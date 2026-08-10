@@ -1,0 +1,168 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Value } from '@sinclair/typebox/value';
+import { CandidateRun } from '../src/application/candidate-run.js';
+import { RunRecordSchema, type RunAttempt, type RunManifest } from '../src/core/schema.js';
+import { ExperimentStore } from '../src/infrastructure/store/experiment-store.js';
+import { ScriptedRunner } from './support/scripted-runtime.js';
+
+const policy = { turnTimeoutMs: 50, maxTargetTurns: 3 };
+const initial = { id: 'message-1', text: 'Start.' };
+const identity = { runId: 'run-1', turnIndex: 0, clientMessageId: 'initial-1' };
+const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+const timestamp = '2026-08-10T00:00:00.000Z';
+
+function settled(status: 'completed' | 'failed' | 'waiting_input' | 'aborted') {
+  return { turnId: 'turn-1', status, confidence: 'native' as const, observedAt: new Date().toISOString(), rawRefs: [] };
+}
+
+function persistedRun(): { attempt: RunAttempt; manifest: RunManifest } {
+  const attempt: RunAttempt = {
+    schemaVersion: 1,
+    runId: 'run-1',
+    experimentId: 'experiment-1',
+    caseId: 'case-1',
+    candidate: { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-test' },
+    policy: { wallClockMs: 1, maxTargetTurns: 3, maxModelCalls: 1, turnTimeoutMs: 50, heartbeatTimeoutMs: 1, maxConsecutiveNoProgress: 1 },
+    createdAt: timestamp,
+  };
+  return {
+    attempt,
+    manifest: {
+      schemaVersion: 1,
+      attempt,
+      resolvedModel: { requested: 'gpt-test', resolved: 'gpt-test' },
+      runtime: { productId: 'codex', executable: 'codex.exe' },
+      environment: { environmentId: 'environment-1', workspacePath: 'C:/safe/workspace' },
+      controller: {
+        providerId: 'test', requestedModel: 'test', resolvedModel: 'test',
+        optionsHash: hash('options'), promptHash: hash('prompt'), toolPolicyHash: hash('tools'), contextPolicyHash: hash('context'),
+        budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0, maxProviderRetries: 0 },
+      },
+      startedAt: timestamp,
+    },
+  };
+}
+
+async function temporaryExperiment(): Promise<string> {
+  return mkdtemp(join(tmpdir(), 'reprise-candidate-run-'));
+}
+
+test('CandidateRun accepts an initial message, waits for settlement, and records all state transitions', async () => {
+  const runner = new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]);
+  const run = new CandidateRun({ runner, policy, release: async () => ({ status: 'released' }) });
+  assert.equal(await run.start(initial, identity), 'awaiting_controller');
+  assert.deepEqual(run.states(), ['created', 'preparing', 'launching', 'awaiting_target', 'awaiting_controller']);
+  assert.equal(await run.complete(), 'finished');
+  assert.equal(run.result().outcome.termination.code, 'completed.controller_satisfied');
+  assert.equal(run.result().outcome.termination.failure, undefined);
+  assert.equal(runner.started.length, 1);
+  assert.equal(runner.stopped, 'completed');
+});
+
+test('CandidateRun distinguishes rejected and unknown delivery without resending', async () => {
+  const rejected = new CandidateRun({ runner: new ScriptedRunner([{ delivery: 'rejected', evidence: 'rpc_response' }], []), policy });
+  assert.equal(await rejected.start(initial, identity), 'finished');
+  assert.equal(rejected.result().outcome.termination.code, 'blocked.input_rejected');
+  assert.equal(rejected.result().outcome.termination.failure, undefined);
+
+  const unknownRunner = new ScriptedRunner([{ delivery: 'unknown', evidence: 'rpc_response' }], []);
+  const unknown = new CandidateRun({ runner: unknownRunner, policy });
+  assert.equal(await unknown.start(initial, identity), 'finished');
+  assert.equal(unknown.result().outcome.termination.code, 'uncertain.input_delivery');
+  assert.equal(unknownRunner.started.length, 1);
+});
+
+test('CandidateRun enforces settlement, turn budgets, cancellation, crash, timeout, and cleanup facts', async () => {
+  const budgetRunner = new ScriptedRunner(
+    [{ delivery: 'accepted', evidence: 'native_admission' }, { delivery: 'accepted', evidence: 'native_admission' }],
+    [settled('waiting_input'), settled('waiting_input')],
+  );
+  const budget = new CandidateRun({ runner: budgetRunner, policy: { ...policy, maxTargetTurns: 2 } });
+  await budget.start(initial, identity);
+  const next = { id: 'message-2', text: 'Continue.' };
+  const nextIdentity = { runId: 'run-1', turnIndex: 1, clientMessageId: 'next-1' };
+  const first = budget.submit(next, nextIdentity);
+  const retried = budget.submit(next, nextIdentity);
+  assert.equal(await first, 'finished');
+  assert.equal(await retried, 'finished');
+  assert.equal(budgetRunner.sent.length, 1);
+  assert.equal(budget.result().outcome.termination.code, 'limit.target_turns');
+  await assert.rejects(budget.submit(next, { ...nextIdentity, clientMessageId: 'next-2' }), /finished/);
+
+  const cancelled = new CandidateRun({ runner: new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]), policy });
+  await cancelled.start(initial, identity);
+  await cancelled.cancel();
+  assert.equal(cancelled.result().outcome.termination.code, 'cancelled.user');
+
+  const crashed = new CandidateRun({ runner: new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [new Error('process exited')]), policy });
+  assert.equal(await crashed.start(initial, identity), 'finished');
+  assert.equal(crashed.result().outcome.termination.code, 'failed.runtime');
+  assert.equal(crashed.result().outcome.termination.failure?.origin, 'runtime');
+
+  const timeout = new CandidateRun({ runner: new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [new Promise(() => {})]), policy: { ...policy, turnTimeoutMs: 1 } });
+  assert.equal(await timeout.start(initial, identity), 'finished');
+  assert.equal(timeout.result().outcome.termination.code, 'limit.turn_timeout');
+
+  const cleanup = new CandidateRun({ runner: new ScriptedRunner([{ delivery: 'rejected', evidence: 'rpc_response' }], [], new Error('cannot stop')), policy, release: async () => { throw new Error('cannot release'); } });
+  await cleanup.start(initial, identity);
+  assert.equal(cleanup.result().outcome.termination.code, 'blocked.input_rejected');
+  assert.equal(cleanup.result().outcome.cleanup.status, 'incomplete');
+});
+
+test('CandidateRun persists attempt, manifest, facts, and terminal record in one trace', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const { attempt, manifest } = persistedRun();
+    const artifactRefs = [{ artifactId: 'candidate-workspace.patch', experimentId: 'experiment-1', runId: 'run-1' }];
+    const runner = new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]);
+    const run = new CandidateRun({ runner, policy, persistence: { journal: store, attempt, manifest, artifactRefs } });
+    const first = run.start(initial, identity);
+    const retry = run.start(initial, identity);
+    assert.equal(await first, 'awaiting_controller');
+    assert.equal(await retry, 'awaiting_controller');
+    assert.equal(runner.started.length, 1);
+    await run.complete();
+
+    const result = run.result();
+    assert.equal(Value.Check(RunRecordSchema, result.record), true);
+    assert.equal(result.record?.trace.lastSequence, store.nextSequence() - 1);
+    assert.deepEqual(result.record?.artifactRefs, artifactRefs);
+    const replay = store.replay('run-1');
+    assert.deepEqual(replay.attempt, attempt);
+    assert.deepEqual(replay.manifest, manifest);
+    assert.deepEqual(replay.finishedPayload, result.record);
+    assert.deepEqual((replay.finishedPayload as { artifactRefs: unknown }).artifactRefs, artifactRefs);
+
+    const events = (await readFile(join(root, 'events.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { type: string });
+    assert.equal(events.findIndex((event) => event.type === 'run.attempt_created') < events.findIndex((event) => event.type === 'run.manifest_created'), true);
+    assert.equal(events.at(-1)?.type, 'run.finished');
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('CandidateRun persists a preparation failure without a manifest as not assessed', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const { attempt } = persistedRun();
+    const runner = new ScriptedRunner([], []);
+    const run = new CandidateRun({ runner, policy, persistence: { journal: store, attempt } });
+    assert.equal(await run.start(initial, identity), 'finished');
+    assert.equal(runner.started.length, 0);
+    assert.equal(run.result().outcome.task.status, 'not_assessed');
+    assert.equal(store.replay('run-1').manifest, undefined);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

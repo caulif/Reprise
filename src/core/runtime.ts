@@ -1,0 +1,61 @@
+export type Delivery = 'accepted' | 'rejected' | 'unknown';
+export type RuntimeStopReason = 'completed' | 'cancelled' | 'failed' | 'shutdown';
+export type UserMessage = { id: string; text: string };
+export type MessageIdentity = { runId: string; turnIndex: number; clientMessageId: string };
+export type DeliveryReceipt = {
+  delivery: Delivery;
+  evidence: 'preflight' | 'rpc_response' | 'native_admission' | 'persisted' | 'native_event';
+  turnId?: string;
+  messageId?: string;
+  acceptedAt?: string;
+};
+export type TurnSettlement = {
+  turnId: string;
+  status: 'completed' | 'failed' | 'waiting_input' | 'aborted';
+  confidence: 'native' | 'composite' | 'heuristic';
+  observedAt: string;
+  rawRefs: unknown[];
+};
+
+export type AvailableRuntime = {
+  productId: string;
+  executable: string;
+  version?: string;
+};
+export type RuntimeRequest = {
+  productId: string;
+  requestedModel: string;
+};
+export type ResolvedRuntime = AvailableRuntime & {
+  requestedModel: string;
+  resolvedModel: string | 'unknown';
+};
+export type PreparedRuntimeEnvironment = { environmentId: string; runId: string; root: string };
+export type TargetEvent = { type: string; occurredAt: string; payload: unknown };
+export type TargetEventSink = { append(event: TargetEvent): Promise<void> };
+export type RuntimeCapabilities = {
+  nativeAdmission: boolean;
+  clientMessageId: boolean;
+  nativeTurnSettlement: boolean;
+  tokenTelemetry: 'native' | 'partial' | 'none';
+  reconnectSession: boolean;
+  querySubmissionByClientId: boolean;
+  confirmProcessTermination: boolean;
+};
+export type TargetStatus = 'starting' | 'running' | 'stopped' | 'unknown';
+
+export interface RuntimePort {
+  readonly id: string;
+  inspectAvailable(): Promise<readonly AvailableRuntime[]>;
+  resolve(request: RuntimeRequest): Promise<ResolvedRuntime>;
+  createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner>;
+}
+
+export interface TargetRunner {
+  capabilities(): RuntimeCapabilities;
+  start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
+  send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
+  waitForTurn(): Promise<TurnSettlement>;
+  inspect(): Promise<TargetStatus>;
+  stop(reason: RuntimeStopReason): Promise<void>;
+}

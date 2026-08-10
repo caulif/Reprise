@@ -1,0 +1,34 @@
+{
+  "name": "reprise",
+  "version": "0.1.0",
+  "description": "Local-first harness for comparing agent runtimes on real tasks.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "reprise": "dist/src/cli/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/test/index.test.js",
+    "check:node": "node dist/src/cli/main.js --version",
+    "check": "npm run typecheck && npm test && npm run check:node",
+    "postbuild": "node scripts/copy-test-fixtures.mjs",
+    "smoke:codex": "npm run build && node scripts/codex-real-smoke.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.1",
+    "@earendil-works/pi-ai": "0.84.1",
+    "@earendil-works/pi-tui": "0.84.1",
+    "@sinclair/typebox": "0.34.52"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}
