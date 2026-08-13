@@ -7,7 +7,7 @@ test('accepts the supported minimum Node.js version', () => {
   assert.throws(() => assertSupportedNodeVersion('22.18.9'), /requires Node\.js >= 22\.19\.0/);
 });
 
-test('CLI help is side-effect free and returns success', () => {
+test('CLI help is side-effect free and documents the TUI entrypoint', () => {
   const output: string[] = [];
   const exitCode = main(['--help'], {
     stdout: (message) => output.push(message),
@@ -16,6 +16,7 @@ test('CLI help is side-effect free and returns success', () => {
 
   assert.equal(exitCode, 0);
   assert.match(output.join('\n'), /Usage:/);
-  assert.match(output.join('\n'), /smoke-record/);
+  assert.match(output.join('\n'), /--sessions-dir/);
+  assert.doesNotMatch(output.join('\n'), /smoke-record/);
   assert.doesNotMatch(output.join('\n'), /stderr:/);
 });

@@ -1,0 +1,14 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise            gpt-5.6-terra · medium   [32m● API ready[0m  [32m● TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Step 2 of 3 ─ Preflight      ✓──●──○
+
+┌─ Candidate preflight ────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Candidate    gpt-5.6-luna · runtime resolved gpt-5.6-luna                                                            │
+│ Runtime      C:\Users\15893\AppData\Roaming\npm\codex.CMD                                                            │
+│ Baseline     available · comparison observational                                                                    │
+│ Limitations  Replay starts from the selected directory's current state, not the historical start; historical results │
+│may already be present.                                                                                               │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Preflight completed without creating an isolated workspace.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Enter] Review run confirmation  [b] Edit source root  [Esc] Home

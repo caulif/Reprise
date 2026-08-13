@@ -1,0 +1,87 @@
+{
+  "target": "019ff9fd-62c5-76b3-ba67-beed462fe746",
+  "sessionsRoot": "C:\\Users\\15893\\.codex\\sessions",
+  "captures": [
+    {
+      "name": "01-home",
+      "width": 120,
+      "rows": 15
+    },
+    {
+      "name": "02-sessions-wide",
+      "width": 120,
+      "rows": 65
+    },
+    {
+      "name": "03-sessions-compact",
+      "width": 60,
+      "rows": 65
+    },
+    {
+      "name": "02a-search-projects",
+      "width": 120,
+      "rows": 18
+    },
+    {
+      "name": "02b-project-sessions",
+      "width": 120,
+      "rows": 19
+    },
+    {
+      "name": "04-inspection-unbounded",
+      "width": 120,
+      "rows": 27
+    },
+    {
+      "name": "05-inspection-32rows",
+      "width": 120,
+      "rows": 27
+    },
+    {
+      "name": "06-inspection-24rows",
+      "width": 120,
+      "rows": 23
+    },
+    {
+      "name": "07-inspection-compact",
+      "width": 60,
+      "rows": 35
+    },
+    {
+      "name": "08-inspection-task-2",
+      "width": 120,
+      "rows": 24
+    },
+    {
+      "name": "09-inspection-task-3",
+      "width": 120,
+      "rows": 24
+    },
+    {
+      "name": "10-inspection-task-1-again",
+      "width": 120,
+      "rows": 27
+    },
+    {
+      "name": "11-home-after-freeze",
+      "width": 120,
+      "rows": 15
+    },
+    {
+      "name": "12-run-source",
+      "width": 120,
+      "rows": 10
+    },
+    {
+      "name": "13-run-preflight",
+      "width": 120,
+      "rows": 14
+    },
+    {
+      "name": "14-run-confirm",
+      "width": 120,
+      "rows": 17
+    }
+  ],
+  "index": "file:///C:/Users/15893/Documents/model-test/Reprise/docs/tui-intake-review/index.html"
+}

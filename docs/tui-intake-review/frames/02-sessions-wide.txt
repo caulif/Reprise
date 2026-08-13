@@ -1,0 +1,65 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise         gpt-5.6-terra · medium   [32m● API ready[0m  [2m○ No TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌─ Projects · 56 · 150 sessions · filter: all ────────────────────────────────┐ ┌─ Preview ────────────────────────────┐
+│❯ Reprise                                                    10  9m ago      │ │ Project      Reprise                 │
+│  20260810汇报ppt                                            1   1h ago      │ │ Path         model-test/Reprise      │
+│  ru-h                                                       1   6h ago      │ │ Sessions     10                      │
+│  .hermes                                                    7   6h ago      │ │                                      │
+│  jie                                                        1   15h ago     │ │ Latest       /goal 理解项目核心，按照│
+│  b                                                          1   15h ago     │ │FIRST-PRINCIPLES-REVIEW.md 逐步进行修 │
+│  2026-08-12/w                                               1   16h ago     │ │改和优化，过程中使用 ponytail ，保持代│
+│  xian                                                       1   20h ago     │ │码克制和简洁                          │
+│  ji                                                         1   2d ago      │ │                                      │
+│  obsidian                                                   13  2d ago      │ │                                      │
+│  lhp                                                        34  2d ago      │ │                                      │
+│  haidian                                                    1   2d ago      │ │                                      │
+│  QianCi                                                     1   2d ago      │ │                                      │
+│  2026-08-10/new-chat                                        1   3d ago      │ │                                      │
+│  gei                                                        1   3d ago      │ │                                      │
+│  gen                                                        1   3d ago      │ │                                      │
+│  RUN-TC-04-dynamic-subagent-orchestration-9d7c9b95/work     1   3d ago      │ │                                      │
+│  RUN-TC-04-dynamic-subagent-orchestration-d7714f36/work     1   3d ago      │ │                                      │
+│  RUN-TC-04-dynamic-subagent-orchestration-9b721d2e/work     1   3d ago      │ │                                      │
+│  RUN-TC-04-dynamic-subagent-orchestration-ae12bdbf/work     1   3d ago      │ │                                      │
+│  2026-08-10/jian                                            1   3d ago      │ │                                      │
+│  RUN-TC-03-kimi-form-preference-57ad2089/work               1   3d ago      │ │                                      │
+│  RUN-TC-01-agent-governor-plan-v2-d9f3d668/work             1   3d ago      │ │                                      │
+│  RUN-TC-02-opencode-visual-diagnosis-f56cd32e/work          1   3d ago      │ │                                      │
+│  blog                                                       2   3d ago      │ │                                      │
+│  RUN-TC-01-agent-governor-plan-v2-4940cdf7/work             1   3d ago      │ │                                      │
+│  RUN-TC-01-agent-governor-plan-v2-9d454f95/work             1   3d ago      │ │                                      │
+│  个人健康                                                   2   3d ago      │ │                                      │
+│  RUN-TC-01-agent-governor-plan-350a1789/work                1   3d ago      │ │                                      │
+│  model-test                                                 19  3d ago      │ │                                      │
+│  RUN-TC-01-agent-governor-plan-d1a96ab2/work                1   3d ago      │ │                                      │
+│  pi-learn                                                   1   4d ago      │ │                                      │
+│  .codex                                                     9   5d ago      │ │                                      │
+│  analysis-2026-08-07                                        1   5d ago      │ │                                      │
+│  fen                                                        1   2026-08-05  │ │                                      │
+│  wei                                                        1   2026-08-05  │ │                                      │
+│  session-distill                                            3   2026-08-05  │ │                                      │
+│  sou                                                        1   2026-08-04  │ │                                      │
+│  微信聊天记录                                               3   2026-08-04  │ │                                      │
+│  g                                                          1   2026-08-03  │ │                                      │
+│  2026-08-03/new-chat                                        1   2026-08-03  │ │                                      │
+│  2026-08-02/new-chat                                        1   2026-08-02  │ │                                      │
+│  2026-07-29/jian                                            1   2026-07-29  │ │                                      │
+│  f                                                          1   2026-07-29  │ │                                      │
+│  new-chat-6                                                 1   2026-07-28  │ │                                      │
+│  yu                                                         1   2026-07-28  │ │                                      │
+│  qin                                                        3   2026-07-28  │ │                                      │
+│  new-chat-5                                                 1   2026-07-28  │ │                                      │
+│  ba                                                         1   2026-07-27  │ │                                      │
+│  work-buddy                                                 1   2026-07-24  │ │                                      │
+│  2026-07-24/w                                               1   2026-07-24  │ │                                      │
+│  new-test                                                   1   2026-07-21  │ │                                      │
+│  2026-07-21/jian                                            1   2026-07-20  │ │                                      │
+│  Aion                                                       1   2026-07-20  │ │                                      │
+│  做ppt                                                      1   2026-07-19  │ │                                      │
+│  2026-07-15/new-chat                                        1   2026-07-15  │ │                                      │
+└─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
+
+ [/] Search
+ Choose a project, then a session. Type / to search.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [↑↓] Select  [Enter] Open project  [/] Search  [f] Filter  [Esc] Home

@@ -1,0 +1,33 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise         gpt-5.6-terra · medium   [32m● API ready[0m  [2m○ No TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌─ Keys ───────────────────────────────────────────────────────┐
+│ Commands: /config, /intake, /run, /history                   │
+│                                                              │
+│  Global      Esc      Back to Home                           │
+│              Ctrl+C   Cancel run, or exit                    │
+│              ?        This help                              │
+│                                                              │
+│  Lists       Up/Down  Select      Enter   Open               │
+│              Tab      Switch tab                             │
+│                                                              │
+│  Running     f        Cycle filter                           │
+│              l / End  Follow latest                          │
+│              PgUp/Dn  Page                                   │
+│                                                              │
+│  Config      s        Save locally (no network)              │
+│              t        Test connection (network)              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ Welcome / Recent runs ─────────────────────────────────┐  ┌─ Current workspace ─────────────────────────────────────┐
+│ Local commands                                          │  │ TaskCase   none selected                                │
+│                                                         │  │ Source     —                                            │
+│ /config    Configure the API connection  [32m✓[0m              │  │ Recent     no local experiments                         │
+│ /intake    Import a Codex historical session            │  │                                                         │
+│ /run       Run the current TaskCase  [33mneeds a TaskCase[0m   │  │                                                         │
+│ /history   Browse local TaskCases and experiments       │  │                                                         │
+└─────────────────────────────────────────────────────────┘  └─────────────────────────────────────────────────────────┘
+
+ ❯ Enter a task or / command…
+ Commands: /config, /intake, /run, /history
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Enter] Run command  [Tab] Complete  [?] Keys  [Ctrl+C] Exit

@@ -1,17 +1,12 @@
-import { Value } from '@sinclair/typebox/value';
-import { EvidenceRefSchema } from '../core/schema.js';
 import { Type, type Static } from '@sinclair/typebox';
-import { PiAgentHost, type StructuredAgentResult } from '../infrastructure/pi-agent-host.js';
+import { EvidenceRefSchema } from '../core/schema.js';
+import { PiAgentHost, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/pi-agent-host.js';
 
 export const ComparisonResultSchema = Type.Object({
-  summary: Type.String({ minLength: 1 }),
-  observations: Type.Array(Type.Object({
-    text: Type.String({ minLength: 1 }),
-    evidence: Type.Array(EvidenceRefSchema, { minItems: 1 }),
-    side: Type.Optional(Type.Union([Type.Literal('baseline'), Type.Literal('candidate'), Type.Literal('both')])),
-  })),
-  limitations: Type.Array(Type.String()),
-  generatedAt: Type.String({ minLength: 1 }),
+  status: Type.Union([Type.Literal('completed'), Type.Literal('insufficient_evidence')]),
+  reportPath: Type.Literal('comparison.md'),
+  evidenceRefs: Type.Array(EvidenceRefSchema),
+  limitationCodes: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
 });
 export type ComparisonResult = Static<typeof ComparisonResultSchema>;
 
@@ -20,14 +15,21 @@ export type ComparisonContext = {
   baseline: { summary: string; evidenceRefs: readonly string[] };
   candidates: readonly { runId: string; summary: string; evidenceRefs: readonly string[] }[];
   telemetry: readonly { runId: string; summary: string }[];
-  fidelity: readonly { runId: string; comparisonClass: string }[];
   artifactRefs: readonly string[];
   allowModelText: boolean;
 };
 
 export interface ComparisonAgentPort {
-  compare(context: ComparisonContext): Promise<StructuredAgentResult<ComparisonResult>>;
+  compare(context: ComparisonContext, tools?: readonly AgentToolDefinition[]): Promise<AgentInvocation<ComparisonResult>>;
 }
+
+const SYSTEM_PROMPT = [
+  'You are Reprise Comparison, a read-only evidence investigator.',
+  'Begin from the supplied briefing and manifest. Use Host evidence tools only when a narrower read can affect the user-facing conclusion; do not read all material by default.',
+  'Distinguish observed facts, inference, unavailable evidence, result differences, process differences, and replay limitations. Do not rank candidates or convert a harness failure into a capability claim.',
+  'Write a free-form user-facing comparison.md with navigable evidence references. Return only a thin JSON envelope: completed or insufficient_evidence, comparison.md, used evidence refs, and optional limitation codes.',
+  'comparison.md is the only body the user reads: the Host wraps it in a thin shell (identity, run metrics, file list) and adds nothing else, so you decide what to show and how to organize it. Cite artifact relative paths when a detail matters; the user opens those files. Write Markdown only, never raw HTML.',
+].join(' ');
 
 export class ComparisonAgent implements ComparisonAgentPort {
   readonly #host: PiAgentHost;
@@ -40,28 +42,20 @@ export class ComparisonAgent implements ComparisonAgentPort {
     this.#maxRepairAttempts = input.maxRepairAttempts;
   }
 
-  async compare(context: ComparisonContext): Promise<StructuredAgentResult<ComparisonResult>> {
+  async compare(context: ComparisonContext, tools: readonly AgentToolDefinition[] = []): Promise<AgentInvocation<ComparisonResult>> {
+    const available = new Set([...context.baseline.evidenceRefs, ...context.candidates.flatMap((candidate) => candidate.evidenceRefs), ...context.artifactRefs]);
     return this.#host.request<ComparisonResult>({
-      systemPrompt: 'Organize only the supplied comparison facts. Return exactly one JSON object with summary (string), observations (array of objects with text (string), evidence (array containing only supplied evidence refs), and optional side (baseline, candidate, or both)), limitations (array of strings), and generatedAt (ISO timestamp). Do not add top-level keys or modify runtime results or fidelity.',
-      context,
-      schema: ComparisonResultSchema,
-      timeoutMs: this.#timeoutMs,
-      maxRepairAttempts: this.#maxRepairAttempts,
-      fallback: { summary: 'Comparison agent unavailable; report persisted facts only.', observations: [], limitations: ['No validated comparison narrative was available.'], generatedAt: new Date().toISOString() },
-      allowModelText: context.allowModelText,
-      capabilities: ['read_artifact'],
-      validate: (result) => comparisonError(result, context),
+      role: 'comparison', systemPrompt: SYSTEM_PROMPT, context, schema: ComparisonResultSchema,
+      timeoutMs: this.#timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
+      allowModelText: context.allowModelText, tools,
+      validate: (result) => result.evidenceRefs.some((ref) => !available.has(ref)) ? 'unknown evidence reference' : undefined,
     });
   }
 }
 
 export function assertComparisonResult(value: unknown, context: ComparisonContext): asserts value is ComparisonResult {
-  const error = comparisonError(value, context);
-  if (error) throw new Error(`Invalid ComparisonResult: ${error}.`);
-}
-
-function comparisonError(value: unknown, context: ComparisonContext): string | undefined {
-  if (!Value.Check(ComparisonResultSchema, value)) return 'schema validation failed';
-  const evidence = new Set([...context.baseline.evidenceRefs, ...context.candidates.flatMap((candidate) => candidate.evidenceRefs), ...context.artifactRefs]);
-  return value.observations.some((observation) => observation.evidence.some((ref) => !evidence.has(ref))) ? 'unknown evidence reference' : undefined;
+  if (value === null || typeof value !== 'object') throw new Error('Invalid ComparisonEnvelope: schema validation failed.');
+  const available = new Set([...context.baseline.evidenceRefs, ...context.candidates.flatMap((candidate) => candidate.evidenceRefs), ...context.artifactRefs]);
+  const refs = (value as { evidenceRefs?: unknown }).evidenceRefs;
+  if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string' || !available.has(ref))) throw new Error('Invalid ComparisonEnvelope: unknown evidence reference.');
 }

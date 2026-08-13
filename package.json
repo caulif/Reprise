@@ -1,7 +1,7 @@
 {
   "name": "reprise",
   "version": "0.1.0",
-  "description": "Local-first harness for comparing agent runtimes on real tasks.",
+  "description": "Local-first harness for replaying and inspecting agent runtimes on real tasks.",
   "type": "module",
   "engines": {
     "node": ">=22.19.0"
@@ -13,13 +13,13 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/test/index.test.js",
+    "test": "npm run build && node --test dist/test/*.test.js",
     "check:node": "node dist/src/cli/main.js --version",
     "check": "npm run typecheck && npm test && npm run check:node",
     "postbuild": "node scripts/copy-test-fixtures.mjs",
-    "smoke:codex": "npm run build && node scripts/codex-real-smoke.mjs"
+    "smoke:codex": "npm run build && node dist/scripts/codex-real-smoke.js"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.84.1",

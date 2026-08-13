@@ -1,13 +1,12 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SAFE_ID, sha256, writeImmutable } from '../../core/identity.js';
 import type { RuntimePort } from '../../core/runtime.js';
 import type { CaseArtifactRef, TaskCase } from '../../core/schema.js';
 import { CodexRuntimePort } from './runtime-port.js';
 
 const FIXTURE_SCHEMA = 'reprise.codex.fixture/v1';
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 type FixturePath = string | URL;
 type JsonRecord = Record<string, unknown>;
@@ -62,10 +61,6 @@ export const codexProductPack: CodexPack = {
 
 function inputPath(path: FixturePath): string {
   return path instanceof URL ? fileURLToPath(path) : path;
-}
-
-function hashBytes(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
 }
 
 function object(value: unknown, label: string): JsonRecord {
@@ -153,7 +148,7 @@ function messages(events: JsonRecord[]): CodexMessageEvent[] {
 export async function importCodexFixture(path: FixturePath, now = new Date().toISOString()): Promise<{ taskCase: TaskCase; rawSession: CodexFixture }> {
   const bytes = await readFile(inputPath(path));
   const rawSession = validateFixture(JSON.parse(bytes.toString('utf8')));
-  const sourceHash = hashBytes(bytes);
+  const sourceHash = sha256(bytes);
   const caseId = `case-${sourceHash.slice(0, 16)}`;
   const transcript = messages(rawSession.events).map(({ type, id: messageId, text: messageText }) => ({
     id: messageId,
@@ -186,18 +181,11 @@ export async function importCodexFixture(path: FixturePath, now = new Date().toI
       ...(rawSession.sourceRuntime.model === undefined ? {} : { model: rawSession.sourceRuntime.model }),
       artifactRefs: [],
     },
-    environmentBaseline: { status: 'unavailable', artifactRefs: [] },
     provenance: { packVersion: codexProductPack.manifest.packVersion, importedAt: now, sourceHash },
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
     contentHash: sourceHash,
   };
   return { taskCase, rawSession };
-}
-
-async function writeImmutable(path: string, data: string | Uint8Array): Promise<void> {
-  const temporary = `${path}.tmp-${process.pid}-${Math.random().toString(16).slice(2)}`;
-  await writeFile(temporary, data, { flag: 'wx' });
-  await rename(temporary, path);
 }
 
 export async function freezeCodexFixture(path: FixturePath, root: string, now = new Date().toISOString()): Promise<{ taskCase: TaskCase; rawSession: CodexFixture }> {

@@ -1,0 +1,15 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise            gpt-5.6-terra · medium   [32m● API ready[0m  [32m● TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌─ Welcome / Recent runs ─────────────────────────────────┐  ┌─ Current workspace ─────────────────────────────────────┐
+│ Local commands                                          │  │ TaskCase   case-820321948a734760                        │
+│                                                         │  │ Source     codex                                        │
+│ /config    Configure the API connection  [32m✓[0m              │  │ Recent     no local experiments                         │
+│ /intake    Import a Codex historical session            │  │                                                         │
+│ /run       Run the current TaskCase  [32m✓[0m                  │  │                                                         │
+│ /history   Browse local TaskCases and experiments       │  │                                                         │
+└─────────────────────────────────────────────────────────┘  └─────────────────────────────────────────────────────────┘
+
+ ❯ Enter a task or / command…
+ TaskCase case-820321948a734760 is current. No candidate command has started; use /run when ready.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Enter] Run command  [Tab] Complete  [?] Keys  [Ctrl+C] Exit

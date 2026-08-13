@@ -1,0 +1,17 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   [2m○ API not configured[0m  [2m○ No TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌─ Harness API ────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ❯ provider type      pi-catalog  [2m[Enter] toggles[0m                                                                     │
+│   provider label     openai-codex                                                                                    │
+│   base URL                                                                                                           │
+│   model              gpt-5.6-terra                                                                                   │
+│   effort             medium  [2m[Enter] cycles[0m                                                                          │
+│   API key reference                                                                                                  │
+│                                                                                                                      │
+│ ● In-memory draft                                                                                                    │
+│ Pi catalog credentials are discovered by Pi and are not copied into Reprise.                                         │
+│ Configuration file: .reprise/harness-model.json                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Edit an in-memory Harness configuration. Save never sends a request; connection testing is explicit.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [↑↓] Select  [Enter] Change  [s] Save locally  [t] Test connection  [Esc] Home

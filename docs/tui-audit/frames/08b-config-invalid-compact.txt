@@ -1,0 +1,21 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
+No configured model   [2mo API not configured[0m  [2mo No TaskCase[0m
+------------------------------------------------------------
+[ Harness API ]
+      provider type      openai-compatible  [2m[Enter] toggles[0m
+      provider label     private-gateway
+      base URL           
+        [33m! not an https URL[0m
+      model              model-private
+      effort             medium  [2m[Enter] cycles[0m
+    > API key reference  
+        [33m! expected env:NAME[0m
+   
+   [33m * Unsaved draft[0m
+    Keys stay in your environment. Reprise saves only
+   env:NAME or ${NAME}.
+    Configuration file: .reprise/harness-model.json
+ Draft changed. Save is local only; use t to explicitly test
+the connection.
+------------------------------------------------------------
+ [↑↓] Select  [Enter] Change  [s] Save locally

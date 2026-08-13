@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { PiTextCaller } from '../../infrastructure/pi-agent-host.js';
+import type { AgentToolDefinition, PiTextCaller, PiTextSession } from '../../infrastructure/pi-agent-host.js';
 import {
   CodexAppServerClient,
   CodexRuntimeUnavailableError,
@@ -30,7 +30,23 @@ export class CodexTextCaller implements PiTextCaller {
     this.#effort = input.effort ?? EXPERIMENT_APPLICATION_EFFORT;
   }
 
-  async complete(input: { systemPrompt: string; contextJson: string; repair?: string; capabilities: readonly string[] }, signal: AbortSignal): Promise<string> {
+  createSession(input: { sessionId: string; systemPrompt: string; tools: readonly AgentToolDefinition[] }): PiTextSession {
+    if (input.tools.length > 0) throw new Error('CodexTextCaller cannot expose Host tools through the app-server protocol.');
+    let controller: AbortController | undefined;
+    return {
+      append: async ({ content, signal }) => {
+        if (signal.aborted) throw abortError();
+        controller = new AbortController();
+        const abort = () => controller?.abort();
+        signal.addEventListener('abort', abort, { once: true });
+        try { return await this.#complete({ systemPrompt: input.systemPrompt, contextJson: content }, controller.signal); }
+        finally { signal.removeEventListener('abort', abort); }
+      },
+      cancel: () => controller?.abort(),
+    };
+  }
+
+  async #complete(input: { systemPrompt: string; contextJson: string }, signal: AbortSignal): Promise<string> {
     if (signal.aborted) throw abortError();
     const executable = await discoverCodexExecutable(this.#options);
     if (!executable) throw new CodexRuntimeUnavailableError('Codex executable was not found for the Experiment Application.');
@@ -84,9 +100,7 @@ export class CodexTextCaller implements PiTextCaller {
   }
 }
 
-function message(input: { contextJson: string; repair?: string }): string {
-  return `${input.repair ? `${input.repair}\n\n` : ''}Use only this JSON context:\n${input.contextJson}`;
-}
+function message(input: { contextJson: string }): string { return `Use only this JSON context:\n${input.contextJson}`; }
 
 function lastAgentMessage(items: unknown): string | undefined {
   if (!Array.isArray(items)) return undefined;

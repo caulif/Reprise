@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +12,6 @@ import { ScriptedRunner } from './support/scripted-runtime.js';
 const policy = { turnTimeoutMs: 50, maxTargetTurns: 3 };
 const initial = { id: 'message-1', text: 'Start.' };
 const identity = { runId: 'run-1', turnIndex: 0, clientMessageId: 'initial-1' };
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const timestamp = '2026-08-10T00:00:00.000Z';
 
 function settled(status: 'completed' | 'failed' | 'waiting_input' | 'aborted') {
@@ -27,7 +25,7 @@ function persistedRun(): { attempt: RunAttempt; manifest: RunManifest } {
     experimentId: 'experiment-1',
     caseId: 'case-1',
     candidate: { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-test' },
-    policy: { wallClockMs: 1, maxTargetTurns: 3, maxModelCalls: 1, turnTimeoutMs: 50, heartbeatTimeoutMs: 1, maxConsecutiveNoProgress: 1 },
+    policy: { wallClockMs: 1, maxTargetTurns: 3, maxModelCalls: 1, turnTimeoutMs: 50, maxConsecutiveNoProgress: 1 },
     createdAt: timestamp,
   };
   return {
@@ -39,9 +37,12 @@ function persistedRun(): { attempt: RunAttempt; manifest: RunManifest } {
       runtime: { productId: 'codex', executable: 'codex.exe' },
       environment: { environmentId: 'environment-1', workspacePath: 'C:/safe/workspace' },
       controller: {
-        providerId: 'test', requestedModel: 'test', resolvedModel: 'test',
-        optionsHash: hash('options'), promptHash: hash('prompt'), toolPolicyHash: hash('tools'), contextPolicyHash: hash('context'),
-        budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0, maxProviderRetries: 0 },
+        providerId: 'test', requestedModel: 'test',
+        budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 },
+      },
+      comparison: {
+        providerId: 'test', requestedModel: 'test',
+        budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 },
       },
       startedAt: timestamp,
     },
@@ -57,7 +58,7 @@ test('CandidateRun accepts an initial message, waits for settlement, and records
   const run = new CandidateRun({ runner, policy, release: async () => ({ status: 'released' }) });
   assert.equal(await run.start(initial, identity), 'awaiting_controller');
   assert.deepEqual(run.states(), ['created', 'preparing', 'launching', 'awaiting_target', 'awaiting_controller']);
-  assert.equal(await run.complete(), 'finished');
+  assert.equal(await run.settleController('satisfied'), 'finished');
   assert.equal(run.result().outcome.termination.code, 'completed.controller_satisfied');
   assert.equal(run.result().outcome.termination.failure, undefined);
   assert.equal(runner.started.length, 1);
@@ -114,6 +115,41 @@ test('CandidateRun enforces settlement, turn budgets, cancellation, crash, timeo
   assert.equal(cleanup.result().outcome.cleanup.status, 'incomplete');
 });
 
+test('CandidateRun records a controller safety stop without claiming a user cancellation', async () => {
+  const run = new CandidateRun({
+    runner: new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]),
+    policy,
+  });
+  await run.start(initial, identity);
+  assert.equal(await run.settleController('no_further_value'), 'finished');
+  assert.equal(run.result().outcome.termination.kind, 'stalled');
+  assert.equal(run.result().outcome.termination.initiatedBy, 'controller');
+});
+
+test('CandidateRun applies its turn timeout to the runner and clears a settled turn timer', async () => {
+  class ImmediateRunner extends ScriptedRunner {
+    timeout: number | undefined;
+    override setRequestTimeout(milliseconds: number): void { this.timeout = milliseconds; }
+  }
+  const runner = new ImmediateRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]);
+  const run = new CandidateRun({ runner, policy: { ...policy, turnTimeoutMs: 60_000 } });
+  assert.equal(await run.start(initial, identity), 'awaiting_controller');
+  assert.equal(runner.timeout, 60_000);
+});
+
+test('CandidateRun lets cancellation win over an in-flight target wait', async () => {
+  const run = new CandidateRun({
+    runner: new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [new Promise(() => {})]),
+    policy: { ...policy, turnTimeoutMs: 50 },
+  });
+  const starting = run.start(initial, identity);
+  await new Promise((resolveWait) => setImmediate(resolveWait));
+  assert.equal(await run.cancel(), 'finished');
+  assert.equal(await starting, 'finished');
+  assert.equal(run.result().outcome.termination.code, 'cancelled.user');
+  assert.deepEqual(run.states().slice(-2), ['finalizing', 'finished']);
+});
+
 test('CandidateRun persists attempt, manifest, facts, and terminal record in one trace', async () => {
   const root = await temporaryExperiment();
   try {
@@ -128,7 +164,7 @@ test('CandidateRun persists attempt, manifest, facts, and terminal record in one
     assert.equal(await first, 'awaiting_controller');
     assert.equal(await retry, 'awaiting_controller');
     assert.equal(runner.started.length, 1);
-    await run.complete();
+    await run.settleController('satisfied');
 
     const result = run.result();
     assert.equal(Value.Check(RunRecordSchema, result.record), true);
@@ -143,6 +179,36 @@ test('CandidateRun persists attempt, manifest, facts, and terminal record in one
     const events = (await readFile(join(root, 'events.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { type: string });
     assert.equal(events.findIndex((event) => event.type === 'run.attempt_created') < events.findIndex((event) => event.type === 'run.manifest_created'), true);
     assert.equal(events.at(-1)?.type, 'run.finished');
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('CandidateRun captures artifacts before it releases its isolated workspace', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const { attempt, manifest } = persistedRun();
+    let released = false;
+    const captured = [{ artifactId: 'candidate-workspace.diff', experimentId: 'experiment-1', runId: 'run-1' }];
+    const runner = new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]);
+    const run = new CandidateRun({
+      runner, policy,
+      release: async () => { released = true; return { status: 'released' }; },
+      persistence: {
+        journal: store, attempt, manifest,
+        captureArtifacts: async () => {
+          assert.equal(released, false);
+          return captured;
+        },
+      },
+    });
+    await run.start(initial, identity);
+    await run.settleController('satisfied');
+    assert.deepEqual(run.result().record?.artifactRefs, captured);
+    assert.equal(released, true);
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });

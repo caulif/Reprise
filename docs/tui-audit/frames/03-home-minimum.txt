@@ -1,0 +1,3 @@
+Terminal is too narrow for
+Reprise.
+Resize to at least 32 columns.

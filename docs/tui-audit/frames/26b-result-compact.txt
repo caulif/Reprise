@@ -1,0 +1,26 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
+gpt-5.6-terra - medium   [32m* API ready[0m  [32m* TaskCase[0m
+------------------------------------------------------------
+[ Run result - completed ]
+   [32m + completed[0m
+        completed.controller_satisfied
+   
+    Run          run-1
+    Cleanup      complete
+    Controller   done
+    Comparison   completed
+    Fidelity     observational
+    Limitations  fingerprint differs
+    Report
+   C:\Users\15893\AppData\Local\Temp\reprise-tui-audit-FrCae
+   6\data\experiments\fixture\report.html
+    Trace
+   C:\Users\15893\AppData\Local\Temp\reprise-tui-audit-FrCae
+   6\data\experiments\fixture\runs\run-1\
+   
+    Single run. Results vary between runs. Reprise records
+   facts for inspection, not rankings.
+ Experiment finished. The report and TUI summary use the
+same persisted facts.
+------------------------------------------------------------
+ [Enter] Home  [b] Home

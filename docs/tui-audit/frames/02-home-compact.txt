@@ -1,0 +1,21 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
+gpt-5.6-terra - medium   [32m* API ready[0m  [2mo No TaskCase[0m
+------------------------------------------------------------
+[ Welcome / Recent runs ]
+    Local commands
+   
+    /config    Configure the API connection  [32m+[0m
+    /intake    Import a Codex historical session
+    /run       Run the current TaskCase  [33mneeds a TaskCase[0m
+    /history   Browse local TaskCases and experiments
+
+[ Current workspace ]
+    TaskCase   none selected
+    Source     -
+    Recent     no local experiments
+
+ > Enter a task or / command...
+ Welcome back. Use /help to see the available local
+workflows.
+------------------------------------------------------------
+ [Enter] Run command  [Tab] Complete  [?] Keys

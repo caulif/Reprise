@@ -1,8 +1,10 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, stat, truncate, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { hostname } from 'node:os';
+import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
+import { SAFE_ID, sha256 } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
   EventEnvelopeSchema,
@@ -15,7 +17,6 @@ import {
 } from '../../core/schema.js';
 
 const SCHEMA_VERSION = 1;
-const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export interface ArtifactManifest {
   readonly artifactId: string;
@@ -29,6 +30,21 @@ export interface ArtifactManifest {
   readonly sourceEventId: string;
   readonly path: string;
 }
+
+const ArtifactManifestSchema = Type.Object({
+  artifactId: Type.String({ pattern: SAFE_ID.source }),
+  schemaVersion: Type.Integer({ minimum: 1 }),
+  kind: Type.String({ minLength: 1 }),
+  mediaType: Type.Optional(Type.String({ minLength: 1 })),
+  byteLength: Type.Integer({ minimum: 0 }),
+  contentHash: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+  createdAt: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}T' }),
+  owner: Type.Object({ experimentId: Type.String({ pattern: SAFE_ID.source }), runId: Type.Optional(Type.String({ pattern: SAFE_ID.source })) }),
+  sourceEventId: Type.String({ minLength: 1 }),
+  path: Type.String({ minLength: 1 }),
+});
+
+export type ExperimentEventListener = (event: EventEnvelope) => void;
 
 export interface AppendEvent {
   readonly type: string;
@@ -55,16 +71,27 @@ interface LockInfo {
   readonly host: string;
 }
 
-function hash(value: string | Uint8Array): string {
-  return createHash('sha256').update(value).digest('hex');
+function eventChecksum(event: Omit<EventEnvelope, 'checksum'>): string {
+  return sha256(JSON.stringify(event));
 }
 
-function eventChecksum(event: Omit<EventEnvelope, 'checksum'>): string {
-  return hash(JSON.stringify(event));
+function isLockInfo(value: unknown): value is LockInfo {
+  if (!value || typeof value !== 'object') return false;
+  const lock = value as Partial<LockInfo>;
+  return typeof lock.experimentId === 'string' && typeof lock.pid === 'number' && Number.isInteger(lock.pid) && lock.pid > 0 && typeof lock.nonce === 'string' && typeof lock.startedAt === 'string' && typeof lock.host === 'string';
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: unknown) {
+    return !(error instanceof Error && 'code' in error && error.code === 'ESRCH');
+  }
 }
 
 function assertId(value: string, name: string): void {
-  if (!ID.test(value)) throw new Error(`${name} must be a safe identifier.`);
+  if (!SAFE_ID.test(value)) throw new Error(`${name} must be a safe identifier.`);
 }
 
 function inside(root: string, candidate: string): string {
@@ -99,6 +126,7 @@ export class ExperimentStore {
   #lockHeld = false;
   #events: EventEnvelope[] = [];
   #appendTail: Promise<void> = Promise.resolve();
+  readonly #listeners = new Set<ExperimentEventListener>();
 
   private constructor(root: string, experimentId: string, events: EventEnvelope[]) {
     this.#root = root;
@@ -125,6 +153,7 @@ export class ExperimentStore {
       startedAt: new Date().toISOString(),
       host: hostname(),
     };
+    const reclaimed = await this.#reclaimStaleLock();
     try {
       await writeFile(this.#lockPath, `${JSON.stringify(lock)}\n`, { encoding: 'utf8', flag: 'wx' });
       this.#lockHeld = true;
@@ -134,6 +163,20 @@ export class ExperimentStore {
       }
       throw error;
     }
+    if (reclaimed) await this.append({ type: 'writer.lock_reclaimed', operationId: `writer-lock-reclaimed-${lock.nonce}`, payload: { previousPid: reclaimed.pid, previousStartedAt: reclaimed.startedAt } });
+  }
+
+  async #reclaimStaleLock(): Promise<LockInfo | undefined> {
+    let value: unknown;
+    try {
+      value = JSON.parse(await readFile(this.#lockPath, 'utf8')) as unknown;
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
+      return undefined;
+    }
+    if (!isLockInfo(value) || value.experimentId !== this.#experimentId || value.host !== hostname() || processExists(value.pid)) return undefined;
+    await rm(this.#lockPath, { force: true });
+    return value;
   }
 
   async close(): Promise<void> {
@@ -142,6 +185,33 @@ export class ExperimentStore {
     await rm(this.#lockPath, { force: true });
     this.#lockHeld = false;
   }
+
+  subscribe(listener: ExperimentEventListener): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  get experimentId(): string { return this.#experimentId; }
+
+  /** Immutable snapshots are returned for evidence readers; callers cannot append through this view. */
+  events(runId?: string): readonly EventEnvelope[] {
+    return this.#events.filter((event) => runId === undefined || event.runId === runId).map((event) => ({ ...event }));
+  }
+
+  async listArtifacts(runId?: string): Promise<readonly ArtifactManifest[]> {
+    const folder = runId ? join(this.#root, 'runs', runId, 'artifacts') : join(this.#root, 'artifacts');
+    try {
+      const { readdir } = await import('node:fs/promises');
+      const names = await readdir(folder);
+      // Artifact payloads may themselves be JSON; only adjacent manifest files have a valid owner.
+      const manifests = await Promise.all(names.filter((name) => name.endsWith('.json')).map(async (name) => JSON.parse(await readFile(join(folder, name), 'utf8')) as unknown));
+      return manifests.filter(isArtifactManifest).filter((manifest) => manifest.owner.experimentId === this.#experimentId && manifest.owner.runId === runId);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
+      throw error;
+    }
+  }
+
 
   nextSequence(): number {
     this.#assertWriter();
@@ -188,6 +258,14 @@ export class ExperimentStore {
     if (!Value.Check(EventEnvelopeSchema, event)) throw new Error('Generated event does not satisfy the event schema.');
     await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);
+    for (const listener of this.#listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.#listeners.delete(listener);
+        process.emitWarning(`Experiment event observer failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     return event;
   }
 
@@ -242,7 +320,7 @@ export class ExperimentStore {
     await rename(temporary, filePath);
     const manifest: ArtifactManifest = {
       artifactId: input.artifactId, schemaVersion: SCHEMA_VERSION, kind: input.kind, ...(input.mediaType ? { mediaType: input.mediaType } : {}),
-      byteLength: input.bytes.byteLength, contentHash: hash(input.bytes), createdAt: new Date().toISOString(),
+      byteLength: input.bytes.byteLength, contentHash: sha256(input.bytes), createdAt: new Date().toISOString(),
       owner: { experimentId: this.#experimentId, ...(input.runId ? { runId: input.runId } : {}) },
       sourceEventId: randomUUID(), path: relative(this.#root, filePath),
     };
@@ -270,7 +348,7 @@ export class ExperimentStore {
       throw new Error('Artifact manifest ownership does not match its reference.');
     }
     const bytes = await readFile(filePath);
-    if (bytes.byteLength !== manifest.byteLength || hash(bytes) !== manifest.contentHash) throw new Error(`Artifact integrity check failed: ${ref.artifactId}.`);
+    if (bytes.byteLength !== manifest.byteLength || sha256(bytes) !== manifest.contentHash) throw new Error(`Artifact integrity check failed: ${ref.artifactId}.`);
     return bytes;
   }
 
@@ -302,6 +380,10 @@ export function assertRunAttempt(value: unknown): asserts value is RunAttempt {
 
 export function assertRunManifest(value: unknown): asserts value is RunManifest {
   if (!Value.Check(RunManifestSchema, value)) throw new Error('Invalid RunManifest.');
+}
+
+function isArtifactManifest(value: unknown): value is ArtifactManifest {
+  return Value.Check(ArtifactManifestSchema, value);
 }
 
 async function readEvents(eventsPath: string): Promise<EventEnvelope[]> {

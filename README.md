@@ -1,6 +1,6 @@
 # Reprise
 
-Reprise 是一个 local-first Harness，用于在真实任务上比较 Agent Runtime。项目保留一条可重复的 fixture + `ScriptedRuntime` 开发路径，也已验证当前 Codex app-server 的真实协议 smoke。
+Reprise 是一个 local-first Harness，用于在真实任务上重放与检视 Agent Runtime，而非评判优劣。项目通过最小确定性单元测试覆盖核心流程，并保留当前 Codex app-server 的真实协议 smoke。
 
 ## 已验证的真实配置
 
@@ -23,26 +23,30 @@ npm install
 npm run check
 ```
 
-fixture 路径不调用 provider：
+## Benchmark TUI
+
+`reprise`（或 `reprise --data-dir <dir> --sessions-dir <dir>`）启动 Home-first 的本地工作台，而不是通用 Coding Agent。键盘闭环仅为：
 
 ```text
-node dist/src/cli/main.js setup --data-dir .reprise --fixture test/fixtures/codex-session.fixture.json
-node dist/src/cli/main.js cases --data-dir .reprise
-node dist/src/cli/main.js compare --data-dir .reprise --case <caseId> --model fixture-model
-node dist/src/cli/main.js report --data-dir .reprise --experiment <experimentId>
-node dist/src/cli/main.js smoke-record --data-dir .reprise --experiment <experimentId> --record <acceptance.json>
+/config → /intake → /run → /history
 ```
+
+- `/config` 保存 OpenAI-compatible endpoint、模型、effort 和 `env:NAME` 密钥引用；密钥值不会写入 Reprise 文件。`[s]` 只做本地保存，`[t]` 才会明确发送最小连通性请求。
+- `/intake` 只浏览本地 Codex 历史会话，用户确认后冻结为当前 `TaskCase`。
+- `/run` 只运行当前 `TaskCase`，要求用户明确输入基线源目录、完成 preflight，并确认可能的网络费用。
+- `/history` 只读浏览已冻结的 TaskCase 和本地实验；详情中可选择当前案例或查看报告路径。
+
+无 slash 的文本不会发送给模型或修改当前工作区。`Esc` 返回 Home/丢弃未保存配置草稿；`Ctrl+C` 在运行中请求取消，其他状态退出并恢复终端。
 
 ## 真实 Codex protocol smoke
 
-先执行一次构建，然后用明确的环境变量和**绝对**数据目录运行。该目录保存不可变 `TaskCase`、Experiment trace、`RunRecord`、报告和验收记录；建议放在临时目录或 `.reprise-*` 目录（已被 Git 忽略）。
+这是一个明确 opt-in 的无工具 app-server 文本协议探针；它不创建实验、不读取工作区，也不替代需要 Host 工具的完整 TUI 实验。
 
 ```powershell
-npm run build
 $env:REPRISE_RUN_CODEX_SMOKE = '1'
-node scripts/codex-real-smoke.mjs --data-dir 'C:\absolute\reprise-real-smoke'
+npm run smoke:codex
 ```
 
-脚本执行一条无工具的固定文本任务，候选使用 Luna/high；Terra/medium 负责一次 Controller 决策和 Comparison。Controller 若发送文本 follow-up，脚本最多提交一次；Comparison 始终按 schema 和 evidence refs 校验，模型输出不合格时保留持久化事实并安全降级。app-server 仍不会获得工具或权限批准。详细准入、证据和限制见 [Codex smoke gate](./docs/codex-smoke-gate.md)。
+脚本只验证 Terra/medium 经当前 Codex app-server 完成一次无工具文本往返，并严格校验固定响应。`CodexTextCaller` 不能把 Host 工具暴露给 app-server，因此它不会伪装成 Controller/Comparison 的完整实验 smoke；完整实验仅通过 TUI 的已配置 Pi Harness 启动。
 
-项目使用单一 TypeScript/ESM 包；`src/cli` 是 fixture CLI 的 composition root，真实 protocol smoke 保持为一份显式运行脚本，避免把受控验证扩展为通用 benchmark CLI。
+项目使用单一 TypeScript/ESM 包；`src/cli` 仅负责启动 TUI，真实 protocol smoke 保持为显式运行脚本，避免把受控验证扩展为通用 benchmark CLI。

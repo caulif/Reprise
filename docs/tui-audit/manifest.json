@@ -1,0 +1,191 @@
+{
+  "captures": [
+    {
+      "name": "01-home-wide",
+      "width": 120,
+      "rows": 15,
+      "issues": []
+    },
+    {
+      "name": "02-home-compact",
+      "width": 60,
+      "rows": 21,
+      "issues": []
+    },
+    {
+      "name": "03-home-minimum",
+      "width": 31,
+      "rows": 3,
+      "issues": []
+    },
+    {
+      "name": "04-home-suggestions",
+      "width": 120,
+      "rows": 23,
+      "issues": []
+    },
+    {
+      "name": "05-home-help",
+      "width": 120,
+      "rows": 33,
+      "issues": []
+    },
+    {
+      "name": "06-config-catalog",
+      "width": 120,
+      "rows": 17,
+      "issues": []
+    },
+    {
+      "name": "07-config-openai-empty",
+      "width": 120,
+      "rows": 17,
+      "issues": []
+    },
+    {
+      "name": "08-config-invalid",
+      "width": 120,
+      "rows": 19,
+      "issues": []
+    },
+    {
+      "name": "08b-config-invalid-compact",
+      "width": 60,
+      "rows": 21,
+      "issues": []
+    },
+    {
+      "name": "09-sessions-wide",
+      "width": 120,
+      "rows": 12,
+      "issues": []
+    },
+    {
+      "name": "10-sessions-compact",
+      "width": 60,
+      "rows": 10,
+      "issues": []
+    },
+    {
+      "name": "11-sessions-cjk-selected",
+      "width": 120,
+      "rows": 13,
+      "issues": []
+    },
+    {
+      "name": "12-inspection-cjk",
+      "width": 120,
+      "rows": 19,
+      "issues": []
+    },
+    {
+      "name": "13-inspection",
+      "width": 120,
+      "rows": 20,
+      "issues": []
+    },
+    {
+      "name": "14-inspection-task-2",
+      "width": 120,
+      "rows": 20,
+      "issues": []
+    },
+    {
+      "name": "15-history-runs",
+      "width": 120,
+      "rows": 9,
+      "issues": []
+    },
+    {
+      "name": "16-history-cases",
+      "width": 120,
+      "rows": 9,
+      "issues": []
+    },
+    {
+      "name": "17-history-detail",
+      "width": 120,
+      "rows": 12,
+      "issues": []
+    },
+    {
+      "name": "18-home-with-taskcase",
+      "width": 120,
+      "rows": 15,
+      "issues": []
+    },
+    {
+      "name": "19-source",
+      "width": 120,
+      "rows": 10,
+      "issues": []
+    },
+    {
+      "name": "19b-source-compact",
+      "width": 60,
+      "rows": 11,
+      "issues": []
+    },
+    {
+      "name": "20-preflight",
+      "width": 120,
+      "rows": 13,
+      "issues": []
+    },
+    {
+      "name": "21-confirm",
+      "width": 120,
+      "rows": 16,
+      "issues": []
+    },
+    {
+      "name": "22-running-wide",
+      "width": 120,
+      "rows": 14,
+      "issues": []
+    },
+    {
+      "name": "23-running-compact",
+      "width": 60,
+      "rows": 16,
+      "issues": []
+    },
+    {
+      "name": "24-running-compact-detail",
+      "width": 60,
+      "rows": 22,
+      "issues": []
+    },
+    {
+      "name": "25-running-filter-target",
+      "width": 120,
+      "rows": 13,
+      "issues": []
+    },
+    {
+      "name": "26-result",
+      "width": 120,
+      "rows": 17,
+      "issues": []
+    },
+    {
+      "name": "26b-result-compact",
+      "width": 60,
+      "rows": 26,
+      "issues": []
+    },
+    {
+      "name": "27-error",
+      "width": 120,
+      "rows": 5,
+      "issues": []
+    },
+    {
+      "name": "28-home-height-24",
+      "width": 120,
+      "rows": 15,
+      "issues": []
+    }
+  ],
+  "index": "file:///C:/Users/15893/Documents/model-test/Reprise/docs/tui-audit/index.html"
+}

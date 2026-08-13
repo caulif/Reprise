@@ -48,6 +48,8 @@ export interface RuntimePort {
   readonly id: string;
   inspectAvailable(): Promise<readonly AvailableRuntime[]>;
   resolve(request: RuntimeRequest): Promise<ResolvedRuntime>;
+  /** Confirms that the requested model is available to this runtime now. */
+  validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime>;
   createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner>;
 }
 
@@ -56,6 +58,8 @@ export interface TargetRunner {
   start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
   send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
   waitForTurn(): Promise<TurnSettlement>;
+  /** CandidateRun gives native RPC calls the same limit as its turn wait. */
+  setRequestTimeout(milliseconds: number): void;
   inspect(): Promise<TargetStatus>;
   stop(reason: RuntimeStopReason): Promise<void>;
 }

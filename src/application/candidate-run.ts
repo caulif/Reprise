@@ -1,14 +1,13 @@
+import { SAFE_ID } from '../core/identity.js';
 import { assertTransition } from '../core/state-machine.js';
 import type { ArtifactRef, CandidateRunState, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
 import type { DeliveryReceipt, MessageIdentity, RuntimeStopReason, TargetRunner, TurnSettlement, UserMessage } from '../core/runtime.js';
 
-const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const deliveryValues = new Set(['accepted', 'rejected', 'unknown']);
 const settlementValues = new Set(['completed', 'failed', 'waiting_input', 'aborted']);
 
 export type CandidateRunPolicy = { turnTimeoutMs: number; maxTargetTurns: number };
 type Cleanup = { status: 'released' | 'already_released' };
-type Fidelity = RunRecord['fidelity'];
 type RecordedEvent = Pick<EventEnvelope, 'eventId' | 'sequence'>;
 type JournalEvent = { type: string; runId: string; operationId: string; payload: unknown };
 type Assessment = RunOutcome['task'];
@@ -26,9 +25,10 @@ export type CandidateRunPersistence = {
   journal: CandidateRunJournal;
   attempt: RunAttempt;
   manifest?: RunManifest;
-  fidelity?: Fidelity;
   /** Artifacts committed before completion, retained in the terminal RunRecord. */
   artifactRefs?: readonly ArtifactRef[];
+  /** Runs after the target stops but before the isolated workspace is released. */
+  captureArtifacts?: () => Promise<readonly ArtifactRef[]>;
 };
 
 type MessageCall = { messageId: string; text: string; promise: Promise<CandidateRunState> };
@@ -44,9 +44,12 @@ export class CandidateRun {
   #settledTurns = 0;
   #outcome: RunOutcome | undefined;
   #record: RunRecord | undefined;
+  #artifactRefs: readonly ArtifactRef[];
+  #warnings: RunRecord['warnings'] = [];
   #stageReached: Exclude<CandidateRunState, 'finalizing' | 'finished'> = 'created';
   #assessment: Assessment | undefined;
   #firstSequence: number | undefined;
+  #finishing: Promise<CandidateRunState> | undefined;
   #messages = new Map<string, MessageCall>();
 
   constructor(input: { runner: TargetRunner; policy: CandidateRunPolicy; release?: () => Promise<Cleanup>; persistence?: CandidateRunPersistence }) {
@@ -55,9 +58,11 @@ export class CandidateRun {
       throw new Error('RunManifest must belong to the persisted RunAttempt.');
     }
     this.#runner = input.runner;
+    this.#runner.setRequestTimeout(input.policy.turnTimeoutMs);
     this.#policy = input.policy;
     this.#release = input.release;
     this.#persistence = input.persistence;
+    this.#artifactRefs = [...(input.persistence?.artifactRefs ?? [])];
   }
 
   states(): readonly CandidateRunState[] { return this.#states; }
@@ -74,17 +79,33 @@ export class CandidateRun {
     return this.#once(message, identity, () => this.#submit(message, identity));
   }
 
-  async complete(): Promise<CandidateRunState> {
+  async settleController(reason: 'satisfied' | 'blocked' | 'requires_real_user_decision' | 'no_further_value'): Promise<CandidateRunState> {
     this.#ensure('awaiting_controller');
-    const evidence = await this.#append('controller.done', { decision: 'satisfied' }, 'controller-done');
-    this.#assessment = { status: 'apparently_completed', decidedBy: 'controller', evidenceRefs: evidence ? [`event:${evidence.eventId}`] : [] };
-    return this.#finish('completed.controller_satisfied', 'completed');
+    const evidence = await this.#append('controller.done', { reason }, 'controller-done');
+    if (reason === 'satisfied') {
+      this.#assessment = { status: 'apparently_completed', decidedBy: 'controller', evidenceRefs: evidence ? [`event:${evidence.eventId}`] : [] };
+      return this.#finish('completed.controller_satisfied', 'completed');
+    }
+    const code = reason === 'requires_real_user_decision' ? 'blocked.requires_user_decision' : reason === 'blocked' ? 'blocked.controller_done' : 'stalled.controller_no_further_value';
+    return this.#finish(code, reason === 'blocked' || reason === 'requires_real_user_decision' ? 'failed' : 'shutdown');
+  }
+
+  async failController(failure: { code: string; message: string }): Promise<CandidateRunState> {
+    this.#ensure('awaiting_controller');
+    await this.#append('controller.failed', failure, 'controller-failed');
+    return this.#finish('failed.controller', 'failed', Object.assign(new Error(failure.message), { code: failure.code }));
   }
 
   async cancel(): Promise<CandidateRunState> {
     if (this.#state === 'finished') return this.#state;
     await this.#append('run.cancel_requested', { requestedBy: 'user' }, 'cancel-request');
     return this.#finish('cancelled.user', 'cancelled');
+  }
+
+  async stopByHarness(code: 'limit.controller_calls' | 'limit.wall_clock' | 'stalled.no_progress'): Promise<CandidateRunState> {
+    this.#ensure('awaiting_controller');
+    await this.#append('harness.stop_requested', { code }, `harness-stop-${code}`);
+    return this.#finish(code, 'shutdown');
   }
 
   async #start(message: UserMessage, identity: MessageIdentity): Promise<CandidateRunState> {
@@ -115,6 +136,8 @@ export class CandidateRun {
   }
 
   async #advance(receipt: DeliveryReceipt, identity: MessageIdentity): Promise<CandidateRunState> {
+    // A terminal cleanup can race an in-flight native turn wait. Its outcome wins.
+    if (this.#state === 'finished') return this.#state;
     assertReceipt(receipt);
     await this.#append('runtime.delivery_observed', { clientMessageId: identity.clientMessageId, turnIndex: identity.turnIndex, receipt }, `delivery-${identity.clientMessageId}`);
     if (receipt.delivery === 'rejected') return this.#finish('blocked.input_rejected', 'failed');
@@ -122,15 +145,12 @@ export class CandidateRun {
     this.#turns += 1;
     if (this.#state === 'launching') await this.#move('awaiting_target');
     try {
-      const settlement = await Promise.race([
-        this.#runner.waitForTurn(),
-        timeoutAfter(this.#policy.turnTimeoutMs),
-      ]);
+      const settlement = await this.#waitForTurn();
       assertSettlement(settlement);
       await this.#append('runtime.turn_settled', settlement, `settlement-${identity.turnIndex}`);
       if (settlement.status !== 'waiting_input' && settlement.status !== 'completed') return this.#finish('failed.runtime', 'failed');
       this.#settledTurns += 1;
-      if (this.#turns >= this.#policy.maxTargetTurns) return this.#finish('limit.target_turns', 'failed');
+      if (this.#turns >= this.#policy.maxTargetTurns) return this.#finish('limit.target_turns', 'shutdown');
       await this.#move('awaiting_controller');
       return this.#state;
     } catch (error) {
@@ -139,6 +159,13 @@ export class CandidateRun {
   }
 
   async #finish(code: string, reason: RuntimeStopReason, cause?: unknown): Promise<CandidateRunState> {
+    if (this.#state === 'finished') return this.#state;
+    if (this.#finishing) return this.#finishing;
+    this.#finishing = this.#finishOnce(code, reason, cause);
+    return this.#finishing;
+  }
+
+  async #finishOnce(code: string, reason: RuntimeStopReason, cause?: unknown): Promise<CandidateRunState> {
     if (this.#state === 'finished') return this.#state;
     const stageReached = this.#state === 'finalizing' ? this.#stageReached : this.#state;
     this.#stageReached = stageReached;
@@ -156,13 +183,16 @@ export class CandidateRun {
 
   async #cleanup(reason: RuntimeStopReason): Promise<RunOutcome['cleanup']> {
     let status: RunOutcome['cleanup']['status'] = 'complete';
+    let remainingResourceIds: string[] = [];
     try {
       await this.#runner.stop(reason);
       await this.#append('runtime.stop_completed', { reason }, 'runtime-stop');
     } catch (error) {
       status = 'incomplete';
-      await this.#append('runtime.stop_failed', errorFact(error), 'runtime-stop-failed');
+      remainingResourceIds = remainingResources(error);
+      await this.#append('runtime.stop_failed', { ...errorFact(error), remainingResourceIds }, 'runtime-stop-failed');
     }
+    await this.#captureArtifacts();
     if (this.#release) {
       try {
         await this.#release();
@@ -172,7 +202,30 @@ export class CandidateRun {
         await this.#append('environment.release_failed', errorFact(error), 'environment-release-failed');
       }
     }
-    return { status, remainingResourceIds: [], evidenceRefs: [] };
+    return { status, remainingResourceIds, evidenceRefs: [] };
+  }
+
+  async #waitForTurn(): Promise<TurnSettlement> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.#runner.waitForTurn(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('turn timeout')), this.#policy.turnTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async #captureArtifacts(): Promise<void> {
+    if (!this.#persistence?.captureArtifacts) return;
+    try {
+      this.#artifactRefs = [...this.#artifactRefs, ...await this.#persistence.captureArtifacts()];
+    } catch (error) {
+      this.#warnings.push({ code: 'artifact.capture_failed', message: errorFact(error).message, evidenceRefs: [] });
+    }
   }
 
   async #append(type: string, payload: unknown, operationId: string): Promise<RecordedEvent | undefined> {
@@ -220,15 +273,14 @@ export class CandidateRun {
       state: 'finished',
       stageReached: this.#stageReached,
       outcome,
-      fidelity: this.#persistence.fidelity ?? defaultFidelity(this.#persistence.manifest),
       trace: {
         experimentId: this.#persistence.attempt.experimentId,
         runId: this.#persistence.attempt.runId,
         firstSequence: this.#firstSequence,
         lastSequence: this.#persistence.journal.nextSequence(),
       },
-      artifactRefs: [...(this.#persistence.artifactRefs ?? [])],
-      warnings: [],
+      artifactRefs: [...this.#artifactRefs],
+      warnings: [...this.#warnings],
     };
   }
 
@@ -244,7 +296,7 @@ function assertPolicy(policy: CandidateRunPolicy): void {
 }
 
 function assertMessage(message: UserMessage, identity: MessageIdentity): void {
-  if (!ID.test(message.id) || typeof message.text !== 'string' || !ID.test(identity.runId) || !Number.isInteger(identity.turnIndex) || identity.turnIndex < 0 || !ID.test(identity.clientMessageId)) {
+  if (!SAFE_ID.test(message.id) || typeof message.text !== 'string' || !SAFE_ID.test(identity.runId) || !Number.isInteger(identity.turnIndex) || identity.turnIndex < 0 || !SAFE_ID.test(identity.clientMessageId)) {
     throw new Error('CandidateRun message identity is invalid.');
   }
 }
@@ -254,13 +306,9 @@ function assertReceipt(receipt: DeliveryReceipt): void {
 }
 
 function assertSettlement(settlement: TurnSettlement): void {
-  if (!settlement || !ID.test(settlement.turnId) || !settlementValues.has(settlement.status) || typeof settlement.observedAt !== 'string') {
+  if (!settlement || !SAFE_ID.test(settlement.turnId) || !settlementValues.has(settlement.status) || typeof settlement.observedAt !== 'string') {
     throw new Error('Runtime returned an invalid turn settlement.');
   }
-}
-
-function timeoutAfter(milliseconds: number): Promise<never> {
-  return new Promise((_, reject) => setTimeout(() => reject(new Error('turn timeout')), milliseconds));
 }
 
 function isTimeout(error: unknown): boolean {
@@ -275,11 +323,19 @@ function errorFact(error: unknown): { message: string } {
   return { message: error instanceof Error ? error.message : String(error) };
 }
 
+function remainingResources(error: unknown): string[] {
+  if (!error || typeof error !== 'object' || !('remainingResourceIds' in error)) return [];
+  const value = (error as { remainingResourceIds?: unknown }).remainingResourceIds;
+  return Array.isArray(value) && value.every((id) => typeof id === 'string' && SAFE_ID.test(id)) ? [...value] : [];
+}
+
 function terminationFor(code: string, cause: unknown): Termination {
   if (code.startsWith('completed.')) return { kind: 'completed', code, initiatedBy: 'controller' };
   if (code.startsWith('limit.')) return { kind: 'limit_reached', code, initiatedBy: 'harness' };
   if (code.startsWith('cancelled.')) return { kind: 'cancelled', code, initiatedBy: 'user' };
-  if (code.startsWith('blocked.')) return { kind: 'blocked', code, initiatedBy: 'harness' };
+  if (code.startsWith('blocked.')) return { kind: 'blocked', code, initiatedBy: 'controller' };
+  if (code.startsWith('stalled.')) return { kind: 'stalled', code, initiatedBy: code === 'stalled.controller_no_further_value' ? 'controller' : 'harness' };
+  if (code === 'failed.controller') return { kind: 'failed', code, initiatedBy: 'controller', failure: { origin: 'controller', code: 'agent_failure', message: errorFact(cause).message, evidenceRefs: [] } };
   if (code.startsWith('uncertain.')) return { kind: 'uncertain', code, initiatedBy: 'harness' };
   return { kind: 'failed', code, initiatedBy: 'harness', failure: { origin: 'runtime', code, message: errorFact(cause).message, evidenceRefs: [] } };
 }
@@ -288,10 +344,4 @@ function assessmentFor(code: string, settled: boolean, hasManifest: boolean): As
   if (!hasManifest) return { status: 'not_assessed', evidenceRefs: [] };
   if (code.startsWith('limit.') && settled) return { status: 'incomplete', evidenceRefs: [] };
   return { status: settled ? 'indeterminate' : 'not_assessed', evidenceRefs: [] };
-}
-
-function defaultFidelity(manifest: RunManifest | undefined): Fidelity {
-  return manifest
-    ? { environment: 'matched', externalWorld: 'unknown', modelResolution: manifest.resolvedModel.resolved === 'unknown' ? 'unknown' : 'verified', comparisonClass: 'exploratory', reasons: [] }
-    : { environment: 'observational', externalWorld: 'unknown', modelResolution: 'unknown', comparisonClass: 'observational', reasons: ['Run manifest was unavailable.'] };
 }

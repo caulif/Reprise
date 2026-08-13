@@ -15,11 +15,12 @@ Desktop.ini
 *.pem
 *.key
 
-# Dependency caches and build output
+# Dependencies and generated output
 node_modules/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 __pycache__/
 *.py[cod]
 .venv/
@@ -32,17 +33,14 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Local Codex app-server schemas generated for protocol verification
+# Local protocol captures and experiment artifacts
 .codex-app-server-schema/
-
-# Local Reprise experiment artifacts
 .reprise*/
 
 # Local scratch output
 /.tmp-interfaces.txt
+/.typecheck*
+/.errors*
 
-# Local planning and design documents
-/docs/
-
-# Local historical experiment runner (user-specific verification)
+# User-specific historical verification runner
 /scripts/codex-real-historical-c.mjs

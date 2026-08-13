@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { SAFE_ID, sha256 } from '../core/identity.js';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 type JsonRecord = Record<string, unknown>;
@@ -49,8 +49,6 @@ export type PreparedEnvironmentRef = {
 
 export type ReleaseResult = { status: 'released' | 'already_released'; environmentId: string };
 
-const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-
 export class LocalWorkspaceProvider {
   readonly #root: string;
   readonly #preparedRoots = new Map<string, string>();
@@ -60,7 +58,11 @@ export class LocalWorkspaceProvider {
     this.#root = resolve(root);
   }
 
-  async resolveBaseline(source: EnvironmentSource, _clues: EnvironmentClue[], _policy: EnvironmentPolicy): Promise<EnvironmentBaseline> {
+  /**
+   * Reads and fingerprints a potential source baseline without copying or
+   * modifying it. Candidate isolation is created only by prepareRun().
+   */
+  async inspectBaseline(source: EnvironmentSource, _clues: EnvironmentClue[], _policy: EnvironmentPolicy): Promise<EnvironmentBaseline> {
     assertId(source.caseId, 'caseId');
     const sourceRoot = resolve(source.sourceRoot);
     let sourceInfo;
@@ -75,12 +77,6 @@ export class LocalWorkspaceProvider {
     if (sourceRoot === this.#root || isInside(this.#root, sourceRoot) || isInside(sourceRoot, this.#root)) {
       throw new Error('Environment source and provider workspace must not overlap.');
     }
-
-    const baselineRoot = join(this.#root, 'baselines', source.caseId);
-    await mkdir(dirname(baselineRoot), { recursive: true });
-    await mkdir(baselineRoot);
-    await copyTree(sourceRoot, baselineRoot);
-    const fingerprint = await fingerprintTree(baselineRoot);
     return {
       baselineId: `baseline-${source.caseId}`,
       caseId: source.caseId,
@@ -88,14 +84,27 @@ export class LocalWorkspaceProvider {
       match: 'matched',
       resources: [],
       readiness: { runnable: 'isolated', strictness: 'strict', blockingResourceIds: [] },
-      fingerprint,
+      fingerprint: await fingerprintTree(sourceRoot),
       capabilities: { canFork: true, fingerprints: ['file_tree'], externalSideEffects: 'none' },
       warnings: [],
       createdAt: new Date().toISOString(),
-      root: baselineRoot,
     };
   }
 
+  /** Copies a previously inspected source into provider-owned baseline storage. */
+  async resolveBaseline(source: EnvironmentSource, clues: EnvironmentClue[], policy: EnvironmentPolicy): Promise<EnvironmentBaseline> {
+    const inspected = await this.inspectBaseline(source, clues, policy);
+    if (inspected.mode === 'unsupported') return inspected;
+    const baselineRoot = join(this.#root, 'baselines', source.caseId);
+    await mkdir(dirname(baselineRoot), { recursive: true });
+    if (!(await exists(baselineRoot))) await mkdir(baselineRoot);
+    if (!(await exists(join(baselineRoot, '.reprise-baseline.json')))) {
+      await copyTree(resolve(source.sourceRoot), baselineRoot);
+      await writeFile(join(baselineRoot, '.reprise-baseline.json'), JSON.stringify({ sourceFingerprint: inspected.fingerprint.digest }), { flag: 'wx' });
+    }
+    const fingerprint = await fingerprintTree(baselineRoot);
+    return { ...inspected, fingerprint, root: baselineRoot };
+  }
   async prepareRun(baseline: EnvironmentBaseline, runId: string): Promise<PreparedEnvironmentRef> {
     assertId(runId, 'runId');
     if (baseline.mode !== 'canonical' || baseline.readiness.runnable !== 'isolated' || !baseline.root) {
@@ -152,7 +161,7 @@ export class LocalWorkspaceProvider {
 }
 
 function assertId(value: string, label: string): void {
-  if (!ID.test(value)) throw new Error(`Invalid ${label}.`);
+  if (!SAFE_ID.test(value)) throw new Error(`Invalid ${label}.`);
 }
 
 function isInside(root: string, candidate: string): boolean {
@@ -161,12 +170,14 @@ function isInside(root: string, candidate: string): boolean {
 }
 
 
+async function exists(path: string): Promise<boolean> { try { await stat(path); return true; } catch (error) { if (isMissing(error)) return false; throw error; } }
+
 function isMissing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 function unsupportedBaseline(caseId: string): EnvironmentBaseline {
-  const fingerprint: EnvironmentFingerprint = { capturedAt: new Date().toISOString(), resources: [], digest: createHash('sha256').update('unsupported').digest('hex') };
+  const fingerprint: EnvironmentFingerprint = { capturedAt: new Date().toISOString(), resources: [], digest: sha256('unsupported') };
   return {
     baselineId: `baseline-${caseId}`,
     caseId,
@@ -209,7 +220,7 @@ async function copyTree(source: string, destination: string): Promise<void> {
 async function fingerprintTree(root: string): Promise<EnvironmentFingerprint> {
   const resources: FingerprintEntry[] = [];
   await collectFingerprint(root, '', resources);
-  const digest = createHash('sha256').update(JSON.stringify(resources)).digest('hex');
+  const digest = sha256(JSON.stringify(resources));
   return { capturedAt: new Date().toISOString(), resources, digest };
 }
 
@@ -223,7 +234,7 @@ async function collectFingerprint(root: string, prefix: string, resources: Finge
       await collectFingerprint(root, relativePath, resources);
     } else if (entry.isFile()) {
       const bytes = await readFile(path);
-      resources.push({ path: relativePath, kind: 'file', size: bytes.byteLength, contentHash: createHash('sha256').update(bytes).digest('hex') });
+      resources.push({ path: relativePath, kind: 'file', size: bytes.byteLength, contentHash: sha256(bytes) });
     } else {
       throw new Error(`Unsupported environment entry: ${path}`);
     }

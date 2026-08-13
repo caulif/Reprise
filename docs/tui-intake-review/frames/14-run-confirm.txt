@@ -1,0 +1,17 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise            gpt-5.6-terra · medium   [32m● API ready[0m  [32m● TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Step 3 of 3 ─ Confirm run      ✓──✓──●
+
+┌─ Start isolated Codex Candidate? ────────────────────────────────────────────────────────────────────────────────────┐
+│ Candidate    gpt-5.6-luna · codex-luna-high                                                                          │
+│ Harness agents gpt-5.6-terra · medium · Controller, Comparison                                                       │
+│ Fidelity     observational                                                                                           │
+│                                                                                                                      │
+│[33m ⚠  This starts a Codex process and may call your configured provider, which can cost money.[0m                          │
+│[32m ✓  Your original source, the historical session, and global Codex config are left unchanged.[0m                         │
+│[32m ✓  The replay starts from the current state of C:\yanjiusheng\本子与项目撰写\CNCERT项目-漏洞整理\20260810汇报ppt, not│
+│[32mthe historical state.[0m                                                                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Review the isolated-run confirmation. The replay begins from the selected directory’s current state.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Enter] Start isolated Candidate  [b] Back  [Esc] Home

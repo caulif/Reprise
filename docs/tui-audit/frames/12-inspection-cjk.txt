@@ -1,0 +1,19 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise         gpt-5.6-terra · medium   [32m● API ready[0m  [2m○ No TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌─ Review session ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Session      session-cjk                                    Started      2026-08-10T21:40:00.000Z                    │
+│ Workspace    C:/中文路径/reprise                            Runtime      0.1.0                                       │
+│ Source:      C:\Users\15893\AppData\Local\Temp\reprise-tui-audit-FrCae6\sessions\rollout-session-cjk.jsonl           │
+│ Signals      users 1 · assistant 1 · tools 0 · completed 1                                                           │
+│ Task         修复这个回归缺陷并验证测试全部通过                                                                      │
+│──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│ Task input 1/1: 修复这个回归缺陷并验证测试全部通过 · Up/Down selects                                                 │
+│ ❯ 1  修复这个回归缺陷并验证测试全部通过                                                                              │
+│──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│ Final     已修复，并补了回归测试。                                                                                   │
+│ Privacy   model text blocked · binary blocked · literal redactions none                                              │
+│ Nothing is written until you press Enter.                                                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Review the session details and privacy policy before writing a TaskCase.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Enter] Freeze immutable TaskCase  [↑↓] Select task start  [t] Toggle model text  [Esc] Home

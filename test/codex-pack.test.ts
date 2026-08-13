@@ -1,17 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { TaskCaseSchema } from '../src/core/schema.js';
 import { codexProductPack, freezeCodexFixture, importCodexFixture, normalizeCodexRuntimeEvent } from '../src/products/codex/pack.js';
-import { CodexRuntimePort, codexSettlementStatus, discoverCodexExecutable } from '../src/products/codex/runtime-port.js';
+import { discoverCodexSessions, freezeCodexSession, inspectCodexSession } from '../src/products/codex/sessions.js';
+import { CodexAppServerClient, CodexRuntimePort, codexSettlementStatus, discoverCodexExecutable } from '../src/products/codex/runtime-port.js';
 import { CodexTextCaller, EXPERIMENT_APPLICATION_EFFORT, EXPERIMENT_APPLICATION_MODEL } from '../src/products/codex/text-caller.js';
 import { assertCodexSmokeAcceptanceRecord, checkCodexSmokeGate, CodexSmokeAcceptanceRecordSchema } from '../src/products/codex/smoke-gate.js';
 import { productPacks } from '../src/products/index.js';
 
 const fixturePath = new URL('./fixtures/codex-session.fixture.json', import.meta.url);
+const execFileAsync = promisify(execFile);
 
 test('Codex fixture import freezes one complete session without exposing raw private fields', async () => {
   const imported = await importCodexFixture(fixturePath);
@@ -83,15 +88,26 @@ test('Codex app-server settlement statuses preserve native terminal semantics', 
   assert.equal(codexSettlementStatus('inProgress'), undefined);
 });
 
-test('Experiment Application defaults to the authorized Terra medium model and honors pre-aborted calls', async () => {
+test('Codex app-server requests time out and close an unresponsive process', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-app-server-timeout-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const fixture = join(root, 'unresponsive-app-server.mjs');
+  await writeFile(fixture, "process.stdin.resume(); process.on('SIGTERM', () => process.exit(0));");
+  const client = new CodexAppServerClient({ executable: process.execPath, args: [fixture], cwd: root, requestTimeoutMs: 25 });
+  await assert.rejects(client.start(), /initialize timed out/);
+  await client.close();
+});
+
+test('Experiment Application defaults to the authorized Terra medium model and rejects unsupported Host tools', async () => {
   assert.equal(EXPERIMENT_APPLICATION_MODEL, 'gpt-5.6-terra');
   assert.equal(EXPERIMENT_APPLICATION_EFFORT, 'medium');
   const controller = new AbortController();
   controller.abort();
-  await assert.rejects(new CodexTextCaller().complete({ systemPrompt: 'Return JSON.', contextJson: '{}', capabilities: [] }, controller.signal), (error: unknown) => {
+  await assert.rejects(new CodexTextCaller().createSession({ sessionId: 'session-1', systemPrompt: 'Return JSON.', tools: [] }).append({ content: '{}', signal: controller.signal }), (error: unknown) => {
     assert.equal((error as Error).name, 'AbortError');
     return true;
   });
+  assert.throws(() => new CodexTextCaller().createSession({ sessionId: 'session-1', systemPrompt: 'Return JSON.', tools: [{ name: 'read_observation', description: '', parameters: Type.Object({}), execute: async () => ({ content: '', details: {} }) }] }), /cannot expose Host tools/);
 });
 
 test('Codex smoke gate reports missing external confirmations without starting a Runtime', () => {
@@ -129,4 +145,95 @@ test('Codex runtime discovery does not report missing executables', async () => 
   assert.equal(await discoverCodexExecutable({ executable: join(tmpdir(), 'does-not-exist', 'codex.exe'), platform: 'win32' }), undefined);
   const runtime = new CodexRuntimePort({ executable: join(tmpdir(), 'does-not-exist', 'codex.exe'), platform: 'win32' });
   await assert.rejects(runtime.resolve({ productId: 'codex', requestedModel: 'gpt-test' }), /executable was not found/);
+});
+
+async function gitHead(cwd: string): Promise<string> {
+  const { stdout } = await execFileAsync('git', ['-C', cwd, 'rev-parse', 'HEAD']);
+  return stdout.trim();
+}
+
+test('Codex session discovery skips one oversized rollout but explicit inspection explains the limit', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-rollout-oversized-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const sessions = join(root, 'sessions');
+  await mkdir(sessions);
+  const valid = join(sessions, 'rollout-valid.jsonl');
+  await writeFile(valid, [
+    JSON.stringify({ timestamp: '2026-08-11T00:00:00.000Z', type: 'session_meta', payload: { id: 'valid-session' } }),
+    JSON.stringify({ timestamp: '2026-08-11T00:00:01.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'Small valid task.' } }),
+  ].join('\n') + '\n');
+  const oversized = join(sessions, 'rollout-oversized.jsonl');
+  await writeFile(oversized, Buffer.alloc(64 * 1024 * 1024 + 1));
+
+  const discovered = await discoverCodexSessions(sessions);
+  assert.deepEqual(discovered.map((session) => session.sessionId), ['valid-session']);
+  await assert.rejects(inspectCodexSession(oversized), /64 MiB inspection limit/);
+});
+
+test('Codex freeze accepts a selected user task input and rejects other transcript entries', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-selected-input-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const source = join(root, 'rollout-selected-input.jsonl');
+  await writeFile(source, [
+    JSON.stringify({ timestamp: '2026-08-11T00:00:00.000Z', type: 'session_meta', payload: { id: 'selected-input' } }),
+    JSON.stringify({ timestamp: '2026-08-11T00:00:01.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'First task.' } }),
+    JSON.stringify({ timestamp: '2026-08-11T00:00:02.000Z', type: 'event_msg', payload: { type: 'agent_message', message: 'First response.' } }),
+    JSON.stringify({ timestamp: '2026-08-11T00:00:03.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'Second task.' } }),
+    JSON.stringify({ timestamp: '2026-08-11T00:00:04.000Z', type: 'event_msg', payload: { type: 'task_complete' } }),
+  ].join('\n') + '\n');
+  const request = { sourcePath: source, casesRoot: join(root, 'cases'), now: '2026-08-11T00:01:00.000Z', privacy: { allowModelText: false, allowBinary: false, redactions: [] } };
+
+  const frozen = await freezeCodexSession({ ...request, initialMessageId: 'message-3' });
+  assert.deepEqual(frozen.taskCase.initialInput, { id: 'message-3', role: 'user', text: 'Second task.' });
+  await assert.rejects(freezeCodexSession({ ...request, casesRoot: join(root, 'invalid-user'), initialMessageId: 'message-2' }), /not a user message/);
+  await assert.rejects(freezeCodexSession({ ...request, casesRoot: join(root, 'invalid-id'), initialMessageId: 'missing' }), /not a user message/);
+});
+
+test('Codex rollout discovery and freeze are read-only, complete, redacted, and idempotent', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-rollout-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const sessions = join(root, 'sessions', '2026', '08', '11');
+  await mkdir(sessions, { recursive: true });
+  const source = join(sessions, 'rollout-2026-08-11T00-00-00-session-1.jsonl');
+  const historicalCwd = join(root, 'historical');
+  await mkdir(historicalCwd);
+  await execFileAsync('git', ['init', historicalCwd]);
+  await execFileAsync('git', ['-C', historicalCwd, 'config', 'user.email', 'test@example.invalid']);
+  await execFileAsync('git', ['-C', historicalCwd, 'config', 'user.name', 'Reprise test']);
+  await writeFile(join(historicalCwd, 'tracked.txt'), 'baseline\n');
+  await execFileAsync('git', ['-C', historicalCwd, 'add', '.']);
+  await execFileAsync('git', ['-C', historicalCwd, 'commit', '-m', 'baseline']);
+  await writeFile(join(historicalCwd, 'dirty.txt'), 'current only\n');
+  const historicalCommit = 'a'.repeat(40);
+  const lines = [
+    { timestamp: '2026-08-11T00:00:00.000Z', type: 'session_meta', payload: { id: 'session-1', cwd: historicalCwd, cli_version: '0.1.0', git: { commit: historicalCommit } } },
+    { timestamp: '2026-08-11T00:00:01.000Z', type: 'turn_context', payload: { model: 'gpt-5.6' } },
+    { timestamp: '2026-08-11T00:00:02.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'Fix the SERVICE_TOKEN leak.' } },
+    { timestamp: '2026-08-11T00:00:03.000Z', type: 'response_item', payload: { type: 'function_call', name: 'shell_command', arguments: '{"command":"npm test"}' } },
+    { timestamp: '2026-08-11T00:00:04.000Z', type: 'response_item', payload: { type: 'function_call', name: 'apply_patch', arguments: '{"patch":"*** Update File: src/example.ts\\n*** Add File: README.md"}' } },
+    { timestamp: '2026-08-11T00:00:05.000Z', type: 'event_msg', payload: { type: 'agent_message', message: 'Fixed and tested.' } },
+    { timestamp: '2026-08-11T00:00:06.000Z', type: 'event_msg', payload: { type: 'task_complete' } },
+  ];
+  await writeFile(source, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
+
+  const discovered = await discoverCodexSessions(join(root, 'sessions'));
+  assert.equal(discovered.length, 1);
+  assert.equal(discovered[0]?.signals.toolCalls, 2);
+  assert.equal((await inspectCodexSession(source)).finalMessage, 'Fixed and tested.');
+
+  const cases = join(root, 'cases');
+  const frozen = await freezeCodexSession({ sourcePath: source, casesRoot: cases, now: '2026-08-11T00:01:00.000Z', privacy: { allowModelText: false, allowBinary: false, redactions: ['SERVICE_TOKEN'] } });
+  assert.equal(frozen.reused, false);
+  assert.equal(Value.Check(TaskCaseSchema, frozen.taskCase), true);
+  assert.doesNotMatch(JSON.stringify(frozen.taskCase), /SERVICE_TOKEN/);
+  assert.doesNotMatch(await readFile(join(cases, frozen.taskCase.caseId, 'raw', 'session.jsonl'), 'utf8'), /SERVICE_TOKEN/);
+  const context = frozen.taskCase.taskContext as Record<string, unknown>;
+  assert.equal(context.historicalCommit, historicalCommit);
+  assert.deepEqual(context.historicalBehavior, { commands: ['npm test'], touchedPaths: ['README.md', 'src/example.ts'] });
+  assert.deepEqual(context.historicalEnvironment, { cwd: { status: 'available', git: { isRepository: true, dirty: true, head: await gitHead(historicalCwd) } } });
+  assert.equal((await freezeCodexSession({ sourcePath: source, casesRoot: cases, now: '2026-08-11T00:01:00.000Z', privacy: { allowModelText: false, allowBinary: false, redactions: ['SERVICE_TOKEN'] } })).reused, true);
+
+  const incomplete = join(sessions, 'rollout-incomplete.jsonl');
+  await writeFile(incomplete, lines.slice(0, -1).map((line) => JSON.stringify(line)).join('\n') + '\n');
+  await assert.rejects(freezeCodexSession({ sourcePath: incomplete, casesRoot: cases, now: '2026-08-11T00:01:00.000Z', privacy: { allowModelText: false, allowBinary: false, redactions: [] } }), /no completed turn/);
 });

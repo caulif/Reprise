@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { appendFile, mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
 import {
@@ -16,12 +15,11 @@ import {
 import { assertTransition, canTransition } from '../src/core/state-machine.js';
 import { ExperimentStore } from '../src/infrastructure/store/experiment-store.js';
 
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const timestamp = '2026-08-10T00:00:00.000Z';
 const candidate = { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-test' };
 const policy = {
   wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1,
-  heartbeatTimeoutMs: 1, maxConsecutiveNoProgress: 1,
+  maxConsecutiveNoProgress: 1,
 };
 const attempt: RunAttempt = {
   schemaVersion: 1, runId: 'run-1', experimentId: 'experiment-1', caseId: 'case-1', candidate, policy, createdAt: timestamp,
@@ -32,9 +30,12 @@ const manifest: RunManifest = {
   runtime: { productId: 'codex', executable: 'codex.exe' },
   environment: { environmentId: 'environment-1', workspacePath: 'C:/safe/workspace' },
   controller: {
-    providerId: 'test', requestedModel: 'test', resolvedModel: 'test',
-    optionsHash: hash('options'), promptHash: hash('prompt'), toolPolicyHash: hash('tools'), contextPolicyHash: hash('context'),
-    budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0, maxProviderRetries: 0 },
+    providerId: 'test', requestedModel: 'test',
+    budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 },
+  },
+  comparison: {
+    providerId: 'test', requestedModel: 'test',
+    budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 },
   },
   startedAt: timestamp,
 };
@@ -50,9 +51,8 @@ test('schemas accept the minimum frozen objects and reject malformed candidates'
     transcript: [{ id: 'message-1', role: 'user', text: 'Implement the feature.' }], historicalEvents: [],
     baseline: { status: 'unavailable', artifactRefs: [], evidenceRefs: [] },
     sourceRuntimeEvidence: { productId: 'codex', artifactRefs: [] },
-    environmentBaseline: { status: 'unavailable', artifactRefs: [] },
-    provenance: { packVersion: 'fixture', importedAt: timestamp, sourceHash: hash('source') },
-    privacy: { allowModelText: false, allowBinary: false, redactions: [] }, contentHash: hash('case'),
+    provenance: { packVersion: 'fixture', importedAt: timestamp, sourceHash: 'a'.repeat(64) },
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] }, contentHash: 'b'.repeat(64),
   };
   assert.equal(Value.Check(TaskCaseSchema, taskCase), true);
   assert.equal(Value.Check(CandidateSpecSchema, { ...candidate, candidateId: '../escape' }), false);
@@ -102,6 +102,23 @@ test('store rejects a second writer and repeats a submitted operation without an
   }
 });
 
+test('store notifies live observers only until they unsubscribe', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const observed: number[] = [];
+    const unsubscribe = store.subscribe((event) => observed.push(event.sequence));
+    await store.append({ type: 'test.first', payload: {} });
+    unsubscribe();
+    await store.append({ type: 'test.second', payload: {} });
+    assert.deepEqual(observed, [1]);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('store serializes concurrent appends for a replayable event log', async () => {
   const root = await temporaryExperiment();
   try {
@@ -143,4 +160,18 @@ test('store recovers a tail half-line and rejects artifact ownership violations'
 test('schema fixtures remain valid for persisted run snapshots', () => {
   assert.equal(Value.Check(RunAttemptSchema, attempt), true);
   assert.equal(Value.Check(RunManifestSchema, manifest), true);
+});
+
+
+test('store reclaims a stale local writer lock and records the recovery', async () => {
+  const root = await temporaryExperiment();
+  try {
+    await writeFile(join(root, 'writer.lock'), `${JSON.stringify({ experimentId: 'experiment-1', pid: 999_999_999, nonce: 'stale-lock', startedAt: '2026-01-01T00:00:00.000Z', host: hostname() })}\n`);
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    assert.equal(store.events()[0]?.type, 'writer.lock_reclaimed');
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

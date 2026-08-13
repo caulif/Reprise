@@ -1,0 +1,5 @@
+# Raw terminal captures are fixed-width evidence: their trailing spaces are intentional.
+docs/tui-audit/frames/** -whitespace
+docs/tui-audit/html/** -whitespace
+docs/tui-intake-review/frames/** -whitespace
+docs/tui-intake-review/html/** -whitespace

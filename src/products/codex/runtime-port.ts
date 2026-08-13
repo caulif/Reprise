@@ -1,8 +1,9 @@
-import { access, stat } from 'node:fs/promises';
+import { access, mkdtemp, rm, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { extname, isAbsolute, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import type {
   AvailableRuntime,
   DeliveryReceipt,
@@ -23,6 +24,8 @@ import type {
 
 export type CodexReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
+export type CodexModel = { id: string; model: string; supportedReasoningEfforts: readonly string[] };
+
 
 export type CodexRuntimeOptions = {
   executable?: string;
@@ -37,14 +40,16 @@ export type CodexRuntimeOptions = {
 
 type JsonRecord = Record<string, unknown>;
 type JsonRpcId = number;
-type PendingRequest = { resolve: (value: unknown) => void; reject: (reason: Error) => void };
+type PendingRequest = { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> };
 type PendingSettlement = { resolve: (settlement: TurnSettlement) => void; reject: (reason: Error) => void };
 
-type AppServerModel = { id?: unknown; model?: unknown; supportedReasoningEfforts?: unknown };
 type StartedThread = { id: string; model: string };
 type StartedTurn = { id: string };
 
 const SAFE_RUNTIME_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const DEFAULT_RPC_TIMEOUT_MS = 120_000;
+const PROCESS_STOP_GRACE_MS = 5_000;
+const PROCESS_CLOSE_TIMEOUT_MS = 5_000;
 
 export class CodexRuntimeUnavailableError extends Error {
   readonly code = 'unsupported_runtime';
@@ -59,29 +64,52 @@ export class CodexRuntimeUnavailableError extends Error {
  * Minimal app-server client for the current Codex JSONL protocol. It deliberately
  * rejects every server-initiated request, so a smoke run cannot auto-approve tools.
  */
+export class CodexProcessCloseError extends Error {
+  readonly remainingResourceIds: readonly string[];
+
+  constructor(resourceId: string) {
+    super(`Codex app-server process ${resourceId} did not close after forced termination.`);
+    this.name = 'CodexProcessCloseError';
+    this.remainingResourceIds = [resourceId];
+  }
+}
+
+/**
+ * Minimal app-server client for the current Codex JSONL protocol. It deliberately
+ * rejects every server-initiated request, so a smoke run cannot auto-approve tools.
+ */
 export class CodexAppServerClient {
   readonly #executable: string;
   readonly #cwd: string;
   readonly #env: Readonly<Record<string, string | undefined>> | undefined;
   readonly #notification: ((method: string, params: unknown) => Promise<void>) | undefined;
+  readonly #arguments: readonly string[];
   #process: ChildProcessWithoutNullStreams | undefined;
   #processClosed: Promise<void> | undefined;
   #nextId = 1;
   #pending = new Map<JsonRpcId, PendingRequest>();
+  #requestTimeoutMs: number;
   #started = false;
   #closed = false;
+  #closing: Promise<void> | undefined;
 
-  constructor(input: { executable: string; cwd: string; env?: Readonly<Record<string, string | undefined>>; onNotification?: (method: string, params: unknown) => Promise<void> }) {
+  constructor(input: { executable: string; cwd: string; env?: Readonly<Record<string, string | undefined>>; onNotification?: (method: string, params: unknown) => Promise<void>; args?: readonly string[]; requestTimeoutMs?: number }) {
     this.#executable = input.executable;
     this.#cwd = input.cwd;
     this.#env = input.env;
     this.#notification = input.onNotification;
+    this.#arguments = input.args ?? ['app-server', '--listen', 'stdio://'];
+    this.#requestTimeoutMs = positiveTimeout(input.requestTimeoutMs, DEFAULT_RPC_TIMEOUT_MS);
+  }
+
+  setRequestTimeout(milliseconds: number): void {
+    this.#requestTimeoutMs = positiveTimeout(milliseconds, this.#requestTimeoutMs);
   }
 
   async start(): Promise<void> {
     if (this.#started) return;
     if (this.#closed) throw new CodexRuntimeUnavailableError('Codex app-server client is closed.');
-    const child = spawn(this.#executable, ['app-server', '--listen', 'stdio://'], {
+    const child = spawn(this.#executable, this.#arguments, {
       cwd: this.#cwd,
       env: this.#env ? { ...process.env, ...this.#env } : process.env,
       stdio: 'pipe',
@@ -91,8 +119,14 @@ export class CodexAppServerClient {
     });
     this.#process = child;
     this.#processClosed = new Promise((resolveClose) => child.once('close', () => resolveClose()));
-    child.once('error', (error) => this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server failed to start: ${error.message}`)));
-    child.once('exit', (code, signal) => this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server exited (${code ?? 'null'}, ${signal ?? 'none'}).`)));
+    child.once('error', (error) => {
+      this.#closed = true;
+      this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server failed to start: ${error.message}`));
+    });
+    child.once('exit', (code, signal) => {
+      this.#closed = true;
+      this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server exited (${code ?? 'null'}, ${signal ?? 'none'}).`));
+    });
     createInterface({ input: child.stdout }).on('line', (line) => { void this.#handleLine(line); });
     createInterface({ input: child.stderr }).on('line', (line) => { void this.#emit('codex.stderr', { line: compactDiagnostic(line) }); });
     await this.request('initialize', {
@@ -106,24 +140,39 @@ export class CodexAppServerClient {
     if (!this.#process || this.#closed) throw new CodexRuntimeUnavailableError('Codex app-server is not running.');
     const id = this.#nextId++;
     const message = { method, id, ...(params === undefined ? {} : { params }) };
-    const result = new Promise<unknown>((resolveRequest, reject) => this.#pending.set(id, { resolve: resolveRequest, reject }));
+    const result = new Promise<unknown>((resolveRequest, reject) => {
+      const timer = setTimeout(() => {
+        this.#rejectPending(id, new CodexRuntimeUnavailableError(`Codex app-server ${method} timed out after ${this.#requestTimeoutMs}ms.`));
+        void this.close().catch(() => undefined);
+      }, this.#requestTimeoutMs);
+      this.#pending.set(id, { resolve: resolveRequest, reject, timer });
+    });
     try {
       this.#process.stdin.write(`${JSON.stringify(message)}\n`);
     } catch (error) {
-      this.#pending.delete(id);
-      throw new CodexRuntimeUnavailableError(`Codex app-server write failed: ${errorMessage(error)}`);
+      this.#rejectPending(id, new CodexRuntimeUnavailableError(`Codex app-server write failed: ${errorMessage(error)}`));
     }
     return result;
   }
 
   async close(): Promise<void> {
+    if (this.#closing) return this.#closing;
+    this.#closing = this.#closeOnce();
+    return this.#closing;
+  }
+
+  async #closeOnce(): Promise<void> {
     const child = this.#process;
     const processClosed = this.#processClosed;
     this.#closed = true;
     this.#process = undefined;
-    if (child && child.exitCode === null && !child.killed) child.kill();
-    // `close` waits for stdio handles too, so the isolated workspace is unlocked before release.
-    await processClosed;
+    this.#failAll(new CodexRuntimeUnavailableError('Codex app-server client closed.'));
+    if (!child || !processClosed || child.exitCode !== null || child.killed) return;
+    child.kill();
+    if (await settlesWithin(processClosed, PROCESS_STOP_GRACE_MS)) return;
+    await forceKill(child);
+    if (await settlesWithin(processClosed, PROCESS_CLOSE_TIMEOUT_MS)) return;
+    throw new CodexProcessCloseError(String(child.pid ?? 'unknown'));
   }
 
   async #handleLine(line: string): Promise<void> {
@@ -140,14 +189,8 @@ export class CodexAppServerClient {
       return;
     }
     if (typeof message.id === 'number' && ('result' in message || 'error' in message)) {
-      const pending = this.#pending.get(message.id);
-      if (!pending) return;
-      this.#pending.delete(message.id);
-      if ('error' in message) {
-        pending.reject(new CodexRuntimeUnavailableError(`Codex app-server ${rpcError(message.error)}.`));
-      } else {
-        pending.resolve(message.result);
-      }
+      if ('error' in message) this.#rejectPending(message.id, new CodexRuntimeUnavailableError(`Codex app-server ${rpcError(message.error)}.`));
+      else this.#resolvePending(message.id, message.result);
       return;
     }
     if (typeof message.id === 'number' && typeof message.method === 'string') {
@@ -159,16 +202,29 @@ export class CodexAppServerClient {
     if (typeof message.method === 'string') await this.#notification?.(message.method, message.params);
   }
 
+  #resolvePending(id: JsonRpcId, result: unknown): void {
+    const pending = this.#pending.get(id);
+    if (!pending) return;
+    this.#pending.delete(id);
+    clearTimeout(pending.timer);
+    pending.resolve(result);
+  }
+
+  #rejectPending(id: JsonRpcId, error: Error): void {
+    const pending = this.#pending.get(id);
+    if (!pending) return;
+    this.#pending.delete(id);
+    clearTimeout(pending.timer);
+    pending.reject(error);
+  }
+
   #write(message: unknown): void {
     if (!this.#process || this.#closed) return;
     try { this.#process.stdin.write(`${JSON.stringify(message)}\n`); } catch { /* process failure is reported by exit/error. */ }
   }
 
   #failAll(error: Error): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    for (const pending of this.#pending.values()) pending.reject(error);
-    this.#pending.clear();
+    for (const id of this.#pending.keys()) this.#rejectPending(id, error);
   }
 
   async #emit(type: string, payload: unknown): Promise<void> {
@@ -182,7 +238,6 @@ class CodexTargetRunner implements TargetRunner {
   readonly #sink: TargetEventSink;
   readonly #effort: CodexReasoningEffort;
   readonly #sandbox: CodexSandboxMode;
-  readonly #env: Readonly<Record<string, string | undefined>> | undefined;
   readonly #client: CodexAppServerClient;
   #thread: StartedThread | undefined;
   #activeTurn: string | undefined;
@@ -196,7 +251,6 @@ class CodexTargetRunner implements TargetRunner {
     this.#sink = input.sink;
     this.#effort = input.effort;
     this.#sandbox = input.sandbox;
-    this.#env = input.env;
     this.#client = new CodexAppServerClient({
       executable: input.runtime.executable,
       cwd: input.environment.root,
@@ -207,6 +261,10 @@ class CodexTargetRunner implements TargetRunner {
 
   capabilities(): RuntimeCapabilities {
     return { nativeAdmission: true, clientMessageId: true, nativeTurnSettlement: true, tokenTelemetry: 'partial', reconnectSession: false, querySubmissionByClientId: false, confirmProcessTermination: true };
+  }
+
+  setRequestTimeout(milliseconds: number): void {
+    this.#client.setRequestTimeout(milliseconds);
   }
 
   async start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt> {
@@ -242,10 +300,9 @@ class CodexTargetRunner implements TargetRunner {
 
   async stop(reason: RuntimeStopReason): Promise<void> {
     const thread = this.#thread;
-    if (!thread) return;
     try {
-      if (this.#activeTurn) await this.#client.request('turn/interrupt', { threadId: thread.id, turnId: this.#activeTurn });
-      await this.#sink.append(event('codex.stop_requested', { reason, threadId: thread.id, turnId: this.#activeTurn ?? null }));
+      if (thread && this.#activeTurn) await this.#client.request('turn/interrupt', { threadId: thread.id, turnId: this.#activeTurn });
+      if (thread) await this.#sink.append(event('codex.stop_requested', { reason, threadId: thread.id, turnId: this.#activeTurn ?? null }));
     } finally {
       this.#status = 'stopped';
       await this.#client.close();
@@ -319,6 +376,37 @@ export class CodexRuntimePort implements RuntimePort {
     return { ...available, requestedModel: request.requestedModel, resolvedModel: 'unknown' };
   }
 
+  /** Lists the current Codex model catalog without starting a target task. */
+  async listModels(): Promise<readonly CodexModel[]> {
+    const executable = await discoverCodexExecutable(this.#options);
+    if (!executable) throw new CodexRuntimeUnavailableError('Codex executable was not found. Set REPRISE_CODEX_EXECUTABLE or install Codex; Reprise does not install it.');
+    const root = await mkdtemp(join(tmpdir(), 'reprise-codex-catalog-'));
+    const client = new CodexAppServerClient({ executable, cwd: root, ...(this.#options.env ? { env: this.#options.env } : {}) });
+    try {
+      await client.start();
+      const models: CodexModel[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 100; page += 1) {
+        const response = record(await client.request('model/list', { limit: 100, ...(cursor ? { cursor } : {}) }));
+        const data = Array.isArray(response.data) ? response.data : [];
+        models.push(...data.map(readCodexModel).filter((model): model is CodexModel => model !== undefined));
+        cursor = text(response.nextCursor);
+        if (!cursor) return models;
+      }
+      throw new CodexRuntimeUnavailableError('Codex model catalog pagination exceeded its safety limit.');
+    } finally {
+      await client.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+
+  /** Verifies a model against Codex's current catalog; it does not modify global configuration. */
+  async validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime> {
+    const resolved = await this.resolve(request);
+    const match = (await this.listModels()).find((model) => model.id === request.requestedModel || model.model === request.requestedModel);
+    if (!match) throw new CodexRuntimeUnavailableError('Codex does not currently expose candidate model ' + request.requestedModel + '.');
+    return { ...resolved, resolvedModel: match.model };
+  }
   async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner> {
     if (runtime.productId !== 'codex') throw new CodexRuntimeUnavailableError('Only Codex runtimes can create a Codex app-server runner.');
     if (!isAbsolute(environment.root)) throw new CodexRuntimeUnavailableError('Codex app-server requires an absolute isolated workspace path.');
@@ -356,6 +444,13 @@ function withPlatformExtensions(path: string, platform: NodeJS.Platform, pathExt
   return [path, ...(pathExt ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((extension) => `${path}${extension}`)];
 }
 
+function readCodexModel(value: unknown): CodexModel | undefined {
+  const model = record(value);
+  const id = text(model.id);
+  const name = text(model.model);
+  if (!id || !name) return undefined;
+  return { id, model: name, supportedReasoningEfforts: Array.isArray(model.supportedReasoningEfforts) ? model.supportedReasoningEfforts.filter((item): item is string => typeof item === 'string') : [] };
+}
 function readStartedThread(value: unknown): StartedThread {
   const response = record(value);
   const thread = record(response.thread);
@@ -392,6 +487,22 @@ function record(value: unknown): JsonRecord { return isRecord(value) ? value : {
 function text(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 function rpcError(value: unknown): string { const detail = record(value); return typeof detail.message === 'string' ? detail.message : 'returned an invalid error response'; }
 function errorMessage(value: unknown): string { return value instanceof Error ? value.message : String(value); }
+function positiveTimeout(value: number | undefined, fallback: number): number { return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback; }
+async function settlesWithin(promise: Promise<void>, milliseconds: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([promise.then(() => true), new Promise<false>((resolveWait) => { timer = setTimeout(() => resolveWait(false), milliseconds); })]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+async function forceKill(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (process.platform !== 'win32' || !child.pid) {
+    child.kill('SIGKILL');
+    return;
+  }
+  await new Promise<void>((resolveWait) => spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore', windowsHide: true }).once('close', () => resolveWait()));
+}
 function compactDiagnostic(value: string): string { return value.replace(/[\r\n\t]/g, ' ').slice(0, 1_000); }
 
 async function isFile(path: string): Promise<boolean> {

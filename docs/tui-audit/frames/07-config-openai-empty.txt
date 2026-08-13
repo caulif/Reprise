@@ -1,0 +1,17 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   [2m○ API not configured[0m  [2m○ No TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌─ Harness API ────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ❯ provider type      openai-compatible  [2m[Enter] toggles[0m                                                              │
+│   provider label     openai-compatible                                                                               │
+│   base URL           required for OpenAI-compatible                                                                  │
+│   model              gpt-5.6-terra                                                                                   │
+│   effort             medium  [2m[Enter] cycles[0m                                                                          │
+│   API key reference  required for OpenAI-compatible                                                                  │
+│                                                                                                                      │
+│[33m ● Unsaved draft[0m                                                                                                      │
+│ Keys stay in your environment. Reprise saves only env:NAME or ${NAME}.                                               │
+│ Configuration file: .reprise/harness-model.json                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ OpenAI-compatible selected. Enter its endpoint, model, and environment key reference.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [↑↓] Select  [Enter] Change  [s] Save locally  [t] Test connection  [Esc] Home

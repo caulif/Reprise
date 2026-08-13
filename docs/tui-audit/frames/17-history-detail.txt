@@ -1,0 +1,12 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   [2m○ API not configured[0m  [2m○ No TaskCase[0m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌─ TaskCase ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ TaskCase: case-history                                                                                               │
+│ Task         Inspect a focused regression.                                                                           │
+│ Source       codex · session-history                                                                                 │
+│ Frozen       2026-08-11T00:00:00.000Z                                                                                │
+│ Path         C:\Users\15893\AppData\Local\Temp\reprise-tui-audit-FrCae6\history-data\cases\case-history\case.json    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Local history detail. Nothing is executed or modified until you select a TaskCase.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Enter] Use this TaskCase  [Esc] Back

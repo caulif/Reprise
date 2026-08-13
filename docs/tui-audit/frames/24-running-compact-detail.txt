@@ -1,0 +1,22 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
+00:05   turn 1/4   calls 1/3   [32m* running[0m
+------------------------------------------------------------
+[2m+ created[0m  ->  [2m+ preparing[0m  ->  [36;1m* launching[0m
+[2m- awaiting_target <> awaiting_controller[0m  ->  [2m- finalizing[0m
+[2m- finished[0m
+
+[ Timeline - Filter: ALL - live ]
+      [2m00:10:00[0m   [34mHARNESS    [0m  State: created -> launching
+      [2m00:10:01[0m   [35mCONTROLLER [0m  Decision: SEND
+      [2m00:10:01[0m   [35mCONTROLLER [0m  Input to Target
+      [2m00:10:02[0m   [36mTARGET     [0m  Visible response +41
+    > [2m00:10:05[0m   [36mTARGET     [0m  Runtime warning[33m ![0m
+
+[ Detail ]
+    [36mTARGET[0m - 2026-08-11T00:10:05.000Z - seq 4
+    Runtime warning
+   
+   runtime warning from target
+ Candidate is running only in an isolated workspace.
+------------------------------------------------------------
+ [↑↓] Select  [PgUp/PgDn] Page  [l] Follow latest

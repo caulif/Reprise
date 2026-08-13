@@ -1,5 +1,4 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { Value } from '@sinclair/typebox/value';
 
 const Id = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' });
 const Hash = Type.String({ pattern: '^[a-f0-9]{64}$' });
@@ -32,11 +31,6 @@ const BaselineEvidenceSchema = Type.Object({
   artifactRefs: Type.Array(CaseArtifactRefSchema),
   evidenceRefs: Type.Array(EvidenceRefSchema),
 });
-const EnvironmentBaselineSchema = Type.Object({
-  status: Type.Union([Type.Literal('available'), Type.Literal('partial'), Type.Literal('unavailable')]),
-  fingerprint: Type.Optional(JsonRecord),
-  artifactRefs: Type.Array(ArtifactRefSchema),
-});
 export const TaskCaseSchema = Type.Object({
   schemaVersion: Type.Integer({ minimum: 1 }),
   caseId: Id,
@@ -51,7 +45,6 @@ export const TaskCaseSchema = Type.Object({
     model: Type.Optional(Type.String()),
     artifactRefs: Type.Array(ArtifactRefSchema),
   }),
-  environmentBaseline: EnvironmentBaselineSchema,
   taskContext: Type.Optional(JsonRecord),
   provenance: Type.Object({
     packVersion: Type.String({ minLength: 1 }),
@@ -77,10 +70,6 @@ export type CandidateSpec = Static<typeof CandidateSpecSchema>;
 const AgentBudgetSchema = Type.Object({
   callTimeoutMs: Type.Integer({ minimum: 1 }),
   maxStructuredRepairAttempts: Type.Integer({ minimum: 0 }),
-  maxProviderRetries: Type.Integer({ minimum: 0 }),
-  maxCalls: Type.Optional(Type.Integer({ minimum: 1 })),
-  maxTokens: Type.Optional(Type.Integer({ minimum: 1 })),
-  maxCost: Type.Optional(Type.Number({ minimum: 0 })),
 });
 const AgentConfigSchema = Type.Object({
   providerId: Type.String({ minLength: 1 }),
@@ -94,10 +83,7 @@ const RunPolicySchema = Type.Object({
   maxTargetTurns: Type.Integer({ minimum: 1 }),
   maxModelCalls: Type.Integer({ minimum: 1 }),
   turnTimeoutMs: Type.Integer({ minimum: 1 }),
-  heartbeatTimeoutMs: Type.Integer({ minimum: 1 }),
   maxConsecutiveNoProgress: Type.Integer({ minimum: 1 }),
-  maxTokens: Type.Optional(Type.Integer({ minimum: 1 })),
-  maxCost: Type.Optional(Type.Number({ minimum: 0 })),
 });
 export const ExperimentSpecSchema = Type.Object({
   experimentId: Id,
@@ -127,11 +113,6 @@ export type RunAttempt = Static<typeof RunAttemptSchema>;
 const ResolvedAgentConfigSchema = Type.Object({
   providerId: Type.String({ minLength: 1 }),
   requestedModel: Type.String({ minLength: 1 }),
-  resolvedModel: Type.Union([Type.String({ minLength: 1 }), Type.Literal('unknown')]),
-  optionsHash: Hash,
-  promptHash: Hash,
-  toolPolicyHash: Hash,
-  contextPolicyHash: Hash,
   budget: AgentBudgetSchema,
 });
 export const RunManifestSchema = Type.Object({
@@ -152,6 +133,7 @@ export const RunManifestSchema = Type.Object({
     workspacePath: Type.String({ minLength: 1 }),
   }),
   controller: ResolvedAgentConfigSchema,
+  comparison: ResolvedAgentConfigSchema,
   startedAt: Timestamp,
 });
 export type RunManifest = Static<typeof RunManifestSchema>;
@@ -209,13 +191,6 @@ export const RunRecordSchema = Type.Object({
     Type.Literal('awaiting_target'), Type.Literal('awaiting_controller'),
   ]),
   outcome: RunOutcomeSchema,
-  fidelity: Type.Object({
-    environment: Type.Union([Type.Literal('matched'), Type.Literal('partial'), Type.Literal('mismatched'), Type.Literal('observational')]),
-    externalWorld: Type.Union([Type.Literal('controlled'), Type.Literal('partially_controlled'), Type.Literal('uncontrolled'), Type.Literal('unknown')]),
-    modelResolution: Type.Union([Type.Literal('verified'), Type.Literal('inferred'), Type.Literal('unknown')]),
-    comparisonClass: Type.Union([Type.Literal('strict'), Type.Literal('exploratory'), Type.Literal('observational')]),
-    reasons: Type.Array(Type.String()),
-  }),
   trace: Type.Object({
     experimentId: Id,
     runId: Id,
