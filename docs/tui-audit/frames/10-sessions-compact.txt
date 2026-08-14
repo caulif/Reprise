@@ -1,10 +1,18 @@
 Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
-gpt-5.6-terra - medium   [32m* API ready[0m  [2mo No TaskCase[0m
+gpt-5.6-terra - medium   ! Harness key missing  o Codex? ...
 ------------------------------------------------------------
-[ Codex sessions - 2 found - filter: all ]
-    > 2026-08-11 00:00  Fix the bug.             u2 a1 t0
-      2026-08-10 21:40  修复这个回归缺陷并验... u1 a1 t0    
- Choose a historical session. Discovery did not execute any
-session content.
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a Codex session
+
+[ reprise - 1 sessions - filter: all ]
+   > 3d ago      修复这个回归缺陷并验证测... u1 a1 t0      
+    1/1
+
+ > [/] Search
+ Choose a historical session. Enter freezes it and starts
+the isolated replay.
 ------------------------------------------------------------
- [↑↓] Select  [Enter] Inspect  [f] Filter  [Esc] Home
+ [↑↓] Select  [Enter] Start run  [/] Search

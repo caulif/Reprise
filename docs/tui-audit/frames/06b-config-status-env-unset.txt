@@ -1,0 +1,29 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
+gpt-5.6-terra · medium   ⚠ Harness env unset  ○ Codex  ○ No task
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a Codex session
+
+┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Endpoint   https://api.dzzzz.cf                                                                                      │
+│ Model      gpt-5.6-terra · medium                                                                                    │
+│ Secret     env OPENAI_API_KEY   ⚠ not set in this shell                                                              │
+│ $env:OPENAI_API_KEY = '<value>'   (never paste the value here)                                                       │
+│                                                                                                                      │
+│   provider type      openai-compatible  [Enter] toggles                                                              │
+│   provider label     dzzzz-openai                                                                                    │
+│   base URL           https://api.dzzzz.cf  ✓                                                                         │
+│ ❯ model              gpt-5.6-terra                                                                                   │
+│   effort             medium  [Enter] toggles                                                                         │
+│   API key            env:OPENAI_API_KEY  ✓                                                                           │
+│   Language           English  [Enter] toggles                                                                        │
+│                                                                                                                      │
+│ ✓ Saved locally                                                                                                      │
+│ Configuration file: .reprise/harness-model.json                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ OPENAI_API_KEY is not set in this shell. $env:OPENAI_API_KEY = '<value>'  Or paste the API key into this page and save.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [↑↓] Select  [Enter] Edit  [t] Test connection  [s] Save locally  [Esc] Home

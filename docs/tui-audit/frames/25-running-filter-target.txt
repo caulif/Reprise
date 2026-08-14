@@ -1,13 +1,17 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise                    00:05   turn 1/4   calls 1/3   [32m● running[0m
+Reprise   Replay in progress · Codex                                                         00:00   round 1   ● running
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-[2m✓ created[0m  →  [2m✓ preparing[0m  →  [36;1m● launching[0m  →  [2m· awaiting_target ⇄ awaiting_controller[0m  →  [2m· finalizing[0m  →  [2m· finished[0m
-
-┌─ Timeline · Filter: TARGET · live ─────────────────────────┐ ┌─ Detail ──────────────────────────────────────────────┐
-│   [2m00:10:02[0m   [36mTARGET     [0m  Visible response +41             │ │ [36mTARGET[0m · 2026-08-11T00:10:05.000Z · seq 4             │
-│ ❯ [2m00:10:05[0m   [36mTARGET     [0m  Runtime warning[33m ⚠[0m                │ │ Runtime warning                                       │
-│                                                            │ │                                                       │
-│                                                            │ │runtime warning from target                            │
-└────────────────────────────────────────────────────────────┘ └───────────────────────────────────────────────────────┘
- Following latest persisted event.
+ ● To Codex   ● Codex screen                                                                                            
+ Task  Fix the bug.                                                                                                     
+                                                                                                                        
+▎ Codex                                                                                                                 
+▎ $ Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name                                                         
+▎ public response line 1                                                                                                
+▎ public response line 2                                                                                                
+▎ public response line 3                                                                                                
+▎ public response line 4                                                                                                
+▎ public response line 5                                                                                                
+▎ public response line 6                                                                                                
+▎ ... +35 lines                                                                                                         
+ ❯ You cannot type to Codex here. Follow-ups are sent by the replay.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [PgUp/PgDn] Page  [l] Follow latest  [f] Filter TARGET>CONTROLLER  [Ctrl+C] Request cancellation  [?] Keys
+ [↑↓] Select  [f] One side  [Ctrl+C] Stop  [Enter] Expand command  [o] Full output  [/] Find  [l] Latest  [?] Keys

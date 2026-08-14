@@ -1,5 +1,6 @@
-# Raw terminal captures are fixed-width evidence: their trailing spaces are intentional.
-docs/tui-audit/frames/** -whitespace
-docs/tui-audit/html/** -whitespace
-docs/tui-intake-review/frames/** -whitespace
-docs/tui-intake-review/html/** -whitespace
+# TUI 审计帧是 CI 的快照基线：必须逐字节稳定。
+# 固定 LF 行尾，否则 Windows 检出会把帧转成 CRLF，而生成器写的是 LF，
+# 每次重新生成都会产生全文件 diff，基线随即失去意义。
+# 尾部空格是定宽证据的一部分，因此关闭空白检查。
+docs/tui-audit/frames/** text eol=lf -whitespace
+test/snapshots/** text eol=lf -whitespace

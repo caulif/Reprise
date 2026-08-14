@@ -1,13 +1,23 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise         gpt-5.6-terra · medium   [32m● API ready[0m  [2m○ No TaskCase[0m
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
+gpt-5.6-terra · medium   ⚠ Harness key missing  ○ Codex  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-┌─ Codex sessions · 2 found · filter: all ────────────────────────────────────┐ ┌─ Preview ────────────────────────────┐
-│   2026-08-11 00:00  Fix the bug.                                 u2 a1 t0   │ │ Session      session-cjk             │
-│ ❯ 2026-08-10 21:40  修复这个回归缺陷并验证测试全部通过           u1 a1 t0   │ │ Started      2026-08-10T21:40:00.000Z│
-│                                                                             │ │ Workspace    C:/中文路径/reprise     │
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a Codex session
+
+┌─ reprise · 1 sessions · filter: all ────────────────────────────────────────┐ ┌─ Preview ────────────────────────────┐
+│❯ 3d ago      修复这个回归缺陷并验证测试全部通过               u1 a1 t0      │ │ Project      reprise                 │
+│ 1/1                                                                         │ │ Session      session-                │
+│                                                                             │ │ Started      2026-08-10 21:40        │
+│                                                                             │ │ Signals      u1 a1 t0                │
 │                                                                             │ │                                      │
-│                                                                             │ │ Task         修复这个回归缺陷并验证测│
-│                                                                             │ │试全部通过                            │
+│                                                                             │ │ Task                                 │
+│                                                                             │ │修复这个回归缺陷并验证测试全部通过    │
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
- Choose a historical session. Discovery did not execute any session content.
+
+ ❯ [/] Search
+ Choose a historical session. Enter freezes it and starts the isolated replay.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Inspect  [f] Filter  [Esc] Home
+ [↑↓] Select  [Enter] Start run  [/] Search  [Backspace] Projects  [Esc] Back

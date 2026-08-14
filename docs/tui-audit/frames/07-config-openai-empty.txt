@@ -1,17 +1,28 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   [2m○ API not configured[0m  [2m○ No TaskCase[0m
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   ○ Harness unset  ○ Codex  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-┌─ Harness API ────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ❯ provider type      openai-compatible  [2m[Enter] toggles[0m                                                              │
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a Codex session
+
+┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Endpoint   not set                                                                                                   │
+│ Model      gpt-5.6-terra · medium                                                                                    │
+│ Secret     ⚠ API key missing                                                                                         │
+│ The API key is saved in .reprise/harness-model.json. env:NAME still works as a fallback.                             │
+│                                                                                                                      │
+│ ❯ provider type      openai-compatible  [Enter] toggles                                                              │
 │   provider label     openai-compatible                                                                               │
 │   base URL           required for OpenAI-compatible                                                                  │
 │   model              gpt-5.6-terra                                                                                   │
-│   effort             medium  [2m[Enter] cycles[0m                                                                          │
-│   API key reference  required for OpenAI-compatible                                                                  │
+│   effort             medium  [Enter] toggles                                                                         │
+│   API key            required for OpenAI-compatible                                                                  │
+│   Language           English  [Enter] toggles                                                                        │
 │                                                                                                                      │
-│[33m ● Unsaved draft[0m                                                                                                      │
-│ Keys stay in your environment. Reprise saves only env:NAME or ${NAME}.                                               │
+│ ● Unsaved draft                                                                                                      │
 │ Configuration file: .reprise/harness-model.json                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- OpenAI-compatible selected. Enter its endpoint, model, and environment key reference.
+ OpenAI-compatible selected. Enter its endpoint, model, and API key.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Change  [s] Save locally  [t] Test connection  [Esc] Home
+ [↑↓] Select  [Enter] Toggle provider  [t] Test connection  [s] Save locally  [Esc] Home

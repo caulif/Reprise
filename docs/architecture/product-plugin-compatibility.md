@@ -40,17 +40,18 @@ Product Pack 不提供 Controller 或 Comparison 的产品专属策略。它不�
 第一版使用简单、可读的 manifest：
 
 ```ts
-interface ProductPluginManifest {
+interface ProductPackManifest {
   productId: string;
+  displayName: string;
   packVersion: string;
   schemaVersion: number;
   sessionSchemaVersions?: string[];
 }
 
-interface RecoveryPlaybookRef {
-  path: string;
+interface RecoveryPlaybookDescriptor {
   version: string;
-  contentHash: string;
+  sha256: string;
+  text: string;
 }
 ```
 

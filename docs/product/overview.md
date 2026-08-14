@@ -150,4 +150,8 @@ Runtime 的 CLI 兼容性不建立独立的运行前验证产品。Claude Code�
 少量明确原语，而不是评测平台
 ```
 
+## 13. 凭据
+
+只持久化 `env:NAME` 引用。密钥值不写入任何 Reprise 文件。Codex 凭据由用户本机登录态提供，Reprise 不读也不保存。
+
 系统架构、公共协议和生命周期以[架构总览](../architecture/overview.md)为唯一来源。

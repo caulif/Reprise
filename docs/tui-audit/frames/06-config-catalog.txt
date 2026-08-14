@@ -1,17 +1,28 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   [2m○ API not configured[0m  [2m○ No TaskCase[0m
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   ○ Harness unset  ○ Codex  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-┌─ Harness API ────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ❯ provider type      pi-catalog  [2m[Enter] toggles[0m                                                                     │
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a Codex session
+
+┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Endpoint   Pi catalog openai-codex                                                                                   │
+│ Model      gpt-5.6-terra · medium                                                                                    │
+│ Secret     Pi manages credentials                                                                                    │
+│ The API key is saved in .reprise/harness-model.json. env:NAME still works as a fallback.                             │
+│                                                                                                                      │
+│ ❯ provider type      pi-catalog  [Enter] toggles                                                                     │
 │   provider label     openai-codex                                                                                    │
 │   base URL                                                                                                           │
 │   model              gpt-5.6-terra                                                                                   │
-│   effort             medium  [2m[Enter] cycles[0m                                                                          │
-│   API key reference                                                                                                  │
+│   effort             medium  [Enter] toggles                                                                         │
+│   API key                                                                                                            │
+│   Language           English  [Enter] toggles                                                                        │
 │                                                                                                                      │
 │ ● In-memory draft                                                                                                    │
-│ Pi catalog credentials are discovered by Pi and are not copied into Reprise.                                         │
 │ Configuration file: .reprise/harness-model.json                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- Edit an in-memory Harness configuration. Save never sends a request; connection testing is explicit.
+ Edit endpoint or model. Save never sends a request; t tests the connection.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Change  [s] Save locally  [t] Test connection  [Esc] Home
+ [↑↓] Select  [Enter] Toggle provider  [t] Test connection  [s] Save locally  [Esc] Home

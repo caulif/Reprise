@@ -6,7 +6,7 @@
 
 ## 1. 设计目标
 
-用户不需要理解 Harness 内部架构，也应能回答：正在比较什么，Harness、Controller 和目标 Runtime 分别在做什么，以及候选结果、效率、成本和可信度有什么差异。
+用户不需要理解 Harness 内部架构，也应能回答：正在比较什么，Harness、Controller 和目标 Runtime 分别在做什么，以及候选结果、效率和可信度有什么差异。当前 TUI 仍不记录完整 token/cost；结果页对不可用的 token 显示 `not recorded`，成本不作精确估算。
 
 界面遵循四条原则：
 
@@ -20,9 +20,9 @@
 Harness 中存在两类不同用途的模型：
 
 - **内部 Agent 模型**：Recovery、Controller 和 Comparison 通过 Pi provider 使用。首次使用时配置一个默认模型，之后可以分别覆盖。
-- **候选模型**：已经配置在 Claude Code、Codex 等目标 Agent Runtime 中，并由该 Runtime 实际执行历史任务的被测模型。
+- **候选模型**：由目标 Agent Runtime 实际执行历史任务的被测模型。当前 TUI 使用 Product Pack 的固定候选配置，不提供候选模型切换控件；候选模型发现/验证接口为后续扩展保留。
 
-候选模型列表不能来自 Pi。Product Pack 应从所选 Runtime 的配置、模型目录或已知别名中发现候选；无法可靠枚举时，允许用户输入 Runtime 接受的模型标识并验证。启动后记录用户请求的模型，以及 Runtime 实际解析出的 provider、模型和别名。
+候选模型不来自 Pi。当前 TUI 不允许在界面中更换候选模型，启动时记录固定候选配置，以及 Runtime 实际解析出的 provider、模型和别名；运行时若无法可靠解析，显示 `unknown`，不伪造模型事实。
 
 候选配置只写入本次运行的隔离环境。若某个 Runtime 只能通过修改用户全局配置切换模型，第一版将其视为不安全或不支持，不静默修改全局状态。
 
@@ -51,7 +51,7 @@ reprise compare
 
 选择 Agent 产品
 → 选择该产品的历史会话
-→ 选择该 Runtime 中已配置或可验证的候选模型
+→ 使用 Product Pack 的固定候选模型配置
 → 只读检查运行条件
 → [准备并开始]
 → 创建隔离副本并注入 run-local 配置
@@ -73,9 +73,9 @@ reprise compare
 ❯ 今天 · Reprise · “重新设计插件架构”
   昨天 · web-project · “修复登录页面”
 
-选择候选模型
-☑ configured-model      configured
-☑ new-model-alias       configured · validation pending
+候选模型
+  Product Pack 默认配置      fixed for this TUI
+  （当前不能在 TUI 中更换）
 
 运行条件
 当前 Runtime            available · auto-recorded
@@ -87,7 +87,7 @@ reprise compare
 [准备并开始]
 ```
 
-进入准备页前只做低成本、只读 preflight。用户点击一次 `[准备并开始]` 后，Harness 才创建 baseline 和候选隔离副本、验证候选配置并启动 Runtime。不要提前创建大量副本，也不增加连续多个确认按钮。
+进入准备页前只做低成本、只读 preflight。用户点击一次 `[准备并开始]` 后，Harness 才创建 baseline 和候选隔离副本、验证候选配置并启动 Runtime。不要提前创建大量副本，也不增加连续多个确认按钮。隔离副本只避免 Candidate 直接写入原目录，并不是隐私清洗：用户须在确认前排除不应被读取或发送的敏感文件。
 
 会影响解释的限制应显示在按钮附近，例如 `environment_partial · 部分外部状态无法恢复`。历史 Runtime 版本与当前版本不同不属于限制；若候选启动前检测到当前 Runtime 发生变化，则显示 `runtime_drift` warning。
 
@@ -103,7 +103,7 @@ reprise compare
 
 Harness 展示 Controller 的可见工作过程，但不依赖或承诺获取 provider 的隐藏 reasoning token。如果模型没有产生可见分析，就展示其工具活动和最终决定，不额外调用模型伪造摘要。
 
-主时间线不直接倾倒底层 event payload。重复、低价值事件应折叠，例如 `Controller inspected 7 transcript fragments`。
+主时间线不直接倾倒底层 event payload。当前仅通过事件投影白名单隐藏部分低价值事件；完整的重复事件折叠仍未实现。
 
 ### 4.2 决策与实际输入
 
@@ -132,20 +132,20 @@ Delivered · accepted · target turn 6
 - Harness、Controller、Target 的高信息密度活动；
 - Controller 决策、完整候选输入和 delivery 状态；
 - approval、错误、重试、中断和停止；
-- target 与 Controller 分开的少量实时耗时、token 和调用统计。
+- target 与 Controller 分开的少量实时耗时和调用统计；token、成本仅在 Runtime 已记录时显示，否则明确标为 `not recorded`。
 
 按需展开：
 
 - 工具调用参数与结果摘要；
 - Controller 读取的原会话片段和候选观察引用；
 - Target 命令输出、diff、后台任务和 Runtime 事件；
-- token、成本、墙钟时间、调用次数和 Harness trace。
+- 已记录的 token、成本、墙钟时间、调用次数和 Harness trace。
 
 原始详情保留 Pi session、Controller 可见输出、`ControllerDecision`、Runtime transcript、`TraceEvent`、完整命令输出、artifact 和结果文件。默认折叠只影响投影，不影响持久化。
 
 ### 4.4 Runtime 详情只读
 
-第一版提供目标 Runtime 的近原生只读会话视图，但不允许在其中直接输入消息。否则输入会绕过 Controller，破坏 delivery、turn boundary、trace 和“同等人类能力”条件。
+第一版提供目标 Runtime 的只读事件与详情投影，以及本地报告/trace 打开入口；它不是完整原生会话 UI，也不允许直接输入消息。否则输入会绕过 Controller，破坏 delivery、turn boundary、trace 和“同等人类能力”条件。
 
 未来若支持用户接管，必须记录明确的 `user_intervened` 事实，并终止或降级当前对照语义，不能把人工输入静默混入 Controller 轨迹。
 
@@ -154,8 +154,8 @@ Delivered · accepted · target turn 6
 
 第一版不实现后台 daemon 或 detach/reattach。TUI 与 Orchestrator 在同一进程中，但渲染层不是运行事实的所有者：
 
-- 关闭详情页或主 TUI 时，运行中任务切换为紧凑日志模式，不返回 shell，也不自动取消；
-- 第一次 Ctrl+C 写入取消请求并进入 `finalizing`；
+- 关闭详情页或主 TUI 时，会取消运行中的任务并等待清理；第一版不支持 detach/reattach，也不把运行转入后台；
+- 第一次 Ctrl+C 写入取消请求并进入 `finalizing`，提示用户等待 runtime 停止和 workspace 清理；
 - 收尾期间第二次 Ctrl+C 可以强制退出，必须尽力写入 `interrupted` 事实，剩余状态由下次启动恢复；
 - 终端窗口或进程被外部终止时不宣称取消或成功，下次打开实验执行 crash recovery；
 - 真正的后台运行与重新附着只在出现明确需求后设计。
@@ -193,13 +193,13 @@ Delivered · accepted · target turn 6
   target 42k tok · controller 6k tok · 7 target tool calls
 ```
 
-宽终端可以使用双栏，窄终端切换独立页面；“右侧入口”不是架构约束。多候选通过标签或列表切换，主时间线一次只聚焦一个候选。具体按键留到选定 TUI 框架后统一设计。
+宽终端可以使用双栏，窄终端切换独立页面；“右侧入口”不是架构约束。当前 MVP 使用固定候选配置，主时间线一次只聚焦该候选；候选切换不在 TUI 中提供。具体按键留到选定 TUI 框架后统一设计。
 
 ## 6. 运行结束后的三层体验
 
-1. **Comparison 摘要**：显示 Agent 选择的有区分度观察和证据入口，同时固定展示 `RunOutcome`、fidelity、时间、成本、token、调用次数、cleanup 和 delivery 异常。不给统一质量总分。
+1. **Comparison 摘要**：显示已生成报告的首条有区分度观察与报告入口，并固定展示可用的 `RunOutcome`、fidelity、时间、调用次数、cleanup 和 delivery 异常；token/cost 未采集时显示 `not recorded`。不给统一质量总分。
 2. **本地 HTML 报告**：提供详细并排比较。第一版是一次性生成的静态本地文件，不实现完整 Web 应用或第二套控制面。
-3. **原始详情**：Harness 自有 transcript、trace、decision 和 telemetry 必须可读；常见文本、diff、JSON、Markdown 和图片提供基础预览，专有 artifact 只保证 metadata 和安全打开入口。
+3. **原始详情**：Harness 自有的持久化 trace、decision 和可用 telemetry 可通过本地入口打开；token/cost 未采集时显示 `not recorded`。第一版不承诺内嵌通用 artifact 预览，专有 artifact 只保证 metadata 和安全打开入口。
 
 ## 7. 失败与中断体验
 
@@ -208,12 +208,13 @@ Delivered · accepted · target turn 6
 - approval 需要真人决定时明确暂停并标明请求来源；
 - delivery unknown 时停止继续发送，并显示不确定性；
 - 用户停止时分别显示取消和清理进度，最终单独展示 cleanup 状态；
+- 关闭 TUI 会取消 active run，不提供 detach；
 - TUI 退出或渲染失败不能改变已持久化的 CandidateRun 事实。
 
 ## 8. MVP 实现顺序
 
 1. 首次 Pi provider 设置和 Agent 产品选择；
-2. Product Pack 的历史会话与 Runtime 候选模型发现；
+2. Product Pack 的历史会话与固定 Runtime 候选配置；候选模型选择暂不在 TUI 提供；
 3. preflight、单次 `[准备并开始]` 和隔离副本进度；
 4. 基于持久化事件的主活动时间线；
 5. Controller decision、实际输入和 delivery 的清晰边界；
@@ -225,7 +226,7 @@ Delivered · accepted · target turn 6
 ## 9. 验收条件
 
 - 用户能区分内部 Agent 模型与 Runtime 候选模型；
-- 候选只来自目标 Runtime 已配置、可发现或可验证的模型；
+- 当前 TUI 明确展示固定候选配置；不声称提供候选模型选择；
 - 从选择 Agent 产品到启动比较只有一条明确主路径；
 - Harness、Controller 和 Target 的活动来源始终可辨认；
 - Controller 可见过程可以检查，但只有独立标记的输入会发送给 Target；

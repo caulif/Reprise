@@ -1,0 +1,13 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise      No configured model   ○ Harness unset  ○ Codex  ● Task
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Last task  Fix the bug. · 2 turns
+
+ Continue
+ r     Replay the current task  needs config
+ i     Import a Codex session
+
+┌─ Checking source ────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Inspecting source and deterministic contamination signals; no model will be called.                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Esc] Home

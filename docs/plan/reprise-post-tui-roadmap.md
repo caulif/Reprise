@@ -2,7 +2,7 @@
 
 状态：后续规划
 日期：2026-08-11
-前置文档：[Reprise 成熟交互式 TUI 实施规划](./reprise-interactive-tui-plan.md)
+前置文档：[TUI 与最小用户交互规划](../product/tui.md)（原前置的交互式 TUI 实施规划已被取代并移出版本控制）
 
 ## 1. 前提
 

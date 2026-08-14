@@ -367,50 +367,54 @@ interface FidelityAssessment {
 每种 Agent 产品由一个静态注册的 Product Pack 适配。Product Pack 把确定性代码和 Recovery Agent 使用的版本化知识作为一个不可拆分的包发布，但不承载 Controller 或 Comparison 的产品专属策略。Pack 和 Playbook hash 写入 manifest/provenance，避免代码适配器与恢复知识静默漂移。
 
 ```ts
-interface AgentProductPlugin {
-  manifest: ProductPluginManifest;
-  sessionSource: SessionSourceAdapter;
+interface ProductPack {
+  manifest: ProductPackManifest;
+  sessions: SessionSourceAdapter;
   runtime: RuntimePort;
-  recoveryPlaybook: RecoveryPlaybookRef;
+  activity: TargetActivityTranslator;
+  recoveryPlaybook(): RecoveryPlaybookDescriptor;
+  checkAuth(): Promise<ProductAuthStatus>;
+  defaultCandidate(): CandidateSpec;
 }
 
-interface ProductPluginManifest {
+interface ProductPackManifest {
   productId: string;
+  displayName: string;
   packVersion: string;
   schemaVersion: number;
   sessionSchemaVersions?: string[];
 }
 
-interface RecoveryPlaybookRef {
-  path: string;
+interface RecoveryPlaybookDescriptor {
   version: string;
-  contentHash: string;
+  sha256: string;
+  text: string;
 }
 
 interface SessionSourceAdapter {
-  discover(query?: SessionDiscoveryQuery): Promise<SessionRef[]>;
-  import(session: SessionRef): Promise<ImportedSession>;
+  readonly defaultRoot: string;
+  discover(query?: SessionDiscoveryQuery): Promise<readonly SessionSummary[]>;
+  inspect(ref: SessionRef): Promise<SessionInspection>;
+  import(ref: SessionRef): Promise<ImportedSession>;
 }
 ```
 
-`ImportedSession` 是产品无关的完整逻辑会话快照。Product Pack 负责确定第一条可执行用户输入；如果 resume、fork 或分支关系无法形成一条明确逻辑会话，则返回 diagnostic，而不是让 Case Preparation 猜测任务边界。
+`ImportedSession` 是产品无关的完整逻辑会话快照。Product Pack 只负责发现与导入；冻结成 `TaskCase`（暂存、原子发布、幂等、脱敏）由共享的 `freezeCase` 承担。Pack 负责确定第一条可执行用户输入；如果 resume、fork 或分支关系无法形成一条明确逻辑会话，则返回 diagnostic，而不是让 Case Preparation 猜测任务边界。
 
 ```ts
 interface ImportedSession {
-  schemaVersion: number;
-  importedSessionId: string;
   source: SessionRef;
-  product: ImportedProductIdentity;
-  initialInput: UserMessage;
-  transcript: Transcript;
-  historicalEvents: HistoricalEvent[];
-  sourceRuntimeEvidence: SourceRuntimeEvidence;
-  environmentClues: EnvironmentClue[];
-  artifactHints: ArtifactHint[];
-  diagnostics: ImportDiagnostic[];
-  rawRefs: ArtifactRef[];
-  provenance: Provenance;
-  contentHash: string;
+  initialInput: SessionMessage;
+  transcript: readonly SessionMessage[];
+  historicalEvents: readonly JsonRecord[];
+  baseline: TaskCase['baseline'];
+  sourceRuntimeEvidence: TaskCase['sourceRuntimeEvidence'];
+  taskContext?: TaskCase['taskContext'];
+  provenance: { packVersion: string };
+  raw: ImportedRawFile;
+  extraFiles?: readonly ImportedExtraFile[];
+  diagnostics: readonly ImportDiagnostic[];
+  signals: SessionSignals;
 }
 ```
 
@@ -637,7 +641,7 @@ type ComparisonEnvelope =
     }
 ```
 
-Comparison Agent 将调查叙述写入自由结构的 `comparison.md`，薄信封只返回阶段状态和引用；Renderer 校验引用，将 Host 结构化事实卡片与 Markdown 正文确定性、安全地组合成报告。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 将调查叙述写入自由结构的 `comparison.md`，薄信封只返回阶段状态和引用；Renderer 校验引用，将任务题头、白名单 Markdown 正文、再其后的 Host 对照条确定性、安全地组合成报告。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
 Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Pi Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型

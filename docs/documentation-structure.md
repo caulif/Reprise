@@ -1,35 +1,48 @@
 # 文档结构与路径约定
 
-本文说明 `docs/` 中的文档用途、权威性、命名和迁移规则。目标是让读者和 Coding Agent 仅凭路径判断一份文档是否能够约束当前实现。
+本文定义 `docs/` 的目录模型、受控边界、权威层级、命名规则和迁移规则。目标是让读者和 Coding Agent 仅凭路径就能判断一份文档是否能够约束当前实现，以及它是否属于版本控制。
+
+写文档时的操作性规则见 [`AGENTS.md`](./AGENTS.md)；本文定义结构，那份文件定义写法。
 
 ## 目录模型
 
 ```text
 docs/
-├── README.md
-├── documentation-structure.md
-├── development-plan.md              # 模块顺序、退出条件与阶段闸门
-├── project-architecture.html        # 只读可视化入口，不拥有独立语义
-├── product/
-│   ├── overview.md                  # 产品目标、用户价值和非目标
-│   └── tui.md                       # 最短用户路径和信息层级
-├── architecture/
-│   ├── overview.md                  # 跨模块唯一主设计
-│   ├── technology-selection.md
-│   ├── persistence-and-crash-consistency.md
-│   ├── product-plugin-compatibility.md
-│   ├── controller.md
-│   ├── controller-experiment-conditions.md
-│   ├── environment.md
-│   ├── comparison.md
-│   ├── run-outcome.md
-│   └── validation.md
-├── research/                        # 理论、调研和备选方案，非规范性
-└── archive/YYYY-MM-DD/              # 被替代的历史材料，非规范性
-    └── drafts/
+├── AGENTS.md                        # 文档层写作指令（不定义规范）
+├── README.md                        # 唯一导航入口
+├── documentation-structure.md       # 本文
+├── development-plan.md              # 模块 0–8 的实现顺序与验收记录
+├── codex-smoke-gate.md              # 真实计费运行的准入程序与验收记录
+├── product/                         # 产品目标、用户路径和非目标
+├── architecture/                    # 当前跨模块与专题架构规范
+├── decisions/                       # 决策记录
+│   ├── proposed/
+│   ├── accepted/
+│   └── superseded/
+├── plan/                            # 尚未完成的工作
+├── research/                        # 设计依据与备选方案，非规范性
+├── progress/MASTER.md               # 稳定进度入口
+└── tui-audit/frames/                # TUI 快照基线（受控）
 ```
 
-目录模型列出当前活跃规范；新增或移动文件时必须同步本节和 `docs/README.md`。
+
+仓库根目录只保留 `README.md` 和 `AGENTS.md`；其他 Markdown 都属于 `docs/` 或对应代码目录。一次性材料放在不受控的 `docs/.local/`，不列入上表。新增或移除受控目录时必须同步本节、`README.md` 和 `.gitignore`，`npm run verify:docs` 会比对本节列出的目录与磁盘实际目录。
+
+## 受控边界
+
+`docs/` 里的材料分三类，只有第一类进入版本控制。
+
+| 类别 | 内容 | 位置 | 是否受控 |
+|---|---|---|---|
+| 长期材料 | 规范、决策、未完成计划、设计依据、进度入口 | 上节目录模型列出的路径 | 是 |
+| 一次性材料 | 某一时点的审查、走查、体验记录、已执行完毕或已被取代的计划 | `docs/.local/` | 否 |
+| 生成产物 | TUI 帧与 HTML、截图、走查产物、验收证据 | `docs/tui-*/`、`docs/evidence/` | 否，唯一例外是 `tui-audit/frames/` |
+
+三条判据：
+
+- **一次性材料不进 git。** 它的价值随代码变化而失效，留在版本控制里只会成为 review 噪音和误引用来源。它仍然留在磁盘上（`docs/.local/`）可供本地查阅，需要长期保留的结论应当提炼进 `decisions/` 或 `architecture/`。
+- **生成产物不进 git。** 能重新生成的东西不需要历史副本。唯一例外是 `tui-audit/frames/`：它被 CI 逐字节比对，用来发现 TUI 渲染的意外变化，因此必须受控，且由 `.gitattributes` 固定为 LF 行尾。
+- **不受控不等于可以随便写。** `docs/.local/` 里的文档同样不得作为当前实现依据；它们不受门禁检查，因此更不能被当成规范引用。
 
 ## 权威与冲突
 
@@ -38,37 +51,81 @@ docs/
 | 产品为什么存在、服务谁、明确不做什么 | `product/` |
 | 跨模块术语、公共协议、所有权和生命周期 | `architecture/overview.md` |
 | 单模块如何细化公共协议 | 对应 `architecture/` 专题 |
-| 实现顺序、模块交付物、退出条件和阶段闸门 | `development-plan.md` |
+| 某个长期约束实现的选择及其被放弃的备选方案 | `decisions/accepted/` |
+| 模块 0–8 的实现顺序与验收 | `development-plan.md` |
+| 真实计费运行的准入条件 | `codex-smoke-gate.md` |
+| 尚未完成的工作 | `plan/` |
+| 稳定的当前进度入口 | `progress/MASTER.md` |
 | 为什么这样设计、有哪些备选方案 | `research/`，非规范性 |
-| 被替代的讨论和过程记录 | `archive/`，非规范性 |
+| Agent 每次会话需要的常驻约束 | 各层 `AGENTS.md`，不定义规范 |
 
-专题文档不得重新定义架构总览的公共类型。HTML 只能同步展示 Markdown，不得重新编号或拥有不同验收条件。发现冲突时修改产生冲突的活跃文档，或归档已经失效的材料；不以最新修改时间判断权威性。
+`AGENTS.md` 在权威层级中没有位置：它只索引规范并给出可立即执行的指令，与 `architecture/` 或 `product/` 冲突时一律以后者为准。它里面每条规则都必须带一个指向归宿的相对链接，规范搬家时链接门禁会强制更新它。
+
+专题文档不得重新定义架构总览的公共类型。HTML 只能同步展示 Markdown 或审计产物，不得重新编号或拥有不同验收条件。发现冲突时修改产生冲突的活跃文档，或把失效材料移入 `docs/.local/`；不以最新修改时间判断权威性。
+
+## 决策记录
+
+`decisions/` 记录已经做出、且会长期约束实现的选择。它的存在理由是：决策理由如果只留在聊天记录或某一轮审查文档里，下一个人（或 Agent）会重新讨论已经讨论过的问题。
+
+### 路径与生命周期
+
+```text
+docs/decisions/{proposed|accepted|superseded}/YYYY-MM-DD-topic.md
+```
+
+- 生命周期由目录表达，状态变化就是移动文件。日期是该主题**首次提出**的日期，移动时不改。
+- **不设分类子目录。** 决策数量到不了需要分类的规模，分类只会制造「这算架构还是流程」的无效讨论。
+- `proposed/` 是尚未拍板的提案；`accepted/` 描述已生效的现实，用现在时；`superseded/` 是被后续决策取代的记录，冻结不再修改，但保留可追溯性。
+
+### 文件格式
+
+第一行是 `# 决策：<标题>`，第三行是 `状态：<proposed|accepted|superseded>` 且必须与所在目录一致。正文小节固定为：
+
+```markdown
+## 问题
+## 决定
+## 备选方案
+## 影响
+## 验证
+```
+
+- `## 问题` 写动机，且要能在不知道结论的前提下读懂。
+- `## 决定` 在 `accepted/` 里用现在时描述已生效的事实，不写「将会」「计划」。
+- `## 备选方案` **强制存在**，每个备选方案一段、以粗体开头说明它为什么落选。备选方案只记录真实考虑过的，不允许为了填格式编造。没有记录到备选方案的决策会被反复重新讨论——这正是决策记录要防止的失败。
+- `## 影响` 同时写这个选择付出了什么和换来了什么。
+- `## 验证` 写什么可观察的事实能证明决定已生效。
+
+格式由 `npm run verify:docs` 检查 `proposed/` 与 `accepted/`。`superseded/` 已冻结，不检查格式，也不再修改。
+
+### 何时必须写
+
+改动跨模块协议、on-disk 或 wire 格式、Agent 提示词契约、工具面、工程流程或门禁时，同一次变更里必须新增或更新一份决策记录。纯机械改动豁免。更新已经拥有该决策的记录即可，不要新建重复记录。
+
+一份记录不允许被改写成相反的决定：用新记录取代它，把旧记录移入 `superseded/` 并双向链接。
 
 ## 放置与命名规则
 
-- 文件和目录使用小写英文 `kebab-case`；入口文件 `README.md` 是唯一例外；日期目录使用 `YYYY-MM-DD`。
+- 文件和目录使用小写英文 `kebab-case`；`README.md`、`AGENTS.md` 是入口文件例外，`progress/MASTER.md` 是稳定进度入口的命名例外；日期目录和决策记录文件名使用 `YYYY-MM-DD`。
 - 每个主题只保留一个当前来源，不在多个目录复制相同规范。
-- 文件名描述稳定主题，不使用 `final`、`new`、`latest` 或版本号；版本号只用于确需追溯的归档草稿。
+- 文件名描述稳定主题，不使用 `final`、`new`、`latest` 或版本号。
 - 不为尚未发生的扩展创建空目录、空接口或占位文档。
 - Product Pack 是叙述术语；公共代码接口仍可命名为 `AgentProductPlugin`。
 
 ## 链接规则
 
 - Markdown 使用相对链接，例如 `../architecture/overview.md`。
-- 链接到文件本身，不硬编码旧工作区绝对路径。
+- 链接到文件本身，不硬编码工作区绝对路径。
 - 移动文件时同时检查所有入站和出站链接。
-- 归档文档可以保留历史文字，但其可点击链接不能指向不存在的路径。
-- `docs/README.md` 只负责导航，不复制专题内容。
+- 不得从受控文档链接到 `docs/.local/`：那些文件在别人的检出里不存在。
 
 ## 迁移规则
 
-文档被替代时：
+文档被取代或执行完毕时：
 
-1. 确认当前唯一来源；
-2. 将旧文档移入 `archive/YYYY-MM-DD/`；
-3. 在归档目录入口说明非规范性和归档原因；
-4. 更新当前文档和导航链接；
-5. 检查 Markdown 相对链接；
-6. 内容完全相同的副本经 hash 确认后只保留一份。
+1. 确认该主题当前的唯一来源；
+2. 需要长期保留的结论提炼进 `architecture/` 或 `decisions/`；
+3. 原文件移入 `docs/.local/`（一次性材料）或 `decisions/superseded/`（决策记录）；
+4. 更新当前文档与 `README.md` 导航；
+5. 运行 `npm run verify:docs` 确认没有断链和目录模型漂移。
 
-当前不建立正式 `decisions/` 目录。只有出现难以从当前规范理解、且会长期约束实现的不可逆决策时，才采用“一项决策一个文件”的轻量 ADR，避免把阶段性讨论升级为制度。
+不再使用 `docs/archive/YYYY-MM-DD/` 这一层：历史追溯由 git 承担，被取代材料的当前副本留在 `docs/.local/`。

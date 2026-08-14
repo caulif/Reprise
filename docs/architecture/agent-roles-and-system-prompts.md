@@ -520,10 +520,11 @@ Comparison 可自行使用只读工具：
 - [OpenCode TUI](https://opencode.ai/docs/tui/)
 - [OpenAI Codex best practices：组织长任务](https://learn.chatgpt.com/guides/best-practices#organize-long-running-chats)
 
-主产物应是 `comparison.md`。最终 HTML 由两部分组成：
+主产物应是 `comparison.md`。最终 HTML 由 Host 组合成：
 
-1. **宿主事实卡片**：模型身份、RunOutcome、终止原因、fidelity、时间、成本、环境和清理状态；
-2. **Agent 比较正文**：安全渲染 `comparison.md`，保留 Agent 自主选择的结构和证据链接。
+1. **题头**：任务一句话；case/run 降到 kicker；
+2. **Agent 比较正文**：安全渲染 `comparison.md`，保留 Agent 自主选择的结构和证据链接；
+3. **宿主对照条**：同一套格子的基线/候选（磁盘 / 结果 / 身份，文案跟随任务语言）；回放限制默认折叠。宿主事实不能从 Markdown 反向解析。
 
 机器接口只需一个薄信封保存 Markdown 路径、引用清单和状态。不要把 Comparison 再次压缩成 `summary + observations[] + limitations[]` 固定模板；该模板会让模型围绕 schema 填空，而不是调查和写报告。
 
@@ -593,7 +594,8 @@ Host 提供的 RunOutcome、termination、fidelity、环境和计量事实是持
 将正文写入 comparison.md。使用初始任务的主要语言；代码、命令、标识符和用户指定文本保持必要形式。报告面向要自行判断的用户，而不是面向 schema。
 
 结构、长度、章节、表格和 finding 数量由证据决定，但应做到：
-- 先给最重要的结果差异，再给必要的过程解释和条件限制；
+- 先写会改变「是否接受这次回放」的差异；不要用「两次都完成了」当首句，除非确实没有结果差异；
+- 对照表最多三行，列是「维度 | 基线 | 候选 | 是否影响使用」；证据放在表外；
 - 明确 baseline 与 candidate 分别发生了什么；
 - 每个关键判断附近都有证据入口；
 - 避免逐事件复述、低价值指标堆砌和伪精确措辞；
@@ -655,7 +657,7 @@ Prompt 不应承担的内容：
 - `PiModelCaller.complete()` 仅调用 `completeSimple`，向模型发送一段 JSON 文本；没有创建真正的 Agent session，也没有注册或执行工具。
 - `capabilities` 目前只是字符串数组，未转化为 shell、artifact reader 或 staging writer。
 - `PiAgentHost` 是一次性结构化 completion + schema repair，不是管理 session、上下文、工具生命周期和审计的 Agent Host。
-- 三个 Agent 共用 90 秒单次调用、一次 repair 的统一配置，忽略它们完全不同的工作形态。
+- 三个 Agent 默认单次调用不设 Host 超时（`timeoutMs: 0`），结构化 repair 只修不合规信封，不在超时后重开同一条 session。
 - 实现把“可审计的自主 Agent”收缩成了“读取摘要并输出固定 JSON 的 LLM 函数”。
 
 ### 8.2 Recovery 偏差
@@ -681,7 +683,7 @@ Prompt 不应承担的内容：
 - 每次 `decide()` 都是独立 completion，不是每个 CandidateRun 的连续 session；
 - 代码增加了 `stop` contract，但当前架构 canonical type 只有 `send | done`，文档与代码不一致；
 - fallback `no_further_value` 会把“Controller 调用失败”转化成完成路径，容易把 Harness 失败误写为 candidate 结果；
-- TUI 默认 `maxTargetTurns: 4`、`maxModelCalls: 3`，与最新“不设总时长/总轮数上限，只保留安全和停滞终止”的讨论方向冲突。
+- TUI 默认 `maxTargetTurns: 256`、`maxModelCalls: 256`、墙钟 24 小时、单回合 2 小时，只作安全阀；完成由 Controller 决定。耗尽必须记 `limit.*`，不能伪装成完成。
 
 因此当前 Controller 无法真正模拟“同等人类能力”，只能根据极少摘要做一次文本分类。
 
@@ -747,7 +749,7 @@ Prompt 不应承担的内容：
 - [Controller 实验条件](./controller-experiment-conditions.md)：模型、工具、完整会话、预算与上下文条件；
 - [Environment 设计](./environment.md)：Recovery 在 staging 中执行，Provider 独立验证；
 - [Comparison 设计](./comparison.md)：只读证据调查、产品无关比较和用户自行判断；
-- [自主 Agent 与自由证据产物讨论稿](../analysis/reprise-autonomous-agents-and-unbounded-run-redesign.md)：受控 shell、自由 Markdown、最小机器信封和不限总预算方向。
+- 受控 shell、自由 Markdown、最小机器信封和不限总预算的方向，来自一份自主 Agent 讨论稿；该讨论稿已执行完毕并移入本地保留区，不再受版本控制。
 
 以下两项已经确认为 canonical contract：
 

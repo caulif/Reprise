@@ -147,7 +147,7 @@ Controller 对原始会话采用“完整可访问”，而不是“每轮把所
 
 ## 6. Controller 预算
 
-Controller、Recovery 和 Comparison 的**资源预算默认均不设上限**。这不等同于取消安全和活性边界：每次调用仍有超时，结构化输出修复和 provider 重试仍有很小的固定次数上限；这些限制用于避免单次请求悬挂或无限重试，不是 Agent 的总调用、token 或成本预算。用户需要控制成本时，可以为单个 Agent 显式配置上限。
+Controller、Recovery 和 Comparison 的**资源预算默认均不设上限**。完成权在 Controller：Host 不得用短调用超时把 Comparison 或 Controller 掐死。`timeoutMs: 0` 表示单次调用不设定时器，仍可由用户取消或 session abort 结束。结构化输出修复只在同一次 `append` 已返回但信封不合规时发生；超时或 `append` 抛错不得在同一条 Pi session 上立刻再 `prompt()`。用户需要控制成本时，可以为单个 Agent 显式配置上限。
 
 ```ts
 interface AgentBudget {
@@ -162,7 +162,7 @@ interface AgentBudget {
 
 - `maxCalls`、`maxTokens` 和 `maxCost` 默认未设置，即 Controller 资源预算无限制；
 - `maxStructuredRepairAttempts` 限制 schema 修复调用，`maxProviderRetries` 限制瞬时 provider 错误重试；两者第一版都保持很小且分别计数；
-- `callTimeoutMs` 防止一次 Controller 调用无限等待；
+- `callTimeoutMs` 仅在用户显式配置时限制单次调用；默认快照写一个很大的安全阀数字，实际 Host 调用为 `timeoutMs: 0`；
 - CandidateRun 的 `RunPolicy` 仍独立约束 Target Runtime 的墙钟、turn 和模型调用；它不是 Controller 的资源预算；
 - RunOrchestrator 执行 CandidateRun 限制；Controller 只能看到对应的运行快照并据此判断是否继续。
 

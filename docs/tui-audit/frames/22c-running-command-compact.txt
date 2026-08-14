@@ -1,0 +1,30 @@
+Reprise   Replay in progress · Codex   C:\Users\15893\Doc...
+00:00   round 1   * running
+------------------------------------------------------------
+ * To Codex   * Codex screen                                
+ Task  Fix the bug.                                         
+                                                            
+| To Codex · historical task                                
+| Fix the failing test.                                     
+| Run the focused test.                                     
+                                                            
+| Codex                                                     
+| $ Get-ChildItem | Format-Table Mode,Length,LastWriteTim...
+| | Mode  Length LastWriteTime         Name                 
+| | ----  ------ -------------         ----                 
+| | -a---   1200 8/13/2026 12:00:00 AM  file-1.txt          
+| | -a---   1201 8/13/2026 12:00:00 AM  file-2.txt          
+| | -a---   1202 8/13/2026 12:00:00 AM  file-3.txt          
+| | -a---   1203 8/13/2026 12:00:00 AM  file-4.txt          
+| ... 20 more lines                                         
+| exit 0 · 476ms                                            
+| public response line 1                                    
+| public response line 2                                    
+| public response line 3                                    
+| public response line 4                                    
+| public response line 5                                    
+| public response line 6                                    
+| ... +35 lines                                             
+ > You cannot type to Codex here. Follow-ups are sent by the replay.
+------------------------------------------------------------
+ [Up/Dn] Select  [f] One side  [Ctrl+C] Stop

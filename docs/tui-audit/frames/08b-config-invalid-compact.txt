@@ -1,21 +1,31 @@
 Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
-No configured model   [2mo API not configured[0m  [2mo No TaskCase[0m
+No configured model   o Harness unset  o Codex?  o No task
 ------------------------------------------------------------
-[ Harness API ]
-      provider type      openai-compatible  [2m[Enter] toggles[0m
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a Codex session
+
+[ Harness connection ]
+    Endpoint   http://insecure.example/v1
+    Model      model-private - medium
+    Secret     not…-key   saved in harness-model.json
+    The API key is saved in .reprise/harness-model.json. 
+   env:NAME still works as a fallback.
+   
+      provider type      openai-compatible  [Enter] toggles
       provider label     private-gateway
       base URL           
-        [33m! not an https URL[0m
+        ! not an https URL
       model              model-private
-      effort             medium  [2m[Enter] cycles[0m
-    > API key reference  
-        [33m! expected env:NAME[0m
+      effort             medium  [Enter] toggles
+    > API key            not…-key  +
+      Language           English  [Enter] toggles
    
-   [33m * Unsaved draft[0m
-    Keys stay in your environment. Reprise saves only
-   env:NAME or ${NAME}.
+    * Unsaved draft
     Configuration file: .reprise/harness-model.json
- Draft changed. Save is local only; use t to explicitly test
-the connection.
+ Draft changed. Save writes the local config file; use t to
+test the connection.
 ------------------------------------------------------------
- [↑↓] Select  [Enter] Change  [s] Save locally
+ [↑↓] Select  [Enter] Edit  [t] Test connection

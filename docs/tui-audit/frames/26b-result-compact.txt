@@ -1,26 +1,32 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
-gpt-5.6-terra - medium   [32m* API ready[0m  [32m* TaskCase[0m
+Reprise   Run result   C:\Users\15893\Documents\model-tes...
+00:00   round 1   * done
 ------------------------------------------------------------
+ * To Codex   * Codex screen                                
+ Task  Fix the bug.                                         
+                                                            
+| Fix the failing test.                                     
+| Run the focused test.                                     
+                                                            
+| Codex                                                     
+| $ Get-ChildItem | Format-Table Mode,Length,La...          
+| public response line 1                                    
+| public response line 2                                    
+| public response line 3                                    
+| public response line 4                                    
+| public response line 5                                    
+| public response line 6                                    
+| ... +35 lines                                             
+
 [ Run result - completed ]
-   [32m + completed[0m
+    + completed
         completed.controller_satisfied
    
     Run          run-1
     Cleanup      complete
     Controller   done
     Comparison   completed
-    Fidelity     observational
-    Limitations  fingerprint differs
-    Report
-   C:\Users\15893\AppData\Local\Temp\reprise-tui-audit-FrCae
-   6\data\experiments\fixture\report.html
-    Trace
-   C:\Users\15893\AppData\Local\Temp\reprise-tui-audit-FrCae
-   6\data\experiments\fixture\runs\run-1\
-   
-    Single run. Results vary between runs. Reprise records
-   facts for inspection, not rankings.
- Experiment finished. The report and TUI summary use the
-same persisted facts.
+    Report       ]8;;file:///TMP/data/experiments/fixture/report.html\report.html]8;;\
+    Trace        ]8;;file:///TMP/data/experiments/fixture/runs/run-1\runs/run-1/]8;;\
+ Experiment finished. Press o to open the report.
 ------------------------------------------------------------
- [Enter] Home  [b] Home
+ [o] Open report  [t] Open trace  [/] Find  [Enter] Home

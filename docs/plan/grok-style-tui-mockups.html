@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reprise TUI 设计稿 · Grok 会话画布</title>
+<style>
+  :root {
+    --bg: #070b14;
+    --panel: #0b1220;
+    --term: #0d1424;
+    --line: #1f2937;
+    --text: #e5e7eb;
+    --muted: #8b95a8;
+    --dim: #5b6578;
+    --accent: #22d3ee;
+    --harness: #60a5fa;
+    --controller: #e879f9;
+    --target: #22d3ee;
+    --compare: #4ade80;
+    --ok: #4ade80;
+    --warn: #facc15;
+    --danger: #f87171;
+    --sel: #13243c;
+    --sel-bar: #22d3ee;
+    --sheet: #111827;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.45 ui-sans-serif, system-ui, "Segoe UI", sans-serif; }
+  a { color: #93c5fd; }
+  .app { display: grid; grid-template-columns: 248px 1fr; min-height: 100%; }
+  nav {
+    position: sticky; top: 0; height: 100vh; overflow: auto;
+    border-right: 1px solid var(--line); background: var(--panel); padding: 16px 12px 24px;
+  }
+  nav h1 { margin: 0 8px 4px; font-size: 13px; font-weight: 650; color: #93c5fd; }
+  nav .sub { margin: 0 8px 14px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+  nav .group { margin: 12px 8px 6px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  nav button {
+    display: block; width: 100%; text-align: left; border: 0; background: transparent;
+    color: var(--text); padding: 6px 8px; border-radius: 6px; cursor: pointer; font: inherit;
+  }
+  nav button:hover { background: #152033; }
+  nav button.active { background: #17304d; color: #93c5fd; }
+  nav button small { display: block; color: var(--muted); font-size: 11px; }
+  main { padding: 20px 24px 48px; min-width: 0; }
+  .meta { max-width: 980px; margin-bottom: 14px; }
+  .meta h2 { margin: 0 0 6px; font-size: 18px; }
+  .meta p { margin: 0; color: var(--muted); }
+  .term {
+    position: relative; width: min(980px, 100%); background: var(--term);
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    font: 13px/1.38 "Cascadia Mono", "Sarasa Mono SC", "JetBrains Mono", Consolas, monospace;
+    box-shadow: 0 16px 40px rgba(0,0,0,.35);
+  }
+  .term.narrow { width: 520px; }
+  .chrome {
+    display: flex; justify-content: space-between; gap: 16px; padding: 8px 12px 0;
+    color: var(--text); white-space: nowrap;
+  }
+  .chrome .right { color: var(--muted); }
+  .rule { height: 1px; background: #243044; margin: 8px 0 0; }
+  .body { position: relative; min-height: 420px; padding: 10px 12px 8px; }
+  .term.narrow .body { min-height: 460px; }
+  .composer { padding: 6px 12px 4px; color: var(--text); }
+  .composer .ghost { color: var(--dim); }
+  .hints { border-top: 1px solid #243044; padding: 6px 12px 8px; color: var(--muted); font-size: 12px; }
+  .k { color: #cbd5e1; }
+  .muted { color: var(--muted); }
+  .dim { color: var(--dim); }
+  .ok { color: var(--ok); }
+  .warn { color: var(--warn); }
+  .danger { color: var(--danger); }
+  .hns { color: var(--harness); }
+  .ctl { color: var(--controller); }
+  .tgt { color: var(--target); }
+  .cmp { color: var(--compare); }
+  .strong { font-weight: 650; }
+  .pill { display: inline-block; }
+  .sec { margin: 10px 0 6px; color: var(--dim); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+  .row { display: flex; gap: 10px; padding: 3px 6px; border-radius: 4px; }
+  .row .key { width: 18px; color: var(--muted); flex: none; }
+  .row .desc { flex: 1; }
+  .row .stat { color: var(--muted); }
+  .row.pick { background: var(--sel); box-shadow: inset 3px 0 0 var(--sel-bar); }
+  .turn { margin: 10px 0 4px; color: var(--muted); font-size: 12px; }
+  .block { padding: 2px 6px 2px 10px; border-radius: 4px; margin: 1px 0; }
+  .block.pick { background: var(--sel); box-shadow: inset 3px 0 0 var(--sel-bar); }
+  .src { display: inline-block; width: 11ch; }
+  .card { margin: 2px 0 6px 22px; color: var(--text); }
+  .cmd { color: #a5f3fc; }
+  .out { color: #cbd5e1; }
+  .quote {
+    margin: 4px 0; padding: 6px 8px; border: 1px solid #334155; border-radius: 4px;
+    color: #e2e8f0; background: #0f172a;
+  }
+  .phase { color: var(--muted); padding: 2px 6px; }
+  .dimback { filter: brightness(.38); pointer-events: none; }
+  .sheet {
+    position: absolute; left: 50%; top: 36px; transform: translateX(-50%);
+    width: min(720px, calc(100% - 32px)); background: var(--sheet);
+    border: 1px solid #334155; border-radius: 8px; padding: 10px 12px 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.55); z-index: 2;
+  }
+  .sheet h3 { margin: 0 0 8px; font-size: 13px; font-weight: 650; color: #93c5fd; }
+  .kv { display: grid; grid-template-columns: 14ch 1fr; gap: 2px 10px; margin: 2px 0; }
+  .kv span:first-child { color: var(--muted); }
+  .field { margin: 6px 0; }
+  .field .label { color: var(--muted); }
+  .field .box { margin-top: 2px; padding: 3px 6px; border: 1px solid #334155; border-radius: 3px; }
+  .field .box.edit { border-color: var(--accent); }
+  .split { display: grid; grid-template-columns: 1.15fr .85fr; gap: 12px; }
+  .list-item { padding: 4px 6px; border-radius: 4px; }
+  .list-item.pick { background: var(--sel); box-shadow: inset 3px 0 0 var(--sel-bar); }
+  .viewer {
+    position: absolute; inset: 28px 16px 52px; background: #0b1220;
+    border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; z-index: 2;
+    overflow: auto;
+  }
+  .actors {
+    position: absolute; top: 36px; right: 12px; width: 260px; background: var(--sheet);
+    border: 1px solid #334155; border-radius: 8px; padding: 8px 10px; z-index: 2;
+  }
+  .actor { margin: 8px 0; }
+  .actor .name { font-weight: 650; }
+  .btnrow { margin-top: 10px; color: var(--ok); }
+  .note { max-width: 980px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+  .hidden { display: none; }
+  .why { margin: 8px 0 0; padding: 8px 10px; background: #111827; border-left: 3px solid #334155; color: #cbd5e1; font-size: 12px; max-width: 980px; }
+  .legend { display: flex; gap: 16px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .legend .in { background: var(--controller); }
+  .legend .out { background: var(--target); }
+  .job { color: var(--muted); margin-bottom: 10px; }
+  .job b { color: var(--text); font-weight: 650; }
+  .steps { margin: 14px 0 0; }
+  .step { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; padding: 5px 4px; align-items: baseline; }
+  .step.on { color: var(--text); }
+  .bar {
+    height: 10px; margin: 10px 0 6px; background: #1e293b; border-radius: 99px; overflow: hidden;
+    border: 1px solid #334155;
+  }
+  .bar > i {
+    display: block; height: 100%; width: 55%;
+    background: repeating-linear-gradient(90deg, #22d3ee 0 14px, #67e8f9 14px 28px);
+    background-size: 28px 100%;
+    animation: slide 0.7s linear infinite;
+  }
+  .bar.done > i { width: 100%; animation: none; background: var(--ok); }
+  @keyframes slide { to { background-position: 28px 0; } }
+  .voice { margin: 10px 0 12px; padding: 8px 10px 8px 12px; border-radius: 6px; }
+  .voice.in { background: #1a1224; box-shadow: inset 3px 0 0 var(--controller); }
+  .voice.out { background: #0b1c24; box-shadow: inset 3px 0 0 var(--target); }
+  .voice.pick { outline: 1px solid #334155; }
+  .voice .who { font-size: 11px; margin-bottom: 4px; letter-spacing: .02em; }
+  .voice.in .who { color: var(--controller); }
+  .voice.out .who { color: var(--target); }
+  .voice .tool { margin: 4px 0; }
+  .voice .tool.closed { color: #a5f3fc; }
+  .pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--target); margin-right: 6px; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+</style>
+</head>
+<body>
+<div class="app">
+<nav>
+  <h1>Grok 风格设计稿</h1>
+  <p class="sub">对照 <a href="./grok-style-tui-redesign.md">重构方案</a>。运行时只有两色：紫=发给产品的话，青=产品自己的屏幕。</p>
+
+  <div class="group">Welcome</div>
+  <button data-id="welcome" class="active">01 Welcome 就绪<small>封面，不是两栏说明书</small></button>
+  <button data-id="welcome-unset">02 Welcome 凭据未设<small>缺配置是状态，不跳页</small></button>
+  <button data-id="welcome-slash">03 Welcome 斜杠发现<small>无斜杠不发给模型</small></button>
+
+  <div class="group">Overlay · 盖在封面上</div>
+  <button data-id="settings">04 Settings<small>/config 一张表</small></button>
+  <button data-id="intake">05 Intake<small>列表 + 检查同层</small></button>
+  <button data-id="history">06 History<small>实验 / case 同一张 sheet</small></button>
+  <button data-id="runsetup">07 Run-setup<small>一次确认，不是三步向导</small></button>
+  <button data-id="help">08 Help<small>? 按键 overlay</small></button>
+
+  <div class="group">对照 · 两色对话</div>
+  <button data-id="prepare">09 准备中<small>四步进度 + 动画条</small></button>
+  <button data-id="running">10 运行<small>紫=发给它 · 青=它的屏幕</small></button>
+  <button data-id="command">11 看一条命令<small>还是 Codex 自己的显示</small></button>
+  <button data-id="decision">12 续问之后<small>只出现新的发给它</small></button>
+  <button data-id="compact">13 窄终端<small>两色不变</small></button>
+  <button data-id="filter">14 只看一边<small>发给它 / 它的屏幕</small></button>
+  <button data-id="viewer">15 Viewer<small>溢出才全屏</small></button>
+  <button data-id="actors">16 Actors pane<small>心跳进侧栏</small></button>
+  <button data-id="result">17 结果收束<small>不换页</small></button>
+  <button data-id="error">18 错误<small>画布内卡片</small></button>
+</nav>
+
+<main>
+<section class="screen" id="welcome">
+  <div class="meta">
+    <h2>01 · Welcome 就绪</h2>
+    <p>工作台封面。最近实验和当前 TaskCase 是一等动作；斜杠命令降到 Browse。</p>
+  </div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div>
+      <div class="right">gpt-5.6-terra · medium &nbsp; <span class="ok">● Harness</span> &nbsp; <span class="ok">● Codex</span> &nbsp; <span class="ok">● Case</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="dim">last case · 修复这个回归缺陷并验证测试全部通过</div>
+      <div class="sec">Continue</div>
+      <div class="row pick"><span class="key">↩</span><span class="desc">昨天的实验 · 修复登录页失败测试</span><span class="stat">comparison ready · 18m</span></div>
+      <div class="row"><span class="key">r</span><span class="desc">对当前 TaskCase 开跑</span><span class="stat">source ready</span></div>
+      <div class="row"><span class="key">i</span><span class="desc">导入 Codex 会话</span><span class="stat"></span></div>
+      <div class="sec">Browse</div>
+      <div class="row"><span class="key dim">/</span><span class="desc">history &nbsp; 本地 TaskCase 与实验</span></div>
+      <div class="row"><span class="key dim">/</span><span class="desc">config &nbsp; 端点、模型、密钥引用</span></div>
+    </div>
+    <div class="composer">❯ <span class="ghost">/ 命令，或选上面的 Continue</span></div>
+    <div class="hints"><span class="k">Enter</span> 继续昨天的实验 &nbsp; <span class="k">r</span> 开跑 &nbsp; <span class="k">i</span> 导入 &nbsp; <span class="k">?</span> 按键 &nbsp; <span class="k">Ctrl+C</span> 退出</div>
+  </div>
+  <p class="note">删掉「Enter a task or / command」。无斜杠输入不会发给任何模型。</p>
+</section>
+
+<section class="screen hidden" id="welcome-unset">
+  <div class="meta">
+    <h2>02 · Welcome 凭据未设</h2>
+    <p>缺配置停在封面，用 pills 和 Next 提示，不把用户推进 Setup 页。</p>
+  </div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div>
+      <div class="right">gpt-5.6-terra · medium &nbsp; <span class="warn">⚠ Harness env unset</span> &nbsp; <span class="ok">● Codex</span> &nbsp; <span class="dim">○ No Case</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="warn">Next · 在当前 shell 设置 Harness 凭据，或打开 /config 写 env:NAME</div>
+      <div class="sec">Continue</div>
+      <div class="row"><span class="key">c</span><span class="desc">打开 /config</span><span class="stat warn">env unset</span></div>
+      <div class="row"><span class="key dim">i</span><span class="desc muted">导入 Codex 会话</span><span class="stat dim">可先做</span></div>
+      <div class="row"><span class="key dim">r</span><span class="desc muted">对当前 TaskCase 开跑</span><span class="stat dim">needs a TaskCase</span></div>
+      <div class="sec">Browse</div>
+      <div class="row"><span class="key dim">/</span><span class="desc">history &nbsp; 还没有本地实验</span></div>
+    </div>
+    <div class="composer">❯ <span class="ghost">/config</span></div>
+    <div class="hints"><span class="k">Enter</span> 打开 /config &nbsp; <span class="k">i</span> 仍可导入 &nbsp; <span class="k">?</span> 按键 &nbsp; <span class="k">Ctrl+C</span> 退出</div>
+  </div>
+  <p class="note">Intake 不依赖 Harness 凭据，所以导入仍然可点。开跑才被挡住。</p>
+</section>
+
+<section class="screen hidden" id="welcome-slash">
+  <div class="meta">
+    <h2>03 · Welcome 斜杠发现</h2>
+    <p>Composer 只发现本地工作流。打普通句子会提示改用 /。</p>
+  </div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div>
+      <div class="right">gpt-5.6-terra · medium &nbsp; <span class="ok">● Harness</span> &nbsp; <span class="ok">● Codex</span> &nbsp; <span class="ok">● Case</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="sec">Commands</div>
+      <div class="row pick"><span class="key">/</span><span class="desc">run &nbsp; 对当前 TaskCase 开跑</span><span class="stat ok">ready</span></div>
+      <div class="row"><span class="key">/</span><span class="desc">intake &nbsp; 导入 Codex 历史会话</span></div>
+      <div class="row"><span class="key">/</span><span class="desc">history &nbsp; 浏览本地 TaskCase 与实验</span></div>
+      <div class="row"><span class="key">/</span><span class="desc">config &nbsp; 端点、模型、密钥引用</span></div>
+      <div class="row"><span class="key">/</span><span class="desc">home &nbsp; 回到封面</span></div>
+    </div>
+    <div class="composer">❯ /r<span class="accent" style="color:var(--accent)">▌</span></div>
+    <div class="hints"><span class="k">Tab</span> 补全 /run &nbsp; <span class="k">Enter</span> 打开 Run-setup &nbsp; <span class="k">Esc</span> 清空</div>
+  </div>
+  <p class="note">若输入「帮我修登录页」：提示这是 Benchmark 工作台，请用 /intake 或 /run。</p>
+</section>
+
+<section class="screen hidden" id="settings">
+  <div class="meta">
+    <h2>04 · Settings overlay</h2>
+    <p>盖在 Welcome 上。Esc 回到封面，滚动位置还在。</p>
+  </div>
+  <div class="term">
+    <div class="dimback">
+      <div class="chrome"><div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div><div class="right">gpt-5.6-terra · medium &nbsp; <span class="ok">● Harness</span></div></div>
+      <div class="rule"></div>
+      <div class="body" style="min-height:420px">
+        <div class="sec">Continue</div>
+        <div class="row"><span class="key">↩</span><span class="desc">昨天的实验</span></div>
+      </div>
+    </div>
+    <div class="sheet">
+      <h3>Settings · Harness endpoint</h3>
+      <div class="field"><div class="label">Provider</div><div class="box">openai-compatible</div></div>
+      <div class="field"><div class="label">Base URL</div><div class="box">https://api.example.com/v1</div></div>
+      <div class="field"><div class="label">Model</div><div class="box">gpt-5.6-terra</div></div>
+      <div class="field"><div class="label">Effort</div><div class="box">medium</div></div>
+      <div class="field"><div class="label">API key reference</div><div class="box edit">env:OPENAI_API_KEY <span class="ok">✓</span></div></div>
+      <div class="dim" style="margin-top:8px">Never paste a secret here. This field stores env:NAME only.</div>
+    </div>
+    <div class="composer">❯ <span class="ghost">字段内编辑 · Esc 关闭 overlay</span></div>
+    <div class="hints"><span class="k">Enter</span> 应用当前字段 &nbsp; <span class="k">Tab</span> 下一字段 &nbsp; <span class="k">Esc</span> 关闭 · 回到 Welcome</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="intake">
+  <div class="meta">
+    <h2>05 · Intake overlay</h2>
+    <p>会话列表和检查在同一张 sheet，不再 sessions 整页换成 inspection 整页。</p>
+  </div>
+  <div class="term">
+    <div class="dimback">
+      <div class="chrome"><div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div><div class="right"><span class="ok">● Codex</span> &nbsp; <span class="dim">○ No Case</span></div></div>
+      <div class="rule"></div>
+      <div class="body" style="min-height:420px"></div>
+    </div>
+    <div class="sheet" style="width:min(860px, calc(100% - 24px))">
+      <h3>Intake · Codex sessions</h3>
+      <div class="split">
+        <div>
+          <div class="list-item pick">2d ago &nbsp; 修复这个回归缺陷并验证测试全部通过 <span class="muted">u1 a1 t0</span></div>
+          <div class="list-item">5d ago &nbsp; 重新设计插件架构 <span class="muted">u4 a12 t3</span></div>
+          <div class="list-item">1w ago &nbsp; 微信 TaskCase 对照 <span class="muted">u2 a8 t2</span></div>
+          <div class="dim" style="margin-top:8px">/ 搜索会话 · 未执行任何会话内容</div>
+        </div>
+        <div>
+          <div class="kv"><span>Project</span><span>wechat-bot</span></div>
+          <div class="kv"><span>Started</span><span>2026-08-12 21:40</span></div>
+          <div class="kv"><span>Signals</span><span>u1 a1 t0</span></div>
+          <div class="kv"><span>Cwd</span><span>C:\work\wechat-bot</span></div>
+          <div class="kv"><span>Task</span><span>修复这个回归缺陷并验证测试全部通过</span></div>
+          <div class="btnrow">Enter · 冻结为 TaskCase</div>
+        </div>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">/ 过滤会话</span></div>
+    <div class="hints"><span class="k">↑↓</span> 选会话 &nbsp; <span class="k">Enter</span> 冻结 &nbsp; <span class="k">Esc</span> 关闭</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="history">
+  <div class="meta">
+    <h2>06 · History overlay</h2>
+    <p>实验和 case 仍分两级，但是同一张 sheet 的左右栏，不再丢掉列表上下文。</p>
+  </div>
+  <div class="term">
+    <div class="dimback">
+      <div class="chrome"><div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div><div class="right"><span class="ok">● Case</span></div></div>
+      <div class="rule"></div>
+      <div class="body" style="min-height:420px"></div>
+    </div>
+    <div class="sheet" style="width:min(860px, calc(100% - 24px))">
+      <h3>History &nbsp; <span class="muted">experiments</span> · cases</h3>
+      <div class="split">
+        <div>
+          <div class="list-item pick">昨天 &nbsp; 修复登录页失败测试 <span class="ok">comparison ready</span></div>
+          <div class="list-item">3d ago &nbsp; 插件架构 <span class="warn">limit_reached</span></div>
+          <div class="list-item">1w ago &nbsp; 微信对照 <span class="danger">error</span></div>
+        </div>
+        <div>
+          <div class="kv"><span>Case</span><span>修复登录页失败测试</span></div>
+          <div class="kv"><span>Candidate</span><span>unknown · runtime resolved gpt-5.4</span></div>
+          <div class="kv"><span>Duration</span><span>18m 12s</span></div>
+          <div class="kv"><span>Token</span><span class="dim">not recorded</span></div>
+          <div class="kv"><span>Report</span><span class="tgt">report.html</span></div>
+          <div class="btnrow">Enter 选为当前 case &nbsp; o 打开报告 &nbsp; t 打开 trace</div>
+        </div>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">Tab 切到 cases</span></div>
+    <div class="hints"><span class="k">Tab</span> experiments / cases &nbsp; <span class="k">Enter</span> 选中 &nbsp; <span class="k">o</span> 报告 &nbsp; <span class="k">Esc</span> 关闭</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="runsetup">
+  <div class="meta">
+    <h2>07 · Run-setup overlay</h2>
+    <p>source / preflight / confirm 并成一张卡。缺 source 才出现路径框。一个确认键。</p>
+  </div>
+  <div class="term">
+    <div class="dimback">
+      <div class="chrome"><div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div><div class="right"><span class="ok">● Case</span></div></div>
+      <div class="rule"></div>
+      <div class="body" style="min-height:420px"></div>
+    </div>
+    <div class="sheet">
+      <h3>Prepare and start</h3>
+      <div class="kv"><span>TaskCase</span><span>修复这个回归缺陷并验证测试全部通过</span></div>
+      <div class="kv"><span>Source</span><span>C:\work\wechat-bot &nbsp; <span class="ok">baseline available</span></span></div>
+      <div class="kv"><span>Candidate</span><span>Product Pack 默认 · runtime resolved gpt-5.4</span></div>
+      <div class="kv"><span>Runtime</span><span>codex 0.4.x · isolation creatable</span></div>
+      <div class="kv"><span>Harness</span><span>gpt-5.6-terra · medium · env:OPENAI_API_KEY <span class="ok">✓</span></span></div>
+      <div class="kv"><span>Limits</span><span>target 4 turns · controller 3 calls · 30m</span></div>
+      <div class="kv"><span>Limitations</span><span class="warn">environment_partial · 部分外部状态无法恢复</span></div>
+      <div class="btnrow" style="margin-top:14px">Enter · 准备并开始</div>
+      <div class="dim">隔离副本只避免 Candidate 写入原目录。确认前排除不应被读取的敏感文件。</div>
+    </div>
+    <div class="composer">❯ <span class="ghost">确认后才创建副本并启动</span></div>
+    <div class="hints"><span class="k">Enter</span> 准备并开始 &nbsp; <span class="k">Esc</span> 取消 · 封面还在</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="help">
+  <div class="meta">
+    <h2>08 · Help overlay</h2>
+    <p>第一版 ? 是帮助，不是 50 键的 Grok palette。</p>
+  </div>
+  <div class="term">
+    <div class="dimback">
+      <div class="chrome"><div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div><div class="right"><span class="ok">● Case</span></div></div>
+      <div class="rule"></div>
+      <div class="body" style="min-height:420px"></div>
+    </div>
+    <div class="sheet">
+      <h3>Keys · Welcome</h3>
+      <div class="kv"><span>/</span><span>发现本地命令</span></div>
+      <div class="kv"><span>Enter</span><span>执行高亮动作</span></div>
+      <div class="kv"><span>r / i / c</span><span>开跑 / 导入 / 配置</span></div>
+      <div class="kv"><span>?</span><span>打开本页</span></div>
+      <div class="kv"><span>Ctrl+C</span><span>退出</span></div>
+      <div class="sec" style="margin-top:12px">Experiment 时另外有</div>
+      <div class="kv"><span>Tab</span><span>Composer ↔ Scrollback</span></div>
+      <div class="kv"><span>↑↓ / Shift+↑↓</span><span>选块 / 按 turn 跳</span></div>
+      <div class="kv"><span>o / t</span><span>original 或报告 / trace</span></div>
+      <div class="kv"><span>Ctrl+G</span><span>Actors pane</span></div>
+    </div>
+    <div class="composer">❯ <span class="ghost"></span></div>
+    <div class="hints"><span class="k">Esc</span> 关闭帮助</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="prepare">
+  <div class="meta">
+    <h2>09 · 准备中</h2>
+    <p>这一页只回答：对照还没开始，机器在搭隔离环境。四步进度 + 动画条，不列内部事件。</p>
+  </div>
+  <div class="why">小白读法：我们要把历史题目拿到一份干净副本里，再打开 Codex。做完这四步，才会出现下面的两色对话。</div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise &nbsp; 正在准备对照</div>
+      <div class="right">00:12 &nbsp; <span class="ok">● 进行中</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="job">题目 &nbsp;<b>修复这个回归缺陷并验证测试全部通过</b></div>
+      <div class="job">将在 <b class="tgt">Codex</b> 里用候选模型重做这道题，不改你原来的仓库。</div>
+      <div class="bar"><i></i></div>
+      <div class="muted">正在复制隔离工作区 · 第 2 / 4 步 · 1,248 个文件</div>
+      <div class="steps">
+        <div class="step"><span class="ok">✓</span><span>恢复历史环境</span><span class="ok">完成</span></div>
+        <div class="step on"><span class="tgt">●</span><span>复制隔离工作区</span><span class="tgt">进行中</span></div>
+        <div class="step dim"><span>○</span><span>写入候选配置</span><span>等待</span></div>
+        <div class="step dim"><span>○</span><span>启动 Codex</span><span>等待</span></div>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">准备期间不能给 Codex 打字</span></div>
+    <div class="hints"><span class="k">Ctrl+C</span> 取消这次对照 &nbsp; <span class="k">?</span> 这页在干什么</div>
+  </div>
+  <p class="note">Recovery / Isolation / Runtime start 这些内部名不出现。失败才把当前步标红，并写一句人话原因。</p>
+</section>
+
+<section class="screen hidden" id="running">
+  <div class="meta">
+    <h2>10 · 运行</h2>
+    <p>屏幕上只剩两种颜色：紫是发给 Codex 的话，青是 Codex 自己的屏幕（经统一投影）。</p>
+  </div>
+  <div class="why">小白读法：上面紫色是「我们让它做什么」，下面青色是「它在自己的产品里做了什么」。Claude Code 以后也投到同一套青卡片，不学两套界面。</div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise &nbsp; 对照进行中 · Codex</div>
+      <div class="right">04:18 &nbsp; 第 2 轮 &nbsp; <span class="ok">● 进行中</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="legend"><span><i class="in"></i>发给 Codex</span><span><i class="out"></i>Codex 的屏幕</span></div>
+      <div class="job">题目 &nbsp;<b>修复这个回归缺陷并验证测试全部通过</b></div>
+
+      <div class="voice in">
+        <div class="who">发给 Codex · 历史题目</div>
+        修复这个回归缺陷并验证测试全部通过。
+      </div>
+
+      <div class="voice out">
+        <div class="who">Codex</div>
+        <div class="tool closed">$ Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name</div>
+        <div class="tool closed">$ npm test <span class="danger">未通过</span></div>
+        测试还是红的。login 用例在 adapter 上报错，我先看调用方。
+      </div>
+
+      <div class="voice in">
+        <div class="who">发给 Codex · 续问</div>
+        测试失败是因为 adapter 仍使用旧接口。请检查共享调用方，修复根因后重新运行相关测试。
+      </div>
+
+      <div class="voice out">
+        <div class="who"><span class="pulse"></span>Codex</div>
+        <div class="tool closed">~ src/runtime/plugin.ts</div>
+        <div class="dim">正在写回复…</div>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">这里不能给 Codex 打字 · 续问由对照自动发</span></div>
+    <div class="hints"><span class="k">↑↓</span> 看上一条 &nbsp; <span class="k">Enter</span> 展开一条命令 &nbsp; <span class="k">f</span> 只看一边 &nbsp; <span class="k">Ctrl+C</span> 停止</div>
+  </div>
+  <p class="note">默认不出现：HARNESS / TARGET / seq / Decision SEND / Delivered / Worked for / Visible response +N。投递失败才用一句话标红。</p>
+</section>
+
+<section class="screen hidden" id="command">
+  <div class="meta">
+    <h2>11 · 看一条命令</h2>
+    <p>展开的仍是 Codex 屏幕里的一块，不是另一栏调试器。Claude Code 的 Bash / 编辑也会投成同一套 $ / ⎿。</p>
+  </div>
+  <div class="why">小白读法：青色块就是「当时 Codex 窗口里能看见的东西」。点开一条命令，只是把那一块看全一点。</div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise &nbsp; 对照进行中 · Codex</div>
+      <div class="right">04:18 &nbsp; 第 2 轮 &nbsp; <span class="warn">○ 在看这条</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="legend"><span><i class="in"></i>发给 Codex</span><span><i class="out"></i>Codex 的屏幕</span></div>
+
+      <div class="voice in">
+        <div class="who">发给 Codex · 历史题目</div>
+        修复这个回归缺陷并验证测试全部通过。
+      </div>
+
+      <div class="voice out pick">
+        <div class="who">Codex</div>
+        <div class="tool">
+          <div class="cmd">$ Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name</div>
+          <div class="out">⎿ Mode &nbsp; Length LastWriteTime &nbsp; &nbsp; &nbsp; &nbsp; Name</div>
+          <div class="out">⎿ -a--- &nbsp; 1200 8/13/2026 12:00:00 AM &nbsp;file-1.txt</div>
+          <div class="out">⎿ -a--- &nbsp; 1201 8/13/2026 12:00:00 AM &nbsp;file-2.txt</div>
+          <div class="dim">&nbsp;&nbsp;… 还有 20 行 &nbsp; · &nbsp; 成功</div>
+        </div>
+        <div class="tool closed">$ npm test <span class="danger">未通过</span></div>
+        测试还是红的。login 用例在 adapter 上报错，我先看调用方。
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">在看 Codex 的一条命令</span></div>
+    <div class="hints"><span class="k">Enter</span> 收起 &nbsp; <span class="k">o</span> 看全文 &nbsp; <span class="k">l</span> 回到最新</div>
+  </div>
+  <p class="note">Product Pack 只负责把 Codex / Claude Code 的原生事件译成同一套：命令、编辑、搜索、可见回复。不抄各产品自己的皮肤。</p>
+</section>
+
+<section class="screen hidden" id="decision">
+  <div class="meta">
+    <h2>12 · 续问之后</h2>
+    <p>Controller 的「决定 / 依据 / 已投递」默认不占屏幕。用户只看到又发出去的那句话，以及 Codex 接着画了什么。</p>
+  </div>
+  <div class="why">小白读法：紫色又出现，表示对照自动帮你又说了一句。你不用知道内部叫 Controller。</div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise &nbsp; 对照进行中 · Codex</div>
+      <div class="right">06:02 &nbsp; 第 3 轮 &nbsp; <span class="warn">○ 在看这条</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="legend"><span><i class="in"></i>发给 Codex</span><span><i class="out"></i>Codex 的屏幕</span></div>
+
+      <div class="voice out">
+        <div class="who">Codex</div>
+        <div class="tool closed">$ npm test <span class="danger">未通过</span></div>
+        测试还是红的。login 用例在 adapter 上报错，我先看调用方。
+      </div>
+
+      <div class="voice in pick">
+        <div class="who">发给 Codex · 续问</div>
+        测试失败是因为 adapter 仍使用旧接口。请检查共享调用方，修复根因后重新运行相关测试。
+      </div>
+
+      <div class="voice out">
+        <div class="who">Codex</div>
+        <div class="tool closed">~ src/runtime/plugin.ts</div>
+        <div class="tool closed">$ npm test <span class="danger">未通过</span></div>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">依据和投递状态按 o 才看</span></div>
+    <div class="hints"><span class="k">o</span> 这条续问的依据 &nbsp; <span class="k">↑↓</span> 上一条 / 下一条 &nbsp; <span class="k">l</span> 回到最新</div>
+  </div>
+  <p class="note">投递被 Runtime 拒绝时，紫色块下只多一句红字「没发出去」，不另开决策页。</p>
+</section>
+
+<section class="screen hidden" id="compact">
+  <div class="meta">
+    <h2>13 · 窄终端</h2>
+    <p>还是紫 / 青两块，只是更挤。不改成 T/C/H 缩写墙。</p>
+  </div>
+  <div class="term narrow">
+    <div class="chrome" style="flex-direction:column;gap:2px">
+      <div>对照 · Codex</div>
+      <div class="right">04:18 &nbsp; <span class="ok">● 进行中</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="voice in">
+        <div class="who">发给 Codex</div>
+        修复这个回归缺陷并验证测试全部通过。
+      </div>
+      <div class="voice out pick">
+        <div class="who">Codex</div>
+        <div class="cmd">$ Get-ChildItem | Format-Table…</div>
+        <div class="out">⎿ file-1.txt</div>
+        <div class="dim">… 还有 20 行</div>
+        测试还是红的。
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">两色不变</span></div>
+    <div class="hints"><span class="k">o</span> 全文 &nbsp; <span class="k">l</span> 最新</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="filter">
+  <div class="meta">
+    <h2>14 · 只看一边</h2>
+    <p>过滤是「只看发给它」或「只看它的屏幕」，不是 TARGET / CONTROLLER / HARNESS。</p>
+  </div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise &nbsp; 对照进行中 · Codex</div>
+      <div class="right">只看 Codex 的屏幕 &nbsp; 04:18</div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="legend"><span class="dim"><i class="in"></i>发给 Codex 已隐藏</span><span><i class="out"></i>Codex 的屏幕</span></div>
+      <div class="voice out">
+        <div class="who">Codex</div>
+        <div class="tool closed">$ Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name</div>
+        <div class="tool closed">$ npm test <span class="danger">未通过</span></div>
+        测试还是红的。login 用例在 adapter 上报错，我先看调用方。
+      </div>
+      <div class="voice out pick">
+        <div class="who"><span class="pulse"></span>Codex</div>
+        <div class="tool closed">~ src/runtime/plugin.ts</div>
+        <div class="dim">正在写回复…</div>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">f 在 全部 / 发给它 / 它的屏幕 之间切换</span></div>
+    <div class="hints"><span class="k">f</span> 换一边 &nbsp; <span class="k">Enter</span> 展开命令 &nbsp; <span class="k">l</span> 回到最新</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="viewer">
+  <div class="meta">
+    <h2>15 · Viewer</h2>
+    <p>全屏只读，盖住画布，不改 surface。禁止再造第三套字段列表。</p>
+  </div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div>
+      <div class="right">viewer · command original &nbsp; <span class="warn">○ browsing</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="dimback" style="min-height:300px">
+        <div class="voice out pick"><div class="who">Codex</div>$ Get-ChildItem | Format-Table …</div>
+      </div>
+      <div class="viewer">
+        <div class="muted">Codex 这条命令的原文</div>
+        <pre style="margin:8px 0 0;white-space:pre-wrap;color:#e5e7eb;font:inherit">$ Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name
+
+Mode   Length LastWriteTime         Name
+----   ------ -------------         ----
+-a---    1200 8/13/2026 12:00:00 AM file-1.txt
+-a---    1201 8/13/2026 12:00:00 AM file-2.txt
+-a---    1202 8/13/2026 12:00:00 AM file-3.txt
+…
+
+cwd     C:\Users\…\reprise-runs\run-1\isolated
+shell   C:\Program Files\PowerShell\7\pwsh.exe
+exit    0
+ms      476</pre>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">viewer 打开时不接收命令</span></div>
+    <div class="hints"><span class="k">Esc</span> 关闭 viewer · 仍停在这条命令 &nbsp; <span class="k">PgUp/PgDn</span> 滚动原文</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="actors">
+  <div class="meta">
+    <h2>16 · Actors pane</h2>
+    <p>四路心跳进可选侧栏。主河不每条 stage_changed 占一行。默认关闭，Ctrl+G 打开。</p>
+  </div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div>
+      <div class="right">04:18 &nbsp; run &nbsp; <span class="ok">● running</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="block"><span class="tgt src">TARGET</span> pwsh · npm test <span class="danger">exit 1 · 2.1s</span></div>
+      <div class="block"><span class="tgt src">TARGET</span> Visible response <span class="muted">streaming…</span></div>
+      <div class="actors">
+        <div class="muted" style="margin-bottom:6px">Actors · Ctrl+G</div>
+        <div class="actor"><div class="name hns">Recovery</div><div class="ok">done</div><div class="dim">budget unused</div></div>
+        <div class="actor"><div class="name ctl">Controller</div><div>reading latest failure</div><div class="dim">calls 1/3</div></div>
+        <div class="actor"><div class="name tgt">Target</div><div>visible response</div><div class="dim">turns 2/4 · token not recorded</div></div>
+        <div class="actor"><div class="name cmp">Comparison</div><div class="dim">waiting</div></div>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">主画布仍 follow</span></div>
+    <div class="hints"><span class="k">Ctrl+G</span> 关闭侧栏 &nbsp; <span class="k">Tab</span> 浏览画布 &nbsp; <span class="k">Ctrl+C</span> 取消</div>
+  </div>
+</section>
+
+<section class="screen hidden" id="result">
+  <div class="meta">
+    <h2>17 · 结果收束</h2>
+    <p>Comparison 是画布最后一块，不换到 Result 页。报告和 trace 仍按 o / t 打开。</p>
+  </div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div>
+      <div class="right">18:12 &nbsp; target 4/4 &nbsp; controller 3/3 &nbsp; <span class="warn">● limit_reached</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="turn">Turn 4 · Target</div>
+      <div class="voice out">
+        <div class="who">Codex</div>
+        改完 adapter 后测试仍有 2 个红。
+      </div>
+      <div class="voice out pick" style="box-shadow: inset 3px 0 0 var(--compare); background:#0f1f17">
+        <div class="who cmp">对照结论</div>
+        候选做了可见修复，但没跑完全部测试。到回合上限后对照仍已写完。
+      </div>
+      <div class="card">
+        候选完成了可见修复，但未跑完全部测试。Comparison 仍已跑完。<br>
+        <span class="dim">token not recorded · cost not estimated</span><br>
+        <span class="tgt">o 报告</span> &nbsp; <span class="tgt">t trace</span> &nbsp; <span class="muted">/home 回封面</span>
+      </div>
+    </div>
+    <div class="composer">❯ <span class="ghost">/home 或继续 /history</span></div>
+    <div class="hints"><span class="k">o</span> 打开报告 &nbsp; <span class="k">t</span> 打开 trace &nbsp; <span class="k">Esc</span> / <span class="k">/home</span> Welcome</div>
+  </div>
+  <p class="note">limit_reached 不是失败页。停止原因和 Comparison 结论分开写。</p>
+</section>
+
+<section class="screen hidden" id="error">
+  <div class="meta">
+    <h2>18 · 错误</h2>
+    <p>不再是孤立 error 页。失败是画布上的 error 卡片；必要时用阻塞 modal，Esc 仍回 Welcome。</p>
+  </div>
+  <div class="term">
+    <div class="chrome">
+      <div>Reprise v0.1.0 &nbsp; C:\work\wechat-bot</div>
+      <div class="right">00:41 &nbsp; <span class="danger">● error</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="body">
+      <div class="job">题目 &nbsp;<b>修复这个回归缺陷并验证测试全部通过</b></div>
+      <div class="bar"><i style="width:75%;animation:none;background:var(--danger)"></i></div>
+      <div class="danger">启动 Codex 失败 · 这台机器上找不到 codex</div>
+      <div class="dim" style="margin-top:8px">没有写入成功结论。隔离副本会清掉。</div>
+      <div style="margin-top:10px"><span class="tgt">t 看记录</span> &nbsp; <span class="muted">Enter 回封面</span></div>
+    </div>
+    <div class="composer">❯ <span class="ghost">/home</span></div>
+    <div class="hints"><span class="k">t</span> 打开 trace &nbsp; <span class="k">Enter</span> Welcome &nbsp; <span class="k">Ctrl+C</span> 退出</div>
+  </div>
+</section>
+</main>
+</div>
+<script>
+  const buttons = [...document.querySelectorAll('nav button')];
+  const screens = [...document.querySelectorAll('.screen')];
+  function show(id) {
+    screens.forEach((s) => s.classList.toggle('hidden', s.id !== id));
+    buttons.forEach((b) => b.classList.toggle('active', b.dataset.id === id));
+    history.replaceState(null, '', '#' + id);
+    document.querySelector('main').scrollTop = 0;
+    window.scrollTo(0, 0);
+  }
+  buttons.forEach((b) => b.addEventListener('click', () => show(b.dataset.id)));
+  const initial = location.hash.slice(1);
+  if (initial && document.getElementById(initial)) show(initial);
+  window.addEventListener('keydown', (e) => {
+    if (e.target !== document.body && e.target.tagName !== 'BODY') return;
+    const i = buttons.findIndex((b) => b.classList.contains('active'));
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); show(buttons[Math.min(buttons.length - 1, i + 1)].dataset.id); }
+    if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); show(buttons[Math.max(0, i - 1)].dataset.id); }
+  });
+</script>
+</body>
+</html>

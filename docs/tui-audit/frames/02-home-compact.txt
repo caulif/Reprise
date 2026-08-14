@@ -1,21 +1,23 @@
 Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
-gpt-5.6-terra - medium   [32m* API ready[0m  [2mo No TaskCase[0m
+gpt-5.6-terra - medium   ! Harness key missing  o Codex? ...
 ------------------------------------------------------------
-[ Welcome / Recent runs ]
-    Local commands
-   
-    /config    Configure the API connection  [32m+[0m
-    /intake    Import a Codex historical session
-    /run       Run the current TaskCase  [33mneeds a TaskCase[0m
-    /history   Browse local TaskCases and experiments
+ Last task  none selected
 
-[ Current workspace ]
-    TaskCase   none selected
-    Source     -
-    Recent     no local experiments
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a Codex session
+ c     Open /config  needs credential
 
- > Enter a task or / command...
+ Browse
+ /intake    Import a Codex historical session
+ /history   Local tasks and replays
+ /config    Endpoint, model, API key
+ /lang      Switch language
+
+ Next: add the API key in /config
+
+ > / command, or pick Continue above
  Welcome back. Use /help to see the available local
 workflows.
 ------------------------------------------------------------
- [Enter] Run command  [Tab] Complete  [?] Keys
+ [Enter] Run command  [r] Replay  [i] Import  [?] Keys

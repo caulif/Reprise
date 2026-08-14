@@ -1,5 +1,9 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   [2m○ API not configured[0m  [2m○ No TaskCase[0m
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   ○ Harness unset  ○ Codex  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-[31m ENOTDIR: not a directory, scandir 'C:\Users\15893\AppData\Local\Temp\reprise-tui-audit-FrCae6\sessions-file'[0m
+┌─ Cannot continue ────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ENOTDIR: not a directory, scandir 'TMP\sessions-file'         │
+│                                                                                                                      │
+│ Isolated Codex was not started by this screen. Enter or b returns to the previous step.                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [b] Back  [Ctrl+C] Exit
+ [Enter] Back  [b] Back  [Esc] Home

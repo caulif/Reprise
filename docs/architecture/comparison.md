@@ -128,7 +128,7 @@ type ComparisonEnvelope =
 - `failed`：Comparison 阶段自身未完成，不能伪装成证据不足。
 - `reportRef` 和 `evidenceRefs` 必须属于当前 experiment/run，并由 Host 校验存在性、ownership、privacy 和可导航性。
 
-RunOutcome、termination、模型身份、时间、token、成本和 cleanup 等事实由 Host 独立结构化持久化，不能从 Markdown 反向解析。`report.html` 只渲染一层薄外壳：caseId、候选模型、运行时刻、一行运行指标、"单次运行、非排名"标注，以及 experiment 目录下的文件入口清单；其余事实留在磁盘上，由 Agent 决定是否在正文中引用。Renderer 对 `comparison.md` 全文转义后嵌入，不重新解释结论，也不接受 Agent 产出的原始 HTML。
+RunOutcome、termination、模型身份、时间、token、成本和 cleanup 等事实由 Host 独立结构化持久化，不能从 Markdown 反向解析。`report.html` 由 Host 渲染：题头是任务一句话（case/run 降到 kicker）；接着是白名单渲染的 Comparison 正文；然后是同一套格子的基线/候选对照条（磁盘 / 结果 / 身份；基线无工作区快照时写明「仅有终稿」）；回放限制默认折叠。`html lang` 与 Host 壳文案都跟随 `initialInput` 的主要语言（现为中/英）；模型名、路径、终止码和 `sourceRootKind=` 保持原文。这与 TUI 的 `/lang` 无关。Comparison 正文应先写会改变「是否接受这次回放」的差异，不用「两次都完成了」当首句（除非确实没有结果差异）；对照表最多三行，列是「维度 | 基线 | 候选 | 是否影响使用」。Renderer 对白名单标记（`h1`–`h3`、段落、列表、加粗、斜体、行内代码、GFM 表、安全相对链接）做确定性渲染；其余文本转义。不重新解释结论，也不接受 Agent 产出的原始 HTML。`artifact:<id>` 仅在 catalog 拥有该附件时改写成相对路径。
 
 ## 6. Artifact 边界
 
@@ -145,7 +145,7 @@ baseline 与 candidate 的配对由稳定的 `artifactKey` 完成，优先使用
 查看深度分为三层：
 
 1. **运行时 TUI**：运行期间显示 Harness、Controller 与 Target 的活动时间线。Controller 可展示 Pi Agent 正常产生的可见 assistant 内容、证据读取、工具活动和最终决定；系统不依赖或承诺获取模型隐藏 reasoning。实际发送的 `send.message` 独立突出并显示 delivery 状态。Runtime 详情第一版只读。
-2. **Comparison 摘要**：运行结束后由 `report.html` 展示 `comparison.md` 正文，外加 Host 渲染的身份、运行指标与文件入口清单。
+2. **Comparison 摘要**：运行结束后由 `report.html` 先展示白名单渲染后的 `comparison.md` 正文，再展示 Host 对照条与折叠的回放限制、文件入口。
 3. **原始详情**：用户可以打开 runtime transcript、trace、artifact 和结果文件自行检查。Harness 自有格式必须可读，任意专有 artifact 不承诺深度渲染。
 
 默认折叠只影响界面投影，不影响事件和 artifact 的持久化。Comparison 不读取或重写 Controller 内部 reasoning，只使用最终输入、结束决定及公共运行事实。完整用户路径和信息层级见 [TUI 与最小用户交互规划](../product/tui.md)。

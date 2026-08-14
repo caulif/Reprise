@@ -1,6 +1,6 @@
 # Environment 子系统设计
 
-状态：当前模块设计
+状态：当前模块设计（Recovery Agent 能力模型 v2 已实施；真实模型 smoke 仍显式 opt-in）
 
 本文定义如何从历史会话证据恢复逻辑会话开始前状态、冻结可复用基线、为每个候选运行准备独立环境、采集前后事实并释放 Harness 自有资源。Recovery Agent 是独立 Agent Module，由 Environment 子系统通过内部端口调用；公共 `EnvironmentPort` 与领域关系以[架构总览](./overview.md)为准。
 
@@ -15,9 +15,9 @@
 ```text
 历史会话与本机证据
 → Environment Resolver
-→ Recovery Agent 在隔离 staging 中恢复
-→ Provider 验证 required resources
-→ 冻结 EnvironmentBaseline
+→ Recovery Agent 仅在 Harness staging 中恢复
+→ Provider 独立验证 required resources
+→ 用户确认后由 Provider 发布（publish）EnvironmentBaseline
 → 每个 CandidateRun 独立 prepareRun
 → before/after fingerprint
 → release Harness 自有运行资源
@@ -103,13 +103,11 @@ interface EnvironmentPort {
     environment: PreparedEnvironmentRef,
   ): Promise<EnvironmentFingerprint>;
 
-  release(
-    environment: PreparedEnvironmentRef,
-  ): Promise<ReleaseResult>;
+  release(environment: PreparedEnvironmentRef): Promise<ReleaseResult>;
 }
 ```
 
-`resolveBaseline` 是 Case Preparation；`prepareRun`、`fingerprint` 和 `release` 是 CandidateRun 生命周期。Orchestrator 不直接调用 `openRecovery`、`finalizeRecovery` 或 Recovery Agent 工具。
+`resolveBaseline` 是 Case Preparation；`prepareRun`、`fingerprint` 和 `release` 是 CandidateRun 生命周期。Recovery 只在 Harness staging 中进行；Provider 独立验证，且只有用户确认后才 publish recovery baseline。Orchestrator 不直接调用 Recovery Agent 工具。
 
 ## 5. 公共领域模型
 
@@ -177,11 +175,7 @@ type RecoveryMethod =
   | "readonly_bind"
   | "none";
 
-type RecoveryConfidence =
-  | "verified"
-  | "inferred"
-  | "partial"
-  | "unavailable";
+type RecoveryConfidence = "verified" | "inferred" | "partial" | "unavailable";
 
 interface EnvironmentResource {
   identity: ResourceIdentity;
@@ -262,6 +256,7 @@ interface PreparedResource {
 `EnvironmentResource` 描述冻结基线中的恢复和验证结果；`PreparedResource` 描述某次 CandidateRun 如何实际使用该资源。run 的临时目录、挂载和外部句柄不能写回 baseline。
 
 Runtime 只获得 `PreparedEnvironmentRef` 中策略允许的正常工作路径和绑定，不获得 Recovery staging、历史证据目录、用户当前工作目录或其他 CandidateRun 的副本。
+
 ### 5.5 Fingerprint 与 ChangeSet
 
 ```ts
@@ -299,9 +294,9 @@ Resolver 处理不完整证据和候选恢复路径。它先做确定性枚举�
 → 枚举 snapshot / Git object / file history / current copy
 → 建立 required resource 候选
 → 创建隔离 staging
-→ Recovery Agent 恢复并解释缺口
-→ Provider 验证
-→ 冻结或诚实降级
+→ Recovery Agent 仅在 Harness staging 中恢复并解释缺口
+→ Provider 独立验证
+→ 用户确认后 publish，或诚实降级为当前状态
 ```
 
 默认候选优先级：
@@ -319,64 +314,37 @@ Resolver 处理不完整证据和候选恢复路径。它先做确定性枚举�
 
 ## 7. Recovery Agent
 
-Environment Resolver 通过独立的 `RecoveryAgentPort` 使用 Pi 驱动的 Recovery Agent，因为真实历史状态经常需要组合 Git、文件历史、会话工具记录和任务语义。Agent 不只生成一份脆弱的恢复 DSL，而是在受限 staging 中完成恢复工作。
+Environment Resolver 通过独立的 `RecoveryAgentPort` 使用 Pi 驱动的 Recovery Agent，因为真实历史状态经常需要组合 Git、文件历史、会话工具记录和任务语义。Agent 不只生成一份脆弱的恢复 DSL，而是在 Harness 自有、未发布的 staging 副本中完成恢复工作。
 
-```ts
-interface RecoveryAgentPort {
-  recover(context: RecoveryContext): Promise<RecoveryEnvelope>;
-}
-```
+当前 Port 与其他 Agent 一致：`recover(context, tools, audit?)` 在一次 Pi tool loop 中返回结构化 `AgentInvocation<RecoveryResult>`。`RecoveryResult` 只允许 `recovered`、`partial` 或 `insufficient_evidence`；它只陈述 Agent 阶段的结论，不能设置最终 `match`、`fidelity` 或验证状态。Environment 子系统拥有调用时机、staging、验证与发布流程；Recovery Agent Module 拥有 session、prompt、Playbook 装载和恢复判断。两者不共享可变内部状态。
 
-Environment 子系统拥有调用时机、staging 和验证流程；Recovery Agent Module 拥有 session、prompt、Playbook 装载和恢复判断。两者不共享可变内部状态。
+### 7.1 内部工作空间与实际边界
 
-### 7.1 内部工作空间
+Provider 为每次恢复创建并持有下列目录，均不暴露给 Candidate Runtime：
 
-这些类型是 Environment 子系统内部实现，不暴露给 Core：
+- `recovery-staging/<recoveryId>`：从用户源目录复制出的可写工作副本；
+- `recovery-temp/<recoveryId>`：shell 的临时 `HOME` 与配置根；
+- 用户源目录：恢复前后均 fingerprint，作为只读 tripwire。
 
-```ts
-interface RecoveryWorkspace {
-  recoveryId: string;
-  baselineId: string;
-  evidenceRoot: PathRef;
-  writableRoot: PathRef;
-  network: "enabled";
-}
+工具集合为 `read_observation`、`list_dir`、`read_file`、`write_file`、`write_recovery_report` 和 `staging_shell`。其中 shell 的 cwd 固定为 staging，命令不按 Git 子命令白名单收窄：它可执行 git、解压、包管理、项目还原脚本及网络查询。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供 API key、token 或其他凭据。
 
-type RecoveryEnvelope =
-  | {
-      status: "completed" | "partial";
-      reportRef: EvidenceRef; // recovery.md
-      baselineCandidateRef?: EvidenceRef;
-      unresolvedResourceRefs: EvidenceRef[];
-    }
-  | {
-      status: "failed";
-      reportRef?: EvidenceRef;
-      errorCode: RecoveryErrorCode;
-    };
-```
+子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`list_dir`、`read_file` 和 `write_file` 对相对路径实施 containment 与符号链接检查；`write_recovery_report` 是写出面向用户的 `recovery.md` 的结构化报告通道。由于通用 shell 不是容器/VM 沙箱，cwd 与环境净化不能机械阻止恶意或失控命令尝试写 staging 外任意绝对路径；实现不把这种预防误称为强隔离。
 
-`RecoveryEnvelope.status` 只表示 Recovery Agent 阶段是否完成，不表示 baseline 已被验证，也不能设置最终 match 或 fidelity。恢复过程、依据和限制写入 `recovery.md`；资源事实、工具 trace 和 Provider 验证结果由 Host 独立结构化持久化。
-
-- `evidenceRoot` 只读，保存经过 ownership 和路径校验的历史证据；
-- `writableRoot` 由 Harness 创建，所有恢复动作限制在其中；
-- 网络默认开放且不限制访问目标或用途，Host 记录网络活动；网络开放不扩大文件与配置权限；
-- Agent 不能直接访问用户全局凭据、当前工作区或其他 run 目录。
+最终保证采用检测加回退：Provider 重扫 staging（无符号链接、预算和可重复 fingerprint）、重新 fingerprint 用户源目录，并独立复验 envelope 引用的证据。source tripwire 变化、扫描失败、证据不一致或其他验证失败都会丢弃 staging 与临时根，绝不发布半恢复结果；上层必须显式回退到当前状态 baseline 并记录警告。该机制确定性阻止已检出的源目录变化被发布为 Recovery baseline，但不能撤销已发生的源目录写入，也不能替代容器级全局写入隔离。
 
 ### 7.2 Product Recovery Playbook
 
-Recovery 是三个 Agent Module 中唯一默认读取产品专属知识的模块。每个 Product Pack 随代码适配器发布版本化 `recovery/SKILL.md`，用于说明：
+Recovery 是三个 Agent Module 中唯一默认读取产品专属知识的模块。每个 Product Pack 随代码适配器发布版本化 `recovery/SKILL.md`，并以 `RecoveryContext.playbook` 的结构化 context 注入，**不拼接到 system prompt**。baseline provenance 记录 Product Pack、Playbook version 与内容 hash。
+
+Playbook 用于说明：
 
 - 产品历史数据及关联 artifact 的语义；
 - 哪些 session、tool call、patch、command 和 result 对恢复有价值；
 - 如何识别 cwd、workspace、逻辑会话起点和文件 preimage；
-- 推荐的调查与恢复顺序；
-- 数据截断、压缩、脱敏及版本差异；
+- 推荐的调查与恢复顺序，以及数据截断、脱敏和版本差异；
 - 哪些线索只能作为推断，不能作为已验证事实。
 
-SessionSourceAdapter 负责确定性发现当前设备上的实际路径、解析已知格式并建立受保护引用；Playbook 负责告诉 Agent 这些证据意味着什么、如何组合使用。能稳定编码的解析规则不能只写在 Playbook 中。Playbook 只提供知识，不能扩大 Recovery Agent 的工具、网络、路径或凭据权限。
-
-baseline provenance 记录 Recovery 的 `ResolvedAgentConfig`、Product Pack 版本、Playbook 版本和内容 hash。找不到匹配版本时可以继续探索性恢复，但必须把知识不匹配计入 fidelity 原因。
+SessionSourceAdapter 负责确定性发现本机实际路径、解析已知格式并建立受保护引用；Playbook 负责告诉 Agent 这些证据意味着什么、如何组合使用。稳定的解析规则不得只写在 Playbook 中。Playbook 不能扩大注册工具、网络、路径或凭据权限；找不到匹配版本可以继续探索性恢复，但必须把知识不匹配计入 fidelity 原因。
 
 ### 7.3 Agent 能做什么
 
@@ -392,19 +360,18 @@ baseline provenance 记录 Recovery 的 `ResolvedAgentConfig`、Product Pack 版
 
 它不能自行把 `assumed` 提升为 `verified`，也不能决定最终 `match`。这些由 Provider 根据事实验证。
 
-### 7.4 Provider 验证
+### 7.4 Provider 验证与用户闸门
 
-Recovery Agent 提交结果后，Provider 至少验证：
+Recovery Agent 返回后，Provider 至少验证：
 
-- 所有路径位于 staging 或受允许的 evidence root；
-- 引用的 Git object、file backup 和 artifact 确实存在；
-- hash、文件类型和路径映射一致；
-- required resource 状态有证据支持；
-- staging 没有越权链接、挂载或意外外部写入；
-- 最终 fingerprint 可重复读取；
-- unresolved resource 正确保留而不是被忽略。
+- envelope 状态、`recovery.md` 要求及 `recovered` 与 unresolved/evidence 的一致性；
+- 引用的 Git object、file backup、artifact 和 hash 是否对应已冻结的事实；
+- 用户源目录 tripwire 在恢复前后是否一致；
+- staging 重扫后是否没有符号链接、是否符合 snapshot 预算、且 fingerprint 可重复读取；
+- `insufficient_evidence` 是否保持 staging 与源 capture 一致；
+- unresolved 是否作为事实保留而非被忽略。
 
-通过验证后，staging 被逻辑冻结为 canonical baseline。冻结表示所有权和写权限约束，不依赖 Windows 只读属性；Candidate Runtime 永远只得到 `prepareRun` 产生的副本。
+验证时会读取报告并从 staging 移除 `recovery.md` 与临时 HOME，使它们不成为 Candidate 可见输入。通过后 staging 只形成待确认的 recovery preview；用户确认后才由 Provider publish 为 canonical baseline。冻结表示 Provider 所有权和写权限约束，不依赖 Windows 只读属性；Candidate Runtime 永远只得到 `prepareRun` 产生的副本。用户拒绝、验证失败或证据不足时不得发布半恢复 staging，而是使用诚实的当前状态路径并保留 warning/验证记录。
 
 ## 8. prepareRun
 
@@ -447,7 +414,7 @@ Harness 永远不把用户当前工作目录作为 CandidateRun 的 root。当�
 
 - 有 Git commit，但历史未提交文件缺失；
 - 有当前目录和部分 preimage，只能覆盖已知文件；
-- shell 命令说明发生过变更，但没有变更前内容；
+- 历史 shell 事件说明发生过变更，但没有变更前内容；
 - 依赖版本、生成物或应用状态只能近似重建。
 
 ### 9.3 无法可靠恢复
@@ -514,19 +481,19 @@ release 必须按 run ID 幂等。`ReleaseResult` 只是 Environment 资源的�
 + 操作是否幂等
 ```
 
-| 操作 | 中断处理 |
-|---|---|
-| 读取证据、inspect、fingerprint | 可重试 |
-| 创建 staging/run 目录 | 使用稳定 ID 和 manifest，核查后重试 |
-| checkout/copy/file restore | 只在 staging；核查目标 fingerprint 后继续或重建 staging |
-| Recovery Agent 调用中断 | 不信任未提交声明；保留 staging 供核查，可重新调用 |
-| baseline 验证完成但响应丢失 | 读取验证 manifest 和 fingerprint，不重复恢复 |
-| prepareRun 响应丢失 | 按 run ID 核查副本与 manifest，不盲目再 copy |
-| after fingerprint 中断 | 只读重试 |
-| release 中断 | 对本 run 资源幂等重试 |
-| 外部副作用状态未知 | 不重放、不回滚，记录并结束 |
+| 操作                           | 中断处理                                                   |
+| ------------------------------ | ---------------------------------------------------------- |
+| 读取证据、inspect、fingerprint | 可重试                                                     |
+| 创建 staging/run 目录          | 使用稳定 ID 和 manifest，核查后重试                        |
+| checkout/copy/file restore     | 只在 staging；核查目标 fingerprint 后继续或重建 staging    |
+| Recovery Agent 调用中断        | 不信任未提交声明；丢弃 staging 与临时 HOME，再从源重新建立 |
+| baseline 验证完成但响应丢失    | 读取验证 manifest 和 fingerprint，不重复恢复               |
+| prepareRun 响应丢失            | 按 run ID 核查副本与 manifest，不盲目再 copy               |
+| after fingerprint 中断         | 只读重试                                                   |
+| release 中断                   | 对本 run 资源幂等重试                                      |
+| 外部副作用状态未知             | 不重放、不回滚，记录并结束                                 |
 
-Recovery staging 中断后可以保留为诊断材料，但不能被 Candidate Runtime 当作已验证 baseline。只有 Provider 验证事实已持久化后才能提升。
+Recovery Agent 调用、证据验证或 source tripwire 任一阶段中断/失败后，当前 Provider 会丢弃 staging 与临时 HOME；审计与验证事实留在 experiment artifacts 中，但 Candidate Runtime 绝不能把这类残留当作已验证 baseline。只有 Provider 验证完成且用户确认后才能提升。
 
 ## 13. 外部资源与 observational mode
 
@@ -587,51 +554,26 @@ LocalWorkspaceProvider
 
 ## 15. 安全策略
 
-```ts
-interface EnvironmentPolicy {
-  allowedEvidenceRoots: PathRef[];
-  experimentRoot: PathRef;
-  network: "disabled" | "scoped";
-  allowedHosts?: string[];
-  externalWrites: "deny" | "explicit";
-  symlinks: "deny" | "within_root";
-  retainFailedRecovery: boolean;
-  retainRunWorkspace: boolean;
-}
-```
+通用 `EnvironmentPolicy` 仍约束 evidence root、Harness owned experiment root、符号链接和普通 run 的外部写入；Recovery v2 的通用 shell 不再把网络或 Git 子命令编码为 `EnvironmentPolicy` 白名单。它的实际边界由 §7.1 的 Provider-owned staging、净化子进程环境、临时 HOME、工具审计、staging 重扫与 source tripwire 共同实现。
 
 实现要求：
 
-- 所有输入路径先解析为绝对规范路径并检查包含关系；
-- 不跟随逃逸 experiment root 的 symlink/junction；
-- copy、fork、release 只针对 manifest 中具有稳定 ownership 的目标；
-- 不把环境变量、凭据文件或用户全局配置自动复制进 baseline；
-- Git hooks、安装脚本和恢复 shell 默认不能访问网络或用户目录；
-- artifact 和 manifest 中的路径对报告使用逻辑引用，不暴露不必要的绝对路径；
-- 错误记录资源 ID、operation ID 和安全的诊断信息，不记录密钥。
+- 所有结构化工具输入路径先解析为相对 staging 路径并检查包含关系，不跟随符号链接/junction；
+- copy、fork、release、discard 只针对 Provider 拥有且稳定记录的目标；
+- 不把环境变量、凭据文件或用户全局配置自动复制进 baseline，也不向 Recovery 子进程传入 API key、token 或全局 Git config；
+- `staging_shell` 的 cwd 固定为 staging，网络默认开放；它不是容器级全局写入沙箱，因此 Provider 必须在完成后验证用户源 tripwire，并在失败时丢弃 staging；
+- artifact、报告和事件使用逻辑引用，不暴露不必要的绝对路径；
+- 错误记录资源 ID、operation ID 和安全诊断信息，不记录密钥。
 
 ## 16. Trace 事件
 
-Environment 子系统至少产生：
-
-```text
-environment.evidence_inspected
-environment.recovery_started
-environment.recovery_completed | environment.recovery_failed
-environment.baseline_validated
-environment.baseline_frozen
-environment.run_prepared
-environment.fingerprint_captured | environment.fingerprint_failed
-environment.release_completed | environment.release_failed
-```
-
-事件使用架构总览的 `TraceEvent` envelope。恢复 Agent 的原始输入输出、Git diff、长清单和 fingerprint detail 使用 artifact 引用，不扩张公共事件字段。
+Recovery orchestration 当前持久化 `recovery.started`、`recovery.completed`、`recovery.warning`，以及每次工具调用的 `agent.tool_called` / `agent.tool_completed` / `agent.tool_failed`。验证失败另写 `recovery-validation.json`；Agent 原始信封写 `recovery.json`，报告作为 `recovery-md` artifact 提交。普通 Environment 生命周期仍记录自己的 baseline/run/fingerprint/release 事实；这些事件不得让 Agent 自行声明 baseline 已验证或已发布。
 
 ## 17. 模块验收条件
 
 - 同一个 baseline 可以为两个 CandidateRun 生成互不影响的可写副本；
 - Runtime 只能看到本 run 的 PreparedEnvironment；
-- Recovery Agent 不能写用户原目录或 evidence root；
+- 结构化工具拒绝写用户原目录或 evidence root；Recovery 的 source tripwire 发现所选用户源目录被改动时，Provider 丢弃 staging 并拒绝接受恢复结果；
 - Provider 能拒绝 Agent 声称已恢复但证据不成立的 required resource；
 - baseline 不可恢复时仍能生成包含具体缺口的 partial/observational 结果；
 - before/after fingerprint 可以生成 ChangeSet 并供 Controller、报告读取；

@@ -286,7 +286,12 @@ finished 后的 late event 不能改写 RunOutcome
 
 只有 `cleanup.status` 为 `incomplete` 或 `unknown` 时才突出清理警告。具体 failure code、原生错误和 evidence 默认进入诊断详情，而不是占据比较报告主体。
 
-## 10. 验收条件
+## 10. 持久化记录字段
+
+<!-- BEGIN GENERATED record-fields (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
+<!-- END GENERATED record-fields -->
+
+## 11. 验收条件
 
 - 生命周期状态、任务判断、终止原因、fidelity 和 cleanup 不混用；
 - Runtime turn 完成不会自动变成任务完成；

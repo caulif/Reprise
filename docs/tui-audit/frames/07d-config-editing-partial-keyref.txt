@@ -1,0 +1,18 @@
+Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
+gpt-5.6-terra · medium   ⚠ Harness env unset  ○ Codex  ○ No task
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a Codex session
+
+┌─ Editing API key ────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Current  env:OPENAI_API_KEY  ✓                                                                                       │
+│                                                                                                                      │
+│ ❯ e▌                                                                                                                 │
+│ Saved in .reprise/harness-model.json (gitignored). env:NAME still works.                                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Editing API key. Type to change the visible value. Enter applies it. Esc keeps the previous value.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Enter] Apply  [Ctrl+U] Clear  [Esc] Keep previous

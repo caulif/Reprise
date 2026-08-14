@@ -206,7 +206,12 @@ Claude Code 的独立 CLI 边界允许 Product Pack 负责原生 session、当�
 - 当前工作目录从未被候选 Runtime 原地使用；
 - schema 不兼容时保留原数据并给出 `unsupported_schema`。
 
-## 12. 明确不做
+## 12. 事件信封字段
+
+<!-- BEGIN GENERATED event-catalog (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
+<!-- END GENERATED event-catalog -->
+
+## 13. 明确不做
 
 - SQLite 或通用事件溯源框架；
 - 分布式消息队列和工作流引擎；
