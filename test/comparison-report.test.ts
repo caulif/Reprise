@@ -13,10 +13,8 @@ function comparison(): ComparisonResult { return { status: 'completed', reportPa
 
 test('report wraps the agent narrative in a deterministic shell of identity, metrics and file entries', () => {
   const html = renderComparisonReport(buildComparisonProjection({ taskCase: taskCase(), runs: [runRecord()], comparison: comparison(), comparisonNarrative: '# Summary\nAgent-authored body <script>alert(1)</script>.', inspections: [{ runId: 'run-1', finalMessage: 'Candidate finished.', changedPaths: ['src/report.ts'], runtimeGeneratedPaths: [], commands: ['npm test'], rejectedApprovals: 1, turns: 2, wallClockMs: 42, tokenCount: 128 }], artifacts: [{ ref: { artifactId: 'output-1', experimentId: 'experiment-1', runId: 'run-1' }, kind: 'image', mediaType: 'image/png', byteLength: 12 }] }));
-  assert.match(html, /Reprise comparison · case-1 · run-1/);
-  assert.match(html, /test-model · started 2026-08-10T00:00:00\.000Z/);
-  assert.match(html, /Turns: 2 · Wall-clock: 42 ms · Changed files: 1 · Tokens: 128/);
-  assert.match(html, /Single run; results are affected by randomness\. This report is not a ranking\./);
+  assert.match(html, /Reprise comparison/);
+  assert.match(html, /test-model · 2 turns · 42 ms · 128 tokens · Not a ranking/);
   assert.match(html, /<h1>Create /);
   assert.doesNotMatch(html, /<h1>case-1<\/h1>/);
   assert.match(html, /<h1>Summary<\/h1>/);
@@ -24,12 +22,10 @@ test('report wraps the agent narrative in a deterministic shell of identity, met
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /href="comparison\.md"/);
   assert.match(html, /href="\.\/runs\/run-1\/artifacts\/output-1"/);
-  assert.match(html, /side baseline/);
-  assert.match(html, /side candidate/);
-  assert.match(html, /workspace files were not captured/);
-  assert.match(html, /1 changed path recorded: src\/report\.ts/);
   assert.match(html, /src\/report\.ts/);
-  assert.ok(html.indexOf('class="narrative"') < html.indexOf('class="compare"'));
+  assert.doesNotMatch(html, /side baseline/);
+  assert.doesNotMatch(html, /Host contrast/);
+  assert.ok(html.indexOf('class="narrative"') < html.indexOf('class="files"'));
 });
 
 test('report header shows resolved model and Host-verified replay conditions', () => {
@@ -54,6 +50,7 @@ test('report header shows resolved model and Host-verified replay conditions', (
       runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1,
       replayConditions: [
         'Requested model sonnet resolved to deepseek-v4-flash; the alias is not a different model.',
+        'sourceRootKind=historical_start. The replica was copied from the historical working directory, then Host removed files written during the frozen session.',
         'The CLI catalog listed this model, and this run produced a native turn result. Listing is not the same as a successful call.',
         'permissionMode=bypassPermissions',
         'Isolation: --no-session-persistence; disallowed CronCreate, CronDelete, ScheduleWakeup, SendMessage.',
@@ -61,12 +58,14 @@ test('report header shows resolved model and Host-verified replay conditions', (
     }],
   }));
   assert.match(html, /sonnet → deepseek-v4-flash/);
-  assert.match(html, /Listing is not the same as a successful call/);
-  assert.match(html, /permissionMode=bypassPermissions/);
-  assert.match(html, /CronCreate/);
-  assert.match(html, /Controller judged the task complete/);
+  assert.match(html, /Not a ranking/);
   assert.match(html, /<details class="limits">/);
-  assert.match(html, /Replay limits/);
+  assert.match(html, /sourceRootKind=historical_start/);
+  assert.match(html, /alias is not a different model/);
+  assert.doesNotMatch(html, /Listing is not the same as a successful call/);
+  assert.doesNotMatch(html, /permissionMode=bypassPermissions/);
+  assert.doesNotMatch(html, /CronCreate/);
+  assert.doesNotMatch(html, /Controller judged the task complete/);
 });
 
 test('Chinese initialInput localizes Host chrome, stop label, and replay limits', () => {
@@ -87,16 +86,16 @@ test('Chinese initialInput localizes Host chrome, stop label, and replay limits'
     }],
   }));
   assert.match(html, /lang="zh"/);
-  assert.match(html, /Reprise 比较 · case-1 · run-1/);
-  assert.match(html, /开始于 2026-08-10T00:00:00\.000Z/);
-  assert.match(html, /单次运行；结果受随机性影响。本报告不是排名。/);
-  assert.match(html, /宿主对照/);
-  assert.match(html, /仅有终稿；未采集工作区文件。/);
-  assert.match(html, /冻结的历史会话/);
+  assert.match(html, /Reprise 比较/);
+  assert.match(html, /test-model · 1 回合 · 不是排名/);
   assert.match(html, /回放限制/);
-  assert.match(html, /判定任务已完成/);
-  assert.match(html, /列入目录不等于调用成功/);
   assert.match(html, /sourceRootKind=historical_start/);
+  assert.match(html, /解析为 deepseek-v4-flash/);
+  assert.doesNotMatch(html, /开始于 /);
+  assert.doesNotMatch(html, /宿主对照/);
+  assert.doesNotMatch(html, /仅有终稿/);
+  assert.doesNotMatch(html, /判定任务已完成/);
+  assert.doesNotMatch(html, /列入目录不等于调用成功/);
   assert.doesNotMatch(html, /Host contrast/);
   assert.doesNotMatch(html, /Replay limits/);
 });
@@ -106,7 +105,7 @@ test('report header distinguishes satisfied, other controller stop, and safety-l
     taskCase: taskCase(),
     runs: [{ ...runRecord(), outcome: { ...runRecord().outcome, termination } }],
   }));
-  assert.match(htmlOf({ kind: 'completed', code: 'completed.controller_satisfied', initiatedBy: 'controller' }), /Controller judged the task complete/);
+  assert.doesNotMatch(htmlOf({ kind: 'completed', code: 'completed.controller_satisfied', initiatedBy: 'controller' }), /Controller judged the task complete/);
   assert.match(htmlOf({ kind: 'completed', code: 'completed.controller_no_further_value', initiatedBy: 'controller' }), /Controller stopped the run/);
   assert.doesNotMatch(htmlOf({ kind: 'completed', code: 'completed.controller_no_further_value', initiatedBy: 'controller' }), /judged the task complete/);
   assert.match(htmlOf({ kind: 'limit_reached', code: 'limit.controller_calls', initiatedBy: 'harness' }), /Safety limit stopped the run/);
@@ -188,7 +187,7 @@ test('report falls back to a complete shell without an Agent narrative and re-re
   const input = { taskCase: taskCase(), runs: [runRecord()] };
   const html = renderComparisonReport(buildComparisonProjection(input));
   assert.match(html, /No validated comparison narrative is available/);
-  assert.match(html, /Changed files: 0|Trace events 3-8/);
+  assert.match(html, /Not a ranking/);
   assert.match(html, /output-1/);
   assert.equal(html, renderComparisonReport(buildComparisonProjection(input)));
 });
