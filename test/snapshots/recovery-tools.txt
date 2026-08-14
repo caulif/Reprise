@@ -1,0 +1,102 @@
+[
+  {
+    "name": "list_dir",
+    "description": "List a bounded directory within staging. Paths must be relative.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "maxLength": 512,
+          "type": "string"
+        },
+        "depth": {
+          "minimum": 0,
+          "maximum": 4,
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "name": "read_file",
+    "description": "Read a bounded byte range from a regular staging file.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "offset": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxBytes": {
+          "minimum": 1,
+          "maximum": 262144,
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "name": "write_file",
+    "description": "Write UTF-8 text to one explicit regular file in staging.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "path",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 262144,
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "staging_shell",
+    "description": "Run one shell command with cwd locked to staging. Network is open; credentials and global configuration are not provided.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "minLength": 1,
+          "maxLength": 32768,
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "write_recovery_report",
+    "description": "Write the final recovery.md report to the staging report sink.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "content"
+      ],
+      "properties": {
+        "content": {
+          "minLength": 1,
+          "maxLength": 262144,
+          "type": "string"
+        }
+      }
+    }
+  }
+]

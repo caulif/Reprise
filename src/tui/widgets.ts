@@ -1,6 +1,6 @@
 import { visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { CandidateRunState } from '../core/schema.js';
-import { truncateFit } from './format.js';
+import { fileLink, truncateFit } from './format.js';
 import type { Theme } from './theme.js';
 
 export type Column = { readonly key: string; readonly width?: number; readonly flex?: number };
@@ -30,11 +30,6 @@ export function panel(theme: Theme, title: string, body: readonly string[], widt
   return [top, ...wrapped, bottom];
 }
 
-export function separator(theme: Theme, width: number): string {
-  if (!theme.framed) return theme.glyphs.h.repeat(Math.max(1, width));
-  const inner = Math.max(1, width - 2);
-  return `${theme.glyphs.teeL}${theme.glyphs.h.repeat(inner)}${theme.glyphs.teeR}`;
-}
 
 export function divider(theme: Theme, width: number): string {
   return theme.glyphs.h.repeat(Math.max(1, width));
@@ -83,6 +78,25 @@ export function table(theme: Theme, rows: readonly Row[], columns: readonly Colu
 const RAIL: readonly CandidateRunState[] = [
   'created', 'preparing', 'launching', 'awaiting_target', 'awaiting_controller', 'finalizing', 'finished',
 ];
+
+export type PreparePhase = 'check' | 'copy' | 'run' | 'compare';
+
+/** One progress line: bar plus the current phase. No step list, no status copy. */
+export function progressBar(theme: Theme, phase: PreparePhase, elapsed: string, width: number): string[] {
+  const ratio = phase === 'check' ? 0.28 : phase === 'copy' ? 0.55 : phase === 'compare' ? 0.92 : 0.82;
+  const barWidth = Math.max(10, Math.min(24, width - 18));
+  const filled = Math.max(1, Math.round(ratio * barWidth));
+  const fill = theme.framed ? '█' : '#';
+  const rest = theme.framed ? '░' : '-';
+  const bar = `[${fill.repeat(filled)}${rest.repeat(Math.max(0, barWidth - filled))}]`;
+  const label = theme.style.accent(phase);
+  const lineWidth = Math.max(1, width);
+  return [pad(truncateFit(` ${bar}  ${label}  ${elapsed}`, lineWidth, theme.glyphs.ellipsis), lineWidth, theme.glyphs.ellipsis)];
+}
+
+export function prepareRail(theme: Theme, phase: Exclude<PreparePhase, 'run' | 'compare'>, elapsed: string, width: number, _detail?: string): string[] {
+  return progressBar(theme, phase, elapsed, width);
+}
 
 export function stateRail(theme: Theme, current: CandidateRunState | undefined, width: number): string[] {
   const g = theme.glyphs;
@@ -164,9 +178,98 @@ function extendPanel(lines: readonly string[], height: number, width: number, th
   return [...lines, ...Array.from({ length: extra }, () => blank)];
 }
 
+const LEADING_PUNCT = /^[：:，。；、,.!?）)\]】»]+/u;
+const PHRASE_BREAK = new Set(['：', '，', '。', '；', '、', '>']);
+
 export function wrapBodyLine(line: string, width: number): string[] {
   if (width <= 0) return [''];
-  return wrapTextWithAnsi(line, width);
+  return line.split(/\r?\n/).flatMap((part) => {
+    const wrapped = /\u001b/.test(part) ? wrapTextWithAnsi(part, width) : wrapPreferBreaks(part, width);
+    return attachLeadingPunctuation(wrapped, width);
+  });
+}
+
+function wrapPreferBreaks(text: string, width: number): string[] {
+  if (visibleWidth(text) <= width) return [text];
+  const lines: string[] = [];
+  let rest = text;
+  while (visibleWidth(rest) > width) {
+    const prefix = takePrefix(rest, width);
+    const split = lastBreak(prefix);
+    lines.push(rest.slice(0, split));
+    rest = rest.slice(split);
+  }
+  if (rest) lines.push(rest);
+  return lines.length ? lines : [''];
+}
+
+function takePrefix(text: string, width: number): string {
+  let used = 0;
+  let end = 0;
+  for (const char of text) {
+    const next = used + visibleWidth(char);
+    if (end > 0 && next > width) break;
+    used = next;
+    end += char.length;
+  }
+  return text.slice(0, Math.max(end, 1));
+}
+
+function lastBreak(prefix: string): number {
+  const phrase = lastPhraseBreak(prefix);
+  if (phrase > 0) return phrase;
+  const path = lastPathBreak(prefix);
+  if (path > 0) return path;
+  return prefix.length;
+}
+
+function lastPhraseBreak(prefix: string): number {
+  let best = -1;
+  const arrow = prefix.lastIndexOf(' -> ');
+  if (arrow > 0) best = arrow + 4;
+  for (let index = 0; index < prefix.length; index += 1) {
+    const ch = prefix[index] ?? '';
+    if ((ch === ' ' || ch === '\t') && /^\s*$/.test(prefix.slice(index + 1))) continue;
+    if ((ch === ' ' || ch === '\t' || PHRASE_BREAK.has(ch)) && index + 1 < prefix.length) best = index + 1;
+  }
+  return best;
+}
+
+function lastPathBreak(prefix: string): number {
+  let best = -1;
+  for (let index = 0; index < prefix.length; index += 1) {
+    const ch = prefix[index];
+    if (ch === '\\' && index + 1 < prefix.length) best = index + 1;
+    if (ch === '/' && isPathSlash(prefix, index) && index + 1 < prefix.length) best = index + 1;
+  }
+  return best;
+}
+
+/** Slash is a path break, not a word like WhatsApp/WeChat. */
+function isPathSlash(text: string, index: number): boolean {
+  if (index === 0) return true;
+  const prev = text[index - 1] ?? '';
+  const next = text[index + 1] ?? '';
+  if (prev === '/' || next === '/') return true;
+  if (prev === ':' && text[index - 2] === '/') return true;
+  if (text.includes('\\') || /^[A-Za-z]:/.test(text)) return true;
+  if (/[A-Za-z0-9]/.test(prev) && /[A-Za-z0-9]/.test(next) && !text.slice(0, index).includes('/')) return false;
+  return Boolean(next);
+}
+
+function attachLeadingPunctuation(lines: readonly string[], width: number): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    const lead = out.length ? LEADING_PUNCT.exec(line)?.[0] : undefined;
+    if (lead && visibleWidth((out.at(-1) ?? '') + lead) <= width) {
+      out[out.length - 1] = `${out.at(-1) ?? ''}${lead}`;
+      const rest = line.slice(lead.length);
+      if (rest) out.push(rest);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.length ? out : [''];
 }
 
 export function kv(theme: Theme, key: string, value: string, width: number): string {
@@ -174,4 +277,35 @@ export function kv(theme: Theme, key: string, value: string, width: number): str
   const labelWidth = Math.max(12, visibleWidth(key));
   const label = pad(key, labelWidth, theme.glyphs.ellipsis);
   return ` ${label} ${value}`;
+}
+
+/** Label plus wrapped value; continuation lines indent under the value, not under a mid-glyph. */
+export function kvBlock(theme: Theme, key: string, value: string, width: number): string[] {
+  const inner = Math.max(1, width - (theme.framed ? 2 : 3));
+  const labelWidth = 12;
+  const valueWidth = Math.max(8, inner - labelWidth - 2);
+  const wrapped = wrapBodyLine(value, valueWidth);
+  const indent = ' '.repeat(labelWidth);
+  return wrapped.map((line, index) => (
+    index === 0
+      ? ` ${pad(key, labelWidth, theme.glyphs.ellipsis)} ${line}`
+      : ` ${indent} ${line}`
+  ));
+}
+
+/** Like kvBlock, but each wrapped visible segment opens the same local path. */
+export function kvLinkBlock(theme: Theme, key: string, label: string, absolutePath: string | undefined, width: number): string[] {
+  const vacant = theme.framed ? '—' : '-';
+  if (!absolutePath || !label.trim() || label === vacant) return kvBlock(theme, key, label, width);
+  const inner = Math.max(1, width - (theme.framed ? 2 : 3));
+  const labelWidth = 12;
+  const valueWidth = Math.max(8, inner - labelWidth - 2);
+  const wrapped = wrapBodyLine(label, valueWidth);
+  const indent = ' '.repeat(labelWidth);
+  return wrapped.map((line, index) => {
+    const linked = fileLink(theme.style.accent(line), absolutePath);
+    return index === 0
+      ? ` ${pad(key, labelWidth, theme.glyphs.ellipsis)} ${linked}`
+      : ` ${indent} ${linked}`;
+  });
 }

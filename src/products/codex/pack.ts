@@ -1,10 +1,15 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SAFE_ID, sha256, writeImmutable } from '../../core/identity.js';
-import type { RuntimePort } from '../../core/runtime.js';
-import type { CaseArtifactRef, TaskCase } from '../../core/schema.js';
+import type { CaseArtifactRef, CandidateSpec, TaskCase } from '../../core/schema.js';
+import type { ProductAuthStatus, ProductPack, RecoveryPlaybookDescriptor } from '../contract.js';
+import { publishFrozenCase } from '../shared/freeze.js';
+import { codexActivityTranslator } from './activity.js';
 import { CodexRuntimePort } from './runtime-port.js';
+import { codexSessionAdapter } from './sessions.js';
 
 const FIXTURE_SCHEMA = 'reprise.codex.fixture/v1';
 
@@ -39,25 +44,37 @@ export type CodexRuntimeEvent = {
   data?: unknown;
 };
 
-export type CodexPack = {
-  runtime: RuntimePort;
-  manifest: {
-    productId: 'codex';
-    packVersion: '0.1.0';
-    schemaVersion: 1;
-    sessionSchemaVersions: readonly [typeof FIXTURE_SCHEMA];
-  };
-};
+export type { RecoveryPlaybookDescriptor };
 
-export const codexProductPack: CodexPack = {
-  runtime: new CodexRuntimePort(),
+const CODEX_RECOVERY_PLAYBOOK_VERSION = 'codex-recovery/v1';
+
+function codexRecoveryPlaybook(): RecoveryPlaybookDescriptor {
+  const text = readFileSync(new URL('./recovery/SKILL.md', import.meta.url), 'utf8');
+  return { version: CODEX_RECOVERY_PLAYBOOK_VERSION, sha256: sha256(text), text };
+}
+
+const DEFAULT_CANDIDATE: CandidateSpec = { candidateId: 'codex-luna-high', productId: 'codex', requestedModel: 'gpt-5.6-luna' };
+
+export const codexProductPack: ProductPack = {
+  runtime: new CodexRuntimePort({ effort: 'high' }),
+  sessions: codexSessionAdapter,
+  activity: codexActivityTranslator,
+  recoveryPlaybook: codexRecoveryPlaybook,
+  checkAuth: checkCodexAuth,
+  defaultCandidate: () => DEFAULT_CANDIDATE,
   manifest: {
     productId: 'codex',
+    displayName: 'Codex',
     packVersion: '0.1.0',
     schemaVersion: 1,
     sessionSchemaVersions: [FIXTURE_SCHEMA],
   },
 };
+
+async function checkCodexAuth(): Promise<ProductAuthStatus> {
+  const auth = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'auth.json');
+  return { configured: existsSync(auth), provider: 'codex', source: 'auth.json' };
+}
 
 function inputPath(path: FixturePath): string {
   return path instanceof URL ? fileURLToPath(path) : path;
@@ -188,25 +205,26 @@ export async function importCodexFixture(path: FixturePath, now = new Date().toI
   return { taskCase, rawSession };
 }
 
-export async function freezeCodexFixture(path: FixturePath, root: string, now = new Date().toISOString()): Promise<{ taskCase: TaskCase; rawSession: CodexFixture }> {
+export async function freezeCodexFixture(
+  path: FixturePath,
+  root: string,
+  now = new Date().toISOString(),
+  write: typeof writeImmutable = writeImmutable,
+): Promise<{ taskCase: TaskCase; rawSession: CodexFixture }> {
   const imported = await importCodexFixture(path, now);
-  const caseDir = join(root, imported.taskCase.caseId);
-  try {
-    await mkdir(caseDir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`Case already exists: ${caseDir}`);
-    throw new Error(`Unable to create case directory ${caseDir}: ${String(error)}`);
-  }
-  await mkdir(join(caseDir, 'raw'));
-  await mkdir(join(caseDir, 'baseline-artifacts'));
-  await writeImmutable(join(caseDir, 'case.json'), `${JSON.stringify(imported.taskCase, null, 2)}
-`);
-  await writeImmutable(join(caseDir, 'raw', 'session.json'), `${JSON.stringify(imported.rawSession, null, 2)}
-`);
-  for (const artifact of imported.rawSession.artifacts.filter((item) => item.baseline === true)) {
-    await writeImmutable(join(caseDir, 'baseline-artifacts', artifact.artifactId), parseBase64(artifact.dataBase64, `artifacts.${artifact.artifactId}.dataBase64`));
-  }
-  await writeImmutable(join(caseDir, 'case.complete'), '');
+  await publishFrozenCase({
+    taskCase: imported.taskCase,
+    casesRoot: root,
+    files: [
+      { relativePath: 'raw/session.json', content: `${JSON.stringify(imported.rawSession, null, 2)}\n` },
+      ...imported.rawSession.artifacts.filter((item) => item.baseline === true).map((artifact) => ({
+        relativePath: `baseline-artifacts/${artifact.artifactId}`,
+        content: parseBase64(artifact.dataBase64, `artifacts.${artifact.artifactId}.dataBase64`),
+      })),
+    ],
+    reuseExisting: false,
+    write,
+  });
   return imported;
 }
 

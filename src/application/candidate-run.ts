@@ -148,7 +148,9 @@ export class CandidateRun {
       const settlement = await this.#waitForTurn();
       assertSettlement(settlement);
       await this.#append('runtime.turn_settled', settlement, `settlement-${identity.turnIndex}`);
-      if (settlement.status !== 'waiting_input' && settlement.status !== 'completed') return this.#finish('failed.runtime', 'failed');
+      if (settlement.status !== 'waiting_input' && settlement.status !== 'completed') {
+        return this.#finish('failed.runtime', 'failed', new Error(`Target turn settled as ${settlement.status}.`));
+      }
       this.#settledTurns += 1;
       if (this.#turns >= this.#policy.maxTargetTurns) return this.#finish('limit.target_turns', 'shutdown');
       await this.#move('awaiting_controller');
@@ -174,9 +176,9 @@ export class CandidateRun {
     const cleanup = await this.#cleanup(reason);
     const termination = terminationFor(code, cause);
     this.#outcome = { task: this.#assessment ?? assessmentFor(code, this.#settledTurns > 0, Boolean(this.#persistence?.manifest)), termination, cleanup };
-    const outcomeEvent = await this.#append('run.outcome_created', this.#outcome, 'outcome');
+    await this.#append('run.outcome_created', this.#outcome, 'outcome');
     await this.#move('finished');
-    this.#record = this.#buildRecord(outcomeEvent);
+    this.#record = this.#buildRecord();
     if (this.#record) await this.#append('run.finished', this.#record, 'finished');
     return this.#state;
   }
@@ -184,38 +186,48 @@ export class CandidateRun {
   async #cleanup(reason: RuntimeStopReason): Promise<RunOutcome['cleanup']> {
     let status: RunOutcome['cleanup']['status'] = 'complete';
     let remainingResourceIds: string[] = [];
+    const evidenceRefs: string[] = [];
+    const appendCleanup = async (type: string, payload: unknown, operationId: string): Promise<void> => {
+      const event = await this.#append(type, payload, operationId);
+      if (event) evidenceRefs.push(`event:${event.eventId}`);
+    };
     try {
       await this.#runner.stop(reason);
-      await this.#append('runtime.stop_completed', { reason }, 'runtime-stop');
+      await appendCleanup('runtime.stop_completed', { reason }, 'runtime-stop');
     } catch (error) {
       status = 'incomplete';
       remainingResourceIds = remainingResources(error);
-      await this.#append('runtime.stop_failed', { ...errorFact(error), remainingResourceIds }, 'runtime-stop-failed');
+      await appendCleanup('runtime.stop_failed', { ...errorFact(error), remainingResourceIds }, 'runtime-stop-failed');
     }
     await this.#captureArtifacts();
     if (this.#release) {
       try {
         await this.#release();
-        await this.#append('environment.release_completed', {}, 'environment-release');
+        await appendCleanup('environment.release_completed', {}, 'environment-release');
       } catch (error) {
         status = 'incomplete';
-        await this.#append('environment.release_failed', errorFact(error), 'environment-release-failed');
+        await appendCleanup('environment.release_failed', errorFact(error), 'environment-release-failed');
       }
     }
-    return { status, remainingResourceIds, evidenceRefs: [] };
+    return { status, remainingResourceIds, evidenceRefs };
   }
 
   async #waitForTurn(): Promise<TurnSettlement> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    const native = this.#runner.waitForTurn();
+    // The abandoned wait must not surface as an unhandled rejection once the race has been decided.
+    void native.catch(() => undefined);
     try {
       return await Promise.race([
-        this.#runner.waitForTurn(),
+        native,
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('turn timeout')), this.#policy.turnTimeoutMs);
+          timer = setTimeout(() => { timedOut = true; reject(new Error('turn timeout')); }, this.#policy.turnTimeoutMs);
         }),
       ]);
     } finally {
       if (timer) clearTimeout(timer);
+      if (timedOut) this.#runner.cancelWait?.('Harness stopped waiting for this turn.');
     }
   }
 
@@ -259,14 +271,10 @@ export class CandidateRun {
     this.#firstSequence ??= event.sequence;
   }
 
-  #buildRecord(outcomeEvent: RecordedEvent | undefined): RunRecord | undefined {
+  #buildRecord(): RunRecord | undefined {
     if (!this.#persistence || this.#firstSequence === undefined) return undefined;
-    const evidenceRefs = outcomeEvent ? [`event:${outcomeEvent.eventId}`] : [];
-    const outcome = evidenceRefs.length > 0 && this.#outcome
-      ? { ...this.#outcome, cleanup: { ...this.#outcome.cleanup, evidenceRefs } }
-      : this.#outcome;
+    const outcome = this.#outcome;
     if (!outcome) throw new Error('CandidateRun outcome was not created.');
-    this.#outcome = outcome;
     return {
       attempt: this.#persistence.attempt,
       ...(this.#persistence.manifest ? { manifest: this.#persistence.manifest } : {}),
@@ -316,7 +324,7 @@ function isTimeout(error: unknown): boolean {
 }
 
 function messageFact(message: UserMessage, identity: MessageIdentity): Record<string, unknown> {
-  return { messageId: message.id, clientMessageId: identity.clientMessageId, turnIndex: identity.turnIndex };
+  return { messageId: message.id, clientMessageId: identity.clientMessageId, turnIndex: identity.turnIndex, text: message.text };
 }
 
 function errorFact(error: unknown): { message: string } {
@@ -325,8 +333,10 @@ function errorFact(error: unknown): { message: string } {
 
 function remainingResources(error: unknown): string[] {
   if (!error || typeof error !== 'object' || !('remainingResourceIds' in error)) return [];
-  const value = (error as { remainingResourceIds?: unknown }).remainingResourceIds;
-  return Array.isArray(value) && value.every((id) => typeof id === 'string' && SAFE_ID.test(id)) ? [...value] : [];
+  const value: unknown = (error as { remainingResourceIds?: unknown }).remainingResourceIds;
+  if (!Array.isArray(value)) return [];
+  const ids = value.filter((id): id is string => typeof id === 'string' && SAFE_ID.test(id));
+  return ids.length === value.length ? ids : [];
 }
 
 function terminationFor(code: string, cause: unknown): Termination {

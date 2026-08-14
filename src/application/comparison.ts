@@ -23,10 +23,21 @@ export type RunInspection = {
   turns: number;
   wallClockMs?: number;
   tokenCount?: number;
+  replayConditions?: readonly string[];
 };
 
 export function buildComparisonContext(taskCase: TaskCase, runs: readonly RunRecord[], inspections: readonly RunInspection[] = []): ComparisonContext {
   assertFacts(taskCase, runs);
+  const byRunId = new Map(inspections.map((inspection) => [inspection.runId, inspection]));
+  const primary = runs[0];
+  const inspection = primary ? byRunId.get(primary.attempt.runId) : undefined;
+  const hostReplay = inspection?.replayConditions?.length && primary
+    ? {
+        sourceRootKind: kindFromConditions(inspection.replayConditions),
+        stopKind: primary.outcome.termination.code,
+        conditions: inspection.replayConditions,
+      }
+    : undefined;
   return {
     task: { caseId: taskCase.caseId, summary: taskCase.initialInput.text },
     baseline: {
@@ -35,12 +46,17 @@ export function buildComparisonContext(taskCase: TaskCase, runs: readonly RunRec
     },
     candidates: runs.map((run) => ({
       runId: run.attempt.runId,
-      summary: inspectionSummary(run, inspections.find((item) => item.runId === run.attempt.runId), taskCase.privacy.allowModelText),
+      summary: inspectionSummary(run, byRunId.get(run.attempt.runId), taskCase.privacy.allowModelText),
       evidenceRefs: runEvidence(run),
     })),
-    telemetry: runs.map((run) => ({ runId: run.attempt.runId, summary: telemetrySummary(run, inspections.find((item) => item.runId === run.attempt.runId)) })),
+    telemetry: runs.map((run) => ({ runId: run.attempt.runId, summary: telemetrySummary(run, byRunId.get(run.attempt.runId)) })),
     artifactRefs: unique(runs.flatMap((run) => run.artifactRefs.map((ref) => `artifact:${ref.artifactId}`))),
     allowModelText: taskCase.privacy.allowModelText,
+    replayScope: {
+      historical: 'TaskCase transcript, baseline.finalMessage, and baseline evidenceRefs are the frozen original session. They are not this candidate\'s actions.',
+      candidate: 'This replay is only the inspection, run record, host-trace.json, candidate-workspace-scope.json, and run events. changedPaths are files the candidate wrote after Host rewound the replica to the session start. Isolation paths are not a capability difference.',
+    },
+    ...(hostReplay ? { hostReplay } : {}),
   };
 }
 
@@ -71,6 +87,7 @@ function inspectionSummary(run: RunRecord, inspection: RunInspection | undefined
   facts.push(`turns=${inspection.turns}`, `changedFiles=${inspection.changedPaths.length}`, `commands=${inspection.commands.length}`);
   if (inspection.rejectedApprovals) facts.push(`rejectedApprovals=${inspection.rejectedApprovals}`);
   if (allowModelText && inspection.finalMessage) facts.push(`finalMessage=${inspection.finalMessage}`);
+  if (inspection.replayConditions?.length) facts.push(`hostConditions=${inspection.replayConditions.join(' | ')}`);
   return `${facts.join('; ')}.`;
 }
 
@@ -91,4 +108,9 @@ function runEvidence(run: RunRecord): string[] {
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
+}
+
+function kindFromConditions(conditions: readonly string[]): string {
+  const hit = conditions.find((item) => item.startsWith('sourceRootKind='));
+  return hit?.slice('sourceRootKind='.length).split(/[.\s]/, 1)[0] ?? 'unknown';
 }

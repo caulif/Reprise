@@ -1,37 +1,30 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
-import { SAFE_ID, sha256, writeImmutable } from '../../core/identity.js';
+import { SAFE_ID } from '../../core/identity.js';
+import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
 import type { TaskCase } from '../../core/schema.js';
+import {
+  isEligibleSession,
+  type ImportedSession,
+  type SessionDiscoveryQuery,
+  type SessionInspection,
+  type SessionMessage,
+  type SessionPrivacy,
+  type SessionRef,
+  type SessionSourceAdapter,
+  type SessionSummary,
+} from '../contract.js';
+import { freezeCase, redactText } from '../shared/freeze.js';
 
-type JsonRecord = Record<string, unknown>;
-type SessionMessage = TaskCase['transcript'][number];
-
-export type CodexSessionSummary = {
-  readonly sessionId: string;
-  readonly sourcePath: string;
-  readonly startedAt: string;
-  readonly cwd?: string;
-  readonly model?: string;
-  readonly summary?: string;
-  readonly signals: { userMessages: number; assistantMessages: number; toolCalls: number; completedTurns: number };
-};
-
-export type CodexSessionInspection = CodexSessionSummary & {
-  readonly transcript: readonly SessionMessage[];
-  readonly finalMessage?: string;
-  readonly sourceVersion?: string;
-  readonly historicalCommit?: string;
-};
-
-export type CodexSessionPrivacy = { allowModelText: boolean; allowBinary: boolean; redactions: readonly string[] };
+export type CodexSessionSummary = SessionSummary;
+export type CodexSessionInspection = SessionInspection;
+export type CodexSessionPrivacy = SessionPrivacy;
 
 /** Completed sessions with a user task and at least one assistant message or tool call. */
-export function isEligible(session: CodexSessionSummary): boolean {
-  return session.signals.completedTurns > 0 && session.signals.userMessages > 0
-    && (session.signals.assistantMessages > 0 || session.signals.toolCalls > 0);
-}
+export const isEligible = isEligibleSession;
 
 const MAX_SESSION_BYTES = 64 * 1024 * 1024;
 const GIT_COMMIT = /^[a-f0-9]{7,64}$/i;
@@ -86,7 +79,7 @@ function summaryFromBytes(sourcePath: string, bytes: Buffer): CodexSessionSummar
     any = true;
     let parsed: unknown;
     try { parsed = JSON.parse(line); } catch (error) {
-      throw new Error(`Codex session ${sourcePath} has invalid JSONL at line ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Codex session ${sourcePath} has invalid JSONL at line ${index + 1}: ${errorMessage(error)}`, { cause: error });
     }
     if (!isRecord(parsed)) throw new Error(`Codex session ${sourcePath} has invalid JSONL at line ${index + 1}: row is not an object`);
     const payload = record(parsed.payload);
@@ -114,7 +107,7 @@ function summaryFromBytes(sourcePath: string, bytes: Buffer): CodexSessionSummar
   if (!startedAt?.match(/^\d{4}-\d{2}-\d{2}T/)) throw new Error(`Codex session ${sessionId} has no valid start time.`);
   if (!userMessages) throw new Error('Codex session has no user message eligible for replay.');
   return {
-    sessionId, sourcePath, startedAt,
+    productId: 'codex', sessionId, sourcePath, startedAt,
     ...(cwd ? { cwd } : {}),
     ...(model ? { model } : {}),
     ...(summary ? { summary } : {}),
@@ -128,36 +121,59 @@ export async function inspectCodexSession(sourcePath: string): Promise<CodexSess
   return inspectionFromRows(source, parseRows(await readSession(source), source));
 }
 
+export async function importCodexSession(sourcePath: string, privacy?: SessionPrivacy): Promise<ImportedSession> {
+  const source = resolve(sourcePath);
+  const bytes = await readSession(source);
+  const raw = privacy ? redactText(bytes.toString('utf8'), privacy.redactions) : bytes.toString('utf8');
+  return importFromBytes(source, Buffer.from(raw, 'utf8'));
+}
+
 /** Freezes exactly the inspected rollout, applying caller-supplied literal redactions before any data is written. */
 export async function freezeCodexSession(input: { sourcePath: string; casesRoot: string; now: string; privacy: CodexSessionPrivacy; initialMessageId?: string }): Promise<{ taskCase: TaskCase; reused: boolean }> {
-  assertPrivacy(input.privacy);
-  const sourcePath = resolve(input.sourcePath);
-  const source = await readSession(sourcePath);
-  const redacted = redact(source.toString('utf8'), input.privacy.redactions);
-  const sourceHash = sha256(Buffer.from(redacted, 'utf8'));
-  const rows = parseRows(Buffer.from(redacted, 'utf8'), sourcePath);
-  const inspection = inspectionFromRows(sourcePath, rows);
-  if (!inspection.signals.completedTurns) throw new Error('Codex session has no completed turn and cannot become a historical TaskCase.');
-  const caseId = `case-${sourceHash.slice(0, 16)}`;
-  const taskCase = await toTaskCase(caseId, sourcePath, sourceHash, redacted, inspection, input.now, input.privacy, rows, input.initialMessageId);
-  const casesRoot = resolve(input.casesRoot);
-  const caseDir = join(casesRoot, caseId);
-  await mkdir(casesRoot, { recursive: true });
+  const imported = await importCodexSession(input.sourcePath, input.privacy);
+  if (!imported.signals.completedTurns) throw new Error('Codex session has no completed turn and cannot become a historical TaskCase.');
   try {
-    await mkdir(caseDir);
-  } catch (error: unknown) {
-    if (!isExists(error)) throw error;
-    return { taskCase: await readExistingCase(caseDir, sourceHash), reused: true };
-  }
-  try {
-    await mkdir(join(caseDir, 'raw'));
-    await writeImmutable(join(caseDir, 'case.json'), `${JSON.stringify(taskCase, null, 2)}\n`);
-    await writeImmutable(join(caseDir, 'raw', 'session.jsonl'), redacted);
-    await writeImmutable(join(caseDir, 'case.complete'), '');
-    return { taskCase, reused: false };
+    return await freezeCase(imported, input.casesRoot, input.privacy, input.now, {
+      ...(input.initialMessageId ? { initialMessageId: input.initialMessageId } : {}),
+      reuseExisting: true,
+      errorLabel: 'Codex session',
+    });
   } catch (error) {
-    throw new Error(`Codex session freeze did not complete for ${caseId}: ${error instanceof Error ? error.message : String(error)}`);
+    if (error instanceof Error && error.message.startsWith('Selected task input')) {
+      throw new Error('Selected task input is not a user message in this Codex session.', { cause: error });
+    }
+    throw error;
   }
+}
+
+export function defaultCodexSessionsRoot(): string {
+  return join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'sessions');
+}
+
+export const codexSessionAdapter: SessionSourceAdapter = {
+  get defaultRoot() { return defaultCodexSessionsRoot(); },
+  discover(query?: SessionDiscoveryQuery) {
+    return discoverCodexSessions(query?.root ?? defaultCodexSessionsRoot(), query?.limit ?? 50).then((sessions) => (
+      query?.excludeRoots?.length ? sessions.filter((session) => !excludedCwd(session.cwd, query.excludeRoots)) : sessions
+    ));
+  },
+  inspect(ref: SessionRef) {
+    if (!ref.sourcePath) throw new Error('Codex session inspect requires a sourcePath.');
+    return inspectCodexSession(ref.sourcePath);
+  },
+  import(ref: SessionRef) {
+    if (!ref.sourcePath) throw new Error('Codex session import requires a sourcePath.');
+    return importCodexSession(ref.sourcePath);
+  },
+};
+
+function excludedCwd(cwd: string | undefined, roots: readonly string[] | undefined): boolean {
+  if (!cwd || !roots?.length) return false;
+  const resolved = resolve(cwd);
+  return roots.some((root) => {
+    const base = resolve(root);
+    return resolved === base || resolved.startsWith(`${base}${sep}`);
+  });
 }
 
 async function rolloutEntries(root: string): Promise<Array<{ path: string; mtime: number; size: number }>> {
@@ -190,7 +206,7 @@ function parseRows(bytes: Buffer, sourcePath: string): JsonRecord[] {
       if (!isRecord(parsed)) throw new Error('row is not an object');
       rows.push(parsed);
     } catch (error) {
-      throw new Error(`Codex session ${sourcePath} has invalid JSONL at line ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Codex session ${sourcePath} has invalid JSONL at line ${index + 1}: ${errorMessage(error)}`, { cause: error });
     }
   }
   if (!rows.length) throw new Error(`Codex session ${sourcePath} is empty.`);
@@ -203,7 +219,7 @@ function inspectionFromRows(sourcePath: string, rows: readonly JsonRecord[]): Co
   const initial = transcript.find((message) => message.role === 'user');
   const finalMessage = [...transcript].reverse().find((message) => message.role === 'assistant')?.text;
   return {
-    sessionId: metadata.sessionId, sourcePath, startedAt: metadata.startedAt,
+    productId: 'codex', sessionId: metadata.sessionId, sourcePath, startedAt: metadata.startedAt,
     ...(metadata.cwd ? { cwd: metadata.cwd } : {}),
     ...(metadata.model ? { model: metadata.model } : {}),
     ...(initial ? { summary: compact(initial.text) } : {}),
@@ -260,13 +276,18 @@ function signalsFrom(rows: readonly JsonRecord[], transcript: readonly SessionMe
   };
 }
 
-async function toTaskCase(caseId: string, sourcePath: string, sourceHash: string, redacted: string, inspection: CodexSessionInspection, now: string, privacy: CodexSessionPrivacy, rows: readonly JsonRecord[], initialMessageId?: string): Promise<TaskCase> {
-  const initial = initialMessageId ? inspection.transcript.find((message) => message.id === initialMessageId && message.role === 'user') : inspection.transcript.find((message) => message.role === 'user');
-  if (!initial) throw new Error(initialMessageId ? 'Selected task input is not a user message in this Codex session.' : 'Codex session initial user message disappeared during freeze.');
+async function importFromBytes(sourcePath: string, bytes: Buffer): Promise<ImportedSession> {
+  const rows = parseRows(bytes, sourcePath);
+  const inspection = inspectionFromRows(sourcePath, rows);
+  const initial = inspection.transcript.find((message) => message.role === 'user');
+  if (!initial) throw new Error('Codex session initial user message disappeared during import.');
   const environment = await historicalEnvironment(inspection.cwd);
   const behavior = historicalBehavior(rows);
   return {
-    schemaVersion: 1, caseId, source: { productId: 'codex', sessionId: inspection.sessionId, sourcePath }, initialInput: initial, transcript: [...inspection.transcript], historicalEvents: [...rows],
+    source: { productId: 'codex', sessionId: inspection.sessionId, sourcePath },
+    initialInput: initial,
+    transcript: [...inspection.transcript],
+    historicalEvents: [...rows],
     baseline: { status: inspection.finalMessage ? 'available' : 'unavailable', ...(inspection.finalMessage ? { finalMessage: inspection.finalMessage } : {}), artifactRefs: [], evidenceRefs: [] },
     sourceRuntimeEvidence: { productId: 'codex', ...(inspection.sourceVersion ? { version: inspection.sourceVersion } : {}), ...(inspection.model ? { model: inspection.model } : {}), artifactRefs: [] },
     taskContext: {
@@ -276,8 +297,10 @@ async function toTaskCase(caseId: string, sourcePath: string, sourceHash: string
       historicalBehavior: behavior,
       signals: inspection.signals,
     },
-    provenance: { packVersion: 'codex-rollout-jsonl/v1', importedAt: now, sourceHash },
-    privacy: { allowModelText: privacy.allowModelText, allowBinary: privacy.allowBinary, redactions: privacy.redactions.map(() => '[REDACTED]') }, contentHash: sha256(Buffer.from(redacted, 'utf8')),
+    provenance: { packVersion: 'codex-rollout-jsonl/v1' },
+    raw: { relativePath: 'raw/session.jsonl', text: bytes.toString('utf8') },
+    diagnostics: [],
+    signals: inspection.signals,
   };
 }
 
@@ -343,20 +366,6 @@ function commitFromMetadata(payload: JsonRecord): string | undefined {
   return value && GIT_COMMIT.test(value) ? value : undefined;
 }
 
-async function readExistingCase(caseDir: string, sourceHash: string): Promise<TaskCase> {
-  try {
-    const existing = JSON.parse(await readFile(join(caseDir, 'case.json'), 'utf8')) as TaskCase;
-    if (existing.provenance.sourceHash !== sourceHash) throw new Error('existing case content does not match the source session');
-    await stat(join(caseDir, 'case.complete'));
-    return existing;
-  } catch (error) { throw new Error(`Existing case cannot be safely reused: ${error instanceof Error ? error.message : String(error)}`); }
-}
-
-function redact(value: string, redactions: readonly string[]): string { return redactions.reduce((result, secret) => result.split(secret).join('[REDACTED]'), value); }
-function assertPrivacy(privacy: CodexSessionPrivacy): void { if (typeof privacy.allowModelText !== 'boolean' || typeof privacy.allowBinary !== 'boolean' || privacy.redactions.some((item) => !item.trim())) throw new Error('Codex session privacy settings are invalid.'); }
 function compact(value: string): string { return value.replace(/\s+/g, ' ').slice(0, 160); }
-function isRecord(value: unknown): value is JsonRecord { return value !== null && typeof value === 'object' && !Array.isArray(value); }
-function record(value: unknown): JsonRecord { return isRecord(value) ? value : {}; }
-function text(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 function isMissing(error: unknown): boolean { return error instanceof Error && 'code' in error && error.code === 'ENOENT'; }
-function isExists(error: unknown): boolean { return error instanceof Error && 'code' in error && error.code === 'EEXIST'; }
+function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }

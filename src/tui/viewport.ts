@@ -1,12 +1,16 @@
 export type Viewport = { readonly width: number; readonly height?: number };
 
 export const HEADER_ROWS = 2;
-export const COMPACT_HEADER_ROWS = 3;
 export const FOOTER_ROWS = 2;
+/** Below this the chrome is trimmed to one row each so the body keeps a usable share of the viewport. */
+export const SHORT_VIEWPORT_ROWS = 16;
+/** Below this no layout leaves room for content, so the workbench asks for a resize instead. */
+export const MIN_VIEWPORT_ROWS = 8;
 
-export function headerRowCount(compact: boolean): number {
-  return compact ? COMPACT_HEADER_ROWS : HEADER_ROWS;
+export function isShortViewport(height: number | undefined): boolean {
+  return height !== undefined && height < SHORT_VIEWPORT_ROWS;
 }
+
 
 export function bodyHeight(viewport: Viewport, messageRows: number, headerRows = HEADER_ROWS): number | undefined {
   if (viewport.height === undefined) return undefined;

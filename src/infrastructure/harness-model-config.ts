@@ -1,6 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { ThinkingLevel } from '@earendil-works/pi-ai';
+import { isRecord } from '../core/json.js';
+import { writeAtomic } from '../core/identity.js';
 
 const FILE_NAME = 'harness-model.json';
 const EFFORTS = new Set<ThinkingLevel>(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
@@ -11,7 +13,7 @@ export type HarnessProvider = {
   readonly id: string;
 };
 
-/** Persisted config contains a non-secret model selection only. */
+/** Local Harness config. apiKey is stored here, like Codex auth.json. */
 export type HarnessModelConfig = V1Config | V2Config;
 
 type V2Config = {
@@ -22,8 +24,10 @@ type V2Config = {
   readonly modelId: string;
   readonly effort: ThinkingLevel;
   readonly baseUrl?: string;
-  /** Environment reference only, never an API-key value. */
+  /** Optional leftover env:NAME reference. Prefer apiKey. */
   readonly keyRef?: string;
+  /** Local file credential, same role as Codex auth.json / Claude .credentials.json. */
+  readonly apiKey?: string;
 };
 
 type V1Config = {
@@ -41,18 +45,15 @@ export async function readHarnessModelConfig(dataDir: string): Promise<HarnessMo
     return validateConfig(JSON.parse(await readFile(path, 'utf8')));
   } catch (error) {
     if (isMissing(error)) return undefined;
-    throw new Error(`Harness model configuration is invalid: ${errorMessage(error)}`);
+    throw new Error(`Harness model configuration is invalid: ${errorMessage(error)}`, { cause: error });
   }
 }
 
-/** Saves normalized v2 configuration atomically, without credentials. */
+/** Saves normalized v2 configuration atomically. apiKey stays in this local data dir. */
 export async function saveHarnessModelConfig(dataDir: string, config: HarnessModelConfig): Promise<void> {
   const value = validateConfig(config);
   const path = configPath(dataDir);
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp-${process.pid}-${Math.random().toString(16).slice(2)}`;
-  await writeFile(temporary, `${JSON.stringify(toPersistedConfig(value), null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
-  await rename(temporary, path);
+  await writeAtomic(path, `${JSON.stringify(toPersistedConfig(value), null, 2)}\n`);
 }
 
 export function defaultHarnessModelConfig(): HarnessModelConfig {
@@ -92,11 +93,20 @@ function normalizeV2(value: Record<string, unknown>): V2Config {
     throw new Error('expected provider kind/id, modelId, and supported effort');
   }
   const baseUrl = optionalBaseUrl(value.baseUrl);
-  const keyRef = value.keyRef === undefined ? undefined : optionalKeyRef(value.keyRef);
-  if (provider.kind === 'openai-compatible' && (baseUrl === undefined || keyRef === undefined)) {
-    throw new Error('openai-compatible providers require baseUrl and keyRef');
+  const credential = readCredential(value.apiKey ?? value.keyRef);
+  if (provider.kind === 'openai-compatible' && (baseUrl === undefined || (!credential.apiKey && !credential.keyRef))) {
+    throw new Error('openai-compatible providers require baseUrl and apiKey');
   }
-  return { schemaVersion: 2, provider: { kind: provider.kind, id: provider.id }, providerId: provider.id, modelId: value.modelId, effort: value.effort, ...(baseUrl === undefined ? {} : { baseUrl }), ...(keyRef === undefined ? {} : { keyRef }) };
+  return {
+    schemaVersion: 2,
+    provider: { kind: provider.kind, id: provider.id },
+    providerId: provider.id,
+    modelId: value.modelId,
+    effort: value.effort,
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(credential.keyRef ? { keyRef: credential.keyRef } : {}),
+    ...(credential.apiKey ? { apiKey: credential.apiKey } : {}),
+  };
 }
 
 function toPersistedConfig(config: V2Config): Omit<V2Config, 'providerId'> {
@@ -104,10 +114,11 @@ function toPersistedConfig(config: V2Config): Omit<V2Config, 'providerId'> {
   return persisted;
 }
 
-function optionalKeyRef(value: unknown): string | undefined {
-  if (typeof value !== 'string') throw new Error('expected keyRef in the form env:NAME or ${NAME}');
-  environmentNameForKeyRef(value);
-  return value;
+function readCredential(value: unknown): { keyRef?: string; apiKey?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== 'string' || !value.trim()) throw new Error('expected apiKey to be a non-empty string');
+  if (value.length > 8_000) throw new Error('expected apiKey to be at most 8000 characters');
+  return KEY_REF.test(value) ? { keyRef: value } : { apiKey: value };
 }
 
 function optionalBaseUrl(value: unknown): string | undefined {
@@ -130,7 +141,7 @@ export type HarnessConfigDraft = {
 };
 
 export const HARNESS_CONFIG_FIELDS = [
-  'provider type', 'provider label', 'base URL', 'model', 'effort', 'API key reference',
+  'provider type', 'provider label', 'base URL', 'model', 'effort', 'API key',
 ] as const;
 export type HarnessConfigField = typeof HARNESS_CONFIG_FIELDS[number];
 
@@ -144,7 +155,7 @@ export function draftForConfig(config: HarnessModelConfig): HarnessConfigDraft {
       modelId: config.modelId,
       effort: config.effort,
       baseUrl: config.baseUrl ?? '',
-      keyRef: config.keyRef ?? '',
+      keyRef: config.apiKey ?? config.keyRef ?? '',
     };
   }
   return {
@@ -171,7 +182,7 @@ export function configForDraft(draft: HarnessConfigDraft): HarnessModelConfig {
     modelId: draft.modelId,
     effort: draft.effort,
     baseUrl: draft.baseUrl,
-    keyRef: draft.keyRef,
+    ...readCredential(draft.keyRef),
   };
 }
 
@@ -190,14 +201,56 @@ export function setConfigField(
   if (field === 'provider label') return { ...draft, providerId: value };
   if (field === 'base URL') return { ...draft, baseUrl: value };
   if (field === 'model') return { ...draft, modelId: value };
-  if (field === 'API key reference') return { ...draft, keyRef: value };
+  if (field === 'API key') return { ...draft, keyRef: value };
   return draft;
 }
 
+export function tryEnvironmentName(value: string): string | undefined {
+  const match = KEY_REF.exec(value);
+  return match?.[1] ?? match?.[2];
+}
+
+/** True when the typed value looks like a secret, not env:NAME or a URL. */
+export function looksLikeSecretValue(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || KEY_REF.test(trimmed) || /^https?:\/\//i.test(trimmed)) return false;
+  if (/^(sk-|sk-proj-|rk-|Bearer\s)/i.test(trimmed)) return true;
+  return trimmed.length >= 32 && !/\s/.test(trimmed);
+}
+
+export function shellEnvAssignment(name: string): string {
+  return process.platform === 'win32' ? `$env:${name} = '<value>'` : `export ${name}='<value>'`;
+}
+
 export function keyRefValidity(value: string): FieldValidity {
-  if (!value) return { ok: false, display: 'required for OpenAI-compatible', reason: 'expected env:NAME' };
+  return apiKeyValidity(value);
+}
+
+export function apiKeyValidity(value: string): FieldValidity {
+  if (!value) return { ok: false, display: 'required for OpenAI-compatible', reason: 'required' };
   if (KEY_REF.test(value)) return { ok: true, display: value };
-  return { ok: false, display: '', reason: 'expected env:NAME' };
+  return { ok: true, display: maskSecret(value) };
+}
+
+export function maskSecret(value: string): string {
+  if (!value || KEY_REF.test(value)) return value;
+  if (value.length <= 8) return '•'.repeat(value.length);
+  return `${value.slice(0, 3)}…${value.slice(-4)}`;
+}
+
+export function resolveHarnessCredential(config: HarnessModelConfig, environment: NodeJS.ProcessEnv = process.env): { apiKey: string; source: string } | undefined {
+  if (config.schemaVersion === 2 && config.apiKey) return { apiKey: config.apiKey, source: 'harness-model.json' };
+  const keyRef = config.schemaVersion === 2 ? config.keyRef : undefined;
+  if (!keyRef) return undefined;
+  const name = environmentNameForKeyRef(keyRef);
+  const apiKey = environment[name];
+  return apiKey ? { apiKey, source: name } : undefined;
+}
+
+export function hasFileApiKey(config: HarnessModelConfig | HarnessConfigDraft): boolean {
+  if ('apiKey' in config && typeof config.apiKey === 'string' && config.apiKey.trim() && !KEY_REF.test(config.apiKey)) return true;
+  if ('keyRef' in config && typeof config.keyRef === 'string' && config.keyRef.trim() && !KEY_REF.test(config.keyRef)) return true;
+  return false;
 }
 
 export function baseUrlValidity(value: string): FieldValidity {
@@ -211,10 +264,6 @@ export function baseUrlValidity(value: string): FieldValidity {
   return { ok: false, display: '', reason: 'not an https URL' };
 }
 
-export function safeBaseUrlDisplay(value: string): string {
-  return baseUrlValidity(value).display;
-}
-
 /** Redacts endpoints and secret-shaped tokens from configuration errors shown in the TUI. */
 export function safeConfigError(error: unknown): string {
   return errorMessage(error)
@@ -224,6 +273,5 @@ export function safeConfigError(error: unknown): string {
 
 function isEffort(value: unknown): value is ThinkingLevel { return typeof value === 'string' && EFFORTS.has(value as ThinkingLevel); }
 function safeId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(value); }
-function isRecord(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function isMissing(error: unknown): boolean { return error instanceof Error && 'code' in error && error.code === 'ENOENT'; }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }

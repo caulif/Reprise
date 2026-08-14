@@ -1,20 +1,33 @@
-import type { CodexExperimentPreflight } from '../../application/codex-experiment.js';
+import type { CodexExperimentPreflight } from '../../application/experiment.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
-import { truncateFit, type TimelineFilter } from '../format.js';
+import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
+import { t, type Locale } from '../i18n.js';
+import { matchesCanvasQuery, matchesFilter, renderScrollback } from '../scrollback.js';
+import { caretAt } from '../text-edit.js';
 import type { Theme } from '../theme.js';
 import type { TimelineEntry } from '../timeline.js';
-import { joinColumns, kv, panel, stateRail, wrapBodyLine } from '../widgets.js';
+import { kv, pad, panel, type PreparePhase } from '../widgets.js';
 
-export type SourceModel = { readonly sourceRoot: string; readonly step: 1 | 2 | 3 };
+export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
+export type RecoveryPreviewModel = {
+  readonly status: 'recovered' | 'partial' | 'insufficient_evidence' | 'failed';
+  readonly reportText?: string;
+  readonly unresolved: readonly string[];
+  readonly changedPathCount: number;
+};
 export type PreflightModel = {
   readonly preflight: CodexExperimentPreflight;
   readonly candidate: CandidateSpec | undefined;
   readonly step: 1 | 2 | 3;
+  readonly recovery?: RecoveryPreviewModel;
+  readonly locale?: Locale;
 };
 export type ConfirmModel = PreflightModel & {
   readonly sourceRoot: string;
   readonly effort: string;
   readonly harnessModel?: string;
+  readonly policy?: RunPolicy;
+  readonly harnessAuthOk?: boolean;
 };
 export type RunningModel = {
   readonly entries: readonly TimelineEntry[];
@@ -28,6 +41,15 @@ export type RunningModel = {
   readonly calls: { readonly used: number; readonly max?: number };
   readonly detailExpanded: boolean;
   readonly policy?: RunPolicy;
+  readonly preparePhase?: PreparePhase;
+  readonly prepareDetail?: string;
+  readonly locale?: Locale;
+  readonly taskTitle?: string;
+  readonly productLabel?: string;
+  readonly finding?: boolean;
+  readonly findQuery?: string;
+  readonly findCursor?: number;
+  readonly tick?: number;
 };
 
 export function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string]): string {
@@ -41,103 +63,187 @@ export function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [stri
 }
 
 export function renderSource(theme: Theme, width: number, model: SourceModel): string[] {
-  return [
-    renderStep(theme, 1, ['Source root', 'Preflight', 'Confirm run']),
+  const locale = model.locale ?? 'en';
+  return panel(theme, t(locale, 'sourceTitle'), [
+    ` ${caretAt(model.sourceRoot, model.sourceCursor ?? model.sourceRoot.length)}`,
     '',
-    ...panel(theme, 'Source root', [` ${model.sourceRoot || '▌'}`], width),
-  ];
+    ` ${t(locale, 'sourceMissing')}`,
+  ], width);
 }
 
 export function renderPreflight(theme: Theme, width: number, model: PreflightModel): string[] {
+  const locale = model.locale ?? 'en';
   const { preflight, candidate } = model;
-  const comparison = preflight.comparisonClass ?? 'none';
+  const comparison = preflight.comparisonClass;
   return [
-    renderStep(theme, 2, ['Source root', 'Preflight', 'Confirm run']),
+    renderStep(theme, 2, [t(locale, 'sourceTitle'), 'Preflight', 'Confirm run']),
     '',
-    ...panel(theme, 'Candidate preflight', [
+    ...panel(theme, t(locale, 'preflightTitle'), [
       kv(theme, 'Candidate', `${candidate?.requestedModel ?? 'unavailable'} ${theme.glyphs.sep} runtime resolved ${preflight.resolved.resolvedModel}`, width - 2),
       kv(theme, 'Runtime', `${preflight.resolved.executable}${preflight.resolved.version ? ` ${theme.glyphs.sep} ${preflight.resolved.version}` : ''}`, width - 2),
       kv(theme, 'Baseline', `${preflight.sourceBaseline} ${theme.glyphs.sep} comparison ${comparison}`, width - 2),
+      ...(preflight.workspace ? [
+        kv(theme, 'Files', preflight.workspace.fileCount.toLocaleString(), width - 2),
+        kv(theme, 'Source size', formatBytes(preflight.workspace.totalBytes), width - 2),
+        kv(theme, 'Largest file', formatBytes(preflight.workspace.largestFileBytes), width - 2),
+      ] : []),
+      kv(theme, 'Status', preflight.workspace?.blockedReasons.length ? `blocked ${dash(theme)} ${preflight.workspace.blockedReasons.join(' | ')}` : 'runnable', width - 2),
       kv(theme, 'Limitations', preflight.limitations.length ? preflight.limitations.join(' | ') : 'none recorded', width - 2),
+      ...(preflight.contamination ? [
+        kv(theme, 'Contamination', contaminationSummary(preflight.contamination), width - 2),
+        theme.style.warn('  1 Current state   2 Recovery (uses model)'),
+      ] : []),
     ], width),
   ];
 }
 
 export function renderConfirmation(theme: Theme, width: number, model: ConfirmModel): string[] {
+  const locale = model.locale ?? 'en';
   const { preflight, candidate, sourceRoot, effort } = model;
-  const fidelity = preflight.comparisonClass ?? 'observational';
+  const fidelity = preflight.comparisonClass;
+  const recovery = model.recovery;
   return [
-    renderStep(theme, 3, ['Source root', 'Preflight', 'Confirm run']),
+    renderStep(theme, 3, [t(locale, 'sourceTitle'), 'Preflight', 'Confirm run']),
     '',
-    ...panel(theme, 'Start isolated Codex Candidate?', [
-      kv(theme, 'Candidate', `${candidate?.requestedModel ?? 'unavailable'} ${theme.glyphs.sep} ${candidate?.candidateId ?? 'isolated Codex runtime'}`, width - 2),
-      kv(theme, 'Harness agents', `${model.harnessModel ?? 'persisted Pi model'} ${theme.glyphs.sep} ${effort} ${theme.glyphs.sep} Controller, Comparison`, width - 2),
+    ...panel(theme, t(locale, 'confirmTitle'), [
+      kv(theme, 'Candidate', candidateLine(candidate), width - 2),
+      kv(theme, 'Harness agents', `${model.harnessModel ?? 'persisted Pi model'} ${theme.glyphs.sep} ${effort} ${theme.glyphs.sep} Controller, Comparison${recovery ? ', Recovery' : ''}`, width - 2),
       kv(theme, 'Fidelity', fidelity, width - 2),
+      ...(recovery ? [
+        kv(theme, 'Recovery', `${recovery.status} ${theme.glyphs.sep} ${recovery.changedPathCount} changed path(s)`, width - 2),
+        kv(theme, 'Unresolved', recovery.unresolved.length ? recovery.unresolved.join(' | ') : 'none', width - 2),
+        ...(recovery.reportText ? [theme.style.muted(`  Report preview: ${truncateFit(recovery.reportText.replaceAll(/\s+/g, ' ').trim(), Math.max(20, width - 12))}`)] : []),
+      ] : []),
+      kv(theme, 'Maximum requests', `Candidate ${model.policy?.maxTargetTurns ?? 'unavailable'} ${theme.glyphs.sep} Controller ${model.policy?.maxModelCalls ?? 'unavailable'} ${theme.glyphs.sep} Comparison 1`, width - 2),
+      kv(theme, 'Network / billing', model.harnessAuthOk === false ? `blocked ${dash(theme)} Harness credential missing` : 'yes / provider-dependent', width - 2),
       '',
-      theme.style.warn(` ${theme.glyphs.warn}  This starts a Codex process and may call your configured provider, which can cost money.`),
+      model.harnessAuthOk === false
+        ? theme.style.danger(` ${theme.glyphs.warn}  Enter will not start Codex. Add an API key in /config first.`)
+        : theme.style.warn(` ${theme.glyphs.warn}  This starts a Codex process and may call your configured provider, which can cost money.`),
       theme.style.ok(` ${theme.glyphs.ok}  Your original source, the historical session, and global Codex config are left unchanged.`),
       theme.style.ok(` ${theme.glyphs.ok}  The replay starts from the current state of ${sourceRoot || 'the selected directory'}, not the historical state.`),
+      theme.style.warn(` ${theme.glyphs.warn}  Reprise copies the selected directory; the isolated copy is not privacy sanitization.`),
+      theme.style.warn(` ${theme.glyphs.warn}  The Candidate can read copied source files. Do not continue with sensitive files you do not want it to read or send.`),
     ], width),
   ];
 }
 
-export function runningChrome(theme: Theme, width: number, model: RunningModel): string[] {
-  return [...stateRail(theme, model.currentState, width), ''];
+export function runningChrome(_theme: Theme, _width: number, model: RunningModel): string[] {
+  if (isPreparing(model)) return [];
+  return [];
 }
 
 export function runningListPanel(theme: Theme, width: number, model: RunningModel, height?: number): string[] {
-  const title = `Timeline ${theme.glyphs.sep} Filter: ${model.filter} ${model.following ? `${theme.glyphs.sep} live` : `${theme.glyphs.sep} browsing`}`;
-  const entries = model.entries;
-  const listBody = entries.length
-    ? entries.map((entry, index) => timelineRow(theme, entry, index === model.selected, width - (theme.framed ? 4 : 3)))
-    : [' Waiting for persisted events...'];
-  if (height !== undefined && entries.length) {
-    listBody.push(` ${model.selected + 1}/${entries.length}`);
-  }
-  return panel(theme, title, listBody, width);
+  return renderTimeline(theme, width, model, height);
 }
 
-export function runningDetailPanel(theme: Theme, width: number, model: RunningModel, height?: number): string[] {
-  const selected = model.entries[model.selected];
-  const detailBody = selected
-    ? detailLines(theme, selected, width - (theme.framed ? 4 : 3), height)
-    : [' Select an event to inspect its detail.'];
-  return panel(theme, 'Detail', detailBody, width);
+export function runningDetailPanel(_theme: Theme, _width: number, _model: RunningModel, _height?: number): string[] {
+  return [];
 }
 
 export function renderTimeline(theme: Theme, width: number, model: RunningModel, height?: number): string[] {
-  const dual = theme.density === 'wide';
-  const stacked = !dual && model.detailExpanded;
-  const listWidth = dual ? Math.max(40, Math.floor(width * 0.52)) : width;
-  const detailWidth = dual ? width - listWidth - 1 : width;
-  const chrome = runningChrome(theme, width, model);
-  const list = runningListPanel(theme, listWidth, model, height);
-  const detail = runningDetailPanel(theme, detailWidth, model, height);
-  if (dual) return [...chrome, ...joinColumns(list, detail, listWidth, detailWidth, 1, theme)];
-  if (stacked) return [...chrome, ...list, '', ...detail];
-  return [...chrome, ...list];
-}
-
-export function sourceHints(): readonly (readonly [string, string])[] {
-  return [['Enter', 'Preflight'], ['Backspace', 'Edit'], ['Esc', 'Home']];
-}
-
-export function preflightHints(): readonly (readonly [string, string])[] {
-  return [['Enter', 'Review run confirmation'], ['b', 'Edit source root'], ['Esc', 'Home']];
-}
-
-export function confirmHints(): readonly (readonly [string, string])[] {
-  return [['Enter', 'Start isolated Candidate'], ['b', 'Back'], ['Esc', 'Home']];
-}
-
-export function runningHints(filter: TimelineFilter, narrow: boolean): readonly (readonly [string, string])[] {
-  const next = nextFilter(filter);
-  const hints: Array<readonly [string, string]> = [
-    ['↑↓', 'Select'], ['PgUp/PgDn', 'Page'], ['l', 'Follow latest'], ['f', `Filter ${filter}>${next}`],
-    ['Ctrl+C', 'Request cancellation'], ['?', 'Keys'],
+  const locale = model.locale ?? 'en';
+  const product = model.productLabel ?? 'Codex';
+  if (isPreparing(model)) return renderPrepare(theme, width, model, locale, product);
+  const visible = model.entries.filter((entry) => matchesFilter(entry, model.filter) && matchesCanvasQuery(entry, model.findQuery ?? ''));
+  const selected = Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
+  const dimIn = model.filter === 'PRODUCT';
+  const dimOut = model.filter === 'INPUT';
+  const inMark = dimIn ? theme.style.muted(theme.glyphs.dot) : theme.style.controller(theme.glyphs.dot);
+  const outMark = dimOut ? theme.style.muted(theme.glyphs.dot) : theme.style.target(theme.glyphs.dot);
+  const inLabel = dimIn ? theme.style.muted(t(locale, 'legendIn', { product })) : t(locale, 'legendIn', { product });
+  const outLabel = dimOut ? theme.style.muted(t(locale, 'legendOut', { product })) : t(locale, 'legendOut', { product });
+  const legend = ` ${inMark} ${inLabel}   ${outMark} ${outLabel}`;
+  const task = model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : undefined;
+  const findBar = model.finding ? renderFindBar(model, locale, visible.length, selected < 0 ? 0 : selected) : [];
+  const header = [legend, ...(task ? [task] : []), ...findBar, ''];
+  const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
+  const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
+    ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
+    : renderScrollback(theme, width, visible, selected < 0 ? 0 : selected, locale, product, bodyHeight, model.tick ?? 0);
+  return [
+    ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
+    ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
   ];
-  if (narrow) hints.splice(3, 0, ['d', 'Detail']);
-  return hints;
+}
+
+function renderFindBar(model: RunningModel, locale: Locale, total: number, selected: number): string[] {
+  const query = model.findQuery ?? '';
+  const value = caretAt(query, model.findCursor ?? query.length);
+  const count = query.trim() && total === 0 ? t(locale, 'findNone') : t(locale, 'findCount', { current: total ? selected + 1 : 0, total });
+  return [` ${t(locale, 'findLabel')} ${value}  ${count}`];
+}
+
+function isPreparing(model: RunningModel): boolean {
+  return model.preparePhase === 'check' || model.preparePhase === 'copy';
+}
+
+function renderPrepare(theme: Theme, width: number, model: RunningModel, locale: Locale, product: string): string[] {
+  const step = model.preparePhase === 'copy' ? 2 : 1;
+  const detail = model.prepareDetail ? ` · ${model.prepareDetail}` : '';
+  const barWidth = Math.max(12, Math.min(36, width - 8));
+  const filled = Math.max(1, Math.round((step / 4) * barWidth));
+  const shift = Math.floor((model.tick ?? 0) / 400) % Math.max(1, filled);
+  const fill = theme.framed ? '█' : '#';
+  const glow = theme.framed ? '▓' : '#';
+  const rest = theme.framed ? '░' : '-';
+  const wave = Array.from({ length: filled }, (_, index) => (index === shift ? glow : fill)).join('');
+  const bar = theme.style.target(`[${wave}${rest.repeat(Math.max(0, barWidth - filled))}]`);
+  const barLabel = t(locale, step === 2 ? 'preparingBar' : 'checkingBar', { step, detail });
+  const marks = [
+    stepLine(theme, 1, step, t(locale, 'stepRestore'), locale),
+    stepLine(theme, 2, step, t(locale, 'stepCopy'), locale),
+    stepLine(theme, 3, step, t(locale, 'stepConfig'), locale),
+    stepLine(theme, 4, step, t(locale, 'stepStart', { product }), locale),
+  ];
+  return [
+    model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : '',
+    ` ${t(locale, 'preparingIn', { product })}`,
+    '',
+    ` ${bar}`,
+    ` ${theme.style.muted(barLabel)}`,
+    '',
+    ...marks,
+  ].filter((line, index) => line || index > 0).map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis)));
+}
+
+function stepLine(theme: Theme, index: number, current: number, label: string, locale: Locale): string {
+  if (index < current) return ` ${theme.style.ok(theme.glyphs.ok)}  ${label}  ${theme.style.ok(t(locale, 'done'))}`;
+  if (index === current) return ` ${theme.style.target(theme.glyphs.dot)}  ${label}  ${theme.style.target(t(locale, 'inProgress'))}`;
+  return theme.style.muted(` ${theme.glyphs.empty}  ${label}  ${t(locale, 'waiting')}`);
+}
+
+export function sourceHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
+  return [['Enter', t(locale, 'hintStartRun')], ['Backspace', t(locale, 'hintEdit')], ['Esc', t(locale, 'hintHome')]];
+}
+
+export function preflightHints(hasContamination = false, locale: Locale = 'en'): readonly (readonly [string, string])[] {
+  return hasContamination
+    ? [['1', t(locale, 'hintCurrentState')], ['2', t(locale, 'hintRecoveryModel')], ['b', t(locale, 'hintEditSource')], ['Esc', t(locale, 'hintHome')]]
+    : [['Enter', t(locale, 'hintReviewConfirm')], ['b', t(locale, 'hintEditSource')], ['Esc', t(locale, 'hintHome')]];
+}
+
+export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {
+  return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintBack')], ['Esc', t(locale, 'hintHome')]];
+}
+
+export function runningHints(_filter: TimelineFilter, narrow: boolean, preparing = false, locale: Locale = 'en', finding = false): readonly (readonly [string, string])[] {
+  if (preparing) return [['Ctrl+C', t(locale, 'hintCancel')], ['?', t(locale, 'hintKeys')]];
+  if (finding) {
+    return [
+      ['Esc', t(locale, 'hintClearFind')],
+      [narrow ? 'Up/Dn' : '↑↓', t(locale, 'hintSelect')],
+      ['Enter', t(locale, 'hintExpand')],
+    ];
+  }
+  return [
+    [narrow ? 'Up/Dn' : '↑↓', t(locale, 'hintSelect')],
+    ['f', t(locale, 'hintFilter')],
+    ['Ctrl+C', t(locale, 'hintStop')],
+    ['Enter', t(locale, 'hintExpand')],
+    ['o', t(locale, 'hintFull')],
+    ...(narrow ? [] : [['/', t(locale, 'hintFind')] as const, ['l', t(locale, 'hintLatest')] as const, ['?', t(locale, 'hintKeys')] as const]),
+  ];
 }
 
 export function currentRunState(entries: readonly TimelineEntry[]): CandidateRunState | undefined {
@@ -149,11 +255,16 @@ export function currentRunState(entries: readonly TimelineEntry[]): CandidateRun
   return undefined;
 }
 
-export function elapsedFrom(entries: readonly TimelineEntry[]): string {
+export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {
+  if (startedAt && startedAt > 0) return formatElapsed(now - startedAt);
   const first = entries[0]?.occurredAt;
   const last = entries.at(-1)?.occurredAt;
   if (!first || !last) return '00:00';
   const ms = Date.parse(last) - Date.parse(first);
+  return formatElapsed(ms);
+}
+
+export function formatElapsed(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '00:00';
   const total = Math.floor(ms / 1000);
   const minutes = Math.floor(total / 60);
@@ -162,61 +273,31 @@ export function elapsedFrom(entries: readonly TimelineEntry[]): string {
 }
 
 export function countTurns(entries: readonly TimelineEntry[]): number {
-  return entries.filter((entry) => (
-    entry.title.startsWith('Turn settled')
-    || entry.title.startsWith('Input submitted')
-    || entry.title.startsWith('Input to Target')
-  )).length;
+  return entries.filter((entry) => entry.title.startsWith('Turn settled')).length;
 }
 
 export function countCalls(entries: readonly TimelineEntry[]): number {
   return entries.filter((entry) => entry.title.startsWith('Decision:')).length;
 }
 
-function timelineRow(theme: Theme, entry: TimelineEntry, selected: boolean, width: number): string {
-  const marker = selected ? theme.glyphs.cursor : ' ';
-  const badge = sourceStyle(theme, entry.source)(entry.source.padEnd(11));
-  const level = entry.level === 'error' ? theme.style.danger(` ${theme.glyphs.err}`) : entry.level === 'warning' ? theme.style.warn(` ${theme.glyphs.warn}`) : '';
-  const time = theme.style.muted(entry.occurredAt.slice(11, 19) || entry.occurredAt);
-  const title = displayTitle(theme, entry.title);
-  const extra = extraLines(entry.detail);
-  const extraMark = extra > 1 ? ` +${extra}` : '';
-  return truncateFit(` ${marker} ${time}   ${badge}  ${title}${extraMark}${level}`, Math.max(8, width), theme.glyphs.ellipsis);
+/** Compact terminals are audited for wide punctuation, so prose dashes have to follow the glyph set. */
+function contaminationSummary(signals: CodexExperimentPreflight['contamination']): string {
+  if (!signals) return 'none';
+  const facts: string[] = [];
+  if (signals.git) facts.push(`git ${signals.git.relation}`);
+  if (signals.timeline) facts.push('timeline modified');
+  if (signals.baselineArtifactsPresent?.length) facts.push(`${signals.baselineArtifactsPresent.length} artifact(s)`);
+  return facts.join(' · ') || 'detected';
 }
 
-function displayTitle(theme: Theme, title: string): string {
-  const named = title.startsWith('State: ? ') ? `State: created ${title.slice('State: ? '.length)}` : title;
-  return theme.framed ? named : named.replaceAll('→', '->').replaceAll('⇄', '<>');
+function dash(theme: Theme): string {
+  return theme.framed ? '—' : '-';
 }
 
-function extraLines(detail: string | undefined): number {
-  if (!detail) return 0;
-  return detail.split(/\r?\n/).length;
-}
-
-function detailLines(theme: Theme, entry: TimelineEntry, width: number, height?: number): string[] {
-  const head = [
-    ` ${sourceStyle(theme, entry.source)(entry.source)} ${theme.glyphs.sep} ${entry.occurredAt} ${theme.glyphs.sep} seq ${entry.sequence}`,
-    ` ${displayTitle(theme, entry.title)}`,
-    '',
-  ];
-  const detail = entry.detail ? wrapBodyLine(entry.detail, Math.max(1, width)) : [' (no detail)'];
-  const lines = [...head, ...detail];
-  if (height === undefined) return lines;
-  const inner = Math.max(1, height - 6);
-  if (lines.length <= inner) return lines;
-  return [...lines.slice(0, inner), ` ${lines.length} ${theme.glyphs.ellipsis}`];
-}
-
-function sourceStyle(theme: Theme, source: TimelineEntry['source']) {
-  if (source === 'HARNESS') return theme.style.harness;
-  if (source === 'CONTROLLER') return theme.style.controller;
-  return theme.style.target;
-}
-
-function nextFilter(filter: TimelineFilter): TimelineFilter {
-  const order: readonly TimelineFilter[] = ['ALL', 'TARGET', 'CONTROLLER', 'HARNESS'];
-  return order[(order.indexOf(filter) + 1) % order.length] ?? 'ALL';
+function candidateLine(candidate: CandidateSpec | undefined): string {
+  const model = candidate?.requestedModel ?? 'unavailable';
+  const effort = candidate?.candidateId?.match(/-(minimal|low|medium|high|xhigh|max)$/)?.[1];
+  return effort ? `${model} · ${effort} · isolated Codex` : `${model} · isolated Codex`;
 }
 
 function isRunState(value: string): value is CandidateRunState {

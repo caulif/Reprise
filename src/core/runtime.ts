@@ -22,13 +22,23 @@ export type AvailableRuntime = {
   executable: string;
   version?: string;
 };
+export type RuntimeAvailabilityStatus = 'available' | 'not_installed' | 'unsupported_platform';
+export type RuntimeAvailability = {
+  productId: string;
+  executable?: string;
+  observedVersion?: string;
+  status: RuntimeAvailabilityStatus;
+  observedAt: string;
+  installHint?: string;
+};
 export type RuntimeRequest = {
   productId: string;
   requestedModel: string;
 };
 export type ResolvedRuntime = AvailableRuntime & {
   requestedModel: string;
-  resolvedModel: string | 'unknown';
+  /** The model the runtime actually reported, or 'unknown' when it never named one. */
+  resolvedModel: string;
 };
 export type PreparedRuntimeEnvironment = { environmentId: string; runId: string; root: string };
 export type TargetEvent = { type: string; occurredAt: string; payload: unknown };
@@ -47,6 +57,7 @@ export type TargetStatus = 'starting' | 'running' | 'stopped' | 'unknown';
 export interface RuntimePort {
   readonly id: string;
   inspectAvailable(): Promise<readonly AvailableRuntime[]>;
+  inspectAvailability(): Promise<readonly RuntimeAvailability[]>;
   resolve(request: RuntimeRequest): Promise<ResolvedRuntime>;
   /** Confirms that the requested model is available to this runtime now. */
   validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime>;
@@ -58,6 +69,11 @@ export interface TargetRunner {
   start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
   send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
   waitForTurn(): Promise<TurnSettlement>;
+  /**
+   * Releases an in-flight waitForTurn() after the Harness stops waiting. Without it a late
+   * settlement would resolve the abandoned wait and leak into the next turn.
+   */
+  cancelWait?(reason: string): void;
   /** CandidateRun gives native RPC calls the same limit as its turn wait. */
   setRequestTimeout(milliseconds: number): void;
   inspect(): Promise<TargetStatus>;

@@ -3,13 +3,32 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runCli, type CliIo } from '../src/cli/main.js';
+import { assertSupportedNodeVersion, runCli, type CliIo } from '../src/cli/main.js';
 
 function ioCapture(): { io: CliIo; stdout: string[]; stderr: string[] } {
   const stdout: string[] = [];
   const stderr: string[] = [];
   return { io: { stdout: (message) => stdout.push(message), stderr: (message) => stderr.push(message) }, stdout, stderr };
 }
+
+
+test('accepts the supported minimum Node.js version', () => {
+  assert.doesNotThrow(() => assertSupportedNodeVersion('22.19.0'));
+  assert.throws(() => assertSupportedNodeVersion('22.18.9'), /requires Node\.js >= 22\.19\.0/);
+});
+
+test('CLI help is side-effect free and documents the TUI entrypoint', async () => {
+  const output: string[] = [];
+  const exitCode = await runCli(['--help'], {
+    stdout: (message) => output.push(message),
+    stderr: (message) => output.push(`stderr:${message}`),
+  });
+  assert.equal(exitCode, 0);
+  assert.match(output.join('\n'), /Usage:/);
+  assert.match(output.join('\n'), /--sessions-dir/);
+  assert.doesNotMatch(output.join('\n'), /smoke-record/);
+  assert.doesNotMatch(output.join('\n'), /stderr:/);
+});
 
 test('CLI starts the interactive intake through an injected terminal workflow', async (t) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'reprise-cli-tui-'));

@@ -1,20 +1,24 @@
-import { type Component, HStack, ScrollView, VStack, isViewportTUI, type TUI, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
-import type { CodexExperimentResult } from '../application/codex-experiment.js';
+import { type Component, ScrollView, VStack, isViewportTUI, type TUI, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import type { CodexExperimentResult } from '../application/experiment.js';
 import { compact, truncateFit } from './format.js';
 import { renderHelp } from './overlays.js';
-import { configHints, renderConfig, type ConfigModel } from './pages/config.js';
+import { CONFIG_FIELDS, configHints, renderConfig, type ConfigModel } from './pages/config.js';
 import { historyDetailHints, historyHints, renderHistory, renderHistoryDetail, type HistoryModel } from './pages/history.js';
 import { homeHints, renderHome, type HomeModel } from './pages/home.js';
 import { inspectionHints, renderInspection, renderSessions, sessionsHints, type InspectionModel, type SessionsModel } from './pages/intake.js';
-import { renderResult, resultHints } from './pages/result.js';
+import { renderFailure, renderResult, resultHints, failureHints } from './pages/result.js';
 import {
   confirmHints, preflightHints, renderConfirmation, renderPreflight, renderSource, renderTimeline,
-  runningChrome, runningDetailPanel, runningHints, runningListPanel, sourceHints,
+  runningChrome, runningHints, sourceHints,
   type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
 } from './pages/run.js';
-import { createTheme, resolveDensity, type Theme } from './theme.js';
-import { bodyHeight, clipLines } from './viewport.js';
-import { divider, justify, keyHints, pill } from './widgets.js';
+import { t, type Locale } from './i18n.js';
+import { OVERLAY_PAGES, overlayChromeRows, renderOverlaySheet } from './overlay-sheet.js';
+import { renderActors, actorsHints } from './pages/actors.js';
+import { renderViewer, viewerHints, type ViewerModel } from './pages/viewer.js';
+import { createTheme, resolveDensity, showsDetailPane, type Theme } from './theme.js';
+import { bodyHeight, clipLines, FOOTER_ROWS, isShortViewport, MIN_VIEWPORT_ROWS } from './viewport.js';
+import { divider, joinColumns, justify, keyHints, panel, pill } from './widgets.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 
 export type WorkbenchPage =
@@ -27,7 +31,11 @@ export type WorkbenchView = {
   readonly modelId?: string;
   readonly effort?: string;
   readonly hasApiConfig: boolean;
+  readonly hasUsableAuth?: boolean;
+  readonly envName?: string;
+  readonly hasCodexLogin?: boolean;
   readonly hasTaskCase: boolean;
+  readonly locale?: Locale;
   readonly message: string;
   readonly inlineHelp?: boolean;
   readonly home?: HomeModel;
@@ -42,6 +50,8 @@ export type WorkbenchView = {
   readonly running?: RunningModel;
   readonly result?: CodexExperimentResult;
   readonly cancelling?: boolean;
+  readonly viewer?: ViewerModel;
+  readonly actorsOpen?: boolean;
 };
 
 class LinesView implements Component {
@@ -63,27 +73,22 @@ export class Workbench implements Component {
     return renderWorkbench(this.#view(), width, this.#viewport().height);
   }
   createLayoutRoot(): Component {
-    const header = new LinesView((width) => renderHeader(createTheme(width), this.#view(), width));
+    const short = (): boolean => isShortViewport(this.#viewport().height);
+    const header = new LinesView((width) => trimChrome(renderHeader(createTheme(width), this.#view(), width), short(), 'head'));
     const rail = new LinesView((width) => {
       const view = this.#view();
       if (view.page !== 'running' || !view.running) return [];
       return runningChrome(createTheme(width), width, view.running);
     });
-    const list = new LinesView((width) => renderLayoutList(createTheme(width), this.#view(), width));
-    const detail = new LinesView((width) => renderLayoutDetail(createTheme(width), this.#view(), width));
-    const body = new HStack([
-      { component: new ScrollView(list, { follow: 'end', primary: true, scrollbar: 'auto' }), grow: 1, shrink: 1, minSize: 20 },
-      {
-        component: new ScrollView(detail, { follow: 'end', scrollbar: 'auto' }),
-        grow: 1, shrink: 1, minSize: 16,
-        visible: (viewport) => {
-          const view = this.#view();
-          return view.page === 'running' && resolveDensity(viewport.width) === 'wide';
-        },
-      },
-    ], { gap: 1 });
-    const message = new LinesView((width) => renderMessage(createTheme(width), this.#view(), width));
-    const footer = new LinesView((width) => renderFooter(createTheme(width), this.#view(), width));
+    const list = new LinesView((width) => {
+      const viewport = this.#viewport();
+      const measuredViewport = viewport.height === undefined ? { width } : { width, height: viewport.height };
+      const height = bodyHeight(measuredViewport, 1, isShortViewport(viewport.height) ? 1 : 2);
+      return renderLayoutList(createTheme(width), this.#view(), width, height);
+    });
+    const body = new ScrollView(list, { follow: 'none', primary: true, scrollbar: 'auto' });
+    const message = new LinesView((width) => trimChrome(renderMessage(createTheme(width), this.#view(), width), short(), 'head'));
+    const footer = new LinesView((width) => trimChrome(renderFooter(createTheme(width), this.#view(), width), short(), 'tail'));
     return new VStack([
       { component: header, grow: 0, shrink: 0, basis: 'auto' },
       { component: rail, grow: 0, shrink: 0, basis: 'auto', visible: () => this.#view().page === 'running' },
@@ -100,35 +105,73 @@ export function mountWorkbench(tui: TUI, workbench: Workbench): void {
 }
 
 export function renderWorkbench(view: WorkbenchView, width: number, height?: number): string[] {
+  const locale = view.locale ?? 'en';
   if (resolveDensity(width) === 'minimum') {
     return [
-      ...wrapTextWithAnsi('Terminal is too narrow for Reprise.', Math.max(1, width)),
-      'Resize to at least 32 columns.',
+      ...wrapTextWithAnsi(t(locale, 'tooNarrow'), Math.max(1, width)),
+      t(locale, 'resizeColumns'),
     ];
   }
+  if (height !== undefined && height < MIN_VIEWPORT_ROWS) {
+    return clipLines([
+      ...wrapTextWithAnsi(t(locale, 'tooShort'), Math.max(1, width)),
+      t(locale, 'resizeRows', { n: MIN_VIEWPORT_ROWS }),
+    ], height);
+  }
+  const short = isShortViewport(height);
   const theme = createTheme(width);
-  const header = renderHeader(theme, view, width);
-  const message = renderMessage(theme, view, width);
-  const available = bodyHeight({ width, ...(height === undefined ? {} : { height }) }, message.length, header.length);
-  return [...header, ...clipLines(renderBody(theme, view, width, available), available), ...message, ...renderFooter(theme, view, width)];
+  const header = trimChrome(renderHeader(theme, view, width), short, 'head');
+  const message = trimChrome(renderMessage(theme, view, width), short, 'head');
+  const footer = trimChrome(renderFooter(theme, view, width), short, 'tail');
+  const available = bodyHeight({ width, ...(height === undefined ? {} : { height }) }, message.length + footer.length - FOOTER_ROWS, header.length);
+  return [...header, ...clipLines(renderBody(theme, view, width, available), available), ...message, ...footer];
+}
+
+/** On a short viewport the dividers and wrapped status text cost more rows than the body can spare. */
+function trimChrome(lines: string[], short: boolean, keep: 'head' | 'tail'): string[] {
+  if (!short || lines.length <= 1) return lines;
+  return keep === 'head' ? lines.slice(0, 1) : lines.slice(-1);
 }
 
 function modelSummary(theme: Theme, view: WorkbenchView): string {
-  if (!view.modelId) return 'No configured model';
+  if (!view.modelId) return t(view.locale ?? 'en', 'noConfiguredModel');
   return `${view.modelId} ${theme.glyphs.sep} ${view.effort ?? 'medium'}`;
 }
 
+function harnessStatus(theme: Theme, view: WorkbenchView): string {
+  const locale = view.locale ?? 'en';
+  if (!view.hasApiConfig) return pill(theme, t(locale, 'harnessUnset'), 'off');
+  if (view.hasUsableAuth === false) return pill(theme, t(locale, view.envName ? 'harnessEnvUnset' : 'harnessKeyMissing'), 'warn');
+  return pill(theme, t(locale, 'harnessReady'), 'ok');
+}
+
+function identityStatus(theme: Theme, view: WorkbenchView): string {
+  const locale = view.locale ?? 'en';
+  const short = theme.density === 'compact' || theme.density === 'minimum';
+  const codex = pill(theme, view.hasCodexLogin ? 'Codex' : (short ? 'Codex?' : 'Codex'), view.hasCodexLogin ? 'ok' : 'off');
+  const task = pill(theme, view.hasTaskCase ? t(locale, 'hasCase') : t(locale, 'noCase'), view.hasTaskCase ? 'ok' : 'off');
+  return `${harnessStatus(theme, view)}  ${codex}  ${task}`;
+}
+
 function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[] {
-  const brand = 'Reprise v0.1.0';
-  const running = view.page === 'running' ? view.running : undefined;
-  const status = running
-    ? pill(theme, running.cancelling ? 'cancelling' : 'running', running.cancelling ? 'warn' : 'ok')
-    : `${pill(theme, view.hasApiConfig ? 'API ready' : 'API not configured', view.hasApiConfig ? 'ok' : 'off')}  ${pill(theme, view.hasTaskCase ? 'TaskCase' : 'No TaskCase', view.hasTaskCase ? 'ok' : 'off')}`;
+  const locale = view.locale ?? 'en';
+  const running = view.page === 'running' || (view.page === 'result' && view.running) ? view.running : undefined;
+  const brand = view.page === 'result' && running
+    ? `${theme.style.harness('Reprise')}   ${t(locale, 'resultTitle')}`
+    : running
+      ? `${theme.style.harness('Reprise')}   ${t(locale, running.preparePhase === 'check' || running.preparePhase === 'copy' ? 'preparingTitle' : 'replayTitle', { product: running.productLabel ?? 'Codex' })}`
+      : theme.style.harness('Reprise v0.1.0');
+  const status = view.page === 'result' && running
+    ? pill(theme, t(locale, 'done'), 'ok')
+    : running
+      ? pill(theme, running.cancelling ? t(locale, 'hintCancel') : t(locale, 'running'), running.cancelling ? 'warn' : 'ok')
+      : identityStatus(theme, view);
   const metrics = running
-    ? `${running.elapsed}   turn ${running.turns.used}${running.turns.max !== undefined ? `/${running.turns.max}` : ''}   calls ${running.calls.used}${running.calls.max !== undefined ? `/${running.calls.max}` : ''}`
+    ? `${running.elapsed}   ${t(locale, 'replayRound', { n: Math.max(1, running.turns.used) })}`
     : modelSummary(theme, view);
   const right = `${metrics}   ${status}`;
-  if (theme.density === 'compact') {
+  const leftWide = running ? brand : `${brand}   ${compact(view.cwd, 48, theme.glyphs.ellipsis)}`;
+  if (theme.density === 'compact' || visibleWidth(`${leftWide}   ${right}`) > width) {
     const cwdBudget = Math.max(8, width - visibleWidth(`${brand}   `));
     const left = `${brand}   ${compact(view.cwd, cwdBudget, theme.glyphs.ellipsis)}`;
     return [
@@ -137,72 +180,126 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
       divider(theme, width),
     ];
   }
-  const left = `${brand}   ${compact(view.cwd, 48, theme.glyphs.ellipsis)}`;
-  return [justify(theme, left, right, width), divider(theme, width)];
+  return [justify(theme, leftWide, right, width), divider(theme, width)];
 }
 
-function renderMessage(theme: Theme, view: WorkbenchView, width: number): string[] {
-  const painted = view.page === 'error' || /error|fail/i.test(view.message)
-    ? theme.style.danger(` ${view.message}`)
-    : ` ${view.message}`;
-  return wrapTextWithAnsi(painted, Math.max(1, width));
+function renderMessage(_theme: Theme, view: WorkbenchView, width: number): string[] {
+  if (view.page === 'error') return [];
+  if (view.page === 'running' && !view.cancelling) return [];
+  if (view.page === 'preflight' && !view.preflight) return [];
+  return wrapTextWithAnsi(` ${view.message}`, Math.max(1, width));
 }
 
 function renderFooter(theme: Theme, view: WorkbenchView, width: number): string[] {
-  return [divider(theme, width), keyHints(theme, hintsFor(view, theme), width)];
+  const locale = view.locale ?? 'en';
+  const product = view.running?.productLabel ?? 'Codex';
+  const preparing = view.running?.preparePhase === 'check' || view.running?.preparePhase === 'copy';
+  const composer = view.page === 'running' && view.running
+    ? ` ${theme.glyphs.cursor} ${theme.style.muted(t(locale, preparing ? 'noTyping' : 'noTypeTarget', { product }))}`
+    : undefined;
+  return [
+    ...(composer ? [theme.style.fillCanvas(composer)] : []),
+    divider(theme, width),
+    keyHints(theme, hintsFor(view, theme), width),
+  ];
 }
 
 function renderBody(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
   const page = renderPage(theme, view, width, height);
   if (!view.inlineHelp) return page;
-  return [...renderHelp(theme, width), '', ...page];
+  return [...renderHelp(theme, width, view.page, view.locale ?? 'en'), '', ...page];
 }
 
 function renderPage(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
-  if (view.page === 'loading' || view.page === 'error') return [];
+  if (view.page === 'loading') return [];
+  if (view.page === 'error') return renderFailure(theme, width, view.message, view.locale ?? 'en');
+  if (view.viewer) {
+    const canvas = renderSurface(theme, view, width, height);
+    return clipLines(renderOverlaySheet(theme, canvas, renderViewer(theme, width, view.viewer, sheetHeight(height, canvas))), height);
+  }
+  if (view.actorsOpen && view.running) {
+    const canvas = renderSurface(theme, view, width, height);
+    return clipLines(renderOverlaySheet(theme, canvas, renderActors(theme, width, view.running, view.locale ?? 'en')), height);
+  }
+  if (OVERLAY_PAGES.has(view.page) && view.home) {
+    const background = renderHome(theme, width, view.home);
+    const canvas = renderSurface(theme, view, width, sheetHeight(height, background));
+    return clipLines(renderOverlaySheet(theme, background, canvas), height);
+  }
+  return renderSurface(theme, view, width, height);
+}
+
+function sheetHeight(height: number | undefined, background: readonly string[]): number | undefined {
+  if (height === undefined) return undefined;
+  return Math.max(4, height - overlayChromeRows(background));
+}
+
+function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
   if (view.page === 'home' && view.home) return renderHome(theme, width, view.home);
   if (view.page === 'config' && view.config) return renderConfig(theme, width, view.config);
-  if (view.page === 'history' && view.history) return renderHistory(theme, width, view.history);
-  if (view.page === 'history-detail' && view.historyDetail) return renderHistoryDetail(theme, width, view.historyDetail);
-  if (view.page === 'sessions' && view.sessions) return renderSessions(theme, width, view.sessions);
-  if (view.page === 'inspection' && view.inspection) return renderInspection(theme, width, view.inspection, height);
+  if ((view.page === 'history' || view.page === 'history-detail') && view.history) return renderHistory(theme, width, view.history, height);
+  if (view.page === 'history-detail' && view.historyDetail) return renderHistoryDetail(theme, width, view.historyDetail, view.locale ?? 'en');
+  if (view.page === 'sessions' && view.sessions) return renderSessions(theme, width, view.sessions, height);
+  if (view.page === 'inspection' && view.inspection) {
+    if (view.sessions && showsDetailPane(theme)) {
+      const listWidth = Math.max(28, Math.floor(width * 0.38));
+      const detailWidth = width - listWidth - 1;
+      return joinColumns(
+        renderSessions(theme, listWidth, view.sessions, height, false, false),
+        renderInspection(theme, detailWidth, view.inspection, height),
+        listWidth, detailWidth, 1, theme,
+      );
+    }
+    return renderInspection(theme, width, view.inspection, height);
+  }
   if (view.page === 'source' && view.source) return renderSource(theme, width, view.source);
   if (view.page === 'preflight' && view.preflight) return renderPreflight(theme, width, view.preflight);
+  if (view.page === 'preflight') {
+    return panel(theme, t(view.locale ?? 'en', 'checkingSourceTitle'), [
+      ` ${view.message || t(view.locale ?? 'en', 'inspectingSource')}`,
+    ], width);
+  }
   if (view.page === 'confirm' && view.confirm) return renderConfirmation(theme, width, view.confirm);
   if (view.page === 'running' && view.running) return renderTimeline(theme, width, view.running, height);
-  if (view.page === 'result' && view.result) return renderResult(theme, width, view.result);
+  if (view.page === 'result' && view.result) {
+    const summary = renderResult(theme, width, view.result, view.locale ?? 'en');
+    if (!view.running?.entries.length) return summary;
+    return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - summary.length - 1)), '', ...summary];
+  }
   return [];
 }
 
-function renderLayoutList(theme: Theme, view: WorkbenchView, width: number): string[] {
-  if (view.page === 'running' && view.running && theme.density === 'wide') {
-    return runningListPanel(theme, width, view.running);
-  }
-  if (view.page === 'running' && view.running) {
-    const chrome = runningChrome(theme, width, view.running);
-    return renderTimeline(theme, width, view.running).slice(chrome.length);
-  }
-  return renderBody(theme, view, width, undefined);
-}
-
-function renderLayoutDetail(theme: Theme, view: WorkbenchView, width: number): string[] {
-  if (view.page === 'running' && view.running && theme.density === 'wide') {
-    return runningDetailPanel(theme, width, view.running);
-  }
-  return [];
+function renderLayoutList(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
+  if (view.page === 'running' && view.running) return clipLines(renderTimeline(theme, width, view.running, height), height);
+  return clipLines(renderBody(theme, view, width, height), height);
 }
 
 function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string, string])[] {
-  if (view.page === 'home') return homeHints();
-  if (view.page === 'config' && view.config) return configHints(view.config.editing);
-  if (view.page === 'history') return historyHints();
-  if (view.page === 'history-detail') return historyDetailHints(Boolean(view.historyDetail && 'taskCase' in view.historyDetail));
-  if (view.page === 'sessions') return sessionsHints(view.sessions);
-  if (view.page === 'inspection') return inspectionHints();
-  if (view.page === 'source') return sourceHints();
-  if (view.page === 'preflight') return preflightHints();
-  if (view.page === 'confirm') return confirmHints();
-  if (view.page === 'running' && view.running) return runningHints(view.running.filter, theme.density !== 'wide');
-  if (view.page === 'result') return resultHints();
-  return [['b', 'Back'], ['Ctrl+C', 'Exit']];
+  const locale = view.locale ?? 'en';
+  if (view.page === 'home') return homeHints(locale, view.home);
+  if (view.page === 'config' && view.config) {
+    return configHints(view.config.editing, CONFIG_FIELDS[view.config.selected], view.config.pendingToggle, view.config.selected >= CONFIG_FIELDS.length, locale);
+  }
+  if (view.page === 'history') return historyHints(locale);
+  if (view.page === 'history-detail') return historyDetailHints(Boolean(view.historyDetail && 'taskCase' in view.historyDetail), Boolean(view.historyDetail && !('taskCase' in view.historyDetail) && view.historyDetail.reportPath), locale);
+  if (view.viewer) return viewerHints(locale);
+  if (view.actorsOpen) return actorsHints(locale);
+  if (view.page === 'sessions') return sessionsHints(view.sessions, locale);
+  if (view.page === 'inspection') return inspectionHints(locale);
+  if (view.page === 'source') return sourceHints(locale);
+  if (view.page === 'preflight') {
+    if (!view.preflight) return [['Esc', t(locale, 'hintHome')]];
+    return preflightHints(Boolean(view.preflight.preflight.contamination), locale);
+  }
+  if (view.page === 'confirm') return confirmHints(view.confirm?.harnessAuthOk !== false, locale);
+  if (view.page === 'running' && view.running) {
+    const preparing = view.running.preparePhase === 'check' || view.running.preparePhase === 'copy';
+    return runningHints(view.running.filter, theme.density !== 'wide', preparing, locale, Boolean(view.running.finding));
+  }
+  if (view.page === 'result' && view.running?.finding) {
+    return runningHints(view.running.filter, theme.density !== 'wide', false, locale, true);
+  }
+  if (view.page === 'result') return resultHints(locale);
+  if (view.page === 'error') return failureHints(locale);
+  return [['b', t(locale, 'hintBack')], ['Ctrl+C', t(locale, 'hintExit')]];
 }

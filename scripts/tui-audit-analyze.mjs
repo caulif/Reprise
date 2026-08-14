@@ -4,7 +4,7 @@ import { visibleWidth } from '@earendil-works/pi-tui';
 import { FORBIDDEN_COMPACT } from '../dist/src/tui/theme.js';
 
 function stripAnsi(text) {
-  return text.replace(/\u001b\[[0-9;]*m/g, '');
+  return text.replace(/\u001b\]8;;[^\u001b]*\u001b\\/g, '').replace(/\u001b\[[0-9;]*m/g, '');
 }
 
 const framesDir = join(process.cwd(), 'docs', 'tui-audit', 'frames');
@@ -40,8 +40,10 @@ for (const file of files) {
     issues.push('compact contains forbidden glyphs');
   }
   if (width < 78 && /[—]/.test(text)) issues.push('compact contains em dash');
-  if (/\u001b\[[0-9;]*m[^\u001b]*\u001b\[0m\.\.\.\u001b\[0m/.test(text) || /\[0m\.\.\.\[0m/.test(text)) {
-    issues.push('ANSI truncation artifact');
+  // pi-tui intentionally emits reset codes around a truncated ellipsis. Only
+  // fail when an escape sequence itself leaks into the visible snapshot.
+  if (stripped.some((line) => /\[(?:[0-9]+;)*[0-9]+m/.test(line))) {
+    issues.push('ANSI escape leaked into visible text');
   }
   const messageHits = stripped.filter((line) => /Welcome back\. Use \/help|ENOTDIR:/.test(line));
   if (messageHits.length >= 2) issues.push(`status message duplicated x${messageHits.length}`);
@@ -53,4 +55,11 @@ for (const item of findings) {
   const mark = item.issues.length ? 'ISSUE' : 'ok';
   console.log(`${mark}\t${item.name}\tw=${item.width}\trows=${item.rows}\tmax=${item.maxVisible}\t${item.issues.join(' | ')}`);
 }
-console.log(`---\n${findings.filter((item) => item.issues.length).length} frames with issues / ${findings.length}`);
+const failed = findings.filter((item) => item.issues.length);
+console.log(`---\n${failed.length} frames with issues / ${findings.length}`);
+// A non-zero exit is what lets CI gate on layout regressions rather than only reporting them.
+if (failed.length) process.exitCode = 1;
+if (!findings.length) {
+  console.error('No audit frames were found. Run "npm run audit:tui" first.');
+  process.exitCode = 1;
+}

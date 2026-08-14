@@ -4,12 +4,12 @@ import { createTheme } from '../src/tui/theme.js';
 import {
   groupSessionsByProject, matchesIntakeQuery, projectLabel, renderInspection, sessionTitle,
 } from '../src/tui/pages/intake.js';
-import type { CodexSessionInspection } from '../src/products/codex/sessions.js';
+import type { SessionInspection } from '../src/products/contract.js';
 
 test('session titles drop leading Windows paths from PPT prompts', () => {
-  const title = sessionTitle('对于"C:\\yanjiusheng\\本子与项目撰写\\CNCERT项目-漏洞整理\\20260810汇报ppt\\重点研发计划中期报告-0811.pptx"这个ppt，现在需要做的修改如下，请截图理解对应的页');
-  assert.doesNotMatch(title, /yanjiusheng/);
-  assert.match(title, /需要做的修改/);
+  const title = sessionTitle('For "C:\\Users\\example\\slides\\report.pptx", make the requested changes.');
+  assert.doesNotMatch(title, /C:\\Users\\example\\slides/);
+  assert.match(title, /make the requested changes/i);
 });
 
 test('sessions group by workspace basename and send missing cwd to 其他', () => {
@@ -21,15 +21,15 @@ test('sessions group by workspace basename and send missing cwd to 其他', () =
   ]);
   assert.equal(grouped[0]?.label, 'blog');
   assert.equal(grouped.find((item) => item.label === 'notes')?.sessions.length, 2);
-  assert.equal(grouped.at(-1)?.label, '其他');
-  assert.equal(projectLabel('C:\\yanjiusheng\\本子与项目撰写\\CNCERT项目-漏洞整理\\20260810汇报ppt'), '20260810汇报ppt');
+  assert.equal(grouped.at(-1)?.label, 'Unknown project');
+  assert.equal(projectLabel('C:\\Users\\example\\slides'), 'slides');
 });
 
 test('intake search matches project name, path, time, and task text', () => {
-  const item = session('id-1', 'C:\\yanjiusheng\\CNCERT项目-漏洞整理\\20260810汇报ppt', '2026-08-13T07:19:57.610Z', '改三列技术路线');
-  assert.equal(matchesIntakeQuery(item, 'CNCERT'), true);
-  assert.equal(matchesIntakeQuery(item, 'ppt'), true);
-  assert.equal(matchesIntakeQuery(item, '三列'), true);
+  const item = session('id-1', 'C:\\Users\\example\\slides', '2026-08-13T07:19:57.610Z', 'Fix the three-column layout');
+  assert.equal(matchesIntakeQuery(item, 'slides'), true);
+  assert.equal(matchesIntakeQuery(item, 'layout'), true);
+  assert.equal(matchesIntakeQuery(item, 'three-column'), true);
   assert.equal(matchesIntakeQuery(item, '07:19'), true);
   assert.equal(matchesIntakeQuery(item, 'clash'), false);
 });
@@ -42,9 +42,10 @@ test('duplicate project basenames keep the parent directory', () => {
   assert.deepEqual(grouped.map((item) => item.label).sort(), ['home/notes', 'work/notes']);
 });
 
-test('inspection keeps the freeze contract strings and updates the selected preview', () => {
+test('inspection freezes the whole session from the first user message', () => {
   const theme = createTheme(120, false);
   const inspection = {
+    productId: 'codex',
     sessionId: 'session-1',
     sourcePath: 'C:\\tmp\\rollout-session-1.jsonl',
     startedAt: '2026-08-11T00:00:00.000Z',
@@ -57,24 +58,29 @@ test('inspection keeps the freeze contract strings and updates the selected prev
       { id: 'message-3', role: 'user', text: 'Verify the regression.' },
     ],
     finalMessage: 'Fixed it.',
-  } as CodexSessionInspection;
+  } as SessionInspection;
   const first = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }).join('\n');
-  assert.match(first, /Task input 1\/2: Fix the bug\./);
+  assert.match(first, /Session start:[\s\S]*Fix the bug\./);
+  assert.match(first, /Later user turns \(Controller will see these\)/);
+  assert.match(first, /2\/2\s+Verify the regression\./);
   assert.match(first, /Source:/);
-  assert.match(first, /Freeze this message:/);
-  assert.match(first, /Choose task start/);
-  const second = renderInspection(theme, 120, {
+  assert.match(first, /Review session/);
+  assert.match(first, /Nothing is written until you press Enter/);
+  assert.doesNotMatch(first, /Choose task start|Select task start|Freeze this message:/);
+  const ignoredSelection = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 1, showOutcome: false,
   }).join('\n');
-  assert.match(second, /Task input 2\/2: Verify the regression\./);
-  assert.match(second, /Freeze this message:[\s\S]*Verify the regression/);
+  assert.match(ignoredSelection, /Session start:/);
+  assert.match(ignoredSelection, /Fix the bug\./);
+  assert.match(ignoredSelection, /Later user turns \(Controller will see these\)[\s\S]*2\/2\s+Verify the regression\./);
 });
 
 test('a 24-row inspection still shows the freeze decision', () => {
   const theme = createTheme(120, false);
   const inspection = {
+    productId: 'codex',
     sessionId: 'session-1',
     sourcePath: 'C:\\tmp\\rollout-session-1.jsonl',
     startedAt: '2026-08-13T07:19:57.610Z',
@@ -88,19 +94,19 @@ test('a 24-row inspection still shows the freeze decision', () => {
       { id: 'message-4', role: 'user', text: '你自己截图看看，现在整个页面都不对了' },
     ],
     finalMessage: '已重排修改稿',
-  } as CodexSessionInspection;
+  } as SessionInspection;
   const frame = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }, 19).join('\n');
   assert.match(frame, /Nothing is written until you press Enter/);
-  assert.match(frame, /Freeze this message:/);
-  assert.match(frame, /Choose task start/);
+  assert.match(frame, /Session start:/);
+  assert.match(frame, /Review session/);
   assert.doesNotMatch(frame, /yanjiusheng/);
 });
 
 function session(id: string, cwd: string | undefined, startedAt: string, summary: string) {
   return {
-    sessionId: id, sourcePath: `${id}.jsonl`, startedAt, ...(cwd ? { cwd } : {}), summary,
+    productId: 'codex', sessionId: id, sourcePath: `${id}.jsonl`, startedAt, ...(cwd ? { cwd } : {}), summary,
     signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
   };
 }

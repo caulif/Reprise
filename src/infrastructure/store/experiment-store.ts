@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat, truncate, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve } from 'node:path';
+import { mkdir, readFile, readdir, rename, rm, stat, truncate, writeFile } from 'node:fs/promises';
+import { join, relative, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { SAFE_ID, sha256 } from '../../core/identity.js';
+import { SAFE_ID, sha256, writeAtomic } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
   EventEnvelopeSchema,
@@ -17,6 +17,8 @@ import {
 } from '../../core/schema.js';
 
 const SCHEMA_VERSION = 1;
+/** A lock owned by another host cannot be probed for liveness, so it is retired on age alone. */
+const FOREIGN_LOCK_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface ArtifactManifest {
   readonly artifactId: string;
@@ -112,10 +114,7 @@ export async function writeImmutableJson(path: string, value: unknown): Promise<
   } catch (error: unknown) {
     if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
   }
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.${randomUUID()}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(value)}\n`, { encoding: 'utf8', flag: 'wx' });
-  await rename(temporary, path);
+  await writeAtomic(path, `${JSON.stringify(value)}\n`);
 }
 
 export class ExperimentStore {
@@ -124,6 +123,7 @@ export class ExperimentStore {
   readonly #eventsPath: string;
   readonly #lockPath: string;
   #lockHeld = false;
+  #lockNonce: string | undefined;
   #events: EventEnvelope[] = [];
   #appendTail: Promise<void> = Promise.resolve();
   readonly #listeners = new Set<ExperimentEventListener>();
@@ -157,33 +157,80 @@ export class ExperimentStore {
     try {
       await writeFile(this.#lockPath, `${JSON.stringify(lock)}\n`, { encoding: 'utf8', flag: 'wx' });
       this.#lockHeld = true;
+      this.#lockNonce = lock.nonce;
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
-        throw new Error(`Experiment ${this.#experimentId} already has an active writer.`);
+        throw new Error(`Experiment ${this.#experimentId} already has an active writer. If no process is running, delete ${this.#lockPath}.`, { cause: error });
       }
       throw error;
     }
+    await repairIncompleteTail(this.#eventsPath);
+    this.#events = await readEvents(this.#eventsPath);
     if (reclaimed) await this.append({ type: 'writer.lock_reclaimed', operationId: `writer-lock-reclaimed-${lock.nonce}`, payload: { previousPid: reclaimed.pid, previousStartedAt: reclaimed.startedAt } });
   }
 
   async #reclaimStaleLock(): Promise<LockInfo | undefined> {
-    let value: unknown;
+    let raw: string;
     try {
-      value = JSON.parse(await readFile(this.#lockPath, 'utf8')) as unknown;
+      raw = await readFile(this.#lockPath, 'utf8');
     } catch (error: unknown) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
-      return undefined;
+      throw error;
     }
-    if (!isLockInfo(value) || value.experimentId !== this.#experimentId || value.host !== hostname() || processExists(value.pid)) return undefined;
-    await rm(this.#lockPath, { force: true });
-    return value;
+    let value: unknown;
+    try {
+      value = JSON.parse(raw) as unknown;
+    } catch {
+      value = undefined;
+    }
+    // A lock written during a crash can be truncated or empty. Keeping it would lock the experiment out forever.
+    const reclaimable = !isLockInfo(value) || value.experimentId !== this.#experimentId || this.#isStale(value);
+    if (!reclaimable) return undefined;
+    if (!(await this.#claimLock())) return undefined;
+    return isLockInfo(value) && value.experimentId === this.#experimentId ? value : undefined;
+  }
+
+  #isStale(lock: LockInfo): boolean {
+    if (lock.host === hostname()) return !processExists(lock.pid);
+    // Another host's liveness is unknowable here, so only age can retire the lock.
+    const startedAt = Date.parse(lock.startedAt);
+    return !Number.isFinite(startedAt) || Date.now() - startedAt >= FOREIGN_LOCK_TTL_MS;
+  }
+
+  async #claimLock(): Promise<boolean> {
+    const tombstone = `${this.#lockPath}.${randomUUID()}.retired`;
+    try {
+      await rename(this.#lockPath, tombstone);
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+      throw error;
+    }
+    await rm(tombstone, { force: true });
+    return true;
   }
 
   async close(): Promise<void> {
     if (!this.#lockHeld) return;
     await this.#appendTail;
-    await rm(this.#lockPath, { force: true });
+    let raw: string | undefined;
+    try {
+      raw = await readFile(this.#lockPath, 'utf8');
+    } catch (error: unknown) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    }
+    if (raw !== undefined) {
+      let value: unknown;
+      try {
+        value = JSON.parse(raw) as unknown;
+      } catch {
+        value = undefined;
+      }
+      if (isLockInfo(value) && value.experimentId === this.#experimentId && value.nonce === this.#lockNonce) {
+        await rm(this.#lockPath, { force: true });
+      }
+    }
     this.#lockHeld = false;
+    this.#lockNonce = undefined;
   }
 
   subscribe(listener: ExperimentEventListener): () => void {
@@ -198,10 +245,19 @@ export class ExperimentStore {
     return this.#events.filter((event) => runId === undefined || event.runId === runId).map((event) => ({ ...event }));
   }
 
+  /**
+   * Snapshot of everything appended after `cursor`, plus the cursor to resume from. Readers that fold the
+   * journal repeatedly (the Controller loop runs once per decision) would otherwise re-copy it every time.
+   */
+  eventsSince(cursor: number, runId?: string): { events: readonly EventEnvelope[]; cursor: number } {
+    const from = Math.max(0, Math.min(cursor, this.#events.length));
+    const events = this.#events.slice(from).filter((event) => runId === undefined || event.runId === runId).map((event) => ({ ...event }));
+    return { events, cursor: this.#events.length };
+  }
+
   async listArtifacts(runId?: string): Promise<readonly ArtifactManifest[]> {
     const folder = runId ? join(this.#root, 'runs', runId, 'artifacts') : join(this.#root, 'artifacts');
     try {
-      const { readdir } = await import('node:fs/promises');
       const names = await readdir(folder);
       // Artifact payloads may themselves be JSON; only adjacent manifest files have a valid owner.
       const manifests = await Promise.all(names.filter((name) => name.endsWith('.json')).map(async (name) => JSON.parse(await readFile(join(folder, name), 'utf8')) as unknown));
@@ -314,10 +370,7 @@ export class ExperimentStore {
     } catch (error: unknown) {
       if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
     }
-    await mkdir(dirname(filePath), { recursive: true });
-    const temporary = `${filePath}.${randomUUID()}.tmp`;
-    await writeFile(temporary, input.bytes, { flag: 'wx' });
-    await rename(temporary, filePath);
+    await writeAtomic(filePath, input.bytes);
     const manifest: ArtifactManifest = {
       artifactId: input.artifactId, schemaVersion: SCHEMA_VERSION, kind: input.kind, ...(input.mediaType ? { mediaType: input.mediaType } : {}),
       byteLength: input.bytes.byteLength, contentHash: sha256(input.bytes), createdAt: new Date().toISOString(),
@@ -325,16 +378,12 @@ export class ExperimentStore {
       sourceEventId: randomUUID(), path: relative(this.#root, filePath),
     };
     await writeImmutableJson(manifestPath, manifest);
-    try {
-      await this.append({
-        type: 'artifact.created', eventId: manifest.sourceEventId, ...(input.runId ? { runId: input.runId } : {}),
-        operationId: input.operationId ?? `artifact-${input.artifactId}`, payload: { artifactId: input.artifactId },
-      });
-      return manifest;
-    } catch (error) {
-      // The immutable file is intentionally left as an uncommitted residual when the event cannot be appended.
-      throw error;
-    }
+    // If the append fails, the immutable file is intentionally left as an uncommitted residual.
+    await this.append({
+      type: 'artifact.created', eventId: manifest.sourceEventId, ...(input.runId ? { runId: input.runId } : {}),
+      operationId: input.operationId ?? `artifact-${input.artifactId}`, payload: { artifactId: input.artifactId },
+    });
+    return manifest;
   }
 
   async readArtifact(ref: ArtifactRef): Promise<Uint8Array> {
@@ -395,7 +444,6 @@ async function readEvents(eventsPath: string): Promise<EventEnvelope[]> {
     throw error;
   }
   const lines = content.split('\n');
-  if (lines.at(-1) !== '') await truncate(eventsPath, content.lastIndexOf('\n') + 1);
   const completeLines = lines.slice(0, -1);
   return completeLines.map((line, index) => {
     let event: unknown;
@@ -406,4 +454,15 @@ async function readEvents(eventsPath: string): Promise<EventEnvelope[]> {
     if (event.sequence !== index + 1) throw new Error(`Event sequence is not contiguous at sequence ${index + 1}.`);
     return event;
   });
+}
+
+async function repairIncompleteTail(eventsPath: string): Promise<void> {
+  let content: string;
+  try {
+    content = await readFile(eventsPath, 'utf8');
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
+    throw error;
+  }
+  if (!content.endsWith('\n')) await truncate(eventsPath, content.lastIndexOf('\n') + 1);
 }

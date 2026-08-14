@@ -86,6 +86,29 @@ test('store commits attempt before manifest, replays events, and preserves a ter
   }
 });
 
+test('store hands incremental readers only the events appended after their cursor', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    await store.append({ type: 'test.event', runId: 'run-1', payload: { value: 1 } });
+    await store.append({ type: 'test.event', runId: 'run-2', payload: { value: 2 } });
+    const first = store.eventsSince(0, 'run-1');
+    assert.equal(first.events.length, 1);
+    assert.equal(first.cursor, 2);
+
+    await store.append({ type: 'test.event', runId: 'run-1', payload: { value: 3 } });
+    const second = store.eventsSince(first.cursor, 'run-1');
+    assert.deepEqual(second.events.map((event) => event.payload), [{ value: 3 }]);
+    assert.equal(store.eventsSince(second.cursor, 'run-1').events.length, 0);
+    // A cursor from a discarded snapshot must not read past the end of the journal.
+    assert.equal(store.eventsSince(99, 'run-1').events.length, 0);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('store rejects a second writer and repeats a submitted operation without another event', async () => {
   const root = await temporaryExperiment();
   try {
@@ -138,7 +161,7 @@ test('store serializes concurrent appends for a replayable event log', async () 
     await rm(root, { recursive: true, force: true });
   }
 });
-test('store recovers a tail half-line and rejects artifact ownership violations', async () => {
+test('store ignores a tail half-line until it owns the writer lock, then refreshes and repairs it', async () => {
   const root = await temporaryExperiment();
   try {
     const store = await ExperimentStore.open(root, 'experiment-1');
@@ -149,9 +172,23 @@ test('store recovers a tail half-line and rejects artifact ownership violations'
     await assert.rejects(store.readArtifact({ artifactId: 'artifact-1', experimentId: 'other-experiment', runId: 'run-1' }), /does not belong/);
     await store.close();
     await appendFile(join(root, 'events.jsonl'), '{"broken":');
+    const beforeOpen = await readFile(join(root, 'events.jsonl'), 'utf8');
     const reopened = await ExperimentStore.open(root, 'experiment-1');
+    assert.equal(await readFile(join(root, 'events.jsonl'), 'utf8'), beforeOpen);
     assert.equal(reopened.replay('run-1').attempt?.runId, 'run-1');
+
+    const otherWriter = await ExperimentStore.open(root, 'experiment-1');
+    await otherWriter.acquireWriter();
+    await otherWriter.append({ type: 'run.noted', operationId: 'refresh-check', payload: {} });
+    await otherWriter.close();
+    assert.equal(reopened.events().some((event) => event.operationId === 'refresh-check'), false);
+
+    await reopened.acquireWriter();
+    assert.equal(reopened.events().some((event) => event.operationId === 'refresh-check'), true);
     assert.match(await readFile(join(root, 'events.jsonl'), 'utf8'), /\n$/);
+    await reopened.append({ type: 'run.noted', operationId: 'after-repair', payload: {} });
+    assert.equal(reopened.events().at(-1)?.sequence, 4);
+    await reopened.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -171,6 +208,75 @@ test('store reclaims a stale local writer lock and records the recovery', async 
     await store.acquireWriter();
     assert.equal(store.events()[0]?.type, 'writer.lock_reclaimed');
     await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('store discards an unreadable writer lock instead of locking the experiment out forever', async () => {
+  for (const corrupt of ['', '{"experimentId":"experi', '{"experimentId":"experiment-1"}']) {
+    const root = await temporaryExperiment();
+    try {
+      await writeFile(join(root, 'writer.lock'), corrupt);
+      const store = await ExperimentStore.open(root, 'experiment-1');
+      await store.acquireWriter();
+      await store.append({ type: 'run.noted', operationId: 'noted', payload: {} });
+      assert.ok(store.events().some((event) => event.type === 'run.noted'));
+      await store.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('store retires a foreign writer lock only once it is older than the TTL', async () => {
+  const root = await temporaryExperiment();
+  const foreign = { experimentId: 'experiment-1', pid: process.pid, nonce: 'foreign-lock', host: `${hostname()}-other` };
+  try {
+    await writeFile(join(root, 'writer.lock'), `${JSON.stringify({ ...foreign, startedAt: new Date().toISOString() })}\n`);
+    const blocked = await ExperimentStore.open(root, 'experiment-1');
+    await assert.rejects(blocked.acquireWriter(), /already has an active writer/);
+    await blocked.close();
+
+    await writeFile(join(root, 'writer.lock'), `${JSON.stringify({ ...foreign, startedAt: '2026-01-01T00:00:00.000Z' })}\n`);
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    assert.equal(store.events()[0]?.type, 'writer.lock_reclaimed');
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+test('store close does not remove a replacement writer lock with another nonce', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const replacement = { experimentId: 'experiment-1', pid: process.pid, nonce: 'replacement-lock', startedAt: new Date().toISOString(), host: hostname() };
+    await writeFile(join(root, 'writer.lock'), `${JSON.stringify(replacement)}
+`);
+    await store.close();
+    assert.deepEqual(JSON.parse(await readFile(join(root, 'writer.lock'), 'utf8')), replacement);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('store allows only one contender to claim a stale writer lock', async () => {
+  const root = await temporaryExperiment();
+  try {
+    await writeFile(join(root, 'writer.lock'), `${JSON.stringify({ experimentId: 'experiment-1', pid: 999_999_999, nonce: 'stale-lock', startedAt: '2026-01-01T00:00:00.000Z', host: hostname() })}
+`);
+    const stores = await Promise.all([
+      ExperimentStore.open(root, 'experiment-1'),
+      ExperimentStore.open(root, 'experiment-1'),
+    ]);
+    const results = await Promise.allSettled(stores.map((store) => store.acquireWriter()));
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
+    await Promise.all(stores.map((store) => store.close()));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

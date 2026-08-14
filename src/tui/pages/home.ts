@@ -1,87 +1,131 @@
 import type { TaskCase } from '../../core/schema.js';
 import { compact, slashCommands } from '../format.js';
+import { commandCatalog, t, type Locale } from '../i18n.js';
+import { caretAt } from '../text-edit.js';
 import type { HistoryExperiment } from '../local-history.js';
-import { projectLabel, sessionTitle } from './intake.js';
+import { sessionTitle } from './intake.js';
 import type { Theme } from '../theme.js';
-import { joinColumns, panel } from '../widgets.js';
+import { pad, panel } from '../widgets.js';
+import { shellEnvAssignment } from '../../infrastructure/harness-model-config.js';
 
 export type HomeModel = {
   readonly taskCase: TaskCase | undefined;
   readonly recentExperiment: HistoryExperiment | undefined;
   readonly hasApiConfig: boolean;
+  readonly hasUsableAuth?: boolean;
+  readonly envName?: string;
+  readonly envSet?: boolean;
+  readonly hasCodexLogin?: boolean;
+  readonly providerLabel?: string;
+  readonly modelId?: string;
   readonly composer: string;
+  readonly composerCursor?: number;
   readonly showSuggestions: boolean;
+  readonly locale?: Locale;
 };
 
 export function renderHome(theme: Theme, width: number, model: HomeModel): string[] {
-  const commands = [
-    commandLine('/config', 'Configure the API connection', model.hasApiConfig ? theme.style.ok(theme.glyphs.ok) : ''),
-    commandLine('/intake', 'Import a Codex historical session', ''),
-    commandLine('/run', 'Run the current TaskCase', runReadiness(theme, model)),
-    commandLine('/history', 'Browse local TaskCases and experiments', ''),
-  ];
-  const vacant = theme.framed ? '—' : '-';
+  const locale = model.locale ?? 'en';
   const taskLabel = model.taskCase
-    ? compact(`${sessionTitle(model.taskCase.initialInput.text)}${frozenStart(model.taskCase)}`, 42, theme.glyphs.ellipsis)
-    : 'none selected';
-  const project = model.taskCase
-    ? projectLabel(historicalCwdOf(model.taskCase))
-    : vacant;
-  const workspace = [
-    ` TaskCase   ${taskLabel}`,
-    ` Project    ${project}`,
-    ` Recent     ${model.recentExperiment ? `${model.recentExperiment.experimentId} ${theme.glyphs.sep} ${model.recentExperiment.outcome ?? 'incomplete'}` : 'no local experiments'}`,
+    ? compact(`${sessionTitle(model.taskCase.initialInput.text)}${frozenStart(model.taskCase)}`, 56, theme.glyphs.ellipsis)
+    : t(locale, 'noneSelected');
+  const continueRows = continueLines(theme, model, locale);
+  const browseRows = [
+    ` ${theme.style.accent('/intake')}    ${t(locale, 'intakeDesc')}`,
+    ` ${theme.style.accent('/history')}   ${t(locale, 'historyDesc')}`,
+    ` ${theme.style.accent('/config')}    ${t(locale, 'configDesc')}`,
+    ` ${theme.style.accent('/lang')}      ${t(locale, 'langDesc')}`,
   ];
-  const welcomeWidth = theme.density === 'wide' ? leftWidth(width) : width;
-  const currentWidth = theme.density === 'wide' ? rightWidth(width) : width;
-  const welcome = panel(theme, 'Welcome / Recent runs', [' Local commands', '', ...commands], welcomeWidth);
-  const current = panel(theme, 'Current workspace', workspace, currentWidth);
-  const stacked = theme.density === 'wide'
-    ? joinColumns(welcome, current, welcomeWidth, currentWidth, 2, theme)
-    : [...welcome, '', ...current];
-  const placeholder = `Enter a task or / command${theme.glyphs.ellipsis}`;
-  const prompt = ` ${theme.glyphs.cursor} ${model.composer ? `${model.composer}▌` : placeholder}`;
-  const suggestions = model.showSuggestions ? renderSuggestions(theme, width, model.composer) : [];
+  const body = [
+    theme.style.muted(` ${t(locale, 'lastCase')}  ${taskLabel}`),
+    '',
+    theme.style.muted(` ${t(locale, 'continue')}`),
+    ...continueRows,
+    '',
+    theme.style.muted(` ${t(locale, 'browse')}`),
+    ...browseRows,
+    '',
+    ` ${nextLine(theme, locale, model)}`,
+    ...(model.envName && model.envSet === false ? [` ${shellEnvAssignment(model.envName)}`] : []),
+  ];
+  const placeholder = t(locale, 'composerHome');
+  const prompt = ` ${theme.glyphs.cursor} ${model.composer ? caretAt(model.composer, model.composerCursor ?? model.composer.length) : theme.style.muted(placeholder)}`;
+  const suggestions = model.showSuggestions ? renderSuggestions(theme, width, model) : [];
   return [
-    ...stacked,
+    ...body,
     ...(suggestions.length ? ['', ...suggestions] : []),
     '',
     prompt,
   ];
 }
 
-export function homeHints(): readonly (readonly [string, string])[] {
-  return [['Enter', 'Run command'], ['Tab', 'Complete'], ['?', 'Keys'], ['Ctrl+C', 'Exit']];
+export function homeHints(locale: Locale = 'en', model?: HomeModel): readonly (readonly [string, string])[] {
+  if (model?.composer.startsWith('/')) {
+    return [
+      ['Tab', t(locale, 'hintTab')],
+      ['Enter', t(locale, 'hintEnter')],
+      ['Esc', t(locale, 'hintEsc')],
+      ['?', t(locale, 'hintKeys')],
+    ];
+  }
+  const enter = model?.recentExperiment ? t(locale, 'hintContinue') : t(locale, 'hintEnter');
+  return [
+    ['Enter', enter],
+    ['r', t(locale, 'hintRun')],
+    ['i', t(locale, 'hintImport')],
+    ['?', t(locale, 'hintKeys')],
+    ['Ctrl+C', t(locale, 'hintExit')],
+  ];
 }
 
-function commandLine(command: string, description: string, status: string): string {
-  const left = ` ${command.padEnd(10)} ${description}`;
+function continueLines(theme: Theme, model: HomeModel, locale: Locale): string[] {
+  const rows: string[] = [];
+  if (model.recentExperiment) {
+    const title = compact(model.recentExperiment.outcome ?? t(locale, 'recentRun'), 36, theme.glyphs.ellipsis);
+    rows.push(row(theme, 'Enter', t(locale, 'recentRun'), title));
+  }
+  rows.push(row(theme, 'r', t(locale, 'runCurrent'), runReadiness(theme, model, locale)));
+  rows.push(row(theme, 'i', t(locale, 'importSession'), ''));
+  if (!model.hasApiConfig || model.hasUsableAuth === false) {
+    const status = model.envName && model.envSet === false
+      ? t(locale, 'envUnset')
+      : t(locale, 'needsCred');
+    rows.push(row(theme, 'c', t(locale, 'openConfig'), theme.style.warn(status)));
+  }
+  return rows;
+}
+
+function row(theme: Theme, key: string, description: string, status: string): string {
+  const left = ` ${theme.style.muted(pad(key, 5))} ${description}`;
   return status ? `${left}  ${status}` : left;
 }
 
-function runReadiness(theme: Theme, model: HomeModel): string {
-  if (!model.taskCase) return theme.style.warn('needs a TaskCase');
-  if (!model.hasApiConfig) return theme.style.warn('needs API config');
-  return theme.style.ok(theme.glyphs.ok);
+function runReadiness(theme: Theme, model: HomeModel, locale: Locale): string {
+  if (!model.taskCase) return theme.style.warn(t(locale, 'needsTask'));
+  if (!model.hasApiConfig) return theme.style.warn(t(locale, 'needsConfig'));
+  if (model.envName && model.envSet === false) return theme.style.warn(t(locale, 'needsEnv'));
+  if (model.hasUsableAuth === false) return theme.style.warn(t(locale, 'needsCred'));
+  return theme.style.ok(t(locale, 'sourceReady'));
 }
 
-function renderSuggestions(theme: Theme, width: number, composer: string): string[] {
-  const matches = slashCommands().filter((command) => command.startsWith(composer.toLowerCase()));
-  const lines = matches.map((command, index) => ` ${index === 0 ? theme.glyphs.cursor : ' '} ${command}`);
-  return panel(theme, 'Commands', lines.length ? lines : [' No matching commands'], Math.min(width, 52));
+function nextLine(theme: Theme, locale: Locale, model: HomeModel): string {
+  if (!model.hasApiConfig) return theme.style.warn(t(locale, 'nextConfig'));
+  if (model.envName && model.envSet === false) return theme.style.warn(t(locale, 'nextSetEnv', { name: model.envName }));
+  if (model.hasUsableAuth === false) return theme.style.warn(t(locale, 'nextSetCred'));
+  if (!model.taskCase) return t(locale, 'nextIntake');
+  return t(locale, 'nextRun');
 }
 
-function leftWidth(width: number): number { return Math.floor((width - 2) / 2); }
-function rightWidth(width: number): number { return width - leftWidth(width) - 2; }
-
-function historicalCwdOf(taskCase: TaskCase): string | undefined {
-  const cwd = taskCase.taskContext?.historicalCwd;
-  return typeof cwd === 'string' ? cwd : undefined;
+function renderSuggestions(theme: Theme, width: number, model: HomeModel): string[] {
+  const locale = model.locale ?? 'en';
+  const matches = commandCatalog(locale).filter((item) => item.command.startsWith(model.composer.toLowerCase())
+    || slashCommands().some((command) => command.startsWith(model.composer.toLowerCase()) && command === item.command));
+  const lines = matches.map((item, index) => ` ${index === 0 ? theme.glyphs.cursor : ' '} ${pad(item.command, 10)} ${item.description}`);
+  return panel(theme, t(locale, 'commands'), lines.length ? lines : [` ${t(locale, 'noMatch')}`], Math.min(width, 72));
 }
 
 function frozenStart(taskCase: TaskCase): string {
   const users = taskCase.transcript.filter((message) => message.role === 'user');
-  const index = users.findIndex((message) => message.id === taskCase.initialInput.id);
-  if (index < 0 || users.length < 2) return '';
-  return ` · ${index + 1}/${users.length}`;
+  if (users.length < 2) return '';
+  return ` · ${users.length} turns`;
 }

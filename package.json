@@ -2,6 +2,14 @@
   "name": "reprise",
   "version": "0.1.0",
   "description": "Local-first harness for replaying and inspecting agent runtimes on real tasks.",
+  "license": "MIT",
+  "keywords": [
+    "agent",
+    "codex",
+    "local-first",
+    "replay",
+    "runtime"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22.19.0"
@@ -10,16 +18,28 @@
     "reprise": "dist/src/cli/main.js"
   },
   "files": [
-    "dist"
+    "dist/src"
   ],
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })\" && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/test/*.test.js",
+    "lint": "eslint src test scripts eslint.config.js",
+    "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
+    "test:only": "node --test \"dist/test/**/*.test.js\"",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage --test-coverage-exclude=dist/test/** --test-coverage-exclude=dist/scripts/** --test-coverage-exclude=dist/src/**/types.js --test-coverage-exclude=dist/src/cli/main.js \"dist/test/**/*.test.js\"",
     "check:node": "node dist/src/cli/main.js --version",
     "check": "npm run typecheck && npm test && npm run check:node",
     "postbuild": "node scripts/copy-test-fixtures.mjs",
-    "smoke:codex": "npm run build && node dist/scripts/codex-real-smoke.js"
+    "audit:tui": "npm run build && node scripts/tui-visual-audit.mjs && node scripts/tui-audit-analyze.mjs",
+    "smoke:codex": "npm run build && node dist/scripts/codex-real-smoke.js",
+    "smoke:codex:recovery": "npm run build && node dist/scripts/codex-real-recovery-smoke.js",
+    "smoke:claude": "npm run build && node dist/scripts/claude-real-smoke.js",
+    "smoke:claude:e2e": "npm run build && node dist/scripts/claude-real-e2e.js",
+    "diag:claude": "npm run build && node dist/scripts/claude-initialize-diag.js",
+    "list:claude-sessions": "npm run build && node dist/scripts/claude-list-sessions.js",
+    "replay:tui": "node scripts/tui-case-replay.mjs",
+    "flow:tui": "npm run build && node dist/scripts/tui-full-flow.js",
+    "prepublishOnly": "npm run check"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.84.1",
@@ -28,7 +48,13 @@
     "@sinclair/typebox": "0.34.52"
   },
   "devDependencies": {
-    "@types/node": "24.10.1",
-    "typescript": "5.9.3"
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.1",
+    "eslint": "10.8.1",
+    "globals": "17.11.0",
+    "jscpd": "4.0.5",
+    "knip": "5.70.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0"
   }
 }

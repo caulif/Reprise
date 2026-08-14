@@ -115,6 +115,46 @@ test('CandidateRun enforces settlement, turn budgets, cancellation, crash, timeo
   assert.equal(cleanup.result().outcome.cleanup.status, 'incomplete');
 });
 
+test('CandidateRun records failed and aborted settlements with causes and cleanup evidence', async () => {
+  for (const settlementStatus of ['failed', 'aborted'] as const) {
+    const root = await temporaryExperiment();
+    try {
+      const store = await ExperimentStore.open(root, 'experiment-1');
+      await store.acquireWriter();
+      const { attempt, manifest } = persistedRun();
+      const runner = new ScriptedRunner(
+        [{ delivery: 'accepted', evidence: 'native_admission' }],
+        [settled(settlementStatus)],
+      );
+      const run = new CandidateRun({
+        runner,
+        policy,
+        release: async () => ({ status: 'released' }),
+        persistence: { journal: store, attempt, manifest },
+      });
+
+      assert.equal(await run.start(initial, identity), 'finished');
+      const result = run.result();
+      const failure = result.outcome.termination.failure;
+      assert.equal(result.outcome.termination.code, 'failed.runtime');
+      assert.equal(failure?.message, `Target turn settled as ${settlementStatus}.`);
+      assert.notEqual(failure?.message, 'undefined');
+      assert.ok(result.record);
+      assert.deepEqual(result.record?.outcome, result.outcome);
+
+      const events = (await readFile(join(root, 'events.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { type: string; eventId: string; payload: unknown });
+      const outcomeEvent = events.find((event) => event.type === 'run.outcome_created');
+      const cleanupEvents = events.filter((event) => ['runtime.stop_completed', 'runtime.stop_failed', 'environment.release_completed', 'environment.release_failed'].includes(event.type));
+      assert.ok(outcomeEvent);
+      assert.deepEqual(outcomeEvent?.payload, result.outcome);
+      assert.deepEqual(result.outcome.cleanup.evidenceRefs, cleanupEvents.map((event) => `event:${event.eventId}`));
+      await store.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
 test('CandidateRun records a controller safety stop without claiming a user cancellation', async () => {
   const run = new CandidateRun({
     runner: new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]),
@@ -176,8 +216,9 @@ test('CandidateRun persists attempt, manifest, facts, and terminal record in one
     assert.deepEqual(replay.finishedPayload, result.record);
     assert.deepEqual((replay.finishedPayload as { artifactRefs: unknown }).artifactRefs, artifactRefs);
 
-    const events = (await readFile(join(root, 'events.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { type: string });
+    const events = (await readFile(join(root, 'events.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { type: string; payload?: { text?: string } });
     assert.equal(events.findIndex((event) => event.type === 'run.attempt_created') < events.findIndex((event) => event.type === 'run.manifest_created'), true);
+    assert.equal(events.find((event) => event.type === 'input.submitted')?.payload?.text, 'Start.');
     assert.equal(events.at(-1)?.type, 'run.finished');
     await store.close();
   } finally {

@@ -1,7 +1,8 @@
-import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
+import { pathToFileURL } from 'node:url';
+import { hyperlink, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 
-export const SLASH_COMMANDS = ['/help', '/config', '/intake', '/run', '/history'] as const;
-export const TIMELINE_FILTERS = ['ALL', 'TARGET', 'CONTROLLER', 'HARNESS'] as const;
+export const SLASH_COMMANDS = ['/help', '/config', '/intake', '/run', '/history', '/lang', '/home', '/find'] as const;
+export const TIMELINE_FILTERS = ['ALL', 'PRODUCT', 'INPUT'] as const;
 export type TimelineFilter = typeof TIMELINE_FILTERS[number];
 const ANSI = /\u001b\[[0-9;]*m/;
 
@@ -15,6 +16,11 @@ export function truncateFit(text: string, width: number, ellipsis = '...'): stri
 
 export function slashCommands(): readonly string[] {
   return SLASH_COMMANDS;
+}
+
+export function unwrapBracketedPaste(value: string): string {
+  const match = /^\u001b\[200~([\s\S]*)\u001b\[201~$/.exec(value);
+  return match ? match[1] ?? '' : value;
 }
 
 export function isTextInput(value: string): boolean {
@@ -36,6 +42,25 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export { formatBytes } from '../core/format.js';
+
+/** Short operator-facing text for the error page; keep the original Error for logs and causes. */
+export function operatorErrorMessage(error: unknown): string {
+  const codeValue = error instanceof Error && 'code' in error ? (error as { code?: unknown }).code : undefined;
+  const code = typeof codeValue === 'string' ? codeValue : '';
+  const message = errorMessage(error);
+  if (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || /operation not permitted, rename/i.test(message)) {
+    return 'Could not publish the isolated baseline. Windows still had a lock on the copied files. Return and /run again.';
+  }
+  return message;
+}
+
 export function missing(value: string | undefined, empty = '—'): string {
   return value?.trim() ? value : empty;
+}
+
+/** Visible label plus OSC 8 file:// link. Wrap the label first; do not wrap through this sequence. */
+export function fileLink(label: string, absolutePath: string): string {
+  if (!label || !absolutePath) return label;
+  return hyperlink(label, pathToFileURL(absolutePath).href);
 }

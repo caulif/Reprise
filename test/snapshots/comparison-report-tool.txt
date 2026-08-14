@@ -1,0 +1,19 @@
+[
+  {
+    "name": "write_comparison_report",
+    "description": "Write the final comparison.md report to the Host-owned report sink.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "content"
+      ],
+      "properties": {
+        "content": {
+          "minLength": 1,
+          "maxLength": 262144,
+          "type": "string"
+        }
+      }
+    }
+  }
+]

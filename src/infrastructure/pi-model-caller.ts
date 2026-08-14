@@ -1,7 +1,7 @@
 import { Agent, type AgentTool } from '@earendil-works/pi-agent-core';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
-import { contentText, createProvider, type Models, type MutableModels, type ThinkingLevel } from '@earendil-works/pi-ai';
+import { contentText, createProvider, type Models, type MutableModels } from '@earendil-works/pi-ai';
 import type { AgentToolDefinition, PiTextCaller, PiTextSession } from './pi-agent-host.js';
 import { environmentNameForKeyRef, type HarnessModelConfig } from './harness-model-config.js';
 
@@ -11,13 +11,13 @@ type MutablePiModels = PiModels & Pick<MutableModels, 'setProvider'>;
 export type PiProviderOption = { readonly id: string; readonly name: string };
 export type PiModelOption = { readonly id: string; readonly name: string };
 
-/** Builds Pi's native custom-provider path without persisting or logging an API key. */
+/** Builds Pi's native custom-provider path. The key comes from the local config file, or env:NAME. */
 export function modelsForConfig(config: HarnessModelConfig, models: MutablePiModels = builtinModels()): MutablePiModels {
   if (config.schemaVersion !== 2 || config.provider.kind !== 'openai-compatible') return models;
+  const fileKey = config.apiKey;
   const keyRef = config.keyRef;
   const baseUrl = config.baseUrl;
-  if (!keyRef || !baseUrl) throw new Error('OpenAI-compatible configuration requires baseUrl and keyRef.');
-  const environmentName = environmentNameForKeyRef(keyRef);
+  if (!baseUrl || (!fileKey && !keyRef)) throw new Error('OpenAI-compatible configuration requires baseUrl and apiKey.');
   models.setProvider(createProvider({
     id: config.provider.id,
     name: config.provider.id,
@@ -27,6 +27,9 @@ export function modelsForConfig(config: HarnessModelConfig, models: MutablePiMod
         name: 'Reprise API key',
         async resolve({ ctx, signal }) {
           signal.throwIfAborted();
+          if (fileKey) return { auth: { apiKey: fileKey }, source: 'harness-model.json' };
+          if (!keyRef) return undefined;
+          const environmentName = environmentNameForKeyRef(keyRef);
           const apiKey = await ctx.env(environmentName);
           signal.throwIfAborted();
           return apiKey ? { auth: { apiKey }, source: environmentName } : undefined;
@@ -64,10 +67,18 @@ export class PiModelCaller implements PiTextCaller {
     return this.#models.getModels(providerId).filter((model) => model.input.includes('text')).map((model) => ({ id: model.id, name: model.name })).sort((left, right) => left.name.localeCompare(right.name));
   }
 
+  async hasAuth(): Promise<boolean> {
+    try {
+      return Boolean(await this.#models.getAuth(this.#model()));
+    } catch {
+      return false;
+    }
+  }
+
   async validate(): Promise<{ source?: string }> {
     const model = this.#model();
     const auth = await this.#models.getAuth(model);
-    if (!auth) throw new Error(`Pi has no usable credential for provider ${this.#config.providerId}. Configure that provider in Pi or its supported environment first.`);
+    if (!auth) throw new Error(`Pi has no usable credential for provider ${this.#config.providerId}. Add apiKey to harness-model.json, or set the referenced environment variable.`);
     const response = await this.#models.completeSimple(model, {
       systemPrompt: 'Reprise connection check. Reply with exactly OK.',
       messages: [{ role: 'user', content: 'Reply with exactly OK.', timestamp: Date.now() }],
@@ -86,7 +97,7 @@ export class PiModelCaller implements PiTextCaller {
       initialState: {
         systemPrompt: input.systemPrompt,
         model: this.#model(),
-        thinkingLevel: this.#config.effort as ThinkingLevel,
+        thinkingLevel: this.#config.effort,
         tools: input.tools.map(toPiTool),
       },
     });
@@ -122,7 +133,7 @@ function toPiTool(tool: AgentToolDefinition): AgentTool {
     name: tool.name,
     label: tool.name,
     description: tool.description,
-    parameters: tool.parameters as never,
+    parameters: tool.parameters,
     executionMode: 'sequential',
     async execute(_toolCallId, params, signal) {
       const result = await tool.execute(params, signal ?? new AbortController().signal);

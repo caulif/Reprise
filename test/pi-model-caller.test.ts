@@ -16,7 +16,7 @@ test('Harness model config persists only the selected non-secret Pi model', asyn
   assert.doesNotMatch(await readFile(configPath(root), 'utf8'), /api[_-]?key|access|refresh/i);
   await writeFile(configPath(root), '{"schemaVersion":1,"providerId":"bad value","modelId":"x","effort":"medium"}\n');
   await assert.rejects(readHarnessModelConfig(root), /invalid/);
-  await writeFile(configPath(root), '{\"schemaVersion\":1,\"providerId\":\"openai\",\"modelId\":\"model-a\",\"effort\":\"medium\",\"baseUrl\":\"https://example.test/v1/\"}\n');
+  await writeFile(configPath(root), '{"schemaVersion":1,"providerId":"openai","modelId":"model-a","effort":"medium","baseUrl":"https://example.test/v1/"}\n');
   assert.equal((await readHarnessModelConfig(root))?.baseUrl, 'https://example.test/v1/');
   for (const baseUrl of ['http://example.test', 'https://key@example.test', 'https://example.test/?api_key=x', 'not-a-url']) {
     await writeFile(configPath(root), JSON.stringify({ schemaVersion: 1, providerId: 'openai', modelId: 'model-a', effort: 'medium', baseUrl }));
@@ -40,9 +40,27 @@ test('Harness model config migrates v1 and saves v2 without a secret', async (t)
   assert.equal(resolveKeyRef('env:REPRISE_TEST_KEY', { REPRISE_TEST_KEY: 'actual-secret-value' }), 'actual-secret-value');
   for (const invalid of ['REPRISE_TEST_KEY', 'env:bad-name', '${MISSING', 'env:']) assert.throws(() => environmentNameForKeyRef(invalid), /keyRef/);
   await writeFile(configPath(root), JSON.stringify({ ...config, keyRef: 'actual-secret-value' }));
-  await assert.rejects(readHarnessModelConfig(root), /keyRef/);
+  const fromKeyRef = await readHarnessModelConfig(root);
+  assert.equal(fromKeyRef && 'apiKey' in fromKeyRef ? fromKeyRef.apiKey : undefined, 'actual-secret-value');
+  assert.equal(fromKeyRef && 'keyRef' in fromKeyRef ? fromKeyRef.keyRef : undefined, undefined);
+  await writeFile(configPath(root), JSON.stringify({ ...config, keyRef: undefined, apiKey: 'file-secret-value' }));
+  const fromApiKey = await readHarnessModelConfig(root);
+  assert.equal(fromApiKey && 'apiKey' in fromApiKey ? fromApiKey.apiKey : undefined, 'file-secret-value');
   await writeFile(configPath(root), JSON.stringify({ ...config, baseUrl: 'https://key@example.test/v1' }));
   await assert.rejects(readHarnessModelConfig(root), /baseUrl/);
+});
+
+test('Harness model config persists a local apiKey', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-harness-api-key-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const config = { schemaVersion: 2 as const, provider: { kind: 'openai-compatible' as const, id: 'private-api' }, providerId: 'private-api', modelId: 'model-a', effort: 'medium' as const, baseUrl: 'https://example.test/v1', apiKey: 'file-secret-value' };
+  await saveHarnessModelConfig(root, config);
+  const persisted = JSON.parse(await readFile(configPath(root), 'utf8')) as { apiKey?: string; keyRef?: string; providerId?: string };
+  assert.equal(persisted.apiKey, 'file-secret-value');
+  assert.equal(persisted.keyRef, undefined);
+  assert.equal(persisted.providerId, undefined);
+  const loaded = await readHarnessModelConfig(root);
+  assert.equal(loaded && 'apiKey' in loaded ? loaded.apiKey : undefined, 'file-secret-value');
 });
 
 test('modelsForConfig registers an OpenAI-compatible model whose key only resolves at request time', async () => {
@@ -57,6 +75,17 @@ test('modelsForConfig registers an OpenAI-compatible model whose key only resolv
   assert.equal(auth?.source, 'REPRISE_TEST_KEY');
   assert.equal(auth?.auth.apiKey, 'actual-secret-value');
   assert.doesNotMatch(JSON.stringify(provider), /actual-secret-value/);
+});
+
+test('modelsForConfig resolves an API key stored in the local config file', async () => {
+  const providers: unknown[] = [];
+  const models = { setProvider(provider: unknown) { providers.push(provider); } } as never;
+  const config = { schemaVersion: 2 as const, provider: { kind: 'openai-compatible' as const, id: 'private-api' }, providerId: 'private-api', modelId: 'model-a', effort: 'medium' as const, baseUrl: 'https://example.test/v1', apiKey: 'file-secret-value' };
+  modelsForConfig(config, models);
+  const provider = providers[0] as { auth: { apiKey?: { resolve(input: { ctx: { env(name: string): Promise<string | undefined> }; signal: AbortSignal }): Promise<{ auth: { apiKey: string }; source?: string } | undefined> } } };
+  const auth = await provider.auth.apiKey?.resolve({ ctx: { env: async () => { throw new Error('must not read the process environment'); } }, signal: new AbortController().signal });
+  assert.equal(auth?.source, 'harness-model.json');
+  assert.equal(auth?.auth.apiKey, 'file-secret-value');
 });
 
 test('PiModelCaller validates configured catalog/auth and sends a text-only Pi request', async () => {
