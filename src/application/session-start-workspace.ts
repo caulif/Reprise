@@ -1,5 +1,6 @@
 import { readdir, rm, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { resolve } from "node:path";
+import { isFsAbsolute, pathContainedBy, relativeInside } from "../core/paths.js";
 import type { TaskCase } from "../core/schema.js";
 import { historicalCwdOf } from "./replay-conditions.js";
 
@@ -58,22 +59,17 @@ function toReplicaRelative(
   const normalized = trimmed.replaceAll("\\", "/");
   if (normalized.includes("\0") || normalized.split("/").includes(".."))
     return undefined;
-  if (!isAbsolute(trimmed)) {
+  if (!isFsAbsolute(trimmed)) {
     return normalized.replace(/^\.\//, "").replace(/\/+$/, "");
   }
   if (!historicalCwd) return undefined;
-  const rel = relative(resolve(historicalCwd), resolve(trimmed)).replaceAll(
-    "\\",
-    "/",
-  );
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  const rel = relativeInside(historicalCwd, trimmed);
+  if (!rel) return undefined;
   return rel;
 }
 
 function insideRoot(root: string, target: string): boolean {
-  const base = resolve(root).toLowerCase();
-  const next = resolve(target).toLowerCase();
-  return next === base || next.startsWith(`${base}\\`) || next.startsWith(`${base}/`);
+  return pathContainedBy(root, target);
 }
 
 async function pruneEmptyParents(root: string, deleted: string): Promise<void> {

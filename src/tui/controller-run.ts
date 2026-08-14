@@ -1,4 +1,5 @@
-import { basename, dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { isFsAbsolute } from '../core/paths.js';
 import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import type { CodexExperimentResult } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
@@ -12,7 +13,7 @@ import type { Consume, ControllerHandle } from './controller-input.js';
 
 export function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
-  return typeof cwd === 'string' && isAbsolute(cwd) ? cwd : undefined;
+  return typeof cwd === 'string' && isFsAbsolute(cwd) ? cwd : undefined;
 }
 
 export function envNameFromConfig(config: HarnessModelConfig, draft: HarnessConfigDraft): string | undefined {
@@ -50,7 +51,7 @@ export function startRunSetup(c: ControllerHandle): Consume {
   }
   c.sourceRoot = historicalCwd(c.taskCase) ?? '';
   c.sourceCursor = c.sourceRoot.length;
-  if (isAbsolute(c.sourceRoot.trim())) {
+  if (isFsAbsolute(c.sourceRoot.trim())) {
     c.runFromSource = false;
     void beginPreflight(c);
     return { consume: true };

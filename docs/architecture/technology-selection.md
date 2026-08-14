@@ -183,7 +183,7 @@ Runtime 下载不属于首版 Harness。自动下载会引入来源校验、许�
 
 第一版正式支持 Windows 11，因为当前开发和首批真实任务在 Windows，进程终止、路径、文件锁、软链接和环境恢复必须在真实平台验证。
 
-同时保持边界：Core、Agent Module、trace 和 renderer 不写 Windows 专属逻辑；差异封装在进程与文件系统基础设施、Product Pack 和 Environment Provider 中。macOS/Linux 不故意阻断，但在完成端到端验证前只标为未验证。
+同时保持边界：Core、Agent Module、trace 和 renderer 不写 Windows 专属逻辑；差异封装在进程与文件系统基础设施、Product Pack 和 Environment Provider 中。macOS/Linux 不故意阻断，但在完成端到端验证前只标为未验证。记录下来的盘符路径（会话 cwd、历史写入、报告短路径）在任何宿主上都按 Windows 路径比较，不得 `resolve()` 进 `process.cwd()`；本机打开或删除文件仍用宿主 `node:path`。
 
 不要同时承诺 Windows、WSL、容器、macOS 和 Linux 一致。WSL、容器和远程机器是 Environment capability，不是一个平台布尔值能解决的问题。
 

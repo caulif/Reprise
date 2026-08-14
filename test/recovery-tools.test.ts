@@ -78,8 +78,8 @@ test("staging_shell runs arbitrary staging commands with a clean temporary envir
     new AbortController().signal,
   );
   assert.equal(
-    await readFile(join(root, "shell-output.txt"), "utf8"),
-    "from-shell\r\n",
+    (await readFile(join(root, "shell-output.txt"), "utf8")).replaceAll("\r\n", "\n"),
+    "from-shell\n",
   );
 
   const environment = await shell.execute(

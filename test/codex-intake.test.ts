@@ -46,7 +46,7 @@ test("Codex intake TUI uses an ASCII narrow-terminal fallback and states the min
   assert.match(narrow, /Continue|Browse|\/ command/);
   assert.doesNotMatch(narrow, /[┌┐└┘│─❯●✓…]/);
   assert.match(narrow, /Continue|Browse|Last task/);
-  assert.match(narrow, /^Reprise v0\.1\.0/m);
+  assert.match(narrow.replace(/\u001b\[[0-9;]*m/g, ''), /^Reprise v0\.1\.0/m);
   assert.doesNotMatch(narrow.split("\n")[0] ?? "", /No configured model|gpt-/);
   assert.match(
     narrow.split("\n")[1] ?? "",

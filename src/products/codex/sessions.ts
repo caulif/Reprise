@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathContainedBy } from '../../core/paths.js';
 import { promisify } from 'node:util';
 import { SAFE_ID } from '../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
@@ -169,11 +170,7 @@ export const codexSessionAdapter: SessionSourceAdapter = {
 
 function excludedCwd(cwd: string | undefined, roots: readonly string[] | undefined): boolean {
   if (!cwd || !roots?.length) return false;
-  const resolved = resolve(cwd);
-  return roots.some((root) => {
-    const base = resolve(root);
-    return resolved === base || resolved.startsWith(`${base}${sep}`);
-  });
+  return roots.some((root) => pathContainedBy(root, cwd));
 }
 
 async function rolloutEntries(root: string): Promise<Array<{ path: string; mtime: number; size: number }>> {

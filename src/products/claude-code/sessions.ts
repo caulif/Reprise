@@ -1,7 +1,8 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join, resolve, sep } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { SAFE_ID } from '../../core/identity.js';
+import { pathContainedBy } from '../../core/paths.js';
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
 import type {
   ImportDiagnostic,
@@ -321,11 +322,7 @@ function parseRows(bytes: Buffer, sourcePath: string): JsonRecord[] {
 
 function excludedCwd(cwd: string | undefined, roots: readonly string[] | undefined): boolean {
   if (!cwd || !roots?.length) return false;
-  const resolved = resolve(cwd);
-  return roots.some((root) => {
-    const base = resolve(root);
-    return resolved === base || resolved.startsWith(`${base}${sep}`);
-  });
+  return roots.some((root) => pathContainedBy(root, cwd));
 }
 
 function startedAtFrom(imported: ImportedSession): string {

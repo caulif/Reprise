@@ -1,4 +1,5 @@
-import { dirname, isAbsolute } from 'node:path';
+import { dirname } from 'node:path';
+import { isFsAbsolute } from '../core/paths.js';
 import { matchesKey } from '@earendil-works/pi-tui';
 import type { CodexExperimentPreflight, CodexExperimentResult, ExperimentHandle, RecoveryAttempt } from '../application/experiment.js';
 import type { CodexTuiWorkflow } from '../application/tui-workflow.js';
@@ -259,7 +260,7 @@ function applySource(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'home') return c.backToHome();
   if (result.action === 'submit') {
     if (!c.taskCase || !c.workflow) return { consume: true };
-    if (!isAbsolute(c.sourceRoot.trim())) {
+    if (!isFsAbsolute(c.sourceRoot.trim())) {
       c.message = t(c.locale, 'sourceMustAbsolute');
       c.render();
       return { consume: true };

@@ -6,7 +6,7 @@ const GATES = [
   { id: 'typecheck', label: 'typecheck', command: 'npm', args: ['run', 'typecheck'] },
   { id: 'lint', label: 'lint', command: 'npm', args: ['run', 'lint'] },
   { id: 'verify:docs', label: 'verify docs', command: 'node', args: ['scripts/verify-docs.mjs'] },
-  { id: 'test', label: 'test', command: 'npm', args: ['run', 'test:only'], needs: ['build', 'lint'] },
+  { id: 'test', label: 'test', command: 'npm', args: ['run', 'test:only'], needs: ['build'] },
   { id: 'check:node', label: 'check node', command: 'npm', args: ['run', 'check:node'], needs: ['build'] },
   { id: 'audit:tui:check', label: 'tui frames', command: 'node', args: ['scripts/tui-visual-audit.mjs', '--check'], needs: ['build'] },
   { id: 'verify:generated', label: 'generated docs', command: 'node', args: ['scripts/gen-docs.mjs', '--check'], needs: ['build'] },

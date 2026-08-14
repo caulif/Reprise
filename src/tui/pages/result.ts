@@ -1,4 +1,5 @@
-import { basename, dirname, join, relative } from 'node:path';
+import { join } from 'node:path';
+import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { CodexExperimentResult } from '../../application/experiment.js';
 import { compact, missing } from '../format.js';
 import { t, type Locale } from '../i18n.js';
@@ -10,7 +11,7 @@ export function renderResult(theme: Theme, width: number, result: CodexExperimen
   const vacant = theme.framed ? '—' : '-';
   const decision = controllerLabel(theme, result, vacant);
   const comparison = missing(result.comparison.result.status, vacant);
-  const experimentRoot = result.experimentRoot ?? (result.reportPath ? dirname(result.reportPath) : undefined);
+  const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
   const report = shortPath(result.reportPath, experimentRoot, vacant);
   const runId = result.record.attempt?.runId;
   const trace = tracePath(runId, theme, width, vacant);
@@ -114,13 +115,20 @@ function explainOutcome(result: CodexExperimentResult, width: number): readonly 
   return undefined;
 }
 
+function parentPath(path: string): string {
+  const posix = asPosixPath(path).replace(/\/+$/, '');
+  const slash = posix.lastIndexOf('/');
+  return slash <= 0 ? posix : posix.slice(0, slash);
+}
+
 function shortPath(path: string | undefined, experimentRoot: string | undefined, vacant: string): string {
   if (!path?.trim()) return vacant;
   if (experimentRoot) {
-    const relativePath = relative(experimentRoot, path);
-    if (relativePath && relativePath !== path && !relativePath.startsWith('..')) return relativePath.replaceAll('\\', '/');
+    const relativePath = relativeInside(experimentRoot, path);
+    if (relativePath) return relativePath;
   }
-  return basename(path);
+  const parts = asPosixPath(path).split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? path;
 }
 
 function tracePath(runId: string | undefined, theme: Theme, width: number, vacant: string): string {
