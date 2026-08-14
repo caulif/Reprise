@@ -30,6 +30,7 @@
 - [文档受控边界](./decisions/accepted/2026-08-14-documentation-version-control-boundary.md)：`docs/` 里什么进 git、什么只留本地。
 - [覆盖率阈值只升不降](./decisions/accepted/2026-08-14-coverage-thresholds.md)：总体阈值取实测值向下取整，不留缓冲。
 - [报告 Host 壳跟随任务语言](./decisions/accepted/2026-08-14-report-host-chrome-follows-task-language.md)：`report.html` 的壳文案跟随 `initialInput`，不跟 TUI `/lang`。
+- [报告第一屏是判断正文](./decisions/accepted/2026-08-14-report-first-screen-is-narrative.md)：不做对照条；限制只留会改变读法的句子。
 - [`superseded/`](./decisions/superseded/)：被后续决策取代的记录，仅供追溯，不能作为当前依据。
 
 ## 未完成的工作

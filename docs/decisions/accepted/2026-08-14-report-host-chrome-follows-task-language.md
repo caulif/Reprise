@@ -26,4 +26,4 @@ Host 渲染的报告壳（题头、对照条标签、降级说明、停止原因
 
 ## 验证
 
-`test/comparison-report.test.ts` 用中文 `initialInput` 断言「宿主对照」「仅有终稿」「回放限制」，并断言不出现 `Host contrast`。英文任务夹具仍匹配 `Reprise comparison` 与 `Wall-clock`。
+`test/comparison-report.test.ts` 用中文 `initialInput` 断言「Reprise 比较」「不是排名」「回放限制」，并断言不出现 `Host contrast`。英文任务夹具仍匹配 `Reprise comparison`。
