@@ -522,9 +522,9 @@ Comparison 可自行使用只读工具：
 
 主产物应是 `comparison.md`。最终 HTML 由 Host 组合成：
 
-1. **题头**：任务一句话；case/run 降到 kicker；
+1. **题头**：任务一句话，加模型与效率一行；
 2. **Agent 比较正文**：安全渲染 `comparison.md`，保留 Agent 自主选择的结构和证据链接；
-3. **宿主对照条**：同一套格子的基线/候选（磁盘 / 结果 / 身份，文案跟随任务语言）；回放限制默认折叠。宿主事实不能从 Markdown 反向解析。
+3. **回放限制与文件**：最多三条会改变读法的 Host 限制（默认折叠），以及交付路径与折叠的原始记录。宿主事实不能从 Markdown 反向解析。
 
 机器接口只需一个薄信封保存 Markdown 路径、引用清单和状态。不要把 Comparison 再次压缩成 `summary + observations[] + limitations[]` 固定模板；该模板会让模型围绕 schema 填空，而不是调查和写报告。
 

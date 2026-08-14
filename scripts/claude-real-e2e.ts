@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   const body = `${report}\n${comparison}`.toLowerCase();
   const checks = {
     reportExists: /Reprise (comparison|比较)/.test(report),
-    hostStrip: /<article class="side baseline">/.test(report) && /<article class="side candidate">/.test(report),
+    hostStrip: /class="narrative"/.test(report) && /class="files"/.test(report),
     markdownRendered: !report.includes('<pre>') || report.includes('<h1>') || report.includes('<table'),
     baselineVsCandidate: /→/.test(report) || /resolved to/.test(body) || /解析为/.test(body),
     catalogVsRan: /listing is not the same as a successful call|列入目录不等于调用成功/.test(body),

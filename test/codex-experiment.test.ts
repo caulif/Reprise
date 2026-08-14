@@ -212,9 +212,9 @@ test("preflight is read-only and successful comparison writes a persisted narrat
   );
   const report = await readFile(result.reportPath, "utf8");
   assert.match(report, /href="comparison\.md"/);
-  assert.match(report, /this report is not a ranking/i);
+  assert.match(report, /not a ranking/i);
   assert.match(report, /Evidence-based narrative/);
-  assert.match(report, /Wall-clock: \d+ ms/);
+  assert.match(report, /\d+ ms/);
   assert.match(report, /host-trace\.json/);
   assert.doesNotMatch(report, /unknown/);
   assert.ok(

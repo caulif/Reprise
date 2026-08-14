@@ -641,7 +641,7 @@ type ComparisonEnvelope =
     }
 ```
 
-Comparison Agent 将调查叙述写入自由结构的 `comparison.md`，薄信封只返回阶段状态和引用；Renderer 校验引用，将任务题头、白名单 Markdown 正文、再其后的 Host 对照条确定性、安全地组合成报告。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 将调查叙述写入自由结构的 `comparison.md`，薄信封只返回阶段状态和引用；Renderer 校验引用，将任务题头、白名单 Markdown 正文、折叠的回放限制与文件入口确定性、安全地组合成报告。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
 Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Pi Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型

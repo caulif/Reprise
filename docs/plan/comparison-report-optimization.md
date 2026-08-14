@@ -147,14 +147,13 @@ Files 指错对象的原因在采集，不在 CSS。`captureWorkspaceScope` 只�
 **信息架构：**
 
 ```text
-题头     Host：任务一句话为 h1；case/run 在 kicker；终止 · 单次非排名
-正文     Comparison：白名单渲染后的 Markdown（先于 Host 对照条）
-对照条   Host：两列同一套格子 On disk / Outcome / Identity；基线无工作区快照时写明「仅有终稿」
-限制     Host：replayConditions 默认折叠
-证据     Host：改动路径（链到隔离区或 scope 快照）+ catalog 附件；JSON 轨迹默认折叠
+题头     Host：任务一句话；模型 · 回合/墙钟 · 不是排名
+正文     Comparison：白名单渲染后的 Markdown
+限制     Host：最多三条会改变读法的条件，默认折叠
+文件     Host：交付路径；JSON 轨迹与 catalog 默认折叠
 ```
 
-对照条与限制是 Host 核验事实，不从 Markdown 反解析。Comparison 正文可以重复解释，但不能覆盖这些格子。
+限制是 Host 核验事实，不从 Markdown 反解析。不做基线/候选对照条。
 
 **视觉：**
 
