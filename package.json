@@ -60,7 +60,7 @@
     "eslint": "10.8.1",
     "globals": "17.11.0",
     "jscpd": "4.0.5",
-    "knip": "5.70.2",
+    "knip": "6.32.1",
     "typescript": "5.9.3",
     "typescript-eslint": "8.67.0"
   }
