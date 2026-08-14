@@ -139,7 +139,7 @@ Files 指错对象的原因在采集，不在 CSS。`captureWorkspaceScope` 只�
 
 **渲染（先于配色）：**
 
-1. 白名单 Markdown：`h1`–`h3`、段落、`ul`/`ol`、`strong`/`em`、`code`、GFM 表、`[text](relative)`。其它标记当文本。禁止 raw HTML、`javascript:`、绝对本机路径。
+1. 白名单 Markdown：`h1`–`h3`、段落、`ul`/`ol`、`strong`/`em`、`code`、GFM 表、相对链接。其它标记当文本。禁止 raw HTML、`javascript:`、绝对本机路径。
 2. 把 `artifact:<id>` 兼容改写成 `./runs/<runId>/artifacts/<id>`（仅当 catalog 拥有该 id）。
 3. `html lang` 与 Host 壳文案都跟随 `initialInput` 的主要语言；模型名、路径和终止码保持原文。
 4. 无 Comparison 时仍输出 Host 壳 + 降级说明，行为与现门禁一致。
