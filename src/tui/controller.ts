@@ -92,6 +92,7 @@ export type CodexIntakeTuiOptions = {
   readonly tui?: TUI;
   readonly now?: () => string;
   readonly nowMs?: () => number;
+  readonly displayCwd?: string;
   readonly piModels?: PiModels;
   readonly workflow?: CodexTuiWorkflow;
 };
@@ -106,6 +107,7 @@ export class CodexIntakeTui {
   readonly workbench: Workbench;
   readonly now: () => string;
   readonly nowMs: () => number;
+  readonly displayCwd: string;
   readonly piModels: PiModels | undefined;
   readonly workflow: CodexTuiWorkflow | undefined;
   page: Page = "loading";
@@ -212,6 +214,7 @@ export class CodexIntakeTui {
     );
     this.now = options.now ?? (() => new Date().toISOString());
     this.nowMs = options.nowMs ?? Date.now;
+    this.displayCwd = options.displayCwd ?? process.cwd();
     this.piModels = options.piModels;
     this.workflow = options.workflow;
   }
@@ -951,6 +954,7 @@ export class CodexIntakeTui {
     const envName = envNameFromConfig(this.modelConfig, this.configDraft);
     return projectWorkbenchView({
       page: this.page,
+      cwd: this.displayCwd,
       modelConfig: this.modelConfig,
       hasSavedModelConfig: this.hasSavedModelConfig,
       locale: this.locale,

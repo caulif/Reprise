@@ -7,7 +7,11 @@ import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/i
 
 Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
 process.env.TERM = process.env.TERM && process.env.TERM !== 'dumb' ? process.env.TERM : 'xterm-256color';
+process.env.FORCE_COLOR = '0';
 delete process.env.NO_COLOR;
+
+/** Must match the cwd baked into docs/tui-audit/frames so Linux CI truncates the same way. */
+const DISPLAY_CWD = 'C:\\Users\\15893\\Documents\\model-test\\Reprise';
 
 const checkMode = process.argv.includes('--check');
 const outDir = join(process.cwd(), 'docs', 'tui-audit');
@@ -182,16 +186,21 @@ async function main() {
     dataDir, sessionsRoot, sessionsRoots: { codex: sessionsRoot, 'claude-code': claudeSessionsRoot },
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
     nowMs: () => 0,
+    displayCwd: DISPLAY_CWD,
     ...extra,
   });
 
   stabilize = (text) => {
     const posix = root.replaceAll('\\', '/');
     const win = root.replaceAll('/', '\\');
+    const cwd = process.cwd();
     return text
+      .replace(/\u001b\[[0-9;]*m/g, '')
       .split(pathToFileURL(root).href).join('file:///TMP')
       .split(win).join('TMP')
       .split(posix).join('TMP')
+      .split(cwd.replaceAll('/', '\\')).join(DISPLAY_CWD)
+      .split(cwd.replaceAll('\\', '/')).join(DISPLAY_CWD)
       .replace(/reprise-tui-audit-[A-Za-z0-9]+/g, 'reprise-tui-audit-TMP');
   };
   await saveHarnessModelConfig(join(root, 'data'), defaultHarnessModelConfig());

@@ -85,7 +85,7 @@ test("staging_shell runs arbitrary staging commands with a clean temporary envir
   const environment = await shell.execute(
     {
       command: nodeCommand(
-        "process.stdout.write(`${process.env.HOME}|${process.env.REPRISE_TEST_API_KEY ?? 'missing'}`)",
+        "process.stdout.write([process.env.HOME, process.env.REPRISE_TEST_API_KEY || 'missing'].join('|'))",
       ),
     },
     new AbortController().signal,

@@ -30,3 +30,4 @@
 - `test/paths.test.ts` 断言 `pathContainedBy(process.cwd(), 'C:/source') === false`。
 - `sessionWritePaths` 对 `C:\Windows\System32\evil.dll` 返回空，只保留副本内相对路径。
 - Ubuntu 上 `/intake` 能到达项目列表；`npm run test:coverage` 不因路径误判掉到阈值以下。
+- TUI 帧比对使用固定 `displayCwd` 和 `FORCE_COLOR=0`，不把宿主 `process.cwd()` 或 ANSI 写进 `docs/tui-audit/frames/`。

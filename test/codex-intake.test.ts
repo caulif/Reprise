@@ -1273,7 +1273,8 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
     keyRef: "env:REPRISE_PRIVATE_KEY",
   });
   assert.doesNotMatch(saved, /actual-secret-value/);
-  assert.doesNotMatch(rendered, /REPRISE_PRIVATE_KEY=.*\S/);
+  assert.doesNotMatch(rendered, /actual-secret-value/);
+  assert.match(rendered, /REPRISE_PRIVATE_KEY is not set/);
 });
 
 test("intake search accepts a slash after search has started", async (t) => {

@@ -28,6 +28,7 @@ type Input = {
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
+  readonly cwd?: string;
 };
 
 function homeModel(input: Input, envSet: boolean) {
@@ -62,7 +63,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   const envSet = Boolean(input.envName && process.env[input.envName]);
   const home = homeModel(input, envSet);
   const base: WorkbenchView = {
-    page: input.page, cwd: process.cwd(),
+    page: input.page, cwd: input.cwd ?? process.cwd(),
     ...(input.hasSavedModelConfig ? { modelId: input.modelConfig.modelId, effort: input.modelConfig.effort } : {}),
     hasApiConfig: input.hasSavedModelConfig,
     hasUsableAuth: input.hasSavedModelConfig && input.harnessAuthOk,
