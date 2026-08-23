@@ -14,7 +14,7 @@ import {
 
 export const EXPERIMENT_APPLICATION_MODEL = 'gpt-5.6-terra';
 export const EXPERIMENT_APPLICATION_EFFORT: CodexReasoningEffort = 'medium';
-export const EXPERIMENT_APPLICATION_TURN_TIMEOUT_MS = 10 * 60_000;
+const EXPERIMENT_APPLICATION_TURN_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * A text-only Experiment Application caller backed by the current Codex app-server.

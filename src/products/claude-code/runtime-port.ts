@@ -25,8 +25,6 @@ import type {
 } from '../../core/runtime.js';
 import { discoverExecutable, forceKill, positiveTimeout, settlesWithin } from '../shared/process.js';
 
-export { redactDiagnostic } from '../shared/process.js';
-
 export const CLAUDE_DISALLOWED_TOOLS = ['CronCreate', 'CronDelete', 'ScheduleWakeup', 'SendMessage'] as const;
 export const CLAUDE_REQUIRED_ARGS = [
   '-p',
@@ -62,7 +60,7 @@ export type ClaudeRuntimeOptions = {
 type PendingControl = { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> };
 type PendingSettlement = { resolve: (settlement: TurnSettlement) => void; reject: (reason: Error) => void };
 
-export class ClaudeRuntimeUnavailableError extends Error {
+class ClaudeRuntimeUnavailableError extends Error {
   readonly code = 'unsupported_runtime';
   constructor(message: string) {
     super(message);
@@ -70,7 +68,7 @@ export class ClaudeRuntimeUnavailableError extends Error {
   }
 }
 
-export class ClaudeProcessCloseError extends Error {
+class ClaudeProcessCloseError extends Error {
   readonly remainingResourceIds: readonly string[];
   constructor(resourceId: string) {
     super(`Claude Code process ${resourceId} did not close after forced termination.`);
@@ -131,6 +129,8 @@ export class ClaudeStreamClient {
     });
     this.#process = child;
     child.stdin.on('error', () => { /* Windows EPIPE must not crash the host. */ });
+    child.stdout.on('error', (error) => this.#failAll(new ClaudeRuntimeUnavailableError(error.message)));
+    child.stderr.on('error', () => { /* stderr pipe failures are consumed; process close reports availability. */ });
     child.stdout.on('data', (chunk: Buffer | string) => { void this.#onChunk(String(chunk)); });
     child.stderr.on('data', () => { /* stderr is diagnostic-only; persist via runner if needed. */ });
     child.on('error', (error) => this.#failAll(new ClaudeRuntimeUnavailableError(error.message)));
@@ -510,6 +510,15 @@ export class ClaudeCodeRuntimePort implements RuntimePort {
     return { ...resolved, resolvedModel: match.resolvedModel };
   }
 
+  recoveryCapabilities() {
+    return {
+      sessionHistory: 'available' as const,
+      localArtifacts: true,
+      workspaceHistory: false,
+      externalSideEffects: "unobserved" as const,
+    };
+  }
+
   async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner> {
     if (runtime.productId !== 'claude-code') throw new ClaudeRuntimeUnavailableError('Only Claude Code runtimes can create a stream-json runner.');
     if (!isAbsolute(environment.root)) throw new ClaudeRuntimeUnavailableError('Claude Code requires an absolute isolated workspace path.');
@@ -524,7 +533,7 @@ export class ClaudeCodeRuntimePort implements RuntimePort {
   }
 }
 
-export async function discoverClaudeExecutable(options: ClaudeRuntimeOptions = {}): Promise<string | undefined> {
+async function discoverClaudeExecutable(options: ClaudeRuntimeOptions = {}): Promise<string | undefined> {
   return discoverExecutable({
     command: 'claude',
     envKey: 'REPRISE_CLAUDE_EXECUTABLE',

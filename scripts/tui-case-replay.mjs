@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { CodexIntakeTui } from '../dist/src/tui/intake-app.js';
 import { createCodexTuiWorkflow } from '../dist/src/application/tui-workflow.js';
 import { CodexRuntimePort } from '../dist/src/products/codex/runtime-port.js';
+import { mockTui, pageHtml, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
 Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
 process.env.TERM = process.env.TERM && process.env.TERM !== 'dumb' ? process.env.TERM : 'xterm-256color';
@@ -25,58 +26,9 @@ const shotDir = join(outDir, 'screenshots');
 const RUN_TIMEOUT_MS = 28 * 60_000;
 const execFileAsync = promisify(execFile);
 
-function mockTui(terminal) {
-  let document;
-  const tui = {
-    terminal,
-    addChild(component) { document = component; },
-    addInputListener() { return () => {}; },
-    start() {},
-    stop() {},
-    requestRender() {},
-    renderNow() {},
-  };
-  return { tui, render(width = 120) { return document?.render(width).join('\n') ?? ''; } };
-}
-
 function enterCommand(app, command) {
   app.handleInput(command);
   app.handleInput('\r');
-}
-
-async function waitFor(condition, ms = 120_000, frame = () => '') {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
-    if (condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(`TUI did not reach the expected state.\n${frame().slice(0, 1500)}`);
-}
-
-function ansiToHtml(text) {
-  const withLinks = text.replace(/\u001b\]8;;([^\u001b]*)\u001b\\([\s\S]*?)\u001b\]8;;\u001b\\/g, (_, url, body) => {
-    const href = String(url).replaceAll('&', '&amp;').replaceAll('"', '&quot;');
-    return `\x00A${href}\x00B${body}\x00C`;
-  });
-  const escaped = withLinks.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-  const colors = {
-    '1': 'font-weight:700', '2': 'opacity:.65', '31': 'color:#f87171', '32': 'color:#4ade80',
-    '33': 'color:#facc15', '34': 'color:#60a5fa', '35': 'color:#e879f9', '36': 'color:#22d3ee',
-    '36;1': 'color:#22d3ee;font-weight:700',
-  };
-  return escaped.replace(/\u001b\[([0-9;]+)m([\s\S]*?)\u001b\[0m/g, (_, code, body) => {
-    const style = colors[code] ?? '';
-    return style ? `<span style="${style}">${body}</span>` : body;
-  }).replace(/\u001b\[[0-9;]*m/g, '').replace(/\x00A([^\x00]*)\x00B([\s\S]*?)\x00C/g, (_, href, body) => (
-    `<a href="${href}" style="color:#67e8f9;text-decoration:underline">${body}</a>`
-  ));
-}
-
-function pageHtml(title, width, frame) {
-  const lines = frame.split('\n');
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title}</title>
-<style>html,body{margin:0;background:#0b1220;color:#e5e7eb}.wrap{padding:16px 20px 24px}h1{font:600 14px/1.4 ui-sans-serif,system-ui;color:#93c5fd;margin:0 0 12px}pre{margin:0;padding:12px 14px;background:#111827;border:1px solid #1f2937;border-radius:8px;font:13px/1.35 Consolas,monospace;white-space:pre;overflow:auto;min-width:${Math.max(40, width)}ch}</style>
-</head><body><div class="wrap"><h1>${title} · ${width} cols · ${lines.length} rows</h1><pre>${ansiToHtml(frame)}</pre></div></body></html>`;
 }
 
 function stripAnsi(text) {
@@ -147,24 +99,24 @@ async function main() {
   const frame = () => host.render(120);
   await push('01-home', 120, frame());
   enterCommand(app, '/history');
-  await waitFor(() => /Recent experiments ·/.test(frame()), 180_000, frame);
+  await waitFor(() => /Recent experiments ·/.test(frame()), { timeoutMs: 180_000, frame });
   await push('02-history-runs', 120, frame());
   app.handleInput('\t');
-  await waitFor(() => /TaskCases ·/.test(frame()), 30_000, frame);
+  await waitFor(() => /TaskCases ·/.test(frame()), { timeoutMs: 30_000, frame });
   await push('03-history-cases', 120, frame());
   for (let index = 0; index < 12 && !new RegExp(`\\b${CASE_ID}\\b`).test(frame()); index += 1) app.handleInput('\u001b[B');
   if (!new RegExp(`\\b${CASE_ID}\\b`).test(frame())) throw new Error(`TaskCase ${CASE_ID} was not visible in history.\n${frame()}`);
   await push('04-history-case-selected', 120, frame());
   app.handleInput('\r');
-  await waitFor(() => /TaskCase:/.test(frame()) && frame().includes(CASE_ID), 30_000, frame);
+  await waitFor(() => /TaskCase:/.test(frame()) && frame().includes(CASE_ID), { timeoutMs: 30_000, frame });
   await push('05-history-detail', 120, frame());
   app.handleInput('\r');
-  await waitFor(() => new RegExp(`${CASE_ID} is current`).test(frame()), 30_000, frame);
+  await waitFor(() => new RegExp(`${CASE_ID} is current`).test(frame()), { timeoutMs: 30_000, frame });
   await push('06-home-with-case', 120, frame());
 
   enterCommand(app, '/run');
   log('starting isolated run');
-  await waitFor(() => /Timeline |Enter the absolute source|no usable credential|Experiment did not start|Cannot continue|Codex was not started/.test(frame()), 180_000, frame);
+  await waitFor(() => /Timeline |Enter the absolute source|no usable credential|Experiment did not start|Cannot continue|Codex was not started/.test(frame()), { timeoutMs: 180_000, frame });
   await push('07-after-run', 120, frame());
   if (/Enter the absolute source/.test(frame())) {
     throw new Error('Historical cwd is missing; refusing to invent a source root.');
@@ -253,7 +205,7 @@ async function copyExperimentArtifacts(dataDir, experimentId, dest) {
   const root = join(dataDir, 'experiments', experimentId);
   await mkdir(dest, { recursive: true });
   const copied = [];
-  for (const name of ['experiment.json', 'comparison.md', 'report.md']) {
+  for (const name of ['experiment.json', 'report.html', 'report.md']) {
     try {
       await copyFile(join(root, name), join(dest, name));
       copied.push(name);

@@ -1,0 +1,1605 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "caseId": "truth-001",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-001-before\n",
+        "nested/notes.md": "# truth-001\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "d72928ae4aff2316916b9490ed7b910117a0cc61e1371f87646d0ebd17c0c704",
+        "nested/notes.md": "62f65e36cd0d21cac581a01376eb354a4fa6261551b01a05703d7792be7e0579",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-002",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-002-before\n",
+        "nested/notes.md": "# truth-002\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "3396588b171e424b3741b0d2eb6c8cd61515b50dd70c87e77ee6027cc52238e1",
+        "nested/notes.md": "af53cf0644149dead053cf22ada16f7384a4903ecf870df1a9c601dfb60395a3",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-003",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-003-before\n",
+        "nested/notes.md": "# truth-003\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "f81787a99011065370f964d9a5288e33f1a9f8ed0eb9134b4d0926f2c0ee417f",
+        "nested/notes.md": "2ba1de42b9edfa513af798521a7e0be21f8e9a79eeba949a1d0fd2d0f79b28d5",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-004",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-004-before\n",
+        "nested/notes.md": "# truth-004\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "392a48fa67356733f48013ee16d98f1dfe80cdd0a8eb05a228448c308ee0287e",
+        "nested/notes.md": "a22019d1f736571ac9598a66f4c5a59ca965d80080b7f004c08ee724a97f340a",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-005",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-005-before\n",
+        "nested/notes.md": "# truth-005\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "15b4acc128c2004ab85edf8982ace466cdc5bcd3d1a376588fac005eb6b654a0",
+        "nested/notes.md": "e685bed6b8f2e7aacb66b74a10f9f7dd938f04dd4b97dec3fa43f1e0c295ae40",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-006",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-006-before\n",
+        "nested/notes.md": "# truth-006\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "109381867bda993d5d555598ab0e1acb3b4a44885df51f0ab7a626b0ab4300ba",
+        "nested/notes.md": "aeda9501ea38a5d52ffd17aa99f190753c80ec81e92fd32ae1b2384d57d9e0ed",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-007",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-007-before\n",
+        "nested/notes.md": "# truth-007\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "d9a7ce7b3a6f888cc8339456f058e997e143c2e84b04f56cb6cd3f01d9f9204d",
+        "nested/notes.md": "656c810a1ec5db90706b1154fce16d0bb5b97f022e07876e5ea8d312ed52c89e",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-008",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-008-before\n",
+        "nested/notes.md": "# truth-008\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "71fd361d442d1652f882d35fa23291f4f9f6fe2d7583d0b1c26382e83cc482df",
+        "nested/notes.md": "0c77165cba9beba3b56e5b1cd44d22e8270087a35506a4e9db7cb78356d3ca61",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-009",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-009-before\n",
+        "nested/notes.md": "# truth-009\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "51562243d5a482537185f6ab254d563f7c99ca75fbfe2a485b69da5a88663c2f",
+        "nested/notes.md": "42c372b01290d14f2e2c99d25e91932c64de039d0f5e9e90b1aa9a90549638bf",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-010",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-010-before\n",
+        "nested/notes.md": "# truth-010\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "b9441a425e44b410b44350e0c8a0a0a45cd2c9f45b2189eb4cd85ca669a33554",
+        "nested/notes.md": "1622696f92b4dd8904bd51007c56b50d273665489dea8b9500d5aaa3f0b9896e",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-011",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-011-before\n",
+        "nested/notes.md": "# truth-011\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "0666c39e0ba2becab6005ae60d4bb2519fe492f7c93034974a5f7e3a743d8af6",
+        "nested/notes.md": "a319bb5e9eb65e6543ba06380b74fe95dfbedec4a40d08dd3ec97d11632a2061",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-012",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-012-before\n",
+        "nested/notes.md": "# truth-012\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "ecf7cedd982476c2d3d71db59541124538b0b8173e73b8a0ebe4b0cfc1104953",
+        "nested/notes.md": "1f7f65f50bb9a8a05691acf85bbb26823cc2f457ba5d1ef8730d95ff80ea6803",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-013",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-013-before\n",
+        "nested/notes.md": "# truth-013\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "b3739dcc48dc66f179330434f019747ee1384cef62bf952db4767eeab786fc11",
+        "nested/notes.md": "352b0983af657ea913632577470cf86c4dc572fd7e28296789c0c38f7b2f9dcc",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-014",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-014-before\n",
+        "nested/notes.md": "# truth-014\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "55d65c90f716c3097d669a8fc4a43df75dbca30ab7220d7d8f6984165acb1307",
+        "nested/notes.md": "5bc6b7d24e0d1c5a3e389d6810637c7bfc8f97f4bfa2f52b5cecd4afe3d3f809",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-015",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-015-before\n",
+        "nested/notes.md": "# truth-015\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "a986829d118b924afddb7a94722a7bdfc19c57832b4e1369f315372388854e61",
+        "nested/notes.md": "0bde43dd3b23cf43886989fd4db9086bb7d9dffed6a5dc3958585e290be0a2be",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-016",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-016-before\n",
+        "nested/notes.md": "# truth-016\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "70e3c85c3b61f03c3a251572df0bde9107d660eea6efb8c39ef8d684bf9b4d8e",
+        "nested/notes.md": "42754828e7982ec2451406ae8c73c62939f7ba3396b195c9ce6b4230f133841e",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-017",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-017-before\n",
+        "nested/notes.md": "# truth-017\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "b1909705eb1d9a785f8d9fe281823d90b58840ea0bb2ade7973db313c37a6874",
+        "nested/notes.md": "8810930f46457fad8b1808ca24548849940cd027d5fd8cd93b096b8a42d6e8ee",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-018",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-018-before\n",
+        "nested/notes.md": "# truth-018\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "c38b8f0d18fe5ffdb41bb51ae5289e5764a596df581736aa356110f2617744ee",
+        "nested/notes.md": "d08248acaf4ce51411fe9b48a48fd6fd09f511b0e437f8c8624e41275fc5f931",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-019",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-019-before\n",
+        "nested/notes.md": "# truth-019\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "6f54d13b914ad9184524a913770158c5a83017a30bf180660020ba20ab9a88ef",
+        "nested/notes.md": "3631e58235945a1ddda84324427f853a1573d2358daea0f4396d412485417ac6",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-020",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-020-before\n",
+        "nested/notes.md": "# truth-020\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "1afd361544a0d023c30f2bf6707e5b325d954eb84e3836f8b8f1bf1cb5fba348",
+        "nested/notes.md": "83da859cefc1446c0f108a0c9cb08998563644eb0de7fef5dfc16e0035ff1dab",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-021",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-021-before\n",
+        "nested/notes.md": "# truth-021\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "26a850f7d2a499c589e12d9cf462fc243c02a1cf4f95bbc7d7207453084799d8",
+        "nested/notes.md": "3d25fa29a325c4bd4857da1158ea7d28ffc9b2777fbc7df7db1bd3a60d01676c",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-022",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-022-before\n",
+        "nested/notes.md": "# truth-022\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "ff5e23ad904cf730a087916e961c3afbc46d10c2184ffb5b03801116ac8be177",
+        "nested/notes.md": "bc807e51f3f6e587f9515943f285edc4e45528e14059af20be5dfd4c1d2ba869",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-023",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-023-before\n",
+        "nested/notes.md": "# truth-023\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "dfb8a89922539cb960789f322b98bbdc00270c98482e1cb59e1def151878c3b1",
+        "nested/notes.md": "7ba458eb5093c9e0f51745688fab841cb94cefb527f51b2e0ac3dfd14492bd27",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-024",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-024-before\n",
+        "nested/notes.md": "# truth-024\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "396fc4f61a8f2f5d1410d1b3c03867244c623f758fb8f8599de21be2a974fafc",
+        "nested/notes.md": "8160ab35cd308bab850d355813b65b426ebef552a250968de79f2cb4008fbcff",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-025",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-025-before\n",
+        "nested/notes.md": "# truth-025\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "6fcdc44e99215c9ee5ec2c9d6741d3ce861d6945a6711f67d1fc5c3bd72ba6a5",
+        "nested/notes.md": "49287d192952d1f9ec96feaba7585846aa2fd7f27a0997a36b0508766600920a",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-026",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-026-before\n",
+        "nested/notes.md": "# truth-026\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "b3e843ee0b1c3534ac46fe669652a95657df40e9fd40f57193fce3afa7f3e83c",
+        "nested/notes.md": "9684b1b40cbd3ab6c5c4c75227a958ede6ef58a50b720c8defa3192658fdcf53",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-027",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-027-before\n",
+        "nested/notes.md": "# truth-027\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "10f17ac0842b7691fd5daa2a903dfdd5d7fb25413d6675eb7265aa4d114f97dc",
+        "nested/notes.md": "e42ba4befcf2cbf2f504520d1824e2ecc9cc438e73e1bdde20812485c365794b",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-028",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-028-before\n",
+        "nested/notes.md": "# truth-028\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "cd1e11d48281a26b6ce2f59ea99af1997ccae564e1854cc680e33e1e852eddce",
+        "nested/notes.md": "5e8e55abe85c2180b84ef6a33efd5789c40ec44b42a1b305e1f7932477b186de",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-029",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-029-before\n",
+        "nested/notes.md": "# truth-029\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "c0e4a0e93da043128dd9d6696cd7d3a0fa49fdc210df167e5c462c17aa3e7b7b",
+        "nested/notes.md": "86775b4eef1de33fa6c7a484962311e15ba3db2c908a768e902d5147d9a6fd6e",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-030",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-030-before\n",
+        "nested/notes.md": "# truth-030\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "7ee9c3ab0da7477f2e45e8767a0a98a1adf5e80f1022b47aa1f112a3c6f6f24d",
+        "nested/notes.md": "72cc2db6c942d48b72edbadec4c431119a3c51f204c29b999459d8229f924246",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-031",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-031-before\n",
+        "nested/notes.md": "# truth-031\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "b55d4f091c607458a7fd6b96570c83e4f89f1b58ae085d42335aef380555ff8e",
+        "nested/notes.md": "76305d265f43ac04272a419e2eee75c0dc77fd96223d6a55fadb92c156b7ddf1",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-032",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-032-before\n",
+        "nested/notes.md": "# truth-032\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "284e31de8444b5b4ce1d7e7739de0b93e6df243c65423d7a753c461365b93f2d",
+        "nested/notes.md": "7f34c38c845b66ede2aa5bb0f5a11ba19c6263230a87bce8dfdca8916c88bd44",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-033",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-033-before\n",
+        "nested/notes.md": "# truth-033\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "5ef025cad2ce7d439f2419495b232540789b8ec7470eb099b24dd1cbbba3936c",
+        "nested/notes.md": "d0f234de59b3df52d87d672c02494f30128d251b0be3b468a769b88a47ca3d61",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-034",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-034-before\n",
+        "nested/notes.md": "# truth-034\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "c03a2c52e66452787955344cefe3dfd15d87d41675a22a3707d91f0b12f99246",
+        "nested/notes.md": "51c12a632227001c65f7e541b0aaf6cc6d8d1b96f9b9cc75c2bfc802c79d3067",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-035",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-035-before\n",
+        "nested/notes.md": "# truth-035\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "5a03c9a5174a6a9fd15a0aee6ad6b739b57bb266c3f33e963095b4d63e9fe129",
+        "nested/notes.md": "e9060f3c5b1502de649805a3a8ebea58773e7593ca25d605c60cdcaeff562c10",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-036",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-036-before\n",
+        "nested/notes.md": "# truth-036\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "aa11b8c7700be59c18811ac01b4103ffa9ab2b7b422cdd5ecb19d63d38c9e4ef",
+        "nested/notes.md": "d2d1fdcba4431410e610fc8aa2b15e78718551bddad0689919d1c9172ae99cdd",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-037",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-037-before\n",
+        "nested/notes.md": "# truth-037\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "39e6a0d2ea8d71ffad95ff1ad3fa4c00cd4f76237bb3978b8e0e11a0eeccc001",
+        "nested/notes.md": "50f487d155f8453d56241a29df99a78eac1b4cb3c5a8b7d59e1003202bbff549",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-038",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-038-before\n",
+        "nested/notes.md": "# truth-038\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "52ed9e8c166697c38d8d1b76b12ae6f2eb418047d1cf6f6d16bead870459d1ed",
+        "nested/notes.md": "3c735cb17afe9c99e506f5c3cf4ee4f2cde77f30b5942c9bda4315c80b0e3a33",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-039",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-039-before\n",
+        "nested/notes.md": "# truth-039\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "9b3b976ab10939745f8020cf6d62f8333f563cf178da05bbe40f066d7fbe08f1",
+        "nested/notes.md": "2e71608eb23675d4c09ff47f7275d6bded4504e5f5ebef3887a8f13e8ba6e1ec",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-040",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-040-before\n",
+        "nested/notes.md": "# truth-040\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "2fe6571382b61dcf0eafc54da146126f70fc6124a6ba28fd7c7232579ae1e41b",
+        "nested/notes.md": "a49cb3921524e79d2f7a20dd09f5d74ef661d62550f02c3fba6000767377a8a3",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-041",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-041-before\n",
+        "nested/notes.md": "# truth-041\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "d5120e85ae11ce5c5a0b44b9d2cee30d09ee92863c6ec8dc743d70821f7c701f",
+        "nested/notes.md": "09c648c65550894dd6ac2724c14556aebc0eeb33285733b2e2cab98e4f82ef18",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-042",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-042-before\n",
+        "nested/notes.md": "# truth-042\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "c91509cd56358f2d33d621d3c610ec8eb8c5dcea918c84b6c1ca65c27328c6be",
+        "nested/notes.md": "f2d63a058f1abbf5a9e965c6f28cbc79aec8b12d656c02aa22a738f19c06a257",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-043",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-043-before\n",
+        "nested/notes.md": "# truth-043\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "8da1962763d3424991245ed177c562c1c556554485dc3e739e536f666ad1e394",
+        "nested/notes.md": "9fa97aa5494ea3c1b7a80584c4beed78e5390ccaa4de45bbc07c8bddc8f76fd5",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-044",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-044-before\n",
+        "nested/notes.md": "# truth-044\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "70ec7f17199893ea685fb4aa2535131900f168f70ee501ae8681d14d9f4042bc",
+        "nested/notes.md": "87a99ad519a953d57b207403311679d24a83fe3bb9e2a52d0087d9c2273e0a4c",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-045",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-045-before\n",
+        "nested/notes.md": "# truth-045\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "b1dc3f59cd50cca4de156d234e900a201f389b72223d91b6ab10331017c5a380",
+        "nested/notes.md": "77a4144fd2d551bdfa42e5456932736b65f6c6e8744a551f3494fb0e3cfc995f",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-046",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-046-before\n",
+        "nested/notes.md": "# truth-046\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "ef007601c0e0a3bb61c27176d35c3acf3294e06a0fd30f92c22253d5326204c9",
+        "nested/notes.md": "97e4e8ecfc90b0ab29e3160d0e8d0d310b9ae01ab30db865560ac5cf558cf135",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-047",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-047-before\n",
+        "nested/notes.md": "# truth-047\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "7419737f21568465e244cdb295ad4d4796abe385b2617e04459294eea357a15f",
+        "nested/notes.md": "0b779b9c9a6c141156a45f4dea3e13a7ecca27e71f42aea5f9374032d277acab",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-048",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-048-before\n",
+        "nested/notes.md": "# truth-048\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "866cf5097337025b703d1f6b901d944f23a64e71adf3c6f349af8a1993efdd5f",
+        "nested/notes.md": "4abfb909f6855f50fc1433bdbab02ea39ba3317ea97aecd6105c8a6857195244",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-049",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-049-before\n",
+        "nested/notes.md": "# truth-049\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "f96dac79c4047e762227e5e717836c030885dc12be0a74af5c1fc6843e99faf7",
+        "nested/notes.md": "5930699422af5e5ae88d84544c5f43a1f166d6ed8bbc1e6e07f0606db095b27d",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-050",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-050-before\n",
+        "nested/notes.md": "# truth-050\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "cf147977e0c36092b2c1ab77cf048fc9c3510bcbf515a4f4ac3585b16a18591c",
+        "nested/notes.md": "88ee6f5c93e0add25489846efa543aa021127603d6b07cb0b5a82c40e47d60c7",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-051",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-051-before\n",
+        "nested/notes.md": "# truth-051\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "16e9fabf812c9b5dde85bb30a742c47e6768aa6302abac0a36e5c88b901ef218",
+        "nested/notes.md": "e031636257ab54623692532da66a699c93f32dc2e359630a10dde1b19df209ea",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-052",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-052-before\n",
+        "nested/notes.md": "# truth-052\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "c98c11591b62ee1668ae2809fc97adb614586f091e96b5e41771300cec3fd99f",
+        "nested/notes.md": "45d634c6db468cc5a55b4c9e0f6bf3df8e7b1be0a805bf29aa4877e9c74e097d",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-053",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-053-before\n",
+        "nested/notes.md": "# truth-053\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "14b419f8a68c4bdbdb88e0190b2e18e743ce817d3d9e4d7714ace009d750d572",
+        "nested/notes.md": "89faa1ff88caa6e888a66f90b1af62d7d0313a8eb9b9851b064a196c79d8dd8c",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-054",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-054-before\n",
+        "nested/notes.md": "# truth-054\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "2c8ea900f6bd9c1d1c8a0527cc717a3cdcfcf79864dd62c8588d9db9b9967928",
+        "nested/notes.md": "514134cab518dc00bf787ee15e58c1a2517115c5746334dd9f8e2ad476be263c",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-055",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-055-before\n",
+        "nested/notes.md": "# truth-055\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "8738cb65f293f5b0be991c7c8c68802a38443e5ad2f87c8fb2edc636338dee6e",
+        "nested/notes.md": "b41b1756794e0b8959f217a7faa5549ac98ff7db77691a478e1b229d1e8407b0",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-056",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-056-before\n",
+        "nested/notes.md": "# truth-056\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "805000e4538536c8195e50421605855ffbe42963fb452c33f046252ae4506f4b",
+        "nested/notes.md": "cce19e3ba013b9381ea14fd6a25cc04ff7aa75df3a7ba689e4fefd94af2478f9",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-057",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-057-before\n",
+        "nested/notes.md": "# truth-057\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "476921c78da1dfa5304ee6a8394a97047cb4c2a94c78674a0e7c986ed98f90a4",
+        "nested/notes.md": "01f3f2866b25aa661c81a343d7859089eea859a0d5f458a628423e2333cb3ce1",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-058",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-058-before\n",
+        "nested/notes.md": "# truth-058\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "e8bc6be733a8afea2ca8a056d07b78c6df7f4f5f523124f866073ca526bd4681",
+        "nested/notes.md": "6815c0f7c8cbf9f43a1d963dd7b53f4edf4994baa863ee787e6ef266c6cb64bf",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-059",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-059-before\n",
+        "nested/notes.md": "# truth-059\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "7954d81047a780a655461fb153c6c8e9edc8666d1ed687b5a9301f43c6be6bc3",
+        "nested/notes.md": "15a6de615e55db60d7c3221228f42e891630c13bf906453c0373642f6c7a6390",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-060",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-060-before\n",
+        "nested/notes.md": "# truth-060\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "70d13bbdb0acbe22df9cb3b4b75e380e16562df7ed1944457f47d5e5a35bb29f",
+        "nested/notes.md": "3ae480be1d559c96589ee2f74561187fe47d7ffb25584bcb0ffe721c39e9f524",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-061",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-061-before\n",
+        "nested/notes.md": "# truth-061\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "e0ff450f2614b098111815ec16b15ce13a9ec8da5c37740de071f88739617fde",
+        "nested/notes.md": "74635da4c23c30434c9c66425c6cfceceb8b58cb3f2820867ec090553eff198d",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-062",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-062-before\n",
+        "nested/notes.md": "# truth-062\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "2d4a685a7d92766e9f3b5627a9f72487f76ed628fb2e4d50be628f45e1d8815a",
+        "nested/notes.md": "34edb66925a73b8d7fc99199d359a4c5bea0a1b6cefb66670be94b055a0e0b3c",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-063",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-063-before\n",
+        "nested/notes.md": "# truth-063\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "99601cb1c732922d878201f3c47c9ceabc9342067154c5f4c92d2b90cb7df948",
+        "nested/notes.md": "b083d8396c39fc16f59997718b9548e4cfb968a9d7c1ddcb080ae7750739aad5",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-064",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-064-before\n",
+        "nested/notes.md": "# truth-064\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "dac9b7b4e19ac66f44002628bf0e44190ced0f975567a349578e746361629f2b",
+        "nested/notes.md": "876601c5a6aecefcdb6bfd93707226929e33a579c4db2967f2ae5fe1502ca46d",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-065",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-065-before\n",
+        "nested/notes.md": "# truth-065\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "4e3bbe7079415f58d7a8a2ec030191638dc6fb9652e12066dde1883ddbd82bf2",
+        "nested/notes.md": "80c1451d5053fb58d03ed5c6166a6a4272e4dc0ee9144930d96f0003701c2082",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-066",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-066-before\n",
+        "nested/notes.md": "# truth-066\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "b2031787f6eb223618c0bda1de609485b16eda79c7527f664445480c2b6c14a8",
+        "nested/notes.md": "92db9d4a9263cfbef770162d5f7e674fdff695aeb9efed302fc6adbead33c479",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-067",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-067-before\n",
+        "nested/notes.md": "# truth-067\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "274fb39144dd614e502272d8b8d7555744daa13fd2f9360197eb1b865234795b",
+        "nested/notes.md": "bd687299e5271bd0838aa6061901a34c1012c411cd72e540d3ba722b006fc8c0",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-068",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-068-before\n",
+        "nested/notes.md": "# truth-068\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "947f9466d10ef2db5747ff3fb9b70dcaed674e4d9311bba088d687ab2b504a3f",
+        "nested/notes.md": "b93dcf8666041e3ef25e9a1e7497f7e3c67025858dcb1abc61801366532e6ede",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-069",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-069-before\n",
+        "nested/notes.md": "# truth-069\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "627c7b13eebc10df0231fdeab537041fb1ac43ad3414b6aaa717a075a606dcc3",
+        "nested/notes.md": "2c036dc702e96ded01eb9935157e030b9dd22f48286ddaac6393713b603ac56a",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-070",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-070-before\n",
+        "nested/notes.md": "# truth-070\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "77c8a6f7e6500ba76bf2008199f2548021bf2c576dc0f025bcf4bff27d8fc0a4",
+        "nested/notes.md": "1f2317a3a13efd41a2fd47a3a70c4ba62f2e5f6434a5819b7b3a525a949b4d6c",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-071",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-071-before\n",
+        "nested/notes.md": "# truth-071\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "eeb4c92c311e1630523ce889f2613ef27b8393ceb0108160e9680dcb8f7101cb",
+        "nested/notes.md": "23e8d0e4b3e2e487d001c7f674d2f86bd583af15ad41514a87a28ad7233d8507",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-072",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-072-before\n",
+        "nested/notes.md": "# truth-072\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "447a82657a724770327a3dca9bdb91f919b760a968bffd543a92f08d75c9771b",
+        "nested/notes.md": "bcb596cd7ad5162fea5638ea494981a8de1bf918c951ada599b358ceedd12ec3",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-073",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-073-before\n",
+        "nested/notes.md": "# truth-073\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "74ed588f8e6df1c07d944a2dc4ed4462f2e3968d0f1cce01fc2d3eaf69c8d938",
+        "nested/notes.md": "ea2709ce43aeca670754c67b3766a50f7d345b49487f97ccbd30ec286bb6e71b",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-074",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-074-before\n",
+        "nested/notes.md": "# truth-074\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "7287a53de1f940768f4abc332006ce4b5d4911fafdf30a714cf8b0ec71849296",
+        "nested/notes.md": "bc4efcff8463798f1f62e0237e90a5b100f43428611183cfca34d6e41dc74af2",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-075",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-075-before\n",
+        "nested/notes.md": "# truth-075\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "fdbd41bde2c805f9cd33a49fd10e683773f2703184a407c0cf5d79b3ed3a7c81",
+        "nested/notes.md": "7dc6dabc77b1ebaa9a75b49917e9de36d1c470e13eff820870c5d8983698683b",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-076",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-076-before\n",
+        "nested/notes.md": "# truth-076\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "d01015b8869486314155f9c1b4a919a197583f2d75599156ee9d5d6a5f44bb8d",
+        "nested/notes.md": "ecf8d7272f387fc9b2f6f44b5ea746760a2bb3fa31a42f6992587fdfc5d806c7",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-077",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-077-before\n",
+        "nested/notes.md": "# truth-077\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "9f2fb2b2c1a93b98d0c4f1156135945f9575b016859e54bf817e7a03a1f4b47c",
+        "nested/notes.md": "d2400f6c976b81f226c274e5ac9d27e21e8e8daf1cb4f4a708d7fd3dd24b1f54",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-078",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-078-before\n",
+        "nested/notes.md": "# truth-078\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "f79e29ddec7e3a7735ca544e0dc59403fd93303274b56e750d35c3ff25f6eca3",
+        "nested/notes.md": "7053b36996c49eb9630a26b7de3f24c8b8790f9cb0f47f0402fa06d7e6c5f8c2",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-079",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-079-before\n",
+        "nested/notes.md": "# truth-079\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "1fe930a13c05d73b47b65677453f09191ba88bb5b00acf5eaf462e1855f5d5f1",
+        "nested/notes.md": "82eb4d4a877a8a0c7c3e559b72313ef6249683ae1e0dc576e54e91d82998bde7",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-080",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-080-before\n",
+        "nested/notes.md": "# truth-080\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "f67df331d9d7e4847d30efbb7b79be185a41d5242e740dd3af091e92ac4fd03c",
+        "nested/notes.md": "d4d780f0f9582e79874f5dc69a5a98d7b18125b6f70e9121626ed4184d9dc16a",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-081",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-081-before\n",
+        "nested/notes.md": "# truth-081\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "862af2b608e60d7e6f3c70dc729cb9220adcb759a4595635297ec533aaed8781",
+        "nested/notes.md": "425f0ee2fbd0381a85149e93d318b7591279b124f96f4302eba9e123c81d479f",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-082",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-082-before\n",
+        "nested/notes.md": "# truth-082\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "308aef74e0acbf6ee44f82c8209463c3996d59a1717dc4c7a4244ce9a10dc16f",
+        "nested/notes.md": "16e207d15cdb4f542c31f829b933bd3f203c5dfbcf1c0cb856082707b14aa1a0",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-083",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-083-before\n",
+        "nested/notes.md": "# truth-083\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "c62e5fa7038195c99302b2472d2957d2240ee6cb1f48f03bba8b64d0f03589db",
+        "nested/notes.md": "277ed74da219c261a2ee2de56235e66654f6dfa0e05d9a03e2e99bdde252ed81",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-084",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-084-before\n",
+        "nested/notes.md": "# truth-084\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "20e62f8750e10dd400ca1e73ccfc21bf1a2ed1b8400131e7250d5c697d4a0b85",
+        "nested/notes.md": "97e6a7c5e5505bce530cf74167740cac92f0673a77753481dc84a24dec6e8fd2",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-085",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-085-before\n",
+        "nested/notes.md": "# truth-085\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "1ee4c43084d3144ce62071ba9d2f3f9dab9a78aa587d9e20654a206d7f5e378f",
+        "nested/notes.md": "dc8198289e7201d4ad1ef1b346165ee07bc7a2bd11f594637fd3768025a8d444",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-086",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-086-before\n",
+        "nested/notes.md": "# truth-086\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "7385b0c3aa91db5c984661335ecd81a938c6054c9c6a0b182254e45880d0eea0",
+        "nested/notes.md": "f9ded73c5f8a26d348708acdd5c6ac75256fc5cdfd4bb662dea4b1c59ae905f5",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-087",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-087-before\n",
+        "nested/notes.md": "# truth-087\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "fdaa97d2609503d141887da8e10e243b15127c6e66ba3d993edc0c3ab40f4e22",
+        "nested/notes.md": "d5392e2f1871c0d7ad774699145ec53abeb2b2bcf0529c42a911b5d9bf3967fe",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-088",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-088-before\n",
+        "nested/notes.md": "# truth-088\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "e86d5e7a51920e5f1caf02953e42fd0561ca7a72121d9c2a081f1a285199d8b5",
+        "nested/notes.md": "d177d08f5fe91a197bd235e0f900c73838548aa94051ee6a193d8afe4f3033f6",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-089",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-089-before\n",
+        "nested/notes.md": "# truth-089\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "55f025e5e2202ed05c772ac637688f975a590ff5c17c2f15a8427157168867c5",
+        "nested/notes.md": "ada6084b42a115c7cf4e8054d263f8bda40590c65ef4fae45c596fe8ff98cd8e",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-090",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-090-before\n",
+        "nested/notes.md": "# truth-090\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "2597123e099fee36ea82f0d348dd8b19a924aae5fe49e6ee97c29ee06beec1b8",
+        "nested/notes.md": "6e0b9ead19a47988716b7749276c93433eb62a63483433bb5b145b771b5772e1",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-091",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-091-before\n",
+        "nested/notes.md": "# truth-091\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "7baa9a29913c193c77d66b7f425545317d4dd408a81ccd8ef57012ea01f13544",
+        "nested/notes.md": "5696997881e72c5de2d82832d4b8b82f244d011b4fa04d77f3a02887f15ba7ce",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-092",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-092-before\n",
+        "nested/notes.md": "# truth-092\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "5810a983be6c582a2144df1ec30a5065da49609ca9b3f5e3da99d1527dd5869b",
+        "nested/notes.md": "ad8dc1eb7423e26ef20ead32d46edb8f846a58b86592690e09452f67e00e423c",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-093",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-093-before\n",
+        "nested/notes.md": "# truth-093\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "539a8bdf4b61ec812f9892fefa4fe38c2191b611f8db783e1590a66660a4021c",
+        "nested/notes.md": "597d5030261ca20dd101b7e376d9f3852282cea625feadc4b1f73d2e4ddc88d8",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    },
+    {
+      "caseId": "truth-094",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-094-before\n",
+        "nested/notes.md": "# truth-094\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "d29f40af186e461e8e0617cffb5c135b896d54e5144f8d8a0c44c5059fb11f61",
+        "nested/notes.md": "f55ad7053e8b6077dd01a8a6e13884f06c019c62a414f42c01099f29cf24e8dc",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "delete"
+    },
+    {
+      "caseId": "truth-095",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-095-before\n",
+        "nested/notes.md": "# truth-095\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "82f3229a4efbf6b97d3536dd16bf3dfbf763a8efcf4bebf5d7b2a640d2de9563",
+        "nested/notes.md": "ba425a0135709b23257240f81f4bf99ffa3006a4ea65eb44409409b6d76ae7cb",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "binary"
+    },
+    {
+      "caseId": "truth-096",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-096-before\n",
+        "nested/notes.md": "# truth-096\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "3a2d4870be76e7533daea8285a1e6cc9512c1e4a51fc564d502c5869acc96a3f",
+        "nested/notes.md": "11c704bfe390dfeccaeb1574f76a0289f8aee5ee002b6e77e7ccda8f9bc58160",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "conflicting_evidence"
+    },
+    {
+      "caseId": "truth-097",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-097-before\n",
+        "nested/notes.md": "# truth-097\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "81c12339fd2bc92b4cdd16aa1f46d50d86571608715d1b78f156a62d3781673a",
+        "nested/notes.md": "cafdb6336cd8a9253daf0ffd47f720f29c02d6020dc96148e6776acf68970925",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "large_repo"
+    },
+    {
+      "caseId": "truth-098",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-098-before\n",
+        "nested/notes.md": "# truth-098\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "8b8814ce13b1a7cf617d56e164cb278c74a1a68a96da7cbe19a24a80d045317a",
+        "nested/notes.md": "0956f434403d5f57afb0935442246dbf091552830218a992e17844f31737dd0d",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "symlink"
+    },
+    {
+      "caseId": "truth-099",
+      "pack": "codex",
+      "baselineFiles": {
+        "tracked.txt": "truth-099-before\n",
+        "nested/notes.md": "# truth-099\ncheckpoint\n",
+        "binary.bin": "AP8QgAE="
+      },
+      "truthTree": {
+        "tracked.txt": "ef0d419c0b8eca91119e861a4ffb420833a3ca4f44bf1cd0db4e4dfbec53cce7",
+        "nested/notes.md": "55ad413ceba8aa26d4752db3d55a7747db0ca5f30079da63499ab0101fc880a2",
+        "binary.bin": "4278405e3a9febca1901414da961d38ad22541cc2aa7981a263f9b16a8e012ab"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "write"
+    },
+    {
+      "caseId": "truth-100",
+      "pack": "claude-code",
+      "baselineFiles": {
+        "tracked.txt": "truth-100-before\n",
+        "nested/notes.md": "# truth-100\ncheckpoint\n",
+        "binary.bin": "AQIDBAU="
+      },
+      "truthTree": {
+        "tracked.txt": "f24b31bbea83f9987a80a74bda56c73eda20fedf56412ae9097314e8517e3592",
+        "nested/notes.md": "4e4326c02c9b69e4d723f39e3f428b0ea65a59a5ac0ce24a64a76f7be09c4946",
+        "binary.bin": "74f81fe167d99b4cb41d6d0ccda82278caee9f3e2f25d5e5a3936ff3dcec60d0"
+      },
+      "allowedEquivalentPaths": [],
+      "perturbation": "rename"
+    }
+  ]
+}

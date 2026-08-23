@@ -13,6 +13,7 @@ test('Windows recorded cwd is not treated as under the POSIX process cwd', () =>
   assert.equal(pathContainedBy(process.cwd(), 'C:/source'), false);
   assert.equal(pathContainedBy('C:/source', 'C:/source'), true);
   assert.equal(pathContainedBy(String.raw`C:\source`, 'C:/source/app'), true);
+  assert.equal(pathContainedBy('C:/work/app', 'C:/work/app2'), false);
   assert.equal(pathContainedBy('C:/source', String.raw`C:\Windows\System32\evil.dll`), false);
 });
 

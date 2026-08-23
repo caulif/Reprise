@@ -47,12 +47,12 @@ export interface Theme {
   };
 }
 
-export const UNICODE_GLYPHS: Glyphs = {
+const UNICODE_GLYPHS: Glyphs = {
   tl: '┌', tr: '┐', bl: '└', br: '┘', h: '─', v: '│', teeL: '├', teeR: '┤',
   cursor: '❯', dot: '●', ok: '✓', warn: '⚠', err: '✗', ellipsis: '…', arrow: '→', sep: '·', empty: '○',
 };
 
-export const ASCII_GLYPHS: Glyphs = {
+const ASCII_GLYPHS: Glyphs = {
   tl: '+', tr: '+', bl: '+', br: '+', h: '-', v: '|', teeL: '+', teeR: '+',
   cursor: '>', dot: '*', ok: '+', warn: '!', err: 'x', ellipsis: '...', arrow: '->', sep: '-', empty: 'o',
 };
@@ -89,11 +89,11 @@ export function showsDetailPane(theme: Theme): boolean {
   return theme.density === 'regular' || theme.density === 'wide';
 }
 
-export function colorSupported(env: NodeJS.ProcessEnv = process.env, isTty = Boolean(process.stdout.isTTY)): boolean {
+function colorSupported(env: NodeJS.ProcessEnv = process.env, isTty = Boolean(process.stdout.isTTY)): boolean {
   return resolveColorMode(env, isTty) !== 'off';
 }
 
-export function resolveColorMode(env: NodeJS.ProcessEnv = process.env, isTty = Boolean(process.stdout.isTTY)): ColorMode {
+function resolveColorMode(env: NodeJS.ProcessEnv = process.env, isTty = Boolean(process.stdout.isTTY)): ColorMode {
   if (env.NO_COLOR || env.TERM === 'dumb' || env.FORCE_COLOR === '0') return 'off';
   if (!isTty && !env.FORCE_COLOR) return 'off';
   if (env.FORCE_COLOR === '1' || env.FORCE_COLOR === '2') return 'ansi';
@@ -164,7 +164,7 @@ function buildTheme(density: Density, mode: ColorMode): Theme {
   };
 }
 
-export function withBackground(text: string, bg: string): string {
+function withBackground(text: string, bg: string): string {
   return `${bg}${text.replaceAll('\x1b[0m', `\x1b[0m${bg}`)}\x1b[0m`;
 }
 

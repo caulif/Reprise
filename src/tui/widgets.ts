@@ -94,10 +94,6 @@ export function progressBar(theme: Theme, phase: PreparePhase, elapsed: string, 
   return [pad(truncateFit(` ${bar}  ${label}  ${elapsed}`, lineWidth, theme.glyphs.ellipsis), lineWidth, theme.glyphs.ellipsis)];
 }
 
-export function prepareRail(theme: Theme, phase: Exclude<PreparePhase, 'run' | 'compare'>, elapsed: string, width: number, _detail?: string): string[] {
-  return progressBar(theme, phase, elapsed, width);
-}
-
 export function stateRail(theme: Theme, current: CandidateRunState | undefined, width: number): string[] {
   const g = theme.glyphs;
   const active = current ?? 'created';

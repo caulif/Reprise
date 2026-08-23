@@ -15,7 +15,6 @@ export type HomeModel = {
   readonly hasUsableAuth?: boolean;
   readonly envName?: string;
   readonly envSet?: boolean;
-  readonly hasCodexLogin?: boolean;
   readonly providerLabel?: string;
   readonly modelId?: string;
   readonly composer: string;

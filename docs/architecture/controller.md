@@ -429,13 +429,16 @@ Recovery Agent 和 Comparison Agent 可以复用同一个 Pi Host 实现，但�
 
 ```text
 controller.requested
-controller.completed | controller.failed
+controller.observation_read
 controller.decision
+controller.completed | controller.failed
 ```
+
+`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把成功读取的当前 run event refs 记入本轮 catalog。离线重建只读事件日志和已保存 artifacts，并校验 digest。
 
 事件引用：
 
-- `runId`、turn ID 和 operation ID；
+- `runId`、turn ID、`requestId` 和 operation ID；
 - SteeringContext 快照或 hash；
 - 使用的 Controller 模型、解析后身份和配置；
 - Observation 与 artifact refs；

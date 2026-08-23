@@ -1,15 +1,15 @@
-import { execFile } from 'node:child_process';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathContainedBy } from '../../core/paths.js';
-import { promisify } from 'node:util';
 import { SAFE_ID } from '../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
+import { runProcess } from '../../infrastructure/process-runner.js';
+import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, SessionDiscoveryError, parseJsonlRows, readSessionFile, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
 import type { TaskCase } from '../../core/schema.js';
 import {
-  isEligibleSession,
   type ImportedSession,
+  type SessionDiscoveryPage,
   type SessionDiscoveryQuery,
   type SessionInspection,
   type SessionMessage,
@@ -24,107 +24,107 @@ export type CodexSessionSummary = SessionSummary;
 export type CodexSessionInspection = SessionInspection;
 export type CodexSessionPrivacy = SessionPrivacy;
 
-/** Completed sessions with a user task and at least one assistant message or tool call. */
-export const isEligible = isEligibleSession;
-
 const MAX_SESSION_BYTES = 64 * 1024 * 1024;
+const MAX_SUMMARY_BYTES = 4 * 1024 * 1024;
+const MAX_SUMMARY_LINES = 50_000;
 const GIT_COMMIT = /^[a-f0-9]{7,64}$/i;
-const execFileAsync = promisify(execFile);
 
-/** Newest rollouts by file mtime, then inspect only until `limit` summaries exist. Does not parse the whole tree. */
+/** Compatibility wrapper for callers that only need the first page of Codex rollouts. */
 export async function discoverCodexSessions(sessionsRoot: string, limit = 50): Promise<readonly CodexSessionSummary[]> {
-  if (!Number.isInteger(limit) || limit < 1) throw new Error('Session discovery limit must be a positive integer.');
-  const ranked = (await rolloutEntries(resolve(sessionsRoot)))
-    .filter((entry) => entry.size <= MAX_SESSION_BYTES)
-    .sort((left, right) => right.mtime - left.mtime || left.path.localeCompare(right.path));
-  const summaries: CodexSessionSummary[] = [];
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(8, ranked.length) }, async () => {
-    while (summaries.length < limit) {
-      const index = cursor;
-      cursor += 1;
-      const entry = ranked[index];
-      if (!entry) return;
-      const summary = await inspectForDiscovery(entry.path);
-      if (summary) summaries.push(summary);
-    }
+  return (await discoverCodexSessionPage({ root: sessionsRoot, limit })).items;
+}
+
+async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<SessionDiscoveryPage> {
+  const root = resolve(query.root ?? defaultCodexSessionsRoot());
+  const listing = await listJsonlFiles(root, (name) => name.startsWith('rollout-') && name.endsWith('.jsonl'), query.signal);
+  const ranked = [...listing.entries].sort((left, right) => right.mtime - left.mtime || left.path.localeCompare(right.path));
+  return discoverSessionPage({
+    root,
+    ranked,
+    limit: query.limit ?? 50,
+    ...(query.cursor ? { cursor: query.cursor } : {}),
+    ...(query.signal ? { signal: query.signal } : {}),
+    cacheKey: 'codex',
+    ...(query.refresh ? { refresh: true } : {}),
+    diagnostics: listing.diagnostics,
+    inspect: (entry) => summarizeCodexSession(entry, query.signal),
+    inspectPartial: (entry, signal) => summarizeCodexSessionHead(entry, signal),
+    exclude: (session) => excludedCwd(session.cwd, query.excludeRoots),
   });
-  await Promise.all(workers);
-  return summaries.sort((left, right) => right.startedAt.localeCompare(left.startedAt)).slice(0, limit);
 }
+/** Listing reads one JSONL row at a time and keeps only metadata/counts, never a transcript. */
+type CodexSummaryState = {
+  sessionId?: string | undefined; startedAt?: string | undefined; updatedAt?: string | undefined; cwd?: string | undefined; model?: string | undefined; summary?: string | undefined;
+  userMessages: number; assistantMessages: number; toolCalls: number; completedTurns: number;
+};
 
-/** Discovery skips unreadable or oversized local rollouts so one archival file cannot break the whole TUI. */
-async function inspectForDiscovery(sourcePath: string): Promise<CodexSessionSummary | undefined> {
-  try { return await summarizeCodexSession(sourcePath); } catch { return undefined; }
-}
-
-/** Listing only needs metadata, the first user prompt, and counts — not the full transcript. */
-async function summarizeCodexSession(sourcePath: string): Promise<CodexSessionSummary> {
-  const source = resolve(sourcePath);
-  return summaryFromBytes(source, await readSession(source));
-}
-
-function summaryFromBytes(sourcePath: string, bytes: Buffer): CodexSessionSummary {
-  let sessionId: string | undefined;
-  let startedAt: string | undefined;
-  let cwd: string | undefined;
-  let model: string | undefined;
-  let summary: string | undefined;
-  let userMessages = 0;
-  let assistantMessages = 0;
-  let toolCalls = 0;
-  let completedTurns = 0;
-  let any = false;
-  for (const [index, line] of bytes.toString('utf8').split(/\r?\n/).entries()) {
-    if (!line.trim()) continue;
-    any = true;
-    let parsed: unknown;
-    try { parsed = JSON.parse(line); } catch (error) {
-      throw new Error(`Codex session ${sourcePath} has invalid JSONL at line ${index + 1}: ${errorMessage(error)}`, { cause: error });
-    }
-    if (!isRecord(parsed)) throw new Error(`Codex session ${sourcePath} has invalid JSONL at line ${index + 1}: row is not an object`);
-    const payload = record(parsed.payload);
-    if (parsed.type === 'session_meta') {
-      sessionId = text(payload.id);
-      startedAt = text(parsed.timestamp) ?? text(payload.timestamp);
-      cwd = text(payload.cwd);
-    }
-    if (parsed.type === 'turn_context') model ??= text(payload.model);
-    const payloadType = text(payload.type);
-    if (parsed.type === 'event_msg') {
-      const value = text(payload.message);
-      if (value && payloadType === 'user_message') {
-        userMessages += 1;
-        summary ??= compact(value);
-      } else if (value && payloadType === 'agent_message') {
-        assistantMessages += 1;
-      }
-    }
-    if (payloadType === 'function_call' || payloadType === 'custom_tool_call') toolCalls += 1;
-    if (payloadType === 'task_complete') completedTurns += 1;
-  }
-  if (!any) throw new Error(`Codex session ${sourcePath} is empty.`);
-  if (!sessionId || !SAFE_ID.test(sessionId)) throw new Error('Codex session metadata has no valid id.');
-  if (!startedAt?.match(/^\d{4}-\d{2}-\d{2}T/)) throw new Error(`Codex session ${sessionId} has no valid start time.`);
-  if (!userMessages) throw new Error('Codex session has no user message eligible for replay.');
+async function summarizeCodexSessionHead(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<CodexSessionSummary> {
+  const state: CodexSummaryState = { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
+  const sourcePath = resolve(entry.path);
+  await forEachJsonlHeadSummaryLine(sourcePath, 'Codex', { maxBytes: 256 * 1024, maxLines: 2_000, ...(signal ? { signal } : {}) }, (row) => consumeCodexSummaryRow(state, row));
+  if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new SessionDiscoveryError('too-large', 'Codex session head has no valid id.');
+  if (!state.userMessages) throw new SessionDiscoveryError('too-large', 'Codex session head has no user message.');
   return {
-    productId: 'codex', sessionId, sourcePath, startedAt,
-    ...(cwd ? { cwd } : {}),
-    ...(model ? { model } : {}),
-    ...(summary ? { summary } : {}),
-    signals: { userMessages, assistantMessages, toolCalls, completedTurns },
+    productId: 'codex', sessionId: state.sessionId, sourcePath, partial: true,
+    ...(state.startedAt ? { startedAt: state.startedAt, startedAtSource: 'event' as const } : {}),
+    updatedAt: state.updatedAt ?? new Date(entry.mtime).toISOString(),
+    updatedAtSource: state.updatedAt ? 'event' : 'file-mtime',
+    ...(state.cwd ? { cwd: state.cwd } : {}), ...(state.model ? { model: state.model } : {}),
+    ...(state.summary ? { summary: state.summary } : {}),
+    signals: { userMessages: state.userMessages, assistantMessages: state.assistantMessages, toolCalls: state.toolCalls, completedTurns: state.completedTurns },
   };
 }
 
+async function summarizeCodexSession(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<CodexSessionSummary> {
+  const state: CodexSummaryState = { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
+  const sourcePath = resolve(entry.path);
+  await forEachJsonlSummaryLine(sourcePath, 'Codex', { maxBytes: MAX_SUMMARY_BYTES, maxLines: MAX_SUMMARY_LINES, ...(signal ? { signal } : {}) }, (row) => consumeCodexSummaryRow(state, row));
+  if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new Error('Codex session metadata has no valid id.');
+  if (!state.userMessages) throw new Error('Codex session has no user message eligible for replay.');
+  const fallback = new Date(entry.mtime).toISOString();
+  return {
+    productId: 'codex', sessionId: state.sessionId, sourcePath,
+    ...(state.startedAt ? { startedAt: state.startedAt, startedAtSource: 'event' as const } : {}),
+    updatedAt: state.updatedAt ?? fallback,
+    updatedAtSource: state.updatedAt ? 'event' : 'file-mtime',
+    ...(state.cwd ? { cwd: state.cwd } : {}), ...(state.model ? { model: state.model } : {}),
+    ...(state.summary ? { summary: state.summary } : {}),
+    signals: { userMessages: state.userMessages, assistantMessages: state.assistantMessages, toolCalls: state.toolCalls, completedTurns: state.completedTurns },
+  };
+}
+
+function consumeCodexSummaryRow(state: CodexSummaryState, row: JsonRecord): void {
+  const payload = record(row.payload);
+  const sourceTimestamp = text(row.timestamp) ?? text(payload.timestamp);
+  const timestamp = validSessionTimestamp(sourceTimestamp);
+  if (sourceTimestamp && !timestamp) throw new SessionDiscoveryError('invalid-metadata', 'Codex session has an invalid timestamp.');
+  if (timestamp && (!state.startedAt || timestamp < state.startedAt)) state.startedAt = timestamp;
+  if (timestamp && (!state.updatedAt || timestamp > state.updatedAt)) state.updatedAt = timestamp;
+  if (row.type === 'session_meta') {
+    state.sessionId ??= text(payload.id);
+    state.cwd ??= text(payload.cwd);
+  }
+  if (row.type === 'turn_context') state.model ??= text(payload.model);
+  const payloadType = text(payload.type);
+  if (row.type === 'event_msg') {
+    const value = text(payload.message);
+    if (value && payloadType === 'user_message') {
+      state.userMessages += 1;
+      state.summary ??= compact(value);
+    } else if (value && payloadType === 'agent_message') state.assistantMessages += 1;
+  }
+  if (payloadType === 'function_call' || payloadType === 'custom_tool_call') state.toolCalls += 1;
+  if (payloadType === 'task_complete') state.completedTurns += 1;
+}
 /** Checks one complete rollout before a user chooses to freeze it. */
 export async function inspectCodexSession(sourcePath: string): Promise<CodexSessionInspection> {
   const source = resolve(sourcePath);
-  return inspectionFromRows(source, parseRows(await readSession(source), source));
+  return inspectionFromRows(source, parseJsonlRows(await readSessionFile(source, 'Codex', MAX_SESSION_BYTES), source, 'Codex'));
 }
 
-export async function importCodexSession(sourcePath: string, privacy?: SessionPrivacy): Promise<ImportedSession> {
+async function importCodexSession(sourcePath: string, privacy?: SessionPrivacy): Promise<ImportedSession> {
   const source = resolve(sourcePath);
-  const bytes = await readSession(source);
+  const bytes = await readSessionFile(source, 'Codex', MAX_SESSION_BYTES);
   const raw = privacy ? redactText(bytes.toString('utf8'), privacy.redactions) : bytes.toString('utf8');
   return importFromBytes(source, Buffer.from(raw, 'utf8'));
 }
@@ -147,16 +147,14 @@ export async function freezeCodexSession(input: { sourcePath: string; casesRoot:
   }
 }
 
-export function defaultCodexSessionsRoot(): string {
+function defaultCodexSessionsRoot(): string {
   return join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'sessions');
 }
 
 export const codexSessionAdapter: SessionSourceAdapter = {
   get defaultRoot() { return defaultCodexSessionsRoot(); },
   discover(query?: SessionDiscoveryQuery) {
-    return discoverCodexSessions(query?.root ?? defaultCodexSessionsRoot(), query?.limit ?? 50).then((sessions) => (
-      query?.excludeRoots?.length ? sessions.filter((session) => !excludedCwd(session.cwd, query.excludeRoots)) : sessions
-    ));
+    return discoverCodexSessionPage({ ...query, root: query?.root ?? defaultCodexSessionsRoot() });
   },
   inspect(ref: SessionRef) {
     if (!ref.sourcePath) throw new Error('Codex session inspect requires a sourcePath.');
@@ -171,43 +169,6 @@ export const codexSessionAdapter: SessionSourceAdapter = {
 function excludedCwd(cwd: string | undefined, roots: readonly string[] | undefined): boolean {
   if (!cwd || !roots?.length) return false;
   return roots.some((root) => pathContainedBy(root, cwd));
-}
-
-async function rolloutEntries(root: string): Promise<Array<{ path: string; mtime: number; size: number }>> {
-  let entries;
-  try { entries = await readdir(root, { withFileTypes: true }); } catch (error) { if (isMissing(error)) return []; throw error; }
-  return (await Promise.all(entries.map(async (entry) => {
-    const path = join(root, entry.name);
-    if (entry.isDirectory()) return rolloutEntries(path);
-    if (!entry.isFile() || !entry.name.startsWith('rollout-') || !entry.name.endsWith('.jsonl')) return [];
-    try {
-      const info = await stat(path);
-      return [{ path, mtime: info.mtimeMs, size: info.size }];
-    } catch { return []; }
-  }))).flat();
-}
-
-async function readSession(path: string): Promise<Buffer> {
-  const info = await stat(path);
-  if (!info.isFile()) throw new Error(`Codex session is not a file: ${path}`);
-  if (info.size > MAX_SESSION_BYTES) throw new Error(`Codex session exceeds the ${MAX_SESSION_BYTES / 1024 / 1024} MiB inspection limit: ${path}`);
-  return readFile(path);
-}
-
-function parseRows(bytes: Buffer, sourcePath: string): JsonRecord[] {
-  const rows: JsonRecord[] = [];
-  for (const [index, line] of bytes.toString('utf8').split(/\r?\n/).entries()) {
-    if (!line.trim()) continue;
-    try {
-      const parsed: unknown = JSON.parse(line);
-      if (!isRecord(parsed)) throw new Error('row is not an object');
-      rows.push(parsed);
-    } catch (error) {
-      throw new Error(`Codex session ${sourcePath} has invalid JSONL at line ${index + 1}: ${errorMessage(error)}`, { cause: error });
-    }
-  }
-  if (!rows.length) throw new Error(`Codex session ${sourcePath} is empty.`);
-  return rows;
 }
 
 function inspectionFromRows(sourcePath: string, rows: readonly JsonRecord[]): CodexSessionInspection {
@@ -232,8 +193,8 @@ function metadataFrom(rows: readonly JsonRecord[]): { sessionId: string; started
   const payload = record(meta?.payload);
   const id = text(payload.id);
   if (!id || !SAFE_ID.test(id)) throw new Error('Codex session metadata has no valid id.');
-  const startedAt = text(meta?.timestamp) ?? text(payload.timestamp);
-  if (!startedAt?.match(/^\d{4}-\d{2}-\d{2}T/)) throw new Error(`Codex session ${id} has no valid start time.`);
+  const startedAt = validSessionTimestamp(text(meta?.timestamp)) ?? validSessionTimestamp(text(payload.timestamp));
+  if (!startedAt) throw new Error(`Codex session ${id} has no valid start time.`);
   const context = record(rows.find((row) => row.type === 'turn_context')?.payload);
   const cwd = text(payload.cwd);
   const model = text(context.model);
@@ -274,7 +235,7 @@ function signalsFrom(rows: readonly JsonRecord[], transcript: readonly SessionMe
 }
 
 async function importFromBytes(sourcePath: string, bytes: Buffer): Promise<ImportedSession> {
-  const rows = parseRows(bytes, sourcePath);
+  const rows = parseJsonlRows(bytes, sourcePath, 'Codex');
   const inspection = inspectionFromRows(sourcePath, rows);
   const initial = inspection.transcript.find((message) => message.role === 'user');
   if (!initial) throw new Error('Codex session initial user message disappeared during import.');
@@ -317,9 +278,18 @@ async function historicalEnvironment(cwd: string | undefined): Promise<JsonRecor
 
 async function git(cwd: string, args: string[]): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 5_000, windowsHide: true });
-    return stdout.trim();
-  } catch { return undefined; }
+    const result = await runProcess({
+      operation: 'historical_environment_git_probe',
+      executableKind: 'git',
+      command: 'git',
+      args: ['-C', cwd, ...args],
+      timeoutMs: 5_000,
+    });
+    return result.stdout.trim();
+  } catch {
+    // Historical environment is optional imported-session context; classified failures degrade it to unavailable.
+    return undefined;
+  }
 }
 
 /** Only structured write tools and unified patches count as touched paths; shell commands are retained without guessing their effects. */
@@ -365,4 +335,3 @@ function commitFromMetadata(payload: JsonRecord): string | undefined {
 
 function compact(value: string): string { return value.replace(/\s+/g, ' ').slice(0, 160); }
 function isMissing(error: unknown): boolean { return error instanceof Error && 'code' in error && error.code === 'ENOENT'; }
-function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }

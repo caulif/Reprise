@@ -9,11 +9,15 @@ import {
   RunAttemptSchema,
   RunManifestSchema,
   TaskCaseSchema,
+  RecoveryInvestigationSchema,
   type RunAttempt,
   type RunManifest,
 } from '../src/core/schema.js';
 import { assertTransition, canTransition } from '../src/core/state-machine.js';
-import { ExperimentStore } from '../src/infrastructure/store/experiment-store.js';
+import { controllerRequestSnapshot } from '../src/application/experiment.js';
+import { reconstructControllerRequest } from '../src/application/controller-request.js';
+import { sha256 } from '../src/core/identity.js';
+import { ExperimentStore, RecoveryArtifactBudgetError } from '../src/infrastructure/store/experiment-store.js';
 
 const timestamp = '2026-08-10T00:00:00.000Z';
 const candidate = { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-test' };
@@ -56,6 +60,12 @@ test('schemas accept the minimum frozen objects and reject malformed candidates'
   };
   assert.equal(Value.Check(TaskCaseSchema, taskCase), true);
   assert.equal(Value.Check(CandidateSpecSchema, { ...candidate, candidateId: '../escape' }), false);
+  assert.equal(Value.Check(RecoveryInvestigationSchema, {
+    schemaVersion: 1,
+    facts: [{ factId: "workspace-1", kind: "workspace", reliability: "weak", sourceRefs: ["event:history-1"], observedAt: "2026-08-18T00:00:00.000Z", pathScope: ["README.md"], summary: "Workspace contains a task-related file." }],
+    plan: { planId: "plan-1", factsUsed: ["fact:workspace-1"], hypotheses: [{ hypothesisId: "hypothesis-1", rationale: "Inspect the current file as a candidate baseline.", paths: ["README.md"], supportingFactRefs: ["fact:workspace-1"], counterFactRefs: [], expectedChecks: ["read the diff"], confidence: "low" }], candidates: [{ hypothesisId: "hypothesis-1", operations: [] }], verificationPlan: ["read the diff"] },
+    candidates: [{ candidateId: "candidate-1", hypothesisId: "hypothesis-1", status: "created", factRefs: ["fact:workspace-1"], beforeDigest: "a".repeat(64), createdAt: "2026-08-18T00:00:00.000Z" }],
+  }), true);
 });
 
 test('CandidateRun permits only the seven-state graph', () => {
@@ -125,6 +135,92 @@ test('store rejects a second writer and repeats a submitted operation without an
   }
 });
 
+test('store rejects malformed Controller request and observation payloads', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    await assert.rejects(
+      store.append({
+        type: 'controller.requested',
+        runId: 'run-1',
+        operationId: 'controller-request-run-1-1',
+        payload: { schemaVersion: 1, requestId: 'controller-request-run-1-1' },
+      }),
+      /controller.requested payload does not satisfy its schema/,
+    );
+    await assert.rejects(
+      store.append({
+        type: 'controller.observation_read',
+        runId: 'run-1',
+        operationId: 'controller-request-run-1-1-observation-1',
+        payload: { requestId: 'controller-request-run-1-1', evidenceRefs: ['event:tool-new'] },
+      }),
+      /controller.observation_read payload does not satisfy its schema/,
+    );
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('store reconstructs a Controller request from persisted events including observation reads', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const snapshot = controllerRequestSnapshot({
+      requestId: 'controller-request-run-1-1',
+      runId: 'run-1',
+      runState: 'awaiting_controller',
+      task: {
+        initialInput: { id: 'message-1', role: 'user', text: 'Implement it.' },
+        baseline: { status: 'unavailable', artifactRefs: [], evidenceRefs: [] },
+        privacy: { allowModelText: true, allowBinary: false, redactions: [] },
+        historicalUserTurns: [],
+      },
+      current: { summary: 'Waiting.', evidenceRefs: ['event:current-1'] },
+      trajectory: { summary: 'None.', evidenceRefs: [] },
+      evidenceCatalog: [{ ref: 'event:current-1', runId: 'run-1', source: 'initial' }],
+      budget: { decisionsUsed: 0, decisionsLimit: 2 },
+    });
+    await store.append({
+      type: 'controller.requested',
+      runId: 'run-1',
+      operationId: 'controller-request-run-1-1',
+      payload: {
+        schemaVersion: 1,
+        toolSetVersion: 1,
+        requestId: 'controller-request-run-1-1',
+        runId: 'run-1',
+        inputDigest: sha256(JSON.stringify(snapshot)),
+        snapshot,
+      },
+    });
+    await store.append({
+      type: 'controller.observation_read',
+      runId: 'run-1',
+      operationId: 'controller-request-run-1-1-observation-1',
+      payload: {
+        schemaVersion: 1,
+        requestId: 'controller-request-run-1-1',
+        runId: 'run-1',
+        source: 'run_events',
+        evidenceRefs: ['event:current-1', 'event:tool-new'],
+      },
+    });
+    const rebuilt = reconstructControllerRequest(store.events('run-1'), 'controller-request-run-1-1');
+    assert.deepEqual(rebuilt.snapshot.current, snapshot.current);
+    assert.deepEqual(rebuilt.snapshot.evidenceCatalog, [
+      { ref: 'event:current-1', runId: 'run-1', source: 'initial' },
+      { ref: 'event:tool-new', runId: 'run-1', source: 'tool' },
+    ]);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('store notifies live observers only until they unsubscribe', async () => {
   const root = await temporaryExperiment();
   try {
@@ -136,6 +232,45 @@ test('store notifies live observers only until they unsubscribe', async () => {
     unsubscribe();
     await store.append({ type: 'test.second', payload: {} });
     assert.deepEqual(observed, [1]);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('recovery artifact policy audits soft budgets and rejects hard budgets without writing the payload', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1', {
+      recoveryArtifactPolicy: { softBytes: 5, hardBytes: 8 },
+    });
+    await store.acquireWriter();
+    await store.commitArtifact({ artifactId: 'recovery-small', kind: 'recovery_report', bytes: Buffer.from('123456') });
+    assert.equal(store.events().some((event) => event.type === 'recovery.artifact_budget_soft_exceeded'), true);
+    await assert.rejects(
+      store.commitArtifact({ artifactId: 'recovery-too-large', kind: 'recovery_report', bytes: Buffer.from('123') }),
+      RecoveryArtifactBudgetError,
+    );
+    assert.equal(store.events().some((event) => event.type === 'recovery.artifact_budget_hard_rejected'), true);
+    assert.equal((await store.listArtifacts()).some((artifact) => artifact.artifactId === 'recovery-too-large'), false);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('recovery artifact cleanup applies terminal-specific TTL and audits the result', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1', {
+      recoveryArtifactPolicy: { softBytes: 100, hardBytes: 200, successTtlMs: 1, failureTtlMs: 1 },
+    });
+    await store.acquireWriter();
+    await store.commitArtifact({ artifactId: 'recovery-old', kind: 'recovery_report', bytes: Buffer.from('old') });
+    const result = await store.cleanupRecoveryArtifacts({ terminalStatus: 'completed', now: Date.now() + 100 });
+    assert.deepEqual(result, { removed: 1, failed: 0 });
+    assert.equal((await store.listArtifacts()).some((artifact) => artifact.artifactId === 'recovery-old'), false);
+    assert.equal(store.events().some((event) => event.type === 'recovery.artifact_cleanup_completed'), true);
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });

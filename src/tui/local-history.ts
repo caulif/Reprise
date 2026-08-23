@@ -41,7 +41,7 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
   const runId = metadata.runIds[0];
   const record = runId ? await readRunRecord(join(path, 'runs', runId, 'record.json')) : undefined;
   const unread = Boolean(runId && !record && await readJson(join(path, 'runs', runId, 'record.json')));
-  const reportPath = await exists(join(path, 'report.html')) ? join(path, 'report.html') : undefined;
+  const reportPath = await exists(join(path, 'report.html')) ? join(path, 'report.html') : await exists(join(path, 'comparison-failure.html')) ? join(path, 'comparison-failure.html') : undefined;
   return {
     experimentId, taskCaseId: metadata.spec.taskCaseId,
     ...(runId ? { runId } : {}),

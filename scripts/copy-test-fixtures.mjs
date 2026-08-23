@@ -6,6 +6,11 @@ await copyFile(
   "dist/test/fixtures/codex-session.fixture.json",
 );
 
+await copyFile(
+  "test/fixtures/recovery-truth-dataset.json",
+  "dist/test/fixtures/recovery-truth-dataset.json",
+);
+
 await mkdir("dist/src/products/codex/recovery", { recursive: true });
 await copyFile(
   "src/products/codex/recovery/SKILL.md",

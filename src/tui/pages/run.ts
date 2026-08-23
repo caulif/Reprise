@@ -21,6 +21,7 @@ export type PreflightModel = {
   readonly step: 1 | 2 | 3;
   readonly recovery?: RecoveryPreviewModel;
   readonly locale?: Locale;
+  readonly productLabel?: string;
 };
 export type ConfirmModel = PreflightModel & {
   readonly sourceRoot: string;
@@ -52,7 +53,7 @@ export type RunningModel = {
   readonly tick?: number;
 };
 
-export function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string]): string {
+function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string]): string {
   const g = theme.glyphs;
   const marks = [1, 2, 3].map((index) => {
     if (index < step) return g.ok;
@@ -90,8 +91,7 @@ export function renderPreflight(theme: Theme, width: number, model: PreflightMod
       kv(theme, 'Status', preflight.workspace?.blockedReasons.length ? `blocked ${dash(theme)} ${preflight.workspace.blockedReasons.join(' | ')}` : 'runnable', width - 2),
       kv(theme, 'Limitations', preflight.limitations.length ? preflight.limitations.join(' | ') : 'none recorded', width - 2),
       ...(preflight.contamination ? [
-        kv(theme, 'Contamination', contaminationSummary(preflight.contamination), width - 2),
-        theme.style.warn('  1 Current state   2 Recovery (uses model)'),
+        kv(theme, 'Preparation', 'Recovery will verify the isolated environment automatically.', width - 2),
       ] : []),
     ], width),
   ];
@@ -100,28 +100,27 @@ export function renderPreflight(theme: Theme, width: number, model: PreflightMod
 export function renderConfirmation(theme: Theme, width: number, model: ConfirmModel): string[] {
   const locale = model.locale ?? 'en';
   const { preflight, candidate, sourceRoot, effort } = model;
+  const product = model.productLabel ?? t(locale, 'unknownAgent');
   const fidelity = preflight.comparisonClass;
   const recovery = model.recovery;
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), 'Preflight', 'Confirm run']),
     '',
-    ...panel(theme, t(locale, 'confirmTitle'), [
-      kv(theme, 'Candidate', candidateLine(candidate), width - 2),
-      kv(theme, 'Harness agents', `${model.harnessModel ?? 'persisted Pi model'} ${theme.glyphs.sep} ${effort} ${theme.glyphs.sep} Controller, Comparison${recovery ? ', Recovery' : ''}`, width - 2),
+    ...panel(theme, t(locale, 'confirmTitle', { product }), [
+      kv(theme, 'Candidate', candidateLine(candidate, product), width - 2),
+      kv(theme, 'Harness agents', `${model.harnessModel ?? 'persisted Pi model'} ${theme.glyphs.sep} ${effort} ${theme.glyphs.sep} Controller, Comparison`, width - 2),
       kv(theme, 'Fidelity', fidelity, width - 2),
       ...(recovery ? [
-        kv(theme, 'Recovery', `${recovery.status} ${theme.glyphs.sep} ${recovery.changedPathCount} changed path(s)`, width - 2),
-        kv(theme, 'Unresolved', recovery.unresolved.length ? recovery.unresolved.join(' | ') : 'none', width - 2),
-        ...(recovery.reportText ? [theme.style.muted(`  Report preview: ${truncateFit(recovery.reportText.replaceAll(/\s+/g, ' ').trim(), Math.max(20, width - 12))}`)] : []),
+        kv(theme, 'Environment', recovery.unresolved.length ? 'prepared with recorded limitations' : 'prepared', width - 2),
       ] : []),
       kv(theme, 'Maximum requests', `Candidate ${model.policy?.maxTargetTurns ?? 'unavailable'} ${theme.glyphs.sep} Controller ${model.policy?.maxModelCalls ?? 'unavailable'} ${theme.glyphs.sep} Comparison 1`, width - 2),
       kv(theme, 'Network / billing', model.harnessAuthOk === false ? `blocked ${dash(theme)} Harness credential missing` : 'yes / provider-dependent', width - 2),
       '',
       model.harnessAuthOk === false
-        ? theme.style.danger(` ${theme.glyphs.warn}  Enter will not start Codex. Add an API key in /config first.`)
-        : theme.style.warn(` ${theme.glyphs.warn}  This starts a Codex process and may call your configured provider, which can cost money.`),
-      theme.style.ok(` ${theme.glyphs.ok}  Your original source, the historical session, and global Codex config are left unchanged.`),
-      theme.style.ok(` ${theme.glyphs.ok}  The replay starts from the current state of ${sourceRoot || 'the selected directory'}, not the historical state.`),
+        ? theme.style.danger(` ${theme.glyphs.warn}  Enter will not start ${product}. Add an API key in /config first.`)
+        : theme.style.warn(` ${theme.glyphs.warn}  This starts a ${product} process and may call your configured provider, which can cost money.`),
+      theme.style.ok(` ${theme.glyphs.ok}  Your original source, the historical session, and original runtime configuration are left unchanged.`),
+      theme.style.ok(` ${theme.glyphs.ok}  The replay starts from the prepared isolated state of ${sourceRoot || 'the selected directory'}.`),
       theme.style.warn(` ${theme.glyphs.warn}  Reprise copies the selected directory; the isolated copy is not privacy sanitization.`),
       theme.style.warn(` ${theme.glyphs.warn}  The Candidate can read copied source files. Do not continue with sensitive files you do not want it to read or send.`),
     ], width),
@@ -133,17 +132,9 @@ export function runningChrome(_theme: Theme, _width: number, model: RunningModel
   return [];
 }
 
-export function runningListPanel(theme: Theme, width: number, model: RunningModel, height?: number): string[] {
-  return renderTimeline(theme, width, model, height);
-}
-
-export function runningDetailPanel(_theme: Theme, _width: number, _model: RunningModel, _height?: number): string[] {
-  return [];
-}
-
 export function renderTimeline(theme: Theme, width: number, model: RunningModel, height?: number): string[] {
   const locale = model.locale ?? 'en';
-  const product = model.productLabel ?? 'Codex';
+  const product = model.productLabel ?? t(locale, 'unknownAgent');
   if (isPreparing(model)) return renderPrepare(theme, width, model, locale, product);
   const visible = model.entries.filter((entry) => matchesFilter(entry, model.filter) && matchesCanvasQuery(entry, model.findQuery ?? ''));
   const selected = Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
@@ -217,10 +208,8 @@ export function sourceHints(locale: Locale = 'en'): readonly (readonly [string, 
   return [['Enter', t(locale, 'hintStartRun')], ['Backspace', t(locale, 'hintEdit')], ['Esc', t(locale, 'hintHome')]];
 }
 
-export function preflightHints(hasContamination = false, locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return hasContamination
-    ? [['1', t(locale, 'hintCurrentState')], ['2', t(locale, 'hintRecoveryModel')], ['b', t(locale, 'hintEditSource')], ['Esc', t(locale, 'hintHome')]]
-    : [['Enter', t(locale, 'hintReviewConfirm')], ['b', t(locale, 'hintEditSource')], ['Esc', t(locale, 'hintHome')]];
+export function preflightHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
+  return [['b', t(locale, 'hintEditSource')], ['Esc', t(locale, 'hintHome')]];
 }
 
 export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {
@@ -264,7 +253,7 @@ export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(),
   return formatElapsed(ms);
 }
 
-export function formatElapsed(ms: number): string {
+function formatElapsed(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '00:00';
   const total = Math.floor(ms / 1000);
   const minutes = Math.floor(total / 60);
@@ -280,24 +269,14 @@ export function countCalls(entries: readonly TimelineEntry[]): number {
   return entries.filter((entry) => entry.title.startsWith('Decision:')).length;
 }
 
-/** Compact terminals are audited for wide punctuation, so prose dashes have to follow the glyph set. */
-function contaminationSummary(signals: CodexExperimentPreflight['contamination']): string {
-  if (!signals) return 'none';
-  const facts: string[] = [];
-  if (signals.git) facts.push(`git ${signals.git.relation}`);
-  if (signals.timeline) facts.push('timeline modified');
-  if (signals.baselineArtifactsPresent?.length) facts.push(`${signals.baselineArtifactsPresent.length} artifact(s)`);
-  return facts.join(' · ') || 'detected';
-}
-
 function dash(theme: Theme): string {
   return theme.framed ? '—' : '-';
 }
 
-function candidateLine(candidate: CandidateSpec | undefined): string {
+function candidateLine(candidate: CandidateSpec | undefined, product: string): string {
   const model = candidate?.requestedModel ?? 'unavailable';
   const effort = candidate?.candidateId?.match(/-(minimal|low|medium|high|xhigh|max)$/)?.[1];
-  return effort ? `${model} · ${effort} · isolated Codex` : `${model} · isolated Codex`;
+  return effort ? `${model} · ${effort} · isolated ${product}` : `${model} · isolated ${product}`;
 }
 
 function isRunState(value: string): value is CandidateRunState {

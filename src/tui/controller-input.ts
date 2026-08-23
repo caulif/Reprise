@@ -29,7 +29,7 @@ import {
 import { eventOriginalText, type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import type { PreparePhase } from './widgets.js';
-import { beginPreflight, beginRecovery, beginRun, discardRecovery, freeze, requestCancellation, startRunSetup } from './controller-run.js';
+import { beginPreflight, beginRun, freeze, requestCancellation, startRunSetup } from './controller-run.js';
 
 export type Page = WorkbenchView['page'];
 export type Consume = { consume: true };
@@ -110,8 +110,10 @@ export type ControllerHandle = {
   setLocale(typed: string): Promise<void>;
   visibleTimeline(): readonly TimelineEntry[];
   scheduleTimelineRender(): void;
-  refreshCodexLogin(): void;
+  refreshProductAuth(): Promise<void>;
   loadSessions(): Promise<void>;
+  loadMoreProductSessions(): void;
+  refreshProductSessions(): void;
   loadHistory(): Promise<void>;
   setHomeMessage(message: string): Consume;
   isEditingText(): boolean;
@@ -209,7 +211,7 @@ function applyHome(c: ControllerHandle, data: string): Consume | undefined {
   return { consume: true };
 }
 
-export function submitComposer(c: ControllerHandle): Consume {
+function submitComposer(c: ControllerHandle): Consume {
   const typed = c.composer.trim().toLowerCase();
   c.composer = '';
   c.composerCursor = 0;
@@ -238,14 +240,14 @@ export function submitComposer(c: ControllerHandle): Consume {
   return c.setHomeMessage(t(c.locale, 'unknownCommand', { cmd: typed }));
 }
 
-export function startSessionDiscovery(c: ControllerHandle): Consume {
+function startSessionDiscovery(c: ControllerHandle): Consume {
   c.message = t(c.locale, 'discoveringSessions');
   c.render();
   void c.loadSessions();
   return { consume: true };
 }
 
-export function startHistoryLoad(c: ControllerHandle): Consume {
+function startHistoryLoad(c: ControllerHandle): Consume {
   c.message = t(c.locale, 'readingHistory');
   c.render();
   void c.loadHistory();
@@ -298,6 +300,14 @@ function applySessions(c: ControllerHandle, data: string): Consume | undefined {
   }
   if (result.action === 'leave-project') return c.backToProjects();
   if (result.action === 'home') return c.backToHome();
+  if (result.action === 'more') {
+    c.loadMoreProductSessions();
+    return { consume: true };
+  }
+  if (result.action === 'refresh') {
+    c.refreshProductSessions();
+    return { consume: true };
+  }
   if (result.action === 'toggle-filter') {
     c.filterEligible = !c.filterEligible;
     c.selected = 0;
@@ -341,21 +351,10 @@ function applyInspection(c: ControllerHandle, data: string): Consume | undefined
 }
 
 function applyPreflight(c: ControllerHandle, data: string): Consume | undefined {
-  const result = dispatchPreflightInput(data, Boolean(c.preflight?.contamination));
+  const result = dispatchPreflightInput(data);
   if (!result) return undefined;
   if (result.action === 'home') return c.backToHome();
-  if (result.action === 'source') {
-    c.page = 'source';
-    c.render();
-    return { consume: true };
-  }
-  if (result.action === 'recovery') {
-    void beginRecovery(c);
-    return { consume: true };
-  }
-  void discardRecovery(c);
-  c.page = 'confirm';
-  c.message = t(c.locale, 'currentStateReplay');
+  c.page = 'source';
   c.render();
   return { consume: true };
 }
@@ -446,7 +445,7 @@ function applyHistoryDetail(c: ControllerHandle, data: string): Consume | undefi
   return undefined;
 }
 
-export function clearFind(c: ControllerHandle): Consume {
+function clearFind(c: ControllerHandle): Consume {
   const current = c.visibleTimeline()[c.timelineSelected];
   c.finding = false;
   c.findQuery = '';
@@ -459,7 +458,7 @@ export function clearFind(c: ControllerHandle): Consume {
   return { consume: true };
 }
 
-export function openSelectedDetail(c: ControllerHandle): Consume {
+function openSelectedDetail(c: ControllerHandle): Consume {
   const entry = c.visibleTimeline()[c.timelineSelected];
   const body = eventOriginalText(entry);
   if (!body?.trim()) {
@@ -472,7 +471,7 @@ export function openSelectedDetail(c: ControllerHandle): Consume {
   return { consume: true };
 }
 
-export function moveTimeline(c: ControllerHandle, amount: number): Consume {
+function moveTimeline(c: ControllerHandle, amount: number): Consume {
   const entries = c.visibleTimeline();
   c.timelineSelected = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
   c.timelineFollowing = c.timelineSelected === Math.max(0, entries.length - 1);
@@ -480,7 +479,7 @@ export function moveTimeline(c: ControllerHandle, amount: number): Consume {
   return { consume: true };
 }
 
-export function followTimeline(c: ControllerHandle): Consume {
+function followTimeline(c: ControllerHandle): Consume {
   c.timelineSelected = Math.max(0, c.visibleTimeline().length - 1);
   c.timelineFollowing = true;
   c.message = t(c.locale, 'followingLatest');
@@ -488,7 +487,7 @@ export function followTimeline(c: ControllerHandle): Consume {
   return { consume: true };
 }
 
-export function cycleTimelineFilter(c: ControllerHandle): Consume {
+function cycleTimelineFilter(c: ControllerHandle): Consume {
   c.timelineFilterIndex = (c.timelineFilterIndex + 1) % TIMELINE_FILTERS.length;
   return followTimeline(c);
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, rm, stat, truncate, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, truncate, unlink, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { Type } from '@sinclair/typebox';
@@ -8,6 +8,8 @@ import { SAFE_ID, sha256, writeAtomic } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
   EventEnvelopeSchema,
+  ControllerObservationReadPayloadSchema,
+  ControllerRequestedPayloadSchema,
   RunAttemptSchema,
   RunManifestSchema,
   type ArtifactRef,
@@ -19,6 +21,27 @@ import {
 const SCHEMA_VERSION = 1;
 /** A lock owned by another host cannot be probed for liveness, so it is retired on age alone. */
 const FOREIGN_LOCK_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Recovery keeps structured evidence by default; full workspace trees are never artifacts. */
+const RECOVERY_ARTIFACT_LIMITS: RecoveryArtifactPolicy = {
+  softBytes: 64 * 1024 * 1024,
+  hardBytes: 128 * 1024 * 1024,
+  successTtlMs: 7 * 24 * 60 * 60 * 1000,
+  failureTtlMs: 30 * 24 * 60 * 60 * 1000,
+};
+
+export type RecoveryArtifactPolicy = {
+  readonly softBytes: number;
+  readonly hardBytes: number;
+  readonly successTtlMs?: number;
+  readonly failureTtlMs?: number;
+};
+
+export class RecoveryArtifactBudgetError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
 
 export interface ArtifactManifest {
   readonly artifactId: string;
@@ -127,21 +150,27 @@ export class ExperimentStore {
   #events: EventEnvelope[] = [];
   #appendTail: Promise<void> = Promise.resolve();
   readonly #listeners = new Set<ExperimentEventListener>();
+  readonly #recoveryArtifactPolicy: RecoveryArtifactPolicy;
 
-  private constructor(root: string, experimentId: string, events: EventEnvelope[]) {
+  private constructor(root: string, experimentId: string, events: EventEnvelope[], recoveryArtifactPolicy: RecoveryArtifactPolicy) {
     this.#root = root;
     this.#experimentId = experimentId;
     this.#eventsPath = join(root, 'events.jsonl');
     this.#lockPath = join(root, 'writer.lock');
     this.#events = events;
+    this.#recoveryArtifactPolicy = recoveryArtifactPolicy;
   }
 
-  static async open(experimentRoot: string, experimentId: string): Promise<ExperimentStore> {
+  static async open(experimentRoot: string, experimentId: string, options: { recoveryArtifactPolicy?: RecoveryArtifactPolicy } = {}): Promise<ExperimentStore> {
     assertId(experimentId, 'experimentId');
     const root = resolve(experimentRoot);
     await mkdir(root, { recursive: true });
     const events = await readEvents(join(root, 'events.jsonl'));
-    return new ExperimentStore(root, experimentId, events);
+    const recoveryArtifactPolicy = options.recoveryArtifactPolicy ?? RECOVERY_ARTIFACT_LIMITS;
+    if (!Number.isSafeInteger(recoveryArtifactPolicy.softBytes) || !Number.isSafeInteger(recoveryArtifactPolicy.hardBytes) || recoveryArtifactPolicy.softBytes < 0 || recoveryArtifactPolicy.hardBytes < recoveryArtifactPolicy.softBytes || (recoveryArtifactPolicy.successTtlMs !== undefined && recoveryArtifactPolicy.successTtlMs < 0) || (recoveryArtifactPolicy.failureTtlMs !== undefined && recoveryArtifactPolicy.failureTtlMs < 0)) {
+      throw new Error('Invalid recovery artifact budget policy.');
+    }
+    return new ExperimentStore(root, experimentId, events, recoveryArtifactPolicy);
   }
 
   async acquireWriter(): Promise<void> {
@@ -312,6 +341,8 @@ export class ExperimentStore {
     };
     const event: EventEnvelope = { ...body, checksum: eventChecksum(body) };
     if (!Value.Check(EventEnvelopeSchema, event)) throw new Error('Generated event does not satisfy the event schema.');
+    if (event.type === 'controller.requested' && !Value.Check(ControllerRequestedPayloadSchema, event.payload)) throw new Error('controller.requested payload does not satisfy its schema.');
+    if (event.type === 'controller.observation_read' && !Value.Check(ControllerObservationReadPayloadSchema, event.payload)) throw new Error('controller.observation_read payload does not satisfy its schema.');
     await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);
     for (const listener of this.#listeners) {
@@ -370,6 +401,7 @@ export class ExperimentStore {
     } catch (error: unknown) {
       if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
     }
+    if (input.kind.startsWith('recovery_')) await this.#assertRecoveryArtifactBudget(input);
     await writeAtomic(filePath, input.bytes);
     const manifest: ArtifactManifest = {
       artifactId: input.artifactId, schemaVersion: SCHEMA_VERSION, kind: input.kind, ...(input.mediaType ? { mediaType: input.mediaType } : {}),
@@ -384,6 +416,75 @@ export class ExperimentStore {
       operationId: input.operationId ?? `artifact-${input.artifactId}`, payload: { artifactId: input.artifactId },
     });
     return manifest;
+  }
+
+
+  async cleanupRecoveryArtifacts(input: { runId?: string; terminalStatus: 'completed' | 'failed'; now?: number }): Promise<{ removed: number; failed: number }> {
+    this.#assertWriter();
+    const ttlMs = input.terminalStatus === 'completed'
+      ? this.#recoveryArtifactPolicy.successTtlMs
+      : this.#recoveryArtifactPolicy.failureTtlMs;
+    if (ttlMs === undefined) return { removed: 0, failed: 0 };
+    const cutoff = (input.now ?? Date.now()) - ttlMs;
+    const artifacts = (await this.listArtifacts(input.runId)).filter((artifact) => artifact.kind.startsWith('recovery_') && Date.parse(artifact.createdAt) < cutoff);
+    let removed = 0;
+    let failed = 0;
+    for (const artifact of artifacts) {
+      try {
+        const folder = input.runId ? join('runs', input.runId, 'artifacts') : 'artifacts';
+        await unlink(inside(this.#root, join(folder, artifact.artifactId)));
+        await unlink(inside(this.#root, join(folder, `${artifact.artifactId}.json`)));
+        removed += 1;
+      } catch (error: unknown) {
+        failed += 1;
+        await this.append({
+          type: 'recovery.artifact_cleanup_failed',
+          ...(input.runId ? { runId: input.runId } : {}),
+          operationId: `recovery-artifact-cleanup-failed-${artifact.artifactId}`,
+          payload: { reasonCode: errorCode(error), terminalStatus: input.terminalStatus },
+        });
+      }
+    }
+    if (removed > 0) await this.append({
+      type: 'recovery.artifact_cleanup_completed',
+      ...(input.runId ? { runId: input.runId } : {}),
+      operationId: `recovery-artifact-cleanup-${input.runId ?? 'experiment'}`,
+      payload: { removed, failed, terminalStatus: input.terminalStatus },
+    });
+    return { removed, failed };
+  }
+
+  async #assertRecoveryArtifactBudget(input: { artifactId: string; runId?: string; kind: string; bytes: Uint8Array }): Promise<void> {
+    const manifests = await this.listArtifacts(input.runId);
+    const recoveryArtifacts = manifests.filter((manifest) => manifest.kind.startsWith('recovery_'));
+    const contentHash = sha256(input.bytes);
+    const retainedBytes = recoveryArtifacts.reduce((total, manifest) => total + manifest.byteLength, 0);
+    const duplicateBytes = recoveryArtifacts.some((manifest) => manifest.contentHash === contentHash) ? input.bytes.byteLength : 0;
+    const projectedBytes = retainedBytes + input.bytes.byteLength;
+    const payload = {
+      retainedBytes,
+      incomingBytes: input.bytes.byteLength,
+      projectedBytes,
+      dedupRatio: projectedBytes === 0 ? 0 : duplicateBytes / projectedBytes,
+      scope: input.runId ? 'run' : 'experiment',
+    };
+    if (projectedBytes > this.#recoveryArtifactPolicy.hardBytes) {
+      await this.append({
+        type: 'recovery.artifact_budget_hard_rejected',
+        ...(input.runId ? { runId: input.runId } : {}),
+        operationId: `recovery-artifact-budget-hard-${input.artifactId}`,
+        payload,
+      });
+      throw new RecoveryArtifactBudgetError('Recovery artifact hard budget exceeded; full environment exports require explicit debug opt-in.');
+    }
+    if (projectedBytes > this.#recoveryArtifactPolicy.softBytes) {
+      await this.append({
+        type: 'recovery.artifact_budget_soft_exceeded',
+        ...(input.runId ? { runId: input.runId } : {}),
+        operationId: `recovery-artifact-budget-soft-${input.artifactId}`,
+        payload,
+      });
+    }
   }
 
   async readArtifact(ref: ArtifactRef): Promise<Uint8Array> {
@@ -423,12 +524,16 @@ export class ExperimentStore {
   }
 }
 
-export function assertRunAttempt(value: unknown): asserts value is RunAttempt {
+function assertRunAttempt(value: unknown): asserts value is RunAttempt {
   if (!Value.Check(RunAttemptSchema, value)) throw new Error('Invalid RunAttempt.');
 }
 
-export function assertRunManifest(value: unknown): asserts value is RunManifest {
+function assertRunManifest(value: unknown): asserts value is RunManifest {
   if (!Value.Check(RunManifestSchema, value)) throw new Error('Invalid RunManifest.');
+}
+
+function errorCode(error: unknown): string {
+  return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'unknown';
 }
 
 function isArtifactManifest(value: unknown): value is ArtifactManifest {

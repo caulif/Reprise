@@ -9,6 +9,7 @@ import {
   assertComparisonResult,
   type ComparisonAgentPort,
   type ComparisonContext,
+  type ComparisonReportFacts,
   type ComparisonResult,
 } from '../agents/comparison-agent.js';
 import type { AgentToolDefinition, StructuredAgentResult } from '../infrastructure/pi-agent-host.js';
@@ -50,6 +51,7 @@ export function buildComparisonContext(taskCase: TaskCase, runs: readonly RunRec
       evidenceRefs: runEvidence(run),
     })),
     telemetry: runs.map((run) => ({ runId: run.attempt.runId, summary: telemetrySummary(run, byRunId.get(run.attempt.runId)) })),
+    reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay),
     artifactRefs: unique(runs.flatMap((run) => run.artifactRefs.map((ref) => `artifact:${ref.artifactId}`))),
     allowModelText: taskCase.privacy.allowModelText,
     replayScope: {
@@ -71,6 +73,29 @@ export async function comparePersistedFacts(input: {
   const result = await input.agent.compare(context, input.tools);
   if (result.status === 'completed') assertComparisonResult(result.value, context);
   return { context, result };
+}
+
+function buildReportFacts(run: RunRecord | undefined, inspection: RunInspection | undefined, taskCase: TaskCase, hostReplay: ComparisonContext['hostReplay']): ComparisonReportFacts {
+  if (!run) return {
+    run: { runId: 'unavailable', outcome: 'unavailable', terminationCode: 'unavailable', initiatedBy: 'unavailable' },
+    models: { candidate: 'unavailable' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
+    delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' },
+    replay: { conditions: [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: 'unavailable' },
+  };
+  const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
+  return {
+    run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
+    models: { candidate: run.manifest?.resolvedModel.resolved ?? run.attempt.candidate.requestedModel, ...(run.manifest ? { controller: run.manifest.controller.requestedModel, comparison: run.manifest.comparison.requestedModel } : {}) },
+    activity: { ...(inspection ? { candidateTurns: inspection.turns } : {}) },
+    limits: { wallClockMs: run.attempt.policy.wallClockMs, maxTargetTurns: run.attempt.policy.maxTargetTurns, maxModelCalls: run.attempt.policy.maxModelCalls, triggered },
+    runtime: { productId: run.attempt.candidate.productId },
+    delivery: { changedPaths: inspection?.changedPaths ?? [], targetArtifactStatus: run.artifactRefs.length ? 'artifacts_recorded' : 'not_collected', verificationStatus: run.outcome.task.status },
+    replay: { ...(hostReplay?.sourceRootKind ? { sourceRootKind: hostReplay.sourceRootKind } : {}), conditions: hostReplay?.conditions ?? [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: evidenceLevel(run.outcome.task.evidenceRefs) },
+  };
+}
+
+function evidenceLevel(refs: readonly string[]): string {
+  return refs.length ? 'verifiable' : 'session_claim_only';
 }
 
 function assertFacts(taskCase: TaskCase, runs: readonly RunRecord[]): void {

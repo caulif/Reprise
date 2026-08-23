@@ -16,6 +16,7 @@ import { promisify } from "node:util";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { TaskCaseSchema } from "../src/core/schema.js";
+import { resolvedRecoveryFacts } from "../src/infrastructure/recovery-tools.js";
 import { sha256, writeImmutable } from "../src/core/identity.js";
 import type { TargetRunner } from "../src/core/runtime.js";
 import {
@@ -36,8 +37,8 @@ import {
   codexSettlementStatus,
   defaultCodexSandbox,
   discoverCodexExecutable,
-  redactDiagnostic,
 } from "../src/products/codex/runtime-port.js";
+import { redactDiagnostic } from "../src/products/shared/process.js";
 import {
   CodexTextCaller,
   EXPERIMENT_APPLICATION_EFFORT,
@@ -996,6 +997,12 @@ test("Codex rollout discovery and freeze are read-only, complete, redacted, and 
       },
     },
   });
+  const recoveryFacts = await resolvedRecoveryFacts(historicalCwd, frozen.taskCase);
+  assert.equal(recoveryFacts.catalog.length, frozen.taskCase.transcript.length + frozen.taskCase.historicalEvents.length);
+  assert.ok(recoveryFacts.catalog.some((entry) => entry.source === "transcript"));
+  assert.ok(recoveryFacts.catalog.some((entry) => entry.source === "historical_events"));
+  assert.ok(recoveryFacts.evidenceRefs.some((ref) => ref.startsWith("event:transcript-")));
+  assert.ok(recoveryFacts.evidenceRefs.some((ref) => ref.startsWith("event:history-")));
   assert.equal(
     (
       await freezeCodexSession({

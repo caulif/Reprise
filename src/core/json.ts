@@ -17,7 +17,3 @@ export function record(value: unknown): JsonRecord {
 export function text(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
-
-export function integer(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
-}

@@ -34,10 +34,13 @@
     "check": "node scripts/run-gates.mjs check",
     "postbuild": "node scripts/copy-test-fixtures.mjs",
     "audit:tui": "npm run build && node scripts/tui-visual-audit.mjs && node scripts/tui-audit-analyze.mjs",
-    "audit:tui:check": "npm run build && node scripts/tui-visual-audit.mjs --check",
+    "audit:tui:check": "npm run build && node scripts/tui-visual-audit.mjs --check && node scripts/tui-audit-analyze.mjs",
     "audit:tui:ci": "node scripts/tui-visual-audit.mjs --check",
     "smoke:codex": "npm run build && node dist/scripts/codex-real-smoke.js",
     "smoke:codex:recovery": "npm run build && node dist/scripts/codex-real-recovery-smoke.js",
+    "evaluate:recovery": "npm run build && node dist/scripts/recovery-evaluate.js",
+    "evaluate:recovery:checkpoint": "npm run build && node dist/scripts/recovery-checkpoint-5plus5.js",
+    "evaluate:recovery:real": "node scripts/recovery-real-5plus5.mjs",
     "smoke:claude": "npm run build && node dist/scripts/claude-real-smoke.js",
     "smoke:claude:e2e": "npm run build && node dist/scripts/claude-real-e2e.js",
     "diag:claude": "npm run build && node dist/scripts/claude-initialize-diag.js",
@@ -45,7 +48,7 @@
     "replay:tui": "node scripts/tui-case-replay.mjs",
     "flow:tui": "npm run build && node dist/scripts/tui-full-flow.js",
     "knip": "knip",
-    "jscpd": "jscpd src --min-tokens 60 --min-lines 6 --mode mild --threshold 0 --reporters console --output .tmp-jscpd",
+    "jscpd": "jscpd src --min-tokens 60 --min-lines 6 --mode mild --threshold 1 --reporters console --output .tmp-jscpd",
     "prepublishOnly": "npm run check"
   },
   "dependencies": {

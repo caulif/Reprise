@@ -13,6 +13,7 @@ docs/
 ├── documentation-structure.md       # 本文
 ├── development-plan.md              # 模块 0–8 的实现顺序与验收记录
 ├── codex-smoke-gate.md              # 真实计费运行的准入程序与验收记录
+├── engineering-gates.md             # 本地与 CI 门禁契约
 ├── product/                         # 产品目标、用户路径和非目标
 ├── architecture/                    # 当前跨模块与专题架构规范
 ├── decisions/                       # 决策记录
@@ -54,6 +55,7 @@ docs/
 | 某个长期约束实现的选择及其被放弃的备选方案 | `decisions/accepted/` |
 | 模块 0–8 的实现顺序与验收 | `development-plan.md` |
 | 真实计费运行的准入条件 | `codex-smoke-gate.md` |
+| 本地与 CI 门禁契约 | `engineering-gates.md` |
 | 尚未完成的工作 | `plan/` |
 | 稳定的当前进度入口 | `progress/MASTER.md` |
 | 为什么这样设计、有哪些备选方案 | `research/`，非规范性 |

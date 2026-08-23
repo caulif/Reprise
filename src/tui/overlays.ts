@@ -5,8 +5,6 @@ import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
 import { panel } from './widgets.js';
 
-export const HELP_COMMANDS_LINE = 'Commands: /config, /intake, /run, /history, /lang, /find';
-
 /** Several keys mean different things per page (`f`, `t`, `d`), so help is scoped to where the user is. */
 const PAGE_KEYS: Record<string, readonly string[]> = {
   home: [

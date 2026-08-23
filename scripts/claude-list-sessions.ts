@@ -6,7 +6,7 @@ import { claudeSessionAdapter } from '../src/products/claude-code/sessions.js';
 
 const summaries = await claudeSessionAdapter.discover({ limit: 30, excludeRoots: [process.cwd()] });
 const rows = [];
-for (const session of summaries) {
+for (const session of summaries.items) {
   const cwd = session.cwd;
   let bytes = 0;
   let files = 0;

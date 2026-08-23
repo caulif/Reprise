@@ -1,15 +1,15 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   ○ Harness unset  ○ Codex  ○ No task
+Reprise v0.1.0   C:\reprise                              No configured model   ○ Harness unset  ○ Agent unset  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Last task  none selected
 
  Continue
  r     Replay the current task  needs a task
- i     Import a Codex session
+ i     Import a historical session
 
 ┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Endpoint   http://insecure.example/v1                                                                                │
 │ Model      model-private · medium                                                                                    │
-│ Secret     not…-key   saved in harness-model.json                                                                    │
+│ Secret     not...-key   saved in harness-model.json                                                                  │
 │ The API key is saved in .reprise/harness-model.json. env:NAME still works as a fallback.                             │
 │                                                                                                                      │
 │   provider type      openai-compatible  [Enter] toggles                                                              │
@@ -18,7 +18,7 @@ Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured mod
 │     ⚠ not an https URL                                                                                               │
 │   model              model-private                                                                                   │
 │   effort             medium  [Enter] toggles                                                                         │
-│ ❯ API key            not…-key  ✓                                                                                     │
+│ ❯ API key            not...-key  ✓                                                                                   │
 │   Language           English  [Enter] toggles                                                                        │
 │                                                                                                                      │
 │ ● Unsaved draft                                                                                                      │

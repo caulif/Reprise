@@ -4,14 +4,13 @@ import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import type { CodexExperimentResult } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { freezeCase } from '../products/shared/freeze.js';
-import { findProductPack } from '../products/index.js';
 import { errorMessage } from './format.js';
 import { t, type Locale } from './i18n.js';
 import { projectLabel } from './pages/intake.js';
 import { appendTimelineEntries, projectTimelineEvent } from './timeline.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
 
-export function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
+function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
   return typeof cwd === 'string' && isFsAbsolute(cwd) ? cwd : undefined;
 }
@@ -20,12 +19,12 @@ export function envNameFromConfig(config: HarnessModelConfig, draft: HarnessConf
   return tryEnvironmentName(draft.keyRef) ?? (config.schemaVersion === 2 ? tryEnvironmentName(config.keyRef ?? '') : undefined);
 }
 
-export function workspaceDetail(workspace: { fileCount: number; totalBytes: number } | undefined): string | undefined {
+function workspaceDetail(workspace: { fileCount: number; totalBytes: number } | undefined): string | undefined {
   if (!workspace) return undefined;
   return `${workspace.fileCount.toLocaleString()} files · ${(workspace.totalBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-export function resultMessage(result: CodexExperimentResult, locale: Locale): string {
+function resultMessage(result: CodexExperimentResult, locale: Locale): string {
   const kind = result.record.outcome.termination.kind;
   if (kind === 'blocked') return t(locale, 'resultBlocked');
   if (kind === 'failed') return t(locale, 'resultFailed');
@@ -71,7 +70,8 @@ export async function freeze(
   const token = c.beginNavigation();
   try {
     const session = c.inspection ?? c.sessions.find((item) => item.sourcePath === sourcePath);
-    const pack = findProductPack(session?.productId ?? c.packs[0]?.manifest.productId ?? 'codex');
+    const pack = c.packs.find((item) => item.manifest.productId === session?.productId);
+    if (!pack) throw new Error(`No Product Pack is registered for session ${session?.productId ?? 'unknown'}.`);
     const imported = await pack.sessions.import({
       productId: pack.manifest.productId,
       sessionId: session?.sessionId ?? 'session',
@@ -118,7 +118,7 @@ export function requestCancellation(c: ControllerHandle): Consume {
   return { consume: true };
 }
 
-export function startRunClock(c: ControllerHandle): void {
+function startRunClock(c: ControllerHandle): void {
   stopRunClock(c);
   c.runStartedAt = Date.now();
   c.runClock = setInterval(() => {
@@ -132,10 +132,10 @@ export function stopRunClock(c: ControllerHandle): void {
   c.runClock = undefined;
 }
 
-export function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
+function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
   if (event.type === 'comparison.started') {
     c.preparePhase = 'compare';
-    c.prepareDetail = 'Writing comparison.md';
+    c.prepareDetail = 'Writing comparison report' ;
   } else if (event.type === 'comparison.completed') {
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
@@ -183,7 +183,7 @@ export async function beginPreflight(c: ControllerHandle): Promise<void> {
       );
     }
     c.preflight = preflight;
-    void beginRun(c);
+    void beginRecovery(c);
     return;
   } catch (error) {
     if (token !== c.generation) return;
@@ -192,7 +192,7 @@ export async function beginPreflight(c: ControllerHandle): Promise<void> {
   c.render(true);
 }
 
-export async function beginRecovery(c: ControllerHandle): Promise<void> {
+async function beginRecovery(c: ControllerHandle): Promise<void> {
   const token = c.beginNavigation();
   try {
     if (!c.workflow || !c.taskCase || !c.preflight) throw new Error('Recovery is unavailable before preflight.');
@@ -201,7 +201,7 @@ export async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.timelineSelected = 0;
     c.timelineFollowing = true;
     c.preparePhase = 'check';
-    c.prepareDetail = 'Recovery Agent is working only in unpublished staging';
+    c.prepareDetail = 'Preparing the isolated environment';
     c.page = 'running';
     startRunClock(c);
     c.render(true);
@@ -245,7 +245,7 @@ export async function beginRecovery(c: ControllerHandle): Promise<void> {
 }
 
 export async function beginRun(c: ControllerHandle): Promise<void> {
-  c.refreshCodexLogin();
+  void c.refreshProductAuth();
   const token = c.beginNavigation();
   const errorReturn = c.runFromSource ? 'source' : 'home';
   try {

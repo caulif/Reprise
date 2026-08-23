@@ -33,7 +33,9 @@ export type WorkbenchView = {
   readonly hasApiConfig: boolean;
   readonly hasUsableAuth?: boolean;
   readonly envName?: string;
-  readonly hasCodexLogin?: boolean;
+  /** Display context for the selected or frozen product; never infer a Codex fallback. */
+  readonly productLabel?: string;
+  readonly productConfigured?: boolean;
   readonly hasTaskCase: boolean;
   readonly locale?: Locale;
   readonly message: string;
@@ -147,10 +149,11 @@ function harnessStatus(theme: Theme, view: WorkbenchView): string {
 
 function identityStatus(theme: Theme, view: WorkbenchView): string {
   const locale = view.locale ?? 'en';
-  const short = theme.density === 'compact' || theme.density === 'minimum';
-  const codex = pill(theme, view.hasCodexLogin ? 'Codex' : (short ? 'Codex?' : 'Codex'), view.hasCodexLogin ? 'ok' : 'off');
+  const product = view.productLabel
+    ? pill(theme, view.productLabel, view.productConfigured ? 'ok' : 'off')
+    : pill(theme, t(locale, 'noAgentSelected'), 'off');
   const task = pill(theme, view.hasTaskCase ? t(locale, 'hasCase') : t(locale, 'noCase'), view.hasTaskCase ? 'ok' : 'off');
-  return `${harnessStatus(theme, view)}  ${codex}  ${task}`;
+  return `${harnessStatus(theme, view)}  ${product}  ${task}`;
 }
 
 function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[] {
@@ -159,7 +162,7 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
   const brand = view.page === 'result' && running
     ? `${theme.style.harness('Reprise')}   ${t(locale, 'resultTitle')}`
     : running
-      ? `${theme.style.harness('Reprise')}   ${t(locale, running.preparePhase === 'check' || running.preparePhase === 'copy' ? 'preparingTitle' : 'replayTitle', { product: running.productLabel ?? 'Codex' })}`
+      ? `${theme.style.harness('Reprise')}   ${t(locale, running.preparePhase === 'check' || running.preparePhase === 'copy' ? 'preparingTitle' : 'replayTitle', { product: running.productLabel ?? t(locale, 'unknownAgent') })}`
       : theme.style.harness('Reprise v0.1.0');
   const status = view.page === 'result' && running
     ? pill(theme, t(locale, 'done'), 'ok')
@@ -192,13 +195,13 @@ function renderMessage(_theme: Theme, view: WorkbenchView, width: number): strin
 
 function renderFooter(theme: Theme, view: WorkbenchView, width: number): string[] {
   const locale = view.locale ?? 'en';
-  const product = view.running?.productLabel ?? 'Codex';
+  const product = view.running?.productLabel ?? t(locale, 'unknownAgent');
   const preparing = view.running?.preparePhase === 'check' || view.running?.preparePhase === 'copy';
   const composer = view.page === 'running' && view.running
     ? ` ${theme.glyphs.cursor} ${theme.style.muted(t(locale, preparing ? 'noTyping' : 'noTypeTarget', { product }))}`
     : undefined;
   return [
-    ...(composer ? [theme.style.fillCanvas(composer)] : []),
+    ...(composer ? [theme.style.fillCanvas(truncateFit(composer, width, theme.glyphs.ellipsis))] : []),
     divider(theme, width),
     keyHints(theme, hintsFor(view, theme), width),
   ];
@@ -262,7 +265,7 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
   if (view.page === 'confirm' && view.confirm) return renderConfirmation(theme, width, view.confirm);
   if (view.page === 'running' && view.running) return renderTimeline(theme, width, view.running, height);
   if (view.page === 'result' && view.result) {
-    const summary = renderResult(theme, width, view.result, view.locale ?? 'en');
+    const summary = renderResult(theme, width, view.result, view.locale ?? 'en', view.productLabel);
     if (!view.running?.entries.length) return summary;
     return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - summary.length - 1)), '', ...summary];
   }
@@ -289,7 +292,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
   if (view.page === 'source') return sourceHints(locale);
   if (view.page === 'preflight') {
     if (!view.preflight) return [['Esc', t(locale, 'hintHome')]];
-    return preflightHints(Boolean(view.preflight.preflight.contamination), locale);
+    return preflightHints(locale);
   }
   if (view.page === 'confirm') return confirmHints(view.confirm?.harnessAuthOk !== false, locale);
   if (view.page === 'running' && view.running) {

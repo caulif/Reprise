@@ -1,9 +1,15 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   ○ Harness unset  ○ Codex  ○ No task
+Reprise v0.1.0   C:\reprise                              No configured model   ○ Harness unset  ○ Agent unset  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-┌─ Cannot continue ────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ENOTDIR: not a directory, scandir 'TMP\sessions-file'         │
-│                                                                                                                      │
-│ Isolated Codex was not started by this screen. Enter or b returns to the previous step.                              │
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a historical session
+
+┌─ Select agent product ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│❯ Codex                                                                           pack 0.1.0  error: ENOTDIR: not a d…│
+│  Claude Code                                                                     pack 0.1.0  sessions not scanned    │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Select an agent product.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Enter] Back  [b] Back  [Esc] Home
+ [↑↓] Select  [Enter] Open product  [Esc] Home

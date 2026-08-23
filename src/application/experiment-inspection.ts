@@ -96,7 +96,7 @@ export async function inspectRun(
   return { ...inspection, evidenceRefs, currentSummary, trajectorySummary };
 }
 
-export async function inspectWorkspace(
+async function inspectWorkspace(
   workspace: WorkspaceInspection | undefined,
 ): Promise<Pick<RunInspection, "changedPaths" | "runtimeGeneratedPaths">> {
   if (!workspace) return { changedPaths: [], runtimeGeneratedPaths: [] };
@@ -115,7 +115,7 @@ export async function inspectWorkspace(
   };
 }
 
-export async function readWorkspaceScope(
+async function readWorkspaceScope(
   store: ExperimentStore,
   record: RunRecord,
 ): Promise<Pick<RunInspection, "changedPaths" | "runtimeGeneratedPaths">> {

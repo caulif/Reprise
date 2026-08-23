@@ -1,4 +1,4 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured model   ○ Harness unset  ○ Codex  ○ No task
+Reprise v0.1.0   C:\reprise                              No configured model   ○ Harness unset  ○ Agent unset  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Last task  none selected
 
@@ -14,7 +14,7 @@ Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise   No configured mod
 │                                                                   │ │ Started      unavailable                       │
 │                                                                   │ │ Report       not generated                     │
 │                                                                   │ │ Stored       0.0 MiB                           │
-│                                                                   │ │ Path         ]8;;file:///TMP/history-data/experiments/exp-history\C:\Users\15893\AppData\Local\]8;;\     │
+│                                                                   │ │ Path         ]8;;file:///TMP/history-data/experiments/exp-history\C:\user\AppData\Local\]8;;\     │
 │                                                                   │ │              ]8;;file:///TMP/history-data/experiments/exp-history\Temp\reprise-tui-audit-TMP\]8;;\    │
 │                                                                   │ │              ]8;;file:///TMP/history-data/experiments/exp-history\history-data\experiments\]8;;\         │
 │                                                                   │ │              ]8;;file:///TMP/history-data/experiments/exp-history\exp-history]8;;\                       │

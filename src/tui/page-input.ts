@@ -117,6 +117,8 @@ export type SessionsAction =
   | 'leave-project'
   | 'home'
   | 'toggle-filter'
+  | 'more'
+  | 'refresh'
   | 'edit-search'
   | 'consume';
 
@@ -138,6 +140,8 @@ export function dispatchSessionsInput(state: SessionsInputState, data: string): 
   if (matchesKey(input, 'up')) return { state, action: 'up', consume: true };
   if (matchesKey(input, 'down')) return { state, action: 'down', consume: true };
   if (matchesKey(input, 'f')) return { state, action: 'toggle-filter', consume: true };
+  if (matchesKey(input, 'm')) return { state, action: 'more', consume: true };
+  if (matchesKey(input, 'r')) return { state, action: 'refresh', consume: true };
   if (matchesKey(input, 'enter')) return { state, action: 'enter', consume: true };
   return undefined;
 }
@@ -153,14 +157,13 @@ export function dispatchInspectionInput(data: string, hasInspection: boolean): {
   return undefined;
 }
 
-export type PreflightAction = 'home' | 'source' | 'recovery' | 'confirm';
+export type PreflightAction = 'home' | 'source';
 
-export function dispatchPreflightInput(data: string, hasContamination: boolean): { action: PreflightAction; consume: true } | undefined {
+/** Recovery starts automatically after preflight; this transient page only allows navigation away. */
+export function dispatchPreflightInput(data: string): { action: PreflightAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
   if (matchesKey(input, 'b')) return { action: 'source', consume: true };
-  if (matchesKey(input, '2') && hasContamination) return { action: 'recovery', consume: true };
-  if (matchesKey(input, '1') || matchesKey(input, 'enter')) return { action: 'confirm', consume: true };
   return undefined;
 }
 

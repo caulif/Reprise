@@ -1,13 +1,27 @@
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
+import { sha256 } from "../core/identity.js";
 
 export type AgentFailure = {
+  /** Safe classification used to decide whether a bounded retry is meaningful. */
+  kind?: AgentFailureKind;
   code:
     "agent_timeout" | "agent_failure" | "invalid_output" | "privacy_blocked";
   message: string;
   attempts: number;
 };
+
+export type AgentFailureKind =
+  | "authentication"
+  | "rate_limited"
+  | "transient_network"
+  | "transient_upstream"
+  | "tool"
+  | "timeout"
+  | "protocol"
+  | "cancelled"
+  | "unknown";
 
 /** A failed invocation deliberately has no T: Host facts must not become model decisions. */
 export type AgentInvocation<T> =
@@ -25,6 +39,8 @@ export type AgentToolDefinition = {
     params: unknown,
     signal: AbortSignal,
   ): Promise<{ content: string; details?: unknown }>;
+  /** Host-only hook for facts a successful read made available during this request. */
+  onCompleted?(result: { content: string; details?: unknown }): Promise<void>;
 };
 
 export type AgentAuditEvent = {
@@ -36,7 +52,8 @@ export type AgentAuditEvent = {
     | "agent.message_appended"
     | "agent.tool_called"
     | "agent.tool_completed"
-    | "agent.tool_failed";
+    | "agent.tool_failed"
+    | "agent.invalid_output";
   sessionId: string;
   role: string;
   payload: Record<string, unknown>;
@@ -72,6 +89,8 @@ export type StructuredAgentRequest<T> = {
   audit?: AgentAuditSink;
   /** Exact JSON the model must return; included in the first prompt and in repairs. */
   outputContract?: string;
+  /** Extra bounded instruction appended only to a schema/validator repair request. */
+  repairInstruction?: string;
 };
 
 export type AgentSessionRequest<T> = Pick<
@@ -82,7 +101,11 @@ export type AgentSessionRequest<T> = Pick<
   | "maxRepairAttempts"
   | "validate"
   | "outputContract"
->;
+  | "repairInstruction"
+> & {
+  /** Host request identity; a cancelled id is dropped before decode. */
+  requestId?: string;
+};
 
 /**
  * The shared Host boundary for all internal agents. It owns session identity,
@@ -146,6 +169,7 @@ export class PiAgentHost {
         "agent_failure",
         errorMessage(error),
         input.audit,
+        classifyAgentFailure(error),
       );
     }
   }
@@ -163,6 +187,9 @@ export class PiAgentHost {
       ...(request.outputContract
         ? { outputContract: request.outputContract }
         : {}),
+      ...(request.repairInstruction
+        ? { repairInstruction: request.repairInstruction }
+        : {}),
     });
   }
 }
@@ -175,6 +202,7 @@ export class AgentSessionHost {
   readonly #audit: AgentAuditSink | undefined;
   readonly #failure: AgentFailure | undefined;
   #cancelled = false;
+  #droppedRequestIds = new Set<string>();
 
   constructor(
     sessionId: string,
@@ -208,11 +236,13 @@ export class AgentSessionHost {
     code: AgentFailure["code"],
     message: string,
     audit?: AgentAuditSink,
+    kind: AgentFailureKind = "unknown",
   ): AgentSessionHost {
     return new AgentSessionHost(sessionId, role, undefined, audit, {
       code,
       message,
       attempts: 0,
+      kind,
     });
   }
 
@@ -220,7 +250,8 @@ export class AgentSessionHost {
     return this.#sessionId;
   }
 
-  async cancel(factRef?: string): Promise<void> {
+  async cancel(factRef?: string, requestId?: string): Promise<void> {
+    if (requestId) this.#droppedRequestIds.add(requestId);
     if (this.#cancelled) return;
     this.#cancelled = true;
     this.#session?.cancel();
@@ -236,7 +267,7 @@ export class AgentSessionHost {
     request: AgentSessionRequest<T>,
   ): Promise<AgentInvocation<T>> {
     assertRequest(request);
-    if (this.#cancelled)
+    if (this.#dropped(request.requestId))
       return { status: "cancelled", sessionId: this.#sessionId };
     if (this.#failure)
       return {
@@ -272,6 +303,8 @@ export class AgentSessionHost {
           controller.signal,
         );
         if (controller.signal.aborted) throw timeoutError();
+        // A provider may resolve after cancel() despite receiving an abort signal.
+        if (this.#dropped(request.requestId)) return { status: 'cancelled', sessionId: this.#sessionId };
         const decoded = decode(request.schema, text);
         const error = decoded.error ?? request.validate?.(decoded.value as T);
         if (!error && decoded.value !== undefined) {
@@ -288,15 +321,24 @@ export class AgentSessionHost {
           };
         }
         lastError = error ?? "schema validation failed";
-        if (attempts === request.maxRepairAttempts)
+        if (attempts === request.maxRepairAttempts) {
+          await this.#audit?.append({
+            type: "agent.invalid_output",
+            sessionId: this.#sessionId,
+            role: this.#role,
+            payload: invalidOutputAudit(lastError, attempts + 1, decoded.value),
+          });
           return this.#failed("invalid_output", lastError, attempts + 1);
+        }
       } catch (error) {
-        if (this.#cancelled || (isAbort(error) && !isTimeout(error)))
+        if (this.#dropped(request.requestId) || (isAbort(error) && !isTimeout(error)))
           return { status: "cancelled", sessionId: this.#sessionId };
+        const code = isTimeout(error) ? "agent_timeout" : "agent_failure";
         return this.#failed(
-          isTimeout(error) ? "agent_timeout" : "agent_failure",
+          code,
           errorMessage(error),
           attempts + 1,
+          isTimeout(error) ? "timeout" : classifyAgentFailure(error),
         );
       } finally {
         if (timer) clearTimeout(timer);
@@ -310,15 +352,22 @@ export class AgentSessionHost {
     code: AgentFailure["code"],
     message: string,
     attempts: number,
+    kind: AgentFailureKind = code === "invalid_output" ? "protocol" : "unknown",
   ): Promise<AgentInvocation<never>> {
-    const failure: AgentFailure = { code, message, attempts };
+    const failure: AgentFailure = { code, message, attempts, kind };
     await this.#audit?.append({
       type: "agent.session_failed",
       sessionId: this.#sessionId,
       role: this.#role,
-      payload: failure,
+      payload: code === "invalid_output"
+        ? { code, attempts, category: invalidOutputCategory(message) }
+        : { code, attempts, kind },
     });
     return { status: "failed", sessionId: this.#sessionId, failure };
+  }
+
+  #dropped(requestId?: string): boolean {
+    return this.#cancelled || Boolean(requestId && this.#droppedRequestIds.has(requestId));
   }
 }
 
@@ -350,6 +399,7 @@ function instrumentTools(
         });
         try {
           const result = await tool.execute(params, signal);
+          await tool.onCompleted?.(result);
           await audit?.append({
             type: "agent.tool_completed",
             sessionId,
@@ -370,11 +420,64 @@ function instrumentTools(
             role,
             payload: { tool: tool.name, message: errorMessage(error) },
           });
-          throw error;
+          throw new AgentToolFailure(error);
         }
       },
     };
   });
+}
+
+class AgentToolFailure extends Error {
+  constructor(cause: unknown) {
+    super("Recovery agent tool execution failed.", { cause });
+    this.name = "AgentToolFailure";
+  }
+}
+
+function classifyAgentFailure(error: unknown): AgentFailureKind {
+  if (error instanceof AgentToolFailure) return "tool";
+  if (isAbort(error)) return "cancelled";
+  const details = errorDetails(error).toLowerCase();
+  const status = errorStatus(error);
+  if (status === 401 || status === 403 || /\b(unauthori[sz]ed|forbidden|invalid api key|authentication)\b/.test(details))
+    return "authentication";
+  if (status === 429 || /\b(rate.?limit|too many requests|quota)\b/.test(details)) return "rate_limited";
+  if ([408, 500, 502, 503, 504].includes(status ?? 0) || /\b(upstream_error|upstream request failed|service temporarily unavailable|bad gateway|gateway timeout)\b/.test(details))
+    return "transient_upstream";
+  if (/\b(econnreset|econnrefused|enotfound|etimedout|timeout|network|transport|fetch failed|socket)\b/.test(details))
+    return "transient_network";
+  if (/\b(invalid json|schema|protocol|malformed|unexpected response)\b/.test(details)) return "protocol";
+  return "unknown";
+}
+
+function errorStatus(error: unknown): number | undefined {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    const record = current as { status?: unknown; statusCode?: unknown; code?: unknown; cause?: unknown };
+    for (const value of [record.status, record.statusCode, record.code]) {
+      if (typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599)
+        return value;
+      if (typeof value === "string" && /^\d{3}$/.test(value)) return Number(value);
+    }
+    current = record.cause;
+  }
+  return undefined;
+}
+
+function errorDetails(error: unknown): string {
+  const messages: string[] = [];
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+  while (current && !seen.has(current) && messages.length < 4) {
+    seen.add(current);
+    if (current instanceof Error) {
+      messages.push(current.message);
+      current = current.cause;
+    } else break;
+  }
+  return messages.join(" ");
 }
 
 function assertSessionInput(input: {
@@ -407,7 +510,28 @@ function promptBody<T>(
     : "";
   if (!attempts) return `${contract}${context}`;
   const reason = lastError ? ` (${lastError})` : "";
-  return `${contract}Your prior response was invalid${reason}. Return only JSON matching the contract.\n\n${context}`;
+  const repair = request.repairInstruction ? ` ${request.repairInstruction.trim()}` : "";
+  return `${contract}Your prior response was invalid${reason}. Return only JSON matching the contract.${repair}\n\n${context}`;
+}
+
+function invalidOutputAudit(error: string, attempts: number, value: unknown): Record<string, unknown> {
+  const refs = value && typeof value === "object" && Array.isArray((value as { evidenceRefs?: unknown }).evidenceRefs)
+    ? (value as { evidenceRefs: unknown[] }).evidenceRefs.filter((ref): ref is string => typeof ref === "string")
+    : [];
+  return {
+    category: invalidOutputCategory(error),
+    attempts,
+    evidenceRefCount: refs.length,
+    evidenceRefsHash: sha256([...refs].sort().join("\0")),
+  };
+}
+
+function invalidOutputCategory(error: string): string {
+  if (/^RECOVERY_UNKNOWN_REF:/.test(error)) return "recovery_unknown_ref";
+  if (/^RECOVERY_/.test(error)) return "recovery_contract";
+  if (/^schema validation failed/.test(error)) return "schema_validation";
+  if (error === "invalid JSON") return "invalid_json";
+  return "validator_rejected";
 }
 
 function decode(
@@ -523,3 +647,6 @@ function redactAuditText(text: string): string {
     .replace(/(Bearer\s+)[^\s]+/gi, "$1[REDACTED]")
     .slice(0, 2048);
 }
+
+
+

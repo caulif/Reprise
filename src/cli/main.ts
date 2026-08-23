@@ -74,7 +74,7 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
     }
     const dataDir = values['data-dir'] ?? process.env.REPRISE_DATA_DIR ?? '.reprise';
     const sessionsRoots = parseSessionsDirs(values['sessions-dir']);
-    const sessionsRoot = sessionsRoots[productPacks[0]?.manifest.productId ?? 'codex'] ?? Object.values(sessionsRoots)[0] ?? '';
+    const sessionsRoot = '';
     await (context.runTui ?? runBenchmarkWorkbenchTui)({
       dataDir,
       sessionsRoot,
@@ -110,12 +110,11 @@ export function parseSessionsDirs(values: readonly string[] | undefined): Record
 
 async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string }): Promise<void> {
   const dataDir = resolve(input.dataDir);
-  const pack = productPacks[0] ?? findProductPack('codex');
   await new CodexIntakeTui({
     dataDir,
     sessionsRoot: input.sessionsRoot,
     sessionsRoots: input.sessionsRoots,
-    workflow: createCodexTuiWorkflow({ dataDir, runtime: pack.runtime, now: input.now ? () => input.now! : () => new Date().toISOString() }),
+    workflow: createCodexTuiWorkflow({ dataDir, now: input.now ? () => input.now! : () => new Date().toISOString() }),
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     now: input.now ? () => input.now! : () => new Date().toISOString(),
   }).run();

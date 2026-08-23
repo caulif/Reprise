@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { hyperlink, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 
-export const SLASH_COMMANDS = ['/help', '/config', '/intake', '/run', '/history', '/lang', '/home', '/find'] as const;
+const SLASH_COMMANDS = ['/help', '/config', '/intake', '/run', '/history', '/lang', '/home', '/find'] as const;
 export const TIMELINE_FILTERS = ['ALL', 'PRODUCT', 'INPUT'] as const;
 export type TimelineFilter = typeof TIMELINE_FILTERS[number];
 const ANSI = /\u001b\[[0-9;]*m/;

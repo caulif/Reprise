@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { sha256, writeImmutable } from '../../core/identity.js';
 import type { TaskCase } from '../../core/schema.js';
+import type { JsonRecord } from '../../core/json.js';
 import type { ImportedSession, SessionMessage, SessionPrivacy } from '../contract.js';
 
 export type FrozenFile = {
@@ -58,7 +59,7 @@ export async function publishFrozenCase(input: PublishFrozenCaseInput): Promise<
   }
 }
 
-export function assertSessionPrivacy(privacy: SessionPrivacy): void {
+function assertSessionPrivacy(privacy: SessionPrivacy): void {
   if (typeof privacy.allowModelText !== 'boolean' || typeof privacy.allowBinary !== 'boolean' || privacy.redactions.some((item) => !item.trim())) {
     throw new Error('Session privacy settings are invalid.');
   }
@@ -68,13 +69,8 @@ export function redactText(value: string, redactions: readonly string[]): string
   return redactions.reduce((result, secret) => result.split(secret).join('[REDACTED]'), value);
 }
 
-export function freezeTaskCase(imported: ImportedSession, privacy: SessionPrivacy, now: string, initialMessageId?: string): TaskCase {
-  assertSessionPrivacy(privacy);
-  return taskCaseFromPrepared(redactImported(imported, privacy.redactions), privacy, now, initialMessageId);
-}
-
 function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy, now: string, initialMessageId?: string): TaskCase {
-  if (!prepared.signals.completedTurns) {
+  if (prepared.evidenceLevel !== 'history' && !prepared.signals.completedTurns) {
     throw new Error('Session has no completed turn and cannot become a historical TaskCase.');
   }
   const initial = selectInitialInput(prepared, initialMessageId);
@@ -86,12 +82,13 @@ function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy
     source: prepared.source.sourcePath
       ? { productId: prepared.source.productId, sessionId: prepared.source.sessionId, sourcePath: prepared.source.sourcePath }
       : { productId: prepared.source.productId, sessionId: prepared.source.sessionId },
+    evidenceLevel: prepared.evidenceLevel ?? 'transcript',
     initialInput: initial,
     transcript: [...prepared.transcript],
     historicalEvents: [...prepared.historicalEvents],
     baseline: prepared.baseline,
     sourceRuntimeEvidence: prepared.sourceRuntimeEvidence,
-    ...(prepared.taskContext ? { taskContext: prepared.taskContext } : {}),
+    ...(prepared.taskContext ? { taskContext: freezeTaskContext(prepared.taskContext) } : {}),
     provenance: { packVersion: prepared.provenance.packVersion, importedAt: now, sourceHash },
     privacy: {
       allowModelText: privacy.allowModelText,
@@ -100,6 +97,17 @@ function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy
     },
     contentHash: sha256(Buffer.from(prepared.raw.text, 'utf8')),
   };
+}
+
+function freezeTaskContext(context: JsonRecord): JsonRecord {
+  const behavior = context.historicalBehavior;
+  if (!behavior || typeof behavior !== 'object' || Array.isArray(behavior)) return context;
+  const paths = (behavior as JsonRecord).touchedPaths;
+  if (!Array.isArray(paths)) return context;
+  const relevantPaths = paths.filter((value): value is string => typeof value === 'string').slice(0, 256);
+  return relevantPaths.length > 0
+    ? { ...context, relevantPaths: [...new Set(relevantPaths)] }
+    : context;
 }
 
 function redactImported(imported: ImportedSession, redactions: readonly string[]): ImportedSession {

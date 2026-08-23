@@ -13,11 +13,11 @@ const DECISION_SECTIONS = ['## 问题', '## 决定', '## 备选方案', '## 影�
 const PROPOSAL_HEADINGS = ['## 计划', '## 迁移计划', '## 验收标准'];
 const IGNORED_LINK_PREFIX = /^(https?:|mailto:|#)/i;
 
-export function splitLines(text) {
+function splitLines(text) {
   return text.split(/\r?\n/);
 }
 
-export function githubSlug(text) {
+function githubSlug(text) {
   const stripped = text
     .replace(/`+/g, '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -29,7 +29,7 @@ export function githubSlug(text) {
     .replace(/\s+/g, '-');
 }
 
-export function headingAnchors(text) {
+function headingAnchors(text) {
   const counts = new Map();
   const anchors = new Set();
   for (const line of splitLines(text)) {
@@ -48,13 +48,13 @@ export function headingAnchors(text) {
   return anchors;
 }
 
-export function countableChars(text) {
+function countableChars(text) {
   const withoutFences = text.replace(/```[\s\S]*?```/g, '');
   const withoutUrls = withoutFences.replace(/!?\[([^\]]*)\]\([^)]+\)/g, '$1');
   return withoutUrls.replace(/\s/g, '').length;
 }
 
-export function extractMarkdownLinks(text) {
+function extractMarkdownLinks(text) {
   const links = [];
   for (const [index, line] of splitLines(text).entries()) {
     for (const match of line.matchAll(/!?\[([^\]]*)\]\(([^)]+)\)/g)) {
@@ -83,7 +83,7 @@ function resolveLink(fromFile, href) {
   return { target, fragment: fragment ?? '', relative: posixPath(relative(ROOT, target)) };
 }
 
-export function parseModelDirectories(markdown) {
+function parseModelDirectories(markdown) {
   const match = /## 目录模型\r?\n\r?\n```text\r?\n([\s\S]*?)```/.exec(markdown);
   if (!match) throw new Error('documentation-structure.md 缺少「目录模型」代码块');
   const dirs = new Set();
@@ -98,7 +98,7 @@ export function parseModelDirectories(markdown) {
   return dirs;
 }
 
-export function trackedTopLevelDocsDirs(files) {
+function trackedTopLevelDocsDirs(files) {
   const dirs = new Set();
   for (const file of files) {
     const parts = file.replace(/^docs\//, '').split('/');
@@ -107,7 +107,7 @@ export function trackedTopLevelDocsDirs(files) {
   return dirs;
 }
 
-export function checkDecisionRecord(relativePath, text) {
+function checkDecisionRecord(relativePath, text) {
   const errors = [];
   const lines = splitLines(text);
   const fileName = relativePath.split('/').pop() ?? '';
@@ -147,7 +147,7 @@ export function checkDecisionRecord(relativePath, text) {
   return errors;
 }
 
-export function checkFileName(relativePath) {
+function checkFileName(relativePath) {
   if (!relativePath.startsWith('docs/') || !relativePath.endsWith('.md')) return [];
   const base = relativePath.split('/').pop() ?? '';
   if (NAME_EXCEPTIONS.has(base)) return [];
@@ -158,13 +158,13 @@ export function checkFileName(relativePath) {
   return errors;
 }
 
-export function checkClaudeMd(text) {
+function checkClaudeMd(text) {
   const trimmed = text.replace(/\r\n/g, '\n').replace(/\n$/, '');
   if (trimmed === '见 AGENTS.md。') return [];
   return ['CLAUDE.md:1  内容  (必须只有一行「见 AGENTS.md。」)'];
 }
 
-export function checkBudgets(manifest, files) {
+function checkBudgets(manifest, files) {
   const errors = [];
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     return ['scripts/doc-budgets.manifest.json:1  清单  (必须是路径到正整数上限的对象)'];
@@ -320,10 +320,9 @@ function selfTest() {
 }
 
 function main() {
-  if (process.argv.includes('--self-test')) {
-    selfTest();
-    return;
-  }
+  selfTest();
+  if (process.exitCode) return;
+  if (process.argv.includes('--self-test')) return;
   const errors = runRepoChecks();
   if (errors.length) {
     console.error(errors.join('\n'));

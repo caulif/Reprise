@@ -4,6 +4,8 @@ import type { CandidateSpec, EventEnvelope, TaskCase } from '../core/schema.js';
 
 export type SessionMessage = TaskCase['transcript'][number];
 
+export type SessionEvidenceLevel = 'transcript' | 'history';
+
 export type SessionSignals = {
   readonly userMessages: number;
   readonly assistantMessages: number;
@@ -11,15 +13,47 @@ export type SessionSignals = {
   readonly completedTurns: number;
 };
 
+export type KnownInstant = {
+  readonly value: string;
+  readonly source: 'event' | 'file-mtime' | 'filename';
+};
+
+/** Orders discovery and UI summaries by known latest activity, then source path. */
+export function compareSessionSummaries(left: SessionSummary, right: SessionSummary): number {
+  const leftTime = knownSessionTime(left);
+  const rightTime = knownSessionTime(right);
+  if (leftTime !== undefined && rightTime !== undefined && leftTime !== rightTime) return rightTime - leftTime;
+  if (leftTime !== undefined && rightTime === undefined) return -1;
+  if (leftTime === undefined && rightTime !== undefined) return 1;
+  return left.sourcePath.localeCompare(right.sourcePath);
+}
+
+function knownSessionTime(session: SessionSummary): number | undefined {
+  const value = session.updatedAt ?? session.startedAt;
+  const timestamp = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
 export type SessionSummary = {
   readonly productId: string;
   readonly sessionId: string;
   readonly sourcePath: string;
-  readonly startedAt: string;
+  /** Missing rather than fabricated when the source does not expose a valid start instant. */
+  readonly startedAt?: string;
+  /** Provenance for the displayed start time, kept separate for backwards-compatible consumers. */
+  readonly startedAtSource?: KnownInstant['source'];
+  /** Latest source event or file update, used for stable discovery ordering when available. */
+  readonly updatedAt?: string;
+  /** Provenance for the displayed update time. */
+  readonly updatedAtSource?: KnownInstant['source'];
   readonly cwd?: string;
   readonly model?: string;
   readonly summary?: string;
+  /** The bounded head was sufficient for a safe list item, but not a complete summary. */
+  readonly partial?: boolean;
   readonly signals: SessionSignals;
+  /** Internal evidence strength. TUI keeps one workflow regardless of this value. */
+  readonly evidenceLevel?: SessionEvidenceLevel;
 };
 
 export type SessionInspection = SessionSummary & {
@@ -41,10 +75,47 @@ export type SessionRef = {
   readonly sourcePath?: string;
 };
 
+export type DiscoveryDiagnosticCode =
+  | 'excluded'
+  | 'stale-cursor'
+  | 'too-large'
+  | 'unreadable-directory'
+  | 'unreadable-file'
+  | 'invalid-jsonl'
+  | 'invalid-metadata'
+  /** Claude's prompt history refers to a session whose replay transcript is no longer local. */
+  | 'history-without-transcript'
+  | 'unsupported-entry';
+
+/** Aggregate information about local records discovery intentionally did not surface. */
+export type DiscoveryDiagnostic = {
+  readonly code: DiscoveryDiagnosticCode;
+  readonly count: number;
+  readonly samplePath?: string;
+};
+
+export type SessionDiscoveryPage = {
+  readonly items: readonly SessionSummary[];
+  /** Opaque continuation token bound to one product root and its stable file ordering. */
+  readonly nextCursor?: string;
+  readonly scanned: number;
+  readonly skipped: number;
+  /** All discovery-index diagnostics for standalone consumers. */
+  readonly diagnostics: readonly DiscoveryDiagnostic[];
+  /** Root-enumeration and immutable summary-index diagnostics, repeated on every cursor page so consumers can avoid double counting them. */
+  readonly rootDiagnostics?: readonly DiscoveryDiagnostic[];
+  /** Optional diagnostics generated while an adapter examines only this cursor page. */
+  readonly pageDiagnostics?: readonly DiscoveryDiagnostic[];
+};
+
 export type SessionDiscoveryQuery = {
   readonly root?: string;
   readonly limit?: number;
+  readonly cursor?: string;
   readonly excludeRoots?: readonly string[];
+  readonly signal?: AbortSignal;
+  /** Rebuild the current root's in-memory summary index. */
+  readonly refresh?: boolean;
 };
 
 export type ImportDiagnostic = {
@@ -76,17 +147,20 @@ export type ImportedSession = {
   readonly extraFiles?: readonly ImportedExtraFile[];
   readonly diagnostics: readonly ImportDiagnostic[];
   readonly signals: SessionSignals;
+  /** Defaults to transcript for adapters written before evidence-aware intake. */
+  readonly evidenceLevel?: SessionEvidenceLevel;
 };
 
 /** Completed sessions with a user task and at least one assistant message or tool call. */
 export function isEligibleSession(session: SessionSummary): boolean {
+  if (session.evidenceLevel === 'history') return session.signals.userMessages > 0;
   return session.signals.completedTurns > 0 && session.signals.userMessages > 0
     && (session.signals.assistantMessages > 0 || session.signals.toolCalls > 0);
 }
 
 export type SessionSourceAdapter = {
   readonly defaultRoot: string;
-  discover(query?: SessionDiscoveryQuery): Promise<readonly SessionSummary[]>;
+  discover(query?: SessionDiscoveryQuery): Promise<SessionDiscoveryPage>;
   inspect(ref: SessionRef): Promise<SessionInspection>;
   import(ref: SessionRef): Promise<ImportedSession>;
 };

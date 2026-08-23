@@ -1,12 +1,25 @@
-import { basename, dirname } from 'node:path';
-import type { SessionInspection, SessionPrivacy, SessionSummary } from '../../products/contract.js';
+import { basename } from 'node:path';
+import { asPosixPath, isFsAbsolute } from '../../core/paths.js';
+import { compareSessionSummaries, type SessionInspection, type SessionPrivacy, type SessionSummary } from '../../products/contract.js';
 import { compact, truncateFit } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import { caretAt } from '../text-edit.js';
 import { showsDetailPane, type Theme } from '../theme.js';
-import { joinColumns, kv, panel, table, wrapBodyLine } from '../widgets.js';
+import { joinColumns, kv, kvBlock, panel, table, wrapBodyLine } from '../widgets.js';
 
-export type IntakeLevel = 'projects' | 'sessions';
+export type IntakeLevel = 'products' | 'projects' | 'sessions';
+
+export type ProductIntakeItem = {
+  readonly productId: string;
+  readonly displayName: string;
+  readonly packVersion: string;
+  readonly discoveryStatus: 'idle' | 'loading' | 'ready' | 'error';
+  readonly sessionCount?: number;
+  readonly scanned?: number;
+  readonly limitReached?: boolean;
+  readonly skipped?: number;
+  readonly diagnostic?: string;
+};
 
 export type SessionProject = {
   readonly key: string;
@@ -18,6 +31,7 @@ export type SessionProject = {
 
 export type SessionsModel = {
   readonly level: IntakeLevel;
+  readonly products?: readonly ProductIntakeItem[];
   readonly projects: readonly SessionProject[];
   readonly sessions: readonly SessionSummary[];
   readonly selected: number;
@@ -26,6 +40,8 @@ export type SessionsModel = {
   readonly searchCursor?: number;
   readonly searching: boolean;
   readonly locale?: import('../i18n.js').Locale;
+  /** Clock supplied by the workbench; inject it for deterministic visual audits. */
+  readonly nowMs?: number;
 };
 
 export type InspectionModel = {
@@ -34,19 +50,50 @@ export type InspectionModel = {
   readonly selectedTaskInput: number;
   readonly showOutcome: boolean;
   readonly locale?: import('../i18n.js').Locale;
+  /** Clock supplied by the workbench; inject it for deterministic visual audits. */
+  readonly nowMs?: number;
 };
 
-const OTHER_PROJECT = 'other';
+const UNKNOWN_PROJECT_PREFIX = 'unknown:';
 
-export function projectKey(cwd: string | undefined): string {
-  const normalized = cwd?.trim().replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase();
-  return normalized || OTHER_PROJECT;
+function projectKey(session: SessionSummary): string {
+  const cwd = canonicalHistoricalCwd(session.cwd);
+  if (cwd) return `${session.productId}\0${cwd}`;
+  // Unknown cwd is not evidence of one shared project; keep each session separate.
+  return `${UNKNOWN_PROJECT_PREFIX}\0${session.productId}\0${session.sessionId}`;
+}
+
+/** A relative historical cwd cannot identify a workspace outside the original product runtime. */
+function canonicalHistoricalCwd(cwd: string | undefined): string | undefined {
+  const value = cwd?.trim();
+  if (!value || !isFsAbsolute(value)) return undefined;
+  return asPosixPath(value).replace(/\/+$/, '').toLowerCase();
+}
+
+function sessionTime(session: SessionSummary | undefined): string {
+  return session?.updatedAt ?? session?.startedAt ?? '';
+}
+
+function isUnknownProject(key: string): boolean {
+  return key.startsWith(UNKNOWN_PROJECT_PREFIX);
 }
 
 export function projectLabel(cwd: string | undefined): string {
   if (!cwd?.trim()) return 'Unknown project';
   const name = basename(cwd.replaceAll('\\', '/'));
   return name || 'Unknown project';
+}
+
+/** Adds just enough parent path to distinguish projects with the same basename. */
+function projectDisplayLabel(path: string | undefined, paths: readonly string[]): string {
+  if (!path) return 'Unknown project';
+  const parts = asPosixPath(path).split('/').filter(Boolean);
+  for (let depth = 1; depth <= parts.length; depth += 1) {
+    const candidate = parts.slice(-depth).join('/');
+    const duplicates = paths.filter((value) => asPosixPath(value).split('/').filter(Boolean).slice(-depth).join('/').toLowerCase() === candidate.toLowerCase());
+    if (duplicates.length === 1) return candidate;
+  }
+  return parts.slice(-Math.min(2, parts.length)).join('/');
 }
 
 export function sessionTitle(summary: string | undefined): string {
@@ -61,36 +108,34 @@ export function sessionTitle(summary: string | undefined): string {
 export function groupSessionsByProject(sessions: readonly SessionSummary[]): SessionProject[] {
   const groups = new Map<string, SessionSummary[]>();
   for (const session of sessions) {
-    const key = projectKey(session.cwd);
+    const key = projectKey(session);
     const list = groups.get(key) ?? [];
     list.push(session);
     groups.set(key, list);
   }
   const grouped = [...groups.entries()].map(([key, items]) => {
-    const ordered = [...items].sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+    const ordered = [...items].sort(compareSessionSummaries);
     const path = ordered.find((item) => item.cwd)?.cwd;
-    return {
-      key,
-      label: key === OTHER_PROJECT ? 'Unknown project' : projectLabel(path),
-      ...(path ? { path } : {}),
-      sessions: ordered,
-      latestAt: ordered[0]?.startedAt ?? '',
-    };
-  }).sort((left, right) => {
-    if (left.key === OTHER_PROJECT) return 1;
-    if (right.key === OTHER_PROJECT) return -1;
-    return right.latestAt.localeCompare(left.latestAt);
+    return { key, ...(path ? { path } : {}), sessions: ordered, latestAt: sessionTime(ordered[0]) };
   });
-  const counts = new Map<string, number>();
-  for (const project of grouped) counts.set(project.label, (counts.get(project.label) ?? 0) + 1);
+  const knownPaths = grouped.flatMap((project) => project.path ? [project.path] : []);
   return grouped.map((project) => {
-    if (project.key === OTHER_PROJECT || (counts.get(project.label) ?? 0) < 2 || !project.path) return project;
-    const parent = basename(dirname(project.path.replaceAll('\\', '/')));
-    return parent ? { ...project, label: `${parent}/${project.label}` } : project;
+    if (isUnknownProject(project.key)) return { ...project, label: 'Unknown project' };
+    const samePath = grouped.filter((other) => other.path && asPosixPath(other.path).toLowerCase() === asPosixPath(project.path ?? '').toLowerCase());
+    const label = projectDisplayLabel(project.path, knownPaths);
+    return samePath.length > 1
+      ? { ...project, label: `${project.sessions[0]?.productId ?? 'agent'} · ${label}` }
+      : { ...project, label };
+  }).sort((left, right) => {
+    if (isUnknownProject(left.key)) return 1;
+    if (isUnknownProject(right.key)) return -1;
+    const order = compareSessionSummaries(left.sessions[0]!, right.sessions[0]!);
+    return order || left.key.localeCompare(right.key);
   });
 }
 
-export function relativeTime(iso: string, now = Date.now(), locale: Locale = 'en'): string {
+export function relativeTime(iso: string | undefined, now = Date.now(), locale: Locale = 'en'): string {
+  if (!iso) return 'Unknown time';
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return iso.replace('T', ' ').slice(0, 16);
   const minutes = Math.max(0, Math.floor((now - then) / 60_000));
@@ -109,7 +154,7 @@ export function matchesIntakeQuery(session: SessionSummary, query: string): bool
   if (!needle) return true;
   const haystack = [
     session.sessionId, session.cwd ?? '', session.summary ?? '', sessionTitle(session.summary),
-    projectLabel(session.cwd), session.startedAt,
+    projectLabel(session.cwd), session.startedAt ?? '', session.updatedAt ?? '',
   ].join('\n').toLowerCase();
   return haystack.includes(needle);
 }
@@ -123,6 +168,7 @@ export function matchesProjectQuery(project: SessionProject, query: string): boo
 
 export function renderSessions(theme: Theme, width: number, model: SessionsModel, height?: number, showPreview = true, showSearch = true): string[] {
   const limit = height === undefined ? 12 : Math.max(1, height - 5);
+  if (model.level === 'products') return renderProducts(theme, width, model, limit);
   if (model.level === 'projects') return renderProjects(theme, width, model, limit, showPreview, showSearch);
   return renderSessionList(theme, width, model, limit, showPreview, showSearch);
 }
@@ -140,7 +186,7 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
     ? later.map((input, index) => ` ${index + 2}/${inputs.length}  ${compact(sessionTitle(input.text), 72, theme.glyphs.ellipsis)}`)
     : [` ${t(locale, 'noneWord')}`];
   const outcome = compact(inspection.finalMessage ?? 'unavailable', showOutcome ? 400 : 120, theme.glyphs.ellipsis);
-  const meta = ` ${project} ${theme.glyphs.sep} ${relativeTime(inspection.startedAt, Date.now(), locale)} ${theme.glyphs.sep} u${inspection.signals.userMessages} a${inspection.signals.assistantMessages} t${inspection.signals.toolCalls}`;
+  const meta = ` ${project} ${theme.glyphs.sep} ${relativeTime(inspection.startedAt, model.nowMs ?? Date.now(), locale)} ${theme.glyphs.sep} u${inspection.signals.userMessages} a${inspection.signals.assistantMessages} t${inspection.signals.toolCalls}`;
   const ruleWidth = Math.max(1, width - (theme.framed ? 2 : 3));
   const rule = theme.glyphs.h.repeat(ruleWidth);
   const body = [
@@ -165,14 +211,39 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
 
 export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): readonly (readonly [string, string])[] {
   if (model?.searching) return [['Esc', t(locale, 'hintClearSearch')], ['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintOpenProject')]];
-  if (model?.level === 'projects') {
-    return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintOpenProject')], ['/', t(locale, 'hintSearch')], ['f', t(locale, 'hintFilterEligible')], ['Esc', t(locale, 'hintHome')]];
+  if (model?.level === 'products') {
+    return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'openProduct')], ['Esc', t(locale, 'hintHome')]];
   }
-  return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintStartRun')], ['/', t(locale, 'hintSearch')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
+  if (model?.level === 'projects') {
+    return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintOpenProject')], ['/', t(locale, 'hintSearch')], ['f', t(locale, 'hintFilterEligible')], ['m', t(locale, 'moreSessions')], ['r', t(locale, 'refreshSessions')], ['Esc', t(locale, 'hintHome')]];
+  }
+  return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintStartRun')], ['/', t(locale, 'hintSearch')], ['m', t(locale, 'moreSessions')], ['r', t(locale, 'refreshSessions')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
 }
 
 export function inspectionHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
   return [['Enter', t(locale, 'hintFreeze')], ['d', t(locale, 'hintExpandOutcome')], ['t', t(locale, 'hintToggleText')], ['Esc', t(locale, 'hintBack')]];
+}
+
+
+function renderProducts(theme: Theme, width: number, model: SessionsModel, limit: number): string[] {
+  const rows = (model.products ?? []).map((product, index) => ({
+    marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
+    product: product.displayName,
+    version: `pack ${product.packVersion}`,
+    status: product.discoveryStatus === 'error'
+      ? `error: ${product.diagnostic ?? t(model.locale ?? 'en', 'sessionDiscoveryFailed')}`
+      : product.discoveryStatus === 'ready'
+        ? `${t(model.locale ?? 'en', 'productSessionCount', { n: product.sessionCount ?? 0 })}${product.limitReached ? '+' : ''}${product.skipped ? t(model.locale ?? 'en', 'productSkippedCount', { n: product.skipped }) : ''}`
+        : product.discoveryStatus === 'loading' ? t(model.locale ?? 'en', 'sessionsLoading') : t(model.locale ?? 'en', 'sessionsNotScanned'),
+  }));
+  const range = visibleRange(rows, model.selected, limit);
+  const inner = Math.max(20, width - (theme.framed ? 2 : 3));
+  const body = rows.length
+    ? paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
+      { key: 'marker', width: 2 }, { key: 'product', flex: 1 }, { key: 'version', width: 12 }, { key: 'status', width: 24 },
+    ], inner), inner), range.start, model.selected)
+    : [` ${t(model.locale ?? 'en', 'noRegisteredProducts')}`];
+  return panel(theme, theme.style.harness(t(model.locale ?? 'en', 'selectAgentProduct')), body, width);
 }
 
 function renderProjects(theme: Theme, width: number, model: SessionsModel, limit: number, showPreview = true, showSearch = true): string[] {
@@ -190,7 +261,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     name: project.label,
     gap: ' ',
     count: String(project.sessions.length),
-    when: relativeTime(project.latestAt, Date.now(), locale),
+    when: relativeTime(project.latestAt, model.nowMs ?? Date.now(), locale),
   }));
   const range = visibleRange(rows, model.selected, limit);
   const listBody = paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
@@ -206,7 +277,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
   const latest = selected?.sessions[0];
   const preview = previewWidth ? panel(theme, theme.style.harness(t(locale, 'previewTitle')), selected && latest ? [
     kv(theme, 'Project', selected.label, previewWidth - 2),
-    kv(theme, 'Path', compact(shortPath(selected.path ?? 'unavailable'), Math.max(8, previewWidth - 16), theme.glyphs.ellipsis), previewWidth - 2),
+    ...kvBlock(theme, 'Path', selected.path ?? 'unavailable', previewWidth - 2),
     kv(theme, 'Sessions', String(selected.sessions.length), previewWidth - 2),
     '',
     kv(theme, 'Latest', sessionTitle(latest.summary), previewWidth - 2),
@@ -227,8 +298,8 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
   const inner = Math.max(20, listWidth - (theme.framed ? 2 : 3));
   const rows = model.sessions.map((session, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
-    started: relativeTime(session.startedAt, Date.now(), locale),
-    summary: sessionTitle(session.summary),
+    started: relativeTime(session.startedAt, model.nowMs ?? Date.now(), locale),
+    summary: `${session.partial ? `${t(locale, 'partialSession')} ` : ''}${sessionTitle(session.summary)}`,
     gap: ' ',
     signals: `u${session.signals.userMessages} a${session.signals.assistantMessages} t${session.signals.toolCalls}`,
   }));
@@ -246,10 +317,10 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
   const preview = previewWidth ? panel(theme, theme.style.harness(t(locale, 'previewTitle')), selected ? [
     kv(theme, 'Project', projectLabel(selected.cwd), previewWidth - 2),
     kv(theme, 'Session', selected.sessionId.slice(0, 8), previewWidth - 2),
-    kv(theme, 'Started', selected.startedAt.replace('T', ' ').slice(0, 16), previewWidth - 2),
+    kv(theme, 'Started', (selected.startedAt ?? 'Unknown time').replace('T', ' ').slice(0, 16), previewWidth - 2),
     kv(theme, 'Signals', `u${selected.signals.userMessages} a${selected.signals.assistantMessages} t${selected.signals.toolCalls}`, previewWidth - 2),
     '',
-    kv(theme, 'Task', sessionTitle(selected.summary), previewWidth - 2),
+    kv(theme, 'Task', `${selected.partial ? `${t(locale, 'partialSession')} ` : ''}${sessionTitle(selected.summary)}`, previewWidth - 2),
   ] : [' No session selected'], previewWidth) : [];
   const body = previewWidth ? joinColumns(list, preview, listWidth, previewWidth, 1, theme) : list;
   return [...body, ...(showSearch ? searchLine(theme, width, model) : [])];
@@ -268,12 +339,6 @@ function paintSelectedRows(theme: Theme, rows: readonly string[], start: number,
 
 function fitRows(rows: readonly string[], width: number): string[] {
   return rows.map((row) => truncateFit(row, width, '...'));
-}
-
-function shortPath(path: string): string {
-  const parts = path.replaceAll('\\', '/').split('/').filter(Boolean);
-  if (parts.length <= 2) return path;
-  return parts.slice(-2).join('/');
 }
 
 function wrapPreview(text: string, width: number, maxLines = 4): string[] {

@@ -3,11 +3,11 @@ Reprise   Preparing replay                                                      
  Task  Fix the bug.                                                                                                     
  Will replay this task in Codex with the candidate model. Your original repo is left unchanged.                         
                                                                                                                         
- [▓█████████████████░░░░░░░░░░░░░░░░░░]                                                                                 
- Copying isolated workspace · step 2 / 4 · 111 files · 66.4 MiB                                                         
+ [▓████████░░░░░░░░░░░░░░░░░░░░░░░░░░░]                                                                                 
+ Checking source · step 1 / 4 · Preparing the isolated environment                                                      
                                                                                                                         
- ✓  Restore historical environment  done                                                                                
- ●  Copy isolated workspace  in progress                                                                                
+ ●  Restore historical environment  in progress                                                                         
+ ○  Copy isolated workspace  waiting                                                                                    
  ○  Write candidate config  waiting                                                                                     
  ○  Start Codex  waiting                                                                                                
  ❯ Cannot type to Codex during prepare

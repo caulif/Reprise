@@ -6,7 +6,7 @@ import { pad, wrapBodyLine } from './widgets.js';
 
 export type Voice = 'input' | 'product' | 'summary';
 
-export function voiceOf(entry: TimelineEntry): Voice | undefined {
+function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.hidden) return undefined;
   if (isQuietMcpStatus(entry)) return undefined;
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·')) return 'input';

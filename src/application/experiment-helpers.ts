@@ -1,11 +1,8 @@
 import { isAbsolute } from "node:path";
+import { isRecord } from "../core/json.js";
 import { SAFE_ID } from "../core/identity.js";
 import type { EventEnvelope } from "../core/schema.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 export function recordValue(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
@@ -80,7 +77,7 @@ export function totalTokenCount(
   return latest;
 }
 
-export function tokenValue(value: unknown): number | undefined {
+function tokenValue(value: unknown): number | undefined {
   const payload = recordValue(value);
   const containers = [
     payload,

@@ -289,6 +289,36 @@ finished 后的 late event 不能改写 RunOutcome
 ## 10. 持久化记录字段
 
 <!-- BEGIN GENERATED record-fields (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
+### TaskCase
+
+| 字段 | 类型 | 可选 |
+|---|---|---|
+| `schemaVersion` | integer | 否 |
+| `caseId` | string | 否 |
+| `source` | object | 否 |
+| `evidenceLevel` | "transcript" | "history" | 是 |
+| `initialInput` | object | 否 |
+| `transcript` | object[] | 否 |
+| `historicalEvents` | object[] | 否 |
+| `baseline` | object | 否 |
+| `sourceRuntimeEvidence` | object | 否 |
+| `taskContext` | object | 是 |
+| `provenance` | object | 否 |
+| `privacy` | object | 否 |
+| `contentHash` | string | 否 |
+
+### RunRecord
+
+| 字段 | 类型 | 可选 |
+|---|---|---|
+| `attempt` | object | 否 |
+| `manifest` | object | 是 |
+| `state` | "finished" | 否 |
+| `stageReached` | "created" | "preparing" | "launching" | "awaiting_target" | "awaiting_controller" | 否 |
+| `outcome` | object | 否 |
+| `trace` | object | 否 |
+| `artifactRefs` | object | object[] | 否 |
+| `warnings` | object[] | 否 |
 <!-- END GENERATED record-fields -->
 
 ## 11. 验收条件

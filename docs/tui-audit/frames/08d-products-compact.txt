@@ -1,0 +1,15 @@
+Reprise v0.1.0   C:\reprise
+gpt-5.6-terra - medium   ! Harness key missing  o Agent u...
+------------------------------------------------------------
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a historical session
+
+[ Select agent product ]
+   > Codex              pack 0.1.0  sessions not scanned    
+     Claude Code        pack 0.1.0  sessions not scanned    
+ Select an agent product.
+------------------------------------------------------------
+ [↑↓] Select  [Enter] Open product  [Esc] Home

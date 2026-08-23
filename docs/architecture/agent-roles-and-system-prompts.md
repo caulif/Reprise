@@ -463,7 +463,7 @@ Comparison 不应在启动时接收全部 transcript、trace、命令输出和�
 | 条件校准 | 把 fidelity、终止原因和完成机会作为结论边界 |
 | 证据引用 | 引用稳定 event id、相对路径与行区间、artifact id 或命令输出片段 |
 | 上下文管理 | 使用分页、range、大小上限和截断标记，避免重复读取与无界输出 |
-| 自由写作 | 生成 `comparison.md`，内容与章节由证据决定 |
+| 自由写作 | 生成完整 `report.html`，内容与页面结构由证据决定 |
 
 所有工具必须只读，并由 Host 校验 experiment/run ownership、路径、大小、类型和 privacy policy。读取接口必须支持分页或 range、明确的返回上限和 `truncated`/`unavailable` 标记；Host 应记录 Comparison 实际查询和读取的范围。外部模型默认不接收未经允许的二进制或敏感内容。
 
@@ -520,11 +520,9 @@ Comparison 可自行使用只读工具：
 - [OpenCode TUI](https://opencode.ai/docs/tui/)
 - [OpenAI Codex best practices：组织长任务](https://learn.chatgpt.com/guides/best-practices#organize-long-running-chats)
 
-主产物应是 `comparison.md`。最终 HTML 由 Host 组合成：
+主产物是 Agent 完整创作的 `report.html`。Host 不组合成功 HTML；
 
-1. **题头**：任务一句话，加模型与效率一行；
-2. **Agent 比较正文**：安全渲染 `comparison.md`，保留 Agent 自主选择的结构和证据链接；
-3. **回放限制与文件**：最多三条会改变读法的 Host 限制（默认折叠），以及交付路径与折叠的原始记录。宿主事实不能从 Markdown 反向解析。
+Host 提供 `reportFacts` 和只读证据工具；Agent 自主选择如何呈现事实、证据入口与页面交互。宿主事实不从 HTML 反向解析。
 
 机器接口只需一个薄信封保存 Markdown 路径、引用清单和状态。不要把 Comparison 再次压缩成 `summary + observations[] + limitations[]` 固定模板；该模板会让模型围绕 schema 填空，而不是调查和写报告。
 
@@ -591,7 +589,7 @@ Host 提供的 RunOutcome、termination、fidelity、环境和计量事实是持
 </工具与安全>
 
 <报告要求>
-将正文写入 comparison.md。使用初始任务的主要语言；代码、命令、标识符和用户指定文本保持必要形式。报告面向要自行判断的用户，而不是面向 schema。
+将完整 HTML 报告写入 report.html。使用初始任务的主要语言；代码、命令、标识符和用户指定文本保持必要形式。报告面向要自行判断的用户，而不是面向 schema。
 
 结构、长度、章节、表格和 finding 数量由证据决定，但应做到：
 - 先写会改变「是否接受这次回放」的差异；不要用「两次都完成了」当首句，除非确实没有结果差异；
@@ -607,7 +605,7 @@ Host 提供的 RunOutcome、termination、fidelity、环境和计量事实是持
 <完成与输出协议>
 完成前检查：关键结果是否实际查看；结论是否可能被未读的显著证据推翻；运行机会是否可比；引用是否真实可导航；限制是否会改变措辞。
 
-最后仅返回 Host 要求的薄完成信封，其中包含 comparison.md 的引用、实际使用的证据引用清单和完成状态。不要把报告重新压缩成固定的 summary、observations 或统一评分 JSON；不要输出隐藏推理全文。
+最后仅返回 Host 要求的薄完成信封，其中包含 report.html 的引用、实际使用的证据引用清单和完成状态。不要把报告重新压缩成固定的 summary、observations 或统一评分 JSON；不要输出隐藏推理全文。
 </完成与输出协议>
 ```
 
@@ -622,7 +620,7 @@ Host 提供的 RunOutcome、termination、fidelity、环境和计量事实是持
 | 是否读完整原会话 | 是 | 是 | 默认否；先看精选投影，按需读取相关区间 |
 | 是否读 candidate 轨迹 | 否 | 仅当前 candidate | 默认看高层索引，按需读取相关公共事件 |
 | 是否决定运行结束 | 否 | 是，语义决定；硬限制由 Orchestrator 执行 | 否 |
-| 主要人类产物 | `recovery.md` | 实际发给 Candidate 的消息 | `comparison.md` |
+| 主要人类产物 | `recovery.md` | 实际发给 Candidate 的消息 | `report.html` |
 | 机器输出 | 薄完成信封 | `send/done` | 薄完成信封 |
 | 事实裁决权 | 无，Provider 验证 | 仅协作/完成判断 | 无，只组织证据 |
 
@@ -695,7 +693,7 @@ Prompt 不应承担的内容：
 - artifact 引用只是字符串，没有可用的读取工具；
 - 没有可导航的 transcript/trace/file/check 索引，也没有按需读取相关区间或内容的工具；
 - 输出被固定为 `summary + observations[] + limitations[]`；
-- 没有生成自由 `comparison.md`，HTML 仍由固定 projection/template 主导；
+- 没有生成自由 `report.html`，或 HTML 仍由固定 projection/template 主导；
 - 无法自主调查，自然也无法选择真正改变用户判断的证据。
 
 这正是报告会空泛、模板化和偏离任务本身的根因。
@@ -725,7 +723,7 @@ Prompt 不应承担的内容：
 ### Comparison
 
 - 能实际打开 baseline/candidate artifacts 和公共运行证据；
-- 能生成自由结构的 `comparison.md`；
+- 能生成自由结构的 `report.html`；
 - 每个实质判断都可导航到真实来源；
 - 能在证据不足或运行机会不对等时拒绝比较；
 - 宿主事实卡片与 Agent 正文明确分离；
@@ -754,6 +752,6 @@ Prompt 不应承担的内容：
 以下两项已经确认为 canonical contract：
 
 1. **Controller 使用 `send | done` 薄决策信封。**`done` 只表示 Controller 不再发送消息；RunOutcome 由 `done.reason` 与 Host 事实共同投影。模型调用失败、Runtime/Harness 故障、用户取消、delivery unknown 和安全终止不产生伪造的 `done`。
-2. **Recovery 与 Comparison 使用“自由 Markdown + 薄完成信封”。**Recovery 写 `recovery.md`，Comparison 写 `comparison.md`；Host 事实继续结构化持久化，薄信封只携带阶段状态、报告/产物引用和必要证据引用。
+2. **Recovery 与 Comparison 使用“自由内容 + 薄完成信封”。**Recovery 写 `recovery.md`，Comparison 写 `report.html`；Host 事实继续结构化持久化，薄信封只携带阶段状态、报告/产物引用和必要证据引用。
 
 架构总览、三个专题设计、schema 与实现必须使用以上 contract，不能再保留 `stop` 分支或固定 `ComparisonResult` 报告模板。

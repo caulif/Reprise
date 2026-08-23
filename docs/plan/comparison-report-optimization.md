@@ -1,190 +1,401 @@
-# 比较报告三方面优化规划
+# Comparison Agent 自由 HTML 报告优化设计
 
-状态：专题计划，实现与本文对齐；真机 e2e 仍需显式 opt-in 重跑
-日期：2026-08-14
-权威性：不覆盖 [`architecture/comparison.md`](../architecture/comparison.md)、[`architecture/agent-roles-and-system-prompts.md`](../architecture/agent-roles-and-system-prompts.md)、[`product/tui.md`](../product/tui.md)。落码前若与 §5 薄壳约定冲突，先改那份规范或写决策记录。
-依据：Claude Code 真机端到端的 `report.html` / `comparison.md` / `controller.decision`；[`agent-system-prompt-redesign.md`](./agent-system-prompt-redesign.md)；[`controller-experiment-conditions.md`](../architecture/controller-experiment-conditions.md)；[`development-plan.md`](../development-plan.md) 模块 6。
+状态：已实施（决策见 [`2026-08-15-comparison-agent-authored-html.md`](../decisions/accepted/2026-08-15-comparison-agent-authored-html.md)）
+日期：2026-08-15
+权威性：本文描述拟议实现，不覆盖 [`architecture/comparison.md`](../architecture/comparison.md) 和 [`architecture/agent-roles-and-system-prompts.md`](../architecture/agent-roles-and-system-prompts.md)。实施时必须先记录决策并同步修改当前架构规范。
 
-## 0. 结论
+## 1. 决策摘要
 
-对照面不好比，不是单一渲染问题。停住候选的是 **Controller 过早 `done/satisfied`**，不是 Harness 回合墙，也不是候选在回合内被掐断。Comparison 把回放条件写成了结果差异；Host 把 Markdown 当纯文本塞进三块灰卡片。
+Comparison Agent 直接编写完整的 `report.html`，并拥有 HTML、CSS、SVG 和 JavaScript 的自由表达能力。Host 不解析报告语义，不使用标签白名单，不清洗或转义 Agent 输出，不把报告重新包装成固定模板，也不因为布局、标签或脚本选择拒绝报告。
 
-产品约定与用户判断一致：候选在一个目标回合内自主做到 `result`；是否再发下一条用户消息、任务算不算完成，由 Controller 决定。[`controller-experiment-conditions.md`](../architecture/controller-experiment-conditions.md) 写明 Controller 资源预算默认无限制；`RunPolicy` 只应是安全阀，耗尽必须记成 `limit.*`，不能伪装成完成。
+报告底线、必含运行指标和推荐表达方式只写入 Comparison System Prompt。Reprise 信任 Comparison Agent 根据任务、证据和读者需要选择信息架构与视觉表现，不建立报告 DSL，也不让 Host 与模型争夺报告作者身份。
 
-这次失败在第二层：Controller 用「当前空目录里已经有文件夹和 PDF」当作验收，而不是用基线终稿里用户已经接受的质量。空 stand-in 让这个低标准更容易成立。
+Host 仍负责提供真实、可追溯的运行事实，并验证最薄的交付协议：Comparison 调用成功、`report.html` 已落盘且可读取、结构化结果信封通过 schema 校验。Host 不验证 HTML 是否包含某个标题、表格或视觉组件。
 
-优化顺序：先修正 Controller 的完成判据与 Host 观察，再让 Comparison 按程序写正文，最后做 HTML。只换配色解决不了「在比什么」。
+## 2. 目标
 
-## 1. 候选与执行（谁该停、谁实际停了）
+本设计解决四个问题：
 
-### 1.1 两层时钟
+1. 报告不能只说 `blocked`，应直接解释失败来自模型策略、模型能力、权限、预算、Runtime、Controller 还是证据不足。
+2. Agent 可以按具体实验选择卡片、时间线、双栏对照、折叠证据、图表或其他表达，不受 Markdown 子集限制。
+3. 所有实验都应报告一组通用运行事实，避免视觉丰富但缺少判断依据。
+4. Reprise 保留事件日志、artifact 和结构化结果信封，使报告可追溯，但不把报告退化成 Host 固定模板。
 
-| 层 | 谁跑 | 何时停 | 这次发生了什么 |
-|---|---|---|---|
-| 目标回合内 | 候选 Runtime | 候选自己交出 `result`，或 Host 安全阀 | 1 回合约 142 秒；`claude-code.assistant` 47 条、`user` 22 条（工具结果）；6 个文件。回合内没有被杀 |
-| 回合之间 | Controller | `send` 再开一回合，或 `done` 结束 | 第一次决策就是 `done/satisfied`。`followupSubmission=false` |
+不追求统一评分、候选排名、跨任务质量总分，也不设计组件协议或通用可视化 DSL。
 
-「候选执行不受限制直到任务完成」指的是第二层：只要 Controller 认为用户还会说话，候选就应再跑；Harness 不得因为「已经有一回合」而收工。第一层本来就是「一条用户消息，候选自己做到交出结果」——Claude Code 的 `result` 帧就是这个边界。
+## 3. 设计原则
 
-历史会话也只有 **1 条用户消息**（转录 46 行 = 1 user + 17 assistant + 28 tool）。`historicalUserFollowups` 为空。Controller 不是因为「没把后半段用户话发出去」而停的，历史上就没有后半段用户话。`completedTurns: 2` 是历史 Agent 的回合标记，不是 2 条用户指令。
+### 3.1 Agent 是报告作者
 
-### 1.2 谁有权停、谁实际停了
+Comparison 的职责不是给 Host 填一段正文，而是调查证据并完成最终用户报告。布局、层次、文字、配色、交互和可视化都属于报告判断的一部分，应由同一个 Agent 统一完成。
 
-终止码是 `completed.controller_satisfied`，`initiatedBy: controller`，任务状态 `apparently_completed`。Controller 自己写的理由是：当前工作目录已有整理文件夹和 PDF，官方链接做过 HTTP 检查。
+### 3.2 System Prompt 约束行为，Host 不约束表现
 
-这不是预算墙。e2e 的 `RunPolicy` 是 2 目标回合、2 次 Controller 决策、5 分钟墙钟；实际用了 1 回合、1 次决策、约 142 秒。若 Controller 当时 `send/verify`，还剩 1 个目标回合和 1 次决策。真正触发的是 prompt 决策序第 1 条：*Goal already satisfied with sufficient evidence → done/satisfied*。
+System Prompt 定义事实纪律、必含指标和安全建议。Host 不通过 sanitizer、HTML AST、模板槽位、CSS token 或组件枚举重复这些规则。
 
-TUI 默认 `TUI_RUN_POLICY` 原先是 4 回合 / 3 次决策 / 30 分钟，同样不是「直到完成」。落地后改为 12 / 12 / 60 分钟安全阀。架构写的是：Controller 预算默认无限制；`RunPolicy` 独立约束 Target；上限耗尽必须是 `limit.*`，不能记成 `done`。e2e 用 2/2 是 smoke 收口，和「任务完成」不是同一套语义。这些上限这次没开火，但只要 Controller 想多协作一轮，第二次就会顶到天花板，那时会变成 `limit.controller_calls` 或 `limit.target_turns`。
+这意味着“必须包含”的指标是 Agent 行为契约，而不是机械门禁。Reprise 可以在评测和人工复核中发现遗漏，但不会因漏项自动重写、补齐或拒绝 Agent 的报告。若产品需要字节级保证某字段一定出现，就必须重新引入结构化渲染或内容校验；这不属于本方案。
 
-禁用 Cron / Schedule / SendMessage 与这次任务无关。`sonnet → deepseek-v4-flash` 只改变归因。
+### 3.3 事实由 Host 提供，解释由 Agent 完成
 
-### 1.3 为什么 Controller 会过早 satisfied
+Host 不要求 Agent 从长事件流手工统计所有数字。能够确定性计算的运行事实应作为 `reportFacts` 进入 Comparison briefing；Agent负责核查关键证据、解释因果关系并选择呈现方式。
 
-四件事叠在一起，缺一则不一定会在第一回合收工。
+`reportFacts` 是输入事实，不是报告模板。增加事实字段不会限制 Agent 如何写 HTML。
 
-1. **验收标尺用了 initialInput，没用用户已接受的结果。** 初始输入约 35 字（下载并整理）。基线终稿约 1024 字，写了落点、笔记风格、PDF 体积。Controller prompt 把 baseline 说成「用户想要并接受的结果，不是必须复制的路径」，决策序第 1 条又只要「目标已满足且证据够」。模型把「当前目录里有文件夹和 PDF」当成目标满足，没有把终稿里的质量当验收清单。不同路径可以，更浅的验收不可以。
-2. **Host 观察偏「本地已完成」。** `currentSummary` 是结算状态、可见终稿、命令数、改动路径数。`sourceRootKind` 不在 `SteeringContext` 里。Controller 看见的是隔离区现场，很容易把「这里已经有产物」读成「任务完成」。
-3. **赛场是空 stand-in。** 脚本不用 `taskContext.historicalCwd`（case 里有这个字段），只放 `note.txt`。原库里的既有文件夹风格不存在，候选只能新建目录。Controller 在空目录里看到新建整理夹，与「下载并整理」字面一致，更难触发 `send/correct` 或 `send/verify`。
-4. **隔离写入是产品不变量。** 即使复制了历史 cwd，写入也只在副本。Controller 不应要求「写回用户原库」；它应要求「在副本里对齐用户已接受的相对位置与质量」。Comparison 把「没写回原库」写成结果差异，是把不变量误当成能力。
+### 3.4 报告和事实记录各司其职
 
-基线仍然只有终稿、没有工作区快照。Controller 不能核验历史落盘，但能把终稿当作**用户已接受的质量描述**来决定要不要再问一句。这次它没有。
+- `report.html`：面向人的主要产物，由 Agent 完整创作。
+- Comparison 结果信封：保存状态、报告路径、证据引用和限制代码，供状态机与恢复使用。
+- 事件日志和 artifacts：事实来源，不由 HTML 取代。
 
-### 1.4 约束
+HTML 可以高度自由，但不能成为唯一事实存储。
 
-- 不把用户知识库复制进 git，也不在不受控文档里展开其内容。
-- 不取消隔离：候选不得写回原目录。
-- 不把「只重放 initialInput」改成按转录逐条重放用户消息。本会话本来就只有一条用户消息；有后续用户消息时，由 Controller 决定是否作为自然回复发出，而不是脚本重放。
-- 不在本计划采集历史工作区快照作为 baseline artifact。没有快照时，报告必须写「基线只有终稿，不能核验落盘」。
-- 不把 `RunPolicy` 安全阀伪装成任务完成。
+## 4. 目标数据流
 
-### 1.5 规划
-
-1. **完成权只给 Controller；安全阀显形。** 真机 / TUI 默认跟架构走：Controller 决策次数默认不设小上限。`RunPolicy` 若保留，只作安全阀，数值明显高于「一条用户消息 + 一次验收」。耗尽记 `limit.*`，报告头栏写「安全阀截断，不是完成」。e2e smoke 的 2/2 不得当作比较实验的完成语义。
-2. **Controller 的 satisfied 要对齐用户已接受的质量。** 在 [`agent-system-prompt-redesign.md`](./agent-system-prompt-redesign.md) 的 Controller 提案上追加：`done/satisfied` 必须对照 `baseline.finalMessage` 里用户已接受的结果质量（交付物种类、整理粒度、必要核验），不是对照「当前目录是否已经有点东西」。不同路径、不同文件夹名可以；缺了用户已接受的关键质量应 `send/verify` 或 `send/correct`，而不是 satisfied。禁止要求写回原绝对路径。禁止把历史 Agent 的实现细节当用户先验喂给候选。
-3. **SteeringContext 补 Host 事实。** 至少：`sourceRootKind`（`historical_cwd` / `operator_selected` / `stand_in`）；隔离副本说明；请求模型与解析模型；改动路径列表而不只是计数。stand-in 时，Controller 不得仅因「在空目录新建了整理夹」而 satisfied。
-4. **e2e 与正式路径对齐。** 比较实验应使用 `historicalCwd` 的隔离副本；若故意用 stand-in，必须写入 `sourceRootKind=stand_in`。TUI 已预填历史 cwd 的保持；操作者改目录记 `operator_selected`。
-5. **报告区分三种停法。** `controller_satisfied` / `controller` 其它 `done` / `limit.*`。只有第一种能写成「Controller 认为任务完成」；后两种写成限制。Comparison 不得把隔离不变量或 stand-in 写成能力差异。
-6. **workflow 候选选择。** `start()` 使用 `pack.defaultCandidate()`，忽略 `defaults.candidate`。指定模型必须走会生效的路径。
-
-验收：再跑同类任务时，若基线终稿要求的关键质量在副本里未出现，第一次 Controller 决策不得是 `done/satisfied`；头栏能读到谁停的、`sourceRootKind`、是否安全阀；stand-in 运行不得把「没写回原库」写成主要结果差异。
-
-## 2. Comparison Agent 的分析角度与正文
-
-### 2.1 当前情况
-
-现行 prompt 已要求区分观察 / 推断 / 不可用，以及结果 / 过程 / 回放限制；不排名；harness 截断不当能力。这次正文在结果差异上写对了几条，也承认基线无法核验。缺口是**没有强制分析程序**，也**没有可渲染的正文约定**。
-
-具体失败：
-
-- 回放条件（空工作区、隔离、模型别名、Controller 过早 satisfied）被写进「结果差异」。
-- 没有基线 vs 候选的对照表，读者要从散文里拼。
-- 引用写成 `artifact:candidate-workspace-scope.json`，Host 不改写，页面上不可点。
-- 强调靠段落密度，不靠少量加粗。
-- [`agent-system-prompt-redesign.md`](./agent-system-prompt-redesign.md) §3 已改分节、调查顺序、语言规则和 `insufficient_evidence`，但没写「先给差异分类」和「Markdown 怎么写才够 Host 渲染」。
-
-[`architecture/comparison.md`](../architecture/comparison.md) 禁止固定评分模板和通用可视化 DSL。优化走 **Markdown 子集 + Host 渲染**，不发明第二种报告语言。
-
-### 2.2 规划
-
-在已有 prompt 重设计之上追加，不另起一份互斥文案。落码仍只改 `src/agents/comparison-agent.ts` 的 `SYSTEM_PROMPT`（及必要时 briefing 字段）。`OUTPUT_CONTRACT`、工具白名单、信封 schema 不动。
-
-**分析程序（有序，写进 prompt）：**
-
-1. 读 Host 回放条件。每一条差异先标成 `result` / `process` / `replay_limitation`，标不成结果就不要写进结果节。
-2. 先核验产物：`candidate-workspace-scope.json`、终稿、catalog 附件。briefing summary 是声称，不是核验。
-3. 再看过程：`read_observation` 的 `run_events`，只为解释结果或限制服务。
-4. 对每条会改变用户判断的发现，读一次最可能反证的证据。
-5. 基线没有工作区文件时，基线落盘、体积、格式只能标「按终稿转述，未核验」。不得把转述写成观察。
-6. 隔离副本、stand-in、安全阀 `limit.*`、模型别名，全部进「回放限制」。`controller_satisfied` 是完成判断，不是限制；但 stand-in 或过低验收导致的 satisfied 要在限制里写明「完成判据可能过宽」。其中任何一条都不能单独证明能力强弱。
-7. 某一整维（过程效率、验证方法、原库风格对齐）比不了，就写不能比的原因；必要时信封用 `insufficient_evidence`。
-
-**正文约定（仍是自由 Markdown，但是 Host 能画出来的子集）：**
-
-```text
-# 对比结论
-一段话：最值得看的差异。会改变判断的短语用 **加粗**，每篇不超过三处。
-
-## 对照
-一张 Markdown 表，列：维度 | 基线 | 候选 | 证据。
-只放核验过或已标明「未核验」的格子。不要为对称而造行。
-
-## 结果差异
-条目。每条先写差异，再写证据。引用用相对路径
-`./runs/<runId>/artifacts/<artifactId>`，不要用 `artifact:` 伪协议。
-
-## 回放限制
-Host 已核验的条件用列表复述，可补充解释，不得改写成结果。
-
-## 过程（可选）
-只写能解释结果或限制的过程。没有可比过程就写「本维不能比」并停止。
+```mermaid
+flowchart LR
+    A["TaskCase / RunRecord / Events"] --> B["Host 组装 reportFacts"]
+    C["Baseline / Candidate artifacts"] --> D["Comparison 只读调查工具"]
+    B --> E["Comparison Agent"]
+    D --> E
+    E --> F["write_comparison_report"]
+    F --> G["report.html 原样落盘"]
+    E --> H["Comparison 结果信封"]
+    G --> I["TUI 按 o 打开"]
+    H --> J["状态、恢复与审计"]
 ```
 
-加粗规则：只加粗判断句（例如「交付位置不同，可能影响可用性」），不加粗路径、数字、小节标题。表格优先于长段落。代码、命令、标识符保持原文。正文语言跟随 `initialInput` 的主要语言。
+Host 不再执行 `Markdown → safe HTML → Host shell`。成功路径只有一份面向用户的 HTML，避免 Agent 正文与 Host 页面互相稀释。
 
-不要求固定 finding 数量，不要求每个任务都有过程节，不输出 HTML、分数或胜者。
+## 5. 输出协议
 
-验收：用本次实验的 briefing（补上 `sourceRootKind=stand_in`）重跑 Comparison 或做夹具回放时，对照表存在；「没写回原库」出现在回放限制而不是结果首条；引用是相对路径；加粗不超过三处。
+### 5.1 结果信封
 
-## 3. HTML 美观与渲染
+Comparison 结构化返回值调整为：
 
-### 3.1 当前情况
-
-`src/report/comparison-report.ts` 输出三块同权重白卡片：头栏只列候选，正文是转义后的 `<pre>`，Files 只列 `comparison.md` 与 experiment-owned JSON。约 569 字节灰底 CSS。`lang="en"` 包中文。模块 6 要求的基线摘要、停止原因、fidelity、遥测，Host 几乎都不投影。
-
-这与 [`architecture/comparison.md`](../architecture/comparison.md) §5 一致：全文转义、不重新解释、不接受 Agent HTML。用户要的「渲染标题/列表/加粗/表格 + 统一配色」**改变这条约定**。落码前必须把 §5 改成：Host 对白名单 Markdown 做确定性渲染；Agent 原文仍不可当 HTML。
-
-Files 指错对象的原因在采集，不在 CSS。`captureWorkspaceScope` 只提交一份 scope JSON（路径、指纹、最多 16 个文本快照）；含 NUL 的 PDF 被跳过。那 6 个交付文件在隔离工作区磁盘上，不是 catalog 项，所以没有相对链接，也没有 diff。
-
-### 3.2 规划
-
-**渲染（先于配色）：**
-
-1. 白名单 Markdown：`h1`–`h3`、段落、`ul`/`ol`、`strong`/`em`、`code`、GFM 表、相对链接。其它标记当文本。禁止 raw HTML、`javascript:`、绝对本机路径。
-2. 把 `artifact:<id>` 兼容改写成 `./runs/<runId>/artifacts/<id>`（仅当 catalog 拥有该 id）。
-3. `html lang` 与 Host 壳文案都跟随 `initialInput` 的主要语言；模型名、路径和终止码保持原文。
-4. 无 Comparison 时仍输出 Host 壳 + 降级说明，行为与现门禁一致。
-
-**信息架构：**
-
-```text
-题头     Host：任务一句话；模型 · 回合/墙钟 · 不是排名
-正文     Comparison：白名单渲染后的 Markdown
-限制     Host：最多三条会改变读法的条件，默认折叠
-文件     Host：交付路径；JSON 轨迹与 catalog 默认折叠
+```ts
+type ComparisonResult = {
+  status: "completed" | "insufficient_evidence";
+  reportPath: "report.html";
+  evidenceRefs: EvidenceRef[];
+  limitationCodes?: string[];
+};
 ```
 
-限制是 Host 核验事实，不从 Markdown 反解析。不做基线/候选对照条。
+`reportPath` 固定为 `report.html` 只是落盘和导航协议，不限制文件内容。
 
-**视觉：**
+### 5.2 写入工具
 
-一套内联 token，不用框架、不用脚本（折叠可用 `<details>`）。纸色底、一种强调色只用于「本次候选」和链接，基线用中性色，限制用警告底。中文正文用系统字体栈并设置标点换行。深浅两套同一语义；打印去掉底色。不要三块同权重白卡片，不要渐变和阴影。
+`write_comparison_report` 接收完整 HTML 字符串：
 
-**证据入口（小步，不建预览框架）：**
+```ts
+type WriteComparisonReportInput = {
+  html: string;
+};
+```
 
-Files 增加 `changedPaths`（来自已有 scope），每条标明「文本快照 / 仅路径 / 二进制未快照」。不在第一刀做图片预览或通用 diff DSL。完整文件仍在磁盘，用户按相对链接打开。
+工具只负责：
 
-验收：`test/comparison-report.test.ts` 增加——标题不再以字面 `#` 出现；`**差异**` 变成 `<strong>`；`<script>` 仍被转义；绝对路径不进 `href`；`artifact:` 在 catalog 命中时变成相对链接；对照条同时出现基线与候选；无叙事时壳完整且两次渲染字节相等。
+- 将内容原样写入实验目录中的 `report.html`；
+- 使用临时文件加原子替换，避免留下半份报告；
+- 记录字节数、哈希、写入时间和 Agent 调用关联；
+- 返回成功或可调试的文件系统错误。
 
-## 4. 实施顺序
+工具不负责：
 
-| 顺序 | 工作 | 主要文件 | 依赖 |
-|---|---|---|---|
-| A | Host 回放条件进入 SteeringContext、Comparison briefing 与头栏；三种停法分开写 | `experiment.ts`、`comparison.ts`、`comparison-report.ts` | 无 |
-| A2 | Controller satisfied 对齐基线终稿质量；stand-in 不得一回合收工 | `controller-agent.ts`；与 [prompt 重设计](./agent-system-prompt-redesign.md) 一次落地 | A |
-| B | Comparison prompt：分类程序 + Markdown 子集 | `comparison-agent.ts`；同上一次落地 | A，否则限制仍会被写成结果 |
-| C | 改 [`architecture/comparison.md`](../architecture/comparison.md) §5 后做白名单渲染与对照条 | `comparison-report.ts`、测试 | 规范先改 |
-| D | 色板与 `<details>` 证据区 | 同上 | C |
-| E | 比较实验用历史 cwd 副本或显式 `stand_in`；提高/去掉 smoke 式 2/2 上限 | `scripts/claude-real-e2e.ts`、`tui-workflow.ts` | A、A2 |
+- 解析 DOM；
+- 删除或改写标签、属性、CSS、SVG、脚本或链接；
+- 注入 Host 页头、指标、样式或免责声明；
+- 根据视觉结构判断报告质量；
+- 自动补写缺少的指标。
 
-A 可单独合并。A2 与 B 的 prompt 改动与 [prompt 重设计](./agent-system-prompt-redesign.md) 一次落地，不要在 A 之前单独上线。C 必须先改架构文档。D 不单独出「只改颜色」的提交。
+### 5.3 HTML 能力
 
-## 5. 明确不做
+允许 Agent 使用完整 HTML 文档能力，包括：
 
-- 不给候选打分、排名或胜者。
-- 不发明可视化 DSL、图表组件或 Agent 产出的 HTML。
-- 不按转录脚本重放用户消息；有后续用户消息时由 Controller 决定是否发出。
+- 任意语义标签和页面布局；
+- 内联或嵌入 CSS；
+- SVG 图形；
+- JavaScript 交互；
+- `<details>`、筛选、切换和证据折叠；
+- 表格、时间线、指标卡和任务专属图表。
+
+Host 不维护允许标签清单。是否使用某项能力由 Agent 根据报告价值判断。
+
+## 6. System Prompt 设计
+
+System Prompt 分为底线、必含内容和推荐实践。底线与必含内容使用明确命令，推荐实践允许 Agent 因任务需要偏离。
+
+### 6.1 底线
+
+建议写入以下不可协商要求：
+
+1. 只陈述可由 briefing、工具读取结果或明确推理支持的内容；不得编造指标、命令、产物或成功状态。
+2. 显著区分“已观察事实”“推断”“无法获得的证据”。
+3. 显著区分结果差异、过程差异和回放限制；不得把隔离路径、stand-in workspace 或历史起点误写成候选能力差异。
+4. 不把候选明确拒绝等同于缺乏技术能力；若关键路径未被尝试，应分别说明直接停止原因和能力不可判定部分。
+5. 证据链接只能指向 briefing 中给出的 Reprise 相对 artifact 路径；不得猜测不存在的文件。
+6. 不在报告中暴露密钥、凭据、环境变量值或工具输出中的敏感内容。
+7. 报告必须自包含，默认不依赖外部网络资源；若确有必要引用外部页面，只提供普通链接，不静默加载远程脚本、字体、图片或分析服务。
+8. 不创建会修改用户文件、发送网络请求、提交表单或伪装系统界面的交互。
+9. 使用任务主要语言撰写报告，模型名、路径、终止码和原始标识保持原文。
+
+这些规则依赖 Agent 遵守。Host 不用 sanitizer 或 CSP 强制执行。
+
+### 6.2 每份报告必含的硬指标
+
+System Prompt 要求 Agent在报告的首屏或紧邻结论处展示：
+
+| 类别 | 必含内容 |
+|---|---|
+| 运行身份 | Run ID、任务摘要、Candidate 模型；Controller 和 Comparison 模型在可用时展示 |
+| 最终状态 | outcome、termination code、终止发起方 |
+| 时间 | 总耗时、Candidate 执行耗时 |
+| 协作轮次 | Candidate turns、Controller calls |
+| 工具执行 | 工具调用总数、成功数、失败数、权限或审批拒绝数 |
+| 资源限制 | 是否触发时间、turn、Controller call 或 token 限制 |
+| 运行能力 | sandbox、approval policy、网络状态和关键 Runtime 能力 |
+| 交付物 | changed paths、目标 artifact 是否存在、关键验证结果 |
+| 回放条件 | replay 类型、workspace 来源、与历史条件的已知差异 |
+| 证据等级 | Baseline 和 Candidate 各自属于可验证、部分可验证还是仅会话声明 |
+
+某个字段不可用时，报告必须显示“未采集”或“不可判定”，不能静默省略，也不能用零代替缺失。
+
+硬指标不包括统一质量分。任务专属指标由 Agent 自主选择，例如测试结果、消息条数、导出时间范围、页面状态或性能数据。
+
+### 6.3 每份报告必答的问题
+
+System Prompt 要求报告让读者无需阅读原始 trace 就能回答：
+
+1. 原始会话和候选最终交付有什么差异？
+2. 候选未达到原始结果时，直接原因是什么？
+3. 哪些原因有证据支持，哪些已被排除，哪些无法判定？
+4. Reprise 的权限、预算、Runtime、回放条件或 Controller 是否实质影响结果？
+5. Baseline 的成功声明可以验证到什么程度？
+6. 本次运行还暴露了哪些产品、评测或报告问题？
+7. 用户下一步最值得检查什么？
+
+### 6.4 推荐但不强制的表达方式
+
+System Prompt 可以推荐：
+
+- 首屏使用一句话 verdict 和归因置信度；
+- 将“主要原因”“排除原因”“无法判定”分区；
+- 用对照表展示 Baseline 与 Candidate；
+- 用时间线压缩多轮过程；
+- 折叠原始证据，避免淹没结论；
+- 提供深色模式、打印样式和窄屏布局；
+- 优先使用原生 HTML/CSS，只有交互确有价值时才使用 JavaScript；
+- 不用视觉强调掩盖低置信度或证据缺口。
+
+Agent 可以为了特定任务采用完全不同的设计。
+
+## 7. `reportFacts` 输入
+
+为了让 Agent 不必自行统计基础数字，Comparison briefing 增加由 Host 投影的 `reportFacts`。字段沿用现有对象和事件语义，不建立第二套状态机。
+
+```ts
+type ComparisonReportFacts = {
+  run: {
+    runId: string;
+    outcome: string;
+    terminationCode: string;
+    initiatedBy?: string;
+    elapsedMs?: number;
+    candidateElapsedMs?: number;
+  };
+  models: {
+    candidate: string;
+    controller?: string;
+    comparison?: string;
+  };
+  activity: {
+    candidateTurns?: number;
+    controllerCalls?: number;
+    toolCalls?: {
+      total: number;
+      succeeded: number;
+      failed: number;
+      denied: number;
+    };
+  };
+  limits: {
+    triggered: string[];
+    configured: Record<string, number | string>;
+  };
+  capabilities: {
+    sandbox?: string;
+    approvalPolicy?: string;
+    network?: string;
+  };
+  replay: {
+    sourceRootKind?: string;
+    stopKind?: string;
+    conditions: string[];
+  };
+  deliveries: {
+    changedPaths: string[];
+    artifactRefs: string[];
+  };
+};
+```
+
+实际字段应优先复用现有 schema 和 helper。若某事实当前没有可靠来源，先传缺失值，不通过启发式猜测补齐。持久化和模型输入仍遵守 [`persistence-and-crash-consistency.md`](../architecture/persistence-and-crash-consistency.md) 的事件可复原要求。
+
+## 8. 归因模型
+
+报告不使用固定总分，但 System Prompt 应引导 Agent 对每个重要归因使用以下证据语言：
+
+- **直接观察**：事件、终止码、工具结果或产物直接证明；
+- **强推断**：多项事实一致支持，存在未观察的替代解释；
+- **弱推断**：证据有限，只能作为可能原因；
+- **不可判定**：关键路径未执行或必要证据缺失；
+- **已排除**：存在足够反证，不应继续作为主要解释。
+
+例如，候选反复拒绝数据库解密，同时拥有 `danger-full-access`、命令基本成功且未触发预算时，报告应把“候选策略拒绝”写为直接原因，把“Reprise 权限不足”和“预算耗尽”列为已排除；因为候选未尝试关键路径，“模型是否具备解密技术能力”仍应写为不可判定。
+
+## 9. 失败与恢复
+
+### 9.1 Comparison 没有写出 HTML
+
+Comparison 调用失败、结果信封无效或 `report.html` 不存在时，Host 生成一个独立命名的 `comparison-failure.html`，只说明技术失败并提供原始记录入口。它不是 Comparison 报告，也不冒充 Agent 的分析。
+
+TUI 显示 Comparison 失败状态，并允许用户打开降级页。CandidateRun 和 RunOutcome 不因 Comparison 失败而改变。
+
+### 9.2 HTML 存在但内容质量差
+
+Host 原样保留并打开报告，不进行自动修复。质量问题通过：
+
+- Comparison prompt 迭代；
+- 真实运行人工审查；
+- 非确定性评测夹具；
+- 报告中保留的模型、证据引用和生成轨迹；
+- 必要时重新运行 Comparison。
+
+处理，而不是逐步增加 HTML 白名单或固定模板。
+
+### 9.3 报告运行时错误
+
+JavaScript、CSS 或资源错误不改变实验结果。报告仍保留用于诊断；TUI 提供打开 artifacts 和原始记录的备用入口。Reprise 不尝试解释或修复 Agent 前端代码。
+
+## 10. 信任边界与接受的风险
+
+本方案有意选择“信任 Comparison Agent”，因此接受以下风险：
+
+- Agent 可能遗漏 System Prompt 要求的某个指标；
+- Agent 可能输出无效 HTML、布局退化或浏览器兼容性较差的页面；
+- Agent 可能生成不必要或有缺陷的 JavaScript；
+- 候选 artifact 中的提示注入可能影响 Comparison 的报告选择；
+- 没有 sanitizer 或 CSP 时，System Prompt 是外部资源、脚本行为和敏感信息保护的主要防线；
+- 相同事实的页面结构可能随模型和版本变化，不能做稳定 DOM 快照对比；
+- HTML 的视觉说服力可能超过其证据强度。
+
+选择这些风险的理由是：报告本身就是 Agent 的核心交付，过度限制会同时限制调查结果的组织能力和表达能力。Reprise 通过保存事实、证据和生成轨迹保证可审计性，而不是通过接管报告作者身份保证一致外观。
+
+如果未来出现真实安全事件或无法接受的报告行为，应优先加强 System Prompt、隔离报告打开环境或调整默认打开方式。只有这些措施不足时，才重新讨论 sanitizer 或受限渲染；不能在本方案实施过程中悄悄加入标签白名单。
+
+## 11. 与当前实现的差异
+
+当前实现是：
+
+```text
+Agent 写 comparison.md
+→ Host 读取 Markdown
+→ safe-markdown 白名单渲染
+→ Host 套固定 report.html 页面
+```
+
+目标实现是：
+
+```text
+Host 提供 reportFacts 和只读证据工具
+→ Agent 调查并写完整 report.html
+→ Host 原样保存和打开
+```
+
+因此实施会涉及：
+
+- Comparison 结果 schema 的 `reportPath`；
+- `write_comparison_report` 工具参数和原子写入；
+- Comparison System Prompt；
+- Comparison briefing 的 `reportFacts`；
+- Experiment 报告生成与恢复路径；
+- TUI 打开和降级逻辑；
+- 当前 Markdown renderer 的调用方和可删除代码；
+- 架构规范、决策记录和相关测试。
+
+如果 `safe-markdown.ts` 没有其他调用方，应删除，而不是保留一条未使用的备用渲染路径。
+
+## 12. 最小实施顺序
+
+| 顺序 | 工作 | 完成判据 |
+|---|---|---|
+| A | 写 accepted 决策并更新 Comparison 架构 | 明确 Agent 拥有完整 HTML、Host 不清洗或重排 |
+| B | Host 投影 `reportFacts` | 夹具能区分权限、预算、Runtime 和模型停止原因；缺失值不伪造为零 |
+| C | 修改 System Prompt 和写入工具 | Agent 可原样写入包含 CSS、SVG、脚本的完整 HTML |
+| D | 切换结果信封和报告生命周期 | 成功结果指向 `report.html`；崩溃恢复不会留下半文件 |
+| E | 删除 Host Markdown 主路径 | 正常成功路径不再调用安全 Markdown renderer 或固定报告壳 |
+| F | 更新 TUI 与降级页 | `o` 打开 Agent 报告；Comparison 失败仍能导航到原始记录 |
+| G | 真实 Comparison smoke | 显式 opt-in 后人工确认硬指标、归因和证据入口可读 |
+
+遵循最小改动原则：不同时建立 JSON 报告 DSL、组件库、模板系统或第二套事实 schema。
+
+## 13. 验证设计
+
+### 13.1 确定性测试
+
+代码测试只验证 Host 拥有的协议：
+
+- 完整 HTML 字节原样落盘，不删除 `<style>`、`<svg>` 或 `<script>`；
+- 原子写入失败时旧报告不被截断；
+- 结果信封只接受 `report.html`；
+- 报告路径不能逃逸实验目录；
+- `reportFacts` 数值来自对应 RunRecord 和事件；
+- 未采集指标保持缺失，不变成零；
+- Comparison 失败生成独立降级页，不覆盖既有 Agent 报告；
+- TUI 打开正确的绝对路径。
+
+这些测试不对 Agent 生成的 DOM 做固定快照，也不机械检查某种配色、卡片数量或章节顺序。
+
+### 13.2 Agent 行为评测
+
+准备少量代表性夹具，检查报告是否覆盖硬指标和归因问题：
+
+1. 模型明确拒绝，但权限充足且预算未触发；
+2. 候选被 turn 或墙钟限制截断；
+3. Runtime 或工具权限真实失败；
+4. Candidate 完成，但 Baseline 只有会话声明、缺少可验证产物；
+5. 没有实质差异；
+6. Comparison 证据不足。
+
+这类检查允许语义评测或人工审查，不把 Agent 页面收缩成固定 DOM。
+
+### 13.3 真机验收
+
+真机运行必须显式 opt-in。验收人确认：
+
+- 第一屏能看懂结果和主要归因；
+- 通用硬指标存在，缺失值有明确标记；
+- 模型策略、技术能力、Reprise 权限、预算、Runtime 和 Controller 没被混为一谈；
+- 证据链接可用；
+- 页面离线打开时核心内容完整；
+- 报告没有泄露凭据或静默发起外部请求；
+- 原始 trace 和 artifacts 仍可独立查看。
+
+## 14. 不做
+
+- 不让 Host 生成正常成功报告的页头、指标卡或正文。
+- 不保留 Markdown 作为必经中间格式。
+- 不建立允许标签、CSS 属性、SVG 元素或 JavaScript API 白名单。
+- 不使用 sanitizer、HTML AST 重写或固定 CSP 改造 Agent 输出。
+- 不发明报告组件 DSL 或要求 Agent 返回 `sections[]`。
+- 不把“硬指标”变成跨任务质量评分。
+- 不因为 Comparison 报告失败改变 CandidateRun 的结果。
 - 不把隔离区写回用户原目录。
-- 不把 e2e smoke 的 2 回合 / 2 次决策当成「任务已完成」的证据。
-- 不在本计划采集历史工作区作为 baseline artifact。
-- 不把 Comparison 改成固定 `summary + observations[]` JSON 模板。
-- 不把用户任务正文或密钥写进受控文档。
+
+## 15. 方案确认点
+
+实施前只需确认一个产品选择：
+
+> Reprise 是否接受“硬指标由 System Prompt 强制、但 Host 不做内容门禁”，并将偶发漏项视为 Comparison Agent 质量问题，而不是报告协议错误？
+
+本次实施确认选择“是”：硬指标由 System Prompt 强制，Host 不做内容门禁；偶发漏项按 Comparison Agent 质量问题处理。已据此记录 accepted 决策并完成实现。若未来要求指标在任何模型输出下都必须存在，则需要改成 Host 固定附加事实区或结构化内容校验，两者都会收回一部分 Agent 自由。

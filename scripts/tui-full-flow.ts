@@ -10,6 +10,7 @@ import {
   defaultHarnessModelConfig,
   saveHarnessModelConfig,
 } from "../src/infrastructure/harness-model-config.js";
+import { mockTui, pageHtml, waitFor } from "./tui-audit-lib.js";
 
 Object.defineProperty(process.stdout, "isTTY", {
   configurable: true,
@@ -29,90 +30,9 @@ const shotDir = join(outDir, "screenshots");
 
 type Capture = { name: string; width: number; rows: number; note: string };
 
-function mockTui(rows?: number) {
-  let document: { render: (width: number) => string[] } | undefined;
-  const tui = {
-    terminal: rows ? { rows, columns: 120 } : undefined,
-    addChild(component: { render: (width: number) => string[] }) {
-      document = component;
-    },
-    addInputListener() {
-      return () => {};
-    },
-    start() {},
-    stop() {},
-    requestRender() {},
-    renderNow() {},
-  };
-  return {
-    tui,
-    render(width = 120) {
-      return document?.render(width).join("\n") ?? "";
-    },
-  };
-}
-
 function enterCommand(app: CodexIntakeTui, command: string) {
   app.handleInput(command);
   app.handleInput("\r");
-}
-
-async function waitFor(condition: () => boolean, frame: () => string) {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    if (condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(
-    `TUI did not reach the expected state.\n${frame().slice(0, 1800)}`,
-  );
-}
-
-function ansiToHtml(text: string) {
-  const withLinks = text.replace(
-    /\u001b\]8;;([^\u001b]*)\u001b\\([\s\S]*?)\u001b\]8;;\u001b\\/g,
-    (_match: string, url: string, body: string) => {
-      const href = String(url)
-        .replaceAll("&", "&amp;")
-        .replaceAll('"', "&quot;");
-      return `\x00A${href}\x00B${body}\x00C`;
-    },
-  );
-  const escaped = withLinks
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-  const colors: Record<string, string> = {
-    "1": "font-weight:700",
-    "2": "opacity:.65",
-    "31": "color:#f87171",
-    "32": "color:#4ade80",
-    "33": "color:#facc15",
-    "34": "color:#60a5fa",
-    "35": "color:#e879f9",
-    "36": "color:#22d3ee",
-    "36;1": "color:#22d3ee;font-weight:700",
-  };
-  return escaped
-    .replace(
-      /\u001b\[([0-9;]+)m([\s\S]*?)\u001b\[0m/g,
-      (_match: string, code: string, body: string) => {
-        const style = colors[code] ?? "";
-        return style ? `<span style="${style}">${body}</span>` : body;
-      },
-    )
-    .replace(/\u001b\[[0-9;]*m/g, "")
-    .replace(
-      /\x00A([^\x00]*)\x00B([\s\S]*?)\x00C/g,
-      (_match: string, href: string, body: string) =>
-        `<a href="${href}" style="color:#67e8f9;text-decoration:underline">${body}</a>`,
-    );
-}
-
-function pageHtml(title: string, width: number, frame: string) {
-  const lines = frame.split("\n");
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title}</title>
-<style>html,body{margin:0;background:#0b1220;color:#e5e7eb}.wrap{padding:16px 20px 24px}h1{font:600 14px/1.4 ui-sans-serif,system-ui;color:#93c5fd;margin:0 0 12px}pre{margin:0;padding:12px 14px;background:#111827;border:1px solid #1f2937;border-radius:8px;font:13px/1.35 Consolas,monospace;white-space:pre;overflow:auto;min-width:${Math.max(40, width)}ch}</style>
-</head><body><div class="wrap"><h1>${title} · ${width} cols · ${lines.length} rows</h1><pre>${ansiToHtml(frame)}</pre></div></body></html>`;
 }
 
 function chromePath() {
@@ -287,7 +207,7 @@ async function main() {
   enterCommand(homeApp, "/config");
   await waitFor(
     () => /Harness connection|Settings/.test(home.render(120)),
-    () => home.render(120),
+    { frame: () => home.render(120) },
   );
   await push("06-config", 120, home.render(120), "设置 overlay");
   homeApp.handleInput("\x1b");
@@ -295,19 +215,19 @@ async function main() {
   enterCommand(homeApp, "/intake");
   await waitFor(
     () => /Choose a project/.test(home.render(120)),
-    () => home.render(120),
+    { frame: () => home.render(120) },
   );
   await push("07-projects", 120, home.render(120), "导入：项目列表");
   homeApp.handleInput("\r");
   await waitFor(
     () => /Fix the bug/.test(home.render(120)),
-    () => home.render(120),
+    { frame: () => home.render(120) },
   );
   await push("08-sessions", 120, home.render(120), "导入：会话列表");
   homeApp.handleInput("\r");
   await waitFor(
     () => /is current/.test(home.render(120)),
-    () => home.render(120),
+    { frame: () => home.render(120) },
   );
   await push("10-home-with-task", 120, home.render(120), "选会话后已冻结任务的封面");
 
@@ -429,7 +349,7 @@ async function main() {
   enterCommand(historyApp, "/history");
   await waitFor(
     () => /Recent experiments/.test(history.render(120)),
-    () => history.render(120),
+    { frame: () => history.render(120) },
   );
   await push("11-history", 120, history.render(120), "历史 overlay");
 
@@ -579,17 +499,17 @@ async function main() {
   enterCommand(runApp, "/intake");
   await waitFor(
     () => /Choose a project/.test(run.render(120)),
-    () => run.render(120),
+    { frame: () => run.render(120) },
   );
   runApp.handleInput("\r");
   await waitFor(
     () => /Fix the bug/.test(run.render(120)),
-    () => run.render(120),
+    { frame: () => run.render(120) },
   );
   runApp.handleInput("\r");
   await waitFor(
     () => /Inspecting source|Candidate preflight|Preparing replay|Copy isolated|To Codex/.test(run.render(120)),
-    () => run.render(120),
+    { frame: () => run.render(120) },
   );
   await push(
     "12-preflight-wait",
@@ -600,13 +520,13 @@ async function main() {
   releasePreflight?.();
   await waitFor(
     () => /Copy isolated|Preparing replay|To Codex/.test(run.render(120)),
-    () => run.render(120),
+    { frame: () => run.render(120) },
   );
   await push("15-preparing", 120, run.render(120), "准备进度");
   releaseCopy?.();
   await waitFor(
     () => /To Codex|Codex/.test(run.render(120)),
-    () => run.render(120),
+    { frame: () => run.render(120) },
   );
   releaseStart?.();
   await new Promise((resolve) => setTimeout(resolve, 40));
@@ -655,7 +575,7 @@ async function main() {
   });
   await waitFor(
     () => /Experiment finished/.test(run.render(120)),
-    () => run.render(120),
+    { frame: () => run.render(120) },
   );
   await push("20-result", 120, run.render(120), "结果留在画布");
   runApp.handleInput("/");
@@ -675,7 +595,7 @@ async function main() {
   enterCommand(errApp, "/intake");
   await waitFor(
     () => /ENOTDIR|not a directory|Error/i.test(err.render(120)),
-    () => err.render(120),
+    { frame: () => err.render(120) },
   );
   await push("22-error", 120, err.render(120), "错误卡片");
 

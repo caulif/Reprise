@@ -1,4 +1,4 @@
-Reprise   Replay in progress · Codex   C:\Users\15893\Doc...
+Reprise   Replay in progress · Codex   C:\reprise
 00:00   round 1   * running
 ------------------------------------------------------------
  * To Codex   * Codex screen                                
@@ -17,6 +17,6 @@ Reprise   Replay in progress · Codex   C:\Users\15893\Doc...
 | public response line 5                                    
 | public response line 6                                    
 | ... +35 lines                                             
- > You cannot type to Codex here. Follow-ups are sent by the replay.
+ > You cannot type to Codex here. Follow-ups are sent by ...
 ------------------------------------------------------------
  [Up/Dn] Select  [f] One side  [Ctrl+C] Stop

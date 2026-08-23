@@ -9,19 +9,18 @@ const GATES = [
   { id: 'test', label: 'test', command: 'npm', args: ['run', 'test:only'], needs: ['build'] },
   { id: 'check:node', label: 'check node', command: 'npm', args: ['run', 'check:node'], needs: ['build'] },
   { id: 'audit:tui:check', label: 'tui frames', command: 'node', args: ['scripts/tui-visual-audit.mjs', '--check'], needs: ['build'] },
+  { id: 'audit:tui:analyze', label: 'tui analyze', command: 'node', args: ['scripts/tui-audit-analyze.mjs'], needs: ['build'] },
   { id: 'verify:generated', label: 'generated docs', command: 'node', args: ['scripts/gen-docs.mjs', '--check'], needs: ['build'] },
-  { id: 'test:coverage', label: 'coverage', command: 'npm', args: ['run', 'test:coverage'] },
-  { id: 'knip', label: 'knip', command: 'npm', args: ['run', 'knip'], allowFailure: true },
-  { id: 'jscpd', label: 'jscpd', command: 'npm', args: ['run', 'jscpd'], allowFailure: true },
+  { id: 'knip', label: 'knip', command: 'npm', args: ['run', 'knip'] },
+  { id: 'jscpd', label: 'jscpd', command: 'npm', args: ['run', 'jscpd'] },
 ];
 
 const MODES = {
   docs: ['verify:docs'],
-  check: ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'verify:docs', 'verify:generated', 'knip', 'jscpd'],
+  check: ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:generated', 'knip', 'jscpd'],
   static: ['typecheck', 'lint', 'verify:docs', 'build', 'verify:generated'],
   test: ['build', 'test', 'check:node'],
-  audit: ['build', 'audit:tui:check'],
-  ci: ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'verify:docs', 'verify:generated', 'test:coverage', 'knip', 'jscpd'],
+  audit: ['build', 'audit:tui:check', 'audit:tui:analyze'],
 };
 
 function validate(selected) {

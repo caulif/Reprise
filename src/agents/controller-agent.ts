@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
 import { EvidenceRefSchema, type CandidateRunState, type TaskCase } from '../core/schema.js';
 import { AgentSessionHost, PiAgentHost, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/pi-agent-host.js';
 
@@ -21,6 +22,8 @@ export type ControllerDecision = Static<typeof ControllerDecisionSchema>;
 export type HistoricalUserTurn = { readonly id: string; readonly text: string };
 
 export type SteeringContext = {
+  /** Host-generated identifier for this one decision request. */
+  requestId: string;
   runId: string;
   runState: CandidateRunState;
   task: Pick<TaskCase, 'initialInput' | 'baseline' | 'privacy'> & {
@@ -28,6 +31,8 @@ export type SteeringContext = {
   };
   current: { summary: string; evidenceRefs: readonly string[] };
   trajectory: { summary: string; evidenceRefs: readonly string[] };
+  /** Host-owned refs with run ownership for this request only. */
+  evidenceCatalog: readonly { ref: string; runId: string; source: 'initial' | 'tool' }[];
   budget: { decisionsUsed: number; decisionsLimit: number };
   replay?: {
     sourceRootKind: SourceRootKind;
@@ -76,7 +81,7 @@ export const CONTROLLER_SYSTEM_PROMPT = [
   '',
   '# Deciding',
   'Work through these in order:',
-  '1. Goal already satisfied with sufficient evidence — not just a completion claim? The bar is the quality the user already accepted in task.baseline.finalMessage (kinds of deliverables, organization, checks they treated as done), not "the current directory now contains something." A different path or folder name is allowed. A shallower result than that accepted quality is not satisfied: send/verify or send/correct. Never require writing back to the original absolute user path. If replay.sourceRootKind is historical_start, leftover files are the pre-task tree, not the accepted result — the candidate must produce that quality in this replica. If replay.sourceRootKind is stand_in, do not treat a new folder in an empty replica as matching accepted baseline quality. done/satisfied.',
+  '1. Goal already satisfied with sufficient evidence — not just a completion claim? The bar is the quality the user already accepted in task.baseline.finalMessage (kinds of deliverables, organization, checks they treated as done), not "the current directory now contains something." A different path or folder name is allowed. A shallower result than that accepted quality is not satisfied: send/verify or send/correct. Never require writing back to the original absolute user path. If replay.sourceRootKind is historical_start, leftover files are the pre-task tree, not the accepted result — the candidate must produce that quality in this replica. If replay.sourceRootKind is stand_in, do not treat a new folder in an empty replica as matching accepted baseline quality. When every acceptance criterion is directly supported by current trustworthy evidence, the candidate state agrees with that evidence, and there is no unresolved conflict, blocker, or pending high-impact user decision, return done/satisfied immediately; do not send a message merely for formal re-confirmation. An evidence ref alone is not sufficient when its supporting fact is not visible in current or observed context. Otherwise, send/verify or send/correct.',
   '2. Continuing would require an authority or approval decision the historical user never granted (releases, deletions, payments, credentials, irreversible external effects)? done/requires_real_user_decision.',
   '3. Candidate stuck in a way no ordinary user message can fix — hard refusal it will not revisit, a permission wall the user could not lift, or a repeated no-progress loop? done/blocked. A single failed command, one refusal, or a clarifying question is not blocked: if a normal user reply could unstick it, send that reply instead.',
   '4. Candidate genuinely deviated from the goal, scope, or stated preferences? send/correct. A different-but-valid approach is not deviation.',
@@ -106,11 +111,33 @@ const OUTPUT_CONTRACT = [
   'Optional on either: "rationale": string, "evidenceRefs": ["event:..."]',
 ].join('\n');
 
+const MAX_CONTROLLER_MESSAGE_BYTES = 65_536;
+const DISALLOWED_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+
+function ownedToolRefs(runId: string, details: unknown): string[] {
+  if (!details || typeof details !== 'object') return [];
+  const record = details as { runId?: unknown; evidenceRefs?: unknown };
+  if (record.runId !== runId || !Array.isArray(record.evidenceRefs)) return [];
+  return record.evidenceRefs.filter((ref): ref is string => typeof ref === 'string' && Value.Check(EvidenceRefSchema, ref));
+}
+
+function validateControllerDecision(decision: ControllerDecision, available: ReadonlySet<string>): string | undefined {
+  if (!Value.Check(ControllerDecisionSchema, decision)) return 'schema validation failed';
+  if (decision.evidenceRefs?.some((ref) => !available.has(ref))) return 'unknown evidence reference';
+  if (decision.type !== 'send') return undefined;
+  if (!decision.message.trim()) return 'message must not be blank';
+  if (Buffer.byteLength(decision.message) > MAX_CONTROLLER_MESSAGE_BYTES) return `message exceeds ${MAX_CONTROLLER_MESSAGE_BYTES} bytes`;
+  return DISALLOWED_CONTROL.test(decision.message) ? 'message contains a disallowed control character' : undefined;
+}
+
 export class ControllerAgent implements ControllerPort {
   readonly #host: PiAgentHost;
   readonly #timeoutMs: number;
   readonly #maxRepairAttempts: number;
   readonly #sessions = new Map<string, Promise<AgentSessionHost>>();
+  readonly #requests = new Map<string, Promise<AgentInvocation<ControllerDecision>>>();
+  readonly #inflight = new Map<string, string>();
+  readonly #toolCallbacks = new Map<string, (result: { content: string; details?: unknown }) => Promise<void>>();
 
   constructor(input: { host: PiAgentHost; timeoutMs: number; maxRepairAttempts: number }) {
     this.#host = input.host;
@@ -120,10 +147,27 @@ export class ControllerAgent implements ControllerPort {
 
   async decide(context: SteeringContext, tools: readonly AgentToolDefinition[] = []): Promise<AgentInvocation<ControllerDecision>> {
     if (context.runState !== 'awaiting_controller') throw new Error('Controller can only decide while CandidateRun awaits controller input.');
-    const available = new Set([...context.current.evidenceRefs, ...context.trajectory.evidenceRefs]);
+    if (this.#requests.has(context.runId)) throw new Error(`Controller request already in flight for run ${context.runId}.`);
+    const catalog = new Set(context.evidenceCatalog.filter((entry) => entry.runId === context.runId).map((entry) => entry.ref));
+    this.#toolCallbacks.set(context.runId, async (result) => {
+      for (const tool of tools) await tool.onCompleted?.(result);
+      for (const ref of ownedToolRefs(context.runId, result.details)) catalog.add(ref);
+    });
+    this.#inflight.set(context.runId, context.requestId);
+    const request = this.#decide(context, tools, catalog);
+    this.#requests.set(context.runId, request);
+    try {
+      return await request;
+    } finally {
+      if (this.#requests.get(context.runId) === request) this.#requests.delete(context.runId);
+      if (this.#inflight.get(context.runId) === context.requestId) this.#inflight.delete(context.runId);
+    }
+  }
+
+  async #decide(context: SteeringContext, tools: readonly AgentToolDefinition[], available: Set<string>): Promise<AgentInvocation<ControllerDecision>> {
     let pending = this.#sessions.get(context.runId);
     if (!pending) {
-      pending = this.#host.createSession({ role: 'controller', systemPrompt: CONTROLLER_SYSTEM_PROMPT, allowModelText: context.task.privacy.allowModelText, tools });
+      pending = this.#host.createSession({ role: 'controller', systemPrompt: CONTROLLER_SYSTEM_PROMPT, allowModelText: context.task.privacy.allowModelText, tools: tools.map((tool) => ({ ...tool, onCompleted: async (result) => { await this.#toolCallbacks.get(context.runId)?.(result); } })) });
       this.#sessions.set(context.runId, pending);
     }
     let session: AgentSessionHost;
@@ -133,23 +177,34 @@ export class ControllerAgent implements ControllerPort {
       if (this.#sessions.get(context.runId) === pending) this.#sessions.delete(context.runId);
       throw error;
     }
-    const request = {
+    const result = await session.request<ControllerDecision>({
       context, schema: ControllerDecisionSchema, timeoutMs: this.#timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
-      outputContract: OUTPUT_CONTRACT,
-      validate: (decision: ControllerDecision) => decision.type === 'send' && decision.evidenceRefs?.some((ref) => !available.has(ref)) ? 'unknown evidence reference' : undefined,
-    };
-    const result = await session.request<ControllerDecision>(request);
+      outputContract: OUTPUT_CONTRACT, requestId: context.requestId,
+      validate: (decision) => validateControllerDecision(decision, available),
+    });
     if (result.status === 'failed' && this.#sessions.get(context.runId) === pending) this.#sessions.delete(context.runId);
     return result;
   }
 
   async cancel(runId: string, factRef?: string): Promise<void> {
+    const requestId = this.#inflight.get(runId);
     const session = this.#sessions.get(runId);
-    if (session) await (await session).cancel(factRef);
+    if (session) {
+      try {
+        await (await session).cancel(factRef, requestId);
+      } catch {
+        // Session creation failed; the in-flight decide already surfaces that error.
+      }
+    }
     this.#sessions.delete(runId);
+    this.#toolCallbacks.delete(runId);
   }
 
   release(runId: string): void {
     this.#sessions.delete(runId);
+    this.#requests.delete(runId);
+    this.#inflight.delete(runId);
+    this.#toolCallbacks.delete(runId);
   }
 }
+

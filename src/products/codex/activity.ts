@@ -54,7 +54,7 @@ export const codexActivityTranslator: TargetActivityTranslator = {
   },
 };
 
-export function inspectCodexRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
+function inspectCodexRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
   const completed = events.filter((event) => event.type === 'codex.item_completed');
   const targetItems = completed.map((event) => record(event.payload).item).filter(isRecord);
   const finalMessage = targetItems

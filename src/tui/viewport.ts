@@ -1,9 +1,9 @@
 export type Viewport = { readonly width: number; readonly height?: number };
 
-export const HEADER_ROWS = 2;
+const HEADER_ROWS = 2;
 export const FOOTER_ROWS = 2;
 /** Below this the chrome is trimmed to one row each so the body keeps a usable share of the viewport. */
-export const SHORT_VIEWPORT_ROWS = 16;
+const SHORT_VIEWPORT_ROWS = 16;
 /** Below this no layout leaves room for content, so the workbench asks for a resize instead. */
 export const MIN_VIEWPORT_ROWS = 8;
 

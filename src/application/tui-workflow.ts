@@ -10,7 +10,6 @@ import type { ProductPack } from '../products/contract.js';
 import { findProductPack } from '../products/index.js';
 import type { SourceRootKind } from './replay-conditions.js';
 
-export const DEFAULT_CANDIDATE: CandidateSpec = { candidateId: 'codex-luna-high', productId: 'codex', requestedModel: 'gpt-5.6-luna' };
 /** Last-resort safety valve. Completion is a Controller decision, not these numbers. */
 export const TUI_RUN_POLICY: RunPolicy = {
   wallClockMs: 24 * 60 * 60_000,
@@ -25,7 +24,7 @@ type ExperimentRequest = { taskCase: TaskCase; sourceRoot: string; sourceRootKin
 type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'experimentId' | 'runId'> & { onEvent?: (event: EventEnvelope) => void };
 
 export type CodexTuiWorkflow = {
-  readonly candidate: CandidateSpec;
+  readonly candidate?: CandidateSpec;
   readonly policy: RunPolicy;
   preflight(input: Omit<ExperimentRequest, 'onEvent' | 'preResolvedBaseline'>): Promise<CodexExperimentPreflight>;
   recover(input: RecoveryRequest): Promise<RecoveryAttempt>;
@@ -33,16 +32,16 @@ export type CodexTuiWorkflow = {
 };
 
 /** One experiment composition root shared by the interactive TUI and explicit protocol smoke. */
-export function createCodexExperimentWorkflow(input: { dataDir: string; runtime: RuntimePort; pack?: ProductPack; agents: () => Promise<HarnessAgents>; now: () => string; defaults?: ExperimentDefaults }): CodexTuiWorkflow {
-  const fallbackPack = input.pack ?? findProductPack(input.runtime.id);
-  const { candidate, policy } = input.defaults ?? { candidate: fallbackPack.defaultCandidate(), policy: TUI_RUN_POLICY };
+export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?: RuntimePort; pack?: ProductPack; agents: () => Promise<HarnessAgents>; now: () => string; defaults?: ExperimentDefaults }): CodexTuiWorkflow {
+  const candidate = input.defaults?.candidate;
+  const policy = input.defaults?.policy ?? TUI_RUN_POLICY;
   const resolve = (taskCase: TaskCase) => {
     const pack = findProductPack(taskCase.source.productId);
-    const selected = candidate.productId === pack.manifest.productId ? candidate : pack.defaultCandidate();
+    const selected = candidate?.productId === pack.manifest.productId ? candidate : pack.defaultCandidate();
     return { pack, candidate: selected, runtime: pack.runtime };
   };
   return {
-    candidate,
+    ...(candidate ? { candidate } : {}),
     policy,
     preflight: ({ taskCase, sourceRoot }) => {
       const selected = resolve(taskCase);
@@ -73,7 +72,7 @@ export function createCodexExperimentWorkflow(input: { dataDir: string; runtime:
 }
 
 /** Creates the production TUI bridge. Selecting a session, or `/run` on a current TaskCase, starts the isolated experiment. */
-export function createCodexTuiWorkflow(input: { dataDir: string; runtime: RuntimePort; pack?: ProductPack; now: () => string }): CodexTuiWorkflow {
+export function createCodexTuiWorkflow(input: { dataDir: string; runtime?: RuntimePort; pack?: ProductPack; now: () => string }): CodexTuiWorkflow {
   let validated: { key: string; agents: HarnessAgents } | undefined;
   return createCodexExperimentWorkflow({
     ...input,

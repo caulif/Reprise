@@ -1,17 +1,18 @@
-import { mkdir, mkdtemp, writeFile, rm, readFile, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CodexIntakeTui } from '../dist/src/tui/intake-app.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
+import { compareFrames, mockTui, pageHtml, selfTestCompareFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
 Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
 process.env.TERM = process.env.TERM && process.env.TERM !== 'dumb' ? process.env.TERM : 'xterm-256color';
 process.env.FORCE_COLOR = '0';
 delete process.env.NO_COLOR;
 
-/** Must match the cwd baked into docs/tui-audit/frames so Linux CI truncates the same way. */
-const DISPLAY_CWD = 'C:\\Users\\15893\\Documents\\model-test\\Reprise';
+/** Neutral Windows cwd so frames do not bake in a developer home directory. */
+const DISPLAY_CWD = 'C:\\reprise';
 
 const checkMode = process.argv.includes('--check');
 const outDir = join(process.cwd(), 'docs', 'tui-audit');
@@ -20,63 +21,6 @@ const generatedRoot = checkMode ? await mkdtemp(join(tmpdir(), 'reprise-tui-chec
 const framesDir = checkMode ? join(generatedRoot, 'frames') : join(outDir, 'frames');
 const htmlDir = checkMode ? join(generatedRoot, 'html') : join(outDir, 'html');
 let stabilize = (text) => text;
-
-function toLf(text) {
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
-function firstLineDiff(expected, actual) {
-  const left = expected.split('\n');
-  const right = actual.split('\n');
-  const count = Math.max(left.length, right.length);
-  for (let index = 0; index < count; index += 1) {
-    if (left[index] !== right[index]) {
-      return { line: index + 1, expected: left[index], actual: right[index] };
-    }
-  }
-  return undefined;
-}
-
-async function compareFrames(generated, baseline) {
-  const generatedFiles = new Set((await readdir(generated)).filter((name) => name.endsWith('.txt')).sort());
-  const baselineFiles = new Set((await readdir(baseline)).filter((name) => name.endsWith('.txt')).sort());
-  const stale = [];
-  for (const name of baselineFiles) {
-    if (!generatedFiles.has(name)) stale.push(`missing generated frame: ${name}`);
-  }
-  for (const name of generatedFiles) {
-    if (!baselineFiles.has(name)) stale.push(`unexpected generated frame: ${name}`);
-  }
-  for (const name of generatedFiles) {
-    if (!baselineFiles.has(name)) continue;
-    const expected = toLf(await readFile(join(baseline, name), 'utf8'));
-    const actual = toLf(await readFile(join(generated, name), 'utf8'));
-    if (expected === actual) continue;
-    const diff = firstLineDiff(expected, actual);
-    stale.push(diff
-      ? `${name} line ${diff.line}\n  baseline ${JSON.stringify(diff.expected)}\n  generated ${JSON.stringify(diff.actual)}`
-      : `${name} differs`);
-  }
-  if (!stale.length) return;
-  throw new Error(`TUI frames are stale.\n${stale.join('\n')}\n运行 npm run audit:tui 并提交 docs/tui-audit/frames/`);
-}
-
-function mockTui(rows) {
-  let document;
-  const tui = {
-    terminal: rows ? { rows, columns: 120 } : undefined,
-    addChild(component) { document = component; },
-    addInputListener() { return () => {}; },
-    start() {},
-    stop() {},
-    requestRender() {},
-    renderNow() {},
-  };
-  return {
-    tui: tui,
-    render(width = 120) { return document?.render(width).join('\n') ?? ''; },
-  };
-}
 
 function enterCommand(app, command) {
   app.handleInput(command);
@@ -89,82 +33,12 @@ function replaceField(app, value) {
   app.handleInput('\r');
 }
 
-async function waitFor(condition, describe = 'expected state') {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    if (condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`TUI did not reach ${describe}.`);
-}
-
-function ansiToHtml(text) {
-  const withLinks = text.replace(/\u001b\]8;;([^\u001b]*)\u001b\\([\s\S]*?)\u001b\]8;;\u001b\\/g, (_, url, body) => {
-    const href = String(url).replaceAll('&', '&amp;').replaceAll('"', '&quot;');
-    return `\x00A${href}\x00B${body}\x00C`;
-  });
-  const escaped = withLinks
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
-  const colors = {
-    '1': 'font-weight:700',
-    '2': 'opacity:.65',
-    '31': 'color:#f87171',
-    '32': 'color:#4ade80',
-    '33': 'color:#facc15',
-    '34': 'color:#60a5fa',
-    '35': 'color:#e879f9',
-    '36': 'color:#22d3ee',
-    '36;1': 'color:#22d3ee;font-weight:700',
-  };
-  return escaped.replace(/\u001b\[([0-9;]+)m([\s\S]*?)\u001b\[0m/g, (_, code, body) => {
-    const style = colors[code] ?? '';
-    return style ? `<span style="${style}">${body}</span>` : body;
-  }).replace(/\u001b\[[0-9;]*m/g, '').replace(/\x00A([^\x00]*)\x00B([\s\S]*?)\x00C/g, (_, href, body) => (
-    `<a href="${href}" style="color:#67e8f9;text-decoration:underline">${body}</a>`
-  ));
-}
-
-function pageHtml(title, width, frame) {
-  const lines = frame.split('\n');
-  return `<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>${title}</title>
-<style>
-  html, body { margin: 0; background: #0b1220; color: #e5e7eb; }
-  .wrap { padding: 16px 20px 24px; }
-  h1 { font: 600 14px/1.4 ui-sans-serif, system-ui; color: #93c5fd; margin: 0 0 12px; }
-  pre {
-    margin: 0; padding: 12px 14px; background: #111827; border: 1px solid #1f2937;
-    border-radius: 8px; font: 13px/1.35 "Cascadia Mono", "Sarasa Mono SC", Consolas, monospace;
-    white-space: pre; overflow: auto; min-width: ${Math.max(40, width)}ch;
-  }
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>${title} · ${width} cols · ${lines.length} rows</h1>
-    <pre>${ansiToHtml(frame)}</pre>
-  </div>
-</body>
-</html>`;
-}
-
 async function capture(name, width, frame) {
   const normalized = toLf(stabilize(frame));
   await writeFile(join(framesDir, `${name}.txt`), normalized, 'utf8');
   await writeFile(join(htmlDir, `${name}.html`), toLf(pageHtml(name, width, frame)), 'utf8');
   const issues = [];
   const lines = frame.split('\n');
-  if (width >= 78) {
-    const tops = lines.filter((line) => line.includes('┌'));
-    const bottoms = lines.filter((line) => line.includes('└'));
-    if (tops.length && bottoms.length && tops[0] && bottoms[0]) {
-      // length is UTF-16; visual check is still useful for ASCII titles
-    }
-  }
   if (width < 78 && width >= 32 && /[┌┐└┘│─❯●✓…]/.test(frame)) {
     issues.push('compact frame still contains wide glyphs');
   }
@@ -194,6 +68,7 @@ async function main() {
     const posix = root.replaceAll('\\', '/');
     const win = root.replaceAll('/', '\\');
     const cwd = process.cwd();
+    const home = homedir();
     return text
       .replace(/\u001b\[[0-9;]*m/g, '')
       .split(pathToFileURL(root).href).join('file:///TMP')
@@ -201,6 +76,8 @@ async function main() {
       .split(posix).join('TMP')
       .split(cwd.replaceAll('/', '\\')).join(DISPLAY_CWD)
       .split(cwd.replaceAll('\\', '/')).join(DISPLAY_CWD)
+      .split(home.replaceAll('/', '\\')).join('C:\\user')
+      .split(home.replaceAll('\\', '/')).join('C:/user')
       .replace(/reprise-tui-audit-[A-Za-z0-9]+/g, 'reprise-tui-audit-TMP');
   };
   await saveHarnessModelConfig(join(root, 'data'), defaultHarnessModelConfig());
@@ -219,6 +96,13 @@ async function main() {
     JSON.stringify({ timestamp: '2026-08-10T21:40:03.000Z', type: 'event_msg', payload: { type: 'task_complete' } }),
   ].join('\n') + '\n');
 
+  const claudeSessionId = '22222222-3333-4444-8555-666666666666';
+  const claudeProject = join(claudeSessionsRoot, 'C--claude-audit');
+  await mkdir(claudeProject, { recursive: true });
+  await writeFile(join(claudeProject, `${claudeSessionId}.jsonl`), [
+    JSON.stringify({ type: 'user', sessionId: claudeSessionId, timestamp: '2026-08-11T00:00:00.000Z', cwd: 'C:/claude-audit', message: { role: 'user', content: 'Review the product intake flow.' } }),
+    JSON.stringify({ type: 'assistant', sessionId: claudeSessionId, timestamp: '2026-08-11T00:00:01.000Z', cwd: 'C:/claude-audit', message: { role: 'assistant', model: 'claude-audit', content: [{ type: 'text', text: 'Reviewed the flow.' }], stop_reason: 'end_turn' } }),
+  ].join('\n') + '\n');
   const captures = [];
   const push = async (name, width, frame) => {
     captures.push(await capture(name, width, frame));
@@ -295,14 +179,29 @@ async function main() {
   if (previousOpenAiKey !== undefined) process.env.OPENAI_API_KEY = previousOpenAiKey;
 
   const intake = mockTui();
+  const intakeNow = '2026-08-11T00:10:00.000Z';
+  const intakeRenderNow = '2026-08-15T00:10:00.000Z';
   const intakeApp = new CodexIntakeTui(tuiOptions(join(root, 'data'), {
-    tui: intake.tui, now: () => '2026-08-11T00:10:00.000Z',
+    tui: intake.tui, now: () => intakeNow, nowMs: () => Date.parse(intakeRenderNow),
   }));
   await intakeApp.start();
   enterCommand(intakeApp, '/intake');
-  await waitFor(() => /Choose a project/.test(intake.render(120)), 'project list');
-  await push('08c-projects-wide', 120, intake.render(120));
-  await push('08d-projects-compact', 60, intake.render(60));
+  await waitFor(() => /Select agent product/.test(intake.render(120)), 'product list');
+  await push('08c-products-wide', 120, intake.render(120));
+  await push('08d-products-compact', 60, intake.render(60));
+  intakeApp.handleInput('\u001b[B');
+  intakeApp.handleInput('\r');
+  await waitFor(() => /Choose a project/.test(intake.render(120)), 'Claude project list');
+  await push('08e-claude-projects-wide', 120, intake.render(120));
+  intakeApp.handleInput('\r');
+  await waitFor(() => /Review the product intake flow/.test(intake.render(120)), 'Claude session list');
+  await push('08f-claude-sessions-wide', 120, intake.render(120));
+  intakeApp.handleInput('\b');
+  intakeApp.handleInput('\b');
+  await waitFor(() => /Select agent product/.test(intake.render(120)), 'product list after Claude');
+  intakeApp.handleInput('\u001b[A');
+  intakeApp.handleInput('\r');
+  await waitFor(() => /Choose a project/.test(intake.render(120)), 'Codex project list');
   intakeApp.handleInput('\u001b[B');
   intakeApp.handleInput('\r');
   await waitFor(() => /Choose a historical session/.test(intake.render(120)), 'CJK session list');
@@ -313,6 +212,8 @@ async function main() {
   await waitFor(() => /is current/.test(intake.render(120)), 'home after CJK freeze');
   await push('12-home-after-cjk-freeze', 120, intake.render(120));
   enterCommand(intakeApp, '/intake');
+  await waitFor(() => /Select agent product/.test(intake.render(120)), 'product list after freeze');
+  intakeApp.handleInput('\r');
   await waitFor(() => /Choose a historical session|Choose a project/.test(intake.render(120)), 'intake after freeze');
   if (/Choose a historical session/.test(intake.render(120))) intakeApp.handleInput('\u001b');
   await waitFor(() => /Choose a project/.test(intake.render(120)), 'project list after freeze');
@@ -367,6 +268,7 @@ async function main() {
 
   const fullPublicResponse = `${Array.from({ length: 40 }, (_, index) => `public response line ${index + 1}`).join('\n')}\nPUBLIC_DETAIL_END`;
   let releasePreflight;
+  let releaseRecovery;
   let releaseCopy;
   let releaseStart;
   let resolveResult;
@@ -383,6 +285,14 @@ async function main() {
         workspace: { fileCount: 111, totalBytes: Math.round(66.4 * 1024 * 1024), largestFileBytes: 1024, blockedReasons: [] },
       };
     },
+    recover: async () => {
+      await new Promise((resolve) => { releaseRecovery = resolve; });
+      return {
+        baseline: { match: 'recovered', warnings: [] },
+        staging: { recoveryId: 'audit-recovery' },
+        provider: { discardRecovery: async () => {} },
+      };
+    },
     start: async (input) => {
       await new Promise((resolve) => { releaseCopy = resolve; });
       input.onEvent({ schemaVersion: 1, sequence: 1, eventId: 'event-1', occurredAt: '2026-08-11T00:10:00.000Z', type: 'run.state_changed', payload: { to: 'launching' }, checksum: 'a'.repeat(64) });
@@ -395,7 +305,7 @@ async function main() {
           item: {
             type: 'commandExecution',
             command: '"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe" -Command "Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name"',
-            status: 'completed', cwd: 'C:\\\\Users\\\\15893\\\\Documents\\\\model-test\\\\Reprise', exitCode: 0, durationMs: 476,
+            status: 'completed', cwd: 'C:\\\\reprise', exitCode: 0, durationMs: 476,
             aggregatedOutput: ['Mode  Length LastWriteTime         Name', '----  ------ -------------         ----', ...Array.from({ length: 24 }, (_, index) => `-a--- ${String(1200 + index).padStart(6)} 8/13/2026 12:00:00 AM  file-${index + 1}.txt`)].join('\n'),
           },
         },
@@ -412,6 +322,8 @@ async function main() {
   }));
   await runApp.start();
   enterCommand(runApp, '/intake');
+  await waitFor(() => /Select agent product/.test(run.render(120)), 'run product list');
+  runApp.handleInput('\r');
   await waitFor(() => /Choose a project/.test(run.render(120)), 'run project list');
   runApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(run.render(120)), 'run session list');
@@ -420,12 +332,17 @@ async function main() {
   await push('19-running-check', 120, run.render(120));
   await push('19b-running-check-compact', 60, run.render(60));
   releasePreflight?.();
-  await waitFor(() => /Copy isolated|Preparing replay|To Codex/.test(run.render(120)), 'auto start after preflight');
+  await waitFor(() => /Preparing replay/.test(run.render(120)), 'automatic environment preparation after preflight');
   await push('20-running-copy', 120, run.render(120));
-  releaseCopy?.();
-  await waitFor(() => /To Codex|Codex/.test(run.render(120)));
+  releaseRecovery?.();
+  await waitFor(() => /Start isolated Codex Candidate/.test(run.render(120)), 'single run confirmation after preparation');
+  runApp.handleInput('\r');
+  await waitFor(() => /Copying isolated workspace/.test(run.render(120)), 'candidate preparation after confirmation');
   await push('21-running-start', 120, run.render(120));
+  releaseCopy?.();
+  await waitFor(() => Boolean(releaseStart), 'candidate start handle');
   releaseStart?.();
+  await waitFor(() => /Replay in progress/.test(run.render(120)), 'candidate replay after preparation');
   await new Promise((resolve) => setTimeout(resolve, 40));
   await push('22-running-wide', 120, run.render(120));
   runApp.handleInput('\u001b[A');
@@ -463,8 +380,10 @@ async function main() {
   }));
   await errApp.start();
   enterCommand(errApp, '/intake');
+  await waitFor(() => /Select agent product/.test(err.render(120)));
+  errApp.handleInput('\r');
   await waitFor(() => /ENOTDIR|not a directory|Error/i.test(err.render(120)));
-  await push('27-error', 120, err.render(120));
+  await push('27-product-discovery-error', 120, err.render(120));
 
   const clipped = mockTui(24);
   const clippedApp = new CodexIntakeTui(tuiOptions(join(root, 'data'), {
@@ -490,7 +409,10 @@ ${captures.map((item) => `<li><a href="html/${item.name}.html">${item.name}</a> 
   for (const item of captures) {
     if (item.issues.length) console.log(`issue ${item.name}: ${item.issues.join('; ')}`);
   }
-  if (checkMode) await compareFrames(framesDir, baselineDir);
+  if (checkMode) {
+    await selfTestCompareFrames();
+    await compareFrames(framesDir, baselineDir);
+  }
   await rm(root, { recursive: true, force: true });
   if (checkMode) await rm(generatedRoot, { recursive: true, force: true });
 }

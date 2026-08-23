@@ -118,7 +118,7 @@ Runtime 的 CLI 兼容性不建立独立的运行前验证产品。Claude Code�
 - target turns、Controller 消息和停止原因；
 - 当前执行 Runtime 的可观察事实与实验内漂移 warning，以及 Environment 和外部状态的匹配或未知项。
 
-任务结果不设统一分数。产品无关的 Comparison Agent 只根据历史任务、原始结果、候选结果、artifact 和客观遥测，选择适合并排查看的文件、diff、截图、命令输出、网页状态或其他证据，并说明为什么展示它们。Report Renderer 验证引用并生成报告；用户直接查看证据和最终产物，自行判断功能完成度、设计质量和实际可用性。具体契约见[Comparison 设计](../architecture/comparison.md)。
+任务结果不设统一分数。产品无关的 Comparison Agent 只根据历史任务、原始结果、候选结果、artifact 和客观遥测，选择适合并排查看的文件、diff、截图、命令输出、网页状态或其他证据，并说明为什么展示它们。Comparison Agent 直接生成报告；Host 只验证薄信封、证据归属和路径；用户直接查看证据和最终产物，自行判断功能完成度、设计质量和实际可用性。具体契约见[Comparison 设计](../architecture/comparison.md)。
 
 报告不得把 Agent 自述、已执行检查、Harness 观察和独立验证混成同一种证据。
 
@@ -152,6 +152,6 @@ Runtime 的 CLI 兼容性不建立独立的运行前验证产品。Claude Code�
 
 ## 13. 凭据
 
-只持久化 `env:NAME` 引用。密钥值不写入任何 Reprise 文件。Codex 凭据由用户本机登录态提供，Reprise 不读也不保存。
+模型服务 API 密钥可作为 `apiKey` 持久化在本机、Git 忽略的 `.reprise/harness-model.json` 中，或继续使用 `env:NAME` 引用；其角色等同于 Codex `auth.json` / Claude Code `.credentials.json` 的本地凭据。密钥值不得提交、打印、写入事件、artifact 或报告。Codex 凭据仍由用户本机登录态提供，Reprise 不读也不保存。
 
 系统架构、公共协议和生命周期以[架构总览](../architecture/overview.md)为唯一来源。

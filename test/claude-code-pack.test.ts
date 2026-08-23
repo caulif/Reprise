@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
 import { TaskCaseSchema, type EventEnvelope } from '../src/core/schema.js';
+import { resolvedRecoveryFacts } from '../src/infrastructure/recovery-tools.js';
 import type { TargetRunner } from '../src/core/runtime.js';
 import { isEligibleSession, type TargetActivity } from '../src/products/contract.js';
 import { freezeCase } from '../src/products/shared/freeze.js';
@@ -17,7 +18,8 @@ import {
   ClaudeCodeRuntimePort,
   clearClaudeCatalogCache,
 } from '../src/products/claude-code/runtime-port.js';
-import { importClaudeSession, discoverClaudeSessions } from '../src/products/claude-code/sessions.js';
+import { importClaudeSession, discoverClaudeSessions, claudeSessionAdapter, defaultClaudeSessionsRoot } from '../src/products/claude-code/sessions.js';
+import { validSessionTimestamp } from '../src/products/shared/session-files.js';
 import {
   assertClaudeSmokeAcceptanceRecord,
   checkClaudeSmokeGate,
@@ -136,6 +138,69 @@ test('Claude session import covers all observed row types and never reads sessio
   }), true);
 });
 
+test('session timestamp validation rejects calendar-invalid ISO values', () => {
+  assert.equal(validSessionTimestamp('2026-02-29T00:00:00.000Z'), undefined);
+  assert.equal(validSessionTimestamp('2026-02-30T00:00:00.000Z'), undefined);
+  assert.equal(validSessionTimestamp('2026-08-14T01:02:03.000Z'), '2026-08-14T01:02:03.000Z');
+});
+
+test('Claude discovery ignores untimestamped metadata rows instead of fabricating an epoch start time', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-claude-discovery-timestamp-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const cwd = join(root, 'project');
+  await writeSession(root, SESSION_ID, cwd, [
+    { type: 'mode', sessionId: SESSION_ID, cwd },
+    { type: 'user', sessionId: SESSION_ID, cwd, timestamp: '2026-08-14T01:02:03.000Z', message: { role: 'user', content: 'Fix the timestamp.' } },
+    { type: 'assistant', sessionId: SESSION_ID, cwd, timestamp: '2026-08-14T01:02:04.000Z', message: { role: 'assistant', content: [{ type: 'text', text: 'Fixed.' }], stop_reason: 'end_turn' } },
+  ]);
+
+  const [session] = await discoverClaudeSessions(root);
+  assert.equal(session?.startedAt, '2026-08-14T01:02:03.000Z');
+  assert.notEqual(session?.startedAt, new Date(0).toISOString());
+});
+
+test('Claude history-only sessions enter the same inspect, freeze, and recovery intake path', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-claude-history-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const sessionsRoot = join(root, 'projects');
+  await mkdir(join(sessionsRoot, 'C--demo'), { recursive: true });
+  const sessionId = SESSION_ID;
+  const historyOnlyId = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+  await writeFile(join(sessionsRoot, 'C--demo', 'renamed-transcript.jsonl'), fullSessionRows('C:\\demo').map((row) => JSON.stringify(row)).join('\n') + '\n');
+  await writeFile(join(root, 'history.jsonl'), [
+    { sessionId, display: 'This transcript wins over duplicate history.', project: 'C:\\demo', timestamp: 1 },
+    { sessionId: historyOnlyId, display: 'Repair the missing migration.', project: 'C:\\demo', timestamp: 2 },
+  ].map((row) => JSON.stringify(row)).join('\n') + '\n');
+
+  const page = await claudeSessionAdapter.discover({ root: sessionsRoot, limit: 50 });
+  assert.equal(page.items.length, 2);
+  assert.equal(page.items.filter((item) => item.sessionId === sessionId).length, 1);
+  const transcript = page.items.find((item) => item.sessionId === sessionId);
+  assert.ok(transcript);
+  assert.equal(transcript.evidenceLevel, 'transcript');
+  assert.match(transcript.sourcePath, /renamed-transcript\.jsonl$/);
+  const history = page.items.find((item) => item.sessionId === historyOnlyId);
+  assert.ok(history);
+  assert.equal(history.evidenceLevel, 'history');
+  assert.equal(history.signals.completedTurns, 0);
+  assert.equal(isEligibleSession(history), true);
+  assert.match(history.sourcePath, /#reprise-history=/);
+
+  const inspection = await claudeSessionAdapter.inspect({ productId: 'claude-code', sessionId: history.sessionId, sourcePath: history.sourcePath });
+  assert.equal(inspection.evidenceLevel, 'history');
+  assert.equal(inspection.transcript.length, 1);
+  const imported = await claudeSessionAdapter.import({ productId: 'claude-code', sessionId: history.sessionId, sourcePath: history.sourcePath });
+  assert.equal(imported.baseline.status, 'unavailable');
+  assert.deepEqual(imported.historicalEvents, []);
+  const frozen = await freezeCase(imported, join(root, 'cases'), { allowModelText: true, allowBinary: false, redactions: [] }, STARTED);
+  assert.equal(frozen.taskCase.evidenceLevel, 'history');
+  assert.equal(frozen.taskCase.transcript.length, 1);
+});
+
+test('Claude default root honors an explicit config directory without reading credentials', () => {
+  assert.equal(defaultClaudeSessionsRoot('C:\\Users\\demo\\.claude-alt'), 'C:\\Users\\demo\\.claude-alt\\projects');
+});
+
 test('Claude discovery skips Reprise-owned cwd and import rejects a session with no end_turn', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-claude-discover-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
@@ -174,6 +239,12 @@ test('Claude import freezes idempotently and redacts secrets through the shared 
   const second = await freezeCase(imported, join(root, 'cases'), { allowModelText: true, allowBinary: false, redactions: ['secret-token'] }, STARTED);
   assert.equal(second.reused, true);
   assert.equal(second.taskCase.caseId, first.taskCase.caseId);
+  const recoveryFacts = await resolvedRecoveryFacts(root, first.taskCase);
+  assert.equal(recoveryFacts.catalog.length, first.taskCase.transcript.length + first.taskCase.historicalEvents.length);
+  assert.ok(recoveryFacts.catalog.some((entry) => entry.source === 'transcript'));
+  assert.ok(recoveryFacts.catalog.some((entry) => entry.source === 'historical_events'));
+  assert.ok(recoveryFacts.evidenceRefs.some((ref) => ref.startsWith('event:transcript-')));
+  assert.ok(recoveryFacts.evidenceRefs.some((ref) => ref.startsWith('event:history-')));
 });
 
 test('Claude activity vocabulary maps built-in tools without exceeding the other-kind threshold', () => {

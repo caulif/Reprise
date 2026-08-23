@@ -77,9 +77,9 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchInspectionInput('t', true)?.action, 'toggle-model-text');
   assert.equal(dispatchInspectionInput('\r', true)?.action, 'freeze');
   assert.equal(dispatchInspectionInput('\r', false), undefined);
-  assert.equal(dispatchPreflightInput('2', true)?.action, 'recovery');
-  assert.equal(dispatchPreflightInput('2', false), undefined);
-  assert.equal(dispatchPreflightInput('\r', false)?.action, 'confirm');
+  assert.equal(dispatchPreflightInput('2'), undefined);
+  assert.equal(dispatchPreflightInput('\r'), undefined);
+  assert.equal(dispatchPreflightInput('b')?.action, 'source');
   assert.equal(dispatchConfirmInput('\r')?.action, 'run');
   assert.equal(dispatchConfirmInput('b')?.action, 'preflight');
   assert.equal(dispatchRunningKeys('d')?.action, 'toggle-detail');

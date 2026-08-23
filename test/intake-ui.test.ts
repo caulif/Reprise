@@ -25,6 +25,17 @@ test('sessions group by workspace basename and send missing cwd to 其他', () =
   assert.equal(projectLabel('C:\\Users\\example\\slides'), 'slides');
 });
 
+test('project grouping keeps products and unknown workspaces isolated', () => {
+  const grouped = groupSessionsByProject([
+    session('codex-session', 'C:\\work\\notes', '2026-08-13T01:00:00.000Z', 'Codex'),
+    { ...session('claude-session', 'C:\\work\\notes', '2026-08-13T02:00:00.000Z', 'Claude'), productId: 'claude-code' },
+    session('unknown-a', undefined, '2026-08-13T03:00:00.000Z', 'A'),
+    session('unknown-b', undefined, '2026-08-13T04:00:00.000Z', 'B'),
+  ]);
+  assert.deepEqual(grouped.map((item) => item.label).filter((label) => label.includes('work/notes')).sort(), ['claude-code · work/notes', 'codex · work/notes']);
+  assert.equal(grouped.filter((item) => item.label === 'Unknown project').length, 2);
+});
+
 test('intake search matches project name, path, time, and task text', () => {
   const item = session('id-1', 'C:\\Users\\example\\slides', '2026-08-13T07:19:57.610Z', 'Fix the three-column layout');
   assert.equal(matchesIntakeQuery(item, 'slides'), true);
@@ -110,3 +121,32 @@ function session(id: string, cwd: string | undefined, startedAt: string, summary
     signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
   };
 }
+
+test('project sessions use sourcePath as a deterministic time tie-breaker', () => {
+  const at = '2026-08-13T01:00:00.000Z';
+  const grouped = groupSessionsByProject([
+    { ...session('z', 'C:\\work\\notes', at, 'Z'), sourcePath: 'C:/sessions/z.jsonl', updatedAt: at },
+    { ...session('a', 'C:\\work\\notes', at, 'A'), sourcePath: 'C:/sessions/a.jsonl', updatedAt: at },
+  ]);
+  assert.deepEqual(grouped[0]?.sessions.map((item) => item.sourcePath), ['C:/sessions/a.jsonl', 'C:/sessions/z.jsonl']);
+});
+
+test('project grouping canonicalizes only absolute workspaces and never merges relative paths', () => {
+  const grouped = groupSessionsByProject([
+    session('absolute-a', 'C:\\work\\notes', '2026-08-13T01:00:00.000Z', 'Absolute A'),
+    session('absolute-b', 'c:/work/notes/', '2026-08-13T02:00:00.000Z', 'Absolute B'),
+    session('relative-a', 'work/notes', '2026-08-13T03:00:00.000Z', 'Relative A'),
+    session('relative-b', 'work/notes', '2026-08-13T04:00:00.000Z', 'Relative B'),
+  ]);
+  assert.equal(grouped.length, 3);
+  assert.equal(grouped.find((item) => item.sessions.some((entry) => entry.sessionId === 'absolute-a'))?.sessions.length, 2);
+  assert.equal(grouped.filter((item) => item.label === 'Unknown project').length, 2);
+});
+
+test('project grouping disambiguates duplicate workspace basenames with parent paths', () => {
+  const grouped = groupSessionsByProject([
+    session('alpha', 'C:/work/alpha/app', '2026-08-13T01:00:00.000Z', 'Alpha'),
+    session('beta', 'C:/work/beta/app', '2026-08-13T02:00:00.000Z', 'Beta'),
+  ]);
+  assert.deepEqual(grouped.map((project) => project.label).sort(), ['alpha/app', 'beta/app']);
+});

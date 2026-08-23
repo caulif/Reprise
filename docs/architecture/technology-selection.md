@@ -189,7 +189,7 @@ Runtime 下载不属于首版 Harness。自动下载会引入来源校验、许�
 
 ## 9. HTML 报告
 
-HTML 只投影安全渲染的 `comparison.md`、固定运行事实和 Harness-owned 证据入口；薄 `ComparisonEnvelope` 仅提供状态和引用。第一版由简单 TypeScript renderer 生成自包含静态 HTML：
+Comparison Agent 直接写入自包含的 `report.html`；Host 只持久化、校验薄信封并导航，不使用 Markdown renderer 或固定 HTML 模板：
 
 - 无前端框架、客户端状态管理和本地 server；
 - CSS 与必要脚本内联；

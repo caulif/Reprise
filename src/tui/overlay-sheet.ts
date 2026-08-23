@@ -5,7 +5,7 @@ export const OVERLAY_PAGES = new Set([
   'source', 'preflight', 'confirm',
 ]);
 
-export const OVERLAY_BACKGROUND_ROWS = 5;
+const OVERLAY_BACKGROUND_ROWS = 5;
 
 export function overlayChromeRows(background: readonly string[]): number {
   return Math.min(OVERLAY_BACKGROUND_ROWS, background.length) + 1;

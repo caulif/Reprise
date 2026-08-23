@@ -16,7 +16,7 @@ export type ReportSpawner = (
 ) => ReportProcess;
 
 /** Opens a local filesystem path with the operating system's default handler. */
-export async function openLocalPath(
+async function openLocalPath(
   target: string,
   start: ReportSpawner = spawn,
 ): Promise<void> {
@@ -78,8 +78,9 @@ export async function openScratchText(
 }
 
 export function assertExperimentReportPath(experimentRoot: string, reportPath: string): void {
-  const expected = resolve(experimentRoot, 'report.html');
-  if (resolve(reportPath) !== expected) throw new Error('Report path must be the report.html file in the selected experiment directory.');
+  const root = resolve(experimentRoot);
+  const allowed = new Set(['report.html', 'comparison-failure.html'].map((name) => resolve(root, name)));
+  if (!allowed.has(resolve(reportPath))) throw new Error('Report path must be report.html or comparison-failure.html in the selected experiment directory.');
 }
 
 export function assertExperimentTracePath(experimentRoot: string, runId: string): string {

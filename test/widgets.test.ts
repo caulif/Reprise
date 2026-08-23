@@ -301,7 +301,8 @@ test('running timeline names a missing state origin as created', () => {
     selected: 0, filter: 'ALL', following: true, cancelling: false,
     currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
   }).join('\n');
-  assert.match(text, /To Codex|Codex|Preparing replay/);
+  assert.match(text, /To Unknown agent|Unknown agent|Preparing replay/);
+  assert.doesNotMatch(text, /Codex/);
   assert.doesNotMatch(text, /State: \?/);
 });
 
@@ -457,6 +458,25 @@ test('regular density paints an intake preview beside the list', () => {
   assert.equal((text.match(/┌─/g) ?? []).length, 2);
 });
 
+test('intake lists honor their injected render clock', () => {
+  const theme = createTheme(90, false);
+  const startedAt = '2026-08-07T00:00:00.000Z';
+  const session = {
+    productId: 'codex', sessionId: 'session-clock', sourcePath: 'session-clock.jsonl', startedAt, cwd: 'C:/work/clock',
+    summary: 'Keep visual frames stable',
+    signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
+  };
+  const base = {
+    projects: [{ key: 'clock', label: 'clock', path: 'C:/work/clock', sessions: [session], latestAt: startedAt }],
+    sessions: [session], selected: 0, filterEligible: false, query: '', searching: false,
+    nowMs: Date.parse('2026-08-11T00:00:00.000Z'),
+  } as const;
+  const projects = renderSessions(theme, 90, { ...base, level: 'projects' }, 16).join('\n');
+  const sessions = renderSessions(theme, 90, { ...base, level: 'sessions' }, 16).join('\n');
+  assert.match(projects, /4d ago/);
+  assert.match(sessions, /4d ago/);
+});
+
 test('relative time follows the workbench locale', () => {
   const now = Date.parse('2026-08-14T12:00:00.000Z');
   assert.equal(relativeTime('2026-08-13T12:00:00.000Z', now, 'zh'), '昨天');
@@ -508,6 +528,31 @@ function isDivider(line: string): boolean {
   return /^[-─]{10,}$/.test(line.trim());
 }
 
+
+test('header names no default product before the user selects one', () => {
+  const text = renderWorkbench({
+    page: 'home', cwd: 'C:\\src', hasApiConfig: true, hasUsableAuth: true, hasTaskCase: false,
+    message: 'Welcome back.',
+    home: { taskCase: undefined, recentExperiment: undefined, hasApiConfig: true, hasUsableAuth: true, composer: '', showSuggestions: false },
+  }, 120).join('\n');
+  assert.match(text, /Agent unset/);
+  assert.doesNotMatch(text, /Codex/);
+});
+
+test('running timeline uses the selected product and has no Codex fallback', () => {
+  const theme = createTheme(120, false);
+  const base = {
+    entries: [], selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
+    currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+  };
+  const claude = renderTimeline(theme, 120, { ...base, productLabel: 'Claude Code' }).join('\n');
+  const unknown = renderTimeline(theme, 120, base).join('\n');
+  assert.match(claude, /To Claude Code/);
+  assert.doesNotMatch(claude, /Codex/);
+  assert.match(unknown, /To Unknown agent/);
+  assert.doesNotMatch(unknown, /Codex/);
+});
+
 test('header shows Harness env unset and does not send Next to /config', () => {
   const text = renderWorkbench({
     page: 'home',
@@ -517,7 +562,8 @@ test('header shows Harness env unset and does not send Next to /config', () => {
     hasApiConfig: true,
     hasUsableAuth: false,
     envName: 'OPENAI_API_KEY',
-    hasCodexLogin: true,
+    productLabel: 'Claude Code',
+    productConfigured: true,
     hasTaskCase: false,
     message: 'Welcome back.',
     home: {
@@ -527,15 +573,15 @@ test('header shows Harness env unset and does not send Next to /config', () => {
       hasUsableAuth: false,
       envName: 'OPENAI_API_KEY',
       envSet: false,
-      hasCodexLogin: true,
-      providerLabel: 'dzzzz-openai',
+        providerLabel: 'dzzzz-openai',
       modelId: 'gpt-5.6-terra',
       composer: '',
       showSuggestions: false,
     },
   }, 120).join('\n');
   assert.match(text, /Harness env unset/);
-  assert.match(text, /Codex/);
+  assert.match(text, /Claude Code/);
+  assert.doesNotMatch(text, /Codex/);
   assert.doesNotMatch(text, /API key missing/);
   assert.doesNotMatch(text, /API ready/);
   assert.match(text, /\/config|Endpoint, model/);
@@ -655,8 +701,12 @@ test('run confirmation presents request, billing, and source-copy boundaries', (
     effort: 'high',
     harnessModel: 'gpt-5',
     harnessAuthOk: true,
+    productLabel: 'Claude Code',
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
   }).join('\n');
+  assert.match(text, /Start isolated Claude Code Candidate[?]/);
+  assert.match(text, /isolated Claude Code/);
+  assert.doesNotMatch(text, /isolated Codex/);
   assert.match(text, /Maximum requests/);
   assert.match(text, /Network \/ billing/);
   assert.match(text, /isolated copy is not privacy sanitization/);
@@ -723,6 +773,27 @@ test('failed result shows the recorded failure instead of limitations copy', () 
   assert.match(text, /failed\.controller/);
   assert.match(text, /Controller: Model text is disallowed by TaskCase privacy policy/);
   assert.doesNotMatch(text, /Limitations|Single run|fingerprint differs/);
+});
+
+test('runtime failure identifies the selected product rather than Codex', () => {
+  const theme = createTheme(120, false);
+  const text = renderResult(theme, 120, {
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: {
+        termination: {
+          kind: 'failed', code: 'failed.runtime',
+          failure: { origin: 'runtime', code: 'runtime.invalid_json', message: 'invalid JSON', evidenceRefs: [] },
+        },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'failed' },
+    comparison: { result: { status: 'failed' } },
+  } as never, 'en', 'Claude Code').join('\n');
+  assert.match(text, /Claude Code: invalid JSON/);
+  assert.match(text, /not a Claude Code runtime crash/);
+  assert.doesNotMatch(text, /Codex/);
 });
 
 test('blocked result is a warning with controller reason and short paths', () => {

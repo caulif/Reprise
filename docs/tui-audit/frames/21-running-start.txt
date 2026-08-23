@@ -1,21 +1,15 @@
-Reprise   Replay in progress · Codex                                                         00:00   round 1   ● running
+Reprise   Preparing replay                                                                   00:00   round 1   ● running
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ● To Codex   ● Codex screen                                                                                            
  Task  Fix the bug.                                                                                                     
+ Will replay this task in Codex with the candidate model. Your original repo is left unchanged.                         
                                                                                                                         
-▎ To Codex · historical task                                                                                            
-▎ Fix the failing test.                                                                                                 
-▎ Run the focused test.                                                                                                 
+ [▓█████████████████░░░░░░░░░░░░░░░░░░]                                                                                 
+ Copying isolated workspace · step 2 / 4 · 111 files · 66.4 MiB                                                         
                                                                                                                         
-▎ Codex                                                                                                                 
-▎ $ Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name                                                         
-▎ public response line 1                                                                                                
-▎ public response line 2                                                                                                
-▎ public response line 3                                                                                                
-▎ public response line 4                                                                                                
-▎ public response line 5                                                                                                
-▎ public response line 6                                                                                                
-▎ ... +35 lines                                                                                                         
- ❯ You cannot type to Codex here. Follow-ups are sent by the replay.
+ ✓  Restore historical environment  done                                                                                
+ ●  Copy isolated workspace  in progress                                                                                
+ ○  Write candidate config  waiting                                                                                     
+ ○  Start Codex  waiting                                                                                                
+ ❯ Cannot type to Codex during prepare
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [f] One side  [Ctrl+C] Stop  [Enter] Expand command  [o] Full output  [/] Find  [l] Latest  [?] Keys
+ [Ctrl+C] Cancel  [?] Keys

@@ -69,3 +69,4 @@ pnpm-debug.log*
 /test-output.txt
 /pack-dry-run.json
 /.tmp-jscpd/
+/.tmp-test-output.txt

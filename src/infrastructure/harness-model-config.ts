@@ -210,20 +210,8 @@ export function tryEnvironmentName(value: string): string | undefined {
   return match?.[1] ?? match?.[2];
 }
 
-/** True when the typed value looks like a secret, not env:NAME or a URL. */
-export function looksLikeSecretValue(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed || KEY_REF.test(trimmed) || /^https?:\/\//i.test(trimmed)) return false;
-  if (/^(sk-|sk-proj-|rk-|Bearer\s)/i.test(trimmed)) return true;
-  return trimmed.length >= 32 && !/\s/.test(trimmed);
-}
-
 export function shellEnvAssignment(name: string): string {
   return process.platform === 'win32' ? `$env:${name} = '<value>'` : `export ${name}='<value>'`;
-}
-
-export function keyRefValidity(value: string): FieldValidity {
-  return apiKeyValidity(value);
 }
 
 export function apiKeyValidity(value: string): FieldValidity {
@@ -235,16 +223,7 @@ export function apiKeyValidity(value: string): FieldValidity {
 export function maskSecret(value: string): string {
   if (!value || KEY_REF.test(value)) return value;
   if (value.length <= 8) return '•'.repeat(value.length);
-  return `${value.slice(0, 3)}…${value.slice(-4)}`;
-}
-
-export function resolveHarnessCredential(config: HarnessModelConfig, environment: NodeJS.ProcessEnv = process.env): { apiKey: string; source: string } | undefined {
-  if (config.schemaVersion === 2 && config.apiKey) return { apiKey: config.apiKey, source: 'harness-model.json' };
-  const keyRef = config.schemaVersion === 2 ? config.keyRef : undefined;
-  if (!keyRef) return undefined;
-  const name = environmentNameForKeyRef(keyRef);
-  const apiKey = environment[name];
-  return apiKey ? { apiKey, source: name } : undefined;
+  return `${value.slice(0, 3)}...${value.slice(-4)}`;
 }
 
 export function hasFileApiKey(config: HarnessModelConfig | HarnessConfigDraft): boolean {

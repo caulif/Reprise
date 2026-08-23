@@ -33,14 +33,18 @@ test('CLI help is side-effect free and documents the TUI entrypoint', async () =
 test('CLI starts the interactive intake through an injected terminal workflow', async (t) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'reprise-cli-tui-'));
   t.after(async () => rm(dataDir, { recursive: true, force: true }));
-  const calls: Array<{ dataDir: string; sessionsRoot: string }> = [];
+  const calls: Array<{ dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>> }> = [];
   const captured = ioCapture();
-  assert.equal(await runCli(['--data-dir', dataDir, '--sessions-dir', join(dataDir, 'sessions')], captured.io, {
+  const codexSessions = join(dataDir, 'codex-sessions');
+  const claudeSessions = join(dataDir, 'claude-sessions');
+  assert.equal(await runCli(['--data-dir', dataDir, '--sessions-dir', `codex=${codexSessions}`, '--sessions-dir', `claude-code=${claudeSessions}`], captured.io, {
     now: '2026-08-11T00:00:00.000Z',
-    runTui: async (input) => { calls.push({ dataDir: input.dataDir, sessionsRoot: input.sessionsRoot }); },
+    runTui: async (input) => { calls.push({ dataDir: input.dataDir, sessionsRoot: input.sessionsRoot, sessionsRoots: input.sessionsRoots }); },
   }), 0);
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.dataDir, dataDir);
+  assert.equal(calls[0]?.sessionsRoots.codex, codexSessions);
+  assert.equal(calls[0]?.sessionsRoots['claude-code'], claudeSessions);
   assert.match(captured.stdout.join('\n'), /TUI closed/);
 });
 

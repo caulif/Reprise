@@ -14,11 +14,6 @@ import {
   writeImmutableJson,
   type ExperimentStore,
 } from "../infrastructure/store/experiment-store.js";
-import {
-  buildComparisonProjection,
-  renderComparisonReport,
-} from "../report/comparison-report.js";
-import { reportLang } from "../report/safe-markdown.js";
 import type {
   CodexExperimentInput,
   CodexExperimentPreflight,
@@ -27,8 +22,6 @@ import type {
 import { invocationFact, isMissing } from "./experiment-helpers.js";
 import { inspectRun } from "./experiment-inspection.js";
 import type { SourceRootKind } from "./replay-conditions.js";
-
-export { totalTokenCount, tokenValue } from "./experiment-helpers.js";
 
 export async function finishExperiment(input: {
   input: CodexExperimentInput;
@@ -92,7 +85,7 @@ export async function finishExperiment(input: {
       ...(record.manifest?.resolvedModel.resolved
         ? { resolvedModel: record.manifest.resolvedModel.resolved }
         : {}),
-      lang: reportLang(input.taskCase.initialInput.text),
+      lang: languageOf(input.taskCase.initialInput.text),
     },
   );
   const comparison = await comparePersistedFacts({
@@ -123,7 +116,7 @@ export async function finishExperiment(input: {
       sessionId: comparisonResult.sessionId,
       failure: {
         code: "agent_failure",
-        message: "Comparison agent completed without writing comparison.md.",
+        message: "Comparison agent completed without writing report.html.",
         attempts: 1,
       },
     };
@@ -138,55 +131,13 @@ export async function finishExperiment(input: {
     join(input.experimentRoot, "comparison.json"),
     comparisonResult,
   );
-  const completedComparison =
-    comparisonResult.status === "completed"
-      ? comparisonResult.value
-      : undefined;
-  const reportPath = join(input.experimentRoot, "report.html");
-  const recoveryArtifacts = (await input.store.listArtifacts()).filter(
-    (manifest) =>
-      record.artifactRefs.some(
-        (ref) =>
-          "experimentId" in ref &&
-          ref.experimentId === input.input.experimentId &&
-          ref.runId === undefined &&
-          ref.artifactId === manifest.artifactId,
-      ),
-  );
-  const artifacts = [
-    ...(await input.store.listArtifacts(input.input.runId)),
-    ...recoveryArtifacts,
-  ].map((manifest) => ({
-    ref: {
-      artifactId: manifest.artifactId,
-      experimentId: input.input.experimentId,
-      ...(manifest.owner.runId ? { runId: manifest.owner.runId } : {}),
-    },
-    kind: manifest.kind,
-    ...(manifest.mediaType ? { mediaType: manifest.mediaType } : {}),
-    byteLength: manifest.byteLength,
-  }));
-  const comparisonNarrative =
-    completedComparison && input.taskCase.privacy.allowModelText
-      ? await readComparisonNarrative(
-          input.experimentRoot,
-          completedComparison.reportPath,
-        )
-      : undefined;
-  await writeFile(
-    reportPath,
-    renderComparisonReport(
-      buildComparisonProjection({
-        taskCase: input.taskCase,
-        runs: [record],
-        inspections: [inspection],
-        artifacts,
-        ...(completedComparison ? { comparison: completedComparison } : {}),
-        ...(comparisonNarrative ? { comparisonNarrative } : {}),
-      }),
-    ),
-    "utf8",
-  );
+  const completedComparison = comparisonResult.status === "completed" ? comparisonResult.value : undefined;
+  const reportPath = completedComparison
+    ? join(input.experimentRoot, "report.html")
+    : join(input.experimentRoot, "comparison-failure.html");
+  if (!completedComparison) {
+    await writeComparisonFailurePage(reportPath, comparisonResult);
+  }
   await input.store.append({
     type: "report.created",
     runId: input.input.runId,
@@ -220,22 +171,23 @@ export async function finishExperiment(input: {
   };
 }
 
-export async function readComparisonNarrative(
-  experimentRoot: string,
-  reportPath: string,
-): Promise<string | undefined> {
-  try {
-    return (await readFile(join(experimentRoot, reportPath), "utf8")).slice(
-      0,
-      64 * 1024,
-    );
-  } catch (error) {
-    if (isMissing(error)) return undefined;
-    throw error;
-  }
+function languageOf(text: string): "zh" | "en" {
+  return /[\u4e00-\u9fff]/.test(text) ? "zh" : "en";
 }
 
-export async function reportExists(
+async function writeComparisonFailurePage(
+  reportPath: string,
+  result: StructuredAgentResult<unknown>,
+): Promise<void> {
+  const reason = result.status === "failed" ? result.failure.message : "Comparison did not return a completed report.";
+  await writeFile(reportPath, `<!doctype html><html lang="en"><meta charset="utf-8"><title>Comparison unavailable</title><main><h1>Comparison unavailable</h1><p>${escapeHtml(reason)}</p><p>Open the experiment trace and artifacts to inspect the recorded evidence.</p></main></html>`, "utf8");
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+}
+
+async function reportExists(
   experimentRoot: string,
   reportPath: string,
 ): Promise<boolean> {

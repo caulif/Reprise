@@ -53,6 +53,14 @@ export type RuntimeCapabilities = {
   confirmProcessTermination: boolean;
 };
 export type TargetStatus = 'starting' | 'running' | 'stopped' | 'unknown';
+/** Product-owned sources that Recovery may investigate without consulting credentials. */
+export type RecoveryRuntimeCapabilities = {
+  sessionHistory: 'available' | 'limited' | 'unavailable';
+  localArtifacts: boolean;
+  workspaceHistory: boolean;
+  /** Local workspace checkpoints never imply that remote, IDE, browser, or database effects were reversed. */
+  externalSideEffects: 'unobserved' | 'compensatable';
+};
 
 export interface RuntimePort {
   readonly id: string;
@@ -61,6 +69,8 @@ export interface RuntimePort {
   resolve(request: RuntimeRequest): Promise<ResolvedRuntime>;
   /** Confirms that the requested model is available to this runtime now. */
   validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime>;
+  /** Declares local, credential-free evidence sources exposed by this product pack. */
+  recoveryCapabilities(): RecoveryRuntimeCapabilities;
   createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner>;
 }
 

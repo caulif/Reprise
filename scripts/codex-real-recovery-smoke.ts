@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { ComparisonAgentPort } from '../src/agents/comparison-agent.js';
 import type { ControllerPort } from '../src/agents/controller-agent.js';
@@ -9,7 +9,7 @@ import { recoverCodexExperiment, startCodexExperiment } from '../src/application
 import { createHarnessAgents } from '../src/application/harness-agents.js';
 import type { TaskCase } from '../src/core/schema.js';
 import type { ResolvedRuntime, RuntimePort, TargetEventSink, TargetRunner } from '../src/core/runtime.js';
-import type { HarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
+import { readHarnessModelConfig, type HarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
 import { ScriptedRunner } from '../src/infrastructure/scripted-runtime.js';
 
 const git = promisify(execFile);
@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   if (process.env.REPRISE_RUN_CODEX_RECOVERY_SMOKE !== '1') {
     throw new Error('Set REPRISE_RUN_CODEX_RECOVERY_SMOKE=1 to run the real Recovery smoke.');
   }
-  const config = modelConfig();
+  const config = await modelConfig();
   const root = await mkdtemp(join(tmpdir(), 'reprise-real-recovery-'));
   const sourceRoot = join(root, 'source');
   const dataDir = join(root, 'data');
@@ -58,15 +58,11 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(result, null, 2));
 }
 
-function modelConfig(): HarnessModelConfig {
-  const baseUrl = process.env.REPRISE_RECOVERY_BASE_URL;
-  const keyName = process.env.REPRISE_RECOVERY_API_KEY_ENV ?? 'OPENAI_API_KEY';
-  if (!baseUrl) throw new Error('Set REPRISE_RECOVERY_BASE_URL to the OpenAI-compatible /v1 endpoint.');
-  if (!process.env[keyName]) throw new Error(`Set ${keyName} in this shell; the smoke never reads credentials from disk.`);
-  return {
-    schemaVersion: 2, provider: { kind: 'openai-compatible', id: 'recovery-smoke' }, providerId: 'recovery-smoke',
-    modelId: process.env.REPRISE_RECOVERY_MODEL ?? 'gpt-5.6-luna', effort: 'medium', baseUrl, keyRef: `env:${keyName}`,
-  };
+async function modelConfig(): Promise<HarnessModelConfig> {
+  const configDir = resolve('.reprise');
+  const config = await readHarnessModelConfig(configDir);
+  if (!config) throw new Error(`Configure ${join(configDir, 'harness-model.json')} before running the real Recovery smoke.`);
+  return config;
 }
 
 async function setupHistoricalSource(sourceRoot: string): Promise<void> {
@@ -118,6 +114,7 @@ class ScriptedCandidateRuntime implements RuntimePort {
   async inspectAvailability() { return [{ productId: 'codex', executable: 'scripted-recovery-smoke', observedVersion: 'fixture', status: 'available' as const, observedAt: now }]; }
   async resolve(request: { productId: string; requestedModel: string }): Promise<ResolvedRuntime> { return { productId: request.productId, executable: 'scripted-recovery-smoke', version: 'fixture', requestedModel: request.requestedModel, resolvedModel: request.requestedModel }; }
   async validateCandidate(request: { productId: string; requestedModel: string }): Promise<ResolvedRuntime> { return this.resolve(request); }
+  recoveryCapabilities() { return { sessionHistory: 'available' as const, localArtifacts: true, workspaceHistory: false, externalSideEffects: 'unobserved' as const }; }
   async createRunner(_runtime: ResolvedRuntime, _environment: { environmentId: string; runId: string; root: string }, sink: TargetEventSink): Promise<TargetRunner> {
     await sink.append({ type: 'codex.item_completed', occurredAt: now, payload: { item: { type: 'agentMessage', text: 'Scripted Candidate completed orchestration smoke.' } } });
     return new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [{ turnId: 'scripted-turn', status: 'waiting_input', confidence: 'native', observedAt: now, rawRefs: [] }]);
@@ -127,8 +124,8 @@ class ScriptedCandidateRuntime implements RuntimePort {
 const scriptedController: ControllerPort = { decide: async () => ({ status: 'completed', sessionId: 'scripted-controller', value: { type: 'done', reason: 'satisfied' } }) };
 const scriptedComparison: ComparisonAgentPort = { compare: async (_context, tools = []) => {
   const report = tools.find((tool) => tool.name === 'write_comparison_report');
-  await report?.execute({ content: '# Comparison\n\nScripted Candidate orchestration completed after the accepted Recovery baseline.' }, new AbortController().signal);
-  return { status: 'completed', sessionId: 'scripted-comparison', value: { status: 'completed', reportPath: 'comparison.md', evidenceRefs: [] } };
+  await report?.execute({ html: '<!doctype html><html lang="en"><meta charset="utf-8"><title>Comparison</title><body><h1>Comparison</h1><p>Scripted Candidate orchestration completed after the accepted Recovery baseline.</p></body></html>' }, new AbortController().signal);
+  return { status: 'completed', sessionId: 'scripted-comparison', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } };
 } };
 
 main().catch((error: unknown) => {

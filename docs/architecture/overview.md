@@ -121,7 +121,7 @@ TaskCase + CandidateSpec
 ```text
 BaselineEvidence + one or more RunRecord
 → Comparison Agent
-→ ComparisonEnvelope + comparison.md
+→ ComparisonEnvelope + report.html
 → Report Renderer
 → 并排报告
 ```
@@ -357,7 +357,7 @@ interface FidelityAssessment {
 | Controller Agent Module | 同等人类能力下的下一条输入或结束 | 目标任务工具、环境写入、实验状态 |
 | Trace Store | append-only 事实和 artifact 引用 | 覆盖或重新解释历史事实 |
 | Comparison Agent Module | 选择和组织值得比较的结果证据 | 修改运行结果、判定 fidelity 或统一打分 |
-| Report Renderer | Host 事实卡片与 `comparison.md` 的确定性安全渲染 | 候选运行和语义选择 |
+| Report Renderer | Agent-authored `report.html` 的原样持久化与导航 | 候选运行和语义选择 |
 | Pi Agent Host | 模型 session、上下文、工具钩子和调用遥测 | 领域状态与跨模块共享对话 |
 
 三个 Agent Module 只共享 Pi Agent Host 基础设施，不共享 session、prompt、上下文或工具权限。组件之间传递不可变快照、句柄引用、事件和决策，不共享可变全局状态。
@@ -632,7 +632,7 @@ interface ComparisonContext {
 type ComparisonEnvelope =
   | {
       status: "completed" | "insufficient_evidence";
-      reportRef: EvidenceRef; // comparison.md
+      reportPath: "report.html"
       evidenceRefs: EvidenceRef[];
     }
   | {
@@ -641,7 +641,7 @@ type ComparisonEnvelope =
     }
 ```
 
-Comparison Agent 将调查叙述写入自由结构的 `comparison.md`，薄信封只返回阶段状态和引用；Renderer 校验引用，将任务题头、白名单 Markdown 正文、折叠的回放限制与文件入口确定性、安全地组合成报告。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 将完整自由结构 HTML 写入 `report.html`；薄信封只返回阶段状态和引用。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
 Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Pi Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型

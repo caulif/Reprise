@@ -10,7 +10,7 @@ export type TuiPreferences = {
   readonly locale: Locale;
 };
 
-export function defaultTuiPreferences(): TuiPreferences {
+function defaultTuiPreferences(): TuiPreferences {
   return { locale: 'en' };
 }
 

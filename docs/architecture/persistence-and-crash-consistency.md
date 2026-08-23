@@ -209,6 +209,17 @@ Claude Code 的独立 CLI 边界允许 Product Pack 负责原生 session、当�
 ## 12. 事件信封字段
 
 <!-- BEGIN GENERATED event-catalog (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
+| 字段 | 类型 | 可选 |
+|---|---|---|
+| `schemaVersion` | integer | 否 |
+| `sequence` | integer | 否 |
+| `eventId` | string | 否 |
+| `occurredAt` | string | 否 |
+| `type` | string | 否 |
+| `runId` | string | 是 |
+| `operationId` | string | 是 |
+| `payload` | unknown | 否 |
+| `checksum` | string | 否 |
 <!-- END GENERATED event-catalog -->
 
 ## 13. 明确不做

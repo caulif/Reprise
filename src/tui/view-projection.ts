@@ -9,15 +9,15 @@ import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import type { Locale } from './i18n.js';
-import { sessionTitle } from './pages/intake.js';
+import { sessionTitle, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
 
 type Input = {
-  readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly hasCodexLogin: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
+  readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
   readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
-  readonly intakeLevel: IntakeLevel; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean;
+  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean;
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: CodexExperimentPreflight | undefined; readonly recoveryAttempt?: RecoveryAttempt | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly preparePhase?: PreparePhase; readonly prepareDetail?: string;
@@ -36,7 +36,6 @@ function homeModel(input: Input, envSet: boolean) {
     taskCase: input.taskCase, recentExperiment: input.recentExperiment,
     hasApiConfig: input.hasSavedModelConfig, hasUsableAuth: input.hasSavedModelConfig && input.harnessAuthOk,
     ...(input.envName ? { envName: input.envName, envSet } : {}),
-    hasCodexLogin: input.hasCodexLogin,
     ...(input.hasSavedModelConfig ? { providerLabel: input.modelConfig.providerId, modelId: input.modelConfig.modelId } : {}),
     composer: input.composer, composerCursor: input.composerCursor, showSuggestions: input.showSuggestions && !input.commandOverlay,
     locale: input.locale ?? 'en',
@@ -52,7 +51,7 @@ function runningModel(input: Input) {
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },
     detailExpanded: input.detailExpanded, ...(input.policy ? { policy: input.policy } : {}),
     ...(input.preparePhase ? { preparePhase: input.preparePhase, ...(input.prepareDetail ? { prepareDetail: input.prepareDetail } : {}) } : {}),
-    locale: input.locale ?? 'en', productLabel: 'Codex',
+    locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}),
     ...(input.taskCase ? { taskTitle: sessionTitle(input.taskCase.initialInput.text) } : {}),
     ...(input.finding ? { finding: true, findQuery: input.findQuery ?? '', findCursor: input.findCursor ?? 0 } : {}),
     tick: input.nowMs ?? Date.now(),
@@ -68,7 +67,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     hasApiConfig: input.hasSavedModelConfig,
     hasUsableAuth: input.hasSavedModelConfig && input.harnessAuthOk,
     ...(input.envName ? { envName: input.envName } : {}),
-    hasCodexLogin: input.hasCodexLogin,
+    ...(input.productLabel ? { productLabel: input.productLabel } : {}),
+    ...(input.productConfigured !== undefined ? { productConfigured: input.productConfigured } : {}),
     hasTaskCase: Boolean(input.taskCase),
     locale: input.locale ?? 'en',
     message: input.message,
@@ -106,16 +106,17 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   }
   const sessions = {
     level: input.intakeLevel,
+    products: input.products,
     projects: input.intakeLevel === 'projects' ? input.visibleProjects : input.visibleProjects.filter((project) => project.key === input.activeProjectKey),
     sessions: input.visibleSessions, selected: input.selected, filterEligible: input.filterEligible,
     query: input.searchQuery, searchCursor: input.searchCursor, searching: input.searching,
-    locale: input.locale ?? 'en',
+    locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}),
   };
   if (input.page === 'sessions') return { ...base, sessions };
   if (input.page === 'inspection' && input.inspection) {
     return {
       ...base, sessions,
-      inspection: { inspection: input.inspection, privacy: input.privacy, selectedTaskInput: input.inspectionTaskInput, showOutcome: input.inspectionShowOutcome, locale: input.locale ?? 'en' },
+      inspection: { inspection: input.inspection, privacy: input.privacy, selectedTaskInput: input.inspectionTaskInput, showOutcome: input.inspectionShowOutcome, locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}) },
     };
   }
   if (input.page === 'source') return { ...base, source: { sourceRoot: input.sourceRoot, sourceCursor: input.sourceCursor, step: 1, locale: input.locale ?? 'en' } };
@@ -125,8 +126,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     unresolved: input.recoveryAttempt.baseline.recovery.unresolved,
     changedPathCount: input.recoveryAttempt.providerPreview?.changedPaths.length ?? 0,
   } : undefined;
-  if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en' } };
-  if (input.page === 'confirm' && input.preflight) return { ...base, confirm: { preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en' } };
+  if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
+  if (input.page === 'confirm' && input.preflight) return { ...base, confirm: { preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
   if (input.page === 'running') return { ...base, running: runningModel(input) };
   if (input.page === 'result' && input.result) return { ...base, running: runningModel(input), result: input.result };
   return base;

@@ -37,6 +37,10 @@ export class FakeRuntimePort implements RuntimePort {
     return { productId: 'fake', executable: 'fake', requestedModel: request.requestedModel, resolvedModel: 'fake-model' };
   }
 
+  recoveryCapabilities() {
+    return { sessionHistory: 'available' as const, localArtifacts: true, workspaceHistory: false, externalSideEffects: 'unobserved' as const };
+  }
+
   async createRunner(_runtime: ResolvedRuntime, _environment: PreparedRuntimeEnvironment, _sink: TargetEventSink): Promise<TargetRunner> {
     throw new Error('Fake runtime cannot create a runner.');
   }

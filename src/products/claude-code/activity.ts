@@ -33,7 +33,7 @@ export const claudeActivityTranslator: TargetActivityTranslator = {
   },
 };
 
-export function inspectClaudeRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
+function inspectClaudeRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
   const assistants = events.filter((event) => event.type === 'claude-code.assistant');
   const texts = assistants.flatMap((event) => textBlocks(record(event.payload)));
   const commands = [...new Set(

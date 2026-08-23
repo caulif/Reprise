@@ -18,6 +18,40 @@ import {
 } from "../src/infrastructure/harness-model-config.js";
 import { projectTimelineEvent } from "../src/tui/timeline.js";
 
+
+test("intake discovers only the selected registered product and keeps product caches isolated", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-product-intake-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const calls: string[] = [];
+  const summary = (productId: string, id: string) => ({ productId, sessionId: id, sourcePath: join(root, id), startedAt: "2026-08-11T00:00:00.000Z", cwd: "C:/same", summary: id, signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 } });
+  const pack = (productId: string, displayName: string, sessions: readonly ReturnType<typeof summary>[]) => ({
+    manifest: { productId, displayName, packVersion: "test", schemaVersion: 1 },
+    checkAuth: async () => ({ configured: false }),
+    sessions: { defaultRoot: root, discover: async () => { calls.push(productId); return { items: sessions, scanned: sessions.length, skipped: 0, diagnostics: [] }; }, inspect: async () => { throw new Error("unused"); }, import: async () => { throw new Error("unused"); } },
+  }) as unknown as import("../src/products/contract.js").ProductPack;
+  let document: Component | undefined;
+  const tui = { addChild(component: Component) { document = component; }, addInputListener() { return () => {}; }, start() {}, stop() {}, requestRender() {}, renderNow() {} } as unknown as TUI;
+  const app = new CodexIntakeTui({ dataDir: join(root, "data"), tui, packs: [pack("codex", "Codex", [summary("codex", "codex-1")]), pack("claude-code", "Claude Code", [summary("claude-code", "claude-1")])], privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
+  await app.start();
+  await app.loadSessions();
+  assert.deepEqual(calls, []);
+  assert.match(document?.render(120).join("\n") ?? "", /Codex[\s\S]*Claude Code/);
+  app.selected = 1;
+  app.openIntakeSelection();
+  await waitFor(() => calls.length === 1);
+  assert.deepEqual(calls, ["claude-code"]);
+  assert.equal(app.visibleSessions()[0]?.productId, "claude-code");
+  assert.equal(app.groupedProjects()[0]?.sessions[0]?.productId, "claude-code");
+  app.backToProjects();
+  app.selected = 0;
+  app.openIntakeSelection();
+  await waitFor(() => calls.length === 2);
+  assert.deepEqual(calls, ["claude-code", "codex"]);
+  app.backToProjects();
+  app.openIntakeSelection();
+  assert.deepEqual(calls, ["claude-code", "codex"]);
+});
+
 test("Codex intake TUI uses an ASCII narrow-terminal fallback and states the minimum width", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-tui-narrow-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
@@ -120,7 +154,7 @@ test("Codex intake TUI presents session discovery errors instead of rejecting in
   });
 
   await app.start();
-  enterCommand(app, "/intake");
+  await enterIntake(app);
   await waitFor(() => /ENOTDIR/.test(rendered));
   assert.match(rendered, /ENOTDIR/);
 });
@@ -200,7 +234,7 @@ test("Codex intake TUI only reads before explicit freeze and leaves no ambiguous
   await app.start();
   assert.match(rendered, /Continue|Browse|\/ command/);
   assert.match(rendered, /\/intake|i\s+Import a Codex session/);
-  enterCommand(app, "/intake");
+  await enterIntake(app);
   await waitFor(() => /Fix the bug\./.test(rendered));
   assert.equal(await readFile(source, "utf8"), raw);
 
@@ -225,13 +259,20 @@ test("Codex intake TUI only reads before explicit freeze and leaves no ambiguous
   assert.equal(await readFile(source, "utf8"), raw);
 });
 
+async function enterIntake(app: CodexIntakeTui): Promise<void> {
+  enterCommand(app, "/intake");
+  app.handleInput("\r");
+  await waitFor(() => app.intakeLevel === "projects" || app.productDiscovery.get("codex")?.status === "error");
+  if (app.intakeLevel === "projects") app.handleInput("\r");
+}
 function enterCommand(app: CodexIntakeTui, command: string): void {
   app.handleInput(command);
   app.handleInput("\r");
 }
 
 async function waitFor(condition: () => boolean): Promise<void> {
-  const deadline = Date.now() + 2_000;
+  // The full gate runs test files concurrently; allow a busy Windows worker to render before declaring a UI failure.
+  const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (condition()) return;
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
@@ -442,6 +483,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   let rendered = "";
   let stops = 0;
   let requestedRenders = 0;
+  const timelineRenderCallbacks: (() => void)[] = [];
   const tui = {
     addChild(component: Component) {
       document = component;
@@ -483,6 +525,10 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
         resolvedModel: "gpt-5.6-luna",
       },
       limitations: ["fingerprint differs"],
+    }),
+    recover: async () => ({
+      baseline: { match: "recovered", warnings: [] },
+      provider: { discardRecovery: async () => {} },
     }),
     start: async (input: {
       sourceRoot: string;
@@ -565,19 +611,17 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
     workflow,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
     now: () => "2026-08-11T00:10:00.000Z",
+    queueTimelineRender: (callback) => { timelineRenderCallbacks.push(callback); },
   });
 
   await app.start();
-  enterCommand(app, "/intake");
+  await enterIntake(app);
   await waitFor(() => /Make a focused change\./.test(rendered));
   app.handleInput("\r");
-  await waitFor(() =>
-    /Preparing replay|Copy isolated workspace|To Codex/.test(rendered),
-  );
-  assert.doesNotMatch(
-    rendered,
-    /Candidate preflight|Start isolated Codex Candidate|Step 1 of 3|Checking source|Copying workspace/,
-  );
+  await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
+  assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Restore the task start/);
+  app.handleInput("\r");
+  await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
   await waitFor(() => sourceRoot === "C:/not-automatic");
   app.handleInput("\u0003");
   assert.equal(stops, 0);
@@ -591,6 +635,8 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   assert.doesNotMatch(rendered, /State: created → launching/);
   assert.match(rendered, /Prompt|To Codex|public response line 1/);
   assert.match(rendered, /public response line 1/);
+  assert.equal(timelineRenderCallbacks.length, 1);
+  timelineRenderCallbacks.shift()?.();
   requestedRenders = 0;
   for (let sequence = 6; sequence <= 8; sequence += 1) {
     emitEvent?.({
@@ -603,8 +649,8 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
       checksum: "d".repeat(64),
     });
   }
-  await waitFor(() => requestedRenders === 1);
-  await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  assert.equal(timelineRenderCallbacks.length, 1);
+  timelineRenderCallbacks.shift()?.();
   assert.equal(requestedRenders, 1);
   app.handleInput("/");
   for (const ch of "public response") app.handleInput(ch);
@@ -660,7 +706,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   assert.equal(stops, 1);
 });
 
-test("Codex intake TUI starts a contaminated session without asking for Recovery", async (t) => {
+test("Codex intake TUI automatically prepares every session with Recovery before the single run confirmation", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-tui-recovery-retry-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const sessionsRoot = join(root, "sessions");
@@ -767,15 +813,15 @@ test("Codex intake TUI starts a contaminated session without asking for Recovery
   });
 
   await app.start();
-  enterCommand(app, "/intake");
+  await enterIntake(app);
   await waitFor(() => /Restore the task start/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() =>
-    /Preparing replay|Copy isolated workspace|Experiment finished/.test(rendered),
-  );
-  assert.equal(recoveryCalls, 0);
+  await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
+  assert.equal(recoveryCalls, 1);
+  assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Recovery preview is ready/);
+  app.handleInput("\r");
+  await waitFor(() => /Preparing replay|Copy isolated workspace|Experiment finished/.test(rendered));
   assert.equal(discarded, 0);
-  assert.doesNotMatch(rendered, /Recovery preview is ready/);
 });
 
 test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", async (t) => {
@@ -843,6 +889,10 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
       },
       limitations: [],
     }),
+    recover: async () => ({
+      baseline: { match: "recovered", warnings: [] },
+      provider: { discardRecovery: async () => {} },
+    }),
     start: async () => {
       await new Promise<void>((resolve) => {
         releaseStart = resolve;
@@ -864,12 +914,12 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
   });
 
   await app.start();
-  enterCommand(app, "/intake");
+  await enterIntake(app);
   await waitFor(() => /Cancel this run/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() =>
-    /Preparing replay|Copy isolated workspace/.test(rendered),
-  );
+  await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
+  app.handleInput("\r");
+  await waitFor(() => /Preparing replay|Copy isolated workspace/.test(rendered));
   app.handleInput("\u0003");
   releaseStart?.();
   await waitFor(() => cancelCalls === 1);
@@ -940,6 +990,10 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
       },
       limitations: [],
     }),
+    recover: async () => ({
+      baseline: { match: "recovered", warnings: [] },
+      provider: { discardRecovery: async () => {} },
+    }),
     start: async (input: {
       sourceRoot: string;
       onEvent: (event: unknown) => void;
@@ -983,7 +1037,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
     now: () => "2026-08-11T00:10:00.000Z",
   });
   await app.start();
-  enterCommand(app, "/intake");
+  await enterIntake(app);
   await waitFor(() => /Patch the missing path/.test(rendered));
   app.handleInput("\r");
   await waitFor(() => /Source root|Historical cwd is missing/.test(rendered));
@@ -1000,13 +1054,9 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   app.handleInput("\b");
   app.handleInput("C:\\explicit-source");
   app.handleInput("\r");
-  await waitFor(() =>
-    /Preparing replay|Copy isolated workspace|To Codex/.test(rendered),
-  );
-  assert.doesNotMatch(
-    rendered,
-    /Candidate preflight|Start isolated Codex Candidate/,
-  );
+  await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
+  app.handleInput("\r");
+  await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
   releaseStart?.();
   await waitFor(() => sourceRoot === "C:\\explicit-source");
   assert.equal(sourceRoot, "C:\\explicit-source");
@@ -1327,7 +1377,7 @@ test("intake search accepts a slash after search has started", async (t) => {
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
   });
   await app.start();
-  enterCommand(app, "/intake");
+  await enterIntake(app);
   await waitFor(() =>
     /Choose a historical session|Choose a project/.test(rendered),
   );

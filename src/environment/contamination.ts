@@ -1,10 +1,7 @@
-import { execFile } from 'node:child_process';
 import { stat } from 'node:fs/promises';
-import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import type { TaskCase } from '../core/schema.js';
-
-const execFileAsync = promisify(execFile);
+import { runProcess } from '../infrastructure/process-runner.js';
 
 export type ContaminationSignals = {
   git?: { historicalCommit: string; currentHead: string; relation: 'same' | 'ancestor' | 'diverged' | 'missing' };
@@ -82,7 +79,8 @@ function latestHistoricalTime(taskCase: TaskCase): string | undefined {
 }
 
 async function git(root: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', [...args], { cwd: root, windowsHide: true, maxBuffer: 64 * 1024 });
-  return stdout;
+  return (await runProcess({
+    operation: 'contamination_git_probe', executableKind: 'git', command: 'git', args, cwd: root, timeoutMs: 5_000, maxOutputBytes: 64 * 1024,
+  })).stdout;
 }
 async function succeeds(action: () => Promise<unknown>): Promise<boolean> { try { await action(); return true; } catch { return false; } }

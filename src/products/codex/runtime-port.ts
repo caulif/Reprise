@@ -25,8 +25,6 @@ import type {
 } from '../../core/runtime.js';
 import { discoverExecutable, forceKill, positiveTimeout, redactDiagnostic, settlesWithin } from '../shared/process.js';
 
-export { redactDiagnostic } from '../shared/process.js';
-
 export type CodexReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 export type CodexModel = { id: string; model: string; supportedReasoningEfforts: readonly string[] };
@@ -77,7 +75,7 @@ export class CodexRuntimeUnavailableError extends Error {
  * Minimal app-server client for the current Codex JSONL protocol. It deliberately
  * rejects every server-initiated request, so a smoke run cannot auto-approve tools.
  */
-export class CodexProcessCloseError extends Error {
+class CodexProcessCloseError extends Error {
   readonly remainingResourceIds: readonly string[];
 
   constructor(resourceId: string) {
@@ -142,6 +140,8 @@ export class CodexAppServerClient {
       this.#closed = true;
       this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server failed to start: ${error.message}`), !this.#closing);
     });
+    child.stdout.on('error', (error) => this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server stdout failed: ${error.message}`), !this.#closing));
+    child.stderr.on('error', (error) => this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server stderr failed: ${error.message}`), !this.#closing));
     child.once('exit', (code, signal) => {
       this.#closed = true;
       this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server exited (${code ?? 'null'}, ${signal ?? 'none'}).`), !this.#closing);
@@ -574,6 +574,15 @@ export class CodexRuntimePort implements RuntimePort {
     if (!match) throw new CodexRuntimeUnavailableError('Codex does not currently expose candidate model ' + request.requestedModel + '.');
     return { ...resolved, resolvedModel: match.model };
   }
+  recoveryCapabilities() {
+    return {
+      sessionHistory: 'available' as const,
+      localArtifacts: true,
+      workspaceHistory: false,
+      externalSideEffects: "unobserved" as const,
+    };
+  }
+
   async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner> {
     if (runtime.productId !== 'codex') throw new CodexRuntimeUnavailableError('Only Codex runtimes can create a Codex app-server runner.');
     if (!isAbsolute(environment.root)) throw new CodexRuntimeUnavailableError('Codex app-server requires an absolute isolated workspace path.');

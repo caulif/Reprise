@@ -41,7 +41,7 @@
 
 ## 影响
 
-- 受控 `docs/` 文件从 190 降到 79，其中 42 个是有门禁价值的快照基线，实际内容文档 37 个。
+- 受控 `docs/` 只保留目录模型列出的长期材料，外加 `tui-audit/frames/` 快照基线。走查产物和一次性计划不进 git。
 - 约 19 MB 走查产物和 12.2 MB 含个人信息的真实会话数据不再可能被误提交。
 - `docs/archive/`、`docs/analysis/`、`docs/feedback/` 三个目录取消。
 - 一次性材料仍在磁盘上（`docs/.local/`），但在别人的检出里不存在，因此受控文档不得链接它们。
@@ -49,7 +49,7 @@
 
 ## 验证
 
-- `git ls-files docs | Measure-Object` 为 79；其中 `docs/tui-audit` 为 42。
+- `git ls-files docs/tui-audit` 为 41（仅 `frames/`）。
 - `git check-ignore docs/.local/x`、`docs/tui-loop/x`、`docs/evidence/x` 命中；`docs/tui-audit/frames/01-home-wide.txt` 不命中。
 - `.gitattributes` 对 `docs/tui-audit/frames/**` 声明 `text eol=lf`。
 - `npm run verify:docs` 比对目录模型与磁盘实际目录，并拒绝从受控文档指向 `docs/.local/` 的链接。

@@ -25,7 +25,7 @@ Agent 输出进入系统前必须符合对应公共协议：
 
 - Controller 输出合法的 `ControllerDecision`；
 - Recovery 输出合法的恢复计划；
-- Comparison 写入可安全渲染的 `comparison.md`，并输出合法的薄 `ComparisonEnvelope`；
+- Comparison 原样写入完整 `report.html`，并输出合法的薄 `ComparisonEnvelope`；
 - `send` 包含非空、可提交的输入；
 - artifact、run、environment 和 evidence 引用能够解析。
 

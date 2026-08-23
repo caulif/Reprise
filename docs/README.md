@@ -20,7 +20,8 @@
 12. [非确定性 Agent 的最小验证边界](./architecture/validation.md)：只验证 schema、能力、生命周期和事实完整性。
 13. [分模块开发实现计划](./development-plan.md)：模块 0–8 的实现顺序、边界与验收记录。
 14. [Codex smoke 闸门](./codex-smoke-gate.md)：真实计费运行的准入、事实记录与人工复核清单。
-15. [稳定进度入口](./progress/MASTER.md)：当前工作进度的固定入口。
+15. [工程门禁](./engineering-gates.md)：本地 `check`、CI lane、反向用例和覆盖率棘轮。
+16. [稳定进度入口](./progress/MASTER.md)：当前工作进度的固定入口。
 
 ## 决策记录
 
@@ -30,6 +31,9 @@
 - [文档受控边界](./decisions/accepted/2026-08-14-documentation-version-control-boundary.md)：`docs/` 里什么进 git、什么只留本地。
 - [覆盖率阈值只升不降](./decisions/accepted/2026-08-14-coverage-thresholds.md)：总体阈值取实测值向下取整，不留缓冲。
 - [记录路径按盘符比较](./decisions/accepted/2026-08-14-host-independent-recorded-paths.md)：Windows 会话路径在 POSIX CI 上不得 `resolve()` 进 `process.cwd()`。
+- [TUI 帧基线只在 Windows 比对](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)：帧是平台相关产物，不在 Ubuntu 上逐字节比对。
+- [生成区输出信封字段表](./decisions/accepted/2026-08-15-generated-docs-envelope-fields.md)：`EventEnvelope.type` 是开放字符串，不生成类型目录。
+- [门禁必须附反向用例](./decisions/accepted/2026-08-15-gate-reverse-tests.md)：只验证干净树上退出 0 不构成门禁生效的证据。
 - [报告 Host 壳跟随任务语言](./decisions/accepted/2026-08-14-report-host-chrome-follows-task-language.md)：`report.html` 的壳文案跟随 `initialInput`，不跟 TUI `/lang`。
 - [报告第一屏是判断正文](./decisions/accepted/2026-08-14-report-first-screen-is-narrative.md)：不做对照条；限制只留会改变读法的句子。
 - [`superseded/`](./decisions/superseded/)：被后续决策取代的记录，仅供追溯，不能作为当前依据。
@@ -38,7 +42,6 @@
 
 `plan/` 只保留尚未做完的工作；做完或被取代后按迁移规则移出。
 
-- [面向 Agent 协作的工程化优化](./plan/agent-oriented-engineering-optimization.md)：当前主任务——AGENTS.md 分层、文档与质量门禁、决策记录、覆盖率与快照基线。
 - [当前实现差距与修正计划](./plan/current-implementation-gap-and-correction-plan.md)：canonical 设计与代码的逐项偏差及迁移路线。
 - [第六轮优化分析](./plan/optimization-round-6.md)：仍未闭合的 P2/P3 条目与产品承诺缺口。
 - [Agent System Prompt 重设计](./plan/agent-system-prompt-redesign.md)：Controller 与 Comparison 提示词的重设计提案。

@@ -37,6 +37,10 @@ function table(rows) {
   ].join('\n');
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function replaceRegion(text, slug, body) {
   const begin = BEGIN(slug);
   const end = END(slug);
@@ -44,11 +48,25 @@ function replaceRegion(text, slug, body) {
   if (!text.includes(begin) || !text.includes(end)) {
     throw new Error(`missing generated region ${slug}`);
   }
-  return text.replace(new RegExp(`${begin}[\\s\\S]*?${end}`), block);
+  const next = text.replace(new RegExp(`${escapeRegExp(begin)}[\\s\\S]*?${escapeRegExp(end)}`), block);
+  if (next === text && !text.includes(block)) {
+    throw new Error(`generated region ${slug} did not match`);
+  }
+  return next;
 }
 
 function toLf(text) {
-  return text.replace(/\r\n/g, '\n');
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function selfTest() {
+  const slug = 'event-catalog';
+  const original = `${BEGIN(slug)}\nGARBAGE\n${END(slug)}`;
+  const next = replaceRegion(original, slug, '| field |');
+  if (!next.includes('| field |') || next.includes('GARBAGE') || toLf(original) === toLf(next)) {
+    throw new Error('gen-docs self-test: replaceRegion did not replace a marked region');
+  }
+  console.log('gen-docs self-test: replaceRegion updates marked regions');
 }
 
 async function generate() {
@@ -76,9 +94,11 @@ async function generate() {
 }
 
 async function main() {
+  selfTest();
   const check = process.argv.includes('--check');
   const files = await generate();
   const stale = [];
+  let wrote = 0;
   for (const file of files) {
     const current = toLf(await readFile(file.path, 'utf8'));
     if (current === file.next) continue;
@@ -87,11 +107,12 @@ async function main() {
       continue;
     }
     await writeFile(file.path, file.next, 'utf8');
+    wrote += 1;
   }
   if (check && stale.length) {
     throw new Error(`generated docs are stale: ${stale.join(', ')}\n运行 npm run gen:docs 并提交受影响的文档`);
   }
-  console.log(check ? 'verify:generated: ok' : `gen-docs: wrote ${files.length} files`);
+  console.log(check ? 'verify:generated: ok' : `gen-docs: wrote ${wrote} files`);
 }
 
 await main();

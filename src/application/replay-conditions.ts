@@ -38,7 +38,7 @@ export function inferSourceRootKind(input: {
   return "operator_selected";
 }
 
-export function describeStop(record: RunRecord | undefined, lang: ReplayLang = "en"): string {
+function describeStop(record: RunRecord | undefined, lang: ReplayLang = "en"): string {
   const zh = lang === "zh";
   if (!record) return zh ? "运行尚未到达 Host 终态决定。" : "The run has not reached a terminal Host decision.";
   const code = record.outcome.termination.code;
@@ -118,7 +118,7 @@ export function hostReplayConditions(input: ReplayHostInput): readonly string[] 
   return notes;
 }
 
-export function sourceRootKindNote(kind: SourceRootKind, lang: ReplayLang = "en"): string {
+function sourceRootKindNote(kind: SourceRootKind, lang: ReplayLang = "en"): string {
   const zh = lang === "zh";
   if (kind === "stand_in") {
     return zh

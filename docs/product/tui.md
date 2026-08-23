@@ -50,6 +50,7 @@ API key 与 provider 配置复用 Pi，Harness 不建立第二套凭据存储。
 reprise compare
 
 选择 Agent 产品
+→ 选择该产品下的项目
 → 选择该产品的历史会话
 → 使用 Product Pack 的固定候选模型配置
 → 只读检查运行条件
@@ -62,14 +63,18 @@ reprise compare
 
 界面使用“Agent 产品”或“目标 Agent Runtime”，不使用“Agent Harness”；Harness 指当前项目本身。
 
+`/intake` 首先同步展示当前构建静态注册的 Product Pack。它不会在进入页面时解析任何历史目录；用户选择产品后，才调用该 Pack 的会话 Adapter。会话上限、项目分组、搜索、发现失败和进程内缓存均按产品隔离。没有会话、未安装 Runtime 或未配置凭据不会让已注册产品从列表消失；运行前的 preflight 才给出 Runtime 的权威诊断。
+
 ### 3.3 选择与准备
 
 ```text
 选择 Agent 产品
 ❯ Codex
-  Claude Code（首个纵切片后）
+  Claude Code
 
-选择历史会话
+选择该产品下的项目和历史会话
+
+会话发现按已安装的 Agent 产品惰性执行：进入产品页后才扫描该 Pack 的配置 root。为保证全局最新活动排序，首屏先完成可取消、有界并发的轻量摘要 index；随后每页展示已发现数、已跳过的本地损坏/排除记录和是否还有下一页，`m` 继续加载，`r` 从第一页刷新。列表不读取完整 transcript，只逐行读取受限的元数据；超限、无权限、损坏 JSONL、无效元数据及不跟随的 symlink/junction 以聚合计数呈现，不展示会话正文或绝对路径。摘要缺少可靠时间时显示为未知时间，绝不补成 1970 年；只有缺少事件时间时才会使用并标记文件修改时间。产品、root 和 cursor 三者共同界定缓存，因此切换 Agent 或 session root 不会串用会话。TUI 帧审计会为相对时间注入固定渲染时钟，生产交互仍使用系统时钟，因而审计基线不会随日期自然漂移。
 ❯ 今天 · Reprise · “重新设计插件架构”
   昨天 · web-project · “修复登录页面”
 

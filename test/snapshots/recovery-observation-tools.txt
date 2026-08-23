@@ -1,5 +1,30 @@
 [
   {
+    "name": "derive_task_footprint",
+    "description": "Derive bounded path, command, and test clues from frozen observations without treating inferred clues as verified facts.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "search_recovery_artifacts",
+    "description": "Search frozen transcript and historical observations by a bounded term; returns Host refs and hashes, not unregistered artifacts.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "query"
+      ],
+      "properties": {
+        "query": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
     "name": "read_observation",
     "description": "Read a bounded page of the frozen historical transcript or historical events.",
     "parameters": {

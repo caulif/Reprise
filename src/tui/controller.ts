@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
 import {
   Loader,
@@ -31,7 +31,7 @@ import {
   type HarnessModelConfig,
 } from "../infrastructure/harness-model-config.js";
 import { PiModelCaller } from "../infrastructure/pi-model-caller.js";
-import { isEligibleSession, type ProductPack, type SessionInspection, type SessionPrivacy, type SessionSummary } from "../products/contract.js";
+import { compareSessionSummaries, isEligibleSession, type DiscoveryDiagnostic, type ProductPack, type SessionInspection, type SessionPrivacy, type SessionSummary } from "../products/contract.js";
 import { findProductPack, productPacks } from "../products/index.js";
 import {
   errorMessage,
@@ -83,11 +83,27 @@ type PiModels = Pick<
 >;
 type Option = import("./types.js").Option;
 type ConfigDraft = HarnessConfigDraft;
+type ProductDiscoveryState = {
+  readonly status: 'idle' | 'loading' | 'ready' | 'error';
+  readonly root?: string;
+  readonly nextCursor?: string;
+  readonly scanned?: number;
+  readonly skipped?: number;
+  readonly diagnostics?: readonly DiscoveryDiagnostic[];
+  /** Discovery-index diagnostics are repeated by every cursor page and must only contribute once in the TUI. */
+  readonly rootDiagnostics?: readonly DiscoveryDiagnostic[];
+  /** Compatibility diagnostics from adapters that cannot return discovery-index diagnostics. */
+  readonly pageDiagnostics?: readonly DiscoveryDiagnostic[];
+  readonly message?: string;
+};
+
+type SessionLoadMode = 'initial' | 'more' | 'refresh';
 export type CodexIntakeTuiOptions = {
   readonly dataDir: string;
-  readonly sessionsRoot: string;
+  readonly sessionsRoot?: string;
   readonly sessionsRoots?: Readonly<Record<string, string>>;
   readonly pack?: ProductPack;
+  readonly packs?: readonly ProductPack[];
   readonly privacy: SessionPrivacy;
   readonly tui?: TUI;
   readonly now?: () => string;
@@ -95,11 +111,23 @@ export type CodexIntakeTuiOptions = {
   readonly displayCwd?: string;
   readonly piModels?: PiModels;
   readonly workflow?: CodexTuiWorkflow;
+  /** Schedules the coalesced timeline repaint; injectable so callers can deterministically drain it in tests. */
+  readonly queueTimelineRender?: (callback: () => void) => void;
 };
+function mergeDiscoveryDiagnostics(previous: readonly DiscoveryDiagnostic[] | undefined, next: readonly DiscoveryDiagnostic[]): readonly DiscoveryDiagnostic[] {
+  const totals = new Map<string, { count: number; samplePath?: string }>();
+  for (const diagnostic of [...previous ?? [], ...next]) {
+    const current = totals.get(diagnostic.code);
+    totals.set(diagnostic.code, { count: (current?.count ?? 0) + diagnostic.count, ...(current?.samplePath ?? diagnostic.samplePath ? { samplePath: current?.samplePath ?? diagnostic.samplePath } : {}) });
+  }
+  return [...totals.entries()].sort(([left], [right]) => left.localeCompare(right))
+    .map(([code, value]) => ({ code: code as DiscoveryDiagnostic['code'], count: value.count, ...(value.samplePath ? { samplePath: value.samplePath } : {}) }));
+}
+
 /** Keyboard-only Home-first benchmark workbench for configuration, intake, and isolated runs. */
 export class CodexIntakeTui {
   readonly dataDir: string;
-  readonly sessionsRoot: string;
+  readonly sessionsRoot: string | undefined;
   readonly sessionsRoots: Readonly<Record<string, string>>;
   readonly packs: readonly ProductPack[];
   privacy: SessionPrivacy;
@@ -110,13 +138,18 @@ export class CodexIntakeTui {
   readonly displayCwd: string;
   readonly piModels: PiModels | undefined;
   readonly workflow: CodexTuiWorkflow | undefined;
+  readonly queueTimelineRender: (callback: () => void) => void;
   page: Page = "loading";
   sessions: readonly SessionSummary[] = [];
+  activeProductId = '';
+  readonly productSessions = new Map<string, readonly SessionSummary[]>();
+  readonly productDiscovery = new Map<string, ProductDiscoveryState>();
+  private discoveryAbort: AbortController | undefined;
   inspection: SessionInspection | undefined;
   inspectionTaskInput = 0;
   selected = 0;
   filterEligible = false;
-  intakeLevel: IntakeLevel = "projects";
+  intakeLevel: IntakeLevel = "products";
   activeProjectKey = "";
   searchQuery = "";
   searchCursor = 0;
@@ -133,7 +166,7 @@ export class CodexIntakeTui {
   configBuffer = "";
   configCursor = 0;
   configPendingToggle = false;
-  hasCodexLogin = false;
+  readonly productAuth = new Map<string, boolean>();
   sessionLimitReached = false;
   providers: readonly Option[] = [];
   models: readonly Option[] = [];
@@ -196,10 +229,14 @@ export class CodexIntakeTui {
   constructor(options: CodexIntakeTuiOptions) {
     this.dataDir = options.dataDir;
     this.sessionsRoot = options.sessionsRoot;
-    this.packs = options.pack ? [options.pack] : productPacks;
-    this.sessionsRoots = options.sessionsRoots ?? Object.fromEntries(
-      this.packs.map((pack) => [pack.manifest.productId, options.sessionsRoot || pack.sessions.defaultRoot]),
-    );
+    this.packs = options.packs ?? (options.pack ? [options.pack] : productPacks);
+    // sessionsRoot predates Product Pack selection. It belongs to the explicitly supplied Pack,
+    // or to the historical Codex default, never to whichever custom Pack happens to be listed first.
+    const legacyPack = options.pack ?? this.packs.find((pack) => pack.manifest.productId === 'codex') ?? (this.packs.length === 1 ? this.packs[0] : undefined);
+    const legacyRoot = options.sessionsRoot && legacyPack
+      ? { [legacyPack.manifest.productId]: options.sessionsRoot }
+      : {};
+    this.sessionsRoots = { ...legacyRoot, ...options.sessionsRoots };
     this.privacy = options.privacy;
     this.tui =
       options.tui ??
@@ -217,6 +254,7 @@ export class CodexIntakeTui {
     this.displayCwd = options.displayCwd ?? process.cwd();
     this.piModels = options.piModels;
     this.workflow = options.workflow;
+    this.queueTimelineRender = options.queueTimelineRender ?? ((callback) => { setTimeout(callback, 16); });
   }
   async start(): Promise<void> {
     if (this.started) return;
@@ -238,7 +276,7 @@ export class CodexIntakeTui {
       configurationIssue = `Could not read local configuration: ${safeConfigError(error)}`;
     }
     await this.refreshHarnessAuth();
-    this.refreshCodexLogin();
+    void this.refreshProductAuth();
     this.locale = (await readTuiPreferences(this.dataDir)).locale;
     await this.loadHome(configurationIssue);
     this.render(true);
@@ -478,7 +516,7 @@ export class CodexIntakeTui {
     }
   }
   async loadHome(initialMessage?: string): Promise<void> {
-    this.refreshCodexLogin();
+    void this.refreshProductAuth();
     const token = this.beginNavigation();
     try {
       this.recentExperiment = (
@@ -493,27 +531,103 @@ export class CodexIntakeTui {
     this.message = initialMessage ?? t(this.locale, "welcomeBack");
   }
   async loadSessions(): Promise<void> {
+    this.beginNavigation();
+    this.intakeLevel = "products";
+    this.activeProductId = "";
+    this.selected = 0;
+    this.searchQuery = "";
+    this.searchCursor = 0;
+    this.searching = false;
+    this.page = "sessions";
+    this.message = "Select an agent product.";
+    this.render(true);
+  }
+
+  async loadProductSessions(productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
+    const pack = this.packs.find((item) => item.manifest.productId === productId);
+    if (!pack) return;
+    const root = resolve(this.sessionsRoots[productId] ?? pack.sessions.defaultRoot);
+    const state = this.productDiscovery.get(productId);
+    const cached = this.productSessions.get(productId);
+    if (mode === "initial" && state?.status === "ready" && state.root === root && cached) {
+      this.activateProductSessions(productId, cached, Boolean(state.nextCursor));
+      this.render(true);
+      return;
+    }
+    if (mode === "more" && (!cached || !state?.nextCursor || state.root !== root)) return;
     const token = this.beginNavigation();
+    this.discoveryAbort?.abort();
+    const abort = new AbortController();
+    this.discoveryAbort = abort;
+    this.activeProductId = productId;
+    this.productDiscovery.set(productId, { status: "loading", root, ...(state?.nextCursor ? { nextCursor: state.nextCursor } : {}) });
+    this.render();
     try {
-      const discovered = await Promise.all(this.packs.map(async (pack) => {
-        const root = this.sessionsRoots[pack.manifest.productId] ?? this.sessionsRoot ?? pack.sessions.defaultRoot;
-        return [...await pack.sessions.discover({ root, limit: SESSION_LIMIT, excludeRoots: [this.dataDir, process.cwd()] })];
-      }));
-      this.sessions = discovered.flat().sort((left, right) => right.startedAt.localeCompare(left.startedAt)).slice(0, SESSION_LIMIT);
-      this.sessionLimitReached = this.sessions.length === SESSION_LIMIT;
-      if (token !== this.generation) return;
-      this.selected = 0;
-      this.searchQuery = "";
-      this.searchCursor = 0;
-      this.searching = false;
-      this.syncIntakeLevel();
-      this.page = "sessions";
-      this.message = this.sessionsMessage();
+      const discovered = await pack.sessions.discover({
+        root,
+        limit: SESSION_LIMIT,
+        ...(mode === "more" && state?.nextCursor ? { cursor: state.nextCursor } : {}),
+        excludeRoots: [this.dataDir, process.cwd()],
+        signal: abort.signal,
+        ...(mode === "refresh" ? { refresh: true } : {}),
+      });
+      const invalid = discovered.items.find((session) => session.productId !== productId);
+      if (invalid) throw new Error(`Session adapter for ${productId} returned ${invalid.productId}.`);
+      if (token !== this.generation || abort.signal.aborted) return;
+      const sessions = [...(mode === "more" ? cached ?? [] : []), ...discovered.items.slice(0, SESSION_LIMIT)]
+        .sort(compareSessionSummaries);
+      const rootDiagnostics = discovered.rootDiagnostics ?? (mode === "more" ? state?.rootDiagnostics ?? [] : []);
+      const pageDiagnostics = discovered.pageDiagnostics ?? (discovered.rootDiagnostics ? [] : discovered.diagnostics);
+      const accumulatedPageDiagnostics = mergeDiscoveryDiagnostics(
+        mode === "more" ? state?.pageDiagnostics : undefined,
+        pageDiagnostics,
+      );
+      const diagnostics = mergeDiscoveryDiagnostics(rootDiagnostics, accumulatedPageDiagnostics);
+      this.productSessions.set(productId, sessions);
+      this.productDiscovery.set(productId, {
+        status: "ready", root,
+        ...(discovered.nextCursor ? { nextCursor: discovered.nextCursor } : {}),
+        scanned: discovered.scanned,
+        skipped: diagnostics.reduce((total, diagnostic) => total + diagnostic.count, 0),
+        diagnostics,
+        ...(rootDiagnostics.length ? { rootDiagnostics } : {}),
+        ...(accumulatedPageDiagnostics.length ? { pageDiagnostics: accumulatedPageDiagnostics } : {}),
+      });
+      this.activateProductSessions(productId, sessions, Boolean(discovered.nextCursor));
     } catch (error) {
-      if (token !== this.generation) return;
-      this.showError(error, "home");
+      if (token !== this.generation || abort.signal.aborted) return;
+      const message = operatorErrorMessage(error);
+      this.productDiscovery.set(productId, { status: "error", root, message });
+      this.intakeLevel = "products";
+      this.activeProductId = "";
+      this.selected = Math.max(0, this.packs.findIndex((item) => item.manifest.productId === productId));
+      this.message = "Select an agent product.";
+    } finally {
+      if (this.discoveryAbort === abort) this.discoveryAbort = undefined;
     }
     this.render(true);
+  }
+
+  loadMoreProductSessions(): void {
+    if (this.activeProductId) void this.loadProductSessions(this.activeProductId, "more");
+  }
+
+  refreshProductSessions(): void {
+    if (this.activeProductId) void this.loadProductSessions(this.activeProductId, "refresh");
+  }
+
+  private activateProductSessions(productId: string, sessions: readonly SessionSummary[], limitReached: boolean): void {
+    this.activeProductId = productId;
+    this.sessions = sessions;
+    this.sessionLimitReached = limitReached;
+    this.selected = 0;
+    this.searchQuery = "";
+    this.searchCursor = 0;
+    this.searching = false;
+    this.intakeLevel = "projects";
+    this.syncIntakeLevel();
+    this.page = "sessions";
+    this.message = this.sessionsMessage();
   }
   move(amount: number): { consume: true } {
     const count = this.intakeCount();
@@ -529,10 +643,10 @@ export class CodexIntakeTui {
   scheduleTimelineRender(): void {
     if (this.timelineRenderQueued) return;
     this.timelineRenderQueued = true;
-    setTimeout(() => {
+    this.queueTimelineRender(() => {
       this.timelineRenderQueued = false;
       if (this.page === "running") this.render();
-    }, 16);
+    });
   }
 
   visibleTimeline(): readonly TimelineEntry[] {
@@ -658,6 +772,7 @@ export class CodexIntakeTui {
 
   backToHome(): { consume: true } {
     void discardRecovery(this);
+    this.discoveryAbort?.abort();
     this.generation += 1;
     this.configEditing = false;
     this.configBuffer = "";
@@ -692,6 +807,7 @@ export class CodexIntakeTui {
 
   close(): { consume: true } {
     if (this.closed) return { consume: true };
+    this.discoveryAbort?.abort();
     this.generation += 1;
     this.closed = true;
     stopRunClock(this);
@@ -709,6 +825,11 @@ export class CodexIntakeTui {
 
 
   openIntakeSelection(): { consume: true } {
+    if (this.intakeLevel === "products") {
+      const pack = this.packs[this.selected];
+      if (pack) void this.loadProductSessions(pack.manifest.productId);
+      return { consume: true };
+    }
     if (this.intakeLevel === "projects") {
       const project = this.visibleProjects()[this.selected];
       if (!project) return { consume: true };
@@ -732,40 +853,54 @@ export class CodexIntakeTui {
 
   /** The one place that phrases the session browser's state, so every level change says the same thing. */
   sessionsMessage(): string {
-    if (!this.sessions.length) return t(this.locale, "noSessionsFound");
-    const truncation = this.sessionLimitReached
-      ? t(this.locale, "showingNewest", { n: SESSION_LIMIT })
+    const discovery = this.activeProductId ? this.productDiscovery.get(this.activeProductId) : undefined;
+    const skipped = discovery?.skipped ?? 0;
+    const status = t(this.locale, "sessionDiscoveryStatus", { shown: this.sessions.length, skipped });
+    const scanned = ` · ${discovery?.scanned ?? this.sessions.length} ${this.locale === 'zh' ? '已扫描' : 'scanned'}`;
+    const more = this.sessionLimitReached
+      ? ` · ${t(this.locale, "moreAvailable")}. ${t(this.locale, "loadMoreSessions")}`
+      : ".";
+    const diagnostics = discovery?.diagnostics?.length
+      ? ` ${t(this.locale, "sessionDiagnostics", {
+        diagnostics: discovery.diagnostics.map((diagnostic) => `${this.discoveryDiagnosticLabel(this.locale, diagnostic.code)} (${diagnostic.count})`).join(", "),
+      })}.`
       : "";
-    return (
-      (this.intakeLevel === "projects"
-        ? t(this.locale, "chooseProject")
-        : t(this.locale, "chooseSession")) + truncation
-    );
+    if (!this.sessions.length) return `${t(this.locale, "noSessionsFound")} ${status}${more}${scanned}${diagnostics}`;
+    const instruction = this.intakeLevel === "projects"
+      ? t(this.locale, "chooseProject")
+      : t(this.locale, "chooseSession");
+    return `${instruction} ${status}${more}${scanned}${diagnostics}`;
   }
 
-  refreshCodexLogin(): void {
-    void this.refreshProductAuth();
+
+discoveryDiagnosticLabel(locale: Locale, code: DiscoveryDiagnostic['code']): string {
+    return code === 'history-without-transcript' ? t(locale, 'historyWithoutTranscript') : code;
   }
 
   async refreshProductAuth(): Promise<void> {
-    const statuses = await Promise.all(this.packs.map((pack) => pack.checkAuth()));
-    this.hasCodexLogin = statuses.some((status) => status.configured);
+    const statuses = await Promise.all(this.packs.map(async (pack) => ({
+      productId: pack.manifest.productId,
+      status: await pack.checkAuth(),
+    })));
+    this.productAuth.clear();
+    for (const { productId, status } of statuses) this.productAuth.set(productId, status.configured);
   }
 
   canLeaveProject(): boolean {
-    return (
-      this.intakeLevel === "sessions" && this.groupedProjects().length > 1
-    );
+    return this.intakeLevel !== "products";
   }
 
   backToProjects(): { consume: true } {
-    this.intakeLevel = "projects";
-    this.selected = Math.max(
-      0,
-      this.visibleProjects().findIndex(
-        (project) => project.key === this.activeProjectKey,
-      ),
-    );
+    if (this.intakeLevel === "projects") {
+      this.discoveryAbort?.abort();
+      this.beginNavigation();
+      this.intakeLevel = "products";
+      this.selected = Math.max(0, this.packs.findIndex((pack) => pack.manifest.productId === this.activeProductId));
+      this.activeProductId = "";
+    } else {
+      this.intakeLevel = "projects";
+      this.selected = Math.max(0, this.visibleProjects().findIndex((project) => project.key === this.activeProjectKey));
+    }
     this.searching = false;
     this.searchQuery = "";
     this.searchCursor = 0;
@@ -776,17 +911,11 @@ export class CodexIntakeTui {
 
   syncIntakeLevel(): void {
     const projects = this.groupedProjects();
-    if (projects.length <= 1) {
-      this.intakeLevel = "sessions";
+    if (!this.activeProjectKey || !projects.some((project) => project.key === this.activeProjectKey)) {
       this.activeProjectKey = projects[0]?.key ?? "";
-      return;
     }
-    if (
-      this.intakeLevel === "sessions" &&
-      !projects.some((project) => project.key === this.activeProjectKey)
-    ) {
+    if (this.intakeLevel === "sessions" && !projects.some((project) => project.key === this.activeProjectKey)) {
       this.intakeLevel = "projects";
-      this.activeProjectKey = projects[0]?.key ?? "";
     }
   }
 
@@ -831,9 +960,20 @@ export class CodexIntakeTui {
   }
 
   intakeCount(): number {
-    return this.intakeLevel === "projects"
-      ? this.visibleProjects().length
-      : this.visibleSessions().length;
+    if (this.intakeLevel === "products") return this.packs.length;
+    return this.intakeLevel === "projects" ? this.visibleProjects().length : this.visibleSessions().length;
+  }
+
+  productItems(): import("./pages/intake.js").ProductIntakeItem[] {
+    return this.packs.map((pack) => {
+      const state = this.productDiscovery.get(pack.manifest.productId) ?? { status: "idle" as const };
+      const root = resolve(this.sessionsRoots[pack.manifest.productId] ?? pack.sessions.defaultRoot);
+      const sessions = state.root === root ? this.productSessions.get(pack.manifest.productId) : undefined;
+      return { productId: pack.manifest.productId, displayName: pack.manifest.displayName, packVersion: pack.manifest.packVersion,
+        discoveryStatus: state.status, ...(sessions ? { sessionCount: sessions.length } : {}), ...(state.scanned !== undefined ? { scanned: state.scanned } : {}),
+        ...(state.nextCursor ? { limitReached: true } : {}),
+        ...(state.skipped ? { skipped: state.skipped } : {}), ...(state.message ? { diagnostic: state.message } : {}) };
+    });
   }
 
   beginNavigation(): number {
@@ -950,8 +1090,19 @@ export class CodexIntakeTui {
     else this.tui.requestRender();
   }
 
+  productContext(): { productLabel?: string; productConfigured?: boolean } {
+    const productId = this.taskCase?.source.productId || this.activeProductId;
+    const pack = this.packs.find((item) => item.manifest.productId === productId);
+    if (!pack) return {};
+    return {
+      productLabel: pack.manifest.displayName,
+      productConfigured: this.productAuth.get(productId) ?? false,
+    };
+  }
+
   view(): WorkbenchView {
     const envName = envNameFromConfig(this.modelConfig, this.configDraft);
+    const product = this.productContext();
     return projectWorkbenchView({
       page: this.page,
       cwd: this.displayCwd,
@@ -960,7 +1111,7 @@ export class CodexIntakeTui {
       locale: this.locale,
       harnessAuthOk: this.harnessAuthOk,
       ...(envName ? { envName } : {}),
-      hasCodexLogin: this.hasCodexLogin,
+      ...product,
       taskCase: this.taskCase,
       message: this.message,
       inlineHelp: this.inlineHelp,
@@ -983,6 +1134,7 @@ export class CodexIntakeTui {
       historySelected: this.historySelected,
       historyDetail: this.historyDetail,
       intakeLevel: this.intakeLevel,
+      products: this.productItems(),
       visibleProjects: this.visibleProjects(),
       activeProjectKey: this.activeProjectKey,
       visibleSessions: this.visibleSessions(),
@@ -1061,4 +1213,3 @@ function harnessCaller(
     ? new PiModelCaller(config)
     : new PiModelCaller(config, catalog);
 }
-

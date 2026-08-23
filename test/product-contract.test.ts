@@ -31,7 +31,7 @@ test('fake pack import freezes idempotently and redacts secrets', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-fake-freeze-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const sessions = await fakeProductPack.sessions.discover();
-  const session = sessions[0];
+  const session = sessions.items[0];
   assert.ok(session);
   const imported = await fakeProductPack.sessions.import({
     productId: 'fake',

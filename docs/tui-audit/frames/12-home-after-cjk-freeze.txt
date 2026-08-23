@@ -1,15 +1,14 @@
-Reprise v0.1.0   C:\Users\15893\Documents\model-test\Reprise
-gpt-5.6-terra · medium   ⚠ Harness key missing  ○ Codex  ● Task
+Reprise v0.1.0   C:\reprise                              gpt-5.6-terra · medium   ⚠ Harness key missing  ○ Codex  ● Task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Last task  修复这个回归缺陷并验证测试全部通过
 
  Continue
  r     Replay the current task  needs credential
- i     Import a Codex session
+ i     Import a historical session
  c     Open /config  needs credential
 
  Browse
- /intake    Import a Codex historical session
+ /intake    Import a historical agent session
  /history   Local tasks and replays
  /config    Endpoint, model, API key
  /lang      Switch language

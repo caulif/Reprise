@@ -18,13 +18,13 @@ export const fakeSessionAdapter: SessionSourceAdapter = {
     const root = resolve(query?.root ?? this.defaultRoot);
     const limit = query?.limit ?? 50;
     let names: string[];
-    try { names = await readdir(root); } catch { return []; }
+    try { names = await readdir(root); } catch { return { items: [], scanned: 0, skipped: 0, diagnostics: [] }; }
     const summaries: SessionSummary[] = [];
     for (const name of names.sort().reverse()) {
       if (!name.endsWith('.jsonl') || summaries.length >= limit) continue;
       try { summaries.push(await inspectPath(join(root, name))); } catch { /* skip bad files */ }
     }
-    return summaries;
+    return { items: summaries, scanned: names.length, skipped: 0, diagnostics: [] };
   },
   inspect(ref: SessionRef) {
     if (!ref.sourcePath) throw new Error('Fake session inspect requires a sourcePath.');

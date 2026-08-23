@@ -1,6 +1,6 @@
 # AGENTS.md
 
-改代码后跑 `npm run check`（[门禁](docs/plan/agent-oriented-engineering-optimization.md)）。只改文档跑 `npm run verify:docs`。不要为一次改动默认跑全套。
+改代码后跑 `npm run check`（[门禁](docs/engineering-gates.md)）。只改文档跑 `npm run verify:docs`。不要为一次改动默认跑全套。新增或修改门禁时，同一次变更必须附一个能让该门禁失败的自动化用例（[反向用例](docs/decisions/accepted/2026-08-15-gate-reverse-tests.md)）。覆盖率阈值只能升不能降（[覆盖率](docs/decisions/accepted/2026-08-14-coverage-thresholds.md)）。
 
 测试读的是 `dist/`。改完源码必须先 `npm run build`；`node --test` 直接跑 `.ts` 不成立（[`package.json`](package.json)）。
 
@@ -14,7 +14,7 @@ CandidateRun 状态变化只能过 `src/core/state-machine.ts` 的 `assertTransi
 
 TUI 是事件日志的只读投影，不持有实验状态机，不伪造未公开的推理过程（[TUI](docs/product/tui.md)）。
 
-只存 `env:NAME` 引用，密钥值不写入任何 Reprise 文件；不读也不保存 Codex 凭据（[凭据](docs/product/overview.md#13-凭据)）。
+模型服务 API 密钥可存于本机且 Git 忽略的 `.reprise/harness-model.json` 的 `apiKey` 字段，等同于 Codex `auth.json` / Claude Code `.credentials.json` 的本地凭据；也可继续使用 `env:NAME` 引用。不得提交、打印、复制到事件、artifact 或报告；不读也不保存 Codex 凭据（[凭据](docs/product/overview.md#13-凭据)）。
 
 真实 Runtime 调用必须显式 opt-in（环境变量），默认路径不产生外部费用（[smoke](docs/codex-smoke-gate.md)）。
 

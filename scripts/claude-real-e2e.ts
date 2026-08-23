@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   });
   const result = await handle.result;
   const report = await readFile(result.reportPath, 'utf8');
-  const comparisonPath = join(result.experimentRoot, 'comparison.md');
+  const comparisonPath = join(result.experimentRoot, 'report.html');
   let comparison = '';
   try { comparison = await readFile(comparisonPath, 'utf8'); } catch { /* comparison agent may have failed */ }
   const body = `${report}\n${comparison}`.toLowerCase();

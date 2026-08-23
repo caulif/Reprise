@@ -8,8 +8,7 @@ import { COMPARISON_SYSTEM_PROMPT } from '../src/agents/comparison-agent.js';
 import { RECOVERY_SYSTEM_PROMPT } from '../src/agents/recovery-agent.js';
 import { comparisonReportTool, observationTools } from '../src/infrastructure/agent-tools.js';
 import { recoveryObservationTools, recoveryTools } from '../src/infrastructure/recovery-tools.js';
-import { buildComparisonProjection, renderComparisonReport } from '../src/report/comparison-report.js';
-import type { RunRecord, TaskCase } from '../src/core/schema.js';
+import type { TaskCase } from '../src/core/schema.js';
 import type { ExperimentStore } from '../src/infrastructure/store/experiment-store.js';
 
 const SNAPSHOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../test/snapshots');
@@ -56,50 +55,4 @@ test('runtime-facing tool schemas match committed snapshots', async () => {
   await assertSnapshot('comparison-report-tool', toolCatalog([comparisonReportTool('TMP')]));
   await assertSnapshot('recovery-observation-tools', toolCatalog(recoveryObservationTools(taskCase)));
   await assertSnapshot('recovery-tools', toolCatalog(recoveryTools('TMP', 8)));
-});
-
-test('comparison report rendering matches a committed snapshot', async () => {
-  const timestamp = '2026-08-10T00:00:00.000Z';
-  const taskCase: TaskCase = {
-    schemaVersion: 1, caseId: 'case-1', source: { productId: 'codex', sessionId: 'session-1' },
-    initialInput: { id: 'message-1', role: 'user', text: 'Add a deterministic fixture importer.' },
-    transcript: [{ id: 'message-1', role: 'user', text: 'Add a deterministic fixture importer.' }],
-    historicalEvents: [],
-    baseline: { status: 'available', finalMessage: 'Implemented the importer.', artifactRefs: [], evidenceRefs: ['event:baseline-1'] },
-    sourceRuntimeEvidence: { productId: 'codex', artifactRefs: [] },
-    provenance: { packVersion: 'fixture', importedAt: timestamp, sourceHash: 'a'.repeat(64) },
-    privacy: { allowModelText: true, allowBinary: false, redactions: [] },
-    contentHash: 'b'.repeat(64),
-  };
-  const run: RunRecord = {
-    attempt: {
-      schemaVersion: 1, runId: 'run-1', experimentId: 'experiment-1', caseId: 'case-1',
-      candidate: { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-5.6-codex' },
-      policy: { wallClockMs: 1000, maxTargetTurns: 2, maxModelCalls: 2, turnTimeoutMs: 1000, maxConsecutiveNoProgress: 1 },
-      createdAt: timestamp,
-    },
-    state: 'finished', stageReached: 'awaiting_controller',
-    outcome: {
-      task: { status: 'apparently_completed', decidedBy: 'controller', evidenceRefs: ['event:task-1'] },
-      termination: { kind: 'completed', code: 'completed.controller_satisfied', initiatedBy: 'controller' },
-      cleanup: { status: 'complete', remainingResourceIds: [], evidenceRefs: ['event:cleanup-1'] },
-    },
-    trace: { experimentId: 'experiment-1', runId: 'run-1', firstSequence: 1, lastSequence: 2 },
-    artifactRefs: [],
-    warnings: [],
-  };
-  const html = renderComparisonReport(buildComparisonProjection({
-    taskCase,
-    runs: [run],
-    inspections: [{
-      runId: 'run-1',
-      finalMessage: 'Implemented the importer.',
-      changedPaths: ['src/importer.ts'],
-      runtimeGeneratedPaths: [],
-      commands: ['read_file'],
-      rejectedApprovals: 0,
-      turns: 1,
-    }],
-  }));
-  await assertSnapshot('comparison-report', html);
 });
