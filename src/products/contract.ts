@@ -93,7 +93,8 @@ export type DiscoveryDiagnosticCode =
   | 'catalog-schema-unsupported'
   | 'catalog-read-error'
   | 'global-state-unavailable'
-  | 'source-missing';
+  | 'source-missing'
+  | 'conflicting-project-source';
 
 /** Aggregate information about local records discovery intentionally did not surface. */
 export type DiscoveryDiagnostic = {

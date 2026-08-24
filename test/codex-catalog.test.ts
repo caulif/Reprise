@@ -72,6 +72,32 @@ test("Codex catalog degrades a database with no threads table", async (t) => {
 });
 
 
+test("Codex catalog reports unavailable sources and project conflicts", async (t) => {
+  const missingRoot = await mkdtemp(join(tmpdir(), "reprise-codex-catalog-missing-"));
+  t.after(async () => rm(missingRoot, { recursive: true, force: true }));
+  const missing = await readCodexCatalog({ codexHome: missingRoot });
+  assert.equal(missing.diagnostics.some((diagnostic) => diagnostic.code === "catalog-unavailable"), true);
+
+  const root = await mkdtemp(join(tmpdir(), "reprise-codex-catalog-conflict-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const db = new DatabaseSync(join(root, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT NOT NULL, rollout_path TEXT, created_at INTEGER, updated_at INTEGER, cwd TEXT, project_id TEXT)");
+  db.prepare("INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?)").run(
+    "11111111-2222-4333-8444-555555555555", null, 1_750_000_000, 1_750_000_001, "C:\\other", "database-project",
+  );
+  db.close();
+  await writeFile(join(root, ".codex-global-state.json"), JSON.stringify({
+    "local-projects": {
+      assigned: { id: "assigned", name: "Assigned", rootPaths: ["C:\\assigned"] },
+      database: { id: "database-project", name: "Database", rootPaths: ["C:\\database"] },
+    },
+    "thread-project-assignments": { "11111111-2222-4333-8444-555555555555": { projectId: "assigned" } },
+  }));
+  const conflict = await readCodexCatalog({ codexHome: root });
+  assert.equal(conflict.sessions[0]?.cwd, "C:\\assigned");
+  assert.equal(conflict.diagnostics.some((diagnostic) => diagnostic.code === "conflicting-project-source"), true);
+});
+
 test("projectless provenance overrides a transcript cwd during grouping", () => {
   const projects = groupSessionsByProject([{
     productId: "codex", sessionId: "projectless-thread", sourcePath: "/tmp/session.jsonl", cwd: "C:\\demo",

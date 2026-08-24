@@ -72,6 +72,7 @@ export async function freeze(
     const session = c.inspection ?? c.sessions.find((item) => item.sourcePath === sourcePath);
     const pack = c.packs.find((item) => item.manifest.productId === session?.productId);
     if (!pack) throw new Error(`No Product Pack is registered for session ${session?.productId ?? 'unknown'}.`);
+    if (session?.availability === 'catalog-only') throw new Error('Selected session has catalog metadata but no readable transcript.');
     const imported = await pack.sessions.import({
       productId: pack.manifest.productId,
       sessionId: session?.sessionId ?? 'session',

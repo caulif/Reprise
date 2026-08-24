@@ -20,7 +20,7 @@ Pack 的 discovery 返回完整轻量条目与正式项目目录；TUI 只在完
 
 ## 影响
 
-列表发现仍是本地只读、无网络和无 Runtime 副作用；启动阶段只读取目录元数据与 bounded summary，详情和冻结路径按需读取 transcript 正文。数据库或 global state 不可用时会降级到 rollout 发现，并通过 diagnostics 解释缺失来源。
+列表发现仍是本地只读、无网络和无 Runtime 副作用；启动阶段只读取目录元数据与 bounded summary，详情和冻结路径按需读取 transcript 正文。数据库或 global state 不可用时会降级到 rollout 发现，并通过 diagnostics 解释缺失来源。若 catalog 与 rollout 都不可用，返回 `catalog-unavailable`；项目 assignment、SQLite project、workspace hint 或记录 cwd 不一致时按 assignment、SQLite project、workspace hint、记录 cwd 的优先级归属，并返回 `conflicting-project-source`，不静默覆盖。
 
 ## 验证
 

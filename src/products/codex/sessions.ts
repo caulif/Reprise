@@ -40,6 +40,7 @@ async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<S
   const root = resolve(query.root ?? defaultCodexSessionsRoot());
   const listing = await listJsonlFiles(root, (name) => name.startsWith('rollout-') && name.endsWith('.jsonl'), query.signal);
   const ranked = [...listing.entries].sort((left, right) => right.mtime - left.mtime || left.path.localeCompare(right.path));
+  const catalogPromise = query.cursor ? undefined : readCodexCatalog({ codexHome: resolve(join(root, '..')), sessionsRoot: root });
   const rolloutPage = await discoverSessionPage({
     root, ranked,
     // An omitted limit means the adapter is building the complete catalog. Explicit limits remain a compatibility API.
@@ -51,10 +52,10 @@ async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<S
     exclude: (session) => excludedCwd(session.cwd, query.excludeRoots),
   });
   if (query.cursor) return rolloutPage;
-  const catalog = await readCodexCatalog({ codexHome: resolve(join(root, '..')), sessionsRoot: root });
+  const catalog = await catalogPromise!;
   const merged = mergeCodexSources(rolloutPage.items, catalog.sessions, query.excludeRoots);
   return { ...rolloutPage, items: merged, scanned: Math.max(rolloutPage.scanned, merged.length),
-    skipped: rolloutPage.skipped + catalog.diagnostics.reduce((total, diagnostic) => total + diagnostic.count, 0),
+    skipped: rolloutPage.skipped,
     diagnostics: [...rolloutPage.diagnostics, ...catalog.diagnostics],
     ...(catalog.projects.length ? { projects: catalog.projects.map((project): SessionDiscoveryProject => ({ key: `codex\0${(project.rootPaths[0] ?? '').replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()}`, label: project.name, ...(project.rootPaths[0] ? { path: project.rootPaths[0] } : {}) })) } : {}) };
 }

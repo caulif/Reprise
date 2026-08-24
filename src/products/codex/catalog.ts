@@ -3,6 +3,7 @@ import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { SAFE_ID } from '../../core/identity.js';
+import { pathContainedBy } from '../../core/paths.js';
 import { text } from '../../core/json.js';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
@@ -17,12 +18,12 @@ type SqlRow = Record<string, unknown>;
 const NullableText = Type.Union([Type.String(), Type.Null()]);
 const CodexThreadRowSchema = Type.Object({
   id: Type.String(),
-  rollout_path: NullableText,
-  created_at: Type.Unknown(),
-  updated_at: Type.Unknown(),
-  cwd: NullableText,
-  title: NullableText,
-  preview: NullableText,
+  rollout_path: Type.Optional(NullableText),
+  created_at: Type.Optional(Type.Unknown()),
+  updated_at: Type.Optional(Type.Unknown()),
+  cwd: Type.Optional(NullableText),
+  title: Type.Optional(NullableText),
+  preview: Type.Optional(NullableText),
   model: Type.Optional(NullableText),
   has_user_event: Type.Optional(Type.Union([Type.Number(), Type.String(), Type.Null()])),
   archived: Type.Optional(Type.Union([Type.Number(), Type.Boolean(), Type.Null()])),
@@ -34,7 +35,10 @@ export async function readCodexCatalog(options: CodexCatalogOptions = {}): Promi
   const codexHome = resolve(options.codexHome ?? join(homedir(), '.codex'));
   const sessionsRoot = resolve(options.sessionsRoot ?? join(codexHome, 'sessions'));
   const diagnostics: DiscoveryDiagnostic[] = [];
-  if (!existsSync(join(codexHome, 'state_5.sqlite')) && !existsSync(join(codexHome, '.codex-global-state.json'))) return { sessions: [], projects: [], diagnostics };
+  if (!existsSync(join(codexHome, 'state_5.sqlite')) && !existsSync(join(codexHome, '.codex-global-state.json'))) {
+    diagnostics.push({ code: 'catalog-unavailable', count: 1, samplePath: codexHome });
+    return { sessions: [], projects: [], diagnostics };
+  }
   const global = await readCodexGlobalState(codexHome, diagnostics);
   const projects = global.projects;
   const databasePath = join(codexHome, 'state_5.sqlite');
@@ -79,8 +83,14 @@ function catalogSummary(row: SqlRow, sessionsRoot: string, global: CodexGlobalSt
   if (text(row.rollout_path) && !rolloutPath) diagnostics.push({ code: 'source-missing', count: 1, samplePath: 'state_5.sqlite' });
   const assigned = global.assignments[id];
   const databaseProject = text(row.project_id);
+  const workspaceHint = global.workspaceHints[id];
+  const rowCwd = text(row.cwd);
   const project = assigned ? global.projectsById.get(assigned) : databaseProject ? global.projectsById.get(databaseProject) : undefined;
-  const cwd = project?.rootPaths[0] ?? global.workspaceHints[id] ?? text(row.cwd);
+  const projectRoot = project?.rootPaths[0];
+  if (assigned && databaseProject && assigned !== databaseProject) diagnostics.push({ code: 'conflicting-project-source', count: 1, samplePath: 'state_5.sqlite' });
+  if (projectRoot && workspaceHint && !pathContainedBy(projectRoot, workspaceHint) && !pathContainedBy(workspaceHint, projectRoot)) diagnostics.push({ code: 'conflicting-project-source', count: 1, samplePath: '.codex-global-state.json' });
+  if (projectRoot && rowCwd && !pathContainedBy(projectRoot, rowCwd)) diagnostics.push({ code: 'conflicting-project-source', count: 1, samplePath: 'state_5.sqlite' });
+  const cwd = projectRoot ?? workspaceHint ?? rowCwd;
   const projectless = global.projectless.has(id) || (!project && !cwd);
   const sourcePath = rolloutPath ?? join(sessionsRoot, '.catalog', `${id}.jsonl`);
   const createdAt = instant(row.created_at);

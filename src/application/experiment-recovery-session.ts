@@ -77,6 +77,8 @@ export type RecoveryRunSession = {
   executionCandidate?: RecoveryCandidateStaging;
   context?: RecoveryContext;
   tools?: AgentToolDefinition[];
+  readinessSignature?: string;
+  noProgressTurns?: number;
   graphCandidates?: RecoveryCandidate[];
   candidateReviews?: { candidateId: string; artifactId: string }[];
   candidateGraphArtifactId?: string;

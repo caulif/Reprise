@@ -108,7 +108,7 @@ test('Codex discovery reports malformed and oversized summaries but keeps a file
   assert.equal(session.startedAt, undefined);
   assert.equal(session.updatedAt, fallbackMtime.toISOString());
   assert.equal(session.updatedAtSource, 'file-mtime');
-  assert.deepEqual(page.diagnostics.map((item) => item.code), ['invalid-metadata', 'too-large']);
+  assert.deepEqual(page.diagnostics.map((item) => item.code), ['invalid-metadata', 'too-large', 'catalog-unavailable']);
   assert.equal(page.skipped, 2);
 });
 test('Codex discovery uses the earliest valid event instant as the session start', async (t) => {
