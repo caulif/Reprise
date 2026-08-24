@@ -22,7 +22,7 @@ export async function recoverCodexExperiment(
   try {
     return await runRecoverCodexExperiment(session);
   } catch (error) {
-    return failRecoveryRunSession(session, error);
+    return await failRecoveryRunSession(session, error);
   } finally {
     await closeRecoveryRunSession(session);
   }

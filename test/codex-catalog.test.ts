@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -105,4 +105,43 @@ test("projectless provenance overrides a transcript cwd during grouping", () => 
   }]);
   assert.equal(projects[0]?.key, "projectless");
   assert.equal(projects[0]?.label, "Projectless sessions");
+});
+
+
+test("Codex catalog degrades corrupt and unsupported SQLite schemas without throwing", async (t) => {
+  const corruptRoot = await mkdtemp(join(tmpdir(), "reprise-codex-sqlite-corrupt-"));
+  t.after(async () => rm(corruptRoot, { recursive: true, force: true }));
+  await writeFile(join(corruptRoot, "state_5.sqlite"), "not a sqlite database");
+  const corrupt = await readCodexCatalog({ codexHome: corruptRoot });
+  assert.equal(corrupt.sessions.length, 0);
+  assert.equal(corrupt.diagnostics.some((diagnostic) => diagnostic.code === "catalog-read-error"), true);
+
+  const unsupportedRoot = await mkdtemp(join(tmpdir(), "reprise-codex-sqlite-columns-"));
+  t.after(async () => rm(unsupportedRoot, { recursive: true, force: true }));
+  const db = new DatabaseSync(join(unsupportedRoot, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT NOT NULL, title TEXT)");
+  db.close();
+  const unsupported = await readCodexCatalog({ codexHome: unsupportedRoot });
+  assert.equal(unsupported.sessions.length, 0);
+  assert.equal(unsupported.diagnostics.some((diagnostic) => diagnostic.code === "catalog-schema-unsupported"), true);
+});
+
+test("Codex catalog keeps unsafe rollout paths visible as catalog-only", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-codex-rollout-paths-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const sessionsRoot = join(root, "sessions");
+  await mkdir(sessionsRoot);
+  const outside = join(root, "outside.jsonl");
+  await writeFile(outside, "{}\n");
+  await mkdir(join(sessionsRoot, "rollout-directory"));
+  const db = new DatabaseSync(join(root, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT NOT NULL, rollout_path TEXT)");
+  db.prepare("INSERT INTO threads VALUES (?, ?)").run("relative", "../outside.jsonl");
+  db.prepare("INSERT INTO threads VALUES (?, ?)").run("absolute", outside);
+  db.prepare("INSERT INTO threads VALUES (?, ?)").run("directory", "rollout-directory");
+  db.close();
+  const catalog = await readCodexCatalog({ codexHome: root, sessionsRoot });
+  assert.equal(catalog.sessions.length, 3);
+  assert.equal(catalog.sessions.every((session) => session.availability === "catalog-only"), true);
+  assert.equal(catalog.diagnostics.filter((diagnostic) => diagnostic.code === "source-missing").length, 3);
 });

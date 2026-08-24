@@ -102,8 +102,9 @@ function catalogSummary(row: SqlRow, sessionsRoot: string, global: CodexGlobalSt
     ...(cwd ? { cwd } : {}), ...(text(row.model) ? { model: text(row.model) } : {}),
     ...(text(row.title) || text(row.preview) ? { summary: text(row.title) ?? text(row.preview) } : {}),
     partial: true, evidenceLevel: 'history',
-    sourceKind: rolloutPath ? (projectless ? 'projectless' : 'catalog+transcript') : (projectless ? 'projectless' : 'catalog-only'),
-    availability: rolloutPath ? 'indexed' : 'catalog-only',
+    // The catalog path is only a candidate until the rollout metadata confirms the same session id.
+    sourceKind: projectless ? 'projectless' : 'catalog-only',
+    availability: 'catalog-only',
     signals: { userMessages: Number(row.has_user_event) > 0 ? 1 : 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
   } as SessionSummary];
 }

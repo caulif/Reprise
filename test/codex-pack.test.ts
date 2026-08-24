@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -794,6 +795,26 @@ test("Codex session discovery skips one oversized rollout but explicit inspectio
     inspectCodexSession(oversized),
     /64 MiB inspection limit/,
   );
+});
+
+
+test("Codex catalog and rollout sources merge only on an exact session id", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-codex-merge-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const sessions = join(root, "sessions");
+  await mkdir(sessions);
+  await writeFile(join(sessions, "rollout-path-mismatch.jsonl"), [
+    JSON.stringify({ timestamp: "2026-08-11T00:00:00.000Z", type: "session_meta", payload: { id: "rollout-id", cwd: "C:\\other" } }),
+    JSON.stringify({ timestamp: "2026-08-11T00:00:01.000Z", type: "event_msg", payload: { type: "user_message", message: "Rollout task." } }),
+  ].join("\n") + "\n");
+  const db = new DatabaseSync(join(root, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT NOT NULL, rollout_path TEXT, title TEXT, cwd TEXT)");
+  db.prepare("INSERT INTO threads VALUES (?, ?, ?, ?)").run("catalog-id", "rollout-path-mismatch.jsonl", "Indexed task", "C:\\demo");
+  db.close();
+  const discovered = await discoverCodexSessions(sessions);
+  assert.deepEqual(new Set(discovered.map((session) => session.sessionId)), new Set(["catalog-id", "rollout-id"]));
+  assert.equal(discovered.find((session) => session.sessionId === "catalog-id")?.sourceKind, "catalog-only");
+  assert.equal(discovered.find((session) => session.sessionId === "rollout-id")?.sourceKind, "rollout-only");
 });
 
 test("Codex freeze accepts a selected user task input and rejects other transcript entries", async (t) => {

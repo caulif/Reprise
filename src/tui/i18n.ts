@@ -185,7 +185,7 @@ const M = {
   moreSessions: { en: 'More sessions', zh: '更多会话' },
   refreshSessions: { en: 'Refresh', zh: '刷新' },
   sessionsNotScanned: { en: 'sessions not scanned', zh: '尚未扫描会话' },
-  sessionsLoading: { en: 'loading sessions...', zh: '正在扫描会话...' },
+  sessionsLoading: { en: 'reading local session catalog...', zh: '正在读取本地会话目录...' },
   sessionDiscoveryFailed: { en: 'session discovery failed', zh: '会话扫描失败' },
   productSessionCount: { en: '{n} sessions', zh: '{n} 条会话' },
   productSkippedCount: { en: '({n} skipped)', zh: '（已跳过 {n} 条）' },

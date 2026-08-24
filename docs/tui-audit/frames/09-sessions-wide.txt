@@ -18,7 +18,7 @@ Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
 
  ❯ [/] Search
- Choose a historical session. Enter freezes it and starts the isolated replay. 2 shown · 1 skipped. · 2 scanned
+ Choose a historical session. Enter freezes it and starts the isolated replay. 2 shown · 0 skipped. · 2 scanned
 Diagnostics: catalog-unavailable (1).
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [↑↓] Select  [Enter] Start run  [/] Search  [m] More sessions  [r] Refresh  [Backspace] Projects  [Esc] Back
