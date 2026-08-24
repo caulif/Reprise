@@ -5,10 +5,6 @@
   "functionLimit": 100,
   "entries": [
     {
-      "name": "executeRecoverCodexExperiment",
-      "file": "src/application/experiment-recovery-run.ts"
-    },
-    {
       "name": "CodexIntakeTui",
       "file": "src/tui/controller.ts"
     },
@@ -91,10 +87,6 @@
     {
       "name": "CodexTextCaller.#complete",
       "file": "src/products/codex/text-caller.ts"
-    },
-    {
-      "name": "handleSubmittedRecoveryPlan",
-      "file": "src/application/experiment-recovery-run-model.ts"
     }
   ]
 }

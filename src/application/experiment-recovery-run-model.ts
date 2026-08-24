@@ -70,7 +70,7 @@ export async function handleSubmittedRecoveryPlan(
   session: RecoveryRunSession,
   plan: RecoveryPlan,
 ): Promise<void> {
-  const { input, store, provider, investigation, activeStaging, candidateRecipeDigests, candidateStagings } =
+  const { input, store, investigation, activeStaging, candidateRecipeDigests, candidateStagings } =
     session;
   if (!investigation || !activeStaging || !candidateRecipeDigests || !candidateStagings)
     throw new Error("Recovery plan expansion was not prepared.");
@@ -87,94 +87,8 @@ export async function handleSubmittedRecoveryPlan(
       expandedHypotheses.some((hypothesis) => hypothesis.hypothesisId === candidate.hypothesisId) &&
       candidate.operations.length > 0,
   );
-  for (const proposal of expandedCandidates) {
-    const decision = decideRecoverySearch({
-      newEvidenceRefs:
-        plan.hypotheses.find((hypothesis) => hypothesis.hypothesisId === proposal.hypothesisId)?.supportingFactRefs ??
-        [],
-      knownEvidenceRefs: investigation.plan.factsUsed,
-      estimatedCost: 1,
-      risk: 0.3,
-      remainingBudget: session.remainingSearchBudget ?? 0,
-    });
-    await store.append({
-      type: "recovery.search_decision",
-      runId: input.runId,
-      operationId: `recovery-search-decision-${proposal.hypothesisId}-${sha256(JSON.stringify(proposal.operations)).slice(0, 12)}`,
-      payload: {
-        hypothesisId: proposal.hypothesisId,
-        mechanism: proposal.operations.map((operation) => operation.operation).join(","),
-        ...decision,
-      },
-    });
-    if (decision.action !== "investigate" && decision.reason !== "no_new_evidence") continue;
-    const candidateMaterializationStartedAt = Date.now();
-    const createdCandidates = await materializeRecoveryCandidates(
-      [
-        {
-          candidateId: `candidate-${proposal.hypothesisId}`,
-          hypothesisId: proposal.hypothesisId,
-          operations: proposal.operations,
-          baseDigest: activeStaging.checkpointFingerprint?.digest ?? activeStaging.sourceFingerprint.digest,
-        },
-      ],
-      {
-        seenRecipeDigests: candidateRecipeDigests,
-        create: (candidate) => provider.createRecoveryCandidate(activeStaging, candidate),
-        onRetry: async ({ candidateId, attempt, reasonCode }) => {
-          await store.append({
-            type: "recovery.candidate_materialization_retry",
-            runId: input.runId,
-            operationId: `recovery-candidate-retry-${candidateId}-${attempt}`,
-            payload: { candidateId, attempt, reasonCode },
-          });
-        },
-      },
-    );
-    const candidate = createdCandidates[0];
-    if (!candidate) continue;
-    candidateStagings.push(candidate);
-    investigation.plan.hypotheses.push(
-      ...expandedHypotheses.filter((hypothesis) => hypothesis.hypothesisId === proposal.hypothesisId),
-    );
-    investigation.plan.candidates.push(proposal);
-    investigation.candidates.push({
-      candidateId: candidate.candidateId,
-      hypothesisId: candidate.hypothesisId,
-      status: "created",
-      factRefs:
-        plan.hypotheses.find((hypothesis) => hypothesis.hypothesisId === proposal.hypothesisId)?.supportingFactRefs ??
-        [],
-      beforeDigest: candidate.beforeFingerprint.digest,
-      createdAt: candidate.createdAt,
-    });
-    session.candidateCount = (session.candidateCount ?? 0) + 1;
-    session.remainingSearchBudget = Math.max(0, (session.remainingSearchBudget ?? 0) - 1);
-    await recordRecoveryAttempt(
-      session,
-      recoveryAttemptRecord({
-        attemptId: `recovery-attempt-dynamic-candidate-${candidate.candidateId}`,
-        phase: "candidate",
-        operation: "create_candidate",
-        candidateId: candidate.candidateId,
-        attemptNumber: session.candidateCount,
-        result: "succeeded",
-        durationMs: Math.max(0, Date.now() - candidateMaterializationStartedAt),
-        recordedAt: new Date().toISOString(),
-      }),
-    );
-    await store.append({
-      type: "recovery.candidate_created",
-      runId: input.runId,
-      operationId: `recovery-candidate-created-${candidate.candidateId}`,
-      payload: {
-        caseId: input.caseId,
-        candidateId: candidate.candidateId,
-        hypothesisId: candidate.hypothesisId,
-        origin: "agent_submitted_plan",
-      },
-    });
-  }
+  for (const proposal of expandedCandidates)
+    await materializeExpandedPlanCandidate(session, plan, proposal, expandedHypotheses);
   await store.append({
     type: "recovery.plan_submitted",
     runId: input.runId,
@@ -430,7 +344,7 @@ export async function materializeExpandedPlanCandidate(
 }
 
 export async function enforceRecoveryReadiness(session: RecoveryRunSession): Promise<void> {
-  const { input, store, context, tools, audit, executionCandidate, maxModelAttempts, provider } = session;
+  const { input, context, tools, audit, executionCandidate, maxModelAttempts } = session;
   if (!context?.readiness || !tools || !audit || !executionCandidate)
     throw new Error("Recovery readiness context was not prepared.");
   const readinessContext = context.readiness;
@@ -451,86 +365,96 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
     session.readinessResult &&
     session.readinessResult.status !== "ready" &&
     session.modelAttempts < maxModelAttempts
-  ) {
-    session.context = {
-      ...context,
-      readinessFeedback: {
-        status: session.readinessResult.status,
-        feedback: session.readinessResult.feedback,
-        missingPaths: session.readinessResult.missingPaths,
-      },
-    };
-    const nextAttempt = session.modelAttempts + 1;
-    const feedbackInput = recoveryModelInputAudit(
-      session.context,
-      tools.map((tool) => tool.name),
-    );
-    const feedbackBytes = Buffer.from(
-      JSON.stringify({ ...feedbackInput, attempt: nextAttempt, feedbackTurn: true }),
-      "utf8",
-    );
-    const feedbackArtifact = await store.commitArtifact({
-      artifactId: `recovery-model-input-feedback-${nextAttempt}-${sha256(feedbackBytes).slice(0, 16)}`,
-      runId: input.runId,
-      kind: "recovery_model_input",
-      mediaType: "application/json",
-      bytes: feedbackBytes,
-      operationId: `recovery-model-input-feedback-${nextAttempt}-created`,
-    });
-    await store.append({
-      type: "recovery.model_input",
-      runId: input.runId,
-      operationId: `recovery-model-input-feedback-${nextAttempt}`,
-      payload: {
-        caseId: input.caseId,
-        attempt: nextAttempt,
-        artifactId: feedbackArtifact.artifactId,
-        contentHash: feedbackArtifact.contentHash,
-        byteLength: feedbackArtifact.byteLength,
-        feedbackTurn: true,
-      },
-    });
-    await store.append({
-      type: "recovery.readiness_feedback",
-      runId: input.runId,
-      operationId: `recovery-readiness-feedback-${nextAttempt}`,
-      payload: {
-        artifactId: feedbackArtifact.artifactId,
-        previousStatus: session.readinessResult.status,
-        missingPaths: session.readinessResult.missingPaths,
-      },
-    });
-    session.modelAttempts = nextAttempt;
-    const feedbackStartedAt = Date.now();
-    session.recovery = await input.recovery.recover(session.context, tools, audit);
-    await recordRecoveryAttempt(
-      session,
-      recoveryAttemptRecord({
-        attemptId: `recovery-attempt-model-${session.modelAttempts}-completed`,
-        phase: "candidate",
-        operation: "invoke_model",
-        candidateId: executionCandidate.candidateId,
-        attemptNumber: session.modelAttempts,
-        result: session.recovery.status === "completed" ? "succeeded" : "failed",
-        ...(session.recovery.status === "failed" ? { failureCode: session.recovery.failure.code } : {}),
-        durationMs: Math.max(0, Date.now() - feedbackStartedAt),
-        recordedAt: new Date().toISOString(),
-      }),
-    );
-    if (session.recovery.status !== "completed")
-      throw new Error(`Recovery feedback turn did not complete: ${session.recovery.status}.`);
-    session.readinessResult = await checkRecoveryReadiness(
-      executionCandidate.root,
-      readinessContext,
-      input.executeReadinessCommands === true ? { executeCommands: true } : {},
-    );
-    await recordRecoveryReadiness(session, session.readinessResult, session.modelAttempts);
-  }
+  )
+    await runReadinessFeedbackTurn(session, readinessContext);
   if (session.readinessResult && session.readinessResult.status !== "ready")
     throw new RecoveryValidationError(
       "provider_validation_failed",
       `Recovery did not reach task readiness: ${session.readinessResult.feedback}`,
     );
+}
+
+async function runReadinessFeedbackTurn(
+  session: RecoveryRunSession,
+  readinessContext: NonNullable<RecoveryContext["readiness"]>,
+): Promise<void> {
+  const { input, store, context, tools, audit, executionCandidate } = session;
+  const readinessResult = session.readinessResult;
+  if (!context || !tools || !audit || !executionCandidate || !readinessResult)
+    throw new Error("Recovery readiness feedback was not prepared.");
+  session.context = {
+    ...context,
+    readinessFeedback: {
+      status: readinessResult.status,
+      feedback: readinessResult.feedback,
+      missingPaths: readinessResult.missingPaths,
+    },
+  };
+  const nextAttempt = session.modelAttempts + 1;
+  const feedbackInput = recoveryModelInputAudit(
+    session.context,
+    tools.map((tool) => tool.name),
+  );
+  const feedbackBytes = Buffer.from(
+    JSON.stringify({ ...feedbackInput, attempt: nextAttempt, feedbackTurn: true }),
+    "utf8",
+  );
+  const feedbackArtifact = await store.commitArtifact({
+    artifactId: `recovery-model-input-feedback-${nextAttempt}-${sha256(feedbackBytes).slice(0, 16)}`,
+    runId: input.runId,
+    kind: "recovery_model_input",
+    mediaType: "application/json",
+    bytes: feedbackBytes,
+    operationId: `recovery-model-input-feedback-${nextAttempt}-created`,
+  });
+  await store.append({
+    type: "recovery.model_input",
+    runId: input.runId,
+    operationId: `recovery-model-input-feedback-${nextAttempt}`,
+    payload: {
+      caseId: input.caseId,
+      attempt: nextAttempt,
+      artifactId: feedbackArtifact.artifactId,
+      contentHash: feedbackArtifact.contentHash,
+      byteLength: feedbackArtifact.byteLength,
+      feedbackTurn: true,
+    },
+  });
+  await store.append({
+    type: "recovery.readiness_feedback",
+    runId: input.runId,
+    operationId: `recovery-readiness-feedback-${nextAttempt}`,
+    payload: {
+      artifactId: feedbackArtifact.artifactId,
+      previousStatus: readinessResult.status,
+      missingPaths: readinessResult.missingPaths,
+    },
+  });
+  session.modelAttempts = nextAttempt;
+  const feedbackStartedAt = Date.now();
+  session.recovery = await input.recovery.recover(session.context, tools, audit);
+  await recordRecoveryAttempt(
+    session,
+    recoveryAttemptRecord({
+      attemptId: `recovery-attempt-model-${session.modelAttempts}-completed`,
+      phase: "candidate",
+      operation: "invoke_model",
+      candidateId: executionCandidate.candidateId,
+      attemptNumber: session.modelAttempts,
+      result: session.recovery.status === "completed" ? "succeeded" : "failed",
+      ...(session.recovery.status === "failed" ? { failureCode: session.recovery.failure.code } : {}),
+      durationMs: Math.max(0, Date.now() - feedbackStartedAt),
+      recordedAt: new Date().toISOString(),
+    }),
+  );
+  if (session.recovery.status !== "completed")
+    throw new Error(`Recovery feedback turn did not complete: ${session.recovery.status}.`);
+  session.readinessResult = await checkRecoveryReadiness(
+    executionCandidate.root,
+    readinessContext,
+    input.executeReadinessCommands === true ? { executeCommands: true } : {},
+  );
+  await recordRecoveryReadiness(session, session.readinessResult, session.modelAttempts);
 }
 
 async function recordRecoveryReadiness(

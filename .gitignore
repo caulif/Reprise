@@ -38,7 +38,7 @@ pnpm-debug.log*
 .reprise*/
 
 # Local scratch output
-/.tmp-interfaces.txt
+/.tmp-*.txt
 /.typecheck*
 /.errors*
 
@@ -71,6 +71,3 @@ pnpm-debug.log*
 /pack-dry-run.json
 /.tmp-jscpd/
 /.tmp-test-output.txt
-
-# Codex local scratch output
-/.tmp-codex*.txt
