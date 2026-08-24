@@ -7,11 +7,12 @@ Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   
  i     Import a historical session
 
 ┌─ reprise · 1 sessions · filter: all ────────────────────────────────────────┐ ┌─ Preview ────────────────────────────┐
-│❯ 4d ago      修复这个回归缺陷并验证测试全部通过               u1 a1 t0      │ │ Project      reprise                 │
+│❯ 4d ago      [unindexed] 修复这个回归缺陷并验证测试全部通过   u1 a1 t0      │ │ Project      reprise                 │
 │ 1/1                                                                         │ │ Session      session-                │
 │                                                                             │ │ Started      2026-08-10 21:40        │
 │                                                                             │ │ Signals      u1 a1 t0                │
 │                                                                             │ │                                      │
+│                                                                             │ │ Status       [unindexed]             │
 │                                                                             │ │ Task                                 │
 │                                                                             │ │修复这个回归缺陷并验证测试全部通过    │
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘

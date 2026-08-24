@@ -67,8 +67,10 @@ function mergeCodexSources(rollouts: readonly CodexSessionSummary[], catalog: re
     const indexed = byId.get(session.sessionId);
     const { partial: _catalogPartial, ...catalogBase } = indexed ?? {};
     const cwd = session.cwd ?? indexed?.cwd;
+    const projectless = indexed?.sourceKind === 'projectless' || !cwd;
+    const sourceKind = indexed ? (projectless ? 'projectless' : 'catalog+transcript') : (projectless ? 'projectless' : 'rollout-only');
     byId.set(session.sessionId, { ...catalogBase, ...session, ...(cwd ? { cwd } : {}),
-      sourceKind: 'catalog+transcript', availability: 'indexed', evidenceLevel: 'transcript', ...(session.partial !== undefined ? { partial: session.partial } : {}) });
+      sourceKind, availability: indexed ? 'indexed' : 'unindexed', evidenceLevel: 'transcript', ...(session.partial !== undefined ? { partial: session.partial } : {}) });
   }
   return [...byId.values()].sort(compareCodexSummaries);
 }

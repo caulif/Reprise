@@ -12,6 +12,7 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
 │                                                                             │ │ Started      2026-08-11 00:00        │
 │                                                                             │ │ Signals      u1 a1 t0                │
 │                                                                             │ │                                      │
+│                                                                             │ │ Status       available               │
 │                                                                             │ │ Task         Review the product      │
 │                                                                             │ │intake flow.                          │
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘

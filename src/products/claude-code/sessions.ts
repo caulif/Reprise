@@ -66,7 +66,8 @@ async function discoverClaudeSessionPage(query: SessionDiscoveryQuery): Promise<
   return discoverSessionPage({
     root,
     ranked,
-    limit: query.limit ?? 50,
+    // An omitted limit builds the complete catalog; explicit limits remain compatibility API.
+    limit: query.cursor ? (query.limit ?? 50) : (query.limit ?? ranked.length + 1),
     ...(query.cursor ? { cursor: query.cursor } : {}),
     ...(query.signal ? { signal: query.signal } : {}),
     cacheKey: 'claude-code',
@@ -188,6 +189,8 @@ async function summarizeClaudeHistorySession(sourcePath: string, sessionId: stri
     summary: compact(entry.display),
     signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
     evidenceLevel: 'history',
+    sourceKind: entry.cwd ? 'unknown' : 'projectless',
+    availability: 'unindexed',
   };
 }
 
@@ -272,6 +275,8 @@ async function summarizeClaudeSession(entry: SessionFileEntry, signal: AbortSign
     ...(state.summary ? { summary: state.summary } : {}),
     signals: { userMessages: state.userMessages, assistantMessages: state.assistantMessages, toolCalls: state.toolCalls, completedTurns: state.completedTurns },
     evidenceLevel: 'transcript',
+    sourceKind: state.cwd ? 'rollout-only' : 'projectless',
+    availability: 'indexed',
   };
 }
 

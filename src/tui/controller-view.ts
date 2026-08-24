@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { CodexIntakeTui } from "./controller.js";
-import { isEligibleSession, type SessionSummary } from "../products/contract.js";
+import { isEligibleSession, type SessionDiscoveryProject, type SessionSummary } from "../products/contract.js";
 import { findProductPack } from "../products/index.js";
 import {
   groupSessionsByProject,
@@ -14,18 +14,24 @@ import { projectWorkbenchView } from "./view-projection.js";
 
 export function groupedProjects(c: CodexIntakeTui): SessionProject[] {
   const cached = c.groupedCache;
+  const catalogProjects: readonly SessionDiscoveryProject[] = c.activeProductId
+    ? c.productDiscovery.get(c.activeProductId)?.projects ?? []
+    : [];
   if (
     cached &&
     cached.sessions === c.sessions &&
-    cached.filterEligible === c.filterEligible
+    cached.filterEligible === c.filterEligible &&
+    cached.catalogProjects === catalogProjects
   )
     return cached.projects;
   const projects = groupSessionsByProject(
     c.filterEligible ? c.sessions.filter(isEligibleSession) : c.sessions,
+    catalogProjects,
   );
   c.groupedCache = {
     sessions: c.sessions,
     filterEligible: c.filterEligible,
+    catalogProjects,
     projects,
   };
   return projects;

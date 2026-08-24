@@ -8,7 +8,7 @@ gpt-5.6-terra - medium   ! Harness key missing  o Codex  ...
  i     Import a historical session
 
 [ reprise - 1 sessions - filter: all ]
-   > 4d ago      修复这个回归缺陷并验证测... u1 a1 t0      
+   > 4d ago      [unindexed] 修复这个回归... u1 a1 t0      
     1/1
 
  > [/] Search

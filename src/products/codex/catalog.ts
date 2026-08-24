@@ -11,10 +11,23 @@ import { readCodexGlobalState, type CodexGlobalState } from './global-state.js';
 
 export type CodexCatalogOptions = { readonly codexHome?: string; readonly sessionsRoot?: string };
 export type CodexCatalog = { readonly sessions: readonly SessionSummary[]; readonly projects: readonly CodexCatalogProject[]; readonly diagnostics: readonly DiscoveryDiagnostic[] };
-export type CodexCatalogProject = { readonly id: string; readonly name: string; readonly rootPaths: readonly string[] };
+export type CodexCatalogProject = { readonly id: string; readonly name: string; readonly rootPaths: readonly string[]; readonly order?: number };
 
 type SqlRow = Record<string, unknown>;
-const CodexThreadRowSchema = Type.Object({ id: Type.String(), rollout_path: Type.String(), created_at: Type.Unknown(), updated_at: Type.Unknown(), cwd: Type.String(), title: Type.String(), preview: Type.String() }, { additionalProperties: true });
+const NullableText = Type.Union([Type.String(), Type.Null()]);
+const CodexThreadRowSchema = Type.Object({
+  id: Type.String(),
+  rollout_path: NullableText,
+  created_at: Type.Unknown(),
+  updated_at: Type.Unknown(),
+  cwd: NullableText,
+  title: NullableText,
+  preview: NullableText,
+  model: Type.Optional(NullableText),
+  has_user_event: Type.Optional(Type.Union([Type.Number(), Type.String(), Type.Null()])),
+  archived: Type.Optional(Type.Union([Type.Number(), Type.Boolean(), Type.Null()])),
+  project_id: Type.Optional(NullableText),
+}, { additionalProperties: true });
 const CATALOG_ID = /^[A-Za-z0-9._:-]{1,256}$/;
 
 export async function readCodexCatalog(options: CodexCatalogOptions = {}): Promise<CodexCatalog> {
@@ -24,7 +37,8 @@ export async function readCodexCatalog(options: CodexCatalogOptions = {}): Promi
   if (!existsSync(join(codexHome, 'state_5.sqlite')) && !existsSync(join(codexHome, '.codex-global-state.json'))) return { sessions: [], projects: [], diagnostics };
   const global = await readCodexGlobalState(codexHome, diagnostics);
   const projects = global.projects;
-  const sessions = readStateThreads(join(codexHome, 'state_5.sqlite'), sessionsRoot, global, diagnostics);
+  const databasePath = join(codexHome, 'state_5.sqlite');
+  const sessions = existsSync(databasePath) ? readStateThreads(databasePath, sessionsRoot, global, diagnostics) : [];
   return { sessions, projects, diagnostics };
 }
 
@@ -38,12 +52,14 @@ function readStateThreads(databasePath: string, sessionsRoot: string, global: Co
       return [];
     }
     const columns = new Set(database.prepare('PRAGMA table_info(threads)').all().map((row) => String((row as SqlRow).name)));
-    const required = ['id', 'rollout_path', 'created_at', 'updated_at', 'cwd', 'title', 'preview'];
+    const required = ['id', 'rollout_path'];
     if (required.some((column) => !columns.has(column))) {
       diagnostics.push({ code: 'catalog-schema-unsupported', count: 1, samplePath: 'state_5.sqlite' });
       return [];
     }
-    const rows = database.prepare('SELECT id, rollout_path, created_at, updated_at, cwd, title, preview, model, has_user_event, archived FROM threads').all() as SqlRow[];
+    const selected = ['id', 'rollout_path', 'created_at', 'updated_at', 'cwd', 'title', 'preview', 'model', 'has_user_event', 'archived', 'project_id']
+      .filter((column) => columns.has(column));
+    const rows = database.prepare(`SELECT ${selected.join(', ')} FROM threads`).all() as SqlRow[];
     return rows.flatMap((row) => Value.Check(CodexThreadRowSchema, row) ? catalogSummary(row, sessionsRoot, global, diagnostics) : (diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: 'state_5.sqlite' }), []));
   } catch (error) {
     diagnostics.push({ code: 'catalog-read-error', count: 1, samplePath: 'state_5.sqlite' });
@@ -62,8 +78,10 @@ function catalogSummary(row: SqlRow, sessionsRoot: string, global: CodexGlobalSt
   const rolloutPath = safeRolloutPath(text(row.rollout_path), sessionsRoot);
   if (text(row.rollout_path) && !rolloutPath) diagnostics.push({ code: 'source-missing', count: 1, samplePath: 'state_5.sqlite' });
   const assigned = global.assignments[id];
-  const cwd = text(row.cwd) ?? (assigned ? global.projectsById.get(assigned) ?.rootPaths[0] : undefined) ?? global.workspaceHints[id];
-  const projectless = global.projectless.has(id) || !cwd;
+  const databaseProject = text(row.project_id);
+  const project = assigned ? global.projectsById.get(assigned) : databaseProject ? global.projectsById.get(databaseProject) : undefined;
+  const cwd = project?.rootPaths[0] ?? global.workspaceHints[id] ?? text(row.cwd);
+  const projectless = global.projectless.has(id) || (!project && !cwd);
   const sourcePath = rolloutPath ?? join(sessionsRoot, '.catalog', `${id}.jsonl`);
   const createdAt = instant(row.created_at);
   const updatedAt = instant(row.updated_at) ?? createdAt;

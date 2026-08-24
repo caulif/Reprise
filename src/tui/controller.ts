@@ -210,6 +210,7 @@ export class CodexIntakeTui {
         sessions: readonly SessionSummary[];
         filterEligible: boolean;
         projects: SessionProject[];
+        catalogProjects: readonly SessionDiscoveryProject[];
       }
     | undefined;
   dirtyCache:

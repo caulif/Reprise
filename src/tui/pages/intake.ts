@@ -59,6 +59,7 @@ const PROJECTLESS_PROJECT_KEY = 'projectless';
 
 function projectKey(session: SessionSummary): string {
   const cwd = canonicalHistoricalCwd(session.cwd);
+  if (session.sourceKind === 'projectless') return PROJECTLESS_PROJECT_KEY;
   if (cwd) return `${session.productId}\0${cwd}`;
   // Unknown cwd is not evidence of one shared project; keep each session separate.
   return `${UNKNOWN_PROJECT_PREFIX}\0${session.productId}\0${session.sessionId}`;
@@ -76,6 +77,14 @@ function sessionTime(session: SessionSummary | undefined): string {
 }
 
 function isProjectless(key: string): boolean { return key === PROJECTLESS_PROJECT_KEY; }
+
+function sessionStatus(session: SessionSummary, locale: Locale): string {
+  if (session.availability === 'catalog-only') return t(locale, 'catalogOnlySession');
+  if (session.availability === 'unindexed') return t(locale, 'unindexedSession');
+  if (session.availability === 'unreadable') return t(locale, 'unreadableSession');
+  if (session.partial) return t(locale, 'partialSession');
+  return '';
+}
 
 function isUnknownProject(key: string): boolean {
   return key.startsWith(UNKNOWN_PROJECT_PREFIX);
@@ -308,7 +317,7 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
   const rows = model.sessions.map((session, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     started: relativeTime(session.startedAt, model.nowMs ?? Date.now(), locale),
-    summary: `${session.partial ? `${t(locale, 'partialSession')} ` : ''}${sessionTitle(session.summary)}`,
+    summary: `${sessionStatus(session, locale) ? `${sessionStatus(session, locale)} ` : ''}${sessionTitle(session.summary)}`,
     gap: ' ',
     signals: `u${session.signals.userMessages} a${session.signals.assistantMessages} t${session.signals.toolCalls}`,
   }));
@@ -329,7 +338,8 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
     kv(theme, 'Started', (selected.startedAt ?? 'Unknown time').replace('T', ' ').slice(0, 16), previewWidth - 2),
     kv(theme, 'Signals', `u${selected.signals.userMessages} a${selected.signals.assistantMessages} t${selected.signals.toolCalls}`, previewWidth - 2),
     '',
-    kv(theme, 'Task', `${selected.partial ? `${t(locale, 'partialSession')} ` : ''}${sessionTitle(selected.summary)}`, previewWidth - 2),
+    kv(theme, 'Status', sessionStatus(selected, locale) || t(locale, 'availableSession'), previewWidth - 2),
+    kv(theme, 'Task', `${sessionTitle(selected.summary)}`, previewWidth - 2),
   ] : [' No session selected'], previewWidth) : [];
   const body = previewWidth ? joinColumns(list, preview, listWidth, previewWidth, 1, theme) : list;
   return [...body, ...(showSearch ? searchLine(theme, width, model) : [])];

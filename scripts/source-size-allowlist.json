@@ -4,27 +4,97 @@
   "fileLimit": 1000,
   "functionLimit": 100,
   "entries": [
-    { "name": "executeRecoverCodexExperiment", "file": "src/application/experiment-recovery-run.ts" },
-    { "name": "CodexIntakeTui", "file": "src/tui/controller.ts" },
-    { "name": "LocalWorkspaceProvider", "file": "src/environment/local-workspace-provider.ts" },
-    { "name": "ExperimentStore", "file": "src/infrastructure/store/experiment-store.ts" },
-    { "name": "completeRecoveryReview", "file": "src/application/experiment-recovery-review.ts" },
-    { "name": "executeExperiment", "file": "src/application/experiment.ts" },
-    { "name": "CandidateRun", "file": "src/application/candidate-run.ts" },
-    { "name": "failRecoverCodexExperiment", "file": "src/application/experiment-recovery-fail.ts" },
-    { "name": "reexecuteCandidate", "file": "src/application/experiment-recovery-review.ts" },
-    { "name": "CodexTargetRunner", "file": "src/products/codex/runtime-port.ts" },
-    { "name": "runControllerLoop", "file": "src/application/experiment.ts" },
-    { "name": "ClaudeTargetRunner", "file": "src/products/claude-code/runtime-port.ts" },
-    { "name": "AgentSessionHost", "file": "src/infrastructure/pi-agent-host.ts" },
-    { "name": "CodexAppServerClient", "file": "src/products/codex/runtime-port.ts" },
-    { "name": "ClaudeStreamClient", "file": "src/products/claude-code/runtime-port.ts" },
-    { "name": "finishExperiment", "file": "src/application/experiment-report.ts" },
-    { "name": "CodexTextCaller", "file": "src/products/codex/text-caller.ts" },
-    { "name": "CodexRuntimePort", "file": "src/products/codex/runtime-port.ts" },
-    { "name": "runProcess", "file": "src/infrastructure/process-runner.ts" },
-    { "name": "ClaudeCodeRuntimePort", "file": "src/products/claude-code/runtime-port.ts" },
-    { "name": "importFromBytes", "file": "src/products/claude-code/sessions.ts" },
-    { "name": "CodexTextCaller.#complete", "file": "src/products/codex/text-caller.ts" }
+    {
+      "name": "executeRecoverCodexExperiment",
+      "file": "src/application/experiment-recovery-run.ts"
+    },
+    {
+      "name": "CodexIntakeTui",
+      "file": "src/tui/controller.ts"
+    },
+    {
+      "name": "LocalWorkspaceProvider",
+      "file": "src/environment/local-workspace-provider.ts"
+    },
+    {
+      "name": "ExperimentStore",
+      "file": "src/infrastructure/store/experiment-store.ts"
+    },
+    {
+      "name": "completeRecoveryReview",
+      "file": "src/application/experiment-recovery-review.ts"
+    },
+    {
+      "name": "executeExperiment",
+      "file": "src/application/experiment.ts"
+    },
+    {
+      "name": "CandidateRun",
+      "file": "src/application/candidate-run.ts"
+    },
+    {
+      "name": "failRecoverCodexExperiment",
+      "file": "src/application/experiment-recovery-fail.ts"
+    },
+    {
+      "name": "reexecuteCandidate",
+      "file": "src/application/experiment-recovery-review.ts"
+    },
+    {
+      "name": "CodexTargetRunner",
+      "file": "src/products/codex/runtime-port.ts"
+    },
+    {
+      "name": "runControllerLoop",
+      "file": "src/application/experiment.ts"
+    },
+    {
+      "name": "ClaudeTargetRunner",
+      "file": "src/products/claude-code/runtime-port.ts"
+    },
+    {
+      "name": "AgentSessionHost",
+      "file": "src/infrastructure/pi-agent-host.ts"
+    },
+    {
+      "name": "CodexAppServerClient",
+      "file": "src/products/codex/runtime-port.ts"
+    },
+    {
+      "name": "ClaudeStreamClient",
+      "file": "src/products/claude-code/runtime-port.ts"
+    },
+    {
+      "name": "finishExperiment",
+      "file": "src/application/experiment-report.ts"
+    },
+    {
+      "name": "CodexTextCaller",
+      "file": "src/products/codex/text-caller.ts"
+    },
+    {
+      "name": "CodexRuntimePort",
+      "file": "src/products/codex/runtime-port.ts"
+    },
+    {
+      "name": "runProcess",
+      "file": "src/infrastructure/process-runner.ts"
+    },
+    {
+      "name": "ClaudeCodeRuntimePort",
+      "file": "src/products/claude-code/runtime-port.ts"
+    },
+    {
+      "name": "importFromBytes",
+      "file": "src/products/claude-code/sessions.ts"
+    },
+    {
+      "name": "CodexTextCaller.#complete",
+      "file": "src/products/codex/text-caller.ts"
+    },
+    {
+      "name": "handleSubmittedRecoveryPlan",
+      "file": "src/application/experiment-recovery-run-model.ts"
+    }
   ]
 }

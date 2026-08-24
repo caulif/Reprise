@@ -7,7 +7,13 @@ import { Value } from '@sinclair/typebox/value';
 import type { DiscoveryDiagnostic } from '../contract.js';
 import type { CodexCatalogProject } from './catalog.js';
 
-const GlobalStateSchema = Type.Record(Type.String(), Type.Unknown());
+const GlobalStateSchema = Type.Object({
+  'local-projects': Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  'project-order': Type.Optional(Type.Array(Type.String())),
+  'projectless-thread-ids': Type.Optional(Type.Array(Type.String())),
+  'thread-project-assignments': Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  'thread-workspace-root-hints': Type.Optional(Type.Record(Type.String(), Type.String())),
+}, { additionalProperties: true });
 
 export type CodexGlobalState = {
   readonly projects: readonly CodexCatalogProject[];
@@ -22,11 +28,12 @@ export async function readCodexGlobalState(codexHome = join(homedir(), '.codex')
   try {
     const parsed: unknown = JSON.parse(await readFile(join(codexHome, '.codex-global-state.json'), 'utf8'));
     if (!Value.Check(GlobalStateSchema, parsed) || !isRecord(parsed)) throw new Error('global state must be an object');
-    const projects = parseProjects(parsed['local-projects']);
+    const order = parseIds(parsed['project-order']);
+    const projects = parseProjects(parsed['local-projects'], order, diagnostics);
     const byId = new Map(projects.map((project) => [project.id, project]));
     return {
       projects, projectsById: byId,
-      assignments: parseAssignments(parsed['thread-project-assignments']),
+      assignments: parseAssignments(parsed['thread-project-assignments'], byId, diagnostics),
       projectless: new Set(parseIds(parsed['projectless-thread-ids'])),
       workspaceHints: parseStringMap(parsed['thread-workspace-root-hints']),
     };
@@ -36,14 +43,16 @@ export async function readCodexGlobalState(codexHome = join(homedir(), '.codex')
   }
 }
 
-function parseProjects(value: unknown): CodexCatalogProject[] {
+function parseProjects(value: unknown, order: readonly string[], diagnostics: DiscoveryDiagnostic[]): CodexCatalogProject[] {
   if (!isRecord(value)) return [];
   return Object.values(value).flatMap((item) => {
-    if (!isRecord(item)) return [];
+    if (!isRecord(item)) { diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: '.codex-global-state.json' }); return []; }
     const id = text(item.id); const name = text(item.name);
     const roots = Array.isArray(item.rootPaths) ? item.rootPaths.filter((path): path is string => typeof path === 'string' && path.trim().length > 0) : [];
-    return id && name ? [{ id, name, rootPaths: roots }] : [];
-  });
+    if (!id || !name) { diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: '.codex-global-state.json' }); return []; }
+    const position = order.indexOf(id);
+    return [{ id, name, rootPaths: roots, ...(position >= 0 ? { order: position } : {}) }];
+  }).sort((left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER));
 }
 function parseIds(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : []; }
 function parseStringMap(value: unknown): Record<string, string> {
@@ -52,10 +61,14 @@ function parseStringMap(value: unknown): Record<string, string> {
   for (const [key, item] of Object.entries(value)) if (typeof item === 'string' && item.length > 0) result[key] = item;
   return result;
 }
-function parseAssignments(value: unknown): Record<string, string> {
+function parseAssignments(value: unknown, projects: ReadonlyMap<string, CodexCatalogProject>, diagnostics: DiscoveryDiagnostic[]): Record<string, string> {
   if (!isRecord(value)) return {};
   return Object.fromEntries(Object.entries(value).flatMap(([thread, assignment]) => {
     const project = isRecord(assignment) ? text(assignment.projectId) : undefined;
-    return project ? [[thread, project]] : [];
+    if (!project || !projects.has(project)) {
+      diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: '.codex-global-state.json' });
+      return [];
+    }
+    return [[thread, project]];
   }));
 }

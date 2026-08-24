@@ -15,7 +15,11 @@
     "scripts/codex-real-historical-c.mjs",
     "scripts/_live-run-with-env.py",
     "scripts/_validate-harness.mjs",
-    "scripts/tui-live-run.mjs"
+    "scripts/tui-live-run.mjs",
+    "src/application/experiment-recovery-run-forensics.ts",
+    "src/application/experiment-recovery-run-model.ts",
+    "src/application/experiment-recovery-run-preflight.ts",
+    "src/application/experiment-recovery-session.ts"
   ],
   "rules": {
     "exports": "error",

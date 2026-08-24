@@ -197,6 +197,23 @@ test('Claude history-only sessions enter the same inspect, freeze, and recovery 
   assert.equal(frozen.taskCase.transcript.length, 1);
 });
 
+test('Claude discovery builds the complete catalog without requiring a continuation key', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-claude-full-catalog-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  for (let index = 0; index < 151; index += 1) {
+    const suffix = index.toString(16).padStart(12, '0');
+    const id = `aaaaaaaa-bbbb-4ccc-8ddd-${suffix}`;
+    await writeSession(root, id, 'C:\\demo', [
+      { type: 'user', sessionId: id, cwd: 'C:\\demo', timestamp: '2026-08-14T01:02:03.000Z', message: { role: 'user', content: `Task ${index}` } },
+      { type: 'assistant', sessionId: id, cwd: 'C:\\demo', timestamp: '2026-08-14T01:02:04.000Z', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }], stop_reason: 'end_turn' } },
+    ]);
+  }
+  const page = await claudeSessionAdapter.discover({ root });
+  assert.equal(page.items.length, 151);
+  assert.equal(page.nextCursor, undefined);
+  assert.equal(page.items.every((item) => item.sourceKind === 'rollout-only'), true);
+});
+
 test('Claude default root honors an explicit config directory without reading credentials', () => {
   assert.equal(defaultClaudeSessionsRoot('C:\\Users\\demo\\.claude-alt'), 'C:\\Users\\demo\\.claude-alt\\projects');
 });
