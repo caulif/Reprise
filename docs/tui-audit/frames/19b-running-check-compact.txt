@@ -1,5 +1,5 @@
 Reprise v0.1.0   C:\reprise
-No configured model   o Harness unset  o Codex  * Task
+No configured model   o Harness unset  * Codex  * Task
 ------------------------------------------------------------
  Last task  Fix the bug. · 2 turns
 

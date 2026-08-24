@@ -328,7 +328,10 @@ async function main() {
   runApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(run.render(120)), 'run session list');
   runApp.handleInput('\r');
-  await waitFor(() => /Inspecting source|Candidate preflight/.test(run.render(120)), 'auto preflight after freeze');
+  await waitFor(() => {
+    const frame = run.render(120);
+    return /Inspecting source|Candidate preflight/.test(frame) && /● Codex/.test(frame);
+  }, 'auto preflight after freeze with selected product');
   await push('19-running-check', 120, run.render(120));
   await push('19b-running-check-compact', 60, run.render(60));
   releasePreflight?.();
