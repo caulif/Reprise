@@ -77,3 +77,6 @@ pnpm-debug.log*
 /src/tui/controller-ops.ts
 /src/tui/controller.ts.*.ts
 /scripts/split-class-in-place.mjs
+/src/tui/controller-state.ts
+/src/tui/intake-tui*.ts
+/scripts/alias-controller-imports.mjs

@@ -59,7 +59,7 @@ const PROJECTLESS_PROJECT_KEY = 'projectless';
 
 function projectKey(session: SessionSummary): string {
   const cwd = canonicalHistoricalCwd(session.cwd);
-  if (session.sourceKind === 'projectless') return PROJECTLESS_PROJECT_KEY;
+  if (session.sourceKind === 'projectless' || session.availability === 'unindexed') return PROJECTLESS_PROJECT_KEY;
   if (cwd) return `${session.productId}\0${cwd}`;
   // Unknown cwd is not evidence of one shared project; keep each session separate.
   return `${UNKNOWN_PROJECT_PREFIX}\0${session.productId}\0${session.sessionId}`;

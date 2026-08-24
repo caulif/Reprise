@@ -25,6 +25,14 @@ test('sessions group by workspace basename and send missing cwd to 其他', () =
   assert.equal(projectLabel('C:\\Users\\example\\slides'), 'slides');
 });
 
+test('unindexed rollouts stay in projectless even when transcript cwd is present', () => {
+  const grouped = groupSessionsByProject([
+    { ...session('unindexed', 'C:\\work\\notes', '2026-08-13T01:00:00.000Z', 'Loose rollout'), availability: 'unindexed', sourceKind: 'rollout-only' },
+  ]);
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0]?.key, 'projectless');
+});
+
 test('project grouping keeps products and unknown workspaces isolated', () => {
   const grouped = groupSessionsByProject([
     session('codex-session', 'C:\\work\\notes', '2026-08-13T01:00:00.000Z', 'Codex'),

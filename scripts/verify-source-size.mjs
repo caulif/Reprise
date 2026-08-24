@@ -102,11 +102,17 @@ export function scanSourceText(file, text, limits) {
   return findings;
 }
 
+const IGNORED_GENERATED_SOURCES = new Set(['controller-state.ts']);
+
+function isIgnoredGeneratedSource(name) {
+  return IGNORED_GENERATED_SOURCES.has(name) || /^intake-tui.*\.ts$/.test(name);
+}
+
 function walkTsFiles(dir, files = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) walkTsFiles(path, files);
-    else if (entry.name.endsWith(".ts")) files.push(path);
+    else if (entry.name.endsWith('.ts') && !isIgnoredGeneratedSource(entry.name)) files.push(path);
   }
   return files;
 }
@@ -181,7 +187,10 @@ function writeLines(path, count, prefix) {
 }
 
 function selfTest() {
-  const dir = mkdtempSync(join(tmpdir(), "reprise-source-size-"));
+  if (!isIgnoredGeneratedSource('intake-tui.ts') || !isIgnoredGeneratedSource('controller-state.ts') || isIgnoredGeneratedSource('controller.ts')) {
+    throw new Error('生成的 TUI 残留必须跳过，正常 controller.ts 不得跳过');
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'reprise-source-size-'));
   try {
     mkdirSync(join(dir, "src"));
     const hugeFile = join(dir, "src", "huge.ts");

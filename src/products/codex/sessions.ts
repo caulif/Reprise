@@ -71,7 +71,8 @@ function mergeCodexSources(rollouts: readonly CodexSessionSummary[], catalog: re
     // An unindexed rollout has no trustworthy Desktop project assignment. Keep it in
     // the explicit projectless bucket instead of inventing a project from cwd alone.
     const projectless = indexed?.sourceKind === 'projectless' || !indexed || !cwd;
-    const sourceKind = indexed ? (projectless ? 'projectless' : 'catalog+transcript') : (projectless ? 'projectless' : 'rollout-only');
+    // Preserve rollout-only provenance; TUI groups unindexed entries projectlessly via availability.
+    const sourceKind = indexed ? (projectless ? 'projectless' : 'catalog+transcript') : 'rollout-only';
     byId.set(session.sessionId, { ...catalogBase, ...session, ...(cwd ? { cwd } : {}),
       sourceKind, availability: indexed ? 'indexed' : 'unindexed', evidenceLevel: 'transcript', ...(session.partial !== undefined ? { partial: session.partial } : {}) });
   }
