@@ -85,7 +85,7 @@ test('product intake isolates per-pack limits, errors, and compact back navigati
   app.selected = 0;
   app.openIntakeSelection();
   await waitFor(() => app.productDiscovery.get('codex')?.status === 'ready');
-  assert.equal(app.sessions.length, 150);
+  assert.equal(app.sessions.length, 200);
   assert.equal(app.visibleSessions().every((item) => item.productId === 'codex'), true);
   assert.deepEqual(calls, ['claude-code', 'codex']);
 
@@ -228,18 +228,18 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
   const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [codex], privacy });
   await app.start();
   await app.loadProductSessions('codex');
-  assert.match(app.message, /1 shown · 2 skipped · more available/);
+  assert.match(app.message, /1 shown · 2 skipped\./);
   assert.match(app.message, /Diagnostics: invalid-jsonl \(1\), unreadable-directory \(1\)/);
   app.locale = 'zh';
-  assert.match(app.sessionsMessage(), /已显示 1 条 · 已跳过 2 条 · 还有更多/);
+  assert.match(app.sessionsMessage(), /已显示 1 条 · 已跳过 2 条/);
   app.loadMoreProductSessions();
-  await waitFor(() => call === 2 && app.productDiscovery.get('codex')?.status === 'ready');
-  assert.equal(app.productItems()[0]?.skipped, 3);
-  assert.match(app.message, /已显示 2 条 · 已跳过 3 条/);
+  assert.equal(call, 1);
+  assert.equal(app.productItems()[0]?.skipped, 2);
+  assert.match(app.message, /1 shown · 2 skipped/);
   assert.doesNotMatch(app.message, /还有更多/);
-  assert.match(app.message, /诊断：invalid-jsonl \(2\), unreadable-directory \(1\)/);
+  assert.match(app.message, /Diagnostics: invalid-jsonl \(1\), unreadable-directory \(1\)/);
   assert.deepEqual(app.productDiscovery.get('codex')?.diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.count]), [
-    ['invalid-jsonl', 2], ['unreadable-directory', 1],
+    ['invalid-jsonl', 1], ['unreadable-directory', 1],
   ]);
 });
 

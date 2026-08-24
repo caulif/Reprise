@@ -53,6 +53,10 @@ npm run smoke:codex
 
 项目使用单一 TypeScript/ESM 包；`src/cli` 仅负责启动 TUI，真实 protocol smoke 保持为显式运行脚本，避免把受控验证扩展为通用 benchmark CLI。
 
+## 协作
+
+贡献、验证命令和真实 smoke 边界见 [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)。漏洞请按 [`docs/SECURITY.md`](./docs/SECURITY.md) 私下报告。支持范围见 [`docs/SUPPORT.md`](./docs/SUPPORT.md)。
+
 ## 文档
 
 产品定义、当前架构、研究依据和历史归档都在 [`docs/`](./docs/README.md)，本文件是仓库根目录唯一的 Markdown 入口。

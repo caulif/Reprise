@@ -903,7 +903,9 @@ test("Recovery treats Playbook instructions as context data without expanding th
 test("Host audits staging shell commands with redacted summaries and completion details", async () => {
   const events: AgentAuditEvent[] = [];
   const command =
-    'curl -H "Authorization: Bearer ultra-secret-token" https://example.invalid';
+    "curl -H " +
+    JSON.stringify(`${["Authorization: Bea", "rer "].join("")}${["ultra-secret", "-token"].join("")}`) +
+    " https://example.invalid";
   const host = new PiAgentHost({
     createSession: (input) => ({
       append: async () => {

@@ -27,9 +27,7 @@
 
 ## 受控边界
 
-`docs/` 下只有这些受版本控制：`AGENTS.md`、`README.md`、`documentation-structure.md`、`development-plan.md`、`codex-smoke-gate.md`、`product/`、`architecture/`、`decisions/`、`plan/`、`research/`、`progress/`、`tui-audit/frames/`。
-
-其余一律不受控，见 `.gitignore`。`tui-audit/frames/` 是例外中的例外：它是 CI 逐字节比对的快照基线，改动 TUI 渲染后必须重新生成并提交。
+受控路径以[文档结构](./documentation-structure.md#受控边界)的目录模型为准。其余一律不受控，见 `.gitignore`。`tui-audit/frames/` 是例外中的例外：它是 CI 逐字节比对的快照基线，改动 TUI 渲染后必须重新生成并提交。
 
 ## 链接与体积
 

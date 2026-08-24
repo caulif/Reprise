@@ -5,7 +5,31 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const NAME_EXCEPTIONS = new Set(['README.md', 'AGENTS.md', 'MASTER.md']);
+const NAME_EXCEPTIONS = new Set([
+  'README.md',
+  'AGENTS.md',
+  'MASTER.md',
+  'CONTRIBUTING.md',
+  'SECURITY.md',
+  'CODE_OF_CONDUCT.md',
+  'SUPPORT.md',
+  'GOVERNANCE.md',
+  'CHANGELOG.md',
+]);
+const COLLABORATION_FILES = [
+  { path: 'docs/CONTRIBUTING.md', needles: ['开发环境', '验证命令', '真实'] },
+  { path: 'docs/SECURITY.md', needles: ['报告渠道', '受支持版本'] },
+  { path: 'docs/CODE_OF_CONDUCT.md', needles: ['不可接受'] },
+  { path: 'docs/SUPPORT.md', needles: ['当前阶段'] },
+  { path: 'docs/GOVERNANCE.md', needles: ['决策'] },
+  { path: 'docs/CHANGELOG.md', needles: ['Unreleased'] },
+  { path: 'docs/plan/task-brief-template.md', needles: ['Done means', 'Rollback'] },
+  { path: '.github/PULL_REQUEST_TEMPLATE.md', needles: ['Goal / user impact', 'Verification', 'Rollback'] },
+  { path: '.github/ISSUE_TEMPLATE/bug.yml', needles: ['复现', '影响', '证据', '环境'] },
+  { path: '.github/ISSUE_TEMPLATE/feature.yml', needles: ['用户问题', '非目标', '替代方案'] },
+  { path: '.github/ISSUE_TEMPLATE/task.yml', needles: ['Done means', 'Rollback'] },
+  { path: '.github/CODEOWNERS', needles: ['@caulif', '/src/core/'] },
+];
 const FORBIDDEN_NAME = /\b(final|latest|new)\b|v\d+|-\d+\.\d+/i;
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
 const DECISION_NAME = /^\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.md$/;
@@ -115,11 +139,19 @@ function checkDecisionRecord(relativePath, text) {
   if (!DECISION_NAME.test(fileName)) {
     errors.push(`${relativePath}:1  文件名  (必须匹配 YYYY-MM-DD-kebab.md)`);
   }
-  if (!/^# 决策：.+/.test(lines[0] ?? '')) {
-    errors.push(`${relativePath}:1  标题  (第 1 行必须是 # 决策：<标题>)`);
+  const dated = /^(\d{4}-\d{2}-\d{2})-/.exec(fileName)?.[1];
+  if (dated && dated < '2026-08-23') {
+    return errors;
   }
-  if ((lines[1] ?? '') !== '') {
-    errors.push(`${relativePath}:2  空行  (第 2 行必须为空)`);
+  const headingLines = lines.filter((line) => line.startsWith('## '));
+  const usesCurrentTemplate =
+    /^# 决策：.+/.test(lines[0] ?? '') &&
+    (lines[1] ?? '') === '' &&
+    /^状态：(proposed|accepted)$/.test(lines[2] ?? '') &&
+    headingLines[0] === '## 问题';
+  if (!usesCurrentTemplate) {
+    errors.push(`${relativePath}:1  模板  (必须是 # 决策：标题、空行、状态：proposed|accepted，且第一节为 ## 问题)`);
+    return errors;
   }
   const status = /^状态：(proposed|accepted)$/.exec(lines[2] ?? '');
   if (!status) {
@@ -127,7 +159,6 @@ function checkDecisionRecord(relativePath, text) {
   } else if (folder && status[1] !== folder) {
     errors.push(`${relativePath}:3  状态  (状态 ${status[1]} 与目录 ${folder} 不一致)`);
   }
-  const headingLines = lines.filter((line) => line.startsWith('## '));
   if (DECISION_SECTIONS.some((section, index) => headingLines[index] !== section) || headingLines.length !== DECISION_SECTIONS.length) {
     errors.push(`${relativePath}:1  小节  (必须按顺序包含 ${DECISION_SECTIONS.join(' ')})`);
   }
@@ -156,6 +187,33 @@ function checkFileName(relativePath) {
   if (!KEBAB.test(base)) errors.push(`${relativePath}:1  文件名  (必须是小写 kebab-case)`);
   if (FORBIDDEN_NAME.test(base)) errors.push(`${relativePath}:1  文件名  (不得含 final/latest/new 或版本号后缀)`);
   return errors;
+}
+
+function checkCollaborationFiles(readText) {
+  const errors = [];
+  for (const spec of COLLABORATION_FILES) {
+    let text;
+    try {
+      text = readText(spec.path);
+    } catch {
+      errors.push(`${spec.path}:1  协作入口  (文件不存在)`);
+      continue;
+    }
+    for (const needle of spec.needles) {
+      if (!text.includes(needle)) {
+        errors.push(`${spec.path}:1  协作入口  (缺少「${needle}」)`);
+      }
+    }
+  }
+  return errors;
+}
+
+function readRepoText(relativePath) {
+  const absolute = join(ROOT, relativePath);
+  if (!existsSync(absolute) || !statSync(absolute).isFile()) {
+    throw new Error(`missing ${relativePath}`);
+  }
+  return readFileSync(absolute, 'utf8');
 }
 
 function checkClaudeMd(text) {
@@ -276,6 +334,7 @@ function runRepoChecks() {
 
   const claude = existsSync(join(ROOT, 'CLAUDE.md')) ? readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8') : '';
   errors.push(...checkClaudeMd(claude));
+  errors.push(...checkCollaborationFiles(readRepoText));
   return errors;
 }
 
@@ -293,7 +352,7 @@ function selfTest() {
     for (const dir of actual) if (!model.has(dir)) errors.push(`extra ${dir}`);
     return errors;
   })());
-  expectFail('决策记录缺备选方案', checkDecisionRecord('docs/decisions/accepted/2026-08-14-sample.md', [
+  expectFail('决策记录缺备选方案', checkDecisionRecord('docs/decisions/accepted/2026-08-23-sample.md', [
     '# 决策：示例',
     '',
     '状态：accepted',
@@ -310,13 +369,26 @@ function selfTest() {
     'w',
     '',
   ].join('\n')));
+  expectFail('决策记录错误标题', checkDecisionRecord('docs/decisions/accepted/2026-08-23-bad-title.md', '# 随便标题\n\n状态：accepted\n'));
+  expectFail('决策记录缺状态行', checkDecisionRecord('docs/decisions/accepted/2026-08-23-no-status.md', '# 决策：无状态\n\n## 问题\n'));
+  expectFail('决策记录缺全部必需小节', checkDecisionRecord('docs/decisions/accepted/2026-08-23-no-sections.md', [
+    '# 决策：无小节',
+    '',
+    '状态：accepted',
+    '',
+    '只有正文。',
+    '',
+  ].join('\n')));
   expectFail('超预算', checkBudgets({ 'docs/AGENTS.md': 1 }, new Map([['docs/AGENTS.md', '一二三四五']])));
+  expectFail('协作入口缺失', checkCollaborationFiles(() => {
+    throw new Error('missing');
+  }));
   if (failures.length) {
     console.error(failures.join('\n'));
     process.exitCode = 1;
     return;
   }
-  console.log('verify-docs self-test: 4 种坏输入均被拒绝');
+  console.log('verify-docs self-test: 8 种坏输入均被拒绝');
 }
 
 function main() {

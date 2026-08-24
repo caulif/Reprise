@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞（私下报告）
+    url: https://github.com/caulif/Reprise/security/advisories/new
+    about: 不要用公开 Issue 报告漏洞或粘贴 secret。
+  - name: 贡献指南
+    url: https://github.com/caulif/Reprise/blob/main/docs/CONTRIBUTING.md
+    about: 本地验证、真实 smoke opt-in 与 PR 要求。

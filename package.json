@@ -49,6 +49,11 @@
     "flow:tui": "npm run build && node dist/scripts/tui-full-flow.js",
     "knip": "knip",
     "jscpd": "jscpd src --min-tokens 60 --min-lines 6 --mode mild --threshold 1 --reporters console --output .tmp-jscpd",
+    "verify:pack": "node scripts/verify-pack.mjs",
+    "verify:audit": "node scripts/verify-audit.mjs",
+    "verify:secrets": "node scripts/verify-secrets.mjs",
+    "verify:imports": "node scripts/verify-layer-imports.mjs",
+    "verify:source-size": "node scripts/verify-source-size.mjs",
     "prepublishOnly": "npm run check"
   },
   "dependencies": {

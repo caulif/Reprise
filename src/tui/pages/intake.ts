@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { asPosixPath, isFsAbsolute } from '../../core/paths.js';
-import { compareSessionSummaries, type SessionInspection, type SessionPrivacy, type SessionSummary } from '../../products/contract.js';
+import { compareSessionSummaries, type SessionDiscoveryProject, type SessionInspection, type SessionPrivacy, type SessionSummary } from '../../products/contract.js';
 import { compact, truncateFit } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import { caretAt } from '../text-edit.js';
@@ -55,6 +55,7 @@ export type InspectionModel = {
 };
 
 const UNKNOWN_PROJECT_PREFIX = 'unknown:';
+const PROJECTLESS_PROJECT_KEY = 'projectless';
 
 function projectKey(session: SessionSummary): string {
   const cwd = canonicalHistoricalCwd(session.cwd);
@@ -73,6 +74,8 @@ function canonicalHistoricalCwd(cwd: string | undefined): string | undefined {
 function sessionTime(session: SessionSummary | undefined): string {
   return session?.updatedAt ?? session?.startedAt ?? '';
 }
+
+function isProjectless(key: string): boolean { return key === PROJECTLESS_PROJECT_KEY; }
 
 function isUnknownProject(key: string): boolean {
   return key.startsWith(UNKNOWN_PROJECT_PREFIX);
@@ -105,7 +108,7 @@ export function sessionTitle(summary: string | undefined): string {
   return stripped || text;
 }
 
-export function groupSessionsByProject(sessions: readonly SessionSummary[]): SessionProject[] {
+export function groupSessionsByProject(sessions: readonly SessionSummary[], catalogProjects: readonly SessionDiscoveryProject[] = []): SessionProject[] {
   const groups = new Map<string, SessionSummary[]>();
   for (const session of sessions) {
     const key = projectKey(session);
@@ -113,22 +116,28 @@ export function groupSessionsByProject(sessions: readonly SessionSummary[]): Ses
     list.push(session);
     groups.set(key, list);
   }
+  for (const project of catalogProjects) if (!groups.has(project.key)) groups.set(project.key, []);
   const grouped = [...groups.entries()].map(([key, items]) => {
     const ordered = [...items].sort(compareSessionSummaries);
     const path = ordered.find((item) => item.cwd)?.cwd;
-    return { key, ...(path ? { path } : {}), sessions: ordered, latestAt: sessionTime(ordered[0]) };
+    const catalog = catalogProjects.find((item) => item.key === key);
+    return { key, ...(path ? { path } : catalog?.path ? { path: catalog.path } : {}), sessions: ordered, latestAt: sessionTime(ordered[0]) || '' };
   });
   const knownPaths = grouped.flatMap((project) => project.path ? [project.path] : []);
   return grouped.map((project) => {
+    if (isProjectless(project.key)) return { ...project, label: 'Projectless sessions' };
     if (isUnknownProject(project.key)) return { ...project, label: 'Unknown project' };
     const samePath = grouped.filter((other) => other.path && asPosixPath(other.path).toLowerCase() === asPosixPath(project.path ?? '').toLowerCase());
-    const label = projectDisplayLabel(project.path, knownPaths);
+    const label = catalogProjects.find((item) => item.key === project.key)?.label ?? projectDisplayLabel(project.path, knownPaths);
     return samePath.length > 1
       ? { ...project, label: `${project.sessions[0]?.productId ?? 'agent'} · ${label}` }
       : { ...project, label };
   }).sort((left, right) => {
     if (isUnknownProject(left.key)) return 1;
     if (isUnknownProject(right.key)) return -1;
+    if (!left.sessions.length && !right.sessions.length) return left.key.localeCompare(right.key);
+    if (!left.sessions.length) return 1;
+    if (!right.sessions.length) return -1;
     const order = compareSessionSummaries(left.sessions[0]!, right.sessions[0]!);
     return order || left.key.localeCompare(right.key);
   });

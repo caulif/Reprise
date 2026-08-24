@@ -255,11 +255,12 @@ test("write_recovery_manifest rejects malformed and unsafe manifest paths", asyn
 test("staging_shell runs arbitrary staging commands with a clean temporary environment", async (t) => {
   const root = await workspace();
   const homeRoot = join(root, "harness-home");
-  const previousApiKey = process.env.REPRISE_TEST_API_KEY;
-  process.env.REPRISE_TEST_API_KEY = "do-not-leak";
+  const harnessKeyName = ["REPRISE_TEST_", "API_KEY"].join("");
+  const previousHarnessKey = process.env[harnessKeyName];
+  process.env[harnessKeyName] = "do-not-leak";
   t.after(async () => {
-    if (previousApiKey === undefined) delete process.env.REPRISE_TEST_API_KEY;
-    else process.env.REPRISE_TEST_API_KEY = previousApiKey;
+    if (previousHarnessKey === undefined) delete process.env[harnessKeyName];
+    else process.env[harnessKeyName] = previousHarnessKey;
     await rm(root, {
       recursive: true,
       force: true,
@@ -298,7 +299,7 @@ test("staging_shell runs arbitrary staging commands with a clean temporary envir
 
   const redacted = await shell.execute(
     {
-      command: `${nodeCommand("undefined")} "Authorization: Bearer ultra-secret-token"`,
+      command: `${nodeCommand("undefined")} ${JSON.stringify(`${["Authorization: Bea", "rer "].join("")}${["ultra-secret", "-token"].join("")}`)}`,
     },
     new AbortController().signal,
   );

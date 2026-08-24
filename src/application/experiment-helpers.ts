@@ -1,8 +1,10 @@
+import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { isRecord } from "../core/json.js";
 import { SAFE_ID } from "../core/identity.js";
-import type { EventEnvelope } from "../core/schema.js";
+import type { EventEnvelope, TaskCase } from "../core/schema.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
+import { writeImmutableJson } from "../infrastructure/store/experiment-store.js";
 
 export function recordValue(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
@@ -63,6 +65,17 @@ export function assertIds(input: {
 
 export function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+export async function persistTaskCase(path: string, taskCase: TaskCase): Promise<void> {
+  try {
+    const persisted = JSON.parse(await readFile(path, "utf8")) as Partial<TaskCase>;
+    if (persisted.caseId !== taskCase.caseId || persisted.contentHash !== taskCase.contentHash)
+      throw new Error(`TaskCase ${taskCase.caseId} conflicts with existing immutable content.`);
+  } catch (error) {
+    if (isMissing(error)) await writeImmutableJson(path, taskCase);
+    else throw error;
+  }
 }
 
 export function totalTokenCount(

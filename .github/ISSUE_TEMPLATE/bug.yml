@@ -1,0 +1,32 @@
+name: Bug
+description: 报告可复现的缺陷
+labels: ["bug"]
+body:
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现
+      description: 最少步骤。能用确定性测试或脚本复现时不要依赖真实 Runtime。
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响
+      description: 谁受影响、数据是否损坏、是否涉及凭据或费用。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据
+      description: 退出码、脱敏日志、测试名。不要粘贴 API key、完整 prompt 或本机秘密路径内容。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: OS、Node 版本、Reprise 版本或 git SHA。已验证平台是 Windows 11。
+    validations:
+      required: true

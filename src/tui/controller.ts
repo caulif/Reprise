@@ -1,4 +1,4 @@
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import type { Models } from "@earendil-works/pi-ai";
 import {
   Loader,
@@ -21,7 +21,6 @@ import {
   configForDraft,
   defaultHarnessModelConfig,
   draftForConfig,
-  hasFileApiKey,
   readHarnessModelConfig,
   saveHarnessModelConfig,
   safeConfigError,
@@ -31,17 +30,14 @@ import {
   type HarnessModelConfig,
 } from "../infrastructure/harness-model-config.js";
 import { PiModelCaller } from "../infrastructure/pi-model-caller.js";
-import { compareSessionSummaries, isEligibleSession, type DiscoveryDiagnostic, type ProductPack, type SessionInspection, type SessionPrivacy, type SessionSummary } from "../products/contract.js";
-import { findProductPack, productPacks } from "../products/index.js";
+import { type DiscoveryDiagnostic, type ProductPack, type SessionDiscoveryProject, type SessionInspection, type SessionPrivacy, type SessionSummary } from "../products/contract.js";
+import { productPacks } from "../products/index.js";
 import {
   errorMessage,
   operatorErrorMessage,
   TIMELINE_FILTERS,
 } from "./format.js";
 import {
-  groupSessionsByProject,
-  matchesIntakeQuery,
-  matchesProjectQuery,
   type IntakeLevel,
   type SessionProject,
 } from "./pages/intake.js";
@@ -54,14 +50,16 @@ import { HelpOverlay, commandSelectList } from "./overlays.js";
 import { CONFIG_FIELDS } from "./pages/config.js";
 import { handleConfigInput } from "./config-input.js";
 import { handleControllerInput } from "./controller-input.js";
-import { discardRecovery, envNameFromConfig, freeze, stopRunClock } from "./controller-run.js";
+import { credentialGapMessage, harnessCaller } from "./controller-auth.js";
+import { groupedProjects, visibleProjects, visibleSessions, intakeCount, productItems, productContext, view as projectView } from "./controller-view.js";
+import { loadProductSessions, loadMoreProductSessions, refreshProductSessions } from "./controller-sessions.js";
+import { discardRecovery, freeze, stopRunClock } from "./controller-run.js";
 import { nextLocale, parseLocale, t, type Locale } from "./i18n.js";
 import { readTuiPreferences, saveTuiPreferences } from "./preferences.js";
 import { matchesCanvasQuery, matchesFilter } from "./scrollback.js";
 import { handleHistoryInput } from "./history-input.js";
 import { createTheme, enableTerminalColor } from "./theme.js";
 import { type TimelineEntry } from "./timeline.js";
-import { projectWorkbenchView } from "./view-projection.js";
 import { Workbench, mountWorkbench, type WorkbenchView } from "./workbench.js";
 import {
   openAllowedFileUrl,
@@ -71,7 +69,6 @@ import {
 } from "./open-report.js";
 import type { PreparePhase } from "./widgets.js";
 type Page = WorkbenchView["page"];
-const SESSION_LIMIT = 150;
 type PiModels = Pick<
   Models,
   | "getProviders"
@@ -95,6 +92,7 @@ type ProductDiscoveryState = {
   /** Compatibility diagnostics from adapters that cannot return discovery-index diagnostics. */
   readonly pageDiagnostics?: readonly DiscoveryDiagnostic[];
   readonly message?: string;
+  readonly projects?: readonly SessionDiscoveryProject[];
 };
 
 type SessionLoadMode = 'initial' | 'more' | 'refresh';
@@ -114,15 +112,6 @@ export type CodexIntakeTuiOptions = {
   /** Schedules the coalesced timeline repaint; injectable so callers can deterministically drain it in tests. */
   readonly queueTimelineRender?: (callback: () => void) => void;
 };
-function mergeDiscoveryDiagnostics(previous: readonly DiscoveryDiagnostic[] | undefined, next: readonly DiscoveryDiagnostic[]): readonly DiscoveryDiagnostic[] {
-  const totals = new Map<string, { count: number; samplePath?: string }>();
-  for (const diagnostic of [...previous ?? [], ...next]) {
-    const current = totals.get(diagnostic.code);
-    totals.set(diagnostic.code, { count: (current?.count ?? 0) + diagnostic.count, ...(current?.samplePath ?? diagnostic.samplePath ? { samplePath: current?.samplePath ?? diagnostic.samplePath } : {}) });
-  }
-  return [...totals.entries()].sort(([left], [right]) => left.localeCompare(right))
-    .map(([code, value]) => ({ code: code as DiscoveryDiagnostic['code'], count: value.count, ...(value.samplePath ? { samplePath: value.samplePath } : {}) }));
-}
 
 /** Keyboard-only Home-first benchmark workbench for configuration, intake, and isolated runs. */
 export class CodexIntakeTui {
@@ -144,7 +133,7 @@ export class CodexIntakeTui {
   activeProductId = '';
   readonly productSessions = new Map<string, readonly SessionSummary[]>();
   readonly productDiscovery = new Map<string, ProductDiscoveryState>();
-  private discoveryAbort: AbortController | undefined;
+  discoveryAbort: AbortController | undefined;
   inspection: SessionInspection | undefined;
   inspectionTaskInput = 0;
   selected = 0;
@@ -544,79 +533,18 @@ export class CodexIntakeTui {
   }
 
   async loadProductSessions(productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
-    const pack = this.packs.find((item) => item.manifest.productId === productId);
-    if (!pack) return;
-    const root = resolve(this.sessionsRoots[productId] ?? pack.sessions.defaultRoot);
-    const state = this.productDiscovery.get(productId);
-    const cached = this.productSessions.get(productId);
-    if (mode === "initial" && state?.status === "ready" && state.root === root && cached) {
-      this.activateProductSessions(productId, cached, Boolean(state.nextCursor));
-      this.render(true);
-      return;
-    }
-    if (mode === "more" && (!cached || !state?.nextCursor || state.root !== root)) return;
-    const token = this.beginNavigation();
-    this.discoveryAbort?.abort();
-    const abort = new AbortController();
-    this.discoveryAbort = abort;
-    this.activeProductId = productId;
-    this.productDiscovery.set(productId, { status: "loading", root, ...(state?.nextCursor ? { nextCursor: state.nextCursor } : {}) });
-    this.render();
-    try {
-      const discovered = await pack.sessions.discover({
-        root,
-        limit: SESSION_LIMIT,
-        ...(mode === "more" && state?.nextCursor ? { cursor: state.nextCursor } : {}),
-        excludeRoots: [this.dataDir, process.cwd()],
-        signal: abort.signal,
-        ...(mode === "refresh" ? { refresh: true } : {}),
-      });
-      const invalid = discovered.items.find((session) => session.productId !== productId);
-      if (invalid) throw new Error(`Session adapter for ${productId} returned ${invalid.productId}.`);
-      if (token !== this.generation || abort.signal.aborted) return;
-      const sessions = [...(mode === "more" ? cached ?? [] : []), ...discovered.items.slice(0, SESSION_LIMIT)]
-        .sort(compareSessionSummaries);
-      const rootDiagnostics = discovered.rootDiagnostics ?? (mode === "more" ? state?.rootDiagnostics ?? [] : []);
-      const pageDiagnostics = discovered.pageDiagnostics ?? (discovered.rootDiagnostics ? [] : discovered.diagnostics);
-      const accumulatedPageDiagnostics = mergeDiscoveryDiagnostics(
-        mode === "more" ? state?.pageDiagnostics : undefined,
-        pageDiagnostics,
-      );
-      const diagnostics = mergeDiscoveryDiagnostics(rootDiagnostics, accumulatedPageDiagnostics);
-      this.productSessions.set(productId, sessions);
-      this.productDiscovery.set(productId, {
-        status: "ready", root,
-        ...(discovered.nextCursor ? { nextCursor: discovered.nextCursor } : {}),
-        scanned: discovered.scanned,
-        skipped: diagnostics.reduce((total, diagnostic) => total + diagnostic.count, 0),
-        diagnostics,
-        ...(rootDiagnostics.length ? { rootDiagnostics } : {}),
-        ...(accumulatedPageDiagnostics.length ? { pageDiagnostics: accumulatedPageDiagnostics } : {}),
-      });
-      this.activateProductSessions(productId, sessions, Boolean(discovered.nextCursor));
-    } catch (error) {
-      if (token !== this.generation || abort.signal.aborted) return;
-      const message = operatorErrorMessage(error);
-      this.productDiscovery.set(productId, { status: "error", root, message });
-      this.intakeLevel = "products";
-      this.activeProductId = "";
-      this.selected = Math.max(0, this.packs.findIndex((item) => item.manifest.productId === productId));
-      this.message = "Select an agent product.";
-    } finally {
-      if (this.discoveryAbort === abort) this.discoveryAbort = undefined;
-    }
-    this.render(true);
+    return await loadProductSessions(this, productId, mode);
   }
 
   loadMoreProductSessions(): void {
-    if (this.activeProductId) void this.loadProductSessions(this.activeProductId, "more");
+    return loadMoreProductSessions(this);
   }
 
   refreshProductSessions(): void {
-    if (this.activeProductId) void this.loadProductSessions(this.activeProductId, "refresh");
+    return refreshProductSessions(this);
   }
 
-  private activateProductSessions(productId: string, sessions: readonly SessionSummary[], limitReached: boolean): void {
+  activateProductSessions(productId: string, sessions: readonly SessionSummary[], limitReached: boolean): void {
     this.activeProductId = productId;
     this.sessions = sessions;
     this.sessionLimitReached = limitReached;
@@ -921,59 +849,23 @@ discoveryDiagnosticLabel(locale: Locale, code: DiscoveryDiagnostic['code']): str
 
   /** Grouping re-sorts every discovered session, and the view asks for it on every frame. */
   groupedProjects(): SessionProject[] {
-    const cached = this.groupedCache;
-    if (
-      cached &&
-      cached.sessions === this.sessions &&
-      cached.filterEligible === this.filterEligible
-    )
-      return cached.projects;
-    const projects = groupSessionsByProject(
-      this.filterEligible ? this.sessions.filter(isEligibleSession) : this.sessions,
-    );
-    this.groupedCache = {
-      sessions: this.sessions,
-      filterEligible: this.filterEligible,
-      projects,
-    };
-    return projects;
+    return groupedProjects(this);
   }
 
   visibleProjects(): SessionProject[] {
-    return this.groupedProjects().filter((project) =>
-      matchesProjectQuery(project, this.searchQuery),
-    );
+    return visibleProjects(this);
   }
 
   visibleSessions(): readonly SessionSummary[] {
-    const pool = this.filterEligible
-      ? this.sessions.filter(isEligibleSession)
-      : this.sessions;
-    const project = this.groupedProjects().find(
-      (item) => item.key === this.activeProjectKey,
-    );
-    const scoped =
-      this.intakeLevel === "sessions" && project ? project.sessions : pool;
-    return scoped.filter((session) =>
-      matchesIntakeQuery(session, this.searchQuery),
-    );
+    return visibleSessions(this);
   }
 
   intakeCount(): number {
-    if (this.intakeLevel === "products") return this.packs.length;
-    return this.intakeLevel === "projects" ? this.visibleProjects().length : this.visibleSessions().length;
+    return intakeCount(this);
   }
 
   productItems(): import("./pages/intake.js").ProductIntakeItem[] {
-    return this.packs.map((pack) => {
-      const state = this.productDiscovery.get(pack.manifest.productId) ?? { status: "idle" as const };
-      const root = resolve(this.sessionsRoots[pack.manifest.productId] ?? pack.sessions.defaultRoot);
-      const sessions = state.root === root ? this.productSessions.get(pack.manifest.productId) : undefined;
-      return { productId: pack.manifest.productId, displayName: pack.manifest.displayName, packVersion: pack.manifest.packVersion,
-        discoveryStatus: state.status, ...(sessions ? { sessionCount: sessions.length } : {}), ...(state.scanned !== undefined ? { scanned: state.scanned } : {}),
-        ...(state.nextCursor ? { limitReached: true } : {}),
-        ...(state.skipped ? { skipped: state.skipped } : {}), ...(state.message ? { diagnostic: state.message } : {}) };
-    });
+    return productItems(this);
   }
 
   beginNavigation(): number {
@@ -1091,125 +983,10 @@ discoveryDiagnosticLabel(locale: Locale, code: DiscoveryDiagnostic['code']): str
   }
 
   productContext(): { productLabel?: string; productConfigured?: boolean } {
-    const productId = this.taskCase?.source.productId || this.activeProductId;
-    const pack = this.packs.find((item) => item.manifest.productId === productId);
-    if (!pack) return {};
-    return {
-      productLabel: pack.manifest.displayName,
-      productConfigured: this.productAuth.get(productId) ?? false,
-    };
+    return productContext(this);
   }
 
   view(): WorkbenchView {
-    const envName = envNameFromConfig(this.modelConfig, this.configDraft);
-    const product = this.productContext();
-    return projectWorkbenchView({
-      page: this.page,
-      cwd: this.displayCwd,
-      modelConfig: this.modelConfig,
-      hasSavedModelConfig: this.hasSavedModelConfig,
-      locale: this.locale,
-      harnessAuthOk: this.harnessAuthOk,
-      ...(envName ? { envName } : {}),
-      ...product,
-      taskCase: this.taskCase,
-      message: this.message,
-      inlineHelp: this.inlineHelp,
-      cancelling: this.cancelling,
-      recentExperiment: this.recentExperiment,
-      composer: this.composer,
-      composerCursor: this.composerCursor,
-      showSuggestions: this.showSuggestions,
-      commandOverlay: Boolean(this.commandOverlay),
-      configDraft: this.configDraft,
-      configSelected: this.configSelected,
-      configEditing: this.configEditing,
-      configBuffer: this.configBuffer,
-      configCursor: this.configCursor,
-      configDirty: this.configDirty(),
-      configPendingToggle: this.configPendingToggle,
-      historyTotalBytes: this.historyTotalBytes,
-      historyTab: this.historyTab,
-      historyItems: this.historyItems(),
-      historySelected: this.historySelected,
-      historyDetail: this.historyDetail,
-      intakeLevel: this.intakeLevel,
-      products: this.productItems(),
-      visibleProjects: this.visibleProjects(),
-      activeProjectKey: this.activeProjectKey,
-      visibleSessions: this.visibleSessions(),
-      selected: this.selected,
-      filterEligible: this.filterEligible,
-      searchQuery: this.searchQuery,
-      searchCursor: this.searchCursor,
-      searching: this.searching,
-      inspection: this.inspection,
-      privacy: this.privacy,
-      inspectionTaskInput: this.inspectionTaskInput,
-      inspectionShowOutcome: this.inspectionShowOutcome,
-      sourceRoot: this.sourceRoot,
-      sourceCursor: this.sourceCursor,
-      preflight: this.preflight,
-      candidate: this.taskCase
-        ? findProductPack(this.taskCase.source.productId).defaultCandidate()
-        : this.workflow?.candidate,
-      recoveryAttempt: this.recoveryAttempt,
-      effort: this.modelConfig.effort,
-      policy: this.workflow?.policy,
-      ...(this.preparePhase
-        ? {
-            preparePhase: this.preparePhase,
-            ...(this.prepareDetail
-              ? { prepareDetail: this.prepareDetail }
-              : {}),
-          }
-        : {}),
-      timeline: this.timeline,
-      visibleTimeline: this.visibleTimeline(),
-      timelineSelected: this.timelineSelected,
-      timelineFilterIndex: this.timelineFilterIndex,
-      timelineFollowing: this.timelineFollowing,
-      detailExpanded: this.detailExpanded,
-      runStartedAt: this.runStartedAt,
-      nowMs: this.nowMs(),
-      result: this.result,
-      ...(this.viewer ? { viewer: this.viewer } : {}),
-      ...(this.actorsOpen ? { actorsOpen: true } : {}),
-      ...(this.finding
-        ? {
-            finding: true,
-            findQuery: this.findQuery,
-            findCursor: this.findCursor,
-          }
-        : {}),
-    });
+    return projectView(this);
   }
-}
-
-
-function envUnsetMessage(keyRef: string): string | undefined {
-  const name = tryEnvironmentName(keyRef);
-  if (!name || process.env[name]) return undefined;
-  return `${name} is not set in this shell. ${shellEnvAssignment(name)}`;
-}
-
-function credentialGapMessage(draft: HarnessConfigDraft): string | undefined {
-  if (draft.kind !== "openai-compatible") return undefined;
-  if (hasFileApiKey(draft)) return undefined;
-  const unset = envUnsetMessage(draft.keyRef);
-  if (unset) return unset;
-  if (!draft.keyRef.trim()) {
-    return "Add an API key to .reprise/harness-model.json, or an env:NAME reference.";
-  }
-  return undefined;
-}
-
-function harnessCaller(
-  config: HarnessModelConfig,
-  catalog?: PiModels,
-): PiModelCaller {
-  return config.schemaVersion === 2 &&
-    config.provider.kind === "openai-compatible"
-    ? new PiModelCaller(config)
-    : new PiModelCaller(config, catalog);
 }

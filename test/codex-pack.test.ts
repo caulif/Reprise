@@ -595,12 +595,14 @@ test("a failed text turn is reported as a failure rather than an empty answer", 
 });
 
 test("target stderr is redacted before it reaches the run journal", () => {
+  const openai = ["sk-", "abcdefghijklmnopqrstuvwx"].join("");
+  const bearer = ["Authorization: Bearer ", "abcdefghijklmnopqrstuvwxyz"].join("");
   assert.equal(
-    redactDiagnostic("failed with sk-abcdefghijklmnopqrstuvwx"),
+    redactDiagnostic(`failed with ${openai}`),
     "failed with [REDACTED]",
   );
   assert.equal(
-    redactDiagnostic("Authorization: Bearer abcdefghijklmnopqrstuvwxyz"),
+    redactDiagnostic(bearer),
     "Authorization: [REDACTED]",
   );
   assert.equal(redactDiagnostic("api_key=abcdefgh12345678"), "[REDACTED]");

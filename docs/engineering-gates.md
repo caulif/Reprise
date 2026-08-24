@@ -16,10 +16,11 @@
 ## 各类检查验什么
 
 - **静态**：`tsc --noEmit`、eslint、文档链接与预算、schema 生成区。
-- **测试**：`dist/test/**/*.test.js` 与 CLI `--version`。CI 在 Windows 和 Ubuntu 各跑一次。
+- **测试**：`dist/test/**/*.test.js` 与 CLI `--version`。CI 在 Windows 和 Ubuntu 各跑一次。Windows 11 是产品支持平台；Ubuntu 是 CI 可移植性门禁，不承诺真实 Runtime 或 TUI 帧。
 - **TUI 帧**：Windows 上逐字节比对 [`docs/tui-audit/frames/`](./tui-audit/frames/)，再跑启发式分析（行宽溢出、面板错位、compact 禁用字符）。基线是 Windows 产物，见[帧基线决策](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)。
 - **覆盖率**：总体 lines / branches / functions 阈值，见[覆盖率决策](./decisions/accepted/2026-08-14-coverage-thresholds.md)。
 - **未使用导出与重复**：`knip` 与 `jscpd` 进入 `check`；失败即红。`jscpd` 的 `--threshold` 是棘轮，只降不升；剩余条数来自两个 Pack 实现同一份契约，不靠忽略清单消音。
+- **供应链与边界**：`verify-pack`、`verify-audit`、`verify-secrets`、`verify-layer-imports`、`verify-source-size` 进入 `static`/`check`。各自带 `--self-test` 反向用例。真实 Runtime smoke 仍不在默认 CI。文件超过 1000 行、函数/类跨度超过 100 行且未在 [`scripts/source-size-allowlist.json`](../scripts/source-size-allowlist.json) 登记，或例外已到期，门禁失败。
 
 ## 门禁必须能失败
 
@@ -27,4 +28,6 @@
 
 覆盖率阈值只能升不能降。降低必须先更新覆盖率决策并写明理由。
 
-不要为了绿灯放宽阈值、给检查加例外、或把失败项改成 `allowFailure`。
+失败日志必须能用来复现：gate id、完整命令、退出码或 spawn 错误、Node/OS/git SHA。`node scripts/run-gates.mjs --self-test` 故意失败以证明这些字段存在。没有非阻断 gate。
+
+不要为了绿灯放宽阈值、给检查加例外、或把失败项改成非阻断。

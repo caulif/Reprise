@@ -10,6 +10,7 @@ import type { TaskCase } from '../../core/schema.js';
 import {
   type ImportedSession,
   type SessionDiscoveryPage,
+  type SessionDiscoveryProject,
   type SessionDiscoveryQuery,
   type SessionInspection,
   type SessionMessage,
@@ -19,6 +20,7 @@ import {
   type SessionSummary,
 } from '../contract.js';
 import { freezeCase, redactText } from '../shared/freeze.js';
+import { readCodexCatalog } from './catalog.js';
 
 export type CodexSessionSummary = SessionSummary;
 export type CodexSessionInspection = SessionInspection;
@@ -38,19 +40,42 @@ async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<S
   const root = resolve(query.root ?? defaultCodexSessionsRoot());
   const listing = await listJsonlFiles(root, (name) => name.startsWith('rollout-') && name.endsWith('.jsonl'), query.signal);
   const ranked = [...listing.entries].sort((left, right) => right.mtime - left.mtime || left.path.localeCompare(right.path));
-  return discoverSessionPage({
-    root,
-    ranked,
-    limit: query.limit ?? 50,
-    ...(query.cursor ? { cursor: query.cursor } : {}),
-    ...(query.signal ? { signal: query.signal } : {}),
-    cacheKey: 'codex',
-    ...(query.refresh ? { refresh: true } : {}),
-    diagnostics: listing.diagnostics,
+  const rolloutPage = await discoverSessionPage({
+    root, ranked,
+    // An omitted limit means the adapter is building the complete catalog. Explicit limits remain a compatibility API.
+    limit: query.limit ?? ranked.length + 1,
+    ...(query.cursor ? { cursor: query.cursor } : {}), ...(query.signal ? { signal: query.signal } : {}),
+    cacheKey: 'codex', ...(query.refresh ? { refresh: true } : {}), diagnostics: listing.diagnostics,
     inspect: (entry) => summarizeCodexSession(entry, query.signal),
     inspectPartial: (entry, signal) => summarizeCodexSessionHead(entry, signal),
     exclude: (session) => excludedCwd(session.cwd, query.excludeRoots),
   });
+  if (query.cursor) return rolloutPage;
+  const catalog = await readCodexCatalog({ codexHome: resolve(join(root, '..')), sessionsRoot: root });
+  const merged = mergeCodexSources(rolloutPage.items, catalog.sessions, query.excludeRoots);
+  return { ...rolloutPage, items: merged, scanned: Math.max(rolloutPage.scanned, merged.length),
+    skipped: rolloutPage.skipped + catalog.diagnostics.reduce((total, diagnostic) => total + diagnostic.count, 0),
+    diagnostics: [...rolloutPage.diagnostics, ...catalog.diagnostics],
+    ...(catalog.projects.length ? { projects: catalog.projects.map((project): SessionDiscoveryProject => ({ key: `codex\0${(project.rootPaths[0] ?? '').replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()}`, label: project.name, ...(project.rootPaths[0] ? { path: project.rootPaths[0] } : {}) })) } : {}) };
+}
+
+function mergeCodexSources(rollouts: readonly CodexSessionSummary[], catalog: readonly CodexSessionSummary[], excludeRoots: readonly string[] | undefined): CodexSessionSummary[] {
+  const byId = new Map<string, CodexSessionSummary>();
+  for (const session of catalog) if (!excludedCwd(session.cwd, excludeRoots)) byId.set(session.sessionId, session);
+  for (const session of rollouts) {
+    if (excludedCwd(session.cwd, excludeRoots)) continue;
+    const indexed = byId.get(session.sessionId);
+    const { partial: _catalogPartial, ...catalogBase } = indexed ?? {};
+    const cwd = session.cwd ?? indexed?.cwd;
+    byId.set(session.sessionId, { ...catalogBase, ...session, ...(cwd ? { cwd } : {}),
+      sourceKind: 'catalog+transcript', availability: 'indexed', evidenceLevel: 'transcript', ...(session.partial !== undefined ? { partial: session.partial } : {}) });
+  }
+  return [...byId.values()].sort(compareCodexSummaries);
+}
+function compareCodexSummaries(left: CodexSessionSummary, right: CodexSessionSummary): number {
+  const leftTime = Date.parse(left.updatedAt ?? left.startedAt ?? ''); const rightTime = Date.parse(right.updatedAt ?? right.startedAt ?? '');
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) return rightTime - leftTime;
+  return left.sessionId.localeCompare(right.sessionId);
 }
 /** Listing reads one JSONL row at a time and keeps only metadata/counts, never a transcript. */
 type CodexSummaryState = {

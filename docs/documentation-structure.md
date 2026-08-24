@@ -10,6 +10,14 @@
 docs/
 ├── AGENTS.md                        # 文档层写作指令（不定义规范）
 ├── README.md                        # 唯一导航入口
+├── CONTRIBUTING.md                  # 贡献与本地验证
+├── SECURITY.md                      # 漏洞报告
+├── CODE_OF_CONDUCT.md               # 行为准则
+├── SUPPORT.md                       # 支持边界
+├── GOVERNANCE.md                    # 维护与决策方式
+├── CHANGELOG.md                     # 用户可见变更
+├── release-checklist.md             # 发布前验证与回滚
+├── postmortem-template.md           # 事故复盘模板
 ├── documentation-structure.md       # 本文
 ├── development-plan.md              # 模块 0–8 的实现顺序与验收记录
 ├── codex-smoke-gate.md              # 真实计费运行的准入程序与验收记录
@@ -97,7 +105,7 @@ docs/decisions/{proposed|accepted|superseded}/YYYY-MM-DD-topic.md
 - `## 影响` 同时写这个选择付出了什么和换来了什么。
 - `## 验证` 写什么可观察的事实能证明决定已生效。
 
-格式由 `npm run verify:docs` 检查 `proposed/` 与 `accepted/`。`superseded/` 已冻结，不检查格式，也不再修改。
+格式由 `npm run verify:docs` 检查 `proposed/` 与 `accepted/`。`superseded/` 已冻结，不检查格式，也不再修改。文件名日期早于 2026-08-23 的记录只检查文件名；2026-08-23 及之后的记录必须使用上述五节模板，文件名合法但正文不像模板时门禁失败。
 
 ### 何时必须写
 
@@ -107,7 +115,7 @@ docs/decisions/{proposed|accepted|superseded}/YYYY-MM-DD-topic.md
 
 ## 放置与命名规则
 
-- 文件和目录使用小写英文 `kebab-case`；`README.md`、`AGENTS.md` 是入口文件例外，`progress/MASTER.md` 是稳定进度入口的命名例外；日期目录和决策记录文件名使用 `YYYY-MM-DD`。
+- 文件和目录使用小写英文 `kebab-case`；`README.md`、`AGENTS.md` 是入口文件例外，`progress/MASTER.md` 是稳定进度入口的命名例外；`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`、`SUPPORT.md`、`GOVERNANCE.md`、`CHANGELOG.md` 是 GitHub 约定文件名例外；日期目录和决策记录文件名使用 `YYYY-MM-DD`。
 - 每个主题只保留一个当前来源，不在多个目录复制相同规范。
 - 文件名描述稳定主题，不使用 `final`、`new`、`latest` 或版本号。
 - 不为尚未发生的扩展创建空目录、空接口或占位文档。

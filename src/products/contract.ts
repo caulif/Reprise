@@ -54,6 +54,9 @@ export type SessionSummary = {
   readonly signals: SessionSignals;
   /** Internal evidence strength. TUI keeps one workflow regardless of this value. */
   readonly evidenceLevel?: SessionEvidenceLevel;
+  /** Internal discovery provenance; adapters may omit it for legacy sources. */
+  readonly sourceKind?: 'catalog+transcript' | 'catalog-only' | 'rollout-only' | 'projectless' | 'unknown';
+  readonly availability?: 'indexed' | 'catalog-only' | 'unindexed' | 'unreadable';
 };
 
 export type SessionInspection = SessionSummary & {
@@ -85,7 +88,12 @@ export type DiscoveryDiagnosticCode =
   | 'invalid-metadata'
   /** Claude's prompt history refers to a session whose replay transcript is no longer local. */
   | 'history-without-transcript'
-  | 'unsupported-entry';
+  | 'unsupported-entry'
+  | 'catalog-unavailable'
+  | 'catalog-schema-unsupported'
+  | 'catalog-read-error'
+  | 'global-state-unavailable'
+  | 'source-missing';
 
 /** Aggregate information about local records discovery intentionally did not surface. */
 export type DiscoveryDiagnostic = {
@@ -94,8 +102,15 @@ export type DiscoveryDiagnostic = {
   readonly samplePath?: string;
 };
 
+export type SessionDiscoveryProject = {
+  readonly key: string;
+  readonly label: string;
+  readonly path?: string;
+};
+
 export type SessionDiscoveryPage = {
   readonly items: readonly SessionSummary[];
+  readonly projects?: readonly SessionDiscoveryProject[];
   /** Opaque continuation token bound to one product root and its stable file ordering. */
   readonly nextCursor?: string;
   readonly scanned: number;
@@ -149,6 +164,9 @@ export type ImportedSession = {
   readonly signals: SessionSignals;
   /** Defaults to transcript for adapters written before evidence-aware intake. */
   readonly evidenceLevel?: SessionEvidenceLevel;
+  /** Internal discovery provenance; adapters may omit it for legacy sources. */
+  readonly sourceKind?: 'catalog+transcript' | 'catalog-only' | 'rollout-only' | 'projectless' | 'unknown';
+  readonly availability?: 'indexed' | 'catalog-only' | 'unindexed' | 'unreadable';
 };
 
 /** Completed sessions with a user task and at least one assistant message or tool call. */

@@ -1,0 +1,25 @@
+name: Feature
+description: 提议用户可观察的行为变化
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: user-problem
+    attributes:
+      label: 用户问题
+      description: 今天做不到或做起来危险的事，而不是实现方案。
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: 非目标
+      description: 这次明确不做的事。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 已经考虑过、但打算放弃的做法。
+    validations:
+      required: true

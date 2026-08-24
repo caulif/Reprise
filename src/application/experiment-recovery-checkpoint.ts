@@ -1,0 +1,156 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { persistRecoveryEvaluation } from "./recovery-evaluation.js";
+import { validateRecoveryEvidence } from "../infrastructure/recovery-tools.js";
+import { writeImmutableJson } from "../infrastructure/store/experiment-store.js";
+import {
+  hostCheckpointRecovery,
+  recoveryEvaluationCase,
+  recoveryTimingSummary,
+} from "./experiment-recovery-support.js";
+import type { RecoveryAttempt, RecoveryAttemptInput } from "./experiment-recovery-types.js";
+import type { RecoveryResult } from "../agents/recovery-agent.js";
+import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
+import type { ExperimentStore } from "../infrastructure/store/experiment-store.js";
+import type { LocalWorkspaceProvider, RecoveryStaging } from "../environment/local-workspace-provider.js";
+import type { RecoveryOrchestrator } from "./recovery-orchestrator.js";
+import type { RecoveryReadinessResult } from "./recovery-readiness.js";
+
+export type HostCheckpointRecoveryArgs = {
+  input: RecoveryAttemptInput;
+  staging: RecoveryStaging;
+  experimentRoot: string;
+  store: ExperimentStore;
+  provider: LocalWorkspaceProvider;
+  activeStaging: RecoveryStaging;
+  recoveryOrchestrator: RecoveryOrchestrator;
+  readinessResult: RecoveryReadinessResult | undefined;
+  forensicsCompleted: boolean;
+  evidenceSourcesAttempted: number | undefined;
+  evidenceSourcesAvailable: number | undefined;
+  hypothesisCount: number | undefined;
+  candidateCount: number | undefined;
+  verifierRejectionReasons: string[] | undefined;
+  providerFailureRetryable: boolean | undefined;
+  pathBoundaryRejected: boolean | undefined;
+};
+
+async function persistHostCheckpointRecoveryOutputs(input: {
+  staging: RecoveryStaging;
+  experimentRoot: string;
+  checkpoint: ReturnType<typeof hostCheckpointRecovery>;
+}): Promise<StructuredAgentResult<RecoveryResult>> {
+  const recovery: StructuredAgentResult<RecoveryResult> = {
+    status: "completed",
+    sessionId: `host-${input.staging.checkpointId}`,
+    value: input.checkpoint.result,
+  };
+  await writeFile(join(input.staging.root, "recovery.md"), input.checkpoint.report, "utf8");
+  await writeFile(
+    join(input.staging.root, "recovery-manifest.json"),
+    JSON.stringify(input.checkpoint.manifest),
+    "utf8",
+  );
+  await writeImmutableJson(join(input.experimentRoot, "recovery.json"), recovery);
+  return recovery;
+}
+
+export async function completeHostCheckpointRecovery(
+  args: HostCheckpointRecoveryArgs,
+): Promise<RecoveryAttempt | undefined> {
+  const input = args.input;
+  const staging = args.staging;
+  const experimentRoot = args.experimentRoot;
+  const store = args.store;
+  const provider = args.provider;
+  const activeStaging = args.activeStaging;
+  const recoveryOrchestrator = args.recoveryOrchestrator;
+  const readinessResult = args.readinessResult;
+  const forensicsCompleted = args.forensicsCompleted;
+  const evidenceSourcesAttempted = args.evidenceSourcesAttempted;
+  const evidenceSourcesAvailable = args.evidenceSourcesAvailable;
+  const hypothesisCount = args.hypothesisCount;
+  const candidateCount = args.candidateCount;
+  const verifierRejectionReasons = args.verifierRejectionReasons;
+  const providerFailureRetryable = args.providerFailureRetryable;
+  const pathBoundaryRejected = args.pathBoundaryRejected;
+
+if (staging.checkpointFingerprint && staging.checkpointId) {
+  const checkpoint = hostCheckpointRecovery(staging);
+  const recovery = await persistHostCheckpointRecoveryOutputs({
+    staging,
+    experimentRoot,
+    checkpoint,
+  });
+  await store.append({
+    type: "recovery.checkpoint_restored",
+    runId: input.runId,
+    operationId: "recovery-checkpoint-restored",
+    payload: {
+      checkpointId: staging.checkpointId,
+      checkpointDigest: staging.checkpointFingerprint.digest,
+      changedPathCount: checkpoint.changedPaths.length,
+    },
+  });
+  await store.append({
+    type: "recovery.completed",
+    runId: input.runId,
+    operationId: "recovery-completed",
+    payload: { status: "completed", source: "host_checkpoint" },
+  });
+  validateRecoveryEvidence(
+    checkpoint.evidence.map((item) => item.ref),
+    checkpoint.result,
+  );
+  const providerPreview = await provider.validateRecovery(
+    activeStaging,
+    checkpoint.result,
+    checkpoint.evidence,
+  );
+  const recoveredPaths = [...providerPreview.changedPaths];
+  const verification = "verified" as const;
+  if (providerPreview.reportText) {
+    await store.commitArtifact({
+      artifactId: "recovery-md",
+      kind: "recovery_report",
+      mediaType: "text/markdown",
+      bytes: Buffer.from(providerPreview.reportText, "utf8"),
+    });
+  }
+  await persistRecoveryEvaluation(store, [
+    recoveryEvaluationCase({
+      caseId: input.caseId,
+      staging,
+      candidateCreated: false,
+      recoveredPaths,
+      forensicsCompleted,
+      evidenceSourcesAttempted,
+      evidenceSourcesAvailable,
+      hypothesisCount,
+      candidateCount,
+      verifierRejectionReasons,
+      providerFailureRetryable,
+      pathBoundaryRejected,
+      verification,
+      modelCalls: 0,
+      startedAt: input.now,
+      timings: recoveryTimingSummary(recoveryOrchestrator.attempts),
+    }),
+  ],
+  undefined,
+  store.events(input.runId),
+);
+  return {
+    baseline: providerPreview.baseline,
+    providerPreview,
+    staging,
+    ...(readinessResult ? { taskReadiness: readinessResult } : {}),
+    recovery,
+    experimentRoot,
+    experimentId: input.experimentId,
+    provider,
+    accept: () => provider.acceptRecovery(providerPreview),
+  };
+}
+  return undefined;
+}

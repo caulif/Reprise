@@ -1,0 +1,36 @@
+name: Task
+description: 实现或修复任务，必须带 Done-means
+labels: ["task"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: In scope / Out of scope
+    validations:
+      required: true
+  - type: textarea
+    id: done-means
+    attributes:
+      label: Done means
+      description: 命令、fixture、期望退出码或快照。不要写「验证通过」。
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: 计划跑哪些命令；真实 smoke 必须显式 opt-in。
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback
+    validations:
+      required: true

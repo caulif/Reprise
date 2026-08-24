@@ -4,6 +4,13 @@
 
 结构、受控边界和命名规则见[文档结构与路径约定](./documentation-structure.md)；写文档时的操作性规则见 [`AGENTS.md`](./AGENTS.md)。
 
+## 协作与治理
+
+- [贡献指南](./CONTRIBUTING.md)：环境、验证命令、真实 smoke opt-in、PR 与 agent 输出。
+- [安全政策](./SECURITY.md)：私下漏洞报告；不要用公开 Issue 贴 secret。
+- [Changelog](./CHANGELOG.md)、[发布清单](./release-checklist.md)、[事故复盘模板](./postmortem-template.md)。
+- 任务 brief：[plan/task-brief-template.md](./plan/task-brief-template.md)。Issue / PR 模板在 `.github/`。
+
 ## 推荐阅读顺序
 
 1. [产品定义](./product/overview.md)：项目解决什么问题，以及明确不做什么。

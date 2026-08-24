@@ -1,0 +1,9 @@
+# 当前唯一维护者。路径覆盖审查报告要求的高风险目录。
+* @caulif
+/src/core/ @caulif
+/src/products/ @caulif
+/src/infrastructure/ @caulif
+/src/tui/ @caulif
+/.github/ @caulif
+/docs/architecture/ @caulif
+/docs/decisions/ @caulif

@@ -416,3 +416,16 @@ test('store allows only one contender to claim a stale writer lock', async () =>
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("store refuses to open a journal with corrupt event JSON", async () => {
+  const root = await temporaryExperiment();
+  try {
+    await writeFile(join(root, "events.jsonl"), "{not-json}\n");
+    await assert.rejects(
+      ExperimentStore.open(root, "experiment-1"),
+      /Corrupt event JSON/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

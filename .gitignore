@@ -53,6 +53,7 @@ pnpm-debug.log*
 # 一次性材料的本地保留区：已执行完毕的审查、被取代的计划、体验记录。
 # 它们仍在磁盘上可查，但不进入 git，因此不会成为 review 噪音。
 /docs/.local/
+/docs/analysis/
 
 # TUI 与验收产物：由脚本重新生成，不受控。
 # 例外是 docs/tui-audit/frames/——它是 CI 比对的快照基线，必须受控。
@@ -70,3 +71,6 @@ pnpm-debug.log*
 /pack-dry-run.json
 /.tmp-jscpd/
 /.tmp-test-output.txt
+
+# Codex local scratch output
+/.tmp-codex.txt
