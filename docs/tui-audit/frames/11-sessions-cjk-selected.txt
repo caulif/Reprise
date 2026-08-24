@@ -6,19 +6,18 @@ Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   
  r     Replay the current task  needs a task
  i     Import a historical session
 
-┌─ reprise · 1 sessions · filter: all ────────────────────────────────────────┐ ┌─ Preview ────────────────────────────┐
-│❯ 4d ago      [unindexed] 修复这个回归缺陷并验证测试全部通过   u1 a1 t0      │ │ Project      reprise                 │
-│ 1/1                                                                         │ │ Session      session-                │
-│                                                                             │ │ Started      2026-08-10 21:40        │
-│                                                                             │ │ Signals      u1 a1 t0                │
+┌─ Projectless sessions · 2 sessions · filter: all ───────────────────────────┐ ┌─ Preview ────────────────────────────┐
+│❯ 4d ago      [unindexed] Fix the bug.                         u2 a1 t0      │ │ Project      source                  │
+│  4d ago      [unindexed] 修复这个回归缺陷并验证测试全部通过   u1 a1 t0      │ │ Session      session-                │
+│ 1/2                                                                         │ │ Started      2026-08-11 00:00        │
+│                                                                             │ │ Signals      u2 a1 t0                │
 │                                                                             │ │                                      │
 │                                                                             │ │ Status       [unindexed]             │
-│                                                                             │ │ Task                                 │
-│                                                                             │ │修复这个回归缺陷并验证测试全部通过    │
+│                                                                             │ │ Task         Fix the bug.            │
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
 
  ❯ [/] Search
  Choose a historical session. Enter freezes it and starts the isolated replay. 2 shown · 0 skipped. · 2 scanned
 Diagnostics: catalog-unavailable (1).
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Start run  [/] Search  [m] More sessions  [r] Refresh  [Backspace] Projects  [Esc] Back
+ [↑↓] Select  [Enter] Start run  [/] Search  [m] All sessions loaded  [r] Refresh  [Backspace] Projects  [Esc] Back

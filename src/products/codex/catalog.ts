@@ -56,7 +56,8 @@ function readStateThreads(databasePath: string, sessionsRoot: string, global: Co
       return [];
     }
     const columns = new Set(database.prepare('PRAGMA table_info(threads)').all().map((row) => String((row as SqlRow).name)));
-    const required = ['id', 'rollout_path'];
+    // rollout_path is optional: Desktop index rows without a local transcript remain catalog-only.
+    const required = ['id'];
     if (required.some((column) => !columns.has(column))) {
       diagnostics.push({ code: 'catalog-schema-unsupported', count: 1, samplePath: 'state_5.sqlite' });
       return [];

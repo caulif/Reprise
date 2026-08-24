@@ -71,3 +71,9 @@ pnpm-debug.log*
 /pack-dry-run.json
 /.tmp-jscpd/
 /.tmp-test-output.txt
+
+# One-shot source extraction leftovers
+/scripts/extract-class-ops.mjs
+/src/tui/controller-ops.ts
+/src/tui/controller.ts.*.ts
+/scripts/split-class-in-place.mjs

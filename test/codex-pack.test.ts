@@ -814,7 +814,7 @@ test("Codex catalog and rollout sources merge only on an exact session id", asyn
   const discovered = await discoverCodexSessions(sessions);
   assert.deepEqual(new Set(discovered.map((session) => session.sessionId)), new Set(["catalog-id", "rollout-id"]));
   assert.equal(discovered.find((session) => session.sessionId === "catalog-id")?.sourceKind, "catalog-only");
-  assert.equal(discovered.find((session) => session.sessionId === "rollout-id")?.sourceKind, "rollout-only");
+  assert.equal(discovered.find((session) => session.sessionId === "rollout-id")?.sourceKind, "projectless");
 });
 
 test("Codex freeze accepts a selected user task input and rejects other transcript entries", async (t) => {

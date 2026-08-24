@@ -712,6 +712,22 @@ test('run confirmation presents request, billing, and source-copy boundaries', (
   assert.match(text, /isolated copy is not privacy sanitization/);
   assert.match(text, /sensitive files you do not want it to read or/);
   assert.match(text, /│send[.]/);
+  const zhText = renderConfirmation(theme, 120, {
+    preflight,
+    candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
+    step: 3,
+    sourceRoot: String.raw`C:\workspace`,
+    effort: 'high',
+    harnessModel: 'gpt-5',
+    harnessAuthOk: true,
+    productLabel: 'Codex',
+    policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
+    locale: 'zh',
+  }).join('\n');
+  assert.match(zhText, /第 3 \/ 3 步/);
+  assert.match(zhText, /最大请求数/);
+  assert.match(zhText, /网络 \/ 计费/);
+  assert.doesNotMatch(zhText, /Confirm run|Maximum requests|Network \/ billing|This starts a/);
 });
 
 test('preflight and history views expose snapshot and storage size', () => {

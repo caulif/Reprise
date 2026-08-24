@@ -3,6 +3,7 @@ import type { CodexIntakeTui } from "./controller.js";
 import { compareSessionSummaries } from "../products/contract.js";
 import type { DiscoveryDiagnostic } from "../products/contract.js";
 import { operatorErrorMessage } from "./format.js";
+import { t } from "./i18n.js";
 
 function mergeDiscoveryDiagnostics(
   previous: readonly DiscoveryDiagnostic[] | undefined,
@@ -88,7 +89,7 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
     c.intakeLevel = "products";
     c.activeProductId = "";
     c.selected = Math.max(0, c.packs.findIndex((item) => item.manifest.productId === productId));
-    c.message = "Select an agent product.";
+    c.message = t(c.locale, "chooseAgentProduct");
   } finally {
     if (c.discoveryAbort === abort) c.discoveryAbort = undefined;
   }

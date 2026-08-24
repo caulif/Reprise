@@ -68,7 +68,9 @@ function mergeCodexSources(rollouts: readonly CodexSessionSummary[], catalog: re
     const indexed = byId.get(session.sessionId);
     const { partial: _catalogPartial, ...catalogBase } = indexed ?? {};
     const cwd = session.cwd ?? indexed?.cwd;
-    const projectless = indexed?.sourceKind === 'projectless' || !cwd;
+    // An unindexed rollout has no trustworthy Desktop project assignment. Keep it in
+    // the explicit projectless bucket instead of inventing a project from cwd alone.
+    const projectless = indexed?.sourceKind === 'projectless' || !indexed || !cwd;
     const sourceKind = indexed ? (projectless ? 'projectless' : 'catalog+transcript') : (projectless ? 'projectless' : 'rollout-only');
     byId.set(session.sessionId, { ...catalogBase, ...session, ...(cwd ? { cwd } : {}),
       sourceKind, availability: indexed ? 'indexed' : 'unindexed', evidenceLevel: 'transcript', ...(session.partial !== undefined ? { partial: session.partial } : {}) });

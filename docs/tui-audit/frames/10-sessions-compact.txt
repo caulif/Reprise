@@ -7,9 +7,10 @@ gpt-5.6-terra - medium   ! Harness key missing  o Codex  ...
  r     Replay the current task  needs a task
  i     Import a historical session
 
-[ reprise - 1 sessions - filter: all ]
-   > 4d ago      [unindexed] 修复这个回归... u1 a1 t0      
-    1/1
+[ Projectless sessions - 2 sessions - filter: all ]
+   > 4d ago      [unindexed] Fix the bug.     u2 a1 t0      
+     4d ago      [unindexed] 修复这个回归... u1 a1 t0      
+    1/2
 
  > [/] Search
  Choose a historical session. Enter freezes it and starts

@@ -267,6 +267,16 @@ catalog 读取应异步执行，但首屏必须明确显示状态：
 
 任何跨模块协议或 on-disk 索引格式在实施同一变更时，必须新增/更新 `docs/decisions/` 决策记录；当前本文本身不改变协议和磁盘格式。
 
+### 8.1 实施记录（2026-08-24）
+
+- [x] **Phase 0：证据与 fixture**：`test/codex-catalog.test.ts` 已覆盖正常/损坏/缺表/缺列 SQLite、catalog-only、项目冲突、projectless、越界 rollout 路径；151 条会话全量分组反向用例已保留。
+- [x] **Phase 1：Codex catalog**：`catalog.ts` 只读探测 `threads` 能力并按存在列投影；`global-state.ts` 校验 global state；无法读取正文的 thread 保留为 `catalog-only`，无 `rollout_path` 列时仍不丢失索引记录；rollout scanner 作为回退。
+- [x] **Phase 2：统一全量项目树**：Codex/Claude 初次 discovery 在未传 cursor 时建立完整轻量目录；TUI 在完整目录上排序、搜索、筛选和项目分组，`m` 不再决定是否发现全部会话，视口只切片绘制；项目外会话和索引状态可见。
+- [x] **Phase 3：Claude 对齐与性能**：Claude transcript 与 `history.jsonl` 按真实 session ID 去重，history-only 使用 locator 保留；共享 discovery 使用 bounded summary 与未变化文件缓存，详情时再读正文。
+- [x] **语言一致性补充**：会话项目/预览/状态字段和确认、预检页面均通过 `src/tui/i18n.ts` 渲染；中文模式不再混入上述中间英文标签。
+
+以上各项的代码与测试已修改；最终完成以第 10 节的三个门禁命令及相关 dist 测试结果为准。
+
 ## 9. 测试与验收
 
 代码变更必须先 `npm run build`，测试从 `dist/` 读取。只改本文档时运行 `npm run verify:docs` 和 `git diff --check -- docs/plan/session-discovery-all-at-once.md`。

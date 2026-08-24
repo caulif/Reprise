@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'docs/**', '.reprise*/**', 'scripts/codex-real-historical-c.mjs'],
+    ignores: ['dist/**', 'node_modules/**', 'docs/**', '.reprise*/**', 'scripts/codex-real-historical-c.mjs', 'scripts/extract-class-ops.mjs', 'src/tui/controller-ops.ts', 'src/tui/controller.ts.*.ts'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

@@ -90,15 +90,22 @@ function isUnknownProject(key: string): boolean {
   return key.startsWith(UNKNOWN_PROJECT_PREFIX);
 }
 
-export function projectLabel(cwd: string | undefined): string {
-  if (!cwd?.trim()) return 'Unknown project';
+function localizedProjectLabel(project: SessionProject | undefined, locale: Locale): string {
+  if (!project) return t(locale, 'unknownProject');
+  if (project.key === PROJECTLESS_PROJECT_KEY) return t(locale, 'projectlessSessions');
+  if (isUnknownProject(project.key)) return t(locale, 'unknownProject');
+  return project.label;
+}
+
+export function projectLabel(cwd: string | undefined, locale: Locale = 'en'): string {
+  if (!cwd?.trim()) return t(locale, 'unknownProject');
   const name = basename(cwd.replaceAll('\\', '/'));
-  return name || 'Unknown project';
+  return name || t(locale, 'unknownProject');
 }
 
 /** Adds just enough parent path to distinguish projects with the same basename. */
-function projectDisplayLabel(path: string | undefined, paths: readonly string[]): string {
-  if (!path) return 'Unknown project';
+function projectDisplayLabel(path: string | undefined, paths: readonly string[], locale: Locale = 'en'): string {
+  if (!path) return t(locale, 'unknownProject');
   const parts = asPosixPath(path).split('/').filter(Boolean);
   for (let depth = 1; depth <= parts.length; depth += 1) {
     const candidate = parts.slice(-depth).join('/');
@@ -108,8 +115,8 @@ function projectDisplayLabel(path: string | undefined, paths: readonly string[])
   return parts.slice(-Math.min(2, parts.length)).join('/');
 }
 
-export function sessionTitle(summary: string | undefined): string {
-  const text = (summary ?? 'No task summary').replace(/\s+/g, ' ').trim();
+export function sessionTitle(summary: string | undefined, locale: Locale = 'en'): string {
+  const text = (summary ?? t(locale, 'noTaskSummary')).replace(/\s+/g, ' ').trim();
   const stripped = text
     .replace(/^.*?["']?[A-Za-z]:[\\/][^"']+["']?[^,，:]*[,，:]\s*/u, '')
     .replace(/^[,:，]\s*/, '')
@@ -134,8 +141,8 @@ export function groupSessionsByProject(sessions: readonly SessionSummary[], cata
   });
   const knownPaths = grouped.flatMap((project) => project.path ? [project.path] : []);
   return grouped.map((project) => {
-    if (isProjectless(project.key)) return { ...project, label: 'Projectless sessions' };
-    if (isUnknownProject(project.key)) return { ...project, label: 'Unknown project' };
+    if (isProjectless(project.key)) return { ...project, label: t('en', 'projectlessSessions') };
+    if (isUnknownProject(project.key)) return { ...project, label: t('en', 'unknownProject') };
     const samePath = grouped.filter((other) => other.path && asPosixPath(other.path).toLowerCase() === asPosixPath(project.path ?? '').toLowerCase());
     const label = catalogProjects.find((item) => item.key === project.key)?.label ?? projectDisplayLabel(project.path, knownPaths);
     return samePath.length > 1
@@ -153,7 +160,7 @@ export function groupSessionsByProject(sessions: readonly SessionSummary[], cata
 }
 
 export function relativeTime(iso: string | undefined, now = Date.now(), locale: Locale = 'en'): string {
-  if (!iso) return 'Unknown time';
+  if (!iso) return t(locale, 'unknownTime');
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return iso.replace('T', ' ').slice(0, 16);
   const minutes = Math.max(0, Math.floor((now - then) / 60_000));
@@ -197,13 +204,13 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
   const inputs = inspection.transcript.filter((message) => message.role === 'user');
   const start = inputs[0];
   const later = inputs.slice(1);
-  const project = projectLabel(inspection.cwd);
+  const project = projectLabel(inspection.cwd, locale);
   const tight = height !== undefined && height < 26;
-  const freezePreview = wrapPreview(start?.text ?? 'unavailable', Math.max(20, width - 4), tight ? 2 : 4);
+  const freezePreview = wrapPreview(start?.text ?? t(locale, 'unavailableValue'), Math.max(20, width - 4), tight ? 2 : 4, locale);
   const laterLines = later.length
-    ? later.map((input, index) => ` ${index + 2}/${inputs.length}  ${compact(sessionTitle(input.text), 72, theme.glyphs.ellipsis)}`)
+    ? later.map((input, index) => ` ${index + 2}/${inputs.length}  ${compact(sessionTitle(input.text, locale), 72, theme.glyphs.ellipsis)}`)
     : [` ${t(locale, 'noneWord')}`];
-  const outcome = compact(inspection.finalMessage ?? 'unavailable', showOutcome ? 400 : 120, theme.glyphs.ellipsis);
+  const outcome = compact(inspection.finalMessage ?? t(locale, 'unavailableValue'), showOutcome ? 400 : 120, theme.glyphs.ellipsis);
   const meta = ` ${project} ${theme.glyphs.sep} ${relativeTime(inspection.startedAt, model.nowMs ?? Date.now(), locale)} ${theme.glyphs.sep} u${inspection.signals.userMessages} a${inspection.signals.assistantMessages} t${inspection.signals.toolCalls}`;
   const ruleWidth = Math.max(1, width - (theme.framed ? 2 : 3));
   const rule = theme.glyphs.h.repeat(ruleWidth);
@@ -218,9 +225,9 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
     ...laterLines,
     rule,
     ` ${t(locale, 'outcomeLabel')}    ${outcome}`,
-    ` ${t(locale, 'privacyLabel')}    model text ${privacy.allowModelText ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} binary ${privacy.allowBinary ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} literal redactions ${privacy.redactions.length || t(locale, 'noneWord')}`,
+    ` ${t(locale, 'privacyLabel')}    ${t(locale, 'fieldModelText')} ${privacy.allowModelText ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldBinary')} ${privacy.allowBinary ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldRedactions')} ${privacy.redactions.length || t(locale, 'noneWord')}`,
     ` ${t(locale, 'nothingWritten')}`,
-    ...(tight ? [] : [kv(theme, 'Source:', inspection.sourcePath, width - 2)]),
+    ...(tight ? [] : [kv(theme, t(locale, 'fieldSource'), inspection.sourcePath, width - 2)]),
   ];
   const inner = height === undefined ? body.length : Math.max(1, height - (theme.framed ? 2 : 1));
   const clipped = body.length <= inner ? body : [...body.slice(0, inner - 1), ` ${theme.glyphs.ellipsis}`];
@@ -267,7 +274,7 @@ function renderProducts(theme: Theme, width: number, model: SessionsModel, limit
 function renderProjects(theme: Theme, width: number, model: SessionsModel, limit: number, showPreview = true, showSearch = true): string[] {
   const sessionCount = model.projects.reduce((sum, project) => sum + project.sessions.length, 0);
   const locale = model.locale ?? 'en';
-  const title = `${t(locale, 'projectsTitle')} ${theme.glyphs.sep} ${model.projects.length} ${theme.glyphs.sep} ${sessionCount} ${t(locale, 'sessionsWord')} ${theme.glyphs.sep} filter: ${model.filterEligible ? t(locale, 'filterEligibleLabel') : t(locale, 'filterAllLabel')}`;
+  const title = `${t(locale, 'projectsTitle')} ${theme.glyphs.sep} ${model.projects.length} ${theme.glyphs.sep} ${sessionCount} ${t(locale, 'sessionsWord')} ${theme.glyphs.sep} ${t(locale, 'filterLabel')}: ${model.filterEligible ? t(locale, 'filterEligibleLabel') : t(locale, 'filterAllLabel')}`;
   if (!model.projects.length) {
     return [...panel(theme, title, [` ${t(locale, 'noMatchingProjects')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
   }
@@ -276,7 +283,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
   const inner = Math.max(20, listWidth - (theme.framed ? 2 : 3));
   const rows = model.projects.map((project, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
-    name: project.label,
+    name: localizedProjectLabel(project, locale),
     gap: ' ',
     count: String(project.sessions.length),
     when: relativeTime(project.latestAt, model.nowMs ?? Date.now(), locale),
@@ -294,12 +301,12 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
   const selected = model.projects[model.selected];
   const latest = selected?.sessions[0];
   const preview = previewWidth ? panel(theme, theme.style.harness(t(locale, 'previewTitle')), selected && latest ? [
-    kv(theme, 'Project', selected.label, previewWidth - 2),
-    ...kvBlock(theme, 'Path', selected.path ?? 'unavailable', previewWidth - 2),
-    kv(theme, 'Sessions', String(selected.sessions.length), previewWidth - 2),
+    kv(theme, t(locale, 'fieldProject'), localizedProjectLabel(selected, locale), previewWidth - 2),
+    ...kvBlock(theme, t(locale, 'fieldPath'), selected.path ?? t(locale, 'unavailableValue'), previewWidth - 2),
+    kv(theme, t(locale, 'fieldSessions'), String(selected.sessions.length), previewWidth - 2),
     '',
-    kv(theme, 'Latest', sessionTitle(latest.summary), previewWidth - 2),
-  ] : [' No project selected'], previewWidth) : [];
+    kv(theme, t(locale, 'fieldLatest'), sessionTitle(latest.summary, locale), previewWidth - 2),
+  ] : [` ${t(locale, 'noProjectSelected')}`], previewWidth) : [];
   const body = previewWidth ? joinColumns(list, preview, listWidth, previewWidth, 1, theme) : list;
   return [...body, ...(showSearch ? searchLine(theme, width, model) : [])];
 }
@@ -307,7 +314,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
 function renderSessionList(theme: Theme, width: number, model: SessionsModel, limit: number, showPreview = true, showSearch = true): string[] {
   const locale = model.locale ?? 'en';
   const project = model.projects[0];
-  const title = `${project?.label ?? t(locale, 'sessionsWord')} ${theme.glyphs.sep} ${model.sessions.length} ${t(locale, 'sessionsWord')} ${theme.glyphs.sep} filter: ${model.filterEligible ? t(locale, 'filterEligibleLabel') : t(locale, 'filterAllLabel')}`;
+  const title = `${localizedProjectLabel(project, locale)} ${theme.glyphs.sep} ${model.sessions.length} ${t(locale, 'sessionsWord')} ${theme.glyphs.sep} ${t(locale, 'filterLabel')}: ${model.filterEligible ? t(locale, 'filterEligibleLabel') : t(locale, 'filterAllLabel')}`;
   if (!model.sessions.length) {
     return [...panel(theme, title, [model.query.trim() ? ` ${t(locale, 'noSessionsMatch')}` : ` ${t(locale, 'noEligibleSessions')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
   }
@@ -317,7 +324,7 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
   const rows = model.sessions.map((session, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     started: relativeTime(session.startedAt, model.nowMs ?? Date.now(), locale),
-    summary: `${sessionStatus(session, locale) ? `${sessionStatus(session, locale)} ` : ''}${sessionTitle(session.summary)}`,
+    summary: `${sessionStatus(session, locale) ? `${sessionStatus(session, locale)} ` : ''}${sessionTitle(session.summary, locale)}`,
     gap: ' ',
     signals: `u${session.signals.userMessages} a${session.signals.assistantMessages} t${session.signals.toolCalls}`,
   }));
@@ -333,14 +340,14 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
   const list = panel(theme, theme.style.harness(title), listBody, listWidth);
   const selected = model.sessions[model.selected];
   const preview = previewWidth ? panel(theme, theme.style.harness(t(locale, 'previewTitle')), selected ? [
-    kv(theme, 'Project', projectLabel(selected.cwd), previewWidth - 2),
-    kv(theme, 'Session', selected.sessionId.slice(0, 8), previewWidth - 2),
-    kv(theme, 'Started', (selected.startedAt ?? 'Unknown time').replace('T', ' ').slice(0, 16), previewWidth - 2),
-    kv(theme, 'Signals', `u${selected.signals.userMessages} a${selected.signals.assistantMessages} t${selected.signals.toolCalls}`, previewWidth - 2),
+    kv(theme, t(locale, 'fieldProject'), projectLabel(selected.cwd, locale), previewWidth - 2),
+    kv(theme, t(locale, 'fieldSession'), selected.sessionId.slice(0, 8), previewWidth - 2),
+    kv(theme, t(locale, 'fieldStarted'), (selected.startedAt ?? t(locale, 'unknownTime')).replace('T', ' ').slice(0, 16), previewWidth - 2),
+    kv(theme, t(locale, 'fieldSignals'), `u${selected.signals.userMessages} a${selected.signals.assistantMessages} t${selected.signals.toolCalls}`, previewWidth - 2),
     '',
-    kv(theme, 'Status', sessionStatus(selected, locale) || t(locale, 'availableSession'), previewWidth - 2),
-    kv(theme, 'Task', `${sessionTitle(selected.summary)}`, previewWidth - 2),
-  ] : [' No session selected'], previewWidth) : [];
+    kv(theme, t(locale, 'fieldStatus'), sessionStatus(selected, locale) || t(locale, 'availableSession'), previewWidth - 2),
+    kv(theme, t(locale, 'fieldTask'), `${sessionTitle(selected.summary, locale)}`, previewWidth - 2),
+  ] : [` ${t(locale, 'noSessionSelected')}`], previewWidth) : [];
   const body = previewWidth ? joinColumns(list, preview, listWidth, previewWidth, 1, theme) : list;
   return [...body, ...(showSearch ? searchLine(theme, width, model) : [])];
 }
@@ -360,9 +367,9 @@ function fitRows(rows: readonly string[], width: number): string[] {
   return rows.map((row) => truncateFit(row, width, '...'));
 }
 
-function wrapPreview(text: string, width: number, maxLines = 4): string[] {
+function wrapPreview(text: string, width: number, maxLines = 4, locale: Locale = 'en'): string[] {
   const lines = wrapBodyLine(text.replace(/\s+/g, ' ').trim(), Math.max(8, width));
-  if (!lines.length) return ['unavailable'];
+  if (!lines.length) return [t(locale, 'unavailableValue')];
   if (lines.length <= maxLines) return lines;
   const keep = Math.max(1, maxLines - 1);
   return [...lines.slice(0, keep), compact(lines.slice(keep).join(' '), width, '...')];

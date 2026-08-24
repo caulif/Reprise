@@ -60,6 +60,22 @@ test("Codex SQLite catalog uses only supported columns and keeps catalog-only ro
   assert.equal(catalog.projects[0]?.order, 0);
 });
 
+test("Codex catalog keeps thread rows when the database has no rollout_path column", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-codex-catalog-no-rollout-column-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const db = new DatabaseSync(join(root, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT NOT NULL, cwd TEXT, title TEXT, has_user_event INTEGER)");
+  db.prepare("INSERT INTO threads VALUES (?, ?, ?, ?)").run(
+    "22222222-3333-4444-8555-666666666666", "C:\\outside", "Desktop-only thread", 1,
+  );
+  db.close();
+  const catalog = await readCodexCatalog({ codexHome: root, sessionsRoot: join(root, "sessions") });
+  assert.equal(catalog.sessions.length, 1);
+  assert.equal(catalog.sessions[0]?.availability, "catalog-only");
+  assert.equal(catalog.sessions[0]?.sourceKind, "catalog-only");
+});
+
+
 test("Codex catalog degrades a database with no threads table", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-sqlite-bad-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
@@ -119,7 +135,7 @@ test("Codex catalog degrades corrupt and unsupported SQLite schemas without thro
   const unsupportedRoot = await mkdtemp(join(tmpdir(), "reprise-codex-sqlite-columns-"));
   t.after(async () => rm(unsupportedRoot, { recursive: true, force: true }));
   const db = new DatabaseSync(join(unsupportedRoot, "state_5.sqlite"));
-  db.exec("CREATE TABLE threads (id TEXT NOT NULL, title TEXT)");
+  db.exec("CREATE TABLE threads (title TEXT)");
   db.close();
   const unsupported = await readCodexCatalog({ codexHome: unsupportedRoot });
   assert.equal(unsupported.sessions.length, 0);

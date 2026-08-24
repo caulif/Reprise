@@ -529,7 +529,7 @@ export class CodexIntakeTui {
     this.searchCursor = 0;
     this.searching = false;
     this.page = "sessions";
-    this.message = "Select an agent product.";
+    this.message = t(this.locale, "chooseAgentProduct");
     this.render(true);
   }
 

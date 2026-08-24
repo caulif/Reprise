@@ -53,14 +53,14 @@ export type RunningModel = {
   readonly tick?: number;
 };
 
-function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string]): string {
+function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string], locale: Locale): string {
   const g = theme.glyphs;
   const marks = [1, 2, 3].map((index) => {
     if (index < step) return g.ok;
     if (index === step) return g.dot;
     return g.empty;
   });
-  return ` Step ${step} of 3 ${g.h} ${labels[step - 1]}      ${marks.join(`${g.h}${g.h}`)}`;
+  return ` ${t(locale, 'stepOf3', { step })} ${g.h} ${labels[step - 1]}      ${marks.join(`${g.h}${g.h}`)}`;
 }
 
 export function renderSource(theme: Theme, width: number, model: SourceModel): string[] {
@@ -75,23 +75,23 @@ export function renderSource(theme: Theme, width: number, model: SourceModel): s
 export function renderPreflight(theme: Theme, width: number, model: PreflightModel): string[] {
   const locale = model.locale ?? 'en';
   const { preflight, candidate } = model;
-  const comparison = preflight.comparisonClass;
+  const comparison = localizedComparison(preflight.comparisonClass, locale);
   return [
-    renderStep(theme, 2, [t(locale, 'sourceTitle'), 'Preflight', 'Confirm run']),
+    renderStep(theme, 2, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
     ...panel(theme, t(locale, 'preflightTitle'), [
-      kv(theme, 'Candidate', `${candidate?.requestedModel ?? 'unavailable'} ${theme.glyphs.sep} runtime resolved ${preflight.resolved.resolvedModel}`, width - 2),
-      kv(theme, 'Runtime', `${preflight.resolved.executable}${preflight.resolved.version ? ` ${theme.glyphs.sep} ${preflight.resolved.version}` : ''}`, width - 2),
-      kv(theme, 'Baseline', `${preflight.sourceBaseline} ${theme.glyphs.sep} comparison ${comparison}`, width - 2),
+      kv(theme, t(locale, 'candidateLabel'), `${candidate?.requestedModel ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'runtimeResolved')} ${preflight.resolved.resolvedModel}`, width - 2),
+      kv(theme, t(locale, 'runtimeLabel'), `${preflight.resolved.executable}${preflight.resolved.version ? ` ${theme.glyphs.sep} ${preflight.resolved.version}` : ''}`, width - 2),
+      kv(theme, t(locale, 'baselineLabel'), `${preflight.sourceBaseline === 'available' ? t(locale, 'availableValue') : preflight.sourceBaseline} ${theme.glyphs.sep} ${t(locale, 'comparisonLabel')} ${comparison}`, width - 2),
       ...(preflight.workspace ? [
-        kv(theme, 'Files', preflight.workspace.fileCount.toLocaleString(), width - 2),
-        kv(theme, 'Source size', formatBytes(preflight.workspace.totalBytes), width - 2),
-        kv(theme, 'Largest file', formatBytes(preflight.workspace.largestFileBytes), width - 2),
+        kv(theme, t(locale, 'filesLabel'), preflight.workspace.fileCount.toLocaleString(), width - 2),
+        kv(theme, t(locale, 'sourceSizeLabel'), formatBytes(preflight.workspace.totalBytes), width - 2),
+        kv(theme, t(locale, 'largestFileLabel'), formatBytes(preflight.workspace.largestFileBytes), width - 2),
       ] : []),
-      kv(theme, 'Status', preflight.workspace?.blockedReasons.length ? `blocked ${dash(theme)} ${preflight.workspace.blockedReasons.join(' | ')}` : 'runnable', width - 2),
-      kv(theme, 'Limitations', preflight.limitations.length ? preflight.limitations.join(' | ') : 'none recorded', width - 2),
+      kv(theme, t(locale, 'statusLabel'), preflight.workspace?.blockedReasons.length ? `${t(locale, 'blockedValue')} ${dash(theme)} ${preflight.workspace.blockedReasons.join(' | ')}` : t(locale, 'runnableValue'), width - 2),
+      kv(theme, t(locale, 'limitationsLabel'), preflight.limitations.length ? preflight.limitations.join(' | ') : t(locale, 'noneRecorded'), width - 2),
       ...(preflight.contamination ? [
-        kv(theme, 'Preparation', 'Recovery will verify the isolated environment automatically.', width - 2),
+        kv(theme, t(locale, 'preparationLabel'), t(locale, 'recoveryPrepared'), width - 2),
       ] : []),
     ], width),
   ];
@@ -101,28 +101,28 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
   const locale = model.locale ?? 'en';
   const { preflight, candidate, sourceRoot, effort } = model;
   const product = model.productLabel ?? t(locale, 'unknownAgent');
-  const fidelity = preflight.comparisonClass;
+  const fidelity = localizedComparison(preflight.comparisonClass, locale);
   const recovery = model.recovery;
   return [
-    renderStep(theme, 3, [t(locale, 'sourceTitle'), 'Preflight', 'Confirm run']),
+    renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
     ...panel(theme, t(locale, 'confirmTitle', { product }), [
-      kv(theme, 'Candidate', candidateLine(candidate, product), width - 2),
-      kv(theme, 'Harness agents', `${model.harnessModel ?? 'persisted Pi model'} ${theme.glyphs.sep} ${effort} ${theme.glyphs.sep} Controller, Comparison`, width - 2),
-      kv(theme, 'Fidelity', fidelity, width - 2),
+      kv(theme, t(locale, 'candidateLabel'), candidateLine(candidate, product, locale), width - 2),
+      kv(theme, t(locale, 'harnessAgentsLabel'), `${model.harnessModel ?? t(locale, 'persistedPiModel')} ${theme.glyphs.sep} ${effort} ${theme.glyphs.sep} ${t(locale, 'controllerLabel')}, ${t(locale, 'comparisonActorLabel')}`, width - 2),
+      kv(theme, t(locale, 'fidelityLabel'), fidelity, width - 2),
       ...(recovery ? [
-        kv(theme, 'Environment', recovery.unresolved.length ? 'prepared with recorded limitations' : 'prepared', width - 2),
+        kv(theme, t(locale, 'environmentLabel'), recovery.unresolved.length ? t(locale, 'preparedWithLimitations') : t(locale, 'preparedValue'), width - 2),
       ] : []),
-      kv(theme, 'Maximum requests', `Candidate ${model.policy?.maxTargetTurns ?? 'unavailable'} ${theme.glyphs.sep} Controller ${model.policy?.maxModelCalls ?? 'unavailable'} ${theme.glyphs.sep} Comparison 1`, width - 2),
-      kv(theme, 'Network / billing', model.harnessAuthOk === false ? `blocked ${dash(theme)} Harness credential missing` : 'yes / provider-dependent', width - 2),
+      kv(theme, t(locale, 'maximumRequestsLabel'), `${t(locale, 'candidateLabel')} ${model.policy?.maxTargetTurns ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'controllerLabel')} ${model.policy?.maxModelCalls ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'comparisonActorLabel')} 1`, width - 2),
+      kv(theme, t(locale, 'networkBillingLabel'), model.harnessAuthOk === false ? `${t(locale, 'blockedValue')} ${dash(theme)} ${t(locale, 'credentialMissing')}` : t(locale, 'providerDependent'), width - 2),
       '',
       model.harnessAuthOk === false
-        ? theme.style.danger(` ${theme.glyphs.warn}  Enter will not start ${product}. Add an API key in /config first.`)
-        : theme.style.warn(` ${theme.glyphs.warn}  This starts a ${product} process and may call your configured provider, which can cost money.`),
-      theme.style.ok(` ${theme.glyphs.ok}  Your original source, the historical session, and original runtime configuration are left unchanged.`),
-      theme.style.ok(` ${theme.glyphs.ok}  The replay starts from the prepared isolated state of ${sourceRoot || 'the selected directory'}.`),
-      theme.style.warn(` ${theme.glyphs.warn}  Reprise copies the selected directory; the isolated copy is not privacy sanitization.`),
-      theme.style.warn(` ${theme.glyphs.warn}  The Candidate can read copied source files. Do not continue with sensitive files you do not want it to read or send.`),
+        ? theme.style.danger(` ${theme.glyphs.warn}  ${t(locale, 'warningCannotStart', { product })}`)
+        : theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'warningStartsProcess', { product })}`),
+      theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'sourceUnchanged')}`),
+      theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'isolatedState', { source: sourceRoot || t(locale, 'selectedDirectory') })}`),
+      theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'copyNotSanitized')}`),
+      theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'candidateReadsSource')}`),
     ], width),
   ];
 }
@@ -273,10 +273,15 @@ function dash(theme: Theme): string {
   return theme.framed ? '—' : '-';
 }
 
-function candidateLine(candidate: CandidateSpec | undefined, product: string): string {
-  const model = candidate?.requestedModel ?? 'unavailable';
+function candidateLine(candidate: CandidateSpec | undefined, product: string, locale: Locale): string {
+  const model = candidate?.requestedModel ?? t(locale, 'unavailableValue');
   const effort = candidate?.candidateId?.match(/-(minimal|low|medium|high|xhigh|max)$/)?.[1];
-  return effort ? `${model} · ${effort} · isolated ${product}` : `${model} · isolated ${product}`;
+  return effort ? `${model} · ${effort} · ${t(locale, 'isolatedProduct', { product })}` : `${model} · ${t(locale, 'isolatedProduct', { product })}`;
+}
+
+function localizedComparison(value: string, locale: Locale): string {
+  const key = value === 'observational' ? 'observationalValue' : value === 'recovered' ? 'recoveredValue' : value === 'recovered_partial' ? 'recoveredPartialValue' : undefined;
+  return key ? t(locale, key) : value;
 }
 
 function isRunState(value: string): value is CandidateRunState {
