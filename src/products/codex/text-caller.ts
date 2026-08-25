@@ -44,114 +44,142 @@ export class CodexTextCaller implements PiTextCaller {
         controller = new AbortController();
         const abort = () => controller?.abort();
         signal.addEventListener('abort', abort, { once: true });
-        try { return await this.#complete({ systemPrompt: input.systemPrompt, contextJson: content }, controller.signal); }
+        try {
+          return await completeCodexTextTurn({
+            options: this.#options,
+            model: this.#model,
+            effort: this.#effort,
+            turnTimeoutMs: this.#turnTimeoutMs,
+          }, { systemPrompt: input.systemPrompt, contextJson: content }, controller.signal);
+        }
         finally { signal.removeEventListener('abort', abort); }
       },
       cancel: () => controller?.abort(),
     };
   }
+}
 
-  async #complete(input: { systemPrompt: string; contextJson: string }, signal: AbortSignal): Promise<string> {
-    if (signal.aborted) throw abortError();
-    const executable = await discoverCodexExecutable(this.#options);
-    if (!executable) throw new CodexRuntimeUnavailableError('Codex executable was not found for the Experiment Application.');
-    const root = await mkdtemp(join(tmpdir(), 'reprise-experiment-application-'));
-    let threadId: string | undefined;
-    let turnId: string | undefined;
-    let finish: ((value: string) => void) | undefined;
-    let fail: ((error: Error) => void) | undefined;
-    let earlyCompletion: Record<string, unknown> | undefined;
-    const completion = new Promise<string>((resolve, reject) => { finish = resolve; fail = reject; });
-    const settleTurn = (turn: Record<string, unknown>) => {
-      const settlement = codexSettlementStatus(text(turn.status));
-      // Without this an interrupted or failed turn would be reported to the Agent as an empty answer.
-      if (settlement !== 'completed' && settlement !== 'waiting_input') {
-        fail?.(new CodexRuntimeUnavailableError(`Codex text turn ended as ${text(turn.status) ?? 'an unreported status'}.`));
-        return;
-      }
-      finish?.(lastAgentMessage(turn.items) ?? '');
-    };
-    // Startup can fail before anything awaits this promise; the close signal must not surface as an unhandled rejection.
-    void completion.catch(() => undefined);
-    const client = new CodexAppServerClient({
-      executable,
-      cwd: root,
-      ...(this.#options.env ? { env: this.#options.env } : {}),
-      ...(this.#options.args ? { args: this.#options.args } : {}),
-      // Completion arrives as a notification, so a dead process would otherwise never settle this call.
-      onClosed: (error) => fail?.(error),
-      onNotification: async (method, params) => {
-        if (method !== 'turn/completed') return;
-        const payload = record(params);
-        if (text(payload.threadId) !== threadId) return;
-        const turn = record(payload.turn);
-        // JSONL response and notification frames can arrive in the same stream chunk. Keep the
-        // terminal notification until turn/start supplies its id instead of losing fast failures.
-        if (!turnId) { earlyCompletion = turn; return; }
-        if (text(turn.id) === turnId) settleTurn(turn);
-      },
-    });
-    let result: string | undefined;
-    let primaryError: unknown;
-    let hasPrimaryError = false;
-    let cleanupError: unknown;
-    let hasCleanupError = false;
-    try {
-      await client.start();
-      const started = record(await client.request('thread/start', {
-        model: this.#model,
-        cwd: root,
-        approvalPolicy: 'never',
-        sandbox: 'read-only',
-        ephemeral: true,
-        threadSource: 'reprise',
-        developerInstructions: input.systemPrompt,
-      }));
-      threadId = text(record(started.thread).id);
-      if (!threadId) throw new CodexRuntimeUnavailableError('Codex app-server thread/start response was incomplete.');
-      const startedTurn = record(await client.request('turn/start', {
-        threadId,
-        input: [{ type: 'text', text: message(input), text_elements: [] }],
-        model: this.#model,
-        effort: this.#effort,
-      }));
-      turnId = text(record(startedTurn.turn).id);
-      if (!turnId) throw new CodexRuntimeUnavailableError('Codex app-server turn/start response was incomplete.');
-      if (earlyCompletion && text(earlyCompletion.id) === turnId) settleTurn(earlyCompletion);
-      result = await raceWithAbort(withTimeout(completion, this.#turnTimeoutMs), signal);
-    } catch (error) {
-      primaryError = error;
-      hasPrimaryError = true;
-      // A turn left running after an abort or timeout keeps burning the operator's budget.
-      if (threadId && turnId) {
-        try {
-          await client.request('turn/interrupt', { threadId, turnId });
-        } catch (interruptError) {
-          cleanupError = interruptError;
-          hasCleanupError = true;
-        }
-      }
+type CodexTextTurnConfig = {
+  options: CodexRuntimeOptions;
+  model: string;
+  effort: CodexReasoningEffort;
+  turnTimeoutMs: number;
+};
+
+async function completeCodexTextTurn(
+  config: CodexTextTurnConfig,
+  input: { systemPrompt: string; contextJson: string },
+  signal: AbortSignal,
+): Promise<string> {
+  if (signal.aborted) throw abortError();
+  const executable = await discoverCodexExecutable(config.options);
+  if (!executable) throw new CodexRuntimeUnavailableError('Codex executable was not found for the Experiment Application.');
+  const root = await mkdtemp(join(tmpdir(), 'reprise-experiment-application-'));
+  const session = await startCodexTextTurn(config, input, executable, root);
+  return finishCodexTextTurn(session, signal, config.turnTimeoutMs);
+}
+
+async function startCodexTextTurn(
+  config: CodexTextTurnConfig,
+  input: { systemPrompt: string; contextJson: string },
+  executable: string,
+  root: string,
+): Promise<{
+  client: CodexAppServerClient;
+  root: string;
+  completion: Promise<string>;
+  threadId: string;
+  turnId: string;
+}> {
+  /* eslint-disable prefer-const -- thread/turn ids are filled after start RPCs; the notification handler closes over them. */
+  let threadId: string | undefined;
+  let turnId: string | undefined;
+  /* eslint-enable prefer-const */
+  let finish: ((value: string) => void) | undefined;
+  let fail: ((error: Error) => void) | undefined;
+  let earlyCompletion: Record<string, unknown> | undefined;
+  const completion = new Promise<string>((resolve, reject) => { finish = resolve; fail = reject; });
+  const settleTurn = (turn: Record<string, unknown>) => {
+    const settlement = codexSettlementStatus(text(turn.status));
+    if (settlement !== 'completed' && settlement !== 'waiting_input') {
+      fail?.(new CodexRuntimeUnavailableError(`Codex text turn ended as ${text(turn.status) ?? 'an unreported status'}.`));
+      return;
     }
+    finish?.(lastAgentMessage(turn.items) ?? '');
+  };
+  void completion.catch(() => undefined);
+  const client = new CodexAppServerClient({
+    executable,
+    cwd: root,
+    ...(config.options.env ? { env: config.options.env } : {}),
+    ...(config.options.args ? { args: config.options.args } : {}),
+    onClosed: (error) => fail?.(error),
+    onNotification: async (method, params) => {
+      if (method !== 'turn/completed') return;
+      const payload = record(params);
+      if (text(payload.threadId) !== threadId) return;
+      const turn = record(payload.turn);
+      if (!turnId) { earlyCompletion = turn; return; }
+      if (text(turn.id) === turnId) settleTurn(turn);
+    },
+  });
+  await client.start();
+  const started = record(await client.request('thread/start', {
+    model: config.model,
+    cwd: root,
+    approvalPolicy: 'never',
+    sandbox: 'read-only',
+    ephemeral: true,
+    threadSource: 'reprise',
+    developerInstructions: input.systemPrompt,
+  }));
+  threadId = text(record(started.thread).id);
+  if (!threadId) throw new CodexRuntimeUnavailableError('Codex app-server thread/start response was incomplete.');
+  const startedTurn = record(await client.request('turn/start', {
+    threadId,
+    input: [{ type: 'text', text: message(input), text_elements: [] }],
+    model: config.model,
+    effort: config.effort,
+  }));
+  turnId = text(record(startedTurn.turn).id);
+  if (!turnId) throw new CodexRuntimeUnavailableError('Codex app-server turn/start response was incomplete.');
+  if (earlyCompletion && text(earlyCompletion.id) === turnId) settleTurn(earlyCompletion);
+  return { client, root, completion, threadId, turnId };
+}
+
+async function finishCodexTextTurn(
+  session: { client: CodexAppServerClient; root: string; completion: Promise<string>; threadId: string; turnId: string },
+  signal: AbortSignal,
+  turnTimeoutMs: number,
+): Promise<string> {
+  let result: string | undefined;
+  let primaryError: unknown;
+  let cleanupError: unknown;
+  try {
+    result = await raceWithAbort(withTimeout(session.completion, turnTimeoutMs), signal);
+  } catch (error) {
+    primaryError = error;
     try {
-      await client.close();
-    } catch (closeError) {
-      if (!hasCleanupError) {
-        cleanupError = closeError;
-        hasCleanupError = true;
-      }
+      await session.client.request('turn/interrupt', { threadId: session.threadId, turnId: session.turnId });
+    } catch (interruptError) {
+      cleanupError = interruptError;
     }
-    try {
-      await rm(root, { recursive: true, force: true });
-    } catch (removeError) {
-      if (!hasCleanupError) {
-        cleanupError = removeError;
-        hasCleanupError = true;
-      }
-    }
-    if (hasPrimaryError) throw primaryError;
-    if (hasCleanupError) throw cleanupError;
-    return result ?? '';
   }
+  try {
+    await session.client.close();
+  } catch (closeError) {
+    cleanupError ??= closeError;
+  }
+  try {
+    await rm(session.root, { recursive: true, force: true });
+  } catch (removeError) {
+    cleanupError ??= removeError;
+  }
+  if (primaryError instanceof Error) throw primaryError;
+  if (primaryError !== undefined && primaryError !== null) throw new Error("Codex text turn failed.");
+  if (cleanupError instanceof Error) throw cleanupError;
+  if (cleanupError !== undefined && cleanupError !== null) throw new Error("Codex text turn cleanup failed.");
+  return result ?? '';
 }
 
 function message(input: { contextJson: string }): string { return `Use only this JSON context:\n${input.contextJson}`; }

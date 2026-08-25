@@ -304,108 +304,130 @@ function consumeClaudeSummaryRow(state: ClaudeSummaryState, row: JsonRecord, ind
   if (parsed.model && parsed.model !== '<synthetic>') state.model = parsed.model;
   state.assistantMessages += parsed.assistantMessages;
 }
+type ClaudeImportState = {
+  diagnostics: ImportDiagnostic[];
+  unknownTypes: number;
+  sessionId: string | undefined;
+  startedAt: string | undefined;
+  cwd: string | undefined;
+  version: string | undefined;
+  gitBranch: string | undefined;
+  effort: string | undefined;
+  permissionMode: string | undefined;
+  compaction: boolean;
+  model: string | undefined;
+  transcript: SessionMessage[];
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  completedTurns: number;
+  eligibleUsers: SessionMessage[];
+};
+
+function ingestClaudeImportRow(state: ClaudeImportState, row: JsonRecord, index: number): void {
+  const type = text(row.type);
+  const rowSessionId = text(row.sessionId);
+  if (rowSessionId) {
+    if (state.sessionId && rowSessionId !== state.sessionId) {
+      state.diagnostics.push({ code: 'session-id-mismatch', message: `Row ${index + 1} sessionId ${rowSessionId} differs from ${state.sessionId}.` });
+    }
+    state.sessionId ??= rowSessionId;
+  }
+  const timestamp = validSessionTimestamp(text(row.timestamp));
+  if (timestamp && (!state.startedAt || timestamp < state.startedAt)) state.startedAt = timestamp;
+  state.cwd ??= text(row.cwd);
+  state.version ??= text(row.version);
+  state.gitBranch ??= text(row.gitBranch);
+  state.effort ??= text(row.effort) ?? text(record(row.message).effort);
+  state.permissionMode ??= text(row.permissionMode) ?? text(row['permission-mode']);
+
+  if (!type || SKIP_TYPES.has(type)) return;
+  if (type === 'system') {
+    if (text(row.subtype) === 'compact_boundary') {
+      state.compaction = true;
+      state.diagnostics.push({ code: 'compact-boundary', message: 'Transcript has an unrecoverable compaction gap.' });
+    }
+    return;
+  }
+  if (type === 'user') {
+    const parsed = parseUserRow(row, index);
+    if (parsed.kind === 'user') {
+      state.userMessages += 1;
+      state.transcript.push(parsed.message);
+      if (!parsed.meta) state.eligibleUsers.push(parsed.message);
+    } else if (parsed.kind === 'tool') {
+      state.transcript.push(parsed.message);
+    }
+    return;
+  }
+  if (type === 'assistant') {
+    const parsed = parseAssistantRow(row, index);
+    state.toolCalls += parsed.toolCalls;
+    state.completedTurns += parsed.completedTurn ? 1 : 0;
+    if (parsed.model && parsed.model !== '<synthetic>') state.model = parsed.model;
+    if (parsed.apiError) return;
+    state.assistantMessages += parsed.assistantMessages;
+    state.transcript.push(...parsed.messages);
+    return;
+  }
+  state.unknownTypes += 1;
+}
+
 async function importFromBytes(sourcePath: string, bytes: Buffer): Promise<ImportedSession> {
   const fileId = basename(sourcePath, '.jsonl');
   const rows = parseJsonlRows(bytes, sourcePath, 'Claude');
-  const diagnostics: ImportDiagnostic[] = [];
-  let unknownTypes = 0;
-  let sessionId: string | undefined;
-  let startedAt: string | undefined;
-  let cwd: string | undefined;
-  let version: string | undefined;
-  let gitBranch: string | undefined;
-  let effort: string | undefined;
-  let permissionMode: string | undefined;
-  let compaction = false;
-  let model: string | undefined;
-  const transcript: SessionMessage[] = [];
-  let userMessages = 0;
-  let assistantMessages = 0;
-  let toolCalls = 0;
-  let completedTurns = 0;
-  const eligibleUsers: SessionMessage[] = [];
+  const state: ClaudeImportState = {
+    diagnostics: [],
+    unknownTypes: 0,
+    sessionId: undefined,
+    startedAt: undefined,
+    cwd: undefined,
+    version: undefined,
+    gitBranch: undefined,
+    effort: undefined,
+    permissionMode: undefined,
+    compaction: false,
+    model: undefined,
+    transcript: [],
+    userMessages: 0,
+    assistantMessages: 0,
+    toolCalls: 0,
+    completedTurns: 0,
+    eligibleUsers: [],
+  };
 
-  for (const [index, row] of rows.entries()) {
-    const type = text(row.type);
-    const rowSessionId = text(row.sessionId);
-    if (rowSessionId) {
-      if (sessionId && rowSessionId !== sessionId) {
-        diagnostics.push({ code: 'session-id-mismatch', message: `Row ${index + 1} sessionId ${rowSessionId} differs from ${sessionId}.` });
-      }
-      sessionId ??= rowSessionId;
-    }
-    const timestamp = validSessionTimestamp(text(row.timestamp));
-    if (timestamp && (!startedAt || timestamp < startedAt)) startedAt = timestamp;
-    cwd ??= text(row.cwd);
-    version ??= text(row.version);
-    gitBranch ??= text(row.gitBranch);
-    effort ??= text(row.effort) ?? text(record(row.message).effort);
-    permissionMode ??= text(row.permissionMode) ?? text(row['permission-mode']);
+  for (const [index, row] of rows.entries()) ingestClaudeImportRow(state, row, index);
 
-    if (!type || SKIP_TYPES.has(type)) continue;
-    if (type === 'system') {
-      if (text(row.subtype) === 'compact_boundary') {
-        compaction = true;
-        diagnostics.push({ code: 'compact-boundary', message: 'Transcript has an unrecoverable compaction gap.' });
-      }
-      continue;
-    }
-    if (type === 'user') {
-      const parsed = parseUserRow(row, index);
-      if (parsed.kind === 'user') {
-        userMessages += 1;
-        transcript.push(parsed.message);
-        if (!parsed.meta) eligibleUsers.push(parsed.message);
-      } else if (parsed.kind === 'tool') {
-        transcript.push(parsed.message);
-      }
-      continue;
-    }
-    if (type === 'assistant') {
-      const parsed = parseAssistantRow(row, index);
-      toolCalls += parsed.toolCalls;
-      completedTurns += parsed.completedTurn ? 1 : 0;
-      if (parsed.model && parsed.model !== '<synthetic>') model = parsed.model;
-      if (parsed.apiError) {
-        continue;
-      }
-      assistantMessages += parsed.assistantMessages;
-      transcript.push(...parsed.messages);
-      continue;
-    }
-    unknownTypes += 1;
+  if (state.unknownTypes) state.diagnostics.push({ code: 'unknown-types', message: `Skipped ${state.unknownTypes} unknown row type(s).` });
+  if (!state.sessionId) state.sessionId = SAFE_ID.test(fileId) ? fileId : undefined;
+  if (state.sessionId && fileId && state.sessionId !== fileId) {
+    state.diagnostics.push({ code: 'filename-mismatch', message: `Filename ${fileId} does not match sessionId ${state.sessionId}.` });
   }
-
-  if (unknownTypes) diagnostics.push({ code: 'unknown-types', message: `Skipped ${unknownTypes} unknown row type(s).` });
-  if (!sessionId) sessionId = SAFE_ID.test(fileId) ? fileId : undefined;
-  if (sessionId && fileId && sessionId !== fileId) {
-    diagnostics.push({ code: 'filename-mismatch', message: `Filename ${fileId} does not match sessionId ${sessionId}.` });
-  }
-  if (!sessionId || !SAFE_ID.test(sessionId)) throw new Error('Claude session metadata has no valid id.');
-  if (!startedAt) throw new Error(`Claude session ${sessionId} has no valid start time.`);
-  const initial = eligibleUsers[0] ?? transcript.find((message) => message.role === 'user');
+  if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new Error('Claude session metadata has no valid id.');
+  if (!state.startedAt) throw new Error(`Claude session ${state.sessionId} has no valid start time.`);
+  const initial = state.eligibleUsers[0] ?? state.transcript.find((message) => message.role === 'user');
   if (!initial) throw new Error('Claude session has no user message eligible for replay.');
-  const finalMessage = [...transcript].reverse().find((message) => message.role === 'assistant')?.text;
-  const signals = { userMessages, assistantMessages, toolCalls, completedTurns };
+  const finalMessage = [...state.transcript].reverse().find((message) => message.role === 'assistant')?.text;
+  const signals = { userMessages: state.userMessages, assistantMessages: state.assistantMessages, toolCalls: state.toolCalls, completedTurns: state.completedTurns };
   return {
-    source: { productId: PRODUCT_ID, sessionId, sourcePath },
+    source: { productId: PRODUCT_ID, sessionId: state.sessionId, sourcePath },
     initialInput: initial,
-    transcript,
+    transcript: state.transcript,
     historicalEvents: rows,
     baseline: { status: finalMessage ? 'available' : 'unavailable', ...(finalMessage ? { finalMessage } : {}), artifactRefs: [], evidenceRefs: [] },
-    sourceRuntimeEvidence: { productId: PRODUCT_ID, ...(version ? { version } : {}), ...(model ? { model } : {}), artifactRefs: [] },
+    sourceRuntimeEvidence: { productId: PRODUCT_ID, ...(state.version ? { version: state.version } : {}), ...(state.model ? { model: state.model } : {}), artifactRefs: [] },
     taskContext: {
-      ...(cwd ? { historicalCwd: cwd } : {}),
-      ...(gitBranch ? { gitBranch } : {}),
-      ...(effort ? { effort } : {}),
-      ...(permissionMode ? { permissionMode } : {}),
-      ...(compaction ? { compaction: true } : {}),
+      ...(state.cwd ? { historicalCwd: state.cwd } : {}),
+      ...(state.gitBranch ? { gitBranch: state.gitBranch } : {}),
+      ...(state.effort ? { effort: state.effort } : {}),
+      ...(state.permissionMode ? { permissionMode: state.permissionMode } : {}),
+      ...(state.compaction ? { compaction: true } : {}),
       historicalBehavior: historicalBehavior(rows),
       signals,
     },
     provenance: { packVersion: 'claude-code-session-jsonl/v1' },
     raw: { relativePath: 'raw/session.jsonl', text: bytes.toString('utf8') },
-    diagnostics,
+    diagnostics: state.diagnostics,
     signals,
   };
 }

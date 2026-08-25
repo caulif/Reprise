@@ -16,7 +16,7 @@ import {
 } from "./experiment-recovery-support.js";
 import type { RecoveryAttempt, RecoveryAttemptInput } from "./experiment-recovery-types.js";
 
-export async function failRecoverCodexExperiment(input: {
+export type FailRecoverCodexExperimentInput = {
   error: unknown;
   attemptInput: RecoveryAttemptInput;
   store: ExperimentStore;
@@ -46,102 +46,122 @@ export async function failRecoverCodexExperiment(input: {
   modelAttempts: number;
   toolFailureByTool: Map<string, number>;
   lastToolFailureCategory: string | undefined;
-}): Promise<RecoveryAttempt> {
-  const error = input.error;
-  const store = input.store;
-  const provider = input.provider;
-  const experimentRoot = input.experimentRoot;
-  const staging = input.staging;
-  const recovery = input.recovery;
-  const recoveryOrchestrator = input.recoveryOrchestrator;
-  const lifecycleState = input.lifecycleState;
-  const moveRecoveryState = input.moveRecoveryState;
-  const preflightOperation = input.preflightOperation;
-  const writerAcquired = input.writerAcquired;
-  const candidateCreated = input.candidateCreated;
-  const recoveredPaths = input.recoveredPaths;
-  const verification = input.verification;
-  const forensicsCompleted = input.forensicsCompleted;
-  const evidenceSourcesAttempted = input.evidenceSourcesAttempted;
-  const evidenceSourcesAvailable = input.evidenceSourcesAvailable;
-  const hypothesisCount = input.hypothesisCount;
-  const candidateCount = input.candidateCount;
-  const verifierRejectionReasons = input.verifierRejectionReasons;
-  const pathBoundaryRejected = input.pathBoundaryRejected;
-  const readinessResult = input.readinessResult;
-  const modelAttempts = input.modelAttempts;
-  const toolFailureByTool = input.toolFailureByTool;
-  const lastToolFailureCategory = input.lastToolFailureCategory;
-  const attemptInput = input.attemptInput;
-  let failureStage = input.failureStage ?? "preflight_failed";
+};
+
+export async function failRecoverCodexExperiment(input: FailRecoverCodexExperimentInput): Promise<RecoveryAttempt> {
+  const settled = await settleFailedRecovery(input);
+  const failed = input.recovery ?? {
+    status: "failed" as const,
+    failure: {
+      code: "agent_failure" as const,
+      message: settled.failureMessage,
+      attempts: 1,
+    },
+  };
+  await persistFailedRecoveryArtifacts({
+    experimentRoot: input.experimentRoot,
+    store: input.store,
+    attemptInput: input.attemptInput,
+    failed,
+    failureStage: settled.failureStage,
+    failureMessage: settled.failureMessage,
+    error: input.error,
+    preflightOperation: input.preflightOperation,
+    writerAcquired: input.writerAcquired,
+    staging: input.staging,
+    candidateCreated: input.candidateCreated,
+    recoveredPaths: input.recoveredPaths,
+    verification: input.verification,
+    forensicsCompleted: input.forensicsCompleted,
+    evidenceSourcesAttempted: input.evidenceSourcesAttempted,
+    evidenceSourcesAvailable: input.evidenceSourcesAvailable,
+    hypothesisCount: input.hypothesisCount,
+    candidateCount: input.candidateCount,
+    verifierRejectionReasons: input.verifierRejectionReasons,
+    providerFailureRetryable: settled.providerFailureRetryable,
+    pathBoundaryRejected: input.pathBoundaryRejected,
+    readinessResult: input.readinessResult,
+    taskOutcome: settled.taskOutcome,
+    modelAttempts: input.modelAttempts,
+    recoveryOrchestrator: input.recoveryOrchestrator,
+  });
+  return {
+    baseline: settled.baseline,
+    recovery: failed,
+    experimentRoot: input.experimentRoot,
+    experimentId: input.attemptInput.experimentId,
+    provider: input.provider,
+  };
+}
+
+async function settleFailedRecovery(input: FailRecoverCodexExperimentInput) {
+  const failureStage = classifyRecoveryFailureStage(
+    input.failureStage ?? "preflight_failed",
+    input.error,
+    input.verifierRejectionReasons,
+    input.recovery?.status === "completed" && input.candidateCreated,
+  );
   let providerFailureRetryable = input.providerFailureRetryable;
   let taskOutcome = input.taskOutcome;
-
-  failureStage = classifyRecoveryFailureStage(
-    failureStage,
-    error,
-    verifierRejectionReasons,
-    recovery?.status === "completed" && candidateCreated,
-  );
   if (!taskOutcome) taskOutcome = failureStage === "provider_validation_failed" ? "unrecoverable" : failureStage === "source_tripwire_failed" ? "blocked_by_safety" : "runner_failed";
   if (failureStage === "preflight_failed") {
-    const diagnostic = recoveryPreflightDiagnostic(error, preflightOperation);
+    const diagnostic = recoveryPreflightDiagnostic(input.error, input.preflightOperation);
     providerFailureRetryable = diagnostic.retryable;
-    await store.append({
+    await input.store.append({
       type: "recovery.preflight_failed",
-      runId: attemptInput.runId,
+      runId: input.attemptInput.runId,
       operationId: "recovery-preflight-failed",
       payload: diagnostic,
     });
   }
   let cleanupFailure: string | undefined;
-  if (staging && failureStage === "provider_validation_failed") {
+  if (input.staging && failureStage === "provider_validation_failed") {
     try {
-      await persistRecoveryValidationArtifacts(store, staging);
+      await persistRecoveryValidationArtifacts(input.store, input.staging);
     } catch (artifactError) {
-      await store.append({ type: "recovery.validation_artifact_failed", runId: attemptInput.runId, operationId: "recovery-validation-artifact-failed", payload: { reasonCode: artifactError instanceof Error ? artifactError.name : "unknown" } });
+      await input.store.append({ type: "recovery.validation_artifact_failed", runId: input.attemptInput.runId, operationId: "recovery-validation-artifact-failed", payload: { reasonCode: artifactError instanceof Error ? artifactError.name : "unknown" } });
     }
   }
-  if (staging) {
+  if (input.staging) {
     try {
-      await provider.discardRecovery(staging);
+      await input.provider.discardRecovery(input.staging);
     } catch (cleanupError) {
       cleanupFailure = safeRecoveryFailureSummary(cleanupError, "runner_crashed");
-      await store.append({ type: "recovery.cleanup_failed", runId: attemptInput.runId, operationId: "recovery-cleanup-failed", payload: { summary: cleanupFailure } });
+      await input.store.append({ type: "recovery.cleanup_failed", runId: input.attemptInput.runId, operationId: "recovery-cleanup-failed", payload: { summary: cleanupFailure } });
     }
   }
-  const fallback = await provider.resolveBaseline(
-    { caseId: attemptInput.caseId, sourceRoot: resolve(attemptInput.sourceRoot) },
+  const fallback = await input.provider.resolveBaseline(
+    { caseId: input.attemptInput.caseId, sourceRoot: resolve(input.attemptInput.sourceRoot) },
     [],
     {},
   );
-  const stateAtFailure = lifecycleState();
+  const stateAtFailure = input.lifecycleState();
   if (stateAtFailure === "candidate_verified")
-    moveRecoveryState("review_required");
+    input.moveRecoveryState("review_required");
   else if (stateAtFailure !== "accepted" && stateAtFailure !== "review_required" && stateAtFailure !== "exhausted")
-    moveRecoveryState("exhausted");
-  const failedAttemptsArtifact = Buffer.from(JSON.stringify({ schemaVersion: 1, state: lifecycleState(), terminalReason: failureStage, attempts: recoveryOrchestrator.attempts }), "utf8");
-  await store.commitArtifact({ artifactId: "recovery-attempts", kind: "recovery_attempts", mediaType: "application/json", bytes: failedAttemptsArtifact, operationId: "recovery-attempts-failed-created" });
-  if (failureStage === "agent_model_failed" && forensicsCompleted) {
-    await store.append({
+    input.moveRecoveryState("exhausted");
+  const failedAttemptsArtifact = Buffer.from(JSON.stringify({ schemaVersion: 1, state: input.lifecycleState(), terminalReason: failureStage, attempts: input.recoveryOrchestrator.attempts }), "utf8");
+  await input.store.commitArtifact({ artifactId: "recovery-attempts", kind: "recovery_attempts", mediaType: "application/json", bytes: failedAttemptsArtifact, operationId: "recovery-attempts-failed-created" });
+  if (failureStage === "agent_model_failed" && input.forensicsCompleted) {
+    await input.store.append({
       type: "recovery.model_fallback",
-      runId: attemptInput.runId,
+      runId: input.attemptInput.runId,
       operationId: "recovery-model-fallback",
       payload: {
         forensicsCompleted: true,
-        hypothesisCount: hypothesisCount ?? 0,
-        candidateCount: candidateCount ?? 0,
-        modelAttempts,
-        ...([...toolFailureByTool.values()].reduce((total, count) => total + count, 0) > 0
-          ? { toolFailureCount: [...toolFailureByTool.values()].reduce((total, count) => total + count, 0) }
+        hypothesisCount: input.hypothesisCount ?? 0,
+        candidateCount: input.candidateCount ?? 0,
+        modelAttempts: input.modelAttempts,
+        ...([...input.toolFailureByTool.values()].reduce((total, count) => total + count, 0) > 0
+          ? { toolFailureCount: [...input.toolFailureByTool.values()].reduce((total, count) => total + count, 0) }
           : {}),
-        ...(lastToolFailureCategory ? { lastToolFailureCategory } : {}),
+        ...(input.lastToolFailureCategory ? { lastToolFailureCategory: input.lastToolFailureCategory } : {}),
       },
     });
   }
-  const failureMessage = safeRecoveryFailureSummary(error, failureStage);
+  const failureMessage = safeRecoveryFailureSummary(input.error, failureStage);
   const fallbackWarning =
-    failureStage === "agent_model_failed" && forensicsCompleted
+    failureStage === "agent_model_failed" && input.forensicsCompleted
       ? "Recovery model failed after Host forensics; the persisted investigation and candidate diagnostics require review."
       : `Recovery failed; replay uses the current source state: ${failureMessage}`;
   const baseline: EnvironmentBaseline = {
@@ -157,8 +177,8 @@ export async function failRecoverCodexExperiment(input: {
       ...(failureStage === "preflight_failed"
         ? {
             failureDetail: recoveryPreflightDiagnostic(
-              error,
-              preflightOperation,
+              input.error,
+              input.preflightOperation,
             ),
           }
         : {}),
@@ -166,14 +186,65 @@ export async function failRecoverCodexExperiment(input: {
       accepted: false,
     },
   };
-  const failed = recovery ?? {
-    status: "failed" as const,
-    failure: {
-      code: "agent_failure" as const,
-      message: failureMessage,
-      attempts: 1,
-    },
-  };
+  return { failureStage, providerFailureRetryable, taskOutcome, failureMessage, baseline };
+}
+
+type PersistFailedRecoveryArtifactsInput = {
+  experimentRoot: string;
+  store: ExperimentStore;
+  attemptInput: RecoveryAttemptInput;
+  failed: StructuredAgentResult<RecoveryResult> | { status: "failed"; failure: { code: "agent_failure"; message: string; attempts: number } };
+  failureStage: string;
+  failureMessage: string;
+  error: unknown;
+  preflightOperation: string;
+  writerAcquired: boolean;
+  staging: RecoveryStaging | undefined;
+  candidateCreated: boolean;
+  recoveredPaths: string[];
+  verification: "verified" | "pending_user_review" | "rejected" | "insufficient_evidence";
+  forensicsCompleted: boolean;
+  evidenceSourcesAttempted: number | undefined;
+  evidenceSourcesAvailable: number | undefined;
+  hypothesisCount: number | undefined;
+  candidateCount: number | undefined;
+  verifierRejectionReasons: string[] | undefined;
+  providerFailureRetryable: boolean | undefined;
+  pathBoundaryRejected: boolean | undefined;
+  readinessResult: RecoveryReadinessResult | undefined;
+  taskOutcome: NonNullable<EnvironmentBaseline["recovery"]>["taskOutcome"] | undefined;
+  modelAttempts: number;
+  recoveryOrchestrator: RecoveryOrchestrator;
+};
+
+async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifactsInput): Promise<void> {
+  const {
+    experimentRoot,
+    store,
+    attemptInput,
+    failed,
+    failureStage,
+    failureMessage,
+    error,
+    preflightOperation,
+    writerAcquired,
+    staging,
+    candidateCreated,
+    recoveredPaths,
+    verification,
+    forensicsCompleted,
+    evidenceSourcesAttempted,
+    evidenceSourcesAvailable,
+    hypothesisCount,
+    candidateCount,
+    verifierRejectionReasons,
+    providerFailureRetryable,
+    pathBoundaryRejected,
+    readinessResult,
+    taskOutcome,
+    modelAttempts,
+    recoveryOrchestrator,
+  } = input;
   await writeImmutableJson(join(experimentRoot, "recovery-validation.json"), {
     status: "failed",
     message: failureMessage,
@@ -236,11 +307,4 @@ export async function failRecoverCodexExperiment(input: {
     undefined,
     store.events(attemptInput.runId),
   );
-  return {
-    baseline,
-    recovery: failed,
-    experimentRoot,
-    experimentId: attemptInput.experimentId,
-    provider,
-  };
 }

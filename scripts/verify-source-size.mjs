@@ -7,7 +7,9 @@ import ts from "typescript";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "src");
+const TEST = join(ROOT, "test");
 const ALLOWLIST_PATH = join(ROOT, "scripts", "source-size-allowlist.json");
+const TEST_FUNCTION_LIMIT = Number.MAX_SAFE_INTEGER;
 
 export function posixPath(path) {
   return path.replaceAll("\\", "/");
@@ -65,7 +67,6 @@ function symbolName(node, sf) {
 
 function isSizedNode(node) {
   return (
-    ts.isClassDeclaration(node) ||
     ts.isFunctionDeclaration(node) ||
     ts.isMethodDeclaration(node) ||
     ts.isConstructorDeclaration(node) ||
@@ -102,17 +103,11 @@ export function scanSourceText(file, text, limits) {
   return findings;
 }
 
-const IGNORED_GENERATED_SOURCES = new Set(['controller-state.ts']);
-
-function isIgnoredGeneratedSource(name) {
-  return IGNORED_GENERATED_SOURCES.has(name) || /^intake-tui.*\.ts$/.test(name);
-}
-
 function walkTsFiles(dir, files = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) walkTsFiles(path, files);
-    else if (entry.name.endsWith('.ts') && !isIgnoredGeneratedSource(entry.name)) files.push(path);
+    else if (entry.name.endsWith('.ts')) files.push(path);
   }
   return files;
 }
@@ -187,25 +182,53 @@ function writeLines(path, count, prefix) {
 }
 
 function selfTest() {
-  if (!isIgnoredGeneratedSource('intake-tui.ts') || !isIgnoredGeneratedSource('controller-state.ts') || isIgnoredGeneratedSource('controller.ts')) {
-    throw new Error('生成的 TUI 残留必须跳过，正常 controller.ts 不得跳过');
-  }
   const dir = mkdtempSync(join(tmpdir(), 'reprise-source-size-'));
   try {
     mkdirSync(join(dir, "src"));
     const hugeFile = join(dir, "src", "huge.ts");
     writeLines(hugeFile, 1001, "export const n");
+    const probe = join(dir, "src", "intake-tui-probe.ts");
+    writeLines(probe, 1001, "export const n");
     const hugeFn = join(dir, "src", "fn.ts");
     const body = Array.from({ length: 99 }, (_, i) => `  const x${i} = ${i};`).join("\n");
     writeFileSync(hugeFn, `export function tooBig() {\n${body}\n}\n`);
+    const methodBody = Array.from({ length: 99 }, (_, i) => `    const x${i} = ${i};`).join("\n");
+    const hugeMethod = `export class Host {\n  tooBig() {\n${methodBody}\n  }\n}\n`;
+    const wideClass = `export class Wide {\n${Array.from({ length: 80 }, (_, i) => `  m${i}() { return ${i}; }`).join("\n")}\n}\n`;
     const limits = { fileLimit: 1000, functionLimit: 100 };
     const fileHits = scanSourceText("src/huge.ts", readFileSync(hugeFile, "utf8"), limits);
     if (!fileHits.some((hit) => hit.kind === "file" && hit.lines === 1001)) {
       throw new Error("1001 行文件必须使门禁失败");
     }
+    const probeHits = scanSourceText("src/intake-tui-probe.ts", readFileSync(probe, "utf8"), limits);
+    if (!probeHits.some((hit) => hit.kind === "file" && hit.lines === 1001)) {
+      throw new Error("名为 intake-tui-probe.ts 的超限源码必须使门禁失败");
+    }
     const fnHits = scanSourceText("src/fn.ts", readFileSync(hugeFn, "utf8"), limits);
     if (!fnHits.some((hit) => hit.kind === "fn" && hit.name === "tooBig" && hit.lines >= 101)) {
       throw new Error("101 行函数必须使门禁失败");
+    }
+    const methodHits = scanSourceText("src/method.ts", hugeMethod, limits);
+    if (!methodHits.some((hit) => hit.kind === "fn" && hit.name === "Host.tooBig" && hit.lines >= 101)) {
+      throw new Error("101 行方法必须使门禁失败");
+    }
+    const classHits = scanSourceText("src/wide.ts", wideClass, limits);
+    if (classHits.some((hit) => hit.kind === "class" || hit.name === "Wide")) {
+      throw new Error("多个短方法组成的类不得按函数超限失败");
+    }
+    const hugeTest = join(dir, "test", "huge.test.ts");
+    mkdirSync(join(dir, "test"));
+    writeLines(hugeTest, 1001, "export const n");
+    const testFileHits = scanSourceText("test/huge.test.ts", readFileSync(hugeTest, "utf8"), limits);
+    if (!testFileHits.some((hit) => hit.kind === "file" && hit.lines === 1001)) {
+      throw new Error("1001 行测试文件必须使门禁失败");
+    }
+    const testFnHits = scanSourceText("test/fn.test.ts", `export function tooBig() {\n${body}\n}\n`, {
+      fileLimit: 1000,
+      functionLimit: TEST_FUNCTION_LIMIT,
+    });
+    if (testFnHits.some((hit) => hit.kind === "fn")) {
+      throw new Error("测试文件中的长回调不得按函数超限失败");
     }
     const allowlist = loadAllowlist({
       owner: "@caulif",
@@ -246,17 +269,23 @@ function selfTest() {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-  console.log("verify-source-size self-test: 1001 行文件与 101 行函数被拒绝；过期例外失败");
+  console.log("verify-source-size self-test: 1001 行 src/test 文件、intake-tui-probe、101 行函数/方法被拒绝；宽类与测试长回调不按函数计；过期例外失败");
 }
 
 function main() {
   selfTest();
   if (process.argv.includes("--self-test")) return;
   const allowlist = loadAllowlist(JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8")));
-  const findings = scanDirectory(SRC, {
-    fileLimit: allowlist.fileLimit,
-    functionLimit: allowlist.functionLimit,
-  });
+  const findings = [
+    ...scanDirectory(SRC, {
+      fileLimit: allowlist.fileLimit,
+      functionLimit: allowlist.functionLimit,
+    }),
+    ...scanDirectory(TEST, {
+      fileLimit: allowlist.fileLimit,
+      functionLimit: TEST_FUNCTION_LIMIT,
+    }),
+  ];
   const errors = evaluateSourceSize({
     findings,
     allowlist,

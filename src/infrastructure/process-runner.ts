@@ -55,13 +55,12 @@ export async function runProcess(input: {
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
   const maxOutputBytes = input.maxOutputBytes ?? 262_144;
-  let outputBytes = 0;
-  let outputTruncated = false;
-  let settled = false;
-  let timedOut = false;
-  let cancelled = false;
+  const output = { bytes: 0, truncated: false };
 
   return new Promise<ProcessResult>((resolve, reject) => {
+    let settled = false;
+    let timedOut = false;
+    let cancelled = false;
     const finish = (error?: ProcessBoundaryError, result?: ProcessResult) => {
       if (settled) return;
       settled = true;
@@ -88,48 +87,73 @@ export async function runProcess(input: {
       terminateChild(child, input.killTree === true);
     }, input.timeoutMs);
     timer.unref();
-
-    // Register before any asynchronous child activity: Node streams otherwise emit unhandled errors.
-    child.on('error', (error) => boundary('spawn_error', error));
-    const collect = (target: Buffer[], chunk: Buffer | string) => {
-      const buffer = Buffer.from(chunk);
-      const remaining = maxOutputBytes - outputBytes;
-      if (remaining <= 0) {
-        outputTruncated = true;
-        if (!input.truncateOutput) {
-          terminateChild(child, input.killTree === true);
-          return boundary('output_limit_exceeded');
-        }
-        return;
-      }
-      const accepted = buffer.subarray(0, remaining);
-      target.push(accepted);
-      outputBytes += accepted.byteLength;
-      if (accepted.byteLength < buffer.byteLength) {
-        outputTruncated = true;
-        if (!input.truncateOutput) {
-          terminateChild(child, input.killTree === true);
-          return boundary('output_limit_exceeded');
-        }
-      }
-    };
-    child.stdin?.on('error', (error) => boundary('stdio_disconnected', error));
-    child.stdout?.on('data', (chunk: Buffer | string) => collect(stdout, chunk));
-    child.stderr?.on('data', (chunk: Buffer | string) => collect(stderr, chunk));
-    child.stdout?.on('error', (error) => boundary('stdio_disconnected', error));
-    child.stderr?.on('error', (error) => boundary('stdio_disconnected', error));
-    child.stdin?.end();
-    child.on('close', (code) => {
-      if (timedOut) return boundary('timed_out');
-      if (cancelled) return boundary('cancelled');
-      if (code !== 0 && !input.allowNonzeroExit) return finish(new ProcessBoundaryError({
-        operation: input.operation, executableKind: input.executableKind, exitCategory: 'nonzero_exit',
-        ...(typeof code === 'number' ? { exitCode: code } : {}),
-      }));
-      finish(undefined, { stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8'), exitCode: typeof code === 'number' ? code : 0, outputTruncated });
-    });
+    attachProcessIo(child, input, stdout, stderr, output, maxOutputBytes, boundary);
+    child.on('close', (code) => settleProcessClose(input, { timedOut, cancelled, code, stdout, stderr, truncated: output.truncated }, finish, boundary));
     if (input.signal?.aborted) abort();
     else input.signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
+function attachProcessIo(
+  child: ChildProcess,
+  input: { killTree?: boolean; truncateOutput?: boolean },
+  stdout: Buffer[],
+  stderr: Buffer[],
+  output: { bytes: number; truncated: boolean },
+  maxOutputBytes: number,
+  boundary: (exitCategory: ProcessExitCategory, error?: unknown) => unknown,
+): void {
+  child.on('error', (error) => boundary('spawn_error', error));
+  const collect = (target: Buffer[], chunk: Buffer | string) => {
+    const buffer = Buffer.from(chunk);
+    const remaining = maxOutputBytes - output.bytes;
+    if (remaining <= 0) {
+      output.truncated = true;
+      if (!input.truncateOutput) {
+        terminateChild(child, input.killTree === true);
+        boundary('output_limit_exceeded');
+      }
+      return;
+    }
+    const accepted = buffer.subarray(0, remaining);
+    target.push(accepted);
+    output.bytes += accepted.byteLength;
+    if (accepted.byteLength < buffer.byteLength) {
+      output.truncated = true;
+      if (!input.truncateOutput) {
+        terminateChild(child, input.killTree === true);
+        boundary('output_limit_exceeded');
+      }
+    }
+  };
+  child.stdin?.on('error', (error) => boundary('stdio_disconnected', error));
+  child.stdout?.on('data', (chunk: Buffer | string) => collect(stdout, chunk));
+  child.stderr?.on('data', (chunk: Buffer | string) => collect(stderr, chunk));
+  child.stdout?.on('error', (error) => boundary('stdio_disconnected', error));
+  child.stderr?.on('error', (error) => boundary('stdio_disconnected', error));
+  child.stdin?.end();
+}
+
+function settleProcessClose(
+  input: { operation: string; executableKind: string; allowNonzeroExit?: boolean },
+  state: { timedOut: boolean; cancelled: boolean; code: number | null; stdout: Buffer[]; stderr: Buffer[]; truncated: boolean },
+  finish: (error?: ProcessBoundaryError, result?: ProcessResult) => void,
+  boundary: (exitCategory: ProcessExitCategory) => unknown,
+): void {
+  if (state.timedOut) { boundary('timed_out'); return; }
+  if (state.cancelled) { boundary('cancelled'); return; }
+  if (state.code !== 0 && !input.allowNonzeroExit) {
+    finish(new ProcessBoundaryError({
+      operation: input.operation, executableKind: input.executableKind, exitCategory: 'nonzero_exit',
+      ...(typeof state.code === 'number' ? { exitCode: state.code } : {}),
+    }));
+    return;
+  }
+  finish(undefined, {
+    stdout: Buffer.concat(state.stdout).toString('utf8'),
+    stderr: Buffer.concat(state.stderr).toString('utf8'),
+    exitCode: typeof state.code === 'number' ? state.code : 0,
+    outputTruncated: state.truncated,
   });
 }
 

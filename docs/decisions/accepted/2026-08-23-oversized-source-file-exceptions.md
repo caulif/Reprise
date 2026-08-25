@@ -4,11 +4,11 @@
 
 ## 问题
 
-仓库约定单个源文件不超过 1000 行、函数/类跨度不超过 100 行。Recovery 与 Candidate 编排、TUI、Runtime 端口仍有一批符号超过函数阈值。没有机械门禁时，例外清单会与代码漂移；把 100 行立刻做成无清单硬失败会逼出无回归保护的切分。
+仓库约定单个源文件不超过 1000 行、函数与方法跨度不超过 100 行。Recovery 与 Candidate 编排、TUI、Runtime 端口仍有一批符号超过函数阈值。没有机械门禁时，例外清单会与代码漂移；把 100 行立刻做成无清单硬失败会逼出无回归保护的切分。
 
 ## 决定
 
-文件阈值 1000 行对 `src/**/*.ts` 立即生效。函数/类跨度阈值 100 行立即生效，但 [`scripts/source-size-allowlist.json`](../../../scripts/source-size-allowlist.json) 中的符号在 **2026-09-06**（含当天之前）可以超限。owner 为 `@caulif`。到期或从代码中消失的条目必须删除；未登记超限必须失败。
+文件阈值 1000 行对 `src/**/*.ts` 与 `test/**/*.ts` 立即生效。函数与方法跨度阈值 100 行对 `src/**/*.ts` 立即生效；测试文件只受文件上限约束，因为场景回调本身是数据密集型用例而不是生产函数。[`scripts/source-size-allowlist.json`](../../../scripts/source-size-allowlist.json) 中的符号在 **2026-09-06**（含当天之前）可以超限。owner 为 `@caulif`。到期或从代码中消失的条目必须删除；未登记超限必须失败。类声明本身不按函数阈值计算；文件总长仍受 1000 行约束。
 
 `scripts/verify-source-size.mjs` 进入 `static` 与 `check`。自检构造 1001 行文件和 101 行函数，二者都必须使门禁失败。过期例外同样失败。
 
@@ -32,6 +32,6 @@ Candidate 运行路径放在 `src/application/experiment.ts`。Recovery 编排�
 
 ## 验证
 
-- `node scripts/verify-source-size.mjs --self-test` 拒绝 1001 行文件、101 行函数和过期例外。
+- `node scripts/verify-source-size.mjs --self-test` 拒绝 1001 行 `src`/`test` 文件、101 行函数、101 行方法、名为 `intake-tui-probe.ts` 的超限文件和过期例外；多个短方法组成的类和测试文件中的长回调不按函数超限失败。
 - `node scripts/verify-source-size.mjs` 报告 0 个未登记超限、0 个过期例外。
 - `src/application/experiment.ts` 少于 1000 行，并再导出 `recoverCodexExperiment`。

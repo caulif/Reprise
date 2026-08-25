@@ -20,7 +20,7 @@
 - **TUI 帧**：Windows 上逐字节比对 [`docs/tui-audit/frames/`](./tui-audit/frames/)，再跑启发式分析（行宽溢出、面板错位、compact 禁用字符）。基线是 Windows 产物，见[帧基线决策](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)。
 - **覆盖率**：总体 lines / branches / functions 阈值，见[覆盖率决策](./decisions/accepted/2026-08-14-coverage-thresholds.md)。
 - **未使用导出与重复**：`knip` 与 `jscpd` 进入 `check`；失败即红。`jscpd` 的 `--threshold` 是棘轮，只降不升；剩余条数来自两个 Pack 实现同一份契约，不靠忽略清单消音。
-- **供应链与边界**：`verify-pack`、`verify-audit`、`verify-secrets`、`verify-layer-imports`、`verify-source-size` 进入 `static`/`check`。各自带 `--self-test` 反向用例。真实 Runtime smoke 仍不在默认 CI。文件超过 1000 行、函数/类跨度超过 100 行且未在 [`scripts/source-size-allowlist.json`](../scripts/source-size-allowlist.json) 登记，或例外已到期，门禁失败。
+- **供应链与边界**：`verify-pack`、`verify-audit`、`verify-secrets`、`verify-layer-imports`、`verify-source-size`、`verify-tracked-source` 进入 `static`/`check`。各自带 `--self-test` 反向用例。真实 Runtime smoke 仍不在默认 CI。`src/**/*.ts` 与 `test/**/*.ts` 文件超过 1000 行、`src/**/*.ts` 函数/方法跨度超过 100 行且未在 [`scripts/source-size-allowlist.json`](../scripts/source-size-allowlist.json) 登记，或例外已到期，门禁失败。`src/` 与 `test/` 不得有被 Git 忽略的 TypeScript；受控源码的相对导入目标必须受 Git 控制；ESLint ignore 以实际配置解析为准，不得覆盖受控 `src/`/`test/` TypeScript；`tsconfig.exclude` 不得列出 `src/` 或 `test/` 路径。见[函数长度与受控源码](./decisions/accepted/2026-08-25-source-size-functions-and-tracked-source.md)。
 
 ## 门禁必须能失败
 

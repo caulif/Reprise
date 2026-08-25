@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { Component, TUI } from '@earendil-works/pi-tui';
-import type { ProductPack, SessionSummary } from '../src/products/contract.js';
+import type { ProductPack, SessionDiscoveryQuery, SessionSummary } from '../src/products/contract.js';
 import { CodexIntakeTui } from '../src/tui/intake-app.js';
+import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 
 const privacy = { allowModelText: false, allowBinary: false, redactions: [] };
 
@@ -23,9 +24,11 @@ function summary(productId: string, sessionId: string, startedAt: string): Sessi
 
 function pack(productId: string, displayName: string, discover: () => Promise<readonly SessionSummary[]>): ProductPack {
   return {
-    manifest: { productId, displayName, packVersion: 'test', schemaVersion: 1 },
+    ...fakeProductPack,
+    manifest: { ...fakeProductPack.manifest, productId, displayName, packVersion: 'test' },
     checkAuth: async () => ({ configured: false }),
     sessions: {
+      ...fakeProductPack.sessions,
       defaultRoot: '.',
       discover: async () => {
         const items = await discover();
@@ -34,7 +37,28 @@ function pack(productId: string, displayName: string, discover: () => Promise<re
       inspect: async () => { throw new Error('not used'); },
       import: async () => { throw new Error('not used'); },
     },
-  } as unknown as ProductPack;
+  };
+}
+
+function sessionPack(input: {
+  productId: string;
+  displayName: string;
+  defaultRoot: string;
+  discover: (query?: SessionDiscoveryQuery) => ReturnType<ProductPack['sessions']['discover']>;
+  importSession?: ProductPack['sessions']['import'];
+}): ProductPack {
+  return {
+    ...fakeProductPack,
+    manifest: { ...fakeProductPack.manifest, productId: input.productId, displayName: input.displayName, packVersion: 'test' },
+    checkAuth: async () => ({ configured: false }),
+    sessions: {
+      ...fakeProductPack.sessions,
+      defaultRoot: input.defaultRoot,
+      discover: input.discover,
+      inspect: async () => { throw new Error('not used'); },
+      import: input.importSession ?? (async () => { throw new Error('not used'); }),
+    },
+  };
 }
 
 function fakeTui(onDocument: (document: Component) => void): TUI {
@@ -102,30 +126,22 @@ test('a late discovery result cannot replace the newly selected product', async 
   t.after(async () => rm(root, { recursive: true, force: true }));
   let releaseCodex: (() => void) | undefined;
   let codexAborted = false;
-  const codex = {
-    manifest: { productId: 'codex', displayName: 'Codex', packVersion: 'test', schemaVersion: 1 },
-    checkAuth: async () => ({ configured: false }),
-    sessions: {
-      defaultRoot: join(root, 'codex'),
-      discover: async (query?: { signal?: AbortSignal }) => {
-        query?.signal?.addEventListener('abort', () => { codexAborted = true; }, { once: true });
-        await new Promise<void>((resolve) => { releaseCodex = resolve; });
-        return { items: [summary('codex', 'late-codex', '2026-08-11T00:00:00.000Z')], scanned: 1, skipped: 0, diagnostics: [] };
-      },
-      inspect: async () => { throw new Error('not used'); },
-      import: async () => { throw new Error('not used'); },
+  const codex = sessionPack({
+    productId: 'codex',
+    displayName: 'Codex',
+    defaultRoot: join(root, 'codex'),
+    discover: async (query) => {
+      query?.signal?.addEventListener('abort', () => { codexAborted = true; }, { once: true });
+      await new Promise<void>((resolve) => { releaseCodex = resolve; });
+      return { items: [summary('codex', 'late-codex', '2026-08-11T00:00:00.000Z')], scanned: 1, skipped: 0, diagnostics: [] };
     },
-  } as unknown as ProductPack;
-  const claude = {
-    manifest: { productId: 'claude-code', displayName: 'Claude Code', packVersion: 'test', schemaVersion: 1 },
-    checkAuth: async () => ({ configured: false }),
-    sessions: {
-      defaultRoot: join(root, 'claude'),
-      discover: async () => ({ items: [summary('claude-code', 'current-claude', '2026-08-12T00:00:00.000Z')], scanned: 1, skipped: 0, diagnostics: [] }),
-      inspect: async () => { throw new Error('not used'); },
-      import: async () => { throw new Error('not used'); },
-    },
-  } as unknown as ProductPack;
+  });
+  const claude = sessionPack({
+    productId: 'claude-code',
+    displayName: 'Claude Code',
+    defaultRoot: join(root, 'claude'),
+    discover: async () => ({ items: [summary('claude-code', 'current-claude', '2026-08-12T00:00:00.000Z')], scanned: 1, skipped: 0, diagnostics: [] }),
+  });
   const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [codex, claude], privacy });
   await app.start();
   const pendingCodex = app.loadProductSessions('codex');
@@ -143,19 +159,15 @@ test('a legacy session root is scoped to one Pack instead of leaking into anothe
   const root = await mkdtemp(join(tmpdir(), 'reprise-product-root-isolation-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const observed: string[] = [];
-  const makePack = (productId: string, defaultRoot: string) => ({
-    manifest: { productId, displayName: productId, packVersion: 'test', schemaVersion: 1 },
-    checkAuth: async () => ({ configured: false }),
-    sessions: {
-      defaultRoot,
-      discover: async (query?: { root?: string }) => {
-        observed.push(`${productId}:${query?.root}`);
-        return { items: [summary(productId, `${productId}-1`, '2026-08-11T00:00:00.000Z')], scanned: 1, skipped: 0, diagnostics: [] };
-      },
-      inspect: async () => { throw new Error('not used'); },
-      import: async () => { throw new Error('not used'); },
+  const makePack = (productId: string, defaultRoot: string) => sessionPack({
+    productId,
+    displayName: productId,
+    defaultRoot,
+    discover: async (query) => {
+      observed.push(`${productId}:${query?.root}`);
+      return { items: [summary(productId, `${productId}-1`, '2026-08-11T00:00:00.000Z')], scanned: 1, skipped: 0, diagnostics: [] };
     },
-  }) as unknown as ProductPack;
+  });
   const legacyRoot = join(root, 'legacy-codex');
   const claudeRoot = join(root, 'claude-default');
   const app = new CodexIntakeTui({
@@ -215,16 +227,12 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
       ...(nextCursor ? { nextCursor } : {}),
     };
   };
-  const codex = {
-    manifest: { productId: 'codex', displayName: 'Codex', packVersion: 'test', schemaVersion: 1 },
-    checkAuth: async () => ({ configured: false }),
-    sessions: {
-      defaultRoot: root,
-      discover: async () => ++call === 1 ? page('first', 'next') : page('second'),
-      inspect: async () => { throw new Error('not used'); },
-      import: async () => { throw new Error('not used'); },
-    },
-  } as unknown as ProductPack;
+  const codex = sessionPack({
+    productId: 'codex',
+    displayName: 'Codex',
+    defaultRoot: root,
+    discover: async () => ++call === 1 ? page('first', 'next') : page('second'),
+  });
   const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [codex], privacy });
   await app.start();
   await app.loadProductSessions('codex');
@@ -248,30 +256,27 @@ test('freeze imports through the session product pack', async (t) => {
   t.after(async () => rm(root, { recursive: true, force: true }));
   const calls: string[] = [];
   const sourcePath = join(root, 'claude.jsonl');
-  const claude = {
-    manifest: { productId: 'claude-code', displayName: 'Claude Code', packVersion: 'test', schemaVersion: 1 },
-    checkAuth: async () => ({ configured: false }),
-    sessions: {
-      defaultRoot: root,
-      discover: async () => ({ items: [], scanned: 0, skipped: 0, diagnostics: [] }),
-      inspect: async () => { throw new Error('not used'); },
-      import: async () => {
-        calls.push('claude-code');
-        return {
-          source: { productId: 'claude-code', sessionId: 'claude-1', sourcePath },
-          initialInput: { id: 'user-1', role: 'user', text: 'Review this.' },
-          transcript: [{ id: 'user-1', role: 'user', text: 'Review this.' }, { id: 'assistant-1', role: 'assistant', text: 'Done.' }],
-          historicalEvents: [],
-          baseline: { status: 'available', artifactRefs: [], evidenceRefs: [] },
-          sourceRuntimeEvidence: { productId: 'claude-code', artifactRefs: [] },
-          provenance: { packVersion: 'test' },
-          raw: { relativePath: 'claude.jsonl', text: '{"fixture":true}\n' },
-          diagnostics: [],
-          signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
-        };
-      },
+  const claude = sessionPack({
+    productId: 'claude-code',
+    displayName: 'Claude Code',
+    defaultRoot: root,
+    discover: async () => ({ items: [], scanned: 0, skipped: 0, diagnostics: [] }),
+    importSession: async () => {
+      calls.push('claude-code');
+      return {
+        source: { productId: 'claude-code', sessionId: 'claude-1', sourcePath },
+        initialInput: { id: 'user-1', role: 'user', text: 'Review this.' },
+        transcript: [{ id: 'user-1', role: 'user', text: 'Review this.' }, { id: 'assistant-1', role: 'assistant', text: 'Done.' }],
+        historicalEvents: [],
+        baseline: { status: 'available', artifactRefs: [], evidenceRefs: [] },
+        sourceRuntimeEvidence: { productId: 'claude-code', artifactRefs: [] },
+        provenance: { packVersion: 'test' },
+        raw: { relativePath: 'claude.jsonl', text: '{"fixture":true}\n' },
+        diagnostics: [],
+        signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
+      };
     },
-  } as unknown as ProductPack;
+  });
   const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [claude], privacy, now: () => '2026-08-15T00:00:00.000Z' });
   app.sessions = [{ ...summary('claude-code', 'claude-1', '2026-08-11T00:00:00.000Z'), sourcePath }];
   const { freeze } = await import('../src/tui/controller-run.js');

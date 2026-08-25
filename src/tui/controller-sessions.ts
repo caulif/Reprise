@@ -41,8 +41,7 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
     c.render(true);
     return;
   }
-  const isMore = (mode as string) === "more";
-  if (isMore) return;
+  if (mode === "more") return;
   const token = c.beginNavigation();
   c.discoveryAbort?.abort();
   const abort = new AbortController();
@@ -53,7 +52,6 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
   try {
     const discovered = await pack.sessions.discover({
       root,
-      ...(isMore && state?.nextCursor ? { cursor: state.nextCursor } : {}),
       excludeRoots: [c.dataDir, process.cwd()],
       signal: abort.signal,
       ...(mode === "refresh" ? { refresh: true } : {}),
@@ -61,12 +59,12 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
     const invalid = discovered.items.find((session) => session.productId !== productId);
     if (invalid) throw new Error(`Session adapter for ${productId} returned ${invalid.productId}.`);
     if (token !== c.generation || abort.signal.aborted) return;
-    const sessions = [...(isMore ? cached ?? [] : []), ...discovered.items]
+    const sessions = [...discovered.items]
       .sort(compareSessionSummaries);
-    const rootDiagnostics = discovered.rootDiagnostics ?? (isMore ? state?.rootDiagnostics ?? [] : []);
+    const rootDiagnostics = discovered.rootDiagnostics ?? [];
     const pageDiagnostics = discovered.pageDiagnostics ?? (discovered.rootDiagnostics ? [] : discovered.diagnostics);
     const accumulatedPageDiagnostics = mergeDiscoveryDiagnostics(
-      mode === "more" ? state?.pageDiagnostics : undefined,
+      undefined,
       pageDiagnostics,
     );
     const diagnostics = mergeDiscoveryDiagnostics(rootDiagnostics, accumulatedPageDiagnostics);

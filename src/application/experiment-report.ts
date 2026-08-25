@@ -64,6 +64,38 @@ export async function finishExperiment(input: {
     join(input.experimentRoot, "runs", input.input.runId, "record.json"),
     record,
   );
+  const { inspection, comparisonResult, reportPath } = await compareExperimentOutcome(input, record);
+  const controllerCalls = input.store
+    .events(input.input.runId)
+    .filter((event) => event.type === "controller.decision").length;
+  return {
+    taskCase: input.taskCase,
+    experimentRoot: input.experimentRoot,
+    reportPath,
+    preflight: input.preflight,
+    record,
+    decision: input.controller.decision,
+    comparison: { result: comparisonResult },
+    followupSubmission: input.controller.followupSubmission,
+    targetEvents: input.targetEvents,
+    facts: {
+      elapsedMs: Date.now() - input.startedAt,
+      turns: inspection.turns,
+      controllerCalls,
+      ...(inspection.wallClockMs === undefined
+        ? {}
+        : { wallClockMs: inspection.wallClockMs }),
+      ...(inspection.tokenCount === undefined
+        ? {}
+        : { tokenCount: inspection.tokenCount }),
+    },
+  };
+}
+
+async function compareExperimentOutcome(
+  input: Parameters<typeof finishExperiment>[0],
+  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+) {
   await input.store.append({
     type: "comparison.started",
     runId: input.input.runId,
@@ -144,31 +176,7 @@ export async function finishExperiment(input: {
     operationId: "report-created",
     payload: { path: reportPath },
   });
-  const controllerCalls = input.store
-    .events(input.input.runId)
-    .filter((event) => event.type === "controller.decision").length;
-  return {
-    taskCase: input.taskCase,
-    experimentRoot: input.experimentRoot,
-    reportPath,
-    preflight: input.preflight,
-    record,
-    decision: input.controller.decision,
-    comparison: { result: comparisonResult },
-    followupSubmission: input.controller.followupSubmission,
-    targetEvents: input.targetEvents,
-    facts: {
-      elapsedMs: Date.now() - input.startedAt,
-      turns: inspection.turns,
-      controllerCalls,
-      ...(inspection.wallClockMs === undefined
-        ? {}
-        : { wallClockMs: inspection.wallClockMs }),
-      ...(inspection.tokenCount === undefined
-        ? {}
-        : { tokenCount: inspection.tokenCount }),
-    },
-  };
+  return { inspection, comparisonResult, reportPath };
 }
 
 function languageOf(text: string): "zh" | "en" {

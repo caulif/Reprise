@@ -21,12 +21,13 @@ const GATES = [
   { id: 'verify:secrets', label: 'secret scan', command: 'node', args: ['scripts/verify-secrets.mjs'] },
   { id: 'verify:imports', label: 'layer imports', command: 'node', args: ['scripts/verify-layer-imports.mjs'] },
   { id: 'verify:source-size', label: 'source size', command: 'node', args: ['scripts/verify-source-size.mjs'] },
+  { id: 'verify:tracked-source', label: 'tracked source', command: 'node', args: ['scripts/verify-tracked-source.mjs'] },
 ];
 
 const MODES = {
   docs: ['verify:docs'],
-  check: ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:generated', 'knip', 'jscpd', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size'],
-  static: ['typecheck', 'lint', 'verify:docs', 'build', 'verify:generated', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size'],
+  check: ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:generated', 'knip', 'jscpd', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'],
+  static: ['typecheck', 'lint', 'verify:docs', 'build', 'verify:generated', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'],
   test: ['build', 'test', 'check:node'],
   audit: ['build', 'audit:tui:check', 'audit:tui:analyze'],
 };

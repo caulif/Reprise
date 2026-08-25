@@ -183,14 +183,10 @@ export function startCodexExperiment(
   };
 }
 
-async function executeExperiment(
+async function captureCodexExperimentContext(
   input: CodexExperimentInput,
-  control: {
-    setActive(run: ActiveRun): void;
-    setController(controller: ControllerPort, runId: string): void;
-    cancelled(): boolean;
-  },
-): Promise<CodexExperimentResult> {
+  control: { cancelled(): boolean },
+) {
   assertPaths(input.dataDir, input.sourceRoot);
   assertIds(input);
   findProductPack(input.candidate.productId);
@@ -238,7 +234,7 @@ async function executeExperiment(
       "Recovered TaskCase.caseId must match the experiment caseId.",
     );
   const historicalCwd = historicalCwdOf(taskCase);
-  let sourceRootKind = inferSourceRootKind({
+  const sourceRootKind = inferSourceRootKind({
     sourceRoot: resolve(input.sourceRoot),
     ...(historicalCwd ? { historicalCwd } : {}),
     ...(input.sourceRootKind ? { explicit: input.sourceRootKind } : {}),
@@ -256,30 +252,53 @@ async function executeExperiment(
     );
   if (control.cancelled())
     throw new Error("Experiment was cancelled before Candidate startup.");
-  // Capture before the Candidate receives any writable copy; recovered baselines already carry their own immutable staging evidence.
   const checkpoint = baseline.recovery
     ? undefined
     : await provider.captureRecoveryCheckpoint({
         caseId: input.caseId,
         sourceRoot: resolve(input.sourceRoot),
       });
+  return {
+    experimentRoot,
+    startedAt,
+    provider,
+    resolved,
+    baseline,
+    taskCase,
+    historicalCwd,
+    sourceRootKind,
+    preflight,
+    checkpoint,
+  };
+}
 
-  const comparisonAgentConfig =
-    input.comparisonAgentConfig ?? input.agentConfig;
+async function openCodexExperimentSession(input: {
+  input: CodexExperimentInput;
+  experimentRoot: string;
+  provider: LocalWorkspaceProvider;
+  resolved: Awaited<ReturnType<typeof resolveVerifiedCandidate>>;
+  baseline: EnvironmentBaseline;
+  taskCase: TaskCase;
+  historicalCwd: string | undefined;
+  sourceRootKind: SourceRootKind;
+}) {
+  const { input: experiment, experimentRoot, provider, resolved, baseline, taskCase, historicalCwd } = input;
+  let sourceRootKind = input.sourceRootKind;
+  const comparisonAgentConfig = experiment.comparisonAgentConfig ?? experiment.agentConfig;
   const spec = {
-    experimentId: input.experimentId,
-    taskCaseId: input.caseId,
-    candidates: [input.candidate],
-    controller: input.agentConfig,
+    experimentId: experiment.experimentId,
+    taskCaseId: experiment.caseId,
+    candidates: [experiment.candidate],
+    controller: experiment.agentConfig,
     comparison: comparisonAgentConfig,
-    runPolicy: input.policy,
+    runPolicy: experiment.policy,
     outputRoot: experimentRoot,
   };
   await writeImmutableJson(join(experimentRoot, "experiment.json"), {
     spec,
-    runIds: [input.runId],
+    runIds: [experiment.runId],
   });
-  let environment = await provider.prepareRun(baseline, input.runId);
+  let environment = await provider.prepareRun(baseline, experiment.runId);
   if (sourceRootKind === "historical_cwd") {
     const rewind = await rewindIsolatedWorkspaceToStart({
       workspaceRoot: environment.root,
@@ -296,12 +315,12 @@ async function executeExperiment(
   }
   const attempt = {
     schemaVersion: 1 as const,
-    runId: input.runId,
-    experimentId: input.experimentId,
-    caseId: input.caseId,
-    candidate: input.candidate,
-    policy: input.policy,
-    createdAt: input.now,
+    runId: experiment.runId,
+    experimentId: experiment.experimentId,
+    caseId: experiment.caseId,
+    candidate: experiment.candidate,
+    policy: experiment.policy,
+    createdAt: experiment.now,
   };
   const manifest: RunManifest = {
     schemaVersion: 1,
@@ -319,151 +338,266 @@ async function executeExperiment(
       environmentId: environment.environmentId,
       workspacePath: environment.root,
     },
-    controller: input.agentConfig,
+    controller: experiment.agentConfig,
     comparison: comparisonAgentConfig,
-    startedAt: input.now,
+    startedAt: experiment.now,
   };
-  const store = await ExperimentStore.open(experimentRoot, input.experimentId);
-  const unsubscribe = input.onEvent
-    ? store.subscribe(input.onEvent)
-    : undefined;
-  let released = false;
+  const store = await ExperimentStore.open(experimentRoot, experiment.experimentId);
+  const unsubscribe = experiment.onEvent ? store.subscribe(experiment.onEvent) : undefined;
+  const lifetime = { released: false };
   const release = async () => {
-    released = true;
+    lifetime.released = true;
     return provider.release(environment);
   };
-  const targetEvents: string[] = [];
-  let run: CandidateRun | undefined;
-  try {
-    await store.acquireWriter();
-    if (checkpoint) {
-      await store.append({
-        type: "recovery.checkpoint_captured",
-        runId: input.runId,
-        operationId: `${checkpoint.checkpointId}-captured`,
-        payload: {
-          checkpointId: checkpoint.checkpointId,
-          digest: checkpoint.fingerprint.digest,
-          resourceCount: checkpoint.fingerprint.resources.length,
-        },
-      });
-    }
-    const recoveryArtifact = input.preResolvedBaseline?.recovery?.reportRef
-      ? (await store.listArtifacts()).find(
-          (artifact) =>
-            artifact.artifactId ===
-            input.preResolvedBaseline?.recovery?.reportRef,
-        )
-      : undefined;
-    const recoveryArtifactRef = recoveryArtifact
-      ? {
-          artifactId: recoveryArtifact.artifactId,
-          experimentId: input.experimentId,
-        }
-      : undefined;
-    const sink: TargetEventSink = {
-      append: async (targetEvent: TargetEvent): Promise<void> => {
-        const event = await store.append({
-          type: targetEvent.type,
-          runId: input.runId,
-          payload: targetEvent.payload,
-          occurredAt: targetEvent.occurredAt,
-        });
-        targetEvents.push(`event:${event.eventId}`);
-      },
-    };
-    const runner = await input.runtime.createRunner(
-      resolved,
-      environment,
-      sink,
-    );
-    run = new CandidateRun({
-      runner,
-      policy: {
-        turnTimeoutMs: input.policy.turnTimeoutMs,
-        maxTargetTurns: input.policy.maxTargetTurns,
-      },
-      release,
-      persistence: {
-        journal: store,
-        attempt,
-        manifest,
-        ...(recoveryArtifactRef ? { artifactRefs: [recoveryArtifactRef] } : {}),
-        captureArtifacts: () =>
-          input.captureArtifacts
-            ? input.captureArtifacts({
-                store,
-                environment,
-                workspaceProvider: provider,
-                sourceRoot: resolve(input.sourceRoot),
-                experimentId: input.experimentId,
-                runId: input.runId,
-              })
-            : captureWorkspaceScope({
-                store,
-                environment,
-                workspaceProvider: provider,
-                experimentId: input.experimentId,
-                runId: input.runId,
-              }),
+  return {
+    sourceRootKind,
+    environment,
+    attempt,
+    manifest,
+    store,
+    unsubscribe,
+    lifetime,
+    release,
+    targetEvents: [] as string[],
+  };
+}
+
+async function startCodexCandidateRun(args: {
+  input: CodexExperimentInput;
+  store: ExperimentStore;
+  checkpoint: Awaited<ReturnType<typeof captureCodexExperimentContext>>["checkpoint"];
+  resolved: Awaited<ReturnType<typeof captureCodexExperimentContext>>["resolved"];
+  environment: PreparedEnvironmentRef;
+  provider: LocalWorkspaceProvider;
+  attempt: RunManifest["attempt"];
+  manifest: RunManifest;
+  release: () => Promise<{ status: "released" | "already_released" }>;
+  targetEvents: string[];
+}): Promise<CandidateRun> {
+  const { input, store, checkpoint, resolved, environment, provider, attempt, manifest, release, targetEvents } = args;
+  await store.acquireWriter();
+  if (checkpoint) {
+    await store.append({
+      type: "recovery.checkpoint_captured",
+      runId: input.runId,
+      operationId: `${checkpoint.checkpointId}-captured`,
+      payload: {
+        checkpointId: checkpoint.checkpointId,
+        digest: checkpoint.fingerprint.digest,
+        resourceCount: checkpoint.fingerprint.resources.length,
       },
     });
-    control.setActive(run);
-    control.setController(input.controller, input.runId);
-    if (control.cancelled()) await run.cancel();
-    else {
-      const controller = await runControllerLoop({
-        run,
-        controller: input.controller,
-        store,
+  }
+  const recoveryArtifact = input.preResolvedBaseline?.recovery?.reportRef
+    ? (await store.listArtifacts()).find(
+        (artifact) =>
+          artifact.artifactId ===
+          input.preResolvedBaseline?.recovery?.reportRef,
+      )
+    : undefined;
+  const recoveryArtifactRef = recoveryArtifact
+    ? {
+        artifactId: recoveryArtifact.artifactId,
+        experimentId: input.experimentId,
+      }
+    : undefined;
+  const sink: TargetEventSink = {
+    append: async (targetEvent: TargetEvent): Promise<void> => {
+      const event = await store.append({
+        type: targetEvent.type,
         runId: input.runId,
-        taskCase,
-        policy: input.policy,
-        controllerModel: input.agentConfig.requestedModel,
-        environment,
-        workspaceProvider: provider,
-        sourceRootKind,
-        requestedModel: input.candidate.requestedModel,
-        resolvedModel: resolved.resolvedModel,
+        payload: targetEvent.payload,
+        occurredAt: targetEvent.occurredAt,
       });
-      return await finishExperiment({
-        input,
-        taskCase,
-        preflight,
-        store,
-        run,
-        controller,
-        experimentRoot,
-        targetEvents,
-        startedAt,
-        sourceRootKind,
-      });
-    }
-    const cancelled = {
-      decision: {
-        status: "cancelled" as const,
-        factRef: `run:${input.runId}:cancelled`,
-      },
-      followupSubmission: false,
-    };
+      targetEvents.push(`event:${event.eventId}`);
+    },
+  };
+  const runner = await input.runtime.createRunner(resolved, environment, sink);
+  return new CandidateRun({
+    runner,
+    policy: {
+      turnTimeoutMs: input.policy.turnTimeoutMs,
+      maxTargetTurns: input.policy.maxTargetTurns,
+    },
+    release,
+    persistence: {
+      journal: store,
+      attempt,
+      manifest,
+      ...(recoveryArtifactRef ? { artifactRefs: [recoveryArtifactRef] } : {}),
+      captureArtifacts: () =>
+        input.captureArtifacts
+          ? input.captureArtifacts({
+              store,
+              environment,
+              workspaceProvider: provider,
+              sourceRoot: resolve(input.sourceRoot),
+              experimentId: input.experimentId,
+              runId: input.runId,
+            })
+          : captureWorkspaceScope({
+              store,
+              environment,
+              workspaceProvider: provider,
+              experimentId: input.experimentId,
+              runId: input.runId,
+            }),
+    },
+  });
+}
+
+async function finishCodexCandidateRun(args: {
+  input: CodexExperimentInput;
+  control: {
+    setActive(run: ActiveRun): void;
+    setController(controller: ControllerPort, runId: string): void;
+    cancelled(): boolean;
+  };
+  run: CandidateRun;
+  store: ExperimentStore;
+  taskCase: TaskCase;
+  preflight: CodexExperimentPreflight;
+  experimentRoot: string;
+  targetEvents: string[];
+  startedAt: number;
+  sourceRootKind: SourceRootKind;
+  environment: PreparedEnvironmentRef;
+  provider: LocalWorkspaceProvider;
+  resolved: Awaited<ReturnType<typeof captureCodexExperimentContext>>["resolved"];
+}): Promise<CodexExperimentResult> {
+  const { input, control, run, store, taskCase, preflight, experimentRoot, targetEvents, startedAt, sourceRootKind, environment, provider, resolved } = args;
+  control.setActive(run);
+  control.setController(input.controller, input.runId);
+  if (control.cancelled()) await run.cancel();
+  else {
+    const controller = await runControllerLoop({
+      run,
+      controller: input.controller,
+      store,
+      runId: input.runId,
+      taskCase,
+      policy: input.policy,
+      controllerModel: input.agentConfig.requestedModel,
+      environment,
+      workspaceProvider: provider,
+      sourceRootKind,
+      requestedModel: input.candidate.requestedModel,
+      resolvedModel: resolved.resolvedModel,
+    });
     return await finishExperiment({
       input,
       taskCase,
       preflight,
       store,
       run,
-      controller: cancelled,
+      controller,
       experimentRoot,
       targetEvents,
       startedAt,
       sourceRootKind,
+    });
+  }
+  const cancelled = {
+    decision: {
+      status: "cancelled" as const,
+      factRef: `run:${input.runId}:cancelled`,
+    },
+    followupSubmission: false,
+  };
+  return await finishExperiment({
+    input,
+    taskCase,
+    preflight,
+    store,
+    run,
+    controller: cancelled,
+    experimentRoot,
+    targetEvents,
+    startedAt,
+    sourceRootKind,
+  });
+}
+
+async function executeExperiment(
+  input: CodexExperimentInput,
+  control: {
+    setActive(run: ActiveRun): void;
+    setController(controller: ControllerPort, runId: string): void;
+    cancelled(): boolean;
+  },
+): Promise<CodexExperimentResult> {
+  const {
+    experimentRoot,
+    startedAt,
+    provider,
+    resolved,
+    baseline,
+    taskCase,
+    historicalCwd,
+    sourceRootKind: initialSourceRootKind,
+    preflight,
+    checkpoint,
+  } = await captureCodexExperimentContext(input, control);
+  let sourceRootKind = initialSourceRootKind;
+  const session = await openCodexExperimentSession({
+    input,
+    experimentRoot,
+    provider,
+    resolved,
+    baseline,
+    taskCase,
+    historicalCwd,
+    sourceRootKind,
+  });
+  sourceRootKind = session.sourceRootKind;
+  const {
+    environment,
+    attempt,
+    manifest,
+    store,
+    unsubscribe,
+    lifetime,
+    release,
+    targetEvents,
+  } = session;
+  let run: CandidateRun | undefined;
+  try {
+    run = await startCodexCandidateRun({
+      input,
+      store,
+      checkpoint,
+      resolved,
+      environment,
+      provider,
+      attempt,
+      manifest,
+      release: async () => {
+        await release();
+        return { status: "released" as const };
+      },
+      targetEvents,
+    });
+    return await finishCodexCandidateRun({
+      input,
+      control,
+      run,
+      store,
+      taskCase,
+      preflight,
+      experimentRoot,
+      targetEvents,
+      startedAt,
+      sourceRootKind,
+      environment,
+      provider,
+      resolved,
     });
   } catch (error) {
     if (run?.states().at(-1) === "awaiting_controller") await run.cancel();
     throw error;
   } finally {
     unsubscribe?.();
-    if (!released) await release();
+    if (!lifetime.released) await release();
     await store.close();
   }
 }
@@ -531,80 +665,7 @@ async function runControllerLoop(input: {
       state = await input.run.stopByHarness("limit.controller_calls");
       break;
     }
-    const observation = await inspectRun(
-      input.store,
-      undefined,
-      input.taskCase.privacy.allowModelText,
-      input.taskCase.source.productId,
-      {
-        runId: input.runId,
-        environment: input.environment,
-        workspaceProvider: input.workspaceProvider,
-      },
-      {
-        sourceRootKind: input.sourceRootKind,
-        requestedModel: input.requestedModel,
-        resolvedModel: input.resolvedModel,
-      },
-    );
-    const requestId = `controller-request-${input.runId}-${controllerCalls + 1}`;
-    const context = {
-        requestId,
-        runId: input.runId,
-        runState: state,
-        task: {
-          initialInput: input.taskCase.initialInput,
-          baseline: input.taskCase.baseline,
-          privacy: input.taskCase.privacy,
-          historicalUserTurns: historicalUserFollowups(
-            input.taskCase.transcript,
-            input.taskCase.initialInput.id,
-          ),
-        },
-        current: {
-          summary: observation.currentSummary,
-          evidenceRefs: observation.evidenceRefs,
-        },
-        evidenceCatalog: observation.evidenceRefs.map((ref) => ({ ref, runId: input.runId, source: 'initial' as const })),
-        trajectory: {
-          summary: observation.trajectorySummary,
-          evidenceRefs: observation.evidenceRefs,
-        },
-        budget: {
-          decisionsUsed: controllerCalls,
-          decisionsLimit: input.policy.maxModelCalls,
-        },
-        replay: {
-          sourceRootKind: input.sourceRootKind,
-          isolation:
-            "Writes stay in the isolated replica and never land in the original user directory.",
-          requestedModel: input.requestedModel,
-          resolvedModel: input.resolvedModel,
-          changedPaths: observation.changedPaths,
-        },
-      };
-    await input.store.append({
-      type: 'controller.requested',
-      runId: input.runId,
-      operationId: requestId,
-      payload: { schemaVersion: 1, toolSetVersion: 1, requestId, runId: input.runId, inputDigest: sha256(JSON.stringify(controllerRequestSnapshot(context))), snapshot: controllerRequestSnapshot(context) },
-    });
-    const tools = observationTools(input.store, {
-      runId: input.runId,
-      transcript: input.taskCase.transcript,
-      allowModelText: input.taskCase.privacy.allowModelText,
-    }).map((tool) => ({
-      ...tool,
-      onCompleted: async (result: { content: string; details?: unknown }) => {
-        await input.store.append(observationReadRecord({
-          requestId,
-          runId: input.runId,
-          details: result.details,
-          allowedRefs: currentRunEventRefs(input.store.events(input.runId), input.runId),
-        }));
-      },
-    }));
-    const decision = await input.controller.decide(context, tools);
+    const decision = await requestControllerDecision(input, state, controllerCalls);
     controllerCalls += 1;
     decisions.push(decision);
     await input.store.append({
@@ -653,6 +714,18 @@ async function runControllerLoop(input: {
       },
     );
   }
+  return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
+}
+
+function finalizeControllerLoop(
+  state: SteeringContext["runState"],
+  decisions: StructuredAgentResult<ControllerDecision>[],
+  controllerCalls: number,
+  followupSubmission: boolean,
+): {
+  decision: StructuredAgentResult<ControllerDecision>;
+  followupSubmission: boolean;
+} {
   if (state !== "finished")
     throw new Error(`Candidate did not reach a terminal state: ${state}.`);
   const last = decisions.at(-1);
@@ -669,5 +742,95 @@ async function runControllerLoop(input: {
       followupSubmission,
     };
   return { decision: last, followupSubmission };
+}
+
+async function requestControllerDecision(
+  input: Parameters<typeof runControllerLoop>[0],
+  state: SteeringContext["runState"],
+  controllerCalls: number,
+) {
+  const observation = await inspectRun(
+    input.store,
+    undefined,
+    input.taskCase.privacy.allowModelText,
+    input.taskCase.source.productId,
+    {
+      runId: input.runId,
+      environment: input.environment,
+      workspaceProvider: input.workspaceProvider,
+    },
+    {
+      sourceRootKind: input.sourceRootKind,
+      requestedModel: input.requestedModel,
+      resolvedModel: input.resolvedModel,
+    },
+  );
+  const requestId = `controller-request-${input.runId}-${controllerCalls + 1}`;
+  const context = {
+    requestId,
+    runId: input.runId,
+    runState: state,
+    task: {
+      initialInput: input.taskCase.initialInput,
+      baseline: input.taskCase.baseline,
+      privacy: input.taskCase.privacy,
+      historicalUserTurns: historicalUserFollowups(
+        input.taskCase.transcript,
+        input.taskCase.initialInput.id,
+      ),
+    },
+    current: {
+      summary: observation.currentSummary,
+      evidenceRefs: observation.evidenceRefs,
+    },
+    evidenceCatalog: observation.evidenceRefs.map((ref) => ({ ref, runId: input.runId, source: "initial" as const })),
+    trajectory: {
+      summary: observation.trajectorySummary,
+      evidenceRefs: observation.evidenceRefs,
+    },
+    budget: {
+      decisionsUsed: controllerCalls,
+      decisionsLimit: input.policy.maxModelCalls,
+    },
+    replay: {
+      sourceRootKind: input.sourceRootKind,
+      isolation:
+        "Writes stay in the isolated replica and never land in the original user directory.",
+      requestedModel: input.requestedModel,
+      resolvedModel: input.resolvedModel,
+      changedPaths: observation.changedPaths,
+    },
+  };
+  await input.store.append({
+    type: "controller.requested",
+    runId: input.runId,
+    operationId: requestId,
+    payload: {
+      schemaVersion: 1,
+      toolSetVersion: 1,
+      requestId,
+      runId: input.runId,
+      inputDigest: sha256(JSON.stringify(controllerRequestSnapshot(context))),
+      snapshot: controllerRequestSnapshot(context),
+    },
+  });
+  const tools = observationTools(input.store, {
+    runId: input.runId,
+    transcript: input.taskCase.transcript,
+    allowModelText: input.taskCase.privacy.allowModelText,
+  }).map((tool) => ({
+    ...tool,
+    onCompleted: async (result: { content: string; details?: unknown }) => {
+      await input.store.append(
+        observationReadRecord({
+          requestId,
+          runId: input.runId,
+          details: result.details,
+          allowedRefs: currentRunEventRefs(input.store.events(input.runId), input.runId),
+        }),
+      );
+    },
+  }));
+  return input.controller.decide(context, tools);
 }
 

@@ -41,6 +41,7 @@
 - [TUI 帧基线只在 Windows 比对](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)：帧是平台相关产物，不在 Ubuntu 上逐字节比对。
 - [生成区输出信封字段表](./decisions/accepted/2026-08-15-generated-docs-envelope-fields.md)：`EventEnvelope.type` 是开放字符串，不生成类型目录。
 - [门禁必须附反向用例](./decisions/accepted/2026-08-15-gate-reverse-tests.md)：只验证干净树上退出 0 不构成门禁生效的证据。
+- [函数长度按方法计，受控源码不得被忽略](./decisions/accepted/2026-08-25-source-size-functions-and-tracked-source.md)：class 跨度不是函数长度；`src/`/`test/` 的 TypeScript 必须受 Git 与 lint 观察。
 - [报告 Host 壳跟随任务语言](./decisions/accepted/2026-08-14-report-host-chrome-follows-task-language.md)：`report.html` 的壳文案跟随 `initialInput`，不跟 TUI `/lang`。
 - [报告第一屏是判断正文](./decisions/accepted/2026-08-14-report-first-screen-is-narrative.md)：不做对照条；限制只留会改变读法的句子。
 - [`superseded/`](./decisions/superseded/)：被后续决策取代的记录，仅供追溯，不能作为当前依据。
