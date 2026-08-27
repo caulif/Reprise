@@ -102,27 +102,31 @@ export function CodexIntakeTui_openIntakeSelection(this: CodexIntakeTui): { cons
 
 export function CodexIntakeTui_sessionsMessage(this: CodexIntakeTui): string {
     const discovery = this.activeProductId ? this.productDiscovery.get(this.activeProductId) : undefined;
+    if (discovery?.status === "loading") return t(this.locale, "sessionsLoading");
+    const projects = this.groupedProjects();
+    const loaded = t(this.locale, "catalogLoaded", { projects: projects.length, sessions: this.sessions.length });
     const skipped = discovery?.skipped ?? 0;
     const status = t(this.locale, "sessionDiscoveryStatus", { shown: this.sessions.length, skipped });
-    const scanned = ` · ${discovery?.scanned ?? this.sessions.length} ${this.locale === 'zh' ? '已扫描' : 'scanned'}`;
-    const more = this.sessionLimitReached
-      ? ` · ${t(this.locale, "moreAvailable")}. ${t(this.locale, "loadMoreSessions")}`
-      : ".";
+    const scanned = ` · ${discovery?.scanned ?? this.sessions.length} ${this.locale === "zh" ? "已扫描" : "scanned"}`;
+    const more = ` ${t(this.locale, "loadMoreSessions")}`;
     const diagnostics = discovery?.diagnostics?.length
       ? ` ${t(this.locale, "sessionDiagnostics", {
         diagnostics: discovery.diagnostics.map((diagnostic: DiscoveryDiagnostic) => `${this.discoveryDiagnosticLabel(this.locale, diagnostic.code)} (${diagnostic.count})`).join(", "),
       })}.`
       : "";
-    if (!this.sessions.length) return `${t(this.locale, "noSessionsFound")} ${status}${more}${scanned}${diagnostics}`;
+    if (!this.sessions.length) return `${t(this.locale, "noSessionsFound")} ${loaded} ${status}.${scanned}${more}${diagnostics}`;
     const instruction = this.intakeLevel === "projects"
       ? t(this.locale, "chooseProject")
       : t(this.locale, "chooseSession");
-    return `${instruction} ${status}${more}${scanned}${diagnostics}`;
+    return `${instruction} ${loaded} ${status}.${scanned}${more}${diagnostics}`;
   }
 
 export function CodexIntakeTui_discoveryDiagnosticLabel(this: CodexIntakeTui, locale: Locale, code: DiscoveryDiagnostic['code']): string {
-    return code === 'history-without-transcript' ? t(locale, 'historyWithoutTranscript') : code;
-  }
+  if (code === 'history-without-transcript') return t(locale, 'historyWithoutTranscript');
+  if (code === 'source-missing') return t(locale, 'sourceMissingDiagnostic');
+  if (code === 'duplicate-source') return t(locale, 'duplicateSourceDiagnostic');
+  return code;
+}
 
 export async function CodexIntakeTui_refreshProductAuth(this: CodexIntakeTui): Promise<void> {
     const statuses = await Promise.all(this.packs.map(async (pack) => ({

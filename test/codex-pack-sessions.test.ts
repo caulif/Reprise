@@ -48,10 +48,9 @@ test("Codex session discovery skips one oversized rollout but explicit inspectio
   await writeFile(oversized, Buffer.alloc(64 * 1024 * 1024 + 1));
 
   const discovered = await discoverCodexSessions(sessions);
-  assert.deepEqual(
-    discovered.map((session) => session.sessionId),
-    ["valid-session"],
-  );
+  assert.equal(discovered.some((session) => session.sessionId === "valid-session"), true);
+  assert.equal(discovered.filter((session) => session.sessionId === "valid-session").length, 1);
+  assert.equal(discovered.some((session) => session.availability === "unreadable"), true);
   await assert.rejects(
     inspectCodexSession(oversized),
     /64 MiB inspection limit/,

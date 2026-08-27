@@ -6,16 +6,17 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
  r     Replay the current task  needs a task
  i     Import a historical session
 
-┌─ Projects · 1 · 1 sessions · filter: all ───────────────────────────────────┐ ┌─ Preview ────────────────────────────┐
-│❯ claude-audit                                               1   4d ago      │ │ Project      claude-audit            │
-│ 1/1                                                                         │ │ Path         C:/claude-audit         │
-│                                                                             │ │ Sessions     1                       │
+┌─ Projects · 2 projects / 1 sessions / 0 projectless / 0 unreadable · filter:… ┌─ Preview ────────────────────────────┐
+│❯ claude-audit                                         1         4d ago      │ │ Project      claude-audit            │
+│  Projectless sessions                                 0 sessionsUnknown time│ │ Path         C:/claude-audit         │
+│ 1/2                                                                         │ │ Sessions     1                       │
 │                                                                             │ │                                      │
 │                                                                             │ │ Latest       Review the product      │
 │                                                                             │ │intake flow.                          │
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
 
  ❯ [/] Search
- Choose a project, then a session. Type / to search. 1 shown · 0 skipped. · 1 scanned
+ Choose a project, then a session. Type / to search. Loaded 2 projects and 1 sessions. 1 shown · 0 skipped. · 1 scanned
+The catalog is complete; m does not paginate.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [↑↓] Select  [Enter] Open project  [/] Search  [f] Filter  [m] All sessions loaded  [r] Refresh  [Esc] Home

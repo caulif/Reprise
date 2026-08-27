@@ -65,10 +65,11 @@ function parseAssignments(value: unknown, projects: ReadonlyMap<string, CodexCat
   if (!isRecord(value)) return {};
   return Object.fromEntries(Object.entries(value).flatMap(([thread, assignment]) => {
     const project = isRecord(assignment) ? text(assignment.projectId) : undefined;
-    if (!project || !projects.has(project)) {
+    if (!project) {
       diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: '.codex-global-state.json' });
       return [];
     }
+    if (!projects.has(project)) diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: '.codex-global-state.json' });
     return [[thread, project]];
   }));
 }

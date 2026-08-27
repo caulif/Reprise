@@ -13,7 +13,7 @@
 - 每个新的 metadata fingerprint 先建立完整、轻量的 `SessionSummary` index，再按 `updatedAt + sourcePath` 全局稳定排序并取展示页。`scanned` 表示该 index 覆盖的候选数，`skipped` 和聚合 `diagnostics` 说明其失败/排除事实；文件 mtime 仅用于候选 fingerprint，绝不作为跨页 event-time 排序的替代；
 - `rootDiagnostics` 保存 metadata 枚举和不可变 summary index 的诊断，并在每个 cursor 页重复返回；Controller 只计入一次。`pageDiagnostics` 保留给只检查当前页的未来/第三方 adapter，当前本地 JSONL Pack 不用它伪装全局 index 的失败归属；
 - `nextCursor` 是不透明 token（当前 v2），编码规范化 root、已枚举候选文件的 SHA-256 fingerprint 和上一条全局排序结果的来源路径；不同 root、候选集合、排序项消失或无效 token 必须失败，不能混合旧页；
-- 查询传入 `cursor`、`signal`、`excludeRoots` 和显式 `refresh`，但 JSONL 格式解析仍只在 Product Pack 内。摘要 index 只在进程内按 `productId + root + fingerprint` 缓存，最多 4 个完成 index；每个 continuation 仍重枚举 metadata 并校验 fingerprint，`refresh` 丢弃命中的 index 后重建。当前两个本地 JSONL Pack 没有经验证的通用归档语义，不能预置 `includeArchived`。未来仅在具体 Pack 的来源格式提供可靠归档事实时扩展该过滤条件；
+- 查询传入 `cursor`、`signal`、精确 `excludeSessionIds` / `excludeSourcePaths`、显式来源目录 `excludeRoots` 和 `refresh`，但 JSONL 格式解析仍只在 Product Pack 内。`excludeRoots` 匹配 `sourcePath` 而不是会话 cwd；摘要 index 只在进程内按 `productId + root + fingerprint` 缓存，最多 4 个完成 index；每个 continuation 仍重枚举 metadata 并校验 fingerprint，`refresh` 丢弃命中的 index 后重建。当前两个本地 JSONL Pack 没有经验证的通用归档语义，不能预置 `includeArchived`。未来仅在具体 Pack 的来源格式提供可靠归档事实时扩展该过滤条件；
 - `SessionSummary.startedAt` 与 `updatedAt` 均可缺失；`startedAtSource` / `updatedAtSource` 明确标记 `event` 或 `file-mtime`。未知时间在 UI 显示为未知，而不是伪造 Unix epoch；按 epoch 值排序时未知项稳定落在已知项之后，并以来源路径打破平局；
 - Controller 以产品和规范化 root 缓存页面；cursor 的候选集合 fingerprint 只用于拒绝不连续的翻页，不把无 watcher 的内存 cache 伪装成实时索引。`m` 仅在 `nextCursor` 存在时加载下一页，`r` 丢弃该 root 的缓存并从第一页刷新；切换产品或开始新的发现会取消尚未完成的发现。
 

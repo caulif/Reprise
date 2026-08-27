@@ -1,6 +1,11 @@
 import { basename } from 'node:path';
-import { asPosixPath, isFsAbsolute } from '../../core/paths.js';
+import { asPosixPath, canonicalRecordedRoot } from '../../core/paths.js';
 import { compareSessionSummaries, type SessionDiscoveryProject, type SessionInspection, type SessionPrivacy, type SessionSummary } from '../../products/contract.js';
+import {
+  isUnknownProjectKey,
+  PROJECTLESS_PROJECT_KEY,
+  sessionGroupingKey,
+} from '../../products/shared/session-project.js';
 import { compact, truncateFit } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import { caretAt } from '../text-edit.js';
@@ -39,6 +44,7 @@ export type SessionsModel = {
   readonly query: string;
   readonly searchCursor?: number;
   readonly searching: boolean;
+  readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error';
   readonly locale?: import('../i18n.js').Locale;
   /** Clock supplied by the workbench; inject it for deterministic visual audits. */
   readonly nowMs?: number;
@@ -54,31 +60,10 @@ export type InspectionModel = {
   readonly nowMs?: number;
 };
 
-const UNKNOWN_PROJECT_PREFIX = 'unknown:';
-const PROJECTLESS_PROJECT_KEY = 'projectless';
-
-function projectKey(session: SessionSummary): string {
-  const cwd = canonicalHistoricalCwd(session.cwd);
-  if (session.sourceKind === 'projectless' || session.availability === 'unindexed') return PROJECTLESS_PROJECT_KEY;
-  if (cwd) return `${session.productId}\0${cwd}`;
-  // Unknown cwd is not evidence of one shared project; keep each session separate.
-  return `${UNKNOWN_PROJECT_PREFIX}\0${session.productId}\0${session.sessionId}`;
-}
-
-/** A relative historical cwd cannot identify a workspace outside the original product runtime. */
-function canonicalHistoricalCwd(cwd: string | undefined): string | undefined {
-  const value = cwd?.trim();
-  if (!value || !isFsAbsolute(value)) return undefined;
-  return asPosixPath(value).replace(/\/+$/, '').toLowerCase();
-}
-
-function sessionTime(session: SessionSummary | undefined): string {
-  return session?.updatedAt ?? session?.startedAt ?? '';
-}
-
 function isProjectless(key: string): boolean { return key === PROJECTLESS_PROJECT_KEY; }
 
 function sessionStatus(session: SessionSummary, locale: Locale): string {
+  if (session.evidenceLevel === 'history') return t(locale, 'historyOnlySession');
   if (session.availability === 'catalog-only') return t(locale, 'catalogOnlySession');
   if (session.availability === 'unindexed') return t(locale, 'unindexedSession');
   if (session.availability === 'unreadable') return t(locale, 'unreadableSession');
@@ -86,8 +71,12 @@ function sessionStatus(session: SessionSummary, locale: Locale): string {
   return '';
 }
 
+function sessionTime(session: SessionSummary | undefined): string {
+  return session?.updatedAt ?? session?.startedAt ?? '';
+}
+
 function isUnknownProject(key: string): boolean {
-  return key.startsWith(UNKNOWN_PROJECT_PREFIX);
+  return isUnknownProjectKey(key);
 }
 
 function localizedProjectLabel(project: SessionProject | undefined, locale: Locale): string {
@@ -125,14 +114,20 @@ export function sessionTitle(summary: string | undefined, locale: Locale = 'en')
 }
 
 export function groupSessionsByProject(sessions: readonly SessionSummary[], catalogProjects: readonly SessionDiscoveryProject[] = []): SessionProject[] {
+  const catalogKeysByRoot = new Map<string, string>();
+  for (const project of catalogProjects) {
+    const canonical = canonicalRecordedRoot(project.path);
+    if (canonical) catalogKeysByRoot.set(canonical, project.key);
+  }
   const groups = new Map<string, SessionSummary[]>();
   for (const session of sessions) {
-    const key = projectKey(session);
+    const key = sessionGroupingKey(session, catalogKeysByRoot);
     const list = groups.get(key) ?? [];
     list.push(session);
     groups.set(key, list);
   }
   for (const project of catalogProjects) if (!groups.has(project.key)) groups.set(project.key, []);
+  if (!groups.has(PROJECTLESS_PROJECT_KEY)) groups.set(PROJECTLESS_PROJECT_KEY, []);
   const grouped = [...groups.entries()].map(([key, items]) => {
     const ordered = [...items].sort(compareSessionSummaries);
     const path = ordered.find((item) => item.cwd)?.cwd;
@@ -271,10 +266,23 @@ function renderProducts(theme: Theme, width: number, model: SessionsModel, limit
   return panel(theme, theme.style.harness(t(model.locale ?? 'en', 'selectAgentProduct')), body, width);
 }
 
+function catalogStats(projects: readonly SessionProject[]): { projects: number; sessions: number; projectless: number; unreadable: number } {
+  const sessions = projects.flatMap((project) => project.sessions);
+  return {
+    projects: projects.length,
+    sessions: sessions.length,
+    projectless: projects.find((project) => isProjectless(project.key))?.sessions.length ?? 0,
+    unreadable: sessions.filter((session) => session.availability === 'catalog-only' || session.availability === 'unreadable').length,
+  };
+}
+
 function renderProjects(theme: Theme, width: number, model: SessionsModel, limit: number, showPreview = true, showSearch = true): string[] {
-  const sessionCount = model.projects.reduce((sum, project) => sum + project.sessions.length, 0);
   const locale = model.locale ?? 'en';
-  const title = `${t(locale, 'projectsTitle')} ${theme.glyphs.sep} ${model.projects.length} ${theme.glyphs.sep} ${sessionCount} ${t(locale, 'sessionsWord')} ${theme.glyphs.sep} ${t(locale, 'filterLabel')}: ${model.filterEligible ? t(locale, 'filterEligibleLabel') : t(locale, 'filterAllLabel')}`;
+  const stats = catalogStats(model.projects);
+  const title = `${t(locale, 'projectsTitle')} ${theme.glyphs.sep} ${t(locale, 'catalogCounts', stats)} ${theme.glyphs.sep} ${t(locale, 'filterLabel')}: ${model.filterEligible ? t(locale, 'filterEligibleLabel') : t(locale, 'filterAllLabel')}`;
+  if (model.discoveryStatus === 'loading' && stats.sessions === 0) {
+    return [...panel(theme, title, [` ${t(locale, 'sessionsLoading')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
+  }
   if (!model.projects.length) {
     return [...panel(theme, title, [` ${t(locale, 'noMatchingProjects')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
   }
@@ -285,7 +293,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     name: localizedProjectLabel(project, locale),
     gap: ' ',
-    count: String(project.sessions.length),
+    count: project.sessions.length ? String(project.sessions.length) : t(locale, 'emptyProjectSessions'),
     when: relativeTime(project.latestAt, model.nowMs ?? Date.now(), locale),
   }));
   const range = visibleRange(rows, model.selected, limit);
@@ -293,19 +301,19 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     { key: 'marker', width: 2 },
     { key: 'name', flex: 1 },
     { key: 'gap', width: 1 },
-    { key: 'count', width: 4 },
+    { key: 'count', width: 10 },
     { key: 'when', width: 12 },
   ], inner), inner), range.start, model.selected);
   listBody.push(theme.style.muted(` ${model.selected + 1}/${rows.length}`));
   const list = panel(theme, theme.style.harness(title), listBody, listWidth);
   const selected = model.projects[model.selected];
   const latest = selected?.sessions[0];
-  const preview = previewWidth ? panel(theme, theme.style.harness(t(locale, 'previewTitle')), selected && latest ? [
+  const preview = previewWidth ? panel(theme, theme.style.harness(t(locale, 'previewTitle')), selected ? [
     kv(theme, t(locale, 'fieldProject'), localizedProjectLabel(selected, locale), previewWidth - 2),
     ...kvBlock(theme, t(locale, 'fieldPath'), selected.path ?? t(locale, 'unavailableValue'), previewWidth - 2),
-    kv(theme, t(locale, 'fieldSessions'), String(selected.sessions.length), previewWidth - 2),
+    kv(theme, t(locale, 'fieldSessions'), selected.sessions.length ? String(selected.sessions.length) : t(locale, 'emptyProjectSessions'), previewWidth - 2),
     '',
-    kv(theme, t(locale, 'fieldLatest'), sessionTitle(latest.summary, locale), previewWidth - 2),
+    kv(theme, t(locale, 'fieldLatest'), latest ? sessionTitle(latest.summary, locale) : t(locale, 'unavailableValue'), previewWidth - 2),
   ] : [` ${t(locale, 'noProjectSelected')}`], previewWidth) : [];
   const body = previewWidth ? joinColumns(list, preview, listWidth, previewWidth, 1, theme) : list;
   return [...body, ...(showSearch ? searchLine(theme, width, model) : [])];
@@ -343,6 +351,7 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
     kv(theme, t(locale, 'fieldProject'), projectLabel(selected.cwd, locale), previewWidth - 2),
     kv(theme, t(locale, 'fieldSession'), selected.sessionId.slice(0, 8), previewWidth - 2),
     kv(theme, t(locale, 'fieldStarted'), (selected.startedAt ?? t(locale, 'unknownTime')).replace('T', ' ').slice(0, 16), previewWidth - 2),
+    kv(theme, t(locale, 'fieldUpdated'), (selected.updatedAt ?? selected.startedAt ?? t(locale, 'unknownTime')).replace('T', ' ').slice(0, 16), previewWidth - 2),
     kv(theme, t(locale, 'fieldSignals'), `u${selected.signals.userMessages} a${selected.signals.assistantMessages} t${selected.signals.toolCalls}`, previewWidth - 2),
     '',
     kv(theme, t(locale, 'fieldStatus'), sessionStatus(selected, locale) || t(locale, 'availableSession'), previewWidth - 2),

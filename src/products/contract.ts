@@ -94,6 +94,7 @@ export type DiscoveryDiagnosticCode =
   | 'catalog-read-error'
   | 'global-state-unavailable'
   | 'source-missing'
+  | 'duplicate-source'
   | 'conflicting-project-source';
 
 /** Aggregate information about local records discovery intentionally did not surface. */
@@ -128,6 +129,11 @@ export type SessionDiscoveryQuery = {
   readonly root?: string;
   readonly limit?: number;
   readonly cursor?: string;
+  /** Exact product session ids. Does not imply cwd or project exclusion. */
+  readonly excludeSessionIds?: readonly string[];
+  /** Exact source files after normalization and containment in the discovery root. */
+  readonly excludeSourcePaths?: readonly string[];
+  /** Explicit source-directory exclusion. Never applied to session cwd. */
   readonly excludeRoots?: readonly string[];
   readonly signal?: AbortSignal;
   /** Rebuild the current root's in-memory summary index. */

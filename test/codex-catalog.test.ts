@@ -7,6 +7,43 @@ import { DatabaseSync } from "node:sqlite";
 import { readCodexGlobalState } from "../src/products/codex/global-state.js";
 import { readCodexCatalog } from "../src/products/codex/catalog.js";
 import { groupSessionsByProject } from "../src/tui/pages/intake.js";
+import { classifyCodexProject } from "../src/products/codex/project-attribution.js";
+import { catalogProjectKey, isUnknownProjectKey, sessionGroupingKey, sessionProjectKey } from "../src/products/shared/session-project.js";
+
+test("Codex project attribution prefers assignment and keeps unknown projects", () => {
+  const projectsById = new Map([["reprise", { id: "reprise", rootPaths: ["C:\\Users\\demo\\Reprise"] }]]);
+  const assigned = classifyCodexProject({
+    threadId: "t1",
+    assignment: "reprise",
+    sqliteProjectId: "other",
+    cwd: "C:\\Users\\demo\\Reprise\\src",
+    projectless: new Set(),
+    projectsById,
+  });
+  assert.equal(assigned.evidence, "assignment");
+  assert.equal(assigned.classification, "project");
+  assert.equal(assigned.projectRoot, "C:\\Users\\demo\\Reprise");
+  const unknown = classifyCodexProject({
+    threadId: "t2",
+    assignment: "missing",
+    projectless: new Set(),
+    projectsById,
+  });
+  assert.equal(unknown.classification, "unknown");
+  assert.equal(unknown.evidence, "assignment");
+  const outside = classifyCodexProject({
+    threadId: "t3",
+    projectless: new Set(["t3"]),
+    cwd: "C:\\Users\\demo\\Reprise",
+    projectsById,
+  });
+  assert.equal(outside.classification, "projectless");
+  const key = catalogProjectKey("codex", "C:\\Users\\demo\\Reprise", "reprise");
+  assert.equal(key, sessionProjectKey("codex", "c:/users/demo/reprise"));
+  assert.equal(sessionGroupingKey({
+    productId: "codex", sessionId: "rollout", cwd: "C:\\Users\\demo\\Reprise\\src", availability: "unindexed",
+  }, new Map([["c:/users/demo/reprise", key]])), key);
+});
 
 test("Codex global state reader validates malformed state and preserves projectless ids", async () => {
   const root = await mkdtemp(join(tmpdir(), "reprise-global-state-"));
@@ -123,6 +160,49 @@ test("projectless provenance overrides a transcript cwd during grouping", () => 
   assert.equal(projects[0]?.label, "Projectless sessions");
 });
 
+test("Codex assignment wins over empty sqlite project_id and uses the shared project key", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-codex-assignment-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const db = new DatabaseSync(join(root, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT NOT NULL, cwd TEXT, project_id TEXT)");
+  db.prepare("INSERT INTO threads VALUES (?, ?, ?)").run("11111111-2222-4333-8444-555555555555", "C:\\demo", null);
+  db.close();
+  await writeFile(join(root, ".codex-global-state.json"), JSON.stringify({
+    "local-projects": { reprise: { id: "reprise", name: "reprise开发", rootPaths: ["C:\\Users\\demo\\Reprise"] } },
+    "thread-project-assignments": { "11111111-2222-4333-8444-555555555555": { projectId: "reprise" } },
+  }));
+  const catalog = await readCodexCatalog({ codexHome: root });
+  assert.equal(catalog.sessions[0]?.cwd, "C:\\Users\\demo\\Reprise");
+  assert.equal(catalog.sessions[0]?.sourceKind, "catalog-only");
+  const grouped = groupSessionsByProject(catalog.sessions, [{
+    key: catalogProjectKey("codex", "C:\\Users\\demo\\Reprise", "reprise"),
+    label: "reprise开发",
+    path: "C:\\Users\\demo\\Reprise",
+  }]);
+  assert.equal(grouped[0]?.label, "reprise开发");
+  assert.equal(grouped[0]?.key, catalogProjectKey("codex", "C:\\Users\\demo\\Reprise", "reprise"));
+});
+
+test("Codex assignment to an unknown project keeps the session as unknown", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-codex-unknown-project-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const db = new DatabaseSync(join(root, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT NOT NULL, cwd TEXT)");
+  db.prepare("INSERT INTO threads VALUES (?, ?)").run("11111111-2222-4333-8444-555555555555", "C:\\demo");
+  db.close();
+  await writeFile(join(root, ".codex-global-state.json"), JSON.stringify({
+    "thread-project-assignments": { "11111111-2222-4333-8444-555555555555": { projectId: "missing" } },
+  }));
+  const catalog = await readCodexCatalog({ codexHome: root });
+  assert.equal(catalog.sessions.length, 1);
+  assert.equal(catalog.sessions[0]?.sourceKind, "unknown");
+  const grouped = groupSessionsByProject(catalog.sessions);
+  const unknown = grouped.find((project) => isUnknownProjectKey(project.key));
+  assert.equal(unknown?.label, "Unknown project");
+  assert.equal(unknown?.sessions.length, 1);
+});
+
+
 
 test("Codex catalog degrades corrupt and unsupported SQLite schemas without throwing", async (t) => {
   const corruptRoot = await mkdtemp(join(tmpdir(), "reprise-codex-sqlite-corrupt-"));
@@ -161,3 +241,23 @@ test("Codex catalog keeps unsafe rollout paths visible as catalog-only", async (
   assert.equal(catalog.sessions.every((session) => session.availability === "catalog-only"), true);
   assert.equal(catalog.diagnostics.filter((diagnostic) => diagnostic.code === "source-missing").length, 3);
 });
+
+test("Codex catalog accepts Windows extended rollout paths that stay inside sessions root", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-codex-extended-path-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const sessionsRoot = join(root, "sessions");
+  await mkdir(sessionsRoot);
+  const file = join(sessionsRoot, "rollout-extended.jsonl");
+  await writeFile(file, `${JSON.stringify({ type: "session_meta", payload: { id: "11111111-2222-4333-8444-555555555555" } })}\n`);
+  const stored = process.platform === "win32" ? `\\\\?\\${file}` : file;
+  const db = new DatabaseSync(join(root, "state_5.sqlite"));
+  db.exec("CREATE TABLE threads (id TEXT NOT NULL, rollout_path TEXT)");
+  db.prepare("INSERT INTO threads VALUES (?, ?)").run("11111111-2222-4333-8444-555555555555", stored);
+  db.close();
+  const catalog = await readCodexCatalog({ codexHome: root, sessionsRoot });
+  assert.equal(catalog.sessions[0]?.availability, "indexed");
+  assert.equal(catalog.sessions[0]?.evidenceLevel, "transcript");
+  assert.equal(catalog.diagnostics.some((diagnostic) => diagnostic.code === "source-missing"), false);
+  assert.ok(catalog.sessions[0]?.sourcePath && !catalog.sessions[0].sourcePath.includes(".catalog"));
+});
+

@@ -1,14 +1,15 @@
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, lstatSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { SAFE_ID } from '../../core/identity.js';
-import { pathContainedBy } from '../../core/paths.js';
-import { text } from '../../core/json.js';
+import { isFsAbsolute, pathContainedBy, stripWindowsExtendedPrefix } from '../../core/paths.js';
+import { isRecord, record, text } from '../../core/json.js';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { DiscoveryDiagnostic, SessionSummary } from '../contract.js';
 import { readCodexGlobalState, type CodexGlobalState } from './global-state.js';
+import { classifyCodexProject } from './project-attribution.js';
 
 export type CodexCatalogOptions = { readonly codexHome?: string; readonly sessionsRoot?: string };
 export type CodexCatalog = { readonly sessions: readonly SessionSummary[]; readonly projects: readonly CodexCatalogProject[]; readonly diagnostics: readonly DiscoveryDiagnostic[] };
@@ -80,43 +81,80 @@ function catalogSummary(row: SqlRow, sessionsRoot: string, global: CodexGlobalSt
     diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: 'state_5.sqlite' });
     return [];
   }
-  const rolloutPath = safeRolloutPath(text(row.rollout_path), sessionsRoot);
+  const candidate = safeRolloutPath(text(row.rollout_path), sessionsRoot);
+  const rolloutPath = candidate && peekCodexSessionId(candidate) === id ? candidate : undefined;
   if (text(row.rollout_path) && !rolloutPath) diagnostics.push({ code: 'source-missing', count: 1, samplePath: 'state_5.sqlite' });
   const assigned = global.assignments[id];
   const databaseProject = text(row.project_id);
   const workspaceHint = global.workspaceHints[id];
   const rowCwd = text(row.cwd);
-  const project = assigned ? global.projectsById.get(assigned) : databaseProject ? global.projectsById.get(databaseProject) : undefined;
-  const projectRoot = project?.rootPaths[0];
+  const attribution = classifyCodexProject({
+    threadId: id,
+    projectless: global.projectless,
+    projectsById: global.projectsById,
+    ...(assigned ? { assignment: assigned } : {}),
+    ...(databaseProject ? { sqliteProjectId: databaseProject } : {}),
+    ...(workspaceHint ? { workspaceHint } : {}),
+    ...(rowCwd ? { cwd: rowCwd } : {}),
+  });
   if (assigned && databaseProject && assigned !== databaseProject) diagnostics.push({ code: 'conflicting-project-source', count: 1, samplePath: 'state_5.sqlite' });
-  if (projectRoot && workspaceHint && !pathContainedBy(projectRoot, workspaceHint) && !pathContainedBy(workspaceHint, projectRoot)) diagnostics.push({ code: 'conflicting-project-source', count: 1, samplePath: '.codex-global-state.json' });
-  if (projectRoot && rowCwd && !pathContainedBy(projectRoot, rowCwd)) diagnostics.push({ code: 'conflicting-project-source', count: 1, samplePath: 'state_5.sqlite' });
-  const cwd = projectRoot ?? workspaceHint ?? rowCwd;
-  const projectless = global.projectless.has(id) || (!project && !cwd);
+  if (attribution.projectRoot && workspaceHint && !pathContainedBy(attribution.projectRoot, workspaceHint) && !pathContainedBy(workspaceHint, attribution.projectRoot)) {
+    diagnostics.push({ code: 'conflicting-project-source', count: 1, samplePath: '.codex-global-state.json' });
+  }
+  if (attribution.projectRoot && rowCwd && !pathContainedBy(attribution.projectRoot, rowCwd)) {
+    diagnostics.push({ code: 'conflicting-project-source', count: 1, samplePath: 'state_5.sqlite' });
+  }
+  const cwd = attribution.projectRoot ?? workspaceHint ?? rowCwd;
   const sourcePath = rolloutPath ?? join(sessionsRoot, '.catalog', `${id}.jsonl`);
   const createdAt = instant(row.created_at);
   const updatedAt = instant(row.updated_at) ?? createdAt;
+  const sourceKind = attribution.classification === 'projectless'
+    ? 'projectless'
+    : attribution.classification === 'unknown' ? 'unknown' : rolloutPath ? 'catalog+transcript' : 'catalog-only';
   return [{
     productId: 'codex', sessionId: id, sourcePath,
     ...(createdAt ? { startedAt: createdAt, startedAtSource: 'event' as const } : {}),
     ...(updatedAt ? { updatedAt, updatedAtSource: 'event' as const } : {}),
     ...(cwd ? { cwd } : {}), ...(text(row.model) ? { model: text(row.model) } : {}),
     ...(text(row.title) || text(row.preview) ? { summary: text(row.title) ?? text(row.preview) } : {}),
-    partial: true, evidenceLevel: 'history',
-    // The catalog path is only a candidate until the rollout metadata confirms the same session id.
-    sourceKind: projectless ? 'projectless' : 'catalog-only',
-    availability: 'catalog-only',
+    partial: true, ...(rolloutPath ? { evidenceLevel: 'transcript' as const } : {}),
+    sourceKind,
+    availability: rolloutPath ? 'indexed' : 'catalog-only',
     signals: { userMessages: Number(row.has_user_event) > 0 ? 1 : 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
   } as SessionSummary];
 }
 
 function safeRolloutPath(value: string | undefined, sessionsRoot: string): string | undefined {
   if (!value) return undefined;
-  const resolved = resolve(sessionsRoot, value);
-  const rel = relative(sessionsRoot, resolved);
-  if (rel === '..' || rel.startsWith(`..${resolved.includes('\\') ? '\\' : '/'}`) || isAbsolute(rel)) return undefined;
-  try { if (!lstatSync(resolved).isFile() || resolve(realpathSync(resolved)) !== resolve(realpathSync(sessionsRoot), relative(sessionsRoot, resolved))) return undefined; } catch { return undefined; }
-  return resolved;
+  const stripped = stripWindowsExtendedPrefix(value);
+  const resolved = isFsAbsolute(stripped) ? stripped : resolve(sessionsRoot, stripped);
+  if (!pathContainedBy(sessionsRoot, resolved)) return undefined;
+  try {
+    if (!lstatSync(resolved).isFile()) return undefined;
+    const realFile = stripWindowsExtendedPrefix(realpathSync(resolved));
+    const realRoot = stripWindowsExtendedPrefix(realpathSync(sessionsRoot));
+    if (!pathContainedBy(realRoot, realFile)) return undefined;
+    return realFile;
+  } catch {
+    return undefined;
+  }
+}
+
+function peekCodexSessionId(path: string): string | undefined {
+  try {
+    const head = readFileSync(path, 'utf8').slice(0, 256 * 1024);
+    for (const line of head.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let parsed: unknown;
+      try { parsed = JSON.parse(line); } catch { continue; }
+      if (!isRecord(parsed) || text(parsed.type) !== 'session_meta') continue;
+      const id = text(record(parsed.payload).id);
+      if (id && SAFE_ID.test(id)) return id;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 function instant(value: unknown): string | undefined {
   const number = typeof value === 'number' ? value : Number(value);

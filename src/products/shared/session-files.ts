@@ -215,7 +215,10 @@ export async function forEachJsonlSummaryLine(path: string, product: string, opt
 }
 
 export async function readSessionFile(path: string, product: string, maxBytes: number): Promise<Buffer> {
-  const info = await stat(path);
+  let info;
+  try { info = await stat(path); } catch (error) {
+    throw new Error(`${product} session cannot be read: ${path}`, { cause: error });
+  }
   if (!info.isFile()) throw new Error(`${product} session is not a file: ${path}`);
   if (info.size > maxBytes) throw new Error(`${product} session exceeds the ${maxBytes / 1024 / 1024} MiB inspection limit: ${path}`);
   return readFile(path);
@@ -256,6 +259,8 @@ export type DiscoverSessionPageInput = {
   /** Optional safe list-level fallback for files exceeding the complete-summary limits. */
   readonly inspectPartial?: (entry: SessionFileEntry, signal: AbortSignal | undefined) => Promise<SessionSummary>;
   readonly exclude?: (session: SessionSummary) => boolean;
+  /** Keep a list row when summary/inspect fails so damaged sources stay visible. */
+  readonly failedSummary?: (entry: SessionFileEntry, code: DiscoveryDiagnosticCode) => SessionSummary;
 };
 
 /** Builds a bounded, product-neutral summary index before applying globally ordered cursor pages. */
@@ -267,11 +272,13 @@ export async function discoverSessionPage(input: DiscoverSessionPageInput): Prom
   const cursor = decodeCursor(input.cursor, root, fingerprint);
   const indexDiagnostics = new DiscoveryDiagnostics(input.diagnostics, input.root);
   const cacheKey = input.cacheKey ? `${input.cacheKey}\0${root}` : undefined;
-  const indexed = await loadSummaryIndex(input.ranked, input.inspect, input.inspectPartial, input.signal, cacheKey, input.refresh);
+  const indexed = await loadSummaryIndex(input.ranked, input.inspect, input.inspectPartial, input.signal, cacheKey, input.refresh, input.failedSummary);
   const summaries: SessionSummary[] = [];
   for (const result of indexed) {
-    if (result.errorCode) indexDiagnostics.add(result.errorCode, result.entry.path);
-    else if (result.session && input.exclude?.(result.session)) indexDiagnostics.add('excluded', result.entry.path);
+    if (result.errorCode) {
+      indexDiagnostics.add(result.errorCode, result.entry.path);
+      if (result.session && !input.exclude?.(result.session)) summaries.push(result.session);
+    } else if (result.session && input.exclude?.(result.session)) indexDiagnostics.add('excluded', result.entry.path);
     else if (result.session) summaries.push(result.session);
   }
   summaries.sort(compareSessionSummaries);
@@ -298,6 +305,7 @@ async function loadSummaryIndex(
   signal: AbortSignal | undefined,
   cacheKey: string | undefined,
   refresh: boolean | undefined,
+  failedSummary: ((entry: SessionFileEntry, code: DiscoveryDiagnosticCode) => SessionSummary) | undefined,
 ): Promise<readonly IndexedSession[]> {
   if (cacheKey && refresh) summaryIndexCache.delete(cacheKey);
   const cached = cacheKey ? summaryIndexCache.get(cacheKey) : undefined;
@@ -313,7 +321,7 @@ async function loadSummaryIndex(
         return old;
       }
       discoveryCacheReread += 1;
-      return indexSessionSummary(entry, inspect, inspectPartial, signal);
+      return indexSessionSummary(entry, inspect, inspectPartial, signal, failedSummary);
     }));
     for (const result of results) current.set(result.entry.path, result);
   }
@@ -321,7 +329,13 @@ async function loadSummaryIndex(
   return [...current.values()];
 }
 
-async function indexSessionSummary(entry: SessionFileEntry, inspect: (entry: SessionFileEntry) => Promise<SessionSummary>, inspectPartial: ((entry: SessionFileEntry, signal: AbortSignal | undefined) => Promise<SessionSummary>) | undefined, signal: AbortSignal | undefined): Promise<IndexedSession> {
+async function indexSessionSummary(
+  entry: SessionFileEntry,
+  inspect: (entry: SessionFileEntry) => Promise<SessionSummary>,
+  inspectPartial: ((entry: SessionFileEntry, signal: AbortSignal | undefined) => Promise<SessionSummary>) | undefined,
+  signal: AbortSignal | undefined,
+  failedSummary: ((entry: SessionFileEntry, code: DiscoveryDiagnosticCode) => SessionSummary) | undefined,
+): Promise<IndexedSession> {
   try {
     return { entry, session: await inspect(entry) };
   } catch (error) {
@@ -331,11 +345,21 @@ async function indexSessionSummary(entry: SessionFileEntry, inspect: (entry: Ses
       catch (partialError) {
         if (isAbortError(partialError)) throw partialError;
         recordDiscoveryDetail(partialError);
+        return failedIndex(entry, error, failedSummary);
       }
     }
     recordDiscoveryDetail(error);
-    return { entry, errorCode: discoveryErrorCode(error) };
+    return failedIndex(entry, error, failedSummary);
   }
+}
+
+function failedIndex(
+  entry: SessionFileEntry,
+  error: unknown,
+  failedSummary: ((entry: SessionFileEntry, code: DiscoveryDiagnosticCode) => SessionSummary) | undefined,
+): IndexedSession {
+  const errorCode = discoveryErrorCode(error);
+  return { entry, errorCode, ...(failedSummary ? { session: failedSummary(entry, errorCode) } : {}) };
 }
 
 function cacheSummaryIndex(cacheKey: string, indexed: Map<string, IndexedSession>): void {

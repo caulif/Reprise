@@ -21,6 +21,7 @@ test('sessions group by workspace basename and send missing cwd to 其他', () =
   ]);
   assert.equal(grouped[0]?.label, 'blog');
   assert.equal(grouped.find((item) => item.label === 'notes')?.sessions.length, 2);
+  assert.equal(grouped.find((item) => item.key === 'projectless')?.sessions.length, 0);
   assert.equal(grouped.at(-1)?.label, 'Unknown project');
   assert.equal(projectLabel('C:\\Users\\example\\slides'), 'slides');
 });
@@ -31,6 +32,15 @@ test('unindexed rollouts stay in projectless even when transcript cwd is present
   ]);
   assert.equal(grouped.length, 1);
   assert.equal(grouped[0]?.key, 'projectless');
+});
+
+test('unindexed rollouts join a catalog project when cwd is under that root', () => {
+  const grouped = groupSessionsByProject(
+    [{ ...session('unindexed', 'C:\\work\\notes\\app', '2026-08-13T01:00:00.000Z', 'Loose rollout'), availability: 'unindexed', sourceKind: 'rollout-only' }],
+    [{ key: 'codex\0c:/work/notes', label: 'notes', path: 'C:\\work\\notes' }],
+  );
+  assert.equal(grouped[0]?.key, 'codex\0c:/work/notes');
+  assert.equal(grouped[0]?.sessions.length, 1);
 });
 
 test('project grouping keeps products and unknown workspaces isolated', () => {
@@ -58,7 +68,7 @@ test('duplicate project basenames keep the parent directory', () => {
     session('a', 'C:\\work\\notes', '2026-08-13T01:00:00.000Z', 'One'),
     session('b', 'C:\\home\\notes', '2026-08-13T02:00:00.000Z', 'Two'),
   ]);
-  assert.deepEqual(grouped.map((item) => item.label).sort(), ['home/notes', 'work/notes']);
+  assert.deepEqual(grouped.map((item) => item.label).sort(), ['Projectless sessions', 'home/notes', 'work/notes']);
 });
 
 test('inspection freezes the whole session from the first user message', () => {
@@ -146,7 +156,7 @@ test('project grouping canonicalizes only absolute workspaces and never merges r
     session('relative-a', 'work/notes', '2026-08-13T03:00:00.000Z', 'Relative A'),
     session('relative-b', 'work/notes', '2026-08-13T04:00:00.000Z', 'Relative B'),
   ]);
-  assert.equal(grouped.length, 3);
+  assert.equal(grouped.length, 4);
   assert.equal(grouped.find((item) => item.sessions.some((entry) => entry.sessionId === 'absolute-a'))?.sessions.length, 2);
   assert.equal(grouped.filter((item) => item.label === 'Unknown project').length, 2);
 });
@@ -156,5 +166,5 @@ test('project grouping disambiguates duplicate workspace basenames with parent p
     session('alpha', 'C:/work/alpha/app', '2026-08-13T01:00:00.000Z', 'Alpha'),
     session('beta', 'C:/work/beta/app', '2026-08-13T02:00:00.000Z', 'Beta'),
   ]);
-  assert.deepEqual(grouped.map((project) => project.label).sort(), ['alpha/app', 'beta/app']);
+  assert.deepEqual(grouped.map((project) => project.label).sort(), ['Projectless sessions', 'alpha/app', 'beta/app']);
 });

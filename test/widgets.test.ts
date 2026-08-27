@@ -455,6 +455,7 @@ test('regular density paints an intake preview beside the list', () => {
   }, 16).join('\n');
   assert.match(text, /Preview/);
   assert.match(text, /Fix the regression/);
+  assert.match(text, /Updated/);
   assert.equal((text.match(/┌─/g) ?? []).length, 2);
 });
 
@@ -475,6 +476,51 @@ test('intake lists honor their injected render clock', () => {
   const sessions = renderSessions(theme, 90, { ...base, level: 'sessions' }, 16).join('\n');
   assert.match(projects, /4d ago/);
   assert.match(sessions, /4d ago/);
+});
+
+test('project catalog title counts projects, sessions, projectless, and unreadable', () => {
+  const theme = createTheme(120, false);
+  const startedAt = '2026-08-12T21:40:00.000Z';
+  const readable = {
+    productId: 'codex', sessionId: 'ok', sourcePath: 'ok.jsonl', startedAt, cwd: 'C:/work/app',
+    summary: 'Keep going', signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
+  };
+  const missing = {
+    productId: 'codex', sessionId: 'gone', sourcePath: 'gone.jsonl', startedAt, cwd: 'C:/work/app',
+    summary: 'Missing transcript', availability: 'catalog-only' as const,
+    signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
+  };
+  const text = renderSessions(theme, 120, {
+    level: 'projects',
+    projects: [
+      { key: 'codex\0c:/work/app', label: 'app', path: 'C:/work/app', sessions: [readable, missing], latestAt: startedAt },
+      { key: 'empty', label: 'Empty', path: 'C:/work/empty', sessions: [], latestAt: '' },
+      { key: 'projectless', label: 'Projectless sessions', sessions: [], latestAt: '' },
+    ],
+    sessions: [],
+    selected: 1,
+    filterEligible: false,
+    query: '',
+    searching: false,
+  }, 16).join('\n');
+  assert.match(text, /3 projects \/ 2 sessions \/ 0 projectless \/ 1 unreadable/);
+  assert.match(text, /0 sessions/);
+  assert.match(text, /Empty/);
+});
+
+test('project catalog shows a loading catalog state', () => {
+  const theme = createTheme(90, false);
+  const text = renderSessions(theme, 90, {
+    level: 'projects',
+    projects: [{ key: 'projectless', label: 'Projectless sessions', sessions: [], latestAt: '' }],
+    sessions: [],
+    selected: 0,
+    filterEligible: false,
+    query: '',
+    searching: false,
+    discoveryStatus: 'loading',
+  }, 12).join('\n');
+  assert.match(text, /reading local session catalog/);
 });
 
 test('relative time follows the workbench locale', () => {

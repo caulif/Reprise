@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { isEligibleSession } from '../src/products/contract.js';
 import { claudeSessionAdapter } from '../src/products/claude-code/sessions.js';
 
-const summaries = await claudeSessionAdapter.discover({ limit: 30, excludeRoots: [process.cwd()] });
+const summaries = await claudeSessionAdapter.discover({ limit: 30 });
 const rows = [];
 for (const session of summaries.items) {
   const cwd = session.cwd;

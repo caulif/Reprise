@@ -4,6 +4,7 @@ import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import type { CodexExperimentResult } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { freezeCase } from '../products/shared/freeze.js';
+import { importVerifiedSession } from '../products/shared/session-recovery.js';
 import { errorMessage } from './format.js';
 import { t, type Locale } from './i18n.js';
 import { projectLabel } from './pages/intake.js';
@@ -72,12 +73,8 @@ export async function freeze(
     const session = c.inspection ?? c.sessions.find((item) => item.sourcePath === sourcePath);
     const pack = c.packs.find((item) => item.manifest.productId === session?.productId);
     if (!pack) throw new Error(`No Product Pack is registered for session ${session?.productId ?? 'unknown'}.`);
-    if (session?.availability === 'catalog-only') throw new Error('Selected session has catalog metadata but no readable transcript.');
-    const imported = await pack.sessions.import({
-      productId: pack.manifest.productId,
-      sessionId: session?.sessionId ?? 'session',
-      sourcePath,
-    });
+    if (!session) throw new Error('Selected session is no longer available.');
+    const imported = await importVerifiedSession(pack.sessions, session, sourcePath);
     const result = await freezeCase(imported, join(c.dataDir, 'cases'), c.privacy, c.now(), {
       ...(input.initialMessageId ? { initialMessageId: input.initialMessageId } : {}),
       reuseExisting: true,

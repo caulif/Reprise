@@ -1,11 +1,12 @@
 import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { pathContainedBy } from '../../core/paths.js';
 import { SAFE_ID } from '../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
 import { runProcess } from '../../infrastructure/process-runner.js';
 import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, SessionDiscoveryError, parseJsonlRows, readSessionFile, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
+import { isExcludedSession } from '../shared/session-exclusion.js';
+import { catalogProjectKey } from '../shared/session-project.js';
 import type { TaskCase } from '../../core/schema.js';
 import {
   type ImportedSession,
@@ -20,6 +21,7 @@ import {
   type SessionSummary,
 } from '../contract.js';
 import { freezeCase, redactText } from '../shared/freeze.js';
+import { assertTranscriptSessionId, isSyntheticCatalogSource, unreadableSessionSummary } from '../shared/session-recovery.js';
 import { readCodexCatalog } from './catalog.js';
 
 export type CodexSessionSummary = SessionSummary;
@@ -49,34 +51,61 @@ async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<S
     cacheKey: 'codex', ...(query.refresh ? { refresh: true } : {}), diagnostics: listing.diagnostics,
     inspect: (entry) => summarizeCodexSession(entry, query.signal),
     inspectPartial: (entry, signal) => summarizeCodexSessionHead(entry, signal),
-    exclude: (session) => excludedCwd(session.cwd, query.excludeRoots),
+    exclude: (session) => isExcludedSession(session, query, [root]),
+    failedSummary: (entry) => unreadableSessionSummary('codex', entry),
   });
   if (query.cursor) return rolloutPage;
   const catalog = await catalogPromise!;
-  const merged = mergeCodexSources(rolloutPage.items, catalog.sessions, query.excludeRoots);
+  const duplicates: { count: number } = { count: 0 };
+  const merged = mergeCodexSources(rolloutPage.items, catalog.sessions, (session) => isExcludedSession(session, query, [root]), duplicates);
   return { ...rolloutPage, items: merged, scanned: Math.max(rolloutPage.scanned, merged.length),
     skipped: rolloutPage.skipped,
-    diagnostics: [...rolloutPage.diagnostics, ...catalog.diagnostics],
-    ...(catalog.projects.length ? { projects: catalog.projects.map((project): SessionDiscoveryProject => ({ key: `codex\0${(project.rootPaths[0] ?? '').replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase()}`, label: project.name, ...(project.rootPaths[0] ? { path: project.rootPaths[0] } : {}) })) } : {}) };
+    diagnostics: [
+      ...rolloutPage.diagnostics,
+      ...catalog.diagnostics,
+      ...(duplicates.count ? [{ code: 'duplicate-source' as const, count: duplicates.count }] : []),
+    ],
+    ...(catalog.projects.length ? { projects: catalog.projects.map((project): SessionDiscoveryProject => ({
+      key: catalogProjectKey('codex', project.rootPaths[0], project.id),
+      label: project.name,
+      ...(project.rootPaths[0] ? { path: project.rootPaths[0] } : {}),
+    })) } : {}) };
 }
 
-function mergeCodexSources(rollouts: readonly CodexSessionSummary[], catalog: readonly CodexSessionSummary[], excludeRoots: readonly string[] | undefined): CodexSessionSummary[] {
+function mergeCodexSources(
+  rollouts: readonly CodexSessionSummary[],
+  catalog: readonly CodexSessionSummary[],
+  excluded: (session: CodexSessionSummary) => boolean,
+  duplicates: { count: number },
+): CodexSessionSummary[] {
   const byId = new Map<string, CodexSessionSummary>();
-  for (const session of catalog) if (!excludedCwd(session.cwd, excludeRoots)) byId.set(session.sessionId, session);
+  for (const session of catalog) if (!excluded(session)) byId.set(session.sessionId, session);
   for (const session of rollouts) {
-    if (excludedCwd(session.cwd, excludeRoots)) continue;
+    if (excluded(session)) continue;
     const indexed = byId.get(session.sessionId);
+    if (indexed && indexed.availability !== 'catalog-only' && indexed.sourcePath !== session.sourcePath) {
+      duplicates.count += 1;
+      if (sessionRecency(indexed) > sessionRecency(session)) continue;
+    }
     const { partial: _catalogPartial, ...catalogBase } = indexed ?? {};
     const cwd = session.cwd ?? indexed?.cwd;
-    // An unindexed rollout has no trustworthy Desktop project assignment. Keep it in
-    // the explicit projectless bucket instead of inventing a project from cwd alone.
-    const projectless = indexed?.sourceKind === 'projectless' || !indexed || !cwd;
-    // Preserve rollout-only provenance; TUI groups unindexed entries projectlessly via availability.
-    const sourceKind = indexed ? (projectless ? 'projectless' : 'catalog+transcript') : 'rollout-only';
+    const sourceKind = indexed
+      ? indexed.sourceKind === 'projectless' || indexed.sourceKind === 'unknown'
+        ? indexed.sourceKind
+        : 'catalog+transcript'
+      : 'rollout-only';
+    const evidenceLevel = session.availability === 'unreadable' ? session.evidenceLevel : 'transcript';
     byId.set(session.sessionId, { ...catalogBase, ...session, ...(cwd ? { cwd } : {}),
-      sourceKind, availability: indexed ? 'indexed' : 'unindexed', evidenceLevel: 'transcript', ...(session.partial !== undefined ? { partial: session.partial } : {}) });
+      sourceKind, availability: indexed ? 'indexed' : session.availability === 'unreadable' ? 'unreadable' : 'unindexed',
+      ...(evidenceLevel ? { evidenceLevel } : {}),
+      ...(session.partial !== undefined ? { partial: session.partial } : {}) });
   }
   return [...byId.values()].sort(compareCodexSummaries);
+}
+
+function sessionRecency(session: CodexSessionSummary): number {
+  const value = Date.parse(session.updatedAt ?? session.startedAt ?? '');
+  return Number.isFinite(value) ? value : 0;
 }
 function compareCodexSummaries(left: CodexSessionSummary, right: CodexSessionSummary): number {
   const leftTime = Date.parse(left.updatedAt ?? left.startedAt ?? ''); const rightTime = Date.parse(right.updatedAt ?? right.startedAt ?? '');
@@ -187,20 +216,25 @@ export const codexSessionAdapter: SessionSourceAdapter = {
   discover(query?: SessionDiscoveryQuery) {
     return discoverCodexSessionPage({ ...query, root: query?.root ?? defaultCodexSessionsRoot() });
   },
-  inspect(ref: SessionRef) {
+  async inspect(ref: SessionRef) {
     if (!ref.sourcePath) throw new Error('Codex session inspect requires a sourcePath.');
-    return inspectCodexSession(ref.sourcePath);
+    if (isSyntheticCatalogSource(ref.sourcePath)) {
+      throw new Error('Selected session has catalog metadata but no readable transcript.');
+    }
+    const inspection = await inspectCodexSession(ref.sourcePath);
+    assertTranscriptSessionId(ref.sessionId, inspection.sessionId);
+    return inspection;
   },
-  import(ref: SessionRef) {
+  async import(ref: SessionRef) {
     if (!ref.sourcePath) throw new Error('Codex session import requires a sourcePath.');
-    return importCodexSession(ref.sourcePath);
+    if (isSyntheticCatalogSource(ref.sourcePath)) {
+      throw new Error('Selected session has catalog metadata but no readable transcript.');
+    }
+    const imported = await importCodexSession(ref.sourcePath);
+    assertTranscriptSessionId(ref.sessionId, imported.source.sessionId);
+    return imported;
   },
 };
-
-function excludedCwd(cwd: string | undefined, roots: readonly string[] | undefined): boolean {
-  if (!cwd || !roots?.length) return false;
-  return roots.some((root) => pathContainedBy(root, cwd));
-}
 
 function inspectionFromRows(sourcePath: string, rows: readonly JsonRecord[]): CodexSessionInspection {
   const metadata = metadataFrom(rows);

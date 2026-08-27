@@ -9,6 +9,7 @@ import { resolvedRecoveryFacts } from '../src/infrastructure/recovery-tools.js';
 import type { TargetRunner } from '../src/core/runtime.js';
 import { isEligibleSession, type TargetActivity } from '../src/products/contract.js';
 import { freezeCase } from '../src/products/shared/freeze.js';
+import { freezeBlockedReason, importVerifiedSession } from '../src/products/shared/session-recovery.js';
 import { claudeCodeProductPack, checkClaudeAuth } from '../src/products/claude-code/pack.js';
 import { claudeActivityTranslator } from '../src/products/claude-code/activity.js';
 import {
@@ -182,9 +183,16 @@ test('Claude history-only sessions enter the same inspect, freeze, and recovery 
   const history = page.items.find((item) => item.sessionId === historyOnlyId);
   assert.ok(history);
   assert.equal(history.evidenceLevel, 'history');
+  assert.equal(history.availability, 'catalog-only');
   assert.equal(history.signals.completedTurns, 0);
   assert.equal(isEligibleSession(history), true);
   assert.match(history.sourcePath, /#reprise-history=/);
+  assert.equal(freezeBlockedReason(history), 'history-only');
+  await assert.rejects(
+    importVerifiedSession(claudeSessionAdapter, history, history.sourcePath),
+    /history-only/,
+  );
+  assert.equal(freezeBlockedReason(transcript), undefined);
 
   const inspection = await claudeSessionAdapter.inspect({ productId: 'claude-code', sessionId: history.sessionId, sourcePath: history.sourcePath });
   assert.equal(inspection.evidenceLevel, 'history');
@@ -218,7 +226,7 @@ test('Claude default root honors an explicit config directory without reading cr
   assert.equal(defaultClaudeSessionsRoot('C:\\Users\\demo\\.claude-alt'), 'C:\\Users\\demo\\.claude-alt\\projects');
 });
 
-test('Claude discovery skips Reprise-owned cwd and import rejects a session with no end_turn', async (t) => {
+test('Claude discovery keeps a session whose cwd is excluded and still rejects incomplete freeze', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-claude-discover-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const owned = join(root, 'owned-workspace');
@@ -230,7 +238,7 @@ test('Claude discovery skips Reprise-owned cwd and import rejects a session with
     baseRow('assistant', other, { sessionId: incompleteId, message: { role: 'assistant', model: 'claude-fable-5', content: [{ type: 'text', text: 'Hi' }], stop_reason: 'tool_use' } }),
   ]);
   const found = await discoverClaudeSessions(root, 20, [owned]);
-  assert.equal(found.some((item) => item.cwd === owned), false);
+  assert.equal(found.some((item) => item.sessionId === SESSION_ID), true);
   assert.equal(found.some((item) => item.sessionId === incompleteId), true);
   const incomplete = found.find((item) => item.sessionId === incompleteId);
   assert.ok(incomplete);

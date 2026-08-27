@@ -4,9 +4,10 @@ import { stat } from 'node:fs/promises';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { SAFE_ID } from '../../core/identity.js';
-import { pathContainedBy } from '../../core/paths.js';
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
 import { discoverSessionPage, forEachJsonlSummaryLine, listJsonlFiles, SessionDiscoveryError, parseJsonlRows, readSessionFile, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
+import { isExcludedSession } from '../shared/session-exclusion.js';
+import { assertTranscriptSessionId, unreadableSessionSummary } from '../shared/session-recovery.js';
 import type {
   ImportDiagnostic,
   ImportedSession,
@@ -39,13 +40,17 @@ export const claudeSessionAdapter: SessionSourceAdapter = {
   discover(query?: SessionDiscoveryQuery) {
     return discoverClaudeSessionPage({ ...query, root: query?.root ?? defaultClaudeSessionsRoot() });
   },
-  inspect(ref: SessionRef) {
+  async inspect(ref: SessionRef) {
     if (!ref.sourcePath) throw new Error('Claude session inspect requires a sourcePath.');
-    return inspectClaudeSession(ref.sourcePath);
+    const inspection = await inspectClaudeSession(ref.sourcePath);
+    assertTranscriptSessionId(ref.sessionId, inspection.sessionId);
+    return inspection;
   },
-  import(ref: SessionRef) {
+  async import(ref: SessionRef) {
     if (!ref.sourcePath) throw new Error('Claude session import requires a sourcePath.');
-    return importClaudeSession(ref.sourcePath);
+    const imported = await importClaudeSession(ref.sourcePath);
+    assertTranscriptSessionId(ref.sessionId, imported.source.sessionId);
+    return imported;
   },
 };
 
@@ -74,7 +79,8 @@ async function discoverClaudeSessionPage(query: SessionDiscoveryQuery): Promise<
     ...(query.refresh ? { refresh: true } : {}),
     diagnostics: [...listing.diagnostics, ...history.diagnostics],
     inspect: (entry) => summarizeClaudeSource(entry, query.signal, history.entries),
-    exclude: (session) => excludedCwd(session.cwd, query.excludeRoots),
+    exclude: (session) => isExcludedSession(session, query, [root]),
+    failedSummary: (entry) => unreadableSessionSummary(PRODUCT_ID, entry),
   });
 }
 
@@ -190,7 +196,7 @@ async function summarizeClaudeHistorySession(sourcePath: string, sessionId: stri
     signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
     evidenceLevel: 'history',
     sourceKind: entry.cwd ? 'unknown' : 'projectless',
-    availability: 'unindexed',
+    availability: 'catalog-only',
   };
 }
 
@@ -496,11 +502,6 @@ function parseAssistantRow(row: JsonRecord, index: number): {
     }
   }
   return { messages: apiError ? [] : messages, assistantMessages: apiError ? 0 : assistantMessages, toolCalls, completedTurn, apiError, ...(model ? { model } : {}) };
-}
-
-function excludedCwd(cwd: string | undefined, roots: readonly string[] | undefined): boolean {
-  if (!cwd || !roots?.length) return false;
-  return roots.some((root) => pathContainedBy(root, cwd));
 }
 
 function startedAtFrom(imported: ImportedSession): string {

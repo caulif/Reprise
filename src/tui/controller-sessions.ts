@@ -1,9 +1,27 @@
 import { resolve } from "node:path";
 import type { CodexIntakeTui } from "./controller.js";
 import { compareSessionSummaries } from "../products/contract.js";
-import type { DiscoveryDiagnostic } from "../products/contract.js";
+import type { DiscoveryDiagnostic, SessionDiscoveryQuery } from "../products/contract.js";
 import { operatorErrorMessage } from "./format.js";
 import { t } from "./i18n.js";
+
+export function sessionDiscoveryQuery(input: {
+  readonly root: string;
+  readonly dataDir: string;
+  readonly signal?: AbortSignal;
+  readonly refresh?: boolean;
+  readonly excludeSessionIds?: readonly string[];
+  readonly excludeSourcePaths?: readonly string[];
+}): SessionDiscoveryQuery {
+  return {
+    root: input.root,
+    excludeRoots: [input.dataDir],
+    ...(input.excludeSessionIds?.length ? { excludeSessionIds: input.excludeSessionIds } : {}),
+    ...(input.excludeSourcePaths?.length ? { excludeSourcePaths: input.excludeSourcePaths } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
+    ...(input.refresh ? { refresh: true } : {}),
+  };
+}
 
 function mergeDiscoveryDiagnostics(
   previous: readonly DiscoveryDiagnostic[] | undefined,
@@ -50,12 +68,13 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
   c.productDiscovery.set(productId, { status: "loading", root, ...(state?.nextCursor ? { nextCursor: state.nextCursor } : {}) });
   c.render();
   try {
-    const discovered = await pack.sessions.discover({
+    const discovered = await pack.sessions.discover(sessionDiscoveryQuery({
       root,
-      excludeRoots: [c.dataDir, process.cwd()],
+      dataDir: c.dataDir,
       signal: abort.signal,
       ...(mode === "refresh" ? { refresh: true } : {}),
-    });
+      ...(c.runtimeSessionIds.length ? { excludeSessionIds: c.runtimeSessionIds } : {}),
+    }));
     const invalid = discovered.items.find((session) => session.productId !== productId);
     if (invalid) throw new Error(`Session adapter for ${productId} returned ${invalid.productId}.`);
     if (token !== c.generation || abort.signal.aborted) return;

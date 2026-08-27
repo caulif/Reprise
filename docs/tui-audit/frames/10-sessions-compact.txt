@@ -14,7 +14,8 @@ gpt-5.6-terra - medium   ! Harness key missing  o Codex  ...
 
  > [/] Search
  Choose a historical session. Enter freezes it and starts
-the isolated replay. 2 shown · 0 skipped. · 2 scanned
-Diagnostics: catalog-unavailable (1).
+the isolated replay. Loaded 1 projects and 2 sessions. 2
+shown · 0 skipped. · 2 scanned The catalog is complete; m
+does not paginate. Diagnostics: catalog-unavailable (1).
 ------------------------------------------------------------
  [↑↓] Select  [Enter] Start run  [/] Search

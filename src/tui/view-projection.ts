@@ -17,7 +17,7 @@ type Input = {
   readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
-  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean;
+  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error';
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: CodexExperimentPreflight | undefined; readonly recoveryAttempt?: RecoveryAttempt | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly preparePhase?: PreparePhase; readonly prepareDetail?: string;
@@ -110,6 +110,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     projects: input.intakeLevel === 'projects' ? input.visibleProjects : input.visibleProjects.filter((project) => project.key === input.activeProjectKey),
     sessions: input.visibleSessions, selected: input.selected, filterEligible: input.filterEligible,
     query: input.searchQuery, searchCursor: input.searchCursor, searching: input.searching,
+    ...(input.discoveryStatus ? { discoveryStatus: input.discoveryStatus } : {}),
     locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}),
   };
   if (input.page === 'sessions') return { ...base, sessions };

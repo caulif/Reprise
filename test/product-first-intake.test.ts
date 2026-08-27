@@ -46,6 +46,7 @@ function sessionPack(input: {
   defaultRoot: string;
   discover: (query?: SessionDiscoveryQuery) => ReturnType<ProductPack['sessions']['discover']>;
   importSession?: ProductPack['sessions']['import'];
+  inspectSession?: ProductPack['sessions']['inspect'];
 }): ProductPack {
   return {
     ...fakeProductPack,
@@ -55,7 +56,7 @@ function sessionPack(input: {
       ...fakeProductPack.sessions,
       defaultRoot: input.defaultRoot,
       discover: input.discover,
-      inspect: async () => { throw new Error('not used'); },
+      inspect: input.inspectSession ?? (async () => { throw new Error('not used'); }),
       import: input.importSession ?? (async () => { throw new Error('not used'); }),
     },
   };
@@ -236,7 +237,9 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
   const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [codex], privacy });
   await app.start();
   await app.loadProductSessions('codex');
-  assert.match(app.message, /1 shown · 2 skipped\./);
+  assert.match(app.message, /Loaded \d+ projects and 1 sessions/);
+  assert.match(app.message, /1 shown · 2 skipped/);
+  assert.match(app.message, /The catalog is complete; m does not paginate/);
   assert.match(app.message, /Diagnostics: invalid-jsonl \(1\), unreadable-directory \(1\)/);
   app.locale = 'zh';
   assert.match(app.sessionsMessage(), /已显示 1 条 · 已跳过 2 条/);
@@ -276,6 +279,14 @@ test('freeze imports through the session product pack', async (t) => {
         signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
       };
     },
+    inspectSession: async (ref) => ({
+      productId: 'claude-code',
+      sessionId: ref.sessionId,
+      sourcePath: ref.sourcePath ?? sourcePath,
+      signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
+      transcript: [{ id: 'user-1', role: 'user', text: 'Review this.' }],
+      evidenceLevel: 'transcript',
+    }),
   });
   const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [claude], privacy, now: () => '2026-08-15T00:00:00.000Z' });
   app.sessions = [{ ...summary('claude-code', 'claude-1', '2026-08-11T00:00:00.000Z'), sourcePath }];

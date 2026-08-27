@@ -10,6 +10,7 @@ Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   
 │❯ 4d ago      [unindexed] Fix the bug.                         u2 a1 t0      │ │ Project      source                  │
 │  4d ago      [unindexed] 修复这个回归缺陷并验证测试全部通过   u1 a1 t0      │ │ Session      session-                │
 │ 1/2                                                                         │ │ Started      2026-08-11 00:00        │
+│                                                                             │ │ Updated      2026-08-11 00:00        │
 │                                                                             │ │ Signals      u2 a1 t0                │
 │                                                                             │ │                                      │
 │                                                                             │ │ Status       [unindexed]             │
@@ -17,7 +18,7 @@ Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
 
  ❯ [/] Search
- Choose a historical session. Enter freezes it and starts the isolated replay. 2 shown · 0 skipped. · 2 scanned
-Diagnostics: catalog-unavailable (1).
+ Choose a historical session. Enter freezes it and starts the isolated replay. Loaded 1 projects and 2 sessions. 2 shown
+· 0 skipped. · 2 scanned The catalog is complete; m does not paginate. Diagnostics: catalog-unavailable (1).
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [↑↓] Select  [Enter] Start run  [/] Search  [m] All sessions loaded  [r] Refresh  [Backspace] Projects  [Esc] Back

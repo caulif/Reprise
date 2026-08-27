@@ -38,6 +38,9 @@
 - [文档受控边界](./decisions/accepted/2026-08-14-documentation-version-control-boundary.md)：`docs/` 里什么进 git、什么只留本地。
 - [覆盖率阈值只升不降](./decisions/accepted/2026-08-14-coverage-thresholds.md)：总体阈值取实测值向下取整，不留缓冲。
 - [记录路径按盘符比较](./decisions/accepted/2026-08-14-host-independent-recorded-paths.md)：Windows 会话路径在 POSIX CI 上不得 `resolve()` 进 `process.cwd()`。
+- [Session discovery 按来源身份排除](./decisions/accepted/2026-08-26-session-discovery-source-exclusion.md)：不按会话 cwd 或 `process.cwd()` 删除历史；精确 ID/path 才排除。
+- [Session 项目 key 由共享函数生成](./decisions/accepted/2026-08-27-session-project-key.md)：Pack 与 TUI 使用同一 `sessionProjectKey`，Codex 归属 assignment 优先。
+- [会话恢复按可验证正文分级](./decisions/accepted/2026-08-27-session-recovery-readiness.md)：Enter/freeze 只接受当场校验通过的 transcript；catalog-only 与 history-only 禁止回放。
 - [TUI 帧基线只在 Windows 比对](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)：帧是平台相关产物，不在 Ubuntu 上逐字节比对。
 - [生成区输出信封字段表](./decisions/accepted/2026-08-15-generated-docs-envelope-fields.md)：`EventEnvelope.type` 是开放字符串，不生成类型目录。
 - [门禁必须附反向用例](./decisions/accepted/2026-08-15-gate-reverse-tests.md)：只验证干净树上退出 0 不构成门禁生效的证据。

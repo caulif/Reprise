@@ -87,6 +87,7 @@ export function productContext(c: CodexIntakeTui): { productLabel?: string; prod
 export function view(c: CodexIntakeTui): WorkbenchView {
   const envName = envNameFromConfig(c.modelConfig, c.configDraft);
   const product = c.productContext();
+  const discoveryStatus = c.productDiscovery.get(c.activeProductId)?.status;
   return projectWorkbenchView({
     page: c.page,
     cwd: c.displayCwd,
@@ -127,6 +128,7 @@ export function view(c: CodexIntakeTui): WorkbenchView {
     searchQuery: c.searchQuery,
     searchCursor: c.searchCursor,
     searching: c.searching,
+    ...(discoveryStatus ? { discoveryStatus } : {}),
     inspection: c.inspection,
     privacy: c.privacy,
     inspectionTaskInput: c.inspectionTaskInput,

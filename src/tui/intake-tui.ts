@@ -73,6 +73,7 @@ export type CodexIntakeTuiOptions = {
 /** Keyboard-only Home-first benchmark workbench for configuration, intake, and isolated runs. */
 export class CodexIntakeTui {
   dataDir!: string;
+  runtimeSessionIds: readonly string[] = [];
   sessionsRoot: string | undefined;
   sessionsRoots!: Readonly<Record<string, string>>;
   packs!: readonly ProductPack[];
