@@ -8,7 +8,7 @@
 
 ## 决定
 
-Enter/freeze 只接受当场通过 `stat`、大小上限、JSONL 解析和 session ID 校验的正文。`catalog-only`、合成 `.catalog/` 路径和 Claude history locator 禁止创建可回放 TaskCase。Pack inspect/import 在读取后核对 `sessionId`。同 ID 多个 rollout 保留较新且校验通过的文件，并记 `duplicate-source`。摘要失败的文件以 `unreadable` 留在 catalog，不得从 `items` 删除。
+Enter/freeze 只接受当场通过 `stat`、流式 JSONL 解析和 session ID 校验的正文。`catalog-only`、合成 `.catalog/` 路径和 Claude history locator 禁止创建可回放 TaskCase。Pack inspect/import 在读取后核对 `sessionId`。同 ID 多个 rollout 保留较新且校验通过的文件，并记 `duplicate-source`。摘要失败的文件以 `pending` 或硬错误 `unreadable` 留在 catalog，不得从 `items` 删除。不完整摘要交给完整 inspect，见[会话恢复按 readiness 分级](./2026-08-27-session-recovery-best-effort.md)。
 
 ## 备选方案
 

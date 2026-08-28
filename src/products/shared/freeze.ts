@@ -1,14 +1,18 @@
 import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { createInterface } from 'node:readline';
+import { tmpdir } from 'node:os';
+import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
-import { sha256, writeImmutable } from '../../core/identity.js';
+import { copyAtomic, sha256, sha256File, writeImmutable } from '../../core/identity.js';
 import type { TaskCase } from '../../core/schema.js';
 import type { JsonRecord } from '../../core/json.js';
 import type { ImportedSession, SessionMessage, SessionPrivacy } from '../contract.js';
 
 export type FrozenFile = {
   readonly relativePath: string;
-  readonly content: string | Buffer;
+  readonly content?: string | Buffer;
+  readonly copyFrom?: string;
 };
 
 export type PublishFrozenCaseInput = {
@@ -44,7 +48,9 @@ export async function publishFrozenCase(input: PublishFrozenCaseInput): Promise<
     for (const file of input.files) {
       const directory = join(staging, file.relativePath.split(/[/\\]/).slice(0, -1).join('/'));
       if (directory !== staging) await mkdir(directory, { recursive: true });
-      await write(join(staging, file.relativePath), file.content);
+      const destination = join(staging, file.relativePath);
+      if (file.copyFrom) await copyAtomic(file.copyFrom, destination);
+      else await write(destination, file.content ?? '');
     }
     await write(join(staging, 'case.complete'), '');
     await rename(staging, caseDir);
@@ -65,16 +71,15 @@ function assertSessionPrivacy(privacy: SessionPrivacy): void {
   }
 }
 
-export function redactText(value: string, redactions: readonly string[]): string {
+function redactText(value: string, redactions: readonly string[]): string {
   return redactions.reduce((result, secret) => result.split(secret).join('[REDACTED]'), value);
 }
 
-function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy, now: string, initialMessageId?: string): TaskCase {
+function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy, now: string, sourceHash: string, initialMessageId?: string): TaskCase {
   if (prepared.evidenceLevel !== 'history' && !prepared.signals.completedTurns) {
     throw new Error('Session has no completed turn and cannot become a historical TaskCase.');
   }
   const initial = selectInitialInput(prepared, initialMessageId);
-  const sourceHash = sha256(Buffer.from(prepared.raw.text, 'utf8'));
   const caseId = `case-${sourceHash.slice(0, 16)}`;
   return {
     schemaVersion: 1,
@@ -95,7 +100,7 @@ function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy
       allowBinary: privacy.allowBinary,
       redactions: privacy.redactions.map(() => '[REDACTED]'),
     },
-    contentHash: sha256(Buffer.from(prepared.raw.text, 'utf8')),
+    contentHash: sourceHash,
   };
 }
 
@@ -121,7 +126,10 @@ function redactImported(imported: ImportedSession, redactions: readonly string[]
       ...imported.baseline,
       ...(imported.baseline.finalMessage ? { finalMessage: redactText(imported.baseline.finalMessage, redactions) } : {}),
     },
-    raw: { ...imported.raw, text: redactText(imported.raw.text, redactions) },
+    raw: {
+      ...imported.raw,
+      text: imported.raw.text ? redactText(imported.raw.text, redactions) : imported.raw.text,
+    },
   };
 }
 
@@ -138,19 +146,68 @@ export async function freezeCase(
 ): Promise<{ taskCase: TaskCase; reused: boolean }> {
   assertSessionPrivacy(privacy);
   const prepared = redactImported(imported, privacy.redactions);
-  const taskCase = taskCaseFromPrepared(prepared, privacy, now, options.initialMessageId);
-  const files: FrozenFile[] = [
-    { relativePath: prepared.raw.relativePath, content: prepared.raw.text },
-    ...(prepared.extraFiles ?? []).map((file) => ({ relativePath: file.relativePath, content: file.bytes })),
-  ];
-  return publishFrozenCase({
-    taskCase,
-    casesRoot,
-    files,
-    reuseExisting: options.reuseExisting ?? true,
-    ...(options.write ? { write: options.write } : {}),
-    ...(options.errorLabel ? { errorLabel: options.errorLabel } : {}),
-  });
+  const raw = await materializeRawFile(prepared, privacy.redactions);
+  try {
+    const taskCase = taskCaseFromPrepared(prepared, privacy, now, raw.hash, options.initialMessageId);
+    const files: FrozenFile[] = [
+      raw.file,
+      ...(prepared.extraFiles ?? []).map((file) => ({ relativePath: file.relativePath, content: file.bytes })),
+    ];
+    return await publishFrozenCase({
+      taskCase,
+      casesRoot,
+      files,
+      reuseExisting: options.reuseExisting ?? true,
+      ...(options.write ? { write: options.write } : {}),
+      ...(options.errorLabel ? { errorLabel: options.errorLabel } : {}),
+    });
+  } finally {
+    if (raw.cleanup) await rm(raw.cleanup, { force: true });
+  }
+}
+
+async function materializeRawFile(
+  imported: ImportedSession,
+  redactions: readonly string[],
+): Promise<{ hash: string; file: FrozenFile; cleanup?: string }> {
+  const relativePath = imported.raw.relativePath;
+  if (imported.raw.sourcePath && !redactions.length) {
+    const path = join(tmpdir(), `reprise-raw-${process.pid}-${randomUUID()}.jsonl`);
+    await copyAtomic(imported.raw.sourcePath, path);
+    return { hash: await sha256File(path), file: { relativePath, copyFrom: path }, cleanup: path };
+  }
+  if (imported.raw.sourcePath && redactions.length) {
+    const { hash, path } = await writeRedactedJsonlCopy(imported.raw.sourcePath, redactions);
+    return { hash, file: { relativePath, copyFrom: path }, cleanup: path };
+  }
+  const text = imported.raw.text;
+  return { hash: sha256(Buffer.from(text, 'utf8')), file: { relativePath, content: text } };
+}
+
+async function writeRedactedJsonlCopy(
+  sourcePath: string,
+  redactions: readonly string[],
+): Promise<{ hash: string; path: string }> {
+  const path = join(tmpdir(), `reprise-redacted-${process.pid}-${randomUUID()}.jsonl`);
+  const hash = createHash('sha256');
+  const output = createWriteStream(path, { flags: 'wx' });
+  const stream = createReadStream(sourcePath, { encoding: 'utf8' });
+  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      const next = `${redactText(line, redactions)}\n`;
+      hash.update(next);
+      if (!output.write(next)) await new Promise<void>((resolveWrite) => output.once('drain', resolveWrite));
+    }
+  } catch (error) {
+    await rm(path, { force: true });
+    throw error;
+  } finally {
+    lines.close();
+    stream.destroy();
+    await new Promise<void>((resolveClose, reject) => output.end((error: Error | null | undefined) => error ? reject(error) : resolveClose()));
+  }
+  return { hash: hash.digest('hex'), path };
 }
 
 function selectInitialInput(imported: ImportedSession, initialMessageId?: string): SessionMessage {

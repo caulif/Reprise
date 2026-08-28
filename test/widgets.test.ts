@@ -11,6 +11,8 @@ import { renderHistory, renderHistoryDetail } from '../src/tui/pages/history.js'
 import { renderFailure, renderResult, resultHints } from '../src/tui/pages/result.js';
 import { projectTimelineEvent } from '../src/tui/timeline.js';
 import { relativeTime, renderSessions } from '../src/tui/pages/intake.js';
+import { sessionReplayErrorMessage, t } from '../src/tui/i18n.js';
+import { SessionReplayError } from '../src/products/shared/session-recovery.js';
 import { FORBIDDEN_COMPACT, createTheme } from '../src/tui/theme.js';
 import { operatorErrorMessage, truncateFit } from '../src/tui/format.js';
 import { kv, kvBlock, pad, panel, joinColumns, progressBar, stateRail, wrapBodyLine, keyHints } from '../src/tui/widgets.js';
@@ -457,6 +459,36 @@ test('regular density paints an intake preview beside the list', () => {
   assert.match(text, /Fix the regression/);
   assert.match(text, /Updated/);
   assert.equal((text.match(/┌─/g) ?? []).length, 2);
+});
+
+test('pending list rows show truncated summary, not an unreadable freeze verdict', () => {
+  const theme = createTheme(90, false);
+  const startedAt = '2026-08-12T21:40:00.000Z';
+  const session = {
+    productId: 'codex', sessionId: 'pending-1', sourcePath: 'pending.jsonl', startedAt, cwd: 'C:/work/app',
+    summary: 'Late user lives past the window',
+    recoveryReadiness: 'pending' as const,
+    signals: { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
+  };
+  const text = renderSessions(theme, 90, {
+    level: 'sessions',
+    projects: [{ key: 'app', label: 'app', path: 'C:/work/app', sessions: [session], latestAt: startedAt }],
+    sessions: [session],
+    selected: 0,
+    filterEligible: false,
+    query: '',
+    searching: false,
+    locale: 'en',
+  }, 16).join('\n');
+  assert.match(text, /\[partial summary\]/);
+  assert.doesNotMatch(text, /\[unreadable\]/);
+  assert.doesNotMatch(text, /\[pending full inspect\]/);
+});
+
+test('session replay errors map to distinct operator copy', () => {
+  assert.equal(sessionReplayErrorMessage(new SessionReplayError('no-user-input', 'x'), 'zh'), t('zh', 'notReplayableNoUserInput'));
+  assert.equal(sessionReplayErrorMessage(new SessionReplayError('corrupt', 'x'), 'en'), t('en', 'notReplayableCorrupt'));
+  assert.equal(sessionReplayErrorMessage(new Error('other'), 'en'), undefined);
 });
 
 test('intake lists honor their injected render clock', () => {

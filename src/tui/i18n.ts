@@ -140,7 +140,23 @@ const M = {
   filterAllSessions: { en: 'Showing all discovered sessions.', zh: '显示找到的全部会话。' },
   modelTextAllowed: { en: 'Model text sharing with the configured Pi provider is now allowed for this session.', zh: '本会话已允许与已配置的内部模型分享正文。' },
   modelTextBlocked: { en: 'Model text sharing with the configured Pi provider is now blocked.', zh: '本会话已禁止与已配置的内部模型分享正文。' },
-  freezingCase: { en: 'Freezing the session and starting the isolated replay...', zh: '正在冻结会话并开始隔离对照…' },
+  freezingCase: { en: 'Reading the full transcript and freezing a TaskCase...', zh: '正在完整读取并冻结任务…' },
+  inspectingIncompleteSummary: { en: 'Incomplete summary. Reading the full transcript...', zh: '摘要不完整，正在完整读取…' },
+  inspectingSelectedSession: { en: 'Reading the full transcript and freezing a TaskCase...', zh: '正在完整读取并冻结任务…' },
+  frozenEnteringRecovery: { en: 'TaskCase frozen. Starting environment recovery...', zh: '已冻结，进入环境恢复…' },
+  recoveringTitle: { en: 'Recovering session', zh: '正在恢复会话' },
+  recoveryStagePrepare: { en: 'Preparing recovery environment', zh: '准备恢复环境' },
+  recoveryStageSession: { en: 'Reading session', zh: '正在读取会话' },
+  recoveryStageAgent: { en: 'Running recovery agent', zh: '正在运行恢复' },
+  userRecovered: { en: 'Recovered', zh: '已恢复' },
+  userPartial: { en: 'Partial recovery', zh: '部分恢复' },
+  userFailed: { en: 'Could not recover', zh: '无法恢复' },
+  notReplayableNoUserInput: { en: 'Cannot replay: no eligible user input.', zh: '无法回放：没有合法用户输入' },
+  notReplayableCorrupt: { en: 'Cannot replay: transcript is corrupt.', zh: '无法回放：正文损坏' },
+  notReplayableUnreadable: { en: 'Cannot replay: source is unreadable.', zh: '无法回放：来源不可读' },
+  notReplayableHistoryOnly: { en: 'Cannot replay: history-only session has no transcript.', zh: '无法回放：仅历史记录，没有正文' },
+  notReplayableCatalogOnly: { en: 'Cannot replay: catalog metadata has no transcript.', zh: '无法回放：仅有索引，没有正文' },
+  notReplayablePending: { en: 'Source changed during read. Retry the freeze.', zh: '读取时源文件已变化，请重试冻结。' },
   envNotSetConfig: { en: '{name} is not set in this shell. {assign}  Or paste the API key into this page and save.', zh: '当前终端未设置 {name}。{assign}  也可以把 API 密钥贴到本页并保存。' },
   editConfig: { en: 'Edit endpoint or model. Save never sends a request; t tests the connection.', zh: '编辑端点或模型。保存不会发请求；t 才测试连接。' },
   testingConnection: { en: 'Testing the connection with a minimal request. This may call the configured provider.', zh: '正在用最小请求测试连接。这可能调用已配置的服务。' },
@@ -157,8 +173,9 @@ const M = {
   checkingSourceTitle: { en: 'Checking source', zh: '正在检查源目录' },
   contaminationFound: { en: 'Preparing the isolated environment from available evidence.', zh: '正在依据可用证据准备隔离环境。' },
   noContamination: { en: 'Preparing the isolated environment before run confirmation.', zh: '正在准备隔离环境，随后将显示开跑确认。' },
-  recoveryReady: { en: 'Environment prepared. Review the run confirmation and press Enter to start.', zh: '环境已准备完成。核对开跑确认后按 Enter 开始。' },
-  recoveryFailed: { en: 'Environment preparation has recorded limitations. Review the run confirmation and press Enter to start.', zh: '环境准备存在已记录限制。核对开跑确认后按 Enter 开始。' },
+  recoveryReady: { en: 'Recovered. Review the run confirmation and press Enter to start the isolated candidate.', zh: '已恢复。核对开跑确认后按 Enter 启动隔离候选。' },
+  recoveryFailed: { en: 'Could not recover a complete environment. Transcript and diagnostics were saved.', zh: '无法完整恢复环境。会话正文和诊断已保存。' },
+  recoveryPartial: { en: 'Partial recovery. Some workspace paths were skipped automatically.', zh: '部分恢复。已自动跳过部分项目路径。' },
   followingLatest: { en: 'Following latest persisted event.', zh: '已跟随最新已写入事件。' },
   returnedPrevious: { en: 'Returned to the previous step. Correct the issue and try again.', zh: '已回到上一步。改完问题再试。' },
   noReport: { en: 'No generated report is available for this experiment.', zh: '这次对照还没有报告。' },
@@ -174,7 +191,7 @@ const M = {
   inspectingJsonl: { en: 'Inspecting the selected local JSONL; no commands are executed.', zh: '正在查看选中的本地记录；不会执行任何命令。' },
   noSessionsFound: { en: 'No local agent sessions were found.', zh: '没有找到本地 Agent 会话记录。' },
   chooseProject: { en: 'Choose a project, then a session. Type / to search.', zh: '先选项目，再选会话。输入 / 搜索。' },
-  chooseSession: { en: 'Choose a historical session. Enter freezes it and starts the isolated replay.', zh: '选择一条历史会话。按 Enter 冻结并开始隔离对照。' },
+  chooseSession: { en: 'Choose a historical session. Enter reads the full transcript, then freezes if replayable.', zh: '选择一条历史会话。按 Enter 完整读取；可回放则冻结任务。' },
   sessionDiscoveryStatus: { en: '{shown} shown · {skipped} skipped', zh: '已显示 {shown} 条 · 已跳过 {skipped} 条' },
   moreAvailable: { en: 'more available', zh: '还有更多' },
   loadMoreSessions: { en: 'The catalog is complete; m does not paginate.', zh: '目录已完整；m 不会分页。' },
@@ -308,8 +325,8 @@ const M = {
   runtimeResolved: { en: 'runtime resolved', zh: '运行时解析为' },
   comparisonLabel: { en: 'comparison', zh: '对照' },
   observationalValue: { en: 'observational', zh: '观察性' },
-  recoveredValue: { en: 'recovered', zh: '已恢复' },
-  recoveredPartialValue: { en: 'recovered_partial', zh: '部分恢复' },
+  recoveredValue: { en: 'Recovered', zh: '已恢复' },
+  recoveredPartialValue: { en: 'Partial recovery', zh: '部分恢复' },
   availableValue: { en: 'available', zh: '可用' },
   runnableValue: { en: 'runnable', zh: '可运行' },
   blockedValue: { en: 'blocked', zh: '受阻' },
@@ -352,6 +369,10 @@ const M = {
   historyOnlySession: { en: '[history-only]', zh: '[仅历史]' },
   unindexedSession: { en: '[unindexed]', zh: '[未编入索引]' },
   unreadableSession: { en: '[unreadable]', zh: '[正文不可读]' },
+  pendingSession: { en: '[pending full inspect]', zh: '[待完整解析]' },
+  bestEffortSession: { en: '[best-effort]', zh: '[尽力恢复]' },
+  noUserInputSession: { en: '[no user input]', zh: '[无用户输入]' },
+  corruptSession: { en: '[corrupt]', zh: '[正文损坏]' },
   availableSession: { en: 'available', zh: '可读取' },
   projectlessSessions: { en: 'Projectless sessions', zh: '项目外会话' },
   unknownTime: { en: 'Unknown time', zh: '时间未知' },
@@ -367,6 +388,7 @@ const M = {
   fieldLatest: { en: 'Latest', zh: '最近活动' },
   fieldStarted: { en: 'Started', zh: '开始时间' },
   fieldUpdated: { en: 'Updated', zh: '更新时间' },
+  recoveryDiagnostics: { en: 'Recovery', zh: '恢复诊断' },
   fieldSource: { en: 'Source:', zh: '来源：' },
   fieldModelText: { en: 'model text', zh: '模型文本' },
   fieldBinary: { en: 'binary', zh: '二进制' },
@@ -385,7 +407,7 @@ const M = {
   noneWord: { en: 'none', zh: '无' },
   unavailable: { en: 'unavailable', zh: '不可用' },
   resultTitle: { en: 'Run result', zh: '对照结果' },
-  cannotContinue: { en: 'Cannot continue', zh: '无法继续' },
+  cannotContinue: { en: 'Could not recover', zh: '无法恢复' },
   errorReturnHint: { en: 'No isolated candidate was started by this screen. Enter or b returns to the previous step.', zh: '这个界面没有启动隔离候选。Enter 或 b 回到上一步。' },
   hintOpenProject: { en: 'Open project', zh: '打开项目' },
   hintInspect: { en: 'Inspect', zh: '查看' },
@@ -407,6 +429,18 @@ export function t(locale: Locale, key: MessageKey, vars?: Record<string, string 
     for (const [name, value] of Object.entries(vars)) text = text.replaceAll(`{${name}}`, String(value));
   }
   return text;
+}
+
+export function sessionReplayErrorMessage(error: unknown, locale: Locale): string | undefined {
+  if (!(error instanceof Error) || error.name !== 'SessionReplayError') return undefined;
+  const code = 'code' in error && typeof (error as { code: unknown }).code === 'string' ? (error as { code: string }).code : '';
+  if (code === 'no-user-input') return t(locale, 'notReplayableNoUserInput');
+  if (code === 'corrupt') return t(locale, 'notReplayableCorrupt');
+  if (code === 'unreadable') return t(locale, 'notReplayableUnreadable');
+  if (code === 'history-only') return t(locale, 'notReplayableHistoryOnly');
+  if (code === 'source-missing') return t(locale, 'notReplayableCatalogOnly');
+  if (code === 'pending') return t(locale, 'notReplayablePending');
+  return error.message;
 }
 
 export function parseLocale(value: string | undefined): Locale | undefined {

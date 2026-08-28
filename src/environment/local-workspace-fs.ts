@@ -1,7 +1,7 @@
-import { cp, lstat, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { formatBytes } from '../core/format.js';
 import { SAFE_ID, sha256, sha256File } from '../core/identity.js';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
 import { RecoveryManifestSchema, type RecoveryManifest } from '../core/schema.js';
 import { gitFileHash, isRecoveryPath, type RecoveryEvidenceVerification } from '../infrastructure/recovery-tools.js';
@@ -14,6 +14,7 @@ import {
   type RecoveryEnvelope,
   type SensitiveFileCategory,
   type WorkspaceBudget,
+  type WorkspaceExclusion,
 } from './local-workspace-provider.js';
 
 export function recoveryPath(root: string, relativePath: string): string {
@@ -263,6 +264,64 @@ export function unsupportedBaseline(caseId: string): EnvironmentBaseline {
   };
 }
 
+function isAccessDenied(error: unknown): boolean {
+  if (!(error instanceof Error) || !('code' in error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === 'EACCES' || code === 'EPERM';
+}
+
+async function realPathOrResolved(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if (isMissing(error) || isAccessDenied(error)) return resolve(path);
+    throw error;
+  }
+}
+
+/**
+ * In-root links are materialized as ordinary files/directories. Out-of-root,
+ * missing, cyclic, or unreadable links are skipped and never followed.
+ */
+async function resolveSafeLink(
+  sourceRoot: string,
+  linkPath: string,
+  chain: ReadonlySet<string>,
+): Promise<
+  | { action: 'file'; from: string }
+  | { action: 'directory'; from: string }
+  | { action: 'skip'; reasonCode: WorkspaceExclusion['reasonCode'] }
+> {
+  let raw: string;
+  try {
+    raw = await readlink(linkPath);
+  } catch (error) {
+    if (isMissing(error)) return { action: 'skip', reasonCode: 'workspace.target_missing' };
+    if (isAccessDenied(error)) return { action: 'skip', reasonCode: 'workspace.permission_denied' };
+    return { action: 'skip', reasonCode: 'workspace.symlink_skipped' };
+  }
+  const target = resolve(dirname(linkPath), raw);
+  const source = resolve(sourceRoot);
+  if (target !== source && !isInside(source, target)) return { action: 'skip', reasonCode: 'workspace.symlink_skipped' };
+  let info;
+  try {
+    info = await lstat(target);
+  } catch (error) {
+    if (isMissing(error)) return { action: 'skip', reasonCode: 'workspace.target_missing' };
+    if (isAccessDenied(error)) return { action: 'skip', reasonCode: 'workspace.permission_denied' };
+    return { action: 'skip', reasonCode: 'workspace.symlink_skipped' };
+  }
+  if (info.isSymbolicLink()) {
+    if (chain.has(target)) return { action: 'skip', reasonCode: 'workspace.cycle_skipped' };
+    return resolveSafeLink(sourceRoot, target, new Set(chain).add(linkPath));
+  }
+  const identity = await realPathOrResolved(target);
+  if (chain.has(identity)) return { action: 'skip', reasonCode: 'workspace.cycle_skipped' };
+  if (info.isDirectory()) return { action: 'directory', from: target };
+  if (info.isFile()) return { action: 'file', from: target };
+  return { action: 'skip', reasonCode: 'workspace.unsupported_entry' };
+}
+
 
 function isRecoveryMarker(value: unknown): value is NonNullable<EnvironmentBaseline['recovery']> {
   if (!value || typeof value !== 'object') return false;
@@ -272,17 +331,56 @@ function isRecoveryMarker(value: unknown): value is NonNullable<EnvironmentBasel
 }
 
 export async function copyTree(source: string, destination: string): Promise<void> {
-  for (const entry of await readdir(source, { withFileTypes: true })) {
+  await copyTreeFrom(source, destination, source, new Set());
+}
+
+async function copyTreeFrom(
+  source: string,
+  destination: string,
+  sourceRoot: string,
+  chain: ReadonlySet<string>,
+): Promise<void> {
+  const identity = await realPathOrResolved(source);
+  if (chain.has(identity)) return;
+  const nextChain = new Set(chain).add(identity);
+  let entries;
+  try {
+    entries = await readdir(source, { withFileTypes: true });
+  } catch (error) {
+    if (isAccessDenied(error) || isMissing(error)) return;
+    throw error;
+  }
+  for (const entry of entries) {
     const from = join(source, entry.name);
     const to = join(destination, entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`Environment source contains an unsupported symlink: ${from}`);
-    if (entry.isDirectory()) {
+    let info;
+    try {
+      info = await lstat(from);
+    } catch (error) {
+      if (isAccessDenied(error) || isMissing(error)) continue;
+      throw error;
+    }
+    if (info.isSymbolicLink()) {
+      const resolved = await resolveSafeLink(sourceRoot, from, nextChain);
+      if (resolved.action === 'skip') continue;
+      if (resolved.action === 'directory') {
+        await mkdir(to);
+        await copyTreeFrom(resolved.from, to, sourceRoot, nextChain);
+        continue;
+      }
+      await writeFile(to, await readFile(resolved.from, { flag: 'r' }), { flag: 'wx' });
+      continue;
+    }
+    if (info.isDirectory()) {
       await mkdir(to);
-      await copyTree(from, to);
-    } else if (entry.isFile()) {
-      await writeFile(to, await readFile(from, { flag: 'r' }), { flag: 'wx' });
-    } else {
-      throw new Error(`Unsupported environment entry: ${from}`);
+      await copyTreeFrom(from, to, sourceRoot, nextChain);
+    } else if (info.isFile()) {
+      try {
+        await writeFile(to, await readFile(from, { flag: 'r' }), { flag: 'wx' });
+      } catch (error) {
+        if (isAccessDenied(error) || isMissing(error)) continue;
+        throw error;
+      }
     }
   }
 }
@@ -307,7 +405,12 @@ function workspaceBudgetFromTotals({ fileCount, totalBytes, largestFileBytes }: 
 }
 
 type FingerprintTotals = { fileCount: number; totalBytes: number; largestFileBytes: number };
-type FingerprintScan = { resources: FingerprintEntry[]; totals: FingerprintTotals; sensitiveFileCounts: Record<SensitiveFileCategory, number>; budget: WorkspaceBudget };
+type FingerprintScan = {
+  resources: FingerprintEntry[];
+  totals: FingerprintTotals;
+  sensitiveFileCounts: Record<SensitiveFileCategory, number>;
+  budget: WorkspaceBudget;
+};
 
 export async function fingerprintTree(root: string): Promise<{ fingerprint: EnvironmentFingerprint; budget: WorkspaceBudget }> {
   const scan = await scanFingerprintTree(root);
@@ -329,8 +432,9 @@ async function scanFingerprintTree(root: string): Promise<FingerprintScan> {
   const resources: FingerprintEntry[] = [];
   const totals = { fileCount: 0, totalBytes: 0, largestFileBytes: 0 };
   const sensitiveFileCounts: Record<SensitiveFileCategory, number> = { env: 0, credential: 0, private_key: 0 };
+  const excludedEntries: WorkspaceExclusion[] = [];
   try {
-    await collectFingerprintMetadata(root, '', resources, totals, sensitiveFileCounts);
+    await collectFingerprintMetadata(root, root, '', resources, totals, sensitiveFileCounts, excludedEntries, new Set());
   } catch (error) {
     if (!(error instanceof BudgetExceeded)) throw error;
   }
@@ -338,39 +442,103 @@ async function scanFingerprintTree(root: string): Promise<FingerprintScan> {
     resources,
     totals,
     sensitiveFileCounts,
-    budget: { ...workspaceBudgetFromTotals(totals), sensitiveFileCounts },
+    budget: {
+      ...workspaceBudgetFromTotals(totals),
+      sensitiveFileCounts,
+      ...(excludedEntries.length ? { excludedEntries } : {}),
+    },
   };
 }
 
 async function collectFingerprintMetadata(
-  root: string,
+  sourceRoot: string,
+  currentDir: string,
   prefix: string,
   resources: FingerprintEntry[],
   totals: { fileCount: number; totalBytes: number; largestFileBytes: number },
   sensitiveFileCounts: Record<SensitiveFileCategory, number>,
+  excludedEntries: WorkspaceExclusion[],
+  chain: ReadonlySet<string>,
 ): Promise<void> {
-  const entries = await readdir(join(root, ...prefix ? prefix.split('/') : []), { withFileTypes: true });
+  const identity = await realPathOrResolved(currentDir);
+  if (chain.has(identity)) {
+    if (prefix) excludedEntries.push({ path: prefix, reasonCode: 'workspace.cycle_skipped' });
+    return;
+  }
+  const nextChain = new Set(chain).add(identity);
+  let entries;
+  try {
+    entries = await readdir(currentDir, { withFileTypes: true });
+  } catch (error) {
+    if (isAccessDenied(error)) {
+      if (prefix) excludedEntries.push({ path: prefix, reasonCode: 'workspace.permission_denied' });
+      return;
+    }
+    throw error;
+  }
   for (const entry of entries) {
     const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-    const path = join(root, ...relativePath.split('/'));
-    if (entry.isSymbolicLink()) throw new Error(`Environment workspace contains an unsupported symlink: ${path}`);
-    if (entry.isDirectory()) {
+    const path = join(currentDir, entry.name);
+    let info;
+    try {
+      info = await lstat(path);
+    } catch (error) {
+      if (isAccessDenied(error) || isMissing(error)) {
+        excludedEntries.push({ path: relativePath, reasonCode: isAccessDenied(error) ? 'workspace.permission_denied' : 'workspace.target_missing' });
+        continue;
+      }
+      throw error;
+    }
+    if (info.isSymbolicLink()) {
+      const resolved = await resolveSafeLink(sourceRoot, path, nextChain);
+      if (resolved.action === 'skip') {
+        excludedEntries.push({ path: relativePath, reasonCode: resolved.reasonCode });
+        continue;
+      }
+      if (resolved.action === 'directory') {
+        resources.push({ path: relativePath, kind: 'directory', size: 0 });
+        await collectFingerprintMetadata(sourceRoot, resolved.from, relativePath, resources, totals, sensitiveFileCounts, excludedEntries, nextChain);
+        continue;
+      }
+      await recordFingerprintFile(relativePath, entry.name, resolved.from, resources, totals, sensitiveFileCounts);
+      continue;
+    }
+    if (info.isDirectory()) {
       resources.push({ path: relativePath, kind: 'directory', size: 0 });
-      await collectFingerprintMetadata(root, relativePath, resources, totals, sensitiveFileCounts);
-    } else if (entry.isFile()) {
-      const size = (await stat(path)).size;
-      totals.fileCount += 1;
-      totals.totalBytes += size;
-      totals.largestFileBytes = Math.max(totals.largestFileBytes, size);
-      const sensitiveCategory = sensitiveFileCategory(entry.name);
-      if (sensitiveCategory) sensitiveFileCounts[sensitiveCategory] += 1;
-      resources.push({ path: relativePath, kind: 'file', size });
-      if (totals.fileCount > SNAPSHOT_LIMITS.files || totals.totalBytes > SNAPSHOT_LIMITS.totalBytes || totals.largestFileBytes > SNAPSHOT_LIMITS.fileBytes) {
-        throw new BudgetExceeded();
+      await collectFingerprintMetadata(sourceRoot, path, relativePath, resources, totals, sensitiveFileCounts, excludedEntries, nextChain);
+    } else if (info.isFile()) {
+      try {
+        await recordFingerprintFile(relativePath, entry.name, path, resources, totals, sensitiveFileCounts);
+      } catch (error) {
+        if (isAccessDenied(error) || isMissing(error)) {
+          excludedEntries.push({ path: relativePath, reasonCode: isAccessDenied(error) ? 'workspace.permission_denied' : 'workspace.target_missing' });
+          continue;
+        }
+        throw error;
       }
     } else {
-      throw new Error(`Unsupported environment entry: ${path}`);
+      excludedEntries.push({ path: relativePath, reasonCode: 'workspace.unsupported_entry' });
     }
+  }
+}
+
+async function recordFingerprintFile(
+  relativePath: string,
+  name: string,
+  path: string,
+  resources: FingerprintEntry[],
+  totals: { fileCount: number; totalBytes: number; largestFileBytes: number },
+  sensitiveFileCounts: Record<SensitiveFileCategory, number>,
+): Promise<void> {
+  const size = (await stat(path)).size;
+  totals.fileCount += 1;
+  totals.totalBytes += size;
+  totals.largestFileBytes = Math.max(totals.largestFileBytes, size);
+  const sensitiveCategory = sensitiveFileCategory(name);
+  if (sensitiveCategory) sensitiveFileCounts[sensitiveCategory] += 1;
+  resources.push({ path: relativePath, kind: 'file', size });
+  if (totals.fileCount > SNAPSHOT_LIMITS.files || totals.totalBytes > SNAPSHOT_LIMITS.totalBytes || totals.largestFileBytes > SNAPSHOT_LIMITS.fileBytes) {
+    throw new BudgetExceeded();
   }
 }
 

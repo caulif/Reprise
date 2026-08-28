@@ -2,7 +2,7 @@
 
 Version: claude-code-recovery/v1
 
-This playbook is evidence for Recovery Agent. It does not grant tools or change permissions.
+This playbook is evidence for Recovery Agent. It does not grant tools or change permissions. Do not parse product session JSONL; the Host already froze `TaskCase.initialInput` and you must not invent or replace it.
 
 ## Where to look
 

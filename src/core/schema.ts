@@ -7,6 +7,37 @@ const JsonRecord = Type.Record(Type.String(), Type.Unknown());
 export const EvidenceRefSchema = Type.String({
   pattern: "^(event|artifact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
 });
+const RecoveryReadinessSchema = Type.Union([
+  Type.Literal("verified"),
+  Type.Literal("best-effort"),
+  Type.Literal("pending"),
+  Type.Literal("history-only"),
+  Type.Literal("no-user-input"),
+  Type.Literal("corrupt"),
+]);
+export type RecoveryReadiness = Static<typeof RecoveryReadinessSchema>;
+const RecoveryDiagnosticSchema = Type.Object({
+  code: Type.String({ minLength: 1, maxLength: 128 }),
+  message: Type.String({ minLength: 1, maxLength: 4096 }),
+  physicalLine: Type.Optional(Type.Integer({ minimum: 1 })),
+});
+export type RecoveryDiagnostic = Static<typeof RecoveryDiagnosticSchema>;
+export const SessionRecoveryAttemptSchema = Type.Object({
+  attempted: Type.Literal(true),
+  status: Type.Union([
+    Type.Literal("recovered"),
+    Type.Literal("partial"),
+    Type.Literal("not-replayable"),
+    Type.Literal("retryable"),
+  ]),
+  sourcePath: Type.String({ minLength: 1 }),
+  sessionId: Type.String({ minLength: 1 }),
+  parsedMessageCount: Type.Integer({ minimum: 0 }),
+  skippedEventCount: Type.Integer({ minimum: 0 }),
+  diagnostics: Type.Array(RecoveryDiagnosticSchema),
+  rawSnapshotPath: Type.Optional(Type.String({ minLength: 1 })),
+});
+export type SessionRecoveryAttemptRecord = Static<typeof SessionRecoveryAttemptSchema>;
 export type EvidenceRef = Static<typeof EvidenceRefSchema>;
 export const ControllerRequestedPayloadSchema = Type.Object({
   schemaVersion: Type.Literal(1),
@@ -128,12 +159,52 @@ const RecoveryCheckpointFingerprintSchema = Type.Object({
   resources: Type.Array(RecoveryCheckpointFingerprintEntrySchema),
   digest: Hash,
 });
+const WorkspaceExclusionSchema = Type.Object({
+  path: Type.String({ minLength: 1, maxLength: 4096 }),
+  reasonCode: Type.Union([
+    Type.Literal("workspace.symlink_skipped"),
+    Type.Literal("workspace.permission_denied"),
+    Type.Literal("workspace.target_missing"),
+    Type.Literal("workspace.cycle_skipped"),
+    Type.Literal("workspace.unsupported_entry"),
+    Type.Literal("workspace.budget_skipped"),
+  ]),
+});
 const RecoveryCheckpointBudgetSchema = Type.Object({
   fileCount: Type.Integer({ minimum: 0 }),
   totalBytes: Type.Integer({ minimum: 0 }),
   largestFileBytes: Type.Integer({ minimum: 0 }),
   blockedReasons: Type.Readonly(Type.Array(Type.String())),
+  excludedEntries: Type.Optional(Type.Readonly(Type.Array(WorkspaceExclusionSchema))),
 });
+export const RecoveryAttemptDiagnosisSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  sessionId: Type.String({ minLength: 1, maxLength: 256 }),
+  sourcePath: Type.String({ minLength: 1, maxLength: 4096 }),
+  transcriptStatus: Type.Union([
+    Type.Literal("ok"),
+    Type.Literal("partial"),
+    Type.Literal("invalid"),
+    Type.Literal("missing"),
+  ]),
+  workspaceStatus: Type.Union([
+    Type.Literal("complete"),
+    Type.Literal("partial"),
+    Type.Literal("unavailable"),
+  ]),
+  excludedEntries: Type.Array(WorkspaceExclusionSchema),
+  recoveryAgentStarted: Type.Boolean(),
+  finalStatus: Type.Union([
+    Type.Literal("recovered"),
+    Type.Literal("partial"),
+    Type.Literal("failed"),
+  ]),
+  retryable: Type.Boolean(),
+  reasonCode: Type.String({ minLength: 1, maxLength: 128 }),
+});
+export type RecoveryAttemptDiagnosis = Static<
+  typeof RecoveryAttemptDiagnosisSchema
+>;
 /** Persistent Provider-owned metadata; the checkpoint tree itself remains content-only. */
 export const RecoveryCheckpointRecordSchema = Type.Object({
   schemaVersion: Type.Literal(1),

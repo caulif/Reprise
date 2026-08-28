@@ -202,7 +202,7 @@ test("Codex intake TUI only reads before explicit freeze and leaves no ambiguous
       .join("\n") + "\n";
   await writeFile(source, raw);
   const oversized = join(sessionsRoot, "rollout-oversized.jsonl");
-  await writeFile(oversized, Buffer.alloc(64 * 1024 * 1024 + 1));
+  await writeFile(oversized, Buffer.alloc(4 * 1024 * 1024 + 1));
 
   let document: Component | undefined;
   let rendered = "";

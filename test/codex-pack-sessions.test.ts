@@ -23,7 +23,7 @@ import {
 import { gitHead } from "./codex-pack-support.js";
 
 const execFileAsync = promisify(execFile);
-test("Codex session discovery skips one oversized rollout but explicit inspection explains the limit", async (t) => {
+test("Codex session discovery keeps an unreadable oversized summary without dropping the valid rollout", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-rollout-oversized-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const sessions = join(root, "sessions");
@@ -45,16 +45,17 @@ test("Codex session discovery skips one oversized rollout but explicit inspectio
     ].join("\n") + "\n",
   );
   const oversized = join(sessions, "rollout-oversized.jsonl");
-  await writeFile(oversized, Buffer.alloc(64 * 1024 * 1024 + 1));
+  await writeFile(oversized, Buffer.alloc(4 * 1024 * 1024 + 1));
 
   const discovered = await discoverCodexSessions(sessions);
   assert.equal(discovered.some((session) => session.sessionId === "valid-session"), true);
   assert.equal(discovered.filter((session) => session.sessionId === "valid-session").length, 1);
-  assert.equal(discovered.some((session) => session.availability === "unreadable"), true);
-  await assert.rejects(
-    inspectCodexSession(oversized),
-    /64 MiB inspection limit/,
-  );
+  const oversizedSession = discovered.find((session) => session.sourcePath.includes("oversized"));
+  assert.ok(oversizedSession);
+  assert.equal(oversizedSession.recoveryReadiness, "pending");
+  assert.notEqual(oversizedSession.availability, "unreadable");
+  const inspected = await inspectCodexSession(valid);
+  assert.equal(inspected.sessionId, "valid-session");
 });
 
 

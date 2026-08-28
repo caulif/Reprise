@@ -1,6 +1,8 @@
 import type { RuntimePort } from '../core/runtime.js';
 import type { JsonRecord } from '../core/json.js';
-import type { CandidateSpec, EventEnvelope, TaskCase } from '../core/schema.js';
+import type { CandidateSpec, EventEnvelope, RecoveryDiagnostic, RecoveryReadiness, TaskCase } from '../core/schema.js';
+
+export type { RecoveryDiagnostic, RecoveryReadiness } from '../core/schema.js';
 
 export type SessionMessage = TaskCase['transcript'][number];
 
@@ -57,6 +59,9 @@ export type SessionSummary = {
   /** Internal discovery provenance; adapters may omit it for legacy sources. */
   readonly sourceKind?: 'catalog+transcript' | 'catalog-only' | 'rollout-only' | 'projectless' | 'unknown';
   readonly availability?: 'indexed' | 'catalog-only' | 'unindexed' | 'unreadable';
+  /** Transcript recovery, independent of whether the source file exists. */
+  readonly recoveryReadiness?: RecoveryReadiness;
+  readonly recoveryDiagnostics?: readonly RecoveryDiagnostic[];
 };
 
 export type SessionInspection = SessionSummary & {
@@ -148,6 +153,7 @@ export type ImportDiagnostic = {
 export type ImportedRawFile = {
   readonly relativePath: string;
   readonly text: string;
+  readonly sourcePath?: string;
 };
 
 export type ImportedExtraFile = {
@@ -174,6 +180,8 @@ export type ImportedSession = {
   /** Internal discovery provenance; adapters may omit it for legacy sources. */
   readonly sourceKind?: 'catalog+transcript' | 'catalog-only' | 'rollout-only' | 'projectless' | 'unknown';
   readonly availability?: 'indexed' | 'catalog-only' | 'unindexed' | 'unreadable';
+  readonly recoveryReadiness?: RecoveryReadiness;
+  readonly recoveryDiagnostics?: readonly RecoveryDiagnostic[];
 };
 
 /** Completed sessions with a user task and at least one assistant message or tool call. */

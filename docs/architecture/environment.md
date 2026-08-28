@@ -56,7 +56,7 @@ Environment 子系统负责：
 
 Environment 子系统不负责：
 
-- 解析 Claude/Codex 私有事件格式；
+- 解析 Claude/Codex 私有事件格式，或改写已冻结的 `TaskCase.initialInput`；
 - 安装或启动 Agent Runtime；
 - 决定 CandidateRun 何时完成；
 - 保证外部网站、数据库或服务可以回到历史状态；
@@ -542,7 +542,7 @@ LocalWorkspaceProvider
 最小能力：
 
 - 验证并规范化 Windows/POSIX 路径；
-- 复制普通本地工作区到 Harness 自有目录；
+- 复制普通本地工作区到 Harness 自有目录；source root 内可证明安全的链接物化为普通文件，root 外、循环或不可读的 symlink/junction 记入 `excludedEntries` 并跳过，不跟随、不在候选中保留指向真实 workspace 的可写链接；
 - 使用已有 Git object 恢复提交状态；
 - 应用有证据的未提交 diff 或 preimage；
 - 记录 symlink、submodule、untracked 和权限限制；

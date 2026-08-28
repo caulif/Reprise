@@ -1,4 +1,4 @@
-import { canonicalRecordedRoot, pathContainedBy } from '../../core/paths.js';
+import { canonicalRecordedRoot, longestContainingRoot, pathContainedBy } from '../../core/paths.js';
 
 export type CodexProjectRef = {
   readonly id: string;
@@ -37,9 +37,9 @@ export function classifyCodexProject(input: {
   if (assigned) return assigned;
   const sqlite = attributedProject(input.sqliteProjectId, input.projectsById, 'sqlite-project-id');
   if (sqlite) return sqlite;
-  const hinted = matchKnownRoot(input.workspaceHint, input.projectsById, 'workspace-hint');
+  const hinted = matchWorkspaceHint(input.workspaceHint, input.projectsById);
   if (hinted) return hinted;
-  const cwd = matchKnownRoot(input.cwd, input.projectsById, 'cwd');
+  const cwd = matchCwdRoot(input.cwd, input.projectsById);
   if (cwd) return cwd;
   if (input.cwd) return { projectRoot: input.cwd, classification: 'project', evidence: 'cwd' };
   return { classification: 'projectless', evidence: 'none' };
@@ -62,19 +62,42 @@ function attributedProject(
   };
 }
 
-function matchKnownRoot(
+function matchCwdRoot(
   path: string | undefined,
   projectsById: ReadonlyMap<string, CodexProjectRef>,
-  evidence: 'workspace-hint' | 'cwd',
 ): CodexProjectAttribution | undefined {
-  const canonical = canonicalRecordedRoot(path);
-  if (!canonical || !path) return undefined;
-  for (const project of projectsById.values()) {
+  if (!path || !canonicalRecordedRoot(path)) return undefined;
+  return attributionForRoot(longestContainingRoot(path, projectRoots(projectsById)), projectsById, 'cwd');
+}
+
+function matchWorkspaceHint(
+  path: string | undefined,
+  projectsById: ReadonlyMap<string, CodexProjectRef>,
+): CodexProjectAttribution | undefined {
+  if (!path || !canonicalRecordedRoot(path)) return undefined;
+  const inside = attributionForRoot(longestContainingRoot(path, projectRoots(projectsById)), projectsById, 'workspace-hint');
+  if (inside) return inside;
+  const children = [...projectsById.values()].filter((project) => {
     const root = project.rootPaths[0];
-    if (!root) continue;
-    if (pathContainedBy(root, path) || pathContainedBy(path, root)) {
-      return { projectId: project.id, projectRoot: root, classification: 'project', evidence };
-    }
-  }
-  return undefined;
+    return Boolean(root && pathContainedBy(path, root));
+  });
+  if (children.length !== 1) return undefined;
+  const project = children[0]!;
+  const projectRoot = project.rootPaths[0];
+  return { projectId: project.id, ...(projectRoot ? { projectRoot } : {}), classification: 'project', evidence: 'workspace-hint' };
+}
+
+function projectRoots(projectsById: ReadonlyMap<string, CodexProjectRef>): string[] {
+  return [...projectsById.values()].flatMap((project) => project.rootPaths[0] ? [project.rootPaths[0]] : []);
+}
+
+function attributionForRoot(
+  root: string | undefined,
+  projectsById: ReadonlyMap<string, CodexProjectRef>,
+  evidence: 'cwd' | 'workspace-hint',
+): CodexProjectAttribution | undefined {
+  if (!root) return undefined;
+  const project = [...projectsById.values()].find((candidate) => candidate.rootPaths[0] === root);
+  if (!project) return undefined;
+  return { projectId: project.id, projectRoot: root, classification: 'project', evidence };
 }

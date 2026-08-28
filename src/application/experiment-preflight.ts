@@ -92,9 +92,12 @@ export function preflightFromBaseline(
   const limitations = baseline.recovery
     ? [...baseline.warnings]
     : [limitation, ...baseline.warnings];
+  const excluded = baseline.budget.excludedEntries?.length ?? 0;
   return {
     sourceBaseline:
-      baseline.readiness.runnable === "blocked" ? "partial" : "available",
+      baseline.readiness.runnable === "blocked" || excluded > 0
+        ? "partial"
+        : "available",
     resolved,
     sourceFingerprint:
       baseline.recovery?.sourceDigest ?? baseline.fingerprint.digest,

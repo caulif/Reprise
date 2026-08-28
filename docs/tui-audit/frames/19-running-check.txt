@@ -1,13 +1,13 @@
-Reprise v0.1.0   C:\reprise                                       No configured model   ○ Harness unset  ● Codex  ● Task
+Reprise   Preparing replay                                                                   00:00   round 1   ● running
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Last task  Fix the bug. · 2 turns
-
- Continue
- r     Replay the current task  needs config
- i     Import a historical session
-
-┌─ Checking source ────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Inspecting source and deterministic contamination signals; no model will be called.                                  │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Recovering session                                                                                                     
+                                                                                                                        
+ Session      Fix the bug.                                                                                              
+ Project      source                                                                                                    
+ Status       Preparing recovery environment                                                                            
+                                                                                                                        
+ [▓████████░░░░░░░░░░░░░░░░░░░░░░░░░░░]                                                                                 
+ Will replay this task in Codex with the candidate model. Your original repo is left unchanged.                         
+ ❯ Cannot type to Codex during prepare
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Esc] Home
+ [Ctrl+C] Cancel  [?] Keys

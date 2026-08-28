@@ -5,9 +5,10 @@ import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { SAFE_ID } from '../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
-import { discoverSessionPage, forEachJsonlSummaryLine, listJsonlFiles, SessionDiscoveryError, parseJsonlRows, readSessionFile, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
+import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, SessionDiscoveryError, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
+import { forEachJsonlRecordLenient, withStableJsonlRead } from '../shared/jsonl-io.js';
 import { isExcludedSession } from '../shared/session-exclusion.js';
-import { assertTranscriptSessionId, unreadableSessionSummary } from '../shared/session-recovery.js';
+import { assertTranscriptSessionId, discoveryFailureSummary } from '../shared/session-recovery.js';
 import type {
   ImportDiagnostic,
   ImportedSession,
@@ -21,7 +22,6 @@ import type {
 } from '../contract.js';
 
 const PRODUCT_ID = 'claude-code';
-const MAX_SESSION_BYTES = 64 * 1024 * 1024;
 const MAX_SUMMARY_BYTES = 4 * 1024 * 1024;
 const MAX_SUMMARY_LINES = 50_000;
 const SKIP_TYPES = new Set([
@@ -79,8 +79,9 @@ async function discoverClaudeSessionPage(query: SessionDiscoveryQuery): Promise<
     ...(query.refresh ? { refresh: true } : {}),
     diagnostics: [...listing.diagnostics, ...history.diagnostics],
     inspect: (entry) => summarizeClaudeSource(entry, query.signal, history.entries),
+    inspectPartial: (entry, signal) => summarizeClaudeSessionHead(entry, signal),
     exclude: (session) => isExcludedSession(session, query, [root]),
-    failedSummary: (entry) => unreadableSessionSummary(PRODUCT_ID, entry),
+    failedSummary: (entry, code) => discoveryFailureSummary(PRODUCT_ID, entry, code),
   });
 }
 
@@ -197,40 +198,49 @@ async function summarizeClaudeHistorySession(sourcePath: string, sessionId: stri
     evidenceLevel: 'history',
     sourceKind: entry.cwd ? 'unknown' : 'projectless',
     availability: 'catalog-only',
+    recoveryReadiness: 'history-only',
   };
 }
 
 async function inspectClaudeSession(sourcePath: string): Promise<SessionInspection> {
-  const imported = await importClaudeSession(sourcePath);
-  const cwd = cwdFrom(imported);
-  const model = modelFrom(imported);
-  const version = versionFrom(imported);
-  const commit = commitFrom(imported);
-  const summary = imported.initialInput.text ? compact(imported.initialInput.text) : undefined;
-  const finalMessage = imported.baseline.finalMessage;
-  return {
-    productId: PRODUCT_ID,
-    sessionId: imported.source.sessionId,
-    sourcePath: imported.source.sourcePath ?? sourcePath,
-    startedAt: startedAtFrom(imported),
-    ...(cwd ? { cwd } : {}),
-    ...(model ? { model } : {}),
-    ...(summary ? { summary } : {}),
-    signals: imported.signals,
-    evidenceLevel: imported.evidenceLevel ?? 'transcript',
-    transcript: imported.transcript,
-    ...(finalMessage ? { finalMessage } : {}),
-    ...(version ? { sourceVersion: version } : {}),
-    ...(commit ? { historicalCommit: commit } : {}),
-  };
+  const historySessionId = historyLocatorSessionId(sourcePath);
+  if (historySessionId) return inspectionFromImported(await importClaudeHistorySession(sourcePath, historySessionId), sourcePath);
+  const source = resolve(sourcePath);
+  const stable = await withStableJsonlRead(source, async () => {
+    const state = emptyClaudeImportState();
+    const walk = await forEachJsonlRecordLenient(source, 'Claude', (row, index) => ingestClaudeImportRow(state, row, index));
+    return { state, walk };
+  });
+  applyClaudeWalk(stable.value.state, stable.value.walk, stable.changed);
+  return inspectionFromClaudeState(source, stable.value.state);
 }
 
 export async function importClaudeSession(sourcePath: string): Promise<ImportedSession> {
   const historySessionId = historyLocatorSessionId(sourcePath);
   if (historySessionId) return importClaudeHistorySession(sourcePath, historySessionId);
   const source = resolve(sourcePath);
-  const bytes = await readSessionFile(source, 'Claude', MAX_SESSION_BYTES);
-  return importFromBytes(source, bytes);
+  const stable = await withStableJsonlRead(source, async () => {
+    const state = emptyClaudeImportState();
+    const events: JsonRecord[] = [];
+    const walk = await forEachJsonlRecordLenient(source, 'Claude', (row, index) => {
+      ingestClaudeImportRow(state, row, index);
+      events.push(row);
+    });
+    return { state, walk, events };
+  });
+  applyClaudeWalk(stable.value.state, stable.value.walk, stable.changed);
+  return importedFromClaudeState(source, stable.value.state, stable.value.events);
+}
+
+function applyClaudeWalk(
+  state: ClaudeImportState,
+  walk: { diagnostics: readonly { code: string; message: string; physicalLine?: number }[] },
+  changed: boolean,
+): void {
+  for (const diagnostic of walk.diagnostics) {
+    state.diagnostics.push({ code: diagnostic.code, message: diagnostic.message });
+  }
+  if (changed) state.diagnostics.push({ code: 'source-changed', message: 'Source file changed during read; retry the recovery attempt.' });
 }
 
 async function importClaudeHistorySession(sourcePath: string, sessionId: string): Promise<ImportedSession> {
@@ -254,6 +264,7 @@ async function importClaudeHistorySession(sourcePath: string, sessionId: string)
     diagnostics: [],
     signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
     evidenceLevel: 'history',
+    recoveryReadiness: 'history-only',
   };
 }
 
@@ -261,6 +272,17 @@ type ClaudeSummaryState = {
   sessionId?: string | undefined; startedAt?: string | undefined; updatedAt?: string | undefined; cwd?: string | undefined; model?: string | undefined; summary?: string | undefined;
   userMessages: number; assistantMessages: number; toolCalls: number; completedTurns: number;
 };
+
+async function summarizeClaudeSessionHead(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<SessionSummary> {
+  if (historyLocatorSessionId(entry.path)) throw new SessionDiscoveryError('too-large', 'Claude history locator cannot use a transcript head.');
+  const state: ClaudeSummaryState = { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
+  const sourcePath = resolve(entry.path);
+  await forEachJsonlHeadSummaryLine(sourcePath, 'Claude', { maxBytes: 256 * 1024, maxLines: 2_000, ...(signal ? { signal } : {}) }, (row, index) => consumeClaudeSummaryRow(state, row, index));
+  const fileId = basename(sourcePath, '.jsonl');
+  state.sessionId ??= SAFE_ID.test(fileId) ? fileId : undefined;
+  if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new SessionDiscoveryError('too-large', 'Claude session head has no valid id.');
+  return claudeSummaryFromState(entry, sourcePath, state, true);
+}
 
 /** Listing reads one JSONL row at a time and keeps only metadata/counts, never a transcript. */
 async function summarizeClaudeSession(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<SessionSummary> {
@@ -270,10 +292,15 @@ async function summarizeClaudeSession(entry: SessionFileEntry, signal: AbortSign
   const fileId = basename(sourcePath, '.jsonl');
   state.sessionId ??= SAFE_ID.test(fileId) ? fileId : undefined;
   if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new Error('Claude session metadata has no valid id.');
-  if (!state.userMessages) throw new Error('Claude session has no user message eligible for replay.');
+  return claudeSummaryFromState(entry, sourcePath, state, false);
+}
+
+function claudeSummaryFromState(entry: SessionFileEntry, sourcePath: string, state: ClaudeSummaryState, partial: boolean): SessionSummary {
   const fallback = new Date(entry.mtime).toISOString();
+  const readiness = partial ? 'pending' as const : state.userMessages ? 'verified' as const : 'no-user-input' as const;
   return {
-    productId: PRODUCT_ID, sessionId: state.sessionId, sourcePath,
+    productId: PRODUCT_ID, sessionId: state.sessionId!, sourcePath,
+    ...(partial ? { partial: true } : {}),
     ...(state.startedAt ? { startedAt: state.startedAt, startedAtSource: 'event' as const } : {}),
     updatedAt: state.updatedAt ?? fallback,
     updatedAtSource: state.updatedAt ? 'event' : 'file-mtime',
@@ -283,6 +310,9 @@ async function summarizeClaudeSession(entry: SessionFileEntry, signal: AbortSign
     evidenceLevel: 'transcript',
     sourceKind: state.cwd ? 'rollout-only' : 'projectless',
     availability: 'indexed',
+    recoveryReadiness: readiness,
+    ...(readiness === 'no-user-input' ? { recoveryDiagnostics: [{ code: 'no-user-input', message: 'Complete discovery summary found no eligible user message.' }] } : {}),
+    ...(partial ? { recoveryDiagnostics: [{ code: 'summary-window', message: 'List used a bounded head; full inspect is required.' }] } : {}),
   };
 }
 
@@ -328,7 +358,31 @@ type ClaudeImportState = {
   toolCalls: number;
   completedTurns: number;
   eligibleUsers: SessionMessage[];
+  touchedPaths: Set<string>;
 };
+
+function emptyClaudeImportState(): ClaudeImportState {
+  return {
+    diagnostics: [],
+    unknownTypes: 0,
+    sessionId: undefined,
+    startedAt: undefined,
+    cwd: undefined,
+    version: undefined,
+    gitBranch: undefined,
+    effort: undefined,
+    permissionMode: undefined,
+    compaction: false,
+    model: undefined,
+    transcript: [],
+    userMessages: 0,
+    assistantMessages: 0,
+    toolCalls: 0,
+    completedTurns: 0,
+    eligibleUsers: [],
+    touchedPaths: new Set(),
+  };
+}
 
 function ingestClaudeImportRow(state: ClaudeImportState, row: JsonRecord, index: number): void {
   const type = text(row.type);
@@ -371,6 +425,7 @@ function ingestClaudeImportRow(state: ClaudeImportState, row: JsonRecord, index:
     state.toolCalls += parsed.toolCalls;
     state.completedTurns += parsed.completedTurn ? 1 : 0;
     if (parsed.model && parsed.model !== '<synthetic>') state.model = parsed.model;
+    consumeClaudeWriteTools(state, row);
     if (parsed.apiError) return;
     state.assistantMessages += parsed.assistantMessages;
     state.transcript.push(...parsed.messages);
@@ -379,47 +434,17 @@ function ingestClaudeImportRow(state: ClaudeImportState, row: JsonRecord, index:
   state.unknownTypes += 1;
 }
 
-async function importFromBytes(sourcePath: string, bytes: Buffer): Promise<ImportedSession> {
-  const fileId = basename(sourcePath, '.jsonl');
-  const rows = parseJsonlRows(bytes, sourcePath, 'Claude');
-  const state: ClaudeImportState = {
-    diagnostics: [],
-    unknownTypes: 0,
-    sessionId: undefined,
-    startedAt: undefined,
-    cwd: undefined,
-    version: undefined,
-    gitBranch: undefined,
-    effort: undefined,
-    permissionMode: undefined,
-    compaction: false,
-    model: undefined,
-    transcript: [],
-    userMessages: 0,
-    assistantMessages: 0,
-    toolCalls: 0,
-    completedTurns: 0,
-    eligibleUsers: [],
-  };
-
-  for (const [index, row] of rows.entries()) ingestClaudeImportRow(state, row, index);
-
-  if (state.unknownTypes) state.diagnostics.push({ code: 'unknown-types', message: `Skipped ${state.unknownTypes} unknown row type(s).` });
-  if (!state.sessionId) state.sessionId = SAFE_ID.test(fileId) ? fileId : undefined;
-  if (state.sessionId && fileId && state.sessionId !== fileId) {
-    state.diagnostics.push({ code: 'filename-mismatch', message: `Filename ${fileId} does not match sessionId ${state.sessionId}.` });
-  }
-  if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new Error('Claude session metadata has no valid id.');
-  if (!state.startedAt) throw new Error(`Claude session ${state.sessionId} has no valid start time.`);
+function importedFromClaudeState(sourcePath: string, state: ClaudeImportState, events: readonly JsonRecord[]): ImportedSession {
+  const { sessionId } = finalizeClaudeImport(sourcePath, state);
   const initial = state.eligibleUsers[0] ?? state.transcript.find((message) => message.role === 'user');
   if (!initial) throw new Error('Claude session has no user message eligible for replay.');
   const finalMessage = [...state.transcript].reverse().find((message) => message.role === 'assistant')?.text;
   const signals = { userMessages: state.userMessages, assistantMessages: state.assistantMessages, toolCalls: state.toolCalls, completedTurns: state.completedTurns };
   return {
-    source: { productId: PRODUCT_ID, sessionId: state.sessionId, sourcePath },
+    source: { productId: PRODUCT_ID, sessionId, sourcePath },
     initialInput: initial,
     transcript: state.transcript,
-    historicalEvents: rows,
+    historicalEvents: events,
     baseline: { status: finalMessage ? 'available' : 'unavailable', ...(finalMessage ? { finalMessage } : {}), artifactRefs: [], evidenceRefs: [] },
     sourceRuntimeEvidence: { productId: PRODUCT_ID, ...(state.version ? { version: state.version } : {}), ...(state.model ? { model: state.model } : {}), artifactRefs: [] },
     taskContext: {
@@ -428,14 +453,99 @@ async function importFromBytes(sourcePath: string, bytes: Buffer): Promise<Impor
       ...(state.effort ? { effort: state.effort } : {}),
       ...(state.permissionMode ? { permissionMode: state.permissionMode } : {}),
       ...(state.compaction ? { compaction: true } : {}),
-      historicalBehavior: historicalBehavior(rows),
+      ...(state.startedAt ? { historyStartedAt: state.startedAt } : {}),
+      historicalBehavior: { commands: [], touchedPaths: [...state.touchedPaths].sort() },
       signals,
     },
     provenance: { packVersion: 'claude-code-session-jsonl/v1' },
-    raw: { relativePath: 'raw/session.jsonl', text: bytes.toString('utf8') },
+    raw: { relativePath: 'raw/session.jsonl', text: '', sourcePath },
     diagnostics: state.diagnostics,
     signals,
   };
+}
+
+function inspectionFromClaudeState(sourcePath: string, state: ClaudeImportState): SessionInspection {
+  const { sessionId, startedAt } = finalizeClaudeImport(sourcePath, state);
+  const initial = state.eligibleUsers[0] ?? state.transcript.find((message) => message.role === 'user');
+  const finalMessage = [...state.transcript].reverse().find((message) => message.role === 'assistant')?.text;
+  const changed = state.diagnostics.some((item) => item.code === 'source-changed');
+  const corrupt = state.diagnostics.some((item) => item.code === 'invalid-jsonl' || item.code === 'corrupt-prefix');
+  const truncated = state.diagnostics.some((item) => item.code === 'truncated-tail');
+  const recoveryReadiness = changed ? 'pending' as const
+    : corrupt ? 'corrupt' as const
+      : !initial ? 'no-user-input' as const
+        : truncated ? 'best-effort' as const
+          : 'verified' as const;
+  return {
+    productId: PRODUCT_ID,
+    sessionId,
+    sourcePath,
+    startedAt,
+    ...(state.cwd ? { cwd: state.cwd } : {}),
+    ...(state.model ? { model: state.model } : {}),
+    ...(initial ? { summary: compact(initial.text) } : {}),
+    signals: { userMessages: state.userMessages, assistantMessages: state.assistantMessages, toolCalls: state.toolCalls, completedTurns: state.completedTurns },
+    evidenceLevel: 'transcript',
+    transcript: state.transcript,
+    availability: 'indexed',
+    recoveryReadiness,
+    recoveryDiagnostics: state.diagnostics.map((item) => ({ code: item.code, message: item.message })),
+    ...(finalMessage ? { finalMessage } : {}),
+    ...(state.version ? { sourceVersion: state.version } : {}),
+  };
+}
+
+function inspectionFromImported(imported: ImportedSession, sourcePath: string): SessionInspection {
+  const cwd = cwdFrom(imported);
+  const model = modelFrom(imported);
+  const version = versionFrom(imported);
+  const commit = commitFrom(imported);
+  const summary = imported.initialInput.text ? compact(imported.initialInput.text) : undefined;
+  const finalMessage = imported.baseline.finalMessage;
+  return {
+    productId: PRODUCT_ID,
+    sessionId: imported.source.sessionId,
+    sourcePath: imported.source.sourcePath ?? sourcePath,
+    startedAt: startedAtFrom(imported),
+    ...(cwd ? { cwd } : {}),
+    ...(model ? { model } : {}),
+    ...(summary ? { summary } : {}),
+    signals: imported.signals,
+    evidenceLevel: imported.evidenceLevel ?? 'transcript',
+    transcript: imported.transcript,
+    ...(imported.recoveryReadiness ? { recoveryReadiness: imported.recoveryReadiness } : imported.evidenceLevel === 'history' ? { recoveryReadiness: 'history-only' as const } : {}),
+    ...(finalMessage ? { finalMessage } : {}),
+    ...(version ? { sourceVersion: version } : {}),
+    ...(commit ? { historicalCommit: commit } : {}),
+  };
+}
+
+function finalizeClaudeImport(sourcePath: string, state: ClaudeImportState): { sessionId: string; startedAt: string } {
+  const fileId = basename(sourcePath, '.jsonl');
+  if (state.unknownTypes) state.diagnostics.push({ code: 'unknown-types', message: `Skipped ${state.unknownTypes} unknown row type(s).` });
+  if (!state.sessionId) state.sessionId = SAFE_ID.test(fileId) ? fileId : undefined;
+  if (state.sessionId && fileId && state.sessionId !== fileId) {
+    state.diagnostics.push({ code: 'filename-mismatch', message: `Filename ${fileId} does not match sessionId ${state.sessionId}.` });
+  }
+  if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new Error('Claude session metadata has no valid id.');
+  if (!state.startedAt) throw new Error(`Claude session ${state.sessionId} has no valid start time.`);
+  return { sessionId: state.sessionId, startedAt: state.startedAt };
+}
+
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'Delete']);
+
+function consumeClaudeWriteTools(state: ClaudeImportState, row: JsonRecord): void {
+  const content = record(row.message).content;
+  if (!Array.isArray(content)) return;
+  for (const part of content) {
+    if (!isRecord(part) || part.type !== 'tool_use') continue;
+    const name = text(part.name);
+    if (!name || !WRITE_TOOLS.has(name)) continue;
+    const input = record(part.input);
+    const path = text(input.file_path) ?? text(input.path);
+    const normalized = path?.trim().replaceAll('\\', '/');
+    if (normalized && normalized.length <= 1_024) state.touchedPaths.add(normalized);
+  }
 }
 
 function parseUserRow(row: JsonRecord, index: number): { kind: 'user'; message: SessionMessage; meta: boolean } | { kind: 'tool'; message: SessionMessage } | { kind: 'skip' } {
@@ -526,26 +636,6 @@ function modelFrom(imported: ImportedSession): string | undefined {
 
 function versionFrom(imported: ImportedSession): string | undefined {
   return imported.sourceRuntimeEvidence.version;
-}
-
-const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'Delete']);
-
-function historicalBehavior(rows: readonly JsonRecord[]): { commands: readonly string[]; touchedPaths: readonly string[] } {
-  const touchedPaths = new Set<string>();
-  for (const row of rows) {
-    const content = record(row.message).content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      if (!isRecord(part) || part.type !== 'tool_use') continue;
-      const name = text(part.name);
-      if (!name || !WRITE_TOOLS.has(name)) continue;
-      const input = record(part.input);
-      const path = text(input.file_path) ?? text(input.path);
-      const normalized = path?.trim().replaceAll('\\', '/');
-      if (normalized && normalized.length <= 1_024) touchedPaths.add(normalized);
-    }
-  }
-  return { commands: [], touchedPaths: [...touchedPaths].sort() };
 }
 
 function commitFrom(imported: ImportedSession): string | undefined {

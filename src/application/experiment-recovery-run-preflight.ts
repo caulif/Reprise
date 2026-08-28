@@ -80,6 +80,7 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
         credential: 0,
         private_key: 0,
       },
+      excludedEntries: session.staging.sourceBudget.excludedEntries ?? [],
     },
   });
 }

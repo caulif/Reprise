@@ -58,7 +58,11 @@ export function recoveryModelInputAudit(
         : [],
     },
     runtimeCapabilities: context.runtimeCapabilities,
-    staging: { fileCount: staging?.fileCount, totalBytes: staging?.totalBytes },
+    staging: {
+      fileCount: staging?.fileCount,
+      totalBytes: staging?.totalBytes,
+      excludedEntries: staging?.excludedEntries,
+    },
     budget: { maxToolCalls: budget?.maxToolCalls, timeoutMs: budget?.timeoutMs },
     allowModelText: context.allowModelText,
     toolNames: [...toolNames],

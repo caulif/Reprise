@@ -209,7 +209,7 @@ async function main() {
   await push('10-sessions-compact', 60, intake.render(60));
   await push('11-sessions-cjk-selected', 120, intake.render(120));
   intakeApp.handleInput('\r');
-  await waitFor(() => /is current/.test(intake.render(120)), 'home after CJK freeze');
+  await waitFor(() => /is current/.test(intake.render(120)), { describe: 'home after CJK freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('12-home-after-cjk-freeze', 120, intake.render(120));
   enterCommand(intakeApp, '/intake');
   await waitFor(() => /Select agent product/.test(intake.render(120)), 'product list after freeze');
@@ -221,7 +221,7 @@ async function main() {
   intakeApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(intake.render(120)), 'English session list');
   intakeApp.handleInput('\r');
-  await waitFor(() => /is current/.test(intake.render(120)), 'home after English freeze');
+  await waitFor(() => /is current/.test(intake.render(120)), { describe: 'home after English freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('13-home-after-freeze', 120, intake.render(120));
   await push('18-home-with-taskcase', 120, intake.render(120));
 
@@ -330,12 +330,12 @@ async function main() {
   runApp.handleInput('\r');
   await waitFor(() => {
     const frame = run.render(120);
-    return /Inspecting source|Candidate preflight/.test(frame) && /● Codex/.test(frame);
-  }, 'auto preflight after freeze with selected product');
+    return /Recovering session|Preparing recovery environment|TaskCase frozen|Starting environment recovery/.test(frame);
+  }, { describe: 'auto recovery after freeze with selected product', timeoutMs: 30_000, frame: () => run.render(120) });
   await push('19-running-check', 120, run.render(120));
   await push('19b-running-check-compact', 60, run.render(60));
   releasePreflight?.();
-  await waitFor(() => /Preparing replay/.test(run.render(120)), 'automatic environment preparation after preflight');
+  await waitFor(() => /Running recovery agent/.test(run.render(120)), 'automatic environment preparation after preflight');
   await push('20-running-copy', 120, run.render(120));
   releaseRecovery?.();
   await waitFor(() => /Start isolated Codex Candidate/.test(run.render(120)), 'single run confirmation after preparation');

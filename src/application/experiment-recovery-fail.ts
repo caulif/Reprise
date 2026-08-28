@@ -1,6 +1,10 @@
 import { join, resolve } from "node:path";
 import type { RecoveryResult } from "../agents/recovery-agent.js";
 import { persistRecoveryEvaluation } from "./recovery-evaluation.js";
+import {
+  persistRecoveryAttemptDiagnosis,
+  recoveryAttemptDiagnosis,
+} from "./recovery-user-status.js";
 import type { EnvironmentBaseline, LocalWorkspaceProvider, RecoveryStaging } from "../environment/local-workspace-provider.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
 import { ExperimentStore, writeImmutableJson } from "../infrastructure/store/experiment-store.js";
@@ -85,6 +89,20 @@ export async function failRecoverCodexExperiment(input: FailRecoverCodexExperime
     modelAttempts: input.modelAttempts,
     recoveryOrchestrator: input.recoveryOrchestrator,
   });
+  await persistRecoveryAttemptDiagnosis(
+    input.experimentRoot,
+    recoveryAttemptDiagnosis({
+      taskCase: input.attemptInput.taskCase,
+      baseline: settled.baseline,
+      transcriptOk: Boolean(input.attemptInput.taskCase.initialInput?.text),
+      recoveryAgentStarted: input.modelAttempts > 0,
+      retryable: Boolean(settled.providerFailureRetryable),
+      reasonCode:
+        settled.baseline.budget.excludedEntries?.[0]?.reasonCode ??
+        settled.failureStage ??
+        "recovery_agent.failed",
+    }),
+  );
   return {
     baseline: settled.baseline,
     recovery: failed,

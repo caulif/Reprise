@@ -1,4 +1,4 @@
-import { canonicalRecordedRoot, pathContainedBy } from '../../core/paths.js';
+import { canonicalRecordedRoot, longestContainingRoot } from '../../core/paths.js';
 import type { SessionSummary } from '../contract.js';
 
 export const PROJECTLESS_PROJECT_KEY = 'projectless';
@@ -38,8 +38,6 @@ export function sessionGroupingKey(
 function catalogKeyForRoot(canonical: string, catalogKeysByRoot: ReadonlyMap<string, string>): string | undefined {
   const exact = catalogKeysByRoot.get(canonical);
   if (exact) return exact;
-  for (const [root, key] of catalogKeysByRoot) {
-    if (pathContainedBy(root, canonical) || pathContainedBy(canonical, root)) return key;
-  }
-  return undefined;
+  const deepest = longestContainingRoot(canonical, catalogKeysByRoot.keys());
+  return deepest ? catalogKeysByRoot.get(deepest) : undefined;
 }

@@ -31,7 +31,7 @@ Claude 的 `history.jsonl` 是提示历史索引，不是可冻结的 session tr
 - 选择具体产品之前不读取任何该产品的 session 根目录；
 - UI 可以明确展示「还有更多」和已跳过数量，而不把 150 条误称为完整结果；产品页以及选择产品后的项目/会话页均展示 index 级跳过数和按 code 聚合的安全摘要；同一不可读目录、坏文件或排除项不会随分页被重复计入；
 - 兼容旧单值 `sessionsRoot` 时，显式 `pack` 优先；否则多 Pack 仅映射到历史 Codex Pack（不依赖 Pack 数组顺序），单 Pack 映射到该唯一 Pack。产品 keyed root 可显式覆盖该兼容映射；
-- 两个 Pack 都通过 `fs.opendir()` 有界遍历并逐行读取摘要；目录按稳定的广度优先批次、每批最多 8 个目录任务执行，摘要 index 也每批最多 8 个文件任务，不能把整棵目录树或全部文件读取放入无界 `Promise.all()`。单个摘要的 4 MiB / 50,000 行预算触发 `too-large`，完整 inspect/import 保留既有 64 MiB 限制。
+- 两个 Pack 都通过 `fs.opendir()` 有界遍历并逐行读取摘要；目录按稳定的广度优先批次、每批最多 8 个目录任务执行，摘要 index 也每批最多 8 个文件任务，不能把整棵目录树或全部文件读取放入无界 `Promise.all()`。单个摘要的 4 MiB / 50,000 行预算触发 `too-large`。inspect/import 的读取方式见[流式正文决策](./2026-08-27-stream-session-transcript-io.md)。
 - 严格的全局 event-time 排序与“在尚未读取后续候选前先展示最新首屏”不能同时成立。因此首个页面等待可取消的完整轻量 index；index 完成后，结果页和 cursor 页才渐进展示。目录 symlink/junction 一律作为 `unsupported-entry` 跳过，不跟随到 root 外或循环目录。Windows ACL 拒绝由临时目录上的 `icacls.exe` fixture 覆盖，cleanup 先移除 deny ACE，绝不更改真实历史目录。
 
 ## 验证

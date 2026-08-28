@@ -1,15 +1,13 @@
 Reprise   Preparing replay                                                                   00:00   round 1   ● running
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Task  Fix the bug.                                                                                                     
- Will replay this task in Codex with the candidate model. Your original repo is left unchanged.                         
+ Recovering session                                                                                                     
+                                                                                                                        
+ Session      Fix the bug.                                                                                              
+ Project      source                                                                                                    
+ Status       Running recovery agent                                                                                    
                                                                                                                         
  [▓████████░░░░░░░░░░░░░░░░░░░░░░░░░░░]                                                                                 
- Checking source · step 1 / 4 · Preparing the isolated environment                                                      
-                                                                                                                        
- ●  Restore historical environment  in progress                                                                         
- ○  Copy isolated workspace  waiting                                                                                    
- ○  Write candidate config  waiting                                                                                     
- ○  Start Codex  waiting                                                                                                
+ Will replay this task in Codex with the candidate model. Your original repo is left unchanged.                         
  ❯ Cannot type to Codex during prepare
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [Ctrl+C] Cancel  [?] Keys

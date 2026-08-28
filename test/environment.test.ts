@@ -8,7 +8,9 @@ import {
   readdir,
   rename,
   rm,
+  lstat,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -866,5 +868,64 @@ test("insufficient evidence keeps an unchanged staging copy matched to current s
     preview.baseline.fingerprint.digest,
     staging.sourceFingerprint.digest,
   );
+  await provider.discardRecovery(staging);
+});
+
+test("workspace junctions are skipped, recorded, and do not block a partial candidate", async (t) => {
+  const { root, source } = await directories();
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+    await rm(source, { recursive: true, force: true });
+  });
+  const outside = await mkdtemp(join(tmpdir(), "reprise-link-target-"));
+  t.after(async () => rm(outside, { recursive: true, force: true }));
+  await writeFile(join(outside, "secret.txt"), "outside");
+  await mkdir(join(source, "ppt_build"));
+  await writeFile(join(source, "readme.txt"), "keep");
+  try {
+    await symlink(outside, join(source, "ppt_build", "node_modules"), "junction");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && ["EPERM", "EACCES"].includes(String(error.code))) {
+      t.skip("directory junction creation is unavailable in this environment");
+      return;
+    }
+    throw error;
+  }
+  const provider = new LocalWorkspaceProvider(root);
+  const inspected = await provider.inspectBaseline({ caseId: "case-junction", sourceRoot: source }, [], {});
+  assert.equal(inspected.readiness.runnable, "isolated");
+  assert.equal(inspected.budget.blockedReasons.length, 0);
+  assert.ok(inspected.budget.excludedEntries?.some((item) => item.reasonCode === "workspace.symlink_skipped"));
+  assert.equal(inspected.fingerprint.resources.some((item) => item.path.includes("node_modules")), false);
+  const staging = await provider.beginRecovery({ caseId: "case-junction", sourceRoot: source });
+  assert.equal(await readFile(join(staging.root, "readme.txt"), "utf8"), "keep");
+  await assert.rejects(stat(join(staging.root, "ppt_build", "node_modules")));
+  assert.equal(await readFile(join(outside, "secret.txt"), "utf8"), "outside");
+  await provider.discardRecovery(staging);
+});
+
+test("in-root file links are materialized as ordinary files without keeping a writable link", async (t) => {
+  const { root, source } = await directories();
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+    await rm(source, { recursive: true, force: true });
+  });
+  await writeFile(join(source, "target.txt"), "inside");
+  try {
+    await symlink("target.txt", join(source, "link.txt"), "file");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && ["EPERM", "EACCES"].includes(String(error.code))) {
+      t.skip("Windows symlink creation is unavailable in this environment");
+      return;
+    }
+    throw error;
+  }
+  const provider = new LocalWorkspaceProvider(root);
+  const inspected = await provider.inspectBaseline({ caseId: "case-inroot-link", sourceRoot: source }, [], {});
+  assert.equal(inspected.fingerprint.resources.some((item) => item.path === "link.txt"), true);
+  const staging = await provider.beginRecovery({ caseId: "case-inroot-link", sourceRoot: source });
+  assert.equal(await readFile(join(staging.root, "link.txt"), "utf8"), "inside");
+  const copied = await lstat(join(staging.root, "link.txt"));
+  assert.equal(copied.isSymbolicLink(), false);
   await provider.discardRecovery(staging);
 });

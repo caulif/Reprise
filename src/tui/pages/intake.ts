@@ -63,11 +63,14 @@ export type InspectionModel = {
 function isProjectless(key: string): boolean { return key === PROJECTLESS_PROJECT_KEY; }
 
 function sessionStatus(session: SessionSummary, locale: Locale): string {
+  if (session.partial || session.recoveryReadiness === 'pending') return t(locale, 'partialSession');
+  if (session.recoveryReadiness === 'best-effort') return t(locale, 'bestEffortSession');
+  if (session.recoveryReadiness === 'no-user-input') return t(locale, 'noUserInputSession');
+  if (session.recoveryReadiness === 'corrupt') return t(locale, 'corruptSession');
   if (session.evidenceLevel === 'history') return t(locale, 'historyOnlySession');
   if (session.availability === 'catalog-only') return t(locale, 'catalogOnlySession');
   if (session.availability === 'unindexed') return t(locale, 'unindexedSession');
   if (session.availability === 'unreadable') return t(locale, 'unreadableSession');
-  if (session.partial) return t(locale, 'partialSession');
   return '';
 }
 
@@ -222,6 +225,9 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
     ` ${t(locale, 'outcomeLabel')}    ${outcome}`,
     ` ${t(locale, 'privacyLabel')}    ${t(locale, 'fieldModelText')} ${privacy.allowModelText ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldBinary')} ${privacy.allowBinary ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldRedactions')} ${privacy.redactions.length || t(locale, 'noneWord')}`,
     ` ${t(locale, 'nothingWritten')}`,
+    ...(inspection.recoveryDiagnostics?.length
+      ? [` ${t(locale, 'recoveryDiagnostics')} ${inspection.recoveryDiagnostics.map((item) => item.code).join(' / ')}`]
+      : []),
     ...(tight ? [] : [kv(theme, t(locale, 'fieldSource'), inspection.sourcePath, width - 2)]),
   ];
   const inner = height === undefined ? body.length : Math.max(1, height - (theme.framed ? 2 : 1));

@@ -65,6 +65,19 @@ export type EnvironmentFingerprint = {
 export type SensitiveFileCategory = 'env' | 'credential' | 'private_key';
 export type SensitiveFileCounts = Readonly<Record<SensitiveFileCategory, number>>;
 
+export type WorkspaceExclusionReason =
+  | 'workspace.symlink_skipped'
+  | 'workspace.permission_denied'
+  | 'workspace.target_missing'
+  | 'workspace.cycle_skipped'
+  | 'workspace.unsupported_entry'
+  | 'workspace.budget_skipped';
+
+export type WorkspaceExclusion = {
+  path: string;
+  reasonCode: WorkspaceExclusionReason;
+};
+
 export type WorkspaceBudget = {
   fileCount: number;
   totalBytes: number;
@@ -72,6 +85,8 @@ export type WorkspaceBudget = {
   blockedReasons: readonly string[];
   /** Category counts only; paths and contents never leave the provider scan. */
   sensitiveFileCounts?: SensitiveFileCounts;
+  /** Link, permission, and other skipped paths; never followed out of the source root. */
+  excludedEntries?: readonly WorkspaceExclusion[];
 };
 
 export type EnvironmentBaseline = {
@@ -198,6 +213,7 @@ export class LocalWorkspaceProvider {
     }
     const captured = await fingerprintTree(sourceRoot);
     const { fingerprint, budget } = captured;
+    const excluded = budget.excludedEntries ?? [];
     return {
       baselineId: `baseline-${source.caseId}`,
       caseId: source.caseId,
@@ -208,7 +224,10 @@ export class LocalWorkspaceProvider {
       fingerprint,
       budget,
       capabilities: { canFork: true, fingerprints: ['file_tree'], externalSideEffects: 'none' },
-      warnings: [...budget.blockedReasons],
+      warnings: [
+        ...budget.blockedReasons,
+        ...excluded.map((item) => `${item.path}: ${item.reasonCode}`),
+      ],
       createdAt: new Date().toISOString(),
     };
   }
@@ -261,7 +280,13 @@ export class LocalWorkspaceProvider {
       checkpointId: checkpoint.checkpointId,
       caseId: checkpoint.caseId,
       fingerprint: checkpoint.fingerprint,
-      budget: { ...checkpoint.budget, blockedReasons: [...checkpoint.budget.blockedReasons] },
+      budget: {
+        fileCount: checkpoint.budget.fileCount,
+        totalBytes: checkpoint.budget.totalBytes,
+        largestFileBytes: checkpoint.budget.largestFileBytes,
+        blockedReasons: [...checkpoint.budget.blockedReasons],
+        ...(checkpoint.budget.excludedEntries ? { excludedEntries: [...checkpoint.budget.excludedEntries] } : {}),
+      },
     };
     if (!Value.Check(RecoveryCheckpointRecordSchema, record))
       throw new Error('Recovery checkpoint metadata does not match RecoveryCheckpointRecordSchema.');

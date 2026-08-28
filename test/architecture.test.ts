@@ -32,6 +32,22 @@ test('only the product registry may import a concrete pack', async () => {
   assert.deepEqual(violations, []);
 });
 
+test('recovery stack does not import product JSONL parsers', async () => {
+  const files = [
+    ...(await tsFiles(join(SRC, 'agents'))).filter((file) => file.includes('recovery')),
+    ...(await tsFiles(join(SRC, 'infrastructure'))).filter((file) => /recovery/.test(file)),
+    ...(await tsFiles(join(SRC, 'application'))).filter((file) => /experiment-recovery|recovery-/.test(file)),
+  ];
+  const violations: string[] = [];
+  for (const file of files) {
+    const source = await readFile(file, 'utf8');
+    if (/from\s+['"][^'"]*(?:jsonl-io|products\/(?:codex|claude-code)\/sessions)['"]/.test(source)) {
+      violations.push(relative(SRC, file).split(sep).join('/'));
+    }
+  }
+  assert.deepEqual(violations, []);
+});
+
 test('packs do not import each other', async () => {
   const packs = ['codex', 'claude-code'];
   for (const pack of packs) {

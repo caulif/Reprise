@@ -8,6 +8,10 @@ import {
 import { RecoveryValidationError } from "../environment/local-workspace-provider.js";
 import { replayControlledRecoveryDeltaBytes } from "../infrastructure/recovery-write-journal.js";
 import { persistRecoveryEvaluation } from "./recovery-evaluation.js";
+import {
+  persistRecoveryAttemptDiagnosis,
+  recoveryAttemptDiagnosis,
+} from "./recovery-user-status.js";
 import { verifyRecoveryCandidate } from "./recovery-verifier.js";
 import { validateRecoveryEvidence } from "../infrastructure/recovery-tools.js";
 import {
@@ -259,6 +263,21 @@ async function persistRecoveryCompletionArtifacts(
       bytes: Buffer.from(activeProviderPreview.reportText, "utf8"),
     });
   }
+  await persistRecoveryAttemptDiagnosis(
+    session.experimentRoot,
+    recoveryAttemptDiagnosis({
+      taskCase: input.taskCase,
+      baseline: activeProviderPreview.baseline,
+      transcriptOk: Boolean(input.taskCase.initialInput?.text),
+      recoveryAgentStarted: true,
+      retryable: false,
+      reasonCode:
+        activeProviderPreview.baseline.budget.excludedEntries?.[0]?.reasonCode ??
+        (activeProviderPreview.baseline.recovery?.status === "recovered"
+          ? "recovered"
+          : "recovery_agent.failed"),
+    }),
+  );
   if (session.writerAcquired)
     await persistRecoveryEvaluation(
       store,

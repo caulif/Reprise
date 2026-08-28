@@ -99,7 +99,7 @@ interface TaskCaseBuilder {
 }
 ```
 
-它不使用 Agent 判断任务边界，也不生成会话内任务候选；用户选择的完整逻辑会话直接成为一个 TaskCase。只有 Environment 子系统内部的 Recovery Agent 处理恢复所需的语义判断，Environment Provider 负责隔离和验证。TaskCase manifest 原子写入后全部字段只读；修改会话、证据、环境或策略时创建新 Case。冻结后正常运行不依赖历史产品私有日志或 Recovery Playbook 持续可用。
+它不使用 Agent 判断任务边界，也不生成会话内任务候选；用户选择的完整逻辑会话直接成为一个 TaskCase。会话列表的摘要窗口只服务展示；冻结资格以选中后的完整 inspect/import 为准，不以列表缓存的 `pending` 或截断摘要为准。只有 Environment 子系统内部的 Recovery Agent 处理恢复所需的语义判断，且只在已有合法 `initialInput` 的 TaskCase 之后运行；它不解析产品 JSONL，也不改写 `initialInput`。Environment Provider 负责隔离和验证。TaskCase manifest 原子写入后全部字段只读；修改会话、证据、环境或策略时创建新 Case。冻结后正常运行不依赖历史产品私有日志或 Recovery Playbook 持续可用。
 
 ### 3.2 Candidate Run
 

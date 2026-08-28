@@ -9,7 +9,7 @@ import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import type { Locale } from './i18n.js';
-import { sessionTitle, type ProductIntakeItem } from './pages/intake.js';
+import { projectLabel, sessionTitle, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
 
 type Input = {
@@ -52,7 +52,13 @@ function runningModel(input: Input) {
     detailExpanded: input.detailExpanded, ...(input.policy ? { policy: input.policy } : {}),
     ...(input.preparePhase ? { preparePhase: input.preparePhase, ...(input.prepareDetail ? { prepareDetail: input.prepareDetail } : {}) } : {}),
     locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}),
-    ...(input.taskCase ? { taskTitle: sessionTitle(input.taskCase.initialInput.text) } : {}),
+    ...(input.taskCase ? {
+      taskTitle: sessionTitle(input.taskCase.initialInput.text),
+      workspaceProject: projectLabel(
+        typeof input.taskCase.taskContext?.historicalCwd === 'string' ? input.taskCase.taskContext.historicalCwd : undefined,
+        input.locale ?? 'en',
+      ),
+    } : {}),
     ...(input.finding ? { finding: true, findQuery: input.findQuery ?? '', findCursor: input.findCursor ?? 0 } : {}),
     tick: input.nowMs ?? Date.now(),
   };

@@ -94,8 +94,6 @@ export function CodexIntakeTui_openIntakeSelection(this: CodexIntakeTui): { cons
     }
     const selected = this.visibleSessions()[this.selected];
     if (!selected) return { consume: true };
-    this.message = t(this.locale, "freezingCase");
-    this.render();
     void freeze(this, selected.sourcePath, { thenRun: true });
     return { consume: true };
   }

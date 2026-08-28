@@ -1,17 +1,22 @@
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { SAFE_ID } from '../../core/identity.js';
 import { isFsAbsolute, pathContainedBy, stripWindowsExtendedPrefix } from '../../core/paths.js';
-import { isRecord, record, text } from '../../core/json.js';
+import { text } from '../../core/json.js';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { DiscoveryDiagnostic, SessionSummary } from '../contract.js';
+import { peekJsonlSessionId } from '../shared/jsonl-io.js';
 import { readCodexGlobalState, type CodexGlobalState } from './global-state.js';
 import { classifyCodexProject } from './project-attribution.js';
 
-export type CodexCatalogOptions = { readonly codexHome?: string; readonly sessionsRoot?: string };
+export type CodexCatalogOptions = {
+  readonly codexHome?: string;
+  readonly sessionsRoot?: string;
+  readonly sessionIdsByPath?: ReadonlyMap<string, string>;
+};
 export type CodexCatalog = { readonly sessions: readonly SessionSummary[]; readonly projects: readonly CodexCatalogProject[]; readonly diagnostics: readonly DiscoveryDiagnostic[] };
 export type CodexCatalogProject = { readonly id: string; readonly name: string; readonly rootPaths: readonly string[]; readonly order?: number };
 
@@ -43,11 +48,19 @@ export async function readCodexCatalog(options: CodexCatalogOptions = {}): Promi
   const global = await readCodexGlobalState(codexHome, diagnostics);
   const projects = global.projects;
   const databasePath = join(codexHome, 'state_5.sqlite');
-  const sessions = existsSync(databasePath) ? readStateThreads(databasePath, sessionsRoot, global, diagnostics) : [];
+  const sessions = existsSync(databasePath)
+    ? readStateThreads(databasePath, sessionsRoot, global, diagnostics, options.sessionIdsByPath)
+    : [];
   return { sessions, projects, diagnostics };
 }
 
-function readStateThreads(databasePath: string, sessionsRoot: string, global: CodexGlobalState, diagnostics: DiscoveryDiagnostic[]): SessionSummary[] {
+function readStateThreads(
+  databasePath: string,
+  sessionsRoot: string,
+  global: CodexGlobalState,
+  diagnostics: DiscoveryDiagnostic[],
+  sessionIdsByPath: ReadonlyMap<string, string> | undefined,
+): SessionSummary[] {
   let database: DatabaseSync | undefined;
   try {
     database = new DatabaseSync(databasePath, { readOnly: true });
@@ -66,7 +79,7 @@ function readStateThreads(databasePath: string, sessionsRoot: string, global: Co
     const selected = ['id', 'rollout_path', 'created_at', 'updated_at', 'cwd', 'title', 'preview', 'model', 'has_user_event', 'archived', 'project_id']
       .filter((column) => columns.has(column));
     const rows = database.prepare(`SELECT ${selected.join(', ')} FROM threads`).all() as SqlRow[];
-    return rows.flatMap((row) => Value.Check(CodexThreadRowSchema, row) ? catalogSummary(row, sessionsRoot, global, diagnostics) : (diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: 'state_5.sqlite' }), []));
+    return rows.flatMap((row) => Value.Check(CodexThreadRowSchema, row) ? catalogSummary(row, sessionsRoot, global, diagnostics, sessionIdsByPath) : (diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: 'state_5.sqlite' }), []));
   } catch (error) {
     diagnostics.push({ code: 'catalog-read-error', count: 1, samplePath: 'state_5.sqlite' });
     return [];
@@ -75,14 +88,20 @@ function readStateThreads(databasePath: string, sessionsRoot: string, global: Co
   }
 }
 
-function catalogSummary(row: SqlRow, sessionsRoot: string, global: CodexGlobalState, diagnostics: DiscoveryDiagnostic[]): SessionSummary[] {
+function catalogSummary(
+  row: SqlRow,
+  sessionsRoot: string,
+  global: CodexGlobalState,
+  diagnostics: DiscoveryDiagnostic[],
+  sessionIdsByPath: ReadonlyMap<string, string> | undefined,
+): SessionSummary[] {
   const id = text(row.id);
   if (!id || !SAFE_ID.test(id) || !CATALOG_ID.test(id)) {
     diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: 'state_5.sqlite' });
     return [];
   }
   const candidate = safeRolloutPath(text(row.rollout_path), sessionsRoot);
-  const rolloutPath = candidate && peekCodexSessionId(candidate) === id ? candidate : undefined;
+  const rolloutPath = candidate && rolloutMatchesThread(id, candidate, sessionIdsByPath) ? candidate : undefined;
   if (text(row.rollout_path) && !rolloutPath) diagnostics.push({ code: 'source-missing', count: 1, samplePath: 'state_5.sqlite' });
   const assigned = global.assignments[id];
   const databaseProject = text(row.project_id);
@@ -140,22 +159,20 @@ function safeRolloutPath(value: string | undefined, sessionsRoot: string): strin
   }
 }
 
-function peekCodexSessionId(path: string): string | undefined {
-  try {
-    const head = readFileSync(path, 'utf8').slice(0, 256 * 1024);
-    for (const line of head.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      let parsed: unknown;
-      try { parsed = JSON.parse(line); } catch { continue; }
-      if (!isRecord(parsed) || text(parsed.type) !== 'session_meta') continue;
-      const id = text(record(parsed.payload).id);
-      if (id && SAFE_ID.test(id)) return id;
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
+function rolloutMatchesThread(
+  threadId: string,
+  candidate: string,
+  sessionIdsByPath: ReadonlyMap<string, string> | undefined,
+): boolean {
+  const known = sessionIdsByPath?.get(catalogPathKey(candidate));
+  if (known) return known === threadId;
+  return peekJsonlSessionId('codex', candidate) === threadId;
 }
+
+export function catalogPathKey(path: string): string {
+  return stripWindowsExtendedPrefix(path).replaceAll('\\', '/').toLowerCase();
+}
+
 function instant(value: unknown): string | undefined {
   const number = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(number) || number <= 0) return undefined;

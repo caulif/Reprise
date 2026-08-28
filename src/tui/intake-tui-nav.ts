@@ -5,7 +5,7 @@ import { HelpOverlay, commandSelectList } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
 import { productContext as activeProductContext, view as projectView } from "./controller-view.js";
 import { discardRecovery, stopRunClock } from "./controller-run.js";
-import { nextLocale, parseLocale, t } from "./i18n.js";
+import { nextLocale, parseLocale, sessionReplayErrorMessage, t } from "./i18n.js";
 import { saveTuiPreferences } from "./preferences.js";
 import { matchesCanvasQuery, matchesFilter } from "./scrollback.js";
 import { createTheme } from "./theme.js";
@@ -68,7 +68,7 @@ export function CodexIntakeTui_showError(this: CodexIntakeTui, error: unknown, r
     stopRunClock(this);
     this.errorReturnPage = returnPage;
     this.page = "error";
-    this.message = operatorErrorMessage(error);
+    this.message = sessionReplayErrorMessage(error, this.locale) ?? operatorErrorMessage(error);
   }
 
 export function CodexIntakeTui_returnFromError(this: CodexIntakeTui): { consume: true } {

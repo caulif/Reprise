@@ -41,6 +41,10 @@
 - [Session discovery 按来源身份排除](./decisions/accepted/2026-08-26-session-discovery-source-exclusion.md)：不按会话 cwd 或 `process.cwd()` 删除历史；精确 ID/path 才排除。
 - [Session 项目 key 由共享函数生成](./decisions/accepted/2026-08-27-session-project-key.md)：Pack 与 TUI 使用同一 `sessionProjectKey`，Codex 归属 assignment 优先。
 - [会话恢复按可验证正文分级](./decisions/accepted/2026-08-27-session-recovery-readiness.md)：Enter/freeze 只接受当场校验通过的 transcript；catalog-only 与 history-only 禁止回放。
+- [会话恢复按 readiness 分级](./decisions/accepted/2026-08-27-session-recovery-best-effort.md)：discovery 不得用摘要失败提前判死；完整 inspect 区分 verified / best-effort / pending / corrupt / no-user-input。
+- [会话恢复对用户只暴露终态](./decisions/accepted/2026-08-28-session-recovery-user-first.md)：选会话后自动恢复；symlink/junction 后台跳过；主界面只显示已恢复 / 部分恢复 / 无法恢复。
+- [列表展示、冻结与 Recovery Agent 分界](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)：列表只截断展示；冻结由 Case Preparation 完成；Recovery Agent 只做环境恢复。
+- [会话正文流式读取](./decisions/accepted/2026-08-27-stream-session-transcript-io.md)：catalog 只读固定头；inspect/import 逐行 JSONL；cwd 单向最长根。
 - [TUI 帧基线只在 Windows 比对](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)：帧是平台相关产物，不在 Ubuntu 上逐字节比对。
 - [生成区输出信封字段表](./decisions/accepted/2026-08-15-generated-docs-envelope-fields.md)：`EventEnvelope.type` 是开放字符串，不生成类型目录。
 - [门禁必须附反向用例](./decisions/accepted/2026-08-15-gate-reverse-tests.md)：只验证干净树上退出 0 不构成门禁生效的证据。
@@ -54,6 +58,8 @@
 `plan/` 只保留尚未做完的工作；做完或被取代后按迁移规则移出。
 
 - [当前实现差距与修正计划](./plan/current-implementation-gap-and-correction-plan.md)：canonical 设计与代码的逐项偏差及迁移路线。
+- [会话恢复的尽力而为实施方案](./plan/session-recovery-best-effort-implementation.md)：让每个 Codex/Claude Code 来源都进入恢复尝试，并区分可回放、部分恢复和不可回放。
+- [列表展示与 Recovery Agent 的分界](./plan/session-intake-vs-recovery-agent.md)：实施清单见该计划；长期约束见[对应决策](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)。
 - [第六轮优化分析](./plan/optimization-round-6.md)：仍未闭合的 P2/P3 条目与产品承诺缺口。
 - [Agent System Prompt 重设计](./plan/agent-system-prompt-redesign.md)：Controller 与 Comparison 提示词的重设计提案。
 - [Claude Code Pack 实施](./plan/claude-code-pack-implementation.md)与[第二、第三 Product Pack 全景](./plan/second-product-packs-claude-code-dsh.md)。
@@ -83,3 +89,4 @@
 - 各层 `AGENTS.md` 只索引规范并给出指令，不定义规范。
 
 如果专题设计与架构总览冲突，以架构总览为准；如果架构设计偏离产品目标，应先修改产品定义或写一份决策记录，而不是让两份文档长期矛盾。
+

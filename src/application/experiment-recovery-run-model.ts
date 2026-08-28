@@ -59,6 +59,9 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
     staging: {
       fileCount: staging.sourceBudget.fileCount,
       totalBytes: staging.sourceBudget.totalBytes,
+      ...(staging.sourceBudget.excludedEntries?.length
+        ? { excludedEntries: staging.sourceBudget.excludedEntries }
+        : {}),
     },
     budget: { maxToolCalls: input.maxToolCalls, timeoutMs: 600_000 },
     allowModelText: input.taskCase.privacy.allowModelText,

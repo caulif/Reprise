@@ -132,7 +132,7 @@ test('10.5 deleting the transcript after listing blocks freeze instead of import
   const session = page.items.find((item) => item.sessionId === THREAD);
   assert.ok(session);
   await unlink(file);
-  await assert.rejects(importVerifiedSession(codexSessionAdapter, session, session.sourcePath), /cannot be read|unreadable|no readable transcript/i);
+  await assert.rejects(importVerifiedSession(codexSessionAdapter, session, session.sourcePath), /cannot be read|unreadable|no readable transcript|ENOENT|Cannot replay/i);
 });
 
 test('10.6 filename UUID is not used as session id when metadata differs', async (t) => {
@@ -211,7 +211,7 @@ test('10.8 rollout-only, catalog-only, and catalog+transcript share grouping and
   assert.equal(project.sessions.some((item) => item.sessionId === 'catalog-only-id'), true);
 });
 
-test('damaged JSONL stays in the catalog as unreadable and cannot freeze', async (t) => {
+test('damaged JSONL stays in the catalog and inspects with a diagnostic instead of vanishing', async (t) => {
   const home = await mkdtemp(join(tmpdir(), 'reprise-recovery-broken-jsonl-'));
   t.after(async () => rm(home, { recursive: true, force: true }));
   const sessions = join(home, 'sessions');
@@ -219,11 +219,11 @@ test('damaged JSONL stays in the catalog as unreadable and cannot freeze', async
   await writeFile(join(sessions, 'rollout-ok.jsonl'), rollout(THREAD, 'C:\\demo'));
   await writeFile(join(sessions, 'rollout-broken.jsonl'), 'not-json\n');
   const page = await codexSessionAdapter.discover({ root: sessions });
-  const broken = page.items.find((item) => item.availability === 'unreadable');
+  const broken = page.items.find((item) => item.sourcePath.includes('broken'));
   assert.ok(broken);
   assert.equal(page.items.some((item) => item.sessionId === THREAD), true);
   assert.ok(page.diagnostics.some((item) => item.code === 'invalid-jsonl'));
-  await assert.rejects(importVerifiedSession(codexSessionAdapter, broken, broken.sourcePath), /unreadable/);
+  await assert.rejects(importVerifiedSession(codexSessionAdapter, broken, broken.sourcePath), /Cannot replay|no valid id|invalid JSONL/i);
 });
 
 test('refresh keeps Codex project assignment and Claude cwd transcripts', async (t) => {

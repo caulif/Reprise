@@ -46,6 +46,7 @@ export type RunningModel = {
   readonly prepareDetail?: string;
   readonly locale?: Locale;
   readonly taskTitle?: string;
+  readonly workspaceProject?: string;
   readonly productLabel?: string;
   readonly finding?: boolean;
   readonly findQuery?: string;
@@ -99,17 +100,16 @@ export function renderPreflight(theme: Theme, width: number, model: PreflightMod
 
 export function renderConfirmation(theme: Theme, width: number, model: ConfirmModel): string[] {
   const locale = model.locale ?? 'en';
-  const { preflight, candidate, sourceRoot, effort } = model;
+  const { preflight, candidate, sourceRoot } = model;
   const product = model.productLabel ?? t(locale, 'unknownAgent');
-  const fidelity = localizedComparison(preflight.comparisonClass, locale);
+  const fidelity = userRecoveryHeadline(preflight.comparisonClass, locale);
   const recovery = model.recovery;
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
     ...panel(theme, t(locale, 'confirmTitle', { product }), [
+      kv(theme, t(locale, 'statusLabel'), fidelity, width - 2),
       kv(theme, t(locale, 'candidateLabel'), candidateLine(candidate, product, locale), width - 2),
-      kv(theme, t(locale, 'harnessAgentsLabel'), `${model.harnessModel ?? t(locale, 'persistedPiModel')} ${theme.glyphs.sep} ${effort} ${theme.glyphs.sep} ${t(locale, 'controllerLabel')}, ${t(locale, 'comparisonActorLabel')}`, width - 2),
-      kv(theme, t(locale, 'fidelityLabel'), fidelity, width - 2),
       ...(recovery ? [
         kv(theme, t(locale, 'environmentLabel'), recovery.unresolved.length ? t(locale, 'preparedWithLimitations') : t(locale, 'preparedValue'), width - 2),
       ] : []),
@@ -170,6 +170,29 @@ function isPreparing(model: RunningModel): boolean {
 }
 
 function renderPrepare(theme: Theme, width: number, model: RunningModel, locale: Locale, product: string): string[] {
+  if (model.preparePhase === 'check') {
+    const detail = model.prepareDetail ? model.prepareDetail : t(locale, 'recoveryStagePrepare');
+    const barWidth = Math.max(12, Math.min(36, width - 8));
+    const filled = Math.max(1, Math.round((1 / 4) * barWidth));
+    const shift = Math.floor((model.tick ?? 0) / 400) % Math.max(1, filled);
+    const fill = theme.framed ? '█' : '#';
+    const glow = theme.framed ? '▓' : '#';
+    const rest = theme.framed ? '░' : '-';
+    const wave = Array.from({ length: filled }, (_, index) => (index === shift ? glow : fill)).join('');
+    const bar = theme.style.target(`[${wave}${rest.repeat(Math.max(0, barWidth - filled))}]`);
+    const project = model.workspaceProject ?? t(locale, 'projectlessSessions');
+    const session = model.taskTitle ?? t(locale, 'noTaskSummary');
+    return [
+      ` ${t(locale, 'recoveringTitle')}`,
+      '',
+      kv(theme, t(locale, 'fieldSession'), session, width),
+      kv(theme, t(locale, 'fieldProject'), project, width),
+      kv(theme, t(locale, 'statusLabel'), detail, width),
+      '',
+      ` ${bar}`,
+      ` ${theme.style.muted(t(locale, 'preparingIn', { product }))}`,
+    ].map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis)));
+  }
   const step = model.preparePhase === 'copy' ? 2 : 1;
   const detail = model.prepareDetail ? ` · ${model.prepareDetail}` : '';
   const barWidth = Math.max(12, Math.min(36, width - 8));
@@ -277,6 +300,12 @@ function candidateLine(candidate: CandidateSpec | undefined, product: string, lo
   const model = candidate?.requestedModel ?? t(locale, 'unavailableValue');
   const effort = candidate?.candidateId?.match(/-(minimal|low|medium|high|xhigh|max)$/)?.[1];
   return effort ? `${model} · ${effort} · ${t(locale, 'isolatedProduct', { product })}` : `${model} · ${t(locale, 'isolatedProduct', { product })}`;
+}
+
+function userRecoveryHeadline(value: string, locale: Locale): string {
+  if (value === 'recovered') return t(locale, 'userRecovered');
+  if (value === 'recovered_partial') return t(locale, 'userPartial');
+  return t(locale, 'userFailed');
 }
 
 function localizedComparison(value: string, locale: Locale): string {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { opendir, readFile, stat } from 'node:fs/promises';
+import { opendir, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { isRecord, type JsonRecord } from '../../core/json.js';
@@ -214,32 +214,6 @@ export async function forEachJsonlSummaryLine(path: string, product: string, opt
   if (!any) throw new SessionDiscoveryError('invalid-jsonl', `${product} session ${path} is empty.`);
 }
 
-export async function readSessionFile(path: string, product: string, maxBytes: number): Promise<Buffer> {
-  let info;
-  try { info = await stat(path); } catch (error) {
-    throw new Error(`${product} session cannot be read: ${path}`, { cause: error });
-  }
-  if (!info.isFile()) throw new Error(`${product} session is not a file: ${path}`);
-  if (info.size > maxBytes) throw new Error(`${product} session exceeds the ${maxBytes / 1024 / 1024} MiB inspection limit: ${path}`);
-  return readFile(path);
-}
-
-export function parseJsonlRows(bytes: Buffer, sourcePath: string, product: string): JsonRecord[] {
-  const rows: JsonRecord[] = [];
-  for (const [index, line] of bytes.toString('utf8').split(/\r?\n/).entries()) {
-    if (!line.trim()) continue;
-    try {
-      const parsed: unknown = JSON.parse(line);
-      if (!isRecord(parsed)) throw new Error('row is not an object');
-      rows.push(parsed);
-    } catch (error) {
-      throw new Error(`${product} session ${sourcePath} has invalid JSONL at line ${index + 1}: ${errorMessage(error)}`, { cause: error });
-    }
-  }
-  if (!rows.length) throw new Error(`${product} session ${sourcePath} is empty.`);
-  return rows;
-}
-
 type DiscoveryCursor = { readonly version: 2; readonly root: string; readonly fingerprint: string; readonly path: string };
 type IndexedSession = { readonly entry: SessionFileEntry; readonly session?: SessionSummary; readonly errorCode?: DiscoveryDiagnosticCode; readonly excluded?: true };
 
@@ -345,7 +319,7 @@ async function indexSessionSummary(
       catch (partialError) {
         if (isAbortError(partialError)) throw partialError;
         recordDiscoveryDetail(partialError);
-        return failedIndex(entry, error, failedSummary);
+        return failedIndex(entry, partialError, failedSummary);
       }
     }
     recordDiscoveryDetail(error);

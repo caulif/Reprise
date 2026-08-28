@@ -4,12 +4,13 @@ import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import type { CodexExperimentResult } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { freezeCase } from '../products/shared/freeze.js';
-import { importVerifiedSession } from '../products/shared/session-recovery.js';
+import { importVerifiedSession, listSummaryIncomplete } from '../products/shared/session-recovery.js';
 import { errorMessage } from './format.js';
 import { t, type Locale } from './i18n.js';
 import { projectLabel } from './pages/intake.js';
 import { appendTimelineEntries, projectTimelineEvent } from './timeline.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
+import { userRecoveryStatus } from '../application/recovery-user-status.js';
 
 function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
@@ -33,7 +34,7 @@ function resultMessage(result: CodexExperimentResult, locale: Locale): string {
   return t(locale, 'resultOther');
 }
 
-export function startRunSetup(c: ControllerHandle): Consume {
+export function startRunSetup(c: ControllerHandle, input: { afterFreeze?: boolean } = {}): Consume {
   if (!c.taskCase) {
     c.page = 'home';
     return c.setHomeMessage(t(c.locale, 'noTask'));
@@ -53,7 +54,7 @@ export function startRunSetup(c: ControllerHandle): Consume {
   c.sourceCursor = c.sourceRoot.length;
   if (isFsAbsolute(c.sourceRoot.trim())) {
     c.runFromSource = false;
-    void beginPreflight(c);
+    void beginPreflight(c, { afterFreeze: input.afterFreeze === true });
     return { consume: true };
   }
   c.runFromSource = true;
@@ -74,6 +75,9 @@ export async function freeze(
     const pack = c.packs.find((item) => item.manifest.productId === session?.productId);
     if (!pack) throw new Error(`No Product Pack is registered for session ${session?.productId ?? 'unknown'}.`);
     if (!session) throw new Error('Selected session is no longer available.');
+    const alreadyInspected = c.inspection?.sourcePath === sourcePath;
+    c.message = t(c.locale, !alreadyInspected && listSummaryIncomplete(session) ? 'inspectingIncompleteSummary' : 'inspectingSelectedSession');
+    c.render(true);
     const imported = await importVerifiedSession(pack.sessions, session, sourcePath);
     const result = await freezeCase(imported, join(c.dataDir, 'cases'), c.privacy, c.now(), {
       ...(input.initialMessageId ? { initialMessageId: input.initialMessageId } : {}),
@@ -82,7 +86,7 @@ export async function freeze(
     if (token !== c.generation) return;
     c.taskCase = result.taskCase;
     if (input.thenRun && c.workflow) {
-      startRunSetup(c);
+      startRunSetup(c, { afterFreeze: true });
       return;
     }
     c.page = 'home';
@@ -148,7 +152,7 @@ function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
   if (c.page === 'running') c.scheduleTimelineRender();
 }
 
-export async function beginPreflight(c: ControllerHandle): Promise<void> {
+export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?: boolean } = {}): Promise<void> {
   const token = c.beginNavigation();
   const errorReturn = c.runFromSource ? 'source' : 'home';
   try {
@@ -164,22 +168,17 @@ export async function beginPreflight(c: ControllerHandle): Promise<void> {
       },
     };
     c.taskCase = taskCase;
-    c.page = 'preflight';
-    c.message = t(c.locale, 'inspectingSource');
+    c.page = 'running';
+    c.preparePhase = 'check';
+    c.prepareDetail = t(c.locale, 'recoveryStagePrepare');
+    c.message = t(c.locale, input.afterFreeze ? 'frozenEnteringRecovery' : 'inspectingSource');
+    startRunClock(c);
     c.render(true);
     const preflight = await c.workflow.preflight({
       taskCase,
       sourceRoot: c.sourceRoot.trim(),
     });
     if (token !== c.generation) return;
-    const blocked = preflight.workspace?.blockedReasons ?? [];
-    if (preflight.sourceBaseline === 'unavailable' || blocked.length) {
-      throw new Error(
-        blocked.length
-          ? blocked.join(' | ')
-          : 'Candidate was not started because the source baseline is unavailable.',
-      );
-    }
     c.preflight = preflight;
     void beginRecovery(c);
     return;
@@ -192,6 +191,7 @@ export async function beginPreflight(c: ControllerHandle): Promise<void> {
 
 async function beginRecovery(c: ControllerHandle): Promise<void> {
   const token = c.beginNavigation();
+  const errorReturn = c.runFromSource ? 'source' : 'home';
   try {
     if (!c.workflow || !c.taskCase || !c.preflight) throw new Error('Recovery is unavailable before preflight.');
     await discardRecovery(c);
@@ -199,7 +199,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.timelineSelected = 0;
     c.timelineFollowing = true;
     c.preparePhase = 'check';
-    c.prepareDetail = 'Preparing the isolated environment';
+    c.prepareDetail = t(c.locale, 'recoveryStageAgent');
     c.page = 'running';
     startRunClock(c);
     c.render(true);
@@ -213,12 +213,15 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
       return;
     }
     c.recoveryAttempt = attempt;
-    const recovered = attempt.baseline.match === 'recovered' || attempt.baseline.match === 'recovered_partial';
+    const userStatus = userRecoveryStatus({
+      baseline: attempt.baseline,
+      transcriptOk: Boolean(c.taskCase.initialInput?.text),
+    });
     c.preflight = {
       ...c.preflight,
-      comparisonClass: attempt.baseline.match === 'recovered'
+      comparisonClass: userStatus === 'recovered'
         ? 'recovered'
-        : attempt.baseline.match === 'recovered_partial'
+        : userStatus === 'partial'
           ? 'recovered_partial'
           : 'observational',
       limitations: [
@@ -233,10 +236,14 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.prepareDetail = undefined;
     stopRunClock(c);
     c.page = 'confirm';
-    c.message = recovered ? t(c.locale, 'recoveryReady') : t(c.locale, 'recoveryFailed');
+    c.message = userStatus === 'recovered'
+      ? t(c.locale, 'recoveryReady')
+      : userStatus === 'partial'
+        ? t(c.locale, 'recoveryPartial')
+        : t(c.locale, 'recoveryFailed');
   } catch (error) {
     if (token !== c.generation) return;
-    c.showError(error, 'preflight');
+    c.showError(error, errorReturn);
     stopRunClock(c);
   }
   c.render(true);

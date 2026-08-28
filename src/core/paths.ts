@@ -50,6 +50,21 @@ function compareKey(value: string): string {
   return asPosixPath(resolve(posix)).replace(/\/+$/, '').toLowerCase();
 }
 
+/** Longest recorded root that contains `target`. Parent-of-root paths never match. */
+export function longestContainingRoot(target: string, roots: Iterable<string>): string | undefined {
+  let best: string | undefined;
+  let bestLength = -1;
+  for (const root of roots) {
+    if (!pathContainedBy(root, target)) continue;
+    const key = canonicalRecordedRoot(root) ?? compareKey(root);
+    if (key.length > bestLength) {
+      best = root;
+      bestLength = key.length;
+    }
+  }
+  return best;
+}
+
 /** Absolute Windows/POSIX recorded roots only. Relative cwd cannot identify a workspace. */
 export function canonicalRecordedRoot(path: string | undefined): string | undefined {
   const value = stripWindowsExtendedPrefix(path?.trim() ?? '');

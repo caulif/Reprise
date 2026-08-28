@@ -344,8 +344,6 @@ function applyInspection(c: ControllerHandle, data: string): Consume | undefined
     c.render();
     return { consume: true };
   }
-  c.message = t(c.locale, 'freezingCase');
-  c.render();
   if (c.inspection) void freeze(c, c.inspection.sourcePath, { thenRun: true });
   return { consume: true };
 }

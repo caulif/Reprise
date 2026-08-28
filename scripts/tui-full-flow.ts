@@ -355,6 +355,7 @@ async function main() {
 
   const fullPublicResponse = `${Array.from({ length: 40 }, (_, index) => `public response line ${index + 1}`).join("\n")}\nPUBLIC_DETAIL_END`;
   let releasePreflight: (() => void) | undefined;
+  let releaseRecovery: (() => void) | undefined;
   let releaseCopy: (() => void) | undefined;
   let releaseStart: (() => void) | undefined;
   let resolveResult: ((value: unknown) => void) | undefined;
@@ -391,6 +392,16 @@ async function main() {
           largestFileBytes: 1024,
           blockedReasons: [],
         },
+      };
+    },
+    recover: async () => {
+      await new Promise<void>((resolve) => {
+        releaseRecovery = resolve;
+      });
+      return {
+        baseline: { match: "recovered", warnings: [], mode: "canonical" },
+        staging: { recoveryId: "audit-recovery" },
+        provider: { discardRecovery: async () => undefined },
       };
     },
     start: async (input: { onEvent: (event: unknown) => void }) => {
@@ -508,16 +519,26 @@ async function main() {
   );
   runApp.handleInput("\r");
   await waitFor(
-    () => /Inspecting source|Candidate preflight|Preparing replay|Copy isolated|To Codex/.test(run.render(120)),
+    () => /Recovering session|Preparing recovery environment|Preparing replay|TaskCase frozen|Starting environment recovery/.test(run.render(120)),
     { frame: () => run.render(120) },
   );
   await push(
     "12-preflight-wait",
     120,
     run.render(120),
-    "选会话后直接检查源目录，不再经过确认页",
+    "选会话后直接开始恢复",
   );
   releasePreflight?.();
+  await waitFor(
+    () => /Preparing replay|Recovering session/.test(run.render(120)),
+    { frame: () => run.render(120) },
+  );
+  releaseRecovery?.();
+  await waitFor(
+    () => /Start isolated Codex Candidate/.test(run.render(120)),
+    { frame: () => run.render(120) },
+  );
+  runApp.handleInput("\r");
   await waitFor(
     () => /Copy isolated|Preparing replay|To Codex/.test(run.render(120)),
     { frame: () => run.render(120) },
