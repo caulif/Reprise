@@ -8,6 +8,7 @@ import { copyAtomic, sha256, sha256File, writeImmutable } from '../../core/ident
 import type { TaskCase } from '../../core/schema.js';
 import type { JsonRecord } from '../../core/json.js';
 import type { ImportedSession, SessionMessage, SessionPrivacy } from '../contract.js';
+import { firstReplayUserMessage } from './replay-user-input.js';
 
 export type FrozenFile = {
   readonly relativePath: string;
@@ -153,11 +154,24 @@ export async function freezeCase(
       raw.file,
       ...(prepared.extraFiles ?? []).map((file) => ({ relativePath: file.relativePath, content: file.bytes })),
     ];
+    const reuseExisting = options.reuseExisting ?? true;
+    if (reuseExisting) {
+      const caseDir = resolve(casesRoot, taskCase.caseId);
+      if (await isFrozenCase(caseDir)) {
+        try {
+          const existing = await readExistingCase(caseDir, raw.hash);
+          if (existing.initialInput.id === taskCase.initialInput.id) return { taskCase: existing, reused: true };
+        } catch {
+          // Existing case.json does not match this freeze selection; replace it.
+        }
+        await rm(caseDir, { recursive: true, force: true });
+      }
+    }
     return await publishFrozenCase({
       taskCase,
       casesRoot,
       files,
-      reuseExisting: options.reuseExisting ?? true,
+      reuseExisting: false,
       ...(options.write ? { write: options.write } : {}),
       ...(options.errorLabel ? { errorLabel: options.errorLabel } : {}),
     });
@@ -211,7 +225,7 @@ async function writeRedactedJsonlCopy(
 }
 
 function selectInitialInput(imported: ImportedSession, initialMessageId?: string): SessionMessage {
-  if (!initialMessageId) return imported.initialInput;
+  if (!initialMessageId) return firstReplayUserMessage(imported.transcript) ?? imported.initialInput;
   const selected = imported.transcript.find((message) => message.id === initialMessageId && message.role === 'user');
   if (!selected) throw new Error('Selected task input is not a user message in this session.');
   return selected;

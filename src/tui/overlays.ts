@@ -23,7 +23,7 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
     'f          Toggle eligible-only filter',
   ],
   inspection: [
-    'Enter      Freeze the session from the first user message',
+    'Enter      Freeze the session from the first user task',
     't          Toggle model text sharing',
     'd          Toggle outcome detail',
   ],

@@ -137,7 +137,9 @@ test('CandidateRun records failed and aborted settlements with causes and cleanu
       const result = run.result();
       const failure = result.outcome.termination.failure;
       assert.equal(result.outcome.termination.code, 'failed.runtime');
+      assert.equal(failure?.code, 'failed.runtime');
       assert.equal(failure?.message, `Target turn settled as ${settlementStatus}.`);
+      assert.notEqual(failure?.message, 'undefined');
       assert.notEqual(failure?.message, 'undefined');
       assert.ok(result.record);
       assert.deepEqual(result.record?.outcome, result.outcome);
@@ -148,11 +150,33 @@ test('CandidateRun records failed and aborted settlements with causes and cleanu
       assert.ok(outcomeEvent);
       assert.deepEqual(outcomeEvent?.payload, result.outcome);
       assert.deepEqual(result.outcome.cleanup.evidenceRefs, cleanupEvents.map((event) => `event:${event.eventId}`));
+      assert.equal(result.outcome.cleanup.status, 'complete');
       await store.close();
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   }
+});
+
+test('CandidateRun maps an upstream settlement into a classified runtime failure', async () => {
+  const runner = new ScriptedRunner(
+    [{ delivery: 'accepted', evidence: 'native_admission' }],
+    [{
+      turnId: 'turn-1',
+      status: 'failed',
+      confidence: 'native',
+      observedAt: new Date().toISOString(),
+      rawRefs: [],
+      failure: { kind: 'upstream', summary: 'HTTP 503 from the model endpoint.', retryable: true, reconnectCount: 5 },
+    }],
+  );
+  const run = new CandidateRun({ runner, policy, release: async () => ({ status: 'released' }) });
+  assert.equal(await run.start(initial, identity), 'finished');
+  const failure = run.result().outcome.termination.failure;
+  assert.equal(run.result().outcome.termination.code, 'failed.runtime');
+  assert.equal(failure?.code, 'failed.runtime.upstream_unavailable');
+  assert.equal(failure?.message, 'HTTP 503 from the model endpoint.');
+  assert.equal(run.result().outcome.cleanup.status, 'complete');
 });
 
 test('CandidateRun records a controller safety stop without claiming a user cancellation', async () => {

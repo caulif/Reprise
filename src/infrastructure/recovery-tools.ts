@@ -1,5 +1,6 @@
 import { isAbsolute } from "node:path";
 import { sha256 } from "../core/identity.js";
+import { sameFsPath } from "../core/paths.js";
 import { type TaskCase } from "../core/schema.js";
 import { ProcessBoundaryError, runProcess } from "./process-runner.js";
 
@@ -139,37 +140,9 @@ async function probeGit(
   const operations: RecoveryFactOperation[] = [
     probeOperation("repository", inside),
   ];
-  if (!inside.ok || inside.stdout.trim() !== "true") {
-    operations.push({
-      operation: "head",
-      availability: "unavailable",
-      attempts: 1,
-      reason: "not_repository",
-    });
-    operations.push({
-      operation: "status",
-      availability: "unavailable",
-      attempts: 1,
-      reason: "not_repository",
-    });
-    if (historicalCommit)
-      operations.push({
-        operation: "historical_commit",
-        availability: "unavailable",
-        attempts: 1,
-        reason: "not_repository",
-      });
-    return {
-      git: {
-        isRepo: false,
-        headState: "unborn",
-        dirtyPaths: [],
-        untrackedPaths: [],
-        statusAvailable: false,
-      },
-      operations,
-    };
-  }
+  if (!inside.ok || inside.stdout.trim() !== "true") return unavailableGit(operations, historicalCommit);
+  const toplevel = await gitProbe(root, ["rev-parse", "--show-toplevel"], "toplevel", true);
+  if (!toplevel.ok || !sameFsPath(toplevel.stdout.trim(), root)) return unavailableGit(operations, historicalCommit);
   const head = await gitProbe(
     root,
     ["rev-parse", "--verify", "HEAD"],
@@ -228,6 +201,44 @@ type GitProbe = {
   attempts: 1 | 2;
   failure?: "nonzero_exit" | "process_error";
 };
+
+function unavailableGit(
+  operations: RecoveryFactOperation[],
+  historicalCommit: string | undefined,
+): {
+  git: NonNullable<ResolvedRecoveryFacts["git"]>;
+  operations: RecoveryFactOperation[];
+} {
+  operations.push({
+    operation: "head",
+    availability: "unavailable",
+    attempts: 1,
+    reason: "not_repository",
+  });
+  operations.push({
+    operation: "status",
+    availability: "unavailable",
+    attempts: 1,
+    reason: "not_repository",
+  });
+  if (historicalCommit)
+    operations.push({
+      operation: "historical_commit",
+      availability: "unavailable",
+      attempts: 1,
+      reason: "not_repository",
+    });
+  return {
+    git: {
+      isRepo: false,
+      headState: "unborn",
+      dirtyPaths: [],
+      untrackedPaths: [],
+      statusAvailable: false,
+    },
+    operations,
+  };
+}
 
 function probeOperation(
   operation: Exclude<RecoveryFactOperation["operation"], "evidence_catalog">,
@@ -353,6 +364,20 @@ function uniqueRefs(
 ): string[] {
   return [...new Set(evidence.map((item) => item.ref))];
 } /** Rejects envelope claims that cannot be supported by frozen recovery evidence. */
+export function ownedRecoveryRefs(
+  refs: readonly string[],
+  evidence: readonly { ref: string }[],
+): string[] {
+  const known = new Set(evidence.map((item) => item.ref));
+  const owned = refs.filter((ref) => known.has(ref));
+  if (refs.length > 0 && owned.length === 0) {
+    throw new RecoveryEvidenceValidationError(
+      `Recovery evidence is not owned by the frozen TaskCase: ${refs[0]}.`,
+    );
+  }
+  return owned;
+}
+
 export function validateRecoveryEvidence(
   knownRefs: readonly string[],
   result: {
@@ -366,20 +391,14 @@ export function validateRecoveryEvidence(
       "recovered status cannot include unresolved items; use partial.",
     );
   }
-  if (
-    (result.status === "recovered" || result.status === "partial") &&
-    !result.evidenceRefs.length
-  ) {
+  const owned = ownedRecoveryRefs(
+    result.evidenceRefs,
+    knownRefs.map((ref) => ({ ref })),
+  );
+  if (result.status === "recovered" && !owned.length) {
     throw new RecoveryEvidenceValidationError(
-      "recovered or partial status requires owned evidence references.",
+      "recovered status requires owned evidence references.",
     );
-  }
-  const known = new Set(knownRefs);
-  for (const ref of result.evidenceRefs) {
-    if (!known.has(ref))
-      throw new RecoveryEvidenceValidationError(
-        `Recovery evidence is not owned by the frozen TaskCase: ${ref}.`,
-      );
   }
 }
 

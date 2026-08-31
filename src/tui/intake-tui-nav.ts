@@ -65,6 +65,12 @@ export async function CodexIntakeTui_setLocale(this: CodexIntakeTui, typed: stri
 export function CodexIntakeTui_showError(this: CodexIntakeTui, error: unknown, returnPage: Exclude<Page, "error" | "running" | "loading">): void {
     this.preparePhase = undefined;
     this.prepareDetail = undefined;
+    this.runPhase = undefined;
+    this.lastRuntimeEventAt = undefined;
+    this.lastRuntimeEventKind = undefined;
+    this.modelOutputSeen = false;
+    this.reconnectCount = 0;
+    this.reconnectTotal = 0;
     stopRunClock(this);
     this.errorReturnPage = returnPage;
     this.page = "error";

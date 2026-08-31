@@ -4,7 +4,7 @@ Reprise 是一个 local-first Harness，用于在真实任务上重放与检视 
 
 ## 已验证的真实配置
 
-- 候选 Runtime：`gpt-5.6-luna`，reasoning effort `high`。
+- 候选 Runtime：`gpt-5.6-terra`，reasoning effort `high`（默认候选与本机当前 Codex 配置一致）。
 - Experiment Application（Controller、Comparison）：`gpt-5.6-terra`，reasoning effort `medium`。
 - Runtime 拒绝所有 app-server 发起的工具/权限请求；真实 smoke 在 Harness 拥有的隔离工作区中运行。
 

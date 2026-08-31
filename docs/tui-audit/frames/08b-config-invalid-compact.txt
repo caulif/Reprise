@@ -1,5 +1,5 @@
 Reprise v0.1.0   C:\reprise
-No configured model   o Harness unset  o Agent unset  o N...
+No configured model   o Harness unset  o Product unset  o...
 ------------------------------------------------------------
  Last task  none selected
 

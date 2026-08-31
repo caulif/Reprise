@@ -179,11 +179,12 @@ function compareCodexSummaries(left: CodexSessionSummary, right: CodexSessionSum
 /** Listing reads one JSONL row at a time and keeps only metadata/counts, never a transcript. */
 type CodexSummaryState = {
   sessionId?: string | undefined; startedAt?: string | undefined; updatedAt?: string | undefined; cwd?: string | undefined; model?: string | undefined; summary?: string | undefined;
+  laterUserSummaries: string[];
   userMessages: number; assistantMessages: number; toolCalls: number; completedTurns: number;
 };
 
 async function summarizeCodexSessionHead(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<CodexSessionSummary> {
-  const state: CodexSummaryState = { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
+  const state: CodexSummaryState = { laterUserSummaries: [], userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
   const sourcePath = resolve(entry.path);
   await forEachJsonlHeadSummaryLine(sourcePath, 'Codex', { maxBytes: 256 * 1024, maxLines: 2_000, ...(signal ? { signal } : {}) }, (row) => consumeCodexSummaryRow(state, row));
   if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new SessionDiscoveryError('too-large', 'Codex session head has no valid id.');
@@ -191,7 +192,7 @@ async function summarizeCodexSessionHead(entry: SessionFileEntry, signal: AbortS
 }
 
 async function summarizeCodexSession(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<CodexSessionSummary> {
-  const state: CodexSummaryState = { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
+  const state: CodexSummaryState = { laterUserSummaries: [], userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
   const sourcePath = resolve(entry.path);
   await forEachJsonlSummaryLine(sourcePath, 'Codex', { maxBytes: MAX_SUMMARY_BYTES, maxLines: MAX_SUMMARY_LINES, ...(signal ? { signal } : {}) }, (row) => consumeCodexSummaryRow(state, row));
   if (!state.sessionId || !SAFE_ID.test(state.sessionId)) throw new Error('Codex session metadata has no valid id.');
@@ -217,6 +218,7 @@ function summaryFromCodexState(
     updatedAtSource: state.updatedAt ? 'event' : 'file-mtime',
     ...(state.cwd ? { cwd: state.cwd } : {}), ...(state.model ? { model: state.model } : {}),
     ...(state.summary ? { summary: state.summary } : {}),
+    ...(state.laterUserSummaries.length ? { laterUserSummaries: state.laterUserSummaries } : {}),
     signals: { userMessages: state.userMessages, assistantMessages: state.assistantMessages, toolCalls: state.toolCalls, completedTurns: state.completedTurns },
     availability: 'indexed',
     sourceKind: state.cwd ? 'rollout-only' : 'projectless',
@@ -240,7 +242,7 @@ function consumeCodexSummaryRow(state: CodexSummaryState, row: JsonRecord): void
   const message = consumeCodexMessage(row);
   if (message.role === 'user' && message.text) {
     state.userMessages += 1;
-    state.summary ??= compact(message.text);
+    recordLaterUserSummary(state, message.text);
   } else if (message.role === 'assistant' && message.text) state.assistantMessages += 1;
   const payloadType = text(payload.type);
   if (payloadType === 'function_call' || payloadType === 'custom_tool_call') state.toolCalls += 1;
@@ -601,4 +603,9 @@ function commitFromMetadata(payload: JsonRecord): string | undefined {
 }
 
 function compact(value: string): string { return value.replace(/\s+/g, ' ').slice(0, 160); }
+function recordLaterUserSummary(state: { summary?: string | undefined; laterUserSummaries: string[] }, text: string): void {
+  const compactText = compact(text);
+  if (!state.summary) state.summary = compactText;
+  else if (state.laterUserSummaries.length < 8) state.laterUserSummaries.push(compactText);
+}
 function isMissing(error: unknown): boolean { return error instanceof Error && 'code' in error && error.code === 'ENOENT'; }

@@ -77,3 +77,19 @@ async function relativeImports(file: string): Promise<string[]> {
   const source = await readFile(file, 'utf8');
   return [...source.matchAll(IMPORT)].map((match) => match[1] ?? '');
 }
+
+test('recovery workspace tools do not export retired tool names', async () => {
+  const { recoveryTools, recoveryObservationTools } = await import('../src/infrastructure/recovery-tools.js');
+  const names = [
+    ...recoveryObservationTools({
+      transcript: [],
+      historicalEvents: [],
+    } as never).map((tool) => tool.name),
+    ...recoveryTools('TMP').map((tool) => tool.name),
+  ];
+  assert.deepEqual(names.sort(), ['edit', 'find', 'grep', 'ls', 'powershell', 'read', 'read_observation', 'write']);
+  for (const retired of ['delete_file', 'list_dir', 'write_file', 'write_recovery_manifest', 'derive_task_footprint']) {
+    assert.equal(names.includes(retired), false);
+  }
+});
+

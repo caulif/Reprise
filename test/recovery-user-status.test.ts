@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { userRecoveryStatus } from '../src/application/recovery-user-status.js';
+import { diagnosisReasonCode, userRecoveryStatus } from '../src/application/recovery-user-status.js';
 import type { EnvironmentBaseline } from '../src/environment/local-workspace-provider.js';
 
 function baseline(overrides: Partial<EnvironmentBaseline>): EnvironmentBaseline {
@@ -43,4 +43,56 @@ test('user recovery status maps complete recovery, skipped links, and missing so
     baseline: baseline({ match: 'recovered' }),
     transcriptOk: false,
   }), 'failed');
+});
+
+test('fallback without accept is failed; skipped symlink with accept stays partial', () => {
+  assert.equal(userRecoveryStatus({
+    baseline: baseline({
+      match: 'current_state_fallback',
+      recovery: { status: 'failed', unresolved: [], sourceDigest: 'a'.repeat(64), recoveredDigest: 'b'.repeat(64) },
+      budget: {
+        fileCount: 1, totalBytes: 1, largestFileBytes: 1, blockedReasons: [],
+        excludedEntries: [{ path: 'ppt_build/node_modules', reasonCode: 'workspace.symlink_skipped' }],
+      },
+    }),
+    transcriptOk: true,
+    hasAccept: false,
+  }), 'failed');
+  assert.equal(userRecoveryStatus({
+    baseline: baseline({
+      match: 'recovered_partial',
+      recovery: { status: 'partial', unresolved: [], sourceDigest: 'a'.repeat(64), recoveredDigest: 'b'.repeat(64) },
+      budget: {
+        fileCount: 1, totalBytes: 1, largestFileBytes: 1, blockedReasons: [],
+        excludedEntries: [{ path: 'ppt_build/node_modules', reasonCode: 'workspace.symlink_skipped' }],
+      },
+    }),
+    transcriptOk: true,
+    hasAccept: true,
+  }), 'partial');
+});
+
+test('diagnosis reason prefers failureStage over skipped symlink', () => {
+  const crashed = baseline({
+    match: 'current_state_fallback',
+    recovery: {
+      status: 'failed', unresolved: [], sourceDigest: 'a'.repeat(64), recoveredDigest: 'b'.repeat(64),
+      failureStage: 'runner_crashed',
+    },
+    budget: {
+      fileCount: 1, totalBytes: 1, largestFileBytes: 1, blockedReasons: [],
+      excludedEntries: [{ path: 'ppt_build/node_modules', reasonCode: 'workspace.symlink_skipped' }],
+    },
+  });
+  assert.equal(diagnosisReasonCode({ baseline: crashed, transcriptOk: true, failureStage: 'runner_crashed' }), 'runner_crashed');
+  assert.equal(diagnosisReasonCode({
+    baseline: baseline({
+      match: 'recovered',
+      budget: {
+        fileCount: 1, totalBytes: 1, largestFileBytes: 1, blockedReasons: [],
+        excludedEntries: [{ path: 'ppt_build/node_modules', reasonCode: 'workspace.symlink_skipped' }],
+      },
+    }),
+    transcriptOk: true,
+  }), 'workspace.symlink_skipped');
 });

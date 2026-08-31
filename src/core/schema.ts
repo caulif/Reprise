@@ -130,7 +130,7 @@ export type RecoverySelectionDiagnostics = Static<
   typeof RecoverySelectionDiagnosticsSchema
 >;
 
-export const RecoveryManifestSchema = Type.Object({
+const RecoveryManifestSchema = Type.Object({
   actions: Type.Array(
     Type.Object({
       operation: Type.Union([
@@ -142,7 +142,7 @@ export const RecoveryManifestSchema = Type.Object({
       path: Type.String({ minLength: 1 }),
       beforeHash: Type.Optional(Hash),
       afterHash: Type.Optional(Hash),
-      evidenceRefs: Type.Array(EvidenceRefSchema, { minItems: 1 }),
+      evidenceRefs: Type.Array(EvidenceRefSchema),
     }),
   ),
   unresolved: Type.Array(Type.String()),
@@ -228,6 +228,8 @@ const RecoveryDeltaFileSchema = Type.Object({
 export const RecoveryControlledWriteSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   tool: Type.Union([
+    Type.Literal("write"),
+    Type.Literal("edit"),
     Type.Literal("write_file"),
     Type.Literal("write_recovery_manifest"),
     Type.Literal("write_recovery_report"),
@@ -346,7 +348,7 @@ const RecoveryPlanCandidateSchema = Type.Object({
   hypothesisId: Id,
   operations: Type.Array(RecoveryPlanOperationSchema),
 });
-export const RecoveryPlanSchema = Type.Object({
+const RecoveryPlanSchema = Type.Object({
   planId: Id,
   factsUsed: Type.Array(RecoveryFactRefSchema),
   hypotheses: Type.Array(RecoveryHypothesisSchema, { minItems: 1 }),

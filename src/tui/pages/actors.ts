@@ -5,7 +5,7 @@ import { kv, panel } from '../widgets.js';
 
 export function renderActors(theme: Theme, width: number, model: RunningModel, locale: Locale = 'en'): string[] {
   const inner = Math.min(width, 56);
-  const recovery = model.preparePhase ? t(locale, 'inProgress') : t(locale, 'done');
+  const recovery = model.preparePhase === 'check' || model.runPhase === 'recovery' ? t(locale, 'inProgress') : t(locale, 'done');
   const controller = model.calls.max === undefined
     ? `${model.calls.used}`
     : `${model.calls.used}/${model.calls.max}`;

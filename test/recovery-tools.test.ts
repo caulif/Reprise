@@ -19,8 +19,8 @@ import {
   verifyRecoveryEvidence,
 } from "../src/infrastructure/recovery-tools.js";
 import { sha256 } from "../src/core/identity.js";
-import { replayControlledRecoveryDelta, replayControlledRecoveryDeltaBytes } from "../src/infrastructure/recovery-write-journal.js";
-import type { RecoveryControlledWrite, TaskCase } from "../src/core/schema.js";
+import { replayControlledRecoveryDeltaBytes } from "../src/infrastructure/recovery-write-journal.js";
+import type { TaskCase } from "../src/core/schema.js";
 
 const exec = promisify(execFile);
 
@@ -35,7 +35,7 @@ async function workspace(): Promise<string> {
 }
 
 function tool(root: string, name: string, maxToolCalls = 64, options = {}) {
-  const toolOptions = name === "staging_shell" ? { allowShell: true, ...options } : options;
+  const toolOptions = name === "powershell" ? { allowShell: true, ...options } : options;
   const found = recoveryTools(root, maxToolCalls, toolOptions).find(
     (item) => item.name === name,
   );
@@ -44,15 +44,19 @@ function tool(root: string, name: string, maxToolCalls = 64, options = {}) {
 }
 
 function nodeCommand(script: string): string {
-  return `"${process.execPath}" -e "${script}"`;
+  const executable = process.execPath.replaceAll("'", "''");
+  return `& '${executable}' -e ${JSON.stringify(script)}`;
 }
 
 
-test("general staging shell is absent unless the Host explicitly enables it", async (t) => {
+test("powershell is always registered on the Recovery workspace surface", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  assert.equal(recoveryTools(root).some((item) => item.name === "staging_shell"), false);
-  assert.equal(recoveryTools(root, 64, { allowShell: true }).some((item) => item.name === "staging_shell"), true);
+  assert.equal(recoveryTools(root).some((item) => item.name === "powershell"), true);
+  assert.deepEqual(
+    recoveryTools(root).map((item) => item.name).sort(),
+    ["edit", "find", "grep", "ls", "powershell", "read", "write"],
+  );
 });
 
 test("structured recovery tools reject traversal, absolute paths, backslashes and symlink targets", async (t) => {
@@ -60,7 +64,7 @@ test("structured recovery tools reject traversal, absolute paths, backslashes an
   t.after(() =>
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   );
-  const read = tool(root, "read_file");
+  const read = tool(root, "read");
   for (const path of [
     "../x",
     resolve(root, "input.txt"),
@@ -84,7 +88,7 @@ test("structured recovery tools reject traversal, absolute paths, backslashes an
     read.execute({ path: ".env" }, new AbortController().signal),
     /credential_read_denied/i,
   );
-  const shell = tool(root, "staging_shell");
+  const shell = tool(root, "powershell");
   await assert.rejects(
     shell.execute({ command: "type .env" }, new AbortController().signal),
     /credential_read_denied/i,
@@ -95,7 +99,7 @@ test("Recovery model cannot read credential-class files", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   await writeFile(join(root, ".env"), "TOKEN=do-not-read");
-  const read = tool(root, "read_file");
+  const read = tool(root, "read");
   await assert.rejects(read.execute({ path: ".env" }, new AbortController().signal), /credential_read_denied/i);
 });
 
@@ -105,7 +109,7 @@ test("direct Recovery writes journal schema-validated pre/post hashes", async (t
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   );
   const entries: unknown[] = [];
-  const write = tool(root, "write_file", 64, {
+  const write = tool(root, "write", 64, {
     onControlledWrite: async (entry: unknown) => {
       entries.push(entry);
     },
@@ -117,7 +121,7 @@ test("direct Recovery writes journal schema-validated pre/post hashes", async (t
   assert.deepEqual(entries, [
     {
       schemaVersion: 1,
-      tool: "write_file",
+      tool: "write",
       phase: "before",
       path: "input.txt",
       before: {
@@ -128,7 +132,7 @@ test("direct Recovery writes journal schema-validated pre/post hashes", async (t
     },
     {
       schemaVersion: 1,
-      tool: "write_file",
+      tool: "write",
       phase: "after",
       path: "input.txt",
       before: {
@@ -145,114 +149,32 @@ test("direct Recovery writes journal schema-validated pre/post hashes", async (t
   ]);
 });
 
-test("direct Recovery delete journals the removed file without inventing a post-state", async (t) => {
+test("powershell deletes are unobserved by the controlled-write journal", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const entries: unknown[] = [];
-  const remove = tool(root, "delete_file", 64, {
+  const shell = tool(root, "powershell", 64, {
     onControlledWrite: async (entry: unknown) => entries.push(entry),
   });
-  await remove.execute({ path: "input.txt" }, new AbortController().signal);
+  await shell.execute({ command: "Remove-Item -LiteralPath input.txt" }, new AbortController().signal);
   await assert.rejects(readFile(join(root, "input.txt")));
-  assert.deepEqual(entries, [
-    {
-      schemaVersion: 1,
-      tool: "delete_file",
-      phase: "before",
-      path: "input.txt",
-      before: { kind: "file", size: Buffer.byteLength("original\r\n"), contentHash: sha256("original\r\n") },
-    },
-    {
-      schemaVersion: 1,
-      tool: "delete_file",
-      phase: "after",
-      path: "input.txt",
-      before: { kind: "file", size: Buffer.byteLength("original\r\n"), contentHash: sha256("original\r\n") },
-    },
-  ]);
+  assert.deepEqual(entries, []);
 });
 
-test("write_recovery_manifest rejects malformed and unsafe manifest paths", async (t) => {
+test("write allows recovery.md and rejects the Host-owned manifest name", async (t) => {
   const root = await workspace();
-  t.after(() =>
-    rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
-  );
-  const manifest = tool(root, "write_recovery_manifest");
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const write = tool(root, "write");
   const signal = new AbortController().signal;
-  await assert.rejects(
-    manifest.execute({ actions: "not-an-array", unresolved: [] }, signal),
-    /recovery_manifest_invalid/i,
-  );
-  await assert.rejects(
-    manifest.execute(
-      {
-        actions: [
-          {
-            operation: "restore",
-            path: "../outside.txt",
-            evidenceRefs: ["event:history-1"],
-          },
-        ],
-        unresolved: [],
-      },
-      signal,
-    ),
-    /staging-relative/i,
-  );
-  await assert.rejects(
-    manifest.execute(
-      {
-        actions: [
-          {
-            operation: "restore",
-            path: ".git/index",
-            evidenceRefs: ["event:history-1"],
-          },
-        ],
-        unresolved: [],
-      },
-      signal,
-    ),
-    /staging-relative/i,
-  );
-  await manifest.execute(
-    {
-      actions: [
-        {
-          operation: "restore",
-          path: "input.txt",
-          evidenceRefs: ["event:history-1"],
-        },
-      ],
-      unresolved: [],
-    },
-    signal,
-  );
-  assert.deepEqual(
-    JSON.parse(await readFile(join(root, "recovery-manifest.json"), "utf8")),
-    {
-      actions: [
-        {
-          operation: "restore",
-          path: "input.txt",
-          evidenceRefs: ["event:history-1"],
-        },
-      ],
-      unresolved: [],
-    },
-  );
-  const write = tool(root, "write_file");
+  await write.execute({ path: "recovery.md", content: "# Recovery\n" }, signal);
+  assert.match(await readFile(join(root, "recovery.md"), "utf8"), /# Recovery/);
   await assert.rejects(
     write.execute({ path: "recovery-manifest.json", content: "{}" }, signal),
     /recovery_sink_reserved/i,
   );
-  await assert.rejects(
-    write.execute({ path: "recovery.md", content: "# bypass" }, signal),
-    /recovery_sink_reserved/i,
-  );
 });
 
-test("staging_shell runs arbitrary staging commands with a clean temporary environment", async (t) => {
+test("powershell runs arbitrary staging commands with a clean temporary environment", async (t) => {
   const root = await workspace();
   const homeRoot = join(root, "harness-home");
   const harnessKeyName = ["REPRISE_TEST_", "API_KEY"].join("");
@@ -269,9 +191,9 @@ test("staging_shell runs arbitrary staging commands with a clean temporary envir
     });
   });
 
-  const shell = tool(root, "staging_shell", 64, { homeRoot });
+  const shell = tool(root, "powershell", 64, { homeRoot });
   await shell.execute(
-    { command: "echo from-shell> shell-output.txt" },
+    { command: "Set-Content -LiteralPath shell-output.txt -Value 'from-shell'" },
     new AbortController().signal,
   );
   assert.equal(
@@ -308,13 +230,13 @@ test("staging_shell runs arbitrary staging commands with a clean temporary envir
   assert.doesNotMatch(redactedDetails.command, /ultra-secret-token/);
 
   const pipeline = await shell.execute(
-    { command: "echo alpha | findstr alpha > pipe-output.txt" },
+    { command: "Write-Output alpha | findstr.exe alpha | Set-Content -LiteralPath pipe-output.txt" },
     new AbortController().signal,
   );
   assert.equal((pipeline.details as { exitCode: number }).exitCode, 0);
   assert.equal((await readFile(join(root, "pipe-output.txt"), "utf8")).trim(), "alpha");
   const nonzero = await shell.execute(
-    { command: "exit /b 7" },
+    { command: "exit 7" },
     new AbortController().signal,
   );
   assert.equal((nonzero.details as { exitCode: number }).exitCode, 7);
@@ -329,13 +251,13 @@ test("staging_shell runs arbitrary staging commands with a clean temporary envir
   );
 });
 
-test("staging_shell times out individual commands and marks truncated output", async (t) => {
+test("powershell times out individual commands and marks truncated output", async (t) => {
   const root = await workspace();
   t.after(() =>
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   );
 
-  const timedShell = tool(root, "staging_shell", 64, { shellTimeoutMs: 100 });
+  const timedShell = tool(root, "powershell", 64, { shellTimeoutMs: 100 });
   await assert.rejects(
     timedShell.execute(
       { command: nodeCommand("setTimeout(() => undefined, 2000)") },
@@ -344,7 +266,7 @@ test("staging_shell times out individual commands and marks truncated output", a
     /timed out/i,
   );
 
-  const shell = tool(root, "staging_shell");
+  const shell = tool(root, "powershell");
   const output = await shell.execute(
     { command: nodeCommand("process.stdout.write('x'.repeat(300000))") },
     new AbortController().signal,
@@ -357,7 +279,7 @@ test("staging_shell times out individual commands and marks truncated output", a
 test("recovery tools reject identical calls that add no information", async () => {
   const root = await workspace();
   try {
-    const list = tool(root, "list_dir");
+    const list = tool(root, "ls");
     await list.execute({}, new AbortController().signal);
     await assert.rejects(
       list.execute({}, new AbortController().signal),
@@ -368,10 +290,10 @@ test("recovery tools reject identical calls that add no information", async () =
   }
 });
 
-test("recovery tool budget rejects the 65th call", async () => {
+test("recovery tool budget rejects the 65th investigation call", async () => {
   const root = await workspace();
   try {
-    const list = tool(root, "list_dir");
+    const list = tool(root, "ls");
     for (let index = 0; index < 64; index += 1) {
       await list.execute({ path: `missing-${index}` }, new AbortController().signal);
     }
@@ -386,6 +308,23 @@ test("recovery tool budget rejects the 65th call", async () => {
       maxRetries: 10,
       retryDelay: 100,
     });
+  }
+});
+
+test("write still succeeds after 64 investigation calls", async () => {
+  const root = await workspace();
+  try {
+    const tools = recoveryTools(root, 64);
+    const list = tools.find((item) => item.name === "ls");
+    const report = tools.find((item) => item.name === "write");
+    assert.ok(list && report);
+    for (let index = 0; index < 64; index += 1) {
+      await list.execute({ path: `missing-${index}` }, new AbortController().signal);
+    }
+    const written = await report.execute({ path: "recovery.md", content: "# Recovery\nKept the current tree.\n" }, new AbortController().signal);
+    assert.match(written.content, /Wrote \d+ bytes/);
+  } finally {
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -471,6 +410,18 @@ test("recovery catalog assigns stable Host refs to transcript and id-less histor
   assert.deepEqual(rows[0]?.observation, { kind: "tool", output: "observed" });
 });
 
+test("read_observation truncates oversized historical pages", async () => {
+  const huge = { kind: "tool", output: "x".repeat(40_000) };
+  const taskCase = recoveryTaskCase([huge, huge]);
+  const observation = recoveryObservationTools(taskCase).find((item) => item.name === "read_observation");
+  assert.ok(observation);
+  const page = await observation.execute({ source: "historical_events", maxItems: 8 }, new AbortController().signal);
+  const rows = JSON.parse(page.content) as unknown[];
+  assert.equal(rows.length, 1);
+  assert.equal(page.details && (page.details as { truncated?: boolean }).truncated, true);
+  assert.equal((page.details as { nextCursor?: number }).nextCursor, 1);
+});
+
 test("Git facts preserve an unborn repository and distinguish a non-repository", async (t) => {
   const root = await workspace();
   const nonRepo = await workspace();
@@ -541,6 +492,17 @@ test("Git facts preserve an unborn repository and distinguish a non-repository",
   );
 });
 
+test("Git facts ignore a parent repository when the source root is not itself a repo", async (t) => {
+  const outer = await workspace();
+  const inner = join(outer, "nested-source");
+  t.after(() => rm(outer, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  await git(outer, ["init"]);
+  await mkdir(inner);
+  await writeFile(join(inner, "notes.txt"), "task\n");
+  const facts = await resolvedRecoveryFacts(inner, recoveryTaskCase([]));
+  assert.equal(facts.git?.isRepo, false);
+});
+
 function recoveryTaskCase(
   historicalEvents: Record<string, unknown>[],
 ): TaskCase {
@@ -563,42 +525,17 @@ function recoveryTaskCase(
   };
 }
 
-test("high-level observation tools return only bounded Host-owned clues", async () => {
+test("read_observation is the only frozen-history tool", async () => {
   const taskCase = recoveryTaskCase([
     { command: "npm test", output: "updated src/recovery.ts" },
   ]);
   const tools = recoveryObservationTools(taskCase);
-  const footprint = tools.find((item) => item.name === "derive_task_footprint");
-  const search = tools.find(
-    (item) => item.name === "search_recovery_artifacts",
-  );
-  assert.ok(footprint);
-  assert.ok(search);
-  const derived = JSON.parse(
-    (await footprint.execute({}, new AbortController().signal)).content,
-  ) as {
-    ref: string;
-    paths: string[];
-    commands: string[];
-  }[];
-  assert.ok(derived.some((entry) => entry.paths.includes("src/recovery.ts")));
-  assert.ok(derived.some((entry) => entry.commands.includes("npm test")));
-  const found = JSON.parse(
-    (await search.execute({ query: "recovery" }, new AbortController().signal))
-      .content,
-  ) as {
-    ref: string;
-    source: string;
-    index: number;
-    contentHash: string;
-  }[];
-  assert.ok(found.length > 0);
-  assert.ok(
-    found.every((entry) =>
-      /^event:(transcript|history)-\d+-[a-f0-9]{16}$/.test(entry.ref),
-    ),
-  );
-  assert.ok(found.every((entry) => /^[a-f0-9]{64}$/.test(entry.contentHash)));
+  assert.deepEqual(tools.map((item) => item.name), ["read_observation"]);
+  const page = JSON.parse(
+    (await tools[0]?.execute({ source: "historical_events" }, new AbortController().signal))?.content ?? "[]",
+  ) as { ref?: string }[];
+  assert.ok(page.length > 0);
+  assert.ok(page.every((entry) => typeof entry.ref === "string"));
 });
 
 test("frozen observation reads retry once and report an unavailable evidence source", async () => {
@@ -644,7 +581,7 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
   );
   const operations: unknown[] = [];
   let directoryAttempts = 0;
-  const list = tool(root, "list_dir", 64, {
+  const list = tool(root, "ls", 64, {
     filesystem: {
       readDirectory: async () => {
         directoryAttempts += 1;
@@ -674,7 +611,7 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
 
   let fileAttempts = 0;
   const reads: unknown[] = [];
-  const read = tool(root, "read_file", 64, {
+  const read = tool(root, "read", 64, {
     filesystem: {
       readRegularFile: async () => {
         fileAttempts += 1;
@@ -707,7 +644,7 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
   ]);
 });
 
-test("workspace and Git inspection stay bounded and never read Git object bodies", async (t) => {
+test("workspace listing stays bounded and powershell git log omits blob bodies", async (t) => {
   const root = await workspace();
   t.after(() =>
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
@@ -722,132 +659,23 @@ test("workspace and Git inspection stay bounded and never read Git object bodies
   await writeFile(join(root, "secret.txt"), "object-body-must-not-appear\n");
   await git(root, ["add", "secret.txt"]);
   await git(root, ["commit", "-m", "second commit"]);
-  const inspectWorkspace = tool(root, "inspect_workspace");
-  const inspected = await inspectWorkspace.execute(
-    { depth: 0 },
-    new AbortController().signal,
-  );
-  assert.match(inspected.content, /input\.txt/);
-  assert.match(inspected.content, /directory nested/);
-  assert.doesNotMatch(inspected.content, /child\.txt/);
-  const inspectGit = tool(root, "inspect_git_history");
-  const history = await inspectGit.execute(
-    { depth: 1, includeReflog: true },
+  const listed = await tool(root, "ls").execute({ depth: 0 }, new AbortController().signal);
+  assert.match(listed.content, /input\.txt/);
+  assert.match(listed.content, /directory nested/);
+  assert.doesNotMatch(listed.content, /child\.txt/);
+  const history = await tool(root, "powershell").execute(
+    { command: "git log -1 --format=%s" },
     new AbortController().signal,
   );
   assert.match(history.content, /second commit/);
   assert.doesNotMatch(history.content, /object-body-must-not-appear/);
 });
 
-test("submit_recovery_plan requires the structured schema and propagates Host validation", async (t) => {
-  const root = await workspace();
-  t.after(() =>
-    rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
-  );
-  const received: unknown[] = [];
-  const submit = tool(root, "submit_recovery_plan", 64, {
-    onPlan: async (plan: unknown) => {
-      const value = plan as {
-        factsUsed: string[];
-        candidates: { operations: { path: string }[] }[];
-      };
-      if (value.factsUsed.includes("fact:unknown"))
-        throw new Error("recovery_plan_unknown_fact");
-      if (
-        value.candidates.some((candidate) =>
-          candidate.operations.some((operation) =>
-            operation.path.startsWith(".git/"),
-          ),
-        )
-      )
-        throw new Error("recovery_plan_unsafe_path");
-      received.push(plan);
-    },
-  });
-  const plan = {
-    planId: "plan-1",
-    factsUsed: ["fact:workspace-current"],
-    hypotheses: [
-      {
-        hypothesisId: "current-workspace",
-        rationale: "inspect",
-        paths: ["input.txt"],
-        supportingFactRefs: ["fact:workspace-current"],
-        counterFactRefs: [],
-        expectedChecks: ["read file"],
-        confidence: "low",
-      },
-    ],
-    candidates: [
-      {
-        hypothesisId: "current-workspace",
-        operations: [
-          {
-            operation: "modify",
-            path: "input.txt",
-            rationale: "candidate check",
-          },
-        ],
-      },
-    ],
-    verificationPlan: ["read file"],
-  };
-  await submit.execute(plan, new AbortController().signal);
-  assert.equal(received.length, 1);
-  await assert.rejects(
-    submit.execute(
-      { ...plan, factsUsed: ["fact:unknown"] },
-      new AbortController().signal,
-    ),
-    /unknown_fact/,
-  );
-  await assert.rejects(
-    submit.execute(
-      {
-        ...plan,
-        candidates: [
-          {
-            hypothesisId: "current-workspace",
-            operations: [
-              {
-                operation: "modify",
-                path: ".git/config",
-                rationale: "invalid",
-              },
-            ],
-          },
-        ],
-      },
-      new AbortController().signal,
-    ),
-    /unsafe_path/,
-  );
-});
-
-test("direct Recovery binary writes preserve bytes and journal only hashes", async (t) => {
-  const root = await workspace();
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const entries: unknown[] = [];
-  const bytes = Buffer.from([0, 255, 16, 128, 1]);
-  const write = tool(root, "write_binary_file", 64, {
-    onControlledWrite: async (entry: unknown) => entries.push(entry),
-  });
-  await write.execute({ path: "output.bin", base64: bytes.toString("base64") }, new AbortController().signal);
-  assert.deepEqual(await readFile(join(root, "output.bin")), bytes);
-  assert.deepEqual(entries, [
-    { schemaVersion: 1, tool: "write_binary_file", phase: "before", path: "output.bin" },
-    {
-      schemaVersion: 1,
-      tool: "write_binary_file",
-      phase: "after",
-      path: "output.bin",
-      after: { kind: "file", size: bytes.byteLength, contentHash: sha256(bytes) },
-    },
-  ]);
-  await assert.rejects(
-    write.execute({ path: "invalid.bin", base64: "AA==\n" }, new AbortController().signal),
-    /canonical/i,
-  );
+test("retired Recovery tools are not registered", () => {
+  const names = recoveryTools(".").map((item) => item.name);
+  for (const name of ["submit_recovery_plan", "write_binary_file", "rename_file", "inspect_workspace"]) {
+    assert.equal(names.includes(name), false);
+  }
 });
 
 test("controlled Recovery delta replay requires and verifies immutable postimage bytes", async () => {
@@ -892,44 +720,14 @@ test("controlled Recovery delta replay requires and verifies immutable postimage
   );
 });
 
-test("direct Recovery rename preserves the paired file delta and rejects overwrite", async (t) => {
-  const root = await workspace();
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const entries: unknown[] = [];
-  const move = tool(root, "rename_file", 64, {
-    onControlledWrite: async (entry: unknown) => entries.push(entry),
-  });
-  await move.execute({ from: "input.txt", to: "nested/renamed.txt" }, new AbortController().signal);
-  await assert.rejects(readFile(join(root, "input.txt")));
-  assert.equal(await readFile(join(root, "nested", "renamed.txt"), "utf8"), "original\r\n");
-  const file = { kind: "file", size: Buffer.byteLength("original\r\n"), contentHash: sha256("original\r\n") };
-  assert.deepEqual(entries, [
-    { schemaVersion: 1, tool: "rename_file", phase: "before", path: "nested/renamed.txt", sourcePath: "input.txt", before: file },
-    { schemaVersion: 1, tool: "rename_file", phase: "after", path: "nested/renamed.txt", sourcePath: "input.txt", before: file, after: file },
-  ]);
-  await writeFile(join(root, "existing.txt"), "target");
-  await assert.rejects(
-    move.execute({ from: "nested/renamed.txt", to: "existing.txt" }, new AbortController().signal),
-    /must not already exist/i,
-  );
-  await assert.rejects(
-    move.execute({ from: "nested/renamed.txt", to: "nested/renamed.txt" }, new AbortController().signal),
-    /different paths/i,
-  );
-  const replayed = replayControlledRecoveryDelta(entries as RecoveryControlledWrite[]);
-  assert.equal(replayed.get("input.txt"), undefined);
-  assert.deepEqual(replayed.get("nested/renamed.txt"), file);
-});
-
-
-test("staging_shell reports a missing Windows executable without leaking command details", async (t) => {
+test("powershell reports a missing Windows executable without leaking command details", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows executable matrix case");
     return;
   }
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const shell = tool(root, "staging_shell", 64, { shellExecutable: join(root, "missing-pwsh.exe") });
+  const shell = tool(root, "powershell", 64, { shellExecutable: join(root, "missing-pwsh.exe") });
   await assert.rejects(
     shell.execute({ command: "echo should-not-run" }, new AbortController().signal),
     /spawn error/i,

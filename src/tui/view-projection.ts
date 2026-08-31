@@ -1,15 +1,16 @@
+import { userRecoveryStatus } from '../application/recovery-user-status.js';
 import type { CodexExperimentPreflight, CodexExperimentResult, RecoveryAttempt } from '../application/experiment.js';
 import type { CandidateSpec, RunPolicy, TaskCase } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
-import { countCalls, countTurns, currentRunState, elapsedFrom } from './pages/run.js';
+import { countCalls, countTurns, currentRunState, elapsedFrom, type CandidateRunPhase } from './pages/run.js';
 import { TIMELINE_FILTERS } from './format.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
-import type { Locale } from './i18n.js';
-import { projectLabel, sessionTitle, type ProductIntakeItem } from './pages/intake.js';
+import { formatRecoveryFailureSummary, type Locale } from './i18n.js';
+import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
 
 type Input = {
@@ -21,6 +22,12 @@ type Input = {
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: CodexExperimentPreflight | undefined; readonly recoveryAttempt?: RecoveryAttempt | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly preparePhase?: PreparePhase; readonly prepareDetail?: string;
+  readonly runPhase?: CandidateRunPhase;
+  readonly lastRuntimeEventAt?: string;
+  readonly lastRuntimeEventKind?: string;
+  readonly modelOutputSeen?: boolean;
+  readonly reconnectCount?: number;
+  readonly reconnectTotal?: number;
   readonly nowMs?: number;
   readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly result?: CodexExperimentResult | undefined;
   readonly viewer?: { readonly title: string; readonly body: string };
@@ -39,6 +46,7 @@ function homeModel(input: Input, envSet: boolean) {
     ...(input.hasSavedModelConfig ? { providerLabel: input.modelConfig.providerId, modelId: input.modelConfig.modelId } : {}),
     composer: input.composer, composerCursor: input.composerCursor, showSuggestions: input.showSuggestions && !input.commandOverlay,
     locale: input.locale ?? 'en',
+    ...(input.recoveryAttempt?.baseline.recovery?.status === 'failed' ? { recoveryFailed: true } : {}),
   };
 }
 
@@ -51,9 +59,19 @@ function runningModel(input: Input) {
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },
     detailExpanded: input.detailExpanded, ...(input.policy ? { policy: input.policy } : {}),
     ...(input.preparePhase ? { preparePhase: input.preparePhase, ...(input.prepareDetail ? { prepareDetail: input.prepareDetail } : {}) } : {}),
+    ...(input.runPhase ? { runPhase: input.runPhase } : {}),
+    ...(input.lastRuntimeEventAt ? { lastRuntimeEventAt: input.lastRuntimeEventAt } : {}),
+    ...(input.lastRuntimeEventKind ? { lastRuntimeEventKind: input.lastRuntimeEventKind } : {}),
+    ...(input.modelOutputSeen ? { modelOutputSeen: true } : {}),
+    ...(input.reconnectCount ? { reconnectCount: input.reconnectCount } : {}),
+    ...(input.reconnectTotal ? { reconnectTotal: input.reconnectTotal } : {}),
+    ...(input.runStartedAt ? { runStartedAt: input.runStartedAt } : {}),
     locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}),
     ...(input.taskCase ? {
-      taskTitle: sessionTitle(input.taskCase.initialInput.text),
+      taskTitle: taskDisplaySummary(
+        input.taskCase.initialInput.text,
+        input.taskCase.transcript.filter((message) => message.role === 'user').map((message) => message.text).slice(1),
+      ),
       workspaceProject: projectLabel(
         typeof input.taskCase.taskContext?.historicalCwd === 'string' ? input.taskCase.taskContext.historicalCwd : undefined,
         input.locale ?? 'en',
@@ -128,14 +146,25 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   }
   if (input.page === 'source') return { ...base, source: { sourceRoot: input.sourceRoot, sourceCursor: input.sourceCursor, step: 1, locale: input.locale ?? 'en' } };
   const recovery = input.recoveryAttempt?.baseline.recovery ? {
-    status: input.recoveryAttempt.baseline.recovery.status,
+    status: previewStatus(userRecoveryStatus({
+      baseline: input.recoveryAttempt.baseline,
+      transcriptOk: Boolean(input.taskCase?.initialInput?.text),
+      hasAccept: input.recoveryAttempt.accept !== undefined,
+    })),
     ...(input.recoveryAttempt.providerPreview?.reportText ? { reportText: input.recoveryAttempt.providerPreview.reportText } : {}),
     unresolved: input.recoveryAttempt.baseline.recovery.unresolved,
     changedPathCount: input.recoveryAttempt.providerPreview?.changedPaths.length ?? 0,
+    ...(input.recoveryAttempt.baseline.recovery.failureStage
+      ? { failureSummary: formatRecoveryFailureSummary(input.locale ?? 'en', input.recoveryAttempt.baseline.recovery.failureStage) }
+      : {}),
   } : undefined;
   if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
   if (input.page === 'confirm' && input.preflight) return { ...base, confirm: { preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
   if (input.page === 'running') return { ...base, running: runningModel(input) };
   if (input.page === 'result' && input.result) return { ...base, running: runningModel(input), result: input.result };
   return base;
+}
+
+function previewStatus(status: 'recovered' | 'partial' | 'failed'): 'recovered' | 'partial' | 'failed' {
+  return status;
 }

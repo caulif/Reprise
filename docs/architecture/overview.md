@@ -152,7 +152,7 @@ interface TaskCase {
 }
 ```
 
-`transcript` 和 `historicalEvents` 保存用户选择的完整逻辑会话；整段会话默认就是一个任务，不再从中推断子任务边界。`initialInput` 是 Product Pack 确定的第一条可执行用户输入，只用于启动候选 Runtime。Controller 可以读取完整历史轨迹，但不会逐轮 replay。
+`transcript` 和 `historicalEvents` 保存用户选择的完整逻辑会话；整段会话默认就是一个任务，不再从中推断子任务边界。`initialInput` 是 Case Preparation 从完整会话选出的第一条用户任务句（跳过产品注入的指令块），只用于启动候选 Runtime。Controller 可以读取完整历史轨迹，但不会逐轮 replay。
 
 `BaselineEvidence` 保存原始完成结果中可获得的最终消息、产物和检查引用。它是候选结果唯一要比较的历史基线，不要求由 Harness 重跑，也不用于候选之间排名。没有历史产物时明确记录 unavailable，不由 Agent 补造。
 
@@ -523,9 +523,12 @@ type TurnSettlement = {
   status: "completed" | "failed" | "waiting_input" | "aborted";
   confidence: "native" | "composite" | "heuristic";
   observedAt: string;
-  modelCalls?: number;
-  toolCalls?: number;
-  error?: TargetError;
+  failure?: {
+    kind: "upstream" | "authentication" | "protocol" | "process" | "unknown";
+    summary: string;
+    retryable: boolean;
+    reconnectCount?: number;
+  };
   rawRefs: ArtifactRef[];
 };
 ```

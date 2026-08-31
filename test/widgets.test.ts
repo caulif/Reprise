@@ -347,7 +347,7 @@ test('help names the keys of the page it was opened on', () => {
   // `t` and `d` are overloaded across pages, so inspection must not inherit the running meanings.
   const inspection = helpLines('inspection').join('\n');
   assert.match(inspection, /t\s+Toggle model text sharing/);
-  assert.match(inspection, /Enter\s+Freeze the session from the first user message/);
+  assert.match(inspection, /Enter\s+Freeze the session from the first user task/);
   assert.doesNotMatch(inspection, /Select task input|Select task start/);
   assert.doesNotMatch(inspection, /Request cancellation/);
 
@@ -480,9 +480,9 @@ test('pending list rows show truncated summary, not an unreadable freeze verdict
     searching: false,
     locale: 'en',
   }, 16).join('\n');
-  assert.match(text, /\[partial summary\]/);
-  assert.doesNotMatch(text, /\[unreadable\]/);
   assert.doesNotMatch(text, /\[pending full inspect\]/);
+  assert.match(text, /Late user/);
+  assert.doesNotMatch(text, /\[unreadable\]/);
 });
 
 test('session replay errors map to distinct operator copy', () => {
@@ -613,8 +613,9 @@ test('header names no default product before the user selects one', () => {
     message: 'Welcome back.',
     home: { taskCase: undefined, recentExperiment: undefined, hasApiConfig: true, hasUsableAuth: true, composer: '', showSuggestions: false },
   }, 120).join('\n');
-  assert.match(text, /Agent unset/);
+  assert.match(text, /Product unset/);
   assert.doesNotMatch(text, /Codex/);
+  assert.doesNotMatch(text, /Agent unset/);
 });
 
 test('running timeline uses the selected product and has no Codex fallback', () => {
@@ -769,7 +770,7 @@ test('run confirmation presents request, billing, and source-copy boundaries', (
   const preflight = {
     sourceBaseline: 'available',
     resolved: { executable: 'codex', resolvedModel: 'gpt-5', version: '1.0.0' },
-    limitations: [], comparisonClass: 'observational',
+    limitations: [], comparisonClass: 'recovered',
   } as never;
   const text = renderConfirmation(theme, 120, {
     preflight,

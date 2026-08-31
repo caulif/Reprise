@@ -40,6 +40,13 @@ export function redactDiagnostic(value: string): string {
   return SECRET_PATTERNS.reduce((result, pattern) => result.replace(pattern, '[REDACTED]'), value);
 }
 
+export function summarizeDiagnostic(value: string, limit = 240): string {
+  const flattened = value.replace(/https?:\/\/[^\s]+/gi, '[endpoint]').replace(/[\r\n\t]/g, ' ');
+  return redactDiagnostic(flattened).slice(0, limit);
+}
+
+
+
 export type ExecutableDiscovery = {
   readonly command: string;
   readonly envKey?: string;

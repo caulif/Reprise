@@ -11,6 +11,8 @@ import { projectLabel } from './pages/intake.js';
 import { appendTimelineEntries, projectTimelineEvent } from './timeline.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
 import { userRecoveryStatus } from '../application/recovery-user-status.js';
+import { record, text } from '../core/json.js';
+import type { CandidateRunPhase } from './pages/run.js';
 
 function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
@@ -145,6 +147,7 @@ function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
   }
+  noteRunDiagnostics(c, event);
   appendTimelineEntries(c.timeline, projectTimelineEvent(event));
   const visible = c.visibleTimeline();
   if (c.timelineFollowing) c.timelineSelected = Math.max(0, visible.length - 1);
@@ -198,6 +201,8 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.timeline = [];
     c.timelineSelected = 0;
     c.timelineFollowing = true;
+    resetRunDiagnostics(c);
+    c.runPhase = 'recovery';
     c.preparePhase = 'check';
     c.prepareDetail = t(c.locale, 'recoveryStageAgent');
     c.page = 'running';
@@ -216,6 +221,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     const userStatus = userRecoveryStatus({
       baseline: attempt.baseline,
       transcriptOk: Boolean(c.taskCase.initialInput?.text),
+      hasAccept: attempt.accept !== undefined,
     });
     c.preflight = {
       ...c.preflight,
@@ -266,14 +272,10 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.findCursor = 0;
     const taskCase = c.taskCase;
     if (!c.preflight) throw new Error('Run confirmation requires a completed preflight.');
-    const blocked = c.preflight.workspace?.blockedReasons ?? [];
-    if (c.preflight.sourceBaseline === 'unavailable' || blocked.length) {
-      throw new Error(
-        blocked.length
-          ? blocked.join(' | ')
-          : 'Candidate was not started because the source baseline is unavailable.',
-      );
-    }
+    const blocked = candidateStartBlocked(candidateGateFrom(c));
+    if (blocked) throw new Error(blocked);
+    resetRunDiagnostics(c);
+    c.runPhase = 'candidate_starting';
     c.preparePhase = 'copy';
     c.prepareDetail = undefined;
     c.page = 'running';
@@ -336,4 +338,96 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
   }
   stopRunClock(c);
   c.render(true);
+}
+
+export type CandidateStartGate = {
+  sourceBaseline?: string;
+  blockedReasons: readonly string[];
+  recovery?: {
+    hasAccept: boolean;
+    hasStaging: boolean;
+    baselineMode: string;
+    runnable?: string;
+    userStatus?: 'recovered' | 'partial' | 'failed';
+  };
+};
+
+export function candidateGateFrom(c: ControllerHandle): CandidateStartGate {
+  return {
+    blockedReasons: c.preflight?.workspace?.blockedReasons ?? [],
+    ...(c.preflight?.sourceBaseline ? { sourceBaseline: c.preflight.sourceBaseline } : {}),
+    ...(c.recoveryAttempt
+      ? {
+          recovery: {
+            hasAccept: c.recoveryAttempt.accept !== undefined,
+            hasStaging: Boolean(c.recoveryAttempt.staging),
+            baselineMode: c.recoveryAttempt.baseline.mode,
+            ...(c.recoveryAttempt.baseline.readiness?.runnable
+              ? { runnable: c.recoveryAttempt.baseline.readiness.runnable }
+              : {}),
+            userStatus: userRecoveryStatus({
+              baseline: c.recoveryAttempt.baseline,
+              transcriptOk: Boolean(c.taskCase?.initialInput?.text),
+              hasAccept: c.recoveryAttempt.accept !== undefined,
+            }),
+          },
+        }
+      : {}),
+  };
+}
+
+export function candidateStartBlocked(input: CandidateStartGate): string | undefined {
+  if (input.recovery) {
+    if (input.recovery.baselineMode === 'unsupported' || input.recovery.runnable === 'unsupported') {
+      return 'Candidate was not started because recovery did not produce a runnable workspace.';
+    }
+    if (!input.recovery.hasAccept || input.recovery.userStatus === 'failed') {
+      return 'Candidate was not started because recovery did not produce a runnable workspace.';
+    }
+    return undefined;
+  }
+  if (input.sourceBaseline === 'unavailable' || input.blockedReasons.length) {
+    return input.blockedReasons.length
+      ? input.blockedReasons.join(' | ')
+      : 'Candidate was not started because the source baseline is unavailable.';
+  }
+  return undefined;
+}
+
+function resetRunDiagnostics(c: ControllerHandle): void {
+  c.runPhase = undefined;
+  c.lastRuntimeEventAt = undefined;
+  c.lastRuntimeEventKind = undefined;
+  c.modelOutputSeen = false;
+  c.reconnectCount = 0;
+  c.reconnectTotal = 0;
+}
+
+function noteRunDiagnostics(c: ControllerHandle, event: EventEnvelope): void {
+  c.lastRuntimeEventAt = event.occurredAt;
+  c.lastRuntimeEventKind = event.type;
+  const phase = phaseForEvent(event);
+  if (phase) c.runPhase = phase;
+  if (event.type === 'codex.item_agentMessage_delta' || event.type === 'codex.item_completed') c.modelOutputSeen = true;
+  if (event.type !== 'codex.error') return;
+  const attempt = parseReconnectAttempt(text(record(event.payload).message) ?? '');
+  if (!attempt) return;
+  c.reconnectCount = attempt.current;
+  c.reconnectTotal = attempt.total;
+  c.runPhase = 'candidate_reconnecting';
+}
+
+function parseReconnectAttempt(message: string): { current: number; total: number } | undefined {
+  const match = /Reconnecting\s+(\d+)\s*\/\s*(\d+)/i.exec(message);
+  if (!match) return undefined;
+  return { current: Number(match[1]), total: Number(match[2]) };
+}
+
+function phaseForEvent(event: EventEnvelope): CandidateRunPhase | undefined {
+  const type = event.type;
+  if (type.startsWith('recovery.')) return 'recovery';
+  if (type.startsWith('agent.') && text(record(event.payload).role) === 'recovery') return 'recovery';
+  if (type === 'run.attempt_created' || type === 'codex.thread_started') return 'candidate_starting';
+  if (type === 'codex.turn_admitted' || type.startsWith('codex.item_')) return 'candidate_generating';
+  return undefined;
 }

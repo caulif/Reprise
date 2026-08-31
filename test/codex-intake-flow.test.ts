@@ -86,6 +86,7 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
     recover: async () => ({
       baseline: { match: "recovered", warnings: [] },
       provider: { discardRecovery: async () => {} },
+      accept: async () => ({ match: "recovered", warnings: [] }),
     }),
     start: async () => {
       await new Promise<void>((resolve) => {
@@ -110,6 +111,8 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
   await app.start();
   await enterIntake(app);
   await waitFor(() => /Cancel this run/.test(rendered));
+  app.handleInput("\r");
+  await waitFor(() => /Session start:/.test(rendered));
   app.handleInput("\r");
   await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
   app.handleInput("\r");
@@ -187,6 +190,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
     recover: async () => ({
       baseline: { match: "recovered", warnings: [] },
       provider: { discardRecovery: async () => {} },
+      accept: async () => ({ match: "recovered", warnings: [] }),
     }),
     start: async (input: {
       sourceRoot: string;
@@ -233,6 +237,8 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   await app.start();
   await enterIntake(app);
   await waitFor(() => /Patch the missing path/.test(rendered));
+  app.handleInput("\r");
+  await waitFor(() => /Session start:/.test(rendered));
   app.handleInput("\r");
   await waitFor(() => /Source root|Historical cwd is missing/.test(rendered));
   assert.match(rendered, /Source root/);

@@ -9,6 +9,7 @@ import { RecoveryValidationError } from "../environment/local-workspace-provider
 import { replayControlledRecoveryDeltaBytes } from "../infrastructure/recovery-write-journal.js";
 import { persistRecoveryEvaluation } from "./recovery-evaluation.js";
 import {
+  diagnosisReasonCode,
   persistRecoveryAttemptDiagnosis,
   recoveryAttemptDiagnosis,
 } from "./recovery-user-status.js";
@@ -271,11 +272,14 @@ async function persistRecoveryCompletionArtifacts(
       transcriptOk: Boolean(input.taskCase.initialInput?.text),
       recoveryAgentStarted: true,
       retryable: false,
-      reasonCode:
-        activeProviderPreview.baseline.budget.excludedEntries?.[0]?.reasonCode ??
-        (activeProviderPreview.baseline.recovery?.status === "recovered"
-          ? "recovered"
-          : "recovery_agent.failed"),
+      reasonCode: diagnosisReasonCode({
+        baseline: activeProviderPreview.baseline,
+        transcriptOk: Boolean(input.taskCase.initialInput?.text),
+        ...(activeProviderPreview.baseline.recovery?.failureStage
+          ? { failureStage: activeProviderPreview.baseline.recovery.failureStage }
+          : {}),
+      }),
+      hasAccept: true,
     }),
   );
   if (session.writerAcquired)
@@ -337,7 +341,8 @@ async function acceptReadyBaselineAndComplete(session: RecoveryRunSession): Prom
     !candidateGraphArtifactId
   )
     throw new Error("Recovery completion was not prepared.");
-  if (session.verification === "verified" || session.readinessResult?.status === "ready")
+  const from = lifecycleState(session);
+  if (from === "candidate_verified" || from === "candidate_pending_review")
     moveRecoveryState(session, "selected_checkpoint");
   activeProviderPreview = await acceptReadyBaseline(session, activeProviderPreview);
   await persistRecoveryCompletionArtifacts(session, activeProviderPreview);
@@ -369,32 +374,41 @@ async function acceptReadyBaseline(
   session: RecoveryRunSession,
   activeProviderPreview: NonNullable<RecoveryRunSession["activeProviderPreview"]>,
 ): Promise<NonNullable<RecoveryRunSession["activeProviderPreview"]>> {
-  if (session.readinessResult?.status !== "ready") return activeProviderPreview;
   const { input, store, executionCandidate } = session;
   if (!executionCandidate) throw new Error("Recovery acceptance candidate was not prepared.");
-  session.taskOutcome = "ready_for_task";
-  session.verification = "verified";
+  const ready = session.readinessResult?.status === "ready";
+  if (ready) {
+    session.taskOutcome = "ready_for_task";
+    session.verification = "verified";
+  }
   const acceptedPreview = {
     ...activeProviderPreview,
     baseline: {
       ...activeProviderPreview.baseline,
       ...(activeProviderPreview.baseline.recovery
-        ? { recovery: { ...activeProviderPreview.baseline.recovery, taskOutcome: session.taskOutcome } }
+        ? {
+            recovery: {
+              ...activeProviderPreview.baseline.recovery,
+              ...(session.taskOutcome ? { taskOutcome: session.taskOutcome } : {}),
+            },
+          }
         : {}),
     },
   };
   session.activeProviderPreview = acceptedPreview;
-  moveRecoveryState(session, "ready_for_task");
-  await store.append({
-    type: "recovery.ready_for_task",
-    runId: input.runId,
-    operationId: "recovery-ready-for-task",
-    payload: {
-      caseId: input.caseId,
-      candidateId: executionCandidate.candidateId,
-      checkedPaths: session.readinessResult.checkedPaths,
-    },
-  });
+  if (ready) {
+    moveRecoveryState(session, "ready_for_task");
+    await store.append({
+      type: "recovery.ready_for_task",
+      runId: input.runId,
+      operationId: "recovery-ready-for-task",
+      payload: {
+        caseId: input.caseId,
+        candidateId: executionCandidate.candidateId,
+        checkedPaths: session.readinessResult?.checkedPaths ?? [],
+      },
+    });
+  }
   session.automaticallyAcceptedBaseline = await session.provider.acceptRecovery(acceptedPreview);
   moveRecoveryState(session, "accepted");
   await store.append({

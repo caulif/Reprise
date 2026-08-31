@@ -1,7 +1,7 @@
 import { SAFE_ID } from '../core/identity.js';
 import { assertTransition } from '../core/state-machine.js';
 import type { ArtifactRef, CandidateRunState, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
-import type { DeliveryReceipt, MessageIdentity, RuntimeStopReason, TargetRunner, TurnSettlement, UserMessage } from '../core/runtime.js';
+import type { DeliveryReceipt, MessageIdentity, RuntimeFailureKind, RuntimeStopReason, TargetRunner, TurnSettlement, UserMessage } from '../core/runtime.js';
 
 const deliveryValues = new Set(['accepted', 'rejected', 'unknown']);
 const settlementValues = new Set(['completed', 'failed', 'waiting_input', 'aborted']);
@@ -149,14 +149,15 @@ export class CandidateRun {
       assertSettlement(settlement);
       await this.#append('runtime.turn_settled', settlement, `settlement-${identity.turnIndex}`);
       if (settlement.status !== 'waiting_input' && settlement.status !== 'completed') {
-        return this.#finish('failed.runtime', 'failed', new Error(`Target turn settled as ${settlement.status}.`));
+        const mapped = finishFromSettlement(settlement);
+        return this.#finish(mapped.code, 'failed', mapped.cause);
       }
       this.#settledTurns += 1;
       if (this.#turns >= this.#policy.maxTargetTurns) return this.#finish('limit.target_turns', 'shutdown');
       await this.#move('awaiting_controller');
       return this.#state;
     } catch (error) {
-      return this.#finish(isTimeout(error) ? 'limit.turn_timeout' : 'failed.runtime', 'failed', error);
+      return this.#finish(isTimeout(error) ? 'limit.turn_timeout' : 'failed.runtime', 'failed', annotateRuntimeError(error));
     }
   }
 
@@ -347,7 +348,46 @@ function terminationFor(code: string, cause: unknown): Termination {
   if (code.startsWith('stalled.')) return { kind: 'stalled', code, initiatedBy: code === 'stalled.controller_no_further_value' ? 'controller' : 'harness' };
   if (code === 'failed.controller') return { kind: 'failed', code, initiatedBy: 'controller', failure: { origin: 'controller', code: 'agent_failure', message: errorFact(cause).message, evidenceRefs: [] } };
   if (code.startsWith('uncertain.')) return { kind: 'uncertain', code, initiatedBy: 'harness' };
-  return { kind: 'failed', code, initiatedBy: 'harness', failure: { origin: 'runtime', code, message: errorFact(cause).message, evidenceRefs: [] } };
+  return { kind: 'failed', code, initiatedBy: 'harness', failure: { origin: 'runtime', code: specificFailureCode(code, cause), message: errorFact(cause).message, evidenceRefs: [] } };
+}
+
+function finishFromSettlement(settlement: TurnSettlement): { code: string; cause: Error } {
+  const specific = runtimeFailureCode(settlement.failure?.kind);
+  const message = settlement.failure?.summary ?? `Target turn settled as ${settlement.status}.`;
+  return { code: 'failed.runtime', cause: Object.assign(new Error(message), { code: specific }) };
+}
+
+function annotateRuntimeError(error: unknown): unknown {
+  if (!(error instanceof Error)) return error;
+  if (hasFailureCode(error)) return error;
+  const specific = runtimeFailureCode(kindFromThrownMessage(error.message));
+  if (specific === 'failed.runtime') return error;
+  return Object.assign(error, { code: specific });
+}
+
+function specificFailureCode(code: string, cause: unknown): string {
+  return hasFailureCode(cause) ? cause.code : code;
+}
+
+function runtimeFailureCode(kind: RuntimeFailureKind | undefined): string {
+  if (kind === 'upstream') return 'failed.runtime.upstream_unavailable';
+  if (kind === 'authentication') return 'failed.runtime.authentication';
+  if (kind === 'protocol') return 'failed.runtime.protocol';
+  if (kind === 'process') return 'failed.runtime.process';
+  return 'failed.runtime';
+}
+
+function kindFromThrownMessage(message: string): RuntimeFailureKind | undefined {
+  if (/unrecognized turn|invalid json-rpc|protocol error/i.test(message)) return 'protocol';
+  if (/app-server exited|process exited|failed to start:|EPIPE/i.test(message)) return 'process';
+  if (/HTTP\s*503|\b503\b|temporarily unavailable/i.test(message)) return 'upstream';
+  if (/unauthorized|invalid api key|HTTP\s*401/i.test(message)) return 'authentication';
+  return undefined;
+}
+
+function hasFailureCode(value: unknown): value is { code: string } {
+  if (!value || typeof value !== 'object' || !('code' in value)) return false;
+  return typeof value.code === 'string' && value.code.length > 0;
 }
 
 function assessmentFor(code: string, settled: boolean, hasManifest: boolean): Assessment {

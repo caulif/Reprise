@@ -14,6 +14,7 @@ export type RecoveryPreviewModel = {
   readonly reportText?: string;
   readonly unresolved: readonly string[];
   readonly changedPathCount: number;
+  readonly failureSummary?: string;
 };
 export type PreflightModel = {
   readonly preflight: CodexExperimentPreflight;
@@ -30,6 +31,7 @@ export type ConfirmModel = PreflightModel & {
   readonly policy?: RunPolicy;
   readonly harnessAuthOk?: boolean;
 };
+export type CandidateRunPhase = 'recovery' | 'candidate_starting' | 'candidate_generating' | 'candidate_reconnecting';
 export type RunningModel = {
   readonly entries: readonly TimelineEntry[];
   readonly selected: number;
@@ -52,6 +54,13 @@ export type RunningModel = {
   readonly findQuery?: string;
   readonly findCursor?: number;
   readonly tick?: number;
+  readonly runPhase?: CandidateRunPhase;
+  readonly lastRuntimeEventAt?: string;
+  readonly lastRuntimeEventKind?: string;
+  readonly modelOutputSeen?: boolean;
+  readonly reconnectCount?: number;
+  readonly reconnectTotal?: number;
+  readonly runStartedAt?: number;
 };
 
 function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string], locale: Locale): string {
@@ -104,32 +113,83 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
   const product = model.productLabel ?? t(locale, 'unknownAgent');
   const fidelity = userRecoveryHeadline(preflight.comparisonClass, locale);
   const recovery = model.recovery;
+  const canStart = confirmCanStart(model);
+  const recoveryRunnable = model.preflight.comparisonClass !== 'observational' && model.recovery?.status !== 'failed';
+  const startWarning = !canStart
+    ? (model.harnessAuthOk === false
+      ? t(locale, 'warningCannotStart', { product })
+      : t(locale, 'warningCannotStartFailedRecovery', { product }))
+    : t(locale, 'warningStartsProcess', { product });
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
-    ...panel(theme, t(locale, 'confirmTitle', { product }), [
+    ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), [
       kv(theme, t(locale, 'statusLabel'), fidelity, width - 2),
       kv(theme, t(locale, 'candidateLabel'), candidateLine(candidate, product, locale), width - 2),
       ...(recovery ? [
-        kv(theme, t(locale, 'environmentLabel'), recovery.unresolved.length ? t(locale, 'preparedWithLimitations') : t(locale, 'preparedValue'), width - 2),
+        kv(theme, t(locale, 'environmentLabel'), environmentStatus(recovery, recoveryRunnable, locale), width - 2),
+        ...(recovery.failureSummary ? [kv(theme, t(locale, 'recoveryDiagnostics'), recovery.failureSummary, width - 2)] : []),
       ] : []),
       kv(theme, t(locale, 'maximumRequestsLabel'), `${t(locale, 'candidateLabel')} ${model.policy?.maxTargetTurns ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'controllerLabel')} ${model.policy?.maxModelCalls ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'comparisonActorLabel')} 1`, width - 2),
       kv(theme, t(locale, 'networkBillingLabel'), model.harnessAuthOk === false ? `${t(locale, 'blockedValue')} ${dash(theme)} ${t(locale, 'credentialMissing')}` : t(locale, 'providerDependent'), width - 2),
       '',
-      model.harnessAuthOk === false
-        ? theme.style.danger(` ${theme.glyphs.warn}  ${t(locale, 'warningCannotStart', { product })}`)
-        : theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'warningStartsProcess', { product })}`),
+      canStart ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`) : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`),
       theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'sourceUnchanged')}`),
-      theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'isolatedState', { source: sourceRoot || t(locale, 'selectedDirectory') })}`),
+      ...(recoveryRunnable ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'isolatedState', { source: sourceRoot || t(locale, 'selectedDirectory') })}`)] : []),
       theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'copyNotSanitized')}`),
       theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'candidateReadsSource')}`),
     ], width),
   ];
 }
 
-export function runningChrome(_theme: Theme, _width: number, model: RunningModel): string[] {
+export function confirmCanStart(model: ConfirmModel): boolean {
+  if (model.harnessAuthOk === false) return false;
+  if (model.preflight.comparisonClass === 'observational') return false;
+  if (model.recovery?.status === 'failed') return false;
+  return true;
+}
+
+function environmentStatus(recovery: RecoveryPreviewModel, recoveryRunnable: boolean, locale: Locale): string {
+  if (!recoveryRunnable || recovery.status === 'failed') return t(locale, 'environmentNotRunnable');
+  return recovery.unresolved.length ? t(locale, 'preparedWithLimitations') : t(locale, 'preparedValue');
+}
+
+export function runningChrome(theme: Theme, width: number, model: RunningModel): string[] {
   if (isPreparing(model)) return [];
-  return [];
+  const locale = model.locale ?? 'en';
+  const product = model.productLabel ?? t(locale, 'unknownAgent');
+  const phase = phaseLine(model, locale, product);
+  const wait = waitLine(model, locale);
+  return [phase, ...(wait ? [theme.style.muted(` ${wait}`)] : [])].map((line) =>
+    theme.style.fillCanvas(pad(line.startsWith(' ') ? line : ` ${line}`, width, theme.glyphs.ellipsis)),
+  );
+}
+
+function phaseLine(model: RunningModel, locale: Locale, product: string): string {
+  if (model.runPhase === 'candidate_reconnecting') {
+    return t(locale, 'candidateReconnecting', {
+      product,
+      current: model.reconnectCount ?? 0,
+      total: model.reconnectTotal || 5,
+    });
+  }
+  if (model.runPhase === 'candidate_starting') return t(locale, 'candidateStarting', { product });
+  if (model.runPhase === 'recovery') return t(locale, 'recoveringTitle');
+  return t(locale, 'candidateGenerating', { product, n: Math.max(1, model.turns.used) });
+}
+
+function waitLine(model: RunningModel, locale: Locale): string | undefined {
+  const now = model.tick ?? Date.now();
+  const last = model.lastRuntimeEventAt ? Date.parse(model.lastRuntimeEventAt) : (model.runStartedAt ?? 0);
+  const idle = Number.isFinite(last) && last > 0 ? now - last : now - (model.runStartedAt ?? 0);
+  if (idle >= 120_000) return t(locale, 'runStaleHint');
+  const sinceStart = now - (model.runStartedAt ?? now);
+  if (sinceStart >= 30_000) return t(locale, 'runStillWaiting');
+  return undefined;
+}
+
+export function isRecoveryChrome(model: RunningModel): boolean {
+  return model.runPhase === 'recovery' || model.preparePhase === 'check';
 }
 
 export function renderTimeline(theme: Theme, width: number, model: RunningModel, height?: number): string[] {
@@ -138,20 +198,25 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   if (isPreparing(model)) return renderPrepare(theme, width, model, locale, product);
   const visible = model.entries.filter((entry) => matchesFilter(entry, model.filter) && matchesCanvasQuery(entry, model.findQuery ?? ''));
   const selected = Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
+  const recovering = model.runPhase === 'recovery';
   const dimIn = model.filter === 'PRODUCT';
   const dimOut = model.filter === 'INPUT';
   const inMark = dimIn ? theme.style.muted(theme.glyphs.dot) : theme.style.controller(theme.glyphs.dot);
   const outMark = dimOut ? theme.style.muted(theme.glyphs.dot) : theme.style.target(theme.glyphs.dot);
   const inLabel = dimIn ? theme.style.muted(t(locale, 'legendIn', { product })) : t(locale, 'legendIn', { product });
   const outLabel = dimOut ? theme.style.muted(t(locale, 'legendOut', { product })) : t(locale, 'legendOut', { product });
-  const legend = ` ${inMark} ${inLabel}   ${outMark} ${outLabel}`;
+  const legend = recovering
+    ? ` ${theme.style.harness(theme.glyphs.dot)} ${t(locale, 'recoveryLegend')}`
+    : ` ${inMark} ${inLabel}   ${outMark} ${outLabel}`;
   const task = model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : undefined;
   const findBar = model.finding ? renderFindBar(model, locale, visible.length, selected < 0 ? 0 : selected) : [];
   const header = [legend, ...(task ? [task] : []), ...findBar, ''];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
-    : renderScrollback(theme, width, visible, selected < 0 ? 0 : selected, locale, product, bodyHeight, model.tick ?? 0);
+    : recovering && !visible.length
+      ? [theme.style.muted(` ${t(locale, 'recoveryEmpty')}`)]
+      : renderScrollback(theme, width, visible, selected < 0 ? 0 : selected, locale, product, bodyHeight, model.tick ?? 0);
   return [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
@@ -190,7 +255,7 @@ function renderPrepare(theme: Theme, width: number, model: RunningModel, locale:
       kv(theme, t(locale, 'statusLabel'), detail, width),
       '',
       ` ${bar}`,
-      ` ${theme.style.muted(t(locale, 'preparingIn', { product }))}`,
+      ` ${theme.style.muted(t(locale, 'recoveringPrepare'))}`,
     ].map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis)));
   }
   const step = model.preparePhase === 'copy' ? 2 : 1;

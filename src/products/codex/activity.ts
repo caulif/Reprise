@@ -43,6 +43,10 @@ export const codexActivityTranslator: TargetActivityTranslator = {
         }];
       case 'codex.protocol_error':
         return [{ activity: { kind: 'runtime_error', message: text(payload.message) ?? 'unknown protocol error' } }];
+      case 'codex.error': {
+        const message = text(payload.message) ?? 'runtime error';
+        return [{ activity: { kind: 'runtime_error', message } }];
+      }
       case 'codex.stderr':
         return [];
       default:

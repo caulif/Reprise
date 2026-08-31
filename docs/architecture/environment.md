@@ -17,7 +17,7 @@
 → Environment Resolver
 → Recovery Agent 仅在 Harness staging 中恢复
 → Provider 独立验证 required resources
-→ 用户确认后由 Provider 发布（publish）EnvironmentBaseline
+→ 校验通过后 Host 自动 publish EnvironmentBaseline
 → 每个 CandidateRun 独立 prepareRun
 → before/after fingerprint
 → release Harness 自有运行资源
@@ -107,7 +107,7 @@ interface EnvironmentPort {
 }
 ```
 
-`resolveBaseline` 是 Case Preparation；`prepareRun`、`fingerprint` 和 `release` 是 CandidateRun 生命周期。Recovery 只在 Harness staging 中进行；Provider 独立验证，且只有用户确认后才 publish recovery baseline。Orchestrator 不直接调用 Recovery Agent 工具。
+`resolveBaseline` 是 Case Preparation；`prepareRun`、`fingerprint` 和 `release` 是 CandidateRun 生命周期。Recovery 只在 Harness staging 中进行；Provider 独立验证，校验通过后 Host 立即 `acceptRecovery`。确认页只确认是否启动隔离 Candidate。Orchestrator 不直接调用 Recovery Agent 工具。
 
 ## 5. 公共领域模型
 
@@ -143,7 +143,7 @@ interface EnvironmentClue {
 }
 ```
 
-`initialInputId` 固定指向完整逻辑会话的第一条可执行用户输入，只用于确定恢复时点，不是可配置的任务切片边界。SessionSourceAdapter 只提取和归一化线索，不声称线索已经验证。未知私有事件采用 ignore-and-record；已知事件缺少关键字段时输出 warning 并保留 raw artifact。
+`initialInputId` 指向冻结时选定的可执行用户任务句（跳过产品注入的指令块），只用于确定恢复时点，不是可配置的任务切片边界。SessionSourceAdapter 只提取和归一化线索，不声称线索已经验证。未知私有事件采用 ignore-and-record；已知事件缺少关键字段时输出 warning 并保留 raw artifact。
 
 ### 5.2 资源、状态与证据
 
@@ -296,7 +296,7 @@ Resolver 处理不完整证据和候选恢复路径。它先做确定性枚举�
 → 创建隔离 staging
 → Recovery Agent 仅在 Harness staging 中恢复并解释缺口
 → Provider 独立验证
-→ 用户确认后 publish，或诚实降级为当前状态
+→ 校验通过后 Host publish，或诚实降级为当前状态
 ```
 
 默认候选优先级：
@@ -326,9 +326,9 @@ Provider 为每次恢复创建并持有下列目录，均不暴露给 Candidate 
 - `recovery-temp/<recoveryId>`：shell 的临时 `HOME` 与配置根；
 - 用户源目录：恢复前后均 fingerprint，作为只读 tripwire。
 
-工具集合为 `read_observation`、`list_dir`、`read_file`、`write_file`、`write_recovery_report` 和 `staging_shell`。其中 shell 的 cwd 固定为 staging，命令不按 Git 子命令白名单收窄：它可执行 git、解压、包管理、项目还原脚本及网络查询。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供 API key、token 或其他凭据。
+工具集合为 `read_observation`、`ls`、`read`、`grep`、`find`、`edit`、`write` 和 `powershell`。Host 在调用模型前写入有界调查包（路径线索、后续用户句、`isRepo`），并记 `recovery.investigation_packet`；`read_observation` 单次 JSON 有字节上限，超限返回截断游标，仅当调查包不够时翻页。`write` 到 staging 根 `recovery.md` 是报告通道，不计入调查工具次数。`partial` 的变更路径以 fingerprint 差为准，弱证据（Host 观察到的删/改）即可 preview；`recovered` 仍要路径级强证据。伪造且无法对应冻结 catalog 的 envelope ref 不得进入 published baseline。Readiness 反馈轮若模型请求失败，Host 保留上一份已通过 TypeBox 的完成信封并停止继续反馈，不得把整次恢复改写成 current-state fallback。后一次会话即使 `completed`，也必须先对当前 staging 做不丢弃副本的探测；失败则沿用上一份已探测通过的完成信封，不得覆盖后整单 fallback。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库；父目录或子目录里的 `.git` 不得把 git 选成第一执行候选。`powershell` 的 cwd 固定为 staging，命令不按 Git 子命令白名单收窄：它可执行 git、解压、包管理、项目还原脚本及网络查询。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供 API key、token 或其他凭据。破坏性变更（删除类 powershell）有独立上限，耗尽后不封 `ls`/`read`/`grep`/`find`。
 
-子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`list_dir`、`read_file` 和 `write_file` 对相对路径实施 containment 与符号链接检查；`write_recovery_report` 是写出面向用户的 `recovery.md` 的结构化报告通道。由于通用 shell 不是容器/VM 沙箱，cwd 与环境净化不能机械阻止恶意或失控命令尝试写 staging 外任意绝对路径；实现不把这种预防误称为强隔离。
+子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`ls`、`read`、`grep`、`find`、`edit` 和 `write` 对相对路径实施 containment 与符号链接检查；`recovery.md` 由 `write` 写出。由于通用 shell 不是容器/VM 沙箱，cwd 与环境净化不能机械阻止恶意或失控命令尝试写 staging 外任意绝对路径；实现不把这种预防误称为强隔离。
 
 最终保证采用检测加回退：Provider 重扫 staging（无符号链接、预算和可重复 fingerprint）、重新 fingerprint 用户源目录，并独立复验 envelope 引用的证据。source tripwire 变化、扫描失败、证据不一致或其他验证失败都会丢弃 staging 与临时根，绝不发布半恢复结果；上层必须显式回退到当前状态 baseline 并记录警告。该机制确定性阻止已检出的源目录变化被发布为 Recovery baseline，但不能撤销已发生的源目录写入，也不能替代容器级全局写入隔离。
 
@@ -371,7 +371,7 @@ Recovery Agent 返回后，Provider 至少验证：
 - `insufficient_evidence` 是否保持 staging 与源 capture 一致；
 - unresolved 是否作为事实保留而非被忽略。
 
-验证时会读取报告并从 staging 移除 `recovery.md` 与临时 HOME，使它们不成为 Candidate 可见输入。通过后 staging 只形成待确认的 recovery preview；用户确认后才由 Provider publish 为 canonical baseline。冻结表示 Provider 所有权和写权限约束，不依赖 Windows 只读属性；Candidate Runtime 永远只得到 `prepareRun` 产生的副本。用户拒绝、验证失败或证据不足时不得发布半恢复 staging，而是使用诚实的当前状态路径并保留 warning/验证记录。
+验证时会读取报告并从 staging 移除 `recovery.md` 与临时 HOME，使它们不成为 Candidate 可见输入。校验通过后 Host 立即 publish canonical baseline。冻结表示 Provider 所有权和写权限约束，不依赖 Windows 只读属性；Candidate Runtime 永远只得到 `prepareRun` 产生的副本。验证失败或证据不足时不得发布半恢复 staging，而是使用诚实的当前状态路径并保留 warning/验证记录。确认页拒绝只是不启动 Candidate。
 
 ## 8. prepareRun
 
@@ -493,7 +493,7 @@ release 必须按 run ID 幂等。`ReleaseResult` 只是 Environment 资源的�
 | release 中断                   | 对本 run 资源幂等重试                                      |
 | 外部副作用状态未知             | 不重放、不回滚，记录并结束                                 |
 
-Recovery Agent 调用、证据验证或 source tripwire 任一阶段中断/失败后，当前 Provider 会丢弃 staging 与临时 HOME；审计与验证事实留在 experiment artifacts 中，但 Candidate Runtime 绝不能把这类残留当作已验证 baseline。只有 Provider 验证完成且用户确认后才能提升。
+Recovery Agent 调用、证据验证或 source tripwire 任一阶段中断/失败后，当前 Provider 会丢弃 staging 与临时 HOME；审计与验证事实留在 experiment artifacts 中，但 Candidate Runtime 绝不能把这类残留当作已验证 baseline。只有 Provider 验证完成后才能提升为 canonical baseline。
 
 ## 13. 外部资源与 observational mode
 
@@ -561,7 +561,7 @@ LocalWorkspaceProvider
 - 所有结构化工具输入路径先解析为相对 staging 路径并检查包含关系，不跟随符号链接/junction；
 - copy、fork、release、discard 只针对 Provider 拥有且稳定记录的目标；
 - 不把环境变量、凭据文件或用户全局配置自动复制进 baseline，也不向 Recovery 子进程传入 API key、token 或全局 Git config；
-- `staging_shell` 的 cwd 固定为 staging，网络默认开放；它不是容器级全局写入沙箱，因此 Provider 必须在完成后验证用户源 tripwire，并在失败时丢弃 staging；
+- `powershell` 的 cwd 固定为 staging，网络默认开放；它不是容器级全局写入沙箱，因此 Provider 必须在完成后验证用户源 tripwire，并在失败时丢弃 staging；
 - artifact、报告和事件使用逻辑引用，不暴露不必要的绝对路径；
 - 错误记录资源 ID、operation ID 和安全诊断信息，不记录密钥。
 

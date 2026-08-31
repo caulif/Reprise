@@ -495,7 +495,7 @@ test("Recovery validates isolated git checkout, report, accept, and marker reuse
       64,
       staging.temporaryRoot ? { homeRoot: staging.temporaryRoot, allowShell: true } : { allowShell: true },
     )
-    .find((item) => item.name === "staging_shell");
+    .find((item) => item.name === "powershell");
   assert.ok(shell);
   await shell.execute(
     { command: `git checkout ${commit} -- input.txt` },
@@ -560,29 +560,53 @@ test("Recovery provider rejects manifest path mismatches and unowned action evid
   };
   const evidence = [{ ref: "event:history-1", kind: "historical_event" as const }];
 
-  const omitted = await provider.beginRecovery({ caseId: "case-manifest-omitted", sourceRoot: source });
-  await writeFile(join(omitted.root, "input.txt"), "historical");
-  await writeFile(join(omitted.root, "other.txt"), "also changed");
-  await writeFile(join(omitted.root, "recovery.md"), "# partial\r\n");
-  await writeFile(join(omitted.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:history-1"] }], unresolved: envelope.unresolved }));
-  await assert.rejects(provider.validateRecovery(omitted, envelope, evidence), /paths/i);
+  const extra = await provider.beginRecovery({ caseId: "case-manifest-extra", sourceRoot: source });
+  await writeFile(join(extra.root, "input.txt"), "historical");
+  await writeFile(join(extra.root, "other.txt"), "also changed");
+  await writeFile(join(extra.root, "recovery.md"), "# partial\r\n");
+  await writeFile(join(extra.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:history-1"] }], unresolved: envelope.unresolved }));
+  const extraPreview = await provider.validateRecovery(extra, envelope, evidence);
+  assert.equal(extraPreview.baseline.match, "recovered_partial");
+  assert.ok(extraPreview.changedPaths.includes("other.txt"));
+  const acceptedExtra = await provider.acceptRecovery(extraPreview);
+  assert.equal(acceptedExtra.match, "recovered_partial");
 
   const excess = await provider.beginRecovery({ caseId: "case-manifest-excess", sourceRoot: source });
   await writeFile(join(excess.root, "input.txt"), "historical");
   await writeFile(join(excess.root, "recovery.md"), "# partial\r\n");
   await writeFile(join(excess.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:history-1"] }, { operation: "create", path: "other.txt", evidenceRefs: ["event:history-1"] }], unresolved: envelope.unresolved }));
-  await assert.rejects(provider.validateRecovery(excess, envelope, evidence), /paths/i);
+  const extraPreview2 = await provider.validateRecovery(excess, envelope, evidence);
+  assert.equal(extraPreview2.baseline.match, "recovered_partial");
+
+  const recoveredExtra = await provider.beginRecovery({ caseId: "case-manifest-recovered-extra", sourceRoot: source });
+  await writeFile(join(recoveredExtra.root, "input.txt"), "historical");
+  await writeFile(join(recoveredExtra.root, "other.txt"), "also changed");
+  await writeFile(join(recoveredExtra.root, "recovery.md"), "# recovered\r\n");
+  await writeFile(join(recoveredExtra.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:history-1"] }], unresolved: [] }));
+  await assert.rejects(provider.validateRecovery(recoveredExtra, { ...envelope, status: "recovered", unresolved: [] }, evidence), /strong path evidence|paths/i);
 
   const unowned = await provider.beginRecovery({ caseId: "case-manifest-unowned", sourceRoot: source });
   await writeFile(join(unowned.root, "input.txt"), "historical");
   await writeFile(join(unowned.root, "recovery.md"), "# partial\r\n");
   await writeFile(join(unowned.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:other"] }], unresolved: envelope.unresolved }));
-  await assert.rejects(provider.validateRecovery(unowned, envelope, evidence), /absent from the envelope/i);
+  await assert.rejects(provider.validateRecovery(unowned, { ...envelope, evidenceRefs: ["event:not-owned-ref"] }, evidence), /not owned/i);
 
   const unchanged = await provider.beginRecovery({ caseId: "case-manifest-unchanged", sourceRoot: source });
   await writeFile(join(unchanged.root, "recovery.md"), "# recovered\r\n");
   await writeFile(join(unchanged.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "restore", path: "input.txt", evidenceRefs: ["event:history-1"] }], unresolved: [] }));
   await assert.rejects(provider.validateRecovery(unchanged, { ...envelope, status: "recovered", unresolved: [] }, evidence), /paths/i);
+
+  const emptyRefs = await provider.beginRecovery({ caseId: "case-manifest-empty-refs", sourceRoot: source });
+  await writeFile(join(emptyRefs.root, "input.txt"), "historical");
+  await writeFile(join(emptyRefs.root, "recovery.md"), "# partial\r\n");
+  const emptyPreview = await provider.validateRecovery(emptyRefs, {
+    status: "partial",
+    reportPath: "recovery.md",
+    unresolved: envelope.unresolved,
+    evidenceRefs: [],
+  }, evidence);
+  assert.equal(emptyPreview.baseline.match, "recovered_partial");
+  assert.ok(emptyPreview.changedPaths.includes("input.txt"));
 });
 
 test("Recovery provider rejects unverified complete envelopes and preserves accepted recovered baselines", async (t) => {
@@ -731,7 +755,7 @@ test("Recovery provider rejects tampered delta without changing staging", async 
   const provider = new LocalWorkspaceProvider(root);
   const staging = await provider.beginRecovery({ caseId: "case-delta-tamper", sourceRoot: source });
   const before = await provider.fingerprintRecoveryCandidate(await provider.createRecoveryCandidate(staging, { candidateId: "before", hypothesisId: "h" }));
-  const entries = [{ schemaVersion: 1 as const, tool: "write_file" as const, phase: "after" as const, path: "input.txt", after: { kind: "file" as const, size: 6, contentHash: sha256("honest"), artifactId: "tampered" } }];
+  const entries = [{ schemaVersion: 1 as const, tool: "write" as const, phase: "after" as const, path: "input.txt", after: { kind: "file" as const, size: 6, contentHash: sha256("honest"), artifactId: "tampered" } }];
   await assert.rejects(provider.applyControlledRecoveryDelta(staging, entries, async () => Buffer.from("wrong")), /integrity|before/);
   assert.equal((await provider.fingerprintRecoveryCandidate(await provider.createRecoveryCandidate(staging, { candidateId: "after", hypothesisId: "h2" }))).digest, before.digest);
   await provider.discardRecovery(staging);
@@ -748,7 +772,7 @@ test("Recovery provider rejects conflicting delta bindings transactionally", asy
   const metadata = { kind: "file" as const, size: 3, contentHash: sha256("new") };
   const entry = (baseDigest: string, checkpointId?: string) => ({
     schemaVersion: 1 as const,
-    tool: "write_file" as const,
+    tool: "write" as const,
     phase: "after" as const,
     path: "new.txt",
     ...(checkpointId ? { checkpointId } : {}),

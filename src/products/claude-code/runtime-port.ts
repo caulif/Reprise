@@ -23,7 +23,7 @@ import type {
   TurnSettlement,
   UserMessage,
 } from '../../core/runtime.js';
-import { discoverExecutable, forceKill, positiveTimeout, settlesWithin } from '../shared/process.js';
+import { discoverExecutable, forceKill, positiveTimeout, settlesWithin, summarizeDiagnostic } from '../shared/process.js';
 
 export const CLAUDE_DISALLOWED_TOOLS = ['CronCreate', 'CronDelete', 'ScheduleWakeup', 'SendMessage'] as const;
 export const CLAUDE_REQUIRED_ARGS = [
@@ -384,12 +384,20 @@ class ClaudeTargetRunner implements TargetRunner {
       this.#failSettlement(new ClaudeRuntimeUnavailableError(`Claude Code reported an unrecognized turn settlement (${subtype ?? 'missing subtype'}).`));
       return;
     }
+    const failure = status === 'failed' || status === 'aborted'
+      ? {
+          kind: 'unknown' as const,
+          summary: summarizeDiagnostic(terminal ?? subtype ?? `Claude Code turn settled as ${status}.`),
+          retryable: false,
+        }
+      : undefined;
     const settlement: TurnSettlement = {
       turnId: `turn-${this.#turnIndex || 1}`,
       status,
       confidence: 'native',
       observedAt: new Date().toISOString(),
       rawRefs: [{ type: 'result', subtype: subtype ?? null, is_error: frame.is_error === true, terminal_reason: terminal ?? null }],
+      ...(failure ? { failure } : {}),
     };
     if (this.#waiter) {
       const waiter = this.#waiter;

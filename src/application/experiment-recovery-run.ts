@@ -22,6 +22,24 @@ export async function recoverCodexExperiment(
   try {
     return await runRecoverCodexExperiment(session);
   } catch (error) {
+    if (session.lastCompletedRecovery?.status === "completed") {
+      session.recovery = session.lastCompletedRecovery;
+      try {
+        return await finalizeRecoveredCandidate(session);
+      } catch (finalizeError) {
+        // The completed envelope could not be published; keep the original failure as the terminal record.
+        void finalizeError;
+        return await failRecoveryRunSession(session, error);
+      }
+    }
+    if (session.recovery?.status === "completed") {
+      try {
+        return await finalizeRecoveredCandidate(session);
+      } catch (finalizeError) {
+        void finalizeError;
+        return await failRecoveryRunSession(session, error);
+      }
+    }
     return await failRecoveryRunSession(session, error);
   } finally {
     await closeRecoveryRunSession(session);

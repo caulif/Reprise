@@ -10,8 +10,9 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.hidden) return undefined;
   if (isQuietMcpStatus(entry)) return undefined;
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·')) return 'input';
+  if (entry.title.startsWith('Recovery')) return 'summary';
   if (entry.title.startsWith('Decision:') || entry.title.startsWith('Working') || entry.title.startsWith('State:')
-    || entry.title.startsWith('Turn settled') || entry.title.startsWith('Recovery') || entry.title.startsWith('Isolation')
+    || entry.title.startsWith('Turn settled') || entry.title.startsWith('Isolation')
     || entry.title.startsWith('Runtime') || entry.title.startsWith('Stage')) {
     return undefined;
   }
@@ -119,7 +120,10 @@ function voiceHeader(
       : t(locale, 'followUp');
     return theme.style.controller(` ${t(locale, 'toProduct', { product })} · ${kind}`);
   }
-  if (group.voice === 'summary') return theme.style.ok(` ${t(locale, 'comparisonTitle')}`);
+  if (group.voice === 'summary') {
+    const first = group.items[0]?.entry.title ?? '';
+    return theme.style.ok(` ${t(locale, first.startsWith('Recovery') ? 'recoveryLegend' : 'comparisonTitle')}`);
+  }
   const pulse = writing && Math.floor(tick / 400) % 2 === 0 ? `${theme.style.target(theme.glyphs.dot)} ` : writing ? `${theme.style.muted(theme.glyphs.empty)} ` : '';
   return `${pulse}${theme.style.target(` ${product}`)}`;
 }

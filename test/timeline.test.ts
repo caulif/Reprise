@@ -269,3 +269,55 @@ test('timeline drops a second Prompt with the same title', () => {
   })));
   assert.equal(timeline.filter((entry) => entry.title.startsWith('Prompt ·')).length, 1);
 });
+
+test('recovery timeline keeps report writes, powershell, and failures visible', () => {
+  const listed = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'ls' }))[0];
+  const deleted = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'powershell', params: { command: 'Remove-Item ppt_build/out.pptx' } }))[0];
+  const reported = projectTimelineEvent(event('agent.tool_completed', { role: 'recovery', tool: 'write' }))[0];
+  const failed = projectTimelineEvent(event('agent.tool_failed', { role: 'recovery', tool: 'read_observation', message: 'tool budget exhausted' }))[0];
+  assert.equal(listed?.hidden, true);
+  assert.equal(deleted?.hidden, undefined);
+  assert.equal(reported?.hidden, undefined);
+  assert.equal(failed?.hidden, undefined);
+  assert.equal(failed?.level, 'error');
+});
+
+test('recovery timeline collapses identical consecutive tool failures', () => {
+  const timeline: TimelineEntry[] = [];
+  const message = 'recovery_no_information_gain: destructive change budget of 16 was exhausted.';
+  for (let index = 0; index < 34; index += 1) {
+    appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_failed', {
+      role: 'recovery',
+      tool: 'powershell',
+      message,
+    })));
+  }
+  const visible = timeline.filter((entry) => !entry.hidden);
+  assert.equal(visible.length, 1);
+  assert.match(visible[0]?.detail ?? '', / ×34$/);
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_failed', {
+    role: 'recovery',
+    tool: 'powershell',
+    message: 'Recovery tool-call budget of 64 was exhausted.',
+  })));
+  assert.equal(timeline.filter((entry) => !entry.hidden).length, 2);
+});
+
+test('powershell completion is visible when git reports the candidate is not a repository', () => {
+  const entry = projectTimelineEvent(event('agent.tool_completed', {
+    role: 'recovery',
+    tool: 'powershell',
+    content: 'fatal: not a git repository (or any of the parent directories): .git',
+  }))[0];
+  assert.equal(entry?.hidden, undefined);
+  assert.match(entry?.detail ?? '', /不是 Git 仓库/);
+});
+
+test('recovery start does not show a source digest as timeline detail', () => {
+  const started = projectTimelineEvent(event('recovery.started', {
+    sourceDigest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  }))[0];
+  assert.equal(started?.title, 'Recovery started');
+  assert.equal(started?.detail, undefined);
+  assert.doesNotMatch(JSON.stringify(started), /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+});

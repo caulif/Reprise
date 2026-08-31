@@ -12,10 +12,10 @@ gpt-5.6-terra - medium   ! Harness key missing  o Codex  ...
     1/1
 
  > [/] Search
- Choose a historical session. Enter reads the full
-transcript, then freezes if replayable. Loaded 3 projects
-and 2 sessions. 2 shown · 0 skipped. · 2 scanned The catalog
-is complete; m does not paginate. Diagnostics:
+ Choose a historical session. Enter opens the review; Enter
+again freezes and starts recovery. Loaded 3 projects and 2
+sessions. 2 shown · 0 skipped. · 2 scanned The catalog is
+complete; m does not paginate. Diagnostics:
 catalog-unavailable (1).
 ------------------------------------------------------------
- [↑↓] Select  [Enter] Start run  [/] Search
+ [↑↓] Select  [Enter] Inspect  [/] Search

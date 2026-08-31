@@ -112,7 +112,7 @@ TaskCase.initialInput             TaskCase.transcript
 启动候选 Runtime 的输入          理解用户协作能力与历史结果的完整证据
 ```
 
-- `initialInput` 是 Product Pack 从完整会话确定的第一条可执行用户输入；
+- `initialInput` 是 Case Preparation 从完整会话选出的第一条用户任务句（跳过产品注入的指令块）；
 - Target Runtime 只以 `initialInput` 开始，不接收原历史后续轨迹；
 - Controller 可以读取完整 transcript，并根据候选当前表现决定是否需要提出历史中类似的纠正、补充或验收输入；
 - 历史会话结束不是候选运行的停止边界。

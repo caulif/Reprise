@@ -49,7 +49,7 @@ export function getRecoveryControlledWriteBinding(
  * This replays metadata only; it never invents file bytes or claims that an
  * unobserved staging_shell mutation was covered.
  */
-export function replayControlledRecoveryDelta(
+function replayControlledRecoveryDelta(
   entries: readonly RecoveryControlledWrite[],
 ): ReadonlyMap<string, ReplayedRecoveryFileState> {
   getRecoveryControlledWriteBinding(entries);
@@ -117,49 +117,6 @@ export async function replayControlledRecoveryDeltaBytes(
  * Journals the pre/post state of a direct Host-owned Recovery write.  It deliberately
  * excludes staging_shell: an arbitrary child process is an external/unobserved writer.
  */
-/** Records a paired move without pretending that source absence is file content. */
-export async function journalControlledRecoveryRename(
-  input: {
-    relativeSourcePath: string;
-    sourceAbsolutePath: string;
-    relativeTargetPath: string;
-    targetAbsolutePath: string;
-    rename: () => Promise<void>;
-  },
-  onWrite: RecoveryControlledWriteHook | undefined,
-): Promise<void> {
-  const before = await recoveryFileSnapshot(input.sourceAbsolutePath);
-  if (!before)
-    throw new Error(`Recovery rename source does not exist: ${input.relativeSourcePath}.`);
-  if (await recoveryFileSnapshot(input.targetAbsolutePath))
-    throw new Error(`Recovery rename target already exists: ${input.relativeTargetPath}.`);
-  const entry = {
-    schemaVersion: 1 as const,
-    tool: "rename_file" as const,
-    path: input.relativeTargetPath,
-    sourcePath: input.relativeSourcePath,
-  };
-  await emit(onWrite, { ...entry, phase: "before", before });
-  try {
-    await input.rename();
-  } catch (error) {
-    const after = await recoveryFileSnapshot(input.targetAbsolutePath);
-    await emit(onWrite, {
-      ...entry,
-      phase: "failed",
-      before,
-      ...(after ? { after } : {}),
-    });
-    throw error;
-  }
-  const after = await recoveryFileSnapshot(input.targetAbsolutePath);
-  if (!after)
-    throw new Error(`Recovery rename did not create ${input.relativeTargetPath}.`);
-  if (await recoveryFileSnapshot(input.sourceAbsolutePath))
-    throw new Error(`Recovery rename did not remove ${input.relativeSourcePath}.`);
-  await emit(onWrite, { ...entry, phase: "after", before, after });
-}
-
 export async function journalControlledRecoveryWrite(
   input: {
     tool: RecoveryControlledWrite["tool"];

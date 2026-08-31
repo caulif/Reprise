@@ -240,7 +240,7 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
   assert.match(app.message, /Loaded \d+ projects and 1 sessions/);
   assert.match(app.message, /1 shown · 2 skipped/);
   assert.match(app.message, /The catalog is complete; m does not paginate/);
-  assert.match(app.message, /Diagnostics: invalid-jsonl \(1\), unreadable-directory \(1\)/);
+  assert.match(app.message, /Diagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable-directory \(1\)/);
   app.locale = 'zh';
   assert.match(app.sessionsMessage(), /已显示 1 条 · 已跳过 2 条/);
   app.loadMoreProductSessions();
@@ -248,7 +248,7 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
   assert.equal(app.productItems()[0]?.skipped, 2);
   assert.match(app.message, /1 shown · 2 skipped/);
   assert.doesNotMatch(app.message, /还有更多/);
-  assert.match(app.message, /Diagnostics: invalid-jsonl \(1\), unreadable-directory \(1\)/);
+  assert.match(app.message, /Diagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable-directory \(1\)/);
   assert.deepEqual(app.productDiscovery.get('codex')?.diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.count]), [
     ['invalid-jsonl', 1], ['unreadable-directory', 1],
   ]);

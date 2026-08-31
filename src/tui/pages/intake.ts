@@ -6,6 +6,7 @@ import {
   PROJECTLESS_PROJECT_KEY,
   sessionGroupingKey,
 } from '../../products/shared/session-project.js';
+import { looksLikeInjectedInstruction, firstReplayUserMessage } from '../../products/shared/replay-user-input.js';
 import { compact, truncateFit } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import { caretAt } from '../text-edit.js';
@@ -63,7 +64,7 @@ export type InspectionModel = {
 function isProjectless(key: string): boolean { return key === PROJECTLESS_PROJECT_KEY; }
 
 function sessionStatus(session: SessionSummary, locale: Locale): string {
-  if (session.partial || session.recoveryReadiness === 'pending') return t(locale, 'partialSession');
+  if (session.partial) return t(locale, 'partialSession');
   if (session.recoveryReadiness === 'best-effort') return t(locale, 'bestEffortSession');
   if (session.recoveryReadiness === 'no-user-input') return t(locale, 'noUserInputSession');
   if (session.recoveryReadiness === 'corrupt') return t(locale, 'corruptSession');
@@ -107,13 +108,38 @@ function projectDisplayLabel(path: string | undefined, paths: readonly string[],
   return parts.slice(-Math.min(2, parts.length)).join('/');
 }
 
-export function sessionTitle(summary: string | undefined, locale: Locale = 'en'): string {
-  const text = (summary ?? t(locale, 'noTaskSummary')).replace(/\s+/g, ' ').trim();
+export function sessionTitle(summary: string | undefined, locale: Locale = 'en', laterUserTexts: readonly string[] = []): string {
+  return taskDisplaySummary(summary, laterUserTexts, locale);
+}
+
+export function sessionListTitle(session: Pick<SessionSummary, 'summary' | 'laterUserSummaries'>, locale: Locale = 'en'): string {
+  return sessionTitle(session.summary, locale, session.laterUserSummaries ?? []);
+}
+
+export function taskDisplaySummary(
+  text: string | undefined,
+  laterUserTexts: readonly string[] = [],
+  locale: Locale = 'en',
+): string {
+  const primary = (text ?? t(locale, 'noTaskSummary')).replace(/\s+/g, ' ').trim();
+  if (looksLikeInjectedInstruction(primary)) {
+    const next = laterUserTexts.map((item) => item.replace(/\s+/g, ' ').trim()).find((item) => item && !looksLikeInjectedInstruction(item) && item.length <= 280);
+    if (next) return compactTitle(next);
+  }
+  return compactTitle(primary);
+}
+
+function compactTitle(text: string): string {
   const stripped = text
     .replace(/^.*?["']?[A-Za-z]:[\\/][^"']+["']?[^,，:]*[,，:]\s*/u, '')
     .replace(/^[,:，]\s*/, '')
     .trim();
-  return stripped || text;
+  const value = stripped || text;
+  if (looksLikeInjectedInstruction(value)) {
+    const firstLine = value.split(/(?<=\.)\s/)[0] ?? value;
+    if (firstLine.length > 80 && value.length > 160) return value.slice(0, 72).trim();
+  }
+  return value;
 }
 
 export function groupSessionsByProject(sessions: readonly SessionSummary[], catalogProjects: readonly SessionDiscoveryProject[] = []): SessionProject[] {
@@ -176,7 +202,8 @@ export function matchesIntakeQuery(session: SessionSummary, query: string): bool
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   const haystack = [
-    session.sessionId, session.cwd ?? '', session.summary ?? '', sessionTitle(session.summary),
+    session.sessionId, session.cwd ?? '', session.summary ?? '', sessionListTitle(session),
+    ...(session.laterUserSummaries ?? []),
     projectLabel(session.cwd), session.startedAt ?? '', session.updatedAt ?? '',
   ].join('\n').toLowerCase();
   return haystack.includes(needle);
@@ -200,8 +227,13 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
   const locale = model.locale ?? 'en';
   const { inspection, privacy, showOutcome } = model;
   const inputs = inspection.transcript.filter((message) => message.role === 'user');
-  const start = inputs[0];
-  const later = inputs.slice(1);
+  if (!inputs.length) {
+    return panel(theme, `${t(locale, 'chooseTaskStart')} ${theme.glyphs.sep} ${projectLabel(inspection.cwd, locale)}`, [
+      ` ${t(locale, 'notReplayableNoUserInput')}`,
+    ], width);
+  }
+  const start = firstReplayUserMessage(inputs) ?? inputs[0];
+  const later = start ? inputs.filter((message) => message.id !== start.id) : inputs.slice(1);
   const project = projectLabel(inspection.cwd, locale);
   const tight = height !== undefined && height < 26;
   const freezePreview = wrapPreview(start?.text ?? t(locale, 'unavailableValue'), Math.max(20, width - 4), tight ? 2 : 4, locale);
@@ -243,7 +275,7 @@ export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): rea
   if (model?.level === 'projects') {
     return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintOpenProject')], ['/', t(locale, 'hintSearch')], ['f', t(locale, 'hintFilterEligible')], ['m', t(locale, 'moreSessions')], ['r', t(locale, 'refreshSessions')], ['Esc', t(locale, 'hintHome')]];
   }
-  return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintStartRun')], ['/', t(locale, 'hintSearch')], ['m', t(locale, 'moreSessions')], ['r', t(locale, 'refreshSessions')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
+  return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintInspect')], ['/', t(locale, 'hintSearch')], ['m', t(locale, 'moreSessions')], ['r', t(locale, 'refreshSessions')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
 }
 
 export function inspectionHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
@@ -319,7 +351,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     ...kvBlock(theme, t(locale, 'fieldPath'), selected.path ?? t(locale, 'unavailableValue'), previewWidth - 2),
     kv(theme, t(locale, 'fieldSessions'), selected.sessions.length ? String(selected.sessions.length) : t(locale, 'emptyProjectSessions'), previewWidth - 2),
     '',
-    kv(theme, t(locale, 'fieldLatest'), latest ? sessionTitle(latest.summary, locale) : t(locale, 'unavailableValue'), previewWidth - 2),
+    kv(theme, t(locale, 'fieldLatest'), latest ? sessionListTitle(latest, locale) : t(locale, 'unavailableValue'), previewWidth - 2),
   ] : [` ${t(locale, 'noProjectSelected')}`], previewWidth) : [];
   const body = previewWidth ? joinColumns(list, preview, listWidth, previewWidth, 1, theme) : list;
   return [...body, ...(showSearch ? searchLine(theme, width, model) : [])];
@@ -338,7 +370,7 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
   const rows = model.sessions.map((session, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     started: relativeTime(session.startedAt, model.nowMs ?? Date.now(), locale),
-    summary: `${sessionStatus(session, locale) ? `${sessionStatus(session, locale)} ` : ''}${sessionTitle(session.summary, locale)}`,
+    summary: `${sessionStatus(session, locale) ? `${sessionStatus(session, locale)} ` : ''}${sessionListTitle(session, locale)}`,
     gap: ' ',
     signals: `u${session.signals.userMessages} a${session.signals.assistantMessages} t${session.signals.toolCalls}`,
   }));
@@ -361,7 +393,7 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
     kv(theme, t(locale, 'fieldSignals'), `u${selected.signals.userMessages} a${selected.signals.assistantMessages} t${selected.signals.toolCalls}`, previewWidth - 2),
     '',
     kv(theme, t(locale, 'fieldStatus'), sessionStatus(selected, locale) || t(locale, 'availableSession'), previewWidth - 2),
-    kv(theme, t(locale, 'fieldTask'), `${sessionTitle(selected.summary, locale)}`, previewWidth - 2),
+    kv(theme, t(locale, 'fieldTask'), `${sessionListTitle(selected, locale)}`, previewWidth - 2),
   ] : [` ${t(locale, 'noSessionSelected')}`], previewWidth) : [];
   const body = previewWidth ? joinColumns(list, preview, listWidth, previewWidth, 1, theme) : list;
   return [...body, ...(showSearch ? searchLine(theme, width, model) : [])];

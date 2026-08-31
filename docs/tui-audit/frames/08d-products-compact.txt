@@ -1,5 +1,5 @@
 Reprise v0.1.0   C:\reprise
-gpt-5.6-terra - medium   ! Harness key missing  o Agent u...
+gpt-5.6-terra - medium   ! Harness key missing  o Product...
 ------------------------------------------------------------
  Last task  none selected
 

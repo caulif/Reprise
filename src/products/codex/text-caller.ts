@@ -11,6 +11,7 @@ import {
   type CodexReasoningEffort,
   type CodexRuntimeOptions,
 } from './runtime-port.js';
+import { classifyCodexTurnFailure } from './turn-settlement.js';
 
 export const EXPERIMENT_APPLICATION_MODEL = 'gpt-5.6-terra';
 export const EXPERIMENT_APPLICATION_EFFORT: CodexReasoningEffort = 'medium';
@@ -75,8 +76,13 @@ async function completeCodexTextTurn(
   const executable = await discoverCodexExecutable(config.options);
   if (!executable) throw new CodexRuntimeUnavailableError('Codex executable was not found for the Experiment Application.');
   const root = await mkdtemp(join(tmpdir(), 'reprise-experiment-application-'));
-  const session = await startCodexTextTurn(config, input, executable, root);
-  return finishCodexTextTurn(session, signal, config.turnTimeoutMs);
+  try {
+    const session = await startCodexTextTurn(config, input, executable, root);
+    return await finishCodexTextTurn(session, signal, config.turnTimeoutMs);
+  } catch (error) {
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function startCodexTextTurn(
@@ -91,10 +97,8 @@ async function startCodexTextTurn(
   threadId: string;
   turnId: string;
 }> {
-  /* eslint-disable prefer-const -- thread/turn ids are filled after start RPCs; the notification handler closes over them. */
   let threadId: string | undefined;
   let turnId: string | undefined;
-  /* eslint-enable prefer-const */
   let finish: ((value: string) => void) | undefined;
   let fail: ((error: Error) => void) | undefined;
   let earlyCompletion: Record<string, unknown> | undefined;
@@ -102,7 +106,8 @@ async function startCodexTextTurn(
   const settleTurn = (turn: Record<string, unknown>) => {
     const settlement = codexSettlementStatus(text(turn.status));
     if (settlement !== 'completed' && settlement !== 'waiting_input') {
-      fail?.(new CodexRuntimeUnavailableError(`Codex text turn ended as ${text(turn.status) ?? 'an unreported status'}.`));
+      const failure = classifyCodexTurnFailure(turn);
+      fail?.(new CodexRuntimeUnavailableError(failure?.summary ?? `Codex text turn ended as ${text(turn.status) ?? 'an unreported status'}.`));
       return;
     }
     finish?.(lastAgentMessage(turn.items) ?? '');
@@ -123,28 +128,34 @@ async function startCodexTextTurn(
       if (text(turn.id) === turnId) settleTurn(turn);
     },
   });
-  await client.start();
-  const started = record(await client.request('thread/start', {
-    model: config.model,
-    cwd: root,
-    approvalPolicy: 'never',
-    sandbox: 'read-only',
-    ephemeral: true,
-    threadSource: 'reprise',
-    developerInstructions: input.systemPrompt,
-  }));
-  threadId = text(record(started.thread).id);
-  if (!threadId) throw new CodexRuntimeUnavailableError('Codex app-server thread/start response was incomplete.');
-  const startedTurn = record(await client.request('turn/start', {
-    threadId,
-    input: [{ type: 'text', text: message(input), text_elements: [] }],
-    model: config.model,
-    effort: config.effort,
-  }));
-  turnId = text(record(startedTurn.turn).id);
-  if (!turnId) throw new CodexRuntimeUnavailableError('Codex app-server turn/start response was incomplete.');
-  if (earlyCompletion && text(earlyCompletion.id) === turnId) settleTurn(earlyCompletion);
-  return { client, root, completion, threadId, turnId };
+  try {
+    await client.start();
+    const started = record(await client.request('thread/start', {
+      model: config.model,
+      cwd: root,
+      approvalPolicy: 'never',
+      sandbox: 'read-only',
+      ephemeral: true,
+      threadSource: 'reprise',
+      developerInstructions: input.systemPrompt,
+    }));
+    threadId = text(record(started.thread).id);
+    if (!threadId) throw new CodexRuntimeUnavailableError('Codex app-server thread/start response was incomplete.');
+    const startedTurn = record(await client.request('turn/start', {
+      threadId,
+      input: [{ type: 'text', text: message(input), text_elements: [] }],
+      model: config.model,
+      effort: config.effort,
+    }));
+    turnId = text(record(startedTurn.turn).id);
+    if (!turnId) throw new CodexRuntimeUnavailableError('Codex app-server turn/start response was incomplete.');
+    if (earlyCompletion && text(earlyCompletion.id) === turnId) settleTurn(earlyCompletion);
+    return { client, root, completion, threadId, turnId };
+  } catch (error) {
+    await client.close().catch(() => undefined);
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function finishCodexTextTurn(

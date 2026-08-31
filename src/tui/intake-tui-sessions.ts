@@ -14,7 +14,6 @@ import {
   loadMoreProductSessions as fetchMoreProductSessions,
   refreshProductSessions as refetchProductSessions,
 } from "./controller-sessions.js";
-import { freeze } from "./controller-run.js";
 import { t, type Locale } from "./i18n.js";
 type SessionLoadMode = "initial" | "more" | "refresh";
 
@@ -94,9 +93,9 @@ export function CodexIntakeTui_openIntakeSelection(this: CodexIntakeTui): { cons
     }
     const selected = this.visibleSessions()[this.selected];
     if (!selected) return { consume: true };
-    void freeze(this, selected.sourcePath, { thenRun: true });
+    void CodexIntakeTui_openSessionInspection.call(this, selected);
     return { consume: true };
-  }
+}
 
 export function CodexIntakeTui_sessionsMessage(this: CodexIntakeTui): string {
     const discovery = this.activeProductId ? this.productDiscovery.get(this.activeProductId) : undefined;
@@ -123,6 +122,7 @@ export function CodexIntakeTui_discoveryDiagnosticLabel(this: CodexIntakeTui, lo
   if (code === 'history-without-transcript') return t(locale, 'historyWithoutTranscript');
   if (code === 'source-missing') return t(locale, 'sourceMissingDiagnostic');
   if (code === 'duplicate-source') return t(locale, 'duplicateSourceDiagnostic');
+  if (code === 'invalid-jsonl') return t(locale, 'catalogInvalidJsonl');
   return code;
 }
 
@@ -187,3 +187,36 @@ export function CodexIntakeTui_intakeCount(this: CodexIntakeTui): number {
 export function CodexIntakeTui_productItems(this: CodexIntakeTui): import("./pages/intake.js").ProductIntakeItem[] {
     return listProductItems(this);
   }
+
+async function CodexIntakeTui_openSessionInspection(this: CodexIntakeTui, session: SessionSummary): Promise<void> {
+  const pack = this.packs.find((item) => item.manifest.productId === session.productId);
+  if (!pack) {
+    this.showError(new Error(`No Product Pack is registered for session ${session.productId}.`), "sessions");
+    this.render(true);
+    return;
+  }
+  const token = this.beginNavigation();
+  this.message = t(this.locale, "inspectingSelectedSession");
+  this.render(true);
+  try {
+    const inspected = await pack.sessions.inspect({
+      productId: session.productId,
+      sessionId: session.sessionId,
+      sourcePath: session.sourcePath,
+    });
+    if (token !== this.generation) return;
+    if (!inspected.transcript.some((message) => message.role === "user")) {
+      this.showError(new Error(t(this.locale, "notReplayableNoUserInput")), "sessions");
+      this.render(true);
+      return;
+    }
+    this.inspection = inspected;
+    this.inspectionTaskInput = 0;
+    this.page = "inspection";
+    this.message = t(this.locale, "chooseSession");
+  } catch (error) {
+    if (token !== this.generation) return;
+    this.showError(error, "sessions");
+  }
+  this.render(true);
+}

@@ -9,7 +9,6 @@ import {
   type TaskCase,
   type RecoveryInvestigation,
   type RecoveryManifest,
-  type RecoveryPlan,
   type RecoveryControlledWrite,
 } from "../core/schema.js";
 import { sha256 } from "../core/identity.js";
@@ -68,7 +67,21 @@ export function recoveryModelInputAudit(
     toolNames: [...toolNames],
     contextDigest: sha256(JSON.stringify(context) ?? "undefined"),
     initialInputDigest: sha256(JSON.stringify(initialInput) ?? "undefined"),
+    investigationPacketDigest:
+      context.investigationPacket !== undefined
+        ? sha256(JSON.stringify(context.investigationPacket))
+        : undefined,
   };
+}
+
+export function recoveryInvocationFailureStage(
+  recovery: StructuredAgentResult<RecoveryResult>,
+): NonNullable<NonNullable<EnvironmentBaseline["recovery"]>["failureStage"]> {
+  if (recovery.status === "cancelled") return "cancelled";
+  if (recovery.status === "failed" && recovery.failure.code === "agent_timeout") return "agent_timeout";
+  if (recovery.status === "failed" && recovery.failure.code === "invalid_output") return "agent_invalid_output";
+  if (recovery.status === "failed" && recovery.failure.kind === "tool") return "agent_tool_failed";
+  return "agent_model_failed";
 }
 
 export function retryableRecoveryFailure(
@@ -446,55 +459,6 @@ function isRecoveryDeliveryArtifact(path: string): boolean {
   return path === "recovery.md" || path === "recovery-manifest.json";
 }
 
-export class RecoveryPlanPathBoundaryError extends Error {
-  constructor() {
-    super(
-      "recovery_plan_unsafe_path: operations must use staging-relative slash paths outside .git.",
-    );
-    this.name = "RecoveryPlanPathBoundaryError";
-  }
-}
-
-export function validateSubmittedRecoveryPlan(
-  plan: RecoveryPlan,
-  investigation: RecoveryInvestigation,
-): void {
-  const knownFacts = new Set(
-    investigation.facts.map((fact) => `fact:${fact.factId}`),
-  );
-  const knownHypotheses = new Set(
-    investigation.plan.hypotheses.map((hypothesis) => hypothesis.hypothesisId),
-  );
-  const refs = [
-    ...plan.factsUsed,
-    ...plan.hypotheses.flatMap((hypothesis) => [
-      ...hypothesis.supportingFactRefs,
-      ...hypothesis.counterFactRefs,
-    ]),
-  ];
-  if (refs.some((ref) => !knownFacts.has(ref)))
-    throw new Error(
-      "recovery_plan_unknown_fact: use only Host-provided investigation fact refs.",
-    );
-  const submittedHypotheses = new Set(plan.hypotheses.map((hypothesis) => hypothesis.hypothesisId));
-  if (plan.candidates.some((candidate) => !knownHypotheses.has(candidate.hypothesisId) && !submittedHypotheses.has(candidate.hypothesisId)))
-    throw new Error("recovery_plan_unknown_hypothesis: candidates must reference a submitted hypothesis.");
-  for (const candidate of plan.candidates)
-    for (const operation of candidate.operations)
-      if (!isSafeRecoveryPlanPath(operation.path))
-        throw new RecoveryPlanPathBoundaryError();
-}
-
-function isSafeRecoveryPlanPath(path: string): boolean {
-  return (
-    Boolean(path) &&
-    !path.includes("\\") &&
-    !path.startsWith("/") &&
-    !path.split("/").some((part) => !part || part === "." || part === "..") &&
-    !path.startsWith(".git/")
-  );
-}
-
 export function initialRecoveryInvestigation(
   facts: Awaited<ReturnType<typeof resolvedRecoveryFacts>>,
   observedAt: string,
@@ -789,6 +753,7 @@ export function classifyRecoveryFailureStage(
   verifierRejectionReasons?: readonly string[],
   agentCompletedWithCandidate = false,
 ): NonNullable<NonNullable<EnvironmentBaseline["recovery"]>["failureStage"]> {
+  if (recoveryModelRequestError(error)) return "agent_model_failed";
   if (
     stage === "provider_validation_failed" &&
     verifierRejectionReasons?.length
@@ -808,6 +773,27 @@ export function classifyRecoveryFailureStage(
   )
     return "runner_crashed";
   return stage;
+}
+
+function recoveryModelRequestError(error: unknown): boolean {
+  const text = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  return /\b(context_length_exceeded|maximum context length|prompt is too long|context window)\b/i.test(text);
+}
+
+export function recoveryFailedFromThrown(
+  error: unknown,
+  sessionId: string,
+): StructuredAgentResult<RecoveryResult> {
+  return {
+    status: "failed",
+    sessionId,
+    failure: {
+      code: "agent_failure",
+      kind: recoveryModelRequestError(error) ? "protocol" : "unknown",
+      message: error instanceof Error ? error.message : String(error),
+      attempts: 1,
+    },
+  };
 }
 
 export function safeRecoveryFailureSummary(

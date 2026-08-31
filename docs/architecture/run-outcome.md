@@ -130,7 +130,7 @@ failed.external_dependency
 uncertain.input_delivery
 ```
 
-原生 Codex、Claude Code 或其他 Runtime 原因保存在规范化事件和 raw artifact 中，不直接扩张 Core 联合类型。
+原生 Codex、Claude Code 或其他 Runtime 原因保存在规范化事件和 raw artifact 中，不直接扩张 Core 联合类型。`termination.code` 对 Runtime 技术故障保持 `failed.runtime`；细分类只写在 `termination.failure.code`。
 
 ### 3.1 Controller 与系统事件映射
 

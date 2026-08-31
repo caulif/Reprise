@@ -446,6 +446,8 @@ function classifyAgentFailure(error: unknown): AgentFailureKind {
     return "transient_upstream";
   if (/\b(econnreset|econnrefused|enotfound|etimedout|timeout|network|transport|fetch failed|socket)\b/.test(details))
     return "transient_network";
+  if (/\b(context_length_exceeded|maximum context length|prompt is too long|context window)\b/.test(details))
+    return "protocol";
   if (/\b(invalid json|schema|protocol|malformed|unexpected response)\b/.test(details)) return "protocol";
   return "unknown";
 }
@@ -610,8 +612,8 @@ function safeParams(value: unknown): Record<string, unknown> {
     facts[key] =
       key === "content" && typeof item === "string"
         ? { byteLength: Buffer.byteLength(item) }
-        : key === "path"
-          ? "relative-path"
+        : key === "path" && typeof item === "string"
+          ? redactAuditText(item).slice(0, 240)
           : key === "command" && typeof item === "string"
             ? redactAuditText(item)
             : typeof item;

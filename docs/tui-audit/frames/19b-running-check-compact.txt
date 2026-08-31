@@ -1,4 +1,4 @@
-Reprise   Preparing replay   C:\reprise
+Reprise   Recovering session   C:\reprise
 00:00   round 1   * running
 ------------------------------------------------------------
  Recovering session                                         
@@ -8,7 +8,7 @@ Reprise   Preparing replay   C:\reprise
  Status       Preparing recovery environment                
                                                             
  [#########---------------------------]                     
- Will replay this task in Codex with the candidate model....
- > Cannot type to Codex during prepare
+ Recovering the isolated workspace from this session. You...
+ > Cannot type while recovery is running.
 ------------------------------------------------------------
  [Ctrl+C] Cancel  [?] Keys

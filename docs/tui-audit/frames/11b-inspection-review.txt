@@ -1,0 +1,31 @@
+Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   ⚠ Harness key missing  ○ Codex  ○ No task
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Last task  none selected
+
+ Continue
+ r     Replay the current task  needs a task
+ i     Import a historical session
+
+┌─ reprise · 1 sessions · filter: all ──────┐ ┌─ Review session · reprise ─────────────────────────────────────────────┐
+│❯ 4d ago      修复这个回归… u1 a1 t0       │ │ Enter freezes this session. Replay starts at the first user task, not  │
+│ 1/1                                       │ │product-injected instruction blocks. Later user turns stay in the case  │
+│                                           │ │for the Controller. The Runtime does not start yet.                     │
+│                                           │ │ reprise · 4d ago · u1 a1 t0                                            │
+│                                           │ │────────────────────────────────────────────────────────────────────────│
+│                                           │ │ Session start:                                                         │
+│                                           │ │ 修复这个回归缺陷并验证测试全部通过                                     │
+│                                           │ │────────────────────────────────────────────────────────────────────────│
+│                                           │ │ Later user turns (Controller will see these)                           │
+│                                           │ │ none                                                                   │
+│                                           │ │────────────────────────────────────────────────────────────────────────│
+│                                           │ │ Outcome    已修复，并补了回归测试。                                    │
+│                                           │ │ Privacy    model text blocked · binary blocked · literal redactions    │
+│                                           │ │none                                                                    │
+│                                           │ │ Nothing is written until you press Enter.                              │
+│                                           │ │ Source:                                                                │
+│                                           │ │TMP\sessions\    │
+│                                           │ │rollout-session-cjk.jsonl                                               │
+└───────────────────────────────────────────┘ └────────────────────────────────────────────────────────────────────────┘
+ Choose a historical session. Enter opens the review; Enter again freezes and starts recovery.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [Enter] Freeze and recover  [d] Expand outcome  [t] Toggle model text  [Esc] Back

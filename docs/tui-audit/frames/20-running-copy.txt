@@ -1,4 +1,4 @@
-Reprise   Preparing replay                                                                   00:00   round 1   ● running
+Reprise   Recovering session                                                                 00:00   round 1   ● running
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Recovering session                                                                                                     
                                                                                                                         
@@ -7,7 +7,7 @@ Reprise   Preparing replay                                                      
  Status       Running recovery agent                                                                                    
                                                                                                                         
  [▓████████░░░░░░░░░░░░░░░░░░░░░░░░░░░]                                                                                 
- Will replay this task in Codex with the candidate model. Your original repo is left unchanged.                         
- ❯ Cannot type to Codex during prepare
+ Recovering the isolated workspace from this session. Your original files stay unchanged.                               
+ ❯ Cannot type while recovery is running.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [Ctrl+C] Cancel  [?] Keys

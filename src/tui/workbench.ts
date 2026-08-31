@@ -8,7 +8,7 @@ import { homeHints, renderHome, type HomeModel } from './pages/home.js';
 import { inspectionHints, renderInspection, renderSessions, sessionsHints, type InspectionModel, type SessionsModel } from './pages/intake.js';
 import { renderFailure, renderResult, resultHints, failureHints } from './pages/result.js';
 import {
-  confirmHints, preflightHints, renderConfirmation, renderPreflight, renderSource, renderTimeline,
+  confirmHints, confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderPreflight, renderSource, renderTimeline,
   runningChrome, runningHints, sourceHints,
   type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
 } from './pages/run.js';
@@ -156,13 +156,20 @@ function identityStatus(theme: Theme, view: WorkbenchView): string {
   return `${harnessStatus(theme, view)}  ${product}  ${task}`;
 }
 
+function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'candidateStartingTitle' | 'replayTitle' | 'candidateRunningTitle' {
+  if (isRecoveryChrome(running)) return 'recoveringTitle';
+  if (running.preparePhase === 'copy') return 'candidateStartingTitle';
+  if (running.preparePhase === 'compare') return 'replayTitle';
+  return 'candidateRunningTitle';
+}
+
 function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[] {
   const locale = view.locale ?? 'en';
   const running = view.page === 'running' || (view.page === 'result' && view.running) ? view.running : undefined;
   const brand = view.page === 'result' && running
     ? `${theme.style.harness('Reprise')}   ${t(locale, 'resultTitle')}`
     : running
-      ? `${theme.style.harness('Reprise')}   ${t(locale, running.preparePhase === 'check' || running.preparePhase === 'copy' ? 'preparingTitle' : 'replayTitle', { product: running.productLabel ?? t(locale, 'unknownAgent') })}`
+      ? `${theme.style.harness('Reprise')}   ${t(locale, runningHeaderKey(running), { product: running.productLabel ?? t(locale, 'unknownAgent') })}`
       : theme.style.harness('Reprise v0.1.0');
   const status = view.page === 'result' && running
     ? pill(theme, t(locale, 'done'), 'ok')
@@ -196,9 +203,10 @@ function renderMessage(_theme: Theme, view: WorkbenchView, width: number): strin
 function renderFooter(theme: Theme, view: WorkbenchView, width: number): string[] {
   const locale = view.locale ?? 'en';
   const product = view.running?.productLabel ?? t(locale, 'unknownAgent');
-  const preparing = view.running?.preparePhase === 'check' || view.running?.preparePhase === 'copy';
+  const recovering = view.running ? isRecoveryChrome(view.running) : false;
+  const preparing = recovering || view.running?.preparePhase === 'copy';
   const composer = view.page === 'running' && view.running
-    ? ` ${theme.glyphs.cursor} ${theme.style.muted(t(locale, preparing ? 'noTyping' : 'noTypeTarget', { product }))}`
+    ? ` ${theme.glyphs.cursor} ${theme.style.muted(t(locale, recovering ? 'noTypeRecovery' : preparing ? 'noTyping' : 'noTypeTarget', { product }))}`
     : undefined;
   return [
     ...(composer ? [theme.style.fillCanvas(truncateFit(composer, width, theme.glyphs.ellipsis))] : []),
@@ -294,9 +302,9 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     if (!view.preflight) return [['Esc', t(locale, 'hintHome')]];
     return preflightHints(locale);
   }
-  if (view.page === 'confirm') return confirmHints(view.confirm?.harnessAuthOk !== false, locale);
+  if (view.page === 'confirm') return confirmHints(view.confirm ? confirmCanStart(view.confirm) : false, locale);
   if (view.page === 'running' && view.running) {
-    const preparing = view.running.preparePhase === 'check' || view.running.preparePhase === 'copy';
+    const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
     return runningHints(view.running.filter, theme.density !== 'wide', preparing, locale, Boolean(view.running.finding));
   }
   if (view.page === 'result' && view.running?.finding) {

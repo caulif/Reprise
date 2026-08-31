@@ -41,6 +41,42 @@ type EntryExtra = {
 
 type MakeEntry = (source: TimelineSource, title: string, detail?: string, extra?: EntryExtra) => TimelineEntry;
 
+const RECOVERY_VISIBLE_TOOLS = new Set([
+  'write',
+  'edit',
+  'powershell',
+]);
+
+function recoveryToolRow(payload: JsonRecord, type: string): { title: string; detail?: string; extra?: EntryExtra } {
+  const tool = text(payload.tool) ?? 'unknown';
+  const failed = type === 'agent.tool_failed';
+  const completed = type === 'agent.tool_completed';
+  const details = record(payload.details);
+  const gitMissing =
+    (tool === 'powershell' && completed && /not a git repository/i.test(text(payload.content) ?? '')) ||
+    (completed && details.isRepo === false);
+  const title = failed
+    ? `Recovery tool failed · ${tool}`
+    : completed
+      ? `Recovery tool completed · ${tool}`
+      : `Recovery tool · ${tool}`;
+  const path = text(record(payload.params).path) ?? text(details.path);
+  const detail = failed
+    ? (text(payload.message) ?? text(payload.error))
+    : gitMissing
+      ? '不是 Git 仓库'
+      : path;
+  const hide = !failed && !gitMissing && !RECOVERY_VISIBLE_TOOLS.has(tool);
+  return {
+    title,
+    ...(detail ? { detail } : {}),
+    extra: {
+      ...(failed ? { level: 'error' as const } : {}),
+      ...(hide ? { hidden: true } : {}),
+    },
+  };
+}
+
 /** Projects persisted public facts into an operator timeline; unknown and noisy delta events stay in trace only. */
 export function appendTimelineEntries(timeline: TimelineEntry[], incoming: readonly TimelineEntry[]): void {
   const seen = new Set(timeline.filter((entry) => entry.title.startsWith('Prompt ·')).map((entry) => entry.title));
@@ -54,8 +90,45 @@ export function appendTimelineEntries(timeline: TimelineEntry[], incoming: reado
       timeline[index] = mergeEntry(timeline[index] ?? entry, entry);
       continue;
     }
-    timeline.push(entry);
+    const collapsed = collapseRepeatedRecoveryFailure(timeline, entry);
+    if (!collapsed) timeline.push(entry);
   }
+}
+
+function collapseRepeatedRecoveryFailure(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
+  if (entry.hidden || entry.level !== 'error' || !entry.title.startsWith('Recovery tool failed')) return false;
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const previous = timeline[index];
+    if (!previous || previous.hidden) continue;
+    if (previous.title !== entry.title || previous.level !== 'error') return false;
+    const previousKey = recoveryFailureText(previous.detail);
+    const nextKey = recoveryFailureText(entry.detail);
+    if (previousKey !== nextKey) return false;
+    const count = recoveryFailureCount(previous.detail) + 1;
+    timeline[index] = {
+      ...previous,
+      sequence: entry.sequence,
+      occurredAt: entry.occurredAt,
+      detail: `${previousKey} ×${count}`,
+      ...(entry.original || previous.original
+        ? { original: clampOriginal(`${previous.original ?? previous.detail ?? ''}\n${entry.original ?? entry.detail ?? ''}`) }
+        : {}),
+    };
+    return true;
+  }
+  return false;
+}
+
+function recoveryFailureText(detail: string | undefined): string {
+  const raw = (detail ?? '').replace(/ ×\d+$/, '');
+  if (/destructive change budget of 16|delete_file budget of 16/.test(raw)) return 'destructive change budget exhausted';
+  if (/tool-call budget of /.test(raw)) return 'investigation budget exhausted';
+  return raw;
+}
+
+function recoveryFailureCount(detail: string | undefined): number {
+  const match = / ×(\d+)$/.exec(detail ?? '');
+  return match ? Number(match[1]) : 1;
 }
 
 export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEntry[] {
@@ -78,18 +151,18 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
 
   switch (event.type) {
     case 'recovery.started':
-      return [entry('HARNESS', 'Recovery started', text(payload.sourceDigest))];
+      return [entry('HARNESS', 'Recovery started')];
     case 'recovery.completed': {
       const status = text(payload.status) ?? text(record(payload.value).status) ?? 'unknown';
       const failed = status === 'failed';
       return [entry('HARNESS', `Recovery ${status}`, text(payload.message) ?? text(record(payload.failure).message), failed ? { level: 'error' } : undefined)];
     }
     case 'agent.tool_called':
-      return [entry('HARNESS', `Recovery tool · ${text(payload.tool) ?? 'unknown'}`, undefined, { hidden: true })];
     case 'agent.tool_completed':
-      return [entry('HARNESS', `Recovery tool completed · ${text(payload.tool) ?? 'unknown'}`, undefined, { hidden: true })];
-    case 'agent.tool_failed':
-      return [entry('HARNESS', `Recovery tool failed · ${text(payload.tool) ?? 'unknown'}`, text(payload.message) ?? text(payload.error), { level: 'error' })];
+    case 'agent.tool_failed': {
+      const row = recoveryToolRow(payload, event.type);
+      return [entry('HARNESS', row.title, row.detail, row.extra)];
+    }
     case 'run.attempt_created':
       return [entry('HARNESS', 'Run created', requestedModel(payload), { hidden: true })];
     case 'run.state_changed':

@@ -402,6 +402,7 @@ async function main() {
         baseline: { match: "recovered", warnings: [], mode: "canonical" },
         staging: { recoveryId: "audit-recovery" },
         provider: { discardRecovery: async () => undefined },
+        accept: async () => ({ match: "recovered", warnings: [], mode: "canonical" }),
       };
     },
     start: async (input: { onEvent: (event: unknown) => void }) => {

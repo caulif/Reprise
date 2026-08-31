@@ -1,211 +1,6 @@
 [
   {
-    "name": "inspect_workspace",
-    "description": "Inspect the selected candidate workspace at bounded depth; use this before guessing paths or edits.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "depth": {
-          "minimum": 0,
-          "maximum": 4,
-          "type": "integer"
-        }
-      }
-    }
-  },
-  {
-    "name": "inspect_git_history",
-    "description": "Inspect bounded Git log, reflog, and unreachable-object summaries in the selected candidate; never returns object contents.",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "paths": {
-          "maxItems": 32,
-          "type": "array",
-          "items": {
-            "minLength": 1,
-            "maxLength": 512,
-            "type": "string"
-          }
-        },
-        "depth": {
-          "minimum": 1,
-          "maximum": 50,
-          "type": "integer"
-        },
-        "includeReflog": {
-          "type": "boolean"
-        },
-        "includeDangling": {
-          "type": "boolean"
-        }
-      }
-    }
-  },
-  {
-    "name": "submit_recovery_plan",
-    "description": "Submit a revised, Host-validated RecoveryPlan before further writes. Use only fact refs from investigation and keep competing hypotheses when evidence is uncertain.",
-    "parameters": {
-      "type": "object",
-      "required": [
-        "planId",
-        "factsUsed",
-        "hypotheses",
-        "candidates",
-        "verificationPlan"
-      ],
-      "properties": {
-        "planId": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-          "type": "string"
-        },
-        "factsUsed": {
-          "type": "array",
-          "items": {
-            "pattern": "^fact:[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-            "type": "string"
-          }
-        },
-        "hypotheses": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "hypothesisId",
-              "rationale",
-              "paths",
-              "supportingFactRefs",
-              "counterFactRefs",
-              "expectedChecks",
-              "confidence"
-            ],
-            "properties": {
-              "hypothesisId": {
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-                "type": "string"
-              },
-              "rationale": {
-                "minLength": 1,
-                "type": "string"
-              },
-              "paths": {
-                "type": "array",
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "supportingFactRefs": {
-                "type": "array",
-                "items": {
-                  "pattern": "^fact:[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-                  "type": "string"
-                }
-              },
-              "counterFactRefs": {
-                "type": "array",
-                "items": {
-                  "pattern": "^fact:[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-                  "type": "string"
-                }
-              },
-              "expectedChecks": {
-                "type": "array",
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "confidence": {
-                "anyOf": [
-                  {
-                    "const": "high",
-                    "type": "string"
-                  },
-                  {
-                    "const": "medium",
-                    "type": "string"
-                  },
-                  {
-                    "const": "low",
-                    "type": "string"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "candidates": {
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "hypothesisId",
-              "operations"
-            ],
-            "properties": {
-              "hypothesisId": {
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-                "type": "string"
-              },
-              "operations": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "operation",
-                    "path",
-                    "rationale"
-                  ],
-                  "properties": {
-                    "operation": {
-                      "anyOf": [
-                        {
-                          "const": "create",
-                          "type": "string"
-                        },
-                        {
-                          "const": "modify",
-                          "type": "string"
-                        },
-                        {
-                          "const": "delete",
-                          "type": "string"
-                        },
-                        {
-                          "const": "restore",
-                          "type": "string"
-                        }
-                      ]
-                    },
-                    "path": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "rationale": {
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "verificationPlan": {
-          "type": "array",
-          "items": {
-            "minLength": 1,
-            "type": "string"
-          }
-        }
-      }
-    }
-  },
-  {
-    "name": "list_dir",
+    "name": "ls",
     "description": "List a bounded directory within staging. Paths must be relative.",
     "parameters": {
       "type": "object",
@@ -223,7 +18,7 @@
     }
   },
   {
-    "name": "read_file",
+    "name": "read",
     "description": "Read a bounded byte range from a regular staging file.",
     "parameters": {
       "type": "object",
@@ -249,8 +44,78 @@
     }
   },
   {
-    "name": "write_file",
-    "description": "Write UTF-8 text to one explicit regular file in staging.",
+    "name": "grep",
+    "description": "Search file contents in staging; returns a bounded list of path:line matches.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "query"
+      ],
+      "properties": {
+        "query": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 512,
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "find",
+    "description": "Find staging paths whose names contain a bounded substring.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 512,
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "edit",
+    "description": "Replace one exact text span in an existing staging file.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "path",
+        "oldText",
+        "newText"
+      ],
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "maxLength": 512,
+          "type": "string"
+        },
+        "oldText": {
+          "minLength": 1,
+          "maxLength": 262144,
+          "type": "string"
+        },
+        "newText": {
+          "maxLength": 262144,
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "write",
+    "description": "Create or overwrite one explicit regular file in staging. recovery.md is the report sink.",
     "parameters": {
       "type": "object",
       "required": [
@@ -271,151 +136,17 @@
     }
   },
   {
-    "name": "write_binary_file",
-    "description": "Write canonical base64 bytes to one explicit regular file in staging.",
+    "name": "powershell",
+    "description": "Run one PowerShell command with cwd locked to staging. Network is open; credentials and global configuration are not provided.",
     "parameters": {
       "type": "object",
       "required": [
-        "path",
-        "base64"
+        "command"
       ],
       "properties": {
-        "path": {
+        "command": {
           "minLength": 1,
-          "maxLength": 512,
-          "type": "string"
-        },
-        "base64": {
-          "maxLength": 349530,
-          "type": "string"
-        }
-      }
-    }
-  },
-  {
-    "name": "rename_file",
-    "description": "Rename one regular staging file without overwriting the target, with a Host-owned paired journal.",
-    "parameters": {
-      "type": "object",
-      "required": [
-        "from",
-        "to"
-      ],
-      "properties": {
-        "from": {
-          "minLength": 1,
-          "maxLength": 512,
-          "type": "string"
-        },
-        "to": {
-          "minLength": 1,
-          "maxLength": 512,
-          "type": "string"
-        }
-      }
-    }
-  },
-  {
-    "name": "delete_file",
-    "description": "Delete one explicit regular staging file with a Host-owned before/after journal.",
-    "parameters": {
-      "type": "object",
-      "required": [
-        "path"
-      ],
-      "properties": {
-        "path": {
-          "minLength": 1,
-          "maxLength": 512,
-          "type": "string"
-        }
-      }
-    }
-  },
-  {
-    "name": "write_recovery_manifest",
-    "description": "Write the final recovery-manifest.json through the structured sink. Use only staging-relative paths and Host-owned evidence refs.",
-    "parameters": {
-      "type": "object",
-      "required": [
-        "actions",
-        "unresolved"
-      ],
-      "properties": {
-        "actions": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "operation",
-              "path",
-              "evidenceRefs"
-            ],
-            "properties": {
-              "operation": {
-                "anyOf": [
-                  {
-                    "const": "create",
-                    "type": "string"
-                  },
-                  {
-                    "const": "modify",
-                    "type": "string"
-                  },
-                  {
-                    "const": "delete",
-                    "type": "string"
-                  },
-                  {
-                    "const": "restore",
-                    "type": "string"
-                  }
-                ]
-              },
-              "path": {
-                "minLength": 1,
-                "type": "string"
-              },
-              "beforeHash": {
-                "pattern": "^[a-f0-9]{64}$",
-                "type": "string"
-              },
-              "afterHash": {
-                "pattern": "^[a-f0-9]{64}$",
-                "type": "string"
-              },
-              "evidenceRefs": {
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "pattern": "^(event|artifact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "unresolved": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    }
-  },
-  {
-    "name": "write_recovery_report",
-    "description": "Write the final recovery.md report to the staging report sink.",
-    "parameters": {
-      "type": "object",
-      "required": [
-        "content"
-      ],
-      "properties": {
-        "content": {
-          "minLength": 1,
-          "maxLength": 262144,
+          "maxLength": 32768,
           "type": "string"
         }
       }

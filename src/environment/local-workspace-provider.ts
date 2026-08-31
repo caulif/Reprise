@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
 import { RecoveryCheckpointRecordSchema, type RecoveryCheckpointRecord, type RecoveryControlledWrite } from '../core/schema.js';
 import { getRecoveryControlledWriteBinding, replayControlledRecoveryDeltaBytes } from '../infrastructure/recovery-write-journal.js';
-import { verifyRecoveryEvidence, type RecoveryEvidenceVerification } from '../infrastructure/recovery-tools.js';
+import { verifyRecoveryEvidence, ownedRecoveryRefs, type RecoveryEvidenceVerification } from '../infrastructure/recovery-tools.js';
 import {
   copyTree as copyTree,
   assertId as assertId,
@@ -22,8 +22,9 @@ import {
   removeCaptureArtifacts as removeCaptureArtifacts,
   readBaselineMarker as readBaselineMarker,
   isRecoveryEnvelope as isRecoveryEnvelope,
-  readRecoveryManifest as readRecoveryManifest,
+  hostManifestFromFingerprint as hostManifestFromFingerprint,
   validateManifest as validateManifest,
+  candidateChangedPaths as candidateChangedPaths,
   changedPaths as changedPaths,
   readRecoveryReport,
 } from './local-workspace-fs.js';
@@ -488,13 +489,11 @@ export class LocalWorkspaceProvider {
     let reportText: string | undefined;
     let sourceTripwireAfter: EnvironmentFingerprint;
     try {
+      await this.probeRecovery(staging, result, evidence);
       if (!isRecoveryEnvelope(result)) throw new Error('Recovery result is invalid.');
-      await verifyRecoveryEvidence(staging.root, result.evidenceRefs, evidence);
       sourceTripwireAfter = (await fingerprintTree(staging.sourceRoot)).fingerprint;
-      if (sourceTripwireAfter.digest !== staging.sourceTripwireBefore.digest) throw new RecoveryValidationError('source_tripwire_failed', 'Recovery changed the user source directory; staging will be discarded.');
       if (result.status !== 'insufficient_evidence') reportText = await readRecoveryReport(staging.root);
       else reportText = await readRecoveryReport(staging.root).catch(() => undefined);
-      const manifest = result.status === 'insufficient_evidence' ? undefined : await readRecoveryManifest(staging.root, result);
       // recovery.md and the shell's HOME are audit/runtime artifacts, not candidate-visible workspace input.
       await unlink(join(staging.root, 'recovery.md')).catch((error: unknown) => { if (!isMissing(error)) throw error; });
       await unlink(join(staging.root, 'recovery-manifest.json')).catch((error: unknown) => { if (!isMissing(error)) throw error; });
@@ -502,12 +501,16 @@ export class LocalWorkspaceProvider {
       const captured = await fingerprintTree(staging.root);
       if (captured.budget.blockedReasons.length) throw new Error(captured.budget.blockedReasons.join(' '));
       const changed = changedPaths(staging.sourceFingerprint, captured.fingerprint);
-      if (result.status === 'insufficient_evidence' && changed.length) throw new Error('insufficient_evidence must leave the staging workspace unchanged.');
-      if (manifest) await validateManifest(manifest, changed, result, evidence, staging.sourceFingerprint, captured.fingerprint, staging.root);
+      const ownedRefs = ownedRecoveryRefs(result.evidenceRefs, evidence);
+      const manifest = result.status === 'insufficient_evidence'
+        ? undefined
+        : hostManifestFromFingerprint(changed.filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json'), staging.sourceFingerprint, captured.fingerprint, ownedRefs);
+      const extraNotes = manifest ? await validateManifest(manifest, changed.filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json'), { ...result, evidenceRefs: ownedRefs }, evidence, staging.sourceFingerprint, captured.fingerprint, staging.root) : [];
+      const unresolved = [...result.unresolved, ...extraNotes];
       const recovery: NonNullable<EnvironmentBaseline['recovery']> = {
         status: result.status,
         ...(reportText ? { reportRef: 'recovery-md' } : {}),
-        unresolved: [...result.unresolved],
+        unresolved,
         sourceDigest: staging.sourceFingerprint.digest,
         recoveredDigest: captured.fingerprint.digest,
         sourceTripwire: { before: staging.sourceTripwireBefore.digest, after: sourceTripwireAfter.digest },
@@ -518,13 +521,43 @@ export class LocalWorkspaceProvider {
         baselineId: `baseline-${staging.caseId}`, caseId: staging.caseId, mode: 'canonical', match, resources: [],
         readiness: { runnable: 'isolated', strictness: 'strict', blockingResourceIds: [] }, fingerprint: captured.fingerprint, budget: captured.budget,
         capabilities: { canFork: true, fingerprints: ['file_tree'], externalSideEffects: 'none' },
-        warnings: result.status === 'insufficient_evidence' ? ['Recovery had insufficient evidence; replay will use the current source state.'] : [],
+        warnings: [
+          ...(result.status === 'insufficient_evidence' ? ['Recovery had insufficient evidence; replay will use the current source state.'] : []),
+          ...extraNotes,
+        ],
         recovery, createdAt: new Date().toISOString(), root: staging.root,
       };
       return { recoveryId: staging.recoveryId, baseline, ...(reportText ? { reportText } : {}), changedPaths: changed, accepted: false };
     } catch (error) {
       await this.discardRecovery(staging);
       throw error;
+    }
+  }
+
+  /** Same checks as validateRecovery, but never unlinks sinks or discards staging. */
+  async probeRecovery(
+    staging: RecoveryStaging,
+    result: RecoveryEnvelope,
+    evidence: readonly RecoveryEvidenceVerification[] = [],
+    candidate?: RecoveryCandidateStaging,
+  ): Promise<void> {
+    this.#assertRecoveryStaging(staging);
+    if (candidate) this.#assertRecoveryCandidate(candidate);
+    const root = candidate?.root ?? staging.root;
+    if (!isRecoveryEnvelope(result)) throw new Error('Recovery result is invalid.');
+    const ownedRefs = ownedRecoveryRefs(result.evidenceRefs, evidence);
+    await verifyRecoveryEvidence(root, ownedRefs, evidence);
+    const sourceTripwireAfter = (await fingerprintTree(staging.sourceRoot)).fingerprint;
+    if (sourceTripwireAfter.digest !== staging.sourceTripwireBefore.digest) throw new RecoveryValidationError('source_tripwire_failed', 'Recovery changed the user source directory; staging will be discarded.');
+    if (result.status !== 'insufficient_evidence') await readRecoveryReport(root);
+    else await readRecoveryReport(root).catch(() => undefined);
+    const captured = await fingerprintTree(root);
+    if (captured.budget.blockedReasons.length) throw new Error(captured.budget.blockedReasons.join(' '));
+    const changed = candidateChangedPaths(staging.sourceFingerprint, captured.fingerprint);
+    if (result.status === 'insufficient_evidence' && changed.length) throw new Error('insufficient_evidence must leave the staging workspace unchanged.');
+    if (result.status !== 'insufficient_evidence') {
+      const manifest = hostManifestFromFingerprint(changed, staging.sourceFingerprint, captured.fingerprint, ownedRefs);
+      await validateManifest(manifest, changed, { ...result, evidenceRefs: ownedRefs }, evidence, staging.sourceFingerprint, captured.fingerprint, root);
     }
   }
 

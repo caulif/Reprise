@@ -209,6 +209,9 @@ async function main() {
   await push('10-sessions-compact', 60, intake.render(60));
   await push('11-sessions-cjk-selected', 120, intake.render(120));
   intakeApp.handleInput('\r');
+  await waitFor(() => /Session start:/.test(intake.render(120)), 'CJK inspection');
+  await push('11b-inspection-review', 120, intake.render(120));
+  intakeApp.handleInput('\r');
   await waitFor(() => /is current/.test(intake.render(120)), { describe: 'home after CJK freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('12-home-after-cjk-freeze', 120, intake.render(120));
   enterCommand(intakeApp, '/intake');
@@ -220,6 +223,8 @@ async function main() {
   intakeApp.handleInput('\u001b[A');
   intakeApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(intake.render(120)), 'English session list');
+  intakeApp.handleInput('\r');
+  await waitFor(() => /Session start:/.test(intake.render(120)), 'English inspection');
   intakeApp.handleInput('\r');
   await waitFor(() => /is current/.test(intake.render(120)), { describe: 'home after English freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('13-home-after-freeze', 120, intake.render(120));
@@ -291,6 +296,7 @@ async function main() {
         baseline: { match: 'recovered', warnings: [] },
         staging: { recoveryId: 'audit-recovery' },
         provider: { discardRecovery: async () => {} },
+        accept: async () => ({ match: 'recovered', warnings: [] }),
       };
     },
     start: async (input) => {
@@ -317,6 +323,7 @@ async function main() {
     },
   };
   const run = mockTui(32);
+  await saveHarnessModelConfig(join(root, 'data-run'), defaultHarnessModelConfig());
   const runApp = new CodexIntakeTui(tuiOptions(join(root, 'data-run'), {
     tui: run.tui, workflow, now: () => '2026-08-11T00:10:00.000Z',
   }));
@@ -328,6 +335,8 @@ async function main() {
   runApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(run.render(120)), 'run session list');
   runApp.handleInput('\r');
+  await waitFor(() => /Session start:/.test(run.render(120)), 'run inspection');
+  runApp.handleInput('\r');
   await waitFor(() => {
     const frame = run.render(120);
     return /Recovering session|Preparing recovery environment|TaskCase frozen|Starting environment recovery/.test(frame);
@@ -338,14 +347,14 @@ async function main() {
   await waitFor(() => /Running recovery agent/.test(run.render(120)), 'automatic environment preparation after preflight');
   await push('20-running-copy', 120, run.render(120));
   releaseRecovery?.();
-  await waitFor(() => /Start isolated Codex Candidate/.test(run.render(120)), 'single run confirmation after preparation');
+  await waitFor(() => /Start isolated Codex Candidate/.test(run.render(120)), { describe: 'single run confirmation after preparation', frame: () => run.render(120) });
   runApp.handleInput('\r');
   await waitFor(() => /Copying isolated workspace/.test(run.render(120)), 'candidate preparation after confirmation');
   await push('21-running-start', 120, run.render(120));
   releaseCopy?.();
   await waitFor(() => Boolean(releaseStart), 'candidate start handle');
   releaseStart?.();
-  await waitFor(() => /Replay in progress/.test(run.render(120)), 'candidate replay after preparation');
+  await waitFor(() => /Candidate running/.test(run.render(120)), 'candidate replay after preparation');
   await new Promise((resolve) => setTimeout(resolve, 40));
   await push('22-running-wide', 120, run.render(120));
   runApp.handleInput('\u001b[A');

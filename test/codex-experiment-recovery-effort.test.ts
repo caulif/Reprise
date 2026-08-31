@@ -19,13 +19,14 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
+  const events: { type: string; payload: unknown }[] = [];
   const recovery: RecoveryAgentPort = {
     recover: async (_context, tools) => {
       const writer = tools.find(
-        (tool) => tool.name === "write_recovery_report",
+        (tool) => tool.name === "write",
       );
       await writer?.execute(
-        { content: "# Recovery\n\nRestored from current evidence." },
+        { path: "recovery.md", content: "# Recovery\n\nRestored from current evidence." },
         new AbortController().signal,
       );
       return {
@@ -50,7 +51,12 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
     recovery,
     maxToolCalls: 64,
     now,
+    onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
+  assert.equal(
+    events.some((event) => event.type === "recovery.investigation_packet"),
+    true,
+  );
   assert.equal(attempt.baseline.recovery?.status, "insufficient_evidence");
   assert.ok(attempt.providerPreview);
   assert.equal(
@@ -87,16 +93,17 @@ test("Recovery persists shell audit details alongside the report narrative for c
       createSession: (session) => ({
         append: async () => {
           const shell = session.tools.find(
-            (tool) => tool.name === "staging_shell",
+            (tool) => tool.name === "powershell",
           );
           const report = session.tools.find(
-            (tool) => tool.name === "write_recovery_report",
+            (tool) => tool.name === "write",
           );
           assert.ok(shell);
           assert.ok(report);
           await shell.execute({ command }, new AbortController().signal);
           await report.execute(
             {
+              path: "recovery.md",
               content:
                 "# Recovery\n\nExecuted `echo recovery-audit-marker` while inspecting staging.",
             },
@@ -138,7 +145,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
       (event) =>
         event.type === "agent.tool_completed" &&
         isRecord(event.payload) &&
-        event.payload.tool === "staging_shell",
+        event.payload.tool === "powershell",
     );
   const details = isRecord(shellCompleted?.payload)
     ? shellCompleted.payload.details
@@ -238,7 +245,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
   };
   assert.equal(persistedInput.evidenceLevel, "history");
   assert.equal(persistedInput.taskCaseId, base.taskCase.caseId);
-  assert.ok(persistedInput.toolNames.includes("inspect_workspace"));
+  assert.ok(persistedInput.toolNames.includes("ls"));
   const persistedText = Buffer.from(bytes).toString("utf8");
   assert.doesNotMatch(persistedText, /secret task body|private transcript|C:\\Sensitive\\Workspace/);
   await store.close();
@@ -487,40 +494,21 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
   const base = input(root, new VerifiedRuntime());
   const recovery: RecoveryAgentPort = {
     recover: async (_context, tools) => {
-      const submit = tools.find((tool) => tool.name === "submit_recovery_plan");
-      assert.ok(submit);
-      await submit.execute(
-        {
-          planId: "unsafe-plan",
-          factsUsed: ["fact:workspace-current"],
-          hypotheses: [
-            {
-              hypothesisId: "current-workspace",
-              rationale: "inspect",
-              paths: ["README.md"],
-              supportingFactRefs: ["fact:workspace-current"],
-              counterFactRefs: [],
-              expectedChecks: ["inspect"],
-              confidence: "low",
-            },
-          ],
-          candidates: [
-            {
-              hypothesisId: "current-workspace",
-              operations: [
-                {
-                  operation: "restore",
-                  path: ".git/config",
-                  rationale: "invalid path",
-                },
-              ],
-            },
-          ],
-          verificationPlan: ["inspect"],
-        },
+      assert.equal(tools.some((tool) => tool.name === "submit_recovery_plan"), false);
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "recovery.md", content: "# Recovery\n\nNo plan tool." },
         new AbortController().signal,
       );
-      throw new Error("unsafe plan unexpectedly accepted");
+      return {
+        status: "completed",
+        sessionId: "recovery-path-boundary-metric",
+        value: {
+          status: "insufficient_evidence",
+          reportPath: "recovery.md",
+          unresolved: ["no candidate justified"],
+          evidenceRefs: [],
+        },
+      };
     },
   };
   const attempt = await recoverCodexExperiment({
@@ -534,7 +522,7 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
     maxToolCalls: 64,
     now,
   });
-  assert.equal(attempt.baseline.recovery?.failureStage, "agent_tool_failed");
+  assert.equal(attempt.baseline.match, "current_state_fallback");
   const evaluation = JSON.parse(
     await readFile(
       join(attempt.experimentRoot, "artifacts", "recovery-evaluation"),
@@ -546,7 +534,7 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
       pathBoundaryRejected?: boolean;
     }[];
   };
-  assert.equal(evaluation.rows[0]?.pathBoundaryRejected, true);
+  assert.equal(evaluation.rows[0]?.pathBoundaryRejected, undefined);
   assert.equal("providerFailureRetryable" in (evaluation.rows[0] ?? {}), false);
 });
 
@@ -604,17 +592,13 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
       const evidenceRef = _context.resolved.evidenceRefs[0];
       assert.ok(evidenceRef);
       if (recoveryCalls > 2) {
-        await tools.find((tool) => tool.name === "write_file")?.execute(
+        await tools.find((tool) => tool.name === "write")?.execute(
           { path: "README.md", content: "# continue recovered\n" },
           new AbortController().signal,
         );
-        await tools.find((tool) => tool.name === "write_recovery_manifest")?.execute(
-          { actions: [{ operation: "create", path: "README.md", evidenceRefs: [evidenceRef] }], unresolved: [] },
-          new AbortController().signal,
-        );
       }
-      await tools.find((tool) => tool.name === "write_recovery_report")?.execute(
-        { content: "# Recovery\n\nThe task input is available for continuation." },
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "recovery.md", content: "# Recovery\n\nThe task input is available for continuation." },
         new AbortController().signal,
       );
       return {
@@ -623,8 +607,7 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
         value: {
           status: "partial",
           reportPath: "recovery.md",
-          manifestPath: "recovery-manifest.json",
-          unresolved: [],
+          unresolved: ["README.md was reconstructed on a later turn"],
           evidenceRefs: [evidenceRef],
         },
       };
@@ -662,6 +645,98 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
   assert.equal((await attempt.accept?.())?.root, attempt.baseline.root);
 });
 
+test("Recovery keeps the first TypeBox-valid envelope when a later model request exceeds context", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-keep-envelope-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  const task = {
+    ...base.taskCase,
+    taskContext: { ...base.taskCase.taskContext, relevantPaths: ["README.md"] },
+  } as TaskCase;
+  const events: { type: string; payload: unknown }[] = [];
+  let calls = 0;
+  const recovery: RecoveryAgentPort = {
+    recover: async (_context, tools) => {
+      calls += 1;
+      if (calls > 1) throw new Error("HTTP 400 context_length_exceeded");
+      const evidenceRef = _context.resolved.evidenceRefs[0];
+      assert.ok(evidenceRef);
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "notes.txt", content: "recovered note\n" },
+        new AbortController().signal,
+      );
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "recovery.md", content: "# Recovery\n\nFirst envelope stayed after the context-length failure." },
+        new AbortController().signal,
+      );
+      return {
+        status: "completed",
+        sessionId: "recovery-keep-envelope",
+        value: {
+          status: "partial",
+          reportPath: "recovery.md",
+          manifestPath: "recovery-manifest.json",
+          unresolved: ["README.md is not reconstructed"],
+          evidenceRefs: [evidenceRef],
+        },
+      };
+    },
+  };
+  const attempt = await recoverCodexExperiment({
+    dataDir: base.dataDir,
+    caseId: base.caseId,
+    experimentId: "recovery-keep-envelope",
+    runId: "recovery-keep-envelope-run",
+    sourceRoot: base.sourceRoot,
+    taskCase: task,
+    recovery,
+    maxToolCalls: 64,
+    maxModelAttempts: 3,
+    now,
+    onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
+  });
+  assert.equal(calls, 2);
+  assert.equal(attempt.baseline.match, "recovered_partial");
+  assert.equal(attempt.acceptedAutomatically, true);
+  assert.equal(attempt.baseline.root?.includes("baselines"), true);
+  assert.equal(attempt.baseline.recovery?.status, "partial");
+  assert.equal(attempt.accept !== undefined, true);
+  assert.equal(
+    events.some(
+      (event) =>
+        event.type === "recovery.model_retry" &&
+        (event.payload as { keptCompletedEnvelope?: boolean }).keptCompletedEnvelope === true,
+    ),
+    true,
+  );
+});
+
+test("Recovery classifies a first-turn context-length error as agent_model_failed without an accept", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-context-first-fail-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "source"));
+  await writeFile(join(root, "source", "README.md"), "# source\n");
+  const base = input(root, new VerifiedRuntime());
+  const attempt = await recoverCodexExperiment({
+    dataDir: base.dataDir,
+    caseId: base.caseId,
+    experimentId: "recovery-context-first-fail",
+    runId: "recovery-context-first-fail-run",
+    sourceRoot: base.sourceRoot,
+    taskCase: base.taskCase,
+    recovery: {
+      recover: async () => {
+        throw new Error("HTTP 400 context_length_exceeded");
+      },
+    },
+    maxToolCalls: 64,
+    now,
+  });
+  assert.equal(attempt.baseline.recovery?.failureStage, "agent_model_failed");
+  assert.equal(attempt.accept === undefined, true);
+});
+
 
 
 
@@ -693,12 +768,8 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
       calls += 1;
       const evidenceRef = _context.resolved.evidenceRefs[0];
       assert.ok(evidenceRef);
-      await tools.find((tool) => tool.name === "write_recovery_manifest")?.execute(
-        { actions: [], unresolved: ["README.md is not available"] },
-        new AbortController().signal,
-      );
-      await tools.find((tool) => tool.name === "write_recovery_report")?.execute(
-        { content: "# Recovery\n\nThe task file is unavailable." },
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "recovery.md", content: "# Recovery\n\nThe task file is unavailable." },
         new AbortController().signal,
       );
       return {
@@ -748,12 +819,8 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
     recover: async (_context, tools) => {
       const evidenceRef = _context.resolved.evidenceRefs[0];
       assert.ok(evidenceRef);
-      await tools.find((tool) => tool.name === "write_recovery_manifest")?.execute(
-        { actions: [], unresolved: ["outside path is not inspected"] },
-        new AbortController().signal,
-      );
-      await tools.find((tool) => tool.name === "write_recovery_report")?.execute(
-        { content: "# Recovery\n\nThe requested path is outside staging." },
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "recovery.md", content: "# Recovery\n\nThe requested path is outside staging." },
         new AbortController().signal,
       );
       return {

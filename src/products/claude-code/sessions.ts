@@ -270,12 +270,13 @@ async function importClaudeHistorySession(sourcePath: string, sessionId: string)
 
 type ClaudeSummaryState = {
   sessionId?: string | undefined; startedAt?: string | undefined; updatedAt?: string | undefined; cwd?: string | undefined; model?: string | undefined; summary?: string | undefined;
+  laterUserSummaries: string[];
   userMessages: number; assistantMessages: number; toolCalls: number; completedTurns: number;
 };
 
 async function summarizeClaudeSessionHead(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<SessionSummary> {
   if (historyLocatorSessionId(entry.path)) throw new SessionDiscoveryError('too-large', 'Claude history locator cannot use a transcript head.');
-  const state: ClaudeSummaryState = { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
+  const state: ClaudeSummaryState = { laterUserSummaries: [], userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
   const sourcePath = resolve(entry.path);
   await forEachJsonlHeadSummaryLine(sourcePath, 'Claude', { maxBytes: 256 * 1024, maxLines: 2_000, ...(signal ? { signal } : {}) }, (row, index) => consumeClaudeSummaryRow(state, row, index));
   const fileId = basename(sourcePath, '.jsonl');
@@ -286,7 +287,7 @@ async function summarizeClaudeSessionHead(entry: SessionFileEntry, signal: Abort
 
 /** Listing reads one JSONL row at a time and keeps only metadata/counts, never a transcript. */
 async function summarizeClaudeSession(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<SessionSummary> {
-  const state: ClaudeSummaryState = { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
+  const state: ClaudeSummaryState = { laterUserSummaries: [], userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 };
   const sourcePath = resolve(entry.path);
   await forEachJsonlSummaryLine(sourcePath, 'Claude', { maxBytes: MAX_SUMMARY_BYTES, maxLines: MAX_SUMMARY_LINES, ...(signal ? { signal } : {}) }, (row, index) => consumeClaudeSummaryRow(state, row, index));
   const fileId = basename(sourcePath, '.jsonl');
@@ -306,6 +307,7 @@ function claudeSummaryFromState(entry: SessionFileEntry, sourcePath: string, sta
     updatedAtSource: state.updatedAt ? 'event' : 'file-mtime',
     ...(state.cwd ? { cwd: state.cwd } : {}), ...(state.model ? { model: state.model } : {}),
     ...(state.summary ? { summary: state.summary } : {}),
+    ...(state.laterUserSummaries.length ? { laterUserSummaries: state.laterUserSummaries } : {}),
     signals: { userMessages: state.userMessages, assistantMessages: state.assistantMessages, toolCalls: state.toolCalls, completedTurns: state.completedTurns },
     evidenceLevel: 'transcript',
     sourceKind: state.cwd ? 'rollout-only' : 'projectless',
@@ -329,7 +331,7 @@ function consumeClaudeSummaryRow(state: ClaudeSummaryState, row: JsonRecord, ind
     const parsed = parseUserRow(row, index);
     if (parsed.kind === 'user') {
       state.userMessages += 1;
-      if (!parsed.meta) state.summary ??= compact(parsed.message.text);
+      if (!parsed.meta) recordLaterUserSummary(state, parsed.message.text);
     }
     return;
   }
@@ -644,3 +646,8 @@ function commitFrom(imported: ImportedSession): string | undefined {
 }
 
 function compact(value: string): string { return value.replace(/\s+/g, ' ').slice(0, 160); }
+function recordLaterUserSummary(state: { summary?: string | undefined; laterUserSummaries: string[] }, text: string): void {
+  const compactText = compact(text);
+  if (!state.summary) state.summary = compactText;
+  else if (state.laterUserSummaries.length < 8) state.laterUserSummaries.push(compactText);
+}

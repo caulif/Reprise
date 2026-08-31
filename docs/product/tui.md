@@ -73,7 +73,7 @@ reprise compare
 
 选择该产品下的项目和历史会话
 
-会话发现按已安装的 Agent 产品惰性执行：进入产品页后才扫描该 Pack 的配置 root。为保证全局最新活动排序，首屏先完成可取消、有界并发的轻量摘要 index；随后每页展示已发现数、已跳过的本地损坏/排除记录和是否还有下一页，`m` 继续加载，`r` 从第一页刷新。列表不读取完整 transcript，只逐行读取受限的元数据；超限、无权限、损坏 JSONL、无效元数据及不跟随的 symlink/junction 以聚合计数呈现，不展示会话正文或绝对路径。摘要窗口截断只影响展示：`pending` 或残缺摘要仍可 Enter，由 Case Preparation 做完整 inspect 后再决定能否冻结；不要把窗口里看不到用户消息写成硬 `unreadable`。点选后的状态文案对齐管线：「摘要不完整，正在完整读取」「已冻结，进入环境恢复」「无法恢复：没有合法用户输入」。选择会话后进入 recovering 页面并自动尝试恢复；环境检查、symlink/junction 跳过和部分 workspace 都是后台步骤。用户终态只显示「已恢复」「部分恢复」或「无法恢复」，见[会话恢复对用户只暴露终态](../decisions/accepted/2026-08-28-session-recovery-user-first.md)。Recovery Agent 只在 TaskCase 冻结成功之后、且仅在 Provider 创建的候选环境中恢复，不解析产品 JSONL，不写入用户原始 workspace。摘要缺少可靠时间时显示为未知时间，绝不补成 1970 年；只有缺少事件时间时才会使用并标记文件修改时间。产品、root 和 cursor 三者共同界定缓存，因此切换 Agent 或 session root 不会串用会话。TUI 帧审计会为相对时间注入固定渲染时钟，生产交互仍使用系统时钟，因而审计基线不会随日期自然漂移。
+会话发现按已安装的 Agent 产品惰性执行：进入产品页后才扫描该 Pack 的配置 root。为保证全局最新活动排序，首屏先完成可取消、有界并发的轻量摘要 index；随后每页展示已发现数、已跳过的本地损坏/排除记录和是否还有下一页，`m` 继续加载，`r` 从第一页刷新。列表不读取完整 transcript，只逐行读取受限的元数据；超限、无权限、损坏 JSONL、无效元数据及不跟随的 symlink/junction 以聚合计数呈现，不展示会话正文或绝对路径。摘要窗口截断只影响展示：`pending` 或残缺摘要仍可 Enter，由核对页做完整 inspect 后再决定能否冻结；不要把窗口里看不到用户消息写成硬 `unreadable`。列表行与项目「最近活动」在首条用户句像指令块时，改用同一摘要窗口里的后续短用户任务句；冻结 `initialInput` 用同一启发式取第一条不像注入指令块的用户任务句，找不到则退回第一条 user 行。摘要窗口截断只截断展示，列表行不标「待完整解析」。顶栏空心灯表示未选会话产品。点选后的状态文案对齐管线：「摘要不完整，正在完整读取」「已冻结，进入环境恢复」「无法恢复：没有合法用户输入」。**会话 Enter 打开核对页（任务起点句）；核对页 Enter 才冻结并启动恢复。**无合法用户输入不得出现可冻结核对卡，进入错误页。环境检查、symlink/junction 跳过和部分 workspace 都是后台步骤。用户终态只显示「已恢复」「部分恢复」或「无法恢复」，见[会话恢复对用户只暴露终态](../decisions/accepted/2026-08-28-session-recovery-user-first.md)。Recovery Agent 只在 TaskCase 冻结成功之后、且仅在 Provider 创建的候选环境中恢复，不解析产品 JSONL，不写入用户原始 workspace。摘要缺少可靠时间时显示为未知时间，绝不补成 1970 年；只有缺少事件时间时才会使用并标记文件修改时间。产品、root 和 cursor 三者共同界定缓存，因此切换 Agent 或 session root 不会串用会话。TUI 帧审计会为相对时间注入固定渲染时钟，生产交互仍使用系统时钟，因而审计基线不会随日期自然漂移。
 ❯ 今天 · Reprise · “重新设计插件架构”
   昨天 · web-project · “修复登录页面”
 
@@ -108,6 +108,8 @@ reprise compare
 Harness 展示 Controller 的可见工作过程，但不依赖或承诺获取 provider 的隐藏 reasoning token。如果模型没有产生可见分析，就展示其工具活动和最终决定，不额外调用模型伪造摘要。
 
 主时间线不直接倾倒底层 event payload。当前仅通过事件投影白名单隐藏部分低价值事件；完整的重复事件折叠仍未实现。
+
+恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段图例是恢复活动，空画布不得写成候选正在写回复。确认后进入候选运行，标题是「候选运行中」或「正在启动候选」。用户终态为无法恢复或没有 accept 时，确认页禁止启动隔离候选，标题与环境行不得声称已准备隔离对照，诊断行用人话原因加代码，禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；超过 30 秒仍无 turn 终态时提示仍在等待，超过 120 秒无新事件时提示可 Ctrl+C。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
 
 ### 4.2 决策与实际输入
 

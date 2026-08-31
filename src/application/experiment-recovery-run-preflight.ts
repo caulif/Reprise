@@ -9,6 +9,13 @@ import {
   type RecoveryRunSession,
 } from "./experiment-recovery-session.js";
 
+export function recoveryToolFailureCategory(payload: { category?: unknown; message?: unknown }): string {
+  const message = typeof payload.message === "string" ? payload.message : "";
+  if (/destructive change budget of 16|delete_file budget of 16|tool-call budget of /.test(message)) return "budget_exhausted";
+  if (typeof payload.category === "string") return payload.category;
+  return "tool_execution_failed";
+}
+
 export function createRecoveryAuditSink(session: RecoveryRunSession): AgentAuditSink {
   const { store, input, toolFailureByTool } = session;
   return {
@@ -16,8 +23,7 @@ export function createRecoveryAuditSink(session: RecoveryRunSession): AgentAudit
       if (event.type === "agent.tool_failed") {
         const tool = typeof event.payload.tool === "string" ? event.payload.tool : "unknown";
         toolFailureByTool.set(tool, (toolFailureByTool.get(tool) ?? 0) + 1);
-        session.lastToolFailureCategory =
-          typeof event.payload.category === "string" ? event.payload.category : "tool_execution_failed";
+        session.lastToolFailureCategory = recoveryToolFailureCategory(event.payload);
       }
       await store.append({
         type: event.type,

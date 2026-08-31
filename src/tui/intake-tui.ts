@@ -31,6 +31,7 @@ import type { Option } from "./types.js";
 import type { TimelineEntry } from "./timeline.js";
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { PreparePhase } from "./widgets.js";
+import type { CandidateRunPhase } from "./pages/run.js";
 
 type Page = WorkbenchView["page"];
 type PiModels = Pick<
@@ -146,6 +147,12 @@ export class CodexIntakeTui {
   timelineRenderQueued = false;
   runStartedAt = 0;
   runClock: ReturnType<typeof setInterval> | undefined;
+  runPhase: CandidateRunPhase | undefined;
+  lastRuntimeEventAt: string | undefined;
+  lastRuntimeEventKind: string | undefined;
+  modelOutputSeen = false;
+  reconnectCount = 0;
+  reconnectTotal = 0;
   preparePhase: PreparePhase | undefined;
   prepareDetail: string | undefined;
   runFromSource = false;

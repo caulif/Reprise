@@ -28,7 +28,7 @@ import {
   defaultCodexSandbox,
   discoverCodexExecutable,
 } from "../src/products/codex/runtime-port.js";
-import { redactDiagnostic } from "../src/products/shared/process.js";
+import { redactDiagnostic, summarizeDiagnostic } from "../src/products/shared/process.js";
 import {
   CodexTextCaller,
   EXPERIMENT_APPLICATION_EFFORT,
@@ -52,6 +52,14 @@ test("Codex Recovery Playbook has stable provenance and is included in build out
     "utf8",
   );
   assert.equal(builtPlaybook, playbook.text);
+});
+
+test("Codex defaults to the locally configured Terra candidate", () => {
+  assert.deepEqual(codexProductPack.defaultCandidate(), {
+    candidateId: "codex-terra-high",
+    productId: "codex",
+    requestedModel: "gpt-5.6-terra",
+  });
 });
 
 test("Codex fixture import freezes one complete session without exposing raw private fields", async () => {
@@ -292,6 +300,21 @@ test("server requests with string ids are rejected and exposed with one codex ev
   );
 });
 
+test("Codex runner sends the resolved model to thread and turn requests", async (t) => {
+  const { runner, records } = await fakeCodexRunner(t, "model_routing", {
+    requestedModel: "model-alias",
+    resolvedModel: "canonical-model",
+  });
+  await runner.start(
+    { id: "message-1", text: "Make the change." },
+    { runId: "run-1", turnIndex: 0, clientMessageId: "initial-run-1" },
+  );
+  const threadStarted = records.find((item) => item.type === "codex.thread_started");
+  const turnAdmitted = records.find((item) => item.type === "codex.turn_admitted");
+  assert.equal((threadStarted?.payload as { model?: string }).model, "canonical-model");
+  assert.equal((turnAdmitted?.payload as { model?: string }).model, "canonical-model");
+});
+
 test("server request rejection response preserves the string JSON-RPC id", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-rpc-string-id-"));
   const script = join(root, "fake-app-server.mjs");
@@ -370,6 +393,54 @@ test("an unrecognized turn status fails the waiter instead of waiting out the tu
   assert.ok(events.includes("codex.protocol_error"));
 });
 
+test("a failed Codex turn with HTTP 503 is an upstream settlement, not a protocol hang", async (t) => {
+  const { runner, events, records } = await fakeCodexRunner(t, "failed_503");
+  await runner.start(
+    { id: "message-1", text: "Make the change." },
+    { runId: "run-1", turnIndex: 0, clientMessageId: "initial-run-1" },
+  );
+  const settlement = await timeoutAfter(runner.waitForTurn(), 2_000, "503 settlement hung");
+  assert.equal(settlement.status, "failed");
+  assert.equal(settlement.failure?.kind, "upstream");
+  assert.equal(settlement.failure?.retryable, true);
+  assert.equal(settlement.failure?.reconnectCount, 5);
+  const serialized = JSON.stringify(settlement);
+  assert.doesNotMatch(serialized, /abcdefghijklmnopqrstuvwxyz/);
+  assert.doesNotMatch(serialized, /api_key=abcdefgh/);
+  assert.doesNotMatch(serialized, /https:\/\/api\.example\.com/);
+  assert.match(settlement.failure?.summary ?? "", /503/);
+  assert.equal(events.filter((type) => type === "codex.error").length, 5);
+  for (const record of records.filter((item) => item.type === "codex.error")) {
+    assert.doesNotMatch(JSON.stringify(record.payload), /abcdefghijklmnopqrstuvwxyz/);
+    assert.doesNotMatch(JSON.stringify(record.payload), /https:\/\/api\.example\.com/);
+  }
+});
+
+test("a failed Codex turn without an error payload stays an unknown failure", async (t) => {
+  const { runner } = await fakeCodexRunner(t, "failed");
+  await runner.start(
+    { id: "message-1", text: "Make the change." },
+    { runId: "run-1", turnIndex: 0, clientMessageId: "initial-run-1" },
+  );
+  const settlement = await runner.waitForTurn();
+  assert.equal(settlement.status, "failed");
+  assert.equal(settlement.failure?.kind, "unknown");
+  assert.equal(settlement.failure?.retryable, false);
+});
+
+test("an exited Codex process wakes waitForTurn immediately", async (t) => {
+  const { runner } = await fakeCodexRunner(t, "exit");
+  await runner.start(
+    { id: "message-1", text: "Make the change." },
+    { runId: "run-1", turnIndex: 0, clientMessageId: "initial-run-1" },
+  );
+  await timeoutAfter(
+    assert.rejects(runner.waitForTurn(), /Codex app-server exited/),
+    2_000,
+    "process exit did not wake the waiter",
+  );
+});
+
 test("cancelWait releases an abandoned turn wait so a late settlement cannot leak into the next turn", async (t) => {
   const { runner } = await fakeCodexRunner(t, "never");
   await runner.start(
@@ -444,7 +515,7 @@ test("text caller keeps the turn failure when client close fails", async (t) => 
     });
     await assert.rejects(
       session.append({ content: "{}", signal: new AbortController().signal }),
-      /ended as failed/,
+      /classified upstream error|ended as failed/,
     );
   } finally {
     close.mock.restore();
@@ -521,8 +592,31 @@ test("a failed text turn is reported as a failure rather than an empty answer", 
   });
   await assert.rejects(
     session.append({ content: "{}", signal: new AbortController().signal }),
-    /ended as failed/,
+    /classified upstream error|ended as failed/,
   );
+});
+
+test("a text turn that fails during thread/start still removes its temp directory", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-text-caller-start-fail-"));
+  const script = join(root, "failing-app-server.mjs");
+  await writeFile(script, FAKE_APP_SERVER);
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const before = new Set(await readdir(tmpdir()));
+  const caller = new CodexTextCaller({
+    options: { executable: process.execPath, args: [script, "thread_start_fail"] },
+    turnTimeoutMs: 5_000,
+  });
+  const session = caller.createSession({
+    sessionId: "session-1",
+    systemPrompt: "Compare the runs.",
+    tools: [],
+  });
+  await assert.rejects(
+    session.append({ content: "{}", signal: new AbortController().signal }),
+    /cannot start thread|thread\/start/,
+  );
+  const leftover = (await readdir(tmpdir())).filter((name) => name.startsWith("reprise-experiment-application-") && !before.has(name));
+  assert.deepEqual(leftover, []);
 });
 
 test("target stderr is redacted before it reaches the run journal", () => {
@@ -541,6 +635,17 @@ test("target stderr is redacted before it reaches the run journal", () => {
     redactDiagnostic("ENOENT: no such file or directory"),
     "ENOENT: no such file or directory",
   );
+});
+
+test("settlement summaries strip credentials and full upstream URLs", () => {
+  const openai = ["sk-", "abcdefghijklmnopqrstuvwx"].join("");
+  const summary = summarizeDiagnostic(
+    `HTTP 503 at https://api.example.com/v1/responses?api_key=${openai} Authorization: Bearer abcdefghijklmnopqrstuvwxyz`,
+  );
+  assert.doesNotMatch(summary, /api\.example\.com/);
+  assert.doesNotMatch(summary, /abcdefghijklmnopqrstuvwxyz/);
+  assert.doesNotMatch(summary, /abcdefghijklmnopqrstuvwx/);
+  assert.match(summary, /\[endpoint\]/);
 });
 
 test("Codex app-server requests time out and close an unresponsive process", async (t) => {

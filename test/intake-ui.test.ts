@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTheme } from '../src/tui/theme.js';
 import {
-  groupSessionsByProject, matchesIntakeQuery, projectLabel, renderInspection, sessionTitle,
+  groupSessionsByProject, matchesIntakeQuery, projectLabel, renderInspection, renderSessions, sessionListTitle, sessionTitle, taskDisplaySummary,
 } from '../src/tui/pages/intake.js';
 import type { SessionInspection } from '../src/products/contract.js';
 
@@ -10,6 +10,48 @@ test('session titles drop leading Windows paths from PPT prompts', () => {
   const title = sessionTitle('For "C:\\Users\\example\\slides\\report.pptx", make the requested changes.');
   assert.doesNotMatch(title, /C:\\Users\\example\\slides/);
   assert.match(title, /make the requested changes/i);
+});
+
+test('session list titles use later short user tasks while a lone first message stays first', () => {
+  const instruction = '# AGENTS.md\n1. Keep the skill. 2. don\'t re-write it. 3. More rules here that go on for a while so this looks like injected instructions.';
+  const later = session('later-task', 'C:\\work\\slides', '2026-08-13T01:00:00.000Z', instruction);
+  const withLater = { ...later, laterUserSummaries: ['Make a 10-page briefing deck about the CNCERT findings.'] };
+  assert.match(sessionListTitle(withLater), /briefing deck/i);
+  assert.doesNotMatch(sessionListTitle(withLater), /don't re-write it/i);
+  assert.match(sessionListTitle(later), /AGENTS.md/);
+  const theme = createTheme(120, false);
+  const listed = renderSessions(theme, 120, {
+    level: 'sessions',
+    projects: [{ key: 'slides', label: 'slides', path: 'C:\\work\\slides', sessions: [withLater], latestAt: withLater.startedAt }],
+    sessions: [withLater],
+    selected: 0,
+    filterEligible: false,
+    query: '',
+    searching: false,
+    locale: 'en',
+  }, 16).join('\n');
+  assert.match(listed, /briefing deck/i);
+  assert.doesNotMatch(listed, /don't re-write it/i);
+  const latest = renderSessions(theme, 120, {
+    level: 'projects',
+    projects: [{ key: 'slides', label: 'slides', path: 'C:\\work\\slides', sessions: [withLater], latestAt: withLater.startedAt }],
+    sessions: [withLater],
+    selected: 0,
+    filterEligible: false,
+    query: '',
+    searching: false,
+    locale: 'en',
+  }, 16).join('\n');
+  assert.match(latest, /briefing deck/i);
+});
+
+test('task display summary uses the later short user task when the first message is an instruction block', () => {
+  const title = taskDisplaySummary(
+    '# AGENTS.md\n1. Keep the skill. 2. don\'t re-write it. 3. More rules here that go on for a while so this looks like injected instructions.',
+    ['Make a 10-page briefing deck about the CNCERT findings.'],
+  );
+  assert.match(title, /briefing deck/i);
+  assert.doesNotMatch(title, /don't re-write it/i);
 });
 
 test('sessions group by workspace basename and send missing cwd to 其他', () => {
@@ -71,7 +113,7 @@ test('duplicate project basenames keep the parent directory', () => {
   assert.deepEqual(grouped.map((item) => item.label).sort(), ['Projectless sessions', 'home/notes', 'work/notes']);
 });
 
-test('inspection freezes the whole session from the first user message', () => {
+test('inspection freezes the whole session from the first user task', () => {
   const theme = createTheme(120, false);
   const inspection = {
     productId: 'codex',
@@ -106,6 +148,30 @@ test('inspection freezes the whole session from the first user message', () => {
   assert.match(ignoredSelection, /Later user turns \(Controller will see these\)[\s\S]*2\/2\s+Verify the regression\./);
 });
 
+test('inspection start skips an injected instruction block', () => {
+  const theme = createTheme(120, false);
+  const inspection = {
+    productId: 'codex',
+    sessionId: 'session-agents',
+    sourcePath: 'C:\\tmp\\rollout-agents.jsonl',
+    startedAt: '2026-08-11T00:00:00.000Z',
+    cwd: 'C:/source',
+    summary: '# AGENTS.md\nFollow these rules.',
+    signals: { userMessages: 2, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
+    transcript: [
+      { id: 'message-1', role: 'user', text: '# AGENTS.md\nFollow these rules. don\'t re-write it' },
+      { id: 'message-2', role: 'assistant', text: 'Loaded.' },
+      { id: 'message-3', role: 'user', text: 'Fix the login regression.' },
+    ],
+    finalMessage: 'Loaded.',
+  } as SessionInspection;
+  const text = renderInspection(theme, 120, {
+    inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
+  }).join('\n');
+  assert.match(text, /Session start:[\s\S]*Fix the login regression\./);
+  assert.match(text, /Later user turns \(Controller will see these\)[\s\S]*AGENTS\.md/);
+});
+
 test('a 24-row inspection still shows the freeze decision', () => {
   const theme = createTheme(120, false);
   const inspection = {
@@ -131,6 +197,24 @@ test('a 24-row inspection still shows the freeze decision', () => {
   assert.match(frame, /Session start:/);
   assert.match(frame, /Review session/);
   assert.doesNotMatch(frame, /yanjiusheng/);
+});
+
+test('inspection without user input does not show a freeze card', () => {
+  const theme = createTheme(120, false);
+  const inspection = {
+    productId: 'codex',
+    sessionId: 'session-empty',
+    sourcePath: 'C:/tmp/empty.jsonl',
+    startedAt: '2026-08-11T00:00:00.000Z',
+    cwd: 'C:/source',
+    transcript: [{ id: 'message-1', role: 'assistant', text: 'No user asked anything.' }],
+    signals: { userMessages: 0, assistantMessages: 1, toolCalls: 0, completedTurns: 0 },
+  } as SessionInspection;
+  const frame = renderInspection(theme, 120, {
+    inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
+  }).join('\n');
+  assert.match(frame, /Cannot replay: no eligible user input/);
+  assert.doesNotMatch(frame, /Session start:/);
 });
 
 function session(id: string, cwd: string | undefined, startedAt: string, summary: string) {

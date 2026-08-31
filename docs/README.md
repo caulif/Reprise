@@ -43,6 +43,15 @@
 - [会话恢复按可验证正文分级](./decisions/accepted/2026-08-27-session-recovery-readiness.md)：Enter/freeze 只接受当场校验通过的 transcript；catalog-only 与 history-only 禁止回放。
 - [会话恢复按 readiness 分级](./decisions/accepted/2026-08-27-session-recovery-best-effort.md)：discovery 不得用摘要失败提前判死；完整 inspect 区分 verified / best-effort / pending / corrupt / no-user-input。
 - [会话恢复对用户只暴露终态](./decisions/accepted/2026-08-28-session-recovery-user-first.md)：选会话后自动恢复；symlink/junction 后台跳过；主界面只显示已恢复 / 部分恢复 / 无法恢复。
+- [无 accept 的恢复失败不得启动隔离候选](./decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)：fallback / 崩溃没有接受点时是无法恢复；确认页禁止开跑。
+- [Partial 恢复允许额外工作区变更并保留预览](./decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)：`partial` 的 manifest 不必与变更路径全等；校验通过的 preview 必须暴露 accept。
+- [后一次完成信封不得覆盖已探测通过的信封](./decisions/accepted/2026-08-31-recovery-keep-last-valid-envelope.md)：反馈轮新信封先探测；失败则沿用上一份完成信封并保留 staging。
+- [回放起点是用户任务句](./decisions/accepted/2026-08-31-replay-user-task-not-injected-instruction.md)：冻结跳过产品注入的 `AGENTS.md` / 指令块；完整 transcript 仍留给 Controller。
+- [校验通过的恢复 preview 自动接受](./decisions/accepted/2026-08-31-recovery-auto-accept-validated-preview.md)：Host 在 `validateRecovery` 成功后立即 `acceptRecovery`；确认页只确认是否开计费候选。
+- [Recovery 调查包](./decisions/accepted/2026-08-31-recovery-investigation-packet.md)：进入模型的历史主通道是 Host 有界调查包，不是全文翻页。
+- [Recovery 八工具面](./decisions/accepted/2026-08-31-recovery-pi-aligned-tools.md)：工作区对齐 Pi；Host 只留 `read_observation`。
+- [partial 以 fingerprint 为变更源](./decisions/accepted/2026-08-31-recovery-fingerprint-changeset.md)：路径集合由 Host 计算，伪造 ref 不得进入 baseline。
+- [候选 Runtime 失败分类与恢复门禁解耦](./decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)：settlement 保留脱敏失败类别；恢复 candidate 不被 source blockedReasons 再拦；不对 503 自动重试。
 - [列表展示、冻结与 Recovery Agent 分界](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)：列表只截断展示；冻结由 Case Preparation 完成；Recovery Agent 只做环境恢复。
 - [会话正文流式读取](./decisions/accepted/2026-08-27-stream-session-transcript-io.md)：catalog 只读固定头；inspect/import 逐行 JSONL；cwd 单向最长根。
 - [TUI 帧基线只在 Windows 比对](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)：帧是平台相关产物，不在 Ubuntu 上逐字节比对。
@@ -58,6 +67,8 @@
 `plan/` 只保留尚未做完的工作；做完或被取代后按迁移规则移出。
 
 - [当前实现差距与修正计划](./plan/current-implementation-gap-and-correction-plan.md)：canonical 设计与代码的逐项偏差及迁移路线。
+- [Codex 真实会话恢复失败修正](./plan/codex-real-session-recovery-correction.md)：恢复页冒充候选、失败被显示为部分恢复、二次模型错误丢弃已完成 partial 的分批修正。
+- [2026-08-31 走查后的恢复修复](./plan/codex-recovery-20260831-fix.md)：Host 调查包为主、工具面对齐 Pi 八件套、fingerprint 为变更源、核对页与时间线。
 - [会话恢复的尽力而为实施方案](./plan/session-recovery-best-effort-implementation.md)：让每个 Codex/Claude Code 来源都进入恢复尝试，并区分可回放、部分恢复和不可回放。
 - [列表展示与 Recovery Agent 的分界](./plan/session-intake-vs-recovery-agent.md)：实施清单见该计划；长期约束见[对应决策](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)。
 - [第六轮优化分析](./plan/optimization-round-6.md)：仍未闭合的 P2/P3 条目与产品承诺缺口。
@@ -73,6 +84,8 @@
 ## 设计依据
 
 - [架构研究基础](./research/architecture-foundations.md)与[Controller 研究基础](./research/controller-foundations.md)：解释为什么这样设计，可以提出备选方案，但不覆盖 `architecture/`。
+- [Controller / Comparison 工具面与 Host 调查包](./research/controller-comparison-host-packet-and-tools.md)：三个内部 Agent 都注册 Pi 工作区七件套加 `read_observation`；额外工具只保留工作区看不见的分页历史。
+- [三个内部 Agent 的模块设计审查](./research/three-agents-design-review.md)：三角色共用八工具与轮间压缩；角色差异只在 cwd、写策略和会话形态。
 
 ## 不在版本控制内的材料
 

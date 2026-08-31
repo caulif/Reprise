@@ -238,9 +238,14 @@ test("Codex intake TUI only reads before explicit freeze and leaves no ambiguous
   assert.equal(await readFile(source, "utf8"), raw);
 
   app.handleInput("\r");
+  await waitFor(() => /Session start:/.test(rendered));
+  assert.match(rendered, /Session start:/);
+  assert.match(rendered, /Review session/);
+  assert.equal(await readFile(source, "utf8"), raw);
+
+  app.handleInput("\r");
   await waitFor(() => /is current/.test(rendered));
   assert.match(rendered, /is current/);
-  assert.doesNotMatch(rendered, /Review the session details|Choose task start|Session start:/);
   assert.equal(await readFile(source, "utf8"), raw);
   const caseId = (await readdir(join(root, "data", "cases")))[0];
   assert.ok(caseId);

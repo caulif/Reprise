@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import type { RecoveryResult } from "../agents/recovery-agent.js";
 import { persistRecoveryEvaluation } from "./recovery-evaluation.js";
 import {
+  diagnosisReasonCode,
   persistRecoveryAttemptDiagnosis,
   recoveryAttemptDiagnosis,
 } from "./recovery-user-status.js";
@@ -97,10 +98,12 @@ export async function failRecoverCodexExperiment(input: FailRecoverCodexExperime
       transcriptOk: Boolean(input.attemptInput.taskCase.initialInput?.text),
       recoveryAgentStarted: input.modelAttempts > 0,
       retryable: Boolean(settled.providerFailureRetryable),
-      reasonCode:
-        settled.baseline.budget.excludedEntries?.[0]?.reasonCode ??
-        settled.failureStage ??
-        "recovery_agent.failed",
+      reasonCode: diagnosisReasonCode({
+        baseline: settled.baseline,
+        transcriptOk: Boolean(input.attemptInput.taskCase.initialInput?.text),
+        failureStage: settled.failureStage,
+      }),
+      hasAccept: false,
     }),
   );
   return {

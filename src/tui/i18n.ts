@@ -25,6 +25,7 @@ const M = {
   needsEnv: { en: 'needs env', zh: '需要环境变量' },
   needsCred: { en: 'needs credential', zh: '需要凭据' },
   sourceReady: { en: 'source ready', zh: '源目录就绪' },
+  cannotStartRun: { en: 'cannot start', zh: '无法开跑' },
   envUnset: { en: 'env unset', zh: '环境变量未设' },
   nextSetCred: { en: 'Next: add the API key in /config', zh: '下一步：在 /config 写入 API 密钥' },
   nextSetEnv: { en: 'Next: set {name} in this shell', zh: '下一步：在当前终端设置 {name}' },
@@ -41,7 +42,7 @@ const M = {
   harnessEnvUnset: { en: 'Harness env unset', zh: '内部模型环境变量未设' },
   harnessKeyMissing: { en: 'Harness key missing', zh: '内部模型缺少密钥' },
   noCase: { en: 'No task', zh: '无任务' },
-  noAgentSelected: { en: 'Agent unset', zh: '未选 Agent' },
+  noAgentSelected: { en: 'Product unset', zh: '未选会话产品' },
   unknownAgent: { en: 'Unknown agent', zh: '未知 Agent' },
   hasCase: { en: 'Task', zh: '已选任务' },
   hintEnter: { en: 'Run command', zh: '执行命令' },
@@ -71,6 +72,7 @@ const M = {
   langSaved: { en: 'Language set to English.', zh: '已切换为中文。' },
   preparingTitle: { en: 'Preparing replay', zh: '正在准备对照' },
   preparingIn: { en: 'Will replay this task in {product} with the candidate model. Your original repo is left unchanged.', zh: '将在 {product} 里用候选模型重做这道题，不改你原来的仓库。' },
+  recoveringPrepare: { en: 'Recovering the isolated workspace from this session. Your original files stay unchanged.', zh: '正在根据这次会话恢复隔离工作区，不改你原来的文件。' },
   taskLabel: { en: 'Task', zh: '题目' },
   stepRestore: { en: 'Restore historical environment', zh: '恢复历史环境' },
   stepCopy: { en: 'Copy isolated workspace', zh: '复制隔离工作区' },
@@ -92,6 +94,9 @@ const M = {
   historicalTask: { en: 'historical task', zh: '历史题目' },
   followUp: { en: 'follow-up', zh: '续问' },
   writing: { en: 'Writing a reply...', zh: '正在写回复...' },
+  recoveryLegend: { en: 'Recovery activity', zh: '恢复活动' },
+  recoveryEmpty: { en: 'Recovery is working in the isolated workspace.', zh: '正在隔离工作区里恢复。' },
+  noTypeRecovery: { en: 'Cannot type while recovery is running.', zh: '恢复进行中不能打字。' },
   moreLines: { en: '... {n} more lines', zh: '... 还有 {n} 行' },
   passed: { en: 'ok', zh: '成功' },
   failed: { en: 'failed', zh: '未通过' },
@@ -142,7 +147,7 @@ const M = {
   modelTextBlocked: { en: 'Model text sharing with the configured Pi provider is now blocked.', zh: '本会话已禁止与已配置的内部模型分享正文。' },
   freezingCase: { en: 'Reading the full transcript and freezing a TaskCase...', zh: '正在完整读取并冻结任务…' },
   inspectingIncompleteSummary: { en: 'Incomplete summary. Reading the full transcript...', zh: '摘要不完整，正在完整读取…' },
-  inspectingSelectedSession: { en: 'Reading the full transcript and freezing a TaskCase...', zh: '正在完整读取并冻结任务…' },
+  inspectingSelectedSession: { en: 'Reading the full transcript for review...', zh: '正在完整读取以便核对…' },
   frozenEnteringRecovery: { en: 'TaskCase frozen. Starting environment recovery...', zh: '已冻结，进入环境恢复…' },
   recoveringTitle: { en: 'Recovering session', zh: '正在恢复会话' },
   recoveryStagePrepare: { en: 'Preparing recovery environment', zh: '准备恢复环境' },
@@ -191,7 +196,7 @@ const M = {
   inspectingJsonl: { en: 'Inspecting the selected local JSONL; no commands are executed.', zh: '正在查看选中的本地记录；不会执行任何命令。' },
   noSessionsFound: { en: 'No local agent sessions were found.', zh: '没有找到本地 Agent 会话记录。' },
   chooseProject: { en: 'Choose a project, then a session. Type / to search.', zh: '先选项目，再选会话。输入 / 搜索。' },
-  chooseSession: { en: 'Choose a historical session. Enter reads the full transcript, then freezes if replayable.', zh: '选择一条历史会话。按 Enter 完整读取；可回放则冻结任务。' },
+  chooseSession: { en: 'Choose a historical session. Enter opens the review; Enter again freezes and starts recovery.', zh: '选择一条历史会话。Enter 打开核对页；再按 Enter 冻结并开始恢复。' },
   sessionDiscoveryStatus: { en: '{shown} shown · {skipped} skipped', zh: '已显示 {shown} 条 · 已跳过 {skipped} 条' },
   moreAvailable: { en: 'more available', zh: '还有更多' },
   loadMoreSessions: { en: 'The catalog is complete; m does not paginate.', zh: '目录已完整；m 不会分页。' },
@@ -305,6 +310,7 @@ const M = {
   sourceTitle: { en: 'Source root', zh: '源目录' },
   preflightTitle: { en: 'Candidate preflight', zh: '候选预检' },
   confirmTitle: { en: 'Start isolated {product} Candidate?', zh: '启动隔离的 {product} 候选？' },
+  confirmTitleBlocked: { en: 'Cannot start isolated {product} Candidate', zh: '无法启动隔离的 {product} 候选' },
   preflightStep: { en: 'Preflight', zh: '预检' },
   confirmStep: { en: 'Confirm run', zh: '确认运行' },
   candidateLabel: { en: 'Candidate', zh: '候选' },
@@ -334,6 +340,7 @@ const M = {
   recoveryPrepared: { en: 'Recovery will verify the isolated environment automatically.', zh: '恢复流程会自动验证隔离环境。' },
   preparedValue: { en: 'prepared', zh: '已准备' },
   preparedWithLimitations: { en: 'prepared with recorded limitations', zh: '已准备，但存在已记录限制' },
+  environmentNotRunnable: { en: 'not a runnable isolated workspace', zh: '没有可运行的隔离工作区' },
   persistedPiModel: { en: 'persisted Pi model', zh: '已保存的 Pi 模型' },
   controllerLabel: { en: 'Controller', zh: '控制器' },
   comparisonActorLabel: { en: 'Comparison', zh: '对照' },
@@ -341,6 +348,7 @@ const M = {
   credentialMissing: { en: 'Harness credential missing', zh: '缺少 Harness 凭据' },
   warningStartsProcess: { en: 'This starts a {product} process and may call your configured provider, which can cost money.', zh: '这会启动 {product} 进程，并可能调用已配置的服务商而产生费用。' },
   warningCannotStart: { en: 'Enter will not start {product}. Add an API key in /config first.', zh: '按 Enter 不会启动 {product}。请先在 /config 添加 API 密钥。' },
+  warningCannotStartFailedRecovery: { en: 'Enter will not start {product}. Recovery did not produce a runnable isolated workspace.', zh: '按 Enter 不会启动 {product}。恢复没有得到可运行的隔离工作区。' },
   sourceUnchanged: { en: 'Your original source, the historical session, and original runtime configuration are left unchanged.', zh: '原始源目录、历史会话和原始运行时配置均不会改变。' },
   isolatedState: { en: 'The replay starts from the prepared isolated state of {source}.', zh: '对照会从 {source} 的已准备隔离状态开始。' },
   copyNotSanitized: { en: 'Reprise copies the selected directory; the isolated copy is not privacy sanitization.', zh: 'Reprise 会复制所选目录；隔离副本不等于隐私脱敏。' },
@@ -369,7 +377,7 @@ const M = {
   historyOnlySession: { en: '[history-only]', zh: '[仅历史]' },
   unindexedSession: { en: '[unindexed]', zh: '[未编入索引]' },
   unreadableSession: { en: '[unreadable]', zh: '[正文不可读]' },
-  pendingSession: { en: '[pending full inspect]', zh: '[待完整解析]' },
+  catalogInvalidJsonl: { en: 'catalog skipped invalid JSONL (not this row)', zh: '目录全局跳过了无效 JSONL（不是当前行损坏）' },
   bestEffortSession: { en: '[best-effort]', zh: '[尽力恢复]' },
   noUserInputSession: { en: '[no user input]', zh: '[无用户输入]' },
   corruptSession: { en: '[corrupt]', zh: '[正文损坏]' },
@@ -389,13 +397,19 @@ const M = {
   fieldStarted: { en: 'Started', zh: '开始时间' },
   fieldUpdated: { en: 'Updated', zh: '更新时间' },
   recoveryDiagnostics: { en: 'Recovery', zh: '恢复诊断' },
+  recoveryReasonValidationFailed: { en: 'Workspace validation rejected the recovery envelope', zh: '工作区校验未通过' },
+  recoveryReasonBudget: { en: 'Recovery used up its tool budget', zh: '恢复用尽了工具预算' },
+  recoveryReasonModelFailed: { en: 'The recovery model did not finish', zh: '恢复模型没有完成' },
+  recoveryReasonToolFailed: { en: 'A recovery tool failed', zh: '恢复工具失败' },
+  recoveryReasonGeneric: { en: 'Recovery did not produce a runnable workspace', zh: '恢复没有得到可运行的隔离工作区' },
+  recoveryReasonWithCode: { en: '{reason} ({code})', zh: '{reason}（{code}）' },
   fieldSource: { en: 'Source:', zh: '来源：' },
   fieldModelText: { en: 'model text', zh: '模型文本' },
   fieldBinary: { en: 'binary', zh: '二进制' },
   fieldRedactions: { en: 'literal redactions', zh: '字面量脱敏' },
   filterLabel: { en: 'filter', zh: '过滤' },
   chooseTaskStart: { en: 'Review session', zh: '核对会话' },
-  freezeIntro: { en: 'Enter freezes this session. The first user message is the start. Later user turns stay in the case for the Controller. The Runtime does not start yet.', zh: '按 Enter 冻结整段会话。起点永远是第一条用户消息。后面的用户轮次留给 Controller。此时不会启动 Runtime。' },
+  freezeIntro: { en: 'Enter freezes this session. Replay starts at the first user task, not product-injected instruction blocks. Later user turns stay in the case for the Controller. The Runtime does not start yet.', zh: '按 Enter 冻结整段会话。回放起点是第一条用户任务句，不是产品自动注入的指令块。后面的用户轮次留给 Controller。此时不会启动 Runtime。' },
   freezeThis: { en: 'Session start:', zh: '会话起点：' },
   laterUserTurns: { en: 'Later user turns (Controller will see these)', zh: '后续用户轮次（Controller 会看到）' },
   nothingWritten: { en: 'Nothing is written until you press Enter.', zh: '按 Enter 之前不会写入任何东西。' },
@@ -414,11 +428,20 @@ const M = {
   hintSearch: { en: 'Search', zh: '搜索' },
   hintFilterEligible: { en: 'Filter', zh: '过滤' },
   hintClearSearch: { en: 'Clear search', zh: '清除搜索' },
-  hintFreeze: { en: 'Freeze session', zh: '冻结会话' },
+  hintFreeze: { en: 'Freeze and recover', zh: '冻结并恢复' },
   hintSelectTask: { en: 'Select task start', zh: '选择题目起点' },
   hintExpandOutcome: { en: 'Expand outcome', zh: '展开结果' },
   hintToggleText: { en: 'Toggle model text', zh: '切换正文分享' },
   hintProjects: { en: 'Projects', zh: '项目' },
+  candidateRunningTitle: { en: 'Candidate running · {product}', zh: '候选运行中 · {product}' },
+  candidateStartingTitle: { en: 'Starting candidate · {product}', zh: '正在启动候选 · {product}' },
+  candidateStarting: { en: 'Starting {product}...', zh: '正在启动 {product}...' },
+  candidateGenerating: { en: '{product} is generating, turn {n}', zh: '{product} 正在生成，第 {n} 轮' },
+  candidateReconnecting: { en: '{product} connection interrupted, reconnecting ({current}/{total})', zh: '{product} 连接暂时中断，正在重连（{current}/{total}）' },
+  candidateUpstreamFailed: { en: '{product} failed: upstream service temporarily unavailable', zh: '{product} 已失败：上游服务暂时不可用' },
+  runStillWaiting: { en: 'Still waiting for a turn to settle.', zh: '仍在等待本轮结束。' },
+  runStaleHint: { en: 'No new events for a while. Press Ctrl+C to cancel.', zh: '长时间无新事件，可按 Ctrl+C 取消。' },
+  upstreamUnavailable: { en: 'Upstream service temporarily unavailable (retryable). Restart the candidate when the provider recovers.', zh: '上游服务暂时不可用（可稍后重试）。服务恢复后请重新启动候选，不要当成恢复失败。' },
 } as const satisfies Record<string, Msg>;
 
 export type MessageKey = keyof typeof M;
@@ -441,6 +464,16 @@ export function sessionReplayErrorMessage(error: unknown, locale: Locale): strin
   if (code === 'source-missing') return t(locale, 'notReplayableCatalogOnly');
   if (code === 'pending') return t(locale, 'notReplayablePending');
   return error.message;
+}
+
+export function formatRecoveryFailureSummary(locale: Locale, stage: string): string {
+  const reason =
+    stage === 'provider_validation_failed' ? t(locale, 'recoveryReasonValidationFailed')
+    : /budget/.test(stage) ? t(locale, 'recoveryReasonBudget')
+    : stage === 'agent_model_failed' || stage === 'agent_timeout' ? t(locale, 'recoveryReasonModelFailed')
+    : stage === 'agent_tool_failed' ? t(locale, 'recoveryReasonToolFailed')
+    : t(locale, 'recoveryReasonGeneric');
+  return t(locale, 'recoveryReasonWithCode', { reason, code: stage });
 }
 
 export function parseLocale(value: string | undefined): Locale | undefined {

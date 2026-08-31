@@ -42,6 +42,8 @@ export type RecoveryRunSession = {
   unsubscribe?: () => void;
   staging?: RecoveryStaging;
   recovery?: StructuredAgentResult<RecoveryResult>;
+  lastCompletedRecovery?: StructuredAgentResult<RecoveryResult>;
+  haltReadinessFeedback?: boolean;
   candidateCreated: boolean;
   recoveredPaths: string[];
   verification: "verified" | "pending_user_review" | "rejected" | "insufficient_evidence";

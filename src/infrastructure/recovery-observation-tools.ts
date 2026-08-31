@@ -3,14 +3,12 @@ import type { TaskCase } from "../core/schema.js";
 import type { AgentToolDefinition } from "./pi-agent-host.js";
 import {
   integer,
-  isRelativePath,
   recoveryEvidenceCatalog,
-  requiredString,
   type RecoveryEvidenceCatalogEntry,
 } from "./recovery-tools.js";
 
 export type RecoveryObservationOperation = {
-  operation: "derive_task_footprint" | "search_recovery_artifacts" | "read_observation";
+  operation: "read_observation";
   availability: "available" | "unavailable";
   attempts: 1 | 2;
   reason?: "frozen_evidence_error";
@@ -44,6 +42,35 @@ async function boundedObservation<T>(
   return undefined;
 }
 
+const MAX_OBSERVATION_JSON_BYTES = 48_000;
+
+function observationPage(facts: readonly unknown[], catalog: readonly RecoveryEvidenceCatalogEntry[], start: number, maxItems: number): {
+  page: { ref: string | undefined; observation: unknown }[];
+  nextCursor?: number;
+  truncated: boolean;
+} {
+  const page: { ref: string | undefined; observation: unknown }[] = [];
+  let bytes = 2;
+  let truncated = false;
+  const end = Math.min(facts.length, start + maxItems);
+  for (let index = start; index < end; index += 1) {
+    const item = { ref: catalog[index]?.ref, observation: facts[index] };
+    const extra = Buffer.byteLength(JSON.stringify(item)) + (page.length ? 1 : 0);
+    if (page.length && bytes + extra > MAX_OBSERVATION_JSON_BYTES) {
+      truncated = true;
+      break;
+    }
+    page.push(item);
+    bytes += extra;
+  }
+  const consumed = page.length;
+  return {
+    page,
+    truncated,
+    ...(start + consumed < facts.length || truncated ? { nextCursor: start + consumed } : {}),
+  };
+}
+
 function unavailableObservation(
   operation: RecoveryObservationOperation["operation"],
   details: Record<string, unknown> = {},
@@ -66,51 +93,9 @@ export function recoveryObservationTools(
   });
   return [
     {
-      name: "derive_task_footprint",
-      description:
-        "Derive bounded path, command, and test clues from frozen observations without treating inferred clues as verified facts.",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const footprint = await boundedObservation(options, "derive_task_footprint", () =>
-          recoveryEvidenceCatalog(taskCase)
-            .map((entry) => ({
-              ref: entry.ref,
-              source: entry.source,
-              paths: footprintMatches(taskCaseObservation(taskCase, entry)),
-              commands: footprintCommands(taskCaseObservation(taskCase, entry)),
-            }))
-            .filter((entry) => entry.paths.length || entry.commands.length),
-        );
-        if (!footprint) return unavailableObservation("derive_task_footprint");
-        return {
-          content: JSON.stringify(footprint.slice(0, 128)),
-          details: { available: true, returned: Math.min(footprint.length, 128), inferred: true },
-        };
-      },
-    },
-    {
-      name: "search_recovery_artifacts",
-      description:
-        "Search frozen transcript and historical observations by a bounded term; returns Host refs and hashes, not unregistered artifacts.",
-      parameters: Type.Object({ query: Type.String({ minLength: 1, maxLength: 256 }) }),
-      execute: async (params) => {
-        const query = requiredString((params as { query?: unknown }).query, "query").toLowerCase();
-        const matches = await boundedObservation(options, "search_recovery_artifacts", () =>
-          recoveryEvidenceCatalog(taskCase).filter((entry) =>
-            JSON.stringify(taskCaseObservation(taskCase, entry)).toLowerCase().includes(query),
-          ),
-        );
-        const redactedQuery = redactSearchQuery(query);
-        if (!matches) return unavailableObservation("search_recovery_artifacts", { query: redactedQuery });
-        return {
-          content: JSON.stringify(matches.slice(0, 64)),
-          details: { query: redactedQuery, available: true, returned: Math.min(matches.length, 64), truncated: matches.length > 64 },
-        };
-      },
-    },
-    {
       name: "read_observation",
-      description: "Read a bounded page of the frozen historical transcript or historical events.",
+      description:
+        "Optional fallback: read a bounded page of frozen transcript or historical events. Prefer the Host investigation packet.",
       parameters,
       execute: async (params) => {
         const value = params as { source?: unknown; start?: unknown; maxItems?: unknown };
@@ -121,64 +106,22 @@ export function recoveryObservationTools(
         const facts = value.source === "transcript" ? taskCase.transcript : taskCase.historicalEvents;
         const page = await boundedObservation(options, "read_observation", () => {
           const catalog = recoveryEvidenceCatalog(taskCase).filter((entry) => entry.source === value.source);
-          return facts.slice(start, start + maxItems).map((observation, offset) => ({
-            ref: catalog[start + offset]?.ref,
-            observation,
-          }));
+          return observationPage(facts, catalog, start, maxItems);
         });
         if (!page) return unavailableObservation("read_observation", { source: value.source, start });
         return {
-          content: JSON.stringify(page),
+          content: JSON.stringify(page.page),
           details: {
             source: value.source,
             start,
             available: true,
-            refs: page.map((item) => item.ref),
-            returned: page.length,
-            ...(start + page.length < facts.length ? { nextCursor: start + page.length } : {}),
+            refs: page.page.map((item) => item.ref),
+            returned: page.page.length,
+            truncated: page.truncated,
+            ...(page.nextCursor !== undefined ? { nextCursor: page.nextCursor } : {}),
           },
         };
       },
     },
   ];
-}
-function taskCaseObservation(
-  taskCase: TaskCase,
-  entry: RecoveryEvidenceCatalogEntry,
-): unknown {
-  return entry.source === "transcript"
-    ? taskCase.transcript[entry.index]
-    : taskCase.historicalEvents[entry.index];
-}
-
-function footprintMatches(value: unknown): string[] {
-  const text = JSON.stringify(value);
-  const candidates =
-    text.match(/[A-Za-z0-9][A-Za-z0-9._/-]{0,127}(?:\.[A-Za-z0-9_-]{1,32})/g) ??
-    [];
-  return [
-    ...new Set(
-      candidates.filter(
-        (item) => isRelativePath(item) && !item.startsWith("event:"),
-      ),
-    ),
-  ].slice(0, 32);
-}
-
-function footprintCommands(value: unknown): string[] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-  return Object.entries(value as Record<string, unknown>)
-    .filter(
-      ([key, item]) =>
-        /command|test|script/i.test(key) && typeof item === "string",
-    )
-    .map(([, item]) => String(item).slice(0, 512))
-    .slice(0, 16);
-}
-
-function redactSearchQuery(query: string): string {
-  return query.replace(
-    /(?:token|password|secret|api[_-]?key)\s*[:=]\s*\S+/gi,
-    "$1=[REDACTED]",
-  );
 }

@@ -890,7 +890,7 @@ test("Recovery treats Playbook instructions as context data without expanding th
   assert.match(requestContent, /"evidenceLevel":"history"/);
   assert.match(requestContent, /Choose exactly one status-specific shape/);
   assert.match(requestContent, /Every bracketed value is a JSON array, never an object/);
-  assert.match(requestContent, /For insufficient_evidence: do not include manifestPath/);
+  assert.match(requestContent, /Do not write recovery-manifest\.json/);
   assert.match(registration.systemPrompt, /not a complete execution record/);
   assert.doesNotMatch(registration.systemPrompt, /delete the user directory/i);
   assert.deepEqual(
@@ -927,7 +927,7 @@ test("Host audits staging shell commands with redacted summaries and completion 
     allowModelText: true,
     tools: [
       {
-        name: "staging_shell",
+        name: "powershell",
         description: "Test shell audit surface.",
         parameters: Type.Object({ command: Type.String() }),
         execute: async () => ({
@@ -945,7 +945,7 @@ test("Host audits staging shell commands with redacted summaries and completion 
 
   assert.equal(result.status, "completed");
   const shellEvents = events.filter(
-    (event) => event.payload.tool === "staging_shell",
+    (event) => event.payload.tool === "powershell",
   );
   assert.deepEqual(
     shellEvents.map((event) => event.type),
@@ -954,4 +954,46 @@ test("Host audits staging shell commands with redacted summaries and completion 
   assert.match(JSON.stringify(shellEvents), /networkAccess/);
   assert.match(JSON.stringify(shellEvents), /\[REDACTED\]/);
   assert.doesNotMatch(JSON.stringify(shellEvents), /ultra-secret-token/);
+});
+
+test("Host audits recovery path params as the staging-relative path", async () => {
+  const events: AgentAuditEvent[] = [];
+  const host = new PiAgentHost({
+    createSession: (input) => ({
+      append: async () => {
+        const remove = input.tools[0];
+        assert.ok(remove);
+        await remove.execute({ path: "ppt_build/out.pptx" }, new AbortController().signal);
+        return JSON.stringify({ ok: true });
+      },
+      cancel() {},
+    }),
+  });
+  const result = await host.request({
+    role: "recovery",
+    systemPrompt: "fixed prompt",
+    context: {},
+    schema: Type.Object({ ok: Type.Boolean() }),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+    allowModelText: true,
+    tools: [
+      {
+        name: "powershell",
+        description: "Test path audit surface.",
+        parameters: Type.Object({ path: Type.String() }),
+        execute: async () => ({ content: "Deleted file.", details: { path: "ppt_build/out.pptx" } }),
+      },
+    ],
+    audit: {
+      append: async (event) => {
+        events.push(event);
+      },
+    },
+  });
+  assert.equal(result.status, "completed");
+  const called = events.find((event) => event.type === "agent.tool_called");
+  const params = called?.payload.params as { path?: string } | undefined;
+  assert.equal(params?.path, "ppt_build/out.pptx");
+  assert.doesNotMatch(JSON.stringify(events), /relative-path/);
 });

@@ -2,8 +2,7 @@ import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, st
 import { formatBytes } from '../core/format.js';
 import { SAFE_ID, sha256, sha256File } from '../core/identity.js';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { Value } from '@sinclair/typebox/value';
-import { RecoveryManifestSchema, type RecoveryManifest } from '../core/schema.js';
+import { type RecoveryManifest } from '../core/schema.js';
 import { gitFileHash, isRecoveryPath, type RecoveryEvidenceVerification } from '../infrastructure/recovery-tools.js';
 import {
   MAX_INLINE_HASH_BYTES,
@@ -146,47 +145,65 @@ export async function readBaselineMarker(path: string): Promise<BaselineMarker |
 }
 
 export function isRecoveryEnvelope(value: RecoveryEnvelope): boolean {
-  return (value.status === 'recovered' || value.status === 'partial' || value.status === 'insufficient_evidence')
-    && !(value.status === 'recovered' && value.unresolved.length > 0)
-    && !((value.status === 'recovered' || value.status === 'partial') && value.evidenceRefs.length === 0)
-    && ((value.status === 'insufficient_evidence' && value.manifestPath === undefined) || ((value.status === 'recovered' || value.status === 'partial') && value.manifestPath === 'recovery-manifest.json'))
-    && value.reportPath === 'recovery.md' && Array.isArray(value.unresolved) && value.unresolved.every((item) => typeof item === 'string')
-    && Array.isArray(value.evidenceRefs) && value.evidenceRefs.every((item) => typeof item === 'string' && /^(event|artifact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(item));
+  const refsOk = Array.isArray(value.evidenceRefs) && value.evidenceRefs.every((item) => typeof item === 'string' && /^(event|artifact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(item));
+  const unresolvedOk = Array.isArray(value.unresolved) && value.unresolved.every((item) => typeof item === 'string');
+  if (value.reportPath !== 'recovery.md' || !refsOk || !unresolvedOk) return false;
+  if (value.status === 'recovered') return value.unresolved.length === 0 && value.evidenceRefs.length > 0;
+  return value.status === 'partial' || value.status === 'insufficient_evidence';
 }
 
-export async function readRecoveryManifest(root: string, result: RecoveryEnvelope): Promise<RecoveryManifest> {
-  if (result.manifestPath !== 'recovery-manifest.json') throw new Error('Recovery manifest is required.');
-  let value: unknown;
-  try { value = JSON.parse(await readFile(join(root, result.manifestPath), 'utf8')) as unknown; }
-  catch { throw new Error('Recovery manifest is unreadable.'); }
-  if (!Value.Check(RecoveryManifestSchema, value)) throw new Error('Recovery manifest is invalid.');
-  return value;
+export function hostManifestFromFingerprint(
+  changed: readonly string[],
+  before: EnvironmentFingerprint,
+  after: EnvironmentFingerprint,
+  evidenceRefs: readonly string[],
+): RecoveryManifest {
+  const previous = new Map(before.resources.map((entry) => [entry.path, entry]));
+  const current = new Map(after.resources.map((entry) => [entry.path, entry]));
+  return {
+    actions: changed.map((path) => {
+      const beforeEntry = previous.get(path);
+      const afterEntry = current.get(path);
+      const operation = !beforeEntry && afterEntry ? 'create' : beforeEntry && !afterEntry ? 'delete' : 'modify';
+      return {
+        operation,
+        path,
+        evidenceRefs: [...evidenceRefs],
+        ...(beforeEntry?.contentHash ? { beforeHash: beforeEntry.contentHash } : {}),
+        ...(afterEntry?.contentHash ? { afterHash: afterEntry.contentHash } : {}),
+      };
+    }),
+    unresolved: [],
+  };
 }
+
 export async function validateManifest(
-  manifest: RecoveryManifest,
+  _manifest: RecoveryManifest,
   changed: readonly string[],
   result: RecoveryEnvelope,
   evidence: readonly RecoveryEvidenceVerification[],
   before: EnvironmentFingerprint,
   after: EnvironmentFingerprint,
   root: string,
-): Promise<void> {
-  const paths = manifest.actions.map((action) => action.path).sort();
-  if (manifest.actions.some((action) => !isRecoveryPath(action.path))) throw new Error('Recovery manifest contains an unsafe path.');
-  if (new Set(paths).size !== paths.length || JSON.stringify(paths) !== JSON.stringify([...changed].sort())) throw new Error('Recovery manifest paths must exactly match changed paths.');
+): Promise<readonly string[]> {
+  const ownedRefs = result.evidenceRefs.filter((ref) => evidence.some((item) => item.ref === ref));
+  const paths = [...changed].sort();
   const known = new Map(evidence.map((item) => [item.ref, item]));
   const previous = new Map(before.resources.map((entry) => [entry.path, entry]));
   const current = new Map(after.resources.map((entry) => [entry.path, entry]));
-  for (const action of manifest.actions) {
-    if (action.evidenceRefs.some((ref) => !result.evidenceRefs.includes(ref) || !known.has(ref))) throw new Error('Recovery manifest action uses evidence absent from the envelope.');
+  const actions = hostManifestFromFingerprint(paths, before, after, ownedRefs).actions;
+  if (actions.some((action) => !isRecoveryPath(action.path))) throw new Error('Recovery manifest contains an unsafe path.');
+  if (result.status === 'recovered' && paths.length === 0) throw new Error('Recovery manifest paths must exactly match changed paths.');
+  for (const action of actions) {
     const beforeEntry = previous.get(action.path);
     const afterEntry = current.get(action.path);
     validateActionOperation(action.operation, beforeEntry, afterEntry, action.path);
     validateActionHashes(action.beforeHash, action.afterHash, beforeEntry, afterEntry, action.path);
-    if (result.status === 'recovered' && !(await actionHasStrongEvidence(action.path, afterEntry, action.evidenceRefs, known, root))) {
+    if (result.status === 'recovered' && !(await actionHasStrongEvidence(action.path, afterEntry, ownedRefs, known, root))) {
       throw new Error(`Recovered action lacks strong path evidence: ${action.path}.`);
     }
   }
+  return [];
 }
 
 function validateActionOperation(
@@ -241,6 +258,13 @@ export function changedPaths(before: EnvironmentFingerprint, after: EnvironmentF
   const initial = index(before);
   const current = index(after);
   return [...new Set([...initial.keys(), ...current.keys()])].filter((path) => !path.startsWith('.git/') && initial.get(path) !== current.get(path)).sort();
+}
+
+const RECOVERY_SINK_NAMES = new Set(['recovery.md', 'recovery-manifest.json']);
+
+/** Manifest checks ignore Host sinks that `validateRecovery` unlinks before fingerprinting. */
+export function candidateChangedPaths(before: EnvironmentFingerprint, after: EnvironmentFingerprint): string[] {
+  return changedPaths(before, after).filter((path) => !RECOVERY_SINK_NAMES.has(path));
 }
 
 export function isMissing(error: unknown): boolean {

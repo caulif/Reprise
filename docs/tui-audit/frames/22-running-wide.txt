@@ -1,4 +1,4 @@
-Reprise   Replay in progress · Codex                                                         00:00   round 1   ● running
+Reprise   Candidate running · Codex                                                          00:00   round 1   ● running
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  ● To Codex   ● Codex screen                                                                                            
  Task  Fix the bug.                                                                                                     

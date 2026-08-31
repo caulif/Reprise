@@ -23,7 +23,13 @@ import type {
   TurnSettlement,
   UserMessage,
 } from '../../core/runtime.js';
-import { discoverExecutable, forceKill, positiveTimeout, redactDiagnostic, settlesWithin } from '../shared/process.js';
+import { discoverExecutable, forceKill, positiveTimeout, settlesWithin, summarizeDiagnostic } from '../shared/process.js';
+import {
+  classifyCodexTurnFailure,
+  diagnosticMessage,
+  parseReconnectAttempt,
+  redactNotificationParams,
+} from './turn-settlement.js';
 
 export type CodexReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
@@ -276,6 +282,8 @@ class CodexTargetRunner implements TargetRunner {
   #earlySettlements = new Map<string, Record<string, unknown>>();
   #status: TargetStatus = 'starting';
   #processExitRecorded = false;
+  #reconnectCount = 0;
+  #endpointKind: 'custom_base_url' | 'default';
 
   constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; effort: CodexReasoningEffort; sandbox: CodexSandboxMode; env?: Readonly<Record<string, string | undefined>>; args?: readonly string[] }) {
     this.#runtime = input.runtime;
@@ -283,6 +291,7 @@ class CodexTargetRunner implements TargetRunner {
     this.#sink = input.sink;
     this.#effort = input.effort;
     this.#sandbox = input.sandbox;
+    this.#endpointKind = endpointKind(input.env);
     this.#client = new CodexAppServerClient({
       executable: input.runtime.executable,
       cwd: input.environment.root,
@@ -305,7 +314,7 @@ class CodexTargetRunner implements TargetRunner {
     if (this.#thread) throw new Error('Codex target has already started.');
     await this.#client.start();
     const result = await this.#client.request('thread/start', {
-      model: this.#runtime.requestedModel,
+      model: this.#effectiveModel(),
       cwd: this.#environment.root,
       approvalPolicy: 'never',
       sandbox: this.#sandbox,
@@ -313,7 +322,17 @@ class CodexTargetRunner implements TargetRunner {
       threadSource: 'reprise',
     });
     this.#thread = readStartedThread(result);
-    await this.#sink.append(event('codex.thread_started', { threadId: this.#thread.id, model: this.#thread.model, requestedModel: this.#runtime.requestedModel, effort: this.#effort, sandbox: this.#sandbox }));
+    await this.#sink.append(event('codex.thread_started', {
+      threadId: this.#thread.id,
+      model: this.#thread.model,
+      requestedModel: this.#runtime.requestedModel,
+      resolvedModel: this.#runtime.resolvedModel,
+      productId: this.#runtime.productId,
+      ...(this.#runtime.version ? { runtimeVersion: this.#runtime.version } : {}),
+      endpointKind: this.#endpointKind,
+      effort: this.#effort,
+      sandbox: this.#sandbox,
+    }));
     if (this.#status === 'stopped') throw new CodexRuntimeUnavailableError('Codex app-server exited before the target started.');
     this.#status = 'running';
     return this.#send(initial, identity);
@@ -395,7 +414,7 @@ class CodexTargetRunner implements TargetRunner {
       threadId: thread.id,
       clientUserMessageId: identity.clientMessageId,
       input: [{ type: 'text', text: message.text, text_elements: [] }],
-      model: this.#runtime.requestedModel,
+      model: thread.model,
       effort: this.#effort,
     });
     const turn = readStartedTurn(result);
@@ -405,8 +424,13 @@ class CodexTargetRunner implements TargetRunner {
       this.#earlySettlements.delete(turn.id);
       await this.#settleTurn(earlySettlement);
     }
-    await this.#sink.append(event('codex.turn_admitted', { threadId: thread.id, turnId: turn.id, messageId: message.id, clientMessageId: identity.clientMessageId, model: this.#runtime.requestedModel, effort: this.#effort }));
+    await this.#sink.append(event('codex.turn_admitted', { threadId: thread.id, turnId: turn.id, messageId: message.id, clientMessageId: identity.clientMessageId, model: thread.model, effort: this.#effort }));
     return { delivery: 'accepted', evidence: 'rpc_response', turnId: turn.id, messageId: message.id, acceptedAt: new Date().toISOString() };
+  }
+
+  #effectiveModel(): string {
+    const resolvedModel = this.#runtime.resolvedModel.trim();
+    return resolvedModel && resolvedModel !== 'unknown' ? resolvedModel : this.#runtime.requestedModel;
   }
 
   async #onNotification(method: string, params: unknown): Promise<void> {
@@ -415,7 +439,8 @@ class CodexTargetRunner implements TargetRunner {
       await this.#sink.append(event('codex.model_rerouted', { fromModel: text(payload.fromModel), toModel: text(payload.toModel), reason: payload.reason ?? 'unknown' }));
       return;
     }
-    await this.#sink.append(event(`codex.${method.replaceAll('/', '_')}`, params));
+    this.#noteReconnect(method, params);
+    await this.#sink.append(event(`codex.${method.replaceAll('/', '_')}`, redactNotificationParams(method, params)));
     if (method !== 'turn/completed') return;
     const payload = record(params);
     const turn = record(payload.turn);
@@ -439,7 +464,15 @@ class CodexTargetRunner implements TargetRunner {
       this.#failSettlement(new CodexRuntimeUnavailableError(`Codex app-server reported an unrecognized turn settlement (${reported ?? 'missing status'}).`));
       return;
     }
-    const settlement: TurnSettlement = { turnId, status, confidence: 'native', observedAt: new Date().toISOString(), rawRefs: [{ method: 'turn/completed', status: text(turn.status) }] };
+    const failure = classifyCodexTurnFailure(turn, { ...(this.#reconnectCount ? { reconnectCount: this.#reconnectCount } : {}) });
+    const settlement: TurnSettlement = {
+      turnId,
+      status,
+      confidence: 'native',
+      observedAt: new Date().toISOString(),
+      rawRefs: [{ method: 'turn/completed', status: text(turn.status) }],
+      ...(failure ? { failure } : {}),
+    };
     if (this.#activeTurn === turnId) this.#activeTurn = undefined;
     if (this.#waiter) {
       const waiter = this.#waiter;
@@ -447,6 +480,16 @@ class CodexTargetRunner implements TargetRunner {
       waiter.resolve(settlement);
     } else {
       this.#settlements.push(settlement);
+    }
+  }
+
+  #noteReconnect(method: string, params: unknown): void {
+    const message = diagnosticMessage(params) ?? '';
+    const attempt = parseReconnectAttempt(message);
+    if (attempt) {
+      this.#reconnectCount = Math.max(this.#reconnectCount, attempt.current);
+    } else if (method === 'error' && /HTTP\s*503|\b503\b/i.test(message) && this.#reconnectCount === 0) {
+      this.#reconnectCount = 1;
     }
   }
 }
@@ -650,4 +693,8 @@ function isJsonRpcId(value: unknown): value is JsonRpcId { return typeof value =
 function event(type: string, payload: unknown): TargetEvent { return { type, occurredAt: new Date().toISOString(), payload }; }
 function rpcError(value: unknown): string { const detail = record(value); return typeof detail.message === 'string' ? detail.message : 'returned an invalid error response'; }
 function errorMessage(value: unknown): string { return value instanceof Error ? value.message : String(value); }
-function compactDiagnostic(value: string): string { return redactDiagnostic(value.replace(/[\r\n\t]/g, ' ')).slice(0, 1_000); }
+function compactDiagnostic(value: string): string { return summarizeDiagnostic(value, 1_000); }
+function endpointKind(env?: Readonly<Record<string, string | undefined>>): 'custom_base_url' | 'default' {
+  const configured = env && Object.prototype.hasOwnProperty.call(env, 'OPENAI_BASE_URL') ? env.OPENAI_BASE_URL : process.env.OPENAI_BASE_URL;
+  return configured?.trim() ? 'custom_base_url' : 'default';
+}

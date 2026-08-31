@@ -9,12 +9,20 @@ export type DeliveryReceipt = {
   messageId?: string;
   acceptedAt?: string;
 };
+export type RuntimeFailureKind = 'upstream' | 'authentication' | 'protocol' | 'process' | 'unknown';
+export type TurnFailure = {
+  kind: RuntimeFailureKind;
+  summary: string;
+  retryable: boolean;
+  reconnectCount?: number;
+};
 export type TurnSettlement = {
   turnId: string;
   status: 'completed' | 'failed' | 'waiting_input' | 'aborted';
   confidence: 'native' | 'composite' | 'heuristic';
   observedAt: string;
   rawRefs: unknown[];
+  failure?: TurnFailure;
 };
 
 export type AvailableRuntime = {

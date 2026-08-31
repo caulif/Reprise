@@ -36,6 +36,13 @@ test("Recovery preserves a known verifier rejection as provider validation", () 
     ),
     "provider_validation_failed",
   );
+  assert.equal(
+    classifyRecoveryFailureStage(
+      "provider_validation_failed",
+      new Error("HTTP 400 context_length_exceeded"),
+    ),
+    "agent_model_failed",
+  );
 });
 
 test("Recovery records Provider validation failure separately from a completed Agent envelope", async (t) => {
@@ -286,39 +293,16 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
   const task = { ...base.taskCase, taskContext: { historicalCommit: commit } };
   const recovery: RecoveryAgentPort = {
     recover: async (_context, tools) => {
-      const writer = tools.find((tool) => tool.name === "write_file");
-      const report = tools.find(
-        (tool) => tool.name === "write_recovery_report",
-      );
-      const manifest = tools.find(
-        (tool) => tool.name === "write_recovery_manifest",
-      );
+      const writer = tools.find((tool) => tool.name === "write");
       assert.ok(writer);
-      assert.ok(report);
-      assert.ok(manifest);
       await writer.execute(
         { path: "README.md", content: "# original\n" },
         new AbortController().signal,
       );
-      await report.execute(
+      await writer.execute(
         {
-          content:
-            "# Recovery\n\nRestored README.md from the verified task-start commit.",
-        },
-        new AbortController().signal,
-      );
-      await manifest.execute(
-        {
-          actions: [
-            {
-              operation: "restore",
-              path: "README.md",
-              beforeHash: sha256("# completed\n"),
-              afterHash: sha256("# original\n"),
-              evidenceRefs: ["artifact:historical-commit"],
-            },
-          ],
-          unresolved: [],
+          path: "recovery.md",
+          content: "# Recovery\n\nRestored README.md from the verified task-start commit.",
         },
         new AbortController().signal,
       );
@@ -330,7 +314,6 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
           reportPath: "recovery.md",
           unresolved: [],
           evidenceRefs: ["artifact:historical-commit"],
-          manifestPath: "recovery-manifest.json",
         },
       };
     },
@@ -348,7 +331,7 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
   });
   assert.equal(attempt.baseline.match, "recovered");
   assert.match(
-    await readFile(join(attempt.staging?.root ?? "", "README.md"), "utf8"),
+    await readFile(join(attempt.baseline.root ?? attempt.staging?.root ?? "", "README.md"), "utf8"),
     /^# original\r?\n$/,
   );
   assert.match(
@@ -410,79 +393,18 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
       assert.match(context.executionCandidate.candidateId, /^candidate-(preimage-reconstruction|patch-replay)$/);
       assert.match(context.executionCandidate.hypothesisId, /^(preimage-reconstruction|patch-replay)$/);
       assert.equal(context.runtimeCapabilities?.externalSideEffects, "unobserved");
-       const writer = tools.find((tool) => tool.name === "write_file");
-      const report = tools.find(
-        (tool) => tool.name === "write_recovery_report",
-      );
-      const manifest = tools.find(
-        (tool) => tool.name === "write_recovery_manifest",
-      );
+      const writer = tools.find((tool) => tool.name === "write");
       assert.ok(writer);
-      assert.ok(report);
-      assert.ok(manifest);
-      const submitPlan = tools.find(
-        (tool) => tool.name === "submit_recovery_plan",
-      );
-      assert.ok(submitPlan);
-      const factRef = "fact:preimages";
-      assert.ok(factRef);
-      await submitPlan.execute(
-        {
-          planId: "agent-revised-plan",
-          factsUsed: [factRef],
-          hypotheses: [
-            {
-              hypothesisId: "preimage-reconstruction",
-              rationale: "Restore the selected candidate.",
-              paths: ["README.md"],
-              supportingFactRefs: [factRef],
-              counterFactRefs: [],
-              expectedChecks: ["read README"],
-              confidence: "low",
-            },
-          ],
-          candidates: [
-            {
-              hypothesisId: "preimage-reconstruction",
-              operations: [
-                {
-                  operation: "restore",
-                  path: "README.md",
-                  rationale:
-                    "Compare the candidate against the historical clue.",
-                },
-              ],
-            },
-          ],
-          verificationPlan: ["read README"],
-        },
-        new AbortController().signal,
-      );
       await writer.execute(
         { path: "README.md", content: "# recovered\n" },
         new AbortController().signal,
       );
-      await report.execute(
-        { content: "# Recovery\n\nCandidate restored README." },
+      await writer.execute(
+        { path: "recovery.md", content: "# Recovery\n\nCandidate restored README." },
         new AbortController().signal,
       );
       const evidenceRef = context.resolved.evidenceRefs[0];
       assert.ok(evidenceRef);
-      await manifest.execute(
-        {
-          actions: [
-            {
-              operation: "restore",
-              path: "README.md",
-              beforeHash: sha256("# completed\n"),
-              afterHash: sha256("# recovered\n"),
-              evidenceRefs: [evidenceRef],
-            },
-          ],
-          unresolved: [],
-        },
-        new AbortController().signal,
-      );
       return {
         status: "completed",
         sessionId: "recovery-candidate",
@@ -491,7 +413,6 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
           reportPath: "recovery.md",
           unresolved: ["Current task transcript does not prove the preimage."],
           evidenceRefs: [evidenceRef],
-          manifestPath: "recovery-manifest.json",
         },
       };
     },
@@ -513,7 +434,7 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
       }),
   });
   assert.equal(
-    await readFile(join(attempt.staging?.root ?? "", "README.md"), "utf8"),
+    await readFile(join(attempt.baseline.root ?? attempt.staging?.root ?? "", "README.md"), "utf8"),
     "# recovered\n",
   );
   assert.equal(
@@ -540,22 +461,20 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
         event.payload.path,
       ]),
     [
-      ["write_file", "before", "README.md"],
-      ["write_file", "after", "README.md"],
-      ["write_recovery_report", "before", "recovery.md"],
-      ["write_recovery_report", "after", "recovery.md"],
-      ["write_recovery_manifest", "before", "recovery-manifest.json"],
-      ["write_recovery_manifest", "after", "recovery-manifest.json"],
+      ["write", "before", "README.md"],
+      ["write", "after", "README.md"],
+      ["write", "before", "recovery.md"],
+      ["write", "after", "recovery.md"],
     ],
   );
   const controlledPostimages = events
     .filter((event) => event.type === "recovery.controlled_write")
     .map((event) => event.payload)
     .filter((entry) => entry.phase === "after");
-  assert.equal(controlledPostimages.length, 3);
+  assert.equal(controlledPostimages.length, 2);
   assert.deepEqual(
     controlledPostimages.map((entry) => entry.origin),
-    ["agent_direct_write", "agent_direct_write", "agent_direct_write"],
+    ["agent_direct_write", "agent_direct_write"],
   );
   for (const entry of controlledPostimages) {
     const after = entry.after as {
@@ -570,39 +489,11 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
     assert.equal(blob.byteLength, after.size);
     assert.equal(sha256(blob), after.contentHash);
   }
-  assert.deepEqual(
-    events.find((event) => event.type === "recovery.plan_submitted")?.payload,
-    {
-      plan: {
-        planId: "agent-revised-plan",
-        factsUsed: ["fact:preimages"],
-        hypotheses: [
-          {
-            hypothesisId: "preimage-reconstruction",
-            rationale: "Restore the selected candidate.",
-            paths: ["README.md"],
-            supportingFactRefs: ["fact:preimages"],
-            counterFactRefs: [],
-            expectedChecks: ["read README"],
-            confidence: "low",
-          },
-        ],
-        candidates: [
-          {
-            hypothesisId: "preimage-reconstruction",
-            operations: [
-              {
-                operation: "restore",
-                path: "README.md",
-                rationale: "Compare the candidate against the historical clue.",
-              },
-            ],
-          },
-        ],
-        verificationPlan: ["read README"],
-      },
-    },
+  assert.equal(
+    events.some((event) => event.type === "recovery.investigation_packet"),
+    true,
   );
+  assert.equal(events.find((event) => event.type === "recovery.plan_submitted"), undefined);
   assert.deepEqual(
     events
       .filter((event) => event.type === "recovery.candidate_discarded")
@@ -654,7 +545,8 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
   assert.ok(diff.factRefs.every((ref) => ref.startsWith("fact:")));
   assert.ok(diff.changedPaths.some((entry) => entry.path === "README.md"));
   const lifecycle = JSON.parse(await readFile(join(attempt.experimentRoot, "artifacts", "recovery-attempts"), "utf8")) as { state: string; attempts: { phase: string; result: string }[] };
-  assert.equal(lifecycle.state, "candidate_pending_review");
+  assert.equal(lifecycle.state, "accepted");
+  assert.equal(attempt.acceptedAutomatically, true);
   assert.ok(lifecycle.attempts.some((item) => item.phase === "forensics" && item.result === "succeeded"));
   assert.equal(diff.taskPathOutcomes.length, 1);
   assert.deepEqual(
@@ -691,10 +583,6 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
     false,
   );
   assert.equal(typeof attempt.recordReviewFeedback, "function");
-  const feedbackArtifact = await attempt.recordReviewFeedback?.({ candidateId: "candidate-preimage-reconstruction", decision: "accept" });
-  assert.match(feedbackArtifact ?? "", /^recovery-review-feedback-candidate-preimage-reconstruction-/);
-  const feedbackEvent = events.find((event) => event.type === "recovery.review_feedback_recorded");
-  assert.equal(typeof feedbackEvent?.payload.checkpointId, "string");
   assert.equal(typeof attempt.accept, "function");
   const accept = () => {
     if (!attempt.accept) throw new Error("Recovery attempt did not expose accept.");

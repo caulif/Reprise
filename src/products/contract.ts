@@ -51,6 +51,8 @@ export type SessionSummary = {
   readonly cwd?: string;
   readonly model?: string;
   readonly summary?: string;
+  /** Later user texts from the same bounded head; list titles may prefer a short task over an instruction block. */
+  readonly laterUserSummaries?: readonly string[];
   /** The bounded head was sufficient for a safe list item, but not a complete summary. */
   readonly partial?: boolean;
   readonly signals: SessionSignals;

@@ -16,7 +16,7 @@ export function renderResult(theme: Theme, width: number, result: CodexExperimen
   const runId = result.record.attempt?.runId;
   const trace = tracePath(runId, theme, width, vacant);
   const traceAbs = runId && experimentRoot ? join(experimentRoot, 'runs', runId) : undefined;
-  const summary = explainOutcome(result, Math.max(20, width - 4), productLabel ?? t(locale, 'unknownAgent'));
+  const summary = explainOutcome(result, Math.max(20, width - 4), productLabel ?? t(locale, 'unknownAgent'), locale);
   const metrics = metricsLine(theme, result);
   const col = theme.density === 'wide' ? Math.floor((width - 4) / 2) : width - 2;
   const facts = theme.density === 'wide'
@@ -91,11 +91,13 @@ function metricsLine(theme: Theme, result: CodexExperimentResult): string | unde
   return parts.join(` ${theme.glyphs.sep} `);
 }
 
-function explainOutcome(result: CodexExperimentResult, width: number, product: string): readonly string[] | undefined {
+function explainOutcome(result: CodexExperimentResult, width: number, product: string, locale: Locale): readonly string[] | undefined {
   const failure = result.record.outcome.termination.failure;
   if (failure?.message) {
     const origin = failure.origin === 'controller' ? 'Controller' : failure.origin === 'runtime' ? product : failure.origin;
-    const lines = /invalid JSON|schema validation failed/i.test(failure.message)
+    const lines = failure.code === 'failed.runtime.upstream_unavailable'
+      ? [t(locale, 'upstreamUnavailable'), `${origin}: ${failure.message}`]
+      : /invalid JSON|schema validation failed/i.test(failure.message)
       ? [`${origin}: ${failure.message}`, `The Candidate turn still ran. This is a Harness-agent output error, not a ${product} runtime crash.`]
       : [`${origin}: ${failure.message}`];
     return lines.flatMap((line) => wrapBodyLine(line, width));

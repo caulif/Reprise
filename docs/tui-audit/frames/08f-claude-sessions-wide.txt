@@ -19,7 +19,7 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
 
  ❯ [/] Search
- Choose a historical session. Enter reads the full transcript, then freezes if replayable. Loaded 2 projects and 1
+ Choose a historical session. Enter opens the review; Enter again freezes and starts recovery. Loaded 2 projects and 1
 sessions. 1 shown · 0 skipped. · 1 scanned The catalog is complete; m does not paginate.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Start run  [/] Search  [m] All sessions loaded  [r] Refresh  [Backspace] Projects  [Esc] Back
+ [↑↓] Select  [Enter] Inspect  [/] Search  [m] All sessions loaded  [r] Refresh  [Backspace] Projects  [Esc] Back

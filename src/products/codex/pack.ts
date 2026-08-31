@@ -53,7 +53,7 @@ function codexRecoveryPlaybook(): RecoveryPlaybookDescriptor {
   return { version: CODEX_RECOVERY_PLAYBOOK_VERSION, sha256: sha256(text), text };
 }
 
-const DEFAULT_CANDIDATE: CandidateSpec = { candidateId: 'codex-luna-high', productId: 'codex', requestedModel: 'gpt-5.6-luna' };
+const DEFAULT_CANDIDATE: CandidateSpec = { candidateId: 'codex-terra-high', productId: 'codex', requestedModel: 'gpt-5.6-terra' };
 
 export const codexProductPack: ProductPack = {
   runtime: new CodexRuntimePort({ effort: 'high' }),

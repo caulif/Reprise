@@ -3,7 +3,7 @@ import { compact, slashCommands } from '../format.js';
 import { commandCatalog, t, type Locale } from '../i18n.js';
 import { caretAt } from '../text-edit.js';
 import type { HistoryExperiment } from '../local-history.js';
-import { sessionTitle } from './intake.js';
+import { taskDisplaySummary } from './intake.js';
 import type { Theme } from '../theme.js';
 import { pad, panel } from '../widgets.js';
 import { shellEnvAssignment } from '../../infrastructure/harness-model-config.js';
@@ -21,12 +21,13 @@ export type HomeModel = {
   readonly composerCursor?: number;
   readonly showSuggestions: boolean;
   readonly locale?: Locale;
+  readonly recoveryFailed?: boolean;
 };
 
 export function renderHome(theme: Theme, width: number, model: HomeModel): string[] {
   const locale = model.locale ?? 'en';
   const taskLabel = model.taskCase
-    ? compact(`${sessionTitle(model.taskCase.initialInput.text)}${frozenStart(model.taskCase)}`, 56, theme.glyphs.ellipsis)
+    ? compact(`${taskDisplaySummary(model.taskCase.initialInput.text, model.taskCase.transcript.filter((message) => message.role === 'user').map((message) => message.text).slice(1), locale)}${frozenStart(model.taskCase)}`, 56, theme.glyphs.ellipsis)
     : t(locale, 'noneSelected');
   const continueRows = continueLines(theme, model, locale);
   const browseRows = [
@@ -104,6 +105,7 @@ function runReadiness(theme: Theme, model: HomeModel, locale: Locale): string {
   if (!model.hasApiConfig) return theme.style.warn(t(locale, 'needsConfig'));
   if (model.envName && model.envSet === false) return theme.style.warn(t(locale, 'needsEnv'));
   if (model.hasUsableAuth === false) return theme.style.warn(t(locale, 'needsCred'));
+  if (model.recoveryFailed) return theme.style.warn(t(locale, 'cannotStartRun'));
   return theme.style.ok(t(locale, 'sourceReady'));
 }
 

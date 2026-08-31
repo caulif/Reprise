@@ -31,7 +31,6 @@ import {
   persistRecoveryControlledWriteBlob,
   recoveryReviewSummary,
   recoveryCandidateDiff,
-  validateSubmittedRecoveryPlan,
 } from "./experiment-recovery-support.js";
 import type { RecoveryAttempt, RecoveryAttemptInput } from "./experiment-recovery-types.js";
 import type { RecoveryResult } from "../agents/recovery-agent.js";
@@ -175,15 +174,6 @@ function review_reexecutionTools(
           runId: session.input.runId,
           operationId: `recovery-${candidateId}-workspace-read-${operation.operation}-${operation.attempts}-${sha256(JSON.stringify(operation)).slice(0, 12)}`,
           payload: { candidateId, ...operation },
-        });
-      },
-      onPlan: async (plan) => {
-        validateSubmittedRecoveryPlan(plan, session.investigation);
-        await executionStore.append({
-          type: "recovery.plan_submitted",
-          runId: session.input.runId,
-          operationId: `recovery-${candidateId}-plan-submitted-${sha256(JSON.stringify(plan)).slice(0, 12)}`,
-          payload: { candidateId, plan },
         });
       },
     }),

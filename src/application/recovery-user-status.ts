@@ -13,16 +13,32 @@ export type UserRecoveryStatus = RecoveryAttemptDiagnosis["finalStatus"];
 export function userRecoveryStatus(input: {
   baseline: EnvironmentBaseline;
   transcriptOk: boolean;
+  hasAccept?: boolean;
 }): UserRecoveryStatus {
   if (!input.transcriptOk) return "failed";
   if (input.baseline.mode === "unsupported") return "failed";
   const excluded = input.baseline.budget?.excludedEntries?.length ?? 0;
   const recovery = input.baseline.recovery?.status;
   const match = input.baseline.match;
+  const hasAccept = input.hasAccept === true;
+  if ((recovery === "failed" || match === "current_state_fallback") && !hasAccept) return "failed";
   if (excluded > 0 || recovery === "partial" || match === "recovered_partial") return "partial";
-  if (recovery === "failed" || match === "current_state_fallback") return "partial";
   if (recovery === "recovered" || match === "recovered") return "recovered";
-  return "partial";
+  return hasAccept ? "partial" : "failed";
+}
+
+export function diagnosisReasonCode(input: {
+  baseline: EnvironmentBaseline;
+  transcriptOk: boolean;
+  failureStage?: string;
+}): string {
+  if (!input.transcriptOk) return "transcript.invalid";
+  const stage = input.failureStage ?? input.baseline.recovery?.failureStage;
+  if (stage) return stage;
+  const excluded = input.baseline.budget?.excludedEntries?.[0]?.reasonCode;
+  if (excluded) return excluded;
+  if (input.baseline.recovery?.status === "recovered" || input.baseline.match === "recovered") return "recovered";
+  return "recovery_agent.failed";
 }
 
 export function recoveryAttemptDiagnosis(input: {
@@ -32,11 +48,13 @@ export function recoveryAttemptDiagnosis(input: {
   recoveryAgentStarted: boolean;
   retryable: boolean;
   reasonCode: string;
+  hasAccept?: boolean;
 }): RecoveryAttemptDiagnosis {
   const excludedEntries = [...(input.baseline.budget?.excludedEntries ?? [])];
   const finalStatus = userRecoveryStatus({
     baseline: input.baseline,
     transcriptOk: input.transcriptOk,
+    ...(input.hasAccept !== undefined ? { hasAccept: input.hasAccept } : {}),
   });
   const diagnosis: RecoveryAttemptDiagnosis = {
     schemaVersion: 1,

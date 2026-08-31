@@ -29,7 +29,8 @@ import {
 import { eventOriginalText, type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import type { PreparePhase } from './widgets.js';
-import { beginPreflight, beginRun, freeze, requestCancellation, startRunSetup } from './controller-run.js';
+import type { CandidateRunPhase } from './pages/run.js';
+import { beginPreflight, beginRun, candidateGateFrom, candidateStartBlocked, freeze, requestCancellation, startRunSetup } from './controller-run.js';
 
 export type Page = WorkbenchView['page'];
 export type Consume = { consume: true };
@@ -82,6 +83,12 @@ export type ControllerHandle = {
   runStartedAt: number;
   runClock: ReturnType<typeof setInterval> | undefined;
   cancelling: boolean;
+  runPhase: CandidateRunPhase | undefined;
+  lastRuntimeEventAt: string | undefined;
+  lastRuntimeEventKind: string | undefined;
+  modelOutputSeen: boolean;
+  reconnectCount: number;
+  reconnectTotal: number;
   modelConfig: HarnessModelConfig;
   configDraft: HarnessConfigDraft;
   configEditing: boolean;
@@ -344,7 +351,12 @@ function applyInspection(c: ControllerHandle, data: string): Consume | undefined
     c.render();
     return { consume: true };
   }
-  if (c.inspection) void freeze(c, c.inspection.sourcePath, { thenRun: true });
+  if (c.inspection?.transcript.some((message) => message.role === 'user')) {
+    void freeze(c, c.inspection.sourcePath, { thenRun: true });
+    return { consume: true };
+  }
+  c.showError(new Error(t(c.locale, 'notReplayableNoUserInput')), 'sessions');
+  c.render();
   return { consume: true };
 }
 
@@ -363,6 +375,11 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'home') return c.backToHome();
   if (result.action === 'preflight') {
     c.page = 'preflight';
+    c.render();
+    return { consume: true };
+  }
+  if (candidateStartBlocked(candidateGateFrom(c))) {
+    c.message = t(c.locale, 'recoveryFailed');
     c.render();
     return { consume: true };
   }

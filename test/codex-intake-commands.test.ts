@@ -269,6 +269,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
     recover: async () => ({
       baseline: { match: "recovered", warnings: [] },
       provider: { discardRecovery: async () => {} },
+      accept: async () => ({ match: "recovered", warnings: [] }),
     }),
     start: async (input: {
       sourceRoot: string;
@@ -357,6 +358,8 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   await app.start();
   await enterIntake(app);
   await waitFor(() => /Make a focused change\./.test(rendered));
+  app.handleInput("\r");
+  await waitFor(() => /Session start:/.test(rendered));
   app.handleInput("\r");
   await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Restore the task start/);
@@ -524,6 +527,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
       baseline: { match: "recovered", warnings: [] },
       staging: { recoveryId: `recovery-${++recoveryCalls}` },
       provider,
+      accept: async () => ({ match: "recovered", warnings: [] }),
     }),
     start: async () => ({
       cancel: async () => {},
@@ -555,6 +559,8 @@ test("Codex intake TUI automatically prepares every session with Recovery before
   await app.start();
   await enterIntake(app);
   await waitFor(() => /Restore the task start/.test(rendered));
+  app.handleInput("\r");
+  await waitFor(() => /Session start:/.test(rendered));
   app.handleInput("\r");
   await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
   assert.equal(recoveryCalls, 1);

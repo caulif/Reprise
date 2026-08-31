@@ -2,7 +2,7 @@
 
 Version: claude-code-recovery/v1
 
-This playbook is evidence for Recovery Agent. It does not grant tools or change permissions. Do not parse product session JSONL; the Host already froze `TaskCase.initialInput` and you must not invent or replace it.
+This playbook is evidence for Recovery Agent. It does not grant tools or change permissions. Start from the Host investigation packet and compare staging with `ls`/`grep`/`find`. Use `read_observation` only when a decision-critical sentence is missing from the packet. Do not parse product session JSONL; the Host already froze `TaskCase.initialInput` and you must not invent or replace it. If a small in-root instruction file is still needed for the task, write it into staging from Host-owned evidence. Do not follow out-of-root symlinks or copy large trees such as `node_modules`. Do not default to deleting leftover caches such as `.playwright-cli`.
 
 ## Where to look
 
@@ -48,6 +48,6 @@ This playbook is evidence for Recovery Agent. It does not grant tools or change 
 
 Treat that sequence as "the candidate never started the task", not as a completed replay.
 
-## Recovery manifest
+## Report
 
-For `recovered` and `partial`, write `recovery-manifest.json` as well as `recovery.md`. It is the machine-verifiable record: list each candidate-visible changed path exactly once, use only Host-owned evidence refs, and record `beforeHash` / `afterHash` for file content when available. Do not list `.git` metadata. `recovered` requires path-level strong evidence (a matching verified preimage or Git blob); otherwise return `partial` with the uncertainty in `unresolved`.
+For `recovered` and `partial`, write `recovery.md` with `write`. Do not invent a path inventory; the Host computes changed paths from fingerprint. `recovered` requires path-level strong evidence (a matching verified preimage or Git blob); otherwise return `partial` with the uncertainty in `unresolved`.

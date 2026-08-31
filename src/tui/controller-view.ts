@@ -150,6 +150,12 @@ export function view(c: CodexIntakeTui): WorkbenchView {
             : {}),
         }
       : {}),
+    ...(c.runPhase ? { runPhase: c.runPhase } : {}),
+    ...(c.lastRuntimeEventAt ? { lastRuntimeEventAt: c.lastRuntimeEventAt } : {}),
+    ...(c.lastRuntimeEventKind ? { lastRuntimeEventKind: c.lastRuntimeEventKind } : {}),
+    ...(c.modelOutputSeen ? { modelOutputSeen: true } : {}),
+    ...(c.reconnectCount ? { reconnectCount: c.reconnectCount } : {}),
+    ...(c.reconnectTotal ? { reconnectTotal: c.reconnectTotal } : {}),
     timeline: c.timeline,
     visibleTimeline: c.visibleTimeline(),
     timelineSelected: c.timelineSelected,
