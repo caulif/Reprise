@@ -8,6 +8,7 @@ import { SAFE_ID, sha256, writeAtomic } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
   EventEnvelopeSchema,
+  ComparisonRequestedPayloadSchema,
   ControllerObservationReadPayloadSchema,
   ControllerRequestedPayloadSchema,
   RunAttemptSchema,
@@ -343,6 +344,7 @@ export class ExperimentStore {
     if (!Value.Check(EventEnvelopeSchema, event)) throw new Error('Generated event does not satisfy the event schema.');
     if (event.type === 'controller.requested' && !Value.Check(ControllerRequestedPayloadSchema, event.payload)) throw new Error('controller.requested payload does not satisfy its schema.');
     if (event.type === 'controller.observation_read' && !Value.Check(ControllerObservationReadPayloadSchema, event.payload)) throw new Error('controller.observation_read payload does not satisfy its schema.');
+    if (event.type === 'comparison.requested' && !Value.Check(ComparisonRequestedPayloadSchema, event.payload)) throw new Error('comparison.requested payload does not satisfy its schema.');
     await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);
     for (const listener of this.#listeners) {

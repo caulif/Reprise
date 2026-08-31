@@ -36,6 +36,7 @@ import {
 } from "../environment/local-workspace-provider.js";
 import type { ContaminationSignals } from "../environment/contamination.js";
 import { observationTools } from "../infrastructure/agent-tools.js";
+import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
 import {
   ExperimentStore,
@@ -48,13 +49,7 @@ import {
   inferSourceRootKind,
   type SourceRootKind,
 } from "./replay-conditions.js";
-import {
-  assertIds,
-  assertPaths,
-  invocationFact,
-  isCompleted,
-  persistTaskCase,
-} from "./experiment-helpers.js";
+import { assertIds, assertPaths, experimentAgentAuditSink, invocationFact, isCompleted, persistTaskCase } from "./experiment-helpers.js";
 import { captureWorkspaceScope, inspectRun } from "./experiment-inspection.js";
 import {
   preflightFromBaseline,
@@ -483,6 +478,7 @@ async function finishCodexCandidateRun(args: {
       sourceRootKind,
       requestedModel: input.candidate.requestedModel,
       resolvedModel: resolved.resolvedModel,
+      experimentRoot,
     });
     return await finishExperiment({
       input,
@@ -495,6 +491,7 @@ async function finishCodexCandidateRun(args: {
       targetEvents,
       startedAt,
       sourceRootKind,
+      workspaceRoot: environment.root,
     });
   }
   const cancelled = {
@@ -515,6 +512,7 @@ async function finishCodexCandidateRun(args: {
     targetEvents,
     startedAt,
     sourceRootKind,
+    workspaceRoot: environment.root,
   });
 }
 
@@ -630,6 +628,7 @@ async function runControllerLoop(input: {
   sourceRootKind: SourceRootKind;
   requestedModel: string;
   resolvedModel: string;
+  experimentRoot: string;
 }): Promise<{
   decision: StructuredAgentResult<ControllerDecision>;
   followupSubmission: boolean;
@@ -814,23 +813,28 @@ async function requestControllerDecision(
       snapshot: controllerRequestSnapshot(context),
     },
   });
-  const tools = observationTools(input.store, {
-    runId: input.runId,
-    transcript: input.taskCase.transcript,
-    allowModelText: input.taskCase.privacy.allowModelText,
-  }).map((tool) => ({
-    ...tool,
-    onCompleted: async (result: { content: string; details?: unknown }) => {
-      await input.store.append(
-        observationReadRecord({
-          requestId,
-          runId: input.runId,
-          details: result.details,
-          allowedRefs: currentRunEventRefs(input.store.events(input.runId), input.runId),
-        }),
-      );
-    },
-  }));
-  return input.controller.decide(context, tools);
+  const tools = [
+    ...observationTools(input.store, {
+      runId: input.runId,
+      transcript: input.taskCase.transcript,
+      allowModelText: input.taskCase.privacy.allowModelText,
+    }).map((tool) => ({
+      ...tool,
+      onCompleted: async (result: { content: string; details?: unknown }) => {
+        await input.store.append(
+          observationReadRecord({
+            requestId,
+            runId: input.runId,
+            details: result.details,
+            allowedRefs: currentRunEventRefs(input.store.events(input.runId), input.runId),
+          }),
+        );
+      },
+    })),
+    ...recoveryTools(input.environment.root, 64, {
+      homeRoot: join(input.experimentRoot, ".reprise-controller-home"),
+    }),
+  ];
+  return input.controller.decide(context, tools, experimentAgentAuditSink(input.store, input.runId));
 }
 

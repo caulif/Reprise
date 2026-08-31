@@ -614,9 +614,9 @@ Host 提供的 RunOutcome、termination、fidelity、环境和计量事实是持
 | 维度 | Recovery | Controller | Comparison |
 |---|---|---|---|
 | 发生时间 | CandidateRun 前 | CandidateRun 中每个输入边界 | CandidateRun 后 |
-| 主要身份 | 环境恢复执行者 | 原用户协作代理 | 只读比较研究员 |
-| 是否可写 | 仅 staging | 否 | 否 |
-| 是否可执行 shell | 可，受限且用于恢复/核验 | 只读调查型 | 只读调查型 |
+| 主要身份 | 环境恢复执行者 | 原用户协作代理 | 比较研究员 |
+| 是否可写 | 仅 staging | 隔离副本有界写；不写源目录 | 仅沙箱 `report.html`；`candidate/` 只读挂载 |
+| 是否可执行 shell | 可，cwd 锁 staging | 可，cwd 锁隔离副本 | 可，cwd 锁报告沙箱；不得改 candidate/ |
 | 是否读完整原会话 | 是 | 是 | 默认否；先看精选投影，按需读取相关区间 |
 | 是否读 candidate 轨迹 | 否 | 仅当前 candidate | 默认看高层索引，按需读取相关公共事件 |
 | 是否决定运行结束 | 否 | 是，语义决定；硬限制由 Orchestrator 执行 | 否 |

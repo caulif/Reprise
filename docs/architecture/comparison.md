@@ -2,25 +2,27 @@
 
 状态：当前模块设计
 
-Comparison 是产品无关、只读的比较研究者。它从冻结的 baseline、Candidate RunRecord、事件与 catalog artifact 中调查差异，输出供用户自行判断的本地报告；它不运行 Runtime、不修改实验状态，也不排名候选。
+Comparison 是产品无关的比较研究者。它从冻结的 baseline、Candidate RunRecord、事件与 catalog artifact 中调查差异，输出供用户自行判断的本地报告；它不运行 Runtime、不修改实验状态，也不排名候选。
 
 ## 数据流
 
 ```mermaid
 flowchart LR
   A[TaskCase / RunRecord / events] --> B[Host reportFacts projection]
-  C[Catalog artifacts] --> D[Read-only tools]
+  C[Sandbox candidate mount and evidence files] --> D[Workspace tools]
   B --> E[Comparison Agent]
   D --> E
-  E --> F[write_comparison_report]
-  F --> G[report.html]
+  E --> F[write report.html]
+  F --> G[Host copies report.html]
   E --> H[Thin result envelope]
   G --> I[TUI open]
 ```
 
 ## 输出与所有权
 
-Comparison Agent 是成功报告的唯一作者。它调用 `write_comparison_report({ html })` 写入完整、自包含的 `report.html`；可自由使用 HTML、CSS、SVG 与有价值的本地 JavaScript。Host 原样持久化字节，不使用 sanitizer、标签白名单、HTML AST 重写、固定模板或内容门禁。
+Comparison Agent 是成功报告的唯一作者。它用 `write` 把完整、自包含的 HTML 写到报告沙箱根 `report.html`；可自由使用 HTML、CSS、SVG 与有价值的本地 JavaScript。Host 校验后把字节拷到实验根，不使用 sanitizer、标签白名单、HTML AST 重写、固定模板或内容门禁。
+
+`candidate/` 是隔离副本的只读挂载。工具名与另外两个内部 Agent 相同，见 [八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)。调用前写入 [comparison.requested](../decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)。
 
 薄信封只保存 `status`、固定的 `reportPath: "report.html"`、`evidenceRefs` 与可选 `limitationCodes`。Host 检查信封 schema、证据归属和报告文件可读性，但不检查页面的章节、视觉组件或指标是否出现。
 

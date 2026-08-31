@@ -1,15 +1,13 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ControllerDecision } from "../agents/controller-agent.js";
-import { comparePersistedFacts } from "./comparison.js";
+import { comparePersistedFacts, buildComparisonContext } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
-import type { TaskCase } from "../core/schema.js";
-import {
-  comparisonReportTool,
-  evidenceTools,
-  observationTools,
-} from "../infrastructure/agent-tools.js";
+import { sha256 } from "../core/identity.js";
+import type { ArtifactRef, TaskCase } from "../core/schema.js";
+import { observationTools } from "../infrastructure/agent-tools.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
+import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import {
   writeImmutableJson,
   type ExperimentStore,
@@ -19,9 +17,11 @@ import type {
   CodexExperimentPreflight,
   CodexExperimentResult,
 } from "./experiment.js";
-import { invocationFact, isMissing } from "./experiment-helpers.js";
+import { experimentAgentAuditSink, invocationFact, isMissing } from "./experiment-helpers.js";
 import { inspectRun } from "./experiment-inspection.js";
 import type { SourceRootKind } from "./replay-conditions.js";
+
+const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
 export async function finishExperiment(input: {
   input: CodexExperimentInput;
@@ -37,6 +37,7 @@ export async function finishExperiment(input: {
   targetEvents: readonly string[];
   startedAt: number;
   sourceRootKind: SourceRootKind;
+  workspaceRoot: string;
 }): Promise<CodexExperimentResult> {
   const finishedRecord = input.run.result().record;
   if (!finishedRecord)
@@ -120,22 +121,17 @@ async function compareExperimentOutcome(
       lang: languageOf(input.taskCase.initialInput.text),
     },
   );
-  const comparison = await comparePersistedFacts({
-    taskCase: input.taskCase,
-    runs: [record],
-    inspections: [inspection],
-    agent: input.input.comparison,
-    tools: [
-      ...evidenceTools(input.store, record.artifactRefs),
-      ...observationTools(input.store, {
-        runId: input.input.runId,
-        transcript: input.taskCase.transcript,
-        allowModelText: input.taskCase.privacy.allowModelText,
-      }),
-      comparisonReportTool(input.experimentRoot),
-    ],
-  });
-  let comparisonResult = comparison.result;
+  const sandboxRoot = join(input.experimentRoot, "comparison-sandbox");
+  await materializeComparisonSandbox(input.store, record.artifactRefs, sandboxRoot);
+  await persistComparisonRequest(input.store, input.input.runId, buildComparisonContext(
+    input.taskCase,
+    [record],
+    [inspection],
+  ));
+  let comparisonResult = (await invokeComparison(input, record, inspection, sandboxRoot)).result;
+  if (comparisonResult.status === "completed") {
+    await copyComparisonReport(sandboxRoot, input.experimentRoot);
+  }
   if (
     comparisonResult.status === "completed" &&
     !(await reportExists(
@@ -177,6 +173,85 @@ async function compareExperimentOutcome(
     payload: { path: reportPath },
   });
   return { inspection, comparisonResult, reportPath };
+}
+
+async function invokeComparison(
+  input: Parameters<typeof finishExperiment>[0],
+  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+  inspection: Awaited<ReturnType<typeof inspectRun>>,
+  sandboxRoot: string,
+) {
+  return comparePersistedFacts({
+    taskCase: input.taskCase,
+    runs: [record],
+    inspections: [inspection],
+    agent: input.input.comparison,
+    audit: experimentAgentAuditSink(input.store, input.input.runId),
+    tools: [
+      ...observationTools(input.store, {
+        runId: input.input.runId,
+        transcript: input.taskCase.transcript,
+        allowModelText: input.taskCase.privacy.allowModelText,
+      }),
+      ...recoveryTools(sandboxRoot, 64, {
+        mounts: { candidate: input.workspaceRoot },
+        allowWrite: (path) => path === "report.html",
+        completionPaths: new Set(["report.html"]),
+        denyDestructiveOnPrefix: ["candidate"],
+        homeRoot: join(input.experimentRoot, ".reprise-comparison-home"),
+      }),
+    ],
+  });
+}
+
+async function persistComparisonRequest(store: ExperimentStore, runId: string, context: unknown): Promise<void> {
+  const bytes = Buffer.from(JSON.stringify(context), "utf8");
+  const truncated = bytes.byteLength > MAX_COMPARISON_INPUT_BYTES;
+  const stored = truncated ? bytes.subarray(0, MAX_COMPARISON_INPUT_BYTES) : bytes;
+  const digest = sha256(stored);
+  const artifact = await store.commitArtifact({
+    artifactId: `comparison-model-input-${digest.slice(0, 16)}`,
+    runId,
+    kind: "comparison_model_input",
+    mediaType: "application/json",
+    bytes: stored,
+  });
+  await store.append({
+    type: "comparison.requested",
+    runId,
+    operationId: "comparison-requested",
+    payload: {
+      schemaVersion: 1,
+      requestId: "comparison-requested",
+      runId,
+      inputDigest: digest,
+      artifactId: artifact.artifactId,
+      byteLength: stored.byteLength,
+      truncated,
+    },
+  });
+}
+
+async function materializeComparisonSandbox(
+  store: ExperimentStore,
+  refs: readonly ArtifactRef[],
+  sandboxRoot: string,
+): Promise<void> {
+  await mkdir(join(sandboxRoot, "evidence"), { recursive: true });
+  for (const ref of refs) {
+    if (!("experimentId" in ref)) continue;
+    const bytes = await store.readArtifact(ref);
+    await writeFile(join(sandboxRoot, "evidence", ref.artifactId), bytes);
+  }
+}
+
+async function copyComparisonReport(sandboxRoot: string, experimentRoot: string): Promise<void> {
+  try {
+    await copyFile(join(sandboxRoot, "report.html"), join(experimentRoot, "report.html"));
+  } catch (error) {
+    if (isMissing(error)) return;
+    throw error;
+  }
 }
 
 function languageOf(text: string): "zh" | "en" {

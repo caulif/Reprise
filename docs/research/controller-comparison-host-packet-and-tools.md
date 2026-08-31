@@ -108,7 +108,4 @@ briefing JSON 继续当调查包。缺的工程对称：`comparison.requested` d
 
 ## 7. 还开放的只剩实现选择
 
-工具名单已经闭合：**三个角色都是八个工具**。Comparison 只读挂载、三角色轮间压缩、八件套不裁切：见 [模块设计审查 §6](./three-agents-design-review.md)。剩下是：
-
-1. 要不要继续做 §2.1，把 `read_observation` 也干掉（可后做，不挡八件套落地）。
-2. 各角色预算数字（调查调用上限、破坏性上限）；破坏性上限不封 `read`/`ls`/`grep`。
+当前规范见 [八工具与写策略](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)。审查稿里可后做的：§2.1 物化历史以去掉 `read_observation`。

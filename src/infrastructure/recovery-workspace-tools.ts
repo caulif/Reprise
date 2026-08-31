@@ -47,11 +47,18 @@ export type RecoveryToolOptions = {
   onControlledWrite?: RecoveryControlledWriteHook;
   onOperation?: (operation: RecoveryToolOperation) => Promise<void>;
   filesystem?: RecoveryToolFilesystem;
+  /** First path segment → absolute tree. Writes to these prefixes are denied. */
+  mounts?: Readonly<Record<string, string>>;
+  allowWrite?: (relativePath: string) => boolean;
+  completionPaths?: ReadonlySet<string>;
+  denyDestructiveOnPrefix?: readonly string[];
 };
 
 type RecoveryToolContext = {
   root: string;
   options: RecoveryToolOptions;
+  mounts: Readonly<Record<string, string>>;
+  completionPaths: ReadonlySet<string>;
   limit: <T>(fn: () => Promise<T>) => () => Promise<T>;
   boundedRead: <T>(
     operation: RecoveryToolOperation["operation"],
@@ -103,7 +110,7 @@ function createRecoveryToolContext(
     }
     return undefined;
   };
-  return { root, options, limit, boundedRead, ensureHome, readDirectory, readRegularFile };
+  return { root, options, mounts: options.mounts ?? {}, completionPaths: options.completionPaths ?? new Set(["recovery.md"]), limit, boundedRead, ensureHome, readDirectory, readRegularFile };
 }
 
 function decorateRecoveryTools(
@@ -126,6 +133,7 @@ function decorateRecoveryTools(
         completionTools,
         options.onBudgetExhausted,
         params,
+        options.completionPaths ?? new Set(["recovery.md"]),
       );
       const key = `${mutationVersion}:${tool.name}:${JSON.stringify(params)}`;
       if (seen.has(key)) throw new Error("recovery_no_information_gain: repeated tool call with identical inputs.");
@@ -160,7 +168,7 @@ export function recoveryTools(
 }
 
 function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, limit, boundedRead, readDirectory } = ctx;
+  const { root, limit, boundedRead } = ctx;
   return {
     name: "ls",
     description: "List a bounded directory within staging. Paths must be relative.",
@@ -171,12 +179,11 @@ function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
     execute: async (params) =>
       limit(async () => {
         const value = params as { path?: unknown; depth?: unknown };
-        const requestedPath = value.path === undefined ? "" : requiredString(value.path, "path");
-        const path = requestedPath ? pathIn(root, requestedPath) : { absolute: root, relative: "" };
+        const path = value.path === undefined ? { absolute: root, relative: "", writable: true, containmentRoot: root } : pathIn(ctx, requiredString(value.path, "path"));
         const depth = value.depth === undefined ? 1 : integer(value.depth, undefined, "depth", 0, 4);
         const entries = await boundedRead("directory_list", async () => {
-          await assertNoSymlinkAncestors(root, path.absolute);
-          return listTree(root, path.relative, depth, readDirectory);
+          await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
+          return listTree(ctx, path.relative, depth);
         });
         return directoryReadResult(path.relative || ".", entries);
       })(),
@@ -184,7 +191,7 @@ function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
 }
 
 function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, limit, boundedRead, readRegularFile } = ctx;
+  const { limit, boundedRead, readRegularFile } = ctx;
   return {
     name: "read",
     description: "Read a bounded byte range from a regular staging file.",
@@ -196,7 +203,7 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
     execute: async (params) =>
       limit(async () => {
         const value = params as { path?: unknown; offset?: unknown; maxBytes?: unknown };
-        const path = pathIn(root, requiredString(value.path, "path"));
+        const path = pathIn(ctx, requiredString(value.path, "path"));
         if (isSensitiveRecoveryPath(path.relative))
           throw recoveryToolError("credential_read_denied", "Known credential files are not readable by the Recovery model.", {
             path: "<credential-file>",
@@ -205,7 +212,7 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
         const maxBytes =
           value.maxBytes === undefined ? DEFAULT_READ_BYTES : integer(value.maxBytes, undefined, "maxBytes", 1, MAX_BYTES);
         const bytes = await boundedRead("file_read", async () => {
-          await assertNoSymlinkAncestors(root, path.absolute);
+          await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
           await assertRegular(path.absolute);
           return readRegularFile(path.absolute);
         });
@@ -226,7 +233,7 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
 }
 
 function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, limit, boundedRead, readDirectory, readRegularFile } = ctx;
+  const { root, limit, boundedRead, readRegularFile } = ctx;
   return {
     name: "grep",
     description: "Search file contents in staging; returns a bounded list of path:line matches.",
@@ -239,17 +246,17 @@ function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
         const value = params as { query?: unknown; path?: unknown };
         const query = requiredString(value.query, "query");
         const requested = value.path === undefined ? "" : requiredString(value.path, "path");
-        const start = requested ? pathIn(root, requested) : { absolute: root, relative: "" };
+        const start = requested ? pathIn(ctx, requested) : { absolute: root, relative: "", containmentRoot: root, writable: true };
         const entries = await boundedRead("directory_list", async () => {
-          await assertNoSymlinkAncestors(root, start.absolute);
-          return listTree(root, start.relative, 4, readDirectory);
+          await assertNoSymlinkAncestors(start.containmentRoot, start.absolute);
+          return listTree(ctx, start.relative, 4);
         });
         const matches: string[] = [];
         for (const entry of entries ?? []) {
           if (!entry.startsWith("file ") || matches.length >= MAX_GREP_MATCHES) continue;
           const relativePath = entry.slice(5);
           if (isSensitiveRecoveryPath(relativePath) || HOST_RESERVED.has(basename(relativePath))) continue;
-          const absolute = pathIn(root, relativePath).absolute;
+          const absolute = pathIn(ctx, relativePath).absolute;
           const bytes = await boundedRead("file_read", async () => {
             await assertRegular(absolute);
             return readRegularFile(absolute);
@@ -273,7 +280,7 @@ function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
 }
 
 function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, limit, boundedRead, readDirectory } = ctx;
+  const { root, limit, boundedRead } = ctx;
   return {
     name: "find",
     description: "Find staging paths whose names contain a bounded substring.",
@@ -286,10 +293,10 @@ function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
         const value = params as { name?: unknown; path?: unknown };
         const needle = requiredString(value.name, "name").toLowerCase();
         const requested = value.path === undefined ? "" : requiredString(value.path, "path");
-        const start = requested ? pathIn(root, requested) : { absolute: root, relative: "" };
+        const start = requested ? pathIn(ctx, requested) : { absolute: root, relative: "", containmentRoot: root, writable: true };
         const entries = await boundedRead("directory_list", async () => {
-          await assertNoSymlinkAncestors(root, start.absolute);
-          return listTree(root, start.relative, 4, readDirectory);
+          await assertNoSymlinkAncestors(start.containmentRoot, start.absolute);
+          return listTree(ctx, start.relative, 4);
         });
         const hits = (entries ?? [])
           .map((entry) => entry.replace(/^(?:file|directory|other) /, ""))
@@ -304,7 +311,7 @@ function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
 }
 
 function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, options, limit } = ctx;
+  const { options, limit } = ctx;
   return {
     name: "edit",
     description: "Replace one exact text span in an existing staging file.",
@@ -316,14 +323,15 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
     execute: async (params) =>
       limit(async () => {
         const value = params as { path?: unknown; oldText?: unknown; newText?: unknown };
-        const path = pathIn(root, requiredString(value.path, "path"));
+        const path = pathIn(ctx, requiredString(value.path, "path"));
+        assertWritablePath(ctx, path);
         if (HOST_RESERVED.has(basename(path.relative)))
           throw recoveryToolError("recovery_sink_reserved", "Host-owned contract files cannot be edited.", {
             path: "notes.txt",
           });
         const oldText = requiredString(value.oldText, "oldText");
         const newText = requiredString(value.newText, "newText");
-        await assertNoSymlinkAncestors(root, path.absolute);
+        await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
         await assertRegular(path.absolute);
         const current = await readFile(path.absolute, "utf8");
         const index = current.indexOf(oldText);
@@ -346,7 +354,7 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
 }
 
 function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, options, limit } = ctx;
+  const { options, limit } = ctx;
   return {
     name: "write",
     description: "Create or overwrite one explicit regular file in staging. recovery.md is the report sink.",
@@ -357,7 +365,8 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
     execute: async (params) =>
       limit(async () => {
         const value = params as { path?: unknown; content?: unknown };
-        const path = pathIn(root, requiredString(value.path, "path"));
+        const path = pathIn(ctx, requiredString(value.path, "path"));
+        assertWritablePath(ctx, path);
         if (HOST_RESERVED.has(basename(path.relative)) && !path.relative.includes("/"))
           throw recoveryToolError("recovery_sink_reserved", "recovery-manifest.json is Host-owned.", {
             path: "notes.txt",
@@ -365,7 +374,7 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
           });
         const content = requiredString(value.content, "content");
         if (Buffer.byteLength(content) > MAX_BYTES) throw new Error(`content exceeds ${MAX_BYTES} bytes.`);
-        await assertNoSymlinkAncestors(root, path.absolute);
+        await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
         await assertWritableFile(path.absolute);
         await mkdir(resolve(path.absolute, ".."), { recursive: true });
         await journalControlledRecoveryWrite(
@@ -400,6 +409,7 @@ function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
         if (Buffer.byteLength(command) > MAX_COMMAND_BYTES)
           throw new Error(`command exceeds ${MAX_COMMAND_BYTES} bytes.`);
         assertShellCommandDoesNotTargetSensitiveFiles(command);
+        assertShellDoesNotMutateReadonlyMount(ctx, command);
         const home = await ensureHome();
         return runShell(
           root,
@@ -527,6 +537,25 @@ function looksLikeNetworkCommand(command: string): boolean {
   );
 }
 
+function assertWritablePath(ctx: RecoveryToolContext, path: { relative: string; writable: boolean }): void {
+  if (!path.writable) throw new Error("write_denied: path is a read-only mount.");
+  if (ctx.options.allowWrite && !ctx.options.allowWrite(path.relative))
+    throw new Error("write_denied: path is outside the Host write policy.");
+}
+
+function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command: string): void {
+  const prefixes = ctx.options.denyDestructiveOnPrefix ?? Object.keys(ctx.mounts);
+  if (!prefixes.length) return;
+  const mutates = /\b(Remove-Item|Set-Content|Add-Content|Out-File|New-Item|Move-Item|Copy-Item|Rename-Item|rmdir|\brm\b|\bdel\b|\brd\b)\b/i.test(
+    command,
+  );
+  if (!mutates) return;
+  for (const prefix of prefixes) {
+    if (command.includes(prefix) || command.includes(ctx.mounts[prefix] ?? ""))
+      throw new Error("write_denied: powershell must not mutate a read-only mount.");
+  }
+}
+
 async function assertNoSymlinkAncestors(root: string, target: string): Promise<void> {
   const resolvedRoot = resolve(root);
   const resolvedTarget = resolve(target);
@@ -545,9 +574,29 @@ async function assertNoSymlinkAncestors(root: string, target: string): Promise<v
   }
 }
 
-function pathIn(root: string, input: string): { absolute: string; relative: string } {
+type ResolvedWorkspacePath = {
+  absolute: string;
+  relative: string;
+  writable: boolean;
+  containmentRoot: string;
+};
+
+function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath {
   if (!input || isAbsolute(input) || input.includes("\\") || input.split("/").some((part) => !part || part === "." || part === ".."))
     throw new Error("Path must be a non-empty slash-separated relative path without . or ...");
+  const parts = input.split("/");
+  const mountRoot = ctx.mounts[parts[0] ?? ""];
+  if (mountRoot) {
+    const rest = parts.slice(1).join("/");
+    if (!rest) return { absolute: resolve(mountRoot), relative: parts[0]!, writable: false, containmentRoot: resolve(mountRoot) };
+    const inner = containedPath(mountRoot, rest);
+    return { absolute: inner.absolute, relative: `${parts[0]}/${inner.relative}`, writable: false, containmentRoot: resolve(mountRoot) };
+  }
+  const inner = containedPath(ctx.root, input);
+  return { ...inner, writable: true, containmentRoot: ctx.root };
+}
+
+function containedPath(root: string, input: string): { absolute: string; relative: string } {
   const absolute = resolve(root, ...input.split("/"));
   const rel = relative(root, absolute);
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error("Path escapes staging.");
@@ -578,21 +627,25 @@ function unavailableFileReadResult(path: string, offset: number): { content: str
   return { content: "", details: { path, offset, available: false, reason: "filesystem_error" } };
 }
 
-async function listTree(
-  root: string,
-  prefix: string,
-  depth: number,
-  readDirectory: NonNullable<RecoveryToolFilesystem["readDirectory"]>,
-): Promise<string[]> {
-  const current = prefix ? resolve(root, ...prefix.split("/")) : root;
-  const entries = await readDirectory(current);
+async function listTree(ctx: RecoveryToolContext, prefix: string, depth: number): Promise<string[]> {
+  const start = prefix ? pathIn(ctx, prefix) : { absolute: ctx.root, relative: "", containmentRoot: ctx.root, writable: true };
+  const entries = await ctx.readDirectory(start.absolute);
   const output: string[] = [];
+  const seen = new Set<string>();
   for (const entry of entries) {
     const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    seen.add(entry.name);
     if (entry.isSymbolicLink()) throw new Error(`Symbolic link encountered: ${relativePath}`);
     output.push(`${entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other"} ${relativePath}`);
     if (entry.isDirectory() && depth > 0 && output.length < MAX_LIST_ENTRIES)
-      output.push(...(await listTree(root, relativePath, depth - 1, readDirectory)));
+      output.push(...(await listTree(ctx, relativePath, depth - 1)));
+  }
+  if (!prefix) {
+    for (const mount of Object.keys(ctx.mounts)) {
+      if (seen.has(mount)) continue;
+      output.unshift(`directory ${mount}`);
+      if (depth > 0 && output.length < MAX_LIST_ENTRIES) output.push(...(await listTree(ctx, mount, depth - 1)));
+    }
   }
   return output;
 }

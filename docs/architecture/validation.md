@@ -37,8 +37,8 @@ Schema 验证只判断输出是否可执行，不判断内容是否聪明或措�
 
 Agent 只能使用 Host 显式提供的能力：
 
-- Controller 只有只读观察和决策能力，不能写环境或调用 Target 工具；
-- Comparison 只有只读 artifact 与 telemetry 工具；
+- Controller 使用与 Recovery 相同的八个工具名，cwd 为隔离副本；不得写用户源目录、不得调用 Target 工具或改 CandidateRun 状态机；
+- Comparison 使用同一八个工具名；`candidate/` 只读挂载，只许 `write` `report.html`；不得改实验状态或排名候选；
 - Recovery 的写入能力只作用于 Harness 持有的 staging；
 - 路径、ownership、隐私和大小限制由工具实现验证；
 - 权限扩大、真实发布、付款、删除和其他不可逆动作必须来自真实用户授权。

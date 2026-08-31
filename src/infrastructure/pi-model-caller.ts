@@ -3,6 +3,7 @@ import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { contentText, createProvider, type Models, type MutableModels } from '@earendil-works/pi-ai';
 import type { AgentToolDefinition, PiTextCaller, PiTextSession } from './pi-agent-host.js';
+import { compactAgentMessages } from './session-compact.js';
 import { environmentNameForKeyRef, type HarnessModelConfig } from './harness-model-config.js';
 
 export type PiModels = Pick<Models, 'getProviders' | 'getModels' | 'getModel' | 'getAuth' | 'completeSimple' | 'streamSimple'>;
@@ -89,11 +90,26 @@ export class PiModelCaller implements PiTextCaller {
     return auth.source === undefined ? {} : { source: auth.source };
   }
 
-  createSession(input: { sessionId: string; systemPrompt: string; tools: readonly AgentToolDefinition[] }): PiTextSession {
+  createSession(input: {
+    sessionId: string;
+    systemPrompt: string;
+    tools: readonly AgentToolDefinition[];
+    onContextCompact?: (payload: { replaced: readonly { toolName: string; digest: string; byteLength: number }[] }) => Promise<void>;
+  }): PiTextSession {
     const agent = new Agent({
       sessionId: input.sessionId,
       streamFn: this.#models.streamSimple.bind(this.#models),
       toolExecution: 'sequential',
+      transformContext: async (messages) => {
+        const compacted = compactAgentMessages(messages);
+        if (compacted.replaced.length) {
+          agent.state.messages = compacted.messages;
+          await input.onContextCompact?.({
+            replaced: compacted.replaced.map(({ toolName, digest, byteLength }) => ({ toolName, digest, byteLength })),
+          });
+        }
+        return compacted.messages;
+      },
       initialState: {
         systemPrompt: input.systemPrompt,
         model: this.#model(),

@@ -3,8 +3,8 @@ import { isAbsolute } from "node:path";
 import { isRecord } from "../core/json.js";
 import { SAFE_ID } from "../core/identity.js";
 import type { EventEnvelope, TaskCase } from "../core/schema.js";
-import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
-import { writeImmutableJson } from "../infrastructure/store/experiment-store.js";
+import type { AgentAuditSink, StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
+import { writeImmutableJson, type ExperimentStore } from "../infrastructure/store/experiment-store.js";
 
 export function recordValue(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
@@ -111,4 +111,16 @@ function tokenValue(value: unknown): number | undefined {
       )
         return container[key] as number;
   return undefined;
+}
+
+export function experimentAgentAuditSink(store: ExperimentStore, runId: string): AgentAuditSink {
+  return {
+    append: async (event) => {
+      await store.append({
+        type: event.type,
+        runId,
+        payload: { role: event.role, sessionId: event.sessionId, ...event.payload },
+      });
+    },
+  };
 }

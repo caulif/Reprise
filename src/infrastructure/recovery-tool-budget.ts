@@ -17,8 +17,9 @@ export function chargeRecoveryToolBudget(
   completionTools: ReadonlySet<string>,
   onBudgetExhausted?: (category: "budget_exhausted") => void,
   params?: unknown,
+  completionPaths: ReadonlySet<string> = new Set(["recovery.md"]),
 ): void {
-  if (completionTools.has(name) || isCompletionWrite(name, params)) {
+  if (completionTools.has(name) || isCompletionWrite(name, params, completionPaths)) {
     if (++budget.completionCalls > 8) throw new Error("Recovery completion-tool budget of 8 was exhausted.");
     return;
   }
@@ -41,10 +42,10 @@ export function noteDestructiveRecoveryCall(
   if (isDestructiveCall(name, params)) budget.deleteCalls += 1;
 }
 
-function isCompletionWrite(name: string, params: unknown): boolean {
+function isCompletionWrite(name: string, params: unknown, completionPaths: ReadonlySet<string>): boolean {
   if (name !== "write") return false;
   const path = params && typeof params === "object" && "path" in params ? String((params as { path?: unknown }).path) : "";
-  return path === "recovery.md";
+  return completionPaths.has(path);
 }
 
 function isDestructiveCall(name: string, params: unknown): boolean {

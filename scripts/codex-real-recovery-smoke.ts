@@ -123,8 +123,8 @@ class ScriptedCandidateRuntime implements RuntimePort {
 
 const scriptedController: ControllerPort = { decide: async () => ({ status: 'completed', sessionId: 'scripted-controller', value: { type: 'done', reason: 'satisfied' } }) };
 const scriptedComparison: ComparisonAgentPort = { compare: async (_context, tools = []) => {
-  const report = tools.find((tool) => tool.name === 'write_comparison_report');
-  await report?.execute({ html: '<!doctype html><html lang="en"><meta charset="utf-8"><title>Comparison</title><body><h1>Comparison</h1><p>Scripted Candidate orchestration completed after the accepted Recovery baseline.</p></body></html>' }, new AbortController().signal);
+  const report = tools.find((tool) => tool.name === 'write');
+  await report?.execute({ path: 'report.html', content: '<!doctype html><html lang="en"><meta charset="utf-8"><title>Comparison</title><body><h1>Comparison</h1><p>Scripted Candidate orchestration completed after the accepted Recovery baseline.</p></body></html>' }, new AbortController().signal);
   return { status: 'completed', sessionId: 'scripted-comparison', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } };
 } };
 

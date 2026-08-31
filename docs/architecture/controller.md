@@ -195,7 +195,7 @@ Controller 不直接调用 Runtime 的 approval API；它只能通过普通用�
 
 ## 6. Observation Adapter
 
-Controller 不能只读 Target 的最终自述，也不应获得任意可写 shell。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 RuntimePort、Environment 和 ArtifactStore 已经规范化、且用户正常可见的事实。
+Controller 不能只读 Target 的最终自述，也不应获得无界、无 cwd 锁的 shell。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 RuntimePort、Environment 和 ArtifactStore 已经规范化、且用户正常可见的事实。工作区八工具由 Host 直接挂在隔离副本上，见 [八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)。
 
 ```text
 TargetEventSink / Environment fingerprint / ArtifactStore
@@ -213,7 +213,7 @@ TargetEventSink / Environment fingerprint / ArtifactStore
 
 1. **事实优先**：保留 Agent 自述、工具结果、Harness 观察和独立检查的证据来源。
 2. **轻量内联**：消息、状态和短摘要内联；长日志、diff、截图和二进制内容使用引用。
-3. **只读观察**：Adapter 不修改候选环境，不替 Target 执行修复。
+3. **Adapter 不替 Target 干活**：Observation Adapter 不修改候选环境、不替 Target 执行修复。Host 工作区工具另有写策略，仍不得调用 Target Runtime。
 4. **按需展开**：Controller 可读取允许的 artifact 引用，不把所有历史内容塞进每轮 prompt。
 5. **产品隔离**：Claude/Codex 私有事件先由 SessionSourceAdapter 或 RuntimePort 归一化；Controller 不解析私有 JSONL，也不加载产品专属 Controller Playbook。
 6. **诚实缺失**：无法采集的事实标记 unavailable，不根据 Agent 文字推断为已验证。
@@ -258,7 +258,7 @@ interface TargetObservation {
 
 默认使用执行过程中自然产生的被动事实。只有任务判断确实需要、且用户正常会查看某项结果时，Observation Adapter 才能请求声明式只读探测。探测能力必须标明输入、可能副作用和证据来源。
 
-Controller 不获得任意 shell。需要 Target 建立证据时发送 `verify` 消息；报告阶段需要独立展示时由 Comparison Agent 使用只读报告能力完成，不把两者混进 Controller。
+Controller 不获得无界 shell。需要 Target 建立证据时发送 `verify` 消息；报告阶段由 Comparison 写 `report.html`，不把两者混进 Controller。隔离副本上的 `powershell` 有 cwd 锁、净化环境和预算。
 
 ### 6.5 Artifact 解析
 
@@ -462,7 +462,7 @@ Controller failure 与 Target failure、Runtime failure 和报告 failure 分开
 ## 14. 安全与隐私
 
 - Controller 输入先应用 `TaskCase.privacy`；密钥和凭据不进入模型上下文。
-- Controller 工具只读，且只能读取本 case/run 拥有的 artifact。
+- Controller 工具只能作用于本 run 的隔离副本与 Host 允许的观察源；不得写用户源目录或调用 Target 工具。
 - 原始会话可能包含个人和业务数据；外部 provider 的发送范围必须可见并可配置。
 - `rationale` 不应包含敏感推理或完整私有内容，只保留对用户有用的简短依据。
 - Controller 消息经过长度、空文本和控制字符验证后才能发送给 Runtime。

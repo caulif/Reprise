@@ -86,29 +86,15 @@ Pi Agent Host 是 Harness 的实现基础设施，不是需要恢复的历史 Ag
 
 ## 4. Controller 工具集合
 
-Controller 工具的目的只有一个：读取一个真实用户为了继续协作而合理能够看到的证据。工具必须只读、受 ownership 限制，并且不能绕过 Target Runtime 执行任务。
+Controller 工具让扮演用户的模型能看见隔离副本里一个真实用户本来就能看见的证据，并在副本内做有界核对。工具名与 Recovery / Comparison 相同（见 [八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。不能绕过 Target Runtime 执行任务。
 
-第一版推荐保留三个能力，而不是提供 shell 或通用文件系统：
-
-1. 读取完整原始会话的指定消息范围；
-2. 读取当前 Case/Run 拥有的 artifact 内容或片段；
-3. 获取 Harness 已生成的确定性 artifact 预览和 metadata。
-
-这些能力可以由一个小型 `ControllerEvidenceReader` 端口承载，再由 Pi Host 暴露成适合模型调用的工具；不需要为每种任务建立工具插件系统。
-
-```ts
-interface ControllerEvidenceReader {
-  readTranscript(request: TranscriptReadRequest): Promise<TranscriptSlice>;
-  readArtifact(request: ArtifactReadRequest): Promise<ArtifactSlice>;
-  inspectArtifact(ref: ArtifactRef): Promise<ArtifactMetadata>;
-}
-```
+Host 暴露工作区七件套加 `read_observation`（`transcript` | `run_events`）。`powershell` 的 cwd 锁在隔离副本，净化环境、不给凭据、stdout/时限有界。破坏性变更有上限，不封 `read`/`ls`/`grep`/`find`。
 
 工具边界：
 
-- 不能写文件、执行命令、调用 Target 工具或直接修改环境；
+- 不得写用户源目录、不得调用 Target 工具、不得直接改 CandidateRun 状态机；发给候选的唯一用户输入仍是信封 `message`；
 - 不能读取 Case/Run 所有权之外的路径；
-- 路径、artifact ID、读取范围、类型和大小在 Host 边界验证；
+- 路径、读取范围、类型和大小在 Host 边界验证；
 - 未支持的二进制内容返回 metadata 或 unavailable，不让模型猜测；
 - 确定性 renderer 可以生成派生预览，但预览必须成为带 provenance 的新 artifact；
 - 工具能力配置在同一 Experiment 的候选间一致，实际调用次数不要求一致。

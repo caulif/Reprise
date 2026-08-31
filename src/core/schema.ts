@@ -56,6 +56,16 @@ export const ControllerObservationReadPayloadSchema = Type.Object({
   evidenceRefs: Type.Array(EvidenceRefSchema),
 });
 export type ControllerObservationReadPayload = Static<typeof ControllerObservationReadPayloadSchema>;
+export const ComparisonRequestedPayloadSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  requestId: Id,
+  runId: Id,
+  inputDigest: Hash,
+  artifactId: Id,
+  byteLength: Type.Integer({ minimum: 1, maximum: 262_144 }),
+  truncated: Type.Boolean(),
+});
+export type ComparisonRequestedPayload = Static<typeof ComparisonRequestedPayloadSchema>;
 /** Public, redacted input set frozen before a Recovery evaluation starts. */
 const RecoverySelectionSourceStateSchema = Type.Object({
   readiness: Type.Union([

@@ -158,6 +158,15 @@ test('store rejects malformed Controller request and observation payloads', asyn
       }),
       /controller.observation_read payload does not satisfy its schema/,
     );
+    await assert.rejects(
+      store.append({
+        type: 'comparison.requested',
+        runId: 'run-1',
+        operationId: 'comparison-requested',
+        payload: { schemaVersion: 1, requestId: 'comparison-requested' },
+      }),
+      /comparison.requested payload does not satisfy its schema/,
+    );
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });

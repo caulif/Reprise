@@ -100,11 +100,12 @@ const controller: ControllerPort = {
 const comparison: ComparisonAgentPort = {
   compare: async (_context, tools = []) => {
     const writer = tools.find(
-      (tool) => tool.name === "write_comparison_report",
+      (tool) => tool.name === "write",
     );
     await writer?.execute(
       {
-        html: '<!doctype html><style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>',
+        path: "report.html",
+        content: '<!doctype html><style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>',
       },
       new AbortController().signal,
     );

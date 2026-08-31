@@ -53,7 +53,8 @@ export type AgentAuditEvent = {
     | "agent.tool_called"
     | "agent.tool_completed"
     | "agent.tool_failed"
-    | "agent.invalid_output";
+    | "agent.invalid_output"
+    | "agent.context_compacted";
   sessionId: string;
   role: string;
   payload: Record<string, unknown>;
@@ -72,6 +73,7 @@ export interface PiTextCaller {
     sessionId: string;
     systemPrompt: string;
     tools: readonly AgentToolDefinition[];
+    onContextCompact?: (payload: { replaced: readonly { toolName: string; digest: string; byteLength: number }[] }) => Promise<void>;
   }): Promise<PiTextSession> | PiTextSession;
 }
 
@@ -148,6 +150,14 @@ export class PiAgentHost {
         sessionId,
         systemPrompt: input.systemPrompt,
         tools,
+        onContextCompact: async (payload) => {
+          await input.audit?.append({
+            type: "agent.context_compacted",
+            sessionId,
+            role: input.role,
+            payload,
+          });
+        },
       });
       await input.audit?.append({
         type: "agent.session_started",

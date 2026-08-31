@@ -808,7 +808,7 @@ interface TracePort {
 - Product Pack 的 RuntimePort 只能获得本次 `PreparedEnvironmentRef` 和明确配置，不能默认遍历用户全局目录。
 - Recovery Agent 只写 Environment staging；历史证据和用户原目录保持只读。
 - Candidate Runtime 永远不获得用户当前工作目录；无法建立隔离副本或受控观察绑定时，运行状态为 `unsupported`。
-- Controller 只获得只读观察能力，不能调用 Target 工具或修改环境。
+- Controller 获得与 Recovery 相同的八个工具名，cwd 为隔离副本；不能调用 Target 工具或写用户源目录。
 - Pi Host 在发送上下文前执行 privacy policy 和敏感信息过滤；无法确认内容允许发送或过滤失败时阻塞该 Agent 调用并记录原因，不用更多原文静默降级。
 - 权限扩大、真实发布、付款、删除和不可逆迁移必须来自真实用户授权。
 - trace 和错误信息不得保存密钥、凭据或不必要的个人信息。

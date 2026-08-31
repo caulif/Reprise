@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { assertComparisonResult } from '../src/agents/comparison-agent.js';
 import { buildComparisonContext, comparePersistedFacts, type RunInspection } from '../src/application/comparison.js';
-import { comparisonReportTool } from '../src/infrastructure/agent-tools.js';
+import { fingerprintTree } from '../src/environment/local-workspace-fs.js';
+import { recoveryTools } from '../src/infrastructure/recovery-tools.js';
 import type { ComparisonAgentPort } from '../src/agents/comparison-agent.js';
 import type { RunRecord, TaskCase } from '../src/core/schema.js';
 
@@ -13,16 +14,34 @@ const timestamp = '2026-08-15T00:00:00.000Z';
 function taskCase(): TaskCase { return { schemaVersion: 1, caseId: 'case-1', source: { productId: 'codex', sessionId: 'session-1' }, initialInput: { id: 'message-1', role: 'user', text: '修复报告。' }, transcript: [{ id: 'message-1', role: 'user', text: '修复报告。' }], historicalEvents: [], baseline: { status: 'available', finalMessage: 'Done.', artifactRefs: [], evidenceRefs: ['event:baseline-1'] }, sourceRuntimeEvidence: { productId: 'codex', artifactRefs: [] }, provenance: { packVersion: 'fixture', importedAt: timestamp, sourceHash: 'a'.repeat(64) }, privacy: { allowModelText: true, allowBinary: false, redactions: [] }, contentHash: 'b'.repeat(64) }; }
 function runRecord(): RunRecord { return { attempt: { schemaVersion: 1, runId: 'run-1', experimentId: 'experiment-1', caseId: 'case-1', candidate: { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-5.6' }, policy: { wallClockMs: 1000, maxTargetTurns: 2, maxModelCalls: 3, turnTimeoutMs: 1000, maxConsecutiveNoProgress: 1 }, createdAt: timestamp }, state: 'finished', stageReached: 'awaiting_controller', outcome: { task: { status: 'incomplete', evidenceRefs: [] }, termination: { kind: 'limit_reached', code: 'limit.turns', initiatedBy: 'harness' }, cleanup: { status: 'complete', remainingResourceIds: [], evidenceRefs: [] } }, trace: { experimentId: 'experiment-1', runId: 'run-1', firstSequence: 1, lastSequence: 2 }, artifactRefs: [], warnings: [] }; }
 
-test('comparison report tool writes complete HTML bytes verbatim to report.html', async (t) => {
+test('comparison write tool writes report.html and refuses candidate paths', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-report-'));
+  const candidate = join(root, 'isolation');
   t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(candidate, { recursive: true });
+  await writeFile(join(candidate, 'kept.txt'), 'keep');
   const html = '<!doctype html><style>body{color:red}</style><svg><path /></svg><script>window.ok=true</script>';
-  const result = await comparisonReportTool(root).execute({ html }, new AbortController().signal);
+  const tools = recoveryTools(root, 64, {
+    mounts: { candidate },
+    allowWrite: (path) => path === 'report.html',
+    completionPaths: new Set(['report.html']),
+    denyDestructiveOnPrefix: ['candidate'],
+  });
+  const write = tools.find((tool) => tool.name === 'write');
+  assert.ok(write);
+  const before = await fingerprintTree(candidate);
+  await write.execute({ path: 'report.html', content: html }, new AbortController().signal);
   assert.equal(await readFile(join(root, 'report.html'), 'utf8'), html);
-  const details = result.details as { path: string; bytes: number; sha256: string };
-  assert.equal(details.path, 'report.html');
-  assert.equal(details.bytes, Buffer.byteLength(html));
-  assert.match(details.sha256, /^[a-f0-9]{64}$/);
+  await assert.rejects(write.execute({ path: 'candidate/kept.txt', content: 'nope' }, new AbortController().signal), /write_denied/);
+  const powershell = tools.find((tool) => tool.name === 'powershell');
+  assert.ok(powershell);
+  await assert.rejects(
+    powershell.execute({ command: 'Remove-Item candidate/kept.txt' }, new AbortController().signal),
+    /write_denied/,
+  );
+  const after = await fingerprintTree(candidate);
+  assert.equal(after.fingerprint.digest, before.fingerprint.digest);
+  assert.equal(await readFile(join(candidate, 'kept.txt'), 'utf8'), 'keep');
 });
 
 test('comparison envelope accepts only report.html', () => {

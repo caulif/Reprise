@@ -74,12 +74,7 @@ Recovery 的调查包已有事件与 ADR（[调查包决策](../decisions/accept
 
 交付物：Recovery 写 `recovery.md`、Comparison 写 `report.html`（`write` 到保留名，Host 校验后摘走）；Controller 信封即交付。沙箱挂载见 §6.1。
 
-## 5. 落地顺序建议（讨论用，不是计划）
-
-1. **审计对称**（§3.2）：`comparison.requested` + 三角色 audit sink。不动工具面，独立可合。
-2. **工具工厂泛化 + 三角色换装八件套**（§3.1 + §3.3 + §6.1）：删 `read_artifact` / `write_comparison_report`；Controller / Comparison 注册与 Recovery 同一组名字；预算随工厂；Comparison `candidate/` 只读挂载。改 [`controller.md`](../architecture/controller.md)、[实验条件 §4](../architecture/controller-experiment-conditions.md)、[`comparison.md`](../architecture/comparison.md)、[`validation.md`](../architecture/validation.md) 并写 ADR。
-3. **轮间压缩**（§6.2）：落在 `PiAgentHost` / `PiModelCaller` 的 session 工具循环上，三个角色默认开启。
-4. **validate 提炼**（§3.4）：纯重构，随手做。
+批次、验收与规范见 [八工具与写策略](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)、[轮间压缩](../decisions/accepted/2026-08-31-internal-agent-turn-compaction.md)、[模型输入与工具审计](../decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)。
 
 ## 6. 已闭合的选择
 

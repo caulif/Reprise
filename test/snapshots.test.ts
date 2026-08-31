@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { CONTROLLER_SYSTEM_PROMPT } from '../src/agents/controller-agent.js';
 import { COMPARISON_SYSTEM_PROMPT } from '../src/agents/comparison-agent.js';
 import { RECOVERY_SYSTEM_PROMPT } from '../src/agents/recovery-agent.js';
-import { comparisonReportTool, observationTools } from '../src/infrastructure/agent-tools.js';
+import { observationTools } from '../src/infrastructure/agent-tools.js';
 import { recoveryObservationTools, recoveryTools } from '../src/infrastructure/recovery-tools.js';
 import type { TaskCase } from '../src/core/schema.js';
 import type { ExperimentStore } from '../src/infrastructure/store/experiment-store.js';
@@ -52,7 +52,6 @@ test('runtime-facing tool schemas match committed snapshots', async () => {
     transcript,
     allowModelText: true,
   })));
-  await assertSnapshot('comparison-report-tool', toolCatalog([comparisonReportTool('TMP')]));
   await assertSnapshot('recovery-observation-tools', toolCatalog(recoveryObservationTools(taskCase)));
   await assertSnapshot('recovery-tools', toolCatalog(recoveryTools('TMP', 8)));
 });

@@ -335,6 +335,17 @@ test("a scripted Controller run persists controller.requested and reconstructs i
     const requested = events.find((event) => event.type === "controller.requested");
     assert.ok(requested?.operationId);
     assert.ok(events.some((event) => event.type === "controller.observation_read"));
+    assert.ok(events.some((event) => event.type === "agent.tool_called"));
+    assert.ok(events.some((event) => event.type === "agent.tool_completed"));
+    const comparisonRequested = events.find((event) => event.type === "comparison.requested");
+    assert.ok(comparisonRequested);
+    const comparisonPayload = comparisonRequested.payload as { artifactId: string; inputDigest: string; runId: string };
+    const briefing = await store.readArtifact({
+      artifactId: comparisonPayload.artifactId,
+      experimentId: "experiment-1",
+      runId: comparisonPayload.runId,
+    });
+    assert.equal(sha256(briefing), comparisonPayload.inputDigest);
     const rebuilt = reconstructControllerRequest(events, requested.operationId);
     assert.equal(rebuilt.requestId, requested.operationId);
     assert.equal(rebuilt.runId, "run-1");

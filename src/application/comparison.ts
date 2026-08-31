@@ -13,6 +13,7 @@ import {
   type ComparisonResult,
 } from '../agents/comparison-agent.js';
 import type { AgentToolDefinition, StructuredAgentResult } from '../infrastructure/pi-agent-host.js';
+import type { AgentAuditSink } from '../infrastructure/pi-agent-host.js';
 
 export type RunInspection = {
   runId: string;
@@ -68,9 +69,10 @@ export async function comparePersistedFacts(input: {
   agent: ComparisonAgentPort;
   tools?: readonly AgentToolDefinition[];
   inspections?: readonly RunInspection[];
+  audit?: AgentAuditSink;
 }): Promise<{ context: ComparisonContext; result: StructuredAgentResult<ComparisonResult> }> {
   const context = buildComparisonContext(input.taskCase, input.runs, input.inspections);
-  const result = await input.agent.compare(context, input.tools);
+  const result = await input.agent.compare(context, input.tools, input.audit);
   if (result.status === 'completed') assertComparisonResult(result.value, context);
   return { context, result };
 }

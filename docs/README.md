@@ -48,6 +48,9 @@
 - [后一次完成信封不得覆盖已探测通过的信封](./decisions/accepted/2026-08-31-recovery-keep-last-valid-envelope.md)：反馈轮新信封先探测；失败则沿用上一份完成信封并保留 staging。
 - [回放起点是用户任务句](./decisions/accepted/2026-08-31-replay-user-task-not-injected-instruction.md)：冻结跳过产品注入的 `AGENTS.md` / 指令块；完整 transcript 仍留给 Controller。
 - [校验通过的恢复 preview 自动接受](./decisions/accepted/2026-08-31-recovery-auto-accept-validated-preview.md)：Host 在 `validateRecovery` 成功后立即 `acceptRecovery`；确认页只确认是否开计费候选。
+- [内部 Agent 模型输入与工具审计](./decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)：`comparison.requested`；三角色 `AgentAuditSink`。
+- [内部 Agent 轮间压缩](./decisions/accepted/2026-08-31-internal-agent-turn-compaction.md)：下一次 completion 前压缩更早的 tool 正文。
+- [内部 Agent 八工具与写策略](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md)：三角色同一组工具名；Comparison `candidate/` 只读挂载。
 - [Recovery 调查包](./decisions/accepted/2026-08-31-recovery-investigation-packet.md)：进入模型的历史主通道是 Host 有界调查包，不是全文翻页。
 - [Recovery 八工具面](./decisions/accepted/2026-08-31-recovery-pi-aligned-tools.md)：工作区对齐 Pi；Host 只留 `read_observation`。
 - [partial 以 fingerprint 为变更源](./decisions/accepted/2026-08-31-recovery-fingerprint-changeset.md)：路径集合由 Host 计算，伪造 ref 不得进入 baseline。
@@ -72,7 +75,7 @@
 - [会话恢复的尽力而为实施方案](./plan/session-recovery-best-effort-implementation.md)：让每个 Codex/Claude Code 来源都进入恢复尝试，并区分可回放、部分恢复和不可回放。
 - [列表展示与 Recovery Agent 的分界](./plan/session-intake-vs-recovery-agent.md)：实施清单见该计划；长期约束见[对应决策](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)。
 - [第六轮优化分析](./plan/optimization-round-6.md)：仍未闭合的 P2/P3 条目与产品承诺缺口。
-- [Agent System Prompt 重设计](./plan/agent-system-prompt-redesign.md)：Controller 与 Comparison 提示词的重设计提案。
+- [Agent System Prompt 重设计](./plan/agent-system-prompt-redesign.md)：Controller 与 Comparison 提示词的重设计提案。工具面以 [八工具决策](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md) 为准。
 - [Claude Code Pack 实施](./plan/claude-code-pack-implementation.md)与[第二、第三 Product Pack 全景](./plan/second-product-packs-claude-code-dsh.md)。
 - [Canonical Agent Host 重建](./plan/canonical-agent-host-reconstruction.md)。
 - [借鉴 Grok Build 的 TUI 重构](./plan/grok-style-tui-redesign.md)与[每面设计稿](./plan/grok-style-tui-mockups.html)。
