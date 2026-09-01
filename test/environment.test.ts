@@ -19,6 +19,7 @@ import {
   calculateWorkspaceBudget,
   LocalWorkspaceProvider,
   publishDirectory,
+  recoveryCandidateDirName,
   SNAPSHOT_LIMITS,
 } from "../src/environment/local-workspace-provider.js";
 import { sha256 } from "../src/core/identity.js";
@@ -678,9 +679,15 @@ test("Recovery candidates isolate competing hypotheses and are discarded with th
   });
   const provider = new LocalWorkspaceProvider(root);
   const staging = await provider.beginRecovery({ caseId: "case-candidates", sourceRoot: source });
+  assert.match(staging.recoveryId, /^[0-9a-f]{32}$/);
+  assert.equal(staging.root, join(root, "rs", staging.recoveryId));
+  assert.equal(staging.temporaryRoot, join(root, "rt", staging.recoveryId));
   const first = await provider.createRecoveryCandidate(staging, {
     candidateId: "candidate-git", hypothesisId: "hypothesis-git",
   });
+  assert.equal(first.root, join(root, "rc", staging.recoveryId, recoveryCandidateDirName("candidate-git")));
+  assert.equal(recoveryCandidateDirName("candidate-historical-observations").length, 8);
+  assert.doesNotMatch(first.root, /candidate-historical-observations|candidate-git/);
   const second = await provider.createRecoveryCandidate(staging, {
     candidateId: "candidate-patch", hypothesisId: "hypothesis-patch",
   });

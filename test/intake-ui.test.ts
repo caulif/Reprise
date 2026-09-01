@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTheme } from '../src/tui/theme.js';
 import {
-  groupSessionsByProject, matchesIntakeQuery, projectLabel, renderInspection, renderSessions, sessionListTitle, sessionTitle, taskDisplaySummary,
+  groupSessionsByProject, matchesIntakeQuery, projectLabel, renderInspection, renderSessions, sessionListTitle, sessionTitle, taskDisplaySummary, formatDiscoverySignals,
+  selectDefaultProjectIndex,
 } from '../src/tui/pages/intake.js';
+import { renderWorkbench } from '../src/tui/workbench.js';
 import type { SessionInspection } from '../src/products/contract.js';
 
 test('session titles drop leading Windows paths from PPT prompts', () => {
@@ -66,6 +68,18 @@ test('sessions group by workspace basename and send missing cwd to 其他', () =
   assert.equal(grouped.find((item) => item.key === 'projectless')?.sessions.length, 0);
   assert.equal(grouped.at(-1)?.label, 'Unknown project');
   assert.equal(projectLabel('C:\\Users\\example\\slides'), 'slides');
+});
+
+test('project list default cursor prefers last project, then cwd, and skips harness checkout', () => {
+  const hermes = { key: 'hermes', label: '.hermes', path: 'C:/wsl/.hermes', sessions: [session('h', 'C:/wsl/.hermes', '2026-08-31T12:00:00.000Z', 'Hermes')], latestAt: '2026-08-31T12:00:00.000Z' };
+  const ppt = { key: 'ppt', label: 'ppt', path: 'C:/work/cncert', sessions: [session('p', 'C:/work/cncert', '2026-08-30T12:00:00.000Z', 'PPT')], latestAt: '2026-08-30T12:00:00.000Z' };
+  const reprise = { key: 'reprise', label: 'reprise开发', path: 'C:/work/Reprise', sessions: [session('r', 'C:/work/Reprise', '2026-08-29T12:00:00.000Z', 'Harness')], latestAt: '2026-08-29T12:00:00.000Z' };
+  const projects = [hermes, ppt, reprise];
+  assert.equal(selectDefaultProjectIndex(projects, 'C:/work/cncert'), 1);
+  assert.equal(selectDefaultProjectIndex(projects, 'C:/unrelated'), 0);
+  assert.equal(selectDefaultProjectIndex(projects, 'C:/unrelated', 'ppt'), 1);
+  assert.equal(selectDefaultProjectIndex(projects, 'C:/work/Reprise', '', 'C:/work/Reprise/docs/.local/data'), 0);
+  assert.equal(selectDefaultProjectIndex(projects, 'C:/work/Reprise', 'ppt', 'C:/work/Reprise/docs/.local/data'), 1);
 });
 
 test('unindexed rollouts stay in projectless even when transcript cwd is present', () => {
@@ -169,7 +183,9 @@ test('inspection start skips an injected instruction block', () => {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }).join('\n');
   assert.match(text, /Session start:[\s\S]*Fix the login regression\./);
-  assert.match(text, /Later user turns \(Controller will see these\)[\s\S]*AGENTS\.md/);
+  assert.doesNotMatch(text, /don't re-write it/i);
+  const laterSection = text.split(/Later user turns \(Controller will see these\)/)[1] ?? '';
+  assert.doesNotMatch(laterSection, /AGENTS\.md/);
 });
 
 test('a 24-row inspection still shows the freeze decision', () => {
@@ -251,4 +267,79 @@ test('project grouping disambiguates duplicate workspace basenames with parent p
     session('beta', 'C:/work/beta/app', '2026-08-13T02:00:00.000Z', 'Beta'),
   ]);
   assert.deepEqual(grouped.map((project) => project.label).sort(), ['Projectless sessions', 'alpha/app', 'beta/app']);
+});
+
+test('partial discovery summaries omit uncounted assistant and tool signals', () => {
+  const counted = {
+    signals: { userMessages: 1, assistantMessages: 1, toolCalls: 0, completedTurns: 1 },
+  };
+  const partial = {
+    ...counted,
+    partial: true as const,
+    signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
+  };
+  const catalogOnly = {
+    ...counted,
+    availability: 'catalog-only' as const,
+    signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
+  };
+  assert.equal(formatDiscoverySignals(counted), 'u1 a1 t0');
+  assert.equal(formatDiscoverySignals(partial), 'u1');
+  assert.equal(formatDiscoverySignals(catalogOnly), 'u1');
+  const theme = createTheme(120, false);
+  const listed = renderSessions(theme, 120, {
+    level: 'sessions',
+    projects: [{ key: 'app', label: 'app', path: 'C:/work/app', sessions: [{
+      productId: 'codex', sessionId: 's1', sourcePath: 's1.jsonl', startedAt: '2026-08-13T00:00:00.000Z',
+      cwd: 'C:/work/app', summary: 'Catalog row', partial: true,
+      signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
+    }], latestAt: '2026-08-13T00:00:00.000Z' }],
+    sessions: [{
+      productId: 'codex', sessionId: 's1', sourcePath: 's1.jsonl', startedAt: '2026-08-13T00:00:00.000Z',
+      cwd: 'C:/work/app', summary: 'Catalog row', partial: true,
+      signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
+    }],
+    selected: 0, filterEligible: false, query: '', searching: false, locale: 'en',
+  }, 16).join('\n');
+  assert.match(listed, /u1/);
+  assert.doesNotMatch(listed, /a0/);
+  assert.doesNotMatch(listed, /\[partial summary\]/);
+});
+
+test('a selected session product uses a filled header lamp', () => {
+  const unset = renderWorkbench({
+    page: 'home', cwd: 'C:\\src', hasApiConfig: true, hasUsableAuth: true, hasTaskCase: false,
+    message: 'Welcome back.',
+    home: { taskCase: undefined, recentExperiment: undefined, hasApiConfig: true, hasUsableAuth: true, composer: '', showSuggestions: false },
+  }, 120).join('\n');
+  const selected = renderWorkbench({
+    page: 'sessions', cwd: 'C:\\src', hasApiConfig: true, hasUsableAuth: false, hasTaskCase: false,
+    productLabel: 'Codex', productConfigured: true,
+    message: 'Select an agent product.',
+    home: { taskCase: undefined, recentExperiment: undefined, hasApiConfig: true, hasUsableAuth: false, composer: '', showSuggestions: false },
+    sessions: {
+      level: 'products', projects: [], sessions: [], selected: 0, filterEligible: false, query: '', searching: false,
+      products: [{ productId: 'codex', displayName: 'Codex', packVersion: '0.1.0', discoveryStatus: 'idle' }],
+    },
+  } as never, 120).join('\n');
+  assert.match(unset, /○ Product unset|o Product unset/);
+  assert.match(selected, /● Codex|\* Codex/);
+  assert.doesNotMatch(selected, /Product unset/);
+});
+
+test('discovery messages wrap on semantic lines instead of mid-phrase', () => {
+  const text = renderWorkbench({
+    page: 'sessions', cwd: 'C:\\src', hasApiConfig: true, hasUsableAuth: true, hasTaskCase: false,
+    productLabel: 'Codex', productConfigured: true,
+    message: 'Choose a historical session. Enter opens the review; Enter again freezes and starts recovery.\nLoaded 3 projects and 2 sessions.\n2 shown · 0 skipped · 2 scanned.\nThe catalog is complete; m does not paginate.\nDiagnostics: catalog index unavailable (not this row) (1).',
+    home: { taskCase: undefined, recentExperiment: undefined, hasApiConfig: true, hasUsableAuth: true, composer: '', showSuggestions: false },
+    sessions: {
+      level: 'sessions',
+      projects: [{ key: 'reprise', label: 'reprise', path: 'C:/reprise', sessions: [], latestAt: '' }],
+      sessions: [], selected: 0, filterEligible: false, query: '', searching: false,
+    },
+  } as never, 72).join('\n');
+  assert.match(text, /2 shown · 0 skipped · 2 scanned/);
+  assert.doesNotMatch(text, /2\n sessions/);
+  assert.match(text, /catalog index unavailable \(not this row\)/);
 });

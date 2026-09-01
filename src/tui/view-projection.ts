@@ -154,8 +154,11 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(input.recoveryAttempt.providerPreview?.reportText ? { reportText: input.recoveryAttempt.providerPreview.reportText } : {}),
     unresolved: input.recoveryAttempt.baseline.recovery.unresolved,
     changedPathCount: input.recoveryAttempt.providerPreview?.changedPaths.length ?? 0,
+    skippedPaths: [...(input.recoveryAttempt.baseline.budget?.excludedEntries ?? [])],
     ...(input.recoveryAttempt.baseline.recovery.failureStage
-      ? { failureSummary: formatRecoveryFailureSummary(input.locale ?? 'en', input.recoveryAttempt.baseline.recovery.failureStage) }
+        ? { failureSummary: formatRecoveryFailureSummary(input.locale ?? 'en', input.recoveryAttempt.baseline.recovery.failureStage, {
+            changedPathCount: input.recoveryAttempt.providerPreview?.changedPaths.length ?? 0,
+          }) }
       : {}),
   } : undefined;
   if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };

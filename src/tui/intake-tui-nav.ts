@@ -29,6 +29,10 @@ export function CodexIntakeTui_move(this: CodexIntakeTui, amount: number): { con
       0,
       Math.min(Math.max(0, count - 1), this.selected + amount),
     );
+    if (this.page === "sessions" && this.intakeLevel === "products") {
+      const productId = this.packs[this.selected]?.manifest.productId;
+      if (productId) this.lastProductId = productId;
+    }
     this.render();
     return { consume: true };
   }

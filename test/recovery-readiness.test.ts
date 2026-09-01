@@ -33,7 +33,7 @@ test("Recovery readiness blocks paths outside staging", async () => {
   assert.equal(result.status, "blocked");
 });
 
- test("Recovery readiness refuses continuation when no task path is available", async () => {
+test("Recovery readiness treats an empty path list as ready after Host accepted the workspace", async () => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-no-path-"));
   const result = await checkRecoveryReadiness(root, {
     schemaVersion: 1,
@@ -43,8 +43,8 @@ test("Recovery readiness blocks paths outside staging", async () => {
     priorCommands: [],
     availableChecks: ["inspect required paths and task inputs"],
   });
-  assert.equal(result.status, "not_ready");
-  assert.match(result.feedback, /No task-relevant path/);
+  assert.equal(result.status, "ready");
+  assert.match(result.feedback, /No extra task paths/);
 });
 
 

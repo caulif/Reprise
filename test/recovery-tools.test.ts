@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   mkdir,
   mkdtemp,
@@ -11,7 +12,10 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { PassThrough } from "node:stream";
 import { promisify } from "node:util";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
+import type { ProcessSpawner } from "../src/infrastructure/process-runner.js";
 import {
   recoveryObservationTools,
   recoveryTools,
@@ -48,6 +52,26 @@ function nodeCommand(script: string): string {
   return `& '${executable}' -e ${JSON.stringify(script)}`;
 }
 
+function capturingSpawner(capture: {
+  command?: string;
+  args?: readonly string[];
+  env?: NodeJS.ProcessEnv;
+}): ProcessSpawner {
+  return (command: string, args: readonly string[], options: SpawnOptions) => {
+    capture.command = command;
+    capture.args = args;
+    if (options.env) capture.env = options.env;
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: () => true,
+    });
+    queueMicrotask(() => child.emit("close", 0));
+    return child as unknown as ChildProcess;
+  };
+}
+
 
 test("powershell is always registered on the Recovery workspace surface", async (t) => {
   const root = await workspace();
@@ -69,10 +93,11 @@ test("structured recovery tools reject traversal, absolute paths, backslashes an
     "../x",
     resolve(root, "input.txt"),
     "dir\\x",
-    "./input.txt",
   ]) {
     await assert.rejects(read.execute({ path }, new AbortController().signal));
   }
+  const dotted = await read.execute({ path: "./input.txt" }, new AbortController().signal);
+  assert.match(dotted.content, /original/);
   try {
     await symlink(join(root, "input.txt"), join(root, "link.txt"));
   } catch {
@@ -730,6 +755,105 @@ test("powershell reports a missing Windows executable without leaking command de
   const shell = tool(root, "powershell", 64, { shellExecutable: join(root, "missing-pwsh.exe") });
   await assert.rejects(
     shell.execute({ command: "echo should-not-run" }, new AbortController().signal),
-    /spawn error/i,
+    (error: unknown) =>
+      error instanceof Error &&
+      /ENOENT/.test(error.message) &&
+      /未找到 PowerShell/.test(error.message) &&
+      !/echo should-not-run/.test(error.message),
   );
+});
+
+test("powershell uses PATH pwsh, Bypass, UTF-8 prefix, and argv command on a short cwd", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows argv case");
+    return;
+  }
+  const root = await workspace();
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const pwsh = join(root, "pwsh.exe");
+  await writeFile(pwsh, "");
+  const capture: { command?: string; args?: readonly string[]; env?: NodeJS.ProcessEnv } = {};
+  const shell = tool(root, "powershell", 64, {
+    findExecutableOnPath: (name: string) => (name === "pwsh.exe" ? pwsh : undefined),
+    spawnProcess: capturingSpawner(capture),
+  });
+  await shell.execute({ command: "Get-Location" }, new AbortController().signal);
+  assert.equal(capture.command, pwsh);
+  assert.deepEqual(capture.args?.slice(0, 5), [
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+  ]);
+  assert.match(String(capture.args?.at(-1)), /OutputEncoding/);
+  assert.match(String(capture.args?.at(-1)), /Get-Location/);
+  assert.equal(capture.env?.REPRISE_RECOVERY_COMMAND, undefined);
+});
+
+test("powershell reports a missing staging directory without MAX_PATH or executable wording", async () => {
+  const missing = join(tmpdir(), `reprise-missing-cwd-${Date.now()}`);
+  const shell = tool(missing, "powershell");
+  await assert.rejects(
+    shell.execute({ command: "Get-Location" }, new AbortController().signal),
+    (error: unknown) =>
+      error instanceof Error &&
+      /Working directory does not exist/.test(error.message) &&
+      !/MAX_PATH/.test(error.message) &&
+      !/未找到 PowerShell/.test(error.message),
+  );
+});
+
+test("powershell mutates staging when the workspace path exceeds Windows MAX_PATH", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows CreateProcess MAX_PATH case");
+    return;
+  }
+  let root = await mkdtemp(join(tmpdir(), "reprise-maxpath-"));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  while (root.length < 270) {
+    root = join(root, "seg01234567");
+    await mkdir(root, { recursive: true });
+  }
+  await writeFile(join(root, "input.txt"), "original\r\n");
+  const shell = tool(root, "powershell");
+  const signal = new AbortController().signal;
+  await shell.execute({ command: "'probe' | Set-Content -LiteralPath probe.txt" }, signal);
+  assert.match(await readFile(join(root, "probe.txt"), "utf8"), /probe/);
+  await shell.execute({ command: "Remove-Item -LiteralPath input.txt" }, signal);
+  await assert.rejects(readFile(join(root, "input.txt")));
+});
+
+test("powershell long cwd keeps the command in IEX environment variables", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows CreateProcess MAX_PATH case");
+    return;
+  }
+  let root = await mkdtemp(join(tmpdir(), "reprise-maxpath-iex-"));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  while (root.length < 270) {
+    root = join(root, "seg01234567");
+    await mkdir(root, { recursive: true });
+  }
+  const capture: { args?: readonly string[]; env?: NodeJS.ProcessEnv } = {};
+  const shell = tool(root, "powershell", 64, { spawnProcess: capturingSpawner(capture) });
+  await shell.execute({ command: "Remove-Item -LiteralPath input.txt" }, new AbortController().signal);
+  assert.match(String(capture.args?.at(-1)), /Invoke-Expression/);
+  assert.match(String(capture.env?.REPRISE_RECOVERY_COMMAND), /OutputEncoding/);
+  assert.match(String(capture.env?.REPRISE_RECOVERY_COMMAND), /Remove-Item/);
+  assert.equal(capture.env?.REPRISE_RECOVERY_CWD, root);
+});
+
+test("ls treats omitted path, dot, and dot-slash as the staging root", async (t) => {
+  const root = await workspace();
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const listing = tool(root, "ls");
+  const signal = new AbortController().signal;
+  const omitted = JSON.parse((await listing.execute({}, signal)).content) as string[];
+  const dot = JSON.parse((await listing.execute({ path: "." }, signal)).content) as string[];
+  const slashDot = JSON.parse((await listing.execute({ path: "./" }, signal)).content) as string[];
+  assert.deepEqual(dot, omitted);
+  assert.deepEqual(slashDot, omitted);
+  await assert.rejects(listing.execute({ path: ".." }, signal));
+  await assert.rejects(listing.execute({ path: "C:/outside" }, signal));
 });

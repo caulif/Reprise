@@ -245,7 +245,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.message = userStatus === 'recovered'
       ? t(c.locale, 'recoveryReady')
       : userStatus === 'partial'
-        ? t(c.locale, 'recoveryPartial')
+        ? t(c.locale, 'recoveryPartial', { n: attempt.providerPreview?.changedPaths.length ?? 0 })
         : t(c.locale, 'recoveryFailed');
   } catch (error) {
     if (token !== c.generation) return;

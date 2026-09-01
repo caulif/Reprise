@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Duplex, PassThrough } from 'node:stream';
 import test from 'node:test';
-import { ProcessBoundaryError, runProcess, type ProcessSpawner } from '../src/infrastructure/process-runner.js';
+import { ProcessBoundaryError, runProcess, windowsTaskkillExecutable, type ProcessSpawner } from '../src/infrastructure/process-runner.js';
 
 function fakeSpawner(child: EventEmitter & { stdin: Duplex; stdout: PassThrough; stderr: PassThrough; kill(): boolean }): ProcessSpawner {
   return (() => child) as unknown as ProcessSpawner;
@@ -91,4 +91,9 @@ test('runProcess classifies a caller cancellation independently from timeout', a
     assert.equal(cause.exitCategory, 'cancelled');
     return true;
   });
+});
+
+test('windows kill tree uses System32 taskkill, not PATH', () => {
+  assert.match(windowsTaskkillExecutable(), /System32[/\\]taskkill\.exe$/i);
+  assert.notEqual(windowsTaskkillExecutable(), 'taskkill');
 });

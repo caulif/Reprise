@@ -1,4 +1,4 @@
-Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Harness key missing  ○ Claude Code  ○ No task
+Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Harness key missing  ● Claude Code  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Last task  none selected
 
@@ -16,7 +16,9 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
 
  ❯ [/] Search
- Choose a project, then a session. Type / to search. Loaded 2 projects and 1 sessions. 1 shown · 0 skipped. · 1 scanned
-The catalog is complete; m does not paginate.
+ Choose a project, then a session. Type / to search.
+ Loaded 2 projects and 1 sessions.
+ 1 shown · 0 skipped · 1 scanned.
+ The catalog is complete; m does not paginate.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [↑↓] Select  [Enter] Open project  [/] Search  [f] Filter  [m] All sessions loaded  [r] Refresh  [Esc] Home

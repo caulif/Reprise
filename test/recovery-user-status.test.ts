@@ -95,4 +95,12 @@ test('diagnosis reason prefers failureStage over skipped symlink', () => {
     }),
     transcriptOk: true,
   }), 'workspace.symlink_skipped');
+  assert.equal(diagnosisReasonCode({
+    baseline: baseline({
+      match: 'recovered_partial',
+      recovery: { status: 'partial', unresolved: ['no git'], sourceDigest: 'a'.repeat(64), recoveredDigest: 'b'.repeat(64) },
+    }),
+    transcriptOk: true,
+    hasAccept: true,
+  }), 'weak_or_incomplete_evidence');
 });

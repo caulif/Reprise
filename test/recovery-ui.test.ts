@@ -89,11 +89,17 @@ test('confirmation with accept stays partial and startable', () => {
     harnessAuthOk: true,
     productLabel: 'Codex',
     locale: 'zh',
-    recovery: { status: 'partial', unresolved: ['Workspace also changed extra.txt without a matching manifest action.'], changedPathCount: 16 },
+    recovery: { status: 'partial', unresolved: ['Workspace also changed extra.txt without a matching manifest action.'], changedPathCount: 16, skippedPaths: [{ path: 'ppt_build/node_modules', reasonCode: 'workspace.symlink_skipped' }] },
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'partial', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: ['Workspace also changed extra.txt without a matching manifest action.'], comparisonClass: 'recovered_partial' },
   } as never).join('\n');
   assert.match(text, /部分恢复/);
+  assert.match(text, /变更路径/);
+  assert.match(text, /16/);
+  assert.match(text, /跳过路径/);
+  assert.match(text, /ppt_build\/node_modules/);
+  assert.match(text, /未决/);
+  assert.match(text, /extra\.txt/);
   assert.doesNotMatch(text, /无法启动隔离/);
   assert.match(text, /启动隔离的 Codex 候选/);
 });
@@ -113,17 +119,43 @@ test('confirmation without accept explains validation failure in Chinese', () =>
       status: 'failed',
       unresolved: [],
       changedPathCount: 0,
-      failureSummary: formatRecoveryFailureSummary('zh', 'provider_validation_failed'),
+      failureSummary: formatRecoveryFailureSummary('zh', 'provider_validation_failed', { changedPathCount: 0 }),
+    },
+    policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
+    preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
+  } as never).join('\n');
+  assert.match(text, /无法启动隔离的 Codex 候选/);
+  assert.match(text, /没有观察到隔离工作区变更/);
+  assert.match(text, /no_task_path_outcome/);
+  assert.doesNotMatch(text, /工作区校验未通过/);
+  assert.doesNotMatch(text, /对照会从/);
+  const diagnostic = [...text.matchAll(/恢复诊断.*/g)].map((row) => row[0]).join('\n');
+  assert.doesNotMatch(diagnostic, /^恢复诊断\s+provider_validation_failed$/);
+});
+
+test('confirmation with workspace changes still reports validation failure', () => {
+  const theme = createTheme(120, false);
+  const text = renderConfirmation(theme, 120, {
+    candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
+    step: 3,
+    sourceRoot: String.raw`C:\workspace`,
+    effort: 'high',
+    harnessModel: 'gpt-5',
+    harnessAuthOk: true,
+    productLabel: 'Codex',
+    locale: 'zh',
+    recovery: {
+      status: 'failed',
+      unresolved: [],
+      changedPathCount: 3,
+      failureSummary: formatRecoveryFailureSummary('zh', 'provider_validation_failed', { changedPathCount: 3 }),
     },
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
   assert.match(text, /无法启动隔离的 Codex 候选/);
   assert.match(text, /工作区校验未通过/);
-  assert.match(text, /provider_validation_failed/);
-  assert.doesNotMatch(text, /对照会从/);
-  const diagnostic = [...text.matchAll(/恢复诊断.*/g)].map((row) => row[0]).join('\n');
-  assert.doesNotMatch(diagnostic, /^恢复诊断\s+provider_validation_failed$/);
+  assert.doesNotMatch(text, /没有观察到隔离工作区变更/);
 });
 
 test('failure page uses the user-facing could-not-recover title', () => {

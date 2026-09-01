@@ -1,6 +1,6 @@
 # 2026-08-31 走查后的恢复修复规划
 
-状态：A–G 已落地；H Discovery 后置  
+状态：A–H 已落地  
 范围：同一次 Codex 历史会话走到确认页仍挡住「部分恢复可开跑」的缺口，以及 Recovery **工具面与 Host 调查包**的收敛。不扩大为候选 Runtime、跟随出根 symlink、无界调查预算。  
 依据：[TUI](../product/tui.md)、[Environment](../architecture/environment.md)、[校验通过预览自动接受](../decisions/accepted/2026-08-31-recovery-auto-accept-validated-preview.md)、[partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)、[无 accept 不得开跑](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)、[列表与 Recovery 分界](../decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)、[回放起点](../decisions/accepted/2026-08-31-replay-user-task-not-injected-instruction.md)、[证据 catalog](../decisions/accepted/2026-08-17-recovery-evidence-catalog-and-fallback.md)。走查事实在本机 `docs/.local/`（不受控，本文不链过去）。Pi 内置工具面见 [earendil-works/pi](https://github.com/earendil-works/pi) `packages/coding-agent/src/core/tools`（`ToolName`：`read` / `bash` / `powershell` / `edit` / `write` / `grep` / `find` / `ls`）。
 
@@ -36,7 +36,7 @@ Done means：`npm run check`；TUI 改动更新 `docs/tui-audit/frames/`；工�
 
 删、改名、Git：`powershell` 或 `edit`/`write`。报告：约定 `write` 到 staging 根 `recovery.md`；校验后 Host 摘掉（与今天专用 sink 同一不变量）。契约 JSON 不进候选树。
 
-三个角色工作区动词对齐；Controller / Comparison 的完整工具面见 [审查稿](../research/controller-comparison-host-packet-and-tools.md)。`read_observation` 的 source 按角色白名单区分，本计划不改名。Recovery prompt：默认先看调查包。
+三个角色工作区动词对齐。Controller / Comparison 的换装、audit、轮间压缩见 [八工具](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)、[轮间压缩](../decisions/accepted/2026-08-31-internal-agent-turn-compaction.md)、[审计](../decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)。`read_observation` 的 source 按角色白名单区分。Recovery prompt：默认先看调查包。
 
 ## 2. 非目标
 
@@ -45,7 +45,7 @@ Done means：`npm run check`；TUI 改动更新 `docs/tui-audit/frames/`；工�
 - 自动启动计费 Candidate。
 - Recovery 解析产品 JSONL 或改 `initialInput`。
 - 第一轮塞进全文 transcript（曾经撑爆上下文）。
-- Discovery `a0` / 默认光标 / 页脚换行（§7 后置）。
+- Discovery 列表把「窗口里看不到助手」标成硬 `unreadable`。
 
 ## 3. 根因
 
@@ -72,7 +72,7 @@ D 破坏性变更上限    ──► 不封读/搜
 E 时间线诊断码合并
 F 核对页
 G Playbook 与 Recovery prompt
-H Discovery（后置）
+H Discovery
 ```
 
 A 与 C 不依赖新工具名，可先于 B 落地（旧工具仍能跑通走查）。B 必须改 architecture §7.1、Playbook、大量测试。D 在 B 之后按 `powershell`/fingerprint 计，不再按 `delete_file` 次数。
@@ -204,9 +204,12 @@ A 与 C 不依赖新工具名，可先于 B 落地（旧工具仍能跑通走查
 
 ---
 
-### H — Discovery（后置）
+### H — Discovery
 
-空心灯、页脚分行、`a0`、默认光标：不挡 A–G。
+- 顶栏空心灯只表示未选会话产品：home 无冻结任务时仍空心。产品列表光标所在 Pack、以及已进入该 Pack 的项目/会话页，顶栏实心灯（与 CLI 登录、Harness 密钥无关）。
+- 打开 `/intake` 时光标落在上次浏览的 Pack，否则第一项；顶栏跟随光标。
+- 发现说明分行：指令、已加载计数、分页、catalog 全局诊断各占一行。`catalog-unavailable` / `invalid-jsonl` 标明不是当前行损坏。
+- 列表残缺摘要（`partial` 或 `catalog-only`）只展示已计数的 `uN`，不写未扫描的 `a0 t0`。核对页仍用 inspect 后的完整信号。
 
 ## 5. 确认页
 
@@ -223,6 +226,6 @@ A 与 C 不依赖新工具名，可先于 B 落地（旧工具仍能跑通走查
 2. **D 过渡**（删除上限不误伤 list）若 C 单独合入。
 3. **B + D 最终 + G**（换 8 工具、预算改计、文档）。
 4. **E、F**（TUI）。
-5. **H** 可选。
+5. **H**（Discovery 顶栏/页脚/信号）。
 
 复跑同一 jsonl、同一源目录、停确认页。通过：调查包事件存在；`hasAccept` 或 `baselines/` 有 root；确认页部分恢复；核对页能打开。

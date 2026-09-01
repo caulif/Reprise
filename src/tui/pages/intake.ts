@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { asPosixPath, canonicalRecordedRoot } from '../../core/paths.js';
+import { asPosixPath, canonicalRecordedRoot, pathContainedBy } from '../../core/paths.js';
 import { compareSessionSummaries, type SessionDiscoveryProject, type SessionInspection, type SessionPrivacy, type SessionSummary } from '../../products/contract.js';
 import {
   isUnknownProjectKey,
@@ -63,8 +63,19 @@ export type InspectionModel = {
 
 function isProjectless(key: string): boolean { return key === PROJECTLESS_PROJECT_KEY; }
 
+/** Discovery list omits a/t when the summary window did not count them. Inspect uses full signals. */
+export function formatDiscoverySignals(session: Pick<SessionSummary, 'signals' | 'partial' | 'availability'>): string {
+  const user = `u${session.signals.userMessages}`;
+  if (session.partial || session.availability === 'catalog-only') return user;
+  return `${user} a${session.signals.assistantMessages} t${session.signals.toolCalls}`;
+}
+
 function sessionStatus(session: SessionSummary, locale: Locale): string {
-  if (session.partial) return t(locale, 'partialSession');
+  const titled = sessionListTitle(session, locale);
+  const placeholder = t(locale, 'noTaskSummary');
+  if (session.partial && (!titled || titled === placeholder || looksLikeInjectedInstruction(titled))) {
+    return t(locale, 'partialSession');
+  }
   if (session.recoveryReadiness === 'best-effort') return t(locale, 'bestEffortSession');
   if (session.recoveryReadiness === 'no-user-input') return t(locale, 'noUserInputSession');
   if (session.recoveryReadiness === 'corrupt') return t(locale, 'corruptSession');
@@ -183,6 +194,36 @@ export function groupSessionsByProject(sessions: readonly SessionSummary[], cata
   });
 }
 
+export function selectDefaultProjectIndex(
+  projects: readonly SessionProject[],
+  displayCwd: string,
+  lastProjectKey = '',
+  dataDir = '',
+): number {
+  if (!projects.length) return 0;
+  if (lastProjectKey) {
+    const remembered = projects.findIndex((project) => project.key === lastProjectKey);
+    if (remembered >= 0) return remembered;
+  }
+  const cwdHits = projects
+    .map((project, index) => ({ index, path: project.path }))
+    .filter((item): item is { index: number; path: string } => Boolean(item.path) && pathContainedBy(item.path!, displayCwd))
+    .filter((item) => !isHarnessCheckout(item.path, displayCwd, dataDir));
+  if (cwdHits.length) {
+    cwdHits.sort((left, right) => right.path.length - left.path.length);
+    return cwdHits[0]!.index;
+  }
+  return 0;
+}
+
+function isHarnessCheckout(projectPath: string, displayCwd: string, dataDir: string): boolean {
+  if (!dataDir) return false;
+  const dataInsideProject = pathContainedBy(projectPath, dataDir);
+  const dataInsideCwd = pathContainedBy(displayCwd, dataDir);
+  const projectIsCwd = asPosixPath(projectPath).toLowerCase() === asPosixPath(displayCwd).toLowerCase();
+  return dataInsideProject || (projectIsCwd && dataInsideCwd);
+}
+
 export function relativeTime(iso: string | undefined, now = Date.now(), locale: Locale = 'en'): string {
   if (!iso) return t(locale, 'unknownTime');
   const then = Date.parse(iso);
@@ -234,11 +275,13 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
   }
   const start = firstReplayUserMessage(inputs) ?? inputs[0];
   const later = start ? inputs.filter((message) => message.id !== start.id) : inputs.slice(1);
+  const laterTasks = later.filter((message) => !looksLikeInjectedInstruction(message.text));
   const project = projectLabel(inspection.cwd, locale);
   const tight = height !== undefined && height < 26;
   const freezePreview = wrapPreview(start?.text ?? t(locale, 'unavailableValue'), Math.max(20, width - 4), tight ? 2 : 4, locale);
-  const laterLines = later.length
-    ? later.map((input, index) => ` ${index + 2}/${inputs.length}  ${compact(sessionTitle(input.text, locale), 72, theme.glyphs.ellipsis)}`)
+  const laterTotal = laterTasks.length + 1;
+  const laterLines = laterTasks.length
+    ? laterTasks.map((input, index) => ` ${index + 2}/${laterTotal}  ${compact(sessionTitle(input.text, locale), 72, theme.glyphs.ellipsis)}`)
     : [` ${t(locale, 'noneWord')}`];
   const outcome = compact(inspection.finalMessage ?? t(locale, 'unavailableValue'), showOutcome ? 400 : 120, theme.glyphs.ellipsis);
   const meta = ` ${project} ${theme.glyphs.sep} ${relativeTime(inspection.startedAt, model.nowMs ?? Date.now(), locale)} ${theme.glyphs.sep} u${inspection.signals.userMessages} a${inspection.signals.assistantMessages} t${inspection.signals.toolCalls}`;
@@ -372,7 +415,7 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
     started: relativeTime(session.startedAt, model.nowMs ?? Date.now(), locale),
     summary: `${sessionStatus(session, locale) ? `${sessionStatus(session, locale)} ` : ''}${sessionListTitle(session, locale)}`,
     gap: ' ',
-    signals: `u${session.signals.userMessages} a${session.signals.assistantMessages} t${session.signals.toolCalls}`,
+    signals: formatDiscoverySignals(session),
   }));
   const range = visibleRange(rows, model.selected, limit);
   const listBody = paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
@@ -390,7 +433,7 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
     kv(theme, t(locale, 'fieldSession'), selected.sessionId.slice(0, 8), previewWidth - 2),
     kv(theme, t(locale, 'fieldStarted'), (selected.startedAt ?? t(locale, 'unknownTime')).replace('T', ' ').slice(0, 16), previewWidth - 2),
     kv(theme, t(locale, 'fieldUpdated'), (selected.updatedAt ?? selected.startedAt ?? t(locale, 'unknownTime')).replace('T', ' ').slice(0, 16), previewWidth - 2),
-    kv(theme, t(locale, 'fieldSignals'), `u${selected.signals.userMessages} a${selected.signals.assistantMessages} t${selected.signals.toolCalls}`, previewWidth - 2),
+    kv(theme, t(locale, 'fieldSignals'), formatDiscoverySignals(selected), previewWidth - 2),
     '',
     kv(theme, t(locale, 'fieldStatus'), sessionStatus(selected, locale) || t(locale, 'availableSession'), previewWidth - 2),
     kv(theme, t(locale, 'fieldTask'), `${sessionListTitle(selected, locale)}`, previewWidth - 2),

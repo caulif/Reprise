@@ -1,6 +1,6 @@
 import type { CodexIntakeTui } from "./intake-tui.js";
 import { type DiscoveryDiagnostic, type SessionSummary } from "../products/contract.js";
-import { type SessionProject } from "./pages/intake.js";
+import { type SessionProject, selectDefaultProjectIndex } from "./pages/intake.js";
 import { readLocalHistory } from "./local-history.js";
 import {
   groupedProjects as groupIntakeProjects,
@@ -36,8 +36,10 @@ export async function CodexIntakeTui_loadHome(this: CodexIntakeTui, initialMessa
 export async function CodexIntakeTui_loadSessions(this: CodexIntakeTui): Promise<void> {
     this.beginNavigation();
     this.intakeLevel = "products";
+    const last = this.lastProductId || this.activeProductId;
     this.activeProductId = "";
-    this.selected = 0;
+    const index = last ? this.packs.findIndex((pack) => pack.manifest.productId === last) : 0;
+    this.selected = index >= 0 ? index : 0;
     this.searchQuery = "";
     this.searchCursor = 0;
     this.searching = false;
@@ -60,13 +62,16 @@ export function CodexIntakeTui_refreshProductSessions(this: CodexIntakeTui): voi
 
 export function CodexIntakeTui_activateProductSessions(this: CodexIntakeTui, productId: string, sessions: readonly SessionSummary[], limitReached: boolean): void {
     this.activeProductId = productId;
+    this.lastProductId = productId;
     this.sessions = sessions;
     this.sessionLimitReached = limitReached;
-    this.selected = 0;
     this.searchQuery = "";
     this.searchCursor = 0;
     this.searching = false;
     this.intakeLevel = "projects";
+    const projects = this.visibleProjects();
+    this.selected = selectDefaultProjectIndex(projects, this.displayCwd, this.lastProjectKey, this.dataDir);
+    this.activeProjectKey = projects[this.selected]?.key ?? "";
     this.syncIntakeLevel();
     this.page = "sessions";
     this.message = this.sessionsMessage();
@@ -82,6 +87,7 @@ export function CodexIntakeTui_openIntakeSelection(this: CodexIntakeTui): { cons
       const project = this.visibleProjects()[this.selected];
       if (!project) return { consume: true };
       this.activeProjectKey = project.key;
+      this.lastProjectKey = project.key;
       this.intakeLevel = "sessions";
       this.selected = 0;
       this.searching = false;
@@ -98,24 +104,28 @@ export function CodexIntakeTui_openIntakeSelection(this: CodexIntakeTui): { cons
 }
 
 export function CodexIntakeTui_sessionsMessage(this: CodexIntakeTui): string {
+    if (this.intakeLevel === "products") return t(this.locale, "chooseAgentProduct");
     const discovery = this.activeProductId ? this.productDiscovery.get(this.activeProductId) : undefined;
     if (discovery?.status === "loading") return t(this.locale, "sessionsLoading");
     const projects = this.groupedProjects();
     const loaded = t(this.locale, "catalogLoaded", { projects: projects.length, sessions: this.sessions.length });
     const skipped = discovery?.skipped ?? 0;
-    const status = t(this.locale, "sessionDiscoveryStatus", { shown: this.sessions.length, skipped });
-    const scanned = ` · ${discovery?.scanned ?? this.sessions.length} ${this.locale === "zh" ? "已扫描" : "scanned"}`;
-    const more = ` ${t(this.locale, "loadMoreSessions")}`;
-    const diagnostics = discovery?.diagnostics?.length
-      ? ` ${t(this.locale, "sessionDiagnostics", {
+    const scanned = discovery?.scanned ?? this.sessions.length;
+    const status = t(this.locale, "sessionDiscoveryStatus", { shown: this.sessions.length, skipped, scanned });
+    const lines = [
+      this.sessions.length
+        ? this.intakeLevel === "projects" ? t(this.locale, "chooseProject") : t(this.locale, "chooseSession")
+        : t(this.locale, "noSessionsFound"),
+      loaded,
+      `${status}.`,
+      t(this.locale, "loadMoreSessions"),
+    ];
+    if (discovery?.diagnostics?.length) {
+      lines.push(t(this.locale, "sessionDiagnostics", {
         diagnostics: discovery.diagnostics.map((diagnostic: DiscoveryDiagnostic) => `${this.discoveryDiagnosticLabel(this.locale, diagnostic.code)} (${diagnostic.count})`).join(", "),
-      })}.`
-      : "";
-    if (!this.sessions.length) return `${t(this.locale, "noSessionsFound")} ${loaded} ${status}.${scanned}${more}${diagnostics}`;
-    const instruction = this.intakeLevel === "projects"
-      ? t(this.locale, "chooseProject")
-      : t(this.locale, "chooseSession");
-    return `${instruction} ${loaded} ${status}.${scanned}${more}${diagnostics}`;
+      }) + ".");
+    }
+    return lines.join("\n");
   }
 
 export function CodexIntakeTui_discoveryDiagnosticLabel(this: CodexIntakeTui, locale: Locale, code: DiscoveryDiagnostic['code']): string {
@@ -123,6 +133,7 @@ export function CodexIntakeTui_discoveryDiagnosticLabel(this: CodexIntakeTui, lo
   if (code === 'source-missing') return t(locale, 'sourceMissingDiagnostic');
   if (code === 'duplicate-source') return t(locale, 'duplicateSourceDiagnostic');
   if (code === 'invalid-jsonl') return t(locale, 'catalogInvalidJsonl');
+  if (code === 'catalog-unavailable') return t(locale, 'catalogUnavailable');
   return code;
 }
 

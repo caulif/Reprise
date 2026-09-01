@@ -36,6 +36,7 @@ function imported(transcript: readonly SessionMessage[]): ImportedSession {
 test('looksLikeInjectedInstruction matches AGENTS.md and instruction fences', () => {
   assert.equal(looksLikeInjectedInstruction(AGENTS), true);
   assert.equal(looksLikeInjectedInstruction('<INSTRUCTIONS>\nBe careful.'), true);
+  assert.equal(looksLikeInjectedInstruction('<environment_context>\n<current_date>2026-08-30</current_date>'), true);
   assert.equal(looksLikeInjectedInstruction(TASK), false);
 });
 

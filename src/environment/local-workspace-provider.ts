@@ -1,6 +1,6 @@
 import { lstat, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { SAFE_ID, writeAtomic } from '../core/identity.js';
+import { SAFE_ID, sha256, writeAtomic } from '../core/identity.js';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
 import { RecoveryCheckpointRecordSchema, type RecoveryCheckpointRecord, type RecoveryControlledWrite } from '../core/schema.js';
@@ -180,6 +180,11 @@ export type RecoveryPreview = {
   accepted: boolean;
 };
 
+/** On-disk candidate folder is an 8-hex digest so CreateProcess cwd stays under MAX_PATH. */
+export function recoveryCandidateDirName(candidateId: string): string {
+  return sha256(candidateId).slice(0, 8);
+}
+
 export class LocalWorkspaceProvider {
   readonly #root: string;
   readonly #copyTree: TreeCopier;
@@ -326,11 +331,11 @@ export class LocalWorkspaceProvider {
     if (inspected.mode !== 'canonical' || inspected.readiness.runnable !== 'isolated') {
       throw new Error(`Environment source for ${source.caseId} cannot be recovered.`);
     }
-    const recoveriesRoot = join(this.#root, 'recovery-staging');
+    const recoveriesRoot = join(this.#root, 'rs');
     await mkdir(recoveriesRoot, { recursive: true });
-    const recoveryId = `recovery-${source.caseId}-${randomUUID()}`;
+    const recoveryId = randomUUID().replaceAll('-', '');
     const root = join(recoveriesRoot, recoveryId);
-    const temporaryRoot = join(this.#root, 'recovery-temp', recoveryId);
+    const temporaryRoot = join(this.#root, 'rt', recoveryId);
     try {
       await mkdir(root);
       await mkdir(temporaryRoot, { recursive: true });
@@ -378,7 +383,7 @@ export class LocalWorkspaceProvider {
     assertId(input.hypothesisId, 'hypothesisId');
     const key = `${staging.recoveryId}:${input.candidateId}`;
     if (this.#recoveryCandidates.has(key)) throw new Error('Recovery candidate already exists.');
-    const root = join(this.#root, 'recovery-candidates', staging.recoveryId, input.candidateId);
+    const root = join(this.#root, 'rc', staging.recoveryId, recoveryCandidateDirName(input.candidateId));
     await mkdir(dirname(root), { recursive: true });
     try {
       await mkdir(root);

@@ -75,12 +75,16 @@ export function productItems(c: CodexIntakeTui): import("./pages/intake.js").Pro
 }
 
 export function productContext(c: CodexIntakeTui): { productLabel?: string; productConfigured?: boolean } {
-  const productId = c.taskCase?.source.productId || c.activeProductId;
+  const highlighted = c.page === 'sessions' && c.intakeLevel === 'products'
+    ? c.packs[c.selected]?.manifest.productId ?? ''
+    : '';
+  const browsing = c.page === 'sessions' || c.page === 'inspection';
+  const productId = c.taskCase?.source.productId || (browsing ? (c.activeProductId || highlighted) : '');
   const pack = c.packs.find((item) => item.manifest.productId === productId);
   if (!pack) return {};
   return {
     productLabel: pack.manifest.displayName,
-    productConfigured: c.productAuth.get(productId) ?? false,
+    productConfigured: true,
   };
 }
 

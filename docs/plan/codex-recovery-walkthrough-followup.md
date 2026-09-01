@@ -3,7 +3,7 @@
 状态：完成
 
 范围：2026-08-30 同会话复跑后仍成立的缺口。不扩大为候选 Runtime、冻结 `initialInput`、跟随出根 symlink。  
-依据：[复跑走查](../.local/cncert-20260825ppt-recovery-20260830/report.md)（不受控）、[上一轮修正](./codex-real-session-recovery-correction.md)、[无 accept 不得开跑](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)、[列表与 Recovery 分界](../decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)。
+依据：走查事实在本机 `docs/.local/`（不受控，本文不链过去）、[上一轮修正](./codex-real-session-recovery-correction.md)、[无 accept 不得开跑](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)、[列表与 Recovery 分界](../decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)。
 
 ## 1. 要变成真的事
 

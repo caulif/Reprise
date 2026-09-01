@@ -156,10 +156,10 @@ function identityStatus(theme: Theme, view: WorkbenchView): string {
   return `${harnessStatus(theme, view)}  ${product}  ${task}`;
 }
 
-function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'candidateStartingTitle' | 'replayTitle' | 'candidateRunningTitle' {
+function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'candidateStartingTitle' | 'comparingTitle' | 'candidateRunningTitle' {
   if (isRecoveryChrome(running)) return 'recoveringTitle';
   if (running.preparePhase === 'copy') return 'candidateStartingTitle';
-  if (running.preparePhase === 'compare') return 'replayTitle';
+  if (running.preparePhase === 'compare') return 'comparingTitle';
   return 'candidateRunningTitle';
 }
 
@@ -177,7 +177,9 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
       ? pill(theme, running.cancelling ? t(locale, 'hintCancel') : t(locale, 'running'), running.cancelling ? 'warn' : 'ok')
       : identityStatus(theme, view);
   const metrics = running
-    ? `${running.elapsed}   ${t(locale, 'replayRound', { n: Math.max(1, running.turns.used) })}`
+    ? running.preparePhase === 'compare'
+      ? running.elapsed
+      : `${running.elapsed}   ${t(locale, 'replayRound', { n: Math.max(1, running.turns.used) })}`
     : modelSummary(theme, view);
   const right = `${metrics}   ${status}`;
   const leftWide = running ? brand : `${brand}   ${compact(view.cwd, 48, theme.glyphs.ellipsis)}`;
@@ -197,7 +199,7 @@ function renderMessage(_theme: Theme, view: WorkbenchView, width: number): strin
   if (view.page === 'error') return [];
   if (view.page === 'running' && !view.cancelling) return [];
   if (view.page === 'preflight' && !view.preflight) return [];
-  return wrapTextWithAnsi(` ${view.message}`, Math.max(1, width));
+  return view.message.split(/\r?\n/).flatMap((line) => wrapTextWithAnsi(` ${line}`, Math.max(1, width)));
 }
 
 function renderFooter(theme: Theme, view: WorkbenchView, width: number): string[] {

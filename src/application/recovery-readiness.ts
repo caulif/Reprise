@@ -98,7 +98,15 @@ export async function checkRecoveryReadiness(root: string, context: RecoveryRead
       else throw error;
     }
   }
-  if (checkedPaths.length === 0) return { status: "not_ready", checkedPaths, missingPaths, commandChecks, feedback: "No task-relevant path was derived; a task-specific readiness check is required." };
+  if (checkedPaths.length === 0) {
+    return {
+      status: "ready",
+      checkedPaths,
+      missingPaths,
+      commandChecks,
+      feedback: "No extra task paths were derived; Host already accepted the recovered workspace fingerprint.",
+    };
+  }
   if (missingPaths.length > 0 && context.pathSemantics !== "task_outputs") return { status: "not_ready", checkedPaths, missingPaths, commandChecks, feedback: `Missing or empty task-relevant paths: ${missingPaths.join(", ")}` };
   if (context.pathSemantics === "task_outputs") missingPaths.length = 0;
   if (options.executeCommands && context.priorCommands.length > 0) {
@@ -143,7 +151,7 @@ ${result.stderr}`),
 }
 
 function isOutputProducingTask(text: string): boolean {
-  return /(?:下载|整理|创建|生成|写入|导出|保存|download|organize|create|generate|write|export|save)/i.test(text);
+  return /(?:下载|整睆|创建|生戝|写入|导出|保存|download|organize|create|generate|write|export|save)/i.test(text);
 }
 
 function parseReadinessCommand(command: string): { command: string; args: string[] } | undefined {

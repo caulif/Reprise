@@ -6,6 +6,8 @@ export function looksLikeInjectedInstruction(text: string): boolean {
   return (
     /^#\s*AGENTS\.md/i.test(head) ||
     /^<INSTRUCTIONS>/i.test(head) ||
+    /<environment_context>/i.test(head) ||
+    /<current_date>/i.test(head) ||
     (/^#{1,3}\s+\S/.test(head) && text.length > 400) ||
     /don't re-write it/i.test(head)
   );

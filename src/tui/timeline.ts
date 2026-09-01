@@ -2,6 +2,14 @@ import { record, text, type JsonRecord } from '../core/json.js';
 import type { EventEnvelope } from '../core/schema.js';
 import type { FileChange, TargetActivity, TargetActivityEntry } from '../products/contract.js';
 import { productPacks } from '../products/index.js';
+import {
+  collapseAgentRows,
+  laneSource,
+  projectAgentTool,
+  projectContextCompacted,
+  type AgentKind,
+  type AgentLane,
+} from './agent-activity.js';
 
 /** Full event text kept for [o]; the visible pane only shows a short structured preview. */
 const MAX_ORIGINAL_CHARS = 32_768;
@@ -28,6 +36,9 @@ export interface TimelineEntry {
   readonly patch?: 'replace' | 'append';
   /** Streaming placeholder; later real text replaces this row instead of appending. */
   readonly placeholder?: boolean;
+  readonly lane?: AgentLane;
+  readonly kind?: AgentKind;
+  readonly count?: number;
 }
 
 type EntryExtra = {
@@ -37,45 +48,12 @@ type EntryExtra = {
   patch?: TimelineEntry['patch'];
   original?: string;
   placeholder?: boolean;
+  lane?: AgentLane;
+  kind?: AgentKind;
+  count?: number;
 };
 
 type MakeEntry = (source: TimelineSource, title: string, detail?: string, extra?: EntryExtra) => TimelineEntry;
-
-const RECOVERY_VISIBLE_TOOLS = new Set([
-  'write',
-  'edit',
-  'powershell',
-]);
-
-function recoveryToolRow(payload: JsonRecord, type: string): { title: string; detail?: string; extra?: EntryExtra } {
-  const tool = text(payload.tool) ?? 'unknown';
-  const failed = type === 'agent.tool_failed';
-  const completed = type === 'agent.tool_completed';
-  const details = record(payload.details);
-  const gitMissing =
-    (tool === 'powershell' && completed && /not a git repository/i.test(text(payload.content) ?? '')) ||
-    (completed && details.isRepo === false);
-  const title = failed
-    ? `Recovery tool failed · ${tool}`
-    : completed
-      ? `Recovery tool completed · ${tool}`
-      : `Recovery tool · ${tool}`;
-  const path = text(record(payload.params).path) ?? text(details.path);
-  const detail = failed
-    ? (text(payload.message) ?? text(payload.error))
-    : gitMissing
-      ? '不是 Git 仓库'
-      : path;
-  const hide = !failed && !gitMissing && !RECOVERY_VISIBLE_TOOLS.has(tool);
-  return {
-    title,
-    ...(detail ? { detail } : {}),
-    extra: {
-      ...(failed ? { level: 'error' as const } : {}),
-      ...(hide ? { hidden: true } : {}),
-    },
-  };
-}
 
 /** Projects persisted public facts into an operator timeline; unknown and noisy delta events stay in trace only. */
 export function appendTimelineEntries(timeline: TimelineEntry[], incoming: readonly TimelineEntry[]): void {
@@ -87,16 +65,21 @@ export function appendTimelineEntries(timeline: TimelineEntry[], incoming: reado
     }
     const index = entry.itemId ? lastIndexByItemId(timeline, entry.itemId) : -1;
     if (index >= 0) {
-      timeline[index] = mergeEntry(timeline[index] ?? entry, entry);
+      const merged = settleLiveId(mergeEntry(timeline[index] ?? entry, entry));
+      timeline.splice(index, 1);
+      if (!collapseRepeatedRecoveryFailure(timeline, merged) && !collapseAgentRows(timeline, merged)) {
+        timeline.splice(Math.min(index, timeline.length), 0, merged);
+      }
       continue;
     }
-    const collapsed = collapseRepeatedRecoveryFailure(timeline, entry);
-    if (!collapsed) timeline.push(entry);
+    const settled = settleLiveId(entry);
+    const collapsed = collapseRepeatedRecoveryFailure(timeline, settled) || collapseAgentRows(timeline, settled);
+    if (!collapsed) timeline.push(settled);
   }
 }
 
 function collapseRepeatedRecoveryFailure(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
-  if (entry.hidden || entry.level !== 'error' || !entry.title.startsWith('Recovery tool failed')) return false;
+  if (entry.hidden || entry.level !== 'error' || !entry.title.includes('tool failed')) return false;
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const previous = timeline[index];
     if (!previous || previous.hidden) continue;
@@ -147,11 +130,14 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     ...(extra?.itemId ? { itemId: extra.itemId } : {}),
     ...(extra?.patch ? { patch: extra.patch } : {}),
     ...(extra?.placeholder ? { placeholder: true } : {}),
+    ...(extra?.lane ? { lane: extra.lane } : {}),
+    ...(extra?.kind ? { kind: extra.kind } : {}),
+    ...(extra?.count !== undefined ? { count: extra.count } : {}),
   });
 
   switch (event.type) {
     case 'recovery.started':
-      return [entry('HARNESS', 'Recovery started')];
+      return [entry('HARNESS', 'Recovery started', undefined, { hidden: true })];
     case 'recovery.completed': {
       const status = text(payload.status) ?? text(record(payload.value).status) ?? 'unknown';
       const failed = status === 'failed';
@@ -160,9 +146,20 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'agent.tool_called':
     case 'agent.tool_completed':
     case 'agent.tool_failed': {
-      const row = recoveryToolRow(payload, event.type);
-      return [entry('HARNESS', row.title, row.detail, row.extra)];
+      const row = projectAgentTool(payload, event.type);
+      return [entry(laneSource(row.extra.lane), row.title, row.detail, {
+        ...row.extra,
+        ...(row.original ? { original: row.original } : {}),
+      })];
     }
+    case 'agent.context_compacted': {
+      const row = projectContextCompacted(payload);
+      return [entry(laneSource(row.extra.lane), row.title, row.detail, row.extra)];
+    }
+    case 'agent.session_completed':
+    case 'agent.message_appended':
+    case 'agent.session_started':
+      return [];
     case 'run.attempt_created':
       return [entry('HARNESS', 'Run created', requestedModel(payload), { hidden: true })];
     case 'run.state_changed':
@@ -197,7 +194,7 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'report.created':
       return [entry('HARNESS', 'Report created', text(payload.path))];
     case 'controller.started':
-      return [entry('CONTROLLER', 'Evaluation started', text(payload.model))];
+      return [entry('CONTROLLER', 'Evaluation started', text(payload.model), { hidden: true })];
     case 'controller.decision':
       return controllerEntries(event, payload);
     case 'controller.done':
@@ -205,15 +202,27 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'controller.failed':
       return [entry('CONTROLLER', 'Controller failed', text(payload.message), { level: 'error' })];
     case 'comparison.started':
-      return [entry('CONTROLLER', 'Comparison started', text(payload.model))];
-    case 'comparison.completed': {
-      const status = text(payload.status) ?? 'unknown';
-      const failure = record(payload.failure);
-      return [entry('CONTROLLER', status === 'completed' ? 'Comparison completed' : `Comparison ${status}`, status === 'failed' ? text(failure.message) : undefined, status === 'failed' ? { level: 'error' } : undefined)];
-    }
+      return [entry('CONTROLLER', 'Comparison started', text(payload.model), { hidden: true, lane: 'comparison' })];
+    case 'comparison.completed':
+      return projectComparisonCompleted(entry, payload);
     default:
       return projectPackActivities(event, entry);
   }
+}
+
+function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
+  const status = text(payload.status) ?? 'unknown';
+  const failure = record(payload.failure);
+  const value = record(payload.value);
+  const codes = Array.isArray(value.limitationCodes) ? value.limitationCodes.filter((item): item is string => typeof item === 'string') : [];
+  const detail = status === 'failed'
+    ? text(failure.message)
+    : ['report.html', ...codes].filter(Boolean).join(' · ');
+  return [entry('CONTROLLER', status === 'completed' ? 'Comparison completed' : `Comparison ${status}`, detail, {
+    lane: 'comparison',
+    kind: 'deliver',
+    ...(status === 'failed' ? { level: 'error' as const } : {}),
+  })];
 }
 
 function projectPackActivities(event: EventEnvelope, entry: MakeEntry): readonly TimelineEntry[] {
@@ -525,6 +534,14 @@ function outcome(payload: JsonRecord): string {
   return `task=${text(task.status) ?? 'unknown'} · termination=${text(termination.kind) ?? 'unknown'} · cleanup=${text(cleanup.status) ?? 'unknown'}`;
 }
 
+function settleLiveId(entry: TimelineEntry): TimelineEntry {
+  if (entry.placeholder) return entry;
+  const id = entry.itemId ?? '';
+  if (!id.startsWith('live:') && !id.startsWith('compact:')) return entry;
+  const { itemId: _itemId, patch: _patch, ...rest } = entry;
+  return rest;
+}
+
 function lastIndexByItemId(timeline: readonly TimelineEntry[], itemId: string): number {
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     if (timeline[index]?.itemId === itemId) return index;
@@ -554,14 +571,17 @@ function mergeEntry(previous: TimelineEntry, next: TimelineEntry): TimelineEntry
   const keepStream = Boolean(next.placeholder && previous.detail && !previous.placeholder);
   const detail = keepStream ? previous.detail : (next.detail ?? previous.detail);
   const original = next.original ?? (keepStream ? previous.original : next.original) ?? previous.original;
+  const { placeholder: _placeholder, ...rest } = { ...previous, ...next };
   return {
-    ...previous,
-    ...next,
+    ...rest,
     ...(detail ? { detail } : {}),
     ...(original ? { original } : {}),
     ...(next.hidden ? { hidden: true } : {}),
     ...(next.level ? { level: next.level } : previous.level ? { level: previous.level } : {}),
-    ...(keepStream || next.placeholder ? { placeholder: keepStream ? previous.placeholder : next.placeholder } : {}),
+    ...(keepStream || next.placeholder ? { placeholder: true as const } : {}),
+    ...(next.lane ? { lane: next.lane } : previous.lane ? { lane: previous.lane } : {}),
+    ...(next.kind ? { kind: next.kind } : previous.kind ? { kind: previous.kind } : {}),
+    ...(next.count !== undefined ? { count: next.count } : previous.count !== undefined ? { count: previous.count } : {}),
   };
 }
 

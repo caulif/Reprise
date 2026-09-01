@@ -161,11 +161,14 @@ The RecoveryContext JSON gives you:
 - budget: tool-call and time budget, so the user can see what recovery cost.
 
 # Working method
-Read investigationPacket, then compare staging with ls, grep, and find. Use
-read_observation only when the packet is missing a decision-critical sentence.
-Use powershell only for remaining bounded work (cwd is staging; no credentials).
-Do not treat leftover caches such as .playwright-cli as the default deletion
-target. A "pending_user_review" outcome is useful and is not a failed investigation.
+Read investigationPacket first. Packet paths are already slash-separated relative
+posix names inside staging. List the staging root by omitting ls.path or passing
+"." / "./"; never pass a Windows drive path to ls, grep, find, read, edit, or write.
+Use read_observation only when the packet is missing a decision-critical sentence.
+Use powershell only for remaining bounded work (cwd is already staging; do not cd
+to a drive letter; delete with relative paths). Do not treat leftover caches such
+as .playwright-cli as the default deletion target. A "pending_user_review" outcome
+is useful and is not a failed investigation.
 
 You have Host-provided workspace tools. Treat unavailable external resources as
 unresolved rather than trying to bypass the boundary. Investigate and act the way a

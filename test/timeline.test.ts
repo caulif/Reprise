@@ -74,6 +74,8 @@ test('timeline projects operator-relevant persisted facts', () => {
     title: 'Comparison failed',
     detail: 'missing narrative',
     level: 'error',
+    lane: 'comparison',
+    kind: 'deliver',
   });
 });
 
@@ -270,16 +272,26 @@ test('timeline drops a second Prompt with the same title', () => {
   assert.equal(timeline.filter((entry) => entry.title.startsWith('Prompt ·')).length, 1);
 });
 
-test('recovery timeline keeps report writes, powershell, and failures visible', () => {
-  const listed = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'ls' }))[0];
+test('recovery timeline keeps inspect, powershell, writes, and failures visible', () => {
+  const listed = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'ls', params: { path: '.' } }))[0];
   const deleted = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'powershell', params: { command: 'Remove-Item ppt_build/out.pptx' } }))[0];
-  const reported = projectTimelineEvent(event('agent.tool_completed', { role: 'recovery', tool: 'write' }))[0];
+  const reported = projectTimelineEvent(event('agent.tool_completed', { role: 'recovery', tool: 'write', params: { path: 'recovery.md' } }))[0];
   const failed = projectTimelineEvent(event('agent.tool_failed', { role: 'recovery', tool: 'read_observation', message: 'tool budget exhausted' }))[0];
-  assert.equal(listed?.hidden, true);
+  assert.equal(listed?.hidden, undefined);
+  assert.match(listed?.title ?? '', /Recovery · inspect/);
   assert.equal(deleted?.hidden, undefined);
+  assert.match(deleted?.detail ?? '', /Remove-Item/);
   assert.equal(reported?.hidden, undefined);
+  assert.match(reported?.detail ?? '', /recovery.md/);
   assert.equal(failed?.hidden, undefined);
   assert.equal(failed?.level, 'error');
+  const duplicate = projectTimelineEvent(event('agent.tool_failed', {
+    role: 'recovery',
+    tool: 'ls',
+    message: 'recovery_no_information_gain: repeated tool call with identical inputs.',
+  }))[0];
+  assert.equal(duplicate?.hidden, true);
+  assert.equal(duplicate?.level, undefined);
 });
 
 test('recovery timeline collapses identical consecutive tool failures', () => {
@@ -318,6 +330,7 @@ test('recovery start does not show a source digest as timeline detail', () => {
     sourceDigest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   }))[0];
   assert.equal(started?.title, 'Recovery started');
+  assert.equal(started?.hidden, true);
   assert.equal(started?.detail, undefined);
   assert.doesNotMatch(JSON.stringify(started), /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
 });

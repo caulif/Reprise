@@ -1,4 +1,4 @@
-Reprise v0.1.0   C:\reprise                            No configured model   ○ Harness unset  ○ Product unset  ○ No task
+Reprise v0.1.0   C:\reprise                                    No configured model   ○ Harness unset  ● Codex  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Last task  none selected
 

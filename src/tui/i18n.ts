@@ -95,6 +95,19 @@ const M = {
   followUp: { en: 'follow-up', zh: '续问' },
   writing: { en: 'Writing a reply...', zh: '正在写回复...' },
   recoveryLegend: { en: 'Recovery activity', zh: '恢复活动' },
+  controllerLegend: { en: 'Controller', zh: '控制器' },
+  comparingTitle: { en: 'Writing comparison report', zh: '正在写对照报告' },
+  phaseInspect: { en: 'Investigate', zh: '调查' },
+  phaseMutate: { en: 'Change workspace', zh: '改工作区' },
+  phaseDeliver: { en: 'Write report', zh: '写报告' },
+  phaseVerify: { en: 'Validate', zh: '校验' },
+  phaseRead: { en: 'Read evidence', zh: '读证据' },
+  phaseDecide: { en: 'Decide', zh: '决定' },
+  phaseSend: { en: 'Deliver', zh: '投递' },
+  phaseReadResult: { en: 'Read results', zh: '读结果' },
+  phaseReadHistory: { en: 'Compare history', zh: '对照历史' },
+  phaseWriteReport: { en: 'Write report', zh: '写报告' },
+  actorWaiting: { en: 'waiting', zh: '等待' },
   recoveryEmpty: { en: 'Recovery is working in the isolated workspace.', zh: '正在隔离工作区里恢复。' },
   noTypeRecovery: { en: 'Cannot type while recovery is running.', zh: '恢复进行中不能打字。' },
   moreLines: { en: '... {n} more lines', zh: '... 还有 {n} 行' },
@@ -180,7 +193,7 @@ const M = {
   noContamination: { en: 'Preparing the isolated environment before run confirmation.', zh: '正在准备隔离环境，随后将显示开跑确认。' },
   recoveryReady: { en: 'Recovered. Review the run confirmation and press Enter to start the isolated candidate.', zh: '已恢复。核对开跑确认后按 Enter 启动隔离候选。' },
   recoveryFailed: { en: 'Could not recover a complete environment. Transcript and diagnostics were saved.', zh: '无法完整恢复环境。会话正文和诊断已保存。' },
-  recoveryPartial: { en: 'Partial recovery. Some workspace paths were skipped automatically.', zh: '部分恢复。已自动跳过部分项目路径。' },
+  recoveryPartial: { en: 'Partial recovery. {n} workspace paths changed.', zh: '部分恢复。工作区变更 {n} 条。' },
   followingLatest: { en: 'Following latest persisted event.', zh: '已跟随最新已写入事件。' },
   returnedPrevious: { en: 'Returned to the previous step. Correct the issue and try again.', zh: '已回到上一步。改完问题再试。' },
   noReport: { en: 'No generated report is available for this experiment.', zh: '这次对照还没有报告。' },
@@ -197,7 +210,7 @@ const M = {
   noSessionsFound: { en: 'No local agent sessions were found.', zh: '没有找到本地 Agent 会话记录。' },
   chooseProject: { en: 'Choose a project, then a session. Type / to search.', zh: '先选项目，再选会话。输入 / 搜索。' },
   chooseSession: { en: 'Choose a historical session. Enter opens the review; Enter again freezes and starts recovery.', zh: '选择一条历史会话。Enter 打开核对页；再按 Enter 冻结并开始恢复。' },
-  sessionDiscoveryStatus: { en: '{shown} shown · {skipped} skipped', zh: '已显示 {shown} 条 · 已跳过 {skipped} 条' },
+  sessionDiscoveryStatus: { en: '{shown} shown · {skipped} skipped · {scanned} scanned', zh: '已显示 {shown} 条 · 已跳过 {skipped} 条 · 已扫描 {scanned} 条' },
   moreAvailable: { en: 'more available', zh: '还有更多' },
   loadMoreSessions: { en: 'The catalog is complete; m does not paginate.', zh: '目录已完整；m 不会分页。' },
   sessionDiagnostics: { en: 'Diagnostics: {diagnostics}', zh: '诊断：{diagnostics}' },
@@ -325,6 +338,10 @@ const M = {
   harnessAgentsLabel: { en: 'Harness agents', zh: 'Harness 模型' },
   fidelityLabel: { en: 'Fidelity', zh: '保真度' },
   environmentLabel: { en: 'Environment', zh: '环境' },
+  changedPathsLabel: { en: 'Changed paths', zh: '变更路径' },
+  changedPathsValue: { en: '{n}', zh: '{n}' },
+  skippedPathsLabel: { en: 'Skipped paths', zh: '跳过路径' },
+  unresolvedLabel: { en: 'Unresolved', zh: '未决' },
   maximumRequestsLabel: { en: 'Maximum requests', zh: '最大请求数' },
   networkBillingLabel: { en: 'Network / billing', zh: '网络 / 计费' },
   unavailableValue: { en: 'unavailable', zh: '不可用' },
@@ -378,6 +395,7 @@ const M = {
   unindexedSession: { en: '[unindexed]', zh: '[未编入索引]' },
   unreadableSession: { en: '[unreadable]', zh: '[正文不可读]' },
   catalogInvalidJsonl: { en: 'catalog skipped invalid JSONL (not this row)', zh: '目录全局跳过了无效 JSONL（不是当前行损坏）' },
+  catalogUnavailable: { en: 'catalog index unavailable (not this row)', zh: '目录索引不可用（不是当前行损坏）' },
   bestEffortSession: { en: '[best-effort]', zh: '[尽力恢复]' },
   noUserInputSession: { en: '[no user input]', zh: '[无用户输入]' },
   corruptSession: { en: '[corrupt]', zh: '[正文损坏]' },
@@ -398,6 +416,7 @@ const M = {
   fieldUpdated: { en: 'Updated', zh: '更新时间' },
   recoveryDiagnostics: { en: 'Recovery', zh: '恢复诊断' },
   recoveryReasonValidationFailed: { en: 'Workspace validation rejected the recovery envelope', zh: '工作区校验未通过' },
+  recoveryReasonNoWorkspaceChange: { en: 'No isolated workspace changes were observed', zh: '没有观察到隔离工作区变更' },
   recoveryReasonBudget: { en: 'Recovery used up its tool budget', zh: '恢复用尽了工具预算' },
   recoveryReasonModelFailed: { en: 'The recovery model did not finish', zh: '恢复模型没有完成' },
   recoveryReasonToolFailed: { en: 'A recovery tool failed', zh: '恢复工具失败' },
@@ -466,14 +485,21 @@ export function sessionReplayErrorMessage(error: unknown, locale: Locale): strin
   return error.message;
 }
 
-export function formatRecoveryFailureSummary(locale: Locale, stage: string): string {
-  const reason =
-    stage === 'provider_validation_failed' ? t(locale, 'recoveryReasonValidationFailed')
+export function formatRecoveryFailureSummary(
+  locale: Locale,
+  stage: string,
+  detail?: { changedPathCount?: number },
+): string {
+  const noWorkspaceChange = stage === 'provider_validation_failed' && (detail?.changedPathCount ?? -1) === 0;
+  const reason = noWorkspaceChange
+    ? t(locale, 'recoveryReasonNoWorkspaceChange')
+    : stage === 'provider_validation_failed' ? t(locale, 'recoveryReasonValidationFailed')
     : /budget/.test(stage) ? t(locale, 'recoveryReasonBudget')
     : stage === 'agent_model_failed' || stage === 'agent_timeout' ? t(locale, 'recoveryReasonModelFailed')
     : stage === 'agent_tool_failed' ? t(locale, 'recoveryReasonToolFailed')
     : t(locale, 'recoveryReasonGeneric');
-  return t(locale, 'recoveryReasonWithCode', { reason, code: stage });
+  const code = noWorkspaceChange ? `${stage}; no_task_path_outcome` : stage;
+  return t(locale, 'recoveryReasonWithCode', { reason, code });
 }
 
 export function parseLocale(value: string | undefined): Locale | undefined {

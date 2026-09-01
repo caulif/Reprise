@@ -31,13 +31,26 @@ export function diagnosisReasonCode(input: {
   baseline: EnvironmentBaseline;
   transcriptOk: boolean;
   failureStage?: string;
+  hasAccept?: boolean;
 }): string {
   if (!input.transcriptOk) return "transcript.invalid";
+  const status = userRecoveryStatus({
+    baseline: input.baseline,
+    transcriptOk: input.transcriptOk,
+    ...(input.hasAccept !== undefined ? { hasAccept: input.hasAccept } : {}),
+  });
+  if (status === "recovered") return "recovered";
+  if (status === "partial") {
+    const excluded = input.baseline.budget?.excludedEntries?.[0]?.reasonCode;
+    if (input.baseline.recovery?.status === "partial" || input.baseline.match === "recovered_partial") {
+      return "weak_or_incomplete_evidence";
+    }
+    return excluded ?? "weak_or_incomplete_evidence";
+  }
   const stage = input.failureStage ?? input.baseline.recovery?.failureStage;
   if (stage) return stage;
   const excluded = input.baseline.budget?.excludedEntries?.[0]?.reasonCode;
   if (excluded) return excluded;
-  if (input.baseline.recovery?.status === "recovered" || input.baseline.match === "recovered") return "recovered";
   return "recovery_agent.failed";
 }
 
@@ -75,7 +88,7 @@ export function recoveryAttemptDiagnosis(input: {
     recoveryAgentStarted: input.recoveryAgentStarted,
     finalStatus,
     retryable: input.retryable,
-    reasonCode: input.reasonCode,
+      reasonCode: input.reasonCode,
   };
   if (!Value.Check(RecoveryAttemptDiagnosisSchema, diagnosis)) {
     throw new Error("Recovery attempt diagnosis does not match RecoveryAttemptDiagnosisSchema.");

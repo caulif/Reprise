@@ -100,6 +100,8 @@ test('product intake isolates per-pack limits, errors, and compact back navigati
 
   await app.start();
   await app.loadSessions();
+  assert.equal(app.selected, 0);
+  assert.deepEqual(app.productContext(), { productLabel: 'Codex', productConfigured: true });
   app.selected = 1;
   app.openIntakeSelection();
   await waitFor(() => app.productDiscovery.get('claude-code')?.status === 'error');
@@ -121,6 +123,30 @@ test('product intake isolates per-pack limits, errors, and compact back navigati
   app.handleInput('\b');
   assert.equal(app.intakeLevel, 'products');
   assert.match(document?.render(60).join('\n') ?? '', /Select agent product/);
+});
+
+test('intake restores the last product cursor after leaving the catalog', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-product-cursor-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const app = new CodexIntakeTui({
+    dataDir: join(root, 'data'),
+    tui: fakeTui(() => {}),
+    packs: [
+      pack('codex', 'Codex', async () => []),
+      pack('claude-code', 'Claude Code', async () => []),
+    ],
+    privacy,
+  });
+  await app.start();
+  await app.loadSessions();
+  app.handleInput('\x1b[B');
+  assert.equal(app.lastProductId, 'claude-code');
+  assert.deepEqual(app.productContext(), { productLabel: 'Claude Code', productConfigured: true });
+  await app.loadHome();
+  assert.deepEqual(app.productContext(), {});
+  await app.loadSessions();
+  assert.equal(app.selected, 1);
+  assert.deepEqual(app.productContext(), { productLabel: 'Claude Code', productConfigured: true });
 });
 test('a late discovery result cannot replace the newly selected product', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-product-switch-'));
@@ -238,11 +264,11 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
   await app.start();
   await app.loadProductSessions('codex');
   assert.match(app.message, /Loaded \d+ projects and 1 sessions/);
-  assert.match(app.message, /1 shown · 2 skipped/);
-  assert.match(app.message, /The catalog is complete; m does not paginate/);
-  assert.match(app.message, /Diagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable-directory \(1\)/);
+  assert.match(app.message, /1 shown · 2 skipped · 2 scanned/);
+  assert.match(app.message, /\nThe catalog is complete; m does not paginate\./);
+  assert.match(app.message, /\nDiagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable-directory \(1\)/);
   app.locale = 'zh';
-  assert.match(app.sessionsMessage(), /已显示 1 条 · 已跳过 2 条/);
+  assert.match(app.sessionsMessage(), /已显示 1 条 · 已跳过 2 条 · 已扫描 2 条/);
   app.loadMoreProductSessions();
   assert.equal(call, 1);
   assert.equal(app.productItems()[0]?.skipped, 2);
@@ -294,4 +320,41 @@ test('freeze imports through the session product pack', async (t) => {
   await freeze(app, sourcePath);
   assert.deepEqual(calls, ['claude-code']);
   assert.equal(app.taskCase?.source.productId, 'claude-code');
+});
+
+test('project list cursor prefers displayCwd over the most recent project', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-project-cursor-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const hermes = { ...summary('codex', 'hermes', '2026-08-31T12:00:00.000Z'), cwd: 'C:/wsl/.hermes' };
+  const ppt = { ...summary('codex', 'ppt', '2026-08-30T12:00:00.000Z'), cwd: 'C:/work/cncert' };
+  const discover = async (items: SessionSummary[]) => ({ items, scanned: items.length, skipped: 0, diagnostics: [] as const });
+  const matched = new CodexIntakeTui({
+    dataDir: join(root, 'matched'),
+    tui: fakeTui(() => {}),
+    packs: [sessionPack({
+      productId: 'codex',
+      displayName: 'Codex',
+      defaultRoot: root,
+      discover: async () => discover([hermes, ppt]),
+    })],
+    privacy,
+    displayCwd: 'C:/work/cncert',
+  });
+  await matched.loadProductSessions('codex');
+  assert.equal(matched.intakeLevel, 'projects');
+  assert.match(matched.visibleProjects()[matched.selected]?.path ?? '', /cncert/i);
+  const unmatched = new CodexIntakeTui({
+    dataDir: join(root, 'unmatched'),
+    tui: fakeTui(() => {}),
+    packs: [sessionPack({
+      productId: 'codex',
+      displayName: 'Codex',
+      defaultRoot: root,
+      discover: async () => discover([hermes, ppt]),
+    })],
+    privacy,
+    displayCwd: 'C:/unrelated',
+  });
+  await unmatched.loadProductSessions('codex');
+  assert.match(unmatched.visibleProjects()[unmatched.selected]?.path ?? '', /hermes/i);
 });

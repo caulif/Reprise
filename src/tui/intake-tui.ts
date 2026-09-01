@@ -90,6 +90,8 @@ export class CodexIntakeTui {
   page: Page = "loading";
   sessions: readonly SessionSummary[] = [];
   activeProductId = "";
+  lastProductId = "";
+  lastProjectKey = "";
   readonly productSessions = new Map<string, readonly SessionSummary[]>();
   readonly productDiscovery = new Map<string, ProductDiscoveryState>();
   discoveryAbort: AbortController | undefined;

@@ -53,7 +53,10 @@
 - [内部 Agent 八工具与写策略](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md)：三角色同一组工具名；Comparison `candidate/` 只读挂载。
 - [Recovery 调查包](./decisions/accepted/2026-08-31-recovery-investigation-packet.md)：进入模型的历史主通道是 Host 有界调查包，不是全文翻页。
 - [Recovery 八工具面](./decisions/accepted/2026-08-31-recovery-pi-aligned-tools.md)：工作区对齐 Pi；Host 只留 `read_observation`。
-- [partial 以 fingerprint 为变更源](./decisions/accepted/2026-08-31-recovery-fingerprint-changeset.md)：路径集合由 Host 计算，伪造 ref 不得进入 baseline。
+- [Windows PowerShell 回退与 `.` 为根](./decisions/accepted/2026-08-31-recovery-windows-shell-and-dot-paths.md)：`.` 列 staging 根；空变更确认页不伪装成校验细节。
+- [Recovery PowerShell 对齐 Pi 并缩短隔离目录](./decisions/accepted/2026-09-01-recovery-powershell-pi-spawn-and-short-paths.md)：PATH 发现、argv `-Command`、`rs`/`rt`/`rc` 短路径；不灌完整环境。
+- [内部 Agent 运行画布的压缩与分轨](./decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)：按 role 投影；调查合并；Controller 品红与投递分轨；Comparison 绿卡。
+- [恢复终态、确认卡片与短候选目录](./decisions/accepted/2026-09-01-recovery-operator-feedback-and-short-candidates.md)：partial 诊断码、8-hex 候选段、确认卡片与列表光标。
 - [候选 Runtime 失败分类与恢复门禁解耦](./decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)：settlement 保留脱敏失败类别；恢复 candidate 不被 source blockedReasons 再拦；不对 503 自动重试。
 - [列表展示、冻结与 Recovery Agent 分界](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)：列表只截断展示；冻结由 Case Preparation 完成；Recovery Agent 只做环境恢复。
 - [会话正文流式读取](./decisions/accepted/2026-08-27-stream-session-transcript-io.md)：catalog 只读固定头；inspect/import 逐行 JSONL；cwd 单向最长根。
@@ -72,6 +75,8 @@
 - [当前实现差距与修正计划](./plan/current-implementation-gap-and-correction-plan.md)：canonical 设计与代码的逐项偏差及迁移路线。
 - [Codex 真实会话恢复失败修正](./plan/codex-real-session-recovery-correction.md)：恢复页冒充候选、失败被显示为部分恢复、二次模型错误丢弃已完成 partial 的分批修正。
 - [2026-08-31 走查后的恢复修复](./plan/codex-recovery-20260831-fix.md)：Host 调查包为主、工具面对齐 Pi 八件套、fingerprint 为变更源、核对页与时间线。
+- [A–H 落地后仍挡住部分恢复](./plan/codex-recovery-ah-followup.md)：`powershell` spawn、`.` 路径、核对页注入块、项目默认光标。
+- [对照 Pi 的 Recovery powershell](./plan/recovery-powershell-pi-alignment.md)：对齐 earendil-works/pi 的发现/argv/UTF-8，并缩短 Harness 超长 staging cwd。
 - [会话恢复的尽力而为实施方案](./plan/session-recovery-best-effort-implementation.md)：让每个 Codex/Claude Code 来源都进入恢复尝试，并区分可回放、部分恢复和不可回放。
 - [列表展示与 Recovery Agent 的分界](./plan/session-intake-vs-recovery-agent.md)：实施清单见该计划；长期约束见[对应决策](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)。
 - [第六轮优化分析](./plan/optimization-round-6.md)：仍未闭合的 P2/P3 条目与产品承诺缺口。

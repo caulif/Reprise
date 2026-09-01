@@ -1,4 +1,4 @@
-Reprise v0.1.0   C:\reprise                   gpt-5.6-terra · medium   ⚠ Harness key missing  ○ Product unset  ○ No task
+Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   ⚠ Harness key missing  ● Codex  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Last task  none selected
 

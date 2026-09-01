@@ -1,5 +1,6 @@
 import type { CodexExperimentPreflight } from '../../application/experiment.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
+import { activeLane, lastLiveVerb, phaseIndex } from '../agent-activity.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import { matchesCanvasQuery, matchesFilter, renderScrollback } from '../scrollback.js';
@@ -14,6 +15,7 @@ export type RecoveryPreviewModel = {
   readonly reportText?: string;
   readonly unresolved: readonly string[];
   readonly changedPathCount: number;
+  readonly skippedPaths?: readonly { readonly path: string; readonly reasonCode: string }[];
   readonly failureSummary?: string;
 };
 export type PreflightModel = {
@@ -128,6 +130,13 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
       kv(theme, t(locale, 'candidateLabel'), candidateLine(candidate, product, locale), width - 2),
       ...(recovery ? [
         kv(theme, t(locale, 'environmentLabel'), environmentStatus(recovery, recoveryRunnable, locale), width - 2),
+        kv(theme, t(locale, 'changedPathsLabel'), t(locale, 'changedPathsValue', { n: recovery.changedPathCount }), width - 2),
+        ...((recovery.skippedPaths ?? []).length
+          ? [kv(theme, t(locale, 'skippedPathsLabel'), (recovery.skippedPaths ?? []).map((item) => `${item.path} (${item.reasonCode})`).join(' · '), width - 2)]
+          : []),
+        ...(recovery.unresolved[0]
+          ? [kv(theme, t(locale, 'unresolvedLabel'), recovery.unresolved[0], width - 2)]
+          : []),
         ...(recovery.failureSummary ? [kv(theme, t(locale, 'recoveryDiagnostics'), recovery.failureSummary, width - 2)] : []),
       ] : []),
       kv(theme, t(locale, 'maximumRequestsLabel'), `${t(locale, 'candidateLabel')} ${model.policy?.maxTargetTurns ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'controllerLabel')} ${model.policy?.maxModelCalls ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'comparisonActorLabel')} 1`, width - 2),
@@ -174,7 +183,14 @@ function phaseLine(model: RunningModel, locale: Locale, product: string): string
     });
   }
   if (model.runPhase === 'candidate_starting') return t(locale, 'candidateStarting', { product });
-  if (model.runPhase === 'recovery') return t(locale, 'recoveringTitle');
+  if (model.preparePhase === 'compare') {
+    const verb = lastLiveVerb(model.entries);
+    return verb ? `${t(locale, 'comparingTitle')} · ${verb}` : t(locale, 'comparingTitle');
+  }
+  if (model.runPhase === 'recovery') {
+    const verb = lastLiveVerb(model.entries);
+    return verb ? `${t(locale, 'recoveringTitle')} · ${verb}` : t(locale, 'recoveringTitle');
+  }
   return t(locale, 'candidateGenerating', { product, n: Math.max(1, model.turns.used) });
 }
 
@@ -205,12 +221,16 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const outMark = dimOut ? theme.style.muted(theme.glyphs.dot) : theme.style.target(theme.glyphs.dot);
   const inLabel = dimIn ? theme.style.muted(t(locale, 'legendIn', { product })) : t(locale, 'legendIn', { product });
   const outLabel = dimOut ? theme.style.muted(t(locale, 'legendOut', { product })) : t(locale, 'legendOut', { product });
+  const comparing = model.preparePhase === 'compare';
   const legend = recovering
     ? ` ${theme.style.harness(theme.glyphs.dot)} ${t(locale, 'recoveryLegend')}`
-    : ` ${inMark} ${inLabel}   ${outMark} ${outLabel}`;
+    : comparing
+      ? ` ${theme.style.ok(theme.glyphs.dot)} ${t(locale, 'comparisonTitle')}`
+      : ` ${inMark} ${inLabel}   ${outMark} ${outLabel}   ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'controllerLegend')}`;
   const task = model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : undefined;
+  const phases = renderPhaseStrip(theme, model, locale);
   const findBar = model.finding ? renderFindBar(model, locale, visible.length, selected < 0 ? 0 : selected) : [];
-  const header = [legend, ...(task ? [task] : []), ...findBar, ''];
+  const header = [legend, ...(task ? [task] : []), ...phases, ...findBar, ''];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
@@ -221,6 +241,23 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
   ];
+}
+
+function renderPhaseStrip(theme: Theme, model: RunningModel, locale: Locale): readonly string[] {
+  const lane = activeLane(model.entries, model.runPhase, model.preparePhase);
+  if (!lane) return [];
+  const { current } = phaseIndex(lane, model.entries);
+  const names = lane === 'recovery'
+    ? [t(locale, 'phaseInspect'), t(locale, 'phaseMutate'), t(locale, 'phaseDeliver'), t(locale, 'phaseVerify')]
+    : lane === 'controller'
+      ? [t(locale, 'phaseRead'), t(locale, 'phaseDecide'), t(locale, 'phaseSend')]
+      : [t(locale, 'phaseReadResult'), t(locale, 'phaseReadHistory'), t(locale, 'phaseWriteReport')];
+  const parts = names.map((name, index) => {
+    if (index === current) return theme.style.target(name);
+    if (index < current) return theme.style.ok(name);
+    return theme.style.muted(name);
+  });
+  return [` ${parts.join(` ${theme.style.muted(theme.glyphs.arrow)} `)}`];
 }
 
 function renderFindBar(model: RunningModel, locale: Locale, total: number, selected: number): string[] {

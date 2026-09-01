@@ -275,6 +275,7 @@ async function persistRecoveryCompletionArtifacts(
       reasonCode: diagnosisReasonCode({
         baseline: activeProviderPreview.baseline,
         transcriptOk: Boolean(input.taskCase.initialInput?.text),
+        hasAccept: true,
         ...(activeProviderPreview.baseline.recovery?.failureStage
           ? { failureStage: activeProviderPreview.baseline.recovery.failureStage }
           : {}),

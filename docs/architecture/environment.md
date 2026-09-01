@@ -322,11 +322,12 @@ Environment Resolver 通过独立的 `RecoveryAgentPort` 使用 Pi 驱动的 Rec
 
 Provider 为每次恢复创建并持有下列目录，均不暴露给 Candidate Runtime：
 
-- `recovery-staging/<recoveryId>`：从用户源目录复制出的可写工作副本；
-- `recovery-temp/<recoveryId>`：shell 的临时 `HOME` 与配置根；
+- `rs/<recoveryId>`：从用户源目录复制出的可写工作副本；
+- `rt/<recoveryId>`：shell 的临时 `HOME` 与配置根；
+- `rc/<recoveryId>/<8-hex>`：互不污染的候选工作区；段名是 `sha256(candidateId)` 前 8 位，不是 hypothesis 全名。
 - 用户源目录：恢复前后均 fingerprint，作为只读 tripwire。
 
-工具集合为 `read_observation`、`ls`、`read`、`grep`、`find`、`edit`、`write` 和 `powershell`。Controller 与 Comparison 注册同一组名字，cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。Host 在调用模型前写入有界调查包（路径线索、后续用户句、`isRepo`），并记 `recovery.investigation_packet`；`read_observation` 单次 JSON 有字节上限，超限返回截断游标，仅当调查包不够时翻页。`write` 到 staging 根 `recovery.md` 是报告通道，不计入调查工具次数。`partial` 的变更路径以 fingerprint 差为准，弱证据（Host 观察到的删/改）即可 preview；`recovered` 仍要路径级强证据。伪造且无法对应冻结 catalog 的 envelope ref 不得进入 published baseline。Readiness 反馈轮若模型请求失败，Host 保留上一份已通过 TypeBox 的完成信封并停止继续反馈，不得把整次恢复改写成 current-state fallback。后一次会话即使 `completed`，也必须先对当前 staging 做不丢弃副本的探测；失败则沿用上一份已探测通过的完成信封，不得覆盖后整单 fallback。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库；父目录或子目录里的 `.git` 不得把 git 选成第一执行候选。`powershell` 的 cwd 固定为 staging，命令不按 Git 子命令白名单收窄：它可执行 git、解压、包管理、项目还原脚本及网络查询。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供 API key、token 或其他凭据。破坏性变更（删除类 powershell）有独立上限，耗尽后不封 `ls`/`read`/`grep`/`find`。
+工具集合为 `read_observation`、`ls`、`read`、`grep`、`find`、`edit`、`write` 和 `powershell`。Controller 与 Comparison 注册同一组名字，cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。Host 在调用模型前写入有界调查包（路径线索、后续用户句、`isRepo`），并记 `recovery.investigation_packet`；`read_observation` 单次 JSON 有字节上限，超限返回截断游标，仅当调查包不够时翻页。`write` 到 staging 根 `recovery.md` 是报告通道，不计入调查工具次数。`partial` 的变更路径以 fingerprint 差为准，弱证据（Host 观察到的删/改）即可 preview；`recovered` 仍要路径级强证据。伪造且无法对应冻结 catalog 的 envelope ref 不得进入 published baseline。Readiness 反馈轮若模型请求失败，Host 保留上一份已通过 TypeBox 的完成信封并停止继续反馈，不得把整次恢复改写成 current-state fallback。后一次会话即使 `completed`，也必须先对当前 staging 做不丢弃副本的探测；失败则沿用上一份已探测通过的完成信封，不得覆盖后整单 fallback。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库；父目录或子目录里的 `.git` 不得把 git 选成第一执行候选。`powershell` 的 cwd 固定为 staging，命令不按 Git 子命令白名单收窄：它可执行 git、解压、包管理、项目还原脚本及网络查询。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供 API key、token 或其他凭据。破坏性变更（删除类 powershell）有独立上限，耗尽后不封 `ls`/`read`/`grep`/`find`。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作 staging 根；`..`、绝对路径和反斜杠仍拒绝。
 
 子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`ls`、`read`、`grep`、`find`、`edit` 和 `write` 对相对路径实施 containment 与符号链接检查；`recovery.md` 由 `write` 写出。由于通用 shell 不是容器/VM 沙箱，cwd 与环境净化不能机械阻止恶意或失控命令尝试写 staging 外任意绝对路径；实现不把这种预防误称为强隔离。
 
@@ -371,7 +372,7 @@ Recovery Agent 返回后，Provider 至少验证：
 - `insufficient_evidence` 是否保持 staging 与源 capture 一致；
 - unresolved 是否作为事实保留而非被忽略。
 
-验证时会读取报告并从 staging 移除 `recovery.md` 与临时 HOME，使它们不成为 Candidate 可见输入。校验通过后 Host 立即 publish canonical baseline。冻结表示 Provider 所有权和写权限约束，不依赖 Windows 只读属性；Candidate Runtime 永远只得到 `prepareRun` 产生的副本。验证失败或证据不足时不得发布半恢复 staging，而是使用诚实的当前状态路径并保留 warning/验证记录。确认页拒绝只是不启动 Candidate。
+验证时会读取报告并从 staging 移除 `recovery.md` 与临时 HOME，使它们不成为 Candidate 可见输入。校验通过后 Host 立即 publish canonical baseline。冻结表示 Provider 所有权和写权限约束，不依赖 Windows 只读属性；Candidate Runtime 永远只得到 `prepareRun` 产生的副本。验证失败或证据不足时不得发布半恢复 staging，而是使用诚实的当前状态路径并保留 warning/验证记录。确认页拒绝只是不启动 Candidate。无变更时诊断优先说明没有观察到隔离工作区变更。
 
 ## 8. prepareRun
 

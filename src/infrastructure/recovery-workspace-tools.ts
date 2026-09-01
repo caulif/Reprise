@@ -1,5 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile } from "node:fs/promises";
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { writeAtomic } from "../core/identity.js";
 import {
@@ -7,7 +10,7 @@ import {
   type RecoveryControlledWriteHook,
 } from "./recovery-write-journal.js";
 import type { AgentToolDefinition } from "./pi-agent-host.js";
-import { runProcess } from "./process-runner.js";
+import { ProcessBoundaryError, runProcess, type ProcessSpawner } from "./process-runner.js";
 import {
   chargeRecoveryToolBudget,
   noteDestructiveRecoveryCall,
@@ -20,6 +23,12 @@ const MAX_LIST_ENTRIES = 256;
 const MAX_COMMAND_BYTES = 32_768;
 const MAX_GREP_MATCHES = 64;
 const RECOVERY_SHELL_TIMEOUT_MS = 60_000;
+/** CreateProcess lpCurrentDirectory; Node fs can still create longer staging roots. */
+const WINDOWS_CREATEPROCESS_CWD_LIMIT = 248;
+const POWERSHELL_ARGS = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"] as const;
+const POWERSHELL_UTF8_PREFIX = "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n";
+const LONG_CWD_POWERSHELL =
+  "Set-Location -LiteralPath $env:REPRISE_RECOVERY_CWD; Invoke-Expression $env:REPRISE_RECOVERY_COMMAND; exit $LASTEXITCODE";
 const HOST_RESERVED = new Set(["recovery-manifest.json"]);
 
 export type RecoveryToolOperation = {
@@ -52,6 +61,8 @@ export type RecoveryToolOptions = {
   allowWrite?: (relativePath: string) => boolean;
   completionPaths?: ReadonlySet<string>;
   denyDestructiveOnPrefix?: readonly string[];
+  findExecutableOnPath?: (name: string) => string | undefined;
+  spawnProcess?: ProcessSpawner;
 };
 
 type RecoveryToolContext = {
@@ -410,15 +421,9 @@ function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
           throw new Error(`command exceeds ${MAX_COMMAND_BYTES} bytes.`);
         assertShellCommandDoesNotTargetSensitiveFiles(command);
         assertShellDoesNotMutateReadonlyMount(ctx, command);
+        if (!existsSync(root)) throw new Error("Working directory does not exist. Cannot execute PowerShell commands.");
         const home = await ensureHome();
-        return runShell(
-          root,
-          home,
-          command,
-          signal,
-          options.shellTimeoutMs ?? RECOVERY_SHELL_TIMEOUT_MS,
-          options.shellExecutable,
-        );
+        return runShell(root, home, command, signal, options);
       })(),
   };
 }
@@ -454,21 +459,26 @@ function runShell(
   home: string,
   command: string,
   signal: AbortSignal,
-  timeoutMs: number,
-  executableOverride?: string,
+  options: RecoveryToolOptions,
 ): Promise<{ content: string; details: Record<string, unknown> }> {
+  const timeoutMs = options.shellTimeoutMs ?? RECOVERY_SHELL_TIMEOUT_MS;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1) throw new Error("Shell timeout must be a positive integer.");
+  if (!existsSync(root)) throw new Error("Working directory does not exist. Cannot execute PowerShell commands.");
   const windows = process.platform === "win32";
-  const powershell = executableOverride ?? "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+  const resolved = windows
+    ? resolveWindowsPowershell(options.shellExecutable, options.findExecutableOnPath)
+    : undefined;
+  if (windows && !resolved) {
+    throw new Error("ENOENT: PowerShell executable was not found (未找到 PowerShell).");
+  }
+  const invocation = windowsPowershellInvocation(root, command);
   return runProcess({
     operation: "powershell",
-    executableKind: windows ? "powershell_7" : "shell",
-    command: windows ? powershell : command,
-    args: windows
-      ? ["-NoProfile", "-NonInteractive", "-Command", "Invoke-Expression $env:REPRISE_RECOVERY_COMMAND; exit $LASTEXITCODE"]
-      : [],
-    cwd: root,
-    env: windows ? { ...sanitizedEnvironment(home), REPRISE_RECOVERY_COMMAND: command } : sanitizedEnvironment(home),
+    executableKind: windows ? resolved!.kind : "shell",
+    command: windows ? resolved!.executable : command,
+    args: windows ? invocation.args : [],
+    cwd: invocation.spawnCwd,
+    env: { ...sanitizedEnvironment(home), ...invocation.extraEnv },
     shell: !windows,
     allowNonzeroExit: windows,
     killTree: true,
@@ -476,6 +486,7 @@ function runShell(
     timeoutMs,
     maxOutputBytes: MAX_BYTES,
     truncateOutput: true,
+    ...(options.spawnProcess ? { spawnProcess: options.spawnProcess } : {}),
   }).then((result) => {
     const content = [result.stdout, result.stderr ? `stderr:\n${result.stderr}` : ""].filter(Boolean).join("\n");
     return {
@@ -490,29 +501,112 @@ function runShell(
         networkAccess: looksLikeNetworkCommand(command),
       },
     };
+  }).catch((error) => {
+    if (error instanceof ProcessBoundaryError) throw formatPowershellBoundary(error, resolved?.executable);
+    throw error;
   });
+}
+
+function windowsPowershellInvocation(
+  stagingRoot: string,
+  command: string,
+): { spawnCwd: string; args: string[]; extraEnv: NodeJS.ProcessEnv } {
+  const script = `${POWERSHELL_UTF8_PREFIX}${command}`;
+  const spawnCwd = windowsCreateProcessCwd(stagingRoot);
+  if (process.platform !== "win32" || spawnCwd === stagingRoot) {
+    return { spawnCwd, args: [...POWERSHELL_ARGS, script], extraEnv: {} };
+  }
+  return {
+    spawnCwd,
+    args: [...POWERSHELL_ARGS, LONG_CWD_POWERSHELL],
+    extraEnv: { REPRISE_RECOVERY_COMMAND: script, REPRISE_RECOVERY_CWD: stagingRoot },
+  };
+}
+
+function windowsCreateProcessCwd(stagingRoot: string): string {
+  if (process.platform !== "win32" || stagingRoot.length < WINDOWS_CREATEPROCESS_CWD_LIMIT) return stagingRoot;
+  return tmpdir();
+}
+
+function resolveWindowsPowershell(
+  override?: string,
+  findOnPath?: (name: string) => string | undefined,
+): { executable: string; kind: "powershell_7" | "powershell_windows" } | undefined {
+  if (override) {
+    if (!existsSync(override)) return undefined;
+    return { executable: override, kind: /pwsh\.exe$/i.test(override) ? "powershell_7" : "powershell_windows" };
+  }
+  const locate = findOnPath ?? findExecutableOnPath;
+  const pwshOnPath = locate("pwsh.exe");
+  if (pwshOnPath) return { executable: pwshOnPath, kind: "powershell_7" };
+  const programFiles = envLookup(process.env, "ProgramFiles") ?? "C:\\Program Files";
+  const pwsh7 = join(programFiles, "PowerShell", "7", "pwsh.exe");
+  if (existsSync(pwsh7)) return { executable: pwsh7, kind: "powershell_7" };
+  const powershellOnPath = locate("powershell.exe");
+  if (powershellOnPath) return { executable: powershellOnPath, kind: "powershell_windows" };
+  const systemRoot = envLookup(process.env, "SystemRoot") ?? envLookup(process.env, "WINDIR") ?? "C:\\Windows";
+  const windowsPs = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  if (existsSync(windowsPs)) return { executable: windowsPs, kind: "powershell_windows" };
+  return undefined;
+}
+
+function findExecutableOnPath(executable: string): string | undefined {
+  try {
+    const result = spawnSync("where", [executable], { encoding: "utf-8", timeout: 5_000, windowsHide: true });
+    if (result.status !== 0 || !result.stdout) return undefined;
+    const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
+    if (firstMatch && existsSync(firstMatch)) return firstMatch;
+  } catch {
+    // where.exe missing, timed out, or spawn failed: continue to known install paths
+  }
+  return undefined;
+}
+
+function formatPowershellBoundary(error: ProcessBoundaryError, executable?: string): Error {
+  const bits = [error.exitCategory, error.errnoCode].filter(Boolean).join(" ");
+  const missing =
+    error.errnoCode === "ENOENT" && executable && existsSync(executable)
+      ? " Windows CreateProcess rejected the working directory (MAX_PATH)."
+      : error.errnoCode === "ENOENT"
+        ? " PowerShell executable was not found (未找到 PowerShell)."
+        : "";
+  return new Error(`${bits}:${missing} ${error.message}`.replace(/\s+/g, " ").trim());
+}
+
+function envLookup(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const found = Object.keys(env).find((key) => key.toLowerCase() === name.toLowerCase());
+  return found === undefined ? undefined : env[found];
 }
 
 function sanitizedEnvironment(home: string): NodeJS.ProcessEnv {
   const allowed = new Set([
-    "PATH",
-    "Path",
-    "PATHEXT",
-    "SystemRoot",
-    "WINDIR",
-    "ComSpec",
-    "TEMP",
-    "TMP",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "TERM",
-    "USER",
-    "USERNAME",
+    "path",
+    "pathext",
+    "systemroot",
+    "windir",
+    "comspec",
+    "temp",
+    "tmp",
+    "lang",
+    "lc_all",
+    "lc_ctype",
+    "term",
+    "user",
+    "username",
   ]);
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env))
-    if (value !== undefined && (allowed.has(key) || key.startsWith("LC_"))) env[key] = value;
+    if (value !== undefined && (allowed.has(key.toLowerCase()) || key.startsWith("LC_"))) env[key] = value;
+  const ensure = (canonical: string, fallback?: string) => {
+    if (envLookup(env, canonical) !== undefined) return;
+    const fromProcess = envLookup(process.env, canonical) ?? fallback;
+    if (fromProcess) env[canonical] = fromProcess;
+  };
+  const systemRoot = envLookup(env, "SystemRoot") ?? envLookup(process.env, "SystemRoot") ?? envLookup(process.env, "WINDIR");
+  ensure("SystemRoot", systemRoot);
+  ensure("WINDIR", envLookup(env, "SystemRoot"));
+  const root = envLookup(env, "SystemRoot");
+  ensure("ComSpec", root ? join(root, "System32", "cmd.exe") : undefined);
   env.HOME = home;
   env.USERPROFILE = home;
   env.XDG_CONFIG_HOME = home;
@@ -581,10 +675,25 @@ type ResolvedWorkspacePath = {
   containmentRoot: string;
 };
 
+function workspaceRelative(input: string): string | { root: true } | undefined {
+  if (isAbsolute(input) || input.includes("\\")) return undefined;
+  if (input === "" || input === "." || input === "./") return { root: true };
+  const kept: string[] = [];
+  for (const part of input.split("/")) {
+    if (part === ".") continue;
+    if (!part || part === "..") return undefined;
+    kept.push(part);
+  }
+  return kept.length === 0 ? { root: true } : kept.join("/");
+}
+
 function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath {
-  if (!input || isAbsolute(input) || input.includes("\\") || input.split("/").some((part) => !part || part === "." || part === ".."))
-    throw new Error("Path must be a non-empty slash-separated relative path without . or ...");
-  const parts = input.split("/");
+  const relativePath = workspaceRelative(input);
+  if (relativePath === undefined)
+    throw new Error("Path must be a slash-separated relative path without .. or backslashes.");
+  if (typeof relativePath !== "string")
+    return { absolute: ctx.root, relative: "", writable: true, containmentRoot: ctx.root };
+  const parts = relativePath.split("/");
   const mountRoot = ctx.mounts[parts[0] ?? ""];
   if (mountRoot) {
     const rest = parts.slice(1).join("/");
@@ -592,7 +701,7 @@ function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath 
     const inner = containedPath(mountRoot, rest);
     return { absolute: inner.absolute, relative: `${parts[0]}/${inner.relative}`, writable: false, containmentRoot: resolve(mountRoot) };
   }
-  const inner = containedPath(ctx.root, input);
+  const inner = containedPath(ctx.root, relativePath);
   return { ...inner, writable: true, containmentRoot: ctx.root };
 }
 
