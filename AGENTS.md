@@ -10,7 +10,7 @@
 
 CandidateRun 状态变化只能过 `src/core/state-machine.ts` 的 `assertTransition`（[结果](docs/architecture/run-outcome.md)）。
 
-进入模型请求的输入必须能从事件日志复原；新增模型可见输入必须新增事件（[持久化](docs/architecture/persistence-and-crash-consistency.md)）。
+进入模型请求的输入必须能从事件日志复原（压缩后试卷是 summary + retained tail，见 `agent.context_compacted`）；新增模型可见输入必须新增事件（[持久化](docs/architecture/persistence-and-crash-consistency.md)）。
 
 TUI 是事件日志的只读投影，不持有实验状态机，不伪造未公开的推理过程（[TUI](docs/product/tui.md)）。
 

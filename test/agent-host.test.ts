@@ -741,7 +741,7 @@ test("Recovery rejects recovered output that still has unresolved facts", async 
       text: "normal playbook",
     },
     staging: { fileCount: 0, totalBytes: 0 },
-    budget: { maxToolCalls: 64, timeoutMs: 50 },
+    budget: { timeoutMs: 50 },
     allowModelText: true,
   };
   const recovery = new RecoveryAgent({
@@ -781,7 +781,7 @@ test("Recovery repair is envelope-only and audits invalid output without model t
     resolved: { patches: [], preimages: [], evidenceRefs: ["event:owned"] },
     playbook: { productId: "test", version: "test/v1", sha256: "a".repeat(64), text: "playbook" },
     staging: { fileCount: 1, totalBytes: 1 },
-    budget: { maxToolCalls: 64, timeoutMs: 50 },
+    budget: { timeoutMs: 50 },
     allowModelText: true,
   };
   const recovery = new RecoveryAgent({
@@ -869,7 +869,7 @@ test("Recovery treats Playbook instructions as context data without expanding th
         text: playbookInstruction,
       },
       staging: { fileCount: 0, totalBytes: 0 },
-      budget: { maxToolCalls: 64, timeoutMs: 50 },
+      budget: { timeoutMs: 50 },
       allowModelText: true,
     },
     [

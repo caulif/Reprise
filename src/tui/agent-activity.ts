@@ -42,17 +42,9 @@ export function projectAgentTool(
   const failed = type === 'agent.tool_failed';
   const completed = type === 'agent.tool_completed';
   const message = text(payload.message) ?? text(payload.error) ?? '';
-  const noGain = failed && /repeated tool call with identical inputs/i.test(message);
   const object = toolObject(payload, tool);
   const kind = toolKind(lane, tool, object.command);
   const gitMissing = isGitMissing(tool, completed, payload);
-  if (noGain) {
-    return {
-      title: `${laneLabel(lane)} tool failed · ${tool}`,
-      detail: message,
-      extra: { hidden: true, lane, kind, itemId: `live:${lane}`, patch: 'replace' },
-    };
-  }
   if (failed) {
     return {
       title: `${laneLabel(lane)} tool failed · ${tool}`,
@@ -91,11 +83,11 @@ export function projectContextCompacted(payload: JsonRecord): {
   extra: { lane: AgentLane; kind: 'compact'; count: number; itemId: string; patch: 'replace' };
 } {
   const lane = agentLane(payload);
-  const replaced = Array.isArray(payload.replaced) ? payload.replaced.length : 1;
+  const retained = typeof payload.retainedCount === 'number' ? payload.retainedCount : 1;
   return {
     title: laneTitle(lane, 'compact'),
-    detail: `×${replaced}`,
-    extra: { lane, kind: 'compact', count: replaced, itemId: `compact:${lane}`, patch: 'replace' },
+    detail: `tail ${retained}`,
+    extra: { lane, kind: 'compact', count: 1, itemId: `compact:${lane}`, patch: 'replace' },
   };
 }
 
@@ -272,7 +264,7 @@ function mutateKey(entry: TimelineEntry): string {
 }
 
 function mergeDetail(previous: TimelineEntry, next: TimelineEntry, count: number): string {
-  if (previous.kind === 'compact' || next.kind === 'compact') return `×${count}`;
+  if (previous.kind === 'compact' || next.kind === 'compact') return `tail ×${count}`;
   const names = uniqueNames([...(previous.detail ?? '').split(/[·×]/), ...(next.detail ?? '').split(/[·×]/)]);
   const shown = names.slice(0, 3).join(' · ');
   return `${shown}  ×${count}`;

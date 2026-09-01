@@ -38,9 +38,9 @@ async function workspace(): Promise<string> {
   return root;
 }
 
-function tool(root: string, name: string, maxToolCalls = 64, options = {}) {
+function tool(root: string, name: string, options = {}) {
   const toolOptions = name === "powershell" ? { allowShell: true, ...options } : options;
-  const found = recoveryTools(root, maxToolCalls, toolOptions).find(
+  const found = recoveryTools(root, toolOptions).find(
     (item) => item.name === name,
   );
   assert.ok(found, `missing ${name}`);
@@ -134,7 +134,7 @@ test("direct Recovery writes journal schema-validated pre/post hashes", async (t
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   );
   const entries: unknown[] = [];
-  const write = tool(root, "write", 64, {
+  const write = tool(root, "write", {
     onControlledWrite: async (entry: unknown) => {
       entries.push(entry);
     },
@@ -178,7 +178,7 @@ test("powershell deletes are unobserved by the controlled-write journal", async 
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const entries: unknown[] = [];
-  const shell = tool(root, "powershell", 64, {
+  const shell = tool(root, "powershell", {
     onControlledWrite: async (entry: unknown) => entries.push(entry),
   });
   await shell.execute({ command: "Remove-Item -LiteralPath input.txt" }, new AbortController().signal);
@@ -216,7 +216,7 @@ test("powershell runs arbitrary staging commands with a clean temporary environm
     });
   });
 
-  const shell = tool(root, "powershell", 64, { homeRoot });
+  const shell = tool(root, "powershell", { homeRoot });
   await shell.execute(
     { command: "Set-Content -LiteralPath shell-output.txt -Value 'from-shell'" },
     new AbortController().signal,
@@ -282,7 +282,7 @@ test("powershell times out individual commands and marks truncated output", asyn
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   );
 
-  const timedShell = tool(root, "powershell", 64, { shellTimeoutMs: 100 });
+  const timedShell = tool(root, "powershell", { shellTimeoutMs: 100 });
   await assert.rejects(
     timedShell.execute(
       { command: nodeCommand("setTimeout(() => undefined, 2000)") },
@@ -301,45 +301,10 @@ test("powershell times out individual commands and marks truncated output", asyn
   assert.equal(details.truncated, true);
 });
 
-test("recovery tools reject identical calls that add no information", async () => {
-  const root = await workspace();
-  try {
-    const list = tool(root, "ls");
-    await list.execute({}, new AbortController().signal);
-    await assert.rejects(
-      list.execute({}, new AbortController().signal),
-      /no_information_gain/i,
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  }
-});
-
-test("recovery tool budget rejects the 65th investigation call", async () => {
-  const root = await workspace();
-  try {
-    const list = tool(root, "ls");
-    for (let index = 0; index < 64; index += 1) {
-      await list.execute({ path: `missing-${index}` }, new AbortController().signal);
-    }
-    await assert.rejects(
-      list.execute({ path: "missing-64" }, new AbortController().signal),
-      /budget/i,
-    );
-  } finally {
-    await rm(root, {
-      recursive: true,
-      force: true,
-      maxRetries: 10,
-      retryDelay: 100,
-    });
-  }
-});
-
 test("write still succeeds after 64 investigation calls", async () => {
   const root = await workspace();
   try {
-    const tools = recoveryTools(root, 64);
+    const tools = recoveryTools(root);
     const list = tools.find((item) => item.name === "ls");
     const report = tools.find((item) => item.name === "write");
     assert.ok(list && report);
@@ -606,7 +571,7 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
   );
   const operations: unknown[] = [];
   let directoryAttempts = 0;
-  const list = tool(root, "ls", 64, {
+  const list = tool(root, "ls", {
     filesystem: {
       readDirectory: async () => {
         directoryAttempts += 1;
@@ -636,7 +601,7 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
 
   let fileAttempts = 0;
   const reads: unknown[] = [];
-  const read = tool(root, "read", 64, {
+  const read = tool(root, "read", {
     filesystem: {
       readRegularFile: async () => {
         fileAttempts += 1;
@@ -752,7 +717,7 @@ test("powershell reports a missing Windows executable without leaking command de
   }
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const shell = tool(root, "powershell", 64, { shellExecutable: join(root, "missing-pwsh.exe") });
+  const shell = tool(root, "powershell", { shellExecutable: join(root, "missing-pwsh.exe") });
   await assert.rejects(
     shell.execute({ command: "echo should-not-run" }, new AbortController().signal),
     (error: unknown) =>
@@ -773,7 +738,7 @@ test("powershell uses PATH pwsh, Bypass, UTF-8 prefix, and argv command on a sho
   const pwsh = join(root, "pwsh.exe");
   await writeFile(pwsh, "");
   const capture: { command?: string; args?: readonly string[]; env?: NodeJS.ProcessEnv } = {};
-  const shell = tool(root, "powershell", 64, {
+  const shell = tool(root, "powershell", {
     findExecutableOnPath: (name: string) => (name === "pwsh.exe" ? pwsh : undefined),
     spawnProcess: capturingSpawner(capture),
   });
@@ -836,7 +801,7 @@ test("powershell long cwd keeps the command in IEX environment variables", async
     await mkdir(root, { recursive: true });
   }
   const capture: { args?: readonly string[]; env?: NodeJS.ProcessEnv } = {};
-  const shell = tool(root, "powershell", 64, { spawnProcess: capturingSpawner(capture) });
+  const shell = tool(root, "powershell", { spawnProcess: capturingSpawner(capture) });
   await shell.execute({ command: "Remove-Item -LiteralPath input.txt" }, new AbortController().signal);
   assert.match(String(capture.args?.at(-1)), /Invoke-Expression/);
   assert.match(String(capture.env?.REPRISE_RECOVERY_COMMAND), /OutputEncoding/);

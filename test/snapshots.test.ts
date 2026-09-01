@@ -53,5 +53,5 @@ test('runtime-facing tool schemas match committed snapshots', async () => {
     allowModelText: true,
   })));
   await assertSnapshot('recovery-observation-tools', toolCatalog(recoveryObservationTools(taskCase)));
-  await assertSnapshot('recovery-tools', toolCatalog(recoveryTools('TMP', 8)));
+  await assertSnapshot('recovery-tools', toolCatalog(recoveryTools('TMP')));
 });

@@ -72,7 +72,6 @@ export type RecoveryAttemptInput = {
   allowShell?: boolean;
   /** Explicit opt-in for replaying allowlisted historical commands inside recovery staging. */
   executeReadinessCommands?: boolean;
-  maxToolCalls: number;
   environmentProvider?: LocalWorkspaceProvider;
   now: string;
   onEvent?: (event: EventEnvelope) => void;

@@ -831,7 +831,7 @@ async function requestControllerDecision(
         );
       },
     })),
-    ...recoveryTools(input.environment.root, 64, {
+    ...recoveryTools(input.environment.root, {
       homeRoot: join(input.experimentRoot, ".reprise-controller-home"),
     }),
   ];

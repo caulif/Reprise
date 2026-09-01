@@ -288,10 +288,10 @@ test('recovery timeline keeps inspect, powershell, writes, and failures visible'
   const duplicate = projectTimelineEvent(event('agent.tool_failed', {
     role: 'recovery',
     tool: 'ls',
-    message: 'recovery_no_information_gain: repeated tool call with identical inputs.',
+    message: 'path not found',
   }))[0];
-  assert.equal(duplicate?.hidden, true);
-  assert.equal(duplicate?.level, undefined);
+  assert.equal(duplicate?.hidden, undefined);
+  assert.equal(duplicate?.level, 'error');
 });
 
 test('recovery timeline collapses identical consecutive tool failures', () => {

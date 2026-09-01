@@ -10,7 +10,7 @@
 2. `pending_user_review` 候选必须保留在 Provider-owned 隔离目录。Host 暴露 `selectCandidate(candidateId)` 作为人工选择入口；选择写入 `recovery.candidate_selected_by_user`，包括 candidate、hypothesis、graph artifact 和 `requiresReexecution`。
 3. 人工选择不直接复制候选到 source，也不直接 `accept`。尚未重新执行并通过 Provider 验证的 alternate candidate 必须继续拒绝接受，避免把审查意图误报成 `verified`。
 4. Recovery attempt 返回后，选择事件使用短生命周期 ExperimentStore writer 持久化并通知 Host event listener；不能依赖已关闭的主 attempt writer。
-5. 相同 mutation version、工具名和参数的重复调用属于无信息增益调用，由 Host 拒绝；受控写入或 shell 成功会推进 mutation version，因此写入后的重新读取仍被允许。硬性 `maxToolCalls` 预算继续生效；Host 按 hypothesis 递减剩余搜索预算，并拒绝估计成本超过剩余预算的 probe。
+5. Host 按 hypothesis 递减剩余搜索预算，并拒绝估计成本超过剩余预算的 probe。内部 Agent 工具调用不再按次数、破坏性次数或相同输入拦截；上下文走 Pi 压缩，见 [对齐 Pi 循环](./2026-09-02-internal-agent-pi-alignment.md)。受控写入或 shell 成功仍推进 mutation version，供候选图与证据记账，不用于拒绝重复读取。
 
 ## 不变的安全边界
 

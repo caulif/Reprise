@@ -12,10 +12,10 @@ async function workspace(): Promise<string> {
   return root;
 }
 
-test("destructive powershell stops after 16 calls without blocking ls", async (t) => {
+test("workspace tools do not cap investigation or destructive powershell calls", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const tools = recoveryTools(root, 64);
+  const tools = recoveryTools(root, { allowShell: true });
   const shell = tools.find((item) => item.name === "powershell");
   const list = tools.find((item) => item.name === "ls");
   const report = tools.find((item) => item.name === "write");
@@ -23,59 +23,23 @@ test("destructive powershell stops after 16 calls without blocking ls", async (t
   assert.ok(list);
   assert.ok(report);
   const signal = new AbortController().signal;
-  for (let index = 0; index < 16; index += 1) {
+  for (let index = 0; index < 17; index += 1) {
     const path = `scratch-${index}.txt`;
     await writeFile(join(root, path), "x\n");
     await shell.execute({ command: `Remove-Item -LiteralPath ${path}` }, signal);
-    if (index === 0) await list.execute({}, signal);
+    await list.execute({}, signal);
   }
-  await writeFile(join(root, "scratch-16.txt"), "x\n");
-  await assert.rejects(
-    shell.execute({ command: "Remove-Item -LiteralPath scratch-16.txt" }, signal),
-    /destructive change budget of 16/i,
-  );
+  await report.execute({ path: "recovery.md", content: "# Recovery\n" }, signal);
+});
+
+test("identical ls calls are not rejected", async (t) => {
+  const root = await workspace();
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const list = recoveryTools(root).find((item) => item.name === "ls");
+  assert.ok(list);
+  const signal = new AbortController().signal;
   await list.execute({}, signal);
-  await report.execute({ path: "recovery.md", content: "# Recovery\n" }, signal);
-});
-
-test("destructive cap does not consume the investigation budget", async (t) => {
-  const root = await workspace();
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const tools = recoveryTools(root, 16);
-  const shell = tools.find((item) => item.name === "powershell");
-  const report = tools.find((item) => item.name === "write");
-  assert.ok(shell);
-  assert.ok(report);
-  const signal = new AbortController().signal;
-  for (let index = 0; index < 16; index += 1) {
-    const path = `scratch-${index}.txt`;
-    await writeFile(join(root, path), "x\n");
-    await shell.execute({ command: `Remove-Item -LiteralPath ${path}` }, signal);
-  }
-  await writeFile(join(root, "scratch-16.txt"), "x\n");
-  await assert.rejects(
-    shell.execute({ command: "Remove-Item -LiteralPath scratch-16.txt" }, signal),
-    /destructive change budget of 16/i,
-  );
-  await report.execute({ path: "recovery.md", content: "# Recovery\n" }, signal);
-});
-
-test("investigation budget exhaustion still fails powershell", async (t) => {
-  const root = await workspace();
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const tools = recoveryTools(root, 16);
-  const shell = tools.find((item) => item.name === "powershell");
-  const list = tools.find((item) => item.name === "ls");
-  assert.ok(shell);
-  assert.ok(list);
-  const signal = new AbortController().signal;
-  for (let index = 0; index < 16; index += 1) {
-    await list.execute({ path: `missing-${index}` }, signal);
-  }
-  await assert.rejects(
-    shell.execute({ command: "Write-Output ok" }, signal),
-    /tool-call budget of 16/i,
-  );
+  await list.execute({}, signal);
 });
 
 test("old tool names are not registered", () => {
@@ -85,16 +49,10 @@ test("old tool names are not registered", () => {
   }
 });
 
-test("destructive and investigation budget messages classify as budget_exhausted", () => {
+test("legacy budget messages still classify as budget_exhausted", () => {
   assert.equal(
     recoveryToolFailureCategory({
       message: "recovery_no_information_gain: destructive change budget of 16 was exhausted.",
-    }),
-    "budget_exhausted",
-  );
-  assert.equal(
-    recoveryToolFailureCategory({
-      message: "recovery_no_information_gain: delete_file budget of 16 was exhausted.",
     }),
     "budget_exhausted",
   );

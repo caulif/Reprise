@@ -49,7 +49,6 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery,
-    maxToolCalls: 64,
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
@@ -131,7 +130,6 @@ test("Recovery persists shell audit details alongside the report narrative for c
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery,
-    maxToolCalls: 64,
     allowShell: true,
     now,
   });
@@ -201,7 +199,6 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
         };
       },
     },
-    maxToolCalls: 64,
     now,
     onEvent: (event) =>
       events.push({ type: event.type, payload: event.payload }),
@@ -282,7 +279,6 @@ test("Recovery runs maximum-effort forensics even with an empty transcript and e
         };
       },
     },
-    maxToolCalls: 64,
     now,
     onEvent: (event) =>
       events.push({ type: event.type, payload: event.payload }),
@@ -373,7 +369,6 @@ test("Recovery retries a transient staging failure before maximum-effort forensi
         },
       }),
     },
-    maxToolCalls: 64,
     now,
     environmentProvider: provider,
     onEvent: (event) =>
@@ -439,7 +434,6 @@ test("Recovery records a redacted preflight diagnostic after staging retry is ex
         throw new Error("must not run");
       },
     },
-    maxToolCalls: 64,
     now,
     environmentProvider: provider,
     onEvent: (event) =>
@@ -519,7 +513,6 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery,
-    maxToolCalls: 64,
     now,
   });
   assert.equal(attempt.baseline.match, "current_state_fallback");
@@ -559,7 +552,6 @@ test("Recovery maps a cancelled Agent invocation to the cancelled failure stage"
         sessionId: "recovery-cancelled",
       }),
     },
-    maxToolCalls: 64,
     now,
   });
   assert.equal(attempt.baseline.recovery?.failureStage, "cancelled");
@@ -621,7 +613,6 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
     sourceRoot: base.sourceRoot,
     taskCase: readinessTask,
     recovery,
-    maxToolCalls: 64,
     maxModelAttempts: 3,
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
@@ -691,7 +682,6 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
     sourceRoot: base.sourceRoot,
     taskCase: task,
     recovery,
-    maxToolCalls: 64,
     maxModelAttempts: 3,
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
@@ -730,7 +720,6 @@ test("Recovery classifies a first-turn context-length error as agent_model_faile
         throw new Error("HTTP 400 context_length_exceeded");
       },
     },
-    maxToolCalls: 64,
     now,
   });
   assert.equal(attempt.baseline.recovery?.failureStage, "agent_model_failed");
@@ -793,7 +782,6 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
     sourceRoot: base.sourceRoot,
     taskCase: task,
     recovery,
-    maxToolCalls: 64,
     maxModelAttempts: 3,
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
@@ -844,7 +832,6 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
     sourceRoot: base.sourceRoot,
     taskCase: task,
     recovery,
-    maxToolCalls: 64,
     maxModelAttempts: 2,
     now,
   });

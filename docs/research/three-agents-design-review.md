@@ -46,11 +46,11 @@
 
 ### 3.3 预算（半欠账）
 
-- Recovery：调查调用上限 + completion 上限 + 破坏性上限（[`recovery-tool-budget.ts`](../../src/infrastructure/recovery-tool-budget.ts)）。
-- Controller：只有编排层 `maxModelCalls` / `wallClockMs`，工具调用无上限——今天只有一个只读分页工具所以无害，换上七件套后就是无界 shell 预算。
-- Comparison：什么都没有。
+- Recovery：内部 Agent 不再按工具次数截断（[对齐 Pi 循环](../decisions/accepted/2026-09-02-internal-agent-pi-alignment.md)）。forensics 仍有 hypothesis 搜索预算；CandidateRun 仍有墙钟等实验策略。
+- Controller：编排层 `maxModelCalls` / `wallClockMs`；工具调用无次数上限。
+- Comparison：无工具次数上限。
 
-提案：预算跟着工作区工具工厂走，三角色都有调查调用上限。参数按角色：Recovery 维持现状；Controller 破坏性有界（不封读）；Comparison 对 `candidate/` 的写上限为 0（策略拒绝），对 `report.html` 走 completion 上限。预算是 Host 事实，耗尽要有事件。
+上下文压力走 Pi compact 与模型窗口，不靠 Host 调查调用计数。
 
 ### 3.4 信封与 validate（小欠账）
 
@@ -74,7 +74,7 @@ Recovery 的调查包已有事件与 ADR（[调查包决策](../decisions/accept
 
 交付物：Recovery 写 `recovery.md`、Comparison 写 `report.html`（`write` 到保留名，Host 校验后摘走）；Controller 信封即交付。沙箱挂载见 §6.1。
 
-批次、验收与规范见 [八工具与写策略](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)、[轮间压缩](../decisions/accepted/2026-08-31-internal-agent-turn-compaction.md)、[模型输入与工具审计](../decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)。
+批次、验收与规范见 [八工具与写策略](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)、[对齐 Pi 循环](../decisions/accepted/2026-09-02-internal-agent-pi-alignment.md)、[模型输入与工具审计](../decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)。
 
 ## 6. 已闭合的选择
 
@@ -97,9 +97,9 @@ Windows 没有 POSIX bind mount。挂载 = **路径映射 + 写策略**：`read`
 
 「一轮」= 一次模型 completion，以及它触发的工具结果被写进 session 之后。Recovery 一次调查、Comparison 一次写报告、Controller 一次 `decide()`，内部都可以有很多这样的轮。压缩对三个角色默认开启，不写进 prompt。
 
-- **时机**：每一轮工具结果已经进入 session、下一次模型调用之前，把**更早**的 tool 正文换成有界占位（工具名、路径/source、byteLength、content digest）。**刚刚产生、即将被下一轮模型读到的那批工具结果保持全文。** Controller 两次 `append` 之间，上一轮决策的工具正文同样压缩；信封 JSON 与调查包用户消息保留。
-- **可复原**：全文在当轮 `agent.tool_completed`；压缩再记 Host 事件（被替换消息的 digest 列表）。随后进入模型的是压缩后的 session（外加新调查包，若有），这是那次请求必须能从事件复原的输入。
-- **实现落点**：今天 [`PiModelCaller`](../../src/infrastructure/pi-model-caller.ts) 一次 `agent.prompt()` 跑完整工具循环才返回，消息藏在闭包里。压缩必须钩进 **循环内的下一次 completion 之前**（扩展 `PiTextSession`，或在工具 `execute` 返回后改 `agent.state.messages`），不能只在 Host 信封 `completed` 之后做——对 Recovery / Comparison 那时 session 已结束。不要在三个 `src/agents/*.ts` 里手改 transcript。
+- **时机**：每一轮工具结果已经进入 session、下一次模型调用之前，按 Pi `shouldCompact` 做 structured summary，保留 recent tail。**刚刚产生、即将被下一轮模型读到的那批工具结果在 tail 内保持全文。**
+- **可复原**：试卷是 summary + retained tail（`agent.context_compacted`）。全文仍在当轮 `agent.tool_completed`，不等于下一轮试卷。
+- **实现落点**：[`PiModelCaller`](../../src/infrastructure/pi-model-caller.ts) 在 `shouldStopAfterTurn` 与 overflow 路径调用 `prepareCompaction`/`compact`。不要在三个 `src/agents/*.ts` 里手改 transcript。
 
 ### 6.3 八件套不按角色裁切（已定）
 

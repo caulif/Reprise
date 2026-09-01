@@ -13,7 +13,7 @@ export type HarnessAgents = {
     readonly providerId: string;
     readonly requestedModel: string;
     readonly budget: { readonly callTimeoutMs: number; readonly maxStructuredRepairAttempts: number };
-    readonly recoveryBudget: { readonly callTimeoutMs: number; readonly maxStructuredRepairAttempts: number; readonly maxToolCalls: number };
+    readonly recoveryBudget: { readonly callTimeoutMs: number; readonly maxStructuredRepairAttempts: number };
   };
 };
 
@@ -27,7 +27,7 @@ const UNBOUNDED_CALL_SNAPSHOT_MS = 24 * 60 * 60_000;
 export function createHarnessAgents(config: HarnessModelConfig, caller: PiTextCaller = new PiModelCaller(config)): HarnessAgents {
   const host = new PiAgentHost(caller);
   const budget = { callTimeoutMs: UNBOUNDED_CALL_SNAPSHOT_MS, maxStructuredRepairAttempts: 1 };
-  const recoveryBudget = { callTimeoutMs: UNBOUNDED_CALL_SNAPSHOT_MS, maxStructuredRepairAttempts: 1, maxToolCalls: 64 };
+  const recoveryBudget = { callTimeoutMs: UNBOUNDED_CALL_SNAPSHOT_MS, maxStructuredRepairAttempts: 1 };
   const options = { host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts };
   return {
     controller: new ControllerAgent(options),

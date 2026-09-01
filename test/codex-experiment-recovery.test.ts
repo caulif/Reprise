@@ -72,7 +72,6 @@ test("Recovery records Provider validation failure separately from a completed A
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery,
-    maxToolCalls: 64,
     now,
   });
   assert.equal(attempt.baseline.recovery?.status, "failed");
@@ -126,7 +125,6 @@ test("Recovery rejects an unproven recovered no-op before Provider promotion", a
     taskCase: base.taskCase,
     recovery,
     environmentProvider: new CleanupFailingRecoveryProvider(join(root, "provider")),
-    maxToolCalls: 64,
     now,
   });
   assert.equal(attempt.baseline.recovery?.failureStage, "provider_validation_failed");
@@ -169,7 +167,6 @@ test("Recovery classifies a structured model request failure separately from too
         };
       },
     },
-    maxToolCalls: 64,
     now,
   });
   assert.equal(
@@ -247,7 +244,6 @@ test("Recovery source tripwire falls back to current state and records a warning
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery,
-    maxToolCalls: 64,
     now,
   });
 
@@ -326,7 +322,6 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
     sourceRoot: source,
     taskCase: task,
     recovery,
-    maxToolCalls: 64,
     now,
   });
   assert.equal(attempt.baseline.match, "recovered");
@@ -425,7 +420,6 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
     sourceRoot: base.sourceRoot,
     taskCase: task,
     recovery,
-    maxToolCalls: 64,
     now,
     onEvent: (event) =>
       events.push({

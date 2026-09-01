@@ -210,7 +210,7 @@ async function executeOne(product, item, ordinal, agents, alias, expectedSession
   try {
     attempt = await recoverCodexExperiment({
       dataDir: executionDataDir, caseId: frozen.taskCase.caseId, experimentId: `eval-${alias}`, runId: `recovery-${alias}`,
-      sourceRoot, taskCase: frozen.taskCase, recovery: agents.recovery, executeReadinessCommands: process.env.REPRISE_RUN_RECOVERY_CONTINUATION_CHECKS === '1', maxToolCalls: agents.config.recoveryBudget.maxToolCalls,
+      sourceRoot, taskCase: frozen.taskCase, recovery: agents.recovery, executeReadinessCommands: process.env.REPRISE_RUN_RECOVERY_CONTINUATION_CHECKS === '1',
       now: new Date().toISOString(),
     });
   } catch (error) {

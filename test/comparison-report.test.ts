@@ -21,7 +21,7 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
   await mkdir(candidate, { recursive: true });
   await writeFile(join(candidate, 'kept.txt'), 'keep');
   const html = '<!doctype html><style>body{color:red}</style><svg><path /></svg><script>window.ok=true</script>';
-  const tools = recoveryTools(root, 64, {
+  const tools = recoveryTools(root, {
     mounts: { candidate },
     allowWrite: (path) => path === 'report.html',
     completionPaths: new Set(['report.html']),

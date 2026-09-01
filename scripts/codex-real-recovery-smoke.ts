@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const agents = createHarnessAgents(config);
   const attempt = await recoverCodexExperiment({
     dataDir, caseId, experimentId, runId, sourceRoot, taskCase, recovery: agents.recovery,
-    maxToolCalls: agents.config.recoveryBudget.maxToolCalls, now,
+    now,
   });
   await assertRecovery(attempt, sourceRoot, dataDir, experimentId);
   const baseline = await attempt.accept?.();

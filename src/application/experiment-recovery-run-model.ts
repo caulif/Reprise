@@ -62,7 +62,7 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
         ? { excludedEntries: staging.sourceBudget.excludedEntries }
         : {}),
     },
-    budget: { maxToolCalls: input.maxToolCalls, timeoutMs: 600_000 },
+    budget: { timeoutMs: 600_000 },
     allowModelText: input.taskCase.privacy.allowModelText,
     readiness: deriveRecoveryReadinessContext(input.taskCase, historicalCwdOf(input.taskCase)),
   };
@@ -82,7 +82,7 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
         });
       },
     }),
-    ...recoveryTools(executionCandidate.root, input.maxToolCalls, {
+    ...recoveryTools(executionCandidate.root, {
       ...(input.allowShell ? { allowShell: true } : {}),
       ...(activeStaging?.temporaryRoot ? { homeRoot: activeStaging.temporaryRoot } : {}),
       onControlledWrite: async (entry) => {
@@ -105,10 +105,6 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
           operationId: `recovery-workspace-read-${operation.operation}-${operation.attempts}-${sha256(JSON.stringify(operation)).slice(0, 16)}`,
           payload: operation,
         });
-      },
-      onBudgetExhausted: (category) => {
-        session.lastToolFailureCategory = category;
-        session.haltReadinessFeedback = true;
       },
     }),
   ];

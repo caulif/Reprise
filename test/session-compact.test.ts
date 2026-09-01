@@ -1,41 +1,63 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
-import { compactAgentMessages } from '../src/infrastructure/session-compact.js';
+import { compactPiMessages, needsPiCompaction } from '../src/infrastructure/pi-compaction.js';
 import { PiAgentHost, type AgentAuditEvent } from '../src/infrastructure/pi-agent-host.js';
-import { sha256 } from '../src/core/identity.js';
+import type { AgentMessage } from '@earendil-works/pi-agent-core';
+import type { Api, Model, Models } from '@earendil-works/pi-ai';
 
-test('compactAgentMessages keeps the latest tool batch and digests earlier tool bodies', () => {
-  const first = { role: 'toolResult', toolName: 'ls', toolCallId: '1', content: [{ type: 'text', text: 'FIRST_BODY' }] };
-  const assistant = { role: 'assistant', content: [] };
-  const second = { role: 'toolResult', toolName: 'read', toolCallId: '2', content: [{ type: 'text', text: 'SECOND_BODY' }] };
-  const compacted = compactAgentMessages([
-    { role: 'user', content: [{ type: 'text', text: 'go' }] },
-    first,
-    assistant,
-    second,
-  ]);
-  assert.equal(compacted.replaced.length, 1);
-  assert.equal(compacted.replaced[0]?.digest, sha256('FIRST_BODY'));
-  const compactedText = (compacted.messages[1] as { content: { text: string }[] }).content[0]!.text;
-  const marker = JSON.parse(compactedText) as { compacted: boolean };
-  assert.equal(marker.compacted, true);
-  assert.match(JSON.stringify(compacted.messages[3]), /SECOND_BODY/);
-  assert.doesNotMatch(JSON.stringify(compacted.messages[3]), /compacted":true/);
+const tinyWindowModel = { contextWindow: 1_000 } as Model<Api>;
+
+test('needsPiCompaction is false for a short transcript', () => {
+  const messages: AgentMessage[] = [
+    { role: 'user', content: [{ type: 'text', text: 'go' }], timestamp: 1 },
+  ];
+  assert.equal(needsPiCompaction(messages, 128_000), false);
 });
 
-test('compactAgentMessages refuses to treat a mismatched digest as the original body', () => {
-  const first = { role: 'toolResult', toolName: 'ls', toolCallId: '1', content: [{ type: 'text', text: 'FIRST_BODY' }] };
-  const compacted = compactAgentMessages([{ role: 'assistant', content: [] }, first, { role: 'assistant', content: [] }]);
-  const stored = compacted.replaced[0];
-  assert.ok(stored);
-  assert.notEqual(stored.digest, sha256('NOT_THE_ORIGINAL'));
-  assert.equal(stored.digest, sha256('FIRST_BODY'));
+test('needsPiCompaction follows Pi shouldCompact against provider usage', () => {
+  const messages: AgentMessage[] = [{
+    role: 'assistant',
+    content: [],
+    api: 'openai-completions',
+    provider: 'test',
+    model: 'm',
+    usage: { input: 120_000, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 120_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: 'stop',
+    timestamp: 1,
+  }];
+  assert.equal(needsPiCompaction(messages, tinyWindowModel.contextWindow), true);
+});
+
+test('compactPiMessages uses Pi completeSimple to replace history with a summary plus tail', async () => {
+  const chunk = 'x'.repeat(2_000);
+  const messages: AgentMessage[] = [];
+  for (let index = 0; index < 80; index += 1) {
+    messages.push({ role: 'user', content: [{ type: 'text', text: chunk }], timestamp: index + 1 });
+  }
+  const models = {
+    completeSimple: async () => ({
+      role: 'assistant',
+      content: [{ type: 'text', text: '## Goal\nKeep going.' }],
+      api: 'openai-completions',
+      provider: 'test',
+      model: 'm',
+      usage: { input: 10, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 20, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: 'stop',
+      timestamp: 4,
+    }),
+  } as unknown as Pick<Models, 'completeSimple'>;
+  const model = { id: 'm', name: 'm', api: 'openai-completions', provider: 'test', baseUrl: '', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 16_384 } as Model<Api>;
+  const compacted = await compactPiMessages({ messages, models, model, thinkingLevel: 'low' });
+  assert.ok(compacted);
+  assert.equal(compacted.messages[0]?.role, 'compactionSummary');
+  assert.match(compacted.audit.summary, /Keep going/);
+  assert.ok(compacted.audit.retainedCount >= 1);
 });
 
 test('Host records agent.context_compacted from the Pi session compact hook', async () => {
   const events: AgentAuditEvent[] = [];
-  let compact: ((payload: { replaced: readonly { toolName: string; digest: string; byteLength: number }[] }) => Promise<void>) | undefined;
+  let compact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined;
   const host = new PiAgentHost({
     createSession: (input) => {
       compact = input.onContextCompact;
@@ -61,8 +83,6 @@ test('Host records agent.context_compacted from the Pi session compact hook', as
   });
   assert.equal(result.status, 'completed');
   assert.equal(typeof compact, 'function');
-  await compact!({
-    replaced: [{ toolName: 'ls', digest: 'a'.repeat(64), byteLength: 12 }],
-  });
+  await compact!({ summary: '## Goal\nDone', tokensBefore: 12_000, retainedCount: 3 });
   assert.ok(events.some((event) => event.type === 'agent.context_compacted'));
 });

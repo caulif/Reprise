@@ -134,6 +134,8 @@ controller.input_proposed
 
 只有 `runtime.input_accepted` 才推进到候选 turn。目标 CLI 的 Product Pack 负责定义如何确认该边界；Harness 不把进程写入成功或 stdout 出现当作通用判据。
 
+内部 Agent 在一次 completion 前若触发 Pi 压缩，那一次送给模型的试卷是 compaction summary 加上 retained tail。`agent.context_compacted` 记录 summary、tokensBefore 和 retainedCount。被切掉的 tool 正文不以 digest 占位进入下一轮试卷；全文仍在当轮 `agent.tool_completed`，供审计，不等于下一轮试卷。不得要求从压缩结果还原被丢弃的 tool 正文。
+
 ## 6. 崩溃恢复
 
 启动或打开实验时：

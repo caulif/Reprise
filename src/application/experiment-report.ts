@@ -193,7 +193,7 @@ async function invokeComparison(
         transcript: input.taskCase.transcript,
         allowModelText: input.taskCase.privacy.allowModelText,
       }),
-      ...recoveryTools(sandboxRoot, 64, {
+      ...recoveryTools(sandboxRoot, {
         mounts: { candidate: input.workspaceRoot },
         allowWrite: (path) => path === "report.html",
         completionPaths: new Set(["report.html"]),

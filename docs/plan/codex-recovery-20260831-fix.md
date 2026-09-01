@@ -36,7 +36,7 @@ Done means：`npm run check`；TUI 改动更新 `docs/tui-audit/frames/`；工�
 
 删、改名、Git：`powershell` 或 `edit`/`write`。报告：约定 `write` 到 staging 根 `recovery.md`；校验后 Host 摘掉（与今天专用 sink 同一不变量）。契约 JSON 不进候选树。
 
-三个角色工作区动词对齐。Controller / Comparison 的换装、audit、轮间压缩见 [八工具](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)、[轮间压缩](../decisions/accepted/2026-08-31-internal-agent-turn-compaction.md)、[审计](../decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)。`read_observation` 的 source 按角色白名单区分。Recovery prompt：默认先看调查包。
+三个角色工作区动词对齐。Controller / Comparison 的换装、audit、轮间压缩见 [八工具](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)、[对齐 Pi 循环](../decisions/accepted/2026-09-02-internal-agent-pi-alignment.md)、[审计](../decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)。`read_observation` 的 source 按角色白名单区分。Recovery prompt：默认先看调查包。
 
 ## 2. 非目标
 

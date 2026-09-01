@@ -11,10 +11,6 @@ import {
 } from "./recovery-write-journal.js";
 import type { AgentToolDefinition } from "./pi-agent-host.js";
 import { ProcessBoundaryError, runProcess, type ProcessSpawner } from "./process-runner.js";
-import {
-  chargeRecoveryToolBudget,
-  noteDestructiveRecoveryCall,
-} from "./recovery-tool-budget.js";
 import { integer, requiredString } from "./recovery-tools.js";
 
 const MAX_BYTES = 262_144;
@@ -52,7 +48,6 @@ export type RecoveryToolOptions = {
   shellExecutable?: string;
   homeRoot?: string;
   allowShell?: boolean;
-  onBudgetExhausted?: (category: "budget_exhausted") => void;
   onControlledWrite?: RecoveryControlledWriteHook;
   onOperation?: (operation: RecoveryToolOperation) => Promise<void>;
   filesystem?: RecoveryToolFilesystem;
@@ -124,58 +119,20 @@ function createRecoveryToolContext(
   return { root, options, mounts: options.mounts ?? {}, completionPaths: options.completionPaths ?? new Set(["recovery.md"]), limit, boundedRead, ensureHome, readDirectory, readRegularFile };
 }
 
-function decorateRecoveryTools(
-  tools: readonly AgentToolDefinition[],
-  options: RecoveryToolOptions,
-  maxToolCalls: number,
-): readonly AgentToolDefinition[] {
-  const seen = new Set<string>();
-  let mutationVersion = 0;
-  const budget = { investigationCalls: 0, completionCalls: 0, deleteCalls: 0 };
-  const completionTools = new Set<string>();
-  const mutatingTools = new Set(["write", "edit", "powershell"]);
-  return tools.map((tool) => ({
-    ...tool,
-    execute: async (params: unknown, signal: AbortSignal) => {
-      chargeRecoveryToolBudget(
-        tool.name,
-        budget,
-        maxToolCalls,
-        completionTools,
-        options.onBudgetExhausted,
-        params,
-        options.completionPaths ?? new Set(["recovery.md"]),
-      );
-      const key = `${mutationVersion}:${tool.name}:${JSON.stringify(params)}`;
-      if (seen.has(key)) throw new Error("recovery_no_information_gain: repeated tool call with identical inputs.");
-      seen.add(key);
-      const result = await tool.execute(params, signal);
-      noteDestructiveRecoveryCall(tool.name, params, budget);
-      if (mutatingTools.has(tool.name)) mutationVersion += 1;
-      return result;
-    },
-  }));
-}
-
 export function recoveryTools(
   stagingRoot: string,
-  maxToolCalls = 64,
   options: RecoveryToolOptions = {},
 ): readonly AgentToolDefinition[] {
   const ctx = createRecoveryToolContext(stagingRoot, options);
-  return decorateRecoveryTools(
-    [
-      lsTool(ctx),
-      readTool(ctx),
-      grepTool(ctx),
-      findTool(ctx),
-      editTool(ctx),
-      writeTool(ctx),
-      powershellTool(ctx),
-    ],
-    options,
-    maxToolCalls,
-  );
+  return [
+    lsTool(ctx),
+    readTool(ctx),
+    grepTool(ctx),
+    findTool(ctx),
+    editTool(ctx),
+    writeTool(ctx),
+    powershellTool(ctx),
+  ];
 }
 
 function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {

@@ -66,7 +66,6 @@ test("Recovery keeps the first valid partial when a later completed envelope fai
     sourceRoot: base.sourceRoot,
     taskCase: task,
     recovery,
-    maxToolCalls: 64,
     maxModelAttempts: 3,
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
@@ -119,7 +118,6 @@ test("Recovery still falls back when the only completed envelope fails probe", a
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery,
-    maxToolCalls: 64,
     now,
   });
   assert.equal(attempt.accept === undefined, true);
@@ -127,12 +125,12 @@ test("Recovery still falls back when the only completed envelope fails probe", a
   assert.equal(attempt.baseline.match, "current_state_fallback");
 });
 
-test("Recovery does not start a readiness feedback turn after powershell budget is exhausted", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-delete-budget-halt-"));
+test("Recovery still completes after more than sixteen destructive powershell calls", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-delete-uncapped-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
-  for (let index = 0; index < 16; index += 1) {
+  for (let index = 0; index < 17; index += 1) {
     await writeFile(join(base.sourceRoot, `scratch-${index}.txt`), "x\n");
   }
   const task = {
@@ -147,20 +145,16 @@ test("Recovery does not start a readiness feedback turn after powershell budget 
       assert.ok(evidenceRef);
       const remove = tools.find((tool) => tool.name === "powershell");
       const signal = new AbortController().signal;
-      for (let index = 0; index < 16; index += 1) {
+      for (let index = 0; index < 17; index += 1) {
         await remove?.execute({ command: `Remove-Item -LiteralPath scratch-${index}.txt` }, signal);
       }
-      await assert.rejects(
-        remove?.execute({ command: "Remove-Item -LiteralPath scratch-0.txt" }, signal) ?? Promise.reject(new Error("missing")),
-        /destructive change budget of 16/,
-      );
       await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "recovery.md", content: "# Recovery\n\nDeletes stopped at the Host cap." },
+        { path: "recovery.md", content: "# Recovery\n\nDeletes are not capped by a Host tool budget." },
         signal,
       );
       return {
         status: "completed",
-        sessionId: "recovery-delete-budget-halt",
+        sessionId: "recovery-delete-uncapped",
         value: {
           status: "partial",
           reportPath: "recovery.md",
@@ -174,12 +168,11 @@ test("Recovery does not start a readiness feedback turn after powershell budget 
   const attempt = await recoverCodexExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
-    experimentId: "recovery-delete-budget-halt",
-    runId: "recovery-delete-budget-halt-run",
+    experimentId: "recovery-delete-uncapped",
+    runId: "recovery-delete-uncapped-run",
     sourceRoot: base.sourceRoot,
     taskCase: task,
     recovery,
-    maxToolCalls: 64,
     maxModelAttempts: 3,
     now,
   });

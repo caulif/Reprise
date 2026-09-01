@@ -99,7 +99,7 @@ test('internal agents share eight tool names and retire catalog readers', async 
   const loop = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
   assert.match(loop, /experimentAgentAuditSink/);
   const caller = await readFile(join(SRC, 'infrastructure/pi-model-caller.ts'), 'utf8');
-  assert.match(caller, /compactAgentMessages/);
-  assert.match(caller, /transformContext/);
+  assert.match(caller, /shouldStopAfterTurn/);
+  assert.match(caller, /compactPiMessages/);
 });
 

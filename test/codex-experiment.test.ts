@@ -47,7 +47,6 @@ test("trusted checkpoints restore deterministically without invoking the Recover
         );
       },
     },
-    maxToolCalls: 64,
     now,
     environmentProvider: provider,
     onEvent: (event) =>

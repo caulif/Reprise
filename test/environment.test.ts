@@ -493,7 +493,6 @@ test("Recovery validates isolated git checkout, report, accept, and marker reuse
   const shell = (await import("../src/infrastructure/recovery-tools.js"))
     .recoveryTools(
       staging.root,
-      64,
       staging.temporaryRoot ? { homeRoot: staging.temporaryRoot, allowShell: true } : { allowShell: true },
     )
     .find((item) => item.name === "powershell");

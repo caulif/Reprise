@@ -51,7 +51,7 @@ export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?
       const agents = await input.agents();
       const experimentId = `recovery-${randomUUID()}`;
       const runId = `recovery-run-${randomUUID()}`;
-      return recoverCodexExperiment({ dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot, taskCase: request.taskCase, recovery: agents.recovery, maxToolCalls: agents.config.recoveryBudget.maxToolCalls, now: input.now(), ...(request.onEvent ? { onEvent: request.onEvent } : {}) });
+      return recoverCodexExperiment({ dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot, taskCase: request.taskCase, recovery: agents.recovery, now: input.now(), ...(request.onEvent ? { onEvent: request.onEvent } : {}) });
     },
     async start(request): Promise<ExperimentHandle> {
       const agents = await input.agents();

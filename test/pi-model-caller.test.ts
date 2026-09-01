@@ -69,8 +69,8 @@ test('modelsForConfig registers an OpenAI-compatible model whose key only resolv
   const config = { schemaVersion: 2 as const, provider: { kind: 'openai-compatible' as const, id: 'private-api' }, providerId: 'private-api', modelId: 'model-a', effort: 'medium' as const, baseUrl: 'https://example.test/v1', keyRef: 'env:REPRISE_TEST_KEY' };
   modelsForConfig(config, models);
   assert.equal(providers.length, 1);
-  const provider = providers[0] as { getModels(): Array<{ id: string; baseUrl: string }>; auth: { apiKey?: { resolve(input: { ctx: { env(name: string): Promise<string | undefined> }; signal: AbortSignal }): Promise<{ auth: { apiKey: string }; source?: string } | undefined> } } };
-  assert.deepEqual(provider.getModels().map((model) => ({ id: model.id, baseUrl: model.baseUrl })), [{ id: 'model-a', baseUrl: 'https://example.test/v1' }]);
+  const provider = providers[0] as { getModels(): Array<{ id: string; baseUrl: string; contextWindow: number; maxTokens: number }>; auth: { apiKey?: { resolve(input: { ctx: { env(name: string): Promise<string | undefined> }; signal: AbortSignal }): Promise<{ auth: { apiKey: string }; source?: string } | undefined> } } };
+  assert.deepEqual(provider.getModels().map((model) => ({ id: model.id, baseUrl: model.baseUrl, contextWindow: model.contextWindow, maxTokens: model.maxTokens })), [{ id: 'model-a', baseUrl: 'https://example.test/v1', contextWindow: 128_000, maxTokens: 16_384 }]);
   const auth = await provider.auth.apiKey?.resolve({ ctx: { env: async (name) => name === 'REPRISE_TEST_KEY' ? 'actual-secret-value' : undefined }, signal: new AbortController().signal });
   assert.equal(auth?.source, 'REPRISE_TEST_KEY');
   assert.equal(auth?.auth.apiKey, 'actual-secret-value');

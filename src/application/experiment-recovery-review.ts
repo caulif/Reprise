@@ -147,7 +147,7 @@ function review_reexecutionTools(
         });
       },
     }),
-    ...recoveryTools(candidate.root, session.input.maxToolCalls, {
+    ...recoveryTools(candidate.root, {
       ...(session.input.allowShell ? { allowShell: true } : {}),
       ...(session.activeStaging.temporaryRoot ? { homeRoot: session.activeStaging.temporaryRoot } : {}),
       onControlledWrite: async (entry) => {

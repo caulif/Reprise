@@ -62,7 +62,7 @@ export function recoveryModelInputAudit(
       totalBytes: staging?.totalBytes,
       excludedEntries: staging?.excludedEntries,
     },
-    budget: { maxToolCalls: budget?.maxToolCalls, timeoutMs: budget?.timeoutMs },
+    budget: { timeoutMs: budget?.timeoutMs },
     allowModelText: context.allowModelText,
     toolNames: [...toolNames],
     contextDigest: sha256(JSON.stringify(context) ?? "undefined"),

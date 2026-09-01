@@ -49,7 +49,7 @@
 - [回放起点是用户任务句](./decisions/accepted/2026-08-31-replay-user-task-not-injected-instruction.md)：冻结跳过产品注入的 `AGENTS.md` / 指令块；完整 transcript 仍留给 Controller。
 - [校验通过的恢复 preview 自动接受](./decisions/accepted/2026-08-31-recovery-auto-accept-validated-preview.md)：Host 在 `validateRecovery` 成功后立即 `acceptRecovery`；确认页只确认是否开计费候选。
 - [内部 Agent 模型输入与工具审计](./decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)：`comparison.requested`；三角色 `AgentAuditSink`。
-- [内部 Agent 轮间压缩](./decisions/accepted/2026-08-31-internal-agent-turn-compaction.md)：下一次 completion 前压缩更早的 tool 正文。
+- [内部 Agent 对齐 Pi 循环](./decisions/accepted/2026-09-02-internal-agent-pi-alignment.md)：读并行写顺序；Pi compact 试卷；取消工具次数预算与重复输入拦截。
 - [内部 Agent 八工具与写策略](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md)：三角色同一组工具名；Comparison `candidate/` 只读挂载。
 - [Recovery 调查包](./decisions/accepted/2026-08-31-recovery-investigation-packet.md)：进入模型的历史主通道是 Host 有界调查包，不是全文翻页。
 - [Recovery 八工具面](./decisions/accepted/2026-08-31-recovery-pi-aligned-tools.md)：工作区对齐 Pi；Host 只留 `read_observation`。

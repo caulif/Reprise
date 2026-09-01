@@ -88,7 +88,7 @@ Pi Agent Host 是 Harness 的实现基础设施，不是需要恢复的历史 Ag
 
 Controller 工具让扮演用户的模型能看见隔离副本里一个真实用户本来就能看见的证据，并在副本内做有界核对。工具名与 Recovery / Comparison 相同（见 [八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。不能绕过 Target Runtime 执行任务。
 
-Host 暴露工作区七件套加 `read_observation`（`transcript` | `run_events`）。`powershell` 的 cwd 锁在隔离副本，净化环境、不给凭据、stdout/时限有界。破坏性变更有上限，不封 `read`/`ls`/`grep`/`find`。
+Host 暴露工作区七件套加 `read_observation`（`transcript` | `run_events`）。`powershell` 的 cwd 锁在隔离副本，净化环境、不给凭据、stdout/时限有界。不按工具调用次数截断；上下文走 Pi 压缩。
 
 工具边界：
 

@@ -1,6 +1,8 @@
 # 决策：内部 Agent 轮间压缩工具正文
 
-状态：accepted
+状态：superseded
+
+被 [内部 Agent 对齐 Pi 循环](../accepted/2026-09-02-internal-agent-pi-alignment.md) 取代。下文冻结，描述被放弃的 digest 占位策略。
 
 ## 问题
 

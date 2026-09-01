@@ -28,6 +28,9 @@ type V2Config = {
   readonly keyRef?: string;
   /** Local file credential, same role as Codex auth.json / Claude .credentials.json. */
   readonly apiKey?: string;
+  /** When set, overrides the catalog/custom model context window used for Pi compaction. */
+  readonly contextWindow?: number;
+  readonly maxTokens?: number;
 };
 
 type V1Config = {
@@ -97,6 +100,8 @@ function normalizeV2(value: Record<string, unknown>): V2Config {
   if (provider.kind === 'openai-compatible' && (baseUrl === undefined || (!credential.apiKey && !credential.keyRef))) {
     throw new Error('openai-compatible providers require baseUrl and apiKey');
   }
+  const contextWindow = optionalPositiveInt(value.contextWindow, 'contextWindow');
+  const maxTokens = optionalPositiveInt(value.maxTokens, 'maxTokens');
   return {
     schemaVersion: 2,
     provider: { kind: provider.kind, id: provider.id },
@@ -106,6 +111,8 @@ function normalizeV2(value: Record<string, unknown>): V2Config {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(credential.keyRef ? { keyRef: credential.keyRef } : {}),
     ...(credential.apiKey ? { apiKey: credential.apiKey } : {}),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(maxTokens === undefined ? {} : { maxTokens }),
   };
 }
 
@@ -129,6 +136,12 @@ function optionalBaseUrl(value: unknown): string | undefined {
     if (url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) return value;
   } catch { /* handled below */ }
   throw new Error('expected baseUrl to be an absolute HTTPS URL without credentials, query, or fragment');
+}
+
+function optionalPositiveInt(value: unknown, label: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`expected ${label} to be a positive integer`);
+  return value;
 }
 
 export type HarnessConfigDraft = {

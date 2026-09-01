@@ -72,7 +72,7 @@ async function runFixture(_output: string, productId: "codex" | "claude-code", f
     const attempt = await recoverCodexExperiment({
       dataDir: join(root, "data"), caseId, experimentId: `checkpoint-${fixture.id}`, runId: `checkpoint-${fixture.id}-run`,
       sourceRoot, checkpointRoot: checkpoint.root, taskCase: taskCase(caseId, productId), recovery: recoveryMustNotRun,
-      maxToolCalls: 64, now, environmentProvider: provider,
+      now, environmentProvider: provider,
     });
     if (attempt.recovery.status !== "completed" || attempt.recovery.value.status !== "recovered" || attempt.baseline.match !== "recovered")
       throw new Error("checkpoint recovery did not produce a recovered baseline");

@@ -82,13 +82,13 @@ test('comparison write report.html is visible on the summary lane', () => {
 
 test('context compact folds into one compact row', () => {
   const timeline = collect([
-    event('agent.context_compacted', { role: 'recovery', replaced: [{ toolName: 'read' }, { toolName: 'ls' }] }),
-    event('agent.context_compacted', { role: 'recovery', replaced: [{ toolName: 'grep' }] }),
+    event('agent.context_compacted', { role: 'recovery', summary: 'a', tokensBefore: 1000, retainedCount: 2 }),
+    event('agent.context_compacted', { role: 'recovery', summary: 'b', tokensBefore: 2000, retainedCount: 1 }),
   ]);
   const visible = timeline.filter((entry) => !entry.hidden);
   assert.equal(visible.length, 1);
   assert.match(visible[0]?.title ?? '', /compact/);
-  assert.match(visible[0]?.detail ?? '', /×3/);
+  assert.match(visible[0]?.detail ?? '', /tail ×2/);
 });
 
 test('recovery canvas shows inspect activity instead of a candidate reply', () => {

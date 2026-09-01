@@ -110,7 +110,7 @@ export async function materializeSeedCandidates(session: RecoveryRunSession): Pr
         recordedAt: new Date().toISOString(),
       }),
     );
-  session.remainingSearchBudget = input.maxToolCalls;
+  session.remainingSearchBudget = 64;
   let knownFactRefs: string[] = [];
   for (const hypothesis of seed.plan.hypotheses) {
     const decision = decideRecoverySearch({

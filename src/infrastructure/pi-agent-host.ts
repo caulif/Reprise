@@ -73,7 +73,7 @@ export interface PiTextCaller {
     sessionId: string;
     systemPrompt: string;
     tools: readonly AgentToolDefinition[];
-    onContextCompact?: (payload: { replaced: readonly { toolName: string; digest: string; byteLength: number }[] }) => Promise<void>;
+    onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
   }): Promise<PiTextSession> | PiTextSession;
 }
 
