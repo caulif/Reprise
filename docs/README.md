@@ -56,6 +56,7 @@
 - [Windows PowerShell 回退与 `.` 为根](./decisions/accepted/2026-08-31-recovery-windows-shell-and-dot-paths.md)：`.` 列 staging 根；空变更确认页不伪装成校验细节。
 - [Recovery PowerShell 对齐 Pi 并缩短隔离目录](./decisions/accepted/2026-09-01-recovery-powershell-pi-spawn-and-short-paths.md)：PATH 发现、argv `-Command`、`rs`/`rt`/`rc` 短路径；不灌完整环境。
 - [内部 Agent 运行画布的压缩与分轨](./decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)：按 role 投影；调查合并；Controller 品红与投递分轨；Comparison 绿卡。
+- [恢复后选择候选产品与模型](./decisions/accepted/2026-09-02-candidate-product-and-model-picker.md)：来源 Pack 做恢复；开跑可选别的 Pack 再 `listCatalog`。
 - [恢复终态、确认卡片与短候选目录](./decisions/accepted/2026-09-01-recovery-operator-feedback-and-short-candidates.md)：partial 诊断码、8-hex 候选段、确认卡片与列表光标。
 - [候选 Runtime 失败分类与恢复门禁解耦](./decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)：settlement 保留脱敏失败类别；恢复 candidate 不被 source blockedReasons 再拦；不对 503 自动重试。
 - [列表展示、冻结与 Recovery Agent 分界](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)：列表只截断展示；冻结由 Case Preparation 完成；Recovery Agent 只做环境恢复。
@@ -87,6 +88,7 @@
 - [比较报告三方面优化](./plan/comparison-report-optimization.md)：候选执行条件、Comparison 分析与正文、HTML 渲染与配色。
 - [以用户为中心的端到端优化](./plan/user-centered-end-to-end-optimization.md)。
 - [下一阶段开发计划](./plan/further-development-plan.md)：实时时间线、CLI 入口和新验收任务。
+- [无头 CLI 与 TUI 并行控制面](./plan/agent-headless-cli.md)与[讨论稿](./plan/agent-headless-cli.html)：子命令调用同一套 Application；人与外部 agent 共用 JSON 信封。
 - [TUI 之后的产品路线图](./plan/reprise-post-tui-roadmap.md)。
 
 ## 设计依据

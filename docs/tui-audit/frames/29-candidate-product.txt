@@ -1,0 +1,18 @@
+Reprise v0.1.0   C:\reprise                              gpt-5.6-terra · medium   ⚠ Harness key missing  ● Codex  ● Task
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Last task  Fix the bug. · 2 turns
+
+ Continue
+ r     Replay the current task  needs credential
+ i     Import a historical session
+
+┌─ Run · choose candidate product ─────────────────────────────────────────────────────────────────────────────────────┐
+│ Task         Fix the bug.                                                                                            │
+│ Source session Codex                                                                                                 │
+│                                                                                                                      │
+│❯ Codex                                                                                 source session  reading local…│
+│  Claude Code                                                                                           reading local…│
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Recovered. Choose a candidate product, then a model, then confirm to start.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ [↑↓] Select  [Enter] Choose models  [b] Back  [Esc] Home

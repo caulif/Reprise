@@ -3,6 +3,7 @@ import type {
   PreparedRuntimeEnvironment,
   ResolvedRuntime,
   RuntimeAvailability,
+  RuntimeModelOffer,
   RuntimePort,
   RuntimeRequest,
   TargetEventSink,
@@ -35,6 +36,10 @@ export class FakeRuntimePort implements RuntimePort {
       throw new Error(`Fake catalog does not list ${request.requestedModel}.`);
     }
     return { productId: 'fake', executable: 'fake', requestedModel: request.requestedModel, resolvedModel: 'fake-model' };
+  }
+
+  async listCatalog(): Promise<readonly RuntimeModelOffer[]> {
+    return [{ value: 'fake-model', displayName: 'fake-model', resolvedModel: 'fake-model' }];
   }
 
   recoveryCapabilities() {

@@ -43,6 +43,12 @@ export type RuntimeRequest = {
   productId: string;
   requestedModel: string;
 };
+/** Product-owned catalog entry. `value` is what CandidateSpec.requestedModel stores. */
+export type RuntimeModelOffer = {
+  readonly value: string;
+  readonly displayName: string;
+  readonly resolvedModel?: string;
+};
 export type ResolvedRuntime = AvailableRuntime & {
   requestedModel: string;
   /** The model the runtime actually reported, or 'unknown' when it never named one. */
@@ -77,6 +83,8 @@ export interface RuntimePort {
   resolve(request: RuntimeRequest): Promise<ResolvedRuntime>;
   /** Confirms that the requested model is available to this runtime now. */
   validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime>;
+  /** Current models this runtime will accept as CandidateSpec.requestedModel. */
+  listCatalog(): Promise<readonly RuntimeModelOffer[]>;
   /** Declares local, credential-free evidence sources exposed by this product pack. */
   recoveryCapabilities(): RecoveryRuntimeCapabilities;
   createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner>;

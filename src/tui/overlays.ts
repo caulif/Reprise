@@ -37,6 +37,16 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
     't          Open local path',
   ],
   source: ['Enter      Start the isolated run', 'Esc        Back to Home'],
+  'candidate-product': [
+    'Up/Down    Select candidate product',
+    'Enter      Choose that product\'s models',
+    'b          Back',
+  ],
+  'candidate-model': [
+    'Up/Down    Select model',
+    'Enter      Confirm this model',
+    'b          Change product',
+  ],
   running: [
     'Up/Down    Scroll          PgUp/Dn Page',
     'l / End    Follow latest',

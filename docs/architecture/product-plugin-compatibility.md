@@ -108,8 +108,8 @@ interface ExecutionRuntimeFingerprint {
 → 导入 TaskCase 和 SourceRuntimeEvidence
 
 候选运行
-→ 用同一 Pack 发现当前已安装 Runtime
-→ 解析用户请求的候选模型
+→ 操作者选择已注册 Pack（可以与来源会话产品不同）
+→ 对该 Pack 调用 `listCatalog`，再 `validateCandidate`
 → 写入 ExecutionRuntimeFingerprint
 → 启动 TargetRunner
 ```

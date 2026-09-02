@@ -16,7 +16,7 @@ import {
   saveHarnessModelConfig,
 } from "../src/infrastructure/harness-model-config.js";
 
-import { enterIntake, enterCommand, waitFor } from "./codex-intake-support.js";
+import { enterIntake, enterCommand, waitFor, advanceCandidatePicker, fixtureCatalog } from "./codex-intake-support.js";
 
 test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-tui-force-close-"));
@@ -68,6 +68,7 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
     },
   } as unknown as TUI;
   const workflow = {
+    ...fixtureCatalog,
     candidate: {
       candidateId: "cancel-fixture",
       productId: "codex",
@@ -114,7 +115,7 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
   app.handleInput("\r");
   await waitFor(() => /Session start:/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
+  await advanceCandidatePicker(app, () => rendered);
   app.handleInput("\r");
   await waitFor(() => /Preparing replay|Copy isolated workspace/.test(rendered));
   app.handleInput("\u0003");
@@ -172,6 +173,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   let sourceRoot = "";
   let releaseStart: (() => void) | undefined;
   const workflow = {
+    ...fixtureCatalog,
     candidate: {
       candidateId: "codex-luna-high",
       productId: "codex",
@@ -254,7 +256,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   app.handleInput("\b");
   app.handleInput("C:\\explicit-source");
   app.handleInput("\r");
-  await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
+  await advanceCandidatePicker(app, () => rendered);
   app.handleInput("\r");
   await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
   releaseStart?.();

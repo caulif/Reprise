@@ -167,13 +167,25 @@ export function dispatchPreflightInput(data: string): { action: PreflightAction;
   return undefined;
 }
 
-export type ConfirmAction = 'home' | 'preflight' | 'run';
+export type ConfirmAction = 'home' | 'models' | 'run';
 
 export function dispatchConfirmInput(data: string): { action: ConfirmAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
-  if (matchesKey(input, 'b')) return { action: 'preflight', consume: true };
+  if (matchesKey(input, 'b')) return { action: 'models', consume: true };
   if (matchesKey(input, 'enter')) return { action: 'run', consume: true };
+  return undefined;
+}
+
+export type CandidatePickerAction = 'home' | 'up' | 'down' | 'enter' | 'back';
+
+export function dispatchCandidatePickerInput(data: string): { action: CandidatePickerAction; consume: true } | undefined {
+  const input = unwrapBracketedPaste(data);
+  if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
+  if (matchesKey(input, 'b')) return { action: 'back', consume: true };
+  if (matchesKey(input, 'up')) return { action: 'up', consume: true };
+  if (matchesKey(input, 'down')) return { action: 'down', consume: true };
+  if (matchesKey(input, 'enter')) return { action: 'enter', consume: true };
   return undefined;
 }
 

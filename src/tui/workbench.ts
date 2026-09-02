@@ -7,6 +7,7 @@ import { historyDetailHints, historyHints, renderHistory, renderHistoryDetail, t
 import { homeHints, renderHome, type HomeModel } from './pages/home.js';
 import { inspectionHints, renderInspection, renderSessions, sessionsHints, type InspectionModel, type SessionsModel } from './pages/intake.js';
 import { renderFailure, renderResult, resultHints, failureHints } from './pages/result.js';
+import { candidateModelHints, candidateProductHints, renderCandidateModelPicker, renderCandidateProductPicker, type CandidateModelPage, type CandidateProductModel } from './pages/candidate.js';
 import {
   confirmHints, confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderPreflight, renderSource, renderTimeline,
   runningChrome, runningHints, sourceHints,
@@ -23,7 +24,7 @@ import type { HistoryCase, HistoryExperiment } from './local-history.js';
 
 export type WorkbenchPage =
   | 'loading' | 'home' | 'config' | 'history' | 'history-detail' | 'sessions' | 'inspection'
-  | 'source' | 'preflight' | 'confirm' | 'running' | 'result' | 'error';
+  | 'source' | 'preflight' | 'candidate-product' | 'candidate-model' | 'confirm' | 'running' | 'result' | 'error';
 
 export type WorkbenchView = {
   readonly page: WorkbenchPage;
@@ -47,6 +48,8 @@ export type WorkbenchView = {
   readonly sessions?: SessionsModel;
   readonly inspection?: InspectionModel;
   readonly source?: SourceModel;
+  readonly candidateProduct?: CandidateProductModel;
+  readonly candidateModel?: CandidateModelPage;
   readonly preflight?: PreflightModel;
   readonly confirm?: ConfirmModel;
   readonly running?: RunningModel;
@@ -266,6 +269,8 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
     return renderInspection(theme, width, view.inspection, height);
   }
   if (view.page === 'source' && view.source) return renderSource(theme, width, view.source);
+  if (view.page === 'candidate-product' && view.candidateProduct) return renderCandidateProductPicker(theme, width, view.candidateProduct);
+  if (view.page === 'candidate-model' && view.candidateModel) return renderCandidateModelPicker(theme, width, view.candidateModel);
   if (view.page === 'preflight' && view.preflight) return renderPreflight(theme, width, view.preflight);
   if (view.page === 'preflight') {
     return panel(theme, t(view.locale ?? 'en', 'checkingSourceTitle'), [
@@ -300,6 +305,8 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
   if (view.page === 'sessions') return sessionsHints(view.sessions, locale);
   if (view.page === 'inspection') return inspectionHints(locale);
   if (view.page === 'source') return sourceHints(locale);
+  if (view.page === 'candidate-product') return candidateProductHints(locale);
+  if (view.page === 'candidate-model') return candidateModelHints(view.candidateModel?.status === 'ready' && Boolean(view.candidateModel.offers.length), locale);
   if (view.page === 'preflight') {
     if (!view.preflight) return [['Esc', t(locale, 'hintHome')]];
     return preflightHints(locale);

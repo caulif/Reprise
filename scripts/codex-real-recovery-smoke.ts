@@ -114,6 +114,7 @@ class ScriptedCandidateRuntime implements RuntimePort {
   async inspectAvailability() { return [{ productId: 'codex', executable: 'scripted-recovery-smoke', observedVersion: 'fixture', status: 'available' as const, observedAt: now }]; }
   async resolve(request: { productId: string; requestedModel: string }): Promise<ResolvedRuntime> { return { productId: request.productId, executable: 'scripted-recovery-smoke', version: 'fixture', requestedModel: request.requestedModel, resolvedModel: request.requestedModel }; }
   async validateCandidate(request: { productId: string; requestedModel: string }): Promise<ResolvedRuntime> { return this.resolve(request); }
+  async listCatalog() { return [{ value: 'gpt-5.6-terra', displayName: 'gpt-5.6-terra', resolvedModel: 'gpt-5.6-terra' }] as const; }
   recoveryCapabilities() { return { sessionHistory: 'available' as const, localArtifacts: true, workspaceHistory: false, externalSideEffects: 'unobserved' as const }; }
   async createRunner(_runtime: ResolvedRuntime, _environment: { environmentId: string; runId: string; root: string }, sink: TargetEventSink): Promise<TargetRunner> {
     await sink.append({ type: 'codex.item_completed', occurredAt: now, payload: { item: { type: 'agentMessage', text: 'Scripted Candidate completed orchestration smoke.' } } });

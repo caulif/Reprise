@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   dispatchCanvasInput,
+  dispatchCandidatePickerInput,
   dispatchConfirmInput,
   dispatchErrorKeys,
   dispatchGlobalInput,
@@ -81,7 +82,9 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchPreflightInput('\r'), undefined);
   assert.equal(dispatchPreflightInput('b')?.action, 'source');
   assert.equal(dispatchConfirmInput('\r')?.action, 'run');
-  assert.equal(dispatchConfirmInput('b')?.action, 'preflight');
+  assert.equal(dispatchConfirmInput('b')?.action, 'models');
+  assert.equal(dispatchCandidatePickerInput('b')?.action, 'back');
+  assert.equal(dispatchCandidatePickerInput('\r')?.action, 'enter');
   assert.equal(dispatchRunningKeys('d')?.action, 'toggle-detail');
   assert.equal(dispatchRunningKeys('\x1b')?.action, 'active-message');
   assert.equal(dispatchResultKeys('o')?.action, 'open-report');

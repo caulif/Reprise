@@ -20,3 +20,25 @@ export async function waitFor(condition: () => boolean): Promise<void> {
   }
   throw new Error("TUI did not render its expected state.");
 }
+
+export async function advanceCandidatePicker(app: CodexIntakeTui, rendered: () => string): Promise<void> {
+  await waitFor(() => /choose candidate product|选候选产品/i.test(rendered()));
+  app.handleInput("\r");
+  await waitFor(() => /choose candidate model|选候选模型/i.test(rendered()));
+  app.handleInput("\r");
+  await waitFor(() => /Start isolated .+ Candidate|启动隔离的/.test(rendered()));
+}
+
+export const fixtureCatalog = {
+  async listCatalog() {
+    return [{ value: "fixture", displayName: "fixture", resolvedModel: "fixture" }] as const;
+  },
+  async verifyCandidate(candidate: { productId: string; requestedModel: string }) {
+    return {
+      productId: candidate.productId,
+      executable: "fixture",
+      requestedModel: candidate.requestedModel,
+      resolvedModel: candidate.requestedModel,
+    };
+  },
+};

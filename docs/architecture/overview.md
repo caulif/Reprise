@@ -442,12 +442,20 @@ Controller 模块从这些公共数据组装 `SteeringContext`；Comparison 模�
 ## 7. RuntimePort 与 TargetRunner
 
 ```ts
+type RuntimeModelOffer = {
+  value: string;
+  displayName: string;
+  resolvedModel?: string;
+};
+
 interface RuntimePort {
   id: string;
   inspectAvailable(): Promise<AvailableRuntime[]>;
   resolve(
     request: RuntimeRequest,
   ): Promise<ResolvedRuntime>;
+  validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime>;
+  listCatalog(): Promise<readonly RuntimeModelOffer[]>;
   createRunner(
     runtime: ResolvedRuntime,
     environment: PreparedEnvironmentRef,

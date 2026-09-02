@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import type { CodexIntakeTui } from "./controller.js";
 import { isEligibleSession, type SessionDiscoveryProject, type SessionSummary } from "../products/contract.js";
-import { findProductPack } from "../products/index.js";
 import {
   groupSessionsByProject,
   matchesIntakeQuery,
@@ -88,6 +87,28 @@ export function productContext(c: CodexIntakeTui): { productLabel?: string; prod
   };
 }
 
+function candidateRunFields(c: CodexIntakeTui) {
+  const sourceProductLabel = c.packs.find((pack) => pack.manifest.productId === c.taskCase?.source.productId)?.manifest.displayName;
+  const candidateProductLabel = c.packs.find((pack) => pack.manifest.productId === (c.selectedCandidate?.productId || c.candidateProductId))?.manifest.displayName;
+  return {
+    ...(c.selectedCandidate ? { candidate: c.selectedCandidate } : {}),
+    ...(sourceProductLabel ? { sourceProductLabel } : {}),
+    ...(candidateProductLabel ? { candidateProductLabel } : {}),
+    candidateProducts: c.packs.map((pack) => ({
+      productId: pack.manifest.productId,
+      displayName: pack.manifest.displayName,
+      sourceSession: pack.manifest.productId === c.taskCase?.source.productId,
+      availability: c.candidateAvailability[pack.manifest.productId] ?? 'loading' as const,
+    })),
+    candidateProductCursor: c.candidateProductCursor,
+    candidateModelOffers: c.candidateModelOffers,
+    candidateModelCursor: c.candidateModelCursor,
+    candidateCatalogStatus: c.candidateCatalogStatus,
+    ...(c.candidateCatalogError ? { candidateCatalogError: c.candidateCatalogError } : {}),
+    ...(c.candidateSuggestedValue ? { candidateSuggestedValue: c.candidateSuggestedValue } : {}),
+  };
+}
+
 export function view(c: CodexIntakeTui): WorkbenchView {
   const envName = envNameFromConfig(c.modelConfig, c.configDraft);
   const product = c.productContext();
@@ -140,9 +161,7 @@ export function view(c: CodexIntakeTui): WorkbenchView {
     sourceRoot: c.sourceRoot,
     sourceCursor: c.sourceCursor,
     preflight: c.preflight,
-    candidate: c.taskCase
-      ? findProductPack(c.taskCase.source.productId).defaultCandidate()
-      : c.workflow?.candidate,
+    ...candidateRunFields(c),
     recoveryAttempt: c.recoveryAttempt,
     effort: c.modelConfig.effort,
     policy: c.workflow?.policy,

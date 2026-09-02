@@ -9,8 +9,10 @@ import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } f
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
+import { beginPreflight, beginRun, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, startRunSetup } from './controller-run.js';
 import {
   dispatchCanvasInput,
+  dispatchCandidatePickerInput,
   dispatchConfirmInput,
   dispatchErrorKeys,
   dispatchGlobalInput,
@@ -30,7 +32,6 @@ import { eventOriginalText, type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import type { PreparePhase } from './widgets.js';
 import type { CandidateRunPhase } from './pages/run.js';
-import { beginPreflight, beginRun, candidateGateFrom, candidateStartBlocked, freeze, requestCancellation, startRunSetup } from './controller-run.js';
 
 export type Page = WorkbenchView['page'];
 export type Consume = { consume: true };
@@ -74,6 +75,17 @@ export type ControllerHandle = {
   readonly workflow: CodexTuiWorkflow | undefined;
   generation: number;
   recoveryAttempt: RecoveryAttempt | undefined;
+  selectedCandidate: import('../core/schema.js').CandidateSpec | undefined;
+  candidateProductId: string;
+  candidateProductCursor: number;
+  candidateAvailability: Readonly<Record<string, import('../core/runtime.js').RuntimeAvailabilityStatus | 'loading'>>;
+  candidateModelOffers: readonly import('../core/runtime.js').RuntimeModelOffer[];
+  candidateModelCursor: number;
+  candidateCatalogStatus: 'idle' | 'loading' | 'ready' | 'error';
+  candidateCatalogError: string | undefined;
+  candidateSuggestedValue: string | undefined;
+  candidateCatalogGeneration: number;
+  candidateAvailabilityGeneration: number;
   activeExperiment: ExperimentHandle | undefined;
   recentExperiment: HistoryExperiment | undefined;
   readonly dataDir: string;
@@ -147,6 +159,8 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'home') return applyHome(c, input);
   if (c.page === 'source') return applySource(c, input);
   if (c.page === 'preflight') return applyPreflight(c, input);
+  if (c.page === 'candidate-product') return applyCandidateProduct(c, input);
+  if (c.page === 'candidate-model') return applyCandidateModel(c, input);
   if (c.page === 'confirm') return applyConfirm(c, input);
   if (c.page === 'result') {
     const result = dispatchResultKeys(input);
@@ -369,12 +383,53 @@ function applyPreflight(c: ControllerHandle, data: string): Consume | undefined 
   return { consume: true };
 }
 
+function applyCandidateProduct(c: ControllerHandle, data: string): Consume | undefined {
+  const result = dispatchCandidatePickerInput(data);
+  if (!result) return undefined;
+  if (result.action === 'home') return c.backToHome();
+  if (result.action === 'back') {
+    c.page = 'confirm';
+    c.render();
+    return { consume: true };
+  }
+  if (result.action === 'up' || result.action === 'down') {
+    const next = c.candidateProductCursor + (result.action === 'up' ? -1 : 1);
+    c.candidateProductCursor = Math.max(0, Math.min(c.packs.length - 1, next));
+    c.render();
+    return { consume: true };
+  }
+  void loadCandidateCatalog(c);
+  return { consume: true };
+}
+
+function applyCandidateModel(c: ControllerHandle, data: string): Consume | undefined {
+  const result = dispatchCandidatePickerInput(data);
+  if (!result) return undefined;
+  if (result.action === 'home') return c.backToHome();
+  if (result.action === 'back') {
+    c.page = 'candidate-product';
+    c.render();
+    return { consume: true };
+  }
+  if (result.action === 'up' || result.action === 'down') {
+    const next = c.candidateModelCursor + (result.action === 'up' ? -1 : 1);
+    c.candidateModelCursor = Math.max(0, Math.min(Math.max(0, c.candidateModelOffers.length - 1), next));
+    c.render();
+    return { consume: true };
+  }
+  if (c.candidateCatalogStatus !== 'ready' || !c.candidateModelOffers.length) return { consume: true };
+  void acceptCandidateModel(c);
+  return { consume: true };
+}
+
 function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
   const result = dispatchConfirmInput(data);
   if (!result) return undefined;
   if (result.action === 'home') return c.backToHome();
-  if (result.action === 'preflight') {
-    c.page = 'preflight';
+  if (result.action === 'models') {
+    if (candidateStartBlocked(candidateGateFrom(c))) return c.backToHome();
+    c.page = c.selectedCandidate || c.candidateProductId ? 'candidate-model' : 'candidate-product';
+    if (c.page === 'candidate-model' && c.candidateCatalogStatus === 'idle') void loadCandidateCatalog(c);
     c.render();
     return { consume: true };
   }

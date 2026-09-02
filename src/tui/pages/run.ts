@@ -32,6 +32,7 @@ export type ConfirmModel = PreflightModel & {
   readonly harnessModel?: string;
   readonly policy?: RunPolicy;
   readonly harnessAuthOk?: boolean;
+  readonly sourceProductLabel?: string;
 };
 export type CandidateRunPhase = 'recovery' | 'candidate_starting' | 'candidate_generating' | 'candidate_reconnecting';
 export type RunningModel = {
@@ -127,6 +128,9 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     '',
     ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), [
       kv(theme, t(locale, 'statusLabel'), fidelity, width - 2),
+      ...(model.sourceProductLabel && model.sourceProductLabel !== product
+        ? [kv(theme, t(locale, 'sourceProductLabel'), model.sourceProductLabel, width - 2)]
+        : []),
       kv(theme, t(locale, 'candidateLabel'), candidateLine(candidate, product, locale), width - 2),
       ...(recovery ? [
         kv(theme, t(locale, 'environmentLabel'), environmentStatus(recovery, recoveryRunnable, locale), width - 2),
@@ -142,6 +146,9 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
       kv(theme, t(locale, 'maximumRequestsLabel'), `${t(locale, 'candidateLabel')} ${model.policy?.maxTargetTurns ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'controllerLabel')} ${model.policy?.maxModelCalls ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'comparisonActorLabel')} 1`, width - 2),
       kv(theme, t(locale, 'networkBillingLabel'), model.harnessAuthOk === false ? `${t(locale, 'blockedValue')} ${dash(theme)} ${t(locale, 'credentialMissing')}` : t(locale, 'providerDependent'), width - 2),
       '',
+      ...(model.sourceProductLabel && model.sourceProductLabel !== product
+        ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)]
+        : []),
       canStart ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`) : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`),
       theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'sourceUnchanged')}`),
       ...(recoveryRunnable ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'isolatedState', { source: sourceRoot || t(locale, 'selectedDirectory') })}`)] : []),
@@ -155,6 +162,7 @@ export function confirmCanStart(model: ConfirmModel): boolean {
   if (model.harnessAuthOk === false) return false;
   if (model.preflight.comparisonClass === 'observational') return false;
   if (model.recovery?.status === 'failed') return false;
+  if (model.recovery && !model.candidate) return false;
   return true;
 }
 
@@ -338,7 +346,7 @@ export function preflightHints(locale: Locale = 'en'): readonly (readonly [strin
 }
 
 export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintBack')], ['Esc', t(locale, 'hintHome')]];
+  return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
 }
 
 export function runningHints(_filter: TimelineFilter, narrow: boolean, preparing = false, locale: Locale = 'en', finding = false): readonly (readonly [string, string])[] {

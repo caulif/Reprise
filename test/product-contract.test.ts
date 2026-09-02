@@ -24,6 +24,7 @@ for (const pack of packs) {
     assert.ok(pack.activity);
     assert.ok(pack.recoveryPlaybook().text);
     assert.ok(pack.defaultCandidate().productId === pack.manifest.productId);
+    assert.equal(typeof pack.runtime.listCatalog, 'function');
   });
 }
 

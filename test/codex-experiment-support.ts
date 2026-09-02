@@ -6,6 +6,7 @@ import { type ControllerPort } from "../src/agents/controller-agent.js";
 import { startCodexExperiment } from "../src/application/experiment.js";
 import type {
   ResolvedRuntime,
+  RuntimeModelOffer,
   RuntimePort,
   TargetEventSink,
   TargetRunner,
@@ -49,6 +50,9 @@ export class VerifiedRuntime implements RuntimePort {
     requestedModel: string;
   }) {
     return this.resolve(request);
+  }
+  async listCatalog(): Promise<readonly RuntimeModelOffer[]> {
+    return [{ value: "gpt-5", displayName: "gpt-5", resolvedModel: "gpt-5" }];
   }
   recoveryCapabilities() {
     return {
@@ -231,6 +235,9 @@ class MultiTurnRuntime implements RuntimePort {
     requestedModel: string;
   }) {
     return this.resolve(request);
+  }
+  async listCatalog(): Promise<readonly RuntimeModelOffer[]> {
+    return [{ value: "gpt-5", displayName: "gpt-5", resolvedModel: "gpt-5" }];
   }
   recoveryCapabilities() {
     return {

@@ -2,7 +2,7 @@ import type { Theme } from './theme.js';
 
 export const OVERLAY_PAGES = new Set([
   'config', 'history', 'history-detail', 'sessions', 'inspection',
-  'source', 'preflight', 'confirm',
+  'source', 'preflight', 'candidate-product', 'candidate-model', 'confirm',
 ]);
 
 const OVERLAY_BACKGROUND_ROWS = 5;

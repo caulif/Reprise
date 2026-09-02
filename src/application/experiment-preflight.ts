@@ -20,13 +20,15 @@ export async function preflightCodexExperiment(
     | "dataDir"
     | "experimentId"
     | "caseId"
-  > & { taskCase: TaskCase },
+  > & { taskCase: TaskCase; verifyCandidate?: boolean },
 ): Promise<CodexExperimentPreflight> {
   assertPaths(input.dataDir, input.sourceRoot);
-  findProductPack(input.candidate.productId);
+  if (input.verifyCandidate !== false) findProductPack(input.candidate.productId);
   if (input.caseId !== input.taskCase.caseId)
     throw new Error("Experiment caseId must match TaskCase.caseId.");
-  const resolved = await resolveVerifiedCandidate(
+  const resolved = input.verifyCandidate === false
+    ? await pendingResolved(input.runtime, input.candidate)
+    : await resolveVerifiedCandidate(
     input.runtime,
     input.candidate,
   );
@@ -68,6 +70,19 @@ export async function resolveVerifiedCandidate(
   if (resolved.resolvedModel === "unknown")
     throw new Error("Candidate model is not verified by the target runtime.");
   return resolved;
+}
+
+async function pendingResolved(runtime: RuntimePort, candidate: CandidateSpec): Promise<ResolvedRuntime> {
+  const available = (await runtime.inspectAvailable())[0];
+  if (available) {
+    return { ...available, requestedModel: candidate.requestedModel, resolvedModel: "pending" };
+  }
+  return {
+    productId: candidate.productId,
+    executable: "unresolved",
+    requestedModel: candidate.requestedModel,
+    resolvedModel: "pending",
+  };
 }
 
 export function preflightFromBaseline(

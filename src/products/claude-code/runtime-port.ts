@@ -488,6 +488,15 @@ export class ClaudeCodeRuntimePort implements RuntimePort {
     return models;
   }
 
+  async listCatalog(): Promise<readonly import('../../core/runtime.js').RuntimeModelOffer[]> {
+    const models = await this.listModels();
+    return models.map((model) => ({
+      value: model.value,
+      displayName: model.value,
+      resolvedModel: model.resolvedModel,
+    }));
+  }
+
   async #fetchModels(executable: string): Promise<readonly ClaudeModel[]> {
     const root = await mkdtemp(join(tmpdir(), 'reprise-claude-catalog-'));
     const client = new ClaudeStreamClient({

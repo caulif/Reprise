@@ -564,6 +564,15 @@ export class CodexRuntimePort implements RuntimePort {
     return models;
   }
 
+  async listCatalog(): Promise<readonly import('../../core/runtime.js').RuntimeModelOffer[]> {
+    const models = await this.listModels();
+    return models.map((model) => ({
+      value: model.id,
+      displayName: model.id,
+      resolvedModel: model.model,
+    }));
+  }
+
   async #fetchModels(executable: string): Promise<readonly CodexModel[]> {
     const root = await mkdtemp(join(tmpdir(), 'reprise-codex-catalog-'));
     const client = new CodexAppServerClient({ executable, cwd: root, ...(this.#options.env ? { env: this.#options.env } : {}), ...(this.#options.args ? { args: this.#options.args } : {}) });

@@ -7,7 +7,8 @@ import type {
   RecoveryAttempt,
 } from "../application/experiment.js";
 import type { CodexTuiWorkflow } from "../application/tui-workflow.js";
-import type { TaskCase } from "../core/schema.js";
+import type { TaskCase, CandidateSpec } from "../core/schema.js";
+import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
 import {
   defaultHarnessModelConfig,
   draftForConfig,
@@ -136,6 +137,17 @@ export class CodexIntakeTui {
   sourceCursor = 0;
   preflight: CodexExperimentPreflight | undefined;
   recoveryAttempt: RecoveryAttempt | undefined;
+  selectedCandidate: CandidateSpec | undefined;
+  candidateProductId = "";
+  candidateProductCursor = 0;
+  candidateAvailability: Readonly<Record<string, RuntimeAvailabilityStatus | "loading">> = {};
+  candidateModelOffers: readonly RuntimeModelOffer[] = [];
+  candidateModelCursor = 0;
+  candidateCatalogStatus: "idle" | "loading" | "ready" | "error" = "idle";
+  candidateCatalogError: string | undefined;
+  candidateSuggestedValue: string | undefined;
+  candidateCatalogGeneration = 0;
+  candidateAvailabilityGeneration = 0;
   activeExperiment: ExperimentHandle | undefined;
   result: CodexExperimentResult | undefined;
   timeline: TimelineEntry[] = [];

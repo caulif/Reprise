@@ -280,6 +280,10 @@ async function main() {
   const workflow = {
     candidate: { candidateId: 'codex-luna-high', productId: 'codex', requestedModel: 'gpt-5.6-luna' },
     policy: { wallClockMs: 30 * 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10 * 60_000, maxConsecutiveNoProgress: 1 },
+    listCatalog: async () => [{ value: 'gpt-5.6-luna', displayName: 'gpt-5.6-luna', resolvedModel: 'gpt-5.6-luna' }],
+    verifyCandidate: async (candidate) => ({
+      productId: candidate.productId, executable: 'fixture', requestedModel: candidate.requestedModel, resolvedModel: candidate.requestedModel,
+    }),
     preflight: async () => {
       await new Promise((resolve) => { releasePreflight = resolve; });
       return {
@@ -347,6 +351,14 @@ async function main() {
   await waitFor(() => /Running recovery agent/.test(run.render(120)), 'automatic environment preparation after preflight');
   await push('20-running-copy', 120, run.render(120));
   releaseRecovery?.();
+  await waitFor(() => /choose candidate product/.test(run.render(120)), { describe: 'candidate product after recovery', frame: () => run.render(120) });
+  await push('29-candidate-product', 120, run.render(120));
+  await push('29b-candidate-product-narrow', 60, run.render(60));
+  runApp.handleInput('\r');
+  await waitFor(() => /choose candidate model/.test(run.render(120)), { describe: 'candidate model after product', frame: () => run.render(120) });
+  await push('30-candidate-model', 120, run.render(120));
+  await push('30b-candidate-model-narrow', 60, run.render(60));
+  runApp.handleInput('\r');
   await waitFor(() => /Start isolated Codex Candidate/.test(run.render(120)), { describe: 'single run confirmation after preparation', frame: () => run.render(120) });
   runApp.handleInput('\r');
   await waitFor(() => /Copying isolated workspace/.test(run.render(120)), 'candidate preparation after confirmation');

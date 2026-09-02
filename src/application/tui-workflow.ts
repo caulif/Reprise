@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CandidateSpec, EventEnvelope, RunPolicy, TaskCase } from '../core/schema.js';
-import type { RuntimePort } from '../core/runtime.js';
+import type { ResolvedRuntime, RuntimeModelOffer, RuntimePort } from '../core/runtime.js';
 import { readHarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { PiModelCaller } from '../infrastructure/pi-model-caller.js';
 import { createHarnessAgents, type HarnessAgents } from './harness-agents.js';
@@ -20,13 +20,26 @@ export const TUI_RUN_POLICY: RunPolicy = {
 };
 
 type ExperimentDefaults = { readonly candidate: CandidateSpec; readonly policy: RunPolicy };
-type ExperimentRequest = { taskCase: TaskCase; sourceRoot: string; sourceRootKind?: SourceRootKind; expectedSourceFingerprint?: string; preResolvedBaseline?: EnvironmentBaseline; recoveryAttempt?: RecoveryAttempt; experimentId?: string; runId?: string; onEvent: (event: EventEnvelope) => void };
-type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'experimentId' | 'runId'> & { onEvent?: (event: EventEnvelope) => void };
+type ExperimentRequest = {
+  taskCase: TaskCase;
+  sourceRoot: string;
+  sourceRootKind?: SourceRootKind;
+  expectedSourceFingerprint?: string;
+  preResolvedBaseline?: EnvironmentBaseline;
+  recoveryAttempt?: RecoveryAttempt;
+  experimentId?: string;
+  runId?: string;
+  candidate?: CandidateSpec;
+  onEvent: (event: EventEnvelope) => void;
+};
+type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'experimentId' | 'runId' | 'candidate'> & { onEvent?: (event: EventEnvelope) => void };
 
 export type CodexTuiWorkflow = {
   readonly candidate?: CandidateSpec;
   readonly policy: RunPolicy;
-  preflight(input: Omit<ExperimentRequest, 'onEvent' | 'preResolvedBaseline'>): Promise<CodexExperimentPreflight>;
+  listCatalog(productId: string): Promise<readonly RuntimeModelOffer[]>;
+  verifyCandidate(candidate: CandidateSpec): Promise<ResolvedRuntime>;
+  preflight(input: Omit<ExperimentRequest, 'onEvent' | 'preResolvedBaseline'> & { verifyCandidate?: boolean }): Promise<CodexExperimentPreflight>;
   recover(input: RecoveryRequest): Promise<RecoveryAttempt>;
   start(input: ExperimentRequest): Promise<ExperimentHandle>;
 };
@@ -35,17 +48,29 @@ export type CodexTuiWorkflow = {
 export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?: RuntimePort; pack?: ProductPack; agents: () => Promise<HarnessAgents>; now: () => string; defaults?: ExperimentDefaults }): CodexTuiWorkflow {
   const candidate = input.defaults?.candidate;
   const policy = input.defaults?.policy ?? TUI_RUN_POLICY;
-  const resolve = (taskCase: TaskCase) => {
-    const pack = findProductPack(taskCase.source.productId);
-    const selected = candidate?.productId === pack.manifest.productId ? candidate : pack.defaultCandidate();
-    return { pack, candidate: selected, runtime: pack.runtime };
+  const packFor = (productId: string): ProductPack => {
+    if (input.pack?.manifest.productId === productId) return input.pack;
+    return findProductPack(productId);
+  };
+  const resolve = (taskCase: TaskCase, chosen?: CandidateSpec) => {
+    const sourcePack = packFor(taskCase.source.productId);
+    const spec = chosen ?? candidate;
+    const candidatePack = spec ? packFor(spec.productId) : sourcePack;
+    const selected = spec?.productId === candidatePack.manifest.productId ? spec : candidatePack.defaultCandidate();
+    return { sourcePack, pack: candidatePack, candidate: selected, runtime: input.runtime ?? candidatePack.runtime };
   };
   return {
     ...(candidate ? { candidate } : {}),
     policy,
-    preflight: ({ taskCase, sourceRoot }) => {
-      const selected = resolve(taskCase);
-      return preflightCodexExperiment({ dataDir: input.dataDir, caseId: taskCase.caseId, experimentId: previewExperimentId(taskCase.caseId), sourceRoot, taskCase, candidate: selected.candidate, runtime: selected.runtime });
+    listCatalog: (productId) => packFor(productId).runtime.listCatalog(),
+    verifyCandidate: (spec) => packFor(spec.productId).runtime.validateCandidate(spec),
+    preflight: ({ taskCase, sourceRoot, candidate: chosen, verifyCandidate }) => {
+      const selected = resolve(taskCase, chosen);
+      return preflightCodexExperiment({
+        dataDir: input.dataDir, caseId: taskCase.caseId, experimentId: previewExperimentId(taskCase.caseId),
+        sourceRoot, taskCase, candidate: selected.candidate, runtime: selected.runtime,
+        ...(verifyCandidate === false ? { verifyCandidate: false } : {}),
+      });
     },
     async recover(request): Promise<RecoveryAttempt> {
       const agents = await input.agents();
@@ -55,7 +80,7 @@ export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?
     },
     async start(request): Promise<ExperimentHandle> {
       const agents = await input.agents();
-      const selected = resolve(request.taskCase);
+      const selected = resolve(request.taskCase, request.candidate);
       const experimentId = request.recoveryAttempt?.experimentId ?? request.experimentId ?? `experiment-${randomUUID()}`;
       const runId = request.runId ?? `run-${randomUUID()}`;
       return startCodexExperiment({

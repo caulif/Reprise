@@ -18,7 +18,7 @@ import {
 } from "../src/infrastructure/harness-model-config.js";
 import { projectTimelineEvent } from "../src/tui/timeline.js";
 
-import { enterIntake, enterCommand, waitFor } from "./codex-intake-support.js";
+import { enterIntake, enterCommand, waitFor, advanceCandidatePicker, fixtureCatalog } from "./codex-intake-support.js";
 
 test("command overlay filters with one SelectList instance until it is dismissed", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-tui-command-overlay-"));
@@ -251,6 +251,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   let emitEvent: ((event: unknown) => void) | undefined;
   const fullPublicResponse = `${Array.from({ length: 200 }, (_, index) => `public response line ${index + 1}`).join("\n")}\nPUBLIC_DETAIL_END`;
   const workflow = {
+    ...fixtureCatalog,
     candidate: {
       candidateId: "codex-luna-high",
       productId: "codex",
@@ -361,7 +362,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   app.handleInput("\r");
   await waitFor(() => /Session start:/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
+  await advanceCandidatePicker(app, () => rendered);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Restore the task start/);
   app.handleInput("\r");
   await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
@@ -501,6 +502,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
     },
   };
   const workflow = {
+    ...fixtureCatalog,
     candidate: {
       candidateId: "recovery-fixture",
       productId: "codex",
@@ -562,7 +564,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
   app.handleInput("\r");
   await waitFor(() => /Session start:/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Start isolated Codex Candidate|Environment.*prepared/.test(rendered));
+  await advanceCandidatePicker(app, () => rendered);
   assert.equal(recoveryCalls, 1);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Recovery preview is ready/);
   app.handleInput("\r");

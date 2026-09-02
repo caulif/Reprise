@@ -1,6 +1,7 @@
 import { userRecoveryStatus } from '../application/recovery-user-status.js';
 import type { CodexExperimentPreflight, CodexExperimentResult, RecoveryAttempt } from '../application/experiment.js';
 import type { CandidateSpec, RunPolicy, TaskCase } from '../core/schema.js';
+import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from '../core/runtime.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
 import { countCalls, countTurns, currentRunState, elapsedFrom, type CandidateRunPhase } from './pages/run.js';
@@ -21,6 +22,15 @@ type Input = {
   readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error';
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: CodexExperimentPreflight | undefined; readonly recoveryAttempt?: RecoveryAttempt | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
+  readonly sourceProductLabel?: string;
+  readonly candidateProductLabel?: string;
+  readonly candidateProducts?: readonly { readonly productId: string; readonly displayName: string; readonly sourceSession: boolean; readonly availability?: RuntimeAvailabilityStatus | 'loading' }[];
+  readonly candidateProductCursor?: number;
+  readonly candidateModelOffers?: readonly RuntimeModelOffer[];
+  readonly candidateModelCursor?: number;
+  readonly candidateCatalogStatus?: 'idle' | 'loading' | 'ready' | 'error';
+  readonly candidateCatalogError?: string;
+  readonly candidateSuggestedValue?: string;
   readonly preparePhase?: PreparePhase; readonly prepareDetail?: string;
   readonly runPhase?: CandidateRunPhase;
   readonly lastRuntimeEventAt?: string;
@@ -145,6 +155,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     };
   }
   if (input.page === 'source') return { ...base, source: { sourceRoot: input.sourceRoot, sourceCursor: input.sourceCursor, step: 1, locale: input.locale ?? 'en' } };
+  const picker = candidatePickerView(input, base);
+  if (picker) return picker;
   const recovery = input.recoveryAttempt?.baseline.recovery ? {
     status: previewStatus(userRecoveryStatus({
       baseline: input.recoveryAttempt.baseline,
@@ -162,10 +174,55 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
       : {}),
   } : undefined;
   if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
-  if (input.page === 'confirm' && input.preflight) return { ...base, confirm: { preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
+  if (input.page === 'confirm' && input.preflight) return { ...base, confirm: { preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en', ...(input.candidateProductLabel ? { productLabel: input.candidateProductLabel } : input.productLabel ? { productLabel: input.productLabel } : {}), ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {}) } };
   if (input.page === 'running') return { ...base, running: runningModel(input) };
   if (input.page === 'result' && input.result) return { ...base, running: runningModel(input), result: input.result };
   return base;
+}
+
+function candidatePickerView(input: Input, base: WorkbenchView): WorkbenchView | undefined {
+  const locale = input.locale ?? 'en';
+  const taskTitle = taskTitleOf(input.taskCase, locale);
+  const sourceProductLabel = input.sourceProductLabel ?? input.productLabel ?? '';
+  if (input.page === 'candidate-product') {
+    return {
+      ...base,
+      candidateProduct: {
+        ...(taskTitle ? { taskTitle } : {}),
+        sourceProductLabel,
+        products: input.candidateProducts ?? [],
+        selected: input.candidateProductCursor ?? 0,
+        locale,
+      },
+    };
+  }
+  if (input.page !== 'candidate-model') return undefined;
+  const status = input.candidateCatalogStatus === 'ready' || input.candidateCatalogStatus === 'loading' || input.candidateCatalogStatus === 'error'
+    ? input.candidateCatalogStatus
+    : 'loading';
+  return {
+    ...base,
+    candidateModel: {
+      ...(taskTitle ? { taskTitle } : {}),
+      sourceProductLabel,
+      candidateProductLabel: input.candidateProductLabel ?? input.productLabel ?? '',
+      offers: input.candidateModelOffers ?? [],
+      selected: input.candidateModelCursor ?? 0,
+      status,
+      ...(input.candidateCatalogError ? { error: input.candidateCatalogError } : {}),
+      ...(input.candidateSuggestedValue ? { suggestedValue: input.candidateSuggestedValue } : {}),
+      locale,
+    },
+  };
+}
+
+function taskTitleOf(taskCase: TaskCase | undefined, locale: Locale): string | undefined {
+  if (!taskCase) return undefined;
+  return taskDisplaySummary(
+    taskCase.initialInput.text,
+    taskCase.transcript.filter((message) => message.role === 'user').map((message) => message.text).slice(1),
+    locale,
+  );
 }
 
 function previewStatus(status: 'recovered' | 'partial' | 'failed'): 'recovered' | 'partial' | 'failed' {

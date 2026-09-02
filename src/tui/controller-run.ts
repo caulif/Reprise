@@ -1,6 +1,7 @@
 import { basename, dirname, join } from 'node:path';
 import { isFsAbsolute } from '../core/paths.js';
 import type { EventEnvelope, TaskCase } from '../core/schema.js';
+import { candidateSpecFromOffer, catalogCursor } from '../application/candidate-spec.js';
 import type { CodexExperimentResult } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { freezeCase } from '../products/shared/freeze.js';
@@ -180,6 +181,7 @@ export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?:
     const preflight = await c.workflow.preflight({
       taskCase,
       sourceRoot: c.sourceRoot.trim(),
+      verifyCandidate: false,
     });
     if (token !== c.generation) return;
     c.preflight = preflight;
@@ -241,12 +243,16 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
     stopRunClock(c);
-    c.page = 'confirm';
-    c.message = userStatus === 'recovered'
-      ? t(c.locale, 'recoveryReady')
-      : userStatus === 'partial'
-        ? t(c.locale, 'recoveryPartial', { n: attempt.providerPreview?.changedPaths.length ?? 0 })
-        : t(c.locale, 'recoveryFailed');
+    c.selectedCandidate = undefined;
+    if (userStatus === 'failed') {
+      c.page = 'confirm';
+      c.message = t(c.locale, 'recoveryFailed');
+    } else {
+      openCandidateProductPicker(c);
+      c.message = userStatus === 'recovered'
+        ? t(c.locale, 'recoveryReady')
+        : t(c.locale, 'recoveryPartial', { n: attempt.providerPreview?.changedPaths.length ?? 0 });
+    }
   } catch (error) {
     if (token !== c.generation) return;
     c.showError(error, errorReturn);
@@ -272,8 +278,11 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.findCursor = 0;
     const taskCase = c.taskCase;
     if (!c.preflight) throw new Error('Run confirmation requires a completed preflight.');
+    const candidate = c.selectedCandidate;
+    if (!candidate) throw new Error('A candidate product and model must be selected before the isolated run starts.');
     const blocked = candidateStartBlocked(candidateGateFrom(c));
     if (blocked) throw new Error(blocked);
+    c.preflight = { ...c.preflight, resolved: await c.workflow.verifyCandidate(candidate) };
     resetRunDiagnostics(c);
     c.runPhase = 'candidate_starting';
     c.preparePhase = 'copy';
@@ -290,6 +299,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     const handle = await c.workflow.start({
       taskCase,
       sourceRoot: c.sourceRoot.trim(),
+      candidate,
       onEvent: (event) => appendTimeline(c, event),
       ...(c.preflight.sourceFingerprint ? { expectedSourceFingerprint: c.preflight.sourceFingerprint } : {}),
       ...(recoveryAttempt
@@ -431,3 +441,81 @@ function phaseForEvent(event: EventEnvelope): CandidateRunPhase | undefined {
   if (type === 'codex.turn_admitted' || type.startsWith('codex.item_')) return 'candidate_generating';
   return undefined;
 }
+
+function openCandidateProductPicker(c: ControllerHandle): void {
+  const sourceId = c.taskCase?.source.productId ?? '';
+  c.candidateProductId = sourceId;
+  c.candidateProductCursor = Math.max(0, c.packs.findIndex((pack) => pack.manifest.productId === sourceId));
+  c.selectedCandidate = undefined;
+  c.candidateModelOffers = [];
+  c.candidateCatalogStatus = 'idle';
+  c.candidateCatalogError = undefined;
+  c.page = 'candidate-product';
+  void refreshCandidateAvailability(c);
+}
+
+async function refreshCandidateAvailability(c: ControllerHandle): Promise<void> {
+  const generation = ++c.candidateAvailabilityGeneration;
+  const entries = await Promise.all(c.packs.map(async (pack) => {
+    try {
+      const [item] = await pack.runtime.inspectAvailability();
+      return [pack.manifest.productId, item?.status ?? 'not_installed'] as const;
+    } catch {
+      return [pack.manifest.productId, 'not_installed'] as const;
+    }
+  }));
+  if (generation !== c.candidateAvailabilityGeneration) return;
+  c.candidateAvailability = Object.fromEntries(entries);
+  if (c.page === 'candidate-product') c.render();
+}
+
+export async function loadCandidateCatalog(c: ControllerHandle): Promise<void> {
+  const pack = c.packs[c.candidateProductCursor] ?? c.packs.find((item) => item.manifest.productId === c.candidateProductId);
+  if (!c.workflow || !pack) throw new Error('Candidate product is unavailable.');
+  const generation = ++c.candidateCatalogGeneration;
+  c.candidateProductId = pack.manifest.productId;
+  c.selectedCandidate = undefined;
+  c.candidateModelOffers = [];
+  c.candidateCatalogStatus = 'loading';
+  c.candidateCatalogError = undefined;
+  c.candidateSuggestedValue = pack.defaultCandidate().requestedModel;
+  c.page = 'candidate-model';
+  c.render();
+  try {
+    const offers = await c.workflow.listCatalog(pack.manifest.productId);
+    if (generation !== c.candidateCatalogGeneration) return;
+    c.candidateModelOffers = offers;
+    c.candidateModelCursor = catalogCursor(offers, c.candidateSuggestedValue);
+    if (!offers.length) {
+      c.candidateCatalogStatus = 'error';
+      c.candidateCatalogError = t(c.locale, 'catalogEmpty');
+    } else {
+      c.candidateCatalogStatus = 'ready';
+    }
+  } catch (error) {
+    if (generation !== c.candidateCatalogGeneration) return;
+    c.candidateModelOffers = [];
+    c.candidateCatalogStatus = 'error';
+    c.candidateCatalogError = errorMessage(error);
+  }
+  c.render();
+}
+
+export async function acceptCandidateModel(c: ControllerHandle): Promise<void> {
+  const pack = c.packs.find((item) => item.manifest.productId === c.candidateProductId);
+  const offer = c.candidateModelOffers[c.candidateModelCursor];
+  if (!c.workflow || !pack || !offer || c.candidateCatalogStatus !== 'ready') return;
+  try {
+    const spec = candidateSpecFromOffer(pack.manifest.productId, offer);
+    const resolved = await c.workflow.verifyCandidate(spec);
+    c.selectedCandidate = spec;
+    if (c.preflight) c.preflight = { ...c.preflight, resolved };
+    c.page = 'confirm';
+    c.message = t(c.locale, 'recoveryReady');
+  } catch (error) {
+    c.candidateCatalogStatus = 'error';
+    c.candidateCatalogError = errorMessage(error);
+  }
+  c.render();
+}
+
