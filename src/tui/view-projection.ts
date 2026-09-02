@@ -61,6 +61,7 @@ function homeModel(input: Input, envSet: boolean) {
 }
 
 function runningModel(input: Input) {
+  const productLabel = chromeProductLabel(input);
   return {
     entries: input.visibleTimeline, selected: input.timelineSelected, filter: TIMELINE_FILTERS[input.timelineFilterIndex] ?? 'ALL',
     following: input.timelineFollowing, cancelling: input.cancelling, currentState: currentRunState(input.timeline),
@@ -76,7 +77,7 @@ function runningModel(input: Input) {
     ...(input.reconnectCount ? { reconnectCount: input.reconnectCount } : {}),
     ...(input.reconnectTotal ? { reconnectTotal: input.reconnectTotal } : {}),
     ...(input.runStartedAt ? { runStartedAt: input.runStartedAt } : {}),
-    locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}),
+    locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
     ...(input.taskCase ? {
       taskTitle: taskDisplaySummary(
         input.taskCase.initialInput.text,
@@ -95,13 +96,14 @@ function runningModel(input: Input) {
 export function projectWorkbenchView(input: Input): WorkbenchView {
   const envSet = Boolean(input.envName && process.env[input.envName]);
   const home = homeModel(input, envSet);
+  const productLabel = chromeProductLabel(input);
   const base: WorkbenchView = {
     page: input.page, cwd: input.cwd ?? process.cwd(),
     ...(input.hasSavedModelConfig ? { modelId: input.modelConfig.modelId, effort: input.modelConfig.effort } : {}),
     hasApiConfig: input.hasSavedModelConfig,
     hasUsableAuth: input.hasSavedModelConfig && input.harnessAuthOk,
     ...(input.envName ? { envName: input.envName } : {}),
-    ...(input.productLabel ? { productLabel: input.productLabel } : {}),
+    ...(productLabel ? { productLabel } : {}),
     ...(input.productConfigured !== undefined ? { productConfigured: input.productConfigured } : {}),
     hasTaskCase: Boolean(input.taskCase),
     locale: input.locale ?? 'en',
@@ -223,6 +225,15 @@ function taskTitleOf(taskCase: TaskCase | undefined, locale: Locale): string | u
     taskCase.transcript.filter((message) => message.role === 'user').map((message) => message.text).slice(1),
     locale,
   );
+}
+
+function chromeProductLabel(input: Input): string | undefined {
+  const recovering = input.runPhase === 'recovery' || input.preparePhase === 'check';
+  if (recovering) return input.productLabel;
+  if (input.page === 'confirm' || input.page === 'running' || input.page === 'result') {
+    return input.candidateProductLabel || input.productLabel;
+  }
+  return input.productLabel;
 }
 
 function previewStatus(status: 'recovered' | 'partial' | 'failed'): 'recovered' | 'partial' | 'failed' {

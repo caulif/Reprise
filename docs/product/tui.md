@@ -22,7 +22,7 @@ Harness 中存在两类不同用途的模型：
 - **内部 Agent 模型**：Recovery、Controller 和 Comparison 通过 Pi provider 使用。首次使用时配置一个默认模型，之后可以分别覆盖。
 - **候选模型**：由目标 Agent Runtime 实际执行历史任务的被测模型。恢复成功后 TUI 先选已注册 Product Pack，再选该 Pack `RuntimePort.listCatalog()` 给出的模型。列表不是 Pi 内部模型。
 
-候选模型不来自 Pi。确认页记录所选 `CandidateSpec` 以及 Runtime 实际解析出的模型和别名；无法可靠解析时显示 `unknown`，不伪造模型事实。
+候选模型不来自 Pi。确认页只复述已选 `CandidateSpec` 的产品与模型，以及恢复终态一词；解析名与请求名不同时附在候选行。无法可靠解析时显示 `unknown`，不伪造模型事实。
 
 候选配置只写入本次运行的隔离环境。若某个 Runtime 只能通过修改用户全局配置切换模型，第一版将其视为不安全或不支持，不静默修改全局状态。
 
@@ -90,7 +90,7 @@ reprise compare
 [准备并开始]
 ```
 
-进入准备页前只做低成本、只读环境检查。恢复成功后的选产品、选模型是选择，不是计费确认。操作者在确认页按 Enter 后，Harness 才创建候选隔离副本、再次 `validateCandidate` 并启动 Runtime。不要提前创建大量副本。隔离副本只避免 Candidate 直接写入原目录，并不是隐私清洗：用户须在确认前排除不应被读取或发送的敏感文件。
+进入准备页前只做低成本、只读环境检查。恢复成功后的选产品、选模型是选择，不是计费确认。操作者在确认页按 Enter 后，Harness 才创建候选隔离副本、再次 `validateCandidate` 并启动 Runtime。不要提前创建大量副本。确认页只问费用与「原目录不变、候选读写隔离副本」。变更条数、未决和限额不进确认页。
 
 会影响解释的限制应显示在按钮附近，例如 `environment_partial · 部分外部状态无法恢复`。历史 Runtime 版本与当前版本不同不属于限制；若候选启动前检测到当前 Runtime 发生变化，则显示 `runtime_drift` warning。
 
@@ -108,7 +108,7 @@ Harness 展示 Controller 的可见工作过程，但不依赖或承诺获取 pr
 
 主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：调查类工具合并成「动词 + 对象 + 次数」，变更与 `write` 各占一行，工具 stdout 与上下文 JSON 只经 `[o]`。Controller 工具是品红声部，不得画进 Target 青色；`Decision:` 与 `Input to Target` 分轨。Comparison 在候选对话之后用绿色声部，对照进行中标题是「正在写对照报告」。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)。
 
-恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段图例是恢复活动，空画布不得写成候选正在写回复。确认后进入候选运行，标题是「候选运行中」或「正在启动候选」。用户终态为无法恢复或没有 accept 时，确认页禁止启动隔离候选，标题与环境行不得声称已准备隔离对照，诊断行用人话原因加代码：变更为 0 时说明没有观察到隔离工作区变更，有变更才强调工作区校验未通过；禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；超过 30 秒仍无 turn 终态时提示仍在等待，超过 120 秒无新事件时提示可 Ctrl+C。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
+恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段图例是恢复活动，空画布不得写成候选正在写回复。确认后进入候选运行，标题是「候选运行中 · {候选产品}」或「正在启动 {候选产品}」；图例「发给 {产品}」用 `CandidateSpec.productId` 的显示名，不用来源会话产品。用户终态为无法恢复或没有 accept 时，确认页禁止启动隔离候选，标题不得声称已准备隔离对照，原因留一句人话（校验失败时附代码）：变更为 0 时说明没有观察到隔离工作区变更，有变更才强调工作区校验未通过；禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；超过 30 秒仍无 turn 终态时提示仍在等待，超过 120 秒无新事件时提示可 Ctrl+C。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
 
 ### 4.2 决策与实际输入
 

@@ -765,7 +765,7 @@ test('production layout accepts bracketed paste and completes a unique Home comm
 });
 
 
-test('run confirmation presents request, billing, and source-copy boundaries', () => {
+test('run confirmation only restates the start decision', () => {
   const theme = createTheme(120, false);
   const preflight = {
     sourceBaseline: 'available',
@@ -784,13 +784,12 @@ test('run confirmation presents request, billing, and source-copy boundaries', (
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
   }).join('\n');
   assert.match(text, /Start isolated Claude Code Candidate[?]/);
-  assert.match(text, /isolated Claude Code/);
+  assert.match(text, /Claude Code\s+·\s+gpt-5/);
   assert.doesNotMatch(text, /isolated Codex/);
-  assert.match(text, /Maximum requests/);
-  assert.match(text, /Network \/ billing/);
-  assert.match(text, /isolated copy is not privacy sanitization/);
-  assert.match(text, /sensitive files you do not want it to read or/);
-  assert.match(text, /│send[.]/);
+  assert.doesNotMatch(text, /Maximum requests/);
+  assert.doesNotMatch(text, /Network \/ billing/);
+  assert.doesNotMatch(text, /privacy sanitization/);
+  assert.match(text, /Original directory stays unchanged/);
   const zhText = renderConfirmation(theme, 120, {
     preflight,
     candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
@@ -804,8 +803,7 @@ test('run confirmation presents request, billing, and source-copy boundaries', (
     locale: 'zh',
   }).join('\n');
   assert.match(zhText, /第 3 \/ 3 步/);
-  assert.match(zhText, /最大请求数/);
-  assert.match(zhText, /网络 \/ 计费/);
+  assert.match(zhText, /可能产生费用/);
   assert.doesNotMatch(zhText, /Confirm run|Maximum requests|Network \/ billing|This starts a/);
 });
 

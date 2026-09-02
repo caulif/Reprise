@@ -33,6 +33,7 @@ test('timeline projects operator-relevant persisted facts', () => {
     title: 'Prompt · Fix the failing test.',
     detail: 'Fix the failing test.',
   });
+  assert.equal(projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: 'Edit slides.html in the current directory.' }))[0]?.detail, 'Edit slides.html in the current directory.');
   assert.deepEqual(projectTimelineEvent(event('input.submitted', { turnIndex: 0 })), []);
 
   const plan = projectTimelineEvent(event('codex.turn_plan_updated', {

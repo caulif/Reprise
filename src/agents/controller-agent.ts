@@ -35,14 +35,22 @@ export type SteeringContext = {
   /** Host-owned refs with run ownership for this request only. */
   evidenceCatalog: readonly { ref: string; runId: string; source: 'initial' | 'tool' }[];
   budget: { decisionsUsed: number; decisionsLimit: number };
+  /** opening: no candidate turn yet; steering: after a settled turn. */
+  phase?: 'opening' | 'steering';
   replay?: {
     sourceRootKind: SourceRootKind;
     isolation: string;
     requestedModel: string;
     resolvedModel?: string;
     changedPaths: readonly string[];
+    historicalCwd?: string;
+    workspaceRoot?: string;
   };
 };
+
+function isOpeningContext(context: Pick<SteeringContext, 'phase' | 'runState'>): boolean {
+  return context.phase === 'opening' || (context.phase !== 'steering' && context.runState === 'created');
+}
 
 /** User messages after the frozen session start. Controller may send these as follow-ups. */
 export function historicalUserFollowups(
@@ -65,23 +73,32 @@ export const CONTROLLER_SYSTEM_PROMPT = [
   'You are the Controller in a Reprise replay experiment: you act as the original user of a real, completed task while a candidate agent re-attempts that task in an isolated workspace.',
   '',
   '# Role',
-  'Reprise replays a frozen historical task against a candidate runtime. The candidate cannot see the historical session; you can. At each settled candidate turn the Host asks you for exactly one decision: send one user message, or declare that the user would stop here. You are not the task executor, not a grader, and not a script replayer: a candidate may take a different and better path than the historical one, and different trajectories deserve different messages.',
+  'Reprise replays a frozen historical task against a candidate runtime. The candidate cannot see the historical session; you can. The Host asks you for exactly one decision before any candidate turn (opening) and after each settled candidate turn: send one user message, or — only after a candidate turn — declare that the user would stop here. You are not the task executor, not a grader, and not a script replayer: a candidate may take a different and better path than the historical one, and different trajectories deserve different messages.',
   '',
   '# Inputs',
   'Each request is a JSON SteeringContext:',
-  '- task.initialInput: the original task as the user first stated it. The Candidate always starts from this message.',
+  '- phase: "opening" before the candidate has a turn; "steering" after a settled turn. Opening must be send. done is invalid until a candidate turn has settled.',
+  '- task.initialInput: the frozen original task sentence. It is evidence of what the user wanted, not the text the Host will submit. You author every user message the candidate receives, including the first.',
   '- task.historicalUserTurns: later messages that same historical user actually sent. When the Candidate asks for a fact, preference, path, format, or similar detail the user later supplied, send that information as a natural user reply. These messages demonstrate user knowledge; they are not assistant or tool discoveries, and they are not a script to replay blindly.',
   '- task.baseline: the frozen historical outcome. It shows what the user wanted and accepted, not a path the candidate must copy.',
-  '- current / trajectory: Host-written summaries of the latest settled turn and the run so far, with evidenceRefs. They are summaries, not full facts.',
+  '- current / trajectory: Host-written summaries. On opening they state that no candidate turn has started. They are summaries, not full facts.',
   '- budget: decisionsUsed / decisionsLimit counts your own decisions, not candidate turns. Hitting the Host safety limit is not the same as the user being done.',
-  '- replay: Host-verified replay facts. sourceRootKind is historical_start, historical_cwd, operator_selected, or stand_in. historical_start means Host stripped the frozen session\'s write paths from the isolated replica so the candidate starts from the pre-task tree. changedPaths lists files in the isolated replica. Isolation means writes never land in the original user directory.',
+  '- replay: Host-verified replay facts. sourceRootKind is historical_start, historical_cwd, operator_selected, or stand_in. historical_start means Host stripped the frozen session\'s write paths from the isolated replica so the candidate starts from the pre-task tree. replay.workspaceRoot is where this user is working now. replay.historicalCwd is the historical working directory when those paths appear in initialInput. changedPaths lists files in the isolated replica. Isolation means writes never land in the original user directory.',
   'Workspace tools (read, ls, grep, find, edit, write, powershell) operate on the isolated replica. The read_observation tool pages two sources: "transcript" (the frozen historical session) and "run_events" (this candidate run only). Read before deciding when it could change the decision — for example to check whether the user already answered the question the candidate is asking, or whether a completion claim matches actual events. Do not page through everything by default.',
   '',
   '# What the user knows',
   'Model the original user\'s demonstrated goals, knowledge, constraints, preferences, and authority. Facts the user personally stated in the historical session are yours to give. Facts that only the historical agent later discovered, implemented, or reported are NOT the user\'s prior knowledge: do not feed them to the candidate as hints or answers, because that would erase the real differences between candidates. When unsure whether the user knew something, prefer a goal-level question or a verification request over revealing it.',
   '',
+  '# Opening',
+  'When phase is opening, or current says the candidate turn has not started:',
+  '- Return send with intent continue. done is not allowed: there is no completion, blockage, or remaining-value judgment yet.',
+  '- Write one user task message in the primary language of initialInput, with the same goal, constraints, and collaboration style.',
+  '- If initialInput names paths under replay.historicalCwd, retarget those paths to replay.workspaceRoot (or speak of the current working directory). The user is sitting in this replica, not at the old drive letter.',
+  '- Side materials outside historicalCwd: if they exist inside the replica, name them by their replica-relative location; if they were never copied, keep the user\'s original reference and do not pretend they are in the replica.',
+  '- Do not mention Reprise, isolation, recovery, comparison, the baseline, or the Controller. Do not paste the recovery report or list baseline deliverables as hints.',
+  '',
   '# Deciding',
-  'Work through these in order:',
+  'After a candidate turn has settled, work through these in order:',
   '1. Goal already satisfied with sufficient evidence — not just a completion claim? The bar is the quality the user already accepted in task.baseline.finalMessage (kinds of deliverables, organization, checks they treated as done), not "the current directory now contains something." A different path or folder name is allowed. A shallower result than that accepted quality is not satisfied: send/verify or send/correct. Never require writing back to the original absolute user path. If replay.sourceRootKind is historical_start, leftover files are the pre-task tree, not the accepted result — the candidate must produce that quality in this replica. If replay.sourceRootKind is stand_in, do not treat a new folder in an empty replica as matching accepted baseline quality. When every acceptance criterion is directly supported by current trustworthy evidence, the candidate state agrees with that evidence, and there is no unresolved conflict, blocker, or pending high-impact user decision, return done/satisfied immediately; do not send a message merely for formal re-confirmation. An evidence ref alone is not sufficient when its supporting fact is not visible in current or observed context. Otherwise, send/verify or send/correct.',
   '2. Continuing would require an authority or approval decision the historical user never granted (releases, deletions, payments, credentials, irreversible external effects)? done/requires_real_user_decision.',
   '3. Candidate stuck in a way no ordinary user message can fix — hard refusal it will not revisit, a permission wall the user could not lift, or a repeated no-progress loop? done/blocked. A single failed command, one refusal, or a clarifying question is not blocked: if a normal user reply could unstick it, send that reply instead.',
@@ -109,6 +126,7 @@ const OUTPUT_CONTRACT = [
   'Return only one JSON object. No markdown, no prose, no extra keys.',
   'send: {"type":"send","message":"...","intent":"continue"|"inform"|"correct"|"verify"}',
   'done: {"type":"done","reason":"satisfied"|"blocked"|"requires_real_user_decision"|"no_further_value"}',
+  'Opening (phase opening): send only. done is invalid.',
   'Optional on either: "rationale": string, "evidenceRefs": ["event:..."]',
 ].join('\n');
 
@@ -122,9 +140,14 @@ function ownedToolRefs(runId: string, details: unknown): string[] {
   return record.evidenceRefs.filter((ref): ref is string => typeof ref === 'string' && Value.Check(EvidenceRefSchema, ref));
 }
 
-function validateControllerDecision(decision: ControllerDecision, available: ReadonlySet<string>): string | undefined {
+function validateControllerDecision(
+  decision: ControllerDecision,
+  available: ReadonlySet<string>,
+  opening: boolean,
+): string | undefined {
   if (!Value.Check(ControllerDecisionSchema, decision)) return 'schema validation failed';
   if (unknownEvidenceRefMessage(decision.evidenceRefs ?? [], available)) return 'unknown evidence reference';
+  if (opening && decision.type === 'done') return 'opening decision must be send';
   if (decision.type !== 'send') return undefined;
   if (!decision.message.trim()) return 'message must not be blank';
   if (Buffer.byteLength(decision.message) > MAX_CONTROLLER_MESSAGE_BYTES) return `message exceeds ${MAX_CONTROLLER_MESSAGE_BYTES} bytes`;
@@ -147,7 +170,12 @@ export class ControllerAgent implements ControllerPort {
   }
 
   async decide(context: SteeringContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink): Promise<AgentInvocation<ControllerDecision>> {
-    if (context.runState !== 'awaiting_controller') throw new Error('Controller can only decide while CandidateRun awaits controller input.');
+    const opening = isOpeningContext(context);
+    if (opening) {
+      if (context.runState !== 'created') throw new Error('Opening Controller decision requires CandidateRun created.');
+    } else if (context.runState !== 'awaiting_controller') {
+      throw new Error('Controller can only decide while CandidateRun awaits controller input.');
+    }
     if (this.#requests.has(context.runId)) throw new Error(`Controller request already in flight for run ${context.runId}.`);
     const catalog = new Set(context.evidenceCatalog.filter((entry) => entry.runId === context.runId).map((entry) => entry.ref));
     this.#toolCallbacks.set(context.runId, async (result) => {
@@ -187,7 +215,7 @@ export class ControllerAgent implements ControllerPort {
     const result = await session.request<ControllerDecision>({
       context, schema: ControllerDecisionSchema, timeoutMs: this.#timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
       outputContract: OUTPUT_CONTRACT, requestId: context.requestId,
-      validate: (decision) => validateControllerDecision(decision, available),
+      validate: (decision) => validateControllerDecision(decision, available, isOpeningContext(context)),
     });
     if (result.status === 'failed' && this.#sessions.get(context.runId) === pending) this.#sessions.delete(context.runId);
     return result;

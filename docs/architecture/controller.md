@@ -109,11 +109,11 @@ interface ControllerTaskView {
 ```text
 TaskCase.initialInput             TaskCase.transcript
 ─────────────────────┬────────────────────────────────────────
-启动候选 Runtime 的输入          理解用户协作能力与历史结果的完整证据
+冻结的原用户任务句（只读考卷）     理解用户协作能力与历史结果的完整证据
 ```
 
 - `initialInput` 是 Case Preparation 从完整会话选出的第一条用户任务句（跳过产品注入的指令块）；
-- Target Runtime 只以 `initialInput` 开始，不接收原历史后续轨迹；
+- Target Runtime 收到的每一条用户消息都由 Controller 写出，包括第一句；Host 不把 `initialInput` 原文投递给候选；
 - Controller 可以读取完整 transcript，并根据候选当前表现决定是否需要提出历史中类似的纠正、补充或验收输入；
 - 历史会话结束不是候选运行的停止边界。
 
@@ -142,8 +142,8 @@ Baseline 保存原始完成结果，是候选结果的比较对象，但不是�
 TargetRunner 的公共协议定义在[架构总览](./overview.md)。从 Controller 视角，一轮协作经历：
 
 ```text
-Controller decision persisted
-→ RunOrchestrator 调用 start/send
+Controller opening send persisted
+→ RunOrchestrator 调用 start（正文是 Controller 的 message）
 → delivery accepted
 → Target started（可能稍后发生）
 → Target 输出消息、调用工具和修改环境
@@ -153,7 +153,7 @@ Controller decision persisted
 → Controller 返回 send 或 done
 ```
 
-Controller 只在 `awaiting_controller` 被调用。以下都不能触发 Controller：
+候选进程与 Controller session 在准备阶段一同拉起。第一条用户输入之前，Controller 在 `created` 上做 opening 决策，只许 `send`。Controller 在 `awaiting_controller` 上做后续决策。以下都不能触发 Controller：
 
 - Runtime 只接受了消息但 turn 尚未开始；
 - 模型刚输出一段流式文本；

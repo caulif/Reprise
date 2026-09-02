@@ -299,7 +299,7 @@ test("the Controller sees settled turns accumulate across decisions", async (t) 
   // The observation is folded incrementally, so a stale cursor would freeze this count at one.
   assert.deepEqual(
     summaries.map((summary) => /Settled turns: (\d+)/.exec(summary)?.[1]),
-    ["1", "2", "3"],
+    ["0", "1", "2"],
   );
 });
 
@@ -310,15 +310,26 @@ test("a scripted Controller run persists controller.requested and reconstructs i
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const controller = new ControllerAgent({
     host: new PiAgentHost({
-      createSession: (session) => ({
-        append: async () => {
-          const tool = session.tools.find((entry) => entry.name === "read_observation");
-          assert.ok(tool);
-          await tool.execute({ source: "run_events", start: 0, maxItems: 8 }, new AbortController().signal);
-          return JSON.stringify({ type: "done", reason: "satisfied" });
-        },
-        cancel() {},
-      }),
+      createSession: (session) => {
+        let calls = 0;
+        return {
+          append: async () => {
+            calls += 1;
+            if (calls === 1) {
+              const tool = session.tools.find((entry) => entry.name === "read_observation");
+              assert.ok(tool);
+              await tool.execute({ source: "run_events", start: 0, maxItems: 8 }, new AbortController().signal);
+              return JSON.stringify({
+                type: "send",
+                message: "Make the focused change in this directory.",
+                intent: "continue",
+              });
+            }
+            return JSON.stringify({ type: "done", reason: "satisfied" });
+          },
+          cancel() {},
+        };
+      },
     }),
     timeoutMs: 5_000,
     maxRepairAttempts: 0,
@@ -396,7 +407,7 @@ test("cancelling an in-flight Controller request discards a late send before Can
     const events = store.events("run-1");
     assert.equal(
       events.filter((event) => event.type === "input.submitted").length,
-      1,
+      0,
     );
     const decision = events.find((event) => event.type === "controller.decision");
     assert.equal((decision?.payload as { status?: string } | undefined)?.status, "cancelled");
@@ -468,4 +479,94 @@ test("a changed source fingerprint blocks Candidate startup after preflight", as
     /changed after preflight/,
   );
   assert.equal(runtime.created, 0);
+});
+
+test("the first Target message is the Controller opening send, not frozen initialInput", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-opening-send-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "source"));
+  await writeFile(join(root, "source", "README.md"), "# source\n");
+  const historicalCwd = "C:\\yanjiusheng\\project";
+  const frozen = `Edit ${historicalCwd}\\slides.html`;
+  const opening = "Edit slides.html in the current directory.";
+  let sawOpening = false;
+  const controller: ControllerPort = {
+    decide: async (ctx) => {
+      if (ctx.phase === "opening") {
+        sawOpening = Boolean(ctx.replay?.workspaceRoot && ctx.replay.historicalCwd === historicalCwd);
+        return {
+          status: "completed",
+          sessionId: "controller-1",
+          value: { type: "send", message: opening, intent: "continue" },
+        };
+      }
+      return {
+        status: "completed",
+        sessionId: "controller-1",
+        value: { type: "done", reason: "satisfied" },
+      };
+    },
+  };
+  const base = input(root, new VerifiedRuntime());
+  const result = await startCodexExperiment({
+    ...base,
+    taskCase: {
+      ...base.taskCase,
+      initialInput: { ...base.taskCase.initialInput, text: frozen },
+      transcript: [{ id: "message-1", role: "user", text: frozen }],
+      taskContext: { ...base.taskCase.taskContext, historicalCwd },
+    },
+    controller,
+    policy: patientPolicy,
+  }).result;
+  assert.equal(result.record.outcome.termination.kind, "completed");
+  assert.equal(sawOpening, true);
+  const store = await ExperimentStore.open(result.experimentRoot, "experiment-1");
+  try {
+    const events = store.events("run-1");
+    const startedAt = events.findIndex((event) => event.type === "controller.started");
+    const submitted = events.filter((event) => event.type === "input.submitted");
+    assert.equal(startedAt >= 0 && startedAt < events.findIndex((event) => event.type === "input.submitted"), true);
+    assert.equal(submitted.length, 1);
+    assert.equal((submitted[0]?.payload as { text?: string }).text, opening);
+    assert.notEqual((submitted[0]?.payload as { text?: string }).text, frozen);
+    const requested = events.find((event) => event.type === "controller.requested");
+    assert.ok(requested?.operationId);
+    const rebuilt = reconstructControllerRequest(events, requested.operationId);
+    assert.equal((rebuilt.snapshot as { phase?: string }).phase, "opening");
+  } finally {
+    await store.close();
+  }
+});
+
+test("an opening done does not start the Target with frozen initialInput", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-opening-done-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "source"));
+  await writeFile(join(root, "source", "README.md"), "# source\n");
+  const frozen = "Make the focused change.";
+  const controller: ControllerPort = {
+    decide: async () => ({
+      status: "completed",
+      sessionId: "controller-1",
+      value: { type: "done", reason: "satisfied" },
+    }),
+  };
+  const result = await startCodexExperiment({
+    ...input(root, new VerifiedRuntime()),
+    controller,
+    policy: patientPolicy,
+  }).result;
+  assert.equal(result.record.outcome.termination.code, "failed.controller");
+  const store = await ExperimentStore.open(result.experimentRoot, "experiment-1");
+  try {
+    const events = store.events("run-1");
+    assert.equal(events.filter((event) => event.type === "input.submitted").length, 0);
+    assert.equal(
+      events.some((event) => event.type === "input.submitted" && (event.payload as { text?: string }).text === frozen),
+      false,
+    );
+  } finally {
+    await store.close();
+  }
 });

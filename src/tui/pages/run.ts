@@ -112,48 +112,27 @@ export function renderPreflight(theme: Theme, width: number, model: PreflightMod
 
 export function renderConfirmation(theme: Theme, width: number, model: ConfirmModel): string[] {
   const locale = model.locale ?? 'en';
-  const { preflight, candidate, sourceRoot } = model;
   const product = model.productLabel ?? t(locale, 'unknownAgent');
-  const fidelity = userRecoveryHeadline(preflight.comparisonClass, locale);
   const recovery = model.recovery;
   const canStart = confirmCanStart(model);
-  const recoveryRunnable = model.preflight.comparisonClass !== 'observational' && model.recovery?.status !== 'failed';
+  const recoveryRunnable = model.preflight.comparisonClass !== 'observational' && recovery?.status !== 'failed';
+  const cross = Boolean(model.sourceProductLabel && model.sourceProductLabel !== product);
   const startWarning = !canStart
     ? (model.harnessAuthOk === false
       ? t(locale, 'warningCannotStart', { product })
-      : t(locale, 'warningCannotStartFailedRecovery', { product }))
+      : (recovery?.failureSummary ?? t(locale, 'warningCannotStartFailedRecovery', { product })))
     : t(locale, 'warningStartsProcess', { product });
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
     ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), [
-      kv(theme, t(locale, 'statusLabel'), fidelity, width - 2),
-      ...(model.sourceProductLabel && model.sourceProductLabel !== product
-        ? [kv(theme, t(locale, 'sourceProductLabel'), model.sourceProductLabel, width - 2)]
-        : []),
-      kv(theme, t(locale, 'candidateLabel'), candidateLine(candidate, product, locale), width - 2),
-      ...(recovery ? [
-        kv(theme, t(locale, 'environmentLabel'), environmentStatus(recovery, recoveryRunnable, locale), width - 2),
-        kv(theme, t(locale, 'changedPathsLabel'), t(locale, 'changedPathsValue', { n: recovery.changedPathCount }), width - 2),
-        ...((recovery.skippedPaths ?? []).length
-          ? [kv(theme, t(locale, 'skippedPathsLabel'), (recovery.skippedPaths ?? []).map((item) => `${item.path} (${item.reasonCode})`).join(' · '), width - 2)]
-          : []),
-        ...(recovery.unresolved[0]
-          ? [kv(theme, t(locale, 'unresolvedLabel'), recovery.unresolved[0], width - 2)]
-          : []),
-        ...(recovery.failureSummary ? [kv(theme, t(locale, 'recoveryDiagnostics'), recovery.failureSummary, width - 2)] : []),
-      ] : []),
-      kv(theme, t(locale, 'maximumRequestsLabel'), `${t(locale, 'candidateLabel')} ${model.policy?.maxTargetTurns ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'controllerLabel')} ${model.policy?.maxModelCalls ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'comparisonActorLabel')} 1`, width - 2),
-      kv(theme, t(locale, 'networkBillingLabel'), model.harnessAuthOk === false ? `${t(locale, 'blockedValue')} ${dash(theme)} ${t(locale, 'credentialMissing')}` : t(locale, 'providerDependent'), width - 2),
+      kv(theme, t(locale, 'candidateLabel'), candidateSummary(model.candidate, product, model.preflight.resolved.resolvedModel, locale), width - 2),
+      kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
+      ...(cross ? [kv(theme, t(locale, 'sourceProductLabel'), `${model.sourceProductLabel}  →  ${product}`, width - 2)] : []),
       '',
-      ...(model.sourceProductLabel && model.sourceProductLabel !== product
-        ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)]
-        : []),
+      ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
       canStart ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`) : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`),
-      theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'sourceUnchanged')}`),
-      ...(recoveryRunnable ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'isolatedState', { source: sourceRoot || t(locale, 'selectedDirectory') })}`)] : []),
-      theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'copyNotSanitized')}`),
-      theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'candidateReadsSource')}`),
+      ...(canStart ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'confirmCopySafe')}`)] : []),
     ], width),
   ];
 }
@@ -166,9 +145,12 @@ export function confirmCanStart(model: ConfirmModel): boolean {
   return true;
 }
 
-function environmentStatus(recovery: RecoveryPreviewModel, recoveryRunnable: boolean, locale: Locale): string {
-  if (!recoveryRunnable || recovery.status === 'failed') return t(locale, 'environmentNotRunnable');
-  return recovery.unresolved.length ? t(locale, 'preparedWithLimitations') : t(locale, 'preparedValue');
+function recoveryWord(model: ConfirmModel, locale: Locale): string {
+  const status = model.recovery?.status;
+  if (status === 'partial') return t(locale, 'userPartial');
+  if (status === 'failed') return t(locale, 'userFailed');
+  if (status === 'recovered') return t(locale, 'userRecovered');
+  return userRecoveryHeadline(model.preflight.comparisonClass, locale);
 }
 
 export function runningChrome(theme: Theme, width: number, model: RunningModel): string[] {
@@ -406,10 +388,10 @@ function dash(theme: Theme): string {
   return theme.framed ? '—' : '-';
 }
 
-function candidateLine(candidate: CandidateSpec | undefined, product: string, locale: Locale): string {
-  const model = candidate?.requestedModel ?? t(locale, 'unavailableValue');
-  const effort = candidate?.candidateId?.match(/-(minimal|low|medium|high|xhigh|max)$/)?.[1];
-  return effort ? `${model} · ${effort} · ${t(locale, 'isolatedProduct', { product })}` : `${model} · ${t(locale, 'isolatedProduct', { product })}`;
+function candidateSummary(candidate: CandidateSpec | undefined, product: string, resolvedModel: string | undefined, locale: Locale): string {
+  if (!candidate) return t(locale, 'unavailableValue');
+  const model = candidate.requestedModel;
+  return resolvedModel && resolvedModel !== model ? `${product}  ·  ${model} · ${resolvedModel}` : `${product}  ·  ${model}`;
 }
 
 function userRecoveryHeadline(value: string, locale: Locale): string {

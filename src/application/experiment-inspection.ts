@@ -96,6 +96,20 @@ export async function inspectRun(
   return { ...inspection, evidenceRefs, currentSummary, trajectorySummary };
 }
 
+export function unstartedControllerObservation(): Pick<
+  ControllerObservation,
+  "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths"
+> {
+  return {
+    currentSummary:
+      "Candidate turn has not started. Settlement: none. No model text is available to the Controller. Observed commands: 0; changed paths: 0; rejected approvals: 0.",
+    trajectorySummary:
+      "Settled turns: 0; commands: 0; changed paths: 0; runtime-generated paths: 0.",
+    evidenceRefs: [],
+    changedPaths: [],
+  };
+}
+
 async function inspectWorkspace(
   workspace: WorkspaceInspection | undefined,
 ): Promise<Pick<RunInspection, "changedPaths" | "runtimeGeneratedPaths">> {

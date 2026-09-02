@@ -10,7 +10,7 @@
 2. “固定 Controller”是指同一个 Experiment 内将 Controller 作为控制变量，不是把某个模型硬编码成产品默认值，也不是要求不同时间创建的所有 Experiment 永久使用同一模型。
 3. 每个 CandidateRun 使用独立的 Controller session，候选之间不共享隐藏状态；同一 Experiment 的候选共享同一份已解析 Controller 配置。
 4. Pi Agent Host 随项目正常更新，不要求恢复或固定历史 Host 版本，也不作为目标 Runtime 的比较变量。
-5. Controller 可以且必须访问 TaskCase 中的完整原始会话。原始会话是理解用户目标、知识、偏好、纠正方式和验收习惯的证据，不是需要隐藏的标准答案；Target Runtime 仍只从 `TaskCase.initialInput` 开始。
+5. Controller 可以且必须访问 TaskCase 中的完整原始会话。原始会话是理解用户目标、知识、偏好、纠正方式和验收习惯的证据，不是需要隐藏的标准答案；Target Runtime 收到的用户消息全部由 Controller 写出，包括第一句。
 6. 完整原始会话的使用边界由 canonical system prompt 明确限制：历史后续轨迹用于理解用户目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。第一版不再设计未来信息检测、答案泄漏评分、第二审查 Agent 或人工用户策略规则。
 7. “同等人类能力”不能被证明，只能被操作化。产品实现的是固定条件下的适应性用户协作模拟，不声称精确预测真实用户在反事实情境中的唯一输入。
 8. Controller 使用什么模型不属于 Harness 的产品判断，取决于用户通过 Pi 能访问什么模型。Harness 不捆绑、推荐或评价 Controller 模型。

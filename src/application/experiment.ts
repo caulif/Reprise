@@ -50,7 +50,12 @@ import {
   type SourceRootKind,
 } from "./replay-conditions.js";
 import { assertIds, assertPaths, experimentAgentAuditSink, invocationFact, isCompleted, persistTaskCase } from "./experiment-helpers.js";
-import { captureWorkspaceScope, inspectRun } from "./experiment-inspection.js";
+import {
+  captureWorkspaceScope,
+  inspectRun,
+  unstartedControllerObservation,
+  type ControllerObservation,
+} from "./experiment-inspection.js";
 import {
   preflightFromBaseline,
   resolveVerifiedCandidate,
@@ -478,6 +483,7 @@ async function finishCodexCandidateRun(args: {
       sourceRootKind,
       requestedModel: input.candidate.requestedModel,
       resolvedModel: resolved.resolvedModel,
+      candidateProductId: input.candidate.productId,
       experimentRoot,
     });
     return await finishExperiment({
@@ -607,6 +613,7 @@ export function controllerRequestSnapshot(context: SteeringContext): Record<stri
     requestId: context.requestId,
     runId: context.runId,
     runState: context.runState,
+    ...(context.phase ? { phase: context.phase } : {}),
     current: context.current,
     trajectory: context.trajectory,
     evidenceCatalog: context.evidenceCatalog,
@@ -628,26 +635,13 @@ async function runControllerLoop(input: {
   sourceRootKind: SourceRootKind;
   requestedModel: string;
   resolvedModel: string;
+  candidateProductId: string;
   experimentRoot: string;
 }): Promise<{
   decision: StructuredAgentResult<ControllerDecision>;
   followupSubmission: boolean;
 }> {
-  let state = await input.run.start(
-    {
-      id: input.taskCase.initialInput.id,
-      text: input.taskCase.initialInput.text,
-    },
-    {
-      runId: input.runId,
-      turnIndex: 0,
-      clientMessageId: `initial-${input.runId}`,
-    },
-  );
   const decisions: StructuredAgentResult<ControllerDecision>[] = [];
-  let controllerCalls = 0;
-  let duplicateInputs = 0;
-  let followupSubmission = false;
   const startedAt = Date.now();
   await input.store.append({
     type: "controller.started",
@@ -655,6 +649,12 @@ async function runControllerLoop(input: {
     operationId: "controller-started",
     payload: { model: input.controllerModel },
   });
+  const opened = await deliverOpening(input, decisions);
+  if (opened.finished) return opened.result;
+  let state = opened.state;
+  let controllerCalls = opened.controllerCalls;
+  let duplicateInputs = 0;
+  let followupSubmission = false;
   while (state === "awaiting_controller") {
     if (Date.now() - startedAt >= input.policy.wallClockMs) {
       state = await input.run.stopByHarness("limit.wall_clock");
@@ -664,56 +664,117 @@ async function runControllerLoop(input: {
       state = await input.run.stopByHarness("limit.controller_calls");
       break;
     }
-    const decision = await requestControllerDecision(input, state, controllerCalls);
-    controllerCalls += 1;
-    decisions.push(decision);
-    await input.store.append({
-      type: "controller.decision",
-      runId: input.runId,
-      operationId: `controller-decision-${controllerCalls}`,
-      payload: invocationFact(decision),
-    });
-    if (decision.status !== "completed") {
-      state =
-        decision.status === "failed"
-          ? await input.run.failController({
-              code: decision.failure.code,
-              message: decision.failure.message,
-            })
-          : decision.status === "cancelled"
-            ? await input.run.cancel()
-            : await input.run.stopByHarness("stalled.no_progress");
-      break;
-    }
-    if (decision.value.type === "done") {
-      state = await input.run.settleController(decision.value.reason);
-      break;
-    }
-    const previous = decisions.at(-2);
-    duplicateInputs =
-      isCompleted(previous) &&
-      previous.value.type === "send" &&
-      previous.value.message === decision.value.message
-        ? duplicateInputs + 1
-        : 0;
-    if (duplicateInputs >= input.policy.maxConsecutiveNoProgress) {
-      state = await input.run.stopByHarness("stalled.no_progress");
-      break;
-    }
-    followupSubmission = true;
-    state = await input.run.submit(
-      {
-        id: `controller-${input.runId}-${controllerCalls}`,
-        text: decision.value.message,
-      },
-      {
-        runId: input.runId,
-        turnIndex: controllerCalls,
-        clientMessageId: `controller-${controllerCalls}-${input.runId}`,
-      },
-    );
+    const steered = await deliverSteering(input, state, decisions, controllerCalls, duplicateInputs);
+    state = steered.state;
+    controllerCalls = steered.controllerCalls;
+    duplicateInputs = steered.duplicateInputs;
+    followupSubmission = steered.followupSubmission || followupSubmission;
+    if (steered.stop) break;
   }
   return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
+}
+
+type LoopInput = Parameters<typeof runControllerLoop>[0];
+
+async function deliverOpening(
+  input: LoopInput,
+  decisions: StructuredAgentResult<ControllerDecision>[],
+): Promise<
+  | { finished: true; result: ReturnType<typeof finalizeControllerLoop> }
+  | { finished: false; state: SteeringContext["runState"]; controllerCalls: number }
+> {
+  const opening = await requestControllerDecision(input, "created", 0, "opening");
+  decisions.push(opening);
+  await persistControllerDecision(input, 1, opening);
+  if (opening.status !== "completed" || opening.value.type !== "send") {
+    const state = await abortOpening(input, opening);
+    return { finished: true, result: finalizeControllerLoop(state, decisions, 1, false) };
+  }
+  const state = await input.run.start(
+    { id: `controller-${input.runId}-1`, text: opening.value.message },
+    { runId: input.runId, turnIndex: 0, clientMessageId: `controller-1-${input.runId}` },
+  );
+  return { finished: false, state, controllerCalls: 1 };
+}
+
+async function abortOpening(
+  input: LoopInput,
+  opening: StructuredAgentResult<ControllerDecision>,
+): Promise<SteeringContext["runState"]> {
+  if (opening.status === "cancelled") return input.run.cancel();
+  if (opening.status === "failed") {
+    return input.run.failBeforeStart({ code: opening.failure.code, message: opening.failure.message });
+  }
+  return input.run.failBeforeStart({ code: "invalid_output", message: "Opening decision must be send." });
+}
+
+async function deliverSteering(
+  input: LoopInput,
+  state: SteeringContext["runState"],
+  decisions: StructuredAgentResult<ControllerDecision>[],
+  controllerCalls: number,
+  duplicateInputs: number,
+): Promise<{
+  state: SteeringContext["runState"];
+  controllerCalls: number;
+  duplicateInputs: number;
+  followupSubmission: boolean;
+  stop: boolean;
+}> {
+  const decision = await requestControllerDecision(input, state, controllerCalls, "steering");
+  const calls = controllerCalls + 1;
+  decisions.push(decision);
+  await persistControllerDecision(input, calls, decision);
+  if (decision.status !== "completed") {
+    const next =
+      decision.status === "failed"
+        ? await input.run.failController({ code: decision.failure.code, message: decision.failure.message })
+        : decision.status === "cancelled"
+          ? await input.run.cancel()
+          : await input.run.stopByHarness("stalled.no_progress");
+    return { state: next, controllerCalls: calls, duplicateInputs, followupSubmission: false, stop: true };
+  }
+  if (decision.value.type === "done") {
+    return {
+      state: await input.run.settleController(decision.value.reason),
+      controllerCalls: calls,
+      duplicateInputs,
+      followupSubmission: false,
+      stop: true,
+    };
+  }
+  const previous = decisions.at(-2);
+  const repeats =
+    isCompleted(previous) && previous.value.type === "send" && previous.value.message === decision.value.message
+      ? duplicateInputs + 1
+      : 0;
+  if (repeats >= input.policy.maxConsecutiveNoProgress) {
+    return {
+      state: await input.run.stopByHarness("stalled.no_progress"),
+      controllerCalls: calls,
+      duplicateInputs: repeats,
+      followupSubmission: false,
+      stop: true,
+    };
+  }
+  const next = await input.run.submit(
+    { id: `controller-${input.runId}-${calls}`, text: decision.value.message },
+    { runId: input.runId, turnIndex: calls - 1, clientMessageId: `controller-${calls}-${input.runId}` },
+  );
+  return { state: next, controllerCalls: calls, duplicateInputs: repeats, followupSubmission: true, stop: false };
+}
+
+async function persistControllerDecision(
+  input: { store: ExperimentStore; runId: string },
+  controllerCalls: number,
+  decision: StructuredAgentResult<ControllerDecision>,
+): Promise<void> {
+  await input.store.append({
+    type: "controller.decision",
+    runId: input.runId,
+    operationId: `controller-decision-${controllerCalls}`,
+    payload: invocationFact(decision),
+  });
 }
 
 function finalizeControllerLoop(
@@ -744,15 +805,33 @@ function finalizeControllerLoop(
 }
 
 async function requestControllerDecision(
-  input: Parameters<typeof runControllerLoop>[0],
+  input: LoopInput,
   state: SteeringContext["runState"],
   controllerCalls: number,
+  phase: "opening" | "steering",
 ) {
-  const observation = await inspectRun(
+  const observation = await observeForController(input, phase);
+  const context = steeringContextFrom(input, state, controllerCalls, phase, observation);
+  await persistControllerRequested(input, context);
+  return input.controller.decide(
+    context,
+    controllerDecisionTools(input, context.requestId),
+    experimentAgentAuditSink(input.store, input.runId),
+  );
+}
+
+async function observeForController(
+  input: LoopInput,
+  phase: "opening" | "steering",
+): Promise<
+  Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths">
+> {
+  if (phase === "opening") return unstartedControllerObservation();
+  return inspectRun(
     input.store,
     undefined,
     input.taskCase.privacy.allowModelText,
-    input.taskCase.source.productId,
+    input.candidateProductId,
     {
       runId: input.runId,
       environment: input.environment,
@@ -764,11 +843,21 @@ async function requestControllerDecision(
       resolvedModel: input.resolvedModel,
     },
   );
-  const requestId = `controller-request-${input.runId}-${controllerCalls + 1}`;
-  const context = {
-    requestId,
+}
+
+function steeringContextFrom(
+  input: LoopInput,
+  state: SteeringContext["runState"],
+  controllerCalls: number,
+  phase: "opening" | "steering",
+  observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths">,
+): SteeringContext {
+  const historicalCwd = historicalCwdOf(input.taskCase);
+  return {
+    requestId: `controller-request-${input.runId}-${controllerCalls + 1}`,
     runId: input.runId,
     runState: state,
+    phase,
     task: {
       initialInput: input.taskCase.initialInput,
       baseline: input.taskCase.baseline,
@@ -793,27 +882,34 @@ async function requestControllerDecision(
     },
     replay: {
       sourceRootKind: input.sourceRootKind,
-      isolation:
-        "Writes stay in the isolated replica and never land in the original user directory.",
+      isolation: "Writes stay in the isolated replica and never land in the original user directory.",
       requestedModel: input.requestedModel,
       resolvedModel: input.resolvedModel,
       changedPaths: observation.changedPaths,
+      workspaceRoot: input.environment.root,
+      ...(historicalCwd ? { historicalCwd } : {}),
     },
   };
+}
+
+async function persistControllerRequested(input: LoopInput, context: SteeringContext): Promise<void> {
   await input.store.append({
     type: "controller.requested",
     runId: input.runId,
-    operationId: requestId,
+    operationId: context.requestId,
     payload: {
       schemaVersion: 1,
       toolSetVersion: 1,
-      requestId,
+      requestId: context.requestId,
       runId: input.runId,
       inputDigest: sha256(JSON.stringify(controllerRequestSnapshot(context))),
       snapshot: controllerRequestSnapshot(context),
     },
   });
-  const tools = [
+}
+
+function controllerDecisionTools(input: LoopInput, requestId: string) {
+  return [
     ...observationTools(input.store, {
       runId: input.runId,
       transcript: input.taskCase.transcript,
@@ -835,6 +931,5 @@ async function requestControllerDecision(
       homeRoot: join(input.experimentRoot, ".reprise-controller-home"),
     }),
   ];
-  return input.controller.decide(context, tools, experimentAgentAuditSink(input.store, input.runId));
 }
 

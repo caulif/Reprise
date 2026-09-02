@@ -511,7 +511,7 @@ export async function acceptCandidateModel(c: ControllerHandle): Promise<void> {
     c.selectedCandidate = spec;
     if (c.preflight) c.preflight = { ...c.preflight, resolved };
     c.page = 'confirm';
-    c.message = t(c.locale, 'recoveryReady');
+    c.message = '';
   } catch (error) {
     c.candidateCatalogStatus = 'error';
     c.candidateCatalogError = errorMessage(error);

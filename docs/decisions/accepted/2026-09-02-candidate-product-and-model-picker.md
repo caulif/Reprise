@@ -23,10 +23,10 @@
 
 ## 影响
 
-[TUI 最短路径](../../product/tui.md#32-每次比较)。[Product Pack 兼容性](../../architecture/product-plugin-compatibility.md#5-pack-选择流程) 的候选运行步骤。`CandidateSpec.productId` 决定 Runtime；`recover` 仍用来源 Pack。
+[TUI 最短路径](../../product/tui.md#32-每次比较)。[Product Pack 兼容性](../../architecture/product-plugin-compatibility.md#5-pack-选择流程) 的候选运行步骤。`CandidateSpec.productId` 决定 Runtime；`recover` 仍用来源 Pack。确认页、运行页顶栏与画布图例用候选 Pack 显示名，不用 `TaskCase.source.productId`。
 
 ## 验证
 
-- `test/candidate-picker.test.ts`：目录渲染、跨产品确认、无候选不得开跑、假 Pack `listCatalog`。
+- `test/candidate-picker.test.ts`：目录渲染、跨产品确认、无候选不得开跑、假 Pack `listCatalog`、运行画布用候选产品名。
 - `test/codex-intake-flow.test.ts` / `test/codex-intake-commands.test.ts`：恢复成功后经过选产品与选模型才确认。
 - `docs/tui-audit/frames/`：`29-candidate-product`、`30-candidate-model`。

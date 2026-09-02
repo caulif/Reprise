@@ -73,7 +73,7 @@ Enter 记下 `candidate.productId`，进入选模型。`b` 回恢复摘要。换
 
 ### 4.3 确认页
 
-展示来源产品、候选产品、`requestedModel` 与解析名。二者不同时用一句话说明：对照的是恢复后的同一任务，候选是另一套 Runtime。`b` 回选模型。
+字段与版式见 [confirm-page-simplify.md](./confirm-page-simplify.md)：只复述候选产品、模型、恢复终态一词；跨产品时加来源行。`b` 回选模型。
 
 ## 5. 候选写入
 

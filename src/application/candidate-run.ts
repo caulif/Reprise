@@ -96,6 +96,14 @@ export class CandidateRun {
     return this.#finish('failed.controller', 'failed', Object.assign(new Error(failure.message), { code: failure.code }));
   }
 
+  /** Opening decision failed before the first Target message; never submit frozen initialInput. */
+  async failBeforeStart(failure: { code: string; message: string }): Promise<CandidateRunState> {
+    this.#ensure('created');
+    if (this.#persistence) this.#track(await this.#persistence.journal.commitAttempt(this.#persistence.attempt));
+    await this.#append('controller.failed', failure, 'controller-failed');
+    return this.#finish('failed.controller', 'failed', Object.assign(new Error(failure.message), { code: failure.code }));
+  }
+
   async cancel(): Promise<CandidateRunState> {
     if (this.#state === 'finished') return this.#state;
     await this.#append('run.cancel_requested', { requestedBy: 'user' }, 'cancel-request');

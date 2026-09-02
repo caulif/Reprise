@@ -65,6 +65,14 @@ test('CandidateRun accepts an initial message, waits for settlement, and records
   assert.equal(runner.stopped, 'completed');
 });
 
+test('CandidateRun failBeforeStart never delivers a Target user message', async () => {
+  const runner = new ScriptedRunner([], []);
+  const run = new CandidateRun({ runner, policy });
+  assert.equal(await run.failBeforeStart({ code: 'invalid_output', message: 'Opening decision must be send.' }), 'finished');
+  assert.equal(runner.started.length, 0);
+  assert.equal(run.result().outcome.termination.code, 'failed.controller');
+});
+
 test('CandidateRun distinguishes rejected and unknown delivery without resending', async () => {
   const rejected = new CandidateRun({ runner: new ScriptedRunner([{ delivery: 'rejected', evidence: 'rpc_response' }], []), policy });
   assert.equal(await rejected.start(initial, identity), 'finished');

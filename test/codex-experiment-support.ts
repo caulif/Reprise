@@ -95,11 +95,22 @@ export class VerifiedRuntime implements RuntimePort {
   }
 }
 const controller: ControllerPort = {
-  decide: async () => ({
-    status: "completed",
-    sessionId: "controller-1",
-    value: { type: "done", reason: "satisfied" },
-  }),
+  decide: async (ctx) =>
+    ctx.phase === "opening" || ctx.runState === "created"
+      ? {
+          status: "completed",
+          sessionId: "controller-1",
+          value: {
+            type: "send",
+            message: ctx.task.initialInput.text,
+            intent: "continue",
+          },
+        }
+      : {
+          status: "completed",
+          sessionId: "controller-1",
+          value: { type: "done", reason: "satisfied" },
+        },
 };
 const comparison: ComparisonAgentPort = {
   compare: async (_context, tools = []) => {

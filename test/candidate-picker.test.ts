@@ -6,6 +6,8 @@ import { renderCandidateModelPicker, renderCandidateProductPicker } from '../src
 import { candidateSpecFromOffer } from '../src/application/candidate-spec.js';
 import { createCodexExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
+import { projectWorkbenchView } from '../src/tui/view-projection.js';
+import { renderWorkbench } from '../src/tui/workbench.js';
 
 test('candidate spec id follows product and catalog value', () => {
   const spec = candidateSpecFromOffer('claude-code', { value: 'sonnet', displayName: 'sonnet', resolvedModel: 'claude-sonnet-4-6' });
@@ -87,7 +89,71 @@ test('cross-product confirmation names source and candidate', () => {
   } as never).join('\n');
   assert.match(text, /Codex/);
   assert.match(text, /sonnet/);
-  assert.match(text, /different product|另一套 Runtime/);
+  assert.match(text, /different runtime|另一套 Runtime/);
+  assert.doesNotMatch(text, /Maximum requests|Changed paths|未决/);
+});
+
+test('running canvas uses the candidate product not the source session product', () => {
+  const view = projectWorkbenchView({
+    page: 'running',
+    cwd: 'C:\\repo',
+    productLabel: 'Codex',
+    candidateProductLabel: 'Claude Code',
+    sourceProductLabel: 'Codex',
+    candidate: { candidateId: 'claude-code-sonnet', productId: 'claude-code', requestedModel: 'sonnet' },
+    locale: 'zh',
+    message: '',
+    inlineHelp: false,
+    cancelling: false,
+    hasSavedModelConfig: true,
+    harnessAuthOk: true,
+    modelConfig: { providerId: 'pi', modelId: 'gpt-5.6-terra', effort: 'medium' },
+    configDraft: { kind: 'openai-compatible', providerId: 'openai-compatible', modelId: 'gpt-5.6-terra', effort: 'medium' },
+    composer: '',
+    composerCursor: 0,
+    showSuggestions: false,
+    commandOverlay: false,
+    configSelected: 0,
+    configEditing: false,
+    configBuffer: '',
+    configCursor: 0,
+    configDirty: false,
+    configPendingToggle: false,
+    historyTotalBytes: 0,
+    historyTab: 'runs',
+    historyItems: [],
+    historySelected: 0,
+    intakeLevel: 'products',
+    products: [],
+    visibleProjects: [],
+    activeProjectKey: '',
+    visibleSessions: [],
+    selected: 0,
+    filterEligible: false,
+    searchQuery: '',
+    searchCursor: 0,
+    searching: false,
+    privacy: { allowModelText: false, redactions: [] },
+    inspectionTaskInput: 0,
+    inspectionShowOutcome: false,
+    sourceRoot: 'C:\\x',
+    sourceCursor: 0,
+    effort: 'medium',
+    timeline: [],
+    visibleTimeline: [],
+    timelineSelected: 0,
+    timelineFilterIndex: 0,
+    timelineFollowing: true,
+    detailExpanded: false,
+    runStartedAt: 1,
+  } as never);
+  assert.equal(view.running?.productLabel, 'Claude Code');
+  assert.equal(view.productLabel, 'Claude Code');
+  const text = renderWorkbench(view, 120).join('\n');
+  assert.match(text, /候选运行中 · Claude Code/);
+  assert.match(text, /发给 Claude Code/);
+  assert.doesNotMatch(text, /候选运行中 · Codex/);
+  assert.doesNotMatch(text, /发给 Codex/);
 });
 
 test('workflow listCatalog is the selected pack catalog', async () => {

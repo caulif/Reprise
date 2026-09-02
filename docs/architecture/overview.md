@@ -152,7 +152,7 @@ interface TaskCase {
 }
 ```
 
-`transcript` 和 `historicalEvents` 保存用户选择的完整逻辑会话；整段会话默认就是一个任务，不再从中推断子任务边界。`initialInput` 是 Case Preparation 从完整会话选出的第一条用户任务句（跳过产品注入的指令块），只用于启动候选 Runtime。Controller 可以读取完整历史轨迹，但不会逐轮 replay。
+`transcript` 和 `historicalEvents` 保存用户选择的完整逻辑会话；整段会话默认就是一个任务，不再从中推断子任务边界。`initialInput` 是 Case Preparation 从完整会话选出的第一条用户任务句（跳过产品注入的指令块），是冻结考卷，不是 Host 投递给候选的原文。Controller 写出候选收到的每一条用户消息，包括第一句。Controller 可以读取完整历史轨迹，但不会逐轮 replay。
 
 `BaselineEvidence` 保存原始完成结果中可获得的最终消息、产物和检查引用。它是候选结果唯一要比较的历史基线，不要求由 Harness 重跑，也不用于候选之间排名。没有历史产物时明确记录 unavailable，不由 Agent 补造。
 
@@ -543,7 +543,7 @@ type TurnSettlement = {
 
 turn boundary 优先使用原生生命周期事件，其次组合 transport、process 和工具状态，最后才使用 quiet-period fallback。普通文本输出不是 turn boundary。
 
-候选 Runtime 以恢复后的会话起点环境创建，并由 `TargetRunner.start(TaskCase.initialInput, ...)` 接收首条用户输入；Product Pack 不注入原历史后续轨迹。`RuntimePort.resolve` 只解析当前机器已安装的 Runtime，不接受历史版本约束，也不下载或切换版本。`ResolvedRuntime` 至少记录 executable、产品、可观察版本、provider 与模型解析，以及可取得的工具、MCP、权限、沙箱、上下文压缩和重试配置；闭源内部行为无法验证时记录 `unknown`。
+候选 Runtime 以恢复后的会话起点环境创建，并由 `TargetRunner.start` 接收 Controller 开场 `send` 的正文；Product Pack 不注入原历史后续轨迹，Host 也不原样重放 `TaskCase.initialInput`。`RuntimePort.resolve` 只解析当前机器已安装的 Runtime，不接受历史版本约束，也不下载或切换版本。`ResolvedRuntime` 至少记录 executable、产品、可观察版本、provider 与模型解析，以及可取得的工具、MCP、权限、沙箱、上下文压缩和重试配置；闭源内部行为无法验证时记录 `unknown`。
 
 Experiment 首个候选准备时保存一次 Runtime fingerprint，每个候选启动前重新解析并写入各自 `RunManifest`。预期使用同一 Runtime 的候选若 fingerprint 发生变化，Harness 追加 `runtime_drift` warning 并继续运行；历史 `SourceRuntimeEvidence` 与当前 fingerprint 不比较、不产生 warning，也不改变 fidelity。使用不同 Agent 产品或显式不同当前配置的候选仍可比较，但报告只能将差异解释为“实际 Agent 配置差异”，不能声称纯模型隔离。
 

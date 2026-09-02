@@ -70,12 +70,13 @@ test('confirmation headline uses Recovered, Partial recovery, or Could not recov
   assert.doesNotMatch(recovered, /recovered_partial/);
   assert.match(failed, /Enter will not start Codex/);
   assert.doesNotMatch(recovered, /Enter will not start/);
-  assert.match(failed, /Cannot start isolated Codex Candidate/);
+  assert.match(failed, /Cannot start isolated candidate/);
   assert.doesNotMatch(failed, /Start isolated Codex Candidate/);
   assert.doesNotMatch(failed, /prepared isolated state/);
   assert.doesNotMatch(failed, /对照会从/);
   assert.match(recovered, /Start isolated Codex Candidate/);
-  assert.match(recovered, /prepared isolated state/);
+  assert.match(recovered, /Original directory stays unchanged/);
+  assert.doesNotMatch(recovered, /Maximum requests|Network \/ billing|Changed paths/);
 });
 
 test('confirmation with accept stays partial and startable', () => {
@@ -94,14 +95,14 @@ test('confirmation with accept stays partial and startable', () => {
     preflight: { sourceBaseline: 'partial', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: ['Workspace also changed extra.txt without a matching manifest action.'], comparisonClass: 'recovered_partial' },
   } as never).join('\n');
   assert.match(text, /部分恢复/);
-  assert.match(text, /变更路径/);
-  assert.match(text, /16/);
-  assert.match(text, /跳过路径/);
-  assert.match(text, /ppt_build\/node_modules/);
-  assert.match(text, /未决/);
-  assert.match(text, /extra\.txt/);
+  assert.doesNotMatch(text, /变更路径/);
+  assert.doesNotMatch(text, /跳过路径/);
+  assert.doesNotMatch(text, /ppt_build\/node_modules/);
+  assert.doesNotMatch(text, /未决/);
+  assert.doesNotMatch(text, /extra\.txt/);
   assert.doesNotMatch(text, /无法启动隔离/);
   assert.match(text, /启动隔离的 Codex 候选/);
+  assert.match(text, /原目录不变/);
 });
 
 test('confirmation without accept explains validation failure in Chinese', () => {
@@ -124,13 +125,11 @@ test('confirmation without accept explains validation failure in Chinese', () =>
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
-  assert.match(text, /无法启动隔离的 Codex 候选/);
+  assert.match(text, /无法启动隔离候选/);
   assert.match(text, /没有观察到隔离工作区变更/);
   assert.match(text, /no_task_path_outcome/);
   assert.doesNotMatch(text, /工作区校验未通过/);
   assert.doesNotMatch(text, /对照会从/);
-  const diagnostic = [...text.matchAll(/恢复诊断.*/g)].map((row) => row[0]).join('\n');
-  assert.doesNotMatch(diagnostic, /^恢复诊断\s+provider_validation_failed$/);
 });
 
 test('confirmation with workspace changes still reports validation failure', () => {
@@ -153,7 +152,7 @@ test('confirmation with workspace changes still reports validation failure', () 
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
-  assert.match(text, /无法启动隔离的 Codex 候选/);
+  assert.match(text, /无法启动隔离候选/);
   assert.match(text, /工作区校验未通过/);
   assert.doesNotMatch(text, /没有观察到隔离工作区变更/);
 });
