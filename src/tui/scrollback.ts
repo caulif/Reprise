@@ -10,6 +10,12 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.hidden) return undefined;
   if (isQuietMcpStatus(entry)) return undefined;
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·')) return 'input';
+  if (entry.kind === 'narrate') {
+    if (entry.lane === 'comparison') return 'summary';
+    if (entry.lane === 'recovery') return 'summary';
+    return 'controller';
+  }
+  if (entry.kind === 'fold') return 'controller';
   if (entry.title.startsWith('Recovery')) return 'summary';
   if (entry.title.startsWith('Decision:') || entry.title.startsWith('Controller ·') || entry.lane === 'controller') {
     return 'controller';

@@ -3,8 +3,8 @@ Reprise   Candidate running · Codex                                            
  ● To Codex   ● Codex screen   ● Controller                                                                             
  Task  Fix the bug.                                                                                                     
                                                                                                                         
-                                                                                                                        
 ▎ Controller                                                                                                            
+▎ ▸ 第 1 轮 · SEND ·                                                                                                    
 ▎ Decision: SEND One check remains.                                                                                     
                                                                                                                         
 ▎ To Codex · historical task                                                                                            
@@ -29,4 +29,4 @@ Reprise   Candidate running · Codex                                            
 ▎ ... +35 lines                                                                                                         
  ❯ You cannot type to Codex here. Follow-ups are sent by the replay.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [f] One side  [Ctrl+C] Stop  [Enter] Expand command  [o] Full output  [/] Find  [l] Latest  [?] Keys
+ [↑↓] Select  [f] One side  [Ctrl+C] Stop  [Enter] Expand command  [o] Full output  [Tab] Switch pane  [/] Find

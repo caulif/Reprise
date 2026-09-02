@@ -2,7 +2,7 @@
 
 状态：当前模块设计
 
-Comparison 是产品无关的比较研究者。它从冻结的 baseline、Candidate RunRecord、事件与 catalog artifact 中调查差异，输出供用户自行判断的本地报告；它不运行 Runtime、不修改实验状态，也不排名候选。
+Comparison 是产品无关的比较研究者。它从冻结的 baseline、Candidate RunRecord、事件与 catalog artifact 中调查差异，输出供用户自行判断的本地报告；它不运行 Runtime、不修改实验状态，也不排名候选。Comparison 由 TUI 对照门或 CLI `--compare` 显式启动，默认不调用。
 
 ## 数据流
 

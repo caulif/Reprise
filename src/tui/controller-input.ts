@@ -71,6 +71,10 @@ export type ControllerHandle = {
   timelineSelected: number;
   timelineFollowing: boolean;
   timelineFilterIndex: number;
+  paneFocus: 'left' | 'right';
+  expandedFolds: string[];
+  autoCompare: boolean;
+  compareChoice: { resolve(run: boolean): void } | undefined;
   runFromSource: boolean;
   readonly workflow: CodexTuiWorkflow | undefined;
   generation: number;
@@ -162,6 +166,7 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'candidate-product') return applyCandidateProduct(c, input);
   if (c.page === 'candidate-model') return applyCandidateModel(c, input);
   if (c.page === 'confirm') return applyConfirm(c, input);
+  if (c.page === 'compare-gate') return applyCompareGate(c, input);
   if (c.page === 'result') {
     const result = dispatchResultKeys(input);
     if (!result) return undefined;
@@ -422,6 +427,21 @@ function applyCandidateModel(c: ControllerHandle, data: string): Consume | undef
   return { consume: true };
 }
 
+function applyCompareGate(c: ControllerHandle, data: string): Consume | undefined {
+  const input = unwrapBracketedPaste(data);
+  if (matchesKey(input, 'enter')) {
+    c.compareChoice?.resolve(true);
+    c.compareChoice = undefined;
+    return { consume: true };
+  }
+  if (input === 's' || input === 'S') {
+    c.compareChoice?.resolve(false);
+    c.compareChoice = undefined;
+    return { consume: true };
+  }
+  return undefined;
+}
+
 function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
   const result = dispatchConfirmInput(data);
   if (!result) return undefined;
@@ -449,6 +469,11 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   if (!result) return undefined;
   if (result.action === 'toggle-detail') {
     c.detailExpanded = !c.detailExpanded;
+    c.render();
+    return { consume: true };
+  }
+  if (result.action === 'toggle-pane') {
+    c.paneFocus = c.paneFocus === 'left' ? 'right' : 'left';
     c.render();
     return { consume: true };
   }

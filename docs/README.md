@@ -58,6 +58,7 @@
 - [内部 Agent 运行画布的压缩与分轨](./decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)：按 role 投影；调查合并；Controller 品红与投递分轨；Comparison 绿卡。
 - [恢复后选择候选产品与模型](./decisions/accepted/2026-09-02-candidate-product-and-model-picker.md)：来源 Pack 做恢复；开跑可选别的 Pack 再 `listCatalog`。
 - [Controller 写出每一条用户输入](./decisions/accepted/2026-09-02-controller-owns-every-user-turn.md)：冻结 `initialInput` 只作考卷；开场与后续用户消息都由 Controller `send`。
+- [可见短句、运行分屏与显式对照](./decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)：`agent.assistant_visible`；候选左右分栏；对照默认跳过。
 - [恢复终态、确认卡片与短候选目录](./decisions/accepted/2026-09-01-recovery-operator-feedback-and-short-candidates.md)：partial 诊断码、8-hex 候选段、确认卡片与列表光标。
 - [候选 Runtime 失败分类与恢复门禁解耦](./decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)：settlement 保留脱敏失败类别；恢复 candidate 不被 source blockedReasons 再拦；不对 503 自动重试。
 - [列表展示、冻结与 Recovery Agent 分界](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)：列表只截断展示；冻结由 Case Preparation 完成；Recovery Agent 只做环境恢复。
@@ -92,6 +93,7 @@
 - [无头 CLI 与 TUI 并行控制面](./plan/agent-headless-cli.md)与[讨论稿](./plan/agent-headless-cli.html)：子命令调用同一套 Application；人与外部 agent 共用 JSON 信封。
 - [TUI 之后的产品路线图](./plan/reprise-post-tui-roadmap.md)。
 - [Controller 拥有每一轮用户输入](./plan/controller-owns-every-user-turn.md)：候选与 Controller 一同启动；含第一句在内的用户消息和停止只由 Controller 决定。
+- [内部 Agent 可见过程](./plan/recovery-narrative-canvas.md)与[设计稿](./plan/recovery-narrative-canvas.html)：短句为脊；候选运行左右分屏；对照先问再跑。
 
 ## 设计依据
 

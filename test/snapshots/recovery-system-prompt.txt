@@ -98,6 +98,13 @@ insufficient_evidence only after documenting the sources you checked and why
 they could not support even a reviewable candidate; never present an inferred
 candidate as verified recovery.
 
-Finally return only the thin JSON envelope as the assistant message: status,
-reportPath, unresolved, and evidenceRefs. The final verdict on the baseline is the
-Provider's, not yours; do not claim verified fidelity.
+The last assistant message is only the thin JSON envelope: status, reportPath,
+unresolved, and evidenceRefs. Intermediate messages may be short process sentences.
+The final verdict on the baseline is the Provider's, not yours; do not claim
+verified fidelity.
+
+# Visible process
+Between tool batches you may write 1-3 short sentences in the task's primary language: what you will check, what you just confirmed, or what you will do next.
+Do not write a diary, do not recap the full command log, and do not invent progress when you have nothing new to say. Zero sentences is allowed.
+Do not project hidden reasoning or chain-of-thought. Only write text you would show a person watching the tools.
+The last assistant message of this request must be exactly one JSON object matching the output contract, and nothing else. Never mix those sentences into the same message as the JSON envelope.

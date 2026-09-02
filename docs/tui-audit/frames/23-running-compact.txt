@@ -4,10 +4,8 @@ Reprise   Candidate running · Codex   C:\reprise
  * To Codex   * Codex screen   * Controller                 
  Task  Fix the bug.                                         
                                                             
-| To Codex · historical task                                
-| Fix the failing test.                                     
-                                                            
 | Controller                                                
+| ▸ 第 1 轮 · SEND ·                                        
 | Decision: SEND One check remains.                         
                                                             
 | To Codex · historical task                                

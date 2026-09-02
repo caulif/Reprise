@@ -2,7 +2,7 @@ import { basename, dirname, join } from 'node:path';
 import { isFsAbsolute } from '../core/paths.js';
 import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import { candidateSpecFromOffer, catalogCursor } from '../application/candidate-spec.js';
-import type { CodexExperimentResult } from '../application/experiment.js';
+import type { CodexExperimentResult, ExperimentHandle } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { freezeCase } from '../products/shared/freeze.js';
 import { importVerifiedSession, listSummaryIncomplete } from '../products/shared/session-recovery.js';
@@ -261,6 +261,32 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
   c.render(true);
 }
 
+async function settleRun(
+  c: ControllerHandle,
+  handle: ExperimentHandle,
+  token: number,
+): Promise<CodexExperimentResult | undefined> {
+  if (c.autoCompare || c.cancelling) return handle.result;
+  const partial = await handle.candidateFinished;
+  if (token !== c.generation) return undefined;
+  c.result = partial;
+  c.page = 'compare-gate';
+  c.render(true);
+  const runCompare = await new Promise<boolean>((resolve) => {
+    c.compareChoice = { resolve };
+  });
+  if (token !== c.generation) return undefined;
+  if (runCompare) {
+    c.page = 'running';
+    c.preparePhase = 'compare';
+    c.render(true);
+    await handle.runComparison();
+  } else {
+    await handle.skipComparison();
+  }
+  return handle.result;
+}
+
 export async function beginRun(c: ControllerHandle): Promise<void> {
   void c.refreshProductAuth();
   const token = c.beginNavigation();
@@ -308,6 +334,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
             ...(acceptedBaseline ? { preResolvedBaseline: acceptedBaseline } : {}),
           }
         : {}),
+      ...(c.autoCompare ? { compare: true } : { deferComparison: true }),
     });
     if (token !== c.generation) {
       await handle.cancel().catch(() => undefined);
@@ -319,8 +346,8 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     if (c.cancelling) await handle.cancel();
     c.message = c.cancelling ? t(c.locale, 'cancellationRequested') : '';
     c.render(true);
-    const result = await handle.result;
-    if (token !== c.generation) return;
+    const result = await settleRun(c, handle, token);
+    if (!result || token !== c.generation) return;
     c.result = result;
     const experimentRoot = result.experimentRoot ?? dirname(result.reportPath);
     const completedCase = result.taskCase ?? c.taskCase;

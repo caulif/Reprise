@@ -208,6 +208,7 @@ export function input(root: string, runtime: VerifiedRuntime) {
     controller,
     comparison,
     now,
+    compare: true,
   };
 }
 class MultiTurnRuntime implements RuntimePort {

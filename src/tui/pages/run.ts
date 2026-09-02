@@ -1,13 +1,14 @@
 import type { CodexExperimentPreflight } from '../../application/experiment.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
 import { activeLane, lastLiveVerb, phaseIndex } from '../agent-activity.js';
+import { foldProcessEntries, splitRunEntries } from '../fold-process.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import { matchesCanvasQuery, matchesFilter, renderScrollback } from '../scrollback.js';
 import { caretAt } from '../text-edit.js';
 import type { Theme } from '../theme.js';
 import type { TimelineEntry } from '../timeline.js';
-import { kv, pad, panel, type PreparePhase } from '../widgets.js';
+import { joinColumns, kv, pad, panel, type PreparePhase } from '../widgets.js';
 
 export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
 export type RecoveryPreviewModel = {
@@ -64,6 +65,8 @@ export type RunningModel = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly runStartedAt?: number;
+  readonly paneFocus?: 'left' | 'right';
+  readonly expandedFolds?: readonly string[];
 };
 
 function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string], locale: Locale): string {
@@ -190,7 +193,9 @@ function waitLine(model: RunningModel, locale: Locale): string | undefined {
   const idle = Number.isFinite(last) && last > 0 ? now - last : now - (model.runStartedAt ?? 0);
   if (idle >= 120_000) return t(locale, 'runStaleHint');
   const sinceStart = now - (model.runStartedAt ?? now);
-  if (sinceStart >= 30_000) return t(locale, 'runStillWaiting');
+  if (sinceStart >= 30_000) {
+    return t(locale, model.runPhase === 'recovery' ? 'runStillRecovering' : 'runStillWaiting');
+  }
   return undefined;
 }
 
@@ -222,15 +227,59 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const findBar = model.finding ? renderFindBar(model, locale, visible.length, selected < 0 ? 0 : selected) : [];
   const header = [legend, ...(task ? [task] : []), ...phases, ...findBar, ''];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
+  const expanded = new Set(model.expandedFolds ?? []);
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
     : recovering && !visible.length
       ? [theme.style.muted(` ${t(locale, 'recoveryEmpty')}`)]
-      : renderScrollback(theme, width, visible, selected < 0 ? 0 : selected, locale, product, bodyHeight, model.tick ?? 0);
+      : splitCandidate(model, recovering, comparing, width)
+        ? renderSplitBody(theme, width, model, visible, locale, product, bodyHeight, expanded)
+        : renderScrollback(theme, width, foldProcessEntries(visible, expanded), selected < 0 ? 0 : selected, locale, product, bodyHeight, model.tick ?? 0);
   return [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
   ];
+}
+
+function splitCandidate(model: RunningModel, recovering: boolean, comparing: boolean, width: number): boolean {
+  if (model.paneFocus) return false;
+  return !recovering && !comparing && !isPreparing(model) && width >= 110;
+}
+
+export function runningPaneModel(model: RunningModel, pane: 'left' | 'right'): RunningModel {
+  const panes = splitRunEntries(model.entries);
+  const expanded = new Set(model.expandedFolds ?? []);
+  const entries = pane === 'left' ? foldProcessEntries(panes.left, expanded) : panes.right;
+  const selected = Math.max(0, Math.min(model.selected, Math.max(0, entries.length - 1)));
+  return { ...model, entries, selected, paneFocus: pane };
+}
+
+function renderSplitBody(
+  theme: Theme,
+  width: number,
+  model: RunningModel,
+  visible: readonly TimelineEntry[],
+  locale: Locale,
+  product: string,
+  bodyHeight: number | undefined,
+  expanded: ReadonlySet<string>,
+): string[] {
+  const panes = splitRunEntries(visible);
+  const left = foldProcessEntries(panes.left, expanded);
+  const right = panes.right;
+  const leftWidth = Math.max(28, Math.floor(width * 0.4));
+  const rightWidth = Math.max(28, width - leftWidth - 1);
+  const leftSel = Math.max(0, left.findIndex((entry) => entry === model.entries[model.selected]));
+  const rightSel = Math.max(0, right.findIndex((entry) => entry === model.entries[model.selected]));
+  const leftLines = [
+    theme.style.controller(` ${t(locale, 'controllerLegend')}`),
+    ...renderScrollback(theme, leftWidth, left, leftSel, locale, product, bodyHeight === undefined ? undefined : Math.max(3, bodyHeight - 1), model.tick ?? 0),
+  ];
+  const rightLines = [
+    theme.style.target(` ${t(locale, 'legendOut', { product })}`),
+    ...renderScrollback(theme, rightWidth, right, rightSel, locale, product, bodyHeight === undefined ? undefined : Math.max(3, bodyHeight - 1), model.tick ?? 0),
+  ];
+  return joinColumns(leftLines, rightLines, leftWidth, rightWidth, 1, theme);
 }
 
 function renderPhaseStrip(theme: Theme, model: RunningModel, locale: Locale): readonly string[] {
@@ -346,8 +395,21 @@ export function runningHints(_filter: TimelineFilter, narrow: boolean, preparing
     ['Ctrl+C', t(locale, 'hintStop')],
     ['Enter', t(locale, 'hintExpand')],
     ['o', t(locale, 'hintFull')],
-    ...(narrow ? [] : [['/', t(locale, 'hintFind')] as const, ['l', t(locale, 'hintLatest')] as const, ['?', t(locale, 'hintKeys')] as const]),
+    ...(narrow ? [] : [['Tab', t(locale, 'hintSwitchPane')] as const, ['/', t(locale, 'hintFind')] as const, ['l', t(locale, 'hintLatest')] as const, ['?', t(locale, 'hintKeys')] as const]),
   ];
+}
+
+export function renderCompareGate(theme: Theme, width: number, locale: Locale = 'en'): string[] {
+  return panel(theme, t(locale, 'compareGateTitle'), [
+    ` ${t(locale, 'compareGateBody')}`,
+    '',
+    theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'compareGateEnter')}`),
+    theme.style.muted(` s  ${t(locale, 'compareGateSkip')}`),
+  ], width);
+}
+
+export function compareGateHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
+  return [['Enter', t(locale, 'hintRunComparison')], ['s', t(locale, 'hintSkipComparison')], ['Ctrl+C', t(locale, 'hintStop')]];
 }
 
 export function currentRunState(entries: readonly TimelineEntry[]): CandidateRunState | undefined {

@@ -106,6 +106,7 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
     sessionsRoot,
     tui,
     workflow,
+    autoCompare: true,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
   });
 
@@ -233,6 +234,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
     sessionsRoot,
     tui,
     workflow,
+    autoCompare: true,
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     now: () => "2026-08-11T00:10:00.000Z",
   });

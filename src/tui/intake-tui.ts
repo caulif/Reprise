@@ -70,6 +70,7 @@ export type CodexIntakeTuiOptions = {
   readonly piModels?: PiModels;
   readonly workflow?: CodexTuiWorkflow;
   readonly queueTimelineRender?: (callback: () => void) => void;
+  readonly autoCompare?: boolean;
 };
 
 /** Keyboard-only Home-first benchmark workbench for configuration, intake, and isolated runs. */
@@ -184,6 +185,10 @@ export class CodexIntakeTui {
   locale: Locale = "en";
   viewer: { title: string; body: string } | undefined;
   actorsOpen = false;
+  paneFocus: 'left' | 'right' = 'left';
+  expandedFolds: string[] = [];
+  autoCompare = false;
+  compareChoice: { resolve(run: boolean): void } | undefined;
   groupedCache:
     | {
         sessions: readonly SessionSummary[];

@@ -44,7 +44,7 @@ async function main(): Promise<void> {
     candidate: { candidateId: 'scripted-candidate', productId: 'codex', requestedModel: 'scripted' },
     policy: { wallClockMs: 30_000, maxTargetTurns: 2, maxModelCalls: 1, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 1 },
     agentConfig: agents.config, runtime: new ScriptedCandidateRuntime(), controller: scriptedController, comparison: scriptedComparison,
-    environmentProvider: attempt.provider, preResolvedBaseline: baseline, now,
+    environmentProvider: attempt.provider, preResolvedBaseline: baseline, now, compare: true,
   }).result;
   if (candidate.record.outcome.termination.kind !== 'completed') throw new Error('Scripted Candidate orchestration did not complete.');
   await access(candidate.reportPath);

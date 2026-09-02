@@ -8,6 +8,7 @@ const MIN_NODE = [22, 19, 0] as const;
 const commandOptions = {
   'data-dir': { type: 'string' },
   'sessions-dir': { type: 'string', multiple: true },
+  compare: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
 } as const;
@@ -15,6 +16,7 @@ const commandOptions = {
 type CommandValues = {
   readonly 'data-dir'?: string;
   readonly 'sessions-dir'?: string[];
+  readonly compare?: boolean;
   readonly help?: boolean;
   readonly version?: boolean;
 };
@@ -26,7 +28,7 @@ export interface CliIo {
 
 export interface CliContext {
   readonly now?: string;
-  readonly runTui?: (input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string }) => Promise<void>;
+  readonly runTui?: (input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string; autoCompare?: boolean }) => Promise<void>;
 }
 
 export function assertSupportedNodeVersion(version = process.versions.node): void {
@@ -49,7 +51,7 @@ export function helpText(): string {
     'Reprise — local-first agent runtime replay and inspection',
     '',
     'Usage:',
-    '  reprise [--data-dir <dir>] [--sessions-dir <productId>=<path>]',
+    '  reprise [--data-dir <dir>] [--sessions-dir <productId>=<path>] [--compare]',
     '  reprise [--help] [--version]',
     '',
     'Options:',
@@ -57,6 +59,7 @@ export function helpText(): string {
     '  -v, --version    Show the installed Reprise and Node.js versions',
     '  --data-dir       Use this local data directory (default: REPRISE_DATA_DIR or .reprise)',
     '  --sessions-dir   Repeatable <productId>=<path>. A bare path still sets the default product sessions root.',
+    '  --compare        Run Comparison after the candidate without the TUI confirmation gate.',
   ].join('\n');
 }
 
@@ -79,6 +82,7 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
       dataDir,
       sessionsRoot,
       sessionsRoots,
+      ...(values.compare ? { autoCompare: true } : {}),
       ...(context.now ? { now: context.now } : {}),
     });
     io.stdout('TUI closed.');
@@ -108,7 +112,7 @@ export function parseSessionsDirs(values: readonly string[] | undefined): Record
   return roots;
 }
 
-async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string }): Promise<void> {
+async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string; autoCompare?: boolean }): Promise<void> {
   const dataDir = resolve(input.dataDir);
   await new CodexIntakeTui({
     dataDir,
@@ -117,6 +121,7 @@ async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: 
     workflow: createCodexTuiWorkflow({ dataDir, now: input.now ? () => input.now! : () => new Date().toISOString() }),
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     now: input.now ? () => input.now! : () => new Date().toISOString(),
+    ...(input.autoCompare ? { autoCompare: true } : {}),
   }).run();
 }
 

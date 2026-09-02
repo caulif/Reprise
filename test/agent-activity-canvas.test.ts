@@ -141,5 +141,5 @@ test('actors overlay shows the current controller verb', () => {
     selected: 0, filter: 'ALL', following: true, cancelling: false,
     currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1, max: 3 }, detailExpanded: false,
   }, 'zh').join('\n');
-  assert.match(text, /read_observation|run_events/);
+  assert.match(text, /inspect|run_events/);
 });

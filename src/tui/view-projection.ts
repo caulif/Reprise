@@ -39,7 +39,7 @@ type Input = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
-  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly result?: CodexExperimentResult | undefined;
+  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly paneFocus?: 'left' | 'right'; readonly expandedFolds?: readonly string[]; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly result?: CodexExperimentResult | undefined;
   readonly viewer?: { readonly title: string; readonly body: string };
   readonly actorsOpen?: boolean;
   readonly finding?: boolean;
@@ -77,6 +77,8 @@ function runningModel(input: Input) {
     ...(input.reconnectCount ? { reconnectCount: input.reconnectCount } : {}),
     ...(input.reconnectTotal ? { reconnectTotal: input.reconnectTotal } : {}),
     ...(input.runStartedAt ? { runStartedAt: input.runStartedAt } : {}),
+    ...(input.paneFocus ? { paneFocus: input.paneFocus } : {}),
+    ...(input.expandedFolds?.length ? { expandedFolds: input.expandedFolds } : {}),
     locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
     ...(input.taskCase ? {
       taskTitle: taskDisplaySummary(

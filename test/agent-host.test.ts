@@ -526,7 +526,7 @@ test("Host extracts JSON from preamble text and strips unknown properties", asyn
   const result = await controller.decide(context());
   assert.equal(result.status, "completed");
   if (result.status === "completed") assert.equal(result.value.type, "done");
-  assert.match(sessions[0]?.appended[0] ?? "", /Return only one JSON object/);
+  assert.match(sessions[0]?.appended[0] ?? "", /last assistant message is only one JSON object/);
 });
 
 test("invalid JSON and illegal decision fields keep distinct Host errors", async () => {

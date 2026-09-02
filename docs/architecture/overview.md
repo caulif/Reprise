@@ -126,7 +126,7 @@ BaselineEvidence + one or more RunRecord
 → 并排报告
 ```
 
-Comparison Agent 只读取规范化的任务、结果、artifact、遥测和 fidelity，不理解具体 Agent 产品。报告是可重复生成的只读投影，不属于 CandidateRun 的 `finalizing`；Comparison 或 Renderer 失败不改变运行结果。
+Comparison Agent 只读取规范化的任务、结果、artifact、遥测和 fidelity，不理解具体 Agent 产品。报告是可重复生成的只读投影，不属于 CandidateRun 的 `finalizing`；Comparison 或 Renderer 失败不改变运行结果。Comparison 由操作者在 TUI 对照门确认，或由 CLI `--compare` 显式启动；默认跳过，不写 `report.html`。
 
 ## 4. 核心领域模型
 

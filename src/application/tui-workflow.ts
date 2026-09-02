@@ -31,6 +31,8 @@ type ExperimentRequest = {
   runId?: string;
   candidate?: CandidateSpec;
   onEvent: (event: EventEnvelope) => void;
+  compare?: boolean;
+  deferComparison?: boolean;
 };
 type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'experimentId' | 'runId' | 'candidate'> & { onEvent?: (event: EventEnvelope) => void };
 
@@ -91,6 +93,8 @@ export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?
         ...(request.preResolvedBaseline ? { preResolvedBaseline: request.preResolvedBaseline } : {}),
         ...(request.recoveryAttempt ? { environmentProvider: request.recoveryAttempt.provider, ...(request.preResolvedBaseline ? {} : { preResolvedBaseline: request.recoveryAttempt.baseline }) } : {}),
         ...(request.sourceRootKind ? { sourceRootKind: request.sourceRootKind } : {}),
+        ...(request.compare ? { compare: true } : {}),
+        ...(request.deferComparison ? { deferComparison: true } : {}),
       });
     },
   };

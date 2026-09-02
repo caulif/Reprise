@@ -6,6 +6,7 @@ import {
   type AgentInvocation,
   type AgentToolDefinition,
 } from "../infrastructure/pi-agent-host.js";
+import { VISIBLE_PROCESS_SECTION } from "./visible-process.js";
 
 const RecoveryResultSchema = Type.Union([
   Type.Object({
@@ -219,12 +220,15 @@ insufficient_evidence only after documenting the sources you checked and why
 they could not support even a reviewable candidate; never present an inferred
 candidate as verified recovery.
 
-Finally return only the thin JSON envelope as the assistant message: status,
-reportPath, unresolved, and evidenceRefs. The final verdict on the baseline is the
-Provider's, not yours; do not claim verified fidelity.`;
+The last assistant message is only the thin JSON envelope: status, reportPath,
+unresolved, and evidenceRefs. Intermediate messages may be short process sentences.
+The final verdict on the baseline is the Provider's, not yours; do not claim
+verified fidelity.
+
+${VISIBLE_PROCESS_SECTION}`;
 
 const OUTPUT_CONTRACT = [
-  "After all tool calls, return exactly one JSON object and nothing else. Do not return your report, a tool result, prose, Markdown, or a JSON array.",
+  "After all tool calls, the last assistant message is exactly one JSON object. Intermediate assistant messages may be short process sentences. Do not return your report, a tool result, Markdown, or a JSON array as that last message.",
   "Choose exactly one status-specific shape below. Every bracketed value is a JSON array, never an object. Copy reportPath exactly.",
   '{"status":"recovered","reportPath":"recovery.md","unresolved":[],"evidenceRefs":["event:transcript-0-..."]}',
   '{"status":"partial","reportPath":"recovery.md","unresolved":["what remains uncertain"],"evidenceRefs":["event:transcript-0-..."]}',

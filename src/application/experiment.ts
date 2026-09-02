@@ -60,7 +60,7 @@ import {
   preflightFromBaseline,
   resolveVerifiedCandidate,
 } from "./experiment-preflight.js";
-import { finishExperiment } from "./experiment-report.js";
+import { finishExperiment, attachExperimentComparison } from "./experiment-report.js";
 
 
 export type { SourceRootKind };
@@ -91,7 +91,7 @@ export type CodexExperimentResult = {
   preflight: CodexExperimentPreflight;
   record: RunRecord;
   decision: StructuredAgentResult<ControllerDecision>;
-  comparison: { result: StructuredAgentResult<ComparisonResult> };
+  comparison: { result: StructuredAgentResult<ComparisonResult> | { status: "skipped" } };
   followupSubmission: boolean;
   targetEvents: readonly string[];
   checkpoint?: RecoveryCheckpoint;
@@ -128,6 +128,10 @@ export type CodexExperimentInput = {
   comparison: ComparisonAgentPort;
   now: string;
   onEvent?: (event: EventEnvelope) => void;
+  /** When true, Comparison runs before this handle's result settles. Default is skip. */
+  compare?: boolean;
+  /** Hold the isolated workspace until runComparison or skipComparison. */
+  deferComparison?: boolean;
   captureArtifacts?: (input: {
     store: ExperimentStore;
     environment: PreparedEnvironmentRef;
@@ -140,11 +144,21 @@ export type CodexExperimentInput = {
 
 export type ExperimentHandle = {
   result: Promise<CodexExperimentResult>;
+  candidateFinished: Promise<CodexExperimentResult>;
+  runComparison(): Promise<void>;
+  skipComparison(): Promise<void>;
   cancel(): Promise<void>;
 };
 
 
 type ActiveRun = { cancel(): Promise<unknown> };
+
+type ExperimentControl = {
+  setActive(run: ActiveRun): void;
+  setController(controller: ControllerPort, runId: string): void;
+  cancelled(): boolean;
+  waitForComparison(partial: CodexExperimentResult): Promise<boolean>;
+};
 
 /**
  * The publishing-level Codex experiment path. It has one CandidateRun state
@@ -157,6 +171,18 @@ export function startCodexExperiment(
   let activeController: ControllerPort | undefined;
   let activeRunId: string | undefined;
   let cancelRequested = false;
+  let decideComparison: ((run: boolean) => void) | undefined;
+  const comparisonDecision = input.deferComparison
+    ? new Promise<boolean>((resolve) => {
+        decideComparison = resolve;
+      })
+    : undefined;
+  let resolveCandidate: ((result: CodexExperimentResult) => void) | undefined;
+  const deferredCandidate = input.deferComparison
+    ? new Promise<CodexExperimentResult>((resolve) => {
+        resolveCandidate = resolve;
+      })
+    : undefined;
   const result = executeExperiment(input, {
     setActive(run) {
       active = run;
@@ -168,11 +194,25 @@ export function startCodexExperiment(
     cancelled() {
       return cancelRequested;
     },
+    async waitForComparison(partial) {
+      resolveCandidate?.(partial);
+      if (cancelRequested) return false;
+      if (!comparisonDecision) return Boolean(input.compare);
+      return comparisonDecision;
+    },
   });
   return {
     result,
+    candidateFinished: deferredCandidate ?? result,
+    async runComparison(): Promise<void> {
+      decideComparison?.(true);
+    },
+    async skipComparison(): Promise<void> {
+      decideComparison?.(false);
+    },
     async cancel(): Promise<void> {
       cancelRequested = true;
+      decideComparison?.(false);
       if (activeController && activeRunId)
         await activeController.cancel?.(
           activeRunId,
@@ -448,11 +488,7 @@ async function startCodexCandidateRun(args: {
 
 async function finishCodexCandidateRun(args: {
   input: CodexExperimentInput;
-  control: {
-    setActive(run: ActiveRun): void;
-    setController(controller: ControllerPort, runId: string): void;
-    cancelled(): boolean;
-  };
+  control: ExperimentControl;
   run: CandidateRun;
   store: ExperimentStore;
   taskCase: TaskCase;
@@ -465,70 +501,56 @@ async function finishCodexCandidateRun(args: {
   provider: LocalWorkspaceProvider;
   resolved: Awaited<ReturnType<typeof captureCodexExperimentContext>>["resolved"];
 }): Promise<CodexExperimentResult> {
-  const { input, control, run, store, taskCase, preflight, experimentRoot, targetEvents, startedAt, sourceRootKind, environment, provider, resolved } = args;
+  const { input, control, run, store, taskCase, preflight, experimentRoot, targetEvents, startedAt, sourceRootKind, environment, resolved } = args;
   control.setActive(run);
   control.setController(input.controller, input.runId);
   if (control.cancelled()) await run.cancel();
-  else {
-    const controller = await runControllerLoop({
-      run,
-      controller: input.controller,
-      store,
-      runId: input.runId,
-      taskCase,
-      policy: input.policy,
-      controllerModel: input.agentConfig.requestedModel,
-      environment,
-      workspaceProvider: provider,
-      sourceRootKind,
-      requestedModel: input.candidate.requestedModel,
-      resolvedModel: resolved.resolvedModel,
-      candidateProductId: input.candidate.productId,
-      experimentRoot,
-    });
-    return await finishExperiment({
-      input,
-      taskCase,
-      preflight,
-      store,
-      run,
-      controller,
-      experimentRoot,
-      targetEvents,
-      startedAt,
-      sourceRootKind,
-      workspaceRoot: environment.root,
-    });
-  }
-  const cancelled = {
-    decision: {
-      status: "cancelled" as const,
-      factRef: `run:${input.runId}:cancelled`,
-    },
-    followupSubmission: false,
-  };
-  return await finishExperiment({
+  const controller = control.cancelled()
+    ? {
+        decision: {
+          status: "cancelled" as const,
+          factRef: `run:${input.runId}:cancelled`,
+        },
+        followupSubmission: false,
+      }
+    : await runControllerLoop({
+        run,
+        controller: input.controller,
+        store,
+        runId: input.runId,
+        taskCase,
+        policy: input.policy,
+        controllerModel: input.agentConfig.requestedModel,
+        environment,
+        workspaceProvider: args.provider,
+        sourceRootKind,
+        requestedModel: input.candidate.requestedModel,
+        resolvedModel: resolved.resolvedModel,
+        candidateProductId: input.candidate.productId,
+        experimentRoot,
+      });
+  const finishInput = {
     input,
     taskCase,
     preflight,
     store,
     run,
-    controller: cancelled,
+    controller,
     experimentRoot,
     targetEvents,
     startedAt,
     sourceRootKind,
     workspaceRoot: environment.root,
-  });
+    compare: false as const,
+  };
+  const partial = await finishExperiment(finishInput);
+  if (!(await control.waitForComparison(partial))) return partial;
+  return attachExperimentComparison({ ...finishInput, compare: true }, partial.record);
 }
 
 async function executeExperiment(
   input: CodexExperimentInput,
-  control: {
-    setActive(run: ActiveRun): void;
-    setController(controller: ControllerPort, runId: string): void;
-    cancelled(): boolean;
-  },
+  control: ExperimentControl,
 ): Promise<CodexExperimentResult> {
   const {
     experimentRoot,

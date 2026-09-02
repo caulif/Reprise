@@ -234,10 +234,11 @@ export function dispatchCanvasInput(
   return undefined;
 }
 
-export type RunningAction = 'toggle-detail' | 'toggle-actors' | 'open-detail' | 'active-message';
+export type RunningAction = 'toggle-detail' | 'toggle-actors' | 'open-detail' | 'active-message' | 'toggle-pane';
 
 export function dispatchRunningKeys(data: string): { action: RunningAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
+  if (matchesKey(input, 'tab')) return { action: 'toggle-pane', consume: true };
   if (matchesKey(input, 'd') || matchesKey(input, 'enter')) return { action: 'toggle-detail', consume: true };
   if (matchesKey(input, 'ctrl+g')) return { action: 'toggle-actors', consume: true };
   if (matchesKey(input, 'o')) return { action: 'open-detail', consume: true };

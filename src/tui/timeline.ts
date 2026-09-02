@@ -10,6 +10,7 @@ import {
   type AgentKind,
   type AgentLane,
 } from './agent-activity.js';
+import { projectAssistantVisible } from './fold-process.js';
 
 /** Full event text kept for [o]; the visible pane only shows a short structured preview. */
 const MAX_ORIGINAL_CHARS = 32_768;
@@ -154,6 +155,10 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     }
     case 'agent.context_compacted': {
       const row = projectContextCompacted(payload);
+      return [entry(laneSource(row.extra.lane), row.title, row.detail, row.extra)];
+    }
+    case 'agent.assistant_visible': {
+      const row = projectAssistantVisible(payload);
       return [entry(laneSource(row.extra.lane), row.title, row.detail, row.extra)];
     }
     case 'agent.session_completed':

@@ -14,4 +14,4 @@ Reprise   Candidate running · Codex                                            
 ▎ ... +35 lines                                                                                                         
  ❯ You cannot type to Codex here. Follow-ups are sent by the replay.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [f] One side  [Ctrl+C] Stop  [Enter] Expand command  [o] Full output  [/] Find  [l] Latest  [?] Keys
+ [↑↓] Select  [f] One side  [Ctrl+C] Stop  [Enter] Expand command  [o] Full output  [Tab] Switch pane  [/] Find

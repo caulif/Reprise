@@ -10,7 +10,9 @@ export function renderResult(theme: Theme, width: number, result: CodexExperimen
   const kind = result.record.outcome.termination.kind;
   const vacant = theme.framed ? '—' : '-';
   const decision = controllerLabel(theme, result, vacant);
-  const comparison = missing(result.comparison.result.status, vacant);
+  const comparison = result.comparison.result.status === 'skipped'
+    ? t(locale, 'comparisonSkipped')
+    : missing(result.comparison.result.status, vacant);
   const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
   const report = shortPath(result.reportPath, experimentRoot, vacant);
   const runId = result.record.attempt?.runId;
@@ -38,7 +40,7 @@ export function renderResult(theme: Theme, width: number, result: CodexExperimen
     ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
     '',
     ...facts,
-    ...kvLinkBlock(theme, 'Report', report, result.reportPath, width),
+    ...(result.comparison.result.status === 'skipped' ? [] : kvLinkBlock(theme, 'Report', report, result.reportPath, width)),
     ...kvLinkBlock(theme, 'Trace', trace, traceAbs, width),
   ], width);
 }

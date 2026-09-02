@@ -504,6 +504,7 @@ async function main() {
     sessionsRoot,
     tui: run.tui as never,
     workflow: workflow as never,
+    autoCompare: true,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
     now: () => "2026-08-11T00:10:00.000Z",
   });

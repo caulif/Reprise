@@ -38,6 +38,7 @@ export async function finishExperiment(input: {
   startedAt: number;
   sourceRootKind: SourceRootKind;
   workspaceRoot: string;
+  compare?: boolean;
 }): Promise<CodexExperimentResult> {
   const finishedRecord = input.run.result().record;
   if (!finishedRecord)
@@ -65,18 +66,53 @@ export async function finishExperiment(input: {
     join(input.experimentRoot, "runs", input.input.runId, "record.json"),
     record,
   );
-  const { inspection, comparisonResult, reportPath } = await compareExperimentOutcome(input, record);
+  const inspection = await inspectExperimentRun(input, record);
+  const compared = input.compare
+    ? await compareExperimentOutcome(input, record, inspection)
+    : skippedComparison(input.experimentRoot);
+  return experimentResult(input, record, inspection, compared);
+}
+
+export async function attachExperimentComparison(
+  input: Parameters<typeof finishExperiment>[0],
+  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+): Promise<CodexExperimentResult> {
+  const inspection = await inspectExperimentRun(input, record);
+  return experimentResult(
+    input,
+    record,
+    inspection,
+    await compareExperimentOutcome(input, record, inspection),
+  );
+}
+
+function skippedComparison(experimentRoot: string) {
+  return {
+    comparisonResult: { status: "skipped" as const },
+    reportPath: experimentRoot,
+  };
+}
+
+function experimentResult(
+  input: Parameters<typeof finishExperiment>[0],
+  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+  inspection: Awaited<ReturnType<typeof inspectRun>>,
+  compared: {
+    comparisonResult: CodexExperimentResult["comparison"]["result"];
+    reportPath: string;
+  },
+): CodexExperimentResult {
   const controllerCalls = input.store
     .events(input.input.runId)
     .filter((event) => event.type === "controller.decision").length;
   return {
     taskCase: input.taskCase,
     experimentRoot: input.experimentRoot,
-    reportPath,
+    reportPath: compared.reportPath,
     preflight: input.preflight,
     record,
     decision: input.controller.decision,
-    comparison: { result: comparisonResult },
+    comparison: { result: compared.comparisonResult },
     followupSubmission: input.controller.followupSubmission,
     targetEvents: input.targetEvents,
     facts: {
@@ -93,20 +129,11 @@ export async function finishExperiment(input: {
   };
 }
 
-async function compareExperimentOutcome(
+async function inspectExperimentRun(
   input: Parameters<typeof finishExperiment>[0],
   record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
 ) {
-  await input.store.append({
-    type: "comparison.started",
-    runId: input.input.runId,
-    operationId: "comparison-started",
-    payload: {
-      model: (input.input.comparisonAgentConfig ?? input.input.agentConfig)
-        .requestedModel,
-    },
-  });
-  const inspection = await inspectRun(
+  return inspectRun(
     input.store,
     record,
     input.taskCase.privacy.allowModelText,
@@ -121,6 +148,22 @@ async function compareExperimentOutcome(
       lang: languageOf(input.taskCase.initialInput.text),
     },
   );
+}
+
+async function compareExperimentOutcome(
+  input: Parameters<typeof finishExperiment>[0],
+  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+  inspection: Awaited<ReturnType<typeof inspectRun>>,
+) {
+  await input.store.append({
+    type: "comparison.started",
+    runId: input.input.runId,
+    operationId: "comparison-started",
+    payload: {
+      model: (input.input.comparisonAgentConfig ?? input.input.agentConfig)
+        .requestedModel,
+    },
+  });
   const sandboxRoot = join(input.experimentRoot, "comparison-sandbox");
   await materializeComparisonSandbox(input.store, record.artifactRefs, sandboxRoot);
   await persistComparisonRequest(input.store, input.input.runId, buildComparisonContext(
@@ -172,7 +215,7 @@ async function compareExperimentOutcome(
     operationId: "report-created",
     payload: { path: reportPath },
   });
-  return { inspection, comparisonResult, reportPath };
+  return { comparisonResult, reportPath };
 }
 
 async function invokeComparison(

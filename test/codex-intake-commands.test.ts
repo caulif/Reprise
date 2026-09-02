@@ -351,6 +351,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
     sessionsRoot,
     tui,
     workflow,
+    autoCompare: true,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
     now: () => "2026-08-11T00:10:00.000Z",
     queueTimelineRender: (callback) => { timelineRenderCallbacks.push(callback); },
@@ -555,6 +556,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
     sessionsRoot,
     tui,
     workflow,
+    autoCompare: true,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
   });
 

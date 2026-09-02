@@ -570,3 +570,34 @@ test("an opening done does not start the Target with frozen initialInput", async
     await store.close();
   }
 });
+
+test("comparison does not start unless compare is set", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-skip-compare-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "source"));
+  await writeFile(join(root, "source", "README.md"), "# source\n");
+  let compared = 0;
+  const comparison: ComparisonAgentPort = {
+    compare: async () => {
+      compared += 1;
+      return {
+        status: "completed",
+        sessionId: "comparison-1",
+        value: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+      };
+    },
+  };
+  const result = await startCodexExperiment({
+    ...input(root, new VerifiedRuntime()),
+    comparison,
+    compare: false,
+  }).result;
+  assert.equal(compared, 0);
+  assert.equal(result.comparison.result.status, "skipped");
+  const store = await ExperimentStore.open(result.experimentRoot, "experiment-1");
+  try {
+    assert.equal(store.events("run-1").some((event) => event.type === "comparison.started"), false);
+  } finally {
+    await store.close();
+  }
+});

@@ -184,6 +184,8 @@ export function view(c: CodexIntakeTui): WorkbenchView {
     timelineSelected: c.timelineSelected,
     timelineFilterIndex: c.timelineFilterIndex,
     timelineFollowing: c.timelineFollowing,
+    paneFocus: c.paneFocus,
+    expandedFolds: c.expandedFolds,
     detailExpanded: c.detailExpanded,
     runStartedAt: c.runStartedAt,
     nowMs: c.nowMs(),

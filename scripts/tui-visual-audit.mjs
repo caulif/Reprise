@@ -61,6 +61,7 @@ async function main() {
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
     nowMs: () => 0,
     displayCwd: DISPLAY_CWD,
+    autoCompare: true,
     ...extra,
   });
 

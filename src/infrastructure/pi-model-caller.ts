@@ -2,6 +2,7 @@ import { Agent, type AgentMessage, type AgentTool } from '@earendil-works/pi-age
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { contentText, createProvider, isContextOverflow, type Api, type Model, type Models, type MutableModels } from '@earendil-works/pi-ai';
+import { visibleAssistantText } from './assistant-visible.js';
 import type { AgentToolDefinition, PiTextCaller, PiTextSession } from './pi-agent-host.js';
 import {
   compactPiMessages,
@@ -105,6 +106,7 @@ export class PiModelCaller implements PiTextCaller {
     systemPrompt: string;
     tools: readonly AgentToolDefinition[];
     onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
+    onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
   }): PiTextSession {
     const model = this.#model();
     const models = this.#models;
@@ -129,6 +131,16 @@ export class PiModelCaller implements PiTextCaller {
         thinkingLevel: this.#config.effort,
         tools: input.tools.map(toPiTool),
       },
+    });
+    let visibleTurn = 0;
+    agent.subscribe(async (event) => {
+      if (event.type !== 'message_end') return;
+      const message = event.message as { role?: string; content?: readonly { type?: string; text?: string }[] };
+      if (message.role !== 'assistant') return;
+      const text = visibleAssistantText(message.content);
+      if (!text) return;
+      visibleTurn += 1;
+      await input.onAssistantVisible?.({ text, turn: visibleTurn });
     });
     return {
       async append({ content, signal }): Promise<string> {

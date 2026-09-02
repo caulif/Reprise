@@ -2,7 +2,7 @@ import { record, text, type JsonRecord } from '../core/json.js';
 import type { TimelineEntry, TimelineSource } from './timeline.js';
 
 export type AgentLane = 'recovery' | 'controller' | 'comparison';
-export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live';
+export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live' | 'narrate' | 'fold';
 
 const INVESTIGATE = new Set(['ls', 'read', 'grep', 'find', 'read_observation']);
 const MUTATE = new Set(['powershell', 'edit']);
@@ -122,6 +122,7 @@ export function lastLiveVerb(entries: readonly TimelineEntry[]): string | undefi
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (!entry || entry.hidden) continue;
+    if (entry.kind === 'narrate') return (entry.detail ?? entry.title).split(/\n/)[0]?.slice(0, 24);
     if (entry.placeholder || entry.kind === 'live') return verbFromTitle(entry.title);
     if (entry.lane) return verbFromTitle(entry.title);
     return undefined;
@@ -215,7 +216,7 @@ function toolObject(payload: JsonRecord, tool: string): { short: string; origina
   const details = record(payload.details);
   const source = text(params.source) ?? text(details.source);
   if (tool === 'read_observation') {
-    return { short: source ?? 'observation', verb: 'read_observation', ...(source ? { original: source } : {}) };
+    return { short: source ?? 'observation', verb: 'inspect', ...(source ? { original: source } : {}) };
   }
   const path = text(params.path) ?? text(details.path);
   if (path) return { short: leaf(path), original: path, verb: tool === 'write' || tool === 'edit' ? tool : 'inspect' };

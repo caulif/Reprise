@@ -54,7 +54,8 @@ export type AgentAuditEvent = {
     | "agent.tool_completed"
     | "agent.tool_failed"
     | "agent.invalid_output"
-    | "agent.context_compacted";
+    | "agent.context_compacted"
+    | "agent.assistant_visible";
   sessionId: string;
   role: string;
   payload: Record<string, unknown>;
@@ -74,6 +75,7 @@ export interface PiTextCaller {
     systemPrompt: string;
     tools: readonly AgentToolDefinition[];
     onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
+    onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
   }): Promise<PiTextSession> | PiTextSession;
 }
 
@@ -153,6 +155,14 @@ export class PiAgentHost {
         onContextCompact: async (payload) => {
           await input.audit?.append({
             type: "agent.context_compacted",
+            sessionId,
+            role: input.role,
+            payload,
+          });
+        },
+        onAssistantVisible: async (payload) => {
+          await input.audit?.append({
+            type: "agent.assistant_visible",
             sessionId,
             role: input.role,
             payload,

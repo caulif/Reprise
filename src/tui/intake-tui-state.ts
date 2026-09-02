@@ -31,6 +31,7 @@ function wireCodexIntakeTui(target: CodexIntakeTui, options: CodexIntakeTuiOptio
   target.displayCwd = options.displayCwd ?? process.cwd();
   target.piModels = options.piModels;
   target.workflow = options.workflow;
+  target.autoCompare = Boolean(options.autoCompare);
   target.queueTimelineRender =
     options.queueTimelineRender ??
     ((callback: () => void) => {
