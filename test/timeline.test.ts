@@ -273,9 +273,22 @@ test('timeline drops a second Prompt with the same title', () => {
   assert.equal(timeline.filter((entry) => entry.title.startsWith('Prompt ·')).length, 1);
 });
 
-test('recovery timeline keeps inspect, powershell, writes, and failures visible', () => {
+test('send and input.submitted keep one presented user sentence', () => {
+  const timeline: TimelineEntry[] = [];
+  const message = '请先查看当前目录中的 Excel 数据和参考 PPT。';
+  appendTimelineEntries(timeline, projectTimelineEvent(event('controller.decision', {
+    status: 'completed',
+    value: { type: 'send', message },
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: message })));
+  const presented = timeline.filter((entry) => entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·'));
+  assert.equal(presented.length, 1);
+  assert.equal(presented[0]?.title, 'Input to Target');
+});
+
+test('recovery timeline keeps inspect, shell_exec, writes, and failures visible', () => {
   const listed = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'ls', params: { path: '.' } }))[0];
-  const deleted = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'powershell', params: { command: 'Remove-Item ppt_build/out.pptx' } }))[0];
+  const deleted = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'shell_exec', params: { command: 'Remove-Item ppt_build/out.pptx' } }))[0];
   const reported = projectTimelineEvent(event('agent.tool_completed', { role: 'recovery', tool: 'write', params: { path: 'recovery.md' } }))[0];
   const failed = projectTimelineEvent(event('agent.tool_failed', { role: 'recovery', tool: 'read_observation', message: 'tool budget exhausted' }))[0];
   assert.equal(listed?.hidden, undefined);
@@ -301,7 +314,7 @@ test('recovery timeline collapses identical consecutive tool failures', () => {
   for (let index = 0; index < 34; index += 1) {
     appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_failed', {
       role: 'recovery',
-      tool: 'powershell',
+      tool: 'shell_exec',
       message,
     })));
   }
@@ -310,16 +323,16 @@ test('recovery timeline collapses identical consecutive tool failures', () => {
   assert.match(visible[0]?.detail ?? '', / ×34$/);
   appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_failed', {
     role: 'recovery',
-    tool: 'powershell',
+    tool: 'shell_exec',
     message: 'Recovery tool-call budget of 64 was exhausted.',
   })));
   assert.equal(timeline.filter((entry) => !entry.hidden).length, 2);
 });
 
-test('powershell completion is visible when git reports the candidate is not a repository', () => {
+test('shell_exec completion is visible when git reports the candidate is not a repository', () => {
   const entry = projectTimelineEvent(event('agent.tool_completed', {
     role: 'recovery',
-    tool: 'powershell',
+    tool: 'shell_exec',
     content: 'fatal: not a git repository (or any of the parent directories): .git',
   }))[0];
   assert.equal(entry?.hidden, undefined);
@@ -335,3 +348,5 @@ test('recovery start does not show a source digest as timeline detail', () => {
   assert.equal(started?.detail, undefined);
   assert.doesNotMatch(JSON.stringify(started), /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
 });
+
+

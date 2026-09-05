@@ -9,6 +9,5 @@ Reprise   Recovering session   C:\reprise
                                                             
  [#########---------------------------]                     
  Recovering the isolated workspace from this session. You...
- > Cannot type while recovery is running.
 ------------------------------------------------------------
  [Ctrl+C] Cancel  [?] Keys

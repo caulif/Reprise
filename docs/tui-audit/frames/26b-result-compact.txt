@@ -4,6 +4,8 @@ Reprise   Run result   C:\reprise
  * To Codex   * Codex screen   * Controller                 
  Task  Fix the bug.                                         
                                                             
+| Controller                                                
+| ▸ 第 1 轮 · SEND ·                                        
 | Decision: SEND One check remains.                         
                                                             
 | To Codex · historical task                                
@@ -16,17 +18,15 @@ Reprise   Run result   C:\reprise
 | public response line 3                                    
 | public response line 4                                    
 | public response line 5                                    
+| public response line 6                                    
+| ... +35 lines                                             
 
 [ Run result - completed ]
     + completed
         completed.controller_satisfied
-   
-    Run          run-1
-    Cleanup      complete
-    Controller   done
-    Comparison   completed
     Report       ]8;;file:///TMP/data/experiments/fixture/report.html\report.html]8;;\
+    Replica      ]8;;file:///TMP/data/experiments/fixture/environment/runs/run-1\environment/runs/run-1/]8;;\
     Trace        ]8;;file:///TMP/data/experiments/fixture/runs/run-1\runs/run-1/]8;;\
  Experiment finished. Press o to open the report.
 ------------------------------------------------------------
- [o] Open report  [t] Open trace  [/] Find  [Enter] Home
+ [o] Open report  [t] Open trace  [w] Open replica

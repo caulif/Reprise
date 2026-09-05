@@ -57,6 +57,7 @@ export function recoveryModelInputAudit(
         : [],
     },
     runtimeCapabilities: context.runtimeCapabilities,
+    recoveryCandidates: context.recoveryCandidates,
     staging: {
       fileCount: staging?.fileCount,
       totalBytes: staging?.totalBytes,

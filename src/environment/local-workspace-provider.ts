@@ -422,6 +422,23 @@ export class LocalWorkspaceProvider {
       throw error;
     }
   }
+
+  /** Replaces a mutable execution candidate with another owned candidate before agent actions continue. */
+  async copyRecoveryCandidateTo(candidate: RecoveryCandidateStaging, targetRoot: string): Promise<void> {
+    this.#assertRecoveryCandidate(candidate);
+    const target = resolve(targetRoot);
+    if (!isInside(this.#root, target) || target === this.#root)
+      throw new Error('Recovery candidate target is not owned by this provider.');
+    if (target === candidate.root) return;
+    await rm(target, { recursive: true, force: true });
+    try {
+      await mkdir(target, { recursive: true });
+      await this.#copyTree(candidate.root, target);
+    } catch (error) {
+      await rm(target, { recursive: true, force: true });
+      throw error;
+    }
+  }
   /**
    * Applies an artifact-backed direct-write journal to an isolated staging tree.
    * The operation is transactional at the provider boundary: writes happen in a
@@ -698,30 +715,15 @@ export class LocalWorkspaceProvider {
   }
 
   async release(environment: PreparedEnvironmentRef): Promise<ReleaseResult> {
-    if (!this.#preparedRoots.has(environment.environmentId)) {
-      const expectedRoot = join(this.#root, 'runs', environment.runId);
-      if (environment.environmentId !== `environment-${environment.runId}` || resolve(environment.root) !== expectedRoot) {
-        throw new Error('Environment workspace is not owned by this provider.');
-      }
-      try {
-        await stat(environment.root);
-      } catch (error) {
-        if (isMissing(error)) return { status: 'already_released', environmentId: environment.environmentId };
-        throw error;
-      }
+    const expectedRoot = join(this.#root, 'runs', environment.runId);
+    if (environment.environmentId !== `environment-${environment.runId}` || resolve(environment.root) !== expectedRoot) {
       throw new Error('Environment workspace is not owned by this provider.');
     }
-    this.#assertOwnedEnvironment(environment);
-    try {
-      await rm(environment.root, { recursive: true, force: false });
-      this.#preparedRoots.delete(environment.environmentId);
-      return { status: 'released', environmentId: environment.environmentId };
-    } catch (error) {
-      if (isMissing(error)) {
-        this.#preparedRoots.delete(environment.environmentId);
-        return { status: 'already_released', environmentId: environment.environmentId };
-      }
-      throw new Error(`Unable to release environment ${environment.environmentId}: ${String(error)}`, { cause: error });
+    if (!this.#preparedRoots.has(environment.environmentId)) {
+      return { status: 'already_released', environmentId: environment.environmentId };
     }
+    this.#assertOwnedEnvironment(environment);
+    this.#preparedRoots.delete(environment.environmentId);
+    return { status: 'released', environmentId: environment.environmentId };
   }
 }

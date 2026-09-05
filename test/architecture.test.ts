@@ -78,28 +78,34 @@ async function relativeImports(file: string): Promise<string[]> {
   return [...source.matchAll(IMPORT)].map((match) => match[1] ?? '');
 }
 
-test('internal agents share eight tool names and retire catalog readers', async () => {
+test('internal agents share workspace tools; Controller omits read_observation', async () => {
   const { recoveryTools, recoveryObservationTools } = await import('../src/infrastructure/recovery-tools.js');
-  const { observationTools } = await import('../src/infrastructure/agent-tools.js');
-  const eight = ['edit', 'find', 'grep', 'ls', 'powershell', 'read', 'read_observation', 'write'];
+  const eight = ['edit', 'find', 'grep', 'ls', 'read', 'read_observation', 'shell_exec', 'write'];
+  const seven = ['edit', 'find', 'grep', 'ls', 'read', 'shell_exec', 'write'];
   const recovery = [
     ...recoveryObservationTools({ transcript: [], historicalEvents: [] } as never).map((tool) => tool.name),
     ...recoveryTools('TMP').map((tool) => tool.name),
   ].sort();
-  const store = { events: () => [] } as never;
-  const controller = [
-    ...observationTools(store, { runId: 'run-1', transcript: [], allowModelText: true }).map((tool) => tool.name),
-    ...recoveryTools('TMP').map((tool) => tool.name),
-  ].sort();
+  const controller = recoveryTools('TMP', { allowWrite: () => false, mounts: { project: 'REPLICA' } })
+    .map((tool) => tool.name)
+    .sort();
   assert.deepEqual(recovery, eight);
-  assert.deepEqual(controller, eight);
+  assert.deepEqual(controller, seven);
+  assert.equal(controller.includes('read_observation'), false);
   const experiment = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
   assert.match(experiment, /comparison\.requested/);
   assert.doesNotMatch(experiment, /write_comparison_report|read_artifact/);
   const loop = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
   assert.match(loop, /experimentAgentAuditSink/);
+  assert.match(loop, /controllerBriefingRoot/);
+  assert.match(loop, /assertBriefingOutsideReplica/);
+  assert.doesNotMatch(loop, /observationTools/);
+  assert.doesNotMatch(loop, /recoveryTools\(\s*input\.environment\.root/);
   const caller = await readFile(join(SRC, 'infrastructure/pi-model-caller.ts'), 'utf8');
   assert.match(caller, /shouldStopAfterTurn/);
   assert.match(caller, /compactPiMessages/);
 });
+
+
+
 

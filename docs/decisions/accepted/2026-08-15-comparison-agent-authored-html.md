@@ -11,7 +11,7 @@
 
 Comparison Agent 通过 `write_comparison_report({ html })` 原样写入实验根目录的 `report.html`。HTML、CSS、SVG 与本地 JavaScript 都由 Agent 选择；Host 不清洗、转义、解析或重排成功报告，也不检查固定 DOM、标题或指标卡。
 
-Host 仍校验薄交付协议：结构化结果信封通过 schema、其 `reportPath` 固定为 `report.html`、文件可读且位于实验目录内。Host 将确定性运行事实以 `reportFacts` 提供给 Agent；必含运行指标是 System Prompt 行为契约，缺项视为 Agent 质量问题而非 Host 内容门禁。
+Host 仍校验薄交付协议：结构化结果信封通过 schema、其 `reportPath` 固定为 `report.html`、文件可读且位于实验目录内。Host 将确定性运行事实以 `reportFacts` 提供给 Agent。首屏是否摊开哪些事实由 [自由报告形式](./2026-09-02-comparison-free-report-form.md) 约束，缺项不构成 Host 内容门禁。
 
 Comparison 调用失败时，Host 写入独立的 `comparison-failure.html` 导航页，不覆盖已存在的 Agent 报告，也不改变 CandidateRun 结果。
 

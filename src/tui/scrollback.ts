@@ -108,7 +108,13 @@ function renderVoiceCard(
   const header = voiceHeader(theme, group, locale, product, writing, tick);
   const body: string[] = [];
   let selectedOffset = 0;
+  const seenInput = new Set<string>();
   for (const item of group.items) {
+    if (group.voice === 'input') {
+      const key = inputText(item.entry).replace(/\s+/g, ' ').trim();
+      if (key && seenInput.has(key)) continue;
+      if (key) seenInput.add(key);
+    }
     if (item.index === selected) selectedOffset = 1 + body.length;
     body.push(...voiceBody(theme, item.entry, item.index === selected, width, locale, product));
   }

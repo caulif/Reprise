@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openPathInvocation } from '../infrastructure/platform.js';
 
 type ReportProcess = {
   once(event: 'error', listener: (error: Error) => void): void;
@@ -20,8 +21,8 @@ async function openLocalPath(
   target: string,
   start: ReportSpawner = spawn,
 ): Promise<void> {
-  const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
-  const child = start(command, [target], { detached: true, stdio: 'ignore', windowsHide: true });
+  const invocation = openPathInvocation(target);
+  const child = start(invocation.executable, invocation.args, { detached: true, stdio: 'ignore', windowsHide: true });
   child.unref();
   await new Promise<void>((resolveOpen, rejectOpen) => {
     child.once('error', rejectOpen);
@@ -45,6 +46,14 @@ export async function openExperimentTrace(
   start: ReportSpawner = spawn,
 ): Promise<void> {
   await openLocalPath(assertExperimentTracePath(experimentRoot, runId), start);
+}
+
+export async function openExperimentReplica(
+  experimentRoot: string,
+  runId: string,
+  start: ReportSpawner = spawn,
+): Promise<void> {
+  await openLocalPath(assertExperimentReplicaPath(experimentRoot, runId), start);
 }
 
 export async function openAllowedLocalPath(
@@ -84,12 +93,20 @@ export function assertExperimentReportPath(experimentRoot: string, reportPath: s
 }
 
 export function assertExperimentTracePath(experimentRoot: string, runId: string): string {
+  return assertExperimentRunFolder(experimentRoot, runId, 'runs', 'Trace');
+}
+
+export function assertExperimentReplicaPath(experimentRoot: string, runId: string): string {
+  return assertExperimentRunFolder(experimentRoot, runId, join('environment', 'runs'), 'Replica');
+}
+
+function assertExperimentRunFolder(experimentRoot: string, runId: string, relativeRuns: string, label: string): string {
   if (!runId.trim() || runId === '.' || /[\\/]/.test(runId) || runId.includes('..')) {
-    throw new Error('Trace path must be a run directory inside the selected experiment.');
+    throw new Error(`${label} path must be a run directory inside the selected experiment.`);
   }
-  const runsRoot = resolve(experimentRoot, 'runs');
+  const runsRoot = resolve(experimentRoot, relativeRuns);
   const expected = assertPathInsideRoot(runsRoot, resolve(runsRoot, runId));
-  if (expected === resolve(runsRoot)) throw new Error('Trace path must be a run directory inside the selected experiment.');
+  if (expected === resolve(runsRoot)) throw new Error(`${label} path must be a run directory inside the selected experiment.`);
   return expected;
 }
 

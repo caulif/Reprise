@@ -148,6 +148,7 @@ function review_reexecutionTools(
       },
     }),
     ...recoveryTools(candidate.root, {
+      allowBinary: session.input.taskCase.privacy.allowBinary,
       ...(session.input.allowShell ? { allowShell: true } : {}),
       ...(session.activeStaging.temporaryRoot ? { homeRoot: session.activeStaging.temporaryRoot } : {}),
       onControlledWrite: async (entry) => {
@@ -461,6 +462,8 @@ export async function completeRecoveryReview(args: CompleteRecoveryReviewArgs): 
   provider,
   accept: async () => {
     if (automaticallyAcceptedBaseline) return automaticallyAcceptedBaseline;
+    if (session.activeProviderPreview.baseline.match === "current_state_fallback" && input.allowCurrentStateFallback !== true)
+      throw new Error("Current-state fallback requires explicit allowCurrentStateFallback opt-in.");
     if (session.selectedCandidateId !== session.validatedCandidateId)
       throw new Error("Selected Recovery candidate has not been re-executed and validated.");
     const accepted = await provider.acceptRecovery(session.activeProviderPreview);

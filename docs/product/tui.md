@@ -128,7 +128,7 @@ Input to Claude Code
 Delivered · accepted · target turn 6
 ```
 
-只有 `ControllerDecision.send.message` 会发送给 Target。Controller 的可见分析、工具参数、`intent`、`rationale` 和证据引用只属于 Harness 记录。Delivery 状态必须来自 Runtime 协议，不能依据界面是否继续活动推测；`unknown`、拒绝和超时应明确显示。
+只有 `ControllerDecision.send.message` 会发送给 Target。同一句投递只画一张 Input 卡：`input.submitted` 与 Pack `prompt` 若正文相同则合并进已有气泡，不叠第二段。Controller 的可见分析、工具参数、`intent`、`rationale` 和证据引用只属于 Harness 记录。Delivery 状态必须来自 Runtime 协议，不能依据界面是否继续活动推测；`unknown`、拒绝和超时应明确显示。
 
 ### 4.3 默认显示与按需展开
 
@@ -199,13 +199,13 @@ Delivered · accepted · target turn 6
   target 42k tok · controller 6k tok · 7 target tool calls
 ```
 
-宽终端可以使用双栏，窄终端切换独立页面；“右侧入口”不是架构约束。当前 MVP 使用固定候选配置，主时间线一次只聚焦该候选；候选切换不在 TUI 中提供。具体按键留到选定 TUI 框架后统一设计。
+宽终端可以使用双栏，窄终端切换独立页面；“右侧入口”不是架构约束。当前 MVP 使用固定候选配置，主时间线一次只聚焦该候选；候选切换不在 TUI 中提供。页脚只列出该页确实会响应的键，清单见[页脚快捷键](#10-页脚快捷键)。
 
 ## 6. 运行结束后的三层体验
 
-1. **Comparison 摘要**：显示已生成报告的首条有区分度观察与报告入口，并固定展示可用的 `RunOutcome`、fidelity、时间、调用次数、cleanup 和 delivery 异常；token/cost 未采集时显示 `not recorded`。不给统一质量总分。
+1. **Comparison 摘要**：Host 投影终止、已有硬数和报告入口；有对照时可选显示信封 `headline`。不把 Controller `done/satisfied` 理由当成对照结论。跳过对照时对照为未运行，不写两边都如何。token/cost 未采集时显示 `not recorded`。不解析 `report.html`，不给统一质量总分。
 2. **本地 HTML 报告**：提供详细并排比较。第一版是一次性生成的静态本地文件，不实现完整 Web 应用或第二套控制面。
-3. **原始详情**：Harness 自有的持久化 trace、decision 和可用 telemetry 可通过本地入口打开；token/cost 未采集时显示 `not recorded`。第一版不承诺内嵌通用 artifact 预览，专有 artifact 只保证 metadata 和安全打开入口。
+3. **原始详情**：Harness 自有的持久化 trace、decision 和可用 telemetry 可通过本地入口打开；token/cost 未采集时显示 `not recorded`。候选隔离副本留在实验目录 `environment/runs/{runId}`，结果页列出该路径，`w` 打开它；cleanup 不删除其中交付物。第一版不承诺内嵌通用 artifact 预览，专有 artifact 只保证 metadata 和安全打开入口。
 
 ## 7. 失败与中断体验
 
@@ -242,7 +242,40 @@ Delivered · accepted · target turn 6
 - 摘要同时保留 Agent 观察和固定客观事实；
 - 窄终端不依赖右侧面板也能完成相同操作。
 
-## 10. 借鉴边界
+## 10. 页脚快捷键
+
+页脚是该页会响应的键的清单，不展示没有可见效果的操作。未在文本框里编辑时，`?` 打开本页按键说明；`Ctrl+C` 在候选/恢复运行页请求取消，在其余页退出 TUI。
+
+| 页面 | 页脚键 | 作用 |
+|---|---|---|
+| 封面 | Enter | 继续最近一次实验（若有） |
+| 封面 | r / i | 开始运行 / 导入会话 |
+| 封面（输入 `/`） | Tab / Enter / Esc | 补全命令 / 提交 / 清空 |
+| 配置 | ↑↓ / Enter | 选字段 / 编辑或切换 |
+| 配置 | t / s / Esc | 测连接 / 保存到本机 / 回封面 |
+| 会话（产品） | ↑↓ / Enter / Esc | 选择 / 打开产品 / 回封面 |
+| 会话（项目） | ↑↓ Enter `/` f m r Esc | 选择、打开、搜索、只看可跑、更多、刷新、回封面 |
+| 会话（会话） | ↑↓ Enter `/` m r Backspace Esc | 选择、核对、搜索、更多、刷新、回项目、返回 |
+| 会话（搜索中） | Esc / ↑↓ / Enter | 退出搜索 / 选择 / 打开 |
+| 核对 | Enter / d / t / Esc | 冻结 / 展开结局 / 切换模型正文 / 回会话 |
+| 历史 | Tab / ↑↓ / Enter / Esc | 运行与用例 / 选择 / 打开 / 回封面 |
+| 历史详情（用例） | Enter / t / Esc | 使用该用例 / 打开路径 / 返回 |
+| 历史详情（实验） | o / t / Esc | 打开报告（若有）/ 打开路径 / 返回 |
+| 源目录 | Enter / Backspace / Esc | 开始隔离运行 / 改路径 / 回封面 |
+| 预检 | b / Esc | 改源目录 / 回封面 |
+| 候选产品 | ↑↓ / Enter / b / Esc | 选择 / 进模型 / 返回 / 回封面 |
+| 候选模型 | ↑↓ / Enter / b / Esc | 选择 / 确认 / 改产品 / 回封面 |
+| 确认 | Enter / b / Esc | 开跑（被挡时仍按 Enter 只提示） / 改模型 / 回封面 |
+| 对照门 | Enter / s / Ctrl+C | 写对照 / 跳过 / 退出 |
+| 运行（含恢复） | Ctrl+C / ? | 请求取消 / 按键说明 |
+| 结果 | o / t / w / Enter / b | 报告 / 记录目录 / 隔离副本 / 回封面 |
+| 错误 | Enter / b / Esc | 返回 |
+| 全文 overlay | Esc | 关闭 |
+| 角色 overlay | Ctrl+G / Esc | 开关 / 关闭 |
+
+运行页是只读观看面：不向目标 Runtime 打字，续问由对照自动发。页脚不列出选择、过滤、查找、展开命令或切栏；双栏由布局自己滚动，那些键没有可靠的可见效果。
+
+## 11. 借鉴边界
 
 本设计借鉴 Claude Code 和 Codex 的渐进披露：主时间线展示可见 Agent 内容、工具活动、进度、权限和错误，完整 transcript、diff、状态与原始输出按需打开。借鉴的是信息取舍，不复制其视觉外观、私有事件格式或隐藏推理机制。
 

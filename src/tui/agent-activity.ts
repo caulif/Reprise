@@ -5,7 +5,7 @@ export type AgentLane = 'recovery' | 'controller' | 'comparison';
 export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live' | 'narrate' | 'fold';
 
 const INVESTIGATE = new Set(['ls', 'read', 'grep', 'find', 'read_observation']);
-const MUTATE = new Set(['powershell', 'edit']);
+const MUTATE = new Set(['shell_exec', 'edit']);
 const READ_PS = /^(Get-ChildItem|Get-Content|Get-[A-Za-z]+)\b/;
 const WRITE_PS = /\b(Remove-Item|Set-Content|Copy-Item|New-Item|Move-Item|Out-File)\b/i;
 
@@ -160,7 +160,7 @@ function stepFor(lane: AgentLane, entry: TimelineEntry): number {
   }
   if (entry.lane !== 'recovery') return 0;
   if (entry.kind === 'deliver') return 2;
-  if (entry.kind === 'mutate' || (entry.kind === 'live' && /powershell|edit/i.test(entry.title))) return 1;
+  if (entry.kind === 'mutate' || (entry.kind === 'live' && /shell_exec|edit/i.test(entry.title))) return 1;
   return 0;
 }
 
@@ -198,7 +198,7 @@ function laneLabel(lane: AgentLane): string {
 function toolKind(lane: AgentLane, tool: string, command: string | undefined): AgentKind {
   if (tool === 'write') return 'deliver';
   if (INVESTIGATE.has(tool)) return 'investigate';
-  if (tool === 'powershell' && lane === 'comparison' && command && READ_PS.test(command.trim()) && !WRITE_PS.test(command)) {
+  if (tool === 'shell_exec' && lane === 'comparison' && command && READ_PS.test(command.trim()) && !WRITE_PS.test(command)) {
     return 'investigate';
   }
   if (MUTATE.has(tool)) return 'mutate';
@@ -206,7 +206,7 @@ function toolKind(lane: AgentLane, tool: string, command: string | undefined): A
 }
 
 function toolVerb(tool: string, object: { verb?: string }): string {
-  if (tool === 'write' || tool === 'edit' || tool === 'powershell' || tool === 'read_observation') return object.verb ?? tool;
+  if (tool === 'write' || tool === 'edit' || tool === 'shell_exec' || tool === 'read_observation') return object.verb ?? tool;
   if (INVESTIGATE.has(tool)) return 'inspect';
   return tool;
 }
@@ -225,7 +225,7 @@ function toolObject(payload: JsonRecord, tool: string): { short: string; origina
     const verb = powershellVerb(command);
     const quoted = command.match(/['"]([^'"]+)['"]/)?.[1];
     const short = [verb, quoted ? leaf(quoted) : undefined].filter(Boolean).join('  ');
-    return { short: short || verb || 'powershell', original: command, command, verb: verb ?? 'powershell' };
+    return { short: short || verb || 'shell_exec', original: command, command, verb: verb ?? 'shell_exec' };
   }
   return { short: tool, verb: tool };
 }
@@ -237,7 +237,7 @@ function completedDetail(kind: AgentKind, object: { short: string }, tool: strin
 
 function isGitMissing(tool: string, completed: boolean, payload: JsonRecord): boolean {
   const details = record(payload.details);
-  return (tool === 'powershell' && completed && /not a git repository/i.test(text(payload.content) ?? ''))
+  return (tool === 'shell_exec' && completed && /not a git repository/i.test(text(payload.content) ?? ''))
     || (completed && details.isRepo === false);
 }
 
@@ -300,3 +300,6 @@ function observationSource(entry: TimelineEntry): string | undefined {
   if (!entry.title.includes('read_observation')) return undefined;
   return entry.detail?.split(/\s+/)[0];
 }
+
+
+

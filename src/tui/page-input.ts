@@ -246,19 +246,22 @@ export function dispatchRunningKeys(data: string): { action: RunningAction; cons
   return undefined;
 }
 
-export type ResultAction = 'open-report' | 'open-trace' | 'home';
+export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'home';
 
 export function dispatchResultKeys(data: string): { action: ResultAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'o')) return { action: 'open-report', consume: true };
   if (matchesKey(input, 't')) return { action: 'open-trace', consume: true };
+  if (matchesKey(input, 'w')) return { action: 'open-replica', consume: true };
   if (matchesKey(input, 'enter') || matchesKey(input, 'b')) return { action: 'home', consume: true };
   return undefined;
 }
 
 export function dispatchErrorKeys(data: string): { action: 'return'; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'enter') || matchesKey(input, 'b')) return { action: 'return', consume: true };
+  if (matchesKey(input, 'enter') || matchesKey(input, 'b') || matchesKey(input, 'escape')) {
+    return { action: 'return', consume: true };
+  }
   return undefined;
 }
 

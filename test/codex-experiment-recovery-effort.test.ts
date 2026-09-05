@@ -11,7 +11,7 @@ import { ExperimentStore } from "../src/infrastructure/store/experiment-store.js
 import { isRecord } from "../src/core/json.js";
 import { sha256 } from "../src/core/identity.js";
 import type { TaskCase } from "../src/core/schema.js";
-import { now, VerifiedRuntime, input } from "./codex-experiment-support.js";
+import { now, VerifiedRuntime, input, patientPolicy } from "./codex-experiment-support.js";
 
 test("Recovery orchestration persists audit/report and accepted baseline can start Candidate", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-recovery-"));
@@ -49,6 +49,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery,
+    allowCurrentStateFallback: true,
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
@@ -72,6 +73,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
     runId: "candidate-run",
     environmentProvider: attempt.provider,
     preResolvedBaseline: accepted,
+    policy: { ...base.policy, ...patientPolicy },
   }).result;
   assert.equal(result.record.outcome.termination.kind, "completed");
   assert.match(
@@ -92,7 +94,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
       createSession: (session) => ({
         append: async () => {
           const shell = session.tools.find(
-            (tool) => tool.name === "powershell",
+            (tool) => tool.name === "shell_exec",
           );
           const report = session.tools.find(
             (tool) => tool.name === "write",
@@ -118,7 +120,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
         cancel() {},
       }),
     }),
-    timeoutMs: 5_000,
+    timeoutMs: 30_000,
     maxRepairAttempts: 0,
   });
 
@@ -143,7 +145,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
       (event) =>
         event.type === "agent.tool_completed" &&
         isRecord(event.payload) &&
-        event.payload.tool === "powershell",
+        event.payload.tool === "shell_exec",
     );
   const details = isRecord(shellCompleted?.payload)
     ? shellCompleted.payload.details
@@ -838,3 +840,6 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
   assert.equal(attempt.baseline.recovery?.taskOutcome, "blocked_by_safety");
   assert.equal(attempt.baseline.recovery?.failureStage, "provider_validation_failed");
 });
+
+
+

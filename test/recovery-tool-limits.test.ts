@@ -12,11 +12,11 @@ async function workspace(): Promise<string> {
   return root;
 }
 
-test("workspace tools do not cap investigation or destructive powershell calls", async (t) => {
+test("workspace tools do not cap investigation or destructive shell_exec calls", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const tools = recoveryTools(root, { allowShell: true });
-  const shell = tools.find((item) => item.name === "powershell");
+  const shell = tools.find((item) => item.name === "shell_exec");
   const list = tools.find((item) => item.name === "ls");
   const report = tools.find((item) => item.name === "write");
   assert.ok(shell);
@@ -61,3 +61,6 @@ test("legacy budget messages still classify as budget_exhausted", () => {
     "budget_exhausted",
   );
 });
+
+
+

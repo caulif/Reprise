@@ -136,6 +136,8 @@ controller.input_proposed
 
 内部 Agent 在一次 completion 前若触发 Pi 压缩，那一次送给模型的试卷是 compaction summary 加上 retained tail。`agent.context_compacted` 记录 summary、tokensBefore 和 retainedCount。被切掉的 tool 正文不以 digest 占位进入下一轮试卷；全文仍在当轮 `agent.tool_completed`，供审计，不等于下一轮试卷。不得要求从压缩结果还原被丢弃的 tool 正文。
 
+Comparison 的 Planner 与 Reporter 各自有独立 session 和 `comparison.{phase}_requested` 输入 artifact。事件记录 `attemptId`、`phase`、输入 digest 与 artifact ID；Reporter artifact 还包含它启动时看到的计划正文。`work/comparison-plan.md` 是可变工作状态，不是不可变 artifact。新的 comparison attempt 不从旧 attempt 读取 plan 或 report，成功发布使用原子替换，失败保留实验根已有的成功报告。
+
 ## 6. 崩溃恢复
 
 启动或打开实验时：
@@ -184,7 +186,7 @@ interface OperationRef {
 
 ## 9. 删除和保留
 
-默认删除是软删除或归档，不立即物理删除。显式清理前检查运行状态和引用关系；只删除无其他引用的 artifact。第一版可以没有复杂 GC，但不得让重新生成报告或重试自动删除历史 run、TaskCase 或原始证据。
+默认删除是软删除或归档，不立即物理删除。显式清理前检查运行状态和引用关系；只删除无其他引用的 artifact。第一版可以没有复杂 GC，但不得让重新生成报告、重试或 CandidateRun cleanup 自动删除历史 run、TaskCase、原始证据或隔离副本 `environment/runs/{runId}`。
 
 ## 10. 从成熟 Agent 产品借鉴的边界
 

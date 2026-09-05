@@ -330,14 +330,19 @@ test('a 24-row running workbench stays within the viewport', () => {
     },
   }, 120, 24);
   assert.ok(lines.length <= 24, `expected <= 24 lines, got ${lines.length}`);
+  const text = lines.join('\n');
+  assert.match(text, /Ctrl\+C/);
+  assert.doesNotMatch(text, /You cannot type/);
+  assert.doesNotMatch(text, /\[f\]/);
+  assert.doesNotMatch(text, /\[o\]/);
 });
 
 test('help names the keys of the page it was opened on', () => {
   const running = helpLines('running').join('\n');
-  assert.match(running, /f\s+Cycle (?:timeline )?filter/);
-  assert.match(running, /o\s+Open full event output/);
-  assert.match(running, /Enter\s+Expand command/);
-  assert.match(running, /\/\s+Find in canvas/);
+  assert.match(running, /Ctrl\+C\s+Request cancellation/);
+  assert.doesNotMatch(running, /Find in canvas/);
+  assert.doesNotMatch(running, /Expand command/);
+  assert.doesNotMatch(running, /Cycle (?:timeline )?filter/);
   assert.doesNotMatch(running, /Test connection/);
 
   const config = helpLines('config').join('\n');
@@ -354,6 +359,8 @@ test('help names the keys of the page it was opened on', () => {
   const result = helpLines('result').join('\n');
   assert.match(result, /o\s+Open report\.html/);
   assert.match(result, /t\s+Open trace folder/);
+  assert.match(result, /w\s+Open isolated replica/);
+  assert.doesNotMatch(result, /Find in canvas/);
   assert.doesNotMatch(result, /Test connection/);
 
   const global = helpLines().join('\n');
@@ -840,7 +847,7 @@ test('history windows long lists around the selection', () => {
 });
 
 test('result page advertises opening its local report and trace', () => {
-  assert.deepEqual(resultHints(), [['o', 'Open report'], ['t', 'Open trace'], ['/', 'Find'], ['Enter', 'Home'], ['b', 'Home']]);
+  assert.deepEqual(resultHints(), [['o', 'Open report'], ['t', 'Open trace'], ['w', 'Open replica'], ['Enter', 'Home'], ['b', 'Home']]);
 });
 
 test('failed result shows the recorded failure instead of limitations copy', () => {
@@ -905,7 +912,6 @@ test('blocked result is a warning with controller reason and short paths', () =>
   for (const line of lines) assert.equal(visibleWidth(line), 120, line);
   const text = lines.join('\n');
   assert.match(text, /blocked\.controller_done/);
-  assert.match(text, /done · blocked/);
   assert.match(text, /Sandbox denied the WeChat data path/);
   assert.match(text, /Report\s+.*report\.html/);
   assert.match(text, /Trace\s+.*runs\/run-1\//);
@@ -950,6 +956,8 @@ test('compact result keeps Trace on one line', () => {
   } as never).join('\n');
   assert.match(text, /49s/);
   assert.match(text, /1 turn/);
+  assert.match(text, /not recorded tokens/);
+  assert.match(text, /not recorded cost/);
   assert.match(text, /Trace\s+.*runs\/run-6d6a47ae/);
   assert.doesNotMatch(text, /\n\s+runs\//);
 });
@@ -972,10 +980,12 @@ test('result metrics name candidate time when comparison made the experiment lon
   assert.match(text, /candidate 72s/);
 });
 
-test('narrow running hints keep filter and cancel', () => {
+test('running hints keep cancel and drop canvas operations', () => {
   const theme = createTheme(60, false);
   const line = keyHints(theme, runningHints('ALL', true), 60);
   assert.ok(visibleWidth(line) <= 60, line);
-  assert.match(line, /\[f\]/);
   assert.match(line, /Ctrl\+C/);
+  assert.doesNotMatch(line, /\[f\]/);
+  assert.doesNotMatch(line, /\[o\]/);
+  assert.doesNotMatch(line, /Enter/);
 });

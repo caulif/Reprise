@@ -102,6 +102,7 @@ export class CodexAppServerClient {
   readonly #notification: ((method: string, params: unknown) => Promise<void>) | undefined;
   readonly #closed$: ((error: Error) => void) | undefined;
   readonly #arguments: readonly string[];
+  readonly #platform: NodeJS.Platform;
   #process: ChildProcessWithoutNullStreams | undefined;
   #processClosed: Promise<void> | undefined;
   #readers: Interface[] = [];
@@ -113,13 +114,14 @@ export class CodexAppServerClient {
   #closedNotified = false;
   #closing: Promise<void> | undefined;
 
-  constructor(input: { executable: string; cwd: string; env?: Readonly<Record<string, string | undefined>>; onNotification?: (method: string, params: unknown) => Promise<void>; onClosed?: (error: Error) => void; args?: readonly string[]; requestTimeoutMs?: number }) {
+  constructor(input: { executable: string; cwd: string; env?: Readonly<Record<string, string | undefined>>; onNotification?: (method: string, params: unknown) => Promise<void>; onClosed?: (error: Error) => void; args?: readonly string[]; requestTimeoutMs?: number; platform?: NodeJS.Platform }) {
     this.#executable = input.executable;
     this.#cwd = input.cwd;
     this.#env = input.env;
     this.#notification = input.onNotification;
     this.#closed$ = input.onClosed;
     this.#arguments = input.args ?? ['app-server', '--listen', 'stdio://'];
+    this.#platform = input.platform ?? process.platform;
     this.#requestTimeoutMs = positiveTimeout(input.requestTimeoutMs, DEFAULT_RPC_TIMEOUT_MS);
   }
 
@@ -130,15 +132,17 @@ export class CodexAppServerClient {
   async start(): Promise<void> {
     if (this.#started) return;
     if (this.#closed) throw new CodexRuntimeUnavailableError('Codex app-server client is closed.');
-    const shell = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(this.#executable);
-    const executable = shell ? `"${this.#executable}"` : this.#executable;
-    const child = spawn(executable, this.#arguments, {
+    const shim = this.#platform === 'win32' && /\.(?:cmd|bat)$/i.test(this.#executable);
+    const command = shim ? process.env.ComSpec ?? 'cmd.exe' : this.#executable;
+    const args = shim
+      ? ['/d', '/s', '/c', [this.#executable, ...this.#arguments].map(quoteWindowsCommandToken).join(' ')]
+      : this.#arguments;
+    const child = spawn(command, args, {
       cwd: this.#cwd,
       env: this.#env ? { ...process.env, ...this.#env } : process.env,
       stdio: 'pipe',
       windowsHide: true,
-      // npm exposes Codex as a .cmd shim on Windows; Node can only run it through cmd.exe.
-      shell,
+      shell: false,
     });
     this.#process = child;
     this.#processClosed = new Promise((resolveClose) => child.once('close', () => resolveClose()));
@@ -267,6 +271,11 @@ export class CodexAppServerClient {
   }
 }
 
+function quoteWindowsCommandToken(value: string): string {
+  if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) return value;
+  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
+}
+
 class CodexTargetRunner implements TargetRunner {
   readonly #runtime: ResolvedRuntime;
   readonly #environment: PreparedRuntimeEnvironment;
@@ -285,7 +294,7 @@ class CodexTargetRunner implements TargetRunner {
   #reconnectCount = 0;
   #endpointKind: 'custom_base_url' | 'default';
 
-  constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; effort: CodexReasoningEffort; sandbox: CodexSandboxMode; env?: Readonly<Record<string, string | undefined>>; args?: readonly string[] }) {
+  constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; effort: CodexReasoningEffort; sandbox: CodexSandboxMode; env?: Readonly<Record<string, string | undefined>>; args?: readonly string[]; platform?: NodeJS.Platform }) {
     this.#runtime = input.runtime;
     this.#environment = input.environment;
     this.#sink = input.sink;
@@ -297,6 +306,7 @@ class CodexTargetRunner implements TargetRunner {
       cwd: input.environment.root,
       ...(input.env ? { env: input.env } : {}),
       ...(input.args ? { args: input.args } : {}),
+      ...(input.platform ? { platform: input.platform } : {}),
       onNotification: async (method, params) => this.#onNotification(method, params),
       onClosed: (error) => this.#onClosed(error),
     });
@@ -575,7 +585,7 @@ export class CodexRuntimePort implements RuntimePort {
 
   async #fetchModels(executable: string): Promise<readonly CodexModel[]> {
     const root = await mkdtemp(join(tmpdir(), 'reprise-codex-catalog-'));
-    const client = new CodexAppServerClient({ executable, cwd: root, ...(this.#options.env ? { env: this.#options.env } : {}), ...(this.#options.args ? { args: this.#options.args } : {}) });
+    const client = new CodexAppServerClient({ executable, cwd: root, ...(this.#options.env ? { env: this.#options.env } : {}), ...(this.#options.args ? { args: this.#options.args } : {}), ...(this.#options.platform ? { platform: this.#options.platform } : {}) });
     const models: CodexModel[] = [];
     let primaryError: unknown;
     let hasPrimaryError = false;
@@ -644,6 +654,7 @@ export class CodexRuntimePort implements RuntimePort {
       sandbox: this.#options.sandbox ?? defaultCodexSandbox(),
       ...(this.#options.env ? { env: this.#options.env } : {}),
       ...(this.#options.args ? { args: this.#options.args } : {}),
+      ...(this.#options.platform ? { platform: this.#options.platform } : {}),
     });
   }
 }

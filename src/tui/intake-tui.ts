@@ -239,6 +239,7 @@ export class CodexIntakeTui {
     return intakeMethods.CodexIntakeTui_openReport.call(this, experimentRoot, reportPath);
   }
   openTrace(): { consume: true } { return intakeMethods.CodexIntakeTui_openTrace.call(this); }
+  openReplica(): { consume: true } { return intakeMethods.CodexIntakeTui_openReplica.call(this); }
   openLocal(target: string | undefined): { consume: true } { return intakeMethods.CodexIntakeTui_openLocal.call(this, target); }
   openFileUrl(url: string): void { intakeMethods.CodexIntakeTui_openFileUrl.call(this, url); }
   backToHome(): { consume: true } { return intakeMethods.CodexIntakeTui_backToHome.call(this); }

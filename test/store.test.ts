@@ -167,6 +167,12 @@ test('store rejects malformed Controller request and observation payloads', asyn
       }),
       /comparison.requested payload does not satisfy its schema/,
     );
+    for (const type of ['comparison.plan_requested', 'comparison.report_requested'] as const) {
+      await assert.rejects(
+        store.append({ type, runId: 'run-1', operationId: `${type}-bad`, payload: { schemaVersion: 1, attemptId: 'attempt-1', phase: type.includes('plan') ? 'plan' : 'report' } }),
+        new RegExp(`${type} payload does not satisfy its schema`),
+      );
+    }
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });

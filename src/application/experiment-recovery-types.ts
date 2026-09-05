@@ -72,6 +72,8 @@ export type RecoveryAttemptInput = {
   allowShell?: boolean;
   /** Explicit opt-in for replaying allowlisted historical commands inside recovery staging. */
   executeReadinessCommands?: boolean;
+  /** Explicitly allow exploratory replay from the current workspace when history is insufficient. */
+  allowCurrentStateFallback?: boolean;
   environmentProvider?: LocalWorkspaceProvider;
   now: string;
   onEvent?: (event: EventEnvelope) => void;

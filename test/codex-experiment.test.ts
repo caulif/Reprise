@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ComparisonAgentPort } from "../src/agents/comparison-agent.js";
@@ -12,7 +12,7 @@ import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provi
 import { ExperimentStore } from "../src/infrastructure/store/experiment-store.js";
 import type { ResolvedRuntime, TargetEventSink, TargetRunner } from "../src/core/runtime.js";
 import { sha256 } from "../src/core/identity.js";
-import { now, VerifiedRuntime, input, terminationOf, repeatingSend, sendingController, patientPolicy, readJson } from "./codex-experiment-support.js";
+import { now, VerifiedRuntime, input, terminationOf, sendingController, patientPolicy, readJson } from "./codex-experiment-support.js";
 
 test("trusted checkpoints restore deterministically without invoking the Recovery model", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-checkpoint-recovery-"));
@@ -168,15 +168,35 @@ test("preflight is read-only and successful comparison writes a persisted narrat
     "experiment-2",
   );
   try {
+    const runEvents = store.events("run-2");
     assert.ok(
-      store
-        .events("run-2")
-        .some((event) => event.type === "recovery.checkpoint_captured"),
+      runEvents.some((event) => event.type === "recovery.checkpoint_captured"),
     );
     assert.match(
       JSON.stringify(store.replay("run-2").finishedPayload),
       /"state":"finished"/,
     );
+    const started = runEvents.find((event) => event.type === "comparison.started");
+    const attemptId = (started?.payload as { attemptId?: string } | undefined)?.attemptId;
+    assert.ok(attemptId);
+    const attemptRoot = join(result.experimentRoot, "comparison-attempts", attemptId);
+    assert.match(await readFile(join(attemptRoot, "work", "comparison-plan.md"), "utf8"), /Compare the delivered files/);
+    assert.match(await readFile(join(attemptRoot, "briefing", "candidate", "process-index.tsv"), "utf8"), /runtime\.turn_settled/);
+    const planCompleted = runEvents.find((event) => event.type === "comparison.plan_completed");
+    assert.equal((planCompleted?.payload as { planStatus?: string } | undefined)?.planStatus, "ready");
+    const reportRequested = runEvents.find((event) => event.type === "comparison.report_requested");
+    const reportInputId = (reportRequested?.payload as { artifactId?: string } | undefined)?.artifactId;
+    assert.ok(reportInputId);
+    const reportInput = JSON.parse(Buffer.from(await store.readArtifact({ artifactId: reportInputId, experimentId: "experiment-2", runId: "run-2" })).toString("utf8")) as { planContent?: string; promptContent?: string };
+    assert.match(reportInput.planContent ?? "", /Compare the delivered files/);
+    assert.match(reportInput.promptContent ?? "", /planStatus=ready/);
+    assert.notEqual(runEvents.find((event) => event.type === "comparison.plan_requested")?.operationId, reportRequested?.operationId);
+    const links = JSON.parse(await readFile(join(attemptRoot, "briefing", "facts", "comparison-links.json"), "utf8")) as Array<{ side: string; reportHref?: string }>;
+    assert.ok(links.some((link) => link.side === "baseline"));
+    assert.ok(links.some((link) => link.side === "candidate"));
+    for (const link of links) {
+      if (link.reportHref) await stat(join(result.experimentRoot, ...link.reportHref.split("/")));
+    }
   } finally {
     await store.close();
   }
@@ -252,19 +272,33 @@ test("the Harness stops the run when the wall-clock budget is spent", async (t) 
 test("the Harness stops the run when the Controller call budget is spent", async (t) => {
   const termination = await terminationOf(t, {
     controller: sendingController(),
-    policy: { ...patientPolicy, maxModelCalls: 2 },
+    policy: patientPolicy,
+    agentConfig: {
+      providerId: "test",
+      requestedModel: "test-model",
+      budget: { callTimeoutMs: 1_000, maxStructuredRepairAttempts: 0, maxCalls: 2 },
+    },
   });
   assert.equal(termination.kind, "limit_reached");
   assert.equal(termination.code, "limit.controller_calls");
 });
 
-test("the Harness stops the run when the Controller repeats itself without progress", async (t) => {
+test("the Controller may repeat a message when the candidate needs another turn", async (t) => {
+  let calls = 0;
+  const repeatTwice: ControllerPort = {
+    decide: async () => {
+      calls += 1;
+      return calls < 3
+        ? { status: "completed", sessionId: "repeat-controller", value: { type: "send", message: "Please continue checking the artifact.", intent: "verify" } }
+        : { status: "completed", sessionId: "repeat-controller", value: { type: "done", reason: "satisfied" } };
+    },
+  };
   const termination = await terminationOf(t, {
-    controller: repeatingSend,
+    controller: repeatTwice,
     policy: { ...patientPolicy, maxConsecutiveNoProgress: 1 },
   });
-  assert.equal(termination.kind, "stalled");
-  assert.equal(termination.code, "stalled.no_progress");
+  assert.equal(termination.kind, "completed");
+  assert.equal(termination.code, "completed.controller_satisfied");
 });
 
 test("the Controller sees settled turns accumulate across decisions", async (t) => {
@@ -316,9 +350,17 @@ test("a scripted Controller run persists controller.requested and reconstructs i
           append: async () => {
             calls += 1;
             if (calls === 1) {
-              const tool = session.tools.find((entry) => entry.name === "read_observation");
+              return JSON.stringify({
+                markdown: "The user wants the candidate to inspect the project and make the requested change.",
+                sourceMessageIds: ["message-1"],
+                unresolvedActions: ["Make the focused change in this directory."],
+              });
+            }
+            if (calls === 2) {
+              const tool = session.tools.find((entry) => entry.name === "read");
               assert.ok(tool);
-              await tool.execute({ source: "run_events", start: 0, maxItems: 8 }, new AbortController().signal);
+              assert.equal(session.tools.some((entry) => entry.name === "read_observation"), false);
+              await tool.execute({ path: "INDEX.md" }, new AbortController().signal);
               return JSON.stringify({
                 type: "send",
                 message: "Make the focused change in this directory.",
@@ -344,7 +386,7 @@ test("a scripted Controller run persists controller.requested and reconstructs i
     const events = store.events("run-1");
     const requested = events.find((event) => event.type === "controller.requested");
     assert.ok(requested?.operationId);
-    assert.ok(events.some((event) => event.type === "controller.observation_read"));
+    assert.equal(events.some((event) => event.type === "controller.observation_read"), false);
     assert.ok(events.some((event) => event.type === "agent.tool_called"));
     assert.ok(events.some((event) => event.type === "agent.tool_completed"));
     const comparisonRequested = events.find((event) => event.type === "comparison.requested");
@@ -359,8 +401,9 @@ test("a scripted Controller run persists controller.requested and reconstructs i
     const rebuilt = reconstructControllerRequest(events, requested.operationId);
     assert.equal(rebuilt.requestId, requested.operationId);
     assert.equal(rebuilt.runId, "run-1");
-    const catalog = rebuilt.snapshot.evidenceCatalog as readonly { ref: string; source: string }[];
-    assert.ok(catalog.some((entry) => entry.source === "tool"));
+    const snapshot = rebuilt.snapshot as { promptContent?: string; briefingRoot?: string };
+    assert.match(snapshot.promptContent ?? "", /INDEX\.md/);
+    assert.ok(snapshot.briefingRoot);
     assert.equal(sha256(JSON.stringify((requested.payload as { snapshot: unknown }).snapshot)), rebuilt.inputDigest);
   } finally {
     await store.close();
@@ -380,7 +423,14 @@ test("cancelling an in-flight Controller request discards a late send before Can
   const controller = new ControllerAgent({
     host: new PiAgentHost({
       createSession: () => ({
-        append: async () => {
+        append: async ({ content }) => {
+          if (content.includes("Private understanding pass")) {
+            return JSON.stringify({
+              markdown: "The user wants a continued task run.",
+              sourceMessageIds: ["message-1"],
+              unresolvedActions: ["Continue the task"],
+            });
+          }
           started();
           return await new Promise<string>((done) => {
             resolve = done;
@@ -441,6 +491,78 @@ test("a completed comparison without report.html is recorded as an Agent failure
     await readFile(result.reportPath, "utf8"),
     /Comparison unavailable/,
   );
+});
+
+test("Planner partial and unavailable states do not block an independent Reporter", async (t) => {
+  for (const expected of ["partial_unverified", "unavailable"] as const) {
+    const root = await mkdtemp(join(tmpdir(), `reprise-plan-${expected}-`));
+    t.after(async () => rm(root, { recursive: true, force: true }));
+    await mkdir(join(root, "source"));
+    await writeFile(join(root, "source", "README.md"), "# source\n");
+    let reporterPrompt = "";
+    const comparison: ComparisonAgentPort = {
+      plan: async (_context, tools = []) => {
+        if (expected === "partial_unverified") {
+          await tools.find((tool) => tool.name === "write")?.execute(
+            { path: "work/comparison-plan.md", content: "# Partial plan\n" },
+            new AbortController().signal,
+          );
+        }
+        return { status: "failed", sessionId: `planner-${expected}`, failure: { code: "agent_failure", message: "planner stopped", attempts: 1, kind: "cancelled" } };
+      },
+      report: async (context, tools = []) => {
+        reporterPrompt = context.promptContent ?? "";
+        await tools.find((tool) => tool.name === "write")?.execute(
+          { path: "work/comparison-plan.md", content: "# Reporter rewrite\n" },
+          new AbortController().signal,
+        );
+        await tools.find((tool) => tool.name === "write")?.execute(
+          { path: "report.html", content: `<!doctype html><p>${expected}</p>` },
+          new AbortController().signal,
+        );
+        return { status: "completed", sessionId: `reporter-${expected}`, value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };
+      },
+      compare: async () => { throw new Error("report() must be used"); },
+    };
+    const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
+    assert.equal(result.comparison.result.status, "completed");
+    assert.match(reporterPrompt, new RegExp(`planStatus=${expected}`));
+    const store = await ExperimentStore.open(result.experimentRoot, "experiment-1");
+    try {
+      const started = store.events("run-1").find((event) => event.type === "comparison.started");
+      const attemptId = (started?.payload as { attemptId?: string })?.attemptId;
+      assert.ok(attemptId);
+      assert.equal(await readFile(join(result.experimentRoot, "comparison-attempts", attemptId, "work", "comparison-plan.md"), "utf8"), "# Reporter rewrite\n");
+      const completed = store.events("run-1").find((event) => event.type === "comparison.plan_completed");
+      assert.equal((completed?.payload as { planStatus?: string } | undefined)?.planStatus, expected);
+    } finally {
+      await store.close();
+    }
+  }
+});
+
+test("a failed later comparison attempt does not overwrite the last successful report", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-report-retry-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "source"));
+  await writeFile(join(root, "source", "README.md"), "# source\n");
+  const experimentRoot = join(root, "data", "experiments", "experiment-1");
+  await mkdir(experimentRoot, { recursive: true });
+  const published = "<!doctype html><p>previous successful attempt</p>";
+  await writeFile(join(experimentRoot, "report.html"), published);
+  await writeFile(join(experimentRoot, "comparison.json"), JSON.stringify({ status: "completed", sessionId: "old", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } }));
+  const failed: ComparisonAgentPort = {
+    plan: async () => ({ status: "failed", sessionId: "planner-failed", failure: { code: "agent_failure", message: "failed", attempts: 1 } }),
+    report: async () => ({ status: "failed", sessionId: "reporter-failed", failure: { code: "agent_failure", message: "failed", attempts: 1 } }),
+    compare: async () => ({ status: "failed", sessionId: "legacy-failed", failure: { code: "agent_failure", message: "failed", attempts: 1 } }),
+  };
+  const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), comparison: failed }).result;
+  assert.equal(result.comparison.result.status, "failed");
+  assert.equal(await readFile(join(experimentRoot, "report.html"), "utf8"), published);
+  const latest = JSON.parse(await readFile(join(experimentRoot, "comparison.json"), "utf8")) as { status?: string; sessionId?: string };
+  assert.equal(latest.status, "failed");
+  assert.equal(latest.sessionId, "reporter-failed");
+  assert.notEqual(result.reportPath, join(experimentRoot, "report.html"));
 });
 
 test("an unchanged source fingerprint still starts after preflight", async (t) => {

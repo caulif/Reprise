@@ -1,5 +1,4 @@
 import { Type, type Static } from "@sinclair/typebox";
-
 const Id = Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" });
 const Hash = Type.String({ pattern: "^[a-f0-9]{64}$" });
 const Timestamp = Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}T" });
@@ -56,6 +55,22 @@ export const ControllerObservationReadPayloadSchema = Type.Object({
   evidenceRefs: Type.Array(EvidenceRefSchema),
 });
 export type ControllerObservationReadPayload = Static<typeof ControllerObservationReadPayloadSchema>;
+export const ControllerUnderstandingDeltaSchema = Type.Object({
+  mode: Type.Union([Type.Literal("merge"), Type.Literal("replace")]),
+  confirmedFacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 })),
+  acceptanceSignals: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 })),
+  unresolvedActions: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 })),
+});
+export type ControllerUnderstandingDelta = Static<typeof ControllerUnderstandingDeltaSchema>;
+export const ControllerUnderstandingLedgerSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  baseMarkdown: Type.String({ minLength: 1, maxLength: 131_072 }),
+  sourceMessageIds: Type.Array(Id, { maxItems: 512 }),
+  confirmedFacts: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 }),
+  acceptanceSignals: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 }),
+  unresolvedActions: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 }),
+});
+export type ControllerUnderstandingLedger = Static<typeof ControllerUnderstandingLedgerSchema>;
 export const ComparisonRequestedPayloadSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   requestId: Id,
@@ -66,6 +81,28 @@ export const ComparisonRequestedPayloadSchema = Type.Object({
   truncated: Type.Boolean(),
 });
 export type ComparisonRequestedPayload = Static<typeof ComparisonRequestedPayloadSchema>;
+export const ComparisonPhaseRequestedPayloadSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  attemptId: Id,
+  phase: Type.Union([Type.Literal("plan"), Type.Literal("report")]),
+  inputDigest: Hash,
+  artifactId: Id,
+  byteLength: Type.Integer({ minimum: 1 }),
+});
+export type ComparisonPhaseRequestedPayload = Static<typeof ComparisonPhaseRequestedPayloadSchema>;
+const ComparisonLinkSchema = Type.Object({
+  side: Type.Union([Type.Literal("baseline"), Type.Literal("candidate")]),
+  inspectPath: Type.String({ minLength: 1 }),
+  reportHref: Type.Optional(Type.String({ minLength: 1 })),
+  artifactId: Type.Optional(Id),
+  path: Type.Optional(Type.String({ minLength: 1 })),
+  mediaType: Type.Optional(Type.String({ minLength: 1 })),
+  byteLength: Type.Optional(Type.Integer({ minimum: 0 })),
+  evidenceRef: Type.Optional(EvidenceRefSchema),
+});
+export const ComparisonLinksSchema = Type.Array(ComparisonLinkSchema);
+export type ComparisonLinkRecord = Static<typeof ComparisonLinkSchema>;
+export { ComparisonBriefingContextSchema, ComparisonInvocationSchema } from "./comparison-schema.js";
 /** Public, redacted input set frozen before a Recovery evaluation starts. */
 const RecoverySelectionSourceStateSchema = Type.Object({
   readiness: Type.Union([
@@ -139,7 +176,6 @@ export const RecoverySelectionDiagnosticsSchema = Type.Object(
 export type RecoverySelectionDiagnostics = Static<
   typeof RecoverySelectionDiagnosticsSchema
 >;
-
 const RecoveryManifestSchema = Type.Object({
   actions: Type.Array(
     Type.Object({
@@ -226,7 +262,6 @@ export const RecoveryCheckpointRecordSchema = Type.Object({
 export type RecoveryCheckpointRecord = Static<
   typeof RecoveryCheckpointRecordSchema
 >;
-
 const RecoveryDeltaFileSchema = Type.Object({
   kind: Type.Literal("file"),
   contentHash: Hash,
@@ -268,7 +303,6 @@ export const RecoveryControlledWriteSchema = Type.Object({
 export type RecoveryControlledWrite = Static<
   typeof RecoveryControlledWriteSchema
 >;
-
 /** A Host-owned, reviewable observation collected during maximum-effort Recovery. */
 const RecoveryFactSchema = Type.Object({
   factId: Id,
@@ -293,7 +327,6 @@ const RecoveryFactSchema = Type.Object({
   summary: Type.String({ minLength: 1 }),
 });
 export type RecoveryFact = Static<typeof RecoveryFactSchema>;
-
 /** A single Host-audited operation in the Recovery lifecycle. */
 export const RecoveryLifecycleAttemptSchema = Type.Object({
   schemaVersion: Type.Literal(1),
@@ -327,7 +360,6 @@ export const RecoveryLifecycleAttemptSchema = Type.Object({
   recordedAt: Timestamp,
 });
 export type RecoveryLifecycleAttempt = Static<typeof RecoveryLifecycleAttemptSchema>;
-
 const RecoveryFactRefSchema = Type.String({
   pattern: "^fact:[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
 });
@@ -366,7 +398,6 @@ const RecoveryPlanSchema = Type.Object({
   verificationPlan: Type.Array(Type.String({ minLength: 1 })),
 });
 export type RecoveryPlan = Static<typeof RecoveryPlanSchema>;
-
 const RecoveryCandidateSchema = Type.Object({
   candidateId: Id,
   hypothesisId: Id,
@@ -400,7 +431,6 @@ export const RecoveryCandidateGraphSchema = Type.Object({
   })),
 });
 export type RecoveryCandidateGraph = Static<typeof RecoveryCandidateGraphSchema>;
-
 export const RecoveryInvestigationSchema = Type.Object({
   schemaVersion: Type.Integer({ minimum: 1 }),
   facts: Type.Array(RecoveryFactSchema),
@@ -408,7 +438,6 @@ export const RecoveryInvestigationSchema = Type.Object({
   candidates: Type.Array(RecoveryCandidateSchema),
 });
 export type RecoveryInvestigation = Static<typeof RecoveryInvestigationSchema>;
-
 const RecoveryPathOutcomeSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 512 }),
   disposition: Type.Union([
@@ -428,7 +457,6 @@ const RecoveryPathOutcomeSchema = Type.Object({
   failureReason: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
 });
 export type RecoveryPathOutcome = Static<typeof RecoveryPathOutcomeSchema>;
-
 export const RecoveryReviewSummarySchema = Type.Object({
   schemaVersion: Type.Literal(1),
   candidateId: Id,
@@ -468,7 +496,6 @@ export const RecoveryReviewFeedbackSchema = Type.Object({
 });
 export type RecoveryReviewFeedback = Static<typeof RecoveryReviewFeedbackSchema>;
 
-
 export const RecoveryExternalEffectSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   effectId: Id,
@@ -486,7 +513,6 @@ export const RecoveryExternalEffectSchema = Type.Object({
   recordedAt: Timestamp,
 });
 export type RecoveryExternalEffect = Static<typeof RecoveryExternalEffectSchema>;
-
 export const RecoveryCompensationRequestSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   requestId: Id,
@@ -496,7 +522,6 @@ export const RecoveryCompensationRequestSchema = Type.Object({
   requestedAt: Timestamp,
 });
 export type RecoveryCompensationRequest = Static<typeof RecoveryCompensationRequestSchema>;
-
 export const RecoveryCompensationResultSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   requestId: Id,
@@ -512,7 +537,6 @@ export const RecoveryCompensationResultSchema = Type.Object({
   completedAt: Timestamp,
 });
 export type RecoveryCompensationResult = Static<typeof RecoveryCompensationResultSchema>;
-
 const CaseArtifactRefSchema = Type.Object({ artifactId: Id, caseId: Id });
 export type CaseArtifactRef = Static<typeof CaseArtifactRefSchema>;
 export const ArtifactRefSchema = Type.Union([
@@ -520,7 +544,6 @@ export const ArtifactRefSchema = Type.Union([
   Type.Object({ artifactId: Id, experimentId: Id, runId: Type.Optional(Id) }),
 ]);
 export type ArtifactRef = Static<typeof ArtifactRefSchema>;
-
 const SessionRefSchema = Type.Object({
   productId: Id,
   sessionId: Id,
@@ -573,17 +596,16 @@ export const TaskCaseSchema = Type.Object({
   contentHash: Hash,
 });
 export type TaskCase = Static<typeof TaskCaseSchema>;
-
 export const CandidateSpecSchema = Type.Object({
   candidateId: Id,
   productId: Id,
   requestedModel: Type.String({ minLength: 1 }),
 });
 export type CandidateSpec = Static<typeof CandidateSpecSchema>;
-
 const AgentBudgetSchema = Type.Object({
   callTimeoutMs: Type.Integer({ minimum: 1 }),
   maxStructuredRepairAttempts: Type.Integer({ minimum: 0 }),
+  maxCalls: Type.Optional(Type.Integer({ minimum: 1 })),
 });
 const AgentConfigSchema = Type.Object({
   providerId: Type.String({ minLength: 1 }),
@@ -612,7 +634,6 @@ export type ExperimentSpec = Static<typeof ExperimentSpecSchema>;
 export type AgentBudget = Static<typeof AgentBudgetSchema>;
 export type AgentConfig = Static<typeof AgentConfigSchema>;
 export type RunPolicy = Static<typeof RunPolicySchema>;
-
 export const RunAttemptSchema = Type.Object({
   schemaVersion: Type.Integer({ minimum: 1 }),
   runId: Id,
@@ -623,7 +644,6 @@ export const RunAttemptSchema = Type.Object({
   createdAt: Timestamp,
 });
 export type RunAttempt = Static<typeof RunAttemptSchema>;
-
 const ResolvedAgentConfigSchema = Type.Object({
   providerId: Type.String({ minLength: 1 }),
   requestedModel: Type.String({ minLength: 1 }),
@@ -654,7 +674,6 @@ export const RunManifestSchema = Type.Object({
   startedAt: Timestamp,
 });
 export type RunManifest = Static<typeof RunManifestSchema>;
-
 const RunOutcomeSchema = Type.Object({
   task: Type.Object({
     status: Type.Union([
@@ -711,7 +730,6 @@ const RunOutcomeSchema = Type.Object({
   }),
 });
 export type RunOutcome = Static<typeof RunOutcomeSchema>;
-
 const CandidateRunStateSchema = Type.Union([
   Type.Literal("created"),
   Type.Literal("preparing"),
@@ -750,7 +768,6 @@ export const RunRecordSchema = Type.Object({
   ),
 });
 export type RunRecord = Static<typeof RunRecordSchema>;
-
 export const EventEnvelopeSchema = Type.Object({
   schemaVersion: Type.Integer({ minimum: 1 }),
   sequence: Type.Integer({ minimum: 1 }),
@@ -947,7 +964,6 @@ export type RecoveryEvaluationCase = Static<
 export type RecoveryEvaluationTerminalCase = Static<
   typeof RecoveryEvaluationTerminalCaseSchema
 >;
-
 /** Host-derived, redacted constraints used to decide whether staging can resume the task. */
 export const RecoveryReadinessContextSchema = Type.Object({
   schemaVersion: Type.Literal(1),

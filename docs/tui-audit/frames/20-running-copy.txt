@@ -8,6 +8,5 @@ Reprise   Recovering session                                                    
                                                                                                                         
  [▓████████░░░░░░░░░░░░░░░░░░░░░░░░░░░]                                                                                 
  Recovering the isolated workspace from this session. Your original files stay unchanged.                               
- ❯ Cannot type while recovery is running.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [Ctrl+C] Cancel  [?] Keys

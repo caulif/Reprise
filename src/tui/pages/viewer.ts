@@ -22,5 +22,5 @@ export function renderViewer(theme: Theme, width: number, model: ViewerModel, he
 }
 
 export function viewerHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Esc', t(locale, 'hintEsc')], ['PgUp/PgDn', t(locale, 'hintScroll')]];
+  return [['Esc', t(locale, 'hintEsc')]];
 }

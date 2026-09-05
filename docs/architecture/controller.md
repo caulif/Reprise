@@ -195,7 +195,7 @@ Controller 不直接调用 Runtime 的 approval API；它只能通过普通用�
 
 ## 6. Observation Adapter
 
-Controller 不能只读 Target 的最终自述，也不应获得无界、无 cwd 锁的 shell。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 RuntimePort、Environment 和 ArtifactStore 已经规范化、且用户正常可见的事实。工作区八工具由 Host 直接挂在隔离副本上，见 [八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)。
+Controller 不能只读 Target 的最终自述，也不应获得无界、无 cwd 锁的 shell。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 RuntimePort、Environment 和 ArtifactStore 已经规范化、且用户正常可见的事实。Host 把工作区七工具挂在 briefing 根上，`project/` 只读挂载隔离副本；不注册 `read_observation`。见 [Controller 七工具](../decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)。
 
 ```text
 TargetEventSink / Environment fingerprint / ArtifactStore
@@ -274,6 +274,8 @@ interface ControllerArtifactReader {
 Host 在读取前执行 run ownership、路径边界、类型、大小和 privacy policy 校验。Controller 看不到 Trace Store 或文件系统的可变句柄。
 
 ## 7. SteeringContext
+
+Host 每次 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。历史正文与本 run 回合在 briefing 文件里，由 Controller 用 `read` 打开。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash。
 
 ```ts
 interface SteeringContext {
@@ -356,16 +358,16 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 推荐 system prompt 引导 Controller 自主按以下顺序思考：
 
 ```text
-1. 当前 Target 是否已经到达真实输入边界？
-2. 当前结果是否满足原用户目标，且证据足够？
-3. 是否需要真实用户授权或已经无法通过输入推进？
-4. Candidate 是否偏离目标、范围或用户偏好？
-5. 是否缺少原用户本来知道的事实？
-6. 是否需要要求 Target 验证其声明？
-7. 如果都不是，继续是否仍有价值？
+1. 这个人按原会话里表现出来的验收习惯，面对当前屏幕会不会停？
+   终态句里的交付物种类不够；完成声明不够。
+2. 是否需要真实用户授权或已经无法通过输入推进？
+3. Candidate 是否偏离目标、范围或用户已陈述的偏好？
+4. 是否缺少原用户本来知道的事实？（不必等候选先问）
+5. 是否需要按这个人的习惯要求验证？
+6. 如果都不是：这个人还会不会对**这条**轨迹说话？不会则停止。
 ```
 
-这只是 prompt 中的判断顺序，不在 Core 编写规则引擎。
+不要按历史用户句下标重放。历史更短或更长都可以，只要判断的是这个人，而不是剧本。这只是 prompt 中的判断顺序，不在 Core 编写规则引擎。
 
 ## 10. Canonical system prompt
 
@@ -378,27 +380,23 @@ Your job is to decide what the original user, with the same goals, knowledge,
 preferences, authority, and practical ability, would reasonably say next to the
 candidate agent on its current trajectory.
 
-You receive the complete original task conversation, the initial user input, available baseline
-evidence, the candidate trajectory, current artifacts and checks, prior controller
-messages, and the remaining run budget.
+You receive a short decision section plus INDEX.md (a path map). It does not
+contain transcript bodies or baseline.finalMessage. Read history/, THIS-TURN,
+and project/ with workspace tools. There is no read_observation tool.
 
-The original conversation is evidence about the user and the task, not a script to
-replay and not a mandatory reference implementation. Do not pass along answers,
-discoveries, or implementation details learned only from the original agent's later
-work as if the user already knew them. A stronger candidate may take a different path
-or produce a better result. Use your judgment to adapt the next message to what the
-candidate has already understood and done.
+The original conversation is evidence of this person, not a script.
+User messages show how they steer after a first draft and when they stop.
+Do not fire historical user turns in order. Do not wait for the candidate to
+ask before using a preference the user already stated. Do not treat the
+historical agent's discoveries as facts this user already knew.
 
-Do not execute the target task. Do not invent files, checks, permissions, user
-preferences, or external facts. Distinguish agent claims from observed evidence.
-You may ask the candidate to continue, provide facts the user already has, correct
-a real deviation, or ask it to verify its work.
+Return done when THIS user would actually stop given the current artifacts and
+their demonstrated acceptance habits — not merely when the kind of deliverable
+in the baseline final message is present. Do not send only to pad turn count.
 
-Return done when the task is sufficiently satisfied, ordinary user input cannot
-resolve the blocker, further work has no useful value, or a real user decision is
-required. Never infer authorization for publishing, deletion, payment, privilege
-expansion, irreversible migration, or another high-impact action unless the
-historical task clearly provides it.
+Do not execute the target task. Distinguish agent claims from observed evidence.
+Never infer authorization for publishing, deletion, payment, privilege
+expansion, or another high-impact action unless the historical task clearly provides it.
 
 Output exactly one ControllerDecision matching the provided schema. The message
 must read like a natural user message. Do not include analysis inside the message.

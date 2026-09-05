@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isStructuredEnvelope, visibleAssistantText } from '../src/infrastructure/assistant-visible.js';
-import { matchesFilter } from '../src/tui/scrollback.js';
+import { matchesFilter, renderScrollback } from '../src/tui/scrollback.js';
 import { renderTimeline } from '../src/tui/pages/run.js';
 import { createTheme } from '../src/tui/theme.js';
 import { paneOf, projectAssistantVisible, splitRunEntries } from '../src/tui/fold-process.js';
@@ -44,8 +44,8 @@ test('right pane is product session, not Controller tools, and user text is inpu
   const timeline: TimelineEntry[] = [];
   appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_called', {
     role: 'controller',
-    tool: 'read_observation',
-    params: { source: 'transcript' },
+    tool: 'read',
+    params: { path: 'history/outline.tsv' },
   })));
   appendTimelineEntries(timeline, projectTimelineEvent(event('controller.decision', {
     status: 'completed',
@@ -53,7 +53,7 @@ test('right pane is product session, not Controller tools, and user text is inpu
   })));
   const { left, right } = splitRunEntries(timeline);
   assert.ok(left.some((entry) => entry.lane === 'controller' || entry.title.startsWith('Decision:')));
-  assert.equal(right.some((entry) => entry.title.includes('read_observation') || entry.lane === 'controller' && entry.title.startsWith('Controller')), false);
+  assert.equal(right.some((entry) => entry.title.includes('outline') && entry.lane === 'controller' || entry.lane === 'controller' && entry.title.startsWith('Controller') && !entry.title.startsWith('Decision')), false);
   const input = right.find((entry) => entry.title.startsWith('Input to Target'))
     ?? left.find((entry) => entry.title.startsWith('Input to Target'));
   assert.ok(input);
@@ -67,8 +67,8 @@ test('candidate split canvas keeps Controller tools off the product column', () 
   const entries: TimelineEntry[] = [];
   appendTimelineEntries(entries, projectTimelineEvent(event('agent.tool_called', {
     role: 'controller',
-    tool: 'read_observation',
-    params: { source: 'transcript' },
+    tool: 'read',
+    params: { path: 'history/outline.tsv' },
   })));
   appendTimelineEntries(entries, projectTimelineEvent(event('controller.decision', {
     status: 'completed',
@@ -84,4 +84,14 @@ test('candidate split canvas keeps Controller tools off the product column', () 
   assert.match(text, /Please run the tests|请/);
   const projected = projectAssistantVisible({ role: 'controller', text: '先看候选有没有跑测试。' });
   assert.equal(projected.extra.lane, 'controller');
+});
+
+test('scrollback does not reprint the same delivered sentence', () => {
+  const message = '请先查看当前目录中的 Excel 数据和参考 PPT。';
+  const theme = createTheme(80, false);
+  const painted = renderScrollback(theme, 80, [
+    { sequence: 1, occurredAt: timestamp, source: 'CONTROLLER', title: 'Input to Target', detail: message },
+    { sequence: 2, occurredAt: timestamp, source: 'TARGET', title: `Prompt · ${message}`, detail: message },
+  ], 0, 'zh', 'Claude Code').join('\n');
+  assert.equal(painted.split(message).length - 1, 1);
 });

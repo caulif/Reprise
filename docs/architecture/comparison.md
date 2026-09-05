@@ -9,10 +9,14 @@ Comparison 是产品无关的比较研究者。它从冻结的 baseline、Candid
 ```mermaid
 flowchart LR
   A[TaskCase / RunRecord / events] --> B[Host reportFacts projection]
-  C[Sandbox candidate mount and evidence files] --> D[Workspace tools]
-  B --> E[Comparison Agent]
+  C[Live replica candidate/ mount and evidence/ catalog] --> D[Workspace tools]
+  B --> E[Planner session]
   D --> E
-  E --> F[write report.html]
+  E --> P[work/comparison-plan.md]
+  P --> R[Reporter session]
+  B --> R
+  D --> R
+  R --> F[write report.html]
   F --> G[Host copies report.html]
   E --> H[Thin result envelope]
   G --> I[TUI open]
@@ -22,11 +26,13 @@ flowchart LR
 
 Comparison Agent 是成功报告的唯一作者。它用 `write` 把完整、自包含的 HTML 写到报告沙箱根 `report.html`；可自由使用 HTML、CSS、SVG 与有价值的本地 JavaScript。Host 校验后把字节拷到实验根，不使用 sanitizer、标签白名单、HTML AST 重写、固定模板或内容门禁。
 
-`candidate/` 是隔离副本的只读挂载。工具名与另外两个内部 Agent 相同，见 [八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)。调用前写入 [comparison.requested](../decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)。
+一次比较对应一个新的 `comparison-attempts/{attemptId}`。Planner 与 Reporter 是同一 role 的两个独立 session：Planner 调查应比较的结果对象和过程片段，把可变计划写入 `work/comparison-plan.md`；Reporter 从短 orientation、INDEX 和当时计划重新开始，可以否定或重写计划。Planner 失败时 Reporter 仍继续，计划状态明确为 `ready`、`partial_unverified` 或 `unavailable`。只有 Reporter 生成的本 attempt HTML 会原子发布；失败不覆盖旧成功报告。
 
-薄信封只保存 `status`、固定的 `reportPath: "report.html"`、`evidenceRefs` 与可选 `limitationCodes`。Host 检查信封 schema、证据归属和报告文件可读性，但不检查页面的章节、视觉组件或指标是否出现。
+`candidate/` 是 run 结束后仍保留的隔离副本的只读挂载；`history/`、`turns/` 和 `evidence/` 分别提供历史过程、候选 settled turns 和 Host artifact。短 briefing 只保存索引、facts、link catalog 与完整 process index，正文按需读取。Comparison 与 Recovery 为八工具；Controller 为七工具，见 [Controller 七工具](../decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)。调用前写入兼容事件 `comparison.requested`，并为两个阶段分别写入 `comparison.plan_requested` / `comparison.report_requested` 输入快照。
 
-Host 向 briefing 投影 `reportFacts`：运行身份与模型、outcome 和终止原因、可获得的时间/轮次/工具/限制、Runtime 能力、交付物、回放条件与 baseline/candidate 证据等级。缺失值保持缺失；System Prompt 要求 Agent 显示“未采集”或“不可判定”，不能伪造为零。
+薄信封保存 `status`、固定的 `reportPath: "report.html"`、`evidenceRefs`、可选 `limitationCodes` 与可选 `headline`（TUI 一行差，Host 不从 HTML 抽取）。Host 检查信封 schema、证据归属和报告文件可读性，但不检查页面的章节、视觉组件或指标是否出现。
+
+Host 向 briefing 投影 `reportFacts`。缺失值保持缺失。System Prompt 要求用到某项硬数时写“未采集”或“不可判定”，不得写成零或估价；不要求把全部 `reportFacts` 摊在首屏。报告形式由 Agent 按本次差异自定。
 
 ## 事实纪律与安全
 
@@ -43,4 +49,4 @@ Comparison 失败、信封不合规或未写出 `report.html` 时，不改变 Ca
 - Comparison 不依赖 Product Pack、RuntimePort 或产品私有事件类型。
 - 成功 HTML 可包含 Agent 选择的任意页面结构，且被原样保存。
 - 所有读取仍受 artifact ownership、路径、大小和 privacy policy 约束。
-- 持久化事实、artifact、`report.html` 与薄信封足以审计本次比较。
+- 持久化事实、阶段输入快照、attempt 工作区、`report.html` 与薄信封足以审计本次比较。

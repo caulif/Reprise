@@ -10,6 +10,5 @@ Reprise   Starting candidate · Codex                                           
  ●  Copy isolated workspace  in progress                                                                                
  ○  Write candidate config  waiting                                                                                     
  ○  Start Codex  waiting                                                                                                
- ❯ Cannot type to Codex during prepare
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [Ctrl+C] Cancel  [?] Keys

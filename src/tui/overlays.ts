@@ -47,22 +47,17 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
     'Enter      Confirm this model',
     'b          Change product',
   ],
-  running: [
-    'Up/Down    Scroll          PgUp/Dn Page',
-    'l / End    Follow latest',
-    'f          Cycle filter',
-    '/          Find in canvas',
-    'o          Open full event output',
-    'Enter      Expand command',
-    'Ctrl+C     Request cancellation',
-  ],
+  preflight: ['b          Edit source root', 'Esc        Back to Home'],
+  confirm: ['Enter      Start the candidate run', 'b          Change model', 'Esc        Back to Home'],
+  'compare-gate': ['Enter      Start comparison', 's          Skip comparison', 'Ctrl+C     Exit'],
+  running: ['Ctrl+C     Request cancellation'],
   result: [
     'o          Open report.html',
     't          Open trace folder',
-    '/          Find in canvas',
+    'w          Open isolated replica',
     'Enter / b  Back to Home',
   ],
-  error: ['Enter / b  Back to Home'],
+  error: ['Enter / b / Esc  Back to Home'],
 };
 
 export function helpLines(page?: string, locale: Locale = 'en'): readonly string[] {
@@ -72,12 +67,6 @@ export function helpLines(page?: string, locale: Locale = 'en'): readonly string
     t(locale, 'helpTabComplete'),
   ] : undefined;
   const runningKeys = page === 'running' ? [
-    'Up/Down    Scroll          PgUp/Dn Page',
-    'l / End    Follow latest',
-    t(locale, 'helpCycleFilter'),
-    t(locale, 'helpFind'),
-    t(locale, 'helpOpenOutput'),
-    t(locale, 'helpExpandCmd'),
     t(locale, 'helpCancelRun'),
   ] : undefined;
   const keys = page === 'home' ? homeKeys : page === 'running' ? runningKeys : scoped;

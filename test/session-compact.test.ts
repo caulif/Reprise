@@ -55,6 +55,25 @@ test('compactPiMessages uses Pi completeSimple to replace history with a summary
   assert.ok(compacted.audit.retainedCount >= 1);
 });
 
+test('compactPiMessages forwards phase-specific summary instructions', async () => {
+  const seen: string[] = [];
+  const models = {
+    completeSimple: async (_model: unknown, context: { messages: Array<{ content: string | Array<{ type: string; text?: string }> }> }) => {
+      seen.push(JSON.stringify(context));
+      return {
+        role: 'assistant', content: [{ type: 'text', text: 'keep the cited evidence and unresolved questions' }],
+        api: 'openai-completions', provider: 'test', model: 'm',
+        usage: { input: 10, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 20, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: 'stop', timestamp: 4,
+      };
+    },
+  } as never;
+  const messages = Array.from({ length: 30 }, (_, index) => ({ role: 'user' as const, content: `message ${index} ${'x'.repeat(4000)}`, timestamp: index + 1 }));
+  const model = { id: 'm', name: 'm', api: 'openai-completions', provider: 'test', baseUrl: '', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 16_384 } as Model<Api>;
+  await compactPiMessages({ messages, models, model, thinkingLevel: 'low', customInstructions: 'Preserve evidence refs for the report phase.' });
+  assert.match(seen.join('\n'), /Preserve evidence refs for the report phase/);
+});
+
 test('Host records agent.context_compacted from the Pi session compact hook', async () => {
   const events: AgentAuditEvent[] = [];
   let compact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined;

@@ -223,8 +223,8 @@ export function tryEnvironmentName(value: string): string | undefined {
   return match?.[1] ?? match?.[2];
 }
 
-export function shellEnvAssignment(name: string): string {
-  return process.platform === 'win32' ? `$env:${name} = '<value>'` : `export ${name}='<value>'`;
+export function shellEnvAssignment(name: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? `$env:${name} = '<value>'` : `export ${name}='<value>'`;
 }
 
 export function apiKeyValidity(value: string): FieldValidity {

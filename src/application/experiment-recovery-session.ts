@@ -85,6 +85,8 @@ export type RecoveryRunSession = {
   candidateReviews?: { candidateId: string; artifactId: string }[];
   candidateGraphArtifactId?: string;
   activeProviderPreview?: RecoveryPreview;
+  /** Candidate root used by the current model attempt; failed attempts are discarded. */
+  modelAttemptCandidate?: RecoveryCandidateStaging;
 };
 
 export function lifecycleState(session: RecoveryRunSession): RecoveryLifecycleState {

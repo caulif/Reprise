@@ -125,7 +125,7 @@ test("Recovery still falls back when the only completed envelope fails probe", a
   assert.equal(attempt.baseline.match, "current_state_fallback");
 });
 
-test("Recovery still completes after more than sixteen destructive powershell calls", async (t) => {
+test("Recovery still completes after more than sixteen destructive shell_exec calls", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-delete-uncapped-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const base = input(root, new VerifiedRuntime());
@@ -143,7 +143,7 @@ test("Recovery still completes after more than sixteen destructive powershell ca
       calls += 1;
       const evidenceRef = _context.resolved.evidenceRefs[0];
       assert.ok(evidenceRef);
-      const remove = tools.find((tool) => tool.name === "powershell");
+      const remove = tools.find((tool) => tool.name === "shell_exec");
       const signal = new AbortController().signal;
       for (let index = 0; index < 17; index += 1) {
         await remove?.execute({ command: `Remove-Item -LiteralPath scratch-${index}.txt` }, signal);
@@ -179,3 +179,5 @@ test("Recovery still completes after more than sixteen destructive powershell ca
   assert.ok(calls >= 1);
   assert.equal(attempt.accept !== undefined, true);
 });
+
+

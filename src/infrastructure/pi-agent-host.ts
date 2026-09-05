@@ -1,7 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { sha256 } from "../core/identity.js";
+import { hostContext } from "./platform.js";
+
+export type AgentContentBlock = TextContent | ImageContent;
+export type AgentToolResult = {
+  /** Text fallback retained for non-vision models, logs, and existing tool callers. */
+  content: string;
+  /** Native Pi blocks; when present these are sent to the model instead of re-encoding them. */
+  contentBlocks?: readonly AgentContentBlock[];
+  details?: unknown;
+};
 
 export type AgentFailure = {
   /** Safe classification used to decide whether a bounded retry is meaningful. */
@@ -38,9 +49,9 @@ export type AgentToolDefinition = {
   execute(
     params: unknown,
     signal: AbortSignal,
-  ): Promise<{ content: string; details?: unknown }>;
+  ): Promise<AgentToolResult>;
   /** Host-only hook for facts a successful read made available during this request. */
-  onCompleted?(result: { content: string; details?: unknown }): Promise<void>;
+  onCompleted?(result: AgentToolResult): Promise<void>;
 };
 
 export type AgentAuditEvent = {
@@ -64,7 +75,9 @@ export type AgentAuditEvent = {
 export type AgentAuditSink = { append(event: AgentAuditEvent): Promise<void> };
 
 export interface PiTextSession {
-  append(input: { content: string; signal: AbortSignal }): Promise<string>;
+  /** Pi model input capabilities copied from the resolved model descriptor. */
+  readonly inputCapabilities?: readonly string[];
+  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal }): Promise<string>;
   cancel(): void;
 }
 
@@ -74,8 +87,11 @@ export interface PiTextCaller {
     sessionId: string;
     systemPrompt: string;
     tools: readonly AgentToolDefinition[];
+    compactionInstructions?: string;
     onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
+    onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
+    onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
   }): Promise<PiTextSession> | PiTextSession;
 }
 
@@ -89,12 +105,17 @@ export type StructuredAgentRequest<T> = {
   maxRepairAttempts: number;
   allowModelText: boolean;
   tools?: readonly AgentToolDefinition[];
+  compactionInstructions?: string;
   validate?: (value: T) => string | undefined;
   audit?: AgentAuditSink;
   /** Exact JSON the model must return; included in the first prompt and in repairs. */
   outputContract?: string;
   /** Extra bounded instruction appended only to a schema/validator repair request. */
   repairInstruction?: string;
+  /** When set, this string is the model user message instead of JSON.stringify(context). */
+  promptContent?: string;
+  /** Optional native Pi image blocks accompanying the first user message. */
+  promptImages?: readonly ImageContent[];
 };
 
 export type AgentSessionRequest<T> = Pick<
@@ -106,6 +127,8 @@ export type AgentSessionRequest<T> = Pick<
   | "validate"
   | "outputContract"
   | "repairInstruction"
+  | "promptContent"
+  | "promptImages"
 > & {
   /** Host request identity; a cancelled id is dropped before decode. */
   requestId?: string;
@@ -128,6 +151,7 @@ export class PiAgentHost {
     systemPrompt: string;
     allowModelText: boolean;
     tools?: readonly AgentToolDefinition[];
+    compactionInstructions?: string;
     audit?: AgentAuditSink;
   }): Promise<AgentSessionHost> {
     assertSessionInput(input);
@@ -152,6 +176,7 @@ export class PiAgentHost {
         sessionId,
         systemPrompt: input.systemPrompt,
         tools,
+        ...(input.compactionInstructions ? { compactionInstructions: input.compactionInstructions } : {}),
         onContextCompact: async (payload) => {
           await input.audit?.append({
             type: "agent.context_compacted",
@@ -168,14 +193,20 @@ export class PiAgentHost {
             payload,
           });
         },
+        onBeforeToolCall: async ({ tool }: { tool: string }) => { await input.audit?.append({ type: "agent.tool_called", sessionId, role: input.role, payload: { tool, nativeHook: "before" } }); },
+        onAfterToolCall: async (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => { await input.audit?.append({ type: "agent.tool_completed", sessionId, role: input.role, payload: { ...payload, nativeHook: "after" } }); },
       });
       await input.audit?.append({
         type: "agent.session_started",
         sessionId,
         role: input.role,
-        payload: { toolNames: tools.map((tool) => tool.name) },
+        payload: {
+          toolNames: tools.map((tool) => tool.name),
+          hostFacts: (() => { const host = hostContext(); return { platform: host.platform, arch: host.arch, pathCase: host.pathCase, shell: host.defaultShell.kind, capabilities: [...host.capabilities].sort() }; })(),
+          ...(session.inputCapabilities ? { inputCapabilities: [...session.inputCapabilities] } : {}),
+        },
       });
-      return new AgentSessionHost(sessionId, input.role, session, input.audit);
+      return new AgentSessionHost(sessionId, input.role, session, input.audit, undefined, session.inputCapabilities);
     } catch (error) {
       await input.audit?.append({
         type: "agent.session_failed",
@@ -210,6 +241,8 @@ export class PiAgentHost {
       ...(request.repairInstruction
         ? { repairInstruction: request.repairInstruction }
         : {}),
+      ...(request.promptContent ? { promptContent: request.promptContent } : {}),
+      ...(request.promptImages ? { promptImages: request.promptImages } : {}),
     });
   }
 }
@@ -221,6 +254,7 @@ export class AgentSessionHost {
   readonly #session: PiTextSession | undefined;
   readonly #audit: AgentAuditSink | undefined;
   readonly #failure: AgentFailure | undefined;
+  readonly #inputCapabilities: readonly string[];
   #cancelled = false;
   #droppedRequestIds = new Set<string>();
 
@@ -230,12 +264,14 @@ export class AgentSessionHost {
     session?: PiTextSession,
     audit?: AgentAuditSink,
     failure?: AgentFailure,
+    inputCapabilities: readonly string[] = [],
   ) {
     this.#sessionId = sessionId;
     this.#role = role;
     this.#session = session;
     this.#audit = audit;
     this.#failure = failure;
+    this.#inputCapabilities = inputCapabilities;
   }
 
   static blocked(
@@ -305,7 +341,7 @@ export class AgentSessionHost {
       const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const content = promptBody(request, attempts, lastError);
+        const content = capabilityAwarePrompt(promptBody(request, attempts, lastError), this.#inputCapabilities);
         await this.#audit?.append({
           type: "agent.message_appended",
           sessionId: this.#sessionId,
@@ -319,7 +355,7 @@ export class AgentSessionHost {
           timer = setTimeout(() => controller.abort(), request.timeoutMs);
         }
         const text = await abortable(
-          this.#session.append({ content, signal: controller.signal }),
+          this.#session.append({ content, ...(request.promptImages ? { images: request.promptImages } : {}), signal: controller.signal }),
           controller.signal,
         );
         if (controller.signal.aborted) throw timeoutError();
@@ -426,7 +462,9 @@ function instrumentTools(
             role,
             payload: {
               tool: tool.name,
-              byteLength: Buffer.byteLength(result.content),
+              byteLength: contentByteLength(result),
+              contentTypes: contentTypes(result),
+              contentDigest: contentDigest(result),
               ...(result.details && typeof result.details === "object"
                 ? { details: safeDetails(result.details) }
                 : {}),
@@ -526,7 +564,7 @@ function promptBody<T>(
   attempts: number,
   lastError: string | undefined,
 ): string {
-  const context = JSON.stringify(request.context);
+  const context = request.promptContent ?? JSON.stringify(request.context);
   const contract = request.outputContract
     ? `${request.outputContract.trim()}\n\n`
     : "";
@@ -654,6 +692,24 @@ function safeDetails(value: unknown): Record<string, unknown> {
             ? `${item.slice(0, 512)}…`
             : item;
   return facts;
+}
+
+function capabilityAwarePrompt(content: string, inputCapabilities: readonly string[]): string {
+  if (!inputCapabilities.length) return content;
+  return `modelInputCapabilities=${inputCapabilities.join(",")}\nOnly request or interpret native media whose type is listed above.\n\n${content}`;
+}
+
+function contentByteLength(result: AgentToolResult): number {
+  if (!result.contentBlocks) return Buffer.byteLength(result.content);
+  return result.contentBlocks.reduce((total, block) => total + (block.type === "text" ? Buffer.byteLength(block.text) : Buffer.byteLength(block.data, "base64")), 0);
+}
+
+function contentTypes(result: AgentToolResult): string[] {
+  return result.contentBlocks ? [...new Set(result.contentBlocks.map((block) => block.type))] : ["text"];
+}
+
+function contentDigest(result: AgentToolResult): string {
+  return sha256(result.contentBlocks ? JSON.stringify(result.contentBlocks) : result.content);
 }
 
 function redactAuditText(text: string): string {

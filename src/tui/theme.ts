@@ -99,7 +99,7 @@ function resolveColorMode(env: NodeJS.ProcessEnv = process.env, isTty = Boolean(
   if (env.FORCE_COLOR === '1' || env.FORCE_COLOR === '2') return 'ansi';
   if (env.FORCE_COLOR === '3' || env.COLORTERM === 'truecolor' || env.COLORTERM === '24bit') return 'truecolor';
   const depth = typeof process.stdout.getColorDepth === 'function' ? process.stdout.getColorDepth() : 0;
-  if (depth >= 24 || process.platform === 'win32') return 'truecolor';
+  if (depth >= 24) return 'truecolor';
   return 'ansi';
 }
 
@@ -133,7 +133,7 @@ function paintMode(env: NodeJS.ProcessEnv = process.env): ColorMode {
   if (env.FORCE_COLOR === '1' || env.FORCE_COLOR === '2') return 'ansi';
   if (env.FORCE_COLOR === '3' || env.COLORTERM === 'truecolor' || env.COLORTERM === '24bit') return 'truecolor';
   const depth = typeof process.stdout.getColorDepth === 'function' ? process.stdout.getColorDepth() : 0;
-  if (depth >= 24 || process.platform === 'win32') return 'truecolor';
+  if (depth >= 24) return 'truecolor';
   return 'ansi';
 }
 

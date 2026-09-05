@@ -11,7 +11,7 @@
 3. 每个 CandidateRun 使用独立的 Controller session，候选之间不共享隐藏状态；同一 Experiment 的候选共享同一份已解析 Controller 配置。
 4. Pi Agent Host 随项目正常更新，不要求恢复或固定历史 Host 版本，也不作为目标 Runtime 的比较变量。
 5. Controller 可以且必须访问 TaskCase 中的完整原始会话。原始会话是理解用户目标、知识、偏好、纠正方式和验收习惯的证据，不是需要隐藏的标准答案；Target Runtime 收到的用户消息全部由 Controller 写出，包括第一句。
-6. 完整原始会话的使用边界由 canonical system prompt 明确限制：历史后续轨迹用于理解用户目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。第一版不再设计未来信息检测、答案泄漏评分、第二审查 Agent 或人工用户策略规则。
+6. 完整原始会话的使用边界由 canonical system prompt 明确限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停，不是终态句里的交付物种类，也不是用完 `historicalUserTurns`。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。第一版不再设计未来信息检测、答案泄漏评分、第二审查 Agent 或人工用户策略规则。
 7. “同等人类能力”不能被证明，只能被操作化。产品实现的是固定条件下的适应性用户协作模拟，不声称精确预测真实用户在反事实情境中的唯一输入。
 8. Controller 使用什么模型不属于 Harness 的产品判断，取决于用户通过 Pi 能访问什么模型。Harness 不捆绑、推荐或评价 Controller 模型。
 
@@ -86,9 +86,9 @@ Pi Agent Host 是 Harness 的实现基础设施，不是需要恢复的历史 Ag
 
 ## 4. Controller 工具集合
 
-Controller 工具让扮演用户的模型能看见隔离副本里一个真实用户本来就能看见的证据，并在副本内做有界核对。工具名与 Recovery / Comparison 相同（见 [八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。不能绕过 Target Runtime 执行任务。
+Controller 工具让扮演用户的模型能看见隔离副本里一个真实用户本来就能看见的证据。工具名是工作区七件套，不含 `read_observation`（见 [Controller 七工具](../decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)）。不能绕过 Target Runtime 执行任务。
 
-Host 暴露工作区七件套加 `read_observation`（`transcript` | `run_events`）。`powershell` 的 cwd 锁在隔离副本，净化环境、不给凭据、stdout/时限有界。不按工具调用次数截断；上下文走 Pi 压缩。
+Host 暴露工作区七件套。`read_observation` 不注册。历史与本 run 原文在 briefing 目录，用 `read` 读取。`powershell` 的 cwd 锁在隔离副本（`project/` 挂载），净化环境、不给凭据、stdout/时限有界。briefing 根与 `project/` 均拒写。不按工具调用次数截断；上下文走 Pi 压缩。
 
 工具边界：
 
@@ -99,7 +99,7 @@ Host 暴露工作区七件套加 `read_observation`（`transcript` | `run_events
 - 确定性 renderer 可以生成派生预览，但预览必须成为带 provenance 的新 artifact；
 - 工具能力配置在同一 Experiment 的候选间一致，实际调用次数不要求一致。
 
-当前环境和候选轨迹的轻量观察直接进入 `SteeringContext`。工具用于按需展开长内容，不应该让 Controller 自己在整个工作区里漫游。
+当前环境和候选轨迹的轻量摘要可以出现在 INDEX 与 THIS-TURN 文件里。工具用于按需读原文，不应该让 Controller 在整个工作区里漫游。
 
 ## 5. 原始会话可见范围
 
@@ -109,7 +109,9 @@ Controller 对原始会话采用“完整可访问”，而不是“每轮把所
 
 - 完整 transcript 是不可变事实源；
 - 从 `initialInput` 到会话结束的全部原始消息和事件都可以读取；
-- 不隐藏原始会话中的未来用户输入或原 Agent 结果；
+- 不隐藏原始会话中的未来用户输入或原 Agent 结果；那些材料在 briefing 的 `history/` 下按需 `read`，由 Controller 决定是否说、怎么说；
+- Host 不因「还有未使用的历史用户句」拒绝 `done`，也不按序强制投递；
+- `current.summary` 投影结算、命令、路径和后续用户句条数，不把候选终态自述当作完成信号；
 - 摘要不能替代 transcript，也不能成为唯一仍可访问的历史；
 - 每次读取保留消息 ID、顺序和 provenance；
 - privacy policy 可以在发送给外部 provider 前脱敏，但脱敏事实必须可见。
@@ -117,17 +119,14 @@ Controller 对原始会话采用“完整可访问”，而不是“每轮把所
 默认上下文组装为：
 
 ```text
-`initialInput`、目标和硬约束
-+ 完整原始会话（可直接注入或按范围读取）
-+ BaselineEvidence
-+ 当前候选规范化轨迹
-+ 当前环境和 artifact 观察
-+ Controller 先前已发送的消息
-+ 剩余预算和权限边界
-→ SteeringContext
+决策段 + INDEX.md（每次 append）
++ briefing 上的 history/、run/turns/、THIS-TURN（按需 read）
++ project/ 隔离副本（按需 read）
++ 剩余预算（budget.decisionsUsed / 可选 decisionsLimit）
+→ 模型可见输入；SteeringContext 其余字段供 Host 校验，不 JSON 进 prompt
 ```
 
-会话能够放入上下文时可以直接提供完整内容；超过窗口时，Host 提供稳定的 transcript 索引和按消息范围读取能力。无论采用哪种装配方式，Controller 都拥有访问完整会话的能力。
+完整可访问落实为 briefing 文件加工作区工具。INDEX 只列路径；transcript 按 `history/transcript/{id}.txt` 读取。窗口不够时靠 Pi 压缩，不以摘要替代磁盘原文。
 
 不同 CandidateRun 各自从同一个不可变 transcript 开始，不能看到其他候选轨迹或 Comparison 结果。
 
@@ -149,7 +148,7 @@ interface AgentBudget {
 - `maxCalls`、`maxTokens` 和 `maxCost` 默认未设置，即 Controller 资源预算无限制；
 - `maxStructuredRepairAttempts` 限制 schema 修复调用，`maxProviderRetries` 限制瞬时 provider 错误重试；两者第一版都保持很小且分别计数；
 - `callTimeoutMs` 仅在用户显式配置时限制单次调用；默认快照写一个很大的安全阀数字，实际 Host 调用为 `timeoutMs: 0`；
-- CandidateRun 的 `RunPolicy` 仍独立约束 Target Runtime 的墙钟、turn 和模型调用；它不是 Controller 的资源预算；
+- CandidateRun 的 `RunPolicy` 约束 Target Runtime 的墙钟、turn 和模型调用；Controller 决策次数只用 `controller.budget.maxCalls`（未设置则不截断）；
 - RunOrchestrator 执行 CandidateRun 限制；Controller 只能看到对应的运行快照并据此判断是否继续。
 
 所有候选使用相同的显式 Agent 预算配置（默认均为无限制），但实际消费分别记录。Controller token、成本和耗时必须与 Target 指标分开，同时可以提供端到端总量。若用户配置了 Agent 预算，上限耗尽是独立终止原因，不能伪装成 `done` 或任务完成。

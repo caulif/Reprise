@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import {
-  assertExperimentReportPath, assertExperimentTracePath, assertPathInsideRoot,
+  assertExperimentReportPath, assertExperimentTracePath, assertExperimentReplicaPath, assertPathInsideRoot,
   localPathFromFileUrl, openAllowedFileUrl, openExperimentReport, openExperimentTrace, openScratchText,
   type ReportSpawner,
 } from '../src/tui/open-report.js';
@@ -14,6 +14,7 @@ import {
 const EXPERIMENT_ROOT = resolve('/data/experiments/one');
 const REPORT_PATH = join(EXPERIMENT_ROOT, 'report.html');
 const TRACE_PATH = join(EXPERIMENT_ROOT, 'runs', 'run-1');
+const REPLICA_PATH = join(EXPERIMENT_ROOT, 'environment', 'runs', 'run-1');
 const DATA_ROOT = resolve('/data');
 const OTHER_ROOT = resolve('/other');
 
@@ -47,6 +48,12 @@ test('trace opener only accepts a run directory inside the selected experiment',
   assert.equal(assertExperimentTracePath(EXPERIMENT_ROOT, 'run-1').replaceAll('\\', '/'), TRACE_PATH.replaceAll('\\', '/'));
   assert.throws(() => assertExperimentTracePath(EXPERIMENT_ROOT, '../secret'), /Trace path/);
   assert.throws(() => assertExperimentTracePath(EXPERIMENT_ROOT, 'run/nested'), /Trace path/);
+});
+
+test('replica opener only accepts the isolated run workspace inside the selected experiment', () => {
+  assert.equal(assertExperimentReplicaPath(EXPERIMENT_ROOT, 'run-1').replaceAll('\\', '/'), REPLICA_PATH.replaceAll('\\', '/'));
+  assert.throws(() => assertExperimentReplicaPath(EXPERIMENT_ROOT, '../secret'), /Replica path/);
+  assert.throws(() => assertExperimentReplicaPath(EXPERIMENT_ROOT, 'run/nested'), /Replica path/);
 });
 
 test('local file URLs must stay inside the allowed data directory', () => {

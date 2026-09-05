@@ -154,7 +154,7 @@ function isOutputProducingTask(text: string): boolean {
   return /(?:下载|整睆|创建|生戝|写入|导出|保存|download|organize|create|generate|write|export|save)/i.test(text);
 }
 
-function parseReadinessCommand(command: string): { command: string; args: string[] } | undefined {
+function parseReadinessCommand(command: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[] } | undefined {
   if (!command || /[\r\n&|;<>`]/.test(command)) return undefined;
   const tokens = [...command.matchAll(/"([^"\\]*(?:\\.[^"\\]*)*)"|'([^']*)'|(\S+)/g)].map((match) => match[1] ?? match[2] ?? match[3]).filter((token): token is string => token !== undefined);
   if (!tokens.length || (command.match(/"/g)?.length ?? 0) % 2 !== 0 || (command.match(/'/g)?.length ?? 0) % 2 !== 0) return undefined;
@@ -163,5 +163,5 @@ function parseReadinessCommand(command: string): { command: string; args: string
   const executable = executableToken.toLowerCase().replace(/\.cmd$/, "");
   if (!["npm", "pnpm", "yarn", "node", "python", "pytest", "cargo", "go", "make"].includes(executable)) return undefined;
   if (tokens.slice(1).some((token) => token === "-e" || token === "-c" || token.includes(".."))) return undefined;
-  return { command: process.platform === "win32" && ["npm", "pnpm", "yarn"].includes(executable) ? `${executable}.cmd` : executableToken, args: tokens.slice(1) };
+  return { command: platform === "win32" && ["npm", "pnpm", "yarn"].includes(executable) ? `${executable}.cmd` : executableToken, args: tokens.slice(1) };
 }

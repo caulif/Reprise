@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controller Agent 上下文与流程分析</title>
+<style>
+:root{--ink:#172033;--muted:#63708a;--line:#d9e0eb;--paper:#f7f9fc;--blue:#2f6fed;--teal:#138a8a;--amber:#c47b16;--red:#c74646;--green:#258a55;--navy:#172b4d}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.65 "Segoe UI","Microsoft YaHei",Arial,sans-serif}main{max-width:1200px;margin:auto;padding:28px 24px 60px}h1,h2,h3{line-height:1.25;margin:0 0 12px}h1{font-size:34px;color:var(--navy)}h2{font-size:23px;margin-top:32px}h3{font-size:17px}.lead{font-size:18px;color:#33415d;max-width:920px}.meta{color:var(--muted);font-size:13px}.hero{border-bottom:1px solid var(--line);padding-bottom:24px}.verdict{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:22px 0}.stat,.panel,.timeline-item,.option{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 2px 8px #1720330b}.stat strong{display:block;font-size:26px;margin:5px 0}.status-bad{color:var(--red)}.status-good{color:var(--green)}.status-warn{color:var(--amber)}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.panel p{margin:7px 0}.label{display:inline-block;font-size:12px;font-weight:600;color:#fff;border-radius:4px;padding:1px 7px;margin-right:6px}.blue{background:var(--blue)}.teal{background:var(--teal)}.amber{background:var(--amber)}.red{background:var(--red)}.green{background:var(--green)}code,pre{font-family:Consolas,"Microsoft YaHei Mono",monospace}code{background:#eef2f7;padding:2px 5px;border-radius:3px}pre{white-space:pre-wrap;background:#101827;color:#e8eef8;border-radius:6px;padding:14px;overflow:auto;font-size:13px;line-height:1.55}.flow{display:flex;align-items:stretch;gap:8px;overflow:auto;padding:8px 0}.flow .node{min-width:170px;background:#fff;border:1px solid var(--line);border-top:4px solid var(--blue);border-radius:7px;padding:12px}.flow .arrow{display:flex;align-items:center;color:var(--blue);font-size:22px}.layer{display:grid;grid-template-columns:155px 1fr;gap:14px;padding:13px 0;border-bottom:1px solid var(--line)}.layer:last-child{border-bottom:0}.layer-title{font-weight:700;color:var(--navy)}.chips{display:flex;flex-wrap:wrap;gap:7px}.chip{border:1px solid var(--line);border-radius:4px;padding:4px 8px;background:#fbfcfe;font-size:13px}.timeline{position:relative;margin:10px 0 0 13px;border-left:3px solid #cbd6e8;padding-left:21px}.timeline-item{margin:0 0 15px;position:relative}.timeline-item:before{content:"";position:absolute;left:-31px;top:18px;width:11px;height:11px;border:3px solid #fff;border-radius:50%;background:var(--blue);box-shadow:0 0 0 2px var(--blue)}.timeline-item h3{margin-bottom:4px}.evidence{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;margin:16px 0}.evidence>div{padding:16px;border:1px solid var(--line);background:#fff}.evidence>div:first-child{border-radius:8px 0 0 8px}.evidence>div:last-child{border-radius:0 8px 8px 0}.evidence .big{font-size:22px;font-weight:700}.matrix{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line)}.matrix th,.matrix td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}.matrix th{background:#f0f4fa;color:var(--navy)}.matrix tr:last-child td{border-bottom:0}.callout{border-left:4px solid var(--blue);background:#eef5ff;padding:13px 16px;margin:14px 0}.callout.warn{border-left-color:var(--amber);background:#fff7e8}.callout.bad{border-left-color:var(--red);background:#fff0f0}.option{border-top:4px solid var(--blue)}.option.recommended{border-top-color:var(--green)}.option h3{display:flex;justify-content:space-between}.tag{font-size:11px;color:var(--green);border:1px solid #9ed4b6;padding:1px 6px;border-radius:3px}.small{font-size:13px;color:var(--muted)}.footer{margin-top:35px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}@media(max-width:800px){main{padding:20px 15px}.verdict,.grid3,.evidence{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.evidence>div,.evidence>div:first-child,.evidence>div:last-child{border-radius:0}.evidence>div:first-child{border-radius:8px 8px 0 0}.evidence>div:last-child{border-radius:0 0 8px 8px}h1{font-size:28px}.layer{grid-template-columns:1fr;gap:4px}.flow{display:block}.flow .node{margin:8px 0}.flow .arrow{justify-content:center;height:22px}}
+</style>
+</head>
+<body><main>
+<section class="hero">
+<div class="meta">Reprise / Controller Agent / 2026-09-04</div>
+<h1>Controller Agent 上下文与流程分析</h1>
+<p class="lead">本页回答一个具体问题：原始会话已经明确要求“根据 HTML 新建白底 PPT”，为什么 Controller 仍在 HTML 修正后直接结束？结论不是“缺上下文”，而是上下文虽可访问、也被读取，却没有被组织成一次可验证的“用户要求 → 当前产物”对照。</p>
+<p class="meta">复盘对象：<code>recovery-b0f8eaee-f70a-4fca-a125-72949131733e</code> / <code>run-f4ddb43a-fa7c-4caa-a8c7-01f41f2d4f11</code></p>
+</section>
+
+<section class="verdict">
+<div class="stat"><span class="label green">已确认</span><strong class="status-good">读到了</strong>第二轮读取了 <code>message-350</code>，其中包含明确的 HTML → PPT 动作。</div>
+<div class="stat"><span class="label red">断点</span><strong class="status-bad">没采用</strong>读取后仍只发 HTML 白底、风格、数据源修正。</div>
+<div class="stat"><span class="label amber">非本次原因</span><strong class="status-warn">无压缩</strong>本次事件中 <code>agent.context_compacted=0</code>，不能归因于压缩遗忘。</div>
+</section>
+
+<h2>一、当前上下文架构</h2>
+<div class="flow">
+<div class="node"><b>原始会话</b><br><span class="small">TaskCase transcript<br>用户与助手全文</span></div><div class="arrow">→</div>
+<div class="node"><b>Briefing 文件系统</b><br><span class="small">INDEX / history / THIS-TURN / project</span></div><div class="arrow">→</div>
+<div class="node"><b>每轮 request</b><br><span class="small">短指令 + INDEX 路径图<br>正文不内嵌 transcript</span></div><div class="arrow">→</div>
+<div class="node"><b>持久 Controller session</b><br><span class="small">同一 run 复用，追加消息与工具结果</span></div><div class="arrow">→</div>
+<div class="node"><b>JSON decision</b><br><span class="small">send / done，由 Host 校验 schema</span></div>
+</div>
+<div class="panel">
+<div class="layer"><div class="layer-title">System prompt</div><div>角色边界、opening/steering、历史会话的使用方式、完成判断、输出 JSON 契约。</div></div>
+<div class="layer"><div class="layer-title">每轮 prompt</div><div><code>phase</code>、<code>briefingRoot</code>、INDEX.md。历史正文不直接拼入，由 Agent 自己调用 <code>read</code>。</div></div>
+<div class="layer"><div class="layer-title">Briefing</div><div class="chips"><span class="chip">history/initial-input.txt</span><span class="chip">history/outline.tsv</span><span class="chip">history/transcript/{id}.txt</span><span class="chip">THIS-TURN.txt</span><span class="chip">run/turns/NNNN/*</span><span class="chip">project/ 当前副本</span></div></div>
+<div class="layer"><div class="layer-title">Host 事实</div><div>当前回合、changed paths、事件、路径和 evidence refs；不负责解释业务语义，也不判断“是否该做 PPT”。</div></div>
+</div>
+
+<h2>二、建议的新认知回合：先建立任务画像，再决定怎么说</h2>
+<div class="callout"><b>你的思路是成立的，但要把“先思考一轮”定义为 Agent 的认知产物，而不是新的业务状态。</b>Controller 第一次拿到 run 后，先完整读取历史对话和当前任务材料，提炼协作者画像、任务目标、要求变化、交付节奏与验收习惯，写入 run-owned 的 Markdown。这个文件成为后续每轮的可恢复工作记忆。</div>
+<div class="flow">
+<div class="node"><b>认知回合</b><br><span class="small">读完整历史<br>只做理解，不发用户消息</span></div><div class="arrow">→</div>
+<div class="node"><b>任务画像 MD</b><br><span class="small">目标、约束、动作、节奏、未决项、证据引用</span></div><div class="arrow">→</div>
+<div class="node"><b>开场回合</b><br><span class="small">结合画像与初始工作区<br>生成第一条用户输入</span></div><div class="arrow">→</div>
+<div class="node"><b>反馈回合</b><br><span class="small">读当前进度 + 画像<br>决定 send 或 done</span></div>
+</div>
+<div class="grid">
+<div class="panel"><h3><span class="label teal">Turn 0</span>历史理解产物应写什么</h3><p><code>controller-task-understanding.md</code> 不是流水账，而是结构化但可读的“语义账本”：初始目标、后续明确动作、交付格式变化、持续约束、验收信号、用户表达风格、当前未完成事项。</p><p class="small">必须附 transcript message id 和文件路径，便于复核“这条判断来自哪里”。</p></div>
+<div class="panel"><h3><span class="label blue">Turn 1</span>第一条用户输入怎么产生</h3><p>Controller 读取任务画像、初始输入、当前 project 和 replay 路径，判断候选从哪里开始最自然，再以原用户口吻写第一条消息。它不是把初始句机械复制，也不是提前发送后续要求。</p></div>
+<div class="panel"><h3><span class="label amber">每轮</span>反馈后先更新理解</h3><p>每个候选回合结束后，Controller 先把新事实写入画像的“当前进度/已满足/未满足/新证据”区，再决定是否需要一条用户消息。这样最近一轮的局部修改不会覆盖早期的格式变更。</p></div>
+<div class="panel"><h3><span class="label green">完成</span>只在画像覆盖清零后结束</h3><p><code>done/satisfied</code> 的前提不是“当前文件看起来不错”，而是画像中的所有仍适用明确动作都有真实文件或检查证据；若无法验证，应 send/verify 或明确 blocked。</p></div>
+</div>
+
+<h2>三、任务画像 MD 的建议结构</h2>
+<table class="matrix"><thead><tr><th>区块</th><th>内容</th><th>用途</th></tr></thead><tbody>
+<tr><td><code>## Task</code></td><td>初始目标、用户希望交付的对象、允许的工作范围。</td><td>定义问题边界，避免只盯住最近产物。</td></tr>
+<tr><td><code>## Explicit actions</code></td><td>逐条列出用户明确要求：动作、对象、格式、状态（未满足/已满足/待验证）。</td><td>防止“不要机械重放”变成“忽略后续动作”。</td></tr>
+<tr><td><code>## Constraints</code></td><td>白底、统一风格、数据源标注、路径可见等持续约束。</td><td>把修订意见与最终交付区分开。</td></tr>
+<tr><td><code>## Collaboration profile</code></td><td>用户如何提出修改、对视觉/证据/路径的敏感度、何时继续追问。</td><td>帮助 Agent 模拟“这个人下一步会怎么说”。</td></tr>
+<tr><td><code>## Current coverage</code></td><td>当前文件、changed paths、可打开/渲染结果、每条动作的证据 ref。</td><td>为每轮 send/done 提供可审计依据。</td></tr>
+<tr><td><code>## Decision log</code></td><td>每轮为什么发这句话、解决了什么未满足项、下一轮要重新检查什么。</td><td>压缩后恢复推理链，避免只剩最后一次局部总结。</td></tr>
+</tbody></table>
+<div class="callout warn"><b>关键边界：</b>Host 可以创建文件、保存版本、校验路径和记录证据，但不能替 Agent 填写“PPT 是下一步”这样的语义结论。画像由 Controller 生成，Host 只保证它可恢复、可追溯、不会被候选看到。</div>
+
+<h2>四、按你的思路重排后的运行序列</h2>
+<div class="timeline">
+<div class="timeline-item"><h3>认知回合：理解历史，不发送</h3><p>读取完整 transcript，重点扫描用户消息；识别目标变化、格式变化、约束、验收标准和用户协作节奏。写入初始任务画像，并在 audit 中记录读过哪些 message id。</p></div>
+<div class="timeline-item"><h3>开场回合：从画像生成第一条输入</h3><p>读取画像与当前工作区，选择符合原始起点的最小自然请求。此回合只负责产生第一条 user message，不能把后续历史句按顺序倾倒给候选。</p></div>
+<div class="timeline-item"><h3>反馈回合：先更新画像，再输出下一条</h3><p>候选 turn settled 后，读取 THIS-TURN、project 和当前画像；把新事实合并到覆盖清单。若存在未满足的明确要求，生成一条针对当前状态的自然反馈；如果要求已满足，才考虑 done。</p></div>
+<div class="timeline-item"><h3>恢复/压缩：恢复画像，不依赖自由摘要</h3><p>发生 session compact、进程恢复或重建 session 时，优先读取持久化画像 MD。早期目标、格式变化、未满足动作和证据路径必须是保留字段。</p></div>
+</div>
+
+<h2>五、落地前必须解决的能力边界</h2>
+<div class="callout warn"><b>当前 Controller 不能直接按普通文件写入画像。</b>现有 system prompt 说明 <code>edit</code> 和 <code>write</code> 已注册，但写入被拒绝；因此“让 Agent 写一个 MD”如果直接依赖现有工具会失败。推荐让 Agent 在一次认知调用中返回受约束的画像正文，由 Host 校验后写入 run-owned briefing，或提供只允许写入该目录的专用 <code>save_controller_understanding</code> 能力。</div>
+<div class="grid">
+<div class="panel"><h3>推荐接口：语义输出，Host 持久化</h3><p>认知调用返回 <code>understanding_markdown</code>、<code>sourceMessageIds</code>、<code>openQuestions</code>，Host 通过 schema 校验后写入 <code>controller-task-understanding.md</code>。这仍由 Agent 负责理解，Host 只负责保存和追溯。</p></div>
+<div class="panel"><h3>不推荐接口：开放式写文件</h3><p>给 Controller 全部写权限会扩大边界，可能污染候选目录或把模型推理写到错误位置。画像必须位于 Host-owned、candidate 不可见、run-scoped 的目录，并保留版本。</p></div>
+</div>
+<pre>understanding = {
+  markdown: "...",
+  sourceMessageIds: ["message-6", "message-155", "message-350", "message-541"],
+  unresolvedActions: ["新建白底 PPT 并复刻三页 HTML"],
+  generatedAt: "..."
+}
+Host -> Value.Check -> writeAtomic(run/controller-briefing/controller-task-understanding.md)</pre>
+
+<h2>六、每一轮上下文如何增加</h2>
+<table class="matrix"><thead><tr><th>调用</th><th>Host 新增/更新</th><th>Controller 实际动作</th><th>结果</th></tr></thead><tbody>
+<tr><td>第 1 轮 opening</td><td>创建 briefing；写入初始输入、outline、全部 transcript；<code>THIS-TURN</code> 为空。</td><td>读初始输入、项目路径、replay、outline。</td><td>发送“先做 2–3 页 PPT 风格 HTML”。</td></tr>
+<tr><td>第 2 轮 steering</td><td>新增 <code>run/turns/0001</code>；写入候选可见结果、changed paths；更新 THIS-TURN。</td><td>读 HTML；读 <code>message-155</code>、<code>216</code>、<code>350</code>、<code>541</code>。</td><td class="status-bad"><b>关键遗漏：</b>没有把“新建白底 PPT、复刻 HTML”列为未完成动作。</td></tr>
+<tr><td>第 3 轮 steering</td><td>新增 <code>run/turns/0002</code>，仍以 HTML 为唯一 changed path。</td><td>检查 HTML 白底、版式和数据源。</td><td>继续纠正 HTML 第 3 页来源。</td></tr>
+<tr><td>第 4 轮 steering</td><td>新增 <code>run/turns/0003</code>；候选仍只有 HTML。</td><td>再次读 HTML 与数据源文本。</td><td class="status-bad"><b>错误 done：</b>只证明 HTML 修正完成，没有证明 PPT 存在。</td></tr>
+</tbody></table>
+
+<h2>七、证据漏斗：信息在哪里断掉</h2>
+<div class="evidence"><div><div class="big status-good">5 条</div><b>已提供</b><p class="small">message-6 / 155 / 216 / 350 / 541。后续要求包括 HTML 风格确认、继续扩展、HTML → PPT、逐页数据源。</p></div><div><div class="big status-good">4 条</div><b>已读取</b><p class="small">sequence 192–200 明确记录 Controller 读取了 155、216、350、541。</p></div><div><div class="big status-bad">0 条</div><b>进入完成核对</b><p class="small">没有形成“要求项—当前文件—证据—是否满足”的显式账本；第 4 轮只核对 HTML。</p></div></div>
+<div class="callout bad"><b>根因定位：</b>不是 transcript 不可见，而是语义整合失败。Controller 把“不要机械重放历史”落实成了“当前轮继续修 HTML”，没有把历史中的明确格式变化识别为当前任务的未完成交付。</div>
+
+<h2>八、System prompt 的具体问题</h2>
+<div class="grid">
+<div class="panel"><h3><span class="label red">P1</span>历史定位过度偏向“习惯”</h3><p>“History is for whether this user would stop or steer, not a queue to send in order.” 本意是防止剧本式重放，但没有同时规定：后续用户句中的明确动作、格式变更、交付对象仍然是有效任务事实。</p><p class="small">副作用：模型更容易观察“用户会不会继续挑剔 HTML”，而不是确认“PPT 是否已经生成”。</p></div>
+<div class="panel"><h3><span class="label red">P1</span>完成判断没有覆盖检查</h3><p>“Would this user ... actually stop here?” 没有要求列出所有仍适用的明确要求，再逐项用当前文件证明。于是“HTML 看起来合格”被误当成“全局任务完成”。</p></div>
+<div class="panel"><h3><span class="label amber">P2</span>注意力锚定当前回合</h3><p>steering 先读 THIS-TURN 和 project，历史只在必要时再读。这个优先级适合降低成本，却会让最近的 HTML 局部修改压过较早但更高优先级的格式要求。</p></div>
+<div class="panel"><h3><span class="label amber">P2</span>Host 只做 schema 校验</h3><p>Host 会校验 decision 结构和 evidence ref，但不会拒绝“没有 PPT 却 done”。这是正确的边界方向，却缺少对 Agent 的强制推理契约和评测反向用例。</p></div>
+</div>
+
+<h2>九、上下文管理：本次事实与未来风险</h2>
+<div class="grid">
+<div class="panel"><h3 class="status-good">本次不是压缩问题</h3><p>事件统计中 Controller 的 <code>agent.context_compacted</code> 为 0；四次调用共享同一 session，但没有发生 summary + retained tail 替换。因此不能说 PPT 要求被 compact 丢失。</p></div>
+<div class="panel"><h3 class="status-warn">设计仍有两个风险</h3><p>一是每轮正文很短，历史要靠工具主动发现；二是未来长会话发生压缩后，模型生成的 summary 可能保留“当前进展”而弱化早期格式变化。压缩摘要不应成为唯一记忆来源。</p></div>
+<div class="panel"><h3>当前结构的可观测缺口</h3><p><code>SteeringContext.task.historicalUserTurns</code> 在实际构造中为空，虽然 transcript 文件存在；<code>controllerRequestSnapshot</code> 也不记录 Agent 已读取哪些历史句，只记录路径和摘要。</p></div>
+<div class="panel"><h3>应保留的边界</h3><p>不把“HTML 后必须 PPT”写入 Host；不要求发送次数等于历史用户句数；不让 Host 替 Agent 做产品语义判断。Host 只提供事实、持久化、权限和生命周期。</p></div>
+</div>
+
+<h2>十、Agent-first 方案对比</h2>
+<div class="grid3">
+<div class="option"><h3>A. 只改 prompt</h3><p>新增“读取所有后续用户消息；提取动作/对象/格式/约束；与当前产物逐项对照；有未满足项不得 done”。</p><p class="small">成本低，最贴近现有设计；依赖模型持续执行检查。</p></div>
+<div class="option recommended"><h3>B. Prompt + 语义中立账本 <span class="tag">推荐</span></h3><p>Host 每轮生成不可伪造的事实索引：历史用户句、候选文件、扩展名、渲染/打开结果、已发送消息。Agent 自己判断哪些要求仍有效、下一步怎么说。</p><p class="small">改善可见性和可审计性，但不硬编码 HTML/PPT 流程。</p></div>
+<div class="option"><h3>C. 每轮完整 transcript 注入</h3><p>把全部历史正文直接放入每次 request，减少工具读取。</p><p class="small">最直观但 token 成本高、重复多，且仍不能保证模型做语义对照；只适合短会话或诊断模式。</p></div>
+</div>
+
+<h2>十一、推荐的新契约</h2>
+<div class="callout"><b>Controller 每次 steering 必须先完成三步内部工作：</b>（1）读完整用户后续消息，提取仍可能有效的明确动作与约束；（2）检查当前回合和 workspace 的真实文件，尤其是用户点名的格式和路径；（3）形成“已满足 / 未满足 / 无法验证”清单。只有不存在未满足的明确动作，才可返回 <code>done/satisfied</code>。</div>
+<pre># Reading the historical session
+The full transcript is evidence of this person's goals and task changes, not a script.
+Do not replay sentences mechanically. Do extract every still-applicable explicit
+action, deliverable format, named object, constraint, and verification request.
+
+# Before done/satisfied
+Read the relevant later user messages and current project files. Compare each
+explicit requirement with an observable artifact or check. A polished artifact
+of the wrong format is not complete. If any explicit action is unmet or unverified,
+send the shortest natural follow-up in this user's voice. Explain the coverage
+in rationale/evidenceRefs, but do not leak analysis into the user message.</pre>
+
+<h2>十二、生命周期与结果可审阅性</h2>
+<div class="grid">
+<div class="panel"><h3 class="status-bad">独立系统缺陷：副本释放</h3><p>run 结束事件记录了 <code>environment.release_completed</code>。候选 HTML 曾在隔离副本中，但副本释放后用户找不到它。这与 Controller 是否正确判断是两条独立故障链。</p></div>
+<div class="panel"><h3>应成为交付不变量</h3><p>停止 Runtime 不等于删除审阅材料。结束时应把候选文件复制到 experiment-owned deliverables，保留 workspace 直到用户显式清理，并在结果页显示完整绝对路径。</p></div>
+</div>
+<pre>Run:         &lt;完整路径&gt;
+Workspace:   &lt;完整路径&gt;
+Deliverables:&lt;完整路径&gt;
+HTML:        &lt;完整路径或“未生成”&gt;
+PPTX:        &lt;完整路径或“未生成”&gt;
+Screenshots: &lt;完整路径或“未生成”&gt;</pre>
+
+<h2>十三、验证与提分顺序</h2>
+<table class="matrix"><thead><tr><th>优先级</th><th>动作</th><th>通过标准</th></tr></thead><tbody>
+<tr><td><span class="label red">1</span>马上</td><td>改 prompt 与 request briefing，加入“要求—产物覆盖检查”。</td><td>fixture 中 HTML 已有但 PPT 未有时，Controller 必须 send；PPT 和 HTML 都有且可验证时才可 done。</td></tr>
+<tr><td><span class="label amber">2</span>随后</td><td>增加语义中立的历史/产物事实索引和读取审计。</td><td>报告能显示每条用户动作被读到、被采用或被判定已满足。</td></tr>
+<tr><td><span class="label amber">3</span>随后</td><td>固定压缩摘要的保留字段：早期目标、后续格式变化、未满足动作、当前文件。</td><td>发生 compact 后仍能恢复同一覆盖清单；不能仅依赖模型自由摘要。</td></tr>
+<tr><td><span class="label blue">4</span>交付</td><td>保存 deliverables、保留 workspace、结果页打印路径。</td><td>run 结束后 HTML/PPT/截图可打开；未生成项明确显示“未生成”。</td></tr>
+</tbody></table>
+
+<div class="footer">最终责任判断：本次流程判断错误的直接责任在 Controller Agent；根因是历史语义整合和完成覆盖检查不足。候选模型是次要因素，副本释放是独立的交付生命周期缺陷。推荐以方案 B 为主，保持 Agent 判断任务流程，Host 只提供可验证事实和可持续交付物。</div>
+</main></body></html>

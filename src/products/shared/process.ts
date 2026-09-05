@@ -32,7 +32,8 @@ export async function forceKill(child: ChildProcessWithoutNullStreams): Promise<
     child.kill('SIGKILL');
     return;
   }
-  await new Promise<void>((resolveWait) => spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore', windowsHide: true }).once('close', () => resolveWait()));
+  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows';
+  await new Promise<void>((resolveWait) => spawn(join(systemRoot, 'System32', 'taskkill.exe'), ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore', windowsHide: true }).once('close', () => resolveWait()));
 }
 
 /** Target stderr is persisted verbatim into the run journal, so credentials must never survive the trip. */
@@ -65,7 +66,7 @@ export async function discoverExecutable(input: ExecutableDiscovery): Promise<st
     ? configuredCandidates(configured, env.PATH, input.cwd ?? process.cwd(), platform, input.pathExt)
     : pathCandidates(input.command, env.PATH, platform, input.pathExt);
   for (const candidate of candidates) {
-    if (await isFile(candidate)) return candidate;
+    if (await isFile(candidate, platform)) return candidate;
   }
   return undefined;
 }
@@ -87,10 +88,11 @@ function withPlatformExtensions(path: string, platform: NodeJS.Platform, pathExt
   return [path, ...(pathExt ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((extension) => `${path}${extension}`)];
 }
 
-async function isFile(path: string): Promise<boolean> {
+async function isFile(path: string, platform: NodeJS.Platform): Promise<boolean> {
   try {
     await access(path, constants.F_OK);
-    return (await stat(path)).isFile();
+    const info = await stat(path);
+    return info.isFile() && (platform === 'win32' || (info.mode & 0o111) !== 0);
   } catch {
     return false;
   }

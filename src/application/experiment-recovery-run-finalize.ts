@@ -377,6 +377,32 @@ async function acceptReadyBaseline(
 ): Promise<NonNullable<RecoveryRunSession["activeProviderPreview"]>> {
   const { input, store, executionCandidate } = session;
   if (!executionCandidate) throw new Error("Recovery acceptance candidate was not prepared.");
+  if (activeProviderPreview.baseline.match === "current_state_fallback" && input.allowCurrentStateFallback !== true) {
+    session.taskOutcome = "unrecoverable";
+    session.verification = "insufficient_evidence";
+    await store.append({
+      type: "recovery.current_state_fallback_requires_opt_in",
+      runId: input.runId,
+      operationId: "recovery-current-state-fallback-requires-opt-in",
+      payload: { caseId: input.caseId },
+    });
+    const blockedPreview = {
+      ...activeProviderPreview,
+      baseline: {
+        ...activeProviderPreview.baseline,
+        readiness: {
+          ...activeProviderPreview.baseline.readiness,
+          runnable: "blocked" as const,
+          blockingResourceIds: ["recovery-evidence"],
+        },
+        ...(activeProviderPreview.baseline.recovery
+          ? { recovery: { ...activeProviderPreview.baseline.recovery, taskOutcome: "unrecoverable" as const, accepted: false } }
+          : {}),
+      },
+    };
+    session.activeProviderPreview = blockedPreview;
+    return blockedPreview;
+  }
   const ready = session.readinessResult?.status === "ready";
   if (ready) {
     session.taskOutcome = "ready_for_task";

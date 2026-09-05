@@ -10,6 +10,7 @@ import {
   openAllowedFileUrl,
   openAllowedLocalPath,
   openExperimentReport,
+  openExperimentReplica,
   openExperimentTrace,
 } from "./open-report.js";
 
@@ -94,6 +95,30 @@ export function CodexIntakeTui_openTrace(this: CodexIntakeTui): { consume: true 
       })
       .catch((error: unknown) => {
         this.message = t(this.locale, "couldNotOpenTrace", {
+          error: errorMessage(error),
+        });
+        this.render(true);
+      });
+    return { consume: true };
+  }
+
+export function CodexIntakeTui_openReplica(this: CodexIntakeTui): { consume: true } {
+    const experimentRoot =
+      this.result?.experimentRoot ??
+      (this.result ? dirname(this.result.reportPath) : undefined);
+    const runId = this.result?.record.attempt?.runId;
+    if (!experimentRoot || !runId) {
+      this.message = t(this.locale, "noReplica");
+      this.render();
+      return { consume: true };
+    }
+    void openExperimentReplica(experimentRoot, runId)
+      .then(() => {
+        this.message = t(this.locale, "requestedOpenReplica");
+        this.render();
+      })
+      .catch((error: unknown) => {
+        this.message = t(this.locale, "couldNotOpenReplica", {
           error: errorMessage(error),
         });
         this.render(true);

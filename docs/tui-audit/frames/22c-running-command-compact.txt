@@ -4,6 +4,7 @@ Reprise   Candidate running · Codex   C:\reprise
  * To Codex   * Codex screen   * Controller                 
  Task  Fix the bug.                                         
                                                             
+| Controller                                                
 | ▸ 第 1 轮 · SEND ·                                        
 | Decision: SEND One check remains.                         
                                                             
@@ -27,6 +28,5 @@ Reprise   Candidate running · Codex   C:\reprise
 | public response line 5                                    
 | public response line 6                                    
 | ... +35 lines                                             
- > You cannot type to Codex here. Follow-ups are sent by ...
 ------------------------------------------------------------
- [Up/Dn] Select  [f] One side  [Ctrl+C] Stop
+ [Ctrl+C] Stop  [?] Keys

@@ -16,12 +16,6 @@ export function strings(value: unknown): string[] {
     : [];
 }
 
-export function isCompleted<T>(
-  result: StructuredAgentResult<T> | undefined,
-): result is Extract<StructuredAgentResult<T>, { status: "completed" }> {
-  return result?.status === "completed";
-}
-
 export function invocationFact<T>(
   result: StructuredAgentResult<T>,
 ): Record<string, unknown> {

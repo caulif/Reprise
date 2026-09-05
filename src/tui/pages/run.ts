@@ -380,23 +380,10 @@ export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (
   return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
 }
 
-export function runningHints(_filter: TimelineFilter, narrow: boolean, preparing = false, locale: Locale = 'en', finding = false): readonly (readonly [string, string])[] {
-  if (preparing) return [['Ctrl+C', t(locale, 'hintCancel')], ['?', t(locale, 'hintKeys')]];
-  if (finding) {
-    return [
-      ['Esc', t(locale, 'hintClearFind')],
-      [narrow ? 'Up/Dn' : '↑↓', t(locale, 'hintSelect')],
-      ['Enter', t(locale, 'hintExpand')],
-    ];
-  }
-  return [
-    [narrow ? 'Up/Dn' : '↑↓', t(locale, 'hintSelect')],
-    ['f', t(locale, 'hintFilter')],
-    ['Ctrl+C', t(locale, 'hintStop')],
-    ['Enter', t(locale, 'hintExpand')],
-    ['o', t(locale, 'hintFull')],
-    ...(narrow ? [] : [['Tab', t(locale, 'hintSwitchPane')] as const, ['/', t(locale, 'hintFind')] as const, ['l', t(locale, 'hintLatest')] as const, ['?', t(locale, 'hintKeys')] as const]),
-  ];
+export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false): readonly (readonly [string, string])[] {
+  const stop = ['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const;
+  if (finding) return [['Esc', t(locale, 'hintClearFind')], stop];
+  return [stop, ['?', t(locale, 'hintKeys')]];
 }
 
 export function renderCompareGate(theme: Theme, width: number, locale: Locale = 'en'): string[] {

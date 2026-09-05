@@ -39,12 +39,6 @@ function ownedEvidenceRefs(
   return refs;
 }
 
-export function currentRunEventRefs(events: readonly EventEnvelope[], runId: string): Set<string> {
-  return new Set(
-    events.filter((event) => event.runId === runId).map((event) => `event:${event.eventId}`),
-  );
-}
-
 export function observationReadRecord(input: {
   requestId: string;
   runId: string;

@@ -578,7 +578,7 @@ interface EnvironmentPort {
 
 `resolveBaseline` 可以在 Environment 子系统内部使用 Pi 驱动的 Recovery Agent，但必须在 Harness 拥有的 staging 中工作，并由 Provider 验证后冻结。`prepareRun` 从同一 baseline 为每个候选建立独立副本。
 
-`release` 只负责 Harness 拥有的运行资源，不承诺回滚用户目录或外部服务副作用。完整设计见[Environment 专题](./environment.md)。
+`release` 结束 Harness 对本 run 隔离副本的活动句柄，不删除该副本，也不回滚用户目录或外部服务副作用。完整设计见[Environment 专题](./environment.md)。
 
 Environment 以资源级证据描述恢复结果：`EnvironmentResource` 同时保存 `requestedState`、`recoveredState`、`method`、`confidence`、证据引用和限制；某次 CandidateRun 的具体目录、挂载或外部句柄另由 `PreparedResource` 绑定。候选运行必须使用 Harness 创建的隔离副本，或只读/受控的 observational 绑定；无法提供二者时为 `unsupported`，不允许直接在用户当前工作目录运行。
 
@@ -628,6 +628,9 @@ Comparison 发生在 CandidateRun 结束之后，也使用产品无关的公共�
 
 ```ts
 interface ComparisonAgentPort {
+  plan?(context: ComparisonContext): Promise<ComparisonPlanEnvelope>;
+  report?(context: ComparisonContext): Promise<ComparisonEnvelope>;
+  // compatibility path while callers migrate
   compare(context: ComparisonContext): Promise<ComparisonEnvelope>;
 }
 
@@ -652,7 +655,7 @@ type ComparisonEnvelope =
     }
 ```
 
-Comparison Agent 将完整自由结构 HTML 写入 `report.html`；薄信封只返回阶段状态和引用。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 以 Planner/Reporter 两个独立 session 工作；前者写可变计划，后者可否定计划并将完整自由结构 HTML 写入 `report.html`。薄信封返回阶段状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
 Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Pi Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型
@@ -772,7 +775,7 @@ interface TracePort {
 
 规则：
 
-- `sequence` 在 experiment 的唯一 `events.jsonl` 中由单写者 Trace Store 单调分配；Case Preparation 和 Comparison 事件没有 `runId`，CandidateRun 事件必须有；`readRun` 是对该权威日志按 `runId` 的过滤视图，不维护第二份 run 事件日志；
+- `sequence` 在 experiment 的唯一 `events.jsonl` 中由单写者 Trace Store 单调分配；与某次候选结果相关的 Comparison 事件携带该 `runId`，并额外携带 `attemptId`/`phase`；`readRun` 是对该权威日志按 `runId` 的过滤视图，不维护第二份 run 事件日志；
 - `occurredAt` 使用 RFC 3339 UTC，耗时优先使用同进程 monotonic clock；
 - 原生 JSONL、stderr、截图和二进制内容通过 `rawRef` 保存；
 - 产品私有字段留在 raw artifact 或 `data`，不扩张 Core schema；

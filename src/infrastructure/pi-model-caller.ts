@@ -11,6 +11,7 @@ import {
   needsPiCompaction,
 } from './pi-compaction.js';
 import { environmentNameForKeyRef, type HarnessModelConfig } from './harness-model-config.js';
+import { sha256 } from '../core/identity.js';
 
 export type PiModels = Pick<Models, 'getProviders' | 'getModels' | 'getModel' | 'getAuth' | 'completeSimple' | 'streamSimple'>;
 type MutablePiModels = PiModels & Pick<MutableModels, 'setProvider'>;
@@ -18,7 +19,7 @@ type MutablePiModels = PiModels & Pick<MutableModels, 'setProvider'>;
 export type PiProviderOption = { readonly id: string; readonly name: string };
 export type PiModelOption = { readonly id: string; readonly name: string };
 
-const WRITE_TOOLS = new Set(['edit', 'write', 'powershell']);
+const WRITE_TOOLS = new Set(['edit', 'write', 'shell_exec']);
 const STREAM_RETRIES = 3;
 const STREAM_RETRY_DELAY_MS = 8_000;
 
@@ -105,12 +106,16 @@ export class PiModelCaller implements PiTextCaller {
     sessionId: string;
     systemPrompt: string;
     tools: readonly AgentToolDefinition[];
+    compactionInstructions?: string;
     onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
+    onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
+    onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
   }): PiTextSession {
     const model = this.#model();
     const models = this.#models;
     const effort = this.#config.effort;
+    let active = true;
     const agent = new Agent({
       sessionId: input.sessionId,
       streamFn: (streamModel, context, options) => this.#models.streamSimple(streamModel, context, {
@@ -120,9 +125,27 @@ export class PiModelCaller implements PiTextCaller {
       }),
       convertToLlm,
       toolExecution: 'parallel',
+      beforeToolCall: async ({ toolCall }) => {
+        if (!active) return { block: true, reason: 'Agent session is no longer active.', terminate: true };
+        await input.onBeforeToolCall?.({ tool: toolCall.name });
+        return undefined;
+      },
+      afterToolCall: async ({ toolCall, result, isError }) => {
+        // Keep Pi's finalized result intact. Host policy and audit live in the
+        // shared tool wrapper; this hook is the common post-execution boundary.
+        if (!Array.isArray(result.content)) throw new Error('Pi tool result content must be an array.');
+        await input.onAfterToolCall?.({
+          tool: toolCall.name,
+          isError,
+          contentTypes: result.content.map((block) => block.type),
+          byteLength: Buffer.byteLength(JSON.stringify(result.content)),
+          contentDigest: sha256(JSON.stringify(result.content)),
+        });
+        return undefined;
+      },
       maxRetryDelayMs: STREAM_RETRY_DELAY_MS,
       shouldStopAfterTurn: async ({ context }, signal) => {
-        await compactInto(context.messages, agent, model, models, effort, signal, input.onContextCompact);
+        await compactInto(context.messages, agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact);
         return false;
       },
       initialState: {
@@ -143,13 +166,14 @@ export class PiModelCaller implements PiTextCaller {
       await input.onAssistantVisible?.({ text, turn: visibleTurn });
     });
     return {
-      async append({ content, signal }): Promise<string> {
+      inputCapabilities: [...model.input],
+      async append({ content, images, signal }): Promise<string> {
         if (signal.aborted) throw abortError();
         const abort = () => agent.abort();
         signal.addEventListener('abort', abort, { once: true });
         try {
-          await agent.prompt(content);
-          await recoverOverflow(agent, model, models, effort, signal, input.onContextCompact);
+          await agent.prompt(content, images ? [...images] : undefined);
+          await recoverOverflow(agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact);
           const message = lastAssistant(agent.state.messages);
           if (!message || message.role !== 'assistant') throw new Error('Pi Agent session ended without an assistant message.');
           if (message.stopReason === 'error' || message.stopReason === 'aborted') throw new Error(message.errorMessage ?? `Pi Agent session stopped: ${message.stopReason}.`);
@@ -159,7 +183,7 @@ export class PiModelCaller implements PiTextCaller {
           await agent.waitForIdle();
         }
       },
-      cancel(): void { agent.abort(); },
+      cancel(): void { active = false; agent.abort(); },
     };
   }
 
@@ -193,10 +217,11 @@ async function compactInto(
   models: PiModels,
   thinkingLevel: HarnessModelConfig['effort'],
   signal: AbortSignal | undefined,
+  customInstructions: string | undefined,
   onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined,
 ): Promise<boolean> {
   if (!needsPiCompaction(live, contextWindowOf(model))) return false;
-  const compacted = await compactPiMessages({ messages: live, models, model, thinkingLevel, ...(signal ? { signal } : {}) });
+  const compacted = await compactPiMessages({ messages: live, models, model, thinkingLevel, ...(customInstructions ? { customInstructions } : {}), ...(signal ? { signal } : {}) });
   if (!compacted) return false;
   live.splice(0, live.length, ...compacted.messages);
   agent.state.messages = compacted.messages;
@@ -210,12 +235,13 @@ async function recoverOverflow(
   models: PiModels,
   thinkingLevel: HarnessModelConfig['effort'],
   signal: AbortSignal,
+  customInstructions: string | undefined,
   onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined,
 ): Promise<void> {
   const message = lastAssistant(agent.state.messages);
   if (!message || message.role !== 'assistant') return;
   if (!isContextOverflow(message, contextWindowOf(model))) return;
-  const compacted = await compactPiMessages({ messages: agent.state.messages, models, model, thinkingLevel, signal });
+  const compacted = await compactPiMessages({ messages: agent.state.messages, models, model, thinkingLevel, ...(customInstructions ? { customInstructions } : {}), signal });
   if (!compacted) return;
   agent.state.messages = compacted.messages;
   await onContextCompact?.(compacted.audit);
@@ -236,13 +262,16 @@ function toPiTool(tool: AgentToolDefinition): AgentTool {
     ...(WRITE_TOOLS.has(tool.name) ? { executionMode: 'sequential' as const } : {}),
     async execute(_toolCallId, params, signal) {
       const result = await tool.execute(params, signal ?? new AbortController().signal);
-      return { content: [{ type: 'text', text: result.content }], details: result.details ?? {} };
+      return { content: result.contentBlocks ? [...result.contentBlocks] : [{ type: 'text', text: result.content }], details: result.details ?? {} };
     },
   };
 }
+
 
 function jsonSchemaParameters(parameters: AgentToolDefinition['parameters']): AgentTool['parameters'] {
   return JSON.parse(JSON.stringify(parameters)) as AgentTool['parameters'];
 }
 
 function abortError(): Error { const error = new Error('Pi model request was aborted.'); error.name = 'AbortError'; return error; }
+
+

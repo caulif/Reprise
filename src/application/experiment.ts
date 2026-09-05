@@ -5,14 +5,24 @@ import type {
   ComparisonResult,
 } from "../agents/comparison-agent.js";
 import {
-  historicalUserFollowups,
   type ControllerDecision,
   type ControllerPort,
   type SteeringContext,
 } from "../agents/controller-agent.js";
 import { rewindIsolatedWorkspaceToStart } from "./session-start-workspace.js";
 import { CandidateRun } from "./candidate-run.js";
-import { currentRunEventRefs, observationReadRecord } from "./controller-request.js";
+import {
+  appendSentUserMessage,
+  assertBriefingOutsideReplica,
+  CONTROLLER_PROJECT_MOUNT,
+  controllerBriefingRoot,
+  controllerPromptContent,
+  controllerRequestSnapshot,
+  applyControllerUnderstandingDelta,
+  writeControllerUnderstanding,
+  writeOpeningBriefing,
+  writeSettledTurnBriefing,
+} from "./controller-briefing.js";
 import { sha256 } from "../core/identity.js";
 import type {
   CandidateSpec,
@@ -35,7 +45,6 @@ import {
   type RecoveryCheckpoint,
 } from "../environment/local-workspace-provider.js";
 import type { ContaminationSignals } from "../environment/contamination.js";
-import { observationTools } from "../infrastructure/agent-tools.js";
 import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
 import {
@@ -49,7 +58,7 @@ import {
   inferSourceRootKind,
   type SourceRootKind,
 } from "./replay-conditions.js";
-import { assertIds, assertPaths, experimentAgentAuditSink, invocationFact, isCompleted, persistTaskCase } from "./experiment-helpers.js";
+import { assertIds, assertPaths, experimentAgentAuditSink, invocationFact, persistTaskCase } from "./experiment-helpers.js";
 import {
   captureWorkspaceScope,
   inspectRun,
@@ -61,19 +70,16 @@ import {
   resolveVerifiedCandidate,
 } from "./experiment-preflight.js";
 import { finishExperiment, attachExperimentComparison } from "./experiment-report.js";
-
-
+export { controllerRequestSnapshot } from "./controller-briefing.js";
 export type { SourceRootKind };
 export { preflightCodexExperiment } from "./experiment-preflight.js";
 export { recoverCodexExperiment, classifyRecoveryFailureStage } from "./experiment-recovery.js";
 export type { RecoveryAttempt, RecoveryAttemptMode, RecoveryAttemptInput } from "./experiment-recovery.js";
-
 export type ExperimentAgentConfig = {
   providerId: string;
   requestedModel: string;
-  budget: { callTimeoutMs: number; maxStructuredRepairAttempts: number };
+  budget: { callTimeoutMs: number; maxStructuredRepairAttempts: number; maxCalls?: number };
 };
-
 export type CodexExperimentPreflight = {
   sourceBaseline: "available" | "partial" | "unavailable";
   resolved: ResolvedRuntime;
@@ -83,7 +89,6 @@ export type CodexExperimentPreflight = {
   comparisonClass: "observational" | "recovered" | "recovered_partial";
   contamination?: ContaminationSignals;
 };
-
 export type CodexExperimentResult = {
   taskCase: TaskCase;
   experimentRoot: string;
@@ -103,7 +108,6 @@ export type CodexExperimentResult = {
     tokenCount?: number;
   };
 };
-
 export type CodexExperimentInput = {
   dataDir: string;
   caseId: string;
@@ -141,7 +145,6 @@ export type CodexExperimentInput = {
     runId: string;
   }) => Promise<readonly RunRecord["artifactRefs"][number][] | readonly []>;
 };
-
 export type ExperimentHandle = {
   result: Promise<CodexExperimentResult>;
   candidateFinished: Promise<CodexExperimentResult>;
@@ -149,17 +152,13 @@ export type ExperimentHandle = {
   skipComparison(): Promise<void>;
   cancel(): Promise<void>;
 };
-
-
 type ActiveRun = { cancel(): Promise<unknown> };
-
 type ExperimentControl = {
   setActive(run: ActiveRun): void;
   setController(controller: ControllerPort, runId: string): void;
   cancelled(): boolean;
   waitForComparison(partial: CodexExperimentResult): Promise<boolean>;
 };
-
 /**
  * The publishing-level Codex experiment path. It has one CandidateRun state
  * machine and leaves all reviewable facts under a fresh experiment directory.
@@ -222,7 +221,6 @@ export function startCodexExperiment(
     },
   };
 }
-
 async function captureCodexExperimentContext(
   input: CodexExperimentInput,
   control: { cancelled(): boolean },
@@ -311,7 +309,6 @@ async function captureCodexExperimentContext(
     checkpoint,
   };
 }
-
 async function openCodexExperimentSession(input: {
   input: CodexExperimentInput;
   experimentRoot: string;
@@ -401,7 +398,6 @@ async function openCodexExperimentSession(input: {
     targetEvents: [] as string[],
   };
 }
-
 async function startCodexCandidateRun(args: {
   input: CodexExperimentInput;
   store: ExperimentStore;
@@ -485,7 +481,6 @@ async function startCodexCandidateRun(args: {
     },
   });
 }
-
 async function finishCodexCandidateRun(args: {
   input: CodexExperimentInput;
   control: ExperimentControl;
@@ -528,6 +523,9 @@ async function finishCodexCandidateRun(args: {
         resolvedModel: resolved.resolvedModel,
         candidateProductId: input.candidate.productId,
         experimentRoot,
+        ...(input.agentConfig.budget.maxCalls !== undefined
+          ? { maxControllerCalls: input.agentConfig.budget.maxCalls }
+          : {}),
       });
   const finishInput = {
     input,
@@ -547,7 +545,6 @@ async function finishCodexCandidateRun(args: {
   if (!(await control.waitForComparison(partial))) return partial;
   return attachExperimentComparison({ ...finishInput, compare: true }, partial.record);
 }
-
 async function executeExperiment(
   input: CodexExperimentInput,
   control: ExperimentControl,
@@ -627,23 +624,6 @@ async function executeExperiment(
     await store.close();
   }
 }
-
-export function controllerRequestSnapshot(context: SteeringContext): Record<string, unknown> {
-  return {
-    schemaVersion: 1,
-    toolSetVersion: 1,
-    requestId: context.requestId,
-    runId: context.runId,
-    runState: context.runState,
-    ...(context.phase ? { phase: context.phase } : {}),
-    current: context.current,
-    trajectory: context.trajectory,
-    evidenceCatalog: context.evidenceCatalog,
-    budget: context.budget,
-    ...(context.replay ? { replay: context.replay } : {}),
-  };
-}
-
 async function runControllerLoop(input: {
   run: CandidateRun;
   controller: ControllerPort;
@@ -659,6 +639,7 @@ async function runControllerLoop(input: {
   resolvedModel: string;
   candidateProductId: string;
   experimentRoot: string;
+  maxControllerCalls?: number;
 }): Promise<{
   decision: StructuredAgentResult<ControllerDecision>;
   followupSubmission: boolean;
@@ -671,33 +652,41 @@ async function runControllerLoop(input: {
     operationId: "controller-started",
     payload: { model: input.controllerModel },
   });
+  await prepareControllerUnderstanding(input);
   const opened = await deliverOpening(input, decisions);
   if (opened.finished) return opened.result;
   let state = opened.state;
   let controllerCalls = opened.controllerCalls;
-  let duplicateInputs = 0;
   let followupSubmission = false;
   while (state === "awaiting_controller") {
     if (Date.now() - startedAt >= input.policy.wallClockMs) {
       state = await input.run.stopByHarness("limit.wall_clock");
       break;
     }
-    if (controllerCalls >= input.policy.maxModelCalls) {
+    if (input.maxControllerCalls !== undefined && controllerCalls >= input.maxControllerCalls) {
       state = await input.run.stopByHarness("limit.controller_calls");
       break;
     }
-    const steered = await deliverSteering(input, state, decisions, controllerCalls, duplicateInputs);
+    const steered = await deliverSteering(input, state, decisions, controllerCalls);
     state = steered.state;
     controllerCalls = steered.controllerCalls;
-    duplicateInputs = steered.duplicateInputs;
     followupSubmission = steered.followupSubmission || followupSubmission;
     if (steered.stop) break;
   }
   return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
 }
-
+async function prepareControllerUnderstanding(input: LoopInput): Promise<void> {
+  if (!input.controller.understand) return;
+  const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
+  assertBriefingOutsideReplica(briefingRoot, input.environment.root);
+  const packed = await packControllerBriefing(input, "opening", briefingRoot);
+  const context = steeringContextFrom(input, "created", 0, "opening", packed);
+  const understanding = await input.controller.understand(context, controllerDecisionTools(input, briefingRoot), experimentAgentAuditSink(input.store, input.runId));
+  await input.store.append({ type: "controller.understanding", runId: input.runId, operationId: `${context.requestId}-understanding`, payload: invocationFact(understanding) });
+  if (understanding.status !== "completed") throw new Error(understanding.status === "failed" ? `Controller understanding failed: ${understanding.failure.message}` : "Controller understanding was cancelled.");
+  await writeControllerUnderstanding(briefingRoot, understanding.value);
+}
 type LoopInput = Parameters<typeof runControllerLoop>[0];
-
 async function deliverOpening(
   input: LoopInput,
   decisions: StructuredAgentResult<ControllerDecision>[],
@@ -716,9 +705,12 @@ async function deliverOpening(
     { id: `controller-${input.runId}-1`, text: opening.value.message },
     { runId: input.runId, turnIndex: 0, clientMessageId: `controller-1-${input.runId}` },
   );
+  await appendSentUserMessage(controllerBriefingRoot(input.experimentRoot, input.runId), {
+    id: `controller-${input.runId}-1`,
+    text: opening.value.message,
+  });
   return { finished: false, state, controllerCalls: 1 };
 }
-
 async function abortOpening(
   input: LoopInput,
   opening: StructuredAgentResult<ControllerDecision>,
@@ -729,17 +721,14 @@ async function abortOpening(
   }
   return input.run.failBeforeStart({ code: "invalid_output", message: "Opening decision must be send." });
 }
-
 async function deliverSteering(
   input: LoopInput,
   state: SteeringContext["runState"],
   decisions: StructuredAgentResult<ControllerDecision>[],
   controllerCalls: number,
-  duplicateInputs: number,
 ): Promise<{
   state: SteeringContext["runState"];
   controllerCalls: number;
-  duplicateInputs: number;
   followupSubmission: boolean;
   stop: boolean;
 }> {
@@ -754,27 +743,34 @@ async function deliverSteering(
         : decision.status === "cancelled"
           ? await input.run.cancel()
           : await input.run.stopByHarness("stalled.no_progress");
-    return { state: next, controllerCalls: calls, duplicateInputs, followupSubmission: false, stop: true };
+    return { state: next, controllerCalls: calls, followupSubmission: false, stop: true };
+  }
+  if (decision.value.understandingDelta) {
+    await applyControllerUnderstandingDelta(
+      controllerBriefingRoot(input.experimentRoot, input.runId),
+      decision.value.understandingDelta,
+    );
+    await input.store.append({
+      type: "controller.understanding_updated",
+      runId: input.runId,
+      operationId: `controller-understanding-${calls}`,
+      payload: { turnIndex: calls, mode: decision.value.understandingDelta.mode, path: "controller-understanding.json" },
+    });
   }
   if (decision.value.type === "done") {
+    const reads = input.store.events(input.runId).filter((event) =>
+      event.type === "controller.observation_read" && event.payload && typeof event.payload === "object" &&
+      (event.payload as { requestId?: unknown }).requestId === `controller-request-${input.runId}-${calls}`,
+    ).length;
+    await input.store.append({
+      type: "controller.completion_diagnostic",
+      runId: input.runId,
+      operationId: `controller-diagnostic-${calls}`,
+      payload: { reads, evidenceStatus: reads > 0 ? "read" : "not_read", advisory: true },
+    });
     return {
       state: await input.run.settleController(decision.value.reason),
       controllerCalls: calls,
-      duplicateInputs,
-      followupSubmission: false,
-      stop: true,
-    };
-  }
-  const previous = decisions.at(-2);
-  const repeats =
-    isCompleted(previous) && previous.value.type === "send" && previous.value.message === decision.value.message
-      ? duplicateInputs + 1
-      : 0;
-  if (repeats >= input.policy.maxConsecutiveNoProgress) {
-    return {
-      state: await input.run.stopByHarness("stalled.no_progress"),
-      controllerCalls: calls,
-      duplicateInputs: repeats,
       followupSubmission: false,
       stop: true,
     };
@@ -783,9 +779,12 @@ async function deliverSteering(
     { id: `controller-${input.runId}-${calls}`, text: decision.value.message },
     { runId: input.runId, turnIndex: calls - 1, clientMessageId: `controller-${calls}-${input.runId}` },
   );
-  return { state: next, controllerCalls: calls, duplicateInputs: repeats, followupSubmission: true, stop: false };
+  await appendSentUserMessage(controllerBriefingRoot(input.experimentRoot, input.runId), {
+    id: `controller-${input.runId}-${calls}`,
+    text: decision.value.message,
+  });
+  return { state: next, controllerCalls: calls, followupSubmission: true, stop: false };
 }
-
 async function persistControllerDecision(
   input: { store: ExperimentStore; runId: string },
   controllerCalls: number,
@@ -798,7 +797,6 @@ async function persistControllerDecision(
     payload: invocationFact(decision),
   });
 }
-
 function finalizeControllerLoop(
   state: SteeringContext["runState"],
   decisions: StructuredAgentResult<ControllerDecision>[],
@@ -825,31 +823,45 @@ function finalizeControllerLoop(
     };
   return { decision: last, followupSubmission };
 }
-
 async function requestControllerDecision(
   input: LoopInput,
   state: SteeringContext["runState"],
   controllerCalls: number,
   phase: "opening" | "steering",
 ) {
-  const observation = await observeForController(input, phase);
-  const context = steeringContextFrom(input, state, controllerCalls, phase, observation);
+  const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
+  assertBriefingOutsideReplica(briefingRoot, input.environment.root);
+  const packed = await packControllerBriefing(input, phase, briefingRoot);
+  const context = steeringContextFrom(input, state, controllerCalls, phase, packed);
   await persistControllerRequested(input, context);
   return input.controller.decide(
     context,
-    controllerDecisionTools(input, context.requestId),
+    controllerDecisionTools(input, briefingRoot),
     experimentAgentAuditSink(input.store, input.runId),
   );
 }
-
-async function observeForController(
+async function packControllerBriefing(
   input: LoopInput,
   phase: "opening" | "steering",
-): Promise<
-  Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths">
-> {
-  if (phase === "opening") return unstartedControllerObservation();
-  return inspectRun(
+  briefingRoot: string,
+): Promise<{
+  observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths">;
+  indexMarkdown: string;
+  fileDigests: Record<string, string>;
+  briefingRoot: string;
+}> {
+  if (phase === "opening") {
+    const historicalCwd = historicalCwdOf(input.taskCase);
+    const written = await writeOpeningBriefing({
+      briefingRoot,
+      replicaRoot: input.environment.root,
+      taskCase: input.taskCase,
+      sourceRootKind: input.sourceRootKind,
+      ...(historicalCwd ? { historicalCwd } : {}),
+    });
+    return { observation: unstartedControllerObservation(), ...written, briefingRoot };
+  }
+  const inspection = await inspectRun(
     input.store,
     undefined,
     input.taskCase.privacy.allowModelText,
@@ -865,29 +877,46 @@ async function observeForController(
       resolvedModel: input.resolvedModel,
     },
   );
+  const written = await writeSettledTurnBriefing({
+    briefingRoot,
+    turnIndex: Math.max(1, inspection.turns),
+    visibleText: inspection.finalMessage ?? "",
+    events: eventsForLatestTurn(input.store.events(input.runId)),
+    changedPaths: inspection.changedPaths,
+    allowModelText: input.taskCase.privacy.allowModelText,
+  });
+  return { observation: inspection, ...written, briefingRoot };
 }
-
+function eventsForLatestTurn(events: readonly EventEnvelope[]): EventEnvelope[] {
+  const settled = events.filter((event) => event.type === "runtime.turn_settled");
+  const last = settled.at(-1);
+  const previous = settled.at(-2);
+  const start = previous?.sequence ?? 0;
+  const end = last?.sequence ?? Number.POSITIVE_INFINITY;
+  return events.filter((event) => event.sequence > start && event.sequence <= end);
+}
 function steeringContextFrom(
   input: LoopInput,
   state: SteeringContext["runState"],
   controllerCalls: number,
   phase: "opening" | "steering",
-  observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths">,
+  packed: {
+    observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths">;
+    indexMarkdown: string;
+    fileDigests: Record<string, string>; briefingRoot: string;
+  },
 ): SteeringContext {
   const historicalCwd = historicalCwdOf(input.taskCase);
+  const observation = packed.observation;
   return {
     requestId: `controller-request-${input.runId}-${controllerCalls + 1}`,
     runId: input.runId,
     runState: state,
-    phase,
-    task: {
+    phase, task: {
       initialInput: input.taskCase.initialInput,
       baseline: input.taskCase.baseline,
       privacy: input.taskCase.privacy,
-      historicalUserTurns: historicalUserFollowups(
-        input.taskCase.transcript,
-        input.taskCase.initialInput.id,
-      ),
+      historicalUserTurns: [],
     },
     current: {
       summary: observation.currentSummary,
@@ -900,8 +929,15 @@ function steeringContextFrom(
     },
     budget: {
       decisionsUsed: controllerCalls,
-      decisionsLimit: input.policy.maxModelCalls,
+      ...(input.maxControllerCalls !== undefined ? { decisionsLimit: input.maxControllerCalls } : {}),
     },
+    promptContent: controllerPromptContent({
+      phase,
+      briefingRoot: packed.briefingRoot,
+      indexMarkdown: packed.indexMarkdown,
+    }),
+    briefingRoot: packed.briefingRoot,
+    fileDigests: packed.fileDigests,
     replay: {
       sourceRootKind: input.sourceRootKind,
       isolation: "Writes stay in the isolated replica and never land in the original user directory.",
@@ -913,8 +949,8 @@ function steeringContextFrom(
     },
   };
 }
-
 async function persistControllerRequested(input: LoopInput, context: SteeringContext): Promise<void> {
+  const snapshot = controllerRequestSnapshot(context);
   await input.store.append({
     type: "controller.requested",
     runId: input.runId,
@@ -924,33 +960,20 @@ async function persistControllerRequested(input: LoopInput, context: SteeringCon
       toolSetVersion: 1,
       requestId: context.requestId,
       runId: input.runId,
-      inputDigest: sha256(JSON.stringify(controllerRequestSnapshot(context))),
-      snapshot: controllerRequestSnapshot(context),
+      inputDigest: sha256(JSON.stringify(snapshot)),
+      snapshot,
     },
   });
 }
-
-function controllerDecisionTools(input: LoopInput, requestId: string) {
+function controllerDecisionTools(input: LoopInput, briefingRoot: string) {
   return [
-    ...observationTools(input.store, {
-      runId: input.runId,
-      transcript: input.taskCase.transcript,
-      allowModelText: input.taskCase.privacy.allowModelText,
-    }).map((tool) => ({
-      ...tool,
-      onCompleted: async (result: { content: string; details?: unknown }) => {
-        await input.store.append(
-          observationReadRecord({
-            requestId,
-            runId: input.runId,
-            details: result.details,
-            allowedRefs: currentRunEventRefs(input.store.events(input.runId), input.runId),
-          }),
-        );
-      },
-    })),
-    ...recoveryTools(input.environment.root, {
+    ...recoveryTools(briefingRoot, {
+      allowBinary: input.taskCase.privacy.allowBinary,
       homeRoot: join(input.experimentRoot, ".reprise-controller-home"),
+      mounts: { [CONTROLLER_PROJECT_MOUNT]: input.environment.root },
+      allowWrite: () => false,
+      shellCwd: input.environment.root,
+      denyDestructiveOnPrefix: [CONTROLLER_PROJECT_MOUNT],
     }),
   ];
 }

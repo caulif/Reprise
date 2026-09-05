@@ -160,7 +160,7 @@ test("LocalWorkspaceProvider retries a failed baseline capture without leaving a
   }
 });
 
-test("LocalWorkspaceProvider owns run paths and release is idempotent", async () => {
+test("release keeps the isolated run workspace and is idempotent", async () => {
   const { root, source } = await directories();
   try {
     const provider = new LocalWorkspaceProvider(root);
@@ -180,7 +180,10 @@ test("LocalWorkspaceProvider owns run paths and release is idempotent", async ()
       status: "already_released",
       environmentId: environment.environmentId,
     });
-    await assert.rejects(stat(environment.root), { code: "ENOENT" });
+    assert.equal(
+      await readFile(join(environment.root, "input.txt"), "utf8"),
+      "original",
+    );
 
     const forged = { ...environment, root: source };
     await assert.rejects(provider.fingerprint(forged), /owned|workspace/);
@@ -495,7 +498,7 @@ test("Recovery validates isolated git checkout, report, accept, and marker reuse
       staging.root,
       staging.temporaryRoot ? { homeRoot: staging.temporaryRoot, allowShell: true } : { allowShell: true },
     )
-    .find((item) => item.name === "powershell");
+    .find((item) => item.name === "shell_exec");
   assert.ok(shell);
   await shell.execute(
     { command: `git checkout ${commit} -- input.txt` },
@@ -959,3 +962,6 @@ test("in-root file links are materialized as ordinary files without keeping a wr
   assert.equal(copied.isSymbolicLink(), false);
   await provider.discardRecovery(staging);
 });
+
+
+

@@ -50,7 +50,7 @@
 - [校验通过的恢复 preview 自动接受](./decisions/accepted/2026-08-31-recovery-auto-accept-validated-preview.md)：Host 在 `validateRecovery` 成功后立即 `acceptRecovery`；确认页只确认是否开计费候选。
 - [内部 Agent 模型输入与工具审计](./decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)：`comparison.requested`；三角色 `AgentAuditSink`。
 - [内部 Agent 对齐 Pi 循环](./decisions/accepted/2026-09-02-internal-agent-pi-alignment.md)：读并行写顺序；Pi compact 试卷；取消工具次数预算与重复输入拦截。
-- [内部 Agent 八工具与写策略](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md)：三角色同一组工具名；Comparison `candidate/` 只读挂载。
+- [内部 Agent 八工具与写策略](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md)：工作区七件套共用名；Recovery / Comparison 另加 `read_observation`。
 - [Recovery 调查包](./decisions/accepted/2026-08-31-recovery-investigation-packet.md)：进入模型的历史主通道是 Host 有界调查包，不是全文翻页。
 - [Recovery 八工具面](./decisions/accepted/2026-08-31-recovery-pi-aligned-tools.md)：工作区对齐 Pi；Host 只留 `read_observation`。
 - [Windows PowerShell 回退与 `.` 为根](./decisions/accepted/2026-08-31-recovery-windows-shell-and-dot-paths.md)：`.` 列 staging 根；空变更确认页不伪装成校验细节。
@@ -58,7 +58,14 @@
 - [内部 Agent 运行画布的压缩与分轨](./decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)：按 role 投影；调查合并；Controller 品红与投递分轨；Comparison 绿卡。
 - [恢复后选择候选产品与模型](./decisions/accepted/2026-09-02-candidate-product-and-model-picker.md)：来源 Pack 做恢复；开跑可选别的 Pack 再 `listCatalog`。
 - [Controller 写出每一条用户输入](./decisions/accepted/2026-09-02-controller-owns-every-user-turn.md)：冻结 `initialInput` 只作考卷；开场与后续用户消息都由 Controller `send`。
+- [Controller 按验收习惯停](./decisions/accepted/2026-09-03-controller-stop-on-acceptance-habits.md)：不是种类匹配，也不是按序用完历史用户句。
+- [Controller 七工具](./decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)：不注册 `read_observation`；Recovery / Comparison 仍为八工具。
+- [Controller 路径 briefing](./decisions/accepted/2026-09-03-controller-path-briefing.md)：INDEX 进 append；briefing 不进副本；`maxCalls` 才截断 Controller。
 - [可见短句、运行分屏与显式对照](./decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)：`agent.assistant_visible`；候选左右分栏；对照默认跳过。
+- [运行页只读观看，页脚只保留有效键](./decisions/accepted/2026-09-04-running-page-watch-only-footer.md)：运行页只留 `Ctrl+C` 与 `?`；页脚不列无效画布操作。
+- [结果页打开隔离副本，对照读活副本](./decisions/accepted/2026-09-04-result-replica-open-and-comparison-live-mount.md)：`w` 打开 `environment/runs/{runId}`；Comparison 的 `candidate/` 是活副本。
+- [候选隔离副本在 cleanup 后保留](./decisions/accepted/2026-09-04-retain-isolated-run-workspace.md)：`release` 只结束活动句柄，不删除 `environment/runs/{runId}`。
+- [Comparison 报告形式由 Agent 自定](./decisions/accepted/2026-09-02-comparison-free-report-form.md)：Prompt 不规定版式；TUI 只用可选 `headline`。
 - [恢复终态、确认卡片与短候选目录](./decisions/accepted/2026-09-01-recovery-operator-feedback-and-short-candidates.md)：partial 诊断码、8-hex 候选段、确认卡片与列表光标。
 - [候选 Runtime 失败分类与恢复门禁解耦](./decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)：settlement 保留脱敏失败类别；恢复 candidate 不被 source blockedReasons 再拦；不对 503 自动重试。
 - [列表展示、冻结与 Recovery Agent 分界](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)：列表只截断展示；冻结由 Case Preparation 完成；Recovery Agent 只做环境恢复。
@@ -93,12 +100,16 @@
 - [无头 CLI 与 TUI 并行控制面](./plan/agent-headless-cli.md)与[讨论稿](./plan/agent-headless-cli.html)：子命令调用同一套 Application；人与外部 agent 共用 JSON 信封。
 - [TUI 之后的产品路线图](./plan/reprise-post-tui-roadmap.md)。
 - [Controller 拥有每一轮用户输入](./plan/controller-owns-every-user-turn.md)：候选与 Controller 一同启动；含第一句在内的用户消息和停止只由 Controller 决定。
+- [Controller 看完整会话再自主停](./plan/controller-judge-from-full-session.md)：用户句是验收习惯证据，不是按序剧本；停机看这个人面对当前轨迹会不会说，不看终态句种类。
+- [Host 与 Controller 协作装配](./plan/host-controller-collaboration.md)：已锁定选择（一个 session、INDEX 进 append、Host 不因零 read 拒绝 `done`）。
+- [Controller 路径 briefing 落地](./plan/controller-path-briefing.md)：磁盘布局、工具挂载、append 正文、循环改动、夹具与阶段。
+- [Controller 用户模拟讨论稿](./plan/controller-user-simulation.html)：路径指针 + 自读文件；历史不得进候选副本。
 - [内部 Agent 可见过程](./plan/recovery-narrative-canvas.md)与[设计稿](./plan/recovery-narrative-canvas.html)：短句为脊；候选运行左右分屏；对照先问再跑。
 
 ## 设计依据
 
 - [架构研究基础](./research/architecture-foundations.md)与[Controller 研究基础](./research/controller-foundations.md)：解释为什么这样设计，可以提出备选方案，但不覆盖 `architecture/`。
-- [Controller / Comparison 工具面与 Host 调查包](./research/controller-comparison-host-packet-and-tools.md)：三个内部 Agent 都注册 Pi 工作区七件套加 `read_observation`；额外工具只保留工作区看不见的分页历史。
+- [Controller / Comparison 工具面与 Host 调查包](./research/controller-comparison-host-packet-and-tools.md)：审查时的工具面提案；当前规范以 [八工具](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md) 与 [Controller 七工具](./decisions/accepted/2026-09-03-controller-seven-workspace-tools.md) 为准。
 - [三个内部 Agent 的模块设计审查](./research/three-agents-design-review.md)：三角色共用八工具与轮间压缩；角色差异只在 cwd、写策略和会话形态。
 
 ## 不在版本控制内的材料

@@ -40,11 +40,11 @@ test('consecutive recovery inspect tools merge and omit file bodies', () => {
   assert.doesNotMatch(JSON.stringify(visible), /SECRET_BODY|MORE_SECRET/);
 });
 
-test('controller read_observation is a controller voice and not a product voice', () => {
+test('controller read is a controller voice and not a product voice', () => {
   const [entry] = projectTimelineEvent(event('agent.tool_called', {
     role: 'controller',
-    tool: 'read_observation',
-    params: { source: 'transcript' },
+    tool: 'read',
+    params: { path: 'history/initial-input.txt' },
   }));
   assert.equal(entry?.source, 'CONTROLLER');
   assert.equal(entry?.lane, 'controller');
@@ -95,7 +95,7 @@ test('recovery canvas shows inspect activity instead of a candidate reply', () =
   const theme = createTheme(120, false);
   const entries = collect([
     event('agent.tool_completed', { role: 'recovery', tool: 'ls', params: { path: '.' } }),
-    event('agent.tool_called', { role: 'recovery', tool: 'powershell', params: { command: "Remove-Item -LiteralPath '.\\out.html'" } }),
+    event('agent.tool_called', { role: 'recovery', tool: 'shell_exec', params: { command: "Remove-Item -LiteralPath '.\\out.html'" } }),
   ]);
   const text = renderTimeline(theme, 120, {
     entries,
@@ -106,7 +106,7 @@ test('recovery canvas shows inspect activity instead of a candidate reply', () =
     locale: 'zh',
   }).join('\n');
   assert.match(text, /恢复活动/);
-  assert.match(text, /inspect|powershell|Remove-Item/);
+  assert.match(text, /inspect|shell_exec|Remove-Item/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /正在写回复/);
 });
@@ -134,12 +134,14 @@ test('comparison header does not keep the candidate turn chrome', () => {
 test('actors overlay shows the current controller verb', () => {
   const theme = createTheme(80, false);
   const entries = collect([
-    event('agent.tool_called', { role: 'controller', tool: 'read_observation', params: { source: 'run_events' } }),
+    event('agent.tool_called', { role: 'controller', tool: 'read', params: { path: 'history/outline.tsv' } }),
   ]);
   const text = renderActors(theme, 56, {
     entries,
     selected: 0, filter: 'ALL', following: true, cancelling: false,
     currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1, max: 3 }, detailExpanded: false,
   }, 'zh').join('\n');
-  assert.match(text, /inspect|run_events/);
+  assert.match(text, /inspect|outline/);
 });
+
+

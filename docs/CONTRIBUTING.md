@@ -2,7 +2,7 @@
 
 先读根 [`README.md`](../README.md) 和本文件，再读任务触及的 [`AGENTS.md`](../AGENTS.md)、[`src/AGENTS.md`](../src/AGENTS.md) 或 [`docs/AGENTS.md`](./AGENTS.md)。产品与架构以 [`docs/README.md`](./README.md) 导航的规范为准，不要在 PR 里复制它们。
 
-**Windows 11 + Node.js `>=22.19.0`** 是产品支持与本地验证平台。CI 的 test matrix 另含 Ubuntu，作为可移植性回归门禁：Ubuntu 上的 Node 测试失败会阻止合并，但不承诺真实 Runtime、TUI 帧或 Windows 专用路径行为在 Ubuntu 上可用。其他未列入 CI 的 OS 上的失败可报告，不构成回归门禁。
+**Node.js `>=22.19.0`** 是运行时基线。CI 的 test matrix 覆盖 Windows、macOS 和 Ubuntu，作为可移植性回归门禁；真实 Runtime smoke、TUI 帧和平台专用权限行为仍需在目标宿主上显式验证。其他未列入 CI 的 OS 上的失败可报告，不构成回归门禁。
 
 ## 开发环境
 

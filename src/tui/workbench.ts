@@ -233,15 +233,7 @@ function renderMessage(_theme: Theme, view: WorkbenchView, width: number): strin
 }
 
 function renderFooter(theme: Theme, view: WorkbenchView, width: number): string[] {
-  const locale = view.locale ?? 'en';
-  const product = view.running?.productLabel ?? t(locale, 'unknownAgent');
-  const recovering = view.running ? isRecoveryChrome(view.running) : false;
-  const preparing = recovering || view.running?.preparePhase === 'copy';
-  const composer = view.page === 'running' && view.running
-    ? ` ${theme.glyphs.cursor} ${theme.style.muted(t(locale, recovering ? 'noTypeRecovery' : preparing ? 'noTyping' : 'noTypeTarget', { product }))}`
-    : undefined;
   return [
-    ...(composer ? [theme.style.fillCanvas(truncateFit(composer, width, theme.glyphs.ellipsis))] : []),
     divider(theme, width),
     keyHints(theme, hintsFor(view, theme), width),
   ];
@@ -345,10 +337,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
     return runningHints(view.running.filter, theme.density !== 'wide', preparing, locale, Boolean(view.running.finding));
   }
-  if (view.page === 'result' && view.running?.finding) {
-    return runningHints(view.running.filter, theme.density !== 'wide', false, locale, true);
-  }
-  if (view.page === 'result') return resultHints(locale);
+  if (view.page === 'result') return resultHints(locale, view.result?.comparison.result.status === 'skipped');
   if (view.page === 'error') return failureHints(locale);
   return [['b', t(locale, 'hintBack')], ['Ctrl+C', t(locale, 'hintExit')]];
 }

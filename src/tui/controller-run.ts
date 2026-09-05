@@ -30,6 +30,7 @@ function workspaceDetail(workspace: { fileCount: number; totalBytes: number } | 
 }
 
 function resultMessage(result: CodexExperimentResult, locale: Locale): string {
+  if (result.comparison.result.status === 'skipped') return t(locale, 'resultSkipped');
   const kind = result.record.outcome.termination.kind;
   if (kind === 'blocked') return t(locale, 'resultBlocked');
   if (kind === 'failed') return t(locale, 'resultFailed');

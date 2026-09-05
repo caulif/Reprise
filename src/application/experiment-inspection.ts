@@ -87,10 +87,11 @@ export async function inspectRun(
     typeof settlementStatus === "string" ? settlementStatus : "unknown";
   const currentSummary = [
     `Latest target settlement: ${status}.`,
-    allowModelText && finalMessage
-      ? `Visible final response: ${finalMessage}`
-      : "No model text is available to the Controller.",
     `Observed commands: ${commands.length}; changed paths: ${inspection.changedPaths.length}; rejected approvals: ${rejectedApprovals}.`,
+    `Workspace evidence: ${inspection.workspaceEvidenceStatus ?? "unavailable"}.`,
+    allowModelText && finalMessage
+      ? "Visible assistant text was recorded; inspect THIS-TURN and project files rather than treating this summary as completion."
+      : "No model text is available to the Controller.",
   ].join(" ");
   const trajectorySummary = `Settled turns: ${inspection.turns}; commands: ${commands.length}; changed paths: ${inspection.changedPaths.length}; runtime-generated paths: ${inspection.runtimeGeneratedPaths.length}.`;
   return { ...inspection, evidenceRefs, currentSummary, trajectorySummary };
@@ -112,8 +113,8 @@ export function unstartedControllerObservation(): Pick<
 
 async function inspectWorkspace(
   workspace: WorkspaceInspection | undefined,
-): Promise<Pick<RunInspection, "changedPaths" | "runtimeGeneratedPaths">> {
-  if (!workspace) return { changedPaths: [], runtimeGeneratedPaths: [] };
+): Promise<Pick<RunInspection, "changedPaths" | "runtimeGeneratedPaths" | "workspaceEvidenceStatus">> {
+  if (!workspace) return { changedPaths: [], runtimeGeneratedPaths: [], workspaceEvidenceStatus: "not_collected" as const };
   const after = await workspace.workspaceProvider.fingerprint(
     workspace.environment,
   );
@@ -126,17 +127,18 @@ async function inspectWorkspace(
     runtimeGeneratedPaths: paths.filter((path) =>
       path.startsWith("node_modules/"),
     ),
+    workspaceEvidenceStatus: "available" as const,
   };
 }
 
 async function readWorkspaceScope(
   store: ExperimentStore,
   record: RunRecord,
-): Promise<Pick<RunInspection, "changedPaths" | "runtimeGeneratedPaths">> {
+): Promise<Pick<RunInspection, "changedPaths" | "runtimeGeneratedPaths" | "workspaceEvidenceStatus">> {
   const ref = record.artifactRefs.find(
     (item) => item.artifactId === "candidate-workspace-scope.json",
   );
-  if (!ref) return { changedPaths: [], runtimeGeneratedPaths: [] };
+  if (!ref) return { changedPaths: [], runtimeGeneratedPaths: [], workspaceEvidenceStatus: "not_collected" as const };
   try {
     const scope = recordValue(
       JSON.parse(Buffer.from(await store.readArtifact(ref)).toString("utf8")),
@@ -144,9 +146,10 @@ async function readWorkspaceScope(
     return {
       changedPaths: strings(scope.changedPaths),
       runtimeGeneratedPaths: strings(scope.runtimeGeneratedPaths),
+      workspaceEvidenceStatus: "available" as const,
     };
   } catch {
-    return { changedPaths: [], runtimeGeneratedPaths: [] };
+    return { changedPaths: [], runtimeGeneratedPaths: [], workspaceEvidenceStatus: "unavailable" as const };
   }
 }
 

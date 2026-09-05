@@ -39,7 +39,7 @@ async function workspace(): Promise<string> {
 }
 
 function tool(root: string, name: string, options = {}) {
-  const toolOptions = name === "powershell" ? { allowShell: true, ...options } : options;
+  const toolOptions = name === "shell_exec" ? { allowShell: true, ...options } : options;
   const found = recoveryTools(root, toolOptions).find(
     (item) => item.name === name,
   );
@@ -73,14 +73,31 @@ function capturingSpawner(capture: {
 }
 
 
-test("powershell is always registered on the Recovery workspace surface", async (t) => {
+test("shell_exec is always registered on the Recovery workspace surface", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  assert.equal(recoveryTools(root).some((item) => item.name === "powershell"), true);
+  assert.equal(recoveryTools(root).some((item) => item.name === "shell_exec"), true);
   assert.deepEqual(
     recoveryTools(root).map((item) => item.name).sort(),
-    ["edit", "find", "grep", "ls", "powershell", "read", "write"],
+    ["edit", "find", "grep", "ls", "read", "shell_exec", "write"],
   );
+});
+
+test("workspace read returns native image blocks only when binary access is authorized", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-image-read-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  await writeFile(join(root, "result.png"), bytes);
+  const denied = tool(root, "read", { allowBinary: false });
+  await assert.rejects(denied.execute({ path: "result.png", format: "image", mimeType: "image/png" }, new AbortController().signal), /binary_read_denied/);
+  const result = await tool(root, "read", { allowBinary: true }).execute(
+    { path: "result.png", format: "image", mimeType: "image/png" },
+    new AbortController().signal,
+  );
+  assert.deepEqual(result.contentBlocks, [
+    { type: "text", text: "Image result.png." },
+    { type: "image", data: bytes.toString("base64"), mimeType: "image/png" },
+  ]);
 });
 
 test("structured recovery tools reject traversal, absolute paths, backslashes and symlink targets", async (t) => {
@@ -113,7 +130,7 @@ test("structured recovery tools reject traversal, absolute paths, backslashes an
     read.execute({ path: ".env" }, new AbortController().signal),
     /credential_read_denied/i,
   );
-  const shell = tool(root, "powershell");
+  const shell = tool(root, "shell_exec");
   await assert.rejects(
     shell.execute({ command: "type .env" }, new AbortController().signal),
     /credential_read_denied/i,
@@ -174,11 +191,11 @@ test("direct Recovery writes journal schema-validated pre/post hashes", async (t
   ]);
 });
 
-test("powershell deletes are unobserved by the controlled-write journal", async (t) => {
+test("shell_exec deletes are unobserved by the controlled-write journal", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const entries: unknown[] = [];
-  const shell = tool(root, "powershell", {
+  const shell = tool(root, "shell_exec", {
     onControlledWrite: async (entry: unknown) => entries.push(entry),
   });
   await shell.execute({ command: "Remove-Item -LiteralPath input.txt" }, new AbortController().signal);
@@ -199,7 +216,7 @@ test("write allows recovery.md and rejects the Host-owned manifest name", async 
   );
 });
 
-test("powershell runs arbitrary staging commands with a clean temporary environment", async (t) => {
+test("shell_exec runs arbitrary staging commands with a clean temporary environment", async (t) => {
   const root = await workspace();
   const homeRoot = join(root, "harness-home");
   const harnessKeyName = ["REPRISE_TEST_", "API_KEY"].join("");
@@ -216,7 +233,7 @@ test("powershell runs arbitrary staging commands with a clean temporary environm
     });
   });
 
-  const shell = tool(root, "powershell", { homeRoot });
+  const shell = tool(root, "shell_exec", { homeRoot });
   await shell.execute(
     { command: "Set-Content -LiteralPath shell-output.txt -Value 'from-shell'" },
     new AbortController().signal,
@@ -276,13 +293,13 @@ test("powershell runs arbitrary staging commands with a clean temporary environm
   );
 });
 
-test("powershell times out individual commands and marks truncated output", async (t) => {
+test("shell_exec times out individual commands and marks truncated output", async (t) => {
   const root = await workspace();
   t.after(() =>
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   );
 
-  const timedShell = tool(root, "powershell", { shellTimeoutMs: 100 });
+  const timedShell = tool(root, "shell_exec", { shellTimeoutMs: 100 });
   await assert.rejects(
     timedShell.execute(
       { command: nodeCommand("setTimeout(() => undefined, 2000)") },
@@ -291,7 +308,7 @@ test("powershell times out individual commands and marks truncated output", asyn
     /timed out/i,
   );
 
-  const shell = tool(root, "powershell");
+  const shell = tool(root, "shell_exec");
   const output = await shell.execute(
     { command: nodeCommand("process.stdout.write('x'.repeat(300000))") },
     new AbortController().signal,
@@ -634,7 +651,7 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
   ]);
 });
 
-test("workspace listing stays bounded and powershell git log omits blob bodies", async (t) => {
+test("workspace listing stays bounded and shell_exec git log omits blob bodies", async (t) => {
   const root = await workspace();
   t.after(() =>
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
@@ -653,7 +670,7 @@ test("workspace listing stays bounded and powershell git log omits blob bodies",
   assert.match(listed.content, /input\.txt/);
   assert.match(listed.content, /directory nested/);
   assert.doesNotMatch(listed.content, /child\.txt/);
-  const history = await tool(root, "powershell").execute(
+  const history = await tool(root, "shell_exec").execute(
     { command: "git log -1 --format=%s" },
     new AbortController().signal,
   );
@@ -710,14 +727,14 @@ test("controlled Recovery delta replay requires and verifies immutable postimage
   );
 });
 
-test("powershell reports a missing Windows executable without leaking command details", async (t) => {
+test("shell_exec reports a missing Windows executable without leaking command details", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows executable matrix case");
     return;
   }
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const shell = tool(root, "powershell", { shellExecutable: join(root, "missing-pwsh.exe") });
+  const shell = tool(root, "shell_exec", { shellExecutable: join(root, "missing-pwsh.exe") });
   await assert.rejects(
     shell.execute({ command: "echo should-not-run" }, new AbortController().signal),
     (error: unknown) =>
@@ -728,7 +745,7 @@ test("powershell reports a missing Windows executable without leaking command de
   );
 });
 
-test("powershell uses PATH pwsh, Bypass, UTF-8 prefix, and argv command on a short cwd", async (t) => {
+test("shell_exec uses PATH pwsh, Bypass, UTF-8 prefix, and argv command on a short cwd", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows argv case");
     return;
@@ -738,7 +755,7 @@ test("powershell uses PATH pwsh, Bypass, UTF-8 prefix, and argv command on a sho
   const pwsh = join(root, "pwsh.exe");
   await writeFile(pwsh, "");
   const capture: { command?: string; args?: readonly string[]; env?: NodeJS.ProcessEnv } = {};
-  const shell = tool(root, "powershell", {
+  const shell = tool(root, "shell_exec", {
     findExecutableOnPath: (name: string) => (name === "pwsh.exe" ? pwsh : undefined),
     spawnProcess: capturingSpawner(capture),
   });
@@ -756,9 +773,9 @@ test("powershell uses PATH pwsh, Bypass, UTF-8 prefix, and argv command on a sho
   assert.equal(capture.env?.REPRISE_RECOVERY_COMMAND, undefined);
 });
 
-test("powershell reports a missing staging directory without MAX_PATH or executable wording", async () => {
+test("shell_exec reports a missing staging directory without MAX_PATH or executable wording", async () => {
   const missing = join(tmpdir(), `reprise-missing-cwd-${Date.now()}`);
-  const shell = tool(missing, "powershell");
+  const shell = tool(missing, "shell_exec");
   await assert.rejects(
     shell.execute({ command: "Get-Location" }, new AbortController().signal),
     (error: unknown) =>
@@ -769,7 +786,7 @@ test("powershell reports a missing staging directory without MAX_PATH or executa
   );
 });
 
-test("powershell mutates staging when the workspace path exceeds Windows MAX_PATH", async (t) => {
+test("shell_exec mutates staging when the workspace path exceeds Windows MAX_PATH", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows CreateProcess MAX_PATH case");
     return;
@@ -781,7 +798,7 @@ test("powershell mutates staging when the workspace path exceeds Windows MAX_PAT
     await mkdir(root, { recursive: true });
   }
   await writeFile(join(root, "input.txt"), "original\r\n");
-  const shell = tool(root, "powershell");
+  const shell = tool(root, "shell_exec");
   const signal = new AbortController().signal;
   await shell.execute({ command: "'probe' | Set-Content -LiteralPath probe.txt" }, signal);
   assert.match(await readFile(join(root, "probe.txt"), "utf8"), /probe/);
@@ -789,7 +806,7 @@ test("powershell mutates staging when the workspace path exceeds Windows MAX_PAT
   await assert.rejects(readFile(join(root, "input.txt")));
 });
 
-test("powershell long cwd keeps the command in IEX environment variables", async (t) => {
+test("shell_exec long cwd keeps the command in IEX environment variables", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows CreateProcess MAX_PATH case");
     return;
@@ -801,7 +818,7 @@ test("powershell long cwd keeps the command in IEX environment variables", async
     await mkdir(root, { recursive: true });
   }
   const capture: { args?: readonly string[]; env?: NodeJS.ProcessEnv } = {};
-  const shell = tool(root, "powershell", { spawnProcess: capturingSpawner(capture) });
+  const shell = tool(root, "shell_exec", { spawnProcess: capturingSpawner(capture) });
   await shell.execute({ command: "Remove-Item -LiteralPath input.txt" }, new AbortController().signal);
   assert.match(String(capture.args?.at(-1)), /Invoke-Expression/);
   assert.match(String(capture.env?.REPRISE_RECOVERY_COMMAND), /OutputEncoding/);
@@ -822,3 +839,7 @@ test("ls treats omitted path, dot, and dot-slash as the staging root", async (t)
   await assert.rejects(listing.execute({ path: ".." }, signal));
   await assert.rejects(listing.execute({ path: "C:/outside" }, signal));
 });
+
+
+
+

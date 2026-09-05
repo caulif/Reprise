@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { terminateProcessTree } from './platform.js';
 import { join } from 'node:path';
 
 export type ProcessExitCategory = 'spawn_error' | 'stdio_disconnected' | 'nonzero_exit' | 'timed_out' | 'cancelled' | 'output_limit_exceeded';
@@ -81,11 +82,11 @@ export async function runProcess(input: {
     };
     const abort = () => {
       cancelled = true;
-      terminateChild(child, input.killTree === true);
+      terminateProcessTree(child, input.killTree === true);
     };
     const timer = setTimeout(() => {
       timedOut = true;
-      terminateChild(child, input.killTree === true);
+      terminateProcessTree(child, input.killTree === true);
     }, input.timeoutMs);
     timer.unref();
     attachProcessIo(child, input, stdout, stderr, output, maxOutputBytes, boundary);
@@ -111,7 +112,7 @@ function attachProcessIo(
     if (remaining <= 0) {
       output.truncated = true;
       if (!input.truncateOutput) {
-        terminateChild(child, input.killTree === true);
+        terminateProcessTree(child, input.killTree === true);
         boundary('output_limit_exceeded');
       }
       return;
@@ -122,7 +123,7 @@ function attachProcessIo(
     if (accepted.byteLength < buffer.byteLength) {
       output.truncated = true;
       if (!input.truncateOutput) {
-        terminateChild(child, input.killTree === true);
+        terminateProcessTree(child, input.killTree === true);
         boundary('output_limit_exceeded');
       }
     }
@@ -163,17 +164,10 @@ function errnoCode(error: unknown): string | undefined {
   return error.code;
 }
 
+
 export function windowsTaskkillExecutable(): string {
   const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows';
   return join(systemRoot, 'System32', 'taskkill.exe');
 }
 
-function terminateChild(child: ChildProcess, killTree: boolean): void {
-  if (!killTree || process.platform !== 'win32' || child.pid === undefined) {
-    child.kill();
-    return;
-  }
-  const killer = spawn(windowsTaskkillExecutable(), ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore', windowsHide: true });
-  killer.once('error', () => child.kill());
-  killer.once('close', () => { if (!child.killed) child.kill(); });
-}
+

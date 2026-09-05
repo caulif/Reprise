@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { assertComparisonResult } from '../src/agents/comparison-agent.js';
+import { assertComparisonResult, COMPARISON_SYSTEM_PROMPT } from '../src/agents/comparison-agent.js';
 import { buildComparisonContext, comparePersistedFacts, type RunInspection } from '../src/application/comparison.js';
 import { fingerprintTree } from '../src/environment/local-workspace-fs.js';
 import { recoveryTools } from '../src/infrastructure/recovery-tools.js';
@@ -33,10 +33,10 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
   await write.execute({ path: 'report.html', content: html }, new AbortController().signal);
   assert.equal(await readFile(join(root, 'report.html'), 'utf8'), html);
   await assert.rejects(write.execute({ path: 'candidate/kept.txt', content: 'nope' }, new AbortController().signal), /write_denied/);
-  const powershell = tools.find((tool) => tool.name === 'powershell');
-  assert.ok(powershell);
+  const shellTool = tools.find((tool) => tool.name === 'shell_exec');
+  assert.ok(shellTool);
   await assert.rejects(
-    powershell.execute({ command: 'Remove-Item candidate/kept.txt' }, new AbortController().signal),
+    shellTool.execute({ command: 'Remove-Item candidate/kept.txt' }, new AbortController().signal),
     /write_denied/,
   );
   const after = await fingerprintTree(candidate);
@@ -47,7 +47,9 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
 test('comparison envelope accepts only report.html', () => {
   const context = buildComparisonContext(taskCase(), [runRecord()]);
   assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, context));
+  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [], headline: 'Same files, fewer turns.' }, context));
   assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: '../report.html', evidenceRefs: [] }, context), /schema validation failed/);
+  assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [], headline: 'x'.repeat(281) }, context), /schema validation failed/);
 });
 
 test('reportFacts preserve missing measurements and project known run facts', () => {
@@ -65,3 +67,11 @@ test('comparison orchestration rejects envelope citations outside persisted fact
   const agent: ComparisonAgentPort = { compare: async () => ({ status: 'completed', sessionId: 'comparison-1', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: ['event:foreign-1'] } }) };
   await assert.rejects(comparePersistedFacts({ taskCase: taskCase(), runs: [runRecord()], agent }), /unknown evidence reference/);
 });
+
+test('comparison prompt points workspace tools at the live replica mount', () => {
+  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the live isolated replica/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /comparison-sandbox\/candidate/);
+});
+
+
+

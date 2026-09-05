@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ComparisonAgentPort } from "../src/agents/comparison-agent.js";
 import { type ControllerPort } from "../src/agents/controller-agent.js";
-import { startCodexExperiment } from "../src/application/experiment.js";
+import { startCodexExperiment, type ExperimentAgentConfig } from "../src/application/experiment.js";
 import type {
   ResolvedRuntime,
   RuntimeModelOffer,
@@ -113,6 +113,21 @@ const controller: ControllerPort = {
         },
 };
 const comparison: ComparisonAgentPort = {
+  plan: async (_context, tools = []) => {
+    await tools.find((tool) => tool.name === "write")?.execute(
+      { path: "work/comparison-plan.md", content: "# Plan\n\nCompare the delivered files and the final settled turn.\n" },
+      new AbortController().signal,
+    );
+    return { status: "completed", sessionId: "comparison-planner-1", value: { status: "planned", planPath: "work/comparison-plan.md" } };
+  },
+  report: async (_context, tools = []) => {
+    const writer = tools.find((tool) => tool.name === "write");
+    await writer?.execute(
+      { path: "report.html", content: '<!doctype html><style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>' },
+      new AbortController().signal,
+    );
+    return { status: "completed", sessionId: "comparison-reporter-1", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };
+  },
   compare: async (_context, tools = []) => {
     const writer = tools.find(
       (tool) => tool.name === "write",
@@ -203,7 +218,7 @@ export function input(root: string, runtime: VerifiedRuntime) {
       providerId: "test",
       requestedModel: "test-model",
       budget: { callTimeoutMs: 1_000, maxStructuredRepairAttempts: 0 },
-    },
+    } as ExperimentAgentConfig,
     runtime,
     controller,
     comparison,
@@ -282,6 +297,7 @@ export async function terminationOf(
     controller: ControllerPort;
     policy?: Partial<TaskPolicy>;
     turns?: number;
+    agentConfig?: ReturnType<typeof input>["agentConfig"];
   },
 ): Promise<{ kind: string; code: string }> {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-experiment-"));
@@ -294,6 +310,7 @@ export async function terminationOf(
     runtime: new MultiTurnRuntime(overrides.turns ?? 4),
     controller: overrides.controller,
     policy: { ...base.policy, ...overrides.policy },
+    ...(overrides.agentConfig ? { agentConfig: overrides.agentConfig } : {}),
   }).result;
   return result.record.outcome.termination;
 }

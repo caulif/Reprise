@@ -19,7 +19,7 @@
   },
   {
     "name": "read",
-    "description": "Read a bounded byte range from a regular staging file.",
+    "description": "Read a bounded byte range from a regular file, or return the whole file as a native Pi image block when format=image is authorized.",
     "parameters": {
       "type": "object",
       "required": [
@@ -39,6 +39,22 @@
           "minimum": 1,
           "maximum": 262144,
           "type": "integer"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "const": "text",
+              "type": "string"
+            },
+            {
+              "const": "image",
+              "type": "string"
+            }
+          ]
+        },
+        "mimeType": {
+          "pattern": "^image/[A-Za-z0-9.+-]+$",
+          "type": "string"
         }
       }
     }
@@ -136,8 +152,8 @@
     }
   },
   {
-    "name": "powershell",
-    "description": "Run one PowerShell command with cwd locked to staging. Network is open; credentials and global configuration are not provided.",
+    "name": "shell_exec",
+    "description": "Run one host-shell command with cwd locked to staging. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided.",
     "parameters": {
       "type": "object",
       "required": [

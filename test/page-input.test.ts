@@ -89,7 +89,9 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchRunningKeys('\x1b')?.action, 'active-message');
   assert.equal(dispatchResultKeys('o')?.action, 'open-report');
   assert.equal(dispatchResultKeys('t')?.action, 'open-trace');
+  assert.equal(dispatchResultKeys('w')?.action, 'open-replica');
   assert.equal(dispatchErrorKeys('b')?.action, 'return');
+  assert.equal(dispatchErrorKeys('\x1b')?.action, 'return');
 });
 
 test('history detail distinguishes a frozen case from an experiment', () => {

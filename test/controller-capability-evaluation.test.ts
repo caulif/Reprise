@@ -109,10 +109,13 @@ test('controller contract lane covers 12 cases and one fact-changing variant eac
   console.log(`controller-contract: ${all.length} cases x 3 = ${runs} runs; score=${total}/${runs * 2}; hardFailures=0`);
 });
 
-test('controller prompt permits immediate satisfaction only from visible trustworthy evidence', () => {
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /directly supported by current trustworthy evidence/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /do not send a message merely for formal re-confirmation/);
+test('controller prompt stops on this user\'s acceptance habits, not deliverable kind', () => {
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /acceptance habits/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not send only to pad turn count/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not wait for the candidate to ask/);
   assert.match(CONTROLLER_SYSTEM_PROMPT, /evidence ref alone is not sufficient/);
+  assert.doesNotMatch(CONTROLLER_SYSTEM_PROMPT, /merely for formal re-confirmation/);
+  assert.doesNotMatch(CONTROLLER_SYSTEM_PROMPT, /When the Candidate asks for a fact/);
 });
 
 test('controller rejects ungrounded evidence and unsafe message output', async () => {

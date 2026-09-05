@@ -21,6 +21,8 @@ import { recoveryAttemptRecord } from "./recovery-orchestrator.js";
 import { deriveRecoveryReadinessContext, checkRecoveryReadiness } from "./recovery-readiness.js";
 import { historicalCwdOf } from "./replay-conditions.js";
 import { RecoveryValidationError } from "../environment/local-workspace-provider.js";
+import { Type } from "@sinclair/typebox";
+import type { AgentToolDefinition } from "../infrastructure/pi-agent-host.js";
 
 export function buildRecoveryAgentContext(session: RecoveryRunSession): RecoveryContext {
   const { input, attemptMode, facts, investigation, executionCandidate, pack, playbook, staging } = session;
@@ -53,6 +55,13 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
       candidateId: executionCandidate.candidateId,
       hypothesisId: executionCandidate.hypothesisId,
     },
+    ...(session.candidateStagings
+      ? { recoveryCandidates: session.candidateStagings.map((candidate) => ({
+          candidateId: candidate.candidateId,
+          hypothesisId: candidate.hypothesisId,
+          beforeDigest: candidate.beforeFingerprint.digest,
+        })) }
+      : {}),
     runtimeCapabilities: pack.runtime.recoveryCapabilities(),
     playbook,
     staging: {
@@ -72,6 +81,27 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
   const { input, store, executionCandidate, activeStaging } = session;
   if (!executionCandidate) throw new Error("Recovery execution candidate was not prepared.");
   session.tools = [
+    {
+      name: "select_recovery_candidate",
+      description: "Select one Host-materialized recovery candidate before making further changes.",
+      parameters: Type.Object({ candidateId: Type.String({ minLength: 1 }) }),
+      execute: async (params) => {
+        const candidateId = (params as { candidateId?: unknown }).candidateId;
+        if (typeof candidateId !== "string") throw new Error("candidateId is required.");
+        const candidate = session.candidateStagings?.find((item) => item.candidateId === candidateId);
+        if (!candidate || !session.activeStaging || !session.executionCandidate)
+          throw new Error(`Recovery candidate is unavailable: ${candidateId}`);
+        await session.provider.copyRecoveryCandidateTo(candidate, session.executionCandidate.root);
+        session.executionCandidate = { ...session.executionCandidate, hypothesisId: candidate.hypothesisId, beforeFingerprint: candidate.beforeFingerprint };
+        await store.append({
+          type: "recovery.candidate_selected_by_agent",
+          runId: input.runId,
+          operationId: `recovery-candidate-selected-by-agent-${candidateId}`,
+          payload: { candidateId, hypothesisId: candidate.hypothesisId },
+        });
+        return { content: `Selected recovery candidate ${candidateId}.` };
+      },
+    },
     ...recoveryObservationTools(input.taskCase, {
       onOperation: async (operation) => {
         await store.append({
@@ -83,6 +113,7 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
       },
     }),
     ...recoveryTools(executionCandidate.root, {
+      allowBinary: input.taskCase.privacy.allowBinary,
       ...(input.allowShell ? { allowShell: true } : {}),
       ...(activeStaging?.temporaryRoot ? { homeRoot: activeStaging.temporaryRoot } : {}),
       onControlledWrite: async (entry) => {
@@ -111,50 +142,22 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
 }
 
 export async function runRecoveryModelAttempts(session: RecoveryRunSession): Promise<void> {
-  const { input, store, context, tools, audit, executionCandidate, maxModelAttempts, experimentRoot } = session;
-  if (!context || !tools || !audit || !executionCandidate)
+  const { input, store, audit, maxModelAttempts, experimentRoot } = session;
+  if (!session.context || !session.tools || !audit || !session.executionCandidate)
     throw new Error("Recovery model invocation was not prepared.");
   session.failureStage = "agent_tool_failed";
   session.preflightOperation = "recovery_agent_invoke";
-  const modelInputBase = recoveryModelInputAudit(context, tools.map((tool) => tool.name));
   let retryModel = true;
   while (retryModel) {
+    if (session.modelAttempts > 0 && session.recovery?.status === "failed") {
+      await refreshRecoveryCandidateForRetry(session);
+    }
     session.modelAttempts += 1;
-    const modelInput = { ...modelInputBase, attempt: session.modelAttempts };
-    const modelInputBytes = Buffer.from(JSON.stringify(modelInput), "utf8");
-    const modelInputArtifact = await store.commitArtifact({
-      artifactId: `recovery-model-input-${session.modelAttempts}-${sha256(modelInputBytes).slice(0, 16)}`,
-      runId: input.runId,
-      kind: "recovery_model_input",
-      mediaType: "application/json",
-      bytes: modelInputBytes,
-      operationId: `recovery-model-input-${session.modelAttempts}-created`,
-    });
-    await store.append({
-      type: "recovery.investigation_packet",
-      runId: input.runId,
-      operationId: `recovery-investigation-packet-${session.modelAttempts}`,
-      payload: {
-        caseId: input.caseId,
-        attempt: session.modelAttempts,
-        truncated: context.investigationPacket?.truncated === true,
-        pathCount: context.investigationPacket?.candidatePaths.length ?? 0,
-        laterUserTurnCount: context.investigationPacket?.laterUserTurns.length ?? 0,
-        digest: sha256(JSON.stringify(context.investigationPacket ?? {})),
-      },
-    });
-    await store.append({
-      type: "recovery.model_input",
-      runId: input.runId,
-      operationId: `recovery-model-input-${session.modelAttempts}`,
-      payload: {
-        caseId: input.caseId,
-        attempt: session.modelAttempts,
-        artifactId: modelInputArtifact.artifactId,
-        contentHash: modelInputArtifact.contentHash,
-        byteLength: modelInputArtifact.byteLength,
-      },
-    });
+    const context = session.context;
+    const tools = session.tools;
+    const executionCandidate = session.executionCandidate;
+    if (!context || !tools || !executionCandidate) throw new Error("Recovery retry context was not prepared.");
+    await persistRecoveryModelInput(session, context, tools);
     await recordRecoveryAttempt(
       session,
       recoveryAttemptRecord({
@@ -207,6 +210,86 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
     session.failureStage = recoveryInvocationFailureStage(session.recovery);
     throw new Error(`Recovery did not complete: ${session.recovery.status}.`);
   }
+}
+
+async function persistRecoveryModelInput(
+  session: RecoveryRunSession,
+  context: RecoveryContext,
+  tools: readonly AgentToolDefinition[],
+): Promise<void> {
+  const { input, store } = session;
+  const attempt = session.modelAttempts;
+  const toolNames = tools.map((tool) => (tool as { name: string }).name);
+  const bytes = Buffer.from(JSON.stringify({ ...recoveryModelInputAudit(context, toolNames), attempt }), "utf8");
+  const artifact = await store.commitArtifact({
+    artifactId: `recovery-model-input-${attempt}-${sha256(bytes).slice(0, 16)}`,
+    runId: input.runId,
+    kind: "recovery_model_input",
+    mediaType: "application/json",
+    bytes,
+    operationId: `recovery-model-input-${attempt}-created`,
+  });
+  await store.append({
+    type: "recovery.investigation_packet",
+    runId: input.runId,
+    operationId: `recovery-investigation-packet-${attempt}`,
+    payload: {
+      caseId: input.caseId,
+      attempt,
+      truncated: context.investigationPacket?.truncated === true,
+      pathCount: context.investigationPacket?.candidatePaths.length ?? 0,
+      laterUserTurnCount: context.investigationPacket?.laterUserTurns.length ?? 0,
+      digest: sha256(JSON.stringify(context.investigationPacket ?? {})),
+    },
+  });
+  await store.append({
+    type: "recovery.model_input",
+    runId: input.runId,
+    operationId: `recovery-model-input-${attempt}`,
+    payload: { caseId: input.caseId, attempt, artifactId: artifact.artifactId, contentHash: artifact.contentHash, byteLength: artifact.byteLength },
+  });
+}
+
+async function refreshRecoveryCandidateForRetry(session: RecoveryRunSession): Promise<void> {
+  const { executionCandidate, activeStaging, provider, input } = session;
+  if (!executionCandidate || !activeStaging) throw new Error("Recovery retry candidate was not prepared.");
+  const previousCandidateId = executionCandidate.candidateId;
+  await provider.discardRecoveryCandidate(executionCandidate);
+  const retryCandidate = await provider.createRecoveryCandidate(activeStaging, {
+    candidateId: `candidate-${executionCandidate.hypothesisId}-retry-${session.modelAttempts + 1}`,
+    hypothesisId: executionCandidate.hypothesisId,
+  });
+  session.executionCandidate = retryCandidate;
+  session.modelAttemptCandidate = retryCandidate;
+  if (session.candidateStagings) {
+    session.candidateStagings = [
+      ...session.candidateStagings.filter((candidate) => candidate.candidateId !== previousCandidateId),
+      retryCandidate,
+    ];
+  }
+  if (session.investigation) {
+    session.investigation = {
+      ...session.investigation,
+      candidates: session.investigation.candidates
+        .filter((candidate) => candidate.candidateId !== previousCandidateId)
+        .concat({
+          candidateId: retryCandidate.candidateId,
+          hypothesisId: retryCandidate.hypothesisId,
+          status: "created",
+          factRefs: session.investigation.plan.hypotheses.find((hypothesis) => hypothesis.hypothesisId === retryCandidate.hypothesisId)?.supportingFactRefs ?? [],
+          beforeDigest: retryCandidate.beforeFingerprint.digest,
+          createdAt: retryCandidate.createdAt,
+        }),
+    };
+  }
+  session.context = buildRecoveryAgentContext(session);
+  buildRecoveryAgentTools(session);
+  await session.store.append({
+    type: "recovery.model_retry_candidate_created",
+    runId: input.runId,
+    operationId: `recovery-model-retry-candidate-${session.modelAttempts + 1}`,
+    payload: { previousCandidateId, candidateId: retryCandidate.candidateId },
+  });
 }
 
 export async function invokeRecoveryAgent(session: RecoveryRunSession): Promise<void> {

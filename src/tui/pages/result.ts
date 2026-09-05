@@ -1,52 +1,46 @@
 import { join } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { CodexExperimentResult } from '../../application/experiment.js';
-import { compact, missing } from '../format.js';
+import { compact } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
-import { joinColumns, kv, kvLinkBlock, panel, wrapBodyLine } from '../widgets.js';
+import { kv, kvLinkBlock, panel, wrapBodyLine } from '../widgets.js';
 
 export function renderResult(theme: Theme, width: number, result: CodexExperimentResult, locale: Locale = 'en', productLabel?: string): string[] {
   const kind = result.record.outcome.termination.kind;
   const vacant = theme.framed ? '—' : '-';
-  const decision = controllerLabel(theme, result, vacant);
-  const comparison = result.comparison.result.status === 'skipped'
-    ? t(locale, 'comparisonSkipped')
-    : missing(result.comparison.result.status, vacant);
+  const skipped = result.comparison.result.status === 'skipped';
   const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
   const report = shortPath(result.reportPath, experimentRoot, vacant);
   const runId = result.record.attempt?.runId;
   const trace = tracePath(runId, theme, width, vacant);
   const traceAbs = runId && experimentRoot ? join(experimentRoot, 'runs', runId) : undefined;
-  const summary = explainOutcome(result, Math.max(20, width - 4), productLabel ?? t(locale, 'unknownAgent'), locale);
-  const metrics = metricsLine(theme, result);
-  const col = theme.density === 'wide' ? Math.floor((width - 4) / 2) : width - 2;
-  const facts = theme.density === 'wide'
-    ? joinColumns(
-      [kv(theme, 'Run', compact(result.record.attempt.runId, col - 14, theme.glyphs.ellipsis), col), kv(theme, 'Controller', decision, col)],
-      [kv(theme, 'Cleanup', result.record.outcome.cleanup.status, col), kv(theme, 'Comparison', comparison, col)],
-      col, col, 2,
-    )
-    : [
-      kv(theme, 'Run', compact(result.record.attempt.runId, Math.max(12, width - 16), theme.glyphs.ellipsis), width - 2),
-      kv(theme, 'Cleanup', result.record.outcome.cleanup.status, width - 2),
-      kv(theme, 'Controller', decision, width - 2),
-      kv(theme, 'Comparison', comparison, width - 2),
-    ];
+  const replicaAbs = runId && experimentRoot ? join(experimentRoot, 'environment', 'runs', runId) : undefined;
+  const inner = Math.max(20, width - 4);
+  const headline = skipped ? undefined : envelopeHeadline(result);
+  const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
+  const metrics = metricsLine(theme, result, locale);
   return panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, [
     terminationBanner(theme, kind),
     `     ${result.record.outcome.termination.code}`,
     ...(metrics ? [`     ${metrics}`] : []),
+    ...(headline ? ['', ...wrapBodyLine(headline, inner).map((line) => ` ${line}`)] : []),
     ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
-    '',
-    ...facts,
-    ...(result.comparison.result.status === 'skipped' ? [] : kvLinkBlock(theme, 'Report', report, result.reportPath, width)),
+    ...(skipped ? ['', kv(theme, 'Comparison', t(locale, 'comparisonSkipped'), width - 2)] : []),
+    ...(skipped ? [] : kvLinkBlock(theme, 'Report', report, result.reportPath, width)),
+    ...kvLinkBlock(theme, 'Replica', replicaLabel(runId, theme, width, vacant), replicaAbs, width),
     ...kvLinkBlock(theme, 'Trace', trace, traceAbs, width),
   ], width);
 }
 
-export function resultHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['o', t(locale, 'hintReport')], ['t', t(locale, 'hintTrace')], ['/', t(locale, 'hintFind')], ['Enter', t(locale, 'hintHome')], ['b', t(locale, 'hintHome')]];
+export function resultHints(locale: Locale = 'en', comparisonSkipped = false): readonly (readonly [string, string])[] {
+  const rest: readonly (readonly [string, string])[] = [
+    ['t', t(locale, 'hintTrace')],
+    ['w', t(locale, 'hintReplica')],
+    ['Enter', t(locale, 'hintHome')],
+    ['b', t(locale, 'hintHome')],
+  ];
+  return comparisonSkipped ? rest : [['o', t(locale, 'hintReport')], ...rest];
 }
 
 export function renderFailure(theme: Theme, width: number, message: string, locale: Locale = 'en'): string[] {
@@ -70,25 +64,27 @@ function terminationBanner(theme: Theme, kind: string): string {
   return theme.style.danger(` ${theme.glyphs.err} ${kind}`);
 }
 
-function controllerLabel(theme: Theme, result: CodexExperimentResult, vacant: string): string {
-  if (result.decision.status !== 'completed') return missing(result.decision.status, vacant);
-  const value = result.decision.value;
-  if (value.type === 'done') return value.reason ? `done ${theme.glyphs.sep} ${value.reason}` : 'done';
-  return value.type;
+function envelopeHeadline(result: CodexExperimentResult): string | undefined {
+  const cmp = result.comparison.result;
+  if (cmp.status !== 'completed' || !('value' in cmp)) return undefined;
+  const text = cmp.value?.headline?.trim();
+  return text || undefined;
 }
 
-function metricsLine(theme: Theme, result: CodexExperimentResult): string | undefined {
+function metricsLine(theme: Theme, result: CodexExperimentResult, locale: Locale): string | undefined {
   const facts = result.facts;
   if (!facts) return undefined;
   const total = facts.elapsedMs;
   const candidate = facts.wallClockMs;
   const showBoth = total !== undefined && candidate !== undefined && total - candidate >= 2000;
+  const missing = t(locale, 'notRecorded');
   const parts = [
     total !== undefined ? `${Math.round(total / 1000)}s` : candidate === undefined ? undefined : `${Math.round(candidate / 1000)}s`,
     showBoth && candidate !== undefined ? `candidate ${Math.round(candidate / 1000)}s` : undefined,
     `${facts.turns} turn${facts.turns === 1 ? '' : 's'}`,
     `${facts.controllerCalls} controller`,
-    facts.tokenCount === undefined ? undefined : `${facts.tokenCount} tokens`,
+    facts.tokenCount === undefined ? `${missing} tokens` : `${facts.tokenCount} tokens`,
+    `${missing} cost`,
   ].filter((part): part is string => Boolean(part));
   return parts.join(` ${theme.glyphs.sep} `);
 }
@@ -105,16 +101,19 @@ function explainOutcome(result: CodexExperimentResult, width: number, product: s
     return lines.flatMap((line) => wrapBodyLine(line, width));
   }
   const value = result.decision.status === 'completed' ? result.decision.value : undefined;
-  if (value?.type === 'done' && value.rationale?.trim()) return wrapBodyLine(value.rationale.trim(), width);
+  if (value?.type === 'done' && value.reason !== 'satisfied' && value.rationale?.trim()) {
+    return wrapBodyLine(value.rationale.trim(), width);
+  }
+  const compared = result.comparison.result.status !== 'skipped';
   if (result.record.outcome.termination.kind === 'blocked') {
-    return wrapBodyLine('Candidate did not finish the original task. Comparison still ran. Press o for the report.', width);
+    return wrapBodyLine(compared
+      ? 'Candidate did not finish the original task. Comparison still ran. Press o for the report.'
+      : 'Candidate did not finish the original task.', width);
   }
   if (result.record.outcome.termination.kind === 'limit_reached') {
     const code = result.record.outcome.termination.code;
-    const message = code === 'limit.target_turns'
-      ? 'Candidate reached the target turn limit. Comparison still ran. Press o for the report.'
-      : `Candidate reached a run limit (${code}). Comparison still ran. Press o for the report.`;
-    return wrapBodyLine(message, width);
+    const cap = code === 'limit.target_turns' ? 'Candidate reached the target turn limit.' : `Candidate reached a run limit (${code}).`;
+    return wrapBodyLine(compared ? `${cap} Comparison still ran. Press o for the report.` : cap, width);
   }
   return undefined;
 }
@@ -131,15 +130,23 @@ function shortPath(path: string | undefined, experimentRoot: string | undefined,
     const relativePath = relativeInside(experimentRoot, path);
     if (relativePath) return relativePath;
   }
-  const parts = asPosixPath(path).split('/').filter(Boolean);
+  const parts = asPosixPath(path).split('/').filter((item) => item);
   return parts[parts.length - 1] ?? path;
 }
 
-function tracePath(runId: string | undefined, theme: Theme, width: number, vacant: string): string {
+function runFolderLabel(prefix: string, runId: string | undefined, theme: Theme, width: number, vacant: string): string {
   if (!runId) return vacant;
-  const full = `runs/${runId}/`;
+  const full = `${prefix}${runId}/`;
   const inner = Math.max(1, width - (theme.framed ? 2 : 3));
   const valueWidth = Math.max(8, inner - 14);
   if (full.length <= valueWidth) return full;
-  return `runs/${compact(runId, Math.max(10, valueWidth - 6), theme.glyphs.ellipsis)}/`;
+  return `${prefix}${compact(runId, Math.max(10, valueWidth - prefix.length - 1), theme.glyphs.ellipsis)}/`;
+}
+
+function replicaLabel(runId: string | undefined, theme: Theme, width: number, vacant: string): string {
+  return runFolderLabel('environment/runs/', runId, theme, width, vacant);
+}
+
+function tracePath(runId: string | undefined, theme: Theme, width: number, vacant: string): string {
+  return runFolderLabel('runs/', runId, theme, width, vacant);
 }

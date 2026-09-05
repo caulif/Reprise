@@ -60,6 +60,7 @@ type MakeEntry = (source: TimelineSource, title: string, detail?: string, extra?
 export function appendTimelineEntries(timeline: TimelineEntry[], incoming: readonly TimelineEntry[]): void {
   const seen = new Set(timeline.filter((entry) => entry.title.startsWith('Prompt ·')).map((entry) => entry.title));
   for (const entry of incoming) {
+    if (collapsePresentedInput(timeline, entry)) continue;
     if (entry.title.startsWith('Prompt ·')) {
       if (seen.has(entry.title)) continue;
       seen.add(entry.title);
@@ -77,6 +78,28 @@ export function appendTimelineEntries(timeline: TimelineEntry[], incoming: reado
     const collapsed = collapseRepeatedRecoveryFailure(timeline, settled) || collapseAgentRows(timeline, settled);
     if (!collapsed) timeline.push(settled);
   }
+}
+
+function collapsePresentedInput(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
+  const key = presentedInputKey(entry);
+  if (!key) return false;
+  const index = timeline.findIndex((row) => presentedInputKey(row) === key);
+  if (index < 0) return false;
+  const existing = timeline[index];
+  if (entry.title.startsWith('Input to Target') && existing?.title.startsWith('Prompt ·')) {
+    timeline[index] = entry;
+  }
+  return true;
+}
+
+function presentedInputKey(entry: TimelineEntry): string | undefined {
+  const raw = entry.title.startsWith('Input to Target')
+    ? entry.detail
+    : entry.title.startsWith('Prompt ·')
+      ? (entry.detail ?? entry.title.slice('Prompt · '.length))
+      : undefined;
+  const key = raw?.replace(/\s+/g, ' ').trim();
+  return key || undefined;
 }
 
 function collapseRepeatedRecoveryFailure(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
@@ -598,3 +621,5 @@ export function eventOriginalText(entry: TimelineEntry | undefined): string | un
   if (!entry) return undefined;
   return entry.original ?? entry.detail;
 }
+
+

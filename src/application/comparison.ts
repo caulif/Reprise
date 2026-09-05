@@ -26,6 +26,7 @@ export type RunInspection = {
   wallClockMs?: number;
   tokenCount?: number;
   replayConditions?: readonly string[];
+  workspaceEvidenceStatus?: 'available' | 'not_collected' | 'unavailable';
 };
 
 export function buildComparisonContext(taskCase: TaskCase, runs: readonly RunRecord[], inspections: readonly RunInspection[] = []): ComparisonContext {

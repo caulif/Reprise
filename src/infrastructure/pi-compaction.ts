@@ -35,6 +35,7 @@ export async function compactPiMessages(input: {
   models: Pick<Models, "completeSimple">;
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
+  customInstructions?: string;
   signal?: AbortSignal;
 }): Promise<{ messages: AgentMessage[]; audit: PiCompactionAudit } | undefined> {
   const prepared = prepareCompaction(agentMessagesToEntries(input.messages), DEFAULT_COMPACTION_SETTINGS);
@@ -44,7 +45,7 @@ export async function compactPiMessages(input: {
     prepared.value,
     input.models as Models,
     input.model,
-    undefined,
+    input.customInstructions,
     input.signal,
     input.thinkingLevel,
     COMPACT_RETRY,

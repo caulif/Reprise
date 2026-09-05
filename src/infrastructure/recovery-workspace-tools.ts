@@ -11,6 +11,7 @@ import {
 } from "./recovery-write-journal.js";
 import type { AgentToolDefinition } from "./pi-agent-host.js";
 import { ProcessBoundaryError, runProcess, type ProcessSpawner } from "./process-runner.js";
+import { shellInvocation } from "./platform.js";
 import { integer, requiredString } from "./recovery-tools.js";
 
 const MAX_BYTES = 262_144;
@@ -58,6 +59,12 @@ export type RecoveryToolOptions = {
   denyDestructiveOnPrefix?: readonly string[];
   findExecutableOnPath?: (name: string) => string | undefined;
   spawnProcess?: ProcessSpawner;
+  /** When set, shell_exec cwd is this directory instead of `root`. */
+  shellCwd?: string;
+  /** Explicit task-scoped variables added after environment sanitization. */
+  shellEnv?: Readonly<Record<string, string>>;
+  /** Whether this role may send file bytes to the model as native image blocks. */
+  allowBinary?: boolean;
 };
 
 type RecoveryToolContext = {
@@ -162,15 +169,17 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { limit, boundedRead, readRegularFile } = ctx;
   return {
     name: "read",
-    description: "Read a bounded byte range from a regular staging file.",
+    description: "Read a bounded byte range from a regular file, or return the whole file as a native Pi image block when format=image is authorized.",
     parameters: Type.Object({
       path: Type.String({ minLength: 1, maxLength: 512 }),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
       maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_BYTES })),
+      format: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("image")])),
+      mimeType: Type.Optional(Type.String({ pattern: "^image/[A-Za-z0-9.+-]+$" })),
     }),
     execute: async (params) =>
       limit(async () => {
-        const value = params as { path?: unknown; offset?: unknown; maxBytes?: unknown };
+        const value = params as { path?: unknown; offset?: unknown; maxBytes?: unknown; format?: unknown; mimeType?: unknown };
         const path = pathIn(ctx, requiredString(value.path, "path"));
         if (isSensitiveRecoveryPath(path.relative))
           throw recoveryToolError("credential_read_denied", "Known credential files are not readable by the Recovery model.", {
@@ -185,6 +194,17 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
           return readRegularFile(path.absolute);
         });
         if (!bytes) return unavailableFileReadResult(path.relative, offset);
+        if (value.format === "image") {
+          if (!ctx.options.allowBinary) throw new Error("binary_read_denied: image content is not authorized for this task.");
+          if (offset !== 0 || bytes.length > maxBytes) throw new Error(`image_read_requires_whole_file: image must fit within ${maxBytes} bytes.`);
+          const mimeType = requiredString(value.mimeType, "mimeType");
+          if (!/^image\/[A-Za-z0-9.+-]+$/.test(mimeType)) throw new Error("mimeType must be an image media type.");
+          return {
+            content: `Image ${path.relative} (${mimeType}, ${bytes.length} bytes).`,
+            contentBlocks: [{ type: "text" as const, text: `Image ${path.relative}.` }, { type: "image" as const, data: bytes.toString("base64"), mimeType }],
+            details: { path: path.relative, offset: 0, available: true, mediaType: mimeType, byteLength: bytes.length, truncated: false },
+          };
+        }
         const slice = bytes.subarray(offset, offset + maxBytes);
         return {
           content: slice.toString("utf8"),
@@ -365,9 +385,9 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
 function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { root, options, limit, ensureHome } = ctx;
   return {
-    name: "powershell",
+    name: "shell_exec",
     description:
-      "Run one PowerShell command with cwd locked to staging. Network is open; credentials and global configuration are not provided.",
+      "Run one host-shell command with cwd locked to staging. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided.",
     parameters: Type.Object({
       command: Type.String({ minLength: 1, maxLength: MAX_COMMAND_BYTES }),
     }),
@@ -378,9 +398,10 @@ function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
           throw new Error(`command exceeds ${MAX_COMMAND_BYTES} bytes.`);
         assertShellCommandDoesNotTargetSensitiveFiles(command);
         assertShellDoesNotMutateReadonlyMount(ctx, command);
-        if (!existsSync(root)) throw new Error("Working directory does not exist. Cannot execute PowerShell commands.");
+        const cwd = options.shellCwd ?? root;
+        if (!existsSync(cwd)) throw new Error("Working directory does not exist. Cannot execute PowerShell commands.");
         const home = await ensureHome();
-        return runShell(root, home, command, signal, options);
+        return runShell(cwd, home, command, signal, options);
       })(),
   };
 }
@@ -428,15 +449,16 @@ function runShell(
   if (windows && !resolved) {
     throw new Error("ENOENT: PowerShell executable was not found (未找到 PowerShell).");
   }
-  const invocation = windowsPowershellInvocation(root, command);
+  const invocation = windows ? windowsPowershellInvocation(root, command) : undefined;
+  const portableShell = windows ? undefined : shellInvocation(command);
   return runProcess({
-    operation: "powershell",
-    executableKind: windows ? resolved!.kind : "shell",
-    command: windows ? resolved!.executable : command,
-    args: windows ? invocation.args : [],
-    cwd: invocation.spawnCwd,
-    env: { ...sanitizedEnvironment(home), ...invocation.extraEnv },
-    shell: !windows,
+    operation: "shell_exec",
+    executableKind: windows ? resolved!.kind : portableShell!.kind,
+    command: windows ? resolved!.executable : portableShell!.executable,
+    args: windows ? invocation!.args : portableShell!.args,
+    cwd: windows ? invocation!.spawnCwd : root,
+    env: { ...sanitizedEnvironment(home), ...options.shellEnv, ...(windows ? invocation!.extraEnv : {}) },
+    shell: false,
     allowNonzeroExit: windows,
     killTree: true,
     signal,
@@ -499,8 +521,8 @@ function resolveWindowsPowershell(
   const programFiles = envLookup(process.env, "ProgramFiles") ?? "C:\\Program Files";
   const pwsh7 = join(programFiles, "PowerShell", "7", "pwsh.exe");
   if (existsSync(pwsh7)) return { executable: pwsh7, kind: "powershell_7" };
-  const powershellOnPath = locate("powershell.exe");
-  if (powershellOnPath) return { executable: powershellOnPath, kind: "powershell_windows" };
+  const windowsPsOnPath = locate("powershell.exe");
+  if (windowsPsOnPath) return { executable: windowsPsOnPath, kind: "powershell_windows" };
   const systemRoot = envLookup(process.env, "SystemRoot") ?? envLookup(process.env, "WINDIR") ?? "C:\\Windows";
   const windowsPs = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   if (existsSync(windowsPs)) return { executable: windowsPs, kind: "powershell_windows" };
@@ -603,7 +625,7 @@ function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command
   if (!mutates) return;
   for (const prefix of prefixes) {
     if (command.includes(prefix) || command.includes(ctx.mounts[prefix] ?? ""))
-      throw new Error("write_denied: powershell must not mutate a read-only mount.");
+      throw new Error("write_denied: shell_exec must not mutate a read-only mount.");
   }
 }
 
@@ -729,3 +751,9 @@ async function assertWritableFile(path: string): Promise<void> {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
+
+
+
+
+
+

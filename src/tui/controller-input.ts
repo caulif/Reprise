@@ -126,6 +126,7 @@ export type ControllerHandle = {
   syncIntakeLevel(): void;
   openReport(experimentRoot: string | undefined, reportPath: string | undefined): Consume;
   openTrace(): Consume;
+  openReplica(): Consume;
   openLocal(target: string | undefined): Consume;
   returnFromError(): Consume;
   configPageInput(data: string): Consume | undefined;
@@ -153,10 +154,6 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   }, input);
   if (global) return applyGlobal(c, global.action);
   if (c.page === 'running') return applyRunning(c, input);
-  if (c.page === 'result') {
-    const canvas = applyCanvas(c, input);
-    if (canvas) return canvas;
-  }
   if (c.page === 'config') return c.configPageInput(input);
   if (c.page === 'history') return c.historyInput(input);
   if (c.page === 'history-detail') return applyHistoryDetail(c, input);
@@ -171,12 +168,14 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     const result = dispatchResultKeys(input);
     if (!result) return undefined;
     if (result.action === 'open-report') {
+      if (c.result?.comparison.result.status === 'skipped') return undefined;
       return c.openReport(
         c.result?.experimentRoot ?? (c.result ? dirname(c.result.reportPath) : undefined),
         c.result?.reportPath,
       );
     }
     if (result.action === 'open-trace') return c.openTrace();
+    if (result.action === 'open-replica') return c.openReplica();
     return c.backToHome();
   }
   if (c.page === 'error') {

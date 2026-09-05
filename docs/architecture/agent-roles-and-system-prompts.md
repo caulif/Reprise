@@ -264,13 +264,12 @@ Controller 是**原用户的动态协作代理**。
 
 Controller 应使用独立的长生命周期 session，至少在一个 CandidateRun 内保持连续性。Host 必须持久化每次输入快照、只读工具调用、可见输出和最终 decision；已持久化 decision 是恢复事实，模型隐藏状态不是。
 
-默认工具建议：
+默认工具：
 
-- 会话读取：按消息范围读取完整原始 transcript、initial input 和历史用户输入；
-- 运行读取：读取当前 candidate 的规范化消息、tool call、check、artifact change 和 settlement；
-- 证据读取：预览或检索本 case/run 拥有的 baseline/candidate artifact、diff、日志、截图和检查结果；
-- 工具权限：全部只读，不提供文件写入、patch、任务 shell、Runtime approval 或 Candidate 工具代理能力；
-- 隔离：不能读取其他 candidate 的轨迹、Controller session 或 Comparison 结论。
+- 工作区七件套，根在 Host briefing 目录；`project/` 只读挂载隔离副本；不注册 `read_observation`；
+- 历史与本 run 原文按 INDEX 中的路径 `read`；
+- 全部拒写；`powershell` cwd 锁在副本；不提供 Runtime approval 或 Candidate 工具代理；
+- 不能读取其他 candidate 的轨迹、Controller session 或 Comparison 结论。
 
 Controller 的“能力与原用户相当”是操作化条件，不表示可以模拟用户未知的未来事实，也不表示可以替真实用户作任何决定。工具和上下文必须支持它调查当前可见事实，但不能让它执行目标任务或改变 candidate 环境。
 
@@ -278,9 +277,9 @@ Controller 的“能力与原用户相当”是操作化条件，不表示可以
 
 每次 `SteeringContext` 至少包含：
 
-- 完整原始会话的不可变索引及按需读取能力；
-- `initialInput`、原用户目标、硬约束、偏好、权限与 baseline evidence；
-- 当前真实 `TurnSettlement` 和 target observation，而不是一句固定的“turn settled”；
+- Host briefing 目录（INDEX、history、本 run 回合文件）及按路径读取能力；
+- `initialInput` 作为 `history/initial-input.txt`，原用户目标、硬约束、偏好与授权；
+- 结算后 `THIS-TURN` 与 `project/` 当前产物，而不是一句固定的“turn settled”；
 - 近期 candidate 消息、tool calls、checks、artifact changes 与带 provenance 的早期阶段摘要；
 - 环境 mismatch、unavailable 观察和采集限制；
 - Controller 先前已发送消息及 delivery 状态；
@@ -417,7 +416,7 @@ rationale 只写简短、可审计的决策依据，可以引用关键 observati
 
 ### 5.1 它是干什么的
 
-Comparison 是**只读的比较研究 Agent**。
+Comparison 是**对实验事实只读、对本 attempt 工作区可写的比较研究 Agent**。
 
 它回答的不是“哪个模型赢了”，而是：
 
@@ -436,7 +435,7 @@ Comparison 不应在启动时接收全部 transcript、trace、命令输出和�
 - 区分结果质量差异、过程差异与实验条件限制；
 - 选择少量高信息量发现并按重要性组织；
 - 为每个实质判断提供邻近、可追溯的证据入口；
-- 用初始任务的主要语言写面向用户的自由 Markdown。
+- 用初始任务的主要语言写面向用户的自由 HTML。
 
 ### 5.3 它不负责什么
 
@@ -448,7 +447,7 @@ Comparison 不应在启动时接收全部 transcript、trace、命令输出和�
 - 不为了“全面”默认读取全部 transcript、trace、命令输出或 artifact。
 - 不把 candidate 自述、TUI 摘要或 Host 摘要当作独立验证。
 - 不读取或重写 Controller 的隐藏 reasoning。
-- 不修改任何 artifact、run 或用户文件。
+- 不修改任何 artifact、run 或用户文件；只写当前 attempt 的 `work/`、`scratch/` 和 `report.html`。
 
 ### 5.4 必须具备的能力
 
@@ -457,7 +456,7 @@ Comparison 不应在启动时接收全部 transcript、trace、命令输出和�
 | 分层理解 | 理解 briefing 是观察投影、manifest 是目录、原始证据才是可核验来源 |
 | 自主调查 | 先浏览索引，提出可能改变结论的问题，再按判断价值深入 |
 | 定向检索 | 可搜索文件名和内容、读取指定 range、查询 event/transcript 区间及筛选 telemetry |
-| 只读 shell | 可在受控 evidence workspace 中使用基础检索、查看和确定性比较命令 |
+| 本地 shell | PowerShell cwd 固定在 `scratch/`，可复制、转换和比较选定证据，但只读 mount 不可修改 |
 | Artifact 阅读 | 支持文本、Markdown、JSON、diff、图片预览及未知类型 metadata |
 | 过程理解 | 可按需读取 target transcript、公开 trace、命令/检查输出，不要求全量注入 |
 | 条件校准 | 把 fidelity、终止原因和完成机会作为结论边界 |
@@ -465,15 +464,19 @@ Comparison 不应在启动时接收全部 transcript、trace、命令输出和�
 | 上下文管理 | 使用分页、range、大小上限和截断标记，避免重复读取与无界输出 |
 | 自由写作 | 生成完整 `report.html`，内容与页面结构由证据决定 |
 
-所有工具必须只读，并由 Host 校验 experiment/run ownership、路径、大小、类型和 privacy policy。读取接口必须支持分页或 range、明确的返回上限和 `truncated`/`unavailable` 标记；Host 应记录 Comparison 实际查询和读取的范围。外部模型默认不接收未经允许的二进制或敏感内容。
+证据 mount 必须只读，并由 Host 校验 experiment/run ownership、路径、类型和 privacy policy；`work/`、`scratch/` 与 `report.html` 按 phase 开放写入。读取接口支持 range、明确的返回上限和 `truncated`/`unavailable` 标记；Host 记录 Comparison 实际查询和读取的范围。允许二进制时，图片通过 Pi 原生 content block 交给模型，路径或 metadata 不能冒充视觉观察。
 
 ### 5.5 输入与输出
 
-Comparison 的输入分三层，只有第一、二层默认进入活动上下文。
+Planner 和 Reporter 是两个独立 session，共用一个 comparison attempt，但不共享消息历史。Planner 在 `work/comparison-plan.md` 留下可修改计划；Reporter 可以否定、清空或重写。Comparison 的输入分三层，只有短 orientation 与导航索引默认进入活动上下文。
 
-#### 第一层：TUI-equivalent briefing
+#### 第一层：短 orientation
 
-这是面向 Comparison 的首屏精选信息，约等于用户在成熟 coding agent TUI 主时间线和结果页中能快速看到的内容：
+每个 phase 的第一条消息只包含初始任务全文、phase 目标、双方证据可用性、计划状态、briefing root 与 INDEX。它不内联 transcript、events、文件正文或长摘要。
+
+#### 第二层：导航 briefing
+
+Host 在 attempt 下生成薄 briefing：
 
 - 初始任务、主要语言和任务目标摘要；
 - baseline 与当前 candidate 最终可见的 assistant 消息；
@@ -487,9 +490,7 @@ Comparison 的输入分三层，只有第一、二层默认进入活动上下文
 
 该层应高信息密度、可读且有明确大小预算。TUI 的折叠规则可作为默认取舍，但不能把当前可见区域误当成 Comparison 的权限上限。
 
-#### 第二层：Agent-enhanced manifest
-
-Comparison 默认比人类 TUI 多获得一层**目录信息**，用于决定下一步查什么，而不是直接获得全部内容：
+这些目录信息用于决定下一步查什么，而不是直接获得全部内容：
 
 - baseline/candidate artifact catalog 摘要与配对提示；
 - 文件树或 changed-file index；
@@ -524,7 +525,7 @@ Comparison 可自行使用只读工具：
 
 Host 提供 `reportFacts` 和只读证据工具；Agent 自主选择如何呈现事实、证据入口与页面交互。宿主事实不从 HTML 反向解析。
 
-机器接口只需一个薄信封保存 Markdown 路径、引用清单和状态。不要把 Comparison 再次压缩成 `summary + observations[] + limitations[]` 固定模板；该模板会让模型围绕 schema 填空，而不是调查和写报告。
+机器接口只需一个薄信封保存 HTML 路径、引用清单和状态。不要把 Comparison 再次压缩成 `summary + observations[] + limitations[]` 固定模板；该模板会让模型围绕 schema 填空，而不是调查和写报告。
 
 ### 5.6 推荐 system prompt
 

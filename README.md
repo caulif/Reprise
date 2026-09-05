@@ -13,7 +13,7 @@ Reprise 是一个 local-first Harness，用于在真实任务上重放与检视 
 ## 要求
 
 - Node.js `>=22.19.0`
-- Windows 11 是第一版唯一已验证的平台。
+- Windows 11、macOS 和 Linux 均纳入 CI 可移植性验证；真实 Runtime smoke 仍需在目标宿主上显式 opt-in。
 - 已安装并登录当前 Codex；Reprise 不安装 Codex，也不读取或保存凭据。
 
 ## 本地开发
@@ -43,6 +43,12 @@ npm run check
 ## 真实 Codex protocol smoke
 
 这是一个明确 opt-in 的无工具 app-server 文本协议探针；它不创建实验、不读取工作区，也不替代需要 Host 工具的完整 TUI 实验。
+
+```sh
+REPRISE_RUN_CODEX_SMOKE=1 npm run smoke:codex
+```
+
+PowerShell 等价写法：
 
 ```powershell
 $env:REPRISE_RUN_CODEX_SMOKE = '1'
