@@ -1,5 +1,7 @@
 # Comparison Agent 设计
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前模块设计
 
 Comparison 是产品无关的比较研究者。它从冻结的 baseline、Candidate RunRecord、事件与 catalog artifact 中调查差异，输出供用户自行判断的本地报告；它不运行 Runtime、不修改实验状态，也不排名候选。Comparison 由 TUI 对照门或 CLI `--compare` 显式启动，默认不调用。

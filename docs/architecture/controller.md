@@ -1,5 +1,7 @@
 # 同等人类能力与 Controller 设计
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前模块设计
 
 本文完整定义产品无关的同等人类能力模块：它如何读取规范化历史任务、理解 Target Runner 的输入边界、构造观察、调用 Pi Agent、生成下一条用户消息并留下证据。公共领域类型、七状态模型和端口所有权以[架构总览](./overview.md)为准；本文只细化 Controller 所需的视图和交互协议。Controller 的实验级配置、工具、完整会话可见性、预算与压缩细节见[Controller 实验条件](./controller-experiment-conditions.md)。

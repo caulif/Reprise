@@ -2,19 +2,16 @@
 
 ## 当前目标
 
-- 实施 [Session / harness / workflow 架构重构](../plan/reprise-architecture-redesign.md)。
-- 当前代码仍遵循 `architecture/` 与 `decisions/accepted/`；目标规划不表示已经迁移。
+实施[架构重构规划](../plan/reprise-architecture-redesign.md)，具体步骤见[重构实施计划](../plan/reprise-refactoring-execution.md)。唯一批次顺序与 A1–A18 在总计划维护，交互验收在[TUI 规划](../plan/reprise-tui-design.md)维护，本文件不复制设计决定。
 
 ## 当前批次
 
-- M1：执行机制与持久化，先验证 Pi Session/JSONL、压缩和持久化的可用范围。
-
-## 已确认范围
-
-- 三角色共用内部模型配置，各自使用连续独立 Session。
-- 运行中只查看和取消；重开后只查看历史，不自动续跑。
-- Windows 默认 PowerShell，macOS/Linux 默认 Bash；各平台运行本机任务。
+M1：验证 Pi Session/JSONL、压缩及持久化的公开能力。代码迁移尚未在本入口记录完成证据，不能把目标规划或文档整理当作 M1 通过。
 
 ## 验证记录
 
-- M0：`npm run verify:docs` 通过；旧计划、研究和进度材料已迁入本机归档，受控入口、链接和目录边界已收口。
+2026-09-08 文档对齐：恢复已确认的 CLI、插件、取消、TUI 约束；收敛 prompt 与平台专题，保留当前实现到目标的迁移归宿。文档门禁的结果由本次执行日志及 PR 验证栏提供，不据此宣称代码验收通过。
+
+## 更新约定
+
+每个实施批次记录提交或 PR、验证命令、预期与实际结果、剩余阻塞，并链接对应验收项。没有可复现证据不标为完成；不要保存逐轮对话、工具日志或另一份任务清单。

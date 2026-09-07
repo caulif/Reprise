@@ -1,5 +1,7 @@
 # CandidateRun 结果与终止协议
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前模块设计
 
 本文定义一次 `CandidateRun` 结束后如何表达任务判断、终止原因、技术故障和资源清理结果。公共类型与七状态模型以[架构总览](./overview.md)为准；本文细化这些类型的生成规则、约束和用户展示。

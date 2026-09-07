@@ -1,5 +1,7 @@
 # Product Pack 兼容性
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前架构基线
 
 本文定义 Product Pack 的发现、选择和兼容性判定。它与[架构总览](./overview.md)、[环境设计](./environment.md)和[持久化与崩溃一致性](./persistence-and-crash-consistency.md)配套使用。

@@ -1,5 +1,7 @@
 # Controller 实验条件
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前模块设计
 
 本文定义的不是如何限制 Controller 的智能，而是如何让它在不同候选模型之间代表同一种用户协作能力。Controller 仍然可以根据每条候选轨迹自主决定下一条输入。

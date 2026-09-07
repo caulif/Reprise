@@ -1,33 +1,24 @@
 # Reprise 文档
 
-`product/` 和 `architecture/` 描述当前实现；`decisions/accepted/` 记录已经生效的长期选择；`plan/` 只记录尚未实施的目标；`research/` 不定义实现。目录、命名与迁移规则见[文档结构与路径约定](./documentation-structure.md)。
+当前实现规范与重构目标分开维护。开始任务先确认是在修复现有行为，还是实施一个已确认迁移批次；不要按文件修改时间选择规范。
 
-## 当前规范
+## 按任务阅读
 
-1. [产品定义](./product/overview.md)
-2. [架构总览](./architecture/overview.md)
-3. [持久化与崩溃一致性](./architecture/persistence-and-crash-consistency.md)
-4. [Product Pack 兼容性](./architecture/product-plugin-compatibility.md)
-5. [CandidateRun 结果与终止协议](./architecture/run-outcome.md)
-6. [TUI](./product/tui.md)
-7. [工程门禁](./engineering-gates.md)
+| 要做什么 | 先读 | 再读 |
+|---|---|---|
+| 使用与配置 | [产品定义](./product/overview.md)、[TUI](./product/tui.md) | [支持](./SUPPORT.md)、[真实调用准入](./codex-smoke-gate.md) |
+| 理解代码边界 | [架构总览](./architecture/overview.md) | [技术基线](./architecture/technology-selection.md)、[角色与 prompt 入口](./architecture/agent-roles-and-system-prompts.md) |
+| 修改存储或运行 | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md)、[环境](./architecture/environment.md) |
+| 修改模拟用户或对照 | [Controller](./architecture/controller.md)、[Comparison](./architecture/comparison.md) | [实验条件](./architecture/controller-experiment-conditions.md)、[验证边界](./architecture/validation.md) |
+| 接入产品或平台 | [Product Pack](./architecture/product-plugin-compatibility.md) | [本机平台边界](./architecture/cross-platform.md) |
+| 实施重构 | [架构目标与 A1–A18](./plan/reprise-architecture-redesign.md)、[逐步实施计划](./plan/reprise-refactoring-execution.md) | [TUI 目标](./plan/reprise-tui-design.md)、[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)、[进度](./progress/MASTER.md) |
+| 提交与审查 | [贡献指南](./CONTRIBUTING.md)、[工程门禁](./engineering-gates.md) | [任务 brief](./plan/task-brief-template.md)、[治理](./GOVERNANCE.md) |
+| 维护文档或发布 | [文档结构](./documentation-structure.md)、[文档指令](./AGENTS.md) | [发布检查](./release-checklist.md)、[Changelog](./CHANGELOG.md)、[事故复盘](./postmortem-template.md) |
 
-## 已确认的重构目标
+## 权威与迁移
 
-- [Session / harness / workflow 架构重构规划](./plan/reprise-architecture-redesign.md)
-- [TUI 阅读与交互规划](./plan/reprise-tui-design.md)
-- [目标决策提案](./decisions/proposed/2026-09-07-reprise-session-harness-workflow.md)
-- [文档处置清单](./plan/documentation-reconciliation-for-session-harness-workflow.md)
+product/ 与 architecture/ 描述当前实现的规则；plan/ 拥有已确认但尚未实施的目标；[目标 ADR](./decisions/proposed/2026-09-07-reprise-session-harness-workflow.md)记录选择理由。旧 Understanding、双 Session、静态插件等尚在代码中的规则保留为迁移源，不代表目标继续采用。
 
-目标设计尚未取代当前规范。实现每个迁移批次时，先同步相关架构文档和 ADR，再移动被替代材料。
+每个批次在同一变更中更新代码、规范、相关 ADR 与证据。通过[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)判断哪些旧决定需要被替代。不要在修文档时宣布功能已实现，也不要因旧 ADR 存在而重新讨论已确认目标。
 
-## 工程与治理
-
-- [贡献指南](./CONTRIBUTING.md)
-- [安全政策](./SECURITY.md)
-- [任务 brief 模板](./plan/task-brief-template.md)
-- [真实 Runtime smoke 闸门](./codex-smoke-gate.md)
-- [稳定进度入口](./progress/MASTER.md)
-- [决策记录目录](./decisions/)
-
-`docs/.local/` 保存已完成计划、一次性审查和本机运行记录，不受版本控制，也不能作为当前依据。`tui-audit/frames/` 是受控的 CI 快照基线。
+目录边界和维护规则由[文档结构](./documentation-structure.md)拥有；运行进度只记在 MASTER。决策目录可搜索，不在这里手工复制所有 ADR 标题。HTML 是本机非权威草图，公开检出只靠 Markdown 即可理解设计。

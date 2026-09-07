@@ -1,23 +1,22 @@
-# Session / Harness / Workflow 重构的文档处置
+# 重构的规范迁移边界
 
-状态：本轮文档迁移的执行清单。
+本文只标识当前实现与已确认目标之间需要同时迁移的归宿，不定义另一套实施顺序。顺序与验收以[总计划](./reprise-architecture-redesign.md)为准，界面以[TUI 目标](./reprise-tui-design.md)为准，进度以[MASTER](../progress/MASTER.md)为准。
 
-## 唯一来源
+## 当前到目标
 
-[架构重构规划](./reprise-architecture-redesign.md)是尚未实施目标的唯一文字来源；[TUI 设计](./reprise-tui-design.md)是目标交互来源；[决策提案](../decisions/proposed/2026-09-07-reprise-session-harness-workflow.md)记录已确认但未生效的长期选择。当前代码仍由 `product/`、`architecture/` 和 `decisions/accepted/` 描述。
+| 迁移边界 | 当前代码与规范 | 目标及关闭条件 |
+|---|---|---|
+| Session 与模型输入 | [Pi Host](../../src/infrastructure/pi-agent-host.ts)、[持久化](../architecture/persistence-and-crash-consistency.md) | 唯一 Session 事实源，压缩不丢历史；A1、A2、A6–A8 |
+| 恢复与场景 | [环境](../architecture/environment.md)、[恢复接受 ADR](../decisions/accepted/2026-08-31-recovery-auto-accept-validated-preview.md) | 证据不足停止，不强行接受；封存场景重复运行，A5、A10、A17 |
+| Controller | [Controller](../architecture/controller.md)、[独立理解 ADR](../decisions/accepted/2026-09-04-controller-understanding-pass.md)、[完成守卫 ADR](../decisions/accepted/2026-09-06-controller-completion-evidence-guard.md) | 每 run 连续 Session，取消独立 Understanding 和强制账本守卫；A3 |
+| Comparison | [对照](../architecture/comparison.md)、[双阶段 ADR](../decisions/accepted/2026-09-05-comparison-two-phase-attempts-and-pi-media.md) | 每 attempt 单 Session，独立对照与封存输入；A4、A17 |
+| CLI 与取消 | [CLI](../../src/cli/main.ts)、[运行结果](../architecture/run-outcome.md) | 完整与分步执行共用实现，本机跨终端取消；A9、A13–A15 |
+| Product Pack | [兼容性](../architecture/product-plugin-compatibility.md)、[注册入口](../../src/products/index.ts) | 显式本地插件，第三测试插件无需改宿主；A16、A18 |
+| 平台 | [本机平台](../architecture/cross-platform.md)、[Host ADR](../decisions/accepted/2026-09-05-cross-platform-host-and-agent-tools.md) | Windows PowerShell、macOS/Linux Bash，进程树与终端分别验证；A11 |
+| TUI | [当前界面](../product/tui.md)、[活动画布 ADR](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md) | 单列连续记录、键盘入口、03a 左右项目页；按 TUI 验收，更新帧基线 |
 
-## 处置
+工具数量、提示词全文和公共字段以对应代码定义为准，不再用一份平行 prompt 文档重定义。上述迁移必须保留权限、隔离、秘密保护、模型输入可复原、投递未知不重发及结果与清理分离。
 
-| 类别 | 处理 |
-| --- | --- |
-| `plan/` 中的旧 Host、Recovery、Controller、Comparison、会话发现和 TUI 专题计划 | 已被总计划覆盖，迁入 `docs/.local/plan-pre-session-harness/` |
-| `research/` 中的中间架构、工具面和理论稿 | 迁入 `docs/.local/research-pre-session-harness/`；不作为规范入口 |
-| 单次运行分析、真实使用记录和旧进度 | 迁入 `docs/.local/`；不保留受控链接 |
-| `product/`、`architecture/`、安全/门禁、`tui-audit/frames/` | 保留；在对应代码迁移批次更新真实行为 |
-| `decisions/accepted/` | 保留当前实现依据；代码迁移完成且有替代 ADR 时才移入 `superseded/` |
+## 关闭规则
 
-直接冲突且必须由替代 ADR 处理的旧选择包括：Pi Host 不拥有 Session 事实源、Controller 独立 Understanding、Comparison Planner/Reporter 双 session、统一八/七工具作为内核，以及 Windows-only 产品范围。替代 ADR 必须保留安全、事件复原、隔离和取消不变量。
-
-## 收口标准
-
-README 与进度入口只链接当前规范、目标总计划、TUI 设计、决策提案和 task brief。受控文档不得链接 `docs/.local/`。移走材料前先消除入站链接；文档门禁通过后，旧材料才算退出活跃文档树。
+本表的每行关闭需要对应实现、正向与失败场景证据，以及当前规范与 ADR 的同批更新；只改措辞不算完成。替代 ADR 指向被取代记录，旧记录移入 superseded 并保留链接。未完成的行不能因删除计划而消失。全部关闭后将本表移出活跃计划，只在进度入口记录完成证据。

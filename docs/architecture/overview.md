@@ -1,12 +1,14 @@
 # Reprise 架构总览
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前架构基线
 
 本文是跨模块术语、领域模型、端口和生命周期的唯一规范。专题文档可以完整细化一个模块，但不得重新定义本文的公共类型或改变其所有权。
 
 ## 1. 架构目标
 
-Harness 在尽量恢复历史任务环境的前提下，用当前机器已安装的 Agent 产品 Runtime 运行候选模型，并以动态 Controller 模拟同等人类能力的后续协作。模型是实验中唯一被有意改变的主要变量；当前 Runtime、Environment、Controller 和预算等其他条件尽量固定，所有已知偏差和未知项必须完整记录。历史 Runtime 只作为来源证据。
+Harness 在尽量恢复历史任务环境的前提下，用当前机器已安装的 Agent 产品 Runtime 运行候选模型，并以动态 Controller 模拟同等人类能力的后续协作。来源与候选的产品、模型、Environment、Controller 和预算差异均须记录，不能把一次对照解释为纯模型效应。历史 Runtime 只作为来源证据。
 
 架构优先满足：
 
@@ -89,15 +91,6 @@ flowchart TB
 
 Case Preparation Service 就是一个确定性的 `TaskCaseBuilder`：
 
-```ts
-interface TaskCaseBuilder {
-  build(
-    source: SessionRef,
-    privacy: PrivacyPolicy,
-    environmentPolicy: EnvironmentPolicy,
-  ): Promise<TaskCase>;
-}
-```
 
 它不使用 Agent 判断任务边界，也不生成会话内任务候选；用户选择的完整逻辑会话直接成为一个 TaskCase。会话列表的摘要窗口只服务展示；冻结资格以选中后的完整 inspect/import 为准，不以列表缓存的 `pending` 或截断摘要为准。只有 Environment 子系统内部的 Recovery Agent 处理恢复所需的语义判断，且只在已有合法 `initialInput` 的 TaskCase 之后运行；它不解析产品 JSONL，也不改写 `initialInput`。Environment Provider 负责隔离和验证。TaskCase manifest 原子写入后全部字段只读；修改会话、证据、环境或策略时创建新 Case。冻结后正常运行不依赖历史产品私有日志或 Recovery Playbook 持续可用。
 
@@ -130,27 +123,12 @@ Comparison Agent 只读取规范化的任务、结果、artifact、遥测和 fid
 
 ## 4. 核心领域模型
 
+字段与类型的唯一可执行来源是 [schema.ts](../../src/core/schema.ts)、[Runtime 端口](../../src/core/runtime.ts)和[产品契约](../../src/products/contract.ts)。本文只定义语义与所有权，不维护另一套接口声明。
+
 ### 4.1 TaskCase
 
 `TaskCase` 是冻结的历史任务输入，不是对历史产品的动态查询。
 
-```ts
-interface TaskCase {
-  schemaVersion: number;
-  caseId: string;
-  source: SessionRef;
-  initialInput: UserMessage;
-  transcript: Transcript;             // 完整历史会话
-  historicalEvents: HistoricalEvent[];
-  baseline: BaselineEvidence;
-  sourceRuntimeEvidence: SourceRuntimeEvidence;
-  environmentBaseline: EnvironmentBaseline;
-  taskContext?: TaskContext;
-  provenance: Provenance;
-  privacy: PrivacyPolicy;
-  contentHash: string;
-}
-```
 
 `transcript` 和 `historicalEvents` 保存用户选择的完整逻辑会话；整段会话默认就是一个任务，不再从中推断子任务边界。`initialInput` 是 Case Preparation 从完整会话选出的第一条用户任务句（跳过产品注入的指令块），是冻结考卷，不是 Host 投递给候选的原文。Controller 写出候选收到的每一条用户消息，包括第一句。Controller 可以读取完整历史轨迹，但不会逐轮 replay。
 
@@ -158,62 +136,6 @@ interface TaskCase {
 
 ### 4.2 ExperimentSpec、CandidateSpec 与 Agent 配置
 
-```ts
-interface ExperimentSpec {
-  experimentId: string;
-  taskCaseId: string;
-  candidates: CandidateSpec[];
-  controller: AgentConfig;
-  comparison: AgentConfig;
-  runPolicy: RunPolicy;
-  outputRoot: PathRef;
-}
-
-interface CandidateSpec {
-  candidateId: string;
-  productId: string;
-  requestedModel: ModelRequest;
-}
-
-interface AgentConfig {
-  providerId: string;
-  requestedModel: string;
-  options?: Record<string, unknown>;
-  budget: AgentBudget;
-  contextPolicy?: Record<string, unknown>;
-}
-
-interface AgentBudget {
-  maxCalls?: number;
-  maxTokens?: number;
-  maxCost?: number;
-  callTimeoutMs: number;
-  maxStructuredRepairAttempts: number;
-  maxProviderRetries: number;
-}
-
-interface ResolvedAgentConfig {
-  providerId: string;
-  requestedModel: string;
-  resolvedModel: string | "unknown";
-  optionsHash: string;
-  promptHash: string;
-  toolPolicyHash: string;
-  contextPolicyHash: string;
-  budget: AgentBudget;
-}
-
-interface RunPolicy {
-  wallClockMs: number;
-  maxTargetTurns: number;
-  maxModelCalls: number;
-  turnTimeoutMs: number;
-  heartbeatTimeoutMs: number;
-  maxConsecutiveNoProgress: number;
-  maxTokens?: number;
-  maxCost?: number;
-}
-```
 
 `ExperimentSpec` 表达用户想比较什么。Controller 和 Comparison 的请求配置在 Experiment 创建时冻结；Controller 在首个候选运行前解析，Comparison 在比较调用前解析，并分别保存实际模型与配置 hash。Recovery 属于 Case Preparation，它的 `ResolvedAgentConfig` 保存在 `TaskCase.provenance`，不进入 `ExperimentSpec`。三个 Agent 的总调用、token 和成本上限默认未设置；单次调用 timeout、结构化修复次数和 provider 重试次数始终有限。`RunPolicy` 只约束 Target Runtime，不能作为内部 Agent 的预算或重试策略。
 
@@ -223,106 +145,6 @@ interface RunPolicy {
 
 准备阶段可能在 Runtime、模型或 Environment 尚未解析成功时结束，因此 CandidateRun 先冻结最小 `RunAttempt`；只有启动条件齐备后才提交 `RunManifest`。不使用大量可选字段表达不合法的半 Manifest。
 
-```ts
-interface RunAttempt {
-  schemaVersion: number;
-  runId: string;
-  experimentId: string;
-  caseId: string;
-  candidate: CandidateSpec;
-  policy: RunPolicy;
-  createdAt: string;
-}
-
-interface RunManifest {
-  schemaVersion: number;
-  attempt: RunAttempt;
-  resolvedModel: ResolvedModelIdentity;
-  runtime: ResolvedRuntime;
-  environment: PreparedEnvironmentRef;
-  controller: ResolvedAgentConfig;
-  startedAt: string;
-}
-
-interface TraceSliceRef {
-  experimentId: string;
-  runId: string;
-  firstSequence: number;
-  lastSequence: number;
-}
-
-interface RunRecord {
-  attempt: RunAttempt;
-  manifest?: RunManifest;
-  state: "finished";
-  stageReached: "created" | "preparing" | "launching" | "awaiting_target" | "awaiting_controller";
-  outcome: RunOutcome;
-  fidelity: FidelityAssessment;
-  finalEnvironment?: EnvironmentFingerprint;
-  trace: TraceSliceRef;
-  artifactRefs: ArtifactRef[];
-  warnings: RunWarning[];
-}
-
-interface RunWarning {
-  code: string;
-  message: string;
-  evidenceRefs: EvidenceRef[];
-}
-
-`stageReached` 只记录进入 `finalizing` 前到达的最深执行阶段；每个终态记录都已经经过 `finalizing` 并处于 `finished`，因此不把这两个必经终态重复写入该字段。
-
-type EvidenceRef = string;
-
-interface RunOutcome {
-  task: TaskAssessment;
-  termination: RunTermination;
-  cleanup: CleanupResult;
-}
-
-interface TaskAssessment {
-  status:
-    | "apparently_completed"
-    | "incomplete"
-    | "indeterminate"
-    | "not_assessed";
-  decidedBy?: "controller";
-  evidenceRefs: EvidenceRef[];
-}
-
-interface RunTermination {
-  kind:
-    | "completed"
-    | "limit_reached"
-    | "stalled"
-    | "cancelled"
-    | "blocked"
-    | "failed"
-    | "uncertain";
-  code: string;
-  initiatedBy: "target" | "controller" | "user" | "harness";
-  failure?: RunFailure;
-}
-
-interface RunFailure {
-  origin:
-    | "runtime"
-    | "controller"
-    | "environment"
-    | "harness"
-    | "external_dependency"
-    | "unknown";
-  code: string;
-  message: string;
-  evidenceRefs: EvidenceRef[];
-}
-
-interface CleanupResult {
-  status: "not_needed" | "complete" | "incomplete" | "unknown";
-  remainingResourceIds: string[];
-  evidenceRefs: EvidenceRef[];
-}
-```
 
 `RunAttempt` 在 `created` 状态提交，因此 Environment `unsupported`、Runtime resolve 失败或初始准备中断仍能产生合法终态记录。`manifest` 只在 `stageReached` 达到 `launching` 或更晚时存在；提交后不可变。请求的模型别名和 Runtime 实际解析出的模型身份必须同时保存，无法验证实际身份时使用 `unknown`。
 
@@ -332,15 +154,6 @@ interface CleanupResult {
 
 匹配程度是多维事实，不是生命周期状态：
 
-```ts
-interface FidelityAssessment {
-  environment: "matched" | "partial" | "mismatched" | "observational";
-  externalWorld: "controlled" | "partially_controlled" | "uncontrolled" | "unknown";
-  modelResolution: "verified" | "inferred" | "unknown";
-  comparisonClass: "strict" | "exploratory" | "observational";
-  reasons: string[];
-}
-```
 
 `comparisonClass` 由环境、外部世界和模型解析三个维度派生。历史 Runtime 版本差异不参与 fidelity；`runtime_drift` 是候选之间当前执行条件意外变化的 warning，`environment_mismatch` 是 fidelity 原因，二者都不扩张七状态模型，也不表示任务失败。
 
@@ -366,57 +179,9 @@ interface FidelityAssessment {
 
 每种 Agent 产品由一个静态注册的 Product Pack 适配。Product Pack 把确定性代码和 Recovery Agent 使用的版本化知识作为一个不可拆分的包发布，但不承载 Controller 或 Comparison 的产品专属策略。Pack 和 Playbook hash 写入 manifest/provenance，避免代码适配器与恢复知识静默漂移。
 
-```ts
-interface ProductPack {
-  manifest: ProductPackManifest;
-  sessions: SessionSourceAdapter;
-  runtime: RuntimePort;
-  activity: TargetActivityTranslator;
-  recoveryPlaybook(): RecoveryPlaybookDescriptor;
-  checkAuth(): Promise<ProductAuthStatus>;
-  defaultCandidate(): CandidateSpec;
-}
-
-interface ProductPackManifest {
-  productId: string;
-  displayName: string;
-  packVersion: string;
-  schemaVersion: number;
-  sessionSchemaVersions?: string[];
-}
-
-interface RecoveryPlaybookDescriptor {
-  version: string;
-  sha256: string;
-  text: string;
-}
-
-interface SessionSourceAdapter {
-  readonly defaultRoot: string;
-  discover(query?: SessionDiscoveryQuery): Promise<readonly SessionSummary[]>;
-  inspect(ref: SessionRef): Promise<SessionInspection>;
-  import(ref: SessionRef): Promise<ImportedSession>;
-}
-```
 
 `ImportedSession` 是产品无关的完整逻辑会话快照。Product Pack 只负责发现与导入；冻结成 `TaskCase`（暂存、原子发布、幂等、脱敏）由共享的 `freezeCase` 承担。Pack 负责确定第一条可执行用户输入；如果 resume、fork 或分支关系无法形成一条明确逻辑会话，则返回 diagnostic，而不是让 Case Preparation 猜测任务边界。
 
-```ts
-interface ImportedSession {
-  source: SessionRef;
-  initialInput: SessionMessage;
-  transcript: readonly SessionMessage[];
-  historicalEvents: readonly JsonRecord[];
-  baseline: TaskCase['baseline'];
-  sourceRuntimeEvidence: TaskCase['sourceRuntimeEvidence'];
-  taskContext?: TaskCase['taskContext'];
-  provenance: { packVersion: string };
-  raw: ImportedRawFile;
-  extraFiles?: readonly ImportedExtraFile[];
-  diagnostics: readonly ImportDiagnostic[];
-  signals: SessionSignals;
-}
-```
 
 SessionSourceAdapter 负责可靠定位和解析私有数据；Recovery Playbook 解释环境证据的语义、调查顺序、恢复方法和已知版本限制。TaskCase 冻结完整会话及其必要证据，正常候选运行不依赖产品私有日志继续存在。
 
@@ -441,77 +206,9 @@ runtime private events  → RuntimePort          → TargetEvent / TurnSettlemen
 Controller 模块从这些公共数据组装 `SteeringContext`；Comparison 模块从 `TaskCase`、`RunRecord` 和 artifact 组装 `ComparisonContext`。Product Pack 不生成二者，也不提供 Controller/Comparison Playbook。无法规范化但需要追溯的原始数据只保留为受保护 `rawRef`。
 ## 7. RuntimePort 与 TargetRunner
 
-```ts
-type RuntimeModelOffer = {
-  value: string;
-  displayName: string;
-  resolvedModel?: string;
-};
-
-interface RuntimePort {
-  id: string;
-  inspectAvailable(): Promise<AvailableRuntime[]>;
-  resolve(
-    request: RuntimeRequest,
-  ): Promise<ResolvedRuntime>;
-  validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime>;
-  listCatalog(): Promise<readonly RuntimeModelOffer[]>;
-  createRunner(
-    runtime: ResolvedRuntime,
-    environment: PreparedEnvironmentRef,
-    sink: TargetEventSink,
-  ): Promise<TargetRunner>;
-}
-
-interface TargetRunner {
-  capabilities(): RuntimeCapabilities;
-  start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
-  send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
-  waitForTurn(options?: WaitOptions): Promise<TurnSettlement>;
-  inspect(): Promise<TargetStatus>;
-  stop(reason: RuntimeStopReason): Promise<void>;
-}
-
-type RuntimeStopReason =
-  | "completed"
-  | "cancelled"
-  | "failed"
-  | "shutdown";
-```
 
 `TargetEventSink` 是原生与规范化事件的单一流式出口。`waitForTurn()` 只返回 Orchestrator 推进状态所需的 settlement，不能成为第二条重复事件流。
 
-```ts
-interface RuntimeCapabilities {
-  nativeAdmission: boolean;
-  clientMessageId: boolean;
-  nativeTurnSettlement: boolean;
-  tokenTelemetry: "native" | "partial" | "none";
-  reconnectSession: boolean;
-  querySubmissionByClientId: boolean;
-  confirmProcessTermination: boolean;
-}
-
-
-interface MessageIdentity {
-  runId: string;
-  turnIndex: number;
-  clientMessageId: string;
-}
-
-type DeliveryReceipt = {
-  delivery: "accepted" | "rejected" | "unknown";
-  turnId?: string;
-  messageId?: string;
-  acceptedAt?: string;
-  evidence:
-    | "preflight"
-    | "rpc_response"
-    | "native_admission"
-    | "persisted"
-    | "native_event";
-};
-```
 
 `start` 和 `send` 使用相同 delivery 语义：
 
@@ -525,21 +222,6 @@ accepted ≠ started ≠ settled
 
 `unknown` 禁止自动重发。Product Pack 先使用 message identity、turn ID、session ID 或进程状态核查；仍无法确认时进入收尾。
 
-```ts
-type TurnSettlement = {
-  turnId: string;
-  status: "completed" | "failed" | "waiting_input" | "aborted";
-  confidence: "native" | "composite" | "heuristic";
-  observedAt: string;
-  failure?: {
-    kind: "upstream" | "authentication" | "protocol" | "process" | "unknown";
-    summary: string;
-    retryable: boolean;
-    reconnectCount?: number;
-  };
-  rawRefs: ArtifactRef[];
-};
-```
 
 turn boundary 优先使用原生生命周期事件，其次组合 transport、process 和工具状态，最后才使用 quiet-period fallback。普通文本输出不是 turn boundary。
 
@@ -553,28 +235,6 @@ Runtime 的现实兼容性不作为独立的通用 Capability Probe、能力注�
 
 Core 只看环境基线和候选副本，不编排 Recovery Agent 的内部 loop：
 
-```ts
-interface EnvironmentPort {
-  resolveBaseline(
-    source: EnvironmentSource,
-    clues: EnvironmentClue[],
-    policy: EnvironmentPolicy,
-  ): Promise<EnvironmentBaseline>;
-
-  prepareRun(
-    baseline: EnvironmentBaseline,
-    runId: string,
-  ): Promise<PreparedEnvironmentRef>;
-
-  fingerprint(
-    environment: PreparedEnvironmentRef,
-  ): Promise<EnvironmentFingerprint>;
-
-  release(
-    environment: PreparedEnvironmentRef,
-  ): Promise<ReleaseResult>;
-}
-```
 
 `resolveBaseline` 可以在 Environment 子系统内部使用 Pi 驱动的 Recovery Agent，但必须在 Harness 拥有的 staging 中工作，并由 Provider 验证后冻结。`prepareRun` 从同一 baseline 为每个候选建立独立副本。
 
@@ -588,72 +248,16 @@ Environment 以资源级证据描述恢复结果：`EnvironmentResource` 同时�
 
 Environment 子系统通过内部端口调用 Recovery Agent：
 
-```ts
-interface RecoveryAgentPort {
-  recover(context: RecoveryContext): Promise<RecoveryEnvelope>;
-}
-```
 
 Recovery Agent 使用产品 Recovery Playbook 和受限 staging 工具；Provider 验证其结果并冻结 baseline。完整设计见[Environment 专题](./environment.md)。
 
 Controller 对所有 Agent 产品使用同一公共接口：
 
-```ts
-interface ControllerPort {
-  decide(context: SteeringContext): Promise<ControllerDecision>;
-}
-
-type ControllerDecision =
-  | {
-      type: "send";
-      message: string;
-      intent: "continue" | "inform" | "correct" | "verify";
-      rationale?: string;
-      evidenceRefs?: EvidenceRef[];
-    }
-  | {
-      type: "done";
-      reason:
-        | "satisfied"
-        | "blocked"
-        | "requires_real_user_decision"
-        | "no_further_value";
-      rationale?: string;
-    };
-```
 
 Product Pack 只交付规范化会话和 Target events；产品无关的 Observation Assembler 属于 Controller 模块，由它构造 `SteeringContext`。完整设计见[Controller 专题](./controller.md)。
 
 Comparison 发生在 CandidateRun 结束之后，也使用产品无关的公共接口：
 
-```ts
-interface ComparisonAgentPort {
-  plan?(context: ComparisonContext): Promise<ComparisonPlanEnvelope>;
-  report?(context: ComparisonContext): Promise<ComparisonEnvelope>;
-  // compatibility path while callers migrate
-  compare(context: ComparisonContext): Promise<ComparisonEnvelope>;
-}
-
-interface ComparisonContext {
-  task: ComparisonTaskView;
-  baseline: ResultSnapshot;
-  candidates: CandidateResultView[];
-  telemetry: CandidateTelemetryView[];
-  fidelity: FidelityAssessment[];
-  artifacts: ArtifactCatalog;
-}
-
-type ComparisonEnvelope =
-  | {
-      status: "completed" | "insufficient_evidence";
-      reportPath: "report.html"
-      evidenceRefs: EvidenceRef[];
-    }
-  | {
-      status: "failed";
-      errorCode: ComparisonErrorCode;
-    }
-```
 
 Comparison Agent 以 Planner/Reporter 两个独立 session 工作；前者写可变计划，后者可否定计划并将完整自由结构 HTML 写入 `report.html`。薄信封返回阶段状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
@@ -741,37 +345,6 @@ sequenceDiagram
 
 只使用 `TraceEvent` 这个公共名称：
 
-```ts
-interface TraceEvent<T = unknown> {
-  schemaVersion: number;
-  eventId: string;
-  experimentId: string;
-  runId?: string;
-  sequence: number;
-  occurredAt: string;
-  monotonicMs?: number;
-  source:
-    | "harness"
-    | "runtime"
-    | "environment"
-    | "controller"
-    | "comparison"
-    | "renderer";
-  type: string;
-  turnId?: string;
-  operationId?: string;
-  causedBy?: string;
-  data: T;
-  rawRef?: ArtifactRef;
-}
-
-interface TracePort {
-  append(event: TraceEvent): Promise<void>;
-  storeArtifact(artifact: ArtifactInput): Promise<ArtifactRef>;
-  readExperiment(experimentId: string): AsyncIterable<TraceEvent>;
-  readRun(runId: string): AsyncIterable<TraceEvent>;
-}
-```
 
 规则：
 
@@ -819,7 +392,7 @@ interface TracePort {
 - Product Pack 的 RuntimePort 只能获得本次 `PreparedEnvironmentRef` 和明确配置，不能默认遍历用户全局目录。
 - Recovery Agent 只写 Environment staging；历史证据和用户原目录保持只读。
 - Candidate Runtime 永远不获得用户当前工作目录；无法建立隔离副本或受控观察绑定时，运行状态为 `unsupported`。
-- Controller 获得与 Recovery 相同的八个工具名，cwd 为隔离副本；不能调用 Target 工具或写用户源目录。
+- Controller 的工具与权限由[角色定义](../../src/agents/controller-agent.ts)及其 Host 注册拥有；不能调用 Target 工具或写用户源目录。
 - Pi Host 在发送上下文前执行 privacy policy 和敏感信息过滤；无法确认内容允许发送或过滤失败时阻塞该 Agent 调用并记录原因，不用更多原文静默降级。
 - 权限扩大、真实发布、付款、删除和不可逆迁移必须来自真实用户授权。
 - trace 和错误信息不得保存密钥、凭据或不必要的个人信息。

@@ -1,5 +1,7 @@
 # Environment 子系统设计
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前模块设计（Recovery Agent 能力模型 v2 已实施；真实模型 smoke 仍显式 opt-in）
 
 本文定义如何从历史会话证据恢复逻辑会话开始前状态、冻结可复用基线、为每个候选运行准备独立环境、采集前后事实并释放 Harness 自有资源。Recovery Agent 是独立 Agent Module，由 Environment 子系统通过内部端口调用；公共 `EnvironmentPort` 与领域关系以[架构总览](./overview.md)为准。
@@ -327,7 +329,7 @@ Provider 为每次恢复创建并持有下列目录，均不暴露给 Candidate 
 - `rc/<recoveryId>/<8-hex>`：互不污染的候选工作区；段名是 `sha256(candidateId)` 前 8 位，不是 hypothesis 全名。
 - 用户源目录：恢复前后均 fingerprint，作为只读 tripwire。
 
-工具集合为 `ls`、`read`、`grep`、`find`、`edit`、`write` 和 `powershell`。三个内部角色的工作区工厂注册这七个名字（[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)）。cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。Host 在调用模型前写入有界调查包（路径线索、后续用户句、`isRepo`）和工作集 JSON，并记 `recovery.investigation_packet`；冻结 transcript 与 historical events 写成只读 `observations/`，模型用 `read` / `grep` 按需取一句。`write` 到 staging 根 `recovery.md` 是报告通道。`partial` 的变更路径以 fingerprint 差为准，弱证据（Host 观察到的删/改）即可 preview；自称 `recovered` 但缺路径级强证据时 Host 收成 `partial`，不授予 `recovered`。无任务路径变更的 `recovered` 仍拒绝。伪造且无法对应冻结 catalog 的 envelope ref 不得进入 published baseline。Readiness 反馈轮若模型请求失败，Host 保留上一份已通过 TypeBox 的完成信封并停止继续反馈，不得把整次恢复改写成 current-state fallback。后一次会话即使 `completed`，也必须先对当前 staging 做不丢弃副本的探测；失败则沿用上一份已探测通过的完成信封，不得覆盖后整单 fallback。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库；父目录或子目录里的 `.git` 不得把 git 选成第一执行候选。`powershell` 的 cwd 固定为 staging，命令不按 Git 子命令白名单收窄：它可执行 git、解压、包管理、项目还原脚本及网络查询。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供 API key、token 或其他凭据。内部 Agent 不按工具调用次数或破坏性次数截断；上下文压力走 Pi 压缩与模型窗口。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作 staging 根；`..`、绝对路径和反斜杠仍拒绝。
+工具集合以[工作区工具注册](../../src/infrastructure/recovery-workspace-tools.ts)为准；shell 的公开工具名为 `shell_exec`，不以固定工具数量作为内核契约。三个内部角色通过各自权限配置复用工作区工具（[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)）。cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。Host 在调用模型前写入有界调查包（路径线索、后续用户句、`isRepo`）和工作集 JSON，并记 `recovery.investigation_packet`；冻结 transcript 与 historical events 写成只读 `observations/`，模型用 `read` / `grep` 按需取一句。`write` 到 staging 根 `recovery.md` 是报告通道。`partial` 的变更路径以 fingerprint 差为准，弱证据（Host 观察到的删/改）即可 preview；自称 `recovered` 但缺路径级强证据时 Host 收成 `partial`，不授予 `recovered`。无任务路径变更的 `recovered` 仍拒绝。伪造且无法对应冻结 catalog 的 envelope ref 不得进入 published baseline。Readiness 反馈轮若模型请求失败，Host 保留上一份已通过 TypeBox 的完成信封并停止继续反馈，不得把整次恢复改写成 current-state fallback。后一次会话即使 `completed`，也必须先对当前 staging 做不丢弃副本的探测；失败则沿用上一份已探测通过的完成信封，不得覆盖后整单 fallback。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库；父目录或子目录里的 `.git` 不得把 git 选成第一执行候选。`powershell` 的 cwd 固定为 staging，命令不按 Git 子命令白名单收窄：它可执行 git、解压、包管理、项目还原脚本及网络查询。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供 API key、token 或其他凭据。内部 Agent 不按工具调用次数或破坏性次数截断；上下文压力走 Pi 压缩与模型窗口。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作 staging 根；`..`、绝对路径和反斜杠仍拒绝。
 
 子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`ls`、`read`、`grep`、`find`、`edit` 和 `write` 对相对路径实施 containment 与符号链接检查；`recovery.md` 由 `write` 写出。由于通用 shell 不是容器/VM 沙箱，cwd 与环境净化不能机械阻止恶意或失控命令尝试写 staging 外任意绝对路径；实现不把这种预防误称为强隔离。
 
@@ -425,7 +427,7 @@ Harness 永远不把用户当前工作目录作为 CandidateRun 的 root。当�
 - 原始环境依赖已删除账号、凭据或不可获得软件；
 - 闭源产品内部状态未公开也未留下可验证输出。
 
-无法恢复时仍可让用户选择探索性运行，但 `EnvironmentBaseline.match` 必须是 `partial`、`mismatched` 或 `observational`，报告展示具体缺失资源。
+无法恢复时保存缺口与调查结果，不进入候选启动；当前部分恢复的接受条件以 Provider 校验和[恢复失败阻止候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)为准，不能把 observational 记录当作运行授权。
 
 ## 10. 运行后环境事实
 

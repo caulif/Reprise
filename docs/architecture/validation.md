@@ -1,5 +1,7 @@
 # 非确定性 Agent 的最小验证边界
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前模块设计
 
 本文定义 Harness 如何验证包含非确定性 Agent 的系统。目标不是证明 Agent 总能做出好判断，而是保证 Agent 的任何输出都不会破坏系统的安全性、一致性和可追溯性。

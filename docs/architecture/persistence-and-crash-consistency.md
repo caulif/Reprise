@@ -1,5 +1,7 @@
 # 持久化与崩溃一致性
 
+本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+
 状态：当前架构基线
 
 本文定义 Harness 的本地持久化协议、崩溃恢复语义和删除边界。它是 `overview.md` 中 Trace、RunManifest、RunRecord、Artifact 和 Comparison Projection 的专题规范；不改变这些公共对象的所有权。
