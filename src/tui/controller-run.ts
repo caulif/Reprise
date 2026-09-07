@@ -625,7 +625,7 @@ export function bindWorkflow(c: ControllerHandle, work: Promise<void>): void {
   void work.catch(() => undefined);
 }
 
-export function bindRecovery(c: ControllerHandle, work: Promise<void>): void {
+function bindRecovery(c: ControllerHandle, work: Promise<void>): void {
   c.recoveryFinished = work;
   void work.catch(() => undefined);
 }

@@ -43,7 +43,7 @@ TUI 可以退出或重建，但不能定义 Runtime 的 turn boundary，也不�
 | 发布 | 一个 npm CLI 包、一个主命令 | 首版编译原生单文件 executable |
 | Product Pack | 首个纵切片只源码静态注册 Codex；通过后再规划 Claude Code | 首版外部插件加载、插件市场、目录扫描、动态执行代码 |
 | 候选调度 | 默认串行 | 为吞吐量建设并行调度器 |
-| 首发平台 | Windows 11 正式支持 | 未验证就承诺全平台一致 |
+| 目标平台 | Windows、macOS、Linux 各自运行本机任务 | 跨机迁移、跨系统重放或未验证的一致性承诺 |
 
 ## 3. Pi 的复用边界
 
@@ -181,9 +181,9 @@ Runtime 下载不属于首版 Harness。自动下载会引入来源校验、许�
 
 ## 8. 平台范围
 
-第一版正式支持 Windows 11，因为当前开发和首批真实任务在 Windows，进程终止、路径、文件锁、软链接和环境恢复必须在真实平台验证。
+当前实现的主要验证证据来自 Windows 11；已确认的重构目标要求 Windows、macOS、Linux 均可在本机运行本机任务。平台能力必须由各平台实际验证成立，不能用 Windows 结果替代。
 
-同时保持边界：Core、Agent Module、trace 和 renderer 不写 Windows 专属逻辑；差异封装在进程与文件系统基础设施、Product Pack 和 Environment Provider 中。macOS/Linux 不故意阻断，但在完成端到端验证前只标为未验证。记录下来的盘符路径（会话 cwd、历史写入、报告短路径）在任何宿主上都按 Windows 路径比较，不得 `resolve()` 进 `process.cwd()`；本机打开或删除文件仍用宿主 `node:path`。
+同时保持边界：Core、Agent Module、trace 和 renderer 不写 Windows 专属逻辑；差异封装在进程与文件系统基础设施、Product Pack 和 Environment Provider 中。Windows 默认 PowerShell，macOS/Linux 默认 Bash。记录下来的盘符路径（会话 cwd、历史写入、报告短路径）在任何宿主上都按 Windows 路径比较，不得 `resolve()` 进 `process.cwd()`；本机打开或删除文件仍用宿主 `node:path`。
 
 不要同时承诺 Windows、WSL、容器、macOS 和 Linux 一致。WSL、容器和远程机器是 Environment capability，不是一个平台布尔值能解决的问题。
 
@@ -249,7 +249,7 @@ const productPacks = [codexProductPack];
 以下决定已确认，作为第一版实现基线：
 
 1. 接受 Node.js `>=22.19.0`。该版本跟随当前 Pi 的最低运行要求；不为旧 Node 降低 Pi 版本，也不增加兼容层。未来 Pi 提升最低版本时，Harness 通过一次明确的基线升级跟随，而不是在每个模块中长期维护多套 Node 分支。
-2. 第一版只把 Windows 11 称为正式支持平台。Core 和领域模块保持平台无关；macOS/Linux 在完成真实端到端验证前只标为未验证。
+2. Windows、macOS、Linux 是目标平台。Core 和领域模块保持平台无关；每个平台只对其本机任务与本机历史负责，不承诺跨机迁移或跨系统重放。
 3. 首个纵切片只静态注册 Codex Product Pack；Codex 真实纵切片通过后，再单独规划 Claude Code。外部 Product Pack 的加载、分发和安全边界不属于当前兼容承诺；未来出现真实第三方需求时再设计显式可信 npm 包加载，不预先实现动态机制。
 
 这三项决定主动放弃了一部分旧 Node 覆盖和即时第三方扩展，换取与 Pi 一致的运行时地基、编译期可检查的产品边界和更小的安全/供应链责任面。

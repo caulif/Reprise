@@ -22,7 +22,7 @@
 
 ## 影响
 
-[Controller 设计](../../architecture/controller.md) §9–10。[实验条件](../../architecture/controller-experiment-conditions.md) §1.6 与 §5。实现规划：[看完整会话再自主停](../../plan/controller-judge-from-full-session.md)。
+[Controller 设计](../../architecture/controller.md) §9–10。[实验条件](../../architecture/controller-experiment-conditions.md) §1.6 与 §5。
 
 ## 验证
 

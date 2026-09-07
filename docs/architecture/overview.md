@@ -855,4 +855,4 @@ src/
 - 自动回滚外部世界；
 - 为尚未支持的环境预建空接口。
 
-理论依据和项目调研见[架构研究基础](../research/architecture-foundations.md)与[Controller 研究基础](../research/controller-foundations.md)。
+目标重构方向见[Session / harness / workflow 规划](../plan/reprise-architecture-redesign.md)；它不覆盖本文描述的当前实现。

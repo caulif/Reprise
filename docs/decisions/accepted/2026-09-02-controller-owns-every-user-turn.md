@@ -24,7 +24,7 @@
 
 ## 影响
 
-[Controller 设计](../../architecture/controller.md) §4.1 与 §5。[架构总览](../../architecture/overview.md) 的候选启动输入。[Controller 实验条件](../../architecture/controller-experiment-conditions.md)。实现规划：[Controller 拥有每一轮用户输入](../../plan/controller-owns-every-user-turn.md)。
+[Controller 设计](../../architecture/controller.md) §4.1 与 §5。[架构总览](../../architecture/overview.md) 的候选启动输入。[Controller 实验条件](../../architecture/controller-experiment-conditions.md)。
 
 ## 验证
 

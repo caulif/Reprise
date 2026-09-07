@@ -505,4 +505,4 @@ Comparison Agent 不读取 Product Pack 或产品私有日志，也不改变运�
 - Controller 遥测与 Target 遥测可分开查看；
 - 报告失败或 Comparison Agent 失败不改变 Controller 或 RunOutcome。
 
-理论依据见[Controller 研究基础](../research/controller-foundations.md)。
+目标重构中 Controller 的会话边界见[Session / harness / workflow 规划](../plan/reprise-architecture-redesign.md)；本文仍描述当前实现。

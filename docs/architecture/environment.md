@@ -585,4 +585,4 @@ Recovery orchestration 当前持久化 `recovery.started`、`recovery.completed`
 - Runtime 私有 schema 不进入 Environment 公共模型；
 - 没有为尚未支持的外部环境建立空 Provider 接口。
 
-相关理论和项目调研保留在[架构研究基础](../research/architecture-foundations.md)。
+目标重构中的场景准备边界见[Session / harness / workflow 规划](../plan/reprise-architecture-redesign.md)；本文仍描述当前实现。

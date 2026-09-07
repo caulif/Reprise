@@ -19,7 +19,6 @@ docs/
 ├── release-checklist.md             # 发布前验证与回滚
 ├── postmortem-template.md           # 事故复盘模板
 ├── documentation-structure.md       # 本文
-├── development-plan.md              # 模块 0–8 的实现顺序与验收记录
 ├── codex-smoke-gate.md              # 真实计费运行的准入程序与验收记录
 ├── engineering-gates.md             # 本地与 CI 门禁契约
 ├── product/                         # 产品目标、用户路径和非目标
@@ -28,8 +27,7 @@ docs/
 │   ├── proposed/
 │   ├── accepted/
 │   └── superseded/
-├── plan/                            # 尚未完成的工作
-├── research/                        # 设计依据与备选方案，非规范性
+├── plan/                            # 唯一活跃总计划、目标设计与 task brief
 ├── progress/MASTER.md               # 稳定进度入口
 └── tui-audit/frames/                # TUI 快照基线（受控）
 ```
@@ -61,12 +59,11 @@ docs/
 | 跨模块术语、公共协议、所有权和生命周期 | `architecture/overview.md` |
 | 单模块如何细化公共协议 | 对应 `architecture/` 专题 |
 | 某个长期约束实现的选择及其被放弃的备选方案 | `decisions/accepted/` |
-| 模块 0–8 的实现顺序与验收 | `development-plan.md` |
 | 真实计费运行的准入条件 | `codex-smoke-gate.md` |
 | 本地与 CI 门禁契约 | `engineering-gates.md` |
-| 尚未完成的工作 | `plan/` |
+| 尚未完成的工作 | `plan/`；同一主题只保留一个活跃总计划 |
 | 稳定的当前进度入口 | `progress/MASTER.md` |
-| 为什么这样设计、有哪些备选方案 | `research/`，非规范性 |
+| 为什么这样设计、有哪些备选方案 | `decisions/`；本机交互预览可放在忽略的 `research/`，推导和一次性研究放在 `docs/.local/` |
 | Agent 每次会话需要的常驻约束 | 各层 `AGENTS.md`，不定义规范 |
 
 `AGENTS.md` 在权威层级中没有位置：它只索引规范并给出可立即执行的指令，与 `architecture/` 或 `product/` 冲突时一律以后者为准。它里面每条规则都必须带一个指向归宿的相对链接，规范搬家时链接门禁会强制更新它。
@@ -117,6 +114,7 @@ docs/decisions/{proposed|accepted|superseded}/YYYY-MM-DD-topic.md
 
 - 文件和目录使用小写英文 `kebab-case`；`README.md`、`AGENTS.md` 是入口文件例外，`progress/MASTER.md` 是稳定进度入口的命名例外；`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`、`SUPPORT.md`、`GOVERNANCE.md`、`CHANGELOG.md` 是 GitHub 约定文件名例外；日期目录和决策记录文件名使用 `YYYY-MM-DD`。
 - 每个主题只保留一个当前来源，不在多个目录复制相同规范。
+- 一份尚未实施的目标设计只能有一个 Markdown 权威来源；配套 HTML 只同步展示它，不能另列验收或架构决定。
 - 文件名描述稳定主题，不使用 `final`、`new`、`latest` 或版本号。
 - 不为尚未发生的扩展创建空目录、空接口或占位文档。
 - Product Pack 是叙述术语；公共代码接口仍可命名为 `AgentProductPlugin`。

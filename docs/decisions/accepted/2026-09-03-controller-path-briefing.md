@@ -27,7 +27,7 @@
 
 ## 影响
 
-[Controller 设计](../../architecture/controller.md)、[实验条件](../../architecture/controller-experiment-conditions.md) §5–6。[落地计划](../../plan/controller-path-briefing.md)。
+[Controller 设计](../../architecture/controller.md)、[实验条件](../../architecture/controller-experiment-conditions.md) §5–6。
 
 ## 验证
 

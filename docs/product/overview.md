@@ -24,7 +24,7 @@ Reprise 帮助个人用户回答：
 → 检查运行条件并创建隔离副本
 → 候选模型在原 Agent 产品中执行任务
 → Controller 根据当前轨迹动态生成后续用户输入
-→ Comparison Agent 整理原始结果、候选产物和过程遥测
+→ 用户查看结果路径，按需发起 Comparison
 → 用户在 TUI 摘要和本地并排报告中自行判断
 ```
 
@@ -32,7 +32,7 @@ Reprise 帮助个人用户回答：
 
 每个候选模型的执行对应一个独立 `CandidateRun`；它共享同一个 `TaskCase` 和实验条件，但拥有独立的工作环境、运行记录与 trace。
 
-Recovery、Controller 和 Comparison 是三个独立 Agent 模块：Recovery 理解产品相关恢复证据，Controller 只基于规范化会话与当前轨迹模拟用户协作，Comparison 只基于历史结果和候选结果组织展示。它们由 Harness 的确定性任务编排串联，但不共享对话状态或领域职责。
+Recovery、Controller 和 Comparison 是三个独立 Agent 模块：Recovery 理解产品相关恢复证据，Controller 只基于规范化会话与当前轨迹模拟用户协作，Comparison 只基于历史结果和候选结果组织展示。它们共享一份内部模型配置，但各自拥有独立的连续 Session 和领域职责。
 
 Pi provider 中配置的是 Harness 内部 Agent 模型；候选模型必须由目标 Agent Runtime 配置、接受并解析，不能从 Pi 模型列表替代推断。完整交互路径见 [TUI 与最小用户交互规划](./tui.md)。
 
@@ -45,7 +45,7 @@ Pi provider 中配置的是 Harness 内部 Agent 模型；候选模型必须由�
 - 始终记录时间、token、成本、模型调用、工具调用和停止原因等过程事实。
 - 让 Agent 根据任务本身选择值得展示的结果证据，不强制统一质量评分。
 - 生成可追溯的本地报告，由用户直接查看产物和证据。
-- 在条件无法完全恢复时允许探索性运行，同时明确展示差异和未知项。
+- 恢复证据不足时保存调查结果并停止，不把不足场景伪装为可比较运行。
 
 ## 4. 非目标
 
@@ -86,7 +86,7 @@ Pi provider 中配置的是 Harness 内部 Agent 模型；候选模型必须由�
 
 Controller 在每个稳定输入边界决定发送下一条普通用户消息，或者结束运行。它模拟的是同一个有能力的用户面对不同轨迹时会如何继续协作，而不是复刻相同文本，也不是替候选模型执行任务。
 
-Controller 模型由用户从自己通过 Pi 可用的 provider 与模型中选择。Harness 不指定、捆绑、推荐或评价 Controller 模型；它只保证同一 Experiment 的候选使用同一份配置并分别运行独立 session。
+用户为三个内部角色选择一份通过 Pi 可用的 provider 与模型配置。Harness 不指定、捆绑、推荐或评价该模型；每个角色在自己的 Session 中使用启动时配置快照。
 
 具体契约见[Controller 设计](../architecture/controller.md)。
 
@@ -94,7 +94,7 @@ Controller 模型由用户从自己通过 Pi 可用的 provider 与模型中选�
 
 用户选择的一段完整逻辑会话会被保存为不可变的 `TaskCase`。整段会话默认就是一个真实任务，不从中自动发现、评分或切分子任务。TaskCase 包含完整 transcript、第一条可执行用户输入、原始结果证据、来源 Runtime 证据、Environment 证据和隐私策略，但不要求重新编写任务或制作标准答案。来源 Runtime 证据只用于解释历史会话，不参与候选 Runtime 选择或环境匹配。
 
-候选 Runtime 从该会话的第一条可执行用户输入开始；Controller 可以读取完整原始会话，并根据候选当前轨迹自主决定后续输入，而不是逐字重放历史用户消息。历史会话的结束不限制候选运行轮数，停止仍由 Orchestrator 的默认条件和用户配置决定。
+候选 Runtime 从该会话的第一条可执行用户输入开始；Controller 可以读取完整原始会话，并根据候选当前轨迹自主决定后续输入，而不是逐字重放历史用户消息。历史会话的结束不限制候选运行轮数，停止由 Controller 的用户协作判断、预算和显式取消共同决定。
 
 `TaskCase` 的公共模型见[架构总览](../architecture/overview.md)。
 

@@ -53,7 +53,9 @@ pnpm-debug.log*
 # One-shot notes accidentally created at the docs root.
 /docs/真实使用测试记录-*.md
 /docs/project-optimization-analysis-*.md
-/docs/research/*.html
+
+# Local interactive previews and exploratory research; durable conclusions belong in docs/plan or docs/decisions.
+/docs/research/
 
 # Local scratch output
 /.tmp-*.txt

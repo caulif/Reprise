@@ -97,6 +97,16 @@ function trackedFiles(glob) {
   return output ? output.split('\0').filter(Boolean) : [];
 }
 
+function workingMarkdownFiles() {
+  const tracked = trackedFiles('*.md');
+  const untracked = git(['ls-files', '--others', '--exclude-standard', '-z', '*.md']);
+  return [...new Set([...tracked, ...(untracked ? untracked.split('\0').filter(Boolean) : [])])];
+}
+
+function existingFiles(files) {
+  return files.filter((file) => existsSync(join(ROOT, file)));
+}
+
 function posixPath(value) {
   return value.split(sep).join('/');
 }
@@ -288,7 +298,7 @@ function checkLinks(markdownFiles, tracked) {
 
 function loadTrackedMarkdown() {
   const files = new Map();
-  for (const file of trackedFiles('*.md')) {
+  for (const file of existingFiles(workingMarkdownFiles())) {
     files.set(file, readFileSync(join(ROOT, file), 'utf8'));
   }
   return files;
@@ -297,7 +307,7 @@ function loadTrackedMarkdown() {
 function runRepoChecks() {
   const errors = [];
   const markdown = loadTrackedMarkdown();
-  const tracked = trackedFiles('.');
+  const tracked = existingFiles([...trackedFiles('.'), ...workingMarkdownFiles()]);
   errors.push(...checkLinks(markdown, tracked));
 
   const structure = markdown.get('docs/documentation-structure.md');
@@ -383,12 +393,15 @@ function selfTest() {
   expectFail('协作入口缺失', checkCollaborationFiles(() => {
     throw new Error('missing');
   }));
+  if (existingFiles(['docs/README.md', 'docs/missing.md']).join(',') !== 'docs/README.md') {
+    failures.push('已删除的跟踪文档: 不应被当作可读取文件');
+  }
   if (failures.length) {
     console.error(failures.join('\n'));
     process.exitCode = 1;
     return;
   }
-  console.log('verify-docs self-test: 8 种坏输入均被拒绝');
+  console.log('verify-docs self-test: 8 种坏输入均被拒绝，已删除跟踪文档被跳过');
 }
 
 function main() {
