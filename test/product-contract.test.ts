@@ -10,8 +10,18 @@ import { claudeCodeProductPack } from '../src/products/claude-code/pack.js';
 import { codexProductPack } from '../src/products/codex/pack.js';
 import type { ProductPack, TargetActivity } from '../src/products/contract.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
+import { rankSessionFiles } from '../src/products/shared/session-files.js';
 
 const packs: readonly ProductPack[] = [codexProductPack, fakeProductPack, claudeCodeProductPack];
+
+test('shared session ranking is newest-first with a stable path tie-breaker', () => {
+  const ranked = rankSessionFiles([
+    { path: 'b.jsonl', mtime: 10, size: 1 },
+    { path: 'a.jsonl', mtime: 10, size: 1 },
+    { path: 'c.jsonl', mtime: 11, size: 1 },
+  ]);
+  assert.deepEqual(ranked.map((entry) => entry.path), ['c.jsonl', 'a.jsonl', 'b.jsonl']);
+});
 
 for (const pack of packs) {
   test(`${pack.manifest.productId} manifest is complete`, () => {

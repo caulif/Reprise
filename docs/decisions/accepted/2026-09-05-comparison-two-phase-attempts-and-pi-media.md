@@ -21,9 +21,9 @@ briefing 只放 orientation、导航索引、Host facts、结果链接和完整 
 
 HTML 只校验文件存在、路径和可读性，不校验 DOM、章节、首屏结构或 CSP。报告不必宣布 winner；首屏突出关键差异和双方原始结果入口是 prompt 目标。
 
-## 未采用
+## 备选方案
 
-- 单 session 先规划再写报告：规划历史会挤占 Reporter 上下文，也无法验证 session 隔离。
+**单 session 先规划再写报告**：规划历史会挤占 Reporter 上下文，也无法验证 session 隔离。
 - 把计划注册成不可变 artifact：会错误地抬高临时推理状态的权威性。
 - Reprise 自建媒体/provider 编码或能力枚举：重复 Pi 已有边界并增加适配分叉。
 - viewer、CSP 或 DOM 模板门禁：本地自生成证据不需要这一层产品约束。

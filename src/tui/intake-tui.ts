@@ -11,7 +11,7 @@ import type { TaskCase, CandidateSpec } from "../core/schema.js";
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
 import {
   defaultHarnessModelConfig,
-  draftForConfig,
+  emptyHarnessConfigDraft,
   type HarnessConfigDraft,
   type HarnessModelConfig,
 } from "../infrastructure/harness-model-config.js";
@@ -112,7 +112,7 @@ export class CodexIntakeTui {
   inspectionShowOutcome = false;
   modelConfig: HarnessModelConfig = defaultHarnessModelConfig();
   hasSavedModelConfig = false;
-  configDraft: ConfigDraft = draftForConfig(defaultHarnessModelConfig());
+  configDraft: ConfigDraft = emptyHarnessConfigDraft();
   configSelected = 0;
   configEditing = false;
   configBuffer = "";
@@ -150,6 +150,10 @@ export class CodexIntakeTui {
   candidateCatalogGeneration = 0;
   candidateAvailabilityGeneration = 0;
   activeExperiment: ExperimentHandle | undefined;
+  recoveryAbort: AbortController | undefined;
+  startupAbort: AbortController | undefined;
+  recoveryFinished: Promise<void> | undefined;
+  workflowFinished: Promise<void> | undefined;
   result: CodexExperimentResult | undefined;
   timeline: TimelineEntry[] = [];
   timelineSelected = 0;

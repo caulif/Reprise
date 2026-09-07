@@ -4,6 +4,7 @@ import { ControllerAgent } from '../agents/controller-agent.js';
 import { PiAgentHost, type PiTextCaller } from '../infrastructure/pi-agent-host.js';
 import { PiModelCaller } from '../infrastructure/pi-model-caller.js';
 import type { HarnessModelConfig } from '../infrastructure/harness-model-config.js';
+import type { AgentBudget } from '../core/schema.js';
 
 export type HarnessAgents = {
   readonly controller: ControllerAgent;
@@ -21,18 +22,17 @@ export type HarnessAgents = {
  * Constructs all internal agents from the one persisted, non-sensitive Pi choice.
  * Credentials remain entirely in Pi's provider layer.
  */
-/** Persisted snapshot only; schema requires callTimeoutMs >= 1. Live Host calls use timeoutMs 0. */
-const UNBOUNDED_CALL_SNAPSHOT_MS = 24 * 60 * 60_000;
+const DEFAULT_BUDGET: AgentBudget = { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 };
 
-export function createHarnessAgents(config: HarnessModelConfig, caller: PiTextCaller = new PiModelCaller(config)): HarnessAgents {
+export function createHarnessAgents(config: HarnessModelConfig, caller: PiTextCaller = new PiModelCaller(config), limits: { budget?: AgentBudget; recoveryBudget?: AgentBudget } = {}): HarnessAgents {
   const host = new PiAgentHost(caller);
-  const budget = { callTimeoutMs: UNBOUNDED_CALL_SNAPSHOT_MS, maxStructuredRepairAttempts: 1 };
-  const recoveryBudget = { callTimeoutMs: UNBOUNDED_CALL_SNAPSHOT_MS, maxStructuredRepairAttempts: 1 };
-  const options = { host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts };
+  const budget = limits.budget ?? DEFAULT_BUDGET;
+  const recoveryBudget = limits.recoveryBudget ?? budget;
+  const options = { host, timeoutMs: budget.callTimeoutMs, maxRepairAttempts: budget.maxStructuredRepairAttempts };
   return {
     controller: new ControllerAgent(options),
     comparison: new ComparisonAgent(options),
-    recovery: new RecoveryAgent({ host, timeoutMs: 0, maxRepairAttempts: recoveryBudget.maxStructuredRepairAttempts }),
+    recovery: new RecoveryAgent({ host, timeoutMs: recoveryBudget.callTimeoutMs, maxRepairAttempts: recoveryBudget.maxStructuredRepairAttempts }),
     config: { providerId: config.providerId, requestedModel: config.modelId, budget, recoveryBudget },
   };
 }

@@ -58,7 +58,7 @@ export function startRunSetup(c: ControllerHandle, input: { afterFreeze?: boolea
   c.sourceCursor = c.sourceRoot.length;
   if (isFsAbsolute(c.sourceRoot.trim())) {
     c.runFromSource = false;
-    void beginPreflight(c, { afterFreeze: input.afterFreeze === true });
+    bindWorkflow(c, beginPreflight(c, { afterFreeze: input.afterFreeze === true }));
     return { consume: true };
   }
   c.runFromSource = true;
@@ -107,13 +107,19 @@ export async function freeze(
 
 export async function discardRecovery(c: ControllerHandle): Promise<void> {
   const attempt = c.recoveryAttempt;
-  c.recoveryAttempt = undefined;
-  if (attempt?.staging) await attempt.provider.discardRecovery(attempt.staging).catch(() => undefined);
+  try {
+    if (attempt?.staging) await attempt.provider.discardRecovery(attempt.staging);
+    if (c.recoveryAttempt === attempt) c.recoveryAttempt = undefined;
+  } catch (error) {
+    throw Object.assign(new Error(t(c.locale, 'cleanupFailed'), { cause: error }), { name: 'RecoveryCleanupError' });
+  }
 }
 
 export function requestCancellation(c: ControllerHandle): Consume {
   if (c.cancelling) return c.close();
   c.cancelling = true;
+  c.startupAbort?.abort();
+  c.recoveryAbort?.abort();
   c.message = t(c.locale, 'cancellationRequested');
   c.render();
   void c.activeExperiment?.cancel().catch((error: unknown) => {
@@ -159,10 +165,12 @@ function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
 
 export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?: boolean } = {}): Promise<void> {
   const token = c.beginNavigation();
+  c.cancelling = false;
   const errorReturn = c.runFromSource ? 'source' : 'home';
   try {
     if (!c.workflow || !c.taskCase) throw new Error('Experiment workflow is unavailable.');
-    void discardRecovery(c);
+    await discardRecovery(c);
+    if (token !== c.generation) return;
     c.preflight = undefined;
     const taskCase = {
       ...c.taskCase,
@@ -185,8 +193,18 @@ export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?:
       verifyCandidate: false,
     });
     if (token !== c.generation) return;
+    if (c.cancelling) {
+      c.cancelling = false;
+      c.page = 'home';
+      c.preparePhase = undefined;
+      c.prepareDetail = undefined;
+      c.message = t(c.locale, 'recoveryCancelled');
+      stopRunClock(c);
+      c.render(true);
+      return;
+    }
     c.preflight = preflight;
-    void beginRecovery(c);
+    bindRecovery(c, beginRecovery(c));
     return;
   } catch (error) {
     if (token !== c.generation) return;
@@ -197,6 +215,9 @@ export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?:
 
 async function beginRecovery(c: ControllerHandle): Promise<void> {
   const token = c.beginNavigation();
+  const abort = new AbortController();
+  c.recoveryAbort = abort;
+  c.cancelling = false;
   const errorReturn = c.runFromSource ? 'source' : 'home';
   try {
     if (!c.workflow || !c.taskCase || !c.preflight) throw new Error('Recovery is unavailable before preflight.');
@@ -212,15 +233,22 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     startRunClock(c);
     c.render(true);
     const attempt = await c.workflow.recover({
+      signal: abort.signal,
       taskCase: c.taskCase,
       sourceRoot: c.sourceRoot.trim(),
       onEvent: (event) => appendTimeline(c, event),
     });
     if (token !== c.generation) {
-      if (attempt.staging) await attempt.provider.discardRecovery(attempt.staging);
+      c.recoveryAttempt = attempt;
+      await discardRecovery(c);
       return;
     }
     c.recoveryAttempt = attempt;
+    if (attempt.cleanupFailed) throw Object.assign(new Error(t(c.locale, 'cleanupFailed')), { name: 'RecoveryCleanupError' });
+    if (abort.signal.aborted) {
+      await discardRecovery(c);
+      abort.signal.throwIfAborted();
+    }
     const userStatus = userRecoveryStatus({
       baseline: attempt.baseline,
       transcriptOk: Boolean(c.taskCase.initialInput?.text),
@@ -255,9 +283,22 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
         : t(c.locale, 'recoveryPartial', { n: attempt.providerPreview?.changedPaths.length ?? 0 });
     }
   } catch (error) {
-    if (token !== c.generation) return;
-    c.showError(error, errorReturn);
+    if (token !== c.generation) {
+      if (error instanceof Error && error.name === 'RecoveryCleanupError') throw error;
+      return;
+    }
+    if (abort.signal.aborted && !(error instanceof Error && error.name === 'RecoveryCleanupError')) {
+      c.page = 'home';
+      c.preparePhase = undefined;
+      c.prepareDetail = undefined;
+      c.message = t(c.locale, 'recoveryCancelled');
+    } else c.showError(error, errorReturn);
     stopRunClock(c);
+  } finally {
+    if (c.recoveryAbort === abort) {
+      c.recoveryAbort = undefined;
+      c.cancelling = false;
+    }
   }
   c.render(true);
 }
@@ -288,9 +329,34 @@ async function settleRun(
   return handle.result;
 }
 
+function showRunResult(c: ControllerHandle, result: CodexExperimentResult): void {
+  c.result = result;
+  const experimentRoot = result.experimentRoot ?? dirname(result.reportPath);
+  const completedCase = result.taskCase ?? c.taskCase;
+  c.recentExperiment = {
+    experimentId: basename(experimentRoot),
+    taskCaseId: completedCase?.caseId ?? 'unknown',
+    runId: result.record.attempt.runId,
+    outcome: result.record.outcome.termination.kind,
+    startedAt: result.record.attempt.createdAt,
+    reportPath: result.reportPath,
+    path: experimentRoot,
+    sizeBytes: 0,
+  };
+  c.activeExperiment = undefined;
+  c.page = 'result';
+  c.timelineFilterIndex = 0;
+  c.finding = false;
+  c.findQuery = '';
+  c.findCursor = 0;
+  c.message = resultMessage(result, c.locale);
+}
+
 export async function beginRun(c: ControllerHandle): Promise<void> {
   void c.refreshProductAuth();
   const token = c.beginNavigation();
+  const abort = new AbortController();
+  c.startupAbort = abort;
   const errorReturn = c.runFromSource ? 'source' : 'home';
   try {
     if (!c.workflow || !c.taskCase) throw new Error('Experiment workflow is unavailable.');
@@ -310,6 +376,8 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     const blocked = candidateStartBlocked(candidateGateFrom(c));
     if (blocked) throw new Error(blocked);
     c.preflight = { ...c.preflight, resolved: await c.workflow.verifyCandidate(candidate) };
+    if (token !== c.generation) return;
+    abort.signal.throwIfAborted();
     resetRunDiagnostics(c);
     c.runPhase = 'candidate_starting';
     c.preparePhase = 'copy';
@@ -322,8 +390,10 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.render(true);
     const recoveryAttempt = c.recoveryAttempt;
     const acceptedBaseline = recoveryAttempt?.accept ? await recoveryAttempt.accept() : undefined;
-    c.recoveryAttempt = undefined;
+    if (token !== c.generation) return;
+    abort.signal.throwIfAborted();
     const handle = await c.workflow.start({
+      signal: abort.signal,
       taskCase,
       sourceRoot: c.sourceRoot.trim(),
       candidate,
@@ -337,8 +407,11 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
         : {}),
       ...(c.autoCompare ? { compare: true } : { deferComparison: true }),
     });
+    c.recoveryAttempt = undefined;
     if (token !== c.generation) {
-      await handle.cancel().catch(() => undefined);
+      await handle.cancel();
+      const result = await handle.result;
+      if (result.record.outcome.cleanup.status !== 'complete') throw new Error(t(c.locale, 'cleanupFailed'));
       return;
     }
     c.preparePhase = undefined;
@@ -349,30 +422,25 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.render(true);
     const result = await settleRun(c, handle, token);
     if (!result || token !== c.generation) return;
-    c.result = result;
-    const experimentRoot = result.experimentRoot ?? dirname(result.reportPath);
-    const completedCase = result.taskCase ?? c.taskCase;
-    c.recentExperiment = {
-      experimentId: basename(experimentRoot),
-      taskCaseId: completedCase?.caseId ?? 'unknown',
-      runId: result.record.attempt.runId,
-      outcome: result.record.outcome.termination.kind,
-      startedAt: result.record.attempt.createdAt,
-      reportPath: result.reportPath,
-      path: experimentRoot,
-      sizeBytes: 0,
-    };
-    c.activeExperiment = undefined;
-    c.page = 'result';
-    c.timelineFilterIndex = 0;
-    c.finding = false;
-    c.findQuery = '';
-    c.findCursor = 0;
-    c.message = resultMessage(result, c.locale);
+    showRunResult(c, result);
   } catch (error) {
-    if (token !== c.generation) return;
+    if (token !== c.generation) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      throw error;
+    }
     c.activeExperiment = undefined;
-    c.showError(error, errorReturn);
+    if (abort.signal.aborted && error instanceof Error && error.name === 'AbortError') {
+      try {
+        await discardRecovery(c);
+        c.page = 'home';
+        c.preparePhase = undefined;
+        c.prepareDetail = undefined;
+        c.message = t(c.locale, 'startupCancelled');
+        c.cancelling = false;
+      } catch (cleanupError) { c.showError(cleanupError, errorReturn); }
+    } else c.showError(error, errorReturn);
+  } finally {
+    if (c.startupAbort === abort) c.startupAbort = undefined;
   }
   stopRunClock(c);
   c.render(true);
@@ -466,6 +534,7 @@ function phaseForEvent(event: EventEnvelope): CandidateRunPhase | undefined {
   if (type.startsWith('recovery.')) return 'recovery';
   if (type.startsWith('agent.') && text(record(event.payload).role) === 'recovery') return 'recovery';
   if (type === 'run.attempt_created' || type === 'codex.thread_started') return 'candidate_starting';
+  if (type === 'runtime.delivery_observed' || (type === 'run.state_changed' && record(event.payload).to === 'awaiting_target')) return 'candidate_generating';
   if (type === 'codex.turn_admitted' || type.startsWith('codex.item_')) return 'candidate_generating';
   return undefined;
 }
@@ -533,17 +602,31 @@ export async function acceptCandidateModel(c: ControllerHandle): Promise<void> {
   const pack = c.packs.find((item) => item.manifest.productId === c.candidateProductId);
   const offer = c.candidateModelOffers[c.candidateModelCursor];
   if (!c.workflow || !pack || !offer || c.candidateCatalogStatus !== 'ready') return;
+  const generation = c.generation;
   try {
     const spec = candidateSpecFromOffer(pack.manifest.productId, offer);
     const resolved = await c.workflow.verifyCandidate(spec);
+    if (generation !== c.generation) return;
     c.selectedCandidate = spec;
     if (c.preflight) c.preflight = { ...c.preflight, resolved };
     c.page = 'confirm';
     c.message = '';
   } catch (error) {
+    if (generation !== c.generation) return;
     c.candidateCatalogStatus = 'error';
     c.candidateCatalogError = errorMessage(error);
   }
   c.render();
+}
+
+/** A second observer so close() is not the only listener on background run promises. */
+export function bindWorkflow(c: ControllerHandle, work: Promise<void>): void {
+  c.workflowFinished = work;
+  void work.catch(() => undefined);
+}
+
+export function bindRecovery(c: ControllerHandle, work: Promise<void>): void {
+  c.recoveryFinished = work;
+  void work.catch(() => undefined);
 }
 

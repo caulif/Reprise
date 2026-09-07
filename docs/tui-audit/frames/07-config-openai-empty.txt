@@ -8,14 +8,16 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
 
 ┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Endpoint   not set                                                                                                   │
-│ Model      gpt-5.6-terra · medium                                                                                    │
+│ Model       · medium                                                                                                 │
 │ Secret     ⚠ API key missing                                                                                         │
 │ The API key is saved in .reprise/harness-model.json. env:NAME still works as a fallback.                             │
 │                                                                                                                      │
 │ ❯ provider type      openai-compatible  [Enter] toggles                                                              │
 │   provider label     openai-compatible                                                                               │
 │   base URL           required for OpenAI-compatible                                                                  │
-│   model              gpt-5.6-terra                                                                                   │
+│   model              (required)                                                                                      │
+│   API                openai-completions  [Enter] toggles                                                             │
+│   reasoning          false  [Enter] toggles                                                                          │
 │   effort             medium  [Enter] toggles                                                                         │
 │   API key            required for OpenAI-compatible                                                                  │
 │   Language           English  [Enter] toggles                                                                        │

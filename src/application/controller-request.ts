@@ -68,6 +68,19 @@ export function observationReadRecord(input: {
   };
 }
 
+export function controllerReadEvidenceOnRequest(
+  events: readonly EventEnvelope[],
+  runId: string,
+  requestId: string,
+): boolean {
+  return events.some((event) => {
+    if (event.type !== "controller.observation_read" || event.runId !== runId) return false;
+    return Value.Check(ControllerObservationReadPayloadSchema, event.payload)
+      && event.payload.runId === runId && event.payload.requestId === requestId
+      && event.payload.source === "workspace_read" && event.payload.evidenceRefs.length > 0;
+  });
+}
+
 /** Rebuilds the persisted, de-identified Controller input without a model call or live workspace read. */
 export function reconstructControllerRequest(events: readonly EventEnvelope[], requestId: string): ReconstructedControllerRequest {
   const event = events.find((candidate) => candidate.type === "controller.requested" && candidate.operationId === requestId);

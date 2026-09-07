@@ -1,5 +1,5 @@
 import {
-  HARNESS_CONFIG_FIELDS, apiKeyValidity, baseUrlValidity, configFieldValue, hasFileApiKey, maskSecret, shellEnvAssignment,
+  HARNESS_CONFIG_FIELDS, apiKeyValidity, baseUrlValidity, configFieldValue, configFieldsForKind, hasFileApiKey, languageFieldIndex, maskSecret, shellEnvAssignment,
   type HarnessConfigDraft, type HarnessConfigField,
 } from '../../infrastructure/harness-model-config.js';
 import { t, type Locale } from '../i18n.js';
@@ -8,7 +8,6 @@ import { pad, panel } from '../widgets.js';
 import { caretAt } from '../text-edit.js';
 
 export const CONFIG_FIELDS = HARNESS_CONFIG_FIELDS;
-export const LANGUAGE_FIELD_INDEX = CONFIG_FIELDS.length;
 export type ConfigField = HarnessConfigField;
 
 export type ConfigModel = {
@@ -27,7 +26,9 @@ export type ConfigModel = {
 
 export function renderConfig(theme: Theme, width: number, model: ConfigModel): string[] {
   const locale = model.locale ?? 'en';
-  const field = CONFIG_FIELDS[model.selected] ?? CONFIG_FIELDS[0];
+  const fields = configFieldsForKind(model.draft.kind);
+  const languageIndex = languageFieldIndex(model.draft.kind);
+  const field = fields[model.selected] ?? 'provider type';
   if (model.editing) {
     const reason = fieldReason(field, model.buffer, model.draft.kind);
     return panel(theme, t(locale, 'editingField', { field: fieldLabel(locale, field) }), [
@@ -38,7 +39,7 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
       ` ${t(locale, 'neverPasteSecret')}`,
     ], width);
   }
-  const values = CONFIG_FIELDS.flatMap((item, index) => {
+  const values = fields.flatMap((item, index) => {
     const marker = index === model.selected ? theme.glyphs.cursor : ' ';
     const hint = fieldHint(item, locale);
     const value = fieldValue(theme, item, configFieldValue(model.draft, item), model.draft.kind, locale);
@@ -47,10 +48,10 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
     const painted = index === model.selected ? theme.style.selected(line) : line;
     return reason ? [painted, `     ${theme.style.warn(`${theme.glyphs.warn} ${reason}`)}`] : [painted];
   });
-  const languageMarker = model.selected === LANGUAGE_FIELD_INDEX ? theme.glyphs.cursor : ' ';
+  const languageMarker = model.selected === languageIndex ? theme.glyphs.cursor : ' ';
   const languageValue = t(locale, locale === 'zh' ? 'chinese' : 'english');
   const languageLine = ` ${languageMarker} ${pad(t(locale, 'languageField'), 18, theme.glyphs.ellipsis)} ${languageValue}  ${theme.style.muted(t(locale, 'langToggleHint'))}`;
-  const paintedLanguage = model.selected === LANGUAGE_FIELD_INDEX ? theme.style.selected(languageLine) : languageLine;
+  const paintedLanguage = model.selected === languageIndex ? theme.style.selected(languageLine) : languageLine;
   const dirty = model.dirty
     ? theme.style.warn(` ${theme.glyphs.dot} ${t(locale, 'unsavedDraft')}`)
     : theme.style.ok(` ${theme.glyphs.ok} ${t(locale, 'savedLocally')}`);
@@ -78,7 +79,9 @@ export function configHints(
   if (pendingToggle) return [['Enter', t(locale, 'hintConfirmSwitch')], ['Esc', t(locale, 'hintCancelSwitch')]];
   const enter = languageSelected
     ? t(locale, 'hintToggleLang')
-    : field === 'provider type' ? t(locale, 'hintToggleProvider') : field === 'effort' ? t(locale, 'hintCycleEffort') : t(locale, 'hintEdit');
+    : field === 'provider type' ? t(locale, 'hintToggleProvider')
+      : field === 'effort' || field === 'API' || field === 'reasoning' ? t(locale, 'hintCycleEffort')
+        : t(locale, 'hintEdit');
   return [['↑↓', t(locale, 'hintSelect')], ['Enter', enter], ['t', t(locale, 'hintTest')], ['s', t(locale, 'hintSave')], ['Esc', t(locale, 'hintHome')]];
 }
 
@@ -94,7 +97,9 @@ function connectionStatus(theme: Theme, model: ConfigModel, locale: Locale): rea
       : model.draft.kind === 'openai-compatible'
         ? theme.style.warn(`${theme.glyphs.warn} ${t(locale, 'envNameMissing')}`)
         : t(locale, 'piManagesCreds');
-  const hint = model.envName && model.envSet === false
+  const hint = model.draft.kind === 'pi-catalog'
+    ? ` ${t(locale, 'piLoginHint')}`
+    : model.envName && model.envSet === false
     ? ` ${shellEnvAssignment(model.envName)}   ${t(locale, 'neverPasteValue')}`
     : ` ${t(locale, 'keysStayInEnv')}`;
   return [
@@ -110,6 +115,8 @@ function fieldLabel(locale: Locale, field: ConfigField): string {
   if (field === 'provider label') return t(locale, 'fieldProviderLabel');
   if (field === 'base URL') return t(locale, 'fieldBaseUrl');
   if (field === 'model') return t(locale, 'fieldModel');
+  if (field === 'API') return t(locale, 'fieldApi');
+  if (field === 'reasoning') return t(locale, 'fieldReasoning');
   if (field === 'effort') return t(locale, 'fieldEffort');
   return t(locale, 'fieldKeyRef');
 }
@@ -143,6 +150,6 @@ function fieldReason(field: ConfigField, value: string, kind: HarnessConfigDraft
 }
 
 function fieldHint(field: ConfigField, locale: Locale): string {
-  if (field === 'provider type' || field === 'effort') return t(locale, 'langToggleHint');
+  if (field === 'provider type' || field === 'effort' || field === 'API' || field === 'reasoning') return t(locale, 'langToggleHint');
   return '';
 }

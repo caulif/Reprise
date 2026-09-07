@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,6 +13,7 @@ import {
   writeSettledTurnBriefing,
   writeControllerUnderstanding,
   applyControllerUnderstandingDelta,
+  readControllerPendingActions,
 } from "../src/application/controller-briefing.js";
 import type { TaskCase } from "../src/core/schema.js";
 
@@ -179,4 +180,41 @@ test("writes the Controller task understanding into the Host-owned briefing", as
   await applyControllerUnderstandingDelta(root, { mode: "replace", unresolvedActions: ["重新检查"] });
   assert.doesNotMatch(await readFile(path, "utf8"), /新建 PPT/);
   assert.match(await readFile(path, "utf8"), /重新检查/);
+});
+
+test('understanding ledger preserves merge semantics, clears replace, and rejects corruption', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-ledger-integrity-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await writeControllerUnderstanding(root, { markdown: 'Deliver slides.', sourceMessageIds: ['m1'], unresolvedActions: ['slides', 'sources', 'slides'] });
+  await applyControllerUnderstandingDelta(root, { mode: 'merge', unresolvedActions: [] });
+  assert.deepEqual(await readControllerPendingActions(root), ['slides', 'sources']);
+  await applyControllerUnderstandingDelta(root, { mode: 'replace', unresolvedActions: [] });
+  assert.deepEqual(await readControllerPendingActions(root), []);
+  const contract = JSON.parse(await readFile(join(root, 'controller-contract.json'), 'utf8')) as { nodes: unknown[] };
+  assert.deepEqual(contract.nodes, []);
+  for (const corrupt of ['{', '{"schemaVersion":1,"unresolvedActions":[]}']) {
+    await writeFile(join(root, 'controller-understanding.json'), corrupt);
+    await assert.rejects(readControllerPendingActions(root));
+    await assert.rejects(applyControllerUnderstandingDelta(root, { mode: 'replace', unresolvedActions: [] }));
+    assert.equal(await readFile(join(root, 'controller-understanding.json'), 'utf8'), corrupt);
+  }
+});
+
+test('ledger remains authoritative after a projection write fails and an idempotent retry rebuilds it', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-ledger-rebuild-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const bodyPath = await writeControllerUnderstanding(root, { markdown: 'Deliver slides.', sourceMessageIds: ['m1'], unresolvedActions: ['slides'] });
+  await rm(bodyPath);
+  await mkdir(bodyPath);
+  await assert.rejects(applyControllerUnderstandingDelta(root, { mode: 'replace', unresolvedActions: [] }));
+  assert.deepEqual(await readControllerPendingActions(root, true), []);
+  await rm(bodyPath, { recursive: true });
+  await rm(join(root, 'controller-contract.json'));
+  await applyControllerUnderstandingDelta(root, { mode: 'merge' });
+  assert.match(await readFile(bodyPath, 'utf8'), /## Unresolved actions\n- \(none\)/);
+  const contract = JSON.parse(await readFile(join(root, 'controller-contract.json'), 'utf8')) as { nodes: unknown[] };
+  assert.deepEqual(contract.nodes, []);
+  await rm(join(root, 'controller-understanding.json'));
+  await assert.rejects(readControllerPendingActions(root, true), { code: 'ENOENT' });
+  assert.equal(await readControllerPendingActions(root), undefined);
 });

@@ -5,6 +5,14 @@ import { renderFailure } from '../src/tui/pages/result.js';
 import { createTheme } from '../src/tui/theme.js';
 import { formatRecoveryFailureSummary } from '../src/tui/i18n.js';
 
+test('Recovery agent failure copy separates upstream and credentials from invalid workspace recovery', () => {
+  const transient = formatRecoveryFailureSummary('zh', 'agent_model_failed', { agentFailureKind: 'transient_upstream' });
+  assert.match(transient, /恢复 Agent.*暂时失败.*重试/);
+  const authentication = formatRecoveryFailureSummary('en', 'agent_model_failed', { agentFailureKind: 'authentication' });
+  assert.match(authentication, /Recovery agent.*provider credentials/);
+  assert.doesNotMatch(authentication, /Temporary failure/);
+});
+
 test('recovery canvas does not impersonate a candidate reply', () => {
   const theme = createTheme(120, false);
   const text = renderTimeline(theme, 120, {
@@ -157,9 +165,9 @@ test('confirmation with workspace changes still reports validation failure', () 
   assert.doesNotMatch(text, /没有观察到隔离工作区变更/);
 });
 
-test('failure page uses the user-facing could-not-recover title', () => {
+test('generic failure page does not misclassify every phase as recovery', () => {
   const theme = createTheme(120, false);
   const text = renderFailure(theme, 120, 'workspace.symlink_skipped').join('\n');
-  assert.match(text, /Could not recover/);
-  assert.doesNotMatch(text, /Cannot continue/);
+  assert.match(text, /Cannot continue/);
+  assert.doesNotMatch(text, /Could not recover/);
 });

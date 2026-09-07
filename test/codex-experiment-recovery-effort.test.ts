@@ -171,6 +171,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
   let called = false;
+  let observedBudget: number | undefined;
   const events: { type: string; payload: unknown }[] = [];
   const attempt = await recoverCodexExperiment({
     dataDir: base.dataDir,
@@ -187,7 +188,9 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
       taskContext: { ...base.taskCase.taskContext, cwd: "C:\\Sensitive\\Workspace" },
     },
     recovery: {
-      recover: async () => {
+      timeoutMs: 43210,
+      recover: async (context) => {
+        observedBudget = context.budget.timeoutMs;
         called = true;
         return {
           status: "completed",
@@ -206,6 +209,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
       events.push({ type: event.type, payload: event.payload }),
   });
   assert.equal(called, true);
+  assert.equal(observedBudget, 43210);
   assert.equal(attempt.baseline.recovery?.status, "insufficient_evidence");
   assert.deepEqual(
     events
@@ -240,10 +244,12 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
   const persistedInput = JSON.parse(Buffer.from(bytes).toString("utf8")) as {
     evidenceLevel?: string;
     taskCaseId?: string;
+    budget: { timeoutMs: number };
     toolNames: string[];
   };
   assert.equal(persistedInput.evidenceLevel, "history");
   assert.equal(persistedInput.taskCaseId, base.taskCase.caseId);
+  assert.equal(persistedInput.budget.timeoutMs, observedBudget);
   assert.ok(persistedInput.toolNames.includes("ls"));
   const persistedText = Buffer.from(bytes).toString("utf8");
   assert.doesNotMatch(persistedText, /secret task body|private transcript|C:\\Sensitive\\Workspace/);

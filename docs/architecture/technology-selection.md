@@ -160,7 +160,7 @@ Process Host 不理解 Codex/Claude Code 语义；Product Pack 不各自发明�
 - 记录 resolved executable、报告版本和脱敏后的 argv；
 - 凭据只经 Runtime 支持的环境或配置传递，不进入 trace。
 
-Windows 的 `.cmd` shim、信号语义和子进程树清理必须在真实纵切片验证。如果标准 `spawn` 由此产生多处分支，再采用 Pi 已使用的 `cross-spawn`。首版不预先引入 `node-pty`，也不以 `shell: true` 解决 PATH 问题。
+Windows 的 `.cmd`/`.bat` 经 `spawnRuntimeProcess` 启动：ComSpec `/d /s /c`、整行外包一层引号、`windowsVerbatimArguments`，见[cmd shim 启动](../decisions/accepted/2026-09-06-windows-cmd-shim-spawn.md)。信号语义和子进程树清理必须在真实纵切片验证。如果标准 `spawn` 由此产生多处分支，再采用 Pi 已使用的 `cross-spawn`。首版不预先引入 `node-pty`，也不以 `shell: true` 解决 PATH 问题。
 
 ## 7. Runtime 发现和版本
 

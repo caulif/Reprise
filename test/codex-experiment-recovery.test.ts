@@ -10,6 +10,8 @@ import { recoverCodexExperiment, startCodexExperiment, classifyRecoveryFailureSt
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
 import { sha256 } from "../src/core/identity.js";
 import { now, VerifiedRuntime, input } from "./codex-experiment-support.js";
+import { RecoveryAgent } from '../src/agents/recovery-agent.js';
+import { PiAgentHost } from '../src/infrastructure/pi-agent-host.js';
 
 test("Recovery preserves a known verifier rejection as provider validation", () => {
   assert.equal(
@@ -52,7 +54,10 @@ test("Recovery records Provider validation failure separately from a completed A
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
   const recovery: RecoveryAgentPort = {
-    recover: async () => ({
+    timeoutMs: 12345,
+    recover: async (context) => {
+      assert.equal(context.budget.timeoutMs, 12345);
+      return ({
       status: "completed",
       sessionId: "recovery-1",
       value: {
@@ -62,7 +67,8 @@ test("Recovery records Provider validation failure separately from a completed A
         evidenceRefs: ["event:missing"],
         manifestPath: "recovery-manifest.json",
       },
-    }),
+      });
+    },
   };
   const attempt = await recoverCodexExperiment({
     dataDir: base.dataDir,
@@ -93,6 +99,35 @@ class CleanupFailingRecoveryProvider extends LocalWorkspaceProvider {
     throw new Error("cleanup fixture failure");
   }
 }
+
+test('Recovery cancellation aborts a pending model call, persists cancellation and discards staging', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-recovery-cancel-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'source'));
+  await writeFile(join(root, 'source', 'README.md'), '# source\n');
+  const base = input(root, new VerifiedRuntime());
+  const abort = new AbortController();
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => { started = resolve; });
+  let discarded = 0;
+  const provider = new LocalWorkspaceProvider(join(root, 'provider'));
+  const discard = provider.discardRecovery.bind(provider);
+  t.mock.method(provider, 'discardRecovery', async (...args: Parameters<typeof discard>) => { discarded += 1; return discard(...args); });
+  const recovery = new RecoveryAgent({ host: new PiAgentHost({ createSession: () => ({
+    append: ({ signal }) => { assert.equal(signal.aborted, false); started(); return new Promise<string>(() => {}); }, cancel() {},
+  }) }), timeoutMs: 0, maxRepairAttempts: 1 });
+  const pending = recoverCodexExperiment({ dataDir: base.dataDir, caseId: base.caseId, experimentId: 'recovery-cancel', runId: 'recovery-cancel-run', sourceRoot: base.sourceRoot, taskCase: base.taskCase, recovery, environmentProvider: provider, now, signal: abort.signal });
+  await ready;
+  abort.abort();
+  const attempt = await pending;
+  assert.equal(attempt.recovery.status, 'cancelled');
+  assert.equal(attempt.baseline.recovery?.failureStage, 'cancelled');
+  assert.equal(typeof attempt.accept, 'undefined');
+  assert.equal(discarded, 1);
+  const persisted = JSON.parse(await readFile(join(attempt.experimentRoot, 'recovery.json'), 'utf8')) as { status: string };
+  assert.equal(persisted.status, 'cancelled');
+  assert.equal(await readFile(join(root, 'source', 'README.md'), 'utf8'), '# source\n');
+});
 
 test("Recovery rejects an unproven recovered no-op before Provider promotion", async (t) => {
   const root = await mkdtemp(
@@ -128,6 +163,8 @@ test("Recovery rejects an unproven recovered no-op before Provider promotion", a
     now,
   });
   assert.equal(attempt.baseline.recovery?.failureStage, "provider_validation_failed");
+  assert.equal(attempt.cleanupFailed, true);
+  assert.ok(attempt.staging);
   const validation = JSON.parse(
     await readFile(
       join(attempt.experimentRoot, "recovery-validation.json"),

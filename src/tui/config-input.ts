@@ -1,8 +1,7 @@
-import { CONFIG_FIELDS, LANGUAGE_FIELD_INDEX } from './pages/config.js';
 import { nextOption, unwrapBracketedPaste } from './format.js';
 import { applyTextEdit } from './text-edit.js';
-import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
-import { configFieldValue, setConfigField } from '../infrastructure/harness-model-config.js';
+import type { HarnessConfigDraft, HarnessConfigField, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
+import { configFieldValue, configFieldsForKind, emptyHarnessConfigDraft, languageFieldIndex, setConfigField } from '../infrastructure/harness-model-config.js';
 import type { Option } from './types.js';
 import { matchesKey } from '@earendil-works/pi-tui';
 
@@ -25,23 +24,25 @@ export type ConfigInputResult = {
 
 export function handleConfigInput(state: ConfigInputState, data: string, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }): ConfigInputResult | undefined {
   const input = unwrapBracketedPaste(data);
-  if (state.editing) return editConfigValue(state, input);
+  const fields = configFieldsForKind(state.draft.kind);
+  const languageIndex = languageFieldIndex(state.draft.kind);
+  if (state.editing) return editConfigValue(state, input, fields);
   if (state.pendingToggle) {
     if (matchesKey(input, 'enter')) return applyProviderToggle(state, refreshModels);
     if (matchesKey(input, 'escape')) return { state: { ...state, pendingToggle: false }, message: 'Provider switch cancelled.', consume: true };
     return handleConfigInput({ ...state, pendingToggle: false }, input, refreshModels) ?? { state: { ...state, pendingToggle: false }, consume: true };
   }
   if (matchesKey(input, 'escape')) return { state, action: 'home', consume: true };
-  if (matchesKey(input, 'up') || matchesKey(input, 'down')) return { state: { ...state, selected: Math.max(0, Math.min(LANGUAGE_FIELD_INDEX, state.selected + (matchesKey(input, 'up') ? -1 : 1))) }, consume: true };
+  if (matchesKey(input, 'up') || matchesKey(input, 'down')) return { state: { ...state, selected: Math.max(0, Math.min(languageIndex, state.selected + (matchesKey(input, 'up') ? -1 : 1))) }, consume: true };
   if (matchesKey(input, 't')) return { state, action: 'test', consume: true };
   if (matchesKey(input, 's')) return { state, action: 'save', consume: true };
   if (!matchesKey(input, 'enter')) return undefined;
-  if (state.selected === LANGUAGE_FIELD_INDEX) return { state, action: 'toggle-locale', consume: true };
-  return beginConfigEdit(state, refreshModels);
+  if (state.selected === languageIndex) return { state, action: 'toggle-locale', consume: true };
+  return beginConfigEdit(state, refreshModels, fields);
 }
 
-function beginConfigEdit(state: ConfigInputState, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }): ConfigInputResult {
-  const field = CONFIG_FIELDS[state.selected] ?? CONFIG_FIELDS[0];
+function beginConfigEdit(state: ConfigInputState, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }, fields: readonly HarnessConfigField[]): ConfigInputResult {
+  const field = fields[state.selected] ?? 'provider type';
   if (field === 'provider type') {
     if (state.draft.baseUrl || state.draft.keyRef) {
       return { state: { ...state, pendingToggle: true }, message: 'Enter again to switch provider and clear URL and API key. Esc cancels.', consume: true };
@@ -53,6 +54,13 @@ function beginConfigEdit(state: ConfigInputState, refreshModels: (draft: Harness
     const effort = efforts[(efforts.indexOf(state.draft.effort) + 1) % efforts.length] ?? state.draft.effort;
     return { state: { ...state, draft: { ...state.draft, effort } }, message: 'Effort changed in the draft.', consume: true };
   }
+  if (field === 'API') {
+    const api = state.draft.api === 'openai-completions' ? 'openai-responses' : 'openai-completions';
+    return { state: { ...state, draft: { ...state.draft, api } }, message: 'API changed in the draft.', consume: true };
+  }
+  if (field === 'reasoning') {
+    return { state: { ...state, draft: { ...state.draft, reasoning: !state.draft.reasoning } }, message: 'Reasoning changed in the draft.', consume: true };
+  }
   if (state.draft.kind === 'pi-catalog' && field === 'provider label') {
     const provider = nextOption(state.providers, state.draft.providerId);
     if (!provider) return { state, consume: true };
@@ -63,30 +71,28 @@ function beginConfigEdit(state: ConfigInputState, refreshModels: (draft: Harness
     const model = nextOption(state.models, state.draft.modelId);
     return model ? { state: { ...state, draft: { ...state.draft, modelId: model.id } }, message: 'Model changed in the draft.', consume: true } : { state, consume: true };
   }
-  if (state.draft.kind === 'pi-catalog' && field === 'API key') {
-    return { state, message: 'Pi catalog manages credentials; the API key is not applicable.', consume: true };
-  }
   const current = configFieldValue(state.draft, field);
   return { state: { ...state, editing: true, buffer: current, cursor: current.length }, message: `Editing ${field}. Type to change the visible value. Enter applies it. Esc keeps the previous value.`, consume: true };
 }
 
 function applyProviderToggle(state: ConfigInputState, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }): ConfigInputResult {
   const draft = state.draft.kind === 'pi-catalog'
-    ? { ...state.draft, kind: 'openai-compatible' as const, providerId: 'openai-compatible', baseUrl: '', keyRef: '' }
-    : { ...state.draft, kind: 'pi-catalog' as const, providerId: state.providers[0]?.id ?? 'openai-codex', baseUrl: '', keyRef: '' };
+    ? { ...emptyHarnessConfigDraft(), effort: state.draft.effort }
+    : { ...emptyHarnessConfigDraft(), kind: 'pi-catalog' as const, providerId: state.providers[0]?.id ?? 'openai-codex', effort: state.draft.effort };
   const refreshed = draft.kind === 'pi-catalog' ? refreshModels(draft) : { draft, models: state.models };
+  const selected = Math.min(state.selected, languageFieldIndex(refreshed.draft.kind));
   return {
-    state: { ...state, draft: refreshed.draft, models: refreshed.models, pendingToggle: false },
-    message: draft.kind === 'pi-catalog' ? 'Pi catalog selected. Pi manages its configured credentials.' : 'OpenAI-compatible selected. Enter its endpoint, model, and API key.',
+    state: { ...state, draft: refreshed.draft, models: refreshed.models, pendingToggle: false, selected },
+    message: draft.kind === 'pi-catalog' ? 'Pi catalog selected. Sign in with pi /login, then test the connection.' : 'OpenAI-compatible selected. Enter its endpoint, model, and API key.',
     consume: true,
   };
 }
 
-function editConfigValue(state: ConfigInputState, data: string): ConfigInputResult {
+function editConfigValue(state: ConfigInputState, data: string, fields: readonly HarnessConfigField[]): ConfigInputResult {
   if (matchesKey(data, 'escape')) return { state: { ...state, editing: false, buffer: '', cursor: 0 }, message: 'Field edit discarded. Configuration remains an in-memory draft.', consume: true };
   if (matchesKey(data, 'ctrl+a') || matchesKey(data, 'ctrl+u')) return { state: { ...state, buffer: '', cursor: 0 }, consume: true };
   if (matchesKey(data, 'enter')) {
-    const field = CONFIG_FIELDS[state.selected] ?? CONFIG_FIELDS[0];
+    const field = fields[state.selected] ?? 'provider type';
     const next = state.buffer.trim();
     return { state: { ...state, draft: setConfigField(state.draft, field, next), editing: false, buffer: '', cursor: 0 }, message: 'Draft changed. Save writes the local config file; use t to test the connection.', consume: true };
   }

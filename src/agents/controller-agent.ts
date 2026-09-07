@@ -42,7 +42,7 @@ export type SteeringContext = {
   trajectory: { summary: string; evidenceRefs: readonly string[] };
   /** Host-owned refs with run ownership for this request only. */
   evidenceCatalog: readonly { ref: string; runId: string; source: 'initial' | 'tool' }[];
-  budget: { decisionsUsed: number; decisionsLimit?: number };
+  budget: { decisionsUsed: number; decisionsLimit?: number; callTimeoutMs?: number };
   /** opening: no candidate turn yet; steering: after a settled turn. */
   phase?: 'opening' | 'steering';
   /** Host-built user message: decision instructions + INDEX.md. Not JSON of this object. */
@@ -113,7 +113,8 @@ export const CONTROLLER_SYSTEM_PROMPT = [
   '4. Real deviation from goal, scope, or stated preferences → send/correct. A different valid path is not deviation.',
   '5. Missing a fact this user already knew → send/inform.',
   '6. A completion claim or risky step needs a check this user would demand → send/verify.',
-  '7. Otherwise: if this user would still speak to THIS trajectory, send/continue; if not, done/no_further_value. Do not stop merely because some historical user sentences were never sent, and do not send them in order to exhaust them.',
+  '7. If delivery satisfies this user, choose done/satisfied. done/no_further_value means unmet work remains and further steering would not help; it is not a synonym for successful completion. Do not send historical sentences merely to exhaust them.',
+  'understandingDelta merge only appends. Remove completed actions with mode replace and the full remaining unresolvedActions, using [] when all are resolved. Example: done/satisfied with understandingDelta {"mode":"replace","unresolvedActions":[]}. Host completion feedback asks you to reconcile your ledger or read evidence; it is not a new candidate task.',
   '',
   '# Writing the message',
   'The message must read as the original user would write it, in the primary language of initial-input.txt (code, commands, and identifiers keep their original form):',
@@ -178,7 +179,7 @@ export class ControllerAgent implements ControllerPort {
   readonly #sessions = new Map<string, Promise<AgentSessionHost>>();
   readonly #requests = new Map<string, Promise<AgentInvocation<ControllerDecision>>>();
   readonly #inflight = new Map<string, string>();
-  readonly #toolCallbacks = new Map<string, (result: AgentToolResult) => Promise<void>>();
+  readonly #toolCallbacks = new Map<string, (name: string, result: AgentToolResult) => Promise<void>>();
 
   constructor(input: { host: PiAgentHost; timeoutMs: number; maxRepairAttempts: number }) {
     this.#host = input.host;
@@ -189,8 +190,8 @@ export class ControllerAgent implements ControllerPort {
   async understand(context: SteeringContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink): Promise<AgentInvocation<ControllerUnderstanding>> {
     if (context.runState !== 'created' || context.phase !== 'opening')
       throw new Error('Controller understanding requires the opening context.');
-    this.#toolCallbacks.set(context.runId, async (result) => {
-      for (const tool of tools) await tool.onCompleted?.(result);
+    this.#toolCallbacks.set(context.runId, async (name, result) => {
+      await tools.find((tool) => tool.name === name)?.onCompleted?.(result);
     });
     const session = await this.#sessionFor(context, tools, audit);
     return session.request<ControllerUnderstanding>({
@@ -221,8 +222,8 @@ export class ControllerAgent implements ControllerPort {
     }
     if (this.#requests.has(context.runId)) throw new Error(`Controller request already in flight for run ${context.runId}.`);
     const catalog = new Set(context.evidenceCatalog.filter((entry) => entry.runId === context.runId).map((entry) => entry.ref));
-    this.#toolCallbacks.set(context.runId, async (result) => {
-      for (const tool of tools) await tool.onCompleted?.(result);
+    this.#toolCallbacks.set(context.runId, async (name, result) => {
+      await tools.find((tool) => tool.name === name)?.onCompleted?.(result);
       for (const ref of ownedToolRefs(context.runId, result.details)) catalog.add(ref);
     });
     this.#inflight.set(context.runId, context.requestId);
@@ -239,8 +240,9 @@ export class ControllerAgent implements ControllerPort {
   async #decide(context: SteeringContext, tools: readonly AgentToolDefinition[], available: Set<string>, audit?: AgentAuditSink): Promise<AgentInvocation<ControllerDecision>> {
     const session = await this.#sessionFor(context, tools, audit);
     const opening = isOpeningContext(context);
+    const timeoutMs = context.budget.callTimeoutMs === undefined ? this.#timeoutMs : Math.min(this.#timeoutMs || Infinity, context.budget.callTimeoutMs);
     const result = await session.request<ControllerDecision>({
-      context, schema: ControllerDecisionSchema, timeoutMs: this.#timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
+      context, schema: ControllerDecisionSchema, timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
       outputContract: OUTPUT_CONTRACT, requestId: context.requestId,
       promptContent: context.promptContent ?? `phase=${opening ? "opening" : "steering"}\n`,
       validate: (decision) => validateControllerDecision(decision, available, opening),
@@ -257,7 +259,7 @@ export class ControllerAgent implements ControllerPort {
         systemPrompt: CONTROLLER_SYSTEM_PROMPT,
         allowModelText: context.task.privacy.allowModelText,
         compactionInstructions: CONTROLLER_COMPACTION,
-        tools: tools.map((tool) => ({ ...tool, onCompleted: async (result) => { await this.#toolCallbacks.get(context.runId)?.(result); } })),
+        tools: tools.map((tool) => ({ ...tool, onCompleted: async (result) => { await this.#toolCallbacks.get(context.runId)?.(tool.name, result); } })),
         ...(audit ? { audit } : {}),
       });
       this.#sessions.set(context.runId, pending);

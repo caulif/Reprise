@@ -3,6 +3,7 @@ import { Loader, isViewportTUI } from "@earendil-works/pi-tui";
 import {
   configForDraft,
   draftForConfig,
+  emptyHarnessConfigDraft,
   saveHarnessModelConfig,
   safeConfigError,
   shellEnvAssignment,
@@ -66,7 +67,9 @@ export function CodexIntakeTui_modelsForDraft(this: CodexIntakeTui, draft: Confi
 
 export async function CodexIntakeTui_openConfig(this: CodexIntakeTui): Promise<void> {
     const token = this.beginNavigation();
-    this.configDraft = draftForConfig(this.modelConfig);
+    this.configDraft = this.hasSavedModelConfig
+      ? draftForConfig(this.modelConfig)
+      : emptyHarnessConfigDraft();
     this.configSelected =
       this.configDraft.kind === "openai-compatible"
         ? Math.max(0, CONFIG_FIELDS.indexOf("model"))

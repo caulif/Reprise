@@ -70,6 +70,22 @@ test('sessions group by workspace basename and send missing cwd to 其他', () =
   assert.equal(projectLabel('C:\\Users\\example\\slides'), 'slides');
 });
 
+test('catalog project names and session directories retain their sources at both widths', () => {
+  const sessions = [session('ppt', 'C:/work/ppt', '2026-09-06T01:00:00.000Z', 'Create slides')];
+  const projects = groupSessionsByProject(sessions, [{ key: 'codex\0c:/work/ppt', label: 'ppt-bjj', path: 'C:/work/ppt' }]);
+  assert.equal(projects[0]?.catalogLabel, 'ppt-bjj');
+  assert.equal(projects[0]?.path, 'C:/work/ppt');
+  for (const width of [60, 120]) {
+    const output = renderSessions(createTheme(width, false), width, {
+      level: 'projects', projects, sessions, selected: 0, filterEligible: false, query: '', searching: false,
+    }, 20).join('\n');
+    assert.match(output, /Catalog name/);
+    assert.match(output, /ppt-bjj/);
+    assert.match(output, /Session cwd/);
+    assert.match(output, /C:\/work\/ppt/);
+  }
+});
+
 test('project list default cursor prefers last project, then cwd, and skips harness checkout', () => {
   const hermes = { key: 'hermes', label: '.hermes', path: 'C:/wsl/.hermes', sessions: [session('h', 'C:/wsl/.hermes', '2026-08-31T12:00:00.000Z', 'Hermes')], latestAt: '2026-08-31T12:00:00.000Z' };
   const ppt = { key: 'ppt', label: 'ppt', path: 'C:/work/cncert', sessions: [session('p', 'C:/work/cncert', '2026-08-30T12:00:00.000Z', 'PPT')], latestAt: '2026-08-30T12:00:00.000Z' };

@@ -216,6 +216,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
           record: {
             attempt: { runId: "run-1" },
             outcome: {
+              task: { status: 'apparently_completed' },
               termination: {
                 kind: "completed",
                 code: "completed.controller_satisfied",
@@ -418,6 +419,7 @@ test("Codex intake TUI browses validated local history and selects a TaskCase wi
         startedAt: "2026-08-11T01:00:00.000Z",
       },
       outcome: {
+        task: { status: 'apparently_completed', evidenceRefs: [] },
         termination: {
           kind: "completed",
           code: "completed.controller_satisfied",
@@ -455,6 +457,10 @@ test("Codex intake TUI browses validated local history and selects a TaskCase wi
   enterCommand(app, "/history");
   await waitFor(() => /Recent experiments/.test(rendered));
   assert.match(rendered, /exp-history/);
+  app.handleInput('\x1b');
+  assert.equal(app.page, 'home');
+  enterCommand(app, '/history');
+  await waitFor(() => app.page === 'history');
   app.handleInput("\t");
   assert.match(rendered, /TaskCases/);
   app.handleInput("\r");
@@ -498,8 +504,8 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   await app.start();
   enterCommand(app, "/config");
   await waitFor(() => /Harness connection/.test(rendered));
-  app.handleInput("\r"); // provider type: pi catalog -> OpenAI-compatible
-  app.handleInput("\u001b[B");
+  app.handleInput("\u001b[A");
+  app.handleInput("\u001b[A");
   app.handleInput("\r");
   replaceField("private-gateway");
   app.handleInput("\u001b[B");
@@ -508,7 +514,9 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   app.handleInput("\u001b[B");
   app.handleInput("\r");
   replaceField("model-private");
-  app.handleInput("\u001b[B"); // effort, deliberately retain default
+  app.handleInput("\u001b[B");
+  app.handleInput("\u001b[B");
+  app.handleInput("\u001b[B");
   app.handleInput("\u001b[B");
   app.handleInput("\r");
   replaceField("env:REPRISE_PRIVATE_KEY");
@@ -524,6 +532,8 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
     modelId: "model-private",
     effort: "medium",
     baseUrl: "https://api.example.test/v1",
+    api: "openai-completions",
+    reasoning: false,
     keyRef: "env:REPRISE_PRIVATE_KEY",
   });
   assert.doesNotMatch(saved, /actual-secret-value/);

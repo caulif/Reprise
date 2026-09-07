@@ -20,7 +20,7 @@ import {
 } from "../src/infrastructure/pi-agent-host.js";
 import { Type } from "@sinclair/typebox";
 import { controllerRequestSnapshot } from "../src/application/experiment.js";
-import { observationReadRecord, reconstructControllerRequest } from "../src/application/controller-request.js";
+import { observationReadRecord, reconstructControllerRequest, controllerReadEvidenceOnRequest } from "../src/application/controller-request.js";
 import { sha256 } from "../src/core/identity.js";
 function context(allowModelText = true): SteeringContext {
   return {
@@ -109,6 +109,14 @@ test("observation reads persist only current-run event refs from this request", 
     allowedRefs: new Set(["event:keep-1"]),
   });
   assert.deepEqual(foreign.payload.evidenceRefs, []);
+});
+test("completion evidence belongs to this request and has a persisted result ref", () => {
+  const requestId = "controller-request-run-1-2";
+  const read = observationReadRecord({ requestId, runId: "run-1", details: { source: "workspace_read", runId: "run-1", evidenceRefs: ["artifact:read-1"] }, allowedRefs: new Set(["artifact:read-1"]) });
+  assert.equal(controllerReadEvidenceOnRequest([read] as never, "run-1", requestId), true);
+  assert.equal(controllerReadEvidenceOnRequest([read] as never, "run-2", requestId), false);
+  assert.equal(controllerReadEvidenceOnRequest([read] as never, "run-1", "old-request"), false);
+  assert.equal(controllerReadEvidenceOnRequest([{ ...read, payload: { ...read.payload, evidenceRefs: [] } }] as never, "run-1", requestId), false);
 });
 test("historicalUserFollowups keeps later user turns after the session start", () => {
   assert.deepEqual(
@@ -349,20 +357,6 @@ test("a second Controller decide for the same run is rejected while one request 
   resolve(JSON.stringify({ type: "done", reason: "satisfied" }));
   assert.equal((await pending).status, "completed");
 });
-test("a Controller result resolving after cancellation is discarded", async () => {
-  let resolve!: (value: string) => void;
-  const controller = new ControllerAgent({
-    host: new PiAgentHost({ createSession: () => ({ append: async () => await new Promise<string>((done) => { resolve = done; }), cancel() {} }) }),
-    timeoutMs: 0,
-    maxRepairAttempts: 0,
-  });
-  const pending = controller.decide(context());
-  await new Promise((done) => setImmediate(done));
-  await controller.cancel("run-1");
-  resolve(JSON.stringify({ type: "send", message: "Late send must not land.", intent: "continue" }));
-  const result = await pending;
-  assert.equal(result.status, "cancelled");
-});
 test("classifies transient upstream responses for bounded Recovery retry", async () => {
   const host = new PiAgentHost({
     createSession: () => ({
@@ -375,6 +369,40 @@ test("classifies transient upstream responses for bounded Recovery retry", async
   assert.equal(result.status, "failed");
   if (result.status === "failed") assert.equal(result.failure.kind, "transient_upstream");
 });
+test('schema repair shares the original deadline and cannot start after it expires', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  let prompts = 0;
+  const host = new PiAgentHost({ createSession: () => ({
+    append: async () => { prompts += 1; t.mock.timers.tick(1_001); return 'invalid JSON'; },
+    cancel() {},
+  }) });
+  const result = await host.request({ role: 'controller', systemPrompt: 'test', context: {}, schema: Type.Object({ ok: Type.Boolean() }), timeoutMs: 1_000, maxRepairAttempts: 2, allowModelText: true });
+  assert.equal(result.status, 'failed');
+  if (result.status === 'failed') assert.equal(result.failure.code, 'agent_timeout');
+  assert.equal(prompts, 1);
+});
+test('Controller cancellation releases a provider that never settles and aborts its tools', { timeout: 1000 }, async () => {
+  let resolve!: (value: string) => void;
+  let signal: AbortSignal | undefined;
+  let cancelled = 0;
+  const controller = new ControllerAgent({
+    host: new PiAgentHost({ createSession: () => ({
+      append: (input) => { signal = input.signal; return new Promise<string>((done) => { resolve = done; }); },
+      cancel() { cancelled += 1; },
+    }) }),
+    timeoutMs: 0, maxRepairAttempts: 1,
+  });
+  const pending = controller.decide(context());
+  await new Promise((done) => setImmediate(done));
+  assert.ok(signal);
+  await controller.cancel('run-1');
+  assert.equal((await pending).status, 'cancelled');
+  assert.equal(signal.aborted, true);
+  assert.equal(cancelled, 1);
+  resolve(JSON.stringify({ type: 'send', message: 'Late send must not land.', intent: 'continue' }));
+  assert.equal((await pending).status, 'cancelled');
+});
+
 test("failed, timeout, and privacy-blocked requests never manufacture a Controller decision", async () => {
   const invalid = new ControllerAgent({
     host: new PiAgentHost(
@@ -562,13 +590,16 @@ test("Agent Host classifies provider failures without treating unknown errors as
   const auth = await invoke(new Error("401 unauthorized"));
   const network = await invoke(new Error("ECONNRESET while fetching model"));
   const unknown = await invoke(new Error("provider stopped unexpectedly"));
+  const http2 = await invoke(new Error("Upstream HTTP/2 stream failed"));
   assert.equal(auth.status, "failed");
   assert.equal(network.status, "failed");
   assert.equal(unknown.status, "failed");
-  if (auth.status === "failed" && network.status === "failed" && unknown.status === "failed") {
+  assert.equal(http2.status, "failed");
+  if (auth.status === "failed" && network.status === "failed" && unknown.status === "failed" && http2.status === "failed") {
     assert.equal(auth.failure.kind, "authentication");
     assert.equal(network.failure.kind, "transient_network");
     assert.equal(unknown.failure.kind, "unknown");
+    assert.equal(http2.failure.kind, "transient_network");
   }
 });
 test("Agent Host records tool failures as non-model failures", async () => {
@@ -694,49 +725,6 @@ test("Host executes only registered tools and redacts write contents from audit 
   assert.doesNotMatch(JSON.stringify(events), /secret text/);
 });
 
-test("Recovery rejects recovered output that still has unresolved facts", async () => {
-  const recoveryContext: RecoveryContext = {
-    task: {
-      caseId: "case-1",
-      initialInput: { id: "message-1", role: "user", text: "Recover it." },
-    },
-    session: { transcriptLength: 0, historicalEventCount: 0 },
-    clues: {},
-    resolved: { patches: [], preimages: [], evidenceRefs: [] },
-    playbook: {
-      productId: "test",
-      version: "test/v1",
-      sha256: "a".repeat(64),
-      text: "normal playbook",
-    },
-    staging: { fileCount: 0, totalBytes: 0 },
-    budget: { timeoutMs: 50 },
-    allowModelText: true,
-  };
-  const recovery = new RecoveryAgent({
-    host: new PiAgentHost(
-      caller([
-        JSON.stringify({
-          status: "recovered",
-          reportPath: "recovery.md",
-          unresolved: ["uncertain starting state"],
-          evidenceRefs: [],
-        }),
-      ]),
-    ),
-    timeoutMs: 50,
-    maxRepairAttempts: 0,
-  });
-  const result = await recovery.recover(recoveryContext, []);
-  assert.equal(result.status, "failed");
-  if (result.status === "failed") {
-    assert.equal(result.failure.code, "invalid_output");
-    assert.match(
-      result.failure.message,
-      /schema validation/i,
-    );
-  }
-});
 test("Recovery repair is envelope-only and audits invalid output without model text", async () => {
   const events: AgentAuditEvent[] = [];
   const sessions: Array<{ input: Parameters<PiTextCaller["createSession"]>[0]; appended: string[] }> = [];

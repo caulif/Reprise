@@ -93,13 +93,14 @@ export type GlobalInputContext = {
   readonly viewer: boolean;
   readonly actorsOpen: boolean;
   readonly helpOpen: boolean;
+  readonly startupActive?: boolean;
 };
 
 export type GlobalInputAction = 'cancel' | 'close' | 'close-viewer' | 'close-actors' | 'hide-help' | 'show-help';
 
 export function dispatchGlobalInput(ctx: GlobalInputContext, data: string): { action: GlobalInputAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'ctrl+c')) return { action: ctx.page === 'running' ? 'cancel' : 'close', consume: true };
+  if (matchesKey(input, 'ctrl+c')) return { action: ctx.page === 'running' || ctx.startupActive ? 'cancel' : 'close', consume: true };
   if (ctx.viewer && matchesKey(input, 'escape')) return { action: 'close-viewer', consume: true };
   if (ctx.actorsOpen && matchesKey(input, 'escape')) return { action: 'close-actors', consume: true };
   if (ctx.helpOpen && matchesKey(input, 'escape')) return { action: 'hide-help', consume: true };
@@ -253,7 +254,7 @@ export function dispatchResultKeys(data: string): { action: ResultAction; consum
   if (matchesKey(input, 'o')) return { action: 'open-report', consume: true };
   if (matchesKey(input, 't')) return { action: 'open-trace', consume: true };
   if (matchesKey(input, 'w')) return { action: 'open-replica', consume: true };
-  if (matchesKey(input, 'enter') || matchesKey(input, 'b')) return { action: 'home', consume: true };
+  if (matchesKey(input, 'enter') || matchesKey(input, 'b') || matchesKey(input, 'escape')) return { action: 'home', consume: true };
   return undefined;
 }
 

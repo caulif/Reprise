@@ -1,5 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { Value } from "@sinclair/typebox/value";
+import { ControllerReadArtifactSchema, ControllerShellArtifactSchema } from "../core/schema.js";
 import type {
   ComparisonAgentPort,
   ComparisonResult,
@@ -16,6 +18,7 @@ import {
   assertBriefingOutsideReplica,
   CONTROLLER_PROJECT_MOUNT,
   controllerBriefingRoot,
+  readControllerPendingActions,
   controllerPromptContent,
   controllerRequestSnapshot,
   applyControllerUnderstandingDelta,
@@ -23,6 +26,7 @@ import {
   writeOpeningBriefing,
   writeSettledTurnBriefing,
 } from "./controller-briefing.js";
+import { controllerReadEvidenceOnRequest, observationReadRecord } from "./controller-request.js";
 import { sha256 } from "../core/identity.js";
 import type {
   CandidateSpec,
@@ -154,6 +158,7 @@ export type ExperimentHandle = {
 };
 type ActiveRun = { cancel(): Promise<unknown> };
 type ExperimentControl = {
+  signal: AbortSignal;
   setActive(run: ActiveRun): void;
   setController(controller: ControllerPort, runId: string): void;
   cancelled(): boolean;
@@ -166,6 +171,7 @@ type ExperimentControl = {
 export function startCodexExperiment(
   input: CodexExperimentInput,
 ): ExperimentHandle {
+  const abort = new AbortController();
   let active: ActiveRun | undefined;
   let activeController: ControllerPort | undefined;
   let activeRunId: string | undefined;
@@ -183,6 +189,7 @@ export function startCodexExperiment(
       })
     : undefined;
   const result = executeExperiment(input, {
+    signal: abort.signal,
     setActive(run) {
       active = run;
     },
@@ -211,6 +218,7 @@ export function startCodexExperiment(
     },
     async cancel(): Promise<void> {
       cancelRequested = true;
+      abort.abort();
       decideComparison?.(false);
       if (activeController && activeRunId)
         await activeController.cancel?.(
@@ -528,6 +536,7 @@ async function finishCodexCandidateRun(args: {
           : {}),
       });
   const finishInput = {
+    signal: control.signal,
     input,
     taskCase,
     preflight,
@@ -652,7 +661,11 @@ async function runControllerLoop(input: {
     operationId: "controller-started",
     payload: { model: input.controllerModel },
   });
-  await prepareControllerUnderstanding(input);
+  const understandingFailure = await prepareControllerUnderstanding(input);
+  if (understandingFailure) {
+    const state = await abortOpening(input, understandingFailure);
+    return finalizeControllerLoop(state, [understandingFailure], 0, false);
+  }
   const opened = await deliverOpening(input, decisions);
   if (opened.finished) return opened.result;
   let state = opened.state;
@@ -675,15 +688,15 @@ async function runControllerLoop(input: {
   }
   return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
 }
-async function prepareControllerUnderstanding(input: LoopInput): Promise<void> {
+async function prepareControllerUnderstanding(input: LoopInput): Promise<StructuredAgentResult<ControllerDecision> | undefined> {
   if (!input.controller.understand) return;
   const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   assertBriefingOutsideReplica(briefingRoot, input.environment.root);
   const packed = await packControllerBriefing(input, "opening", briefingRoot);
   const context = steeringContextFrom(input, "created", 0, "opening", packed);
-  const understanding = await input.controller.understand(context, controllerDecisionTools(input, briefingRoot), experimentAgentAuditSink(input.store, input.runId));
+  const understanding = await input.controller.understand(context, controllerDecisionTools(input, briefingRoot, context.requestId), experimentAgentAuditSink(input.store, input.runId));
   await input.store.append({ type: "controller.understanding", runId: input.runId, operationId: `${context.requestId}-understanding`, payload: invocationFact(understanding) });
-  if (understanding.status !== "completed") throw new Error(understanding.status === "failed" ? `Controller understanding failed: ${understanding.failure.message}` : "Controller understanding was cancelled.");
+  if (understanding.status !== "completed") return understanding;
   await writeControllerUnderstanding(briefingRoot, understanding.value);
 }
 type LoopInput = Parameters<typeof runControllerLoop>[0];
@@ -758,15 +771,25 @@ async function deliverSteering(
     });
   }
   if (decision.value.type === "done") {
-    const reads = input.store.events(input.runId).filter((event) =>
-      event.type === "controller.observation_read" && event.payload && typeof event.payload === "object" &&
-      (event.payload as { requestId?: unknown }).requestId === `controller-request-${input.runId}-${calls}`,
-    ).length;
+    const pending = await readControllerPendingActions(controllerBriefingRoot(input.experimentRoot, input.runId), typeof input.controller.understand === 'function');
+    const requestId = `controller-request-${input.runId}-${calls}`;
+    const events = input.store.events(input.runId);
+    const evidenceRefs = events.filter((event) => controllerReadEvidenceOnRequest([event], input.runId, requestId)).map((event) => `event:${event.eventId}`);
+    const readEvidence = evidenceRefs.length > 0;
+    const lastSubmission = events.filter((event) => event.type === "input.submitted").at(-1)?.sequence ?? 0;
+    const rejects = events.filter((event) => event.sequence > lastSubmission && event.type === "controller.done_rejected");
+    if (decision.value.reason === "satisfied" && pending !== undefined && (pending.length > 0 || !readEvidence)) {
+      const firstReject = rejects[0];
+      const exhausted = rejects.length >= 2 || (firstReject !== undefined && Date.now() - Date.parse(firstReject.occurredAt) >= 180_000);
+      const payload = { requestId, reason: pending.length ? "unresolved_actions" : "evidence_required", unresolvedActions: pending, decision: decision.value, evidenceRefs, correctionAttempts: rejects.length, exhausted };
+      await input.store.append({ type: exhausted ? "controller.completion_diagnostic" : "controller.done_rejected", runId: input.runId, operationId: `controller-completion-${calls}`, payload });
+      return { state: exhausted ? await input.run.stopByHarness("stalled.controller_completion_guard") : state, controllerCalls: calls, followupSubmission: false, stop: exhausted };
+    }
     await input.store.append({
       type: "controller.completion_diagnostic",
       runId: input.runId,
       operationId: `controller-diagnostic-${calls}`,
-      payload: { reads, evidenceStatus: reads > 0 ? "read" : "not_read", advisory: true },
+      payload: { requestId, decision: decision.value, unresolvedActions: pending ?? [], evidenceRefs, correctionAttempts: rejects.length, accepted: true, reads: evidenceRefs.length, evidenceStatus: readEvidence ? "read" : "not_read", advisory: true },
     });
     return {
       state: await input.run.settleController(decision.value.reason),
@@ -777,7 +800,7 @@ async function deliverSteering(
   }
   const next = await input.run.submit(
     { id: `controller-${input.runId}-${calls}`, text: decision.value.message },
-    { runId: input.runId, turnIndex: calls - 1, clientMessageId: `controller-${calls}-${input.runId}` },
+    { runId: input.runId, turnIndex: input.store.events(input.runId).filter((event) => event.type === "input.submitted").length, clientMessageId: `controller-${calls}-${input.runId}` },
   );
   await appendSentUserMessage(controllerBriefingRoot(input.experimentRoot, input.runId), {
     id: `controller-${input.runId}-${calls}`,
@@ -785,6 +808,7 @@ async function deliverSteering(
   });
   return { state: next, controllerCalls: calls, followupSubmission: true, stop: false };
 }
+
 async function persistControllerDecision(
   input: { store: ExperimentStore; runId: string },
   controllerCalls: number,
@@ -832,11 +856,16 @@ async function requestControllerDecision(
   const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   assertBriefingOutsideReplica(briefingRoot, input.environment.root);
   const packed = await packControllerBriefing(input, phase, briefingRoot);
-  const context = steeringContextFrom(input, state, controllerCalls, phase, packed);
+  const base = steeringContextFrom(input, state, controllerCalls, phase, packed);
+  const events = input.store.events(input.runId);
+  const lastSubmission = events.filter((event) => event.type === "input.submitted").at(-1)?.sequence ?? 0;
+  const rejections = events.filter((event) => event.type === "controller.done_rejected" && event.sequence > lastSubmission);
+  const feedback = rejections.at(-1);
+  const context = feedback ? { ...base, budget: { ...base.budget, callTimeoutMs: Math.max(1, 180_000 - (Date.now() - Date.parse(rejections[0]!.occurredAt))) }, promptContent: `${base.promptContent}\n\n# Host completion feedback\n${JSON.stringify(feedback.payload)}\nReconcile the ledger using replace and inspect current results. This is not a new candidate task. Return a corrected decision.` } : base;
   await persistControllerRequested(input, context);
   return input.controller.decide(
     context,
-    controllerDecisionTools(input, briefingRoot),
+    controllerDecisionTools(input, briefingRoot, context.requestId, packed.observation.changedPaths),
     experimentAgentAuditSink(input.store, input.runId),
   );
 }
@@ -965,7 +994,7 @@ async function persistControllerRequested(input: LoopInput, context: SteeringCon
     },
   });
 }
-function controllerDecisionTools(input: LoopInput, briefingRoot: string) {
+function controllerDecisionTools(input: LoopInput, briefingRoot: string, requestId: string, changedPaths: readonly string[] = []) {
   return [
     ...recoveryTools(briefingRoot, {
       allowBinary: input.taskCase.privacy.allowBinary,
@@ -974,7 +1003,29 @@ function controllerDecisionTools(input: LoopInput, briefingRoot: string) {
       allowWrite: () => false,
       shellCwd: input.environment.root,
       denyDestructiveOnPrefix: [CONTROLLER_PROJECT_MOUNT],
-    }),
+    }).map((tool) => tool.name !== "read" && tool.name !== "shell_exec" ? tool : { ...tool, onCompleted: async (result: import("../infrastructure/pi-agent-host.js").AgentToolResult) => {
+      const details = result.details as { path?: string; available?: boolean; offset?: number; command?: string; cwd?: string; exitCode?: number; stdoutBytes?: number; stderrBytes?: number; truncated?: boolean } | undefined;
+      const shell = tool.name === "shell_exec";
+      let observation: unknown;
+      if (shell) {
+        observation = { schemaVersion: 1, command: details?.command, cwd: details?.cwd, exitCode: details?.exitCode, stdoutBytes: details?.stdoutBytes, stderrBytes: details?.stderrBytes, truncated: details?.truncated, content: result.content };
+        if (!Value.Check(ControllerShellArtifactSchema, observation)) throw new Error("Controller shell artifact is malformed.");
+      } else {
+        if (!details?.available || !details.path || !result.content.length) return;
+        const turns = input.store.events(input.runId).filter((event) => event.type === "runtime.turn_settled").length;
+        const latest = `run/turns/${String(turns).padStart(4, "0")}/`;
+        const changed = changedPaths.some((path) => details.path === `${CONTROLLER_PROJECT_MOUNT}/${path.replaceAll("\\", "/")}`);
+        if (!turns || !(changed || (details.path.startsWith(latest) && /\/(visible\.txt|events\.jsonl)$/.test(details.path)))) return;
+        observation = { path: details.path, offset: details.offset ?? 0, content: result.content, ...(result.contentBlocks ? { contentBlocks: result.contentBlocks } : {}) };
+        if (!Value.Check(ControllerReadArtifactSchema, observation)) throw new Error("Controller read artifact is malformed.");
+      }
+      const bytes = Buffer.from(JSON.stringify(observation));
+      const artifactId = `controller-${shell ? "shell" : "read"}-${sha256(bytes).slice(0, 32)}`;
+      await input.store.commitArtifact({ artifactId, runId: input.runId, kind: "controller_observation", mediaType: "application/json", bytes });
+      const evidenceRefs = [`artifact:${artifactId}`];
+      result.details = { ...details, runId: input.runId, evidenceRefs };
+      await input.store.append(observationReadRecord({ requestId, runId: input.runId, details: { runId: input.runId, source: shell ? "workspace_shell" : "workspace_read", evidenceRefs }, allowedRefs: new Set(evidenceRefs) }));
+    } }),
   ];
 }
 

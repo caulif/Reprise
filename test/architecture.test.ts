@@ -78,23 +78,21 @@ async function relativeImports(file: string): Promise<string[]> {
   return [...source.matchAll(IMPORT)].map((match) => match[1] ?? '');
 }
 
-test('internal agents share workspace tools; Controller omits read_observation', async () => {
-  const { recoveryTools, recoveryObservationTools } = await import('../src/infrastructure/recovery-tools.js');
-  const eight = ['edit', 'find', 'grep', 'ls', 'read', 'read_observation', 'shell_exec', 'write'];
+test('internal agents share workspace tools without read_observation', async () => {
+  const { recoveryTools } = await import('../src/infrastructure/recovery-tools.js');
   const seven = ['edit', 'find', 'grep', 'ls', 'read', 'shell_exec', 'write'];
-  const recovery = [
-    ...recoveryObservationTools({ transcript: [], historicalEvents: [] } as never).map((tool) => tool.name),
-    ...recoveryTools('TMP').map((tool) => tool.name),
-  ].sort();
+  const recovery = recoveryTools('TMP').map((tool) => tool.name).sort();
   const controller = recoveryTools('TMP', { allowWrite: () => false, mounts: { project: 'REPLICA' } })
     .map((tool) => tool.name)
     .sort();
-  assert.deepEqual(recovery, eight);
+  assert.deepEqual(recovery, seven);
   assert.deepEqual(controller, seven);
   assert.equal(controller.includes('read_observation'), false);
+  const registered = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
+  assert.doesNotMatch(registered, /name:\s*["']read_observation["']/);
   const experiment = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
   assert.match(experiment, /comparison\.requested/);
-  assert.doesNotMatch(experiment, /write_comparison_report|read_artifact/);
+  assert.doesNotMatch(experiment, /write_comparison_report|read_artifact|observationTools|read_observation/);
   const loop = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
   assert.match(loop, /experimentAgentAuditSink/);
   assert.match(loop, /controllerBriefingRoot/);
@@ -102,8 +100,11 @@ test('internal agents share workspace tools; Controller omits read_observation',
   assert.doesNotMatch(loop, /observationTools/);
   assert.doesNotMatch(loop, /recoveryTools\(\s*input\.environment\.root/);
   const caller = await readFile(join(SRC, 'infrastructure/pi-model-caller.ts'), 'utf8');
-  assert.match(caller, /shouldStopAfterTurn/);
+  assert.match(caller, /transformContext/);
   assert.match(caller, /compactPiMessages/);
+  assert.match(caller, /working set still exceeds/);
+  const runModel = await readFile(join(SRC, 'application/experiment-recovery-run-model.ts'), 'utf8');
+  assert.doesNotMatch(runModel, /recoveryObservationTools/);
 });
 
 

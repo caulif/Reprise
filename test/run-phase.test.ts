@@ -63,6 +63,7 @@ test('upstream runtime failure names the temporary outage on the result page', (
     record: {
       attempt: { runId: 'run-1' },
       outcome: {
+        task: { status: 'indeterminate' },
         termination: {
           kind: 'failed', code: 'failed.runtime',
           failure: {
@@ -76,7 +77,7 @@ test('upstream runtime failure names the temporary outage on the result page', (
       },
     },
     decision: { status: 'failed' },
-    comparison: { result: { status: 'failed' } },
+    comparison: { result: { status: 'skipped' } },
   } as never, 'zh', 'Codex').join('\n');
   assert.match(text, /上游服务暂时不可用/);
   assert.match(text, /HTTP 503/);

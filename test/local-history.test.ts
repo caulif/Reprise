@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile, stat } from 'node:fs/promises';
+import { mkdir, rm, writeFile, stat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtemp } from 'node:fs/promises';
@@ -17,6 +17,17 @@ test('local history reports experiment and total persisted data sizes', async (t
   assert.equal(history.experiments.length, 1);
   assert.ok((history.experiments[0]?.sizeBytes ?? 0) >= 12);
   assert.ok(history.totalBytes >= history.experiments[0]!.sizeBytes);
+  await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'failed', failure: { code: 'agent_failure', message: 'context_length_exceeded', kind: 'protocol', attempts: 1 } }));
+  const failed = (await readLocalHistory(root)).experiments[0]!;
+  assert.equal(failed.comparisonStatus, 'failed');
+  assert.equal(failed.comparisonFailure, 'protocol');
+  assert.equal(failed.reportKind, 'Previous report');
+  assert.equal(failed.reportPath, join(experiment, 'report.html'));
+  await writeFile(join(experiment, 'comparison-failure.html'), 'failure diagnosis');
+  const diagnostic = (await readLocalHistory(root)).experiments[0]!;
+  assert.equal(diagnostic.reportKind, 'Diagnostic');
+  assert.equal(diagnostic.reportPath, join(experiment, 'comparison-failure.html'));
+  assert.equal(await readFile(join(experiment, 'report.html'), 'utf8'), 'report bytes');
 });
 
 test('local history reclaims released baseline copies before reporting size', async (t) => {

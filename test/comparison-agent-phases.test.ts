@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { Type } from "@sinclair/typebox";
 import { ComparisonAgent, type ComparisonContext } from "../src/agents/comparison-agent.js";
 import { PiAgentHost, type AgentAuditEvent, type PiTextCaller } from "../src/infrastructure/pi-agent-host.js";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { startCodexExperiment } from '../src/application/experiment.js';
+import { input, patientPolicy, VerifiedRuntime } from './codex-experiment-support.js';
 
 function context(): ComparisonContext {
   return {
@@ -13,6 +18,42 @@ function context(): ComparisonContext {
     reportFacts: { run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" }, models: { candidate: "fixture" }, activity: {}, limits: { triggered: [] }, runtime: { productId: "codex" }, delivery: { changedPaths: [], targetArtifactStatus: "unavailable", verificationStatus: "unavailable" }, replay: { conditions: [], baselineEvidence: "unavailable", candidateEvidence: "unavailable" } },
   };
 }
+
+test('experiment cancellation interrupts either Comparison phase without changing the candidate outcome', async (t) => {
+  for (const phase of ['plan', 'report']) await t.test(phase, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'reprise-comparison-cancel-'));
+    t.after(async () => rm(root, { recursive: true, force: true }));
+    const base = input(root, new VerifiedRuntime());
+    await mkdir(base.sourceRoot, { recursive: true });
+    await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => { started = resolve; });
+    const phases: string[] = [];
+    let signal: AbortSignal | undefined;
+    const comparison = new ComparisonAgent({ timeoutMs: 0, maxRepairAttempts: 0, host: new PiAgentHost({ createSession: ({ systemPrompt }) => ({
+      append: async (request) => {
+        const current = systemPrompt.includes('Planner phase') ? 'plan' : 'report';
+        phases.push(current);
+        if (current !== phase) return JSON.stringify({ status: 'planned', planPath: 'work/comparison-plan.md' });
+        signal = request.signal;
+        started();
+        return new Promise<string>(() => {});
+      }, cancel() {},
+    }) }) });
+    const handle = startCodexExperiment({ ...base, policy: patientPolicy, comparison, deferComparison: true });
+    const candidate = await handle.candidateFinished;
+    await handle.runComparison();
+    await ready;
+    await handle.cancel();
+    const result = await handle.result;
+    assert.equal(signal?.aborted, true);
+    assert.equal(result.comparison.result.status, 'cancelled');
+    assert.deepEqual(result.record.outcome, candidate.record.outcome);
+    assert.deepEqual(phases, phase === 'plan' ? ['plan'] : ['plan', 'report']);
+    const persisted = JSON.parse(await readFile(join(result.experimentRoot, 'comparison.json'), 'utf8')) as { status: string };
+    assert.equal(persisted.status, 'cancelled');
+  });
+});
 
 test("Comparison Planner and Reporter use isolated sessions and the Reporter may replace the plan", async () => {
   const responses = [
@@ -39,6 +80,44 @@ test("Comparison Planner and Reporter use isolated sessions and the Reporter may
   assert.equal(sessions[1]?.appended.length, 1);
   assert.match(sessions[0]?.input.systemPrompt ?? "", /Planner phase/);
   assert.match(sessions[1]?.input.systemPrompt ?? "", /report a user reads/);
+});
+
+test("Comparison Reporter keeps owned observation refs and drops unknown extras", async () => {
+  const owned = "event:run-owned-1";
+  const keep = new ComparisonAgent({
+    host: new PiAgentHost({
+      createSession: () => ({
+        append: async () => JSON.stringify({
+          status: "completed",
+          reportPath: "report.html",
+          evidenceRefs: [owned, "event:foreign-1"],
+        }),
+        cancel() {},
+      }),
+    }),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const kept = await keep.report({ ...context(), ownedEvidenceRefs: [owned] });
+  assert.equal(kept.status, "completed");
+  if (kept.status === "completed") assert.deepEqual(kept.value.evidenceRefs, [owned]);
+  const reject = new ComparisonAgent({
+    host: new PiAgentHost({
+      createSession: () => ({
+        append: async () => JSON.stringify({
+          status: "completed",
+          reportPath: "report.html",
+          evidenceRefs: ["event:foreign-1"],
+        }),
+        cancel() {},
+      }),
+    }),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const rejected = await reject.report({ ...context(), ownedEvidenceRefs: [owned] });
+  assert.equal(rejected.status, "failed");
+  if (rejected.status === "failed") assert.match(rejected.failure.message, /unknown evidence reference/);
 });
 
 test("Host records Pi model input capabilities without inventing a Reprise capability enum", async () => {

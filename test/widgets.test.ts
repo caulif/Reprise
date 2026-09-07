@@ -759,11 +759,6 @@ test('production layout accepts bracketed paste and completes a unique Home comm
   let frame = renderFrame(tui, term, 30, 120);
   assert.match(frame, /Harness connection/);
 
-  // Pi catalog model selection is a picker. Toggle once to the editable OpenAI-compatible draft.
-  app.handleInput('\r');
-  app.handleInput('\x1b[B');
-  app.handleInput('\x1b[B');
-  app.handleInput('\x1b[B');
   app.handleInput('\r');
   app.handleInput('\x15');
   app.handleInput('\x1b[200~pasted-model\x1b[201~');
@@ -847,7 +842,7 @@ test('history windows long lists around the selection', () => {
 });
 
 test('result page advertises opening its local report and trace', () => {
-  assert.deepEqual(resultHints(), [['o', 'Open report'], ['t', 'Open trace'], ['w', 'Open replica'], ['Enter', 'Home'], ['b', 'Home']]);
+  assert.deepEqual(resultHints(), [['o', 'Open report'], ['t', 'Open trace'], ['w', 'Open replica'], ['Enter', 'Home'], ['Esc', 'Home'], ['b', 'Home']]);
 });
 
 test('failed result shows the recorded failure instead of limitations copy', () => {
@@ -859,6 +854,7 @@ test('failed result shows the recorded failure instead of limitations copy', () 
     record: {
       attempt: { runId: 'run-1' },
       outcome: {
+        task: { status: 'indeterminate' },
         termination: {
           kind: 'failed',
           code: 'failed.controller',
@@ -868,7 +864,7 @@ test('failed result shows the recorded failure instead of limitations copy', () 
       },
     },
     decision: { status: 'failed' },
-    comparison: { result: { status: 'failed' } },
+    comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
   } as never).join('\n');
   assert.match(text, /failed\.controller/);
   assert.match(text, /Controller: Model text is disallowed by TaskCase privacy policy/);
@@ -881,6 +877,7 @@ test('runtime failure identifies the selected product rather than Codex', () => 
     record: {
       attempt: { runId: 'run-1' },
       outcome: {
+        task: { status: 'indeterminate' },
         termination: {
           kind: 'failed', code: 'failed.runtime',
           failure: { origin: 'runtime', code: 'runtime.invalid_json', message: 'invalid JSON', evidenceRefs: [] },
@@ -889,7 +886,7 @@ test('runtime failure identifies the selected product rather than Codex', () => 
       },
     },
     decision: { status: 'failed' },
-    comparison: { result: { status: 'failed' } },
+    comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
   } as never, 'en', 'Claude Code').join('\n');
   assert.match(text, /Claude Code: invalid JSON/);
   assert.match(text, /not a Claude Code runtime crash/);
@@ -904,7 +901,7 @@ test('blocked result is a warning with controller reason and short paths', () =>
     preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
     record: {
       attempt: { runId: 'run-1' },
-      outcome: { termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked', rationale: 'Sandbox denied the WeChat data path.' } },
     comparison: { result: { status: 'completed' } },
@@ -930,7 +927,7 @@ test('limit_reached result explains the turn cap', () => {
     preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
     record: {
       attempt: { runId: 'run-1' },
-      outcome: { termination: { kind: 'limit_reached', code: 'limit.target_turns' }, cleanup: { status: 'complete' } },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'limit_reached', code: 'limit.target_turns' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'send', message: 'Continue.' } },
     comparison: { result: { status: 'completed' } },
@@ -948,7 +945,7 @@ test('compact result keeps Trace on one line', () => {
     preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
     record: {
       attempt: { runId: 'run-6d6a47ae-e824-4f40-b1ad-35565ba8943c' },
-      outcome: { termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
     comparison: { result: { status: 'completed' } },
@@ -970,7 +967,7 @@ test('result metrics name candidate time when comparison made the experiment lon
     preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
     record: {
       attempt: { runId: 'run-1' },
-      outcome: { termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
     comparison: { result: { status: 'completed' } },

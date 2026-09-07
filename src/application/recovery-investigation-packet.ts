@@ -5,7 +5,7 @@ import {
 } from "../infrastructure/recovery-tools.js";
 import type { TaskCase } from "../core/schema.js";
 
-export const INVESTIGATION_PACKET_MAX_PATHS = 256;
+export const INVESTIGATION_PACKET_MAX_PATHS = 48;
 const INVESTIGATION_PACKET_MAX_LATER_TURNS = 8;
 const INVESTIGATION_PACKET_MAX_TURN_CHARS = 400;
 
@@ -26,29 +26,21 @@ export function buildRecoveryInvestigationPacket(
 ): RecoveryInvestigationPacket {
   const laterUserTurns = laterTurns(taskCase);
   const catalogPaths: string[] = [];
-  let pathTruncated = false;
   for (const entry of recoveryEvidenceCatalog(taskCase)) {
     const observation =
       entry.source === "transcript"
         ? taskCase.transcript[entry.index]
         : taskCase.historicalEvents[entry.index];
-    for (const path of relativePathCluesFromValue(observation)) {
-      if (catalogPaths.length >= INVESTIGATION_PACKET_MAX_PATHS) {
-        pathTruncated = true;
-        break;
-      }
-      catalogPaths.push(path);
-    }
-    if (pathTruncated) break;
+    for (const path of relativePathCluesFromValue(observation)) catalogPaths.push(path);
   }
   const relevant =
     Array.isArray(taskCase.taskContext?.relevantPaths)
       ? taskCase.taskContext.relevantPaths.filter((item): item is string => typeof item === "string")
       : [];
-  const candidatePaths = uniqueLimited(
-    [...relevant, ...catalogPaths],
-    INVESTIGATION_PACKET_MAX_PATHS,
-  );
+  const mentioned = `${taskCase.initialInput.text}\n${laterUserTurns.turns.join("\n")}`;
+  const ranked = rankPaths([...relevant, ...catalogPaths], mentioned, relevant);
+  const pathTruncated = ranked.length > INVESTIGATION_PACKET_MAX_PATHS;
+  const candidatePaths = uniqueLimited(ranked, INVESTIGATION_PACKET_MAX_PATHS);
   const preimagePaths = uniqueLimited(
     facts.preimages.map((item) => item.path),
     INVESTIGATION_PACKET_MAX_PATHS,
@@ -93,6 +85,24 @@ function laterTurns(taskCase: TaskCase): { turns: string[]; truncated: boolean }
     turns: rest.slice(0, INVESTIGATION_PACKET_MAX_LATER_TURNS),
     truncated: rest.length > INVESTIGATION_PACKET_MAX_LATER_TURNS,
   };
+}
+
+function rankPaths(paths: readonly string[], mentioned: string, relevant: readonly string[]): string[] {
+  const relevantSet = new Set(relevant);
+  const mentionedLower = mentioned.toLowerCase();
+  return [...new Set(paths.filter((item) => item.length > 0))].sort((left, right) => {
+    const delta = pathScore(right, relevantSet, mentionedLower) - pathScore(left, relevantSet, mentionedLower);
+    return delta !== 0 ? delta : left.localeCompare(right);
+  });
+}
+
+function pathScore(path: string, relevant: ReadonlySet<string>, mentionedLower: string): number {
+  let score = 0;
+  if (relevant.has(path)) score += 100;
+  if (mentionedLower.includes(path.toLowerCase()) || mentionedLower.includes(path.split("/").pop()?.toLowerCase() ?? "\0"))
+    score += 50;
+  if (/\.(html?|md|txt|json|csv|xlsx|pptx?|docx?|ts|tsx|js|py|go|rs|ya?ml)$/i.test(path)) score += 10;
+  return score;
 }
 
 function uniqueLimited(values: readonly string[], max: number): string[] {

@@ -49,17 +49,22 @@
 - [回放起点是用户任务句](./decisions/accepted/2026-08-31-replay-user-task-not-injected-instruction.md)：冻结跳过产品注入的 `AGENTS.md` / 指令块；完整 transcript 仍留给 Controller。
 - [校验通过的恢复 preview 自动接受](./decisions/accepted/2026-08-31-recovery-auto-accept-validated-preview.md)：Host 在 `validateRecovery` 成功后立即 `acceptRecovery`；确认页只确认是否开计费候选。
 - [内部 Agent 模型输入与工具审计](./decisions/accepted/2026-08-31-internal-agent-audit-and-comparison-requested.md)：`comparison.requested`；三角色 `AgentAuditSink`。
+- [Harness 内部模型第三方优先](./decisions/accepted/2026-09-06-harness-internal-model-providers.md)：网关按中转注册；官方 OAuth 只走 Pi catalog。
 - [内部 Agent 对齐 Pi 循环](./decisions/accepted/2026-09-02-internal-agent-pi-alignment.md)：读并行写顺序；Pi compact 试卷；取消工具次数预算与重复输入拦截。
-- [内部 Agent 八工具与写策略](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md)：工作区七件套共用名；Recovery / Comparison 另加 `read_observation`。
+- [内部 Agent 八工具与写策略](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md)：工作区七件套共用名；冻结历史走观察文件，见[工作集](./decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。
 - [Recovery 调查包](./decisions/accepted/2026-08-31-recovery-investigation-packet.md)：进入模型的历史主通道是 Host 有界调查包，不是全文翻页。
-- [Recovery 八工具面](./decisions/accepted/2026-08-31-recovery-pi-aligned-tools.md)：工作区对齐 Pi；Host 只留 `read_observation`。
+- [Recovery 工作集与观察文件](./decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)：进模型只给工作集；冻结历史写成只读 `observations/`；不注册翻页工具。
+- [Recovery 信封 recovered 带 unresolved 收成 partial](./decisions/accepted/2026-09-07-recovery-envelope-recovered-unresolved-to-partial.md)：解析后改 status，不放宽 recovered 的强证据。
+- [recovered 缺路径级强证据时收成 partial](./decisions/accepted/2026-09-07-recovery-recovered-without-strong-evidence-to-partial.md)：fingerprint 有任务路径则预览，不授予 recovered。
+- [Comparison 信封承认挂载的观察 ref](./decisions/accepted/2026-09-07-comparison-owned-observation-refs.md)：INDEX / process-index 的 event ref 可引用；全伪仍拒绝。
+- [Recovery 八工具面](./decisions/accepted/2026-08-31-recovery-pi-aligned-tools.md)：工作区对齐 Pi；冻结历史是 `observations/` 挂载。
 - [Windows PowerShell 回退与 `.` 为根](./decisions/accepted/2026-08-31-recovery-windows-shell-and-dot-paths.md)：`.` 列 staging 根；空变更确认页不伪装成校验细节。
 - [Recovery PowerShell 对齐 Pi 并缩短隔离目录](./decisions/accepted/2026-09-01-recovery-powershell-pi-spawn-and-short-paths.md)：PATH 发现、argv `-Command`、`rs`/`rt`/`rc` 短路径；不灌完整环境。
 - [内部 Agent 运行画布的压缩与分轨](./decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)：按 role 投影；调查合并；Controller 品红与投递分轨；Comparison 绿卡。
 - [恢复后选择候选产品与模型](./decisions/accepted/2026-09-02-candidate-product-and-model-picker.md)：来源 Pack 做恢复；开跑可选别的 Pack 再 `listCatalog`。
 - [Controller 写出每一条用户输入](./decisions/accepted/2026-09-02-controller-owns-every-user-turn.md)：冻结 `initialInput` 只作考卷；开场与后续用户消息都由 Controller `send`。
 - [Controller 按验收习惯停](./decisions/accepted/2026-09-03-controller-stop-on-acceptance-habits.md)：不是种类匹配，也不是按序用完历史用户句。
-- [Controller 七工具](./decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)：不注册 `read_observation`；Recovery / Comparison 仍为八工具。
+- [Controller 七工具](./decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)：不注册 `read_observation`；Recovery / Comparison 工作区工厂同样七名。
 - [Controller 路径 briefing](./decisions/accepted/2026-09-03-controller-path-briefing.md)：INDEX 进 append；briefing 不进副本；`maxCalls` 才截断 Controller。
 - [可见短句、运行分屏与显式对照](./decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)：`agent.assistant_visible`；候选左右分栏；对照默认跳过。
 - [运行页只读观看，页脚只保留有效键](./decisions/accepted/2026-09-04-running-page-watch-only-footer.md)：运行页只留 `Ctrl+C` 与 `?`；页脚不列无效画布操作。
@@ -68,6 +73,7 @@
 - [Comparison 报告形式由 Agent 自定](./decisions/accepted/2026-09-02-comparison-free-report-form.md)：Prompt 不规定版式；TUI 只用可选 `headline`。
 - [恢复终态、确认卡片与短候选目录](./decisions/accepted/2026-09-01-recovery-operator-feedback-and-short-candidates.md)：partial 诊断码、8-hex 候选段、确认卡片与列表光标。
 - [候选 Runtime 失败分类与恢复门禁解耦](./decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)：settlement 保留脱敏失败类别；恢复 candidate 不被 source blockedReasons 再拦；不对 503 自动重试。
+- [Windows `.cmd` shim 的 Runtime 启动方式](./decisions/accepted/2026-09-06-windows-cmd-shim-spawn.md)：ComSpec `/d /s /c` 加外层引号与 `windowsVerbatimArguments`；禁止 `shell: true`。
 - [列表展示、冻结与 Recovery Agent 分界](./decisions/accepted/2026-08-27-session-intake-vs-recovery-agent.md)：列表只截断展示；冻结由 Case Preparation 完成；Recovery Agent 只做环境恢复。
 - [会话正文流式读取](./decisions/accepted/2026-08-27-stream-session-transcript-io.md)：catalog 只读固定头；inspect/import 逐行 JSONL；cwd 单向最长根。
 - [TUI 帧基线只在 Windows 比对](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)：帧是平台相关产物，不在 Ubuntu 上逐字节比对。
@@ -82,6 +88,9 @@
 
 `plan/` 只保留尚未做完的工作；做完或被取代后按迁移规则移出。
 
+- [Reprise 架构重构规划](./plan/reprise-architecture-redesign.md)（[交互图](./research/reprise-architecture-redesign.html)）：Session、harness、workflow 的目标职责，本机会话历史与三平台运行；设计已确认，实施按规划验收。
+
+- [Harness 内部模型：第三方优先，官方登录可选](./plan/harness-internal-model-providers.md)：按 Pi `models.json` / CC Switch 中转习惯注册网关；官方 OAuth 只走 Pi catalog，不读 Codex CLI 凭据。
 - [当前实现差距与修正计划](./plan/current-implementation-gap-and-correction-plan.md)：canonical 设计与代码的逐项偏差及迁移路线。
 - [Codex 真实会话恢复失败修正](./plan/codex-real-session-recovery-correction.md)：恢复页冒充候选、失败被显示为部分恢复、二次模型错误丢弃已完成 partial 的分批修正。
 - [2026-08-31 走查后的恢复修复](./plan/codex-recovery-20260831-fix.md)：Host 调查包为主、工具面对齐 Pi 八件套、fingerprint 为变更源、核对页与时间线。
@@ -108,9 +117,13 @@
 
 ## 设计依据
 
+- [文档信息架构优化建议](./research/documentation-information-architecture-optimization.md)：针对规范、决策、计划、研究、进度和证据的生命周期与导航改进建议。
+
 - [架构研究基础](./research/architecture-foundations.md)与[Controller 研究基础](./research/controller-foundations.md)：解释为什么这样设计，可以提出备选方案，但不覆盖 `architecture/`。
+- [Reprise 架构导读](./research/reprise-architecture-walkthrough.md)（[HTML 图版](./research/reprise-architecture-walkthrough.html)）：用对照实验把关键设计、实现落点和结构张力讲清楚；非规范。
 - [Controller / Comparison 工具面与 Host 调查包](./research/controller-comparison-host-packet-and-tools.md)：审查时的工具面提案；当前规范以 [八工具](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md) 与 [Controller 七工具](./decisions/accepted/2026-09-03-controller-seven-workspace-tools.md) 为准。
 - [三个内部 Agent 的模块设计审查](./research/three-agents-design-review.md)：三角色共用八工具与轮间压缩；角色差异只在 cwd、写策略和会话形态。
+- [Agent 架构设想](./research/reprise-agent-architecture.md)（[HTML](./research/reprise-agent-architecture.html)）：从第一性原理重画三个内部 Agent 的模块、合同与代码中的 workflow 切分；非规范。
 
 ## 不在版本控制内的材料
 
@@ -127,4 +140,3 @@
 - 各层 `AGENTS.md` 只索引规范并给出指令，不定义规范。
 
 如果专题设计与架构总览冲突，以架构总览为准；如果架构设计偏离产品目标，应先修改产品定义或写一份决策记录，而不是让两份文档长期矛盾。
-

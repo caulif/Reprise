@@ -10,15 +10,15 @@
 ## 决定
 
 - Controller 只注册：`read`、`ls`、`grep`、`find`、`edit`、`write`、`powershell`。不注册 `read_observation`，不保留同名空壳。
-- Recovery 与 Comparison 仍为八工具，含 `read_observation`。
+- Recovery 与 Comparison 的工作区工厂同样是这七个名字。冻结历史走观察文件，见 [工作集与观察文件](./2026-09-07-recovery-working-set-and-observation-files.md)。
 - 历史会话与本 run 回合原文只存在 briefing 目录；Controller 用工作区读工具读取。`edit` / `write` 仍注册，`allowWrite` 恒 false。
-- 架构测试：Controller 工具名集合等于上述七个；Recovery 仍等于八个。
+- 架构测试：三角色工作区工具名集合等于上述七个。
 
 ## 备选方案
 
 **三角色仍八个名字，Controller 的 `read_observation` 返回「改用 read」。** 模型可继续调用无效入口。
 
-**三角色都去掉 `read_observation`。** Recovery 调查包与 Comparison 仍依赖分页观察。
+**三角色都去掉 `read_observation` 且不物化观察文件。** 工作区看不到冻结会话；该方案已由观察文件取代。
 
 ## 影响
 
@@ -26,5 +26,5 @@
 
 ## 验证
 
-- `test/architecture.test.ts`：Controller 装配不含 `read_observation`。
+- `test/architecture.test.ts`：三角色工作区装配不含 `read_observation`。
 - Controller system prompt 写明没有 `read_observation`。

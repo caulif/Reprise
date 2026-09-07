@@ -152,6 +152,6 @@ Runtime 的 CLI 兼容性不建立独立的运行前验证产品。Claude Code�
 
 ## 13. 凭据
 
-模型服务 API 密钥可作为 `apiKey` 持久化在本机、Git 忽略的 `.reprise/harness-model.json` 中，或继续使用 `env:NAME` 引用；其角色等同于 Codex `auth.json` / Claude Code `.credentials.json` 的本地凭据。密钥值不得提交、打印、写入事件、artifact 或报告。Codex 凭据仍由用户本机登录态提供，Reprise 不读也不保存。
+模型服务 API 密钥可作为 `apiKey` 持久化在本机、Git 忽略的 `.reprise/harness-model.json` 中，或继续使用 `env:NAME` 引用。官方 Pi catalog 登录只存在 `~/.pi/agent/auth.json`。密钥值不得提交、打印、写入事件、artifact 或报告。候选 Runtime 的 Codex / Claude 凭据仍由用户本机登录态提供，Reprise 不读也不保存。
 
 系统架构、公共协议和生命周期以[架构总览](../architecture/overview.md)为唯一来源。

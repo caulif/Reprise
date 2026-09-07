@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { CodexExperimentResult } from '../../application/experiment.js';
 import { compact } from '../format.js';
-import { t, type Locale } from '../i18n.js';
+import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
 import { kv, kvLinkBlock, panel, wrapBodyLine } from '../widgets.js';
 
@@ -10,6 +10,8 @@ export function renderResult(theme: Theme, width: number, result: CodexExperimen
   const kind = result.record.outcome.termination.kind;
   const vacant = theme.framed ? '—' : '-';
   const skipped = result.comparison.result.status === 'skipped';
+  const comparison = result.comparison.result;
+  const failed = comparison.status === 'failed';
   const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
   const report = shortPath(result.reportPath, experimentRoot, vacant);
   const runId = result.record.attempt?.runId;
@@ -23,11 +25,13 @@ export function renderResult(theme: Theme, width: number, result: CodexExperimen
   return panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, [
     terminationBanner(theme, kind),
     `     ${result.record.outcome.termination.code}`,
+    kv(theme, 'Task', result.record.outcome.task.status, width - 2),
+    ...(!skipped ? [kv(theme, 'Comparison', failed ? `${locale === 'zh' ? '比较报告生成失败' : 'Report generation failed'} (${comparison.failure.kind ?? comparison.failure.code})` : comparison.status, width - 2)] : []),
     ...(metrics ? [`     ${metrics}`] : []),
     ...(headline ? ['', ...wrapBodyLine(headline, inner).map((line) => ` ${line}`)] : []),
     ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
     ...(skipped ? ['', kv(theme, 'Comparison', t(locale, 'comparisonSkipped'), width - 2)] : []),
-    ...(skipped ? [] : kvLinkBlock(theme, 'Report', report, result.reportPath, width)),
+    ...(skipped ? [] : kvLinkBlock(theme, failed ? 'Diagnostic' : 'Report', report, result.reportPath, width)),
     ...kvLinkBlock(theme, 'Replica', replicaLabel(runId, theme, width, vacant), replicaAbs, width),
     ...kvLinkBlock(theme, 'Trace', trace, traceAbs, width),
   ], width);
@@ -38,6 +42,7 @@ export function resultHints(locale: Locale = 'en', comparisonSkipped = false): r
     ['t', t(locale, 'hintTrace')],
     ['w', t(locale, 'hintReplica')],
     ['Enter', t(locale, 'hintHome')],
+    ['Esc', t(locale, 'hintHome')],
     ['b', t(locale, 'hintHome')],
   ];
   return comparisonSkipped ? rest : [['o', t(locale, 'hintReport')], ...rest];
@@ -92,6 +97,9 @@ function metricsLine(theme: Theme, result: CodexExperimentResult, locale: Locale
 function explainOutcome(result: CodexExperimentResult, width: number, product: string, locale: Locale): readonly string[] | undefined {
   const failure = result.record.outcome.termination.failure;
   if (failure?.message) {
+    if (failure.origin === 'controller' && result.decision.status === 'failed' && result.decision.failure?.kind) {
+      return wrapBodyLine(formatHarnessFailure(locale, result.record.outcome.task.status === 'not_assessed' ? 'opening' : 'controller', result.decision.failure.kind), width);
+    }
     const origin = failure.origin === 'controller' ? 'Controller' : failure.origin === 'runtime' ? product : failure.origin;
     const lines = failure.code === 'failed.runtime.upstream_unavailable'
       ? [t(locale, 'upstreamUnavailable'), `${origin}: ${failure.message}`]

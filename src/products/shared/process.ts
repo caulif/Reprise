@@ -1,6 +1,6 @@
 import { access, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process';
 import { extname, isAbsolute, join, resolve } from 'node:path';
 
 const SECRET_PATTERNS: readonly RegExp[] = [
@@ -25,6 +25,49 @@ export async function settlesWithin(promise: Promise<void>, milliseconds: number
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+export type WindowsProcessInvocation = {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly windowsVerbatimArguments?: true;
+};
+
+function quoteWindowsCommandToken(value: string): string {
+  if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) return value;
+  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
+}
+
+/** Windows `.cmd`/`.bat` must use ComSpec `/d /s /c` with a wrapping quote pair and verbatim arguments. */
+export function windowsProcessInvocation(
+  executable: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+  comSpec: string = process.env.ComSpec ?? 'cmd.exe',
+): WindowsProcessInvocation {
+  if (platform !== 'win32' || !/\.(?:cmd|bat)$/i.test(executable)) {
+    return { command: executable, args: [...args] };
+  }
+  const commandLine = [executable, ...args].map(quoteWindowsCommandToken).join(' ');
+  return {
+    command: comSpec,
+    args: ['/d', '/s', '/c', `"${commandLine}"`],
+    windowsVerbatimArguments: true,
+  };
+}
+
+export function spawnRuntimeProcess(
+  executable: string,
+  args: readonly string[],
+  options: SpawnOptions & { platform?: NodeJS.Platform } = {},
+): ChildProcessWithoutNullStreams {
+  const { platform, ...spawnOptions } = options;
+  const invocation = windowsProcessInvocation(executable, args, platform ?? process.platform);
+  return spawn(invocation.command, [...invocation.args], {
+    ...spawnOptions,
+    shell: false,
+    ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+  }) as ChildProcessWithoutNullStreams;
 }
 
 export async function forceKill(child: ChildProcessWithoutNullStreams): Promise<void> {
@@ -97,3 +140,6 @@ async function isFile(path: string, platform: NodeJS.Platform): Promise<boolean>
     return false;
   }
 }
+export const DEFAULT_RUNTIME_RPC_TIMEOUT_MS = 120_000;
+export const RUNTIME_PROCESS_STOP_GRACE_MS = 5_000;
+export const RUNTIME_PROCESS_CLOSE_TIMEOUT_MS = 5_000;

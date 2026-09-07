@@ -108,6 +108,7 @@ export async function failRecoverCodexExperiment(input: FailRecoverCodexExperime
   );
   return {
     baseline: settled.baseline,
+    ...(settled.cleanupFailure ? { cleanupFailed: true, ...(input.staging ? { staging: input.staging } : {}) } : {}),
     recovery: failed,
     experimentRoot: input.experimentRoot,
     experimentId: input.attemptInput.experimentId,
@@ -207,7 +208,7 @@ async function settleFailedRecovery(input: FailRecoverCodexExperimentInput) {
       accepted: false,
     },
   };
-  return { failureStage, providerFailureRetryable, taskOutcome, failureMessage, baseline };
+  return { failureStage, providerFailureRetryable, taskOutcome, failureMessage, baseline, cleanupFailure };
 }
 
 type PersistFailedRecoveryArtifactsInput = {

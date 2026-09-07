@@ -6,6 +6,7 @@
 
 ### Changed
 
+- Harness 内部模型默认按第三方网关注册（`reasoning` 缺省关闭）；官方订阅改走 Pi catalog 与 `pi /login`。
 - 运行页页脚只保留取消与按键说明，去掉不能可靠操作的画布快捷键和伪输入行。结果页不再列出查找。
 - 候选隔离副本在 run 结束后保留在 `environment/runs/{runId}`，`release` 只结束活动句柄，不删除该目录。结果页列出该路径并用 `w` 打开；Comparison 的 `candidate/` 读这棵活副本。
 - 内部 Agent 同批读可并行、写顺序执行；上下文用 Pi compact（summary + tail）而不是 digest 占位；不再用工具调用次数或相同输入拦截截断。

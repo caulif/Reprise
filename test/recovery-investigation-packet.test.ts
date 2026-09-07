@@ -42,6 +42,7 @@ test("investigation packet includes task paths and later user turns without the 
   });
   assert.equal(packet.truncated, false);
   assert.ok(packet.candidatePaths.includes("foo.html"));
+  assert.equal(packet.candidatePaths[0], "foo.html");
   assert.ok(packet.laterUserTurns.some((turn) => turn.includes("slides.pptx")));
   assert.deepEqual(packet.preimagePaths, ["notes.md"]);
   assert.deepEqual(packet.patchPaths, ["patch.diff"]);

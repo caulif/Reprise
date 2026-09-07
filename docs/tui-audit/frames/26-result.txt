@@ -3,8 +3,6 @@ Reprise   Run result                                                            
  ● To Codex   ● Codex screen   ● Controller                                                                             
  Task  Fix the bug.                                                                                                     
                                                                                                                         
-▎ Controller                                                                                                            
-▎ ▸ 第 1 轮 · SEND ·                                                                                                    
 ▎ Decision: SEND One check remains.                                                                                     
                                                                                                                         
 ▎ To Codex · historical task                                                                                            
@@ -23,10 +21,12 @@ Reprise   Run result                                                            
 ┌─ Run result ─ completed ─────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ✓ completed                                                                                                          │
 │     completed.controller_satisfied                                                                                   │
+│ Task         apparently_completed                                                                                    │
+│ Comparison   completed                                                                                               │
 │ Report       ]8;;file:///TMP/data/experiments/fixture/report.html\report.html]8;;\                                                                                             │
 │ Replica      ]8;;file:///TMP/data/experiments/fixture/environment/runs/run-1\environment/runs/run-1/]8;;\                                                                                 │
 │ Trace        ]8;;file:///TMP/data/experiments/fixture/runs/run-1\runs/run-1/]8;;\                                                                                             │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Experiment finished. Press o to open the report.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [o] Open report  [t] Open trace  [w] Open replica  [Enter] Home  [b] Home
+ [o] Open report  [t] Open trace  [w] Open replica  [Enter] Home  [Esc] Home  [b] Home

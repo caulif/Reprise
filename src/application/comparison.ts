@@ -12,8 +12,8 @@ import {
   type ComparisonReportFacts,
   type ComparisonResult,
 } from '../agents/comparison-agent.js';
-import type { AgentToolDefinition, StructuredAgentResult } from '../infrastructure/pi-agent-host.js';
-import type { AgentAuditSink } from '../infrastructure/pi-agent-host.js';
+import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/pi-agent-host.js';
+import { recoveryEvidenceCatalog } from '../infrastructure/recovery-tools.js';
 
 export type RunInspection = {
   runId: string;
@@ -132,6 +132,21 @@ function runEvidence(run: RunRecord): string[] {
     ...run.warnings.flatMap((warning) => warning.evidenceRefs),
     ...run.artifactRefs.map((ref) => `artifact:${ref.artifactId}`),
   ]);
+}
+
+export function comparisonOwnedObservationRefs(
+  taskCase: TaskCase,
+  events: readonly { eventId: string }[] = [],
+): string[] {
+  return unique([
+    ...recoveryEvidenceCatalog(taskCase).map((entry) => entry.ref),
+    ...events.map((event) => `event:${event.eventId}`),
+  ]);
+}
+
+export function briefingComparisonContext(context: ComparisonContext): ComparisonContext {
+  const { ownedEvidenceRefs, ...briefing } = context;
+  return briefing;
 }
 
 function unique(values: readonly string[]): string[] {

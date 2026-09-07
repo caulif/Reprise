@@ -174,6 +174,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(input.recoveryAttempt.baseline.recovery.failureStage
         ? { failureSummary: formatRecoveryFailureSummary(input.locale ?? 'en', input.recoveryAttempt.baseline.recovery.failureStage, {
             changedPathCount: input.recoveryAttempt.providerPreview?.changedPaths.length ?? 0,
+            ...(input.recoveryAttempt.recovery?.status === 'failed' && input.recoveryAttempt.recovery.failure.kind ? { agentFailureKind: input.recoveryAttempt.recovery.failure.kind } : {}),
           }) }
       : {}),
   } : undefined;

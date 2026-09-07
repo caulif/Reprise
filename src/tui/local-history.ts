@@ -3,10 +3,10 @@ import { constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
 import { isRecord } from '../core/json.js';
-import { ExperimentSpecSchema, RunRecordSchema, TaskCaseSchema, type RunRecord, type TaskCase } from '../core/schema.js';
+import { ComparisonInvocationSchema, ExperimentSpecSchema, RunRecordSchema, TaskCaseSchema, type RunRecord, type TaskCase } from '../core/schema.js';
 
 export type HistoryCase = { readonly taskCase: TaskCase; readonly path: string };
-export type HistoryExperiment = { readonly experimentId: string; readonly taskCaseId: string; readonly runId?: string; readonly outcome?: string; readonly startedAt?: string; readonly reportPath?: string; readonly path: string; readonly sizeBytes: number };
+export type HistoryExperiment = { readonly experimentId: string; readonly taskCaseId: string; readonly runId?: string; readonly outcome?: string; readonly taskStatus?: string; readonly comparisonStatus?: string; readonly comparisonFailure?: string; readonly reportKind?: 'Report' | 'Diagnostic' | 'Previous report'; readonly startedAt?: string; readonly reportPath?: string; readonly path: string; readonly sizeBytes: number };
 
 /** Lists only schema-validated local objects beneath Reprise's configured data directory. */
 export async function readLocalHistory(dataDir: string): Promise<{ readonly cases: readonly HistoryCase[]; readonly experiments: readonly HistoryExperiment[]; readonly totalBytes: number }> {
@@ -41,14 +41,20 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
   const runId = metadata.runIds[0];
   const record = runId ? await readRunRecord(join(path, 'runs', runId, 'record.json')) : undefined;
   const unread = Boolean(runId && !record && await readJson(join(path, 'runs', runId, 'record.json')));
-  const reportPath = await exists(join(path, 'report.html')) ? join(path, 'report.html') : await exists(join(path, 'comparison-failure.html')) ? join(path, 'comparison-failure.html') : undefined;
+  const comparisonValue = await readJson(join(path, 'comparison.json'));
+  const comparison = Value.Check(ComparisonInvocationSchema, comparisonValue) ? comparisonValue : undefined;
+  const diagnostic = await exists(join(path, 'comparison-failure.html')) ? join(path, 'comparison-failure.html') : undefined;
+  const success = await exists(join(path, 'report.html')) ? join(path, 'report.html') : undefined;
+  const reportPath = comparison?.status === 'failed' ? diagnostic ?? success : success ?? diagnostic;
+  const reportKind = reportPath === diagnostic && diagnostic ? 'Diagnostic' : comparison?.status === 'failed' ? 'Previous report' : 'Report';
   return {
     experimentId, taskCaseId: metadata.spec.taskCaseId,
     ...(runId ? { runId } : {}),
     ...(record
-      ? { outcome: record.outcome.termination.kind, startedAt: record.attempt.createdAt }
+      ? { outcome: record.outcome.termination.kind, taskStatus: record.outcome.task.status, startedAt: record.attempt.createdAt }
       : unread ? { outcome: 'record unread' } : {}),
-    ...(reportPath ? { reportPath } : {}),
+    ...(reportPath ? { reportPath, reportKind } : {}),
+    ...(comparison ? { comparisonStatus: comparison.status, ...(comparison.status === 'failed' ? { comparisonFailure: comparison.failure.kind ?? comparison.failure.code } : {}) } : {}),
     path,
     sizeBytes: await directorySize(path),
   };

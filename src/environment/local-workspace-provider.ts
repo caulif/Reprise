@@ -24,6 +24,7 @@ import {
   isRecoveryEnvelope as isRecoveryEnvelope,
   hostManifestFromFingerprint as hostManifestFromFingerprint,
   validateManifest as validateManifest,
+  envelopeForObservedChanges as envelopeForObservedChanges,
   candidateChangedPaths as candidateChangedPaths,
   changedPaths as changedPaths,
   readRecoveryReport,
@@ -524,13 +525,15 @@ export class LocalWorkspaceProvider {
       if (captured.budget.blockedReasons.length) throw new Error(captured.budget.blockedReasons.join(' '));
       const changed = changedPaths(staging.sourceFingerprint, captured.fingerprint);
       const ownedRefs = ownedRecoveryRefs(result.evidenceRefs, evidence);
-      const manifest = result.status === 'insufficient_evidence'
+      const taskChanged = changed.filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json');
+      const effective = await envelopeForObservedChanges({ ...result, evidenceRefs: ownedRefs }, taskChanged, evidence, captured.fingerprint, staging.root);
+      const manifest = effective.status === 'insufficient_evidence'
         ? undefined
-        : hostManifestFromFingerprint(changed.filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json'), staging.sourceFingerprint, captured.fingerprint, ownedRefs);
-      const extraNotes = manifest ? await validateManifest(manifest, changed.filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json'), { ...result, evidenceRefs: ownedRefs }, evidence, staging.sourceFingerprint, captured.fingerprint, staging.root) : [];
-      const unresolved = [...result.unresolved, ...extraNotes];
+        : hostManifestFromFingerprint(taskChanged, staging.sourceFingerprint, captured.fingerprint, ownedRefs);
+      const extraNotes = manifest ? await validateManifest(manifest, taskChanged, { ...effective, evidenceRefs: ownedRefs }, evidence, staging.sourceFingerprint, captured.fingerprint, staging.root) : [];
+      const unresolved = [...effective.unresolved, ...extraNotes];
       const recovery: NonNullable<EnvironmentBaseline['recovery']> = {
-        status: result.status,
+        status: effective.status,
         ...(reportText ? { reportRef: 'recovery-md' } : {}),
         unresolved,
         sourceDigest: staging.sourceFingerprint.digest,
@@ -538,13 +541,13 @@ export class LocalWorkspaceProvider {
         sourceTripwire: { before: staging.sourceTripwireBefore.digest, after: sourceTripwireAfter.digest },
         ...(staging.playbook ? { playbook: staging.playbook } : {}),
       };
-      const match = result.status === 'recovered' ? 'recovered' : result.status === 'partial' ? 'recovered_partial' : 'current_state_fallback';
+      const match = effective.status === 'recovered' ? 'recovered' : effective.status === 'partial' ? 'recovered_partial' : 'current_state_fallback';
       const baseline: EnvironmentBaseline = {
         baselineId: `baseline-${staging.caseId}`, caseId: staging.caseId, mode: 'canonical', match, resources: [],
         readiness: { runnable: 'isolated', strictness: 'strict', blockingResourceIds: [] }, fingerprint: captured.fingerprint, budget: captured.budget,
         capabilities: { canFork: true, fingerprints: ['file_tree'], externalSideEffects: 'none' },
         warnings: [
-          ...(result.status === 'insufficient_evidence' ? ['Recovery had insufficient evidence; replay will use the current source state.'] : []),
+          ...(effective.status === 'insufficient_evidence' ? ['Recovery had insufficient evidence; replay will use the current source state.'] : []),
           ...extraNotes,
         ],
         recovery, createdAt: new Date().toISOString(), root: staging.root,
@@ -578,8 +581,9 @@ export class LocalWorkspaceProvider {
     const changed = candidateChangedPaths(staging.sourceFingerprint, captured.fingerprint);
     if (result.status === 'insufficient_evidence' && changed.length) throw new Error('insufficient_evidence must leave the staging workspace unchanged.');
     if (result.status !== 'insufficient_evidence') {
+      const effective = await envelopeForObservedChanges({ ...result, evidenceRefs: ownedRefs }, changed, evidence, captured.fingerprint, root);
       const manifest = hostManifestFromFingerprint(changed, staging.sourceFingerprint, captured.fingerprint, ownedRefs);
-      await validateManifest(manifest, changed, { ...result, evidenceRefs: ownedRefs }, evidence, staging.sourceFingerprint, captured.fingerprint, root);
+      await validateManifest(manifest, changed, effective, evidence, staging.sourceFingerprint, captured.fingerprint, root);
     }
   }
 

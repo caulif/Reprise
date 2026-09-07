@@ -7,6 +7,13 @@ import { writeAtomic } from '../core/identity.js';
 const FILE_NAME = 'harness-model.json';
 const EFFORTS = new Set<ThinkingLevel>(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const KEY_REF = /^(?:env:([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\})$/;
+const OPENAI_APIS = new Set(['openai-completions', 'openai-responses'] as const);
+
+export type OpenAiCompatApi = 'openai-completions' | 'openai-responses';
+export type HarnessCompat = {
+  readonly supportsDeveloperRole?: boolean;
+  readonly supportsReasoningEffort?: boolean;
+};
 
 export type HarnessProvider = {
   readonly kind: 'pi-catalog' | 'openai-compatible';
@@ -31,6 +38,9 @@ type V2Config = {
   /** When set, overrides the catalog/custom model context window used for Pi compaction. */
   readonly contextWindow?: number;
   readonly maxTokens?: number;
+  readonly api?: OpenAiCompatApi;
+  readonly reasoning?: boolean;
+  readonly compat?: HarnessCompat;
 };
 
 type V1Config = {
@@ -63,6 +73,19 @@ export function defaultHarnessModelConfig(): HarnessModelConfig {
   return { schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'openai-codex' }, providerId: 'openai-codex', modelId: 'gpt-5.6-terra', effort: 'medium' };
 }
 
+export function emptyHarnessConfigDraft(): HarnessConfigDraft {
+  return {
+    kind: 'openai-compatible',
+    providerId: 'openai-compatible',
+    modelId: '',
+    effort: 'medium',
+    baseUrl: '',
+    keyRef: '',
+    api: 'openai-completions',
+    reasoning: false,
+  };
+}
+
 export function configPath(dataDir: string): string { return join(dataDir, FILE_NAME); }
 
 /** Validates an env key reference and returns only its environment-variable name. */
@@ -86,8 +109,7 @@ function validateConfig(value: unknown): V2Config {
 
 function normalizeV1(value: V1Config): V2Config {
   if (!safeId(value.providerId) || !safeId(value.modelId) || !isEffort(value.effort)) throw new Error('expected providerId, modelId, and supported effort');
-  const baseUrl = optionalBaseUrl(value.baseUrl);
-  return normalizeV2({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: value.providerId }, modelId: value.modelId, effort: value.effort, ...(baseUrl === undefined ? {} : { baseUrl }) });
+  return normalizeV2({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: value.providerId }, modelId: value.modelId, effort: value.effort });
 }
 
 function normalizeV2(value: Record<string, unknown>): V2Config {
@@ -95,24 +117,39 @@ function normalizeV2(value: Record<string, unknown>): V2Config {
   if (!isRecord(provider) || (provider.kind !== 'pi-catalog' && provider.kind !== 'openai-compatible') || !safeId(provider.id) || !safeId(value.modelId) || !isEffort(value.effort)) {
     throw new Error('expected provider kind/id, modelId, and supported effort');
   }
+  if (provider.kind === 'pi-catalog') {
+    return {
+      schemaVersion: 2,
+      provider: { kind: 'pi-catalog', id: provider.id },
+      providerId: provider.id,
+      modelId: value.modelId,
+      effort: value.effort,
+    };
+  }
   const baseUrl = optionalBaseUrl(value.baseUrl);
   const credential = readCredential(value.apiKey ?? value.keyRef);
-  if (provider.kind === 'openai-compatible' && (baseUrl === undefined || (!credential.apiKey && !credential.keyRef))) {
+  if (baseUrl === undefined || (!credential.apiKey && !credential.keyRef)) {
     throw new Error('openai-compatible providers require baseUrl and apiKey');
   }
   const contextWindow = optionalPositiveInt(value.contextWindow, 'contextWindow');
   const maxTokens = optionalPositiveInt(value.maxTokens, 'maxTokens');
+  const api = optionalApi(value.api);
+  const reasoning = optionalBoolean(value.reasoning, 'reasoning');
+  const compat = optionalCompat(value.compat);
   return {
     schemaVersion: 2,
-    provider: { kind: provider.kind, id: provider.id },
+    provider: { kind: 'openai-compatible', id: provider.id },
     providerId: provider.id,
     modelId: value.modelId,
     effort: value.effort,
-    ...(baseUrl === undefined ? {} : { baseUrl }),
+    baseUrl,
     ...(credential.keyRef ? { keyRef: credential.keyRef } : {}),
     ...(credential.apiKey ? { apiKey: credential.apiKey } : {}),
     ...(contextWindow === undefined ? {} : { contextWindow }),
     ...(maxTokens === undefined ? {} : { maxTokens }),
+    ...(api === undefined ? {} : { api }),
+    ...(reasoning === undefined ? {} : { reasoning }),
+    ...(compat === undefined ? {} : { compat }),
   };
 }
 
@@ -144,6 +181,30 @@ function optionalPositiveInt(value: unknown, label: string): number | undefined 
   return value;
 }
 
+function optionalApi(value: unknown): OpenAiCompatApi | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && OPENAI_APIS.has(value as OpenAiCompatApi)) return value as OpenAiCompatApi;
+  throw new Error('expected api to be openai-completions or openai-responses');
+}
+
+function optionalBoolean(value: unknown, label: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'boolean') return value;
+  throw new Error(`expected ${label} to be a boolean`);
+}
+
+function optionalCompat(value: unknown): HarnessCompat | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error('expected compat to be an object');
+  const supportsDeveloperRole = optionalBoolean(value.supportsDeveloperRole, 'compat.supportsDeveloperRole');
+  const supportsReasoningEffort = optionalBoolean(value.supportsReasoningEffort, 'compat.supportsReasoningEffort');
+  if (supportsDeveloperRole === undefined && supportsReasoningEffort === undefined) return undefined;
+  return {
+    ...(supportsDeveloperRole === undefined ? {} : { supportsDeveloperRole }),
+    ...(supportsReasoningEffort === undefined ? {} : { supportsReasoningEffort }),
+  };
+}
+
 export type HarnessConfigDraft = {
   kind: 'pi-catalog' | 'openai-compatible';
   providerId: string;
@@ -151,12 +212,24 @@ export type HarnessConfigDraft = {
   effort: ThinkingLevel;
   baseUrl: string;
   keyRef: string;
+  api: OpenAiCompatApi;
+  reasoning: boolean;
 };
 
 export const HARNESS_CONFIG_FIELDS = [
-  'provider type', 'provider label', 'base URL', 'model', 'effort', 'API key',
+  'provider type', 'provider label', 'base URL', 'model', 'API', 'reasoning', 'effort', 'API key',
 ] as const;
 export type HarnessConfigField = typeof HARNESS_CONFIG_FIELDS[number];
+
+export function configFieldsForKind(kind: HarnessConfigDraft['kind']): readonly HarnessConfigField[] {
+  return kind === 'openai-compatible'
+    ? HARNESS_CONFIG_FIELDS
+    : HARNESS_CONFIG_FIELDS.filter((field) => field === 'provider type' || field === 'provider label' || field === 'model' || field === 'effort');
+}
+
+export function languageFieldIndex(kind: HarnessConfigDraft['kind']): number {
+  return configFieldsForKind(kind).length;
+}
 
 export type FieldValidity = { readonly ok: boolean; readonly display: string; readonly reason?: string };
 
@@ -167,13 +240,15 @@ export function draftForConfig(config: HarnessModelConfig): HarnessConfigDraft {
       providerId: config.provider.id,
       modelId: config.modelId,
       effort: config.effort,
-      baseUrl: config.baseUrl ?? '',
-      keyRef: config.apiKey ?? config.keyRef ?? '',
+      baseUrl: config.provider.kind === 'openai-compatible' ? (config.baseUrl ?? '') : '',
+      keyRef: config.provider.kind === 'openai-compatible' ? (config.apiKey ?? config.keyRef ?? '') : '',
+      api: config.api ?? 'openai-completions',
+      reasoning: config.reasoning === true,
     };
   }
   return {
     kind: 'pi-catalog', providerId: config.providerId, modelId: config.modelId,
-    effort: config.effort, baseUrl: config.baseUrl ?? '', keyRef: '',
+    effort: config.effort, baseUrl: '', keyRef: '', api: 'openai-completions', reasoning: false,
   };
 }
 
@@ -185,7 +260,6 @@ export function configForDraft(draft: HarnessConfigDraft): HarnessModelConfig {
       providerId: draft.providerId,
       modelId: draft.modelId,
       effort: draft.effort,
-      ...(draft.baseUrl ? { baseUrl: draft.baseUrl } : {}),
     };
   }
   return {
@@ -195,6 +269,8 @@ export function configForDraft(draft: HarnessConfigDraft): HarnessModelConfig {
     modelId: draft.modelId,
     effort: draft.effort,
     baseUrl: draft.baseUrl,
+    api: draft.api,
+    reasoning: draft.reasoning,
     ...readCredential(draft.keyRef),
   };
 }
@@ -204,6 +280,8 @@ export function configFieldValue(draft: HarnessConfigDraft, field: HarnessConfig
   if (field === 'provider label') return draft.providerId;
   if (field === 'base URL') return draft.baseUrl;
   if (field === 'model') return draft.modelId;
+  if (field === 'API') return draft.api;
+  if (field === 'reasoning') return draft.reasoning ? 'true' : 'false';
   if (field === 'effort') return draft.effort;
   return draft.keyRef;
 }
@@ -235,8 +313,7 @@ export function apiKeyValidity(value: string): FieldValidity {
 
 export function maskSecret(value: string): string {
   if (!value || KEY_REF.test(value)) return value;
-  if (value.length <= 8) return '•'.repeat(value.length);
-  return `${value.slice(0, 3)}...${value.slice(-4)}`;
+  return '•'.repeat(8);
 }
 
 export function hasFileApiKey(config: HarnessModelConfig | HarnessConfigDraft): boolean {

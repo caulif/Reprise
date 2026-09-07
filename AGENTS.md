@@ -14,13 +14,13 @@ CandidateRun 状态变化只能过 `src/core/state-machine.ts` 的 `assertTransi
 
 TUI 是事件日志的只读投影，不持有实验状态机，不伪造未公开的推理过程（[TUI](docs/product/tui.md)）。
 
-模型服务 API 密钥可存于本机且 Git 忽略的 `.reprise/harness-model.json` 的 `apiKey` 字段，等同于 Codex `auth.json` / Claude Code `.credentials.json` 的本地凭据；也可继续使用 `env:NAME` 引用。不得提交、打印、复制到事件、artifact 或报告；不读也不保存 Codex 凭据（[凭据](docs/product/overview.md#13-凭据)）。
+模型服务 API 密钥可存于本机且 Git 忽略的 `.reprise/harness-model.json`；官方目录登录只在 Pi `auth.json`。不得提交、打印、复制到事件、artifact 或报告；不读也不保存 Codex CLI 凭据（[凭据](docs/product/overview.md#13-凭据)）。
 
 真实 Runtime 调用必须显式 opt-in（环境变量），默认路径不产生外部费用（[smoke](docs/codex-smoke-gate.md)）。
 
 改动跨模块协议、on-disk 格式、提示词契约、工具面、工程流程时，同一次变更必须新增或更新 `docs/decisions/`（[决策记录](docs/documentation-structure.md#决策记录)）。
 
-Windows 11 是唯一已验证平台；路径拼接和进程启动按 Windows 优先（`.cmd` shim 必须加引号）（[技术选型](docs/architecture/technology-selection.md)）。
+Windows 11 是唯一已验证平台；路径拼接和进程启动按 Windows 优先（`.cmd` 走 `spawnRuntimeProcess`）（[技术选型](docs/architecture/technology-selection.md)）。
 
 不注释代码本身已经说清的事实。空 `catch` 必须写明它吞掉了什么、以及为什么其他情况到不了这里。
 

@@ -17,11 +17,11 @@ import { sha256 } from "../core/identity.js";
 import { replayControlledRecoveryDeltaBytes } from "../infrastructure/recovery-write-journal.js";
 import { RecoveryValidationError } from "../environment/local-workspace-provider.js";
 import {
-  recoveryObservationTools,
   recoveryTools,
   validateRecoveryEvidence,
   resolvedRecoveryFacts,
 } from "../infrastructure/recovery-tools.js";
+import { OBSERVATIONS_MOUNT, recoveryObservationsRoot, writeFrozenObservationTree } from "./observation-files.js";
 import {
   ExperimentStore,
   writeImmutableJson,
@@ -35,6 +35,7 @@ import {
 import type { RecoveryAttempt, RecoveryAttemptInput } from "./experiment-recovery-types.js";
 import type { RecoveryResult } from "../agents/recovery-agent.js";
 import type { RecoveryContext } from "../agents/recovery-agent.js";
+import { recoveryWorkingSet } from "../agents/recovery-working-set.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
 import type {
   EnvironmentBaseline,
@@ -137,18 +138,10 @@ function review_reexecutionTools(
     },
   };
   const alternateTools = [
-    ...recoveryObservationTools(session.input.taskCase, {
-      onOperation: async (operation) => {
-        await executionStore.append({
-          type: "recovery.frozen_observation_read",
-          runId: session.input.runId,
-          operationId: `recovery-${candidateId}-frozen-observation-${operation.operation}-${operation.attempts}-${sha256(JSON.stringify(operation)).slice(0, 12)}`,
-          payload: { candidateId, ...operation },
-        });
-      },
-    }),
     ...recoveryTools(candidate.root, {
       allowBinary: session.input.taskCase.privacy.allowBinary,
+      mounts: { [OBSERVATIONS_MOUNT]: recoveryObservationsRoot(session.experimentRoot, session.input.runId) },
+      denyDestructiveOnPrefix: [OBSERVATIONS_MOUNT],
       ...(session.input.allowShell ? { allowShell: true } : {}),
       ...(session.activeStaging.temporaryRoot ? { homeRoot: session.activeStaging.temporaryRoot } : {}),
       onControlledWrite: async (entry) => {
@@ -201,6 +194,11 @@ async function review_reexecuteCandidate(session: RecoveryReviewSession, candida
   const executionWrites: RecoveryControlledWrite[] = [];
   try {
     await executionStore.acquireWriter();
+    await writeFrozenObservationTree({
+      root: recoveryObservationsRoot(session.experimentRoot, session.input.runId),
+      taskCase: session.input.taskCase,
+      ...(session.context.playbook.text ? { playbookText: session.context.playbook.text } : {}),
+    });
     const { alternateContext, alternateAudit, alternateTools } = review_reexecutionTools(
       session,
       candidate,
@@ -210,6 +208,7 @@ async function review_reexecuteCandidate(session: RecoveryReviewSession, candida
     );
     const modelInput = {
       ...recoveryModelInputAudit(alternateContext, alternateTools.map((tool) => tool.name)),
+      workingSetDigest: sha256(JSON.stringify(recoveryWorkingSet(alternateContext))),
       attempt: 1,
       candidateId,
     };
@@ -232,6 +231,7 @@ async function review_reexecuteCandidate(session: RecoveryReviewSession, candida
       alternateContext,
       alternateTools,
       alternateAudit,
+      session.input.signal,
     );
     await writeImmutableJson(
       join(session.experimentRoot, `recovery-${candidateId}.json`),

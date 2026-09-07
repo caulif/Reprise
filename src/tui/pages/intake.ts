@@ -30,6 +30,7 @@ export type ProductIntakeItem = {
 export type SessionProject = {
   readonly key: string;
   readonly label: string;
+  readonly catalogLabel?: string;
   readonly path?: string;
   readonly sessions: readonly SessionSummary[];
   readonly latestAt: string;
@@ -172,7 +173,7 @@ export function groupSessionsByProject(sessions: readonly SessionSummary[], cata
     const ordered = [...items].sort(compareSessionSummaries);
     const path = ordered.find((item) => item.cwd)?.cwd;
     const catalog = catalogProjects.find((item) => item.key === key);
-    return { key, ...(path ? { path } : catalog?.path ? { path: catalog.path } : {}), sessions: ordered, latestAt: sessionTime(ordered[0]) || '' };
+    return { key, ...(catalog ? { catalogLabel: catalog.label } : {}), ...(path ? { path } : catalog?.path ? { path: catalog.path } : {}), sessions: ordered, latestAt: sessionTime(ordered[0]) || '' };
   });
   const knownPaths = grouped.flatMap((project) => project.path ? [project.path] : []);
   return grouped.map((project) => {
@@ -370,6 +371,12 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
   const previewWidth = showPreview && showsDetailPane(theme) ? Math.max(28, Math.floor(width * 0.34)) : 0;
   const listWidth = previewWidth ? width - previewWidth - 1 : width;
   const inner = Math.max(20, listWidth - (theme.framed ? 2 : 3));
+  const selected = model.projects[model.selected];
+  const pathLabel = selected?.sessions.some((session) => session.cwd) ? 'sessionDirectory' : selected?.catalogLabel ? 'catalogDirectory' : 'fieldPath';
+  const compactDetail = !previewWidth && selected?.catalogLabel ? [
+    ...kvBlock(theme, t(locale, 'catalogProjectName'), selected.catalogLabel, inner),
+    ...kvBlock(theme, t(locale, pathLabel), selected.path ?? t(locale, 'unavailableValue'), inner),
+  ] : [];
   const rows = model.projects.map((project, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     name: localizedProjectLabel(project, locale),
@@ -377,7 +384,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     count: project.sessions.length ? String(project.sessions.length) : t(locale, 'emptyProjectSessions'),
     when: relativeTime(project.latestAt, model.nowMs ?? Date.now(), locale),
   }));
-  const range = visibleRange(rows, model.selected, limit);
+  const range = visibleRange(rows, model.selected, Math.max(1, limit - compactDetail.length));
   const listBody = paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
     { key: 'marker', width: 2 },
     { key: 'name', flex: 1 },
@@ -386,12 +393,12 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     { key: 'when', width: 12 },
   ], inner), inner), range.start, model.selected);
   listBody.push(theme.style.muted(` ${model.selected + 1}/${rows.length}`));
+  listBody.push(...compactDetail);
   const list = panel(theme, theme.style.harness(title), listBody, listWidth);
-  const selected = model.projects[model.selected];
   const latest = selected?.sessions[0];
   const preview = previewWidth ? panel(theme, theme.style.harness(t(locale, 'previewTitle')), selected ? [
-    kv(theme, t(locale, 'fieldProject'), localizedProjectLabel(selected, locale), previewWidth - 2),
-    ...kvBlock(theme, t(locale, 'fieldPath'), selected.path ?? t(locale, 'unavailableValue'), previewWidth - 2),
+    ...kvBlock(theme, t(locale, selected.catalogLabel ? 'catalogProjectName' : 'fieldProject'), localizedProjectLabel(selected, locale), previewWidth - 2),
+    ...kvBlock(theme, t(locale, pathLabel), selected.path ?? t(locale, 'unavailableValue'), previewWidth - 2),
     kv(theme, t(locale, 'fieldSessions'), selected.sessions.length ? String(selected.sessions.length) : t(locale, 'emptyProjectSessions'), previewWidth - 2),
     '',
     kv(theme, t(locale, 'fieldLatest'), latest ? sessionListTitle(latest, locale) : t(locale, 'unavailableValue'), previewWidth - 2),

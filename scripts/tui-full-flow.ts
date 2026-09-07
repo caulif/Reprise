@@ -213,6 +213,8 @@ async function main() {
   homeApp.handleInput("\x1b");
 
   enterCommand(homeApp, "/intake");
+  // Product selection is an explicit step before project discovery.
+  homeApp.handleInput("\r");
   await waitFor(
     () => /Choose a project/.test(home.render(120)),
     { frame: () => home.render(120) },

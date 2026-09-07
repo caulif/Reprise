@@ -436,6 +436,7 @@ async function acceptReadyBaseline(
       },
     });
   }
+  session.input.signal?.throwIfAborted();
   session.automaticallyAcceptedBaseline = await session.provider.acceptRecovery(acceptedPreview);
   moveRecoveryState(session, "accepted");
   await store.append({
@@ -448,8 +449,10 @@ async function acceptReadyBaseline(
 }
 
 export async function finalizeRecoveredCandidate(session: RecoveryRunSession): Promise<RecoveryAttempt> {
+  session.input.signal?.throwIfAborted();
   await replayAndDiffCandidate(session);
   await persistAlternateCandidateReviews(session);
   await persistCandidateGraphAndValidate(session);
+  session.input.signal?.throwIfAborted();
   return acceptReadyBaselineAndComplete(session);
 }

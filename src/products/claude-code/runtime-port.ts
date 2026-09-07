@@ -1,5 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -23,7 +23,7 @@ import type {
   TurnSettlement,
   UserMessage,
 } from '../../core/runtime.js';
-import { discoverExecutable, forceKill, positiveTimeout, settlesWithin, summarizeDiagnostic } from '../shared/process.js';
+import { DEFAULT_RUNTIME_RPC_TIMEOUT_MS, RUNTIME_PROCESS_CLOSE_TIMEOUT_MS, RUNTIME_PROCESS_STOP_GRACE_MS, discoverExecutable, forceKill, positiveTimeout, settlesWithin, spawnRuntimeProcess, summarizeDiagnostic } from '../shared/process.js';
 
 export const CLAUDE_DISALLOWED_TOOLS = ['CronCreate', 'CronDelete', 'ScheduleWakeup', 'SendMessage'] as const;
 export const CLAUDE_REQUIRED_ARGS = [
@@ -38,9 +38,9 @@ export const CLAUDE_REQUIRED_ARGS = [
   '--no-session-persistence',
 ] as const;
 
-const DEFAULT_RPC_TIMEOUT_MS = 120_000;
-const PROCESS_STOP_GRACE_MS = 5_000;
-const PROCESS_CLOSE_TIMEOUT_MS = 5_000;
+const DEFAULT_RPC_TIMEOUT_MS = DEFAULT_RUNTIME_RPC_TIMEOUT_MS;
+const PROCESS_STOP_GRACE_MS = RUNTIME_PROCESS_STOP_GRACE_MS;
+const PROCESS_CLOSE_TIMEOUT_MS = RUNTIME_PROCESS_CLOSE_TIMEOUT_MS;
 const CATALOG_TTL_MS = 10 * 60_000;
 const NORMAL_TERMINAL = new Set(['', 'end_turn', 'completed', 'success']);
 
@@ -121,7 +121,7 @@ export class ClaudeStreamClient {
 
   async start(): Promise<void> {
     if (this.#process) return;
-    const child = spawn(this.#executable, [...this.#args], {
+    const child = spawnRuntimeProcess(this.#executable, this.#args, {
       cwd: this.#cwd,
       env: this.#env,
       stdio: ['pipe', 'pipe', 'pipe'],

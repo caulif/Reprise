@@ -10,8 +10,8 @@ Reprise v0.1.0   C:\reprise                              gpt-5.6-terra · medium
 │ Task         Fix the bug.                                                                                            │
 │ Source session Codex                                                                                                 │
 │                                                                                                                      │
-│❯ Codex                                                                                 source session  reading local…│
-│  Claude Code                                                                                           reading local…│
+│❯ Codex                                                                                 source session  available     │
+│  Claude Code                                                                                           available     │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Recovered. Choose a candidate product, then a model, then confirm to start.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -3,7 +3,10 @@ import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { sha256 } from "../core/identity.js";
+import { classifyAgentFailure, type AgentFailureKind } from "./agent-failure.js";
 import { hostContext } from "./platform.js";
+
+export type { AgentFailureKind };
 
 export type AgentContentBlock = TextContent | ImageContent;
 export type AgentToolResult = {
@@ -22,17 +25,6 @@ export type AgentFailure = {
   message: string;
   attempts: number;
 };
-
-export type AgentFailureKind =
-  | "authentication"
-  | "rate_limited"
-  | "transient_network"
-  | "transient_upstream"
-  | "tool"
-  | "timeout"
-  | "protocol"
-  | "cancelled"
-  | "unknown";
 
 /** A failed invocation deliberately has no T: Host facts must not become model decisions. */
 export type AgentInvocation<T> =
@@ -66,6 +58,7 @@ export type AgentAuditEvent = {
     | "agent.tool_failed"
     | "agent.invalid_output"
     | "agent.context_compacted"
+    | "agent.request_retried"
     | "agent.assistant_visible";
   sessionId: string;
   role: string;
@@ -89,6 +82,7 @@ export interface PiTextCaller {
     tools: readonly AgentToolDefinition[];
     compactionInstructions?: string;
     onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
+    onRetry?: (payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>;
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
     onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
     onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
@@ -96,6 +90,7 @@ export interface PiTextCaller {
 }
 
 export type StructuredAgentRequest<T> = {
+  signal?: AbortSignal;
   role: string;
   systemPrompt: string;
   context: unknown;
@@ -116,6 +111,8 @@ export type StructuredAgentRequest<T> = {
   promptContent?: string;
   /** Optional native Pi image blocks accompanying the first user message. */
   promptImages?: readonly ImageContent[];
+  /** Role-owned rewrite of parsed JSON before TypeBox Clean/Check. */
+  normalize?: (value: unknown) => unknown;
 };
 
 export type AgentSessionRequest<T> = Pick<
@@ -129,6 +126,8 @@ export type AgentSessionRequest<T> = Pick<
   | "repairInstruction"
   | "promptContent"
   | "promptImages"
+  | "normalize"
+  | "signal"
 > & {
   /** Host request identity; a cancelled id is dropped before decode. */
   requestId?: string;
@@ -193,6 +192,7 @@ export class PiAgentHost {
             payload,
           });
         },
+        onRetry: async (payload: { attempt: number; kind: string; delayMs: number }) => { await input.audit?.append({ type: "agent.request_retried", sessionId, role: input.role, payload }); },
         onBeforeToolCall: async ({ tool }: { tool: string }) => { await input.audit?.append({ type: "agent.tool_called", sessionId, role: input.role, payload: { tool, nativeHook: "before" } }); },
         onAfterToolCall: async (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => { await input.audit?.append({ type: "agent.tool_completed", sessionId, role: input.role, payload: { ...payload, nativeHook: "after" } }); },
       });
@@ -230,6 +230,7 @@ export class PiAgentHost {
   ): Promise<AgentInvocation<T>> {
     const session = await this.createSession(request);
     return session.request({
+      ...(request.signal ? { signal: request.signal } : {}),
       context: request.context,
       schema: request.schema,
       timeoutMs: request.timeoutMs,
@@ -243,6 +244,7 @@ export class PiAgentHost {
         : {}),
       ...(request.promptContent ? { promptContent: request.promptContent } : {}),
       ...(request.promptImages ? { promptImages: request.promptImages } : {}),
+      ...(request.normalize ? { normalize: request.normalize } : {}),
     });
   }
 }
@@ -256,6 +258,7 @@ export class AgentSessionHost {
   readonly #failure: AgentFailure | undefined;
   readonly #inputCapabilities: readonly string[];
   #cancelled = false;
+  readonly #abort = new AbortController();
   #droppedRequestIds = new Set<string>();
 
   constructor(
@@ -310,6 +313,7 @@ export class AgentSessionHost {
     if (requestId) this.#droppedRequestIds.add(requestId);
     if (this.#cancelled) return;
     this.#cancelled = true;
+    this.#abort.abort();
     this.#session?.cancel();
     await this.#audit?.append({
       type: "agent.session_cancelled",
@@ -323,7 +327,8 @@ export class AgentSessionHost {
     request: AgentSessionRequest<T>,
   ): Promise<AgentInvocation<T>> {
     assertRequest(request);
-    if (this.#dropped(request.requestId))
+    const cancelled = () => this.#dropped(request.requestId) || request.signal?.aborted;
+    if (cancelled())
       return { status: "cancelled", sessionId: this.#sessionId };
     if (this.#failure)
       return {
@@ -336,9 +341,11 @@ export class AgentSessionHost {
         "Agent session is unavailable without a recorded failure.",
       );
     let attempts = 0;
+    const deadline = request.timeoutMs > 0 ? Date.now() + request.timeoutMs : undefined;
     let lastError: string | undefined;
     for (; attempts <= request.maxRepairAttempts; attempts += 1) {
       const controller = new AbortController();
+      const signal = AbortSignal.any([controller.signal, this.#abort.signal, ...(request.signal ? [request.signal] : [])]);
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const content = capabilityAwarePrompt(promptBody(request, attempts, lastError), this.#inputCapabilities);
@@ -352,16 +359,19 @@ export class AgentSessionHost {
           },
         });
         if (request.timeoutMs > 0) {
-          timer = setTimeout(() => controller.abort(), request.timeoutMs);
+          const remaining = deadline! - Date.now();
+          if (remaining <= 0) throw timeoutError();
+          timer = setTimeout(() => controller.abort(), remaining);
         }
+        if (cancelled()) return { status: 'cancelled', sessionId: this.#sessionId };
         const text = await abortable(
-          this.#session.append({ content, ...(request.promptImages ? { images: request.promptImages } : {}), signal: controller.signal }),
-          controller.signal,
+          this.#session.append({ content, ...(request.promptImages ? { images: request.promptImages } : {}), signal }),
+          signal,
         );
         if (controller.signal.aborted) throw timeoutError();
         // A provider may resolve after cancel() despite receiving an abort signal.
-        if (this.#dropped(request.requestId)) return { status: 'cancelled', sessionId: this.#sessionId };
-        const decoded = decode(request.schema, text);
+        if (cancelled()) return { status: 'cancelled', sessionId: this.#sessionId };
+        const decoded = decode(request.schema, text, request.normalize);
         const error = decoded.error ?? request.validate?.(decoded.value as T);
         if (!error && decoded.value !== undefined) {
           await this.#audit?.append({
@@ -387,14 +397,17 @@ export class AgentSessionHost {
           return this.#failed("invalid_output", lastError, attempts + 1);
         }
       } catch (error) {
-        if (this.#dropped(request.requestId) || (isAbort(error) && !isTimeout(error)))
+        if (cancelled())
           return { status: "cancelled", sessionId: this.#sessionId };
-        const code = isTimeout(error) ? "agent_timeout" : "agent_failure";
+        const kind = isTimeout(error) ? "timeout" : classifyAgentFailure(error);
+        if (kind === "cancelled")
+          return { status: "cancelled", sessionId: this.#sessionId };
+        const code = kind === "timeout" ? "agent_timeout" : "agent_failure";
         return this.#failed(
           code,
           errorMessage(error),
           attempts + 1,
-          isTimeout(error) ? "timeout" : classifyAgentFailure(error),
+          kind,
         );
       } finally {
         if (timer) clearTimeout(timer);
@@ -492,54 +505,6 @@ class AgentToolFailure extends Error {
   }
 }
 
-function classifyAgentFailure(error: unknown): AgentFailureKind {
-  if (error instanceof AgentToolFailure) return "tool";
-  if (isAbort(error)) return "cancelled";
-  const details = errorDetails(error).toLowerCase();
-  const status = errorStatus(error);
-  if (status === 401 || status === 403 || /\b(unauthori[sz]ed|forbidden|invalid api key|authentication)\b/.test(details))
-    return "authentication";
-  if (status === 429 || /\b(rate.?limit|too many requests|quota)\b/.test(details)) return "rate_limited";
-  if ([408, 500, 502, 503, 504].includes(status ?? 0) || /\b(upstream_error|upstream request failed|service temporarily unavailable|bad gateway|gateway timeout)\b/.test(details))
-    return "transient_upstream";
-  if (/\b(econnreset|econnrefused|enotfound|etimedout|timeout|network|transport|fetch failed|socket)\b/.test(details))
-    return "transient_network";
-  if (/\b(context_length_exceeded|maximum context length|prompt is too long|context window)\b/.test(details))
-    return "protocol";
-  if (/\b(invalid json|schema|protocol|malformed|unexpected response)\b/.test(details)) return "protocol";
-  return "unknown";
-}
-
-function errorStatus(error: unknown): number | undefined {
-  const seen = new Set<unknown>();
-  let current: unknown = error;
-  while (current && typeof current === "object" && !seen.has(current)) {
-    seen.add(current);
-    const record = current as { status?: unknown; statusCode?: unknown; code?: unknown; cause?: unknown };
-    for (const value of [record.status, record.statusCode, record.code]) {
-      if (typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599)
-        return value;
-      if (typeof value === "string" && /^\d{3}$/.test(value)) return Number(value);
-    }
-    current = record.cause;
-  }
-  return undefined;
-}
-
-function errorDetails(error: unknown): string {
-  const messages: string[] = [];
-  let current: unknown = error;
-  const seen = new Set<unknown>();
-  while (current && !seen.has(current) && messages.length < 4) {
-    seen.add(current);
-    if (current instanceof Error) {
-      messages.push(current.message);
-      current = current.cause;
-    } else break;
-  }
-  return messages.join(" ");
-}
-
 function assertSessionInput(input: {
   role: string;
   systemPrompt: string;
@@ -597,10 +562,12 @@ function invalidOutputCategory(error: string): string {
 function decode(
   schema: TSchema,
   text: string,
+  normalize?: (value: unknown) => unknown,
 ): { value?: unknown; error?: string } {
   const parsed = parse(text);
   if (parsed === undefined) return { error: "invalid JSON" };
-  const cleaned = Value.Clean(schema, parsed);
+  const prepared = normalize ? normalize(parsed) : parsed;
+  const cleaned = Value.Clean(schema, prepared);
   if (Value.Check(schema, cleaned)) return { value: cleaned };
   const first = Value.Errors(schema, cleaned).First();
   const path = first?.path || "/";
@@ -655,9 +622,6 @@ function isTimeout(error: unknown): boolean {
     error instanceof Error &&
     (error.name === "TimeoutError" || error.message === "agent timeout")
   );
-}
-function isAbort(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
 }
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

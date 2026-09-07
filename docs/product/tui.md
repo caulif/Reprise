@@ -42,7 +42,7 @@ Recovery、Controller、Comparison 默认使用此配置
 [完成]
 ```
 
-API key 与 provider 配置复用 Pi，Harness 不建立第二套凭据存储。高级用户之后可以分别覆盖三个内部 Agent 的模型、预算和上下文设置；三个 Agent 的总调用、token 与成本预算默认均不设上限。
+第三方密钥保存在 Git 忽略的 `.reprise/harness-model.json`，或使用 `env:NAME`。官方目录（ChatGPT Codex、Claude 订阅等）的登录只存在 Pi 的 `~/.pi/agent/auth.json`；在 Pi 里 `/login` 后再把配置切到 Pi catalog。Reprise 不读取 Codex CLI 或 Claude Code 的登录文件。高级用户之后可以分别覆盖三个内部 Agent 的模型、预算和上下文设置；三个 Agent 的总调用、token 与成本预算默认均不设上限。
 
 ### 3.2 每次比较
 
@@ -158,6 +158,12 @@ Delivered · accepted · target turn 6
 
 ### 4.5 退出、取消与进程中断
 
+通用错误页标题为“无法继续”。正文区分 Harness 连接探测、环境恢复、Controller 开场理解和后续判断的失败类别及可重试性；只有环境恢复失败使用恢复阶段文案，原始 provider 错误不直接显示。
+
+恢复模型或连接探测进行中，Ctrl+C 将取消信号传入该请求；恢复调用完成失败落盘与清理后返回封面。关闭 TUI 同样取消正在进行的恢复，关闭等待包含恢复 Promise。取消不会自动选择候选模型或启动候选。
+
+关闭 TUI 等待 active experiment 的终态记录，并检查 cleanup；待确认的恢复副本也须丢弃。清理失败时显示“清理未完成，请检查保留的资源”，保留恢复引用，关闭调用返回失败，不显示 provider 私有错误正文。恢复已取消不能覆盖清理失败提示。
+
 第一版不实现后台 daemon 或 detach/reattach。TUI 与 Orchestrator 在同一进程中，但渲染层不是运行事实的所有者：
 
 - 关闭详情页或主 TUI 时，会取消运行中的任务并等待清理；第一版不支持 detach/reattach，也不把运行转入后台；
@@ -268,12 +274,14 @@ Delivered · accepted · target turn 6
 | 确认 | Enter / b / Esc | 开跑（被挡时仍按 Enter 只提示） / 改模型 / 回封面 |
 | 对照门 | Enter / s / Ctrl+C | 写对照 / 跳过 / 退出 |
 | 运行（含恢复） | Ctrl+C / ? | 请求取消 / 按键说明 |
-| 结果 | o / t / w / Enter / b | 报告 / 记录目录 / 隔离副本 / 回封面 |
+| 结果 | o / t / w / Enter / b / Esc | 报告或失败诊断 / 记录目录 / 隔离副本 / 回封面 |
 | 错误 | Enter / b / Esc | 返回 |
 | 全文 overlay | Esc | 关闭 |
 | 角色 overlay | Ctrl+G / Esc | 开关 / 关闭 |
 
-运行页是只读观看面：不向目标 Runtime 打字，续问由对照自动发。页脚不列出选择、过滤、查找、展开命令或切栏；双栏由布局自己滚动，那些键没有可靠的可见效果。
+运行页是只读观看面：不向目标 Runtime 打字，续问由 Controller 产生。帮助层按当前页面显示，运行页说明角色层、切栏和详情操作。运行阶段由共享 Runtime 生命周期事件投影，适用于所有 Pack。
+
+结果和历史分别显示任务判断、运行终止及 Comparison 状态。比较失败显示失败类别，入口标为 Diagnostic；已有成功报告保留，并在适用时标为 Previous report。配置页密钥使用完整遮罩，会话列表摘要排除共享识别规则认定的注入指令，原始会话仍用于检查和回放。
 
 ## 11. 借鉴边界
 

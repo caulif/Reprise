@@ -272,6 +272,39 @@ process.stdin.on('data', (chunk) => {
   assert.equal((await readFile(count, "utf8")).trim().split(/\r?\n/).length, 2);
 });
 
+test("Codex app-server client starts through a Windows .cmd shim", async (t) => {
+  if (process.platform !== "win32") return;
+  const root = await mkdtemp(join(tmpdir(), "reprise-codex-cmd-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const script = join(root, "catalog-app-server.mjs");
+  const shim = join(root, "codex.cmd");
+  await writeFile(
+    script,
+    `
+let buffer = '';
+const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  for (let end = buffer.indexOf('\\n'); end >= 0; end = buffer.indexOf('\\n')) {
+    const line = buffer.slice(0, end).trim();
+    buffer = buffer.slice(end + 1);
+    if (!line) continue;
+    const message = JSON.parse(line);
+    if (message.method === 'initialize') send({ id: message.id, result: {} });
+    else send({ id: message.id, result: {} });
+  }
+});
+`,
+  );
+  await writeFile(
+    shim,
+    `@ECHO off\r\nSETLOCAL\r\nendLocal & goto #_undefined_# 2>NUL || "${process.execPath}" "${script}" %*\r\n`,
+  );
+  const client = new CodexAppServerClient({ executable: shim, cwd: root });
+  await client.start();
+  await client.close();
+});
+
 test("Windows Codex sandbox defaults to full access because workspace-write cannot apply deny-read ACLs", () => {
   assert.equal(defaultCodexSandbox("win32"), "danger-full-access");
   assert.equal(defaultCodexSandbox("linux"), "workspace-write");

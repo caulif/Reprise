@@ -1,5 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface, type Interface } from 'node:readline';
 import { isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -23,7 +23,7 @@ import type {
   TurnSettlement,
   UserMessage,
 } from '../../core/runtime.js';
-import { discoverExecutable, forceKill, positiveTimeout, settlesWithin, summarizeDiagnostic } from '../shared/process.js';
+import { DEFAULT_RUNTIME_RPC_TIMEOUT_MS, RUNTIME_PROCESS_CLOSE_TIMEOUT_MS, RUNTIME_PROCESS_STOP_GRACE_MS, discoverExecutable, forceKill, positiveTimeout, settlesWithin, spawnRuntimeProcess, summarizeDiagnostic } from '../shared/process.js';
 import {
   classifyCodexTurnFailure,
   diagnosticMessage,
@@ -64,9 +64,9 @@ type PendingSettlement = { resolve: (settlement: TurnSettlement) => void; reject
 type StartedThread = { id: string; model: string };
 type StartedTurn = { id: string };
 
-const DEFAULT_RPC_TIMEOUT_MS = 120_000;
-const PROCESS_STOP_GRACE_MS = 5_000;
-const PROCESS_CLOSE_TIMEOUT_MS = 5_000;
+const DEFAULT_RPC_TIMEOUT_MS = DEFAULT_RUNTIME_RPC_TIMEOUT_MS;
+const PROCESS_STOP_GRACE_MS = RUNTIME_PROCESS_STOP_GRACE_MS;
+const PROCESS_CLOSE_TIMEOUT_MS = RUNTIME_PROCESS_CLOSE_TIMEOUT_MS;
 
 export class CodexRuntimeUnavailableError extends Error {
   readonly code = 'unsupported_runtime';
@@ -113,6 +113,7 @@ export class CodexAppServerClient {
   #closed = false;
   #closedNotified = false;
   #closing: Promise<void> | undefined;
+  #stderrCompact = '';
 
   constructor(input: { executable: string; cwd: string; env?: Readonly<Record<string, string | undefined>>; onNotification?: (method: string, params: unknown) => Promise<void>; onClosed?: (error: Error) => void; args?: readonly string[]; requestTimeoutMs?: number; platform?: NodeJS.Platform }) {
     this.#executable = input.executable;
@@ -132,17 +133,12 @@ export class CodexAppServerClient {
   async start(): Promise<void> {
     if (this.#started) return;
     if (this.#closed) throw new CodexRuntimeUnavailableError('Codex app-server client is closed.');
-    const shim = this.#platform === 'win32' && /\.(?:cmd|bat)$/i.test(this.#executable);
-    const command = shim ? process.env.ComSpec ?? 'cmd.exe' : this.#executable;
-    const args = shim
-      ? ['/d', '/s', '/c', [this.#executable, ...this.#arguments].map(quoteWindowsCommandToken).join(' ')]
-      : this.#arguments;
-    const child = spawn(command, args, {
+    const child = spawnRuntimeProcess(this.#executable, this.#arguments, {
       cwd: this.#cwd,
       env: this.#env ? { ...process.env, ...this.#env } : process.env,
       stdio: 'pipe',
       windowsHide: true,
-      shell: false,
+      platform: this.#platform,
     });
     this.#process = child;
     this.#processClosed = new Promise((resolveClose) => child.once('close', () => resolveClose()));
@@ -152,9 +148,13 @@ export class CodexAppServerClient {
     });
     child.stdout.on('error', (error) => this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server stdout failed: ${error.message}`), !this.#closing));
     child.stderr.on('error', (error) => this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server stderr failed: ${error.message}`), !this.#closing));
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      this.#stderrCompact = compactDiagnostic(`${this.#stderrCompact} ${String(chunk)}`.trim());
+    });
     child.once('exit', (code, signal) => {
       this.#closed = true;
-      this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server exited (${code ?? 'null'}, ${signal ?? 'none'}).`), !this.#closing);
+      const detail = this.#stderrCompact ? `: ${this.#stderrCompact}` : '';
+      this.#failAll(new CodexRuntimeUnavailableError(`Codex app-server exited (${code ?? 'null'}, ${signal ?? 'none'})${detail}.`), !this.#closing);
     });
     this.#readers = [
       createInterface({ input: child.stdout }).on('line', (line) => { void this.#handleLine(line); }),
@@ -269,11 +269,6 @@ export class CodexAppServerClient {
   async #emit(type: string, payload: unknown): Promise<void> {
     await this.#notification?.(type, payload);
   }
-}
-
-function quoteWindowsCommandToken(value: string): string {
-  if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) return value;
-  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
 }
 
 class CodexTargetRunner implements TargetRunner {

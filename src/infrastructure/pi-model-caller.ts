@@ -1,6 +1,9 @@
 import { Agent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core';
+import { setTimeout as delay } from 'node:timers/promises';
+import { classifyAgentFailure } from './agent-failure.js';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
+import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { contentText, createProvider, isContextOverflow, type Api, type Model, type Models, type MutableModels } from '@earendil-works/pi-ai';
 import { visibleAssistantText } from './assistant-visible.js';
 import type { AgentToolDefinition, PiTextCaller, PiTextSession } from './pi-agent-host.js';
@@ -8,7 +11,9 @@ import {
   compactPiMessages,
   contextWindowOf,
   convertToLlm,
+  estimatedMessageTokens,
   needsPiCompaction,
+  prunePiMessagesForBudget,
 } from './pi-compaction.js';
 import { environmentNameForKeyRef, type HarnessModelConfig } from './harness-model-config.js';
 import { sha256 } from '../core/identity.js';
@@ -22,6 +27,8 @@ export type PiModelOption = { readonly id: string; readonly name: string };
 const WRITE_TOOLS = new Set(['edit', 'write', 'shell_exec']);
 const STREAM_RETRIES = 3;
 const STREAM_RETRY_DELAY_MS = 8_000;
+/** Outer budget for the billed probe, including Pi retries. Must exceed one slow gateway round-trip. */
+export const PI_PROBE_TIMEOUT_MS = 180_000;
 
 /** Builds Pi's native custom-provider path. The key comes from the local config file, or env:NAME. */
 export function modelsForConfig(config: HarnessModelConfig, models: MutablePiModels = builtinModels()): MutablePiModels {
@@ -29,8 +36,9 @@ export function modelsForConfig(config: HarnessModelConfig, models: MutablePiMod
   const fileKey = config.apiKey;
   const keyRef = config.keyRef;
   const baseUrl = config.baseUrl;
-  if (!baseUrl || (!fileKey && !keyRef)) throw new Error('OpenAI-compatible configuration requires baseUrl and apiKey.');
+  if (!baseUrl || (!fileKey && !keyRef)) return models;
   const overlay = windowOverlay(config);
+  const api = config.api === 'openai-responses' ? 'openai-responses' : 'openai-completions';
   models.setProvider(createProvider({
     id: config.provider.id,
     name: config.provider.id,
@@ -50,11 +58,12 @@ export function modelsForConfig(config: HarnessModelConfig, models: MutablePiMod
       },
     },
     models: [{
-      id: config.modelId, name: config.modelId, api: 'openai-completions', provider: config.provider.id, baseUrl,
-      reasoning: true, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      id: config.modelId, name: config.modelId, api, provider: config.provider.id, baseUrl,
+      reasoning: config.reasoning === true, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: overlay.contextWindow ?? 128_000, maxTokens: overlay.maxTokens ?? 16_384,
+      ...(config.compat ? { compat: config.compat } : {}),
     }],
-    api: openAICompletionsApi(),
+    api: api === 'openai-responses' ? openAIResponsesApi() : openAICompletionsApi(),
   }));
   return models;
 }
@@ -88,18 +97,47 @@ export class PiModelCaller implements PiTextCaller {
     }
   }
 
-  async validate(): Promise<{ source?: string }> {
+  async validate(signal?: AbortSignal): Promise<{ source?: string }> {
+    signal?.throwIfAborted();
     const model = this.#model();
     const auth = await this.#models.getAuth(model);
-    if (!auth) throw new Error(`Pi has no usable credential for provider ${this.#config.providerId}. Add apiKey to harness-model.json, or set the referenced environment variable.`);
-    const response = await this.#models.completeSimple(model, {
-      systemPrompt: 'Reprise connection check. Reply with exactly OK.',
-      messages: [{ role: 'user', content: 'Reply with exactly OK.', timestamp: Date.now() }],
-    }, { reasoning: this.#config.effort, signal: AbortSignal.timeout(15_000) });
-    if (response.stopReason === 'error' || response.stopReason === 'aborted' || !contentText(response.content).trim()) {
-      throw new Error(response.errorMessage ?? `Pi model connection check stopped: ${response.stopReason}.`);
+    signal?.throwIfAborted();
+    if (!auth) {
+      throw new Error(isCatalog(this.#config)
+        ? `Pi has no usable credential for provider ${this.#config.providerId}. Run pi /login for this provider, then test the connection.`
+        : `Pi has no usable credential for provider ${this.#config.providerId}. Add apiKey to harness-model.json, or set the referenced environment variable.`);
     }
-    return auth.source === undefined ? {} : { source: auth.source };
+    const relayReasoning = isCatalog(this.#config) || (this.#config.schemaVersion === 2 && this.#config.reasoning === true);
+    const probeSignal = AbortSignal.any([AbortSignal.timeout(PI_PROBE_TIMEOUT_MS), ...(signal ? [signal] : [])]);
+    let lastError: Error | undefined;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      probeSignal.throwIfAborted();
+      let response: Awaited<ReturnType<PiModels['completeSimple']>>;
+      try {
+        response = await this.#models.completeSimple(model, {
+          systemPrompt: 'Reprise connection check. Reply with exactly OK.',
+          messages: [{ role: 'user', content: 'Reply with exactly OK.', timestamp: Date.now() }],
+        }, {
+          maxRetries: STREAM_RETRIES,
+          maxRetryDelayMs: STREAM_RETRY_DELAY_MS,
+          signal: probeSignal,
+          ...(relayReasoning ? { reasoning: this.#config.effort } : {}),
+        });
+      } catch (error) {
+        signal?.throwIfAborted();
+        throw new Error(hintThinking(this.#config, error instanceof Error ? error.message : String(error)), { cause: error });
+      }
+      signal?.throwIfAborted();
+      if (response.stopReason !== 'error' && response.stopReason !== 'aborted' && contentText(response.content).trim()) {
+        return auth.source === undefined ? {} : { source: auth.source };
+      }
+      lastError = new Error(hintThinking(this.#config, response.errorMessage ?? `Pi model connection check stopped: ${response.stopReason}.`));
+      const kind = classifyAgentFailure(lastError);
+      const retryable = kind === 'transient_upstream' || kind === 'transient_network' || kind === 'timeout';
+      if (attempt === 3 || !retryable) throw lastError;
+      await delay(200 * 2 ** (attempt - 1) + Math.floor(Math.random() * 100), undefined, { signal: probeSignal });
+    }
+    throw lastError ?? new Error('Pi model connection check failed.');
   }
 
   createSession(input: {
@@ -108,6 +146,7 @@ export class PiModelCaller implements PiTextCaller {
     tools: readonly AgentToolDefinition[];
     compactionInstructions?: string;
     onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
+    onRetry?: (payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>;
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
     onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
     onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
@@ -116,11 +155,13 @@ export class PiModelCaller implements PiTextCaller {
     const models = this.#models;
     const effort = this.#config.effort;
     let active = true;
+    const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })))) / 3);
+    const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
     const agent = new Agent({
       sessionId: input.sessionId,
       streamFn: (streamModel, context, options) => this.#models.streamSimple(streamModel, context, {
         ...options,
-        maxRetries: STREAM_RETRIES,
+        maxRetries: 0,
         maxRetryDelayMs: STREAM_RETRY_DELAY_MS,
       }),
       convertToLlm,
@@ -144,9 +185,9 @@ export class PiModelCaller implements PiTextCaller {
         return undefined;
       },
       maxRetryDelayMs: STREAM_RETRY_DELAY_MS,
-      shouldStopAfterTurn: async ({ context }, signal) => {
-        await compactInto(context.messages, agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact);
-        return false;
+      transformContext: async (messages, signal) => {
+        await compactInto(messages, agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact, availableWindow);
+        return messages;
       },
       initialState: {
         systemPrompt: input.systemPrompt,
@@ -173,7 +214,7 @@ export class PiModelCaller implements PiTextCaller {
         signal.addEventListener('abort', abort, { once: true });
         try {
           await agent.prompt(content, images ? [...images] : undefined);
-          await recoverOverflow(agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact);
+          await recoverAgentResponse(agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
           const message = lastAssistant(agent.state.messages);
           if (!message || message.role !== 'assistant') throw new Error('Pi Agent session ended without an assistant message.');
           if (message.stopReason === 'error' || message.stopReason === 'aborted') throw new Error(message.errorMessage ?? `Pi Agent session stopped: ${message.stopReason}.`);
@@ -191,6 +232,7 @@ export class PiModelCaller implements PiTextCaller {
     const model = this.#models.getModel(this.#config.providerId, this.#config.modelId);
     if (!model) throw new Error(`Pi provider ${this.#config.providerId} does not expose model ${this.#config.modelId}.`);
     if (!model.input.includes('text')) throw new Error(`Pi model ${this.#config.modelId} does not accept text input.`);
+    if (isCatalog(this.#config)) return model;
     const overlay = windowOverlay(this.#config);
     if (this.#config.baseUrl === undefined && overlay.contextWindow === undefined && overlay.maxTokens === undefined) return model;
     return {
@@ -199,6 +241,16 @@ export class PiModelCaller implements PiTextCaller {
       ...overlay,
     };
   }
+}
+
+function isCatalog(config: HarnessModelConfig): boolean {
+  return config.schemaVersion === 2 && config.provider.kind === 'pi-catalog';
+}
+
+function hintThinking(config: HarnessModelConfig, message: string): string {
+  if (isCatalog(config) || config.schemaVersion !== 2 || config.reasoning !== true) return message;
+  if (!/\b(reasoning|thinking)\b/i.test(message)) return message;
+  return `${message} If the gateway rejected thinking, set reasoning to false.`;
 }
 
 function windowOverlay(config: HarnessModelConfig): { contextWindow?: number; maxTokens?: number } {
@@ -219,17 +271,35 @@ async function compactInto(
   signal: AbortSignal | undefined,
   customInstructions: string | undefined,
   onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined,
+  availableWindow: number,
 ): Promise<boolean> {
-  if (!needsPiCompaction(live, contextWindowOf(model))) return false;
+  if (availableWindow <= 0) throw new Error('Context budget: system prompt, tools and output reserve exceed the model window.');
+  const pruned = prunePiMessagesForBudget(live, false);
+  if (pruned.changed) {
+    agent.state.messages = live;
+    await onContextCompact?.({ summary: pruned.summary, tokensBefore: estimatedMessageTokens(live), retainedCount: live.length });
+  }
+  if (!needsPiCompaction(live, availableWindow)) return pruned.changed;
   const compacted = await compactPiMessages({ messages: live, models, model, thinkingLevel, ...(customInstructions ? { customInstructions } : {}), ...(signal ? { signal } : {}) });
-  if (!compacted) return false;
+  if (!compacted) {
+    const shrink = prunePiMessagesForBudget(live, true);
+    agent.state.messages = live;
+    await onContextCompact?.({
+      summary: shrink.changed ? `Host working-set shrink after empty Pi history. ${shrink.summary}` : 'Host working-set shrink after empty Pi history.',
+      tokensBefore: estimatedMessageTokens(live),
+      retainedCount: live.length,
+    });
+    if (needsPiCompaction(live, availableWindow)) throw new Error('Context budget: working set still exceeds the available window.');
+    return true;
+  }
+  if (needsPiCompaction(compacted.messages, availableWindow)) throw new Error('Context budget: retained tail still exceeds the available window.');
   live.splice(0, live.length, ...compacted.messages);
   agent.state.messages = compacted.messages;
   await onContextCompact?.(compacted.audit);
   return true;
 }
 
-async function recoverOverflow(
+async function recoverAgentResponse(
   agent: Agent,
   model: Model<Api>,
   models: PiModels,
@@ -237,16 +307,33 @@ async function recoverOverflow(
   signal: AbortSignal,
   customInstructions: string | undefined,
   onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined,
+  onRetry: ((payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>) | undefined,
 ): Promise<void> {
-  const message = lastAssistant(agent.state.messages);
-  if (!message || message.role !== 'assistant') return;
-  if (!isContextOverflow(message, contextWindowOf(model))) return;
-  const compacted = await compactPiMessages({ messages: agent.state.messages, models, model, thinkingLevel, ...(customInstructions ? { customInstructions } : {}), signal });
-  if (!compacted) return;
-  agent.state.messages = compacted.messages;
-  await onContextCompact?.(compacted.audit);
-  const last = compacted.messages.at(-1);
-  if (last && (last.role === 'user' || last.role === 'toolResult')) await agent.continue();
+  let overflowRecovered = false;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    signal.throwIfAborted();
+    const message = lastAssistant(agent.state.messages);
+    if (!message || message.role !== 'assistant' || message.stopReason !== 'error') return;
+    const overflow = isContextOverflow(message, contextWindowOf(model));
+    const kind = classifyAgentFailure(new Error(message.errorMessage ?? 'Agent response failed.'));
+    if (!overflow && kind !== 'transient_upstream' && kind !== 'transient_network') return;
+    if (attempt === 3 || (overflow && overflowRecovered)) return;
+    const tail = agent.state.messages.at(-1);
+    if (tail !== message) throw new Error('Agent failed outside the latest response; cannot safely continue.');
+    agent.state.messages.pop();
+    if (overflow) {
+      const before = JSON.stringify(agent.state.messages).length;
+      const compacted = await compactPiMessages({ messages: agent.state.messages, models, model, thinkingLevel, ...(customInstructions ? { customInstructions } : {}), signal });
+      if (!compacted || JSON.stringify(compacted.messages).length >= before) throw new Error('Context budget: overflow recovery could not reduce the input.');
+      agent.state.messages = compacted.messages;
+      await onContextCompact?.(compacted.audit);
+      overflowRecovered = true;
+    }
+    const delayMs = overflow ? 0 : 200 * 2 ** (attempt - 1) + Math.floor(Math.random() * 100);
+    await onRetry?.({ attempt: attempt + 1, kind: overflow ? 'context_overflow' : kind, delayMs });
+    await delay(delayMs, undefined, { signal });
+    await agent.continue();
+  }
 }
 
 function lastAssistant(messages: readonly AgentMessage[]) {

@@ -9,7 +9,7 @@ import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } f
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
-import { beginPreflight, beginRun, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, startRunSetup } from './controller-run.js';
+import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, startRunSetup } from './controller-run.js';
 import {
   dispatchCanvasInput,
   dispatchCandidatePickerInput,
@@ -37,6 +37,10 @@ export type Page = WorkbenchView['page'];
 export type Consume = { consume: true };
 
 export type ControllerHandle = {
+  recoveryAbort: AbortController | undefined;
+  startupAbort: AbortController | undefined;
+  recoveryFinished: Promise<void> | undefined;
+  workflowFinished: Promise<void> | undefined;
   page: Page;
   viewer: { title: string; body: string } | undefined;
   actorsOpen: boolean;
@@ -151,11 +155,12 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     viewer: Boolean(c.viewer),
     actorsOpen: c.actorsOpen,
     helpOpen: Boolean(c.helpOverlay || c.inlineHelp),
+    startupActive: Boolean(c.startupAbort),
   }, input);
   if (global) return applyGlobal(c, global.action);
   if (c.page === 'running') return applyRunning(c, input);
   if (c.page === 'config') return c.configPageInput(input);
-  if (c.page === 'history') return c.historyInput(input);
+  if (c.page === 'history') return matchesKey(input, 'escape') ? c.backToHome() : c.historyInput(input);
   if (c.page === 'history-detail') return applyHistoryDetail(c, input);
   if (c.page === 'home') return applyHome(c, input);
   if (c.page === 'source') return applySource(c, input);
@@ -293,7 +298,7 @@ function applySource(c: ControllerHandle, data: string): Consume | undefined {
       return { consume: true };
     }
     c.runFromSource = true;
-    void beginPreflight(c);
+    bindWorkflow(c, beginPreflight(c));
     return { consume: true };
   }
   c.render();
@@ -457,7 +462,7 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
     c.render();
     return { consume: true };
   }
-  void beginRun(c);
+  bindWorkflow(c, beginRun(c));
   return { consume: true };
 }
 

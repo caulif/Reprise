@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CandidateSpec, EventEnvelope, RunPolicy, TaskCase } from '../core/schema.js';
+import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase } from '../core/schema.js';
 import type { ResolvedRuntime, RuntimeModelOffer, RuntimePort } from '../core/runtime.js';
 import { readHarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { PiModelCaller } from '../infrastructure/pi-model-caller.js';
@@ -19,8 +19,9 @@ export const TUI_RUN_POLICY: RunPolicy = {
   maxConsecutiveNoProgress: 2,
 };
 
-type ExperimentDefaults = { readonly candidate: CandidateSpec; readonly policy: RunPolicy };
+type ExperimentDefaults = { readonly candidate?: CandidateSpec; readonly policy: RunPolicy };
 type ExperimentRequest = {
+  signal?: AbortSignal;
   taskCase: TaskCase;
   sourceRoot: string;
   sourceRootKind?: SourceRootKind;
@@ -34,7 +35,7 @@ type ExperimentRequest = {
   compare?: boolean;
   deferComparison?: boolean;
 };
-type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'experimentId' | 'runId' | 'candidate'> & { onEvent?: (event: EventEnvelope) => void };
+type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'experimentId' | 'runId' | 'candidate'> & { onEvent?: (event: EventEnvelope) => void; signal?: AbortSignal };
 
 export type CodexTuiWorkflow = {
   readonly candidate?: CandidateSpec;
@@ -47,7 +48,7 @@ export type CodexTuiWorkflow = {
 };
 
 /** One experiment composition root shared by the interactive TUI and explicit protocol smoke. */
-export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?: RuntimePort; pack?: ProductPack; agents: () => Promise<HarnessAgents>; now: () => string; defaults?: ExperimentDefaults }): CodexTuiWorkflow {
+export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?: RuntimePort; pack?: ProductPack; agents: (signal?: AbortSignal) => Promise<HarnessAgents>; now: () => string; defaults?: ExperimentDefaults }): CodexTuiWorkflow {
   const candidate = input.defaults?.candidate;
   const policy = input.defaults?.policy ?? TUI_RUN_POLICY;
   const packFor = (productId: string): ProductPack => {
@@ -75,13 +76,17 @@ export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?
       });
     },
     async recover(request): Promise<RecoveryAttempt> {
-      const agents = await input.agents();
+      request.signal?.throwIfAborted();
+      const agents = await input.agents(request.signal);
+      request.signal?.throwIfAborted();
       const experimentId = `recovery-${randomUUID()}`;
       const runId = `recovery-run-${randomUUID()}`;
-      return recoverCodexExperiment({ dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot, taskCase: request.taskCase, recovery: agents.recovery, now: input.now(), ...(request.onEvent ? { onEvent: request.onEvent } : {}) });
+      return recoverCodexExperiment({ dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot, taskCase: request.taskCase, recovery: agents.recovery, now: input.now(), ...(request.signal ? { signal: request.signal } : {}), ...(request.onEvent ? { onEvent: request.onEvent } : {}) });
     },
     async start(request): Promise<ExperimentHandle> {
-      const agents = await input.agents();
+      request.signal?.throwIfAborted();
+      const agents = await input.agents(request.signal);
+      request.signal?.throwIfAborted();
       const selected = resolve(request.taskCase, request.candidate);
       const experimentId = request.recoveryAttempt?.experimentId ?? request.experimentId ?? `experiment-${randomUUID()}`;
       const runId = request.runId ?? `run-${randomUUID()}`;
@@ -101,19 +106,24 @@ export function createCodexExperimentWorkflow(input: { dataDir: string; runtime?
 }
 
 /** Creates the production TUI bridge. Selecting a session, or `/run` on a current TaskCase, starts the isolated experiment. */
-export function createCodexTuiWorkflow(input: { dataDir: string; runtime?: RuntimePort; pack?: ProductPack; now: () => string }): CodexTuiWorkflow {
+export function createCodexTuiWorkflow(input: { dataDir: string; runtime?: RuntimePort; pack?: ProductPack; now: () => string; defaults?: ExperimentDefaults; budget?: AgentBudget; recoveryBudget?: AgentBudget }): CodexTuiWorkflow {
   let validated: { key: string; agents: HarnessAgents } | undefined;
   return createCodexExperimentWorkflow({
     ...input,
-    agents: async () => {
+    agents: async (signal) => {
       const config = await readHarnessModelConfig(input.dataDir);
       if (!config) throw new Error('Harness Pi setup is required before an experiment can start.');
       const key = JSON.stringify(config);
       if (validated?.key === key) return validated.agents;
       const caller = new PiModelCaller(config);
       // The connection check is a real, billable request, so it is repeated only when the configuration changes.
-      await caller.validate();
-      validated = { key, agents: createHarnessAgents(config, caller) };
+      try {
+        await caller.validate(signal);
+      } catch (error) {
+        signal?.throwIfAborted();
+        throw Object.assign(new Error('Harness connection probe failed.', { cause: error }), { name: 'HarnessProbeError' });
+      }
+      validated = { key, agents: createHarnessAgents(config, caller, input) };
       return validated.agents;
     },
   });

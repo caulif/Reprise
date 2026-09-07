@@ -10,7 +10,7 @@ No configured model   o Harness unset  o Product unset  o...
 [ Harness connection ]
     Endpoint   http://insecure.example/v1
     Model      model-private - medium
-    Secret     not...-key   saved in harness-model.json
+    Secret     ••••••••   saved in harness-model.json
     The API key is saved in .reprise/harness-model.json. 
    env:NAME still works as a fallback.
    
@@ -19,8 +19,10 @@ No configured model   o Harness unset  o Product unset  o...
       base URL           
         ! not an https URL
       model              model-private
+      API                openai-completions  [Enter] toggles
+      reasoning          false  [Enter] toggles
       effort             medium  [Enter] toggles
-    > API key            not...-key  +
+    > API key            ••••••••  +
       Language           English  [Enter] toggles
    
     * Unsaved draft

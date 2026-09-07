@@ -353,6 +353,8 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 预算、timeout、Runtime failure 和 user abort 是 Orchestrator stop reason，不伪装成 Controller done。
 
+有效的非 satisfied 判断表示任务 incomplete；Host 未接受完成判断时保持 indeterminate。ledger 的 unresolvedActions 是当前剩余事项，merge 追加，replace 提交完整剩余集合（允许空数组）；contract 是该集合的投影。satisfied 的完成门检查当前剩余事项及当前 request 的候选结果读取证据。Host 纠错只反馈 Controller，不产生候选输入，最多两次纠正机会且总计不超过 180 秒；耗尽以 stalled.controller_completion_guard 终止。具体取舍见 [完成纠错决策](../decisions/accepted/2026-09-06-ppt-flow-convergence-and-observation-bounds.md)。
+
 ## 9. 决策过程
 
 推荐 system prompt 引导 Controller 自主按以下顺序思考：
@@ -432,7 +434,7 @@ controller.decision
 controller.completed | controller.failed
 ```
 
-`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把成功读取的当前 run event refs 记入本轮 catalog。离线重建只读事件日志和已保存 artifacts，并校验 digest。
+`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把本轮成功的 workspace `read` 或带 event refs 的观察记入 catalog。离线重建只读事件日志和已保存 artifacts，并校验 digest。
 
 事件引用：
 

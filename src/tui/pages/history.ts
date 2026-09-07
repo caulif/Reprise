@@ -55,7 +55,9 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
     kv(theme, 'Run', missing(item.runId), width - 2),
     kv(theme, 'Outcome', item.outcome ?? 'incomplete or no record', width - 2),
     kv(theme, 'Started', item.startedAt ?? 'unavailable', width - 2),
-    ...kvLinkBlock(theme, 'Report', item.reportPath ?? 'not generated', item.reportPath, width),
+    ...(item.taskStatus ? [kv(theme, 'Task', item.taskStatus, width - 2)] : []),
+    ...(item.comparisonStatus ? [kv(theme, 'Comparison', `${item.comparisonStatus}${item.comparisonFailure ? ` (${item.comparisonFailure})` : ''}`, width - 2)] : []),
+    ...kvLinkBlock(theme, item.reportKind ?? 'Report', item.reportPath ?? 'not generated', item.reportPath, width),
     kv(theme, 'Stored', formatBytes(item.sizeBytes), width - 2),
     ...kvLinkBlock(theme, 'Path', item.path, item.path, width),
   ], width);

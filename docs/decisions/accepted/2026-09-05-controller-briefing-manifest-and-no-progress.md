@@ -1,6 +1,8 @@
 # 决策：Controller briefing 可复原清单与无进展策略解耦
 
-## 背景
+状态：accepted
+
+## 问题
 
 Controller 需要按需读取历史和候选轨迹，且压缩或恢复后仍能确认可读文件的版本。Target 的无进展策略不能限制 Controller 的合法重复澄清。
 
@@ -12,7 +14,11 @@ Controller 需要按需读取历史和候选轨迹，且压缩或恢复后仍能
 - `RunPolicy.maxConsecutiveNoProgress` 不再用于比较 Controller 消息。Controller 仅受其显式 Agent budget 和用户取消、墙钟等终止条件约束。
 - 每个 settled turn 额外生成 `event-index.tsv`；Controller 完成时记录 advisory completion diagnostic，报告读取证据数量但不因未读取而拒绝 `done`。
 
-## 边界
+## 备选方案
+
+**沿用 Target 的无进展计数器**：会阻断 Controller 合法的重复澄清，因此不采用。
+
+## 影响
 
 Manifest 是取证索引，不是语义摘要，也不替代事件日志或工作区 fingerprint。缺失文件仍需由读取工具报告，不能用 manifest 中的零值推断“无变化”。
 

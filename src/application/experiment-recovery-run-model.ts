@@ -1,7 +1,9 @@
 import { sha256 } from "../core/identity.js";
 import type { RecoveryContext } from "../agents/recovery-agent.js";
+import { recoveryWorkingSet } from "../agents/recovery-working-set.js";
 import { buildRecoveryInvestigationPacket } from "./recovery-investigation-packet.js";
-import { recoveryObservationTools, recoveryTools, validateRecoveryEvidence } from "../infrastructure/recovery-tools.js";
+import { OBSERVATIONS_MOUNT, recoveryObservationsRoot, writeFrozenObservationTree } from "./observation-files.js";
+import { recoveryTools, validateRecoveryEvidence } from "../infrastructure/recovery-tools.js";
 import {
   persistRecoveryControlledWriteBlob,
   recoveryClues,
@@ -71,7 +73,7 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
         ? { excludedEntries: staging.sourceBudget.excludedEntries }
         : {}),
     },
-    budget: { timeoutMs: 600_000 },
+    budget: { timeoutMs: input.recovery.timeoutMs ?? 600_000 },
     allowModelText: input.taskCase.privacy.allowModelText,
     readiness: deriveRecoveryReadinessContext(input.taskCase, historicalCwdOf(input.taskCase)),
   };
@@ -102,18 +104,10 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
         return { content: `Selected recovery candidate ${candidateId}.` };
       },
     },
-    ...recoveryObservationTools(input.taskCase, {
-      onOperation: async (operation) => {
-        await store.append({
-          type: "recovery.frozen_observation_read",
-          runId: input.runId,
-          operationId: `recovery-frozen-observation-${operation.operation}-${operation.attempts}-${sha256(JSON.stringify(operation)).slice(0, 16)}`,
-          payload: operation,
-        });
-      },
-    }),
     ...recoveryTools(executionCandidate.root, {
       allowBinary: input.taskCase.privacy.allowBinary,
+      mounts: { [OBSERVATIONS_MOUNT]: recoveryObservationsRoot(session.experimentRoot, input.runId) },
+      denyDestructiveOnPrefix: [OBSERVATIONS_MOUNT],
       ...(input.allowShell ? { allowShell: true } : {}),
       ...(activeStaging?.temporaryRoot ? { homeRoot: activeStaging.temporaryRoot } : {}),
       onControlledWrite: async (entry) => {
@@ -149,6 +143,7 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
   session.preflightOperation = "recovery_agent_invoke";
   let retryModel = true;
   while (retryModel) {
+    input.signal?.throwIfAborted();
     if (session.modelAttempts > 0 && session.recovery?.status === "failed") {
       await refreshRecoveryCandidateForRetry(session);
     }
@@ -172,7 +167,7 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
       }),
     );
     const modelStartedAt = Date.now();
-    session.recovery = await input.recovery.recover(context, tools, audit);
+    session.recovery = await input.recovery.recover(context, tools, audit, input.signal);
     if (session.recovery.status === "completed") session.lastCompletedRecovery = session.recovery;
     await recordRecoveryAttempt(
       session,
@@ -220,7 +215,11 @@ async function persistRecoveryModelInput(
   const { input, store } = session;
   const attempt = session.modelAttempts;
   const toolNames = tools.map((tool) => (tool as { name: string }).name);
-  const bytes = Buffer.from(JSON.stringify({ ...recoveryModelInputAudit(context, toolNames), attempt }), "utf8");
+  const bytes = Buffer.from(JSON.stringify({
+    ...recoveryModelInputAudit(context, toolNames),
+    workingSetDigest: sha256(JSON.stringify(recoveryWorkingSet(context))),
+    attempt,
+  }), "utf8");
   const artifact = await store.commitArtifact({
     artifactId: `recovery-model-input-${attempt}-${sha256(bytes).slice(0, 16)}`,
     runId: input.runId,
@@ -294,6 +293,11 @@ async function refreshRecoveryCandidateForRetry(session: RecoveryRunSession): Pr
 
 export async function invokeRecoveryAgent(session: RecoveryRunSession): Promise<void> {
   session.context = buildRecoveryAgentContext(session);
+  await writeFrozenObservationTree({
+    root: recoveryObservationsRoot(session.experimentRoot, session.input.runId),
+    taskCase: session.input.taskCase,
+    ...(session.playbook?.text ? { playbookText: session.playbook.text } : {}),
+  });
   buildRecoveryAgentTools(session);
   await runRecoveryModelAttempts(session);
 }
@@ -337,7 +341,7 @@ async function runReadinessFeedbackTurn(
   session: RecoveryRunSession,
   readinessContext: NonNullable<RecoveryContext["readiness"]>,
 ): Promise<void> {
-  const { input, store, context, tools, audit, executionCandidate } = session;
+  const { input, context, tools, audit, executionCandidate } = session;
   const readinessResult = session.readinessResult;
   if (!context || !tools || !audit || !executionCandidate || !readinessResult)
     throw new Error("Recovery readiness feedback was not prepared.");
@@ -350,14 +354,62 @@ async function runReadinessFeedbackTurn(
     },
   };
   const nextAttempt = session.modelAttempts + 1;
-  const feedbackInput = recoveryModelInputAudit(
-    session.context,
-    tools.map((tool) => tool.name),
+  await persistReadinessFeedbackInput(session, nextAttempt);
+  session.modelAttempts = nextAttempt;
+  const feedbackStartedAt = Date.now();
+  const previousCompleted = session.lastCompletedRecovery ?? (session.recovery?.status === "completed" ? session.recovery : undefined);
+  try {
+    input.signal?.throwIfAborted();
+    session.recovery = await input.recovery.recover(session.context, tools, audit, input.signal);
+  } catch (error) {
+    session.recovery = recoveryFailedFromThrown(
+      error,
+      previousCompleted?.status === "completed" ? previousCompleted.sessionId : "recovery-feedback",
+    );
+  }
+  await recordRecoveryAttempt(
+    session,
+    recoveryAttemptRecord({
+      attemptId: `recovery-attempt-model-${session.modelAttempts}-completed`,
+      phase: "candidate",
+      operation: "invoke_model",
+      candidateId: executionCandidate.candidateId,
+      attemptNumber: session.modelAttempts,
+      result: session.recovery.status === "completed" ? "succeeded" : "failed",
+      ...(session.recovery.status === "failed" ? { failureCode: session.recovery.failure.code } : {}),
+      durationMs: Math.max(0, Date.now() - feedbackStartedAt),
+      recordedAt: new Date().toISOString(),
+    }),
   );
-  const feedbackBytes = Buffer.from(
-    JSON.stringify({ ...feedbackInput, attempt: nextAttempt, feedbackTurn: true }),
-    "utf8",
+  if (input.signal?.aborted) input.signal.throwIfAborted();
+  if (session.recovery.status !== "completed") {
+    await keepEnvelopeAfterFailedFeedback(session, previousCompleted);
+    return;
+  }
+  const previousValid = previousCompleted?.status === "completed" ? previousCompleted : undefined;
+  const newUsable = await completedEnvelopeUsable(session, session.recovery);
+  if (!newUsable && previousValid && (await completedEnvelopeUsable(session, previousValid))) {
+    await keepEnvelopeAfterInvalidCompletedFeedback(session, previousValid);
+    return;
+  }
+  session.lastCompletedRecovery = session.recovery;
+  session.readinessResult = await checkRecoveryReadiness(
+    executionCandidate.root,
+    readinessContext,
+    input.executeReadinessCommands === true ? { executeCommands: true } : {},
   );
+  await recordRecoveryReadiness(session, session.readinessResult, session.modelAttempts);
+}
+
+async function persistReadinessFeedbackInput(session: RecoveryRunSession, nextAttempt: number): Promise<void> {
+  const { input, store, context, tools, readinessResult } = session;
+  if (!context || !tools || !readinessResult) throw new Error("Recovery readiness feedback was not prepared.");
+  const feedbackBytes = Buffer.from(JSON.stringify({
+    ...recoveryModelInputAudit(context, tools.map((tool) => tool.name)),
+    workingSetDigest: sha256(JSON.stringify(recoveryWorkingSet(context))),
+    attempt: nextAttempt,
+    feedbackTurn: true,
+  }), "utf8");
   const feedbackArtifact = await store.commitArtifact({
     artifactId: `recovery-model-input-feedback-${nextAttempt}-${sha256(feedbackBytes).slice(0, 16)}`,
     runId: input.runId,
@@ -389,48 +441,6 @@ async function runReadinessFeedbackTurn(
       missingPaths: readinessResult.missingPaths,
     },
   });
-  session.modelAttempts = nextAttempt;
-  const feedbackStartedAt = Date.now();
-  const previousCompleted = session.lastCompletedRecovery ?? (session.recovery?.status === "completed" ? session.recovery : undefined);
-  try {
-    session.recovery = await input.recovery.recover(session.context, tools, audit);
-  } catch (error) {
-    session.recovery = recoveryFailedFromThrown(
-      error,
-      previousCompleted?.status === "completed" ? previousCompleted.sessionId : "recovery-feedback",
-    );
-  }
-  await recordRecoveryAttempt(
-    session,
-    recoveryAttemptRecord({
-      attemptId: `recovery-attempt-model-${session.modelAttempts}-completed`,
-      phase: "candidate",
-      operation: "invoke_model",
-      candidateId: executionCandidate.candidateId,
-      attemptNumber: session.modelAttempts,
-      result: session.recovery.status === "completed" ? "succeeded" : "failed",
-      ...(session.recovery.status === "failed" ? { failureCode: session.recovery.failure.code } : {}),
-      durationMs: Math.max(0, Date.now() - feedbackStartedAt),
-      recordedAt: new Date().toISOString(),
-    }),
-  );
-  if (session.recovery.status !== "completed") {
-    await keepEnvelopeAfterFailedFeedback(session, previousCompleted);
-    return;
-  }
-  const previousValid = previousCompleted?.status === "completed" ? previousCompleted : undefined;
-  const newUsable = await completedEnvelopeUsable(session, session.recovery);
-  if (!newUsable && previousValid && (await completedEnvelopeUsable(session, previousValid))) {
-    await keepEnvelopeAfterInvalidCompletedFeedback(session, previousValid);
-    return;
-  }
-  session.lastCompletedRecovery = session.recovery;
-  session.readinessResult = await checkRecoveryReadiness(
-    executionCandidate.root,
-    readinessContext,
-    input.executeReadinessCommands === true ? { executeCommands: true } : {},
-  );
-  await recordRecoveryReadiness(session, session.readinessResult, session.modelAttempts);
 }
 
 async function completedEnvelopeUsable(

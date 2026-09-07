@@ -18,7 +18,7 @@
 
 ## 影响
 
-Prompt 要求先读调查包再对照 staging。`read_observation` 仍可分页读冻结历史，但是备胎。
+Prompt 要求先读调查包再对照 staging。缺句时读 `observations/` 文件，不再分页翻冻结历史，见 [工作集与观察文件](./2026-09-07-recovery-working-set-and-observation-files.md)。
 
 ## 验证
 

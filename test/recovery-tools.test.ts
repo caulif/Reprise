@@ -17,7 +17,6 @@ import { promisify } from "node:util";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { ProcessSpawner } from "../src/infrastructure/process-runner.js";
 import {
-  recoveryObservationTools,
   recoveryTools,
   resolvedRecoveryFacts,
   verifyRecoveryEvidence,
@@ -401,32 +400,12 @@ test("recovery catalog assigns stable Host refs to transcript and id-less histor
   assert.equal(facts.catalog.length, 2);
   assert.match(facts.catalog[1]?.ref ?? "", /^event:history-0-[a-f0-9]{16}$/);
   assert.ok(facts.evidenceRefs.includes(facts.catalog[1]?.ref ?? ""));
-  const observation = recoveryObservationTools(taskCase).find(
-    (tool) => tool.name === "read_observation",
-  );
-  assert.ok(observation);
-  const page = await observation.execute(
-    { source: "historical_events" },
-    new AbortController().signal,
-  );
-  const rows = JSON.parse(page.content) as {
-    ref: string;
-    observation: unknown;
-  }[];
-  assert.equal(rows[0]?.ref, facts.catalog[1]?.ref);
-  assert.deepEqual(rows[0]?.observation, { kind: "tool", output: "observed" });
 });
 
-test("read_observation truncates oversized historical pages", async () => {
-  const huge = { kind: "tool", output: "x".repeat(40_000) };
-  const taskCase = recoveryTaskCase([huge, huge]);
-  const observation = recoveryObservationTools(taskCase).find((item) => item.name === "read_observation");
-  assert.ok(observation);
-  const page = await observation.execute({ source: "historical_events", maxItems: 8 }, new AbortController().signal);
-  const rows = JSON.parse(page.content) as unknown[];
-  assert.equal(rows.length, 1);
-  assert.equal(page.details && (page.details as { truncated?: boolean }).truncated, true);
-  assert.equal((page.details as { nextCursor?: number }).nextCursor, 1);
+test("workspace factory does not register frozen-history paging tools", () => {
+  const names = recoveryTools("TMP").map((item) => item.name).sort();
+  assert.deepEqual(names, ["edit", "find", "grep", "ls", "read", "shell_exec", "write"]);
+  assert.equal(names.includes("read_observation"), false);
 });
 
 test("Git facts preserve an unborn repository and distinguish a non-repository", async (t) => {
@@ -531,55 +510,6 @@ function recoveryTaskCase(
     contentHash: "b".repeat(64),
   };
 }
-
-test("read_observation is the only frozen-history tool", async () => {
-  const taskCase = recoveryTaskCase([
-    { command: "npm test", output: "updated src/recovery.ts" },
-  ]);
-  const tools = recoveryObservationTools(taskCase);
-  assert.deepEqual(tools.map((item) => item.name), ["read_observation"]);
-  const page = JSON.parse(
-    (await tools[0]?.execute({ source: "historical_events" }, new AbortController().signal))?.content ?? "[]",
-  ) as { ref?: string }[];
-  assert.ok(page.length > 0);
-  assert.ok(page.every((entry) => typeof entry.ref === "string"));
-});
-
-test("frozen observation reads retry once and report an unavailable evidence source", async () => {
-  const attempts: unknown[] = [];
-  let reads = 0;
-  const observation = recoveryObservationTools(recoveryTaskCase([]), {
-    beforeRead: async () => {
-      reads += 1;
-      throw new Error("simulated frozen evidence read failure");
-    },
-    onOperation: async (operation) => {
-      attempts.push(operation);
-    },
-  }).find((item) => item.name === "read_observation");
-  assert.ok(observation);
-  const result = await observation.execute(
-    { source: "transcript" },
-    new AbortController().signal,
-  );
-  assert.equal(reads, 2);
-  assert.equal(result.content, "[]");
-  assert.deepEqual(result.details, {
-    operation: "read_observation",
-    available: false,
-    reason: "frozen_evidence_error",
-    source: "transcript",
-    start: 0,
-  });
-  assert.deepEqual(attempts, [
-    {
-      operation: "read_observation",
-      availability: "unavailable",
-      attempts: 2,
-      reason: "frozen_evidence_error",
-    },
-  ]);
-});
 
 test("bounded workspace reads retry once and degrade with Host-owned diagnostics", async (t) => {
   const root = await workspace();

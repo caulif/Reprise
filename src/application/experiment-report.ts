@@ -2,11 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import type { ControllerDecision } from "../agents/controller-agent.js";
-import { buildComparisonContext } from "./comparison.js";
+import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObservationRefs } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonInvocationSchema, type ArtifactRef, type TaskCase } from "../core/schema.js";
-import { observationTools } from "../infrastructure/agent-tools.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
 import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import {
@@ -29,6 +28,7 @@ import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../in
 const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
 export async function finishExperiment(input: {
+  signal?: AbortSignal;
   input: CodexExperimentInput;
   taskCase: TaskCase;
   preflight: CodexExperimentPreflight;
@@ -172,22 +172,32 @@ async function compareExperimentOutcome(
     },
   });
   await materializeComparisonSandbox(input.store, record.artifactRefs, attemptRoot);
-  const context = buildComparisonContext(input.taskCase, [record], [inspection]);
+  const events = input.store.events(input.input.runId);
+  const context: ComparisonContext = {
+    ...buildComparisonContext(input.taskCase, [record], [inspection]),
+    ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
+  };
+  const briefingContext = briefingComparisonContext(context);
   const materializedIds = new Set(record.artifactRefs.map((ref) => ref.artifactId));
   const briefing = await writeComparisonBriefing({
     attemptRoot, experimentRoot: input.experimentRoot, workspaceRoot: input.workspaceRoot,
-    taskCase: input.taskCase, record, context, events: input.store.events(input.input.runId),
+    taskCase: input.taskCase, record, context: briefingContext, events,
     artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
   });
-  await persistComparisonRequest(input.store, input.input.runId, attemptId, context);
+  await persistComparisonRequest(input.store, input.input.runId, attemptId, briefingContext);
   const planContext = withOrientation(context, input, "plan", attemptRoot, briefing.indexMarkdown, "unavailable");
-  await persistPhaseRequest(input.store, input.input.runId, attemptId, "plan", planContext);
+    await persistPhaseRequest(input.store, input.input.runId, attemptId, "plan", briefingComparisonContext(planContext));
   const planResult = await invokePlan(input, planContext, attemptRoot, attemptId);
   const plan = await planHandoff(attemptRoot, planResult);
   await input.store.append({ type: "comparison.plan_completed", runId: input.input.runId, operationId: `comparison-plan-completed-${attemptId}`, payload: { attemptId, phase: "plan", planStatus: plan.status, ...invocationFact(planResult) } });
   const reportContext = withOrientation(context, input, "report", attemptRoot, briefing.indexMarkdown, plan.status, plan.failureKind, plan.digest);
-  await persistPhaseRequest(input.store, input.input.runId, attemptId, "report", { ...reportContext, planContent: plan.content });
-  let comparisonResult = await invokeReport(input, reportContext, attemptRoot, attemptId);
+  let comparisonResult: AgentInvocation<ComparisonResult>;
+  if (planResult.status === 'cancelled' || input.signal?.aborted) comparisonResult = { status: 'cancelled' };
+  else {
+    await persistPhaseRequest(input.store, input.input.runId, attemptId, "report", { ...briefingComparisonContext(reportContext), planContent: plan.content });
+    comparisonResult = await invokeReport(input, reportContext, attemptRoot, attemptId);
+  }
+  if (input.signal?.aborted) comparisonResult = { status: 'cancelled' };
   if (comparisonResult.status === "completed") assertComparisonResult(comparisonResult.value, context);
   if (
     comparisonResult.status === "completed" &&
@@ -254,24 +264,25 @@ async function invokePlan(
   attemptId: string,
 ): Promise<AgentInvocation<ComparisonPlanResult>> {
   if (!input.input.comparison.plan) return { status: "failed", failure: { code: "agent_failure", message: "Comparison Planner is unavailable.", attempts: 0 } };
-  return input.input.comparison.plan(context, comparisonTools(input, attemptRoot, "plan"), phaseAudit(input, attemptId, "plan"));
+  if (input.signal?.aborted) return { status: 'cancelled' };
+  return input.input.comparison.plan(context, comparisonTools(input, attemptRoot, "plan"), phaseAudit(input, attemptId, "plan"), input.signal);
 }
 
 async function invokeReport(
   input: Parameters<typeof finishExperiment>[0], context: ComparisonContext, attemptRoot: string, attemptId: string,
 ): Promise<AgentInvocation<ComparisonResult>> {
+  if (input.signal?.aborted) return { status: 'cancelled' };
   const tools = comparisonTools(input, attemptRoot, "report");
   const audit = phaseAudit(input, attemptId, "report");
   return input.input.comparison.report
-    ? input.input.comparison.report(context, tools, audit)
-    : input.input.comparison.compare(context, tools, audit);
+    ? input.input.comparison.report(context, tools, audit, input.signal)
+    : input.input.comparison.compare(context, tools, audit, input.signal);
 }
 
 function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptRoot: string, phase: ComparisonPhase): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
   return [
-    ...observationTools(input.store, { runId: input.input.runId, transcript: input.taskCase.transcript, allowModelText: input.taskCase.privacy.allowModelText }),
     ...recoveryTools(attemptRoot, {
       allowBinary: input.taskCase.privacy.allowBinary,
       mounts: {
@@ -282,7 +293,7 @@ function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptR
       },
       allowWrite: (path) => path.startsWith("scratch/") || path === "work/comparison-plan.md" || (phase === "report" && path === "report.html"),
       completionPaths: new Set(phase === "plan" ? ["work/comparison-plan.md"] : ["report.html"]),
-      denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns"],
+      denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns", "observations"],
       shellCwd: scratchRoot,
       shellEnv: {
         REPRISE_BASELINE_ROOT: join(controllerRoot, "history"), REPRISE_CANDIDATE_ROOT: input.workspaceRoot,

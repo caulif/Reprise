@@ -5,8 +5,9 @@ import { join, resolve } from 'node:path';
 import { SAFE_ID } from '../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
 import { runProcess } from '../../infrastructure/process-runner.js';
-import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, SessionDiscoveryError, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
+import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, rankSessionFiles, SessionDiscoveryError, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
 import { isExcludedSession } from '../shared/session-exclusion.js';
+import { looksLikeInjectedInstruction } from '../shared/replay-user-input.js';
 import { catalogProjectKey } from '../shared/session-project.js';
 import type { TaskCase } from '../../core/schema.js';
 import type {
@@ -49,7 +50,7 @@ export async function discoverCodexSessions(sessionsRoot: string, limit = 50): P
 async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<SessionDiscoveryPage> {
   const root = resolve(query.root ?? defaultCodexSessionsRoot());
   const listing = await listJsonlFiles(root, (name) => name.startsWith('rollout-') && name.endsWith('.jsonl'), query.signal);
-  const ranked = [...listing.entries].sort((left, right) => right.mtime - left.mtime || left.path.localeCompare(right.path));
+  const ranked = rankSessionFiles(listing.entries);
   const rolloutPage = await discoverSessionPage({
     root, ranked,
     // An omitted limit means the adapter is building the complete catalog. Explicit limits remain a compatibility API.
@@ -604,6 +605,7 @@ function commitFromMetadata(payload: JsonRecord): string | undefined {
 
 function compact(value: string): string { return value.replace(/\s+/g, ' ').slice(0, 160); }
 function recordLaterUserSummary(state: { summary?: string | undefined; laterUserSummaries: string[] }, text: string): void {
+  if (looksLikeInjectedInstruction(text)) return;
   const compactText = compact(text);
   if (!state.summary) state.summary = compactText;
   else if (state.laterUserSummaries.length < 8) state.laterUserSummaries.push(compactText);

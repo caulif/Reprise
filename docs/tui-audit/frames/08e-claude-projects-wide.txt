@@ -8,7 +8,7 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
 
 ┌─ Projects · 2 projects / 1 sessions / 0 projectless / 0 unreadable · filter:… ┌─ Preview ────────────────────────────┐
 │❯ claude-audit                                         1         4d ago      │ │ Project      claude-audit            │
-│  Projectless sessions                                 0 sessionsUnknown time│ │ Path         C:/claude-audit         │
+│  Projectless sessions                                 0 sessionsUnknown time│ │ Session cwd  C:/claude-audit         │
 │ 1/2                                                                         │ │ Sessions     1                       │
 │                                                                             │ │                                      │
 │                                                                             │ │ Latest       Review the product      │

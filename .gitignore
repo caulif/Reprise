@@ -1,3 +1,10 @@
+# Personal project skills and generated architecture diagrams.
+# Agents still load these from disk; they are local viewing only.
+/.grok/
+/.codex/skills/
+/architecture.html
+/architecture.md
+
 # Operating system and editor files
 .DS_Store
 Thumbs.db

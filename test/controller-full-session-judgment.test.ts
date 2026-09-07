@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Type } from '@sinclair/typebox';
 import { ControllerAgent, CONTROLLER_SYSTEM_PROMPT, type SteeringContext } from '../src/agents/controller-agent.js';
 import { PiAgentHost, type PiTextCaller } from '../src/infrastructure/pi-agent-host.js';
 import { controllerPromptContent, renderIndexMarkdown } from '../src/application/controller-briefing.js';
@@ -62,6 +63,29 @@ function policyStub(): PiTextCaller {
   };
 }
 
+test('session callbacks are bound to the actual tool and current request', async () => {
+  const callbacks: string[] = [];
+  let calls = 0;
+  const controller = new ControllerAgent({ host: new PiAgentHost({ createSession: (session) => ({
+    append: async () => {
+      calls += 1;
+      const name = calls === 1 ? 'ls' : 'read';
+      await session.tools.find((tool) => tool.name === name)!.execute({}, new AbortController().signal);
+      return JSON.stringify({ type: 'done', reason: 'satisfied' });
+    },
+    cancel() {},
+  }) }), timeoutMs: 1_000, maxRepairAttempts: 0 });
+  for (const index of [1, 2]) {
+    const result = await controller.decide({ ...briefing({ includeFollowupInIndex: false, settledTurns: 1 }), requestId: `request-${index}` }, ['ls', 'read'].map((name) => ({
+      name, description: name, parameters: Type.Object({}),
+      execute: async () => ({ content: 'result', details: { available: true, path: 'project/output.html' } }),
+      onCompleted: async () => { callbacks.push(`${name}-${index}`); },
+    })));
+    assert.equal(result.status, 'completed');
+  }
+  assert.deepEqual(callbacks, ['ls-1', 'read-2']);
+});
+
 test('first-pass same-kind deliverable with historical user steering is send, not done', async () => {
   const controller = new ControllerAgent({
     host: new PiAgentHost(policyStub()),
@@ -88,7 +112,7 @@ test('without later user steering, the same first pass may stop', async () => {
 
 test('controller prompt does not treat unused historical user turns as a stop reason', () => {
   assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not fire historical user sentences in sequence/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /do not send them in order to exhaust them/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not send historical sentences merely to exhaust them/);
 });
 
 test('Controller without promptContent still does not dump historical user turns', async () => {

@@ -34,6 +34,8 @@ export type ComparisonContext = {
     conditions: readonly string[];
   };
   promptContent?: string;
+  /** Host-owned observation and run-event refs; omitted from the model briefing JSON. */
+  ownedEvidenceRefs?: readonly string[];
 };
 
 export type ComparisonReportFacts = {
@@ -47,9 +49,9 @@ export type ComparisonReportFacts = {
 };
 
 export interface ComparisonAgentPort {
-  plan?(context: ComparisonContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink): Promise<AgentInvocation<ComparisonPlanResult>>;
-  report?(context: ComparisonContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink): Promise<AgentInvocation<ComparisonResult>>;
-  compare(context: ComparisonContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink): Promise<AgentInvocation<ComparisonResult>>;
+  plan?(context: ComparisonContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonPlanResult>>;
+  report?(context: ComparisonContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonResult>>;
+  compare(context: ComparisonContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonResult>>;
 }
 
 const COMPARISON_COMPACTION = 'Preserve the current phase goal and output contract, baseline/candidate scope, verified findings with evidence refs or rereadable paths, unresolved questions, and the next plan/report action. Drop long tool bodies that can be reread by path.';
@@ -74,8 +76,7 @@ export const COMPARISON_SYSTEM_PROMPT = [
   '',
   '# Inputs and tools',
   'The briefing JSON (task, baseline, candidates, telemetry, artifactRefs, reportFacts) is a curated projection, not the full facts, and its summaries are claims until checked. reportFacts are Host-projected run facts: display unavailable values as 未采集 / 不可判定, never as zero. "It said it finished" is not verification.',
-  '- Workspace tools (read, ls, grep, find): candidate/ is the live isolated replica retained after the run (read-only); history/ and evidence/ hold available historical and Host evidence. work/ is revisable planning state. write/edit may change work/comparison-plan.md and report.html; shell_exec cwd is scratch/.',
-  '- read_observation pages the frozen historical transcript ("transcript") or this candidate run\'s events ("run_events").',
+  '- Workspace tools (read, ls, grep, find): candidate/ is the live isolated replica retained after the run (read-only); history/ and evidence/ hold available historical and Host evidence. observations/ is a read-only mount of frozen transcript, historical events, and this run\'s events (INDEX.md then one file). work/ is revisable planning state. write/edit may change work/comparison-plan.md and report.html; shell_exec cwd is scratch/. There is no read_observation tool.',
   'Investigate selectively: read when a narrower read could change a user-facing conclusion; do not read all material by default. Check outcome evidence (final messages, workspace scope, artifacts, checks) before process evidence (event traces). Before committing to a finding that matters, make one attempt to read the evidence most likely to contradict it.',
   '',
   '# Judging differences',
@@ -105,6 +106,7 @@ export const COMPARISON_SYSTEM_PROMPT = [
 const OUTPUT_CONTRACT = [
   'Call write with path report.html and the complete HTML document. The last assistant message is only one JSON object. Intermediate messages may be the short process sentences.',
   '{"status":"completed"|"insufficient_evidence","reportPath":"report.html","evidenceRefs":["artifact:..."]}',
+  'evidenceRefs must be Host-owned: observations/INDEX.tsv, process-index evidence_ref, or briefing artifact/baseline/candidate refs. Unknown extras are dropped; only-unknown envelopes are rejected.',
   'Optional: "limitationCodes": ["..."], "headline": "<one TUI sentence>"',
 ].join('\n');
 
@@ -124,13 +126,14 @@ export class ComparisonAgent implements ComparisonAgentPort {
     this.#maxRepairAttempts = input.maxRepairAttempts;
   }
 
-  async compare(context: ComparisonContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink): Promise<AgentInvocation<ComparisonResult>> {
-    return this.report(context, tools, audit);
+  async compare(context: ComparisonContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonResult>> {
+    return this.report(context, tools, audit, signal);
   }
 
-  async plan(context: ComparisonContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink): Promise<AgentInvocation<ComparisonPlanResult>> {
+  async plan(context: ComparisonContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonPlanResult>> {
     return this.#host.request<ComparisonPlanResult>({
       role: 'comparison', systemPrompt: COMPARISON_PLANNER_SYSTEM_PROMPT, context, schema: ComparisonPlanResultSchema,
+      ...(signal ? { signal } : {}),
       timeoutMs: this.#timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
       allowModelText: context.allowModelText, tools, outputContract: PLAN_OUTPUT_CONTRACT,
       compactionInstructions: `${COMPARISON_COMPACTION} For Planner preserve selected objects, selection reasons, and counterevidence still to check.`,
@@ -139,23 +142,44 @@ export class ComparisonAgent implements ComparisonAgentPort {
     });
   }
 
-  async report(context: ComparisonContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink): Promise<AgentInvocation<ComparisonResult>> {
-    const available = new Set([...context.baseline.evidenceRefs, ...context.candidates.flatMap((candidate) => candidate.evidenceRefs), ...context.artifactRefs]);
+  async report(context: ComparisonContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonResult>> {
+    const available = comparisonEvidenceAllowlist(context);
     return this.#host.request<ComparisonResult>({
       role: 'comparison', systemPrompt: COMPARISON_SYSTEM_PROMPT, context, schema: ComparisonResultSchema,
+      ...(signal ? { signal } : {}),
       timeoutMs: this.#timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
       allowModelText: context.allowModelText, tools, outputContract: OUTPUT_CONTRACT,
       compactionInstructions: `${COMPARISON_COMPACTION} For Reporter preserve kept or rejected differences, intended page expression, and necessary content not yet written to HTML.`,
       ...(context.promptContent ? { promptContent: context.promptContent } : {}),
       ...(audit ? { audit } : {}),
+      normalize: (value) => normalizeComparisonEvidence(value, available),
       validate: (result) => unknownEvidenceRefMessage(result.evidenceRefs, available),
+      repairInstruction: 'If unresolved citations are unknown, keep only Host-owned refs from observations/INDEX.tsv or briefing facts, or use [].',
     });
   }
 }
 
+function comparisonEvidenceAllowlist(context: ComparisonContext): Set<string> {
+  return new Set([
+    ...context.baseline.evidenceRefs,
+    ...context.candidates.flatMap((candidate) => candidate.evidenceRefs),
+    ...context.artifactRefs,
+    ...(context.ownedEvidenceRefs ?? []),
+  ]);
+}
+
+function normalizeComparisonEvidence(value: unknown, available: ReadonlySet<string>): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as { evidenceRefs?: unknown };
+  if (!Array.isArray(record.evidenceRefs)) return value;
+  const owned = record.evidenceRefs.filter((ref): ref is string => typeof ref === 'string' && available.has(ref));
+  if (record.evidenceRefs.length > 0 && owned.length === 0) return value;
+  return { ...record, evidenceRefs: owned };
+}
+
 export function assertComparisonResult(value: unknown, context: ComparisonContext): asserts value is ComparisonResult {
   if (!Value.Check(ComparisonResultSchema, value)) throw new Error('Invalid ComparisonEnvelope: schema validation failed.');
-  const available = new Set([...context.baseline.evidenceRefs, ...context.candidates.flatMap((candidate) => candidate.evidenceRefs), ...context.artifactRefs]);
+  const available = comparisonEvidenceAllowlist(context);
   const refs = (value as { evidenceRefs?: unknown }).evidenceRefs;
   if (!Array.isArray(refs) || refs.some((ref) => typeof ref !== 'string')) throw new Error('Invalid ComparisonEnvelope: unknown evidence reference.');
   if (unknownEvidenceRefMessage(refs, available)) throw new Error('Invalid ComparisonEnvelope: unknown evidence reference.');

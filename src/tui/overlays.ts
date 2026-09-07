@@ -68,10 +68,14 @@ export function helpLines(page?: string, locale: Locale = 'en'): readonly string
   ] : undefined;
   const runningKeys = page === 'running' ? [
     t(locale, 'helpCancelRun'),
+    'Ctrl+G     Actors',
+    'Tab        Switch pane',
+    'd / Enter  Toggle details',
+    'o          Open selected detail',
   ] : undefined;
   const keys = page === 'home' ? homeKeys : page === 'running' ? runningKeys : scoped;
   return [
-    t(locale, 'helpCommands'),
+    ...(page === 'home' || page === undefined ? [t(locale, 'helpCommands')] : []),
     '',
     ...(keys ? [` ${t(locale, 'helpThisPage', { page: page ?? '' })}`, ...keys.map((line) => `   ${line}`), ''] : []),
     ` ${t(locale, 'helpGlobalLine')}`,

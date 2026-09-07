@@ -16,11 +16,13 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
 │   provider label     dzzzz-openai                                                                                    │
 │   base URL           https://api.dzzzz.cf  ✓                                                                         │
 │ ❯ model              gpt-5.6-terra                                                                                   │
+│   API                openai-completions  [Enter] toggles                                                             │
+│   reasoning          false  [Enter] toggles                                                                          │
 │   effort             medium  [Enter] toggles                                                                         │
 │   API key            env:OPENAI_API_KEY  ✓                                                                           │
 │   Language           English  [Enter] toggles                                                                        │
 │                                                                                                                      │
-│ ✓ Saved locally                                                                                                      │
+│ ● Unsaved draft                                                                                                      │
 │ Configuration file: .reprise/harness-model.json                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  OPENAI_API_KEY is not set in this shell. $env:OPENAI_API_KEY = '<value>'  Or paste the API key into this page and save.

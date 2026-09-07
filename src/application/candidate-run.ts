@@ -87,6 +87,7 @@ export class CandidateRun {
       return this.#finish('completed.controller_satisfied', 'completed');
     }
     const code = reason === 'requires_real_user_decision' ? 'blocked.requires_user_decision' : reason === 'blocked' ? 'blocked.controller_done' : 'stalled.controller_no_further_value';
+    this.#assessment = { status: 'incomplete', decidedBy: 'controller', evidenceRefs: evidence ? [`event:${evidence.eventId}`] : [] };
     return this.#finish(code, reason === 'blocked' || reason === 'requires_real_user_decision' ? 'failed' : 'shutdown');
   }
 
@@ -110,7 +111,7 @@ export class CandidateRun {
     return this.#finish('cancelled.user', 'cancelled');
   }
 
-  async stopByHarness(code: 'limit.controller_calls' | 'limit.wall_clock' | 'stalled.no_progress'): Promise<CandidateRunState> {
+  async stopByHarness(code: 'limit.controller_calls' | 'limit.wall_clock' | 'stalled.no_progress' | 'stalled.controller_completion_guard'): Promise<CandidateRunState> {
     this.#ensure('awaiting_controller');
     await this.#append('harness.stop_requested', { code }, `harness-stop-${code}`);
     return this.#finish(code, 'shutdown');

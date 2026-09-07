@@ -486,13 +486,19 @@ export function initialRecoveryInvestigation(
   };
 }
 
+const MAX_FACT_SOURCE_REFS = 8;
+
+function representativeRefs(refs: readonly string[], fallback: string): string[] {
+  const unique = [...new Set(refs.filter((item) => item.length > 0))];
+  const sliced = unique.slice(0, MAX_FACT_SOURCE_REFS);
+  return sliced.length > 0 ? sliced : [fallback];
+}
+
 function recoveryInvestigationFacts(
   facts: Awaited<ReturnType<typeof resolvedRecoveryFacts>>,
   observedAt: string,
 ): RecoveryInvestigation["facts"] {
-  const sourceRefs = facts.evidenceRefs.length
-    ? facts.evidenceRefs
-    : ["artifact:recovery-investigation"];
+  const sourceRefs = representativeRefs(facts.evidenceRefs, "artifact:recovery-investigation");
   const historicalPaths = recoveryHistoricalPaths(facts);
   const records: RecoveryInvestigation["facts"] = [
     {
@@ -511,7 +517,7 @@ function recoveryInvestigationFacts(
       factId: "historical-observations",
       kind: "session",
       reliability: "weak",
-      sourceRefs: facts.catalog.map((entry) => entry.ref),
+      sourceRefs: representativeRefs(facts.catalog.map((entry) => entry.ref), "artifact:recovery-investigation"),
       observedAt,
       pathScope: historicalPaths.length ? historicalPaths : ["."],
       summary: `${facts.catalog.length} frozen historical observation(s) are available for targeted investigation.`,

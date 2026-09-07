@@ -586,7 +586,13 @@ test("Recovery provider rejects manifest path mismatches and unowned action evid
   await writeFile(join(recoveredExtra.root, "other.txt"), "also changed");
   await writeFile(join(recoveredExtra.root, "recovery.md"), "# recovered\r\n");
   await writeFile(join(recoveredExtra.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:history-1"] }], unresolved: [] }));
-  await assert.rejects(provider.validateRecovery(recoveredExtra, { ...envelope, status: "recovered", unresolved: [] }, evidence), /strong path evidence|paths/i);
+  const remapped = await provider.validateRecovery(recoveredExtra, { ...envelope, status: "recovered", unresolved: [] }, evidence);
+  assert.equal(remapped.baseline.match, "recovered_partial");
+  assert.equal(remapped.baseline.recovery?.status, "partial");
+  assert.match(remapped.baseline.recovery?.unresolved.join(" ") ?? "", /remapped recovered to partial/);
+  assert.ok(remapped.changedPaths.includes("other.txt"));
+  const acceptedRemapped = await provider.acceptRecovery(remapped);
+  assert.equal(acceptedRemapped.match, "recovered_partial");
 
   const unowned = await provider.beginRecovery({ caseId: "case-manifest-unowned", sourceRoot: source });
   await writeFile(join(unowned.root, "input.txt"), "historical");

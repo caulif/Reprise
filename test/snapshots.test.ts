@@ -6,10 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { CONTROLLER_SYSTEM_PROMPT } from '../src/agents/controller-agent.js';
 import { COMPARISON_SYSTEM_PROMPT } from '../src/agents/comparison-agent.js';
 import { RECOVERY_SYSTEM_PROMPT } from '../src/agents/recovery-agent.js';
-import { observationTools } from '../src/infrastructure/agent-tools.js';
-import { recoveryObservationTools, recoveryTools } from '../src/infrastructure/recovery-tools.js';
-import type { TaskCase } from '../src/core/schema.js';
-import type { ExperimentStore } from '../src/infrastructure/store/experiment-store.js';
+import { recoveryTools } from '../src/infrastructure/recovery-tools.js';
 
 const SNAPSHOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../test/snapshots');
 const UPDATE = process.env.UPDATE_SNAPSHOTS === '1';
@@ -41,17 +38,5 @@ test('agent system prompts match committed snapshots', async () => {
 });
 
 test('runtime-facing tool schemas match committed snapshots', async () => {
-  const store = { events: () => [] } as unknown as ExperimentStore;
-  const transcript: TaskCase['transcript'] = [{ id: 'message-1', role: 'user', text: 'Add a deterministic fixture importer.' }];
-  const taskCase = {
-    transcript,
-    historicalEvents: [],
-  } as unknown as TaskCase;
-  await assertSnapshot('observation-tools', toolCatalog(observationTools(store, {
-    runId: 'run-1',
-    transcript,
-    allowModelText: true,
-  })));
-  await assertSnapshot('recovery-observation-tools', toolCatalog(recoveryObservationTools(taskCase)));
   await assertSnapshot('recovery-tools', toolCatalog(recoveryTools('TMP')));
 });

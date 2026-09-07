@@ -578,5 +578,4 @@ export function integer(
 }
 
 
-export { recoveryObservationTools, type RecoveryObservationOperation, type RecoveryObservationOptions } from "./recovery-observation-tools.js";
 export { recoveryTools, type RecoveryToolOptions, type RecoveryToolFilesystem, type RecoveryToolOperation } from "./recovery-workspace-tools.js";

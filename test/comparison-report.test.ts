@@ -63,6 +63,19 @@ test('reportFacts preserve missing measurements and project known run facts', ()
   assert.equal(facts.replay.baselineEvidence, 'verifiable');
 });
 
+test('comparison envelope accepts Host-owned observation refs and rejects only-unknown refs', () => {
+  const owned = 'event:transcript-0-aaaaaaaaaaaaaaaa';
+  const context = {
+    ...buildComparisonContext(taskCase(), [runRecord()]),
+    ownedEvidenceRefs: [owned],
+  };
+  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [owned] }, context));
+  assert.throws(
+    () => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['event:foreign-1'] }, context),
+    /unknown evidence reference/,
+  );
+});
+
 test('comparison orchestration rejects envelope citations outside persisted facts', async () => {
   const agent: ComparisonAgentPort = { compare: async () => ({ status: 'completed', sessionId: 'comparison-1', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: ['event:foreign-1'] } }) };
   await assert.rejects(comparePersistedFacts({ taskCase: taskCase(), runs: [runRecord()], agent }), /unknown evidence reference/);

@@ -2,7 +2,8 @@ import { type Component, HStack, ScrollView, VStack, isViewportTUI, type TUI, vi
 import type { CodexExperimentResult } from '../application/experiment.js';
 import { compact, truncateFit } from './format.js';
 import { renderHelp } from './overlays.js';
-import { CONFIG_FIELDS, configHints, renderConfig, type ConfigModel } from './pages/config.js';
+import { configHints, renderConfig, type ConfigModel } from './pages/config.js';
+import { configFieldsForKind, languageFieldIndex } from '../infrastructure/harness-model-config.js';
 import { historyDetailHints, historyHints, renderHistory, renderHistoryDetail, type HistoryModel } from './pages/history.js';
 import { homeHints, renderHome, type HomeModel } from './pages/home.js';
 import { inspectionHints, renderInspection, renderSessions, sessionsHints, type InspectionModel, type SessionsModel } from './pages/intake.js';
@@ -316,7 +317,8 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
   const locale = view.locale ?? 'en';
   if (view.page === 'home') return homeHints(locale, view.home);
   if (view.page === 'config' && view.config) {
-    return configHints(view.config.editing, CONFIG_FIELDS[view.config.selected], view.config.pendingToggle, view.config.selected >= CONFIG_FIELDS.length, locale);
+    const fields = configFieldsForKind(view.config.draft.kind);
+    return configHints(view.config.editing, fields[view.config.selected], view.config.pendingToggle, view.config.selected >= languageFieldIndex(view.config.draft.kind), locale);
   }
   if (view.page === 'history') return historyHints(locale);
   if (view.page === 'history-detail') return historyDetailHints(Boolean(view.historyDetail && 'taskCase' in view.historyDetail), Boolean(view.historyDetail && !('taskCase' in view.historyDetail) && view.historyDetail.reportPath), locale);

@@ -167,6 +167,11 @@ test("Codex intake TUI opens Home without configuration and only enters config o
   assert.doesNotMatch(rendered, /Harness connection/);
   enterCommand(app, "/config");
   await waitFor(() => /Harness connection/.test(rendered));
+  assert.match(rendered, /openai-compatible/);
+  app.handleInput("\u001b[A");
+  app.handleInput("\u001b[A");
+  app.handleInput("\u001b[A");
+  app.handleInput("\r");
   assert.match(rendered, /provider-a/);
   app.handleInput("s");
   await waitFor(() => /Configuration saved locally/.test(rendered));
@@ -368,6 +373,8 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   app.handleInput("\r");
   await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
   await waitFor(() => sourceRoot === "C:/not-automatic");
+  emitEvent?.({ schemaVersion: 1, sequence: 6, eventId: 'shared-delivery', occurredAt: '2026-08-11T00:10:03.000Z', type: 'runtime.delivery_observed', payload: { status: 'accepted' }, checksum: 'd'.repeat(64) });
+  assert.equal(app.runPhase, 'candidate_generating');
   app.handleInput("\u0003");
   assert.equal(stops, 0);
   assert.equal(cancellations, 0);
@@ -431,6 +438,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
     record: {
       attempt: { runId: "run-1" },
       outcome: {
+        task: { status: 'apparently_completed' },
         termination: {
           kind: "completed",
           code: "completed.controller_satisfied",
@@ -447,6 +455,8 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   });
   await waitFor(() => /Experiment finished/.test(rendered));
   assert.match(rendered, /report\.html/);
+  app.handleInput('\x1b');
+  assert.equal(app.page, 'home');
   app.handleInput("\u0003");
   assert.equal(stops, 1);
 });
@@ -539,6 +549,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
         record: {
           attempt: { runId: "run-1" },
           outcome: {
+            task: { status: 'apparently_completed' },
             termination: {
               kind: "completed",
               code: "completed.controller_satisfied",

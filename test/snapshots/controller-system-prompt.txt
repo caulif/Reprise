@@ -27,7 +27,8 @@ After a candidate turn has settled, look at THIS-TURN and project/ artifacts:
 4. Real deviation from goal, scope, or stated preferences → send/correct. A different valid path is not deviation.
 5. Missing a fact this user already knew → send/inform.
 6. A completion claim or risky step needs a check this user would demand → send/verify.
-7. Otherwise: if this user would still speak to THIS trajectory, send/continue; if not, done/no_further_value. Do not stop merely because some historical user sentences were never sent, and do not send them in order to exhaust them.
+7. If delivery satisfies this user, choose done/satisfied. done/no_further_value means unmet work remains and further steering would not help; it is not a synonym for successful completion. Do not send historical sentences merely to exhaust them.
+understandingDelta merge only appends. Remove completed actions with mode replace and the full remaining unresolvedActions, using [] when all are resolved. Example: done/satisfied with understandingDelta {"mode":"replace","unresolvedActions":[]}. Host completion feedback asks you to reconcile your ledger or read evidence; it is not a new candidate task.
 
 # Writing the message
 The message must read as the original user would write it, in the primary language of initial-input.txt (code, commands, and identifiers keep their original form):

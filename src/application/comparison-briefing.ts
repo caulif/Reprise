@@ -6,6 +6,8 @@ import type { ComparisonContext } from "../agents/comparison-agent.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonBriefingContextSchema, ComparisonLinksSchema, type ComparisonLinkRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
 import type { ArtifactManifest } from "../infrastructure/store/experiment-store.js";
+import { briefingComparisonContext } from "./comparison.js";
+import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "./observation-files.js";
 
 export type ComparisonPhase = "plan" | "report";
 export type ComparisonPlanStatus = "ready" | "partial_unverified" | "unavailable";
@@ -36,15 +38,20 @@ export async function writeComparisonBriefing(input: {
     mkdir(join(input.attemptRoot, "scratch"), { recursive: true }),
     mkdir(join(input.attemptRoot, "evidence"), { recursive: true }),
   ]);
+  await writeFrozenObservationTree({
+    root: join(input.attemptRoot, OBSERVATIONS_MOUNT),
+    taskCase: input.taskCase,
+    runEvents: input.events,
+  });
   const links = await comparisonLinks(input);
   if (!Value.Check(ComparisonLinksSchema, links)) throw new Error("Comparison links do not satisfy ComparisonLinksSchema.");
-  if (!Value.Check(ComparisonBriefingContextSchema, input.context)) throw new Error("Comparison context does not satisfy ComparisonBriefingContextSchema.");
+  if (!Value.Check(ComparisonBriefingContextSchema, briefingComparisonContext(input.context))) throw new Error("Comparison context does not satisfy ComparisonBriefingContextSchema.");
   const indexMarkdown = comparisonIndex();
   const files: Record<string, string> = {
     "INDEX.md": indexMarkdown,
     "task/initial-input.txt": input.taskCase.privacy.allowModelText ? input.taskCase.initialInput.text : "[REDACTED]",
     "candidate/process-index.tsv": processIndex(input.events),
-    "facts/context.json": `${JSON.stringify(input.context, null, 2)}\n`,
+    "facts/context.json": `${JSON.stringify(briefingComparisonContext(input.context), null, 2)}\n`,
     "facts/comparison-links.json": `${JSON.stringify(links, null, 2)}\n`,
   };
   for (const [path, body] of Object.entries(files)) await writeAtomic(join(briefingRoot, ...path.split("/")), body);
@@ -83,10 +90,13 @@ function comparisonIndex(): string {
     "",
     "Read only what can change the comparison. The historical and candidate process bodies are mounted separately; this directory contains navigation and Host facts.",
     "",
-    "- task/initial-input.txt — frozen initial task",
-    "- facts/context.json — bounded Host projection, not a substitute for direct evidence",
-    "- facts/comparison-links.json — inspect paths and stable report links",
-    "- candidate/process-index.tsv — complete run event index including post-settlement events",
+    "All tool paths below are relative to the attempt root, not briefingRoot.",
+    "- briefing/INDEX.md — this navigation map",
+    "- briefing/task/initial-input.txt — frozen initial task",
+    "- briefing/facts/context.json — bounded Host projection, not a substitute for direct evidence",
+    "- briefing/facts/comparison-links.json — inspect paths and stable report links",
+    "- briefing/candidate/process-index.tsv — complete run event index including post-settlement events",
+    "- observations/INDEX.md — frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/ — frozen historical conversation (read-only mount)",
     "- turns/ — candidate settled-turn briefing (read-only mount)",
     "- candidate/ — retained candidate workspace (read-only mount)",

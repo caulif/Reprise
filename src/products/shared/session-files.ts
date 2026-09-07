@@ -21,6 +21,11 @@ export type SessionFileEntry = { path: string; mtime: number; size: number };
 export type SessionFileListing = { readonly entries: readonly SessionFileEntry[]; readonly diagnostics: readonly DiscoveryDiagnostic[] };
 export type JsonlSummaryReadOptions = { readonly maxBytes: number; readonly maxLines: number; readonly signal?: AbortSignal };
 
+/** Product-neutral ordering for discovered session files. */
+export function rankSessionFiles(entries: readonly SessionFileEntry[]): SessionFileEntry[] {
+  return [...entries].sort((left, right) => right.mtime - left.mtime || left.path.localeCompare(right.path));
+}
+
 /** Development-only counters for verifying the bounded in-memory summary cache. */
 export function resetSessionDiscoveryCacheStats(): void {
   discoveryCacheUnchanged = 0;

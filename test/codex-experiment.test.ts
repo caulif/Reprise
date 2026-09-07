@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ComparisonAgentPort } from "../src/agents/comparison-agent.js";
 import { ControllerAgent, type ControllerPort } from "../src/agents/controller-agent.js";
-import { reconstructControllerRequest } from "../src/application/controller-request.js";
+import { controllerReadEvidenceOnRequest, reconstructControllerRequest } from "../src/application/controller-request.js";
 import { preflightCodexExperiment, recoverCodexExperiment, startCodexExperiment } from "../src/application/experiment.js";
 import { PiAgentHost } from "../src/infrastructure/pi-agent-host.js";
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
@@ -347,7 +347,7 @@ test("a scripted Controller run persists controller.requested and reconstructs i
       createSession: (session) => {
         let calls = 0;
         return {
-          append: async () => {
+          append: async ({ content }) => {
             calls += 1;
             if (calls === 1) {
               return JSON.stringify({
@@ -367,7 +367,12 @@ test("a scripted Controller run persists controller.requested and reconstructs i
                 intent: "continue",
               });
             }
-            return JSON.stringify({ type: "done", reason: "satisfied" });
+            if (calls === 3) return JSON.stringify({ type: "done", reason: "satisfied", understandingDelta: { mode: "merge", unresolvedActions: [] } });
+            assert.match(content, /Host completion feedback/);
+            await session.tools.find((entry) => entry.name === 'shell_exec')!.execute({ command: process.platform === 'win32' ? 'Get-Content -LiteralPath README.md' : 'cat README.md' }, new AbortController().signal);
+            const tool = session.tools.find((entry) => entry.name === "read")!;
+            await tool.execute({ path: "run/turns/0001/visible.txt" }, new AbortController().signal);
+            return JSON.stringify({ type: "done", reason: "satisfied", understandingDelta: { mode: "replace", unresolvedActions: [] } });
           },
           cancel() {},
         };
@@ -384,9 +389,31 @@ test("a scripted Controller run persists controller.requested and reconstructs i
   const store = await ExperimentStore.open(result.experimentRoot, "experiment-1");
   try {
     const events = store.events("run-1");
+    assert.equal(result.record.outcome.termination.kind, "completed");
+    assert.equal(events.filter((event) => event.type === "input.submitted").length, 1);
+    const readEvent = events.find((event) => event.type === "controller.observation_read" && (event.payload as { source: string }).source === 'workspace_read');
+    assert.equal((readEvent?.payload as { requestId?: string })?.requestId, "controller-request-run-1-3");
+    const readPayload = readEvent?.payload as { evidenceRefs: string[] };
+    assert.equal(readPayload.evidenceRefs.length, 1);
+    const savedRead = await store.readArtifact({ artifactId: readPayload.evidenceRefs[0]!.slice('artifact:'.length), experimentId: 'experiment-1', runId: 'run-1' });
+    const readContent = JSON.parse(savedRead.toString()) as { path: string; content: string; offset: number };
+    assert.equal(readContent.path, 'run/turns/0001/visible.txt');
+    assert.equal(readContent.offset, 0);
+    assert.match(readContent.content, /Focused change completed/);
+    const corrected = reconstructControllerRequest(events, 'controller-request-run-1-3');
+    assert.match(String(corrected.snapshot.promptContent), /Host completion feedback/);
+    const shellEvent = events.find((event) => event.type === 'controller.observation_read' && (event.payload as { source: string }).source === 'workspace_shell');
+    assert.ok(shellEvent);
+    assert.equal(controllerReadEvidenceOnRequest([shellEvent], 'run-1', 'controller-request-run-1-3'), false);
+    const shellPayload = shellEvent.payload as { evidenceRefs: string[]; requestId: string };
+    assert.equal(shellPayload.requestId, 'controller-request-run-1-3');
+    const shellArtifact = JSON.parse((await store.readArtifact({ artifactId: shellPayload.evidenceRefs[0]!.slice('artifact:'.length), experimentId: 'experiment-1', runId: 'run-1' })).toString()) as { content: string; exitCode: number; cwd: string };
+    assert.match(shellArtifact.content, /# source/);
+    assert.equal(shellArtifact.exitCode, 0);
+    assert.equal(shellArtifact.cwd, '.');
     const requested = events.find((event) => event.type === "controller.requested");
     assert.ok(requested?.operationId);
-    assert.equal(events.some((event) => event.type === "controller.observation_read"), false);
+    assert.equal(events.some((event) => event.type === "controller.observation_read"), true);
     assert.ok(events.some((event) => event.type === "agent.tool_called"));
     assert.ok(events.some((event) => event.type === "agent.tool_completed"));
     const comparisonRequested = events.find((event) => event.type === "comparison.requested");
@@ -405,6 +432,87 @@ test("a scripted Controller run persists controller.requested and reconstructs i
     assert.match(snapshot.promptContent ?? "", /INDEX\.md/);
     assert.ok(snapshot.briefingRoot);
     assert.equal(sha256(JSON.stringify((requested.payload as { snapshot: unknown }).snapshot)), rebuilt.inputDigest);
+  } finally {
+    await store.close();
+  }
+});
+
+test("completion guard bounds rejected satisfied decisions without resubmitting the candidate", async (t) => {
+  for (const reason of ['satisfied', 'blocked', 'no_further_value', 'requires_real_user_decision'] as const) {
+    await t.test(reason, async (t) => {
+      const root = await mkdtemp(join(tmpdir(), 'reprise-completion-guard-'));
+      t.after(async () => rm(root, { recursive: true, force: true }));
+      await mkdir(join(root, 'source'));
+      await writeFile(join(root, 'source', 'README.md'), '# source\n');
+      let calls = 0;
+      const controller = new ControllerAgent({
+        host: new PiAgentHost({ createSession: (session) => ({
+          append: async () => {
+            calls += 1;
+            if (calls === 1) return JSON.stringify({ markdown: 'Deliver the requested change.', sourceMessageIds: ['message-1'], unresolvedActions: reason === 'satisfied' ? [] : ['Review the change.'] });
+            if (calls === 2) return JSON.stringify({ type: 'send', message: 'Make the change.', intent: 'continue' });
+            await session.tools.find((tool) => tool.name === 'read')!.execute({ path: 'INDEX.md' }, new AbortController().signal);
+            if (reason === 'satisfied') await rm(join(root, 'data', 'experiments', 'experiment-1', 'runs', 'run-1', 'controller-briefing', 'controller-contract.json'), { force: true });
+            return JSON.stringify({ type: 'done', reason });
+          },
+          cancel() {},
+        }) }),
+        timeoutMs: 5_000,
+        maxRepairAttempts: 0,
+      });
+      const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), controller, policy: patientPolicy }).result;
+      const store = await ExperimentStore.open(result.experimentRoot, 'experiment-1');
+      try {
+        const events = store.events('run-1');
+        assert.equal(events.filter((event) => event.type === 'input.submitted').length, 1);
+        assert.equal(events.filter((event) => event.type === 'controller.observation_read').length, 0);
+        assert.equal(result.record.outcome.cleanup.status, 'complete');
+        if (reason === 'satisfied') {
+          assert.equal(calls, 5);
+          assert.equal(result.record.outcome.termination.code, 'stalled.controller_completion_guard');
+          assert.equal(result.record.outcome.task.status, 'indeterminate');
+          assert.equal(events.filter((event) => event.type === 'controller.done_rejected').length, 2);
+          const diagnostic = events.find((event) => event.type === 'controller.completion_diagnostic');
+          assert.equal((diagnostic?.payload as { exhausted: boolean }).exhausted, true);
+        } else {
+          assert.equal(calls, 3);
+          assert.equal(events.filter((event) => event.type === 'controller.done_rejected').length, 0);
+          assert.equal(result.record.outcome.task.status, 'incomplete');
+        }
+      } finally {
+        await store.close();
+      }
+    });
+  }
+});
+
+test('completion guard expires its correction time budget before the count limit', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const root = await mkdtemp(join(tmpdir(), 'reprise-correction-deadline-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'source'));
+  await writeFile(join(root, 'source', 'README.md'), '# source\n');
+  let calls = 0;
+  const controller: ControllerPort = {
+    understand: async () => ({ status: 'completed', sessionId: 'fixture', value: { markdown: 'Deliver slides.', sourceMessageIds: ['message-1'], unresolvedActions: [] } }),
+    decide: async (context) => {
+      calls += 1;
+      if (calls === 1) return { status: 'completed', sessionId: 'fixture', value: { type: 'send', message: 'Make the change.', intent: 'continue' } };
+      if (calls === 3) {
+        assert.ok(context.budget.callTimeoutMs && context.budget.callTimeoutMs <= 180_000);
+        t.mock.timers.tick(180_001);
+      }
+      return { status: 'completed', sessionId: 'fixture', value: { type: 'done', reason: 'satisfied' } };
+    },
+  };
+  const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), controller, policy: { ...patientPolicy, wallClockMs: 360_000 } }).result;
+  assert.equal(result.record.outcome.termination.code, 'stalled.controller_completion_guard');
+  assert.equal(calls, 3);
+  const store = await ExperimentStore.open(result.experimentRoot, 'experiment-1');
+  try {
+    const events = store.events('run-1');
+    assert.equal(events.filter((event) => event.type === 'controller.done_rejected').length, 1);
+    assert.equal(events.filter((event) => event.type === 'input.submitted').length, 1);
   } finally {
     await store.close();
   }
@@ -690,6 +798,31 @@ test("an opening done does not start the Target with frozen initialInput", async
     );
   } finally {
     await store.close();
+  }
+});
+
+test('understanding failure and cancellation persist legal terminal records without candidate input', async (t) => {
+  for (const status of ['failed', 'cancelled'] as const) {
+    const root = await mkdtemp(join(tmpdir(), 'reprise-understanding-failure-'));
+    t.after(async () => rm(root, { recursive: true, force: true }));
+    await mkdir(join(root, 'source'));
+    await writeFile(join(root, 'source', 'README.md'), '# source\n');
+    const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), policy: patientPolicy, controller: {
+      understand: async () => status === 'failed' ? { status, sessionId: 'fixture', failure: { code: 'agent_failure', message: 'Upstream request failed', kind: 'transient_upstream', attempts: 3 } } : { status, sessionId: 'fixture' },
+      decide: async () => { throw new Error('No decision is allowed without understanding.'); },
+    } }).result;
+    assert.equal(result.record.outcome.termination.kind, status);
+    assert.equal(result.record.outcome.task.status, 'not_assessed');
+    assert.equal(result.record.outcome.cleanup.status, 'complete');
+    const persisted = JSON.parse(await readFile(join(result.experimentRoot, 'runs', 'run-1', 'record.json'), 'utf8')) as { outcome: unknown };
+    assert.deepEqual(persisted.outcome, result.record.outcome);
+    const store = await ExperimentStore.open(result.experimentRoot, 'experiment-1');
+    try {
+      assert.equal(store.events('run-1').filter((event) => event.type === 'input.submitted').length, 0);
+      assert.ok(store.events('run-1').some((event) => event.type === 'controller.understanding'));
+    } finally {
+      await store.close();
+    }
   }
 });
 

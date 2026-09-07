@@ -3,6 +3,14 @@ export type Locale = 'en' | 'zh';
 type Msg = { readonly en: string; readonly zh: string };
 
 const M = {
+  harnessProbe: { en: 'Harness connection check', zh: 'Harness 连接探测' },
+  harnessRecovery: { en: 'Recovery agent', zh: '恢复 Agent' },
+  harnessOpening: { en: 'Controller opening', zh: 'Controller 开场理解' },
+  harnessController: { en: 'Controller decision', zh: 'Controller 决策' },
+  harnessTransient: { en: 'Temporary failure; retry when the service is available.', zh: '暂时失败；服务恢复后可重试。' },
+  harnessAuthentication: { en: 'Check the Harness provider credentials.', zh: '请检查 Harness 模型服务凭据。' },
+  harnessProtocol: { en: 'Check the context budget and model response diagnostics.', zh: '请检查上下文预算和模型响应诊断。' },
+  harnessFailure: { en: 'Failed; review the saved diagnostics.', zh: '失败；请查看已保存的诊断。' },
   continue: { en: 'Continue', zh: '继续' },
   browse: { en: 'Browse', zh: '浏览' },
   commands: { en: 'Commands', zh: '命令' },
@@ -178,6 +186,9 @@ const M = {
   requestedOpenOutput: { en: 'Requested the system open the full event output.', zh: '已请求系统打开这条的全文。' },
   couldNotOpenOutput: { en: 'Could not open output: {error}', zh: '无法打开全文：{error}' },
   cancellationRequested: { en: 'Cancellation requested. Press Ctrl+C again to force exit.', zh: '已请求取消。再按一次 Ctrl+C 会强制退出。' },
+  recoveryCancelled: { en: 'Recovery cancelled.', zh: '恢复已取消。' },
+  startupCancelled: { en: 'Experiment startup cancelled.', zh: '实验启动已取消。' },
+  cleanupFailed: { en: 'Cleanup did not complete. Retained resources require review.', zh: '清理未完成，请检查保留的资源。' },
   inspectingSource: { en: 'Inspecting source and deterministic contamination signals; no model will be called.', zh: '正在检查源目录和污染信号；不会调用模型。' },
   checkingSourceTitle: { en: 'Checking source', zh: '正在检查源目录' },
   contaminationFound: { en: 'Preparing the isolated environment from available evidence.', zh: '正在依据可用证据准备隔离环境。' },
@@ -270,6 +281,7 @@ const M = {
   notSetInShell: { en: 'not set in this shell', zh: '当前终端未设置' },
   envNameMissing: { en: 'API key missing', zh: '缺少 API 密钥' },
   piManagesCreds: { en: 'Pi manages credentials', zh: '凭据由目录管理' },
+  piLoginHint: { en: 'Sign in with pi /login, then press t to test. Reprise does not store ChatGPT or Codex CLI tokens.', zh: '先在 Pi 执行 /login，再按 t 测试连接。Reprise 不保存 ChatGPT 或 Codex CLI 令牌。' },
   keysStayInEnv: { en: 'The API key is saved in .reprise/harness-model.json. env:NAME still works as a fallback.', zh: 'API 密钥保存在 .reprise/harness-model.json。env:NAME 仍可作为回退。' },
   savedInConfig: { en: 'saved in harness-model.json', zh: '已写入配置文件' },
   neverPasteValue: { en: '(never paste the value here)', zh: '（不要把值贴到这里）' },
@@ -291,6 +303,8 @@ const M = {
   fieldProviderLabel: { en: 'provider label', zh: '服务商标签' },
   fieldBaseUrl: { en: 'base URL', zh: '接口地址' },
   fieldModel: { en: 'model', zh: '模型' },
+  fieldApi: { en: 'API', zh: '接口类型' },
+  fieldReasoning: { en: 'reasoning', zh: '推理' },
   fieldEffort: { en: 'effort', zh: '力度' },
   fieldKeyRef: { en: 'API key', zh: 'API 密钥' },
   currentValue: { en: 'Current', zh: '当前值' },
@@ -429,7 +443,10 @@ const M = {
   noneWord: { en: 'none', zh: '无' },
   unavailable: { en: 'unavailable', zh: '不可用' },
   resultTitle: { en: 'Run result', zh: '对照结果' },
-  cannotContinue: { en: 'Could not recover', zh: '无法恢复' },
+  cannotContinue: { en: 'Cannot continue', zh: '无法继续' },
+  catalogProjectName: { en: 'Catalog name', zh: '目录显示名' },
+  sessionDirectory: { en: 'Session cwd', zh: '会话目录' },
+  catalogDirectory: { en: 'Catalog path', zh: '登记路径' },
   errorReturnHint: { en: 'No isolated candidate was started by this screen. Enter or b returns to the previous step.', zh: '这个界面没有启动隔离候选。Enter 或 b 回到上一步。' },
   hintOpenProject: { en: 'Open project', zh: '打开项目' },
   hintInspect: { en: 'Inspect', zh: '查看' },
@@ -486,8 +503,9 @@ export function sessionReplayErrorMessage(error: unknown, locale: Locale): strin
 export function formatRecoveryFailureSummary(
   locale: Locale,
   stage: string,
-  detail?: { changedPathCount?: number },
+  detail?: { changedPathCount?: number; agentFailureKind?: string },
 ): string {
+  if (detail?.agentFailureKind && (stage === 'agent_model_failed' || stage === 'agent_timeout')) return formatHarnessFailure(locale, 'recovery', detail.agentFailureKind);
   const noWorkspaceChange = stage === 'provider_validation_failed' && (detail?.changedPathCount ?? -1) === 0;
   const reason = noWorkspaceChange
     ? t(locale, 'recoveryReasonNoWorkspaceChange')
@@ -498,6 +516,12 @@ export function formatRecoveryFailureSummary(
     : t(locale, 'recoveryReasonGeneric');
   const code = noWorkspaceChange ? `${stage}; no_task_path_outcome` : stage;
   return t(locale, 'recoveryReasonWithCode', { reason, code });
+}
+
+export function formatHarnessFailure(locale: Locale, phase: 'probe' | 'recovery' | 'opening' | 'controller', kind: string): string {
+  const stage = t(locale, phase === 'probe' ? 'harnessProbe' : phase === 'recovery' ? 'harnessRecovery' : phase === 'opening' ? 'harnessOpening' : 'harnessController');
+  const reason = t(locale, ['transient_network', 'transient_upstream', 'timeout', 'rate_limited'].includes(kind) ? 'harnessTransient' : kind === 'authentication' ? 'harnessAuthentication' : kind === 'protocol' ? 'harnessProtocol' : 'harnessFailure');
+  return `${stage}: ${reason} (${kind})`;
 }
 
 export function parseLocale(value: string | undefined): Locale | undefined {

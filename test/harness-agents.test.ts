@@ -17,3 +17,26 @@ test('Harness agent factory shares one Pi session caller and persisted model cho
     recoveryBudget: { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 },
   });
 });
+
+test('factory budgets bound live Controller calls and match the persisted configuration', async () => {
+  let aborted = false;
+  const budget = { callTimeoutMs: 20, maxStructuredRepairAttempts: 1 };
+  const recoveryBudget = { callTimeoutMs: 40, maxStructuredRepairAttempts: 0 };
+  const agents = createHarnessAgents(defaultHarnessModelConfig(), {
+    createSession: () => ({
+      append: ({ signal }) => new Promise<string>(() => { signal.addEventListener('abort', () => { aborted = true; }, { once: true }); }),
+      cancel() {},
+    }),
+  }, { budget, recoveryBudget });
+  const result = await agents.controller.decide({
+    requestId: 'controller-request-run-budget-1', runId: 'run-budget', runState: 'awaiting_controller',
+    task: { initialInput: { id: 'input-1', role: 'user', text: 'Fix it.' }, baseline: { status: 'available', artifactRefs: [], evidenceRefs: [] }, privacy: { allowModelText: true, allowBinary: false, redactions: [] }, historicalUserTurns: [] },
+    current: { summary: 'Settled.', evidenceRefs: [] }, trajectory: { summary: 'One turn.', evidenceRefs: [] }, evidenceCatalog: [], budget: { decisionsUsed: 1, decisionsLimit: 2 },
+  });
+  assert.equal(result.status, 'failed');
+  if (result.status === 'failed') assert.equal(result.failure.kind, 'timeout');
+  assert.equal(aborted, true);
+  assert.deepEqual(agents.config.budget, budget);
+  assert.deepEqual(agents.config.recoveryBudget, recoveryBudget);
+  assert.equal(agents.recovery.timeoutMs, recoveryBudget.callTimeoutMs);
+});

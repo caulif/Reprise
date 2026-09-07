@@ -12,6 +12,8 @@ const draft: HarnessConfigDraft = {
   effort: 'medium',
   baseUrl: 'https://api.example.test/v1',
   keyRef: '',
+  api: 'openai-completions',
+  reasoning: false,
 };
 
 function refresh(next: HarnessConfigDraft) {
@@ -21,7 +23,7 @@ function refresh(next: HarnessConfigDraft) {
 function editingState(overrides: Partial<ConfigInputState> = {}): ConfigInputState {
   return {
     draft,
-    selected: 5,
+    selected: 7,
     editing: true,
     buffer: '',
     cursor: 0,
@@ -38,7 +40,7 @@ function caretLine(text: string): string {
 test('config editor paints the raw buffer instead of keyRef validity copy', () => {
   const theme = createTheme(120);
   const text = renderConfig(theme, 120, {
-    draft, selected: 5, editing: true, buffer: 'e', cursor: 1, dirty: true, saved: false,
+    draft, selected: 7, editing: true, buffer: 'e', cursor: 1, dirty: true, saved: false,
   }).join('\n');
   const caret = caretLine(text);
   assert.match(caret, /e/);
@@ -51,7 +53,7 @@ test('typing e keeps the letter visible in the editor buffer', () => {
   assert.equal(result?.state.buffer, 'e');
   const theme = createTheme(120);
   const caret = caretLine(renderConfig(theme, 120, {
-    draft, selected: 5, editing: true, buffer: result?.state.buffer ?? '', cursor: result?.state.cursor ?? 0, dirty: true, saved: false,
+    draft, selected: 7, editing: true, buffer: result?.state.buffer ?? '', cursor: result?.state.cursor ?? 0, dirty: true, saved: false,
   }).join('\n'));
   assert.match(caret, /e/);
 });
@@ -86,7 +88,7 @@ test('switching provider with an existing URL requires a second Enter', () => {
 test('opening a text field prefills the current value', () => {
   const result = handleConfigInput({
     draft: { ...draft, keyRef: 'env:OPENAI_API_KEY' },
-    selected: 5, editing: false, buffer: '', cursor: 0, providers: [], models: [],
+    selected: 7, editing: false, buffer: '', cursor: 0, providers: [], models: [],
   }, '\r', refresh);
   assert.equal(result?.state.editing, true);
   assert.equal(result?.state.buffer, 'env:OPENAI_API_KEY');
@@ -102,10 +104,23 @@ test('config editor supports cursor movement, insertion, and delete', () => {
   assert.deepEqual({ buffer: deleted?.state.buffer, cursor: deleted?.state.cursor }, { buffer: 'bc', cursor: 0 });
 });
 
-test('Pi catalog does not offer an API key that would be discarded', () => {
-  const result = handleConfigInput(editingState({
-    draft: { ...draft, kind: 'pi-catalog', providerId: 'catalog', keyRef: '' }, selected: 5, editing: false,
-  }), '\r', refresh);
-  assert.equal(result?.state.editing, false);
-  assert.match(result?.message ?? '', /manages credentials/);
+test('Pi catalog hides the API key and asks the operator to log in with Pi', () => {
+  const catalog = { ...draft, kind: 'pi-catalog' as const, providerId: 'catalog', keyRef: '' };
+  const theme = createTheme(120);
+  const text = renderConfig(theme, 120, {
+    draft: catalog, selected: 0, editing: false, buffer: '', dirty: false, saved: false,
+  }).join('\n');
+  assert.doesNotMatch(text, /API key|base URL/);
+  assert.match(text, /pi \/login/i);
+});
+
+test('Enter cycles API type and reasoning on an OpenAI-compatible draft', () => {
+  const api = handleConfigInput({
+    draft, selected: 4, editing: false, buffer: '', cursor: 0, providers: [], models: [],
+  }, '\r', refresh);
+  assert.equal(api?.state.draft.api, 'openai-responses');
+  const reasoning = handleConfigInput({
+    draft, selected: 5, editing: false, buffer: '', cursor: 0, providers: [], models: [],
+  }, '\r', refresh);
+  assert.equal(reasoning?.state.draft.reasoning, true);
 });

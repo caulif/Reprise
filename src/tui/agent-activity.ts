@@ -4,7 +4,7 @@ import type { TimelineEntry, TimelineSource } from './timeline.js';
 export type AgentLane = 'recovery' | 'controller' | 'comparison';
 export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live' | 'narrate' | 'fold';
 
-const INVESTIGATE = new Set(['ls', 'read', 'grep', 'find', 'read_observation']);
+const INVESTIGATE = new Set(['ls', 'read', 'grep', 'find']);
 const MUTATE = new Set(['shell_exec', 'edit']);
 const READ_PS = /^(Get-ChildItem|Get-Content|Get-[A-Za-z]+)\b/;
 const WRITE_PS = /\b(Remove-Item|Set-Content|Copy-Item|New-Item|Move-Item|Out-File)\b/i;

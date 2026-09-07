@@ -1,11 +1,12 @@
 import type { CodexIntakeTui } from "./intake-tui.js";
-import { draftForConfig } from "../infrastructure/harness-model-config.js";
+import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harness-model-config.js";
+import { classifyAgentFailure } from '../infrastructure/agent-failure.js';
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
 import { HelpOverlay, commandSelectList } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
 import { productContext as activeProductContext, view as projectView } from "./controller-view.js";
 import { discardRecovery, stopRunClock } from "./controller-run.js";
-import { nextLocale, parseLocale, sessionReplayErrorMessage, t } from "./i18n.js";
+import { formatHarnessFailure, nextLocale, parseLocale, sessionReplayErrorMessage, t } from "./i18n.js";
 import { saveTuiPreferences } from "./preferences.js";
 import { matchesCanvasQuery, matchesFilter } from "./scrollback.js";
 import { createTheme } from "./theme.js";
@@ -78,7 +79,9 @@ export function CodexIntakeTui_showError(this: CodexIntakeTui, error: unknown, r
     stopRunClock(this);
     this.errorReturnPage = returnPage;
     this.page = "error";
-    this.message = sessionReplayErrorMessage(error, this.locale) ?? operatorErrorMessage(error);
+    this.message = error instanceof Error && error.name === 'HarnessProbeError'
+      ? formatHarnessFailure(this.locale, 'probe', classifyAgentFailure(error.cause))
+      : sessionReplayErrorMessage(error, this.locale) ?? operatorErrorMessage(error);
   }
 
 export function CodexIntakeTui_returnFromError(this: CodexIntakeTui): { consume: true } {
@@ -89,13 +92,15 @@ export function CodexIntakeTui_returnFromError(this: CodexIntakeTui): { consume:
   }
 
 export function CodexIntakeTui_backToHome(this: CodexIntakeTui): { consume: true } {
-    void discardRecovery(this);
+    this.startupAbort?.abort();
+    void discardRecovery(this).catch((error: unknown) => { this.showError(error, 'home'); this.render(true); });
     this.discoveryAbort?.abort();
+    this.recoveryAbort?.abort();
     this.generation += 1;
     this.configEditing = false;
     this.configBuffer = "";
     this.configCursor = 0;
-    this.configDraft = draftForConfig(this.modelConfig);
+    this.configDraft = this.hasSavedModelConfig ? draftForConfig(this.modelConfig) : emptyHarnessConfigDraft();
     this.configPendingToggle = false;
     this.historyDetail = undefined;
     this.hideHelp();
@@ -125,17 +130,35 @@ export function CodexIntakeTui_backToHome(this: CodexIntakeTui): { consume: true
 
 export function CodexIntakeTui_close(this: CodexIntakeTui): { consume: true } {
     if (this.closed) return { consume: true };
+    this.startupAbort?.abort();
     this.discoveryAbort?.abort();
+    this.recoveryAbort?.abort();
     this.generation += 1;
     this.closed = true;
+    this.compareChoice?.resolve(false);
+    this.compareChoice = undefined;
     stopRunClock(this);
     this.hideHelp();
     this.hideCommandOverlay();
     // An experiment that started but never reached the running page would otherwise outlive the TUI.
     const experiment = this.activeExperiment;
     this.activeExperiment = undefined;
-    if (experiment && !this.cancelling)
-      this.closing = experiment.cancel().catch(() => undefined);
+    const pending: Promise<unknown>[] = [this.closing];
+    if (this.workflowFinished) pending.push(this.workflowFinished);
+    if (experiment) {
+      if (!this.cancelling) pending.push(experiment.cancel());
+      pending.push(experiment.result.then((result) => {
+        if (result.record.outcome.cleanup.status !== 'complete') throw new Error(t(this.locale, 'cleanupFailed'));
+      }));
+    }
+    if (this.recoveryFinished) pending.push(this.recoveryFinished);
+    this.closing = (async () => {
+      const settled = await Promise.allSettled(pending);
+      const discarded = await Promise.allSettled([discardRecovery(this)]);
+      if ([...settled, ...discarded].some((result) => result.status === 'rejected')) throw new Error(t(this.locale, 'cleanupFailed'));
+    })();
+    // run() observes the original rejection; this handler also covers callers that only use start()/close().
+    void this.closing.catch(() => { this.message = t(this.locale, 'cleanupFailed'); });
     if (this.started) this.tui.stop();
     this.resolveClosed?.();
     return { consume: true };

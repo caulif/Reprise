@@ -7,22 +7,20 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
  i     Import a historical session
 
 ┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Endpoint   Pi catalog openai-codex                                                                                   │
-│ Model      gpt-5.6-terra · medium                                                                                    │
+│ Endpoint   Pi catalog amazon-bedrock                                                                                 │
+│ Model      au.anthropic.claude-opus-4-6-v1 · medium                                                                  │
 │ Secret     Pi manages credentials                                                                                    │
-│ The API key is saved in .reprise/harness-model.json. env:NAME still works as a fallback.                             │
+│ Sign in with pi /login, then press t to test. Reprise does not store ChatGPT or Codex CLI tokens.                    │
 │                                                                                                                      │
 │ ❯ provider type      pi-catalog  [Enter] toggles                                                                     │
-│   provider label     openai-codex                                                                                    │
-│   base URL                                                                                                           │
-│   model              gpt-5.6-terra                                                                                   │
+│   provider label     amazon-bedrock                                                                                  │
+│   model              au.anthropic.claude-opus-4-6-v1                                                                 │
 │   effort             medium  [Enter] toggles                                                                         │
-│   API key                                                                                                            │
 │   Language           English  [Enter] toggles                                                                        │
 │                                                                                                                      │
-│ ● In-memory draft                                                                                                    │
+│ ● Unsaved draft                                                                                                      │
 │ Configuration file: .reprise/harness-model.json                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- Edit endpoint or model. Save never sends a request; t tests the connection.
+ Pi catalog selected. Sign in with pi /login, then test the connection.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [↑↓] Select  [Enter] Toggle provider  [t] Test connection  [s] Save locally  [Esc] Home

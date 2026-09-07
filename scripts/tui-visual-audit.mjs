@@ -126,6 +126,10 @@ async function main() {
   await configApp.start();
   enterCommand(configApp, '/config');
   await waitFor(() => /Harness connection/.test(config.render(120)));
+  configApp.handleInput('\u001b[A');
+  configApp.handleInput('\u001b[A');
+  configApp.handleInput('\u001b[A');
+  configApp.handleInput('\r');
   await push('06-config-catalog', 120, config.render(120));
   configApp.handleInput('\r');
   await push('07-config-openai-empty', 120, config.render(120));
@@ -138,6 +142,8 @@ async function main() {
   configApp.handleInput('\u001b[B');
   configApp.handleInput('\r');
   replaceField(configApp, 'model-private');
+  configApp.handleInput('\u001b[B');
+  configApp.handleInput('\u001b[B');
   configApp.handleInput('\u001b[B');
   configApp.handleInput('\u001b[B');
   configApp.handleInput('\r');
@@ -163,6 +169,8 @@ async function main() {
   enterCommand(envApp, '/config');
   await waitFor(() => /Harness connection/.test(envHome.render(120)));
   await push('06b-config-status-env-unset', 120, envHome.render(120));
+  envApp.handleInput('\u001b[B');
+  envApp.handleInput('\u001b[B');
   envApp.handleInput('\u001b[B');
   envApp.handleInput('\u001b[B');
   envApp.handleInput('\r');
@@ -259,7 +267,7 @@ async function main() {
   await writeFile(join(experimentsRoot, 'runs', 'run-history', 'record.json'), JSON.stringify({
     schemaVersion: 1,
     attempt: { schemaVersion: 1, runId: 'run-history', experimentId: 'exp-history', caseId: 'case-history', candidate: { candidateId: 'codex-history', productId: 'codex', requestedModel: 'gpt-history' }, policy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 }, createdAt: '2026-08-11T01:00:00.000Z' },
-    outcome: { termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
+    outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
   }));
   const history = mockTui();
   const historyApp = new CodexIntakeTui(tuiOptions(historyRoot, { tui: history.tui }));
@@ -353,6 +361,11 @@ async function main() {
   await push('20-running-copy', 120, run.render(120));
   releaseRecovery?.();
   await waitFor(() => /choose candidate product/.test(run.render(120)), { describe: 'candidate product after recovery', frame: () => run.render(120) });
+  await waitFor(() => /choose candidate product/.test(run.render(120)) && !/reading loc/.test(run.render(120)), {
+    describe: 'candidate availability settled',
+    timeoutMs: 15_000,
+    frame: () => run.render(120),
+  });
   await push('29-candidate-product', 120, run.render(120));
   await push('29b-candidate-product-narrow', 60, run.render(60));
   runApp.handleInput('\r');
@@ -389,7 +402,7 @@ async function main() {
       comparisonClass: 'observational',
       limitations: ['fingerprint differs'],
     },
-    record: { attempt: { runId: 'run-1' }, outcome: { termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } } },
+    record: { attempt: { runId: 'run-1' }, outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } } },
     decision: { status: 'completed', value: { type: 'done' }, usedFallback: false },
     comparison: { result: { status: 'completed', usedFallback: false } },
   });

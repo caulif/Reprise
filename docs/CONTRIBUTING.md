@@ -11,7 +11,7 @@ npm ci
 npm run check
 ```
 
-不要提交 `.reprise/`、凭据、真实 smoke 输出或本地数据目录。Harness 模型密钥只存在本机 Git 忽略的 `.reprise/harness-model.json` 或 `env:NAME`；不得打印、复制进事件、artifact、报告或 PR。Reprise 不读取、不保存 Codex 凭据。
+不要提交 `.reprise/`、凭据、真实 smoke 输出或本地数据目录。Harness 模型密钥只存在本机 Git 忽略的 `.reprise/harness-model.json` 或 `env:NAME`；官方登录只在 Pi `auth.json`。不得打印、复制进事件、artifact、报告或 PR。Reprise 不读取、不保存 Codex CLI 凭据。
 
 ## 验证命令
 

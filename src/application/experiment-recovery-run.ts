@@ -22,6 +22,11 @@ export async function recoverCodexExperiment(
   try {
     return await runRecoverCodexExperiment(session);
   } catch (error) {
+    if (input.signal?.aborted) {
+      session.failureStage = 'cancelled';
+      session.recovery = { status: 'cancelled' };
+      return await failRecoveryRunSession(session, error);
+    }
     if (session.lastCompletedRecovery?.status === "completed") {
       session.recovery = session.lastCompletedRecovery;
       try {
@@ -47,11 +52,17 @@ export async function recoverCodexExperiment(
 }
 
 async function runRecoverCodexExperiment(session: RecoveryRunSession): Promise<RecoveryAttempt> {
+  session.input.signal?.throwIfAborted();
   await beginRecoveryStaging(session);
+  session.input.signal?.throwIfAborted();
   const checkpoint = await tryHostCheckpointRecovery(session);
+  session.input.signal?.throwIfAborted();
   if (checkpoint) return checkpoint;
   await runRecoveryForensics(session);
+  session.input.signal?.throwIfAborted();
   await invokeRecoveryAgent(session);
+  session.input.signal?.throwIfAborted();
   await enforceRecoveryReadiness(session);
+  session.input.signal?.throwIfAborted();
   return finalizeRecoveredCandidate(session);
 }

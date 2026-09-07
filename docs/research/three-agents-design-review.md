@@ -30,7 +30,7 @@
 
 现状：Recovery 已是这八个；Controller 只有 `read_observation`；Comparison 是 `read_artifact` + `read_observation` + `write_comparison_report`。欠的是后两家补齐八件套、删掉专用读/写工具。
 
-工程含义：[`recovery-workspace-tools.ts`](../../src/infrastructure/recovery-workspace-tools.ts) 泛化为工作区工厂。Controller 的 cwd 是隔离副本，`write`/`edit`/`powershell` 有界（用户在自己项目里本来就能看、改、跑命令；仍不得调用 Target Runtime、不得写源目录；发给候选的唯一用户输入仍是信封 `message`）。Comparison 的 cwd 是报告沙箱；`candidate/` 只读挂载，`write`/`edit` 只许落到 `report.html`。[`agent-tools.ts`](../../src/infrastructure/agent-tools.ts) 的 `read_artifact` / `write_comparison_report` 删除。`read_observation` 一份实现，source 白名单按角色传入。
+工程含义：[`recovery-workspace-tools.ts`](../../src/infrastructure/recovery-workspace-tools.ts) 泛化为工作区工厂。Controller 的 cwd 是隔离副本，`write`/`edit`/`powershell` 有界（用户在自己项目里本来就能看、改、跑命令；仍不得调用 Target Runtime、不得写源目录；发给候选的唯一用户输入仍是信封 `message`）。Comparison 的 cwd 是报告沙箱；`candidate/` 只读挂载，`write`/`edit` 只许落到 `report.html`。专用 `read_artifact` / `write_comparison_report` 已删除。冻结历史写成 `observations/` 文件，见 [工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。
 
 ### 3.2 审计与模型输入事件（欠账，且违反仓库规则）
 

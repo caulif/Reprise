@@ -5,9 +5,10 @@ import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { SAFE_ID } from '../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
-import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, SessionDiscoveryError, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
+import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, rankSessionFiles, SessionDiscoveryError, type SessionFileEntry, validSessionTimestamp } from '../shared/session-files.js';
 import { forEachJsonlRecordLenient, withStableJsonlRead } from '../shared/jsonl-io.js';
 import { isExcludedSession } from '../shared/session-exclusion.js';
+import { looksLikeInjectedInstruction } from '../shared/replay-user-input.js';
 import { assertTranscriptSessionId, discoveryFailureSummary } from '../shared/session-recovery.js';
 import type {
   ImportDiagnostic,
@@ -64,10 +65,11 @@ async function discoverClaudeSessionPage(query: SessionDiscoveryQuery): Promise<
   const listing = await listJsonlFiles(root, (name) => name.endsWith('.jsonl'), query.signal);
   const transcriptIds = await collectClaudeTranscriptIds(listing.entries, query.signal);
   const history = await loadClaudeHistoryEntries(join(dirname(root), 'history.jsonl'), transcriptIds, query.signal);
-  const ranked = [
+  const entries = [
     ...listing.entries,
     ...history.entries.map((entry) => ({ path: historyLocator(entry.historyPath, entry.sessionId), mtime: entry.timestampMs, size: 0 })),
-  ].sort((left, right) => right.mtime - left.mtime || left.path.localeCompare(right.path));
+  ];
+  const ranked = rankSessionFiles(entries);
   return discoverSessionPage({
     root,
     ranked,
@@ -647,6 +649,7 @@ function commitFrom(imported: ImportedSession): string | undefined {
 
 function compact(value: string): string { return value.replace(/\s+/g, ' ').slice(0, 160); }
 function recordLaterUserSummary(state: { summary?: string | undefined; laterUserSummaries: string[] }, text: string): void {
+  if (looksLikeInjectedInstruction(text)) return;
   const compactText = compact(text);
   if (!state.summary) state.summary = compactText;
   else if (state.laterUserSummaries.length < 8) state.laterUserSummaries.push(compactText);

@@ -36,7 +36,7 @@ Controller 的 `message` 仍是发给候选的唯一用户输入；工作区工�
 
 判决句：若 Host 把该事实 **物化成工作区文件**，就不要专用工具；若它只存在于 store / 分页 API、且不宜整包落盘，才留一个 Host 工具。
 
-今天代码里多出来的三个（[`agent-tools.ts`](../../src/infrastructure/agent-tools.ts)）逐个对照：
+今天代码里多出来的专用工具对照（实现已迁到工作区工厂 [`recovery-workspace-tools.ts`](../../src/infrastructure/recovery-workspace-tools.ts)）：
 
 | 现有专用工具 | 工作区能否替代 | 结论 |
 |---|---|---|

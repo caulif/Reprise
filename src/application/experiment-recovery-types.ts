@@ -17,6 +17,7 @@ import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
 import type { RecoveryReadinessResult } from "./recovery-readiness.js";
 
 export type RecoveryAttempt = {
+  readonly cleanupFailed?: boolean;
   readonly baseline: EnvironmentBaseline;
   readonly providerPreview?: RecoveryPreview;
   readonly staging?: RecoveryStaging;
@@ -55,6 +56,7 @@ export type RecoveryAttemptMode =
   | "maximum-effort-aggressive";
 
 export type RecoveryAttemptInput = {
+  signal?: AbortSignal;
   dataDir: string;
   caseId: string;
   experimentId: string;

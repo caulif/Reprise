@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { codexSessionAdapter } from '../src/products/codex/sessions.js';
+import { claudeSessionAdapter } from '../src/products/claude-code/sessions.js';
 import { listJsonlFiles } from '../src/products/shared/session-files.js';
 
 function rollout(id: string, timestamp = '2026-08-11T00:00:00.000Z'): string {
@@ -15,6 +16,27 @@ function rollout(id: string, timestamp = '2026-08-11T00:00:00.000Z'): string {
     JSON.stringify({ timestamp: '2026-08-11T00:00:02.000Z', type: 'event_msg', payload: { type: 'agent_message', message: 'Done.' } }),
   ].join('\n') + '\n';
 }
+
+test('both discovery summaries skip injected instructions before and after the task', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-summary-instructions-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const timestamp = '2026-08-11T00:00:00.000Z';
+  const texts = ['# AGENTS.md\nFollow repository rules.', 'Create two PPT slides.', '<environment_context>cwd</environment_context>', 'Use a white background.'];
+  const codex = join(root, 'codex');
+  const claude = join(root, 'claude');
+  await mkdir(codex);
+  await mkdir(claude);
+  await writeFile(join(codex, 'rollout-instructions.jsonl'), [
+    { timestamp, type: 'session_meta', payload: { id: 'instructions', cwd: root } },
+    ...texts.map((message) => ({ timestamp, type: 'event_msg', payload: { type: 'user_message', message } })),
+  ].map((row) => JSON.stringify(row)).join('\n'));
+  await writeFile(join(claude, 'instructions.jsonl'), texts.map((text, index) => JSON.stringify({ timestamp, type: 'user', sessionId: 'instructions', uuid: `message-${index}`, cwd: root, message: { role: 'user', content: text } })).join('\n'));
+  for (const [adapter, directory] of [[codexSessionAdapter, codex], [claudeSessionAdapter, claude]] as const) {
+    const page = await adapter.discover({ root: directory, limit: 10 });
+    assert.equal(page.items[0]?.summary, 'Create two PPT slides.');
+    assert.deepEqual(page.items[0]?.laterUserSummaries, ['Use a white background.']);
+  }
+});
 
 test('Codex discovery builds a bounded global summary index for a large local tree', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-discovery-tree-'));

@@ -177,6 +177,28 @@ export function hostManifestFromFingerprint(
   };
 }
 
+const RECOVERED_WITHOUT_STRONG_EVIDENCE =
+  'Host remapped recovered to partial: fingerprint changed without path-level strong evidence.';
+
+/** recovered stays recovered only with strong evidence on every observed path; otherwise partial. */
+export async function envelopeForObservedChanges(
+  result: RecoveryEnvelope,
+  changed: readonly string[],
+  evidence: readonly RecoveryEvidenceVerification[],
+  after: EnvironmentFingerprint,
+  root: string,
+): Promise<RecoveryEnvelope> {
+  if (result.status !== 'recovered' || changed.length === 0) return result;
+  const ownedRefs = result.evidenceRefs.filter((ref) => evidence.some((item) => item.ref === ref));
+  const known = new Map(evidence.map((item) => [item.ref, item]));
+  const current = new Map(after.resources.map((entry) => [entry.path, entry]));
+  for (const path of changed) {
+    if (await actionHasStrongEvidence(path, current.get(path), ownedRefs, known, root)) continue;
+    return { ...result, status: 'partial', unresolved: [RECOVERED_WITHOUT_STRONG_EVIDENCE] };
+  }
+  return result;
+}
+
 export async function validateManifest(
   _manifest: RecoveryManifest,
   changed: readonly string[],

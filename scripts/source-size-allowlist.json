@@ -3,5 +3,10 @@
   "until": "2026-09-06",
   "fileLimit": 1000,
   "functionLimit": 100,
-  "entries": []
+  "entries": [{
+    "name": "src/application/experiment.ts",
+    "file": "src/application/experiment.ts",
+    "until": "2026-10-01",
+    "reason": "Controller completion evidence guard is being migrated out of the legacy orchestration module."
+  }]
 }
