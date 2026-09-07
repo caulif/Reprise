@@ -79,7 +79,7 @@
 
 测试对应的观察分页入口当时在 Host 工具里对事件数组 `slice` 后 JSON 序列化；没有字节预算，也没有单条巨型事件处理。这是 5.1 MB 返回的直接实现原因。原始事件中可包含很大的工具结果或嵌套正文，不能用记录数推算模型 token。分页工具已删除，冻结历史写成 `observations/` 文件，见 [工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。
 
-首次分析参考的 [recovery-observation-tools.ts](../../src/infrastructure/recovery-observation-tools.ts) 有 48,000 字节页面预算，可复用其思路，但不能原样照搬：该版本在页面为空时允许第一条超大记录进入，仍有单条越界缺口。
+首次分析参考的当时 Host 观察分页实现（已删除的 `recovery-observation-tools.ts`）有 48,000 字节页面预算，可复用其思路，但不能原样照搬：该版本在页面为空时允许第一条超大记录进入，仍有单条越界缺口。
 
 [pi-model-caller.ts](../../src/infrastructure/pi-model-caller.ts) 和 [pi-compaction.ts](../../src/infrastructure/pi-compaction.ts) 在首次分析时已有 Pi 压缩及 overflow 恢复。此次没有成功压缩事件，说明不能依赖“已有压缩”兜住超大工具输出；该版本还会把无法准备或失败的压缩折叠为 undefined。究竟是保留尾部过大、摘要请求失败、阈值判断还是恢复路径未继续，需要离线故障注入区分，日志不足以断言其中某一个。
 
@@ -97,7 +97,7 @@
 
 ### 4.6 上游故障、环境限制与测试方法
 
-报告记录连接探测预算由 60 秒调整为 180 秒。扩大预算只能解决慢请求，不能解决约 40 秒返回的 upstream failure。首次分析的 [pi-agent-host.ts](../../src/infrastructure/pi-agent-host.ts) 已存在 transient 重试，条件却依赖 `maxRepairAttempts > 0`，计时与取消行为也需独立验证；不应照搬[另一场 opening 失败计划](./latest-run-controller-understanding-failure-2026-09-06.md) 中“新增共享重试”的全部内容。
+报告记录连接探测预算由 60 秒调整为 180 秒。扩大预算只能解决慢请求，不能解决约 40 秒返回的 upstream failure。首次分析的 [pi-agent-host.ts](../../src/infrastructure/pi-agent-host.ts) 已存在 transient 重试，条件却依赖 `maxRepairAttempts > 0`，计时与取消行为也需独立验证；不应照搬另一场 opening 失败记录中“新增共享重试”的全部内容。
 
 本实验 manifest 的 wallClock 为 24 小时、maxTargetTurns / maxModelCalls 为 256、turnTimeout 为 2 小时，内部调用预算也为 24 小时。它们不是 Reporter 超限的原因，但作为全流程 smoke 的止损界限过宽。
 

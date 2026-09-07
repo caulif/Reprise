@@ -43,6 +43,17 @@ pnpm-debug.log*
 # Local protocol captures and experiment artifacts
 .codex-app-server-schema/
 .reprise*/
+.playwright-cli/
+
+# PPT flow local driver and tests. They must not live under test/ while ignored:
+# verify:tracked-source rejects gitignored TypeScript in src/ and test/.
+/scripts/ppt-flow-*.ts
+/test/ppt-flow-*.test.ts
+
+# One-shot notes accidentally created at the docs root.
+/docs/真实使用测试记录-*.md
+/docs/project-optimization-analysis-*.md
+/docs/research/*.html
 
 # Local scratch output
 /.tmp-*.txt

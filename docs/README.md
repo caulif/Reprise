@@ -88,8 +88,6 @@
 
 `plan/` 只保留尚未做完的工作；做完或被取代后按迁移规则移出。
 
-- [Reprise 架构重构规划](./plan/reprise-architecture-redesign.md)（[交互图](./research/reprise-architecture-redesign.html)）：Session、harness、workflow 的目标职责，本机会话历史与三平台运行；设计已确认，实施按规划验收。
-
 - [Harness 内部模型：第三方优先，官方登录可选](./plan/harness-internal-model-providers.md)：按 Pi `models.json` / CC Switch 中转习惯注册网关；官方 OAuth 只走 Pi catalog，不读 Codex CLI 凭据。
 - [当前实现差距与修正计划](./plan/current-implementation-gap-and-correction-plan.md)：canonical 设计与代码的逐项偏差及迁移路线。
 - [Codex 真实会话恢复失败修正](./plan/codex-real-session-recovery-correction.md)：恢复页冒充候选、失败被显示为部分恢复、二次模型错误丢弃已完成 partial 的分批修正。
@@ -117,13 +115,10 @@
 
 ## 设计依据
 
-- [文档信息架构优化建议](./research/documentation-information-architecture-optimization.md)：针对规范、决策、计划、研究、进度和证据的生命周期与导航改进建议。
-
 - [架构研究基础](./research/architecture-foundations.md)与[Controller 研究基础](./research/controller-foundations.md)：解释为什么这样设计，可以提出备选方案，但不覆盖 `architecture/`。
-- [Reprise 架构导读](./research/reprise-architecture-walkthrough.md)（[HTML 图版](./research/reprise-architecture-walkthrough.html)）：用对照实验把关键设计、实现落点和结构张力讲清楚；非规范。
+- [Reprise 架构导读](./research/reprise-architecture-walkthrough.md)：用对照实验把关键设计、实现落点和结构张力讲清楚；非规范。
 - [Controller / Comparison 工具面与 Host 调查包](./research/controller-comparison-host-packet-and-tools.md)：审查时的工具面提案；当前规范以 [八工具](./decisions/accepted/2026-08-31-internal-agent-eight-tools.md) 与 [Controller 七工具](./decisions/accepted/2026-09-03-controller-seven-workspace-tools.md) 为准。
 - [三个内部 Agent 的模块设计审查](./research/three-agents-design-review.md)：三角色共用八工具与轮间压缩；角色差异只在 cwd、写策略和会话形态。
-- [Agent 架构设想](./research/reprise-agent-architecture.md)（[HTML](./research/reprise-agent-architecture.html)）：从第一性原理重画三个内部 Agent 的模块、合同与代码中的 workflow 切分；非规范。
 
 ## 不在版本控制内的材料
 

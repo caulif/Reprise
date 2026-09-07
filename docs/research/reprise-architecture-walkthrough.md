@@ -2,7 +2,6 @@
 
 状态：研究导读，非规范  
 日期：2026-09-07  
-浏览器阅读（SVG 可渲染）：[reprise-architecture-walkthrough.html](./reprise-architecture-walkthrough.html)  
 规范仍以[产品定义](../product/overview.md)和[架构总览](../architecture/overview.md)为准。本文解释设计如何落到代码，并标出后续优化要面对的结构张力；不重新定义公共类型。
 
 ---
