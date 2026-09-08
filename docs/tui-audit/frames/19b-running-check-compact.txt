@@ -1,5 +1,5 @@
 Reprise   Recovering session   C:\reprise
-00:00   round 1   * running
+00:00   * running
 ------------------------------------------------------------
  Recovering session                                         
                                                             
@@ -9,4 +9,4 @@ Reprise   Recovering session   C:\reprise
                                                             
  Recovering the isolated workspace from this session. You...
 ------------------------------------------------------------
- [Ctrl+C] Cancel  [/] Find  [v] Select  [?] Keys
+ [Ctrl+C] Cancel  [/] Find  [Tab] Detail  [v] Select

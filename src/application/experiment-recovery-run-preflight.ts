@@ -36,7 +36,7 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
   const { input, store, provider } = session;
   await store.acquireWriter();
   session.writerAcquired = true;
-  const pack = findProductPack(input.taskCase.source.productId);
+  const pack = input.pack ?? findProductPack(input.taskCase.source.productId);
   const descriptor = packRecoveryPlaybook(pack);
   const playbook = {
     productId: pack.manifest.productId,

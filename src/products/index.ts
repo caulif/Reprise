@@ -14,6 +14,27 @@ export function resetProductPacks(): void {
   packLoadDiagnostics = [];
 }
 
+export type ProductLookup = {
+  readonly packs: readonly ProductPack[];
+  readonly diagnostics: readonly PackLoadDiagnostic[];
+  find(productId: string): ProductPack;
+};
+
+export function createProductLookup(packs: readonly ProductPack[], diagnostics: readonly PackLoadDiagnostic[] = []): ProductLookup {
+  return {
+    packs,
+    diagnostics,
+    find(productId) {
+      const pack = packs.find((item) => item.manifest.productId === productId);
+      if (!pack) {
+        const known = packs.map((item) => item.manifest.productId).join(", ") || "(none)";
+        throw new Error(`Unknown product '${productId}'. Registered products: ${known}.`);
+      }
+      return pack;
+    },
+  };
+}
+
 export async function loadAndActivateProductPacks(dataDir: string): Promise<readonly PackLoadDiagnostic[]> {
   const assembled = await assembleProductPacks(dataDir, builtinPacks);
   productPacks = assembled.packs;

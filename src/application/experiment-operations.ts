@@ -12,6 +12,7 @@ type RecoverFn = (request: {
   sourceRoot: string;
   sourceRootKind?: SourceRootKind;
   onEvent?: (event: EventEnvelope) => void;
+  onActivity?: (activity: import("./experiment-activity.js").ExperimentActivity) => void;
 }) => Promise<RecoveryAttempt>;
 
 type StartFn = (request: {
@@ -26,6 +27,7 @@ type StartFn = (request: {
   runId?: string;
   candidate?: CandidateSpec;
   onEvent: (event: EventEnvelope) => void;
+  onActivity?: (activity: import("./experiment-activity.js").ExperimentActivity) => void;
   compare?: boolean;
   deferComparison?: boolean;
 }) => Promise<ExperimentHandle>;
@@ -45,6 +47,7 @@ export async function runSealedScenario(workflow: Workflow, request: {
   dataDir: string;
   scenario: string;
   onEvent: RunInput["onEvent"];
+  onActivity?: RunInput["onActivity"];
   candidate?: CandidateSpec;
   compare?: boolean;
   deferComparison?: boolean;
@@ -57,6 +60,7 @@ export async function runSealedScenario(workflow: Workflow, request: {
     recoveryAttempt: loaded.attempt,
     experimentId: loaded.descriptor.experimentId,
     onEvent: request.onEvent,
+    ...(request.onActivity ? { onActivity: request.onActivity } : {}),
     ...(request.candidate ? { candidate: request.candidate } : {}),
     ...(request.compare ? { compare: true } : {}),
     ...(request.deferComparison ? { deferComparison: true } : {}),

@@ -95,6 +95,16 @@ test("installed package specifier resolves from the data directory", async (t) =
   assert.ok(assembled.packs.some((pack) => pack.manifest.productId === "fixture-pkg"));
 });
 
+test("product lookups from different assemblies do not share extras", async () => {
+  const { createProductLookup } = await import("../src/products/index.js");
+  const left = createProductLookup([codexProductPack]);
+  const right = createProductLookup([claudeCodeProductPack]);
+  assert.equal(left.find("codex").manifest.productId, "codex");
+  assert.throws(() => left.find("claude-code"));
+  assert.throws(() => right.find("codex"));
+  assert.equal(right.find("claude-code").manifest.productId, "claude-code");
+});
+
 function packModule(input: {
   productId: string;
   capabilities: readonly string[];

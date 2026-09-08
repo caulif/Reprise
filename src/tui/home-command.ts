@@ -1,6 +1,6 @@
 import { slashCommands } from './format.js';
 
-export type HomeCommand = 'help' | 'config' | 'intake' | 'run' | 'history' | 'lang' | 'home' | 'find' | 'empty' | 'plain' | 'unknown';
+export type HomeCommand = 'help' | 'config' | 'intake' | 'history' | 'lang' | 'empty' | 'plain' | 'unknown';
 
 export function classifyHomeCommand(value: string): HomeCommand {
   const command = value.trim().toLowerCase();
@@ -9,11 +9,8 @@ export function classifyHomeCommand(value: string): HomeCommand {
   if (command === '/help') return 'help';
   if (command === '/config') return 'config';
   if (command === '/intake') return 'intake';
-  if (command === '/run') return 'run';
   if (command === '/history') return 'history';
   if (command === '/lang' || command.startsWith('/lang ')) return 'lang';
-  if (command === '/home') return 'home';
-  if (command === '/find' || command.startsWith('/find ')) return 'find';
   return 'unknown';
 }
 

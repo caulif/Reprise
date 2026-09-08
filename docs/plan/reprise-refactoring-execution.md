@@ -321,7 +321,7 @@ M1.1–M7 实施步骤已关闭。未关闭的是 TUI 真终端、未通过的 C
 
 出口：公开检出无需本机 HTML 即可理解、构建、运行和扩展；模拟路径、文档、打包与实际支持声明一致。对应 A12 及整体验收。
 
-**完成（2026-09-08）。** 删除 `productId === "codex"` 无名根映射与 `stalled.controller_completion_guard`；无名根绑定第一个 import Pack 或显式 `pack`。README/AGENTS/`reprise/pack-api`/`plugins.json` 与支持声明一致。A1–A18 机械路径见 MASTER 核对表。**未关闭**：TUI IME/滚轮/拖选与 macOS/Linux 真终端；Controller 真实模型 lane 已跑、五族代表未匹配；Runtime smoke 未授权。目标 ADR 仍为 proposed。ADR：[M7 收口与未关闭验收](../decisions/accepted/2026-09-08-m7-delivery-and-acceptance-gaps.md)。
+**完成（2026-09-08）。** 删除 `productId === "codex"` 无名根映射与 `stalled.controller_completion_guard`；无名根绑定第一个 import Pack 或显式 `pack`。README/AGENTS/`reprise/pack-api`/`plugins.json` 与支持声明一致。A1–A18 机械路径见 MASTER 核对表。**未关闭**项见[平台证据矩阵](./2026-09-08-platform-evidence-matrix.md)与 [Session harness workflow](../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。ADR：[M7 收口与未关闭验收](../decisions/accepted/2026-09-08-m7-delivery-and-acceptance-gaps.md)。
 
 ## 10. 验证实施方式
 

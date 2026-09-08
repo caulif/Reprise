@@ -1,9 +1,7 @@
-Reprise   Run result                                                                            00:00   round 1   ● done
+Reprise   Run result                                                                                      00:00   ● done
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  ● To Codex   ● Codex screen   ● Controller                                                                             
  Task  Fix the bug.                                                                                                     
-                                                                                                                        
-▎ Decision: SEND One check remains.                                                                                     
                                                                                                                         
 ▎ To Codex · historical task                                                                                            
 ▎ Run the focused test.                                                                                                 
@@ -16,11 +14,13 @@ Reprise   Run result                                                            
 ▎ public response line 4                                                                                                
 ▎ public response line 5                                                                                                
 ▎ public response line 6                                                                                                
+▎ ... +35 lines                                                                                                         
 
 ┌─ Run result ─ completed ─────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ✓ completed                                                                                                          │
-│     completed.controller_satisfied                                                                                   │
 │ Task         apparently_completed                                                                                    │
+│ Termination  completed · completed.controller_satisfied                                                              │
+│ Cleanup      complete                                                                                                │
 │ Comparison   completed                                                                                               │
 │ Report       TMP\data\experiments\fixture\report.html         │
 │ Replica                                                                                                              │

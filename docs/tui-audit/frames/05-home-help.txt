@@ -1,7 +1,7 @@
 Reprise v0.1.0   C:\reprise                   gpt-5.6-terra · medium   ⚠ Harness key missing  ○ Product unset  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ┌─ Keys ───────────────────────────────────────────────────────┐
-│ Commands: /config, /intake, /run, /history, /lang, /find     │
+│ Commands: /intake, /history, /config, /lang, /help           │
 │                                                              │
 │  This page (home)                                            │
 │    Type       /command, then Enter                           │
@@ -13,18 +13,18 @@ Reprise v0.1.0   C:\reprise                   gpt-5.6-terra · medium   ⚠ Harn
 │              ?        This help                              │
 └──────────────────────────────────────────────────────────────┘
 
- Last task  none selected
+ Internal model  gpt-5.6-terra
 
  Continue
- /run     Replay the current task  needs a task
- /intake  Import a historical session
+ /history Local experiments  no local experiments
  /config  Open /config  needs credential
 
  Browse
  /intake    Import a historical agent session
- /history   Local tasks and replays
- /config    Endpoint, model, API key
+ /history   Local experiments
+ /config    Internal Agent model
  /lang      Switch language
+ /help      Show keys and commands
 
  Next: add the API key in /config
 

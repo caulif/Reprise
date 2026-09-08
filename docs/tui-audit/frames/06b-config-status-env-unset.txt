@@ -1,12 +1,13 @@
 Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Harness env unset  ○ Product unset  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Last task  none selected
+ Internal model  gpt-5.6-terra
 
  Continue
- /run     Replay the current task  needs a task
- /intake  Import a historical session
+ /history Local experiments  no local experiments
+ /config  Open /config  env unset
 
-┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
+┌─ Internal Agent model ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Shared by recovery, simulated user, and comparison. Candidate models are chosen later.                               │
 │ Endpoint   https://api.dzzzz.cf                                                                                      │
 │ Internal model      gpt-5.6-terra · medium                                                                           │
 │ Secret     env OPENAI_API_KEY   ⚠ not set in this shell                                                              │

@@ -74,7 +74,7 @@ flowchart TB
     RENDERER --> USER[Local Report]
 ```
 
-原始会话直接成为基线材料，不经过 TargetRunner。只有候选模型的运行进入执行平面。Product Pack负责把产品私有数据转换成 Harness 公共协议；Controller 和 Comparison 不读取 Claude Code、Codex 等产品的私有日志或格式。
+原始会话直接成为基线材料，不经过 TargetRunner。只有候选模型的运行进入执行平面。Product Pack负责把产品私有数据转换成 Harness 公共协议；Controller 和 Comparison 不读取 Claude Code、Codex 等产品的私有日志或格式。CLI 与 TUI 只组装输入、渲染和订阅活动身份；实验 Workflow 使用启动处注入的 Pack lookup。来源产品与候选产品使用不同命令字段。未验证的操作系统与终端组合见[平台证据矩阵](../plan/2026-09-08-platform-evidence-matrix.md)。
 
 ## 3. 三段生命周期
 

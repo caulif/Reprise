@@ -51,13 +51,14 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
   ],
   preflight: ['b          Edit source root', 'Esc        Back to Home'],
   confirm: ['Enter      Start the candidate run', 'b          Change model', 'Esc        Back to Home'],
-  'compare-gate': ['Enter      Start comparison', 's          Skip comparison', 'Ctrl+C     Exit'],
-  running: ['Ctrl+C     Request cancellation', '/          Find in timeline', 'v          Reading mode'],
+  'compare-gate': ['c          Start comparison', 'Esc        Home (skip comparison)'],
+  running: ['Ctrl+C     Request cancellation', '/          Find in timeline', 'v          Reading mode', 'Esc        Stays on the record'],
   result: [
+    'c          Start comparison when offered',
     'o          Open report.html',
     't          Open trace folder',
     'w          Open isolated replica',
-    'Enter / b  Back to Home',
+    'Esc        Back to Home',
   ],
   error: ['Enter / b / Esc  Back to Home'],
 };
@@ -74,9 +75,9 @@ export function helpLines(page?: string, locale: Locale = 'en'): readonly string
     '/          Find visible titles in this experiment (not a Home command)',
     'v          Reading/select mode (pause redraw, disable mouse report)',
     'Home/End   First record / follow latest',
-    'Enter      Next find hit while searching; details when not searching',
-    'Ctrl+G     Actors',
-    'o          Open selected detail',
+    'Tab        Focus expandable groups',
+    'Enter      Next find hit while searching; expand when not searching',
+    'o          Open selected original detail',
   ] : undefined;
   const keys = page === 'home' ? homeKeys : page === 'running' ? runningKeys : scoped;
   return [

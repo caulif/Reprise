@@ -21,7 +21,7 @@ export async function recoverCodexExperiment(
 ): Promise<RecoveryAttempt> {
   const localAbort = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, localAbort.signal]) : localAbort.signal;
-  const activity = registerActivity({
+  const activity = input.activity ?? registerActivity({
     kind: "prepare",
     experimentId: input.experimentId,
     runId: input.runId,
@@ -30,6 +30,7 @@ export async function recoverCodexExperiment(
       localAbort.abort();
     },
   });
+  if (input.activity) activity.cancel = async () => { localAbort.abort(); };
   await activityControlReady(activity);
   let session: RecoveryRunSession | undefined;
   try {

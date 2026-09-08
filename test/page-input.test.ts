@@ -64,6 +64,9 @@ test('search field starts from a slash and leaves other keys to the page', () =>
 
 test('submitted home command classifies a unique prefix', () => {
   assert.equal(submittedHomeCommand('/in'), 'intake');
+  assert.equal(submittedHomeCommand('/run'), 'unknown');
+  assert.equal(submittedHomeCommand('/find'), 'unknown');
+  assert.equal(submittedHomeCommand('/lang'), 'lang');
 });
 
 test('global input routes ctrl+c and overlay escapes before page keys', () => {
@@ -87,8 +90,9 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchConfirmInput('b')?.action, 'models');
   assert.equal(dispatchCandidatePickerInput('b')?.action, 'back');
   assert.equal(dispatchCandidatePickerInput('\r')?.action, 'enter');
-  assert.equal(dispatchRunningKeys('d')?.action, 'toggle-detail');
+  assert.equal(dispatchRunningKeys('\t')?.action, 'cycle-fold');
   assert.equal(dispatchRunningKeys('\x1b')?.action, 'active-message');
+  assert.equal(dispatchResultKeys('c')?.action, 'compare');
   assert.equal(dispatchResultKeys('o')?.action, 'open-report');
   assert.equal(dispatchResultKeys('t')?.action, 'open-trace');
   assert.equal(dispatchResultKeys('w')?.action, 'open-replica');

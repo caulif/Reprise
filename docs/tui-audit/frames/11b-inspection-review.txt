@@ -1,10 +1,10 @@
 Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   ⚠ Harness key missing  ● Codex  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Last task  none selected
+ Internal model  gpt-5.6-terra
 
  Continue
- /run     Replay the current task  needs a task
- /intake  Import a historical session
+ /history Local experiments  no local experiments
+ /config  Open /config  needs credential
 
 ┌─ reprise · 1 sessions · filter: all ──────┐ ┌─ Review session · reprise ─────────────────────────────────────────────┐
 │❯ 4d ago      修复这个回归… u1 a1 t0       │ │ Enter freezes this session. Replay starts at the first user task, not  │

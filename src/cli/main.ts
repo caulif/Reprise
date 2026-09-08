@@ -6,7 +6,7 @@ import { classifyCliError } from "../application/cli-error.js";
 import { CLI_EXIT, exitCodeForKind } from "../core/cli-protocol.js";
 import { runHeadlessCommand, type HeadlessContext } from "./headless.js";
 import { runQueryCommand } from "./query.js";
-import { loadAndActivateProductPacks } from "../products/index.js";
+import { createProductLookup, loadAndActivateProductPacks, packLoadDiagnostics, productPacks } from "../products/index.js";
 import { parseSessionsDirs } from "./sessions-dirs.js";
 import { parseOutputMode, writeJsonResult } from "./protocol.js";
 
@@ -65,8 +65,8 @@ export function helpText(): string {
     "  reprise [--data-dir <dir>] [--sessions-dir <productId>=<path>] [--compare]",
     "  reprise products|models|projects|sessions|inspect|import|history|events|auth [--json]",
     "  reprise config get|set [--json]",
-    "  reprise prepare (--source-root <dir> --task-case <file.json> | --product <id> --source-path <path>) [--json|--jsonl]",
-    "  reprise run (--source-root <dir> --task-case <file.json> | --scenario <experimentId>) [--json|--jsonl]",
+    "  reprise prepare (--source-root <dir> --task-case <file.json> | --source-product <id> --source-path <path>) [--json|--jsonl]",
+    "  reprise run (--source-root <dir> --task-case <file.json> | --scenario <experimentId>) [--product <id> --model <id>] [--json|--jsonl]",
     "  reprise compare (--experiment <id> | --source-root <dir> --task-case <file.json>) [--json|--jsonl]",
     "  reprise cancel <operationId|experimentId|runId> [--data-dir <dir>] [--json]",
     "  reprise [--help] [--version]",
@@ -123,7 +123,11 @@ async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: 
     dataDir,
     sessionsRoot: input.sessionsRoot,
     sessionsRoots: input.sessionsRoots,
-    workflow: createHarnessWorkflow({ dataDir, now: input.now ? () => input.now! : () => new Date().toISOString() }),
+    workflow: createHarnessWorkflow({
+      dataDir,
+      lookup: createProductLookup(productPacks, packLoadDiagnostics),
+      now: input.now ? () => input.now! : () => new Date().toISOString(),
+    }),
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     now: input.now ? () => input.now! : () => new Date().toISOString(),
     ...(input.autoCompare ? { autoCompare: true } : {}),

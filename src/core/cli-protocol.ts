@@ -1,3 +1,5 @@
+import { Type, type Static } from "@sinclair/typebox";
+
 export const CLI_PROTOCOL_VERSION = 1 as const;
 
 export const CLI_EXIT = {
@@ -25,31 +27,62 @@ export type CliErrorKind =
 
 export type CliOutputMode = "json" | "jsonl";
 
-export type CliActivity = {
-  readonly operationId: string;
-  readonly experimentId: string;
-  readonly runId: string;
-};
+const CliActivitySchema = Type.Object({
+  operationId: Type.String({ minLength: 1 }),
+  experimentId: Type.String({ minLength: 1 }),
+  runId: Type.String({ minLength: 1 }),
+});
+export type CliActivity = Static<typeof CliActivitySchema>;
 
-export type CliErrorBody = {
-  readonly kind: CliErrorKind;
-  readonly message: string;
-  readonly id?: string;
-};
+const CliErrorKindSchema = Type.Union([
+  Type.Literal("usage"),
+  Type.Literal("not_found"),
+  Type.Literal("config_missing"),
+  Type.Literal("capability_missing"),
+  Type.Literal("conflict"),
+  Type.Literal("cancelled"),
+  Type.Literal("timeout"),
+  Type.Literal("failed"),
+]);
 
-export type CliJsonResult = {
-  readonly schemaVersion: typeof CLI_PROTOCOL_VERSION;
-  readonly ok: boolean;
-  readonly command: string;
-  readonly data?: unknown;
-  readonly activity?: CliActivity;
-  readonly error?: CliErrorBody;
-};
+const CliErrorBodySchema = Type.Object({
+  kind: CliErrorKindSchema,
+  message: Type.String({ minLength: 1 }),
+  id: Type.Optional(Type.String({ minLength: 1 })),
+});
+export type CliErrorBody = Static<typeof CliErrorBodySchema>;
 
-export type CliJsonlRecord =
-  | { readonly schemaVersion: typeof CLI_PROTOCOL_VERSION; readonly type: "activity"; readonly activity: CliActivity }
-  | { readonly schemaVersion: typeof CLI_PROTOCOL_VERSION; readonly type: "event"; readonly sequence: number; readonly event: unknown }
-  | { readonly schemaVersion: typeof CLI_PROTOCOL_VERSION; readonly type: "end"; readonly ok: boolean; readonly status?: string; readonly error?: CliErrorBody };
+export const CliJsonResultSchema = Type.Object({
+  schemaVersion: Type.Literal(CLI_PROTOCOL_VERSION),
+  ok: Type.Boolean(),
+  command: Type.String({ minLength: 1 }),
+  data: Type.Optional(Type.Unknown()),
+  activity: Type.Optional(CliActivitySchema),
+  error: Type.Optional(CliErrorBodySchema),
+});
+export type CliJsonResult = Static<typeof CliJsonResultSchema>;
+
+export const CliJsonlRecordSchema = Type.Union([
+  Type.Object({
+    schemaVersion: Type.Literal(CLI_PROTOCOL_VERSION),
+    type: Type.Literal("activity"),
+    activity: CliActivitySchema,
+  }),
+  Type.Object({
+    schemaVersion: Type.Literal(CLI_PROTOCOL_VERSION),
+    type: Type.Literal("event"),
+    sequence: Type.Integer(),
+    event: Type.Unknown(),
+  }),
+  Type.Object({
+    schemaVersion: Type.Literal(CLI_PROTOCOL_VERSION),
+    type: Type.Literal("end"),
+    ok: Type.Boolean(),
+    status: Type.Optional(Type.String()),
+    error: Type.Optional(CliErrorBodySchema),
+  }),
+]);
+export type CliJsonlRecord = Static<typeof CliJsonlRecordSchema>;
 
 export function exitCodeForKind(kind: CliErrorKind): CliExitCode {
   if (kind === "usage") return CLI_EXIT.usage;

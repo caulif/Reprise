@@ -58,6 +58,7 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
     : theme.style.ok(` ${theme.glyphs.ok} ${t(locale, 'savedLocally')}`);
   const status = model.saved || model.dirty ? dirty : ` ${theme.glyphs.dot} ${t(locale, 'inMemoryDraft')}`;
   return panel(theme, theme.style.harness(t(locale, 'configTitle')), [
+    theme.style.muted(` ${t(locale, 'configSharedHint')}`),
     ...connectionStatus(theme, model, locale),
     '',
     ...values,

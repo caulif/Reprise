@@ -23,7 +23,7 @@
 证据分三类，不能互相顶替：
 
 1. **平台模拟**：CI [check.yml](../../.github/workflows/check.yml) 在 Windows、macOS、Ubuntu 跑同一套离线测试；shell、路径、进程见[原生平台语义](../decisions/accepted/2026-09-08-native-platform-semantics.md)。
-2. **真实终端**：TUI 帧基线与假终端按键在 Windows 检查。中文、IME、滚轮、拖选、链接、异常退出恢复尚未在 macOS/Linux 真终端关闭。
+2. **真实终端**：TUI 帧基线与假终端按键在 Windows 检查。逐项状态见[平台证据矩阵](../plan/2026-09-08-platform-evidence-matrix.md)；macOS/Linux 真终端本轮 unverified。
 3. **真实 Runtime**：Codex/Claude smoke 仅显式环境变量准入，见[smoke 闸门](../codex-smoke-gate.md)；缺授权时保持缺口。
 
 第三测试 Pack 经配置加载，见[第三 Pack 与平台证据](../decisions/accepted/2026-09-08-third-pack-and-platform-evidence.md)。支持声明见[支持边界](../SUPPORT.md)。

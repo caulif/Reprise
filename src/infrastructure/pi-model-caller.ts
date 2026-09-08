@@ -160,13 +160,13 @@ export class PiModelCaller implements PiTextCaller {
     const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
     const agent = new Agent({
       sessionId: input.sessionId,
-      streamFn: (streamModel, context, options) => {
+      streamFn: async (streamModel, context, options) => {
         const notify = input.onModelRequest;
         if (notify) {
           const serialized = JSON.stringify({ model: streamModel, context });
           const modelId = "id" in streamModel ? String(streamModel.id) : String(streamModel);
           const messageCount = "messages" in context && Array.isArray(context.messages) ? context.messages.length : 0;
-          void notify({ model: modelId, digest: sha256(serialized), messageCount });
+          await notify({ model: modelId, digest: sha256(serialized), messageCount });
         }
         return this.#models.streamSimple(streamModel, context, {
           ...options,

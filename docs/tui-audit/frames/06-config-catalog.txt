@@ -1,12 +1,13 @@
 Reprise v0.1.0   C:\reprise                            No configured model   ○ Harness unset  ○ Product unset  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Last task  none selected
+ Internal model  needs config
 
  Continue
- /run     Replay the current task  needs a task
- /intake  Import a historical session
+ /history Local experiments  no local experiments
+ /config  Open /config  needs credential
 
-┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
+┌─ Internal Agent model ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Shared by recovery, simulated user, and comparison. Candidate models are chosen later.                               │
 │ Endpoint   Pi catalog amazon-bedrock                                                                                 │
 │ Internal model      au.anthropic.claude-opus-4-6-v1 · medium                                                         │
 │ Secret     Pi manages credentials                                                                                    │

@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Reprise 是 local-first 个人对照工具。Windows 11 是现有主要真实验证平台；CI 在 Windows、macOS、Ubuntu 运行模拟测试，配置见 [check.yml](../.github/workflows/check.yml)。这不证明各平台真实 Runtime、文件权限或 TUI 均已验证。三平台模拟、Windows 真终端帧、opt-in Runtime smoke 分列见[本机平台边界](./architecture/cross-platform.md)。macOS/Linux 真终端的 IME、滚轮与拖选仍是缺口。
+Reprise 是 local-first 个人对照工具。Windows 11 是现有主要真实验证平台；CI 在 Windows、macOS、Ubuntu 运行模拟测试，配置见 [check.yml](../.github/workflows/check.yml)。这不证明各平台真实 Runtime、文件权限或 TUI 均已验证。三平台模拟、Windows 真终端帧、opt-in Runtime smoke 分列见[本机平台边界](./architecture/cross-platform.md)与[平台证据矩阵](./plan/2026-09-08-platform-evidence-matrix.md)。macOS/Linux 真终端本轮 unverified。
 
 Node 要求以 [package.json](../package.json) 的 engines 为准。平台与 shell 当前行为见[本机平台边界](./architecture/cross-platform.md)。不承诺公共榜单或承担用户的模型费用。
 

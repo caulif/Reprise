@@ -1,10 +1,10 @@
 Reprise v0.1.0   C:\reprise                            No configured model   ○ Harness unset  ○ Product unset  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Last task  none selected
+ Internal model  needs config
 
  Continue
  Enter    Latest replay  record unread
- /run     Replay the current task  needs a task
+ /config  Open /config  needs credential
 
 ┌─ Recent experiments · Storage 0.0 MiB ────────────────────────────┐ ┌─ Experiment ───────────────────────────────────┐
 │ ❯ exp-history · record unread                                     │ │ ID           exp-history                       │

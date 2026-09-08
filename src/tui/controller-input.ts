@@ -7,13 +7,13 @@ import type { ExperimentWorkflow } from '../application/tui-workflow.js';
 import type { TaskCase } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
-import { coveringFoldIds } from './fold-process.js';
+import { coveringFoldIds, foldProcessEntries, selectedIndexAfterFold } from './fold-process.js';
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import { matchesCanvasQuery, matchesFilter } from './scrollback.js';
 import { canvasHitIndices, nextHitIndex, syncTimelineSelection, timelineIdentity } from './timeline-read.js';
-import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, startRunSetup } from './controller-run.js';
+import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation } from './controller-run.js';
 import {
   dispatchCanvasInput,
   dispatchCandidatePickerInput,
@@ -152,6 +152,7 @@ export type ControllerHandle = {
   loadMoreProductSessions(): void;
   refreshProductSessions(): void;
   loadHistory(): Promise<void>;
+  openRecentExperiment(): Consume;
   setHomeMessage(message: string): Consume;
   isEditingText(): boolean;
 };
@@ -181,10 +182,15 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'candidate-product') return applyCandidateProduct(c, input);
   if (c.page === 'candidate-model') return applyCandidateModel(c, input);
   if (c.page === 'confirm') return applyConfirm(c, input);
-  if (c.page === 'compare-gate') return applyCompareGate(c, input);
   if (c.page === 'result') {
     const result = dispatchResultKeys(input);
     if (!result) return undefined;
+    if (result.action === 'compare') {
+      if (!c.compareChoice) return { consume: true };
+      c.compareChoice.resolve(true);
+      c.compareChoice = undefined;
+      return { consume: true };
+    }
     if (result.action === 'open-report') {
       if (c.result?.comparison.result.status === 'skipped') return undefined;
       return c.openReport(
@@ -194,6 +200,10 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     }
     if (result.action === 'open-trace') return c.openTrace();
     if (result.action === 'open-replica') return c.openReplica();
+    if (c.compareChoice) {
+      c.compareChoice.resolve(false);
+      c.compareChoice = undefined;
+    }
     return c.backToHome();
   }
   if (c.page === 'error') {
@@ -256,7 +266,7 @@ function submitComposer(c: ControllerHandle): Consume {
   c.hideCommandOverlay();
   const command = submittedHomeCommand(typed);
   if (command === 'empty') {
-    if (c.recentExperiment) return startHistoryLoad(c);
+    if (c.recentExperiment) return c.openRecentExperiment();
     return { consume: true };
   }
   if (command === 'plain') return c.setHomeMessage(t(c.locale, 'plainRejected'));
@@ -266,14 +276,11 @@ function submitComposer(c: ControllerHandle): Consume {
     return { consume: true };
   }
   if (command === 'intake') return startSessionDiscovery(c);
-  if (command === 'run') return startRunSetup(c);
   if (command === 'history') return startHistoryLoad(c);
   if (command === 'lang') {
     void c.setLocale(typed);
     return { consume: true };
   }
-  if (command === 'home') return c.backToHome();
-  if (command === 'find') return c.setHomeMessage(t(c.locale, 'findOnlyDuring'));
   return c.setHomeMessage(t(c.locale, 'unknownCommand', { cmd: typed }));
 }
 
@@ -440,7 +447,7 @@ function applyCandidateModel(c: ControllerHandle, data: string): Consume | undef
 
 function applyCompareGate(c: ControllerHandle, data: string): Consume | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'enter')) {
+  if (matchesKey(input, 'enter') || input === 'c' || input === 'C') {
     c.compareChoice?.resolve(true);
     c.compareChoice = undefined;
     return { consume: true };
@@ -493,13 +500,8 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
     c.render();
     return { consume: true };
   }
-  if (result.action === 'toggle-pane') {
-    return { consume: true };
-  }
-  if (result.action === 'toggle-actors') {
-    c.actorsOpen = !c.actorsOpen;
-    c.render();
-    return { consume: true };
+  if (result.action === 'cycle-fold' || result.action === 'cycle-fold-prev') {
+    return cycleFoldSelection(c, result.action === 'cycle-fold-prev' ? -1 : 1);
   }
   if (result.action === 'open-detail') return openSelectedDetail(c);
   c.message = t(c.locale, 'experimentActive');
@@ -531,7 +533,6 @@ function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
   }
   if (result.action === 'follow') return followTimeline(c);
   if (result.action === 'home') return homeTimeline(c);
-  if (result.action === 'cycle-filter') return cycleTimelineFilter(c);
   if (result.action === 'edit-find') {
     c.timelineFollowing = false;
     expandFoldsForQuery(c);
@@ -645,9 +646,33 @@ function followTimeline(c: ControllerHandle): Consume {
   return { consume: true };
 }
 
-function cycleTimelineFilter(c: ControllerHandle): Consume {
-  c.timelineFilterIndex = (c.timelineFilterIndex + 1) % TIMELINE_FILTERS.length;
-  return followTimeline(c);
+function cycleFoldSelection(c: ControllerHandle, direction: 1 | -1): Consume {
+  const visible = c.visibleTimeline();
+  const folded = foldProcessEntries(visible, new Set(c.expandedFolds));
+  const foldIndices = folded.flatMap((entry, index) => entry.kind === 'fold' ? [index] : []);
+  if (!foldIndices.length) {
+    c.detailExpanded = !c.detailExpanded;
+    c.render();
+    return { consume: true };
+  }
+  const current = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
+  const pos = foldIndices.findIndex((index) => index >= current);
+  const start = pos < 0 ? 0 : pos;
+  const nextIndex = foldIndices[(start + (direction === 1 ? 1 : foldIndices.length - 1)) % foldIndices.length];
+  if (nextIndex === undefined) {
+    c.render();
+    return { consume: true };
+  }
+  const target = folded[nextIndex];
+  if (target) {
+    const identity = timelineIdentity(target);
+    const raw = visible.findIndex((entry) => timelineIdentity(entry) === identity);
+    c.timelineSelected = raw >= 0 ? raw : Math.min(current, Math.max(0, visible.length - 1));
+    c.timelineAnchor = identity;
+    c.timelineFollowing = false;
+  }
+  c.render();
+  return { consume: true };
 }
 
 function expandFoldsForQuery(c: ControllerHandle): void {

@@ -227,7 +227,6 @@ export type CanvasAction =
   | 'start-find'
   | 'follow'
   | 'home'
-  | 'cycle-filter'
   | 'consume';
 
 export function dispatchCanvasInput(
@@ -258,26 +257,26 @@ export function dispatchCanvasInput(
   if (matchesKey(input, 'pageDown')) return { state, action: 'move', amount: 10, consume: true };
   if (matchesKey(input, 'home')) return { state, action: 'home', consume: true };
   if (matchesKey(input, 'end') || matchesKey(input, 'l')) return { state, action: 'follow', consume: true };
-  if (matchesKey(input, 'f')) return { state, action: 'cycle-filter', consume: true };
   return undefined;
 }
 
-export type RunningAction = 'toggle-detail' | 'toggle-actors' | 'open-detail' | 'active-message' | 'toggle-pane';
+export type RunningAction = 'toggle-detail' | 'open-detail' | 'active-message' | 'cycle-fold' | 'cycle-fold-prev';
 
 export function dispatchRunningKeys(data: string): { action: RunningAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'tab')) return { action: 'toggle-pane', consume: true };
+  if (matchesKey(input, 'shift+tab')) return { action: 'cycle-fold-prev', consume: true };
+  if (matchesKey(input, 'tab')) return { action: 'cycle-fold', consume: true };
   if (matchesKey(input, 'd') || matchesKey(input, 'enter')) return { action: 'toggle-detail', consume: true };
-  if (matchesKey(input, 'ctrl+g')) return { action: 'toggle-actors', consume: true };
   if (matchesKey(input, 'o')) return { action: 'open-detail', consume: true };
   if (matchesKey(input, 'escape')) return { action: 'active-message', consume: true };
   return undefined;
 }
 
-export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'home';
+export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'compare' | 'home';
 
 export function dispatchResultKeys(data: string): { action: ResultAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
+  if (input === 'c' || input === 'C') return { action: 'compare', consume: true };
   if (matchesKey(input, 'o')) return { action: 'open-report', consume: true };
   if (matchesKey(input, 't')) return { action: 'open-trace', consume: true };
   if (matchesKey(input, 'w')) return { action: 'open-replica', consume: true };

@@ -14,6 +14,8 @@ import type {
   RecoveryStaging,
 } from "../environment/local-workspace-provider.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
+import type { ProductPack } from "../products/contract.js";
+import type { ExperimentActivity } from "./experiment-activity.js";
 import type { RecoveryReadinessResult } from "./recovery-readiness.js";
 
 export type RecoveryAttempt = {
@@ -79,4 +81,6 @@ export type RecoveryAttemptInput = {
   environmentProvider?: LocalWorkspaceProvider;
   now: string;
   onEvent?: (event: EventEnvelope) => void;
+  pack?: ProductPack;
+  activity?: ExperimentActivity;
 };

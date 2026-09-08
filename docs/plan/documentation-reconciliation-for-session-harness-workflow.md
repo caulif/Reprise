@@ -12,8 +12,8 @@
 | Comparison | [对照](../architecture/comparison.md)、[单 Session ADR](../decisions/accepted/2026-09-08-comparison-single-session.md) | A4、A17 |
 | CLI 与取消 | [CLI](../../src/cli/main.ts)、[共用操作 ADR](../decisions/accepted/2026-09-08-shared-experiment-operations.md)、[跨终端 cancel](../decisions/accepted/2026-09-08-cross-terminal-cancel.md) | A9、A13–A15 |
 | Product Pack | [兼容性](../architecture/product-plugin-compatibility.md)、[注册入口](../../src/products/index.ts)、[第三 Pack](../decisions/accepted/2026-09-08-third-pack-and-platform-evidence.md) | A16 模拟第三 Pack 与 A18；真实 Runtime smoke 仍 opt-in |
-| 平台 | [本机平台](../architecture/cross-platform.md)、[原生平台语义](../decisions/accepted/2026-09-08-native-platform-semantics.md) | A11：CI 三 OS 模拟 shell/路径/进程；**TUI 真终端 IME 不在 A11** |
-| TUI | [当前界面](../product/tui.md)、[公开时间线](../decisions/accepted/2026-09-08-public-activity-timeline.md)、[阅读与终端](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md) | Windows 帧与假终端；**三系统真终端 IME/滚轮/拖选未关闭** |
+| 平台 | [本机平台](../architecture/cross-platform.md)、[原生平台语义](../decisions/accepted/2026-09-08-native-platform-semantics.md)、[平台证据矩阵](./2026-09-08-platform-evidence-matrix.md) | A11：CI 三 OS 模拟 shell/路径/进程；**TUI 真终端 IME 不在 A11** |
+| TUI | [当前界面](../product/tui.md)、[公开时间线](../decisions/accepted/2026-09-08-public-activity-timeline.md)、[阅读与终端](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)、[界面重构](./reprise-tui-surface-refactor.md) | 页图以 `product/tui.md` 为准。真终端见[平台矩阵](./2026-09-08-platform-evidence-matrix.md) |
 
 工具数量、提示词全文和公共字段以对应代码定义为准，不再用一份平行 prompt 文档重定义。上述迁移必须保留权限、隔离、秘密保护、模型输入可复原、投递未知不重发及结果与清理分离。
 

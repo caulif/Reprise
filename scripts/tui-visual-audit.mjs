@@ -148,7 +148,7 @@ async function main() {
   const configApp = new CodexIntakeTui(tuiOptions(join(root, 'data-config'), { tui: config.tui }));
   await configApp.start();
   enterCommand(configApp, '/config');
-  await waitFor(() => /Harness connection/.test(config.render(120)));
+  await waitFor(() => /Internal Agent model/.test(config.render(120)));
   configApp.handleInput('\u001b[A');
   configApp.handleInput('\u001b[A');
   configApp.handleInput('\u001b[A');
@@ -190,7 +190,7 @@ async function main() {
   await envApp.start();
   await push('01b-home-env-unset', 120, envHome.render(120));
   enterCommand(envApp, '/config');
-  await waitFor(() => /Harness connection/.test(envHome.render(120)));
+  await waitFor(() => /Internal Agent model/.test(envHome.render(120)));
   await push('06b-config-status-env-unset', 120, envHome.render(120));
   envApp.handleInput('\u001b[B');
   envApp.handleInput('\u001b[B');

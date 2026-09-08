@@ -1,19 +1,19 @@
 Reprise   Run result   C:\reprise
-00:00   round 1   * done
+00:00   * done
 ------------------------------------------------------------
  * To Codex   * Codex screen   * Controller                 
  Task  Fix the bug.                                         
                                                             
-| Decision: SEND One check remains.                         
-                                                            
-| To Codex · historical task                                
-| Run the focused test.                                     
-                                                            
+| public response line 1                                    
+| public response line 2                                    
+| public response line 3                                    
+| public response line 4                                    
 
 [ Run result - completed ]
     + completed
-        completed.controller_satisfied
     Task         apparently_completed
+    Termination  completed · completed.controller_satisfied
+    Cleanup      complete
     Comparison   completed
     Report       
    C:\user\AppData\Local\Temp\

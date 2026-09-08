@@ -1,11 +1,11 @@
 Reprise v0.1.0   C:\reprise
 gpt-5.6-terra - medium   ! Harness key missing  * Codex  ...
 ------------------------------------------------------------
- Last task  Fix the bug. · 2 turns
+ Internal model  gpt-5.6-terra
 
  Continue
- /run     Replay the current task  needs credential
- /intake  Import a historical session
+ /history Local experiments  no local experiments
+ /config  Open /config  needs credential
 
 [ Run · choose candidate model ]
     Source session Codex

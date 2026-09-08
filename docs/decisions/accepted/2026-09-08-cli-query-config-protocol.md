@@ -11,7 +11,7 @@
 ## 决定
 
 - 查询子命令（products、models、projects、sessions、history、events、auth、config get）先于有副作用命令；参数与退出码以 `src/core/cli-protocol.ts` 与 CLI 实现为准。
-- 来源身份是 productId + sessionId，歧义时用 `--source-path`。来源产品与候选产品用 `--product` 各自指定。分页用 `limit`/`cursor`（会话 cursor 为 sourcePath 或 Pack 续读令牌）。
+- 来源身份是 productId + sessionId，歧义时用 `--source-path`。来源产品用 `--source-product`；候选产品用 `--product` 与 `--model`，不得共用一个字段。分页用 `limit`/`cursor`（会话 cursor 为 sourcePath 或 Pack 续读令牌）。
 - `--json` 与 `--jsonl` 互斥。子命令默认 JSON 单结果；`--jsonl` 只用于 prepare/run/compare 的活动与事件流，并以 `type=end` 收束。诊断写 stderr。查询成功不因所查实验失败而失败。
 - 退出码：0 成功，1 副作用失败，2 用法，3 未知 ID，4 配置/能力缺失，5 写者冲突，6 取消，7 超时。
 - 密钥不得作为 `--api-key`。保存配置走与 TUI 相同的 `saveHarnessModelConfig`；凭据用 `--api-key-file` 或 `--key-ref env:NAME`。`pi /login` 是交互登录，本 CLI 不代收秘密。

@@ -2,7 +2,7 @@
 
 状态：目标设计已由用户确认，供后续实施；本文不宣称代码已完成迁移，也不覆盖当前架构规范。
 
-本文是本轮重构目标与验收的唯一文字来源。选择理由见[重构决策提案](../decisions/proposed/2026-09-07-reprise-session-harness-workflow.md)。当前实现依据仍为[架构总览](../architecture/overview.md)。
+本文是本轮重构目标与验收的唯一文字来源。选择理由见[Session harness workflow](../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。当前实现依据仍为[架构总览](../architecture/overview.md)。未关闭的真终端与 Runtime 行见[平台证据矩阵](./2026-09-08-platform-evidence-matrix.md)。
 
 ## 1. 产品边界
 

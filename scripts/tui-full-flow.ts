@@ -187,15 +187,15 @@ async function main() {
     "02-suggestions",
     120,
     home.render(120),
-    "斜杠命令发现，应含 /find",
+    "斜杠命令发现，应含 /intake",
   );
   homeApp.handleInput("\u001b");
-  enterCommand(homeApp, "/find");
+  enterCommand(homeApp, "/run");
   await push(
-    "03-find-on-home",
+    "03-unknown-run",
     120,
     home.render(120),
-    "封面 /find 应提示只在对照中可用",
+    "封面 /run 不是命令",
   );
   homeApp.handleInput("?");
   await push("04-help", 120, home.render(120), "帮助 overlay");
@@ -206,7 +206,7 @@ async function main() {
 
   enterCommand(homeApp, "/config");
   await waitFor(
-    () => /Harness connection|Settings/.test(home.render(120)),
+    () => /Internal Agent model|Settings/.test(home.render(120)),
     { frame: () => home.render(120) },
   );
   await push("06-config", 120, home.render(120), "设置 overlay");

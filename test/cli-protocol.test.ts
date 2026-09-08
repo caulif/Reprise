@@ -200,3 +200,64 @@ test("headless run timeout aborts the handle cancel path", async (t) => {
   assert.equal(code, CLI_EXIT.cancelled);
 });
 
+const sampleTask = (caseId: string) => ({
+  schemaVersion: 1, caseId, source: { productId: "codex", sessionId: "session-1" },
+  initialInput: { id: "msg-1", role: "user", text: "Synthetic task" },
+  transcript: [{ id: "msg-1", role: "user", text: "Synthetic task" }],
+  historicalEvents: [], baseline: { status: "unavailable", artifactRefs: [], evidenceRefs: [] },
+  sourceRuntimeEvidence: { productId: "codex", artifactRefs: [] },
+  provenance: { packVersion: "1", importedAt: "2026-09-08T00:00:00Z", sourceHash: "a".repeat(64) },
+  privacy: { allowModelText: true, allowBinary: false, redactions: [] }, contentHash: "b".repeat(64),
+});
+
+test("prepare rejects candidate --product and accepts source-product without --model", async (t) => {
+  const { runHeadlessCommand } = await import("../src/cli/headless.js");
+  const dataDir = await mkdtemp(join(tmpdir(), "reprise-cli-prepare-src-"));
+  t.after(async () => rm(dataDir, { recursive: true, force: true }));
+  const captured = { stderr: [] as string[] };
+  const code = await runHeadlessCommand("prepare", ["--data-dir", dataDir, "--product", "codex", "--source-path", join(dataDir, "session.jsonl"), "--json"], {
+    stdout: () => {},
+    stderr: (line) => captured.stderr.push(line),
+  });
+  assert.equal(code, CLI_EXIT.usage);
+  assert.match(captured.stderr.join("\n"), /source-product/);
+});
+
+test("JSONL prepare emits real activity before recover returns and timeout cancels it", async (t) => {
+  const { runHeadlessCommand } = await import("../src/cli/headless.js");
+  const dataDir = await mkdtemp(join(tmpdir(), "reprise-cli-prepare-act-"));
+  t.after(async () => rm(dataDir, { recursive: true, force: true }));
+  const taskPath = join(dataDir, "task.json");
+  await writeFile(taskPath, JSON.stringify(sampleTask("case-prepare-act")));
+  const outputs: Array<Record<string, unknown>> = [];
+  let cancelled = false;
+  const workflow = {
+    recover: async (request: { onActivity?: (activity: { operationId: string; experimentId: string; runId: string }) => void; signal?: AbortSignal }) => {
+      request.onActivity?.({ operationId: "op-prepare-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", experimentId: "recovery-1", runId: "recovery-run-1" });
+      await new Promise<void>((_resolve, reject) => {
+        request.signal?.addEventListener("abort", () => {
+          cancelled = true;
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        }, { once: true });
+      });
+    },
+  };
+  const code = await runHeadlessCommand("prepare", ["--data-dir", dataDir, "--task-case", taskPath, "--source-root", dataDir, "--timeout-ms", "30", "--jsonl"], {
+    stdout: (line) => outputs.push(JSON.parse(line) as Record<string, unknown>),
+    stderr: () => {},
+  }, { workflow: workflow as never });
+  assert.equal(cancelled, true);
+  assert.equal(outputs[0]?.type, "activity");
+  assert.equal((outputs[0]?.activity as { operationId: string }).operationId, "op-prepare-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+  assert.equal(code, CLI_EXIT.cancelled);
+});
+
+test("CLI JSON envelopes reject empty command at the public schema boundary", async () => {
+  const { writeJsonResult } = await import("../src/cli/protocol.js");
+  const { CliError } = await import("../src/application/cli-error.js");
+  assert.throws(
+    () => writeJsonResult({ stdout: () => {}, stderr: () => {} }, { ok: true, command: "" }),
+    CliError,
+  );
+});
+

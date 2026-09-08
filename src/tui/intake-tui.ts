@@ -225,6 +225,7 @@ export class CodexIntakeTui {
   historyInput(data: string): { consume: true } | undefined { return intakeMethods.CodexIntakeTui_historyInput.call(this, data); }
   historyItems(): readonly (HistoryCase | HistoryExperiment)[] { return intakeMethods.CodexIntakeTui_historyItems.call(this); }
   loadHistory(): Promise<void> { return intakeMethods.CodexIntakeTui_loadHistory.call(this); }
+  openRecentExperiment(): { consume: true } { return intakeMethods.CodexIntakeTui_openRecentExperiment.call(this); }
   openConfig(): Promise<void> { return intakeMethods.CodexIntakeTui_openConfig.call(this); }
   saveConfig(): Promise<void> { return intakeMethods.CodexIntakeTui_saveConfig.call(this); }
   testConfigConnection(): Promise<void> { return intakeMethods.CodexIntakeTui_testConfigConnection.call(this); }

@@ -315,7 +315,7 @@ export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparin
   if (finding) {
     return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
   }
-  return [stop, ['/', t(locale, 'hintTimelineFind')], ['v', t(locale, 'hintReadingMode')], ['?', t(locale, 'hintKeys')]];
+  return [stop, ['/', t(locale, 'hintTimelineFind')], ['Tab', t(locale, 'hintDetail')], ['v', t(locale, 'hintReadingMode')], ['?', t(locale, 'hintKeys')]];
 }
 
 export function renderCompareGate(theme: Theme, width: number, locale: Locale = 'en'): string[] {
@@ -323,12 +323,12 @@ export function renderCompareGate(theme: Theme, width: number, locale: Locale = 
     ` ${t(locale, 'compareGateBody')}`,
     '',
     theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'compareGateEnter')}`),
-    theme.style.muted(` s  ${t(locale, 'compareGateSkip')}`),
+    theme.style.muted(` Esc  ${t(locale, 'compareGateSkip')}`),
   ], width);
 }
 
 export function compareGateHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Enter', t(locale, 'hintRunComparison')], ['s', t(locale, 'hintSkipComparison')], ['Ctrl+C', t(locale, 'hintStop')]];
+  return [['c', t(locale, 'hintRunComparison')], ['Esc', t(locale, 'hintHome')], ['Ctrl+C', t(locale, 'hintExit')]];
 }
 
 export function currentRunState(entries: readonly TimelineEntry[]): CandidateRunState | undefined {

@@ -315,7 +315,7 @@ async function settleRun(
   const partial = await handle.candidateFinished;
   if (token !== c.generation) return undefined;
   c.result = partial;
-  c.page = 'running';
+  c.page = 'result';
   c.preparePhase = undefined;
   c.prepareDetail = undefined;
   c.message = t(c.locale, 'compareGateBody');

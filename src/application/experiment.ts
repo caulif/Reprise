@@ -127,6 +127,7 @@ export type CodexExperimentInput = {
   comparisonAgentConfig?: ExperimentAgentConfig;
   runtime: RuntimePort;
   pack?: ProductPack;
+  activity?: ExperimentActivity;
   environmentProvider?: LocalWorkspaceProvider;
   /** A previously validated Recovery preview selected by the operator. */
   preResolvedBaseline?: EnvironmentBaseline;
@@ -205,13 +206,14 @@ export function startCodexExperiment(
   };
   if (input.signal?.aborted) void cancel();
   else input.signal?.addEventListener("abort", () => { void cancel(); }, { once: true });
-  const activity = registerActivity({
+  const activity = input.activity ?? registerActivity({
     kind: input.compare ? "compare" : "run",
     experimentId: input.experimentId,
     runId: input.runId,
     cancel,
     dataDir: input.dataDir,
   });
+  if (input.activity) activity.cancel = cancel;
   const published = activityControlReady(activity);
   const result = executeExperiment(input, {
     signal: abort.signal,
@@ -253,7 +255,6 @@ async function captureCodexExperimentContext(
 ) {
   assertPaths(input.dataDir, input.sourceRoot);
   assertIds(input);
-  findProductPack(input.candidate.productId);
   if (
     typeof input.taskCase !== "function" &&
     input.caseId !== input.taskCase.caseId

@@ -10,8 +10,8 @@ import { inspectionHints, renderInspection, renderSessions, sessionsHints, type 
 import { renderFailure, renderResult, resultHints, failureHints } from './pages/result.js';
 import { candidateModelHints, candidateProductHints, renderCandidateModelPicker, renderCandidateProductPicker, type CandidateModelPage, type CandidateProductModel } from './pages/candidate.js';
 import {
-  confirmHints, confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderCompareGate, renderPreflight, renderSource, renderTimeline,
-  runningChrome, runningHints, compareGateHints, sourceHints,
+  compareGateHints, confirmHints, confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderCompareGate, renderPreflight, renderSource, renderTimeline,
+  runningChrome, runningHints, sourceHints,
   type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
 } from './pages/run.js';
 import { t, type Locale } from './i18n.js';
@@ -181,11 +181,7 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
     : running
       ? pill(theme, running.cancelling ? t(locale, 'hintCancel') : t(locale, 'running'), running.cancelling ? 'warn' : 'ok')
       : identityStatus(theme, view);
-  const metrics = running
-    ? running.preparePhase === 'compare'
-      ? running.elapsed
-      : `${running.elapsed}   ${t(locale, 'replayRound', { n: Math.max(1, running.turns.used) })}`
-    : modelSummary(theme, view);
+  const metrics = running ? running.elapsed : modelSummary(theme, view);
   const right = `${metrics}   ${status}`;
   const leftWide = running ? brand : `${brand}   ${compact(view.cwd, 48, theme.glyphs.ellipsis)}`;
   if (theme.density === 'compact' || visibleWidth(`${leftWide}   ${right}`) > width) {
@@ -278,10 +274,7 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
   if (view.page === 'confirm' && view.confirm) return renderConfirmation(theme, width, view.confirm);
   if (view.page === 'compare-gate') return renderCompareGate(theme, width, view.locale ?? 'en');
   if (view.page === 'running' && view.running) {
-    if (!view.comparePending) return renderTimeline(theme, width, view.running, height);
-    const gate = renderCompareGate(theme, width, view.locale ?? 'en');
-    const bodyHeight = height === undefined ? undefined : Math.max(6, height - gate.length - 1);
-    return [...renderTimeline(theme, width, view.running, bodyHeight), '', ...gate];
+    return renderTimeline(theme, width, view.running, height);
   }
   if (view.page === 'result' && view.result) {
     const summary = renderResult(theme, width, view.result, view.locale ?? 'en', view.productLabel);
@@ -317,7 +310,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     return preflightHints(locale);
   }
   if (view.page === 'confirm') return confirmHints(view.confirm ? confirmCanStart(view.confirm) : false, locale);
-  if (view.page === 'compare-gate' || view.comparePending) return compareGateHints(locale);
+  if (view.page === 'compare-gate') return compareGateHints(locale);
   if (view.page === 'running' && view.running) {
     const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
     return runningHints(
@@ -329,7 +322,13 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
       Boolean(view.running.readingMode),
     );
   }
-  if (view.page === 'result') return resultHints(locale, view.result?.comparison.result.status === 'skipped');
+  if (view.page === 'result') {
+    return resultHints(
+      locale,
+      view.result?.comparison.result.status === 'skipped',
+      Boolean(view.comparePending),
+    );
+  }
   if (view.page === 'error') return failureHints(locale);
   return [['b', t(locale, 'hintBack')], ['Ctrl+C', t(locale, 'hintExit')]];
 }

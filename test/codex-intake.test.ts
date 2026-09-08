@@ -78,7 +78,7 @@ test("Codex intake TUI uses an ASCII narrow-terminal fallback and states the min
   const narrow = document?.render(60).join("\n") ?? "";
   assert.match(narrow, /Continue|Browse|\/ command/);
   assert.doesNotMatch(narrow, /[┌┐└┘│─❯●✓…]/);
-  assert.match(narrow, /Continue|Browse|Last task/);
+  assert.match(narrow, /Continue|Browse|Internal model/);
   assert.match(narrow.replace(/\u001b\[[0-9;]*m/g, ''), /^Reprise v0\.1\.0/m);
   assert.doesNotMatch(narrow.split("\n")[0] ?? "", /No configured model|gpt-/);
   assert.match(
@@ -119,7 +119,7 @@ test("Codex intake TUI uses framed panels at normal terminal widths", async (t) 
   await app.start();
   const wide = document?.render(120).join("\n") ?? "";
   assert.match(wide, /Continue|Browse|\/ command/);
-  assert.match(wide, /\/config|\/intake|\/run/);
+  assert.match(wide, /\/config|\/intake|\/lang/);
 });
 
 test("Codex intake TUI presents session discovery errors instead of rejecting in the background", async (t) => {

@@ -6,9 +6,13 @@
 
 ## 当前批次
 
-实施 [重构评估 R1–R4](../plan/2026-09-08-refactoring-review-closeout.md)：committed 历史校验与路径边界、CLI 失败退出与默认不挂对照、同 scene 多 run、对照不装候选 Runtime、sessions 游标与 import/inspect、TUI 只折叠工具组。真实终端 IME、Runtime smoke 与付费模型请求边界未关闭。
+实施 [TUI 界面重构](../plan/reprise-tui-surface-refactor.md) U1–U6：封面斜杠、连续记录、结果段 `c` 对照、页脚与规范。真终端 IME/滚轮/拖选不在本批关闭。
 
 ## 验证记录
+
+2026-09-08 TUI 界面重构 U1–U6：`npm run check` 17 门禁通过（含 `audit:tui` 48 帧 0 overflow、`verify:docs`）。封面斜杠为 `/intake` `/history` `/config` `/lang` `/help`；候选结束后结果段 `c` 对照；运行中 Esc 不取消。真终端 IME/滚轮/拖选不在本批关闭。
+
+2026-09-08 进一步审查实施：F1 来源 `--source-product` 与候选 `--product/--model` 拆开；F2/F3 应用发布真实 activity 且前台 SIGINT 覆盖 prepare/run/compare；F4 JSON/JSONL `Value.Check`；F5 Workflow 注入 Pack lookup；F6 探测前可取消。P4 矩阵见 [平台证据](../plan/2026-09-08-platform-evidence-matrix.md)：Windows 部分 verified，macOS/Linux unverified。目标 ADR 迁入 [Session harness workflow](../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。未关闭：真人 IME、授权 Runtime smoke、Controller 付费 lane 与 `REPRISE_AGENT_CONTEXT_PROBE` 对拍。
 
 2026-09-08 重构评估收口：规划见 [R1–R4](../plan/2026-09-08-refactoring-review-closeout.md)；决策见 [只读历史与 run 所有权](../decisions/accepted/2026-09-08-committed-history-and-run-ownership.md)。未关闭：真实模型 streamFn 对拍、三 OS 真终端、Controller 付费 lane。
 

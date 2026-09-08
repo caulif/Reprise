@@ -1,10 +1,10 @@
 Reprise v0.1.0   C:\reprise                                    No configured model   ○ Harness unset  ● Codex  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Last task  none selected
+ Internal model  needs config
 
  Continue
- /run     Replay the current task  needs a task
- /intake  Import a historical session
+ /history Local experiments  no local experiments
+ /config  Open /config  needs credential
 
 ┌─ Select agent product ───────────────────────────────────────────────────────────────────────────────────────────────┐
 │❯ Codex                                                                           pack 0.1.0  error: ENOTDIR: not a d…│

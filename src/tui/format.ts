@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url';
 import { getCapabilities, hyperlink, stripTerminalSequences, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { isFsAbsolute } from '../core/paths.js';
 
-const SLASH_COMMANDS = ['/help', '/config', '/intake', '/run', '/history', '/lang', '/home', '/find'] as const;
+const SLASH_COMMANDS = ['/help', '/config', '/intake', '/history', '/lang'] as const;
 export const TIMELINE_FILTERS = ['ALL', 'PRODUCT', 'INPUT'] as const;
 export type TimelineFilter = typeof TIMELINE_FILTERS[number];
 const ANSI = /\u001b\[[0-9;]*m/;
@@ -51,7 +51,7 @@ export function operatorErrorMessage(error: unknown): string {
   const code = typeof codeValue === 'string' ? codeValue : '';
   const message = errorMessage(error);
   if (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || /operation not permitted, rename/i.test(message)) {
-    return 'Could not publish the isolated baseline. Windows still had a lock on the copied files. Return and /run again.';
+    return 'Could not publish the isolated baseline. Windows still had a lock on the copied files. Return and start again from /intake.';
   }
   return message;
 }

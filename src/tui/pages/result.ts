@@ -24,8 +24,9 @@ export function renderResult(theme: Theme, width: number, result: CodexExperimen
   const metrics = metricsLine(theme, result, locale);
   return panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, [
     terminationBanner(theme, kind),
-    `     ${result.record.outcome.termination.code}`,
     kv(theme, 'Task', result.record.outcome.task.status, width - 2),
+    kv(theme, 'Termination', `${kind} · ${result.record.outcome.termination.code}`, width - 2),
+    kv(theme, 'Cleanup', result.record.outcome.cleanup?.status ?? vacant, width - 2),
     ...(!skipped ? [kv(theme, 'Comparison', failed ? `${locale === 'zh' ? '比较报告生成失败' : 'Report generation failed'} (${comparison.failure.kind ?? comparison.failure.code})` : comparison.status, width - 2)] : []),
     ...(metrics ? [`     ${metrics}`] : []),
     ...(headline ? ['', ...wrapBodyLine(headline, inner).map((line) => ` ${line}`)] : []),
@@ -37,7 +38,7 @@ export function renderResult(theme: Theme, width: number, result: CodexExperimen
   ], width);
 }
 
-export function resultHints(locale: Locale = 'en', comparisonSkipped = false): readonly (readonly [string, string])[] {
+export function resultHints(locale: Locale = 'en', comparisonSkipped = false, comparePending = false): readonly (readonly [string, string])[] {
   const rest: readonly (readonly [string, string])[] = [
     ['t', t(locale, 'hintTrace')],
     ['w', t(locale, 'hintReplica')],
@@ -45,7 +46,10 @@ export function resultHints(locale: Locale = 'en', comparisonSkipped = false): r
     ['Esc', t(locale, 'hintHome')],
     ['b', t(locale, 'hintHome')],
   ];
-  return comparisonSkipped ? rest : [['o', t(locale, 'hintReport')], ...rest];
+  const report = comparisonSkipped ? rest : [['o', t(locale, 'hintReport')] as const, ...rest];
+  return comparePending || comparisonSkipped
+    ? [['c', t(locale, 'hintCompare')], ...report]
+    : report;
 }
 
 export function renderFailure(theme: Theme, width: number, message: string, locale: Locale = 'en'): string[] {

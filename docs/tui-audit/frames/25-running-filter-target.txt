@@ -1,7 +1,14 @@
-Reprise   Candidate running · Codex                                                          00:00   round 1   ● running
+Reprise   Candidate running · Codex                                                                    00:00   ● running
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  ● To Codex   ● Codex screen   ● Controller                                                                             
  Task  Fix the bug.                                                                                                     
+                                                                                                                        
+▎ Controller                                                                                                            
+▎ ▸ 第 1 轮 · SEND ·                                                                                                    
+▎ Decision: SEND One check remains.                                                                                     
+                                                                                                                        
+▎ To Codex · historical task                                                                                            
+▎ Run the focused test.                                                                                                 
                                                                                                                         
 ▎ Codex                                                                                                                 
 ▎ $ Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name                                                         
@@ -13,4 +20,4 @@ Reprise   Candidate running · Codex                                            
 ▎ public response line 6                                                                                                
 ▎ ... +35 lines                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Stop  [/] Find  [v] Select  [?] Keys
+ [Ctrl+C] Stop  [/] Find  [Tab] Detail  [v] Select  [?] Keys

@@ -1,10 +1,10 @@
 Reprise v0.1.0   C:\reprise                            No configured model   ○ Harness unset  ○ Product unset  ○ No task
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Last task  none selected
+ Internal model  needs config
 
  Continue
  Enter    Latest replay  record unread
- /run     Replay the current task  needs a task
+ /config  Open /config  needs credential
 
 ┌─ TaskCases · Storage 0.0 MiB ─────────────────────────────────────┐ ┌─ TaskCase ─────────────────────────────────────┐
 │ ❯ case-history · Inspect a focused regression.                    │ │ TaskCase: case-history                         │
@@ -28,6 +28,6 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
 │                                                                   │ │reprise-tui-audit-TMP\history-data\cases\    │
 │                                                                   │ │case-history\case.json                          │
 └───────────────────────────────────────────────────────────────────┘ └────────────────────────────────────────────────┘
- Local history detail. Nothing is executed or modified until you select a TaskCase.
+ Experiment record. Opening history does not resume a process.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [Enter] Use this TaskCase  [t] Open path  [Esc] Back

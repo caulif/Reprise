@@ -59,23 +59,23 @@ const ASCII_GLYPHS: Glyphs = {
 
 export const FORBIDDEN_COMPACT = /[┌┐└┘│─❯●✓…]/;
 
-/** Matches docs/plan/grok-style-tui-mockups.html */
+/** Matches docs/plan/reprise-tui-design.md: low-chroma body, one accent. */
 const GROK = {
-  accent: { ansi: '96;1', rgb: [34, 211, 238] },
-  muted: { ansi: '90', rgb: [139, 149, 168] },
-  harness: { ansi: '94', rgb: [96, 165, 250] },
-  controller: { ansi: '95', rgb: [232, 121, 249] },
-  target: { ansi: '96', rgb: [34, 211, 238] },
-  ok: { ansi: '92', rgb: [74, 222, 128] },
-  warn: { ansi: '93', rgb: [250, 204, 21] },
-  danger: { ansi: '91', rgb: [248, 113, 113] },
-  selectedFg: { rgb: [229, 231, 235] },
-  selectedBg: { rgb: [19, 36, 60] },
-  canvasBg: { rgb: [13, 20, 36] },
-  voiceInBg: { rgb: [26, 18, 36] },
-  voiceOutBg: { rgb: [11, 28, 36] },
-  voiceInSel: { rgb: [42, 26, 58] },
-  voiceOutSel: { rgb: [18, 48, 64] },
+  accent: { ansi: '36;1', rgb: [167, 217, 190] },
+  muted: { ansi: '90', rgb: [139, 153, 149] },
+  harness: { ansi: '36', rgb: [167, 217, 190] },
+  controller: { ansi: '37', rgb: [220, 226, 223] },
+  target: { ansi: '36', rgb: [167, 217, 190] },
+  ok: { ansi: '32', rgb: [167, 217, 190] },
+  warn: { ansi: '33', rgb: [238, 176, 155] },
+  danger: { ansi: '31', rgb: [238, 176, 155] },
+  selectedFg: { rgb: [220, 226, 223] },
+  selectedBg: { rgb: [23, 29, 32] },
+  canvasBg: { rgb: [12, 16, 18] },
+  voiceInBg: { rgb: [23, 29, 32] },
+  voiceOutBg: { rgb: [16, 22, 24] },
+  voiceInSel: { rgb: [30, 38, 42] },
+  voiceOutSel: { rgb: [24, 34, 36] },
 } as const;
 
 export function resolveDensity(width: number): Density {

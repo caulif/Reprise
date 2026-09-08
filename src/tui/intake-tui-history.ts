@@ -5,6 +5,16 @@ import { handleHistoryInput } from "./history-input.js";
 import { t } from "./i18n.js";
 import { projectPersistedTimeline } from "./timeline.js";
 
+export function CodexIntakeTui_openRecentExperiment(this: CodexIntakeTui): { consume: true } {
+  const recent = this.recentExperiment;
+  if (!recent) {
+    void CodexIntakeTui_loadHistory.call(this);
+    return { consume: true };
+  }
+  void openHistoryExperiment(this, recent);
+  return { consume: true };
+}
+
 export function CodexIntakeTui_historyInput(this: CodexIntakeTui, data: string): { consume: true } | undefined {
     const result = handleHistoryInput(
       { tab: this.historyTab, selected: this.historySelected },
@@ -37,7 +47,7 @@ async function openHistoryExperiment(c: CodexIntakeTui, item: HistoryExperiment)
     c.timeline = projectPersistedTimeline(page.events);
     const visible = c.visibleTimeline();
     c.timelineSelected = Math.max(0, visible.length - 1);
-    c.timelineFollowing = false;
+    c.timelineFollowing = true;
     c.page = "history-detail";
     c.message = t(c.locale, "historyDetailMsg");
   } catch (error) {

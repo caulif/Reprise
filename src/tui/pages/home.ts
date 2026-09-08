@@ -3,7 +3,6 @@ import { compact, slashCommands } from '../format.js';
 import { commandCatalog, t, type Locale } from '../i18n.js';
 import { caretAt } from '../text-edit.js';
 import type { HistoryExperiment } from '../local-history.js';
-import { taskDisplaySummary } from './intake.js';
 import type { Theme } from '../theme.js';
 import { pad, panel } from '../widgets.js';
 import { shellEnvAssignment } from '../../infrastructure/harness-model-config.js';
@@ -26,18 +25,16 @@ export type HomeModel = {
 
 export function renderHome(theme: Theme, width: number, model: HomeModel): string[] {
   const locale = model.locale ?? 'en';
-  const taskLabel = model.taskCase
-    ? compact(`${taskDisplaySummary(model.taskCase.initialInput.text, model.taskCase.transcript.filter((message) => message.role === 'user').map((message) => message.text).slice(1), locale)}${frozenStart(model.taskCase)}`, 56, theme.glyphs.ellipsis)
-    : t(locale, 'noneSelected');
   const continueRows = continueLines(theme, model, locale);
   const browseRows = [
     ` ${theme.style.accent('/intake')}    ${t(locale, 'intakeDesc')}`,
     ` ${theme.style.accent('/history')}   ${t(locale, 'historyDesc')}`,
     ` ${theme.style.accent('/config')}    ${t(locale, 'configDesc')}`,
     ` ${theme.style.accent('/lang')}      ${t(locale, 'langDesc')}`,
+    ` ${theme.style.accent('/help')}      ${t(locale, 'helpDesc')}`,
   ];
   const body = [
-    theme.style.muted(` ${t(locale, 'lastCase')}  ${taskLabel}`),
+    theme.style.muted(` ${t(locale, 'internalModelLine')}  ${internalModelLabel(theme, model, locale)}`),
     '',
     theme.style.muted(` ${t(locale, 'continue')}`),
     ...continueRows,
@@ -68,7 +65,7 @@ export function homeHints(locale: Locale = 'en', model?: HomeModel): readonly (r
       ['Esc', t(locale, 'hintEsc')],
     ];
   }
-  const enter = model?.recentExperiment ? t(locale, 'hintContinue') : t(locale, 'hintEnter');
+  const enter = model?.recentExperiment ? t(locale, 'hintOpenRecent') : t(locale, 'hintEnter');
   return [
     ['/', t(locale, 'hintCommand')],
     ['Tab', t(locale, 'hintTab')],
@@ -83,9 +80,9 @@ function continueLines(theme: Theme, model: HomeModel, locale: Locale): string[]
   if (model.recentExperiment) {
     const title = compact(model.recentExperiment.outcome ?? t(locale, 'recentRun'), 36, theme.glyphs.ellipsis);
     rows.push(row(theme, 'Enter', t(locale, 'recentRun'), title));
+  } else {
+    rows.push(row(theme, '/history', t(locale, 'historyDesc'), theme.style.muted(t(locale, 'noExperiments'))));
   }
-  rows.push(row(theme, '/run', t(locale, 'runCurrent'), runReadiness(theme, model, locale)));
-  rows.push(row(theme, '/intake', t(locale, 'importSession'), ''));
   if (!model.hasApiConfig || model.hasUsableAuth === false) {
     const status = model.envName && model.envSet === false
       ? t(locale, 'envUnset')
@@ -100,21 +97,17 @@ function row(theme: Theme, key: string, description: string, status: string): st
   return status ? `${left}  ${status}` : left;
 }
 
-function runReadiness(theme: Theme, model: HomeModel, locale: Locale): string {
-  if (!model.taskCase) return theme.style.warn(t(locale, 'needsTask'));
-  if (!model.hasApiConfig) return theme.style.warn(t(locale, 'needsConfig'));
-  if (model.envName && model.envSet === false) return theme.style.warn(t(locale, 'needsEnv'));
-  if (model.hasUsableAuth === false) return theme.style.warn(t(locale, 'needsCred'));
-  if (model.recoveryFailed) return theme.style.warn(t(locale, 'cannotStartRun'));
-  return theme.style.ok(t(locale, 'sourceReady'));
+function internalModelLabel(theme: Theme, model: HomeModel, locale: Locale): string {
+  if (model.modelId) return compact(model.modelId, 40, theme.glyphs.ellipsis);
+  if (!model.hasApiConfig || model.hasUsableAuth === false) return theme.style.warn(t(locale, 'needsConfig'));
+  return t(locale, 'noneSelected');
 }
 
 function nextLine(theme: Theme, locale: Locale, model: HomeModel): string {
   if (!model.hasApiConfig) return theme.style.warn(t(locale, 'nextConfig'));
   if (model.envName && model.envSet === false) return theme.style.warn(t(locale, 'nextSetEnv', { name: model.envName }));
   if (model.hasUsableAuth === false) return theme.style.warn(t(locale, 'nextSetCred'));
-  if (!model.taskCase) return t(locale, 'nextIntake');
-  return t(locale, 'nextRun');
+  return t(locale, 'nextIntake');
 }
 
 function renderSuggestions(theme: Theme, width: number, model: HomeModel): string[] {
@@ -123,10 +116,4 @@ function renderSuggestions(theme: Theme, width: number, model: HomeModel): strin
     || slashCommands().some((command) => command.startsWith(model.composer.toLowerCase()) && command === item.command));
   const lines = matches.map((item, index) => ` ${index === 0 ? theme.glyphs.cursor : ' '} ${pad(item.command, 10)} ${item.description}`);
   return panel(theme, t(locale, 'commands'), lines.length ? lines : [` ${t(locale, 'noMatch')}`], Math.min(width, 72));
-}
-
-function frozenStart(taskCase: TaskCase): string {
-  const users = taskCase.transcript.filter((message) => message.role === 'user');
-  if (users.length < 2) return '';
-  return ` · ${users.length} turns`;
 }

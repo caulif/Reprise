@@ -123,8 +123,8 @@ export async function CodexIntakeTui_saveConfig(this: CodexIntakeTui): Promise<v
       await this.refreshHarnessAuth();
       if (token !== this.generation) return;
       await this.loadHome();
-      this.message = this.harnessAuthOk
-        ? "Configuration saved locally. Use /run when a TaskCase is ready."
+        this.message = this.harnessAuthOk
+        ? t(this.locale, 'configSavedIntake')
         : `Configuration saved locally. ${credentialGapMessage(this.configDraft) ?? "Harness has no usable credential."}`;
     } catch (error) {
       if (token !== this.generation) return;

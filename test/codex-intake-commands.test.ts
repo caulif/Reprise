@@ -113,13 +113,13 @@ test("Codex intake TUI keeps non-command input local and makes help and unknown 
 
   enterCommand(app, "/unknown");
   assert.match(rendered, /Unknown command: \/unknown/);
-  enterCommand(app, "/find");
-  assert.match(rendered, /Find is available during a replay/);
+  enterCommand(app, "/run");
+  assert.match(rendered, /Unknown command: \/run/);
   app.handleInput("?");
-  assert.match(rendered, /Commands: \/config, \/intake, \/run, \/history/);
+  assert.match(rendered, /Commands: \/intake, \/history, \/config, \/lang, \/help/);
   app.handleInput("\x1b");
   assert.doesNotMatch(rendered, /This page \(home\)/);
-  assert.match(rendered, /Find is available during a replay/);
+  assert.match(rendered, /Unknown command: \/run/);
 });
 
 test("Codex intake TUI opens Home without configuration and only enters config on an explicit command", async (t) => {
@@ -164,9 +164,9 @@ test("Codex intake TUI opens Home without configuration and only enters config o
 
   await app.start();
   assert.match(rendered, /Continue|Browse|\/ command/);
-  assert.doesNotMatch(rendered, /Harness connection/);
+  assert.doesNotMatch(rendered, /Configuration file:|\.reprise\/harness-model\.json/);
   enterCommand(app, "/config");
-  await waitFor(() => /Harness connection/.test(rendered));
+  await waitFor(() => /Internal Agent model/.test(rendered));
   assert.match(rendered, /openai-compatible/);
   app.handleInput("\u001b[A");
   app.handleInput("\u001b[A");
@@ -188,7 +188,7 @@ test("Codex intake TUI opens Home without configuration and only enters config o
   );
   assert.match(rendered, /Continue|Browse|\/ command/);
   enterCommand(app, "/config");
-  await waitFor(() => /Harness connection/.test(rendered));
+  await waitFor(() => /Internal Agent model/.test(rendered));
   assert.doesNotMatch(rendered, /Unsaved draft/);
   assert.match(rendered, /Saved locally/);
 });

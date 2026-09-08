@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createExperimentWorkflow, createHarnessWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
-import { candidateStartBlocked } from '../src/tui/controller-run.js';
+import { candidateStartBlocked, startRunSetup } from '../src/tui/controller-run.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,7 +11,7 @@ import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../src/infras
 import { CodexIntakeTui_showError } from '../src/tui/intake-tui-nav.js';
 import { CodexIntakeTui } from '../src/tui/intake-app.js';
 import { mockTui } from '../scripts/tui-audit-lib.js';
-import { enterCommand, waitFor } from './codex-intake-support.js';
+import { waitFor } from './codex-intake-support.js';
 
 test('TUI run policy is a last-resort safety valve, not a completion budget', () => {
   assert.equal(TUI_RUN_POLICY.maxTargetTurns, 256);
@@ -40,6 +40,24 @@ test('connection probe failures preserve their phase and show localized retry gu
   });
 });
 
+test('recover publishes activity before the billable connection probe', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'reprise-probe-activity-'));
+  t.after(async () => rm(dataDir, { recursive: true, force: true }));
+  await saveHarnessModelConfig(dataDir, defaultHarnessModelConfig());
+  const order: string[] = [];
+  t.mock.method(PiModelCaller.prototype, 'validate', async () => {
+    order.push('probe');
+    throw new Error('stop-after-probe-order');
+  });
+  const workflow = createHarnessWorkflow({ dataDir, now: () => new Date().toISOString() });
+  await assert.rejects(workflow.recover({
+    taskCase: { caseId: 'case-order', source: { productId: 'codex', sessionId: 's' } } as never,
+    sourceRoot: dataDir,
+    onActivity: () => { order.push('activity'); },
+  }), /stop-after-probe-order|HarnessProbeError/);
+  assert.deepEqual(order, ['activity', 'probe']);
+});
+
 test('production Recovery forwards cancellation to the probe and does not misclassify it', async (t) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'reprise-probe-cancel-'));
   t.after(async () => rm(dataDir, { recursive: true, force: true }));
@@ -59,7 +77,7 @@ test('production Recovery forwards cancellation to the probe and does not miscla
   await ready;
   abort.abort();
   await assert.rejects(pending, { name: 'AbortError' });
-  assert.equal(seen, abort.signal);
+  assert.equal(seen?.aborted, true);
 });
 
 test('Ctrl+C during Recovery aborts preparation and never enters candidate selection', async (t) => {
@@ -82,7 +100,7 @@ test('Ctrl+C during Recovery aborts preparation and never enters candidate selec
   t.after(() => app.close());
   await app.start();
   app.taskCase = { caseId: 'case-cancel', initialInput: { text: 'Create slides' }, taskContext: { historicalCwd: dataDir }, privacy: { redactions: [] } } as never;
-  enterCommand(app, '/run');
+  startRunSetup(app);
   await waitFor(() => signal !== undefined);
   assert.equal(app.page, 'running');
   app.handleInput('\u0003');
@@ -123,7 +141,7 @@ test('Ctrl+C while preflight is pending prevents a later Recovery call', async (
   t.after(() => app.close());
   await app.start();
   app.taskCase = { caseId: 'case-cancel', initialInput: { text: 'Create slides' }, taskContext: { historicalCwd: dataDir }, privacy: { redactions: [] } } as never;
-  enterCommand(app, '/run');
+  startRunSetup(app);
   await waitFor(() => app.page === 'running');
   app.handleInput('\u0003');
   release();
@@ -158,7 +176,7 @@ test('closing the TUI waits for cancelled Recovery cleanup', async (t) => {
   t.after(() => { release(); app.close(); });
   await app.start();
   app.taskCase = { caseId: 'case-close', initialInput: { text: 'Create slides' }, taskContext: { historicalCwd: dataDir }, privacy: { redactions: [] } } as never;
-  enterCommand(app, '/run');
+  startRunSetup(app);
   await waitFor(() => signal !== undefined);
   app.close();
   assert.equal(signal?.aborted, true);
@@ -187,7 +205,7 @@ test('closing preserves a late Recovery staging reference when cleanup fails', a
   t.after(() => { release(); app.close(); });
   await app.start();
   app.taskCase = { caseId: 'late-cleanup', initialInput: { text: 'Create slides' }, taskContext: { historicalCwd: dataDir }, privacy: { redactions: [] } } as never;
-  enterCommand(app, '/run');
+  startRunSetup(app);
   await waitFor(() => recovering);
   app.close();
   const rejected = assert.rejects(app.closing, /Cleanup did not complete/);
@@ -242,7 +260,7 @@ test('startup cancellation reaches the Harness probe and prevents experiment cre
   const failure = assert.rejects(started, { name: 'AbortError' });
   release();
   await failure;
-  assert.equal(observed, abort.signal);
+  assert.equal(observed?.aborted, true);
 });
 
 test('source blockedReasons do not block a recovered candidate', () => {

@@ -59,7 +59,7 @@
 
 ### 3.4 proposed 决策与当前代码存在生命周期错位
 
-`docs/decisions/proposed/2026-09-07-reprise-session-harness-workflow.md` 已说明实施尚未迁移规范，但源码和 accepted ADR 已经按目标设计推进。继续保持 proposed 会让新贡献者不知道哪些边界是现行规则。
+`docs/decisions/accepted/2026-09-07-reprise-session-harness-workflow.md` 约束现行入口。未关闭的真实证据单独保留，不能写成已支持。
 
 **要求**：完成未关闭证据后，将稳定部分迁入 accepted，并同步 `docs/architecture/overview.md`、依赖方向、持久化、TUI 和 Pack 规范；未完成的真实证据单独保留为验收缺口，不能写成已支持。
 
@@ -229,7 +229,7 @@ recover 在生成实验 ID 之前 `await input.agents`，后者可以执行实�
 
 - [目标架构](reprise-architecture-redesign.md)
 - 目标架构交互图：本机 `docs/research/reprise-architecture-redesign.html`（不受控参考）
-- [目标决策](../decisions/proposed/2026-09-07-reprise-session-harness-workflow.md)
+- [目标决策](../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)
 - [TUI 目标](reprise-tui-design.md)
 - TUI 交互预览：本机 `docs/research/reprise-tui-design.html`（不受控参考）
 - [既有实施计划](reprise-refactoring-execution.md)

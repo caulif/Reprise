@@ -504,7 +504,7 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   };
   await app.start();
   enterCommand(app, "/config");
-  await waitFor(() => /Harness connection/.test(rendered));
+  await waitFor(() => /Internal Agent model/.test(rendered));
   app.handleInput("\u001b[A");
   app.handleInput("\u001b[A");
   app.handleInput("\r");
@@ -645,5 +645,5 @@ test("TUI language defaults to English and /lang zh switches the cover without m
   await waitFor(() => /语言/.test(rendered));
   assert.match(rendered, /语言/);
   assert.match(rendered, /中文/);
-  assert.doesNotMatch(rendered, /Harness connection|Language/);
+  assert.doesNotMatch(rendered, /Internal Agent model|Language/);
 });

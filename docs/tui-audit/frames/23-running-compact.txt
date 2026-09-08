@@ -1,5 +1,5 @@
 Reprise   Candidate running · Codex   C:\reprise
-00:00   round 1   * running
+00:00   * running
 ------------------------------------------------------------
  * To Codex   * Codex screen   * Controller                 
  Task  Fix the bug.                                         
@@ -21,4 +21,4 @@ Reprise   Candidate running · Codex   C:\reprise
 | public response line 6                                    
 | ... +35 lines                                             
 ------------------------------------------------------------
- [Ctrl+C] Stop  [/] Find  [v] Select  [?] Keys
+ [Ctrl+C] Stop  [/] Find  [Tab] Detail  [v] Select  [?] Keys

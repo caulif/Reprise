@@ -7,7 +7,7 @@ import { LocalWorkspaceProvider } from "../environment/local-workspace-provider.
 import { CliError } from "./cli-error.js";
 import { readJsonFile } from "./experiment-history-list.js";
 import { attachExperimentComparison } from "./experiment-report.js";
-import { finishExperimentActivity, registerActivity, activityControlReady } from "./experiment-activity.js";
+import { finishExperimentActivity, registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
 import { isPersistedExperimentMetadata, listPersistedRunIds, readRunPreflight, resolvedExperimentRoot } from "./experiment-layout.js";
 import type { CodexExperimentInput, CodexExperimentPreflight, CodexExperimentResult, ExperimentAgentConfig } from "./experiment.js";
 import type { ComparisonAgentPort } from "../agents/comparison-agent.js";
@@ -19,12 +19,14 @@ export async function comparePersistedExperiment(input: {
   readonly dataDir: string;
   readonly experimentId: string;
   readonly runId?: string;
-  readonly comparison: ComparisonAgentPort;
-  readonly agentConfig: ExperimentAgentConfig;
+  readonly comparison?: ComparisonAgentPort;
+  readonly agentConfig?: ExperimentAgentConfig;
+  readonly resolveAgents?: (signal: AbortSignal) => Promise<{ comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig }>;
   readonly policy: RunPolicy;
   readonly now: string;
   readonly signal?: AbortSignal;
   readonly onEvent?: (event: EventEnvelope) => void;
+  readonly onActivity?: (activity: ExperimentActivity) => void;
 }): Promise<CodexExperimentResult> {
   const experimentRoot = resolvedExperimentRoot(input.dataDir, input.experimentId);
   const loaded = await loadFinishedRun(experimentRoot, input.experimentId, input.runId);
@@ -39,14 +41,19 @@ export async function comparePersistedExperiment(input: {
     dataDir: input.dataDir,
     cancel: async () => { localAbort.abort(); },
   });
+  input.onActivity?.(activity);
   try {
     await activityControlReady(activity);
+    const agents = input.comparison && input.agentConfig
+      ? { comparison: input.comparison, agentConfig: input.agentConfig }
+      : await resolveCompareAgents(input.resolveAgents, signal);
+    signal.throwIfAborted();
     await store.acquireWriter();
     const provider = new LocalWorkspaceProvider(join(experimentRoot, "environment"));
     const snapshot = await provider.candidateSnapshot(loaded.record.attempt.runId);
     const finishInput = {
       signal,
-      input: experimentInput(input, loaded, experimentRoot),
+      input: experimentInput({ ...input, comparison: agents.comparison, agentConfig: agents.agentConfig }, loaded, experimentRoot),
       taskCase: loaded.taskCase,
       preflight: loaded.preflight,
       store,
@@ -67,6 +74,14 @@ export async function comparePersistedExperiment(input: {
     await store.close();
     finishExperimentActivity(input.experimentId);
   }
+}
+
+async function resolveCompareAgents(
+  resolveAgents: ((signal: AbortSignal) => Promise<{ comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig }>) | undefined,
+  signal: AbortSignal,
+): Promise<{ comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig }> {
+  if (!resolveAgents) throw new Error("Persisted comparison requires injected comparison agents.");
+  return resolveAgents(signal);
 }
 
 async function loadFinishedRun(experimentRoot: string, experimentId: string, requestedRunId?: string) {

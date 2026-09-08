@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { CodexIntakeTui } from '../dist/src/tui/intake-app.js';
 import { createHarnessWorkflow } from '../dist/src/application/tui-workflow.js';
+import { startRunSetup } from '../dist/src/tui/controller-run.js';
 import { CodexRuntimePort } from '../dist/src/products/codex/runtime-port.js';
 import { mockTui, pageHtml, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
@@ -114,7 +115,7 @@ async function main() {
   await waitFor(() => new RegExp(`${CASE_ID} is current`).test(frame()), { timeoutMs: 30_000, frame });
   await push('06-home-with-case', 120, frame());
 
-  enterCommand(app, '/run');
+  startRunSetup(app);
   log('starting isolated run');
   await waitFor(() => /Timeline |Enter the absolute source|no usable credential|Experiment did not start|Cannot continue|Codex was not started/.test(frame()), { timeoutMs: 180_000, frame });
   await push('07-after-run', 120, frame());

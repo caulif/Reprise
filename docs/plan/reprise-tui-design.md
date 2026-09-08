@@ -1,6 +1,6 @@
 # Reprise TUI 阅读与交互规划
 
-本文是目标设计，与[整体重构规划](./reprise-architecture-redesign.md)配套，不覆盖当前产品规范。阅读与折叠合同见[公开活动时间线](../decisions/accepted/2026-09-08-public-activity-timeline.md)。
+本文是目标设计，与[整体重构规划](./reprise-architecture-redesign.md)配套，不覆盖当前产品规范。把现有界面对齐本文的步骤见[界面重构实施计划](./reprise-tui-surface-refactor.md)。阅读与折叠合同见[公开活动时间线](../decisions/accepted/2026-09-08-public-activity-timeline.md)。
 
 ## 信息与页面
 
@@ -12,7 +12,7 @@
 
 ## 键盘入口与层级选择
 
-首页沿用现有项目的斜杠命令习惯：常用入口为 /intake、/history、/config，帮助收在 /help。输入 / 打开与筛选建议，↑ ↓ 移动，Tab 补全，Enter 执行。首页输入只接收应用命令，不作为 Agent 对话输入。实验时间线内 / 表示当前记录搜索，界面底部提示当前语义。
+首页沿用现有项目的斜杠命令习惯：常用入口为 /intake、/history、/config、/lang，帮助收在 /help。`/lang` 切换 TUI 中/英，只影响操作者界面，不改报告或任务语言。输入 / 打开与筛选建议，↑ ↓ 移动，Tab 补全，Enter 执行。首页输入只接收应用命令，不作为 Agent 对话输入。实验时间线内 / 表示当前记录搜索，界面底部提示当前语义。
 
 来源选择分为产品、项目、会话、起点核对四层。列表 ↑ ↓ 选择、Enter 确认、Esc 返回上一层；会话列表输入关键词过滤，空结果不得确认。会话 Enter 只打开核对，核对 Enter 才开始准备。返回保留选项与筛选位置是实施验收项，不重新扫描无变化的列表。
 
@@ -42,7 +42,7 @@
 
 运行中只查看与取消，无聊天输入框，无原生产品第二窗口。Ctrl+C 请求取消，展示取消中，只有所有者确认终态才显示已取消；另一终端 cancel 的结果经同一记录显示。强制退出、中断、不可达、清理失败分别说明，不视为成功或自动续跑。浏览记录不是关闭执行所有者；只读观察窗口退出不得取消其他进程的实验。所有业务操作复用 CLI 的应用服务，TUI 不持有实验状态机。
 
-Product Pack 将公开消息、工具、结果、文件变化和状态规范化；宿主统一布局与措辞，不嵌入产品原生 ANSI 画面。保留来源、顺序和稳定活动身份以支持流式更新与去重。正常产品扩展不要求新增 TUI 分支。协议决策沿用[重构决策](../decisions/proposed/2026-09-07-reprise-session-harness-workflow.md)。
+Product Pack 将公开消息、工具、结果、文件变化和状态规范化；宿主统一布局与措辞，不嵌入产品原生 ANSI 画面。保留来源、顺序和稳定活动身份以支持流式更新与去重。正常产品扩展不要求新增 TUI 分支。协议决策沿用[Session harness workflow](../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。真终端范围见[平台证据矩阵](./2026-09-08-platform-evidence-matrix.md)。
 
 ## 视觉与验收
 

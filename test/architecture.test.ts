@@ -160,6 +160,8 @@ test('TUI and CLI recovery paths do not opt in to current-state fallback', async
   assert.match(operations, /runPreparedExperiment/);
   const compare = await readFile(join(SRC, 'application/experiment-compare-persisted.ts'), 'utf8');
   assert.doesNotMatch(compare, /findProductPack/);
+  assert.doesNotMatch(workflow, /findProductPack/);
+  assert.match(cli, /source-product/);
 });
 
 test('third pack proof does not inject host packs or workflow pack objects', async () => {
@@ -199,6 +201,15 @@ test('real-terminal TUI probe is opt-in and outside engineering gates', async ()
   });
   assert.notEqual(noTty.status, 0);
   assert.match(`${noTty.stderr}${noTty.stdout}`, /real TTY/);
+  const caller = await readFile(join(SRC, 'infrastructure/pi-model-caller.ts'), 'utf8');
+  assert.match(caller, /await notify\(/);
+});
+
+test('opt-in agent context probe stays outside engineering gates', async () => {
+  const script = await readFile(join(process.cwd(), 'scripts/agent-context-probe.ts'), 'utf8');
+  assert.match(script, /REPRISE_AGENT_CONTEXT_PROBE/);
+  const gates = await readFile(join(process.cwd(), 'scripts/run-gates.mjs'), 'utf8');
+  assert.doesNotMatch(gates, /agent-context-probe|REPRISE_AGENT_CONTEXT_PROBE/);
 });
 
 test('CI test matrix covers three operating systems', async () => {

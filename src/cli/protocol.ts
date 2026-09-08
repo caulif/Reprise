@@ -1,4 +1,5 @@
-import { CLI_PROTOCOL_VERSION, type CliActivity, type CliErrorBody, type CliJsonResult, type CliJsonlRecord, type CliOutputMode } from "../core/cli-protocol.js";
+import { Value } from "@sinclair/typebox/value";
+import { CLI_PROTOCOL_VERSION, CliJsonlRecordSchema, CliJsonResultSchema, type CliActivity, type CliErrorBody, type CliJsonResult, type CliJsonlRecord, type CliOutputMode } from "../core/cli-protocol.js";
 import { CliError } from "../application/cli-error.js";
 import type { EventEnvelope } from "../core/schema.js";
 
@@ -9,11 +10,17 @@ export type ProtocolIo = {
 
 export function writeJsonResult(io: ProtocolIo, result: Omit<CliJsonResult, "schemaVersion">): void {
   const body: CliJsonResult = { schemaVersion: CLI_PROTOCOL_VERSION, ...result };
+  assertPublicEnvelope(CliJsonResultSchema, body, "CLI JSON result");
   io.stdout(JSON.stringify(body));
 }
 
 function writeJsonl(io: ProtocolIo, record: CliJsonlRecord): void {
+  assertPublicEnvelope(CliJsonlRecordSchema, record, "CLI JSONL record");
   io.stdout(JSON.stringify(record));
+}
+
+function assertPublicEnvelope(schema: typeof CliJsonResultSchema | typeof CliJsonlRecordSchema, value: unknown, label: string): void {
+  if (!Value.Check(schema, value)) throw new CliError("failed", `${label} failed schema check.`);
 }
 
 export function writeActivity(io: ProtocolIo, mode: CliOutputMode, command: string, activity: CliActivity): void {
