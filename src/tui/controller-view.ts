@@ -7,6 +7,7 @@ import {
   matchesProjectQuery,
   type SessionProject,
 } from "./pages/intake.js";
+import { importPacks, packSessions, runtimePacks } from "../products/pack-access.js";
 import { envNameFromConfig } from "./controller-run.js";
 import type { WorkbenchView } from "./workbench.js";
 import { projectWorkbenchView } from "./view-projection.js";
@@ -57,14 +58,14 @@ export function visibleSessions(c: CodexIntakeTui): readonly SessionSummary[] {
 }
 
 export function intakeCount(c: CodexIntakeTui): number {
-  if (c.intakeLevel === "products") return c.packs.length;
+  if (c.intakeLevel === "products") return importPacks(c.packs).length;
   return c.intakeLevel === "projects" ? c.visibleProjects().length : c.visibleSessions().length;
 }
 
 export function productItems(c: CodexIntakeTui): import("./pages/intake.js").ProductIntakeItem[] {
-  return c.packs.map((pack) => {
+  return importPacks(c.packs).map((pack) => {
     const state = c.productDiscovery.get(pack.manifest.productId) ?? { status: "idle" as const };
-    const root = resolve(c.sessionsRoots[pack.manifest.productId] ?? pack.sessions.defaultRoot);
+    const root = resolve(c.sessionsRoots[pack.manifest.productId] ?? packSessions(pack).defaultRoot);
     const sessions = state.root === root ? c.productSessions.get(pack.manifest.productId) : undefined;
     return { productId: pack.manifest.productId, displayName: pack.manifest.displayName, packVersion: pack.manifest.packVersion,
       discoveryStatus: state.status, ...(sessions ? { sessionCount: sessions.length } : {}), ...(state.scanned !== undefined ? { scanned: state.scanned } : {}),
@@ -75,7 +76,7 @@ export function productItems(c: CodexIntakeTui): import("./pages/intake.js").Pro
 
 export function productContext(c: CodexIntakeTui): { productLabel?: string; productConfigured?: boolean } {
   const highlighted = c.page === 'sessions' && c.intakeLevel === 'products'
-    ? c.packs[c.selected]?.manifest.productId ?? ''
+    ? importPacks(c.packs)[c.selected]?.manifest.productId ?? ''
     : '';
   const browsing = c.page === 'sessions' || c.page === 'inspection';
   const productId = c.taskCase?.source.productId || (browsing ? (c.activeProductId || highlighted) : '');
@@ -94,7 +95,7 @@ function candidateRunFields(c: CodexIntakeTui) {
     ...(c.selectedCandidate ? { candidate: c.selectedCandidate } : {}),
     ...(sourceProductLabel ? { sourceProductLabel } : {}),
     ...(candidateProductLabel ? { candidateProductLabel } : {}),
-    candidateProducts: c.packs.map((pack) => ({
+    candidateProducts: runtimePacks(c.packs).map((pack) => ({
       productId: pack.manifest.productId,
       displayName: pack.manifest.displayName,
       sourceSession: pack.manifest.productId === c.taskCase?.source.productId,
@@ -112,7 +113,10 @@ function candidateRunFields(c: CodexIntakeTui) {
 export function view(c: CodexIntakeTui): WorkbenchView {
   const envName = envNameFromConfig(c.modelConfig, c.configDraft);
   const product = c.productContext();
-  const discoveryStatus = c.productDiscovery.get(c.activeProductId)?.status;
+  const discovery = c.activeProductId ? c.productDiscovery.get(c.activeProductId) : undefined;
+  const discoveryStatus = discovery?.status;
+  const grouped = c.groupedProjects();
+  const activeProject = grouped.find((project) => project.key === c.activeProjectKey);
   return projectWorkbenchView({
     page: c.page,
     cwd: c.displayCwd,
@@ -138,6 +142,7 @@ export function view(c: CodexIntakeTui): WorkbenchView {
     configCursor: c.configCursor,
     configDirty: c.configDirty(),
     configPendingToggle: c.configPendingToggle,
+    ...(c.configLeaveConfirm ? { configLeaveConfirm: true } : {}),
     historyTotalBytes: c.historyTotalBytes,
     historyTab: c.historyTab,
     historyItems: c.historyItems(),
@@ -154,6 +159,9 @@ export function view(c: CodexIntakeTui): WorkbenchView {
     searchCursor: c.searchCursor,
     searching: c.searching,
     ...(discoveryStatus ? { discoveryStatus } : {}),
+    ...(discovery?.diagnostics?.length ? { discoveryCodes: discovery.diagnostics.map((item) => item.code) } : {}),
+    groupedProjectCount: grouped.length,
+    unfilteredSessionCount: activeProject?.sessions.length ?? 0,
     inspection: c.inspection,
     privacy: c.privacy,
     inspectionTaskInput: c.inspectionTaskInput,
@@ -189,15 +197,12 @@ export function view(c: CodexIntakeTui): WorkbenchView {
     detailExpanded: c.detailExpanded,
     runStartedAt: c.runStartedAt,
     nowMs: c.nowMs(),
+    ...(c.compareChoice ? { comparePending: true } : {}),
     result: c.result,
     ...(c.viewer ? { viewer: c.viewer } : {}),
     ...(c.actorsOpen ? { actorsOpen: true } : {}),
-    ...(c.finding
-      ? {
-          finding: true,
-          findQuery: c.findQuery,
-          findCursor: c.findCursor,
-        }
-      : {}),
+    ...(c.finding ? { finding: true, findQuery: c.findQuery, findCursor: c.findCursor } : {}),
+    ...(c.timelineReadOffset ? { timelineReadOffset: c.timelineReadOffset } : {}),
+    ...(c.readingMode ? { readingMode: true } : {}),
   });
 }

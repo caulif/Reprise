@@ -6,7 +6,8 @@ import type { DeliveryReceipt, MessageIdentity, RuntimeFailureKind, RuntimeStopR
 const deliveryValues = new Set(['accepted', 'rejected', 'unknown']);
 const settlementValues = new Set(['completed', 'failed', 'waiting_input', 'aborted']);
 
-export type CandidateRunPolicy = { turnTimeoutMs: number; maxTargetTurns: number };
+export type CandidateRunPolicy = { turnTimeoutMs: number; maxTargetTurns: number; cleanupTimeoutMs?: number };
+const DEFAULT_CLEANUP_TIMEOUT_MS = 10_000;
 type Cleanup = { status: 'released' | 'already_released' };
 type RecordedEvent = Pick<EventEnvelope, 'eventId' | 'sequence'>;
 type JournalEvent = { type: string; runId: string; operationId: string; payload: unknown };
@@ -107,11 +108,13 @@ export class CandidateRun {
 
   async cancel(): Promise<CandidateRunState> {
     if (this.#state === 'finished') return this.#state;
+    if (this.#finishing) return this.#finishing;
     await this.#append('run.cancel_requested', { requestedBy: 'user' }, 'cancel-request');
+    if (this.#finishing) return this.#finishing;
     return this.#finish('cancelled.user', 'cancelled');
   }
 
-  async stopByHarness(code: 'limit.controller_calls' | 'limit.wall_clock' | 'stalled.no_progress' | 'stalled.controller_completion_guard'): Promise<CandidateRunState> {
+  async stopByHarness(code: 'limit.controller_calls' | 'limit.wall_clock' | 'stalled.no_progress'): Promise<CandidateRunState> {
     this.#ensure('awaiting_controller');
     await this.#append('harness.stop_requested', { code }, `harness-stop-${code}`);
     return this.#finish(code, 'shutdown');
@@ -125,6 +128,7 @@ export class CandidateRun {
     if (this.#persistence?.manifest) this.#track(await this.#persistence.journal.commitManifest(this.#persistence.manifest));
     await this.#move('launching');
     await this.#append('input.submitted', messageFact(message, identity), `input-${identity.clientMessageId}`);
+    if (this.#finishing) return this.#finishing;
     try {
       return await this.#advance(await this.#runner.start(message, identity), identity);
     } catch (error) {
@@ -137,6 +141,7 @@ export class CandidateRun {
     if (identity.turnIndex !== this.#turns) throw new Error('Message identity turn index does not match CandidateRun.');
     await this.#move('awaiting_target');
     await this.#append('input.submitted', messageFact(message, identity), `input-${identity.clientMessageId}`);
+    if (this.#finishing) return this.#finishing;
     try {
       return await this.#advance(await this.#runner.send(message, identity), identity);
     } catch (error) {
@@ -146,17 +151,20 @@ export class CandidateRun {
 
   async #advance(receipt: DeliveryReceipt, identity: MessageIdentity): Promise<CandidateRunState> {
     // A terminal cleanup can race an in-flight native turn wait. Its outcome wins.
-    if (this.#state === 'finished') return this.#state;
+    if (this.#finishing) return this.#finishing;
     assertReceipt(receipt);
     await this.#append('runtime.delivery_observed', { clientMessageId: identity.clientMessageId, turnIndex: identity.turnIndex, receipt }, `delivery-${identity.clientMessageId}`);
+    if (this.#finishing) return this.#finishing;
     if (receipt.delivery === 'rejected') return this.#finish('blocked.input_rejected', 'failed');
     if (receipt.delivery === 'unknown') return this.#finish('uncertain.input_delivery', 'failed');
     this.#turns += 1;
     if (this.#state === 'launching') await this.#move('awaiting_target');
     try {
       const settlement = await this.#waitForTurn();
+      if (this.#finishing) return this.#finishing;
       assertSettlement(settlement);
       await this.#append('runtime.turn_settled', settlement, `settlement-${identity.turnIndex}`);
+      if (this.#finishing) return this.#finishing;
       if (settlement.status !== 'waiting_input' && settlement.status !== 'completed') {
         const mapped = finishFromSettlement(settlement);
         return this.#finish(mapped.code, 'failed', mapped.cause);
@@ -166,6 +174,7 @@ export class CandidateRun {
       await this.#move('awaiting_controller');
       return this.#state;
     } catch (error) {
+      if (this.#finishing) return this.#finishing;
       return this.#finish(isTimeout(error) ? 'limit.turn_timeout' : 'failed.runtime', 'failed', annotateRuntimeError(error));
     }
   }
@@ -194,32 +203,60 @@ export class CandidateRun {
   }
 
   async #cleanup(reason: RuntimeStopReason): Promise<RunOutcome['cleanup']> {
-    let status: RunOutcome['cleanup']['status'] = 'complete';
-    let remainingResourceIds: string[] = [];
     const evidenceRefs: string[] = [];
     const appendCleanup = async (type: string, payload: unknown, operationId: string): Promise<void> => {
       const event = await this.#append(type, payload, operationId);
       if (event) evidenceRefs.push(`event:${event.eventId}`);
     };
-    try {
-      await this.#runner.stop(reason);
-      await appendCleanup('runtime.stop_completed', { reason }, 'runtime-stop');
-    } catch (error) {
-      status = 'incomplete';
-      remainingResourceIds = remainingResources(error);
-      await appendCleanup('runtime.stop_failed', { ...errorFact(error), remainingResourceIds }, 'runtime-stop-failed');
-    }
+    const stopped = await this.#stopRuntime(reason, appendCleanup);
+    let status = stopped.status;
     await this.#captureArtifacts();
     if (this.#release) {
       try {
         await this.#release();
         await appendCleanup('environment.release_completed', {}, 'environment-release');
       } catch (error) {
-        status = 'incomplete';
+        if (status === 'complete') status = 'incomplete';
         await appendCleanup('environment.release_failed', errorFact(error), 'environment-release-failed');
       }
     }
-    return { status, remainingResourceIds, evidenceRefs };
+    return { status, remainingResourceIds: stopped.remainingResourceIds, evidenceRefs };
+  }
+
+  async #stopRuntime(
+    reason: RuntimeStopReason,
+    appendCleanup: (type: string, payload: unknown, operationId: string) => Promise<void>,
+  ): Promise<{ status: 'complete' | 'incomplete' | 'unknown'; remainingResourceIds: string[] }> {
+    const timeoutMs = this.#policy.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = this.#runner.stop(reason);
+    void stop.catch(() => undefined);
+    try {
+      await Promise.race([
+        stop,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            reject(new Error('cleanup_timeout'));
+          }, timeoutMs);
+          timer.unref();
+        }),
+      ]);
+      await appendCleanup('runtime.stop_completed', { reason }, 'runtime-stop');
+      return { status: 'complete', remainingResourceIds: [] };
+    } catch (error) {
+      const remainingResourceIds = timedOut ? ['runtime'] : remainingResources(error);
+      const status = timedOut ? 'unknown' as const : 'incomplete' as const;
+      await appendCleanup(
+        'runtime.stop_failed',
+        timedOut ? { reason: 'cleanup_timeout', remainingResourceIds } : { ...errorFact(error), remainingResourceIds },
+        'runtime-stop-failed',
+      );
+      return { status, remainingResourceIds };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async #waitForTurn(): Promise<TurnSettlement> {
@@ -311,6 +348,9 @@ function assertPolicy(policy: CandidateRunPolicy): void {
   if (!Number.isInteger(policy.turnTimeoutMs) || policy.turnTimeoutMs < 1 || !Number.isInteger(policy.maxTargetTurns) || policy.maxTargetTurns < 1) {
     throw new Error('CandidateRun policy must contain positive integer limits.');
   }
+  if (policy.cleanupTimeoutMs !== undefined && (!Number.isInteger(policy.cleanupTimeoutMs) || policy.cleanupTimeoutMs < 1)) {
+    throw new Error('CandidateRun policy must contain positive integer limits.');
+  }
 }
 
 function assertMessage(message: UserMessage, identity: MessageIdentity): void {
@@ -355,7 +395,10 @@ function terminationFor(code: string, cause: unknown): Termination {
   if (code.startsWith('cancelled.')) return { kind: 'cancelled', code, initiatedBy: 'user' };
   if (code.startsWith('blocked.')) return { kind: 'blocked', code, initiatedBy: 'controller' };
   if (code.startsWith('stalled.')) return { kind: 'stalled', code, initiatedBy: code === 'stalled.controller_no_further_value' ? 'controller' : 'harness' };
-  if (code === 'failed.controller') return { kind: 'failed', code, initiatedBy: 'controller', failure: { origin: 'controller', code: 'agent_failure', message: errorFact(cause).message, evidenceRefs: [] } };
+  if (code === 'failed.controller') {
+    const inner = hasFailureCode(cause) ? cause.code : 'agent_failure';
+    return { kind: 'failed', code, initiatedBy: 'controller', failure: { origin: 'controller', code: inner, message: errorFact(cause).message, evidenceRefs: [] } };
+  }
   if (code.startsWith('uncertain.')) return { kind: 'uncertain', code, initiatedBy: 'harness' };
   return { kind: 'failed', code, initiatedBy: 'harness', failure: { origin: 'runtime', code: specificFailureCode(code, cause), message: errorFact(cause).message, evidenceRefs: [] } };
 }

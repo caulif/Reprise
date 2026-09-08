@@ -2,6 +2,8 @@
 
 状态：accepted
 
+Controller 账本、独立 understand 与 Host 完成护栏由 [opening 同 Session](./2026-09-08-controller-opening-single-session.md) 取代；下文这些条款冻结。分页、工具路径、Pi 预算与观察登记仍约束实现。
+
 ## 问题
 
 PPT 回放暴露了两类独立故障：Host 把 Controller 账本冲突转换为候选续做指令；Comparison 的记录数分页允许单次返回数 MB 内容。简报索引与工具根目录不一致也使按路径读取失败。
@@ -20,7 +22,7 @@ shell_exec 返回的模型可见输出、脱敏命令、相对 cwd、退出码�
 
 Recovery 与 Comparison 共用有限页面算法。普通响应保留数组协议；超大单条返回 schemaVersion=1 的 JSON 片段，包含 index、ref（可用时）、originalBytes、offset、excerpt 和 nextOffset。offset 使用 UTF-16 索引，nextOffset 继续同一条，nextCursor 前进到下一条。最终原生 text block 的序列化大小不超过 48,000 字节；历史与事件原件不截断。隐私投影在分页前执行，审计保留游标、偏移、数量和结果摘要。
 
-Comparison 工具路径相对 attempt 根，简报文件明确以 briefing/ 开头，candidate/ 只指候选副本。Planner 与 Reporter 共用这份索引。
+Comparison 工具路径相对 attempt 根，简报文件明确以 briefing/ 开头，candidate/ 只指候选副本。调查与报告共用这份索引。
 
 Pi 在请求前使用 transformContext 检查上下文，预算覆盖固定提示词、工具定义和输出预留。无法摘要或摘要后尾部仍超限时返回 Context budget 诊断。瞬时网络或上游失败最多三次响应尝试，通过原 session continue 保留已完成工具结果；Host 不重放整个输入。schema 修复与响应恢复共享一次请求的 deadline，取消信号覆盖退避。恢复尝试通过 agent.request_retried 记录。
 
@@ -30,7 +32,7 @@ RecoveryAgentPort 暴露可选的只读 timeoutMs；生产 Agent 的模型上下
 
 Agent Host 将请求取消信号、session 取消信号与单次调用超时合并，取消会释放 Host 等待并中止工具信号，不依赖 provider 主动完成响应。Recovery 的请求信号从 TUI 经 workflow 传至连接探测和模型调用，包括 readiness feedback 和候选重执行。取消后在阶段边界停止后续工作，通过已有失败记录和 staging 清理结束；禁止利用此前 completed 信封继续自动发布恢复候选。文件系统中已开始的操作仍需等待返回，取消不声称已撤销外部副作用。
 
-实验取消信号同时传给 Comparison Planner 与 Reporter。Planner 取消会停止 Reporter 启动；Reporter 取消以 cancelled 比较信封落盘，不发布成功报告，也不改写已经终止的候选 outcome。preflight 返回时检查 TUI 取消请求，取消后不启动 Recovery。关闭 TUI 的等待包含恢复清理完成，返回封面或停止渲染不是清理证据。
+实验取消信号传给进行中的 Comparison Session。取消以 cancelled 比较信封落盘，不发布成功报告，也不改写已经终止的候选 outcome。preflight 返回时检查 TUI 取消请求，取消后不启动 Recovery。关闭 TUI 的等待包含恢复清理完成，返回封面或停止渲染不是清理证据。
 
 关闭等待包括 activeExperiment 的终态结果及其 cleanup 状态、正在恢复的 Promise、待确认恢复副本的丢弃。清理错误不吞掉：关闭 Promise 返回失败，公开错误信息不包含 provider 私有细节。恢复失败时，cleanupFailed 和仍需清理的 staging 引用通过进程内 RecoveryAttempt 返回，磁盘事实仍由 recovery.cleanup_failed 事件承载；TUI 保留失败引用以供检查和重试，取消提示不能覆盖清理失败。
 

@@ -22,6 +22,7 @@ import {
   recoveryCandidateDirName,
   SNAPSHOT_LIMITS,
 } from "../src/environment/local-workspace-provider.js";
+import { candidateChangedPaths } from "../src/environment/local-workspace-fs.js";
 import { sha256 } from "../src/core/identity.js";
 
 async function directories(): Promise<{ root: string; source: string }> {
@@ -248,13 +249,14 @@ test("inspectBaseline and resolveBaseline share the source fingerprint and keep 
     assert.equal(resolved.fingerprint.digest, inspected.fingerprint.digest);
     assert.ok(resolved.root);
     const environment = await provider.prepareRun(resolved, "run-marker");
+    assert.equal(
+      await readFile(join(resolved.root ?? "", "input.txt"), "utf8"),
+      "original",
+    );
     await assert.rejects(
       stat(join(environment.root, ".reprise-baseline.json")),
       { code: "ENOENT" },
     );
-    await assert.rejects(stat(join(resolved.root ?? "", "input.txt")), {
-      code: "ENOENT",
-    });
     assert.ok(
       (await readdir(join(root, "baselines"))).includes(
         "case-marker.marker.json",
@@ -359,7 +361,7 @@ test("publishDirectory copies when every rename attempt stays busy", async () =>
   }
 });
 
-test("prepareRun drops the baseline copy after the isolated run workspace exists", async () => {
+test("prepareRun keeps the sealed baseline and isolates each run copy", async () => {
   const { root, source } = await directories();
   try {
     const provider = new LocalWorkspaceProvider(root);
@@ -368,24 +370,28 @@ test("prepareRun drops the baseline copy after the isolated run workspace exists
       [],
       {},
     );
-    const environment = await provider.prepareRun(baseline, "run-drop");
+    const first = await provider.prepareRun(baseline, "run-drop-a");
+    const second = await provider.prepareRun(baseline, "run-drop-b");
+    assert.equal(first.beforeFingerprint.digest, second.beforeFingerprint.digest);
     assert.equal(
-      await readFile(join(environment.root, "input.txt"), "utf8"),
+      await readFile(join(root, "baselines", "case-drop", "input.txt"), "utf8"),
       "original",
     );
-    await assert.rejects(stat(join(root, "baselines", "case-drop")), {
-      code: "ENOENT",
-    });
-    const again = await provider.resolveBaseline(
+    await writeFile(join(first.root, "input.txt"), "mutated-run-a");
+    assert.equal(
+      await readFile(join(root, "baselines", "case-drop", "input.txt"), "utf8"),
+      "original",
+    );
+    assert.equal(await readFile(join(second.root, "input.txt"), "utf8"), "original");
+    await rm(source, { recursive: true, force: true });
+    const sealed = await provider.resolveBaseline(
       { caseId: "case-drop", sourceRoot: source },
       [],
       {},
     );
-    assert.equal(again.fingerprint.digest, baseline.fingerprint.digest);
-    assert.equal(
-      await readFile(join(again.root ?? "", "input.txt"), "utf8"),
-      "original",
-    );
+    assert.equal(sealed.fingerprint.digest, baseline.fingerprint.digest);
+    const third = await provider.prepareRun(sealed, "run-drop-c");
+    assert.equal(third.beforeFingerprint.digest, first.beforeFingerprint.digest);
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(source, { recursive: true, force: true });
@@ -969,5 +975,21 @@ test("in-root file links are materialized as ordinary files without keeping a wr
   await provider.discardRecovery(staging);
 });
 
-
+test("candidateChangedPaths omits pytest cache files", () => {
+  const before = {
+    capturedAt: "2026-09-08T00:00:00.000Z",
+    digest: "before",
+    resources: [{ path: "app.py", kind: "file" as const, size: 1 }],
+  };
+  const after = {
+    capturedAt: "2026-09-08T00:00:00.000Z",
+    digest: "after",
+    resources: [
+      { path: "app.py", kind: "file" as const, size: 2 },
+      { path: "__pycache__/app.cpython-312.pyc", kind: "file" as const, size: 8 },
+      { path: ".pytest_cache/v/cache/nodeids", kind: "file" as const, size: 4 },
+    ],
+  };
+  assert.deepEqual(candidateChangedPaths(before, after), ["app.py"]);
+});
 

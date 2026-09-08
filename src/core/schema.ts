@@ -55,12 +55,6 @@ export const ControllerObservationReadPayloadSchema = Type.Object({
   evidenceRefs: Type.Array(EvidenceRefSchema),
 });
 export type ControllerObservationReadPayload = Static<typeof ControllerObservationReadPayloadSchema>;
-export const ControllerUnderstandingDeltaSchema = Type.Object({
-  mode: Type.Union([Type.Literal("merge"), Type.Literal("replace")]),
-  confirmedFacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 })),
-  acceptanceSignals: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 })),
-  unresolvedActions: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 })),
-});
 export const ControllerReadArtifactSchema = Type.Object({
   path: Type.String({ minLength: 1 }), offset: Type.Integer({ minimum: 0 }),
   content: Type.String(),
@@ -70,21 +64,6 @@ export const ControllerReadArtifactSchema = Type.Object({
   ]))),
 });
 export const ControllerShellArtifactSchema = Type.Object({ schemaVersion: Type.Literal(1), command: Type.String({ minLength: 1 }), cwd: Type.Literal("."), exitCode: Type.Integer(), stdoutBytes: Type.Integer({ minimum: 0 }), stderrBytes: Type.Integer({ minimum: 0 }), truncated: Type.Boolean(), content: Type.String() });
-export type ControllerUnderstandingDelta = Static<typeof ControllerUnderstandingDeltaSchema>;
-export const ControllerUnderstandingLedgerSchema = Type.Object({
-  schemaVersion: Type.Literal(1),
-  baseMarkdown: Type.String({ minLength: 1, maxLength: 131_072 }),
-  sourceMessageIds: Type.Array(Id, { maxItems: 512 }),
-  confirmedFacts: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 }),
-  acceptanceSignals: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 }),
-  unresolvedActions: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 }),
-});
-export type ControllerUnderstandingLedger = Static<typeof ControllerUnderstandingLedgerSchema>;
-export const ControllerContractSchema = Type.Object({
-  schemaVersion: Type.Literal(1),
-  nodes: Type.Array(Type.Object({ id: Id, title: Type.String({ minLength: 1 }), dependsOn: Type.Array(Id, { maxItems: 256 }), status: Type.Union([Type.Literal("pending"), Type.Literal("active"), Type.Literal("verified"), Type.Literal("blocked"), Type.Literal("waived")]), required: Type.Boolean(), evidenceRef: Type.Optional(EvidenceRefSchema) }), { maxItems: 256 }),
-});
-export type ControllerContract = Static<typeof ControllerContractSchema>;
 export const ComparisonRequestedPayloadSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   requestId: Id,
@@ -990,3 +969,12 @@ export const RecoveryReadinessContextSchema = Type.Object({
   availableChecks: Type.Array(Type.String({ minLength: 1, maxLength: 2048 }), { maxItems: 64 }),
 }, { additionalProperties: false });
 export type RecoveryReadinessContext = Static<typeof RecoveryReadinessContextSchema>;
+export const SceneDescriptorSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  experimentId: Id,
+  caseId: Id,
+  runId: Id,
+  sourceRoot: Type.String({ minLength: 1 }),
+  sealed: Type.Boolean(),
+});
+export type SceneDescriptor = Static<typeof SceneDescriptorSchema>;

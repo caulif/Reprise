@@ -4,7 +4,7 @@
 
 测试读的是 `dist/`。改完源码必须先 `npm run build`；`node --test` 直接跑 `.ts` 不成立（[`package.json`](package.json)）。
 
-新增 Runtime 能力先改 `src/core/runtime.ts` 端口，再改两个 Pack；不在应用层判断产品类型（[兼容性](docs/architecture/product-plugin-compatibility.md)）。
+新增 Runtime 能力先改 `src/core/runtime.ts` 端口，再改内置 Pack；不在应用层判断产品类型（[兼容性](docs/architecture/product-plugin-compatibility.md)）。
 
 持久化、模型输出、外部 JSON 的读写必须过 `src/core/schema.ts` 的 `Value.Check`；同进程内的类型化边界不加运行时校验（[持久化](docs/architecture/persistence-and-crash-consistency.md)）。
 

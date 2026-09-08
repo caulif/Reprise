@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
@@ -231,7 +231,7 @@ function selectInitialInput(imported: ImportedSession, initialMessageId?: string
   return selected;
 }
 
-async function isFrozenCase(caseDir: string): Promise<boolean> {
+export async function isFrozenCase(caseDir: string): Promise<boolean> {
   try {
     await stat(join(caseDir, 'case.complete'));
     return true;
@@ -239,6 +239,30 @@ async function isFrozenCase(caseDir: string): Promise<boolean> {
     if (isMissing(error)) return false;
     throw error;
   }
+}
+
+/** Published cases only; staging dirs and unfinished trees are omitted. */
+export async function listPublishedFrozenCases(casesRoot: string): Promise<string[]> {
+  let names: string[];
+  try {
+    names = await readdir(casesRoot);
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
+  }
+  const published: string[] = [];
+  for (const name of names) {
+    if (name.startsWith('.')) continue;
+    const caseDir = join(casesRoot, name);
+    try {
+      if (!(await stat(caseDir)).isDirectory()) continue;
+    } catch (error) {
+      if (isMissing(error)) continue;
+      throw error;
+    }
+    if (await isFrozenCase(caseDir)) published.push(name);
+  }
+  return published;
 }
 
 async function readExistingCase(caseDir: string, sourceHash: string): Promise<TaskCase> {

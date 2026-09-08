@@ -15,7 +15,10 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
     if (entry.lane === 'recovery') return 'summary';
     return 'controller';
   }
-  if (entry.kind === 'fold') return 'controller';
+  if (entry.kind === 'fold') {
+    if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
+    return 'controller';
+  }
   if (entry.title.startsWith('Recovery')) return 'summary';
   if (entry.title.startsWith('Decision:') || entry.title.startsWith('Controller ·') || entry.lane === 'controller') {
     return 'controller';
@@ -46,11 +49,7 @@ export function matchesFilter(entry: TimelineEntry, filter: TimelineFilter): boo
   return true;
 }
 
-export function matchesCanvasQuery(entry: TimelineEntry, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return true;
-  return [entry.title, entry.detail, entry.original].some((part) => part?.toLowerCase().includes(needle));
-}
+export { matchesCanvasQuery } from './timeline-read.js';
 
 export function renderScrollback(
   theme: Theme,
@@ -61,6 +60,7 @@ export function renderScrollback(
   product: string,
   height?: number,
   tick = 0,
+  readingOffset = 0,
 ): string[] {
   const groups = groupVoices(entries);
   const lines: string[] = [];
@@ -78,7 +78,7 @@ export function renderScrollback(
     return [fillCanvas(theme, ` ${theme.style.muted(t(locale, 'writing', { product }))}`, width)];
   }
   if (height === undefined || lines.length <= height) return lines;
-  const start = Math.max(0, Math.min(selectedAt, lines.length - height));
+  const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - height));
   return lines.slice(start, start + height);
 }
 

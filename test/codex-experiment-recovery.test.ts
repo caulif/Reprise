@@ -49,7 +49,7 @@ test("Recovery preserves a known verifier rejection as provider validation", () 
 
 test("Recovery records Provider validation failure separately from a completed Agent envelope", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-recovery-failure-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -102,7 +102,7 @@ class CleanupFailingRecoveryProvider extends LocalWorkspaceProvider {
 
 test('Recovery cancellation aborts a pending model call, persists cancellation and discards staging', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-recovery-cancel-'));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, 'source'));
   await writeFile(join(root, 'source', 'README.md'), '# source\n');
   const base = input(root, new VerifiedRuntime());
@@ -133,7 +133,7 @@ test("Recovery rejects an unproven recovered no-op before Provider promotion", a
   const root = await mkdtemp(
     join(tmpdir(), "reprise-codex-recovery-runner-crash-"),
   );
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -178,7 +178,7 @@ test("Recovery classifies a structured model request failure separately from too
   const root = await mkdtemp(
     join(tmpdir(), "reprise-codex-recovery-model-failure-"),
   );
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -253,7 +253,7 @@ test("Recovery source tripwire falls back to current state and records a warning
   const root = await mkdtemp(
     join(tmpdir(), "reprise-codex-recovery-tripwire-"),
   );
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -307,7 +307,7 @@ test("Recovery source tripwire falls back to current state and records a warning
 
 test("Recovery orchestration uses a scripted Agent to restore a historical Git baseline before Candidate startup", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-recovery-golden-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const source = join(root, "source");
   await mkdir(source);
   await writeFile(join(source, "README.md"), "# original\n");
@@ -392,7 +392,7 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
   const root = await mkdtemp(
     join(tmpdir(), "reprise-codex-recovery-candidate-"),
   );
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const source = join(root, "source");
   await mkdir(source);
   await writeFile(join(source, "README.md"), "# completed\n");

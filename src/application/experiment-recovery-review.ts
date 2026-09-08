@@ -36,7 +36,9 @@ import type { RecoveryAttempt, RecoveryAttemptInput } from "./experiment-recover
 import type { RecoveryResult } from "../agents/recovery-agent.js";
 import type { RecoveryContext } from "../agents/recovery-agent.js";
 import { recoveryWorkingSet } from "../agents/recovery-working-set.js";
+import { recoveryAcceptIsExposed } from "./recovery-user-status.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
+import { persistAgentAuditEvent } from "./experiment-helpers.js";
 import type {
   EnvironmentBaseline,
   LocalWorkspaceProvider,
@@ -123,6 +125,7 @@ function review_reexecutionTools(
 ) {
   const alternateContext = {
     ...session.context,
+    continuityKey: `${session.input.experimentId}:${candidateId}`,
     executionCandidate: {
       candidateId: candidate.candidateId,
       hypothesisId: candidate.hypothesisId,
@@ -130,10 +133,9 @@ function review_reexecutionTools(
   };
   const alternateAudit = {
     append: async (event: import("../infrastructure/pi-agent-host.js").AgentAuditEvent): Promise<void> => {
-      await executionStore.append({
-        type: event.type,
-        runId: session.input.runId,
-        payload: { role: event.role, sessionId: event.sessionId, candidateId, ...event.payload },
+      await persistAgentAuditEvent(executionStore, session.input.runId, {
+        ...event,
+        payload: { candidateId, ...event.payload },
       });
     },
   };
@@ -443,6 +445,12 @@ export async function completeRecoveryReview(args: CompleteRecoveryReviewArgs): 
   const recordExternalEffect = review_recordExternalEffect.bind(null, session);
   const requestCompensation = review_requestCompensation.bind(null, session);
   const recordReviewFeedback = review_recordReviewFeedback.bind(null, session);
+  const exposeAccept = recoveryAcceptIsExposed({
+    automaticallyAccepted: Boolean(automaticallyAcceptedBaseline),
+    envelopeStatus: recovery.status === "completed" ? recovery.value.status : undefined,
+    match: session.activeProviderPreview.baseline.match,
+    runnable: session.activeProviderPreview.baseline.readiness?.runnable,
+  });
 
   return {
   get baseline() { return automaticallyAcceptedBaseline ?? session.activeProviderPreview.baseline; },
@@ -460,26 +468,30 @@ export async function completeRecoveryReview(args: CompleteRecoveryReviewArgs): 
   experimentRoot,
   experimentId: input.experimentId,
   provider,
-  accept: async () => {
-    if (automaticallyAcceptedBaseline) return automaticallyAcceptedBaseline;
-    if (session.activeProviderPreview.baseline.match === "current_state_fallback" && input.allowCurrentStateFallback !== true)
-      throw new Error("Current-state fallback requires explicit allowCurrentStateFallback opt-in.");
-    if (session.selectedCandidateId !== session.validatedCandidateId)
-      throw new Error("Selected Recovery candidate has not been re-executed and validated.");
-    const accepted = await provider.acceptRecovery(session.activeProviderPreview);
-    if (lifecycleState() === "candidate_pending_review" || lifecycleState() === "review_required")
-      moveRecoveryState("selected_checkpoint");
-    moveRecoveryState("accepted");
-    const acceptanceStore = await ExperimentStore.open(experimentRoot, input.experimentId);
-    try {
-      await acceptanceStore.acquireWriter();
-      const bytes = Buffer.from(JSON.stringify({ schemaVersion: 1, state: lifecycleState(), attempts: recoveryOrchestrator.attempts }), "utf8");
-      await acceptanceStore.commitArtifact({ artifactId: "recovery-attempts-accepted", kind: "recovery_attempts", mediaType: "application/json", bytes, operationId: "recovery-attempts-accepted-created" });
-      await acceptanceStore.append({ type: "recovery.lifecycle_completed", runId: input.runId, operationId: "recovery-lifecycle-accepted", payload: { state: lifecycleState() } });
-    } finally {
-      await acceptanceStore.close();
-    }
-    return accepted;
-  },
-};
+  ...(exposeAccept
+    ? {
+        accept: async () => {
+          if (automaticallyAcceptedBaseline) return automaticallyAcceptedBaseline;
+          if (session.activeProviderPreview.baseline.match === "current_state_fallback" && input.allowCurrentStateFallback !== true)
+            throw new Error("Current-state fallback requires explicit allowCurrentStateFallback opt-in.");
+          if (session.selectedCandidateId !== session.validatedCandidateId)
+            throw new Error("Selected Recovery candidate has not been re-executed and validated.");
+          const accepted = await provider.acceptRecovery(session.activeProviderPreview);
+          if (lifecycleState() === "candidate_pending_review" || lifecycleState() === "review_required")
+            moveRecoveryState("selected_checkpoint");
+          moveRecoveryState("accepted");
+          const acceptanceStore = await ExperimentStore.open(experimentRoot, input.experimentId);
+          try {
+            await acceptanceStore.acquireWriter();
+            const bytes = Buffer.from(JSON.stringify({ schemaVersion: 1, state: lifecycleState(), attempts: recoveryOrchestrator.attempts }), "utf8");
+            await acceptanceStore.commitArtifact({ artifactId: "recovery-attempts-accepted", kind: "recovery_attempts", mediaType: "application/json", bytes, operationId: "recovery-attempts-accepted-created" });
+            await acceptanceStore.append({ type: "recovery.lifecycle_completed", runId: input.runId, operationId: "recovery-lifecycle-accepted", payload: { state: lifecycleState() } });
+          } finally {
+            await acceptanceStore.close();
+          }
+          return accepted;
+        },
+      }
+    : {}),
+  };
 }

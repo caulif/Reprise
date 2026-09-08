@@ -65,7 +65,7 @@ reprise compare
 
 界面使用“Agent 产品”或“目标 Agent Runtime”，不使用“Agent Harness”；Harness 指当前项目本身。
 
-`/intake` 首先同步展示当前构建静态注册的 Product Pack。它不会在进入页面时解析任何历史目录；用户选择产品后，才调用该 Pack 的会话 Adapter。会话上限、项目分组、搜索、发现失败和进程内缓存均按产品隔离。没有会话、未安装 Runtime 或未配置凭据不会让已注册产品从列表消失；运行前的 preflight 才给出 Runtime 的权威诊断。
+`/intake` 首先展示已组装的 Product Pack（内置 Codex/Claude Code 与 `{dataDir}/plugins.json` 的本地模块）。它不会在进入页面时解析任何历史目录；用户选择产品后，才调用该 Pack 的会话 Adapter。会话上限、项目分组、搜索、发现失败和进程内缓存均按产品隔离。没有会话、未安装 Runtime 或未配置凭据不会让已注册产品从列表消失；运行前的 preflight 才给出 Runtime 的权威诊断。
 
 ### 3.3 选择与准备
 
@@ -76,7 +76,7 @@ reprise compare
 
 选择该产品下的项目和历史会话
 
-会话发现按已安装的 Agent 产品惰性执行：进入产品页后才扫描该 Pack 的配置 root。为保证全局最新活动排序，首屏先完成可取消、有界并发的轻量摘要 index；随后每页展示已发现数、已跳过的本地损坏/排除记录和是否还有下一页，`m` 继续加载，`r` 从第一页刷新。列表不读取完整 transcript，只逐行读取受限的元数据；超限、无权限、损坏 JSONL、无效元数据及不跟随的 symlink/junction 以聚合计数呈现，不展示会话正文或绝对路径。摘要窗口截断只影响展示：`pending` 或残缺摘要仍可 Enter，由核对页做完整 inspect 后再决定能否冻结；不要把窗口里看不到用户消息写成硬 `unreadable`。列表行与项目「最近活动」在首条用户句像指令块（含 `<environment_context>`）时，改用同一摘要窗口里的后续短用户任务句；冻结 `initialInput` 用同一启发式取第一条不像注入指令块的用户任务句，找不到则退回第一条 user 行。摘要窗口截断只截断展示，有可用任务标题的残缺摘要不在列表行标「摘要不完整」；残缺摘要不把未扫描的助手/工具次数写成 `a0 t0`。顶栏空心灯表示未选会话产品（封面且未冻结任务）。产品列表光标所在 Pack 算已选，实心灯。发现页脚把指令、计数和 catalog 全局诊断分行，不在词中截断计数。点选后的状态文案对齐管线：「摘要不完整，正在完整读取」「已冻结，进入环境恢复」「无法恢复：没有合法用户输入」。**会话 Enter 打开核对页（任务起点句）；核对页后续用户轮次用同一启发式去掉注入块；核对页 Enter 才冻结并启动恢复。**进入项目列表时光标优先上次打开的项目，再当前工作区；当前工作区目录若包含 Harness `dataDir`（从本仓库启动）则跳过。确认卡片展示变更条数、第一条未决说明和跳过的 symlink。无合法用户输入不得出现可冻结核对卡，进入错误页。环境检查、symlink/junction 跳过和部分 workspace 都是后台步骤。用户终态只显示「已恢复」「部分恢复」或「无法恢复」，见[会话恢复对用户只暴露终态](../decisions/accepted/2026-08-28-session-recovery-user-first.md)。已恢复或部分恢复后选择候选产品与模型，见[恢复后选择候选产品与模型](../decisions/accepted/2026-09-02-candidate-product-and-model-picker.md)。Recovery Agent 只在 TaskCase 冻结成功之后、且仅在 Provider 创建的候选环境中恢复，不解析产品 JSONL，不写入用户原始 workspace。摘要缺少可靠时间时显示为未知时间，绝不补成 1970 年；只有缺少事件时间时才会使用并标记文件修改时间。产品、root 和 cursor 三者共同界定缓存，因此切换 Agent 或 session root 不会串用会话。TUI 帧审计会为相对时间注入固定渲染时钟，生产交互仍使用系统时钟，因而审计基线不会随日期自然漂移。
+会话发现按已安装的 Agent 产品惰性执行：进入产品页后才扫描该 Pack 的配置 root。为保证全局最新活动排序，首屏先完成可取消、有界并发的轻量摘要 index；随后每页展示已发现数、已跳过的本地损坏/排除记录和是否还有下一页，Ctrl+N 继续加载，Ctrl+R 从第一页刷新。列表筛选用可打印输入，Ctrl+F 切换可用会话过滤。列表不读取完整 transcript，只逐行读取受限的元数据；超限、无权限、损坏 JSONL、无效元数据及不跟随的 symlink/junction 以聚合计数呈现，不展示会话正文或绝对路径。摘要窗口截断只影响展示：`pending` 或残缺摘要仍可 Enter，由核对页做完整 inspect 后再决定能否冻结；不要把窗口里看不到用户消息写成硬 `unreadable`。列表行与项目「最近活动」在首条用户句像指令块（含 `<environment_context>`）时，改用同一摘要窗口里的后续短用户任务句；冻结 `initialInput` 用同一启发式取第一条不像注入指令块的用户任务句，找不到则退回第一条 user 行。摘要窗口截断只截断展示，有可用任务标题的残缺摘要不在列表行标「摘要不完整」；残缺摘要不把未扫描的助手/工具次数写成 `a0 t0`。顶栏空心灯表示未选会话产品（封面且未冻结任务）。产品列表光标所在 Pack 算已选，实心灯。发现页脚把指令、计数和 catalog 全局诊断分行，不在词中截断计数。点选后的状态文案对齐管线：「摘要不完整，正在完整读取」「已冻结，进入环境恢复」「无法恢复：没有合法用户输入」。**会话 Enter 打开核对页（任务起点句）；核对页后续用户轮次用同一启发式去掉注入块；核对页 Enter 才冻结并启动恢复。**进入项目列表时光标优先上次打开的项目，再当前工作区；当前工作区目录若包含 Harness `dataDir`（从本仓库启动）则跳过。确认卡片展示变更条数、第一条未决说明和跳过的 symlink。无合法用户输入不得出现可冻结核对卡，进入错误页。环境检查、symlink/junction 跳过和部分 workspace 都是后台步骤。用户终态只显示「已恢复」「部分恢复」或「无法恢复」，见[会话恢复对用户只暴露终态](../decisions/accepted/2026-08-28-session-recovery-user-first.md)。已恢复或部分恢复后选择候选产品与模型，见[恢复后选择候选产品与模型](../decisions/accepted/2026-09-02-candidate-product-and-model-picker.md)。Recovery Agent 只在 TaskCase 冻结成功之后、且仅在 Provider 创建的候选环境中恢复，不解析产品 JSONL，不写入用户原始 workspace。摘要缺少可靠时间时显示为未知时间，绝不补成 1970 年；只有缺少事件时间时才会使用并标记文件修改时间。产品、root 和 cursor 三者共同界定缓存，因此切换 Agent 或 session root 不会串用会话。TUI 帧审计会为相对时间注入固定渲染时钟，生产交互仍使用系统时钟，因而审计基线不会随日期自然漂移。
 ❯ 今天 · Reprise · “重新设计插件架构”
   昨天 · web-project · “修复登录页面”
 
@@ -109,7 +109,7 @@ reprise compare
 
 Harness 展示 Controller 的可见工作过程，但不依赖或承诺获取 provider 的隐藏 reasoning token。可见短句来自 `agent.assistant_visible`；如果模型没有产生可见分析，就只展示折叠后的工具活动和最终决定，不额外调用模型伪造摘要。
 
-主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：调查类工具合并成「动词 + 对象 + 次数」，变更与 `write` 各占一行，工具 stdout 与上下文 JSON 只经 `[o]`。候选运行宽屏左右分栏：左 Controller（历史回合默认一行折叠），右栏是 Pack 译出的产品可见会话；用户句走 Input 紫，不得画成 Target 青色。两栏独立滚动，滚轮只动焦点栏。窄屏 `Tab` 在两栏全宽之间切换。Comparison 必须先经对照门：Enter 才开绿声部，标题是「正在写对照报告」；跳过则结果页对照为未运行。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)与[可见短句与显式对照](../decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)。
+主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：调查类工具合并成「动词 + 对象 + 次数」，变更与 `write` 各占一行，工具 stdout 与上下文 JSON 只经 `[o]`。一个实验一条单列连续记录：恢复、模拟用户投递、候选公开活动、结果与可选对照按持久化顺序追加。投递消息走 Input 声部，不得画成 Target 青色。候选公开活动来自已校验的 `runtime.public_activity`；重开只读事件日志，不加载 Pack。未公开 reasoning 不进主列。Comparison 叠在同一时间线：Enter 才开对照，跳过则结果对照为未运行。滚动按条目身份保存阅读位置；向上阅读暂停跟随，Home 到最早可见条，End 或 `l` 跟随最新。实验内 `/` 搜索已投影的可见标题与短文案（含折叠组内标题与尚未展开的记录），不搜索长工具原文或 `original`。Enter / Shift+Enter 在命中间移动并展开所在组。`v` 关闭鼠标报告并暂停当前视图重绘，后台仍追加持久化事件；退出后提示暂停期间的新活动条数。查找中的 `v` 写入查询，不进入阅读模式。本地产物链接：路径须为已验证绝对路径，支持 OSC 8 时输出 `file:` URI，否则显示完整可复制路径，并去掉控制序列。进程 `exit`、未捕获异常会调用 `tui.stop()` 以恢复终端模式。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)与[可见短句与显式对照](../decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)与[公开活动持久化与单列时间线](../decisions/accepted/2026-09-08-public-activity-timeline.md)与[阅读锚点、搜索与终端恢复](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)。
 
 恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段图例是恢复活动，空画布不得写成候选正在写回复。超过 30 秒仍无恢复进展时提示「仍在恢复」，不用候选的「仍在等待本轮结束」。确认后进入候选运行，标题是「候选运行中 · {候选产品}」或「正在启动 {候选产品}」；图例「发给 {产品}」用 `CandidateSpec.productId` 的显示名，不用来源会话产品。用户终态为无法恢复或没有 accept 时，确认页禁止启动隔离候选，标题不得声称已准备隔离对照，原因留一句人话（校验失败时附代码）：变更为 0 时说明没有观察到隔离工作区变更，有变更才强调工作区校验未通过；禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；候选阶段超过 30 秒仍无 turn 终态时提示仍在等待，超过 120 秒无新事件时提示可 Ctrl+C。封面、列表、核对、恢复、确认、运行、对照门、对照过程与结果的可滚动区都接鼠标滚轮。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
 
@@ -259,6 +259,7 @@ Delivered · accepted · target turn 6
 | 封面 | Enter | 继续最近一次实验（若有） |
 | 封面 | r / i | 开始运行 / 导入会话 |
 | 封面（输入 `/`） | Tab / Enter / Esc | 补全命令 / 提交 / 清空 |
+| 封面 | `/` | 命令入口，不是时间线查找 |
 | 配置 | ↑↓ / Enter | 选字段 / 编辑或切换 |
 | 配置 | t / s / Esc | 测连接 / 保存到本机 / 回封面 |
 | 会话（产品） | ↑↓ / Enter / Esc | 选择 / 打开产品 / 回封面 |
@@ -275,7 +276,7 @@ Delivered · accepted · target turn 6
 | 候选模型 | ↑↓ / Enter / b / Esc | 选择 / 确认 / 改产品 / 回封面 |
 | 确认 | Enter / b / Esc | 开跑（被挡时仍按 Enter 只提示） / 改模型 / 回封面 |
 | 对照门 | Enter / s / Ctrl+C | 写对照 / 跳过 / 退出 |
-| 运行（含恢复） | Ctrl+C / ? | 请求取消 / 按键说明 |
+| 运行（含恢复） | `/` / `v` / Ctrl+C / ? | 查找时间线 / 阅读模式 / 请求取消 / 按键说明 |
 | 结果 | o / t / w / Enter / b / Esc | 报告或失败诊断 / 记录目录 / 隔离副本 / 回封面 |
 | 错误 | Enter / b / Esc | 返回 |
 | 全文 overlay | Esc | 关闭 |

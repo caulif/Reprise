@@ -2,7 +2,7 @@
 
 本文供执行重构的 coding agent 使用。它把[架构目标](./reprise-architecture-redesign.md)的七批迁移拆成执行步骤，不重新定义产品需求、公共字段或验收编号。目标语义以该文档及 [TUI 目标](./reprise-tui-design.md)为准；当前差异见[迁移边界](./documentation-reconciliation-for-session-harness-workflow.md)，唯一完成记录在 [MASTER](../progress/MASTER.md)。
 
-本计划是实施指引，不表示代码已经迁移。代码定位基于制定计划时的仓库；每批动手前重新检查实际调用者、工作区变更和相关规范。不要仅按文件名批量移动或删除。
+M1.1–M7 实施步骤已关闭。未关闭的是 TUI 真终端、未通过的 Controller 真实模型 lane，以及未授权的 Runtime smoke，见 MASTER。下文各节是已执行批次的记录与验证命令，不是尚未开工的待办清单。
 
 ## 1. 执行规则与完成单位
 
@@ -70,6 +70,8 @@
 
 出口：一项可运行的最小能力验证覆盖工具往返和取消，并给出唯一存储所有者选择。对应 A1；该选择涉及格式时更新 ADR。
 
+**完成（2026-09-08）。** 锁定 Pi 0.84.1。公开 `Agent` 验证覆盖工具往返、原生消息块、事件顺序与取消；`AgentHarness` 高级入口为占位，不接入。唯一存储所有者是 Experiment `events.jsonl`，身份草案见[事实源决策](../decisions/accepted/2026-09-08-session-fact-owner-and-identity.md)。验证：`npm run build` 后 `node --test dist/test/pi-agent-loop-baseline.test.js dist/test/pi-session-reliability.test.js dist/test/session-compact.test.js`。Invocation 生命周期拆分仍属 M1.2。
+
 ### M1.2 分开 Session 生命周期与 Invocation 生命周期
 
 1. 保留 createSession/request 的真实复用价值；将请求完成与 Session 关闭的语义分开，给每次 Invocation 和底层模型请求稳定身份。
@@ -79,6 +81,8 @@
 5. 上层只消费完成、失败、取消等明确结果；结构化解析成功不替代业务检查，失败不能制造默认领域结果。
 
 出口：同 Session 两次调用共享上下文，不同 run/角色不串话；并发重入、晚到响应、超时与取消有验证。对应 A2、A6、A9。
+
+**完成（2026-09-08）。** Host 将 Invocation 完成与 Session 关闭分开；同 Session 并发 `request` 拒绝；`close()` 后禁止追加。验证：`npm run build` 后 `node --test dist/test/agent-session-lifecycle.test.js dist/test/agent-host.test.js`。理由见[生命周期决策](../decisions/accepted/2026-09-08-session-invocation-lifecycle.md)。完整模型输入仍属 M1.3。
 
 ### M1.3 完整记录并可重建模型输入
 
@@ -91,6 +95,8 @@
 
 出口：从空进程读记录重建每次请求输入，包含一次压缩和一次修复；模拟写失败、尾部不完整、缺附件和非法 JSON，给出明确诊断。对应 A6–A8、A10。
 
+**完成（2026-09-08）。** Host 在调用模型前写入过滤后的 `agent.message_appended`，成功路径在解码前写入 `agent.model_output`；大正文与图片落到 `agent_model_input` 附件。验证：`npm run build` 后 `node --test dist/test/agent-model-input.test.js dist/test/agent-host.test.js dist/test/agent-session-lifecycle.test.js dist/test/session-compact.test.js`。理由见[模型输入重建](../decisions/accepted/2026-09-08-model-input-reconstruction.md)。旧日志缺正文的只读解释属 M1.4。
+
 ### M1.4 历史兼容与只读重开
 
 1. 为新格式设置明确版本，区分可读旧格式、未知版本和损坏记录。旧日志缺少正文时显示“该记录未保存完整内容”，不能补写推测过程。
@@ -99,6 +105,8 @@
 4. 崩溃后只能依据已提交事实显示中断或未知；不凭锁文件/PID 存在与否推导候选已停止。
 
 出口：杀掉写进程后，新进程可读取提交前缀；未知格式明确失败；旧历史仍可读其已保存内容。对应 A7、A8、A18。
+
+**完成（2026-09-08）。** History 只读 `events.jsonl`：缺正文显示固定缺口文案；未知信封/正文版本失败；旧 `session_completed` 只读解释为当时请求结束。崩溃无 record 时按已提交事件显示 interrupted/unknown，不读 lock/PID，不加载 Pack。验证：`npm run build` 后 `node --test dist/test/agent-model-input.test.js dist/test/agent-history-read.test.js dist/test/local-history.test.js dist/test/widgets.test.js dist/test/architecture.test.js`。理由见[历史只读](../decisions/accepted/2026-09-08-history-readonly-compat.md)。
 
 ## 4. M2：harness、Recovery、封存场景与运行生命周期
 
@@ -111,6 +119,8 @@
 
 出口：越界写、源目录修改、非法工具参数、秘密内容在边界被拒绝或遮蔽；原有隔离和恢复调查有效测试继续成立。对应 A10。
 
+**完成（2026-09-08）。** 角色写权限留在 application：Controller 只读，Comparison 只写本次 attempt 的 `scratch` 第一段、计划文件与 `report.html`；不新增跨角色 Verifier。路径包含改用 `pathContainedBy` / `relativeInside`，写入后再 `realpath`。验证：`npm run build` 后 `node --test dist/test/comparison-report.test.js dist/test/experiment-inspection.test.js dist/test/controller-briefing.test.js dist/test/architecture.test.js dist/test/recovery-tools.test.js`；随后 `npm run check` 通过。理由见[角色副作用所有权](../decisions/accepted/2026-09-08-role-side-effect-ownership.md)。
+
 ### M2.2 Recovery 连续 Session 与停止语义
 
 1. 一次准备创建一个 Recovery Session；调查、业务反馈和可修复输出在同 Session 中继续。
@@ -119,6 +129,8 @@
 4. 可修复结构问题与真实证据缺失分开：前者有界修复，后者停止，不用循环请求伪造证据。
 
 出口：充分证据生成场景；不足证据、工具失败、取消分别有终态记录，无可运行场景泄漏。对应 A2、A5、A7。
+
+**完成（2026-09-08）。** Recovery 按 `continuityKey` 复用 Pi Session；信封修复同 Invocation；不足证据停止就绪循环、诊断 failed、不暴露 `accept`。TUI/CLI 无 current-state fallback。验证：`npm run build` 后 `node --test dist/test/recovery-envelope.test.js dist/test/codex-experiment-recovery-effort.test.js dist/test/recovery-user-status.test.js dist/test/tui-workflow.test.js dist/test/architecture.test.js`；随后 `npm run check` 通过。理由见[Recovery 连续 Session](../decisions/accepted/2026-09-08-recovery-continuous-session.md)。
 
 ### M2.3 场景封存与重复运行
 
@@ -130,6 +142,8 @@
 
 出口：同场景两次模拟运行初始指纹一致且写入隔离；封存中断、指纹不符、缺文件均拒绝运行。对应 A17。
 
+**完成（2026-09-08）。** 封存 baseline 在 `prepareRun` 后保留；源目录缺失只读封存 fingerprint。`case.complete` 才进入可选列表。对照挂 `snapshots/{runId}`，incomplete 不挂活动 run 目录。验证：`npm run build` 后 `node --test dist/test/scene-seal.test.js dist/test/environment.test.js dist/test/local-history.test.js dist/test/comparison-report.test.js dist/test/experiment-inspection.test.js`；随后 `npm run check` 通过。理由见[场景封存与重复运行](../decisions/accepted/2026-09-08-scene-seal-and-repeat-runs.md)。
+
 ### M2.4 CandidateRun 与活动所有权
 
 1. 复用状态机与 CandidateRun，把状态写入从 UI 回调剥离；执行生命周期先持久化决定，再进行候选投递。
@@ -139,6 +153,8 @@
 5. 同实验同一时间只有一个写操作；不同实验不被全 dataDir 锁串行化。异常关闭保留事实，不自动夺锁或接管。
 
 出口：启动失败、未知投递、取消等待、自然完成与取消竞态、清理失败均保留独立事实。对应 A9、A15 的应用侧前提。
+
+**完成（2026-09-08）。** CandidateRun 先持久化再投递；未知投递不重发。进程内 `operationId`/`experimentId`/`runId` 可查询；`reprise cancel` 解析三类 ID 且不夺锁。取消请求与终态分开；晚到 settlement 不改写终态。实验目录写锁不自动回收。验证：`npm run build` 后 `node --test dist/test/candidate-run.test.js dist/test/store.test.js dist/test/experiment-activity.test.js dist/test/cli.test.js`；随后 `npm run check` 通过。理由见[CandidateRun 活动所有权](../decisions/accepted/2026-09-08-candidate-run-activity-ownership.md)。
 
 ## 5. M3：Controller 单 Session 与用户协作行为
 
@@ -152,6 +168,8 @@
 
 出口：模拟调用计数证明没有理解前置请求；opening 与后续 send/done 属于同一 Session；旧字段不再影响新运行停止。对应 A2、A3、A12。
 
+**完成（2026-09-08）。** 实验入口只 `decide`；首次 Invocation 在本 run Controller Session 内调查并 opening。新路径不写理解账本、不以 unread/ledger 拒绝 `done`。验证：`npm run build` 后 `node --test dist/test/controller-full-session-judgment.test.js dist/test/codex-experiment.test.js dist/test/controller-briefing.test.js dist/test/snapshots.test.js`；随后 `npm run check` 通过。理由见[opening 同 Session](../decisions/accepted/2026-09-08-controller-opening-single-session.md)。
+
 ### M3.2 验证协作语义和投递边界
 
 1. prompt 区分历史用户要求、历史 agent 发现和当前候选事实；历史消息不是顺序重放队列。
@@ -161,6 +179,8 @@
 5. 用现有 Controller 评估素材选择有代表性的样例：已满足用户、尚需核验、无继续价值、授权不足、历史 agent 结论不可信。结构测试与人工语义评估分别报告。
 
 出口：机械验证执行/投递协议，人工记录协作与停止是否合理及局限；不得声称模拟测试证明模型语义等价。对应 A3、A7。
+
+**完成（2026-09-08）。** briefing 区分三类事实；决策先落盘再投递；`promptDigest` 入快照；不同 run 不共享 Session。合同 lane 覆盖五类样例且与真实模型 lane 分报。验证：`npm run build` 后 `node --test dist/test/controller-collaboration-protocol.test.js dist/test/controller-capability-evaluation.test.js dist/test/candidate-run.test.js dist/test/codex-experiment.test.js dist/test/snapshots.test.js`；随后 `npm run check` 通过。理由见[协作协议](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md)。
 
 ## 6. M4：Comparison 单 Session 与独立执行
 
@@ -172,6 +192,8 @@
 6. 报告区分任务结果、协议/恢复限制与配置差异，不把不同产品、工具或策略的差异归因于纯模型能力。
 
 出口：结束原进程后独立对照成功；重复 attempt 隔离；损坏快照、取消、报告写失败不发布成功结果。对应 A2、A4、A7、A17。
+
+**完成（2026-09-08）。** 每次 attempt 一个 Comparison Session；应用只 `compare()`；计划文件是同 Session 笔记。对照读封存快照与已提交事实，候选结束后 `runComparison` 可独立发起。失败/取消不覆盖成功 `report.html`。验证：`npm run build` 后 `node --test dist/test/comparison-agent-phases.test.js dist/test/codex-experiment.test.js dist/test/comparison-report.test.js dist/test/scene-seal.test.js dist/test/snapshots.test.js dist/test/architecture.test.js dist/test/agent-host.test.js`；随后 `npm run check` 通过。理由见[单 Session 对照](../decisions/accepted/2026-09-08-comparison-single-session.md)。
 
 ## 7. M5：共用 Workflow、完整 CLI 与键盘 TUI
 
@@ -185,6 +207,8 @@
 
 出口：同输入的 CLI/TUI 调用同一应用路径；模拟完整与分步执行得到一致的领域结果。对应 A13。
 
+**完成（2026-09-08）。** `prepareExperiment` / `runPreparedExperiment` / `runFullExperiment` 为 CLI 与 TUI 共用；完整 run 先 prepare 再同一 scene-run。候选启动守卫在 application；`start` 在已有 recoveryAttempt 时执行该守卫。无子命令仍开 TUI；`prepare`/`run`/`compare`/`cancel` 不静态加载 TUI。验证：`npm run build` 后 `node --test dist/test/experiment-operations.test.js dist/test/cli.test.js dist/test/architecture.test.js dist/test/tui-workflow.test.js`；随后 `npm run check` 通过。理由见[共用实验操作](../decisions/accepted/2026-09-08-shared-experiment-operations.md)。
+
 ### M5.2 CLI 查询、配置与机器协议
 
 1. 先实现帮助、产品/模型/项目/会话查询、内部配置、认证状态与历史查询，再连接有副作用命令。具体参数和错误码在实现代码定义，文档只给经过验证的示例。
@@ -197,6 +221,8 @@
 
 出口：真实子进程运行 CLI，覆盖无 TTY、stdout 管道、错误 stderr、退出码、分页和事件续读；全流程不要求打开 TUI。对应 A13、A14。
 
+**完成（2026-09-08）。** 查询子命令与 `--json`/`--jsonl` 互斥协议；来源用 `--source-path`；`run` 的 source 与 `--scenario` 互斥；`compare --experiment` 对照终态 run；密钥不进 argv。验证：`npm run build` 后 `node --test dist/test/cli.test.js dist/test/cli-protocol.test.js dist/test/architecture.test.js dist/test/experiment-operations.test.js`；随后 `npm run check` 通过。理由见[CLI 查询与机器协议](../decisions/accepted/2026-09-08-cli-query-config-protocol.md)。
+
 ### M5.3 TUI 选择与配置流程
 
 1. 首页实现目标规定的少量斜杠入口，键盘补全与确认；提示当前按键，不设计网页式按钮工具栏。
@@ -206,6 +232,8 @@
 5. 切换页面保留筛选/选中位置。空匹配禁止确认，IME 输入不被快捷键截断。
 
 出口：只用键盘可完成配置、来源选择、准备、候选选择、运行和结果查看；大量项目及窄屏均可操作。按 TUI 验收。
+
+**完成（2026-09-08）。** 首页只接收斜杠命令；配置 Ctrl+S/Ctrl+T 与未保存离开确认；列表可打印输入筛选，Ctrl+F/N/R 为目录动作；切层保留筛选与选中；空匹配、无历史、无权限、读失败分文案。验证：`npm run build` 后 `node --test dist/test/page-input.test.js dist/test/config-editor.test.js dist/test/intake-ui.test.js dist/test/product-first-intake.test.js dist/test/widgets.test.js`；随后 `npm run check` 通过。理由见[TUI 选择与配置按键](../decisions/accepted/2026-09-08-tui-selection-and-config-keys.md)。
 
 ### M5.4 单实验连续时间线
 
@@ -217,6 +245,8 @@
 
 出口：实时与重开投影一致，未知活动有通用降级，原插件缺失仍可读。按 TUI 验收及 A8、A18。
 
+**完成（2026-09-08）。** 候选启动不清空时间线；单列连续记录；`runtime.public_activity` 经 schema 校验后持久化；TUI 不加载 Pack；thinking 不进主列；任务/终止/清理分条可见；对照门叠在时间线；历史实验只读 `events.jsonl`。验证：`npm run build` 后 `node --test dist/test/timeline.test.js dist/test/public-activity.test.js dist/test/architecture.test.js dist/test/widgets.test.js dist/test/codex-intake-commands.test.js`；随后 `npm run check` 通过。理由见[公开活动持久化与单列时间线](../decisions/accepted/2026-09-08-public-activity-timeline.md)。
+
 ### M5.5 阅读、搜索与终端交互
 
 1. 滚动以稳定条目身份保存阅读锚点；追加、折叠、缩放和分页不抢位置。向上阅读暂停跟随，End 返回最新。
@@ -226,6 +256,8 @@
 5. 异常退出也恢复终端模式。真实鼠标、IME、修饰点击、缩放验证留给 M6，不把 HTML 原型作为证据。
 
 出口：假终端/事件回放验证锚点、键盘、搜索和选择模式；更新相关 TUI 帧并审阅差异。按 TUI 验收。
+
+**完成（2026-09-08）。** 阅读锚点用 `itemId`/`sequence`；查找不扫 `original`；`v` 关鼠标报告并暂停重绘；`fileLink` 按 OSC 8 能力输出；真实终端异常路径 `tui.stop()`。ADR：[阅读锚点、搜索与终端恢复](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)。
 
 ## 8. M6：跨平台本机控制与可扩展 Pack
 
@@ -238,6 +270,8 @@
 
 出口：三个系统的模拟流程与进程清理有独立证据；运行环境不可用时报告能力不足，不静默换语义。对应 A9、A11。
 
+**完成（2026-09-08）。** Windows PowerShell、macOS/Linux `/bin/bash`，不读 `SHELL`；`shell: false` 与 POSIX 进程组；WSL 拒绝宿主 Windows 路径；`stop` 超时 cleanup 为 `unknown`。ADR：[原生平台语义](../decisions/accepted/2026-09-08-native-platform-semantics.md)。
+
 ### M6.2 跨终端 cancel
 
 1. 活动所有者启动本机端点，Windows 用受限命名管道，POSIX 用私有目录 Unix socket。先验证权限实现，不允许未鉴权 TCP 回退。
@@ -248,6 +282,8 @@
 6. 确保同实验 compare 与其他写操作冲突时拒绝，不同实验可独立执行。
 
 出口：用两个真实本机进程取消 CLI/TUI 的 prepare/run/compare；额外覆盖错误 owner、过期记录、断连、重复、自然结束、清理超时和权限拒绝。对应 A15；此时才能关闭 M5 的跨终端前置缺口。
+
+**完成（2026-09-08）。** Windows 命名管道 / POSIX Unix socket；token 不进事件与 JSON；客户端不删锁、不杀 PID。ADR：[跨终端 cancel](../decisions/accepted/2026-09-08-cross-terminal-cancel.md)。
 
 ### M6.3 版本化本地插件边界
 
@@ -260,6 +296,8 @@
 
 出口：重复身份、不兼容版本、错误导出及单能力插件有验证；现有两个产品行为保持成立。对应 A16、A18。
 
+**完成（2026-09-08）。** `{dataDir}/plugins.json` 加载 JS/已安装包；`apiMajor` 与 `import`/`runtime` 能力；重复身份保留先注册者。ADR：[版本化本地 Pack 边界](../decisions/accepted/2026-09-08-versioned-local-pack-boundary.md)。
+
 ### M6.4 独立第三 Pack 与平台证明
 
 1. 将现有 fake Pack 素材发展为独立测试包/本地模块，通过真实配置入口加载，禁止测试直接注入宿主私有对象绕开插件 API。
@@ -268,6 +306,8 @@
 4. 记录三系统终端版本与中文、IME、滚轮、拖选、链接、退出恢复证据。实际产品 smoke 按现有显式准入执行，没有环境或授权时保留缺口，不自行产生费用。
 
 出口：第三 Pack 只需包与配置；平台模拟、真实终端、真实 Runtime 三类证据分别可审查。对应 A11、A16、A18。
+
+**完成（2026-09-08）。** `reprise-third-pack` 经 `plugins.json` 加载；发现/导入/目录/活动/CLI/TUI 不注入 Pack。pack-api 从 dist 解析。三平台证据分层，macOS/Linux 真终端 IME 仍为缺口。ADR：[第三 Pack 与平台证据](../decisions/accepted/2026-09-08-third-pack-and-platform-evidence.md)。
 
 ## 9. M7：旧实现删除、规范生效与交付
 
@@ -280,6 +320,8 @@
 7. 完成后把实施过程证据留在 MASTER/PR，已结束的计划按文档生命周期退出活跃导航；稳定设计归当前规范，不永久维护两套正文。
 
 出口：公开检出无需本机 HTML 即可理解、构建、运行和扩展；模拟路径、文档、打包与实际支持声明一致。对应 A12 及整体验收。
+
+**完成（2026-09-08）。** 删除 `productId === "codex"` 无名根映射与 `stalled.controller_completion_guard`；无名根绑定第一个 import Pack 或显式 `pack`。README/AGENTS/`reprise/pack-api`/`plugins.json` 与支持声明一致。A1–A18 机械路径见 MASTER 核对表。**未关闭**：TUI IME/滚轮/拖选与 macOS/Linux 真终端；Controller 真实模型 lane 已跑、五族代表未匹配；Runtime smoke 未授权。目标 ADR 仍为 proposed。ADR：[M7 收口与未关闭验收](../decisions/accepted/2026-09-08-m7-delivery-and-acceptance-gaps.md)。
 
 ## 10. 验证实施方式
 

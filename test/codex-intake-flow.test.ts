@@ -305,6 +305,7 @@ test("Codex intake TUI browses validated local history and selects a TaskCase wi
     contentHash: "b".repeat(64),
   };
   await writeFile(join(casesRoot, "case.json"), JSON.stringify(taskCase));
+  await writeFile(join(casesRoot, "case.complete"), "");
   await writeFile(
     join(experimentsRoot, "experiment.json"),
     JSON.stringify({
@@ -520,7 +521,7 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   app.handleInput("\u001b[B");
   app.handleInput("\r");
   replaceField("env:REPRISE_PRIVATE_KEY");
-  app.handleInput("s");
+  app.handleInput("\x13");
   await waitFor(() => /Configuration saved locally/.test(rendered));
   const saved = await readFile(
     join(root, "data", "harness-model.json"),

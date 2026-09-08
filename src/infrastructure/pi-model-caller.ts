@@ -145,11 +145,12 @@ export class PiModelCaller implements PiTextCaller {
     systemPrompt: string;
     tools: readonly AgentToolDefinition[];
     compactionInstructions?: string;
-    onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
+    onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number; reason?: string; retainedTail?: readonly unknown[] }) => Promise<void>;
     onRetry?: (payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>;
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
     onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
     onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
+    onModelRequest?: (payload: { model: string; digest: string; messageCount: number }) => Promise<void>;
   }): PiTextSession {
     const model = this.#model();
     const models = this.#models;
@@ -159,11 +160,20 @@ export class PiModelCaller implements PiTextCaller {
     const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
     const agent = new Agent({
       sessionId: input.sessionId,
-      streamFn: (streamModel, context, options) => this.#models.streamSimple(streamModel, context, {
-        ...options,
-        maxRetries: 0,
-        maxRetryDelayMs: STREAM_RETRY_DELAY_MS,
-      }),
+      streamFn: (streamModel, context, options) => {
+        const notify = input.onModelRequest;
+        if (notify) {
+          const serialized = JSON.stringify({ model: streamModel, context });
+          const modelId = "id" in streamModel ? String(streamModel.id) : String(streamModel);
+          const messageCount = "messages" in context && Array.isArray(context.messages) ? context.messages.length : 0;
+          void notify({ model: modelId, digest: sha256(serialized), messageCount });
+        }
+        return this.#models.streamSimple(streamModel, context, {
+          ...options,
+          maxRetries: 0,
+          maxRetryDelayMs: STREAM_RETRY_DELAY_MS,
+        });
+      },
       convertToLlm,
       toolExecution: 'parallel',
       beforeToolCall: async ({ toolCall }) => {
@@ -270,14 +280,14 @@ async function compactInto(
   thinkingLevel: HarnessModelConfig['effort'],
   signal: AbortSignal | undefined,
   customInstructions: string | undefined,
-  onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined,
+  onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number; reason?: string; retainedTail?: readonly unknown[] }) => Promise<void>) | undefined,
   availableWindow: number,
 ): Promise<boolean> {
   if (availableWindow <= 0) throw new Error('Context budget: system prompt, tools and output reserve exceed the model window.');
   const pruned = prunePiMessagesForBudget(live, false);
   if (pruned.changed) {
     agent.state.messages = live;
-    await onContextCompact?.({ summary: pruned.summary, tokensBefore: estimatedMessageTokens(live), retainedCount: live.length });
+    await onContextCompact?.({ summary: pruned.summary, tokensBefore: estimatedMessageTokens(live), retainedCount: live.length, reason: "prune", retainedTail: [...live] });
   }
   if (!needsPiCompaction(live, availableWindow)) return pruned.changed;
   const compacted = await compactPiMessages({ messages: live, models, model, thinkingLevel, ...(customInstructions ? { customInstructions } : {}), ...(signal ? { signal } : {}) });
@@ -285,9 +295,11 @@ async function compactInto(
     const shrink = prunePiMessagesForBudget(live, true);
     agent.state.messages = live;
     await onContextCompact?.({
-      summary: shrink.changed ? `Host working-set shrink after empty Pi history. ${shrink.summary}` : 'Host working-set shrink after empty Pi history.',
+      summary: shrink.changed ? `Host working-set shrink after empty Pi history. ${shrink.summary}` : "Host working-set shrink after empty Pi history.",
       tokensBefore: estimatedMessageTokens(live),
       retainedCount: live.length,
+      reason: "shrink",
+      retainedTail: [...live],
     });
     if (needsPiCompaction(live, availableWindow)) throw new Error('Context budget: working set still exceeds the available window.');
     return true;
@@ -306,7 +318,7 @@ async function recoverAgentResponse(
   thinkingLevel: HarnessModelConfig['effort'],
   signal: AbortSignal,
   customInstructions: string | undefined,
-  onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined,
+  onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number; reason?: string; retainedTail?: readonly unknown[] }) => Promise<void>) | undefined,
   onRetry: ((payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>) | undefined,
 ): Promise<void> {
   let overflowRecovered = false;

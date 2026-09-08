@@ -10,7 +10,7 @@
 
 Reprise 的 Core、Agent session 和事件协议不直接选择操作系统。启动层生成 HostContext，infrastructure 根据 HostContext 选择路径、shell、进程取消和可选终端能力。Agent 使用语义工具 `shell_exec`（文档语义名为 `shell.exec`，注册名遵守 Pi 工具安全命名限制），不再依赖固定的 `powershell` 工具名。
 
-shell 工具默认由 Host 以 `file + args[]` 启动：Windows 使用 PowerShell，macOS/Linux 使用用户配置的 zsh、bash 或 fish。只有 Host 生成 shell adapter 命令时才进入 shell；Agent 输入仍受 cwd、环境、超时、输出上限和敏感文件规则约束。
+shell 工具默认由 Host 以 `file + args[]` 启动：Windows 使用 PowerShell，macOS 与 Linux 使用 `/bin/bash`。不读取 `SHELL`。只有 Host 生成 shell adapter 命令时才进入 shell；Agent 输入仍受 cwd、环境、超时、输出上限和敏感文件规则约束。进程树、WSL 本机路径与收尾时限见[原生平台语义](./2026-09-08-native-platform-semantics.md)。
 
 ### 原因
 

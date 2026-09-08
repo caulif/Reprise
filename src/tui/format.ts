@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
-import { hyperlink, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
+import { getCapabilities, hyperlink, stripTerminalSequences, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
+import { isFsAbsolute } from '../core/paths.js';
 
 const SLASH_COMMANDS = ['/help', '/config', '/intake', '/run', '/history', '/lang', '/home', '/find'] as const;
 export const TIMELINE_FILTERS = ['ALL', 'PRODUCT', 'INPUT'] as const;
@@ -59,8 +60,12 @@ export function missing(value: string | undefined, empty = '—'): string {
   return value?.trim() ? value : empty;
 }
 
-/** Visible label plus OSC 8 file:// link. Wrap the label first; do not wrap through this sequence. */
+/** Visible label plus OSC 8 file:// link when the terminal supports it. Wrap the label first. */
 export function fileLink(label: string, absolutePath: string): string {
-  if (!label || !absolutePath) return label;
-  return hyperlink(label, pathToFileURL(absolutePath).href);
+  const safeLabel = stripTerminalSequences(label);
+  if (!safeLabel || !absolutePath || !isFsAbsolute(absolutePath)) return safeLabel;
+  const href = stripTerminalSequences(pathToFileURL(absolutePath).href);
+  if (!href || /[\u0000-\u001f\u007f]/.test(href)) return stripTerminalSequences(absolutePath);
+  if (getCapabilities().hyperlinks) return hyperlink(safeLabel, href);
+  return stripTerminalSequences(absolutePath);
 }

@@ -1,6 +1,8 @@
 # 决策：Controller 私有任务理解回合
 
-状态：accepted
+状态：superseded
+
+被 [opening 同 Session](../accepted/2026-09-08-controller-opening-single-session.md) 取代。下文冻结，描述被放弃的独立 understand 回合。
 
 ## 问题
 

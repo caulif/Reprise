@@ -1,6 +1,6 @@
 # Environment 子系统设计
 
-本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前模块设计（Recovery Agent 能力模型 v2 已实施；真实模型 smoke 仍显式 opt-in）
 
@@ -391,11 +391,12 @@ Recovery Agent 返回后，Provider 至少验证：
 
 策略：
 
-- `canonical + canFork`：从冻结基线 fork；
+- `canonical + canFork`：从冻结基线 fork；封存树留在 `baselines/{caseId}`，`prepareRun` 不得删除它；
 - `copy`：从记录的近似来源重新 copy，并再次记录 mismatch；
 - `observational`：只绑定用户明确允许的只读或受控观察资源，不声称隔离；无法提供这种绑定时为 `unsupported`；
 - baseline digest 变化：拒绝静默继续，重新 resolve 或降级为 mismatch；
 - 目标 run 目录已经存在：先按 manifest 和 run ID 核查，不覆盖不明目录。
+- 活源目录缺失时，`resolveBaseline` 只核验已发布封存与 marker；指纹不符或缺文件则拒绝，不从原会话目录再推导起点。
 
 不同候选模型不能共享可写工作目录。否则前一个候选的修改会成为后一个候选的起点。
 
@@ -445,6 +446,8 @@ CandidateRun 在 `finalizing` 中按顺序执行：
 如果 after fingerprint 失败，保留 Target 已产生的 trace 和 artifacts，标记 fingerprint unavailable。失败不能把原 outcome 改成另一个结果。
 
 Environment Provider 不分析“修改得好不好”；Controller 和 Comparison Agent 只读取 ChangeSet 与产物。文件、截图、浏览器状态或文档预览应该通过 artifact 引用暴露，不把大内容塞进 EnvironmentFingerprint。
+
+候选结束、release 之前，Provider 把当时工作区封到 `snapshots/{runId}`，并以 `{runId}.complete` 标记发布。Comparison 只只读挂载该封存；未完成快照必须标识为 unavailable，不能把活动 `runs/{runId}` 当作终态对照输入。结果页仍可打开隔离副本供人查看。
 
 ## 11. release 与资源所有权
 

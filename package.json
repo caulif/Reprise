@@ -14,9 +14,13 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "bin": {
-    "reprise": "dist/src/cli/main.js"
-  },
+    "bin": {
+      "reprise": "dist/src/cli/main.js"
+    },
+    "exports": {
+      ".": "./dist/src/cli/main.js",
+      "./pack-api": "./dist/src/products/contract.js"
+    },
   "files": [
     "dist/src"
   ],
@@ -38,6 +42,8 @@
     "audit:tui:ci": "node scripts/tui-visual-audit.mjs --check",
     "smoke:codex": "npm run build && node dist/scripts/codex-real-smoke.js",
     "smoke:codex:recovery": "npm run build && node dist/scripts/codex-real-recovery-smoke.js",
+    "probe:tui-terminal": "npm run build && node dist/scripts/tui-real-terminal-probe.js",
+    "evaluate:controller": "npm run build && node dist/scripts/controller-capability-eval.js",
     "evaluate:recovery": "npm run build && node dist/scripts/recovery-evaluate.js",
     "evaluate:recovery:checkpoint": "npm run build && node dist/scripts/recovery-checkpoint-5plus5.js",
     "evaluate:recovery:real": "node scripts/recovery-real-5plus5.mjs",

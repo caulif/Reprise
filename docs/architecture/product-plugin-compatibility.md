@@ -1,6 +1,6 @@
 # Product Pack 兼容性
 
-本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前架构基线
 
@@ -47,6 +47,8 @@ interface ProductPackManifest {
   displayName: string;
   packVersion: string;
   schemaVersion: number;
+  apiMajor: number;
+  capabilities: Array<"import" | "runtime">;
   sessionSchemaVersions?: string[];
 }
 
@@ -104,7 +106,7 @@ interface ExecutionRuntimeFingerprint {
 ```text
 历史会话证据
 → 读取明确的 product / session schema clues
-→ 枚举本地静态注册的 Product Pack
+→ 枚举已组装的 Product Pack（内置与 `{dataDir}/plugins.json`）
 → 过滤不支持的产品或 schema
 → 选择唯一匹配 Pack
 → 导入 TaskCase 和 SourceRuntimeEvidence
@@ -116,7 +118,7 @@ interface ExecutionRuntimeFingerprint {
 → 启动 TargetRunner
 ```
 
-第一版使用显式静态注册；不实现远程发现、热加载、Pack 市场或动态依赖注入。
+内置 Pack 与本地配置模块走同一 registry；不实现远程发现、热加载、Pack 市场或动态依赖注入。详见[版本化本地 Pack 边界](../decisions/accepted/2026-09-08-versioned-local-pack-boundary.md)。
 
 多个 Pack 都能解析时，按以下顺序消歧：
 

@@ -145,7 +145,9 @@ export function comparisonOwnedObservationRefs(
 }
 
 export function briefingComparisonContext(context: ComparisonContext): ComparisonContext {
-  const { ownedEvidenceRefs, ...briefing } = context;
+  const briefing = { ...context };
+  delete briefing.ownedEvidenceRefs;
+  delete briefing.attemptId;
   return briefing;
 }
 

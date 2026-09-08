@@ -28,3 +28,7 @@ await copyFile(
   "test/fixtures/fake-pack/sessions/sample.jsonl",
   "dist/test/fixtures/fake-pack/sessions/sample.jsonl",
 );
+await copyFile(
+  "test/fixtures/fake-pack/package.json",
+  "dist/test/fixtures/fake-pack/package.json",
+);

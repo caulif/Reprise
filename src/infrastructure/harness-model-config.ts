@@ -322,6 +322,32 @@ export function hasFileApiKey(config: HarnessModelConfig | HarnessConfigDraft): 
   return false;
 }
 
+/** Public view of local harness config. Secrets are never included. */
+export function publicHarnessConfig(config: HarnessModelConfig | undefined): {
+  readonly present: boolean;
+  readonly providerKind?: 'pi-catalog' | 'openai-compatible';
+  readonly providerId?: string;
+  readonly modelId?: string;
+  readonly effort?: string;
+  readonly baseUrl?: string;
+  readonly hasCredential?: boolean;
+  readonly keyRef?: string;
+} {
+  if (!config) return { present: false };
+  const kind = config.schemaVersion === 2 ? config.provider.kind : 'pi-catalog';
+  const keyRef = config.schemaVersion === 2 && 'keyRef' in config ? config.keyRef : undefined;
+  return {
+    present: true,
+    providerKind: kind,
+    providerId: config.providerId,
+    modelId: config.modelId,
+    effort: config.effort,
+    ...(config.schemaVersion === 2 && config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+    hasCredential: hasFileApiKey(config) || Boolean(keyRef && process.env[environmentNameForKeyRef(keyRef)]),
+    ...(keyRef ? { keyRef } : {}),
+  };
+}
+
 export function baseUrlValidity(value: string): FieldValidity {
   if (!value) return { ok: false, display: 'required for OpenAI-compatible', reason: 'not an https URL' };
   try {

@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { CodexIntakeTui } from '../dist/src/tui/intake-app.js';
-import { createCodexTuiWorkflow } from '../dist/src/application/tui-workflow.js';
+import { createHarnessWorkflow } from '../dist/src/application/tui-workflow.js';
 import { CodexRuntimePort } from '../dist/src/products/codex/runtime-port.js';
 import { mockTui, pageHtml, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
@@ -77,7 +77,7 @@ async function main() {
   const host = mockTui({ columns: 120, rows: 32 });
   const app = new CodexIntakeTui({
     dataDir, sessionsRoot, tui: host.tui,
-    workflow: createCodexTuiWorkflow({ dataDir, runtime: new CodexRuntimePort({ effort: 'high' }), now: () => new Date().toISOString() }),
+    workflow: createHarnessWorkflow({ dataDir, runtime: new CodexRuntimePort({ effort: 'high' }), now: () => new Date().toISOString() }),
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
   });
   await app.start();

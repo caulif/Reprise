@@ -1,7 +1,7 @@
 import { matchesKey } from '@earendil-works/pi-tui';
 import { applyTextEdit } from './text-edit.js';
 import { classifyHomeCommand, completeUniqueHomeCommand } from './home-command.js';
-import { slashCommands, unwrapBracketedPaste } from './format.js';
+import { isTextInput, slashCommands, unwrapBracketedPaste } from './format.js';
 
 export type Consume = { consume: true };
 
@@ -13,34 +13,45 @@ export type HomeComposerState = {
 
 export type HomeComposerResult = {
   readonly state: HomeComposerState;
-  readonly action?: 'submit' | 'start-run' | 'start-intake' | 'open-config' | 'escape';
+  readonly action?: 'submit' | 'escape';
   readonly consume: true;
 };
+
+function matchingHomeCommands(composer: string): readonly string[] {
+  const prefix = composer.trim().toLowerCase();
+  if (!prefix || prefix === '/') return slashCommands();
+  return slashCommands().filter((command) => command.startsWith(prefix));
+}
 
 export function dispatchHomeComposer(state: HomeComposerState, data: string): HomeComposerResult | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'escape')) {
     return { state: { composer: '', cursor: 0, showSuggestions: false }, action: 'escape', consume: true };
   }
+  if (state.showSuggestions && (matchesKey(input, 'up') || matchesKey(input, 'down'))) {
+    return cycleHomeSuggestion(state, matchesKey(input, 'up') ? -1 : 1);
+  }
   if (matchesKey(input, 'tab')) {
-    const matches = slashCommands().filter((command) => command.startsWith(state.composer.toLowerCase()));
+    const matches = matchingHomeCommands(state.composer);
     const composer = matches.length === 1 ? matches[0] ?? state.composer : state.composer;
     return { state: { composer, cursor: composer.length, showSuggestions: true }, consume: true };
   }
   if (matchesKey(input, 'enter')) return { state, action: 'submit', consume: true };
-  if (!state.composer && (input === 'r' || input === 'i' || input === 'c')) {
-    return {
-      state,
-      action: input === 'r' ? 'start-run' : input === 'i' ? 'start-intake' : 'open-config',
-      consume: true,
-    };
-  }
   const edited = applyTextEdit(state.composer, state.cursor, input);
   if (!edited.handled) return undefined;
   return {
     state: { composer: edited.value, cursor: edited.cursor, showSuggestions: edited.value.startsWith('/') },
     consume: true,
   };
+}
+
+function cycleHomeSuggestion(state: HomeComposerState, delta: number): HomeComposerResult {
+  const matches = matchingHomeCommands(state.composer.startsWith('/') ? state.composer : '/');
+  if (!matches.length) return { state, consume: true };
+  const current = matches.indexOf(state.composer.toLowerCase());
+  const index = current < 0 ? (delta > 0 ? 0 : matches.length - 1) : (current + delta + matches.length) % matches.length;
+  const composer = matches[index] ?? state.composer;
+  return { state: { composer, cursor: composer.length, showSuggestions: true }, consume: true };
 }
 
 export function submittedHomeCommand(composer: string): ReturnType<typeof classifyHomeCommand> {
@@ -124,7 +135,11 @@ export type SessionsAction =
   | 'consume';
 
 export function dispatchSessionsInput(state: SessionsInputState, data: string): { state: SearchFieldState; action: SessionsAction; consume: true } | undefined {
-  const search = dispatchSearchField(state, data);
+  const input = unwrapBracketedPaste(data);
+  if (matchesKey(input, 'ctrl+f')) return { state, action: 'toggle-filter', consume: true };
+  if (matchesKey(input, 'ctrl+n')) return { state, action: 'more', consume: true };
+  if (matchesKey(input, 'ctrl+r')) return { state, action: 'refresh', consume: true };
+  const search = dispatchSearchField(state, input);
   if (search) {
     const action: SessionsAction = search.action === 'escape' ? 'escape-search'
       : search.action === 'up' ? 'up'
@@ -135,14 +150,14 @@ export function dispatchSessionsInput(state: SessionsInputState, data: string): 
       : 'consume';
     return { state: search.state, action, consume: true };
   }
-  const input = unwrapBracketedPaste(data);
+  if (!state.searching && isTextInput(input)) {
+    const edited = applyTextEdit(state.query, state.cursor, input);
+    return { state: { query: edited.value, cursor: edited.cursor, searching: true }, action: 'edit-search', consume: true };
+  }
   if (matchesKey(input, 'escape')) return { state, action: state.canLeaveProject ? 'leave-project' : 'home', consume: true };
   if (matchesKey(input, 'backspace') && state.canLeaveProject) return { state, action: 'leave-project', consume: true };
   if (matchesKey(input, 'up')) return { state, action: 'up', consume: true };
   if (matchesKey(input, 'down')) return { state, action: 'down', consume: true };
-  if (matchesKey(input, 'f')) return { state, action: 'toggle-filter', consume: true };
-  if (matchesKey(input, 'm')) return { state, action: 'more', consume: true };
-  if (matchesKey(input, 'r')) return { state, action: 'refresh', consume: true };
   if (matchesKey(input, 'enter')) return { state, action: 'enter', consume: true };
   return undefined;
 }
@@ -203,7 +218,17 @@ export function dispatchHistoryDetailInput(data: string, kind: HistoryDetailKind
 }
 
 export type CanvasFindState = { readonly finding: boolean; readonly query: string; readonly cursor: number };
-export type CanvasAction = 'clear-find' | 'move' | 'toggle-detail' | 'edit-find' | 'start-find' | 'follow' | 'cycle-filter' | 'consume';
+export type CanvasAction =
+  | 'clear-find'
+  | 'move'
+  | 'next-hit'
+  | 'prev-hit'
+  | 'edit-find'
+  | 'start-find'
+  | 'follow'
+  | 'home'
+  | 'cycle-filter'
+  | 'consume';
 
 export function dispatchCanvasInput(
   state: CanvasFindState,
@@ -218,7 +243,8 @@ export function dispatchCanvasInput(
     if (matchesKey(input, 'down')) return { state, action: 'move', amount: 1, consume: true };
     if (matchesKey(input, 'pageUp')) return { state, action: 'move', amount: -10, consume: true };
     if (matchesKey(input, 'pageDown')) return { state, action: 'move', amount: 10, consume: true };
-    if (matchesKey(input, 'enter')) return { state, action: 'toggle-detail', consume: true };
+    if (matchesKey(input, 'shift+enter')) return { state, action: 'prev-hit', consume: true };
+    if (matchesKey(input, 'enter')) return { state, action: 'next-hit', consume: true };
     const edited = applyTextEdit(state.query, state.cursor, input);
     if (!edited.handled) return { state, action: 'consume', consume: true };
     return { state: { finding: true, query: edited.value, cursor: edited.cursor }, action: 'edit-find', consume: true };
@@ -230,6 +256,7 @@ export function dispatchCanvasInput(
   if (matchesKey(input, 'down')) return { state, action: 'move', amount: 1, consume: true };
   if (matchesKey(input, 'pageUp')) return { state, action: 'move', amount: -10, consume: true };
   if (matchesKey(input, 'pageDown')) return { state, action: 'move', amount: 10, consume: true };
+  if (matchesKey(input, 'home')) return { state, action: 'home', consume: true };
   if (matchesKey(input, 'end') || matchesKey(input, 'l')) return { state, action: 'follow', consume: true };
   if (matchesKey(input, 'f')) return { state, action: 'cycle-filter', consume: true };
   return undefined;

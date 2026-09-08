@@ -1,6 +1,8 @@
 # 决策：Controller 完成判断的交付与证据护栏
 
-状态：accepted
+状态：superseded
+
+被 [opening 同 Session](../accepted/2026-09-08-controller-opening-single-session.md) 取代。下文冻结，描述被放弃的 Host 完成证据护栏。
 
 ## 问题
 

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { terminateProcessTree } from './platform.js';
+import { spawnCancelOptions, terminateProcessTree } from './platform.js';
 import { join } from 'node:path';
 
 export type ProcessExitCategory = 'spawn_error' | 'stdio_disconnected' | 'nonzero_exit' | 'timed_out' | 'cancelled' | 'output_limit_exceeded';
@@ -38,7 +38,6 @@ export async function runProcess(input: {
   timeoutMs: number;
   maxOutputBytes?: number;
   truncateOutput?: boolean;
-  shell?: boolean;
   env?: NodeJS.ProcessEnv;
   killTree?: boolean;
   signal?: AbortSignal;
@@ -48,9 +47,8 @@ export async function runProcess(input: {
 }): Promise<ProcessResult> {
   const start = input.spawnProcess ?? spawn;
   const child = start(input.command, input.args, {
+    ...spawnCancelOptions(input.killTree === true),
     ...(input.cwd ? { cwd: input.cwd } : {}),
-    windowsHide: true,
-    shell: input.shell ?? false,
     ...(input.env ? { env: input.env } : {}),
     stdio: ['pipe', 'pipe', 'pipe'],
   });

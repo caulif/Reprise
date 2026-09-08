@@ -35,6 +35,7 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
   await assert.rejects(write.execute({ path: 'candidate/kept.txt', content: 'nope' }, new AbortController().signal), /write_denied/);
   const shellTool = tools.find((tool) => tool.name === 'shell_exec');
   assert.ok(shellTool);
+  assert.match(shellTool.description, /Read-only mounts/);
   await assert.rejects(
     shellTool.execute({ command: 'Remove-Item candidate/kept.txt' }, new AbortController().signal),
     /write_denied/,
@@ -43,6 +44,27 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
   assert.equal(after.fingerprint.digest, before.fingerprint.digest);
   assert.equal(await readFile(join(candidate, 'kept.txt'), 'utf8'), 'keep');
 });
+
+test('comparison write policy uses the first path segment, not a string prefix', async (t) => {
+  const { comparisonAttemptWriteAllowed } = await import('../src/application/experiment-report.js');
+  assert.equal(comparisonAttemptWriteAllowed('scratch/notes.md'), true);
+  assert.equal(comparisonAttemptWriteAllowed('scratch-evil/notes.md'), false);
+  assert.equal(comparisonAttemptWriteAllowed('work/comparison-plan.md'), true);
+  assert.equal(comparisonAttemptWriteAllowed('report.html'), true);
+  const root = await mkdtemp(join(tmpdir(), 'reprise-scratch-prefix-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const write = recoveryTools(root, {
+    allowWrite: comparisonAttemptWriteAllowed,
+  }).find((tool) => tool.name === 'write');
+  assert.ok(write);
+  await write.execute({ path: 'scratch/ok.txt', content: 'ok' }, new AbortController().signal);
+  assert.equal(await readFile(join(root, 'scratch', 'ok.txt'), 'utf8'), 'ok');
+  await assert.rejects(
+    write.execute({ path: 'scratch-evil/pwn.txt', content: 'nope' }, new AbortController().signal),
+    /write_denied/,
+  );
+});
+
 
 test('comparison envelope accepts only report.html', () => {
   const context = buildComparisonContext(taskCase(), [runRecord()]);
@@ -81,8 +103,9 @@ test('comparison orchestration rejects envelope citations outside persisted fact
   await assert.rejects(comparePersistedFacts({ taskCase: taskCase(), runs: [runRecord()], agent }), /unknown evidence reference/);
 });
 
-test('comparison prompt points workspace tools at the live replica mount', () => {
-  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the live isolated replica/);
+test('comparison prompt points workspace tools at the sealed snapshot mount', () => {
+  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed end-of-run snapshot/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /comparison-sandbox\/candidate/);
 });
 

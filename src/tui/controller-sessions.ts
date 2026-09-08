@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { CodexIntakeTui } from "./controller.js";
-import { compareSessionSummaries } from "../products/contract.js";
-import type { DiscoveryDiagnostic, SessionDiscoveryQuery } from "../products/contract.js";
+import { packSessions } from "../products/pack-access.js";
+import { compareSessionSummaries, type DiscoveryDiagnostic, type SessionDiscoveryQuery } from "../products/contract.js";
 import { operatorErrorMessage } from "./format.js";
 import { t } from "./i18n.js";
 
@@ -50,8 +50,9 @@ type SessionLoadMode = "initial" | "more" | "refresh";
 
 export async function loadProductSessions(c: CodexIntakeTui, productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
   const pack = c.packs.find((item) => item.manifest.productId === productId);
-  if (!pack) return;
-  const root = resolve(c.sessionsRoots[productId] ?? pack.sessions.defaultRoot);
+  if (!pack?.sessions) return;
+  const sessions = packSessions(pack);
+  const root = resolve(c.sessionsRoots[productId] ?? sessions.defaultRoot);
   const state = c.productDiscovery.get(productId);
   const cached = c.productSessions.get(productId);
   if (mode === "initial" && state?.status === "ready" && state.root === root && cached) {
@@ -68,7 +69,7 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
   c.productDiscovery.set(productId, { status: "loading", root, ...(state?.nextCursor ? { nextCursor: state.nextCursor } : {}) });
   c.render();
   try {
-    const discovered = await pack.sessions.discover(sessionDiscoveryQuery({
+    const discovered = await sessions.discover(sessionDiscoveryQuery({
       root,
       dataDir: c.dataDir,
       signal: abort.signal,
@@ -78,7 +79,7 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
     const invalid = discovered.items.find((session) => session.productId !== productId);
     if (invalid) throw new Error(`Session adapter for ${productId} returned ${invalid.productId}.`);
     if (token !== c.generation || abort.signal.aborted) return;
-    const sessions = [...discovered.items]
+    const listed = [...discovered.items]
       .sort(compareSessionSummaries);
     const rootDiagnostics = discovered.rootDiagnostics ?? [];
     const pageDiagnostics = discovered.pageDiagnostics ?? (discovered.rootDiagnostics ? [] : discovered.diagnostics);
@@ -87,7 +88,7 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
       pageDiagnostics,
     );
     const diagnostics = mergeDiscoveryDiagnostics(rootDiagnostics, accumulatedPageDiagnostics);
-    c.productSessions.set(productId, sessions);
+    c.productSessions.set(productId, listed);
     c.productDiscovery.set(productId, {
       status: "ready", root,
       ...(discovered.nextCursor ? { nextCursor: discovered.nextCursor } : {}),
@@ -98,7 +99,7 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
       ...(discovered.projects ? { projects: discovered.projects } : {}),
       ...(accumulatedPageDiagnostics.length ? { pageDiagnostics: accumulatedPageDiagnostics } : {}),
     });
-    c.activateProductSessions(productId, sessions, false);
+    c.activateProductSessions(productId, listed, false);
   } catch (error) {
     if (token !== c.generation || abort.signal.aborted) return;
     const message = operatorErrorMessage(error);

@@ -14,13 +14,15 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
   config: [
     'Up/Down    Select field',
     'Enter      Edit text, or toggle provider / effort',
-    't          Test connection (network)',
-    's          Save locally (no network)',
+    'Ctrl+T     Test connection (network)',
+    'Ctrl+S     Save locally (no network)',
   ],
   sessions: [
-    'Up/Down    Select          Enter   Start run',
-    '/          Search',
-    'f          Toggle eligible-only filter',
+    'Up/Down    Select          Enter   Open',
+    'Type       Filter the list',
+    'Ctrl+F     Toggle eligible-only filter',
+    'Ctrl+N     Load more',
+    'Ctrl+R     Refresh from the first page',
   ],
   inspection: [
     'Enter      Freeze the session from the first user task',
@@ -50,7 +52,7 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
   preflight: ['b          Edit source root', 'Esc        Back to Home'],
   confirm: ['Enter      Start the candidate run', 'b          Change model', 'Esc        Back to Home'],
   'compare-gate': ['Enter      Start comparison', 's          Skip comparison', 'Ctrl+C     Exit'],
-  running: ['Ctrl+C     Request cancellation'],
+  running: ['Ctrl+C     Request cancellation', '/          Find in timeline', 'v          Reading mode'],
   result: [
     'o          Open report.html',
     't          Open trace folder',
@@ -65,12 +67,15 @@ export function helpLines(page?: string, locale: Locale = 'en'): readonly string
   const homeKeys = page === 'home' ? [
     t(locale, 'helpTypeCommand'),
     t(locale, 'helpTabComplete'),
+    'Up/Down    Choose a matching /command',
   ] : undefined;
   const runningKeys = page === 'running' ? [
     t(locale, 'helpCancelRun'),
+    '/          Find visible titles in this experiment (not a Home command)',
+    'v          Reading/select mode (pause redraw, disable mouse report)',
+    'Home/End   First record / follow latest',
+    'Enter      Next find hit while searching; details when not searching',
     'Ctrl+G     Actors',
-    'Tab        Switch pane',
-    'd / Enter  Toggle details',
     'o          Open selected detail',
   ] : undefined;
   const keys = page === 'home' ? homeKeys : page === 'running' ? runningKeys : scoped;

@@ -107,6 +107,108 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.doesNotMatch(runModel, /recoveryObservationTools/);
 });
 
+test('role write policy stays on application owners without a shared Verifier', async () => {
+  const { comparisonAttemptWriteAllowed } = await import('../src/application/experiment-report.js');
+  assert.equal(comparisonAttemptWriteAllowed('scratch/a.txt'), true);
+  assert.equal(comparisonAttemptWriteAllowed('scratch-evil/a.txt'), false);
+  assert.equal(comparisonAttemptWriteAllowed('report.html'), true);
+  const report = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
+  assert.doesNotMatch(report, /\.plan\(|\.report\(|invokePlan|invokeReport/);
+  const comparisonAgent = await readFile(join(SRC, 'agents/comparison-agent.ts'), 'utf8');
+  assert.doesNotMatch(comparisonAgent, /#host\.request/);
+  assert.match(comparisonAgent, /createSession/);
+  const experiment = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
+  assert.match(experiment, /allowWrite:\s*\(\)\s*=>\s*false/);
+  assert.doesNotMatch(experiment, /interface\s+\w*Verifier/);
+  const tools = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
+  assert.match(tools, /pathContainedBy/);
+  assert.match(tools, /assertStillInside/);
+  const inspection = await readFile(join(SRC, 'application/experiment-inspection.ts'), 'utf8');
+  assert.match(inspection, /pathContainedBy/);
+  assert.doesNotMatch(inspection, /fullPath\.startsWith/);
+});
+
+test('history read does not import products, Host, or model callers', async () => {
+  const source = await readFile(join(SRC, 'infrastructure/agent-history-read.ts'), 'utf8');
+  assert.doesNotMatch(source, /products\/|pi-agent-host|pi-model-caller|LocalWorkspaceProvider/);
+  const appHistory = await readFile(join(SRC, 'application/experiment-history-read.ts'), 'utf8');
+  assert.doesNotMatch(appHistory, /products\/|pi-agent-host|pi-model-caller|LocalWorkspaceProvider/);
+});
+
+test('TUI timeline projection does not load product packs', async () => {
+  const timeline = await readFile(join(SRC, 'tui/timeline.ts'), 'utf8');
+  assert.doesNotMatch(timeline, /products\/index|productPacks/);
+  const experiment = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
+  assert.match(experiment, /persistPublicActivities/);
+  const run = await readFile(join(SRC, 'tui/controller-run.ts'), 'utf8');
+  const beginRun = run.slice(run.indexOf('export async function beginRun'));
+  assert.doesNotMatch(beginRun, /c\.timeline = \[\]/);
+});
+
+test('TUI and CLI recovery paths do not opt in to current-state fallback', async () => {
+  const workflow = await readFile(join(SRC, 'application/experiment-workflow.ts'), 'utf8');
+  assert.doesNotMatch(workflow, /allowCurrentStateFallback/);
+  const cli = await readFile(join(SRC, 'cli/main.ts'), 'utf8');
+  assert.doesNotMatch(cli, /allowCurrentStateFallback/);
+  assert.doesNotMatch(cli, /acceptRecovery/);
+  assert.doesNotMatch(cli, /from ['"]\.\.\/tui\//);
+  assert.match(cli, /await import\("\.\.\/tui\/intake-app\.js"\)/);
+  assert.match(cli, /products\|models\|projects\|sessions\|inspect\|import\|history\|events\|auth/);
+  const operations = await readFile(join(SRC, 'application/experiment-operations.ts'), 'utf8');
+  assert.match(operations, /runFullExperiment/);
+  assert.match(operations, /prepareExperiment/);
+  assert.match(operations, /runPreparedExperiment/);
+  const compare = await readFile(join(SRC, 'application/experiment-compare-persisted.ts'), 'utf8');
+  assert.doesNotMatch(compare, /findProductPack/);
+});
+
+test('third pack proof does not inject host packs or workflow pack objects', async () => {
+  const source = await readFile(join(process.cwd(), 'test', 'third-pack-config.test.ts'), 'utf8');
+  assert.doesNotMatch(source, /new CodexIntakeTui\([\s\S]*?packs\s*:/);
+  assert.doesNotMatch(source, /createExperimentWorkflow|createHarnessWorkflow|createCodexExperimentWorkflow|createCodexTuiWorkflow/);
+  assert.doesNotMatch(source, /from ['"]\.\.\/src\/infrastructure\/store/);
+});
+
+test('unnamed sessionsRoot and harness stop codes do not use product-name or ledger-guard leftovers', async () => {
+  const intakeState = await readFile(join(SRC, 'tui/intake-tui-state.ts'), 'utf8');
+  assert.doesNotMatch(intakeState, /productId === ['"]codex['"]/);
+  const candidateRun = await readFile(join(SRC, 'application/candidate-run.ts'), 'utf8');
+  assert.doesNotMatch(candidateRun, /controller_completion_guard/);
+  const workflow = await readFile(join(SRC, 'application/experiment-workflow.ts'), 'utf8');
+  const tuiWorkflow = await readFile(join(SRC, 'application/tui-workflow.ts'), 'utf8');
+  assert.doesNotMatch(workflow, /createCodexExperimentWorkflow|createCodexTuiWorkflow|CodexTuiWorkflow/);
+  assert.doesNotMatch(tuiWorkflow, /createCodexExperimentWorkflow|createCodexTuiWorkflow|CodexTuiWorkflow/);
+});
+
+test('real-terminal TUI probe is opt-in and outside engineering gates', async () => {
+  const script = await readFile(join(process.cwd(), 'scripts/tui-real-terminal-probe.ts'), 'utf8');
+  assert.match(script, /REPRISE_REAL_TERMINAL/);
+  assert.match(script, /isTTY/);
+  const gates = await readFile(join(process.cwd(), 'scripts/run-gates.mjs'), 'utf8');
+  assert.doesNotMatch(gates, /probe:tui-terminal|tui-real-terminal-probe|REPRISE_REAL_TERMINAL/);
+  const { spawnSync } = await import('node:child_process');
+  const denied = spawnSync(process.execPath, [join(process.cwd(), 'dist/scripts/tui-real-terminal-probe.js')], {
+    encoding: 'utf8',
+    env: { ...process.env, REPRISE_REAL_TERMINAL: '' },
+  });
+  assert.notEqual(denied.status, 0);
+  assert.match(`${denied.stderr}${denied.stdout}`, /REPRISE_REAL_TERMINAL/);
+  const noTty = spawnSync(process.execPath, [join(process.cwd(), 'dist/scripts/tui-real-terminal-probe.js'), join(process.cwd(), 'probe-out.json')], {
+    encoding: 'utf8',
+    env: { ...process.env, REPRISE_REAL_TERMINAL: '1' },
+  });
+  assert.notEqual(noTty.status, 0);
+  assert.match(`${noTty.stderr}${noTty.stdout}`, /real TTY/);
+});
+
+test('CI test matrix covers three operating systems', async () => {
+  const workflow = await readFile(join(process.cwd(), '.github', 'workflows', 'check.yml'), 'utf8');
+  assert.match(workflow, /windows-latest/);
+  assert.match(workflow, /macos-latest/);
+  assert.match(workflow, /ubuntu-latest/);
+});
+
+
 
 
 

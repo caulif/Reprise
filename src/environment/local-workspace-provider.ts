@@ -21,6 +21,7 @@ import {
   publishDirectory as publishDirectory,
   removeCaptureArtifacts as removeCaptureArtifacts,
   readBaselineMarker as readBaselineMarker,
+  loadSealedBaseline as loadSealedBaseline,
   isRecoveryEnvelope as isRecoveryEnvelope,
   hostManifestFromFingerprint as hostManifestFromFingerprint,
   validateManifest as validateManifest,
@@ -630,18 +631,22 @@ export class LocalWorkspaceProvider {
   /** Copies a previously inspected source into provider-owned baseline storage. */
   async resolveBaseline(source: EnvironmentSource, clues: EnvironmentClue[], policy: EnvironmentPolicy): Promise<EnvironmentBaseline> {
     const inspected = await this.inspectBaseline(source, clues, policy);
-    if (inspected.mode === 'unsupported' || inspected.readiness.runnable === 'blocked') return inspected;
     const baselineRoot = join(this.#root, 'baselines', source.caseId);
     const baselinesRoot = dirname(baselineRoot);
     const markerPath = join(baselinesRoot, `${source.caseId}.marker.json`);
+    const recorded = await readBaselineMarker(markerPath);
+    const baselineExists = await exists(baselineRoot);
+    if (inspected.mode === 'unsupported') {
+      if (recorded && baselineExists) return loadSealedBaseline(source.caseId, baselineRoot, recorded);
+      return inspected;
+    }
+    if (inspected.readiness.runnable === 'blocked') return inspected;
     await mkdir(baselinesRoot, { recursive: true });
 
-    const recorded = await readBaselineMarker(markerPath);
     if (recorded !== undefined && recorded.sourceFingerprint !== inspected.fingerprint.digest) {
       // Silently reusing a stale copy would make the whole run compare against the wrong tree.
       throw new Error(`Environment source for case ${source.caseId} changed since its baseline was captured. Use a new caseId, or delete ${baselineRoot} to recapture it.`);
     }
-    const baselineExists = await exists(baselineRoot);
     if (recorded === undefined && baselineExists) {
       // A missing marker makes an existing baseline uncommitted residue, never a reusable copy.
       await rm(baselineRoot, { recursive: true, force: true });
@@ -686,7 +691,6 @@ export class LocalWorkspaceProvider {
       await rm(runRoot, { recursive: true, force: true });
       throw error;
     }
-    if (!baseline.recovery) await rm(baselineRoot, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 }).catch(() => undefined);
     this.#preparedRoots.set(`environment-${runId}`, runRoot);
     return {
       environmentId: `environment-${runId}`,
@@ -698,6 +702,44 @@ export class LocalWorkspaceProvider {
       manifestRef: `environment:${runId}`,
       beforeFingerprint,
     };
+  }
+
+  candidateSnapshotRoot(runId: string): string {
+    assertId(runId, 'runId');
+    return join(this.#root, 'snapshots', runId);
+  }
+
+  async candidateSnapshot(runId: string): Promise<{ root: string; status: 'complete' | 'incomplete' | 'missing' }> {
+    const root = this.candidateSnapshotRoot(runId);
+    if (await exists(join(this.#root, 'snapshots', `${runId}.complete`))) return { root, status: 'complete' };
+    if (await exists(join(this.#root, 'snapshots', `${runId}.incomplete`))) return { root, status: 'incomplete' };
+    return { root, status: 'missing' };
+  }
+
+  /** Copies the run workspace to an immutable comparison snapshot before release. */
+  async sealCandidateSnapshot(environment: PreparedEnvironmentRef): Promise<{ root: string; status: 'complete' | 'incomplete' }> {
+    this.#assertOwnedEnvironment(environment);
+    const snapshotRoot = this.candidateSnapshotRoot(environment.runId);
+    const snapshotsRoot = dirname(snapshotRoot);
+    const staging = join(snapshotsRoot, `.${environment.runId}.staging-${process.pid}-${randomUUID()}`);
+    const completeMarker = join(snapshotsRoot, `${environment.runId}.complete`);
+    const incompleteMarker = join(snapshotsRoot, `${environment.runId}.incomplete`);
+    try {
+      await mkdir(snapshotsRoot, { recursive: true });
+      await mkdir(staging);
+      await this.#copyTree(environment.root, staging);
+      await publishDirectory(staging, snapshotRoot);
+      await rm(incompleteMarker, { force: true });
+      await writeFile(completeMarker, '');
+      return { root: snapshotRoot, status: 'complete' };
+    } catch {
+      // Staging copy or publish failed; the live run directory must not be treated as a final snapshot.
+      await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      await mkdir(snapshotRoot, { recursive: true });
+      await writeFile(incompleteMarker, '');
+      await rm(completeMarker, { force: true });
+      return { root: snapshotRoot, status: 'incomplete' };
+    }
   }
 
   // ponytail: ownership is process-local until a run manifest exists; later recovery can validate that manifest before cleanup.

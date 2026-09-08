@@ -47,6 +47,8 @@ export type SessionsModel = {
   readonly searchCursor?: number;
   readonly searching: boolean;
   readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error';
+  readonly unfilteredCount?: number;
+  readonly discoveryCodes?: readonly string[];
   readonly locale?: import('../i18n.js').Locale;
   /** Clock supplied by the workbench; inject it for deterministic visual audits. */
   readonly nowMs?: number;
@@ -317,9 +319,9 @@ export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): rea
     return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'openProduct')], ['Esc', t(locale, 'hintHome')]];
   }
   if (model?.level === 'projects') {
-    return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintOpenProject')], ['/', t(locale, 'hintSearch')], ['f', t(locale, 'hintFilterEligible')], ['m', t(locale, 'moreSessions')], ['r', t(locale, 'refreshSessions')], ['Esc', t(locale, 'hintHome')]];
+    return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintOpenProject')], ['type', t(locale, 'hintSearch')], ['Ctrl+F', t(locale, 'hintFilterEligible')], ['Ctrl+N', t(locale, 'moreAvailable')], ['Ctrl+R', t(locale, 'refreshSessions')], ['Esc', t(locale, 'hintHome')]];
   }
-  return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintInspect')], ['/', t(locale, 'hintSearch')], ['m', t(locale, 'moreSessions')], ['r', t(locale, 'refreshSessions')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
+  return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintInspect')], ['type', t(locale, 'hintSearch')], ['Ctrl+N', t(locale, 'moreAvailable')], ['Ctrl+R', t(locale, 'refreshSessions')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
 }
 
 export function inspectionHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
@@ -348,6 +350,18 @@ function renderProducts(theme: Theme, width: number, model: SessionsModel, limit
   return panel(theme, theme.style.harness(t(model.locale ?? 'en', 'selectAgentProduct')), body, width);
 }
 
+function emptyCatalogCopy(model: SessionsModel, kind: 'projects' | 'sessions'): string {
+  const locale = model.locale ?? 'en';
+  if (model.discoveryStatus === 'error') return t(locale, 'discoveryReadFailed');
+  if (model.discoveryCodes?.includes('unreadable-directory') && !(model.unfilteredCount ?? 0)) {
+    return t(locale, 'discoveryNoPermission');
+  }
+  if (model.query.trim() || (model.unfilteredCount ?? 0) > 0) {
+    return t(locale, kind === 'projects' ? 'noMatchingProjects' : 'noSessionsMatch');
+  }
+  return t(locale, kind === 'projects' ? 'noSessionsFound' : 'noEligibleSessions');
+}
+
 function catalogStats(projects: readonly SessionProject[]): { projects: number; sessions: number; projectless: number; unreadable: number } {
   const sessions = projects.flatMap((project) => project.sessions);
   return {
@@ -366,7 +380,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     return [...panel(theme, title, [` ${t(locale, 'sessionsLoading')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
   }
   if (!model.projects.length) {
-    return [...panel(theme, title, [` ${t(locale, 'noMatchingProjects')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
+    return [...panel(theme, title, [` ${emptyCatalogCopy(model, 'projects')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
   }
   const previewWidth = showPreview && showsDetailPane(theme) ? Math.max(28, Math.floor(width * 0.34)) : 0;
   const listWidth = previewWidth ? width - previewWidth - 1 : width;
@@ -412,7 +426,7 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
   const project = model.projects[0];
   const title = `${localizedProjectLabel(project, locale)} ${theme.glyphs.sep} ${model.sessions.length} ${t(locale, 'sessionsWord')} ${theme.glyphs.sep} ${t(locale, 'filterLabel')}: ${model.filterEligible ? t(locale, 'filterEligibleLabel') : t(locale, 'filterAllLabel')}`;
   if (!model.sessions.length) {
-    return [...panel(theme, title, [model.query.trim() ? ` ${t(locale, 'noSessionsMatch')}` : ` ${t(locale, 'noEligibleSessions')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
+    return [...panel(theme, title, [` ${emptyCatalogCopy(model, 'sessions')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
   }
   const previewWidth = showPreview && showsDetailPane(theme) ? Math.max(28, Math.floor(width * 0.34)) : 0;
   const listWidth = previewWidth ? width - previewWidth - 1 : width;

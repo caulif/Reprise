@@ -1,9 +1,8 @@
 import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { pathContainedBy } from "../core/paths.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import type { ControllerUnderstanding, SteeringContext } from "../agents/controller-agent.js";
-import { Value } from "@sinclair/typebox/value";
-import { ControllerUnderstandingLedgerSchema, ControllerContractSchema, type ControllerUnderstandingDelta, type ControllerUnderstandingLedger, type ControllerContract } from "../core/schema.js";
+import { CONTROLLER_PROMPT_DIGEST, type SteeringContext } from "../agents/controller-agent.js";
 import type { EventEnvelope, TaskCase } from "../core/schema.js";
 import type { SourceRootKind } from "./replay-conditions.js";
 
@@ -24,9 +23,7 @@ export function controllerBriefingRoot(experimentRoot: string, runId: string): s
 }
 
 export function assertBriefingOutsideReplica(briefingRoot: string, replicaRoot: string): void {
-  const briefing = briefingRoot.replaceAll("\\", "/").toLowerCase();
-  const replica = replicaRoot.replaceAll("\\", "/").toLowerCase();
-  if (briefing === replica || briefing.startsWith(`${replica}/`)) {
+  if (pathContainedBy(replicaRoot, briefingRoot)) {
     throw new Error("Controller briefing must not be written inside the isolated replica.");
   }
 }
@@ -62,6 +59,11 @@ export function renderIndexMarkdown(latestTurnRelative: string | undefined): str
     "This directory is Host-owned and invisible to the candidate. `project/` is a read-only mount of the isolated replica.",
     "Read files with workspace tools (`read`, `ls`, `grep`, `find`). Do not expect `read_observation`.",
     "",
+    "Fact kinds (do not mix):",
+    "- historical user requirements: history/initial-input.txt and outline rows with role=user",
+    "- historical agent discoveries: outline rows with role=assistant; not this user's prior knowledge",
+    "- current candidate facts: run/turns/ and project/",
+    "",
     "Paths:",
     "- history/initial-input.txt — frozen first user task sentence",
     "- history/outline.tsv — id, role, bytes, after_first_deliverable (1 after first non-empty assistant text in transcript order)",
@@ -71,10 +73,8 @@ export function renderIndexMarkdown(latestTurnRelative: string | undefined): str
     "- run/sent-user-messages.jsonl — user messages already submitted this run",
     "- run/turns/NNNN/visible.txt, events.jsonl, event-index.tsv, changed-paths.txt — one settled candidate turn",
     "- THIS-TURN.txt — relative path of the latest turn directory, empty before the first settlement",
-    "- controller-task-understanding.md — Controller's private, Host-persisted task and collaborator understanding",
-    "- controller-understanding.json — mutable, schema-validated semantic ledger",
-    "- controller-contract.json — mutable delivery nodes derived from unresolved actions",
     "- manifest.json — deterministic digest/size index for briefing files",
+    "- project/imported-inputs/ — files the frozen user sentence named that lived outside historical cwd (directory may be absent)",
     "",
     `Latest turn: ${latest}`,
     "",
@@ -83,20 +83,20 @@ export function renderIndexMarkdown(latestTurnRelative: string | undefined): str
 
 const OPENING_DECISION = [
   "# Decision (opening)",
-  "Read history/initial-input.txt, project-root.txt, and replay.txt.",
-  "Read outline.tsv and transcript files with after_first_deliverable=0 if you need tone or constraints stated before a first deliverable.",
+  "This first Invocation investigates history and returns the opening send in the same Controller Session.",
+  "Read history/initial-input.txt, project-root.txt, replay.txt, outline.tsv, and transcript files as needed for goals, constraints, and collaboration habits.",
+  "Treat role=user as this user's requirements; role=assistant as historical agent discoveries, not prior user knowledge.",
   "Do not put after_first_deliverable=1 user sentences into the first message.",
   "Return send. done is invalid.",
 ].join("\n");
 
 const STEERING_DECISION = [
   "# Decision (after a settled candidate turn)",
+  "Continue the same Controller Session. Only add facts from this settled turn and current project/ artifacts.",
   "Read THIS-TURN.txt and the files it names, then inspect project/ for current artifacts.",
-  "History is for whether this user would stop or steer, not a queue to send in order.",
-  "You may send or done. Before done/satisfied, read this turn's output and the current deliverable files. Host completion feedback is for you to reconcile, not a user instruction to relay to the candidate.",
-  'merge only appends facts/actions. To remove completed actions, use understandingDelta with mode replace and the complete remaining unresolvedActions, including [] when none remain. Omitted arrays stay unchanged.',
+  "History is for whether this user would stop or steer, not a queue to send in order. Exhausting historical user sentences is not done/satisfied.",
+  "You may send or done. Host does not reject done for unread files or a missing ledger.",
   "Treat files on disk as truth if they disagree with earlier session summaries.",
-  "Read controller-task-understanding.md before deciding. It is a private semantic ledger, not a script; update your understanding from the current turn before choosing send or done.",
 ].join("\n");
 
 export function controllerPromptContent(input: {
@@ -106,105 +106,6 @@ export function controllerPromptContent(input: {
 }): string {
   const decision = input.phase === "opening" ? OPENING_DECISION : STEERING_DECISION;
   return `${decision}\n\nbriefingRoot=${input.briefingRoot}\nphase=${input.phase}\n\n# INDEX.md\n${input.indexMarkdown}`;
-}
-
-export async function writeControllerUnderstanding(
-  briefingRoot: string,
-  understanding: ControllerUnderstanding,
-): Promise<string> {
-  const body = [
-    "# Controller task understanding",
-    "",
-    understanding.markdown.trim(),
-    "",
-    "## Source messages",
-    ...understanding.sourceMessageIds.map((id) => `- ${id}`),
-    "",
-    "## Unresolved actions at capture time",
-    ...(understanding.unresolvedActions.length
-      ? understanding.unresolvedActions.map((action) => `- ${action}`)
-      : ["- (none reported)"]),
-    "",
-  ].join("\n");
-  const path = join(briefingRoot, "controller-task-understanding.md");
-  const ledger: ControllerUnderstandingLedger = {
-    schemaVersion: 1,
-    baseMarkdown: understanding.markdown.trim(),
-    sourceMessageIds: understanding.sourceMessageIds,
-    confirmedFacts: [],
-    acceptanceSignals: [],
-    unresolvedActions: [...new Set(understanding.unresolvedActions)],
-  };
-  if (!Value.Check(ControllerUnderstandingLedgerSchema, ledger)) throw new Error("Controller understanding ledger is malformed.");
-  await writeAtomic(join(briefingRoot, "controller-understanding.json"), JSON.stringify(ledger, null, 2));
-  const contract: ControllerContract = {
-    schemaVersion: 1,
-    nodes: ledger.unresolvedActions.map((title) => ({ id: `action-${sha256(title).slice(0, 24)}`, title, dependsOn: [], status: "pending" as const, required: true })),
-  };
-  if (!Value.Check(ControllerContractSchema, contract)) throw new Error("Controller contract is malformed.");
-  await writeAtomic(join(briefingRoot, "controller-contract.json"), JSON.stringify(contract, null, 2));
-  await writeAtomic(path, body);
-  await writeBriefingManifest(briefingRoot);
-  return path;
-}
-
-export async function applyControllerUnderstandingDelta(
-  briefingRoot: string,
-  delta: ControllerUnderstandingDelta,
-): Promise<string> {
-  const ledgerPath = join(briefingRoot, "controller-understanding.json");
-  const current: unknown = JSON.parse(await readFile(ledgerPath, "utf8"));
-  if (!Value.Check(ControllerUnderstandingLedgerSchema, current)) throw new Error("Controller understanding ledger is malformed.");
-  const ledger = current;
-  const update = (old: string[], next: string[] | undefined): string[] =>
-    next === undefined ? old : [...new Set(delta.mode === "replace" ? next : [...old, ...next])];
-  const updated: ControllerUnderstandingLedger = {
-    ...ledger,
-    confirmedFacts: update(ledger.confirmedFacts, delta.confirmedFacts),
-    acceptanceSignals: update(ledger.acceptanceSignals, delta.acceptanceSignals),
-    unresolvedActions: update(ledger.unresolvedActions, delta.unresolvedActions),
-  };
-  if (!Value.Check(ControllerUnderstandingLedgerSchema, updated)) throw new Error("Controller understanding ledger is malformed.");
-  await writeAtomic(ledgerPath, JSON.stringify(updated, null, 2));
-  const section = (title: string, values: string[]) => [
-    `## ${title}`,
-    ...(values.length ? values.map((value) => `- ${value}`) : ["- (none)"]),
-    "",
-  ];
-  const body = [
-    "# Controller task understanding", "", updated.baseMarkdown, "",
-    ...section("Confirmed facts", updated.confirmedFacts),
-    ...section("Acceptance signals", updated.acceptanceSignals),
-    "## Source messages", ...updated.sourceMessageIds.map((id) => `- ${id}`), "",
-    ...section("Unresolved actions", updated.unresolvedActions),
-  ].join("\n");
-  await writeAtomic(join(briefingRoot, "controller-task-understanding.md"), body);
-  const previousContractPath = join(briefingRoot, "controller-contract.json");
-  try {
-    const candidate: unknown = JSON.parse(await readFile(previousContractPath, "utf8"));
-    if (!Value.Check(ControllerContractSchema, candidate)) throw new Error("Controller contract is malformed.");
-  } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-  }
-  const contract: ControllerContract = {
-    schemaVersion: 1,
-    nodes: updated.unresolvedActions.map((title) => ({ id: `action-${sha256(title).slice(0, 24)}`, title, dependsOn: [], status: "pending", required: true })),
-  };
-  if (!Value.Check(ControllerContractSchema, contract)) throw new Error("Controller contract is malformed.");
-  await writeAtomic(previousContractPath, JSON.stringify(contract, null, 2));
-  await writeBriefingManifest(briefingRoot);
-  return join(briefingRoot, "controller-task-understanding.md");
-}
-
-export async function readControllerPendingActions(briefingRoot: string, required = false): Promise<string[] | undefined> {
-  try {
-    const value: unknown = JSON.parse(await readFile(join(briefingRoot, "controller-understanding.json"), "utf8"));
-    if (!Value.Check(ControllerUnderstandingLedgerSchema, value)) throw new Error("Controller understanding ledger is malformed.");
-    return value.unresolvedActions;
-  } catch (error) {
-    if (!required && error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
-    throw error;
-  }
 }
 
 function visibleText(text: string, allowModelText: boolean): string {
@@ -284,9 +185,6 @@ async function digestBriefing(briefingRoot: string, turnRelative: string | undef
     "history/outline.tsv",
     "project-root.txt",
     "replay.txt",
-    "controller-task-understanding.md",
-    "controller-understanding.json",
-    "controller-contract.json",
     "manifest.json",
   ];
   if (turnRelative) {
@@ -322,6 +220,7 @@ export function controllerRequestSnapshot(context: SteeringContext): Record<stri
   return {
     schemaVersion: 1,
     toolSetVersion: 1,
+    promptDigest: CONTROLLER_PROMPT_DIGEST,
     requestId: context.requestId,
     runId: context.runId,
     runState: context.runState,

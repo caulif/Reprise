@@ -8,7 +8,7 @@
 
 ## 决定
 
-在当前实现中，Controller 完成护栏暂时与 CandidateRun 编排共存于 `experiment.ts`。文件拥有到 2026-10-01 的短期门禁例外；后续将 Controller turn loop 提取到独立 application 模块并删除例外。
+`experiment.ts` 将 CandidateRun 与 Controller `decide` 循环放在同一 application 模块。文件长度遵守源码体积门禁，不登记例外。
 
 ## 备选方案
 
@@ -20,4 +20,4 @@
 
 ## 验证
 
-源码尺寸门禁验证例外有效期；提取完成时删除例外并运行 `npm run check`。
+源码尺寸门禁对 `experiment.ts` 无例外；`npm run check` 必须通过。

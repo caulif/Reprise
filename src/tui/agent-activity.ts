@@ -130,55 +130,6 @@ export function lastLiveVerb(entries: readonly TimelineEntry[]): string | undefi
   return undefined;
 }
 
-export function phaseIndex(
-  lane: AgentLane,
-  entries: readonly TimelineEntry[],
-): { current: number; labels: readonly ['inspect', 'mutate', 'deliver'] | readonly ['inspect', 'decide', 'deliver'] } {
-  const labels = lane === 'controller'
-    ? ['inspect', 'decide', 'deliver'] as const
-    : ['inspect', 'mutate', 'deliver'] as const;
-  let current = 0;
-  for (const entry of entries) {
-    if (entry.hidden) continue;
-    current = Math.max(current, stepFor(lane, entry));
-  }
-  return { current, labels };
-}
-
-function stepFor(lane: AgentLane, entry: TimelineEntry): number {
-  if (lane === 'controller') {
-    if (entry.title.startsWith('Input to Target')) return 2;
-    if (entry.title.startsWith('Decision:')) return 1;
-    if (entry.lane === 'controller') return 0;
-    return 0;
-  }
-  if (lane === 'comparison') {
-    if (entry.title.startsWith('Comparison completed') || entry.kind === 'deliver') return 2;
-    if (entry.lane === 'comparison' && observationSource(entry) === 'transcript') return 1;
-    if (entry.lane === 'comparison') return 0;
-    return 0;
-  }
-  if (entry.lane !== 'recovery') return 0;
-  if (entry.kind === 'deliver') return 2;
-  if (entry.kind === 'mutate' || (entry.kind === 'live' && /shell_exec|edit/i.test(entry.title))) return 1;
-  return 0;
-}
-
-export function activeLane(entries: readonly TimelineEntry[], runPhase?: string, preparePhase?: string): AgentLane | undefined {
-  if (runPhase === 'recovery') return 'recovery';
-  if (preparePhase === 'compare') return 'comparison';
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (!entry || entry.hidden) continue;
-    if (entry.source === 'TARGET' && !entry.lane) return undefined;
-    if (entry.lane) return entry.lane;
-    if (isDecision(entry) || entry.title.startsWith('Input to Target')) return 'controller';
-    if (entry.title.startsWith('Comparison')) return 'comparison';
-    return undefined;
-  }
-  return undefined;
-}
-
 export function actorVerb(entries: readonly TimelineEntry[], lane: AgentLane): string | undefined {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
@@ -294,11 +245,6 @@ function verbFromTitle(title: string): string {
 
 function isDecision(entry: TimelineEntry | undefined): boolean {
   return Boolean(entry?.title.startsWith('Decision:'));
-}
-
-function observationSource(entry: TimelineEntry): string | undefined {
-  if (!entry.title.includes('read_observation')) return undefined;
-  return entry.detail?.split(/\s+/)[0];
 }
 
 

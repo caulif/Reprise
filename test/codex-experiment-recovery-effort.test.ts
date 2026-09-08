@@ -15,7 +15,7 @@ import { now, VerifiedRuntime, input, patientPolicy } from "./codex-experiment-s
 
 test("Recovery orchestration persists audit/report and accepted baseline can start Candidate", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-recovery-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -84,7 +84,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
 
 test("Recovery persists shell audit details alongside the report narrative for cross-checking", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-recovery-audit-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const command = "echo recovery-audit-marker";
@@ -166,7 +166,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
   const root = await mkdtemp(
     join(tmpdir(), "reprise-recovery-history-capability-"),
   );
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -258,7 +258,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
 
 test("Recovery runs maximum-effort forensics even with an empty transcript and evidence catalog", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-capability-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -339,7 +339,7 @@ test("Recovery retries a transient staging failure before maximum-effort forensi
   const root = await mkdtemp(
     join(tmpdir(), "reprise-recovery-preflight-retry-"),
   );
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -411,7 +411,7 @@ test("Recovery records a redacted preflight diagnostic after staging retry is ex
   const root = await mkdtemp(
     join(tmpdir(), "reprise-recovery-preflight-diagnostic-"),
   );
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -490,7 +490,7 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
   const root = await mkdtemp(
     join(tmpdir(), "reprise-recovery-path-boundary-metric-"),
   );
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -543,7 +543,7 @@ test("Recovery maps a cancelled Agent invocation to the cancelled failure stage"
   const root = await mkdtemp(
     join(tmpdir(), "reprise-recovery-cancelled-stage-"),
   );
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -572,7 +572,7 @@ test("Recovery maps a cancelled Agent invocation to the cancelled failure stage"
 
 test("Recovery promotes a task-ready staging baseline automatically", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-recovery-auto-ready-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   const events: { type: string; payload: unknown }[] = [];
@@ -646,7 +646,7 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
 
 test("Recovery keeps the first TypeBox-valid envelope when a later model request exceeds context", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-keep-envelope-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   const task = {
@@ -712,7 +712,7 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
 
 test("Recovery classifies a first-turn context-length error as agent_model_failed without an accept", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-context-first-fail-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
@@ -751,7 +751,7 @@ test("Recovery classifies a first-turn context-length error as agent_model_faile
 
 test("Recovery stops a readiness loop with an unrecoverable task outcome", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-readiness-no-progress-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   const task = {
@@ -802,9 +802,58 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
   assert.equal(evaluation.rows[0]?.taskOutcome, "unrecoverable");
 });
 
+test("insufficient evidence does not loop for missing paths and cannot be accepted", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-insufficient-stop-"));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  const task = {
+    ...base.taskCase,
+    taskContext: { ...base.taskCase.taskContext, relevantPaths: ["README.md"] },
+  } as TaskCase;
+  let calls = 0;
+  const recovery: RecoveryAgentPort = {
+    recover: async (_context, tools) => {
+      calls += 1;
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "recovery.md", content: "# Recovery\n\nNo recoverable evidence." },
+        new AbortController().signal,
+      );
+      return {
+        status: "completed",
+        sessionId: "insufficient-stop",
+        value: {
+          status: "insufficient_evidence",
+          reportPath: "recovery.md",
+          unresolved: ["checked git, transcript, and workspace; no rewindable start"],
+          evidenceRefs: [],
+        },
+      };
+    },
+  };
+  const attempt = await recoverCodexExperiment({
+    dataDir: base.dataDir,
+    caseId: base.caseId,
+    experimentId: "recovery-insufficient-stop",
+    runId: "recovery-insufficient-stop-run",
+    sourceRoot: base.sourceRoot,
+    taskCase: task,
+    recovery,
+    maxModelAttempts: 3,
+    now,
+  });
+  assert.equal(calls, 1);
+  assert.equal(attempt.accept === undefined, true);
+  assert.equal(attempt.acceptedAutomatically, undefined);
+  assert.equal(attempt.baseline.recovery?.status, "insufficient_evidence");
+  const diagnosis = JSON.parse(await readFile(join(attempt.experimentRoot, "recovery-diagnosis.json"), "utf8")) as { finalStatus: string };
+  assert.equal(diagnosis.finalStatus, "failed");
+});
+
+
 test("Recovery classifies a readiness boundary violation as blocked by safety", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-readiness-blocked-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   const task = {

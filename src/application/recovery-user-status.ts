@@ -17,6 +17,8 @@ export function userRecoveryStatus(input: {
 }): UserRecoveryStatus {
   if (!input.transcriptOk) return "failed";
   if (input.baseline.mode === "unsupported") return "failed";
+  if (input.baseline.recovery?.status === "insufficient_evidence") return "failed";
+  if (input.baseline.readiness?.runnable === "blocked") return "failed";
   const excluded = input.baseline.budget?.excludedEntries?.length ?? 0;
   const recovery = input.baseline.recovery?.status;
   const match = input.baseline.match;
@@ -25,6 +27,20 @@ export function userRecoveryStatus(input: {
   if (excluded > 0 || recovery === "partial" || match === "recovered_partial") return "partial";
   if (recovery === "recovered" || match === "recovered") return "recovered";
   return hasAccept ? "partial" : "failed";
+}
+
+/** Operator accept/start is never offered for insufficient evidence or a blocked workspace. */
+export function recoveryAcceptIsExposed(input: {
+  automaticallyAccepted?: boolean;
+  envelopeStatus?: string | undefined;
+  match?: string | undefined;
+  runnable?: string | undefined;
+}): boolean {
+  if (input.automaticallyAccepted === true) return true;
+  if (input.envelopeStatus === "insufficient_evidence") return false;
+  if (input.match === "current_state_fallback") return false;
+  if (input.runnable === "blocked" || input.runnable === "unsupported") return false;
+  return input.envelopeStatus === "recovered" || input.envelopeStatus === "partial";
 }
 
 export function diagnosisReasonCode(input: {

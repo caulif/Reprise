@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtemp } from 'node:fs/promises';
 import { readLocalHistory } from '../src/tui/local-history.js';
+import { renderHistoryDetail } from '../src/tui/pages/history.js';
+import { t as uiText } from '../src/tui/i18n.js';
+import { createTheme } from '../src/tui/theme.js';
+import { sha256 } from '../src/core/identity.js';
+import { isRecord } from '../src/core/json.js';
 
 test('local history reports experiment and total persisted data sizes', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-history-'));
@@ -30,7 +35,7 @@ test('local history reports experiment and total persisted data sizes', async (t
   assert.equal(await readFile(join(experiment, 'report.html'), 'utf8'), 'report bytes');
 });
 
-test('local history reclaims released baseline copies before reporting size', async (t) => {
+test('local history keeps sealed baseline copies when reporting size', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-history-reclaim-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const experiment = join(root, 'experiments', 'exp-reclaim');
@@ -41,6 +46,32 @@ test('local history reclaims released baseline copies before reporting size', as
   await writeFile(join(baseline, 'payload.bin'), 'x'.repeat(4096));
   await writeFile(join(experiment, 'report.html'), 'report');
   const history = await readLocalHistory(root);
-  await assert.rejects(stat(baseline), { code: 'ENOENT' });
-  assert.ok((history.experiments[0]?.sizeBytes ?? 0) < 4096);
+  await stat(baseline);
+  assert.ok((history.experiments[0]?.sizeBytes ?? 0) >= 4096);
+});
+
+test('local history classifies a crashed run from committed events and ignores the writer lock', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-crash-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const experiment = join(root, 'experiments', 'exp-crash');
+  await mkdir(experiment, { recursive: true });
+  await writeFile(join(experiment, 'experiment.json'), JSON.stringify({ spec: { schemaVersion: 1, experimentId: 'exp-crash', taskCaseId: 'case-crash', candidates: [{ candidateId: 'candidate', productId: 'codex', requestedModel: 'model' }], controller: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, comparison: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, runPolicy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 }, outputRoot: experiment }, runIds: ['run-1'] }));
+  await writeFile(join(experiment, 'writer.lock'), JSON.stringify({ experimentId: 'exp-crash', pid: process.pid, nonce: 'live', startedAt: new Date().toISOString(), host: 'other-host' }));
+  const occurredAt = '2026-09-08T00:00:00.000Z';
+  const line = (sequence: number, type: string, payload: Record<string, unknown>) => {
+    const body = { schemaVersion: 1, sequence, eventId: `event${sequence}`, occurredAt, type, payload };
+    return `${JSON.stringify({ ...body, checksum: sha256(JSON.stringify(body)) })}\n`;
+  };
+  await writeFile(join(experiment, 'events.jsonl'), `${line(1, 'run.attempt_created', { runId: 'run-1' })}${line(2, 'agent.session_started', { sessionId: 'session-1', role: 'recovery', systemPrompt: 'x', tools: [] })}${line(3, 'agent.message_appended', { sessionId: 'session-1', invocationId: 'inv-1', requestIndex: 1, repair: false, byteLength: 4 })}`);
+  const history = await readLocalHistory(root);
+  const item = history.experiments[0];
+  assert.ok(item);
+  assert.equal(item.outcome, 'interrupted');
+  assert.equal(item.incompleteModelInput, true);
+  const lock = JSON.parse(await readFile(join(experiment, 'writer.lock'), 'utf8')) as unknown;
+  assert.equal(isRecord(lock) && lock.pid === process.pid, true);
+  const zh = renderHistoryDetail(createTheme(120, false), 120, item, 'zh').join('\n');
+  assert.match(zh, /该记录未保存完整内容/);
+  assert.match(zh, /已中断/);
+  assert.equal(uiText('zh', 'incompleteModelInput'), '该记录未保存完整内容');
 });

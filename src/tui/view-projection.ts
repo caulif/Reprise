@@ -17,9 +17,9 @@ import type { PreparePhase } from './widgets.js';
 type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
   readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
-  readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean;
+  readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
-  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error';
+  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[];
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: CodexExperimentPreflight | undefined; readonly recoveryAttempt?: RecoveryAttempt | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly sourceProductLabel?: string;
@@ -39,12 +39,14 @@ type Input = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
-  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly paneFocus?: 'left' | 'right'; readonly expandedFolds?: readonly string[]; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly result?: CodexExperimentResult | undefined;
+  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly paneFocus?: 'left' | 'right'; readonly expandedFolds?: readonly string[]; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: CodexExperimentResult | undefined;
   readonly viewer?: { readonly title: string; readonly body: string };
   readonly actorsOpen?: boolean;
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
+  readonly timelineReadOffset?: number;
+  readonly readingMode?: boolean;
   readonly cwd?: string;
 };
 
@@ -91,6 +93,8 @@ function runningModel(input: Input) {
       ),
     } : {}),
     ...(input.finding ? { finding: true, findQuery: input.findQuery ?? '', findCursor: input.findCursor ?? 0 } : {}),
+    ...(input.timelineReadOffset ? { readingOffset: input.timelineReadOffset } : {}),
+    ...(input.readingMode ? { readingMode: true } : {}),
     tick: input.nowMs ?? Date.now(),
   };
 }
@@ -112,6 +116,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     message: input.message,
     ...(input.inlineHelp ? { inlineHelp: true } : {}),
     cancelling: input.cancelling,
+    ...(input.comparePending ? { comparePending: true } : {}),
     home,
     ...(input.viewer ? { viewer: { ...input.viewer, locale: input.locale ?? 'en' } } : {}),
     ...(input.actorsOpen ? { actorsOpen: true } : {}),
@@ -125,6 +130,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
         dirty: input.configDirty, saved: input.hasSavedModelConfig,
         ...(input.envName ? { envName: input.envName, envSet } : {}),
         pendingToggle: input.configPendingToggle,
+        ...(input.configLeaveConfirm ? { leaveConfirm: true } : {}),
         locale: input.locale ?? 'en',
       },
     };
@@ -140,6 +146,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
           : {}),
       },
       ...(input.historyDetail ? { historyDetail: input.historyDetail } : {}),
+      ...(input.page === 'history-detail' && input.timeline.length ? { running: runningModel(input) } : {}),
     };
   }
   const sessions = {
@@ -149,6 +156,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     sessions: input.visibleSessions, selected: input.selected, filterEligible: input.filterEligible,
     query: input.searchQuery, searchCursor: input.searchCursor, searching: input.searching,
     ...(input.discoveryStatus ? { discoveryStatus: input.discoveryStatus } : {}),
+    ...(input.groupedProjectCount !== undefined ? { unfilteredCount: input.intakeLevel === 'sessions' ? input.unfilteredSessionCount : input.groupedProjectCount } : {}),
+    ...(input.discoveryCodes?.length ? { discoveryCodes: input.discoveryCodes } : {}),
     locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}),
   };
   if (input.page === 'sessions') return { ...base, sessions };

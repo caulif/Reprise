@@ -1,6 +1,6 @@
 # 同等人类能力与 Controller 设计
 
-本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前模块设计
 
@@ -155,7 +155,7 @@ Controller opening send persisted
 → Controller 返回 send 或 done
 ```
 
-候选进程与 Controller session 在准备阶段一同拉起。第一条用户输入之前，Controller 在 `created` 上做 opening 决策，只许 `send`。Controller 在 `awaiting_controller` 上做后续决策。以下都不能触发 Controller：
+候选进程与 Controller session 在准备阶段一同拉起。第一条用户输入之前，Controller 在本 run 的同一 Session 内用首次 Invocation 阅读历史并形成 opening，只许 `send`。没有独立的 understand 调用。Controller 在 `awaiting_controller` 上做后续决策，继续该 Session。以下都不能触发 Controller：
 
 - Runtime 只接受了消息但 turn 尚未开始；
 - 模型刚输出一段流式文本；
@@ -355,7 +355,7 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 预算、timeout、Runtime failure 和 user abort 是 Orchestrator stop reason，不伪装成 Controller done。
 
-有效的非 satisfied 判断表示任务 incomplete；Host 未接受完成判断时保持 indeterminate。ledger 的 unresolvedActions 是当前剩余事项，merge 追加，replace 提交完整剩余集合（允许空数组）；contract 是该集合的投影。satisfied 的完成门检查当前剩余事项及当前 request 的候选结果读取证据。Host 纠错只反馈 Controller，不产生候选输入，最多两次纠正机会且总计不超过 180 秒；耗尽以 stalled.controller_completion_guard 终止。具体取舍见 [完成纠错决策](../decisions/accepted/2026-09-06-ppt-flow-convergence-and-observation-bounds.md)。
+有效的非 satisfied 判断表示任务 incomplete。Host 接受 Controller 的 `done` 作为停止决定，不因未读 briefing 文件、缺失账本或省略 `understandingDelta` 而拒绝。历史记录中的 `controller.understanding` 与账本事件仍可只读展示。具体取舍见 [opening 同 Session](../decisions/accepted/2026-09-08-controller-opening-single-session.md)。
 
 ## 9. 决策过程
 
@@ -373,38 +373,15 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 不要按历史用户句下标重放。历史更短或更长都可以，只要判断的是这个人，而不是剧本。这只是 prompt 中的判断顺序，不在 Core 编写规则引擎。
 
-## 10. Canonical system prompt
+## 10. Prompt 与评估分层
 
-下面是实现基线，可在不改变行为契约的前提下调整措辞：
+可执行 system prompt 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。
 
-```text
-You are the user-collaboration controller for a personal agent comparison.
+briefing INDEX 把材料分成三类，不得混用：历史用户要求（`role=user` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`run/turns/` 与 `project/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。
 
-Your job is to decide what the original user, with the same goals, knowledge,
-preferences, authority, and practical ability, would reasonably say next to the
-candidate agent on its current trajectory.
+Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `CONTROLLER_PROMPT_DIGEST` 相同）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
 
-You receive a short decision section plus INDEX.md (a path map). It does not
-contain transcript bodies or baseline.finalMessage. Read history/, THIS-TURN,
-and project/ with workspace tools. There is no read_observation tool.
-
-The original conversation is evidence of this person, not a script.
-User messages show how they steer after a first draft and when they stop.
-Do not fire historical user turns in order. Do not wait for the candidate to
-ask before using a preference the user already stated. Do not treat the
-historical agent's discoveries as facts this user already knew.
-
-Return done when THIS user would actually stop given the current artifacts and
-their demonstrated acceptance habits — not merely when the kind of deliverable
-in the baseline final message is present. Do not send only to pad turn count.
-
-Do not execute the target task. Distinguish agent claims from observed evidence.
-Never infer authorization for publishing, deletion, payment, privilege
-expansion, or another high-impact action unless the historical task clearly provides it.
-
-Output exactly one ControllerDecision matching the provided schema. The message
-must read like a natural user message. Do not include analysis inside the message.
-```
+机械协议由 `test/controller-collaboration-protocol.test.ts`、`test/candidate-run.test.ts` 与合同 lane `test/controller-capability-evaluation.test.ts` 覆盖。合同 lane 的样例族覆盖已满足用户、尚需核验、无继续价值、授权不足、历史 agent 结论不可信；该 lane 用脚本输出，不证明与真人协作等价。真实模型能力评估入口为 `npm run evaluate:controller -- <dataDir> <绝对报告路径>`，要求 `REPRISE_REAL_MODEL=1`，不进入 `npm run check`；报告只记类型/理由/intent 是否匹配，不含模型原文。见 [能力评估分层](../decisions/accepted/2026-08-22-controller-capability-evaluation-lane.md) 与 [协作协议](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md)。
 
 实现时把 schema、有效 reason、任务数据和权限边界作为独立结构化上下文提供，不在 prompt 文本中拼接不可信内容。
 

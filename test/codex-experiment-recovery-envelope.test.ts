@@ -10,7 +10,7 @@ import { now, VerifiedRuntime, input } from "./codex-experiment-support.js";
 
 test("Recovery keeps the first valid partial when a later completed envelope fails probe", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-keep-probed-envelope-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   const task = {
@@ -88,7 +88,7 @@ test("Recovery keeps the first valid partial when a later completed envelope fai
 
 test("Recovery still falls back when the only completed envelope fails probe", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-only-invalid-envelope-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   const recovery: RecoveryAgentPort = {
@@ -127,7 +127,7 @@ test("Recovery still falls back when the only completed envelope fails probe", a
 
 test("Recovery still completes after more than sixteen destructive shell_exec calls", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-delete-uncapped-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   for (let index = 0; index < 17; index += 1) {

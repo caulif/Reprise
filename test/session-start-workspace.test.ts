@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rewindIsolatedWorkspaceToStart, sessionWritePaths } from '../src/application/session-start-workspace.js';
+import {
+  absolutePathsInText,
+  importExternalTaskInputs,
+  rewindIsolatedWorkspaceToStart,
+  sessionWritePaths,
+} from '../src/application/session-start-workspace.js';
 import type { TaskCase } from '../src/core/schema.js';
 
 function caseWithWrites(cwd: string, paths: readonly string[]): TaskCase {
@@ -49,4 +54,34 @@ test('rewind removes historical writes from the isolated replica only', async (t
   assert.deepEqual(result.removed, ['kimi-k3/README.md']);
   await assert.rejects(readFile(join(replica, 'kimi-k3', 'README.md')));
   assert.equal(await readFile(join(replica, 'keep.txt'), 'utf8'), 'pre-task\n');
+});
+
+test('absolutePathsInText finds Windows paths and import copies files outside cwd', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-import-inputs-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const cwd = join(root, 'hist');
+  const replica = join(root, 'replica');
+  const outside = join(root, 'clip.png');
+  const secret = join(root, '.env');
+  await mkdir(cwd, { recursive: true });
+  await mkdir(replica, { recursive: true });
+  await writeFile(join(cwd, 'inside.txt'), 'keep-out');
+  await writeFile(outside, 'png-bytes');
+  await writeFile(secret, 'TOKEN=no');
+  const insidePath = join(cwd, 'inside.txt');
+  assert.ok(absolutePathsInText(`see ${outside} please`).includes(outside));
+  const task = {
+    ...caseWithWrites(cwd, []),
+    initialInput: { id: 'message-1', role: 'user' as const, text: `edit with ${outside} and ${insidePath} and ${secret}` },
+  };
+  const imported = await importExternalTaskInputs({
+    workspaceRoot: replica,
+    taskCase: task,
+    historicalCwd: cwd,
+  });
+  assert.equal(imported.length, 1);
+  assert.equal(imported[0]?.relative, 'imported-inputs/clip.png');
+  assert.equal(await readFile(join(replica, 'imported-inputs', 'clip.png'), 'utf8'), 'png-bytes');
+  await assert.rejects(readFile(join(replica, 'imported-inputs', '.env')));
+  await assert.rejects(readFile(join(replica, 'imported-inputs', 'inside.txt')));
 });

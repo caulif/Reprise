@@ -3,8 +3,8 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
  Last task  none selected
 
  Continue
- r     Replay the current task  needs a task
- i     Import a historical session
+ /run     Replay the current task  needs a task
+ /intake  Import a historical session
 
 ┌─ Projects · 2 projects / 1 sessions / 0 projectless / 0 unreadable · filter:… ┌─ Preview ────────────────────────────┐
 │❯ claude-audit                                         1         4d ago      │ │ Project      claude-audit            │
@@ -15,10 +15,10 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
 │                                                                             │ │intake flow.                          │
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
 
- ❯ [/] Search
- Choose a project, then a session. Type / to search.
+ ❯ Type to filter
+ Choose a project, then a session. Type to filter.
  Loaded 2 projects and 1 sessions.
  1 shown · 0 skipped · 1 scanned.
- The catalog is complete; m does not paginate.
+ The catalog is complete; Ctrl+N does not paginate.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Open project  [/] Search  [f] Filter  [m] All sessions loaded  [r] Refresh  [Esc] Home
+ [↑↓] Select  [Enter] Open project  [type] Search  [Ctrl+F] Filter  [Ctrl+N] more available  [Ctrl+R] Refresh

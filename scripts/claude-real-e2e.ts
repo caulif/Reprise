@@ -1,7 +1,7 @@
 import { copyFile, mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { createCodexExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
+import { createExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
 import { createHarnessAgents } from '../src/application/harness-agents.js';
 import { historicalCwdOf } from '../src/application/replay-conditions.js';
 import { readHarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
@@ -26,9 +26,8 @@ async function main(): Promise<void> {
     redactions: [],
   }, new Date().toISOString());
   const prepared = await resolveSourceRoot(dataDir, historicalCwdOf(frozen.taskCase));
-  const workflow = createCodexExperimentWorkflow({
+  const workflow = createExperimentWorkflow({
     dataDir,
-    runtime: claudeCodeProductPack.runtime,
     pack: claudeCodeProductPack,
     now: () => new Date().toISOString(),
     defaults: {

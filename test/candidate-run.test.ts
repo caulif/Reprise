@@ -71,6 +71,7 @@ test('CandidateRun failBeforeStart never delivers a Target user message', async 
   assert.equal(await run.failBeforeStart({ code: 'invalid_output', message: 'Opening decision must be send.' }), 'finished');
   assert.equal(runner.started.length, 0);
   assert.equal(run.result().outcome.termination.code, 'failed.controller');
+  assert.equal(run.result().outcome.termination.failure?.code, 'invalid_output');
 });
 
 test('CandidateRun distinguishes rejected and unknown delivery without resending', async () => {
@@ -121,6 +122,24 @@ test('CandidateRun enforces settlement, turn budgets, cancellation, crash, timeo
   await cleanup.start(initial, identity);
   assert.equal(cleanup.result().outcome.termination.code, 'blocked.input_rejected');
   assert.equal(cleanup.result().outcome.cleanup.status, 'incomplete');
+});
+
+test('CandidateRun records unknown cleanup when runtime stop exceeds the bound', async () => {
+  const runner = new ScriptedRunner(
+    [{ delivery: 'accepted', evidence: 'native_admission' }],
+    [settled('waiting_input')],
+    undefined,
+    { hangStop: true },
+  );
+  const run = new CandidateRun({
+    runner,
+    policy: { ...policy, cleanupTimeoutMs: 20 },
+    release: async () => ({ status: 'released' }),
+  });
+  await run.start(initial, identity);
+  assert.equal(await run.settleController('satisfied'), 'finished');
+  assert.equal(run.result().outcome.cleanup.status, 'unknown');
+  assert.deepEqual(run.result().outcome.cleanup.remainingResourceIds, ['runtime']);
 });
 
 test('CandidateRun records failed and aborted settlements with causes and cleanup evidence', async () => {
@@ -300,6 +319,61 @@ test('CandidateRun persists a preparation failure without a manifest as not asse
     assert.equal(runner.started.length, 0);
     assert.equal(run.result().outcome.task.status, 'not_assessed');
     assert.equal(store.replay('run-1').manifest, undefined);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('CandidateRun records cancel requested before finish and ignores a late settlement', async () => {
+  let settle!: (value: ReturnType<typeof settled>) => void;
+  const pending = new Promise<ReturnType<typeof settled>>((resolve) => { settle = resolve; });
+  const runner = new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [pending]);
+  const run = new CandidateRun({ runner, policy: { turnTimeoutMs: 5_000, maxTargetTurns: 3 } });
+  const started = run.start(initial, identity);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(await run.cancel(), 'finished');
+  assert.equal(run.result().outcome.termination.code, 'cancelled.user');
+  settle(settled('waiting_input'));
+  assert.equal(await started, 'finished');
+  assert.equal(run.result().outcome.termination.code, 'cancelled.user');
+  assert.equal(run.states().at(-1), 'finished');
+});
+
+test('CandidateRun commits the attempt before the runtime sees the first message', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const { attempt, manifest } = persistedRun();
+    const order: string[] = [];
+    const runner = new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]);
+    const originalStart = runner.start.bind(runner);
+    runner.start = async (message, identity) => {
+      order.push('runtime');
+      return originalStart(message, identity);
+    };
+    const run = new CandidateRun({
+      runner,
+      policy,
+      persistence: {
+        journal: {
+          commitAttempt: async (value, operationId) => {
+            order.push('attempt');
+            return store.commitAttempt(value, operationId);
+          },
+          commitManifest: (value, operationId) => store.commitManifest(value, operationId),
+          append: (event) => store.append(event),
+          nextSequence: () => store.nextSequence(),
+        },
+        attempt,
+        manifest,
+      },
+    });
+    await run.start(initial, identity);
+    assert.deepEqual(order.slice(0, 2), ['attempt', 'runtime']);
+    await run.cancel();
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });

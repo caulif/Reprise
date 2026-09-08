@@ -1,4 +1,5 @@
 import type { CodexIntakeTui } from "./intake-tui.js";
+import { importPacks } from "../products/pack-access.js";
 import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harness-model-config.js";
 import { classifyAgentFailure } from '../infrastructure/agent-failure.js';
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
@@ -8,7 +9,8 @@ import { productContext as activeProductContext, view as projectView } from "./c
 import { discardRecovery, stopRunClock } from "./controller-run.js";
 import { formatHarnessFailure, nextLocale, parseLocale, sessionReplayErrorMessage, t } from "./i18n.js";
 import { saveTuiPreferences } from "./preferences.js";
-import { matchesCanvasQuery, matchesFilter } from "./scrollback.js";
+import { matchesFilter } from "./scrollback.js";
+import { mouseReportingSequence } from "./terminal-guard.js";
 import { createTheme } from "./theme.js";
 import { type TimelineEntry } from "./timeline.js";
 import { type WorkbenchView } from "./workbench.js";
@@ -31,7 +33,7 @@ export function CodexIntakeTui_move(this: CodexIntakeTui, amount: number): { con
       Math.min(Math.max(0, count - 1), this.selected + amount),
     );
     if (this.page === "sessions" && this.intakeLevel === "products") {
-      const productId = this.packs[this.selected]?.manifest.productId;
+      const productId = importPacks(this.packs)[this.selected]?.manifest.productId;
       if (productId) this.lastProductId = productId;
     }
     this.render();
@@ -39,21 +41,19 @@ export function CodexIntakeTui_move(this: CodexIntakeTui, amount: number): { con
   }
 
 export function CodexIntakeTui_scheduleTimelineRender(this: CodexIntakeTui): void {
+    if (this.readingMode) return;
     if (this.timelineRenderQueued) return;
     this.timelineRenderQueued = true;
     this.queueTimelineRender(() => {
       this.timelineRenderQueued = false;
+      if (this.readingMode) return;
       if (this.page === "running") this.render();
     });
   }
 
 export function CodexIntakeTui_visibleTimeline(this: CodexIntakeTui): readonly TimelineEntry[] {
     const filter = TIMELINE_FILTERS[this.timelineFilterIndex] ?? "ALL";
-    return this.timeline.filter(
-      (entry) =>
-        matchesFilter(entry, filter) &&
-        matchesCanvasQuery(entry, this.findQuery),
-    );
+    return this.timeline.filter((entry) => matchesFilter(entry, filter));
   }
 
 export async function CodexIntakeTui_setLocale(this: CodexIntakeTui, typed: string): Promise<void> {
@@ -119,6 +119,7 @@ export function CodexIntakeTui_backToHome(this: CodexIntakeTui): { consume: true
     this.finding = false;
     this.findQuery = "";
     this.findCursor = 0;
+    this.readingMode = false;
     this.intakeLevel = "projects";
     this.preparePhase = undefined;
     this.prepareDetail = undefined;
@@ -159,6 +160,8 @@ export function CodexIntakeTui_close(this: CodexIntakeTui): { consume: true } {
     })();
     // run() observes the original rejection; this handler also covers callers that only use start()/close().
     void this.closing.catch(() => { this.message = t(this.locale, 'cleanupFailed'); });
+    this.terminalGuard?.();
+    this.terminalGuard = undefined;
     if (this.started) this.tui.stop();
     this.resolveClosed?.();
     return { consume: true };
@@ -247,7 +250,13 @@ export function CodexIntakeTui_viewport(this: CodexIntakeTui): { height?: number
     return typeof rows === "number" && rows > 0 ? { height: rows } : {};
   }
 
+export function CodexIntakeTui_setMouseReporting(this: CodexIntakeTui, enabled: boolean): void {
+    const terminal = this.tui as { terminal?: { write?: (data: string) => void } };
+    terminal.terminal?.write?.(mouseReportingSequence(enabled));
+  }
+
 export function CodexIntakeTui_render(this: CodexIntakeTui, immediate = false): void {
+    if (this.readingMode && !immediate) return;
     this.workbench.invalidate();
     if (immediate) this.tui.renderNow();
     else this.tui.requestRender();

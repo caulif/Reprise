@@ -17,7 +17,7 @@ test('accepts the supported minimum Node.js version', () => {
   assert.throws(() => assertSupportedNodeVersion('22.18.9'), /requires Node\.js >= 22\.19\.0/);
 });
 
-test('CLI help is side-effect free and documents the TUI entrypoint', async () => {
+test('CLI help documents TUI entry and shared prepare/run/compare operations', async () => {
   const output: string[] = [];
   const exitCode = await runCli(['--help'], {
     stdout: (message) => output.push(message),
@@ -25,7 +25,8 @@ test('CLI help is side-effect free and documents the TUI entrypoint', async () =
   });
   assert.equal(exitCode, 0);
   assert.match(output.join('\n'), /Usage:/);
-  assert.match(output.join('\n'), /--sessions-dir/);
+  assert.match(output.join('\n'), /reprise prepare/);
+  assert.match(output.join('\n'), /reprise run/);
   assert.doesNotMatch(output.join('\n'), /smoke-record/);
   assert.doesNotMatch(output.join('\n'), /stderr:/);
 });
@@ -48,8 +49,60 @@ test('CLI starts the interactive intake through an injected terminal workflow', 
   assert.match(captured.stdout.join('\n'), /TUI closed/);
 });
 
-test('CLI reports unexpected positional arguments', async () => {
+test('CLI reports compare subcommand usage instead of launching TUI', async () => {
   const captured = ioCapture();
-  assert.equal(await runCli(['compare', '--case', 'case-1'], captured.io), 1);
-  assert.match(captured.stderr.join('\n'), /Unexpected argument 'compare'/);
+  assert.equal(await runCli(['compare', '--case', 'case-1'], captured.io), 2);
+  assert.match(captured.stderr.join('\n'), /Unknown option '--case'|Usage: reprise compare/);
+  assert.doesNotMatch(captured.stdout.join('\n'), /TUI closed/);
+});
+
+test('CLI prepare and run require source and TaskCase and do not open TUI', async () => {
+  const captured = ioCapture();
+  assert.equal(await runCli(['prepare'], captured.io), 2);
+  assert.match(captured.stderr.join('\n'), /reprise prepare/);
+  assert.equal(await runCli(['run'], captured.io), 2);
+  assert.match(captured.stderr.join('\n'), /source-root|scenario/);
+  assert.doesNotMatch(captured.stdout.join('\n'), /TUI closed/);
+});
+
+test('CLI query products returns JSON identities without opening TUI', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'reprise-cli-products-'));
+  t.after(async () => rm(dataDir, { recursive: true, force: true }));
+  const captured = ioCapture();
+  assert.equal(await runCli(['products', '--json', '--data-dir', dataDir], captured.io), 0);
+  const body = JSON.parse(captured.stdout.join('\n')) as { ok: boolean; data: { products: Array<{ productId: string }> } };
+  assert.equal(body.ok, true);
+  assert.ok(body.data.products.some((item) => item.productId === 'codex'));
+  assert.equal(captured.stderr.join(''), '');
+  assert.doesNotMatch(captured.stdout.join('\n'), /TUI closed/);
+});
+
+test('CLI rejects API keys on the command line', async () => {
+  const captured = ioCapture();
+  assert.equal(await runCli(['config', 'set', '--api-key', 'sk-secret'], captured.io), 2);
+  assert.match(captured.stderr.join('\n'), /Do not pass API keys/);
+  assert.doesNotMatch(captured.stdout.join('\n'), /sk-secret/);
+});
+
+test('CLI history query succeeds for a failed experiment record', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'reprise-cli-hist-'));
+  t.after(async () => rm(dataDir, { recursive: true, force: true }));
+  const captured = ioCapture();
+  assert.equal(await runCli(['history', '--data-dir', dataDir, '--json'], captured.io), 0);
+  const body = JSON.parse(captured.stdout.join('\n')) as { ok: boolean; data: { items: unknown[] } };
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.data.items, []);
+});
+
+test('CLI events of an unknown experiment exits not_found without TUI', async () => {
+  const captured = ioCapture();
+  assert.equal(await runCli(['events', '--experiment', 'missing-exp', '--json'], captured.io), 3);
+  assert.match(captured.stderr.join('\n'), /Unknown experiment/);
+  assert.doesNotMatch(captured.stdout.join('\n'), /TUI closed/);
+});
+
+test('CLI json and jsonl together is usage', async () => {
+  const captured = ioCapture();
+  assert.equal(await runCli(['products', '--json', '--jsonl'], captured.io), 2);
+  assert.match(captured.stderr.join('\n'), /either --json or --jsonl/);
 });

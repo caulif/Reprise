@@ -3,13 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { TuiAltScreen, visibleWidth } from '@earendil-works/pi-tui';
+import { TuiAltScreen, setCapabilities, visibleWidth } from '@earendil-works/pi-tui';
 import { CodexIntakeTui } from '../src/tui/intake-app.js';
 import { renderConfirmation, renderPreflight, renderTimeline, runningHints } from '../src/tui/pages/run.js';
 import { matchesCanvasQuery } from '../src/tui/scrollback.js';
 import { renderHistory, renderHistoryDetail } from '../src/tui/pages/history.js';
 import { renderFailure, renderResult, resultHints } from '../src/tui/pages/result.js';
-import { projectTimelineEvent } from '../src/tui/timeline.js';
 import { relativeTime, renderSessions } from '../src/tui/pages/intake.js';
 import { sessionReplayErrorMessage, t } from '../src/tui/i18n.js';
 import { SessionReplayError } from '../src/products/shared/session-recovery.js';
@@ -19,6 +18,7 @@ import { kv, kvBlock, pad, panel, joinColumns, progressBar, stateRail, wrapBodyL
 import { renderWorkbench } from '../src/tui/workbench.js';
 import { helpLines } from '../src/tui/overlays.js';
 import { FakeTerminal, renderFrame } from './support/fake-terminal.js';
+import { publicActivityEntry } from './support/public-timeline.js';
 
 test('panel top and bottom borders have the same visible width', () => {
   const theme = createTheme(80, false);
@@ -54,10 +54,10 @@ test('pad uses visible width rather than UTF-16 length', () => {
 test('a long agent message stays in the detail pane instead of exploding the list', () => {
   const theme = createTheme(120, false);
   const body = `${Array.from({ length: 200 }, (_, index) => `public response line ${index + 1}`).join('\n')}\nPUBLIC_DETAIL_END`;
-  const entry = projectTimelineEvent({
+  const entry = publicActivityEntry({
     schemaVersion: 1, sequence: 1, eventId: 'event-1', occurredAt: '2026-08-11T00:10:02.000Z',
     type: 'codex.item_completed', payload: { item: { type: 'agentMessage', text: body } }, checksum: 'c'.repeat(64),
-  })[0];
+  });
   assert.ok(entry);
   const lines = renderTimeline(theme, 120, {
     entries: [entry],
@@ -112,6 +112,7 @@ test('kvBlock keeps the path with the colon wrap and does not start a line with 
 });
 
 test('history TaskCase detail keeps panel borders when the task includes a Windows path', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const theme = createTheme(120, false);
   const lines = renderHistoryDetail(theme, 120, {
     path: 'C:\\Users\\example\\Documents\\model-test\\Reprise\\.reprise\\cases\\case-4efe900555f98a46\\case.json',
@@ -130,7 +131,7 @@ test('history TaskCase detail keeps panel borders when the task includes a Windo
 
 test('detail pane indents command output so it does not stick to the frame', () => {
   const theme = createTheme(120, false);
-  const entry = projectTimelineEvent({
+  const entry = publicActivityEntry({
     schemaVersion: 1, sequence: 29, eventId: 'event-29', occurredAt: '2026-08-13T14:17:28.260Z',
     type: 'codex.item_completed',
     payload: {
@@ -142,7 +143,7 @@ test('detail pane indents command output so it does not stick to the frame', () 
       },
     },
     checksum: 'c'.repeat(64),
-  })[0];
+  });
   assert.ok(entry);
   const lines = renderTimeline(theme, 120, {
     entries: [entry],
@@ -160,7 +161,7 @@ test('detail pane indents command output so it does not stick to the frame', () 
 
 test('command detail paints a one-line invocation plus indented output', () => {
   const theme = createTheme(120, false);
-  const entry = projectTimelineEvent({
+  const entry = publicActivityEntry({
     schemaVersion: 1, sequence: 5, eventId: 'event-5', occurredAt: '2026-08-11T00:10:01.500Z',
     type: 'codex.item_completed',
     payload: {
@@ -172,7 +173,7 @@ test('command detail paints a one-line invocation plus indented output', () => {
       },
     },
     checksum: 'c'.repeat(64),
-  })[0];
+  });
   assert.ok(entry);
   const text = renderTimeline(theme, 120, {
     entries: [entry],
@@ -247,11 +248,11 @@ test('prepareRail stays compact and names the current phase', () => {
   assert.match(compare, /compare/);
 });
 
-test('canvas find keeps matching voice blocks and hides the rest', () => {
+test('canvas find locates hits and keeps surrounding entries', () => {
   const input = { sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'CONTROLLER' as const, title: 'Input to Target', detail: 'Fix the failing test.' };
   const product = { sequence: 2, occurredAt: '2026-08-11T00:10:02.000Z', source: 'TARGET' as const, title: 'Visible response', detail: 'public response line 1', original: 'PUBLIC_DETAIL_END' };
   assert.equal(matchesCanvasQuery(product, 'public response'), true);
-  assert.equal(matchesCanvasQuery(product, 'PUBLIC_DETAIL'), true);
+  assert.equal(matchesCanvasQuery(product, 'PUBLIC_DETAIL'), false);
   assert.equal(matchesCanvasQuery(input, 'public response'), false);
   const theme = createTheme(120, false);
   const model = {
@@ -264,7 +265,7 @@ test('canvas find keeps matching voice blocks and hides the rest', () => {
   assert.match(text, /Find:/);
   assert.match(text, /1\/1/);
   assert.match(text, /public response line 1/);
-  assert.doesNotMatch(text, /Fix the failing test/);
+  assert.match(text, /Fix the failing test/);
   const restored = renderTimeline(theme, 120, { ...model, finding: false, findQuery: '' }).join('\n');
   assert.match(restored, /Fix the failing test/);
   assert.match(restored, /public response line 1/);
@@ -346,7 +347,7 @@ test('help names the keys of the page it was opened on', () => {
   assert.doesNotMatch(running, /Test connection/);
 
   const config = helpLines('config').join('\n');
-  assert.match(config, /t\s+Test connection/);
+  assert.match(config, /Ctrl\+T\s+Test connection/);
   assert.doesNotMatch(config, /Cycle timeline filter/);
 
   // `t` and `d` are overloaded across pages, so inspection must not inherit the running meanings.
@@ -438,7 +439,7 @@ test('a regular-width intake sheet keeps preview, panel close, search, and foote
   const text = lines.join('\n');
   assert.equal(lines.length, 24);
   assert.match(text, /Preview/);
-  assert.match(text, /\[\/\] Search/);
+  assert.match(text, /\[type\] Search/);
   assert.match(text, /└/);
   assert.match(text, /\[↑↓\]|\[Up\/Dn\]/);
   assert.match(text, /51\/51/);
@@ -894,6 +895,7 @@ test('runtime failure identifies the selected product rather than Codex', () => 
 });
 
 test('blocked result is a warning with controller reason and short paths', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const theme = createTheme(120, false);
   const lines = renderResult(theme, 120, {
     reportPath: 'C:\\exp\\report.html',
@@ -938,6 +940,7 @@ test('limit_reached result explains the turn cap', () => {
 });
 
 test('compact result keeps Trace on one line', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const theme = createTheme(60, false);
   const text = renderResult(theme, 60, {
     reportPath: 'C:\\exp\\report.html',
@@ -982,6 +985,7 @@ test('running hints keep cancel and drop canvas operations', () => {
   const line = keyHints(theme, runningHints('ALL', true), 60);
   assert.ok(visibleWidth(line) <= 60, line);
   assert.match(line, /Ctrl\+C/);
+  assert.match(line, /Find/);
   assert.doesNotMatch(line, /\[f\]/);
   assert.doesNotMatch(line, /\[o\]/);
   assert.doesNotMatch(line, /Enter/);

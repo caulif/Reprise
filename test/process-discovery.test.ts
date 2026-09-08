@@ -83,3 +83,19 @@ test("Node's default argv quoting of a pre-quoted cmd /c line cannot start a .cm
   });
   assert.notEqual(code, 0);
 });
+
+test("WSL discovery rejects a host Windows executable even when the file exists", async () => {
+  const windowsExe = process.platform === "win32"
+    ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    : String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`;
+  assert.equal(
+    await discoverExecutable({
+      command: "powershell",
+      executable: windowsExe,
+      platform: "linux",
+      env: { WSL_DISTRO_NAME: "Ubuntu", PATH: "/usr/bin" },
+      cwd: process.cwd(),
+    }),
+    undefined,
+  );
+});

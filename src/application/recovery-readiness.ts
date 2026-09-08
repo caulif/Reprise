@@ -1,5 +1,6 @@
 import { access, readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve, relative } from "node:path";
+import { pathContainedBy } from "../core/paths.js";
 import { Value } from "@sinclair/typebox/value";
 import { sha256 } from "../core/identity.js";
 import { ProcessBoundaryError, runProcess } from "../infrastructure/process-runner.js";
@@ -86,7 +87,7 @@ export async function checkRecoveryReadiness(root: string, context: RecoveryRead
     const normalized = path.replaceAll("\\", "/");
     if (normalized.startsWith("/") || normalized.split("/").includes("..")) return { status: "blocked", checkedPaths, missingPaths, commandChecks, feedback: `Readiness path escaped staging boundary: ${path}` };
     const absolute = resolve(root, ...normalized.split("/"));
-    if (relative(resolve(root), absolute).startsWith("..")) return { status: "blocked", checkedPaths, missingPaths, commandChecks, feedback: `Readiness path escaped staging boundary: ${path}` };
+    if (!pathContainedBy(resolve(root), absolute)) return { status: "blocked", checkedPaths, missingPaths, commandChecks, feedback: `Readiness path escaped staging boundary: ${path}` };
     checkedPaths.push(normalized);
     try {
       await access(absolute);

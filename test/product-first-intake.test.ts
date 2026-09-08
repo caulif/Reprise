@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { Component, TUI } from '@earendil-works/pi-tui';
-import type { ProductPack, SessionDiscoveryQuery, SessionSummary } from '../src/products/contract.js';
+import type { ProductPack, SessionDiscoveryQuery, SessionSourceAdapter, SessionSummary } from '../src/products/contract.js';
 import { CodexIntakeTui } from '../src/tui/intake-app.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 
@@ -44,9 +44,9 @@ function sessionPack(input: {
   productId: string;
   displayName: string;
   defaultRoot: string;
-  discover: (query?: SessionDiscoveryQuery) => ReturnType<ProductPack['sessions']['discover']>;
-  importSession?: ProductPack['sessions']['import'];
-  inspectSession?: ProductPack['sessions']['inspect'];
+  discover: (query?: SessionDiscoveryQuery) => ReturnType<SessionSourceAdapter['discover']>;
+  importSession?: SessionSourceAdapter['import'];
+  inspectSession?: SessionSourceAdapter['inspect'];
 }): ProductPack {
   return {
     ...fakeProductPack,
@@ -197,11 +197,12 @@ test('a legacy session root is scoped to one Pack instead of leaking into anothe
   });
   const legacyRoot = join(root, 'legacy-codex');
   const claudeRoot = join(root, 'claude-default');
+  const codexDefault = join(root, 'codex-default');
   const app = new CodexIntakeTui({
     dataDir: join(root, 'data'),
     sessionsRoot: legacyRoot,
     tui: fakeTui(() => {}),
-    packs: [makePack('codex', join(root, 'codex-default')), makePack('claude-code', claudeRoot)],
+    packs: [makePack('codex', codexDefault), makePack('claude-code', claudeRoot)],
     privacy,
   });
 
@@ -213,16 +214,28 @@ test('a legacy session root is scoped to one Pack instead of leaking into anothe
     dataDir: join(root, 'reordered-data'),
     sessionsRoot: legacyRoot,
     tui: fakeTui(() => {}),
-    packs: [makePack('claude-code', claudeRoot), makePack('codex', join(root, 'codex-default'))],
+    packs: [makePack('claude-code', claudeRoot), makePack('codex', codexDefault)],
     privacy,
   });
   await reordered.start();
   await reordered.loadProductSessions('claude-code');
   await reordered.loadProductSessions('codex');
   assert.deepEqual(observed.slice(1), [
-    `claude-code:${claudeRoot}`,
-    `codex:${legacyRoot}`,
+    `claude-code:${legacyRoot}`,
+    `codex:${codexDefault}`,
   ]);
+
+  const explicitOwner = new CodexIntakeTui({
+    dataDir: join(root, 'explicit-data'),
+    sessionsRoot: legacyRoot,
+    pack: makePack('codex', codexDefault),
+    tui: fakeTui(() => {}),
+    packs: [makePack('claude-code', claudeRoot), makePack('codex', join(root, 'codex-other'))],
+    privacy,
+  });
+  await explicitOwner.start();
+  await explicitOwner.loadProductSessions('codex');
+  assert.deepEqual(observed.slice(3), [`codex:${legacyRoot}`]);
 
   const singlePackRoot = join(root, 'single-pack-root');
   const singlePack = new CodexIntakeTui({
@@ -234,7 +247,7 @@ test('a legacy session root is scoped to one Pack instead of leaking into anothe
   });
   await singlePack.start();
   await singlePack.loadProductSessions('claude-code');
-  assert.deepEqual(observed.slice(3), [`claude-code:${singlePackRoot}`]);
+  assert.deepEqual(observed.slice(4), [`claude-code:${singlePackRoot}`]);
 });
 
 test('cursor pagination counts root diagnostics once and page diagnostics once per examined record', async (t) => {
@@ -265,8 +278,8 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
   await app.loadProductSessions('codex');
   assert.match(app.message, /Loaded \d+ projects and 1 sessions/);
   assert.match(app.message, /1 shown · 2 skipped · 2 scanned/);
-  assert.match(app.message, /\nThe catalog is complete; m does not paginate\./);
-  assert.match(app.message, /\nDiagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable-directory \(1\)/);
+  assert.match(app.message, /\nThe catalog is complete; Ctrl\+N does not paginate\./);
+  assert.match(app.message, /\nDiagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable directory \(1\)/);
   app.locale = 'zh';
   assert.match(app.sessionsMessage(), /已显示 1 条 · 已跳过 2 条 · 已扫描 2 条/);
   app.loadMoreProductSessions();
@@ -274,7 +287,7 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
   assert.equal(app.productItems()[0]?.skipped, 2);
   assert.match(app.message, /1 shown · 2 skipped/);
   assert.doesNotMatch(app.message, /还有更多/);
-  assert.match(app.message, /Diagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable-directory \(1\)/);
+  assert.match(app.message, /Diagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable directory \(1\)/);
   assert.deepEqual(app.productDiscovery.get('codex')?.diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.count]), [
     ['invalid-jsonl', 1], ['unreadable-directory', 1],
   ]);

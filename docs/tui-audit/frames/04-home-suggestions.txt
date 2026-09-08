@@ -3,9 +3,9 @@ Reprise v0.1.0   C:\reprise                   gpt-5.6-terra · medium   ⚠ Harn
  Last task  none selected
 
  Continue
- r     Replay the current task  needs a task
- i     Import a historical session
- c     Open /config  needs credential
+ /run     Replay the current task  needs a task
+ /intake  Import a historical session
+ /config  Open /config  needs credential
 
  Browse
  /intake    Import a historical agent session
@@ -29,4 +29,4 @@ Reprise v0.1.0   C:\reprise                   gpt-5.6-terra · medium   ⚠ Harn
  ❯ /▌
  Welcome back. Use /help to see the available local workflows.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Tab] Complete  [Enter] Run command  [Esc] Close  [?] Keys
+ [↑↓] Select  [Tab] Complete  [Enter] Run command  [Esc] Close

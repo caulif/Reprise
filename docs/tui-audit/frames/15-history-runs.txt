@@ -3,8 +3,8 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
  Last task  none selected
 
  Continue
- Enter Latest replay  record unread
- r     Replay the current task  needs a task
+ Enter    Latest replay  record unread
+ /run     Replay the current task  needs a task
 
 ┌─ Recent experiments · Storage 0.0 MiB ────────────────────────────┐ ┌─ Experiment ───────────────────────────────────┐
 │ ❯ exp-history · record unread                                     │ │ ID           exp-history                       │
@@ -14,10 +14,22 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
 │                                                                   │ │ Started      unavailable                       │
 │                                                                   │ │ Report       not generated                     │
 │                                                                   │ │ Stored       0.0 MiB                           │
-│                                                                   │ │ Path         ]8;;file:///TMP/history-data/experiments/exp-history\C:\user\AppData\Local\]8;;\     │
-│                                                                   │ │              ]8;;file:///TMP/history-data/experiments/exp-history\Temp\reprise-tui-audit-TMP\]8;;\    │
-│                                                                   │ │              ]8;;file:///TMP/history-data/experiments/exp-history\history-data\experiments\]8;;\         │
-│                                                                   │ │              ]8;;file:///TMP/history-data/experiments/exp-history\exp-history]8;;\                       │
+│                                                                   │ │ Path                                           │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\          │
+│                                                                   │ │experiments\exp-history                         │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\          │
+│                                                                   │ │experiments\exp-history                         │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\          │
+│                                                                   │ │experiments\exp-history                         │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\          │
+│                                                                   │ │experiments\exp-history                         │
 └───────────────────────────────────────────────────────────────────┘ └────────────────────────────────────────────────┘
  Browse local experiments or switch to TaskCases with Tab.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import { deriveRecoveryReadinessContext, checkRecoveryReadiness } from "./recove
 import { historicalCwdOf } from "./replay-conditions.js";
 import { RecoveryValidationError } from "../environment/local-workspace-provider.js";
 import { Type } from "@sinclair/typebox";
+import { packRuntime } from "../products/pack-access.js";
 import type { AgentToolDefinition } from "../infrastructure/pi-agent-host.js";
 
 export function buildRecoveryAgentContext(session: RecoveryRunSession): RecoveryContext {
@@ -64,7 +65,7 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
           beforeDigest: candidate.beforeFingerprint.digest,
         })) }
       : {}),
-    runtimeCapabilities: pack.runtime.recoveryCapabilities(),
+    runtimeCapabilities: packRuntime(pack).recoveryCapabilities(),
     playbook,
     staging: {
       fileCount: staging.sourceBudget.fileCount,
@@ -75,6 +76,7 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
     },
     budget: { timeoutMs: input.recovery.timeoutMs ?? 600_000 },
     allowModelText: input.taskCase.privacy.allowModelText,
+    continuityKey: input.experimentId,
     readiness: deriveRecoveryReadinessContext(input.taskCase, historicalCwdOf(input.taskCase)),
   };
 }
@@ -325,7 +327,9 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
     session.readinessResult.status !== "ready" &&
     session.modelAttempts < maxModelAttempts &&
     session.lastToolFailureCategory !== "budget_exhausted" &&
-    session.haltReadinessFeedback !== true
+    session.haltReadinessFeedback !== true &&
+    session.recovery?.status === "completed" &&
+    session.recovery.value.status !== "insufficient_evidence"
   )
     await runReadinessFeedbackTurn(session, readinessContext);
   if (session.readinessResult && session.readinessResult.status !== "ready" && session.lastCompletedRecovery?.status !== "completed" && session.recovery?.status !== "completed") {

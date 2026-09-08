@@ -71,3 +71,20 @@ export function canonicalRecordedRoot(path: string | undefined): string | undefi
   if (!value || !isFsAbsolute(value)) return undefined;
   return asPosixPath(value).replace(/\/+$/, '').toLowerCase();
 }
+
+const WSL_WINDOWS_MOUNT = /^\/mnt\/[a-zA-Z](\/|$)/;
+
+type HostEnv = { WSL_DISTRO_NAME?: string; WSL_INTEROP?: string };
+
+/** Linux process with WSL interop env; uses distro paths, not the Windows host filesystem. */
+export function isWslHost(platform: string, env: HostEnv = process.env): boolean {
+  return platform === 'linux' && Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP);
+}
+
+/** False for host-Windows paths when the process is WSL, and for drive paths on POSIX. */
+export function isNativeHostPath(path: string, platform: string, env: HostEnv = process.env): boolean {
+  const posix = asPosixPath(stripWindowsExtendedPrefix(path));
+  if (WINDOWS_ABS.test(path) || WINDOWS_ABS.test(posix)) return platform === 'win32' && !isWslHost(platform, env);
+  if (isWslHost(platform, env) && WSL_WINDOWS_MOUNT.test(posix)) return false;
+  return true;
+}

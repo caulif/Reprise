@@ -53,10 +53,12 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
     kv(theme, 'ID', item.experimentId, width - 2),
     kv(theme, 'TaskCase', item.taskCaseId, width - 2),
     kv(theme, 'Run', missing(item.runId), width - 2),
-    kv(theme, 'Outcome', item.outcome ?? 'incomplete or no record', width - 2),
+    kv(theme, 'Outcome', historyOutcomeLabel(item, locale), width - 2),
     kv(theme, 'Started', item.startedAt ?? 'unavailable', width - 2),
     ...(item.taskStatus ? [kv(theme, 'Task', item.taskStatus, width - 2)] : []),
     ...(item.comparisonStatus ? [kv(theme, 'Comparison', `${item.comparisonStatus}${item.comparisonFailure ? ` (${item.comparisonFailure})` : ''}`, width - 2)] : []),
+    ...(item.incompleteModelInput ? kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width) : []),
+    ...(item.formatError ? [kv(theme, 'Format', t(locale, 'unsupportedSchema'), width - 2)] : []),
     ...kvLinkBlock(theme, item.reportKind ?? 'Report', item.reportPath ?? 'not generated', item.reportPath, width),
     kv(theme, 'Stored', formatBytes(item.sizeBytes), width - 2),
     ...kvLinkBlock(theme, 'Path', item.path, item.path, width),
@@ -79,4 +81,11 @@ function visibleRange<T>(items: readonly T[], selected: number, limit = 8): { st
   if (items.length <= limit) return { start: 0, end: items.length };
   const start = Math.max(0, Math.min(items.length - limit, selected - Math.floor(limit / 2)));
   return { start, end: start + limit };
+}
+
+function historyOutcomeLabel(item: HistoryExperiment, locale: Locale): string {
+  if (item.formatError) return t(locale, 'unsupportedSchema');
+  if (item.outcome === 'interrupted') return t(locale, 'interrupted');
+  if (item.outcome === 'unknown') return t(locale, 'unknownOutcome');
+  return item.outcome ?? t(locale, 'incomplete');
 }

@@ -1,14 +1,18 @@
 import { dirname } from 'node:path';
+import { runtimePacks } from '../products/pack-access.js';
 import { isFsAbsolute } from '../core/paths.js';
 import { matchesKey } from '@earendil-works/pi-tui';
 import type { CodexExperimentPreflight, CodexExperimentResult, ExperimentHandle, RecoveryAttempt } from '../application/experiment.js';
-import type { CodexTuiWorkflow } from '../application/tui-workflow.js';
+import type { ExperimentWorkflow } from '../application/tui-workflow.js';
 import type { TaskCase } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
+import { coveringFoldIds } from './fold-process.js';
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
+import { matchesCanvasQuery, matchesFilter } from './scrollback.js';
+import { canvasHitIndices, nextHitIndex, syncTimelineSelection, timelineIdentity } from './timeline-read.js';
 import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, startRunSetup } from './controller-run.js';
 import {
   dispatchCanvasInput,
@@ -65,6 +69,10 @@ export type ControllerHandle = {
   finding: boolean;
   findQuery: string;
   findCursor: number;
+  readingMode: boolean;
+  readingVisibleAt: number;
+  timelineAnchor: string | undefined;
+  timelineReadOffset: number;
   preparePhase: PreparePhase | undefined;
   prepareDetail: string | undefined;
   detailExpanded: boolean;
@@ -80,7 +88,7 @@ export type ControllerHandle = {
   autoCompare: boolean;
   compareChoice: { resolve(run: boolean): void } | undefined;
   runFromSource: boolean;
-  readonly workflow: CodexTuiWorkflow | undefined;
+  readonly workflow: ExperimentWorkflow | undefined;
   generation: number;
   recoveryAttempt: RecoveryAttempt | undefined;
   selectedCandidate: import('../core/schema.js').CandidateSpec | undefined;
@@ -138,6 +146,7 @@ export type ControllerHandle = {
   setLocale(typed: string): Promise<void>;
   visibleTimeline(): readonly TimelineEntry[];
   scheduleTimelineRender(): void;
+  setMouseReporting(enabled: boolean): void;
   refreshProductAuth(): Promise<void>;
   loadSessions(): Promise<void>;
   loadMoreProductSessions(): void;
@@ -161,7 +170,11 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'running') return applyRunning(c, input);
   if (c.page === 'config') return c.configPageInput(input);
   if (c.page === 'history') return matchesKey(input, 'escape') ? c.backToHome() : c.historyInput(input);
-  if (c.page === 'history-detail') return applyHistoryDetail(c, input);
+  if (c.page === 'history-detail') {
+    const canvas = c.timeline.length ? applyCanvas(c, input) : undefined;
+    if (canvas) return canvas;
+    return applyHistoryDetail(c, input);
+  }
   if (c.page === 'home') return applyHome(c, input);
   if (c.page === 'source') return applySource(c, input);
   if (c.page === 'preflight') return applyPreflight(c, input);
@@ -230,12 +243,6 @@ function applyHome(c: ControllerHandle, data: string): Consume | undefined {
     return { consume: true };
   }
   if (result.action === 'submit') return submitComposer(c);
-  if (result.action === 'start-run') return startRunSetup(c);
-  if (result.action === 'start-intake') return startSessionDiscovery(c);
-  if (result.action === 'open-config') {
-    void c.openConfig();
-    return { consume: true };
-  }
   c.syncCommandOverlay();
   c.render();
   return { consume: true };
@@ -403,7 +410,7 @@ function applyCandidateProduct(c: ControllerHandle, data: string): Consume | und
   }
   if (result.action === 'up' || result.action === 'down') {
     const next = c.candidateProductCursor + (result.action === 'up' ? -1 : 1);
-    c.candidateProductCursor = Math.max(0, Math.min(c.packs.length - 1, next));
+    c.candidateProductCursor = Math.max(0, Math.min(Math.max(0, runtimePacks(c.packs).length - 1), next));
     c.render();
     return { consume: true };
   }
@@ -467,8 +474,18 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
 }
 
 function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
+  const blocked = canvasBlocked(c);
+  if (!blocked && !c.finding) {
+    if (c.readingMode && (matchesKey(data, 'v') || matchesKey(data, 'escape'))) return exitReadingMode(c);
+    if (c.readingMode) return { consume: true };
+    if (matchesKey(data, 'v')) return enterReadingMode(c);
+  }
   const canvas = applyCanvas(c, data);
   if (canvas) return canvas;
+  if (c.compareChoice) {
+    const gate = applyCompareGate(c, data);
+    if (gate) return gate;
+  }
   const result = dispatchRunningKeys(data);
   if (!result) return undefined;
   if (result.action === 'toggle-detail') {
@@ -477,8 +494,6 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
     return { consume: true };
   }
   if (result.action === 'toggle-pane') {
-    c.paneFocus = c.paneFocus === 'left' ? 'right' : 'left';
-    c.render();
     return { consume: true };
   }
   if (result.action === 'toggle-actors') {
@@ -492,30 +507,35 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   return { consume: true };
 }
 
-function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
-  const blocked = c.preparePhase === 'check' || c.preparePhase === 'copy'
+function canvasBlocked(c: ControllerHandle): boolean {
+  return c.preparePhase === 'check' || c.preparePhase === 'copy'
     || Boolean(c.viewer || c.actorsOpen || c.helpOverlay || c.inlineHelp);
-  const result = dispatchCanvasInput({ finding: c.finding, query: c.findQuery, cursor: c.findCursor }, data, blocked);
+}
+
+function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
+  const result = dispatchCanvasInput({ finding: c.finding, query: c.findQuery, cursor: c.findCursor }, data, canvasBlocked(c));
   if (!result) return undefined;
   c.finding = result.state.finding;
   c.findQuery = result.state.query;
   c.findCursor = result.state.cursor;
   if (result.action === 'clear-find') return clearFind(c);
-  if (result.action === 'move') return moveTimeline(c, result.amount ?? 0);
-  if (result.action === 'toggle-detail') {
-    c.detailExpanded = !c.detailExpanded;
-    c.render();
-    return { consume: true };
+  if (result.action === 'next-hit' || result.action === 'prev-hit') {
+    return jumpFindHit(c, result.action === 'prev-hit' ? -1 : 1);
   }
+  if (result.action === 'move') return moveTimeline(c, result.amount ?? 1);
   if (result.action === 'start-find') {
+    c.timelineFollowing = false;
+    expandFoldsForQuery(c);
     c.render();
     return { consume: true };
   }
   if (result.action === 'follow') return followTimeline(c);
+  if (result.action === 'home') return homeTimeline(c);
   if (result.action === 'cycle-filter') return cycleTimelineFilter(c);
   if (result.action === 'edit-find') {
-    c.timelineSelected = 0;
     c.timelineFollowing = false;
+    expandFoldsForQuery(c);
+    syncTimelineSelection(c);
     c.render();
     return { consume: true };
   }
@@ -546,13 +566,11 @@ function applyHistoryDetail(c: ControllerHandle, data: string): Consume | undefi
 
 function clearFind(c: ControllerHandle): Consume {
   const current = c.visibleTimeline()[c.timelineSelected];
+  if (current) c.timelineAnchor = timelineIdentity(current);
   c.finding = false;
   c.findQuery = '';
   c.findCursor = 0;
-  const restored = c.visibleTimeline();
-  const index = current ? restored.indexOf(current) : -1;
-  c.timelineSelected = index >= 0 ? index : Math.max(0, restored.length - 1);
-  c.timelineFollowing = c.timelineSelected === Math.max(0, restored.length - 1);
+  syncTimelineSelection(c);
   c.render();
   return { consume: true };
 }
@@ -571,16 +589,57 @@ function openSelectedDetail(c: ControllerHandle): Consume {
 }
 
 function moveTimeline(c: ControllerHandle, amount: number): Consume {
+  if (c.readingMode && Math.abs(amount) >= 10) {
+    c.timelineReadOffset = Math.max(0, (c.timelineReadOffset ?? 0) + amount);
+    c.timelineFollowing = false;
+    c.render();
+    return { consume: true };
+  }
   const entries = c.visibleTimeline();
-  c.timelineSelected = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
+  const next = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
+  if (next !== c.timelineSelected) c.timelineReadOffset = 0;
+  c.timelineSelected = next;
   c.timelineFollowing = c.timelineSelected === Math.max(0, entries.length - 1);
+  const current = entries[c.timelineSelected];
+  if (current) c.timelineAnchor = timelineIdentity(current);
+  expandFoldsForQuery(c);
+  c.render();
+  return { consume: true };
+}
+
+function jumpFindHit(c: ControllerHandle, direction: 1 | -1): Consume {
+  const entries = c.visibleTimeline();
+  const hits = canvasHitIndices(entries, c.findQuery);
+  if (!hits.length) {
+    c.render();
+    return { consume: true };
+  }
+  c.timelineSelected = nextHitIndex(hits, c.timelineSelected, direction);
+  c.timelineReadOffset = 0;
+  c.timelineFollowing = c.timelineSelected === Math.max(0, entries.length - 1);
+  const current = entries[c.timelineSelected];
+  if (current) c.timelineAnchor = timelineIdentity(current);
+  expandFoldsForQuery(c);
+  c.render();
+  return { consume: true };
+}
+
+function homeTimeline(c: ControllerHandle): Consume {
+  const entries = c.visibleTimeline();
+  c.timelineSelected = 0;
+  c.timelineFollowing = entries.length <= 1;
+  const current = entries[0];
+  if (current) c.timelineAnchor = timelineIdentity(current);
   c.render();
   return { consume: true };
 }
 
 function followTimeline(c: ControllerHandle): Consume {
-  c.timelineSelected = Math.max(0, c.visibleTimeline().length - 1);
+  const visible = c.visibleTimeline();
+  c.timelineSelected = Math.max(0, visible.length - 1);
   c.timelineFollowing = true;
+  const current = visible[c.timelineSelected];
+  if (current) c.timelineAnchor = timelineIdentity(current);
   c.message = t(c.locale, 'followingLatest');
   c.render();
   return { consume: true };
@@ -589,4 +648,34 @@ function followTimeline(c: ControllerHandle): Consume {
 function cycleTimelineFilter(c: ControllerHandle): Consume {
   c.timelineFilterIndex = (c.timelineFilterIndex + 1) % TIMELINE_FILTERS.length;
   return followTimeline(c);
+}
+
+function expandFoldsForQuery(c: ControllerHandle): void {
+  if (!c.findQuery.trim()) return;
+  const filter = TIMELINE_FILTERS[c.timelineFilterIndex] ?? 'ALL';
+  const filtered = c.timeline.filter((entry) => matchesFilter(entry, filter));
+  const hits = c.timeline.filter((entry) => matchesFilter(entry, filter)).filter((entry) => matchesCanvasQuery(entry, c.findQuery));
+  for (const hit of hits) {
+    for (const id of coveringFoldIds(filtered, hit)) {
+      if (!c.expandedFolds.includes(id)) c.expandedFolds.push(id);
+    }
+  }
+}
+
+function enterReadingMode(c: ControllerHandle): Consume {
+  c.readingMode = true;
+  c.timelineFollowing = false;
+  c.readingVisibleAt = c.visibleTimeline().length;
+  c.setMouseReporting(false);
+  c.message = t(c.locale, 'readingModeOn');
+  return { consume: true };
+}
+
+function exitReadingMode(c: ControllerHandle): Consume {
+  c.readingMode = false;
+  c.setMouseReporting(true);
+  const missed = Math.max(0, c.visibleTimeline().length - c.readingVisibleAt);
+  c.message = missed > 0 ? t(c.locale, 'readingModeNewActivity', { n: missed }) : t(c.locale, 'readingModeOff');
+  c.render(true);
+  return { consume: true };
 }

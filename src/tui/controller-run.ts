@@ -4,13 +4,17 @@ import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import { candidateSpecFromOffer, catalogCursor } from '../application/candidate-spec.js';
 import type { CodexExperimentResult, ExperimentHandle } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
+import { packDefaultCandidate, packRuntime, packSessions, runtimePacks } from '../products/pack-access.js';
 import { freezeCase } from '../products/shared/freeze.js';
 import { importVerifiedSession, listSummaryIncomplete } from '../products/shared/session-recovery.js';
 import { errorMessage } from './format.js';
 import { t, type Locale } from './i18n.js';
 import { projectLabel } from './pages/intake.js';
 import { appendTimelineEntries, projectTimelineEvent } from './timeline.js';
+import { syncTimelineSelection } from './timeline-read.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
+import { candidateStartBlocked, type CandidateStartGate } from '../application/candidate-start.js';
+import { prepareExperiment } from '../application/experiment-operations.js';
 import { userRecoveryStatus } from '../application/recovery-user-status.js';
 import { record, text } from '../core/json.js';
 import type { CandidateRunPhase } from './pages/run.js';
@@ -34,6 +38,7 @@ function resultMessage(result: CodexExperimentResult, locale: Locale): string {
   const kind = result.record.outcome.termination.kind;
   if (kind === 'blocked') return t(locale, 'resultBlocked');
   if (kind === 'failed') return t(locale, 'resultFailed');
+  if (kind === 'cancelled') return t(locale, 'resultCancelled');
   if (kind === 'completed') return t(locale, 'resultCompleted');
   return t(locale, 'resultOther');
 }
@@ -82,7 +87,7 @@ export async function freeze(
     const alreadyInspected = c.inspection?.sourcePath === sourcePath;
     c.message = t(c.locale, !alreadyInspected && listSummaryIncomplete(session) ? 'inspectingIncompleteSummary' : 'inspectingSelectedSession');
     c.render(true);
-    const imported = await importVerifiedSession(pack.sessions, session, sourcePath);
+    const imported = await importVerifiedSession(packSessions(pack), session, sourcePath);
     const result = await freezeCase(imported, join(c.dataDir, 'cases'), c.privacy, c.now(), {
       ...(input.initialMessageId ? { initialMessageId: input.initialMessageId } : {}),
       reuseExisting: true,
@@ -157,9 +162,7 @@ function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
   }
   noteRunDiagnostics(c, event);
   appendTimelineEntries(c.timeline, projectTimelineEvent(event));
-  const visible = c.visibleTimeline();
-  if (c.timelineFollowing) c.timelineSelected = Math.max(0, visible.length - 1);
-  else c.timelineSelected = Math.max(0, Math.min(c.timelineSelected, Math.max(0, visible.length - 1)));
+  syncTimelineSelection(c);
   if (c.page === 'running') c.scheduleTimelineRender();
 }
 
@@ -232,7 +235,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.page = 'running';
     startRunClock(c);
     c.render(true);
-    const attempt = await c.workflow.recover({
+    const attempt = await prepareExperiment(c.workflow, {
       signal: abort.signal,
       taskCase: c.taskCase,
       sourceRoot: c.sourceRoot.trim(),
@@ -312,7 +315,10 @@ async function settleRun(
   const partial = await handle.candidateFinished;
   if (token !== c.generation) return undefined;
   c.result = partial;
-  c.page = 'compare-gate';
+  c.page = 'running';
+  c.preparePhase = undefined;
+  c.prepareDetail = undefined;
+  c.message = t(c.locale, 'compareGateBody');
   c.render(true);
   const runCompare = await new Promise<boolean>((resolve) => {
     c.compareChoice = { resolve };
@@ -360,8 +366,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
   const errorReturn = c.runFromSource ? 'source' : 'home';
   try {
     if (!c.workflow || !c.taskCase) throw new Error('Experiment workflow is unavailable.');
-    c.timeline = [];
-    c.timelineSelected = 0;
+    c.timelineSelected = Math.max(0, c.visibleTimeline().length - 1);
     c.timelineFilterIndex = 0;
     c.timelineFollowing = true;
     c.detailExpanded = false;
@@ -446,17 +451,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
   c.render(true);
 }
 
-export type CandidateStartGate = {
-  sourceBaseline?: string;
-  blockedReasons: readonly string[];
-  recovery?: {
-    hasAccept: boolean;
-    hasStaging: boolean;
-    baselineMode: string;
-    runnable?: string;
-    userStatus?: 'recovered' | 'partial' | 'failed';
-  };
-};
+export { candidateStartBlocked, type CandidateStartGate } from "../application/candidate-start.js";
 
 export function candidateGateFrom(c: ControllerHandle): CandidateStartGate {
   return {
@@ -480,24 +475,6 @@ export function candidateGateFrom(c: ControllerHandle): CandidateStartGate {
         }
       : {}),
   };
-}
-
-export function candidateStartBlocked(input: CandidateStartGate): string | undefined {
-  if (input.recovery) {
-    if (input.recovery.baselineMode === 'unsupported' || input.recovery.runnable === 'unsupported') {
-      return 'Candidate was not started because recovery did not produce a runnable workspace.';
-    }
-    if (!input.recovery.hasAccept || input.recovery.userStatus === 'failed') {
-      return 'Candidate was not started because recovery did not produce a runnable workspace.';
-    }
-    return undefined;
-  }
-  if (input.sourceBaseline === 'unavailable' || input.blockedReasons.length) {
-    return input.blockedReasons.length
-      ? input.blockedReasons.join(' | ')
-      : 'Candidate was not started because the source baseline is unavailable.';
-  }
-  return undefined;
 }
 
 function resetRunDiagnostics(c: ControllerHandle): void {
@@ -542,7 +519,8 @@ function phaseForEvent(event: EventEnvelope): CandidateRunPhase | undefined {
 function openCandidateProductPicker(c: ControllerHandle): void {
   const sourceId = c.taskCase?.source.productId ?? '';
   c.candidateProductId = sourceId;
-  c.candidateProductCursor = Math.max(0, c.packs.findIndex((pack) => pack.manifest.productId === sourceId));
+  const packs = runtimePacks(c.packs);
+  c.candidateProductCursor = Math.max(0, packs.findIndex((pack) => pack.manifest.productId === sourceId));
   c.selectedCandidate = undefined;
   c.candidateModelOffers = [];
   c.candidateCatalogStatus = 'idle';
@@ -553,11 +531,12 @@ function openCandidateProductPicker(c: ControllerHandle): void {
 
 async function refreshCandidateAvailability(c: ControllerHandle): Promise<void> {
   const generation = ++c.candidateAvailabilityGeneration;
-  const entries = await Promise.all(c.packs.map(async (pack) => {
+  const entries = await Promise.all(runtimePacks(c.packs).map(async (pack) => {
     try {
-      const [item] = await pack.runtime.inspectAvailability();
+      const [item] = await packRuntime(pack).inspectAvailability();
       return [pack.manifest.productId, item?.status ?? 'not_installed'] as const;
     } catch {
+      // inspectAvailability is best-effort listing; a throw is not_installed, not a TUI crash.
       return [pack.manifest.productId, 'not_installed'] as const;
     }
   }));
@@ -567,7 +546,8 @@ async function refreshCandidateAvailability(c: ControllerHandle): Promise<void> 
 }
 
 export async function loadCandidateCatalog(c: ControllerHandle): Promise<void> {
-  const pack = c.packs[c.candidateProductCursor] ?? c.packs.find((item) => item.manifest.productId === c.candidateProductId);
+  const packs = runtimePacks(c.packs);
+  const pack = packs[c.candidateProductCursor] ?? packs.find((item) => item.manifest.productId === c.candidateProductId);
   if (!c.workflow || !pack) throw new Error('Candidate product is unavailable.');
   const generation = ++c.candidateCatalogGeneration;
   c.candidateProductId = pack.manifest.productId;
@@ -575,7 +555,7 @@ export async function loadCandidateCatalog(c: ControllerHandle): Promise<void> {
   c.candidateModelOffers = [];
   c.candidateCatalogStatus = 'loading';
   c.candidateCatalogError = undefined;
-  c.candidateSuggestedValue = pack.defaultCandidate().requestedModel;
+  c.candidateSuggestedValue = packDefaultCandidate(pack).requestedModel;
   c.page = 'candidate-model';
   c.render();
   try {

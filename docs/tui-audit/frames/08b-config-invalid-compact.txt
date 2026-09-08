@@ -4,12 +4,12 @@ No configured model   o Harness unset  o Product unset  o...
  Last task  none selected
 
  Continue
- r     Replay the current task  needs a task
- i     Import a historical session
+ /run     Replay the current task  needs a task
+ /intake  Import a historical session
 
 [ Harness connection ]
     Endpoint   http://insecure.example/v1
-    Model      model-private - medium
+    Internal model      model-private - medium
     Secret     ••••••••   saved in harness-model.json
     The API key is saved in .reprise/harness-model.json. 
    env:NAME still works as a fallback.
@@ -27,7 +27,7 @@ No configured model   o Harness unset  o Product unset  o...
    
     * Unsaved draft
     Configuration file: .reprise/harness-model.json
- Draft changed. Save writes the local config file; use t to
-test the connection.
+ Draft changed. Ctrl+S writes the local config file; Ctrl+T
+tests the connection.
 ------------------------------------------------------------
- [↑↓] Select  [Enter] Edit  [t] Test connection
+ [↑↓] Select  [Enter] Edit  [Ctrl+T] Test connection

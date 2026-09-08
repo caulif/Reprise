@@ -4,7 +4,7 @@ import { createTheme } from '../src/tui/theme.js';
 import { confirmCanStart, renderConfirmation } from '../src/tui/pages/run.js';
 import { renderCandidateModelPicker, renderCandidateProductPicker } from '../src/tui/pages/candidate.js';
 import { candidateSpecFromOffer } from '../src/application/candidate-spec.js';
-import { createCodexExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
+import { createExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 import { projectWorkbenchView } from '../src/tui/view-projection.js';
 import { renderWorkbench } from '../src/tui/workbench.js';
@@ -45,8 +45,9 @@ test('model picker shows the selected pack catalog', () => {
     ],
   }).join('\n');
   assert.match(text, /sonnet/);
+  assert.match(text, /claude-sonnet-4-6/);
   assert.match(text, /opus/);
-  assert.match(text, /suggested/);
+  assert.match(text, /suggest/);
 });
 
 test('empty catalog cannot be confirmed', () => {
@@ -89,6 +90,7 @@ test('cross-product confirmation names source and candidate', () => {
   } as never).join('\n');
   assert.match(text, /Codex/);
   assert.match(text, /sonnet/);
+  assert.match(text, /claude-sonnet-4-6/);
   assert.match(text, /different runtime|另一套 Runtime/);
   assert.doesNotMatch(text, /Maximum requests|Changed paths|未决/);
 });
@@ -157,9 +159,8 @@ test('running canvas uses the candidate product not the source session product',
 });
 
 test('workflow listCatalog is the selected pack catalog', async () => {
-  const workflow = createCodexExperimentWorkflow({
+  const workflow = createExperimentWorkflow({
     dataDir: 'unused',
-    runtime: fakeProductPack.runtime,
     pack: fakeProductPack,
     now: () => '2026-08-14T00:00:00.000Z',
     defaults: { candidate: fakeProductPack.defaultCandidate(), policy: TUI_RUN_POLICY },

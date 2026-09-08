@@ -3,18 +3,30 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
  Last task  none selected
 
  Continue
- Enter Latest replay  record unread
- r     Replay the current task  needs a task
+ Enter    Latest replay  record unread
+ /run     Replay the current task  needs a task
 
 ┌─ TaskCases · Storage 0.0 MiB ─────────────────────────────────────┐ ┌─ TaskCase ─────────────────────────────────────┐
 │ ❯ case-history · Inspect a focused regression.                    │ │ TaskCase: case-history                         │
 │     imported 2026-08-11T00:00:00.000Z                             │ │ Task         Inspect a focused regression.     │
 │ 1/1                                                               │ │ Source       codex · session-history           │
 │                                                                   │ │ Frozen       2026-08-11T00:00:00.000Z          │
-│                                                                   │ │ Path         ]8;;file:///TMP/history-data/cases/case-history/case.json\C:\user\AppData\Local\]8;;\     │
-│                                                                   │ │              ]8;;file:///TMP/history-data/cases/case-history/case.json\Temp\reprise-tui-audit-TMP\]8;;\    │
-│                                                                   │ │              ]8;;file:///TMP/history-data/cases/case-history/case.json\history-data\cases\case-history\]8;;\  │
-│                                                                   │ │              ]8;;file:///TMP/history-data/cases/case-history/case.json\case.json]8;;\                         │
+│                                                                   │ │ Path                                           │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\cases\    │
+│                                                                   │ │case-history\case.json                          │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\cases\    │
+│                                                                   │ │case-history\case.json                          │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\cases\    │
+│                                                                   │ │case-history\case.json                          │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\cases\    │
+│                                                                   │ │case-history\case.json                          │
 └───────────────────────────────────────────────────────────────────┘ └────────────────────────────────────────────────┘
  Browse local experiments or switch to TaskCases with Tab.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

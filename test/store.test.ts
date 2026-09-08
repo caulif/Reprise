@@ -19,6 +19,14 @@ import { reconstructControllerRequest } from '../src/application/controller-requ
 import { sha256 } from '../src/core/identity.js';
 import { ExperimentStore, RecoveryArtifactBudgetError } from '../src/infrastructure/store/experiment-store.js';
 
+function lockNonce(raw: string): string {
+  const value: unknown = JSON.parse(raw);
+  if (typeof value !== 'object' || value === null || !('nonce' in value) || typeof value.nonce !== 'string') {
+    throw new Error('writer.lock is missing a string nonce');
+  }
+  return value.nonce;
+}
+
 const timestamp = '2026-08-10T00:00:00.000Z';
 const candidate = { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-test' };
 const policy = {
@@ -350,28 +358,27 @@ test('schema fixtures remain valid for persisted run snapshots', () => {
 });
 
 
-test('store reclaims a stale local writer lock and records the recovery', async () => {
+test('store refuses a leftover writer lock instead of reclaiming it', async () => {
   const root = await temporaryExperiment();
   try {
     await writeFile(join(root, 'writer.lock'), `${JSON.stringify({ experimentId: 'experiment-1', pid: 999_999_999, nonce: 'stale-lock', startedAt: '2026-01-01T00:00:00.000Z', host: hostname() })}\n`);
     const store = await ExperimentStore.open(root, 'experiment-1');
-    await store.acquireWriter();
-    assert.equal(store.events()[0]?.type, 'writer.lock_reclaimed');
+    await assert.rejects(store.acquireWriter(), /already has an active writer/);
+    assert.equal(lockNonce(await readFile(join(root, 'writer.lock'), 'utf8')), 'stale-lock');
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test('store discards an unreadable writer lock instead of locking the experiment out forever', async () => {
+test('store refuses an unreadable writer lock without deleting it', async () => {
   for (const corrupt of ['', '{"experimentId":"experi', '{"experimentId":"experiment-1"}']) {
     const root = await temporaryExperiment();
     try {
       await writeFile(join(root, 'writer.lock'), corrupt);
       const store = await ExperimentStore.open(root, 'experiment-1');
-      await store.acquireWriter();
-      await store.append({ type: 'run.noted', operationId: 'noted', payload: {} });
-      assert.ok(store.events().some((event) => event.type === 'run.noted'));
+      await assert.rejects(store.acquireWriter(), /already has an active writer/);
+      assert.equal(await readFile(join(root, 'writer.lock'), 'utf8'), corrupt);
       await store.close();
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -379,7 +386,7 @@ test('store discards an unreadable writer lock instead of locking the experiment
   }
 });
 
-test('store retires a foreign writer lock only once it is older than the TTL', async () => {
+test('store does not retire a foreign writer lock by age', async () => {
   const root = await temporaryExperiment();
   const foreign = { experimentId: 'experiment-1', pid: process.pid, nonce: 'foreign-lock', host: `${hostname()}-other` };
   try {
@@ -390,8 +397,8 @@ test('store retires a foreign writer lock only once it is older than the TTL', a
 
     await writeFile(join(root, 'writer.lock'), `${JSON.stringify({ ...foreign, startedAt: '2026-01-01T00:00:00.000Z' })}\n`);
     const store = await ExperimentStore.open(root, 'experiment-1');
-    await store.acquireWriter();
-    assert.equal(store.events()[0]?.type, 'writer.lock_reclaimed');
+    await assert.rejects(store.acquireWriter(), /already has an active writer/);
+    assert.equal(lockNonce(await readFile(join(root, 'writer.lock'), 'utf8')), 'foreign-lock');
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -414,21 +421,22 @@ test('store close does not remove a replacement writer lock with another nonce',
   }
 });
 
-test('store allows only one contender to claim a stale writer lock', async () => {
+test('store allows only one writer on an experiment and does not serialize different experiments', async () => {
   const root = await temporaryExperiment();
+  const other = await temporaryExperiment();
   try {
-    await writeFile(join(root, 'writer.lock'), `${JSON.stringify({ experimentId: 'experiment-1', pid: 999_999_999, nonce: 'stale-lock', startedAt: '2026-01-01T00:00:00.000Z', host: hostname() })}
-`);
-    const stores = await Promise.all([
-      ExperimentStore.open(root, 'experiment-1'),
-      ExperimentStore.open(root, 'experiment-1'),
-    ]);
-    const results = await Promise.allSettled(stores.map((store) => store.acquireWriter()));
-    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
-    assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
-    await Promise.all(stores.map((store) => store.close()));
+    const first = await ExperimentStore.open(root, 'experiment-1');
+    const contender = await ExperimentStore.open(root, 'experiment-1');
+    const second = await ExperimentStore.open(other, 'experiment-2');
+    await first.acquireWriter();
+    await assert.rejects(contender.acquireWriter(), /already has an active writer/);
+    await second.acquireWriter();
+    await first.append({ type: 'run.noted', operationId: 'noted-1', payload: { experiment: 'one' } });
+    await second.append({ type: 'run.noted', operationId: 'noted-2', payload: { experiment: 'two' } });
+    await Promise.all([first.close(), contender.close(), second.close()]);
   } finally {
     await rm(root, { recursive: true, force: true });
+    await rm(other, { recursive: true, force: true });
   }
 });
 

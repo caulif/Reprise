@@ -6,7 +6,7 @@ import type {
   ExperimentHandle,
   RecoveryAttempt,
 } from "../application/experiment.js";
-import type { CodexTuiWorkflow } from "../application/tui-workflow.js";
+import type { ExperimentWorkflow } from "../application/tui-workflow.js";
 import type { TaskCase, CandidateSpec } from "../core/schema.js";
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
 import {
@@ -31,6 +31,7 @@ import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/int
 import type { Option } from "./types.js";
 import type { TimelineEntry } from "./timeline.js";
 import { type Workbench, type WorkbenchView } from "./workbench.js";
+import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
 import type { CandidateRunPhase } from "./pages/run.js";
 
@@ -68,7 +69,7 @@ export type CodexIntakeTuiOptions = {
   readonly nowMs?: () => number;
   readonly displayCwd?: string;
   readonly piModels?: PiModels;
-  readonly workflow?: CodexTuiWorkflow;
+  readonly workflow?: ExperimentWorkflow;
   readonly queueTimelineRender?: (callback: () => void) => void;
   readonly autoCompare?: boolean;
 };
@@ -87,7 +88,7 @@ export class CodexIntakeTui {
   nowMs!: () => number;
   displayCwd!: string;
   piModels: PiModels | undefined;
-  workflow: CodexTuiWorkflow | undefined;
+  workflow: ExperimentWorkflow | undefined;
   queueTimelineRender!: (callback: () => void) => void;
   page: Page = "loading";
   sessions: readonly SessionSummary[] = [];
@@ -109,6 +110,11 @@ export class CodexIntakeTui {
   finding = false;
   findQuery = "";
   findCursor = 0;
+  readingMode = false;
+  readingVisibleAt = 0;
+  timelineAnchor: string | undefined;
+  timelineReadOffset = 0;
+  terminalGuard: (() => void) | undefined;
   inspectionShowOutcome = false;
   modelConfig: HarnessModelConfig = defaultHarnessModelConfig();
   hasSavedModelConfig = false;
@@ -118,6 +124,8 @@ export class CodexIntakeTui {
   configBuffer = "";
   configCursor = 0;
   configPendingToggle = false;
+  configLeaveConfirm = false;
+  readonly intakeMemory = new Map<string, IntakeProductMemory>();
   readonly productAuth = new Map<string, boolean>();
   sessionLimitReached = false;
   providers: readonly Option[] = [];
@@ -272,6 +280,7 @@ export class CodexIntakeTui {
   muteNodeWarnings(): void { intakeMethods.CodexIntakeTui_muteNodeWarnings.call(this); }
   restoreNodeWarnings(): void { intakeMethods.CodexIntakeTui_restoreNodeWarnings.call(this); }
   viewport(): { height?: number } { return intakeMethods.CodexIntakeTui_viewport.call(this); }
+  setMouseReporting(enabled: boolean): void { intakeMethods.CodexIntakeTui_setMouseReporting.call(this, enabled); }
   render(immediate = false): void { intakeMethods.CodexIntakeTui_render.call(this, immediate); }
   productContext(): { productLabel?: string; productConfigured?: boolean } { return intakeMethods.CodexIntakeTui_productContext.call(this); }
   view(): WorkbenchView { return intakeMethods.CodexIntakeTui_view.call(this); }

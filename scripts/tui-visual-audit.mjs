@@ -3,6 +3,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CodexIntakeTui } from '../dist/src/tui/intake-app.js';
+import { findProductPack } from '../dist/src/products/index.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
 import { compareFrames, mockTui, pageHtml, selfTestCompareFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
@@ -25,6 +26,28 @@ let stabilize = (text) => text;
 function enterCommand(app, command) {
   app.handleInput(command);
   app.handleInput('\r');
+}
+
+function emitPublicActivities(onEvent, envelope, sequence) {
+  let next = sequence;
+  for (const item of findProductPack('codex').activity.translate(envelope)) {
+    onEvent({
+      ...envelope,
+      sequence: next,
+      eventId: `pub-${next}`,
+      type: 'runtime.public_activity',
+      payload: {
+        schemaVersion: 1,
+        sourceEventId: envelope.eventId,
+        sourceEventType: envelope.type,
+        activity: item.activity,
+        ...(item.correlationId ? { correlationId: item.correlationId } : {}),
+        ...(item.merge ? { merge: item.merge } : {}),
+      },
+    });
+    next += 1;
+  }
+  return next;
 }
 
 function replaceField(app, value) {
@@ -255,6 +278,7 @@ async function main() {
     privacy: { allowModelText: false, allowBinary: false, redactions: [] }, contentHash: 'b'.repeat(64),
   };
   await writeFile(join(casesRoot, 'case.json'), JSON.stringify(taskCase));
+  await writeFile(join(casesRoot, 'case.complete'), '');
   await writeFile(join(experimentsRoot, 'experiment.json'), JSON.stringify({ spec: {
     experimentId: 'exp-history', taskCaseId: 'case-history',
     candidates: [{ candidateId: 'codex-history', productId: 'codex', requestedModel: 'gpt-history' }],
@@ -318,7 +342,7 @@ async function main() {
       input.onEvent({ schemaVersion: 1, sequence: 2, eventId: 'event-2', occurredAt: '2026-08-11T00:10:00.000Z', type: 'input.submitted', payload: { turnIndex: 0, text: 'Fix the failing test.' }, checksum: 'a'.repeat(64) });
       input.onEvent({ schemaVersion: 1, sequence: 3, eventId: 'event-3', occurredAt: '2026-08-11T00:10:00.500Z', type: 'codex.turn_started', payload: {}, checksum: 'a'.repeat(64) });
       input.onEvent({ schemaVersion: 1, sequence: 4, eventId: 'event-4', occurredAt: '2026-08-11T00:10:01.000Z', type: 'controller.decision', payload: { status: 'completed', sessionId: 'controller-1', value: { type: 'send', rationale: 'One check remains.', message: 'Run the focused test.' } }, checksum: 'b'.repeat(64) });
-      input.onEvent({
+      const commandEvent = {
         schemaVersion: 1, sequence: 5, eventId: 'event-5', occurredAt: '2026-08-11T00:10:01.500Z', type: 'codex.item_completed',
         payload: {
           item: {
@@ -329,8 +353,12 @@ async function main() {
           },
         },
         checksum: 'c'.repeat(64),
-      });
-      input.onEvent({ schemaVersion: 1, sequence: 6, eventId: 'event-6', occurredAt: '2026-08-11T00:10:02.000Z', type: 'codex.item_completed', payload: { item: { type: 'agentMessage', text: fullPublicResponse } }, checksum: 'd'.repeat(64) });
+      };
+      input.onEvent(commandEvent);
+      emitPublicActivities(input.onEvent, commandEvent, 7);
+      const messageEvent = { schemaVersion: 1, sequence: 6, eventId: 'event-6', occurredAt: '2026-08-11T00:10:02.000Z', type: 'codex.item_completed', payload: { item: { type: 'agentMessage', text: fullPublicResponse } }, checksum: 'd'.repeat(64) };
+      input.onEvent(messageEvent);
+      emitPublicActivities(input.onEvent, messageEvent, 8);
       await new Promise((resolve) => { releaseStart = resolve; });
       return { cancel: async () => {}, result: new Promise((resolve) => { resolveResult = resolve; }) };
     },
@@ -393,6 +421,7 @@ async function main() {
   await push('24-running-compact-detail', 60, run.render(60));
   runApp.handleInput('f');
   await push('25-running-filter-target', 120, run.render(120));
+  runApp.handleInput('s');
   resolveResult?.({
     reportPath: join(root, 'data', 'experiments', 'fixture', 'report.html'),
     experimentRoot: join(root, 'data', 'experiments', 'fixture'),

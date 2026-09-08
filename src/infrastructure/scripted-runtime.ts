@@ -9,7 +9,7 @@ import type {
   UserMessage,
 } from '../core/runtime.js';
 
-export type ScriptedSettlement = TurnSettlement | Error | Promise<never>;
+export type ScriptedSettlement = TurnSettlement | Error | Promise<TurnSettlement>;
 
 export class ScriptedRunner implements TargetRunner {
   readonly started: MessageIdentity[] = [];
@@ -18,11 +18,18 @@ export class ScriptedRunner implements TargetRunner {
   #deliveries: DeliveryReceipt[];
   #settlements: ScriptedSettlement[];
   #stopError: Error | undefined;
+  #hangStop: boolean;
 
-  constructor(deliveries: readonly DeliveryReceipt[], settlements: readonly ScriptedSettlement[], stopError?: Error) {
+  constructor(
+    deliveries: readonly DeliveryReceipt[],
+    settlements: readonly ScriptedSettlement[],
+    stopError?: Error,
+    options?: { hangStop?: boolean },
+  ) {
     this.#deliveries = [...deliveries];
     this.#settlements = [...settlements];
     this.#stopError = stopError;
+    this.#hangStop = options?.hangStop === true;
   }
 
   capabilities(): RuntimeCapabilities {
@@ -55,6 +62,7 @@ export class ScriptedRunner implements TargetRunner {
 
   async stop(reason: RuntimeStopReason): Promise<void> {
     this.stopped = reason;
+    if (this.#hangStop) return new Promise(() => undefined);
     if (this.#stopError) throw this.#stopError;
   }
 

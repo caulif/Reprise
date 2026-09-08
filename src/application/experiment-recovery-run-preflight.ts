@@ -1,9 +1,11 @@
 import { resolve } from "node:path";
 import type { AgentAuditEvent, AgentAuditSink } from "../infrastructure/pi-agent-host.js";
 import { findProductPack } from "../products/index.js";
+import { packRecoveryPlaybook } from "../products/pack-access.js";
 import { completeHostCheckpointRecovery } from "./experiment-recovery-checkpoint.js";
 import type { RecoveryAttempt } from "./experiment-recovery-types.js";
 import { retryRecoveryPreflight } from "./experiment-recovery-support.js";
+import { persistAgentAuditEvent } from "./experiment-helpers.js";
 import {
   moveRecoveryState,
   type RecoveryRunSession,
@@ -25,15 +27,7 @@ export function createRecoveryAuditSink(session: RecoveryRunSession): AgentAudit
         toolFailureByTool.set(tool, (toolFailureByTool.get(tool) ?? 0) + 1);
         session.lastToolFailureCategory = recoveryToolFailureCategory(event.payload);
       }
-      await store.append({
-        type: event.type,
-        runId: input.runId,
-        payload: {
-          role: event.role,
-          sessionId: event.sessionId,
-          ...event.payload,
-        },
-      });
+      await persistAgentAuditEvent(store, input.runId, event);
     },
   };
 }
@@ -43,7 +37,7 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
   await store.acquireWriter();
   session.writerAcquired = true;
   const pack = findProductPack(input.taskCase.source.productId);
-  const descriptor = pack.recoveryPlaybook();
+  const descriptor = packRecoveryPlaybook(pack);
   const playbook = {
     productId: pack.manifest.productId,
     ...descriptor,

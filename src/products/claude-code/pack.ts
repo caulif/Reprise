@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { sha256 } from '../../core/identity.js';
 import type { CandidateSpec } from '../../core/schema.js';
-import type { ProductAuthStatus, ProductPack, RecoveryPlaybookDescriptor } from '../contract.js';
+import type { ProductAuthStatus, CompleteProductPack, RecoveryPlaybookDescriptor } from '../contract.js';
 import { claudeActivityTranslator } from './activity.js';
 import { ClaudeCodeRuntimePort } from './runtime-port.js';
 import { claudeSessionAdapter } from './sessions.js';
@@ -39,7 +39,7 @@ export async function checkClaudeAuth(port?: ClaudeCodeRuntimePort): Promise<Pro
   return { configured: false, provider: 'claude-code', detail: 'No initialize account, credentials file, or ANTHROPIC_API_KEY. Catalog listing is not the same as a runnable account.' };
 }
 
-export const claudeCodeProductPack: ProductPack = {
+export const claudeCodeProductPack: CompleteProductPack = {
   runtime: new ClaudeCodeRuntimePort(),
   sessions: claudeSessionAdapter,
   activity: claudeActivityTranslator,
@@ -51,6 +51,8 @@ export const claudeCodeProductPack: ProductPack = {
     displayName: 'Claude Code',
     packVersion: '0.1.0',
     schemaVersion: 1,
+    apiMajor: 1,
+    capabilities: ['import', 'runtime'],
     sessionSchemaVersions: ['claude-code-session-jsonl/v1'],
   },
 };

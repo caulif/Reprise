@@ -1,17 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, readdir, readFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { writeAtomic } from "../core/identity.js";
+import { pathContainedBy, relativeInside, stripWindowsExtendedPrefix } from "../core/paths.js";
 import {
   journalControlledRecoveryWrite,
   type RecoveryControlledWriteHook,
 } from "./recovery-write-journal.js";
 import type { AgentToolDefinition } from "./pi-agent-host.js";
 import { ProcessBoundaryError, runProcess, type ProcessSpawner } from "./process-runner.js";
-import { shellInvocation } from "./platform.js";
+import { shellExecutableAvailable, shellInvocation } from "./platform.js";
 import { integer, requiredString } from "./recovery-tools.js";
 
 const MAX_BYTES = 262_144;
@@ -52,7 +53,7 @@ export type RecoveryToolOptions = {
   onControlledWrite?: RecoveryControlledWriteHook;
   onOperation?: (operation: RecoveryToolOperation) => Promise<void>;
   filesystem?: RecoveryToolFilesystem;
-  /** First path segment → absolute tree. Writes to these prefixes are denied. */
+  /** First path segment → absolute tree. Writes to these mounts are denied. */
   mounts?: Readonly<Record<string, string>>;
   allowWrite?: (relativePath: string) => boolean;
   completionPaths?: ReadonlySet<string>;
@@ -336,6 +337,7 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
           },
           options.onControlledWrite,
         );
+        await assertStillInside(path.containmentRoot, path.absolute);
         return { content: "Edited file.", details: { path: path.relative, byteLength: Buffer.byteLength(next) } };
       })(),
   };
@@ -374,6 +376,7 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
           },
           options.onControlledWrite,
         );
+        await assertStillInside(path.containmentRoot, path.absolute);
         return {
           content: `Wrote ${Buffer.byteLength(content)} bytes.`,
           details: { path: path.relative, byteLength: Buffer.byteLength(content) },
@@ -386,8 +389,7 @@ function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { root, options, limit, ensureHome } = ctx;
   return {
     name: "shell_exec",
-    description:
-      "Run one host-shell command with cwd locked to staging. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided.",
+    description: shellExecDescription(ctx),
     parameters: Type.Object({
       command: Type.String({ minLength: 1, maxLength: MAX_COMMAND_BYTES }),
     }),
@@ -451,6 +453,9 @@ function runShell(
   }
   const invocation = windows ? windowsPowershellInvocation(root, command) : undefined;
   const portableShell = windows ? undefined : shellInvocation(command);
+  if (!windows && portableShell && !shellExecutableAvailable(portableShell)) {
+    throw new Error("ENOENT: Bash executable was not found (未找到 Bash).");
+  }
   return runProcess({
     operation: "shell_exec",
     executableKind: windows ? resolved!.kind : portableShell!.kind,
@@ -458,7 +463,6 @@ function runShell(
     args: windows ? invocation!.args : portableShell!.args,
     cwd: windows ? invocation!.spawnCwd : root,
     env: { ...sanitizedEnvironment(home), ...options.shellEnv, ...(windows ? invocation!.extraEnv : {}) },
-    shell: false,
     allowNonzeroExit: windows,
     killTree: true,
     signal,
@@ -481,7 +485,7 @@ function runShell(
       },
     };
   }).catch((error) => {
-    if (error instanceof ProcessBoundaryError) throw formatPowershellBoundary(error, resolved?.executable);
+    if (error instanceof ProcessBoundaryError) throw formatShellBoundary(error, windows, windows ? resolved?.executable : portableShell?.executable);
     throw error;
   });
 }
@@ -541,13 +545,15 @@ function findExecutableOnPath(executable: string): string | undefined {
   return undefined;
 }
 
-function formatPowershellBoundary(error: ProcessBoundaryError, executable?: string): Error {
+function formatShellBoundary(error: ProcessBoundaryError, windows: boolean, executable?: string): Error {
   const bits = [error.exitCategory, error.errnoCode].filter(Boolean).join(" ");
   const missing =
     error.errnoCode === "ENOENT" && executable && existsSync(executable)
       ? " Windows CreateProcess rejected the working directory (MAX_PATH)."
       : error.errnoCode === "ENOENT"
-        ? " PowerShell executable was not found (未找到 PowerShell)."
+        ? windows
+          ? " PowerShell executable was not found (未找到 PowerShell)."
+          : " Bash executable was not found (未找到 Bash)."
         : "";
   return new Error(`${bits}:${missing} ${error.message}`.replace(/\s+/g, " ").trim());
 }
@@ -632,11 +638,10 @@ function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command
 async function assertNoSymlinkAncestors(root: string, target: string): Promise<void> {
   const resolvedRoot = resolve(root);
   const resolvedTarget = resolve(target);
-  const relativeTarget = relative(resolvedRoot, resolvedTarget);
-  if (relativeTarget === ".." || relativeTarget.startsWith(`..${sep}`) || isAbsolute(relativeTarget))
-    throw new Error("Path escapes staging.");
+  const relativeTarget = relativeInside(resolvedRoot, resolvedTarget);
+  if (relativeTarget === undefined) throw new Error("Path escapes staging.");
   let current = resolvedRoot;
-  for (const part of relativeTarget.split(sep).filter(Boolean)) {
+  for (const part of relativeTarget.split("/").filter(Boolean)) {
     current = resolve(current, part);
     try {
       if ((await lstat(current)).isSymbolicLink()) throw new Error("Symbolic links are not supported in staging.");
@@ -647,6 +652,19 @@ async function assertNoSymlinkAncestors(root: string, target: string): Promise<v
   }
 }
 
+async function assertStillInside(root: string, target: string): Promise<void> {
+  let realRoot: string;
+  let realTarget: string;
+  try {
+    realRoot = stripWindowsExtendedPrefix(await realpath(root));
+    realTarget = stripWindowsExtendedPrefix(await realpath(target));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!pathContainedBy(realRoot, realTarget)) throw new Error("Path escapes staging.");
+}
+
 type ResolvedWorkspacePath = {
   absolute: string;
   relative: string;
@@ -654,11 +672,23 @@ type ResolvedWorkspacePath = {
   containmentRoot: string;
 };
 
+function shellExecDescription(ctx: RecoveryToolContext): string {
+  const mounts = Object.keys(ctx.mounts);
+  const denied = ctx.options.denyDestructiveOnPrefix ?? [];
+  const readonly = [...new Set([...mounts, ...denied])];
+  const lock = readonly.length
+    ? ` Read-only mounts (${readonly.join(", ")}) must not be mutated. Write only staging files the role allows (Comparison: scratch/, work/comparison-plan.md, report.html).`
+    : "";
+  return `Run one host-shell command with cwd locked to staging. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided.${lock}`;
+}
+
 function workspaceRelative(input: string): string | { root: true } | undefined {
-  if (isAbsolute(input) || input.includes("\\")) return undefined;
-  if (input === "" || input === "." || input === "./") return { root: true };
+  if (isAbsolute(input)) return undefined;
+  const slash = input.replaceAll("\\", "/");
+  if (slash.includes("\\")) return undefined;
+  if (slash === "" || slash === "." || slash === "./") return { root: true };
   const kept: string[] = [];
-  for (const part of input.split("/")) {
+  for (const part of slash.split("/")) {
     if (part === ".") continue;
     if (!part || part === "..") return undefined;
     kept.push(part);
@@ -686,9 +716,9 @@ function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath 
 
 function containedPath(root: string, input: string): { absolute: string; relative: string } {
   const absolute = resolve(root, ...input.split("/"));
-  const rel = relative(root, absolute);
-  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error("Path escapes staging.");
-  return { absolute, relative: rel.replaceAll("\\", "/") };
+  const rel = relativeInside(root, absolute);
+  if (rel === undefined) throw new Error("Path escapes staging.");
+  return { absolute, relative: rel };
 }
 
 function recoveryReadBoundaryError(error: unknown): boolean {
@@ -751,9 +781,4 @@ async function assertWritableFile(path: string): Promise<void> {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
-
-
-
-
-
 

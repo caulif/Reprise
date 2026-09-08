@@ -219,5 +219,6 @@ export async function closeRecoveryRunSession(session: RecoveryRunSession): Prom
     }
   }
   session.unsubscribe?.();
+  session.input.recovery.releasePreparation?.(session.input.experimentId);
   await session.store.close();
 }

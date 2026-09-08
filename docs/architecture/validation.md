@@ -1,6 +1,6 @@
 # 非确定性 Agent 的最小验证边界
 
-本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前模块设计
 
@@ -39,10 +39,11 @@ Schema 验证只判断输出是否可执行，不判断内容是否聪明或措�
 
 Agent 只能使用 Host 显式提供的能力：
 
-- Controller 使用与 Recovery 相同的八个工具名，cwd 为隔离副本；不得写用户源目录、不得调用 Target 工具或改 CandidateRun 状态机；
-- Comparison 使用同一八个工具名；`candidate/` 只读挂载，只许 `write` `report.html`；不得改实验状态或排名候选；
+- Controller 使用与 Recovery 相同的七个工具名；隔离副本只读挂载，不得写用户源目录、不得调用 Target 工具或改 CandidateRun 状态机；
+- Comparison 使用同一七个工具名；`candidate/` 只读挂载，只许写本次 attempt 的 `scratch/`、`work/comparison-plan.md` 与 `report.html`；不得改实验状态或排名候选；
 - Recovery 的写入能力只作用于 Harness 持有的 staging；
-- 路径、ownership、隐私和大小限制由工具实现验证；
+- 路径、ownership、隐私和大小限制由工具实现验证；目录包含用规范化后的真实路径关系，不用简单字符串前缀；
+- 恢复接受、候选投递、报告发布由 harness 拥有，不增加跨角色 Verifier 接口；
 - 权限扩大、真实发布、付款、删除和其他不可逆动作必须来自真实用户授权。
 
 这些约束通过不给予能力和在工具边界验证实现，不依赖 system prompt，也不测试 Agent 是否会自觉遵守。

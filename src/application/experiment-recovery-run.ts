@@ -9,6 +9,7 @@ import { runRecoveryForensics } from "./experiment-recovery-run-forensics.js";
 import { enforceRecoveryReadiness, invokeRecoveryAgent } from "./experiment-recovery-run-model.js";
 import { finalizeRecoveredCandidate } from "./experiment-recovery-run-finalize.js";
 import { classifyRecoveryFailureStage } from "./experiment-recovery-support.js";
+import { finishExperimentActivity, registerActivity, activityControlReady } from "./experiment-activity.js";
 import type { RecoveryAttempt, RecoveryAttemptInput } from "./experiment-recovery-types.js";
 
 export { classifyRecoveryFailureStage };
@@ -18,11 +19,25 @@ export type { RecoveryAttempt, RecoveryAttemptInput, RecoveryAttemptMode } from 
 export async function recoverCodexExperiment(
   input: RecoveryAttemptInput,
 ): Promise<RecoveryAttempt> {
-  const session = await createRecoveryRunSession(input);
+  const localAbort = new AbortController();
+  const signal = input.signal ? AbortSignal.any([input.signal, localAbort.signal]) : localAbort.signal;
+  const activity = registerActivity({
+    kind: "prepare",
+    experimentId: input.experimentId,
+    runId: input.runId,
+    dataDir: input.dataDir,
+    cancel: async () => {
+      localAbort.abort();
+    },
+  });
+  await activityControlReady(activity);
+  let session: RecoveryRunSession | undefined;
   try {
+    session = await createRecoveryRunSession({ ...input, signal });
     return await runRecoverCodexExperiment(session);
   } catch (error) {
-    if (input.signal?.aborted) {
+    if (!session) throw error;
+    if (signal.aborted) {
       session.failureStage = 'cancelled';
       session.recovery = { status: 'cancelled' };
       return await failRecoveryRunSession(session, error);
@@ -47,7 +62,8 @@ export async function recoverCodexExperiment(
     }
     return await failRecoveryRunSession(session, error);
   } finally {
-    await closeRecoveryRunSession(session);
+    if (session) await closeRecoveryRunSession(session);
+    finishExperimentActivity(input.experimentId);
   }
 }
 

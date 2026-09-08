@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, rm, stat, truncate, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, truncate, unlink, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { SAFE_ID, sha256, writeAtomic } from '../../core/identity.js';
+import { SAFE_ID, sha256, eventEnvelopeChecksum, writeAtomic } from '../../core/identity.js';
+import { PublicActivityPayloadSchema } from '../../core/public-activity.js';
 import {
   ArtifactRefSchema,
   EventEnvelopeSchema,
@@ -21,8 +22,6 @@ import {
 } from '../../core/schema.js';
 
 const SCHEMA_VERSION = 1;
-/** A lock owned by another host cannot be probed for liveness, so it is retired on age alone. */
-const FOREIGN_LOCK_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Recovery keeps structured evidence by default; full workspace trees are never artifacts. */
 const RECOVERY_ARTIFACT_LIMITS: RecoveryArtifactPolicy = {
@@ -99,22 +98,13 @@ interface LockInfo {
 }
 
 function eventChecksum(event: Omit<EventEnvelope, 'checksum'>): string {
-  return sha256(JSON.stringify(event));
+  return eventEnvelopeChecksum(event);
 }
 
 function isLockInfo(value: unknown): value is LockInfo {
   if (!value || typeof value !== 'object') return false;
   const lock = value as Partial<LockInfo>;
   return typeof lock.experimentId === 'string' && typeof lock.pid === 'number' && Number.isInteger(lock.pid) && lock.pid > 0 && typeof lock.nonce === 'string' && typeof lock.startedAt === 'string' && typeof lock.host === 'string';
-}
-
-function processExists(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error: unknown) {
-    return !(error instanceof Error && 'code' in error && error.code === 'ESRCH');
-  }
 }
 
 function assertId(value: string, name: string): void {
@@ -184,7 +174,6 @@ export class ExperimentStore {
       startedAt: new Date().toISOString(),
       host: hostname(),
     };
-    const reclaimed = await this.#reclaimStaleLock();
     try {
       await writeFile(this.#lockPath, `${JSON.stringify(lock)}\n`, { encoding: 'utf8', flag: 'wx' });
       this.#lockHeld = true;
@@ -197,47 +186,6 @@ export class ExperimentStore {
     }
     await repairIncompleteTail(this.#eventsPath);
     this.#events = await readEvents(this.#eventsPath);
-    if (reclaimed) await this.append({ type: 'writer.lock_reclaimed', operationId: `writer-lock-reclaimed-${lock.nonce}`, payload: { previousPid: reclaimed.pid, previousStartedAt: reclaimed.startedAt } });
-  }
-
-  async #reclaimStaleLock(): Promise<LockInfo | undefined> {
-    let raw: string;
-    try {
-      raw = await readFile(this.#lockPath, 'utf8');
-    } catch (error: unknown) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
-      throw error;
-    }
-    let value: unknown;
-    try {
-      value = JSON.parse(raw) as unknown;
-    } catch {
-      value = undefined;
-    }
-    // A lock written during a crash can be truncated or empty. Keeping it would lock the experiment out forever.
-    const reclaimable = !isLockInfo(value) || value.experimentId !== this.#experimentId || this.#isStale(value);
-    if (!reclaimable) return undefined;
-    if (!(await this.#claimLock())) return undefined;
-    return isLockInfo(value) && value.experimentId === this.#experimentId ? value : undefined;
-  }
-
-  #isStale(lock: LockInfo): boolean {
-    if (lock.host === hostname()) return !processExists(lock.pid);
-    // Another host's liveness is unknowable here, so only age can retire the lock.
-    const startedAt = Date.parse(lock.startedAt);
-    return !Number.isFinite(startedAt) || Date.now() - startedAt >= FOREIGN_LOCK_TTL_MS;
-  }
-
-  async #claimLock(): Promise<boolean> {
-    const tombstone = `${this.#lockPath}.${randomUUID()}.retired`;
-    try {
-      await rename(this.#lockPath, tombstone);
-    } catch (error: unknown) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
-      throw error;
-    }
-    await rm(tombstone, { force: true });
-    return true;
   }
 
   async close(): Promise<void> {
@@ -347,6 +295,7 @@ export class ExperimentStore {
     if (event.type === 'controller.observation_read' && !Value.Check(ControllerObservationReadPayloadSchema, event.payload)) throw new Error('controller.observation_read payload does not satisfy its schema.');
     if (event.type === 'comparison.requested' && !Value.Check(ComparisonRequestedPayloadSchema, event.payload)) throw new Error('comparison.requested payload does not satisfy its schema.');
     if ((event.type === 'comparison.plan_requested' || event.type === 'comparison.report_requested') && !Value.Check(ComparisonPhaseRequestedPayloadSchema, event.payload)) throw new Error(`${event.type} payload does not satisfy its schema.`);
+    if (event.type === 'runtime.public_activity' && !Value.Check(PublicActivityPayloadSchema, event.payload)) throw new Error('runtime.public_activity payload does not satisfy its schema.');
     await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);
     for (const listener of this.#listeners) {

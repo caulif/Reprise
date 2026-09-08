@@ -1,6 +1,6 @@
 # 持久化与崩溃一致性
 
-本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前架构基线
 
@@ -35,6 +35,7 @@ data/
 │   ├── events.jsonl              # 本 Experiment 唯一权威事件日志
 │   ├── writer.lock               # 仅活动 writer 持有
 │   ├── runs/<run-id>/
+│   │   ├── preflight.json
 │   │   ├── attempt.json
 │   │   ├── manifest.json         # 准备成功后才存在
 │   │   ├── state.json
@@ -46,9 +47,9 @@ data/
 └── blobs/<content-hash>
 ```
 
-`case.json`、`experiment.json`、`attempt.json` 和已存在的 `manifest.json` 是不可变对象。`attempt.json` 在 CandidateRun 创建时提交；`manifest.json` 只在 Runtime、模型和隔离环境均解析成功后提交，准备失败的 run 不伪造半 Manifest。`case.complete` 和 `experiment.complete` 是对应规格的原子提交标记；没有标记的 Case 或 Experiment 不得作为有效输入。`attempt.json` 与可选 `manifest.json` 先原子 rename，再分别以唯一事件 `run.attempt_created`、`run.manifest_created` 提交；文件存在但缺少对应事件时视为未提交残留。`state.json`、`record.json` 和 comparison projection 都可以删除并从事实重建。`blobs/` 可在第一版延后实现；无论 artifact 是否集中存储，都必须保存 hash 和 ownership。
+`case.json`、`experiment.json`、`attempt.json` 和已存在的 `manifest.json` 是不可变对象。`experiment.json` 只保存 ExperimentSpec；run 列表来自 `runs/` 目录（旧文件里的 `runIds` 仅作缺目录时的回退）。`attempt.json` 在 CandidateRun 创建时提交；`manifest.json` 只在 Runtime、模型和隔离环境均解析成功后提交，准备失败的 run 不伪造半 Manifest。`case.complete` 和 `experiment.complete` 是对应规格的原子提交标记；没有标记的 Case 或 Experiment 不得作为有效输入。`attempt.json` 与可选 `manifest.json` 先原子 rename，再分别以唯一事件 `run.attempt_created`、`run.manifest_created` 提交；文件存在但缺少对应事件时视为未提交残留。`state.json`、`record.json` 和 comparison projection 都可以删除并从事实重建。`blobs/` 可在第一版延后实现；无论 artifact 是否集中存储，都必须保存 hash 和 ownership。
 
-`experiments/<experiment-id>/events.jsonl` 是该 Experiment 的唯一事件事实来源。`readRun(runId)` 过滤这份日志，不在 run 目录双写第二份事件日志。第一版数据量小、候选串行，线性过滤优先于维护崩溃时可能分叉的索引；需要性能时再增加可重建索引。
+`experiments/<experiment-id>/events.jsonl` 是该 Experiment 的唯一事件事实来源。内部 Agent Session 与 Invocation 都写入这份日志，不使用 Pi `JsonlSessionRepo` 或 `AgentHarness` 作为第二套权威 transcript。请求完成使用 `agent.invocation_*`；Session 关闭使用 `agent.session_completed` 或 `agent.session_cancelled`。`readRun(runId)` 过滤这份日志，不在 run 目录双写第二份事件日志。第一版数据量小、候选串行，线性过滤优先于维护崩溃时可能分叉的索引；需要性能时再增加可重建索引。
 
 ## 3. 写入规则
 
@@ -67,7 +68,7 @@ data/
 
 ### 3.2 追加式事件与单写者
 
-Experiment 的 `events.jsonl` 只追加，不更新已有行。每个活动 Experiment 同时最多一个 writer：写者获取 `writer.lock` 后才能分配 sequence、追加事件或刷新投影；其他 CLI 进程只能只读或明确报错，不能自动抢锁。lock 至少记录 PID、process nonce、启动时间和 experiment ID；判断 stale lock 时还必须核查已持久化 operation 与 Runtime 外部状态，不能只凭 PID 不存在就重放副作用。
+Experiment 的 `events.jsonl` 只追加，不更新已有行。每个活动 Experiment 同时最多一个 writer：写者获取 `writer.lock` 后才能分配 sequence、追加事件或刷新投影；其他 CLI 进程只能只读或明确报错，不能自动抢锁。lock 至少记录 PID、process nonce、启动时间和 experiment ID。锁文件存在即拒绝新写者，不按 PID 消失、外机 TTL 或损坏内容回收。残留锁由原所有者 `close` 删除，或由操作者手动删除。
 
 事件包络为：
 
@@ -136,9 +137,11 @@ controller.input_proposed
 
 只有 `runtime.input_accepted` 才推进到候选 turn。目标 CLI 的 Product Pack 负责定义如何确认该边界；Harness 不把进程写入成功或 stdout 出现当作通用判据。
 
-内部 Agent 在一次 completion 前若触发 Pi 压缩，那一次送给模型的试卷是 compaction summary 加上 retained tail。`agent.context_compacted` 记录 summary、tokensBefore 和 retainedCount。被切掉的 tool 正文不以 digest 占位进入下一轮试卷；全文仍在当轮 `agent.tool_completed`，供审计，不等于下一轮试卷。不得要求从压缩结果还原被丢弃的 tool 正文。
+内部 Agent 送给模型的输入以实验事件为权威，见[模型输入重建](../decisions/accepted/2026-09-08-model-input-reconstruction.md)。`agent.session_started` 保存过滤后的系统输入与工具定义；每次请求的用户正文在 `agent.message_appended`，模型原文在 `agent.model_output`，工具参数与过滤后的结果按 `toolCallId` 配对。超过内联上限的正文与图片字节引用 `agent_model_input` 附件，重建时校验 hash 与长度。
 
-Comparison 的 Planner 与 Reporter 各自有独立 session 和 `comparison.{phase}_requested` 输入 artifact。事件记录 `attemptId`、`phase`、输入 digest 与 artifact ID；Reporter artifact 还包含它启动时看到的计划正文。`work/comparison-plan.md` 是可变工作状态，不是不可变 artifact。新的 comparison attempt 不从旧 attempt 读取 plan 或 report，成功发布使用原子替换，失败保留实验根已有的成功报告。
+内部 Agent 在一次 completion 前若触发 Pi 压缩，那一次送给模型的试卷是 compaction summary 加上 retained tail。`agent.context_compacted` 记录 summary、tokensBefore、retainedCount、原因和 retained tail 正文或附件引用。被切掉的 tool 正文不以 digest 占位进入下一轮试卷；全文仍在当轮 `agent.tool_completed`，供审计，不等于下一轮试卷。不得要求从压缩结果还原被丢弃的 tool 正文。用户正文提交成功后才调用模型；模型原文提交成功后才能报告 Invocation 成功。尾部半行、非法 JSON、缺附件和校验失败只诊断已提交前缀，不补写。
+
+Comparison 每次 attempt 一个 Session，并写入 `comparison.requested` 输入 artifact。事件记录 `attemptId`、输入 digest 与 artifact ID。`work/comparison-plan.md` 是可变工作笔记，不是不可变 artifact。新的 comparison attempt 不从旧 attempt 读取 plan 或 report，成功发布使用原子替换，失败保留实验根已有的成功报告。历史日志中的 `comparison.plan_requested` / `comparison.report_requested` 仍按原 schema 可读。
 
 ## 6. 崩溃恢复
 
@@ -184,7 +187,7 @@ interface OperationRef {
 
 ## 8. schema 版本化
 
-所有持久化对象和事件包络都带 `schemaVersion`。读取支持当前版本和明确支持的旧版本；写出只使用当前版本。迁移写入新临时文件并原子替换，无法迁移时保留原数据并报告 `unsupported_schema`。事件字段只能向后兼容地新增；删除或改变语义必须提升版本。
+所有持久化对象和事件包络都带 `schemaVersion`。读取支持当前版本和明确支持的旧版本；写出只使用当前版本。事件信封与模型正文当前写入版本为 1。未知版本报告 `unsupported_schema` 并保留原数据，不在打开 History 时重写日志。缺少正文的旧 Agent 事件显示固定缺口文案，见[历史只读](../decisions/accepted/2026-09-08-history-readonly-compat.md)。迁移写入新临时文件并原子替换，无法迁移时保留原数据并报告 `unsupported_schema`。事件字段只能向后兼容地新增；删除或改变语义必须提升版本。
 
 ## 9. 删除和保留
 

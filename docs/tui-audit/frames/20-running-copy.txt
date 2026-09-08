@@ -6,7 +6,6 @@ Reprise   Recovering session                                                    
  Project      source                                                                                                    
  Status       Running recovery agent                                                                                    
                                                                                                                         
- [▓████████░░░░░░░░░░░░░░░░░░░░░░░░░░░]                                                                                 
  Recovering the isolated workspace from this session. Your original files stay unchanged.                               
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Cancel  [?] Keys
+ [Ctrl+C] Cancel  [/] Find  [v] Select  [?] Keys

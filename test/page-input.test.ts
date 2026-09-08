@@ -109,3 +109,34 @@ test('sessions page leaves a project on escape or backspace when that is allowed
   assert.equal(dispatchSessionsInput({ query: '', cursor: 0, searching: false, canLeaveProject: false }, '\x1b')?.action, 'home');
   assert.equal(dispatchSessionsInput({ query: '', cursor: 0, searching: false, canLeaveProject: true }, '\b')?.action, 'leave-project');
 });
+
+test('home letters stay in the composer instead of acting as shortcuts', () => {
+  const typed = dispatchHomeComposer({ composer: '', cursor: 0, showSuggestions: false }, 'r');
+  assert.equal(typed?.state.composer, 'r');
+  assert.equal(typed?.action, undefined);
+});
+
+test('home up and down cycle matching slash commands', () => {
+  const started = dispatchHomeComposer({ composer: '', cursor: 0, showSuggestions: false }, '/');
+  const next = dispatchHomeComposer(started?.state ?? { composer: '/', cursor: 1, showSuggestions: true }, '\x1b[B');
+  assert.ok(next?.state.composer.startsWith('/'));
+  assert.notEqual(next?.state.composer, '/');
+});
+
+test('session list letters filter instead of paging, with Ctrl chords for catalog actions', () => {
+  const typed = dispatchSessionsInput({ query: '', cursor: 0, searching: false, canLeaveProject: true }, 'f');
+  assert.equal(typed?.action, 'edit-search');
+  assert.equal(typed?.state.query, 'f');
+  assert.equal(typed?.state.searching, true);
+  assert.equal(dispatchSessionsInput({ query: '', cursor: 0, searching: false, canLeaveProject: true }, '\x06')?.action, 'toggle-filter');
+  assert.equal(dispatchSessionsInput({ query: '', cursor: 0, searching: false, canLeaveProject: true }, '\x0e')?.action, 'more');
+  assert.equal(dispatchSessionsInput({ query: '', cursor: 0, searching: false, canLeaveProject: true }, '\x12')?.action, 'refresh');
+});
+
+test('canvas find uses Enter and Shift+Enter for hits; Home is not a Home-page command', () => {
+  const finding = { finding: true, query: 'tool', cursor: 4 };
+  assert.equal(dispatchCanvasInput(finding, '\r', false)?.action, 'next-hit');
+  assert.equal(dispatchCanvasInput(finding, '\x1b[13;2u', false)?.action, 'prev-hit');
+  assert.equal(dispatchCanvasInput({ finding: false, query: '', cursor: 0 }, '\x1b[H', false)?.action, 'home');
+  assert.equal(dispatchCanvasInput(finding, 'v', false)?.action, 'edit-find');
+});

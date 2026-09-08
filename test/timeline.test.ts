@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { EventEnvelope } from '../src/core/schema.js';
-import { appendTimelineEntries, projectTimelineEvent, type TimelineEntry } from '../src/tui/timeline.js';
+import { appendTimelineEntries, projectPersistedTimeline, projectTimelineEvent, type TimelineEntry } from '../src/tui/timeline.js';
+import { projectPackEntries } from './support/public-timeline.js';
 
 const timestamp = '2026-08-10T11:33:12.000Z';
 
@@ -15,6 +16,10 @@ function event(type: string, payload: unknown): EventEnvelope {
     payload,
     checksum: '0'.repeat(64),
   };
+}
+
+function projectPack(type: string, payload: unknown): TimelineEntry[] {
+  return projectPackEntries(event(type, payload));
 }
 
 test('timeline projects operator-relevant persisted facts', () => {
@@ -36,11 +41,17 @@ test('timeline projects operator-relevant persisted facts', () => {
   assert.equal(projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: 'Edit slides.html in the current directory.' }))[0]?.detail, 'Edit slides.html in the current directory.');
   assert.deepEqual(projectTimelineEvent(event('input.submitted', { turnIndex: 0 })), []);
 
-  const plan = projectTimelineEvent(event('codex.turn_plan_updated', {
+  const plan = projectPack('codex.turn_plan_updated', {
     plan: [{ step: 'Inspect existing service', status: 'inProgress' }, { step: 'Run tests', status: 'pending' }],
-  }))[0];
+  })[0];
   assert.equal(plan?.source, 'TARGET');
   assert.equal(plan?.detail, 'inProgress · Inspect existing service\npending · Run tests');
+  const rawPlan = projectPersistedTimeline([event('codex.turn_plan_updated', {
+    plan: [{ step: 'Inspect existing service', status: 'inProgress' }],
+  })])[0];
+  assert.equal(rawPlan?.title, 'Activity · codex.turn_plan_updated');
+  assert.doesNotMatch(rawPlan?.detail ?? '', /Inspect existing service/);
+  assert.deepEqual(projectTimelineEvent(event('codex.turn_plan_updated', { plan: [] })), []);
 
   const sent = projectTimelineEvent(event('controller.decision', {
     status: 'completed', sessionId: 'controller-1', value: { type: 'send', rationale: 'One check remains.', message: 'Run the focused test.' },
@@ -81,43 +92,42 @@ test('timeline projects operator-relevant persisted facts', () => {
 });
 
 test('timeline keeps Codex items and merges streamed deltas into one row', () => {
-  assert.equal(projectTimelineEvent(event('codex.item_commandExecution_outputDelta', { itemId: 'call-1', delta: 'noise' }))[0]?.patch, 'append');
-  assert.equal(projectTimelineEvent(event('codex.item_commandExecution_outputDelta', { itemId: 'call-1', delta: 'noise' }))[0]?.detail, 'noise');
+  assert.equal(projectPack('codex.item_commandExecution_outputDelta', { itemId: 'call-1', delta: 'noise' })[0]?.patch, 'append');
+  assert.equal(projectPack('codex.item_commandExecution_outputDelta', { itemId: 'call-1', delta: 'noise' })[0]?.detail, 'noise');
 
-  const emptyThought = projectTimelineEvent(event('codex.item_completed', { item: { type: 'reasoning', id: 'rs-1', summary: [], content: [] } }))[0];
-  assert.equal(emptyThought?.hidden, true);
+  const emptyThought = projectPack('codex.item_completed', { item: { type: 'reasoning', id: 'rs-1', summary: [], content: [] } });
+  assert.equal(emptyThought.length, 0);
 
-  const thinking = projectTimelineEvent(event('codex.item_started', { item: { type: 'reasoning', id: 'rs-1', summary: [], content: [] } }))[0];
-  assert.equal(thinking?.title, 'Thinking');
-  assert.equal(thinking?.itemId, 'rs-1');
+  const thinking = projectPack('codex.item_started', { item: { type: 'reasoning', id: 'rs-1', summary: [], content: [] } });
+  assert.equal(thinking.length, 0);
 
-  const prompt = projectTimelineEvent(event('codex.item_completed', {
+  const prompt = projectPack('codex.item_completed', {
     item: { type: 'userMessage', content: [{ type: 'text', text: 'Please inspect the workspace.\n' }] },
-  }))[0];
+  })[0];
   assert.equal(prompt?.title, 'Prompt · Please inspect the workspace.');
   assert.equal(prompt?.detail, 'Please inspect the workspace.\n');
 
-  const working = projectTimelineEvent(event('codex.turn_started', { turnId: 'turn-1' }))[0];
+  const working = projectPack('codex.turn_started', { turnId: 'turn-1' })[0];
   assert.equal(working?.title, 'Working');
   assert.equal(working?.detail, 'The target is running this turn.');
 
-  const runningPwsh = projectTimelineEvent(event('codex.item_started', {
+  const runningPwsh = projectPack('codex.item_started', {
     item: { type: 'commandExecution', command: '"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe" -Command Get-ChildItem', status: 'inProgress' },
-  }))[0];
+  })[0];
   assert.equal(runningPwsh?.title, 'Running · pwsh · Get-ChildItem');
 
-  const running = projectTimelineEvent(event('codex.item_started', {
+  const running = projectPack('codex.item_started', {
     item: { type: 'commandExecution', command: 'npm test', status: 'inProgress' },
-  }))[0];
+  })[0];
   assert.equal(running?.title, 'Running · npm test');
 
-  const sandbox = projectTimelineEvent(event('codex.item_completed', {
+  const sandbox = projectPack('codex.item_completed', {
     item: {
       type: 'commandExecution', command: '"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe" -Command Get-ChildItem',
       status: 'failed', cwd: 'C:\\work', exitCode: -1, durationMs: 12,
       aggregatedOutput: 'execution error: Io(Custom { kind: Other, error: "Windows sandbox: helper_unknown_error: apply deny-read ACLs" })',
     },
-  }))[0];
+  })[0];
   assert.equal(sandbox?.title, 'pwsh · Get-ChildItem');
   assert.equal(sandbox?.level, 'warning');
   assert.match(sandbox?.detail ?? '', /Sandbox blocked a path outside the isolated workspace/);
@@ -128,18 +138,18 @@ test('timeline keeps Codex items and merges streamed deltas into one row', () =>
   assert.match(sandbox?.original ?? '', /Io\(Custom/);
   assert.equal(running?.detail, '$ npm test');
 
-  const thread = projectTimelineEvent(event('codex.thread_started', { sandbox: 'danger-full-access' }))[0];
+  const thread = projectPack('codex.thread_started', { sandbox: 'danger-full-access' })[0];
   assert.equal(thread?.title, 'Sandbox · full access');
   assert.equal(thread?.source, 'HARNESS');
 
-  const writing = projectTimelineEvent(event('codex.item_started', { item: { type: 'agentMessage', id: 'msg-1', text: '' } }))[0];
+  const writing = projectPack('codex.item_started', { item: { type: 'agentMessage', id: 'msg-1', text: '' } })[0];
   assert.equal(writing?.title, 'Writing');
   assert.equal(writing?.detail, 'The target is writing a reply.');
   assert.equal(writing?.itemId, 'msg-1');
 
-  const command = projectTimelineEvent(event('codex.item_completed', {
+  const command = projectPack('codex.item_completed', {
     item: { type: 'commandExecution', command: 'npm test', status: 'completed', aggregatedOutput: 'one\ntwo\nthree\nfour\nfive\nsix\nseven' },
-  }))[0];
+  })[0];
   assert.equal(command?.title, 'npm test');
   assert.match(command?.detail ?? '', /^\$ npm test/);
   assert.doesNotMatch(command?.detail ?? '', /^Command$/m);
@@ -149,18 +159,18 @@ test('timeline keeps Codex items and merges streamed deltas into one row', () =>
   assert.match(command?.original ?? '', /seven/);
 
   const longCommandOutput = `${Array.from({ length: 200 }, (_, index) => `public output ${index + 1}`).join('\n')}\nCOMMAND_OUTPUT_END`;
-  const fullCommand = projectTimelineEvent(event('codex.item_completed', {
+  const fullCommand = projectPack('codex.item_completed', {
     item: { type: 'commandExecution', command: 'npm test', status: 'completed', aggregatedOutput: longCommandOutput },
-  }))[0];
+  })[0];
   assert.match(fullCommand?.detail ?? '', /public output 1/);
   assert.match(fullCommand?.detail ?? '', /\.\.\. \+\d+ lines/);
   assert.doesNotMatch(fullCommand?.detail ?? '', /COMMAND_OUTPUT_END/);
   assert.match(fullCommand?.original ?? '', /COMMAND_OUTPUT_END/);
 
   const longScript = `"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe" -Command "${'Get-ChildItem -Recurse | Format-Table; '.repeat(12)}"`;
-  const longOneLiner = projectTimelineEvent(event('codex.item_completed', {
+  const longOneLiner = projectPack('codex.item_completed', {
     item: { type: 'commandExecution', command: longScript, status: 'completed', cwd: 'C:\\\\work', exitCode: 0, durationMs: 12, aggregatedOutput: 'Mode Length Name\n---- ------ ----' },
-  }))[0];
+  })[0];
   assert.match(longOneLiner?.title ?? '', /^pwsh · Get-ChildItem/);
   assert.match(longOneLiner?.detail ?? '', /^\$ Get-ChildItem/);
   assert.match(longOneLiner?.detail ?? '', /Mode Length Name/);
@@ -169,22 +179,22 @@ test('timeline keeps Codex items and merges streamed deltas into one row', () =>
   assert.doesNotMatch(longOneLiner?.detail ?? '', /^Command$/m);
   assert.match(longOneLiner?.original ?? '', /Program Files/);
 
-  const runningLong = projectTimelineEvent(event('codex.item_started', {
+  const runningLong = projectPack('codex.item_started', {
     item: { type: 'commandExecution', command: longScript, status: 'inProgress' },
-  }))[0];
+  })[0];
   assert.doesNotMatch(runningLong?.detail ?? '', /Program Files/);
   assert.match(runningLong?.original ?? '', /Program Files/);
   assert.match(runningLong?.detail ?? '', /^\$ Get-ChildItem/);
 
   const nested = '"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe" -Command \'$target=\'"\'C:\\\\software\\\\weixdocuments\\\\xwechat_files\'; Get-ChildItem -LiteralPath $target\'';
-  const nestedCompleted = projectTimelineEvent(event('codex.item_completed', {
+  const nestedCompleted = projectPack('codex.item_completed', {
     item: {
       type: 'commandExecution', command: nested, status: 'completed', exitCode: 0, durationMs: 466,
       cwd: 'C:\\\\Users\\\\15893\\\\Documents\\\\model-test\\\\Reprise\\\\.reprise\\\\experiments\\\\exp\\\\environment\\\\runs\\\\run-e35ec7e8-b8b9-4979-a961-014a6c4d20bd',
       commandActions: [{ type: 'unknown', command: '$target=C:\\\\software\\\\weixdocuments\\\\xwechat_files' }],
       aggregatedOutput: 'Mode  Length Name\n----  ------ ----\nd----       Backup',
     },
-  }))[0];
+  })[0];
   assert.equal(nestedCompleted?.title, 'pwsh · Get-ChildItem');
   assert.match(nestedCompleted?.detail ?? '', /^\$ Get-ChildItem/);
   assert.match(nestedCompleted?.detail ?? '', /Backup/);
@@ -195,33 +205,33 @@ test('timeline keeps Codex items and merges streamed deltas into one row', () =>
   assert.match(nestedCompleted?.original ?? '', /run-e35ec7e8/);
 
   const streaming: TimelineEntry[] = [];
-  appendTimelineEntries(streaming, projectTimelineEvent(event('codex.item_started', {
+  appendTimelineEntries(streaming, projectPack('codex.item_started', {
     item: { type: 'commandExecution', id: 'cmd-stream', command: nested, status: 'inProgress' },
-  })));
-  appendTimelineEntries(streaming, projectTimelineEvent(event('codex.item_commandExecution_outputDelta', { itemId: 'cmd-stream', delta: 'Mode\n' })));
+  }));
+  appendTimelineEntries(streaming, projectPack('codex.item_commandExecution_outputDelta', { itemId: 'cmd-stream', delta: 'Mode\n' }));
   for (let index = 0; index < 8; index += 1) {
-    appendTimelineEntries(streaming, projectTimelineEvent(event('codex.item_commandExecution_outputDelta', {
+    appendTimelineEntries(streaming, projectPack('codex.item_commandExecution_outputDelta', {
       itemId: 'cmd-stream', delta: `file-${index}.txt\n`,
-    })));
+    }));
   }
   assert.doesNotMatch(streaming[0]?.detail ?? '', /Program Files/);
   assert.match(streaming[0]?.title ?? '', /^Running · pwsh/);
   assert.match(streaming[0]?.original ?? '', /file-7\.txt/);
 
-  const response = projectTimelineEvent(event('codex.item_completed', { item: { type: 'agentMessage', text: 'Visible final answer.' } }))[0];
+  const response = projectPack('codex.item_completed', { item: { type: 'agentMessage', text: 'Visible final answer.' } })[0];
   assert.equal(response?.title, 'Visible response');
   assert.equal(response?.detail, 'Visible final answer.');
 });
 
 test('timeline merges agentMessage deltas into the Writing row then keeps the completed reply', () => {
   const timeline: TimelineEntry[] = [];
-  appendTimelineEntries(timeline, projectTimelineEvent(event('codex.item_started', { item: { type: 'agentMessage', id: 'msg-1', text: '' } })));
-  appendTimelineEntries(timeline, projectTimelineEvent(event('codex.item_agentMessage_delta', { itemId: 'msg-1', delta: '可以' })));
-  appendTimelineEntries(timeline, projectTimelineEvent(event('codex.item_agentMessage_delta', { itemId: 'msg-1', delta: '帮你' })));
+  appendTimelineEntries(timeline, projectPack('codex.item_started', { item: { type: 'agentMessage', id: 'msg-1', text: '' } }));
+  appendTimelineEntries(timeline, projectPack('codex.item_agentMessage_delta', { itemId: 'msg-1', delta: '可以' }));
+  appendTimelineEntries(timeline, projectPack('codex.item_agentMessage_delta', { itemId: 'msg-1', delta: '帮你' }));
   assert.equal(timeline.length, 1);
   assert.equal(timeline[0]?.title, 'Writing');
   assert.equal(timeline[0]?.detail, '可以帮你');
-  appendTimelineEntries(timeline, projectTimelineEvent(event('codex.item_completed', { item: { type: 'agentMessage', id: 'msg-1', text: '可以帮你导出记录。' } })));
+  appendTimelineEntries(timeline, projectPack('codex.item_completed', { item: { type: 'agentMessage', id: 'msg-1', text: '可以帮你导出记录。' } }));
   assert.equal(timeline.length, 1);
   assert.equal(timeline[0]?.title, 'Visible response');
   assert.equal(timeline[0]?.detail, '可以帮你导出记录。');
@@ -229,18 +239,18 @@ test('timeline merges agentMessage deltas into the Writing row then keeps the co
 
 test('timeline updates MCP and token rows in place', () => {
   const timeline: TimelineEntry[] = [];
-  appendTimelineEntries(timeline, projectTimelineEvent(event('codex.mcpServer_startupStatus_updated', { name: 'github', status: 'starting' })));
-  appendTimelineEntries(timeline, projectTimelineEvent(event('codex.mcpServer_startupStatus_updated', {
+  appendTimelineEntries(timeline, projectPack('codex.mcpServer_startupStatus_updated', { name: 'github', status: 'starting' }));
+  appendTimelineEntries(timeline, projectPack('codex.mcpServer_startupStatus_updated', {
     name: 'github', status: 'failed', error: 'GITHUB_PAT_TOKEN is not set',
-  })));
+  }));
   assert.equal(timeline.length, 1);
   assert.equal(timeline[0]?.title, 'MCP · github failed');
   assert.equal(timeline[0]?.level, 'warning');
   assert.match(timeline[0]?.detail ?? '', /GITHUB_PAT_TOKEN/);
 
-  appendTimelineEntries(timeline, projectTimelineEvent(event('codex.thread_tokenUsage_updated', {
+  appendTimelineEntries(timeline, projectPack('codex.thread_tokenUsage_updated', {
     tokenUsage: { total: { totalTokens: 24648, inputTokens: 23803, outputTokens: 845, reasoningOutputTokens: 462 } },
-  })));
+  }));
   assert.equal(timeline.length, 2);
   assert.equal(timeline[1]?.title, 'Tokens · 24,648');
   assert.match(timeline[1]?.detail ?? '', /reasoning 462/);
@@ -248,15 +258,15 @@ test('timeline updates MCP and token rows in place', () => {
 
 test('timeline caps an oversized command output and points at the trace for the rest', () => {
   const output = 'x'.repeat(40_000);
-  const entry = projectTimelineEvent(event('codex.item_completed', {
+  const entry = projectPack('codex.item_completed', {
     item: { type: 'commandExecution', command: 'npm test', status: 'completed', aggregatedOutput: output },
-  }))[0];
+  })[0];
   assert.match(entry?.detail ?? '', /^\$ npm test/);
   assert.match(entry?.detail ?? '', /\.\.\. \+\d+ lines/);
   assert.ok((entry?.detail?.length ?? 0) < 4_000);
   assert.match(entry?.original ?? '', /truncated \d+ characters; remainder is in the run trace\.$/);
 
-  const message = projectTimelineEvent(event('codex.item_completed', { item: { type: 'agentMessage', text: output } }))[0];
+  const message = projectPack('codex.item_completed', { item: { type: 'agentMessage', text: output } })[0];
   assert.match(message?.detail ?? '', /\.\.\. \+\d+ lines/);
   assert.match(message?.original ?? '', /truncated \d+ characters/);
 });
@@ -267,9 +277,9 @@ test('timeline keeps target stderr in the trace instead of the operator list', (
 
 test('timeline drops a second Prompt with the same title', () => {
   const timeline = [...projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: 'Please inspect the workspace.' }))];
-  appendTimelineEntries(timeline, projectTimelineEvent(event('codex.item_completed', {
+  appendTimelineEntries(timeline, projectPack('codex.item_completed', {
     item: { type: 'userMessage', content: [{ type: 'text', text: 'Please inspect the workspace.' }] },
-  })));
+  }));
   assert.equal(timeline.filter((entry) => entry.title.startsWith('Prompt ·')).length, 1);
 });
 
@@ -347,6 +357,28 @@ test('recovery start does not show a source digest as timeline detail', () => {
   assert.equal(started?.hidden, true);
   assert.equal(started?.detail, undefined);
   assert.doesNotMatch(JSON.stringify(started), /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+});
+
+test('persisted public activity does not require the original pack at read time', () => {
+  const timeline = projectPersistedTimeline([
+    event('recovery.completed', { status: 'recovered' }),
+    event('runtime.public_activity', {
+      schemaVersion: 1,
+      sourceEventId: 'src-1',
+      sourceEventType: 'unknown-product.item',
+      activity: { kind: 'message', text: 'Visible reply from a missing pack.' },
+    }),
+    event('run.outcome_created', {
+      task: { status: 'apparently_completed', evidenceRefs: [] },
+      termination: { kind: 'completed', code: 'completed.controller_done', initiatedBy: 'controller' },
+      cleanup: { status: 'complete' },
+    }),
+  ]);
+  assert.equal(timeline.some((entry) => entry.title === 'Recovery recovered'), true);
+  assert.equal(timeline.some((entry) => entry.title === 'Visible response' && entry.detail === 'Visible reply from a missing pack.'), true);
+  assert.equal(timeline.some((entry) => entry.title === 'Task · apparently_completed'), true);
+  assert.equal(timeline.some((entry) => entry.title.startsWith('Termination · completed')), true);
+  assert.equal(timeline.some((entry) => entry.title === 'Cleanup · complete'), true);
 });
 
 

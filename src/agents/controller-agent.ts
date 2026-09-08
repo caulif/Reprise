@@ -1,7 +1,8 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { unknownEvidenceRefMessage } from '../core/evidence-refs.js';
-import { EvidenceRefSchema, ControllerUnderstandingDeltaSchema, type CandidateRunState, type TaskCase, type ControllerUnderstandingDelta } from '../core/schema.js';
+import { sha256 } from '../core/identity.js';
+import { EvidenceRefSchema, type CandidateRunState, type TaskCase } from '../core/schema.js';
 import { AgentSessionHost, PiAgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition, type AgentToolResult } from '../infrastructure/pi-agent-host.js';
 import { VISIBLE_PROCESS_SECTION } from './visible-process.js';
 
@@ -11,22 +12,15 @@ const ControllerDecisionSchema = Type.Union([
   Type.Object({
     type: Type.Literal('send'), message: Type.String({ minLength: 1 }),
     intent: Type.Union([Type.Literal('continue'), Type.Literal('inform'), Type.Literal('correct'), Type.Literal('verify')]),
-    rationale: Type.Optional(Type.String()), evidenceRefs: Type.Optional(Type.Array(EvidenceRefSchema)), understandingDelta: Type.Optional(ControllerUnderstandingDeltaSchema),
+    rationale: Type.Optional(Type.String()), evidenceRefs: Type.Optional(Type.Array(EvidenceRefSchema)),
   }),
   Type.Object({
     type: Type.Literal('done'),
     reason: Type.Union([Type.Literal('satisfied'), Type.Literal('blocked'), Type.Literal('requires_real_user_decision'), Type.Literal('no_further_value')]),
-    rationale: Type.Optional(Type.String()), evidenceRefs: Type.Optional(Type.Array(EvidenceRefSchema)), understandingDelta: Type.Optional(ControllerUnderstandingDeltaSchema),
+    rationale: Type.Optional(Type.String()), evidenceRefs: Type.Optional(Type.Array(EvidenceRefSchema)),
   }),
 ]);
 export type ControllerDecision = Static<typeof ControllerDecisionSchema>;
-const ControllerUnderstandingSchema = Type.Object({
-  markdown: Type.String({ minLength: 1, maxLength: 131_072 }),
-  sourceMessageIds: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 512 }),
-  unresolvedActions: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 256 }),
-});
-export type ControllerUnderstanding = Static<typeof ControllerUnderstandingSchema>;
-export type { ControllerUnderstandingDelta };
 
 export type HistoricalUserTurn = { readonly id: string; readonly text: string };
 
@@ -76,8 +70,6 @@ export function historicalUserFollowups(
 
 export interface ControllerPort {
   decide(context: SteeringContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink): Promise<AgentInvocation<ControllerDecision>>;
-  /** Private preflight: understand the historical collaboration before opening. */
-  understand?(context: SteeringContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink): Promise<AgentInvocation<ControllerUnderstanding>>;
   cancel?(runId: string, factRef?: string): Promise<void>;
   /** Drops the per-run session once the run is terminal, so a long-lived TUI does not accumulate them. */
   release?(runId: string): void;
@@ -94,16 +86,16 @@ export const CONTROLLER_SYSTEM_PROMPT = [
   'phase=opening: no candidate turn yet; you must send. phase=steering: a candidate turn has settled; send or done.',
   'briefingRoot is a Host-owned directory the candidate cannot see. Read it with read/ls/grep/find.',
   'project/ is a read-only mount of the isolated replica (the current project). shell_exec cwd is that replica. edit and write are registered but writes are denied.',
+  'Keep three fact kinds separate: (1) historical user requirements — outline role=user and history/initial-input.txt; (2) historical agent discoveries — outline role=assistant, not this user\'s prior knowledge; (3) current candidate facts — run/turns/ and project/. Do not mix them. Historical user lines are not a queue to send in order.',
   'history/initial-input.txt is the frozen first task sentence. history/outline.tsv and history/transcript/{id}.txt are the historical session. after_first_deliverable=1 means that user line came after a first visible assistant deliverable.',
   'THIS-TURN.txt names the latest settled candidate turn directory under run/turns/. replay.txt has sourceRootKind, historicalCwd, and isolation. sourceRootKind historical_start means leftover replica files are the pre-task tree, not the accepted result. stand_in is an empty stand-in folder, not baseline quality.',
   'Treat files on disk as truth if they disagree with compacted session memory. There is no read_observation tool.',
   '',
   '# What the user knows',
   'Model the original user\'s demonstrated goals, knowledge, constraints, preferences, authority, and acceptance habits. Facts the user personally stated are yours to give, in this user\'s voice, when they still apply to the current artifacts. Do not wait for the candidate to ask. Do not fire historical user sentences in sequence. Facts the historical agent later discovered or implemented are NOT the user\'s prior knowledge.',
-  'Before the opening decision, the Host may ask for one private understanding pass. In that pass, read the full historical transcript and return the requested understanding object; do not send a user message or claim the task is complete.',
   '',
   '# Opening',
-  'Read initial-input.txt, project-root.txt, and replay.txt. Retarget paths from historicalCwd to the current replica working directory. Do not copy after_first_deliverable=1 sentences into the first message. Return send with intent continue. Do not mention Reprise, isolation, recovery, comparison, the baseline, or the Controller.',
+  'The first Invocation in this run\'s Controller Session both reads the historical files and returns the opening send. Later decide calls continue the same Session and only add facts from later candidate turns. Read initial-input.txt, project-root.txt, replay.txt, outline.tsv, and transcript files as needed. Retarget paths from historicalCwd to the current replica working directory. Do not copy after_first_deliverable=1 sentences into the first message. Return send with intent continue. Do not mention Reprise, isolation, recovery, comparison, the baseline, or the Controller.',
   '',
   '# Deciding',
   'After a candidate turn has settled, look at THIS-TURN and project/ artifacts:',
@@ -113,8 +105,7 @@ export const CONTROLLER_SYSTEM_PROMPT = [
   '4. Real deviation from goal, scope, or stated preferences → send/correct. A different valid path is not deviation.',
   '5. Missing a fact this user already knew → send/inform.',
   '6. A completion claim or risky step needs a check this user would demand → send/verify.',
-  '7. If delivery satisfies this user, choose done/satisfied. done/no_further_value means unmet work remains and further steering would not help; it is not a synonym for successful completion. Do not send historical sentences merely to exhaust them.',
-  'understandingDelta merge only appends. Remove completed actions with mode replace and the full remaining unresolvedActions, using [] when all are resolved. Example: done/satisfied with understandingDelta {"mode":"replace","unresolvedActions":[]}. Host completion feedback asks you to reconcile your ledger or read evidence; it is not a new candidate task.',
+  '7. If delivery satisfies this user, choose done/satisfied. done/no_further_value means unmet work remains and further steering would not help; it is not a synonym for successful completion. Sending every remaining historical user sentence is not a completion condition. Host does not reject done based on a ledger, unread files, or missing understandingDelta.',
   '',
   '# Writing the message',
   'The message must read as the original user would write it, in the primary language of initial-input.txt (code, commands, and identifiers keep their original form):',
@@ -133,22 +124,18 @@ export const CONTROLLER_SYSTEM_PROMPT = [
   'Process sentences may describe your judgment. The send.message field still must not leak the experiment.',
 ].join('\n');
 
+export const CONTROLLER_PROMPT_DIGEST = sha256(CONTROLLER_SYSTEM_PROMPT);
+
 const OUTPUT_CONTRACT = [
   'The last assistant message is only one JSON object. No markdown around it. Intermediate messages may be the short process sentences.',
   'send: {"type":"send","message":"...","intent":"continue"|"inform"|"correct"|"verify"}',
   'done: {"type":"done","reason":"satisfied"|"blocked"|"requires_real_user_decision"|"no_further_value"}',
   'Opening (phase opening): send only. done is invalid.',
-  'Optional on either: "rationale": string, "evidenceRefs": ["event:..."], "understandingDelta": {"mode":"merge"|"replace", "confirmedFacts"?: string[], "acceptanceSignals"?: string[], "unresolvedActions"?: string[]}',
-].join('\n');
-
-const UNDERSTANDING_OUTPUT_CONTRACT = [
-  'Private understanding response: return only one JSON object.',
-  '{"markdown":"...","sourceMessageIds":["message-id"],"unresolvedActions":["..."]}',
-  'markdown must summarize the task, explicit user actions, durable constraints, collaboration profile, current unresolved actions, and evidence paths.',
+  'Optional on either: "rationale": string, "evidenceRefs": ["event:..."]',
 ].join('\n');
 
 const MAX_CONTROLLER_MESSAGE_BYTES = 65_536;
-const CONTROLLER_COMPACTION = 'Preserve the original user goal and acceptance habits, current CandidateRun state, messages already sent, verified current artifacts and evidence refs, unresolved user actions, and the next decision. Drop tool bodies that can be reread from the briefing paths.';
+const CONTROLLER_COMPACTION = 'Preserve the original user goal and acceptance habits, current CandidateRun state, messages already sent, verified current artifacts and evidence refs, and the next decision. Drop tool bodies that can be reread from the briefing paths.';
 const DISALLOWED_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 
 function ownedToolRefs(runId: string, details: unknown): string[] {
@@ -156,6 +143,16 @@ function ownedToolRefs(runId: string, details: unknown): string[] {
   const record = details as { runId?: unknown; evidenceRefs?: unknown };
   if (record.runId !== runId || !Array.isArray(record.evidenceRefs)) return [];
   return record.evidenceRefs.filter((ref): ref is string => typeof ref === 'string' && Value.Check(EvidenceRefSchema, ref));
+}
+
+function dropMalformedEvidenceRefs(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as { evidenceRefs?: unknown };
+  if (!Array.isArray(record.evidenceRefs)) return value;
+  return {
+    ...record,
+    evidenceRefs: record.evidenceRefs.filter((ref) => typeof ref === "string" && Value.Check(EvidenceRefSchema, ref)),
+  };
 }
 
 function validateControllerDecision(
@@ -185,32 +182,6 @@ export class ControllerAgent implements ControllerPort {
     this.#host = input.host;
     this.#timeoutMs = input.timeoutMs;
     this.#maxRepairAttempts = input.maxRepairAttempts;
-  }
-
-  async understand(context: SteeringContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink): Promise<AgentInvocation<ControllerUnderstanding>> {
-    if (context.runState !== 'created' || context.phase !== 'opening')
-      throw new Error('Controller understanding requires the opening context.');
-    this.#toolCallbacks.set(context.runId, async (name, result) => {
-      await tools.find((tool) => tool.name === name)?.onCompleted?.(result);
-    });
-    const session = await this.#sessionFor(context, tools, audit);
-    return session.request<ControllerUnderstanding>({
-      context,
-      schema: ControllerUnderstandingSchema,
-      timeoutMs: this.#timeoutMs,
-      maxRepairAttempts: this.#maxRepairAttempts,
-      outputContract: UNDERSTANDING_OUTPUT_CONTRACT,
-      requestId: `${context.requestId}-understanding`,
-      promptContent: [
-        '# Private understanding pass',
-        'Read history/initial-input.txt, history/outline.tsv, and every history/transcript/{id}.txt user message, including later messages after the first deliverable.',
-        'Understand the whole task and the original collaborator: goals, explicit actions, deliverable formats, durable constraints, correction style, verification habits, and unresolved work.',
-        'Do not replay the transcript and do not decide the next user message yet. Return the JSON object required by the contract so the Host can persist it as controller-task-understanding.md.',
-        `briefingRoot=${context.briefingRoot ?? ''}`,
-        context.promptContent ?? '',
-      ].join('\n\n'),
-      validate: (value) => value.sourceMessageIds.length === 0 ? 'understanding must cite at least one source message' : undefined,
-    });
   }
 
   async decide(context: SteeringContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink): Promise<AgentInvocation<ControllerDecision>> {
@@ -245,6 +216,7 @@ export class ControllerAgent implements ControllerPort {
       context, schema: ControllerDecisionSchema, timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
       outputContract: OUTPUT_CONTRACT, requestId: context.requestId,
       promptContent: context.promptContent ?? `phase=${opening ? "opening" : "steering"}\n`,
+      normalize: dropMalformedEvidenceRefs,
       validate: (decision) => validateControllerDecision(decision, available, opening),
     });
     if (result.status === 'failed') this.#sessions.delete(context.runId);
@@ -287,6 +259,10 @@ export class ControllerAgent implements ControllerPort {
   }
 
   release(runId: string): void {
+    const pending = this.#sessions.get(runId);
+    if (pending) void pending.then((session) => session.close()).catch(() => {
+      // Session creation failed; callers already observed that error on request.
+    });
     this.#sessions.delete(runId);
     this.#requests.delete(runId);
     this.#inflight.delete(runId);

@@ -21,6 +21,8 @@ export type PiCompactionAudit = {
   summary: string;
   tokensBefore: number;
   retainedCount: number;
+  reason: string;
+  retainedTail: readonly unknown[];
 };
 
 export function contextWindowOf(model: { contextWindow?: number }): number {
@@ -185,6 +187,8 @@ export async function compactPiMessages(input: {
       summary: compacted.value.summary,
       tokensBefore: compacted.value.tokensBefore,
       retainedCount: compacted.value.retainedTail.length,
+      reason: "pi_compact",
+      retainedTail: compacted.value.retainedTail,
     },
   };
 }

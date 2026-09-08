@@ -1,4 +1,5 @@
 import type { CodexIntakeTui } from "./intake-tui.js";
+import { importPacks, packSessions } from "../products/pack-access.js";
 import { type DiscoveryDiagnostic, type SessionSummary } from "../products/contract.js";
 import { type SessionProject, selectDefaultProjectIndex } from "./pages/intake.js";
 import { readLocalHistory } from "./local-history.js";
@@ -15,6 +16,7 @@ import {
   refreshProductSessions as refetchProductSessions,
 } from "./controller-sessions.js";
 import { t, type Locale } from "./i18n.js";
+import { productMemory, rememberProjects, rememberSessions } from "./intake-layer-memory.js";
 type SessionLoadMode = "initial" | "more" | "refresh";
 
 export async function CodexIntakeTui_loadHome(this: CodexIntakeTui, initialMessage?: string): Promise<void> {
@@ -65,13 +67,14 @@ export function CodexIntakeTui_activateProductSessions(this: CodexIntakeTui, pro
     this.lastProductId = productId;
     this.sessions = sessions;
     this.sessionLimitReached = limitReached;
-    this.searchQuery = "";
-    this.searchCursor = 0;
-    this.searching = false;
     this.intakeLevel = "projects";
+    const memory = productMemory(this.intakeMemory, productId);
+    this.searchQuery = memory.projectQuery;
+    this.searchCursor = memory.projectCursor;
+    this.searching = this.searchQuery.length > 0;
     const projects = this.visibleProjects();
-    this.selected = selectDefaultProjectIndex(projects, this.displayCwd, this.lastProjectKey, this.dataDir);
-    this.activeProjectKey = projects[this.selected]?.key ?? "";
+    this.selected = selectDefaultProjectIndex(projects, this.displayCwd, memory.projectKey || this.lastProjectKey, this.dataDir);
+    this.activeProjectKey = projects[this.selected]?.key ?? memory.projectKey;
     this.syncIntakeLevel();
     this.page = "sessions";
     this.message = this.sessionsMessage();
@@ -79,28 +82,44 @@ export function CodexIntakeTui_activateProductSessions(this: CodexIntakeTui, pro
 
 export function CodexIntakeTui_openIntakeSelection(this: CodexIntakeTui): { consume: true } {
     if (this.intakeLevel === "products") {
-      const pack = this.packs[this.selected];
+      const pack = importPacks(this.packs)[this.selected];
       if (pack) void this.loadProductSessions(pack.manifest.productId);
+      else this.message = t(this.locale, "emptyMatchBlocked");
       return { consume: true };
     }
-    if (this.intakeLevel === "projects") {
-      const project = this.visibleProjects()[this.selected];
-      if (!project) return { consume: true };
-      this.activeProjectKey = project.key;
-      this.lastProjectKey = project.key;
-      this.intakeLevel = "sessions";
-      this.selected = 0;
-      this.searching = false;
-      this.searchQuery = "";
-      this.searchCursor = 0;
-      this.message = this.sessionsMessage();
+    if (this.intakeLevel === "projects") return enterProjectSessions(this);
+    const selected = this.visibleSessions()[this.selected];
+    if (!selected) {
+      this.message = t(this.locale, "emptyMatchBlocked");
       this.render();
       return { consume: true };
     }
-    const selected = this.visibleSessions()[this.selected];
-    if (!selected) return { consume: true };
     void CodexIntakeTui_openSessionInspection.call(this, selected);
     return { consume: true };
+}
+
+function enterProjectSessions(c: CodexIntakeTui): { consume: true } {
+  const project = c.visibleProjects()[c.selected];
+  if (!project) {
+    c.message = t(c.locale, "emptyMatchBlocked");
+    c.render();
+    return { consume: true };
+  }
+  const memory = productMemory(c.intakeMemory, c.activeProductId);
+  rememberProjects(memory, c.searchQuery, c.searchCursor, project.key);
+  c.activeProjectKey = project.key;
+  c.lastProjectKey = project.key;
+  const saved = memory.sessionByProject.get(project.key);
+  c.intakeLevel = "sessions";
+  c.searchQuery = saved?.query ?? "";
+  c.searchCursor = saved?.cursor ?? 0;
+  c.searching = c.searchQuery.length > 0;
+  const sessions = c.visibleSessions();
+  const remembered = saved?.sessionId ? sessions.findIndex((session) => session.sessionId === saved.sessionId) : 0;
+  c.selected = remembered >= 0 ? remembered : 0;
+  c.message = c.sessionsMessage();
+  c.render();
+  return { consume: true };
 }
 
 export function CodexIntakeTui_sessionsMessage(this: CodexIntakeTui): string {
@@ -134,13 +153,24 @@ export function CodexIntakeTui_discoveryDiagnosticLabel(this: CodexIntakeTui, lo
   if (code === 'duplicate-source') return t(locale, 'duplicateSourceDiagnostic');
   if (code === 'invalid-jsonl') return t(locale, 'catalogInvalidJsonl');
   if (code === 'catalog-unavailable') return t(locale, 'catalogUnavailable');
+  if (code === 'unreadable-directory') return t(locale, 'discoveryUnreadableDirectory');
+  if (code === 'unreadable-file') return t(locale, 'discoveryUnreadableFile');
+  if (code === 'catalog-read-error') return t(locale, 'discoveryReadFailed');
+  if (code === 'too-large') return t(locale, 'discoveryTooLarge');
+  if (code === 'invalid-metadata') return t(locale, 'discoveryInvalidMetadata');
+  if (code === 'unsupported-entry') return t(locale, 'discoveryUnsupportedEntry');
+  if (code === 'catalog-schema-unsupported') return t(locale, 'discoveryCatalogSchema');
+  if (code === 'global-state-unavailable') return t(locale, 'discoveryGlobalState');
+  if (code === 'conflicting-project-source') return t(locale, 'discoveryConflictingSource');
+  if (code === 'excluded') return t(locale, 'discoveryExcluded');
+  if (code === 'stale-cursor') return t(locale, 'discoveryStaleCursor');
   return code;
 }
 
 export async function CodexIntakeTui_refreshProductAuth(this: CodexIntakeTui): Promise<void> {
     const statuses = await Promise.all(this.packs.map(async (pack) => ({
       productId: pack.manifest.productId,
-      status: await pack.checkAuth(),
+      status: await (pack.checkAuth?.() ?? Promise.resolve({ configured: false })),
     })));
     this.productAuth.clear();
     for (const { productId, status } of statuses) this.productAuth.set(productId, status.configured);
@@ -153,17 +183,29 @@ export function CodexIntakeTui_canLeaveProject(this: CodexIntakeTui): boolean {
 export function CodexIntakeTui_backToProjects(this: CodexIntakeTui): { consume: true } {
     if (this.intakeLevel === "projects") {
       this.discoveryAbort?.abort();
+      if (this.activeProductId) {
+        const memory = productMemory(this.intakeMemory, this.activeProductId);
+        rememberProjects(memory, this.searchQuery, this.searchCursor, this.activeProjectKey);
+      }
       this.beginNavigation();
       this.intakeLevel = "products";
       this.selected = Math.max(0, this.packs.findIndex((pack) => pack.manifest.productId === this.activeProductId));
       this.activeProductId = "";
+      this.searching = false;
+      this.searchQuery = "";
+      this.searchCursor = 0;
     } else {
+      const memory = productMemory(this.intakeMemory, this.activeProductId);
+      const selected = this.visibleSessions()[this.selected];
+      rememberSessions(memory, this.activeProjectKey, this.searchQuery, this.searchCursor, selected?.sessionId ?? "");
+      rememberProjects(memory, memory.projectQuery, memory.projectCursor, this.activeProjectKey);
       this.intakeLevel = "projects";
-      this.selected = Math.max(0, this.visibleProjects().findIndex((project) => project.key === this.activeProjectKey));
+      this.searchQuery = memory.projectQuery;
+      this.searchCursor = memory.projectCursor;
+      this.searching = this.searchQuery.length > 0;
+      const projects = this.visibleProjects();
+      this.selected = Math.max(0, projects.findIndex((project) => project.key === this.activeProjectKey));
     }
-    this.searching = false;
-    this.searchQuery = "";
-    this.searchCursor = 0;
     this.message = this.sessionsMessage();
     this.render();
     return { consume: true };
@@ -210,7 +252,7 @@ async function CodexIntakeTui_openSessionInspection(this: CodexIntakeTui, sessio
   this.message = t(this.locale, "inspectingSelectedSession");
   this.render(true);
   try {
-    const inspected = await pack.sessions.inspect({
+    const inspected = await packSessions(pack).inspect({
       productId: session.productId,
       sessionId: session.sessionId,
       sourcePath: session.sourcePath,

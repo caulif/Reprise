@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SAFE_ID, sha256, writeImmutable } from '../../core/identity.js';
 import type { CaseArtifactRef, CandidateSpec, TaskCase } from '../../core/schema.js';
-import type { ProductAuthStatus, ProductPack, RecoveryPlaybookDescriptor } from '../contract.js';
+import type { ProductAuthStatus, CompleteProductPack, RecoveryPlaybookDescriptor } from '../contract.js';
 import { publishFrozenCase } from '../shared/freeze.js';
 import { codexActivityTranslator } from './activity.js';
 import { CodexRuntimePort } from './runtime-port.js';
@@ -55,7 +55,7 @@ function codexRecoveryPlaybook(): RecoveryPlaybookDescriptor {
 
 const DEFAULT_CANDIDATE: CandidateSpec = { candidateId: 'codex-terra-high', productId: 'codex', requestedModel: 'gpt-5.6-terra' };
 
-export const codexProductPack: ProductPack = {
+export const codexProductPack: CompleteProductPack = {
   runtime: new CodexRuntimePort({ effort: 'high' }),
   sessions: codexSessionAdapter,
   activity: codexActivityTranslator,
@@ -67,6 +67,8 @@ export const codexProductPack: ProductPack = {
     displayName: 'Codex',
     packVersion: '0.1.0',
     schemaVersion: 1,
+    apiMajor: 1,
+    capabilities: ['import', 'runtime'],
     sessionSchemaVersions: [FIXTURE_SCHEMA],
   },
 };

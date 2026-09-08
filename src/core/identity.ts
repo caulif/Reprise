@@ -10,6 +10,11 @@ export function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+/** Canonical checksum for one committed event envelope body (the object without `checksum`). */
+export function eventEnvelopeChecksum(body: object): string {
+  return sha256(JSON.stringify(body));
+}
+
 /** Streams a file through SHA-256 so an oversized input never lands in memory at once. */
 export async function sha256File(path: string): Promise<string> {
   const hash = createHash('sha256');

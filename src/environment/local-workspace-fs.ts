@@ -1,7 +1,8 @@
 import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { formatBytes } from '../core/format.js';
 import { SAFE_ID, sha256, sha256File } from '../core/identity.js';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { relativeInside } from '../core/paths.js';
 import { type RecoveryManifest } from '../core/schema.js';
 import { gitFileHash, isRecoveryPath, type RecoveryEvidenceVerification } from '../infrastructure/recovery-tools.js';
 import {
@@ -61,8 +62,8 @@ export function assertId(value: string, label: string): void {
 }
 
 export function isInside(root: string, candidate: string): boolean {
-  const path = relative(root, candidate);
-  return path !== '' && path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+  const path = relativeInside(root, candidate);
+  return path !== undefined && path !== '';
 }
 
 
@@ -123,7 +124,7 @@ export async function removeCaptureArtifacts(stagingRoot: string | undefined, ba
 }
 
 /** Returns the source digest recorded when the baseline was captured, or undefined when none exists yet. */
-type BaselineMarker = { sourceFingerprint: string; recovery?: NonNullable<EnvironmentBaseline['recovery']> };
+export type BaselineMarker = { sourceFingerprint: string; recovery?: NonNullable<EnvironmentBaseline['recovery']> };
 
 export async function readBaselineMarker(path: string): Promise<BaselineMarker | undefined> {
   let raw: string;
@@ -286,11 +287,59 @@ const RECOVERY_SINK_NAMES = new Set(['recovery.md', 'recovery-manifest.json']);
 
 /** Manifest checks ignore Host sinks that `validateRecovery` unlinks before fingerprinting. */
 export function candidateChangedPaths(before: EnvironmentFingerprint, after: EnvironmentFingerprint): string[] {
-  return changedPaths(before, after).filter((path) => !RECOVERY_SINK_NAMES.has(path));
+  return changedPaths(before, after).filter((path) => !RECOVERY_SINK_NAMES.has(path) && !isGeneratedWorkspaceNoise(path));
+}
+
+function isGeneratedWorkspaceNoise(path: string): boolean {
+  const posix = path.replaceAll("\\", "/");
+  return (
+    posix.includes("/__pycache__/") ||
+    posix.startsWith("__pycache__/") ||
+    posix.includes(".pytest_cache/") ||
+    posix.startsWith(".pytest_cache/") ||
+    posix.endsWith(".pyc")
+  );
 }
 
 export function isMissing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+/** Rebuilds a runnable baseline from a published provider copy when the live source is gone. */
+export async function loadSealedBaseline(
+  caseId: string,
+  baselineRoot: string,
+  recorded: BaselineMarker,
+): Promise<EnvironmentBaseline> {
+  if (!(await exists(baselineRoot))) return unsupportedBaseline(caseId);
+  const { fingerprint, budget } = await fingerprintTree(baselineRoot);
+  const expected = recorded.recovery?.recoveredDigest ?? recorded.sourceFingerprint;
+  if (fingerprint.digest !== expected) {
+    throw new Error(`Sealed baseline for case ${caseId} does not match its published fingerprint.`);
+  }
+  const recovery = recorded.recovery;
+  const excluded = budget.excludedEntries ?? [];
+  return {
+    baselineId: `baseline-${caseId}`,
+    caseId,
+    mode: 'canonical',
+    match: recovery
+      ? recovery.status === 'recovered' ? 'recovered' : recovery.status === 'partial' ? 'recovered_partial' : 'current_state_fallback'
+      : 'matched',
+    resources: [],
+    readiness: {
+      runnable: budget.blockedReasons.length ? 'blocked' : 'isolated',
+      strictness: 'strict',
+      blockingResourceIds: budget.blockedReasons.length ? ['workspace-budget'] : [],
+    },
+    fingerprint,
+    budget,
+    capabilities: { canFork: true, fingerprints: ['file_tree'], externalSideEffects: 'none' },
+    warnings: [...budget.blockedReasons, ...excluded.map((item) => `${item.path}: ${item.reasonCode}`)],
+    createdAt: new Date().toISOString(),
+    root: baselineRoot,
+    ...(recovery ? { recovery } : {}),
+  };
 }
 
 export function unsupportedBaseline(caseId: string): EnvironmentBaseline {

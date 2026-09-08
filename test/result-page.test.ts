@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { setCapabilities } from '@earendil-works/pi-tui';
 import { renderResult } from '../src/tui/pages/result.js';
 import { createTheme } from '../src/tui/theme.js';
 
 test('result page uses comparison headline and hides satisfied rationale', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const theme = createTheme(120, false);
   const compared = renderResult(theme, 120, {
     reportPath: 'C:\\exp\\report.html',

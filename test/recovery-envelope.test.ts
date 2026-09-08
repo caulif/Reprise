@@ -27,6 +27,7 @@ function recoveryContext(): RecoveryContext {
     staging: { fileCount: 0, totalBytes: 0 },
     budget: { timeoutMs: 50 },
     allowModelText: true,
+    continuityKey: "case-1",
   };
 }
 
@@ -72,3 +73,32 @@ test("Recovery keeps recovered when unresolved is empty", async () => {
   assert.equal(result.status, "completed");
   if (result.status === "completed") assert.equal(result.value.status, "recovered");
 });
+
+test("Recovery investigation and feedback reuse one Pi session", async () => {
+  let created = 0;
+  const recovery = new RecoveryAgent({
+    host: new PiAgentHost({
+      createSession() {
+        created += 1;
+        return {
+          append: async () =>
+            JSON.stringify({
+              status: "partial",
+              reportPath: "recovery.md",
+              unresolved: ["still checking"],
+              evidenceRefs: ["event:transcript-7-8ea74b73785ba41a"],
+            }),
+          cancel() {},
+        };
+      },
+    }),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const context = recoveryContext();
+  await recovery.recover(context, []);
+  await recovery.recover({ ...context, readinessFeedback: { status: "not_ready", feedback: "gap", missingPaths: ["a"] } }, []);
+  assert.equal(created, 1);
+  recovery.releasePreparation("case-1");
+});
+

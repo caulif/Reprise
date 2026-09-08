@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isRecord, text } from '../../../src/core/json.js';
 import type {
   ImportedSession,
@@ -11,18 +12,28 @@ import type {
 } from '../../../src/products/contract.js';
 
 const PRODUCT_ID = 'fake';
+const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), 'sessions');
 
 export const fakeSessionAdapter: SessionSourceAdapter = {
-  defaultRoot: join(process.cwd(), 'test', 'fixtures', 'fake-pack', 'sessions'),
+  defaultRoot: DEFAULT_ROOT,
   async discover(query?: SessionDiscoveryQuery) {
     const root = resolve(query?.root ?? this.defaultRoot);
     const limit = query?.limit ?? 50;
     let names: string[];
-    try { names = await readdir(root); } catch { return { items: [], scanned: 0, skipped: 0, diagnostics: [] }; }
+    try {
+      names = await readdir(root);
+    } catch {
+      // Missing sessions root is an empty catalog, not a pack failure.
+      return { items: [], scanned: 0, skipped: 0, diagnostics: [] };
+    }
     const summaries: SessionSummary[] = [];
     for (const name of names.sort().reverse()) {
       if (!name.endsWith('.jsonl') || summaries.length >= limit) continue;
-      try { summaries.push(await inspectPath(join(root, name))); } catch { /* skip bad files */ }
+      try {
+        summaries.push(await inspectPath(join(root, name)));
+      } catch {
+        // Skip unreadable or invalid session files during discovery.
+      }
     }
     return { items: summaries, scanned: names.length, skipped: 0, diagnostics: [] };
   },

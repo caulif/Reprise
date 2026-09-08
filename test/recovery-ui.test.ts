@@ -103,6 +103,7 @@ test('confirmation with accept stays partial and startable', () => {
     preflight: { sourceBaseline: 'partial', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: ['Workspace also changed extra.txt without a matching manifest action.'], comparisonClass: 'recovered_partial' },
   } as never).join('\n');
   assert.match(text, /部分恢复/);
+  assert.match(text, /不是任务开始/);
   assert.doesNotMatch(text, /变更路径/);
   assert.doesNotMatch(text, /跳过路径/);
   assert.doesNotMatch(text, /ppt_build\/node_modules/);

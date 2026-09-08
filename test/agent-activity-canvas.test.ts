@@ -106,7 +106,8 @@ test('recovery canvas shows inspect activity instead of a candidate reply', () =
     locale: 'zh',
   }).join('\n');
   assert.match(text, /恢复活动/);
-  assert.match(text, /inspect|shell_exec|Remove-Item/);
+  assert.match(text, /工具/);
+  assert.doesNotMatch(text, /调查 →/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /正在写回复/);
 });

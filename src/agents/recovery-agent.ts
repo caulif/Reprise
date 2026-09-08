@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, type TaskCase, type RecoveryReadinessContext } from "../core/schema.js";
 import {
+  AgentSessionHost,
   PiAgentHost,
   type AgentAuditSink,
   type AgentInvocation,
@@ -113,6 +114,8 @@ export type RecoveryContext = {
     };
   budget: { timeoutMs: number };
   allowModelText: boolean;
+  /** Harness key for one Recovery preparation; omitted from the model working set. */
+  continuityKey: string;
 };
 
 export interface RecoveryAgentPort {
@@ -123,6 +126,7 @@ export interface RecoveryAgentPort {
     audit?: AgentAuditSink,
     signal?: AbortSignal,
   ): Promise<AgentInvocation<RecoveryResult>>;
+  releasePreparation?(experimentId: string): void;
 }
 
 export const RECOVERY_SYSTEM_PROMPT = `You are Reprise Recovery: an autonomous investigator that rewinds an isolated
@@ -254,6 +258,7 @@ export class RecoveryAgent implements RecoveryAgentPort {
   readonly #host: PiAgentHost;
   readonly timeoutMs: number;
   readonly #maxRepairAttempts: number;
+  readonly #sessions = new Map<string, Promise<AgentSessionHost>>();
 
   constructor(input: {
     host: PiAgentHost;
@@ -271,24 +276,65 @@ export class RecoveryAgent implements RecoveryAgentPort {
     audit?: AgentAuditSink,
     signal?: AbortSignal,
   ): Promise<AgentInvocation<RecoveryResult>> {
-    return this.#host.request<RecoveryResult>({
+    return this.#recover(context, tools, audit, signal);
+  }
+
+  releasePreparation(experimentId: string): void {
+    for (const key of [...this.#sessions.keys()]) {
+      if (key !== experimentId && !key.startsWith(`${experimentId}:`)) continue;
+      const pending = this.#sessions.get(key);
+      if (pending) void pending.then((session) => session.close()).catch(() => {
+        // Session creation failed; recover already returned that error.
+      });
+      this.#sessions.delete(key);
+    }
+  }
+
+  async #recover(
+    context: RecoveryContext,
+    tools: readonly AgentToolDefinition[],
+    audit?: AgentAuditSink,
+    signal?: AbortSignal,
+  ): Promise<AgentInvocation<RecoveryResult>> {
+    const session = await this.#sessionFor(context, tools, audit);
+    return session.request<RecoveryResult>({
       ...(signal ? { signal } : {}),
-      role: "recovery",
-      systemPrompt: RECOVERY_SYSTEM_PROMPT,
       context,
       schema: RecoveryResultSchema,
       timeoutMs: this.timeoutMs,
       maxRepairAttempts: this.#maxRepairAttempts,
-      allowModelText: context.allowModelText,
-      compactionInstructions: RECOVERY_COMPACTION,
-      tools,
       promptContent: recoveryModelPrompt(context),
-      ...(audit ? { audit } : {}),
       outputContract: OUTPUT_CONTRACT,
       repairInstruction: "Do not call tools during repair; correct only the final envelope. If unresolved is non-empty, status must be partial.",
       validate: (result) => validateRecoveryResult(context, result),
       normalize: normalizeRecoveryEnvelope,
     });
+  }
+
+  async #sessionFor(
+    context: RecoveryContext,
+    tools: readonly AgentToolDefinition[],
+    audit?: AgentAuditSink,
+  ): Promise<AgentSessionHost> {
+    const key = context.continuityKey;
+    let pending = this.#sessions.get(key);
+    if (!pending) {
+      pending = this.#host.createSession({
+        role: "recovery",
+        systemPrompt: RECOVERY_SYSTEM_PROMPT,
+        allowModelText: context.allowModelText,
+        compactionInstructions: RECOVERY_COMPACTION,
+        tools,
+        ...(audit ? { audit } : {}),
+      });
+      this.#sessions.set(key, pending);
+    }
+    try {
+      return await pending;
+    } catch (error) {
+      if (this.#sessions.get(key) === pending) this.#sessions.delete(key);
+      throw error;
+    }
   }
 }
 

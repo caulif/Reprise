@@ -11,6 +11,7 @@ import { persistRecoveryEvaluation } from "./recovery-evaluation.js";
 import {
   diagnosisReasonCode,
   persistRecoveryAttemptDiagnosis,
+  recoveryAcceptIsExposed,
   recoveryAttemptDiagnosis,
 } from "./recovery-user-status.js";
 import { verifyRecoveryCandidate } from "./recovery-verifier.js";
@@ -244,7 +245,7 @@ async function persistRecoveryCompletionArtifacts(
   session: RecoveryRunSession,
   activeProviderPreview: NonNullable<RecoveryRunSession["activeProviderPreview"]>,
 ): Promise<void> {
-  const { input, store, staging } = session;
+  const { input, store, staging, recovery } = session;
   const attemptsArtifact = Buffer.from(
     JSON.stringify({ schemaVersion: 1, state: lifecycleState(session), attempts: session.recoveryOrchestrator.attempts }),
     "utf8",
@@ -264,6 +265,12 @@ async function persistRecoveryCompletionArtifacts(
       bytes: Buffer.from(activeProviderPreview.reportText, "utf8"),
     });
   }
+  const hasAccept = recoveryAcceptIsExposed({
+    automaticallyAccepted: Boolean(session.automaticallyAcceptedBaseline),
+    envelopeStatus: recovery?.status === "completed" ? recovery.value.status : undefined,
+    match: activeProviderPreview.baseline.match,
+    runnable: activeProviderPreview.baseline.readiness?.runnable,
+  });
   await persistRecoveryAttemptDiagnosis(
     session.experimentRoot,
     recoveryAttemptDiagnosis({
@@ -275,12 +282,12 @@ async function persistRecoveryCompletionArtifacts(
       reasonCode: diagnosisReasonCode({
         baseline: activeProviderPreview.baseline,
         transcriptOk: Boolean(input.taskCase.initialInput?.text),
-        hasAccept: true,
+        hasAccept,
         ...(activeProviderPreview.baseline.recovery?.failureStage
           ? { failureStage: activeProviderPreview.baseline.recovery.failureStage }
           : {}),
       }),
-      hasAccept: true,
+      hasAccept,
     }),
   );
   if (session.writerAcquired)

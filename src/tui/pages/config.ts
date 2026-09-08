@@ -21,6 +21,7 @@ export type ConfigModel = {
   readonly envName?: string;
   readonly envSet?: boolean;
   readonly pendingToggle?: boolean;
+  readonly leaveConfirm?: boolean;
   readonly locale?: Locale;
 };
 
@@ -65,6 +66,7 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
     status,
     ` ${t(locale, 'configFile')}`,
     ...(model.pendingToggle ? [theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'confirmProviderSwitch')}`)] : []),
+    ...(model.leaveConfirm ? [theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'unsavedLeave')}`)] : []),
   ], width);
 }
 
@@ -74,15 +76,17 @@ export function configHints(
   pendingToggle = false,
   languageSelected = false,
   locale: Locale = 'en',
+  leaveConfirm = false,
 ): readonly (readonly [string, string])[] {
   if (editing) return [['Enter', t(locale, 'hintApply')], ['Ctrl+U', t(locale, 'hintClear')], ['Esc', t(locale, 'hintKeepPrev')]];
+  if (leaveConfirm) return [['Ctrl+S', t(locale, 'hintSave')], ['Enter', t(locale, 'hintDiscardDraft')], ['Esc', t(locale, 'hintStay')]];
   if (pendingToggle) return [['Enter', t(locale, 'hintConfirmSwitch')], ['Esc', t(locale, 'hintCancelSwitch')]];
   const enter = languageSelected
     ? t(locale, 'hintToggleLang')
     : field === 'provider type' ? t(locale, 'hintToggleProvider')
       : field === 'effort' || field === 'API' || field === 'reasoning' ? t(locale, 'hintCycleEffort')
         : t(locale, 'hintEdit');
-  return [['↑↓', t(locale, 'hintSelect')], ['Enter', enter], ['t', t(locale, 'hintTest')], ['s', t(locale, 'hintSave')], ['Esc', t(locale, 'hintHome')]];
+  return [['↑↓', t(locale, 'hintSelect')], ['Enter', enter], ['Ctrl+T', t(locale, 'hintTest')], ['Ctrl+S', t(locale, 'hintSave')], ['Esc', t(locale, 'hintHome')]];
 }
 
 function connectionStatus(theme: Theme, model: ConfigModel, locale: Locale): readonly string[] {
@@ -104,7 +108,7 @@ function connectionStatus(theme: Theme, model: ConfigModel, locale: Locale): rea
     : ` ${t(locale, 'keysStayInEnv')}`;
   return [
     ` ${t(locale, 'endpointLabel')}   ${endpoint}`,
-    ` ${t(locale, 'modelLabel')}      ${model.draft.modelId} ${theme.glyphs.sep} ${model.draft.effort}`,
+    ` ${t(locale, 'harnessModelLabel')}      ${model.draft.modelId} ${theme.glyphs.sep} ${model.draft.effort}`,
     ` ${t(locale, 'secretLabel')}     ${secret}`,
     hint,
   ];

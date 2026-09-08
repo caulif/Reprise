@@ -173,7 +173,7 @@ test("Codex intake TUI opens Home without configuration and only enters config o
   app.handleInput("\u001b[A");
   app.handleInput("\r");
   assert.match(rendered, /provider-a/);
-  app.handleInput("s");
+  app.handleInput("\x13");
   await waitFor(() => /Configuration saved locally/.test(rendered));
   assert.deepEqual(
     await readFile(join(root, "data", "harness-model.json"), "utf8").then(
@@ -338,6 +338,20 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
         payload: { item: { type: "agentMessage", text: fullPublicResponse } },
         checksum: "c".repeat(64),
       });
+      input.onEvent({
+        schemaVersion: 1,
+        sequence: 6,
+        eventId: "event-6",
+        occurredAt: "2026-08-11T00:10:02.000Z",
+        type: "runtime.public_activity",
+        payload: {
+          schemaVersion: 1,
+          sourceEventId: "event-5",
+          sourceEventType: "codex.item_completed",
+          activity: { kind: "message", text: fullPublicResponse },
+        },
+        checksum: "c".repeat(64),
+      });
       await new Promise<void>((resolve) => {
         releaseStart = resolve;
       });
@@ -408,7 +422,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   for (const ch of "public response") app.handleInput(ch);
   assert.match(rendered, /Find:/);
   assert.match(rendered, /public response line 1/);
-  assert.doesNotMatch(rendered, /Fix the failing test/);
+  assert.match(rendered, /Fix the failing test/);
   app.handleInput("\x1b");
   assert.match(rendered, /Fix the failing test|Prompt|To Codex/);
   assert.match(rendered, /public response line 1/);
@@ -423,8 +437,13 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
       sequence: 5,
       eventId: "event-5",
       occurredAt: "2026-08-11T00:10:02.000Z",
-      type: "codex.item_completed",
-      payload: { item: { type: "agentMessage", text: fullPublicResponse } },
+      type: "runtime.public_activity",
+      payload: {
+        schemaVersion: 1,
+        sourceEventId: "event-5",
+        sourceEventType: "codex.item_completed",
+        activity: { kind: "message", text: fullPublicResponse },
+      },
       checksum: "c".repeat(64),
     })[0]?.original ?? "",
     /PUBLIC_DETAIL_END/,

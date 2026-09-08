@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCodexExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
+import { createExperimentWorkflow, createHarnessWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
 import { candidateStartBlocked } from '../src/tui/controller-run.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createCodexTuiWorkflow } from '../src/application/tui-workflow.js';
 import { PiModelCaller } from '../src/infrastructure/pi-model-caller.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
 import { CodexIntakeTui_showError } from '../src/tui/intake-tui-nav.js';
@@ -27,7 +26,7 @@ test('connection probe failures preserve their phase and show localized retry gu
   await saveHarnessModelConfig(dataDir, defaultHarnessModelConfig());
   const cause = Object.assign(new Error('Upstream request failed: provider detail'), { status: 503 });
   t.mock.method(PiModelCaller.prototype, 'validate', async () => { throw cause; });
-  const workflow = createCodexTuiWorkflow({ dataDir, now: () => new Date().toISOString() });
+  const workflow = createHarnessWorkflow({ dataDir, now: () => new Date().toISOString() });
   await assert.rejects(workflow.recover({ taskCase: {} as never, sourceRoot: dataDir }), (error: unknown) => {
     assert.ok(error instanceof Error);
     assert.equal(error.name, 'HarnessProbeError');
@@ -55,7 +54,7 @@ test('production Recovery forwards cancellation to the probe and does not miscla
     await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => reject(new DOMException('Operation cancelled', 'AbortError')), { once: true }));
     return {};
   });
-  const workflow = createCodexTuiWorkflow({ dataDir, now: () => new Date().toISOString() });
+  const workflow = createHarnessWorkflow({ dataDir, now: () => new Date().toISOString() });
   const pending = workflow.recover({ taskCase: {} as never, sourceRoot: dataDir, signal: abort.signal });
   await ready;
   abort.abort();
@@ -97,9 +96,8 @@ test('Ctrl+C during Recovery aborts preparation and never enters candidate selec
 
 test('same-product defaults.candidate is kept instead of pack.defaultCandidate', () => {
   const custom = { candidateId: 'operator-pick', productId: 'fake', requestedModel: 'operator-model' };
-  const workflow = createCodexExperimentWorkflow({
+  const workflow = createExperimentWorkflow({
     dataDir: 'unused',
-    runtime: fakeProductPack.runtime,
     pack: fakeProductPack,
     now: () => '2026-08-14T00:00:00.000Z',
     defaults: { candidate: custom, policy: TUI_RUN_POLICY },
@@ -136,7 +134,7 @@ test('Ctrl+C while preflight is pending prevents a later Recovery call', async (
 
 test('production workflow accepts a smoke policy without forcing a candidate model', () => {
   const policy = { ...TUI_RUN_POLICY, wallClockMs: 45 * 60_000, maxTargetTurns: 16, maxModelCalls: 24 };
-  const workflow = createCodexTuiWorkflow({ dataDir: 'unused', now: () => '2026-09-06T00:00:00.000Z', defaults: { policy } });
+  const workflow = createHarnessWorkflow({ dataDir: 'unused', now: () => '2026-09-06T00:00:00.000Z', defaults: { policy } });
   assert.deepEqual(workflow.policy, policy);
   assert.equal(workflow.candidate, undefined);
 });
@@ -236,7 +234,7 @@ test('startup cancellation reaches the Harness probe and prevents experiment cre
   let release!: () => void;
   const pending = new Promise<void>((resolve) => { release = resolve; });
   let observed: AbortSignal | undefined;
-  const workflow = createCodexExperimentWorkflow({ dataDir: 'unused', now: () => '2026-09-06T00:00:00.000Z',
+  const workflow = createExperimentWorkflow({ dataDir: 'unused', now: () => '2026-09-06T00:00:00.000Z',
     agents: async (signal) => { observed = signal; await pending; return {} as never; },
   });
   const started = workflow.start({ taskCase: {} as never, sourceRoot: 'unused', onEvent: () => {}, signal: abort.signal });
@@ -364,6 +362,23 @@ test('current-state fallback without accept cannot start a candidate', () => {
         hasStaging: true,
         baselineMode: 'canonical',
         runnable: 'isolated',
+        userStatus: 'failed',
+      },
+    }) ?? '',
+    /runnable workspace/,
+  );
+});
+
+test('blocked recovery cannot start a candidate even if an accept handle leaked', () => {
+  assert.match(
+    candidateStartBlocked({
+      sourceBaseline: 'available',
+      blockedReasons: [],
+      recovery: {
+        hasAccept: true,
+        hasStaging: true,
+        baselineMode: 'canonical',
+        runnable: 'blocked',
         userStatus: 'failed',
       },
     }) ?? '',

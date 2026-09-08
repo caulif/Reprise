@@ -7,7 +7,6 @@ Reprise   Recovering session   C:\reprise
  Project      source                                        
  Status       Preparing recovery environment                
                                                             
- [#########---------------------------]                     
  Recovering the isolated workspace from this session. You...
 ------------------------------------------------------------
- [Ctrl+C] Cancel  [?] Keys
+ [Ctrl+C] Cancel  [/] Find  [v] Select  [?] Keys

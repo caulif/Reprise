@@ -79,7 +79,7 @@ export function renderCandidateModelPicker(theme: Theme, width: number, model: C
   const rows = model.offers.map((offer, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     value: offer.displayName || offer.value,
-    note: offer.value === model.suggestedValue ? t(locale, 'suggestedModel') : (offer.resolvedModel && offer.resolvedModel !== offer.value ? offer.resolvedModel : ''),
+    note: modelNote(offer, model.suggestedValue, locale),
   }));
   return panel(theme, theme.style.harness(t(locale, 'selectCandidateModel')), [
     ...header,
@@ -102,6 +102,12 @@ export function candidateModelHints(canEnter: boolean, locale: Locale = 'en'): r
     ['b', t(locale, 'hintChangeProduct')],
     ['Esc', t(locale, 'hintHome')],
   ];
+}
+
+function modelNote(offer: RuntimeModelOffer, suggested: string | undefined, locale: Locale): string {
+  const resolved = offer.resolvedModel && offer.resolvedModel !== offer.value ? offer.resolvedModel : '';
+  const tag = offer.value === suggested ? t(locale, 'suggestedModel') : '';
+  return [resolved, tag].filter(Boolean).join(' · ');
 }
 
 function availabilityLabel(status: CandidateProductRow['availability'], locale: Locale): string {

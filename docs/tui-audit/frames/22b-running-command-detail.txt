@@ -28,4 +28,4 @@ Reprise   Candidate running · Codex                                            
 ▎ public response line 6                                                                                                
 ▎ ... +35 lines                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Stop  [?] Keys
+ [Ctrl+C] Stop  [/] Find  [v] Select  [?] Keys

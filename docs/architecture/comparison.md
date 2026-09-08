@@ -1,6 +1,6 @@
 # Comparison Agent 设计
 
-本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前模块设计
 
@@ -11,14 +11,10 @@ Comparison 是产品无关的比较研究者。它从冻结的 baseline、Candid
 ```mermaid
 flowchart LR
   A[TaskCase / RunRecord / events] --> B[Host reportFacts projection]
-  C[Live replica candidate/ mount and evidence/ catalog] --> D[Workspace tools]
-  B --> E[Planner session]
+  C[Sealed candidate snapshot mount and evidence/ catalog] --> D[Workspace tools]
+  B --> E[Comparison session]
   D --> E
-  E --> P[work/comparison-plan.md]
-  P --> R[Reporter session]
-  B --> R
-  D --> R
-  R --> F[write report.html]
+  E --> F[write report.html]
   F --> G[Host copies report.html]
   E --> H[Thin result envelope]
   G --> I[TUI open]
@@ -28,17 +24,17 @@ flowchart LR
 
 Comparison Agent 是成功报告的唯一作者。它用 `write` 把完整、自包含的 HTML 写到报告沙箱根 `report.html`；可自由使用 HTML、CSS、SVG 与有价值的本地 JavaScript。Host 校验后把字节拷到实验根，不使用 sanitizer、标签白名单、HTML AST 重写、固定模板或内容门禁。
 
-一次比较对应一个新的 `comparison-attempts/{attemptId}`。Planner 与 Reporter 是同一 role 的两个独立 session：Planner 调查应比较的结果对象和过程片段，把可变计划写入 `work/comparison-plan.md`；Reporter 从短 orientation、INDEX 和当时计划重新开始，可以否定或重写计划。Planner 失败时 Reporter 仍继续，计划状态明确为 `ready`、`partial_unverified` 或 `unavailable`。只有 Reporter 生成的本 attempt HTML 会原子发布；失败不覆盖旧成功报告。
+一次比较对应一个新的 `comparison-attempts/{attemptId}`，并只创建一个 Comparison Session。调查、可选的 `work/comparison-plan.md` 笔记、`report.html` 与信封修复都在该 Session 内完成。只有本 attempt 写出的 HTML 会原子发布；失败不覆盖旧成功报告。
 
-`candidate/` 是 run 结束后仍保留的隔离副本的只读挂载；`history/`、`turns/` 和 `evidence/` 分别提供历史过程、候选 settled turns 和 Host artifact。冻结 transcript 与本 run 事件在 attempt 根 `observations/`。短 briefing 只保存索引、facts、link catalog 与完整 process index，正文按需读取。三个内部角色的工作区工厂都是七工具，见 [工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。调用前写入兼容事件 `comparison.requested`，并为两个阶段分别写入 `comparison.plan_requested` / `comparison.report_requested` 输入快照。
+`candidate/` 是候选结束时封存的只读快照；快照未完成时该挂载标识为 unavailable，不是活动 `runs/{runId}`。`history/`、`turns/` 和 `evidence/` 分别提供历史过程、候选 settled turns 和 Host artifact。冻结 transcript 与本 run 事件在 attempt 根 `observations/`。短 briefing 只保存索引、facts、link catalog 与完整 process index，正文按需读取。三个内部角色的工作区工厂都是七工具，见 [工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。Comparison 的 `allowWrite` 只认路径第一段 `scratch`、`work/comparison-plan.md` 与 `report.html`。调用前写入 `comparison.requested` 输入快照。
 
 薄信封保存 `status`、固定的 `reportPath: "report.html"`、`evidenceRefs`、可选 `limitationCodes` 与可选 `headline`（TUI 一行差，Host 不从 HTML 抽取）。Host 检查信封 schema、证据归属和报告文件可读性，但不检查页面的章节、视觉组件或指标是否出现。可引用的 ref 包括 briefing 投影以及 Host 挂载的 `observations/` 与 process-index 事件；夹杂的未知 ref 丢掉，全部未知则拒绝。
 
-Host 向 briefing 投影 `reportFacts`。缺失值保持缺失。System Prompt 要求用到某项硬数时写“未采集”或“不可判定”，不得写成零或估价；不要求把全部 `reportFacts` 摊在首屏。报告形式由 Agent 按本次差异自定。
+Host 向 briefing 投影 `reportFacts`。缺失值保持缺失。System Prompt 要求用到某项硬数时写“未采集”或“不可判定”，不得写成零或估价；不要求把全部 `reportFacts` 摊在首屏。报告形式由 Agent 按本次差异自定。对照入口读取已提交事实与封存快照，不依赖原进程、内存 RecoveryAttempt 或活动 Runtime。
 
 ## 事实纪律与安全
 
-System Prompt 要求区分观察、推断和证据不足，并区分结果差异、过程差异与回放限制。它禁止把预算、Runtime、Controller、隔离目录或 stand-in workspace 误写成能力差异；禁止泄露凭据或环境变量值；报告默认离线，不得静默加载外部资源、发送网络请求、提交表单、修改用户文件或伪装系统界面。
+System Prompt 要求区分观察、推断和证据不足，并区分结果差异、过程差异、回放限制与配置差异。它禁止把预算、Runtime、Controller、隔离目录、stand-in workspace，或产品/工具/策略差误写成能力差异；禁止泄露凭据或环境变量值；报告默认离线，不得静默加载外部资源、发送网络请求、提交表单、修改用户文件或伪装系统界面。
 
 这是一条 Agent 行为契约，不是 Host 内容过滤。分享报告或在更高风险环境打开报告是独立产品决策。
 
@@ -51,4 +47,4 @@ Comparison 失败、信封不合规或未写出 `report.html` 时，不改变 Ca
 - Comparison 不依赖 Product Pack、RuntimePort 或产品私有事件类型。
 - 成功 HTML 可包含 Agent 选择的任意页面结构，且被原样保存。
 - 所有读取仍受 artifact ownership、路径、大小和 privacy policy 约束。
-- 持久化事实、阶段输入快照、attempt 工作区、`report.html` 与薄信封足以审计本次比较。
+- 持久化事实、attempt 工作区、`report.html` 与薄信封足以审计本次比较。

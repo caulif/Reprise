@@ -359,3 +359,25 @@ test('discovery messages wrap on semantic lines instead of mid-phrase', () => {
   assert.doesNotMatch(text, /2\n sessions/);
   assert.match(text, /catalog index unavailable \(not this row\)/);
 });
+
+test('empty project and session lists distinguish no match, no history, and no permission', () => {
+  const theme = createTheme(80, false);
+  const none = renderSessions(theme, 80, {
+    level: 'projects', projects: [], sessions: [], selected: 0, filterEligible: false, query: '', searching: false, locale: 'en',
+  }, 12).join('\n');
+  assert.match(none, /No local agent sessions were found/);
+  const filtered = renderSessions(theme, 80, {
+    level: 'projects', projects: [], sessions: [], selected: 0, filterEligible: false, query: 'zzz', searching: true, locale: 'en',
+  }, 12).join('\n');
+  assert.match(filtered, /No matching projects/);
+  const denied = renderSessions(theme, 80, {
+    level: 'projects', projects: [], sessions: [], selected: 0, filterEligible: false, query: '', searching: false,
+    discoveryCodes: ['unreadable-directory'], unfilteredCount: 0, locale: 'en',
+  }, 12).join('\n');
+  assert.match(denied, /No permission to read the session directory/);
+  const failed = renderSessions(theme, 80, {
+    level: 'projects', projects: [], sessions: [], selected: 0, filterEligible: false, query: '', searching: false,
+    discoveryStatus: 'error', locale: 'en',
+  }, 12).join('\n');
+  assert.match(failed, /Could not read local session records/);
+});

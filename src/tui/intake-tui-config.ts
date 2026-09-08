@@ -28,6 +28,8 @@ export function CodexIntakeTui_configPageInput(this: CodexIntakeTui, data: strin
         providers: this.providers,
         models: this.models,
         pendingToggle: this.configPendingToggle,
+        dirty: this.configDirty(),
+        leaveConfirm: this.configLeaveConfirm,
       },
       data,
       (draft) => this.modelsForDraft(draft),
@@ -39,6 +41,7 @@ export function CodexIntakeTui_configPageInput(this: CodexIntakeTui, data: strin
     this.configBuffer = result.state.buffer;
     this.configCursor = result.state.cursor ?? result.state.buffer.length;
     this.configPendingToggle = Boolean(result.state.pendingToggle);
+    this.configLeaveConfirm = Boolean(result.state.leaveConfirm);
     this.models = result.state.models;
     if (result.message) this.message = result.message;
     if (result.action === "save") void this.saveConfig();
@@ -78,6 +81,7 @@ export async function CodexIntakeTui_openConfig(this: CodexIntakeTui): Promise<v
     this.configBuffer = "";
     this.configCursor = 0;
     this.configPendingToggle = false;
+    this.configLeaveConfirm = false;
     this.providers = new PiModelCaller(
       this.modelConfig,
       this.piModels,

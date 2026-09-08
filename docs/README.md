@@ -11,13 +11,13 @@
 | 修改存储或运行 | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md)、[环境](./architecture/environment.md) |
 | 修改模拟用户或对照 | [Controller](./architecture/controller.md)、[Comparison](./architecture/comparison.md) | [实验条件](./architecture/controller-experiment-conditions.md)、[验证边界](./architecture/validation.md) |
 | 接入产品或平台 | [Product Pack](./architecture/product-plugin-compatibility.md) | [本机平台边界](./architecture/cross-platform.md) |
-| 实施重构 | [架构目标与 A1–A18](./plan/reprise-architecture-redesign.md)、[逐步实施计划](./plan/reprise-refactoring-execution.md) | [TUI 目标](./plan/reprise-tui-design.md)、[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)、[进度](./progress/MASTER.md) |
+| 核对验收缺口 | [架构目标与 A1–A18](./plan/reprise-architecture-redesign.md)、[TUI 目标](./plan/reprise-tui-design.md) | [迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)、[进度](./progress/MASTER.md)、[已关闭实施批次](./plan/reprise-refactoring-execution.md) |
 | 提交与审查 | [贡献指南](./CONTRIBUTING.md)、[工程门禁](./engineering-gates.md) | [任务 brief](./plan/task-brief-template.md)、[治理](./GOVERNANCE.md) |
 | 维护文档或发布 | [文档结构](./documentation-structure.md)、[文档指令](./AGENTS.md) | [发布检查](./release-checklist.md)、[Changelog](./CHANGELOG.md)、[事故复盘](./postmortem-template.md) |
 
 ## 权威与迁移
 
-product/ 与 architecture/ 描述当前实现的规则；plan/ 拥有已确认但尚未实施的目标；[目标 ADR](./decisions/proposed/2026-09-07-reprise-session-harness-workflow.md)记录选择理由。旧 Understanding、双 Session、静态插件等尚在代码中的规则保留为迁移源，不代表目标继续采用。
+product/ 与 architecture/ 描述当前实现的规则；plan/ 拥有尚未关闭的 TUI 真终端验收、[走查修复](./plan/2026-09-08-fe4220-run-remediation.md) 与 [重构评估收口](./plan/2026-09-08-refactoring-review-closeout.md)。[目标 ADR](./decisions/proposed/2026-09-07-reprise-session-harness-workflow.md)仍为 proposed。已落地规则以 accepted ADR 与 architecture/ 为准。
 
 每个批次在同一变更中更新代码、规范、相关 ADR 与证据。通过[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)判断哪些旧决定需要被替代。不要在修文档时宣布功能已实现，也不要因旧 ADR 存在而重新讨论已确认目标。
 

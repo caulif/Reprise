@@ -3,9 +3,9 @@ Reprise v0.1.0   C:\reprise                              gpt-5.6-terra · medium
  Last task  修复这个回归缺陷并验证测试全部通过
 
  Continue
- r     Replay the current task  needs credential
- i     Import a historical session
- c     Open /config  needs credential
+ /run     Replay the current task  needs credential
+ /intake  Import a historical session
+ /config  Open /config  needs credential
 
  Browse
  /intake    Import a historical agent session
@@ -15,7 +15,7 @@ Reprise v0.1.0   C:\reprise                              gpt-5.6-terra · medium
 
  Next: add the API key in /config
 
- ❯ / command, or pick Continue above
+ ❯ Type /command, Tab to complete
  TaskCase reprise is current (case-f6e814335fe91d8f).
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Enter] Run command  [r] Replay  [i] Import  [?] Keys  [Ctrl+C] Exit
+ [/] Command  [Tab] Complete  [Enter] Run command  [?] Keys  [Ctrl+C] Exit

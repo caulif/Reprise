@@ -268,11 +268,17 @@ export type ProductAuthStatus = {
   readonly detail?: string;
 };
 
+export const PACK_API_MAJOR = 1;
+
+export type PackCapability = "import" | "runtime";
+
 export type ProductPackManifest = {
   readonly productId: string;
   readonly displayName: string;
   readonly packVersion: string;
   readonly schemaVersion: number;
+  readonly apiMajor: number;
+  readonly capabilities: readonly PackCapability[];
   readonly sessionSchemaVersions?: readonly string[];
 };
 
@@ -284,10 +290,18 @@ export type RecoveryPlaybookDescriptor = {
 
 export interface ProductPack {
   readonly manifest: ProductPackManifest;
+  readonly sessions?: SessionSourceAdapter;
+  readonly runtime?: RuntimePort;
+  readonly activity?: TargetActivityTranslator;
+  recoveryPlaybook?(): RecoveryPlaybookDescriptor;
+  checkAuth?(): Promise<ProductAuthStatus>;
+  defaultCandidate?(): CandidateSpec;
+}
+
+export type CompleteProductPack = ProductPack & {
   readonly sessions: SessionSourceAdapter;
   readonly runtime: RuntimePort;
   readonly activity: TargetActivityTranslator;
   recoveryPlaybook(): RecoveryPlaybookDescriptor;
-  checkAuth(): Promise<ProductAuthStatus>;
   defaultCandidate(): CandidateSpec;
-}
+};

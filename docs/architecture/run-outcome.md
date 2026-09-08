@@ -1,6 +1,6 @@
 # CandidateRun 结果与终止协议
 
-本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前模块设计
 
@@ -188,6 +188,8 @@ interface CleanupResult {
 - `complete`：所有应释放资源均已确认释放；
 - `incomplete`：已知仍有 Harness-owned 资源未释放；
 - `unknown`：无法确认资源是否已经释放。
+
+CandidateRun 等待 `TargetRunner.stop()` 的上限为 `cleanupTimeoutMs`（缺省 10 秒）。超时将 `cleanup.status` 记为 `unknown`，`remainingResourceIds` 含 `runtime`，并写入 `runtime.stop_failed`（`reason: cleanup_timeout`）。超时后仍可尝试释放环境，但不得把 cleanup 记为 `complete`。
 
 不再区分 `partial` 与 `failed`。对用户和后续程序而言，两者都意味着清理未完成；严重程度由 `remainingResourceIds` 指向的资源类型和 evidence 展示。
 

@@ -3,7 +3,6 @@ Reprise   Starting candidate · Codex                                           
  Task  Fix the bug.                                                                                                     
  Will replay this task in Codex with the candidate model. Your original repo is left unchanged.                         
                                                                                                                         
- [▓█████████████████░░░░░░░░░░░░░░░░░░]                                                                                 
  Copying isolated workspace · step 2 / 4 · 111 files · 66.4 MiB                                                         
                                                                                                                         
  ✓  Restore historical environment  done                                                                                
@@ -11,4 +10,4 @@ Reprise   Starting candidate · Codex                                           
  ○  Write candidate config  waiting                                                                                     
  ○  Start Codex  waiting                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Cancel  [?] Keys
+ [Ctrl+C] Cancel  [/] Find  [v] Select  [?] Keys

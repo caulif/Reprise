@@ -1,0 +1,6 @@
+{
+  "name": "reprise-third-pack",
+  "private": true,
+  "type": "module",
+  "exports": "./pack.js"
+}

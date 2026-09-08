@@ -13,15 +13,15 @@ node dist/src/cli/main.js --help
 node dist/src/cli/main.js
 ```
 
-源码入口为 [CLI](./src/cli/main.ts)。当前 CLI 主要启动 TUI；通过 /config 配置内部模型，/intake 选择来源产品、项目与会话。恢复后选择候选产品与模型，确认执行；结果可以直接查看或按需对照。具体操作与凭据规则见 [TUI](./docs/product/tui.md)和[产品定义](./docs/product/overview.md#13-凭据)。内置产品由[注册入口](./src/products/index.ts)决定，当前包括 Codex 与 Claude Code。
+源码入口为 [CLI](./src/cli/main.ts)。无子命令打开 TUI。`products`/`models`/`history`/`config`、`prepare`/`run`/`compare`/`cancel` 为无头入口，见 `--help`。通过 /config 配置内部模型，/intake 选择来源产品、项目与会话。恢复后选择候选产品与模型，确认执行；结果可以直接查看或按需对照。具体操作与凭据规则见 [TUI](./docs/product/tui.md)和[产品定义](./docs/product/overview.md#13-凭据)。内置产品为 Codex 与 Claude Code；本地模块经 `{dataDir}/plugins.json` 加载，见[版本化本地 Pack 边界](./docs/decisions/accepted/2026-09-08-versioned-local-pack-boundary.md)。Pack 公共类型从 `reprise/pack-api` 解析。
 
 默认数据目录为 .reprise，可通过 --data-dir 或 REPRISE_DATA_DIR 指定；来源目录可使用可重复的 --sessions-dir productId=path。模型调用可能产生费用，隔离副本不等于隐私清洗；实际运行前检查输入与权限。真实 smoke 必须显式 opt-in，见[准入程序](./docs/codex-smoke-gate.md)。
 
-## 当前能力与重构目标
+## 当前能力与未关闭证据
 
-[文档入口](./docs/README.md)明确区分当前规范与已确认目标。完整无头 CLI、跨终端取消、外部本地插件及新的单列键盘 TUI 是[重构规划](./docs/plan/reprise-architecture-redesign.md)的一部分，不能将规划命令当作当前可执行接口。
+无头查询与实验命令、跨终端 cancel、本地插件配置已可用。平台模拟、Windows TUI 帧与 opt-in Runtime smoke 分列见[支持说明](./docs/SUPPORT.md)。macOS/Linux 真终端 IME/滚轮/拖选与未 opt-in 的真实产品 smoke 仍是缺口，不能把 CI 绿灯当作三平台终端或计费 Runtime 已关闭。
 
-平台支持与实际验证边界见[支持说明](./docs/SUPPORT.md)。CI 覆盖不等于所有平台的真实 Runtime 与终端行为已经验证。
+实施批次 M1–M7 已关闭，证据见[进度](./docs/progress/MASTER.md)。未关闭项是 macOS/Linux 真终端、opt-in Runtime smoke，以及未跑的 Controller 真实模型 lane。
 
 ## 贡献
 

@@ -2,6 +2,7 @@ import { access, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process';
 import { extname, isAbsolute, join, resolve } from 'node:path';
+import { isNativeHostPath } from '../../core/paths.js';
 
 const SECRET_PATTERNS: readonly RegExp[] = [
   /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}/g,
@@ -63,20 +64,31 @@ export function spawnRuntimeProcess(
 ): ChildProcessWithoutNullStreams {
   const { platform, ...spawnOptions } = options;
   const invocation = windowsProcessInvocation(executable, args, platform ?? process.platform);
+  const host = platform ?? process.platform;
   return spawn(invocation.command, [...invocation.args], {
     ...spawnOptions,
     shell: false,
     ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+    ...(host !== 'win32' && spawnOptions.detached === undefined ? { detached: true } : {}),
   }) as ChildProcessWithoutNullStreams;
 }
 
 export async function forceKill(child: ChildProcessWithoutNullStreams): Promise<void> {
-  if (process.platform !== 'win32' || !child.pid) {
-    child.kill('SIGKILL');
+  const pid = child.pid;
+  if (process.platform === 'win32' && pid) {
+    const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows';
+    await new Promise<void>((resolveWait) => spawn(join(systemRoot, 'System32', 'taskkill.exe'), ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true }).once('close', () => resolveWait()));
     return;
   }
-  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows';
-  await new Promise<void>((resolveWait) => spawn(join(systemRoot, 'System32', 'taskkill.exe'), ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore', windowsHide: true }).once('close', () => resolveWait()));
+  if (pid !== undefined) {
+    try {
+      process.kill(-pid, 'SIGKILL');
+      return;
+    } catch {
+      /* child is not a process-group leader */
+    }
+  }
+  child.kill('SIGKILL');
 }
 
 /** Target stderr is persisted verbatim into the run journal, so credentials must never survive the trip. */
@@ -109,6 +121,7 @@ export async function discoverExecutable(input: ExecutableDiscovery): Promise<st
     ? configuredCandidates(configured, env.PATH, input.cwd ?? process.cwd(), platform, input.pathExt)
     : pathCandidates(input.command, env.PATH, platform, input.pathExt);
   for (const candidate of candidates) {
+    if (!isNativeHostPath(candidate, platform, env)) continue;
     if (await isFile(candidate, platform)) return candidate;
   }
   return undefined;

@@ -6,14 +6,14 @@
 
 | 迁移边界 | 当前代码与规范 | 目标及关闭条件 |
 |---|---|---|
-| Session 与模型输入 | [Pi Host](../../src/infrastructure/pi-agent-host.ts)、[持久化](../architecture/persistence-and-crash-consistency.md) | 唯一 Session 事实源，压缩不丢历史；A1、A2、A6–A8 |
-| 恢复与场景 | [环境](../architecture/environment.md)、[恢复接受 ADR](../decisions/accepted/2026-08-31-recovery-auto-accept-validated-preview.md) | 证据不足停止，不强行接受；封存场景重复运行，A5、A10、A17 |
-| Controller | [Controller](../architecture/controller.md)、[独立理解 ADR](../decisions/accepted/2026-09-04-controller-understanding-pass.md)、[完成守卫 ADR](../decisions/accepted/2026-09-06-controller-completion-evidence-guard.md) | 每 run 连续 Session，取消独立 Understanding 和强制账本守卫；A3 |
-| Comparison | [对照](../architecture/comparison.md)、[双阶段 ADR](../decisions/accepted/2026-09-05-comparison-two-phase-attempts-and-pi-media.md) | 每 attempt 单 Session，独立对照与封存输入；A4、A17 |
-| CLI 与取消 | [CLI](../../src/cli/main.ts)、[运行结果](../architecture/run-outcome.md) | 完整与分步执行共用实现，本机跨终端取消；A9、A13–A15 |
-| Product Pack | [兼容性](../architecture/product-plugin-compatibility.md)、[注册入口](../../src/products/index.ts) | 显式本地插件，第三测试插件无需改宿主；A16、A18 |
-| 平台 | [本机平台](../architecture/cross-platform.md)、[Host ADR](../decisions/accepted/2026-09-05-cross-platform-host-and-agent-tools.md) | Windows PowerShell、macOS/Linux Bash，进程树与终端分别验证；A11 |
-| TUI | [当前界面](../product/tui.md)、[活动画布 ADR](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md) | 单列连续记录、键盘入口、03a 左右项目页；按 TUI 验收，更新帧基线 |
+| Session 与模型输入 | [Pi Host](../../src/infrastructure/pi-agent-host.ts)、[持久化](../architecture/persistence-and-crash-consistency.md)、[事实源 ADR](../decisions/accepted/2026-09-08-session-fact-owner-and-identity.md)、[模型输入 ADR](../decisions/accepted/2026-09-08-model-input-reconstruction.md)、[历史只读 ADR](../decisions/accepted/2026-09-08-history-readonly-compat.md) | A1、A2、A6–A8 以规划编号关闭；机械路径见对应 ADR |
+| 恢复与场景 | [环境](../architecture/environment.md)、[Recovery 连续 Session](../decisions/accepted/2026-09-08-recovery-continuous-session.md)、[场景封存](../decisions/accepted/2026-09-08-scene-seal-and-repeat-runs.md) | A5、A10、A17；真实历史样本评估仍见恢复评估计划 |
+| Controller | [Controller](../architecture/controller.md)、[opening 同 Session ADR](../decisions/accepted/2026-09-08-controller-opening-single-session.md)、[协作协议](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md) | 无独立 Understanding、无账本守卫；五族样例人工核对见 MASTER；真实模型 lane 须 `REPRISE_REAL_MODEL=1`，MiniMax 代表样例未全部匹配 |
+| Comparison | [对照](../architecture/comparison.md)、[单 Session ADR](../decisions/accepted/2026-09-08-comparison-single-session.md) | A4、A17 |
+| CLI 与取消 | [CLI](../../src/cli/main.ts)、[共用操作 ADR](../decisions/accepted/2026-09-08-shared-experiment-operations.md)、[跨终端 cancel](../decisions/accepted/2026-09-08-cross-terminal-cancel.md) | A9、A13–A15 |
+| Product Pack | [兼容性](../architecture/product-plugin-compatibility.md)、[注册入口](../../src/products/index.ts)、[第三 Pack](../decisions/accepted/2026-09-08-third-pack-and-platform-evidence.md) | A16 模拟第三 Pack 与 A18；真实 Runtime smoke 仍 opt-in |
+| 平台 | [本机平台](../architecture/cross-platform.md)、[原生平台语义](../decisions/accepted/2026-09-08-native-platform-semantics.md) | A11：CI 三 OS 模拟 shell/路径/进程；**TUI 真终端 IME 不在 A11** |
+| TUI | [当前界面](../product/tui.md)、[公开时间线](../decisions/accepted/2026-09-08-public-activity-timeline.md)、[阅读与终端](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md) | Windows 帧与假终端；**三系统真终端 IME/滚轮/拖选未关闭** |
 
 工具数量、提示词全文和公共字段以对应代码定义为准，不再用一份平行 prompt 文档重定义。上述迁移必须保留权限、隔离、秘密保护、模型输入可复原、投递未知不重发及结果与清理分离。
 

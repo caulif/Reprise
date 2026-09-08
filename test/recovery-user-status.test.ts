@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { diagnosisReasonCode, userRecoveryStatus } from '../src/application/recovery-user-status.js';
+import { diagnosisReasonCode, recoveryAcceptIsExposed, userRecoveryStatus } from '../src/application/recovery-user-status.js';
 import type { EnvironmentBaseline } from '../src/environment/local-workspace-provider.js';
 
 function baseline(overrides: Partial<EnvironmentBaseline>): EnvironmentBaseline {
@@ -44,6 +44,27 @@ test('user recovery status maps complete recovery, skipped links, and missing so
     transcriptOk: false,
   }), 'failed');
 });
+
+test('insufficient evidence stays failed even when an accept handle exists', () => {
+  assert.equal(userRecoveryStatus({
+    baseline: baseline({
+      match: 'current_state_fallback',
+      recovery: { status: 'insufficient_evidence', unresolved: ['no git object'], sourceDigest: 'a'.repeat(64), recoveredDigest: 'a'.repeat(64) },
+    }),
+    transcriptOk: true,
+    hasAccept: true,
+  }), 'failed');
+  assert.equal(userRecoveryStatus({
+    baseline: baseline({
+      match: 'recovered_partial',
+      readiness: { runnable: 'blocked', strictness: 'strict', blockingResourceIds: ['recovery-evidence'] },
+      recovery: { status: 'partial', unresolved: [], sourceDigest: 'a'.repeat(64), recoveredDigest: 'b'.repeat(64) },
+    }),
+    transcriptOk: true,
+    hasAccept: true,
+  }), 'failed');
+});
+
 
 test('fallback without accept is failed; skipped symlink with accept stays partial', () => {
   assert.equal(userRecoveryStatus({
@@ -104,3 +125,10 @@ test('diagnosis reason prefers failureStage over skipped symlink', () => {
     hasAccept: true,
   }), 'weak_or_incomplete_evidence');
 });
+
+test('accept is not exposed for insufficient evidence unless Host already auto-accepted', () => {
+  assert.equal(recoveryAcceptIsExposed({ envelopeStatus: 'insufficient_evidence', match: 'current_state_fallback', runnable: 'isolated' }), false);
+  assert.equal(recoveryAcceptIsExposed({ automaticallyAccepted: true, envelopeStatus: 'insufficient_evidence' }), true);
+  assert.equal(recoveryAcceptIsExposed({ envelopeStatus: 'partial', match: 'recovered_partial', runnable: 'isolated' }), true);
+});
+

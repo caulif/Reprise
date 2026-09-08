@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Value } from "@sinclair/typebox/value";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { RecoveryResult } from "../agents/recovery-agent.js";
 import {
   RecoveryReviewSummarySchema,
@@ -12,6 +12,7 @@ import {
   type RecoveryControlledWrite,
 } from "../core/schema.js";
 import { sha256 } from "../core/identity.js";
+import { relativeInside } from "../core/paths.js";
 import {
   RecoveryValidationError,
   type EnvironmentBaseline,
@@ -329,14 +330,8 @@ export async function persistRecoveryControlledWriteBlob(
 
 function recoveryCandidatePath(candidateRoot: string, relativePath: string): string {
   const absolutePath = resolve(candidateRoot, relativePath);
-  const pathFromRoot = relative(candidateRoot, absolutePath);
-  if (
-    !pathFromRoot ||
-    pathFromRoot === ".." ||
-    pathFromRoot.startsWith(`..${String.fromCharCode(92)}`) ||
-    pathFromRoot.startsWith("../") ||
-    isAbsolute(pathFromRoot)
-  )
+  const pathFromRoot = relativeInside(candidateRoot, absolutePath);
+  if (pathFromRoot === undefined || pathFromRoot === "")
     throw new Error("Recovery controlled-write artifact path escapes candidate root.");
   return absolutePath;
 }

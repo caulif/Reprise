@@ -1,5 +1,6 @@
 import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { pathContainedBy } from "../core/paths.js";
 import type { RunInspection } from "./comparison.js";
 import type { EventEnvelope, RunRecord } from "../core/schema.js";
 import {
@@ -8,6 +9,7 @@ import {
 } from "../environment/local-workspace-provider.js";
 import type { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { findProductPack } from "../products/index.js";
+import { packActivity } from "../products/pack-access.js";
 import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./replay-conditions.js";
 import { recordValue, strings, totalTokenCount } from "./experiment-helpers.js";
 
@@ -41,7 +43,7 @@ export async function inspectRun(
   if (!runId)
     throw new Error("Run inspection requires a RunRecord or active workspace.");
   const events = store.events(runId);
-  const facts = findProductPack(productId).activity.inspectRunFacts(events);
+  const facts = packActivity(findProductPack(productId)).inspectRunFacts(events);
   const finalMessage = facts.finalMessage;
   const commands = [...facts.commands];
   const settled = events.filter(
@@ -181,6 +183,7 @@ export async function captureWorkspaceScope(input: {
   runId: string;
 }): Promise<RunRecord["artifactRefs"]> {
   const after = await input.workspaceProvider.fingerprint(input.environment);
+  const snapshot = await input.workspaceProvider.sealCandidateSnapshot(input.environment);
   const allChangedPaths = changedPathsBetween(
     input.environment.beforeFingerprint,
     after,
@@ -207,6 +210,8 @@ export async function captureWorkspaceScope(input: {
     bytes: Buffer.from(
       JSON.stringify(
         {
+          snapshotStatus: snapshot.status,
+          snapshotRoot: snapshot.root,
           baselineFingerprint: input.environment.beforeFingerprint.digest,
           candidateFingerprint: after.digest,
           changedPaths,
@@ -246,11 +251,7 @@ async function textSnapshot(
   path: string,
 ): Promise<{ path: string; content: string; truncated: boolean } | undefined> {
   const fullPath = resolve(root, path);
-  if (
-    !fullPath.startsWith(`${resolve(root)}${"\\"}`) &&
-    !fullPath.startsWith(`${resolve(root)}/`)
-  )
-    return undefined;
+  if (!pathContainedBy(resolve(root), fullPath)) return undefined;
   try {
     if (!(await lstat(fullPath)).isFile()) return undefined;
     const bytes = await readFile(fullPath);

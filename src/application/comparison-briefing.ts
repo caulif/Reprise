@@ -9,10 +9,25 @@ import type { ArtifactManifest } from "../infrastructure/store/experiment-store.
 import { briefingComparisonContext } from "./comparison.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "./observation-files.js";
 
-export type ComparisonPhase = "plan" | "report";
-export type ComparisonPlanStatus = "ready" | "partial_unverified" | "unavailable";
-
 export type ComparisonLink = ComparisonLinkRecord;
+
+export function comparisonOrientation(input: {
+  initialInput: string;
+  briefingRoot: string;
+  indexMarkdown: string;
+  baselineAvailable: boolean;
+  candidateAvailable: boolean;
+}): string {
+  return [
+    `initialTask=${input.initialInput}`,
+    `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
+    `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
+    `briefingRoot=${input.briefingRoot}`,
+    "",
+    "# INDEX.md",
+    input.indexMarkdown,
+  ].join("\n");
+}
 
 export function newComparisonAttempt(experimentRoot: string): { attemptId: string; attemptRoot: string } {
   const attemptId = randomUUID();
@@ -58,32 +73,6 @@ export async function writeComparisonBriefing(input: {
   return { indexMarkdown, links, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
 }
 
-export function comparisonOrientation(input: {
-  phase: ComparisonPhase;
-  initialInput: string;
-  briefingRoot: string;
-  indexMarkdown: string;
-  baselineAvailable: boolean;
-  candidateAvailable: boolean;
-  planStatus: ComparisonPlanStatus;
-  planFailureKind?: string;
-  planDigest?: string;
-}): string {
-  return [
-    `phase=${input.phase}`,
-    `initialTask=${input.initialInput}`,
-    `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
-    `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
-    `planStatus=${input.planStatus}`,
-    ...(input.planFailureKind ? [`planFailureKind=${input.planFailureKind}`] : []),
-    ...(input.planDigest ? [`planDigest=${input.planDigest}`] : []),
-    `briefingRoot=${input.briefingRoot}`,
-    "",
-    "# INDEX.md",
-    input.indexMarkdown,
-  ].join("\n");
-}
-
 function comparisonIndex(): string {
   return [
     "# Comparison briefing map",
@@ -101,7 +90,7 @@ function comparisonIndex(): string {
     "- turns/ — candidate settled-turn briefing (read-only mount)",
     "- candidate/ — retained candidate workspace (read-only mount)",
     "- evidence/ — materialized Host artifacts (read-only mount)",
-    "- work/comparison-plan.md — revisable Planner/Reporter working state",
+    "- work/comparison-plan.md — revisable working notes in this Session",
     "- scratch/ — unrestricted temporary analysis files; PowerShell starts here",
     "",
   ].join("\n");

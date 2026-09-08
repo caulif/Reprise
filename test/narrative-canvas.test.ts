@@ -27,6 +27,7 @@ test('visible assistant text drops JSON envelopes and thinking-only content', ()
   assert.equal(isStructuredEnvelope('{"type":"send","message":"hi"}'), true);
   assert.equal(visibleAssistantText([{ type: 'thinking', text: 'secret' }]), '');
   assert.match(visibleAssistantText([{ type: 'text', text: '先看隔离副本是不是仓库。' }]) ?? '', /隔离副本/);
+  assert.equal(visibleAssistantText([{ type: 'text', text: '<think>hidden</think>{"type":"done","reason":"satisfied"}' }]), '');
 });
 
 test('assistant_visible is projected and Host does not invent narration', () => {
@@ -62,7 +63,7 @@ test('right pane is product session, not Controller tools, and user text is inpu
   assert.equal(paneOf(input), 'both');
 });
 
-test('candidate split canvas keeps Controller tools off the product column', () => {
+test('candidate canvas keeps Controller tools and delivered input on one column', () => {
   const theme = createTheme(120, false);
   const entries: TimelineEntry[] = [];
   appendTimelineEntries(entries, projectTimelineEvent(event('agent.tool_called', {

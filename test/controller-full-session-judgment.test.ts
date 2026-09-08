@@ -112,7 +112,7 @@ test('without later user steering, the same first pass may stop', async () => {
 
 test('controller prompt does not treat unused historical user turns as a stop reason', () => {
   assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not fire historical user sentences in sequence/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not send historical sentences merely to exhaust them/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /Sending every remaining historical user sentence is not a completion condition/);
 });
 
 test('Controller without promptContent still does not dump historical user turns', async () => {
@@ -148,22 +148,20 @@ test('Controller without promptContent still does not dump historical user turns
   assert.doesNotMatch(appended[0] ?? '', /finalMessage/);
 });
 
-test('Controller understanding pass returns a private task image before opening', async () => {
+test('opening and later decide share one Controller Session without a private understanding pass', async () => {
+  let sessions = 0;
   const appended: string[] = [];
   const controller = new ControllerAgent({
     host: new PiAgentHost({
       createSession() {
+        sessions += 1;
         return {
           append: async ({ content }) => {
             appended.push(content);
-            if (content.includes('Private understanding pass')) {
-              return JSON.stringify({
-                markdown: '用户先要 HTML，后续明确要求新建 PPT 并复刻 HTML。',
-                sourceMessageIds: ['message-1', 'message-350'],
-                unresolvedActions: ['新建白底 PPT 并复刻三页 HTML'],
-              });
+            if (content.includes('phase=opening')) {
+              return JSON.stringify({ type: 'send', intent: 'continue', message: '先查看当前材料。' });
             }
-            return JSON.stringify({ type: 'send', intent: 'continue', message: '先查看当前材料。' });
+            return JSON.stringify({ type: 'done', reason: 'satisfied' });
           },
           cancel() {},
         };
@@ -172,13 +170,26 @@ test('Controller understanding pass returns a private task image before opening'
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
-  const base = briefing({ includeFollowupInIndex: false, settledTurns: 0 });
-  const result = await controller.understand?.({ ...base, phase: 'opening', runState: 'created' });
-  assert.equal(result?.status, 'completed');
-  if (result?.status === 'completed') {
-    assert.match(result.value.markdown, /PPT/);
-    assert.deepEqual(result.value.sourceMessageIds, ['message-1', 'message-350']);
-    assert.deepEqual(result.value.unresolvedActions, ['新建白底 PPT 并复刻三页 HTML']);
-  }
-  assert.match(appended[0] ?? '', /Private understanding pass/);
+  const opening = await controller.decide({
+    ...briefing({ includeFollowupInIndex: false, settledTurns: 0 }),
+    runState: 'created',
+    phase: 'opening',
+    requestId: 'controller-request-run-1-1',
+    budget: { decisionsUsed: 0 },
+    promptContent: controllerPromptContent({
+      phase: 'opening',
+      briefingRoot: '/briefing',
+      indexMarkdown: renderIndexMarkdown(undefined),
+    }),
+  });
+  const later = await controller.decide({
+    ...briefing({ includeFollowupInIndex: false, settledTurns: 1 }),
+    requestId: 'controller-request-run-1-2',
+  });
+  assert.equal(sessions, 1);
+  assert.equal(appended.length, 2);
+  assert.equal(opening.status, 'completed');
+  assert.equal(later.status, 'completed');
+  assert.doesNotMatch(appended.join('\n'), /Private understanding pass/);
+  assert.match(appended[0] ?? '', /first Invocation/);
 });

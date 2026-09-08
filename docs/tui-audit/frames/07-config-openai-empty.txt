@@ -3,12 +3,12 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
  Last task  none selected
 
  Continue
- r     Replay the current task  needs a task
- i     Import a historical session
+ /run     Replay the current task  needs a task
+ /intake  Import a historical session
 
 ┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Endpoint   not set                                                                                                   │
-│ Model       · medium                                                                                                 │
+│ Internal model       · medium                                                                                        │
 │ Secret     ⚠ API key missing                                                                                         │
 │ The API key is saved in .reprise/harness-model.json. env:NAME still works as a fallback.                             │
 │                                                                                                                      │
@@ -27,4 +27,4 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  OpenAI-compatible selected. Enter its endpoint, model, and API key.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Toggle provider  [t] Test connection  [s] Save locally  [Esc] Home
+ [↑↓] Select  [Enter] Toggle provider  [Ctrl+T] Test connection  [Ctrl+S] Save locally  [Esc] Home

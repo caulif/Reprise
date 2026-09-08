@@ -8,8 +8,9 @@
 - [process-runner.ts](../../src/infrastructure/process-runner.ts)拥有进程启动、取消、超时、输出限额和错误分类。
 - [产品进程 helper](../../src/products/shared/process.ts)处理 Runtime 启动与 Windows shim；产品协议仍归各 Pack。
 - [Pi Host](../../src/infrastructure/pi-agent-host.ts)记录模型可见 host facts；工具权限归对应角色。
+- [control-endpoint.ts](../../src/infrastructure/control-endpoint.ts)拥有跨终端 cancel 的本机管道/Unix socket；认证 token 不进事件。规则见[跨终端 cancel](../decisions/accepted/2026-09-08-cross-terminal-cancel.md)。
 
-当前 Windows 使用 PowerShell；POSIX 优先 SHELL，未设置时 macOS 使用 /bin/zsh、Linux 使用 /bin/bash。这是当前代码行为，不能写成目标“macOS/Linux 默认 Bash”已经生效。当前非 Windows 终止 helper 调用 child.kill，不据此承诺整个进程组已经被清理。
+当前 Windows 使用 System32 `powershell.exe`；macOS 与 Linux 使用 `/bin/bash`。不读取 `SHELL`。缺省 shell 不存在则失败，不回退。`runProcess` 与 Runtime spawn 均为 `shell: false`。POSIX 杀进程树时 detached 并对进程组发 SIGKILL；Windows 用 System32 `taskkill /T`。WSL 只使用发行版路径，发现可执行文件时跳过盘符路径与 `/mnt/<盘符>/`。CandidateRun 等待 `stop` 超过收尾时限则 cleanup 为 `unknown`。细节见[原生平台语义](../decisions/accepted/2026-09-08-native-platform-semantics.md)。
 
 ## 不变量
 
@@ -19,4 +20,10 @@
 
 ## 验证范围
 
-CI test matrix 的唯一来源是 [check.yml](../../.github/workflows/check.yml)，覆盖 Windows、macOS 与 Ubuntu。TUI 帧基线在 Windows 检查，不能证明其他终端的鼠标、选区、中文或退出恢复。支持声明见[支持边界](../SUPPORT.md)，真实调用准入见[smoke 闸门](../codex-smoke-gate.md)。
+证据分三类，不能互相顶替：
+
+1. **平台模拟**：CI [check.yml](../../.github/workflows/check.yml) 在 Windows、macOS、Ubuntu 跑同一套离线测试；shell、路径、进程见[原生平台语义](../decisions/accepted/2026-09-08-native-platform-semantics.md)。
+2. **真实终端**：TUI 帧基线与假终端按键在 Windows 检查。中文、IME、滚轮、拖选、链接、异常退出恢复尚未在 macOS/Linux 真终端关闭。
+3. **真实 Runtime**：Codex/Claude smoke 仅显式环境变量准入，见[smoke 闸门](../codex-smoke-gate.md)；缺授权时保持缺口。
+
+第三测试 Pack 经配置加载，见[第三 Pack 与平台证据](../decisions/accepted/2026-09-08-third-pack-and-platform-evidence.md)。支持声明见[支持边界](../SUPPORT.md)。

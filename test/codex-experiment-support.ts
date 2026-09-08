@@ -113,20 +113,12 @@ const controller: ControllerPort = {
         },
 };
 const comparison: ComparisonAgentPort = {
-  plan: async (_context, tools = []) => {
+  compare: async (_context, tools = []) => {
     const reader = tools.find((tool) => tool.name === "read")!;
     for (const path of ["briefing/facts/context.json", "briefing/facts/comparison-links.json", "briefing/candidate/process-index.tsv"]) {
       const read = await reader.execute({ path }, new AbortController().signal);
       if (!(read.details as { available?: boolean }).available) throw new Error(`Comparison briefing unavailable: ${path}`);
     }
-    await tools.find((tool) => tool.name === "write")?.execute(
-      { path: "work/comparison-plan.md", content: "# Plan\n\nCompare the delivered files and the final settled turn.\n" },
-      new AbortController().signal,
-    );
-    return { status: "completed", sessionId: "comparison-planner-1", value: { status: "planned", planPath: "work/comparison-plan.md" } };
-  },
-  report: async (_context, tools = []) => {
-    const reader = tools.find((tool) => tool.name === "read")!;
     const index = await reader.execute({ path: "briefing/INDEX.md" }, new AbortController().signal);
     for (const match of index.content.matchAll(/^- (briefing\/\S+)/gm)) {
       const read = await reader.execute({ path: match[1] }, new AbortController().signal);
@@ -134,20 +126,11 @@ const comparison: ComparisonAgentPort = {
     }
     const writer = tools.find((tool) => tool.name === "write");
     await writer?.execute(
-      { path: "report.html", content: '<!doctype html><style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>' },
+      { path: "work/comparison-plan.md", content: "# Plan\n\nCompare the delivered files and the final settled turn.\n" },
       new AbortController().signal,
     );
-    return { status: "completed", sessionId: "comparison-reporter-1", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };
-  },
-  compare: async (_context, tools = []) => {
-    const writer = tools.find(
-      (tool) => tool.name === "write",
-    );
     await writer?.execute(
-      {
-        path: "report.html",
-        content: '<!doctype html><style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>',
-      },
+      { path: "report.html", content: '<!doctype html><style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>' },
       new AbortController().signal,
     );
     return {

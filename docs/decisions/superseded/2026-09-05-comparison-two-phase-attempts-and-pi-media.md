@@ -1,6 +1,9 @@
 # 决策：Comparison 使用双 session attempt，并复用 Pi 原生内容与生命周期
 
-状态：accepted
+状态：superseded
+
+被 [单 Session 对照](../accepted/2026-09-08-comparison-single-session.md) 取代。下文冻结，描述被放弃的 Planner/Reporter 双 Session 强制要求。attempt 目录、原子发布与 Pi 原生媒体块由替代决策保留。
+
 日期：2026-09-05
 
 ## 问题

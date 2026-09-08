@@ -1,6 +1,6 @@
 # Reprise 架构总览
 
-本文约束当前实现；已确认重构目标及替代归宿见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)。迁移代码与规范须同批生效。
+本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前架构基线
 
@@ -177,7 +177,7 @@ Comparison Agent 只读取规范化的任务、结果、artifact、遥测和 fid
 
 ## 6. Product Pack（`AgentProductPlugin`）
 
-每种 Agent 产品由一个静态注册的 Product Pack 适配。Product Pack 把确定性代码和 Recovery Agent 使用的版本化知识作为一个不可拆分的包发布，但不承载 Controller 或 Comparison 的产品专属策略。Pack 和 Playbook hash 写入 manifest/provenance，避免代码适配器与恢复知识静默漂移。
+每种 Agent 产品由一个 Product Pack 适配。Product Pack 把确定性代码和 Recovery Agent 使用的版本化知识作为一个包发布，但不承载 Controller 或 Comparison 的产品专属策略。Pack 和 Playbook hash 写入 manifest/provenance，避免代码适配器与恢复知识静默漂移。Import 与 runtime 按 manifest `capabilities` 独立声明。
 
 
 `ImportedSession` 是产品无关的完整逻辑会话快照。Product Pack 只负责发现与导入；冻结成 `TaskCase`（暂存、原子发布、幂等、脱敏）由共享的 `freezeCase` 承担。Pack 负责确定第一条可执行用户输入；如果 resume、fork 或分支关系无法形成一条明确逻辑会话，则返回 diagnostic，而不是让 Case Preparation 猜测任务边界。
@@ -194,7 +194,7 @@ products/<product-id>/
 └── fixtures
 ```
 
-这是逻辑布局，不要求第一版建立动态模块系统。Product Pack 采用显式静态注册，不实现远程发现、热加载、插件市场、插件沙箱或依赖注入容器。代码能确定性发现和解析的信息不交给 Agent 猜；Playbook 只能提供知识，不能授予工具或文件权限。
+这是逻辑布局。内置 Pack 与 `{dataDir}/plugins.json` 的本地模块走同一 registry；不实现远程发现、热加载、插件市场或插件沙箱。代码能确定性发现和解析的信息不交给 Agent 猜；Playbook 只能提供知识，不能授予工具或文件权限。加载与诊断见[版本化本地 Pack 边界](../decisions/accepted/2026-09-08-versioned-local-pack-boundary.md)。
 
 产品私有数据的边界是：
 
@@ -259,7 +259,7 @@ Product Pack 只交付规范化会话和 Target events；产品无关的 Observa
 Comparison 发生在 CandidateRun 结束之后，也使用产品无关的公共接口：
 
 
-Comparison Agent 以 Planner/Reporter 两个独立 session 工作；前者写可变计划，后者可否定计划并将完整自由结构 HTML 写入 `report.html`。薄信封返回阶段状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 每次 attempt 使用一个连续 Session：调查、工作笔记与完整自由结构 HTML 都写入 `report.html`。薄信封返回状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
 Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Pi Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型
@@ -391,6 +391,8 @@ sequenceDiagram
 - 所有外部输入、路径、artifact 引用、Product Pack 事件和模型结构化输出都在适配器边界验证。
 - Product Pack 的 RuntimePort 只能获得本次 `PreparedEnvironmentRef` 和明确配置，不能默认遍历用户全局目录。
 - Recovery Agent 只写 Environment staging；历史证据和用户原目录保持只读。
+- Controller 工具只读证据与候选结果，不能写隔离副本或用户源目录。
+- Comparison 只写本次 attempt 目录中 Host 允许的相对路径；接受恢复、投递候选、发布报告由 application/harness 执行，不经统一业务 Verifier。
 - Candidate Runtime 永远不获得用户当前工作目录；无法建立隔离副本或受控观察绑定时，运行状态为 `unsupported`。
 - Controller 的工具与权限由[角色定义](../../src/agents/controller-agent.ts)及其 Host 注册拥有；不能调用 Target 工具或写用户源目录。
 - Pi Host 在发送上下文前执行 privacy policy 和敏感信息过滤；无法确认内容允许发送或过滤失败时阻塞该 Agent 调用并记录原因，不用更多原文静默降级。
@@ -428,4 +430,4 @@ src/
 - 自动回滚外部世界；
 - 为尚未支持的环境预建空接口。
 
-目标重构方向见[Session / harness / workflow 规划](../plan/reprise-architecture-redesign.md)；它不覆盖本文描述的当前实现。
+未关闭验收（TUI 真终端、opt-in Runtime smoke、未跑的 Controller 真实模型 lane）见[架构目标](../plan/reprise-architecture-redesign.md)与 [MASTER](../progress/MASTER.md)。

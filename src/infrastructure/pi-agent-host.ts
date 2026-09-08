@@ -5,6 +5,7 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { sha256 } from "../core/identity.js";
 import { classifyAgentFailure, type AgentFailureKind } from "./agent-failure.js";
 import { hostContext } from "./platform.js";
+import { imageRefs, inlineBody, redactModelVisibleText, redactToolResultForModel, toolResultBody } from "./agent-model-input.js";
 
 export type { AgentFailureKind };
 
@@ -28,9 +29,9 @@ export type AgentFailure = {
 
 /** A failed invocation deliberately has no T: Host facts must not become model decisions. */
 export type AgentInvocation<T> =
-  | { status: "completed"; value: T; sessionId: string }
-  | { status: "failed"; failure: AgentFailure; sessionId?: string }
-  | { status: "cancelled"; factRef?: string; sessionId?: string };
+  | { status: "completed"; value: T; sessionId: string; invocationId?: string }
+  | { status: "failed"; failure: AgentFailure; sessionId?: string; invocationId?: string }
+  | { status: "cancelled"; factRef?: string; sessionId?: string; invocationId?: string };
 /** Compatibility name during the staged migration; it no longer has a fallback value. */
 export type StructuredAgentResult<T> = AgentInvocation<T>;
 
@@ -52,6 +53,10 @@ export type AgentAuditEvent = {
     | "agent.session_completed"
     | "agent.session_failed"
     | "agent.session_cancelled"
+    | "agent.invocation_started"
+    | "agent.invocation_completed"
+    | "agent.invocation_failed"
+    | "agent.invocation_cancelled"
     | "agent.message_appended"
     | "agent.tool_called"
     | "agent.tool_completed"
@@ -59,13 +64,18 @@ export type AgentAuditEvent = {
     | "agent.invalid_output"
     | "agent.context_compacted"
     | "agent.request_retried"
-    | "agent.assistant_visible";
+    | "agent.assistant_visible"
+    | "agent.model_output"
+    | "agent.model_request";
   sessionId: string;
   role: string;
   payload: Record<string, unknown>;
 };
 
-export type AgentAuditSink = { append(event: AgentAuditEvent): Promise<void> };
+export type AgentAuditSink = {
+  append(event: AgentAuditEvent): Promise<void>;
+  commitModelInput?(bytes: Uint8Array): Promise<{ artifactId: string; contentHash: string; byteLength: number }>;
+};
 
 export interface PiTextSession {
   /** Pi model input capabilities copied from the resolved model descriptor. */
@@ -81,11 +91,12 @@ export interface PiTextCaller {
     systemPrompt: string;
     tools: readonly AgentToolDefinition[];
     compactionInstructions?: string;
-    onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>;
+    onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number; reason?: string; retainedTail?: readonly unknown[] }) => Promise<void>;
     onRetry?: (payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>;
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
     onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
     onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
+    onModelRequest?: (payload: { model: string; digest: string; messageCount: number }) => Promise<void>;
   }): Promise<PiTextSession> | PiTextSession;
 }
 
@@ -164,37 +175,21 @@ export class PiAgentHost {
       });
       return AgentSessionHost.blocked(sessionId, input.role, input.audit);
     }
+    const cursor: InvocationCursor = { requestIndex: 0 };
     const tools = instrumentTools(
       input.tools ?? [],
       sessionId,
       input.role,
+      cursor,
       input.audit,
     );
     try {
       const session = await this.#caller.createSession({
         sessionId,
-        systemPrompt: input.systemPrompt,
+        systemPrompt: redactModelVisibleText(input.systemPrompt).text,
         tools,
         ...(input.compactionInstructions ? { compactionInstructions: input.compactionInstructions } : {}),
-        onContextCompact: async (payload) => {
-          await input.audit?.append({
-            type: "agent.context_compacted",
-            sessionId,
-            role: input.role,
-            payload,
-          });
-        },
-        onAssistantVisible: async (payload) => {
-          await input.audit?.append({
-            type: "agent.assistant_visible",
-            sessionId,
-            role: input.role,
-            payload,
-          });
-        },
-        onRetry: async (payload: { attempt: number; kind: string; delayMs: number }) => { await input.audit?.append({ type: "agent.request_retried", sessionId, role: input.role, payload }); },
-        onBeforeToolCall: async ({ tool }: { tool: string }) => { await input.audit?.append({ type: "agent.tool_called", sessionId, role: input.role, payload: { tool, nativeHook: "before" } }); },
-        onAfterToolCall: async (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => { await input.audit?.append({ type: "agent.tool_completed", sessionId, role: input.role, payload: { ...payload, nativeHook: "after" } }); },
+        ...callerLoopHooks(sessionId, input.role, cursor, input.audit),
       });
       await input.audit?.append({
         type: "agent.session_started",
@@ -202,11 +197,15 @@ export class PiAgentHost {
         role: input.role,
         payload: {
           toolNames: tools.map((tool) => tool.name),
+          promptDigest: sha256(input.systemPrompt),
+          toolPolicyDigest: sha256(tools.map((tool) => `${tool.name}\n${tool.description}`).join("\n")),
+          systemPrompt: redactModelVisibleText(input.systemPrompt).text,
+          tools: input.tools?.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) ?? [],
           hostFacts: (() => { const host = hostContext(); return { platform: host.platform, arch: host.arch, pathCase: host.pathCase, shell: host.defaultShell.kind, capabilities: [...host.capabilities].sort() }; })(),
           ...(session.inputCapabilities ? { inputCapabilities: [...session.inputCapabilities] } : {}),
         },
       });
-      return new AgentSessionHost(sessionId, input.role, session, input.audit, undefined, session.inputCapabilities);
+      return new AgentSessionHost(sessionId, input.role, session, input.audit, undefined, session.inputCapabilities, cursor);
     } catch (error) {
       await input.audit?.append({
         type: "agent.session_failed",
@@ -229,24 +228,74 @@ export class PiAgentHost {
     request: StructuredAgentRequest<T>,
   ): Promise<AgentInvocation<T>> {
     const session = await this.createSession(request);
-    return session.request({
-      ...(request.signal ? { signal: request.signal } : {}),
-      context: request.context,
-      schema: request.schema,
-      timeoutMs: request.timeoutMs,
-      maxRepairAttempts: request.maxRepairAttempts,
-      ...(request.validate ? { validate: request.validate } : {}),
-      ...(request.outputContract
-        ? { outputContract: request.outputContract }
-        : {}),
-      ...(request.repairInstruction
-        ? { repairInstruction: request.repairInstruction }
-        : {}),
-      ...(request.promptContent ? { promptContent: request.promptContent } : {}),
-      ...(request.promptImages ? { promptImages: request.promptImages } : {}),
-      ...(request.normalize ? { normalize: request.normalize } : {}),
-    });
+    try {
+      return await session.request({
+        ...(request.signal ? { signal: request.signal } : {}),
+        context: request.context,
+        schema: request.schema,
+        timeoutMs: request.timeoutMs,
+        maxRepairAttempts: request.maxRepairAttempts,
+        ...(request.validate ? { validate: request.validate } : {}),
+        ...(request.outputContract
+          ? { outputContract: request.outputContract }
+          : {}),
+        ...(request.repairInstruction
+          ? { repairInstruction: request.repairInstruction }
+          : {}),
+        ...(request.promptContent ? { promptContent: request.promptContent } : {}),
+        ...(request.promptImages ? { promptImages: request.promptImages } : {}),
+        ...(request.normalize ? { normalize: request.normalize } : {}),
+      });
+    } finally {
+      await session.close();
+    }
   }
+}
+
+type InvocationCursor = { invocationId?: string | undefined; requestIndex: number; toolSeq?: number; lastToolCallId?: string };
+
+function callerLoopHooks(
+  sessionId: string,
+  role: string,
+  cursor: InvocationCursor,
+  audit: AgentAuditSink | undefined,
+): Pick<
+  Parameters<PiTextCaller["createSession"]>[0],
+  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onAfterToolCall" | "onModelRequest"
+> {
+  return {
+    onContextCompact: async (payload) => {
+      await audit?.append({
+        type: "agent.context_compacted",
+        sessionId,
+        role,
+        payload: {
+          schemaVersion: 1,
+          invocationId: cursor.invocationId,
+          requestIndex: cursor.requestIndex,
+          summary: redactModelVisibleText(payload.summary).text,
+          tokensBefore: payload.tokensBefore,
+          retainedCount: payload.retainedCount,
+          reason: payload.reason ?? "compact",
+          retainedTail: inlineBody(JSON.stringify(payload.retainedTail ?? [])),
+        },
+      });
+    },
+    onAssistantVisible: async (payload) => {
+      await audit?.append({ type: "agent.assistant_visible", sessionId, role, payload });
+    },
+    onRetry: async (payload) => { await audit?.append({ type: "agent.request_retried", sessionId, role, payload }); },
+    onBeforeToolCall: async ({ tool }) => { await audit?.append({ type: "agent.tool_called", sessionId, role, payload: { tool, nativeHook: "before" } }); },
+    onAfterToolCall: async (payload) => { await audit?.append({ type: "agent.tool_completed", sessionId, role, payload: { ...payload, nativeHook: "after" } }); },
+    onModelRequest: async (payload) => {
+      await audit?.append({
+        type: "agent.model_request",
+        sessionId,
+        role,
+        payload: { schemaVersion: 1, invocationId: cursor.invocationId, requestIndex: cursor.requestIndex, ...payload },
+      });
+    },
+  };
 }
 
 /** One isolated model transcript. A Controller retains one of these per CandidateRun. */
@@ -257,7 +306,10 @@ export class AgentSessionHost {
   readonly #audit: AgentAuditSink | undefined;
   readonly #failure: AgentFailure | undefined;
   readonly #inputCapabilities: readonly string[];
+  readonly #cursor: InvocationCursor;
   #cancelled = false;
+  #closed = false;
+  #busy = false;
   readonly #abort = new AbortController();
   #droppedRequestIds = new Set<string>();
 
@@ -268,6 +320,7 @@ export class AgentSessionHost {
     audit?: AgentAuditSink,
     failure?: AgentFailure,
     inputCapabilities: readonly string[] = [],
+    cursor: InvocationCursor = { requestIndex: 0 },
   ) {
     this.#sessionId = sessionId;
     this.#role = role;
@@ -275,6 +328,7 @@ export class AgentSessionHost {
     this.#audit = audit;
     this.#failure = failure;
     this.#inputCapabilities = inputCapabilities;
+    this.#cursor = cursor;
   }
 
   static blocked(
@@ -313,8 +367,18 @@ export class AgentSessionHost {
     if (requestId) this.#droppedRequestIds.add(requestId);
     if (this.#cancelled) return;
     this.#cancelled = true;
+    this.#closed = true;
     this.#abort.abort();
     this.#session?.cancel();
+    const invocationId = this.#cursor.invocationId;
+    if (invocationId) {
+      await this.#audit?.append({
+        type: "agent.invocation_cancelled",
+        sessionId: this.#sessionId,
+        role: this.#role,
+        payload: { invocationId, ...(factRef ? { factRef } : {}) },
+      });
+    }
     await this.#audit?.append({
       type: "agent.session_cancelled",
       sessionId: this.#sessionId,
@@ -323,116 +387,185 @@ export class AgentSessionHost {
     });
   }
 
+  async close(): Promise<void> {
+    if (this.#closed || this.#cancelled) {
+      this.#closed = true;
+      return;
+    }
+    this.#closed = true;
+    this.#session?.cancel();
+    await this.#audit?.append({
+      type: "agent.session_completed",
+      sessionId: this.#sessionId,
+      role: this.#role,
+      payload: {},
+    });
+  }
+
   async request<T>(
     request: AgentSessionRequest<T>,
   ): Promise<AgentInvocation<T>> {
     assertRequest(request);
-    const cancelled = () => this.#dropped(request.requestId) || request.signal?.aborted;
-    if (cancelled())
+    const blocked = this.#blockedInvocation(request);
+    if (blocked) return blocked;
+    if (this.#busy) throw new Error("Agent session already has an invocation in flight.");
+    const invocationId = request.requestId ?? randomUUID();
+    this.#busy = true;
+    this.#cursor.invocationId = invocationId;
+    this.#cursor.requestIndex = 0;
+    try {
+      await this.#audit?.append({
+        type: "agent.invocation_started",
+        sessionId: this.#sessionId,
+        role: this.#role,
+        payload: { invocationId, ...(request.requestId ? { requestId: request.requestId } : {}) },
+      });
+      return await this.#invoke(request, invocationId);
+    } finally {
+      this.#busy = false;
+      this.#cursor.invocationId = undefined;
+    }
+  }
+
+  #blockedInvocation<T>(request: AgentSessionRequest<T>): AgentInvocation<T> | undefined {
+    if (this.#dropped(request.requestId) || request.signal?.aborted) {
       return { status: "cancelled", sessionId: this.#sessionId };
-    if (this.#failure)
+    }
+    if (this.#closed) {
       return {
         status: "failed",
         sessionId: this.#sessionId,
-        failure: this.#failure,
+        failure: { code: "agent_failure", message: "Agent session is closed.", attempts: 0 },
       };
-    if (!this.#session)
-      throw new Error(
-        "Agent session is unavailable without a recorded failure.",
-      );
-    let attempts = 0;
+    }
+    if (this.#failure) return { status: "failed", sessionId: this.#sessionId, failure: this.#failure };
+    if (!this.#session) throw new Error("Agent session is unavailable without a recorded failure.");
+    return undefined;
+  }
+
+  async #invoke<T>(
+    request: AgentSessionRequest<T>,
+    invocationId: string,
+  ): Promise<AgentInvocation<T>> {
+    const cancelled = () => this.#dropped(request.requestId) || Boolean(request.signal?.aborted);
     const deadline = request.timeoutMs > 0 ? Date.now() + request.timeoutMs : undefined;
     let lastError: string | undefined;
-    for (; attempts <= request.maxRepairAttempts; attempts += 1) {
-      const controller = new AbortController();
-      const signal = AbortSignal.any([controller.signal, this.#abort.signal, ...(request.signal ? [request.signal] : [])]);
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const content = capabilityAwarePrompt(promptBody(request, attempts, lastError), this.#inputCapabilities);
-        await this.#audit?.append({
-          type: "agent.message_appended",
-          sessionId: this.#sessionId,
-          role: this.#role,
-          payload: {
-            byteLength: Buffer.byteLength(content),
-            repair: attempts > 0,
-          },
-        });
-        if (request.timeoutMs > 0) {
-          const remaining = deadline! - Date.now();
-          if (remaining <= 0) throw timeoutError();
-          timer = setTimeout(() => controller.abort(), remaining);
-        }
-        if (cancelled()) return { status: 'cancelled', sessionId: this.#sessionId };
-        const text = await abortable(
-          this.#session.append({ content, ...(request.promptImages ? { images: request.promptImages } : {}), signal }),
-          signal,
-        );
-        if (controller.signal.aborted) throw timeoutError();
-        // A provider may resolve after cancel() despite receiving an abort signal.
-        if (cancelled()) return { status: 'cancelled', sessionId: this.#sessionId };
-        const decoded = decode(request.schema, text, request.normalize);
-        const error = decoded.error ?? request.validate?.(decoded.value as T);
-        if (!error && decoded.value !== undefined) {
-          await this.#audit?.append({
-            type: "agent.session_completed",
-            sessionId: this.#sessionId,
-            role: this.#role,
-            payload: { attempts: attempts + 1 },
-          });
-          return {
-            status: "completed",
-            value: decoded.value as T,
-            sessionId: this.#sessionId,
-          };
-        }
-        lastError = error ?? "schema validation failed";
-        if (attempts === request.maxRepairAttempts) {
-          await this.#audit?.append({
-            type: "agent.invalid_output",
-            sessionId: this.#sessionId,
-            role: this.#role,
-            payload: invalidOutputAudit(lastError, attempts + 1, decoded.value),
-          });
-          return this.#failed("invalid_output", lastError, attempts + 1);
-        }
-      } catch (error) {
-        if (cancelled())
-          return { status: "cancelled", sessionId: this.#sessionId };
-        const kind = isTimeout(error) ? "timeout" : classifyAgentFailure(error);
-        if (kind === "cancelled")
-          return { status: "cancelled", sessionId: this.#sessionId };
-        const code = kind === "timeout" ? "agent_timeout" : "agent_failure";
-        return this.#failed(
-          code,
-          errorMessage(error),
-          attempts + 1,
-          kind,
-        );
-      } finally {
-        if (timer) clearTimeout(timer);
-        if (request.timeoutMs > 0) controller.abort();
-      }
+    for (let attempts = 0; attempts <= request.maxRepairAttempts; attempts += 1) {
+      const outcome = await this.#attempt(request, invocationId, attempts, lastError, deadline, cancelled);
+      if (outcome.done) return outcome.result;
+      lastError = outcome.lastError;
     }
     throw new Error("Agent session repair loop unexpectedly ended.");
+  }
+
+  async #attempt<T>(
+    request: AgentSessionRequest<T>,
+    invocationId: string,
+    attempts: number,
+    lastError: string | undefined,
+    deadline: number | undefined,
+    cancelled: () => boolean,
+  ): Promise<{ done: true; result: AgentInvocation<T> } | { done: false; lastError: string }> {
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, this.#abort.signal, ...(request.signal ? [request.signal] : [])]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      this.#cursor.requestIndex += 1;
+      const content = redactModelVisibleText(capabilityAwarePrompt(promptBody(request, attempts, lastError), this.#inputCapabilities)).text;
+      await this.#audit?.append({
+        type: "agent.message_appended",
+        sessionId: this.#sessionId,
+        role: this.#role,
+        payload: {
+          schemaVersion: 1,
+          invocationId,
+          requestIndex: this.#cursor.requestIndex,
+          byteLength: Buffer.byteLength(content),
+          repair: attempts > 0,
+          body: inlineBody(content),
+          images: await recordedImageRefs(request.promptImages, this.#audit),
+        },
+      });
+      if (request.timeoutMs > 0) {
+        const remaining = deadline! - Date.now();
+        if (remaining <= 0) throw timeoutError();
+        timer = setTimeout(() => controller.abort(), remaining);
+      }
+      if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
+      const text = await abortable(
+        this.#session!.append({ content, ...(request.promptImages ? { images: request.promptImages } : {}), signal }),
+        signal,
+      );
+      if (controller.signal.aborted) throw timeoutError();
+      if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
+      await this.#audit?.append({
+        type: "agent.model_output",
+        sessionId: this.#sessionId,
+        role: this.#role,
+        payload: {
+          schemaVersion: 1,
+          invocationId,
+          requestIndex: this.#cursor.requestIndex,
+          body: inlineBody(text),
+        },
+      });
+      const decoded = decode(request.schema, text, request.normalize);
+      const error = decoded.error ?? request.validate?.(decoded.value as T);
+      if (!error && decoded.value !== undefined) {
+        await this.#audit?.append({
+          type: "agent.invocation_completed",
+          sessionId: this.#sessionId,
+          role: this.#role,
+          payload: { invocationId, attempts: attempts + 1, modelRequests: this.#cursor.requestIndex },
+        });
+        return {
+          done: true,
+          result: { status: "completed", value: decoded.value as T, sessionId: this.#sessionId, invocationId },
+        };
+      }
+      const repairError = error ?? "schema validation failed";
+      if (attempts === request.maxRepairAttempts) {
+        await this.#audit?.append({
+          type: "agent.invalid_output",
+          sessionId: this.#sessionId,
+          role: this.#role,
+          payload: { invocationId, ...invalidOutputAudit(repairError, attempts + 1, decoded.value) },
+        });
+        return { done: true, result: await this.#failed("invalid_output", repairError, attempts + 1, invocationId) };
+      }
+      return { done: false, lastError: repairError };
+    } catch (error) {
+      if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
+      const kind = isTimeout(error) ? "timeout" : classifyAgentFailure(error);
+      if (kind === "cancelled") return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
+      const code = kind === "timeout" ? "agent_timeout" : "agent_failure";
+      return { done: true, result: await this.#failed(code, errorMessage(error), attempts + 1, invocationId, kind) };
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (request.timeoutMs > 0) controller.abort();
+    }
   }
 
   async #failed(
     code: AgentFailure["code"],
     message: string,
     attempts: number,
+    invocationId?: string,
     kind: AgentFailureKind = code === "invalid_output" ? "protocol" : "unknown",
   ): Promise<AgentInvocation<never>> {
     const failure: AgentFailure = { code, message, attempts, kind };
     await this.#audit?.append({
-      type: "agent.session_failed",
+      type: "agent.invocation_failed",
       sessionId: this.#sessionId,
       role: this.#role,
-      payload: code === "invalid_output"
-        ? { code, attempts, category: invalidOutputCategory(message) }
-        : { code, attempts, kind },
+      payload: {
+        ...(invocationId ? { invocationId } : {}),
+        ...(code === "invalid_output"
+          ? { code, attempts, category: invalidOutputCategory(message) }
+          : { code, attempts, kind }),
+      },
     });
-    return { status: "failed", sessionId: this.#sessionId, failure };
+    return { status: "failed", sessionId: this.#sessionId, failure, ...(invocationId ? { invocationId } : {}) };
   }
 
   #dropped(requestId?: string): boolean {
@@ -444,6 +577,7 @@ function instrumentTools(
   tools: readonly AgentToolDefinition[],
   sessionId: string,
   role: string,
+  cursor: InvocationCursor,
   audit?: AgentAuditSink,
 ): AgentToolDefinition[] {
   const names = new Set<string>();
@@ -460,36 +594,50 @@ function instrumentTools(
     return {
       ...tool,
       async execute(params, signal) {
+        const toolCallId = `${cursor.invocationId ?? sessionId}:tool:${cursor.toolSeq = (cursor.toolSeq ?? 0) + 1}`;
         await audit?.append({
           type: "agent.tool_called",
           sessionId,
           role,
-          payload: { tool: tool.name, params: safeParams(params) },
+          payload: {
+            tool: tool.name,
+            toolCallId,
+            params: safeParams(params),
+            ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
+          },
         });
         try {
           const result = await tool.execute(params, signal);
-          await tool.onCompleted?.(result);
+          const visible = redactToolResultForModel(result);
+          await tool.onCompleted?.(visible);
           await audit?.append({
             type: "agent.tool_completed",
             sessionId,
             role,
             payload: {
               tool: tool.name,
-              byteLength: contentByteLength(result),
-              contentTypes: contentTypes(result),
-              contentDigest: contentDigest(result),
-              ...(result.details && typeof result.details === "object"
-                ? { details: safeDetails(result.details) }
+              toolCallId,
+              byteLength: contentByteLength(visible),
+              contentTypes: contentTypes(visible),
+              contentDigest: contentDigest(visible),
+              body: toolResultBody(visible),
+              ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
+              ...(visible.details && typeof visible.details === "object"
+                ? { details: safeDetails(visible.details) }
                 : {}),
             },
           });
-          return result;
+          return visible;
         } catch (error) {
           await audit?.append({
             type: "agent.tool_failed",
             sessionId,
             role,
-            payload: { tool: tool.name, message: errorMessage(error) },
+            payload: {
+              tool: tool.name,
+              message: errorMessage(error),
+              ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
+            },
           });
           throw new AgentToolFailure(error);
         }
@@ -503,6 +651,20 @@ class AgentToolFailure extends Error {
     super("Recovery agent tool execution failed.", { cause });
     this.name = "AgentToolFailure";
   }
+}
+
+async function recordedImageRefs(
+  images: readonly ImageContent[] | undefined,
+  audit: AgentAuditSink | undefined,
+) {
+  const refs = imageRefs(images);
+  if (!images?.length || !audit?.commitModelInput) return refs;
+  const recorded = [];
+  for (const [index, image] of images.entries()) {
+    const artifact = await audit.commitModelInput(Buffer.from(image.data, "base64"));
+    recorded.push({ ...refs[index]!, artifactId: artifact.artifactId });
+  }
+  return recorded;
 }
 
 function assertSessionInput(input: {
@@ -576,13 +738,57 @@ function decode(
 }
 
 function parse(text: string): unknown {
-  const candidates = [stripJsonFence(text.trim()), extractJsonObject(text)];
+  const stripped = stripThinkBlocks(text.trim());
+  const candidates = [stripJsonFence(stripped), ...balancedJsonObjects(stripped)];
+  let last: unknown;
+  let found = false;
   for (const candidate of candidates) {
     if (!candidate) continue;
     try {
-      return JSON.parse(candidate) as unknown;
+      last = JSON.parse(candidate) as unknown;
+      found = true;
     } catch {
-      /* try the next candidate */
+      /* keep scanning; the last successful object wins */
+    }
+  }
+  return found ? last : undefined;
+}
+
+function stripThinkBlocks(text: string): string {
+  return text.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "").trim();
+}
+
+/** Each `{`…`}` span that is a complete JSON object, in document order. */
+function balancedJsonObjects(text: string): string[] {
+  const objects: string[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "{") continue;
+    const span = sliceBalancedObject(text, index);
+    if (span) objects.push(span);
+  }
+  return objects;
+}
+
+function sliceBalancedObject(text: string, start: number): string | undefined {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escape) escape = false;
+      else if (character === "\\") escape = true;
+      else if (character === "\"") inString = false;
+      continue;
+    }
+    if (character === "\"") {
+      inString = true;
+      continue;
+    }
+    if (character === "{") depth += 1;
+    else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
     }
   }
   return undefined;
@@ -596,12 +802,6 @@ function stripJsonFence(text: string): string {
   return embedded?.[1] ?? text;
 }
 
-function extractJsonObject(text: string): string | undefined {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return undefined;
-  return text.slice(start, end + 1);
-}
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) return Promise.reject(timeoutError());
   return new Promise<T>((resolve, reject) => {

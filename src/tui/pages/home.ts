@@ -62,17 +62,17 @@ export function renderHome(theme: Theme, width: number, model: HomeModel): strin
 export function homeHints(locale: Locale = 'en', model?: HomeModel): readonly (readonly [string, string])[] {
   if (model?.composer.startsWith('/')) {
     return [
+      ['↑↓', t(locale, 'hintSelect')],
       ['Tab', t(locale, 'hintTab')],
       ['Enter', t(locale, 'hintEnter')],
       ['Esc', t(locale, 'hintEsc')],
-      ['?', t(locale, 'hintKeys')],
     ];
   }
   const enter = model?.recentExperiment ? t(locale, 'hintContinue') : t(locale, 'hintEnter');
   return [
+    ['/', t(locale, 'hintCommand')],
+    ['Tab', t(locale, 'hintTab')],
     ['Enter', enter],
-    ['r', t(locale, 'hintRun')],
-    ['i', t(locale, 'hintImport')],
     ['?', t(locale, 'hintKeys')],
     ['Ctrl+C', t(locale, 'hintExit')],
   ];
@@ -84,19 +84,19 @@ function continueLines(theme: Theme, model: HomeModel, locale: Locale): string[]
     const title = compact(model.recentExperiment.outcome ?? t(locale, 'recentRun'), 36, theme.glyphs.ellipsis);
     rows.push(row(theme, 'Enter', t(locale, 'recentRun'), title));
   }
-  rows.push(row(theme, 'r', t(locale, 'runCurrent'), runReadiness(theme, model, locale)));
-  rows.push(row(theme, 'i', t(locale, 'importSession'), ''));
+  rows.push(row(theme, '/run', t(locale, 'runCurrent'), runReadiness(theme, model, locale)));
+  rows.push(row(theme, '/intake', t(locale, 'importSession'), ''));
   if (!model.hasApiConfig || model.hasUsableAuth === false) {
     const status = model.envName && model.envSet === false
       ? t(locale, 'envUnset')
       : t(locale, 'needsCred');
-    rows.push(row(theme, 'c', t(locale, 'openConfig'), theme.style.warn(status)));
+    rows.push(row(theme, '/config', t(locale, 'openConfig'), theme.style.warn(status)));
   }
   return rows;
 }
 
 function row(theme: Theme, key: string, description: string, status: string): string {
-  const left = ` ${theme.style.muted(pad(key, 5))} ${description}`;
+  const left = ` ${theme.style.muted(pad(key, 8))} ${description}`;
   return status ? `${left}  ${status}` : left;
 }
 

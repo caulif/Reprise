@@ -99,17 +99,28 @@ test("workspace read returns native image blocks only when binary access is auth
   ]);
 });
 
-test("structured recovery tools reject traversal, absolute paths, backslashes and symlink targets", async (t) => {
+test("relative Windows backslash paths resolve like slash-separated paths", async (t) => {
+  const root = await workspace();
+  t.after(() =>
+    rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
+  );
+  await mkdir(join(root, "dir"));
+  await writeFile(join(root, "dir", "x"), "nested\n");
+  const read = tool(root, "read");
+  const backslash = await read.execute({ path: "dir\\x" }, new AbortController().signal);
+  assert.match(backslash.content, /nested/);
+  await assert.rejects(
+    read.execute({ path: resolve(root, "input.txt") }, new AbortController().signal),
+  );
+});
+
+test("structured recovery tools reject traversal, absolute paths and symlink targets", async (t) => {
   const root = await workspace();
   t.after(() =>
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   );
   const read = tool(root, "read");
-  for (const path of [
-    "../x",
-    resolve(root, "input.txt"),
-    "dir\\x",
-  ]) {
+  for (const path of ["../x", resolve(root, "input.txt")]) {
     await assert.rejects(read.execute({ path }, new AbortController().signal));
   }
   const dotted = await read.execute({ path: "./input.txt" }, new AbortController().signal);

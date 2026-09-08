@@ -7,12 +7,13 @@ import { Value } from '@sinclair/typebox/value';
 import { TaskCaseSchema, type EventEnvelope } from '../src/core/schema.js';
 import { freezeCase } from '../src/products/shared/freeze.js';
 import { claudeCodeProductPack } from '../src/products/claude-code/pack.js';
+import { PACK_API_MAJOR } from '../src/products/index.js';
 import { codexProductPack } from '../src/products/codex/pack.js';
-import type { ProductPack, TargetActivity } from '../src/products/contract.js';
+import type { CompleteProductPack, TargetActivity } from '../src/products/contract.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 import { rankSessionFiles } from '../src/products/shared/session-files.js';
 
-const packs: readonly ProductPack[] = [codexProductPack, fakeProductPack, claudeCodeProductPack];
+const packs: readonly CompleteProductPack[] = [codexProductPack, fakeProductPack, claudeCodeProductPack];
 
 test('shared session ranking is newest-first with a stable path tie-breaker', () => {
   const ranked = rankSessionFiles([
@@ -29,6 +30,8 @@ for (const pack of packs) {
     assert.ok(pack.manifest.displayName);
     assert.ok(pack.manifest.packVersion);
     assert.equal(typeof pack.manifest.schemaVersion, 'number');
+    assert.equal(pack.manifest.apiMajor, PACK_API_MAJOR);
+    assert.deepEqual([...pack.manifest.capabilities], ['import', 'runtime']);
     assert.ok(pack.sessions);
     assert.ok(pack.runtime);
     assert.ok(pack.activity);

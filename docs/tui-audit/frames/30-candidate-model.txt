@@ -3,8 +3,8 @@ Reprise v0.1.0   C:\reprise                              gpt-5.6-terra · medium
  Last task  Fix the bug. · 2 turns
 
  Continue
- r     Replay the current task  needs credential
- i     Import a historical session
+ /run     Replay the current task  needs credential
+ /intake  Import a historical session
 
 ┌─ Run · choose candidate model ───────────────────────────────────────────────────────────────────────────────────────┐
 │ Source session Codex                                                                                                 │

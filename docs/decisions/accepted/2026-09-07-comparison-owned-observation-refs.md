@@ -9,7 +9,7 @@ Comparison briefing 把冻结 transcript、historical events 和本 run 事件�
 
 ## 决定
 
-Host 单独持有 `ownedEvidenceRefs`：`recoveryEvidenceCatalog` 的 transcript/history ref，加上本 run 事件 `event:{eventId}`。它进入信封校验，不写入 briefing `context.json` 或阶段输入快照。信封里属于该集合的 ref 保留；夹杂的未知 ref 丢掉；全部未知则仍拒绝。不把完整 catalog 塞进模型 briefing。
+Host 单独持有 `ownedEvidenceRefs`：`recoveryEvidenceCatalog` 的 transcript/history ref，加上本 run 事件 `event:{eventId}`。它进入信封校验，不写入 briefing `context.json` 或对照输入快照。信封里属于该集合的 ref 保留；夹杂的未知 ref 丢掉；全部未知则仍拒绝。不把完整 catalog 塞进模型 briefing。
 
 ## 备选方案
 

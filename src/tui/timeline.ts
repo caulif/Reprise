@@ -1,7 +1,7 @@
+import { Value } from '@sinclair/typebox/value';
+import { PublicActivityPayloadSchema, type TargetActivity } from '../core/public-activity.js';
 import { record, text, type JsonRecord } from '../core/json.js';
 import type { EventEnvelope } from '../core/schema.js';
-import type { FileChange, TargetActivity, TargetActivityEntry } from '../products/contract.js';
-import { productPacks } from '../products/index.js';
 import {
   collapseAgentRows,
   laneSource,
@@ -138,7 +138,29 @@ function recoveryFailureCount(detail: string | undefined): number {
   return match ? Number(match[1]) : 1;
 }
 
-export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEntry[] {
+const SILENT_TIMELINE_TYPES = new Set([
+  'agent.session_completed',
+  'agent.session_failed',
+  'agent.session_cancelled',
+  'agent.invocation_started',
+  'agent.invocation_completed',
+  'agent.invocation_failed',
+  'agent.invocation_cancelled',
+  'agent.message_appended',
+  'agent.session_started',
+  'agent.model_output',
+  'agent.model_request',
+]);
+
+export function projectPersistedTimeline(events: readonly EventEnvelope[]): TimelineEntry[] {
+  const timeline: TimelineEntry[] = [];
+  const legacyProductFallback = !events.some((event) => event.type === 'runtime.public_activity');
+  for (const event of events) appendTimelineEntries(timeline, projectTimelineEvent(event, { legacyProductFallback }));
+  return timeline;
+}
+
+export function projectTimelineEvent(event: EventEnvelope, options: { legacyProductFallback?: boolean } = {}): readonly TimelineEntry[] {
+  if (SILENT_TIMELINE_TYPES.has(event.type)) return [];
   const payload = record(event.payload);
   const entry = (
     source: TimelineSource,
@@ -184,10 +206,6 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
       const row = projectAssistantVisible(payload);
       return [entry(laneSource(row.extra.lane), row.title, row.detail, row.extra)];
     }
-    case 'agent.session_completed':
-    case 'agent.message_appended':
-    case 'agent.session_started':
-      return [];
     case 'run.attempt_created':
       return [entry('HARNESS', 'Run created', requestedModel(payload), { hidden: true })];
     case 'run.state_changed':
@@ -214,11 +232,13 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
       return [entry('HARNESS', `Stop requested: ${reason}`, code, reason === 'failed' ? { level: 'error' } : undefined)];
     }
     case 'environment.release_completed':
-      return [entry('HARNESS', 'Isolated workspace released', undefined, { hidden: true })];
+      return [entry('HARNESS', 'Cleanup · workspace released', undefined)];
     case 'run.outcome_created':
-      return [entry('HARNESS', 'Outcome recorded', outcome(payload), { hidden: true })];
+      return projectOutcome(entry, payload);
     case 'run.finished':
       return [entry('HARNESS', 'Candidate run finished', undefined, { hidden: true })];
+    case 'runtime.public_activity':
+      return projectPublicActivity(event, entry);
     case 'report.created':
       return [entry('HARNESS', 'Report created', text(payload.path))];
     case 'controller.started':
@@ -234,8 +254,21 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'comparison.completed':
       return projectComparisonCompleted(entry, payload);
     default:
-      return projectPackActivities(event, entry);
+      return projectUnknownActivity(event, entry, options.legacyProductFallback === true);
   }
+}
+
+function projectOutcome(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
+  const task = text(record(payload.task).status) ?? 'unknown';
+  const termination = record(payload.termination);
+  const cleanup = text(record(payload.cleanup).status) ?? 'unknown';
+  const kind = text(termination.kind) ?? 'unknown';
+  const code = text(termination.code);
+  return [
+    entry('HARNESS', `Task · ${task}`),
+    entry('HARNESS', `Termination · ${kind}`, code),
+    entry('HARNESS', `Cleanup · ${cleanup}`, undefined, cleanup === 'failed' ? { level: 'error' } : undefined),
+  ];
 }
 
 function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
@@ -253,13 +286,40 @@ function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): read
   })];
 }
 
-function projectPackActivities(event: EventEnvelope, entry: MakeEntry): readonly TimelineEntry[] {
-  const pack = productPacks.find((item) => event.type.startsWith(`${item.manifest.productId}.`));
-  if (!pack) return [];
-  return pack.activity.translate(event).flatMap((item) => renderActivity(item, entry));
+function projectPublicActivity(event: EventEnvelope, entry: MakeEntry): readonly TimelineEntry[] {
+  if (!Value.Check(PublicActivityPayloadSchema, event.payload)) {
+    return [entry('TARGET', 'Activity · unreadable', event.type)];
+  }
+  const payload = event.payload;
+  if (payload.activity.kind === 'thinking') return [];
+  return renderActivity({
+    activity: payload.activity,
+    ...(payload.correlationId ? { correlationId: payload.correlationId } : {}),
+    ...(payload.merge ? { merge: payload.merge } : {}),
+  }, entry);
 }
 
-function renderActivity(item: TargetActivityEntry, entry: MakeEntry): readonly TimelineEntry[] {
+const HARNESS_EVENT_PREFIXES = [
+  'agent.', 'artifact.', 'comparison.', 'controller.', 'environment.', 'experiment.',
+  'input.', 'recovery.', 'report.', 'run.', 'runtime.',
+];
+
+function projectUnknownActivity(event: EventEnvelope, entry: MakeEntry, legacyProductFallback: boolean): readonly TimelineEntry[] {
+  if (HARNESS_EVENT_PREFIXES.some((prefix) => event.type.startsWith(prefix))) return [];
+  if (/delta|stderr/i.test(event.type)) return [];
+  if (!legacyProductFallback) return [];
+  const payload = record(event.payload);
+  const detail = text(payload.message) ?? text(payload.line) ?? text(payload.text);
+  return [entry('TARGET', `Activity · ${event.type}`, detail)];
+}
+
+type PublicActivityItem = {
+  readonly activity: TargetActivity;
+  readonly correlationId?: string;
+  readonly merge?: 'replace' | 'append';
+};
+
+function renderActivity(item: PublicActivityItem, entry: MakeEntry): readonly TimelineEntry[] {
   const extra: EntryExtra = {
     ...(item.correlationId ? { itemId: item.correlationId } : {}),
     ...(item.merge ? { patch: item.merge } : {}),
@@ -282,14 +342,8 @@ function renderTargetActivity(activity: TargetActivity, entry: MakeEntry, extra:
   switch (activity.kind) {
     case 'prompt':
       return emitPresented(entry, 'TARGET', promptTitle(activity.text), activity.text, extra);
-    case 'thinking': {
-      if (activity.streaming && !activity.text) {
-        return [entry('TARGET', 'Thinking', 'The target is reasoning.', { ...extra, placeholder: true })];
-      }
-      if (activity.streaming) return [entry('TARGET', 'Thinking', activity.text, extra)];
-      if (!activity.text) return [entry('TARGET', 'Thinking', undefined, { ...extra, hidden: true })];
-      return emitPresented(entry, 'TARGET', 'Thought', activity.text, extra);
-    }
+    case 'thinking':
+      return [];
     case 'message': {
       if (activity.streaming && !activity.text) {
         return [entry('TARGET', extra.itemId ? 'Writing' : 'Working', extra.itemId ? 'The target is writing a reply.' : 'The target is running this turn.', { ...extra, placeholder: true })];
@@ -470,6 +524,8 @@ function commandDetail(activity: Extract<TargetActivity, { kind: 'command' }>): 
   return original && original !== detail ? { detail, original: clampOriginal(original) } : { detail };
 }
 
+type FileChange = Extract<TargetActivity, { kind: 'file_change' }>['changes'][number];
+
 function fileChangeBody(changes: readonly FileChange[]): { detail: string; original?: string } {
   const full = fileChangeDetail(changes);
   const headings = full.split(/\n\n/).map((block) => block.split(/\r?\n/).find((line) => line.trim()) ?? '').filter(Boolean);
@@ -553,13 +609,6 @@ function unwrapCommand(command: string): string {
 
 function requestedModel(payload: JsonRecord): string | undefined {
   return text(record(payload.candidate).requestedModel);
-}
-
-function outcome(payload: JsonRecord): string {
-  const task = record(payload.task);
-  const termination = record(payload.termination);
-  const cleanup = record(payload.cleanup);
-  return `task=${text(task.status) ?? 'unknown'} · termination=${text(termination.kind) ?? 'unknown'} · cleanup=${text(cleanup.status) ?? 'unknown'}`;
 }
 
 function settleLiveId(entry: TimelineEntry): TimelineEntry {

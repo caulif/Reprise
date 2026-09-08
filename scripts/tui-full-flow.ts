@@ -268,6 +268,7 @@ async function main() {
     contentHash: "b".repeat(64),
   };
   await writeFile(join(casesRoot, "case.json"), JSON.stringify(taskCase));
+  await writeFile(join(casesRoot, "case.complete"), "");
   await writeFile(
     join(experimentsRoot, "experiment.json"),
     JSON.stringify({

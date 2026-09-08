@@ -1,5 +1,6 @@
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { productPacks } from "../products/index.js";
+import { importPacks } from "../products/pack-access.js";
 import type { CodexIntakeTui, CodexIntakeTuiOptions } from "./intake-tui.js";
 import { Workbench } from "./workbench.js";
 
@@ -7,12 +8,10 @@ function wireCodexIntakeTui(target: CodexIntakeTui, options: CodexIntakeTuiOptio
   target.dataDir = options.dataDir;
   target.sessionsRoot = options.sessionsRoot;
   target.packs = options.packs ?? (options.pack ? [options.pack] : productPacks);
-  const legacyPack =
-    options.pack ??
-    target.packs.find((pack) => pack.manifest.productId === "codex") ??
-    (target.packs.length === 1 ? target.packs[0] : undefined);
+  const importCapable = importPacks(target.packs);
+  const unnamedOwner = options.pack ?? importCapable[0];
   const legacyRoot =
-    options.sessionsRoot && legacyPack ? { [legacyPack.manifest.productId]: options.sessionsRoot } : {};
+    options.sessionsRoot && unnamedOwner ? { [unnamedOwner.manifest.productId]: options.sessionsRoot } : {};
   target.sessionsRoots = { ...legacyRoot, ...options.sessionsRoots };
   target.privacy = options.privacy;
   target.tui =

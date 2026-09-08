@@ -11,22 +11,21 @@ import {
   type ControllerPort,
   type SteeringContext,
 } from "../agents/controller-agent.js";
-import { rewindIsolatedWorkspaceToStart } from "./session-start-workspace.js";
+import { materializeIsolatedStart } from "./session-start-workspace.js";
+import { persistExperimentSpec, persistRunPreflight } from "./experiment-layout.js";
 import { CandidateRun } from "./candidate-run.js";
 import {
   appendSentUserMessage,
   assertBriefingOutsideReplica,
   CONTROLLER_PROJECT_MOUNT,
   controllerBriefingRoot,
-  readControllerPendingActions,
   controllerPromptContent,
   controllerRequestSnapshot,
-  applyControllerUnderstandingDelta,
-  writeControllerUnderstanding,
   writeOpeningBriefing,
   writeSettledTurnBriefing,
 } from "./controller-briefing.js";
-import { controllerReadEvidenceOnRequest, observationReadRecord } from "./controller-request.js";
+import { observationReadRecord } from "./controller-request.js";
+import { persistPublicActivities } from "./public-activity.js";
 import { sha256 } from "../core/identity.js";
 import type {
   CandidateSpec,
@@ -53,16 +52,16 @@ import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
 import {
   ExperimentStore,
-  writeImmutableJson,
 } from "../infrastructure/store/experiment-store.js";
 import { findProductPack } from "../products/index.js";
+import { packActivity } from "../products/pack-access.js";
 import type { ProductPack } from "../products/contract.js";
 import {
   historicalCwdOf,
   inferSourceRootKind,
   type SourceRootKind,
 } from "./replay-conditions.js";
-import { assertIds, assertPaths, experimentAgentAuditSink, invocationFact, persistTaskCase } from "./experiment-helpers.js";
+import { assertIds, assertPaths, experimentAgentAuditSink, invocationFact, persistTaskCase, sourceDirectoryExists } from "./experiment-helpers.js";
 import {
   captureWorkspaceScope,
   inspectRun,
@@ -73,6 +72,7 @@ import {
   preflightFromBaseline,
   resolveVerifiedCandidate,
 } from "./experiment-preflight.js";
+import { finishExperimentActivity, registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
 import { finishExperiment, attachExperimentComparison } from "./experiment-report.js";
 export { controllerRequestSnapshot } from "./controller-briefing.js";
 export type { SourceRootKind };
@@ -140,6 +140,7 @@ export type CodexExperimentInput = {
   compare?: boolean;
   /** Hold the isolated workspace until runComparison or skipComparison. */
   deferComparison?: boolean;
+  signal?: AbortSignal;
   captureArtifacts?: (input: {
     store: ExperimentStore;
     environment: PreparedEnvironmentRef;
@@ -152,6 +153,7 @@ export type CodexExperimentInput = {
 export type ExperimentHandle = {
   result: Promise<CodexExperimentResult>;
   candidateFinished: Promise<CodexExperimentResult>;
+  activity?: ExperimentActivity;
   runComparison(): Promise<void>;
   skipComparison(): Promise<void>;
   cancel(): Promise<void>;
@@ -163,6 +165,7 @@ type ExperimentControl = {
   setController(controller: ControllerPort, runId: string): void;
   cancelled(): boolean;
   waitForComparison(partial: CodexExperimentResult): Promise<boolean>;
+  ready(): Promise<void>;
 };
 /**
  * The publishing-level Codex experiment path. It has one CandidateRun state
@@ -188,6 +191,28 @@ export function startCodexExperiment(
         resolveCandidate = resolve;
       })
     : undefined;
+  const cancel = async (): Promise<void> => {
+    cancelRequested = true;
+    abort.abort();
+    decideComparison?.(false);
+    await input.comparison.cancel?.();
+    if (activeController && activeRunId)
+      await activeController.cancel?.(
+        activeRunId,
+        `run:${activeRunId}:cancelled`,
+      );
+    if (active) await active.cancel();
+  };
+  if (input.signal?.aborted) void cancel();
+  else input.signal?.addEventListener("abort", () => { void cancel(); }, { once: true });
+  const activity = registerActivity({
+    kind: input.compare ? "compare" : "run",
+    experimentId: input.experimentId,
+    runId: input.runId,
+    cancel,
+    dataDir: input.dataDir,
+  });
+  const published = activityControlReady(activity);
   const result = executeExperiment(input, {
     signal: abort.signal,
     setActive(run) {
@@ -206,28 +231,21 @@ export function startCodexExperiment(
       if (!comparisonDecision) return Boolean(input.compare);
       return comparisonDecision;
     },
-  });
-  return {
+    ready: () => published,
+  }).finally(() => finishExperimentActivity(input.experimentId));
+  const handle: ExperimentHandle = {
     result,
     candidateFinished: deferredCandidate ?? result,
+    activity,
     async runComparison(): Promise<void> {
       decideComparison?.(true);
     },
     async skipComparison(): Promise<void> {
       decideComparison?.(false);
     },
-    async cancel(): Promise<void> {
-      cancelRequested = true;
-      abort.abort();
-      decideComparison?.(false);
-      if (activeController && activeRunId)
-        await activeController.cancel?.(
-          activeRunId,
-          `run:${activeRunId}:cancelled`,
-        );
-      if (active) await active.cancel();
-    },
+    cancel,
   };
+  return handle;
 }
 async function captureCodexExperimentContext(
   input: CodexExperimentInput,
@@ -291,14 +309,14 @@ async function captureCodexExperimentContext(
     join(resolve(input.dataDir), "cases", input.caseId, "case.json"),
     taskCase,
   );
-  await writeImmutableJson(join(experimentRoot, "preflight.json"), preflight);
+  await persistRunPreflight(experimentRoot, input.runId, preflight);
   if (preflight.sourceBaseline === "unavailable")
     throw new Error(
       "Candidate was not started because the source baseline is unavailable.",
     );
   if (control.cancelled())
     throw new Error("Experiment was cancelled before Candidate startup.");
-  const checkpoint = baseline.recovery
+  const checkpoint = baseline.recovery || !(await sourceDirectoryExists(resolve(input.sourceRoot)))
     ? undefined
     : await provider.captureRecoveryCheckpoint({
         caseId: input.caseId,
@@ -339,24 +357,20 @@ async function openCodexExperimentSession(input: {
     runPolicy: experiment.policy,
     outputRoot: experimentRoot,
   };
-  await writeImmutableJson(join(experimentRoot, "experiment.json"), {
-    spec,
-    runIds: [experiment.runId],
-  });
+  await persistExperimentSpec(experimentRoot, spec);
   let environment = await provider.prepareRun(baseline, experiment.runId);
-  if (sourceRootKind === "historical_cwd") {
-    const rewind = await rewindIsolatedWorkspaceToStart({
-      workspaceRoot: environment.root,
-      taskCase,
-      ...(historicalCwd ? { historicalCwd } : {}),
-    });
-    if (rewind.removed.length) {
-      sourceRootKind = "historical_start";
-      environment = {
-        ...environment,
-        beforeFingerprint: await provider.fingerprint(environment),
-      };
-    }
+  const prepared = await materializeIsolatedStart({
+    workspaceRoot: environment.root,
+    taskCase,
+    ...(historicalCwd ? { historicalCwd } : {}),
+    sourceRootKind,
+  });
+  if (prepared.sourceRootKind === "historical_start") sourceRootKind = "historical_start";
+  if (prepared.startMutated || prepared.imported.length) {
+    environment = {
+      ...environment,
+      beforeFingerprint: await provider.fingerprint(environment),
+    };
   }
   const attempt = {
     schemaVersion: 1 as const,
@@ -445,6 +459,7 @@ async function startCodexCandidateRun(args: {
         experimentId: input.experimentId,
       }
     : undefined;
+  const pack = input.pack ?? findProductPack(input.candidate.productId);
   const sink: TargetEventSink = {
     append: async (targetEvent: TargetEvent): Promise<void> => {
       const event = await store.append({
@@ -454,6 +469,7 @@ async function startCodexCandidateRun(args: {
         occurredAt: targetEvent.occurredAt,
       });
       targetEvents.push(`event:${event.eventId}`);
+      await persistPublicActivities({ store, envelope: event, translator: packActivity(pack) });
     },
   };
   const runner = await input.runtime.createRunner(resolved, environment, sink);
@@ -535,6 +551,7 @@ async function finishCodexCandidateRun(args: {
           ? { maxControllerCalls: input.agentConfig.budget.maxCalls }
           : {}),
       });
+  const snapshot = await args.provider.candidateSnapshot(input.runId);
   const finishInput = {
     signal: control.signal,
     input,
@@ -548,6 +565,8 @@ async function finishCodexCandidateRun(args: {
     startedAt,
     sourceRootKind,
     workspaceRoot: environment.root,
+    candidateSnapshotRoot: snapshot.root,
+    candidateSnapshotStatus: snapshot.status,
     compare: false as const,
   };
   const partial = await finishExperiment(finishInput);
@@ -558,6 +577,7 @@ async function executeExperiment(
   input: CodexExperimentInput,
   control: ExperimentControl,
 ): Promise<CodexExperimentResult> {
+  await control.ready();
   const {
     experimentRoot,
     startedAt,
@@ -661,11 +681,6 @@ async function runControllerLoop(input: {
     operationId: "controller-started",
     payload: { model: input.controllerModel },
   });
-  const understandingFailure = await prepareControllerUnderstanding(input);
-  if (understandingFailure) {
-    const state = await abortOpening(input, understandingFailure);
-    return finalizeControllerLoop(state, [understandingFailure], 0, false);
-  }
   const opened = await deliverOpening(input, decisions);
   if (opened.finished) return opened.result;
   let state = opened.state;
@@ -687,17 +702,6 @@ async function runControllerLoop(input: {
     if (steered.stop) break;
   }
   return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
-}
-async function prepareControllerUnderstanding(input: LoopInput): Promise<StructuredAgentResult<ControllerDecision> | undefined> {
-  if (!input.controller.understand) return;
-  const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
-  assertBriefingOutsideReplica(briefingRoot, input.environment.root);
-  const packed = await packControllerBriefing(input, "opening", briefingRoot);
-  const context = steeringContextFrom(input, "created", 0, "opening", packed);
-  const understanding = await input.controller.understand(context, controllerDecisionTools(input, briefingRoot, context.requestId), experimentAgentAuditSink(input.store, input.runId));
-  await input.store.append({ type: "controller.understanding", runId: input.runId, operationId: `${context.requestId}-understanding`, payload: invocationFact(understanding) });
-  if (understanding.status !== "completed") return understanding;
-  await writeControllerUnderstanding(briefingRoot, understanding.value);
 }
 type LoopInput = Parameters<typeof runControllerLoop>[0];
 async function deliverOpening(
@@ -758,39 +762,7 @@ async function deliverSteering(
           : await input.run.stopByHarness("stalled.no_progress");
     return { state: next, controllerCalls: calls, followupSubmission: false, stop: true };
   }
-  if (decision.value.understandingDelta) {
-    await applyControllerUnderstandingDelta(
-      controllerBriefingRoot(input.experimentRoot, input.runId),
-      decision.value.understandingDelta,
-    );
-    await input.store.append({
-      type: "controller.understanding_updated",
-      runId: input.runId,
-      operationId: `controller-understanding-${calls}`,
-      payload: { turnIndex: calls, mode: decision.value.understandingDelta.mode, path: "controller-understanding.json" },
-    });
-  }
   if (decision.value.type === "done") {
-    const pending = await readControllerPendingActions(controllerBriefingRoot(input.experimentRoot, input.runId), typeof input.controller.understand === 'function');
-    const requestId = `controller-request-${input.runId}-${calls}`;
-    const events = input.store.events(input.runId);
-    const evidenceRefs = events.filter((event) => controllerReadEvidenceOnRequest([event], input.runId, requestId)).map((event) => `event:${event.eventId}`);
-    const readEvidence = evidenceRefs.length > 0;
-    const lastSubmission = events.filter((event) => event.type === "input.submitted").at(-1)?.sequence ?? 0;
-    const rejects = events.filter((event) => event.sequence > lastSubmission && event.type === "controller.done_rejected");
-    if (decision.value.reason === "satisfied" && pending !== undefined && (pending.length > 0 || !readEvidence)) {
-      const firstReject = rejects[0];
-      const exhausted = rejects.length >= 2 || (firstReject !== undefined && Date.now() - Date.parse(firstReject.occurredAt) >= 180_000);
-      const payload = { requestId, reason: pending.length ? "unresolved_actions" : "evidence_required", unresolvedActions: pending, decision: decision.value, evidenceRefs, correctionAttempts: rejects.length, exhausted };
-      await input.store.append({ type: exhausted ? "controller.completion_diagnostic" : "controller.done_rejected", runId: input.runId, operationId: `controller-completion-${calls}`, payload });
-      return { state: exhausted ? await input.run.stopByHarness("stalled.controller_completion_guard") : state, controllerCalls: calls, followupSubmission: false, stop: exhausted };
-    }
-    await input.store.append({
-      type: "controller.completion_diagnostic",
-      runId: input.runId,
-      operationId: `controller-diagnostic-${calls}`,
-      payload: { requestId, decision: decision.value, unresolvedActions: pending ?? [], evidenceRefs, correctionAttempts: rejects.length, accepted: true, reads: evidenceRefs.length, evidenceStatus: readEvidence ? "read" : "not_read", advisory: true },
-    });
     return {
       state: await input.run.settleController(decision.value.reason),
       controllerCalls: calls,
@@ -856,12 +828,7 @@ async function requestControllerDecision(
   const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   assertBriefingOutsideReplica(briefingRoot, input.environment.root);
   const packed = await packControllerBriefing(input, phase, briefingRoot);
-  const base = steeringContextFrom(input, state, controllerCalls, phase, packed);
-  const events = input.store.events(input.runId);
-  const lastSubmission = events.filter((event) => event.type === "input.submitted").at(-1)?.sequence ?? 0;
-  const rejections = events.filter((event) => event.type === "controller.done_rejected" && event.sequence > lastSubmission);
-  const feedback = rejections.at(-1);
-  const context = feedback ? { ...base, budget: { ...base.budget, callTimeoutMs: Math.max(1, 180_000 - (Date.now() - Date.parse(rejections[0]!.occurredAt))) }, promptContent: `${base.promptContent}\n\n# Host completion feedback\n${JSON.stringify(feedback.payload)}\nReconcile the ledger using replace and inspect current results. This is not a new candidate task. Return a corrected decision.` } : base;
+  const context = steeringContextFrom(input, state, controllerCalls, phase, packed);
   await persistControllerRequested(input, context);
   return input.controller.decide(
     context,

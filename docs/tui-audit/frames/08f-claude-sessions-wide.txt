@@ -3,8 +3,8 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
  Last task  none selected
 
  Continue
- r     Replay the current task  needs a task
- i     Import a historical session
+ /run     Replay the current task  needs a task
+ /intake  Import a historical session
 
 ┌─ claude-audit · 1 sessions · filter: all ───────────────────────────────────┐ ┌─ Preview ────────────────────────────┐
 │❯ 4d ago      Review the product intake flow.                  u1 a1 t0      │ │ Project      claude-audit            │
@@ -18,10 +18,10 @@ Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Ha
 │                                                                             │ │intake flow.                          │
 └─────────────────────────────────────────────────────────────────────────────┘ └──────────────────────────────────────┘
 
- ❯ [/] Search
+ ❯ Type to filter
  Choose a historical session. Enter opens the review; Enter again freezes and starts recovery.
  Loaded 2 projects and 1 sessions.
  1 shown · 0 skipped · 1 scanned.
- The catalog is complete; m does not paginate.
+ The catalog is complete; Ctrl+N does not paginate.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Inspect  [/] Search  [m] All sessions loaded  [r] Refresh  [Backspace] Projects  [Esc] Back
+ [↑↓] Select  [Enter] Inspect  [type] Search  [Ctrl+N] more available  [Ctrl+R] Refresh  [Backspace] Projects

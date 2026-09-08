@@ -7,7 +7,7 @@
 
 Controller 的 deterministic contract lane 保留在 `test/` 并由工程门禁执行；真实模型 capability lane 放在项目目录外的 `controller-eval/`，仅在 `REPRISE_REAL_MODEL=1` 时运行。两者不得以同一个总分表示“Controller 已通过”。
 
-Capability lane 每个最小 case 定义显式用户目标、验收标准、历史用户事实、候选状态、轨迹、可见证据、工具面和不变量，并对每个 case 提供只改变一个事实的反事实。运行严格串行，保存脱敏 trace，工具观察只在当前 Controller 决策内使用；若 fixture 没有脚本化的候选执行和新 settled state，不合成第二轮 Controller 请求。消息采用 rubric 评分，不匹配固定自然语言；intent/reason 使用 case 声明的 acceptable family 作为软分类。
+Capability lane 每个最小 case 定义显式用户目标、验收标准、历史用户事实、候选状态、轨迹、可见证据、工具面和不变量，并对每个 case 提供只改变一个事实的反事实。仓库入口为 `npm run evaluate:controller`，产物写到调用方提供的绝对路径；`npm run check` 不运行该入口。运行严格串行，保存脱敏 trace，工具观察只在当前 Controller 决策内使用；若 fixture 没有脚本化的候选执行和新 settled state，不合成第二轮 Controller 请求。消息采用 rubric 评分，不匹配固定自然语言；intent/reason 使用 case 声明的 acceptable family 作为软分类。
 
 ## 原因
 

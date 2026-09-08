@@ -1,4 +1,4 @@
-import { type Component, HStack, ScrollView, VStack, isViewportTUI, type TUI, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { type Component, ScrollView, VStack, isViewportTUI, type TUI, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { CodexExperimentResult } from '../application/experiment.js';
 import { compact, truncateFit } from './format.js';
 import { renderHelp } from './overlays.js';
@@ -11,7 +11,7 @@ import { renderFailure, renderResult, resultHints, failureHints } from './pages/
 import { candidateModelHints, candidateProductHints, renderCandidateModelPicker, renderCandidateProductPicker, type CandidateModelPage, type CandidateProductModel } from './pages/candidate.js';
 import {
   confirmHints, confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderCompareGate, renderPreflight, renderSource, renderTimeline,
-  runningChrome, runningHints, compareGateHints, runningPaneModel, sourceHints,
+  runningChrome, runningHints, compareGateHints, sourceHints,
   type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
 } from './pages/run.js';
 import { t, type Locale } from './i18n.js';
@@ -54,6 +54,7 @@ export type WorkbenchView = {
   readonly preflight?: PreflightModel;
   readonly confirm?: ConfirmModel;
   readonly running?: RunningModel;
+  readonly comparePending?: boolean;
   readonly result?: CodexExperimentResult;
   readonly cancelling?: boolean;
   readonly viewer?: ViewerModel;
@@ -92,40 +93,13 @@ export class Workbench implements Component {
       const height = bodyHeight(measuredViewport, 1, isShortViewport(viewport.height) ? 1 : 2);
       return renderLayoutList(createTheme(width), this.#view(), width, height);
     });
-    const leftList = new LinesView((width) => {
-      const view = this.#view();
-      if (view.page !== 'running' || !view.running) return [];
-      const viewport = this.#viewport();
-      const height = bodyHeight(viewport.height === undefined ? { width } : { width, height: viewport.height }, 1, isShortViewport(viewport.height) ? 1 : 2);
-      return renderTimeline(createTheme(width), width, runningPaneModel(view.running, 'left'), height);
-    });
-    const rightList = new LinesView((width) => {
-      const view = this.#view();
-      if (view.page !== 'running' || !view.running) return [];
-      const viewport = this.#viewport();
-      const height = bodyHeight(viewport.height === undefined ? { width } : { width, height: viewport.height }, 1, isShortViewport(viewport.height) ? 1 : 2);
-      return renderTimeline(createTheme(width), width, runningPaneModel(view.running, 'right'), height);
-    });
     const body = new ScrollView(list, { follow: 'none', primary: true, scrollbar: 'auto' });
-    const leftBody = new ScrollView(leftList, { follow: 'none', primary: false, scrollbar: 'auto' });
-    const rightBody = new ScrollView(rightList, { follow: 'none', primary: false, scrollbar: 'auto' });
-    const split = new HStack([
-      { component: leftBody, grow: 2, shrink: 1, minSize: 24 },
-      { component: rightBody, grow: 3, shrink: 1, minSize: 28 },
-    ]);
     const message = new LinesView((width) => trimChrome(renderMessage(createTheme(width), this.#view(), width), short(), 'head'));
     const footer = new LinesView((width) => trimChrome(renderFooter(createTheme(width), this.#view(), width), short(), 'tail'));
-    const splitVisible = (): boolean => {
-      const running = this.#view().running;
-      return this.#view().page === 'running' && Boolean(running)
-        && running?.runPhase !== 'recovery' && running?.preparePhase !== 'compare'
-        && running?.preparePhase !== 'check' && running?.preparePhase !== 'copy';
-    };
     return new VStack([
       { component: header, grow: 0, shrink: 0, basis: 'auto' },
       { component: rail, grow: 0, shrink: 0, basis: 'auto', visible: () => this.#view().page === 'running' },
-      { component: split, grow: 1, shrink: 1, minSize: 4, visible: splitVisible },
-      { component: body, grow: 1, shrink: 1, minSize: 4, visible: () => !splitVisible() },
+      { component: body, grow: 1, shrink: 1, minSize: 4 },
       { component: message, grow: 0, shrink: 0, basis: 'auto' },
       { component: footer, grow: 0, shrink: 0, basis: 'auto' },
     ]);
@@ -228,7 +202,7 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
 
 function renderMessage(_theme: Theme, view: WorkbenchView, width: number): string[] {
   if (view.page === 'error') return [];
-  if (view.page === 'running' && !view.cancelling) return [];
+  if (view.page === 'running' && !view.cancelling && !view.comparePending) return [];
   if (view.page === 'preflight' && !view.preflight) return [];
   return view.message.split(/\r?\n/).flatMap((line) => wrapTextWithAnsi(` ${line}`, Math.max(1, width)));
 }
@@ -273,6 +247,10 @@ function sheetHeight(height: number | undefined, background: readonly string[]):
 function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
   if (view.page === 'home' && view.home) return renderHome(theme, width, view.home);
   if (view.page === 'config' && view.config) return renderConfig(theme, width, view.config);
+  if (view.page === 'history-detail' && view.historyDetail && !('taskCase' in view.historyDetail) && view.running?.entries.length) {
+    const summary = renderHistoryDetail(theme, width, view.historyDetail, view.locale ?? 'en');
+    return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - summary.length - 1)), '', ...summary];
+  }
   if ((view.page === 'history' || view.page === 'history-detail') && view.history) return renderHistory(theme, width, view.history, height);
   if (view.page === 'history-detail' && view.historyDetail) return renderHistoryDetail(theme, width, view.historyDetail, view.locale ?? 'en');
   if (view.page === 'sessions' && view.sessions) return renderSessions(theme, width, view.sessions, height);
@@ -299,7 +277,12 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
   }
   if (view.page === 'confirm' && view.confirm) return renderConfirmation(theme, width, view.confirm);
   if (view.page === 'compare-gate') return renderCompareGate(theme, width, view.locale ?? 'en');
-  if (view.page === 'running' && view.running) return renderTimeline(theme, width, view.running, height);
+  if (view.page === 'running' && view.running) {
+    if (!view.comparePending) return renderTimeline(theme, width, view.running, height);
+    const gate = renderCompareGate(theme, width, view.locale ?? 'en');
+    const bodyHeight = height === undefined ? undefined : Math.max(6, height - gate.length - 1);
+    return [...renderTimeline(theme, width, view.running, bodyHeight), '', ...gate];
+  }
   if (view.page === 'result' && view.result) {
     const summary = renderResult(theme, width, view.result, view.locale ?? 'en', view.productLabel);
     if (!view.running?.entries.length) return summary;
@@ -318,7 +301,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
   if (view.page === 'home') return homeHints(locale, view.home);
   if (view.page === 'config' && view.config) {
     const fields = configFieldsForKind(view.config.draft.kind);
-    return configHints(view.config.editing, fields[view.config.selected], view.config.pendingToggle, view.config.selected >= languageFieldIndex(view.config.draft.kind), locale);
+    return configHints(view.config.editing, fields[view.config.selected], view.config.pendingToggle, view.config.selected >= languageFieldIndex(view.config.draft.kind), locale, Boolean(view.config.leaveConfirm));
   }
   if (view.page === 'history') return historyHints(locale);
   if (view.page === 'history-detail') return historyDetailHints(Boolean(view.historyDetail && 'taskCase' in view.historyDetail), Boolean(view.historyDetail && !('taskCase' in view.historyDetail) && view.historyDetail.reportPath), locale);
@@ -334,10 +317,17 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     return preflightHints(locale);
   }
   if (view.page === 'confirm') return confirmHints(view.confirm ? confirmCanStart(view.confirm) : false, locale);
-  if (view.page === 'compare-gate') return compareGateHints(locale);
+  if (view.page === 'compare-gate' || view.comparePending) return compareGateHints(locale);
   if (view.page === 'running' && view.running) {
     const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
-    return runningHints(view.running.filter, theme.density !== 'wide', preparing, locale, Boolean(view.running.finding));
+    return runningHints(
+      view.running.filter,
+      theme.density !== 'wide',
+      preparing,
+      locale,
+      Boolean(view.running.finding),
+      Boolean(view.running.readingMode),
+    );
   }
   if (view.page === 'result') return resultHints(locale, view.result?.comparison.result.status === 'skipped');
   if (view.page === 'error') return failureHints(locale);

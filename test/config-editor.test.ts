@@ -124,3 +124,19 @@ test('Enter cycles API type and reasoning on an OpenAI-compatible draft', () => 
   }, '\r', refresh);
   assert.equal(reasoning?.state.draft.reasoning, true);
 });
+
+test('config save and test use control chords, not letters', () => {
+  const idle = { draft, selected: 0, editing: false, buffer: '', cursor: 0, providers: [], models: [] };
+  assert.equal(handleConfigInput(idle, 's', refresh), undefined);
+  assert.equal(handleConfigInput(idle, '\x13', refresh)?.action, 'save');
+  assert.equal(handleConfigInput(idle, '\x14', refresh)?.action, 'test');
+});
+
+test('leaving config with a dirty draft asks to save or discard', () => {
+  const dirty = { draft, selected: 0, editing: false, buffer: '', cursor: 0, providers: [], models: [], dirty: true };
+  const prompt = handleConfigInput(dirty, '\x1b', refresh);
+  assert.equal(prompt?.state.leaveConfirm, true);
+  assert.equal(prompt?.action, undefined);
+  assert.equal(handleConfigInput(prompt?.state ?? dirty, '\r', refresh)?.action, 'home');
+  assert.equal(handleConfigInput({ ...dirty, leaveConfirm: true }, '\x13', refresh)?.action, 'save');
+});

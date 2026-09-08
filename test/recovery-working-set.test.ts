@@ -36,12 +36,14 @@ function fatContext(): RecoveryContext {
     staging: { fileCount: 3, totalBytes: 99 },
     budget: { timeoutMs: 600_000 },
     allowModelText: true,
+    continuityKey: "case-fat",
   };
 }
 
 test("recovery model prompt omits the thick catalog and playbook body", () => {
   const context = fatContext();
   const prompt = recoveryModelPrompt(context);
+  assert.doesNotMatch(prompt, /continuityKey/);
   assert.doesNotMatch(prompt, /"catalog"\s*:/);
   assert.doesNotMatch(prompt, /playbook body that must not enter/);
   assert.ok(!prompt.includes(context.playbook.text));

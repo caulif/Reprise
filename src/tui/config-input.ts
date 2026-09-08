@@ -14,6 +14,8 @@ export type ConfigInputState = {
   readonly providers: readonly Option[];
   readonly models: readonly Option[];
   readonly pendingToggle?: boolean;
+  readonly dirty?: boolean;
+  readonly leaveConfirm?: boolean;
 };
 export type ConfigInputResult = {
   readonly state: ConfigInputState;
@@ -27,18 +29,37 @@ export function handleConfigInput(state: ConfigInputState, data: string, refresh
   const fields = configFieldsForKind(state.draft.kind);
   const languageIndex = languageFieldIndex(state.draft.kind);
   if (state.editing) return editConfigValue(state, input, fields);
+  if (state.leaveConfirm) return handleLeaveConfirm(state, input);
   if (state.pendingToggle) {
     if (matchesKey(input, 'enter')) return applyProviderToggle(state, refreshModels);
     if (matchesKey(input, 'escape')) return { state: { ...state, pendingToggle: false }, message: 'Provider switch cancelled.', consume: true };
     return handleConfigInput({ ...state, pendingToggle: false }, input, refreshModels) ?? { state: { ...state, pendingToggle: false }, consume: true };
   }
-  if (matchesKey(input, 'escape')) return { state, action: 'home', consume: true };
+  if (matchesKey(input, 'escape')) return leaveConfig(state);
   if (matchesKey(input, 'up') || matchesKey(input, 'down')) return { state: { ...state, selected: Math.max(0, Math.min(languageIndex, state.selected + (matchesKey(input, 'up') ? -1 : 1))) }, consume: true };
-  if (matchesKey(input, 't')) return { state, action: 'test', consume: true };
-  if (matchesKey(input, 's')) return { state, action: 'save', consume: true };
+  if (matchesKey(input, 'ctrl+t')) return { state, action: 'test', consume: true };
+  if (matchesKey(input, 'ctrl+s')) return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
   if (!matchesKey(input, 'enter')) return undefined;
   if (state.selected === languageIndex) return { state, action: 'toggle-locale', consume: true };
   return beginConfigEdit(state, refreshModels, fields);
+}
+
+function leaveConfig(state: ConfigInputState): ConfigInputResult {
+  if (state.dirty) {
+    return {
+      state: { ...state, leaveConfirm: true },
+      message: 'Unsaved draft. Ctrl+S saves, Enter discards, Esc stays.',
+      consume: true,
+    };
+  }
+  return { state, action: 'home', consume: true };
+}
+
+function handleLeaveConfirm(state: ConfigInputState, input: string): ConfigInputResult {
+  if (matchesKey(input, 'escape')) return { state: { ...state, leaveConfirm: false }, message: 'Still editing the in-memory draft.', consume: true };
+  if (matchesKey(input, 'ctrl+s')) return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  if (matchesKey(input, 'enter')) return { state: { ...state, leaveConfirm: false }, action: 'home', consume: true };
+  return { state, consume: true };
 }
 
 function beginConfigEdit(state: ConfigInputState, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }, fields: readonly HarnessConfigField[]): ConfigInputResult {
@@ -94,7 +115,7 @@ function editConfigValue(state: ConfigInputState, data: string, fields: readonly
   if (matchesKey(data, 'enter')) {
     const field = fields[state.selected] ?? 'provider type';
     const next = state.buffer.trim();
-    return { state: { ...state, draft: setConfigField(state.draft, field, next), editing: false, buffer: '', cursor: 0 }, message: 'Draft changed. Save writes the local config file; use t to test the connection.', consume: true };
+    return { state: { ...state, draft: setConfigField(state.draft, field, next), editing: false, buffer: '', cursor: 0 }, message: 'Draft changed. Ctrl+S writes the local config file; Ctrl+T tests the connection.', consume: true };
   }
   const edited = applyTextEdit(state.buffer, state.cursor ?? state.buffer.length, data);
   return edited.handled ? { state: { ...state, buffer: edited.value, cursor: edited.cursor }, consume: true } : { state, consume: true };

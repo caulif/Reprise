@@ -1,14 +1,15 @@
 import type { CodexExperimentPreflight } from '../../application/experiment.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
-import { activeLane, lastLiveVerb, phaseIndex } from '../agent-activity.js';
-import { foldProcessEntries, splitRunEntries } from '../fold-process.js';
+import { lastLiveVerb } from '../agent-activity.js';
+import { foldProcessEntries, selectedIndexAfterFold } from '../fold-process.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
 import { t, type Locale } from '../i18n.js';
-import { matchesCanvasQuery, matchesFilter, renderScrollback } from '../scrollback.js';
+import { matchesFilter, renderScrollback } from '../scrollback.js';
+import { canvasHitIndices } from '../timeline-read.js';
 import { caretAt } from '../text-edit.js';
 import type { Theme } from '../theme.js';
 import type { TimelineEntry } from '../timeline.js';
-import { joinColumns, kv, pad, panel, type PreparePhase } from '../widgets.js';
+import { kv, pad, panel, type PreparePhase } from '../widgets.js';
 
 export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
 export type RecoveryPreviewModel = {
@@ -57,6 +58,8 @@ export type RunningModel = {
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
+  readonly readingOffset?: number;
+  readonly readingMode?: boolean;
   readonly tick?: number;
   readonly runPhase?: CandidateRunPhase;
   readonly lastRuntimeEventAt?: string;
@@ -131,6 +134,7 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), [
       kv(theme, t(locale, 'candidateLabel'), candidateSummary(model.candidate, product, model.preflight.resolved.resolvedModel, locale), width - 2),
       kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
+      ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
       ...(cross ? [kv(theme, t(locale, 'sourceProductLabel'), `${model.sourceProductLabel}  →  ${product}`, width - 2)] : []),
       '',
       ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
@@ -207,7 +211,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const locale = model.locale ?? 'en';
   const product = model.productLabel ?? t(locale, 'unknownAgent');
   if (isPreparing(model)) return renderPrepare(theme, width, model, locale, product);
-  const visible = model.entries.filter((entry) => matchesFilter(entry, model.filter) && matchesCanvasQuery(entry, model.findQuery ?? ''));
+  const visible = model.entries.filter((entry) => matchesFilter(entry, model.filter));
   const selected = Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
   const recovering = model.runPhase === 'recovery';
   const dimIn = model.filter === 'PRODUCT';
@@ -223,80 +227,23 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
       ? ` ${theme.style.ok(theme.glyphs.dot)} ${t(locale, 'comparisonTitle')}`
       : ` ${inMark} ${inLabel}   ${outMark} ${outLabel}   ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'controllerLegend')}`;
   const task = model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : undefined;
-  const phases = renderPhaseStrip(theme, model, locale);
-  const findBar = model.finding ? renderFindBar(model, locale, visible.length, selected < 0 ? 0 : selected) : [];
-  const header = [legend, ...(task ? [task] : []), ...phases, ...findBar, ''];
+  const hits = canvasHitIndices(visible, model.findQuery ?? '');
+  const hitAt = hits.indexOf(selected < 0 ? -1 : selected);
+  const findBar = model.finding ? renderFindBar(model, locale, hits.length, hitAt < 0 ? 0 : hitAt) : [];
+  const header = [legend, ...(task ? [task] : []), ...findBar, ''];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
   const expanded = new Set(model.expandedFolds ?? []);
+  const folded = foldProcessEntries(visible, expanded);
+  const selectedFolded = selectedIndexAfterFold(visible, folded, visible[selected] ?? model.entries[model.selected]);
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
     : recovering && !visible.length
       ? [theme.style.muted(` ${t(locale, 'recoveryEmpty')}`)]
-      : splitCandidate(model, recovering, comparing, width)
-        ? renderSplitBody(theme, width, model, visible, locale, product, bodyHeight, expanded)
-        : renderScrollback(theme, width, foldProcessEntries(visible, expanded), selected < 0 ? 0 : selected, locale, product, bodyHeight, model.tick ?? 0);
+      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0);
   return [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
   ];
-}
-
-function splitCandidate(model: RunningModel, recovering: boolean, comparing: boolean, width: number): boolean {
-  if (model.paneFocus) return false;
-  return !recovering && !comparing && !isPreparing(model) && width >= 110;
-}
-
-export function runningPaneModel(model: RunningModel, pane: 'left' | 'right'): RunningModel {
-  const panes = splitRunEntries(model.entries);
-  const expanded = new Set(model.expandedFolds ?? []);
-  const entries = pane === 'left' ? foldProcessEntries(panes.left, expanded) : panes.right;
-  const selected = Math.max(0, Math.min(model.selected, Math.max(0, entries.length - 1)));
-  return { ...model, entries, selected, paneFocus: pane };
-}
-
-function renderSplitBody(
-  theme: Theme,
-  width: number,
-  model: RunningModel,
-  visible: readonly TimelineEntry[],
-  locale: Locale,
-  product: string,
-  bodyHeight: number | undefined,
-  expanded: ReadonlySet<string>,
-): string[] {
-  const panes = splitRunEntries(visible);
-  const left = foldProcessEntries(panes.left, expanded);
-  const right = panes.right;
-  const leftWidth = Math.max(28, Math.floor(width * 0.4));
-  const rightWidth = Math.max(28, width - leftWidth - 1);
-  const leftSel = Math.max(0, left.findIndex((entry) => entry === model.entries[model.selected]));
-  const rightSel = Math.max(0, right.findIndex((entry) => entry === model.entries[model.selected]));
-  const leftLines = [
-    theme.style.controller(` ${t(locale, 'controllerLegend')}`),
-    ...renderScrollback(theme, leftWidth, left, leftSel, locale, product, bodyHeight === undefined ? undefined : Math.max(3, bodyHeight - 1), model.tick ?? 0),
-  ];
-  const rightLines = [
-    theme.style.target(` ${t(locale, 'legendOut', { product })}`),
-    ...renderScrollback(theme, rightWidth, right, rightSel, locale, product, bodyHeight === undefined ? undefined : Math.max(3, bodyHeight - 1), model.tick ?? 0),
-  ];
-  return joinColumns(leftLines, rightLines, leftWidth, rightWidth, 1, theme);
-}
-
-function renderPhaseStrip(theme: Theme, model: RunningModel, locale: Locale): readonly string[] {
-  const lane = activeLane(model.entries, model.runPhase, model.preparePhase);
-  if (!lane) return [];
-  const { current } = phaseIndex(lane, model.entries);
-  const names = lane === 'recovery'
-    ? [t(locale, 'phaseInspect'), t(locale, 'phaseMutate'), t(locale, 'phaseDeliver'), t(locale, 'phaseVerify')]
-    : lane === 'controller'
-      ? [t(locale, 'phaseRead'), t(locale, 'phaseDecide'), t(locale, 'phaseSend')]
-      : [t(locale, 'phaseReadResult'), t(locale, 'phaseReadHistory'), t(locale, 'phaseWriteReport')];
-  const parts = names.map((name, index) => {
-    if (index === current) return theme.style.target(name);
-    if (index < current) return theme.style.ok(name);
-    return theme.style.muted(name);
-  });
-  return [` ${parts.join(` ${theme.style.muted(theme.glyphs.arrow)} `)}`];
 }
 
 function renderFindBar(model: RunningModel, locale: Locale, total: number, selected: number): string[] {
@@ -313,14 +260,6 @@ function isPreparing(model: RunningModel): boolean {
 function renderPrepare(theme: Theme, width: number, model: RunningModel, locale: Locale, product: string): string[] {
   if (model.preparePhase === 'check') {
     const detail = model.prepareDetail ? model.prepareDetail : t(locale, 'recoveryStagePrepare');
-    const barWidth = Math.max(12, Math.min(36, width - 8));
-    const filled = Math.max(1, Math.round((1 / 4) * barWidth));
-    const shift = Math.floor((model.tick ?? 0) / 400) % Math.max(1, filled);
-    const fill = theme.framed ? '█' : '#';
-    const glow = theme.framed ? '▓' : '#';
-    const rest = theme.framed ? '░' : '-';
-    const wave = Array.from({ length: filled }, (_, index) => (index === shift ? glow : fill)).join('');
-    const bar = theme.style.target(`[${wave}${rest.repeat(Math.max(0, barWidth - filled))}]`);
     const project = model.workspaceProject ?? t(locale, 'projectlessSessions');
     const session = model.taskTitle ?? t(locale, 'noTaskSummary');
     return [
@@ -330,20 +269,11 @@ function renderPrepare(theme: Theme, width: number, model: RunningModel, locale:
       kv(theme, t(locale, 'fieldProject'), project, width),
       kv(theme, t(locale, 'statusLabel'), detail, width),
       '',
-      ` ${bar}`,
       ` ${theme.style.muted(t(locale, 'recoveringPrepare'))}`,
     ].map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis)));
   }
   const step = model.preparePhase === 'copy' ? 2 : 1;
   const detail = model.prepareDetail ? ` · ${model.prepareDetail}` : '';
-  const barWidth = Math.max(12, Math.min(36, width - 8));
-  const filled = Math.max(1, Math.round((step / 4) * barWidth));
-  const shift = Math.floor((model.tick ?? 0) / 400) % Math.max(1, filled);
-  const fill = theme.framed ? '█' : '#';
-  const glow = theme.framed ? '▓' : '#';
-  const rest = theme.framed ? '░' : '-';
-  const wave = Array.from({ length: filled }, (_, index) => (index === shift ? glow : fill)).join('');
-  const bar = theme.style.target(`[${wave}${rest.repeat(Math.max(0, barWidth - filled))}]`);
   const barLabel = t(locale, step === 2 ? 'preparingBar' : 'checkingBar', { step, detail });
   const marks = [
     stepLine(theme, 1, step, t(locale, 'stepRestore'), locale),
@@ -355,7 +285,6 @@ function renderPrepare(theme: Theme, width: number, model: RunningModel, locale:
     model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : '',
     ` ${t(locale, 'preparingIn', { product })}`,
     '',
-    ` ${bar}`,
     ` ${theme.style.muted(barLabel)}`,
     '',
     ...marks,
@@ -380,10 +309,13 @@ export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (
   return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
 }
 
-export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false): readonly (readonly [string, string])[] {
+export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
   const stop = ['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const;
-  if (finding) return [['Esc', t(locale, 'hintClearFind')], stop];
-  return [stop, ['?', t(locale, 'hintKeys')]];
+  if (reading) return [['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')], stop];
+  if (finding) {
+    return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
+  }
+  return [stop, ['/', t(locale, 'hintTimelineFind')], ['v', t(locale, 'hintReadingMode')], ['?', t(locale, 'hintKeys')]];
 }
 
 export function renderCompareGate(theme: Theme, width: number, locale: Locale = 'en'): string[] {
@@ -440,7 +372,7 @@ function dash(theme: Theme): string {
 function candidateSummary(candidate: CandidateSpec | undefined, product: string, resolvedModel: string | undefined, locale: Locale): string {
   if (!candidate) return t(locale, 'unavailableValue');
   const model = candidate.requestedModel;
-  return resolvedModel && resolvedModel !== model ? `${product}  ·  ${model} · ${resolvedModel}` : `${product}  ·  ${model}`;
+  return resolvedModel && resolvedModel !== model ? `${product}  ·  ${resolvedModel} (${model})` : `${product}  ·  ${model}`;
 }
 
 function userRecoveryHeadline(value: string, locale: Locale): string {

@@ -1,10 +1,12 @@
-import { readFile } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { dirname, isAbsolute } from "node:path";
 import { isRecord } from "../core/json.js";
-import { SAFE_ID } from "../core/identity.js";
+import { SAFE_ID, sha256 } from "../core/identity.js";
 import type { EventEnvelope, TaskCase } from "../core/schema.js";
 import type { AgentAuditSink, StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
-import { writeImmutableJson, type ExperimentStore } from "../infrastructure/store/experiment-store.js";
+import { type ExperimentStore } from "../infrastructure/store/experiment-store.js";
+import { isFrozenCase, publishFrozenCase } from "../products/shared/freeze.js";
+import { spillImageRefs, spillInlineBody, type ArtifactBodyResolver } from "../infrastructure/agent-model-input.js";
 
 export function recordValue(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
@@ -23,11 +25,13 @@ export function invocationFact<T>(
     return {
       status: result.status,
       sessionId: result.sessionId,
+      ...(result.invocationId ? { invocationId: result.invocationId } : {}),
       value: result.value,
     };
   return {
     status: result.status,
     ...(result.sessionId ? { sessionId: result.sessionId } : {}),
+    ...(result.invocationId ? { invocationId: result.invocationId } : {}),
     ...(result.status === "failed" ? { failure: result.failure } : {}),
     ...(result.status === "cancelled" && result.factRef
       ? { factRef: result.factRef }
@@ -61,15 +65,34 @@ export function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-export async function persistTaskCase(path: string, taskCase: TaskCase): Promise<void> {
+export async function sourceDirectoryExists(path: string): Promise<boolean> {
   try {
+    return (await stat(path)).isDirectory();
+  } catch (error) {
+    if (isMissing(error)) return false;
+    throw error;
+  }
+}
+
+export async function persistTaskCase(path: string, taskCase: TaskCase): Promise<void> {
+  const caseDir = dirname(path);
+  const casesRoot = dirname(caseDir);
+  if (await isFrozenCase(caseDir)) {
     const persisted = JSON.parse(await readFile(path, "utf8")) as Partial<TaskCase>;
     if (persisted.caseId !== taskCase.caseId || persisted.contentHash !== taskCase.contentHash)
       throw new Error(`TaskCase ${taskCase.caseId} conflicts with existing immutable content.`);
-  } catch (error) {
-    if (isMissing(error)) await writeImmutableJson(path, taskCase);
-    else throw error;
+    return;
   }
+  try {
+    await stat(caseDir);
+  } catch (error) {
+    if (isMissing(error)) {
+      await publishFrozenCase({ taskCase, casesRoot, files: [] });
+      return;
+    }
+    throw error;
+  }
+  throw new Error(`TaskCase ${taskCase.caseId} is an unpublished incomplete freeze.`);
 }
 
 export function totalTokenCount(
@@ -107,14 +130,53 @@ function tokenValue(value: unknown): number | undefined {
   return undefined;
 }
 
+export async function persistAgentAuditEvent(store: ExperimentStore, runId: string, event: Parameters<AgentAuditSink["append"]>[0]): Promise<void> {
+  const write = modelInputWriter(store, runId);
+  const payload: Record<string, unknown> = { role: event.role, sessionId: event.sessionId, ...event.payload };
+  if ("body" in payload) payload.body = await spillInlineBody(payload.body, write);
+  if ("retainedTail" in payload) payload.retainedTail = await spillInlineBody(payload.retainedTail, write);
+  if ("images" in payload) payload.images = await spillImageRefs(payload.images, write);
+  await store.append({
+    type: event.type,
+    runId,
+    payload,
+  });
+}
+
+export function experimentModelInputResolver(store: ExperimentStore, runId: string): ArtifactBodyResolver {
+  return async (ref) => {
+    try {
+      return Buffer.from(await store.readArtifact({
+        artifactId: ref.artifactId,
+        experimentId: store.experimentId,
+        runId,
+      })).toString("utf8");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Model input artifact is missing.";
+      const missing = isMissing(error);
+      throw Object.assign(new Error(message), {
+        diagnostic: {
+          code: missing ? "missing_attachment" as const : "attachment_checksum" as const,
+          message,
+          artifactId: ref.artifactId,
+        },
+      });
+    }
+  };
+}
+
 export function experimentAgentAuditSink(store: ExperimentStore, runId: string): AgentAuditSink {
   return {
-    append: async (event) => {
-      await store.append({
-        type: event.type,
-        runId,
-        payload: { role: event.role, sessionId: event.sessionId, ...event.payload },
-      });
-    },
+    append: async (event) => persistAgentAuditEvent(store, runId, event),
+    commitModelInput: modelInputWriter(store, runId),
   };
+}
+
+function modelInputWriter(store: ExperimentStore, runId: string) {
+  return async (bytes: Uint8Array) => store.commitArtifact({
+    artifactId: `mi${sha256(bytes).slice(0, 16)}`,
+    runId,
+    kind: "agent_model_input",
+    bytes,
+  });
 }

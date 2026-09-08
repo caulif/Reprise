@@ -5,6 +5,7 @@ import { errorMessage } from "./format.js";
 import { t } from "./i18n.js";
 import { readTuiPreferences } from "./preferences.js";
 import { enableTerminalColor } from "./theme.js";
+import { installTerminalRestoreGuard } from "./terminal-guard.js";
 import { mountWorkbench } from "./workbench.js";
 import {
   openAllowedFileUrl,
@@ -21,6 +22,16 @@ export async function CodexIntakeTui_start(this: CodexIntakeTui): Promise<void> 
     mountWorkbench(this.tui, this.workbench);
     this.tui.addInputListener((data) => this.handleInput(data));
     this.render();
+    const terminal = this.tui as { terminal?: { write?: (data: string) => void } };
+    if (typeof terminal.terminal?.write === 'function') {
+      this.terminalGuard = installTerminalRestoreGuard(() => {
+        try {
+          this.tui.stop();
+        } catch {
+          /* alt screen already left or TUI never started */
+        }
+      });
+    }
     this.tui.start();
     let configurationIssue: string | undefined;
     try {

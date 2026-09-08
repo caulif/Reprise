@@ -3,14 +3,14 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
  Last task  none selected
 
  Continue
- r     Replay the current task  needs a task
- i     Import a historical session
+ /run     Replay the current task  needs a task
+ /intake  Import a historical session
 
 ┌─ Harness connection ─────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Endpoint   Pi catalog amazon-bedrock                                                                                 │
-│ Model      au.anthropic.claude-opus-4-6-v1 · medium                                                                  │
+│ Internal model      au.anthropic.claude-opus-4-6-v1 · medium                                                         │
 │ Secret     Pi manages credentials                                                                                    │
-│ Sign in with pi /login, then press t to test. Reprise does not store ChatGPT or Codex CLI tokens.                    │
+│ Sign in with pi /login, then press Ctrl+T to test. Reprise does not store ChatGPT or Codex CLI tokens.               │
 │                                                                                                                      │
 │ ❯ provider type      pi-catalog  [Enter] toggles                                                                     │
 │   provider label     amazon-bedrock                                                                                  │
@@ -23,4 +23,4 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Pi catalog selected. Sign in with pi /login, then test the connection.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Toggle provider  [t] Test connection  [s] Save locally  [Esc] Home
+ [↑↓] Select  [Enter] Toggle provider  [Ctrl+T] Test connection  [Ctrl+S] Save locally  [Esc] Home
