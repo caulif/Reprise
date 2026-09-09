@@ -24,7 +24,7 @@ Host 只把最后一条 assistant JSON 当完成合同，中间可见短句不�
 
 ## 影响
 
-[TUI §3.2](../../product/tui.md#32-每次比较)、[TUI §4.1](../../product/tui.md#41-主活动时间线)。[架构总览](../../architecture/overview.md) 的 Comparison 启动时机。实现：`src/infrastructure/pi-model-caller.ts`、`src/application/experiment-report.ts`、`src/tui/pages/run.ts`。
+[TUI §3.2](../../product/tui.md#32-每次比较)、[TUI §4.1](../../product/tui.md#41-主活动时间线)。[架构总览](../../architecture/overview.md) 的 Comparison 启动时机。实现：`src/infrastructure/agent/model-caller.ts`、`src/application/experiment-report.ts`、`src/tui/pages/run.ts`。
 
 ## 验证
 

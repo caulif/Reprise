@@ -32,4 +32,4 @@
 
 ## 验证
 
-`test/comparison-agent-phases.test.ts`：同 attempt 两次 `compare` 共用一次 `createSession`，不同 attempt 隔离；取消不改候选 outcome。`test/codex-experiment.test.ts`：候选结束后独立对照；新路径无阶段事件；失败 attempt 不覆盖成功报告。`test/scene-seal.test.ts`：未完成快照不挂活动 run。`npm run check` 必须通过。
+`test/comparison-agent-phases.test.ts`：一次 `compare()` 创建一次 Session 并顺序四次委托，不同 attempt 隔离；取消不改候选 outcome。`test/codex-experiment.test.ts`：候选结束后独立对照；新路径无阶段事件；失败 attempt 不覆盖成功报告。`test/scene-seal.test.ts`：未完成快照不挂活动 run。`npm run check` 必须通过。

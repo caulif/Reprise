@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RecoveryOrchestrator, recoveryAttemptRecord, transitionRecoveryState } from "../src/application/recovery-orchestrator.js";
+import { RecoveryOrchestrator, recoveryAttemptRecord, transitionRecoveryState } from "../src/application/recovery/orchestrator.js";
 
 test("Recovery lifecycle permits branch rejection without abandoning another candidate", () => {
   let state = transitionRecoveryState("created", "staged");

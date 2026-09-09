@@ -1,5 +1,5 @@
-import type { RecoveryAttempt } from "./experiment.js";
-import { userRecoveryStatus } from "./recovery-user-status.js";
+import type { RecoveryAttempt } from "./recovery/types.js";
+import { userRecoveryStatus } from "./recovery/user-status.js";
 
 export type CandidateStartGate = {
   sourceBaseline?: string;

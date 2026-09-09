@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { isMissing } from "./experiment-helpers.js";
-import { readCommittedModelLog } from "../infrastructure/agent-history-read.js";
+import { readCommittedModelLog } from "../infrastructure/agent/history-read.js";
 
 export type CommittedExperimentHistory = {
   readonly runStatus: "finished" | "interrupted" | "unknown";

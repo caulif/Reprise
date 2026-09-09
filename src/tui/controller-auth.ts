@@ -1,5 +1,5 @@
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig, shellEnvAssignment } from "../infrastructure/harness-model-config.js";
-import { PiModelCaller } from "../infrastructure/pi-model-caller.js";
+import { PiModelCaller } from "../infrastructure/agent/model-caller.js";
 
 function envUnsetMessage(keyRef: string): string | undefined {
   const name = tryEnvironmentName(keyRef);

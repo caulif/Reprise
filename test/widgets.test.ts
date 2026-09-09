@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TuiAltScreen, setCapabilities, visibleWidth } from '@earendil-works/pi-tui';
-import { CodexIntakeTui } from '../src/tui/intake-app.js';
+import { IntakeTui } from '../src/tui/intake-app.js';
 import { renderConfirmation, renderPreflight, renderTimeline, runningHints } from '../src/tui/pages/run.js';
 import { matchesCanvasQuery } from '../src/tui/scrollback.js';
 import { renderHistory, renderHistoryDetail } from '../src/tui/pages/history.js';
@@ -730,7 +730,7 @@ test('production layout root paints Home through a fake terminal', async (t) => 
   const term = new FakeTerminal(120, 30);
   const tui = new TuiAltScreen(term, false, undefined, { mouse: false });
   t.after(() => tui.stop());
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, 'data'), sessionsRoot: join(root, 'sessions'), tui,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
   });
@@ -749,7 +749,7 @@ test('production layout accepts bracketed paste and completes a unique Home comm
   const term = new FakeTerminal(120, 30);
   const tui = new TuiAltScreen(term, false, undefined, { mouse: false });
   t.after(() => tui.stop());
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, 'data'), sessionsRoot: join(root, 'sessions'), tui,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
   });

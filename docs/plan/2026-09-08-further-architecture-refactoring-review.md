@@ -21,15 +21,15 @@
 
 | 目标区域 | 当前判断 | 证据/定位 | 进一步动作 |
 |---|---|---|---|
-| Agent 执行机制 | 基本落地，真实性未闭环 | `src/infrastructure/pi-agent-host.ts`、`pi-model-caller.ts`、`pi-compaction.ts`；M1 ADR 与测试 | 增加真实模型 context 对拍；确认每次请求前持久化输入、压缩和修复后的顺序 |
-| Session/Invocation | 已落地 | `pi-agent-host.ts`；`agent-session-lifecycle.test.ts`、`agent-model-input.test.ts` | 增加崩溃窗口、写入失败、晚到响应的端到端验证 |
+| Agent 执行机制 | 基本落地，真实性未闭环 | `src/infrastructure/agent/host.ts`、`model-caller.ts`、`compaction.ts`；M1 ADR 与测试 | 增加真实模型 context 对拍；确认每次请求前持久化输入、压缩和修复后的顺序 |
+| Session/Invocation | 已落地 | `src/infrastructure/agent/host.ts`；`agent-session-lifecycle.test.ts`、`agent-model-input.test.ts` | 增加崩溃窗口、写入失败、晚到响应的端到端验证 |
 | Harness 业务所有权 | 已落地但需持续守边界 | `candidate-run.ts`、`experiment-scene.ts`、Recovery 系列 | 检查所有业务状态转换仍只经 `assertTransition`；删除重复结果判断 |
-| Recovery | 已落地 | `experiment-recovery-run*.ts`、`recovery-agent.ts` | 对证据不足、源目录变化、权限失败做跨进程/真实文件系统验证 |
+| Recovery | 已落地 | `src/application/recovery/`、`recovery-agent.ts` | 对证据不足、源目录变化、权限失败做跨进程/真实文件系统验证 |
 | Controller | 结构落地，语义能力未证明 | `controller-agent.ts`、`controller-request.ts`、能力 lane | 先完成付费 lane；记录失败分类；不把合同 lane 当作语义等价证明 |
 | Comparison | 已落地 | `comparison.ts`、`comparison-agent.ts`；单 Session 测试 | 验证历史重开、失败 attempt、不覆盖旧报告和候选 Runtime 隔离 |
 | Workflow | 已落地 | `experiment-workflow.ts`、`experiment-operations.ts` | 继续确保 CLI/TUI 只调用公共操作；禁止页面发请求或持状态机 |
 | CLI | 大部分落地 | `cli/main.ts`、`headless.ts`、`protocol.ts`、`query.ts` | 固定错误 kind/退出码；补充长运行、SIGINT、JSONL EOF 和跨终端 cancel 证据 |
-| TUI | 结构落地，真实终端未闭环 | `src/tui`、`tui-workflow.ts`；回放帧 | 完成三平台真实终端验收；检查视图只读投影和动态追加时选区稳定 |
+| TUI | 结构落地，真实终端未闭环 | `src/tui`；回放帧 | 完成三平台真实终端验收；检查视图只读投影和动态追加时选区稳定 |
 | Product Pack | 已落地 | `products/registry.ts`、`pack-access.ts`、第三 Pack 测试 | 继续验证缺能力诊断、重复身份、历史查询不加载 Pack |
 | 持久化与历史 | 基本落地 | `experiment-store.ts`、`schema.ts`、历史 reader | 补损坏尾、旧版本、部分提交和路径边界的组合测试 |
 | 平台与 Runtime | 代码已迁移，实机证据不足 | `platform.ts`、`process-runner.ts`、`products/shared/process.ts` | 在授权和显式 opt-in 下补 Runtime smoke；记录三 OS 结果 |
@@ -39,7 +39,7 @@
 
 ### 3.1 真实模型输入可能与持久化事实不一致
 
-`pi-agent-host.ts`、`pi-model-caller.ts` 和压缩逻辑已经具备输入记录与恢复路径，但当前证据主要来自可控调用器。风险是生产 `streamFn` 在以下边界改变实际 context：工具结果追加、原生内容块、修复重试、压缩后 retained tail、系统提示词或工具 schema 变化。
+`src/infrastructure/agent/host.ts`、`model-caller.ts` 和压缩逻辑已经具备输入记录与恢复路径，但当前证据主要来自可控调用器。风险是生产 `streamFn` 在以下边界改变实际 context：工具结果追加、原生内容块、修复重试、压缩后 retained tail、系统提示词或工具 schema 变化。
 
 **要求**：为一次真实调用建立可脱敏的 context digest 对拍记录，只保存结构摘要、顺序、消息角色、块类型、大小和 digest，不保存密钥或不必要的模型原文。每次进入 provider 前校验记录已写入；写入失败必须阻止模型调用。
 

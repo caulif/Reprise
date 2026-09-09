@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { CodexIntakeTui } from "./controller.js";
+import type { IntakeTui } from "./intake-tui.js";
 import { packSessions } from "../products/pack-access.js";
 import { compareSessionSummaries, type DiscoveryDiagnostic, type SessionDiscoveryQuery } from "../products/contract.js";
 import { operatorErrorMessage } from "./format.js";
@@ -48,7 +48,7 @@ function mergeDiscoveryDiagnostics(
 
 type SessionLoadMode = "initial" | "more" | "refresh";
 
-export async function loadProductSessions(c: CodexIntakeTui, productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
+export async function loadProductSessions(c: IntakeTui, productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
   const pack = c.packs.find((item) => item.manifest.productId === productId);
   if (!pack?.sessions) return;
   const sessions = packSessions(pack);
@@ -114,10 +114,10 @@ export async function loadProductSessions(c: CodexIntakeTui, productId: string, 
   c.render(true);
 }
 
-export function loadMoreProductSessions(c: CodexIntakeTui): void {
+export function loadMoreProductSessions(c: IntakeTui): void {
   if (c.activeProductId) void c.loadProductSessions(c.activeProductId, "more");
 }
 
-export function refreshProductSessions(c: CodexIntakeTui): void {
+export function refreshProductSessions(c: IntakeTui): void {
   if (c.activeProductId) void c.loadProductSessions(c.activeProductId, "refresh");
 }

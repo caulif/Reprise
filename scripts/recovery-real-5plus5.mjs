@@ -7,16 +7,16 @@ import { claudeSessionAdapter } from '../dist/src/products/claude-code/sessions.
 import { freezeCase } from '../dist/src/products/shared/freeze.js';
 import { readHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
 import { createHarnessAgents } from '../dist/src/application/harness-agents.js';
-import { PiModelCaller } from '../dist/src/infrastructure/pi-model-caller.js';
-import { recoverCodexExperiment } from '../dist/src/application/experiment.js';
+import { PiModelCaller } from '../dist/src/infrastructure/agent/model-caller.js';
+import { recoverCodexExperiment } from '../dist/src/application/recovery/recover.js';
 import { LocalWorkspaceProvider } from '../dist/src/environment/local-workspace-provider.js';
 import { isEligibleSession } from '../dist/src/products/contract.js';
-import { persistRecoveryPreflight, runRecoveryPreflight } from '../dist/src/application/recovery-preflight.js';
-import { createRecoveryEvaluationFileSink, evaluateRecoveryCases, RecoveryEvaluationError, runRecoveryEvaluationBatch, assertRecoveryEvaluationLifecycleIntegrity } from '../dist/src/application/recovery-evaluation.js';
-import { createRecoverySelectionManifest, prepareRecoverySelectionExecution } from '../dist/src/application/recovery-selection.js';
+import { persistRecoveryPreflight, runRecoveryPreflight } from '../dist/src/application/recovery/preflight.js';
+import { createRecoveryEvaluationFileSink, evaluateRecoveryCases, RecoveryEvaluationError, runRecoveryEvaluationBatch, assertRecoveryEvaluationLifecycleIntegrity } from '../dist/src/application/recovery/evaluation.js';
+import { createRecoverySelectionManifest, prepareRecoverySelectionExecution } from '../dist/src/application/recovery/selection.js';
 import { Value } from '@sinclair/typebox/value';
 import { RecoveryEvaluationCaseSchema, RecoveryEvaluationPreflightSchema, RecoverySelectionDiagnosticsSchema } from '../dist/src/core/schema.js';
-import { recoveryEvaluationFailureCode } from '../dist/src/application/recovery-failure-classification.js';
+import { recoveryEvaluationFailureCode } from '../dist/src/application/recovery/failure-classification.js';
 import { ExperimentStore } from '../dist/src/infrastructure/store/experiment-store.js';
 
 const ROOT = resolve('.reprise');

@@ -10,7 +10,7 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { CodexIntakeTui } from "../src/tui/intake-app.js";
+import { IntakeTui } from "../src/tui/intake-app.js";
 import {
   defaultHarnessModelConfig,
   saveHarnessModelConfig,
@@ -101,7 +101,7 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
       };
     },
   } as never;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui,
@@ -230,7 +230,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
       };
     },
   } as never;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui,
@@ -448,7 +448,7 @@ test("Codex intake TUI browses validated local history and selects a TaskCase wi
       rendered = document?.render(120).join("\n") ?? "";
     },
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir,
     sessionsRoot: join(root, "sessions"),
     tui,
@@ -491,7 +491,7 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
       rendered = document?.render(120).join("\n") ?? "";
     },
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot: join(root, "sessions"),
     tui,
@@ -585,7 +585,7 @@ test("intake search accepts a slash after search has started", async (t) => {
       rendered = document?.render(120).join("\n") ?? "";
     },
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui,
@@ -625,7 +625,7 @@ test("TUI language defaults to English and /lang zh switches the cover without m
       rendered = document?.render(120).join("\n") ?? "";
     },
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot: join(root, "sessions"),
     tui,

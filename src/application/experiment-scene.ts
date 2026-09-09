@@ -9,7 +9,7 @@ import { CliError } from "./cli-error.js";
 import { readJsonFile } from "./experiment-history-list.js";
 import { resolvedExperimentRoot } from "./experiment-layout.js";
 import { candidateStartBlocked, candidateGateFromAttempt } from "./candidate-start.js";
-import type { RecoveryAttempt } from "./experiment.js";
+import type { RecoveryAttempt } from "./recovery/types.js";
 
 export async function persistPreparedScene(attempt: RecoveryAttempt, sourceRoot: string, taskCase: TaskCase): Promise<SceneDescriptor> {
   const sealed = attempt.baseline
@@ -54,7 +54,7 @@ export async function loadSealedScene(dataDir: string, experimentId: string): Pr
   const baseline = await loadSealedBaseline(descriptorValue.caseId, baselineRoot, recorded);
   const attempt: RecoveryAttempt = {
     baseline,
-    recovery: { status: "completed", sessionId: `scene-${experimentId}`, value: { status: "recovered", reportPath: "recovery.md", unresolved: [], evidenceRefs: ["event:scene"] } },
+    recovery: { status: "completed", sessionId: `scene-${experimentId}`, value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
     experimentRoot,
     experimentId,
     provider,

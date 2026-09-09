@@ -104,3 +104,52 @@ test("observation files redact assistant and nested text when model text is disa
   assert.equal(run.observation.payload.nested[0]?.text, "[REDACTED]");
   assert.equal(run.observation.payload.keep, "visible");
 });
+
+test("user-inputs index lists historical users and controller sends in order", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-user-inputs-"));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  await writeFrozenObservationTree({
+    root,
+    taskCase: taskCase({
+      transcript: [
+        { id: "message-1", role: "user", text: "first" },
+        { id: "message-2", role: "assistant", text: "reply" },
+        { id: "message-3", role: "user", text: "changed my mind" },
+      ],
+    }),
+    runEvents: [{
+      schemaVersion: 1,
+      sequence: 1,
+      eventId: "ctrl-1",
+      occurredAt: "2026-09-07T00:00:00.000Z",
+      type: "controller.decision",
+      payload: { status: "completed", value: { type: "send", message: "Please verify." } },
+      checksum: "e".repeat(64),
+    }],
+  });
+  const index = await readFile(join(root, "user-inputs", "INDEX.tsv"), "utf8");
+  const lines = index.trim().split("\n");
+  assert.equal(lines[0], "turn_id\torder\trole\tsource\tpath\tattachments\trelated");
+  assert.match(lines[1] ?? "", /^message-1\t1\tuser\thistorical_user\thistory\/transcript\/message-1\.txt\tmissing\thistory\/transcript\/message-2\.txt$/);
+  assert.match(lines[2] ?? "", /^message-3\t2\tuser\thistorical_user\thistory\/transcript\/message-3\.txt\tmissing\tmissing$/);
+  assert.match(lines[3] ?? "", /^controller-send-ctrl-1\t3\tuser\tcontroller\tobservations\/user-inputs\/controller-send-ctrl-1\.txt\tmissing\tmissing$/);
+  assert.equal(await readFile(join(root, "user-inputs", "controller-send-ctrl-1.txt"), "utf8"), "Please verify.\n");
+});
+
+test("user-inputs remain readable when assistant text is redacted", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-user-inputs-privacy-"));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  await writeFrozenObservationTree({
+    root,
+    taskCase: taskCase({
+      privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+      transcript: [
+        { id: "message-1", role: "user", text: "keep user text" },
+        { id: "message-2", role: "assistant", text: "assistant secret" },
+      ],
+    }),
+  });
+  const index = await readFile(join(root, "user-inputs", "INDEX.tsv"), "utf8");
+  assert.match(index, /historical_user/);
+  assert.match(index, /history\/transcript\/message-1\.txt/);
+});

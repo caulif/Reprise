@@ -14,7 +14,7 @@
 
 拆分每次只抽一个稳定职责，并跑直接受影响的 `dist/test`。禁止借例外做一次性架构重写。机械清单是唯一例外登记处；本文不复述符号表。
 
-Candidate 运行路径放在 `src/application/experiment.ts`。Recovery 编排放在 `src/application/experiment-recovery.ts`，并由 `experiment.ts` 再导出。
+Candidate 运行路径放在 `src/application/experiment.ts`。Recovery 编排放在 `src/application/recovery/recover.ts`。
 
 ## 备选方案
 

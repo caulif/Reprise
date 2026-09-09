@@ -3,8 +3,7 @@ import { formatBytes } from '../core/format.js';
 import { SAFE_ID, sha256, sha256File } from '../core/identity.js';
 import { dirname, join, resolve } from 'node:path';
 import { relativeInside } from '../core/paths.js';
-import { type RecoveryManifest } from '../core/schema.js';
-import { gitFileHash, isRecoveryPath, type RecoveryEvidenceVerification } from '../infrastructure/recovery-tools.js';
+import { isRecoveryPath } from '../infrastructure/recovery-tools.js';
 import {
   MAX_INLINE_HASH_BYTES,
   SNAPSHOT_LIMITS,
@@ -146,128 +145,25 @@ export async function readBaselineMarker(path: string): Promise<BaselineMarker |
 }
 
 export function isRecoveryEnvelope(value: RecoveryEnvelope): boolean {
-  const refsOk = Array.isArray(value.evidenceRefs) && value.evidenceRefs.every((item) => typeof item === 'string' && /^(event|artifact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(item));
   const unresolvedOk = Array.isArray(value.unresolved) && value.unresolved.every((item) => typeof item === 'string');
-  if (value.reportPath !== 'recovery.md' || !refsOk || !unresolvedOk) return false;
-  if (value.status === 'recovered') return value.unresolved.length === 0 && value.evidenceRefs.length > 0;
-  return value.status === 'partial' || value.status === 'insufficient_evidence';
+  if (value.reportPath !== 'recovery.md' || !unresolvedOk) return false;
+  if (value.status === 'ready') return true;
+  return value.status === 'blocked' && value.unresolved.length > 0 && value.unresolved.every((item) => item.length > 0);
 }
 
-export function hostManifestFromFingerprint(
-  changed: readonly string[],
-  before: EnvironmentFingerprint,
-  after: EnvironmentFingerprint,
-  evidenceRefs: readonly string[],
-): RecoveryManifest {
-  const previous = new Map(before.resources.map((entry) => [entry.path, entry]));
-  const current = new Map(after.resources.map((entry) => [entry.path, entry]));
-  return {
-    actions: changed.map((path) => {
-      const beforeEntry = previous.get(path);
-      const afterEntry = current.get(path);
-      const operation = !beforeEntry && afterEntry ? 'create' : beforeEntry && !afterEntry ? 'delete' : 'modify';
-      return {
-        operation,
-        path,
-        evidenceRefs: [...evidenceRefs],
-        ...(beforeEntry?.contentHash ? { beforeHash: beforeEntry.contentHash } : {}),
-        ...(afterEntry?.contentHash ? { afterHash: afterEntry.contentHash } : {}),
-      };
-    }),
-    unresolved: [],
-  };
+export async function cleanupRecoveryTransients(root: string): Promise<void> {
+  await unlink(join(root, 'recovery.md')).catch((error: unknown) => { if (!isMissing(error)) throw error; });
+  await unlink(join(root, 'recovery-manifest.json')).catch((error: unknown) => { if (!isMissing(error)) throw error; });
+  await rm(join(root, '.reprise', 'recovery-work'), { recursive: true, force: true });
 }
 
-const RECOVERED_WITHOUT_STRONG_EVIDENCE =
-  'Host remapped recovered to partial: fingerprint changed without path-level strong evidence.';
+const RECOVERY_WORK_PREFIX = '.reprise/recovery-work';
 
-/** recovered stays recovered only with strong evidence on every observed path; otherwise partial. */
-export async function envelopeForObservedChanges(
-  result: RecoveryEnvelope,
-  changed: readonly string[],
-  evidence: readonly RecoveryEvidenceVerification[],
-  after: EnvironmentFingerprint,
-  root: string,
-): Promise<RecoveryEnvelope> {
-  if (result.status !== 'recovered' || changed.length === 0) return result;
-  const ownedRefs = result.evidenceRefs.filter((ref) => evidence.some((item) => item.ref === ref));
-  const known = new Map(evidence.map((item) => [item.ref, item]));
-  const current = new Map(after.resources.map((entry) => [entry.path, entry]));
+export function assertRecoveryPathBoundary(changed: readonly string[]): void {
   for (const path of changed) {
-    if (await actionHasStrongEvidence(path, current.get(path), ownedRefs, known, root)) continue;
-    return { ...result, status: 'partial', unresolved: [RECOVERED_WITHOUT_STRONG_EVIDENCE] };
+    if (path === 'recovery.md' || path === 'recovery-manifest.json' || path === RECOVERY_WORK_PREFIX || path.startsWith(`${RECOVERY_WORK_PREFIX}/`)) continue;
+    if (!isRecoveryPath(path)) throw new Error(`Recovery changed an unsafe path: ${path}.`);
   }
-  return result;
-}
-
-export async function validateManifest(
-  _manifest: RecoveryManifest,
-  changed: readonly string[],
-  result: RecoveryEnvelope,
-  evidence: readonly RecoveryEvidenceVerification[],
-  before: EnvironmentFingerprint,
-  after: EnvironmentFingerprint,
-  root: string,
-): Promise<readonly string[]> {
-  const ownedRefs = result.evidenceRefs.filter((ref) => evidence.some((item) => item.ref === ref));
-  const paths = [...changed].sort();
-  const known = new Map(evidence.map((item) => [item.ref, item]));
-  const previous = new Map(before.resources.map((entry) => [entry.path, entry]));
-  const current = new Map(after.resources.map((entry) => [entry.path, entry]));
-  const actions = hostManifestFromFingerprint(paths, before, after, ownedRefs).actions;
-  if (actions.some((action) => !isRecoveryPath(action.path))) throw new Error('Recovery manifest contains an unsafe path.');
-  if (result.status === 'recovered' && paths.length === 0) throw new Error('Recovery manifest paths must exactly match changed paths.');
-  for (const action of actions) {
-    const beforeEntry = previous.get(action.path);
-    const afterEntry = current.get(action.path);
-    validateActionOperation(action.operation, beforeEntry, afterEntry, action.path);
-    validateActionHashes(action.beforeHash, action.afterHash, beforeEntry, afterEntry, action.path);
-    if (result.status === 'recovered' && !(await actionHasStrongEvidence(action.path, afterEntry, ownedRefs, known, root))) {
-      throw new Error(`Recovered action lacks strong path evidence: ${action.path}.`);
-    }
-  }
-  return [];
-}
-
-function validateActionOperation(
-  operation: RecoveryManifest['actions'][number]['operation'],
-  before: FingerprintEntry | undefined,
-  after: FingerprintEntry | undefined,
-  path: string,
-): void {
-  const beforeExists = Boolean(before);
-  const afterExists = Boolean(after);
-  if ((operation === 'create' && (beforeExists || !afterExists)) || (operation === 'delete' && (!beforeExists || afterExists)) || ((operation === 'modify' || operation === 'restore') && (!beforeExists || !afterExists))) {
-    throw new Error(`Recovery manifest operation does not match the observed change: ${path}.`);
-  }
-}
-
-function validateActionHashes(
-  beforeHash: string | undefined,
-  afterHash: string | undefined,
-  before: FingerprintEntry | undefined,
-  after: FingerprintEntry | undefined,
-  path: string,
-): void {
-  if (beforeHash && before?.contentHash !== beforeHash) throw new Error(`Recovery manifest beforeHash does not match: ${path}.`);
-  if (afterHash && after?.contentHash !== afterHash) throw new Error(`Recovery manifest afterHash does not match: ${path}.`);
-}
-
-async function actionHasStrongEvidence(
-  path: string,
-  after: FingerprintEntry | undefined,
-  refs: readonly string[],
-  evidence: ReadonlyMap<string, RecoveryEvidenceVerification>,
-  root: string,
-): Promise<boolean> {
-  for (const ref of refs) {
-    const item = evidence.get(ref);
-    if (!item) continue;
-    if (item.kind === 'checkpoint' && item.path === path && item.entryKind === after?.kind && item.hash === after?.contentHash) return true;
-    if (item.kind === 'preimage' && item.path === path && after?.contentHash === item.hash) return true;
-    if (item.kind === 'git_commit' && after?.contentHash && await gitFileHash(root, item.commit, path) === after.contentHash) return true;
-  }
-  return false;
 }
 
 export async function readRecoveryReport(root: string): Promise<string> {
@@ -324,7 +220,9 @@ export async function loadSealedBaseline(
     caseId,
     mode: 'canonical',
     match: recovery
-      ? recovery.status === 'recovered' ? 'recovered' : recovery.status === 'partial' ? 'recovered_partial' : 'current_state_fallback'
+      ? recovery.status === 'ready' || recovery.status === 'recovered' ? 'recovered'
+        : recovery.status === 'partial' ? 'recovered_partial'
+        : 'current_state_fallback'
       : 'matched',
     resources: [],
     readiness: {
@@ -421,7 +319,7 @@ async function resolveSafeLink(
 function isRecoveryMarker(value: unknown): value is NonNullable<EnvironmentBaseline['recovery']> {
   if (!value || typeof value !== 'object') return false;
   const item = value as Partial<NonNullable<EnvironmentBaseline['recovery']>>;
-  return (item.status === 'recovered' || item.status === 'partial' || item.status === 'insufficient_evidence' || item.status === 'failed')
+  return (item.status === 'ready' || item.status === 'blocked' || item.status === 'recovered' || item.status === 'partial' || item.status === 'insufficient_evidence' || item.status === 'failed')
     && Array.isArray(item.unresolved) && typeof item.sourceDigest === 'string' && typeof item.recoveredDigest === 'string';
 }
 

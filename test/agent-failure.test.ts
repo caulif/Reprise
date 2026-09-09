@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyAgentFailure } from '../src/infrastructure/agent-failure.js';
-import { retryableRecoveryFailure } from '../src/application/experiment-recovery-support.js';
+import { classifyAgentFailure } from '../src/infrastructure/agent/failure.js';
+import { retryableRecoveryFailure } from '../src/application/recovery/fail.js';
 
 test('HTTP/2 and undici abort are transient, not cancelled or unknown', () => {
   const http2 = classifyAgentFailure(new Error('Upstream HTTP/2 stream failed'));

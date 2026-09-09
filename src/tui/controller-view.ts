@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { CodexIntakeTui } from "./controller.js";
+import type { IntakeTui } from "./intake-tui.js";
 import { isEligibleSession, type SessionDiscoveryProject, type SessionSummary } from "../products/contract.js";
 import {
   groupSessionsByProject,
@@ -12,7 +12,7 @@ import { envNameFromConfig } from "./controller-run.js";
 import type { WorkbenchView } from "./workbench.js";
 import { projectWorkbenchView } from "./view-projection.js";
 
-export function groupedProjects(c: CodexIntakeTui): SessionProject[] {
+export function groupedProjects(c: IntakeTui): SessionProject[] {
   const cached = c.groupedCache;
   const catalogProjects: readonly SessionDiscoveryProject[] = c.activeProductId
     ? c.productDiscovery.get(c.activeProductId)?.projects ?? []
@@ -37,13 +37,13 @@ export function groupedProjects(c: CodexIntakeTui): SessionProject[] {
   return projects;
 }
 
-export function visibleProjects(c: CodexIntakeTui): SessionProject[] {
+export function visibleProjects(c: IntakeTui): SessionProject[] {
   return c.groupedProjects().filter((project) =>
     matchesProjectQuery(project, c.searchQuery),
   );
 }
 
-export function visibleSessions(c: CodexIntakeTui): readonly SessionSummary[] {
+export function visibleSessions(c: IntakeTui): readonly SessionSummary[] {
   const pool = c.filterEligible
     ? c.sessions.filter(isEligibleSession)
     : c.sessions;
@@ -57,12 +57,12 @@ export function visibleSessions(c: CodexIntakeTui): readonly SessionSummary[] {
   );
 }
 
-export function intakeCount(c: CodexIntakeTui): number {
+export function intakeCount(c: IntakeTui): number {
   if (c.intakeLevel === "products") return importPacks(c.packs).length;
   return c.intakeLevel === "projects" ? c.visibleProjects().length : c.visibleSessions().length;
 }
 
-export function productItems(c: CodexIntakeTui): import("./pages/intake.js").ProductIntakeItem[] {
+export function productItems(c: IntakeTui): import("./pages/intake.js").ProductIntakeItem[] {
   return importPacks(c.packs).map((pack) => {
     const state = c.productDiscovery.get(pack.manifest.productId) ?? { status: "idle" as const };
     const root = resolve(c.sessionsRoots[pack.manifest.productId] ?? packSessions(pack).defaultRoot);
@@ -74,7 +74,7 @@ export function productItems(c: CodexIntakeTui): import("./pages/intake.js").Pro
   });
 }
 
-export function productContext(c: CodexIntakeTui): { productLabel?: string; productConfigured?: boolean } {
+export function productContext(c: IntakeTui): { productLabel?: string; productConfigured?: boolean } {
   const highlighted = c.page === 'sessions' && c.intakeLevel === 'products'
     ? importPacks(c.packs)[c.selected]?.manifest.productId ?? ''
     : '';
@@ -88,7 +88,7 @@ export function productContext(c: CodexIntakeTui): { productLabel?: string; prod
   };
 }
 
-function candidateRunFields(c: CodexIntakeTui) {
+function candidateRunFields(c: IntakeTui) {
   const sourceProductLabel = c.packs.find((pack) => pack.manifest.productId === c.taskCase?.source.productId)?.manifest.displayName;
   const candidateProductLabel = c.packs.find((pack) => pack.manifest.productId === (c.selectedCandidate?.productId || c.candidateProductId))?.manifest.displayName;
   return {
@@ -110,7 +110,7 @@ function candidateRunFields(c: CodexIntakeTui) {
   };
 }
 
-export function view(c: CodexIntakeTui): WorkbenchView {
+export function view(c: IntakeTui): WorkbenchView {
   const envName = envNameFromConfig(c.modelConfig, c.configDraft);
   const product = c.productContext();
   const discovery = c.activeProductId ? c.productDiscovery.get(c.activeProductId) : undefined;

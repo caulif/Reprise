@@ -31,7 +31,7 @@ CLI 与 TUI 功能对等，全部配置、发现、执行、取消、历史和�
 
 TUI 不启动 CLI 子进程执行业务，CLI 不导入 TUI 页面或模拟按键。配置、查询、规范化活动和错误分类由两种入口共同消费。插件注册表由启动装配处加载并注入；查询已保存历史无需执行插件代码。
 
-源码落点以现有模块为起点：[Agent Host](../../src/infrastructure/pi-agent-host.ts)、[Pi 调用](../../src/infrastructure/pi-model-caller.ts)、[编排](../../src/application/experiment.ts)、[平台](../../src/infrastructure/platform.ts)、[产品进程](../../src/products/shared/process.ts)。先调整职责和实际调用链，目录搬迁仅在能让所有权更清楚时进行。
+源码落点以现有模块为起点：[Agent Host](../../src/infrastructure/agent/host.ts)、[Pi 调用](../../src/infrastructure/agent/model-caller.ts)、[编排](../../src/application/experiment.ts)、[平台](../../src/infrastructure/platform.ts)、[产品进程](../../src/products/shared/process.ts)。先调整职责和实际调用链，目录搬迁仅在能让所有权更清楚时进行。
 
 ## 3. Agent 执行机制
 
@@ -301,7 +301,7 @@ Codex、Claude 及外部插件都通过同一套公共契约注册。核心程�
 
 ## 11. 参考依据
 
-- [Pi 依赖基线](../../package.json)、[现有 Pi 封装](../../src/infrastructure/pi-model-caller.ts)：复用范围以安装版本实现及可运行检查为准。
+- [Pi 依赖基线](../../package.json)、[现有 Pi 封装](../../src/infrastructure/agent/model-caller.ts)：复用范围以安装版本实现及可运行检查为准。
 - [Codex App Server](https://developers.openai.com/codex/app-server/)：Thread / Turn / Item 的归属，以及读取历史与恢复执行的分离。
 - [Codex 平台隔离](https://learn.chatgpt.com/docs/agent-approvals-security)与[Windows sandbox](https://developers.openai.com/codex/windows/)：统一权限目标与平台原生实现分离。
 - [现有持久化规范](../architecture/persistence-and-crash-consistency.md)、[运行结果](../architecture/run-outcome.md)、[技术选型](../architecture/technology-selection.md)：迁移需要守住的事实与当前实现边界。

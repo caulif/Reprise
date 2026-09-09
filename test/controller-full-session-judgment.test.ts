@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
 import { ControllerAgent, CONTROLLER_SYSTEM_PROMPT, type SteeringContext } from '../src/agents/controller-agent.js';
-import { PiAgentHost, type PiTextCaller } from '../src/infrastructure/pi-agent-host.js';
+import { PiAgentHost, type PiTextCaller } from '../src/infrastructure/agent/host.js';
 import { controllerPromptContent, renderIndexMarkdown } from '../src/application/controller-briefing.js';
 
 function briefing(input: { includeFollowupInIndex: boolean; settledTurns: number }): SteeringContext {
@@ -48,7 +48,7 @@ function policyStub(): PiTextCaller {
     createSession(session) {
       return {
         append: async ({ content }) => {
-          assert.match(session.systemPrompt, /acceptance habits/);
+          assert.match(session.systemPrompt, /验收习惯/);
           assert.doesNotMatch(content, /第二页太空了/);
           assert.match(content, /INDEX\.md/);
           const firstPass = /Latest turn: run\/turns\/0001/.test(content);
@@ -111,8 +111,10 @@ test('without later user steering, the same first pass may stop', async () => {
 });
 
 test('controller prompt does not treat unused historical user turns as a stop reason', () => {
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not fire historical user sentences in sequence/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /Sending every remaining historical user sentence is not a completion condition/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /不要机械重放原句/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /不要为了测试、增加轮数/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /候选自称完成也不是充分的结束依据/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /验收习惯/);
 });
 
 test('Controller without promptContent still does not dump historical user turns', async () => {
@@ -158,6 +160,9 @@ test('opening and later decide share one Controller Session without a private un
         return {
           append: async ({ content }) => {
             appended.push(content);
+            if (appended.length === 1) {
+              return 'Working understanding of the historical user demand.';
+            }
             if (content.includes('phase=opening')) {
               return JSON.stringify({ type: 'send', intent: 'continue', message: '先查看当前材料。' });
             }
@@ -187,9 +192,12 @@ test('opening and later decide share one Controller Session without a private un
     requestId: 'controller-request-run-1-2',
   });
   assert.equal(sessions, 1);
-  assert.equal(appended.length, 2);
+  assert.equal(appended.length, 3);
   assert.equal(opening.status, 'completed');
   assert.equal(later.status, 'completed');
   assert.doesNotMatch(appended.join('\n'), /Private understanding pass/);
-  assert.match(appended[0] ?? '', /first Invocation/);
+  assert.match(appended[0] ?? '', /history\/user-inputs\/INDEX\.tsv/);
+  assert.doesNotMatch(appended[0] ?? '', /Return send/);
+  assert.doesNotMatch(appended[0] ?? '', /output contract/);
+  assert.match(appended[1] ?? '', /第一条自然用户消息/);
 });

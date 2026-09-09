@@ -54,7 +54,7 @@
     "replay:tui": "node scripts/tui-case-replay.mjs",
     "flow:tui": "npm run build && node dist/scripts/tui-full-flow.js",
     "knip": "knip",
-    "jscpd": "jscpd src --ignore src/application/experiment-recovery-run-*.ts --min-tokens 60 --min-lines 6 --mode mild --threshold 1 --reporters console --output .tmp-jscpd",
+    "jscpd": "jscpd src --ignore src/application/recovery/run-*.ts --min-tokens 60 --min-lines 6 --mode mild --threshold 1 --reporters console --output .tmp-jscpd",
     "verify:pack": "node scripts/verify-pack.mjs",
     "verify:audit": "node scripts/verify-audit.mjs",
     "verify:secrets": "node scripts/verify-secrets.mjs",

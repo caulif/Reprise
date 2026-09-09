@@ -1,10 +1,10 @@
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { productPacks } from "../products/index.js";
 import { importPacks } from "../products/pack-access.js";
-import type { CodexIntakeTui, CodexIntakeTuiOptions } from "./intake-tui.js";
+import type { IntakeTui, IntakeTuiOptions } from "./intake-tui.js";
 import { Workbench } from "./workbench.js";
 
-function wireCodexIntakeTui(target: CodexIntakeTui, options: CodexIntakeTuiOptions): void {
+function wireIntakeTui(target: IntakeTui, options: IntakeTuiOptions): void {
   target.dataDir = options.dataDir;
   target.sessionsRoot = options.sessionsRoot;
   target.packs = options.packs ?? (options.pack ? [options.pack] : productPacks);
@@ -38,6 +38,6 @@ function wireCodexIntakeTui(target: CodexIntakeTui, options: CodexIntakeTuiOptio
     });
 }
 
-export function initializeCodexIntakeTui(target: CodexIntakeTui, options: CodexIntakeTuiOptions): void {
-  wireCodexIntakeTui(target, options);
+export function initializeIntakeTui(target: IntakeTui, options: IntakeTuiOptions): void {
+  wireIntakeTui(target, options);
 }

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { Value } from '@sinclair/typebox/value';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createRecoverySelectionManifest, decideRecoverySearch, prepareRecoverySelectionExecution, selectionAliases, validateRecoverySelectionManifest } from '../src/application/recovery-selection.js';
+import { createRecoverySelectionManifest, decideRecoverySearch, prepareRecoverySelectionExecution, selectionAliases, validateRecoverySelectionManifest } from '../src/application/recovery/selection.js';
 import { RecoverySelectionDiagnosticsSchema } from '../src/core/schema.js';
 
 const sourceState = { readiness: 'isolated' as const, fingerprint: 'a'.repeat(64), fileCount: 3, warningCount: 0 };

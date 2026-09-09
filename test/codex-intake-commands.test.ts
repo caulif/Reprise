@@ -11,7 +11,7 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { CodexIntakeTui } from "../src/tui/intake-app.js";
+import { IntakeTui } from "../src/tui/intake-app.js";
 import {
   defaultHarnessModelConfig,
   saveHarnessModelConfig,
@@ -59,7 +59,7 @@ test("command overlay filters with one SelectList instance until it is dismissed
       };
     },
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot: join(root, "sessions"),
     tui,
@@ -97,7 +97,7 @@ test("Codex intake TUI keeps non-command input local and makes help and unknown 
       rendered = document?.render(120).join("\n") ?? "";
     },
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot: join(root, "sessions"),
     tui,
@@ -153,7 +153,7 @@ test("Codex intake TUI opens Home without configuration and only enters config o
       content: [{ type: "text", text: "OK" }],
     }),
   } as never;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot: join(root, "sessions"),
     tui,
@@ -365,7 +365,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
       };
     },
   } as never;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui,
@@ -581,7 +581,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
       }),
     }),
   } as never;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui,

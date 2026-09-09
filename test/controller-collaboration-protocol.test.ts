@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ControllerAgent, CONTROLLER_PROMPT_DIGEST, CONTROLLER_SYSTEM_PROMPT } from '../src/agents/controller-agent.js';
-import { PiAgentHost } from '../src/infrastructure/pi-agent-host.js';
+import { PiAgentHost } from '../src/infrastructure/agent/host.js';
 import { controllerPromptContent, controllerRequestSnapshot, renderIndexMarkdown } from '../src/application/controller-briefing.js';
 import { sha256 } from '../src/core/identity.js';
 import type { SteeringContext } from '../src/agents/controller-agent.js';
@@ -34,8 +34,8 @@ test('Controller request snapshot records the live prompt digest', () => {
   assert.equal(CONTROLLER_PROMPT_DIGEST, sha256(CONTROLLER_SYSTEM_PROMPT));
   const snapshot = controllerRequestSnapshot(steering('run-1'));
   assert.equal(snapshot.promptDigest, CONTROLLER_PROMPT_DIGEST);
-  assert.match(String(snapshot.promptContent), /Exhausting historical user sentences is not done\/satisfied/);
-  assert.match(String(snapshot.promptContent), /current candidate facts/);
+  assert.match(String(snapshot.promptContent), /不要因为候选自称完成而跳过必要检查/);
+  assert.match(String(snapshot.promptContent), /Current candidate facts/);
 });
 
 test('distinct CandidateRun ids do not share a Controller Session', async () => {

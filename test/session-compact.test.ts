@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
-import { compactPiMessages, needsPiCompaction, prunePiMessagesForBudget, shrinkWorkingSetMessage, stripThinkMarkup } from '../src/infrastructure/pi-compaction.js';
-import { PiAgentHost, type AgentAuditEvent } from '../src/infrastructure/pi-agent-host.js';
+import { compactPiMessages, needsPiCompaction, prunePiMessagesForBudget, shrinkWorkingSetMessage, stripThinkMarkup } from '../src/infrastructure/agent/compaction.js';
+import { PiAgentHost, type AgentAuditEvent } from '../src/infrastructure/agent/host.js';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Api, Model, Models } from '@earendil-works/pi-ai';
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isStructuredEnvelope, visibleAssistantText } from '../src/infrastructure/assistant-visible.js';
+import { isStructuredEnvelope, visibleAssistantText } from '../src/infrastructure/agent/assistant-visible.js';
 import { matchesFilter, renderScrollback } from '../src/tui/scrollback.js';
 import { renderTimeline } from '../src/tui/pages/run.js';
 import { createTheme } from '../src/tui/theme.js';

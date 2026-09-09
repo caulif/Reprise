@@ -2,7 +2,8 @@ import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { CONTROLLER_PROMPT_DIGEST, type SteeringContext } from "../agents/controller-agent.js";
+import { CONTROLLER_PROMPT_DIGEST, CONTROLLER_TURN_PROMPTS, type SteeringContext } from "../agents/controller-agent.js";
+import { record, text } from "../core/json.js";
 import type { EventEnvelope, TaskCase } from "../core/schema.js";
 import type { SourceRootKind } from "./replay-conditions.js";
 
@@ -51,65 +52,212 @@ export function renderOutlineTsv(rows: readonly OutlineRow[]): string {
   return `${lines.join("\n")}\n`;
 }
 
+export type ControllerViewSurface = "empty" | "unavailable" | "waiting" | "failed" | "completed" | "aborted";
+
+export function controllerViewSurface(
+  settlementStatus: string | undefined,
+  visibleText: string | undefined,
+  allowModelText: boolean,
+): ControllerViewSurface {
+  if (!allowModelText) return "unavailable";
+  if (settlementStatus === "waiting_input") return "waiting";
+  if (settlementStatus === "failed") return "failed";
+  if (settlementStatus === "aborted") return "aborted";
+  if (settlementStatus === "completed") return visibleText?.trim() ? "completed" : "empty";
+  return visibleText?.trim() ? "completed" : "empty";
+}
+
 export function renderIndexMarkdown(latestTurnRelative: string | undefined): string {
   const latest = latestTurnRelative ?? "(none — opening; THIS-TURN.txt is empty)";
   return [
     "# Controller briefing map",
     "",
-    "This directory is Host-owned and invisible to the candidate. `project/` is a read-only mount of the isolated replica.",
-    "Read files with workspace tools (`read`, `ls`, `grep`, `find`). Do not expect `read_observation`.",
+    "Host-owned, invisible to the candidate. `project/` is a read-only mount of the isolated replica.",
+    "Read with workspace tools (`read`, `ls`, `grep`, `find`). There is no `read_observation`.",
     "",
-    "Fact kinds (do not mix):",
-    "- historical user requirements: history/initial-input.txt and outline rows with role=user",
-    "- historical agent discoveries: outline rows with role=assistant; not this user's prior knowledge",
-    "- current candidate facts: run/turns/ and project/",
-    "",
-    "Paths:",
+    "Historical user requirements:",
+    "- history/user-inputs/INDEX.tsv — complete user demand in session order",
+    "- history/user-inputs/{turn-id}.txt — that user input body",
     "- history/initial-input.txt — frozen first user task sentence",
-    "- history/outline.tsv — id, role, bytes, after_first_deliverable (1 after first non-empty assistant text in transcript order)",
-    "- history/transcript/{id}.txt — full text for that outline id",
-    "- project-root.txt — isolated replica absolute path",
-    "- replay.txt — sourceRootKind, historicalCwd, isolation",
+    "- history/outline.tsv — id, role, bytes, after_first_deliverable",
+    "- history/transcript/{id}.txt — full text for that outline id (user or assistant)",
+    "",
+    "Historical agent discoveries (not this user's prior knowledge): outline rows with role=assistant and their transcript files.",
+    "",
+    "Current candidate facts:",
+    "- view.txt — Host snapshot of the user-visible surface; read this before other details",
+    "- permissions.txt — Controller tools stay read-only; candidate runtime uses Host-fixed historical session settings",
     "- run/sent-user-messages.jsonl — user messages already submitted this run",
-    "- run/turns/NNNN/visible.txt, events.jsonl, event-index.tsv, changed-paths.txt — one settled candidate turn",
+    "- run/turns/NNNN/visible.txt, event-index.tsv, changed-paths.txt — one settled candidate turn",
     "- THIS-TURN.txt — relative path of the latest turn directory, empty before the first settlement",
-    "- manifest.json — deterministic digest/size index for briefing files",
-    "- project/imported-inputs/ — files the frozen user sentence named that lived outside historical cwd (directory may be absent)",
+    "- project/ — current replica; project/imported-inputs/ may be absent",
+    "- project-root.txt, replay.txt, manifest.json — Host path and isolation facts",
     "",
     `Latest turn: ${latest}`,
     "",
   ].join("\n");
 }
 
-const OPENING_DECISION = [
-  "# Decision (opening)",
-  "This first Invocation investigates history and returns the opening send in the same Controller Session.",
-  "Read history/initial-input.txt, project-root.txt, replay.txt, outline.tsv, and transcript files as needed for goals, constraints, and collaboration habits.",
-  "Treat role=user as this user's requirements; role=assistant as historical agent discoveries, not prior user knowledge.",
-  "Do not put after_first_deliverable=1 user sentences into the first message.",
-  "Return send. done is invalid.",
-].join("\n");
-
-const STEERING_DECISION = [
-  "# Decision (after a settled candidate turn)",
-  "Continue the same Controller Session. Only add facts from this settled turn and current project/ artifacts.",
-  "Read THIS-TURN.txt and the files it names, then inspect project/ for current artifacts.",
-  "History is for whether this user would stop or steer, not a queue to send in order. Exhausting historical user sentences is not done/satisfied.",
-  "You may send or done. Host does not reject done for unread files or a missing ledger.",
-  "Treat files on disk as truth if they disagree with earlier session summaries.",
-].join("\n");
-
 export function controllerPromptContent(input: {
   phase: "opening" | "steering";
   briefingRoot: string;
   indexMarkdown: string;
 }): string {
-  const decision = input.phase === "opening" ? OPENING_DECISION : STEERING_DECISION;
+  const decision = input.phase === "opening" ? CONTROLLER_TURN_PROMPTS.opening : CONTROLLER_TURN_PROMPTS.steering;
   return `${decision}\n\nbriefingRoot=${input.briefingRoot}\nphase=${input.phase}\n\n# INDEX.md\n${input.indexMarkdown}`;
 }
 
 function visibleText(text: string, allowModelText: boolean): string {
   return allowModelText ? text : "[REDACTED]";
+}
+
+function renderUserInputIndexTsv(transcript: TaskCase["transcript"]): string {
+  const lines = ["turn_id\torder\trole\tsource\tpath\tattachments\trelated"];
+  let order = 0;
+  for (const message of transcript) {
+    if (message.role !== "user") continue;
+    order += 1;
+    const index = transcript.findIndex((entry) => entry.id === message.id);
+    const next = index >= 0 ? transcript[index + 1] : undefined;
+      const related = next?.role === "assistant" ? `history/transcript/${next.id}.txt` : "missing";
+    lines.push(
+      `${message.id}\t${order}\tuser\thistorical_user\thistory/user-inputs/${message.id}.txt\tmissing\t${related}`,
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+export type CandidateWriteScope = "allowed" | "workspace" | "denied" | "unconfirmed";
+
+function historicalCandidatePermissions(taskCase: TaskCase): {
+  source: "historical_session" | "unconfirmed";
+  sandbox: string;
+  permissionMode: string;
+  approvalPolicy: string;
+  network: string;
+  writes: CandidateWriteScope;
+  uncertainty: string;
+} {
+  const ctx = record(taskCase.taskContext);
+  const fromEvents = permissionFieldsFromRecords(taskCase.historicalEvents);
+  const sandbox = text(ctx.sandbox) ?? fromEvents.sandbox ?? "";
+  const permissionMode = text(ctx.permissionMode) ?? fromEvents.permissionMode ?? "";
+  const approvalPolicy = text(ctx.approvalPolicy) ?? fromEvents.approvalPolicy ?? "";
+  const network = text(ctx.network) ?? fromEvents.network ?? "";
+  const missing = [
+    sandbox ? undefined : "sandbox",
+    permissionMode ? undefined : "permissionMode",
+    approvalPolicy ? undefined : "approvalPolicy",
+  ].filter((item): item is string => Boolean(item));
+  const recorded = Boolean(sandbox || permissionMode || approvalPolicy || network);
+  return {
+    source: recorded ? "historical_session" : "unconfirmed",
+    sandbox: sandbox || "unconfirmed",
+    permissionMode: permissionMode || "(none)",
+    approvalPolicy: approvalPolicy || "unconfirmed",
+    network: network || "(none)",
+    writes: candidateWrites(sandbox, permissionMode),
+    uncertainty: recorded && missing.length === 0
+      ? "(none)"
+      : `${missing.join(",") || "historical_settings_incomplete"}; host_safety_ceiling_applies`,
+  };
+}
+
+function permissionFieldsFromRecords(events: readonly unknown[]): {
+  sandbox?: string;
+  permissionMode?: string;
+  approvalPolicy?: string;
+  network?: string;
+} {
+  let sandbox: string | undefined;
+  let permissionMode: string | undefined;
+  let approvalPolicy: string | undefined;
+  let network: string | undefined;
+  for (const event of events) {
+    const row = record(event);
+    const payload = record(row.payload);
+    sandbox ??= text(row.sandbox) ?? text(payload.sandbox) ?? text(payload.sandbox_policy);
+    permissionMode ??= text(row.permissionMode) ?? text(payload.permissionMode) ?? text(payload["permission-mode"]);
+    approvalPolicy ??= text(row.approvalPolicy) ?? text(payload.approvalPolicy) ?? text(payload.approval_policy);
+    network ??= text(row.network) ?? text(payload.network);
+  }
+  return {
+    ...(sandbox ? { sandbox } : {}),
+    ...(permissionMode ? { permissionMode } : {}),
+    ...(approvalPolicy ? { approvalPolicy } : {}),
+    ...(network ? { network } : {}),
+  };
+}
+
+function candidateWrites(sandbox: string, permissionMode: string): CandidateWriteScope {
+  const sandboxNorm = sandbox.toLowerCase();
+  if (sandboxNorm.includes("full-access") || permissionMode === "bypassPermissions") return "allowed";
+  if (sandboxNorm === "workspace-write" || permissionMode === "acceptEdits") return "workspace";
+  if (sandboxNorm === "read-only" || permissionMode === "plan") return "denied";
+  return "unconfirmed";
+}
+
+function renderPermissionsTxt(taskCase: TaskCase): string {
+  const candidate = historicalCandidatePermissions(taskCase);
+  const privacy = taskCase.privacy;
+  return [
+    "# Controller tools",
+    "controller.writes=denied",
+    "controller.project=read_only",
+    "",
+    "# Candidate runtime",
+    `candidate.source=${candidate.source}`,
+    `candidate.sandbox=${candidate.sandbox}`,
+    `candidate.permissionMode=${candidate.permissionMode}`,
+    `candidate.approvalPolicy=${candidate.approvalPolicy}`,
+    `candidate.network=${candidate.network}`,
+    `candidate.writes=${candidate.writes}`,
+    `candidate.uncertainty=${candidate.uncertainty}`,
+    `privacy.allowModelText=${privacy.allowModelText ? "1" : "0"}`,
+    `privacy.allowBinary=${privacy.allowBinary ? "1" : "0"}`,
+    "",
+  ].join("\n");
+}
+
+function renderViewSnapshot(input: {
+  phase: "opening" | "steering";
+  surface: "empty" | "unavailable" | "waiting" | "failed" | "completed" | "aborted";
+  latestTurnRelative?: string;
+  visibleText?: string;
+  changedPaths?: readonly string[];
+  prompt?: string;
+}): string {
+  if (input.phase === "opening") {
+    return [
+      "surface=empty",
+      "candidate_turn=none",
+      "user_visible=empty",
+      "deliverable_paths=(none)",
+      "prompt=(none)",
+      "user_inputs=history/user-inputs/INDEX.tsv",
+      "permissions=permissions.txt",
+      "",
+    ].join("\n");
+  }
+  const paths = input.changedPaths?.length ? input.changedPaths.join("\n") : "(none)";
+  const visible = input.visibleText?.trim() ? input.visibleText.trimEnd() : "(empty)";
+  const prompt = input.prompt?.trim() ? input.prompt.trimEnd() : "(none)";
+  return [
+    `surface=${input.surface}`,
+    `latest_turn=${input.latestTurnRelative ?? ""}`,
+    "permissions=permissions.txt",
+    `prompt=${prompt === "(none)" ? "(none)" : "see below"}`,
+    "",
+    "# Visible assistant text",
+    visible,
+    "",
+    "# Visible prompt",
+    prompt,
+    "",
+    "# Deliverable paths",
+    paths,
+    "",
+  ].join("\n");
 }
 
 export async function writeOpeningBriefing(input: {
@@ -131,6 +279,15 @@ export async function writeOpeningBriefing(input: {
   for (const message of input.taskCase.transcript) {
     await writeAtomic(join(transcriptDir, `${message.id}.txt`), visibleText(message.text, allow));
   }
+  const userInputs = join(history, "user-inputs");
+  await mkdir(userInputs, { recursive: true });
+  for (const message of input.taskCase.transcript) {
+    if (message.role !== "user") continue;
+    await writeAtomic(join(userInputs, `${message.id}.txt`), visibleText(message.text, allow));
+  }
+  await writeAtomic(join(userInputs, "INDEX.tsv"), renderUserInputIndexTsv(input.taskCase.transcript));
+  await writeAtomic(join(input.briefingRoot, "permissions.txt"), renderPermissionsTxt(input.taskCase));
+  await writeAtomic(join(input.briefingRoot, "view.txt"), renderViewSnapshot({ phase: "opening", surface: "empty" }));
   await writeAtomic(join(input.briefingRoot, "project-root.txt"), `${input.replicaRoot}\n`);
   const cwdLine = input.historicalCwd ? `historicalCwd=${input.historicalCwd}\n` : "";
   await writeAtomic(
@@ -152,17 +309,31 @@ export async function writeSettledTurnBriefing(input: {
   events: readonly EventEnvelope[];
   changedPaths: readonly string[];
   allowModelText: boolean;
+  surface?: "empty" | "unavailable" | "waiting" | "failed" | "completed" | "aborted";
+  prompt?: string;
 }): Promise<{ indexMarkdown: string; fileDigests: Record<string, string>; turnRelative: string }> {
   const turnRelative = `run/turns/${String(input.turnIndex).padStart(4, "0")}`;
   const turnDir = join(input.briefingRoot, ...turnRelative.split("/"));
   await mkdir(turnDir, { recursive: true });
-  await writeAtomic(join(turnDir, "visible.txt"), visibleText(input.visibleText, input.allowModelText));
-  const eventLines = input.events.map((event) => JSON.stringify(input.allowModelText ? event : redactEvent(event)));
-  await writeAtomic(join(turnDir, "events.jsonl"), eventLines.length ? `${eventLines.join("\n")}\n` : "");
+  const visible = visibleText(input.visibleText, input.allowModelText);
+  await writeAtomic(join(turnDir, "visible.txt"), visible);
   const eventIndex = ["sequence\ttype\tevent_id\tmodel_visible", ...input.events.map((event) => `${event.sequence}\t${event.type}\t${event.eventId}\t${input.allowModelText ? "1" : "0"}`)];
   await writeAtomic(join(turnDir, "event-index.tsv"), `${eventIndex.join("\n")}\n`);
   await writeAtomic(join(turnDir, "changed-paths.txt"), `${input.changedPaths.join("\n")}${input.changedPaths.length ? "\n" : ""}`);
   await writeAtomic(join(input.briefingRoot, "THIS-TURN.txt"), `${turnRelative}\n`);
+  const surface = input.surface
+    ?? (!input.allowModelText ? "unavailable" : input.visibleText.trim() ? "completed" : "empty");
+  await writeAtomic(
+    join(input.briefingRoot, "view.txt"),
+    renderViewSnapshot({
+      phase: "steering",
+      surface,
+      latestTurnRelative: turnRelative,
+      visibleText: visible,
+      changedPaths: input.changedPaths,
+      ...(input.prompt ? { prompt: input.prompt } : {}),
+    }),
+  );
   const indexMarkdown = renderIndexMarkdown(turnRelative);
   await writeAtomic(join(input.briefingRoot, "INDEX.md"), indexMarkdown);
   await writeBriefingManifest(input.briefingRoot);
@@ -181,6 +352,9 @@ async function digestBriefing(briefingRoot: string, turnRelative: string | undef
   const relative = [
     "INDEX.md",
     "THIS-TURN.txt",
+    "view.txt",
+    "permissions.txt",
+    "history/user-inputs/INDEX.tsv",
     "history/initial-input.txt",
     "history/outline.tsv",
     "project-root.txt",
@@ -234,19 +408,4 @@ export function controllerRequestSnapshot(context: SteeringContext): Record<stri
     budget: context.budget,
     ...(context.replay ? { replay: context.replay } : {}),
   };
-}
-
-function redactEvent(event: EventEnvelope): EventEnvelope {
-  return { ...event, payload: redactUnknown(event.payload) };
-}
-
-function redactUnknown(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactUnknown);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, child]) => [
-      key,
-      key === "text" && typeof child === "string" ? "[REDACTED]" : redactUnknown(child),
-    ]),
-  );
 }

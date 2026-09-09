@@ -1,44 +1,70 @@
-import type { CodexIntakeTui } from "./intake-tui.js";
 import { readExperimentEvents } from "../application/experiment-event-read.js";
 import { readLocalHistory, type HistoryCase, type HistoryExperiment } from "./local-history.js";
 import { handleHistoryInput } from "./history-input.js";
-import { t } from "./i18n.js";
-import { projectPersistedTimeline } from "./timeline.js";
+import { t, type Locale } from "./i18n.js";
+import { projectPersistedTimeline, type TimelineEntry } from "./timeline.js";
+import type { WorkbenchView } from "./workbench.js";
 
-export function CodexIntakeTui_openRecentExperiment(this: CodexIntakeTui): { consume: true } {
+type ReturnPage = Exclude<WorkbenchView["page"], "error" | "running" | "loading">;
+
+/** History helpers may only touch saved history, timeline projection, and page navigation. */
+export type HistoryPanel = {
+  dataDir: string;
+  locale: Locale;
+  generation: number;
+  page: WorkbenchView["page"];
+  message: string;
+  historyTab: "runs" | "cases";
+  historySelected: number;
+  historyCases: readonly HistoryCase[];
+  historyExperiments: readonly HistoryExperiment[];
+  historyTotalBytes: number;
+  historyDetail: HistoryCase | HistoryExperiment | undefined;
+  recentExperiment: HistoryExperiment | undefined;
+  timeline: TimelineEntry[];
+  timelineSelected: number;
+  timelineFollowing: boolean;
+  historyItems(): readonly (HistoryCase | HistoryExperiment)[];
+  beginNavigation(): number;
+  render(force?: boolean): void;
+  showError(error: unknown, returnPage: ReturnPage): void;
+  visibleTimeline(): readonly TimelineEntry[];
+};
+
+export function IntakeTui_openRecentExperiment(this: HistoryPanel): { consume: true } {
   const recent = this.recentExperiment;
   if (!recent) {
-    void CodexIntakeTui_loadHistory.call(this);
+    void IntakeTui_loadHistory.call(this);
     return { consume: true };
   }
   void openHistoryExperiment(this, recent);
   return { consume: true };
 }
 
-export function CodexIntakeTui_historyInput(this: CodexIntakeTui, data: string): { consume: true } | undefined {
-    const result = handleHistoryInput(
-      { tab: this.historyTab, selected: this.historySelected },
-      data,
-      this.historyItems(),
-    );
-    if (!result) return undefined;
-    this.historyTab = result.state.tab;
-    this.historySelected = result.state.selected;
-    if (result.detail) {
-      if ("taskCase" in result.detail) {
-        this.historyDetail = result.detail;
-        this.page = "history-detail";
-        this.message = t(this.locale, "historyDetailMsg");
-      } else {
-        void openHistoryExperiment(this, result.detail);
-        return result;
-      }
+export function IntakeTui_historyInput(this: HistoryPanel, data: string): { consume: true } | undefined {
+  const result = handleHistoryInput(
+    { tab: this.historyTab, selected: this.historySelected },
+    data,
+    this.historyItems(),
+  );
+  if (!result) return undefined;
+  this.historyTab = result.state.tab;
+  this.historySelected = result.state.selected;
+  if (result.detail) {
+    if ("taskCase" in result.detail) {
+      this.historyDetail = result.detail;
+      this.page = "history-detail";
+      this.message = t(this.locale, "historyDetailMsg");
+    } else {
+      void openHistoryExperiment(this, result.detail);
+      return result;
     }
-    this.render();
-    return result;
   }
+  this.render();
+  return result;
+}
 
-async function openHistoryExperiment(c: CodexIntakeTui, item: HistoryExperiment): Promise<void> {
+async function openHistoryExperiment(c: HistoryPanel, item: HistoryExperiment): Promise<void> {
   const token = c.beginNavigation();
   try {
     const page = await readExperimentEvents({ dataDir: c.dataDir, experimentId: item.experimentId });
@@ -57,31 +83,31 @@ async function openHistoryExperiment(c: CodexIntakeTui, item: HistoryExperiment)
   c.render(true);
 }
 
-export function CodexIntakeTui_historyItems(this: CodexIntakeTui): readonly (HistoryCase | HistoryExperiment)[] {
-    return this.historyTab === "runs"
-      ? this.historyExperiments
-      : this.historyCases;
-  }
+export function IntakeTui_historyItems(this: HistoryPanel): readonly (HistoryCase | HistoryExperiment)[] {
+  return this.historyTab === "runs"
+    ? this.historyExperiments
+    : this.historyCases;
+}
 
-export async function CodexIntakeTui_loadHistory(this: CodexIntakeTui): Promise<void> {
-    const token = this.beginNavigation();
-    try {
-      const history = await readLocalHistory(this.dataDir);
-      if (token !== this.generation) return;
-      this.historyCases = history.cases;
-      this.historyExperiments = history.experiments;
-      this.historyTotalBytes = history.totalBytes;
-      this.recentExperiment = history.experiments[0];
-      this.historyTab = "runs";
-      this.historySelected = 0;
-      this.page = "history";
-      this.message =
-        history.experiments.length || history.cases.length
-          ? t(this.locale, "historyBrowse")
-          : t(this.locale, "historyEmpty");
-    } catch (error) {
-      if (token !== this.generation) return;
-      this.showError(error, "home");
-    }
-    this.render(true);
+export async function IntakeTui_loadHistory(this: HistoryPanel): Promise<void> {
+  const token = this.beginNavigation();
+  try {
+    const history = await readLocalHistory(this.dataDir);
+    if (token !== this.generation) return;
+    this.historyCases = history.cases;
+    this.historyExperiments = history.experiments;
+    this.historyTotalBytes = history.totalBytes;
+    this.recentExperiment = history.experiments[0];
+    this.historyTab = "runs";
+    this.historySelected = 0;
+    this.page = "history";
+    this.message =
+      history.experiments.length || history.cases.length
+        ? t(this.locale, "historyBrowse")
+        : t(this.locale, "historyEmpty");
+  } catch (error) {
+    if (token !== this.generation) return;
+    this.showError(error, "home");
   }
+  this.render(true);
+}

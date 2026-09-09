@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createExperimentWorkflow, createHarnessWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
+import { createExperimentWorkflow, createHarnessWorkflow, TUI_RUN_POLICY } from '../src/application/experiment-workflow.js';
 import { candidateStartBlocked, startRunSetup } from '../src/tui/controller-run.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PiModelCaller } from '../src/infrastructure/pi-model-caller.js';
+import { PiModelCaller } from '../src/infrastructure/agent/model-caller.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
-import { CodexIntakeTui_showError } from '../src/tui/intake-tui-nav.js';
-import { CodexIntakeTui } from '../src/tui/intake-app.js';
+import { IntakeTui_showError } from '../src/tui/intake-tui-nav.js';
+import { IntakeTui } from '../src/tui/intake-app.js';
 import { mockTui } from '../scripts/tui-audit-lib.js';
 import { waitFor } from './codex-intake-support.js';
 
@@ -32,7 +32,7 @@ test('connection probe failures preserve their phase and show localized retry gu
     assert.equal(error.name, 'HarnessProbeError');
     assert.equal(error.cause, cause);
     const view = { locale: 'zh', message: '', page: 'running' };
-    CodexIntakeTui_showError.call(view as never, error, 'home');
+    IntakeTui_showError.call(view as never, error, 'home');
     assert.equal(view.page, 'error');
     assert.match(view.message, /连接探测.*暂时失败.*重试/);
     assert.doesNotMatch(view.message, /无法恢复|provider detail/);
@@ -85,7 +85,7 @@ test('Ctrl+C during Recovery aborts preparation and never enters candidate selec
   t.after(async () => rm(dataDir, { recursive: true, force: true }));
   let signal: AbortSignal | undefined;
   const tui = mockTui();
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir, tui: tui.tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] },
     workflow: {
       policy: TUI_RUN_POLICY,
@@ -133,7 +133,7 @@ test('Ctrl+C while preflight is pending prevents a later Recovery call', async (
   let release!: () => void;
   let calls = 0;
   const pending = new Promise<void>((resolve) => { release = resolve; });
-  const app = new CodexIntakeTui({ dataDir, tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
+  const app = new IntakeTui({ dataDir, tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
     policy: TUI_RUN_POLICY,
     preflight: async () => { await pending; return { sourceBaseline: 'available', limitations: [] }; },
     recover: async () => { calls += 1; throw new Error('must not run'); },
@@ -163,7 +163,7 @@ test('closing the TUI waits for cancelled Recovery cleanup', async (t) => {
   let signal: AbortSignal | undefined;
   let release!: () => void;
   const cleanup = new Promise<void>((resolve) => { release = resolve; });
-  const app = new CodexIntakeTui({ dataDir, tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
+  const app = new IntakeTui({ dataDir, tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
     policy: TUI_RUN_POLICY,
     preflight: async () => ({ sourceBaseline: 'available', limitations: [] }),
     recover: async (request: { signal: AbortSignal }) => {
@@ -197,7 +197,7 @@ test('closing preserves a late Recovery staging reference when cleanup fails', a
   let recovering = false;
   const pending = new Promise<void>((resolve) => { release = resolve; });
   const attempt = { staging: { path: 'retained-staging' }, provider: { discardRecovery: async () => { throw new Error('private cleanup detail'); } } };
-  const app = new CodexIntakeTui({ dataDir, tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
+  const app = new IntakeTui({ dataDir, tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
     policy: TUI_RUN_POLICY,
     preflight: async () => ({ sourceBaseline: 'available', limitations: [] }),
     recover: async () => { recovering = true; await pending; return attempt; },
@@ -221,7 +221,7 @@ test('Ctrl+C while accepting Recovery prevents experiment startup', async () => 
   let starts = 0;
   let discarded = 0;
   const pending = new Promise<void>((resolve) => { release = resolve; });
-  const app = new CodexIntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
+  const app = new IntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
     policy: TUI_RUN_POLICY,
     verifyCandidate: async () => ({}),
     start: async () => { starts += 1; throw new Error('must not start'); },
@@ -275,7 +275,7 @@ test('source blockedReasons do not block a recovered candidate', () => {
 });
 
 test('close waits for the experiment terminal cleanup after cancel returns', async () => {
-  const app = new CodexIntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
+  const app = new IntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
   let release!: () => void;
   let cancelled = 0;
   const pending = new Promise<void>((resolve) => { release = resolve; });
@@ -293,7 +293,7 @@ test('close waits for the experiment terminal cleanup after cancel returns', asy
 
 test('close discards cached recovery and preserves a failed cleanup for review', async () => {
   for (const fails of [false, true]) {
-    const app = new CodexIntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
+    const app = new IntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
     let calls = 0;
     const attempt = { staging: {}, provider: { discardRecovery: async () => { calls += 1; if (fails) throw new Error('private provider detail'); } } };
     app.recoveryAttempt = attempt as never;
@@ -311,7 +311,7 @@ test('close discards cached recovery and preserves a failed cleanup for review',
 });
 
 test('close releases the comparison choice without starting a report', async () => {
-  const app = new CodexIntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
+  const app = new IntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
   let chosen: boolean | undefined;
   app.workflowFinished = new Promise<void>((resolve) => { app.compareChoice = { resolve: (value) => { chosen = value; resolve(); } }; });
   app.page = 'compare-gate';
@@ -329,7 +329,7 @@ test('closing during startup waits for the late handle and its cleanup result', 
     let cancelled = false;
     const start = new Promise<void>((resolve) => { releaseStart = resolve; });
     const result = new Promise<void>((resolve) => { releaseResult = resolve; });
-    const app = new CodexIntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
+    const app = new IntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
       policy: TUI_RUN_POLICY,
       verifyCandidate: async () => ({}),
       start: async () => {

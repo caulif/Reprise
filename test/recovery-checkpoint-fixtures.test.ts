@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { sha256 } from "../src/core/identity.js";
-import { evaluateRecoveryCases } from "../src/application/recovery-evaluation.js";
+import { evaluateRecoveryCases } from "../src/application/recovery/evaluation.js";
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
 
 const exec = promisify(execFile);

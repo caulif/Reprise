@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DEFAULT_RUN_POLICY, createExperimentWorkflow } from '../src/application/experiment-workflow.js';
 import { candidateStartBlocked } from '../src/application/candidate-start.js';
 import { prepareExperiment, runFullExperiment, runPreparedExperiment } from '../src/application/experiment-operations.js';
-import type { RecoveryAttempt } from '../src/application/experiment.js';
+import type { RecoveryAttempt } from '../src/application/recovery/types.js';
 
 async function runnableAttempt(t: { after: (fn: () => Promise<void>) => void }): Promise<RecoveryAttempt> {
   const experimentRoot = await mkdtemp(join(tmpdir(), 'reprise-ops-'));

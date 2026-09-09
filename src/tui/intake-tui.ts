@@ -1,12 +1,9 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { type OverlayHandle, SelectList, type TUI } from "@earendil-works/pi-tui";
-import type {
-  CodexExperimentPreflight,
-  CodexExperimentResult,
-  ExperimentHandle,
-  RecoveryAttempt,
-} from "../application/experiment.js";
-import type { ExperimentWorkflow } from "../application/tui-workflow.js";
+import type { ExperimentResult, ExperimentHandle } from "../application/experiment.js";
+import type { ExperimentPreflight } from "../application/experiment-preflight.js";
+import type { RecoveryAttempt } from "../application/recovery/types.js";
+import type { ExperimentWorkflow } from "../application/experiment-workflow.js";
 import type { TaskCase, CandidateSpec } from "../core/schema.js";
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
 import {
@@ -23,7 +20,7 @@ import type {
   SessionPrivacy,
   SessionSummary,
 } from "../products/contract.js";
-import { initializeCodexIntakeTui } from "./intake-tui-state.js";
+import { initializeIntakeTui } from "./intake-tui-state.js";
 import * as intakeMethods from "./intake-tui-methods.js";
 import type { Locale } from "./i18n.js";
 import type { HistoryCase, HistoryExperiment } from "./local-history.js";
@@ -57,7 +54,7 @@ export type ProductDiscoveryState = {
 
 export type SessionLoadMode = "initial" | "more" | "refresh";
 
-export type CodexIntakeTuiOptions = {
+export type IntakeTuiOptions = {
   readonly dataDir: string;
   readonly sessionsRoot?: string;
   readonly sessionsRoots?: Readonly<Record<string, string>>;
@@ -75,7 +72,7 @@ export type CodexIntakeTuiOptions = {
 };
 
 /** Keyboard-only Home-first benchmark workbench for configuration, intake, and isolated runs. */
-export class CodexIntakeTui {
+export class IntakeTui {
   dataDir!: string;
   runtimeSessionIds: readonly string[] = [];
   sessionsRoot: string | undefined;
@@ -144,7 +141,7 @@ export class CodexIntakeTui {
   recentExperiment: HistoryExperiment | undefined;
   sourceRoot = "";
   sourceCursor = 0;
-  preflight: CodexExperimentPreflight | undefined;
+  preflight: ExperimentPreflight | undefined;
   recoveryAttempt: RecoveryAttempt | undefined;
   selectedCandidate: CandidateSpec | undefined;
   candidateProductId = "";
@@ -162,7 +159,7 @@ export class CodexIntakeTui {
   startupAbort: AbortController | undefined;
   recoveryFinished: Promise<void> | undefined;
   workflowFinished: Promise<void> | undefined;
-  result: CodexExperimentResult | undefined;
+  result: ExperimentResult | undefined;
   timeline: TimelineEntry[] = [];
   timelineSelected = 0;
   timelineFilterIndex = 0;
@@ -211,78 +208,78 @@ export class CodexIntakeTui {
     | undefined;
   dirtyCache: { draft: ConfigDraft; config: HarnessModelConfig; dirty: boolean } | undefined;
 
-  constructor(options: CodexIntakeTuiOptions) {
-    initializeCodexIntakeTui(this, options);
+  constructor(options: IntakeTuiOptions) {
+    initializeIntakeTui(this, options);
   }
 
-  start(): Promise<void> { return intakeMethods.CodexIntakeTui_start.call(this); }
-  run(): Promise<void> { return intakeMethods.CodexIntakeTui_run.call(this); }
-  preview(width = 120): string { return intakeMethods.CodexIntakeTui_preview.call(this, width); }
-  handleInput(data: string): { consume: true } | undefined { return intakeMethods.CodexIntakeTui_handleInput.call(this, data); }
-  setHomeMessage(message: string): { consume: true } { return intakeMethods.CodexIntakeTui_setHomeMessage.call(this, message); }
-  configPageInput(data: string): { consume: true } | undefined { return intakeMethods.CodexIntakeTui_configPageInput.call(this, data); }
-  modelsForDraft(draft: ConfigDraft): { draft: ConfigDraft; models: readonly Option[] } { return intakeMethods.CodexIntakeTui_modelsForDraft.call(this, draft); }
-  historyInput(data: string): { consume: true } | undefined { return intakeMethods.CodexIntakeTui_historyInput.call(this, data); }
-  historyItems(): readonly (HistoryCase | HistoryExperiment)[] { return intakeMethods.CodexIntakeTui_historyItems.call(this); }
-  loadHistory(): Promise<void> { return intakeMethods.CodexIntakeTui_loadHistory.call(this); }
-  openRecentExperiment(): { consume: true } { return intakeMethods.CodexIntakeTui_openRecentExperiment.call(this); }
-  openConfig(): Promise<void> { return intakeMethods.CodexIntakeTui_openConfig.call(this); }
-  saveConfig(): Promise<void> { return intakeMethods.CodexIntakeTui_saveConfig.call(this); }
-  testConfigConnection(): Promise<void> { return intakeMethods.CodexIntakeTui_testConfigConnection.call(this); }
-  refreshHarnessAuth(): Promise<void> { return intakeMethods.CodexIntakeTui_refreshHarnessAuth.call(this); }
-  loadHome(initialMessage?: string): Promise<void> { return intakeMethods.CodexIntakeTui_loadHome.call(this, initialMessage); }
-  loadSessions(): Promise<void> { return intakeMethods.CodexIntakeTui_loadSessions.call(this); }
+  start(): Promise<void> { return intakeMethods.IntakeTui_start.call(this); }
+  run(): Promise<void> { return intakeMethods.IntakeTui_run.call(this); }
+  preview(width = 120): string { return intakeMethods.IntakeTui_preview.call(this, width); }
+  handleInput(data: string): { consume: true } | undefined { return intakeMethods.IntakeTui_handleInput.call(this, data); }
+  setHomeMessage(message: string): { consume: true } { return intakeMethods.IntakeTui_setHomeMessage.call(this, message); }
+  configPageInput(data: string): { consume: true } | undefined { return intakeMethods.IntakeTui_configPageInput.call(this, data); }
+  modelsForDraft(draft: ConfigDraft): { draft: ConfigDraft; models: readonly Option[] } { return intakeMethods.IntakeTui_modelsForDraft.call(this, draft); }
+  historyInput(data: string): { consume: true } | undefined { return intakeMethods.IntakeTui_historyInput.call(this, data); }
+  historyItems(): readonly (HistoryCase | HistoryExperiment)[] { return intakeMethods.IntakeTui_historyItems.call(this); }
+  loadHistory(): Promise<void> { return intakeMethods.IntakeTui_loadHistory.call(this); }
+  openRecentExperiment(): { consume: true } { return intakeMethods.IntakeTui_openRecentExperiment.call(this); }
+  openConfig(): Promise<void> { return intakeMethods.IntakeTui_openConfig.call(this); }
+  saveConfig(): Promise<void> { return intakeMethods.IntakeTui_saveConfig.call(this); }
+  testConfigConnection(): Promise<void> { return intakeMethods.IntakeTui_testConfigConnection.call(this); }
+  refreshHarnessAuth(): Promise<void> { return intakeMethods.IntakeTui_refreshHarnessAuth.call(this); }
+  loadHome(initialMessage?: string): Promise<void> { return intakeMethods.IntakeTui_loadHome.call(this, initialMessage); }
+  loadSessions(): Promise<void> { return intakeMethods.IntakeTui_loadSessions.call(this); }
   loadProductSessions(productId: string, mode?: SessionLoadMode): Promise<void> {
-    return intakeMethods.CodexIntakeTui_loadProductSessions.call(this, productId, mode ?? "initial");
+    return intakeMethods.IntakeTui_loadProductSessions.call(this, productId, mode ?? "initial");
   }
-  loadMoreProductSessions(): void { intakeMethods.CodexIntakeTui_loadMoreProductSessions.call(this); }
-  refreshProductSessions(): void { intakeMethods.CodexIntakeTui_refreshProductSessions.call(this); }
+  loadMoreProductSessions(): void { intakeMethods.IntakeTui_loadMoreProductSessions.call(this); }
+  refreshProductSessions(): void { intakeMethods.IntakeTui_refreshProductSessions.call(this); }
   activateProductSessions(productId: string, sessions: readonly SessionSummary[], limitReached: boolean): void {
-    intakeMethods.CodexIntakeTui_activateProductSessions.call(this, productId, sessions, limitReached);
+    intakeMethods.IntakeTui_activateProductSessions.call(this, productId, sessions, limitReached);
   }
-  move(amount: number): { consume: true } { return intakeMethods.CodexIntakeTui_move.call(this, amount); }
-  scheduleTimelineRender(): void { intakeMethods.CodexIntakeTui_scheduleTimelineRender.call(this); }
-  visibleTimeline(): readonly TimelineEntry[] { return intakeMethods.CodexIntakeTui_visibleTimeline.call(this); }
-  setLocale(typed: string): Promise<void> { return intakeMethods.CodexIntakeTui_setLocale.call(this, typed); }
+  move(amount: number): { consume: true } { return intakeMethods.IntakeTui_move.call(this, amount); }
+  scheduleTimelineRender(): void { intakeMethods.IntakeTui_scheduleTimelineRender.call(this); }
+  visibleTimeline(): readonly TimelineEntry[] { return intakeMethods.IntakeTui_visibleTimeline.call(this); }
+  setLocale(typed: string): Promise<void> { return intakeMethods.IntakeTui_setLocale.call(this, typed); }
   showError(error: unknown, returnPage: Exclude<Page, "error" | "running" | "loading">): void {
-    intakeMethods.CodexIntakeTui_showError.call(this, error, returnPage);
+    intakeMethods.IntakeTui_showError.call(this, error, returnPage);
   }
-  returnFromError(): { consume: true } { return intakeMethods.CodexIntakeTui_returnFromError.call(this); }
+  returnFromError(): { consume: true } { return intakeMethods.IntakeTui_returnFromError.call(this); }
   openReport(experimentRoot: string | undefined, reportPath: string | undefined): { consume: true } {
-    return intakeMethods.CodexIntakeTui_openReport.call(this, experimentRoot, reportPath);
+    return intakeMethods.IntakeTui_openReport.call(this, experimentRoot, reportPath);
   }
-  openTrace(): { consume: true } { return intakeMethods.CodexIntakeTui_openTrace.call(this); }
-  openReplica(): { consume: true } { return intakeMethods.CodexIntakeTui_openReplica.call(this); }
-  openLocal(target: string | undefined): { consume: true } { return intakeMethods.CodexIntakeTui_openLocal.call(this, target); }
-  openFileUrl(url: string): void { intakeMethods.CodexIntakeTui_openFileUrl.call(this, url); }
-  backToHome(): { consume: true } { return intakeMethods.CodexIntakeTui_backToHome.call(this); }
-  close(): { consume: true } { return intakeMethods.CodexIntakeTui_close.call(this); }
-  openIntakeSelection(): { consume: true } { return intakeMethods.CodexIntakeTui_openIntakeSelection.call(this); }
-  sessionsMessage(): string { return intakeMethods.CodexIntakeTui_sessionsMessage.call(this); }
+  openTrace(): { consume: true } { return intakeMethods.IntakeTui_openTrace.call(this); }
+  openReplica(): { consume: true } { return intakeMethods.IntakeTui_openReplica.call(this); }
+  openLocal(target: string | undefined): { consume: true } { return intakeMethods.IntakeTui_openLocal.call(this, target); }
+  openFileUrl(url: string): void { intakeMethods.IntakeTui_openFileUrl.call(this, url); }
+  backToHome(): { consume: true } { return intakeMethods.IntakeTui_backToHome.call(this); }
+  close(): { consume: true } { return intakeMethods.IntakeTui_close.call(this); }
+  openIntakeSelection(): { consume: true } { return intakeMethods.IntakeTui_openIntakeSelection.call(this); }
+  sessionsMessage(): string { return intakeMethods.IntakeTui_sessionsMessage.call(this); }
   discoveryDiagnosticLabel(locale: Locale, code: DiscoveryDiagnostic["code"]): string {
-    return intakeMethods.CodexIntakeTui_discoveryDiagnosticLabel.call(this, locale, code);
+    return intakeMethods.IntakeTui_discoveryDiagnosticLabel.call(this, locale, code);
   }
-  refreshProductAuth(): Promise<void> { return intakeMethods.CodexIntakeTui_refreshProductAuth.call(this); }
-  canLeaveProject(): boolean { return intakeMethods.CodexIntakeTui_canLeaveProject.call(this); }
-  backToProjects(): { consume: true } { return intakeMethods.CodexIntakeTui_backToProjects.call(this); }
-  syncIntakeLevel(): void { intakeMethods.CodexIntakeTui_syncIntakeLevel.call(this); }
-  groupedProjects(): SessionProject[] { return intakeMethods.CodexIntakeTui_groupedProjects.call(this); }
-  visibleProjects(): SessionProject[] { return intakeMethods.CodexIntakeTui_visibleProjects.call(this); }
-  visibleSessions(): readonly SessionSummary[] { return intakeMethods.CodexIntakeTui_visibleSessions.call(this); }
-  intakeCount(): number { return intakeMethods.CodexIntakeTui_intakeCount.call(this); }
-  productItems(): ProductIntakeItem[] { return intakeMethods.CodexIntakeTui_productItems.call(this); }
-  beginNavigation(): number { return intakeMethods.CodexIntakeTui_beginNavigation.call(this); }
-  isEditingText(): boolean { return intakeMethods.CodexIntakeTui_isEditingText.call(this); }
-  showHelp(): { consume: true } { return intakeMethods.CodexIntakeTui_showHelp.call(this); }
-  hideHelp(): void { intakeMethods.CodexIntakeTui_hideHelp.call(this); }
-  syncCommandOverlay(): void { intakeMethods.CodexIntakeTui_syncCommandOverlay.call(this); }
-  hideCommandOverlay(): void { intakeMethods.CodexIntakeTui_hideCommandOverlay.call(this); }
-  configDirty(): boolean { return intakeMethods.CodexIntakeTui_configDirty.call(this); }
-  muteNodeWarnings(): void { intakeMethods.CodexIntakeTui_muteNodeWarnings.call(this); }
-  restoreNodeWarnings(): void { intakeMethods.CodexIntakeTui_restoreNodeWarnings.call(this); }
-  viewport(): { height?: number } { return intakeMethods.CodexIntakeTui_viewport.call(this); }
-  setMouseReporting(enabled: boolean): void { intakeMethods.CodexIntakeTui_setMouseReporting.call(this, enabled); }
-  render(immediate = false): void { intakeMethods.CodexIntakeTui_render.call(this, immediate); }
-  productContext(): { productLabel?: string; productConfigured?: boolean } { return intakeMethods.CodexIntakeTui_productContext.call(this); }
-  view(): WorkbenchView { return intakeMethods.CodexIntakeTui_view.call(this); }
+  refreshProductAuth(): Promise<void> { return intakeMethods.IntakeTui_refreshProductAuth.call(this); }
+  canLeaveProject(): boolean { return intakeMethods.IntakeTui_canLeaveProject.call(this); }
+  backToProjects(): { consume: true } { return intakeMethods.IntakeTui_backToProjects.call(this); }
+  syncIntakeLevel(): void { intakeMethods.IntakeTui_syncIntakeLevel.call(this); }
+  groupedProjects(): SessionProject[] { return intakeMethods.IntakeTui_groupedProjects.call(this); }
+  visibleProjects(): SessionProject[] { return intakeMethods.IntakeTui_visibleProjects.call(this); }
+  visibleSessions(): readonly SessionSummary[] { return intakeMethods.IntakeTui_visibleSessions.call(this); }
+  intakeCount(): number { return intakeMethods.IntakeTui_intakeCount.call(this); }
+  productItems(): ProductIntakeItem[] { return intakeMethods.IntakeTui_productItems.call(this); }
+  beginNavigation(): number { return intakeMethods.IntakeTui_beginNavigation.call(this); }
+  isEditingText(): boolean { return intakeMethods.IntakeTui_isEditingText.call(this); }
+  showHelp(): { consume: true } { return intakeMethods.IntakeTui_showHelp.call(this); }
+  hideHelp(): void { intakeMethods.IntakeTui_hideHelp.call(this); }
+  syncCommandOverlay(): void { intakeMethods.IntakeTui_syncCommandOverlay.call(this); }
+  hideCommandOverlay(): void { intakeMethods.IntakeTui_hideCommandOverlay.call(this); }
+  configDirty(): boolean { return intakeMethods.IntakeTui_configDirty.call(this); }
+  muteNodeWarnings(): void { intakeMethods.IntakeTui_muteNodeWarnings.call(this); }
+  restoreNodeWarnings(): void { intakeMethods.IntakeTui_restoreNodeWarnings.call(this); }
+  viewport(): { height?: number } { return intakeMethods.IntakeTui_viewport.call(this); }
+  setMouseReporting(enabled: boolean): void { intakeMethods.IntakeTui_setMouseReporting.call(this, enabled); }
+  render(immediate = false): void { intakeMethods.IntakeTui_render.call(this, immediate); }
+  productContext(): { productLabel?: string; productConfigured?: boolean } { return intakeMethods.IntakeTui_productContext.call(this); }
+  view(): WorkbenchView { return intakeMethods.IntakeTui_view.call(this); }
 }

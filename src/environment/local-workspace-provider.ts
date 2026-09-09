@@ -1,11 +1,10 @@
-import { lstat, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { SAFE_ID, sha256, writeAtomic } from '../core/identity.js';
+import { SAFE_ID, writeAtomic } from '../core/identity.js';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
 import { RecoveryCheckpointRecordSchema, type RecoveryCheckpointRecord, type RecoveryControlledWrite } from '../core/schema.js';
 import { getRecoveryControlledWriteBinding, replayControlledRecoveryDeltaBytes } from '../infrastructure/recovery-write-journal.js';
-import { verifyRecoveryEvidence, ownedRecoveryRefs, type RecoveryEvidenceVerification } from '../infrastructure/recovery-tools.js';
 import {
   copyTree as copyTree,
   assertId as assertId,
@@ -23,12 +22,11 @@ import {
   readBaselineMarker as readBaselineMarker,
   loadSealedBaseline as loadSealedBaseline,
   isRecoveryEnvelope as isRecoveryEnvelope,
-  hostManifestFromFingerprint as hostManifestFromFingerprint,
-  validateManifest as validateManifest,
-  envelopeForObservedChanges as envelopeForObservedChanges,
+  readRecoveryReport as readRecoveryReport,
   candidateChangedPaths as candidateChangedPaths,
+  assertRecoveryPathBoundary as assertRecoveryPathBoundary,
   changedPaths as changedPaths,
-  readRecoveryReport,
+  cleanupRecoveryTransients as cleanupRecoveryTransients,
 } from './local-workspace-fs.js';
 export {
   publishDirectory as publishDirectory,
@@ -112,7 +110,8 @@ export type EnvironmentBaseline = {
   };
   warnings: string[];
   recovery?: {
-    status: 'recovered' | 'partial' | 'insufficient_evidence' | 'failed';
+    /** New writes are ready | blocked | failed; recovered | partial | insufficient_evidence are disk-read only. */
+    status: 'ready' | 'blocked' | 'failed' | 'recovered' | 'partial' | 'insufficient_evidence';
     /** Host-owned task continuation outcome; agent status alone is not task readiness. */
     taskOutcome?: 'ready_for_task' | 'unrecoverable' | 'blocked_by_safety' | 'runner_failed';
     reportRef?: string;
@@ -143,10 +142,10 @@ export type PreparedEnvironmentRef = {
 export type ReleaseResult = { status: 'released' | 'already_released'; environmentId: string };
 
 export type RecoveryEnvelope = {
-  status: 'recovered' | 'partial' | 'insufficient_evidence';
+  status: 'ready' | 'blocked';
   reportPath: 'recovery.md';
   unresolved: string[];
-  evidenceRefs: string[];
+  evidenceRefs?: string[];
   manifestPath?: 'recovery-manifest.json';
 };
 
@@ -165,15 +164,6 @@ export type RecoveryStaging = {
   playbook?: RecoveryPlaybookProvenance;
 };
 
-export type RecoveryCandidateStaging = {
-  candidateId: string;
-  hypothesisId: string;
-  recoveryId: string;
-  root: string;
-  beforeFingerprint: EnvironmentFingerprint;
-  createdAt: string;
-};
-
 export type RecoveryPreview = {
   recoveryId: string;
   baseline: EnvironmentBaseline;
@@ -182,17 +172,11 @@ export type RecoveryPreview = {
   accepted: boolean;
 };
 
-/** On-disk candidate folder is an 8-hex digest so CreateProcess cwd stays under MAX_PATH. */
-export function recoveryCandidateDirName(candidateId: string): string {
-  return sha256(candidateId).slice(0, 8);
-}
-
 export class LocalWorkspaceProvider {
   readonly #root: string;
   readonly #copyTree: TreeCopier;
   readonly #preparedRoots = new Map<string, string>();
   readonly #recoveryStaging = new Map<string, RecoveryStaging>();
-  readonly #recoveryCandidates = new Map<string, RecoveryCandidateStaging>();
   readonly #recoveryCheckpoints = new Map<string, RecoveryCheckpoint>();
 
   constructor(root: string, copy = copyTree) {
@@ -372,76 +356,6 @@ export class LocalWorkspaceProvider {
   }
 
   /**
-   * Forks a recovery point into a provider-owned candidate workspace. Candidates
-   * never alias the mutable primary staging root, so competing hypotheses cannot
-   * contaminate each other or the source tripwire.
-   */
-  async createRecoveryCandidate(
-    staging: RecoveryStaging,
-    input: { candidateId: string; hypothesisId: string },
-  ): Promise<RecoveryCandidateStaging> {
-    this.#assertRecoveryStaging(staging);
-    assertId(input.candidateId, 'candidateId');
-    assertId(input.hypothesisId, 'hypothesisId');
-    const key = `${staging.recoveryId}:${input.candidateId}`;
-    if (this.#recoveryCandidates.has(key)) throw new Error('Recovery candidate already exists.');
-    const root = join(this.#root, 'rc', staging.recoveryId, recoveryCandidateDirName(input.candidateId));
-    await mkdir(dirname(root), { recursive: true });
-    try {
-      await mkdir(root);
-      await this.#copyTree(staging.root, root);
-      const candidate: RecoveryCandidateStaging = {
-        candidateId: input.candidateId,
-        hypothesisId: input.hypothesisId,
-        recoveryId: staging.recoveryId,
-        root,
-        beforeFingerprint: (await fingerprintTree(root)).fingerprint,
-        createdAt: new Date().toISOString(),
-      };
-      this.#recoveryCandidates.set(key, candidate);
-      return candidate;
-    } catch (error) {
-      await rm(root, { recursive: true, force: true });
-      throw error;
-    }
-  }
-
-  /** Copies a chosen isolated candidate back into the primary staging root for Provider validation. */
-  async selectRecoveryCandidate(
-    staging: RecoveryStaging,
-    candidate: RecoveryCandidateStaging,
-  ): Promise<void> {
-    this.#assertRecoveryStaging(staging);
-    this.#assertRecoveryCandidate(candidate);
-    if (candidate.recoveryId !== staging.recoveryId)
-      throw new Error("Recovery candidate belongs to a different staging session.");
-    await rm(staging.root, { recursive: true, force: true });
-    try {
-      await mkdir(staging.root, { recursive: true });
-      await this.#copyTree(candidate.root, staging.root);
-    } catch (error) {
-      await rm(staging.root, { recursive: true, force: true });
-      throw error;
-    }
-  }
-
-  /** Replaces a mutable execution candidate with another owned candidate before agent actions continue. */
-  async copyRecoveryCandidateTo(candidate: RecoveryCandidateStaging, targetRoot: string): Promise<void> {
-    this.#assertRecoveryCandidate(candidate);
-    const target = resolve(targetRoot);
-    if (!isInside(this.#root, target) || target === this.#root)
-      throw new Error('Recovery candidate target is not owned by this provider.');
-    if (target === candidate.root) return;
-    await rm(target, { recursive: true, force: true });
-    try {
-      await mkdir(target, { recursive: true });
-      await this.#copyTree(candidate.root, target);
-    } catch (error) {
-      await rm(target, { recursive: true, force: true });
-      throw error;
-    }
-  }
-  /**
    * Applies an artifact-backed direct-write journal to an isolated staging tree.
    * The operation is transactional at the provider boundary: writes happen in a
    * temporary copy and replace staging only after every artifact and path check
@@ -489,71 +403,64 @@ export class LocalWorkspaceProvider {
       throw error;
     }
   }
+  /** Recopy the user source onto staging. Callers must also `releasePreparation` so Recovery restarts all three turns. */
+  async resetRecoveryWorkspace(staging: RecoveryStaging): Promise<void> {
+    this.#assertRecoveryStaging(staging);
+    const temporary = join(this.#root, 'rt', `${staging.recoveryId}-reset-${randomUUID()}`);
+    await mkdir(temporary, { recursive: true });
+    try {
+      await this.#copyTree(staging.sourceRoot, temporary);
+      await rm(staging.root, { recursive: true, force: true });
+      await mkdir(staging.root, { recursive: true });
+      await this.#copyTree(temporary, staging.root);
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+  }
+
   async fingerprintRecoveryStaging(staging: RecoveryStaging): Promise<EnvironmentFingerprint> {
     this.#assertRecoveryStaging(staging);
     return (await fingerprintTree(staging.root)).fingerprint;
   }
 
-  async fingerprintRecoveryCandidate(candidate: RecoveryCandidateStaging): Promise<EnvironmentFingerprint> {
-    this.#assertRecoveryCandidate(candidate);
-    return (await fingerprintTree(candidate.root)).fingerprint;
-  }
-
-  async discardRecoveryCandidate(candidate: RecoveryCandidateStaging): Promise<void> {
-    const key = `${candidate.recoveryId}:${candidate.candidateId}`;
-    const owned = this.#recoveryCandidates.get(key);
-    if (!owned || owned.root !== candidate.root) return;
-    this.#recoveryCandidates.delete(key);
-    await rm(candidate.root, { recursive: true, force: true });
-  }
-
-  /** Independently validates an agent result before the operator can publish it. */
-  async validateRecovery(staging: RecoveryStaging, result: RecoveryEnvelope, evidence: readonly RecoveryEvidenceVerification[] = []): Promise<RecoveryPreview> {
+  /** Mechanical checks only; never ranks evidence or rewrites ready/blocked from changed paths. */
+  async validateRecovery(staging: RecoveryStaging, result: RecoveryEnvelope): Promise<RecoveryPreview> {
     this.#assertRecoveryStaging(staging);
     let reportText: string | undefined;
     let sourceTripwireAfter: EnvironmentFingerprint;
     try {
-      await this.probeRecovery(staging, result, evidence);
+      await this.probeRecovery(staging, result);
       if (!isRecoveryEnvelope(result)) throw new Error('Recovery result is invalid.');
       sourceTripwireAfter = (await fingerprintTree(staging.sourceRoot)).fingerprint;
-      if (result.status !== 'insufficient_evidence') reportText = await readRecoveryReport(staging.root);
-      else reportText = await readRecoveryReport(staging.root).catch(() => undefined);
-      // recovery.md and the shell's HOME are audit/runtime artifacts, not candidate-visible workspace input.
-      await unlink(join(staging.root, 'recovery.md')).catch((error: unknown) => { if (!isMissing(error)) throw error; });
-      await unlink(join(staging.root, 'recovery-manifest.json')).catch((error: unknown) => { if (!isMissing(error)) throw error; });
+      reportText = await readRecoveryReport(staging.root);
+      await cleanupRecoveryTransients(staging.root);
       if (staging.temporaryRoot) await rm(staging.temporaryRoot, { recursive: true, force: true });
       const captured = await fingerprintTree(staging.root);
       if (captured.budget.blockedReasons.length) throw new Error(captured.budget.blockedReasons.join(' '));
-      const changed = changedPaths(staging.sourceFingerprint, captured.fingerprint);
-      const ownedRefs = ownedRecoveryRefs(result.evidenceRefs, evidence);
-      const taskChanged = changed.filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json');
-      const effective = await envelopeForObservedChanges({ ...result, evidenceRefs: ownedRefs }, taskChanged, evidence, captured.fingerprint, staging.root);
-      const manifest = effective.status === 'insufficient_evidence'
-        ? undefined
-        : hostManifestFromFingerprint(taskChanged, staging.sourceFingerprint, captured.fingerprint, ownedRefs);
-      const extraNotes = manifest ? await validateManifest(manifest, taskChanged, { ...effective, evidenceRefs: ownedRefs }, evidence, staging.sourceFingerprint, captured.fingerprint, staging.root) : [];
-      const unresolved = [...effective.unresolved, ...extraNotes];
+      const changed = changedPaths(staging.sourceFingerprint, captured.fingerprint).filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json' && path !== '.reprise/recovery-work' && !path.startsWith('.reprise/recovery-work/'));
+      assertRecoveryPathBoundary(changed);
       const recovery: NonNullable<EnvironmentBaseline['recovery']> = {
-        status: effective.status,
+        status: result.status,
         ...(reportText ? { reportRef: 'recovery-md' } : {}),
-        unresolved,
+        unresolved: [...result.unresolved],
         sourceDigest: staging.sourceFingerprint.digest,
         recoveredDigest: captured.fingerprint.digest,
         sourceTripwire: { before: staging.sourceTripwireBefore.digest, after: sourceTripwireAfter.digest },
         ...(staging.playbook ? { playbook: staging.playbook } : {}),
       };
-      const match = effective.status === 'recovered' ? 'recovered' : effective.status === 'partial' ? 'recovered_partial' : 'current_state_fallback';
+      const match = result.status === 'ready' ? 'recovered' : 'current_state_fallback';
       const baseline: EnvironmentBaseline = {
         baselineId: `baseline-${staging.caseId}`, caseId: staging.caseId, mode: 'canonical', match, resources: [],
-        readiness: { runnable: 'isolated', strictness: 'strict', blockingResourceIds: [] }, fingerprint: captured.fingerprint, budget: captured.budget,
+        readiness: {
+          runnable: result.status === 'ready' ? 'isolated' : 'blocked',
+          strictness: 'strict',
+          blockingResourceIds: result.status === 'ready' ? [] : ['recovery-blocked'],
+        }, fingerprint: captured.fingerprint, budget: captured.budget,
         capabilities: { canFork: true, fingerprints: ['file_tree'], externalSideEffects: 'none' },
-        warnings: [
-          ...(effective.status === 'insufficient_evidence' ? ['Recovery had insufficient evidence; replay will use the current source state.'] : []),
-          ...extraNotes,
-        ],
+        warnings: [],
         recovery, createdAt: new Date().toISOString(), root: staging.root,
       };
-      return { recoveryId: staging.recoveryId, baseline, ...(reportText ? { reportText } : {}), changedPaths: changed, accepted: false };
+      return { recoveryId: staging.recoveryId, baseline, ...(reportText ? { reportText } : {}), changedPaths: [...changed], accepted: false };
     } catch (error) {
       await this.discardRecovery(staging);
       throw error;
@@ -561,30 +468,27 @@ export class LocalWorkspaceProvider {
   }
 
   /** Same checks as validateRecovery, but never unlinks sinks or discards staging. */
-  async probeRecovery(
-    staging: RecoveryStaging,
-    result: RecoveryEnvelope,
-    evidence: readonly RecoveryEvidenceVerification[] = [],
-    candidate?: RecoveryCandidateStaging,
-  ): Promise<void> {
+  async probeRecovery(staging: RecoveryStaging, result: RecoveryEnvelope): Promise<void> {
     this.#assertRecoveryStaging(staging);
-    if (candidate) this.#assertRecoveryCandidate(candidate);
-    const root = candidate?.root ?? staging.root;
-    if (!isRecoveryEnvelope(result)) throw new Error('Recovery result is invalid.');
-    const ownedRefs = ownedRecoveryRefs(result.evidenceRefs, evidence);
-    await verifyRecoveryEvidence(root, ownedRefs, evidence);
-    const sourceTripwireAfter = (await fingerprintTree(staging.sourceRoot)).fingerprint;
-    if (sourceTripwireAfter.digest !== staging.sourceTripwireBefore.digest) throw new RecoveryValidationError('source_tripwire_failed', 'Recovery changed the user source directory; staging will be discarded.');
-    if (result.status !== 'insufficient_evidence') await readRecoveryReport(root);
-    else await readRecoveryReport(root).catch(() => undefined);
-    const captured = await fingerprintTree(root);
-    if (captured.budget.blockedReasons.length) throw new Error(captured.budget.blockedReasons.join(' '));
-    const changed = candidateChangedPaths(staging.sourceFingerprint, captured.fingerprint);
-    if (result.status === 'insufficient_evidence' && changed.length) throw new Error('insufficient_evidence must leave the staging workspace unchanged.');
-    if (result.status !== 'insufficient_evidence') {
-      const effective = await envelopeForObservedChanges({ ...result, evidenceRefs: ownedRefs }, changed, evidence, captured.fingerprint, root);
-      const manifest = hostManifestFromFingerprint(changed, staging.sourceFingerprint, captured.fingerprint, ownedRefs);
-      await validateManifest(manifest, changed, effective, evidence, staging.sourceFingerprint, captured.fingerprint, root);
+    const root = staging.root;
+    try {
+      if (!isRecoveryEnvelope(result)) throw new RecoveryValidationError("provider_validation_failed", "Recovery result is invalid.");
+      const sourceTripwireAfter = (await fingerprintTree(staging.sourceRoot)).fingerprint;
+      if (sourceTripwireAfter.digest !== staging.sourceTripwireBefore.digest) throw new RecoveryValidationError("source_tripwire_failed", "Recovery changed the user source directory; staging will be discarded.");
+      try {
+        await readRecoveryReport(root);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new RecoveryValidationError("provider_validation_failed", message.includes("ENOENT") || message.includes("no such file") ? "Recovery report recovery.md is missing." : message);
+      }
+      const captured = await fingerprintTree(root);
+      if (captured.budget.blockedReasons.length) throw new RecoveryValidationError("provider_validation_failed", captured.budget.blockedReasons.join(" "));
+      const changed = candidateChangedPaths(staging.sourceFingerprint, captured.fingerprint)
+        .filter((path) => path !== "recovery.md" && path !== "recovery-manifest.json" && !path.startsWith(".reprise/recovery-work"));
+      assertRecoveryPathBoundary(changed);
+    } catch (error) {
+      if (error instanceof RecoveryValidationError) throw error;
+      throw new RecoveryValidationError("provider_validation_failed", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -592,6 +496,9 @@ export class LocalWorkspaceProvider {
   async acceptRecovery(preview: RecoveryPreview): Promise<EnvironmentBaseline> {
     const staging = this.#recoveryStaging.get(preview.recoveryId);
     if (!staging || preview.accepted || preview.baseline.root !== staging.root) throw new Error('Recovery preview is no longer available.');
+    if (preview.baseline.recovery?.status === 'blocked' || preview.baseline.readiness.runnable === 'blocked') {
+      throw new Error('Blocked Recovery cannot be published as a baseline.');
+    }
     const baselineRoot = join(this.#root, 'baselines', staging.caseId);
     const markerPath = join(dirname(baselineRoot), `${staging.caseId}.marker.json`);
     if (await exists(baselineRoot) || await exists(markerPath)) throw new Error(`A baseline already exists for ${staging.caseId}.`);
@@ -612,9 +519,6 @@ export class LocalWorkspaceProvider {
     const owned = this.#recoveryStaging.get(staging.recoveryId);
     if (!owned || owned.root !== staging.root) return;
     this.#recoveryStaging.delete(staging.recoveryId);
-    for (const candidate of [...this.#recoveryCandidates.values()]) {
-      if (candidate.recoveryId === staging.recoveryId) await this.discardRecoveryCandidate(candidate);
-    }
     await rm(staging.root, { recursive: true, force: true });
     if (staging.temporaryRoot) await rm(staging.temporaryRoot, { recursive: true, force: true });
   }
@@ -622,10 +526,6 @@ export class LocalWorkspaceProvider {
   #assertRecoveryStaging(staging: RecoveryStaging): void {
     const owned = this.#recoveryStaging.get(staging.recoveryId);
     if (!owned || owned.root !== staging.root || !isInside(this.#root, staging.root)) throw new Error('Recovery staging is not owned by this provider.');
-  }
-  #assertRecoveryCandidate(candidate: RecoveryCandidateStaging): void {
-    const owned = this.#recoveryCandidates.get(`${candidate.recoveryId}:${candidate.candidateId}`);
-    if (!owned || owned.root !== candidate.root || !isInside(this.#root, candidate.root)) throw new Error('Recovery candidate is not owned by this provider.');
   }
 
   /** Copies a previously inspected source into provider-owned baseline storage. */
@@ -667,7 +567,7 @@ export class LocalWorkspaceProvider {
 
     try {
       const { fingerprint } = await fingerprintTree(baselineRoot);
-      return { ...inspected, fingerprint, root: baselineRoot, ...(recorded?.recovery ? { recovery: recorded.recovery, match: recorded.recovery.status === 'recovered' ? 'recovered' : recorded.recovery.status === 'partial' ? 'recovered_partial' : 'current_state_fallback' } : {}) };
+      return { ...inspected, fingerprint, root: baselineRoot, ...(recorded?.recovery ? { recovery: recorded.recovery, match: recorded.recovery.status === 'ready' || recorded.recovery.status === 'recovered' ? 'recovered' : recorded.recovery.status === 'partial' ? 'recovered_partial' : 'current_state_fallback' } : {}) };
     } catch (error) {
       if (recorded === undefined) await removeCaptureArtifacts(undefined, baselineRoot, markerPath);
       throw error;
@@ -686,6 +586,7 @@ export class LocalWorkspaceProvider {
     let beforeFingerprint: EnvironmentFingerprint;
     try {
       await this.#copyTree(baselineRoot, runRoot);
+      await cleanupRecoveryTransients(runRoot);
       beforeFingerprint = (await fingerprintTree(runRoot)).fingerprint;
     } catch (error) {
       await rm(runRoot, { recursive: true, force: true });

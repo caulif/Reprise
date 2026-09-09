@@ -4,14 +4,19 @@
 
 ## 按任务阅读
 
+Recovery 需求与实施差异见[起点恢复目标](./plan/recovery-initial-environment.md)，当前行为仍以环境规范和代码为准。
+
 | 要做什么 | 先读 | 再读 |
 |---|---|---|
 | 使用与配置 | [产品定义](./product/overview.md)、[TUI](./product/tui.md) | [支持](./SUPPORT.md)、[真实调用准入](./codex-smoke-gate.md) |
-| 理解代码边界 | [架构总览](./architecture/overview.md) | [技术基线](./architecture/technology-selection.md)、[角色与 prompt 入口](./architecture/agent-roles-and-system-prompts.md) |
+| 理解代码边界 | [架构总览](./architecture/overview.md) | [技术基线](./architecture/technology-selection.md)、[角色与 prompt 入口](./architecture/agent-roles-and-system-prompts.md)、[基座 Host](./decisions/accepted/2026-09-09-agent-foundation-host.md) |
 | 修改存储或运行 | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md)、[环境](./architecture/environment.md) |
 | 修改模拟用户或对照 | [Controller](./architecture/controller.md)、[Comparison](./architecture/comparison.md) | [实验条件](./architecture/controller-experiment-conditions.md)、[验证边界](./architecture/validation.md) |
+| 重构 Controller Agent | [Controller 重构实施参考](./plan/controller-agent-reconstruction.md) | [Controller 架构](./architecture/controller.md)、[实验条件](./architecture/controller-experiment-conditions.md) |
+| 全面重构 Controller | [全面重构计划](./plan/controller-full-refactor-plan.md) | [重构实施参考](./plan/controller-agent-reconstruction.md)、[Controller 架构](./architecture/controller.md) |
+| 阅读比较卡与 Controller 编排 | [对照](./architecture/comparison.md)、[Controller](./architecture/controller.md) | [可分享比较卡](./decisions/accepted/2026-09-09-comparison-shareable-task-card.md)、[Controller 先理解再决策](./decisions/accepted/2026-09-09-controller-understand-then-view.md)；Comparison 全面重构见[实施方案](./plan/comparison-agent-full-refactor.md) |
 | 接入产品或平台 | [Product Pack](./architecture/product-plugin-compatibility.md) | [本机平台边界](./architecture/cross-platform.md) |
-| 核对验收缺口 | [架构目标与 A1–A18](./plan/reprise-architecture-redesign.md)、[TUI 目标](./plan/reprise-tui-design.md) | [TUI 界面重构步骤](./plan/reprise-tui-surface-refactor.md)、[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)、[进度](./progress/MASTER.md)、[已关闭实施批次](./plan/reprise-refactoring-execution.md) |
+| 核对验收缺口 | [架构目标与 A1–A18](./plan/reprise-architecture-redesign.md)、[TUI 目标](./plan/reprise-tui-design.md) | [TUI 界面重构步骤](./plan/reprise-tui-surface-refactor.md)、[模块所有权归组](./plan/reprise-module-ownership.md)、[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)、[进度](./progress/MASTER.md)、[已关闭实施批次](./plan/reprise-refactoring-execution.md) |
 | 提交与审查 | [贡献指南](./CONTRIBUTING.md)、[工程门禁](./engineering-gates.md) | [任务 brief](./plan/task-brief-template.md)、[治理](./GOVERNANCE.md) |
 | 维护文档或发布 | [文档结构](./documentation-structure.md)、[文档指令](./AGENTS.md) | [发布检查](./release-checklist.md)、[Changelog](./CHANGELOG.md)、[事故复盘](./postmortem-template.md) |
 

@@ -7,7 +7,7 @@ Recovery already preserved isolated candidates, controlled-write journals, and P
 ## Decision
 
 - Persist a schema-validated `RecoveryLifecycleAttempt` event/artifact record for the Recovery lifecycle. It contains only phase, operation identifier, candidate identifier, retry ordinal, redacted failure code, duration, and timestamp.
-- Keep the Recovery lifecycle transition table in `src/application/recovery-orchestrator.ts`; it is deliberately Recovery-specific rather than a generic workflow abstraction.
+- Keep the Recovery lifecycle transition table in `src/application/recovery/orchestrator.ts`; it is deliberately Recovery-specific rather than a generic workflow abstraction.
 - Derive candidate `pathOutcomes` from Provider fingerprints. `recovery.md` and `recovery-manifest.json` remain auditable delivery artifacts but are excluded from `recoveredPaths`, candidate verification scope, and recovery-effect summaries.
 - Do not claim semantic truth from a path outcome. `verified`, `accepted`, and hidden-truth `truth-passed` remain distinct promotion layers.
 
@@ -28,4 +28,4 @@ The main flow now records `selected_checkpoint` after verified Provider validati
 
 ## RecoveryOrchestrator ownership
 
-Recovery 生命周期由 `src/application/recovery-orchestrator.ts` 中的 `RecoveryOrchestrator` 持有。它统一负责状态推进、schema 校验后的 attempt 记录和失败终态收口；`experiment.ts` 仅编排 Provider、forensics、candidate 与 promotion 的领域操作，并通过该端口持久化审计事件。这样避免领域操作直接修改生命周期状态，也为后续按窄端口提取 forensics、candidate executor 和 promotion 留下稳定边界。
+Recovery 生命周期由 `src/application/recovery/orchestrator.ts` 中的 `RecoveryOrchestrator` 持有。它统一负责状态推进、schema 校验后的 attempt 记录和失败终态收口；`experiment.ts` 仅编排 Provider、forensics、candidate 与 promotion 的领域操作，并通过该端口持久化审计事件。这样避免领域操作直接修改生命周期状态，也为后续按窄端口提取 forensics、candidate executor 和 promotion 留下稳定边界。

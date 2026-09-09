@@ -61,16 +61,24 @@ export async function writeFrozenObservationTree(input: {
     await writeAtomic(join(input.root, "playbook.md"), input.playbookText);
     fileCount += 1;
   }
+  const userInputs = await writeUserInputIndex({
+    root: input.root,
+    taskCase: input.taskCase,
+    runEvents: input.runEvents ?? [],
+  });
+  fileCount += userInputs.fileCount;
   const index = [
     "# Frozen observations",
     "",
     "Host-owned copies of the frozen session. This tree is not the candidate workspace.",
     "Read INDEX.tsv then a single file with `read`. Grep when you need one sentence or ref.",
     "Do not treat this directory as task output. Envelope refs are the `ref` field inside each JSON file.",
+    "User demand is indexed at user-inputs/INDEX.tsv; read those files in order before other evidence.",
     "",
     `- transcript files: ${catalog.filter((entry) => entry.source === "transcript").length}`,
     `- historical event files: ${catalog.filter((entry) => entry.source === "historical_events").length}`,
     `- run event files: ${input.runEvents?.length ?? 0}`,
+    `- user input files: ${userInputs.turnCount}`,
     input.playbookText ? "- playbook.md — product recovery playbook text" : "",
     "",
   ]
@@ -80,6 +88,68 @@ export async function writeFrozenObservationTree(input: {
   await writeAtomic(join(input.root, "INDEX.tsv"), `${rows.join("\n")}\n`);
   fileCount += 2;
   return { fileCount };
+}
+
+async function writeUserInputIndex(input: {
+  root: string;
+  taskCase: TaskCase;
+  runEvents?: readonly EventEnvelope[];
+}): Promise<{ fileCount: number; turnCount: number }> {
+  const dir = join(input.root, "user-inputs");
+  await mkdir(dir, { recursive: true });
+  const rows = ["turn_id\torder\trole\tsource\tpath\tattachments\trelated"];
+  let order = 0;
+  let extraFiles = 0;
+  for (const message of input.taskCase.transcript) {
+    if (message.role !== "user") continue;
+    order += 1;
+    rows.push([
+      message.id,
+      String(order),
+      "user",
+      "historical_user",
+      `history/transcript/${message.id}.txt`,
+      "missing",
+      relatedReplyPath(input.taskCase.transcript, message.id),
+    ].join("\t"));
+  }
+  for (const event of input.runEvents ?? []) {
+    const sent = controllerSendTurn(event);
+    if (!sent) continue;
+    order += 1;
+    const relative = `user-inputs/${sent.id}.txt`;
+    await writeAtomic(join(input.root, ...relative.split("/")), `${sent.text}\n`);
+    extraFiles += 1;
+    rows.push([
+      sent.id,
+      String(order),
+      "user",
+      "controller",
+      `${OBSERVATIONS_MOUNT}/${relative}`,
+      "missing",
+      "missing",
+    ].join("\t"));
+  }
+  await writeAtomic(join(dir, "INDEX.tsv"), `${rows.join("\n")}\n`);
+  return { fileCount: extraFiles + 1, turnCount: order };
+}
+
+function relatedReplyPath(
+  transcript: TaskCase["transcript"],
+  userId: string,
+): string {
+  const index = transcript.findIndex((message) => message.id === userId);
+  const next = index >= 0 ? transcript[index + 1] : undefined;
+  if (next?.role === "assistant") return `history/transcript/${next.id}.txt`;
+  return "missing";
+}
+
+function controllerSendTurn(event: EventEnvelope): { id: string; text: string } | undefined {
+  if (event.type !== "controller.decision") return undefined;
+  const payload = event.payload as { status?: unknown; value?: { type?: unknown; message?: unknown } };
+  if (payload.status !== "completed" || payload.value?.type !== "send") return undefined;
+  if (typeof payload.value.message !== "string" || !payload.value.message.trim()) return undefined;
+  return { id: `controller-send-${event.eventId}`, text: payload.value.message };
 }
 
 async function writeObservationFile(path: string, body: {

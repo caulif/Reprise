@@ -21,6 +21,41 @@ function envelope(type: string, payload: unknown, sequence = 1): EventEnvelope {
   };
 }
 
+test('latest settled turn does not reuse a previous assistant reply', async () => {
+  const events = [
+    envelope('codex.item_completed', { item: { type: 'agentMessage', text: 'FIRST_REPLY' } }, 1),
+    envelope('runtime.turn_settled', { status: 'completed' }, 2),
+    envelope('runtime.turn_settled', { status: 'failed' }, 3),
+  ];
+  const store = { events: () => events } as unknown as ExperimentStore;
+  const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
+  const observation = await inspectRun(store, record, true, 'codex');
+  assert.equal(observation.finalMessage, 'FIRST_REPLY');
+  assert.equal(observation.turnVisibleText, undefined);
+  assert.equal(observation.settlementStatus, 'failed');
+  assert.match(observation.currentSummary, /No model text is available to the Controller/);
+});
+
+test('latest settled turn prompt comes from public activity, not the previous reply', async () => {
+  const events = [
+    envelope('codex.item_completed', { item: { type: 'agentMessage', text: 'FIRST_REPLY' } }, 1),
+    envelope('runtime.turn_settled', { status: 'completed' }, 2),
+    envelope('runtime.public_activity', {
+      schemaVersion: 1,
+      sourceEventId: 'event-3',
+      sourceEventType: 'codex.item_completed',
+      activity: { kind: 'prompt', text: 'Approve editing README.md?' },
+    }, 3),
+    envelope('runtime.turn_settled', { status: 'waiting_input' }, 4),
+  ];
+  const store = { events: () => events } as unknown as ExperimentStore;
+  const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
+  const observation = await inspectRun(store, record, true, 'codex');
+  assert.equal(observation.turnVisibleText, undefined);
+  assert.equal(observation.turnPrompt, 'Approve editing README.md?');
+  assert.equal(observation.settlementStatus, 'waiting_input');
+});
+
 test('inspectRun current summary does not inline candidate final text', async () => {
   const marker = 'UNIQUE_PPT_CLAIM_SHOULD_NOT_APPEAR';
   const events = [

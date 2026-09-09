@@ -6,7 +6,7 @@
 
 单一 TypeScript/ESM npm 包，保持模块化单体。版本与脚本以 [package.json](../../package.json)、[lockfile](../../package-lock.json)为准，不复制第二份依赖 JSON。Node 最低版本为 engines 声明的基线。
 
-Pi Agent Core、pi-ai、pi-tui 分别用于执行循环、模型适配与终端组件。共用 [Pi Host](../../src/infrastructure/pi-agent-host.ts)，业务权限、生命周期和持久化不交给另一套通用应用壳。锁定 0.84.1 时，公开 `Agent` loop 可用；`AgentHarness.prompt`/`compact`/`resume` 抛出 `HarnessNotImplemented`。Session 事实写入 Experiment `events.jsonl`，不以 Pi JSONL 为权威，见[事实源决策](../decisions/accepted/2026-09-08-session-fact-owner-and-identity.md)。模型可见试卷从同一日志与 `agent_model_input` 附件重建，见[模型输入重建](../decisions/accepted/2026-09-08-model-input-reconstruction.md)。
+Pi Agent Core、pi-ai、pi-tui 分别用于执行循环、模型适配与终端组件。三个内部角色共用 [AgentHost](../../src/infrastructure/agent/host.ts)；Pi 仅出现在 `providers/pi/` 适配器。业务权限、生命周期和持久化不交给另一套通用应用壳。锁定 0.84.1 时，公开 `Agent` loop 可用；`AgentHarness.prompt`/`compact`/`resume` 抛出 `HarnessNotImplemented`。Session 事实写入 Experiment `events.jsonl`，不以 Pi JSONL 为权威，见[事实源决策](../decisions/accepted/2026-09-08-session-fact-owner-and-identity.md)与[基座 Host](../decisions/accepted/2026-09-09-agent-foundation-host.md)。模型可见试卷从同一日志与 `agent_model_input` 附件重建，见[模型输入重建](../decisions/accepted/2026-09-08-model-input-reconstruction.md)。
 
 ## CLI 与 TUI
 

@@ -12,8 +12,8 @@
 2. “固定 Controller”是指同一个 Experiment 内将 Controller 作为控制变量，不是把某个模型硬编码成产品默认值，也不是要求不同时间创建的所有 Experiment 永久使用同一模型。
 3. 每个 CandidateRun 使用独立的 Controller session，候选之间不共享隐藏状态；同一 Experiment 的候选共享同一份已解析 Controller 配置。
 4. Pi Agent Host 随项目正常更新，不要求恢复或固定历史 Host 版本，也不作为目标 Runtime 的比较变量。
-5. Controller 可以且必须访问 TaskCase 中的完整原始会话。原始会话是理解用户目标、知识、偏好、纠正方式和验收习惯的证据，不是需要隐藏的标准答案；Target Runtime 收到的用户消息全部由 Controller 写出，包括第一句。
-6. 完整原始会话的使用边界由 canonical system prompt 明确限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停，不是终态句里的交付物种类，也不是用完 `historicalUserTurns`。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。第一版不再设计未来信息检测、答案泄漏评分、第二审查 Agent 或人工用户策略规则。
+5. Controller 可以且必须通过稳定的用户输入索引访问 TaskCase 中的完整原始会话。用户输入是理解目标、知识、偏好、纠正方式和验收习惯的证据；Target Runtime 收到的用户消息全部由 Controller 写出，包括第一句。历史 Agent 输出、工具过程和交付物按需读取，不在每轮全部内联。
+6. 完整原始会话的使用边界由 canonical system prompt 明确限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停，不是用完 `historicalUserTurns`。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。Controller 只在候选 turn 稳定完成后，先看 Host 的用户视图快照，再按需读取用户可访问材料；不读取流式中间内容。第一版不设计未来信息检测、答案泄漏评分、第二审查 Agent 或人工用户策略规则。
 7. “同等人类能力”不能被证明，只能被操作化。产品实现的是固定条件下的适应性用户协作模拟，不声称精确预测真实用户在反事实情境中的唯一输入。
 8. Controller 使用什么模型不属于 Harness 的产品判断，取决于用户通过 Pi 能访问什么模型。Harness 不捆绑、推荐或评价 Controller 模型。
 
@@ -101,7 +101,7 @@ Host 暴露工作区七件套。`read_observation` 不注册。历史与本 run 
 - 确定性 renderer 可以生成派生预览，但预览必须成为带 provenance 的新 artifact；
 - 工具能力配置在同一 Experiment 的候选间一致，实际调用次数不要求一致。
 
-当前环境和候选轨迹的轻量摘要可以出现在 INDEX 与 THIS-TURN 文件里。工具用于按需读原文，不应该让 Controller 在整个工作区里漫游。
+当前环境和候选轨迹的轻量摘要可以出现在 INDEX、用户视图快照与 THIS-TURN 文件里。工具用于按需读用户可访问原文，不应该让 Controller 在整个工作区里漫游。视图快照在候选 turn 稳定完成后由 Host 写入，代表用户此刻能看到的状态、回复、交付入口和可见提示。
 
 ## 5. 原始会话可见范围
 
@@ -122,10 +122,10 @@ Controller 对原始会话采用“完整可访问”，而不是“每轮把所
 
 ```text
 决策段 + INDEX.md（每次 append）
-+ briefing 上的 history/、run/turns/、THIS-TURN（按需 read）
++ view.txt / permissions.txt（Host 快照）
++ briefing 上的 history/user-inputs/、history/、run/turns/、THIS-TURN（按需 read）
 + project/ 隔离副本（按需 read）
-+ 剩余预算（budget.decisionsUsed / 可选 decisionsLimit）
-→ 模型可见输入；SteeringContext 其余字段供 Host 校验，不 JSON 进 prompt
+→ 模型可见输入；SteeringContext 其余字段（含 budget）供 Host 校验，不 JSON 进 prompt
 ```
 
 完整可访问落实为 briefing 文件加工作区工具。INDEX 只列路径；transcript 按 `history/transcript/{id}.txt` 读取。窗口不够时靠 Pi 压缩，不以摘要替代磁盘原文。

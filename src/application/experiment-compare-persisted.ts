@@ -9,7 +9,8 @@ import { readJsonFile } from "./experiment-history-list.js";
 import { attachExperimentComparison } from "./experiment-report.js";
 import { finishExperimentActivity, registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
 import { isPersistedExperimentMetadata, listPersistedRunIds, readRunPreflight, resolvedExperimentRoot } from "./experiment-layout.js";
-import type { CodexExperimentInput, CodexExperimentPreflight, CodexExperimentResult, ExperimentAgentConfig } from "./experiment.js";
+import type { ExperimentInput, ExperimentResult, ExperimentAgentConfig } from "./experiment.js";
+import type { ExperimentPreflight } from "./experiment-preflight.js";
 import type { ComparisonAgentPort } from "../agents/comparison-agent.js";
 import type { ControllerPort } from "../agents/controller-agent.js";
 import type { RunPolicy } from "../core/schema.js";
@@ -27,7 +28,7 @@ export async function comparePersistedExperiment(input: {
   readonly signal?: AbortSignal;
   readonly onEvent?: (event: EventEnvelope) => void;
   readonly onActivity?: (activity: ExperimentActivity) => void;
-}): Promise<CodexExperimentResult> {
+}): Promise<ExperimentResult> {
   const experimentRoot = resolvedExperimentRoot(input.dataDir, input.experimentId);
   const loaded = await loadFinishedRun(experimentRoot, input.experimentId, input.runId);
   const store = await ExperimentStore.open(experimentRoot, input.experimentId);
@@ -116,7 +117,7 @@ async function loadFinishedRun(experimentRoot: string, experimentId: string, req
   };
 }
 
-function isPreflight(value: unknown): value is CodexExperimentPreflight {
+function isPreflight(value: unknown): value is ExperimentPreflight {
   return typeof value === "object" && value !== null && "sourceBaseline" in value && "resolved" in value;
 }
 
@@ -124,7 +125,7 @@ function experimentInput(
   input: { dataDir: string; comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig; policy: RunPolicy; now: string; onEvent?: (event: EventEnvelope) => void },
   loaded: { spec: ExperimentSpec; record: RunRecord; taskCase: TaskCase },
   experimentRoot: string,
-): CodexExperimentInput {
+): ExperimentInput {
   const candidate = loaded.record.attempt.candidate;
   const controller: ControllerPort = { decide: async () => ({ status: "cancelled" }) };
   return {

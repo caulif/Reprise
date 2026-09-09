@@ -11,12 +11,17 @@ import type { ExperimentStore } from "../infrastructure/store/experiment-store.j
 import { findProductPack } from "../products/index.js";
 import { packActivity } from "../products/pack-access.js";
 import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./replay-conditions.js";
-import { recordValue, strings, totalTokenCount } from "./experiment-helpers.js";
+import { recordValue, strings, collectedTokenFacts, totalTokenCount } from "./experiment-helpers.js";
 
 export type ControllerObservation = RunInspection & {
   evidenceRefs: string[];
   currentSummary: string;
   trajectorySummary: string;
+  settlementStatus?: string;
+  /** Visible assistant text from the latest settled turn only; empty when that turn has none. */
+  turnVisibleText?: string;
+  /** User-visible confirmation or approval request from the latest settled turn. */
+  turnPrompt?: string;
 };
 
 export type WorkspaceInspection = {
@@ -43,18 +48,24 @@ export async function inspectRun(
   if (!runId)
     throw new Error("Run inspection requires a RunRecord or active workspace.");
   const events = store.events(runId);
-  const facts = packActivity(findProductPack(productId)).inspectRunFacts(events);
+  const translator = packActivity(findProductPack(productId));
+  const facts = translator.inspectRunFacts(events);
   const finalMessage = facts.finalMessage;
   const commands = [...facts.commands];
   const settled = events.filter(
     (event) => event.type === "runtime.turn_settled",
   );
+  const turnEvents = eventsForLatestSettledTurn(events);
+  const turnFacts = translator.inspectRunFacts(turnEvents);
+  const turnVisibleText = allowModelText ? turnFacts.finalMessage : undefined;
+  const turnPrompt = allowModelText ? userVisiblePrompt(turnEvents, translator) : undefined;
   const rejectedApprovals = facts.rejectedApprovals;
   const workspaceFacts = record
     ? await readWorkspaceScope(store, record)
     : await inspectWorkspace(workspace);
   const wallClockMs = elapsedWallClock(events, settled);
   const tokenCount = totalTokenCount(events);
+  const tokenUsage = collectedTokenFacts(events);
   const replayConditions = replay
     ? hostReplayConditions({
         sourceRootKind: replay.sourceRootKind,
@@ -76,6 +87,7 @@ export async function inspectRun(
     turns: settled.length,
     ...(wallClockMs === undefined ? {} : { wallClockMs }),
     ...(tokenCount === undefined ? {} : { tokenCount }),
+    ...(tokenUsage ? { tokenUsage } : {}),
     ...workspaceFacts,
     ...(replayConditions?.length ? { replayConditions } : {}),
   };
@@ -91,12 +103,50 @@ export async function inspectRun(
     `Latest target settlement: ${status}.`,
     `Observed commands: ${commands.length}; changed paths: ${inspection.changedPaths.length}; rejected approvals: ${rejectedApprovals}.`,
     `Workspace evidence: ${inspection.workspaceEvidenceStatus ?? "unavailable"}.`,
-    allowModelText && finalMessage
+    allowModelText && turnVisibleText
       ? "Visible assistant text was recorded; inspect THIS-TURN and project files rather than treating this summary as completion."
       : "No model text is available to the Controller.",
   ].join(" ");
   const trajectorySummary = `Settled turns: ${inspection.turns}; commands: ${commands.length}; changed paths: ${inspection.changedPaths.length}; runtime-generated paths: ${inspection.runtimeGeneratedPaths.length}.`;
-  return { ...inspection, evidenceRefs, currentSummary, trajectorySummary };
+  return {
+    ...inspection,
+    evidenceRefs,
+    currentSummary,
+    trajectorySummary,
+    settlementStatus: status,
+    ...(turnVisibleText ? { turnVisibleText } : {}),
+    ...(turnPrompt ? { turnPrompt } : {}),
+  };
+}
+
+/** Inclusive sequence window from the previous settlement (exclusive) through the latest `runtime.turn_settled`. */
+export function eventsForLatestSettledTurn(events: readonly EventEnvelope[]): EventEnvelope[] {
+  const settled = events.filter((event) => event.type === "runtime.turn_settled");
+  const last = settled.at(-1);
+  if (!last) return [];
+  const previous = settled.at(-2);
+  const start = previous?.sequence ?? 0;
+  return events.filter((event) => event.sequence > start && event.sequence <= last.sequence);
+}
+
+function userVisiblePrompt(
+  events: readonly EventEnvelope[],
+  translator: ReturnType<typeof packActivity>,
+): string | undefined {
+  const fromPublic = events.flatMap((event) => {
+    if (event.type !== "runtime.public_activity") return [];
+    const activity = recordValue(recordValue(event.payload).activity);
+    return activity.kind === "prompt" && typeof activity.text === "string" && activity.text.trim()
+      ? [activity.text.trim()]
+      : [];
+  });
+  if (fromPublic.length) return fromPublic.at(-1);
+  const fromTranslate = events.flatMap((event) =>
+    translator.translate(event).flatMap((item) =>
+      item.activity.kind === "prompt" && item.activity.text.trim() ? [item.activity.text.trim()] : [],
+    ),
+  );
+  return fromTranslate.at(-1);
 }
 
 export function unstartedControllerObservation(): Pick<

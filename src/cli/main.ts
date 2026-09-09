@@ -117,9 +117,9 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
 }
 
 async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string; autoCompare?: boolean }): Promise<void> {
-  const { CodexIntakeTui } = await import("../tui/intake-app.js");
+  const { IntakeTui } = await import("../tui/intake-app.js");
   const dataDir = resolve(input.dataDir);
-  await new CodexIntakeTui({
+  await new IntakeTui({
     dataDir,
     sessionsRoot: input.sessionsRoot,
     sessionsRoots: input.sessionsRoots,

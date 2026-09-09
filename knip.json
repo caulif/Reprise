@@ -16,10 +16,10 @@
     "scripts/_live-run-with-env.py",
     "scripts/_validate-harness.mjs",
     "scripts/tui-live-run.mjs",
-    "src/application/experiment-recovery-run-forensics.ts",
-    "src/application/experiment-recovery-run-model.ts",
-    "src/application/experiment-recovery-run-preflight.ts",
-    "src/application/experiment-recovery-session.ts"
+    "src/application/recovery/run-forensics.ts",
+    "src/application/recovery/run-model.ts",
+    "src/application/recovery/run-preflight.ts",
+    "src/application/recovery/session.ts"
   ],
   "rules": {
     "exports": "error",

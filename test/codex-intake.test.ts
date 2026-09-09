@@ -11,7 +11,7 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { CodexIntakeTui } from "../src/tui/intake-app.js";
+import { IntakeTui } from "../src/tui/intake-app.js";
 import {
   defaultHarnessModelConfig,
   saveHarnessModelConfig,
@@ -30,7 +30,7 @@ test("intake discovers only the selected registered product and keeps product ca
   }) as unknown as import("../src/products/contract.js").ProductPack;
   let document: Component | undefined;
   const tui = { addChild(component: Component) { document = component; }, addInputListener() { return () => {}; }, start() {}, stop() {}, requestRender() {}, renderNow() {} } as unknown as TUI;
-  const app = new CodexIntakeTui({ dataDir: join(root, "data"), tui, packs: [pack("codex", "Codex", [summary("codex", "codex-1")]), pack("claude-code", "Claude Code", [summary("claude-code", "claude-1")])], privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
+  const app = new IntakeTui({ dataDir: join(root, "data"), tui, packs: [pack("codex", "Codex", [summary("codex", "codex-1")]), pack("claude-code", "Claude Code", [summary("claude-code", "claude-1")])], privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
   await app.start();
   await app.loadSessions();
   assert.deepEqual(calls, []);
@@ -67,7 +67,7 @@ test("Codex intake TUI uses an ASCII narrow-terminal fallback and states the min
     requestRender() {},
     renderNow() {},
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot: join(root, "sessions"),
     tui,
@@ -109,7 +109,7 @@ test("Codex intake TUI uses framed panels at normal terminal widths", async (t) 
     requestRender() {},
     renderNow() {},
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot: join(root, "sessions"),
     tui,
@@ -145,7 +145,7 @@ test("Codex intake TUI presents session discovery errors instead of rejecting in
       rendered = document?.render(120).join("\n") ?? "";
     },
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui,
@@ -222,7 +222,7 @@ test("Codex intake TUI only reads before explicit freeze and leaves no ambiguous
       rendered = document?.render(120).join("\n") ?? "";
     },
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui,

@@ -3,7 +3,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { getCapabilities } from "@earendil-works/pi-tui";
-import { CodexIntakeTui } from "../src/tui/intake-app.js";
+import { IntakeTui } from "../src/tui/intake-app.js";
 import { fileLink } from "../src/tui/format.js";
 import { DISABLE_MOUSE_REPORTING } from "../src/tui/terminal-guard.js";
 
@@ -22,7 +22,7 @@ const writes: string[] = [];
 let viewportWheel = 0;
 let viewportMouse = 0;
 const dataDir = await mkdtemp(resolve(tmpdir(), "reprise-tui-probe-"));
-const app = new CodexIntakeTui({
+const app = new IntakeTui({
   dataDir,
   privacy: { allowModelText: false, allowBinary: false, redactions: [] },
 });

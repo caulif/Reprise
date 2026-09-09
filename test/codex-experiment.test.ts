@@ -6,8 +6,10 @@ import { join } from "node:path";
 import type { ComparisonAgentPort } from "../src/agents/comparison-agent.js";
 import { ControllerAgent, type ControllerPort } from "../src/agents/controller-agent.js";
 import { controllerReadEvidenceOnRequest, reconstructControllerRequest } from "../src/application/controller-request.js";
-import { preflightCodexExperiment, recoverCodexExperiment, startCodexExperiment } from "../src/application/experiment.js";
-import { PiAgentHost } from "../src/infrastructure/pi-agent-host.js";
+import { preflightCodexExperiment } from "../src/application/experiment-preflight.js";
+import { recoverCodexExperiment } from "../src/application/recovery/recover.js";
+import { startCodexExperiment } from "../src/application/experiment.js";
+import { PiAgentHost } from "../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../src/infrastructure/store/experiment-store.js";
 import type { ResolvedRuntime, TargetEventSink, TargetRunner } from "../src/core/runtime.js";
@@ -349,6 +351,9 @@ test("a scripted Controller run persists controller.requested and reconstructs i
           append: async () => {
             calls += 1;
             if (calls === 1) {
+              return "Working understanding of the historical user demand.";
+            }
+            if (calls === 2) {
               const tool = session.tools.find((entry) => entry.name === "read");
               assert.ok(tool);
               assert.equal(session.tools.some((entry) => entry.name === "read_observation"), false);
@@ -445,7 +450,8 @@ test("done/satisfied is accepted without a Host ledger or unread-file guard", as
         host: new PiAgentHost({ createSession: () => ({
           append: async () => {
             calls += 1;
-            if (calls === 1) return JSON.stringify({ type: 'send', message: 'Make the change.', intent: 'continue' });
+            if (calls === 1) return 'Working understanding of the historical user demand.';
+            if (calls === 2) return JSON.stringify({ type: 'send', message: 'Make the change.', intent: 'continue' });
             return JSON.stringify({ type: 'done', reason });
           },
           cancel() {},
@@ -460,7 +466,7 @@ test("done/satisfied is accepted without a Host ledger or unread-file guard", as
         assert.equal(events.filter((event) => event.type === 'input.submitted').length, 1);
         assert.equal(events.filter((event) => event.type === 'controller.done_rejected').length, 0);
         assert.equal(events.filter((event) => event.type === 'controller.understanding').length, 0);
-        assert.equal(calls, 2);
+        assert.equal(calls, 3);
         assert.equal(result.record.outcome.cleanup.status, 'complete');
         if (reason === 'satisfied') {
           assert.equal(result.record.outcome.termination.kind, 'completed');

@@ -2,7 +2,7 @@
 
 状态：accepted
 
-Controller 账本、独立 understand 与 Host 完成护栏由 [opening 同 Session](./2026-09-08-controller-opening-single-session.md) 取代；下文这些条款冻结。分页、工具路径、Pi 预算与观察登记仍约束实现。
+Controller 账本、独立 understand 与 Host 完成护栏由 [opening 同 Session](../superseded/2026-09-08-controller-opening-single-session.md) 取代；编排见 [先理解再按视图决策](./2026-09-09-controller-understand-then-view.md)。下文这些条款冻结。分页、工具路径、Pi 预算与观察登记仍约束实现。
 
 ## 问题
 

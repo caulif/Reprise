@@ -1,4 +1,3 @@
-import type { CodexIntakeTui } from "./intake-tui.js";
 import { Loader, isViewportTUI } from "@earendil-works/pi-tui";
 import {
   configForDraft,
@@ -8,16 +7,55 @@ import {
   safeConfigError,
   shellEnvAssignment,
   tryEnvironmentName,
+  type HarnessConfigDraft,
+  type HarnessModelConfig,
 } from "../infrastructure/harness-model-config.js";
-import { PiModelCaller } from "../infrastructure/pi-model-caller.js";
+import { PiModelCaller } from "../infrastructure/agent/model-caller.js";
 import { CONFIG_FIELDS } from "./pages/config.js";
 import { handleConfigInput } from "./config-input.js";
 import { credentialGapMessage, harnessCaller } from "./controller-auth.js";
-import { t } from "./i18n.js";
-type ConfigDraft = import("../infrastructure/harness-model-config.js").HarnessConfigDraft;
-type Option = import("./types.js").Option;
+import { t, type Locale } from "./i18n.js";
+import type { Option } from "./types.js";
+import type { WorkbenchView } from "./workbench.js";
 
-export function CodexIntakeTui_configPageInput(this: CodexIntakeTui, data: string): { consume: true } | undefined {
+type ConfigDraft = HarnessConfigDraft;
+
+/** Config helpers may only touch draft, save/test, and operator feedback. */
+export type ConfigPanel = {
+  configDraft: HarnessConfigDraft;
+  configSelected: number;
+  configEditing: boolean;
+  configBuffer: string;
+  configCursor: number;
+  configPendingToggle: boolean;
+  configLeaveConfirm: boolean;
+  configBusy: boolean;
+  providers: readonly Option[];
+  models: readonly Option[];
+  piModels: ConstructorParameters<typeof PiModelCaller>[1];
+  modelConfig: HarnessModelConfig;
+  hasSavedModelConfig: boolean;
+  dataDir: string;
+  locale: Locale;
+  message: string;
+  page: WorkbenchView["page"];
+  generation: number;
+  harnessAuthOk: boolean;
+  dirtyCache: { draft: HarnessConfigDraft; config: HarnessModelConfig; dirty: boolean } | undefined;
+  tui: import("@earendil-works/pi-tui").TUI;
+  configDirty(): boolean;
+  modelsForDraft(draft: HarnessConfigDraft): { draft: HarnessConfigDraft; models: readonly Option[] };
+  saveConfig(): Promise<void>;
+  testConfigConnection(): Promise<void>;
+  refreshHarnessAuth(): Promise<void>;
+  loadHome(): Promise<void>;
+  backToHome(): { consume: true };
+  setLocale(command: string): Promise<void>;
+  beginNavigation(): number;
+  render(force?: boolean): void;
+};
+
+export function IntakeTui_configPageInput(this: ConfigPanel, data: string): { consume: true } | undefined {
     const result = handleConfigInput(
       {
         draft: this.configDraft,
@@ -54,7 +92,7 @@ export function CodexIntakeTui_configPageInput(this: CodexIntakeTui, data: strin
     return { consume: true };
   }
 
-export function CodexIntakeTui_modelsForDraft(this: CodexIntakeTui, draft: ConfigDraft): {
+export function IntakeTui_modelsForDraft(this: ConfigPanel, draft: ConfigDraft): {
     draft: ConfigDraft;
     models: readonly Option[];
   } {
@@ -68,7 +106,7 @@ export function CodexIntakeTui_modelsForDraft(this: CodexIntakeTui, draft: Confi
     return { draft: model ? { ...draft, modelId: model.id } : draft, models };
   }
 
-export async function CodexIntakeTui_openConfig(this: CodexIntakeTui): Promise<void> {
+export async function IntakeTui_openConfig(this: ConfigPanel): Promise<void> {
     const token = this.beginNavigation();
     this.configDraft = this.hasSavedModelConfig
       ? draftForConfig(this.modelConfig)
@@ -110,7 +148,7 @@ export async function CodexIntakeTui_openConfig(this: CodexIntakeTui): Promise<v
     this.render(true);
   }
 
-export async function CodexIntakeTui_saveConfig(this: CodexIntakeTui): Promise<void> {
+export async function IntakeTui_saveConfig(this: ConfigPanel): Promise<void> {
     if (this.configBusy) return;
     this.configBusy = true;
     const token = this.beginNavigation();
@@ -136,7 +174,7 @@ export async function CodexIntakeTui_saveConfig(this: CodexIntakeTui): Promise<v
     this.render(true);
   }
 
-export async function CodexIntakeTui_testConfigConnection(this: CodexIntakeTui): Promise<void> {
+export async function IntakeTui_testConfigConnection(this: ConfigPanel): Promise<void> {
     if (this.configBusy) return;
     const unset = credentialGapMessage(this.configDraft);
     if (unset) {
@@ -180,7 +218,7 @@ export async function CodexIntakeTui_testConfigConnection(this: CodexIntakeTui):
     this.render(true);
   }
 
-export async function CodexIntakeTui_refreshHarnessAuth(this: CodexIntakeTui): Promise<void> {
+export async function IntakeTui_refreshHarnessAuth(this: ConfigPanel): Promise<void> {
     if (!this.hasSavedModelConfig) {
       this.harnessAuthOk = false;
       return;
@@ -195,7 +233,7 @@ export async function CodexIntakeTui_refreshHarnessAuth(this: CodexIntakeTui): P
     }
   }
 
-export function CodexIntakeTui_configDirty(this: CodexIntakeTui): boolean {
+export function IntakeTui_configDirty(this: ConfigPanel): boolean {
     const cached = this.dirtyCache;
     if (
       cached &&

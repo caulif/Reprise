@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { writeAtomic } from "../src/core/identity.js";
 import { controllerPromptContent, renderIndexMarkdown } from "../src/application/controller-briefing.js";
 import { recoveryTools } from "../src/infrastructure/recovery-workspace-tools.js";
-import type { AgentToolDefinition } from "../src/infrastructure/pi-agent-host.js";
+import type { AgentToolDefinition } from "../src/infrastructure/agent/host.js";
 import type { SteeringContext } from "../src/agents/controller-agent.js";
 import { controllerEvalContext, type ControllerEvalCase } from "./controller-eval-cases.js";
 
@@ -110,6 +110,26 @@ export async function packControllerEvalCase(root: string, item: ControllerEvalC
     await mkdir(dirname(path), { recursive: true });
     await writeAtomic(path, body);
   }
+  const latestVisible = files.turns[files.latestTurn.slice("run/turns/".length)]?.visible ?? "";
+  await writeAtomic(join(briefingRoot, "view.txt"), [
+    "surface=completed",
+    `latest_turn=${files.latestTurn}`,
+    "permissions=permissions.txt",
+    "",
+    "# Visible assistant text",
+    latestVisible,
+    "",
+  ].join("\n"));
+  await mkdir(join(briefingRoot, "history", "user-inputs"), { recursive: true });
+  const userIndex = ["turn_id\torder\trole\tsource\tpath\tattachments\trelated"];
+  let order = 0;
+  for (const [id, row] of Object.entries(files.transcript)) {
+    if (row.role !== "user") continue;
+    order += 1;
+    await writeAtomic(join(briefingRoot, "history", "user-inputs", `${id}.txt`), `${row.text}\n`);
+    userIndex.push(`${id}\t${order}\tuser\thistorical_user\thistory/user-inputs/${id}.txt\tmissing\tmissing`);
+  }
+  await writeAtomic(join(briefingRoot, "history", "user-inputs", "INDEX.tsv"), `${userIndex.join("\n")}\n`);
   const indexMarkdown = renderIndexMarkdown(files.latestTurn);
   await writeAtomic(join(briefingRoot, "INDEX.md"), indexMarkdown);
   await writeAtomic(join(briefingRoot, "THIS-TURN.txt"), `${files.latestTurn}\n`);

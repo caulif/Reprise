@@ -1,11 +1,11 @@
 import { copyFile, mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { createExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
+import { createExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/experiment-workflow.js';
 import { createHarnessAgents } from '../src/application/harness-agents.js';
 import { historicalCwdOf } from '../src/application/replay-conditions.js';
 import { readHarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
-import { PiModelCaller } from '../src/infrastructure/pi-model-caller.js';
+import { PiModelCaller } from '../src/infrastructure/agent/model-caller.js';
 import { freezeCase } from '../src/products/shared/freeze.js';
 import { claudeCodeProductPack } from '../src/products/claude-code/pack.js';
 import { importClaudeSession } from '../src/products/claude-code/sessions.js';

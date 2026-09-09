@@ -21,6 +21,7 @@ import {
   controllerBriefingRoot,
   controllerPromptContent,
   controllerRequestSnapshot,
+  controllerViewSurface,
   writeOpeningBriefing,
   writeSettledTurnBriefing,
 } from "./controller-briefing.js";
@@ -36,7 +37,6 @@ import type {
   TaskCase,
 } from "../core/schema.js";
 import type {
-  ResolvedRuntime,
   RuntimePort,
   TargetEvent,
   TargetEventSink,
@@ -47,9 +47,8 @@ import {
   type PreparedEnvironmentRef,
   type RecoveryCheckpoint,
 } from "../environment/local-workspace-provider.js";
-import type { ContaminationSignals } from "../environment/contamination.js";
 import { recoveryTools } from "../infrastructure/recovery-tools.js";
-import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
+import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import {
   ExperimentStore,
 } from "../infrastructure/store/experiment-store.js";
@@ -64,6 +63,7 @@ import {
 import { assertIds, assertPaths, experimentAgentAuditSink, invocationFact, persistTaskCase, sourceDirectoryExists } from "./experiment-helpers.js";
 import {
   captureWorkspaceScope,
+  eventsForLatestSettledTurn,
   inspectRun,
   unstartedControllerObservation,
   type ControllerObservation,
@@ -72,32 +72,19 @@ import {
   preflightFromBaseline,
   resolveVerifiedCandidate,
 } from "./experiment-preflight.js";
+import type { ExperimentPreflight } from "./experiment-preflight.js";
 import { finishExperimentActivity, registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
 import { finishExperiment, attachExperimentComparison } from "./experiment-report.js";
-export { controllerRequestSnapshot } from "./controller-briefing.js";
-export type { SourceRootKind };
-export { preflightCodexExperiment } from "./experiment-preflight.js";
-export { recoverCodexExperiment, classifyRecoveryFailureStage } from "./experiment-recovery.js";
-export type { RecoveryAttempt, RecoveryAttemptMode, RecoveryAttemptInput } from "./experiment-recovery.js";
 export type ExperimentAgentConfig = {
   providerId: string;
   requestedModel: string;
   budget: { callTimeoutMs: number; maxStructuredRepairAttempts: number; maxCalls?: number };
 };
-export type CodexExperimentPreflight = {
-  sourceBaseline: "available" | "partial" | "unavailable";
-  resolved: ResolvedRuntime;
-  sourceFingerprint?: string;
-  workspace?: EnvironmentBaseline["budget"];
-  limitations: readonly string[];
-  comparisonClass: "observational" | "recovered" | "recovered_partial";
-  contamination?: ContaminationSignals;
-};
-export type CodexExperimentResult = {
+export type ExperimentResult = {
   taskCase: TaskCase;
   experimentRoot: string;
   reportPath: string;
-  preflight: CodexExperimentPreflight;
+  preflight: ExperimentPreflight;
   record: RunRecord;
   decision: StructuredAgentResult<ControllerDecision>;
   comparison: { result: StructuredAgentResult<ComparisonResult> | { status: "skipped" } };
@@ -112,7 +99,7 @@ export type CodexExperimentResult = {
     tokenCount?: number;
   };
 };
-export type CodexExperimentInput = {
+export type ExperimentInput = {
   dataDir: string;
   caseId: string;
   experimentId: string;
@@ -152,8 +139,8 @@ export type CodexExperimentInput = {
   }) => Promise<readonly RunRecord["artifactRefs"][number][] | readonly []>;
 };
 export type ExperimentHandle = {
-  result: Promise<CodexExperimentResult>;
-  candidateFinished: Promise<CodexExperimentResult>;
+  result: Promise<ExperimentResult>;
+  candidateFinished: Promise<ExperimentResult>;
   activity?: ExperimentActivity;
   runComparison(): Promise<void>;
   skipComparison(): Promise<void>;
@@ -165,7 +152,7 @@ type ExperimentControl = {
   setActive(run: ActiveRun): void;
   setController(controller: ControllerPort, runId: string): void;
   cancelled(): boolean;
-  waitForComparison(partial: CodexExperimentResult): Promise<boolean>;
+  waitForComparison(partial: ExperimentResult): Promise<boolean>;
   ready(): Promise<void>;
 };
 /**
@@ -173,7 +160,7 @@ type ExperimentControl = {
  * machine and leaves all reviewable facts under a fresh experiment directory.
  */
 export function startCodexExperiment(
-  input: CodexExperimentInput,
+  input: ExperimentInput,
 ): ExperimentHandle {
   const abort = new AbortController();
   let active: ActiveRun | undefined;
@@ -186,9 +173,9 @@ export function startCodexExperiment(
         decideComparison = resolve;
       })
     : undefined;
-  let resolveCandidate: ((result: CodexExperimentResult) => void) | undefined;
+  let resolveCandidate: ((result: ExperimentResult) => void) | undefined;
   const deferredCandidate = input.deferComparison
-    ? new Promise<CodexExperimentResult>((resolve) => {
+    ? new Promise<ExperimentResult>((resolve) => {
         resolveCandidate = resolve;
       })
     : undefined;
@@ -250,7 +237,7 @@ export function startCodexExperiment(
   return handle;
 }
 async function captureCodexExperimentContext(
-  input: CodexExperimentInput,
+  input: ExperimentInput,
   control: { cancelled(): boolean },
 ) {
   assertPaths(input.dataDir, input.sourceRoot);
@@ -337,7 +324,7 @@ async function captureCodexExperimentContext(
   };
 }
 async function openCodexExperimentSession(input: {
-  input: CodexExperimentInput;
+  input: ExperimentInput;
   experimentRoot: string;
   provider: LocalWorkspaceProvider;
   resolved: Awaited<ReturnType<typeof resolveVerifiedCandidate>>;
@@ -422,7 +409,7 @@ async function openCodexExperimentSession(input: {
   };
 }
 async function startCodexCandidateRun(args: {
-  input: CodexExperimentInput;
+  input: ExperimentInput;
   store: ExperimentStore;
   checkpoint: Awaited<ReturnType<typeof captureCodexExperimentContext>>["checkpoint"];
   resolved: Awaited<ReturnType<typeof captureCodexExperimentContext>>["resolved"];
@@ -507,12 +494,12 @@ async function startCodexCandidateRun(args: {
   });
 }
 async function finishCodexCandidateRun(args: {
-  input: CodexExperimentInput;
+  input: ExperimentInput;
   control: ExperimentControl;
   run: CandidateRun;
   store: ExperimentStore;
   taskCase: TaskCase;
-  preflight: CodexExperimentPreflight;
+  preflight: ExperimentPreflight;
   experimentRoot: string;
   targetEvents: string[];
   startedAt: number;
@@ -520,7 +507,7 @@ async function finishCodexCandidateRun(args: {
   environment: PreparedEnvironmentRef;
   provider: LocalWorkspaceProvider;
   resolved: Awaited<ReturnType<typeof captureCodexExperimentContext>>["resolved"];
-}): Promise<CodexExperimentResult> {
+}): Promise<ExperimentResult> {
   const { input, control, run, store, taskCase, preflight, experimentRoot, targetEvents, startedAt, sourceRootKind, environment, resolved } = args;
   control.setActive(run);
   control.setController(input.controller, input.runId);
@@ -575,9 +562,9 @@ async function finishCodexCandidateRun(args: {
   return attachExperimentComparison({ ...finishInput, compare: true }, partial.record);
 }
 async function executeExperiment(
-  input: CodexExperimentInput,
+  input: ExperimentInput,
   control: ExperimentControl,
-): Promise<CodexExperimentResult> {
+): Promise<ExperimentResult> {
   await control.ready();
   const {
     experimentRoot,
@@ -647,6 +634,7 @@ async function executeExperiment(
     });
   } catch (error) {
     if (run?.states().at(-1) === "awaiting_controller") await run.cancel();
+    await input.controller.cancel?.(input.runId);
     throw error;
   } finally {
     unsubscribe?.();
@@ -682,27 +670,31 @@ async function runControllerLoop(input: {
     operationId: "controller-started",
     payload: { model: input.controllerModel },
   });
-  const opened = await deliverOpening(input, decisions);
-  if (opened.finished) return opened.result;
-  let state = opened.state;
-  let controllerCalls = opened.controllerCalls;
-  let followupSubmission = false;
-  while (state === "awaiting_controller") {
-    if (Date.now() - startedAt >= input.policy.wallClockMs) {
-      state = await input.run.stopByHarness("limit.wall_clock");
-      break;
+  try {
+    const opened = await deliverOpening(input, decisions);
+    if (opened.finished) return opened.result;
+    let state = opened.state;
+    let controllerCalls = opened.controllerCalls;
+    let followupSubmission = false;
+    while (state === "awaiting_controller") {
+      if (Date.now() - startedAt >= input.policy.wallClockMs) {
+        state = await input.run.stopByHarness("limit.wall_clock");
+        break;
+      }
+      if (input.maxControllerCalls !== undefined && controllerCalls >= input.maxControllerCalls) {
+        state = await input.run.stopByHarness("limit.controller_calls");
+        break;
+      }
+      const steered = await deliverSteering(input, state, decisions, controllerCalls);
+      state = steered.state;
+      controllerCalls = steered.controllerCalls;
+      followupSubmission = steered.followupSubmission || followupSubmission;
+      if (steered.stop) break;
     }
-    if (input.maxControllerCalls !== undefined && controllerCalls >= input.maxControllerCalls) {
-      state = await input.run.stopByHarness("limit.controller_calls");
-      break;
-    }
-    const steered = await deliverSteering(input, state, decisions, controllerCalls);
-    state = steered.state;
-    controllerCalls = steered.controllerCalls;
-    followupSubmission = steered.followupSubmission || followupSubmission;
-    if (steered.stop) break;
+    return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
+  } finally {
+    input.controller.release?.(input.runId);
   }
-  return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
 }
 type LoopInput = Parameters<typeof runControllerLoop>[0];
 async function deliverOpening(
@@ -874,23 +866,18 @@ async function packControllerBriefing(
       resolvedModel: input.resolvedModel,
     },
   );
+  const turnText = inspection.turnVisibleText ?? "";
   const written = await writeSettledTurnBriefing({
     briefingRoot,
     turnIndex: Math.max(1, inspection.turns),
-    visibleText: inspection.finalMessage ?? "",
-    events: eventsForLatestTurn(input.store.events(input.runId)),
+    visibleText: turnText,
+    events: eventsForLatestSettledTurn(input.store.events(input.runId)),
     changedPaths: inspection.changedPaths,
     allowModelText: input.taskCase.privacy.allowModelText,
+    surface: controllerViewSurface(inspection.settlementStatus, turnText, input.taskCase.privacy.allowModelText),
+    ...(inspection.turnPrompt ? { prompt: inspection.turnPrompt } : {}),
   });
   return { observation: inspection, ...written, briefingRoot };
-}
-function eventsForLatestTurn(events: readonly EventEnvelope[]): EventEnvelope[] {
-  const settled = events.filter((event) => event.type === "runtime.turn_settled");
-  const last = settled.at(-1);
-  const previous = settled.at(-2);
-  const start = previous?.sequence ?? 0;
-  const end = last?.sequence ?? Number.POSITIVE_INFINITY;
-  return events.filter((event) => event.sequence > start && event.sequence <= end);
 }
 function steeringContextFrom(
   input: LoopInput,
@@ -971,7 +958,7 @@ function controllerDecisionTools(input: LoopInput, briefingRoot: string, request
       allowWrite: () => false,
       shellCwd: input.environment.root,
       denyDestructiveOnPrefix: [CONTROLLER_PROJECT_MOUNT],
-    }).map((tool) => tool.name !== "read" && tool.name !== "shell_exec" ? tool : { ...tool, onCompleted: async (result: import("../infrastructure/pi-agent-host.js").AgentToolResult) => {
+    }).map((tool) => tool.name !== "read" && tool.name !== "shell_exec" ? tool : { ...tool, onCompleted: async (result: import("../infrastructure/agent/host.js").AgentToolResult) => {
       const details = result.details as { path?: string; available?: boolean; offset?: number; command?: string; cwd?: string; exitCode?: number; stdoutBytes?: number; stderrBytes?: number; truncated?: boolean } | undefined;
       const shell = tool.name === "shell_exec";
       let observation: unknown;

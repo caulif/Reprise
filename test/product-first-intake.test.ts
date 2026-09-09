@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { Component, TUI } from '@earendil-works/pi-tui';
 import type { ProductPack, SessionDiscoveryQuery, SessionSourceAdapter, SessionSummary } from '../src/products/contract.js';
-import { CodexIntakeTui } from '../src/tui/intake-app.js';
+import { IntakeTui } from '../src/tui/intake-app.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 
 const privacy = { allowModelText: false, allowBinary: false, redactions: [] };
@@ -88,7 +88,7 @@ test('product intake isolates per-pack limits, errors, and compact back navigati
   const codex = Array.from({ length: 200 }, (_, index) =>
     summary('codex', `session-${index}`, `2026-08-11T${String(index % 24).padStart(2, '0')}:00:00.000Z`));
   let document: Component | undefined;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, 'data'),
     tui: fakeTui((value) => { document = value; }),
     packs: [
@@ -128,7 +128,7 @@ test('product intake isolates per-pack limits, errors, and compact back navigati
 test('intake restores the last product cursor after leaving the catalog', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-product-cursor-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, 'data'),
     tui: fakeTui(() => {}),
     packs: [
@@ -169,7 +169,7 @@ test('a late discovery result cannot replace the newly selected product', async 
     defaultRoot: join(root, 'claude'),
     discover: async () => ({ items: [summary('claude-code', 'current-claude', '2026-08-12T00:00:00.000Z')], scanned: 1, skipped: 0, diagnostics: [] }),
   });
-  const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [codex, claude], privacy });
+  const app = new IntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [codex, claude], privacy });
   await app.start();
   const pendingCodex = app.loadProductSessions('codex');
   await waitFor(() => releaseCodex !== undefined);
@@ -198,7 +198,7 @@ test('a legacy session root is scoped to one Pack instead of leaking into anothe
   const legacyRoot = join(root, 'legacy-codex');
   const claudeRoot = join(root, 'claude-default');
   const codexDefault = join(root, 'codex-default');
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir: join(root, 'data'),
     sessionsRoot: legacyRoot,
     tui: fakeTui(() => {}),
@@ -210,7 +210,7 @@ test('a legacy session root is scoped to one Pack instead of leaking into anothe
   await app.loadProductSessions('claude-code');
   assert.deepEqual(observed, [`claude-code:${claudeRoot}`]);
 
-  const reordered = new CodexIntakeTui({
+  const reordered = new IntakeTui({
     dataDir: join(root, 'reordered-data'),
     sessionsRoot: legacyRoot,
     tui: fakeTui(() => {}),
@@ -225,7 +225,7 @@ test('a legacy session root is scoped to one Pack instead of leaking into anothe
     `codex:${codexDefault}`,
   ]);
 
-  const explicitOwner = new CodexIntakeTui({
+  const explicitOwner = new IntakeTui({
     dataDir: join(root, 'explicit-data'),
     sessionsRoot: legacyRoot,
     pack: makePack('codex', codexDefault),
@@ -238,7 +238,7 @@ test('a legacy session root is scoped to one Pack instead of leaking into anothe
   assert.deepEqual(observed.slice(3), [`codex:${legacyRoot}`]);
 
   const singlePackRoot = join(root, 'single-pack-root');
-  const singlePack = new CodexIntakeTui({
+  const singlePack = new IntakeTui({
     dataDir: join(root, 'single-pack-data'),
     sessionsRoot: singlePackRoot,
     tui: fakeTui(() => {}),
@@ -273,7 +273,7 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
     defaultRoot: root,
     discover: async () => ++call === 1 ? page('first', 'next') : page('second'),
   });
-  const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [codex], privacy });
+  const app = new IntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [codex], privacy });
   await app.start();
   await app.loadProductSessions('codex');
   assert.match(app.message, /Loaded \d+ projects and 1 sessions/);
@@ -327,7 +327,7 @@ test('freeze imports through the session product pack', async (t) => {
       evidenceLevel: 'transcript',
     }),
   });
-  const app = new CodexIntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [claude], privacy, now: () => '2026-08-15T00:00:00.000Z' });
+  const app = new IntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(() => {}), packs: [claude], privacy, now: () => '2026-08-15T00:00:00.000Z' });
   app.sessions = [{ ...summary('claude-code', 'claude-1', '2026-08-11T00:00:00.000Z'), sourcePath }];
   const { freeze } = await import('../src/tui/controller-run.js');
   await freeze(app, sourcePath);
@@ -341,7 +341,7 @@ test('project list cursor prefers displayCwd over the most recent project', asyn
   const hermes = { ...summary('codex', 'hermes', '2026-08-31T12:00:00.000Z'), cwd: 'C:/wsl/.hermes' };
   const ppt = { ...summary('codex', 'ppt', '2026-08-30T12:00:00.000Z'), cwd: 'C:/work/cncert' };
   const discover = async (items: SessionSummary[]) => ({ items, scanned: items.length, skipped: 0, diagnostics: [] as const });
-  const matched = new CodexIntakeTui({
+  const matched = new IntakeTui({
     dataDir: join(root, 'matched'),
     tui: fakeTui(() => {}),
     packs: [sessionPack({
@@ -356,7 +356,7 @@ test('project list cursor prefers displayCwd over the most recent project', asyn
   await matched.loadProductSessions('codex');
   assert.equal(matched.intakeLevel, 'projects');
   assert.match(matched.visibleProjects()[matched.selected]?.path ?? '', /cncert/i);
-  const unmatched = new CodexIntakeTui({
+  const unmatched = new IntakeTui({
     dataDir: join(root, 'unmatched'),
     tui: fakeTui(() => {}),
     packs: [sessionPack({

@@ -13,7 +13,7 @@ Recovery 把整份 `resolved`（含完整 evidence catalog）序列化进第一�
 
 冻结 transcript、historical events 以及 Comparison 的本 run 事件由 Host 写成候选旁的只读 `observations/`（INDEX + 按 ref 的小文件）。Recovery 通过 `observations` 挂载读取，不把该树写入用户源目录或候选交付。Comparison 把同一棵树写在 attempt 根下，写策略拒绝改它。
 
-Recovery、Controller、Comparison 的工作区工厂名都是七件套：`read`、`ls`、`grep`、`find`、`edit`、`write`、`shell_exec`。不注册 `read_observation`，不留同名空壳。Recovery 另有 Host 工具 `select_recovery_candidate`，不算工作区工厂。
+Recovery、Controller、Comparison 的工作区工厂名都是七件套：`read`、`ls`、`grep`、`find`、`edit`、`write`、`shell_exec`。不注册 `read_observation`，不留同名空壳。Recovery 不再注册候选选择工具；单副本循环见[自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。
 
 压缩时 Host 先去掉思考链标记并把超页工具结果换成 stub。Pi `prepareCompaction` 无可摘要历史时，Host 收缩工作集并记 `agent.context_compacted`；收缩后仍超窗才失败，文案为工作集仍超窗，不再使用 `no summarizable history`。
 

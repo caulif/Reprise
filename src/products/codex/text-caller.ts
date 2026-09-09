@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { record, text } from '../../core/json.js';
-import type { AgentToolDefinition, PiTextCaller, PiTextSession } from '../../infrastructure/pi-agent-host.js';
+import type { AgentToolDefinition, PiTextCaller, PiTextSession } from '../../infrastructure/agent/host.js';
 import {
   CodexAppServerClient,
   CodexRuntimeUnavailableError,

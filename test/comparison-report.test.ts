@@ -83,6 +83,24 @@ test('reportFacts preserve missing measurements and project known run facts', ()
   assert.equal(facts.limits.triggered[0], 'limit.turns');
   assert.deepEqual(facts.delivery.changedPaths, ['src/a.ts']);
   assert.equal(facts.replay.baselineEvidence, 'verifiable');
+  assert.equal(facts.metrics, undefined);
+});
+
+test('reportFacts project collected token parts and omit speed without a generation interval', () => {
+  const totalOnly = buildComparisonContext(taskCase(), [runRecord()], [{
+    runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, tokenUsage: { total: 256 },
+  }]).reportFacts;
+  assert.deepEqual(totalOnly.metrics?.tokens, { total: 256 });
+  assert.equal(totalOnly.metrics?.generationRate, undefined);
+  assert.equal(totalOnly.metrics?.cost, undefined);
+  const withClock = buildComparisonContext(taskCase(), [runRecord()], [{
+    runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 4_000, tokenUsage: { total: 256 },
+  }]).reportFacts;
+  assert.equal(withClock.metrics?.generationRate, undefined);
+  const rate = buildComparisonContext(taskCase(), [runRecord()], [{
+    runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, generationMs: 2_000, tokenUsage: { output: 80, total: 256 },
+  }]).reportFacts;
+  assert.deepEqual(rate.metrics?.generationRate, { outputTokens: 80, durationMs: 2_000 });
 });
 
 test('comparison envelope accepts Host-owned observation refs and rejects only-unknown refs', () => {
@@ -107,6 +125,21 @@ test('comparison prompt points workspace tools at the sealed snapshot mount', ()
   assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed end-of-run snapshot/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /comparison-sandbox\/candidate/);
+});
+
+test('comparison orientation does not inline the initial task and points at user-inputs', async () => {
+  const { comparisonOrientation } = await import('../src/application/comparison-briefing.js');
+  const prompt = comparisonOrientation({
+    briefingRoot: 'C:/tmp/briefing',
+    indexMarkdown: '- observations/user-inputs/INDEX.tsv — demand index\n',
+    baselineAvailable: true,
+    candidateAvailable: true,
+  });
+  assert.doesNotMatch(prompt, /initialTask=/);
+  assert.doesNotMatch(prompt, /修复报告/);
+  assert.match(prompt, /observations\/user-inputs\/INDEX\.tsv/);
+  assert.match(prompt, /briefingRoot=/);
+  assert.match(prompt, /facts\/context\.json/);
 });
 
 

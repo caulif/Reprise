@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { diagnosisReasonCode, recoveryAcceptIsExposed, userRecoveryStatus } from '../src/application/recovery-user-status.js';
+import { diagnosisReasonCode, recoveryAcceptIsExposed, userRecoveryStatus } from '../src/application/recovery/user-status.js';
 import type { EnvironmentBaseline } from '../src/environment/local-workspace-provider.js';
 
 function baseline(overrides: Partial<EnvironmentBaseline>): EnvironmentBaseline {

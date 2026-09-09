@@ -5,15 +5,26 @@ import { LocalWorkspaceProvider, type EnvironmentBaseline } from "../environment
 import {
   contaminationWarnings,
   detectContamination,
+  type ContaminationSignals,
 } from "../environment/contamination.js";
 import { findProductPack } from "../products/index.js";
-import type { CodexExperimentInput, CodexExperimentPreflight } from "./experiment.js";
+import type { ExperimentInput } from "./experiment.js";
 import { assertPaths } from "./experiment-helpers.js";
+
+export type ExperimentPreflight = {
+  sourceBaseline: "available" | "partial" | "unavailable";
+  resolved: ResolvedRuntime;
+  sourceFingerprint?: string;
+  workspace?: EnvironmentBaseline["budget"];
+  limitations: readonly string[];
+  comparisonClass: "observational" | "recovered" | "recovered_partial";
+  contamination?: ContaminationSignals;
+};
 
 /** Read-only admission check. It never creates a Candidate workspace or calls a target model. */
 export async function preflightCodexExperiment(
   input: Pick<
-    CodexExperimentInput,
+    ExperimentInput,
     | "candidate"
     | "runtime"
     | "sourceRoot"
@@ -21,7 +32,7 @@ export async function preflightCodexExperiment(
     | "experimentId"
     | "caseId"
   > & { taskCase: TaskCase; verifyCandidate?: boolean },
-): Promise<CodexExperimentPreflight> {
+): Promise<ExperimentPreflight> {
   assertPaths(input.dataDir, input.sourceRoot);
   if (input.verifyCandidate !== false) findProductPack(input.candidate.productId);
   if (input.caseId !== input.taskCase.caseId)
@@ -88,7 +99,7 @@ async function pendingResolved(runtime: RuntimePort, candidate: CandidateSpec): 
 export function preflightFromBaseline(
   baseline: EnvironmentBaseline,
   resolved: ResolvedRuntime,
-): CodexExperimentPreflight {
+): ExperimentPreflight {
   if (baseline.readiness.runnable === "unsupported")
     return {
       sourceBaseline: "unavailable",

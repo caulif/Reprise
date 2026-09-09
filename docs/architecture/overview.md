@@ -38,7 +38,7 @@ Harness 在尽量恢复历史任务环境的前提下，用当前机器已安装
 
 ## 2. 系统边界
 
-Harness 不是单个新的 Agent Loop。它以确定性应用流程连接三个独立的智能模块：Recovery Agent、Controller Agent 和 Comparison Agent。三个模块共享 Pi Agent Host 的 session、工具和遥测原语，但拥有不同的上下文、权限、生命周期和输出契约。
+Harness 不是单个新的 Agent Loop。它以确定性应用流程连接三个独立的智能模块：Recovery Agent、Controller Agent 和 Comparison Agent。三个模块共享 Reprise AgentHost/AgentSession；其内部通过 PiProviderAdapter 复用 Pi Agent Core 的执行能力，但拥有不同的上下文、权限、生命周期和输出契约。
 
 ```mermaid
 flowchart TB
@@ -58,7 +58,7 @@ flowchart TB
     COMPARE --> COMPARISON[Comparison Agent]
     COMPARE --> RENDERER[Report Renderer]
 
-    RECOVERY --> PI[Pi Agent Host]
+    RECOVERY --> PI[Reprise AgentHost/AgentSession]
     CTRL --> PI
     COMPARISON --> PI
 
@@ -137,7 +137,7 @@ Comparison Agent 只读取规范化的任务、结果、artifact、遥测和 fid
 ### 4.2 ExperimentSpec、CandidateSpec 与 Agent 配置
 
 
-`ExperimentSpec` 表达用户想比较什么。Controller 和 Comparison 的请求配置在 Experiment 创建时冻结；Controller 在首个候选运行前解析，Comparison 在比较调用前解析，并分别保存实际模型与配置 hash。Recovery 属于 Case Preparation，它的 `ResolvedAgentConfig` 保存在 `TaskCase.provenance`，不进入 `ExperimentSpec`。三个 Agent 的总调用、token 和成本上限默认未设置；单次调用 timeout、结构化修复次数和 provider 重试次数始终有限。`RunPolicy` 只约束 Target Runtime，不能作为内部 Agent 的预算或重试策略。
+`ExperimentSpec` 表达用户想比较什么。Controller 和 Comparison 的请求配置在 Experiment 创建时冻结；Controller 在首个候选运行前解析，Comparison 在比较调用前解析，并分别保存实际模型与配置 hash。Recovery 属于 Case Preparation，它的 `ResolvedAgentConfig` 保存在 `TaskCase.provenance`，不进入 `ExperimentSpec`。三个 Agent 的总调用、token 和成本上限默认未设置。Controller 与 Recovery 的单次调用 timeout、结构化修复次数和 provider 重试次数始终有限；Comparison 使用 Host 无请求截止（`timeoutMs: 0`），仍响应取消与传输失败。`RunPolicy` 只约束 Target Runtime，不能作为内部 Agent 的预算或重试策略。
 
 用户从 Pi 可用的 provider 与模型中选择内部 Agent 配置；Harness 不指定、捆绑或评价这些模型。同一 Experiment 的所有候选共享同一份 Controller 配置，但各自使用独立 session。Comparison 在运行结束后使用冻结的 Comparison 配置；setup 中后来发生的默认值变化不得静默改变已有 TaskCase 或 Experiment。
 
@@ -246,10 +246,9 @@ Environment 以资源级证据描述恢复结果：`EnvironmentResource` 同时�
 
 三个 Agent Module 是一等业务模块，不是 Orchestrator 内部的临时模型调用。它们共享 Pi Agent Host 的基础能力，但各自拥有端口和领域契约；当前不建立万能 `AgentModule<I, O>` 工作流抽象。
 
-Environment 子系统通过内部端口调用 Recovery Agent：
+Environment 子系统通过内部端口调用 Recovery Agent。一次恢复使用一个连续 Session 和一个工作副本，三个 turn 为理解与侦察、恢复与准备、自检与结论；Host 只在机械检查失败时反馈同一 Session。信封为 `ready` / `blocked`。
 
-
-Recovery Agent 使用产品 Recovery Playbook 和受限 staging 工具；Provider 验证其结果并冻结 baseline。完整设计见[Environment 专题](./environment.md)。
+Recovery Agent 使用产品 Recovery Playbook 和现有工作区工具，自主调查、修改、恢复和验证；Host 只负责运行控制、不可逆边界、审计、持久化和机械检查。Provider 保存可复用 baseline。Recovery 的目标和三轮 prompt 设计见[Recovery 起点恢复目标](../plan/recovery-initial-environment.md)与[单工作副本自主三轮循环](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md)。
 
 Controller 对所有 Agent 产品使用同一公共接口：
 
@@ -259,9 +258,9 @@ Product Pack 只交付规范化会话和 Target events；产品无关的 Observa
 Comparison 发生在 CandidateRun 结束之后，也使用产品无关的公共接口：
 
 
-Comparison Agent 每次 attempt 使用一个连续 Session：调查、工作笔记与完整自由结构 HTML 都写入 `report.html`。薄信封返回状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 每次 attempt 使用一个连续 Session，顺序发送四条工作委托，仅末轮解析薄信封；`report.html` 是真实任务比较卡。薄信封返回状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
-Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Pi Host 是基础设施，不是领域服务定位器。
+Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Agent Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型
 
 ```text
@@ -395,7 +394,7 @@ sequenceDiagram
 - Comparison 只写本次 attempt 目录中 Host 允许的相对路径；接受恢复、投递候选、发布报告由 application/harness 执行，不经统一业务 Verifier。
 - Candidate Runtime 永远不获得用户当前工作目录；无法建立隔离副本或受控观察绑定时，运行状态为 `unsupported`。
 - Controller 的工具与权限由[角色定义](../../src/agents/controller-agent.ts)及其 Host 注册拥有；不能调用 Target 工具或写用户源目录。
-- Pi Host 在发送上下文前执行 privacy policy 和敏感信息过滤；无法确认内容允许发送或过滤失败时阻塞该 Agent 调用并记录原因，不用更多原文静默降级。
+- Agent Host 在发送上下文前执行 privacy policy 和敏感信息过滤；无法确认内容允许发送或过滤失败时阻塞该 Agent 调用并记录原因，不用更多原文静默降级。
 - 权限扩大、真实发布、付款、删除和不可逆迁移必须来自真实用户授权。
 - trace 和错误信息不得保存密钥、凭据或不必要的个人信息。
 
@@ -412,7 +411,7 @@ src/
 ├── products/             # Codex 等 Product Pack 的会话/Runtime/Playbook
 ├── environment/          # Provider、baseline、候选副本和 Recovery 接入
 ├── agents/               # Recovery、Controller、Comparison 的独立模块
-├── infrastructure/       # Store、Pi Host、process/path 等平台适配
+├── infrastructure/       # Store、Agent Host、process/path 等平台适配
 ├── report/               # Projection 验证与确定性渲染
 └── cli/                  # 用户入口、TUI 和显式装配
 ```
@@ -431,3 +430,4 @@ src/
 - 为尚未支持的环境预建空接口。
 
 未关闭验收（TUI 真终端、opt-in Runtime smoke、未跑的 Controller 真实模型 lane）见[架构目标](../plan/reprise-architecture-redesign.md)与 [MASTER](../progress/MASTER.md)。
+

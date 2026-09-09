@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { createHarnessAgents } from "../src/application/harness-agents.js";
-import { PiModelCaller } from "../src/infrastructure/pi-model-caller.js";
+import { PiModelCaller } from "../src/infrastructure/agent/model-caller.js";
 import { readHarnessModelConfig } from "../src/infrastructure/harness-model-config.js";
 import { packControllerEvalCase } from "../test/controller-eval-briefing.js";
 import { familyRepresentativeCases, scoreControllerEval } from "../test/controller-eval-cases.js";

@@ -1,12 +1,12 @@
-import type { CodexIntakeTui } from "../src/tui/intake-app.js";
+import type { IntakeTui } from "../src/tui/intake-app.js";
 
-export async function enterIntake(app: CodexIntakeTui): Promise<void> {
+export async function enterIntake(app: IntakeTui): Promise<void> {
   enterCommand(app, "/intake");
   app.handleInput("\r");
   await waitFor(() => app.intakeLevel === "projects" || app.productDiscovery.get("codex")?.status === "error");
   if (app.intakeLevel === "projects") app.handleInput("\r");
 }
-export function enterCommand(app: CodexIntakeTui, command: string): void {
+export function enterCommand(app: IntakeTui, command: string): void {
   app.handleInput(command);
   app.handleInput("\r");
 }
@@ -21,7 +21,7 @@ export async function waitFor(condition: () => boolean): Promise<void> {
   throw new Error("TUI did not render its expected state.");
 }
 
-export async function advanceCandidatePicker(app: CodexIntakeTui, rendered: () => string): Promise<void> {
+export async function advanceCandidatePicker(app: IntakeTui, rendered: () => string): Promise<void> {
   await waitFor(() => /choose candidate product|选候选产品/i.test(rendered()));
   app.handleInput("\r");
   await waitFor(() => /choose candidate model|选候选模型/i.test(rendered()));

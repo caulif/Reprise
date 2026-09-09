@@ -1,4 +1,5 @@
-import type { ExperimentHandle, RecoveryAttempt } from "./experiment.js";
+import type { ExperimentHandle } from "./experiment.js";
+import type { RecoveryAttempt } from "./recovery/types.js";
 import { assertCandidateStartAllowed, candidateGateFromAttempt } from "./candidate-start.js";
 import type { EventEnvelope, TaskCase, CandidateSpec } from "../core/schema.js";
 import type { EnvironmentBaseline } from "../environment/local-workspace-provider.js";

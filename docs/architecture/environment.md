@@ -8,6 +8,8 @@
 
 ## 1. 设计结论
 
+自主反推、全目录按需恢复及按缺口影响决定启动的目标见[Recovery 起点恢复目标](../plan/recovery-initial-environment.md)。本文描述当前环境实现，目标不视为已生效行为。
+
 环境恢复不是“把原会话倒放”，也不是对当前目录做一次 copy。它要回答：
 
 > 候选模型开始执行历史任务前，哪些资源必须处于什么状态，我们现在能用哪些证据恢复和验证它们？
@@ -18,14 +20,14 @@
 历史会话与本机证据
 → Environment Resolver
 → Recovery Agent 仅在 Harness staging 中恢复
-→ Provider 独立验证 required resources
-→ 校验通过后 Host 自动 publish EnvironmentBaseline
+→ Provider 做机械检查（边界、tripwire、报告、预算、schema、可封存性）
+→ 机械检查通过后 Host 自动 publish EnvironmentBaseline
 → 每个 CandidateRun 独立 prepareRun
 → before/after fingerprint
 → release Harness 自有运行资源
 ```
 
-Recovery Agent 负责处理不完整、异构和需要语义判断的恢复问题；Product Pack 提供规范化会话证据和 Recovery Playbook；Provider 负责路径、安全策略、证据真实性和最终验证。Core 与顶层 Orchestrator 不编排 Recovery Agent 的内部 loop。
+Recovery Agent 负责处理不完整、异构和需要语义判断的恢复问题；Product Pack 提供规范化会话证据和 Recovery Playbook；Provider 负责路径、安全策略和机械检查。Core 与顶层 Orchestrator 不编排 Recovery Agent 的内部 loop。
 
 ## 2. 模块边界
 
@@ -289,19 +291,20 @@ ChangeSet 用于 Controller 观察和最终报告，不用于统一质量评分�
 
 ## 6. Environment Resolver
 
-Resolver 处理不完整证据和候选恢复路径。它先做确定性枚举，再把语义判断交给 Recovery Agent：
+Resolver 处理不完整证据并建立一个可操作的恢复工作副本，再把起点判断交给 Recovery Agent：
 
 ```text
 验证 source 路径和 artifact ownership
 → 枚举 snapshot / Git object / file history / current copy
-→ 建立 required resource 候选
-→ 创建隔离 staging
-→ Recovery Agent 仅在 Harness staging 中恢复并解释缺口
-→ Provider 独立验证
-→ 校验通过后 Host publish，或诚实降级为当前状态
+→ 创建一个 Recovery staging 工作副本
+→ Recovery Agent 在连续 Session 中调查、恢复、清理、按需重建并自检
+→ Host 做边界、格式、来源未改和可保存性检查
+→ 保存可复用 baseline，或因关键缺口停止
 ```
 
-默认候选优先级：
+已有 checkpoint 是可直接复用的加速路径，不是 Agent 必须选择的多候选流程。Recovery 默认只有一个工作副本，主动从当前环境和可观察历史反推起点。
+
+旧的候选优先级：
 
 ```text
 用户提供的不可变快照
@@ -312,13 +315,13 @@ Resolver 处理不完整证据和候选恢复路径。它先做确定性枚举�
 → observational / unavailable
 ```
 
-顺序是默认启发，不是硬编码真理。Resolver 还要判断候选能否覆盖 required resources、证据是否自洽、来源是否仍存在，以及读取是否越过策略边界。
+该顺序只作为历史材料的可用性提示，不生成多个候选，也不由 Host 以证据评分替代 Recovery 的任务判断。Host 只检查来源、路径、安全边界和持久化完整性。
 
 ## 7. Recovery Agent
 
 Environment Resolver 通过独立的 `RecoveryAgentPort` 使用 Pi 驱动的 Recovery Agent，因为真实历史状态经常需要组合 Git、文件历史、会话工具记录和任务语义。Agent 不只生成一份脆弱的恢复 DSL，而是在 Harness 自有、未发布的 staging 副本中完成恢复工作。
 
-当前 Port 与其他 Agent 一致：`recover(context, tools, audit?)` 在一次 Pi tool loop 中返回结构化 `AgentInvocation<RecoveryResult>`。`RecoveryResult` 只允许 `recovered`、`partial` 或 `insufficient_evidence`；它只陈述 Agent 阶段的结论，不能设置最终 `match`、`fidelity` 或验证状态。Environment 子系统拥有调用时机、staging、验证与发布流程；Recovery Agent Module 拥有 session、prompt、Playbook 装载和恢复判断。两者不共享可变内部状态。
+Recovery 使用一个连续 Session 和一个工作副本。Agent 自主完成三轮工作：理解与侦察、恢复与准备、自检与结论；每轮都可调查、修改或验证。最终结论为 `ready` 或 `blocked`，由 Agent 判断缺口是否影响原始任务。Host 不使用独立证据评分推翻该判断，只做机械检查并在可修复失败时反馈同一 Session。
 
 ### 7.1 内部工作空间与实际边界
 
@@ -326,14 +329,13 @@ Provider 为每次恢复创建并持有下列目录，均不暴露给 Candidate 
 
 - `rs/<recoveryId>`：从用户源目录复制出的可写工作副本；
 - `rt/<recoveryId>`：shell 的临时 `HOME` 与配置根；
-- `rc/<recoveryId>/<8-hex>`：互不污染的候选工作区；段名是 `sha256(candidateId)` 前 8 位，不是 hypothesis 全名。
 - 用户源目录：恢复前后均 fingerprint，作为只读 tripwire。
 
-工具集合以[工作区工具注册](../../src/infrastructure/recovery-workspace-tools.ts)为准；shell 的公开工具名为 `shell_exec`，不以固定工具数量作为内核契约。三个内部角色通过各自权限配置复用工作区工具（[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)）。cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。Host 在调用模型前写入有界调查包（路径线索、后续用户句、`isRepo`）和工作集 JSON，并记 `recovery.investigation_packet`；冻结 transcript 与 historical events 写成只读 `observations/`，模型用 `read` / `grep` 按需取一句。`write` 到 staging 根 `recovery.md` 是报告通道。`partial` 的变更路径以 fingerprint 差为准，弱证据（Host 观察到的删/改）即可 preview；自称 `recovered` 但缺路径级强证据时 Host 收成 `partial`，不授予 `recovered`。无任务路径变更的 `recovered` 仍拒绝。伪造且无法对应冻结 catalog 的 envelope ref 不得进入 published baseline。Readiness 反馈轮若模型请求失败，Host 保留上一份已通过 TypeBox 的完成信封并停止继续反馈，不得把整次恢复改写成 current-state fallback。后一次会话即使 `completed`，也必须先对当前 staging 做不丢弃副本的探测；失败则沿用上一份已探测通过的完成信封，不得覆盖后整单 fallback。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库；父目录或子目录里的 `.git` 不得把 git 选成第一执行候选。`powershell` 的 cwd 固定为 staging，命令不按 Git 子命令白名单收窄：它可执行 git、解压、包管理、项目还原脚本及网络查询。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供 API key、token 或其他凭据。内部 Agent 不按工具调用次数或破坏性次数截断；上下文压力走 Pi 压缩与模型窗口。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作 staging 根；`..`、绝对路径和反斜杠仍拒绝。
+工具集合以[工作区工具注册](../../src/infrastructure/recovery-workspace-tools.ts)为准；shell 的公开工具名为 `shell_exec`。三个内部角色通过各自权限配置复用工作区工具（[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)）。cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。首包只含任务、起点线索、工作副本摘要、能力边界、Playbook 元数据和 `observations/` 入口；Host 解析出的 patch/preimage/catalog 不进入模型上下文。冻结 transcript 与 historical events 写成只读 `observations/`，模型用 `read` / `grep` 按需取一句。`write` 到工作副本根 `recovery.md` 是报告通道。Agent 可在 `.reprise/recovery-work/` 写短记录；封存前删除该目录。`ready` 不要求发生文件变更。`blocked` 不发布可启动 baseline。伪造路径或改写用户源目录不得进入 published baseline。机械检查失败且可修复时，Host 把事实反馈同一 Session。模型请求失败时保留同一 Session 与工作副本；只有工作副本机械损坏时才丢弃 Session 并重置副本。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库。`powershell` 的 cwd 固定为工作副本。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供凭据。内部 Agent 不按工具调用次数或破坏性次数截断；上下文压力走 Pi 压缩与模型窗口。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作工作副本根；`..`、绝对路径和反斜杠仍拒绝。
 
 子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`ls`、`read`、`grep`、`find`、`edit` 和 `write` 对相对路径实施 containment 与符号链接检查；`recovery.md` 由 `write` 写出。由于通用 shell 不是容器/VM 沙箱，cwd 与环境净化不能机械阻止恶意或失控命令尝试写 staging 外任意绝对路径；实现不把这种预防误称为强隔离。
 
-最终保证采用检测加回退：Provider 重扫 staging（无符号链接、预算和可重复 fingerprint）、重新 fingerprint 用户源目录，并独立复验 envelope 引用的证据。source tripwire 变化、扫描失败、证据不一致或其他验证失败都会丢弃 staging 与临时根，绝不发布半恢复结果；上层必须显式回退到当前状态 baseline 并记录警告。该机制确定性阻止已检出的源目录变化被发布为 Recovery baseline，但不能撤销已发生的源目录写入，也不能替代容器级全局写入隔离。
+最终保证采用检测加回退：Provider 重扫 staging（无符号链接、预算和可重复 fingerprint）、重新 fingerprint 用户源目录，并检查报告存在、路径边界、schema 与可封存性。source tripwire 变化、扫描失败或其他机械检查失败都会丢弃 staging 与临时根，绝不发布半恢复结果；上层必须显式回退到当前状态 baseline 并记录警告。该机制确定性阻止已检出的源目录变化被发布为 Recovery baseline，但不能撤销已发生的源目录写入，也不能替代容器级全局写入隔离。不从 evidence ranking 或 changed paths 推导 `ready` / `blocked`。
 
 ### 7.2 Product Recovery Playbook
 
@@ -351,30 +353,20 @@ SessionSourceAdapter 负责确定性发现本机实际路径、解析已知格�
 
 ### 7.3 Agent 能做什么
 
-在 staging 中，Recovery Agent 可以自主决定：
+在 staging 中，Recovery Agent 在一个连续 Session 和一个工作副本里自主调查、清理、恢复、重建和自检。三个 turn 都允许使用七件套工作区工具。它自己判断哪些内容应保留、恢复、清除或按需重建，并判断剩余缺口是否影响原始任务。环境准备不能替候选完成原始任务。
 
-- checkout 可验证 Git object；
-- 应用已保存的未提交 diff；
-- 从 file-history 恢复 preimage；
-- 复制仍存在的输入资源；
-- 对多个 workspace 的关系作任务语义判断；
-- 标记 required/optional/observed；
-- 解释缺失证据、冲突和潜在风险。
+最终信封只有 `ready` 和 `blocked`。`match` 由 Provider 根据信封机械派生：`ready` 对应 `recovered`，`blocked` 对应 `current_state_fallback`。Agent 不能改写用户源目录，也不能把推断写成已冻结事实。
 
-它不能自行把 `assumed` 提升为 `verified`，也不能决定最终 `match`。这些由 Provider 根据事实验证。
+### 7.4 Provider 验证与封存
 
-### 7.4 Provider 验证与用户闸门
+Recovery Agent 返回后，Provider 只做机械检查：
 
-Recovery Agent 返回后，Provider 至少验证：
-
-- envelope 状态、`recovery.md` 要求及 `recovered` 与 unresolved/evidence 的一致性；
-- 引用的 Git object、file backup、artifact 和 hash 是否对应已冻结的事实；
+- envelope schema 与 `recovery.md` 是否存在且路径合法；
 - 用户源目录 tripwire 在恢复前后是否一致；
 - staging 重扫后是否没有符号链接、是否符合 snapshot 预算、且 fingerprint 可重复读取；
-- `insufficient_evidence` 是否保持 staging 与源 capture 一致；
-- unresolved 是否作为事实保留而非被忽略。
+- 只读观察材料是否未被改写。
 
-验证时会读取报告并从 staging 移除 `recovery.md` 与临时 HOME，使它们不成为 Candidate 可见输入。校验通过后 Host 立即 publish canonical baseline。冻结表示 Provider 所有权和写权限约束，不依赖 Windows 只读属性；Candidate Runtime 永远只得到 `prepareRun` 产生的副本。验证失败或证据不足时不得发布半恢复 staging，而是使用诚实的当前状态路径并保留 warning/验证记录。确认页拒绝只是不启动 Candidate。无变更时诊断优先说明没有观察到隔离工作区变更。
+Host 不以证据评分、changed path 数量或零变更否决改写 `ready` / `blocked`。`blocked` 不得发布可启动 baseline。机械检查失败且可修复时，把事实反馈同一 Session。验证时读取报告，并在封存前删除 `recovery.md`、`.reprise/recovery-work/` 与临时 HOME。校验通过且状态为 `ready` 时 publish canonical baseline。Candidate Runtime 只得到 `prepareRun` 从封存起点复制的独立副本。
 
 ## 8. prepareRun
 

@@ -4,7 +4,7 @@ import type { EventEnvelope } from "../core/schema.js";
 import { CliError } from "./cli-error.js";
 import { isMissing } from "./experiment-helpers.js";
 import { resolvedExperimentRoot } from "./experiment-layout.js";
-import { parseCommittedEventLog } from "../infrastructure/agent-model-input.js";
+import { parseCommittedEventLog } from "../infrastructure/agent/model-input.js";
 
 export type EventPage = {
   readonly experimentId: string;

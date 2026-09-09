@@ -78,14 +78,14 @@ test('controller contract lane covers 12 cases and one fact-changing variant eac
 });
 
 test('controller prompt stops on this user\'s acceptance habits, not deliverable kind', () => {
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /acceptance habits/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not send only to pad turn count/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not wait for the candidate to ask/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /evidence ref alone is not sufficient/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /three fact kinds/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /Sending every remaining historical user sentence is not a completion condition/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /验收习惯/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /不要为了测试、增加轮数/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /不要提前透露用户尚未说出的要求/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /候选自称完成也不是充分的结束依据/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /不能通过消息扩大权限/);
   assert.doesNotMatch(CONTROLLER_SYSTEM_PROMPT, /merely for formal re-confirmation/);
   assert.doesNotMatch(CONTROLLER_SYSTEM_PROMPT, /When the Candidate asks for a fact/);
+  assert.doesNotMatch(CONTROLLER_SYSTEM_PROMPT, /You are the Controller in a Reprise/);
 });
 
 test('collaboration sample families are drawn from the contract-lane cases', () => {

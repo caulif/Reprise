@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { CodexIntakeTui } from "../src/tui/intake-app.js";
+import { IntakeTui } from "../src/tui/intake-app.js";
 import {
   defaultHarnessModelConfig,
   saveHarnessModelConfig,
@@ -30,7 +30,7 @@ const shotDir = join(outDir, "screenshots");
 
 type Capture = { name: string; width: number; rows: number; note: string };
 
-function enterCommand(app: CodexIntakeTui, command: string) {
+function enterCommand(app: IntakeTui, command: string) {
   app.handleInput(command);
   app.handleInput("\r");
 }
@@ -174,7 +174,7 @@ async function main() {
   };
 
   const home = mockTui();
-  const homeApp = new CodexIntakeTui({
+  const homeApp = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui: home.tui as never,
@@ -342,7 +342,7 @@ async function main() {
     }),
   );
   const history = mockTui();
-  const historyApp = new CodexIntakeTui({
+  const historyApp = new IntakeTui({
     dataDir: historyRoot,
     sessionsRoot,
     tui: history.tui as never,
@@ -502,7 +502,7 @@ async function main() {
   };
 
   const run = mockTui(32);
-  const runApp = new CodexIntakeTui({
+  const runApp = new IntakeTui({
     dataDir: join(root, "data"),
     sessionsRoot,
     tui: run.tui as never,
@@ -611,7 +611,7 @@ async function main() {
   const err = mockTui();
   const sessionsFile = join(root, "sessions-file");
   await writeFile(sessionsFile, "not a directory");
-  const errApp = new CodexIntakeTui({
+  const errApp = new IntakeTui({
     dataDir: join(root, "data-err"),
     sessionsRoot: sessionsFile,
     tui: err.tui as never,

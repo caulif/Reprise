@@ -256,6 +256,8 @@ type CodexBuildState = {
   model?: string;
   version?: string;
   historicalCommit?: string;
+  sandbox?: string;
+  approvalPolicy?: string;
   transcript: SessionMessage[];
   events?: JsonRecord[];
   userMessages: number;
@@ -387,15 +389,23 @@ function consumeCodexBuildRow(state: CodexBuildState, row: JsonRecord, index: nu
     const version = text(payload.cli_version);
     const historicalCommit = commitFromMetadata(payload);
     const startedAt = validSessionTimestamp(text(row.timestamp)) ?? validSessionTimestamp(text(payload.timestamp));
+    const sandbox = text(payload.sandbox) ?? text(payload.sandbox_policy);
+    const approvalPolicy = text(payload.approvalPolicy) ?? text(payload.approval_policy);
     if (sessionId) state.sessionId ??= sessionId;
     if (cwd) state.cwd ??= cwd;
     if (version) state.version ??= version;
     if (historicalCommit) state.historicalCommit ??= historicalCommit;
     if (startedAt) state.startedAt ??= startedAt;
+    if (sandbox) state.sandbox ??= sandbox;
+    if (approvalPolicy) state.approvalPolicy ??= approvalPolicy;
   }
   if (row.type === 'turn_context') {
     const model = text(payload.model);
     if (model) state.model ??= model;
+    const sandbox = text(payload.sandbox) ?? text(payload.sandbox_policy);
+    const approvalPolicy = text(payload.approvalPolicy) ?? text(payload.approval_policy);
+    if (sandbox) state.sandbox ??= sandbox;
+    if (approvalPolicy) state.approvalPolicy ??= approvalPolicy;
   }
   const message = consumeCodexMessage(row);
   if (message.skipped) state.skippedEvents += 1;
@@ -535,6 +545,8 @@ async function importFromBuild(sourcePath: string, state: CodexBuildState): Prom
       ...(inspection.cwd ? { historicalCwd: inspection.cwd } : {}),
       historicalEnvironment: environment,
       ...(inspection.historicalCommit ? { historicalCommit: inspection.historicalCommit } : {}),
+      ...(state.sandbox ? { sandbox: state.sandbox } : {}),
+      ...(state.approvalPolicy ? { approvalPolicy: state.approvalPolicy } : {}),
       historicalBehavior: { commands: [...state.commands].sort(), touchedPaths: [...state.touchedPaths].sort() },
       signals: inspection.signals,
     },

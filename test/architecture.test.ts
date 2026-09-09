@@ -36,7 +36,8 @@ test('recovery stack does not import product JSONL parsers', async () => {
   const files = [
     ...(await tsFiles(join(SRC, 'agents'))).filter((file) => file.includes('recovery')),
     ...(await tsFiles(join(SRC, 'infrastructure'))).filter((file) => /recovery/.test(file)),
-    ...(await tsFiles(join(SRC, 'application'))).filter((file) => /experiment-recovery|recovery-/.test(file)),
+    ...(await tsFiles(join(SRC, 'application', 'recovery'))),
+    ...(await tsFiles(join(SRC, 'application'))).filter((file) => /recovery/.test(file)),
   ];
   const violations: string[] = [];
   for (const file of files) {
@@ -99,12 +100,55 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.match(loop, /assertBriefingOutsideReplica/);
   assert.doesNotMatch(loop, /observationTools/);
   assert.doesNotMatch(loop, /recoveryTools\(\s*input\.environment\.root/);
-  const caller = await readFile(join(SRC, 'infrastructure/pi-model-caller.ts'), 'utf8');
+  const caller = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');
   assert.match(caller, /transformContext/);
   assert.match(caller, /compactPiMessages/);
   assert.match(caller, /working set still exceeds/);
-  const runModel = await readFile(join(SRC, 'application/experiment-recovery-run-model.ts'), 'utf8');
+  const runModel = await readFile(join(SRC, 'application/recovery/run-model.ts'), 'utf8');
   assert.doesNotMatch(runModel, /recoveryObservationTools/);
+});
+
+test('Recovery production path does not reintroduce candidate selection or three-state envelopes', async () => {
+  const agent = await readFile(join(SRC, 'agents/recovery-agent.ts'), 'utf8');
+  assert.doesNotMatch(agent, /select_recovery_candidate/);
+  assert.doesNotMatch(agent, /Type\.Literal\("recovered"\)/);
+  assert.doesNotMatch(agent, /insufficient_evidence/);
+  assert.match(agent, /\.work\(/);
+  assert.match(agent, /status: Type\.Literal\("ready"\)/);
+  assert.match(agent, /status: Type\.Literal\("blocked"\)/);
+  const runModel = await readFile(join(SRC, 'application/recovery/run-model.ts'), 'utf8');
+  assert.doesNotMatch(runModel, /select_recovery_candidate/);
+  assert.doesNotMatch(runModel, /recoveryCandidates/);
+  const forensics = await readFile(join(SRC, 'application/recovery/run-forensics.ts'), 'utf8');
+  assert.doesNotMatch(forensics, /materializeRecoveryCandidates/);
+  assert.doesNotMatch(forensics, /decideRecoverySearch/);
+  const verifier = await readFile(join(SRC, 'application/recovery/verifier.ts'), 'utf8');
+  assert.doesNotMatch(verifier, /no_task_path_outcome/);
+  assert.doesNotMatch(verifier, /strong_evidence_complete/);
+  const provider = await readFile(join(SRC, 'environment/local-workspace-provider.ts'), 'utf8');
+  assert.doesNotMatch(provider, /createRecoveryCandidate/);
+  assert.doesNotMatch(provider, /selectRecoveryCandidate/);
+  assert.doesNotMatch(provider, /validateManifest/);
+  assert.doesNotMatch(provider, /verifiedEvidence/);
+  assert.doesNotMatch(provider, /hostManifestFromFingerprint/);
+  const validateBody = provider.match(/async validateRecovery[\s\S]*?\n {2}async probeRecovery/)?.[0] ?? "";
+  assert.doesNotMatch(validateBody, /recovered_partial|insufficient_evidence|extraNotes/);
+  const fail = await readFile(join(SRC, 'application/recovery/fail.ts'), 'utf8');
+  assert.doesNotMatch(fail, /status:\s*["'](?:recovered|partial|insufficient_evidence)["']/);
+  const runFinalize = await readFile(join(SRC, 'application/recovery/run-finalize.ts'), 'utf8');
+  assert.doesNotMatch(runFinalize, /verifiedEvidence/);
+  assert.doesNotMatch(runModel, /resetRecoveryWorkspace/);
+  assert.doesNotMatch(runModel, /investigationPacket/);
+  assert.doesNotMatch(runModel, /\bresolved:/);
+  assert.doesNotMatch(agent, /\bresolved:/);
+  assert.doesNotMatch(agent, /investigationPacket/);
+  const workingSet = await readFile(join(SRC, 'agents/recovery-working-set.ts'), 'utf8');
+  assert.doesNotMatch(workingSet, /investigationPacket/);
+  assert.doesNotMatch(workingSet, /\bresolved:/);
+  await assert.rejects(stat(join(SRC, 'application/recovery/review.ts')));
+  const tools = await readFile(join(SRC, 'application/recovery/run-model.ts'), 'utf8');
+  const names = [...tools.matchAll(/name:\s*["']([^"']+)["']/g)].map((match) => match[1]);
+  assert.equal(names.includes('select_recovery_candidate'), false);
 });
 
 test('role write policy stays on application owners without a shared Verifier', async () => {
@@ -129,7 +173,7 @@ test('role write policy stays on application owners without a shared Verifier', 
 });
 
 test('history read does not import products, Host, or model callers', async () => {
-  const source = await readFile(join(SRC, 'infrastructure/agent-history-read.ts'), 'utf8');
+  const source = await readFile(join(SRC, 'infrastructure/agent/history-read.ts'), 'utf8');
   assert.doesNotMatch(source, /products\/|pi-agent-host|pi-model-caller|LocalWorkspaceProvider/);
   const appHistory = await readFile(join(SRC, 'application/experiment-history-read.ts'), 'utf8');
   assert.doesNotMatch(appHistory, /products\/|pi-agent-host|pi-model-caller|LocalWorkspaceProvider/);
@@ -166,7 +210,7 @@ test('TUI and CLI recovery paths do not opt in to current-state fallback', async
 
 test('third pack proof does not inject host packs or workflow pack objects', async () => {
   const source = await readFile(join(process.cwd(), 'test', 'third-pack-config.test.ts'), 'utf8');
-  assert.doesNotMatch(source, /new CodexIntakeTui\([\s\S]*?packs\s*:/);
+  assert.doesNotMatch(source, /new IntakeTui\([\s\S]*?packs\s*:/);
   assert.doesNotMatch(source, /createExperimentWorkflow|createHarnessWorkflow|createCodexExperimentWorkflow|createCodexTuiWorkflow/);
   assert.doesNotMatch(source, /from ['"]\.\.\/src\/infrastructure\/store/);
 });
@@ -177,9 +221,15 @@ test('unnamed sessionsRoot and harness stop codes do not use product-name or led
   const candidateRun = await readFile(join(SRC, 'application/candidate-run.ts'), 'utf8');
   assert.doesNotMatch(candidateRun, /controller_completion_guard/);
   const workflow = await readFile(join(SRC, 'application/experiment-workflow.ts'), 'utf8');
-  const tuiWorkflow = await readFile(join(SRC, 'application/tui-workflow.ts'), 'utf8');
   assert.doesNotMatch(workflow, /createCodexExperimentWorkflow|createCodexTuiWorkflow|CodexTuiWorkflow/);
-  assert.doesNotMatch(tuiWorkflow, /createCodexExperimentWorkflow|createCodexTuiWorkflow|CodexTuiWorkflow/);
+});
+
+test('application and TUI do not keep empty forwarding modules', async () => {
+  await assert.rejects(stat(join(SRC, 'application/tui-workflow.ts')));
+  await assert.rejects(stat(join(SRC, 'tui/controller.ts')));
+  const intakeApp = await readFile(join(SRC, 'tui/intake-app.ts'), 'utf8');
+  assert.match(intakeApp, /from '\.\/intake-tui\.js'/);
+  assert.doesNotMatch(intakeApp, /controller\.js/);
 });
 
 test('real-terminal TUI probe is opt-in and outside engineering gates', async () => {
@@ -201,8 +251,8 @@ test('real-terminal TUI probe is opt-in and outside engineering gates', async ()
   });
   assert.notEqual(noTty.status, 0);
   assert.match(`${noTty.stderr}${noTty.stdout}`, /real TTY/);
-  const caller = await readFile(join(SRC, 'infrastructure/pi-model-caller.ts'), 'utf8');
-  assert.match(caller, /await notify\(/);
+  const adapter = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');
+  assert.match(adapter, /await notify\(/);
 });
 
 test('opt-in agent context probe stays outside engineering gates', async () => {
@@ -218,6 +268,87 @@ test('CI test matrix covers three operating systems', async () => {
   assert.match(workflow, /macos-latest/);
   assert.match(workflow, /ubuntu-latest/);
 });
+
+test('agent execution does not import experiment application', async () => {
+  const files = await tsFiles(join(SRC, 'infrastructure', 'agent'));
+  const violations: string[] = [];
+  for (const file of files) {
+    const source = await readFile(file, 'utf8');
+    if (/from\s+['"][^'"]*application\//.test(source)) violations.push(relative(SRC, file).split(sep).join('/'));
+  }
+  assert.deepEqual(violations, []);
+});
+
+test('agent foundation uses sequential Pi Agent and never AgentHarness', async () => {
+  await stat(join(SRC, 'infrastructure/agent/types.ts'));
+  await stat(join(SRC, 'infrastructure/agent/session.ts'));
+  await stat(join(SRC, 'infrastructure/agent/providers/fake/adapter.ts'));
+  await stat(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'));
+  const adapter = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');
+  const tools = await readFile(join(SRC, 'infrastructure/agent/providers/pi/tool-adapter.ts'), 'utf8');
+  assert.doesNotMatch(adapter, /AgentHarness/);
+  assert.doesNotMatch(tools, /AgentHarness/);
+  assert.match(tools, /toolExecution: PI_TOOL_EXECUTION/);
+  const host = await readFile(join(SRC, 'infrastructure/agent/host.ts'), 'utf8');
+  assert.match(host, /export class AgentHost/);
+});
+
+test('product packs do not import TUI or experiment workflow', async () => {
+  const files = await tsFiles(join(SRC, 'products'));
+  const violations: string[] = [];
+  for (const file of files) {
+    const source = await readFile(file, 'utf8');
+    if (/from\s+['"][^'"]*(?:tui\/|application\/experiment-workflow|application\/experiment\.js)/.test(source)) {
+      violations.push(relative(SRC, file).split(sep).join('/'));
+    }
+  }
+  assert.deepEqual(violations, []);
+});
+
+test('TUI pages do not import run operations', async () => {
+  const files = await tsFiles(join(SRC, 'tui', 'pages'));
+  const violations: string[] = [];
+  for (const file of files) {
+    const source = await readFile(file, 'utf8');
+    if (/from\s+['"][^'"]*(?:experiment-workflow|experiment-operations|candidate-run|recovery\/run)/.test(source)) {
+      violations.push(relative(SRC, file).split(sep).join('/'));
+    }
+  }
+  assert.deepEqual(violations, []);
+});
+
+test('readonly queries do not import experiment assembly or CandidateRun', async () => {
+  const queries = await readFile(join(SRC, 'application/experiment-queries.ts'), 'utf8');
+  const history = await readFile(join(SRC, 'application/experiment-history-read.ts'), 'utf8');
+  assert.doesNotMatch(queries, /from ['"]\.\/experiment\.js['"]|from ['"]\.\/candidate-run\.js['"]/);
+  assert.doesNotMatch(history, /from ['"]\.\/experiment\.js['"]|from ['"]\.\/candidate-run\.js['"]/);
+});
+
+test('recovery helpers live with their owners instead of support.ts', async () => {
+  await assert.rejects(stat(join(SRC, 'application/recovery/support.ts')));
+  await stat(join(SRC, 'application/recovery/audit.ts'));
+  await stat(join(SRC, 'application/recovery/writes.ts'));
+  await stat(join(SRC, 'application/recovery/investigation.ts'));
+  await stat(join(SRC, 'application/recovery/staging-diagnostic.ts'));
+});
+
+test('core schema concepts are split under schemas/', async () => {
+  const schema = await readFile(join(SRC, 'core/schema.ts'), 'utf8');
+  assert.match(schema, /from ['"]\.\/schemas\/ids\.js['"]/);
+  assert.match(schema, /from ['"]\.\/schemas\/scene\.js['"]/);
+  assert.match(schema, /from ['"]\.\/schemas\/event\.js['"]/);
+  assert.match(schema, /from ['"]\.\/schemas\/recovery\.js['"]/);
+  assert.match(schema, /from ['"]\.\/schemas\/task-case\.js['"]/);
+  assert.match(schema, /from ['"]\.\/schemas\/run\.js['"]/);
+  await stat(join(SRC, 'core/schemas/ids.ts'));
+  await stat(join(SRC, 'core/schemas/scene.ts'));
+  await stat(join(SRC, 'core/schemas/event.ts'));
+  await stat(join(SRC, 'core/schemas/recovery.ts'));
+  await stat(join(SRC, 'core/schemas/task-case.ts'));
+  await stat(join(SRC, 'core/schemas/run.ts'));
+});
+
+
 
 
 

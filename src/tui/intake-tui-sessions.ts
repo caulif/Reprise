@@ -1,4 +1,4 @@
-import type { CodexIntakeTui } from "./intake-tui.js";
+import type { IntakeTui } from "./intake-tui.js";
 import { importPacks, packSessions } from "../products/pack-access.js";
 import { type DiscoveryDiagnostic, type SessionSummary } from "../products/contract.js";
 import { type SessionProject, selectDefaultProjectIndex } from "./pages/intake.js";
@@ -19,7 +19,7 @@ import { t, type Locale } from "./i18n.js";
 import { productMemory, rememberProjects, rememberSessions } from "./intake-layer-memory.js";
 type SessionLoadMode = "initial" | "more" | "refresh";
 
-export async function CodexIntakeTui_loadHome(this: CodexIntakeTui, initialMessage?: string): Promise<void> {
+export async function IntakeTui_loadHome(this: IntakeTui, initialMessage?: string): Promise<void> {
     void this.refreshProductAuth();
     const token = this.beginNavigation();
     try {
@@ -35,7 +35,7 @@ export async function CodexIntakeTui_loadHome(this: CodexIntakeTui, initialMessa
     this.message = initialMessage ?? t(this.locale, "welcomeBack");
   }
 
-export async function CodexIntakeTui_loadSessions(this: CodexIntakeTui): Promise<void> {
+export async function IntakeTui_loadSessions(this: IntakeTui): Promise<void> {
     this.beginNavigation();
     this.intakeLevel = "products";
     const last = this.lastProductId || this.activeProductId;
@@ -50,19 +50,19 @@ export async function CodexIntakeTui_loadSessions(this: CodexIntakeTui): Promise
     this.render(true);
   }
 
-export async function CodexIntakeTui_loadProductSessions(this: CodexIntakeTui, productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
+export async function IntakeTui_loadProductSessions(this: IntakeTui, productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
     return await fetchProductSessions(this, productId, mode);
   }
 
-export function CodexIntakeTui_loadMoreProductSessions(this: CodexIntakeTui): void {
+export function IntakeTui_loadMoreProductSessions(this: IntakeTui): void {
     return fetchMoreProductSessions(this);
   }
 
-export function CodexIntakeTui_refreshProductSessions(this: CodexIntakeTui): void {
+export function IntakeTui_refreshProductSessions(this: IntakeTui): void {
     return refetchProductSessions(this);
   }
 
-export function CodexIntakeTui_activateProductSessions(this: CodexIntakeTui, productId: string, sessions: readonly SessionSummary[], limitReached: boolean): void {
+export function IntakeTui_activateProductSessions(this: IntakeTui, productId: string, sessions: readonly SessionSummary[], limitReached: boolean): void {
     this.activeProductId = productId;
     this.lastProductId = productId;
     this.sessions = sessions;
@@ -80,7 +80,7 @@ export function CodexIntakeTui_activateProductSessions(this: CodexIntakeTui, pro
     this.message = this.sessionsMessage();
   }
 
-export function CodexIntakeTui_openIntakeSelection(this: CodexIntakeTui): { consume: true } {
+export function IntakeTui_openIntakeSelection(this: IntakeTui): { consume: true } {
     if (this.intakeLevel === "products") {
       const pack = importPacks(this.packs)[this.selected];
       if (pack) void this.loadProductSessions(pack.manifest.productId);
@@ -94,11 +94,11 @@ export function CodexIntakeTui_openIntakeSelection(this: CodexIntakeTui): { cons
       this.render();
       return { consume: true };
     }
-    void CodexIntakeTui_openSessionInspection.call(this, selected);
+    void IntakeTui_openSessionInspection.call(this, selected);
     return { consume: true };
 }
 
-function enterProjectSessions(c: CodexIntakeTui): { consume: true } {
+function enterProjectSessions(c: IntakeTui): { consume: true } {
   const project = c.visibleProjects()[c.selected];
   if (!project) {
     c.message = t(c.locale, "emptyMatchBlocked");
@@ -122,7 +122,7 @@ function enterProjectSessions(c: CodexIntakeTui): { consume: true } {
   return { consume: true };
 }
 
-export function CodexIntakeTui_sessionsMessage(this: CodexIntakeTui): string {
+export function IntakeTui_sessionsMessage(this: IntakeTui): string {
     if (this.intakeLevel === "products") return t(this.locale, "chooseAgentProduct");
     const discovery = this.activeProductId ? this.productDiscovery.get(this.activeProductId) : undefined;
     if (discovery?.status === "loading") return t(this.locale, "sessionsLoading");
@@ -147,7 +147,7 @@ export function CodexIntakeTui_sessionsMessage(this: CodexIntakeTui): string {
     return lines.join("\n");
   }
 
-export function CodexIntakeTui_discoveryDiagnosticLabel(this: CodexIntakeTui, locale: Locale, code: DiscoveryDiagnostic['code']): string {
+export function IntakeTui_discoveryDiagnosticLabel(this: IntakeTui, locale: Locale, code: DiscoveryDiagnostic['code']): string {
   if (code === 'history-without-transcript') return t(locale, 'historyWithoutTranscript');
   if (code === 'source-missing') return t(locale, 'sourceMissingDiagnostic');
   if (code === 'duplicate-source') return t(locale, 'duplicateSourceDiagnostic');
@@ -167,7 +167,7 @@ export function CodexIntakeTui_discoveryDiagnosticLabel(this: CodexIntakeTui, lo
   return code;
 }
 
-export async function CodexIntakeTui_refreshProductAuth(this: CodexIntakeTui): Promise<void> {
+export async function IntakeTui_refreshProductAuth(this: IntakeTui): Promise<void> {
     const statuses = await Promise.all(this.packs.map(async (pack) => ({
       productId: pack.manifest.productId,
       status: await (pack.checkAuth?.() ?? Promise.resolve({ configured: false })),
@@ -176,11 +176,11 @@ export async function CodexIntakeTui_refreshProductAuth(this: CodexIntakeTui): P
     for (const { productId, status } of statuses) this.productAuth.set(productId, status.configured);
   }
 
-export function CodexIntakeTui_canLeaveProject(this: CodexIntakeTui): boolean {
+export function IntakeTui_canLeaveProject(this: IntakeTui): boolean {
     return this.intakeLevel !== "products";
   }
 
-export function CodexIntakeTui_backToProjects(this: CodexIntakeTui): { consume: true } {
+export function IntakeTui_backToProjects(this: IntakeTui): { consume: true } {
     if (this.intakeLevel === "projects") {
       this.discoveryAbort?.abort();
       if (this.activeProductId) {
@@ -211,7 +211,7 @@ export function CodexIntakeTui_backToProjects(this: CodexIntakeTui): { consume: 
     return { consume: true };
   }
 
-export function CodexIntakeTui_syncIntakeLevel(this: CodexIntakeTui): void {
+export function IntakeTui_syncIntakeLevel(this: IntakeTui): void {
     const projects = this.groupedProjects();
     if (!this.activeProjectKey || !projects.some((project) => project.key === this.activeProjectKey)) {
       this.activeProjectKey = projects[0]?.key ?? "";
@@ -221,27 +221,27 @@ export function CodexIntakeTui_syncIntakeLevel(this: CodexIntakeTui): void {
     }
   }
 
-export function CodexIntakeTui_groupedProjects(this: CodexIntakeTui): SessionProject[] {
+export function IntakeTui_groupedProjects(this: IntakeTui): SessionProject[] {
     return groupIntakeProjects(this);
   }
 
-export function CodexIntakeTui_visibleProjects(this: CodexIntakeTui): SessionProject[] {
+export function IntakeTui_visibleProjects(this: IntakeTui): SessionProject[] {
     return listVisibleProjects(this);
   }
 
-export function CodexIntakeTui_visibleSessions(this: CodexIntakeTui): readonly SessionSummary[] {
+export function IntakeTui_visibleSessions(this: IntakeTui): readonly SessionSummary[] {
     return listVisibleSessions(this);
   }
 
-export function CodexIntakeTui_intakeCount(this: CodexIntakeTui): number {
+export function IntakeTui_intakeCount(this: IntakeTui): number {
     return countIntakeItems(this);
   }
 
-export function CodexIntakeTui_productItems(this: CodexIntakeTui): import("./pages/intake.js").ProductIntakeItem[] {
+export function IntakeTui_productItems(this: IntakeTui): import("./pages/intake.js").ProductIntakeItem[] {
     return listProductItems(this);
   }
 
-async function CodexIntakeTui_openSessionInspection(this: CodexIntakeTui, session: SessionSummary): Promise<void> {
+async function IntakeTui_openSessionInspection(this: IntakeTui, session: SessionSummary): Promise<void> {
   const pack = this.packs.find((item) => item.manifest.productId === session.productId);
   if (!pack) {
     this.showError(new Error(`No Product Pack is registered for session ${session.productId}.`), "sessions");

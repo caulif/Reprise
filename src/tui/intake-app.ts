@@ -1,1 +1,1 @@
-export { CodexIntakeTui, type CodexIntakeTuiOptions } from './controller.js';
+export { IntakeTui, type IntakeTuiOptions } from './intake-tui.js';

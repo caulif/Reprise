@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
-import { PiAgentHost, type AgentAuditEvent } from '../src/infrastructure/pi-agent-host.js';
+import { PiAgentHost, type AgentAuditEvent } from '../src/infrastructure/agent/host.js';
 import { projectTimelineEvent } from '../src/tui/timeline.js';
 import type { EventEnvelope } from '../src/core/schema.js';
 
@@ -60,7 +60,12 @@ test('a second concurrent invocation on the same Session is rejected', async () 
   const session = await host.createSession({ role: 'recovery', systemPrompt: 'fixed', allowModelText: true });
   const pending = session.request(request());
   await new Promise((done) => setImmediate(done));
-  await assert.rejects(() => session.request(request()), /already has an invocation in flight/);
+  const concurrent = await session.request(request());
+  assert.equal(concurrent.status, 'failed');
+  if (concurrent.status === 'failed') {
+    assert.equal(concurrent.failure.code, 'concurrent_invocation');
+    assert.match(concurrent.failure.message, /already has an invocation in flight/);
+  }
   resolve(JSON.stringify({ ok: true }));
   assert.equal((await pending).status, 'completed');
 });
@@ -130,4 +135,52 @@ test('invocation lifecycle events stay off the run timeline', () => {
   for (const type of ['agent.invocation_started', 'agent.invocation_completed', 'agent.invocation_failed', 'agent.invocation_cancelled']) {
     assert.deepEqual(projectTimelineEvent(envelope(type)), []);
   }
+});
+
+test('Host freeform request completes without JSON repair', async () => {
+  const events: AgentAuditEvent[] = [];
+  const appended: string[] = [];
+  const host = new PiAgentHost({
+    createSession: () => ({
+      append: async ({ content }) => {
+        appended.push(content);
+        return 'investigating both workspaces; not JSON';
+      },
+      cancel() {},
+    }),
+  });
+  const session = await host.createSession({
+    role: 'comparison',
+    systemPrompt: 'fixed',
+    allowModelText: true,
+    audit: { append: async (event) => { events.push(event); } },
+  });
+  const result = await session.requestFreeform({
+    promptContent: 'Read observations/user-inputs/INDEX.tsv first.',
+    timeoutMs: 50,
+  });
+  assert.equal(result.status, 'completed');
+  if (result.status === 'completed') assert.equal('value' in result, false);
+  assert.deepEqual(appended, ['Read observations/user-inputs/INDEX.tsv first.']);
+  assert.ok(events.some((event) => event.type === 'agent.message_appended'));
+  assert.ok(events.some((event) => event.type === 'agent.model_output'));
+  assert.ok(events.some((event) => event.type === 'agent.invocation_completed'));
+  assert.equal(events.some((event) => event.type === 'agent.invalid_output'), false);
+  await session.close();
+});
+
+test('Host freeform request rejects JSON repair attempts', async () => {
+  const host = new PiAgentHost({
+    createSession: () => ({ append: async () => 'unused', cancel() {} }),
+  });
+  const session = await host.createSession({ role: 'comparison', systemPrompt: 'fixed', allowModelText: true });
+  await assert.rejects(
+    () => session.requestFreeform({
+      promptContent: 'Do not return JSON.',
+      timeoutMs: 50,
+      maxRepairAttempts: 1,
+    }),
+    /cannot run JSON repair/,
+  );
+  await session.close();
 });

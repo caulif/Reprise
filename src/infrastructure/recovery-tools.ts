@@ -314,14 +314,6 @@ function gitNonzeroExit(error: unknown): boolean {
     error.exitCategory === "nonzero_exit"
   );
 }
-
-function gitExit(error: unknown, exitCode: number): boolean {
-  return (
-    error instanceof ProcessBoundaryError &&
-    error.exitCategory === "nonzero_exit" &&
-    error.exitCode === exitCode
-  );
-}
 function taskCaseEvidence(
   taskCase: TaskCase,
   preimages: readonly { path: string; source: string; hash: string }[],
@@ -363,69 +355,17 @@ function uniqueRefs(
   evidence: readonly RecoveryEvidenceVerification[],
 ): string[] {
   return [...new Set(evidence.map((item) => item.ref))];
-} /** Rejects envelope claims that cannot be supported by frozen recovery evidence. */
-export function ownedRecoveryRefs(
-  refs: readonly string[],
-  evidence: readonly { ref: string }[],
-): string[] {
-  const known = new Set(evidence.map((item) => item.ref));
-  const owned = refs.filter((ref) => known.has(ref));
-  if (refs.length > 0 && owned.length === 0) {
-    throw new RecoveryEvidenceValidationError(
-      `Recovery evidence is not owned by the frozen TaskCase: ${refs[0]}.`,
-    );
-  }
-  return owned;
 }
 
 export function validateRecoveryEvidence(
-  knownRefs: readonly string[],
+  _knownRefs: readonly string[],
   result: {
-    status: "recovered" | "partial" | "insufficient_evidence";
+    status: "ready" | "blocked";
     unresolved: readonly string[];
-    evidenceRefs: readonly string[];
   },
 ): void {
-  if (result.status === "recovered" && result.unresolved.length) {
-    throw new RecoveryEvidenceValidationError(
-      "recovered status cannot include unresolved items; use partial.",
-    );
-  }
-  const owned = ownedRecoveryRefs(
-    result.evidenceRefs,
-    knownRefs.map((ref) => ({ ref })),
-  );
-  if (result.status === "recovered" && !owned.length) {
-    throw new RecoveryEvidenceValidationError(
-      "recovered status requires owned evidence references.",
-    );
-  }
-}
-
-/** Rechecks the evidence selected by the Agent at the Provider boundary. */ /** Returns a Git blob's content digest for path-level recovery verification. */
-export async function gitFileHash(
-  root: string,
-  commit: string,
-  path: string,
-): Promise<string | undefined> {
-  if (!isRelativePath(path))
-    throw new Error("Recovery path must be a staging-relative slash path.");
-  try {
-    const result = await runProcess({
-      operation: "git_path_verification",
-      executableKind: "git",
-      command: "git",
-      args: ["show", `${commit}:${path}`],
-      cwd: root,
-      timeoutMs: 5_000,
-      maxOutputBytes: MAX_BYTES,
-    });
-    return sha256(result.stdout);
-  } catch (error) {
-    if (gitExit(error, 128)) return undefined;
-    throw new Error(`Git path verification failed for ${path}.`, {
-      cause: error,
-    });
+  if (result.status === "blocked" && result.unresolved.length === 0) {
+    throw new RecoveryEvidenceValidationError("blocked status requires unresolved items.");
   }
 }
 

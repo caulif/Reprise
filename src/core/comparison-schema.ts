@@ -9,6 +9,17 @@ const ComparisonReportFactsSchema = Type.Object({
   runtime: Type.Object({ productId: Type.String(), sandbox: Type.Optional(Type.String()), approvalPolicy: Type.Optional(Type.String()), network: Type.Optional(Type.String()) }),
   delivery: Type.Object({ changedPaths: Type.Array(Type.String()), targetArtifactStatus: Type.String(), verificationStatus: Type.String() }),
   replay: Type.Object({ sourceRootKind: Type.Optional(Type.String()), conditions: Type.Array(Type.String()), baselineEvidence: Type.String(), candidateEvidence: Type.String() }),
+  metrics: Type.Optional(Type.Object({
+    tokens: Type.Optional(Type.Object({
+      total: Type.Optional(Type.Number()),
+      input: Type.Optional(Type.Number()),
+      output: Type.Optional(Type.Number()),
+      cached: Type.Optional(Type.Number()),
+      reasoning: Type.Optional(Type.Number()),
+    })),
+    cost: Type.Optional(Type.Object({ amount: Type.Number(), currency: Type.Optional(Type.String()) })),
+    generationRate: Type.Optional(Type.Object({ outputTokens: Type.Number(), durationMs: Type.Number() })),
+  })),
 });
 export const ComparisonBriefingContextSchema = Type.Object({
   task: Type.Object({ caseId: Type.String(), summary: Type.String() }), baseline: Type.Object({ summary: Type.String(), evidenceRefs: Type.Array(Type.String()) }),

@@ -2,7 +2,7 @@
 
 状态：accepted
 
-取代 [轮间 digest 占位](../superseded/2026-08-31-internal-agent-turn-compaction.md)。修订 [候选选择与信息增益](./2026-08-19-recovery-candidate-selection-and-information-gain.md) 中关于重复工具调用与 `maxToolCalls` 的条款。
+取代 [轮间 digest 占位](../superseded/2026-08-31-internal-agent-turn-compaction.md)。修订 [候选选择与信息增益](../superseded/2026-08-19-recovery-candidate-selection-and-information-gain.md) 中关于重复工具调用与 `maxToolCalls` 的历史条款。
 
 ## 问题
 
@@ -37,3 +37,5 @@
 ## 验证
 
 `test/session-compact.test.ts`：`needsPiCompaction` 跟随 usage；`compactPiMessages` 产出 `compactionSummary`；Host 写入 `agent.context_compacted` 的 summary/retainedCount。`test/recovery-tool-limits.test.ts`：17 次破坏性 powershell 与重复 `ls` 不被拒绝。`test/codex-experiment-recovery-envelope.test.ts`：超过十六次删除后仍可完成恢复。`test/timeline.test.ts`：相同输入失败不再 `hidden`。
+
+

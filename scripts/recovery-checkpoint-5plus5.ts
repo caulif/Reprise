@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { recoverCodexExperiment } from "../src/application/experiment.js";
-import { evaluateRecoveryCases } from "../src/application/recovery-evaluation.js";
+import { recoverCodexExperiment } from "../src/application/recovery/recover.js";
+import { evaluateRecoveryCases } from "../src/application/recovery/evaluation.js";
 import type { RecoveryAgentPort } from "../src/agents/recovery-agent.js";
 import type { TaskCase } from "../src/core/schema.js";
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
@@ -74,7 +74,7 @@ async function runFixture(_output: string, productId: "codex" | "claude-code", f
       sourceRoot, checkpointRoot: checkpoint.root, taskCase: taskCase(caseId, productId), recovery: recoveryMustNotRun,
       now, environmentProvider: provider,
     });
-    if (attempt.recovery.status !== "completed" || attempt.recovery.value.status !== "recovered" || attempt.baseline.match !== "recovered")
+    if (attempt.recovery.status !== "completed" || attempt.recovery.value.status !== "ready" || attempt.baseline.match !== "recovered")
       throw new Error("checkpoint recovery did not produce a recovered baseline");
     const byteMatch = await sameVisibleFiles(checkpoint.root, attempt.staging!.root, [...checkpointFiles.keys()]);
     if (!byteMatch || await anyFileExists(attempt.staging!.root, [...interruptedFiles.keys()].filter((path) => !checkpointFiles.has(path))))

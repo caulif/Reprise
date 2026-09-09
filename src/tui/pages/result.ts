@@ -1,12 +1,12 @@
 import { join } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
-import type { CodexExperimentResult } from '../../application/experiment.js';
+import type { ExperimentResult } from '../../application/experiment.js';
 import { compact } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
 import { kv, kvLinkBlock, panel, wrapBodyLine } from '../widgets.js';
 
-export function renderResult(theme: Theme, width: number, result: CodexExperimentResult, locale: Locale = 'en', productLabel?: string): string[] {
+export function renderResult(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string): string[] {
   const kind = result.record.outcome.termination.kind;
   const vacant = theme.framed ? '—' : '-';
   const skipped = result.comparison.result.status === 'skipped';
@@ -73,14 +73,14 @@ function terminationBanner(theme: Theme, kind: string): string {
   return theme.style.danger(` ${theme.glyphs.err} ${kind}`);
 }
 
-function envelopeHeadline(result: CodexExperimentResult): string | undefined {
+function envelopeHeadline(result: ExperimentResult): string | undefined {
   const cmp = result.comparison.result;
   if (cmp.status !== 'completed' || !('value' in cmp)) return undefined;
   const text = cmp.value?.headline?.trim();
   return text || undefined;
 }
 
-function metricsLine(theme: Theme, result: CodexExperimentResult, locale: Locale): string | undefined {
+function metricsLine(theme: Theme, result: ExperimentResult, locale: Locale): string | undefined {
   const facts = result.facts;
   if (!facts) return undefined;
   const total = facts.elapsedMs;
@@ -98,7 +98,7 @@ function metricsLine(theme: Theme, result: CodexExperimentResult, locale: Locale
   return parts.join(` ${theme.glyphs.sep} `);
 }
 
-function explainOutcome(result: CodexExperimentResult, width: number, product: string, locale: Locale): readonly string[] | undefined {
+function explainOutcome(result: ExperimentResult, width: number, product: string, locale: Locale): readonly string[] | undefined {
   const failure = result.record.outcome.termination.failure;
   if (failure?.message) {
     if (failure.origin === 'controller' && result.decision.status === 'failed' && result.decision.failure?.kind) {

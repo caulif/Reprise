@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Models } from '@earendil-works/pi-ai';
 import { configPath, defaultHarnessModelConfig, environmentNameForKeyRef, readHarnessModelConfig, resolveKeyRef, saveHarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
-import { modelsForConfig, PiModelCaller, PI_PROBE_TIMEOUT_MS } from '../src/infrastructure/pi-model-caller.js';
+import { modelsForConfig, PiModelCaller, PI_PROBE_TIMEOUT_MS } from '../src/infrastructure/agent/model-caller.js';
 
 test('Harness model config persists only the selected non-secret Pi model', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-harness-model-'));

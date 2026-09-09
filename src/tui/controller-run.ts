@@ -2,7 +2,7 @@ import { basename, dirname, join } from 'node:path';
 import { isFsAbsolute } from '../core/paths.js';
 import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import { candidateSpecFromOffer, catalogCursor } from '../application/candidate-spec.js';
-import type { CodexExperimentResult, ExperimentHandle } from '../application/experiment.js';
+import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { packDefaultCandidate, packRuntime, packSessions, runtimePacks } from '../products/pack-access.js';
 import { freezeCase } from '../products/shared/freeze.js';
@@ -15,7 +15,7 @@ import { syncTimelineSelection } from './timeline-read.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
 import { candidateStartBlocked, type CandidateStartGate } from '../application/candidate-start.js';
 import { prepareExperiment } from '../application/experiment-operations.js';
-import { userRecoveryStatus } from '../application/recovery-user-status.js';
+import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import { record, text } from '../core/json.js';
 import type { CandidateRunPhase } from './pages/run.js';
 
@@ -33,7 +33,7 @@ function workspaceDetail(workspace: { fileCount: number; totalBytes: number } | 
   return `${workspace.fileCount.toLocaleString()} files · ${(workspace.totalBytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-function resultMessage(result: CodexExperimentResult, locale: Locale): string {
+function resultMessage(result: ExperimentResult, locale: Locale): string {
   if (result.comparison.result.status === 'skipped') return t(locale, 'resultSkipped');
   const kind = result.record.outcome.termination.kind;
   if (kind === 'blocked') return t(locale, 'resultBlocked');
@@ -310,7 +310,7 @@ async function settleRun(
   c: ControllerHandle,
   handle: ExperimentHandle,
   token: number,
-): Promise<CodexExperimentResult | undefined> {
+): Promise<ExperimentResult | undefined> {
   if (c.autoCompare || c.cancelling) return handle.result;
   const partial = await handle.candidateFinished;
   if (token !== c.generation) return undefined;
@@ -335,7 +335,7 @@ async function settleRun(
   return handle.result;
 }
 
-function showRunResult(c: ControllerHandle, result: CodexExperimentResult): void {
+function showRunResult(c: ControllerHandle, result: ExperimentResult): void {
   c.result = result;
   const experimentRoot = result.experimentRoot ?? dirname(result.reportPath);
   const completedCase = result.taskCase ?? c.taskCase;

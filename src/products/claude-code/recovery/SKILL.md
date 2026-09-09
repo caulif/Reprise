@@ -2,7 +2,7 @@
 
 Version: claude-code-recovery/v1
 
-This playbook is evidence for Recovery Agent. It does not grant tools or change permissions. Start from the Host investigation packet and compare staging with `ls`/`grep`/`find`. When a decision-critical sentence is missing from the packet, read `observations/INDEX.md` then one `observations/` file. Do not parse product session JSONL; the Host already froze `TaskCase.initialInput` and you must not invent or replace it. If a small in-root instruction file is still needed for the task, write it into staging from Host-owned evidence. Do not follow out-of-root symlinks or copy large trees such as `node_modules`. Do not default to deleting leftover caches such as `.playwright-cli`.
+This playbook is evidence for Recovery Agent. It does not grant tools or change permissions. Restore the workspace to the conditions before the original Agent received `task.initialInput`. Clear successor artifacts by default; keep or rebuild only what the original task still needs. Do not finish the original task. Short notes may go in `.reprise/recovery-work/`. Start from the Host packet and compare the work copy with `ls`/`grep`/`find`. When a decision-critical sentence is missing from the packet, read `observations/INDEX.md` then one `observations/` file. Do not parse product session JSONL; the Host already froze `TaskCase.initialInput`. The local developer environment may be used for installs and builds; credentials, the user's real directory, and global Git config stay out of bounds.
 
 ## Where to look
 
@@ -50,4 +50,4 @@ Treat that sequence as "the candidate never started the task", not as a complete
 
 ## Report
 
-For `recovered` and `partial`, write `recovery.md` with `write`. Do not invent a path inventory; the Host computes changed paths from fingerprint. `recovered` requires path-level strong evidence (a matching verified preimage or Git blob); otherwise return `partial` with the uncertainty in `unresolved`.
+Write `recovery.md`. Return `ready` when the candidate can start, including when unrelated gaps remain. Return `blocked` when a remaining gap would change the original task.

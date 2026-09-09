@@ -1,4 +1,4 @@
-import type { CodexExperimentPreflight } from '../../application/experiment.js';
+import type { ExperimentPreflight } from '../../application/experiment-preflight.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
 import { lastLiveVerb } from '../agent-activity.js';
 import { foldProcessEntries, selectedIndexAfterFold } from '../fold-process.js';
@@ -13,7 +13,7 @@ import { kv, pad, panel, type PreparePhase } from '../widgets.js';
 
 export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
 export type RecoveryPreviewModel = {
-  readonly status: 'recovered' | 'partial' | 'insufficient_evidence' | 'failed';
+  readonly status: 'ready' | 'blocked' | 'recovered' | 'partial' | 'insufficient_evidence' | 'failed';
   readonly reportText?: string;
   readonly unresolved: readonly string[];
   readonly changedPathCount: number;
@@ -21,7 +21,7 @@ export type RecoveryPreviewModel = {
   readonly failureSummary?: string;
 };
 export type PreflightModel = {
-  readonly preflight: CodexExperimentPreflight;
+  readonly preflight: ExperimentPreflight;
   readonly candidate: CandidateSpec | undefined;
   readonly step: 1 | 2 | 3;
   readonly recovery?: RecoveryPreviewModel;

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { checkRecoveryReadiness, deriveRecoveryReadinessContext } from "../src/application/recovery-readiness.js";
+import { checkRecoveryReadiness, deriveRecoveryReadinessContext } from "../src/application/recovery/readiness.js";
 import type { TaskCase, RecoveryReadinessContext } from "../src/core/schema.js";
 
 test("Recovery readiness derives task paths and reports a missing path", async () => {

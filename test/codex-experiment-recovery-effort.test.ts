@@ -4,8 +4,9 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RecoveryAgent, type RecoveryAgentPort } from "../src/agents/recovery-agent.js";
-import { recoverCodexExperiment, startCodexExperiment } from "../src/application/experiment.js";
-import { PiAgentHost } from "../src/infrastructure/pi-agent-host.js";
+import { recoverCodexExperiment } from "../src/application/recovery/recover.js";
+import { startCodexExperiment } from "../src/application/experiment.js";
+import { PiAgentHost } from "../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../src/infrastructure/store/experiment-store.js";
 import { isRecord } from "../src/core/json.js";
@@ -33,10 +34,9 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
         status: "completed",
         sessionId: "recovery-1",
         value: {
-          status: "insufficient_evidence",
+          status: "ready",
           reportPath: "recovery.md",
-          unresolved: ["No historical commit."],
-          evidenceRefs: [],
+          unresolved: [],
         },
       };
     },
@@ -54,10 +54,10 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
   assert.equal(
-    events.some((event) => event.type === "recovery.investigation_packet"),
+    events.some((event) => event.type === "recovery.investigation_created"),
     true,
   );
-  assert.equal(attempt.baseline.recovery?.status, "insufficient_evidence");
+  assert.equal(attempt.baseline.recovery?.status, "ready");
   assert.ok(attempt.providerPreview);
   assert.equal(
     await readFile(
@@ -111,7 +111,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
             new AbortController().signal,
           );
           return JSON.stringify({
-            status: "insufficient_evidence",
+            status: "blocked",
             reportPath: "recovery.md",
             unresolved: ["No historical commit."],
             evidenceRefs: [],
@@ -189,17 +189,20 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
     },
     recovery: {
       timeoutMs: 43210,
-      recover: async (context) => {
-        observedBudget = context.budget.timeoutMs;
+      recover: async (_context, tools) => {
+        observedBudget = _context.budget.timeoutMs;
         called = true;
+        await tools.find((tool) => tool.name === "write")?.execute(
+          { path: "recovery.md", content: "# Recovery\n\nHistory-only investigation." },
+          new AbortController().signal,
+        );
         return {
           status: "completed",
           sessionId: "recovery-history",
           value: {
-            status: "insufficient_evidence",
+            status: "blocked",
             reportPath: "recovery.md",
             unresolved: ["No recoverable baseline found after forensics."],
-            evidenceRefs: [],
           },
         };
       },
@@ -210,7 +213,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
   });
   assert.equal(called, true);
   assert.equal(observedBudget, 43210);
-  assert.equal(attempt.baseline.recovery?.status, "insufficient_evidence");
+  assert.equal(attempt.baseline.recovery?.status, "blocked");
   assert.deepEqual(
     events
       .map((event) => event.type)
@@ -272,17 +275,19 @@ test("Recovery runs maximum-effort forensics even with an empty transcript and e
     sourceRoot: base.sourceRoot,
     taskCase: { ...base.taskCase, transcript: [], historicalEvents: [] },
     recovery: {
-      recover: async (context) => {
+      recover: async (_context, tools) => {
         called = true;
-        assert.equal(context.attemptMode, "maximum-effort-safe");
+        await tools.find((tool) => tool.name === "write")?.execute(
+          { path: "recovery.md", content: "# Recovery\n\nEmpty catalog." },
+          new AbortController().signal,
+        );
         return {
           status: "completed",
           sessionId: "recovery-empty",
           value: {
-            status: "insufficient_evidence",
+            status: "blocked",
             reportPath: "recovery.md",
             unresolved: ["Forensics found no historical baseline."],
-            evidenceRefs: [],
           },
         };
       },
@@ -293,7 +298,7 @@ test("Recovery runs maximum-effort forensics even with an empty transcript and e
   });
   assert.equal(called, true);
   assert.equal(attempt.recovery.status, "completed");
-  assert.equal(attempt.baseline.recovery?.status, "insufficient_evidence");
+  assert.equal(attempt.baseline.recovery?.status, "blocked");
   const completed = events.find(
     (event) => event.type === "recovery.forensics_completed",
   );
@@ -366,16 +371,21 @@ test("Recovery retries a transient staging failure before maximum-effort forensi
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery: {
-      recover: async () => ({
+      recover: async (_context, tools) => {
+        await tools.find((tool) => tool.name === "write")?.execute(
+          { path: "recovery.md", content: "# Recovery\n\nStaging retry." },
+          new AbortController().signal,
+        );
+        return {
         status: "completed",
         sessionId: "recovery-preflight-retry",
         value: {
-          status: "insufficient_evidence",
+          status: "blocked",
           reportPath: "recovery.md",
           unresolved: ["No trusted historical baseline."],
-          evidenceRefs: [],
         },
-      }),
+      };
+      },
     },
     now,
     environmentProvider: provider,
@@ -386,7 +396,7 @@ test("Recovery retries a transient staging failure before maximum-effort forensi
     copyCalls >= 2,
     "the Provider receives a second staging attempt before candidate copies",
   );
-  assert.equal(attempt.baseline.recovery?.status, "insufficient_evidence");
+  assert.equal(attempt.baseline.recovery?.status, "blocked");
   assert.deepEqual(
     events.find((event) => event.type === "recovery.preflight_retry")?.payload,
     {
@@ -505,10 +515,9 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
         status: "completed",
         sessionId: "recovery-path-boundary-metric",
         value: {
-          status: "insufficient_evidence",
+          status: "blocked",
           reportPath: "recovery.md",
           unresolved: ["no candidate justified"],
-          evidenceRefs: [],
         },
       };
     },
@@ -575,6 +584,7 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
+  await writeFile(join(base.sourceRoot, "README.md"), "# continue recovered\n");
   const events: { type: string; payload: unknown }[] = [];
   const readinessTask = {
     ...base.taskCase,
@@ -583,20 +593,10 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
       relevantPaths: ["README.md"],
     },
   } as TaskCase;
-  let seenReadiness: unknown;
   let recoveryCalls = 0;
   const recovery: RecoveryAgentPort = {
     recover: async (_context, tools) => {
-      seenReadiness = _context.readiness;
       recoveryCalls += 1;
-      const evidenceRef = _context.resolved.evidenceRefs[0];
-      assert.ok(evidenceRef);
-      if (recoveryCalls > 2) {
-        await tools.find((tool) => tool.name === "write")?.execute(
-          { path: "README.md", content: "# continue recovered\n" },
-          new AbortController().signal,
-        );
-      }
       await tools.find((tool) => tool.name === "write")?.execute(
         { path: "recovery.md", content: "# Recovery\n\nThe task input is available for continuation." },
         new AbortController().signal,
@@ -605,10 +605,9 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
         status: "completed",
         sessionId: "recovery-auto-ready",
         value: {
-          status: "partial",
+          status: "ready",
           reportPath: "recovery.md",
-          unresolved: ["README.md was reconstructed on a later turn"],
-          evidenceRefs: [evidenceRef],
+          unresolved: [],
         },
       };
     },
@@ -625,19 +624,15 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
-  assert.equal(recoveryCalls, 3);
-  assert.equal(events.filter((event) => event.type === "recovery.readiness_feedback").length, 2);
-  assert.deepEqual((seenReadiness as { relevantPaths: string[] }).relevantPaths, ["README.md"]);
-  const readinessChecks = events.filter((event) => event.type === "recovery.readiness_checked");
-  assert.equal((readinessChecks.at(-1)?.payload as { status: string } | undefined)?.status, "ready");
-  assert.equal(attempt.taskReadiness?.status, "ready");
-  assert.equal(attempt.baseline.recovery?.taskOutcome, "ready_for_task");
+  assert.equal(recoveryCalls, 1);
   assert.equal(attempt.acceptedAutomatically, true);
+  assert.equal(attempt.baseline.recovery?.status, "ready");
+  assert.equal(attempt.baseline.recovery?.taskOutcome, "ready_for_task");
   assert.equal(attempt.baseline.root?.includes("baselines"), true);
   assert.equal(await readFile(join(attempt.baseline.root ?? "", "README.md"), "utf8"), "# continue recovered\n");
   const lifecycle = JSON.parse(await readFile(join(attempt.experimentRoot, "artifacts", "recovery-attempts"), "utf8")) as { state: string };
   assert.equal(lifecycle.state, "accepted");
-  assert.ok(events.some((event) => event.type === "recovery.ready_for_task"));
+  assert.ok(events.some((event) => event.type === "recovery.lifecycle_completed"));
   assert.equal(events.filter((event) => event.type === "recovery.lifecycle_completed").length, 1);
   const evaluation = JSON.parse(await readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8")) as { rows: { taskOutcome?: string }[] };
   assert.equal(evaluation.rows[0]?.taskOutcome, "ready_for_task");
@@ -659,8 +654,6 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
     recover: async (_context, tools) => {
       calls += 1;
       if (calls > 1) throw new Error("HTTP 400 context_length_exceeded");
-      const evidenceRef = _context.resolved.evidenceRefs[0];
-      assert.ok(evidenceRef);
       await tools.find((tool) => tool.name === "write")?.execute(
         { path: "notes.txt", content: "recovered note\n" },
         new AbortController().signal,
@@ -673,11 +666,9 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
         status: "completed",
         sessionId: "recovery-keep-envelope",
         value: {
-          status: "partial",
+          status: "ready",
           reportPath: "recovery.md",
-          manifestPath: "recovery-manifest.json",
           unresolved: ["README.md is not reconstructed"],
-          evidenceRefs: [evidenceRef],
         },
       };
     },
@@ -694,20 +685,12 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
-  assert.equal(calls, 2);
-  assert.equal(attempt.baseline.match, "recovered_partial");
+  assert.equal(calls, 1);
+  assert.equal(attempt.baseline.match, "recovered");
   assert.equal(attempt.acceptedAutomatically, true);
   assert.equal(attempt.baseline.root?.includes("baselines"), true);
-  assert.equal(attempt.baseline.recovery?.status, "partial");
+  assert.equal(attempt.baseline.recovery?.status, "ready");
   assert.equal(attempt.accept !== undefined, true);
-  assert.equal(
-    events.some(
-      (event) =>
-        event.type === "recovery.model_retry" &&
-        (event.payload as { keptCompletedEnvelope?: boolean }).keptCompletedEnvelope === true,
-    ),
-    true,
-  );
 });
 
 test("Recovery classifies a first-turn context-length error as agent_model_failed without an accept", async (t) => {
@@ -763,8 +746,6 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
   const recovery: RecoveryAgentPort = {
     recover: async (_context, tools) => {
       calls += 1;
-      const evidenceRef = _context.resolved.evidenceRefs[0];
-      assert.ok(evidenceRef);
       await tools.find((tool) => tool.name === "write")?.execute(
         { path: "recovery.md", content: "# Recovery\n\nThe task file is unavailable." },
         new AbortController().signal,
@@ -773,11 +754,9 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
         status: "completed",
         sessionId: `readiness-no-progress-${calls}`,
         value: {
-          status: "partial",
+          status: "blocked",
           reportPath: "recovery.md",
-          manifestPath: "recovery-manifest.json",
           unresolved: ["README.md is not available"],
-          evidenceRefs: [evidenceRef],
         },
       };
     },
@@ -794,10 +773,9 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
-  assert.equal(calls, 3);
+  assert.equal(calls, 1);
   assert.equal(attempt.baseline.recovery?.taskOutcome, "unrecoverable");
-  assert.equal(events.filter((event) => event.type === "recovery.readiness_feedback").length, 2);
-  assert.equal(events.filter((event) => event.type === "recovery.no_progress").length, 1);
+  assert.equal(events.filter((event) => event.type === "recovery.readiness_feedback").length, 0);
   const evaluation = JSON.parse(await readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8")) as { rows: { taskOutcome?: string }[] };
   assert.equal(evaluation.rows[0]?.taskOutcome, "unrecoverable");
 });
@@ -823,10 +801,9 @@ test("insufficient evidence does not loop for missing paths and cannot be accept
         status: "completed",
         sessionId: "insufficient-stop",
         value: {
-          status: "insufficient_evidence",
+          status: "blocked",
           reportPath: "recovery.md",
           unresolved: ["checked git, transcript, and workspace; no rewindable start"],
-          evidenceRefs: [],
         },
       };
     },
@@ -845,7 +822,7 @@ test("insufficient evidence does not loop for missing paths and cannot be accept
   assert.equal(calls, 1);
   assert.equal(attempt.accept === undefined, true);
   assert.equal(attempt.acceptedAutomatically, undefined);
-  assert.equal(attempt.baseline.recovery?.status, "insufficient_evidence");
+  assert.equal(attempt.baseline.recovery?.status, "blocked");
   const diagnosis = JSON.parse(await readFile(join(attempt.experimentRoot, "recovery-diagnosis.json"), "utf8")) as { finalStatus: string };
   assert.equal(diagnosis.finalStatus, "failed");
 });
@@ -862,8 +839,6 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
   } as TaskCase;
   const recovery: RecoveryAgentPort = {
     recover: async (_context, tools) => {
-      const evidenceRef = _context.resolved.evidenceRefs[0];
-      assert.ok(evidenceRef);
       await tools.find((tool) => tool.name === "write")?.execute(
         { path: "recovery.md", content: "# Recovery\n\nThe requested path is outside staging." },
         new AbortController().signal,
@@ -872,11 +847,9 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
         status: "completed",
         sessionId: "readiness-blocked",
         value: {
-          status: "partial",
+          status: "blocked",
           reportPath: "recovery.md",
-          manifestPath: "recovery-manifest.json",
           unresolved: ["outside path is not inspected"],
-          evidenceRefs: [evidenceRef],
         },
       };
     },
@@ -892,8 +865,8 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
     maxModelAttempts: 2,
     now,
   });
-  assert.equal(attempt.baseline.recovery?.taskOutcome, "blocked_by_safety");
-  assert.equal(attempt.baseline.recovery?.failureStage, "provider_validation_failed");
+  assert.equal(attempt.baseline.recovery?.taskOutcome, "unrecoverable");
+  assert.equal(attempt.baseline.recovery?.status, "blocked");
 });
 
 

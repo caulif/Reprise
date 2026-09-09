@@ -11,7 +11,7 @@ import {
   type AgentEvent,
 } from '@earendil-works/pi-agent-core';
 import { createAssistantMessageEventStream, type AssistantMessage, type Model, type Models } from '@earendil-works/pi-ai';
-import { PiModelCaller, type PiModels } from '../src/infrastructure/pi-model-caller.js';
+import { PiModelCaller, type PiModels } from '../src/infrastructure/agent/model-caller.js';
 
 const model: Model<'openai-completions'> = {
   id: 'fixture',

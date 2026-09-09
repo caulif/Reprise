@@ -2,11 +2,14 @@ import { randomUUID } from 'node:crypto';
 import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase } from '../core/schema.js';
 import type { ResolvedRuntime, RuntimeModelOffer, RuntimePort } from '../core/runtime.js';
 import { readHarnessModelConfig } from '../infrastructure/harness-model-config.js';
-import { PiModelCaller } from '../infrastructure/pi-model-caller.js';
+import { PiModelCaller } from '../infrastructure/agent/model-caller.js';
 import { createHarnessAgents, type HarnessAgents } from './harness-agents.js';
-import { preflightCodexExperiment, recoverCodexExperiment, startCodexExperiment, type CodexExperimentPreflight, type ExperimentHandle, type RecoveryAttempt } from './experiment.js';
+import { startCodexExperiment, type ExperimentHandle } from './experiment.js';
+import { preflightCodexExperiment, type ExperimentPreflight } from './experiment-preflight.js';
+import { recoverCodexExperiment } from './recovery/recover.js';
+import type { RecoveryAttempt } from './recovery/types.js';
 import { comparePersistedExperiment } from './experiment-compare-persisted.js';
-import type { CodexExperimentResult } from './experiment.js';
+import type { ExperimentResult } from './experiment.js';
 import type { EnvironmentBaseline } from '../environment/local-workspace-provider.js';
 import type { ProductPack } from '../products/contract.js';
 import type { ProductLookup } from '../products/index.js';
@@ -50,10 +53,10 @@ export type ExperimentWorkflow = {
   readonly policy: RunPolicy;
   listCatalog(productId: string): Promise<readonly RuntimeModelOffer[]>;
   verifyCandidate(candidate: CandidateSpec): Promise<ResolvedRuntime>;
-  preflight(input: Omit<ExperimentRequest, 'onEvent' | 'preResolvedBaseline'> & { verifyCandidate?: boolean }): Promise<CodexExperimentPreflight>;
+  preflight(input: Omit<ExperimentRequest, 'onEvent' | 'preResolvedBaseline'> & { verifyCandidate?: boolean }): Promise<ExperimentPreflight>;
   recover(input: RecoveryRequest): Promise<RecoveryAttempt>;
   start(input: ExperimentRequest): Promise<ExperimentHandle>;
-  comparePersisted(experimentId: string, onEvent?: (event: EventEnvelope) => void, signal?: AbortSignal, runId?: string, onActivity?: (activity: ExperimentActivity) => void): Promise<CodexExperimentResult>;
+  comparePersisted(experimentId: string, onEvent?: (event: EventEnvelope) => void, signal?: AbortSignal, runId?: string, onActivity?: (activity: ExperimentActivity) => void): Promise<ExperimentResult>;
 };
 
 export function createExperimentWorkflow(input: {
@@ -120,7 +123,7 @@ export function createExperimentWorkflow(input: {
         signal: owned.signal,
       });
     },
-    async comparePersisted(experimentId, onEvent, signal, runId, onActivity): Promise<CodexExperimentResult> {
+    async comparePersisted(experimentId, onEvent, signal, runId, onActivity): Promise<ExperimentResult> {
       signal?.throwIfAborted();
       return comparePersistedExperiment({
         dataDir: input.dataDir, experimentId, policy, now: input.now(),

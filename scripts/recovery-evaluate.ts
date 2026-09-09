@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import { evaluateRecoveryCases } from "../src/application/recovery-evaluation.js";
+import { evaluateRecoveryCases } from "../src/application/recovery/evaluation.js";
 
 const [inputArg, outputArg] = process.argv.slice(2);
 if (!inputArg || !outputArg || !isAbsolute(inputArg) || !isAbsolute(outputArg)) {

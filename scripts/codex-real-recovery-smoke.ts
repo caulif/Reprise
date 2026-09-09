@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { ComparisonAgentPort } from '../src/agents/comparison-agent.js';
 import type { ControllerPort } from '../src/agents/controller-agent.js';
-import { recoverCodexExperiment, startCodexExperiment } from '../src/application/experiment.js';
+import { recoverCodexExperiment } from '../src/application/recovery/recover.js';
+import { startCodexExperiment } from '../src/application/experiment.js';
 import { createHarnessAgents } from '../src/application/harness-agents.js';
 import type { TaskCase } from '../src/core/schema.js';
 import type { ResolvedRuntime, RuntimePort, TargetEventSink, TargetRunner } from '../src/core/runtime.js';
@@ -88,7 +89,7 @@ function makeTaskCase(caseId: string, historicalCommit: string): TaskCase {
 }
 
 async function assertRecovery(attempt: Awaited<ReturnType<typeof recoverCodexExperiment>>, sourceRoot: string, dataDir: string, experimentId: string): Promise<void> {
-  if (attempt.recovery.status !== 'completed' || attempt.recovery.value.status !== 'recovered' || attempt.baseline.match !== 'recovered') {
+  if (attempt.recovery.status !== 'completed' || attempt.recovery.value.status !== 'ready' || attempt.baseline.match !== 'recovered') {
     throw new Error(`Real Recovery did not produce a recovered baseline: ${JSON.stringify(attempt.recovery)}.`);
   }
   if (!attempt.providerPreview?.reportText?.trim()) throw new Error('Recovery preview is missing recovery.md.');

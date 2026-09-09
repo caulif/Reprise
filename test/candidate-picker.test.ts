@@ -4,7 +4,7 @@ import { createTheme } from '../src/tui/theme.js';
 import { confirmCanStart, renderConfirmation } from '../src/tui/pages/run.js';
 import { renderCandidateModelPicker, renderCandidateProductPicker } from '../src/tui/pages/candidate.js';
 import { candidateSpecFromOffer } from '../src/application/candidate-spec.js';
-import { createExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/tui-workflow.js';
+import { createExperimentWorkflow, TUI_RUN_POLICY } from '../src/application/experiment-workflow.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 import { projectWorkbenchView } from '../src/tui/view-projection.js';
 import { renderWorkbench } from '../src/tui/workbench.js';

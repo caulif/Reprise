@@ -12,7 +12,7 @@ export class FakeTerminal implements Terminal {
     this.#rows = rows;
   }
 
-  start(): void { /* tests drive input through CodexIntakeTui.handleInput */ }
+  start(): void { /* tests drive input through IntakeTui.handleInput */ }
   stop(): void { /* no raw mode */ }
   async drainInput(): Promise<void> { /* no stdin */ }
   write(data: string): void { this.#writes.push(data); }

@@ -18,24 +18,22 @@ test('Harness agent factory shares one Pi session caller and persisted model cho
   });
 });
 
-test('factory budgets bound live Controller calls and match the persisted configuration', async () => {
-  let aborted = false;
+test('factory does not give Controller or Comparison the candidate callTimeoutMs', () => {
+  const budget = { callTimeoutMs: 20, maxStructuredRepairAttempts: 1 };
+  const agents = createHarnessAgents(defaultHarnessModelConfig(), {
+    createSession: () => ({ append: async () => '{"type":"done","reason":"satisfied"}', cancel() {} }),
+  }, { budget });
+  assert.equal(agents.comparison.timeoutMs, 0);
+  assert.equal(agents.controller.timeoutMs, 0);
+  assert.equal(agents.config.budget.callTimeoutMs, 20);
+});
+
+test('factory recovery budget still bounds Recovery', () => {
   const budget = { callTimeoutMs: 20, maxStructuredRepairAttempts: 1 };
   const recoveryBudget = { callTimeoutMs: 40, maxStructuredRepairAttempts: 0 };
   const agents = createHarnessAgents(defaultHarnessModelConfig(), {
-    createSession: () => ({
-      append: ({ signal }) => new Promise<string>(() => { signal.addEventListener('abort', () => { aborted = true; }, { once: true }); }),
-      cancel() {},
-    }),
+    createSession: () => ({ append: async () => '{"type":"done","reason":"satisfied"}', cancel() {} }),
   }, { budget, recoveryBudget });
-  const result = await agents.controller.decide({
-    requestId: 'controller-request-run-budget-1', runId: 'run-budget', runState: 'awaiting_controller',
-    task: { initialInput: { id: 'input-1', role: 'user', text: 'Fix it.' }, baseline: { status: 'available', artifactRefs: [], evidenceRefs: [] }, privacy: { allowModelText: true, allowBinary: false, redactions: [] }, historicalUserTurns: [] },
-    current: { summary: 'Settled.', evidenceRefs: [] }, trajectory: { summary: 'One turn.', evidenceRefs: [] }, evidenceCatalog: [], budget: { decisionsUsed: 1, decisionsLimit: 2 },
-  });
-  assert.equal(result.status, 'failed');
-  if (result.status === 'failed') assert.equal(result.failure.kind, 'timeout');
-  assert.equal(aborted, true);
   assert.deepEqual(agents.config.budget, budget);
   assert.deepEqual(agents.config.recoveryBudget, recoveryBudget);
   assert.equal(agents.recovery.timeoutMs, recoveryBudget.callTimeoutMs);

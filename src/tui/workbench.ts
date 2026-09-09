@@ -1,5 +1,5 @@
 import { type Component, ScrollView, VStack, isViewportTUI, type TUI, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
-import type { CodexExperimentResult } from '../application/experiment.js';
+import type { ExperimentResult } from '../application/experiment.js';
 import { compact, truncateFit } from './format.js';
 import { renderHelp } from './overlays.js';
 import { configHints, renderConfig, type ConfigModel } from './pages/config.js';
@@ -55,7 +55,7 @@ export type WorkbenchView = {
   readonly confirm?: ConfirmModel;
   readonly running?: RunningModel;
   readonly comparePending?: boolean;
-  readonly result?: CodexExperimentResult;
+  readonly result?: ExperimentResult;
   readonly cancelling?: boolean;
   readonly viewer?: ViewerModel;
   readonly actorsOpen?: boolean;

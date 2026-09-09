@@ -1,4 +1,4 @@
-import type { CodexIntakeTui } from "./intake-tui.js";
+import type { IntakeTui } from "./intake-tui.js";
 import { dirname } from "node:path";
 import { draftForConfig, readHarnessModelConfig, safeConfigError } from "../infrastructure/harness-model-config.js";
 import { errorMessage } from "./format.js";
@@ -15,7 +15,7 @@ import {
   openExperimentTrace,
 } from "./open-report.js";
 
-export async function CodexIntakeTui_start(this: CodexIntakeTui): Promise<void> {
+export async function IntakeTui_start(this: IntakeTui): Promise<void> {
     if (this.started) return;
     this.started = true;
     enableTerminalColor();
@@ -51,7 +51,7 @@ export async function CodexIntakeTui_start(this: CodexIntakeTui): Promise<void> 
     this.render(true);
   }
 
-export async function CodexIntakeTui_run(this: CodexIntakeTui): Promise<void> {
+export async function IntakeTui_run(this: IntakeTui): Promise<void> {
     this.muteNodeWarnings();
     try {
       await this.start();
@@ -65,11 +65,11 @@ export async function CodexIntakeTui_run(this: CodexIntakeTui): Promise<void> {
     }
   }
 
-export function CodexIntakeTui_preview(this: CodexIntakeTui, width = 120): string {
+export function IntakeTui_preview(this: IntakeTui, width = 120): string {
     return this.workbench.render(width).join("\n");
   }
 
-export function CodexIntakeTui_openReport(this: CodexIntakeTui, experimentRoot: string | undefined, reportPath: string | undefined): { consume: true } {
+export function IntakeTui_openReport(this: IntakeTui, experimentRoot: string | undefined, reportPath: string | undefined): { consume: true } {
     if (!experimentRoot || !reportPath) {
       this.message = t(this.locale, "noReport");
       this.render();
@@ -89,7 +89,7 @@ export function CodexIntakeTui_openReport(this: CodexIntakeTui, experimentRoot: 
     return { consume: true };
   }
 
-export function CodexIntakeTui_openTrace(this: CodexIntakeTui): { consume: true } {
+export function IntakeTui_openTrace(this: IntakeTui): { consume: true } {
     const experimentRoot =
       this.result?.experimentRoot ??
       (this.result ? dirname(this.result.reportPath) : undefined);
@@ -113,7 +113,7 @@ export function CodexIntakeTui_openTrace(this: CodexIntakeTui): { consume: true 
     return { consume: true };
   }
 
-export function CodexIntakeTui_openReplica(this: CodexIntakeTui): { consume: true } {
+export function IntakeTui_openReplica(this: IntakeTui): { consume: true } {
     const experimentRoot =
       this.result?.experimentRoot ??
       (this.result ? dirname(this.result.reportPath) : undefined);
@@ -137,7 +137,7 @@ export function CodexIntakeTui_openReplica(this: CodexIntakeTui): { consume: tru
     return { consume: true };
   }
 
-export function CodexIntakeTui_openLocal(this: CodexIntakeTui, target: string | undefined): { consume: true } {
+export function IntakeTui_openLocal(this: IntakeTui, target: string | undefined): { consume: true } {
     if (!target) {
       this.message = t(this.locale, "noLocalPath");
       this.render();
@@ -157,7 +157,7 @@ export function CodexIntakeTui_openLocal(this: CodexIntakeTui, target: string | 
     return { consume: true };
   }
 
-export function CodexIntakeTui_openFileUrl(this: CodexIntakeTui, url: string): void {
+export function IntakeTui_openFileUrl(this: IntakeTui, url: string): void {
     void openAllowedFileUrl(this.dataDir, url)
       .then(() => {
         this.message = t(this.locale, "requestedOpenPath");

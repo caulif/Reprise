@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildRecoveryInvestigationPacket,
   INVESTIGATION_PACKET_MAX_PATHS,
-} from "../src/application/recovery-investigation-packet.js";
+} from "../src/application/recovery/investigation-packet.js";
 import type { TaskCase } from "../src/core/schema.js";
 
 function taskCase(overrides: Partial<TaskCase> = {}): TaskCase {

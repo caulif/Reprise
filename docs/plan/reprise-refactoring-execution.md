@@ -33,13 +33,13 @@ M1.1–M7 实施步骤已关闭。未关闭的是 TUI 真终端、未通过的 C
 
 | 范围 | 代码入口 | 实施方向 |
 |---|---|---|
-| Agent 执行 | [Pi Host](../../src/infrastructure/pi-agent-host.ts)、[model caller](../../src/infrastructure/pi-model-caller.ts)、[压缩](../../src/infrastructure/pi-compaction.ts) | 复用 loop，分清持续 Session 与单次 Invocation，补全持久化事实 |
+| Agent 执行 | [Pi Host](../../src/infrastructure/agent/host.ts)、[model caller](../../src/infrastructure/agent/model-caller.ts)、[压缩](../../src/infrastructure/agent/compaction.ts) | 复用 loop，分清持续 Session 与单次 Invocation，补全持久化事实 |
 | 存储与领域状态 | [store](../../src/infrastructure/store/experiment-store.ts)、[schema](../../src/core/schema.ts)、[状态机](../../src/core/state-machine.ts) | 复用边界校验和原子写，建立唯一顺序写者及只读重建 |
-| 实验编排 | [experiment](../../src/application/experiment.ts)、[CandidateRun](../../src/application/candidate-run.ts)、[TUI workflow](../../src/application/tui-workflow.ts) | 业务生命周期留在应用侧，提取与界面无关的公共操作 |
+| 实验编排 | [experiment](../../src/application/experiment.ts)、[CandidateRun](../../src/application/candidate-run.ts)、[Workflow](../../src/application/experiment-workflow.ts) | 业务生命周期留在应用侧，提取与界面无关的公共操作 |
 | 三角色 | [Recovery](../../src/agents/recovery-agent.ts)、[Controller](../../src/agents/controller-agent.ts)、[Comparison](../../src/agents/comparison-agent.ts)、[组装](../../src/application/harness-agents.ts) | 各操作连续 Session，删除独立理解和双会话的强制路径 |
-| 恢复与环境 | [恢复入口](../../src/application/experiment-recovery.ts)、[恢复编排](../../src/application/recovery-orchestrator.ts)、[环境](../../src/environment/local-workspace-provider.ts) | 保留证据调查和隔离能力，封存可重复使用的场景 |
+| 恢复与环境 | [恢复入口](../../src/application/recovery/recover.ts)、[恢复编排](../../src/application/recovery/orchestrator.ts)、[环境](../../src/environment/local-workspace-provider.ts) | 保留证据调查和隔离能力，封存可重复使用的场景 |
 | 产品兼容 | [Pack 契约](../../src/products/contract.ts)、[Runtime 端口](../../src/core/runtime.ts)、[注册](../../src/products/index.ts) | 从静态注册接向显式本地加载，保持宿主产品无关 |
-| 用户入口 | [CLI](../../src/cli/main.ts)、[TUI 控制](../../src/tui/controller.ts)、[intake](../../src/tui/intake-app.ts) | 纯 CLI 与 TUI 调用同一业务操作，选择与阅读状态留在 TUI |
+| 用户入口 | [CLI](../../src/cli/main.ts)、[TUI](../../src/tui/intake-tui.ts)、[intake](../../src/tui/intake-app.ts) | 纯 CLI 与 TUI 调用同一业务操作，选择与阅读状态留在 TUI |
 | 投影与终端 | [timeline](../../src/tui/timeline.ts)、[projection](../../src/tui/view-projection.ts)、[viewport](../../src/tui/viewport.ts) | 单条持久化时间线，稳定阅读锚点，键盘与原生选区优先 |
 | 本机能力 | [platform](../../src/infrastructure/platform.ts)、[process runner](../../src/infrastructure/process-runner.ts)、[Pack 进程 helper](../../src/products/shared/process.ts) | 统一 PowerShell/Bash 语义，验证进程树和本机控制端点 |
 
@@ -123,10 +123,10 @@ M1.1–M7 实施步骤已关闭。未关闭的是 TUI 真终端、未通过的 C
 
 ### M2.2 Recovery 连续 Session 与停止语义
 
-1. 一次准备创建一个 Recovery Session；调查、业务反馈和可修复输出在同 Session 中继续。
-2. 保留原有恢复证据、变更调查和验证能力，删除仅为统一架构命名而存在的桥接层，不因为简化设计删掉有效保护。
-3. 证据不足保存原因、调查过程和诊断，返回不可执行结果；所有 CLI/TUI 路径均不能强行接受。
-4. 可修复结构问题与真实证据缺失分开：前者有界修复，后者停止，不用循环请求伪造证据。
+1. 一次准备创建一个 Recovery Session 和一个工作副本；默认执行三个 turn：理解与侦察、恢复与准备、自检与结论。
+2. Recovery 自主选择调查、修改、恢复、重建和验证动作；不预先生成多个候选或要求选择 hypothesis。
+3. 最终结论简化为 `ready` 或 `blocked`；Recovery 判断缺口是否影响任务，Host 只做机械边界和持久化检查。
+4. 保留审计、取消、超时、上下文压缩和来源保护；删除独立业务 Verifier、证据评分和固定 readiness 裁决。
 
 出口：充分证据生成场景；不足证据、工具失败、取消分别有终态记录，无可运行场景泄漏。对应 A2、A5、A7。
 
@@ -168,7 +168,7 @@ M1.1–M7 实施步骤已关闭。未关闭的是 TUI 真终端、未通过的 C
 
 出口：模拟调用计数证明没有理解前置请求；opening 与后续 send/done 属于同一 Session；旧字段不再影响新运行停止。对应 A2、A3、A12。
 
-**完成（2026-09-08）。** 实验入口只 `decide`；首次 Invocation 在本 run Controller Session 内调查并 opening。新路径不写理解账本、不以 unread/ledger 拒绝 `done`。验证：`npm run build` 后 `node --test dist/test/controller-full-session-judgment.test.js dist/test/codex-experiment.test.js dist/test/controller-briefing.test.js dist/test/snapshots.test.js`；随后 `npm run check` 通过。理由见[opening 同 Session](../decisions/accepted/2026-09-08-controller-opening-single-session.md)。
+**完成（2026-09-08）。** 实验入口只 `decide`；首次 Invocation 在本 run Controller Session 内调查并 opening。新路径不写理解账本、不以 unread/ledger 拒绝 `done`。验证：`npm run build` 后 `node --test dist/test/controller-full-session-judgment.test.js dist/test/codex-experiment.test.js dist/test/controller-briefing.test.js dist/test/snapshots.test.js`；随后 `npm run check` 通过。理由见[opening 同 Session](../decisions/superseded/2026-09-08-controller-opening-single-session.md)；后续编排见[先理解再按视图决策](../decisions/accepted/2026-09-09-controller-understand-then-view.md)。
 
 ### M3.2 验证协作语义和投递边界
 

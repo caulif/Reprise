@@ -19,7 +19,6 @@ import {
   calculateWorkspaceBudget,
   LocalWorkspaceProvider,
   publishDirectory,
-  recoveryCandidateDirName,
   SNAPSHOT_LIMITS,
 } from "../src/environment/local-workspace-provider.js";
 import { candidateChangedPaths } from "../src/environment/local-workspace-fs.js";
@@ -524,13 +523,10 @@ test("Recovery validates isolated git checkout, report, accept, and marker reuse
   const preview = await provider.validateRecovery(
     staging,
     {
-      status: "recovered",
+      status: "ready",
       reportPath: "recovery.md",
       unresolved: [],
-      evidenceRefs: ["artifact:historical-commit"],
-      manifestPath: "recovery-manifest.json",
     },
-    [{ ref: "artifact:historical-commit", kind: "git_commit", commit }],
   );
   assert.match(
     await readFile(
@@ -553,7 +549,7 @@ test("Recovery validates isolated git checkout, report, accept, and marker reuse
   await assert.rejects(async () => provider.acceptRecovery(preview));
 });
 
-test("Recovery provider rejects manifest path mismatches and unowned action evidence", async (t) => {
+test("Recovery provider accepts extra changed paths and zero-change ready envelopes", async (t) => {
   const { root, source } = await directories();
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
@@ -561,67 +557,60 @@ test("Recovery provider rejects manifest path mismatches and unowned action evid
   });
   const provider = new LocalWorkspaceProvider(root);
   const envelope = {
-    status: "partial" as const,
+    status: "ready" as const,
     reportPath: "recovery.md" as const,
     unresolved: ["No strong preimage."],
-    evidenceRefs: ["event:history-1"],
-    manifestPath: "recovery-manifest.json" as const,
   };
-  const evidence = [{ ref: "event:history-1", kind: "historical_event" as const }];
 
   const extra = await provider.beginRecovery({ caseId: "case-manifest-extra", sourceRoot: source });
   await writeFile(join(extra.root, "input.txt"), "historical");
   await writeFile(join(extra.root, "other.txt"), "also changed");
-  await writeFile(join(extra.root, "recovery.md"), "# partial\r\n");
-  await writeFile(join(extra.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:history-1"] }], unresolved: envelope.unresolved }));
-  const extraPreview = await provider.validateRecovery(extra, envelope, evidence);
-  assert.equal(extraPreview.baseline.match, "recovered_partial");
+  await writeFile(join(extra.root, "recovery.md"), "# ready\r\n");
+  const extraPreview = await provider.validateRecovery(extra, envelope);
+  assert.equal(extraPreview.baseline.match, "recovered");
+  assert.equal(extraPreview.baseline.recovery?.status, "ready");
   assert.ok(extraPreview.changedPaths.includes("other.txt"));
   const acceptedExtra = await provider.acceptRecovery(extraPreview);
-  assert.equal(acceptedExtra.match, "recovered_partial");
-
-  const excess = await provider.beginRecovery({ caseId: "case-manifest-excess", sourceRoot: source });
-  await writeFile(join(excess.root, "input.txt"), "historical");
-  await writeFile(join(excess.root, "recovery.md"), "# partial\r\n");
-  await writeFile(join(excess.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:history-1"] }, { operation: "create", path: "other.txt", evidenceRefs: ["event:history-1"] }], unresolved: envelope.unresolved }));
-  const extraPreview2 = await provider.validateRecovery(excess, envelope, evidence);
-  assert.equal(extraPreview2.baseline.match, "recovered_partial");
-
-  const recoveredExtra = await provider.beginRecovery({ caseId: "case-manifest-recovered-extra", sourceRoot: source });
-  await writeFile(join(recoveredExtra.root, "input.txt"), "historical");
-  await writeFile(join(recoveredExtra.root, "other.txt"), "also changed");
-  await writeFile(join(recoveredExtra.root, "recovery.md"), "# recovered\r\n");
-  await writeFile(join(recoveredExtra.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:history-1"] }], unresolved: [] }));
-  const remapped = await provider.validateRecovery(recoveredExtra, { ...envelope, status: "recovered", unresolved: [] }, evidence);
-  assert.equal(remapped.baseline.match, "recovered_partial");
-  assert.equal(remapped.baseline.recovery?.status, "partial");
-  assert.match(remapped.baseline.recovery?.unresolved.join(" ") ?? "", /remapped recovered to partial/);
-  assert.ok(remapped.changedPaths.includes("other.txt"));
-  const acceptedRemapped = await provider.acceptRecovery(remapped);
-  assert.equal(acceptedRemapped.match, "recovered_partial");
-
-  const unowned = await provider.beginRecovery({ caseId: "case-manifest-unowned", sourceRoot: source });
-  await writeFile(join(unowned.root, "input.txt"), "historical");
-  await writeFile(join(unowned.root, "recovery.md"), "# partial\r\n");
-  await writeFile(join(unowned.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "modify", path: "input.txt", evidenceRefs: ["event:other"] }], unresolved: envelope.unresolved }));
-  await assert.rejects(provider.validateRecovery(unowned, { ...envelope, evidenceRefs: ["event:not-owned-ref"] }, evidence), /not owned/i);
+  assert.equal(acceptedExtra.match, "recovered");
 
   const unchanged = await provider.beginRecovery({ caseId: "case-manifest-unchanged", sourceRoot: source });
-  await writeFile(join(unchanged.root, "recovery.md"), "# recovered\r\n");
-  await writeFile(join(unchanged.root, "recovery-manifest.json"), JSON.stringify({ actions: [{ operation: "restore", path: "input.txt", evidenceRefs: ["event:history-1"] }], unresolved: [] }));
-  await assert.rejects(provider.validateRecovery(unchanged, { ...envelope, status: "recovered", unresolved: [] }, evidence), /paths/i);
+  await writeFile(join(unchanged.root, "recovery.md"), "# ready\r\n");
+  const zeroChange = await provider.validateRecovery(unchanged, { status: "ready", reportPath: "recovery.md", unresolved: [] });
+  assert.equal(zeroChange.baseline.match, "recovered");
+  assert.equal(zeroChange.baseline.recovery?.status, "ready");
+});
 
-  const emptyRefs = await provider.beginRecovery({ caseId: "case-manifest-empty-refs", sourceRoot: source });
-  await writeFile(join(emptyRefs.root, "input.txt"), "historical");
-  await writeFile(join(emptyRefs.root, "recovery.md"), "# partial\r\n");
-  const emptyPreview = await provider.validateRecovery(emptyRefs, {
-    status: "partial",
-    reportPath: "recovery.md",
-    unresolved: envelope.unresolved,
-    evidenceRefs: [],
-  }, evidence);
-  assert.equal(emptyPreview.baseline.match, "recovered_partial");
-  assert.ok(emptyPreview.changedPaths.includes("input.txt"));
+test("Recovery sealing keeps migrated files, drops leftover work records, and prepareRun copies stay independent", async (t) => {
+  const { root, source } = await directories();
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+    await rm(source, { recursive: true, force: true });
+  });
+  const provider = new LocalWorkspaceProvider(root);
+  const staging = await provider.beginRecovery({ caseId: "case-work-records", sourceRoot: source });
+  await mkdir(join(staging.root, ".reprise", "recovery-work"), { recursive: true });
+  await writeFile(join(staging.root, ".reprise", "recovery-work", "notes.md"), "temp leftover");
+  await writeFile(join(staging.root, ".reprise", "recovery-work", "migrated-config.json"), '{"from":"work"}');
+  await writeFile(join(staging.root, "app-config.json"), '{"from":"work"}');
+  await writeFile(join(staging.root, ".reprise", "keep.json"), '{"keep":true}');
+  await writeFile(join(staging.root, "kept.txt"), "kept");
+  await writeFile(join(staging.root, "recovery.md"), "# ready\r\n");
+  const preview = await provider.validateRecovery(staging, { status: "ready", reportPath: "recovery.md", unresolved: [] });
+  const accepted = await provider.acceptRecovery(preview);
+  await assert.rejects(stat(join(accepted.root ?? "", ".reprise", "recovery-work")));
+  await assert.rejects(stat(join(accepted.root ?? "", ".reprise", "recovery-work", "notes.md")));
+  assert.equal(await readFile(join(accepted.root ?? "", "kept.txt"), "utf8"), "kept");
+  assert.equal(await readFile(join(accepted.root ?? "", "app-config.json"), "utf8"), '{"from":"work"}');
+  assert.equal(await readFile(join(accepted.root ?? "", ".reprise", "keep.json"), "utf8"), '{"keep":true}');
+  const runA = await provider.prepareRun(accepted, "run-a");
+  const runB = await provider.prepareRun(accepted, "run-b");
+  await assert.rejects(stat(join(runA.root, ".reprise", "recovery-work")));
+  await assert.rejects(stat(join(runB.root, ".reprise", "recovery-work")));
+  assert.equal(await readFile(join(runA.root, "app-config.json"), "utf8"), '{"from":"work"}');
+  assert.equal(await readFile(join(runA.root, ".reprise", "keep.json"), "utf8"), '{"keep":true}');
+  await writeFile(join(runA.root, "kept.txt"), "changed-a");
+  assert.equal(await readFile(join(runB.root, "kept.txt"), "utf8"), "kept");
+  assert.equal(await readFile(join(accepted.root ?? "", "kept.txt"), "utf8"), "kept");
 });
 
 test("Recovery provider rejects unverified complete envelopes and preserves accepted recovered baselines", async (t) => {
@@ -642,10 +631,9 @@ test("Recovery provider rejects unverified complete envelopes and preserves acce
   await writeFile(join(invalid.root, "recovery.md"), "# invalid\r\n");
   await assert.rejects(
     provider.validateRecovery(invalid, {
-      status: "recovered",
+      status: "blocked",
       reportPath: "recovery.md",
-      unresolved: ["missing proof"],
-      evidenceRefs: [],
+      unresolved: [],
     }),
     /invalid/i,
   );
@@ -659,13 +647,10 @@ test("Recovery provider rejects unverified complete envelopes and preserves acce
   const preview = await provider.validateRecovery(
     staging,
     {
-      status: "partial",
+      status: "ready",
       reportPath: "recovery.md",
       unresolved: ["No commit metadata."],
-      evidenceRefs: ["event:historical-1"],
-      manifestPath: "recovery-manifest.json",
     },
-    [{ ref: "event:historical-1", kind: "historical_event" }],
   );
   const accepted = await provider.acceptRecovery(preview);
   const run = await provider.prepareRun(accepted, "run-preserve-recovery");
@@ -678,14 +663,14 @@ test("Recovery provider rejects unverified complete envelopes and preserves acce
     [],
     {},
   );
-  assert.equal(replay.match, "recovered_partial");
+  assert.equal(replay.match, "recovered");
   assert.equal(
     await readFile(join(replay.root ?? "", "input.txt"), "utf8"),
     "historical\r\n",
   );
 });
 
-test("Recovery candidates isolate competing hypotheses and are discarded with their parent staging", async (t) => {
+test("Recovery staging lives under provider-owned rs/rt trees", async (t) => {
   const { root, source } = await directories();
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
@@ -696,51 +681,24 @@ test("Recovery candidates isolate competing hypotheses and are discarded with th
   assert.match(staging.recoveryId, /^[0-9a-f]{32}$/);
   assert.equal(staging.root, join(root, "rs", staging.recoveryId));
   assert.equal(staging.temporaryRoot, join(root, "rt", staging.recoveryId));
-  const first = await provider.createRecoveryCandidate(staging, {
-    candidateId: "candidate-git", hypothesisId: "hypothesis-git",
-  });
-  assert.equal(first.root, join(root, "rc", staging.recoveryId, recoveryCandidateDirName("candidate-git")));
-  assert.equal(recoveryCandidateDirName("candidate-historical-observations").length, 8);
-  assert.doesNotMatch(first.root, /candidate-historical-observations|candidate-git/);
-  const second = await provider.createRecoveryCandidate(staging, {
-    candidateId: "candidate-patch", hypothesisId: "hypothesis-patch",
-  });
-  await writeFile(join(first.root, "input.txt"), "git hypothesis");
-  assert.equal(await readFile(join(second.root, "input.txt"), "utf8"), "original");
-  assert.equal(await readFile(join(staging.root, "input.txt"), "utf8"), "original");
-  assert.notEqual((await provider.fingerprintRecoveryCandidate(first)).digest, first.beforeFingerprint.digest);
-  assert.equal((await provider.fingerprintRecoveryCandidate(second)).digest, second.beforeFingerprint.digest);
   await provider.discardRecovery(staging);
-  await assert.rejects(stat(first.root));
-  await assert.rejects(stat(second.root));
+  await assert.rejects(stat(staging.root));
 });
 
-test("Recovery candidate selection promotes only the chosen isolated snapshot", async (t) => {
+test("resetRecoveryWorkspace recopies the source without keeping Agent-owned edits", async (t) => {
   const { root, source } = await directories();
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
     await rm(source, { recursive: true, force: true });
   });
   const provider = new LocalWorkspaceProvider(root);
-  const staging = await provider.beginRecovery({ caseId: "case-select", sourceRoot: source });
-  const selected = await provider.createRecoveryCandidate(staging, {
-    candidateId: "candidate-selected", hypothesisId: "hypothesis-selected",
-  });
-  const sibling = await provider.createRecoveryCandidate(staging, {
-    candidateId: "candidate-sibling", hypothesisId: "hypothesis-sibling",
-  });
-  await writeFile(join(selected.root, "input.txt"), "selected candidate");
-  await provider.selectRecoveryCandidate(staging, selected);
-  assert.equal(await readFile(join(staging.root, "input.txt"), "utf8"), "selected candidate");
-  assert.equal(await readFile(join(sibling.root, "input.txt"), "utf8"), "original");
-
-  const otherStaging = await provider.beginRecovery({ caseId: "case-select-other", sourceRoot: source });
-  const foreign = await provider.createRecoveryCandidate(otherStaging, {
-    candidateId: "candidate-foreign", hypothesisId: "hypothesis-foreign",
-  });
-  await assert.rejects(provider.selectRecoveryCandidate(staging, foreign), /different staging session/);
+  const staging = await provider.beginRecovery({ caseId: "case-reset-workspace", sourceRoot: source });
+  await writeFile(join(staging.root, "input.txt"), "agent-edited");
+  await writeFile(join(staging.root, "extra.txt"), "temporary");
+  await provider.resetRecoveryWorkspace(staging);
+  assert.equal(await readFile(join(staging.root, "input.txt"), "utf8"), await readFile(join(source, "input.txt"), "utf8"));
+  await assert.rejects(stat(join(staging.root, "extra.txt")));
   await provider.discardRecovery(staging);
-  await provider.discardRecovery(otherStaging);
 });
 
 test("Recovery provider replays artifact-backed direct deltas transactionally", async (t) => {
@@ -760,7 +718,7 @@ test("Recovery provider replays artifact-backed direct deltas transactionally", 
   ];
   const artifacts = new Map([["postimage-input", bytes], ["postimage-renamed", Buffer.from("original")]]);
   const result = await provider.applyControlledRecoveryDelta(staging, entries, async (id) => artifacts.get(id) ?? new Uint8Array());
-  assert.equal(result.digest, (await provider.fingerprintRecoveryCandidate(await provider.createRecoveryCandidate(staging, { candidateId: "digest-check", hypothesisId: "h" }))).digest);
+  assert.equal(result.digest, (await provider.fingerprintRecoveryStaging(staging)).digest);
   assert.deepEqual(await readFile(join(staging.root, "input.bin")), bytes);
   assert.equal(await readFile(join(staging.root, "renamed.txt"), "utf8"), "original");
   await assert.rejects(stat(join(staging.root, "input.txt")));
@@ -775,10 +733,10 @@ test("Recovery provider rejects tampered delta without changing staging", async 
   });
   const provider = new LocalWorkspaceProvider(root);
   const staging = await provider.beginRecovery({ caseId: "case-delta-tamper", sourceRoot: source });
-  const before = await provider.fingerprintRecoveryCandidate(await provider.createRecoveryCandidate(staging, { candidateId: "before", hypothesisId: "h" }));
+  const before = await provider.fingerprintRecoveryStaging(staging);
   const entries = [{ schemaVersion: 1 as const, tool: "write" as const, phase: "after" as const, path: "input.txt", after: { kind: "file" as const, size: 6, contentHash: sha256("honest"), artifactId: "tampered" } }];
   await assert.rejects(provider.applyControlledRecoveryDelta(staging, entries, async () => Buffer.from("wrong")), /integrity|before/);
-  assert.equal((await provider.fingerprintRecoveryCandidate(await provider.createRecoveryCandidate(staging, { candidateId: "after", hypothesisId: "h2" }))).digest, before.digest);
+  assert.equal((await provider.fingerprintRecoveryStaging(staging)).digest, before.digest);
   await provider.discardRecovery(staging);
 });
 test("Recovery provider rejects conflicting delta bindings transactionally", async (t) => {
@@ -842,13 +800,10 @@ test("Recovery records verified source tripwire and Playbook provenance", async 
   const preview = await provider.validateRecovery(
     staging,
     {
-      status: "partial",
+      status: "ready",
       reportPath: "recovery.md",
       unresolved: ["No historical preimage."],
-      evidenceRefs: ["event:history-1"],
-      manifestPath: "recovery-manifest.json",
     },
-    [{ ref: "event:history-1", kind: "historical_event" }],
   );
 
   assert.equal(
@@ -877,13 +832,10 @@ test("Recovery discards staging and temporary HOME when the source tripwire chan
     provider.validateRecovery(
       staging,
       {
-        status: "partial",
+        status: "ready",
         reportPath: "recovery.md",
         unresolved: ["Source was altered."],
-        evidenceRefs: ["event:history-1"],
-        manifestPath: "recovery-manifest.json",
       },
-      [{ ref: "event:history-1", kind: "historical_event" }],
     ),
     /user source directory/i,
   );
@@ -891,7 +843,7 @@ test("Recovery discards staging and temporary HOME when the source tripwire chan
   await assert.rejects(stat(staging.temporaryRoot ?? ""));
 });
 
-test("insufficient evidence keeps an unchanged staging copy matched to current state", async (t) => {
+test("blocked Recovery keeps diagnosis and does not publish a runnable baseline", async (t) => {
   const { root, source } = await directories();
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
@@ -899,20 +851,19 @@ test("insufficient evidence keeps an unchanged staging copy matched to current s
   });
   const provider = new LocalWorkspaceProvider(root);
   const staging = await provider.beginRecovery({
-    caseId: "case-insufficient",
+    caseId: "case-blocked",
     sourceRoot: source,
   });
+  await writeFile(join(staging.root, "recovery.md"), "# blocked\r\n");
   const preview = await provider.validateRecovery(staging, {
-    status: "insufficient_evidence",
+    status: "blocked",
     reportPath: "recovery.md",
-    unresolved: ["no evidence"],
-    evidenceRefs: [],
+    unresolved: ["critical input missing"],
   });
   assert.equal(preview.baseline.match, "current_state_fallback");
-  assert.equal(
-    preview.baseline.fingerprint.digest,
-    staging.sourceFingerprint.digest,
-  );
+  assert.equal(preview.baseline.recovery?.status, "blocked");
+  assert.equal(preview.baseline.readiness.runnable, "blocked");
+  await assert.rejects(provider.acceptRecovery(preview), /Blocked Recovery/);
   await provider.discardRecovery(staging);
 });
 

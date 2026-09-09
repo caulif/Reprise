@@ -8,7 +8,7 @@ import { sha256 } from '../src/core/identity.js';
 import type { EventEnvelope } from '../src/core/schema.js';
 import { persistAgentAuditEvent, experimentModelInputResolver } from '../src/application/experiment-helpers.js';
 import { ExperimentStore } from '../src/infrastructure/store/experiment-store.js';
-import { PiAgentHost } from '../src/infrastructure/pi-agent-host.js';
+import { PiAgentHost } from '../src/infrastructure/agent/host.js';
 import {
   INCOMPLETE_MODEL_INPUT_COPY,
   INLINE_MODEL_INPUT_BYTES,
@@ -17,7 +17,7 @@ import {
   parseCommittedEventLog,
   reconstructModelRequests,
   redactModelVisibleText,
-} from '../src/infrastructure/agent-model-input.js';
+} from '../src/infrastructure/agent/model-input.js';
 
 const occurredAt = '2026-09-08T00:00:00.000Z';
 

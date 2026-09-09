@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sha256 } from '../src/core/identity.js';
-import { historicalRunStatus, readCommittedModelLog } from '../src/infrastructure/agent-history-read.js';
+import { historicalRunStatus, readCommittedModelLog } from '../src/infrastructure/agent/history-read.js';
 
 const occurredAt = '2026-09-08T00:00:00.000Z';
 

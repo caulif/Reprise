@@ -2,7 +2,7 @@
 
 状态：superseded
 
-被 [opening 同 Session](../accepted/2026-09-08-controller-opening-single-session.md) 取代。下文冻结，描述被放弃的 Host 完成证据护栏。
+被 [opening 同 Session](./2026-09-08-controller-opening-single-session.md) 取代，后者再被 [先理解再按视图决策](../accepted/2026-09-09-controller-understand-then-view.md) 取代。下文冻结，描述被放弃的 Host 完成证据护栏。
 
 ## 问题
 

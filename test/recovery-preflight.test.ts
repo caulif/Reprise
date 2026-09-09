@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { persistRecoveryPreflight, runRecoveryPreflight } from '../src/application/recovery-preflight.js';
+import { persistRecoveryPreflight, runRecoveryPreflight } from '../src/application/recovery/preflight.js';
 
 test('Recovery preflight returns a ready record after one real validation call', async () => {
   let calls = 0;

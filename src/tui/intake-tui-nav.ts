@@ -1,7 +1,7 @@
-import type { CodexIntakeTui } from "./intake-tui.js";
+import type { IntakeTui } from "./intake-tui.js";
 import { importPacks } from "../products/pack-access.js";
 import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harness-model-config.js";
-import { classifyAgentFailure } from '../infrastructure/agent-failure.js';
+import { classifyAgentFailure } from '../infrastructure/agent/failure.js';
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
 import { HelpOverlay, commandSelectList } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
@@ -16,17 +16,17 @@ import { type TimelineEntry } from "./timeline.js";
 import { type WorkbenchView } from "./workbench.js";
 type Page = import("./workbench.js").WorkbenchView["page"];
 
-export function CodexIntakeTui_handleInput(this: CodexIntakeTui, data: string): { consume: true } | undefined {
+export function IntakeTui_handleInput(this: IntakeTui, data: string): { consume: true } | undefined {
     return handleControllerInput(this, data);
   }
 
-export function CodexIntakeTui_setHomeMessage(this: CodexIntakeTui, message: string): { consume: true } {
+export function IntakeTui_setHomeMessage(this: IntakeTui, message: string): { consume: true } {
     this.message = message;
     this.render();
     return { consume: true };
   }
 
-export function CodexIntakeTui_move(this: CodexIntakeTui, amount: number): { consume: true } {
+export function IntakeTui_move(this: IntakeTui, amount: number): { consume: true } {
     const count = this.intakeCount();
     this.selected = Math.max(
       0,
@@ -40,7 +40,7 @@ export function CodexIntakeTui_move(this: CodexIntakeTui, amount: number): { con
     return { consume: true };
   }
 
-export function CodexIntakeTui_scheduleTimelineRender(this: CodexIntakeTui): void {
+export function IntakeTui_scheduleTimelineRender(this: IntakeTui): void {
     if (this.readingMode) return;
     if (this.timelineRenderQueued) return;
     this.timelineRenderQueued = true;
@@ -51,12 +51,12 @@ export function CodexIntakeTui_scheduleTimelineRender(this: CodexIntakeTui): voi
     });
   }
 
-export function CodexIntakeTui_visibleTimeline(this: CodexIntakeTui): readonly TimelineEntry[] {
+export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEntry[] {
     const filter = TIMELINE_FILTERS[this.timelineFilterIndex] ?? "ALL";
     return this.timeline.filter((entry) => matchesFilter(entry, filter));
   }
 
-export async function CodexIntakeTui_setLocale(this: CodexIntakeTui, typed: string): Promise<void> {
+export async function IntakeTui_setLocale(this: IntakeTui, typed: string): Promise<void> {
     const argument = typed.replace(/^\/lang\s*/, "").trim();
     this.locale = parseLocale(argument) ?? nextLocale(this.locale);
     this.setHomeMessage(t(this.locale, "langNow"));
@@ -67,7 +67,7 @@ export async function CodexIntakeTui_setLocale(this: CodexIntakeTui, typed: stri
     }
   }
 
-export function CodexIntakeTui_showError(this: CodexIntakeTui, error: unknown, returnPage: Exclude<Page, "error" | "running" | "loading">): void {
+export function IntakeTui_showError(this: IntakeTui, error: unknown, returnPage: Exclude<Page, "error" | "running" | "loading">): void {
     this.preparePhase = undefined;
     this.prepareDetail = undefined;
     this.runPhase = undefined;
@@ -84,14 +84,14 @@ export function CodexIntakeTui_showError(this: CodexIntakeTui, error: unknown, r
       : sessionReplayErrorMessage(error, this.locale) ?? operatorErrorMessage(error);
   }
 
-export function CodexIntakeTui_returnFromError(this: CodexIntakeTui): { consume: true } {
+export function IntakeTui_returnFromError(this: IntakeTui): { consume: true } {
     this.page = this.errorReturnPage;
     this.message = t(this.locale, "returnedPrevious");
     this.render();
     return { consume: true };
   }
 
-export function CodexIntakeTui_backToHome(this: CodexIntakeTui): { consume: true } {
+export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.startupAbort?.abort();
     void discardRecovery(this).catch((error: unknown) => { this.showError(error, 'home'); this.render(true); });
     this.discoveryAbort?.abort();
@@ -129,7 +129,7 @@ export function CodexIntakeTui_backToHome(this: CodexIntakeTui): { consume: true
     return { consume: true };
   }
 
-export function CodexIntakeTui_close(this: CodexIntakeTui): { consume: true } {
+export function IntakeTui_close(this: IntakeTui): { consume: true } {
     if (this.closed) return { consume: true };
     this.startupAbort?.abort();
     this.discoveryAbort?.abort();
@@ -167,12 +167,12 @@ export function CodexIntakeTui_close(this: CodexIntakeTui): { consume: true } {
     return { consume: true };
   }
 
-export function CodexIntakeTui_beginNavigation(this: CodexIntakeTui): number {
+export function IntakeTui_beginNavigation(this: IntakeTui): number {
     this.generation += 1;
     return this.generation;
   }
 
-export function CodexIntakeTui_isEditingText(this: CodexIntakeTui): boolean {
+export function IntakeTui_isEditingText(this: IntakeTui): boolean {
     return (
       this.configEditing ||
       this.searching ||
@@ -182,7 +182,7 @@ export function CodexIntakeTui_isEditingText(this: CodexIntakeTui): boolean {
     );
   }
 
-export function CodexIntakeTui_showHelp(this: CodexIntakeTui): { consume: true } {
+export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
     if (typeof this.tui.showOverlay === "function") {
       this.hideHelp();
       this.helpOverlay = this.tui.showOverlay(
@@ -200,13 +200,13 @@ export function CodexIntakeTui_showHelp(this: CodexIntakeTui): { consume: true }
     return { consume: true };
   }
 
-export function CodexIntakeTui_hideHelp(this: CodexIntakeTui): void {
+export function IntakeTui_hideHelp(this: IntakeTui): void {
     this.helpOverlay?.hide();
     this.helpOverlay = undefined;
     this.inlineHelp = false;
   }
 
-export function CodexIntakeTui_syncCommandOverlay(this: CodexIntakeTui): void {
+export function IntakeTui_syncCommandOverlay(this: IntakeTui): void {
     if (!this.showSuggestions || typeof this.tui.showOverlay !== "function") {
       this.hideCommandOverlay();
       return;
@@ -227,45 +227,45 @@ export function CodexIntakeTui_syncCommandOverlay(this: CodexIntakeTui): void {
     });
   }
 
-export function CodexIntakeTui_hideCommandOverlay(this: CodexIntakeTui): void {
+export function IntakeTui_hideCommandOverlay(this: IntakeTui): void {
     this.commandOverlay?.hide();
     this.commandOverlay = undefined;
     this.commandSelectList = undefined;
   }
 
-export function CodexIntakeTui_muteNodeWarnings(this: CodexIntakeTui): void {
+export function IntakeTui_muteNodeWarnings(this: IntakeTui): void {
     if (this.emitWarning) return;
     this.emitWarning = process.emitWarning.bind(process);
     process.emitWarning = () => undefined;
   }
 
-export function CodexIntakeTui_restoreNodeWarnings(this: CodexIntakeTui): void {
+export function IntakeTui_restoreNodeWarnings(this: IntakeTui): void {
     if (!this.emitWarning) return;
     process.emitWarning = this.emitWarning;
     this.emitWarning = undefined;
   }
 
-export function CodexIntakeTui_viewport(this: CodexIntakeTui): { height?: number } {
+export function IntakeTui_viewport(this: IntakeTui): { height?: number } {
     const rows = this.tui.terminal?.rows;
     return typeof rows === "number" && rows > 0 ? { height: rows } : {};
   }
 
-export function CodexIntakeTui_setMouseReporting(this: CodexIntakeTui, enabled: boolean): void {
+export function IntakeTui_setMouseReporting(this: IntakeTui, enabled: boolean): void {
     const terminal = this.tui as { terminal?: { write?: (data: string) => void } };
     terminal.terminal?.write?.(mouseReportingSequence(enabled));
   }
 
-export function CodexIntakeTui_render(this: CodexIntakeTui, immediate = false): void {
+export function IntakeTui_render(this: IntakeTui, immediate = false): void {
     if (this.readingMode && !immediate) return;
     this.workbench.invalidate();
     if (immediate) this.tui.renderNow();
     else this.tui.requestRender();
   }
 
-export function CodexIntakeTui_productContext(this: CodexIntakeTui): { productLabel?: string; productConfigured?: boolean } {
+export function IntakeTui_productContext(this: IntakeTui): { productLabel?: string; productConfigured?: boolean } {
     return activeProductContext(this);
   }
 
-export function CodexIntakeTui_view(this: CodexIntakeTui): WorkbenchView {
+export function IntakeTui_view(this: IntakeTui): WorkbenchView {
     return projectView(this);
   }

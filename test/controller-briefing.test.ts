@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   assertBriefingOutsideReplica,
   controllerPromptContent,
+  controllerViewSurface,
   outlineRows,
   renderIndexMarkdown,
   renderOutlineTsv,
@@ -44,6 +45,14 @@ test("outline marks user lines after the first non-empty assistant text", () => 
   assert.match(renderOutlineTsv(rows), /\t1\n$/);
 });
 
+test("view surface maps settlement without leaking Host diagnostics", () => {
+  assert.equal(controllerViewSurface("waiting_input", "ok?", true), "waiting");
+  assert.equal(controllerViewSurface("failed", "error", true), "failed");
+  assert.equal(controllerViewSurface("aborted", "stop", true), "aborted");
+  assert.equal(controllerViewSurface("completed", "", true), "empty");
+  assert.equal(controllerViewSurface("completed", "done", false), "unavailable");
+});
+
 test("INDEX lists transcript directory and project mount prefix", () => {
   assert.match(renderIndexMarkdown(undefined), /history\/transcript\/\{id\}\.txt/);
   assert.match(renderIndexMarkdown("run/turns/0001"), /project\//);
@@ -71,12 +80,29 @@ test("opening briefing lives outside the replica and opening prompt omits later 
     briefingRoot,
     indexMarkdown: written.indexMarkdown,
   });
-  assert.match(indexOnDisk, /historical user requirements/);
-  assert.match(indexOnDisk, /historical agent discoveries/);
-  assert.match(indexOnDisk, /current candidate facts/);
+  const userIndex = await readFile(join(briefingRoot, "history", "user-inputs", "INDEX.tsv"), "utf8");
+  assert.match(userIndex, /^turn_id\torder\trole\tsource\tpath\tattachments\trelated\n/);
+  assert.match(userIndex, /message-1\t1\tuser\thistorical_user\thistory\/user-inputs\/message-1\.txt/);
+  assert.match(userIndex, /message-3\t2\tuser\thistorical_user/);
+  assert.doesNotMatch(userIndex, new RegExp(marker));
+  const firstUser = await readFile(join(briefingRoot, "history", "user-inputs", "message-1.txt"), "utf8");
+  assert.match(firstUser, /PPT HTML/);
+  const laterUser = await readFile(join(briefingRoot, "history", "user-inputs", "message-3.txt"), "utf8");
+  assert.match(laterUser, new RegExp(marker));
+  const view = await readFile(join(briefingRoot, "view.txt"), "utf8");
+  assert.match(view, /surface=empty/);
+  assert.match(view, /user-inputs\/INDEX\.tsv/);
+  const permissions = await readFile(join(briefingRoot, "permissions.txt"), "utf8");
+  assert.match(permissions, /controller\.writes=denied/);
+  assert.match(permissions, /candidate\.writes=unconfirmed/);
+  assert.match(permissions, /candidate\.source=unconfirmed/);
+  assert.match(permissions, /privacy\.allowModelText=1/);
+  assert.doesNotMatch(permissions, /^writes=denied$/m);
+  assert.match(indexOnDisk, /Historical agent discoveries/);
+  assert.match(indexOnDisk, /Current candidate facts/);
   assert.match(prompt, /INDEX\.md/);
   assert.match(prompt, /history\/initial-input\.txt/);
-  assert.match(prompt, /first Invocation/);
+  assert.match(prompt, /第一条自然用户消息/);
   assert.doesNotMatch(indexOnDisk, /controller-understanding/);
   assert.doesNotMatch(prompt, /understandingDelta/);
   assert.doesNotMatch(prompt, new RegExp(marker));
@@ -136,7 +162,60 @@ test("settled-turn digest changes when visible.txt changes", async () => {
     allowModelText: true,
   });
   assert.notEqual(first.fileDigests["run/turns/0001/visible.txt"], second.fileDigests["run/turns/0001/visible.txt"]);
+  assert.notEqual(first.fileDigests["view.txt"], second.fileDigests["view.txt"]);
+  assert.match(await readFile(join(briefingRoot, "view.txt"), "utf8"), /second pass html/);
+  assert.match(await readFile(join(briefingRoot, "view.txt"), "utf8"), /surface=completed/);
+  assert.match(await readFile(join(briefingRoot, "view.txt"), "utf8"), /# Visible prompt\n\(none\)/);
   assert.match(await readFile(join(briefingRoot, "run/turns/0001/event-index.tsv"), "utf8"), /sequence\ttype\tevent_id\tmodel_visible/);
+});
+
+test("permissions.txt keeps Controller tools read-only when the historical candidate had full access", async () => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-briefing-perm-"));
+  const briefingRoot = join(root, "briefing");
+  const replicaRoot = join(root, "replica");
+  await mkdir(replicaRoot, { recursive: true });
+  const historical = taskCase("第二页太空了。");
+  historical.taskContext = { sandbox: "danger-full-access", approvalPolicy: "on-request" };
+  await writeOpeningBriefing({
+    briefingRoot,
+    replicaRoot,
+    taskCase: historical,
+    sourceRootKind: "historical_start",
+  });
+  const permissions = await readFile(join(briefingRoot, "permissions.txt"), "utf8");
+  assert.match(permissions, /controller\.writes=denied/);
+  assert.match(permissions, /candidate\.source=historical_session/);
+  assert.match(permissions, /candidate\.sandbox=danger-full-access/);
+  assert.match(permissions, /candidate\.writes=allowed/);
+  assert.match(permissions, /candidate\.approvalPolicy=on-request/);
+});
+
+test("settled view snapshot includes the turn prompt without previous-turn assistant text", async () => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-briefing-prompt-"));
+  const briefingRoot = join(root, "briefing");
+  const replicaRoot = join(root, "replica");
+  await mkdir(replicaRoot, { recursive: true });
+  await writeOpeningBriefing({
+    briefingRoot,
+    replicaRoot,
+    taskCase: taskCase("第二页太空了。"),
+    sourceRootKind: "historical_start",
+  });
+  await writeSettledTurnBriefing({
+    briefingRoot,
+    turnIndex: 2,
+    visibleText: "",
+    events: [],
+    changedPaths: [],
+    allowModelText: true,
+    surface: "waiting",
+    prompt: "Allow the candidate to run git push?",
+  });
+  const view = await readFile(join(briefingRoot, "view.txt"), "utf8");
+  assert.match(view, /surface=waiting/);
+  assert.match(view, /# Visible assistant text\n\(empty\)/);
+  assert.match(view, /Allow the candidate to run git push\?/);
+  assert.doesNotMatch(view, /first pass html/);
 });
 
 test("Controller tools read briefing history and deny writes under project/", async () => {

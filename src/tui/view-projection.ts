@@ -1,5 +1,7 @@
-import { userRecoveryStatus } from '../application/recovery-user-status.js';
-import type { CodexExperimentPreflight, CodexExperimentResult, RecoveryAttempt } from '../application/experiment.js';
+import { userRecoveryStatus } from '../application/recovery/user-status.js';
+import type { ExperimentResult } from '../application/experiment.js';
+import type { ExperimentPreflight } from '../application/experiment-preflight.js';
+import type { RecoveryAttempt } from '../application/recovery/types.js';
 import type { CandidateSpec, RunPolicy, TaskCase } from '../core/schema.js';
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from '../core/runtime.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
@@ -21,7 +23,7 @@ type Input = {
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
   readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[];
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
-  readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: CodexExperimentPreflight | undefined; readonly recoveryAttempt?: RecoveryAttempt | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
+  readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: ExperimentPreflight | undefined; readonly recoveryAttempt?: RecoveryAttempt | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly sourceProductLabel?: string;
   readonly candidateProductLabel?: string;
   readonly candidateProducts?: readonly { readonly productId: string; readonly displayName: string; readonly sourceSession: boolean; readonly availability?: RuntimeAvailabilityStatus | 'loading' }[];
@@ -39,7 +41,7 @@ type Input = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
-  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly paneFocus?: 'left' | 'right'; readonly expandedFolds?: readonly string[]; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: CodexExperimentResult | undefined;
+  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly paneFocus?: 'left' | 'right'; readonly expandedFolds?: readonly string[]; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
   readonly viewer?: { readonly title: string; readonly body: string };
   readonly actorsOpen?: boolean;
   readonly finding?: boolean;

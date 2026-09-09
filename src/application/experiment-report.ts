@@ -6,32 +6,29 @@ import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObser
 import type { CandidateRun } from "./candidate-run.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonInvocationSchema, type ArtifactRef, type TaskCase } from "../core/schema.js";
-import type { StructuredAgentResult } from "../infrastructure/pi-agent-host.js";
+import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import {
   writeImmutableJson,
   type ExperimentStore,
 } from "../infrastructure/store/experiment-store.js";
-import type {
-  CodexExperimentInput,
-  CodexExperimentPreflight,
-  CodexExperimentResult,
-} from "./experiment.js";
+import type { ExperimentInput, ExperimentResult } from "./experiment.js";
+import type { ExperimentPreflight } from "./experiment-preflight.js";
 import { experimentAgentAuditSink, invocationFact, isMissing } from "./experiment-helpers.js";
 import { inspectRun } from "./experiment-inspection.js";
 import type { SourceRootKind } from "./replay-conditions.js";
 import { comparisonOrientation, newComparisonAttempt, writeComparisonBriefing } from "./comparison-briefing.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
-import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/pi-agent-host.js";
+import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
 
 const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
 export async function finishExperiment(input: {
   signal?: AbortSignal;
-  input: CodexExperimentInput;
+  input: ExperimentInput;
   taskCase: TaskCase;
-  preflight: CodexExperimentPreflight;
+  preflight: ExperimentPreflight;
   store: ExperimentStore;
   run: CandidateRun;
   controller: {
@@ -46,7 +43,7 @@ export async function finishExperiment(input: {
   candidateSnapshotRoot: string;
   candidateSnapshotStatus: "complete" | "incomplete" | "missing";
   compare?: boolean;
-}): Promise<CodexExperimentResult> {
+}): Promise<ExperimentResult> {
   const finishedRecord = input.run.result().record;
   if (!finishedRecord)
     throw new Error("Candidate run did not produce a RunRecord.");
@@ -83,7 +80,7 @@ export async function finishExperiment(input: {
 export async function attachExperimentComparison(
   input: Parameters<typeof finishExperiment>[0],
   record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
-): Promise<CodexExperimentResult> {
+): Promise<ExperimentResult> {
   const inspection = await inspectExperimentRun(input, record);
   return experimentResult(
     input,
@@ -105,10 +102,10 @@ function experimentResult(
   record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
   inspection: Awaited<ReturnType<typeof inspectRun>>,
   compared: {
-    comparisonResult: CodexExperimentResult["comparison"]["result"];
+    comparisonResult: ExperimentResult["comparison"]["result"];
     reportPath: string;
   },
-): CodexExperimentResult {
+): ExperimentResult {
   const controllerCalls = input.store
     .events(input.input.runId)
     .filter((event) => event.type === "controller.decision").length;
@@ -255,7 +252,6 @@ function withOrientation(
     ...context,
     attemptId,
     promptContent: comparisonOrientation({
-      initialInput: input.taskCase.initialInput.text,
       briefingRoot: join(attemptRoot, "briefing"),
       indexMarkdown,
       baselineAvailable: input.taskCase.baseline.status === "available",

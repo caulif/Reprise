@@ -8,7 +8,7 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { listCandidateModels, listProducts, listSourceSessions } from "../src/application/experiment-queries.js";
 import { findProductPack, loadAndActivateProductPacks, resetProductPacks } from "../src/products/index.js";
 import { packActivity, packRuntime, packSessions } from "../src/products/pack-access.js";
-import { CodexIntakeTui } from "../src/tui/intake-app.js";
+import { IntakeTui } from "../src/tui/intake-app.js";
 import { runCli } from "../src/cli/main.js";
 
 const compiledPackDir = dirname(fileURLToPath(new URL("./fixtures/fake-pack/pack.js", import.meta.url)));
@@ -81,7 +81,7 @@ test("third pack loads from package plus plugins.json without host injection", a
     requestRender() {},
     renderNow() {},
   } as unknown as TUI;
-  const app = new CodexIntakeTui({
+  const app = new IntakeTui({
     dataDir,
     tui,
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },

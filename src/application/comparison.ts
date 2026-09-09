@@ -12,7 +12,7 @@ import {
   type ComparisonReportFacts,
   type ComparisonResult,
 } from '../agents/comparison-agent.js';
-import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/pi-agent-host.js';
+import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/agent/host.js';
 import { recoveryEvidenceCatalog } from '../infrastructure/recovery-tools.js';
 
 export type RunInspection = {
@@ -25,6 +25,8 @@ export type RunInspection = {
   turns: number;
   wallClockMs?: number;
   tokenCount?: number;
+  tokenUsage?: { total?: number; input?: number; output?: number; cached?: number; reasoning?: number };
+  generationMs?: number;
   replayConditions?: readonly string[];
   workspaceEvidenceStatus?: 'available' | 'not_collected' | 'unavailable';
 };
@@ -86,6 +88,7 @@ function buildReportFacts(run: RunRecord | undefined, inspection: RunInspection 
     replay: { conditions: [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: 'unavailable' },
   };
   const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
+  const metrics = projectedMetrics(inspection);
   return {
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
     models: { candidate: run.manifest?.resolvedModel.resolved ?? run.attempt.candidate.requestedModel, ...(run.manifest ? { controller: run.manifest.controller.requestedModel, comparison: run.manifest.comparison.requestedModel } : {}) },
@@ -94,6 +97,20 @@ function buildReportFacts(run: RunRecord | undefined, inspection: RunInspection 
     runtime: { productId: run.attempt.candidate.productId },
     delivery: { changedPaths: inspection?.changedPaths ?? [], targetArtifactStatus: run.artifactRefs.length ? 'artifacts_recorded' : 'not_collected', verificationStatus: run.outcome.task.status },
     replay: { ...(hostReplay?.sourceRootKind ? { sourceRootKind: hostReplay.sourceRootKind } : {}), conditions: hostReplay?.conditions ?? [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: evidenceLevel(run.outcome.task.evidenceRefs) },
+    ...(metrics ? { metrics } : {}),
+  };
+}
+
+function projectedMetrics(inspection: RunInspection | undefined): ComparisonReportFacts['metrics'] {
+  const tokens = inspection?.tokenUsage;
+  if (!tokens) return undefined;
+  const generationRate =
+    tokens.output !== undefined && inspection?.generationMs !== undefined
+      ? { outputTokens: tokens.output, durationMs: inspection.generationMs }
+      : undefined;
+  return {
+    tokens,
+    ...(generationRate ? { generationRate } : {}),
   };
 }
 

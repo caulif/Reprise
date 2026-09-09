@@ -4,7 +4,7 @@
 
 状态：当前模块设计
 
-Comparison 是产品无关的比较研究者。它从冻结的 baseline、Candidate RunRecord、事件与 catalog artifact 中调查差异，输出供用户自行判断的本地报告；它不运行 Runtime、不修改实验状态，也不排名候选。Comparison 由 TUI 对照门或 CLI `--compare` 显式启动，默认不调用。
+Comparison 的 HTML 首屏是**真实任务比较卡**，取舍见[可分享任务比较卡](../decisions/accepted/2026-09-09-comparison-shareable-task-card.md)。Comparison 是产品无关的比较研究者。它从冻结的 baseline、Candidate RunRecord、事件与 catalog artifact 中调查差异，写出面向人类的比较卡；它不运行 Runtime、不修改实验状态，也不做跨任务排名。Comparison 由 TUI 对照门或 CLI `--compare` 显式启动，默认不调用。
 
 ## 数据流
 
@@ -24,13 +24,13 @@ flowchart LR
 
 Comparison Agent 是成功报告的唯一作者。它用 `write` 把完整、自包含的 HTML 写到报告沙箱根 `report.html`；可自由使用 HTML、CSS、SVG 与有价值的本地 JavaScript。Host 校验后把字节拷到实验根，不使用 sanitizer、标签白名单、HTML AST 重写、固定模板或内容门禁。
 
-一次比较对应一个新的 `comparison-attempts/{attemptId}`，并只创建一个 Comparison Session。调查、可选的 `work/comparison-plan.md` 笔记、`report.html` 与信封修复都在该 Session 内完成。只有本 attempt 写出的 HTML 会原子发布；失败不覆盖旧成功报告。
+一次比较对应一个新的 `comparison-attempts/{attemptId}`，并只创建一个 Comparison Session。应用入口只调用一次 `compare()`。Host 在该 Session 内顺序发送四条工作委托：理解任务、调查与准备、创作 `report.html`、审阅并交付薄信封。前三轮是自由文本，不解码 JSON；只有第四轮成功且 attempt 根存在 `report.html` 时才原子发布到实验根。失败或取消不覆盖旧成功报告。Comparison 请求使用 Host `timeoutMs: 0`（无请求截止）；取消与传输错误仍停止后续委托。
 
-`candidate/` 是候选结束时封存的只读快照；快照未完成时该挂载标识为 unavailable，不是活动 `runs/{runId}`。`history/`、`turns/` 和 `evidence/` 分别提供历史过程、候选 settled turns 和 Host artifact。冻结 transcript 与本 run 事件在 attempt 根 `observations/`。短 briefing 只保存索引、facts、link catalog 与完整 process index，正文按需读取。三个内部角色的工作区工厂都是七工具，见 [工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。Comparison 的 `allowWrite` 只认路径第一段 `scratch`、`work/comparison-plan.md` 与 `report.html`。调用前写入 `comparison.requested` 输入快照。
+`candidate/` 是候选结束时封存的只读快照；快照未完成时该挂载标识为 unavailable，不是活动 `runs/{runId}`。`history/`、`turns/` 和 `evidence/` 分别提供历史过程、候选 settled turns 和 Host artifact。冻结 transcript 与本 run 事件在 attempt 根 `observations/`。`observations/user-inputs/INDEX.tsv` 在第一轮之前落盘，按顺序覆盖全部历史用户输入，并用 `historical_user` / `controller` 区分来源。启动 `promptContent` 只给短委托、双方证据是否可用、`briefing/facts/context.json` 指针和资料导航，不内联完整 initial task。正文按需读取。三个内部角色的工作区工厂都是七工具，见 [工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。Comparison 的 `allowWrite` 只认路径第一段 `scratch`、`work/comparison-plan.md` 与 `report.html`。调用前写入 `comparison.requested` 输入快照。
 
 薄信封保存 `status`、固定的 `reportPath: "report.html"`、`evidenceRefs`、可选 `limitationCodes` 与可选 `headline`（TUI 一行差，Host 不从 HTML 抽取）。Host 检查信封 schema、证据归属和报告文件可读性，但不检查页面的章节、视觉组件或指标是否出现。可引用的 ref 包括 briefing 投影以及 Host 挂载的 `observations/` 与 process-index 事件；夹杂的未知 ref 丢掉，全部未知则拒绝。
 
-Host 向 briefing 投影 `reportFacts`。缺失值保持缺失。System Prompt 要求用到某项硬数时写“未采集”或“不可判定”，不得写成零或估价；不要求把全部 `reportFacts` 摊在首屏。报告形式由 Agent 按本次差异自定。对照入口读取已提交事实与封存快照，不依赖原进程、内存 RecoveryAttempt 或活动 Runtime。
+Host 向 briefing 投影 `reportFacts`。缺失值保持缺失；token 只投影已采集分项，没有生成区间就不写速度，没有费用来源就不写费用。System Prompt 要求用到某项硬数时写“未采集”或“不可判定”，不得写成零或估价。报告形式由 Agent 按本次差异自定。对照入口读取已提交事实与封存快照，走同一条四轮路径，不依赖原进程、内存 RecoveryAttempt 或活动 Runtime。
 
 ## 事实纪律与安全
 

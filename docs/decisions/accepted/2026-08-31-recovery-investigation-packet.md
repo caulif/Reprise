@@ -2,6 +2,8 @@
 
 状态：accepted
 
+Agent 首包不再包含调查包，见[单工作副本自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。生成函数仍可用于 Host 侧材料准备与测试。
+
 ## 问题
 
 把冻结 transcript 的翻页交给模型当调查主通道，既撑爆上下文，也让路径线索停留在 162 轮原文里。Host 已经持有 catalog、preimage、relevantPaths 和后续用户句。

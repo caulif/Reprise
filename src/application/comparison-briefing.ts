@@ -12,16 +12,16 @@ import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "./observation-fi
 export type ComparisonLink = ComparisonLinkRecord;
 
 export function comparisonOrientation(input: {
-  initialInput: string;
   briefingRoot: string;
   indexMarkdown: string;
   baselineAvailable: boolean;
   candidateAvailable: boolean;
 }): string {
   return [
-    `initialTask=${input.initialInput}`,
+    "Compare this real task's historical outcome with the candidate run. Read observations/user-inputs/INDEX.tsv first, then every user turn in index order.",
     `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
     `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
+    "Hard metrics live in briefing/facts/context.json (Host projection; missing stays missing).",
     `briefingRoot=${input.briefingRoot}`,
     "",
     "# INDEX.md",
@@ -85,6 +85,7 @@ function comparisonIndex(): string {
     "- briefing/facts/context.json — bounded Host projection, not a substitute for direct evidence",
     "- briefing/facts/comparison-links.json — inspect paths and stable report links",
     "- briefing/candidate/process-index.tsv — complete run event index including post-settlement events",
+    "- observations/user-inputs/INDEX.tsv — complete user demand in session order (historical_user vs controller)",
     "- observations/INDEX.md — frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/ — frozen historical conversation (read-only mount)",
     "- turns/ — candidate settled-turn briefing (read-only mount)",

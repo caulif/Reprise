@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ControllerAgent, type SteeringContext } from '../src/agents/controller-agent.js';
-import { PiAgentHost, type PiTextCaller } from '../src/infrastructure/pi-agent-host.js';
+import { PiAgentHost, type PiTextCaller } from '../src/infrastructure/agent/host.js';
 
 function context(): SteeringContext {
   return {
@@ -26,7 +26,11 @@ function caller(responses: string[]): PiTextCaller {
   return {
     createSession() {
       return {
-        append: async () => responses.shift() ?? '',
+        append: async () => {
+          const next = responses.shift();
+          if (next === undefined) throw new Error('unexpected extra append');
+          return next;
+        },
         cancel() {},
       };
     },
@@ -36,7 +40,7 @@ function caller(responses: string[]): PiTextCaller {
 test('Controller opening rejects done and requires created', async () => {
   const opening = context();
   const done = new ControllerAgent({
-    host: new PiAgentHost(caller([JSON.stringify({ type: 'done', reason: 'satisfied' })])),
+    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'done', reason: 'satisfied' })])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
@@ -44,7 +48,7 @@ test('Controller opening rejects done and requires created', async () => {
   assert.equal(rejected.status, 'failed');
   if (rejected.status === 'failed') assert.match(rejected.failure.message, /opening decision must be send/);
   const send = new ControllerAgent({
-    host: new PiAgentHost(caller([JSON.stringify({ type: 'send', message: 'Work in this directory.', intent: 'continue' })])),
+    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: 'Work in this directory.', intent: 'continue' })])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });

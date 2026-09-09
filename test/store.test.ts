@@ -14,7 +14,7 @@ import {
   type RunManifest,
 } from '../src/core/schema.js';
 import { assertTransition, canTransition } from '../src/core/state-machine.js';
-import { controllerRequestSnapshot } from '../src/application/experiment.js';
+import { controllerRequestSnapshot } from '../src/application/controller-briefing.js';
 import { reconstructControllerRequest } from '../src/application/controller-request.js';
 import { sha256 } from '../src/core/identity.js';
 import { ExperimentStore, RecoveryArtifactBudgetError } from '../src/infrastructure/store/experiment-store.js';

@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recoveryTools } from "../src/infrastructure/recovery-tools.js";
-import { recoveryToolFailureCategory } from "../src/application/experiment-recovery-run-preflight.js";
+import { recoveryToolFailureCategory } from "../src/application/recovery/run-preflight.js";
 
 async function workspace(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-limits-"));

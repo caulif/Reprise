@@ -10,7 +10,7 @@ import {
   journalControlledRecoveryWrite,
   type RecoveryControlledWriteHook,
 } from "./recovery-write-journal.js";
-import type { AgentToolDefinition } from "./pi-agent-host.js";
+import type { AgentToolDefinition } from "./agent/host.js";
 import { ProcessBoundaryError, runProcess, type ProcessSpawner } from "./process-runner.js";
 import { shellExecutableAvailable, shellInvocation } from "./platform.js";
 import { integer, requiredString } from "./recovery-tools.js";

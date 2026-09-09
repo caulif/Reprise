@@ -16,10 +16,10 @@ Controller 回答一个问题：
 
 ```text
 原始 TaskCase
-+ 当前候选轨迹
-+ 用户可见的环境与产物
-+ 已发送的 Controller 消息
-+ 当前预算和权限边界
++ Host 用户视图快照（view.txt）
++ 用户可访问材料（按需）
++ 已发送的用户消息
++ Host 固定权限
           ↓
       Controller
           ↓
@@ -155,7 +155,7 @@ Controller opening send persisted
 → Controller 返回 send 或 done
 ```
 
-候选进程与 Controller session 在准备阶段一同拉起。第一条用户输入之前，Controller 在本 run 的同一 Session 内用首次 Invocation 阅读历史并形成 opening，只许 `send`。没有独立的 understand 调用。Controller 在 `awaiting_controller` 上做后续决策，继续该 Session。以下都不能触发 Controller：
+候选进程与 Controller session 在准备阶段一同拉起。第一条用户输入之前，首次 `decide` 在本 run 的同一 Session 内先做一轮自由理解（读取完整历史用户输入，不交决策信封），再返回 opening `send`。没有独立 Understanding schema 或账本。Controller 只在 `awaiting_controller` 上做后续决策，并先看 Host 生成的 `view.txt`。以下都不能触发后续决策：
 
 - Runtime 只接受了消息但 turn 尚未开始；
 - 模型刚输出一段流式文本；
@@ -277,7 +277,7 @@ Host 在读取前执行 run ownership、路径边界、类型、大小和 privac
 
 ## 7. SteeringContext
 
-Host 每次 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。历史正文与本 run 回合在 briefing 文件里，由 Controller 用 `read` 打开。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash。
+Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`view.txt` 是用户可见表面快照：可见助手文本只取最近一次 settlement 事件区间，确认/授权请求写入 Visible prompt。`permissions.txt` 分 Controller 只读工具与候选运行权限；后者来自历史会话已解析设置，缺失时标 unconfirmed。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)。
 
 ```ts
 interface SteeringContext {
@@ -295,7 +295,7 @@ interface SteeringContext {
 - `trajectory` 包含相关的近期消息、早期阶段摘要和 trace 引用；
 - `environment` 是只读的候选产物与 mismatch 观察，不是 Environment 句柄；
 - `priorDecisions` 防止重复纠正，并帮助维持同一个用户的连续性；
-- `budget` 供 Controller 判断继续是否有价值，但预算执行权仍属于 RunOrchestrator；
+- `budget` 供 Host 记录调用次数与可选显式上限，不写入模型可见 prompt；
 - `permissions` 表明哪些决定必须交还真实用户。
 
 上下文裁剪顺序：
@@ -355,29 +355,26 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 预算、timeout、Runtime failure 和 user abort 是 Orchestrator stop reason，不伪装成 Controller done。
 
-有效的非 satisfied 判断表示任务 incomplete。Host 接受 Controller 的 `done` 作为停止决定，不因未读 briefing 文件、缺失账本或省略 `understandingDelta` 而拒绝。历史记录中的 `controller.understanding` 与账本事件仍可只读展示。具体取舍见 [opening 同 Session](../decisions/accepted/2026-09-08-controller-opening-single-session.md)。
+有效的非 satisfied 判断表示任务 incomplete。Host 接受 Controller 的 `done` 作为停止决定，不因未读 briefing 文件、缺失账本或省略 `understandingDelta` 而拒绝。历史记录中的 `controller.understanding` 与账本事件仍可只读展示。具体取舍见 [先理解再按视图决策](../decisions/accepted/2026-09-09-controller-understand-then-view.md)。
 
 ## 9. 决策过程
 
-推荐 system prompt 引导 Controller 自主按以下顺序思考：
+首次 `decide` 先在同一 Session 自由理解完整历史用户输入，再返回 opening `send`。后续只在稳定 settlement 后，先看 `view.txt`，再按需读取用户可访问材料。判断顺序由 prompt 约束，不在 Core 写成规则引擎：
 
 ```text
-1. 这个人按原会话里表现出来的验收习惯，面对当前屏幕会不会停？
-   终态句里的交付物种类不够；完成声明不够。
-2. 是否需要真实用户授权或已经无法通过输入推进？
-3. Candidate 是否偏离目标、范围或用户已陈述的偏好？
-4. 是否缺少原用户本来知道的事实？（不必等候选先问）
-5. 是否需要按这个人的习惯要求验证？
-6. 如果都不是：这个人还会不会对**这条**轨迹说话？不会则停止。
+1. 当前用户可见结果是否已经满足这项历史任务？候选自称完成不够。
+2. 真实用户此刻会不会继续检查、修改、确认或授权？
+3. 若会继续，发送一条符合当前结果和历史交互节奏的自然消息。
+4. 若目标已满足且没有必要下一步，则结束。
 ```
 
-不要按历史用户句下标重放。历史更短或更长都可以，只要判断的是这个人，而不是剧本。这只是 prompt 中的判断顺序，不在 Core 编写规则引擎。
+不要按历史用户句下标重放。候选走了不同但有效的路径时，根据当前结果回应。不要为了增加轮数或追求无关完美而继续。
 
 ## 10. Prompt 与评估分层
 
-可执行 system prompt 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。
+可执行 system prompt 与 Turn 1 / opening / 循环 prompt 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。
 
-briefing INDEX 把材料分成三类，不得混用：历史用户要求（`role=user` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`run/turns/` 与 `project/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。
+briefing INDEX 把材料分成三类，不得混用：历史用户要求（`history/user-inputs/` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`view.txt`、`run/turns/` 与 `project/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。模型可见请求是决策段加 INDEX.md，不把 SteeringContext JSON 或隐藏字段内联进 prompt。
 
 Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `CONTROLLER_PROMPT_DIGEST` 相同）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
 
@@ -385,11 +382,11 @@ Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消
 
 实现时把 schema、有效 reason、任务数据和权限边界作为独立结构化上下文提供，不在 prompt 文本中拼接不可信内容。
 
-## 11. Pi Agent Host
+## 11. AgentHost
 
-Controller 使用 Pi Agent Core 管理模型调用、session、上下文和工具生命周期。每个 CandidateRun 使用独立 Controller session；不同候选模型不能共享模型隐藏状态，但必须使用 Experiment 已解析的同一 Controller 配置。
+Controller 通过 Reprise `AgentHost` / `AgentSession` 管理模型调用、session、上下文和工具生命周期。每个 CandidateRun 使用独立 Controller session；不同候选模型不能共享模型隐藏状态，但必须使用 Experiment 已解析的同一 Controller 配置。
 
-Pi Host 负责：
+Host 负责：
 
 - 创建具有固定 system prompt、模型和配置的 session；
 - 注入只读 artifact reader；
@@ -400,7 +397,7 @@ Pi Host 负责：
 
 Controller session 不是可恢复实验状态。Orchestrator 只信任已经持久化的 `ControllerDecision`。如果调用返回后、decision 持久化前发生中断，可以重新构造同一 `SteeringContext` 调用一次；结果可能不同，但不能把未持久化的模型输出当成已发送事实。如果 decision 已持久化，则恢复时直接使用该事实，不再次调用模型。
 
-Recovery Agent 和 Comparison Agent 可以复用同一个 Pi Host 实现，但使用独立 session、prompt、上下文和工具，不与 Controller 共享对话。Controller 的 prompt 属于 Controller 模块，不由 Product Pack 提供。
+Recovery Agent 和 Comparison Agent 复用同一个 AgentHost 实现，但使用独立 session、prompt、上下文和工具，不与 Controller 共享对话。Controller 的 prompt 属于 Controller 模块，不由 Product Pack 提供。执行循环由 Pi 适配器驱动，见[基座 Host](../decisions/accepted/2026-09-09-agent-foundation-host.md)。
 
 ## 12. Trace 与遥测
 
@@ -466,7 +463,7 @@ Comparison Agent 不读取 Product Pack 或产品私有日志，也不改变运�
 2. 接收 RuntimePort 的规范化 turn 和 message/tool 事件；
 3. 实现轻量 `TargetObservation` 与 artifact 引用；
 4. 构造可 hash 的 `SteeringContext`；
-5. 用 Pi Host 实现一次 schema-constrained decision；
+5. 用 AgentHost 实现一次 schema-constrained decision；
 6. 将 decision 先写 trace，再交给 RunOrchestrator；
 7. 覆盖 satisfied、纠偏、验证、真实用户授权和 controller failure 场景；
 8. 再按实际任务增加视觉、浏览器或文档 Observation Adapter。

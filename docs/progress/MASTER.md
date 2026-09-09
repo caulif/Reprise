@@ -6,9 +6,19 @@
 
 ## 当前批次
 
-实施 [TUI 界面重构](../plan/reprise-tui-surface-refactor.md) U1–U6：封面斜杠、连续记录、结果段 `c` 对照、页脚与规范。真终端 IME/滚轮/拖选不在本批关闭。
+无进行中的重构批次。真终端、付费 lane、Runtime smoke 仍不关闭。
 
 ## 验证记录
+
+2026-09-09 Agent 基座全面重构：Provider 无关 `AgentHost`/`AgentSession`（`work`/`request`），Pi 仅在 `providers/pi`；Fake adapter；顺序工具执行；业务 Agent 只调用 Host 公共边界。ADR：[基座 Host](../decisions/accepted/2026-09-09-agent-foundation-host.md)。规划见 [实施计划](../plan/agent-foundation-refactor-plan.md)。`npm run check` 17 门禁通过（814 pass / 4 skip）。真终端、付费 lane、Runtime smoke 不在本批关闭。
+
+2026-09-09 Recovery Agent 模块重构：单工作副本、连续三轮 Session、`ready`/`blocked` 信封、Host 机械检查、封存起点后 `prepareRun` 复制独立副本。ADR：[单工作副本自主三轮循环](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md)。实施入口见 [重构计划](../plan/recovery-agent-refactor.md)。`npm run check` 17 门禁通过（803 pass / 4 skip）。真终端、付费 lane、Runtime smoke 不在本批关闭。
+
+2026-09-09 Comparison 与 Controller 重构收口：Comparison 四轮 + `user-inputs` 索引 + `timeoutMs: 0` + 真实 metrics；提案迁入 [可分享任务比较卡](../decisions/accepted/2026-09-09-comparison-shareable-task-card.md)。Controller 首次 `decide` 自由理解后 opening 信封，`view.txt`/`permissions.txt`/`history/user-inputs/INDEX.tsv`，后续仅 settled turn 决策。ADR：[先理解再按视图决策](../decisions/accepted/2026-09-09-controller-understand-then-view.md)。`npm run check` 17 门禁通过（806 pass / 4 skip）。
+
+2026-09-09 Comparison 四轮委托：Host `requestFreeform`；`observations/user-inputs/INDEX.tsv`；一次 `compare()` 四轮且仅末轮信封；装配 `timeoutMs: 0`；`reportFacts.metrics` 只投影已采集 token，无生成区间不写速度。审美与真实模型比较卡不进门禁。规划见 [全面重构方案](../plan/comparison-agent-full-refactor.md)。
+
+2026-09-08 模块所有权 O1–O7：活动身份在 experiment-activity；去掉 TUI/application 空转发；Recovery 在 `src/application/recovery/` 并按所有者拆分；experiment.ts 不再再导出 recover/preflight；TUI config/history 用窄接口；Agent 在 `infrastructure/agent/`，schema 按 ids/scene/event/recovery/task-case/run 拆分。`npm run check` 17 门禁通过（796 pass / 4 skip）；`reprise --version` / `--help` 可跑。真终端、付费 lane、Runtime smoke 不在本批关闭。
 
 2026-09-08 TUI 界面重构 U1–U6：`npm run check` 17 门禁通过（含 `audit:tui` 48 帧 0 overflow、`verify:docs`）。封面斜杠为 `/intake` `/history` `/config` `/lang` `/help`；候选结束后结果段 `c` 对照；运行中 Esc 不取消。真终端 IME/滚轮/拖选不在本批关闭。
 
@@ -68,7 +78,7 @@
 
 2026-09-08 M3.2：`npm run build` 后 `node --test dist/test/controller-collaboration-protocol.test.js dist/test/controller-capability-evaluation.test.js dist/test/candidate-run.test.js dist/test/codex-experiment.test.js dist/test/snapshots.test.js`；随后 `npm run check` 通过。三类事实写入 INDEX/prompt；决策先于投递；未知不重发。合同 lane 不宣称语义等价。ADR：[2026-09-08-controller-collaboration-protocol](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md)。工作区未提交。剩余：M4 Comparison 单 Session 与独立执行。
 
-2026-09-08 M3.1：`npm run build` 后 `node --test dist/test/controller-full-session-judgment.test.js dist/test/codex-experiment.test.js dist/test/controller-briefing.test.js dist/test/snapshots.test.js`；随后 `npm run check` 通过。无独立 understand；opening 与后续 decide 同一 Session；新 run 不以账本拒绝 done。ADR：[2026-09-08-controller-opening-single-session](../decisions/accepted/2026-09-08-controller-opening-single-session.md)。工作区未提交。剩余：M3.2 验证协作语义和投递边界。
+2026-09-08 M3.1：`npm run build` 后 `node --test dist/test/controller-full-session-judgment.test.js dist/test/codex-experiment.test.js dist/test/controller-briefing.test.js dist/test/snapshots.test.js`；随后 `npm run check` 通过。无独立 understand；opening 与后续 decide 同一 Session；新 run 不以账本拒绝 done。ADR：[2026-09-08-controller-opening-single-session](../decisions/superseded/2026-09-08-controller-opening-single-session.md)。工作区未提交。剩余：M3.2 验证协作语义和投递边界。
 
 2026-09-08 M2.4：`npm run build` 后 `node --test dist/test/candidate-run.test.js dist/test/store.test.js dist/test/experiment-activity.test.js dist/test/cli.test.js`；随后 `npm run check` 通过。CandidateRun 先持久化再投递；取消与晚到事件不改写终态；写锁不自动夺锁。ADR：[2026-09-08-candidate-run-activity-ownership](../decisions/accepted/2026-09-08-candidate-run-activity-ownership.md)。工作区未提交。剩余：M3.1 合并首次理解与 opening。
 

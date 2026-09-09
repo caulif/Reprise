@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CodexIntakeTui } from '../dist/src/tui/intake-app.js';
+import { IntakeTui } from '../dist/src/tui/intake-app.js';
 import { findProductPack } from '../dist/src/products/index.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
 import { compareFrames, mockTui, pageHtml, selfTestCompareFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
@@ -133,7 +133,7 @@ async function main() {
   };
 
   const home = mockTui();
-  const homeApp = new CodexIntakeTui(tuiOptions(join(root, 'data'), { tui: home.tui }));
+  const homeApp = new IntakeTui(tuiOptions(join(root, 'data'), { tui: home.tui }));
   await homeApp.start();
   await push('01-home-wide', 120, home.render(120));
   await push('02-home-compact', 60, home.render(60));
@@ -145,7 +145,7 @@ async function main() {
   await push('05-home-help', 120, home.render(120));
 
   const config = mockTui();
-  const configApp = new CodexIntakeTui(tuiOptions(join(root, 'data-config'), { tui: config.tui }));
+  const configApp = new IntakeTui(tuiOptions(join(root, 'data-config'), { tui: config.tui }));
   await configApp.start();
   enterCommand(configApp, '/config');
   await waitFor(() => /Internal Agent model/.test(config.render(120)));
@@ -186,7 +186,7 @@ async function main() {
     keyRef: 'env:OPENAI_API_KEY',
   });
   const envHome = mockTui();
-  const envApp = new CodexIntakeTui(tuiOptions(join(root, 'data-env'), { tui: envHome.tui }));
+  const envApp = new IntakeTui(tuiOptions(join(root, 'data-env'), { tui: envHome.tui }));
   await envApp.start();
   await push('01b-home-env-unset', 120, envHome.render(120));
   enterCommand(envApp, '/config');
@@ -213,7 +213,7 @@ async function main() {
   const intake = mockTui();
   const intakeNow = '2026-08-11T00:10:00.000Z';
   const intakeRenderNow = '2026-08-15T00:10:00.000Z';
-  const intakeApp = new CodexIntakeTui(tuiOptions(join(root, 'data'), {
+  const intakeApp = new IntakeTui(tuiOptions(join(root, 'data'), {
     tui: intake.tui, now: () => intakeNow, nowMs: () => Date.parse(intakeRenderNow),
   }));
   await intakeApp.start();
@@ -294,7 +294,7 @@ async function main() {
     outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
   }));
   const history = mockTui();
-  const historyApp = new CodexIntakeTui(tuiOptions(historyRoot, { tui: history.tui }));
+  const historyApp = new IntakeTui(tuiOptions(historyRoot, { tui: history.tui }));
   await historyApp.start();
   enterCommand(historyApp, '/history');
   await waitFor(() => /Recent experiments/.test(history.render(120)));
@@ -365,7 +365,7 @@ async function main() {
   };
   const run = mockTui(32);
   await saveHarnessModelConfig(join(root, 'data-run'), defaultHarnessModelConfig());
-  const runApp = new CodexIntakeTui(tuiOptions(join(root, 'data-run'), {
+  const runApp = new IntakeTui(tuiOptions(join(root, 'data-run'), {
     tui: run.tui, workflow, now: () => '2026-08-11T00:10:00.000Z',
   }));
   await runApp.start();
@@ -442,7 +442,7 @@ async function main() {
   const err = mockTui();
   const sessionsFile = join(root, 'sessions-file');
   await writeFile(sessionsFile, 'not a directory');
-  const errApp = new CodexIntakeTui(tuiOptions(join(root, 'data-err'), {
+  const errApp = new IntakeTui(tuiOptions(join(root, 'data-err'), {
     tui: err.tui, sessionsRoot: sessionsFile, sessionsRoots: { codex: sessionsFile, 'claude-code': claudeSessionsRoot },
   }));
   await errApp.start();
@@ -453,7 +453,7 @@ async function main() {
   await push('27-product-discovery-error', 120, err.render(120));
 
   const clipped = mockTui(24);
-  const clippedApp = new CodexIntakeTui(tuiOptions(join(root, 'data'), {
+  const clippedApp = new IntakeTui(tuiOptions(join(root, 'data'), {
     tui: clipped.tui, workflow, now: () => '2026-08-11T00:10:00.000Z',
   }));
   await clippedApp.start();

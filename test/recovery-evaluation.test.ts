@@ -14,8 +14,8 @@ import {
   RecoveryEvaluationError,
   assertRecoveryEvaluationIntegrity,
   type RecoveryEvaluationCaseSink,
-} from '../src/application/recovery-evaluation.js';
-import { recoveryEvaluationFailureCode } from '../src/application/recovery-failure-classification.js';
+} from '../src/application/recovery/evaluation.js';
+import { recoveryEvaluationFailureCode } from '../src/application/recovery/failure-classification.js';
 import { RecoveryEvaluationCaseSchema, RecoveryExternalEffectSchema, RecoveryCompensationRequestSchema, RecoveryCompensationResultSchema } from '../src/core/schema.js';
 
 
