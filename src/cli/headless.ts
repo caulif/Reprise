@@ -162,7 +162,19 @@ async function settleHandle(
     const comparisonStatus = result.comparison.result.status;
     const ok = command === "compare" ? comparisonStatus === "completed" : runSucceeded(result.record.state, result.record.outcome.termination.kind);
     const activity = sink.current();
-    emitSettled(io, mode, command, activity, { state: result.record.state, experimentId: result.record.attempt.experimentId, runId: result.record.attempt.runId, comparisonStatus }, ok, result.record.state);
+    emitSettled(io, mode, command, activity, {
+      state: result.record.state,
+      experimentId: result.record.attempt.experimentId,
+      runId: result.record.attempt.runId,
+      productId: result.record.attempt.candidate?.productId,
+      requestedModel: result.record.attempt.candidate?.requestedModel,
+      resolvedModel: result.record.manifest?.resolvedModel?.resolved,
+      candidateSessionId: result.record.session?.sessionId,
+      ...(result.record.outcome.cleanup ? { cleanup: result.record.outcome.cleanup.status } : {}),
+      termination: result.record.outcome.termination.kind,
+      comparisonStatus,
+      reportPath: result.reportPath,
+    }, ok, result.record.state);
     return exitForOutcome(ok, result.record.outcome.termination.kind);
   } finally {
     signal.removeEventListener("abort", abortRun);

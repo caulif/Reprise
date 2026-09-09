@@ -5,11 +5,11 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { ComparisonAgentPort } from '../src/agents/comparison-agent.js';
 import type { ControllerPort } from '../src/agents/controller-agent.js';
-import { recoverCodexExperiment } from '../src/application/recovery/recover.js';
-import { startCodexExperiment } from '../src/application/experiment.js';
+import { recoverExperiment } from '../src/application/recovery/recover.js';
+import { startExperiment } from '../src/application/experiment.js';
 import { createHarnessAgents } from '../src/application/harness-agents.js';
 import type { TaskCase } from '../src/core/schema.js';
-import type { ResolvedRuntime, RuntimePort, TargetEventSink, TargetRunner } from '../src/core/runtime.js';
+import type { ResolvedRuntime, ProductRuntime, TargetEventSink, TargetRunner } from '../src/core/runtime.js';
 import { readHarnessModelConfig, type HarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
 import { ScriptedRunner } from '../src/infrastructure/scripted-runtime.js';
 
@@ -33,14 +33,14 @@ async function main(): Promise<void> {
   await writeFile(join(sourceRoot, 'README.md'), '# completed\n');
   const taskCase = makeTaskCase(caseId, historicalCommit);
   const agents = createHarnessAgents(config);
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir, caseId, experimentId, runId, sourceRoot, taskCase, recovery: agents.recovery,
     now,
   });
   await assertRecovery(attempt, sourceRoot, dataDir, experimentId);
   const baseline = await attempt.accept?.();
   if (!baseline || baseline.match !== 'recovered') throw new Error('Recovery preview was not accepted as a recovered baseline.');
-  const candidate = await startCodexExperiment({
+  const candidate = await startExperiment({
     dataDir, caseId, experimentId, runId: `${runId}-scripted-candidate`, sourceRoot, taskCase,
     candidate: { candidateId: 'scripted-candidate', productId: 'codex', requestedModel: 'scripted' },
     policy: { wallClockMs: 30_000, maxTargetTurns: 2, maxModelCalls: 1, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 1 },
@@ -88,7 +88,7 @@ function makeTaskCase(caseId: string, historicalCommit: string): TaskCase {
   };
 }
 
-async function assertRecovery(attempt: Awaited<ReturnType<typeof recoverCodexExperiment>>, sourceRoot: string, dataDir: string, experimentId: string): Promise<void> {
+async function assertRecovery(attempt: Awaited<ReturnType<typeof recoverExperiment>>, sourceRoot: string, dataDir: string, experimentId: string): Promise<void> {
   if (attempt.recovery.status !== 'completed' || attempt.recovery.value.status !== 'ready' || attempt.baseline.match !== 'recovered') {
     throw new Error(`Real Recovery did not produce a recovered baseline: ${JSON.stringify(attempt.recovery)}.`);
   }
@@ -109,7 +109,7 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
   return (await git('git', args, { cwd, windowsHide: true })).stdout.trim();
 }
 
-class ScriptedCandidateRuntime implements RuntimePort {
+class ScriptedCandidateRuntime implements ProductRuntime {
   readonly id = 'scripted-recovery-smoke';
   async inspectAvailable() { return [{ productId: 'codex', executable: 'scripted-recovery-smoke', version: 'fixture' }] as const; }
   async inspectAvailability() { return [{ productId: 'codex', executable: 'scripted-recovery-smoke', observedVersion: 'fixture', status: 'available' as const, observedAt: now }]; }
@@ -117,8 +117,8 @@ class ScriptedCandidateRuntime implements RuntimePort {
   async validateCandidate(request: { productId: string; requestedModel: string }): Promise<ResolvedRuntime> { return this.resolve(request); }
   async listCatalog() { return [{ value: 'gpt-5.6-terra', displayName: 'gpt-5.6-terra', resolvedModel: 'gpt-5.6-terra' }] as const; }
   recoveryCapabilities() { return { sessionHistory: 'available' as const, localArtifacts: true, workspaceHistory: false, externalSideEffects: 'unobserved' as const }; }
-  async createRunner(_runtime: ResolvedRuntime, _environment: { environmentId: string; runId: string; root: string }, sink: TargetEventSink): Promise<TargetRunner> {
-    await sink.append({ type: 'codex.item_completed', occurredAt: now, payload: { item: { type: 'agentMessage', text: 'Scripted Candidate completed orchestration smoke.' } } });
+  async createRunner(_runtime: ResolvedRuntime, _environment: { environmentId: string; runId: string; root: string }, sink: TargetEventSink, _launch: import('../src/core/schema.js').CandidateLaunchContext): Promise<TargetRunner> {
+    await sink.append({ type: 'runtime.visible_output', occurredAt: now, payload: { item: { type: 'agentMessage', text: 'Scripted Candidate completed orchestration smoke.' } } });
     return new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [{ turnId: 'scripted-turn', status: 'waiting_input', confidence: 'native', observedAt: now, rawRefs: [] }]);
   }
 }

@@ -90,8 +90,7 @@ function freezeManifest(manifest: RecoverySelectionManifest): void {
 }
 
 function aliasFor(productId: string, ordinal: number): string {
-  const prefix = productId === 'claude-code' ? 'claude' : productId;
-  return `${prefix}-${String(ordinal).padStart(2, '0')}`;
+  return `${productId}-${String(ordinal).padStart(2, '0')}`;
 }
 
 export type RecoverySearchDecision = {

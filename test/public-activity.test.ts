@@ -5,14 +5,14 @@ import { PublicActivityPayloadSchema } from "../src/core/public-activity.js";
 import type { EventEnvelope } from "../src/core/schema.js";
 import { Value } from "@sinclair/typebox/value";
 import { findProductPack } from "../src/products/index.js";
-import { packActivity } from "../src/products/pack-access.js";
+import { packProjection } from "../src/products/pack-access.js";
 
 const envelope: EventEnvelope = {
   schemaVersion: 1,
   sequence: 1,
   eventId: "evt-1",
   occurredAt: "2026-09-08T00:00:00.000Z",
-  type: "codex.turn_started",
+  type: "runtime.turn_started",
   runId: "run-1",
   payload: { turnId: "turn-1" },
   checksum: "0".repeat(64),
@@ -37,7 +37,7 @@ test("persistPublicActivities writes schema-checked runtime.public_activity rows
       },
     },
     envelope,
-    translator: packActivity(findProductPack("codex")),
+    translator: packProjection(findProductPack("codex")),
   });
   assert.ok(written.length >= 1);
   for (const event of written) {
@@ -56,7 +56,7 @@ test("invalid public activity payloads are not appended", async () => {
       },
     },
     envelope,
-    translator: { translate: () => [{ activity: { kind: "not-a-kind" } as never }], inspectRunFacts: () => ({ commands: [], rejectedApprovals: 0, evidenceEvents: [] }) },
+    translator: { translate: () => [{ activity: { kind: "not-a-kind" } as never }], inspectRunFacts: () => ({ commands: [], rejectedApprovals: 0, evidenceEvents: [] }), projectTurn: () => ({ turnIndex: 1, status: "empty", observedAt: "2026-09-09T00:00:00.000Z" }) },
   });
   assert.deepEqual(written, []);
 });

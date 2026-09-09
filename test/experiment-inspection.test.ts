@@ -23,7 +23,7 @@ function envelope(type: string, payload: unknown, sequence = 1): EventEnvelope {
 
 test('latest settled turn does not reuse a previous assistant reply', async () => {
   const events = [
-    envelope('codex.item_completed', { item: { type: 'agentMessage', text: 'FIRST_REPLY' } }, 1),
+    envelope('runtime.visible_output', { item: { type: 'agentMessage', text: 'FIRST_REPLY' } }, 1),
     envelope('runtime.turn_settled', { status: 'completed' }, 2),
     envelope('runtime.turn_settled', { status: 'failed' }, 3),
   ];
@@ -38,12 +38,12 @@ test('latest settled turn does not reuse a previous assistant reply', async () =
 
 test('latest settled turn prompt comes from public activity, not the previous reply', async () => {
   const events = [
-    envelope('codex.item_completed', { item: { type: 'agentMessage', text: 'FIRST_REPLY' } }, 1),
+    envelope('runtime.visible_output', { item: { type: 'agentMessage', text: 'FIRST_REPLY' } }, 1),
     envelope('runtime.turn_settled', { status: 'completed' }, 2),
     envelope('runtime.public_activity', {
       schemaVersion: 1,
       sourceEventId: 'event-3',
-      sourceEventType: 'codex.item_completed',
+      sourceEventType: 'runtime.visible_output',
       activity: { kind: 'prompt', text: 'Approve editing README.md?' },
     }, 3),
     envelope('runtime.turn_settled', { status: 'waiting_input' }, 4),
@@ -59,7 +59,7 @@ test('latest settled turn prompt comes from public activity, not the previous re
 test('inspectRun current summary does not inline candidate final text', async () => {
   const marker = 'UNIQUE_PPT_CLAIM_SHOULD_NOT_APPEAR';
   const events = [
-    envelope('codex.item_completed', { item: { type: 'agentMessage', text: marker } }, 1),
+    envelope('runtime.visible_output', { item: { type: 'agentMessage', text: marker } }, 1),
     envelope('runtime.turn_settled', { status: 'completed' }, 2),
   ];
   const store = { events: () => events } as unknown as ExperimentStore;
@@ -71,7 +71,7 @@ test('inspectRun current summary does not inline candidate final text', async ()
 });
 
 test('inspectRun uses the candidate product translator, not the source session product', async () => {
-  const events = [envelope('claude-code.assistant', {
+  const events = [envelope('runtime.visible_output', {
     message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls workspace' } }] },
   })];
   const store = { events: () => events } as unknown as ExperimentStore;

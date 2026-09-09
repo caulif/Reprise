@@ -1,7 +1,7 @@
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import type { ExperimentResult } from '../application/experiment.js';
 import type { ExperimentPreflight } from '../application/experiment-preflight.js';
-import type { RecoveryAttempt } from '../application/recovery/types.js';
+import type { RecoveryView } from '../application/recovery/view.js';
 import type { CandidateSpec, RunPolicy, TaskCase } from '../core/schema.js';
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from '../core/runtime.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
@@ -23,7 +23,7 @@ type Input = {
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
   readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[];
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
-  readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: ExperimentPreflight | undefined; readonly recoveryAttempt?: RecoveryAttempt | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
+  readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: ExperimentPreflight | undefined; readonly recoveryView?: RecoveryView | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly sourceProductLabel?: string;
   readonly candidateProductLabel?: string;
   readonly candidateProducts?: readonly { readonly productId: string; readonly displayName: string; readonly sourceSession: boolean; readonly availability?: RuntimeAvailabilityStatus | 'loading' }[];
@@ -60,12 +60,13 @@ function homeModel(input: Input, envSet: boolean) {
     ...(input.hasSavedModelConfig ? { providerLabel: input.modelConfig.providerId, modelId: input.modelConfig.modelId } : {}),
     composer: input.composer, composerCursor: input.composerCursor, showSuggestions: input.showSuggestions && !input.commandOverlay,
     locale: input.locale ?? 'en',
-    ...(input.recoveryAttempt?.baseline.recovery?.status === 'failed' ? { recoveryFailed: true } : {}),
+    ...(input.recoveryView?.baseline.recovery?.status === 'failed' ? { recoveryFailed: true } : {}),
   };
 }
 
 function runningModel(input: Input) {
   const productLabel = chromeProductLabel(input);
+  const candidateSessionId = candidateSessionIdFrom(input.timeline);
   return {
     entries: input.visibleTimeline, selected: input.timelineSelected, filter: TIMELINE_FILTERS[input.timelineFilterIndex] ?? 'ALL',
     following: input.timelineFollowing, cancelling: input.cancelling, currentState: currentRunState(input.timeline),
@@ -98,7 +99,16 @@ function runningModel(input: Input) {
     ...(input.timelineReadOffset ? { readingOffset: input.timelineReadOffset } : {}),
     ...(input.readingMode ? { readingMode: true } : {}),
     tick: input.nowMs ?? Date.now(),
+    ...(candidateSessionId ? { candidateSessionId } : {}),
   };
+}
+
+function candidateSessionIdFrom(entries: readonly TimelineEntry[]): string | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const match = /^Candidate session · (.+)$/.exec(entries[index]?.title ?? '');
+    if (match?.[1] && match[1] !== '?') return match[1];
+  }
+  return undefined;
 }
 
 export function projectWorkbenchView(input: Input): WorkbenchView {
@@ -172,20 +182,20 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'source') return { ...base, source: { sourceRoot: input.sourceRoot, sourceCursor: input.sourceCursor, step: 1, locale: input.locale ?? 'en' } };
   const picker = candidatePickerView(input, base);
   if (picker) return picker;
-  const recovery = input.recoveryAttempt?.baseline.recovery ? {
+  const recovery = input.recoveryView?.baseline.recovery ? {
     status: previewStatus(userRecoveryStatus({
-      baseline: input.recoveryAttempt.baseline,
+      baseline: input.recoveryView.baseline,
       transcriptOk: Boolean(input.taskCase?.initialInput?.text),
-      hasAccept: input.recoveryAttempt.accept !== undefined,
+      hasAccept: input.recoveryView.hasAccept,
     })),
-    ...(input.recoveryAttempt.providerPreview?.reportText ? { reportText: input.recoveryAttempt.providerPreview.reportText } : {}),
-    unresolved: input.recoveryAttempt.baseline.recovery.unresolved,
-    changedPathCount: input.recoveryAttempt.providerPreview?.changedPaths.length ?? 0,
-    skippedPaths: [...(input.recoveryAttempt.baseline.budget?.excludedEntries ?? [])],
-    ...(input.recoveryAttempt.baseline.recovery.failureStage
-        ? { failureSummary: formatRecoveryFailureSummary(input.locale ?? 'en', input.recoveryAttempt.baseline.recovery.failureStage, {
-            changedPathCount: input.recoveryAttempt.providerPreview?.changedPaths.length ?? 0,
-            ...(input.recoveryAttempt.recovery?.status === 'failed' && input.recoveryAttempt.recovery.failure.kind ? { agentFailureKind: input.recoveryAttempt.recovery.failure.kind } : {}),
+    ...(input.recoveryView.providerPreview?.reportText ? { reportText: input.recoveryView.providerPreview.reportText } : {}),
+    unresolved: input.recoveryView.baseline.recovery.unresolved,
+    changedPathCount: input.recoveryView.providerPreview?.changedPaths.length ?? 0,
+    skippedPaths: [...(input.recoveryView.baseline.budget?.excludedEntries ?? [])],
+    ...(input.recoveryView.baseline.recovery.failureStage
+        ? { failureSummary: formatRecoveryFailureSummary(input.locale ?? 'en', input.recoveryView.baseline.recovery.failureStage, {
+            changedPathCount: input.recoveryView.providerPreview?.changedPaths.length ?? 0,
+            ...(input.recoveryView.recovery?.status === 'failed' && input.recoveryView.recovery.failure.kind ? { agentFailureKind: input.recoveryView.recovery.failure.kind } : {}),
           }) }
       : {}),
   } : undefined;

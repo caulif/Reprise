@@ -1,3 +1,6 @@
+import { Value } from "@sinclair/typebox/value";
+import { CandidateRuntimeEventTypeSchema, type CandidateLaunchContext, type CandidateRuntimeEventType, type CandidateSessionHandle } from "./schema.js";
+
 export type Delivery = 'accepted' | 'rejected' | 'unknown';
 export type RuntimeStopReason = 'completed' | 'cancelled' | 'failed' | 'shutdown';
 export type UserMessage = { id: string; text: string };
@@ -57,6 +60,14 @@ export type ResolvedRuntime = AvailableRuntime & {
 export type PreparedRuntimeEnvironment = { environmentId: string; runId: string; root: string };
 export type TargetEvent = { type: string; occurredAt: string; payload: unknown };
 export type TargetEventSink = { append(event: TargetEvent): Promise<void> };
+
+export function runtimeTargetEvent(type: CandidateRuntimeEventType, payload: unknown, occurredAt = new Date().toISOString()): TargetEvent {
+  return { type: `runtime.${type}`, occurredAt, payload };
+}
+
+export function isCandidateRuntimeJournalType(type: string): boolean {
+  return type.startsWith("runtime.") && Value.Check(CandidateRuntimeEventTypeSchema, type.slice("runtime.".length));
+}
 export type RuntimeCapabilities = {
   nativeAdmission: boolean;
   clientMessageId: boolean;
@@ -76,7 +87,7 @@ export type RecoveryRuntimeCapabilities = {
   externalSideEffects: 'unobserved' | 'compensatable';
 };
 
-export interface RuntimePort {
+export interface ProductRuntime {
   readonly id: string;
   inspectAvailable(): Promise<readonly AvailableRuntime[]>;
   inspectAvailability(): Promise<readonly RuntimeAvailability[]>;
@@ -87,11 +98,17 @@ export interface RuntimePort {
   listCatalog(): Promise<readonly RuntimeModelOffer[]>;
   /** Declares local, credential-free evidence sources exposed by this product pack. */
   recoveryCapabilities(): RecoveryRuntimeCapabilities;
-  createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner>;
+  createRunner(
+    runtime: ResolvedRuntime,
+    environment: PreparedRuntimeEnvironment,
+    sink: TargetEventSink,
+    launch: CandidateLaunchContext,
+  ): Promise<TargetRunner>;
 }
 
 export interface TargetRunner {
   capabilities(): RuntimeCapabilities;
+  session(): CandidateSessionHandle;
   start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
   send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;
   waitForTurn(): Promise<TurnSettlement>;
@@ -99,9 +116,10 @@ export interface TargetRunner {
    * Releases an in-flight waitForTurn() after the Harness stops waiting. Without it a late
    * settlement would resolve the abandoned wait and leak into the next turn.
    */
-  cancelWait?(reason: string): void;
+  cancelWait(reason: string): void;
   /** CandidateRun gives native RPC calls the same limit as its turn wait. */
   setRequestTimeout(milliseconds: number): void;
   inspect(): Promise<TargetStatus>;
   stop(reason: RuntimeStopReason): Promise<void>;
+  close(): Promise<void>;
 }

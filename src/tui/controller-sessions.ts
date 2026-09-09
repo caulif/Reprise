@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { IntakeTui } from "./intake-tui.js";
-import { packSessions } from "../products/pack-access.js";
+import { packHistory } from "../products/pack-access.js";
 import { compareSessionSummaries, type DiscoveryDiagnostic, type SessionDiscoveryQuery } from "../products/contract.js";
 import { operatorErrorMessage } from "./format.js";
 import { t } from "./i18n.js";
@@ -50,8 +50,8 @@ type SessionLoadMode = "initial" | "more" | "refresh";
 
 export async function loadProductSessions(c: IntakeTui, productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
   const pack = c.packs.find((item) => item.manifest.productId === productId);
-  if (!pack?.sessions) return;
-  const sessions = packSessions(pack);
+  if (!pack?.history) return;
+  const sessions = packHistory(pack);
   const root = resolve(c.sessionsRoots[productId] ?? sessions.defaultRoot);
   const state = c.productDiscovery.get(productId);
   const cached = c.productSessions.get(productId);

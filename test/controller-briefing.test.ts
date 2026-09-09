@@ -167,6 +167,8 @@ test("settled-turn digest changes when visible.txt changes", async () => {
   assert.match(await readFile(join(briefingRoot, "view.txt"), "utf8"), /surface=completed/);
   assert.match(await readFile(join(briefingRoot, "view.txt"), "utf8"), /# Visible prompt\n\(none\)/);
   assert.match(await readFile(join(briefingRoot, "run/turns/0001/event-index.tsv"), "utf8"), /sequence\ttype\tevent_id\tmodel_visible/);
+  assert.match(await readFile(join(briefingRoot, "run/turns/0001/user-view.md"), "utf8"), /status=completed/);
+  assert.match(await readFile(join(briefingRoot, "current-user-view.md"), "utf8"), /second pass html/);
 });
 
 test("permissions.txt keeps Controller tools read-only when the historical candidate had full access", async () => {

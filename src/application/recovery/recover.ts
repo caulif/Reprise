@@ -3,4 +3,4 @@ export type {
   RecoveryAttemptInput,
   RecoveryAttemptMode,
 } from "./types.js";
-export { recoverCodexExperiment, classifyRecoveryFailureStage } from "./run.js";
+export { recoverExperiment, classifyRecoveryFailureStage } from "./run.js";

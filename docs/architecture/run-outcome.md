@@ -321,6 +321,7 @@ finished 后的 late event 不能改写 RunOutcome
 | `stageReached` | "created" | "preparing" | "launching" | "awaiting_target" | "awaiting_controller" | 否 |
 | `outcome` | object | 否 |
 | `trace` | object | 否 |
+| `session` | object | 是 |
 | `artifactRefs` | object | object[] | 否 |
 | `warnings` | object[] | 否 |
 <!-- END GENERATED record-fields -->

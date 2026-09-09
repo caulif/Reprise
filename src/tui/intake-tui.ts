@@ -2,7 +2,7 @@ import type { Models } from "@earendil-works/pi-ai";
 import { type OverlayHandle, SelectList, type TUI } from "@earendil-works/pi-tui";
 import type { ExperimentResult, ExperimentHandle } from "../application/experiment.js";
 import type { ExperimentPreflight } from "../application/experiment-preflight.js";
-import type { RecoveryAttempt } from "../application/recovery/types.js";
+import type { RecoveryView } from "../application/recovery/view.js";
 import type { ExperimentWorkflow } from "../application/experiment-workflow.js";
 import type { TaskCase, CandidateSpec } from "../core/schema.js";
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
@@ -142,7 +142,7 @@ export class IntakeTui {
   sourceRoot = "";
   sourceCursor = 0;
   preflight: ExperimentPreflight | undefined;
-  recoveryAttempt: RecoveryAttempt | undefined;
+  recoveryView: RecoveryView | undefined;
   selectedCandidate: CandidateSpec | undefined;
   candidateProductId = "";
   candidateProductCursor = 0;

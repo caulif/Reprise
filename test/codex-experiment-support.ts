@@ -3,18 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ComparisonAgentPort } from "../src/agents/comparison-agent.js";
 import { type ControllerPort } from "../src/agents/controller-agent.js";
-import { startCodexExperiment, type ExperimentAgentConfig } from "../src/application/experiment.js";
+import { startExperiment, type ExperimentAgentConfig } from "../src/application/experiment.js";
 import type {
   ResolvedRuntime,
   RuntimeModelOffer,
-  RuntimePort,
+  ProductRuntime,
   TargetEventSink,
   TargetRunner,
 } from "../src/core/runtime.js";
 import type { TaskCase } from "../src/core/schema.js";
 import { ScriptedRunner } from "./support/scripted-runtime.js";
 export const now = "2026-08-11T12:00:00.000Z";
-export class VerifiedRuntime implements RuntimePort {
+export class VerifiedRuntime implements ProductRuntime {
   readonly id = "verified-test";
   created = 0;
   async inspectAvailable() {
@@ -66,15 +66,16 @@ export class VerifiedRuntime implements RuntimePort {
     _runtime: ResolvedRuntime,
     _environment: { environmentId: string; runId: string; root: string },
     sink: TargetEventSink,
+    _launch: import("../src/core/schema.js").CandidateLaunchContext,
   ): Promise<TargetRunner> {
     this.created += 1;
     await sink.append({
-      type: "codex.item_completed",
+      type: "runtime.tool_finished",
       occurredAt: now,
       payload: { item: { type: "commandExecution", command: "npm test" } },
     });
     await sink.append({
-      type: "codex.item_completed",
+      type: "runtime.visible_output",
       occurredAt: now,
       payload: {
         item: { type: "agentMessage", text: "Focused change completed." },
@@ -220,7 +221,7 @@ export function input(root: string, runtime: VerifiedRuntime) {
     compare: true,
   };
 }
-class MultiTurnRuntime implements RuntimePort {
+class MultiTurnRuntime implements ProductRuntime {
   readonly id = "multi-turn-test";
   constructor(readonly turns: number) {}
   async inspectAvailable() {
@@ -268,7 +269,12 @@ class MultiTurnRuntime implements RuntimePort {
       externalSideEffects: "unobserved" as const,
     };
   }
-  async createRunner(): Promise<TargetRunner> {
+  async createRunner(
+    _runtime?: ResolvedRuntime,
+    _environment?: { environmentId: string; runId: string; root: string },
+    _sink?: TargetEventSink,
+    _launch?: import("../src/core/schema.js").CandidateLaunchContext,
+  ): Promise<TargetRunner> {
     return new ScriptedRunner(
       Array.from({ length: this.turns }, () => ({
         delivery: "accepted" as const,
@@ -299,7 +305,7 @@ export async function terminationOf(
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...base,
     runtime: new MultiTurnRuntime(overrides.turns ?? 4),
     controller: overrides.controller,

@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { RecoveryAgentPort } from "../src/agents/recovery-agent.js";
-import { recoverCodexExperiment, classifyRecoveryFailureStage } from "../src/application/recovery/recover.js";
-import { startCodexExperiment } from "../src/application/experiment.js";
+import { recoverExperiment, classifyRecoveryFailureStage } from "../src/application/recovery/recover.js";
+import { startExperiment } from "../src/application/experiment.js";
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
 import { sha256 } from "../src/core/identity.js";
 import { now, VerifiedRuntime, input } from "./codex-experiment-support.js";
@@ -69,7 +69,7 @@ test("Recovery records Provider validation failure separately from a completed A
       });
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-validation-failure",
@@ -115,7 +115,7 @@ test('Recovery cancellation aborts a pending model call, persists cancellation a
   const recovery = new RecoveryAgent({ host: new PiAgentHost({ createSession: () => ({
     append: ({ signal }) => { assert.equal(signal.aborted, false); started(); return new Promise<string>(() => {}); }, cancel() {},
   }) }), timeoutMs: 0, maxRepairAttempts: 1 });
-  const pending = recoverCodexExperiment({ dataDir: base.dataDir, caseId: base.caseId, experimentId: 'recovery-cancel', runId: 'recovery-cancel-run', sourceRoot: base.sourceRoot, taskCase: base.taskCase, recovery, environmentProvider: provider, now, signal: abort.signal });
+  const pending = recoverExperiment({ dataDir: base.dataDir, caseId: base.caseId, experimentId: 'recovery-cancel', runId: 'recovery-cancel-run', sourceRoot: base.sourceRoot, taskCase: base.taskCase, recovery, environmentProvider: provider, now, signal: abort.signal });
   await ready;
   abort.abort();
   const attempt = await pending;
@@ -150,7 +150,7 @@ test("Recovery rejects an unproven recovered no-op before Provider promotion", a
       },
     }),
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-runner-crash",
@@ -182,7 +182,7 @@ test("Recovery classifies a structured model request failure separately from too
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
   let calls = 0;
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-model-failure",
@@ -272,7 +272,7 @@ test("Recovery source tripwire falls back to current state and records a warning
     },
   };
 
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-tripwire",
@@ -350,7 +350,7 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-golden",
@@ -375,7 +375,7 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
   );
   const accepted = await attempt.accept?.();
   assert.equal(accepted?.match, "recovered");
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...base,
     experimentId: "recovery-golden",
     runId: "candidate-golden-run",
@@ -383,6 +383,7 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
     taskCase: task,
     environmentProvider: attempt.provider,
     preResolvedBaseline: accepted,
+    policy: { ...base.policy, wallClockMs: 15_000 },
   }).result;
   assert.equal(result.record.outcome.termination.kind, "completed");
 });
@@ -442,7 +443,7 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-candidate",

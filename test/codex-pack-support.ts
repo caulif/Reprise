@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { TargetRunner } from "../src/core/runtime.js";
-import { CodexRuntimePort } from "../src/products/codex/runtime-port.js";
+import { CodexProductRuntime } from "../src/products/codex/runtime-port.js";
+import { candidateLaunchFor } from "../src/application/candidate-launch.js";
 
 export const fixturePath = new URL(
   "./fixtures/codex-session.fixture.json",
@@ -57,23 +58,26 @@ export async function fakeCodexRunner(
   const root = await mkdtemp(join(tmpdir(), "reprise-fake-app-server-"));
   const script = join(root, "fake-app-server.mjs");
   await writeFile(script, FAKE_APP_SERVER);
-  const runtime = new CodexRuntimePort({ args: [script, status] });
+  const runtime = new CodexProductRuntime({ args: [script, status] });
   const records: { type: string; payload: unknown }[] = [];
   const events: string[] = [];
-  const runner = await runtime.createRunner(
-    {
+  const environment = { environmentId: "environment-run-1", runId: "run-1", root };
+  const resolved = {
       productId: "codex",
       executable: process.execPath,
       requestedModel: modelOverrides.requestedModel ?? "test-model",
       resolvedModel: modelOverrides.resolvedModel ?? "unknown",
-    },
-    { environmentId: "environment-run-1", runId: "run-1", root },
+    };
+  const runner = await runtime.createRunner(
+    resolved,
+    environment,
     {
       append: async (event) => {
         events.push(event.type);
         records.push({ type: event.type, payload: event.payload });
       },
     },
+    candidateLaunchFor(resolved, environment),
   );
   t.after(async () => runner.stop("shutdown"));
   t.after(async () => rm(root, { recursive: true, force: true }));

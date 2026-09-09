@@ -5,7 +5,7 @@ import { checkClaudeAuth, claudeCodeProductPack } from '../src/products/claude-c
 import {
   CLAUDE_DISALLOWED_TOOLS,
   CLAUDE_REQUIRED_ARGS,
-  ClaudeCodeRuntimePort,
+  ClaudeCodeProductRuntime,
   clearClaudeCatalogCache,
 } from '../src/products/claude-code/runtime-port.js';
 import {
@@ -14,6 +14,7 @@ import {
   type ClaudeSmokeAcceptanceRecord,
 } from '../src/products/claude-code/smoke-gate.js';
 import type { TargetEvent } from '../src/core/runtime.js';
+import { candidateLaunchFor } from '../src/application/candidate-launch.js';
 
 const PROMPT = 'Create a file named ping.txt whose entire contents are exactly pong. Do nothing else.';
 
@@ -22,7 +23,7 @@ async function main(): Promise<void> {
     throw new Error('Set REPRISE_RUN_CLAUDE_SMOKE=1 to run the real Claude Code smoke.');
   }
   const outPath = process.env.REPRISE_CLAUDE_SMOKE_OUT;
-  const runtime = new ClaudeCodeRuntimePort();
+  const runtime = new ClaudeCodeProductRuntime();
   clearClaudeCatalogCache();
   const auth = await checkClaudeAuth(runtime);
   const available = (await runtime.inspectAvailable())[0];
@@ -45,10 +46,12 @@ async function main(): Promise<void> {
   });
   const workspace = await mkdtemp(join(tmpdir(), 'reprise-claude-smoke-'));
   const events: TargetEvent[] = [];
+  const environment = { environmentId: 'environment-smoke', runId: 'run-smoke', root: workspace };
   const runner = await runtime.createRunner(
     resolved,
-    { environmentId: 'environment-smoke', runId: 'run-smoke', root: workspace },
+    environment,
     { append: async (event) => { events.push(event); } },
+    candidateLaunchFor(resolved, environment),
   );
   runner.setRequestTimeout?.(180_000);
   let receiptEvidence: string | undefined;

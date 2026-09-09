@@ -70,6 +70,7 @@ export type RunningModel = {
   readonly runStartedAt?: number;
   readonly paneFocus?: 'left' | 'right';
   readonly expandedFolds?: readonly string[];
+  readonly candidateSessionId?: string;
 };
 
 function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string], locale: Locale): string {
@@ -227,10 +228,13 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
       ? ` ${theme.style.ok(theme.glyphs.dot)} ${t(locale, 'comparisonTitle')}`
       : ` ${inMark} ${inLabel}   ${outMark} ${outLabel}   ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'controllerLegend')}`;
   const task = model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : undefined;
+  const session = model.candidateSessionId
+    ? kv(theme, t(locale, 'fieldSession'), model.candidateSessionId, width)
+    : undefined;
   const hits = canvasHitIndices(visible, model.findQuery ?? '');
   const hitAt = hits.indexOf(selected < 0 ? -1 : selected);
   const findBar = model.finding ? renderFindBar(model, locale, hits.length, hitAt < 0 ? 0 : hitAt) : [];
-  const header = [legend, ...(task ? [task] : []), ...findBar, ''];
+  const header = [legend, ...(task ? [task] : []), ...(session ? [session] : []), ...findBar, ''];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
   const expanded = new Set(model.expandedFolds ?? []);
   const folded = foldProcessEntries(visible, expanded);

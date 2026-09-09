@@ -7,14 +7,14 @@ import type {
   SessionDiscoveryQuery,
   SessionInspection,
   SessionRef,
-  SessionSourceAdapter,
+  ProductHistoryReader,
   SessionSummary,
 } from '../../../src/products/contract.js';
 
 const PRODUCT_ID = 'fake';
 const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), 'sessions');
 
-export const fakeSessionAdapter: SessionSourceAdapter = {
+export const fakeSessionAdapter: ProductHistoryReader = {
   defaultRoot: DEFAULT_ROOT,
   async discover(query?: SessionDiscoveryQuery) {
     const root = resolve(query?.root ?? this.defaultRoot);

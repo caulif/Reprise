@@ -1,6 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, Hash, Id, JsonRecord, Timestamp } from "./ids.js";
 import { ArtifactRefSchema, CandidateSpecSchema } from "./task-case.js";
+import { CandidateSessionHandleSchema } from "./candidate.js";
 
 const AgentBudgetSchema = Type.Object({
   callTimeoutMs: Type.Integer({ minimum: 1 }),
@@ -156,8 +157,9 @@ export const RunRecordSchema = Type.Object({
     experimentId: Id,
     runId: Id,
     firstSequence: Type.Integer({ minimum: 1 }),
-    lastSequence: Type.Integer({ minimum: 1 }),
-  }),
+      lastSequence: Type.Integer({ minimum: 1 }),
+    }),
+  session: Type.Optional(CandidateSessionHandleSchema),
   artifactRefs: Type.Array(ArtifactRefSchema),
   warnings: Type.Array(
     Type.Object({

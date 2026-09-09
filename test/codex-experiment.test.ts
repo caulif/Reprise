@@ -6,9 +6,9 @@ import { join } from "node:path";
 import type { ComparisonAgentPort } from "../src/agents/comparison-agent.js";
 import { ControllerAgent, type ControllerPort } from "../src/agents/controller-agent.js";
 import { controllerReadEvidenceOnRequest, reconstructControllerRequest } from "../src/application/controller-request.js";
-import { preflightCodexExperiment } from "../src/application/experiment-preflight.js";
-import { recoverCodexExperiment } from "../src/application/recovery/recover.js";
-import { startCodexExperiment } from "../src/application/experiment.js";
+import { preflightExperiment } from "../src/application/experiment-preflight.js";
+import { recoverExperiment } from "../src/application/recovery/recover.js";
+import { startExperiment } from "../src/application/experiment.js";
 import { PiAgentHost } from "../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../src/infrastructure/store/experiment-store.js";
@@ -33,7 +33,7 @@ test("trusted checkpoints restore deterministically without invoking the Recover
   await writeFile(join(base.sourceRoot, "new.txt"), "interrupted-work");
   let modelCalled = false;
   const events: { type: string; payload: unknown }[] = [];
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "checkpoint-direct-restore",
@@ -121,10 +121,10 @@ test("preflight is read-only and successful comparison writes a persisted narrat
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const runtime = new VerifiedRuntime();
   const experiment = input(root, runtime);
-  const preflight = await preflightCodexExperiment(experiment);
+  const preflight = await preflightExperiment(experiment);
   assert.equal(preflight.sourceBaseline, "available");
   assert.equal(runtime.created, 0);
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...experiment,
     experimentId: "experiment-2",
     runId: "run-2",
@@ -182,6 +182,8 @@ test("preflight is read-only and successful comparison writes a persisted narrat
     const attemptId = (started?.payload as { attemptId?: string } | undefined)?.attemptId;
     assert.ok(attemptId);
     const attemptRoot = join(result.experimentRoot, "comparison-attempts", attemptId);
+    assert.match(await readFile(join(attemptRoot, "INDEX.md"), "utf8"), /history\//);
+    assert.match(await readFile(join(attemptRoot, "candidate", "outcome.json"), "utf8"), /termination/);
     assert.match(await readFile(join(attemptRoot, "work", "comparison-plan.md"), "utf8"), /Compare the delivered files/);
     assert.match(await readFile(join(attemptRoot, "briefing", "candidate", "process-index.tsv"), "utf8"), /runtime\.turn_settled/);
     const requested = runEvents.find((event) => event.type === "comparison.requested");
@@ -209,24 +211,25 @@ test("records the latest cumulative Codex token count", async (t) => {
       runtime: ResolvedRuntime,
       environment: { environmentId: string; runId: string; root: string },
       sink: TargetEventSink,
+      launch: import("../src/core/schema.js").CandidateLaunchContext,
     ): Promise<TargetRunner> {
       await sink.append({
-        type: "codex.token_count",
+        type: "runtime.usage_reported",
         occurredAt: now,
         payload: { info: { total_token_usage: { total_tokens: 128 } } },
       });
       await sink.append({
-        type: "codex.token_count",
+        type: "runtime.usage_reported",
         occurredAt: now,
         payload: { info: { total_token_usage: { total_tokens: 256 } } },
       });
-      return super.createRunner(runtime, environment, sink);
+      return super.createRunner(runtime, environment, sink, launch);
     }
   }
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-tokens-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
-  const result = await startCodexExperiment(input(root, new TokenRuntime()))
+  const result = await startExperiment(input(root, new TokenRuntime()))
     .result;
   assert.equal(result.facts?.tokenCount, 256);
 });
@@ -376,7 +379,7 @@ test("a scripted Controller run persists controller.requested and reconstructs i
     timeoutMs: 5_000,
     maxRepairAttempts: 0,
   });
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...input(root, new VerifiedRuntime()),
     controller,
     policy: patientPolicy,
@@ -459,7 +462,7 @@ test("done/satisfied is accepted without a Host ledger or unread-file guard", as
         timeoutMs: 5_000,
         maxRepairAttempts: 0,
       });
-      const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), controller, policy: patientPolicy }).result;
+      const result = await startExperiment({ ...input(root, new VerifiedRuntime()), controller, policy: patientPolicy }).result;
       const store = await ExperimentStore.open(result.experimentRoot, 'experiment-1');
       try {
         const events = store.events('run-1');
@@ -506,7 +509,7 @@ test("cancelling an in-flight Controller request discards a late send before Can
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  const handle = startCodexExperiment({
+  const handle = startExperiment({
     ...input(root, new VerifiedRuntime()),
     controller,
     policy: patientPolicy,
@@ -546,7 +549,7 @@ test("a completed comparison without report.html is recorded as an Agent failure
       },
     }),
   };
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...input(root, runtime),
     comparison: silent,
   }).result;
@@ -576,7 +579,7 @@ test("working notes written after a failed first pass stay in the same compariso
       return { status: "completed", sessionId: "comparison-notes", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };
     },
   };
-  const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
+  const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
   assert.equal(result.comparison.result.status, "completed");
   const store = await ExperimentStore.open(result.experimentRoot, "experiment-1");
   try {
@@ -603,7 +606,7 @@ test("a failed later comparison attempt does not overwrite the last successful r
   const failed: ComparisonAgentPort = {
     compare: async () => ({ status: "failed", sessionId: "comparison-failed", failure: { code: "agent_failure", message: "failed", attempts: 1 } }),
   };
-  const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), comparison: failed }).result;
+  const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison: failed }).result;
   assert.equal(result.comparison.result.status, "failed");
   assert.equal(await readFile(join(experimentRoot, "report.html"), "utf8"), published);
   const latest = JSON.parse(await readFile(join(experimentRoot, "comparison.json"), "utf8")) as { status?: string; sessionId?: string };
@@ -619,9 +622,9 @@ test("an unchanged source fingerprint still starts after preflight", async (t) =
   await writeFile(join(root, "source", "README.md"), "# original\n");
   const runtime = new VerifiedRuntime();
   const experiment = input(root, runtime);
-  const preflight = await preflightCodexExperiment(experiment);
+  const preflight = await preflightExperiment(experiment);
   assert.ok(preflight.sourceFingerprint);
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...experiment,
     expectedSourceFingerprint: preflight.sourceFingerprint,
   }).result;
@@ -636,10 +639,10 @@ test("a changed source fingerprint blocks Candidate startup after preflight", as
   await writeFile(join(root, "source", "README.md"), "# original\n");
   const runtime = new VerifiedRuntime();
   const experiment = input(root, runtime);
-  const preflight = await preflightCodexExperiment(experiment);
+  const preflight = await preflightExperiment(experiment);
   await writeFile(join(root, "source", "README.md"), "# changed\n");
   await assert.rejects(
-    startCodexExperiment({
+    startExperiment({
       ...experiment,
       ...(preflight.sourceFingerprint
         ? { expectedSourceFingerprint: preflight.sourceFingerprint }
@@ -677,7 +680,7 @@ test("the first Target message is the Controller opening send, not frozen initia
     },
   };
   const base = input(root, new VerifiedRuntime());
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...base,
     taskCase: {
       ...base.taskCase,
@@ -721,7 +724,7 @@ test("an opening done does not start the Target with frozen initialInput", async
       value: { type: "done", reason: "satisfied" },
     }),
   };
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...input(root, new VerifiedRuntime()),
     controller,
     policy: patientPolicy,
@@ -746,7 +749,7 @@ test('opening failure and cancellation persist legal terminal records without ca
     t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
     await mkdir(join(root, 'source'));
     await writeFile(join(root, 'source', 'README.md'), '# source\n');
-    const result = await startCodexExperiment({ ...input(root, new VerifiedRuntime()), policy: patientPolicy, controller: {
+    const result = await startExperiment({ ...input(root, new VerifiedRuntime()), policy: patientPolicy, controller: {
       decide: async () => status === 'failed'
         ? { status, sessionId: 'fixture', failure: { code: 'agent_failure', message: 'Upstream request failed', kind: 'transient_upstream', attempts: 3 } }
         : { status, sessionId: 'fixture' },
@@ -771,7 +774,7 @@ test("deferred comparison runs from finished candidate facts without a live Reco
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
-  const handle = startCodexExperiment({
+  const handle = startExperiment({
     ...input(root, new VerifiedRuntime()),
     deferComparison: true,
   });
@@ -800,7 +803,7 @@ test("comparison does not start unless compare is set", async (t) => {
       };
     },
   };
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...input(root, new VerifiedRuntime()),
     comparison,
     compare: false,

@@ -127,19 +127,21 @@ function acceptPack(pack: ProductPack, specifier: string, packs: ProductPack[], 
 
 function capabilityMismatch(pack: ProductPack): string | undefined {
   if (packHas(pack, "import")) {
-    if (!pack.sessions) return "import capability requires sessions.";
-    if (typeof pack.sessions.discover !== "function" || typeof pack.sessions.inspect !== "function" || typeof pack.sessions.import !== "function") {
+    if (!pack.history) return "import capability requires history.";
+    if (typeof pack.history.discover !== "function" || typeof pack.history.inspect !== "function" || typeof pack.history.import !== "function") {
       return "import capability requires discover, inspect, and import functions.";
     }
   }
   if (packHas(pack, "runtime")) {
-    if (!pack.runtime || !pack.defaultCandidate || !pack.activity) {
-      return "runtime capability requires runtime, activity, and defaultCandidate.";
+    if (!pack.runtime || !pack.defaultCandidate || !pack.projection) {
+      return "runtime capability requires runtime, projection, and defaultCandidate.";
     }
     if (typeof pack.runtime.validateCandidate !== "function" || typeof pack.runtime.listCatalog !== "function" || typeof pack.runtime.createRunner !== "function") {
       return "runtime capability requires validateCandidate, listCatalog, and createRunner.";
     }
-    if (typeof pack.activity.translate !== "function") return "runtime capability requires activity.translate.";
+    if (typeof pack.projection.translate !== "function" || typeof pack.projection.projectTurn !== "function") {
+      return "runtime capability requires projection.translate and projection.projectTurn.";
+    }
   }
   if (pack.manifest.capabilities.length === 0) return "capabilities must not be empty.";
   return undefined;

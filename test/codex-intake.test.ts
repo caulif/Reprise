@@ -26,7 +26,7 @@ test("intake discovers only the selected registered product and keeps product ca
   const pack = (productId: string, displayName: string, sessions: readonly ReturnType<typeof summary>[]) => ({
     manifest: { productId, displayName, packVersion: "test", schemaVersion: 1 },
     checkAuth: async () => ({ configured: false }),
-    sessions: { defaultRoot: root, discover: async () => { calls.push(productId); return { items: sessions, scanned: sessions.length, skipped: 0, diagnostics: [] }; }, inspect: async () => { throw new Error("unused"); }, import: async () => { throw new Error("unused"); } },
+    history: { defaultRoot: root, discover: async () => { calls.push(productId); return { items: sessions, scanned: sessions.length, skipped: 0, diagnostics: [] }; }, inspect: async () => { throw new Error("unused"); }, import: async () => { throw new Error("unused"); } },
   }) as unknown as import("../src/products/contract.js").ProductPack;
   let document: Component | undefined;
   const tui = { addChild(component: Component) { document = component; }, addInputListener() { return () => {}; }, start() {}, stop() {}, requestRender() {}, renderNow() {} } as unknown as TUI;

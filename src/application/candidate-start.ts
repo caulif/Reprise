@@ -1,4 +1,5 @@
 import type { RecoveryAttempt } from "./recovery/types.js";
+import type { RecoveryView } from "./recovery/view.js";
 import { userRecoveryStatus } from "./recovery/user-status.js";
 
 export type CandidateStartGate = {
@@ -33,17 +34,28 @@ export function candidateStartBlocked(input: CandidateStartGate): string | undef
 }
 
 export function candidateGateFromAttempt(attempt: RecoveryAttempt, transcriptOk: boolean): CandidateStartGate {
+  return candidateGateFromView(
+    {
+      baseline: attempt.baseline,
+      hasAccept: attempt.accept !== undefined,
+      ...(attempt.staging ? { staging: attempt.staging } : {}),
+    },
+    transcriptOk,
+  );
+}
+
+export function candidateGateFromView(view: Pick<RecoveryView, "baseline" | "hasAccept" | "staging">, transcriptOk: boolean): CandidateStartGate {
   return {
     blockedReasons: [],
     recovery: {
-      hasAccept: attempt.accept !== undefined,
-      hasStaging: Boolean(attempt.staging),
-      baselineMode: attempt.baseline.mode,
-      ...(attempt.baseline.readiness?.runnable ? { runnable: attempt.baseline.readiness.runnable } : {}),
+      hasAccept: view.hasAccept,
+      hasStaging: Boolean(view.staging),
+      baselineMode: view.baseline.mode,
+      ...(view.baseline.readiness?.runnable ? { runnable: view.baseline.readiness.runnable } : {}),
       userStatus: userRecoveryStatus({
-        baseline: attempt.baseline,
+        baseline: view.baseline,
         transcriptOk,
-        hasAccept: attempt.accept !== undefined,
+        hasAccept: view.hasAccept,
       }),
     },
   };

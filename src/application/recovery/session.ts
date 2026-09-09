@@ -19,7 +19,7 @@ import { ExperimentStore } from "../../infrastructure/store/experiment-store.js"
 import { resolvedRecoveryFacts } from "../../infrastructure/recovery-tools.js";
 import type { ProductPack } from "../../products/contract.js";
 import { assertIds, assertPaths } from "../experiment-helpers.js";
-import { failRecoverCodexExperiment } from "./fail.js";
+import { failRecoverExperiment } from "./fail.js";
 import type { RecoveryAttempt, RecoveryAttemptInput, RecoveryAttemptMode } from "./types.js";
 import {
   RecoveryOrchestrator,
@@ -150,7 +150,7 @@ export async function failRecoveryRunSession(
   session: RecoveryRunSession,
   error: unknown,
 ): Promise<RecoveryAttempt> {
-  return failRecoverCodexExperiment({
+  return failRecoverExperiment({
     error,
     attemptInput: session.input,
     store: session.store,

@@ -19,7 +19,7 @@ test('selection manifest is schema-checked, redacted, and product-local determin
     runId: 'run-1', seed: 'fixed-seed', selectedAt: '2026-08-18T00:00:00.000Z',
     entries: [entry('codex', 'a'), entry('codex', 'b'), entry('claude-code', 'c')],
   });
-  assert.deepEqual(selectionAliases(result.manifest), ['codex-01', 'codex-02', 'claude-01']);
+  assert.deepEqual(selectionAliases(result.manifest), ['codex-01', 'codex-02', 'claude-code-01']);
   assert.equal(JSON.stringify(result.manifest).includes('private'), false);
   assert.equal(JSON.stringify(result.manifest).includes('sessionId'), false);
   assert.equal(JSON.stringify(result.manifest).includes('cwd'), false);

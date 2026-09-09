@@ -52,7 +52,7 @@ Controller 模块负责：
 - 返回 `ControllerDecision`；
 - 为每次决策生成可追溯事件和上下文引用。
 
-Controller 模块不依赖具体 Product Pack。SessionSourceAdapter 和 RuntimePort 先把产品私有数据转换成 `ImportedSession`、`TargetEvent`、`TurnSettlement` 与 artifact 引用；随后由本模块的 Observation Assembler 统一构造 `SteeringContext`。这样 Codex、Claude Code 或其他产品不会获得不同的 Controller 上下文规则。
+Controller 模块不依赖具体 Product Pack。ProductHistoryReader 和 ProductRuntime 先把产品私有数据转换成 `ImportedSession`、`TargetEvent`、`TurnSettlement` 与 artifact 引用；随后由本模块的 Observation Assembler 统一构造 `SteeringContext`。这样 Codex、Claude Code 或其他产品不会获得不同的 Controller 上下文规则。
 
 Controller 模块不负责：
 
@@ -119,7 +119,7 @@ TaskCase.initialInput             TaskCase.transcript
 - Controller 可以读取完整 transcript，并根据候选当前表现决定是否需要提出历史中类似的纠正、补充或验收输入；
 - 历史会话结束不是候选运行的停止边界。
 
-Controller 不选择会话内任务边界，也不为 Target 补造会话开始前上下文。resume、fork 或 parent session 是否属于同一个逻辑会话，由 SessionSourceAdapter 在导入时确定并留下 provenance。
+Controller 不选择会话内任务边界，也不为 Target 补造会话开始前上下文。resume、fork 或 parent session 是否属于同一个逻辑会话，由 ProductHistoryReader 在导入时确定并留下 provenance。
 
 ### 4.2 用户能力证据
 
@@ -193,11 +193,11 @@ Controller 不直接调用 Runtime 的 approval API；它只能通过普通用�
 
 ### 5.3 delivery unknown
 
-`DeliveryReceipt.delivery === "unknown"` 时，RunOrchestrator 不会调用 Controller 生成替代消息。它先要求 RuntimePort 核查旧 message/turn；仍无法确认则进入 `finalizing`。这样避免同一纠正或授权被发送两次。
+`DeliveryReceipt.delivery === "unknown"` 时，RunOrchestrator 不会调用 Controller 生成替代消息。它先要求 ProductRuntime 核查旧 message/turn；仍无法确认则进入 `finalizing`。这样避免同一纠正或授权被发送两次。
 
 ## 6. Observation Adapter
 
-Controller 不能只读 Target 的最终自述，也不应获得无界、无 cwd 锁的 shell。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 RuntimePort、Environment 和 ArtifactStore 已经规范化、且用户正常可见的事实。Host 把工作区七工具挂在 briefing 根上，`project/` 只读挂载隔离副本；不注册 `read_observation`。见 [Controller 七工具](../decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)。
+Controller 不能只读 Target 的最终自述，也不应获得无界、无 cwd 锁的 shell。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 ProductRuntime、Environment 和 ArtifactStore 已经规范化、且用户正常可见的事实。Host 把工作区七工具挂在 briefing 根上，`project/` 只读挂载隔离副本；不注册 `read_observation`。见 [Controller 七工具](../decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)。
 
 ```text
 TargetEventSink / Environment fingerprint / ArtifactStore
@@ -217,7 +217,7 @@ TargetEventSink / Environment fingerprint / ArtifactStore
 2. **轻量内联**：消息、状态和短摘要内联；长日志、diff、截图和二进制内容使用引用。
 3. **Adapter 不替 Target 干活**：Observation Adapter 不修改候选环境、不替 Target 执行修复。Host 工作区工具另有写策略，仍不得调用 Target Runtime。
 4. **按需展开**：Controller 可读取允许的 artifact 引用，不把所有历史内容塞进每轮 prompt。
-5. **产品隔离**：Claude/Codex 私有事件先由 SessionSourceAdapter 或 RuntimePort 归一化；Controller 不解析私有 JSONL，也不加载产品专属 Controller Playbook。
+5. **产品隔离**：Claude/Codex 私有事件先由 ProductHistoryReader 或 ProductRuntime 归一化；Controller 不解析私有 JSONL，也不加载产品专属 Controller Playbook。
 6. **诚实缺失**：无法采集的事实标记 unavailable，不根据 Agent 文字推断为已验证。
 
 ### 6.2 TargetObservation
@@ -460,7 +460,7 @@ Comparison Agent 不读取 Product Pack 或产品私有日志，也不改变运�
 ## 16. 最小实现顺序
 
 1. 从一个已有 `TaskCase` 构造 `ControllerTaskView`；
-2. 接收 RuntimePort 的规范化 turn 和 message/tool 事件；
+2. 接收 ProductRuntime 的规范化 turn 和 message/tool 事件；
 3. 实现轻量 `TargetObservation` 与 artifact 引用；
 4. 构造可 hash 的 `SteeringContext`；
 5. 用 AgentHost 实现一次 schema-constrained decision；

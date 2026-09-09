@@ -87,6 +87,14 @@ test('CandidateRun distinguishes rejected and unknown delivery without resending
   assert.equal(unknownRunner.started.length, 1);
 });
 
+test('CandidateRun rejects a reused clientMessageId with different text', async () => {
+  const runner = new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]);
+  const run = new CandidateRun({ runner, policy });
+  const pending = run.start(initial, identity);
+  await assert.rejects(run.start({ id: 'message-1', text: 'Other.' }, identity), /already used/);
+  assert.equal(await pending, 'awaiting_controller');
+});
+
 test('CandidateRun enforces settlement, turn budgets, cancellation, crash, timeout, and cleanup facts', async () => {
   const budgetRunner = new ScriptedRunner(
     [{ delivery: 'accepted', evidence: 'native_admission' }, { delivery: 'accepted', evidence: 'native_admission' }],
@@ -259,6 +267,7 @@ test('CandidateRun persists attempt, manifest, facts, and terminal record in one
 
     const result = run.result();
     assert.equal(Value.Check(RunRecordSchema, result.record), true);
+    assert.equal(result.record?.session?.sessionId, 'scripted-session');
     assert.equal(result.record?.trace.lastSequence, store.nextSequence() - 1);
     assert.deepEqual(result.record?.artifactRefs, artifactRefs);
     const replay = store.replay('run-1');
@@ -270,6 +279,7 @@ test('CandidateRun persists attempt, manifest, facts, and terminal record in one
     const events = (await readFile(join(root, 'events.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { type: string; payload?: { text?: string } });
     assert.equal(events.findIndex((event) => event.type === 'run.attempt_created') < events.findIndex((event) => event.type === 'run.manifest_created'), true);
     assert.equal(events.find((event) => event.type === 'input.submitted')?.payload?.text, 'Start.');
+    assert.ok(events.some((event) => event.type === 'candidate.session_bound'));
     assert.equal(events.at(-1)?.type, 'run.finished');
     await store.close();
   } finally {

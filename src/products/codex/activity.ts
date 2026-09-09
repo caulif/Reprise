@@ -2,53 +2,45 @@ import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
 import type { EventEnvelope } from '../../core/schema.js';
 import type {
   FileChange,
-  TargetActivity,
   TargetActivityEntry,
-  TargetActivityTranslator,
+  UserSurfaceProjection,
   TargetRunFacts,
 } from '../contract.js';
+import { projectUserVisibleTurn } from '../contract.js';
 
-const PREFIX = 'codex.';
+const PREFIX = 'runtime.';
 
-export const codexActivityTranslator: TargetActivityTranslator = {
+export const codexActivityTranslator: UserSurfaceProjection = {
   translate(event) {
     if (!event.type.startsWith(PREFIX)) return [];
     const payload = record(event.payload);
     switch (event.type) {
-      case 'codex.thread_started':
+      case 'runtime.session_started':
         return sandboxNotice(payload);
-      case 'codex.turn_started':
+      case 'runtime.turn_started':
         return [{ activity: { kind: 'message', streaming: true } }];
-      case 'codex.turn_plan_updated':
-        return plan(payload);
-      case 'codex.item_started':
-        return targetItem(payload, false);
-      case 'codex.item_completed':
+      case 'runtime.tool_started':
+        return text(payload.name) || text(payload.status) ? mcpStatus(payload) : targetItem(payload, false);
+      case 'runtime.tool_finished':
         return targetItem(payload, true);
-      case 'codex.item_agentMessage_delta':
-        return streamDelta(payload, 'message');
-      case 'codex.item_commandExecution_outputDelta':
-        return streamDelta(payload, 'command');
-      case 'codex.mcpServer_startupStatus_updated':
-        return mcpStatus(payload);
-      case 'codex.thread_tokenUsage_updated':
+      case 'runtime.visible_prompt':
+        return targetItem(payload, true);
+      case 'runtime.visible_output':
+        if (Array.isArray(payload.plan)) return plan(payload);
+        if (payload.kind === 'model_reroute') {
+          return [{
+            activity: {
+              kind: 'other',
+              label: 'Model rerouted',
+              body: `${text(payload.fromModel) ?? '?'} → ${text(payload.toModel) ?? '?'}`,
+            },
+          }];
+        }
+        return targetItem(payload, payload.streaming !== true);
+      case 'runtime.usage_reported':
         return tokenUsage(payload);
-      case 'codex.model_rerouted':
-        return [{
-          activity: {
-            kind: 'other',
-            label: 'Model rerouted',
-            body: `${text(payload.fromModel) ?? '?'} → ${text(payload.toModel) ?? '?'}`,
-          },
-        }];
-      case 'codex.protocol_error':
-        return [{ activity: { kind: 'runtime_error', message: text(payload.message) ?? 'unknown protocol error' } }];
-      case 'codex.error': {
-        const message = text(payload.message) ?? 'runtime error';
-        return [{ activity: { kind: 'runtime_error', message } }];
-      }
-      case 'codex.stderr':
-        return [];
+      case 'runtime.runtime_failed':
+        return [{ activity: { kind: 'runtime_error', message: text(payload.message) ?? 'runtime error' } }];
       default:
         return [];
     }
@@ -56,10 +48,18 @@ export const codexActivityTranslator: TargetActivityTranslator = {
   inspectRunFacts(events) {
     return inspectCodexRunFacts(events);
   },
+  projectTurn(input) {
+    return projectUserVisibleTurn({
+      turnIndex: input.turnIndex,
+      settlement: input.settlement,
+      facts: inspectCodexRunFacts(input.events),
+      allowModelText: input.allowModelText,
+    });
+  },
 };
 
 function inspectCodexRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
-  const completed = events.filter((event) => event.type === 'codex.item_completed');
+  const completed = events.filter((event) => event.type === 'runtime.tool_finished' || event.type === 'runtime.visible_output');
   const targetItems = completed.map((event) => record(event.payload).item).filter(isRecord);
   const finalMessage = targetItems
     .filter((item) => item.type === 'agentMessage')
@@ -72,11 +72,12 @@ function inspectCodexRunFacts(events: readonly EventEnvelope[]): TargetRunFacts 
       .map((item) => (typeof item.command === 'string' ? item.command : undefined))
       .filter((value): value is string => Boolean(value)),
   )];
-  const rejected = events.filter((event) => event.type === 'codex.server_request_rejected');
+  const rejected = events.filter((event) => event.type === 'runtime.runtime_failed');
   const evidenceEvents = events.filter((event) => (
     event.type === 'runtime.turn_settled'
-    || event.type === 'codex.item_completed'
-    || event.type === 'codex.server_request_rejected'
+    || event.type === 'runtime.tool_finished'
+    || event.type === 'runtime.visible_output'
+    || event.type === 'runtime.runtime_failed'
   ));
   return {
     ...(finalMessage ? { finalMessage } : {}),
@@ -196,16 +197,6 @@ function reasoningItem(item: JsonRecord, completed: boolean, extra: { correlatio
     return [{ activity: { kind: 'thinking', ...(summary ? { text: summary } : {}), streaming: true }, ...extra }];
   }
   return [{ activity: { kind: 'thinking', ...(summary ? { text: summary } : {}) }, ...extra }];
-}
-
-function streamDelta(payload: JsonRecord, kind: 'message' | 'command'): readonly TargetActivityEntry[] {
-  const delta = text(payload.delta);
-  if (!delta) return [];
-  const itemId = text(payload.itemId);
-  const activity: TargetActivity = kind === 'message'
-    ? { kind: 'message', text: delta, streaming: true }
-    : { kind: 'command', command: '', status: 'started', output: delta };
-  return [{ activity, merge: 'append', ...(itemId ? { correlationId: itemId } : {}) }];
 }
 
 function mcpStatus(payload: JsonRecord): readonly TargetActivityEntry[] {

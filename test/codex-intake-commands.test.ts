@@ -273,10 +273,14 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
       limitations: ["fingerprint differs"],
     }),
     recover: async () => ({
+      experimentId: "codex-luna-high",
+      experimentRoot: "unused",
       baseline: { match: "recovered", warnings: [] },
-      provider: { discardRecovery: async () => {} },
+      recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
     }),
+    acceptRecovery: async () => ({ match: "recovered", warnings: [] }),
+    discardRecovery: async () => {},
     start: async (input: {
       sourceRoot: string;
       onEvent: (event: unknown) => void;
@@ -308,7 +312,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
         sequence: 3,
         eventId: "event-3",
         occurredAt: "2026-08-11T00:10:00.500Z",
-        type: "codex.turn_started",
+        type: "runtime.turn_started",
         payload: {},
         checksum: "a".repeat(64),
       });
@@ -334,7 +338,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
         sequence: 5,
         eventId: "event-5",
         occurredAt: "2026-08-11T00:10:02.000Z",
-        type: "codex.item_completed",
+        type: "runtime.visible_output",
         payload: { item: { type: "agentMessage", text: fullPublicResponse } },
         checksum: "c".repeat(64),
       });
@@ -347,7 +351,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
         payload: {
           schemaVersion: 1,
           sourceEventId: "event-5",
-          sourceEventType: "codex.item_completed",
+          sourceEventType: "runtime.visible_output",
           activity: { kind: "message", text: fullPublicResponse },
         },
         checksum: "c".repeat(64),
@@ -441,7 +445,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
       payload: {
         schemaVersion: 1,
         sourceEventId: "event-5",
-        sourceEventType: "codex.item_completed",
+        sourceEventType: "runtime.visible_output",
         activity: { kind: "message", text: fullPublicResponse },
       },
       checksum: "c".repeat(64),
@@ -526,11 +530,6 @@ test("Codex intake TUI automatically prepares every session with Recovery before
   } as unknown as TUI;
   let recoveryCalls = 0;
   let discarded = 0;
-  const provider = {
-    discardRecovery: async () => {
-      discarded += 1;
-    },
-  };
   const workflow = {
     ...fixtureCatalog,
     candidate: {
@@ -556,11 +555,17 @@ test("Codex intake TUI automatically prepares every session with Recovery before
       },
     }),
     recover: async () => ({
+      experimentId: `recovery-${recoveryCalls + 1}`,
+      experimentRoot: root,
       baseline: { match: "recovered", warnings: [] },
       staging: { recoveryId: `recovery-${++recoveryCalls}` },
-      provider,
+      recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
     }),
+    acceptRecovery: async () => ({ match: "recovered", warnings: [] }),
+    discardRecovery: async () => {
+      discarded += 1;
+    },
     start: async () => ({
       cancel: async () => {},
       result: Promise.resolve({

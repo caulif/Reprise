@@ -4,7 +4,7 @@ import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import { candidateSpecFromOffer, catalogCursor } from '../application/candidate-spec.js';
 import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
-import { packDefaultCandidate, packRuntime, packSessions, runtimePacks } from '../products/pack-access.js';
+import { packDefaultCandidate, packHistory, runtimePacks } from '../products/pack-access.js';
 import { freezeCase } from '../products/shared/freeze.js';
 import { importVerifiedSession, listSummaryIncomplete } from '../products/shared/session-recovery.js';
 import { errorMessage } from './format.js';
@@ -13,8 +13,9 @@ import { projectLabel } from './pages/intake.js';
 import { appendTimelineEntries, projectTimelineEvent } from './timeline.js';
 import { syncTimelineSelection } from './timeline-read.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
-import { candidateStartBlocked, type CandidateStartGate } from '../application/candidate-start.js';
+import { candidateGateFromView, candidateStartBlocked, type CandidateStartGate } from '../application/candidate-start.js';
 import { prepareExperiment } from '../application/experiment-operations.js';
+import { recoveryViewFromAttempt } from '../application/recovery/view.js';
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import { record, text } from '../core/json.js';
 import type { CandidateRunPhase } from './pages/run.js';
@@ -87,7 +88,7 @@ export async function freeze(
     const alreadyInspected = c.inspection?.sourcePath === sourcePath;
     c.message = t(c.locale, !alreadyInspected && listSummaryIncomplete(session) ? 'inspectingIncompleteSummary' : 'inspectingSelectedSession');
     c.render(true);
-    const imported = await importVerifiedSession(packSessions(pack), session, sourcePath);
+    const imported = await importVerifiedSession(packHistory(pack), session, sourcePath);
     const result = await freezeCase(imported, join(c.dataDir, 'cases'), c.privacy, c.now(), {
       ...(input.initialMessageId ? { initialMessageId: input.initialMessageId } : {}),
       reuseExisting: true,
@@ -111,10 +112,11 @@ export async function freeze(
 }
 
 export async function discardRecovery(c: ControllerHandle): Promise<void> {
-  const attempt = c.recoveryAttempt;
+  const view = c.recoveryView;
+  if (!view) return;
   try {
-    if (attempt?.staging) await attempt.provider.discardRecovery(attempt.staging);
-    if (c.recoveryAttempt === attempt) c.recoveryAttempt = undefined;
+    await c.workflow?.discardRecovery(view.experimentId);
+    if (c.recoveryView === view) c.recoveryView = undefined;
   } catch (error) {
     throw Object.assign(new Error(t(c.locale, 'cleanupFailed'), { cause: error }), { name: 'RecoveryCleanupError' });
   }
@@ -242,20 +244,21 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
       onEvent: (event) => appendTimeline(c, event),
     });
     if (token !== c.generation) {
-      c.recoveryAttempt = attempt;
+      c.recoveryView = recoveryViewFromAttempt(attempt);
       await discardRecovery(c);
       return;
     }
-    c.recoveryAttempt = attempt;
-    if (attempt.cleanupFailed) throw Object.assign(new Error(t(c.locale, 'cleanupFailed')), { name: 'RecoveryCleanupError' });
+    const view = recoveryViewFromAttempt(attempt);
+    c.recoveryView = view;
+    if (view.cleanupFailed) throw Object.assign(new Error(t(c.locale, 'cleanupFailed')), { name: 'RecoveryCleanupError' });
     if (abort.signal.aborted) {
       await discardRecovery(c);
       abort.signal.throwIfAborted();
     }
     const userStatus = userRecoveryStatus({
-      baseline: attempt.baseline,
+      baseline: view.baseline,
       transcriptOk: Boolean(c.taskCase.initialInput?.text),
-      hasAccept: attempt.accept !== undefined,
+      hasAccept: view.hasAccept,
     });
     c.preflight = {
       ...c.preflight,
@@ -266,9 +269,9 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
           : 'observational',
       limitations: [
         ...c.preflight.limitations,
-        ...attempt.baseline.warnings,
-        ...(attempt.providerPreview?.reportText
-          ? [`Recovery preview: ${attempt.providerPreview.changedPaths.length} workspace paths changed; report captured as recovery.md.`]
+        ...(view.baseline.warnings ?? []),
+        ...(view.providerPreview?.reportText
+          ? [`Recovery preview: ${view.providerPreview.changedPaths.length} workspace paths changed; report captured as recovery.md.`]
           : []),
       ],
     };
@@ -283,7 +286,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
       openCandidateProductPicker(c);
       c.message = userStatus === 'recovered'
         ? t(c.locale, 'recoveryReady')
-        : t(c.locale, 'recoveryPartial', { n: attempt.providerPreview?.changedPaths.length ?? 0 });
+        : t(c.locale, 'recoveryPartial', { n: view.providerPreview?.changedPaths.length ?? 0 });
     }
   } catch (error) {
     if (token !== c.generation) {
@@ -393,8 +396,8 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.render(true);
     c.prepareDetail = workspaceDetail(c.preflight.workspace);
     c.render(true);
-    const recoveryAttempt = c.recoveryAttempt;
-    const acceptedBaseline = recoveryAttempt?.accept ? await recoveryAttempt.accept() : undefined;
+    const recoveryView = c.recoveryView;
+    const acceptedBaseline = recoveryView ? await c.workflow.acceptRecovery(recoveryView.experimentId) : undefined;
     if (token !== c.generation) return;
     abort.signal.throwIfAborted();
     const handle = await c.workflow.start({
@@ -404,15 +407,15 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
       candidate,
       onEvent: (event) => appendTimeline(c, event),
       ...(c.preflight.sourceFingerprint ? { expectedSourceFingerprint: c.preflight.sourceFingerprint } : {}),
-      ...(recoveryAttempt
+      ...(recoveryView
         ? {
-            recoveryAttempt,
+            recoveryExperimentId: recoveryView.experimentId,
             ...(acceptedBaseline ? { preResolvedBaseline: acceptedBaseline } : {}),
           }
         : {}),
       ...(c.autoCompare ? { compare: true } : { deferComparison: true }),
     });
-    c.recoveryAttempt = undefined;
+    c.recoveryView = undefined;
     if (token !== c.generation) {
       await handle.cancel();
       const result = await handle.result;
@@ -454,26 +457,13 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
 export { candidateStartBlocked, type CandidateStartGate } from "../application/candidate-start.js";
 
 export function candidateGateFrom(c: ControllerHandle): CandidateStartGate {
+  const recovered = c.recoveryView
+    ? candidateGateFromView(c.recoveryView, Boolean(c.taskCase?.initialInput?.text)).recovery
+    : undefined;
   return {
     blockedReasons: c.preflight?.workspace?.blockedReasons ?? [],
     ...(c.preflight?.sourceBaseline ? { sourceBaseline: c.preflight.sourceBaseline } : {}),
-    ...(c.recoveryAttempt
-      ? {
-          recovery: {
-            hasAccept: c.recoveryAttempt.accept !== undefined,
-            hasStaging: Boolean(c.recoveryAttempt.staging),
-            baselineMode: c.recoveryAttempt.baseline.mode,
-            ...(c.recoveryAttempt.baseline.readiness?.runnable
-              ? { runnable: c.recoveryAttempt.baseline.readiness.runnable }
-              : {}),
-            userStatus: userRecoveryStatus({
-              baseline: c.recoveryAttempt.baseline,
-              transcriptOk: Boolean(c.taskCase?.initialInput?.text),
-              hasAccept: c.recoveryAttempt.accept !== undefined,
-            }),
-          },
-        }
-      : {}),
+    ...(recovered ? { recovery: recovered } : {}),
   };
 }
 
@@ -491,8 +481,8 @@ function noteRunDiagnostics(c: ControllerHandle, event: EventEnvelope): void {
   c.lastRuntimeEventKind = event.type;
   const phase = phaseForEvent(event);
   if (phase) c.runPhase = phase;
-  if (event.type === 'codex.item_agentMessage_delta' || event.type === 'codex.item_completed') c.modelOutputSeen = true;
-  if (event.type !== 'codex.error') return;
+  if (event.type === 'runtime.visible_output' || event.type === 'runtime.turn_settled') c.modelOutputSeen = true;
+  if (event.type !== 'runtime.runtime_failed') return;
   const attempt = parseReconnectAttempt(text(record(event.payload).message) ?? '');
   if (!attempt) return;
   c.reconnectCount = attempt.current;
@@ -510,9 +500,15 @@ function phaseForEvent(event: EventEnvelope): CandidateRunPhase | undefined {
   const type = event.type;
   if (type.startsWith('recovery.')) return 'recovery';
   if (type.startsWith('agent.') && text(record(event.payload).role) === 'recovery') return 'recovery';
-  if (type === 'run.attempt_created' || type === 'codex.thread_started') return 'candidate_starting';
+  if (type === 'run.attempt_created' || type === 'runtime.session_started') return 'candidate_starting';
   if (type === 'runtime.delivery_observed' || (type === 'run.state_changed' && record(event.payload).to === 'awaiting_target')) return 'candidate_generating';
-  if (type === 'codex.turn_admitted' || type.startsWith('codex.item_')) return 'candidate_generating';
+  if (
+    type === 'runtime.turn_started'
+    || type === 'runtime.tool_started'
+    || type === 'runtime.tool_finished'
+    || type === 'runtime.visible_output'
+    || type === 'runtime.visible_prompt'
+  ) return 'candidate_generating';
   return undefined;
 }
 
@@ -533,7 +529,7 @@ async function refreshCandidateAvailability(c: ControllerHandle): Promise<void> 
   const generation = ++c.candidateAvailabilityGeneration;
   const entries = await Promise.all(runtimePacks(c.packs).map(async (pack) => {
     try {
-      const [item] = await packRuntime(pack).inspectAvailability();
+      const [item] = await c.workflow?.inspectAvailability(pack.manifest.productId) ?? [];
       return [pack.manifest.productId, item?.status ?? 'not_installed'] as const;
     } catch {
       // inspectAvailability is best-effort listing; a throw is not_installed, not a TUI crash.

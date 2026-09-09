@@ -26,7 +26,7 @@ Comparison Agent 是成功报告的唯一作者。它用 `write` 把完整、自
 
 一次比较对应一个新的 `comparison-attempts/{attemptId}`，并只创建一个 Comparison Session。应用入口只调用一次 `compare()`。Host 在该 Session 内顺序发送四条工作委托：理解任务、调查与准备、创作 `report.html`、审阅并交付薄信封。前三轮是自由文本，不解码 JSON；只有第四轮成功且 attempt 根存在 `report.html` 时才原子发布到实验根。失败或取消不覆盖旧成功报告。Comparison 请求使用 Host `timeoutMs: 0`（无请求截止）；取消与传输错误仍停止后续委托。
 
-`candidate/` 是候选结束时封存的只读快照；快照未完成时该挂载标识为 unavailable，不是活动 `runs/{runId}`。`history/`、`turns/` 和 `evidence/` 分别提供历史过程、候选 settled turns 和 Host artifact。冻结 transcript 与本 run 事件在 attempt 根 `observations/`。`observations/user-inputs/INDEX.tsv` 在第一轮之前落盘，按顺序覆盖全部历史用户输入，并用 `historical_user` / `controller` 区分来源。启动 `promptContent` 只给短委托、双方证据是否可用、`briefing/facts/context.json` 指针和资料导航，不内联完整 initial task。正文按需读取。三个内部角色的工作区工厂都是七工具，见 [工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。Comparison 的 `allowWrite` 只认路径第一段 `scratch`、`work/comparison-plan.md` 与 `report.html`。调用前写入 `comparison.requested` 输入快照。
+`candidate/` 是候选结束时封存的只读快照；快照未完成时该挂载标识为 unavailable，不是活动 `runs/{runId}`。`history/`、`turns/` 和 `evidence/` 分别提供历史过程、候选 settled turns 和 Host artifact。冻结 transcript 与本 run 事件在 attempt 根 `observations/`（`events/historical` 与 `events/run`）。`observations/user-inputs/INDEX.tsv` 在第一轮之前落盘，按顺序覆盖全部历史用户输入，路径落在 `observations/user-inputs/`，并用 `historical_user` / `controller` 区分来源。启动 `promptContent` 只给短委托、双方证据是否可用、`briefing/facts/context.json` 指针和资料导航，不内联完整 initial task。正文按需读取。三个内部角色的工作区工厂都是七工具，见 [工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)。Comparison 的 `allowWrite` 只认路径第一段 `scratch`、`work/comparison-plan.md` 与 `report.html`。调用前写入 `comparison.requested` 输入快照。
 
 薄信封保存 `status`、固定的 `reportPath: "report.html"`、`evidenceRefs`、可选 `limitationCodes` 与可选 `headline`（TUI 一行差，Host 不从 HTML 抽取）。Host 检查信封 schema、证据归属和报告文件可读性，但不检查页面的章节、视觉组件或指标是否出现。可引用的 ref 包括 briefing 投影以及 Host 挂载的 `observations/` 与 process-index 事件；夹杂的未知 ref 丢掉，全部未知则拒绝。
 
@@ -44,7 +44,7 @@ Comparison 失败、信封不合规或未写出 `report.html` 时，不改变 Ca
 
 ## 验收
 
-- Comparison 不依赖 Product Pack、RuntimePort 或产品私有事件类型。
+- Comparison 不依赖 Product Pack、ProductRuntime 或产品私有事件类型。
 - 成功 HTML 可包含 Agent 选择的任意页面结构，且被原样保存。
 - 所有读取仍受 artifact ownership、路径、大小和 privacy policy 约束。
 - 持久化事实、attempt 工作区、`report.html` 与薄信封足以审计本次比较。

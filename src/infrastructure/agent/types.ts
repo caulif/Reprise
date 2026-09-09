@@ -35,6 +35,7 @@ export type AgentInvocation<T> =
   | { status: "cancelled"; factRef?: string; sessionId?: string; invocationId?: string };
 
 export type StructuredAgentResult<T> = AgentInvocation<T>;
+/** Optional visible diagnostic for audit; business agents must not depend on `text`. */
 export type FreeformInvocation = AgentInvocation<{ text?: string }>;
 export type StructuredInvocation<T> = AgentInvocation<T>;
 export type FreeformAgentInvocation =

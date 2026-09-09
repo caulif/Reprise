@@ -1,7 +1,7 @@
 import { claudeCodeProductPack } from "./claude-code/pack.js";
 import { codexProductPack } from "./codex/pack.js";
 import type { ProductPack } from "./contract.js";
-import { importPacks, packSessions } from "./pack-access.js";
+import { importPacks, packHistory } from "./pack-access.js";
 import { assembleProductPacks, type PackLoadDiagnostic } from "./registry.js";
 
 const builtinPacks: readonly ProductPack[] = [codexProductPack, claudeCodeProductPack];
@@ -52,7 +52,7 @@ export function findProductPack(productId: string): ProductPack {
 }
 
 export function defaultSessionsRoots(): Record<string, string> {
-  return Object.fromEntries(importPacks(productPacks).map((pack) => [pack.manifest.productId, packSessions(pack).defaultRoot]));
+  return Object.fromEntries(importPacks(productPacks).map((pack) => [pack.manifest.productId, packHistory(pack).defaultRoot]));
 }
 
 export { PACK_API_MAJOR } from "./contract.js";

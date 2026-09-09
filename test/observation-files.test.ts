@@ -56,7 +56,7 @@ test("frozen observation files carry Host refs and truncate oversized bodies", a
   const index = await readFile(join(root, "INDEX.md"), "utf8");
   assert.match(index, /Frozen observations/);
   const catalog = recoveryEvidenceCatalog(huge);
-  const history = JSON.parse(await readFile(join(root, "historical-events", `${catalog[2]!.ref.replace(/^event:/, "")}.json`), "utf8")) as {
+  const history = JSON.parse(await readFile(join(root, "events", "historical", `${catalog[2]!.ref.replace(/^event:/, "")}.json`), "utf8")) as {
     ref: string;
     truncated: boolean;
     observation: { excerpt?: string };
@@ -92,12 +92,11 @@ test("observation files redact assistant and nested text when model text is disa
       checksum: "f".repeat(64),
     }],
   });
-  const catalog = recoveryEvidenceCatalog(frozen);
-  const assistant = JSON.parse(await readFile(join(root, "transcript", `${catalog[1]!.ref.replace(/^event:/, "")}.json`), "utf8")) as {
+  const assistant = JSON.parse(await readFile(join(root, "transcript", "message-2.json"), "utf8")) as {
     observation: { text: string };
   };
   assert.equal(assistant.observation.text, "[REDACTED]");
-  const run = JSON.parse(await readFile(join(root, "run-events", "evt-2.json"), "utf8")) as {
+  const run = JSON.parse(await readFile(join(root, "events", "run", "evt-2.json"), "utf8")) as {
     observation: { payload: { item: { text: string }; nested: { text: string }[]; keep: string } };
   };
   assert.equal(run.observation.payload.item.text, "[REDACTED]");
@@ -130,8 +129,8 @@ test("user-inputs index lists historical users and controller sends in order", a
   const index = await readFile(join(root, "user-inputs", "INDEX.tsv"), "utf8");
   const lines = index.trim().split("\n");
   assert.equal(lines[0], "turn_id\torder\trole\tsource\tpath\tattachments\trelated");
-  assert.match(lines[1] ?? "", /^message-1\t1\tuser\thistorical_user\thistory\/transcript\/message-1\.txt\tmissing\thistory\/transcript\/message-2\.txt$/);
-  assert.match(lines[2] ?? "", /^message-3\t2\tuser\thistorical_user\thistory\/transcript\/message-3\.txt\tmissing\tmissing$/);
+  assert.match(lines[1] ?? "", /^message-1\t1\tuser\thistorical_user\tobservations\/user-inputs\/message-1\.txt\tmissing\tobservations\/transcript\/message-2\.json$/);
+  assert.match(lines[2] ?? "", /^message-3\t2\tuser\thistorical_user\tobservations\/user-inputs\/message-3\.txt\tmissing\tmissing$/);
   assert.match(lines[3] ?? "", /^controller-send-ctrl-1\t3\tuser\tcontroller\tobservations\/user-inputs\/controller-send-ctrl-1\.txt\tmissing\tmissing$/);
   assert.equal(await readFile(join(root, "user-inputs", "controller-send-ctrl-1.txt"), "utf8"), "Please verify.\n");
 });
@@ -151,5 +150,33 @@ test("user-inputs remain readable when assistant text is redacted", async (t) =>
   });
   const index = await readFile(join(root, "user-inputs", "INDEX.tsv"), "utf8");
   assert.match(index, /historical_user/);
-  assert.match(index, /history\/transcript\/message-1\.txt/);
+  assert.match(index, /observations\/user-inputs\/message-1\.txt/);
+});
+
+test("observation rematerialization is stable and omits original session paths and secrets", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-observations-stable-"));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const frozen = taskCase({
+    source: { productId: "codex", sessionId: "session", sourcePath: "C:/Users/demo/.codex/sessions/secret.jsonl" },
+  });
+  const owned = [
+    { relativePath: "notes/readme.txt", text: "owned note" },
+    { relativePath: "auth.json", text: "secret-token" },
+    { relativePath: "raw/missing.bin", missing: true },
+  ];
+  await writeFrozenObservationTree({ root, taskCase: frozen, ownedFiles: owned });
+  const first = await readFile(join(root, "INDEX.md"), "utf8");
+  const session = JSON.parse(await readFile(join(root, "session.json"), "utf8")) as {
+    source: { productId: string; sessionId: string; sourcePath?: string };
+    missing: string[];
+  };
+  assert.equal(session.source.productId, "codex");
+  assert.equal(session.source.sessionId, "session");
+  assert.equal(session.source.sourcePath, undefined);
+  assert.ok(session.missing.includes("auth.json"));
+  const refs = JSON.parse(await readFile(join(root, "source-refs", "session.json"), "utf8")) as { sourcePath: string };
+  assert.equal(refs.sourcePath, "omitted");
+  await writeFrozenObservationTree({ root, taskCase: frozen, ownedFiles: owned });
+  assert.equal(await readFile(join(root, "INDEX.md"), "utf8"), first);
+  assert.equal(await readFile(join(root, "files", "notes", "readme.txt"), "utf8"), "owned note");
 });

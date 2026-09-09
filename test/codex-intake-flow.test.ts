@@ -85,10 +85,14 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
       limitations: [],
     }),
     recover: async () => ({
+      experimentId: "cancel-fixture",
+      experimentRoot: "unused",
       baseline: { match: "recovered", warnings: [] },
-      provider: { discardRecovery: async () => {} },
+      recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
     }),
+    acceptRecovery: async () => ({ match: "recovered", warnings: [] }),
+    discardRecovery: async () => {},
     start: async () => {
       await new Promise<void>((resolve) => {
         releaseStart = resolve;
@@ -191,10 +195,14 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
       limitations: [],
     }),
     recover: async () => ({
+      experimentId: "cancel-fixture",
+      experimentRoot: "unused",
       baseline: { match: "recovered", warnings: [] },
-      provider: { discardRecovery: async () => {} },
+      recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
     }),
+    acceptRecovery: async () => ({ match: "recovered", warnings: [] }),
+    discardRecovery: async () => {},
     start: async (input: {
       sourceRoot: string;
       onEvent: (event: unknown) => void;

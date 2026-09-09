@@ -7,7 +7,7 @@ import type {
   ImportedSession,
   SessionInspection,
   SessionRef,
-  SessionSourceAdapter,
+  ProductHistoryReader,
   SessionSummary,
 } from '../contract.js';
 import { peekJsonlSessionId } from './jsonl-io.js';
@@ -162,7 +162,7 @@ export function evidenceRank(session: Pick<SessionSummary, 'availability' | 'rec
 }
 
 export async function attemptSessionRecovery(
-  adapter: Pick<SessionSourceAdapter, 'inspect' | 'import'>,
+  adapter: Pick<ProductHistoryReader, 'inspect' | 'import'>,
   session: Pick<SessionSummary, 'productId' | 'sessionId' | 'sourcePath' | 'availability' | 'evidenceLevel' | 'recoveryReadiness'>,
   sourcePath: string,
 ): Promise<SessionRecoveryAttempt> {
@@ -261,7 +261,7 @@ export async function attemptSessionRecovery(
 }
 
 export async function importVerifiedSession(
-  adapter: Pick<SessionSourceAdapter, 'inspect' | 'import'>,
+  adapter: Pick<ProductHistoryReader, 'inspect' | 'import'>,
   session: Pick<SessionSummary, 'productId' | 'sessionId' | 'sourcePath' | 'availability' | 'evidenceLevel' | 'recoveryReadiness'>,
   sourcePath: string,
 ): Promise<ImportedSession> {
@@ -271,7 +271,7 @@ export async function importVerifiedSession(
 }
 
 async function importAfterInspection(
-  adapter: Pick<SessionSourceAdapter, 'import'>,
+  adapter: Pick<ProductHistoryReader, 'import'>,
   listedId: string,
   ref: SessionRef,
   inspected: SessionInspection,

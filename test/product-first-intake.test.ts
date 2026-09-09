@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { Component, TUI } from '@earendil-works/pi-tui';
-import type { ProductPack, SessionDiscoveryQuery, SessionSourceAdapter, SessionSummary } from '../src/products/contract.js';
+import type { ProductPack, SessionDiscoveryQuery, ProductHistoryReader, SessionSummary } from '../src/products/contract.js';
 import { IntakeTui } from '../src/tui/intake-app.js';
 import { fakeProductPack } from './fixtures/fake-pack/pack.js';
 
@@ -27,8 +27,8 @@ function pack(productId: string, displayName: string, discover: () => Promise<re
     ...fakeProductPack,
     manifest: { ...fakeProductPack.manifest, productId, displayName, packVersion: 'test' },
     checkAuth: async () => ({ configured: false }),
-    sessions: {
-      ...fakeProductPack.sessions,
+    history: {
+      ...fakeProductPack.history,
       defaultRoot: '.',
       discover: async () => {
         const items = await discover();
@@ -44,16 +44,16 @@ function sessionPack(input: {
   productId: string;
   displayName: string;
   defaultRoot: string;
-  discover: (query?: SessionDiscoveryQuery) => ReturnType<SessionSourceAdapter['discover']>;
-  importSession?: SessionSourceAdapter['import'];
-  inspectSession?: SessionSourceAdapter['inspect'];
+  discover: (query?: SessionDiscoveryQuery) => ReturnType<ProductHistoryReader['discover']>;
+  importSession?: ProductHistoryReader['import'];
+  inspectSession?: ProductHistoryReader['inspect'];
 }): ProductPack {
   return {
     ...fakeProductPack,
     manifest: { ...fakeProductPack.manifest, productId: input.productId, displayName: input.displayName, packVersion: 'test' },
     checkAuth: async () => ({ configured: false }),
-    sessions: {
-      ...fakeProductPack.sessions,
+    history: {
+      ...fakeProductPack.history,
       defaultRoot: input.defaultRoot,
       discover: input.discover,
       inspect: input.inspectSession ?? (async () => { throw new Error('not used'); }),

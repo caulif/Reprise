@@ -5,7 +5,7 @@ import { sha256 } from '../../core/identity.js';
 import type { CandidateSpec } from '../../core/schema.js';
 import type { ProductAuthStatus, CompleteProductPack, RecoveryPlaybookDescriptor } from '../contract.js';
 import { claudeActivityTranslator } from './activity.js';
-import { ClaudeCodeRuntimePort } from './runtime-port.js';
+import { ClaudeCodeProductRuntime } from './runtime-port.js';
 import { claudeSessionAdapter } from './sessions.js';
 
 const PLAYBOOK_VERSION = 'claude-code-recovery/v1';
@@ -16,7 +16,7 @@ function claudeRecoveryPlaybook(): RecoveryPlaybookDescriptor {
   return { version: PLAYBOOK_VERSION, sha256: sha256(text), text };
 }
 
-export async function checkClaudeAuth(port?: ClaudeCodeRuntimePort): Promise<ProductAuthStatus> {
+export async function checkClaudeAuth(port?: ClaudeCodeProductRuntime): Promise<ProductAuthStatus> {
   if (port) {
     try {
       const models = await port.listModels();
@@ -30,7 +30,7 @@ export async function checkClaudeAuth(port?: ClaudeCodeRuntimePort): Promise<Pro
   if (process.env.ANTHROPIC_API_KEY) return { configured: true, provider: 'claude-code', source: 'ANTHROPIC_API_KEY' };
   if (!port) {
     try {
-      const models = await new ClaudeCodeRuntimePort().listModels();
+      const models = await new ClaudeCodeProductRuntime().listModels();
       if (models.length) return { configured: true, provider: 'claude-code', source: 'initialize', detail: 'catalog-listed' };
     } catch {
       /* initialize is a runtime fact; absence of a catalog is not a credential leak. */
@@ -40,9 +40,9 @@ export async function checkClaudeAuth(port?: ClaudeCodeRuntimePort): Promise<Pro
 }
 
 export const claudeCodeProductPack: CompleteProductPack = {
-  runtime: new ClaudeCodeRuntimePort(),
-  sessions: claudeSessionAdapter,
-  activity: claudeActivityTranslator,
+  runtime: new ClaudeCodeProductRuntime(),
+  history: claudeSessionAdapter,
+  projection: claudeActivityTranslator,
   recoveryPlaybook: claudeRecoveryPlaybook,
   checkAuth: checkClaudeAuth,
   defaultCandidate: () => DEFAULT_CANDIDATE,
@@ -51,7 +51,7 @@ export const claudeCodeProductPack: CompleteProductPack = {
     displayName: 'Claude Code',
     packVersion: '0.1.0',
     schemaVersion: 1,
-    apiMajor: 1,
+    apiMajor: 2,
     capabilities: ['import', 'runtime'],
     sessionSchemaVersions: ['claude-code-session-jsonl/v1'],
   },

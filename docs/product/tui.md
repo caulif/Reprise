@@ -22,7 +22,7 @@
 Harness 中存在两类不同用途的模型：
 
 - **内部 Agent 模型**：Recovery、Controller 和 Comparison 通过 Pi provider 使用。首次使用时配置一个默认模型，之后可以分别覆盖。
-- **候选模型**：由目标 Agent Runtime 实际执行历史任务的被测模型。恢复成功后 TUI 先选已注册 Product Pack，再选该 Pack `RuntimePort.listCatalog()` 给出的模型。列表不是 Pi 内部模型。
+- **候选模型**：由目标 Agent Runtime 实际执行历史任务的被测模型。恢复成功后 TUI 先选已注册 Product Pack，再选该 Pack `ProductRuntime.listCatalog()` 给出的模型。列表不是 Pi 内部模型。
 
 候选模型不来自 Pi。确认页只复述已选 `CandidateSpec` 的产品与模型，以及恢复终态一词；解析名与请求名不同时附在候选行。无法可靠解析时显示 `unknown`，不伪造模型事实。
 

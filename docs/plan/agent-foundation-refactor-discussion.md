@@ -33,7 +33,6 @@ AgentHost 是 Session 工厂和通用边界，负责：
 - 创建 Session；
 - 注入 Provider Adapter；
 - 校验创建参数；
-- 提供一次性调用能力；
 - 传递模型能力和运行策略。
 
 ### AgentSession
@@ -71,7 +70,7 @@ type StructuredRequest<T> = {
 };
 ```
 
-两种请求共享工具、上下文压缩、取消、审计和错误传播。Freeform 返回自然文本或可见结果，不解析业务 JSON、不触发 Schema repair；Structured 才解码、校验和执行有界 repair。
+两种请求共享工具、上下文压缩、取消、审计和错误传播。Freeform 不解析业务 JSON、不触发 Schema repair；完成结果可带可选 `text` 作为可见诊断，写入审计，业务 Agent 不得依赖。Structured 才解码、校验和执行有界 repair。
 
 ## 4. 工具边界
 

@@ -73,6 +73,22 @@ export {
   RunRecordSchema,
   type RunRecord,
 } from "./schemas/run.js";
+export {
+  CandidateLaunchContextSchema,
+  type CandidateLaunchContext,
+  CandidateSessionHandleSchema,
+  type CandidateSessionHandle,
+  CandidateRuntimeEventSchema,
+  CandidateRuntimeEventTypeSchema,
+  type CandidateRuntimeEvent,
+  type CandidateRuntimeEventType,
+  UserVisibleTurnSchema,
+  type UserVisibleTurn,
+} from "./schemas/candidate.js";
+export {
+  ObservationSessionManifestSchema,
+  type ObservationSessionManifest,
+} from "./schemas/observations.js";
 export const ControllerRequestedPayloadSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   toolSetVersion: Type.Literal(1),

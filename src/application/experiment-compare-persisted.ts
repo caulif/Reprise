@@ -14,7 +14,7 @@ import type { ExperimentPreflight } from "./experiment-preflight.js";
 import type { ComparisonAgentPort } from "../agents/comparison-agent.js";
 import type { ControllerPort } from "../agents/controller-agent.js";
 import type { RunPolicy } from "../core/schema.js";
-import type { RuntimePort } from "../core/runtime.js";
+import type { ProductRuntime } from "../core/runtime.js";
 
 export async function comparePersistedExperiment(input: {
   readonly dataDir: string;
@@ -147,7 +147,7 @@ function experimentInput(
   };
 }
 
-function unusedRuntime(): RuntimePort {
+function unusedRuntime(): ProductRuntime {
   const fail = async () => {
     throw new Error("Persisted comparison does not load a candidate Runtime.");
   };

@@ -18,7 +18,7 @@ import type {
   SessionInspection,
   SessionMessage,
   SessionRef,
-  SessionSourceAdapter,
+  ProductHistoryReader,
   SessionSummary,
 } from '../contract.js';
 
@@ -36,7 +36,7 @@ export function defaultClaudeSessionsRoot(configDir = process.env.CLAUDE_CONFIG_
   return join(configDir?.trim() || join(homedir(), '.claude'), 'projects');
 }
 
-export const claudeSessionAdapter: SessionSourceAdapter = {
+export const claudeSessionAdapter: ProductHistoryReader = {
   get defaultRoot() { return defaultClaudeSessionsRoot(); },
   discover(query?: SessionDiscoveryQuery) {
     return discoverClaudeSessionPage({ ...query, root: query?.root ?? defaultClaudeSessionsRoot() });

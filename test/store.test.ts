@@ -306,7 +306,7 @@ test('store serializes concurrent appends for a replayable event log', async () 
     const store = await ExperimentStore.open(root, 'experiment-1');
     await store.acquireWriter();
     const events = await Promise.all(Array.from({ length: 12 }, (_, index) => store.append({
-      type: 'codex.item_completed',
+      type: 'runtime.visible_output',
       operationId: `operation-${index}`,
       payload: { output: 'x'.repeat(32_000), index },
     })));

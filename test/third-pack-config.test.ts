@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { listCandidateModels, listProducts, listSourceSessions } from "../src/application/experiment-queries.js";
 import { findProductPack, loadAndActivateProductPacks, resetProductPacks } from "../src/products/index.js";
-import { packActivity, packRuntime, packSessions } from "../src/products/pack-access.js";
+import { packProjection, packRuntime, packHistory } from "../src/products/pack-access.js";
 import { IntakeTui } from "../src/tui/intake-app.js";
 import { runCli } from "../src/cli/main.js";
 
@@ -31,7 +31,7 @@ test("third pack loads from package plus plugins.json without host injection", a
   const diagnostics = await loadAndActivateProductPacks(dataDir);
   assert.deepEqual(diagnostics, []);
   const pack = findProductPack("fake");
-  const sessions = packSessions(pack);
+  const sessions = packHistory(pack);
   const discovered = await sessions.discover();
   assert.ok(discovered.items.some((item) => item.sessionId === "fake-session-1"));
   const session = discovered.items[0];
@@ -58,9 +58,9 @@ test("third pack loads from package plus plugins.json without host injection", a
     payload: { text: "Created ping.txt." },
     checksum: "a".repeat(64),
   };
-  const activities = packActivity(pack).translate(envelope);
+  const activities = packProjection(pack).translate(envelope);
   assert.equal(activities[0]?.activity.kind, "message");
-  const facts = packActivity(pack).inspectRunFacts([envelope]);
+  const facts = packProjection(pack).inspectRunFacts([envelope]);
   assert.equal(facts.finalMessage, "Created ping.txt.");
   const listed = listProducts().products.find((item) => item.productId === "fake");
   assert.deepEqual(listed?.roles, ["source", "candidate"]);

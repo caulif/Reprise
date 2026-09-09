@@ -1,6 +1,6 @@
 import { SAFE_ID } from '../core/identity.js';
 import { assertTransition } from '../core/state-machine.js';
-import type { ArtifactRef, CandidateRunState, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
+import type { ArtifactRef, CandidateRunState, CandidateSessionHandle, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
 import type { DeliveryReceipt, MessageIdentity, RuntimeFailureKind, RuntimeStopReason, TargetRunner, TurnSettlement, UserMessage } from '../core/runtime.js';
 
 const deliveryValues = new Set(['accepted', 'rejected', 'unknown']);
@@ -52,6 +52,7 @@ export class CandidateRun {
   #firstSequence: number | undefined;
   #finishing: Promise<CandidateRunState> | undefined;
   #messages = new Map<string, MessageCall>();
+  #handle: CandidateSessionHandle | undefined;
 
   constructor(input: { runner: TargetRunner; policy: CandidateRunPolicy; release?: () => Promise<Cleanup>; persistence?: CandidateRunPersistence }) {
     assertPolicy(input.policy);
@@ -67,6 +68,10 @@ export class CandidateRun {
   }
 
   states(): readonly CandidateRunState[] { return this.#states; }
+  session(): CandidateSessionHandle {
+    if (!this.#handle) throw new Error('CandidateRun has not bound a session.');
+    return this.#handle;
+  }
   result(): { outcome: RunOutcome; record?: RunRecord } {
     if (!this.#outcome) throw new Error('CandidateRun has not finished.');
     return { outcome: this.#outcome, ...(this.#record ? { record: this.#record } : {}) };
@@ -122,6 +127,7 @@ export class CandidateRun {
 
   async #start(message: UserMessage, identity: MessageIdentity): Promise<CandidateRunState> {
     this.#ensure('created');
+    this.#assertIdentity(identity);
     if (this.#persistence) this.#track(await this.#persistence.journal.commitAttempt(this.#persistence.attempt));
     await this.#move('preparing');
     if (this.#persistence && !this.#persistence.manifest) return this.#finish('blocked.manifest_unavailable', 'failed');
@@ -130,7 +136,11 @@ export class CandidateRun {
     await this.#append('input.submitted', messageFact(message, identity), `input-${identity.clientMessageId}`);
     if (this.#finishing) return this.#finishing;
     try {
-      return await this.#advance(await this.#runner.start(message, identity), identity);
+      const receipt = await this.#runner.start(message, identity);
+      this.#handle = this.#runner.session();
+      this.#assertHandle();
+      await this.#append('candidate.session_bound', this.#handle, 'session-bound');
+      return await this.#advance(receipt, identity);
     } catch (error) {
       return this.#finish('failed.runtime', 'failed', error);
     }
@@ -138,6 +148,7 @@ export class CandidateRun {
 
   async #submit(message: UserMessage, identity: MessageIdentity): Promise<CandidateRunState> {
     this.#ensure('awaiting_controller');
+    this.#assertIdentity(identity);
     if (identity.turnIndex !== this.#turns) throw new Error('Message identity turn index does not match CandidateRun.');
     await this.#move('awaiting_target');
     await this.#append('input.submitted', messageFact(message, identity), `input-${identity.clientMessageId}`);
@@ -244,6 +255,7 @@ export class CandidateRun {
         }),
       ]);
       await appendCleanup('runtime.stop_completed', { reason }, 'runtime-stop');
+      await this.#closeRuntime();
       return { status: 'complete', remainingResourceIds: [] };
     } catch (error) {
       const remainingResourceIds = timedOut ? ['runtime'] : remainingResources(error);
@@ -253,9 +265,28 @@ export class CandidateRun {
         timedOut ? { reason: 'cleanup_timeout', remainingResourceIds } : { ...errorFact(error), remainingResourceIds },
         'runtime-stop-failed',
       );
+      if (!timedOut) await this.#closeRuntime();
       return { status, remainingResourceIds };
     } finally {
       if (timer) clearTimeout(timer);
+    }
+  }
+
+  async #closeRuntime(): Promise<void> {
+    try {
+      await this.#runner.close();
+    } catch {
+      // stop() already recorded runtime failure; close is best-effort session teardown.
+    }
+  }
+
+  #assertHandle(): void {
+    if (!this.#handle?.sessionId) throw new Error('TargetRunner.session() did not return a sessionId.');
+  }
+
+  #assertIdentity(identity: MessageIdentity): void {
+    if (this.#persistence && identity.runId !== this.#persistence.attempt.runId) {
+      throw new Error('Message identity runId does not match CandidateRun.');
     }
   }
 
@@ -274,7 +305,7 @@ export class CandidateRun {
       ]);
     } finally {
       if (timer) clearTimeout(timer);
-      if (timedOut) this.#runner.cancelWait?.('Harness stopped waiting for this turn.');
+      if (timedOut) this.#runner.cancelWait('Harness stopped waiting for this turn.');
     }
   }
 
@@ -336,6 +367,7 @@ export class CandidateRun {
       },
       artifactRefs: [...this.#artifactRefs],
       warnings: [...this.#warnings],
+      ...(this.#handle ? { session: this.#handle } : {}),
     };
   }
 

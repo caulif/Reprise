@@ -2,14 +2,16 @@ import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import type { RunInspection } from "./comparison.js";
-import type { EventEnvelope, RunRecord } from "../core/schema.js";
+import { Value } from "@sinclair/typebox/value";
+import { UserVisibleTurnSchema, type EventEnvelope, type RunRecord, type UserVisibleTurn } from "../core/schema.js";
+import type { TurnSettlement } from "../core/runtime.js";
 import {
   LocalWorkspaceProvider,
   type PreparedEnvironmentRef,
 } from "../environment/local-workspace-provider.js";
 import type { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { findProductPack } from "../products/index.js";
-import { packActivity } from "../products/pack-access.js";
+import { packProjection } from "../products/pack-access.js";
 import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./replay-conditions.js";
 import { recordValue, strings, collectedTokenFacts, totalTokenCount } from "./experiment-helpers.js";
 
@@ -22,6 +24,7 @@ export type ControllerObservation = RunInspection & {
   turnVisibleText?: string;
   /** User-visible confirmation or approval request from the latest settled turn. */
   turnPrompt?: string;
+  userView?: UserVisibleTurn;
 };
 
 export type WorkspaceInspection = {
@@ -48,7 +51,7 @@ export async function inspectRun(
   if (!runId)
     throw new Error("Run inspection requires a RunRecord or active workspace.");
   const events = store.events(runId);
-  const translator = packActivity(findProductPack(productId));
+  const translator = packProjection(findProductPack(productId));
   const facts = translator.inspectRunFacts(events);
   const finalMessage = facts.finalMessage;
   const commands = [...facts.commands];
@@ -75,7 +78,6 @@ export async function inspectRun(
         events,
         settledTurns: settled.length,
         changedPaths: workspaceFacts.changedPaths,
-        productId,
         ...(replay.lang ? { lang: replay.lang } : {}),
       })
     : undefined;
@@ -99,6 +101,7 @@ export async function inspectRun(
     : undefined;
   const status =
     typeof settlementStatus === "string" ? settlementStatus : "unknown";
+  const userView = projectLatestUserView(translator, settled.length, latestSettlement, turnEvents, allowModelText);
   const currentSummary = [
     `Latest target settlement: ${status}.`,
     `Observed commands: ${commands.length}; changed paths: ${inspection.changedPaths.length}; rejected approvals: ${rejectedApprovals}.`,
@@ -116,6 +119,7 @@ export async function inspectRun(
     settlementStatus: status,
     ...(turnVisibleText ? { turnVisibleText } : {}),
     ...(turnPrompt ? { turnPrompt } : {}),
+    ...(userView ? { userView } : {}),
   };
 }
 
@@ -129,9 +133,57 @@ export function eventsForLatestSettledTurn(events: readonly EventEnvelope[]): Ev
   return events.filter((event) => event.sequence > start && event.sequence <= last.sequence);
 }
 
+function projectLatestUserView(
+  translator: ReturnType<typeof packProjection>,
+  turnIndex: number,
+  latestSettlement: EventEnvelope | undefined,
+  turnEvents: readonly EventEnvelope[],
+  allowModelText: boolean,
+): UserVisibleTurn | undefined {
+  if (!latestSettlement || turnIndex < 1) return undefined;
+  const payload = recordValue(latestSettlement.payload);
+  const settlement: TurnSettlement = {
+    turnId: typeof payload.turnId === "string" ? payload.turnId : "unknown",
+    status: payload.status === "completed" || payload.status === "failed" || payload.status === "waiting_input" || payload.status === "aborted"
+      ? payload.status
+      : "failed",
+    confidence: payload.confidence === "native" || payload.confidence === "composite" || payload.confidence === "heuristic"
+      ? payload.confidence
+      : "heuristic",
+    observedAt: typeof payload.observedAt === "string" ? payload.observedAt : latestSettlement.occurredAt,
+    rawRefs: Array.isArray(payload.rawRefs) ? payload.rawRefs : [],
+  };
+  try {
+    return translator.projectTurn({
+      turnIndex,
+      settlement,
+      events: turnEvents,
+      allowModelText,
+    });
+  } catch {
+    return { turnIndex, status: "unavailable", observedAt: settlement.observedAt };
+  }
+}
+
+export async function persistUserVisibleTurn(
+  store: ExperimentStore,
+  runId: string,
+  userView: UserVisibleTurn | undefined,
+): Promise<void> {
+  if (!userView) return;
+  if (!Value.Check(UserVisibleTurnSchema, userView)) {
+    throw new Error("UserVisibleTurn failed schema check.");
+  }
+  await store.append({
+    type: "candidate.user_view_persisted",
+    runId,
+    payload: userView,
+  });
+}
+
 function userVisiblePrompt(
   events: readonly EventEnvelope[],
-  translator: ReturnType<typeof packActivity>,
+  translator: ReturnType<typeof packProjection>,
 ): string | undefined {
   const fromPublic = events.flatMap((event) => {
     if (event.type !== "runtime.public_activity") return [];

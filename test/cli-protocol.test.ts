@@ -186,7 +186,7 @@ test("headless run timeout aborts the handle cancel path", async (t) => {
         activity: { operationId: "op-run-timeout", experimentId: "experiment-timeout", runId: "run-timeout" },
         cancel: async () => {
           cancelled = true;
-          settle({ record: { state: "cancelled", attempt: { experimentId: "experiment-timeout", runId: "run-timeout" }, outcome: { termination: { kind: "cancelled" } } }, comparison: { result: { status: "skipped" } } });
+          settle({ record: { state: "cancelled", attempt: { experimentId: "experiment-timeout", runId: "run-timeout", candidate: { candidateId: "codex-fixture", productId: "codex", requestedModel: "fixture" } }, outcome: { termination: { kind: "cancelled" }, cleanup: { status: "complete" } } }, comparison: { result: { status: "skipped" } } });
         },
         result,
       };

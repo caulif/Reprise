@@ -147,7 +147,7 @@ interface EnvironmentClue {
 }
 ```
 
-`initialInputId` 指向冻结时选定的可执行用户任务句（跳过产品注入的指令块），只用于确定恢复时点，不是可配置的任务切片边界。SessionSourceAdapter 只提取和归一化线索，不声称线索已经验证。未知私有事件采用 ignore-and-record；已知事件缺少关键字段时输出 warning 并保留 raw artifact。
+`initialInputId` 指向冻结时选定的可执行用户任务句（跳过产品注入的指令块），只用于确定恢复时点，不是可配置的任务切片边界。ProductHistoryReader 只提取和归一化线索，不声称线索已经验证。未知私有事件采用 ignore-and-record；已知事件缺少关键字段时输出 warning 并保留 raw artifact。
 
 ### 5.2 资源、状态与证据
 
@@ -349,7 +349,7 @@ Playbook 用于说明：
 - 推荐的调查与恢复顺序，以及数据截断、脱敏和版本差异；
 - 哪些线索只能作为推断，不能作为已验证事实。
 
-SessionSourceAdapter 负责确定性发现本机实际路径、解析已知格式并建立受保护引用；Playbook 负责告诉 Agent 这些证据意味着什么、如何组合使用。稳定的解析规则不得只写在 Playbook 中。Playbook 不能扩大注册工具、网络、路径或凭据权限；找不到匹配版本可以继续探索性恢复，但必须把知识不匹配计入 fidelity 原因。
+ProductHistoryReader 负责确定性发现本机实际路径、解析已知格式并建立受保护引用；Playbook 负责告诉 Agent 这些证据意味着什么、如何组合使用。稳定的解析规则不得只写在 Playbook 中。Playbook 不能扩大注册工具、网络、路径或凭据权限；找不到匹配版本可以继续探索性恢复，但必须把知识不匹配计入 fidelity 原因。
 
 ### 7.3 Agent 能做什么
 

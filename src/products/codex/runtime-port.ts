@@ -5,31 +5,32 @@ import { isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { isRecord, record, text } from '../../core/json.js';
 import { SAFE_ID } from '../../core/identity.js';
-import type {
-  AvailableRuntime,
-  DeliveryReceipt,
-  MessageIdentity,
-  PreparedRuntimeEnvironment,
-  ResolvedRuntime,
-  RuntimeAvailability,
-  RuntimeCapabilities,
-  RuntimePort,
-  RuntimeRequest,
-  RuntimeStopReason,
-  TargetEvent,
-  TargetEventSink,
-  TargetRunner,
-  TargetStatus,
-  TurnSettlement,
-  UserMessage,
+import {
+  runtimeTargetEvent,
+  type AvailableRuntime,
+  type DeliveryReceipt,
+  type MessageIdentity,
+  type PreparedRuntimeEnvironment,
+  type ResolvedRuntime,
+  type RuntimeAvailability,
+  type RuntimeCapabilities,
+  type ProductRuntime,
+  type RuntimeRequest,
+  type RuntimeStopReason,
+  type TargetEventSink,
+  type TargetRunner,
+  type TargetStatus,
+  type TurnSettlement,
+  type UserMessage,
 } from '../../core/runtime.js';
+import type { CandidateLaunchContext, CandidateSessionHandle } from '../../core/schema.js';
 import { DEFAULT_RUNTIME_RPC_TIMEOUT_MS, RUNTIME_PROCESS_CLOSE_TIMEOUT_MS, RUNTIME_PROCESS_STOP_GRACE_MS, discoverExecutable, forceKill, positiveTimeout, settlesWithin, spawnRuntimeProcess, summarizeDiagnostic } from '../shared/process.js';
 import {
   classifyCodexTurnFailure,
   diagnosticMessage,
   parseReconnectAttempt,
-  redactNotificationParams,
 } from './turn-settlement.js';
+import { codexNotificationEvent } from './runtime-events.js';
 
 export type CodexReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
@@ -315,6 +316,16 @@ class CodexTargetRunner implements TargetRunner {
     this.#client.setRequestTimeout(milliseconds);
   }
 
+  session(): CandidateSessionHandle {
+    return {
+      sessionId: this.#thread?.id ?? 'unstarted',
+      productId: this.#runtime.productId,
+      requestedModel: this.#runtime.requestedModel,
+      resolvedModel: this.#runtime.resolvedModel,
+      workspaceRoot: this.#environment.root,
+    };
+  }
+
   async start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt> {
     if (this.#thread) throw new Error('Codex target has already started.');
     await this.#client.start();
@@ -327,7 +338,7 @@ class CodexTargetRunner implements TargetRunner {
       threadSource: 'reprise',
     });
     this.#thread = readStartedThread(result);
-    await this.#sink.append(event('codex.thread_started', {
+    await this.#sink.append(runtimeTargetEvent('session_started', {
       threadId: this.#thread.id,
       model: this.#thread.model,
       requestedModel: this.#runtime.requestedModel,
@@ -384,18 +395,18 @@ class CodexTargetRunner implements TargetRunner {
     this.#failSettlement(error);
     if (this.#processExitRecorded) return;
     this.#processExitRecorded = true;
-    void this.#sink.append(event('codex.process_exited', { message: error.message })).catch((appendError: unknown) => {
+    void this.#sink.append(runtimeTargetEvent('runtime_failed', { message: error.message })).catch((appendError: unknown) => {
       this.#settlementFailure ??= new CodexRuntimeUnavailableError(`Failed to record Codex process exit: ${errorMessage(appendError)}`);
     });
   }
 
   async stop(reason: RuntimeStopReason): Promise<void> {
     const thread = this.#thread;
-    if (thread) await this.#sink.append(event('codex.stop_requested', { reason, threadId: thread.id, turnId: this.#activeTurn ?? null }));
+    if (thread) await this.#sink.append(runtimeTargetEvent('session_stopped', { reason, threadId: thread.id, turnId: this.#activeTurn ?? null }));
     try {
       if (this.#status !== 'stopped' && thread && this.#activeTurn) await this.#client.request('turn/interrupt', { threadId: thread.id, turnId: this.#activeTurn });
     } catch (error) {
-      await this.#sink.append(event('codex.stop_interrupt_failed', { message: errorMessage(error), threadId: thread?.id ?? null, turnId: this.#activeTurn ?? null }));
+      await this.#sink.append(runtimeTargetEvent('runtime_failed', { message: errorMessage(error), threadId: thread?.id ?? null, turnId: this.#activeTurn ?? null }));
     }
     let closeError: unknown;
     try {
@@ -409,6 +420,11 @@ class CodexTargetRunner implements TargetRunner {
       if (closeError instanceof Error) throw closeError;
       throw new Error(errorMessage(closeError));
     }
+  }
+
+  async close(): Promise<void> {
+    if (this.#status !== 'stopped') await this.stop('shutdown');
+    await this.#sink.append(runtimeTargetEvent('session_closed', { sessionId: this.#thread?.id ?? this.session().sessionId }));
   }
 
   async #send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt> {
@@ -429,7 +445,7 @@ class CodexTargetRunner implements TargetRunner {
       this.#earlySettlements.delete(turn.id);
       await this.#settleTurn(earlySettlement);
     }
-    await this.#sink.append(event('codex.turn_admitted', { threadId: thread.id, turnId: turn.id, messageId: message.id, clientMessageId: identity.clientMessageId, model: thread.model, effort: this.#effort }));
+    await this.#sink.append(runtimeTargetEvent('delivery_observed', { threadId: thread.id, turnId: turn.id, messageId: message.id, clientMessageId: identity.clientMessageId, model: thread.model, effort: this.#effort }));
     return { delivery: 'accepted', evidence: 'rpc_response', turnId: turn.id, messageId: message.id, acceptedAt: new Date().toISOString() };
   }
 
@@ -441,11 +457,12 @@ class CodexTargetRunner implements TargetRunner {
   async #onNotification(method: string, params: unknown): Promise<void> {
     if (method === 'model/rerouted') {
       const payload = record(params);
-      await this.#sink.append(event('codex.model_rerouted', { fromModel: text(payload.fromModel), toModel: text(payload.toModel), reason: payload.reason ?? 'unknown' }));
+      await this.#sink.append(runtimeTargetEvent('visible_output', { kind: 'model_reroute', fromModel: text(payload.fromModel), toModel: text(payload.toModel), reason: payload.reason ?? 'unknown' }));
       return;
     }
     this.#noteReconnect(method, params);
-    await this.#sink.append(event(`codex.${method.replaceAll('/', '_')}`, redactNotificationParams(method, params)));
+    const mapped = codexNotificationEvent(method, params);
+    if (mapped) await this.#sink.append(mapped);
     if (method !== 'turn/completed') return;
     const payload = record(params);
     const turn = record(payload.turn);
@@ -464,7 +481,7 @@ class CodexTargetRunner implements TargetRunner {
     const status = codexSettlementStatus(text(turn.status));
     if (!turnId || !status) {
       const reported = text(turn.status) ?? null;
-      await this.#sink.append(event('codex.protocol_error', { message: 'turn/completed lacked a recognized turn id or status.', turnId: turnId ?? null, status: reported }));
+      await this.#sink.append(runtimeTargetEvent('runtime_failed', { message: 'turn/completed lacked a recognized turn id or status.', turnId: turnId ?? null, status: reported }));
       // Failing fast beats waiting for the turn budget: an unmapped status is a protocol gap, not a slow turn.
       this.#failSettlement(new CodexRuntimeUnavailableError(`Codex app-server reported an unrecognized turn settlement (${reported ?? 'missing status'}).`));
       return;
@@ -512,7 +529,7 @@ export function clearCodexCatalogCache(): void {
   catalogCache.clear();
 }
 
-export class CodexRuntimePort implements RuntimePort {
+export class CodexProductRuntime implements ProductRuntime {
   readonly id = 'codex';
   readonly #options: CodexRuntimeOptions;
 
@@ -640,9 +657,10 @@ export class CodexRuntimePort implements RuntimePort {
     };
   }
 
-  async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner> {
+  async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink, launch: CandidateLaunchContext): Promise<TargetRunner> {
     if (runtime.productId !== 'codex') throw new CodexRuntimeUnavailableError('Only Codex runtimes can create a Codex app-server runner.');
     if (!isAbsolute(environment.root)) throw new CodexRuntimeUnavailableError('Codex app-server requires an absolute isolated workspace path.');
+    if (launch.workspaceRoot !== environment.root) throw new CodexRuntimeUnavailableError('Runner workspace must match CandidateLaunchContext.workspaceRoot.');
     return new CodexTargetRunner({
       runtime, environment, sink,
       effort: this.#options.effort ?? 'medium',
@@ -705,7 +723,6 @@ function validateMessage(message: UserMessage, identity: MessageIdentity): void 
 }
 
 function isJsonRpcId(value: unknown): value is JsonRpcId { return typeof value === 'number' || typeof value === 'string'; }
-function event(type: string, payload: unknown): TargetEvent { return { type, occurredAt: new Date().toISOString(), payload }; }
 function rpcError(value: unknown): string { const detail = record(value); return typeof detail.message === 'string' ? detail.message : 'returned an invalid error response'; }
 function errorMessage(value: unknown): string { return value instanceof Error ? value.message : String(value); }
 function compactDiagnostic(value: string): string { return summarizeDiagnostic(value, 1_000); }

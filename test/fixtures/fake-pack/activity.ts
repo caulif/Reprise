@@ -1,12 +1,13 @@
 import { record, text } from '../../../src/core/json.js';
 import type { EventEnvelope } from '../../../src/core/schema.js';
-import type { TargetActivityTranslator, TargetRunFacts } from '../../../src/products/contract.js';
+import type { UserSurfaceProjection, TargetRunFacts } from '../../../src/products/contract.js';
+import { projectUserVisibleTurn } from '../../../src/products/contract.js';
 
-export const fakeActivityTranslator: TargetActivityTranslator = {
+export const fakeActivityTranslator: UserSurfaceProjection = {
   translate(event) {
     if (!event.type.startsWith('fake.')) return [];
     const payload = record(event.payload);
-    if (event.type === 'fake.message') {
+    if (event.type === 'fake.message' || event.type === 'runtime.visible_output') {
       const body = text(payload.text);
       return body ? [{ activity: { kind: 'message', text: body } }] : [];
     }
@@ -17,7 +18,7 @@ export const fakeActivityTranslator: TargetActivityTranslator = {
     return [];
   },
   inspectRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
-    const messages = events.filter((event) => event.type === 'fake.message');
+    const messages = events.filter((event) => event.type === 'fake.message' || event.type === 'runtime.visible_output');
     const finalMessage = messages.map((event) => text(record(event.payload).text)).filter((value): value is string => Boolean(value)).at(-1);
     return {
       ...(finalMessage ? { finalMessage } : {}),
@@ -25,5 +26,13 @@ export const fakeActivityTranslator: TargetActivityTranslator = {
       rejectedApprovals: 0,
       evidenceEvents: messages,
     };
+  },
+  projectTurn(input) {
+    return projectUserVisibleTurn({
+      turnIndex: input.turnIndex,
+      settlement: input.settlement,
+      facts: fakeActivityTranslator.inspectRunFacts(input.events),
+      allowModelText: input.allowModelText,
+    });
   },
 };

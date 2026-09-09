@@ -32,9 +32,9 @@ for (const pack of packs) {
     assert.equal(typeof pack.manifest.schemaVersion, 'number');
     assert.equal(pack.manifest.apiMajor, PACK_API_MAJOR);
     assert.deepEqual([...pack.manifest.capabilities], ['import', 'runtime']);
-    assert.ok(pack.sessions);
+    assert.ok(pack.history);
     assert.ok(pack.runtime);
-    assert.ok(pack.activity);
+    assert.ok(pack.projection);
     assert.ok(pack.recoveryPlaybook().text);
     assert.ok(pack.defaultCandidate().productId === pack.manifest.productId);
     assert.equal(typeof pack.runtime.listCatalog, 'function');
@@ -44,10 +44,10 @@ for (const pack of packs) {
 test('fake pack import freezes idempotently and redacts secrets', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-fake-freeze-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
-  const sessions = await fakeProductPack.sessions.discover();
+  const sessions = await fakeProductPack.history.discover();
   const session = sessions.items[0];
   assert.ok(session);
-  const imported = await fakeProductPack.sessions.import({
+  const imported = await fakeProductPack.history.import({
     productId: 'fake',
     sessionId: session.sessionId,
     sourcePath: session.sourcePath,
@@ -72,7 +72,7 @@ test('Claude pack import freezes idempotently through the shared path', async (t
     { type: 'user', sessionId, timestamp: '2026-08-14T00:00:00.000Z', cwd, message: { role: 'user', content: 'Create ping.txt with pong' } },
     { type: 'assistant', sessionId, timestamp: '2026-08-14T00:00:00.000Z', cwd, message: { role: 'assistant', model: 'claude-fable-5', content: [{ type: 'text', text: 'Created.' }], stop_reason: 'end_turn' } },
   ].map((row) => JSON.stringify(row)).join('\n'));
-  const imported = await claudeCodeProductPack.sessions.import({ productId: 'claude-code', sessionId, sourcePath });
+  const imported = await claudeCodeProductPack.history.import({ productId: 'claude-code', sessionId, sourcePath });
   const first = await freezeCase(imported, root, { allowModelText: true, allowBinary: false, redactions: ['pong'] }, '2026-08-14T00:00:00.000Z');
   assert.ok(Value.Check(TaskCaseSchema, first.taskCase));
   assert.match(first.taskCase.initialInput.text, /\[REDACTED\]/);
@@ -86,9 +86,9 @@ test('activity other-kind share stays below the contract threshold', () => {
     envelope('fake.message', { text: 'world' }),
     envelope('fake.other', { label: 'note', body: 'rare' }),
   ];
-  assert.ok(otherRatio(fakeEvents.flatMap((event) => fakeProductPack.activity.translate(event)).map((entry) => entry.activity)) < 0.4);
+  assert.ok(otherRatio(fakeEvents.flatMap((event) => fakeProductPack.projection.translate(event)).map((entry) => entry.activity)) < 0.4);
   const claudeEvents: EventEnvelope[] = [
-    envelope('claude-code.assistant', {
+    envelope('runtime.visible_output', {
       message: {
         content: [
           { type: 'text', text: 'working' },
@@ -101,7 +101,7 @@ test('activity other-kind share stays below the contract threshold', () => {
       },
     }),
   ];
-  assert.ok(otherRatio(claudeEvents.flatMap((event) => claudeCodeProductPack.activity.translate(event)).map((entry) => entry.activity)) < 0.4);
+  assert.ok(otherRatio(claudeEvents.flatMap((event) => claudeCodeProductPack.projection.translate(event)).map((entry) => entry.activity)) < 0.4);
 });
 
 function otherRatio(activities: readonly TargetActivity[]): number {

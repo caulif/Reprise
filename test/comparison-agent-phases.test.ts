@@ -6,7 +6,7 @@ import { PiAgentHost, type AgentAuditEvent, type PiTextCaller } from "../src/inf
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startCodexExperiment } from '../src/application/experiment.js';
+import { startExperiment } from '../src/application/experiment.js';
 import { input, patientPolicy, VerifiedRuntime } from './codex-experiment-support.js';
 
 function context(): ComparisonContext {
@@ -35,7 +35,7 @@ test('experiment cancellation interrupts Comparison without changing the candida
       return new Promise<string>(() => {});
     }, cancel() {},
   }) }) });
-  const handle = startCodexExperiment({ ...base, policy: patientPolicy, comparison, deferComparison: true });
+  const handle = startExperiment({ ...base, policy: patientPolicy, comparison, deferComparison: true });
   const candidate = await handle.candidateFinished;
   await handle.runComparison();
   await ready;

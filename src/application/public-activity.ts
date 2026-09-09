@@ -1,7 +1,7 @@
 import { Value } from "@sinclair/typebox/value";
 import { PublicActivityPayloadSchema } from "../core/public-activity.js";
 import type { EventEnvelope } from "../core/schema.js";
-import type { TargetActivityTranslator } from "../products/contract.js";
+import type { UserSurfaceProjection } from "../products/contract.js";
 
 type EventWriter = {
   append(input: {
@@ -16,7 +16,7 @@ type EventWriter = {
 export async function persistPublicActivities(input: {
   store: EventWriter;
   envelope: EventEnvelope;
-  translator: TargetActivityTranslator;
+  translator: UserSurfaceProjection;
 }): Promise<void> {
   if (input.envelope.type === "runtime.public_activity") return;
   let entries;

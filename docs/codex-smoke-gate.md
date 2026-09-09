@@ -1,6 +1,6 @@
 # Codex smoke gate 记录模板
 
-本模板用于真实 Codex 纵切片的人工验收记录。`CodexRuntimePort` 现已使用当前 Codex app-server JSONL 协议启动线程、提交 turn、等待 native settlement，并在 stop 时关闭进程；它拒绝所有 app-server 发起的工具或权限请求。不要用 fixture 记录冒充真实 smoke。
+本模板用于真实 Codex 纵切片的人工验收记录。`CodexProductRuntime` 现已使用当前 Codex app-server JSONL 协议启动线程、提交 turn、等待 native settlement，并在 stop 时关闭进程；它拒绝所有 app-server 发起的工具或权限请求。不要用 fixture 记录冒充真实 smoke。
 
 ## 已验证的 protocol smoke
 

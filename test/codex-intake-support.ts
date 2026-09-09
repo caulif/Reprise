@@ -33,6 +33,9 @@ export const fixtureCatalog = {
   async listCatalog() {
     return [{ value: "fixture", displayName: "fixture", resolvedModel: "fixture" }] as const;
   },
+  async inspectAvailability(productId: string) {
+    return [{ productId, status: "available" as const, observedAt: "2026-08-11T00:10:00.000Z" }];
+  },
   async verifyCandidate(candidate: { productId: string; requestedModel: string }) {
     return {
       productId: candidate.productId,

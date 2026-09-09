@@ -8,7 +8,7 @@ import { freezeCase } from '../dist/src/products/shared/freeze.js';
 import { readHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
 import { createHarnessAgents } from '../dist/src/application/harness-agents.js';
 import { PiModelCaller } from '../dist/src/infrastructure/agent/model-caller.js';
-import { recoverCodexExperiment } from '../dist/src/application/recovery/recover.js';
+import { recoverExperiment } from '../dist/src/application/recovery/recover.js';
 import { LocalWorkspaceProvider } from '../dist/src/environment/local-workspace-provider.js';
 import { isEligibleSession } from '../dist/src/products/contract.js';
 import { persistRecoveryPreflight, runRecoveryPreflight } from '../dist/src/application/recovery/preflight.js';
@@ -208,7 +208,7 @@ async function executeOne(product, item, ordinal, agents, alias, expectedSession
   const executionDataDir = join(WORK_ROOT, 'cases', alias);
   let attempt;
   try {
-    attempt = await recoverCodexExperiment({
+    attempt = await recoverExperiment({
       dataDir: executionDataDir, caseId: frozen.taskCase.caseId, experimentId: `eval-${alias}`, runId: `recovery-${alias}`,
       sourceRoot, taskCase: frozen.taskCase, recovery: agents.recovery, executeReadinessCommands: process.env.REPRISE_RUN_RECOVERY_CONTINUATION_CHECKS === '1',
       now: new Date().toISOString(),

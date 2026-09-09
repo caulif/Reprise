@@ -5,24 +5,25 @@ import { isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { isRecord, record, text } from '../../core/json.js';
 import { SAFE_ID } from '../../core/identity.js';
-import type {
-  AvailableRuntime,
-  DeliveryReceipt,
-  MessageIdentity,
-  PreparedRuntimeEnvironment,
-  ResolvedRuntime,
-  RuntimeAvailability,
-  RuntimeCapabilities,
-  RuntimePort,
-  RuntimeRequest,
-  RuntimeStopReason,
-  TargetEvent,
-  TargetEventSink,
-  TargetRunner,
-  TargetStatus,
-  TurnSettlement,
-  UserMessage,
+import {
+  runtimeTargetEvent,
+  type AvailableRuntime,
+  type DeliveryReceipt,
+  type MessageIdentity,
+  type PreparedRuntimeEnvironment,
+  type ResolvedRuntime,
+  type RuntimeAvailability,
+  type RuntimeCapabilities,
+  type ProductRuntime,
+  type RuntimeRequest,
+  type RuntimeStopReason,
+  type TargetEventSink,
+  type TargetRunner,
+  type TargetStatus,
+  type TurnSettlement,
+  type UserMessage,
 } from '../../core/runtime.js';
+import type { CandidateLaunchContext, CandidateSessionHandle } from '../../core/schema.js';
 import { DEFAULT_RUNTIME_RPC_TIMEOUT_MS, RUNTIME_PROCESS_CLOSE_TIMEOUT_MS, RUNTIME_PROCESS_STOP_GRACE_MS, discoverExecutable, forceKill, positiveTimeout, settlesWithin, spawnRuntimeProcess, summarizeDiagnostic } from '../shared/process.js';
 
 export const CLAUDE_DISALLOWED_TOOLS = ['CronCreate', 'CronDelete', 'ScheduleWakeup', 'SendMessage'] as const;
@@ -247,6 +248,8 @@ class ClaudeTargetRunner implements TargetRunner {
   readonly #sink: TargetEventSink;
   readonly #client: ClaudeStreamClient;
   readonly #sessionId: string;
+  readonly #runtime: ResolvedRuntime;
+  readonly #workspaceRoot: string;
   #status: TargetStatus = 'starting';
   #settlements: TurnSettlement[] = [];
   #waiter: PendingSettlement | undefined;
@@ -257,6 +260,8 @@ class ClaudeTargetRunner implements TargetRunner {
 
   constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; env?: Readonly<Record<string, string | undefined>>; args?: readonly string[]; safeMode?: boolean }) {
     this.#sink = input.sink;
+    this.#runtime = input.runtime;
+    this.#workspaceRoot = input.environment.root;
     this.#sessionId = randomUUID();
     const args = input.args ?? [
       ...CLAUDE_REQUIRED_ARGS,
@@ -331,8 +336,18 @@ class ClaudeTargetRunner implements TargetRunner {
 
   async inspect(): Promise<TargetStatus> { return this.#status; }
 
+  session(): CandidateSessionHandle {
+    return {
+      sessionId: this.#sessionId,
+      productId: this.#runtime.productId,
+      requestedModel: this.#runtime.requestedModel,
+      resolvedModel: this.#runtime.resolvedModel,
+      workspaceRoot: this.#workspaceRoot,
+    };
+  }
+
   async stop(reason: RuntimeStopReason): Promise<void> {
-    await this.#sink.append(event('claude-code.stop_requested', { reason, sessionId: this.#sessionId }));
+    await this.#sink.append(runtimeTargetEvent('session_stopped', { reason, sessionId: this.#sessionId }));
     if (this.#status !== 'stopped') {
       try { await this.#client.request('interrupt'); } catch { /* interrupt is best-effort; process kill is the final means. */ }
     }
@@ -340,6 +355,11 @@ class ClaudeTargetRunner implements TargetRunner {
     try { await this.#client.close(); } catch (error) { closeError = error; }
     this.#status = 'stopped';
     if (closeError) throw closeError instanceof Error ? closeError : new Error(errorMessage(closeError));
+  }
+
+  async close(): Promise<void> {
+    if (this.#status !== 'stopped') await this.stop('shutdown');
+    await this.#sink.append(runtimeTargetEvent('session_closed', { sessionId: this.#sessionId ?? this.session().sessionId }));
   }
 
   observableConfig(): Record<string, string> {
@@ -358,15 +378,19 @@ class ClaudeTargetRunner implements TargetRunner {
     const type = text(frame.type);
     if (type === 'system' && text(frame.subtype) === 'init') {
       this.#init = frame;
-      await this.#sink.append(event('claude-code.system_init', frame));
+      await this.#sink.append(runtimeTargetEvent('session_started', frame));
       return;
     }
-    if (type === 'assistant' || type === 'user') {
-      await this.#sink.append(event(`claude-code.${type}`, frame));
+    if (type === 'assistant') {
+      await this.#sink.append(runtimeTargetEvent('visible_output', frame));
+      return;
+    }
+    if (type === 'user') {
+      await this.#sink.append(runtimeTargetEvent('tool_finished', frame));
       return;
     }
     if (type === 'result') {
-      await this.#sink.append(event('claude-code.result', frame));
+      await this.#sink.append(runtimeTargetEvent('usage_reported', frame));
       this.#settle(frame);
     }
   }
@@ -380,7 +404,7 @@ class ClaudeTargetRunner implements TargetRunner {
     else if (subtype?.startsWith('error_')) status = 'failed';
     else if (subtype === 'success' && frame.is_error !== true) status = 'completed';
     if (!status) {
-      void this.#sink.append(event('claude-code.protocol_error', { message: 'Unrecognized result subtype or terminal_reason.', subtype: subtype ?? null, terminal_reason: terminal ?? null }));
+      void this.#sink.append(runtimeTargetEvent('runtime_failed', { message: 'Unrecognized result subtype or terminal_reason.', subtype: subtype ?? null, terminal_reason: terminal ?? null }));
       this.#failSettlement(new ClaudeRuntimeUnavailableError(`Claude Code reported an unrecognized turn settlement (${subtype ?? 'missing subtype'}).`));
       return;
     }
@@ -423,7 +447,7 @@ class ClaudeTargetRunner implements TargetRunner {
     this.#failSettlement(error);
     if (this.#processExitRecorded) return;
     this.#processExitRecorded = true;
-    void this.#sink.append(event('claude-code.process_exited', { message: error.message })).catch((appendError: unknown) => {
+    void this.#sink.append(runtimeTargetEvent('runtime_failed', { message: error.message })).catch((appendError: unknown) => {
       this.#settlementFailure ??= new ClaudeRuntimeUnavailableError(`Failed to record Claude process exit: ${errorMessage(appendError)}`);
     });
   }
@@ -435,7 +459,7 @@ export function clearClaudeCatalogCache(): void {
   catalogCache.clear();
 }
 
-export class ClaudeCodeRuntimePort implements RuntimePort {
+export class ClaudeCodeProductRuntime implements ProductRuntime {
   readonly id = 'claude-code';
   readonly #options: ClaudeRuntimeOptions;
 
@@ -536,9 +560,10 @@ export class ClaudeCodeRuntimePort implements RuntimePort {
     };
   }
 
-  async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink): Promise<TargetRunner> {
+  async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink, launch: CandidateLaunchContext): Promise<TargetRunner> {
     if (runtime.productId !== 'claude-code') throw new ClaudeRuntimeUnavailableError('Only Claude Code runtimes can create a stream-json runner.');
     if (!isAbsolute(environment.root)) throw new ClaudeRuntimeUnavailableError('Claude Code requires an absolute isolated workspace path.');
+    if (launch.workspaceRoot !== environment.root) throw new ClaudeRuntimeUnavailableError('Runner workspace must match CandidateLaunchContext.workspaceRoot.');
     return new ClaudeTargetRunner({
       runtime,
       environment,
@@ -578,10 +603,6 @@ function validateMessage(message: UserMessage, identity: MessageIdentity): void 
   if (!SAFE_ID.test(message.id) || !SAFE_ID.test(identity.clientMessageId) || !SAFE_ID.test(identity.runId) || !Number.isInteger(identity.turnIndex) || identity.turnIndex < 0 || !message.text.trim()) {
     throw new Error('Claude runtime message identity is invalid.');
   }
-}
-
-function event(type: string, payload: unknown): TargetEvent {
-  return { type, occurredAt: new Date().toISOString(), payload };
 }
 
 function errorMessage(value: unknown): string {

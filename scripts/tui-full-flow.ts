@@ -375,6 +375,7 @@ async function main() {
       turnTimeoutMs: 10 * 60_000,
       maxConsecutiveNoProgress: 1,
     },
+    inspectAvailability: async (productId: string) => [{ productId, status: "available" as const, observedAt: "2026-08-11T00:10:00.000Z" }],
     preflight: async () => {
       await new Promise<void>((resolve) => {
         releasePreflight = resolve;
@@ -402,12 +403,16 @@ async function main() {
         releaseRecovery = resolve;
       });
       return {
+        experimentId: "audit-recovery",
+        experimentRoot: "audit-root",
         baseline: { match: "recovered", warnings: [], mode: "canonical" },
         staging: { recoveryId: "audit-recovery" },
-        provider: { discardRecovery: async () => undefined },
+        recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
         accept: async () => ({ match: "recovered", warnings: [], mode: "canonical" }),
       };
     },
+    acceptRecovery: async () => ({ match: "recovered", warnings: [], mode: "canonical" }),
+    discardRecovery: async () => undefined,
     start: async (input: { onEvent: (event: unknown) => void }) => {
       await new Promise<void>((resolve) => {
         releaseCopy = resolve;
@@ -435,7 +440,7 @@ async function main() {
         sequence: 3,
         eventId: "event-3",
         occurredAt: "2026-08-11T00:10:00.500Z",
-        type: "codex.turn_started",
+        type: "runtime.turn_started",
         payload: {},
         checksum: "a".repeat(64),
       });
@@ -461,7 +466,7 @@ async function main() {
         sequence: 5,
         eventId: "event-5",
         occurredAt: "2026-08-11T00:10:01.500Z",
-        type: "codex.item_completed",
+        type: "runtime.tool_finished",
         payload: {
           item: {
             type: "commandExecution",
@@ -485,7 +490,7 @@ async function main() {
         sequence: 6,
         eventId: "event-6",
         occurredAt: "2026-08-11T00:10:02.000Z",
-        type: "codex.item_completed",
+        type: "runtime.visible_output",
         payload: { item: { type: "agentMessage", text: fullPublicResponse } },
         checksum: "d".repeat(64),
       });

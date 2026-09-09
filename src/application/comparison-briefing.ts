@@ -1,4 +1,4 @@
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, stat, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
@@ -62,15 +62,66 @@ export async function writeComparisonBriefing(input: {
   if (!Value.Check(ComparisonLinksSchema, links)) throw new Error("Comparison links do not satisfy ComparisonLinksSchema.");
   if (!Value.Check(ComparisonBriefingContextSchema, briefingComparisonContext(input.context))) throw new Error("Comparison context does not satisfy ComparisonBriefingContextSchema.");
   const indexMarkdown = comparisonIndex();
+  const factsContext = `${JSON.stringify(briefingComparisonContext(input.context), null, 2)}\n`;
+  const factsLinks = `${JSON.stringify(links, null, 2)}\n`;
+  const candidateProcess = processIndex(input.events);
   const files: Record<string, string> = {
     "INDEX.md": indexMarkdown,
     "task/initial-input.txt": input.taskCase.privacy.allowModelText ? input.taskCase.initialInput.text : "[REDACTED]",
-    "candidate/process-index.tsv": processIndex(input.events),
-    "facts/context.json": `${JSON.stringify(briefingComparisonContext(input.context), null, 2)}\n`,
-    "facts/comparison-links.json": `${JSON.stringify(links, null, 2)}\n`,
+    "candidate/process-index.tsv": candidateProcess,
+    "facts/context.json": factsContext,
+    "facts/comparison-links.json": factsLinks,
   };
   for (const [path, body] of Object.entries(files)) await writeAtomic(join(briefingRoot, ...path.split("/")), body);
+  await mkdir(join(input.attemptRoot, "history"), { recursive: true });
+  await mkdir(join(input.attemptRoot, "candidate"), { recursive: true });
+  await mkdir(join(input.attemptRoot, "facts"), { recursive: true });
+  await writeAtomic(join(input.attemptRoot, "INDEX.md"), comparisonAttemptIndex());
+  await writeAtomic(join(input.attemptRoot, "facts", "context.json"), factsContext);
+  await writeAtomic(join(input.attemptRoot, "facts", "comparison-links.json"), factsLinks);
+  await writeAtomic(join(input.attemptRoot, "history", "INDEX.md"), [
+    "# History track",
+    "",
+    "Read observations/ for the frozen historical session and this run's imported events.",
+    "User turns: observations/user-inputs/INDEX.tsv",
+    "",
+  ].join("\n"));
+  await writeAtomic(join(input.attemptRoot, "candidate", "INDEX.md"), [
+    "# Candidate track",
+    "",
+    "Process index: candidate/process-index.tsv and briefing/candidate/process-index.tsv",
+    "User views: controller-briefing/current-user-view.md and run/turns/*/user-view.md (mounted as turns/)",
+    "",
+  ].join("\n"));
+  await writeAtomic(join(input.attemptRoot, "candidate", "process-index.tsv"), candidateProcess);
+  await writeAtomic(
+    join(input.attemptRoot, "history", "messages.tsv"),
+    ["id\trole\tbytes", ...input.taskCase.transcript.map((message) => `${message.id}\t${message.role}\t${Buffer.byteLength(message.text)}`)].join("\n") + "\n",
+  );
+  await writeAtomic(
+    join(input.attemptRoot, "candidate", "outcome.json"),
+    `${JSON.stringify(input.record.outcome, null, 2)}\n`,
+  );
+  const userView = await readFile(
+    join(input.experimentRoot, "runs", input.record.attempt.runId, "controller-briefing", "current-user-view.md"),
+    "utf8",
+  ).catch(() => "");
+  if (userView) await writeAtomic(join(input.attemptRoot, "candidate", "user-view.md"), userView);
   return { indexMarkdown, links, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
+}
+
+function comparisonAttemptIndex(): string {
+  return [
+    "# Comparison attempt",
+    "",
+    "- INDEX.md — this map",
+    "- facts/ — Host projection; missing metrics stay missing",
+    "- history/ — historical messages and observations",
+    "- candidate/ — process index, user view, and outcome",
+    "- work/ — Comparison working notes",
+    "- briefing/ — Agent-facing navigation used by tools",
+    "",
+  ].join("\n");
 }
 
 function comparisonIndex(): string {

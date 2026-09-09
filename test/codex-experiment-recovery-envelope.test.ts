@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RecoveryAgentPort } from "../src/agents/recovery-agent.js";
-import { recoverCodexExperiment } from "../src/application/recovery/recover.js";
+import { recoverExperiment } from "../src/application/recovery/recover.js";
 import type { TaskCase } from "../src/core/schema.js";
 import { now, VerifiedRuntime, input } from "./codex-experiment-support.js";
 
@@ -45,7 +45,7 @@ test("Recovery mechanical feedback reuses the same recover() after a missing rep
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-keep-probed",
@@ -86,7 +86,7 @@ test("Recovery still falls back when the only completed envelope fails probe", a
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-only-invalid",
@@ -138,7 +138,7 @@ test("Recovery still completes after more than sixteen destructive shell_exec ca
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-delete-uncapped",

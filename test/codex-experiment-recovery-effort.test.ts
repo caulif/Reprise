@@ -4,8 +4,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RecoveryAgent, type RecoveryAgentPort } from "../src/agents/recovery-agent.js";
-import { recoverCodexExperiment } from "../src/application/recovery/recover.js";
-import { startCodexExperiment } from "../src/application/experiment.js";
+import { recoverExperiment } from "../src/application/recovery/recover.js";
+import { startExperiment } from "../src/application/experiment.js";
 import { PiAgentHost } from "../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../src/infrastructure/store/experiment-store.js";
@@ -41,7 +41,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-experiment",
@@ -67,7 +67,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
     true,
   );
   const accepted = attempt.accept ? await attempt.accept() : attempt.baseline;
-  const result = await startCodexExperiment({
+  const result = await startExperiment({
     ...base,
     experimentId: "recovery-experiment",
     runId: "candidate-run",
@@ -124,7 +124,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
     maxRepairAttempts: 0,
   });
 
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-audit-experiment",
@@ -173,7 +173,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
   let called = false;
   let observedBudget: number | undefined;
   const events: { type: string; payload: unknown }[] = [];
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-history-capability",
@@ -267,7 +267,7 @@ test("Recovery runs maximum-effort forensics even with an empty transcript and e
   const base = input(root, new VerifiedRuntime());
   let called = false;
   const events: { type: string; payload: unknown }[] = [];
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-capability",
@@ -363,7 +363,7 @@ test("Recovery retries a transient staging failure before maximum-effort forensi
       );
     },
   );
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-preflight-retry",
@@ -440,7 +440,7 @@ test("Recovery records a redacted preflight diagnostic after staging retry is ex
       );
     },
   );
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-preflight-diagnostic",
@@ -522,7 +522,7 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-path-boundary-metric",
@@ -556,7 +556,7 @@ test("Recovery maps a cancelled Agent invocation to the cancelled failure stage"
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-cancelled-stage",
@@ -612,7 +612,7 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-auto-ready",
@@ -673,7 +673,7 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-keep-envelope",
@@ -699,7 +699,7 @@ test("Recovery classifies a first-turn context-length error as agent_model_faile
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-context-first-fail",
@@ -761,7 +761,7 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-readiness-no-progress",
@@ -808,7 +808,7 @@ test("insufficient evidence does not loop for missing paths and cannot be accept
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-insufficient-stop",
@@ -854,7 +854,7 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
       };
     },
   };
-  const attempt = await recoverCodexExperiment({
+  const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
     experimentId: "recovery-readiness-blocked",

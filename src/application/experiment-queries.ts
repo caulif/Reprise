@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { findProductPack, productPacks, defaultSessionsRoots, packLoadDiagnostics } from "../products/index.js";
-import { packHas, packRoles, packRuntime, packSessions } from "../products/pack-access.js";
+import { packHas, packRoles, packRuntime, packHistory } from "../products/pack-access.js";
 import type { SessionDiscoveryProject, SessionSummary } from "../products/contract.js";
 import { freezeCase } from "../products/shared/freeze.js";
 import { importVerifiedSession } from "../products/shared/session-recovery.js";
@@ -107,7 +107,7 @@ export async function readAuthStatus(dataDir: string, sessionsRoots?: Readonly<R
   const products = await Promise.all(productPacks.map(async (pack) => ({
     productId: pack.manifest.productId,
     ...(pack.checkAuth ? await pack.checkAuth() : { configured: false }),
-    ...(pack.sessions ? { sessionsRoot: sessionsRoots?.[pack.manifest.productId] ?? pack.sessions.defaultRoot } : {}),
+    ...(pack.history ? { sessionsRoot: sessionsRoots?.[pack.manifest.productId] ?? pack.history.defaultRoot } : {}),
   })));
   return { harness, products };
 }
@@ -121,7 +121,7 @@ async function discoverSource(input: {
 }) {
   const pack = findProductPack(input.productId);
   if (!packHas(pack, "import")) throw new CliError("usage", `Product '${input.productId}' has no import capability.`);
-  const sessions = packSessions(pack);
+  const sessions = packHistory(pack);
   const roots = { ...defaultSessionsRoots(), ...input.sessionsRoots };
   const root = resolve(roots[input.productId] ?? sessions.defaultRoot);
   return sessions.discover({
@@ -170,7 +170,7 @@ export async function inspectSourceSession(input: {
   const listed = await listSourceSessions(input);
   const session = listed.items[0];
   if (!session) throw new CliError("not_found", `Unknown sourcePath '${input.sourcePath}'.`);
-  return packSessions(findProductPack(input.productId)).inspect({
+  return packHistory(findProductPack(input.productId)).inspect({
     productId: session.productId,
     sessionId: session.sessionId,
     sourcePath: session.sourcePath,
@@ -188,6 +188,6 @@ export async function importSourceSession(input: {
   const session = listed.items[0];
   if (!session) throw new CliError("not_found", `Unknown sourcePath '${input.sourcePath}'.`);
   const pack = findProductPack(input.productId);
-  const imported = await importVerifiedSession(packSessions(pack), session, session.sourcePath);
+  const imported = await importVerifiedSession(packHistory(pack), session, session.sourcePath);
   return freezeCase(imported, join(input.dataDir, "cases"), { allowModelText: true, allowBinary: false, redactions: [] }, input.now ?? new Date().toISOString(), { reuseExisting: true });
 }

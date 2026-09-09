@@ -4,7 +4,7 @@ import { isFsAbsolute } from '../core/paths.js';
 import { matchesKey } from '@earendil-works/pi-tui';
 import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
 import type { ExperimentPreflight } from '../application/experiment-preflight.js';
-import type { RecoveryAttempt } from '../application/recovery/types.js';
+import type { RecoveryView } from '../application/recovery/view.js';
 import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
 import type { TaskCase } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
@@ -92,7 +92,7 @@ export type ControllerHandle = {
   runFromSource: boolean;
   readonly workflow: ExperimentWorkflow | undefined;
   generation: number;
-  recoveryAttempt: RecoveryAttempt | undefined;
+  recoveryView: RecoveryView | undefined;
   selectedCandidate: import('../core/schema.js').CandidateSpec | undefined;
   candidateProductId: string;
   candidateProductCursor: number;

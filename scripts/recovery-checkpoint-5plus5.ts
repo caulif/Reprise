@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { recoverCodexExperiment } from "../src/application/recovery/recover.js";
+import { recoverExperiment } from "../src/application/recovery/recover.js";
 import { evaluateRecoveryCases } from "../src/application/recovery/evaluation.js";
 import type { RecoveryAgentPort } from "../src/agents/recovery-agent.js";
 import type { TaskCase } from "../src/core/schema.js";
@@ -69,7 +69,7 @@ async function runFixture(_output: string, productId: "codex" | "claude-code", f
     const checkpointFiles = new Map(checkpoint.fingerprint.resources.filter((entry) => entry.kind === "file" && !entry.path.startsWith(".git/")).map((entry) => [entry.path, entry]));
     const interruptedFiles = new Map(interrupted.fingerprint.resources.filter((entry) => entry.kind === "file" && !entry.path.startsWith(".git/")).map((entry) => [entry.path, entry]));
     const expectedPaths = [...new Set([...checkpointFiles.keys(), ...interruptedFiles.keys()])].filter((path) => JSON.stringify(checkpointFiles.get(path)) !== JSON.stringify(interruptedFiles.get(path))).sort();
-    const attempt = await recoverCodexExperiment({
+    const attempt = await recoverExperiment({
       dataDir: join(root, "data"), caseId, experimentId: `checkpoint-${fixture.id}`, runId: `checkpoint-${fixture.id}-run`,
       sourceRoot, checkpointRoot: checkpoint.root, taskCase: taskCase(caseId, productId), recovery: recoveryMustNotRun,
       now, environmentProvider: provider,

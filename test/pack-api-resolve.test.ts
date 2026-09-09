@@ -16,7 +16,7 @@ test("published pack-api export resolves from dist without source paths", async 
   assert.equal(pkg.exports?.["./pack-api"], "./dist/src/products/contract.js");
   const href = pathToFileURL(join(root, "dist/src/products/contract.js")).href;
   const api = await import(href) as { PACK_API_MAJOR?: number };
-  assert.equal(api.PACK_API_MAJOR, 1);
+  assert.equal(api.PACK_API_MAJOR, 2);
   const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
   const packed = await exec(process.execPath, [npmCli, "pack", "--dry-run", "--json"], {
     cwd: root,

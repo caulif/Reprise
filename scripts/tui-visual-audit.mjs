@@ -30,7 +30,7 @@ function enterCommand(app, command) {
 
 function emitPublicActivities(onEvent, envelope, sequence) {
   let next = sequence;
-  for (const item of findProductPack('codex').activity.translate(envelope)) {
+  for (const item of findProductPack('codex').projection.translate(envelope)) {
     onEvent({
       ...envelope,
       sequence: next,
@@ -314,6 +314,7 @@ async function main() {
     candidate: { candidateId: 'codex-luna-high', productId: 'codex', requestedModel: 'gpt-5.6-luna' },
     policy: { wallClockMs: 30 * 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10 * 60_000, maxConsecutiveNoProgress: 1 },
     listCatalog: async () => [{ value: 'gpt-5.6-luna', displayName: 'gpt-5.6-luna', resolvedModel: 'gpt-5.6-luna' }],
+    inspectAvailability: async (productId) => [{ productId, status: 'available', observedAt: '2026-08-11T00:10:00.000Z' }],
     verifyCandidate: async (candidate) => ({
       productId: candidate.productId, executable: 'fixture', requestedModel: candidate.requestedModel, resolvedModel: candidate.requestedModel,
     }),
@@ -330,20 +331,24 @@ async function main() {
     recover: async () => {
       await new Promise((resolve) => { releaseRecovery = resolve; });
       return {
+        experimentId: 'audit-recovery',
+        experimentRoot: 'audit-root',
         baseline: { match: 'recovered', warnings: [] },
         staging: { recoveryId: 'audit-recovery' },
-        provider: { discardRecovery: async () => {} },
+        recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', reportPath: 'recovery.md', unresolved: [] } },
         accept: async () => ({ match: 'recovered', warnings: [] }),
       };
     },
+    acceptRecovery: async () => ({ match: 'recovered', warnings: [] }),
+    discardRecovery: async () => {},
     start: async (input) => {
       await new Promise((resolve) => { releaseCopy = resolve; });
       input.onEvent({ schemaVersion: 1, sequence: 1, eventId: 'event-1', occurredAt: '2026-08-11T00:10:00.000Z', type: 'run.state_changed', payload: { to: 'launching' }, checksum: 'a'.repeat(64) });
       input.onEvent({ schemaVersion: 1, sequence: 2, eventId: 'event-2', occurredAt: '2026-08-11T00:10:00.000Z', type: 'input.submitted', payload: { turnIndex: 0, text: 'Fix the failing test.' }, checksum: 'a'.repeat(64) });
-      input.onEvent({ schemaVersion: 1, sequence: 3, eventId: 'event-3', occurredAt: '2026-08-11T00:10:00.500Z', type: 'codex.turn_started', payload: {}, checksum: 'a'.repeat(64) });
+      input.onEvent({ schemaVersion: 1, sequence: 3, eventId: 'event-3', occurredAt: '2026-08-11T00:10:00.500Z', type: 'runtime.turn_started', payload: {}, checksum: 'a'.repeat(64) });
       input.onEvent({ schemaVersion: 1, sequence: 4, eventId: 'event-4', occurredAt: '2026-08-11T00:10:01.000Z', type: 'controller.decision', payload: { status: 'completed', sessionId: 'controller-1', value: { type: 'send', rationale: 'One check remains.', message: 'Run the focused test.' } }, checksum: 'b'.repeat(64) });
       const commandEvent = {
-        schemaVersion: 1, sequence: 5, eventId: 'event-5', occurredAt: '2026-08-11T00:10:01.500Z', type: 'codex.item_completed',
+        schemaVersion: 1, sequence: 5, eventId: 'event-5', occurredAt: '2026-08-11T00:10:01.500Z', type: 'runtime.tool_finished',
         payload: {
           item: {
             type: 'commandExecution',
@@ -356,7 +361,7 @@ async function main() {
       };
       input.onEvent(commandEvent);
       emitPublicActivities(input.onEvent, commandEvent, 7);
-      const messageEvent = { schemaVersion: 1, sequence: 6, eventId: 'event-6', occurredAt: '2026-08-11T00:10:02.000Z', type: 'codex.item_completed', payload: { item: { type: 'agentMessage', text: fullPublicResponse } }, checksum: 'd'.repeat(64) };
+      const messageEvent = { schemaVersion: 1, sequence: 6, eventId: 'event-6', occurredAt: '2026-08-11T00:10:02.000Z', type: 'runtime.visible_output', payload: { item: { type: 'agentMessage', text: fullPublicResponse } }, checksum: 'd'.repeat(64) };
       input.onEvent(messageEvent);
       emitPublicActivities(input.onEvent, messageEvent, 8);
       await new Promise((resolve) => { releaseStart = resolve; });
@@ -389,7 +394,7 @@ async function main() {
   await push('20-running-copy', 120, run.render(120));
   releaseRecovery?.();
   await waitFor(() => /choose candidate product/.test(run.render(120)), { describe: 'candidate product after recovery', frame: () => run.render(120) });
-  await waitFor(() => /choose candidate product/.test(run.render(120)) && !/reading loc/.test(run.render(120)), {
+  await waitFor(() => /source session\s+available/.test(run.render(120)), {
     describe: 'candidate availability settled',
     timeoutMs: 15_000,
     frame: () => run.render(120),

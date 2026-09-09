@@ -14,7 +14,6 @@ export type ReplayHostInput = {
   events?: readonly EventEnvelope[];
   settledTurns?: number;
   changedPaths?: readonly string[];
-  productId?: string;
   lang?: ReplayLang;
 };
 
@@ -99,17 +98,19 @@ export function hostReplayConditions(input: ReplayHostInput): readonly string[] 
       ? "写入只留在隔离副本。没有出现在用户原目录是不变量，不是能力差异。"
       : "Writes stay in the isolated replica. Not appearing in the original user directory is an invariant, not a capability difference.",
   );
-  const init = input.events?.find((event) => event.type.endsWith(".system_init"));
-  const permissionMode = recordValue(init?.payload).permissionMode;
+  const started = input.events?.find((event) => event.type === "runtime.session_started");
+  const startedPayload = recordValue(started?.payload);
+  const permissionMode = startedPayload.permissionMode;
   if (typeof permissionMode === "string" && permissionMode.trim()) {
     notes.push(`permissionMode=${permissionMode}`);
   }
-  const productId = input.productId ?? input.record?.attempt.candidate.productId;
-  if (productId === "claude-code") {
+  const disallowed = startedPayload.disallowedTools;
+  const persistence = startedPayload.sessionPersistence;
+  if (typeof disallowed === "string" && disallowed.trim()) {
     notes.push(
       zh
-        ? "隔离：--no-session-persistence；禁止 CronCreate、CronDelete、ScheduleWakeup、SendMessage。"
-        : "Isolation: --no-session-persistence; disallowed CronCreate, CronDelete, ScheduleWakeup, SendMessage.",
+        ? `隔离：sessionPersistence=${typeof persistence === "string" ? persistence : "unknown"}；禁止 ${disallowed}。`
+        : `Isolation: sessionPersistence=${typeof persistence === "string" ? persistence : "unknown"}; disallowed ${disallowed}.`,
     );
   }
   if (input.changedPaths?.length) {

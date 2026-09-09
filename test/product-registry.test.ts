@@ -49,7 +49,7 @@ test("duplicate productId keeps the first pack and records a diagnostic", async 
 test("incompatible apiMajor, invalid export, and raw TypeScript are rejected", async (t) => {
   const dataDir = await mkdtemp(join(tmpdir(), "reprise-pack-bad-"));
   t.after(async () => rm(dataDir, { recursive: true, force: true }));
-  await writeFile(join(dataDir, "major.js"), packModule({ productId: "major-x", apiMajor: 2, capabilities: ["import"], sessions: true }));
+  await writeFile(join(dataDir, "major.js"), packModule({ productId: "major-x", apiMajor: 1, capabilities: ["import"], sessions: true }));
   await writeFile(join(dataDir, "empty.js"), "export const nope = true;\n");
   await writeFile(join(dataDir, "raw.ts"), packModule({ productId: "raw-ts", capabilities: ["import"], sessions: true }));
   await writeFile(join(dataDir, "mismatch.js"), packModule({ productId: "mismatch", capabilities: ["import"] }));
@@ -113,13 +113,13 @@ function packModule(input: {
   runtime?: boolean;
 }): string {
   const sessions = input.sessions
-    ? `sessions: { defaultRoot: "C:/reprise-fixture", discover: async () => ({ items: [], scanned: 0, skipped: 0, diagnostics: [] }), inspect: async () => { throw new Error("unused"); }, import: async () => { throw new Error("unused"); } },`
+    ? `history: { defaultRoot: "C:/reprise-fixture", discover: async () => ({ items: [], scanned: 0, skipped: 0, diagnostics: [] }), inspect: async () => { throw new Error("unused"); }, import: async () => { throw new Error("unused"); } },`
     : "";
   const runtime = input.runtime
-    ? `runtime: { listCatalog: async () => [], inspectAvailability: async () => [], validateCandidate: async () => ({}), createRunner: async () => { throw new Error("unused"); } }, activity: { inspectRunFacts: () => ({ commands: [], rejectedApprovals: [] }), translate: () => [] }, defaultCandidate: () => ({ candidateId: "x", productId: ${JSON.stringify(input.productId)}, requestedModel: "x" }),`
+    ? `runtime: { listCatalog: async () => [], inspectAvailability: async () => [], validateCandidate: async () => ({}), createRunner: async () => { throw new Error("unused"); } }, projection: { inspectRunFacts: () => ({ commands: [], rejectedApprovals: [] }), translate: () => [], projectTurn: () => ({ turnIndex: 1, status: "empty", observedAt: "2026-09-09T00:00:00.000Z" }) }, defaultCandidate: () => ({ candidateId: "x", productId: ${JSON.stringify(input.productId)}, requestedModel: "x" }),`
     : "";
   return `export const pack = {
-    manifest: { productId: ${JSON.stringify(input.productId)}, displayName: ${JSON.stringify(input.productId)}, packVersion: "0.0.1", schemaVersion: 1, apiMajor: ${input.apiMajor ?? 1}, capabilities: ${JSON.stringify(input.capabilities)} },
+    manifest: { productId: ${JSON.stringify(input.productId)}, displayName: ${JSON.stringify(input.productId)}, packVersion: "0.0.1", schemaVersion: 1, apiMajor: ${input.apiMajor ?? 2}, capabilities: ${JSON.stringify(input.capabilities)} },
     ${sessions}
     ${runtime}
   };

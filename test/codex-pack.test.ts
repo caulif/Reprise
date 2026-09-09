@@ -23,7 +23,7 @@ import {
 import {
   CodexAppServerClient,
   clearCodexCatalogCache,
-  CodexRuntimePort,
+  CodexProductRuntime,
   codexSettlementStatus,
   defaultCodexSandbox,
   discoverCodexExecutable,
@@ -41,6 +41,7 @@ import {
 } from "../src/products/codex/smoke-gate.js";
 import { productPacks } from "../src/products/index.js";
 import { fixturePath, FAKE_APP_SERVER, fakeCodexRunner, timeoutAfter } from "./codex-pack-support.js";
+import { candidateLaunchFor } from "../src/application/candidate-launch.js";
 
 test("Codex Recovery Playbook has stable provenance and is included in build output", async () => {
   const playbook = codexProductPack.recoveryPlaybook();
@@ -201,7 +202,7 @@ test("Codex runtime discovery is local-only and resolves model facts as unknown"
     }),
     executable,
   );
-  const runtime = new CodexRuntimePort({
+  const runtime = new CodexProductRuntime({
     executable,
     platform: "win32",
     version: "0.147.0",
@@ -214,10 +215,12 @@ test("Codex runtime discovery is local-only and resolves model facts as unknown"
     requestedModel: "gpt-test",
   });
   assert.equal(resolved.resolvedModel, "unknown");
+  const environment = { environmentId: "env-1", runId: "run-1", root };
   const runner = await runtime.createRunner(
     resolved,
-    { environmentId: "env-1", runId: "run-1", root },
+    environment,
     { append: async () => undefined },
+    candidateLaunchFor(resolved, environment),
   );
   assert.equal(runner.capabilities().nativeAdmission, true);
   assert.equal(runner.capabilities().nativeTurnSettlement, true);
@@ -251,17 +254,17 @@ process.stdin.on('data', (chunk) => {
   );
   t.after(async () => rm(root, { recursive: true, force: true }));
   clearCodexCatalogCache();
-  const first = new CodexRuntimePort({
+  const first = new CodexProductRuntime({
     executable: process.execPath,
     args: [script],
     env: { CODEX_HOME: "home-a" },
   });
-  const second = new CodexRuntimePort({
+  const second = new CodexProductRuntime({
     executable: process.execPath,
     args: [script],
     env: { CODEX_HOME: "home-a" },
   });
-  const third = new CodexRuntimePort({
+  const third = new CodexProductRuntime({
     executable: process.execPath,
     args: [script],
     env: { CODEX_HOME: "home-b" },
@@ -326,7 +329,7 @@ test("server requests with string ids are rejected and exposed with one codex ev
     { id: "message-1", text: "Make the change." },
     { runId: "run-1", turnIndex: 0, clientMessageId: "initial-run-1" },
   );
-  assert.ok(events.includes("codex.server_request_rejected"));
+  assert.ok(events.includes("runtime.runtime_failed"));
   assert.equal(
     events.some((type) => type.startsWith("codex.codex.")),
     false,
@@ -342,8 +345,8 @@ test("Codex runner sends the resolved model to thread and turn requests", async 
     { id: "message-1", text: "Make the change." },
     { runId: "run-1", turnIndex: 0, clientMessageId: "initial-run-1" },
   );
-  const threadStarted = records.find((item) => item.type === "codex.thread_started");
-  const turnAdmitted = records.find((item) => item.type === "codex.turn_admitted");
+  const threadStarted = records.find((item) => item.type === "runtime.session_started");
+  const turnAdmitted = records.find((item) => item.type === "runtime.delivery_observed");
   assert.equal((threadStarted?.payload as { model?: string }).model, "canonical-model");
   assert.equal((turnAdmitted?.payload as { model?: string }).model, "canonical-model");
 });
@@ -394,7 +397,7 @@ test("an unexpectedly exited Codex process fails waitForTurn and records one pro
   await assert.rejects(runner.waitForTurn(), /Codex app-server exited/);
   assert.equal(await runner.inspect(), "stopped");
   assert.equal(
-    events.filter((type) => type === "codex.process_exited").length,
+    events.filter((type) => type === "runtime.runtime_failed").length,
     1,
   );
 });
@@ -409,8 +412,8 @@ test("a Codex turn that waits for input settles natively through the app-server 
   const settlement = await runner.waitForTurn();
   assert.equal(settlement.status, "waiting_input");
   assert.equal(settlement.confidence, "native");
-  assert.ok(events.includes("codex.thread_started"));
-  assert.ok(events.includes("codex.turn_admitted"));
+  assert.ok(events.includes("runtime.session_started"));
+  assert.ok(events.includes("runtime.delivery_observed"));
 });
 
 test("an unrecognized turn status fails the waiter instead of waiting out the turn budget", async (t) => {
@@ -423,7 +426,7 @@ test("an unrecognized turn status fails the waiter instead of waiting out the tu
     runner.waitForTurn(),
     /unrecognized turn settlement \(somethingNew\)/,
   );
-  assert.ok(events.includes("codex.protocol_error"));
+  assert.ok(events.includes("runtime.runtime_failed"));
 });
 
 test("a failed Codex turn with HTTP 503 is an upstream settlement, not a protocol hang", async (t) => {
@@ -442,8 +445,8 @@ test("a failed Codex turn with HTTP 503 is an upstream settlement, not a protoco
   assert.doesNotMatch(serialized, /api_key=abcdefgh/);
   assert.doesNotMatch(serialized, /https:\/\/api\.example\.com/);
   assert.match(settlement.failure?.summary ?? "", /503/);
-  assert.equal(events.filter((type) => type === "codex.error").length, 5);
-  for (const record of records.filter((item) => item.type === "codex.error")) {
+  assert.equal(events.filter((type) => type === "runtime.runtime_failed").length, 5);
+  for (const record of records.filter((item) => item.type === "runtime.runtime_failed")) {
     assert.doesNotMatch(JSON.stringify(record.payload), /abcdefghijklmnopqrstuvwxyz/);
     assert.doesNotMatch(JSON.stringify(record.payload), /https:\/\/api\.example\.com/);
   }
@@ -493,8 +496,8 @@ test("CodexTargetRunner records an interrupt failure when close succeeds", async
   );
   await runner.stop("shutdown");
   assert.equal(await runner.inspect(), "stopped");
-  assert.equal(events.includes("codex.stop_requested"), true);
-  assert.equal(events.includes("codex.stop_interrupt_failed"), true);
+  assert.equal(events.includes("runtime.session_stopped"), true);
+  assert.equal(events.includes("runtime.runtime_failed"), true);
 });
 
 test("CodexTargetRunner reports a close failure after an interrupt failure", async (t) => {
@@ -810,7 +813,7 @@ test("Codex runtime discovery does not report missing executables", async () => 
     }),
     undefined,
   );
-  const runtime = new CodexRuntimePort({
+  const runtime = new CodexProductRuntime({
     executable: join(tmpdir(), "does-not-exist", "codex.exe"),
     platform: "win32",
   });

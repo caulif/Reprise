@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { IntakeTui } from '../dist/src/tui/intake-app.js';
 import { createHarnessWorkflow } from '../dist/src/application/experiment-workflow.js';
 import { startRunSetup } from '../dist/src/tui/controller-run.js';
-import { CodexRuntimePort } from '../dist/src/products/codex/runtime-port.js';
+import { CodexProductRuntime } from '../dist/src/products/codex/runtime-port.js';
 import { mockTui, pageHtml, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
 Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
@@ -78,7 +78,7 @@ async function main() {
   const host = mockTui({ columns: 120, rows: 32 });
   const app = new IntakeTui({
     dataDir, sessionsRoot, tui: host.tui,
-    workflow: createHarnessWorkflow({ dataDir, runtime: new CodexRuntimePort({ effort: 'high' }), now: () => new Date().toISOString() }),
+    workflow: createHarnessWorkflow({ dataDir, runtime: new CodexProductRuntime({ effort: 'high' }), now: () => new Date().toISOString() }),
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
   });
   await app.start();

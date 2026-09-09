@@ -17,7 +17,7 @@ import type { RecoveryOrchestrator, RecoveryLifecycleState } from "./orchestrato
 import type { RecoveryReadinessResult } from "./readiness.js";
 import type { RecoveryAttempt, RecoveryAttemptInput } from "./types.js";
 
-export type FailRecoverCodexExperimentInput = {
+export type FailRecoverExperimentInput = {
   error: unknown;
   attemptInput: RecoveryAttemptInput;
   store: ExperimentStore;
@@ -49,7 +49,7 @@ export type FailRecoverCodexExperimentInput = {
   lastToolFailureCategory: string | undefined;
 };
 
-export async function failRecoverCodexExperiment(input: FailRecoverCodexExperimentInput): Promise<RecoveryAttempt> {
+export async function failRecoverExperiment(input: FailRecoverExperimentInput): Promise<RecoveryAttempt> {
   const settled = await settleFailedRecovery(input);
   const failed = input.recovery ?? {
     status: "failed" as const,
@@ -112,7 +112,7 @@ export async function failRecoverCodexExperiment(input: FailRecoverCodexExperime
   };
 }
 
-async function settleFailedRecovery(input: FailRecoverCodexExperimentInput) {
+async function settleFailedRecovery(input: FailRecoverExperimentInput) {
   const failureStage = classifyRecoveryFailureStage(
     input.failureStage ?? "preflight_failed",
     input.error,

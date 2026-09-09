@@ -4,7 +4,7 @@ import { pathContainedBy } from "../core/paths.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { CONTROLLER_PROMPT_DIGEST, CONTROLLER_TURN_PROMPTS, type SteeringContext } from "../agents/controller-agent.js";
 import { record, text } from "../core/json.js";
-import type { EventEnvelope, TaskCase } from "../core/schema.js";
+import type { EventEnvelope, TaskCase, UserVisibleTurn } from "../core/schema.js";
 import type { SourceRootKind } from "./replay-conditions.js";
 
 export const CONTROLLER_PROJECT_MOUNT = "project";
@@ -260,6 +260,22 @@ function renderViewSnapshot(input: {
   ].join("\n");
 }
 
+function renderUserViewMarkdown(view: UserVisibleTurn): string {
+  return [
+    "# User visible turn",
+    `status=${view.status}`,
+    `turnIndex=${view.turnIndex}`,
+    `observedAt=${view.observedAt}`,
+    "",
+    "# Assistant",
+    view.assistantText?.trim() ? view.assistantText : "(empty)",
+    "",
+    "# Prompt",
+    view.prompt?.trim() ? view.prompt : "(none)",
+    "",
+  ].join("\n");
+}
+
 export async function writeOpeningBriefing(input: {
   briefingRoot: string;
   replicaRoot: string;
@@ -296,6 +312,11 @@ export async function writeOpeningBriefing(input: {
   );
   await writeAtomic(join(input.briefingRoot, "THIS-TURN.txt"), "");
   await writeAtomic(join(input.briefingRoot, "run", "sent-user-messages.jsonl"), "");
+  await writeAtomic(join(input.briefingRoot, "current-user-view.md"), renderUserViewMarkdown({
+    turnIndex: 1,
+    status: "empty",
+    observedAt: "unstarted",
+  }));
   const indexMarkdown = renderIndexMarkdown(undefined);
   await writeAtomic(join(input.briefingRoot, "INDEX.md"), indexMarkdown);
   await writeBriefingManifest(input.briefingRoot);
@@ -311,6 +332,7 @@ export async function writeSettledTurnBriefing(input: {
   allowModelText: boolean;
   surface?: "empty" | "unavailable" | "waiting" | "failed" | "completed" | "aborted";
   prompt?: string;
+  userView?: UserVisibleTurn;
 }): Promise<{ indexMarkdown: string; fileDigests: Record<string, string>; turnRelative: string }> {
   const turnRelative = `run/turns/${String(input.turnIndex).padStart(4, "0")}`;
   const turnDir = join(input.briefingRoot, ...turnRelative.split("/"));
@@ -323,6 +345,16 @@ export async function writeSettledTurnBriefing(input: {
   await writeAtomic(join(input.briefingRoot, "THIS-TURN.txt"), `${turnRelative}\n`);
   const surface = input.surface
     ?? (!input.allowModelText ? "unavailable" : input.visibleText.trim() ? "completed" : "empty");
+  const userView = input.userView ?? {
+    turnIndex: input.turnIndex,
+    status: surface,
+    observedAt: "settled",
+    ...(visible.trim() ? { assistantText: visible } : {}),
+    ...(input.prompt ? { prompt: input.prompt } : {}),
+  };
+  const viewMarkdown = renderUserViewMarkdown(userView);
+  await writeAtomic(join(turnDir, "user-view.md"), viewMarkdown);
+  await writeAtomic(join(input.briefingRoot, "current-user-view.md"), viewMarkdown);
   await writeAtomic(
     join(input.briefingRoot, "view.txt"),
     renderViewSnapshot({
@@ -353,6 +385,7 @@ async function digestBriefing(briefingRoot: string, turnRelative: string | undef
     "INDEX.md",
     "THIS-TURN.txt",
     "view.txt",
+    "current-user-view.md",
     "permissions.txt",
     "history/user-inputs/INDEX.tsv",
     "history/initial-input.txt",
@@ -362,7 +395,7 @@ async function digestBriefing(briefingRoot: string, turnRelative: string | undef
     "manifest.json",
   ];
   if (turnRelative) {
-    relative.push(`${turnRelative}/visible.txt`, `${turnRelative}/changed-paths.txt`, `${turnRelative}/event-index.tsv`);
+    relative.push(`${turnRelative}/visible.txt`, `${turnRelative}/changed-paths.txt`, `${turnRelative}/event-index.tsv`, `${turnRelative}/user-view.md`);
   }
   const fileDigests: Record<string, string> = {};
   for (const path of relative) {

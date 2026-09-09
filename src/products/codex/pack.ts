@@ -8,7 +8,7 @@ import type { CaseArtifactRef, CandidateSpec, TaskCase } from '../../core/schema
 import type { ProductAuthStatus, CompleteProductPack, RecoveryPlaybookDescriptor } from '../contract.js';
 import { publishFrozenCase } from '../shared/freeze.js';
 import { codexActivityTranslator } from './activity.js';
-import { CodexRuntimePort } from './runtime-port.js';
+import { CodexProductRuntime } from './runtime-port.js';
 import { codexSessionAdapter } from './sessions.js';
 
 const FIXTURE_SCHEMA = 'reprise.codex.fixture/v1';
@@ -56,9 +56,9 @@ function codexRecoveryPlaybook(): RecoveryPlaybookDescriptor {
 const DEFAULT_CANDIDATE: CandidateSpec = { candidateId: 'codex-terra-high', productId: 'codex', requestedModel: 'gpt-5.6-terra' };
 
 export const codexProductPack: CompleteProductPack = {
-  runtime: new CodexRuntimePort({ effort: 'high' }),
-  sessions: codexSessionAdapter,
-  activity: codexActivityTranslator,
+  runtime: new CodexProductRuntime({ effort: 'high' }),
+  history: codexSessionAdapter,
+  projection: codexActivityTranslator,
   recoveryPlaybook: codexRecoveryPlaybook,
   checkAuth: checkCodexAuth,
   defaultCandidate: () => DEFAULT_CANDIDATE,
@@ -67,7 +67,7 @@ export const codexProductPack: CompleteProductPack = {
     displayName: 'Codex',
     packVersion: '0.1.0',
     schemaVersion: 1,
-    apiMajor: 1,
+    apiMajor: 2,
     capabilities: ['import', 'runtime'],
     sessionSchemaVersions: [FIXTURE_SCHEMA],
   },

@@ -23,15 +23,17 @@ Product Pack 只解决两类产品私有差异：历史 session 格式，以及�
 ```text
 Product Pack
 ├── manifest
-├── session-source
+├── history
 ├── runtime
+├── projection
 ├── recovery/SKILL.md
 └── fixtures
 ```
 
 - `manifest`：产品身份、Pack 版本和 session schema 声明；
-- `session-source`：发现并导入原生会话，提取来源证据；
-- `runtime`：发现当前安装项，启动目标 CLI、提交输入、识别 turn boundary、规范化原生事件；
+- `history`：`ProductHistoryReader` 发现并导入原生会话，提取来源证据；
+- `runtime`：`ProductRuntime` 发现当前安装项，启动目标 CLI、提交输入、识别 turn boundary、规范化原生事件；
+- `projection`：`UserSurfaceProjection` 把标准事件译成用户可见活动；
 - `recovery/SKILL.md`：Recovery Agent 使用的产品知识；
 - `fixtures`：session 解析与 Runtime 适配器契约测试样例。
 
@@ -59,7 +61,7 @@ interface RecoveryPlaybookDescriptor {
 }
 ```
 
-Manifest 不声明历史 Runtime 版本矩阵。Runtime 适配器是否仍兼容当前产品，由固定原生事件 fixtures、最小契约测试和可选的本机 smoke 验证；失败时返回明确 diagnostic，不用一个宽泛版本范围假装兼容。
+Manifest 不声明历史 Runtime 版本矩阵。公共 Pack API 为 `PACK_API_MAJOR` 2，端口字段见 [ProductPack 端口](../decisions/accepted/2026-09-09-product-pack-ports.md)。Runtime 适配器是否仍兼容当前产品，由固定原生事件 fixtures、最小契约测试和可选的本机 smoke 验证；失败时返回明确 diagnostic，不用一个宽泛版本范围假装兼容。
 
 ## 4. 两类 Runtime 事实
 
@@ -213,7 +215,7 @@ Runtime 发现只有三种结果：可用、未安装、平台不支持。未安
 ## 10. 与其他模块的关系
 
 ```text
-SessionSourceAdapter
+ProductHistoryReader
   → ImportedSession / SourceRuntimeEvidence
   → TaskCase provenance
 

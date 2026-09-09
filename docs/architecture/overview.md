@@ -46,11 +46,11 @@ flowchart TB
     APP --> RUN[Candidate Run Orchestrator]
     APP --> COMPARE[Comparison Service]
 
-    PREP --> SOURCE[SessionSourceAdapter]
+    PREP --> SOURCE[ProductHistoryReader]
     PREP --> RECOVERY[Recovery Agent]
     PREP --> ENV[Environment Provider]
 
-    RUN --> RUNTIME[RuntimePort]
+    RUN --> RUNTIME[ProductRuntime]
     RUN --> CTRL[Controller Agent]
     RUN --> ENV
     RUN --> TRACE[Trace + Artifacts]
@@ -183,13 +183,14 @@ Comparison Agent 只读取规范化的任务、结果、artifact、遥测和 fid
 `ImportedSession` 是产品无关的完整逻辑会话快照。Product Pack 只负责发现与导入；冻结成 `TaskCase`（暂存、原子发布、幂等、脱敏）由共享的 `freezeCase` 承担。Pack 负责确定第一条可执行用户输入；如果 resume、fork 或分支关系无法形成一条明确逻辑会话，则返回 diagnostic，而不是让 Case Preparation 猜测任务边界。
 
 
-SessionSourceAdapter 负责可靠定位和解析私有数据；Recovery Playbook 解释环境证据的语义、调查顺序、恢复方法和已知版本限制。TaskCase 冻结完整会话及其必要证据，正常候选运行不依赖产品私有日志继续存在。
+ProductHistoryReader 负责可靠定位和解析私有数据；Recovery Playbook 解释环境证据的语义、调查顺序、恢复方法和已知版本限制。TaskCase 冻结完整会话及其必要证据，正常候选运行不依赖产品私有日志继续存在。
 
 ```text
 products/<product-id>/
 ├── manifest
-├── session-source
+├── history
 ├── runtime
+├── projection
 ├── recovery/SKILL.md
 └── fixtures
 ```
@@ -199,12 +200,12 @@ products/<product-id>/
 产品私有数据的边界是：
 
 ```text
-historical private data → SessionSourceAdapter → ImportedSession
-runtime private events  → RuntimePort          → TargetEvent / TurnSettlement
+historical private data → ProductHistoryReader → ImportedSession
+runtime private events  → ProductRuntime          → TargetEvent / TurnSettlement
 ```
 
 Controller 模块从这些公共数据组装 `SteeringContext`；Comparison 模块从 `TaskCase`、`RunRecord` 和 artifact 组装 `ComparisonContext`。Product Pack 不生成二者，也不提供 Controller/Comparison Playbook。无法规范化但需要追溯的原始数据只保留为受保护 `rawRef`。
-## 7. RuntimePort 与 TargetRunner
+## 7. ProductRuntime 与 TargetRunner
 
 
 `TargetEventSink` 是原生与规范化事件的单一流式出口。`waitForTurn()` 只返回 Orchestrator 推进状态所需的 settlement，不能成为第二条重复事件流。
@@ -225,11 +226,11 @@ accepted ≠ started ≠ settled
 
 turn boundary 优先使用原生生命周期事件，其次组合 transport、process 和工具状态，最后才使用 quiet-period fallback。普通文本输出不是 turn boundary。
 
-候选 Runtime 以恢复后的会话起点环境创建，并由 `TargetRunner.start` 接收 Controller 开场 `send` 的正文；Product Pack 不注入原历史后续轨迹，Host 也不原样重放 `TaskCase.initialInput`。`RuntimePort.resolve` 只解析当前机器已安装的 Runtime，不接受历史版本约束，也不下载或切换版本。`ResolvedRuntime` 至少记录 executable、产品、可观察版本、provider 与模型解析，以及可取得的工具、MCP、权限、沙箱、上下文压缩和重试配置；闭源内部行为无法验证时记录 `unknown`。
+候选 Runtime 以恢复后的会话起点环境创建，并由 `TargetRunner.start` 接收 Controller 开场 `send` 的正文；Product Pack 不注入原历史后续轨迹，Host 也不原样重放 `TaskCase.initialInput`。`ProductRuntime.resolve` 只解析当前机器已安装的 Runtime，不接受历史版本约束，也不下载或切换版本。`ResolvedRuntime` 至少记录 executable、产品、可观察版本、provider 与模型解析，以及可取得的工具、MCP、权限、沙箱、上下文压缩和重试配置；闭源内部行为无法验证时记录 `unknown`。
 
 Experiment 首个候选准备时保存一次 Runtime fingerprint，每个候选启动前重新解析并写入各自 `RunManifest`。预期使用同一 Runtime 的候选若 fingerprint 发生变化，Harness 追加 `runtime_drift` warning 并继续运行；历史 `SourceRuntimeEvidence` 与当前 fingerprint 不比较、不产生 warning，也不改变 fidelity。使用不同 Agent 产品或显式不同当前配置的候选仍可比较，但报告只能将差异解释为“实际 Agent 配置差异”，不能声称纯模型隔离。
 
-Runtime 的现实兼容性不作为独立的通用 Capability Probe、能力注册表或运行前验证阶段实现。`RuntimeCapabilities` 只保留 admission、settlement、telemetry 和崩溃恢复所需的少数固定事实；Product Pack 必须说明 start/send/stop 响应丢失时可核查的原生证据，能力为 false 时由 Orchestrator 固化 `uncertain.*`，不能宣称 exactly-once。每个 Product Pack 在开发时通过最小适配器契约测试验证自己的 `RuntimePort` 实现；测试使用真实 CLI 或固定的原始事件 fixture，覆盖新会话启动、`accepted`/`settled` 边界、多轮发送、停止和错误分类。运行时只消费适配器声明的能力并记录实际事件，不负责动态发现一套通用能力矩阵。历史会话的 `resume` 仅属于 `SessionSourceAdapter` 的产品私有能力，不是候选 Runtime 的必要控制能力。
+Runtime 的现实兼容性不作为独立的通用 Capability Probe、能力注册表或运行前验证阶段实现。`RuntimeCapabilities` 只保留 admission、settlement、telemetry 和崩溃恢复所需的少数固定事实；Product Pack 必须说明 start/send/stop 响应丢失时可核查的原生证据，能力为 false 时由 Orchestrator 固化 `uncertain.*`，不能宣称 exactly-once。每个 Product Pack 在开发时通过最小适配器契约测试验证自己的 `ProductRuntime` 实现；测试使用真实 CLI 或固定的原始事件 fixture，覆盖新会话启动、`accepted`/`settled` 边界、多轮发送、停止和错误分类。运行时只消费适配器声明的能力并记录实际事件，不负责动态发现一套通用能力矩阵。历史会话的 `resume` 仅属于 `ProductHistoryReader` 的产品私有能力，不是候选 Runtime 的必要控制能力。
 
 ## 8. EnvironmentPort
 
@@ -258,7 +259,7 @@ Product Pack 只交付规范化会话和 Target events；产品无关的 Observa
 Comparison 发生在 CandidateRun 结束之后，也使用产品无关的公共接口：
 
 
-Comparison Agent 每次 attempt 使用一个连续 Session，顺序发送四条工作委托，仅末轮解析薄信封；`report.html` 是真实任务比较卡。薄信封返回状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 RuntimePort、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 每次 attempt 使用一个连续 Session，顺序发送四条工作委托，仅末轮解析薄信封；`report.html` 是真实任务比较卡。薄信封返回状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 ProductRuntime、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
 Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Agent Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型
@@ -309,7 +310,7 @@ created
 sequenceDiagram
     participant O as RunOrchestrator
     participant E as EnvironmentPort
-    participant R as RuntimePort/TargetRunner
+    participant R as ProductRuntime/TargetRunner
     participant C as Controller
     participant S as TraceStore
 
@@ -388,7 +389,7 @@ sequenceDiagram
 ## 14. 安全边界
 
 - 所有外部输入、路径、artifact 引用、Product Pack 事件和模型结构化输出都在适配器边界验证。
-- Product Pack 的 RuntimePort 只能获得本次 `PreparedEnvironmentRef` 和明确配置，不能默认遍历用户全局目录。
+- Product Pack 的 ProductRuntime 只能获得本次 `PreparedEnvironmentRef` 和明确配置，不能默认遍历用户全局目录。
 - Recovery Agent 只写 Environment staging；历史证据和用户原目录保持只读。
 - Controller 工具只读证据与候选结果，不能写隔离副本或用户源目录。
 - Comparison 只写本次 attempt 目录中 Host 允许的相对路径；接受恢复、投递候选、发布报告由 application/harness 执行，不经统一业务 Verifier。

@@ -214,6 +214,8 @@ export function projectTimelineEvent(event: EventEnvelope, options: { legacyProd
       const prompt = text(payload.text);
       return prompt ? emitPresented(entry, 'TARGET', promptTitle(prompt), prompt) : [];
     }
+    case 'candidate.session_bound': return [entry('HARNESS', `Candidate session · ${text(payload.sessionId) ?? '?'}`, text(payload.productId), { hidden: true })];
+    case 'candidate.user_view_persisted': return [entry('HARNESS', `User view · ${text(payload.status) ?? 'unknown'}`, undefined, { hidden: true })];
     case 'runtime.delivery_observed': {
       const delivery = text(record(payload.receipt).delivery) ?? 'unknown';
       if (delivery === 'accepted') return [entry('HARNESS', `Delivery: ${delivery}`, undefined, { hidden: true })];
@@ -254,7 +256,7 @@ export function projectTimelineEvent(event: EventEnvelope, options: { legacyProd
     case 'comparison.completed':
       return projectComparisonCompleted(entry, payload);
     default:
-      return projectUnknownActivity(event, entry, options.legacyProductFallback === true);
+      return event.type.startsWith('runtime.') ? [] : projectUnknownActivity(event, entry, options.legacyProductFallback === true);
   }
 }
 

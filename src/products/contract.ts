@@ -1,8 +1,22 @@
-import type { RuntimePort } from '../core/runtime.js';
+import type { ProductRuntime, TurnSettlement } from '../core/runtime.js';
 import type { JsonRecord } from '../core/json.js';
-import type { CandidateSpec, EventEnvelope, RecoveryDiagnostic, RecoveryReadiness, TaskCase } from '../core/schema.js';
+import type {
+  CandidateSpec,
+  EventEnvelope,
+  RecoveryDiagnostic,
+  RecoveryReadiness,
+  TaskCase,
+  UserVisibleTurn,
+} from '../core/schema.js';
 
-export type { RecoveryDiagnostic, RecoveryReadiness } from '../core/schema.js';
+export type {
+  CandidateLaunchContext,
+  CandidateSessionHandle,
+  CandidateRuntimeEvent,
+  UserVisibleTurn,
+  RecoveryDiagnostic,
+  RecoveryReadiness,
+} from '../core/schema.js';
 
 export type SessionMessage = TaskCase['transcript'][number];
 
@@ -193,7 +207,7 @@ export function isEligibleSession(session: SessionSummary): boolean {
     && (session.signals.assistantMessages > 0 || session.signals.toolCalls > 0);
 }
 
-export type SessionSourceAdapter = {
+export type ProductHistoryReader = {
   readonly defaultRoot: string;
   discover(query?: SessionDiscoveryQuery): Promise<SessionDiscoveryPage>;
   inspect(ref: SessionRef): Promise<SessionInspection>;
@@ -255,10 +269,51 @@ export type TargetRunFacts = {
   readonly evidenceEvents: readonly EventEnvelope[];
 };
 
-export interface TargetActivityTranslator {
+export interface UserSurfaceProjection {
   /** Only this pack's namespace. Empty means keep the event in the trace, not the timeline. */
   translate(event: EventEnvelope): readonly TargetActivityEntry[];
   inspectRunFacts(events: readonly EventEnvelope[]): TargetRunFacts;
+  projectTurn(input: {
+    turnIndex: number;
+    settlement: TurnSettlement;
+    events: readonly EventEnvelope[];
+    allowModelText: boolean;
+  }): UserVisibleTurn;
+}
+
+export function projectUserVisibleTurn(input: {
+  turnIndex: number;
+  settlement: Pick<TurnSettlement, 'status' | 'observedAt' | 'failure'>;
+  facts: TargetRunFacts;
+  allowModelText: boolean;
+}): UserVisibleTurn {
+  if (!input.allowModelText) {
+    return { turnIndex: input.turnIndex, status: 'unavailable', observedAt: input.settlement.observedAt };
+  }
+  const mapped =
+    input.settlement.status === 'waiting_input' ? 'waiting'
+    : input.settlement.status === 'failed' ? 'failed'
+    : input.settlement.status === 'aborted' ? 'aborted'
+    : input.settlement.status === 'completed' ? 'completed'
+    : 'unavailable';
+  if (mapped === 'failed' || mapped === 'aborted') {
+    return {
+      turnIndex: input.turnIndex,
+      status: mapped,
+      observedAt: input.settlement.observedAt,
+      ...(input.settlement.failure?.summary ? { assistantText: input.settlement.failure.summary } : {}),
+    };
+  }
+  const text = input.facts.finalMessage?.trim() ?? '';
+  if (mapped === 'completed' && !text) {
+    return { turnIndex: input.turnIndex, status: 'empty', observedAt: input.settlement.observedAt };
+  }
+  return {
+    turnIndex: input.turnIndex,
+    status: mapped,
+    observedAt: input.settlement.observedAt,
+    ...(text ? { assistantText: text } : {}),
+  };
 }
 
 export type ProductAuthStatus = {
@@ -268,7 +323,7 @@ export type ProductAuthStatus = {
   readonly detail?: string;
 };
 
-export const PACK_API_MAJOR = 1;
+export const PACK_API_MAJOR = 2;
 
 export type PackCapability = "import" | "runtime";
 
@@ -290,18 +345,18 @@ export type RecoveryPlaybookDescriptor = {
 
 export interface ProductPack {
   readonly manifest: ProductPackManifest;
-  readonly sessions?: SessionSourceAdapter;
-  readonly runtime?: RuntimePort;
-  readonly activity?: TargetActivityTranslator;
+  readonly history?: ProductHistoryReader;
+  readonly runtime?: ProductRuntime;
+  readonly projection?: UserSurfaceProjection;
   recoveryPlaybook?(): RecoveryPlaybookDescriptor;
   checkAuth?(): Promise<ProductAuthStatus>;
   defaultCandidate?(): CandidateSpec;
 }
 
 export type CompleteProductPack = ProductPack & {
-  readonly sessions: SessionSourceAdapter;
-  readonly runtime: RuntimePort;
-  readonly activity: TargetActivityTranslator;
+  readonly history: ProductHistoryReader;
+  readonly runtime: ProductRuntime;
+  readonly projection: UserSurfaceProjection;
   recoveryPlaybook(): RecoveryPlaybookDescriptor;
   defaultCandidate(): CandidateSpec;
 };

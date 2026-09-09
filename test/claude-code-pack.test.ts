@@ -7,6 +7,7 @@ import { Value } from '@sinclair/typebox/value';
 import { TaskCaseSchema, type EventEnvelope } from '../src/core/schema.js';
 import { resolvedRecoveryFacts } from '../src/infrastructure/recovery-tools.js';
 import type { TargetRunner } from '../src/core/runtime.js';
+import { candidateLaunchFor } from '../src/application/candidate-launch.js';
 import { isEligibleSession, type TargetActivity } from '../src/products/contract.js';
 import { freezeCase } from '../src/products/shared/freeze.js';
 import { freezeBlockedReason, importVerifiedSession } from '../src/products/shared/session-recovery.js';
@@ -16,7 +17,7 @@ import {
   CLAUDE_DISALLOWED_TOOLS,
   CLAUDE_REQUIRED_ARGS,
   ClaudeStreamClient,
-  ClaudeCodeRuntimePort,
+  ClaudeCodeProductRuntime,
   clearClaudeCatalogCache,
 } from '../src/products/claude-code/runtime-port.js';
 import { importClaudeSession, discoverClaudeSessions, claudeSessionAdapter, defaultClaudeSessionsRoot } from '../src/products/claude-code/sessions.js';
@@ -280,8 +281,8 @@ test('Claude activity vocabulary maps built-in tools without exceeding the other
     'Workflow', 'Skill', 'ReportFindings', 'EnterWorktree', 'ExitWorktree',
   ];
   const events: EventEnvelope[] = [
-    envelope('claude-code.system_init', { permissionMode: 'bypassPermissions', model: 'claude-fable-5[1M]', claude_code_version: '2.1.221' }),
-    envelope('claude-code.assistant', {
+    envelope('runtime.session_started', { permissionMode: 'bypassPermissions', model: 'claude-fable-5[1M]', claude_code_version: '2.1.221' }),
+    envelope('runtime.visible_output', {
       message: {
         content: [
           { type: 'thinking', thinking: 'plan' },
@@ -290,7 +291,7 @@ test('Claude activity vocabulary maps built-in tools without exceeding the other
         ],
       },
     }),
-    envelope('claude-code.result', { usage: { input_tokens: 3, output_tokens: 2 } }),
+    envelope('runtime.usage_reported', { usage: { input_tokens: 3, output_tokens: 2 } }),
   ];
   const activities = events.flatMap((event) => claudeActivityTranslator.translate(event)).map((entry) => entry.activity);
   assert.ok(activities.some((activity) => activity.kind === 'sandbox_notice'));
@@ -310,8 +311,8 @@ test('a successful Claude turn settles only after result and records native admi
   const settlement = await runner.waitForTurn();
   assert.equal(settlement.status, 'completed');
   assert.equal(settlement.confidence, 'native');
-  assert.ok(events.includes('claude-code.system_init'));
-  assert.ok(events.includes('claude-code.result'));
+  assert.ok(events.includes('runtime.session_started'));
+  assert.ok(events.includes('runtime.usage_reported'));
 });
 
 test('subtype success plus is_error settles as failed', async (t) => {
@@ -342,7 +343,7 @@ test('an unrecognized result subtype fails immediately instead of waiting', asyn
     { runId: 'run-1', turnIndex: 0, clientMessageId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
   );
   await assert.rejects(runner.waitForTurn(), /unrecognized turn settlement/);
-  assert.ok(events.includes('claude-code.protocol_error'));
+  assert.ok(events.includes('runtime.runtime_failed'));
 });
 
 test('an unexpectedly exited Claude process fails waitForTurn and records one process_exited event', async (t) => {
@@ -353,7 +354,7 @@ test('an unexpectedly exited Claude process fails waitForTurn and records one pr
   );
   await assert.rejects(runner.waitForTurn(), /exited/);
   assert.equal(await runner.inspect(), 'stopped');
-  assert.equal(events.filter((type) => type === 'claude-code.process_exited').length, 1);
+  assert.equal(events.filter((type) => type === 'runtime.runtime_failed').length, 1);
 });
 
 test('a control request that never responds times out and closes the process', async (t) => {
@@ -393,8 +394,8 @@ test('Claude model catalog cache is shared by identical executable configuration
   const count = join(root, 'calls.log');
   await writeFile(script, FAKE_CLAUDE);
   clearClaudeCatalogCache();
-  const first = new ClaudeCodeRuntimePort({ executable: process.execPath, args: [script, 'catalog'], env: { CLAUDE_FAKE_LOG: count } });
-  const second = new ClaudeCodeRuntimePort({ executable: process.execPath, args: [script, 'catalog'], env: { CLAUDE_FAKE_LOG: count } });
+  const first = new ClaudeCodeProductRuntime({ executable: process.execPath, args: [script, 'catalog'], env: { CLAUDE_FAKE_LOG: count } });
+  const second = new ClaudeCodeProductRuntime({ executable: process.execPath, args: [script, 'catalog'], env: { CLAUDE_FAKE_LOG: count } });
   assert.equal((await first.listModels())[0]?.value, 'sonnet');
   assert.equal((await second.listModels())[0]?.resolvedModel, 'claude-fable-5');
   assert.equal((await readFile(count, 'utf8')).trim().split(/\r?\n/).length, 1);
@@ -432,7 +433,7 @@ test('initialize accepts the nested control_response shape from Claude Code 2.1.
   const script = join(root, 'fake-claude.mjs');
   await writeFile(script, FAKE_CLAUDE);
   clearClaudeCatalogCache();
-  const models = await new ClaudeCodeRuntimePort({ executable: process.execPath, args: [script, 'nested'] }).listModels();
+  const models = await new ClaudeCodeProductRuntime({ executable: process.execPath, args: [script, 'nested'] }).listModels();
   assert.equal(models[0]?.value, 'sonnet');
   assert.equal(models[0]?.resolvedModel, 'claude-fable-5');
 });
@@ -443,7 +444,7 @@ test('checkAuth can use an initialize catalog without reading credential files',
   const script = join(root, 'fake-claude.mjs');
   await writeFile(script, FAKE_CLAUDE);
   clearClaudeCatalogCache();
-  const status = await checkClaudeAuth(new ClaudeCodeRuntimePort({ executable: process.execPath, args: [script, 'catalog'] }));
+  const status = await checkClaudeAuth(new ClaudeCodeProductRuntime({ executable: process.execPath, args: [script, 'catalog'] }));
   assert.equal(status.configured, true);
   assert.equal(status.source, 'initialize');
 });
@@ -533,15 +534,18 @@ async function fakeClaudeRunner(
   const root = await mkdtemp(join(tmpdir(), 'reprise-fake-claude-'));
   const script = join(root, 'fake-claude.mjs');
   await writeFile(script, FAKE_CLAUDE);
-  const runtime = new ClaudeCodeRuntimePort({
+  const runtime = new ClaudeCodeProductRuntime({
     executable: process.execPath,
     args: override?.args ?? [script, mode],
   });
   const events: string[] = [];
+  const environment = { environmentId: 'environment-run-1', runId: 'run-1', root };
+  const resolved = { productId: 'claude-code', executable: process.execPath, requestedModel: 'sonnet', resolvedModel: 'unknown' };
   const runner = await runtime.createRunner(
-    { productId: 'claude-code', executable: process.execPath, requestedModel: 'sonnet', resolvedModel: 'unknown' },
-    { environmentId: 'environment-run-1', runId: 'run-1', root },
+    resolved,
+    environment,
     { append: async (event) => { events.push(event.type); } },
+    candidateLaunchFor(resolved, environment),
   );
   t.after(async () => { try { await runner.stop('shutdown'); } catch { /* already stopped */ } });
   t.after(async () => rm(root, { recursive: true, force: true }));

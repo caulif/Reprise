@@ -6,9 +6,18 @@
 
 ## 当前批次
 
-无进行中的重构批次。真终端、付费 lane、Runtime smoke 仍不关闭。
+Application / 候选链重构：阶段 B–L 代码已接入；Adapter 将候选事件标准化为 `runtime.<CandidateRuntimeEventType>` 再写入 Journal。规划见 [Application 与候选链](../plan/application-candidate-agent-refactor.md)。
 
 ## 验证记录
+
+2026-09-09 Application/候选链阶段 F.2：Adapter 只向 Journal 写 `runtime.<CandidateRuntimeEventType>`；Application 拒绝产品私有类型；TUI 时间线不把原始 runtime 帧当 Activity。ADR：[Runtime 事件](../decisions/accepted/2026-09-09-candidate-runtime-events.md)。`npm run check` 17 门禁通过（828 pass / 4 skip）。
+
+2026-09-09 Application/候选链阶段 H/L：`startExperiment`/`preflightExperiment`/`recoverExperiment`；workflow 持有 Recovery 活对象；TUI 投影 `RecoveryView`。ADR：[产品无关实验入口](../decisions/accepted/2026-09-09-product-agnostic-experiment-entry.md)。`npm run check` 17 门禁通过（827 pass / 4 skip）。
+
+
+2026-09-09 Application/候选链阶段 C–D：observations 含 session.json、events/{historical,run}、user-inputs 原文、省略 sourcePath；启动前写入 `candidate-launch.json`，根外 workspace 与缺 observations 不创建 CandidateRun。ADR：[观察树](../decisions/accepted/2026-09-09-observations-tree.md)、[LaunchContext](../decisions/accepted/2026-09-09-candidate-launch-context.md)。`npm run check` 17 门禁通过（820 pass / 4 skip）。真终端、付费 lane、Runtime smoke 不在本批关闭。
+
+2026-09-09 Application/候选链阶段 B：删除 `SessionSourceAdapter`/`RuntimePort`/`TargetActivityTranslator` 与 `packSessions`/`packActivity`；Fake Pack 可发现会话、列模型、创建 Runner。`npm run check` 17 门禁通过（817 pass / 4 skip）。真终端、付费 lane、Runtime smoke 不在本批关闭。
 
 2026-09-09 Agent 基座全面重构：Provider 无关 `AgentHost`/`AgentSession`（`work`/`request`），Pi 仅在 `providers/pi`；Fake adapter；顺序工具执行；业务 Agent 只调用 Host 公共边界。ADR：[基座 Host](../decisions/accepted/2026-09-09-agent-foundation-host.md)。规划见 [实施计划](../plan/agent-foundation-refactor-plan.md)。`npm run check` 17 门禁通过（814 pass / 4 skip）。真终端、付费 lane、Runtime smoke 不在本批关闭。
 

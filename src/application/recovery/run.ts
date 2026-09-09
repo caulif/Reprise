@@ -16,7 +16,7 @@ export { classifyRecoveryFailureStage };
 export type { RecoveryAttempt, RecoveryAttemptInput, RecoveryAttemptMode } from "./types.js";
 
 /** Runs Recovery only in unpublished Provider staging. The caller must explicitly accept the returned preview. */
-export async function recoverCodexExperiment(
+export async function recoverExperiment(
   input: RecoveryAttemptInput,
 ): Promise<RecoveryAttempt> {
   const localAbort = new AbortController();
@@ -35,7 +35,7 @@ export async function recoverCodexExperiment(
   let session: RecoveryRunSession | undefined;
   try {
     session = await createRecoveryRunSession({ ...input, signal });
-    return await runRecoverCodexExperiment(session);
+    return await runRecoverExperiment(session);
   } catch (error) {
     if (!session) throw error;
     if (signal.aborted) {
@@ -68,7 +68,7 @@ export async function recoverCodexExperiment(
   }
 }
 
-async function runRecoverCodexExperiment(session: RecoveryRunSession): Promise<RecoveryAttempt> {
+async function runRecoverExperiment(session: RecoveryRunSession): Promise<RecoveryAttempt> {
   session.input.signal?.throwIfAborted();
   await beginRecoveryStaging(session);
   session.input.signal?.throwIfAborted();

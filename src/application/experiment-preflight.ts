@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import type { CandidateSpec, TaskCase } from "../core/schema.js";
-import type { ResolvedRuntime, RuntimePort } from "../core/runtime.js";
+import type { ResolvedRuntime, ProductRuntime } from "../core/runtime.js";
 import { LocalWorkspaceProvider, type EnvironmentBaseline } from "../environment/local-workspace-provider.js";
 import {
   contaminationWarnings,
@@ -22,7 +22,7 @@ export type ExperimentPreflight = {
 };
 
 /** Read-only admission check. It never creates a Candidate workspace or calls a target model. */
-export async function preflightCodexExperiment(
+export async function preflightExperiment(
   input: Pick<
     ExperimentInput,
     | "candidate"
@@ -74,7 +74,7 @@ export async function preflightCodexExperiment(
 }
 
 export async function resolveVerifiedCandidate(
-  runtime: RuntimePort,
+  runtime: ProductRuntime,
   candidate: CandidateSpec,
 ): Promise<ResolvedRuntime> {
   const resolved = await runtime.validateCandidate(candidate);
@@ -83,7 +83,7 @@ export async function resolveVerifiedCandidate(
   return resolved;
 }
 
-async function pendingResolved(runtime: RuntimePort, candidate: CandidateSpec): Promise<ResolvedRuntime> {
+async function pendingResolved(runtime: ProductRuntime, candidate: CandidateSpec): Promise<ResolvedRuntime> {
   const available = (await runtime.inspectAvailable())[0];
   if (available) {
     return { ...available, requestedModel: candidate.requestedModel, resolvedModel: "pending" };

@@ -40,7 +40,7 @@ ControllerAgent / ComparisonAgent / RecoveryAgent
 
 ```text
 src/infrastructure/agent/
-├─ host.ts                 # AgentHost 工厂与一次性调用边界
+├─ host.ts                 # AgentHost 工厂与 Session 创建边界
 ├─ session.ts              # AgentSession、Invocation 与状态
 ├─ types.ts                # Provider 无关公共类型
 ├─ audit.ts                # Agent 事件与脱敏持久化适配
@@ -116,7 +116,7 @@ export type StructuredWorkRequest<T> = {
 };
 ```
 
-`work()` 用于自主调查、工具调用、修改、验证和自然语言工作，不解析业务 JSON、不触发 repair。`request()` 用于业务交付，执行 JSON 提取、Schema 校验、normalize、validate 和有界 repair。repair 在同一 Invocation、同一 Session 内追加。
+`work()` 用于自主调查、工具调用、修改、验证和自然语言工作，不解析业务 JSON、不触发 repair，也不把模型原文当作业务交付。`request()` 用于业务交付，执行 JSON 提取、Schema 校验、normalize、validate 和有界 repair。repair 在同一 Invocation、同一 Session 内追加。
 
 ### 4.3 Invocation 结果
 
@@ -129,6 +129,8 @@ export type AgentInvocation<T> =
 export type FreeformInvocation = AgentInvocation<{ text?: string }>;
 export type StructuredInvocation<T> = AgentInvocation<T>;
 ```
+
+`FreeformInvocation` 完成时的 `value.text` 是可选的可见诊断摘录，供审计与测试对照。它不是业务状态；业务 Agent 只根据 `status` 继续轮次或进入 `request()`，不得读取或依赖 `text`。
 
 一次 Invocation 可以包含多个 Pi turn、模型请求、工具调用、retry、压缩和 Structured repair。同一 Session 同时最多一个活动 Invocation；并发直接失败，不排队。
 

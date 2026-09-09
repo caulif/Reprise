@@ -7,7 +7,7 @@ import {
   matchesProjectQuery,
   type SessionProject,
 } from "./pages/intake.js";
-import { importPacks, packSessions, runtimePacks } from "../products/pack-access.js";
+import { importPacks, packHistory, runtimePacks } from "../products/pack-access.js";
 import { envNameFromConfig } from "./controller-run.js";
 import type { WorkbenchView } from "./workbench.js";
 import { projectWorkbenchView } from "./view-projection.js";
@@ -65,7 +65,7 @@ export function intakeCount(c: IntakeTui): number {
 export function productItems(c: IntakeTui): import("./pages/intake.js").ProductIntakeItem[] {
   return importPacks(c.packs).map((pack) => {
     const state = c.productDiscovery.get(pack.manifest.productId) ?? { status: "idle" as const };
-    const root = resolve(c.sessionsRoots[pack.manifest.productId] ?? packSessions(pack).defaultRoot);
+    const root = resolve(c.sessionsRoots[pack.manifest.productId] ?? packHistory(pack).defaultRoot);
     const sessions = state.root === root ? c.productSessions.get(pack.manifest.productId) : undefined;
     return { productId: pack.manifest.productId, displayName: pack.manifest.displayName, packVersion: pack.manifest.packVersion,
       discoveryStatus: state.status, ...(sessions ? { sessionCount: sessions.length } : {}), ...(state.scanned !== undefined ? { scanned: state.scanned } : {}),
@@ -170,7 +170,7 @@ export function view(c: IntakeTui): WorkbenchView {
     sourceCursor: c.sourceCursor,
     preflight: c.preflight,
     ...candidateRunFields(c),
-    recoveryAttempt: c.recoveryAttempt,
+    recoveryView: c.recoveryView,
     effort: c.modelConfig.effort,
     policy: c.workflow?.policy,
     ...(c.preparePhase

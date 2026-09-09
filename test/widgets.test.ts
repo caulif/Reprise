@@ -56,7 +56,7 @@ test('a long agent message stays in the detail pane instead of exploding the lis
   const body = `${Array.from({ length: 200 }, (_, index) => `public response line ${index + 1}`).join('\n')}\nPUBLIC_DETAIL_END`;
   const entry = publicActivityEntry({
     schemaVersion: 1, sequence: 1, eventId: 'event-1', occurredAt: '2026-08-11T00:10:02.000Z',
-    type: 'codex.item_completed', payload: { item: { type: 'agentMessage', text: body } }, checksum: 'c'.repeat(64),
+    type: 'runtime.visible_output', payload: { item: { type: 'agentMessage', text: body } }, checksum: 'c'.repeat(64),
   });
   assert.ok(entry);
   const lines = renderTimeline(theme, 120, {
@@ -133,7 +133,7 @@ test('detail pane indents command output so it does not stick to the frame', () 
   const theme = createTheme(120, false);
   const entry = publicActivityEntry({
     schemaVersion: 1, sequence: 29, eventId: 'event-29', occurredAt: '2026-08-13T14:17:28.260Z',
-    type: 'codex.item_completed',
+    type: 'runtime.tool_finished',
     payload: {
       item: {
         type: 'commandExecution',
@@ -163,7 +163,7 @@ test('command detail paints a one-line invocation plus indented output', () => {
   const theme = createTheme(120, false);
   const entry = publicActivityEntry({
     schemaVersion: 1, sequence: 5, eventId: 'event-5', occurredAt: '2026-08-11T00:10:01.500Z',
-    type: 'codex.item_completed',
+    type: 'runtime.tool_finished',
     payload: {
       item: {
         type: 'commandExecution',

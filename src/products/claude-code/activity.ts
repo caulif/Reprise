@@ -1,28 +1,28 @@
 import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
 import type { EventEnvelope } from '../../core/schema.js';
-import type { FileChange, TargetActivityEntry, TargetActivityTranslator, TargetRunFacts } from '../contract.js';
+import type { FileChange, TargetActivityEntry, UserSurfaceProjection, TargetRunFacts } from '../contract.js';
+import { projectUserVisibleTurn } from '../contract.js';
 
-const PREFIX = 'claude-code.';
 const FILE_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit']);
 const SEARCH_TOOLS = new Set(['WebSearch', 'WebFetch']);
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep']);
 const SUBTASK_TOOLS = new Set(['Task', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop', 'TaskUpdate']);
 const SCHEDULE_TOOLS = new Set(['CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup', 'SendMessage']);
 
-export const claudeActivityTranslator: TargetActivityTranslator = {
+export const claudeActivityTranslator: UserSurfaceProjection = {
   translate(event) {
-    if (!event.type.startsWith(PREFIX)) return [];
+    if (!event.type.startsWith('runtime.')) return [];
     const payload = record(event.payload);
     switch (event.type) {
-      case 'claude-code.system_init':
+      case 'runtime.session_started':
         return sandboxFromInit(payload);
-      case 'claude-code.assistant':
+      case 'runtime.visible_output':
         return assistantBlocks(payload);
-      case 'claude-code.user':
+      case 'runtime.tool_finished':
         return toolResults(payload);
-      case 'claude-code.result':
+      case 'runtime.usage_reported':
         return resultUsage(payload);
-      case 'claude-code.protocol_error':
+      case 'runtime.runtime_failed':
         return [{ activity: { kind: 'runtime_error', message: text(payload.message) ?? 'unknown protocol error' } }];
       default:
         return [];
@@ -31,10 +31,18 @@ export const claudeActivityTranslator: TargetActivityTranslator = {
   inspectRunFacts(events) {
     return inspectClaudeRunFacts(events);
   },
+  projectTurn(input) {
+    return projectUserVisibleTurn({
+      turnIndex: input.turnIndex,
+      settlement: input.settlement,
+      facts: inspectClaudeRunFacts(input.events),
+      allowModelText: input.allowModelText,
+    });
+  },
 };
 
 function inspectClaudeRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
-  const assistants = events.filter((event) => event.type === 'claude-code.assistant');
+  const assistants = events.filter((event) => event.type === 'runtime.visible_output');
   const texts = assistants.flatMap((event) => textBlocks(record(event.payload)));
   const commands = [...new Set(
     assistants.flatMap((event) => toolUses(record(event.payload)))
@@ -42,14 +50,14 @@ function inspectClaudeRunFacts(events: readonly EventEnvelope[]): TargetRunFacts
       .map((item) => text(record(item.input).command))
       .filter((value): value is string => Boolean(value)),
   )];
-  const rejectedApprovals = events.filter((event) => event.type === 'claude-code.result').reduce((count, event) => {
+  const rejectedApprovals = events.filter((event) => event.type === 'runtime.usage_reported').reduce((count, event) => {
     const listed = record(event.payload).permission_denials;
     return count + (Array.isArray(listed) ? listed.length : 0);
   }, 0);
   const evidenceEvents = events.filter((event) => (
     event.type === 'runtime.turn_settled'
-    || event.type === 'claude-code.assistant'
-    || event.type === 'claude-code.result'
+    || event.type === 'runtime.visible_output'
+    || event.type === 'runtime.usage_reported'
   ));
   const finalMessage = texts.at(-1);
   return {

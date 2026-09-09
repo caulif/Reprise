@@ -21,7 +21,7 @@ import type {
   SessionMessage,
   SessionPrivacy,
   SessionRef,
-  SessionSourceAdapter,
+  ProductHistoryReader,
   SessionSummary,
 } from '../contract.js';
 import { freezeCase } from '../shared/freeze.js';
@@ -353,7 +353,7 @@ function defaultCodexSessionsRoot(): string {
   return join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'sessions');
 }
 
-export const codexSessionAdapter: SessionSourceAdapter = {
+export const codexSessionAdapter: ProductHistoryReader = {
   get defaultRoot() { return defaultCodexSessionsRoot(); },
   discover(query?: SessionDiscoveryQuery) {
     return discoverCodexSessionPage({ ...query, root: query?.root ?? defaultCodexSessionsRoot() });

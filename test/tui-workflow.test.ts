@@ -10,6 +10,7 @@ import { PiModelCaller } from '../src/infrastructure/agent/model-caller.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
 import { IntakeTui_showError } from '../src/tui/intake-tui-nav.js';
 import { IntakeTui } from '../src/tui/intake-app.js';
+import type { RecoveryView } from '../src/application/recovery/view.js';
 import { mockTui } from '../scripts/tui-audit-lib.js';
 import { waitFor } from './codex-intake-support.js';
 
@@ -196,11 +197,18 @@ test('closing preserves a late Recovery staging reference when cleanup fails', a
   let release!: () => void;
   let recovering = false;
   const pending = new Promise<void>((resolve) => { release = resolve; });
-  const attempt = { staging: { path: 'retained-staging' }, provider: { discardRecovery: async () => { throw new Error('private cleanup detail'); } } };
+  const attempt = {
+    experimentId: 'late-cleanup',
+    experimentRoot: dataDir,
+    baseline: { mode: 'canonical' },
+    recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', reportPath: 'recovery.md', unresolved: [] } },
+    staging: { recoveryId: 'r', caseId: 'c', sourceRoot: dataDir, root: dataDir },
+  };
   const app = new IntakeTui({ dataDir, tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
     policy: TUI_RUN_POLICY,
     preflight: async () => ({ sourceBaseline: 'available', limitations: [] }),
     recover: async () => { recovering = true; await pending; return attempt; },
+    discardRecovery: async () => { throw new Error('private cleanup detail'); },
   } as never });
   t.after(() => { release(); app.close(); });
   await app.start();
@@ -211,7 +219,7 @@ test('closing preserves a late Recovery staging reference when cleanup fails', a
   const rejected = assert.rejects(app.closing, /Cleanup did not complete/);
   release();
   await rejected;
-  assert.equal(app.recoveryAttempt, attempt);
+  assert.equal(app.recoveryView?.experimentId, 'late-cleanup');
   assert.doesNotMatch(app.message, /private cleanup detail/);
 });
 
@@ -225,15 +233,21 @@ test('Ctrl+C while accepting Recovery prevents experiment startup', async () => 
     policy: TUI_RUN_POLICY,
     verifyCandidate: async () => ({}),
     start: async () => { starts += 1; throw new Error('must not start'); },
+    acceptRecovery: async () => { accepting = true; await pending; return {}; },
+    discardRecovery: async () => { discarded += 1; },
   } as never });
   app.page = 'confirm';
   app.taskCase = { caseId: 'cancel-accept', initialInput: { text: 'Create slides' } } as never;
   app.selectedCandidate = { candidateId: 'candidate', productId: 'codex', requestedModel: 'fixture' };
   app.preflight = { sourceBaseline: 'available', limitations: [] } as never;
-  app.recoveryAttempt = { baseline: { mode: 'canonical' }, staging: {},
-    accept: async () => { accepting = true; await pending; return {}; },
-    provider: { discardRecovery: async () => { discarded += 1; } },
-  } as never;
+  app.recoveryView = {
+    experimentId: 'cancel-accept',
+    experimentRoot: 'unused',
+    baseline: { mode: 'canonical' },
+    recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', reportPath: 'recovery.md', unresolved: [] } },
+    hasAccept: true,
+    staging: { recoveryId: 'r', caseId: 'c', sourceRoot: '/', root: '/' },
+  } as unknown as RecoveryView;
   try {
     app.handleInput('\r');
     await waitFor(() => accepting);
@@ -293,18 +307,26 @@ test('close waits for the experiment terminal cleanup after cancel returns', asy
 
 test('close discards cached recovery and preserves a failed cleanup for review', async () => {
   for (const fails of [false, true]) {
-    const app = new IntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
     let calls = 0;
-    const attempt = { staging: {}, provider: { discardRecovery: async () => { calls += 1; if (fails) throw new Error('private provider detail'); } } };
-    app.recoveryAttempt = attempt as never;
+    const app = new IntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
+      discardRecovery: async () => { calls += 1; if (fails) throw new Error('private provider detail'); },
+    } as never });
+    app.recoveryView = {
+      experimentId: 'cached',
+      experimentRoot: 'unused',
+      baseline: { mode: 'canonical' },
+      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', reportPath: 'recovery.md', unresolved: [] } },
+      hasAccept: false,
+      staging: { recoveryId: 'r', caseId: 'c', sourceRoot: '/', root: '/' },
+    } as unknown as RecoveryView;
     app.close();
     if (fails) {
       await assert.rejects(app.closing, /Cleanup did not complete/);
-      assert.equal(app.recoveryAttempt, attempt);
+      assert.equal(app.recoveryView?.experimentId, 'cached');
       assert.doesNotMatch(app.message, /private provider detail/);
     } else {
       await app.closing;
-      assert.equal(app.recoveryAttempt, undefined);
+      assert.equal(app.recoveryView, undefined);
     }
     assert.equal(calls, 1);
   }

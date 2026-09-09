@@ -2,16 +2,10 @@ import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { ControllerReadArtifactSchema, ControllerShellArtifactSchema } from "../core/schema.js";
-import type {
-  ComparisonAgentPort,
-  ComparisonResult,
-} from "../agents/comparison-agent.js";
-import {
-  type ControllerDecision,
-  type ControllerPort,
-  type SteeringContext,
-} from "../agents/controller-agent.js";
+import type { ComparisonAgentPort, ComparisonResult } from "../agents/comparison-agent.js";
+import { type ControllerDecision, type ControllerPort, type SteeringContext } from "../agents/controller-agent.js";
 import { materializeIsolatedStart } from "./session-start-workspace.js";
+import { commitCandidateLaunchContext } from "./candidate-launch.js";
 import { persistExperimentSpec, persistRunPreflight } from "./experiment-layout.js";
 import { CandidateRun } from "./candidate-run.js";
 import {
@@ -28,19 +22,8 @@ import {
 import { observationReadRecord } from "./controller-request.js";
 import { persistPublicActivities } from "./public-activity.js";
 import { sha256 } from "../core/identity.js";
-import type {
-  CandidateSpec,
-  EventEnvelope,
-  RunManifest,
-  RunPolicy,
-  RunRecord,
-  TaskCase,
-} from "../core/schema.js";
-import type {
-  RuntimePort,
-  TargetEvent,
-  TargetEventSink,
-} from "../core/runtime.js";
+import type { CandidateLaunchContext, CandidateSpec, EventEnvelope, RunManifest, RunPolicy, RunRecord, TaskCase } from "../core/schema.js";
+import { isCandidateRuntimeJournalType, type ProductRuntime, type TargetEvent, type TargetEventSink } from "../core/runtime.js";
 import {
   LocalWorkspaceProvider,
   type EnvironmentBaseline,
@@ -49,11 +32,9 @@ import {
 } from "../environment/local-workspace-provider.js";
 import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
-import {
-  ExperimentStore,
-} from "../infrastructure/store/experiment-store.js";
+import { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { findProductPack } from "../products/index.js";
-import { packActivity } from "../products/pack-access.js";
+import { packProjection } from "../products/pack-access.js";
 import type { ProductPack } from "../products/contract.js";
 import {
   historicalCwdOf,
@@ -65,6 +46,7 @@ import {
   captureWorkspaceScope,
   eventsForLatestSettledTurn,
   inspectRun,
+  persistUserVisibleTurn,
   unstartedControllerObservation,
   type ControllerObservation,
 } from "./experiment-inspection.js";
@@ -112,7 +94,7 @@ export type ExperimentInput = {
   agentConfig: ExperimentAgentConfig;
   /** Comparison may use a different persisted Harness model. */
   comparisonAgentConfig?: ExperimentAgentConfig;
-  runtime: RuntimePort;
+  runtime: ProductRuntime;
   pack?: ProductPack;
   activity?: ExperimentActivity;
   environmentProvider?: LocalWorkspaceProvider;
@@ -128,6 +110,8 @@ export type ExperimentInput = {
   compare?: boolean;
   /** Hold the isolated workspace until runComparison or skipComparison. */
   deferComparison?: boolean;
+  /** Host must find frozen observations under this experiment before creating CandidateRun. */
+  requireObservations?: boolean;
   signal?: AbortSignal;
   captureArtifacts?: (input: {
     store: ExperimentStore;
@@ -156,10 +140,10 @@ type ExperimentControl = {
   ready(): Promise<void>;
 };
 /**
- * The publishing-level Codex experiment path. It has one CandidateRun state
+ * The publishing-level experiment path. It has one CandidateRun state
  * machine and leaves all reviewable facts under a fresh experiment directory.
  */
-export function startCodexExperiment(
+export function startExperiment(
   input: ExperimentInput,
 ): ExperimentHandle {
   const abort = new AbortController();
@@ -236,7 +220,7 @@ export function startCodexExperiment(
   };
   return handle;
 }
-async function captureCodexExperimentContext(
+async function captureExperimentContext(
   input: ExperimentInput,
   control: { cancelled(): boolean },
 ) {
@@ -323,7 +307,7 @@ async function captureCodexExperimentContext(
     checkpoint,
   };
 }
-async function openCodexExperimentSession(input: {
+async function openExperimentSession(input: {
   input: ExperimentInput;
   experimentRoot: string;
   provider: LocalWorkspaceProvider;
@@ -360,6 +344,16 @@ async function openCodexExperimentSession(input: {
       beforeFingerprint: await provider.fingerprint(environment),
     };
   }
+  const launch = await commitCandidateLaunchContext({
+    experimentRoot,
+    experimentId: experiment.experimentId,
+    runId: experiment.runId,
+    workspaceRoot: environment.root,
+    productId: resolved.productId,
+    requestedModel: resolved.requestedModel,
+    resolvedModel: resolved.resolvedModel,
+    requireObservations: Boolean(experiment.requireObservations),
+  });
   const attempt = {
     schemaVersion: 1 as const,
     runId: experiment.runId,
@@ -406,21 +400,23 @@ async function openCodexExperimentSession(input: {
     lifetime,
     release,
     targetEvents: [] as string[],
+    launch,
   };
 }
-async function startCodexCandidateRun(args: {
+async function startCandidateRun(args: {
   input: ExperimentInput;
   store: ExperimentStore;
-  checkpoint: Awaited<ReturnType<typeof captureCodexExperimentContext>>["checkpoint"];
-  resolved: Awaited<ReturnType<typeof captureCodexExperimentContext>>["resolved"];
+  checkpoint: Awaited<ReturnType<typeof captureExperimentContext>>["checkpoint"];
+  resolved: Awaited<ReturnType<typeof captureExperimentContext>>["resolved"];
   environment: PreparedEnvironmentRef;
   provider: LocalWorkspaceProvider;
   attempt: RunManifest["attempt"];
   manifest: RunManifest;
   release: () => Promise<{ status: "released" | "already_released" }>;
   targetEvents: string[];
+  launch: CandidateLaunchContext;
 }): Promise<CandidateRun> {
-  const { input, store, checkpoint, resolved, environment, provider, attempt, manifest, release, targetEvents } = args;
+  const { input, store, checkpoint, resolved, environment, provider, attempt, manifest, release, targetEvents, launch } = args;
   await store.acquireWriter();
   if (checkpoint) {
     await store.append({
@@ -450,6 +446,9 @@ async function startCodexCandidateRun(args: {
   const pack = input.pack ?? findProductPack(input.candidate.productId);
   const sink: TargetEventSink = {
     append: async (targetEvent: TargetEvent): Promise<void> => {
+      if (!isCandidateRuntimeJournalType(targetEvent.type)) {
+        throw new Error(`TargetRunner must emit CandidateRuntimeEvent types, not ${targetEvent.type}.`);
+      }
       const event = await store.append({
         type: targetEvent.type,
         runId: input.runId,
@@ -457,10 +456,10 @@ async function startCodexCandidateRun(args: {
         occurredAt: targetEvent.occurredAt,
       });
       targetEvents.push(`event:${event.eventId}`);
-      await persistPublicActivities({ store, envelope: event, translator: packActivity(pack) });
+      await persistPublicActivities({ store, envelope: event, translator: packProjection(pack) });
     },
   };
-  const runner = await input.runtime.createRunner(resolved, environment, sink);
+  const runner = await input.runtime.createRunner(resolved, environment, sink, launch);
   return new CandidateRun({
     runner,
     policy: {
@@ -493,7 +492,7 @@ async function startCodexCandidateRun(args: {
     },
   });
 }
-async function finishCodexCandidateRun(args: {
+async function finishCandidateRun(args: {
   input: ExperimentInput;
   control: ExperimentControl;
   run: CandidateRun;
@@ -506,7 +505,7 @@ async function finishCodexCandidateRun(args: {
   sourceRootKind: SourceRootKind;
   environment: PreparedEnvironmentRef;
   provider: LocalWorkspaceProvider;
-  resolved: Awaited<ReturnType<typeof captureCodexExperimentContext>>["resolved"];
+  resolved: Awaited<ReturnType<typeof captureExperimentContext>>["resolved"];
 }): Promise<ExperimentResult> {
   const { input, control, run, store, taskCase, preflight, experimentRoot, targetEvents, startedAt, sourceRootKind, environment, resolved } = args;
   control.setActive(run);
@@ -577,9 +576,9 @@ async function executeExperiment(
     sourceRootKind: initialSourceRootKind,
     preflight,
     checkpoint,
-  } = await captureCodexExperimentContext(input, control);
+  } = await captureExperimentContext(input, control);
   let sourceRootKind = initialSourceRootKind;
-  const session = await openCodexExperimentSession({
+  const session = await openExperimentSession({
     input,
     experimentRoot,
     provider,
@@ -602,7 +601,7 @@ async function executeExperiment(
   } = session;
   let run: CandidateRun | undefined;
   try {
-    run = await startCodexCandidateRun({
+    run = await startCandidateRun({
       input,
       store,
       checkpoint,
@@ -616,8 +615,9 @@ async function executeExperiment(
         return { status: "released" as const };
       },
       targetEvents,
+      launch: session.launch,
     });
-    return await finishCodexCandidateRun({
+    return await finishCandidateRun({
       input,
       control,
       run,
@@ -876,7 +876,9 @@ async function packControllerBriefing(
     allowModelText: input.taskCase.privacy.allowModelText,
     surface: controllerViewSurface(inspection.settlementStatus, turnText, input.taskCase.privacy.allowModelText),
     ...(inspection.turnPrompt ? { prompt: inspection.turnPrompt } : {}),
+    ...(inspection.userView ? { userView: inspection.userView } : {}),
   });
+  await persistUserVisibleTurn(input.store, input.runId, inspection.userView);
   return { observation: inspection, ...written, briefingRoot };
 }
 function steeringContextFrom(

@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase } from '../core/schema.js';
-import type { ResolvedRuntime, RuntimeModelOffer, RuntimePort } from '../core/runtime.js';
+import type { ResolvedRuntime, RuntimeAvailability, RuntimeModelOffer, ProductRuntime } from '../core/runtime.js';
 import { readHarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { PiModelCaller } from '../infrastructure/agent/model-caller.js';
 import { createHarnessAgents, type HarnessAgents } from './harness-agents.js';
-import { startCodexExperiment, type ExperimentHandle } from './experiment.js';
-import { preflightCodexExperiment, type ExperimentPreflight } from './experiment-preflight.js';
-import { recoverCodexExperiment } from './recovery/recover.js';
+import { startExperiment, type ExperimentHandle } from './experiment.js';
+import { preflightExperiment, type ExperimentPreflight } from './experiment-preflight.js';
+import { recoverExperiment } from './recovery/recover.js';
 import type { RecoveryAttempt } from './recovery/types.js';
 import { comparePersistedExperiment } from './experiment-compare-persisted.js';
 import type { ExperimentResult } from './experiment.js';
@@ -38,6 +38,8 @@ export type ExperimentRequest = {
   expectedSourceFingerprint?: string;
   preResolvedBaseline?: EnvironmentBaseline;
   recoveryAttempt?: RecoveryAttempt;
+  /** Host-owned Recovery id; TUI passes this instead of a Provider-bearing attempt. */
+  recoveryExperimentId?: string;
   experimentId?: string;
   runId?: string;
   candidate?: CandidateSpec;
@@ -46,22 +48,25 @@ export type ExperimentRequest = {
   compare?: boolean;
   deferComparison?: boolean;
 };
-export type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'experimentId' | 'runId' | 'candidate'> & { onEvent?: (event: EventEnvelope) => void; signal?: AbortSignal };
+export type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'recoveryExperimentId' | 'experimentId' | 'runId' | 'candidate'> & { onEvent?: (event: EventEnvelope) => void; signal?: AbortSignal };
 
 export type ExperimentWorkflow = {
   readonly candidate?: CandidateSpec;
   readonly policy: RunPolicy;
   listCatalog(productId: string): Promise<readonly RuntimeModelOffer[]>;
+  inspectAvailability(productId: string): Promise<readonly RuntimeAvailability[]>;
   verifyCandidate(candidate: CandidateSpec): Promise<ResolvedRuntime>;
   preflight(input: Omit<ExperimentRequest, 'onEvent' | 'preResolvedBaseline'> & { verifyCandidate?: boolean }): Promise<ExperimentPreflight>;
   recover(input: RecoveryRequest): Promise<RecoveryAttempt>;
+  discardRecovery(experimentId: string): Promise<void>;
+  acceptRecovery(experimentId: string): Promise<EnvironmentBaseline | undefined>;
   start(input: ExperimentRequest): Promise<ExperimentHandle>;
   comparePersisted(experimentId: string, onEvent?: (event: EventEnvelope) => void, signal?: AbortSignal, runId?: string, onActivity?: (activity: ExperimentActivity) => void): Promise<ExperimentResult>;
 };
 
 export function createExperimentWorkflow(input: {
   dataDir: string;
-  runtime?: RuntimePort;
+  runtime?: ProductRuntime;
   pack?: ProductPack;
   lookup?: ProductLookup;
   agents: (signal?: AbortSignal) => Promise<HarnessAgents>;
@@ -72,14 +77,16 @@ export function createExperimentWorkflow(input: {
   const policy = input.defaults?.policy ?? DEFAULT_RUN_POLICY;
   const packFor = (productId: string) => resolvePack(productId, input.pack, input.lookup);
   const resolve = (taskCase: TaskCase, chosen?: CandidateSpec) => resolveSelection(taskCase, chosen, candidate, packFor, input.runtime);
+  const ownedRecoveries = createOwnedRecoveries();
   return {
     ...(candidate ? { candidate } : {}),
     policy,
     listCatalog: (productId) => packRuntime(packFor(productId)).listCatalog(),
+    inspectAvailability: (productId) => packRuntime(packFor(productId)).inspectAvailability(),
     verifyCandidate: (spec) => packRuntime(packFor(spec.productId)).validateCandidate(spec),
     preflight: ({ taskCase, sourceRoot, candidate: chosen, verifyCandidate }) => {
       const selected = resolve(taskCase, chosen);
-      return preflightCodexExperiment({
+      return preflightExperiment({
         dataDir: input.dataDir, caseId: taskCase.caseId, experimentId: previewExperimentId(taskCase.caseId),
         sourceRoot, taskCase, candidate: selected.candidate, runtime: selected.runtime,
         ...(verifyCandidate === false ? { verifyCandidate: false } : {}),
@@ -92,36 +99,42 @@ export function createExperimentWorkflow(input: {
       const owned = await beginOwnedActivity("prepare", experimentId, runId, input.dataDir, request.signal, request.onActivity);
       const agents = await input.agents(owned.signal);
       owned.signal.throwIfAborted();
-      return recoverCodexExperiment({
+      const attempt = await recoverExperiment({
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
         taskCase: request.taskCase, recovery: agents.recovery, now: input.now(), pack: packFor(request.taskCase.source.productId),
         activity: owned.activity, signal: owned.signal, ...(request.onEvent ? { onEvent: request.onEvent } : {}),
       });
+      return ownedRecoveries.retain(attempt);
     },
+    discardRecovery: (experimentId) => ownedRecoveries.discard(experimentId),
+    acceptRecovery: (experimentId) => ownedRecoveries.accept(experimentId),
     async start(request): Promise<ExperimentHandle> {
       request.signal?.throwIfAborted();
-      if (request.recoveryAttempt) {
-        assertCandidateStartAllowed(candidateGateFromAttempt(request.recoveryAttempt, Boolean(request.taskCase.initialInput?.text)));
+      const live = request.recoveryAttempt ?? ownedRecoveries.peek(request.recoveryExperimentId);
+      if (live) {
+        assertCandidateStartAllowed(candidateGateFromAttempt(live, Boolean(request.taskCase.initialInput?.text)));
       }
-      const experimentId = request.recoveryAttempt?.experimentId ?? request.experimentId ?? `experiment-${randomUUID()}`;
+      const experimentId = live?.experimentId ?? request.experimentId ?? `experiment-${randomUUID()}`;
       const runId = request.runId ?? `run-${randomUUID()}`;
       const owned = await beginOwnedActivity(request.compare ? "compare" : "run", experimentId, runId, input.dataDir, request.signal, request.onActivity);
       const agents = await input.agents(owned.signal);
       owned.signal.throwIfAborted();
       const selected = resolve(request.taskCase, request.candidate);
-      return startCodexExperiment({
+      const handle = startExperiment({
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
         taskCase: request.taskCase, candidate: selected.candidate, runtime: selected.runtime, pack: selected.pack,
         controller: agents.controller, comparison: agents.comparison,
         agentConfig: agents.config, policy, now: input.now(), onEvent: request.onEvent, activity: owned.activity,
         ...(request.expectedSourceFingerprint ? { expectedSourceFingerprint: request.expectedSourceFingerprint } : {}),
         ...(request.preResolvedBaseline ? { preResolvedBaseline: request.preResolvedBaseline } : {}),
-        ...(request.recoveryAttempt ? { environmentProvider: request.recoveryAttempt.provider, ...(request.preResolvedBaseline ? {} : { preResolvedBaseline: request.recoveryAttempt.baseline }) } : {}),
+        ...(live ? { environmentProvider: live.provider, requireObservations: true, ...(request.preResolvedBaseline ? {} : { preResolvedBaseline: live.baseline }) } : {}),
         ...(request.sourceRootKind ? { sourceRootKind: request.sourceRootKind } : {}),
         ...(request.compare ? { compare: true } : {}),
         ...(request.deferComparison ? { deferComparison: true } : {}),
         signal: owned.signal,
       });
+      if (live) ownedRecoveries.take(live.experimentId);
+      return handle;
     },
     async comparePersisted(experimentId, onEvent, signal, runId, onActivity): Promise<ExperimentResult> {
       signal?.throwIfAborted();
@@ -140,7 +153,7 @@ export function createExperimentWorkflow(input: {
 /** Production harness agents + connection probe. Used by TUI and CLI. */
 export function createHarnessWorkflow(input: {
   dataDir: string;
-  runtime?: RuntimePort;
+  runtime?: ProductRuntime;
   pack?: ProductPack;
   lookup?: ProductLookup;
   now: () => string;
@@ -183,7 +196,7 @@ function resolveSelection(
   chosen: CandidateSpec | undefined,
   fallback: CandidateSpec | undefined,
   packFor: (productId: string) => ProductPack,
-  runtime: RuntimePort | undefined,
+  runtime: ProductRuntime | undefined,
 ) {
   const sourcePack = packFor(taskCase.source.productId);
   const spec = chosen ?? fallback;
@@ -209,4 +222,30 @@ async function beginOwnedActivity(
   onActivity?.(activity);
   await activityControlReady(activity);
   return { activity, signal: combined };
+}
+
+function createOwnedRecoveries() {
+  const owned = new Map<string, RecoveryAttempt>();
+  return {
+    retain(attempt: RecoveryAttempt): RecoveryAttempt {
+      owned.set(attempt.experimentId, attempt);
+      return attempt;
+    },
+    peek(experimentId: string | undefined): RecoveryAttempt | undefined {
+      return experimentId ? owned.get(experimentId) : undefined;
+    },
+    take(experimentId: string): RecoveryAttempt | undefined {
+      const attempt = owned.get(experimentId);
+      owned.delete(experimentId);
+      return attempt;
+    },
+    async discard(experimentId: string): Promise<void> {
+      const attempt = owned.get(experimentId);
+      owned.delete(experimentId);
+      if (attempt?.staging) await attempt.provider.discardRecovery(attempt.staging);
+    },
+    async accept(experimentId: string): Promise<EnvironmentBaseline | undefined> {
+      return owned.get(experimentId)?.accept?.();
+    },
+  };
 }
