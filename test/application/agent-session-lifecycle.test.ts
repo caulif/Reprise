@@ -122,7 +122,7 @@ test('one-shot Host.request closes the Session after the invocation', async () =
   ]);
 });
 
-test('invocation lifecycle events stay off the run timeline', () => {
+test('invocation started is a working now-row; other invocation lifecycle stays hidden', () => {
   const envelope = (type: string): EventEnvelope => ({
     schemaVersion: 1,
     sequence: 1,
@@ -132,8 +132,16 @@ test('invocation lifecycle events stay off the run timeline', () => {
     payload: { role: 'recovery' },
     checksum: '0'.repeat(64),
   });
-  for (const type of ['agent.invocation_started', 'agent.invocation_completed', 'agent.invocation_failed', 'agent.invocation_cancelled']) {
-    assert.deepEqual(projectTimelineEvent(envelope(type)), []);
+  const started = projectTimelineEvent(envelope('agent.invocation_started'));
+  assert.equal(started.length, 1);
+  assert.equal(started[0]?.kind, 'live');
+  assert.equal(started[0]?.itemId, 'now:recovery');
+  assert.match(started[0]?.title ?? '', /Recovery · working/);
+  for (const type of ['agent.invocation_completed', 'agent.invocation_failed', 'agent.invocation_cancelled']) {
+    const rows = projectTimelineEvent(envelope(type));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.hidden, true);
+    assert.equal(rows[0]?.itemId, 'now:recovery');
   }
 });
 

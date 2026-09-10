@@ -1,6 +1,6 @@
 # TUI 界面重构实施计划
 
-本文只写**怎么改现有界面**，不改写交互语义。目标行为以[TUI 阅读与交互规划](./reprise-tui-design.md)为准；本机 HTML 预览只演示页面与按键，不拥有设计事实，不能当终端证据。落地操作以[产品 TUI](../product/tui.md)为准。架构、CLI、Pack 契约不在本计划重做。
+本文只写**怎么改现有界面**，不改写交互语义。目标行为以[TUI 阅读与交互规划](./reprise-tui-design.md)与[操作者画布](./reprise-tui-operator-canvas.md)为准。画布、此刻行、页图收口与结果段的实施顺序见[操作者记录面全面重构](./reprise-tui-operator-record-refactor.md)；本文管命令目录、来源层空态与主题框线，不要和那份计划同一批改同一组帧。本机 HTML 预览只演示页面与按键，不拥有设计事实，不能当终端证据。落地操作以[产品 TUI](../product/tui.md)为准。架构、CLI、Pack 契约不在本计划重做。
 
 进度仍记在 [MASTER](../progress/MASTER.md)。开始本计划第一批时，把 MASTER 当前批次改成本文对应节；未开工前不把界面重构标成进行中。
 
@@ -77,8 +77,8 @@
 |---|---|---|---|
 | U1 页图 | 封面命令与实验阅读面分离 | 斜杠目录（含 `/lang`）；历史 Enter 进记录末尾；对照改为结果段 `c`；运行中 Esc 不取消 | `page-input`、`intake-ui`、`codex-intake-commands`；更新封面/结果/对照门帧 |
 | U2 来源层 | 四层选择可返回且空匹配不能确认 | 项目页布局与详情；去掉主路径 `source`；空态三类文案 | `product-first-intake`、会话帧（含 CJK） |
-| U3 记录面 | 恢复与候选同画布 | 分段标题；顶栏字段；候选选择叠在记录尾；去掉默认双栏与主路径过滤/角色层 | `timeline`、`widgets`、运行帧 |
-| U4 终态 | 判断 / 终止 / 清理 / 路径可同时读 | 结果段与失败/中断投影；历史重开无副作用 | `local-history`、`tui-workflow`、结果帧 |
+| U3 记录面 | 恢复与候选同画布 | 分段标题；顶栏字段；候选选择叠在记录尾；去掉默认双栏与主路径过滤/角色层；默认列执行[操作者画布](./reprise-tui-operator-canvas.md)的此刻行与组折叠 | `timeline`、`agent-activity`、`widgets`、运行帧 |
+| U4 终态 | 判断 / 终止 / 清理 / 短标签可打开 | 结果段与失败/中断投影；报告、副本、记录用 OSC 8 短标签；历史重开无副作用 | `local-history`、`tui-workflow`、结果帧 |
 | U5 视觉 | 页脚与主题符合目标层次 | theme/widgets/i18n；配置页说明 | 全套 `tui-audit` 重录 |
 | U6 规范 | 当前规范与目标对齐 | `product/tui.md` 改为落地行为；迁移表 TUI 行只留真终端缺口 | `npm run verify:docs` |
 

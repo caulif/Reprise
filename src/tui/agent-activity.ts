@@ -49,7 +49,7 @@ export function projectAgentTool(
     return {
       title: `${laneLabel(lane)} tool failed · ${tool}`,
       ...(message ? { detail: message } : {}),
-      extra: { level: 'error', lane, kind, itemId: `live:${lane}`, patch: 'replace' },
+      extra: { level: 'error', lane, kind },
     };
   }
   const verb = toolVerb(tool, object);
@@ -69,9 +69,7 @@ export function projectAgentTool(
       lane,
       kind: live ? 'live' : kind,
       count: 1,
-      itemId: `live:${lane}`,
-      patch: 'replace',
-      ...(live ? { placeholder: true } : {}),
+      ...(live ? { itemId: `now:${lane}`, patch: 'replace' as const, placeholder: true as const } : {}),
       ...(warnWrite ? { level: 'warning' as const } : {}),
     },
   };
@@ -97,8 +95,8 @@ export function collapseAgentRows(timeline: TimelineEntry[], entry: TimelineEntr
   if (entry.kind !== 'investigate' && entry.kind !== 'mutate' && entry.kind !== 'compact') return false;
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const previous = timeline[index];
-    if (!previous || previous.hidden) continue;
-    if (previous.placeholder || previous.kind === 'live' || previous.level === 'error') return false;
+    if (!previous || previous.hidden || previous.placeholder || previous.kind === 'live') continue;
+    if (previous.level === 'error') return false;
     if (previous.lane !== entry.lane || previous.kind !== entry.kind) return false;
     if (entry.kind === 'mutate' && mutateKey(previous) !== mutateKey(entry)) return false;
     const count = (previous.count ?? 1) + (entry.count ?? 1);
@@ -116,6 +114,16 @@ export function collapseAgentRows(timeline: TimelineEntry[], entry: TimelineEntr
     return true;
   }
   return false;
+}
+
+export function projectWorkingNow(lane: AgentLane): {
+  title: string;
+  extra: { lane: AgentLane; kind: 'live'; placeholder: true; itemId: string; patch: 'replace' };
+} {
+  return {
+    title: laneTitle(lane, 'working'),
+    extra: { lane, kind: 'live', placeholder: true, itemId: `now:${lane}`, patch: 'replace' },
+  };
 }
 
 export function lastLiveVerb(entries: readonly TimelineEntry[]): string | undefined {

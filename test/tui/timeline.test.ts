@@ -50,7 +50,7 @@ test('timeline projects operator-relevant persisted facts', () => {
   const sent = projectTimelineEvent(event('controller.decision', {
     status: 'completed', sessionId: 'controller-1', value: { type: 'send', rationale: 'One check remains.', message: 'Run the focused test.' },
   }));
-  assert.deepEqual(sent.map(({ title, detail }) => ({ title, detail })), [
+  assert.deepEqual(sent.filter((row) => !row.hidden).map(({ title, detail }) => ({ title, detail })), [
     { title: 'Decision: SEND', detail: 'One check remains.' },
     { title: 'Input to Target', detail: 'Run the focused test.' },
   ]);
@@ -152,14 +152,16 @@ test('recovery timeline collapses identical consecutive tool failures', () => {
     })));
   }
   const visible = timeline.filter((entry) => !entry.hidden);
-  assert.equal(visible.length, 1);
-  assert.match(visible[0]?.detail ?? '', / ×34$/);
+  const failed = visible.filter((entry) => entry.level === 'error');
+  assert.equal(failed.length, 1);
+  assert.match(failed[0]?.detail ?? '', / ×34$/);
+  assert.ok(visible.some((entry) => entry.kind === 'live' && /working/.test(entry.title)));
   appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_failed', {
     role: 'recovery',
     tool: 'shell_exec',
     message: 'Recovery tool-call budget of 64 was exhausted.',
   })));
-  assert.equal(timeline.filter((entry) => !entry.hidden).length, 2);
+  assert.equal(timeline.filter((entry) => !entry.hidden && entry.level === 'error').length, 2);
 });
 
 test('shell_exec completion is visible when git reports the candidate is not a repository', () => {
@@ -202,4 +204,43 @@ test('persisted user view does not require the original pack at read time', () =
   assert.equal(timeline.some((entry) => entry.title === 'Task · apparently_completed'), true);
   assert.equal(timeline.some((entry) => entry.title.startsWith('Termination · completed')), true);
   assert.equal(timeline.some((entry) => entry.title === 'Cleanup · complete'), true);
+});
+
+test('TUI reads public live from tool_started and ignores Claude tool_use frames', () => {
+  assert.deepEqual(projectTimelineEvent(event('runtime.visible_output', {
+    message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'git status --short' } }] },
+  })), []);
+  const live = projectTimelineEvent(event('runtime.tool_started', {
+    schemaVersion: 1,
+    sessionId: 'sess-1',
+    evidenceRefs: [],
+    live: { schemaVersion: 1, verb: 'run', leaf: 'hugo' },
+  }))[0];
+  assert.equal(live?.title, 'Candidate · run');
+  assert.equal(live?.detail, 'hugo');
+  assert.equal(live?.kind, 'live');
+  assert.deepEqual(projectTimelineEvent(event('runtime.tool_started', {
+    schemaVersion: 1,
+    sessionId: 'sess-1',
+    evidenceRefs: [],
+  })), []);
+});
+
+test('timeline.ts source does not reference message.content', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../../../src/tui/timeline.ts', import.meta.url), 'utf8');
+  assert.equal(src.includes('message.content'), false);
+});
+
+test('pinNowRows keeps active now row at the end of timeline entries', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('recovery.started', {})));
+  assert.equal(timeline.some((entry) => entry.itemId === 'now:recovery' && !entry.hidden), true);
+  assert.equal(timeline.at(-1)?.itemId, 'now:recovery');
+
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'ls', params: { path: '.' } })));
+  assert.equal(timeline.at(-1)?.itemId, 'now:recovery');
+
+  appendTimelineEntries(timeline, projectTimelineEvent(event('recovery.completed', { status: 'recovered' })));
+  assert.equal(timeline.some((entry) => entry.itemId === 'now:recovery' && !entry.hidden), false);
 });

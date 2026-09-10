@@ -20,7 +20,7 @@ import { DEFAULT_RUNTIME_RPC_TIMEOUT_MS, positiveTimeout, spawnRuntimeProcess } 
 import { forceCloseRuntimeProcess } from '../../../infrastructure/process/terminate.js';
 import { summarizeDiagnostic } from '../../../infrastructure/process/stdio.js';
 import { assertRuntimeMessageIdentity, TurnWaiter } from '../../shared/turn-wait.js';
-import { CLAUDE_DISALLOWED_TOOLS, CLAUDE_REQUIRED_ARGS, claudeFrameEvent, claudeSettlementStatus } from './protocol.js';
+import { CLAUDE_DISALLOWED_TOOLS, CLAUDE_REQUIRED_ARGS, claudeFrameEvents, claudeSettlementStatus } from './protocol.js';
 
 type PendingControl = { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> };
 
@@ -327,8 +327,8 @@ export class ClaudeTargetRunner implements TargetRunner {
 
   async #onFrame(frame: Record<string, unknown>): Promise<void> {
     if (text(frame.type) === 'system' && text(frame.subtype) === 'init') this.#init = frame;
-    const event = claudeFrameEvent(frame);
-    if (event) await this.#sink.append(event);
+    const events = claudeFrameEvents(frame);
+    for (const event of events) await this.#sink.append(event);
     if (text(frame.type) === 'result') this.#settle(frame);
   }
 

@@ -306,7 +306,7 @@ export async function terminationOf(
   },
 ): Promise<{ kind: string; code: string }> {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-experiment-"));
-  t.after(async () => rm(root, { recursive: true, force: true }));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const base = input(root, new VerifiedRuntime());

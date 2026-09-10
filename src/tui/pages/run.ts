@@ -189,7 +189,10 @@ function phaseLine(model: RunningModel, locale: Locale, product: string): string
   }
   if (model.runPhase === 'recovery') {
     const verb = lastLiveVerb(model.entries);
-    return verb ? `${t(locale, 'recoveringTitle')} · ${verb}` : t(locale, 'recoveringTitle');
+    const now = model.tick ?? Date.now();
+    const sinceStart = now - (model.runStartedAt ?? now);
+    const baseTitle = sinceStart >= 30_000 ? t(locale, 'stillRecoveringTitle') : t(locale, 'recoveringTitle');
+    return verb ? `${baseTitle} · ${verb}` : baseTitle;
   }
   return t(locale, 'candidateGenerating', { product, n: Math.max(1, model.turns.used) });
 }
@@ -244,7 +247,10 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
     : recovering && !visible.length
-      ? [theme.style.muted(` ${t(locale, 'recoveryEmpty')}`)]
+      ? [
+          theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
+          pad(` ${theme.style.harness(theme.glyphs.dot)} Recovery · working`, width, theme.glyphs.ellipsis),
+        ]
       : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0);
   return [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),

@@ -185,7 +185,28 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'source') return { ...base, source: { sourceRoot: input.sourceRoot, sourceCursor: input.sourceCursor, step: 1, locale: input.locale ?? 'en' } };
   const picker = candidatePickerView(input, base);
   if (picker) return picker;
-  const recovery = input.recoveryView?.baseline.recovery ? {
+  const recovery = recoveryModel(input);
+  if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
+  if (input.page === 'confirm' && input.preflight) return {
+    ...base,
+    ...(input.timeline.length ? { running: runningModel(input) } : {}),
+    confirm: {
+      preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en', ...(input.candidateProductLabel ? { productLabel: input.candidateProductLabel } : input.productLabel ? { productLabel: input.productLabel } : {}), ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {})
+    },
+  };
+  if (input.page === 'compare-gate') return {
+    ...base,
+    ...(input.timeline.length ? { running: runningModel(input) } : {}),
+    ...(input.result ? { result: input.result } : {}),
+  };
+  if (input.page === 'running') return { ...base, running: runningModel(input) };
+  if (input.page === 'result' && input.result) return { ...base, running: runningModel(input), result: input.result };
+  return base;
+}
+
+function recoveryModel(input: Input): import('./pages/run.js').RecoveryPreviewModel | undefined {
+  if (!input.recoveryView?.baseline.recovery) return undefined;
+  return {
     status: previewStatus(userRecoveryStatus({
       baseline: input.recoveryView.baseline,
       transcriptOk: Boolean(input.taskCase?.initialInput?.text),
@@ -201,12 +222,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
             ...(input.recoveryView.recovery?.status === 'failed' && input.recoveryView.recovery.failure.kind ? { agentFailureKind: input.recoveryView.recovery.failure.kind } : {}),
           }) }
       : {}),
-  } : undefined;
-  if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
-  if (input.page === 'confirm' && input.preflight) return { ...base, confirm: { preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en', ...(input.candidateProductLabel ? { productLabel: input.candidateProductLabel } : input.productLabel ? { productLabel: input.productLabel } : {}), ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {}) } };
-  if (input.page === 'running') return { ...base, running: runningModel(input) };
-  if (input.page === 'result' && input.result) return { ...base, running: runningModel(input), result: input.result };
-  return base;
+  };
 }
 
 function candidatePickerView(input: Input, base: WorkbenchView): WorkbenchView | undefined {
@@ -216,6 +232,7 @@ function candidatePickerView(input: Input, base: WorkbenchView): WorkbenchView |
   if (input.page === 'candidate-product') {
     return {
       ...base,
+      ...(input.timeline.length ? { running: runningModel(input) } : {}),
       candidateProduct: {
         ...(taskTitle ? { taskTitle } : {}),
         sourceProductLabel,
@@ -231,6 +248,7 @@ function candidatePickerView(input: Input, base: WorkbenchView): WorkbenchView |
     : 'loading';
   return {
     ...base,
+    ...(input.timeline.length ? { running: runningModel(input) } : {}),
     candidateModel: {
       ...(taskTitle ? { taskTitle } : {}),
       sourceProductLabel,

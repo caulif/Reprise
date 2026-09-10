@@ -40,6 +40,24 @@ export const CandidateRuntimeEventTypeSchema = Type.Union([
 ]);
 export type CandidateRuntimeEventType = Static<typeof CandidateRuntimeEventTypeSchema>;
 
+const PublicLiveVerbSchema = Type.Union([
+  Type.Literal("working"),
+  Type.Literal("read"),
+  Type.Literal("run"),
+  Type.Literal("write"),
+  Type.Literal("edit"),
+  Type.Literal("inspect"),
+]);
+export type PublicLiveVerb = Static<typeof PublicLiveVerbSchema>;
+
+/** Product-agnostic in-progress signal. TUI may read only this object, never private frames. */
+export const PublicLiveActivitySchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  verb: PublicLiveVerbSchema,
+  leaf: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
+});
+export type PublicLiveActivity = Static<typeof PublicLiveActivitySchema>;
+
 /** Journal payload for `runtime.<CandidateRuntimeEventType>` EventEnvelope rows. Envelope owns eventId, sequence, type, and occurredAt. */
 export const CandidateRuntimeEventSchema = Type.Object({
   schemaVersion: Type.Literal(1),
@@ -48,6 +66,7 @@ export const CandidateRuntimeEventSchema = Type.Object({
   messageId: Type.Optional(Type.String({ minLength: 1 })),
   callId: Type.Optional(Type.String({ minLength: 1 })),
   evidenceRefs: Type.Array(Type.String()),
+  live: Type.Optional(PublicLiveActivitySchema),
 }, { additionalProperties: true });
 export type CandidateRuntimeEvent = Static<typeof CandidateRuntimeEventSchema>;
 

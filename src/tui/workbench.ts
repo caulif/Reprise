@@ -227,7 +227,7 @@ function renderPage(theme: Theme, view: WorkbenchView, width: number, height?: n
     const canvas = renderSurface(theme, view, width, height);
     return clipLines(renderOverlaySheet(theme, canvas, renderActors(theme, width, view.running, view.locale ?? 'en')), height);
   }
-  if (OVERLAY_PAGES.has(view.page) && view.home) {
+  if (OVERLAY_PAGES.has(view.page) && view.home && !view.running?.entries.length) {
     const background = renderHome(theme, width, view.home);
     const canvas = renderSurface(theme, view, width, sheetHeight(height, background));
     return clipLines(renderOverlaySheet(theme, background, canvas), height);
@@ -263,16 +263,32 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
     return renderInspection(theme, width, view.inspection, height);
   }
   if (view.page === 'source' && view.source) return renderSource(theme, width, view.source);
-  if (view.page === 'candidate-product' && view.candidateProduct) return renderCandidateProductPicker(theme, width, view.candidateProduct);
-  if (view.page === 'candidate-model' && view.candidateModel) return renderCandidateModelPicker(theme, width, view.candidateModel);
+  if (view.page === 'candidate-product' && view.candidateProduct) {
+    const picker = renderCandidateProductPicker(theme, width, view.candidateProduct);
+    if (!view.running?.entries.length) return picker;
+    return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - picker.length - 1)), '', ...picker];
+  }
+  if (view.page === 'candidate-model' && view.candidateModel) {
+    const picker = renderCandidateModelPicker(theme, width, view.candidateModel);
+    if (!view.running?.entries.length) return picker;
+    return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - picker.length - 1)), '', ...picker];
+  }
   if (view.page === 'preflight' && view.preflight) return renderPreflight(theme, width, view.preflight);
   if (view.page === 'preflight') {
     return panel(theme, t(view.locale ?? 'en', 'checkingSourceTitle'), [
       ` ${view.message || t(view.locale ?? 'en', 'inspectingSource')}`,
     ], width);
   }
-  if (view.page === 'confirm' && view.confirm) return renderConfirmation(theme, width, view.confirm);
-  if (view.page === 'compare-gate') return renderCompareGate(theme, width, view.locale ?? 'en');
+  if (view.page === 'confirm' && view.confirm) {
+    const confirmation = renderConfirmation(theme, width, view.confirm);
+    if (!view.running?.entries.length) return confirmation;
+    return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - confirmation.length - 1)), '', ...confirmation];
+  }
+  if (view.page === 'compare-gate') {
+    const gate = renderCompareGate(theme, width, view.locale ?? 'en');
+    if (!view.running?.entries.length) return gate;
+    return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - gate.length - 1)), '', ...gate];
+  }
   if (view.page === 'running' && view.running) {
     return renderTimeline(theme, width, view.running, height);
   }

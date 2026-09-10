@@ -34,9 +34,11 @@ test('consecutive recovery inspect tools merge and omit file bodies', () => {
     event('agent.tool_completed', { role: 'recovery', tool: 'read', params: { path: 'sessions.jsonl' }, content: 'MORE_SECRET' }),
   ]);
   const visible = timeline.filter((entry) => !entry.hidden);
-  assert.equal(visible.length, 1);
-  assert.match(visible[0]?.title ?? '', /Recovery · inspect/);
-  assert.match(visible[0]?.detail ?? '', /×3/);
+  const inspect = visible.filter((entry) => entry.kind === 'investigate');
+  assert.equal(inspect.length, 1);
+  assert.match(inspect[0]?.title ?? '', /Recovery · inspect/);
+  assert.match(inspect[0]?.detail ?? '', /×3/);
+  assert.ok(visible.some((entry) => entry.kind === 'live' && /working/.test(entry.title)));
   assert.doesNotMatch(JSON.stringify(visible), /SECRET_BODY|MORE_SECRET/);
 });
 

@@ -1,5 +1,6 @@
 import { record, text, type JsonRecord } from "../../../core/json.js";
 import { runtimeTargetEvent, type TargetEvent } from "../../../core/runtime.js";
+import { liveFromCodexItem } from "../../shared/public-live-map.js";
 import { redactNotificationParams } from "./turn-settlement.js";
 
 /** Maps Codex notifications to CandidateRuntimeEvent types. Deltas and heartbeats stay inside the adapter. */
@@ -28,5 +29,9 @@ function mapItem(completed: boolean, payload: unknown): TargetEvent | undefined 
   if (kind === "reasoning") return undefined;
   if (kind === "agentMessage") return runtimeTargetEvent("visible_output", { ...record(payload), streaming: !completed });
   if (kind === "userMessage") return runtimeTargetEvent("visible_prompt", payload);
-  return runtimeTargetEvent(completed ? "tool_finished" : "tool_started", payload);
+  const live = liveFromCodexItem(item);
+  return runtimeTargetEvent(completed ? "tool_finished" : "tool_started", {
+    ...record(payload),
+    ...(live ? { live } : {}),
+  });
 }

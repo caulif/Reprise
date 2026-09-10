@@ -80,8 +80,10 @@ export {
   type CandidateSessionHandle,
   CandidateRuntimeEventSchema,
   CandidateRuntimeEventTypeSchema,
+  PublicLiveActivitySchema,
   type CandidateRuntimeEvent,
   type CandidateRuntimeEventType,
+  type PublicLiveActivity,
   UserVisibleTurnSchema,
   type UserVisibleTurn,
 } from "./schemas/candidate.js";

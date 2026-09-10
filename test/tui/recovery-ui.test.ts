@@ -172,3 +172,36 @@ test('generic failure page does not misclassify every phase as recovery', () => 
   assert.match(text, /Cannot continue/);
   assert.doesNotMatch(text, /Could not recover/);
 });
+
+test('workbench renders timeline above confirmation when recovery entries exist', async () => {
+  const { renderWorkbench } = await import('../../src/tui/workbench.js');
+  const rendered = renderWorkbench({
+    page: 'confirm',
+    cwd: 'C:\\workspace',
+    hasApiConfig: true,
+    hasTaskCase: true,
+    message: '',
+    productLabel: 'Codex',
+    confirm: {
+      candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
+      step: 3,
+      sourceRoot: 'C:\\workspace',
+      effort: 'high',
+      harnessModel: 'gpt-5',
+      harnessAuthOk: true,
+      productLabel: 'Codex',
+      preflight: { sourceBaseline: 'available', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'recovered' },
+    } as never,
+    running: {
+      entries: [
+        { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'Recovery · inspect', detail: 'Read package.json' },
+      ],
+      selected: 0, filter: 'ALL', following: true, cancelling: false,
+      currentState: undefined, elapsed: '00:05', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+    },
+  }, 120).join('\n');
+
+  assert.match(rendered, /inspect Read package\.json/);
+  assert.match(rendered, /Recovery activity/);
+  assert.match(rendered, /Start isolated Codex Candidate/);
+});

@@ -6,12 +6,13 @@
 
 ## 当前批次
 
-实施[可见表面拼接与 Git sink](../plan/2026-09-10-visible-surface-and-git-sink.md)：区间内公开 text 拼接进 `UserVisibleTurn`；Harness 副本 Git remote 指向实验 bare sink。
+按[TUI 操作者记录面全面重构](../plan/reprise-tui-operator-record-refactor.md)完成 R1–R7 批次实施与全量工程收口。
 
 ## 验证记录
 
 2026-09-10 可见表面拼接与 Git sink：一轮公开 text 进 `UserVisibleTurn.assistantText`；`prepareRun` 将 origin 改到 `environment/git-sinks/`。ADR：[可见表面与 Git sink](../decisions/accepted/2026-09-10-visible-surface-and-git-sink.md)。`npm run check` 17 门禁通过（855 pass / 4 skip）。
 
+2026-09-10 TUI 全面重构（R1–R7）：唯一实验记录阅读面落地。此刻行 `pinNowRows` 钉在时间线末尾且结算让位；候选产品/模型选择与确认页叠底在恢复时间线之下支持滚回回溯；结果段三行结构化呈现与 OSC 8 超链接；来源发现空匹配阻断与错误聚合；测试与假终端审计帧同步更新；`npm run check` 17 个门禁全绿通过（854 pass / 0 fail / 4 skip）。
 
 2026-09-10 二次审查：Comparison 从 attempt 根按 INDEX 挂载读取双轨材料；Runtime Journal 校验 turn/message/call 与 session 生命周期；终态由 `candidateRunDisplayFromEvents` 投影，TUI 不再解析时间线 `State:`；规划文档 `projection` 与 `runtime` 并列。ADR：[Journal 归属](../decisions/accepted/2026-09-10-runtime-journal-affiliation.md)、[阶段查询](../decisions/accepted/2026-09-10-candidate-run-phase-query.md)。`audit-root/` 与 `unused/` 已在 `.gitignore`。`npm run check` 17 门禁通过（847 pass / 4 skip）。
 

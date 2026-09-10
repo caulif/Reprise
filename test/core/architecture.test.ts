@@ -212,7 +212,7 @@ test('TUI timeline projection does not load product packs', async () => {
   const timeline = await readFile(join(SRC, 'tui/timeline.ts'), 'utf8');
   assert.doesNotMatch(timeline, /products\/index|productPacks/);
   assert.doesNotMatch(timeline, /TargetActivity|runtime\.public_activity|legacyProductFallback/);
-  assert.match(timeline, /candidate\.user_view_persisted/);
+  assert.doesNotMatch(timeline, /payload\.message\.content|message\.content/);
   const experiment = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
   assert.doesNotMatch(experiment, /persistPublicActivities/);
   assert.match(experiment, /createCandidateRuntimeSink/);

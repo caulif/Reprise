@@ -30,14 +30,16 @@ test('visible assistant text drops JSON envelopes and thinking-only content', ()
   assert.equal(visibleAssistantText([{ type: 'text', text: '<think>hidden</think>{"type":"done","reason":"satisfied"}' }]), '');
 });
 
-test('assistant_visible is projected and Host does not invent narration', () => {
+test('assistant_visible is a working row, not invented narration', () => {
   const [row] = projectTimelineEvent(event('agent.assistant_visible', {
     role: 'recovery',
     text: '先看隔离副本是不是仓库。',
     turn: 1,
   }));
-  assert.equal(row?.kind, 'narrate');
-  assert.match(row?.title ?? '', /隔离副本/);
+  assert.equal(row?.kind, 'live');
+  assert.match(row?.title ?? '', /working/);
+  assert.equal(row?.detail, undefined);
+  assert.match(row?.original ?? '', /隔离副本/);
   assert.equal(projectTimelineEvent(event('agent.message_appended', { role: 'recovery', byteLength: 12 })).length, 0);
 });
 

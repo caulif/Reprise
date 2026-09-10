@@ -13,6 +13,7 @@ export type {
   CandidateLaunchContext,
   CandidateSessionHandle,
   CandidateRuntimeEvent,
+  PublicLiveActivity,
   UserVisibleTurn,
   RecoveryDiagnostic,
   RecoveryReadiness,

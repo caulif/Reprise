@@ -1,14 +1,15 @@
 import { record, text, type JsonRecord } from '../core/json.js';
+import { publicLiveOf } from '../core/public-live.js';
 import type { EventEnvelope } from '../core/schema.js';
 import {
   collapseAgentRows,
   laneSource,
   projectAgentTool,
   projectContextCompacted,
+  projectWorkingNow,
   type AgentKind,
   type AgentLane,
 } from './agent-activity.js';
-import { projectAssistantVisible } from './fold-process.js';
 
 /** Full event text kept for [o]; the visible pane only shows a short structured preview. */
 const MAX_ORIGINAL_CHARS = 32_768;
@@ -62,6 +63,10 @@ export function appendTimelineEntries(timeline: TimelineEntry[], incoming: reado
       if (seen.has(entry.title)) continue;
       seen.add(entry.title);
     }
+    if (isNowRow(entry)) {
+      upsertNowRow(timeline, entry);
+      continue;
+    }
     const index = entry.itemId ? lastIndexByItemId(timeline, entry.itemId) : -1;
     if (index >= 0) {
       const merged = settleLiveId(mergeEntry(timeline[index] ?? entry, entry));
@@ -69,11 +74,13 @@ export function appendTimelineEntries(timeline: TimelineEntry[], incoming: reado
       if (!collapseRepeatedRecoveryFailure(timeline, merged) && !collapseAgentRows(timeline, merged)) {
         timeline.splice(Math.min(index, timeline.length), 0, merged);
       }
+      pinNowRows(timeline);
       continue;
     }
     const settled = settleLiveId(entry);
     const collapsed = collapseRepeatedRecoveryFailure(timeline, settled) || collapseAgentRows(timeline, settled);
     if (!collapsed) timeline.push(settled);
+    pinNowRows(timeline);
   }
 }
 
@@ -103,7 +110,7 @@ function collapseRepeatedRecoveryFailure(timeline: TimelineEntry[], entry: Timel
   if (entry.hidden || entry.level !== 'error' || !entry.title.includes('tool failed')) return false;
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const previous = timeline[index];
-    if (!previous || previous.hidden) continue;
+    if (!previous || previous.hidden || previous.placeholder || previous.kind === 'live') continue;
     if (previous.title !== entry.title || previous.level !== 'error') return false;
     const previousKey = recoveryFailureText(previous.detail);
     const nextKey = recoveryFailureText(entry.detail);
@@ -139,10 +146,6 @@ const SILENT_TIMELINE_TYPES = new Set([
   'agent.session_completed',
   'agent.session_failed',
   'agent.session_cancelled',
-  'agent.invocation_started',
-  'agent.invocation_completed',
-  'agent.invocation_failed',
-  'agent.invocation_cancelled',
   'agent.message_appended',
   'agent.session_started',
   'agent.model_output',
@@ -162,36 +165,53 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
 
   switch (event.type) {
     case 'recovery.started':
-      return [entry('HARNESS', 'Recovery started', undefined, { hidden: true })];
+      return [
+        entry('HARNESS', 'Recovery started', undefined, { hidden: true }),
+        entry('HARNESS', 'Recovery · working', undefined, {
+          kind: 'live', placeholder: true, itemId: 'now:recovery', patch: 'replace', lane: 'recovery',
+        }),
+      ];
     case 'recovery.completed': {
       const status = text(payload.status) ?? text(record(payload.value).status) ?? 'unknown';
       const failed = status === 'failed';
-      return [entry('HARNESS', `Recovery ${status}`, text(payload.message) ?? text(record(payload.failure).message), failed ? { level: 'error' } : undefined)];
+      return [
+        entry('HARNESS', `Recovery ${status}`, text(payload.message) ?? text(record(payload.failure).message), failed ? { level: 'error' } : undefined),
+        clearNow(entry, 'recovery'),
+      ];
     }
+    case 'agent.invocation_started':
+    case 'agent.invocation_completed':
+    case 'agent.invocation_failed':
+    case 'agent.invocation_cancelled':
     case 'agent.tool_called':
     case 'agent.tool_completed':
-    case 'agent.tool_failed': {
-      const row = projectAgentTool(payload, event.type);
-      return [entry(laneSource(row.extra.lane), row.title, row.detail, {
-        ...row.extra,
-        ...(row.original ? { original: row.original } : {}),
-      })];
-    }
-    case 'agent.context_compacted': {
-      const row = projectContextCompacted(payload);
-      return [entry(laneSource(row.extra.lane), row.title, row.detail, row.extra)];
-    }
-    case 'agent.assistant_visible': {
-      const row = projectAssistantVisible(payload);
-      return [entry(laneSource(row.extra.lane), row.title, row.detail, row.extra)];
-    }
+    case 'agent.tool_failed':
+    case 'agent.assistant_visible':
+    case 'agent.context_compacted':
+      return projectInternalNow(event.type, payload, entry);
+    case 'runtime.tool_started':
+    case 'runtime.tool_finished':
+      return projectCandidateNow(event.type, payload, entry);
+    default:
+      return projectRunEvent(event, payload, entry);
+  }
+}
+
+function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
+  switch (event.type) {
     case 'run.attempt_created':
       return [entry('HARNESS', 'Run created', requestedModel(payload), { hidden: true })];
     case 'run.state_changed':
       return [entry('HARNESS', `State: ${text(payload.from) ?? '?'} → ${text(payload.to) ?? '?'}`, undefined, { hidden: true })];
     case 'input.submitted': {
       const prompt = text(payload.text);
-      return prompt ? emitPresented(entry, 'TARGET', promptTitle(prompt), prompt) : [];
+      if (!prompt) return [];
+      return [
+        ...emitPresented(entry, 'TARGET', promptTitle(prompt), prompt),
+        entry('TARGET', 'Candidate · working', undefined, {
+          kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace',
+        }),
+      ];
     }
     case 'candidate.session_bound': return [entry('HARNESS', `Candidate session · ${text(payload.sessionId) ?? '?'}`, text(payload.productId), { hidden: true })];
     case 'candidate.user_view_persisted':
@@ -216,7 +236,12 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'environment.release_completed':
       return [entry('HARNESS', 'Cleanup · workspace released', undefined)];
     case 'run.outcome_created':
-      return projectOutcome(entry, payload);
+      return [
+        ...projectOutcome(entry, payload),
+        entry('TARGET', 'Candidate · working', undefined, {
+          hidden: true, kind: 'live', itemId: 'now:target', patch: 'replace',
+        }),
+      ];
     case 'run.finished':
       return [entry('HARNESS', 'Candidate run finished', undefined, { hidden: true })];
     case 'runtime.runtime_failed':
@@ -226,7 +251,12 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'report.created':
       return [entry('HARNESS', 'Report created', text(payload.path))];
     case 'controller.started':
-      return [entry('CONTROLLER', 'Evaluation started', text(payload.model), { hidden: true })];
+      return [
+        entry('CONTROLLER', 'Evaluation started', text(payload.model), { hidden: true }),
+        entry('CONTROLLER', 'Controller · working', undefined, {
+          kind: 'live', placeholder: true, itemId: 'now:controller', patch: 'replace', lane: 'controller',
+        }),
+      ];
     case 'controller.decision':
       return controllerEntries(event, payload);
     case 'controller.done':
@@ -234,9 +264,17 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'controller.failed':
       return [entry('CONTROLLER', 'Controller failed', text(payload.message), { level: 'error' })];
     case 'comparison.started':
-      return [entry('CONTROLLER', 'Comparison started', text(payload.model), { hidden: true, lane: 'comparison' })];
+      return [
+        entry('CONTROLLER', 'Comparison started', text(payload.model), { hidden: true, lane: 'comparison' }),
+        entry('CONTROLLER', 'Comparison · working', undefined, {
+          kind: 'live', placeholder: true, itemId: 'now:comparison', patch: 'replace', lane: 'comparison',
+        }),
+      ];
     case 'comparison.completed':
-      return projectComparisonCompleted(entry, payload);
+      return [
+        ...projectComparisonCompleted(entry, payload),
+        clearNow(entry, 'comparison'),
+      ];
     default:
       return [];
   }
@@ -258,12 +296,56 @@ function timelineEntryFactory(event: EventEnvelope): MakeEntry {
   });
 }
 
+function agentLaneOf(payload: JsonRecord): AgentLane {
+  return payload.role === 'controller' || payload.role === 'comparison' ? payload.role : 'recovery';
+}
+
+function projectInternalNow(type: string, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
+  if (type === 'agent.context_compacted') {
+    const row = projectContextCompacted(payload);
+    return [entry(laneSource(row.extra.lane), row.title, row.detail, row.extra)];
+  }
+  const lane = agentLaneOf(payload);
+  if (type === 'agent.invocation_completed' || type === 'agent.invocation_failed' || type === 'agent.invocation_cancelled') {
+    return [clearNow(entry, lane)];
+  }
+  if (type === 'agent.invocation_started' || type === 'agent.assistant_visible') {
+    const row = projectWorkingNow(lane);
+    const original = type === 'agent.assistant_visible' ? text(payload.text) : undefined;
+    return [entry(laneSource(lane), row.title, undefined, { ...row.extra, ...(original ? { original } : {}) })];
+  }
+  const row = projectAgentTool(payload, type);
+  const projected = entry(laneSource(row.extra.lane), row.title, row.detail, {
+    ...row.extra,
+    ...(row.original ? { original: row.original } : {}),
+  });
+  if (type !== 'agent.tool_completed' && type !== 'agent.tool_failed') return [projected];
+  const idle = projectWorkingNow(row.extra.lane);
+  return [projected, entry(laneSource(row.extra.lane), idle.title, undefined, idle.extra)];
+}
+
+function projectCandidateNow(type: string, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
+  if (type === 'runtime.tool_finished') {
+    return [entry('TARGET', 'Candidate · working', undefined, {
+      kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace',
+    })];
+  }
+  const live = publicLiveOf(payload);
+  if (!live) return [];
+  return [entry('TARGET', live.verb === 'working' ? 'Candidate · working' : `Candidate · ${live.verb}`, live.leaf, {
+    kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace',
+  })];
+}
+
 function projectUserView(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
   const status = text(payload.status) ?? 'unknown';
   const assistant = text(payload.assistantText);
   const prompt = text(payload.prompt);
+  const clearNow = entry('TARGET', 'Candidate · working', undefined, {
+    hidden: true, kind: 'live', itemId: 'now:target', patch: 'replace',
+  });
   if (status === 'unavailable') {
-    return [entry('TARGET', 'User view unavailable', undefined, { level: 'error' })];
+    return [entry('TARGET', 'User view unavailable', undefined, { level: 'error' }), clearNow];
   }
   const rows: TimelineEntry[] = [];
   if (prompt) rows.push(...emitPresented(entry, 'TARGET', promptTitle(prompt), prompt));
@@ -274,6 +356,7 @@ function projectUserView(entry: MakeEntry, payload: JsonRecord): readonly Timeli
   } else if (!prompt) {
     rows.push(entry('TARGET', `User view · ${status}`));
   }
+  rows.push(clearNow);
   return rows;
 }
 
@@ -310,6 +393,7 @@ function controllerEntries(event: EventEnvelope, payload: JsonRecord): readonly 
   const decision = record(payload.value);
   const kind = text(decision.type);
   if (!kind) return [];
+  const make = timelineEntryFactory(event);
   const rationale = text(decision.rationale);
   const reason = text(decision.reason);
   const title = kind === 'done' && reason ? `Decision: DONE · ${reason}` : `Decision: ${kind.toUpperCase()}`;
@@ -318,12 +402,12 @@ function controllerEntries(event: EventEnvelope, payload: JsonRecord): readonly 
     title,
     ...(rationale ? { detail: rationale } : {}),
   };
-  if (kind !== 'send') return [base];
+  if (kind !== 'send') return [base, clearNow(make, 'controller')];
   const message = text(decision.message);
   return [base, {
     sequence: event.sequence, occurredAt: event.occurredAt, source: 'CONTROLLER', title: 'Input to Target',
     ...(message ? { detail: message } : {}),
-  }];
+  }, clearNow(make, 'controller')];
 }
 
 function promptTitle(prompt: string): string {
@@ -391,6 +475,35 @@ function settleLiveId(entry: TimelineEntry): TimelineEntry {
   if (!id.startsWith('live:') && !id.startsWith('compact:')) return entry;
   const { itemId: _itemId, patch: _patch, ...rest } = entry;
   return rest;
+}
+
+function isNowRow(entry: TimelineEntry): boolean {
+  return Boolean(entry.itemId?.startsWith('now:') && (entry.kind === 'live' || entry.placeholder));
+}
+
+function upsertNowRow(timeline: TimelineEntry[], entry: TimelineEntry): void {
+  const itemId = entry.itemId;
+  if (!itemId) return;
+  const index = lastIndexByItemId(timeline, itemId);
+  if (index >= 0) timeline.splice(index, 1);
+  if (!entry.hidden) timeline.push(settleLiveId(entry));
+  pinNowRows(timeline);
+}
+
+function pinNowRows(timeline: TimelineEntry[]): void {
+  const nowEntries: TimelineEntry[] = [];
+  for (let i = timeline.length - 1; i >= 0; i -= 1) {
+    const row = timeline[i];
+    if (row && !row.hidden && isNowRow(row)) {
+      nowEntries.unshift(timeline.splice(i, 1)[0]!);
+    }
+  }
+  timeline.push(...nowEntries);
+}
+
+function clearNow(entry: MakeEntry, lane: AgentLane): TimelineEntry {
+  const row = projectWorkingNow(lane);
+  return entry(laneSource(lane), row.title, undefined, { ...row.extra, hidden: true });
 }
 
 function lastIndexByItemId(timeline: readonly TimelineEntry[], itemId: string): number {

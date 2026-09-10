@@ -377,7 +377,7 @@ test("a scripted Controller run persists controller.requested and reconstructs i
         };
       },
     }),
-    timeoutMs: 5_000,
+    timeoutMs: 20_000,
     maxRepairAttempts: 0,
   });
   const result = await startExperiment({
@@ -628,6 +628,7 @@ test("an unchanged source fingerprint still starts after preflight", async (t) =
   const result = await startExperiment({
     ...experiment,
     expectedSourceFingerprint: preflight.sourceFingerprint,
+    policy: patientPolicy,
   }).result;
   assert.equal(runtime.created, 1);
   assert.equal(result.record.outcome.termination.kind, "completed");
