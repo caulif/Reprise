@@ -28,6 +28,7 @@ import {
   changedPaths as changedPaths,
   cleanupRecoveryTransients as cleanupRecoveryTransients,
 } from './local-workspace-fs.js';
+import { gitSinkRoot, isolateGitTopology } from './git-sink.js';
 export {
   publishDirectory as publishDirectory,
   calculateWorkspaceBudget as calculateWorkspaceBudget,
@@ -339,6 +340,7 @@ export class LocalWorkspaceProvider {
       } else {
         await this.#copyTree(sourceRoot, root);
       }
+      await isolateGitTopology(root, gitSinkRoot(this.#root, recoveryId));
       const staging: RecoveryStaging = { recoveryId, caseId: source.caseId, sourceRoot, root, sourceFingerprint: inspected.fingerprint, sourceBudget: inspected.budget, sourceTripwireBefore: inspected.fingerprint, ...(checkpointRoot ? { checkpointRoot } : {}), ...(checkpointId ? { checkpointId } : {}), ...(checkpointFingerprint ? { checkpointFingerprint } : {}), temporaryRoot, ...(source.playbook ? { playbook: source.playbook } : {}) };
       this.#recoveryStaging.set(recoveryId, staging);
       return staging;
@@ -407,6 +409,7 @@ export class LocalWorkspaceProvider {
       await rm(staging.root, { recursive: true, force: true });
       await mkdir(staging.root, { recursive: true });
       await this.#copyTree(temporary, staging.root);
+      await isolateGitTopology(staging.root, gitSinkRoot(this.#root, staging.recoveryId));
     } finally {
       await rm(temporary, { recursive: true, force: true });
     }
@@ -499,6 +502,7 @@ export class LocalWorkspaceProvider {
     await mkdir(dirname(baselineRoot), { recursive: true });
     try {
       await publishDirectory(staging.root, baselineRoot);
+      await isolateGitTopology(baselineRoot, gitSinkRoot(this.#root, `baseline-${staging.caseId}`));
       await writeFile(markerPath, JSON.stringify({ sourceFingerprint: staging.sourceFingerprint.digest, recovery: preview.baseline.recovery }), { flag: 'wx' });
       this.#recoveryStaging.delete(staging.recoveryId);
       return { ...preview.baseline, root: baselineRoot };
@@ -551,6 +555,7 @@ export class LocalWorkspaceProvider {
         await mkdir(stagingRoot);
         await this.#copyTree(resolve(source.sourceRoot), stagingRoot);
         await publishDirectory(stagingRoot, baselineRoot);
+        await isolateGitTopology(baselineRoot, gitSinkRoot(this.#root, `baseline-${source.caseId}`));
         await rm(markerPath, { force: true });
         await writeFile(markerPath, JSON.stringify({ sourceFingerprint: inspected.fingerprint.digest, ...(recorded?.recovery ? { recovery: recorded.recovery } : {}) }), { flag: 'wx' });
       } catch (error) {
@@ -581,6 +586,7 @@ export class LocalWorkspaceProvider {
     try {
       await this.#copyTree(baselineRoot, runRoot);
       await cleanupRecoveryTransients(runRoot);
+      await isolateGitTopology(runRoot, gitSinkRoot(this.#root, runId));
       beforeFingerprint = (await fingerprintTree(runRoot)).fingerprint;
     } catch (error) {
       await rm(runRoot, { recursive: true, force: true });

@@ -1,7 +1,7 @@
 import { record, text } from '../../../core/json.js';
 import type { EventEnvelope } from '../../../core/schema.js';
 import type { UserSurfaceProjection, TargetRunFacts } from '../../contract.js';
-import { projectUserVisibleTurn } from '../../contract.js';
+import { projectUserVisibleTurn, publicAssistantFacts } from '../../contract.js';
 
 export const claudeProjection: UserSurfaceProjection = {
   inspectRunFacts(events) {
@@ -35,9 +35,8 @@ function inspectClaudeRunFacts(events: readonly EventEnvelope[]): TargetRunFacts
     || event.type === 'runtime.visible_output'
     || event.type === 'runtime.usage_reported'
   ));
-  const finalMessage = texts.at(-1);
   return {
-    ...(finalMessage ? { finalMessage } : {}),
+    ...publicAssistantFacts(texts),
     commands,
     rejectedApprovals,
     evidenceEvents,

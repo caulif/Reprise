@@ -6,9 +6,12 @@
 
 ## 当前批次
 
-按[重构后续审查清单](../plan/post-refactor-architecture-audit.md)收口 Comparison 双轨读取、Runtime Journal 归属、终态查询投影与规划文档术语。
+实施[可见表面拼接与 Git sink](../plan/2026-09-10-visible-surface-and-git-sink.md)：区间内公开 text 拼接进 `UserVisibleTurn`；Harness 副本 Git remote 指向实验 bare sink。
 
 ## 验证记录
+
+2026-09-10 可见表面拼接与 Git sink：一轮公开 text 进 `UserVisibleTurn.assistantText`；`prepareRun` 将 origin 改到 `environment/git-sinks/`。ADR：[可见表面与 Git sink](../decisions/accepted/2026-09-10-visible-surface-and-git-sink.md)。`npm run check` 17 门禁通过（855 pass / 4 skip）。
+
 
 2026-09-10 二次审查：Comparison 从 attempt 根按 INDEX 挂载读取双轨材料；Runtime Journal 校验 turn/message/call 与 session 生命周期；终态由 `candidateRunDisplayFromEvents` 投影，TUI 不再解析时间线 `State:`；规划文档 `projection` 与 `runtime` 并列。ADR：[Journal 归属](../decisions/accepted/2026-09-10-runtime-journal-affiliation.md)、[阶段查询](../decisions/accepted/2026-09-10-candidate-run-phase-query.md)。`audit-root/` 与 `unused/` 已在 `.gitignore`。`npm run check` 17 门禁通过（847 pass / 4 skip）。
 

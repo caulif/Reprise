@@ -10,7 +10,7 @@
 ## 决定
 
 - `permissions.txt` 分两层：Controller 工具始终 `controller.writes=denied` 且 `project/` 只读；候选运行权限来自 TaskCase 已解析的历史设置（`taskContext` 与历史事件中的 sandbox / permissionMode / approvalPolicy），缺失时标 `unconfirmed` 并注明 Host 安全上限，不把候选写成一律禁止写入。
-- 当前 `view.txt` 的可见助手文本只来自最近一次 `runtime.turn_settled` 对应的事件区间；整次运行的 `finalMessage` 仍供 Comparison 使用。
+- 当前 `view.txt` 的可见助手文本只来自最近一次 `runtime.turn_settled` 对应的事件区间，且是该区间内全部公开 `text` 的拼接；整次运行的 `finalMessage` 仍供 Comparison 摘要使用。区间内拼接见 [可见表面与 Git sink](./2026-09-10-visible-surface-and-git-sink.md)。
 - `view.txt` 的 Visible prompt 来自该区间投影出的 `UserVisibleTurn.prompt`（Pack 从 `runtime.visible_prompt` 收集）。
 
 ## 备选方案

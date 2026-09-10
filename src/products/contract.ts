@@ -199,12 +199,29 @@ export type ProductHistoryReader = {
 };
 
 export type TargetRunFacts = {
+  /** Ordered public assistant texts in the inspected event set. */
+  readonly assistantTexts?: readonly string[];
+  /** Last public assistant text in that set; run-level summary, not the turn surface. */
   readonly finalMessage?: string;
   readonly prompt?: string;
   readonly commands: readonly string[];
   readonly rejectedApprovals: number;
   readonly evidenceEvents: readonly EventEnvelope[];
 };
+
+export function publicAssistantFacts(texts: readonly (string | undefined)[]): Pick<TargetRunFacts, "assistantTexts" | "finalMessage"> {
+  const assistantTexts = texts.map((value) => value?.trim() ?? "").filter(Boolean);
+  const finalMessage = assistantTexts.at(-1);
+  return {
+    ...(assistantTexts.length ? { assistantTexts } : {}),
+    ...(finalMessage ? { finalMessage } : {}),
+  };
+}
+
+export function joinPublicAssistantSurface(texts: readonly string[] | undefined): string | undefined {
+  const parts = (texts ?? []).map((value) => value.trim()).filter(Boolean);
+  return parts.length ? parts.join("\n\n") : undefined;
+}
 
 export interface UserSurfaceProjection {
   inspectRunFacts(events: readonly EventEnvelope[]): TargetRunFacts;
@@ -240,7 +257,7 @@ export function projectUserVisibleTurn(input: {
       ...(input.settlement.failure?.summary ? { assistantText: input.settlement.failure.summary } : {}),
     };
   }
-  const text = input.facts.finalMessage?.trim() ?? '';
+  const text = joinPublicAssistantSurface(input.facts.assistantTexts) ?? input.facts.finalMessage?.trim() ?? '';
   const prompt = input.facts.prompt?.trim() ?? '';
   if (mapped === 'completed' && !text) {
     return {
