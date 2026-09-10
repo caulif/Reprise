@@ -390,7 +390,6 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Restore the task start/);
-  app.handleInput("\r");
   await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
   await waitFor(() => sourceRoot === "C:/not-automatic");
   emitEvent?.({ schemaVersion: 1, sequence: 6, eventId: 'shared-delivery', occurredAt: '2026-08-11T00:10:03.000Z', type: 'runtime.delivery_observed', payload: { status: 'accepted' }, checksum: 'd'.repeat(64) });
@@ -606,7 +605,6 @@ test("Codex intake TUI automatically prepares every session with Recovery before
   await advanceCandidatePicker(app, () => rendered);
   assert.equal(recoveryCalls, 1);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Recovery preview is ready/);
-  app.handleInput("\r");
-  await waitFor(() => /Preparing replay|Copy isolated workspace|Experiment finished/.test(rendered));
+  await waitFor(() => /Preparing replay|Copy isolated workspace|Experiment finished|Run result/.test(rendered) || app.page === "running" || app.page === "result");
   assert.equal(discarded, 0);
 });

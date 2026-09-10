@@ -48,7 +48,7 @@ test('failed comparison remains distinct from a stalled candidate in both termin
     } as never).join('\n');
     assert.match(text, /stalled/);
     assert.match(text, /Task\s+incomplete/);
-    assert.match(text, /Report generation failed/);
+    assert.match(text, /Comparison failed/);
     assert.match(text, /protocol/);
     assert.match(text, /Diagnostic/);
     assert.match(text, /comparison-failure\.html/);

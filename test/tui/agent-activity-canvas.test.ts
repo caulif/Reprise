@@ -27,17 +27,14 @@ function collect(events: readonly EventEnvelope[]): TimelineEntry[] {
   return timeline;
 }
 
-test('consecutive recovery inspect tools merge and omit file bodies', () => {
+test('consecutive recovery inspect tools stay off the settled column', () => {
   const timeline = collect([
     event('agent.tool_completed', { role: 'recovery', tool: 'read', params: { path: 'investigation.md' }, content: 'SECRET_BODY' }),
     event('agent.tool_completed', { role: 'recovery', tool: 'ls', params: { path: '.' } }),
     event('agent.tool_completed', { role: 'recovery', tool: 'read', params: { path: 'sessions.jsonl' }, content: 'MORE_SECRET' }),
   ]);
   const visible = timeline.filter((entry) => !entry.hidden);
-  const inspect = visible.filter((entry) => entry.kind === 'investigate');
-  assert.equal(inspect.length, 1);
-  assert.match(inspect[0]?.title ?? '', /Recovery · inspect/);
-  assert.match(inspect[0]?.detail ?? '', /×3/);
+  assert.equal(visible.filter((entry) => entry.kind === 'investigate').length, 0);
   assert.ok(visible.some((entry) => entry.kind === 'live' && /working/.test(entry.title)));
   assert.doesNotMatch(JSON.stringify(visible), /SECRET_BODY|MORE_SECRET/);
 });
@@ -56,16 +53,15 @@ test('controller read is a controller voice and not a product voice', () => {
   assert.equal(matchesFilter(entry, 'INPUT'), false);
 });
 
-test('controller decision stays separate from the delivered input', () => {
+test('controller decision is the delivered input', () => {
   const rows = projectTimelineEvent(event('controller.decision', {
     status: 'completed',
     value: { type: 'send', rationale: 'One check remains.', message: 'Run the focused test.' },
-  }));
-  assert.ok(rows[0] && rows[1]);
+  })).filter((entry) => !entry.hidden);
+  assert.ok(rows[0]);
   assert.equal(matchesFilter(rows[0], 'ALL'), true);
-  assert.equal(rows[0].title, 'Decision: SEND');
-  assert.equal(rows[1].title, 'Input to Target');
-  assert.equal(matchesFilter(rows[1], 'INPUT'), true);
+  assert.match(rows[0].title, /Input to Target/);
+  assert.equal(matchesFilter(rows[0], 'INPUT'), true);
   assert.equal(matchesFilter(rows[0], 'PRODUCT'), false);
 });
 
@@ -76,21 +72,19 @@ test('comparison write report.html is visible on the summary lane', () => {
     params: { path: 'report.html' },
   }));
   assert.ok(entry);
-  assert.match(entry.title, /Comparison · write/);
+  assert.match(entry.title, /写入/);
   assert.match(entry.detail ?? '', /report.html/);
   assert.equal(matchesFilter(entry, 'ALL'), true);
   assert.equal(matchesFilter(entry, 'PRODUCT'), false);
 });
 
-test('context compact folds into one compact row', () => {
+test('context compact stays off the main column', () => {
   const timeline = collect([
     event('agent.context_compacted', { role: 'recovery', summary: 'a', tokensBefore: 1000, retainedCount: 2 }),
     event('agent.context_compacted', { role: 'recovery', summary: 'b', tokensBefore: 2000, retainedCount: 1 }),
   ]);
   const visible = timeline.filter((entry) => !entry.hidden);
-  assert.equal(visible.length, 1);
-  assert.match(visible[0]?.title ?? '', /compact/);
-  assert.match(visible[0]?.detail ?? '', /tail ×2/);
+  assert.equal(visible.length, 0);
 });
 
 test('recovery canvas shows inspect activity instead of a candidate reply', () => {
@@ -108,7 +102,6 @@ test('recovery canvas shows inspect activity instead of a candidate reply', () =
     locale: 'zh',
   }).join('\n');
   assert.match(text, /恢复活动/);
-  assert.match(text, /工具/);
   assert.doesNotMatch(text, /调查 →/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /正在写回复/);
@@ -131,14 +124,14 @@ test('comparison header does not keep the candidate turn chrome', () => {
   const text = renderTimeline(theme, 120, model).join('\n');
   assert.match(chrome, /正在写对照报告/);
   assert.match(text, /report.html/);
-  assert.match(text, /对照结论/);
+  assert.doesNotMatch(chrome, /第 4 轮/);
 });
 
 test('controller inspect live verb is readable from the activity canvas', () => {
   const entries = collect([
     event('agent.tool_called', { role: 'controller', tool: 'read', params: { path: 'history/outline.tsv' } }),
   ]);
-  assert.match(lastLiveVerb(entries) ?? '', /inspect|outline|read/);
+  assert.match(lastLiveVerb(entries) ?? '', /阅读|read|outline/);
 });
 
 

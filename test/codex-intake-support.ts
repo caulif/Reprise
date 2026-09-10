@@ -26,7 +26,7 @@ export async function advanceCandidatePicker(app: IntakeTui, rendered: () => str
   app.handleInput("\r");
   await waitFor(() => /choose candidate model|选候选模型/i.test(rendered()));
   app.handleInput("\r");
-  await waitFor(() => /Start isolated .+ Candidate|启动隔离的/.test(rendered()));
+  await waitFor(() => app.page === "running" || app.page === "result");
 }
 
 export const fixtureCatalog = {

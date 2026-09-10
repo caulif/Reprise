@@ -10,6 +10,8 @@ Git sink 短哈希目录与 Windows 长路径：`init`+`fetch`、`core.longpaths
 
 ## 验证记录
 
+2026-09-10 内部 Agent 主列钉短句：`assistant_visible` 为 `narrate`，工具只留一行执行条，下一句 flush 成 `▸`；compact 不进主列；选完模型即开跑；DONE/对照终态用人话。ADR：[内部短句主列](../decisions/accepted/2026-09-10-internal-agent-narrate-spine.md)。`npm run check` 17 门禁通过（877 pass / 4 skip）。
+
 2026-09-10 Controller 协作工具面：注册 ls/read/grep/find/edit/write，`edit`/`write` 仅 `project/`，不注册 `shell_exec`；opening briefing `read` 记 `briefing_read`；删除 `historicalUserTurns`；`release` 等待 session close。ADR：[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)。`npm run check` 17 门禁通过（869 pass / 4 skip）。
 
 2026-09-10 Git sink 路径超限：嵌套仓 sink 名为相对路径 SHA-256 前 12 位；`ensureBareSink` 用 `init --bare` + `fetch`，Git `-c core.longpaths=true`。ADR：[可见表面与 Git sink](../decisions/accepted/2026-09-10-visible-surface-and-git-sink.md)。`npm run check` 17 门禁通过（864 pass / 4 skip）。

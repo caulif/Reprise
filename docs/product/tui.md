@@ -56,7 +56,7 @@ reprise compare
 → 选择该产品的历史会话
 → 自动开始恢复并等待结果（已恢复 / 部分恢复 / 无法恢复）
 → 已恢复或部分恢复：选择候选产品，再选择该 Pack 目录中的模型
-→ 确认后创建隔离副本并注入 run-local 配置
+→ 选完模型即创建隔离副本并注入 run-local 配置
 → 运行候选任务
 → 候选结束后停在同一条记录的结果段；c 开始对照，Esc 回封面并跳过对照
 → 查看任务判断、终止与清理；跳过时对照为未运行
@@ -93,7 +93,7 @@ reprise compare
 [准备并开始]
 ```
 
-进入准备页前只做低成本、只读环境检查。恢复成功后的选产品、选模型是选择，不是计费确认。操作者在确认页按 Enter 后，Harness 才创建候选隔离副本、再次 `validateCandidate` 并启动 Runtime。不要提前创建大量副本。确认页只问费用与「原目录不变、候选读写隔离副本」。变更条数、未决和限额不进确认页。
+进入准备页前只做低成本、只读环境检查。恢复成功后选产品、选模型；选完模型即启动隔离候选。不要提前创建大量副本。模型页启动前仍须通过恢复 accept 门。变更条数、未决和限额不进选择页。
 
 会影响解释的限制应显示在按钮附近，例如 `environment_partial · 部分外部状态无法恢复`。历史 Runtime 版本与当前版本不同不属于限制；若候选启动前检测到当前 Runtime 发生变化，则显示 `runtime_drift` warning。
 
@@ -107,30 +107,23 @@ reprise compare
 - **Controller**：Pi Agent 正常产生的可见 assistant 内容、证据读取、工具活动和最终决定；
 - **Target**：目标 Runtime 的可见回复、工具活动、命令、验证和产物变化。
 
-Harness 展示 Controller 的可见工作过程，但不依赖或承诺获取 provider 的隐藏 reasoning token。无进行中工具时，各声部共用一条此刻行 `working`（与 Codex 的 Working 行同类）；`agent.assistant_visible` 全文只经 `[o]`，不铺进主列。候选进行中只投影校验过的 `payload.live`，不解析产品私有帧。
+Harness 展示 Controller 的可见工作过程，但不依赖或承诺获取 provider 的隐藏 reasoning token。无进行中工具时，各声部共用一条此刻行 `working`。内部 Agent 的 `agent.assistant_visible` 钉在主列；候选 thinking 不进主列。候选进行中只投影校验过的 `payload.live`，不解析产品私有帧。
 
-主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：调查类工具合并成「动词 + 对象 + 次数」，变更与 `write` 各占一行，工具 stdout 与上下文 JSON 只经 `[o]`。一个实验一条单列连续记录：恢复、模拟用户投递、用户可见回合、结果与可选对照按持久化顺序追加。投递消息走 Input 声部，不得画成 Target 青色。候选用户可见内容来自已校验的 `candidate.user_view_persisted`；重开只读事件日志，不加载 Pack。未公开 reasoning 与产品私有 runtime payload 不进主列。Comparison 叠在同一时间线：结果段按 `c` 才开对照，跳过则对照为未运行。滚动按条目身份保存阅读位置；向上阅读暂停跟随，Home 到最早可见条，End 或 `l` 跟随最新。实验内 `/` 搜索已投影的可见标题与短文案（含折叠组内标题与尚未展开的记录），不搜索长工具原文或 `original`。Enter / Shift+Enter 在命中间移动并展开所在组。`v` 关闭鼠标报告并暂停当前视图重绘，后台仍追加持久化事件；退出后提示暂停期间的新活动条数。查找中的 `v` 写入查询，不进入阅读模式。本地产物链接：路径须为已验证绝对路径，支持 OSC 8 时输出 `file:` URI，否则显示完整可复制路径，并去掉控制序列。进程 `exit`、未捕获异常会调用 `tui.stop()` 以恢复终端模式。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)与[可见短句与显式对照](../decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)与[UserVisibleTurn 时间线](../decisions/accepted/2026-09-10-user-visible-turn-timeline.md)与[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)与[阅读锚点、搜索与终端恢复](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)。
+主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：进行中只留一行执行条，两次短句之间的成功探路收成 `▸ 阅读证据 · N` 或 `▸ 写入 {叶名}`。工具 stdout 与上下文 JSON 只经 `[o]`。一个实验一条单列连续记录：恢复、模拟用户投递、用户可见回合、结果与可选对照按持久化顺序追加；模拟用户页与对照页不把上一声部过程带进主列。投递消息走 Input 声部，不得画成 Target 青色。候选用户可见内容来自已校验的 `candidate.user_view_persisted`；重开只读事件日志，不加载 Pack。未公开 reasoning 与产品私有 runtime payload 不进主列。Comparison 叠在同一时间线：结果段按 `c` 才开对照，跳过则对照为未运行。滚动按条目身份保存阅读位置；向上阅读暂停跟随，Home 到最早可见条，End 或 `l` 跟随最新。实验内 `/` 搜索已投影的可见标题与短文案（含折叠组内标题与尚未展开的记录），不搜索长工具原文或 `original`。Enter / Shift+Enter 在命中间移动并展开所在组。`v` 关闭鼠标报告并暂停当前视图重绘，后台仍追加持久化事件；退出后提示暂停期间的新活动条数。查找中的 `v` 写入查询，不进入阅读模式。本地产物链接：路径须为已验证绝对路径，支持 OSC 8 时输出 `file:` URI，否则显示完整可复制路径，并去掉控制序列。进程 `exit`、未捕获异常会调用 `tui.stop()` 以恢复终端模式。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)与[可见短句与显式对照](../decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)与[UserVisibleTurn 时间线](../decisions/accepted/2026-09-10-user-visible-turn-timeline.md)与[内部短句主列](../decisions/accepted/2026-09-10-internal-agent-narrate-spine.md)与[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)与[阅读锚点、搜索与终端恢复](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)。
 
-恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段图例是恢复活动，空画布不得写成候选正在写回复。超过 30 秒仍无恢复进展时提示「仍在恢复」，不用候选的「仍在等待本轮结束」。确认后进入候选运行，标题是「候选运行中 · {候选产品}」或「正在启动 {候选产品}」；图例「发给 {产品}」用 `CandidateSpec.productId` 的显示名，不用来源会话产品。用户终态为无法恢复或没有 accept 时，确认页禁止启动隔离候选，标题不得声称已准备隔离对照，原因留一句人话（校验失败时附代码）：变更为 0 时说明没有观察到隔离工作区变更，有变更才强调工作区校验未通过；禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；候选阶段超过 30 秒仍无 turn 终态时提示仍在等待，超过 120 秒无新事件时提示可 Ctrl+C。封面、列表、核对、恢复、确认、运行、对照过程与结果的可滚动区都接鼠标滚轮。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
+恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段图例是恢复活动，空画布不得写成候选正在写回复。选完模型进入候选运行，标题是「候选运行中 · {候选产品}」或「正在启动 {候选产品}」；图例「发给 {产品}」用 `CandidateSpec.productId` 的显示名，不用来源会话产品。用户终态为无法恢复或没有 accept 时，禁止启动隔离候选，标题不得声称已准备隔离对照，原因留一句人话（校验失败时附代码）：变更为 0 时说明没有观察到隔离工作区变更，有变更才强调工作区校验未通过；禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；超过 120 秒无新事件时提示可 Ctrl+C。封面、列表、核对、恢复、选择、运行、对照过程与结果的可滚动区都接鼠标滚轮。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
 
 ### 4.2 决策与实际输入
 
 Controller 的最终决定是一级事件，真正发送给 Target 的内容必须独立突出：
 
 ```text
-Controller decision · CORRECT
-依据：实现接近完成，但测试暴露了共享接口不兼容。
-
-Input to Claude Code
-┌─────────────────────────────────────────────────────────────┐
-│ 测试失败是因为 adapter 仍使用旧接口。请检查共享调用方，   │
-│ 修复根因后重新运行相关测试。                                │
-└─────────────────────────────────────────────────────────────┘
-
-Delivered · accepted · target turn 6
+发给 Claude Code · 后续
+测试失败是因为 adapter 仍使用旧接口。请检查共享调用方。
+已接受 · turn 6
 ```
 
-只有 `ControllerDecision.send.message` 会发送给 Target。同一句投递只画一张 Input 卡：`input.submitted` 与 Pack `prompt` 若正文相同则合并进已有气泡，不叠第二段。Controller 的可见分析、工具参数、`intent`、`rationale` 和证据引用只属于 Harness 记录。Delivery 状态必须来自 Runtime 协议，不能依据界面是否继续活动推测；`unknown`、拒绝和超时应明确显示。
+只有 `ControllerDecision.send.message` 会发送给 Target。同一句投递只画一张 Input 卡：`input.submitted` 与 Pack `prompt` 若正文相同则合并进已有气泡，不叠第二段。有 Input 卡不再画 `Decision: SEND`。Controller 的可见短句属于主列；工具参数、`rationale` 全文和证据引用只经 `[o]`。Delivery 状态必须来自 Runtime 协议，不能依据界面是否继续活动推测；`unknown`、拒绝和超时应明确显示。
 
 ### 4.3 默认显示与按需展开
 

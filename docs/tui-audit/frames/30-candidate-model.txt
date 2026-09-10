@@ -12,6 +12,6 @@ Reprise v0.1.0   C:\reprise                              gpt-5.6-terra · medium
 │                                                                                                                      │
 │❯ gpt-5.6-luna                                                                                                        │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- Recovered. Choose a candidate product, then a model, then confirm to start.
+ Recovered. Choose a candidate product and model to start.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Use this model  [b] Change product  [Esc] Home
+ [↑↓] Select  [Enter] Start isolated Candidate  [b] Change product  [Esc] Home

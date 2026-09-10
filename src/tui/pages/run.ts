@@ -1,6 +1,5 @@
 import type { ExperimentPreflight } from '../../application/experiment-preflight.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
-import { lastLiveVerb } from '../agent-activity.js';
 import { foldProcessEntries, selectedIndexAfterFold } from '../fold-process.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
 import { t, type Locale } from '../i18n.js';
@@ -183,15 +182,11 @@ function phaseLine(model: RunningModel, locale: Locale, product: string): string
   }
   if (model.runPhase === 'candidate_starting') return t(locale, 'candidateStarting', { product });
   if (model.preparePhase === 'compare') {
-    const verb = lastLiveVerb(model.entries);
-    return verb ? `${t(locale, 'comparingTitle')} · ${verb}` : t(locale, 'comparingTitle');
+    return t(locale, 'comparingTitle');
   }
   if (model.runPhase === 'recovery') {
-    const verb = lastLiveVerb(model.entries);
-    const now = model.tick ?? Date.now();
-    const sinceStart = now - (model.runStartedAt ?? now);
-    const baseTitle = sinceStart >= 30_000 ? t(locale, 'stillRecoveringTitle') : t(locale, 'recoveringTitle');
-    return verb ? `${baseTitle} · ${verb}` : baseTitle;
+    const sinceStart = (model.tick ?? Date.now()) - (model.runStartedAt ?? Date.now());
+    return sinceStart >= 30_000 ? t(locale, 'stillRecoveringTitle') : t(locale, 'recoveringTitle');
   }
   return t(locale, 'candidateGenerating', { product, n: Math.max(1, model.turns.used) });
 }
@@ -201,10 +196,6 @@ function waitLine(model: RunningModel, locale: Locale): string | undefined {
   const last = model.lastRuntimeEventAt ? Date.parse(model.lastRuntimeEventAt) : (model.runStartedAt ?? 0);
   const idle = Number.isFinite(last) && last > 0 ? now - last : now - (model.runStartedAt ?? 0);
   if (idle >= 120_000) return t(locale, 'runStaleHint');
-  const sinceStart = now - (model.runStartedAt ?? now);
-  if (sinceStart >= 30_000) {
-    return t(locale, model.runPhase === 'recovery' ? 'runStillRecovering' : 'runStillWaiting');
-  }
   return undefined;
 }
 
@@ -223,16 +214,13 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const legend = recovering
     ? ` ${theme.style.harness(theme.glyphs.dot)} ${t(locale, 'recoveryLegend')}`
     : comparing
-      ? ` ${theme.style.ok(theme.glyphs.dot)} ${t(locale, 'comparisonTitle')}`
+      ? ` ${theme.style.ok(theme.glyphs.dot)} ${t(locale, 'comparisonLegend')}`
       : ` ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'legendIn', { product })}   ${theme.style.target(theme.glyphs.dot)} ${t(locale, 'legendOut', { product })}   ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'controllerLegend')}`;
   const task = model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : undefined;
-  const session = model.candidateSessionId
-    ? kv(theme, t(locale, 'fieldSession'), model.candidateSessionId, width)
-    : undefined;
   const hits = canvasHitIndices(visible, model.findQuery ?? '');
   const hitAt = hits.indexOf(selected < 0 ? -1 : selected);
   const findBar = model.finding ? renderFindBar(model, locale, hits.length, hitAt < 0 ? 0 : hitAt) : [];
-  const header = [legend, ...(task ? [task] : []), ...(session ? [session] : []), ...findBar, ''];
+  const header = [legend, ...(task ? [task] : []), ...findBar, ''];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
   const expanded = new Set(model.expandedFolds ?? []);
   const folded = foldProcessEntries(visible, expanded);
@@ -242,7 +230,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
     : recovering && !visible.length
       ? [
           theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
-          pad(` ${theme.style.harness(theme.glyphs.dot)} Recovery · working`, width, theme.glyphs.ellipsis),
+          pad(` ${theme.style.harness(theme.glyphs.dot)} working`, width, theme.glyphs.ellipsis),
         ]
       : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0);
   return [
@@ -345,7 +333,7 @@ export function countTurns(entries: readonly TimelineEntry[]): number {
 }
 
 export function countCalls(entries: readonly TimelineEntry[]): number {
-  return entries.filter((entry) => entry.title.startsWith('Decision:')).length;
+  return entries.filter((entry) => entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')).length;
 }
 
 function dash(theme: Theme): string {

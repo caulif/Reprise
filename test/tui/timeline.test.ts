@@ -51,14 +51,13 @@ test('timeline projects operator-relevant persisted facts', () => {
     status: 'completed', sessionId: 'controller-1', value: { type: 'send', rationale: 'One check remains.', message: 'Run the focused test.' },
   }));
   assert.deepEqual(sent.filter((row) => !row.hidden).map(({ title, detail }) => ({ title, detail })), [
-    { title: 'Decision: SEND', detail: 'One check remains.' },
     { title: 'Input to Target', detail: 'Run the focused test.' },
   ]);
 
   const done = projectTimelineEvent(event('controller.decision', {
     status: 'completed', sessionId: 'controller-1', value: { type: 'done', reason: 'blocked', rationale: 'Sandbox denied the path.' },
   }))[0];
-  assert.equal(done?.title, 'Decision: DONE · blocked');
+  assert.equal(done?.title, 'DONE · 受阻');
   assert.equal(done?.detail, 'Sandbox denied the path.');
   assert.deepEqual(projectTimelineEvent(event('controller.decision', { status: 'failed', failure: { message: 'Model text is disallowed by TaskCase privacy policy.' } })), []);
 
@@ -77,7 +76,7 @@ test('timeline projects operator-relevant persisted facts', () => {
     sequence: 1,
     occurredAt: timestamp,
     source: 'CONTROLLER',
-    title: 'Comparison failed',
+    title: '对照失败',
     detail: 'missing narrative',
     level: 'error',
     lane: 'comparison',
@@ -119,17 +118,16 @@ test('send and input.submitted keep one presented user sentence', () => {
   assert.equal(presented[0]?.title, 'Input to Target');
 });
 
-test('recovery timeline keeps inspect, shell_exec, writes, and failures visible', () => {
+test('recovery timeline keeps live tools and failures visible', () => {
   const listed = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'ls', params: { path: '.' } }))[0];
   const deleted = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'shell_exec', params: { command: 'Remove-Item ppt_build/out.pptx' } }))[0];
   const reported = projectTimelineEvent(event('agent.tool_completed', { role: 'recovery', tool: 'write', params: { path: 'recovery.md' } }))[0];
   const failed = projectTimelineEvent(event('agent.tool_failed', { role: 'recovery', tool: 'read_observation', message: 'tool budget exhausted' }))[0];
   assert.equal(listed?.hidden, undefined);
-  assert.match(listed?.title ?? '', /Recovery · inspect/);
+  assert.match(listed?.title ?? '', /阅读/);
   assert.equal(deleted?.hidden, undefined);
-  assert.match(deleted?.detail ?? '', /Remove-Item/);
-  assert.equal(reported?.hidden, undefined);
-  assert.match(reported?.detail ?? '', /recovery.md/);
+  assert.match(`${deleted?.title ?? ''} ${deleted?.detail ?? ''}`, /Remove-Item|检查/);
+  assert.equal(reported?.hidden, true);
   assert.equal(failed?.hidden, undefined);
   assert.equal(failed?.level, 'error');
   const duplicate = projectTimelineEvent(event('agent.tool_failed', {
@@ -199,7 +197,7 @@ test('persisted user view does not require the original pack at read time', () =
       cleanup: { status: 'complete' },
     }),
   ]);
-  assert.equal(timeline.some((entry) => entry.title === 'Recovery recovered'), true);
+  assert.equal(timeline.some((entry) => entry.title === '已恢复'), true);
   assert.equal(timeline.some((entry) => entry.title === 'Visible response' && entry.detail === 'Visible reply from a missing pack.'), true);
   assert.equal(timeline.some((entry) => entry.title === 'Task · apparently_completed'), true);
   assert.equal(timeline.some((entry) => entry.title.startsWith('Termination · completed')), true);

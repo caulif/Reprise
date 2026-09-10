@@ -1,28 +1,14 @@
-import { text, type JsonRecord } from '../core/json.js';
-import type { AgentLane } from './agent-activity.js';
+import { projectAssistantVisible } from './agent-activity.js';
 import { timelineIdentity } from './timeline-read.js';
 import type { TimelineEntry } from './timeline.js';
 
-export function projectAssistantVisible(payload: JsonRecord): {
-  title: string;
-  detail: string;
-  extra: { lane: AgentLane; kind: 'narrate'; count: number };
-} {
-  const textBody = text(payload.text) ?? '';
-  const role = payload.role === 'controller' || payload.role === 'comparison' ? payload.role : 'recovery';
-  const first = textBody.split(/\n/)[0]?.trim() ?? '';
-  return {
-    title: first || '…',
-    detail: textBody,
-    extra: { lane: role, kind: 'narrate', count: 1 },
-  };
-}
+export { projectAssistantVisible };
 
 export function paneOf(entry: TimelineEntry): 'left' | 'right' | 'both' | undefined {
   if (entry.hidden) return undefined;
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·')) return 'both';
   if (entry.source === 'TARGET' && !entry.lane) return 'right';
-  if (entry.lane === 'controller' || entry.title.startsWith('Decision:') || entry.title.startsWith('Controller')) return 'left';
+  if (entry.lane === 'controller' || entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·') || entry.title.startsWith('控制Agent')) return 'left';
   if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'left';
   if (entry.source === 'CONTROLLER') return 'left';
   if (entry.level === 'error' && entry.source === 'TARGET') return 'right';
@@ -46,10 +32,11 @@ export function foldProcessEntries(
 ): TimelineEntry[] {
   const turns = groupTurns(entries);
   const out: TimelineEntry[] = [];
+  const unfoldFrom = Math.max(0, turns.length - 2);
   for (const [index, turn] of turns.entries()) {
     const last = index === turns.length - 1;
-    if (last) {
-      out.push(...foldCurrentTurn(turn, expandedIds));
+    if (last || index >= unfoldFrom) {
+      out.push(...(last ? foldCurrentTurn(turn, expandedIds) : [...turn]));
       continue;
     }
     const id = `fold:turn:${index + 1}`;
@@ -59,11 +46,12 @@ export function foldProcessEntries(
     }
     const sent = turn.find((entry) => entry.title.startsWith('Input to Target'));
     const preview = (sent?.detail ?? sent?.title ?? '').replace(/\s+/g, ' ').slice(0, 48);
+    const probe = sent?.title.includes('verify') || sent?.title.includes('探测');
     out.push({
       sequence: turn.at(-1)?.sequence ?? index,
       occurredAt: turn.at(-1)?.occurredAt ?? '',
       source: 'CONTROLLER',
-      title: `▸ 第 ${index + 1} 轮 · SEND · ${preview}`,
+      title: `▸ 第 ${index + 1} 轮 · ${probe ? '探测' : '后续'} · ${preview}`,
       lane: 'controller',
       kind: 'fold',
       itemId: id,
@@ -106,7 +94,7 @@ function groupTurns(entries: readonly TimelineEntry[]): TimelineEntry[][] {
   const turns: TimelineEntry[][] = [[]];
   for (const entry of entries) {
     const current = turns.at(-1) ?? [];
-    if (current.length && entry.title.startsWith('Decision:')) {
+    if (current.length && (entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·'))) {
       turns.push([entry]);
       continue;
     }
@@ -127,12 +115,15 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
       return;
     }
     const lane = tools[0]?.lane;
-    const preview = (tools[0]?.detail ?? tools[0]?.title ?? "").replace(/\s+/g, " ").slice(0, 40);
+    const write = tools.find((item) => item.kind === 'deliver' || /写入/.test(item.title));
+    const title = write && tools.every((item) => item.kind === 'deliver' || /写入/.test(item.title))
+      ? `▸ 写入 ${write.detail ?? write.title}`
+      : `▸ 阅读证据 · ${tools.length}`;
     out.push({
       sequence: tools.at(-1)?.sequence ?? 0,
       occurredAt: tools.at(-1)?.occurredAt ?? "",
       source: tools[0]?.source ?? "HARNESS",
-      title: `▸ 工具  ${preview} · ×${tools.length}`,
+      title,
       ...(lane ? { lane } : {}),
       kind: "fold",
       itemId: thinkFoldId(tools),
@@ -141,7 +132,12 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
     tools = [];
   };
   for (const entry of turn) {
-    if (entry.kind === "investigate" || entry.kind === "live") {
+    if (entry.kind === "live" && entry.itemId?.startsWith("now:")) {
+      flush();
+      out.push(entry);
+      continue;
+    }
+    if (entry.kind === "investigate") {
       tools.push(entry);
       continue;
     }

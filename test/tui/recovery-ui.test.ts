@@ -194,14 +194,14 @@ test('workbench renders timeline above confirmation when recovery entries exist'
     } as never,
     running: {
       entries: [
-        { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'Recovery · inspect', detail: 'Read package.json' },
+        { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'Read package.json', detail: 'Read package.json', lane: 'recovery', kind: 'narrate' },
       ],
       selected: 0, filter: 'ALL', following: true, cancelling: false,
       currentState: undefined, elapsed: '00:05', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
     },
   }, 120).join('\n');
 
-  assert.match(rendered, /inspect Read package\.json/);
+  assert.match(rendered, /Read package\.json/);
   assert.match(rendered, /Recovery activity/);
   assert.match(rendered, /Start isolated Codex Candidate/);
 });

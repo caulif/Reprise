@@ -136,7 +136,7 @@ test('invocation started is a working now-row; other invocation lifecycle stays 
   assert.equal(started.length, 1);
   assert.equal(started[0]?.kind, 'live');
   assert.equal(started[0]?.itemId, 'now:recovery');
-  assert.match(started[0]?.title ?? '', /Recovery · working/);
+  assert.match(started[0]?.title ?? '', /working/);
   for (const type of ['agent.invocation_completed', 'agent.invocation_failed', 'agent.invocation_cancelled']) {
     const rows = projectTimelineEvent(envelope(type));
     assert.equal(rows.length, 1);

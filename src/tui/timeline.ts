@@ -5,7 +5,7 @@ import {
   collapseAgentRows,
   laneSource,
   projectAgentTool,
-  projectContextCompacted,
+  projectAssistantVisible,
   projectWorkingNow,
   type AgentKind,
   type AgentLane,
@@ -58,10 +58,17 @@ type MakeEntry = (source: TimelineSource, title: string, detail?: string, extra?
 export function appendTimelineEntries(timeline: TimelineEntry[], incoming: readonly TimelineEntry[]): void {
   const seen = new Set(timeline.filter((entry) => entry.title.startsWith('Prompt ·')).map((entry) => entry.title));
   for (const entry of incoming) {
+    if (shouldFlushBefore(entry) || (entry.hidden && entry.itemId?.startsWith('now:'))) {
+      flushLane(timeline, entry.lane ?? laneFromEntry(entry));
+    }
     if (collapsePresentedInput(timeline, entry)) continue;
     if (entry.title.startsWith('Prompt ·')) {
       if (seen.has(entry.title)) continue;
       seen.add(entry.title);
+    }
+    if (entry.itemId?.startsWith('flush:') || entry.itemId?.startsWith('flush-write:')) {
+      bumpFlush(timeline, entry);
+      continue;
     }
     if (isNowRow(entry)) {
       upsertNowRow(timeline, entry);
@@ -167,15 +174,26 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'recovery.started':
       return [
         entry('HARNESS', 'Recovery started', undefined, { hidden: true }),
-        entry('HARNESS', 'Recovery · working', undefined, {
+        entry('HARNESS', 'working', undefined, {
           kind: 'live', placeholder: true, itemId: 'now:recovery', patch: 'replace', lane: 'recovery',
         }),
       ];
     case 'recovery.completed': {
-      const status = text(payload.status) ?? text(record(payload.value).status) ?? 'unknown';
-      const failed = status === 'failed';
+      const value = record(payload.value);
+      const finalStatus = text(payload.finalStatus) ?? text(value.finalStatus) ?? recoveryUserWord(payload, value);
+      const unresolved = Array.isArray(value.unresolved)
+        ? value.unresolved.filter((item): item is string => typeof item === 'string')
+        : [];
+      const excerpt = text(payload.reportText) ?? text(value.reportText);
+      const failed = finalStatus === '无法恢复' || text(payload.status) === 'failed';
       return [
-        entry('HARNESS', `Recovery ${status}`, text(payload.message) ?? text(record(payload.failure).message), failed ? { level: 'error' } : undefined),
+        entry('HARNESS', finalStatus, excerpt, {
+          lane: 'recovery',
+          kind: 'deliver',
+          ...(excerpt ? { original: excerpt } : {}),
+          ...(failed ? { level: 'error' as const } : {}),
+        }),
+        ...unresolved.map((item) => entry('HARNESS', item, undefined, { lane: 'recovery', kind: 'narrate' })),
         clearNow(entry, 'recovery'),
       ];
     }
@@ -253,7 +271,7 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
     case 'controller.started':
       return [
         entry('CONTROLLER', 'Evaluation started', text(payload.model), { hidden: true }),
-        entry('CONTROLLER', 'Controller · working', undefined, {
+        entry('CONTROLLER', 'working', undefined, {
           kind: 'live', placeholder: true, itemId: 'now:controller', patch: 'replace', lane: 'controller',
         }),
       ];
@@ -266,7 +284,7 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
     case 'comparison.started':
       return [
         entry('CONTROLLER', 'Comparison started', text(payload.model), { hidden: true, lane: 'comparison' }),
-        entry('CONTROLLER', 'Comparison · working', undefined, {
+        entry('CONTROLLER', 'working', undefined, {
           kind: 'live', placeholder: true, itemId: 'now:comparison', patch: 'replace', lane: 'comparison',
         }),
       ];
@@ -301,18 +319,22 @@ function agentLaneOf(payload: JsonRecord): AgentLane {
 }
 
 function projectInternalNow(type: string, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
-  if (type === 'agent.context_compacted') {
-    const row = projectContextCompacted(payload);
-    return [entry(laneSource(row.extra.lane), row.title, row.detail, row.extra)];
-  }
+  if (type === 'agent.context_compacted') return [];
   const lane = agentLaneOf(payload);
   if (type === 'agent.invocation_completed' || type === 'agent.invocation_failed' || type === 'agent.invocation_cancelled') {
     return [clearNow(entry, lane)];
   }
-  if (type === 'agent.invocation_started' || type === 'agent.assistant_visible') {
+  if (type === 'agent.invocation_started') {
     const row = projectWorkingNow(lane);
-    const original = type === 'agent.assistant_visible' ? text(payload.text) : undefined;
-    return [entry(laneSource(lane), row.title, undefined, { ...row.extra, ...(original ? { original } : {}) })];
+    return [entry(laneSource(lane), row.title, undefined, row.extra)];
+  }
+  if (type === 'agent.assistant_visible') {
+    const vis = projectAssistantVisible(payload);
+    const idle = projectWorkingNow(lane);
+    return [
+      entry(laneSource(lane), vis.title, vis.detail, vis.extra),
+      entry(laneSource(lane), idle.title, undefined, idle.extra),
+    ];
   }
   const row = projectAgentTool(payload, type);
   const projected = entry(laneSource(row.extra.lane), row.title, row.detail, {
@@ -321,7 +343,21 @@ function projectInternalNow(type: string, payload: JsonRecord, entry: MakeEntry)
   });
   if (type !== 'agent.tool_completed' && type !== 'agent.tool_failed') return [projected];
   const idle = projectWorkingNow(row.extra.lane);
-  return [projected, entry(laneSource(row.extra.lane), idle.title, undefined, idle.extra)];
+  const idleRow = entry(laneSource(row.extra.lane), idle.title, undefined, idle.extra);
+  if (type === 'agent.tool_failed' || row.extra.level === 'error') return [projected, idleRow];
+  if (row.detail === '不是 Git 仓库') return [projected, idleRow];
+  const flushId = row.extra.kind === 'deliver' ? `flush-write:${lane}` : `flush:${lane}`;
+  return [
+    entry(laneSource(lane), 'flush', row.detail, {
+      hidden: true,
+      itemId: flushId,
+      patch: 'replace',
+      lane,
+      kind: row.extra.kind === 'deliver' ? 'deliver' : 'investigate',
+      count: 1,
+    }),
+    idleRow,
+  ];
 }
 
 function projectCandidateNow(type: string, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
@@ -374,17 +410,19 @@ function projectOutcome(entry: MakeEntry, payload: JsonRecord): readonly Timelin
 }
 
 function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
-  const status = text(payload.status) ?? 'unknown';
+  const invocation = text(payload.status) ?? 'unknown';
   const failure = record(payload.failure);
   const value = record(payload.value);
+  const valueStatus = text(value.status);
+  const headline = text(value.headline);
   const codes = Array.isArray(value.limitationCodes) ? value.limitationCodes.filter((item): item is string => typeof item === 'string') : [];
-  const detail = status === 'failed'
-    ? text(failure.message)
-    : ['report.html', ...codes].filter(Boolean).join(' · ');
-  return [entry('CONTROLLER', status === 'completed' ? 'Comparison completed' : `Comparison ${status}`, detail, {
+  const failed = invocation === 'failed';
+  const title = failed ? '对照失败' : valueStatus === 'insufficient_evidence' ? '证据不足' : '对照完成';
+  return [entry('CONTROLLER', title, headline ?? (failed ? text(failure.message) : undefined), {
     lane: 'comparison',
     kind: 'deliver',
-    ...(status === 'failed' ? { level: 'error' as const } : {}),
+    ...(codes.length ? { original: codes.join(' · ') } : headline ? { original: headline } : {}),
+    ...(failed ? { level: 'error' as const } : {}),
   })];
 }
 
@@ -395,19 +433,41 @@ function controllerEntries(event: EventEnvelope, payload: JsonRecord): readonly 
   if (!kind) return [];
   const make = timelineEntryFactory(event);
   const rationale = text(decision.rationale);
+  if (kind === 'send') {
+    const intent = text(decision.intent);
+    const message = text(decision.message);
+    return [{
+      sequence: event.sequence, occurredAt: event.occurredAt, source: 'CONTROLLER',
+      title: intent ? `Input to Target · ${intent}` : 'Input to Target',
+      ...(message ? { detail: message } : {}),
+      lane: 'controller',
+      kind: 'deliver',
+    }, clearNow(make, 'controller')];
+  }
   const reason = text(decision.reason);
-  const title = kind === 'done' && reason ? `Decision: DONE · ${reason}` : `Decision: ${kind.toUpperCase()}`;
-  const base: TimelineEntry = {
+  return [{
     sequence: event.sequence, occurredAt: event.occurredAt, source: 'CONTROLLER',
-    title,
+    title: `DONE · ${doneReason(reason)}`,
     ...(rationale ? { detail: rationale } : {}),
-  };
-  if (kind !== 'send') return [base, clearNow(make, 'controller')];
-  const message = text(decision.message);
-  return [base, {
-    sequence: event.sequence, occurredAt: event.occurredAt, source: 'CONTROLLER', title: 'Input to Target',
-    ...(message ? { detail: message } : {}),
+    lane: 'controller',
+    kind: 'deliver',
   }, clearNow(make, 'controller')];
+}
+
+function doneReason(reason: string | undefined): string {
+  if (reason === 'no_further_value') return '没有继续的价值';
+  if (reason === 'satisfied') return '任务已完成';
+  if (reason === 'requires_real_user_decision') return '需要真人决定';
+  if (reason === 'blocked') return '受阻';
+  return reason ?? '结束';
+}
+
+function recoveryUserWord(payload: JsonRecord, value: JsonRecord): string {
+  const envelope = text(value.status) ?? text(payload.status);
+  if (envelope === 'partial' || envelope === 'recovered_partial') return '部分恢复';
+  if (envelope === 'failed' || envelope === 'blocked' || envelope === 'insufficient_evidence') return '无法恢复';
+  if (envelope === 'recovered' || envelope === 'ready' || envelope === 'completed') return '已恢复';
+  return '无法恢复';
 }
 
 function promptTitle(prompt: string): string {
@@ -504,6 +564,78 @@ function pinNowRows(timeline: TimelineEntry[]): void {
 function clearNow(entry: MakeEntry, lane: AgentLane): TimelineEntry {
   const row = projectWorkingNow(lane);
   return entry(laneSource(lane), row.title, undefined, { ...row.extra, hidden: true });
+}
+
+function shouldFlushBefore(entry: TimelineEntry): boolean {
+  if (entry.hidden) return false;
+  if (entry.kind === 'narrate') return true;
+  if (entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')) return true;
+  if (entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复') return true;
+  if (entry.title === '对照完成' || entry.title === '证据不足' || entry.title === '对照失败') return true;
+  return false;
+}
+
+function laneFromEntry(entry: TimelineEntry): AgentLane {
+  if (entry.lane) return entry.lane;
+  if (entry.source === 'CONTROLLER') return 'controller';
+  return 'recovery';
+}
+
+function bumpFlush(timeline: TimelineEntry[], entry: TimelineEntry): void {
+  const itemId = entry.itemId;
+  if (!itemId) return;
+  const index = lastIndexByItemId(timeline, itemId);
+  if (index < 0) {
+    timeline.push(entry);
+    return;
+  }
+  const previous = timeline[index]!;
+  timeline[index] = {
+    ...previous,
+    sequence: entry.sequence,
+    occurredAt: entry.occurredAt,
+    count: (previous.count ?? 1) + (entry.count ?? 1),
+    ...(entry.detail ? { detail: entry.detail } : {}),
+  };
+}
+
+function flushLane(timeline: TimelineEntry[], lane: AgentLane): void {
+  emitFlush(timeline, `flush:${lane}`, (row) => `▸ 阅读证据 · ${row.count ?? 1}`);
+  emitFlush(timeline, `flush-write:${lane}`, (row) => `▸ 写入 ${row.detail ?? ''}`.trim());
+}
+
+function emitFlush(timeline: TimelineEntry[], itemId: string, titleOf: (row: TimelineEntry) => string): void {
+  const index = lastIndexByItemId(timeline, itemId);
+  if (index < 0) return;
+  const pending = timeline.splice(index, 1)[0];
+  if (!pending) return;
+  timeline.push({
+    sequence: pending.sequence,
+    occurredAt: pending.occurredAt,
+    source: pending.source,
+    title: titleOf(pending),
+    kind: 'fold',
+    ...(pending.lane ? { lane: pending.lane } : {}),
+    ...(pending.count !== undefined ? { count: pending.count } : {}),
+  });
+}
+
+export function filterTraceForSurface(
+  entries: readonly TimelineEntry[],
+  surface: 'recovery' | 'picker' | 'candidate' | 'compare' | 'result',
+): readonly TimelineEntry[] {
+  if (surface === 'compare') {
+    return entries.filter((entry) => entry.lane === 'comparison' || entry.itemId === 'now:comparison');
+  }
+  if (surface === 'candidate' || surface === 'result') {
+    return entries.filter((entry) => {
+      if (entry.lane === 'recovery' || entry.itemId === 'now:recovery') return false;
+      if (entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复') return false;
+      if (surface === 'result' && (entry.lane === 'comparison' || entry.itemId === 'now:comparison')) return false;
+      return true;
+    });
+  }
+  return entries;
 }
 
 function lastIndexByItemId(timeline: readonly TimelineEntry[], itemId: string): number {

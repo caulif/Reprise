@@ -1,7 +1,7 @@
 Reprise   Run result   C:\reprise
 00:00   * done
 ------------------------------------------------------------
- * To Codex   * Codex screen   * Controller                 
+ * To Codex   * Codex screen   * Control agent              
  Task  Fix the bug.                                         
                                                             
 | public response line 1                                    
@@ -14,7 +14,7 @@ Reprise   Run result   C:\reprise
     Task         apparently_completed
     Termination  completed · completed.controller_satisfied
     Cleanup      complete
-    Comparison   completed
+    Comparison   Comparison complete
     Report       
    C:\user\AppData\Local\Temp\
    reprise-tui-audit-TMP\data\experiments\fixture\

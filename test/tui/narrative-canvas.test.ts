@@ -5,7 +5,7 @@ import { matchesFilter, renderScrollback } from '../../src/tui/scrollback.js';
 import { renderTimeline } from '../../src/tui/pages/run.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { paneOf, projectAssistantVisible, splitRunEntries } from '../../src/tui/fold-process.js';
-import { appendTimelineEntries, projectTimelineEvent, type TimelineEntry } from '../../src/tui/timeline.js';
+import { appendTimelineEntries, filterTraceForSurface, projectTimelineEvent, type TimelineEntry } from '../../src/tui/timeline.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
 
 const timestamp = '2026-09-02T12:00:00.000Z';
@@ -30,16 +30,14 @@ test('visible assistant text drops JSON envelopes and thinking-only content', ()
   assert.equal(visibleAssistantText([{ type: 'text', text: '<think>hidden</think>{"type":"done","reason":"satisfied"}' }]), '');
 });
 
-test('assistant_visible is a working row, not invented narration', () => {
+test('assistant_visible is a narrate row on the main column', () => {
   const [row] = projectTimelineEvent(event('agent.assistant_visible', {
     role: 'recovery',
     text: '先看隔离副本是不是仓库。',
     turn: 1,
   }));
-  assert.equal(row?.kind, 'live');
-  assert.match(row?.title ?? '', /working/);
-  assert.equal(row?.detail, undefined);
-  assert.match(row?.original ?? '', /隔离副本/);
+  assert.equal(row?.kind, 'narrate');
+  assert.match(row?.title ?? '', /隔离副本/);
   assert.equal(projectTimelineEvent(event('agent.message_appended', { role: 'recovery', byteLength: 12 })).length, 0);
 });
 
@@ -55,7 +53,7 @@ test('right pane is product session, not Controller tools, and user text is inpu
     value: { type: 'send', message: 'Run the focused test.' },
   })));
   const { left, right } = splitRunEntries(timeline);
-  assert.ok(left.some((entry) => entry.lane === 'controller' || entry.title.startsWith('Decision:')));
+  assert.ok(left.some((entry) => entry.lane === 'controller' || entry.title.startsWith('Input to Target')));
   assert.equal(right.some((entry) => entry.title.includes('outline') && entry.lane === 'controller' || entry.lane === 'controller' && entry.title.startsWith('Controller') && !entry.title.startsWith('Decision')), false);
   const input = right.find((entry) => entry.title.startsWith('Input to Target'))
     ?? left.find((entry) => entry.title.startsWith('Input to Target'));
@@ -97,4 +95,155 @@ test('scrollback does not reprint the same delivered sentence', () => {
     { sequence: 2, occurredAt: timestamp, source: 'TARGET', title: `Prompt · ${message}`, detail: message },
   ], 0, 'zh', 'Claude Code').join('\n');
   assert.equal(painted.split(message).length - 1, 1);
+});
+
+test('recovery keeps one live row then flushes tools on the next sentence', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '先看隔离副本是不是仓库。',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_called', {
+    role: 'recovery', tool: 'read', params: { path: 'INDEX.md' },
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_completed', {
+    role: 'recovery', tool: 'read', params: { path: 'INDEX.md' },
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_completed', {
+    role: 'recovery', tool: 'read', params: { path: 'session.json' },
+  })));
+  const live = timeline.filter((entry) => !entry.hidden && entry.kind === 'live');
+  assert.equal(live.length, 1);
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '接着写 recovery.md。',
+  })));
+  const visible = timeline.filter((entry) => !entry.hidden);
+  assert.ok(visible.some((entry) => entry.title.includes('▸ 阅读证据')));
+  assert.equal(visible.some((entry) => /compact/.test(entry.title)), false);
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.context_compacted', {
+    role: 'recovery', retainedCount: 75,
+  })));
+  assert.equal(timeline.filter((entry) => !entry.hidden).some((entry) => /compact/.test(entry.title)), false);
+});
+
+test('recovery.completed uses the user-facing recovery word', () => {
+  const [row] = projectTimelineEvent(event('recovery.completed', { status: 'completed', finalStatus: '部分恢复' }));
+  assert.equal(row?.title, '部分恢复');
+  const recovered = projectTimelineEvent(event('recovery.completed', { status: 'recovered' }))[0];
+  assert.equal(recovered?.title, '已恢复');
+});
+
+test('controller send is an Input card without Decision: SEND', () => {
+  const rows = projectTimelineEvent(event('controller.decision', {
+    status: 'completed',
+    value: { type: 'send', intent: 'verify', message: '在吗', rationale: 'probe' },
+  })).filter((entry) => !entry.hidden);
+  assert.equal(rows.some((entry) => entry.title.startsWith('Input to Target')), true);
+  assert.equal(rows.some((entry) => entry.title.includes('Decision: SEND')), false);
+  const done = projectTimelineEvent(event('controller.decision', {
+    status: 'completed',
+    value: { type: 'done', reason: 'no_further_value', rationale: '候选只回了开场寒暄。' },
+  })).filter((entry) => !entry.hidden);
+  assert.match(done[0]?.title ?? '', /没有继续的价值/);
+  assert.doesNotMatch(done[0]?.title ?? '', /no_further_value/);
+  assert.match(done[0]?.detail ?? '', /寒暄/);
+});
+
+test('comparison completion shows headline not limitation codes', () => {
+  const [row] = projectTimelineEvent(event('comparison.completed', {
+    status: 'completed',
+    value: { status: 'completed', headline: '候选只寒暄，没有做出两页 PPT。', limitationCodes: ['isolation'], reportPath: 'report.html' },
+  }));
+  assert.equal(row?.title, '对照完成');
+  assert.match(row?.detail ?? '', /寒暄/);
+  assert.doesNotMatch(row?.title ?? '', /report.html/);
+});
+
+test('shell_exec live title is a single verb', () => {
+  const [row] = projectTimelineEvent(event('agent.tool_called', {
+    role: 'recovery',
+    tool: 'shell_exec',
+    params: { command: 'Get-ChildItem -LiteralPath .' },
+  }));
+  assert.doesNotMatch(row?.title ?? '', /shell_exec shell_exec/);
+  assert.doesNotMatch(`${row?.title ?? ''} ${row?.detail ?? ''}`, /shell_exec shell_exec/);
+});
+
+test('unsettled candidate keeps a working row then visible response replaces it', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', {
+    turnIndex: 0, text: '在吗',
+  })));
+  const live = timeline.filter((entry) => !entry.hidden && entry.kind === 'live');
+  assert.equal(live.length, 1);
+  assert.match(live[0]?.title ?? '', /working/);
+  appendTimelineEntries(timeline, projectTimelineEvent(event('candidate.user_view_persisted', {
+    turnIndex: 0, status: 'completed', observedAt: timestamp, assistantText: '你好，需要什么帮助？',
+  })));
+  const visible = timeline.filter((entry) => !entry.hidden);
+  assert.ok(visible.some((entry) => entry.title === 'Visible response'));
+  assert.equal(visible.filter((entry) => entry.kind === 'live').length, 0);
+});
+
+test('comparison narrate stays on the compare surface without Input cards', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('controller.decision', {
+    status: 'completed',
+    value: { type: 'send', message: '在吗' },
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'comparison', text: '先核对隔离副本有没有两页 PPT。',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_called', {
+    role: 'comparison', tool: 'read', params: { path: 'report.html' },
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_completed', {
+    role: 'comparison', tool: 'read', params: { path: 'INDEX.md' },
+  })));
+  const live = timeline.filter((entry) => !entry.hidden && entry.kind === 'live' && entry.lane === 'comparison');
+  assert.equal(live.length, 1);
+  const compare = filterTraceForSurface(timeline.filter((entry) => !entry.hidden), 'compare');
+  assert.ok(compare.some((entry) => entry.kind === 'narrate' && /两页 PPT/.test(entry.title)));
+  assert.equal(compare.some((entry) => entry.title.startsWith('Input to Target')), false);
+  assert.equal(compare.some((entry) => entry.title.includes('Decision: SEND')), false);
+  const painted = renderTimeline(createTheme(120, false), 120, {
+    entries: [...compare],
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: 'finished', elapsed: '01:00', turns: { used: 4 }, calls: { used: 2 }, detailExpanded: false,
+    preparePhase: 'compare',
+    productLabel: 'Codex',
+    locale: 'zh',
+  }).join('\n');
+  assert.doesNotMatch(painted, /第 4 轮/);
+  assert.doesNotMatch(painted, /inspect artifact/);
+  assert.match(painted, /对照Agent/);
+});
+
+test('candidate surface hides recovery blocks, compact, and session UUID', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('recovery.completed', {
+    status: 'completed', finalStatus: '已恢复',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.context_compacted', {
+    role: 'controller', retainedCount: 12,
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('candidate.session_bound', {
+    sessionId: '0194abcd-1234-5678-90ab-cdef01234567', productId: 'codex',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('controller.decision', {
+    status: 'completed',
+    value: { type: 'send', message: '继续' },
+  })));
+  const candidate = filterTraceForSurface(timeline.filter((entry) => !entry.hidden), 'candidate');
+  assert.equal(candidate.some((entry) => entry.title === '已恢复'), false);
+  assert.equal(candidate.some((entry) => /compact/.test(entry.title)), false);
+  const painted = renderTimeline(createTheme(120, false), 120, {
+    entries: [...candidate],
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 }, detailExpanded: false,
+    productLabel: 'Codex',
+    locale: 'zh',
+  }).join('\n');
+  assert.doesNotMatch(painted, /0194abcd-1234-5678-90ab-cdef01234567/);
+  assert.doesNotMatch(painted, /仍在等待本轮结束/);
+  assert.doesNotMatch(painted, /compact tail/);
 });

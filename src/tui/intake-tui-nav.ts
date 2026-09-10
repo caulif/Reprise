@@ -12,7 +12,7 @@ import { saveTuiPreferences } from "./preferences.js";
 import { matchesFilter } from "./scrollback.js";
 import { mouseReportingSequence } from "./terminal-guard.js";
 import { createTheme } from "./theme.js";
-import { type TimelineEntry } from "./timeline.js";
+import { filterTraceForSurface, type TimelineEntry } from "./timeline.js";
 import { type WorkbenchView } from "./workbench.js";
 type Page = import("./workbench.js").WorkbenchView["page"];
 
@@ -53,7 +53,21 @@ export function IntakeTui_scheduleTimelineRender(this: IntakeTui): void {
 
 export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEntry[] {
     const filter = TIMELINE_FILTERS[this.timelineFilterIndex] ?? "ALL";
-    return this.timeline.filter((entry) => matchesFilter(entry, filter));
+    const visible = this.timeline.filter((entry) => matchesFilter(entry, filter));
+    const comparing = this.preparePhase === "compare";
+    const recovering = this.runPhase === "recovery" || this.preparePhase === "check";
+    const surface = this.page === "candidate-product" || this.page === "candidate-model"
+      ? "picker"
+      : this.page === "result"
+        ? "result"
+        : comparing
+          ? "compare"
+          : recovering
+            ? "recovery"
+            : this.page === "running"
+              ? "candidate"
+              : "picker";
+    return filterTraceForSurface(visible, surface);
   }
 
 export async function IntakeTui_setLocale(this: IntakeTui, typed: string): Promise<void> {

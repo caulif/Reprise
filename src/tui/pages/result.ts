@@ -27,7 +27,7 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
     kv(theme, t(locale, 'resultTask'), result.record.outcome.task.status, width - 2),
     kv(theme, t(locale, 'resultTermination'), `${kind} · ${result.record.outcome.termination.code}`, width - 2),
     kv(theme, t(locale, 'resultCleanup'), result.record.outcome.cleanup?.status ?? vacant, width - 2),
-    ...(!skipped ? [kv(theme, t(locale, 'resultComparison'), failed ? `${t(locale, 'resultReportFailed')} (${comparison.failure.kind ?? comparison.failure.code})` : comparison.status, width - 2)] : []),
+    ...(!skipped ? [kv(theme, t(locale, 'resultComparison'), comparisonWord(comparison, locale), width - 2)] : []),
     ...(metrics ? [`     ${metrics}`] : []),
     ...(headline ? ['', ...wrapBodyLine(headline, inner).map((line) => ` ${line}`)] : []),
     ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
@@ -71,6 +71,16 @@ function terminationBanner(theme: Theme, kind: string): string {
     return theme.style.warn(` ${theme.glyphs.warn} ${kind}`);
   }
   return theme.style.danger(` ${theme.glyphs.err} ${kind}`);
+}
+
+function comparisonWord(comparison: ExperimentResult['comparison']['result'], locale: Locale): string {
+  if (comparison.status === 'failed') {
+    return `${t(locale, 'comparisonFailedWord')} (${comparison.failure.kind ?? comparison.failure.code})`;
+  }
+  if (comparison.status === 'completed' && 'value' in comparison && comparison.value?.status === 'insufficient_evidence') {
+    return t(locale, 'comparisonInsufficient');
+  }
+  return t(locale, 'comparisonDone');
 }
 
 function envelopeHeadline(result: ExperimentResult): string | undefined {

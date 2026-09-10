@@ -82,8 +82,8 @@ test('canvas find matches visible titles and messages, not original dumps', () =
 
 test('find hit covering a folded turn returns the fold id', () => {
   const hidden = entry(1, 'Input to Target', { detail: 'hidden send', source: 'CONTROLLER' });
-  const later = entry(10, 'Decision: SEND next', { source: 'CONTROLLER', lane: 'controller', kind: 'narrate' });
-  const current = entry(11, 'Visible response', { detail: 'now' });
+  const later = entry(10, 'Input to Target', { detail: 'second send', source: 'CONTROLLER', lane: 'controller' });
+  const current = entry(11, 'Input to Target', { detail: 'now', source: 'CONTROLLER', lane: 'controller' });
   const unfolded = [hidden, later, current];
   const folded = foldProcessEntries(unfolded, new Set());
   assert.ok(folded.some((row) => row.itemId === 'fold:turn:1'));

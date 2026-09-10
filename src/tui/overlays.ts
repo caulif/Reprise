@@ -46,7 +46,7 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
   ],
   'candidate-model': [
     'Up/Down    Select model',
-    'Enter      Confirm this model',
+    'Enter      Start the isolated run',
     'b          Change product',
   ],
   preflight: ['Esc        Back to Home'],

@@ -15,13 +15,23 @@ function agentLane(payload: JsonRecord): AgentLane {
   return 'recovery';
 }
 
-export function laneSource(lane: AgentLane): TimelineSource {
-  return lane === 'controller' ? 'CONTROLLER' : 'HARNESS';
+export function projectAssistantVisible(payload: JsonRecord): {
+  title: string;
+  detail: string;
+  extra: { lane: AgentLane; kind: 'narrate'; count: number };
+} {
+  const textBody = text(payload.text) ?? '';
+  const role = payload.role === 'controller' || payload.role === 'comparison' ? payload.role : 'recovery';
+  const first = textBody.split(/\n/)[0]?.trim() ?? '';
+  return {
+    title: first || '…',
+    detail: textBody,
+    extra: { lane: role, kind: 'narrate', count: 1 },
+  };
 }
 
-function laneTitle(lane: AgentLane, verb: string): string {
-  const prefix = lane === 'recovery' ? 'Recovery' : lane === 'controller' ? 'Controller' : 'Comparison';
-  return `${prefix} · ${verb}`;
+export function laneSource(lane: AgentLane): TimelineSource {
+  return lane === 'controller' ? 'CONTROLLER' : 'HARNESS';
 }
 
 export function projectAgentTool(
@@ -53,7 +63,7 @@ export function projectAgentTool(
     };
   }
   const verb = toolVerb(tool, object);
-  const title = laneTitle(lane, verb);
+  const title = liveTitle(verb);
   const live = !completed;
   const warnWrite = lane === 'comparison' && kind === 'mutate' && /[\\/]candidate[\\/]/i.test(object.command ?? object.short);
   const detail = gitMissing
@@ -72,20 +82,6 @@ export function projectAgentTool(
       ...(live ? { itemId: `now:${lane}`, patch: 'replace' as const, placeholder: true as const } : {}),
       ...(warnWrite ? { level: 'warning' as const } : {}),
     },
-  };
-}
-
-export function projectContextCompacted(payload: JsonRecord): {
-  title: string;
-  detail: string;
-  extra: { lane: AgentLane; kind: 'compact'; count: number; itemId: string; patch: 'replace' };
-} {
-  const lane = agentLane(payload);
-  const retained = typeof payload.retainedCount === 'number' ? payload.retainedCount : 1;
-  return {
-    title: laneTitle(lane, 'compact'),
-    detail: `tail ${retained}`,
-    extra: { lane, kind: 'compact', count: 1, itemId: `compact:${lane}`, patch: 'replace' },
   };
 }
 
@@ -121,7 +117,7 @@ export function projectWorkingNow(lane: AgentLane): {
   extra: { lane: AgentLane; kind: 'live'; placeholder: true; itemId: string; patch: 'replace' };
 } {
   return {
-    title: laneTitle(lane, 'working'),
+    title: 'working',
     extra: { lane, kind: 'live', placeholder: true, itemId: `now:${lane}`, patch: 'replace' },
   };
 }
@@ -130,7 +126,7 @@ export function lastLiveVerb(entries: readonly TimelineEntry[]): string | undefi
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (!entry || entry.hidden) continue;
-    if (entry.kind === 'narrate') return (entry.detail ?? entry.title).split(/\n/)[0]?.slice(0, 24);
+    if (entry.kind === 'narrate') continue;
     if (entry.placeholder || entry.kind === 'live') return verbFromTitle(entry.title);
     if (entry.lane) return verbFromTitle(entry.title);
     return undefined;
@@ -139,7 +135,11 @@ export function lastLiveVerb(entries: readonly TimelineEntry[]): string | undefi
 }
 
 function laneLabel(lane: AgentLane): string {
-  return lane === 'recovery' ? 'Recovery' : lane === 'controller' ? 'Controller' : 'Comparison';
+  return lane === 'recovery' ? '恢复活动' : lane === 'controller' ? '控制Agent' : '对照Agent';
+}
+
+function liveTitle(verb: string): string {
+  return verb === 'shell_exec' ? '检查' : verb;
 }
 
 function toolKind(lane: AgentLane, tool: string, command: string | undefined): AgentKind {
@@ -153,9 +153,10 @@ function toolKind(lane: AgentLane, tool: string, command: string | undefined): A
 }
 
 function toolVerb(tool: string, object: { verb?: string }): string {
-  if (tool === 'write' || tool === 'edit' || tool === 'shell_exec' || tool === 'read_observation') return object.verb ?? tool;
-  if (INVESTIGATE.has(tool)) return 'inspect';
-  return tool;
+  if (tool === 'write' || tool === 'edit') return '写入';
+  if (INVESTIGATE.has(tool) || tool === 'read_observation') return '阅读';
+  if (tool === 'shell_exec') return object.verb === 'shell_exec' || !object.verb ? '检查' : object.verb;
+  return object.verb ?? tool;
 }
 
 function toolObject(payload: JsonRecord, tool: string): { short: string; original?: string; command?: string; verb?: string } {
@@ -166,7 +167,7 @@ function toolObject(payload: JsonRecord, tool: string): { short: string; origina
     return { short: source ?? 'observation', verb: 'inspect', ...(source ? { original: source } : {}) };
   }
   const path = text(params.path) ?? text(details.path);
-  if (path) return { short: leaf(path), original: path, verb: tool === 'write' || tool === 'edit' ? tool : 'inspect' };
+  if (path) return { short: leaf(path), original: path, verb: tool === 'write' || tool === 'edit' ? '写入' : '阅读' };
   const command = text(params.command);
   if (command) {
     const verb = powershellVerb(command);
@@ -236,7 +237,7 @@ function joinOriginal(left: string | undefined, right: string | undefined): stri
 
 function verbFromTitle(title: string): string {
   const at = title.indexOf(' · ');
-  return at >= 0 ? title.slice(at + 3) : title.replace(/^Decision:\s*/, '');
+  return at >= 0 ? title.slice(at + 3) : title.replace(/^Decision:\s*/, '').replace(/^DONE · /, '');
 }
 
 

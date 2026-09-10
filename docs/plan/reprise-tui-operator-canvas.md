@@ -16,21 +16,21 @@ Codex、Claude Code、Grok 的主视图都是**一条状态 + 最新动作 + 已
 | 产物用短标签超链接，完整路径作后备 | 把 180 字盘符路径当唯一入口 |
 | 候选回合未结束也要有「活着」的信号 | 等 `UserVisibleTurn` 落盘才画候选 |
 
-Reprise 多一个声部：Harness 内部 Agent（恢复 / 模拟用户 / 对照）与候选产品必须分色，不能画成同一个聊天窗口。
+Reprise 多一个声部：Harness **内部 Agent**（恢复 / 模拟用户 / 对照）与**候选**必须分色，不能画成同一个聊天窗口。三个内部角色**共用薄荷**，候选用**桃色**；不要三色图例。树与键位见[方案 A](./reprise-tui-live-expand.md)。
 
 ## 两层画布
 
 **此刻（一行，原地替换）。** 进行中的动作只保留「角色 · 动词 · 叶名」。并发时附「另有 N 项」。命令行、stdout、上下文 JSON、未公开 reasoning 不进这一行。内部 Agent 用 `agent.tool_called` 的 `role` + `tool` + `params.path` 叶名。候选只用 Pack 写入的公开进行中字段；没有公开动词时写 `{声部} · working`。TUI 不解析产品私有 `message.content`，不按 `productId` 分支。
 
-**记录（可滚、可展开）。** 只追加已经值得回顾的事实：恢复发现、模拟用户投递卡、候选用户可见回复、错误、任务判断 / 终止 / 清理、对照结论。调查工具完成后收成 `阅读证据 · 12` 一类组；`write` 与失败各占一行。`[o]` / Tab 才打开命令与原文。折叠只改视图。
+**记录（可滚、可展开）。** 只追加已经值得回顾的事实：恢复发现、模拟用户投递卡、候选用户可见回复、错误、任务判断 / 终止 / 清理、对照结论。调查工具完成后收成 `阅读证据 · 12` 一类组；`write` 与失败各占一行。Enter / 单击 `▸` 在主列露出叶名。运行页不设全文 overlay。折叠只改视图。树渲染、列尾状态行与键位见[方案 A](./reprise-tui-live-expand.md)。
 
 Controller 决策输入与正式时间线仍只使用已校验的 `candidate.user_view_persisted`。此刻行不得进入 briefing。见[此刻行与已结算画布](../decisions/accepted/2026-09-10-tui-live-now-row.md)。
 
 ## 模拟用户（Controller）过程
 
-探路与恢复同构：短句钉主列，工具只留一行执行条，下一段话到来时收成 `▸`。另外钉 Input 卡与候选可见回复；有 Input 卡就不再画 `Decision: SEND`。色块标题写「控制Agent」。模拟用户页不带恢复过程。字段、折轮与改动点见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。
+探路与恢复同构同色：短句钉主列，工具只留一行执行条，下一段话到来时收成 `▸`。另外钉 Input 横条与候选可见回复（候选子弹另一色）；有 Input 就不再画 `Decision: SEND`。列尾写「控制Agent」，不另起一张控制色块。模拟用户页不带恢复过程。字段、折轮与改动点见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。
 
-候选无 `live` 时色块是 `working (Ns)`；有 `live` 则换成动词与叶名。thinking 不进主列。
+候选无 `live` 时执行条是 `working (Ns)`；有 `live` 则换成动词与叶名。thinking 不进主列。
 
 ## 候选产品过程
 
@@ -46,13 +46,13 @@ Controller 决策输入与正式时间线仍只使用已校验的 `candidate.use
 
 **来源四层。** 产品 / 项目 / 会话各一行：名、时间、任务短句。核对页展示起点句；Enter 才冻结。发现失败用计数，不展示绝对路径或 transcript。
 
-**恢复。** 标题「正在恢复会话」。短句钉在主列，工具只留一行执行条，下一段话到来时收成 `▸` 摘要。字段与改动点见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。禁止把 argv、compact 和每条 inspect 当过程。终态一词：已恢复 / 部分恢复 / 无法恢复，并摘录 `recovery.md`。
+**恢复。** 标题「正在恢复会话」。内部 Agent 探路：短句钉主列，工具一行执行条，下一段话到来时收成 `▸`。子弹用内部色（与模拟用户、对照相同）。字段与改动点见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。禁止把 argv、compact 和每条 inspect 当过程。终态一词：已恢复 / 部分恢复 / 无法恢复，并摘录 `recovery.md`。
 
 **候选产品与模型。** 只两页：选产品、选模型。选择叠在恢复记录尾。选完模型进入模拟用户运行，不要第三页确认。
 
-**候选运行。** 投递卡是人类可见输入。未结算时画布不能空：无 `live` 时是 `Candidate · working`，有 `live` 则换成动词与叶名。回合结算后此刻行让位给 `UserVisibleTurn`。控制 Agent 过程见上一节，不与候选青色混排，也不把恢复色块带进本页。
+**候选运行。** 投递卡是人类可见输入。未结算时画布不能空：无 `live` 时是 `working (Ns)`，有 `live` 则换成动词与叶名（候选色）。回合结算后此刻行让位给 `UserVisibleTurn`。控制 Agent 过程用内部色，见上一节；不把恢复树带进本页。
 
-**对照。** 按 `c` 后新开对照页，不带控制 Agent 的 Input 与候选回复。短句钉主列，工具一行执行条，下一段话到来时收成 `▸`。顶栏「正在写对照报告」。终态：对照完成 / 证据不足 / 对照失败，并摘录 `headline`。字段见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。不把 Host 四次委托画成章节，不把 `headline` 写成任务判断。
+**对照。** 按 `c` 后新开对照页，不带控制 Agent 的 Input 与候选回复。对照 Agent 探路与恢复同构同色。顶栏「正在写对照报告」。终态：对照完成 / 证据不足 / 对照失败，并摘录 `headline`。字段见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。不把 Host 四次委托画成章节，不把 `headline` 写成任务判断。
 
 **结果。** 三行人话：任务判断、运行终止、清理。token / cost 未采集写 `not recorded`。产物用短标签超链接：`报告`、`隔离副本`、`记录`。标签走已验证绝对路径的 OSC 8 `file:` URI；终端不支持超链接时显示完整可复制路径。键盘 `o` / `t` / `w` 与点击打开同一目标。不把对照 `headline` 写成任务判断。跳过对照写「对照未运行」，并保留 `c`；对照完成后框内换成终态词 + `headline`。
 

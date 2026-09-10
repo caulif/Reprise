@@ -122,7 +122,6 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
   await waitFor(() => /Session start:/.test(rendered));
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
-  app.handleInput("\r");
   await waitFor(() => /Preparing replay|Copy isolated workspace/.test(rendered));
   app.handleInput("\u0003");
   releaseStart?.();
@@ -270,7 +269,6 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   app.handleInput("C:\\explicit-source");
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
-  app.handleInput("\r");
   await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
   releaseStart?.();
   await waitFor(() => sourceRoot === "C:\\explicit-source");

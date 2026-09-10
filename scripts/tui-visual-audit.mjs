@@ -392,9 +392,7 @@ async function main() {
   await push('30-candidate-model', 120, run.render(120));
   await push('30b-candidate-model-narrow', 60, run.render(60));
   runApp.handleInput('\r');
-  await waitFor(() => /Start isolated Codex Candidate/.test(run.render(120)), { describe: 'single run confirmation after preparation', frame: () => run.render(120) });
-  runApp.handleInput('\r');
-  await waitFor(() => /Copying isolated workspace/.test(run.render(120)), 'candidate preparation after confirmation');
+  await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay/.test(run.render(120)), 'candidate preparation after model selection');
   await push('21-running-start', 120, run.render(120));
   await waitFor(() => Boolean(releaseCopy), { describe: 'candidate copy handle', timeoutMs: 30_000 });
   releaseCopy();

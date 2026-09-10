@@ -19,8 +19,13 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
     if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
     return 'controller';
   }
-  if (entry.title.startsWith('Recovery')) return 'summary';
-  if (entry.title.startsWith('Decision:') || entry.title.startsWith('Controller ·') || entry.lane === 'controller') {
+  if (entry.kind === 'live' || entry.placeholder) {
+    if (entry.lane === 'controller') return 'controller';
+    if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
+    if (entry.source === 'TARGET') return 'product';
+  }
+  if (entry.title.startsWith('已恢复') || entry.title.startsWith('部分恢复') || entry.title.startsWith('无法恢复') || entry.title.startsWith('恢复')) return 'summary';
+  if (entry.title.startsWith('DONE ·') || entry.title.startsWith('控制Agent') || entry.lane === 'controller') {
     return 'controller';
   }
   if (entry.title.startsWith('Working') || entry.title.startsWith('State:')
@@ -31,7 +36,7 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.source === 'HARNESS' && entry.level !== 'error' && entry.lane !== 'comparison' && entry.lane !== 'recovery') {
     return undefined;
   }
-  if (entry.title.startsWith('Comparison') || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
+  if (entry.title.startsWith('对照') || entry.title === '证据不足' || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
     || entry.title.startsWith('Controller done') || entry.title.startsWith('Stop requested')) {
     return 'summary';
   }
@@ -134,9 +139,11 @@ function voiceHeader(
 ): string {
   if (group.voice === 'input') {
     const first = group.items[0]?.entry;
-    const kind = first?.title.startsWith('Prompt ·') || first?.title.startsWith('Input to Target')
-      ? t(locale, 'historicalTask')
-      : t(locale, 'followUp');
+    const kind = first?.title.includes('verify')
+      ? t(locale, 'probeTurn')
+      : first?.title.startsWith('Prompt ·')
+        ? t(locale, 'historicalTask')
+        : t(locale, 'followUp');
     return theme.style.controller(` ${t(locale, 'toProduct', { product })} · ${kind}`);
   }
   if (group.voice === 'controller') {
@@ -144,8 +151,9 @@ function voiceHeader(
   }
   if (group.voice === 'summary') {
     const first = group.items[0]?.entry.title ?? '';
-    const comparison = first.startsWith('Comparison') || group.items[0]?.entry.lane === 'comparison';
-    return theme.style.ok(` ${t(locale, first.startsWith('Recovery') ? 'recoveryLegend' : comparison ? 'comparisonTitle' : 'recoveryLegend')}`);
+    const comparison = first.startsWith('对照') || first === '证据不足' || group.items[0]?.entry.lane === 'comparison';
+    const recovery = first.startsWith('已恢复') || first.startsWith('部分恢复') || first.startsWith('无法恢复') || first.startsWith('恢复') || group.items[0]?.entry.lane === 'recovery';
+    return theme.style.ok(` ${t(locale, recovery ? 'recoveryLegend' : comparison ? 'comparisonLegend' : 'recoveryLegend')}`);
   }
   const pulse = writing && Math.floor(tick / 400) % 2 === 0 ? `${theme.style.target(theme.glyphs.dot)} ` : writing ? `${theme.style.muted(theme.glyphs.empty)} ` : '';
   return `${pulse}${theme.style.target(` ${product}`)}`;
@@ -164,7 +172,19 @@ function voiceBody(
   if (voiceOf(entry) === 'input') {
     return wrapBodyLine(inputText(entry), inner).map((line) => ` ${line}`);
   }
-  if (entry.lane || entry.title.startsWith('Decision:') || entry.title.startsWith('Recovery ·') || entry.title.startsWith('Comparison ·')) {
+  if (entry.kind === 'narrate') {
+    const text = (entry.detail ?? entry.title).trim();
+    return wrapBodyLine(text, inner).map((line) => ` ${line}`);
+  }
+  if (entry.kind === 'fold' || entry.title.startsWith('▸')) {
+    return [` ${theme.style.muted(compact(entry.title, inner, theme.glyphs.ellipsis))}`];
+  }
+  if (entry.kind === 'deliver' && (entry.title.startsWith('DONE ·') || entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复' || entry.title === '对照完成' || entry.title === '证据不足' || entry.title === '对照失败')) {
+    const lines = wrapBodyLine(entry.title, inner).map((line) => ` ${theme.style.ok(line)}`);
+    if (!entry.detail || !selected) return lines;
+    return [...lines, ...wrapBodyLine(entry.detail, inner).map((line) => ` ${theme.style.muted(line)}`)];
+  }
+  if (entry.lane || entry.title.startsWith('DONE ·') || entry.title.startsWith('恢复') || entry.title.startsWith('对照')) {
     return agentLines(theme, entry, selected, inner);
   }
   if (isCommand(entry)) {
@@ -215,9 +235,9 @@ function agentLines(
   selected: boolean,
   inner: number,
 ): string[] {
-  const verb = compact(entry.title.replace(/^(Recovery|Controller|Comparison) · /, ''), Math.max(8, inner - 24), theme.glyphs.ellipsis);
+  const verb = compact(entry.title.replace(/^(恢复活动|控制Agent|对照Agent|Recovery|Controller|Comparison) · /, ''), Math.max(8, inner - 24), theme.glyphs.ellipsis);
   const object = entry.detail?.split(/\r?\n/)[0] ?? '';
-  const paint = entry.level === 'error' ? theme.style.danger : entry.lane === 'controller' || entry.title.startsWith('Decision:')
+  const paint = entry.level === 'error' ? theme.style.danger : entry.lane === 'controller' || entry.title.startsWith('DONE ·')
     ? theme.style.controller
     : theme.style.target;
   const line = object ? `${verb}  ${object}` : verb;

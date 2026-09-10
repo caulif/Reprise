@@ -582,14 +582,20 @@ export async function acceptCandidateModel(c: ControllerHandle): Promise<void> {
     if (generation !== c.generation) return;
     c.selectedCandidate = spec;
     if (c.preflight) c.preflight = { ...c.preflight, resolved };
-    c.page = 'confirm';
+    const blocked = candidateStartBlocked(candidateGateFrom(c));
+    if (blocked) {
+      c.message = blocked;
+      c.render();
+      return;
+    }
     c.message = '';
+    bindWorkflow(c, beginRun(c));
   } catch (error) {
     if (generation !== c.generation) return;
     c.candidateCatalogStatus = 'error';
     c.candidateCatalogError = errorMessage(error);
+    c.render();
   }
-  c.render();
 }
 
 /** A second observer so close() is not the only listener on background run promises. */

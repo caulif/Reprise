@@ -545,7 +545,12 @@ async function main() {
   );
   releaseRecovery?.();
   await waitFor(
-    () => /Start isolated Codex Candidate/.test(run.render(120)),
+    () => /choose candidate product/.test(run.render(120)),
+    { frame: () => run.render(120) },
+  );
+  runApp.handleInput("\r");
+  await waitFor(
+    () => /choose candidate model/.test(run.render(120)),
     { frame: () => run.render(120) },
   );
   runApp.handleInput("\r");

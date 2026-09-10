@@ -406,9 +406,7 @@ function applyCandidateProduct(c: ControllerHandle, data: string): Consume | und
   if (!result) return undefined;
   if (result.action === 'home') return c.backToHome();
   if (result.action === 'back') {
-    c.page = 'confirm';
-    c.render();
-    return { consume: true };
+    return c.backToHome();
   }
   if (result.action === 'up' || result.action === 'down') {
     const next = c.candidateProductCursor + (result.action === 'up' ? -1 : 1);

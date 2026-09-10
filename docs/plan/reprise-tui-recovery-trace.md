@@ -1,28 +1,28 @@
 # 内部 Agent Trace：短句为脊、执行条一行
 
-本文是尚未落地的目标。当前主列行为仍以[产品 TUI](../product/tui.md)与[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)为准。本机草图：`docs/research/reprise-tui-operator-canvas.html` 的「恢复 · 目标逐步」「模拟用户 · 目标逐步」「对照 · 目标逐步」。HTML 不受控，不拥有验收。
+当前产品规范见[产品 TUI](../product/tui.md)。候选 live 仍以[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)为准。本机草图：`docs/research/reprise-tui-operator-canvas.html` 的「恢复 · 目标逐步」「模拟用户 · 目标逐步」「对照 · 目标逐步」。HTML 不受控，不拥有验收。
 
 页面衔接：恢复结束后进入候选产品，只保留选产品、选模型两页；选完模型进入模拟用户运行，不要第三页确认、也不要启动过渡帧。选候选时背景仍是恢复终态。模拟用户页**不投影恢复色块**，主列从控制 Agent 重新开始。结果页按 `c` 进入对照；对照页**不投影控制 Agent 的 Input 与候选回复**，主列从对照 Agent 重新开始。声部标题写「控制Agent」「对照Agent」；事件 `role` / `itemId` 仍是 `controller` / `comparison` 与 `now:*`。
 
-三个内部 Agent **同构**的是探路：短句钉住、执行条一行、下一段话到来时 flush 成 `▸`、同一条记录往下长、中间零句不清屏。模拟用户**多两张牌**：Input 卡和候选可见回复。对照**没有**这两张牌，结束钉 `headline` 与报告，不把 Host 四次委托画成章节。
+三个内部 Agent **同构同色**的是探路：短句钉住、执行条一行、下一段话到来时 flush 成 `▸`、同一条记录往下长、中间零句不清屏。子弹色与模拟用户、对照共用内部色，见[方案 A](./reprise-tui-live-expand.md)。模拟用户**多两张牌**：Input 横条和候选可见回复（候选用另一色）。对照**没有**这两张牌，结束钉 `headline` 与报告，不把 Host 四次委托画成章节。
 
 ## 共用画面
 
-色块里探路只交替两类东西：
+树上探路只交替两类东西：
 
 1. **短句**：`agent.assistant_visible` 的 `payload.text`。钉住，不被工具顶掉。
 2. **执行条**：左边动态点，右边永远一行（动词 + 叶名），`itemId: now:recovery` 或 `now:controller` 原地替换。
 
 下一次短句到来时，两次短句之间的工具收成一行 `▸ 阅读证据 · N` 或 `▸ 写入 {叶名}`。`agent.context_compacted` 不进主列。失败行不得并进摘要。
 
-中间没有新短句时，已钉住的话和 `▸` 摘要留在上面，只有底下一行执行条继续换。Host 不编旁白，也不清空前面的 trace。
+中间没有新短句时，已钉住的话和 `▸` 摘要留在上面，只有底下一行执行条继续换。Host 不编旁白，也不清空前面的 trace。执行条闪点、`▸` 展开叶名、Enter/单击切折叠见[方案 A](./reprise-tui-live-expand.md)。
 
 ## 恢复
 
 结束钉三层，都来自已有字段：
 
 - 用户终态一词：已恢复 / 部分恢复 / 无法恢复（`userRecoveryStatus` / `recovery-diagnosis.json` 的 `finalStatus`）
-- `recovery.md` 首段摘录（`providerPreview.reportText`），全文 Tab / `[o]`
+- `recovery.md` 首段摘录（`providerPreview.reportText`）；打开全文走结果页产物，不设运行页 overlay（见[方案 A](./reprise-tui-live-expand.md)）
 - 若有：信封 `value.unresolved[]` 各一行
 
 | 画面 | 事件 / 字段 |
@@ -48,7 +48,7 @@
 结束钉在同一条记录末尾：
 
 - 主句用人话：`DONE · 没有继续的价值` 一类，由 `value.type=done` 加 `value.reason` 映射，**不要把** `no_further_value` **当主句**
-- 其下摘录 `value.rationale` 首段；全文 Tab / `[o]`
+- 其下摘录 `value.rationale` 首段；不设运行页 overlay（见[方案 A](./reprise-tui-live-expand.md)）
 - 投递拒绝、失败各占一行，不得并进 `▸`
 
 藏：`compact tail`、会话 UUID、黄字「仍在等待本轮结束」、argv、每条 inspect、`shell_exec shell_exec`、标题再叠 `· working`、恢复色块。控制 Agent 短句不是第二张 Input 卡。
@@ -74,9 +74,9 @@ Host 连续四次委托（understand / investigate / compose / review）只驱�
 
 - 终态一词：对照完成 / 证据不足 / 对照失败（`comparison.completed` 的 `status`，对应信封 `completed` / `insufficient_evidence` / 失败 invocation）
 - `headline` 一句（信封可选字段）；没有 headline 时不要用 `limitationCodes` 或 `report.html` 路径当主句
-- 报告全文 `[o]` / 短标签打开 `reportPath`
+- 短标签打开 `reportPath`（结果页）；不设运行页 overlay
 
-`limitationCodes` 进 Tab / `[o]`，默认不铺主列。禁止新增 `comparison.finding`。禁止把对照 `headline` 写成模拟用户的任务判断。
+`limitationCodes` 默认不铺主列。禁止新增 `comparison.finding`。禁止把对照 `headline` 写成模拟用户的任务判断。
 
 | 画面 | 事件 / 字段 |
 |---|---|
