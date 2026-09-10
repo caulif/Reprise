@@ -81,6 +81,7 @@ test('timeline projects operator-relevant persisted facts', () => {
     level: 'error',
     lane: 'comparison',
     kind: 'deliver',
+    voice: 'comparison',
   });
 });
 
@@ -214,7 +215,7 @@ test('TUI reads public live from tool_started and ignores Claude tool_use frames
     evidenceRefs: [],
     live: { schemaVersion: 1, verb: 'run', leaf: 'hugo' },
   }))[0];
-  assert.equal(live?.title, 'Candidate · run');
+  assert.equal(live?.title, '运行');
   assert.equal(live?.detail, 'hugo');
   assert.equal(live?.kind, 'live');
   assert.deepEqual(projectTimelineEvent(event('runtime.tool_started', {

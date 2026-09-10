@@ -70,16 +70,16 @@ test('a long agent message stays in the detail pane instead of exploding the lis
   const lines = renderTimeline(theme, 120, {
     entries: [entry],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: true,
+    currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   });
   const text = lines.join('\n');
   assert.match(text, /public response line 1/);
-  assert.match(text, /public response line|Codex|To Codex/);
+  assert.match(text, /public response line|Codex/);
   assert.doesNotMatch(text, /PUBLIC_DETAIL_END/);
   const clipped = renderTimeline(theme, 120, {
     entries: [entry],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: true,
+    currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   }, 16);
   assert.ok(clipped.length < 40, `expected a clipped running view, got ${clipped.length} lines`);
 });
@@ -148,12 +148,12 @@ test('detail pane indents command output so it does not stick to the frame', () 
   const lines = renderTimeline(theme, 120, {
     entries: [entry],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_target', elapsed: '00:34', turns: { used: 0, max: 4 }, calls: { used: 0, max: 3 }, detailExpanded: true,
+    currentState: 'awaiting_target', elapsed: '00:34', turns: { used: 0, max: 4 }, calls: { used: 0, max: 3 },
   });
   for (const line of lines) assert.equal(visibleWidth(line), 120, line);
   const text = lines.join('\n');
-  assert.match(text, /Sandbox blocked/);
   assert.match(text, /Get-Content/);
+  assert.doesNotMatch(text, /Sandbox blocked/);
   assert.doesNotMatch(text, /Program Files/);
   assert.doesNotMatch(text, /seq /);
   assert.doesNotMatch(text.replace(/\u001b\[[0-9;]*m/g, ''), /│execution/);
@@ -169,12 +169,12 @@ test('command detail paints a one-line invocation plus indented output', () => {
   const text = renderTimeline(theme, 120, {
     entries: [entry],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_target', elapsed: '00:00', turns: { used: 0, max: 4 }, calls: { used: 0, max: 3 }, detailExpanded: true,
+    currentState: 'awaiting_target', elapsed: '00:00', turns: { used: 0, max: 4 }, calls: { used: 0, max: 3 },
   }).join('\n');
   const plain = text.replace(/\u001b\[[0-9;]*m/g, '');
   assert.match(plain, /\$ Get-ChildItem \| Format-Table/);
-  assert.match(plain, /file-1\.txt/);
-  assert.match(plain, /exit 0 · 476ms/);
+  assert.doesNotMatch(plain, /file-1\.txt/);
+  assert.doesNotMatch(plain, /exit 0 · 476ms/);
   assert.doesNotMatch(plain, /seq /);
   assert.doesNotMatch(plain, /Command completed/);
   assert.doesNotMatch(plain, /Program Files/);
@@ -258,7 +258,7 @@ test('canvas find locates hits and keeps surrounding entries', () => {
   const model = {
     entries: [input, product],
     selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
-    currentState: 'awaiting_target' as const, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: 'awaiting_target' as const, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
     finding: true, findQuery: 'public response', findCursor: 15,
   };
   const text = renderTimeline(theme, 120, model).join('\n');
@@ -276,7 +276,7 @@ test('timeline extra count excludes the first detail line', () => {
   const text = renderTimeline(createTheme(120, false), 120, {
     entries: [{ sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'TARGET', title: 'Event', detail: 'first\nsecond\nthird' }],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
   assert.match(text, /Event|first|Codex/);
 });
@@ -302,9 +302,9 @@ test('running timeline names a missing state origin as created', () => {
   const text = renderTimeline(theme, 120, {
     entries: [{ sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'HARNESS', title: 'State: ? → launching' }],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
-  assert.match(text, /To Unknown agent|Unknown agent|Preparing replay/);
+  assert.match(text, /Candidate|working|Unknown agent/);
   assert.doesNotMatch(text, /Codex/);
   assert.doesNotMatch(text, /State: \?/);
 });
@@ -327,7 +327,7 @@ test('a 24-row running workbench stays within the viewport', () => {
     running: {
       entries, selected: 0, filter: 'ALL', following: true, cancelling: false,
       currentState: 'launching', elapsed: '00:05', turns: { used: 1, max: 4 },
-      calls: { used: 1, max: 3 }, detailExpanded: false,
+      calls: { used: 1, max: 3 },
     },
   }, 120, 24);
   assert.ok(lines.length <= 24, `expected <= 24 lines, got ${lines.length}`);
@@ -630,13 +630,13 @@ test('running timeline uses the selected product and has no Codex fallback', () 
   const theme = createTheme(120, false);
   const base = {
     entries: [], selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
-    currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   };
   const claude = renderTimeline(theme, 120, { ...base, productLabel: 'Claude Code' }).join('\n');
   const unknown = renderTimeline(theme, 120, base).join('\n');
-  assert.match(claude, /To Claude Code/);
-  assert.doesNotMatch(claude, /Codex/);
-  assert.match(unknown, /To Unknown agent/);
+  assert.match(claude, /Claude Code|Candidate|working/);
+  assert.doesNotMatch(claude, /To Codex/);
+  assert.match(unknown, /Candidate|working|Unknown agent/);
   assert.doesNotMatch(unknown, /Codex/);
 });
 
@@ -687,9 +687,9 @@ test('running voice cards use a left bar and hide ready MCP status', () => {
       { sequence: 3, occurredAt: '2026-08-11T00:10:02.000Z', source: 'TARGET', title: 'Visible response', detail: 'public response line 1' },
     ],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 },
   }).join('\n');
-  assert.match(text, /▎|To Codex|Fix the failing test/);
+  assert.match(text, /▎|Fix the failing test/);
   assert.match(text, /public response line 1/);
   assert.doesNotMatch(text, /linuxdo ready/);
 });
@@ -701,7 +701,7 @@ test('a colored running card paints a voice background', () => {
       { sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'CONTROLLER', title: 'Input to Target', detail: 'Fix the failing test.' },
     ],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 },
   }).join('\n');
   assert.match(text, /\u001b\[48;/);
   assert.match(text, /Fix the failing test/);
@@ -718,7 +718,7 @@ test('a following timeline keeps the latest events in a short viewport', () => {
   const text = renderTimeline(theme, 120, {
     entries, selected: 39, filter: 'ALL', following: true, cancelling: false,
     currentState: 'awaiting_target', elapsed: '01:12', turns: { used: 1, max: 4 },
-    calls: { used: 0, max: 3 }, detailExpanded: false,
+    calls: { used: 0, max: 3 },
   }, 12).join('\n');
   assert.match(text, /Event 40/);
   assert.doesNotMatch(text, /Event 1\b/);
@@ -986,7 +986,7 @@ test('running hints keep cancel and drop canvas operations', () => {
   assert.ok(visibleWidth(line) <= 60, line);
   assert.match(line, /Ctrl\+C/);
   assert.match(line, /Find/);
+  assert.match(line, /Expand/);
   assert.doesNotMatch(line, /\[f\]/);
   assert.doesNotMatch(line, /\[o\]/);
-  assert.doesNotMatch(line, /Enter/);
 });

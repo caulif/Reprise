@@ -8,4 +8,4 @@ Reprise   Recovering session                                                    
                                                                                                                         
  Recovering the isolated workspace from this session. Your original files stay unchanged.                               
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Cancel  [/] Find  [Tab] Detail  [v] Select  [?] Keys
+ [Ctrl+C] Cancel  [/] Find  [Enter] Expand  [v] Select

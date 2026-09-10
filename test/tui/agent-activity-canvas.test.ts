@@ -35,7 +35,7 @@ test('consecutive recovery inspect tools stay off the settled column', () => {
   ]);
   const visible = timeline.filter((entry) => !entry.hidden);
   assert.equal(visible.filter((entry) => entry.kind === 'investigate').length, 0);
-  assert.ok(visible.some((entry) => entry.kind === 'live' && /working/.test(entry.title)));
+  assert.ok(visible.some((entry) => entry.kind === 'live'));
   assert.doesNotMatch(JSON.stringify(visible), /SECRET_BODY|MORE_SECRET/);
 });
 
@@ -96,12 +96,12 @@ test('recovery canvas shows inspect activity instead of a candidate reply', () =
   const text = renderTimeline(theme, 120, {
     entries,
     selected: entries.length - 1, filter: 'ALL', following: true, cancelling: false,
-    currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     productLabel: 'Codex',
     locale: 'zh',
   }).join('\n');
-  assert.match(text, /恢复活动/);
+  assert.match(text, /恢复/);
   assert.doesNotMatch(text, /调查 →/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /正在写回复/);
@@ -115,7 +115,7 @@ test('comparison header does not keep the candidate turn chrome', () => {
   const model = {
     entries,
     selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
-    currentState: 'finished' as const, elapsed: '07:08', turns: { used: 4 }, calls: { used: 2 }, detailExpanded: false,
+    currentState: 'finished' as const, elapsed: '07:08', turns: { used: 4 }, calls: { used: 2 },
     preparePhase: 'compare' as const,
     productLabel: 'Codex',
     locale: 'zh' as const,

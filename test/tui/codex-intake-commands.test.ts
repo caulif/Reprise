@@ -390,7 +390,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Restore the task start/);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
+  await waitFor(() => /Preparing replay|Copy isolated workspace|Codex/.test(rendered));
   await waitFor(() => sourceRoot === "C:/not-automatic");
   emitEvent?.({ schemaVersion: 1, sequence: 6, eventId: 'shared-delivery', occurredAt: '2026-08-11T00:10:03.000Z', type: 'runtime.delivery_observed', payload: { status: 'accepted' }, checksum: 'd'.repeat(64) });
   assert.equal(app.runPhase, 'candidate_generating');
@@ -404,7 +404,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   assert.equal(sourceRoot, "C:/not-automatic");
   assert.equal(allowModelText, false);
   assert.doesNotMatch(rendered, /State: created → launching/);
-  assert.match(rendered, /Prompt|To Codex|public response line 1/);
+  assert.match(rendered, /Prompt|Codex|public response line 1/);
   assert.match(rendered, /public response line 1/);
   assert.equal(timelineRenderCallbacks.length, 1);
   timelineRenderCallbacks.shift()?.();
@@ -429,11 +429,11 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   assert.match(rendered, /public response line 1/);
   assert.match(rendered, /Fix the failing test/);
   app.handleInput("\x1b");
-  assert.match(rendered, /Fix the failing test|Prompt|To Codex/);
+  assert.match(rendered, /Fix the failing test|Prompt|Codex/);
   assert.match(rendered, /public response line 1/);
   assert.doesNotMatch(rendered, /Find:/);
   app.handleInput("f");
-  assert.match(rendered, /To Codex|Codex screen|to Codex/);
+  assert.match(rendered, /Codex/);
   assert.doesNotMatch(rendered, /State: created → launching/);
   assert.match(rendered, /public response line 1|Visible response/);
   assert.match(

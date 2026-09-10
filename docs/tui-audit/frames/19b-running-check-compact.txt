@@ -9,4 +9,4 @@ Reprise   Recovering session   C:\reprise
                                                             
  Recovering the isolated workspace from this session. You...
 ------------------------------------------------------------
- [Ctrl+C] Cancel  [/] Find  [Tab] Detail  [v] Select
+ [Ctrl+C] Cancel  [/] Find  [Enter] Expand  [v] Select

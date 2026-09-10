@@ -48,7 +48,6 @@ export type RunningModel = {
   readonly elapsed: string;
   readonly turns: { readonly used: number; readonly max?: number };
   readonly calls: { readonly used: number; readonly max?: number };
-  readonly detailExpanded: boolean;
   readonly policy?: RunPolicy;
   readonly preparePhase?: PreparePhase;
   readonly prepareDetail?: string;
@@ -165,10 +164,19 @@ export function runningChrome(theme: Theme, width: number, model: RunningModel):
   if (isPreparing(model)) return [];
   const locale = model.locale ?? 'en';
   const product = model.productLabel ?? t(locale, 'unknownAgent');
-  const phase = phaseLine(model, locale, product);
+  const special = model.runPhase === 'candidate_reconnecting'
+    || model.runPhase === 'candidate_starting'
+    || model.preparePhase === 'compare'
+    || model.runPhase === 'recovery';
+  const task = model.taskTitle
+    ? truncateFit(model.taskTitle, Math.max(8, width - product.length - 10), theme.glyphs.ellipsis)
+    : '';
+  const line = special
+    ? phaseLine(model, locale, product)
+    : (task ? `${task} · ${product} · ${model.elapsed}` : `${product} · ${model.elapsed}`);
   const wait = waitLine(model, locale);
-  return [phase, ...(wait ? [theme.style.muted(` ${wait}`)] : [])].map((line) =>
-    theme.style.fillCanvas(pad(line.startsWith(' ') ? line : ` ${line}`, width, theme.glyphs.ellipsis)),
+  return [line, ...(wait ? [theme.style.muted(` ${wait}`)] : [])].map((row) =>
+    theme.style.fillCanvas(pad(row.startsWith(' ') ? row : ` ${row}`, width, theme.glyphs.ellipsis)),
   );
 }
 
@@ -188,7 +196,7 @@ function phaseLine(model: RunningModel, locale: Locale, product: string): string
     const sinceStart = (model.tick ?? Date.now()) - (model.runStartedAt ?? Date.now());
     return sinceStart >= 30_000 ? t(locale, 'stillRecoveringTitle') : t(locale, 'recoveringTitle');
   }
-  return t(locale, 'candidateGenerating', { product, n: Math.max(1, model.turns.used) });
+  return t(locale, 'candidateRunningTitle', { product });
 }
 
 function waitLine(model: RunningModel, locale: Locale): string | undefined {
@@ -210,17 +218,10 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const visible = model.entries.filter((entry) => matchesFilter(entry, model.filter));
   const selected = Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
   const recovering = model.runPhase === 'recovery';
-  const comparing = model.preparePhase === 'compare';
-  const legend = recovering
-    ? ` ${theme.style.harness(theme.glyphs.dot)} ${t(locale, 'recoveryLegend')}`
-    : comparing
-      ? ` ${theme.style.ok(theme.glyphs.dot)} ${t(locale, 'comparisonLegend')}`
-      : ` ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'legendIn', { product })}   ${theme.style.target(theme.glyphs.dot)} ${t(locale, 'legendOut', { product })}   ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'controllerLegend')}`;
-  const task = model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : undefined;
   const hits = canvasHitIndices(visible, model.findQuery ?? '');
   const hitAt = hits.indexOf(selected < 0 ? -1 : selected);
   const findBar = model.finding ? renderFindBar(model, locale, hits.length, hitAt < 0 ? 0 : hitAt) : [];
-  const header = [legend, ...(task ? [task] : []), ...findBar, ''];
+  const header = [...findBar, ...(findBar.length ? [''] : [])];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
   const expanded = new Set(model.expandedFolds ?? []);
   const folded = foldProcessEntries(visible, expanded);
@@ -232,7 +233,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
           theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
           pad(` ${theme.style.harness(theme.glyphs.dot)} working`, width, theme.glyphs.ellipsis),
         ]
-      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0);
+      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed);
   return [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
@@ -308,7 +309,7 @@ export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparin
   if (finding) {
     return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
   }
-  return [stop, ['/', t(locale, 'hintTimelineFind')], ['Tab', t(locale, 'hintDetail')], ['v', t(locale, 'hintReadingMode')], ['?', t(locale, 'hintKeys')]];
+  return [stop, ['/', t(locale, 'hintTimelineFind')], ['Enter', t(locale, 'hintExpand')], ['v', t(locale, 'hintReadingMode')]];
 }
 
 export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {

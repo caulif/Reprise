@@ -1,13 +1,13 @@
 Reprise   Run result   C:\reprise
 00:00   * done
 ------------------------------------------------------------
- * To Codex   * Codex screen   * Control agent              
- Task  Fix the bug.                                         
-                                                            
-| public response line 1                                    
-| public response line 2                                    
-| public response line 3                                    
-| public response line 4                                    
+ public response line 1                                     
+ public response line 2                                     
+ public response line 3                                     
+ public response line 4                                     
+ public response line 5                                     
+ public response line 6                                     
+ ... +35 lines                                              
 
 [ Run result - completed ]
     + completed
@@ -27,6 +27,6 @@ Reprise   Run result   C:\reprise
    C:\user\AppData\Local\Temp\
    reprise-tui-audit-TMP\data\experiments\fixture\runs\
    run-1
- Experiment finished. Press o to open the report.
+ Experiment finished. Open the report from the short label.
 ------------------------------------------------------------
  [o] Open report  [t] Open trace  [w] Open replica

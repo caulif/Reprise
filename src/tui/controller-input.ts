@@ -13,7 +13,7 @@ import { coveringFoldIds, foldProcessEntries, selectedIndexAfterFold } from './f
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
-import { matchesCanvasQuery, matchesFilter } from './scrollback.js';
+import { hitAtBodyRow, layoutScrollback, matchesCanvasQuery, matchesFilter } from './scrollback.js';
 import { canvasHitIndices, nextHitIndex, syncTimelineSelection, timelineIdentity } from './timeline-read.js';
 import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation } from './controller-run.js';
 import {
@@ -34,7 +34,8 @@ import {
   submittedHomeCommand,
   type GlobalInputAction,
 } from './page-input.js';
-import { eventOriginalText, type TimelineEntry } from './timeline.js';
+import { createTheme } from './theme.js';
+import { type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import type { PreparePhase } from './widgets.js';
 import type { CandidateRunPhase } from './pages/run.js';
@@ -48,7 +49,6 @@ export type ControllerHandle = {
   recoveryFinished: Promise<void> | undefined;
   workflowFinished: Promise<void> | undefined;
   page: Page;
-  viewer: { title: string; body: string } | undefined;
   helpOverlay: { hide(): void } | undefined;
   inlineHelp: boolean;
   composer: string;
@@ -76,7 +76,6 @@ export type ControllerHandle = {
   timelineReadOffset: number;
   preparePhase: PreparePhase | undefined;
   prepareDetail: string | undefined;
-  detailExpanded: boolean;
   locale: Locale;
   result: ExperimentResult | undefined;
   message: string;
@@ -166,7 +165,6 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   const global = dispatchGlobalInput({
     page: c.page,
     editingText: c.isEditingText(),
-    viewer: Boolean(c.viewer),
     helpOpen: Boolean(c.helpOverlay || c.inlineHelp),
     startupActive: Boolean(c.startupAbort),
   }, input);
@@ -222,11 +220,6 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
 function applyGlobal(c: ControllerHandle, action: GlobalInputAction): Consume {
   if (action === 'cancel') return requestCancellation(c);
   if (action === 'close') return c.close();
-  if (action === 'close-viewer') {
-    c.viewer = undefined;
-    c.render();
-    return { consume: true };
-  }
   if (action === 'hide-help') {
     c.hideHelp();
     c.render();
@@ -488,15 +481,10 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   }
   const result = dispatchRunningKeys(data);
   if (!result) return undefined;
-  if (result.action === 'toggle-detail') {
-    c.detailExpanded = !c.detailExpanded;
-    c.render();
-    return { consume: true };
-  }
+  if (result.action === 'toggle-fold') return toggleSelectedFold(c);
   if (result.action === 'cycle-fold' || result.action === 'cycle-fold-prev') {
     return cycleFoldSelection(c, result.action === 'cycle-fold-prev' ? -1 : 1);
   }
-  if (result.action === 'open-detail') return openSelectedDetail(c);
   c.message = t(c.locale, 'experimentActive');
   c.render();
   return { consume: true };
@@ -504,7 +492,7 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
 
 function canvasBlocked(c: ControllerHandle): boolean {
   return c.preparePhase === 'check' || c.preparePhase === 'copy'
-    || Boolean(c.viewer || c.helpOverlay || c.inlineHelp);
+    || Boolean(c.helpOverlay || c.inlineHelp);
 }
 
 function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
@@ -526,6 +514,7 @@ function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
   }
   if (result.action === 'follow') return followTimeline(c);
   if (result.action === 'home') return homeTimeline(c);
+  if (result.action === 'click') return clickCanvas(c, result.row ?? 1);
   if (result.action === 'edit-find') {
     c.timelineFollowing = false;
     expandFoldsForQuery(c);
@@ -569,17 +558,41 @@ function clearFind(c: ControllerHandle): Consume {
   return { consume: true };
 }
 
-function openSelectedDetail(c: ControllerHandle): Consume {
-  const entry = c.visibleTimeline()[c.timelineSelected];
-  const body = eventOriginalText(entry);
-  if (!body?.trim()) {
-    c.message = t(c.locale, 'noOriginalOutput');
-    c.render();
-    return { consume: true };
+function clickCanvas(c: ControllerHandle, terminalRow: number): Consume {
+  const visible = c.visibleTimeline();
+  const folded = foldProcessEntries(visible, new Set(c.expandedFolds));
+  const selected = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
+  const layout = layoutScrollback(createTheme(120, false), 120, folded, selected, c.locale, 'product', undefined, 0, c.timelineReadOffset ?? 0, '00:00');
+  const hit = hitAtBodyRow(layout.hits, Math.max(0, terminalRow - 4));
+  if (hit?.fold && hit.itemId) {
+    c.expandedFolds = toggleFoldId(c.expandedFolds, hit.itemId);
   }
-  c.viewer = { title: entry?.title ?? 'original', body };
+  const target = hit ? folded[hit.index] : undefined;
+  if (target) {
+    const identity = timelineIdentity(target);
+    const raw = visible.findIndex((entry) => timelineIdentity(entry) === identity);
+    c.timelineSelected = raw >= 0 ? raw : Math.min(hit?.index ?? 0, Math.max(0, visible.length - 1));
+    c.timelineAnchor = identity;
+    c.timelineFollowing = false;
+  }
   c.render();
   return { consume: true };
+}
+
+function toggleSelectedFold(c: ControllerHandle): Consume {
+  const visible = c.visibleTimeline();
+  const folded = foldProcessEntries(visible, new Set(c.expandedFolds));
+  const selected = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
+  const entry = folded[selected];
+  if (entry?.kind === 'fold' && entry.itemId) {
+    c.expandedFolds = toggleFoldId(c.expandedFolds, entry.itemId);
+  }
+  c.render();
+  return { consume: true };
+}
+
+function toggleFoldId(ids: readonly string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
 }
 
 function moveTimeline(c: ControllerHandle, amount: number): Consume {
@@ -644,7 +657,6 @@ function cycleFoldSelection(c: ControllerHandle, direction: 1 | -1): Consume {
   const folded = foldProcessEntries(visible, new Set(c.expandedFolds));
   const foldIndices = folded.flatMap((entry, index) => entry.kind === 'fold' ? [index] : []);
   if (!foldIndices.length) {
-    c.detailExpanded = !c.detailExpanded;
     c.render();
     return { consume: true };
   }

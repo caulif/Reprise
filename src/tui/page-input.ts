@@ -101,17 +101,15 @@ export function dispatchSearchField(state: SearchFieldState, data: string): Sear
 export type GlobalInputContext = {
   readonly page: string;
   readonly editingText: boolean;
-  readonly viewer: boolean;
   readonly helpOpen: boolean;
   readonly startupActive?: boolean;
 };
 
-export type GlobalInputAction = 'cancel' | 'close' | 'close-viewer' | 'hide-help' | 'show-help';
+export type GlobalInputAction = 'cancel' | 'close' | 'hide-help' | 'show-help';
 
 export function dispatchGlobalInput(ctx: GlobalInputContext, data: string): { action: GlobalInputAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'ctrl+c')) return { action: ctx.page === 'running' || ctx.startupActive ? 'cancel' : 'close', consume: true };
-  if (ctx.viewer && matchesKey(input, 'escape')) return { action: 'close-viewer', consume: true };
   if (ctx.helpOpen && matchesKey(input, 'escape')) return { action: 'hide-help', consume: true };
   if (!ctx.editingText && matchesKey(input, '?')) return { action: 'show-help', consume: true };
   return undefined;
@@ -224,15 +222,44 @@ export type CanvasAction =
   | 'start-find'
   | 'follow'
   | 'home'
+  | 'click'
   | 'consume';
+
+export type SgrMouse = {
+  readonly button: number;
+  readonly col: number;
+  readonly row: number;
+  readonly release: boolean;
+};
+
+/** SGR mouse: `\x1b[<btn;col;rowM` (press) / `m` (release). Wheel is 64/65. */
+function parseSgrMouse(data: string): SgrMouse | undefined {
+  const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
+  if (!match) return undefined;
+  return {
+    button: Number(match[1]),
+    col: Number(match[2]),
+    row: Number(match[3]),
+    release: match[4] === 'm',
+  };
+}
 
 export function dispatchCanvasInput(
   state: CanvasFindState,
   data: string,
   blocked: boolean,
-): { state: CanvasFindState; action: CanvasAction; amount?: number; consume: true } | undefined {
+): { state: CanvasFindState; action: CanvasAction; amount?: number; row?: number; col?: number; consume: true } | undefined {
   if (blocked) return undefined;
   const input = unwrapBracketedPaste(data);
+  const mouse = parseSgrMouse(input);
+  if (mouse && !state.finding) {
+    if (mouse.button === 64) return { state, action: 'move', amount: -1, consume: true };
+    if (mouse.button === 65) return { state, action: 'move', amount: 1, consume: true };
+    if (mouse.button === 0 && !mouse.release) {
+      return { state, action: 'click', row: mouse.row, col: mouse.col, consume: true };
+    }
+    return { state, action: 'consume', consume: true };
+  }
   if (state.finding) {
     if (matchesKey(input, 'escape')) return { state, action: 'clear-find', consume: true };
     if (matchesKey(input, 'up')) return { state, action: 'move', amount: -1, consume: true };
@@ -257,14 +284,13 @@ export function dispatchCanvasInput(
   return undefined;
 }
 
-export type RunningAction = 'toggle-detail' | 'open-detail' | 'active-message' | 'cycle-fold' | 'cycle-fold-prev';
+export type RunningAction = 'toggle-fold' | 'cycle-fold' | 'cycle-fold-prev' | 'active-message';
 
 export function dispatchRunningKeys(data: string): { action: RunningAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'shift+tab')) return { action: 'cycle-fold-prev', consume: true };
   if (matchesKey(input, 'tab')) return { action: 'cycle-fold', consume: true };
-  if (matchesKey(input, 'd') || matchesKey(input, 'enter')) return { action: 'toggle-detail', consume: true };
-  if (matchesKey(input, 'o')) return { action: 'open-detail', consume: true };
+  if (matchesKey(input, 'enter')) return { action: 'toggle-fold', consume: true };
   if (matchesKey(input, 'escape')) return { action: 'active-message', consume: true };
   return undefined;
 }

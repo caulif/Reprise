@@ -1,4 +1,4 @@
-import { compact, truncateFit, type TimelineFilter } from './format.js';
+import { compact, type TimelineFilter } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
 import type { TimelineEntry } from './timeline.js';
@@ -6,10 +6,22 @@ import { pad, wrapBodyLine } from './widgets.js';
 
 export type Voice = 'input' | 'product' | 'summary' | 'controller';
 
+export type CanvasHit = {
+  readonly y: number;
+  readonly index: number;
+  readonly fold: boolean;
+  readonly itemId?: string;
+};
+
 function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.hidden) return undefined;
   if (isQuietMcpStatus(entry)) return undefined;
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·')) return 'input';
+  if (entry.title.startsWith('⎿ ')) {
+    if (entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane)) return 'product';
+    if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
+    return 'controller';
+  }
   if (entry.kind === 'narrate') {
     if (entry.lane === 'comparison') return 'summary';
     if (entry.lane === 'recovery') return 'summary';
@@ -17,6 +29,7 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
   }
   if (entry.kind === 'fold') {
     if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
+    if (entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane)) return 'product';
     return 'controller';
   }
   if (entry.kind === 'live' || entry.placeholder) {
@@ -66,186 +79,166 @@ export function renderScrollback(
   height?: number,
   tick = 0,
   readingOffset = 0,
+  elapsed = '00:00',
 ): string[] {
-  const groups = groupVoices(entries);
-  const lines: string[] = [];
-  let selectedAt = 0;
-  for (const group of groups) {
-    if (lines.length) lines.push(fillCanvas(theme, '', width));
-    const picked = group.items.some((item) => item.index === selected);
-    const writing = group.voice === 'product' && group.items.some((item) => item.entry.title === 'Writing');
-    const live = group.items.some((item) => item.entry.placeholder || item.entry.kind === 'live');
-    const card = renderVoiceCard(theme, group, selected, width, locale, product, writing || live, tick, picked);
-    if (picked) selectedAt = lines.length + card.selectedOffset;
-    lines.push(...card.lines);
-  }
-  if (!lines.length) {
-    return [fillCanvas(theme, ` ${theme.style.muted(t(locale, 'writing', { product }))}`, width)];
-  }
-  if (height === undefined || lines.length <= height) return lines;
-  const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - height));
-  return lines.slice(start, start + height);
+  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed).lines;
 }
 
-function groupVoices(entries: readonly TimelineEntry[]): VoiceGroup[] {
-  const groups: VoiceGroup[] = [];
-  for (const [index, entry] of entries.entries()) {
-    const voice = voiceOf(entry);
-    if (!voice) continue;
-    const last = groups.at(-1);
-    if (last && last.voice === voice) last.items.push({ entry, index });
-    else groups.push({ voice, items: [{ entry, index }] });
-  }
-  return groups;
-}
-
-function renderVoiceCard(
+export function layoutScrollback(
   theme: Theme,
-  group: VoiceGroup,
-  selected: number,
   width: number,
+  entries: readonly TimelineEntry[],
+  selected: number,
   locale: Locale,
   product: string,
-  writing: boolean,
-  tick: number,
-  picked: boolean,
-): { readonly lines: readonly string[]; readonly selectedOffset: number } {
-  const header = voiceHeader(theme, group, locale, product, writing, tick);
-  const body: string[] = [];
-  let selectedOffset = 0;
+  height?: number,
+  tick = 0,
+  readingOffset = 0,
+  elapsed = '00:00',
+): { lines: string[]; hits: CanvasHit[] } {
+  const lines: string[] = [];
+  const hits: CanvasHit[] = [];
+  let selectedAt = 0;
   const seenInput = new Set<string>();
-  for (const item of group.items) {
-    if (group.voice === 'input') {
-      const key = inputText(item.entry).replace(/\s+/g, ' ').trim();
+  for (const [index, entry] of entries.entries()) {
+    if (!voiceOf(entry)) continue;
+    if (voiceOf(entry) === 'input') {
+      const key = inputText(entry).replace(/\s+/g, ' ').trim();
       if (key && seenInput.has(key)) continue;
       if (key) seenInput.add(key);
     }
-    if (item.index === selected) selectedOffset = 1 + body.length;
-    body.push(...voiceBody(theme, item.entry, item.index === selected, width, locale, product));
+    const painted = paintEntry(theme, entry, index === selected, width, locale, product, tick, elapsed);
+    if (index === selected) selectedAt = lines.length;
+    hits.push({
+      y: lines.length,
+      index,
+      fold: entry.kind === 'fold' || entry.title.startsWith('▸'),
+      ...(entry.itemId ? { itemId: entry.itemId } : {}),
+    });
+    lines.push(...painted);
   }
+  const live = visibleNow(entries);
+  if (live || entries.length) {
+    lines.push(fillCanvas(theme, liveStatusLine(theme, live, locale, elapsed, tick, product), width));
+  }
+  if (!lines.length) {
+    const empty = [fillCanvas(theme, liveStatusLine(theme, undefined, locale, elapsed, tick, product), width)];
+    return { lines: empty, hits };
+  }
+  if (height === undefined || lines.length <= height) return { lines, hits };
+  const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - height));
   return {
-    lines: [header, ...body].map((line) => fillVoice(theme, group.voice, line, width, picked)),
-    selectedOffset,
+    lines: lines.slice(start, start + height),
+    hits: hits.map((hit) => ({ ...hit, y: hit.y - start })).filter((hit) => hit.y >= 0 && hit.y < height),
   };
 }
 
-function voiceHeader(
-  theme: Theme,
-  group: VoiceGroup,
-  locale: Locale,
-  product: string,
-  writing: boolean,
-  tick: number,
-): string {
-  if (group.voice === 'input') {
-    const first = group.items[0]?.entry;
-    const kind = first?.title.includes('verify')
-      ? t(locale, 'probeTurn')
-      : first?.title.startsWith('Prompt ·')
-        ? t(locale, 'historicalTask')
-        : t(locale, 'followUp');
-    return theme.style.controller(` ${t(locale, 'toProduct', { product })} · ${kind}`);
+export function hitAtBodyRow(hits: readonly CanvasHit[], bodyRow: number): CanvasHit | undefined {
+  let hit = hits[0];
+  for (const candidate of hits) {
+    if (candidate.y <= bodyRow) hit = candidate;
+    else break;
   }
-  if (group.voice === 'controller') {
-    return theme.style.controller(` ${t(locale, 'controllerLegend')}`);
-  }
-  if (group.voice === 'summary') {
-    const first = group.items[0]?.entry.title ?? '';
-    const comparison = first.startsWith('对照') || first === '证据不足' || group.items[0]?.entry.lane === 'comparison';
-    const recovery = first.startsWith('已恢复') || first.startsWith('部分恢复') || first.startsWith('无法恢复') || first.startsWith('恢复') || group.items[0]?.entry.lane === 'recovery';
-    return theme.style.ok(` ${t(locale, recovery ? 'recoveryLegend' : comparison ? 'comparisonLegend' : 'recoveryLegend')}`);
-  }
-  const pulse = writing && Math.floor(tick / 400) % 2 === 0 ? `${theme.style.target(theme.glyphs.dot)} ` : writing ? `${theme.style.muted(theme.glyphs.empty)} ` : '';
-  return `${pulse}${theme.style.target(` ${product}`)}`;
+  return hit;
 }
 
-function voiceBody(
+function paintEntry(
   theme: Theme,
   entry: TimelineEntry,
   selected: boolean,
   width: number,
   locale: Locale,
   product: string,
+  tick: number,
+  elapsed: string,
 ): string[] {
   const inner = Math.max(8, width - 4);
-  const hook = theme.framed ? '⎿ ' : '| ';
+  const candidate = isCandidate(entry);
+  const paint = entry.level === 'error'
+    ? theme.style.danger
+    : candidate
+      ? theme.style.target
+      : theme.style.harness;
   if (voiceOf(entry) === 'input') {
-    return wrapBodyLine(inputText(entry), inner).map((line) => ` ${line}`);
+    return wrapBodyLine(inputText(entry), inner).map((line, index) => {
+      const prefix = index === 0 ? (theme.framed ? '▎ ' : '| ') : '  ';
+      const row = `${prefix}${line}`;
+      return selected ? theme.style.fillInputSelected(pad(row, width, theme.glyphs.ellipsis)) : theme.style.fillInput(pad(row, width, theme.glyphs.ellipsis));
+    });
+  }
+  if (entry.title.startsWith('⎿ ')) {
+    const row = `   ${theme.style.muted(compact(entry.title, inner, theme.glyphs.ellipsis))}`;
+    return [fillCanvas(theme, selected ? theme.style.strong(row) : row, width)];
+  }
+  if (entry.kind === 'fold' || entry.title.startsWith('▸')) {
+    const title = entry.title.startsWith('▸') ? entry.title : `▸ ${entry.title}`;
+    const row = ` ${paint(compact(title, inner, theme.glyphs.ellipsis))}`;
+    return [fillCanvas(theme, selected ? theme.style.strong(row) : row, width)];
+  }
+  if (entry.kind === 'live' || entry.placeholder) {
+    const pulse = Math.floor(tick / 400) % 2 === 0 ? paint(theme.glyphs.dot) : theme.style.muted(theme.glyphs.empty);
+    const caption = liveCaption(entry, elapsed);
+    const row = ` ${pulse} ${paint(compact(caption, inner - 4, theme.glyphs.ellipsis))}`;
+    return [fillCanvas(theme, selected ? theme.style.strong(row) : row, width)];
   }
   if (entry.kind === 'narrate') {
     const text = (entry.detail ?? entry.title).trim();
-    return wrapBodyLine(text, inner).map((line) => ` ${line}`);
-  }
-  if (entry.kind === 'fold' || entry.title.startsWith('▸')) {
-    return [` ${theme.style.muted(compact(entry.title, inner, theme.glyphs.ellipsis))}`];
+    return wrapBodyLine(text, inner).map((line) => fillCanvas(theme, selected ? theme.style.strong(` ${line}`) : ` ${line}`, width));
   }
   if (entry.kind === 'deliver' && (entry.title.startsWith('DONE ·') || entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复' || entry.title === '对照完成' || entry.title === '证据不足' || entry.title === '对照失败')) {
-    const lines = wrapBodyLine(entry.title, inner).map((line) => ` ${theme.style.ok(line)}`);
+    const lines = wrapBodyLine(entry.title, inner).map((line) => fillCanvas(theme, ` ${theme.style.ok(line)}`, width));
     if (!entry.detail || !selected) return lines;
-    return [...lines, ...wrapBodyLine(entry.detail, inner).map((line) => ` ${theme.style.muted(line)}`)];
-  }
-  if (entry.lane || entry.title.startsWith('DONE ·') || entry.title.startsWith('恢复') || entry.title.startsWith('对照')) {
-    return agentLines(theme, entry, selected, inner);
+    return [...lines, ...wrapBodyLine(entry.detail, inner).map((line) => fillCanvas(theme, ` ${theme.style.muted(line)}`, width))];
   }
   if (isCommand(entry)) {
-    const preview = commandPreview(entry, hook, locale);
-    if (!selected) {
-      const status = commandFailed(entry) ? ` ${theme.style.danger(t(locale, 'failed'))}` : '';
-      return [` ${theme.style.target(compact(commandLine(entry), inner - 8, theme.glyphs.ellipsis))}${status}`];
-    }
-    return preview.map((line) => line.startsWith('$ ')
-      ? ` ${theme.style.target(line)}`
-      : ` ${theme.style.muted(line)}`);
+    const status = commandFailed(entry) ? ` ${theme.style.danger(t(locale, 'failed'))}` : '';
+    return [fillCanvas(theme, ` ${paint(compact(commandLine(entry), inner - 8, theme.glyphs.ellipsis))}${status}`, width)];
   }
   if (isMessage(entry)) {
     const text = entry.detail?.trim() || (entry.title === 'Writing' ? t(locale, 'writing', { product }) : entry.title);
-    const painted = wrapBodyLine(text, inner).map((line) => ` ${line}`);
-    return entry.title === 'Writing' ? painted.map((line) => theme.style.muted(line)) : painted;
-  }
-  if (isFileChange(entry)) {
-    const path = (entry.detail ?? entry.title).split(/\r?\n/)[0] ?? entry.title;
-    return [` ${theme.style.target(`~ ${compact(path, inner - 4, theme.glyphs.ellipsis)}`)}`];
-  }
-  if (entry.title.startsWith('MCP ·')) {
-    const line = compact(entry.detail ? `${entry.title} · ${entry.detail}` : entry.title, inner, theme.glyphs.ellipsis);
-    return [` ${entry.level === 'error' || entry.level === 'warning' ? theme.style.danger(line) : theme.style.muted(line)}`];
+    return wrapBodyLine(text, inner).map((line) => fillCanvas(theme, ` ${paint(line)}`, width));
   }
   const fallback = entry.detail?.split(/\r?\n/)[0] || entry.title;
-  return [` ${selected ? theme.style.strong(truncateFit(fallback, inner, theme.glyphs.ellipsis)) : truncateFit(fallback, inner, theme.glyphs.ellipsis)}`];
+  const line = compact(fallback, inner, theme.glyphs.ellipsis);
+  return [fillCanvas(theme, ` ${selected ? theme.style.strong(line) : paint(line)}`, width)];
 }
 
-function fillVoice(theme: Theme, voice: Voice, text: string, width: number, selected: boolean): string {
-  const bar = theme.framed ? '▎' : '|';
-  const paintedBar = voice === 'input' || voice === 'controller'
-    ? theme.style.controller(bar)
-    : voice === 'summary' ? theme.style.ok(bar) : theme.style.target(bar);
-  const line = `${paintedBar}${pad(text, Math.max(0, width - 1), theme.glyphs.ellipsis)}`;
-  if (voice === 'input' || voice === 'controller') return selected ? theme.style.fillInputSelected(line) : theme.style.fillInput(line);
-  if (voice === 'summary') return selected ? theme.style.fillProductSelected(line) : theme.style.fillCanvas(line);
-  return selected ? theme.style.fillProductSelected(line) : theme.style.fillProduct(line);
+function liveCaption(entry: TimelineEntry, elapsed?: string): string {
+  const title = entry.title.replace(/^Candidate · /, '');
+  if (title === 'working') return elapsed ? `working · ${elapsed}` : 'working';
+  return entry.detail ? `${title} ${entry.detail}` : title;
+}
+
+function visibleNow(entries: readonly TimelineEntry[]): TimelineEntry | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry && !entry.hidden && (entry.kind === 'live' || entry.placeholder) && entry.itemId?.startsWith('now:')) {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+function liveStatusLine(theme: Theme, live: TimelineEntry | undefined, locale: Locale, elapsed: string, tick: number, product: string): string {
+  const pulse = Math.floor(tick / 400) % 2 === 0 ? '*' : theme.glyphs.empty;
+  const role = liveStatusRole(live, locale, product);
+  const action = live ? liveCaption(live) : 'working';
+  return ` ${pulse} ${role} · ${action} · ${elapsed}`;
+}
+
+function liveStatusRole(live: TimelineEntry | undefined, locale: Locale, product: string): string {
+  if (live?.lane === 'recovery') return t(locale, 'recoveryRole');
+  if (live?.lane === 'controller') return t(locale, 'controllerLegend');
+  if (live?.lane === 'comparison') return t(locale, 'comparisonLegend');
+  return product || t(locale, 'candidateRole');
+}
+
+function isCandidate(entry: TimelineEntry): boolean {
+  return entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane);
 }
 
 function fillCanvas(theme: Theme, text: string, width: number): string {
   return theme.style.fillCanvas(pad(text, width, theme.glyphs.ellipsis));
-}
-
-function agentLines(
-  theme: Theme,
-  entry: TimelineEntry,
-  selected: boolean,
-  inner: number,
-): string[] {
-  const verb = compact(entry.title.replace(/^(恢复活动|控制Agent|对照Agent|Recovery|Controller|Comparison) · /, ''), Math.max(8, inner - 24), theme.glyphs.ellipsis);
-  const object = entry.detail?.split(/\r?\n/)[0] ?? '';
-  const paint = entry.level === 'error' ? theme.style.danger : entry.lane === 'controller' || entry.title.startsWith('DONE ·')
-    ? theme.style.controller
-    : theme.style.target;
-  const line = object ? `${verb}  ${object}` : verb;
-  const main = [` ${paint(compact(line, inner, theme.glyphs.ellipsis))}`];
-  if (!selected) return main;
-  const extra = (entry.original ?? entry.detail ?? '').split(/\r?\n/).slice(0, 6);
-  if (extra.length <= 1) return main;
-  return [...main, ...extra.slice(1).map((row) => ` ${theme.style.muted(compact(row, inner, theme.glyphs.ellipsis))}`)];
 }
 
 function inputText(entry: TimelineEntry): string {
@@ -259,10 +252,6 @@ function isCommand(entry: TimelineEntry): boolean {
 
 function isMessage(entry: TimelineEntry): boolean {
   return entry.title === 'Visible response' || entry.title === 'Writing' || entry.title.startsWith('Visible response');
-}
-
-function isFileChange(entry: TimelineEntry): boolean {
-  return entry.title === 'File change' || entry.title === 'Changing files';
 }
 
 function isQuietMcpStatus(entry: TimelineEntry): boolean {
@@ -279,22 +268,3 @@ function commandLine(entry: TimelineEntry): string {
 function commandFailed(entry: TimelineEntry): boolean {
   return entry.level === 'error' || Boolean(entry.detail && /exit [1-9]/.test(entry.detail));
 }
-
-function commandPreview(entry: TimelineEntry, hook: string, locale: Locale): string[] {
-  if (!entry.detail) return [commandLine(entry)];
-  const lines = entry.detail.split(/\r?\n/);
-  return lines.map((line) => {
-    if (line.startsWith('$ ')) return line;
-    if (line.startsWith('| ')) return `${hook}${line.slice(2)}`;
-    if (line.startsWith('... ')) {
-      const count = /\+(\d+)/.exec(line)?.[1];
-      return count ? t(locale, 'moreLines', { n: count }) : line;
-    }
-    return line;
-  });
-}
-
-type VoiceGroup = {
-  readonly voice: Voice;
-  readonly items: { entry: TimelineEntry; index: number }[];
-};

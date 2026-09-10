@@ -1,20 +1,15 @@
 Reprise   Run result                                                                                      00:00   ● done
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ● To Codex   ● Codex screen   ● Control agent                                                                          
- Task  Fix the bug.                                                                                                     
-                                                                                                                        
-▎ To Codex · historical task                                                                                            
 ▎ Fix the failing test.                                                                                                 
 ▎ Run the focused test.                                                                                                 
-                                                                                                                        
-▎ Codex                                                                                                                 
-▎ public response line 1                                                                                                
-▎ public response line 2                                                                                                
-▎ public response line 3                                                                                                
-▎ public response line 4                                                                                                
-▎ public response line 5                                                                                                
-▎ public response line 6                                                                                                
-▎ ... +35 lines                                                                                                         
+ public response line 1                                                                                                 
+ public response line 2                                                                                                 
+ public response line 3                                                                                                 
+ public response line 4                                                                                                 
+ public response line 5                                                                                                 
+ public response line 6                                                                                                 
+ ... +35 lines                                                                                                          
+ * Codex · working · 00:00                                                                                              
 
 ┌─ Run result ─ completed ─────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ✓ completed                                                                                                          │
@@ -27,6 +22,6 @@ Reprise   Run result                                                            
 │TMP\data\experiments\fixture\environment\runs\run-1            │
 │ Trace        TMP\data\experiments\fixture\runs\run-1          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- Experiment finished. Press o to open the report.
+ Experiment finished. Open the report from the short label.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [o] Open report  [t] Open trace  [w] Open replica  [Enter] Home  [Esc] Home  [b] Home

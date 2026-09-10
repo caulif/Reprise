@@ -269,7 +269,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   app.handleInput("C:\\explicit-source");
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|To Codex/.test(rendered));
+  await waitFor(() => /Preparing replay|Copy isolated workspace|Codex/.test(rendered));
   releaseStart?.();
   await waitFor(() => sourceRoot === "C:\\explicit-source");
   assert.equal(sourceRoot, "C:\\explicit-source");

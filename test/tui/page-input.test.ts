@@ -70,12 +70,12 @@ test('submitted home command classifies a unique prefix', () => {
 });
 
 test('global input routes ctrl+c and overlay escapes before page keys', () => {
-  assert.equal(dispatchGlobalInput({ page: 'running', editingText: false, viewer: false, helpOpen: false }, '\u0003')?.action, 'cancel');
-  assert.equal(dispatchGlobalInput({ page: 'confirm', editingText: false, viewer: false, helpOpen: false, startupActive: true }, '\u0003')?.action, 'cancel');
-  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: false, helpOpen: false }, '\u0003')?.action, 'close');
-  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: true, helpOpen: false }, '\x1b')?.action, 'close-viewer');
-  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: false, helpOpen: false }, '?')?.action, 'show-help');
-  assert.equal(dispatchGlobalInput({ page: 'home', editingText: true, viewer: false, helpOpen: false }, '?'), undefined);
+  assert.equal(dispatchGlobalInput({ page: 'running', editingText: false, helpOpen: false }, '\u0003')?.action, 'cancel');
+  assert.equal(dispatchGlobalInput({ page: 'confirm', editingText: false, helpOpen: false, startupActive: true }, '\u0003')?.action, 'cancel');
+  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, helpOpen: false }, '\u0003')?.action, 'close');
+  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, helpOpen: true }, '\x1b')?.action, 'hide-help');
+  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, helpOpen: false }, '?')?.action, 'show-help');
+  assert.equal(dispatchGlobalInput({ page: 'home', editingText: true, helpOpen: false }, '?'), undefined);
 });
 
 test('inspection, preflight, confirm, running, result, and error dispatch the operator keys', () => {
@@ -144,3 +144,17 @@ test('canvas find uses Enter and Shift+Enter for hits; Home is not a Home-page c
   assert.equal(dispatchCanvasInput({ finding: false, query: '', cursor: 0 }, '\x1b[H', false)?.action, 'home');
   assert.equal(dispatchCanvasInput(finding, 'v', false)?.action, 'edit-find');
 });
+
+test('SGR wheel moves the canvas selection; click reports a row; running o does not open overlay', () => {
+  const idle = { finding: false, query: '', cursor: 0 };
+  assert.equal(dispatchCanvasInput(idle, '\x1b[<64;1;2M', false)?.action, 'move');
+  assert.equal(dispatchCanvasInput(idle, '\x1b[<64;1;2M', false)?.amount, -1);
+  assert.equal(dispatchCanvasInput(idle, '\x1b[<65;1;2M', false)?.action, 'move');
+  assert.equal(dispatchCanvasInput(idle, '\x1b[<65;1;2M', false)?.amount, 1);
+  const click = dispatchCanvasInput(idle, '\x1b[<0;4;8M', false);
+  assert.equal(click?.action, 'click');
+  assert.equal(click?.row, 8);
+  assert.equal(dispatchRunningKeys('o'), undefined);
+  assert.equal(dispatchRunningKeys('\r')?.action, 'toggle-fold');
+});
+

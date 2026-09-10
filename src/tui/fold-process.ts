@@ -1,4 +1,4 @@
-import { projectAssistantVisible } from './agent-activity.js';
+import { projectAssistantVisible, uniqueLeafNames } from './agent-activity.js';
 import { timelineIdentity } from './timeline-read.js';
 import type { TimelineEntry } from './timeline.js';
 
@@ -58,7 +58,7 @@ export function foldProcessEntries(
       count: turn.length,
     });
   }
-  return out;
+  return expandFoldLeaves(out, expandedIds);
 }
 
 export function coveringFoldIds(entries: readonly TimelineEntry[], target: TimelineEntry): string[] {
@@ -150,6 +150,29 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
 
 function thinkFoldId(turn: readonly TimelineEntry[]): string {
   return `fold:think:${turn[0]?.sequence ?? 0}`;
+}
+
+function foldLeafNames(detail: string | undefined): string[] {
+  return uniqueLeafNames((detail ?? '').split(/[·,]/));
+}
+
+function expandFoldLeaves(entries: readonly TimelineEntry[], expandedIds: ReadonlySet<string>): TimelineEntry[] {
+  const out: TimelineEntry[] = [];
+  for (const entry of entries) {
+    out.push(entry);
+    if (entry.kind !== 'fold' || !entry.itemId || !expandedIds.has(entry.itemId)) continue;
+    for (const name of foldLeafNames(entry.detail)) {
+      out.push({
+        sequence: entry.sequence,
+        occurredAt: entry.occurredAt,
+        source: entry.source,
+        title: `⎿ ${name}`,
+        ...(entry.lane ? { lane: entry.lane } : {}),
+        ...(entry.voice ? { voice: entry.voice } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 function wouldHideInThinkFold(turn: readonly TimelineEntry[], target: TimelineEntry): boolean {

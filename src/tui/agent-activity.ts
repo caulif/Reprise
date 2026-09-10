@@ -1,8 +1,10 @@
+import { peelStructuredEnvelope } from '../infrastructure/agent/assistant-visible.js';
 import { record, text, type JsonRecord } from '../core/json.js';
 import type { TimelineEntry, TimelineSource } from './timeline.js';
 
 export type AgentLane = 'recovery' | 'controller' | 'comparison';
 export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live' | 'narrate' | 'fold';
+export type TimelineVoice = AgentLane | 'candidate';
 
 const INVESTIGATE = new Set(['ls', 'read', 'grep', 'find']);
 const MUTATE = new Set(['shell_exec', 'edit']);
@@ -20,7 +22,7 @@ export function projectAssistantVisible(payload: JsonRecord): {
   detail: string;
   extra: { lane: AgentLane; kind: 'narrate'; count: number };
 } {
-  const textBody = text(payload.text) ?? '';
+  const textBody = peelStructuredEnvelope(text(payload.text) ?? '');
   const role = payload.role === 'controller' || payload.role === 'comparison' ? payload.role : 'recovery';
   const first = textBody.split(/\n/)[0]?.trim() ?? '';
   return {
@@ -56,9 +58,10 @@ export function projectAgentTool(
   const kind = toolKind(lane, tool, object.command);
   const gitMissing = isGitMissing(tool, completed, payload);
   if (failed) {
+    const failure = humanToolFailure(message);
     return {
-      title: `${laneLabel(lane)} tool failed · ${tool}`,
-      ...(message ? { detail: message } : {}),
+      title: failure.title,
+      ...(failure.detail ? { detail: failure.detail } : {}),
       extra: { level: 'error', lane, kind },
     };
   }
@@ -66,20 +69,19 @@ export function projectAgentTool(
   const title = liveTitle(verb);
   const live = !completed;
   const warnWrite = lane === 'comparison' && kind === 'mutate' && /[\\/]candidate[\\/]/i.test(object.command ?? object.short);
+  const keepNow = live || (completed && !gitMissing);
   const detail = gitMissing
     ? '不是 Git 仓库'
-    : live
-      ? object.short
-      : completedDetail(kind, object, tool);
+    : object.short;
   return {
     title,
     ...(detail ? { detail } : {}),
     ...(object.original && object.original !== detail ? { original: object.original } : {}),
     extra: {
       lane,
-      kind: live ? 'live' : kind,
+      kind: keepNow ? 'live' : kind,
       count: 1,
-      ...(live ? { itemId: `now:${lane}`, patch: 'replace' as const, placeholder: true as const } : {}),
+      ...(keepNow ? { itemId: `now:${lane}`, patch: 'replace' as const, placeholder: true as const } : {}),
       ...(warnWrite ? { level: 'warning' as const } : {}),
     },
   };
@@ -122,6 +124,20 @@ export function projectWorkingNow(lane: AgentLane): {
   };
 }
 
+export function captionPublicLive(verb: string, leaf?: string): { title: string; detail?: string } {
+  const title = verb === 'working'
+    ? 'working'
+    : verb === 'read' || verb === 'inspect'
+      ? '阅读'
+      : verb === 'run'
+        ? '运行'
+        : verb === 'write' || verb === 'edit'
+          ? '写入'
+          : verb;
+  if (!leaf || verb === 'working') return { title };
+  return { title, detail: leaf };
+}
+
 export function lastLiveVerb(entries: readonly TimelineEntry[]): string | undefined {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
@@ -134,12 +150,25 @@ export function lastLiveVerb(entries: readonly TimelineEntry[]): string | undefi
   return undefined;
 }
 
-function laneLabel(lane: AgentLane): string {
-  return lane === 'recovery' ? '恢复活动' : lane === 'controller' ? '控制Agent' : '对照Agent';
-}
-
 function liveTitle(verb: string): string {
   return verb === 'shell_exec' ? '检查' : verb;
+}
+
+function humanToolFailure(message: string): { title: string; detail?: string } {
+  if (/write_denied|outside the Host write policy/i.test(message)) {
+    return { title: '写入失败', detail: '路径不在可写范围' };
+  }
+  if (/destructive change budget of 16|delete_file budget of 16/.test(message)) {
+    return { title: '工具失败', detail: 'destructive change budget exhausted' };
+  }
+  if (/tool-call budget of /.test(message)) {
+    return { title: '工具失败', detail: 'investigation budget exhausted' };
+  }
+  if (/not a git repository/i.test(message)) {
+    return { title: '工具失败', detail: '不是 Git 仓库' };
+  }
+  const trimmed = message.replace(/^[a-z0-9_]+:\s*/i, '').trim();
+  return { title: '工具失败', ...(trimmed ? { detail: trimmed } : {}) };
 }
 
 function toolKind(lane: AgentLane, tool: string, command: string | undefined): AgentKind {
@@ -178,11 +207,6 @@ function toolObject(payload: JsonRecord, tool: string): { short: string; origina
   return { short: tool, verb: tool };
 }
 
-function completedDetail(kind: AgentKind, object: { short: string }, tool: string): string {
-  if (kind === 'deliver') return object.short || (tool === 'write' ? 'report' : object.short);
-  return object.short;
-}
-
 function isGitMissing(tool: string, completed: boolean, payload: JsonRecord): boolean {
   const details = record(payload.details);
   return (tool === 'shell_exec' && completed && /not a git repository/i.test(text(payload.content) ?? ''))
@@ -214,12 +238,12 @@ function mutateKey(entry: TimelineEntry): string {
 
 function mergeDetail(previous: TimelineEntry, next: TimelineEntry, count: number): string {
   if (previous.kind === 'compact' || next.kind === 'compact') return `tail ×${count}`;
-  const names = uniqueNames([...(previous.detail ?? '').split(/[·×]/), ...(next.detail ?? '').split(/[·×]/)]);
+  const names = uniqueLeafNames([...(previous.detail ?? '').split(/[·×]/), ...(next.detail ?? '').split(/[·×]/)]);
   const shown = names.slice(0, 3).join(' · ');
   return `${shown}  ×${count}`;
 }
 
-function uniqueNames(parts: readonly string[]): string[] {
+export function uniqueLeafNames(parts: readonly string[]): string[] {
   const seen = new Set<string>();
   const names: string[] = [];
   for (const part of parts) {

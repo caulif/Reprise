@@ -165,7 +165,6 @@ export class IntakeTui {
   timelineSelected = 0;
   timelineFilterIndex = 0;
   timelineFollowing = true;
-  detailExpanded = false;
   cancelling = false;
   configBusy = false;
   generation = 0;
@@ -196,7 +195,6 @@ export class IntakeTui {
   commandSelectList: SelectList | undefined;
   inlineHelp = false;
   locale: Locale = "en";
-  viewer: { title: string; body: string } | undefined;
   expandedFolds: string[] = [];
   autoCompare = false;
   compareChoice: { resolve(run: boolean): void } | undefined;

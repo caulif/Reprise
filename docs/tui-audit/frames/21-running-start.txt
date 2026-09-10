@@ -10,4 +10,4 @@ Reprise   Starting candidate · Codex                                           
  ○  Write candidate config  waiting                                                                                     
  ○  Start Codex  waiting                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Cancel  [/] Find  [Tab] Detail  [v] Select  [?] Keys
+ [Ctrl+C] Cancel  [/] Find  [Enter] Expand  [v] Select

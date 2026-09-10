@@ -16,7 +16,6 @@ import {
 } from './pages/run.js';
 import { t, type Locale } from './i18n.js';
 import { OVERLAY_PAGES, overlayChromeRows, renderOverlaySheet } from './overlay-sheet.js';
-import { renderViewer, viewerHints, type ViewerModel } from './pages/viewer.js';
 import { createTheme, resolveDensity, showsDetailPane, type Theme } from './theme.js';
 import { bodyHeight, clipLines, FOOTER_ROWS, isShortViewport, MIN_VIEWPORT_ROWS } from './viewport.js';
 import { divider, joinColumns, justify, keyHints, panel, pill } from './widgets.js';
@@ -56,7 +55,6 @@ export type WorkbenchView = {
   readonly comparePending?: boolean;
   readonly result?: ExperimentResult;
   readonly cancelling?: boolean;
-  readonly viewer?: ViewerModel;
 };
 
 class LinesView implements Component {
@@ -217,10 +215,6 @@ function renderBody(theme: Theme, view: WorkbenchView, width: number, height?: n
 function renderPage(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
   if (view.page === 'loading') return [];
   if (view.page === 'error') return renderFailure(theme, width, view.message, view.locale ?? 'en');
-  if (view.viewer) {
-    const canvas = renderSurface(theme, view, width, height);
-    return clipLines(renderOverlaySheet(theme, canvas, renderViewer(theme, width, view.viewer, sheetHeight(height, canvas))), height);
-  }
   if (OVERLAY_PAGES.has(view.page) && view.home && !view.running?.entries.length) {
     const background = renderHome(theme, width, view.home);
     const canvas = renderSurface(theme, view, width, sheetHeight(height, background));
@@ -303,7 +297,6 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
   }
   if (view.page === 'history') return historyHints(locale);
   if (view.page === 'history-detail') return historyDetailHints(Boolean(view.historyDetail && 'taskCase' in view.historyDetail), Boolean(view.historyDetail && !('taskCase' in view.historyDetail) && view.historyDetail.reportPath), locale);
-  if (view.viewer) return viewerHints(locale);
   if (view.page === 'sessions') return sessionsHints(view.sessions, locale);
   if (view.page === 'inspection') return inspectionHints(locale);
   if (view.page === 'source') return sourceHints(locale);

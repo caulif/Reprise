@@ -1,6 +1,6 @@
 # 运行画布：方案 A（一条时间线、两种子弹、列尾状态行）
 
-本文是尚未落地的目标。选定 **方案 A**：运行页主列是**一条**可滚时间线。恢复、模拟用户、对照三页的探路同构：**Reprise 内部 Agent 共用一种子弹色**，**候选 Agent 用另一种**；不再用满宽填色声部卡，也不再给恢复 / 控制 / 对照各画一色。列尾**一行**活着状态。操作者不学「全文 overlay」。
+本文是方案 A 的目标合同。选定 **方案 A**：运行页主列是**一条**可滚时间线。恢复、模拟用户、对照三页的探路同构：**Reprise 内部 Agent 共用一种子弹色**，**候选 Agent 用另一种**；不再用满宽填色声部卡，也不再给恢复 / 控制 / 对照各画一色。列尾**一行**活着状态。操作者不学「全文 overlay」。
 
 短句脊、flush 成 `▸`、页面衔接仍以[内部 Agent Trace](./reprise-tui-recovery-trace.md)为准；候选正式正文仍只来自 `candidate.user_view_persisted`，进行中只读 `payload.live`，见[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)。按键合同以[阅读与交互](./reprise-tui-design.md)为准，下文与之冲突处以本文为目标。真终端点击、滚轮与拖选见[阅读锚点](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)与[平台矩阵](./2026-09-08-platform-evidence-matrix.md)。本机草图：`docs/research/reprise-tui-operator-canvas.html`（「目标逐步」= 方案 A）。HTML 不受控，不拥有验收。
 
@@ -108,7 +108,7 @@ TUI **禁止**把 Claude `message.content` / Codex reasoning 当主列。候选�
 
 1. 闪点画在 `now:{lane}` 行或列尾状态行上，不是只闪已取消的色块标题。
 2. flush 把叶名写入折叠行的 `detail`（主列展开用），`itemId` 稳定；`expandedFolds` 命中才列出叶名。不再依赖 `original` overlay。
-3. Tab 聚焦句柄，Enter 切换展开；`detailExpanded` 要么驱动选中条预览（主列内），要么删除。不要「Tab 声称展开、flush 却丢掉叶名」。
+3. Tab 聚焦句柄，Enter 切换展开。不要「Tab 声称展开、flush 却丢掉叶名」。
 4. 成功完成后不要先跳回无叶名 `working`。`user_view_persisted` / 下一短句才 flush 成 `▸`。
 
 倾向：控制Agent 探路多折成 `▸`；失败和即将 send 的短句展开。Input 钉在候选树上方。
@@ -174,20 +174,19 @@ TUI **禁止**把 Claude `message.content` / Codex reasoning 当主列。候选�
 
 - 识别 SGR 64/65，行为同 ↑↓。
 - 单击 `▸` 写入 `expandedFolds`。
-- 运行页 `o` 不再打开 overlay；删除或停用 `original` overlay 渲染路径（若仅运行页使用则删死代码，不要留无入口函数）。
-- `detailExpanded`：驱动主列预览或删除，禁止空转。
+- 运行页 `o` 不再打开 overlay；已删除仅服务于该 overlay 的 viewer 路径。
 
 ### 4. 结果页（轻改）
 
 [`src/tui/pages/result.ts`](../../src/tui/pages/result.ts)（或现结果投影）
 
-- 打开报告/副本/记录：短标签 + `r`/`t`/`w`。页脚不写「全文 [o]」。
+- 打开报告/副本/记录：短标签 + `o`/`t`/`w`。页脚不写「全文 [o]」。
 - 主列仍是人话终态；`limitationCodes` 不铺默认列。
 
 ### 5. 规范与决策（与代码同批）
 
 - [`docs/product/tui.md`](../product/tui.md)：运行页取消 `o` overlay；`▸` 主列展开；结果页产物键。
-- 新增 ADR：方案 A 树渲染、运行页无 overlay、滚轮改阅读位置、单击只切展开/选中。
+- ADR：[方案 A 树](../decisions/accepted/2026-09-10-tui-option-a-tree.md)。
 - 更新[操作者画布](./reprise-tui-operator-canvas.md)：记录层「Enter/单击 ▸ 露叶名」，删「[o] 才打开原文」。
 - [内部 Agent Trace](./reprise-tui-recovery-trace.md)：终态摘录不再写「全文 Tab / [o]」；改为主列摘录 + 结果页打开文件。
 

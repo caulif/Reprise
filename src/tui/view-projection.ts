@@ -43,8 +43,7 @@ type Input = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
-  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
-  readonly viewer?: { readonly title: string; readonly body: string };
+  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
@@ -74,7 +73,7 @@ function runningModel(input: Input) {
     elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },
-    detailExpanded: input.detailExpanded, ...(input.policy ? { policy: input.policy } : {}),
+    ...(input.policy ? { policy: input.policy } : {}),
     ...(input.preparePhase ? { preparePhase: input.preparePhase, ...(input.prepareDetail ? { prepareDetail: input.prepareDetail } : {}) } : {}),
     ...(input.runPhase ? { runPhase: input.runPhase } : {}),
     ...(input.lastRuntimeEventAt ? { lastRuntimeEventAt: input.lastRuntimeEventAt } : {}),
@@ -130,7 +129,6 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     cancelling: input.cancelling,
     ...(input.comparePending ? { comparePending: true } : {}),
     home,
-    ...(input.viewer ? { viewer: { ...input.viewer, locale: input.locale ?? 'en' } } : {}),
   };
   if (input.page === 'home') return base;
   if (input.page === 'config') {

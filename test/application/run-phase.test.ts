@@ -10,7 +10,7 @@ test('candidate running chrome shows reconnect count and a stale wait hint', () 
   const now = Date.parse('2026-08-28T00:02:10.000Z');
   const reconnect = runningChrome(theme, 120, {
     entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_target', elapsed: '00:46', turns: { used: 1 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: 'awaiting_target', elapsed: '00:46', turns: { used: 1 }, calls: { used: 0 },
     runPhase: 'candidate_reconnecting', reconnectCount: 3, reconnectTotal: 5,
     lastRuntimeEventAt: '2026-08-28T00:02:00.000Z', runStartedAt: now - 46_000, tick: now,
     locale: 'zh', productLabel: 'Codex',
@@ -19,7 +19,7 @@ test('candidate running chrome shows reconnect count and a stale wait hint', () 
   assert.doesNotMatch(reconnect, /正在恢复/);
   const stale = runningChrome(theme, 120, {
     entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_target', elapsed: '02:10', turns: { used: 1 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: 'awaiting_target', elapsed: '02:10', turns: { used: 1 }, calls: { used: 0 },
     runPhase: 'candidate_generating', lastRuntimeEventAt: '2026-08-28T00:00:00.000Z',
     runStartedAt: now - 130_000, tick: now, locale: 'zh', productLabel: 'Codex',
   }).join('\n');
@@ -32,7 +32,7 @@ test('candidate running header is not the recovery title', () => {
     inlineHelp: false,
     running: {
       entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
-      currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 }, detailExpanded: false,
+      currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 },
       productLabel: 'Codex',
     },
   }, 120).join('\n');
@@ -46,7 +46,7 @@ test('recovery runPhase keeps the recovering header after preparePhase is cleare
     inlineHelp: false,
     running: {
       entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
-      currentState: undefined, elapsed: '00:12', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+      currentState: undefined, elapsed: '00:12', turns: { used: 0 }, calls: { used: 0 },
       productLabel: 'Codex',
       runPhase: 'recovery',
     },

@@ -129,13 +129,13 @@ function explainOutcome(result: ExperimentResult, width: number, product: string
   const compared = result.comparison.result.status !== 'skipped';
   if (result.record.outcome.termination.kind === 'blocked') {
     return wrapBodyLine(compared
-      ? 'Candidate did not finish the original task. Comparison still ran. Press o for the report.'
+      ? 'Candidate did not finish the original task. Comparison still ran. Open the report from the short label.'
       : 'Candidate did not finish the original task.', width);
   }
   if (result.record.outcome.termination.kind === 'limit_reached') {
     const code = result.record.outcome.termination.code;
     const cap = code === 'limit.target_turns' ? 'Candidate reached the target turn limit.' : `Candidate reached a run limit (${code}).`;
-    return wrapBodyLine(compared ? `${cap} Comparison still ran. Press o for the report.` : cap, width);
+    return wrapBodyLine(compared ? `${cap} Comparison still ran.` : cap, width);
   }
   return undefined;
 }

@@ -146,16 +146,16 @@ test('running canvas uses the candidate product not the source session product',
     timelineSelected: 0,
     timelineFilterIndex: 0,
     timelineFollowing: true,
-    detailExpanded: false,
     runStartedAt: 1,
   } as never);
   assert.equal(view.running?.productLabel, 'Claude Code');
   assert.equal(view.productLabel, 'Claude Code');
   const text = renderWorkbench(view, 120).join('\n');
   assert.match(text, /候选运行中 · Claude Code/);
-  assert.match(text, /发给 Claude Code/);
+  assert.match(text, /Claude Code · working/);
   assert.doesNotMatch(text, /候选运行中 · Codex/);
   assert.doesNotMatch(text, /发给 Codex/);
+  assert.doesNotMatch(text, /发给 Claude Code/);
 });
 
 test('workflow listCatalog is the selected pack catalog', async () => {

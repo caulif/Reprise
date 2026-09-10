@@ -1,10 +1,13 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import assert from 'node:assert/strict';
 import { isStructuredEnvelope, visibleAssistantText } from '../../src/infrastructure/agent/assistant-visible.js';
-import { matchesFilter, renderScrollback } from '../../src/tui/scrollback.js';
+import { matchesFilter, renderScrollback, layoutScrollback, hitAtBodyRow } from '../../src/tui/scrollback.js';
 import { renderTimeline } from '../../src/tui/pages/run.js';
 import { createTheme } from '../../src/tui/theme.js';
-import { paneOf, projectAssistantVisible, splitRunEntries } from '../../src/tui/fold-process.js';
+import { foldProcessEntries, paneOf, projectAssistantVisible, splitRunEntries } from '../../src/tui/fold-process.js';
 import { appendTimelineEntries, filterTraceForSurface, projectTimelineEvent, type TimelineEntry } from '../../src/tui/timeline.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
 
@@ -78,7 +81,7 @@ test('candidate canvas keeps Controller tools and delivered input on one column'
   const text = renderTimeline(theme, 120, {
     entries,
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 }, detailExpanded: false,
+    currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Codex',
     locale: 'zh',
   }).join('\n');
@@ -208,7 +211,7 @@ test('comparison narrate stays on the compare surface without Input cards', () =
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: [...compare],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'finished', elapsed: '01:00', turns: { used: 4 }, calls: { used: 2 }, detailExpanded: false,
+    currentState: 'finished', elapsed: '01:00', turns: { used: 4 }, calls: { used: 2 },
     preparePhase: 'compare',
     productLabel: 'Codex',
     locale: 'zh',
@@ -239,7 +242,7 @@ test('candidate surface hides recovery blocks, compact, and session UUID', () =>
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: [...candidate],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 }, detailExpanded: false,
+    currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Codex',
     locale: 'zh',
   }).join('\n');
@@ -247,3 +250,160 @@ test('candidate surface hides recovery blocks, compact, and session UUID', () =>
   assert.doesNotMatch(painted, /仍在等待本轮结束/);
   assert.doesNotMatch(painted, /compact tail/);
 });
+
+test('mixed assistant prose peels a trailing send envelope', () => {
+  assert.match(visibleAssistantText([{
+    type: 'text',
+    text: '先投递探测。\n{"type":"send","message":"在吗"}',
+  }]) ?? '', /先投递探测/);
+  assert.doesNotMatch(visibleAssistantText([{
+    type: 'text',
+    text: '先投递探测。\n{"type":"send","message":"在吗"}',
+  }]) ?? '', /"type":"send"/);
+});
+
+test('candidate live keeps the leaf after tool_finished and flushes on user view', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: '在吗' })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('runtime.tool_started', {
+    schemaVersion: 1, sessionId: 's', evidenceRefs: [],
+    live: { schemaVersion: 1, verb: 'read', leaf: 'foo.md' },
+  })));
+  const during = timeline.filter((entry) => !entry.hidden && entry.kind === 'live');
+  assert.match(during[0]?.title ?? '', /阅读/);
+  assert.equal(during[0]?.detail, 'foo.md');
+  appendTimelineEntries(timeline, projectTimelineEvent(event('runtime.tool_finished', {
+    schemaVersion: 1, sessionId: 's', evidenceRefs: [],
+  })));
+  const after = timeline.filter((entry) => !entry.hidden && entry.kind === 'live');
+  assert.equal(after[0]?.detail, 'foo.md');
+  appendTimelineEntries(timeline, projectTimelineEvent(event('candidate.user_view_persisted', {
+    turnIndex: 0, status: 'completed', observedAt: timestamp, assistantText: '看过了。',
+  })));
+  const visible = timeline.filter((entry) => !entry.hidden);
+  assert.ok(visible.some((entry) => entry.title === 'Visible response'));
+  assert.ok(visible.some((entry) => entry.kind === 'fold' && /阅读证据|写入/.test(entry.title)));
+  const painted = renderTimeline(createTheme(120, false), 120, {
+    entries: visible,
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: 'awaiting_controller', elapsed: '03:21', turns: { used: 1 }, calls: { used: 1 },
+    productLabel: 'Claude Code',
+    locale: 'zh',
+  }).join('\n');
+  assert.doesNotMatch(painted, /Candidate · working/);
+  assert.doesNotMatch(painted, /"type":"send"/);
+  assert.doesNotMatch(painted, /\[o\]/);
+  assert.doesNotMatch(painted, /write_denied/);
+});
+
+test('candidate working row without live includes elapsed', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: '在吗' })));
+  const painted = renderTimeline(createTheme(120, false), 120, {
+    entries: timeline.filter((entry) => !entry.hidden),
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: 'awaiting_target', elapsed: '03:21', turns: { used: 1 }, calls: { used: 1 },
+    productLabel: 'Claude Code',
+    locale: 'zh',
+  }).join('\n');
+  assert.match(painted, /working · 03:21/);
+  assert.doesNotMatch(painted, /Candidate · working/);
+});
+
+test('Host write_denied english stays off the default title', () => {
+  const [row] = projectTimelineEvent(event('agent.tool_failed', {
+    role: 'controller',
+    tool: 'write',
+    message: 'write_denied: path is outside the Host write policy.',
+  }));
+  assert.equal(row?.title, '写入失败');
+  assert.doesNotMatch(row?.title ?? '', /write_denied/);
+  assert.doesNotMatch(`${row?.title ?? ''} ${row?.detail ?? ''}`, /outside the Host write policy/);
+});
+
+test('expanded fold lists leaf names in the tree', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '先读索引。',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_completed', {
+    role: 'recovery', tool: 'read', params: { path: 'secret-leaf.md' },
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '接着写报告。',
+  })));
+  const fold = timeline.find((entry) => !entry.hidden && entry.kind === 'fold');
+  const painted = renderTimeline(createTheme(120, false), 120, {
+    entries: timeline.filter((entry) => !entry.hidden),
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
+    expandedFolds: fold?.itemId ? [fold.itemId] : [],
+    runPhase: 'recovery',
+    locale: 'zh',
+  }).join('\n');
+  assert.match(painted, /secret-leaf\.md/);
+});
+
+test('unexpanded fold does not list leaf names and visible_output stays off the column', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '先读索引。',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_completed', {
+    role: 'recovery', tool: 'read', params: { path: 'secret-leaf.md' },
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '接着写报告。',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('runtime.visible_output', {
+    message: { content: [{ type: 'text', text: 'PRIVATE_VISIBLE_OUTPUT' }] },
+  })));
+  const painted = renderTimeline(createTheme(120, false), 120, {
+    entries: timeline.filter((entry) => !entry.hidden),
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
+    runPhase: 'recovery',
+    locale: 'zh',
+  }).join('\n');
+  assert.match(painted, /▸ 阅读证据/);
+  assert.doesNotMatch(painted, /secret-leaf\.md/);
+  assert.doesNotMatch(painted, /PRIVATE_VISIBLE_OUTPUT/);
+});
+
+test('clicking a fold hit writes that itemId into expandedFolds', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '先读索引。',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_completed', {
+    role: 'recovery', tool: 'read', params: { path: 'secret-leaf.md' },
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '接着写报告。',
+  })));
+  const visible = timeline.filter((entry) => !entry.hidden);
+  const folded = foldProcessEntries(visible, new Set());
+  const theme = createTheme(120, false);
+  const layout = layoutScrollback(theme, 120, folded, 0, 'zh', 'Codex', undefined, 0, 0, '00:08');
+  const foldHit = layout.hits.find((hit) => hit.fold && hit.itemId);
+  assert.ok(foldHit?.itemId);
+  const clicked = hitAtBodyRow(layout.hits, foldHit.y);
+  assert.equal(clicked?.itemId, foldHit.itemId);
+  assert.ok(clicked.itemId);
+  const expandedFolds = [clicked.itemId];
+  const painted = renderTimeline(theme, 120, {
+    entries: visible,
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
+    expandedFolds,
+    runPhase: 'recovery',
+    locale: 'zh',
+  }).join('\n');
+  assert.match(painted, /secret-leaf\.md/);
+});
+
+test('timeline projection never reads message.content', () => {
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../src/tui/timeline.ts'), 'utf8');
+  assert.doesNotMatch(source, /message\.content/);
+});
+

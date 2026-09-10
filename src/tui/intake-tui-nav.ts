@@ -122,7 +122,6 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.historyDetail = undefined;
     this.hideHelp();
     this.hideCommandOverlay();
-    this.viewer = undefined;
     this.page = "home";
     this.composer = "";
     this.composerCursor = 0;
@@ -139,7 +138,6 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.intakeLevel = "projects";
     this.preparePhase = undefined;
     this.prepareDetail = undefined;
-    this.detailExpanded = false;
     this.message = t(this.locale, "backAtHome");
     this.render();
     return { consume: true };

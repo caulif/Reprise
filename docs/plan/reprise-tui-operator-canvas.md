@@ -36,7 +36,7 @@ Controller 决策输入与正式时间线仍只使用已校验的 `candidate.use
 
 正式可见正文只来自 `candidate.user_view_persisted`。投递卡来自 `controller.decision` / `input.submitted`。
 
-进行中：无 `live` 时此刻行是 `Candidate · working`；Claude `tool_use` 与 Codex `item/started` 由 Adapter 写成 `runtime.tool_started` 并附校验过的 `live`（verb + 叶名）。TUI 只读 `live`，不拆 `message.content`。thinking 与中间 text 块不进主列。`user_view_persisted` 后此刻行让位。
+进行中：无 `live` 时此刻行是 `working · {elapsed}`；Claude `tool_use` 与 Codex `item/started` 由 Adapter 写成 `runtime.tool_started` 并附校验过的 `live`（verb + 叶名）。TUI 只读 `live`，不拆 `message.content`。thinking 与中间 text 块不进主列。`user_view_persisted` 后此刻行让位。
 
 ## 全流程
 

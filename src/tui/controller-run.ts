@@ -374,7 +374,6 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.timelineSelected = Math.max(0, c.visibleTimeline().length - 1);
     c.timelineFilterIndex = 0;
     c.timelineFollowing = true;
-    c.detailExpanded = false;
     c.cancelling = false;
     c.finding = false;
     c.findQuery = '';

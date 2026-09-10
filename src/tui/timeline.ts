@@ -2,16 +2,19 @@ import { record, text, type JsonRecord } from '../core/json.js';
 import { publicLiveOf } from '../core/public-live.js';
 import type { EventEnvelope } from '../core/schema.js';
 import {
+  captionPublicLive,
   collapseAgentRows,
   laneSource,
   projectAgentTool,
   projectAssistantVisible,
   projectWorkingNow,
+  uniqueLeafNames,
   type AgentKind,
   type AgentLane,
+  type TimelineVoice,
 } from './agent-activity.js';
 
-/** Full event text kept for [o]; the visible pane only shows a short structured preview. */
+/** Full event text kept off the default column; the visible pane only shows a short structured preview. */
 const MAX_ORIGINAL_CHARS = 32_768;
 const PREVIEW_LINES = 6;
 const PREVIEW_CHARS = 1_200;
@@ -24,7 +27,7 @@ export interface TimelineEntry {
   readonly source: TimelineSource;
   readonly title: string;
   readonly detail?: string;
-  /** Full event text for [o] Open full output; omitted when it matches detail. */
+  /** Full event text omitted from the default column when it matches detail. */
   readonly original?: string;
   readonly level?: 'warning' | 'error';
   /** Internal facts kept for counters and phase, omitted from the default operator list. */
@@ -38,6 +41,7 @@ export interface TimelineEntry {
   readonly lane?: AgentLane;
   readonly kind?: AgentKind;
   readonly count?: number;
+  readonly voice?: TimelineVoice;
 }
 
 type EntryExtra = {
@@ -50,6 +54,7 @@ type EntryExtra = {
   lane?: AgentLane;
   kind?: AgentKind;
   count?: number;
+  voice?: TimelineVoice;
 };
 
 type MakeEntry = (source: TimelineSource, title: string, detail?: string, extra?: EntryExtra) => TimelineEntry;
@@ -114,7 +119,7 @@ function presentedInputKey(entry: TimelineEntry): string | undefined {
 }
 
 function collapseRepeatedRecoveryFailure(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
-  if (entry.hidden || entry.level !== 'error' || !entry.title.includes('tool failed')) return false;
+  if (entry.hidden || entry.level !== 'error' || !/工具失败|写入失败|tool failed/.test(entry.title)) return false;
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const previous = timeline[index];
     if (!previous || previous.hidden || previous.placeholder || previous.kind === 'live') continue;
@@ -226,8 +231,8 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
       if (!prompt) return [];
       return [
         ...emitPresented(entry, 'TARGET', promptTitle(prompt), prompt),
-        entry('TARGET', 'Candidate · working', undefined, {
-          kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace',
+        entry('TARGET', 'working', undefined, {
+          kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace', voice: 'candidate',
         }),
       ];
     }
@@ -256,8 +261,8 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
     case 'run.outcome_created':
       return [
         ...projectOutcome(entry, payload),
-        entry('TARGET', 'Candidate · working', undefined, {
-          hidden: true, kind: 'live', itemId: 'now:target', patch: 'replace',
+        entry('TARGET', 'working', undefined, {
+          hidden: true, kind: 'live', itemId: 'now:target', patch: 'replace', voice: 'candidate',
         }),
       ];
     case 'run.finished':
@@ -311,6 +316,7 @@ function timelineEntryFactory(event: EventEnvelope): MakeEntry {
     ...(extra?.lane ? { lane: extra.lane } : {}),
     ...(extra?.kind ? { kind: extra.kind } : {}),
     ...(extra?.count !== undefined ? { count: extra.count } : {}),
+    ...(extra?.voice ? { voice: extra.voice } : extra?.lane ? { voice: extra.lane } : {}),
   });
 }
 
@@ -331,6 +337,9 @@ function projectInternalNow(type: string, payload: JsonRecord, entry: MakeEntry)
   if (type === 'agent.assistant_visible') {
     const vis = projectAssistantVisible(payload);
     const idle = projectWorkingNow(lane);
+    if (!vis.detail && vis.title === '…') {
+      return [entry(laneSource(lane), idle.title, undefined, idle.extra)];
+    }
     return [
       entry(laneSource(lane), vis.title, vis.detail, vis.extra),
       entry(laneSource(lane), idle.title, undefined, idle.extra),
@@ -342,43 +351,58 @@ function projectInternalNow(type: string, payload: JsonRecord, entry: MakeEntry)
     ...(row.original ? { original: row.original } : {}),
   });
   if (type !== 'agent.tool_completed' && type !== 'agent.tool_failed') return [projected];
-  const idle = projectWorkingNow(row.extra.lane);
-  const idleRow = entry(laneSource(row.extra.lane), idle.title, undefined, idle.extra);
-  if (type === 'agent.tool_failed' || row.extra.level === 'error') return [projected, idleRow];
-  if (row.detail === '不是 Git 仓库') return [projected, idleRow];
-  const flushId = row.extra.kind === 'deliver' ? `flush-write:${lane}` : `flush:${lane}`;
+  if (type === 'agent.tool_failed' || row.extra.level === 'error') {
+    const idle = projectWorkingNow(row.extra.lane);
+    return [projected, entry(laneSource(row.extra.lane), idle.title, undefined, idle.extra)];
+  }
+  if (row.detail === '不是 Git 仓库') {
+    const idle = projectWorkingNow(row.extra.lane);
+    return [projected, entry(laneSource(row.extra.lane), idle.title, undefined, idle.extra)];
+  }
+  const writeFlush = /写入/.test(row.title);
+  const flushId = writeFlush ? `flush-write:${lane}` : `flush:${lane}`;
   return [
     entry(laneSource(lane), 'flush', row.detail, {
       hidden: true,
       itemId: flushId,
       patch: 'replace',
       lane,
-      kind: row.extra.kind === 'deliver' ? 'deliver' : 'investigate',
+      kind: writeFlush ? 'deliver' : 'investigate',
       count: 1,
     }),
-    idleRow,
+    projected,
   ];
 }
 
 function projectCandidateNow(type: string, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
-  if (type === 'runtime.tool_finished') {
-    return [entry('TARGET', 'Candidate · working', undefined, {
-      kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace',
-    })];
-  }
+  if (type === 'runtime.tool_finished') return [];
   const live = publicLiveOf(payload);
   if (!live) return [];
-  return [entry('TARGET', live.verb === 'working' ? 'Candidate · working' : `Candidate · ${live.verb}`, live.leaf, {
-    kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace',
-  })];
+  const caption = captionPublicLive(live.verb, live.leaf);
+  const write = live.verb === 'write' || live.verb === 'edit';
+  const now = entry('TARGET', caption.title, caption.detail, {
+    kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace', voice: 'candidate',
+  });
+  if (live.verb === 'working') return [now];
+  return [
+    now,
+    entry('TARGET', 'flush', caption.detail, {
+      hidden: true,
+      itemId: write ? 'flush-write:candidate' : 'flush:candidate',
+      patch: 'replace',
+      kind: write ? 'deliver' : 'investigate',
+      count: 1,
+      voice: 'candidate',
+    }),
+  ];
 }
 
 function projectUserView(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
   const status = text(payload.status) ?? 'unknown';
   const assistant = text(payload.assistantText);
   const prompt = text(payload.prompt);
-  const clearNow = entry('TARGET', 'Candidate · working', undefined, {
-    hidden: true, kind: 'live', itemId: 'now:target', patch: 'replace',
+  const clearNow = entry('TARGET', 'working', undefined, {
+    hidden: true, kind: 'live', itemId: 'now:target', patch: 'replace', voice: 'candidate',
   });
   if (status === 'unavailable') {
     return [entry('TARGET', 'User view unavailable', undefined, { level: 'error' }), clearNow];
@@ -570,13 +594,15 @@ function shouldFlushBefore(entry: TimelineEntry): boolean {
   if (entry.hidden) return false;
   if (entry.kind === 'narrate') return true;
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')) return true;
+  if (entry.title === 'Visible response') return true;
   if (entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复') return true;
   if (entry.title === '对照完成' || entry.title === '证据不足' || entry.title === '对照失败') return true;
   return false;
 }
 
-function laneFromEntry(entry: TimelineEntry): AgentLane {
+function laneFromEntry(entry: TimelineEntry): AgentLane | 'candidate' {
   if (entry.lane) return entry.lane;
+  if (entry.voice === 'candidate' || entry.source === 'TARGET') return 'candidate';
   if (entry.source === 'CONTROLLER') return 'controller';
   return 'recovery';
 }
@@ -590,18 +616,24 @@ function bumpFlush(timeline: TimelineEntry[], entry: TimelineEntry): void {
     return;
   }
   const previous = timeline[index]!;
+  const detail = mergeFlushDetail(previous.detail, entry.detail);
   timeline[index] = {
     ...previous,
     sequence: entry.sequence,
     occurredAt: entry.occurredAt,
     count: (previous.count ?? 1) + (entry.count ?? 1),
-    ...(entry.detail ? { detail: entry.detail } : {}),
+    ...(detail ? { detail } : {}),
   };
 }
 
-function flushLane(timeline: TimelineEntry[], lane: AgentLane): void {
+function mergeFlushDetail(previous: string | undefined, next: string | undefined): string | undefined {
+  const names = uniqueLeafNames([...(previous ?? '').split(/[·,]/), ...(next ?? '').split(/[·,]/)]);
+  return names.length ? names.join(' · ') : undefined;
+}
+
+function flushLane(timeline: TimelineEntry[], lane: AgentLane | 'candidate'): void {
   emitFlush(timeline, `flush:${lane}`, (row) => `▸ 阅读证据 · ${row.count ?? 1}`);
-  emitFlush(timeline, `flush-write:${lane}`, (row) => `▸ 写入 ${row.detail ?? ''}`.trim());
+  emitFlush(timeline, `flush-write:${lane}`, (row) => `▸ 写入 ${row.detail?.split(' · ')[0] ?? ''}`.trim());
 }
 
 function emitFlush(timeline: TimelineEntry[], itemId: string, titleOf: (row: TimelineEntry) => string): void {
@@ -615,8 +647,11 @@ function emitFlush(timeline: TimelineEntry[], itemId: string, titleOf: (row: Tim
     source: pending.source,
     title: titleOf(pending),
     kind: 'fold',
+    itemId,
     ...(pending.lane ? { lane: pending.lane } : {}),
+    ...(pending.voice ? { voice: pending.voice } : pending.source === 'TARGET' ? { voice: 'candidate' as const } : {}),
     ...(pending.count !== undefined ? { count: pending.count } : {}),
+    ...(pending.detail ? { detail: pending.detail } : {}),
   });
 }
 
@@ -678,12 +713,7 @@ function mergeEntry(previous: TimelineEntry, next: TimelineEntry): TimelineEntry
     ...(next.lane ? { lane: next.lane } : previous.lane ? { lane: previous.lane } : {}),
     ...(next.kind ? { kind: next.kind } : previous.kind ? { kind: previous.kind } : {}),
     ...(next.count !== undefined ? { count: next.count } : previous.count !== undefined ? { count: previous.count } : {}),
+    ...(next.voice ? { voice: next.voice } : previous.voice ? { voice: previous.voice } : {}),
   };
 }
-
-export function eventOriginalText(entry: TimelineEntry | undefined): string | undefined {
-  if (!entry) return undefined;
-  return entry.original ?? entry.detail;
-}
-
 

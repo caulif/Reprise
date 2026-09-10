@@ -18,12 +18,12 @@ test('recovery canvas does not impersonate a candidate reply', () => {
   const text = renderTimeline(theme, 120, {
     entries: [],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     productLabel: 'Codex',
     locale: 'zh',
   }).join('\n');
-  assert.match(text, /恢复活动/);
+  assert.match(text, /恢复/);
   assert.match(text, /正在隔离工作区里恢复/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /正在写回复/);
@@ -34,7 +34,7 @@ test('recovery prepare screen shows session and project instead of a preflight g
   const text = renderTimeline(theme, 120, {
     entries: [],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+    currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
     preparePhase: 'check',
     prepareDetail: 'Preparing recovery environment',
     taskTitle: 'Fix the failing test',
@@ -197,11 +197,11 @@ test('workbench renders timeline above confirmation when recovery entries exist'
         { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'Read package.json', detail: 'Read package.json', lane: 'recovery', kind: 'narrate' },
       ],
       selected: 0, filter: 'ALL', following: true, cancelling: false,
-      currentState: undefined, elapsed: '00:05', turns: { used: 0 }, calls: { used: 0 }, detailExpanded: false,
+      currentState: undefined, elapsed: '00:05', turns: { used: 0 }, calls: { used: 0 },
     },
   }, 120).join('\n');
 
   assert.match(rendered, /Read package\.json/);
-  assert.match(rendered, /Recovery activity/);
+  assert.match(rendered, /Recovered/);
   assert.match(rendered, /Start isolated Codex Candidate/);
 });

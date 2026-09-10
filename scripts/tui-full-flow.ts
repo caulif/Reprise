@@ -572,9 +572,7 @@ async function main() {
   await push("17-running-find", 120, run.render(120), "画布内查找，只留匹配块");
   runApp.handleInput("\x1b");
   runApp.handleInput("\u001b[A");
-  runApp.handleInput("o");
-  await push("18-viewer", 120, run.render(120), "全文 overlay");
-  runApp.handleInput("\x1b");
+  await push("18-viewer", 120, run.render(120), "选中上一条，无全文 overlay");
   runApp.handleInput("\u0007");
   await push("19-actors", 120, run.render(120), "Actors pane");
   runApp.handleInput("\x1b");

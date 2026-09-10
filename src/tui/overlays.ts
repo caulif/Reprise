@@ -75,8 +75,7 @@ export function helpLines(page?: string, locale: Locale = 'en'): readonly string
     'v          Reading/select mode (pause redraw, disable mouse report)',
     'Home/End   First record / follow latest',
     'Tab        Focus expandable groups',
-    'Enter      Next find hit while searching; expand when not searching',
-    'o          Open selected original detail',
+    'Enter      Next find hit while searching; expand fold when not searching',
   ] : undefined;
   const keys = page === 'home' ? homeKeys : page === 'running' ? runningKeys : scoped;
   return [
