@@ -12,6 +12,7 @@ Recovery 需求与实施差异见[起点恢复目标](./plan/recovery-initial-en
 | 理解代码边界 | [架构总览](./architecture/overview.md) | [技术基线](./architecture/technology-selection.md)、[角色与 prompt 入口](./architecture/agent-roles-and-system-prompts.md)、[基座 Host](./decisions/accepted/2026-09-09-agent-foundation-host.md) |
 | 修改存储或运行 | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md)、[环境](./architecture/environment.md) |
 | 修改模拟用户或对照 | [Controller](./architecture/controller.md)、[Comparison](./architecture/comparison.md) | [实验条件](./architecture/controller-experiment-conditions.md)、[验证边界](./architecture/validation.md) |
+| 修候选可见表面或 Git 远端隔离 | [可见表面与 Git sink](./plan/2026-09-10-visible-surface-and-git-sink.md) | [用户可见回合](./decisions/accepted/2026-09-09-candidate-runtime-events.md)、[环境](./architecture/environment.md) |
 | 重构 Controller Agent | [Controller 重构实施参考](./plan/controller-agent-reconstruction.md) | [Controller 架构](./architecture/controller.md)、[实验条件](./architecture/controller-experiment-conditions.md) |
 | 全面重构 Controller | [全面重构计划](./plan/controller-full-refactor-plan.md) | [重构实施参考](./plan/controller-agent-reconstruction.md)、[Controller 架构](./architecture/controller.md) |
 | 阅读比较卡与 Controller 编排 | [对照](./architecture/comparison.md)、[Controller](./architecture/controller.md) | [可分享比较卡](./decisions/accepted/2026-09-09-comparison-shareable-task-card.md)、[Controller 先理解再决策](./decisions/accepted/2026-09-09-controller-understand-then-view.md)；Comparison 全面重构见[实施方案](./plan/comparison-agent-full-refactor.md) |

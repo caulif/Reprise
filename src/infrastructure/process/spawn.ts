@@ -1,7 +1,7 @@
 import { access, stat } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process';
-import { extname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { isNativeHostPath } from '../../core/paths.js';
 
 export const DEFAULT_RUNTIME_RPC_TIMEOUT_MS = 120_000;
@@ -58,15 +58,38 @@ export function spawnRuntimeProcess(
   args: readonly string[],
   options: SpawnOptions & { platform?: NodeJS.Platform } = {},
 ): ChildProcessWithoutNullStreams {
-  const { platform, ...spawnOptions } = options;
+  const { platform, env, cwd, ...spawnOptions } = options;
   const invocation = windowsProcessInvocation(executable, args, platform ?? process.platform);
   const host = platform ?? process.platform;
   return spawn(invocation.command, [...invocation.args], {
     ...spawnOptions,
+    cwd,
+    env: isolateCandidateProcessEnv(env, typeof cwd === 'string' ? cwd : undefined),
     shell: false,
     ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     ...(host !== 'win32' && spawnOptions.detached === undefined ? { detached: true } : {}),
   }) as ChildProcessWithoutNullStreams;
+}
+
+const GITHUB_TOKEN_KEYS = new Set(['GITHUB_TOKEN', 'GH_TOKEN']);
+
+/** Strips GitHub tokens and points Git at the run sink home when `cwd` is a prepared replica. */
+export function isolateCandidateProcessEnv(
+  env: NodeJS.ProcessEnv | undefined,
+  cwd: string | undefined,
+): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = { ...(env ?? process.env) };
+  for (const key of Object.keys(next)) {
+    if (GITHUB_TOKEN_KEYS.has(key.toUpperCase())) delete next[key];
+  }
+  if (!cwd) return next;
+  const home = join(dirname(dirname(resolve(cwd))), 'git-sinks', basename(resolve(cwd)));
+  const gitconfig = join(home, 'gitconfig');
+  if (!existsSync(gitconfig)) return next;
+  next.GIT_CONFIG_GLOBAL = gitconfig;
+  next.GIT_CONFIG_SYSTEM = join(home, 'missing-system-gitconfig');
+  next.GIT_CONFIG_NOSYSTEM = '1';
+  return next;
 }
 
 export type ExecutableDiscovery = {

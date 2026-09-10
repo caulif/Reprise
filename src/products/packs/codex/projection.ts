@@ -1,7 +1,7 @@
 import { isRecord, record, text, type JsonRecord } from '../../../core/json.js';
 import type { EventEnvelope } from '../../../core/schema.js';
 import type { UserSurfaceProjection, TargetRunFacts } from '../../contract.js';
-import { projectUserVisibleTurn } from '../../contract.js';
+import { projectUserVisibleTurn, publicAssistantFacts } from '../../contract.js';
 
 export const codexProjection: UserSurfaceProjection = {
   inspectRunFacts(events) {
@@ -20,11 +20,9 @@ export const codexProjection: UserSurfaceProjection = {
 function inspectCodexRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
   const completed = events.filter((event) => event.type === 'runtime.tool_finished' || event.type === 'runtime.visible_output');
   const targetItems = completed.map((event) => record(event.payload).item).filter(isRecord);
-  const finalMessage = targetItems
+  const assistantTexts = targetItems
     .filter((item) => item.type === 'agentMessage')
-    .map((item) => (typeof item.text === 'string' ? item.text : undefined))
-    .filter((value): value is string => Boolean(value))
-    .at(-1);
+    .map((item) => (typeof item.text === 'string' ? item.text : itemText(item)));
   const commands = [...new Set(
     targetItems
       .filter((item) => item.type === 'commandExecution')
@@ -46,7 +44,7 @@ function inspectCodexRunFacts(events: readonly EventEnvelope[]): TargetRunFacts 
     || event.type === 'runtime.runtime_failed'
   ));
   return {
-    ...(finalMessage ? { finalMessage } : {}),
+    ...publicAssistantFacts(assistantTexts),
     ...(prompt ? { prompt } : {}),
     commands,
     rejectedApprovals: rejected.length,

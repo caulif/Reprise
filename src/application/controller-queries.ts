@@ -12,6 +12,7 @@ import {
 import type { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { findProductPack } from "../products/index.js";
 import { packProjection } from "../products/pack-access.js";
+import { joinPublicAssistantSurface } from "../products/contract.js";
 import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./replay-conditions.js";
 import { recordValue, strings, collectedTokenFacts, totalTokenCount } from "./experiment-helpers.js";
 
@@ -62,7 +63,9 @@ export async function inspectRun(
   const turnFacts = translator.inspectRunFacts(turnEvents);
   const latestSettlement = settled.at(-1);
   const userView = projectLatestUserView(translator, settled.length, latestSettlement, turnEvents, allowModelText);
-  const turnVisibleText = allowModelText ? turnFacts.finalMessage : undefined;
+  const turnVisibleText = allowModelText
+    ? joinPublicAssistantSurface(turnFacts.assistantTexts) ?? turnFacts.finalMessage
+    : undefined;
   const turnPrompt = allowModelText ? userVisiblePrompt(userView) : undefined;
   const rejectedApprovals = facts.rejectedApprovals;
   const workspaceFacts = record

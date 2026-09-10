@@ -389,6 +389,7 @@ Host 不以证据评分、changed path 数量或零变更否决改写 `ready` / 
 - baseline digest 变化：拒绝静默继续，重新 resolve 或降级为 mismatch；
 - 目标 run 目录已经存在：先按 manifest 和 run ID 核查，不覆盖不明目录。
 - 活源目录缺失时，`resolveBaseline` 只核验已发布封存与 marker；指纹不符或缺文件则拒绝，不从原会话目录再推导起点。
+- 副本与已发布 baseline、Recovery staging 的 Git `origin`/`pushurl` 必须指向本实验 `environment/git-sinks/` 下的 Harness bare sink；对用户真实 origin 的 push 不得更新该远端。见 [可见表面与 Git sink](../decisions/accepted/2026-09-10-visible-surface-and-git-sink.md)。
 
 不同候选模型不能共享可写工作目录。否则前一个候选的修改会成为后一个候选的起点。
 

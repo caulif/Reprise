@@ -9,6 +9,7 @@ import type { ArtifactManifest } from "../infrastructure/store/experiment-store.
 import { briefingComparisonContext } from "./comparison.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
+import { gitSinkRefsListing, gitSinkRoot } from "../environment/git-sink.js";
 
 export type ComparisonLink = ComparisonLinkRecord;
 
@@ -131,6 +132,7 @@ export async function writeComparisonBriefing(input: {
     "",
     "Process index: candidate/process-index.tsv and briefing/candidate/process-index.tsv",
     "User views: turns/*/user-view.md (controller-briefing/run/turns mount)",
+    "Git experiment remotes: candidate/git-sink-refs.txt",
     "Controller messages: run/sent-user-messages.jsonl and observations/user-inputs/",
     "",
   ].join("\n"));
@@ -152,6 +154,10 @@ export async function writeComparisonBriefing(input: {
     "utf8",
   ).catch(() => "");
   if (userView) await writeAtomic(join(input.attemptRoot, "candidate", "user-view.md"), userView);
+  await writeAtomic(
+    join(input.attemptRoot, "candidate", "git-sink-refs.txt"),
+    await gitSinkRefsListing(gitSinkRoot(join(input.experimentRoot, "environment"), input.record.attempt.runId)),
+  );
   return { indexMarkdown, links, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
 }
 
@@ -190,6 +196,7 @@ function comparisonIndex(snapshotStatus: "complete" | "incomplete" | "unknown", 
     "- observations/INDEX.md — frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/ — frozen historical conversation (read-only mount)",
     "- turns/ — candidate settled-turn briefing including each user-view.md (read-only mount)",
+    "- candidate/git-sink-refs.txt — Harness Git sink refs for this run (not the user's GitHub)",
     "- run/sent-user-messages.jsonl — Controller messages sent this run (read-only mount)",
     "- candidate/ — retained candidate workspace snapshot (read-only mount)",
     "- evidence/ — materialized Host artifacts (read-only mount)",

@@ -12,6 +12,7 @@
 replayScope.historical is the frozen original session. replayScope.candidate is this replay only. Isolation paths are not a capability difference. Never attribute historical commands, files, or exports to this candidate.
 Classify every difference as result, process, replay_limitation, or configuration before writing. Do not present a process, replay, or configuration issue as a result gap or as weaker model capability.
 A run cut off by the harness, a budget, or the runtime is not evidence of weaker capability. Isolation, stand_in, and historical_start are replay limitations, not capability findings.
+Replica Git remotes point at a Harness sink. Do not treat a rewritten origin, a local sink push, or the absence of GitHub as a capability difference. Read candidate/git-sink-refs.txt for this run's experiment remote.
 
 # Workspace
 reportFacts are Host-projected run facts: display unavailable values as 未采集 / 不可判定, never as zero. briefing summaries are claims until checked.
