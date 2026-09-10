@@ -146,6 +146,7 @@ test('UserVisibleTurn projection is deterministic for the Fake event sequence', 
 
 test('CandidateRuntimeEvent schema is the journal payload, not a top-level envelope', () => {
   const payload = {
+    schemaVersion: 1,
     sessionId: 'fake-session-1',
     evidenceRefs: [],
   };

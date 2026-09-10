@@ -213,6 +213,7 @@ test("records the latest cumulative Codex token count", async (t) => {
       sink: TargetEventSink,
       launch: import("../../src/core/schema.js").CandidateLaunchContext,
     ): Promise<TargetRunner> {
+      const runner = await super.createRunner(runtime, environment, sink, launch);
       await sink.append({
         type: "runtime.usage_reported",
         occurredAt: now,
@@ -223,7 +224,7 @@ test("records the latest cumulative Codex token count", async (t) => {
         occurredAt: now,
         payload: { info: { total_token_usage: { total_tokens: 256 } } },
       });
-      return super.createRunner(runtime, environment, sink, launch);
+      return runner;
     }
   }
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-tokens-"));

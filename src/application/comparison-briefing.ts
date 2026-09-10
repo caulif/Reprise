@@ -7,6 +7,7 @@ import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonBriefingContextSchema, ComparisonLinksSchema, type ComparisonLinkRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
 import type { ArtifactManifest } from "../infrastructure/store/experiment-store.js";
 import { briefingComparisonContext } from "./comparison.js";
+import { controllerBriefingRoot } from "./controller-briefing.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
 
 export type ComparisonLink = ComparisonLinkRecord;
@@ -34,6 +35,41 @@ export function newComparisonAttempt(experimentRoot: string): { attemptId: strin
   return { attemptId, attemptRoot: join(experimentRoot, "comparison-attempts", attemptId) };
 }
 
+export function comparisonCandidateMount(input: {
+  candidateSnapshotStatus: "complete" | "incomplete" | "missing";
+  candidateSnapshotRoot: string;
+  attemptRoot: string;
+}): string {
+  if (input.candidateSnapshotStatus === "complete") return input.candidateSnapshotRoot;
+  return join(input.attemptRoot, "candidate-snapshot-unavailable");
+}
+
+/** Tool mounts used by Comparison Agent. Paths are relative to the attempt root. */
+export type ComparisonAttemptMounts = {
+  readonly candidate: string;
+  readonly evidence: string;
+  readonly history: string;
+  readonly turns: string;
+  readonly run: string;
+};
+
+export function comparisonAttemptMounts(input: {
+  experimentRoot: string;
+  runId: string;
+  attemptRoot: string;
+  candidateSnapshotStatus: "complete" | "incomplete" | "missing";
+  candidateSnapshotRoot: string;
+}): ComparisonAttemptMounts {
+  const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
+  return {
+    candidate: comparisonCandidateMount(input),
+    evidence: join(input.attemptRoot, "evidence"),
+    history: join(controllerRoot, "history"),
+    turns: join(controllerRoot, "run", "turns"),
+    run: join(controllerRoot, "run"),
+  };
+}
+
 export async function writeComparisonBriefing(input: {
   attemptRoot: string;
   experimentRoot: string;
@@ -43,6 +79,7 @@ export async function writeComparisonBriefing(input: {
   context: ComparisonContext;
   events: readonly EventEnvelope[];
   artifacts: readonly ArtifactManifest[];
+  snapshotStatus: "complete" | "incomplete" | "missing";
 }): Promise<{ indexMarkdown: string; links: ComparisonLink[]; fileDigests: Record<string, string> }> {
   const briefingRoot = join(input.attemptRoot, "briefing");
   await Promise.all([
@@ -61,7 +98,9 @@ export async function writeComparisonBriefing(input: {
   const links = await comparisonLinks(input);
   if (!Value.Check(ComparisonLinksSchema, links)) throw new Error("Comparison links do not satisfy ComparisonLinksSchema.");
   if (!Value.Check(ComparisonBriefingContextSchema, briefingComparisonContext(input.context))) throw new Error("Comparison context does not satisfy ComparisonBriefingContextSchema.");
-  const indexMarkdown = comparisonIndex();
+  const snapshotStatus = comparisonSnapshotLabel(input.snapshotStatus);
+  const cleanupStatus = input.record.outcome.cleanup.status;
+  const indexMarkdown = comparisonIndex(snapshotStatus, cleanupStatus);
   const factsContext = `${JSON.stringify(briefingComparisonContext(input.context), null, 2)}\n`;
   const factsLinks = `${JSON.stringify(links, null, 2)}\n`;
   const candidateProcess = processIndex(input.events);
@@ -71,6 +110,7 @@ export async function writeComparisonBriefing(input: {
     "candidate/process-index.tsv": candidateProcess,
     "facts/context.json": factsContext,
     "facts/comparison-links.json": factsLinks,
+    "candidate/SNAPSHOT.txt": `snapshotStatus=${snapshotStatus}\ncleanupStatus=${cleanupStatus}\n`,
   };
   for (const [path, body] of Object.entries(files)) await writeAtomic(join(briefingRoot, ...path.split("/")), body);
   await mkdir(join(input.attemptRoot, "history"), { recursive: true });
@@ -90,7 +130,8 @@ export async function writeComparisonBriefing(input: {
     "# Candidate track",
     "",
     "Process index: candidate/process-index.tsv and briefing/candidate/process-index.tsv",
-    "User views: controller-briefing/current-user-view.md and run/turns/*/user-view.md (mounted as turns/)",
+    "User views: turns/*/user-view.md (controller-briefing/run/turns mount)",
+    "Controller messages: run/sent-user-messages.jsonl and observations/user-inputs/",
     "",
   ].join("\n"));
   await writeAtomic(join(input.attemptRoot, "candidate", "process-index.tsv"), candidateProcess);
@@ -102,12 +143,20 @@ export async function writeComparisonBriefing(input: {
     join(input.attemptRoot, "candidate", "outcome.json"),
     `${JSON.stringify(input.record.outcome, null, 2)}\n`,
   );
+  await writeAtomic(
+    join(input.attemptRoot, "candidate", "SNAPSHOT.txt"),
+    `snapshotStatus=${snapshotStatus}\ncleanupStatus=${cleanupStatus}\n`,
+  );
   const userView = await readFile(
     join(input.experimentRoot, "runs", input.record.attempt.runId, "controller-briefing", "current-user-view.md"),
     "utf8",
   ).catch(() => "");
   if (userView) await writeAtomic(join(input.attemptRoot, "candidate", "user-view.md"), userView);
   return { indexMarkdown, links, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
+}
+
+export function comparisonSnapshotLabel(status: "complete" | "incomplete" | "missing"): "complete" | "incomplete" | "unknown" {
+  return status === "missing" ? "unknown" : status;
 }
 
 function comparisonAttemptIndex(): string {
@@ -117,20 +166,21 @@ function comparisonAttemptIndex(): string {
     "- INDEX.md — this map",
     "- facts/ — Host projection; missing metrics stay missing",
     "- history/ — historical messages and observations",
-    "- candidate/ — process index, user view, and outcome",
+    "- candidate/ — process index, user view, outcome, and SNAPSHOT.txt",
     "- work/ — Comparison working notes",
     "- briefing/ — Agent-facing navigation used by tools",
     "",
   ].join("\n");
 }
 
-function comparisonIndex(): string {
+function comparisonIndex(snapshotStatus: "complete" | "incomplete" | "unknown", cleanupStatus: string): string {
   return [
     "# Comparison briefing map",
     "",
     "Read only what can change the comparison. The historical and candidate process bodies are mounted separately; this directory contains navigation and Host facts.",
     "",
     "All tool paths below are relative to the attempt root, not briefingRoot.",
+    `- candidate/SNAPSHOT.txt — snapshotStatus=${snapshotStatus} cleanupStatus=${cleanupStatus}`,
     "- briefing/INDEX.md — this navigation map",
     "- briefing/task/initial-input.txt — frozen initial task",
     "- briefing/facts/context.json — bounded Host projection, not a substitute for direct evidence",
@@ -139,8 +189,9 @@ function comparisonIndex(): string {
     "- observations/user-inputs/INDEX.tsv — complete user demand in session order (historical_user vs controller)",
     "- observations/INDEX.md — frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/ — frozen historical conversation (read-only mount)",
-    "- turns/ — candidate settled-turn briefing (read-only mount)",
-    "- candidate/ — retained candidate workspace (read-only mount)",
+    "- turns/ — candidate settled-turn briefing including each user-view.md (read-only mount)",
+    "- run/sent-user-messages.jsonl — Controller messages sent this run (read-only mount)",
+    "- candidate/ — retained candidate workspace snapshot (read-only mount)",
     "- evidence/ — materialized Host artifacts (read-only mount)",
     "- work/comparison-plan.md — revisable working notes in this Session",
     "- scratch/ — unrestricted temporary analysis files; PowerShell starts here",

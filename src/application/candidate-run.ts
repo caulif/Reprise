@@ -1,8 +1,9 @@
 import { SAFE_ID } from '../core/identity.js';
 import { assertTransition } from '../core/state-machine.js';
 import type { ArtifactRef, CandidateRunState, CandidateSessionHandle, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
-import type { DeliveryReceipt, MessageIdentity, RuntimeStopReason, TargetRunner, TurnSettlement, UserMessage } from '../core/runtime.js';
+import { isCandidateRuntimeJournalType, type DeliveryReceipt, type MessageIdentity, type RuntimeStopReason, type TargetRunner, type TurnSettlement, type UserMessage } from '../core/runtime.js';
 import { cleanupCandidateRun, DEFAULT_CLEANUP_TIMEOUT_MS } from './candidate-run-cleanup.js';
+import { appendCandidateRuntimeEvent } from './candidate-run-events.js';
 import {
   annotateRuntimeError,
   assessmentFor,
@@ -18,15 +19,16 @@ const settlementValues = new Set(['completed', 'failed', 'waiting_input', 'abort
 export type CandidateRunPolicy = { turnTimeoutMs: number; maxTargetTurns: number; cleanupTimeoutMs?: number };
 type Cleanup = { status: 'released' | 'already_released' };
 type RecordedEvent = Pick<EventEnvelope, 'eventId' | 'sequence'>;
-type JournalEvent = { type: string; runId: string; operationId: string; payload: unknown };
+type JournalEvent = { type: string; runId: string; operationId?: string; payload: unknown; occurredAt?: string };
 type Assessment = RunOutcome['task'];
 
 /** The minimal persistence surface CandidateRun needs; ExperimentStore already satisfies it. */
 export interface CandidateRunJournal {
   commitAttempt(attempt: RunAttempt, operationId?: string): Promise<RecordedEvent>;
   commitManifest(manifest: RunManifest, operationId?: string): Promise<RecordedEvent>;
-  append(event: JournalEvent): Promise<RecordedEvent>;
+  append(event: JournalEvent): Promise<EventEnvelope>;
   nextSequence(): number;
+  events(runId: string): readonly EventEnvelope[];
 }
 
 export type CandidateRunPersistence = {
@@ -146,6 +148,7 @@ export class CandidateRun {
       const receipt = await this.#runner.start(message, identity);
       this.#handle = this.#runner.session();
       this.#assertHandle();
+      await this.#append('runtime.session_started', { sessionId: this.#handle.sessionId, productId: this.#handle.productId }, 'session-started');
       await this.#append('candidate.session_bound', this.#handle, 'session-bound');
       return await this.#advance(receipt, identity);
     } catch (error) {
@@ -269,6 +272,18 @@ export class CandidateRun {
 
   async #append(type: string, payload: unknown, operationId: string): Promise<RecordedEvent | undefined> {
     if (!this.#persistence) return undefined;
+    if (isCandidateRuntimeJournalType(type)) {
+      const event = await appendCandidateRuntimeEvent({
+        journal: this.#persistence.journal,
+        runId: this.#persistence.attempt.runId,
+        sessionId: this.#handle?.sessionId ?? 'unstarted',
+        type,
+        payload,
+        operationId,
+      });
+      this.#track(event);
+      return event;
+    }
     const event = await this.#persistence.journal.append({ type, runId: this.#persistence.attempt.runId, operationId, payload });
     this.#track(event);
     return event;

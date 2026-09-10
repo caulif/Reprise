@@ -11,6 +11,7 @@ import type {
   SessionSummary,
 } from '../contract.js';
 import { peekJsonlSessionId } from './jsonl-io.js';
+import type { JsonRecord } from '../../core/json.js';
 import type { SessionFileEntry } from './session-files.js';
 
 export type FreezeBlockReason = 'source-missing' | 'unreadable' | 'history-only' | 'no-user-input' | 'corrupt';
@@ -109,9 +110,14 @@ export function assertTranscriptSessionId(listedId: string, actualId: string): v
   if (listedId !== actualId) throw new Error('Session id from transcript does not match the listed session.');
 }
 
-export function discoveryFailureSummary(productId: string, entry: SessionFileEntry, code: DiscoveryDiagnosticCode): SessionSummary {
+export function discoveryFailureSummary(
+  productId: string,
+  entry: SessionFileEntry,
+  code: DiscoveryDiagnosticCode,
+  extractId: (row: JsonRecord) => string | undefined,
+): SessionSummary {
   const digest = createHash('sha256').update(entry.path).digest('hex').slice(0, 16);
-  const peeked = peekJsonlSessionId(productId, entry.path);
+  const peeked = peekJsonlSessionId(entry.path, extractId);
   const sessionId = peeked && SAFE_ID.test(peeked) ? peeked : `unreadable-${digest}`;
   const hard = HARD_DISCOVERY.has(code);
   const diagnostic: RecoveryDiagnostic = { code, message: hard ? 'Source file could not be read.' : `Discovery summary was incomplete (${code}).` };

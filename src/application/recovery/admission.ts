@@ -30,6 +30,7 @@ export async function admitCandidateLaunch(input: {
     }
   }
   const context: CandidateLaunchContext = {
+    schemaVersion: 1,
     experimentId: input.experimentId,
     runId: input.runId,
     workspaceRoot,

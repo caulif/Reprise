@@ -35,13 +35,13 @@ Controller opening/steering 以 `docs/architecture/controller.md` 和源码为�
 
 ## Product Pack
 
-每个 Pack 必须同时提供：
+每个 Pack 必须同时提供三个并列端口：
 
-```text
-ProductPack = HistoryReader + RuntimeLauncher + UserSurfaceProjection
+```ts
+ProductPack { history, runtime, projection }
 ```
 
-HistoryReader 负责本地会话发现、读取和转换；RuntimeLauncher 负责可用性、模型目录、隔离目录中新 Session、消息投递、原生 settlement 和停止；UserSurfaceProjection 消费标准 Runtime 事件并在稳定 turn 后生成用户可见结果。三者不共享可变 Session 状态。凭据直接使用用户本地登录状态，绝不进入事件、artifact、briefing 或报告。
+`history` 负责本地会话发现、读取和转换；`runtime` 负责可用性、模型目录、隔离目录中新 Session、消息投递、原生 settlement 和停止；`projection` 消费标准 Runtime 事件并在稳定 turn 后生成用户可见结果。`projection` 不是 `runtime` 的字段或内部能力。三者不共享可变 Session 状态。凭据直接使用用户本地登录状态，绝不进入事件、artifact、briefing 或报告。
 
 ## 历史材料与 Recovery
 
@@ -85,7 +85,7 @@ type CandidateRuntimeEvent = {
 ## 用户可见投影
 
 ```text
-标准 Runtime 事件 → UserSurfaceProjection → UserVisibleTurn
+标准 Runtime 事件 → ProductPack.projection → UserVisibleTurn
 ```
 
 只在 settlement 后生成用户可见助手文本、状态、确认/授权/拒绝提示、交付入口和观察时间。写入：
@@ -148,7 +148,7 @@ History 包含历史用户输入、Agent 过程、事件、产物和视图；can
 1. 绘制当前调用图：TUI/CLI → Application → Recovery/Controller/CandidateRun/Comparison → Runtime/Environment。
 2. 列出所有旧接口、旧路径和旧字段，确认它们的真实调用者。
 3. 冻结目标状态图、事件顺序、失败来源和数据所有权。
-4. 建立 Fake ProductPack、Fake HistoryReader、Fake TargetRunner 和 Fake UserSurfaceProjection 的测试骨架。
+4. 建立 Fake ProductPack（含 history、runtime、projection）与 Fake TargetRunner 的测试骨架。
 5. 运行现有构建与门禁，记录基线；不得把当前绿灯当作新架构完成证据。
 
 交付物：调用图、状态图、依赖清单、Fake 测试骨架和基线验证记录。
@@ -207,7 +207,7 @@ History 包含历史用户输入、Agent 过程、事件、产物和视图；can
 
 1. 实现 `CandidateRuntimeEvent`，强制 `eventId`、单调 sequence、时间、sessionId、可选 turnId/messageId/callId、payload 和 evidence refs。
 2. Adapter 先标准化事件，再交给 CandidateRun Journal；Application 不处理产品私有事件。
-3. 实现每个 Product Pack 独立的 `UserSurfaceProjection`，只消费标准事件。
+3. 实现每个 Product Pack 独立的 `projection` 端口，只消费标准事件，不得并入 `runtime`。
 4. 只在原生 settlement 后生成 `UserVisibleTurn`；区分 completed、waiting、failed、aborted、empty、unavailable。
 5. 持久化 `controller-briefing/current-user-view.md` 与每轮不可变 `run/turns/{n}/user-view.md`，同时保存 settlement、事件索引和变更路径。
 6. 投影失败不得静默当作空输出；明确失败或不可用状态。
@@ -321,7 +321,7 @@ TUI/CLI 不自行拼接实验路径，由 Application 返回受控目录或 arti
 ## 14. 最终交付检查
 
 - 目标调用图、状态图和事件顺序与代码一致；
-- ProductPack 同时提供 HistoryReader、RuntimeLauncher 和 UserSurfaceProjection；
+- ProductPack 同时提供 `history`、`runtime` 和独立的 `projection`；
 - Application 不执行候选工具，不解析产品协议；
 - TUI/CLI 只通过 Application 和事件投影工作；
 - CandidateRun、Controller、Recovery、Comparison 的失败和清理边界可审计；

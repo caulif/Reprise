@@ -32,6 +32,7 @@ import type {
   SessionSummary,
 } from '../../contract.js';
 import { freezeCase } from '../../shared/freeze.js';
+import { peekCodexSessionMetaId } from './protocol.js';
 import { forEachJsonlRecordLenient, withStableJsonlRead } from '../../shared/jsonl-io.js';
 import {
   assertTranscriptSessionId,
@@ -67,7 +68,7 @@ async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<S
     inspect: (entry) => summarizeCodexSession(entry, query.signal),
     inspectPartial: (entry, signal) => summarizeCodexSessionHead(entry, signal),
     exclude: (session) => isExcludedSession(session, query, [root]),
-    failedSummary: (entry, code) => discoveryFailureSummary('codex', entry, code),
+    failedSummary: (entry, code) => discoveryFailureSummary('codex', entry, code, peekCodexSessionMetaId),
   });
   if (query.cursor) return rolloutPage;
   const sessionIdsByPath = new Map<string, string>();

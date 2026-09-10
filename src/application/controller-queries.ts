@@ -161,7 +161,7 @@ function projectLatestUserView(
       allowModelText,
     });
   } catch {
-    return { turnIndex, status: "unavailable", observedAt: settlement.observedAt };
+    return { schemaVersion: 1, turnIndex, status: "unavailable", observedAt: settlement.observedAt };
   }
 }
 

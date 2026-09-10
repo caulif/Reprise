@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import { sha256, writeAtomic } from "../core/identity.js";
@@ -271,6 +271,7 @@ export async function writeOpeningBriefing(input: {
   await writeAtomic(join(input.briefingRoot, "THIS-TURN.txt"), "");
   await writeAtomic(join(input.briefingRoot, "run", "sent-user-messages.jsonl"), "");
   await writeAtomic(join(input.briefingRoot, "current-user-view.md"), renderUserViewMarkdown({
+    schemaVersion: 1,
     turnIndex: 1,
     status: "empty",
     observedAt: "unstarted",
@@ -292,6 +293,27 @@ export async function writeSettledTurnBriefing(input: {
   prompt?: string;
   userView?: UserVisibleTurn;
 }): Promise<{ indexMarkdown: string; fileDigests: Record<string, string>; turnRelative: string }> {
+  const staged = await stageSettledTurnBriefing(input);
+  await publishBriefingLive(input.briefingRoot, staged);
+  return {
+    indexMarkdown: staged.indexMarkdown,
+    fileDigests: await digestBriefing(input.briefingRoot, staged.turnRelative),
+    turnRelative: staged.turnRelative,
+  };
+}
+
+/** Writes the immutable turn directory only. Live INDEX/current-user-view stay on the previous published set. */
+export async function stageSettledTurnBriefing(input: {
+  briefingRoot: string;
+  turnIndex: number;
+  visibleText: string;
+  events: readonly EventEnvelope[];
+  changedPaths: readonly string[];
+  allowModelText: boolean;
+  surface?: "empty" | "unavailable" | "waiting" | "failed" | "completed" | "aborted";
+  prompt?: string;
+  userView?: UserVisibleTurn;
+}): Promise<{ turnRelative: string; viewMarkdown: string; indexMarkdown: string; thisTurn: string }> {
   const turnRelative = `run/turns/${String(input.turnIndex).padStart(4, "0")}`;
   const turnDir = join(input.briefingRoot, ...turnRelative.split("/"));
   await mkdir(turnDir, { recursive: true });
@@ -300,10 +322,10 @@ export async function writeSettledTurnBriefing(input: {
   const eventIndex = ["sequence\ttype\tevent_id\tmodel_visible", ...input.events.map((event) => `${event.sequence}\t${event.type}\t${event.eventId}\t${input.allowModelText ? "1" : "0"}`)];
   await writeAtomic(join(turnDir, "event-index.tsv"), `${eventIndex.join("\n")}\n`);
   await writeAtomic(join(turnDir, "changed-paths.txt"), `${input.changedPaths.join("\n")}${input.changedPaths.length ? "\n" : ""}`);
-  await writeAtomic(join(input.briefingRoot, "THIS-TURN.txt"), `${turnRelative}\n`);
   const surface = input.surface
     ?? (!input.allowModelText ? "unavailable" : input.visibleText.trim() ? "completed" : "empty");
   const userView = input.userView ?? {
+    schemaVersion: 1,
     turnIndex: input.turnIndex,
     status: surface,
     observedAt: "settled",
@@ -312,11 +334,37 @@ export async function writeSettledTurnBriefing(input: {
   };
   const viewMarkdown = renderUserViewMarkdown(userView);
   await writeAtomic(join(turnDir, "user-view.md"), viewMarkdown);
-  await writeAtomic(join(input.briefingRoot, "current-user-view.md"), viewMarkdown);
-  const indexMarkdown = renderIndexMarkdown(turnRelative);
-  await writeAtomic(join(input.briefingRoot, "INDEX.md"), indexMarkdown);
-  await writeBriefingManifest(input.briefingRoot);
-  return { indexMarkdown, fileDigests: await digestBriefing(input.briefingRoot, turnRelative), turnRelative };
+  return {
+    turnRelative,
+    viewMarkdown,
+    indexMarkdown: renderIndexMarkdown(turnRelative),
+    thisTurn: `${turnRelative}\n`,
+  };
+}
+
+async function publishBriefingLive(
+  briefingRoot: string,
+  staged: { turnRelative: string; viewMarkdown: string; indexMarkdown: string; thisTurn: string },
+): Promise<void> {
+  const staging = join(briefingRoot, ".publish");
+  await mkdir(staging, { recursive: true });
+  try {
+    await writeAtomic(join(staging, "THIS-TURN.txt"), staged.thisTurn);
+    await writeAtomic(join(staging, "current-user-view.md"), staged.viewMarkdown);
+    await writeAtomic(join(staging, "INDEX.md"), staged.indexMarkdown);
+    const thisTurn = await readFile(join(staging, "THIS-TURN.txt"), "utf8");
+    const current = await readFile(join(staging, "current-user-view.md"), "utf8");
+    const index = await readFile(join(staging, "INDEX.md"), "utf8");
+    if (thisTurn !== staged.thisTurn || current !== staged.viewMarkdown || index !== staged.indexMarkdown) {
+      throw new Error("Controller briefing publish staging did not match the settled turn.");
+    }
+    await writeAtomic(join(briefingRoot, "current-user-view.md"), current);
+    await writeAtomic(join(briefingRoot, "THIS-TURN.txt"), thisTurn);
+    await writeAtomic(join(briefingRoot, "INDEX.md"), index);
+    await writeBriefingManifest(briefingRoot);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
 }
 
 export async function appendSentUserMessage(

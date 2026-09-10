@@ -17,10 +17,18 @@ import type { ExperimentPreflight } from "./experiment-preflight.js";
 import { experimentAgentAuditSink, invocationFact, isMissing } from "./experiment-helpers.js";
 import { inspectRun } from "./controller-queries.js";
 import type { SourceRootKind } from "./replay-conditions.js";
-import { comparisonOrientation, newComparisonAttempt, writeComparisonBriefing } from "./comparison-briefing.js";
+import {
+  comparisonAttemptMounts,
+  comparisonCandidateMount,
+  comparisonOrientation,
+  newComparisonAttempt,
+  writeComparisonBriefing,
+} from "./comparison-briefing.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
+
+export { comparisonCandidateMount };
 
 const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
@@ -189,6 +197,7 @@ async function compareExperimentOutcome(
     attemptRoot, experimentRoot: input.experimentRoot, workspaceRoot: comparisonWorkspaceRoot(input),
     taskCase: input.taskCase, record, context: briefingContext, events,
     artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
+    snapshotStatus: input.candidateSnapshotStatus,
   });
   await persistComparisonRequest(input.store, input.input.runId, attemptId, briefingContext);
   const compareContext = withOrientation(context, input, attemptId, attemptRoot, briefing.indexMarkdown);
@@ -281,35 +290,24 @@ function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]):
     : join(input.experimentRoot, "comparison-attempts", "candidate-snapshot-unavailable");
 }
 
-export function comparisonCandidateMount(input: {
-  candidateSnapshotStatus: "complete" | "incomplete" | "missing";
-  candidateSnapshotRoot: string;
-  attemptRoot: string;
-}): string {
-  if (input.candidateSnapshotStatus === "complete") return input.candidateSnapshotRoot;
-  return join(input.attemptRoot, "candidate-snapshot-unavailable");
-}
-
 function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptRoot: string): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
-  const candidateRoot = comparisonCandidateMount({
+  const mounts = comparisonAttemptMounts({
+    experimentRoot: input.experimentRoot,
+    runId: input.input.runId,
+    attemptRoot,
     candidateSnapshotStatus: input.candidateSnapshotStatus,
     candidateSnapshotRoot: input.candidateSnapshotRoot,
-    attemptRoot,
   });
+  const candidateRoot = mounts.candidate;
   return [
     ...recoveryTools(attemptRoot, {
       allowBinary: input.taskCase.privacy.allowBinary,
-      mounts: {
-        candidate: candidateRoot,
-        evidence: join(attemptRoot, "evidence"),
-        history: join(controllerRoot, "history"),
-        turns: join(controllerRoot, "run", "turns"),
-      },
+      mounts,
       allowWrite: comparisonAttemptWriteAllowed,
       completionPaths: new Set(["work/comparison-plan.md", "report.html"]),
-      denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns", "observations"],
+      denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns", "run", "observations"],
       shellCwd: scratchRoot,
       shellEnv: {
         REPRISE_BASELINE_ROOT: join(controllerRoot, "history"), REPRISE_CANDIDATE_ROOT: candidateRoot,

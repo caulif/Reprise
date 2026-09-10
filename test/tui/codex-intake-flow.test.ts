@@ -87,7 +87,8 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
     recover: async () => ({
       experimentId: "cancel-fixture",
       experimentRoot: "unused",
-      baseline: { match: "recovered", warnings: [] },
+      baseline: { match: "recovered", warnings: [], mode: "canonical" },
+      staging: { recoveryId: "r", caseId: "c", sourceRoot: "C:/source", root: "C:/source" },
       recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
     }),
@@ -197,7 +198,8 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
     recover: async () => ({
       experimentId: "cancel-fixture",
       experimentRoot: "unused",
-      baseline: { match: "recovered", warnings: [] },
+      baseline: { match: "recovered", warnings: [], mode: "canonical" },
+      staging: { recoveryId: "r", caseId: "c", sourceRoot: "C:/source", root: "C:/source" },
       recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
     }),

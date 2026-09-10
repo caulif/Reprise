@@ -275,7 +275,8 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
     recover: async () => ({
       experimentId: "codex-luna-high",
       experimentRoot: "unused",
-      baseline: { match: "recovered", warnings: [] },
+      baseline: { match: "recovered", warnings: [], mode: "canonical" },
+      staging: { recoveryId: "r", caseId: "c", sourceRoot: "C:/source", root: "C:/source" },
       recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
     }),
@@ -353,6 +354,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
           status: "completed",
           observedAt: "2026-08-11T00:10:02.000Z",
           assistantText: fullPublicResponse,
+          schemaVersion: 1,
         },
         checksum: "c".repeat(64),
       });

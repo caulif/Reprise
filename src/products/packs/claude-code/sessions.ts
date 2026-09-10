@@ -6,6 +6,7 @@ import { Value } from '@sinclair/typebox/value';
 import { SAFE_ID } from '../../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../../core/json.js';
 import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, rankSessionFiles, SessionDiscoveryError, type SessionFileEntry, validSessionTimestamp } from '../../shared/session-files.js';
+import { peekClaudeSessionId } from './protocol.js';
 import { forEachJsonlRecordLenient, withStableJsonlRead } from '../../shared/jsonl-io.js';
 import { isExcludedSession } from '../../shared/session-exclusion.js';
 import {
@@ -90,7 +91,7 @@ async function discoverClaudeSessionPage(query: SessionDiscoveryQuery): Promise<
     inspect: (entry) => summarizeClaudeSource(entry, query.signal, history.entries),
     inspectPartial: (entry, signal) => summarizeClaudeSessionHead(entry, signal),
     exclude: (session) => isExcludedSession(session, query, [root]),
-    failedSummary: (entry, code) => discoveryFailureSummary(PRODUCT_ID, entry, code),
+    failedSummary: (entry, code) => discoveryFailureSummary(PRODUCT_ID, entry, code, peekClaudeSessionId),
   });
 }
 

@@ -376,6 +376,7 @@ test('CandidateRun commits the attempt before the runtime sees the first message
           commitManifest: (value, operationId) => store.commitManifest(value, operationId),
           append: (event) => store.append(event),
           nextSequence: () => store.nextSequence(),
+          events: (runId) => store.events(runId),
         },
         attempt,
         manifest,

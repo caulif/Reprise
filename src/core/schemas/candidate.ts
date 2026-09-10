@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Id } from "./ids.js";
 
 export const CandidateLaunchContextSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
   experimentId: Id,
   runId: Id,
   workspaceRoot: Type.String({ minLength: 1 }),
@@ -41,6 +42,7 @@ export type CandidateRuntimeEventType = Static<typeof CandidateRuntimeEventTypeS
 
 /** Journal payload for `runtime.<CandidateRuntimeEventType>` EventEnvelope rows. Envelope owns eventId, sequence, type, and occurredAt. */
 export const CandidateRuntimeEventSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
   sessionId: Type.String({ minLength: 1 }),
   turnId: Type.Optional(Type.String({ minLength: 1 })),
   messageId: Type.Optional(Type.String({ minLength: 1 })),
@@ -50,6 +52,7 @@ export const CandidateRuntimeEventSchema = Type.Object({
 export type CandidateRuntimeEvent = Static<typeof CandidateRuntimeEventSchema>;
 
 export const UserVisibleTurnSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
   turnIndex: Type.Integer({ minimum: 1 }),
   status: Type.Union([
     Type.Literal("completed"),

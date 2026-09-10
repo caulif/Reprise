@@ -16,7 +16,7 @@ import { prepareExperiment } from '../application/experiment-operations.js';
 import { recoveryViewFromAttempt } from '../application/recovery/view.js';
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import { record, text } from '../core/json.js';
-import type { CandidateRunPhase } from './pages/run.js';
+import { candidateRunPhaseFromEvent, candidateRunDisplayFromEvents, isCandidateRunState } from '../application/candidate-run-phase.js';
 
 function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
@@ -471,6 +471,9 @@ export function candidateGateFrom(c: ControllerHandle): CandidateStartGate {
 
 function resetRunDiagnostics(c: ControllerHandle): void {
   c.runPhase = undefined;
+  c.machineState = undefined;
+  c.runFailed = false;
+  c.cleanupStatus = undefined;
   c.lastRuntimeEventAt = undefined;
   c.lastRuntimeEventKind = undefined;
   c.modelOutputSeen = false;
@@ -481,37 +484,29 @@ function resetRunDiagnostics(c: ControllerHandle): void {
 function noteRunDiagnostics(c: ControllerHandle, event: EventEnvelope): void {
   c.lastRuntimeEventAt = event.occurredAt;
   c.lastRuntimeEventKind = event.type;
-  const phase = phaseForEvent(event);
+  const phase = candidateRunPhaseFromEvent(event);
   if (phase) c.runPhase = phase;
+  if (event.type === 'run.state_changed') {
+    const to = text(record(event.payload).to);
+    if (isCandidateRunState(to)) c.machineState = to;
+  }
+  if (event.type === 'run.outcome_created') {
+    const display = candidateRunDisplayFromEvents([event]);
+    c.runFailed = display.failed;
+    c.cleanupStatus = display.cleanupStatus;
+  }
   if (event.type === 'runtime.visible_output' || event.type === 'runtime.turn_settled') c.modelOutputSeen = true;
   if (event.type !== 'runtime.runtime_failed') return;
   const attempt = parseReconnectAttempt(text(record(event.payload).message) ?? '');
   if (!attempt) return;
   c.reconnectCount = attempt.current;
   c.reconnectTotal = attempt.total;
-  c.runPhase = 'candidate_reconnecting';
 }
 
 function parseReconnectAttempt(message: string): { current: number; total: number } | undefined {
   const match = /Reconnecting\s+(\d+)\s*\/\s*(\d+)/i.exec(message);
   if (!match) return undefined;
   return { current: Number(match[1]), total: Number(match[2]) };
-}
-
-function phaseForEvent(event: EventEnvelope): CandidateRunPhase | undefined {
-  const type = event.type;
-  if (type.startsWith('recovery.')) return 'recovery';
-  if (type.startsWith('agent.') && text(record(event.payload).role) === 'recovery') return 'recovery';
-  if (type === 'run.attempt_created' || type === 'runtime.session_started') return 'candidate_starting';
-  if (type === 'runtime.delivery_observed' || (type === 'run.state_changed' && record(event.payload).to === 'awaiting_target')) return 'candidate_generating';
-  if (
-    type === 'runtime.turn_started'
-    || type === 'runtime.tool_started'
-    || type === 'runtime.tool_finished'
-    || type === 'runtime.visible_output'
-    || type === 'runtime.visible_prompt'
-  ) return 'candidate_generating';
-  return undefined;
 }
 
 function openCandidateProductPicker(c: ControllerHandle): void {

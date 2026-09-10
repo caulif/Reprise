@@ -43,6 +43,7 @@ test('fake ProductPack discovers sessions, lists models, and creates a runner', 
 
 test('CandidateLaunchContext and CandidateSessionHandle persist only after schema check', () => {
   const context = {
+    schemaVersion: 1,
     experimentId: 'exp-1',
     runId: 'run-1',
     workspaceRoot: 'C:/reprise/workspace',

@@ -56,6 +56,26 @@ test('shared pack host helpers do not import protocol or projection', async () =
   }
 });
 
+test('shared pack helpers do not branch on productId literals', async () => {
+  for (const file of await tsFiles(join(SRC, 'products', 'shared'))) {
+    const source = await readFile(file, 'utf8');
+    assert.doesNotMatch(source, /productId\s*===\s*['"]/, `${relative(SRC, file)} branches on a productId literal`);
+  }
+});
+
+test('TUI run diagnostics import Application phase projection', async () => {
+  const source = await readFile(join(SRC, 'tui/controller-run.ts'), 'utf8');
+  assert.match(source, /candidateRunPhaseFromEvent/);
+  assert.match(source, /candidateRunDisplayFromEvents/);
+  assert.doesNotMatch(source, /function phaseForEvent/);
+});
+
+test('TUI view projection does not parse timeline titles for CandidateRun state', async () => {
+  const source = await readFile(join(SRC, 'tui/view-projection.ts'), 'utf8');
+  assert.doesNotMatch(source, /currentRunState/);
+  assert.match(source, /machineState/);
+});
+
 test('packs do not import each other', async () => {
   const packs = ['codex', 'claude-code'];
   for (const pack of packs) {
@@ -101,7 +121,7 @@ test('internal agents share workspace tools without read_observation', async () 
   const experiment = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
   assert.match(experiment, /comparison\.requested/);
   assert.doesNotMatch(experiment, /write_comparison_report|read_artifact|observationTools|read_observation/);
-  const loop = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
+  const loop = await readFile(join(SRC, 'application/experiment-controller-loop.ts'), 'utf8');
   assert.match(loop, /experimentAgentAuditSink/);
   assert.match(loop, /controllerBriefingRoot/);
   assert.match(loop, /assertBriefingOutsideReplica/);
@@ -168,8 +188,10 @@ test('role write policy stays on application owners without a shared Verifier', 
   const comparisonAgent = await readFile(join(SRC, 'agents/comparison-agent.ts'), 'utf8');
   assert.doesNotMatch(comparisonAgent, /#host\.request/);
   assert.match(comparisonAgent, /createSession/);
+  const loop = await readFile(join(SRC, 'application/experiment-controller-loop.ts'), 'utf8');
+  assert.match(loop, /allowWrite:\s*\(\)\s*=>\s*false/);
+  assert.doesNotMatch(loop, /interface\s+\w*Verifier/);
   const experiment = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
-  assert.match(experiment, /allowWrite:\s*\(\)\s*=>\s*false/);
   assert.doesNotMatch(experiment, /interface\s+\w*Verifier/);
   const tools = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
   assert.match(tools, /pathContainedBy/);
@@ -193,7 +215,8 @@ test('TUI timeline projection does not load product packs', async () => {
   assert.match(timeline, /candidate\.user_view_persisted/);
   const experiment = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
   assert.doesNotMatch(experiment, /persistPublicActivities/);
-  assert.match(experiment, /isCandidateRuntimeJournalType/);
+  assert.match(experiment, /createCandidateRuntimeSink/);
+  assert.doesNotMatch(experiment, /type: targetEvent\.type/);
   const journal = await readFile(join(SRC, 'application/candidate-run-events.ts'), 'utf8');
   assert.match(journal, /CandidateRuntimeEventSchema/);
   assert.match(journal, /Value\.Check\(CandidateRuntimeEventSchema, envelope\.payload\)/);
@@ -350,7 +373,7 @@ test('TUI pages do not import run operations', async () => {
   const violations: string[] = [];
   for (const file of files) {
     const source = await readFile(file, 'utf8');
-    if (/from\s+['"][^'"]*(?:experiment-workflow|experiment-operations|candidate-run|recovery\/run)/.test(source)) {
+    if (/from\s+['"][^'"]*(?:experiment-workflow|experiment-operations|candidate-run\.js|candidate-run-cleanup|candidate-run-events|recovery\/run)/.test(source)) {
       violations.push(relative(SRC, file).split(sep).join('/'));
     }
   }
@@ -427,6 +450,7 @@ test('ProductPack contract uses history, ProductRuntime, and projection without 
   await assert.rejects(stat(join(SRC, 'application/candidate-launch.ts')));
   await assert.rejects(stat(join(SRC, 'application/candidate-runtime-journal.ts')));
   await assert.rejects(stat(join(SRC, 'application/recovery/run-preflight.ts')));
+  await stat(join(SRC, 'application/experiment-controller-loop.ts'));
   await stat(join(SRC, 'application/candidate-run-cleanup.ts'));
   await stat(join(SRC, 'application/candidate-run-facts.ts'));
   await stat(join(SRC, 'application/recovery/admission.ts'));

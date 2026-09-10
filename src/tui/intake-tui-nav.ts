@@ -71,6 +71,9 @@ export function IntakeTui_showError(this: IntakeTui, error: unknown, returnPage:
     this.preparePhase = undefined;
     this.prepareDetail = undefined;
     this.runPhase = undefined;
+    this.machineState = undefined;
+    this.runFailed = false;
+    this.cleanupStatus = undefined;
     this.lastRuntimeEventAt = undefined;
     this.lastRuntimeEventKind = undefined;
     this.modelOutputSeen = false;

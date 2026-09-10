@@ -182,6 +182,9 @@ export function view(c: IntakeTui): WorkbenchView {
         }
       : {}),
     ...(c.runPhase ? { runPhase: c.runPhase } : {}),
+    ...(c.machineState ? { machineState: c.machineState } : {}),
+    ...(c.runFailed ? { runFailed: true } : {}),
+    ...(c.cleanupStatus ? { cleanupStatus: c.cleanupStatus } : {}),
     ...(c.lastRuntimeEventAt ? { lastRuntimeEventAt: c.lastRuntimeEventAt } : {}),
     ...(c.lastRuntimeEventKind ? { lastRuntimeEventKind: c.lastRuntimeEventKind } : {}),
     ...(c.modelOutputSeen ? { modelOutputSeen: true } : {}),

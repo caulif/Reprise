@@ -10,6 +10,9 @@ import { caretAt } from '../text-edit.js';
 import type { Theme } from '../theme.js';
 import type { TimelineEntry } from '../timeline.js';
 import { kv, pad, panel, type PreparePhase } from '../widgets.js';
+import type { CandidateRunPhase } from '../../application/candidate-run-phase.js';
+
+export type { CandidateRunPhase };
 
 export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
 export type RecoveryPreviewModel = {
@@ -36,7 +39,6 @@ export type ConfirmModel = PreflightModel & {
   readonly harnessAuthOk?: boolean;
   readonly sourceProductLabel?: string;
 };
-export type CandidateRunPhase = 'recovery' | 'candidate_starting' | 'candidate_generating' | 'candidate_reconnecting';
 export type RunningModel = {
   readonly entries: readonly TimelineEntry[];
   readonly selected: number;
@@ -335,15 +337,6 @@ export function compareGateHints(locale: Locale = 'en'): readonly (readonly [str
   return [['c', t(locale, 'hintRunComparison')], ['Esc', t(locale, 'hintHome')], ['Ctrl+C', t(locale, 'hintExit')]];
 }
 
-export function currentRunState(entries: readonly TimelineEntry[]): CandidateRunState | undefined {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const match = /State: .* (?:→|->) ([a-z_]+)/.exec(entries[index]?.title ?? '');
-    const state = match?.[1];
-    if (state && isRunState(state)) return state;
-  }
-  return undefined;
-}
-
 export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {
   if (startedAt && startedAt > 0) return formatElapsed(now - startedAt);
   const first = entries[0]?.occurredAt;
@@ -388,10 +381,4 @@ function userRecoveryHeadline(value: string, locale: Locale): string {
 function localizedComparison(value: string, locale: Locale): string {
   const key = value === 'observational' ? 'observationalValue' : value === 'recovered' ? 'recoveredValue' : value === 'recovered_partial' ? 'recoveredPartialValue' : undefined;
   return key ? t(locale, key) : value;
-}
-
-function isRunState(value: string): value is CandidateRunState {
-  return value === 'created' || value === 'preparing' || value === 'launching'
-    || value === 'awaiting_target' || value === 'awaiting_controller'
-    || value === 'finalizing' || value === 'finished';
 }

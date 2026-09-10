@@ -13,6 +13,7 @@ import {
   renderOutlineTsv,
   writeOpeningBriefing,
   writeSettledTurnBriefing,
+  stageSettledTurnBriefing,
 } from "../../src/application/controller-briefing.js";
 import type { TaskCase } from "../../src/core/schema.js";
 
@@ -174,6 +175,32 @@ test("settled-turn digest changes when visible.txt changes", async () => {
   assert.match(await readFile(join(briefingRoot, "run/turns/0001/event-index.tsv"), "utf8"), /sequence\ttype\tevent_id\tmodel_visible/);
   assert.match(await readFile(join(briefingRoot, "run/turns/0001/user-view.md"), "utf8"), /status=completed/);
   assert.match(await readFile(join(briefingRoot, "current-user-view.md"), "utf8"), /second pass html/);
+});
+
+test("staging a settled turn does not replace the previous live Controller view", async () => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-briefing-interrupt-"));
+  const briefingRoot = join(root, "briefing");
+  const replicaRoot = join(root, "replica");
+  await mkdir(replicaRoot, { recursive: true });
+  await writeOpeningBriefing({
+    briefingRoot,
+    replicaRoot,
+    taskCase: taskCase("第二页太空了。"),
+    sourceRootKind: "historical_start",
+  });
+  const openingView = await readFile(join(briefingRoot, "current-user-view.md"), "utf8");
+  const openingThisTurn = await readFile(join(briefingRoot, "THIS-TURN.txt"), "utf8");
+  await stageSettledTurnBriefing({
+    briefingRoot,
+    turnIndex: 1,
+    visibleText: "partial html",
+    events: [],
+    changedPaths: ["out.html"],
+    allowModelText: true,
+  });
+  assert.equal(await readFile(join(briefingRoot, "current-user-view.md"), "utf8"), openingView);
+  assert.equal(await readFile(join(briefingRoot, "THIS-TURN.txt"), "utf8"), openingThisTurn);
+  assert.match(await readFile(join(briefingRoot, "run/turns/0001/user-view.md"), "utf8"), /partial html/);
 });
 
 test("permissions.txt keeps Controller tools read-only when the historical candidate had full access", async () => {

@@ -6,9 +6,13 @@
 
 ## 当前批次
 
-Application / 候选链：按执行指南对齐目标树（history discover/read/normalize、process spawn/terminate/stdio、Pack runner/protocol、controller-queries、recovery/input、测试分目录）。规划见 [Application 与候选链](../plan/application-candidate-agent-refactor.md) 与 [执行指南](../plan/application-candidate-agent-refactor-execution.md)。
+按[重构后续审查清单](../plan/post-refactor-architecture-audit.md)收口 Comparison 双轨读取、Runtime Journal 归属、终态查询投影与规划文档术语。
 
 ## 验证记录
+
+2026-09-10 二次审查：Comparison 从 attempt 根按 INDEX 挂载读取双轨材料；Runtime Journal 校验 turn/message/call 与 session 生命周期；终态由 `candidateRunDisplayFromEvents` 投影，TUI 不再解析时间线 `State:`；规划文档 `projection` 与 `runtime` 并列。ADR：[Journal 归属](../decisions/accepted/2026-09-10-runtime-journal-affiliation.md)、[阶段查询](../decisions/accepted/2026-09-10-candidate-run-phase-query.md)。`audit-root/` 与 `unused/` 已在 `.gitignore`。`npm run check` 17 门禁通过（847 pass / 4 skip）。
+
+2026-09-10 审查清单：Controller briefing 原子发布；Comparison `SNAPSHOT.txt` 与失败不覆盖成功 `report.html`；Recovery 机械检查失败不得沿用未通过信封；TUI 阶段走 `candidateRunPhaseFromEvent`；共享 JSONL peek 由 Pack 传入提取函数；LaunchContext / Runtime payload / UserVisibleTurn 写 schemaVersion 1，未知事件版本 `unsupported_schema`。ADR：[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)、[封存快照](../decisions/accepted/2026-09-10-comparison-sealed-snapshot.md)、[机械检查 fail-closed](../decisions/accepted/2026-09-10-recovery-mechanical-fail-closed.md)、[阶段查询](../decisions/accepted/2026-09-10-candidate-run-phase-query.md)、[schemaVersion](../decisions/accepted/2026-09-10-persistent-schema-version.md)。`npm run check` 17 门禁通过（843 pass / 4 skip）。
 
 2026-09-10 抽取 Claude Code 与 Codex 共享宿主（进程关闭、turn wait、可用性探测、Session listing 摘要）；`protocol`/`projection` 仍在 Pack。仓库根 `audit-root/`、`unused/` 加入 `.gitignore`。ADR：[Pack 共享宿主](../decisions/accepted/2026-09-10-pack-shared-runtime-host.md)。`npm run check` 静态/jscpd/knip/审计通过（jscpd 16 clones、0.44% duplicated tokens）；`npm run test:only` 835 pass / 4 skip。
 

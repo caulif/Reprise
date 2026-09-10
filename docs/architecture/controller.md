@@ -277,7 +277,7 @@ Host 在读取前执行 run ownership、路径边界、类型、大小和 privac
 
 ## 7. SteeringContext
 
-Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`current-user-view.md` 是用户可见表面快照：可见助手文本只取最近一次 settlement 事件区间，确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 只读工具与候选运行权限；后者来自历史会话已解析设置，缺失时标 unconfirmed。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)。
+Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`current-user-view.md` 是用户可见表面快照：可见助手文本只取最近一次 settlement 事件区间，确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 只读工具与候选运行权限；后者来自历史会话已解析设置，缺失时标 unconfirmed。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)。
 
 ```ts
 interface SteeringContext {

@@ -2,11 +2,11 @@ import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import type { ExperimentResult } from '../application/experiment.js';
 import type { ExperimentPreflight } from '../application/experiment-preflight.js';
 import type { RecoveryView } from '../application/recovery/view.js';
-import type { CandidateSpec, RunPolicy, TaskCase } from '../core/schema.js';
+import type { CandidateSpec, RunPolicy, TaskCase, CandidateRunState } from '../core/schema.js';
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from '../core/runtime.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
-import { countCalls, countTurns, currentRunState, elapsedFrom, type CandidateRunPhase } from './pages/run.js';
+import { countCalls, countTurns, elapsedFrom, type CandidateRunPhase } from './pages/run.js';
 import { TIMELINE_FILTERS } from './format.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { IntakeLevel, SessionProject } from './pages/intake.js';
@@ -35,6 +35,9 @@ type Input = {
   readonly candidateSuggestedValue?: string;
   readonly preparePhase?: PreparePhase; readonly prepareDetail?: string;
   readonly runPhase?: CandidateRunPhase;
+  readonly machineState?: CandidateRunState;
+  readonly runFailed?: boolean;
+  readonly cleanupStatus?: string;
   readonly lastRuntimeEventAt?: string;
   readonly lastRuntimeEventKind?: string;
   readonly modelOutputSeen?: boolean;
@@ -69,7 +72,7 @@ function runningModel(input: Input) {
   const candidateSessionId = candidateSessionIdFrom(input.timeline);
   return {
     entries: input.visibleTimeline, selected: input.timelineSelected, filter: TIMELINE_FILTERS[input.timelineFilterIndex] ?? 'ALL',
-    following: input.timelineFollowing, cancelling: input.cancelling, currentState: currentRunState(input.timeline),
+    following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
     elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },

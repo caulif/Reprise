@@ -6,7 +6,7 @@ import type { ExperimentResult, ExperimentHandle } from '../application/experime
 import type { ExperimentPreflight } from '../application/experiment-preflight.js';
 import type { RecoveryView } from '../application/recovery/view.js';
 import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
-import type { TaskCase } from '../core/schema.js';
+import type { TaskCase, CandidateRunState } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
 import { coveringFoldIds, foldProcessEntries, selectedIndexAfterFold } from './fold-process.js';
@@ -115,6 +115,9 @@ export type ControllerHandle = {
   runClock: ReturnType<typeof setInterval> | undefined;
   cancelling: boolean;
   runPhase: CandidateRunPhase | undefined;
+  machineState: CandidateRunState | undefined;
+  runFailed: boolean;
+  cleanupStatus: string | undefined;
   lastRuntimeEventAt: string | undefined;
   lastRuntimeEventKind: string | undefined;
   modelOutputSeen: boolean;

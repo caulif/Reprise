@@ -109,7 +109,7 @@ function packModule(input: {
     ? `history: { defaultRoot: "C:/reprise-fixture", discover: async () => ({ items: [], scanned: 0, skipped: 0, diagnostics: [] }), inspect: async () => { throw new Error("unused"); }, import: async () => { throw new Error("unused"); } },`
     : "";
   const runtime = input.runtime
-    ? `runtime: { listCatalog: async () => [], inspectAvailability: async () => [], validateCandidate: async () => ({}), createRunner: async () => { throw new Error("unused"); } }, projection: { inspectRunFacts: () => ({ commands: [], rejectedApprovals: [] }), projectTurn: () => ({ turnIndex: 1, status: "empty", observedAt: "2026-09-09T00:00:00.000Z" }) }, defaultCandidate: () => ({ candidateId: "x", productId: ${JSON.stringify(input.productId)}, requestedModel: "x" }), recoveryPlaybook: () => ({ version: "x", sha256: ${JSON.stringify("0".repeat(64))}, text: "# x\\n" }),`
+    ? `runtime: { listCatalog: async () => [], inspectAvailability: async () => [], validateCandidate: async () => ({}), createRunner: async () => { throw new Error("unused"); } }, projection: { inspectRunFacts: () => ({ commands: [], rejectedApprovals: [] }), projectTurn: () => ({ schemaVersion: 1, turnIndex: 1, status: "empty", observedAt: "2026-09-09T00:00:00.000Z" }) }, defaultCandidate: () => ({ candidateId: "x", productId: ${JSON.stringify(input.productId)}, requestedModel: "x" }), recoveryPlaybook: () => ({ version: "x", sha256: ${JSON.stringify("0".repeat(64))}, text: "# x\\n" }),`
     : "";
   return `export const pack = {
     manifest: { productId: ${JSON.stringify(input.productId)}, displayName: ${JSON.stringify(input.productId)}, packVersion: "0.0.1", schemaVersion: 1, apiMajor: ${input.apiMajor ?? 3}, capabilities: ${JSON.stringify(input.capabilities)} },

@@ -9,6 +9,7 @@ import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { DiscoveryDiagnostic, SessionSummary } from '../../contract.js';
 import { peekJsonlSessionId } from '../../shared/jsonl-io.js';
+import { peekCodexSessionMetaId } from './protocol.js';
 import { readCodexGlobalState, type CodexGlobalState } from './global-state.js';
 import { classifyCodexProject } from './project-attribution.js';
 
@@ -166,7 +167,7 @@ function rolloutMatchesThread(
 ): boolean {
   const known = sessionIdsByPath?.get(catalogPathKey(candidate));
   if (known) return known === threadId;
-  return peekJsonlSessionId('codex', candidate) === threadId;
+  return peekJsonlSessionId(candidate, peekCodexSessionMetaId) === threadId;
 }
 
 export function catalogPathKey(path: string): string {

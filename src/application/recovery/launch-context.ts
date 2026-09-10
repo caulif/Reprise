@@ -9,6 +9,7 @@ export function candidateLaunchFor(
   experimentId = "exp-1",
 ): CandidateLaunchContext {
   return {
+    schemaVersion: 1,
     experimentId,
     runId: environment.runId,
     workspaceRoot: environment.root,

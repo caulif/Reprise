@@ -39,3 +39,7 @@ export function claudeSettlementStatus(
   if (subtype === "success" && frame.is_error !== true) return "completed";
   return undefined;
 }
+
+export function peekClaudeSessionId(row: Record<string, unknown>): string | undefined {
+  return text(row.sessionId);
+}

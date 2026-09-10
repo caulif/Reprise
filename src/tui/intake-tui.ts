@@ -4,7 +4,7 @@ import type { ExperimentResult, ExperimentHandle } from "../application/experime
 import type { ExperimentPreflight } from "../application/experiment-preflight.js";
 import type { RecoveryView } from "../application/recovery/view.js";
 import type { ExperimentWorkflow } from "../application/experiment-workflow.js";
-import type { TaskCase, CandidateSpec } from "../core/schema.js";
+import type { TaskCase, CandidateSpec, CandidateRunState } from "../core/schema.js";
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
 import {
   defaultHarnessModelConfig,
@@ -173,6 +173,9 @@ export class IntakeTui {
   runStartedAt = 0;
   runClock: ReturnType<typeof setInterval> | undefined;
   runPhase: CandidateRunPhase | undefined;
+  machineState: CandidateRunState | undefined;
+  runFailed = false;
+  cleanupStatus: string | undefined;
   lastRuntimeEventAt: string | undefined;
   lastRuntimeEventKind: string | undefined;
   modelOutputSeen = false;

@@ -155,7 +155,7 @@ type CandidateSessionHandle = {
 
 验收：Fake Runner 覆盖 accepted/rejected/unknown、completed/waiting/failed/aborted、超时、取消、迟到事件、stop 和 cleanup；真实产品只走显式 opt-in smoke。
 
-### 3.6 标准 Runtime 事件与 UserSurfaceProjection
+### 3.6 标准 Runtime 事件与独立 Projection 端口
 
 目标文件：
 
@@ -164,6 +164,8 @@ src/core/runtime.ts
 src/products/packs/<product>/projection.ts
 src/application/candidate-run-events.ts
 ```
+
+`projection` 是 `ProductPack` 的第三个端口，与 `runtime` 并列。不要把它写进 `ProductRuntime`，也不要在 Application 按产品类型投影用户表面。
 
 Adapter 将原始消息转换为 Journal 行：`EventEnvelope`（`type` 为 `runtime.<CandidateRuntimeEventType>`）加上 payload `CandidateRuntimeEvent`：
 

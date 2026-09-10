@@ -142,5 +142,11 @@ test('comparison orientation does not inline the initial task and points at user
   assert.match(prompt, /facts\/context\.json/);
 });
 
+test('comparison briefing names incomplete and unknown snapshots', async () => {
+  const { comparisonSnapshotLabel } = await import('../../src/application/comparison-briefing.js');
+  assert.equal(comparisonSnapshotLabel('missing'), 'unknown');
+  assert.equal(comparisonSnapshotLabel('incomplete'), 'incomplete');
+});
+
 
 

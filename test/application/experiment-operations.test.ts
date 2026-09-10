@@ -93,7 +93,14 @@ test('candidate start gate stays on application owners', () => {
   assert.match(
     candidateStartBlocked({
       blockedReasons: [],
-      recovery: { hasAccept: false, hasStaging: false, baselineMode: 'canonical', userStatus: 'failed' },
+      recovery: { hasAccept: true, hasStaging: false, baselineMode: 'canonical', envelopeStatus: 'ready', userStatus: 'recovered' },
+    }) ?? '',
+    /staging is incomplete/,
+  );
+  assert.match(
+    candidateStartBlocked({
+      blockedReasons: [],
+      recovery: { hasAccept: true, hasStaging: true, baselineMode: 'canonical', envelopeStatus: 'blocked', runnable: 'isolated' },
     }) ?? '',
     /runnable workspace/,
   );

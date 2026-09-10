@@ -1,4 +1,4 @@
-import { record, text } from "../../../core/json.js";
+import { record, text, type JsonRecord } from "../../../core/json.js";
 import { runtimeTargetEvent, type TargetEvent } from "../../../core/runtime.js";
 import { redactNotificationParams } from "./turn-settlement.js";
 
@@ -16,6 +16,10 @@ export function codexNotificationEvent(method: string, params: unknown): TargetE
   if (method === "turn/plan/updated") return runtimeTargetEvent("visible_output", { kind: "plan", ...record(payload) });
   if (method === "mcpServer/startupStatus/updated") return runtimeTargetEvent("tool_started", payload);
   return undefined;
+}
+
+export function peekCodexSessionMetaId(row: JsonRecord): string | undefined {
+  return text(row.type) === "session_meta" ? text(record(row.payload).id) : undefined;
 }
 
 function mapItem(completed: boolean, payload: unknown): TargetEvent | undefined {

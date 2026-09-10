@@ -229,10 +229,6 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
       }
       if (session.recovery.status === "completed") session.lastCompletedRecovery = session.recovery;
       if (session.recovery.status !== "completed") {
-        if (previousCompleted?.status === "completed") {
-          session.recovery = previousCompleted;
-          return;
-        }
         session.failureStage = recoveryInvocationFailureStage(session.recovery);
         throw new Error(`Recovery mechanical feedback did not complete: ${session.recovery.status}.`, { cause: error });
       }

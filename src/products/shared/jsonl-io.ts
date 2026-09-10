@@ -1,7 +1,7 @@
 import { closeSync, createReadStream, openSync, readSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
-import { isRecord, record, text, type JsonRecord } from '../../core/json.js';
+import { isRecord, type JsonRecord } from '../../core/json.js';
 import { SAFE_ID } from '../../core/identity.js';
 import type { RecoveryDiagnostic } from '../../core/schema.js';
 
@@ -28,7 +28,7 @@ export function readFileHeadSync(path: string, maxBytes = SESSION_HEAD_BYTES): {
   }
 }
 
-export function peekJsonlSessionId(productId: string, path: string): string | undefined {
+export function peekJsonlSessionId(path: string, extractId: (row: JsonRecord) => string | undefined): string | undefined {
   try {
     const { text: head } = readFileHeadSync(path);
     for (const line of head.split(/\r?\n/)) {
@@ -36,9 +36,7 @@ export function peekJsonlSessionId(productId: string, path: string): string | un
       let parsed: unknown;
       try { parsed = JSON.parse(line); } catch { continue; }
       if (!isRecord(parsed)) continue;
-      const id = productId === 'codex'
-        ? text(parsed.type) === 'session_meta' ? text(record(parsed.payload).id) : undefined
-        : text(parsed.sessionId);
+      const id = extractId(parsed);
       if (id && SAFE_ID.test(id)) return id;
     }
   } catch {

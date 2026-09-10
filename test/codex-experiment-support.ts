@@ -70,6 +70,11 @@ export class VerifiedRuntime implements ProductRuntime {
   ): Promise<TargetRunner> {
     this.created += 1;
     await sink.append({
+      type: "runtime.session_started",
+      occurredAt: now,
+      payload: { productId: "verified-test" },
+    });
+    await sink.append({
       type: "runtime.tool_finished",
       occurredAt: now,
       payload: { item: { type: "commandExecution", command: "npm test" } },

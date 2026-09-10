@@ -26,7 +26,6 @@ export class ScriptedRunner implements TargetRunner {
   #cancelled = false;
   #waitReject: ((reason: Error) => void) | undefined;
   #sink: TargetEventSink | undefined;
-  #sequence = 0;
 
   constructor(
     deliveries: readonly DeliveryReceipt[],
@@ -134,11 +133,10 @@ export class ScriptedRunner implements TargetRunner {
 
   async #emit(type: string, payload: Record<string, unknown>): Promise<void> {
     if (!this.#sink) return;
-    this.#sequence += 1;
     await this.#sink.append({
       type: `runtime.${type}`,
       occurredAt: '2026-09-09T00:00:00.000Z',
-      payload: { ...payload, sequence: this.#sequence, evidenceRefs: [] },
+      payload: { ...payload, evidenceRefs: [] },
     });
   }
 }

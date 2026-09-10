@@ -223,7 +223,7 @@ export function projectUserVisibleTurn(input: {
   allowModelText: boolean;
 }): UserVisibleTurn {
   if (!input.allowModelText) {
-    return { turnIndex: input.turnIndex, status: 'unavailable', observedAt: input.settlement.observedAt };
+    return { schemaVersion: 1, turnIndex: input.turnIndex, status: 'unavailable', observedAt: input.settlement.observedAt };
   }
   const mapped =
     input.settlement.status === 'waiting_input' ? 'waiting'
@@ -233,6 +233,7 @@ export function projectUserVisibleTurn(input: {
     : 'unavailable';
   if (mapped === 'failed' || mapped === 'aborted') {
     return {
+      schemaVersion: 1,
       turnIndex: input.turnIndex,
       status: mapped,
       observedAt: input.settlement.observedAt,
@@ -243,6 +244,7 @@ export function projectUserVisibleTurn(input: {
   const prompt = input.facts.prompt?.trim() ?? '';
   if (mapped === 'completed' && !text) {
     return {
+      schemaVersion: 1,
       turnIndex: input.turnIndex,
       status: 'empty',
       observedAt: input.settlement.observedAt,
@@ -250,6 +252,7 @@ export function projectUserVisibleTurn(input: {
     };
   }
   return {
+    schemaVersion: 1,
     turnIndex: input.turnIndex,
     status: mapped,
     observedAt: input.settlement.observedAt,

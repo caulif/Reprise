@@ -510,6 +510,9 @@ async function readEvents(eventsPath: string): Promise<EventEnvelope[]> {
     const { checksum, ...body } = event;
     if (checksum !== eventChecksum(body)) throw new Error(`Event checksum mismatch at sequence ${index + 1}.`);
     if (event.sequence !== index + 1) throw new Error(`Event sequence is not contiguous at sequence ${index + 1}.`);
+    if (event.schemaVersion !== SCHEMA_VERSION) {
+      throw new Error(`unsupported_schema: event schemaVersion ${event.schemaVersion} at sequence ${index + 1}.`);
+    }
     return event;
   });
 }

@@ -16,7 +16,7 @@ import {
 import { assertTransition, canTransition } from '../../src/core/state-machine.js';
 import { controllerRequestSnapshot } from '../../src/application/controller-briefing.js';
 import { reconstructControllerRequest } from '../../src/application/controller-request.js';
-import { sha256 } from '../../src/core/identity.js';
+import { sha256, eventEnvelopeChecksum } from '../../src/core/identity.js';
 import { ExperimentStore, RecoveryArtifactBudgetError } from '../../src/infrastructure/store/experiment-store.js';
 
 function lockNonce(raw: string): string {
@@ -437,6 +437,25 @@ test('store allows only one writer on an experiment and does not serialize diffe
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(other, { recursive: true, force: true });
+  }
+});
+
+test("store refuses to open a journal with an unsupported schemaVersion", async () => {
+  const root = await temporaryExperiment();
+  try {
+    const event = {
+      schemaVersion: 99,
+      sequence: 1,
+      eventId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      occurredAt: "2026-09-10T00:00:00.000Z",
+      type: "run.noted",
+      payload: {},
+    };
+    const checksum = eventEnvelopeChecksum(event);
+    await writeFile(join(root, "events.jsonl"), `${JSON.stringify({ ...event, checksum })}\n`);
+    await assert.rejects(ExperimentStore.open(root, "experiment-1"), /unsupported_schema/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

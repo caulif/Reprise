@@ -10,7 +10,7 @@ Comparison 需要同时阅读历史会话与候选运行，但不能把两侧压
 
 ## 决定
 
-CandidateRun 清理封存后，Host 生成不可变 `comparison-attempts/{attemptId}`，根上包含 `INDEX.md`、`facts/`、`history/`、`candidate/` 和 `work/`。`history/` 提供历史消息索引并指向 `observations/`；`candidate/` 提供过程索引、用户视图副本和 outcome。缺失 token/速度/费用保持缺失。Agent 仍通过既有 briefing 工具面阅读，不访问活动 Session，不改写事实。
+CandidateRun 清理封存后，Host 生成不可变 `comparison-attempts/{attemptId}`，根上包含 `INDEX.md`、`facts/`、`history/`、`candidate/` 和 `work/`。`history/` 提供历史消息索引并指向 `observations/`；`candidate/` 提供过程索引、用户视图副本和 outcome。缺失 token/速度/费用保持缺失。Agent 仍通过既有 briefing 工具面阅读，挂载 `history/`、`turns/`、`run/`、封存 `candidate/` 与 `evidence/`。不访问活动 Session，不改写事实。
 
 `RunRecord` 可携带绑定后的 `session`（`CandidateSessionHandle`），供 CLI/TUI 输出候选 `sessionId`。
 
@@ -26,4 +26,4 @@ CandidateRun 清理封存后，Host 生成不可变 `comparison-attempts/{attemp
 
 ## 验证
 
-`test/codex-experiment.test.ts` 断言 attempt 根 `INDEX.md` 与 `candidate/outcome.json`。`npm run check` 必须通过。
+`test/application/comparison-tracks.test.ts` 从新建 attempt 根按 INDEX 挂载读取全部 settled user-view、Controller 消息、Runtime 过程、历史用户输入与历史 Agent 过程、artifacts 与 workspace snapshot。`test/codex-experiment.test.ts` 断言 attempt 根 `INDEX.md` 与 `candidate/outcome.json`。`npm run check` 必须通过。
