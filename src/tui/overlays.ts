@@ -49,9 +49,8 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
     'Enter      Confirm this model',
     'b          Change product',
   ],
-  preflight: ['b          Edit source root', 'Esc        Back to Home'],
+  preflight: ['Esc        Back to Home'],
   confirm: ['Enter      Start the candidate run', 'b          Change model', 'Esc        Back to Home'],
-  'compare-gate': ['c          Start comparison', 'Esc        Home (skip comparison)'],
   running: ['Ctrl+C     Request cancellation', '/          Find in timeline', 'v          Reading mode', 'Esc        Stays on the record'],
   result: [
     'c          Start comparison when offered',

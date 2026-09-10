@@ -43,7 +43,7 @@ const workspace = await mkdtemp(join(tmpdir(), "reprise-controller-eval-"));
 for (const item of familyRepresentativeCases()) {
   const packed = await packControllerEvalCase(join(workspace, item.id), item);
   const result = await agents.controller.decide(packed.context, packed.tools);
-  agents.controller.release?.(packed.context.runId);
+  await agents.controller.release?.(packed.context.runId);
   if (result.status !== "completed") {
     const reason = result.status === "failed" ? publicFailureReason(result.failure.message) : undefined;
     rows.push({

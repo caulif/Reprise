@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import { getCapabilities, hyperlink, stripTerminalSequences, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { isFsAbsolute } from '../core/paths.js';
+import { t, type Locale } from './i18n.js';
 
 const SLASH_COMMANDS = ['/help', '/config', '/intake', '/history', '/lang'] as const;
 export const TIMELINE_FILTERS = ['ALL', 'PRODUCT', 'INPUT'] as const;
@@ -46,12 +47,15 @@ export function errorMessage(error: unknown): string {
 export { formatBytes } from '../core/format.js';
 
 /** Short operator-facing text for the error page; keep the original Error for logs and causes. */
-export function operatorErrorMessage(error: unknown): string {
+export function operatorErrorMessage(error: unknown, locale: Locale = 'en'): string {
   const codeValue = error instanceof Error && 'code' in error ? (error as { code?: unknown }).code : undefined;
   const code = typeof codeValue === 'string' ? codeValue : '';
   const message = errorMessage(error);
   if (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || /operation not permitted, rename/i.test(message)) {
-    return 'Could not publish the isolated baseline. Windows still had a lock on the copied files. Return and start again from /intake.';
+    return t(locale, 'errorBaselineLock');
+  }
+  if (code === 'ENAMETOOLONG' || /filename too long|invalid index-pack/i.test(message)) {
+    return t(locale, 'errorGitSinkPathTooLong');
   }
   return message;
 }

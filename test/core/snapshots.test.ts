@@ -38,5 +38,5 @@ test('agent system prompts match committed snapshots', async () => {
 });
 
 test('runtime-facing tool schemas match committed snapshots', async () => {
-  await assertSnapshot('recovery-tools', toolCatalog(recoveryTools('TMP')));
+  await assertSnapshot('recovery-tools', toolCatalog(recoveryTools('TMP', { allowShell: true })));
 });

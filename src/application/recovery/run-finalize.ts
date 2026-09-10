@@ -1,5 +1,11 @@
 import { persistRecoveryEvaluation, recoveryEvaluationCase, recoveryTimingSummary } from "./evaluation.js";
 import {
+  applyTaskReadinessGate,
+  measureRecoveryStagingReadiness,
+  taskContinuationOutcome,
+  taskReadinessBlocksPublication,
+} from "./readiness.js";
+import {
   diagnosisReasonCode,
   persistRecoveryAttemptDiagnosis,
   recoveryAcceptIsExposed,
@@ -20,7 +26,22 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
     throw new Error("Recovery finalize was not prepared.");
   session.failureStage = "provider_validation_failed";
   const providerVerificationStartedAt = Date.now();
-  session.activeProviderPreview = await provider.validateRecovery(staging, recovery.value);
+  const validated = await provider.validateRecovery(staging, recovery.value);
+  session.readinessResult = await measureRecoveryStagingReadiness(staging.root, input.taskCase, {
+    executeCommands: Boolean(input.executeReadinessCommands),
+    cwd: input.sourceRoot,
+  });
+  await store.append({
+    type: "recovery.readiness_checked",
+    runId: input.runId,
+    operationId: "recovery-readiness-checked",
+    payload: {
+      status: session.readinessResult.status,
+      missingPathCount: session.readinessResult.missingPaths.length,
+      commandCheckCount: session.readinessResult.commandChecks.length,
+    },
+  });
+  session.activeProviderPreview = applyTaskReadinessGate(validated, session.readinessResult);
   await recordRecoveryAttempt(
     session,
     recoveryAttemptRecord({
@@ -35,7 +56,7 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   );
   moveRecoveryState(session, recovery.value.status === "ready" ? "candidate_verified" : "candidate_pending_review");
   session.verification = recovery.value.status === "ready" ? "verified" : "rejected";
-  session.taskOutcome = recovery.value.status === "ready" ? "ready_for_task" : "unrecoverable";
+  session.taskOutcome = taskContinuationOutcome(recovery.value.status, session.readinessResult);
   const preview = session.activeProviderPreview;
   if (preview.baseline.recovery && session.taskOutcome) {
     const baseline = {
@@ -44,7 +65,9 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
     };
     session.activeProviderPreview = { ...preview, baseline };
   }
-  if (recovery.value.status === "ready") {
+  const mayAccept =
+    recovery.value.status === "ready" && !taskReadinessBlocksPublication(session.readinessResult.status);
+  if (mayAccept) {
     moveRecoveryState(session, "selected_checkpoint");
     moveRecoveryState(session, "ready_for_task");
     session.automaticallyAcceptedBaseline = await provider.acceptRecovery(session.activeProviderPreview);

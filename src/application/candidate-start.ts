@@ -12,6 +12,7 @@ export type CandidateStartGate = {
     runnable?: string;
     envelopeStatus?: string;
     userStatus?: "recovered" | "partial" | "failed";
+    taskReadinessStatus?: "ready" | "not_ready" | "blocked";
   };
 };
 
@@ -30,6 +31,9 @@ export function candidateStartBlocked(input: CandidateStartGate): string | undef
     if (!input.recovery.hasAccept || input.recovery.userStatus === "failed") {
       return "Candidate was not started because recovery did not produce a runnable workspace.";
     }
+    if (input.recovery.taskReadinessStatus === "not_ready" || input.recovery.taskReadinessStatus === "blocked") {
+      return "Candidate was not started because Host task continuation readiness is not ready.";
+    }
     return undefined;
   }
   if (input.sourceBaseline === "unavailable" || input.blockedReasons.length) {
@@ -47,12 +51,13 @@ export function candidateGateFromAttempt(attempt: RecoveryAttempt, transcriptOk:
       hasAccept: attempt.accept !== undefined,
       recovery: attempt.recovery,
       ...(attempt.staging ? { staging: attempt.staging } : {}),
+      ...(attempt.taskReadiness ? { taskReadiness: attempt.taskReadiness } : {}),
     },
     transcriptOk,
   );
 }
 
-export function candidateGateFromView(view: Pick<RecoveryView, "baseline" | "hasAccept" | "staging"> & { recovery?: RecoveryView["recovery"] }, transcriptOk: boolean): CandidateStartGate {
+export function candidateGateFromView(view: Pick<RecoveryView, "baseline" | "hasAccept" | "staging" | "taskReadiness"> & { recovery?: RecoveryView["recovery"] }, transcriptOk: boolean): CandidateStartGate {
   return {
     blockedReasons: [],
     recovery: {
@@ -61,6 +66,7 @@ export function candidateGateFromView(view: Pick<RecoveryView, "baseline" | "has
       baselineMode: view.baseline.mode,
       ...(view.baseline.readiness?.runnable ? { runnable: view.baseline.readiness.runnable } : {}),
       ...(view.recovery?.status === "completed" ? { envelopeStatus: view.recovery.value.status } : {}),
+      ...(view.taskReadiness ? { taskReadinessStatus: view.taskReadiness.status } : {}),
       userStatus: userRecoveryStatus({
         baseline: view.baseline,
         transcriptOk,

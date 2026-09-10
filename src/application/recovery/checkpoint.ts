@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { persistRecoveryEvaluation, recoveryEvaluationCase, recoveryTimingSummary } from "./evaluation.js";
+import { applyTaskReadinessGate, measureRecoveryStagingReadiness, taskReadinessBlocksPublication } from "./readiness.js";
 import { validateRecoveryEvidence, type RecoveryEvidenceVerification } from "../../infrastructure/recovery-tools.js";
 import { writeImmutableJson } from "../../infrastructure/store/experiment-store.js";
 import type { RecoveryManifest } from "../../core/schema.js";
@@ -11,7 +12,6 @@ import type { StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import type { ExperimentStore } from "../../infrastructure/store/experiment-store.js";
 import type { LocalWorkspaceProvider, RecoveryStaging } from "../../environment/local-workspace-provider.js";
 import type { RecoveryOrchestrator } from "./orchestrator.js";
-import type { RecoveryReadinessResult } from "./readiness.js";
 
 export type HostCheckpointRecoveryArgs = {
   input: RecoveryAttemptInput;
@@ -21,7 +21,6 @@ export type HostCheckpointRecoveryArgs = {
   provider: LocalWorkspaceProvider;
   activeStaging: RecoveryStaging;
   recoveryOrchestrator: RecoveryOrchestrator;
-  readinessResult: RecoveryReadinessResult | undefined;
   forensicsCompleted: boolean;
   evidenceSourcesAttempted: number | undefined;
   evidenceSourcesAvailable: number | undefined;
@@ -55,30 +54,10 @@ async function persistHostCheckpointRecoveryOutputs(input: {
 export async function completeHostCheckpointRecovery(
   args: HostCheckpointRecoveryArgs,
 ): Promise<RecoveryAttempt | undefined> {
-  const input = args.input;
-  const staging = args.staging;
-  const experimentRoot = args.experimentRoot;
-  const store = args.store;
-  const provider = args.provider;
-  const activeStaging = args.activeStaging;
-  const recoveryOrchestrator = args.recoveryOrchestrator;
-  const readinessResult = args.readinessResult;
-  const forensicsCompleted = args.forensicsCompleted;
-  const evidenceSourcesAttempted = args.evidenceSourcesAttempted;
-  const evidenceSourcesAvailable = args.evidenceSourcesAvailable;
-  const hypothesisCount = args.hypothesisCount;
-  const candidateCount = args.candidateCount;
-  const verifierRejectionReasons = args.verifierRejectionReasons;
-  const providerFailureRetryable = args.providerFailureRetryable;
-  const pathBoundaryRejected = args.pathBoundaryRejected;
-
-if (staging.checkpointFingerprint && staging.checkpointId) {
+  const { input, staging, experimentRoot, store, provider, activeStaging } = args;
+  if (!staging.checkpointFingerprint || !staging.checkpointId) return undefined;
   const checkpoint = hostCheckpointRecovery(staging);
-  const recovery = await persistHostCheckpointRecoveryOutputs({
-    staging,
-    experimentRoot,
-    checkpoint,
-  });
+  const recovery = await persistHostCheckpointRecoveryOutputs({ staging, experimentRoot, checkpoint });
   await store.append({
     type: "recovery.checkpoint_restored",
     runId: input.runId,
@@ -95,16 +74,15 @@ if (staging.checkpointFingerprint && staging.checkpointId) {
     operationId: "recovery-completed",
     payload: { status: "completed", source: "host_checkpoint" },
   });
-  validateRecoveryEvidence(
-    checkpoint.evidence.map((item) => item.ref),
-    checkpoint.result,
+  validateRecoveryEvidence(checkpoint.evidence.map((item) => item.ref), checkpoint.result);
+  const readiness = await measureRecoveryStagingReadiness(activeStaging.root, input.taskCase, {
+    executeCommands: Boolean(input.executeReadinessCommands),
+    cwd: input.sourceRoot,
+  });
+  const providerPreview = applyTaskReadinessGate(
+    await provider.validateRecovery(activeStaging, checkpoint.result),
+    readiness,
   );
-  const providerPreview = await provider.validateRecovery(
-    activeStaging,
-    checkpoint.result,
-  );
-  const recoveredPaths = [...providerPreview.changedPaths];
-  const verification = "verified" as const;
   if (providerPreview.reportText) {
     await store.commitArtifact({
       artifactId: "recovery-md",
@@ -113,42 +91,44 @@ if (staging.checkpointFingerprint && staging.checkpointId) {
       bytes: Buffer.from(providerPreview.reportText, "utf8"),
     });
   }
-  await persistRecoveryEvaluation(store, [
-    recoveryEvaluationCase({
-      caseId: input.caseId,
-      staging,
-      candidateCreated: false,
-      recoveredPaths,
-      forensicsCompleted,
-      evidenceSourcesAttempted,
-      evidenceSourcesAvailable,
-      hypothesisCount,
-      candidateCount,
-      verifierRejectionReasons,
-      providerFailureRetryable,
-      pathBoundaryRejected,
-      verification,
-      modelCalls: 0,
-      startedAt: input.now,
-      timings: recoveryTimingSummary(recoveryOrchestrator.attempts),
-    }),
-  ],
-  undefined,
-  store.events(input.runId),
-);
+  await persistHostCheckpointEvaluation(args, providerPreview.changedPaths);
   return {
     baseline: providerPreview.baseline,
     providerPreview,
     staging,
-    ...(readinessResult ? { taskReadiness: readinessResult } : {}),
+    taskReadiness: readiness,
     recovery,
     experimentRoot,
     experimentId: input.experimentId,
     provider,
-    accept: () => provider.acceptRecovery(providerPreview),
+    ...(taskReadinessBlocksPublication(readiness.status) ? {} : { accept: () => provider.acceptRecovery(providerPreview) }),
   };
 }
-  return undefined;
+
+async function persistHostCheckpointEvaluation(
+  args: HostCheckpointRecoveryArgs,
+  recoveredPaths: readonly string[],
+): Promise<void> {
+  await persistRecoveryEvaluation(args.store, [
+    recoveryEvaluationCase({
+      caseId: args.input.caseId,
+      staging: args.staging,
+      candidateCreated: false,
+      recoveredPaths: [...recoveredPaths],
+      forensicsCompleted: args.forensicsCompleted,
+      evidenceSourcesAttempted: args.evidenceSourcesAttempted,
+      evidenceSourcesAvailable: args.evidenceSourcesAvailable,
+      hypothesisCount: args.hypothesisCount,
+      candidateCount: args.candidateCount,
+      verifierRejectionReasons: args.verifierRejectionReasons,
+      providerFailureRetryable: args.providerFailureRetryable,
+      pathBoundaryRejected: args.pathBoundaryRejected,
+      verification: "verified",
+      modelCalls: 0,
+      startedAt: args.input.now,
+      timings: recoveryTimingSummary(args.recoveryOrchestrator.attempts),
+    }),
+  ], undefined, args.store.events(args.input.runId));
 }
 
 /** Restores a Provider-validated checkpoint without spending a model call or exposing checkpoint contents. */

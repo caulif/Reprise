@@ -73,6 +73,8 @@ test("frozen observation files carry Host refs and truncate oversized bodies", a
   assert.match(listed.content, /INDEX.md/);
   const page = await read.execute({ path: "observations/INDEX.md" }, new AbortController().signal);
   assert.match(page.content, /Host-owned copies/);
+  assert.equal(await readFile(join(root, "task", "initial-input.txt"), "utf8"), "task\n");
+  assert.match(page.content, /task\/initial-input\.txt/);
 });
 
 test("observation files redact assistant and nested text when model text is disallowed", async (t) => {

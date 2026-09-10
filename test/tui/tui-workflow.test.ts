@@ -336,7 +336,7 @@ test('close releases the comparison choice without starting a report', async () 
   const app = new IntakeTui({ dataDir: 'unused', tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
   let chosen: boolean | undefined;
   app.workflowFinished = new Promise<void>((resolve) => { app.compareChoice = { resolve: (value) => { chosen = value; resolve(); } }; });
-  app.page = 'compare-gate';
+  app.page = 'result';
   app.close();
   await app.closing;
   assert.equal(chosen, false);

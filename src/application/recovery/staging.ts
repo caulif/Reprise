@@ -99,7 +99,6 @@ export async function tryHostCheckpointRecovery(
     provider: session.provider,
     activeStaging,
     recoveryOrchestrator: session.recoveryOrchestrator,
-    readinessResult: session.readinessResult,
     forensicsCompleted: session.forensicsCompleted,
     evidenceSourcesAttempted: session.evidenceSourcesAttempted,
     evidenceSourcesAvailable: session.evidenceSourcesAvailable,

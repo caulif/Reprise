@@ -68,6 +68,44 @@ test("Recovery mechanical feedback reuses the same recover() after a missing rep
   );
 });
 
+test("ready envelope does not auto-accept when Host task readiness is not_ready", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-readiness-gate-"));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  const recovery: RecoveryAgentPort = {
+    recover: async (_context, tools) => {
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "recovery.md", content: "# Recovery\n\nWorkspace looks ready to the agent." },
+        new AbortController().signal,
+      );
+      return {
+        status: "completed",
+        sessionId: "recovery-not-ready-gate",
+        value: { status: "ready", reportPath: "recovery.md", unresolved: [] },
+      };
+    },
+  };
+  const attempt = await recoverExperiment({
+    dataDir: base.dataDir,
+    caseId: base.caseId,
+    experimentId: "recovery-not-ready-gate",
+    runId: "recovery-not-ready-run",
+    sourceRoot: base.sourceRoot,
+    taskCase: {
+      ...base.taskCase,
+      taskContext: { ...base.taskCase.taskContext, relevantPaths: ["content/required.md"] },
+    },
+    recovery,
+    now,
+  });
+  assert.equal(attempt.acceptedAutomatically, undefined);
+  assert.equal(attempt.accept === undefined, true);
+  assert.equal(attempt.taskReadiness?.status, "not_ready");
+  assert.equal(attempt.baseline.readiness.runnable, "blocked");
+  assert.equal(attempt.baseline.recovery?.taskOutcome, "unrecoverable");
+});
+
 test("Recovery still falls back when the only completed envelope fails probe", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-only-invalid-envelope-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
@@ -106,6 +144,7 @@ test("Recovery still completes after more than sixteen destructive shell_exec ca
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
+  await writeFile(join(base.sourceRoot, "README.md"), "# source\n");
   for (let index = 0; index < 17; index += 1) {
     await writeFile(join(base.sourceRoot, `scratch-${index}.txt`), "x\n");
   }
@@ -146,6 +185,7 @@ test("Recovery still completes after more than sixteen destructive shell_exec ca
     sourceRoot: base.sourceRoot,
     taskCase: task,
     recovery,
+    allowShell: true,
     maxModelAttempts: 3,
     now,
   });

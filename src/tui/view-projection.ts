@@ -7,7 +7,6 @@ import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from '../core/runti
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
 import { countCalls, countTurns, elapsedFrom, type CandidateRunPhase } from './pages/run.js';
-import { TIMELINE_FILTERS } from './format.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
@@ -44,9 +43,8 @@ type Input = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
-  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly paneFocus?: 'left' | 'right'; readonly expandedFolds?: readonly string[]; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
+  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly detailExpanded: boolean; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
   readonly viewer?: { readonly title: string; readonly body: string };
-  readonly actorsOpen?: boolean;
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
@@ -71,7 +69,7 @@ function runningModel(input: Input) {
   const productLabel = chromeProductLabel(input);
   const candidateSessionId = candidateSessionIdFrom(input.timeline);
   return {
-    entries: input.visibleTimeline, selected: input.timelineSelected, filter: TIMELINE_FILTERS[input.timelineFilterIndex] ?? 'ALL',
+    entries: input.visibleTimeline, selected: input.timelineSelected, filter: 'ALL' as const,
     following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
     elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },
@@ -85,7 +83,6 @@ function runningModel(input: Input) {
     ...(input.reconnectCount ? { reconnectCount: input.reconnectCount } : {}),
     ...(input.reconnectTotal ? { reconnectTotal: input.reconnectTotal } : {}),
     ...(input.runStartedAt ? { runStartedAt: input.runStartedAt } : {}),
-    ...(input.paneFocus ? { paneFocus: input.paneFocus } : {}),
     ...(input.expandedFolds?.length ? { expandedFolds: input.expandedFolds } : {}),
     locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
     ...(input.taskCase ? {
@@ -134,7 +131,6 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(input.comparePending ? { comparePending: true } : {}),
     home,
     ...(input.viewer ? { viewer: { ...input.viewer, locale: input.locale ?? 'en' } } : {}),
-    ...(input.actorsOpen ? { actorsOpen: true } : {}),
   };
   if (input.page === 'home') return base;
   if (input.page === 'config') {
@@ -193,11 +189,6 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     confirm: {
       preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en', ...(input.candidateProductLabel ? { productLabel: input.candidateProductLabel } : input.productLabel ? { productLabel: input.productLabel } : {}), ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {})
     },
-  };
-  if (input.page === 'compare-gate') return {
-    ...base,
-    ...(input.timeline.length ? { running: runningModel(input) } : {}),
-    ...(input.result ? { result: input.result } : {}),
   };
   if (input.page === 'running') return { ...base, running: runningModel(input) };
   if (input.page === 'result' && input.result) return { ...base, running: runningModel(input), result: input.result };

@@ -16,7 +16,6 @@ function steering(runId: string): SteeringContext {
       initialInput: { id: 'message-1', role: 'user', text: 'Implement it.' },
       baseline: { status: 'unavailable', artifactRefs: [], evidenceRefs: [] },
       privacy: { allowModelText: true, allowBinary: false, redactions: [] },
-      historicalUserTurns: [],
     },
     current: { summary: 'Candidate turn has settled.', evidenceRefs: [] },
     trajectory: { summary: 'Settled turns: 1.', evidenceRefs: [] },

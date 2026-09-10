@@ -308,6 +308,7 @@ function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptR
       allowWrite: comparisonAttemptWriteAllowed,
       completionPaths: new Set(["work/comparison-plan.md", "report.html"]),
       denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns", "run", "observations"],
+      allowShell: true,
       shellCwd: scratchRoot,
       shellEnv: {
         REPRISE_BASELINE_ROOT: join(controllerRoot, "history"), REPRISE_CANDIDATE_ROOT: candidateRoot,

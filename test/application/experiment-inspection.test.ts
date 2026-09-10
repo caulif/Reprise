@@ -64,7 +64,7 @@ test('inspectRun current summary does not inline candidate final text', async ()
   const observation = await inspectRun(store, record, true, 'codex');
   assert.equal(observation.finalMessage, marker);
   assert.doesNotMatch(observation.currentSummary, new RegExp(marker));
-  assert.match(observation.currentSummary, /inspect THIS-TURN and project files rather than treating this summary as completion/);
+  assert.match(observation.currentSummary, /Read current-user-view.md/);
 });
 
 test('inspectRun uses the candidate product translator, not the source session product', async () => {
@@ -84,7 +84,8 @@ test('inspectRun distinguishes workspace evidence that was not collected', async
   const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
   const observation = await inspectRun(store, record, true, 'codex');
   assert.equal(observation.workspaceEvidenceStatus, 'not_collected');
-  assert.match(observation.currentSummary, /Workspace evidence: not_collected/);
+  assert.match(observation.currentSummary, /Read current-user-view.md/);
+  assert.doesNotMatch(observation.currentSummary, /Workspace evidence/);
 });
 
 test('captureWorkspaceScope does not snapshot a sibling tree that shares a path prefix', async (t) => {

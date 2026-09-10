@@ -27,10 +27,9 @@ function briefing(input: { includeFollowupInIndex: boolean; settledTurns: number
         evidenceRefs: [],
       },
       privacy: { allowModelText: true, allowBinary: false, redactions: [] },
-      historicalUserTurns: [{ id: 'message-3', text: marker }],
     },
     current: {
-      summary: 'Latest target settlement: completed. Observed commands: 2; changed paths: 1; rejected approvals: 0.',
+      summary: 'Latest target settlement: completed. Read current-user-view.md for the user-visible surface.',
       evidenceRefs: [],
     },
     trajectory: {
@@ -142,7 +141,6 @@ test('Controller without promptContent still does not dump historical user turns
     ...rest,
     task: {
       ...ctx.task,
-      historicalUserTurns: [{ id: 'message-3', text: marker }],
     },
   });
   assert.equal(result.status, 'completed');

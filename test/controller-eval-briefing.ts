@@ -159,7 +159,7 @@ export async function packControllerEvalCase(root: string, item: ControllerEvalC
     current: { summary: "Latest settled turn is named in THIS-TURN.txt.", evidenceRefs: [...catalogRefs] },
     trajectory: { summary: "Read run/turns and project/; do not trust summaries over files.", evidenceRefs: [...catalogRefs] },
     evidenceCatalog: [...catalogRefs].map((ref) => ({ ref, runId, source: "initial" as const })),
-    task: { ...base.task, historicalUserTurns: [], initialInput: { id: "initial", role: "user", text: TASK } },
+    task: { ...base.task, initialInput: { id: "initial", role: "user", text: TASK } },
   };
   const tools = recoveryTools(briefingRoot, {
     allowBinary: false,

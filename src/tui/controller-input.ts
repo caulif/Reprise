@@ -49,7 +49,6 @@ export type ControllerHandle = {
   workflowFinished: Promise<void> | undefined;
   page: Page;
   viewer: { title: string; body: string } | undefined;
-  actorsOpen: boolean;
   helpOverlay: { hide(): void } | undefined;
   inlineHelp: boolean;
   composer: string;
@@ -85,7 +84,6 @@ export type ControllerHandle = {
   timelineSelected: number;
   timelineFollowing: boolean;
   timelineFilterIndex: number;
-  paneFocus: 'left' | 'right';
   expandedFolds: string[];
   autoCompare: boolean;
   compareChoice: { resolve(run: boolean): void } | undefined;
@@ -169,7 +167,6 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     page: c.page,
     editingText: c.isEditingText(),
     viewer: Boolean(c.viewer),
-    actorsOpen: c.actorsOpen,
     helpOpen: Boolean(c.helpOverlay || c.inlineHelp),
     startupActive: Boolean(c.startupAbort),
   }, input);
@@ -227,11 +224,6 @@ function applyGlobal(c: ControllerHandle, action: GlobalInputAction): Consume {
   if (action === 'close') return c.close();
   if (action === 'close-viewer') {
     c.viewer = undefined;
-    c.render();
-    return { consume: true };
-  }
-  if (action === 'close-actors') {
-    c.actorsOpen = false;
     c.render();
     return { consume: true };
   }
@@ -406,10 +398,7 @@ function applyInspection(c: ControllerHandle, data: string): Consume | undefined
 function applyPreflight(c: ControllerHandle, data: string): Consume | undefined {
   const result = dispatchPreflightInput(data);
   if (!result) return undefined;
-  if (result.action === 'home') return c.backToHome();
-  c.page = 'source';
-  c.render();
-  return { consume: true };
+  return c.backToHome();
 }
 
 function applyCandidateProduct(c: ControllerHandle, data: string): Consume | undefined {
@@ -517,7 +506,7 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
 
 function canvasBlocked(c: ControllerHandle): boolean {
   return c.preparePhase === 'check' || c.preparePhase === 'copy'
-    || Boolean(c.viewer || c.actorsOpen || c.helpOverlay || c.inlineHelp);
+    || Boolean(c.viewer || c.helpOverlay || c.inlineHelp);
 }
 
 function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {

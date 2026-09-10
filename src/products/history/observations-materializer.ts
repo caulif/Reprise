@@ -92,6 +92,9 @@ export async function writeFrozenObservationTree(input: {
     runEvents: input.runEvents ?? [],
   });
   fileCount += userInputs.fileCount;
+  await mkdir(join(input.root, "task"), { recursive: true });
+  await writeAtomic(join(input.root, "task", "initial-input.txt"), `${input.taskCase.initialInput.text}\n`);
+  fileCount += 1;
   fileCount += await writeSessionManifest(input.root, input.taskCase, missing);
   const index = [
     "# Frozen observations",
@@ -100,6 +103,7 @@ export async function writeFrozenObservationTree(input: {
     "Read INDEX.md then a single file with `read`. Grep when you need one sentence or ref.",
     "Do not treat this directory as task output. Envelope refs are the `ref` field inside each JSON file.",
     "User demand is indexed at user-inputs/INDEX.tsv; read those files in order before other evidence.",
+    "The full task sentence is task/initial-input.txt even when the working set truncates it.",
     "Credentials and product original session paths are not copied here.",
     "",
     `- transcript files: ${catalog.filter((entry) => entry.source === "transcript").length}`,
@@ -110,7 +114,7 @@ export async function writeFrozenObservationTree(input: {
     `- missing: ${missing.length}`,
     input.playbookText ? "- playbook.md — product recovery playbook text" : "",
     "",
-    "Layout: session.json, user-inputs/, transcript/, events/, artifacts/, files/, metadata/, source-refs/",
+    "Layout: session.json, task/, user-inputs/, transcript/, events/, artifacts/, files/, metadata/, source-refs/",
     "",
   ]
     .filter((line) => line !== undefined)

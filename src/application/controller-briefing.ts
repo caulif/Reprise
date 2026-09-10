@@ -72,8 +72,8 @@ export function renderIndexMarkdown(latestTurnRelative: string | undefined): str
   return [
     "# Controller briefing map",
     "",
-    "Host-owned, invisible to the candidate. `project/` is a read-only mount of the isolated replica.",
-    "Read with workspace tools (`read`, `ls`, `grep`, `find`). There is no `read_observation`.",
+    "Host-owned, invisible to the candidate. `project/` is the isolated replica: readable, and writable with edit/write.",
+    "Read with workspace tools (`read`, `ls`, `grep`, `find`). edit/write only under `project/`. There is no `shell_exec` and no `read_observation`.",
     "",
     "Historical user requirements:",
     "- history/user-inputs/INDEX.tsv — complete user demand in session order",
@@ -86,8 +86,9 @@ export function renderIndexMarkdown(latestTurnRelative: string | undefined): str
     "",
     "Current candidate facts:",
     "- current-user-view.md — Host snapshot of the current user-visible turn; read this before other details",
-    "- permissions.txt — Controller tools stay read-only; candidate runtime uses Host-fixed historical session settings",
+    "- permissions.txt — Controller may write project/; candidate fields are historical-session inference",
     "- run/sent-user-messages.jsonl — user messages already submitted this run",
+    "- run/controller-writes.jsonl — Controller edit/write audit (Host-owned)",
     "- run/turns/NNNN/user-view.md, visible.txt, event-index.tsv, changed-paths.txt — one settled candidate turn",
     "- THIS-TURN.txt — relative path of the latest turn directory, empty before the first settlement",
     "- project/ — current replica; project/imported-inputs/ may be absent",
@@ -202,10 +203,12 @@ function renderPermissionsTxt(taskCase: TaskCase): string {
   const privacy = taskCase.privacy;
   return [
     "# Controller tools",
-    "controller.writes=denied",
-    "controller.project=read_only",
+    "controller.writes=project",
+    "controller.project=writable",
+    "controller.shell=denied",
     "",
     "# Candidate runtime",
+    "# Historical session inference, not this run's launch grant.",
     `candidate.source=${candidate.source}`,
     `candidate.sandbox=${candidate.sandbox}`,
     `candidate.permissionMode=${candidate.permissionMode}`,
@@ -270,6 +273,7 @@ export async function writeOpeningBriefing(input: {
   );
   await writeAtomic(join(input.briefingRoot, "THIS-TURN.txt"), "");
   await writeAtomic(join(input.briefingRoot, "run", "sent-user-messages.jsonl"), "");
+  await writeAtomic(join(input.briefingRoot, "run", "controller-writes.jsonl"), "");
   await writeAtomic(join(input.briefingRoot, "current-user-view.md"), renderUserViewMarkdown({
     schemaVersion: 1,
     turnIndex: 1,

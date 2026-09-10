@@ -13,7 +13,6 @@ function context(): SteeringContext {
       initialInput: { id: 'message-1', role: 'user', text: 'Implement it.' },
       baseline: { status: 'unavailable', artifactRefs: [], evidenceRefs: [] },
       privacy: { allowModelText: true, allowBinary: false, redactions: [] },
-      historicalUserTurns: [],
     },
     current: { summary: 'Candidate turn has not started.', evidenceRefs: [] },
     trajectory: { summary: 'Settled turns: 0.', evidenceRefs: [] },

@@ -197,7 +197,7 @@ Controller 不直接调用 Runtime 的 approval API；它只能通过普通用�
 
 ## 6. Observation Adapter
 
-Controller 不能只读 Target 的最终自述，也不应获得无界、无 cwd 锁的 shell。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 ProductRuntime、Environment 和 ArtifactStore 已经规范化、且用户正常可见的事实。Host 把工作区七工具挂在 briefing 根上，`project/` 只读挂载隔离副本；不注册 `read_observation`。见 [Controller 七工具](../decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)。
+Controller 不能只读 Target 的最终自述，也不应获得 `shell_exec`。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 ProductRuntime、Environment 和 ArtifactStore 已经规范化的事实。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本；不注册 `read_observation` 与 `shell_exec`。见 [协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)。
 
 ```text
 TargetEventSink / Environment fingerprint / ArtifactStore
@@ -215,7 +215,7 @@ TargetEventSink / Environment fingerprint / ArtifactStore
 
 1. **事实优先**：保留 Agent 自述、工具结果、Harness 观察和独立检查的证据来源。
 2. **轻量内联**：消息、状态和短摘要内联；长日志、diff、截图和二进制内容使用引用。
-3. **Adapter 不替 Target 干活**：Observation Adapter 不修改候选环境、不替 Target 执行修复。Host 工作区工具另有写策略，仍不得调用 Target Runtime。
+3. **Adapter 不替 Target 干活**：Observation Adapter 不修改候选环境、不替 Target 执行修复。Controller 工作区 `edit`/`write` 是用户侧协作，仍不得调用 Target Runtime。
 4. **按需展开**：Controller 可读取允许的 artifact 引用，不把所有历史内容塞进每轮 prompt。
 5. **产品隔离**：Claude/Codex 私有事件先由 ProductHistoryReader 或 ProductRuntime 归一化；Controller 不解析私有 JSONL，也不加载产品专属 Controller Playbook。
 6. **诚实缺失**：无法采集的事实标记 unavailable，不根据 Agent 文字推断为已验证。
@@ -260,7 +260,7 @@ interface TargetObservation {
 
 默认使用执行过程中自然产生的被动事实。只有任务判断确实需要、且用户正常会查看某项结果时，Observation Adapter 才能请求声明式只读探测。探测能力必须标明输入、可能副作用和证据来源。
 
-Controller 不获得无界 shell。需要 Target 建立证据时发送 `verify` 消息；报告阶段由 Comparison 写 `report.html`，不把两者混进 Controller。隔离副本上的 `powershell` 有 cwd 锁、净化环境和预算。
+Controller 不获得 `shell_exec`。需要 Target 建立证据时发送 `verify` 消息；报告阶段由 Comparison 写 `report.html`，不把两者混进 Controller。
 
 ### 6.5 Artifact 解析
 
@@ -277,7 +277,7 @@ Host 在读取前执行 run ownership、路径边界、类型、大小和 privac
 
 ## 7. SteeringContext
 
-Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 只读工具与候选运行权限；后者来自历史会话已解析设置，缺失时标 unconfirmed。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)。
+Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 的 `project/` 写入与候选运行权限；后者是历史会话推断，缺失时标 unconfirmed，不是本次 launch 授权证明。`allowModelText=false` 只红acted 正文，outline 仍含结构。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`；这些 briefing `read` 记 `briefing_read` evidence。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash；`current.summary` 不内联命令或路径计数。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)。
 
 ```ts
 interface SteeringContext {
@@ -406,11 +406,12 @@ Recovery Agent 和 Comparison Agent 复用同一个 AgentHost 实现，但使用
 ```text
 controller.requested
 controller.observation_read
+controller.workspace_write
 controller.decision
 controller.completed | controller.failed
 ```
 
-`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把本轮成功的 workspace `read` 或带 event refs 的观察记入 catalog。离线重建只读事件日志和已保存 artifacts，并校验 digest。
+`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把本轮成功的 briefing `read` 或候选观察记入 catalog。`controller.workspace_write` 记录 Controller 对 `project/` 的 edit/write。离线重建只读事件日志和已保存 artifacts，并校验 digest。
 
 事件引用：
 

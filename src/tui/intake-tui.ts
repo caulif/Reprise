@@ -197,8 +197,6 @@ export class IntakeTui {
   inlineHelp = false;
   locale: Locale = "en";
   viewer: { title: string; body: string } | undefined;
-  actorsOpen = false;
-  paneFocus: 'left' | 'right' = 'left';
   expandedFolds: string[] = [];
   autoCompare = false;
   compareChoice: { resolve(run: boolean): void } | undefined;

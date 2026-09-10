@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { checkRecoveryReadiness, deriveRecoveryReadinessContext } from "../../src/application/recovery/readiness.js";
+import { checkRecoveryReadiness, deriveRecoveryReadinessContext, applyTaskReadinessGate, taskContinuationOutcome, taskReadinessBlocksPublication } from "../../src/application/recovery/readiness.js";
 import type { TaskCase, RecoveryReadinessContext } from "../../src/core/schema.js";
 
 test("Recovery readiness derives task paths and reports a missing path", async () => {
@@ -143,4 +143,17 @@ test("Recovery readiness runs only allowlisted commands in staging when opted in
   assert.equal(result.status, "not_ready");
   assert.equal(result.commandChecks[0]?.status, "passed");
   assert.equal(result.commandChecks[1]?.status, "blocked");
+});
+
+test("Host task readiness blocks publication when required paths are missing", () => {
+  const preview = applyTaskReadinessGate(
+    { baseline: { readiness: { runnable: "isolated", strictness: "strict", blockingResourceIds: [] } } },
+    { status: "not_ready", checkedPaths: ["src/main.ts"], missingPaths: ["src/main.ts"], commandChecks: [], feedback: "missing" },
+  );
+  assert.equal(preview.baseline.readiness.runnable, "blocked");
+  assert.deepEqual(preview.baseline.readiness.blockingResourceIds, ["task-readiness"]);
+  assert.equal(taskReadinessBlocksPublication("ready"), false);
+  assert.equal(taskContinuationOutcome("ready", { status: "ready", checkedPaths: [], missingPaths: [], commandChecks: [], feedback: "" }), "ready_for_task");
+  assert.equal(taskContinuationOutcome("ready", { status: "not_ready", checkedPaths: [], missingPaths: ["a"], commandChecks: [], feedback: "" }), "unrecoverable");
+  assert.equal(taskContinuationOutcome("ready", { status: "blocked", checkedPaths: [], missingPaths: [], commandChecks: [], feedback: "" }), "blocked_by_safety");
 });

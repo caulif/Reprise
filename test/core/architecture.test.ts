@@ -109,22 +109,33 @@ async function relativeImports(file: string): Promise<string[]> {
 test('internal agents share workspace tools without read_observation', async () => {
   const { recoveryTools } = await import('../../src/infrastructure/recovery-tools.js');
   const seven = ['edit', 'find', 'grep', 'ls', 'read', 'shell_exec', 'write'];
+  const withoutShell = ['edit', 'find', 'grep', 'ls', 'read', 'write'];
   const recovery = recoveryTools('TMP').map((tool) => tool.name).sort();
-  const controller = recoveryTools('TMP', { allowWrite: () => false, mounts: { project: 'REPLICA' } })
+  const recoveryShell = recoveryTools('TMP', { allowShell: true }).map((tool) => tool.name).sort();
+  const { controllerProjectWriteAllowed } = await import('../../src/application/controller-tools.js');
+  const controller = recoveryTools('TMP', {
+    allowWrite: controllerProjectWriteAllowed,
+    writableMounts: ['project'],
+    mounts: { project: 'REPLICA' },
+  })
     .map((tool) => tool.name)
     .sort();
-  assert.deepEqual(recovery, seven);
-  assert.deepEqual(controller, seven);
+  assert.deepEqual(recovery, withoutShell);
+  assert.deepEqual(recoveryShell, seven);
+  assert.deepEqual(controller, withoutShell);
   assert.equal(controller.includes('read_observation'), false);
   const registered = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
   assert.doesNotMatch(registered, /name:\s*["']read_observation["']/);
+  assert.match(registered, /\.\.\.\(options\.allowShell \? \[powershellTool\(ctx\)\] : \[\]\)/);
   const experiment = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
   assert.match(experiment, /comparison\.requested/);
+  assert.match(experiment, /allowShell:\s*true/);
   assert.doesNotMatch(experiment, /write_comparison_report|read_artifact|observationTools|read_observation/);
   const loop = await readFile(join(SRC, 'application/experiment-controller-loop.ts'), 'utf8');
   assert.match(loop, /experimentAgentAuditSink/);
   assert.match(loop, /controllerBriefingRoot/);
   assert.match(loop, /assertBriefingOutsideReplica/);
+  assert.doesNotMatch(loop, /allowShell:\s*true/);
   assert.doesNotMatch(loop, /observationTools/);
   assert.doesNotMatch(loop, /recoveryTools\(\s*input\.environment\.root/);
   const caller = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');
@@ -133,6 +144,9 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.match(caller, /working set still exceeds/);
   const runModel = await readFile(join(SRC, 'application/recovery/run-model.ts'), 'utf8');
   assert.doesNotMatch(runModel, /recoveryObservationTools/);
+  const runFinalize = await readFile(join(SRC, 'application/recovery/run-finalize.ts'), 'utf8');
+  assert.match(runFinalize, /measureRecoveryStagingReadiness/);
+  assert.match(runFinalize, /taskReadinessBlocksPublication/);
 });
 
 test('Recovery production path does not reintroduce candidate selection or three-state envelopes', async () => {
@@ -189,7 +203,8 @@ test('role write policy stays on application owners without a shared Verifier', 
   assert.doesNotMatch(comparisonAgent, /#host\.request/);
   assert.match(comparisonAgent, /createSession/);
   const loop = await readFile(join(SRC, 'application/experiment-controller-loop.ts'), 'utf8');
-  assert.match(loop, /allowWrite:\s*\(\)\s*=>\s*false/);
+  assert.match(loop, /controllerProjectWriteAllowed|controllerDecisionTools/);
+  assert.doesNotMatch(loop, /allowWrite:\s*\(\)\s*=>\s*false/);
   assert.doesNotMatch(loop, /interface\s+\w*Verifier/);
   const experiment = await readFile(join(SRC, 'application/experiment.ts'), 'utf8');
   assert.doesNotMatch(experiment, /interface\s+\w*Verifier/);

@@ -39,7 +39,6 @@ export function controllerEvalContext(caseId: string, evidenceId: string): Steer
     runState: "awaiting_controller",
     task: {
       initialInput: { id: "initial", role: "user", text: "完成任务并满足验收标准。" },
-      historicalUserTurns: [{ id: "followup", text: "路径是 C:\\work\\demo；请在这个目录处理。" }],
       baseline: { status: "available", artifactRefs: [], evidenceRefs: [evidence] },
       privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     },

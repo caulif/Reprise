@@ -151,6 +151,48 @@ ${result.stderr}`),
   return { status: "ready", checkedPaths, missingPaths, commandChecks, feedback: `All ${checkedPaths.length} task-relevant paths are present and readable${commandChecks.some((check) => check.status === "passed") ? "; readiness commands passed." : "."}` };
 }
 
+export function taskReadinessBlocksPublication(status: RecoveryReadinessResult["status"]): boolean {
+  return status !== "ready";
+}
+
+export function taskContinuationOutcome(
+  envelopeStatus: string,
+  readiness: RecoveryReadinessResult,
+): "ready_for_task" | "unrecoverable" | "blocked_by_safety" {
+  if (readiness.status === "blocked") return "blocked_by_safety";
+  if (readiness.status === "not_ready") return "unrecoverable";
+  return envelopeStatus === "ready" ? "ready_for_task" : "unrecoverable";
+}
+
+export async function measureRecoveryStagingReadiness(
+  root: string,
+  taskCase: TaskCase,
+  options: { executeCommands?: boolean; cwd?: string } = {},
+): Promise<RecoveryReadinessResult> {
+  return checkRecoveryReadiness(root, deriveRecoveryReadinessContext(taskCase, options.cwd), {
+    executeCommands: Boolean(options.executeCommands),
+  });
+}
+
+export function applyTaskReadinessGate<T extends {
+  baseline: {
+    readiness: { runnable: string; strictness: string; blockingResourceIds: string[] };
+  };
+}>(preview: T, readiness: RecoveryReadinessResult): T {
+  if (!taskReadinessBlocksPublication(readiness.status)) return preview;
+  return {
+    ...preview,
+    baseline: {
+      ...preview.baseline,
+      readiness: {
+        ...preview.baseline.readiness,
+        runnable: "blocked",
+        blockingResourceIds: [...new Set([...preview.baseline.readiness.blockingResourceIds, "task-readiness"])],
+      },
+    },
+  };
+}
+
 function isOutputProducingTask(text: string): boolean {
   return /(?:下载|整睆|创建|生戝|写入|导出|保存|download|organize|create|generate|write|export|save)/i.test(text);
 }

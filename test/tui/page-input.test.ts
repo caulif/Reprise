@@ -70,12 +70,12 @@ test('submitted home command classifies a unique prefix', () => {
 });
 
 test('global input routes ctrl+c and overlay escapes before page keys', () => {
-  assert.equal(dispatchGlobalInput({ page: 'running', editingText: false, viewer: false, actorsOpen: false, helpOpen: false }, '\u0003')?.action, 'cancel');
-  assert.equal(dispatchGlobalInput({ page: 'confirm', editingText: false, viewer: false, actorsOpen: false, helpOpen: false, startupActive: true }, '\u0003')?.action, 'cancel');
-  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: false, actorsOpen: false, helpOpen: false }, '\u0003')?.action, 'close');
-  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: true, actorsOpen: false, helpOpen: false }, '\x1b')?.action, 'close-viewer');
-  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: false, actorsOpen: false, helpOpen: false }, '?')?.action, 'show-help');
-  assert.equal(dispatchGlobalInput({ page: 'home', editingText: true, viewer: false, actorsOpen: false, helpOpen: false }, '?'), undefined);
+  assert.equal(dispatchGlobalInput({ page: 'running', editingText: false, viewer: false, helpOpen: false }, '\u0003')?.action, 'cancel');
+  assert.equal(dispatchGlobalInput({ page: 'confirm', editingText: false, viewer: false, helpOpen: false, startupActive: true }, '\u0003')?.action, 'cancel');
+  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: false, helpOpen: false }, '\u0003')?.action, 'close');
+  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: true, helpOpen: false }, '\x1b')?.action, 'close-viewer');
+  assert.equal(dispatchGlobalInput({ page: 'home', editingText: false, viewer: false, helpOpen: false }, '?')?.action, 'show-help');
+  assert.equal(dispatchGlobalInput({ page: 'home', editingText: true, viewer: false, helpOpen: false }, '?'), undefined);
 });
 
 test('inspection, preflight, confirm, running, result, and error dispatch the operator keys', () => {
@@ -85,7 +85,7 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchInspectionInput('\r', false), undefined);
   assert.equal(dispatchPreflightInput('2'), undefined);
   assert.equal(dispatchPreflightInput('\r'), undefined);
-  assert.equal(dispatchPreflightInput('b')?.action, 'source');
+  assert.equal(dispatchPreflightInput('b')?.action, 'home');
   assert.equal(dispatchConfirmInput('\r')?.action, 'run');
   assert.equal(dispatchConfirmInput('b')?.action, 'models');
   assert.equal(dispatchCandidatePickerInput('b')?.action, 'back');

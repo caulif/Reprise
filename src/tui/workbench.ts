@@ -10,13 +10,12 @@ import { inspectionHints, renderInspection, renderSessions, sessionsHints, type 
 import { renderFailure, renderResult, resultHints, failureHints } from './pages/result.js';
 import { candidateModelHints, candidateProductHints, renderCandidateModelPicker, renderCandidateProductPicker, type CandidateModelPage, type CandidateProductModel } from './pages/candidate.js';
 import {
-  compareGateHints, confirmHints, confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderCompareGate, renderPreflight, renderSource, renderTimeline,
+  confirmHints, confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderPreflight, renderSource, renderTimeline,
   runningChrome, runningHints, sourceHints,
   type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
 } from './pages/run.js';
 import { t, type Locale } from './i18n.js';
 import { OVERLAY_PAGES, overlayChromeRows, renderOverlaySheet } from './overlay-sheet.js';
-import { renderActors, actorsHints } from './pages/actors.js';
 import { renderViewer, viewerHints, type ViewerModel } from './pages/viewer.js';
 import { createTheme, resolveDensity, showsDetailPane, type Theme } from './theme.js';
 import { bodyHeight, clipLines, FOOTER_ROWS, isShortViewport, MIN_VIEWPORT_ROWS } from './viewport.js';
@@ -25,7 +24,7 @@ import type { HistoryCase, HistoryExperiment } from './local-history.js';
 
 export type WorkbenchPage =
   | 'loading' | 'home' | 'config' | 'history' | 'history-detail' | 'sessions' | 'inspection'
-  | 'source' | 'preflight' | 'candidate-product' | 'candidate-model' | 'confirm' | 'running' | 'compare-gate' | 'result' | 'error';
+  | 'source' | 'preflight' | 'candidate-product' | 'candidate-model' | 'confirm' | 'running' | 'result' | 'error';
 
 export type WorkbenchView = {
   readonly page: WorkbenchPage;
@@ -58,7 +57,6 @@ export type WorkbenchView = {
   readonly result?: ExperimentResult;
   readonly cancelling?: boolean;
   readonly viewer?: ViewerModel;
-  readonly actorsOpen?: boolean;
 };
 
 class LinesView implements Component {
@@ -223,10 +221,6 @@ function renderPage(theme: Theme, view: WorkbenchView, width: number, height?: n
     const canvas = renderSurface(theme, view, width, height);
     return clipLines(renderOverlaySheet(theme, canvas, renderViewer(theme, width, view.viewer, sheetHeight(height, canvas))), height);
   }
-  if (view.actorsOpen && view.running) {
-    const canvas = renderSurface(theme, view, width, height);
-    return clipLines(renderOverlaySheet(theme, canvas, renderActors(theme, width, view.running, view.locale ?? 'en')), height);
-  }
   if (OVERLAY_PAGES.has(view.page) && view.home && !view.running?.entries.length) {
     const background = renderHome(theme, width, view.home);
     const canvas = renderSurface(theme, view, width, sheetHeight(height, background));
@@ -284,11 +278,6 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
     if (!view.running?.entries.length) return confirmation;
     return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - confirmation.length - 1)), '', ...confirmation];
   }
-  if (view.page === 'compare-gate') {
-    const gate = renderCompareGate(theme, width, view.locale ?? 'en');
-    if (!view.running?.entries.length) return gate;
-    return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - gate.length - 1)), '', ...gate];
-  }
   if (view.page === 'running' && view.running) {
     return renderTimeline(theme, width, view.running, height);
   }
@@ -315,7 +304,6 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
   if (view.page === 'history') return historyHints(locale);
   if (view.page === 'history-detail') return historyDetailHints(Boolean(view.historyDetail && 'taskCase' in view.historyDetail), Boolean(view.historyDetail && !('taskCase' in view.historyDetail) && view.historyDetail.reportPath), locale);
   if (view.viewer) return viewerHints(locale);
-  if (view.actorsOpen) return actorsHints(locale);
   if (view.page === 'sessions') return sessionsHints(view.sessions, locale);
   if (view.page === 'inspection') return inspectionHints(locale);
   if (view.page === 'source') return sourceHints(locale);
@@ -326,7 +314,6 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     return preflightHints(locale);
   }
   if (view.page === 'confirm') return confirmHints(view.confirm ? confirmCanStart(view.confirm) : false, locale);
-  if (view.page === 'compare-gate') return compareGateHints(locale);
   if (view.page === 'running' && view.running) {
     const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
     return runningHints(

@@ -31,7 +31,6 @@ function context(allowModelText = true): SteeringContext {
       initialInput: { id: "message-1", role: "user", text: "Implement it." },
       baseline: { status: "unavailable", artifactRefs: [], evidenceRefs: [] },
       privacy: { allowModelText, allowBinary: false, redactions: [] },
-      historicalUserTurns: [],
     },
     current: {
       summary: "Target is waiting.",
@@ -161,9 +160,6 @@ test("Controller decide uses INDEX promptContent and does not inline later user 
     promptContent: "# INDEX.md\nhistory/initial-input.txt\n",
     task: {
       ...context().task,
-      historicalUserTurns: [
-        { id: "message-3", text: "Export AionUi讨论群1." },
-      ],
     },
   });
   assert.equal(result.status, "completed");
@@ -683,7 +679,7 @@ test("a released Controller session is not reused by a later run with the same i
     maxRepairAttempts: 0,
   });
   await controller.decide(context());
-  controller.release("run-1");
+  await controller.release("run-1");
   await controller.decide(context());
   assert.equal(sessions.length, 2);
 });

@@ -26,6 +26,7 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
     allowWrite: (path) => path === 'report.html',
     completionPaths: new Set(['report.html']),
     denyDestructiveOnPrefix: ['candidate'],
+    allowShell: true,
   });
   const write = tools.find((tool) => tool.name === 'write');
   assert.ok(write);

@@ -102,18 +102,16 @@ export type GlobalInputContext = {
   readonly page: string;
   readonly editingText: boolean;
   readonly viewer: boolean;
-  readonly actorsOpen: boolean;
   readonly helpOpen: boolean;
   readonly startupActive?: boolean;
 };
 
-export type GlobalInputAction = 'cancel' | 'close' | 'close-viewer' | 'close-actors' | 'hide-help' | 'show-help';
+export type GlobalInputAction = 'cancel' | 'close' | 'close-viewer' | 'hide-help' | 'show-help';
 
 export function dispatchGlobalInput(ctx: GlobalInputContext, data: string): { action: GlobalInputAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'ctrl+c')) return { action: ctx.page === 'running' || ctx.startupActive ? 'cancel' : 'close', consume: true };
   if (ctx.viewer && matchesKey(input, 'escape')) return { action: 'close-viewer', consume: true };
-  if (ctx.actorsOpen && matchesKey(input, 'escape')) return { action: 'close-actors', consume: true };
   if (ctx.helpOpen && matchesKey(input, 'escape')) return { action: 'hide-help', consume: true };
   if (!ctx.editingText && matchesKey(input, '?')) return { action: 'show-help', consume: true };
   return undefined;
@@ -173,13 +171,12 @@ export function dispatchInspectionInput(data: string, hasInspection: boolean): {
   return undefined;
 }
 
-export type PreflightAction = 'home' | 'source';
+export type PreflightAction = 'home';
 
 /** Recovery starts automatically after preflight; this transient page only allows navigation away. */
 export function dispatchPreflightInput(data: string): { action: PreflightAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
-  if (matchesKey(input, 'b')) return { action: 'source', consume: true };
+  if (matchesKey(input, 'escape') || matchesKey(input, 'b')) return { action: 'home', consume: true };
   return undefined;
 }
 

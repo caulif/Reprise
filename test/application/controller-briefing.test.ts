@@ -99,7 +99,7 @@ test("opening briefing lives outside the replica and opening prompt omits later 
   assert.match(indexOnDisk, /current-user-view\.md/);
   assert.doesNotMatch(indexOnDisk, /view\.txt/);
   const permissions = await readFile(join(briefingRoot, "permissions.txt"), "utf8");
-  assert.match(permissions, /controller\.writes=denied/);
+  assert.match(permissions, /controller\.writes=project/);
   assert.match(permissions, /candidate\.writes=unconfirmed/);
   assert.match(permissions, /candidate\.source=unconfirmed/);
   assert.match(permissions, /privacy\.allowModelText=1/);
@@ -203,7 +203,7 @@ test("staging a settled turn does not replace the previous live Controller view"
   assert.match(await readFile(join(briefingRoot, "run/turns/0001/user-view.md"), "utf8"), /partial html/);
 });
 
-test("permissions.txt keeps Controller tools read-only when the historical candidate had full access", async () => {
+test("permissions.txt keeps Controller writes on project/ when the historical candidate had full access", async () => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-perm-"));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
@@ -217,7 +217,8 @@ test("permissions.txt keeps Controller tools read-only when the historical candi
     sourceRootKind: "historical_start",
   });
   const permissions = await readFile(join(briefingRoot, "permissions.txt"), "utf8");
-  assert.match(permissions, /controller\.writes=denied/);
+  assert.match(permissions, /controller\.writes=project/);
+  assert.match(permissions, /Historical session inference/);
   assert.match(permissions, /candidate\.source=historical_session/);
   assert.match(permissions, /candidate\.sandbox=danger-full-access/);
   assert.match(permissions, /candidate\.writes=allowed/);
@@ -252,7 +253,7 @@ test("settled view snapshot includes the turn prompt without previous-turn assis
   assert.doesNotMatch(view, /first pass html/);
 });
 
-test("Controller tools read briefing history and deny writes under project/", async () => {
+test("Controller tools read briefing history, write project/, and deny briefing writes", async () => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-tools-"));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
@@ -264,11 +265,14 @@ test("Controller tools read briefing history and deny writes under project/", as
     sourceRootKind: "historical_start",
   });
   const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const { controllerProjectWriteAllowed } = await import("../../src/application/controller-tools.js");
   const tools = recoveryTools(briefingRoot, {
-    allowWrite: () => false,
+    allowWrite: controllerProjectWriteAllowed,
+    writableMounts: ["project"],
     mounts: { project: replicaRoot },
   });
   assert.equal(tools.some((tool) => tool.name === "read_observation"), false);
+  assert.equal(tools.some((tool) => tool.name === "shell_exec"), false);
   const read = tools.find((tool) => tool.name === "read");
   const write = tools.find((tool) => tool.name === "write");
   assert.ok(read);
@@ -277,8 +281,10 @@ test("Controller tools read briefing history and deny writes under project/", as
   const history = await read.execute({ path: "history/initial-input.txt" }, signal);
   assert.match(history.content, /PPT HTML/);
   await assert.rejects(
-    () => write.execute({ path: "project/injected.txt", content: "no" }, signal),
+    () => write.execute({ path: "history/initial-input.txt", content: "no" }, signal),
     /write_denied/,
   );
+  const written = await write.execute({ path: "project/injected.txt", content: "ok" }, signal);
+  assert.match(written.content, /Wrote/);
 });
 

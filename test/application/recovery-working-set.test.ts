@@ -16,6 +16,12 @@ function fatContext(): RecoveryContext {
     budget: { timeoutMs: 600_000 },
     allowModelText: true,
     continuityKey: "case-fat",
+    evidence: {
+      catalogCount: 2,
+      verifiedCount: 1,
+      evidenceRefs: ["event:transcript-0-aaaa"],
+      verified: [{ ref: "event:transcript-0-aaaa", kind: "historical_event" }],
+    },
   };
 }
 
@@ -26,15 +32,23 @@ test("recovery model prompt omits Host-resolved facts, investigation packet, and
   assert.doesNotMatch(prompt, /"resolved"\s*:/);
   assert.doesNotMatch(prompt, /investigationPacket/);
   assert.doesNotMatch(prompt, /playbook body that must not enter/);
+  assert.doesNotMatch(prompt, /full catalog row that must not enter/);
   assert.ok(!prompt.includes(context.playbook.text));
   const parsed = JSON.parse(prompt) as ReturnType<typeof recoveryWorkingSet>;
   assert.equal("resolved" in parsed, false);
   assert.equal("investigationPacket" in parsed, false);
-  const task = parsed.task as { initialInput: { truncated: boolean; text: string } };
+  const task = parsed.task as { initialInput: { truncated: boolean; text: string; fullTextPath: string } };
   assert.equal(task.initialInput.truncated, true);
   assert.ok(task.initialInput.text.length < context.task.initialInput.text.length);
+  assert.equal(task.initialInput.fullTextPath, "observations/task/initial-input.txt");
   assert.ok(Buffer.byteLength(prompt) < 80_000);
   const observations = parsed.observations as { root: string; index: string };
   assert.equal(observations.root, "observations");
   assert.equal(observations.index, "observations/INDEX.md");
+  const evidence = parsed.evidence as { catalogCount: number; catalogIndex: string; evidenceRefs: string[] };
+  assert.equal(evidence.catalogCount, 2);
+  assert.equal(evidence.catalogIndex, "observations/INDEX.tsv");
+  assert.deepEqual(evidence.evidenceRefs, ["event:transcript-0-aaaa"]);
+  const playbook = parsed.playbook as { textPath: string };
+  assert.equal(playbook.textPath, "observations/playbook.md");
 });

@@ -1,11 +1,7 @@
-import { join } from "node:path";
-import { Value } from "@sinclair/typebox/value";
-import { ControllerReadArtifactSchema, ControllerShellArtifactSchema } from "../core/schema.js";
 import { type ControllerDecision, type ControllerPort, type SteeringContext } from "../agents/controller-agent.js";
 import {
   appendSentUserMessage,
   assertBriefingOutsideReplica,
-  CONTROLLER_PROJECT_MOUNT,
   controllerBriefingRoot,
   controllerPromptContent,
   controllerRequestSnapshot,
@@ -13,12 +9,11 @@ import {
   writeOpeningBriefing,
   writeSettledTurnBriefing,
 } from "./controller-briefing.js";
-import { observationReadRecord } from "./controller-request.js";
+import { controllerDecisionTools, createControllerToolBindings, type ControllerToolBindings } from "./controller-tools.js";
 import { sha256 } from "../core/identity.js";
 import type { RunPolicy, TaskCase } from "../core/schema.js";
 import type { PreparedEnvironmentRef } from "../environment/local-workspace-provider.js";
-import { recoveryTools } from "../infrastructure/recovery-tools.js";
-import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
+import type { AgentToolDefinition, StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { historicalCwdOf, type SourceRootKind } from "./replay-conditions.js";
 import { experimentAgentAuditSink, invocationFact } from "./experiment-helpers.js";
@@ -53,6 +48,9 @@ export async function runControllerLoop(input: {
 }> {
   const decisions: StructuredAgentResult<ControllerDecision>[] = [];
   const startedAt = Date.now();
+  const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
+  const bindings = createControllerToolBindings();
+  const tools = controllerDecisionTools(input, briefingRoot, bindings);
   await input.store.append({
     type: "controller.started",
     runId: input.runId,
@@ -60,7 +58,7 @@ export async function runControllerLoop(input: {
     payload: { model: input.controllerModel },
   });
   try {
-    const opened = await deliverOpening(input, decisions);
+    const opened = await deliverOpening(input, decisions, tools, bindings);
     if (opened.finished) return opened.result;
     let state = opened.state;
     let controllerCalls = opened.controllerCalls;
@@ -74,7 +72,7 @@ export async function runControllerLoop(input: {
         state = await input.run.stopByHarness("limit.controller_calls");
         break;
       }
-      const steered = await deliverSteering(input, state, decisions, controllerCalls);
+      const steered = await deliverSteering(input, state, decisions, controllerCalls, tools, bindings);
       state = steered.state;
       controllerCalls = steered.controllerCalls;
       followupSubmission = steered.followupSubmission || followupSubmission;
@@ -82,7 +80,7 @@ export async function runControllerLoop(input: {
     }
     return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
   } finally {
-    input.controller.release?.(input.runId);
+    await input.controller.release?.(input.runId);
   }
 }
 
@@ -91,11 +89,13 @@ type LoopInput = Parameters<typeof runControllerLoop>[0];
 async function deliverOpening(
   input: LoopInput,
   decisions: StructuredAgentResult<ControllerDecision>[],
+  tools: readonly AgentToolDefinition[],
+  bindings: ControllerToolBindings,
 ): Promise<
   | { finished: true; result: ReturnType<typeof finalizeControllerLoop> }
   | { finished: false; state: SteeringContext["runState"]; controllerCalls: number }
 > {
-  const opening = await requestControllerDecision(input, "created", 0, "opening");
+  const opening = await requestControllerDecision(input, "created", 0, "opening", tools, bindings);
   decisions.push(opening);
   await persistControllerDecision(input, 1, opening);
   if (opening.status !== "completed" || opening.value.type !== "send") {
@@ -129,13 +129,15 @@ async function deliverSteering(
   state: SteeringContext["runState"],
   decisions: StructuredAgentResult<ControllerDecision>[],
   controllerCalls: number,
+  tools: readonly AgentToolDefinition[],
+  bindings: ControllerToolBindings,
 ): Promise<{
   state: SteeringContext["runState"];
   controllerCalls: number;
   followupSubmission: boolean;
   stop: boolean;
 }> {
-  const decision = await requestControllerDecision(input, state, controllerCalls, "steering");
+  const decision = await requestControllerDecision(input, state, controllerCalls, "steering", tools, bindings);
   const calls = controllerCalls + 1;
   decisions.push(decision);
   await persistControllerDecision(input, calls, decision);
@@ -212,17 +214,19 @@ async function requestControllerDecision(
   state: SteeringContext["runState"],
   controllerCalls: number,
   phase: "opening" | "steering",
+  tools: readonly AgentToolDefinition[],
+  bindings: ControllerToolBindings,
 ) {
   const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   assertBriefingOutsideReplica(briefingRoot, input.environment.root);
   const packed = await packControllerBriefing(input, phase, briefingRoot);
   const context = steeringContextFrom(input, state, controllerCalls, phase, packed);
+  bindings.requestId = context.requestId;
+  bindings.phase = phase;
+  bindings.changedPaths = packed.observation.changedPaths;
+  bindings.settledTurnCount = input.store.events(input.runId).filter((event) => event.type === "runtime.turn_settled").length;
   await persistControllerRequested(input, context);
-  return input.controller.decide(
-    context,
-    controllerDecisionTools(input, briefingRoot, context.requestId, packed.observation.changedPaths),
-    experimentAgentAuditSink(input.store, input.runId),
-  );
+  return input.controller.decide(context, tools, experimentAgentAuditSink(input.store, input.runId));
 }
 
 async function packControllerBriefing(
@@ -299,7 +303,6 @@ function steeringContextFrom(
       initialInput: input.taskCase.initialInput,
       baseline: input.taskCase.baseline,
       privacy: input.taskCase.privacy,
-      historicalUserTurns: [],
     },
     current: {
       summary: observation.currentSummary,
@@ -350,37 +353,3 @@ async function persistControllerRequested(input: LoopInput, context: SteeringCon
   });
 }
 
-function controllerDecisionTools(input: LoopInput, briefingRoot: string, requestId: string, changedPaths: readonly string[] = []) {
-  return [
-    ...recoveryTools(briefingRoot, {
-      allowBinary: input.taskCase.privacy.allowBinary,
-      homeRoot: join(input.experimentRoot, ".reprise-controller-home"),
-      mounts: { [CONTROLLER_PROJECT_MOUNT]: input.environment.root },
-      allowWrite: () => false,
-      shellCwd: input.environment.root,
-      denyDestructiveOnPrefix: [CONTROLLER_PROJECT_MOUNT],
-    }).map((tool) => tool.name !== "read" && tool.name !== "shell_exec" ? tool : { ...tool, onCompleted: async (result: import("../infrastructure/agent/host.js").AgentToolResult) => {
-      const details = result.details as { path?: string; available?: boolean; offset?: number; command?: string; cwd?: string; exitCode?: number; stdoutBytes?: number; stderrBytes?: number; truncated?: boolean } | undefined;
-      const shell = tool.name === "shell_exec";
-      let observation: unknown;
-      if (shell) {
-        observation = { schemaVersion: 1, command: details?.command, cwd: details?.cwd, exitCode: details?.exitCode, stdoutBytes: details?.stdoutBytes, stderrBytes: details?.stderrBytes, truncated: details?.truncated, content: result.content };
-        if (!Value.Check(ControllerShellArtifactSchema, observation)) throw new Error("Controller shell artifact is malformed.");
-      } else {
-        if (!details?.available || !details.path || !result.content.length) return;
-        const turns = input.store.events(input.runId).filter((event) => event.type === "runtime.turn_settled").length;
-        const latest = `run/turns/${String(turns).padStart(4, "0")}/`;
-        const changed = changedPaths.some((path) => details.path === `${CONTROLLER_PROJECT_MOUNT}/${path.replaceAll("\\", "/")}`);
-        if (!turns || !(changed || (details.path.startsWith(latest) && /\/(visible\.txt|events\.jsonl)$/.test(details.path)))) return;
-        observation = { path: details.path, offset: details.offset ?? 0, content: result.content, ...(result.contentBlocks ? { contentBlocks: result.contentBlocks } : {}) };
-        if (!Value.Check(ControllerReadArtifactSchema, observation)) throw new Error("Controller read artifact is malformed.");
-      }
-      const bytes = Buffer.from(JSON.stringify(observation));
-      const artifactId = `controller-${shell ? "shell" : "read"}-${sha256(bytes).slice(0, 32)}`;
-      await input.store.commitArtifact({ artifactId, runId: input.runId, kind: "controller_observation", mediaType: "application/json", bytes });
-      const evidenceRefs = [`artifact:${artifactId}`];
-      result.details = { ...details, runId: input.runId, evidenceRefs };
-      await input.store.append(observationReadRecord({ requestId, runId: input.runId, details: { runId: input.runId, source: shell ? "workspace_shell" : "workspace_read", evidenceRefs }, allowedRefs: new Set(evidenceRefs) }));
-    } }),
-  ];
-}

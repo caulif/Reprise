@@ -70,7 +70,6 @@ export type RunningModel = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly runStartedAt?: number;
-  readonly paneFocus?: 'left' | 'right';
   readonly expandedFolds?: readonly string[];
   readonly candidateSessionId?: string;
 };
@@ -220,18 +219,12 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const visible = model.entries.filter((entry) => matchesFilter(entry, model.filter));
   const selected = Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
   const recovering = model.runPhase === 'recovery';
-  const dimIn = model.filter === 'PRODUCT';
-  const dimOut = model.filter === 'INPUT';
-  const inMark = dimIn ? theme.style.muted(theme.glyphs.dot) : theme.style.controller(theme.glyphs.dot);
-  const outMark = dimOut ? theme.style.muted(theme.glyphs.dot) : theme.style.target(theme.glyphs.dot);
-  const inLabel = dimIn ? theme.style.muted(t(locale, 'legendIn', { product })) : t(locale, 'legendIn', { product });
-  const outLabel = dimOut ? theme.style.muted(t(locale, 'legendOut', { product })) : t(locale, 'legendOut', { product });
   const comparing = model.preparePhase === 'compare';
   const legend = recovering
     ? ` ${theme.style.harness(theme.glyphs.dot)} ${t(locale, 'recoveryLegend')}`
     : comparing
       ? ` ${theme.style.ok(theme.glyphs.dot)} ${t(locale, 'comparisonTitle')}`
-      : ` ${inMark} ${inLabel}   ${outMark} ${outLabel}   ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'controllerLegend')}`;
+      : ` ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'legendIn', { product })}   ${theme.style.target(theme.glyphs.dot)} ${t(locale, 'legendOut', { product })}   ${theme.style.controller(theme.glyphs.dot)} ${t(locale, 'controllerLegend')}`;
   const task = model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : undefined;
   const session = model.candidateSessionId
     ? kv(theme, t(locale, 'fieldSession'), model.candidateSessionId, width)
@@ -314,7 +307,7 @@ export function sourceHints(locale: Locale = 'en'): readonly (readonly [string, 
 }
 
 export function preflightHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['b', t(locale, 'hintEditSource')], ['Esc', t(locale, 'hintHome')]];
+  return [['Esc', t(locale, 'hintHome')], ['b', t(locale, 'hintHome')]];
 }
 
 export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {
@@ -328,19 +321,6 @@ export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparin
     return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
   }
   return [stop, ['/', t(locale, 'hintTimelineFind')], ['Tab', t(locale, 'hintDetail')], ['v', t(locale, 'hintReadingMode')], ['?', t(locale, 'hintKeys')]];
-}
-
-export function renderCompareGate(theme: Theme, width: number, locale: Locale = 'en'): string[] {
-  return panel(theme, t(locale, 'compareGateTitle'), [
-    ` ${t(locale, 'compareGateBody')}`,
-    '',
-    theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'compareGateEnter')}`),
-    theme.style.muted(` Esc  ${t(locale, 'compareGateSkip')}`),
-  ], width);
-}
-
-export function compareGateHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['c', t(locale, 'hintRunComparison')], ['Esc', t(locale, 'hintHome')], ['Ctrl+C', t(locale, 'hintExit')]];
 }
 
 export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {

@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { writeAtomic } from "../core/identity.js";
+import { sha256, writeAtomic } from "../core/identity.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -68,10 +68,7 @@ export async function gitSinkRefsListing(sinkRoot: string): Promise<string> {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   for (const repo of repos) {
-    const { stdout } = await execFileAsync("git", ["--git-dir", repo, "show-ref"], {
-      encoding: "utf8",
-      windowsHide: true,
-    }).catch(() => ({ stdout: "" }));
+    const { stdout } = await git(["--git-dir", repo, "show-ref"]).catch(() => ({ stdout: "" }));
     const name = basename(repo);
     const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
     if (!lines.length) rows.push(`${name}\tmissing\t`);
@@ -107,26 +104,20 @@ async function findGitWorktrees(tree: string): Promise<string[]> {
 }
 
 function sinkName(relativePath: string): string {
-  const slug = relativePath === "." ? "_root" : relativePath.replaceAll("/", "__");
-  return `${slug}.git`;
+  if (relativePath === ".") return "_root.git";
+  return `${sha256(relativePath).slice(0, 12)}.git`;
 }
 
 async function ensureBareSink(worktree: string, sink: string): Promise<void> {
-  if (existsSync(join(sink, "HEAD"))) {
-    await execFileAsync("git", ["--git-dir", sink, "fetch", "--update-head-ok", worktree, "+refs/*:refs/*"], {
-      windowsHide: true,
-    });
-    return;
+  if (!existsSync(join(sink, "HEAD"))) {
+    await mkdir(sink, { recursive: true });
+    await git(["init", "--bare", sink]);
   }
-  await mkdir(dirname(sink), { recursive: true });
-  await execFileAsync("git", ["clone", "--bare", "--local", worktree, sink], { windowsHide: true });
+  await git(["--git-dir", sink, "fetch", "--update-head-ok", worktree, "+refs/*:refs/*"]);
 }
 
 async function remoteUrls(worktree: string): Promise<string[]> {
-  const { stdout } = await execFileAsync("git", ["-C", worktree, "config", "--get-regexp", String.raw`^remote\..*\.(url|pushurl)$`], {
-    encoding: "utf8",
-    windowsHide: true,
-  }).catch(() => ({ stdout: "" }));
+  const { stdout } = await git(["-C", worktree, "config", "--get-regexp", String.raw`^remote\..*\.(url|pushurl)$`]).catch(() => ({ stdout: "" }));
   return unique(stdout.split(/\r?\n/).flatMap((line) => expandRemoteUrl(line.replace(/^\S+\s+/, "").trim())).filter(Boolean));
 }
 
@@ -144,19 +135,16 @@ function expandRemoteUrl(url: string): string[] {
 }
 
 async function retargetRemotes(worktree: string, sinkUrl: string): Promise<void> {
-  const { stdout } = await execFileAsync("git", ["-C", worktree, "remote"], {
-    encoding: "utf8",
-    windowsHide: true,
-  }).catch(() => ({ stdout: "" }));
+  const { stdout } = await git(["-C", worktree, "remote"]).catch(() => ({ stdout: "" }));
   const remotes = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (!remotes.length) {
-    await execFileAsync("git", ["-C", worktree, "remote", "add", "origin", sinkUrl], { windowsHide: true });
-    await execFileAsync("git", ["-C", worktree, "config", "remote.origin.pushurl", sinkUrl], { windowsHide: true });
+    await git(["-C", worktree, "remote", "add", "origin", sinkUrl]);
+    await git(["-C", worktree, "config", "remote.origin.pushurl", sinkUrl]);
     return;
   }
   for (const remote of remotes) {
-    await execFileAsync("git", ["-C", worktree, "config", `remote.${remote}.url`, sinkUrl], { windowsHide: true });
-    await execFileAsync("git", ["-C", worktree, "config", `remote.${remote}.pushurl`, sinkUrl], { windowsHide: true });
+    await git(["-C", worktree, "config", `remote.${remote}.url`, sinkUrl]);
+    await git(["-C", worktree, "config", `remote.${remote}.pushurl`, sinkUrl]);
   }
 }
 
@@ -184,7 +172,7 @@ async function writeGitconfig(sinkRoot: string, repos: GitIsolationRecord["repos
   for (const repo of repos) {
     const sinkUrl = gitFileUrl(repo.sink);
     for (const url of repo.originalUrls) {
-      await execFileAsync("git", ["config", "-f", gitconfig, "--add", `url.${sinkUrl}.insteadOf`, url], { windowsHide: true });
+      await git(["config", "-f", gitconfig, "--add", `url.${sinkUrl}.insteadOf`, url]);
     }
   }
 }
@@ -219,4 +207,11 @@ function isSinkUrl(url: string, sinkRoot: string): boolean {
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
+}
+
+function git(args: readonly string[]) {
+  return execFileAsync("git", ["-c", "core.longpaths=true", ...args], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
 }

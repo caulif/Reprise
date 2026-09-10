@@ -97,6 +97,7 @@ export async function inspectRun(
     ...(tokenUsage ? { tokenUsage } : {}),
     ...workspaceFacts,
     ...(replayConditions?.length ? { replayConditions } : {}),
+    controllerWritePaths: controllerWritePathsFromEvents(events),
   };
   const evidenceRefs = facts.evidenceEvents
     .map((event) => `event:${event.eventId}`);
@@ -107,13 +108,12 @@ export async function inspectRun(
     typeof settlementStatus === "string" ? settlementStatus : "unknown";
   const currentSummary = [
     `Latest target settlement: ${status}.`,
-    `Observed commands: ${commands.length}; changed paths: ${inspection.changedPaths.length}; rejected approvals: ${rejectedApprovals}.`,
-    `Workspace evidence: ${inspection.workspaceEvidenceStatus ?? "unavailable"}.`,
+    "Read current-user-view.md for the user-visible surface.",
     allowModelText && turnVisibleText
-      ? "Visible assistant text was recorded; inspect THIS-TURN and project files rather than treating this summary as completion."
+      ? "Visible assistant text is in current-user-view.md."
       : "No model text is available to the Controller.",
   ].join(" ");
-  const trajectorySummary = `Settled turns: ${inspection.turns}; commands: ${commands.length}; changed paths: ${inspection.changedPaths.length}; runtime-generated paths: ${inspection.runtimeGeneratedPaths.length}.`;
+  const trajectorySummary = `Settled turns: ${inspection.turns}. Read current-user-view.md and THIS-TURN.txt.`;
   return {
     ...inspection,
     evidenceRefs,
@@ -195,9 +195,9 @@ export function unstartedControllerObservation(): Pick<
 > {
   return {
     currentSummary:
-      "Candidate turn has not started. Settlement: none. No model text is available to the Controller. Observed commands: 0; changed paths: 0; rejected approvals: 0.",
+      "Candidate turn has not started. Read current-user-view.md for the user-visible surface. No model text is available to the Controller.",
     trajectorySummary:
-      "Settled turns: 0; commands: 0; changed paths: 0; runtime-generated paths: 0.",
+      "Settled turns: 0. Read current-user-view.md and THIS-TURN.txt.",
     evidenceRefs: [],
     changedPaths: [],
   };
@@ -355,6 +355,19 @@ async function textSnapshot(
   } catch {
     return undefined;
   }
+}
+
+function controllerWritePathsFromEvents(events: readonly EventEnvelope[]): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (event.type !== "controller.workspace_write") continue;
+    const path = recordValue(event.payload).path;
+    if (typeof path !== "string" || seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+  }
+  return paths;
 }
 
 function changedPathsBetween(

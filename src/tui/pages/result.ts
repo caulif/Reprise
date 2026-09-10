@@ -24,17 +24,17 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
   const metrics = metricsLine(theme, result, locale);
   return panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, [
     terminationBanner(theme, kind),
-    kv(theme, 'Task', result.record.outcome.task.status, width - 2),
-    kv(theme, 'Termination', `${kind} · ${result.record.outcome.termination.code}`, width - 2),
-    kv(theme, 'Cleanup', result.record.outcome.cleanup?.status ?? vacant, width - 2),
-    ...(!skipped ? [kv(theme, 'Comparison', failed ? `${locale === 'zh' ? '比较报告生成失败' : 'Report generation failed'} (${comparison.failure.kind ?? comparison.failure.code})` : comparison.status, width - 2)] : []),
+    kv(theme, t(locale, 'resultTask'), result.record.outcome.task.status, width - 2),
+    kv(theme, t(locale, 'resultTermination'), `${kind} · ${result.record.outcome.termination.code}`, width - 2),
+    kv(theme, t(locale, 'resultCleanup'), result.record.outcome.cleanup?.status ?? vacant, width - 2),
+    ...(!skipped ? [kv(theme, t(locale, 'resultComparison'), failed ? `${t(locale, 'resultReportFailed')} (${comparison.failure.kind ?? comparison.failure.code})` : comparison.status, width - 2)] : []),
     ...(metrics ? [`     ${metrics}`] : []),
     ...(headline ? ['', ...wrapBodyLine(headline, inner).map((line) => ` ${line}`)] : []),
     ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
-    ...(skipped ? ['', kv(theme, 'Comparison', t(locale, 'comparisonSkipped'), width - 2)] : []),
-    ...(skipped ? [] : kvLinkBlock(theme, failed ? 'Diagnostic' : 'Report', report, result.reportPath, width)),
-    ...kvLinkBlock(theme, 'Replica', replicaLabel(runId, theme, width, vacant), replicaAbs, width),
-    ...kvLinkBlock(theme, 'Trace', trace, traceAbs, width),
+    ...(skipped ? ['', kv(theme, t(locale, 'resultComparison'), t(locale, 'comparisonSkipped'), width - 2)] : []),
+    ...(skipped ? [] : kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), report, result.reportPath, width)),
+    ...kvLinkBlock(theme, t(locale, 'resultReplica'), replicaLabel(runId, theme, width, vacant), replicaAbs, width),
+    ...kvLinkBlock(theme, t(locale, 'resultTrace'), trace, traceAbs, width),
   ], width);
 }
 

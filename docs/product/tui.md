@@ -109,9 +109,9 @@ reprise compare
 
 Harness 展示 Controller 的可见工作过程，但不依赖或承诺获取 provider 的隐藏 reasoning token。无进行中工具时，各声部共用一条此刻行 `working`（与 Codex 的 Working 行同类）；`agent.assistant_visible` 全文只经 `[o]`，不铺进主列。候选进行中只投影校验过的 `payload.live`，不解析产品私有帧。
 
-主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：调查类工具合并成「动词 + 对象 + 次数」，变更与 `write` 各占一行，工具 stdout 与上下文 JSON 只经 `[o]`。一个实验一条单列连续记录：恢复、模拟用户投递、用户可见回合、结果与可选对照按持久化顺序追加。投递消息走 Input 声部，不得画成 Target 青色。候选用户可见内容来自已校验的 `candidate.user_view_persisted`；重开只读事件日志，不加载 Pack。未公开 reasoning 与产品私有 runtime payload 不进主列。Comparison 叠在同一时间线：Enter 才开对照，跳过则结果对照为未运行。滚动按条目身份保存阅读位置；向上阅读暂停跟随，Home 到最早可见条，End 或 `l` 跟随最新。实验内 `/` 搜索已投影的可见标题与短文案（含折叠组内标题与尚未展开的记录），不搜索长工具原文或 `original`。Enter / Shift+Enter 在命中间移动并展开所在组。`v` 关闭鼠标报告并暂停当前视图重绘，后台仍追加持久化事件；退出后提示暂停期间的新活动条数。查找中的 `v` 写入查询，不进入阅读模式。本地产物链接：路径须为已验证绝对路径，支持 OSC 8 时输出 `file:` URI，否则显示完整可复制路径，并去掉控制序列。进程 `exit`、未捕获异常会调用 `tui.stop()` 以恢复终端模式。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)与[可见短句与显式对照](../decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)与[UserVisibleTurn 时间线](../decisions/accepted/2026-09-10-user-visible-turn-timeline.md)与[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)与[阅读锚点、搜索与终端恢复](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)。
+主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：调查类工具合并成「动词 + 对象 + 次数」，变更与 `write` 各占一行，工具 stdout 与上下文 JSON 只经 `[o]`。一个实验一条单列连续记录：恢复、模拟用户投递、用户可见回合、结果与可选对照按持久化顺序追加。投递消息走 Input 声部，不得画成 Target 青色。候选用户可见内容来自已校验的 `candidate.user_view_persisted`；重开只读事件日志，不加载 Pack。未公开 reasoning 与产品私有 runtime payload 不进主列。Comparison 叠在同一时间线：结果段按 `c` 才开对照，跳过则对照为未运行。滚动按条目身份保存阅读位置；向上阅读暂停跟随，Home 到最早可见条，End 或 `l` 跟随最新。实验内 `/` 搜索已投影的可见标题与短文案（含折叠组内标题与尚未展开的记录），不搜索长工具原文或 `original`。Enter / Shift+Enter 在命中间移动并展开所在组。`v` 关闭鼠标报告并暂停当前视图重绘，后台仍追加持久化事件；退出后提示暂停期间的新活动条数。查找中的 `v` 写入查询，不进入阅读模式。本地产物链接：路径须为已验证绝对路径，支持 OSC 8 时输出 `file:` URI，否则显示完整可复制路径，并去掉控制序列。进程 `exit`、未捕获异常会调用 `tui.stop()` 以恢复终端模式。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)与[可见短句与显式对照](../decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)与[UserVisibleTurn 时间线](../decisions/accepted/2026-09-10-user-visible-turn-timeline.md)与[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)与[阅读锚点、搜索与终端恢复](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)。
 
-恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段图例是恢复活动，空画布不得写成候选正在写回复。超过 30 秒仍无恢复进展时提示「仍在恢复」，不用候选的「仍在等待本轮结束」。确认后进入候选运行，标题是「候选运行中 · {候选产品}」或「正在启动 {候选产品}」；图例「发给 {产品}」用 `CandidateSpec.productId` 的显示名，不用来源会话产品。用户终态为无法恢复或没有 accept 时，确认页禁止启动隔离候选，标题不得声称已准备隔离对照，原因留一句人话（校验失败时附代码）：变更为 0 时说明没有观察到隔离工作区变更，有变更才强调工作区校验未通过；禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；候选阶段超过 30 秒仍无 turn 终态时提示仍在等待，超过 120 秒无新事件时提示可 Ctrl+C。封面、列表、核对、恢复、确认、运行、对照门、对照过程与结果的可滚动区都接鼠标滚轮。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
+恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段图例是恢复活动，空画布不得写成候选正在写回复。超过 30 秒仍无恢复进展时提示「仍在恢复」，不用候选的「仍在等待本轮结束」。确认后进入候选运行，标题是「候选运行中 · {候选产品}」或「正在启动 {候选产品}」；图例「发给 {产品}」用 `CandidateSpec.productId` 的显示名，不用来源会话产品。用户终态为无法恢复或没有 accept 时，确认页禁止启动隔离候选，标题不得声称已准备隔离对照，原因留一句人话（校验失败时附代码）：变更为 0 时说明没有观察到隔离工作区变更，有变更才强调工作区校验未通过；禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；候选阶段超过 30 秒仍无 turn 终态时提示仍在等待，超过 120 秒无新事件时提示可 Ctrl+C。封面、列表、核对、恢复、确认、运行、对照过程与结果的可滚动区都接鼠标滚轮。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
 
 ### 4.2 决策与实际输入
 
@@ -207,7 +207,7 @@ Delivered · accepted · target turn 6
   target 42k tok · controller 6k tok · 7 target tool calls
 ```
 
-宽终端可以使用双栏，窄终端切换独立页面；“右侧入口”不是架构约束。当前候选产品与模型在恢复后的选择页确定，运行中不能切换；主时间线一次聚焦该候选。页脚只列出该页确实会响应的键，清单见[页脚快捷键](#10-页脚快捷键)。
+运行阅读默认单列。宽屏双栏只用于来源项目页（左列表右核对）。当前候选产品与模型在恢复后的选择页确定，运行中不能切换；主时间线一次聚焦该候选。页脚只列出该页确实会响应的键，清单见[页脚快捷键](#10-页脚快捷键)。
 
 ## 6. 运行结束后的三层体验
 
@@ -270,7 +270,7 @@ Delivered · accepted · target turn 6
 | 历史详情（用例） | Enter / t / Esc | 使用该用例 / 打开路径 / 返回 |
 | 历史详情（实验） | o / t / Esc | 打开报告（若有）/ 打开路径 / 返回 |
 | 源目录 | Enter / Backspace / Esc | 开始隔离运行 / 改路径 / 回封面（非首页入口） |
-| 预检 | b / Esc | 改源目录 / 回封面 |
+| 预检 | Esc / b | 回封面 |
 | 候选产品 | ↑↓ / Enter / b / Esc | 选择 / 进模型 / 返回 / 回封面 |
 | 候选模型 | ↑↓ / Enter / b / Esc | 选择 / 确认 / 改产品 / 回封面 |
 | 确认 | Enter / b / Esc | 开跑（被挡时仍按 Enter 只提示） / 改模型 / 回封面 |
@@ -281,7 +281,7 @@ Delivered · accepted · target turn 6
 
 运行页是只读观看面：不向目标 Runtime 打字，续问由 Controller 产生。帮助层按当前页面显示。运行阶段由共享 Runtime 生命周期事件投影，适用于所有 Pack。
 
-结果和历史分别显示任务判断、运行终止及 Comparison 状态。比较失败显示失败类别，入口标为 Diagnostic；已有成功报告保留，并在适用时标为 Previous report。配置页密钥使用完整遮罩，会话列表摘要排除共享识别规则认定的注入指令，原始会话仍用于检查和回放。
+结果段叠在同一条记录底部，三行人话对应任务判断、运行终止、清理；跳过对照写「对照未运行」。产物短标签打开报告、隔离副本与记录目录（支持 OSC 8 时用 `file:` 链接）。比较失败显示失败类别，入口标为 Diagnostic。配置页密钥使用完整遮罩，会话列表摘要排除共享识别规则认定的注入指令，原始会话仍用于检查和回放。手填源目录只在历史 cwd 缺失时出现，封面 `/` 进不了该页。
 
 ## 11. 借鉴边界
 

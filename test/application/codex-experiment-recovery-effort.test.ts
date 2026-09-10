@@ -644,6 +644,7 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
+  await writeFile(join(base.sourceRoot, "README.md"), "# source\n");
   const task = {
     ...base.taskCase,
     taskContext: { ...base.taskCase.taskContext, relevantPaths: ["README.md"] },
@@ -865,7 +866,7 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
     maxModelAttempts: 2,
     now,
   });
-  assert.equal(attempt.baseline.recovery?.taskOutcome, "unrecoverable");
+  assert.equal(attempt.baseline.recovery?.taskOutcome, "blocked_by_safety");
   assert.equal(attempt.baseline.recovery?.status, "blocked");
 });
 

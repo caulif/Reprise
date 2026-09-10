@@ -53,8 +53,10 @@ export type RecoveryToolOptions = {
   onControlledWrite?: RecoveryControlledWriteHook;
   onOperation?: (operation: RecoveryToolOperation) => Promise<void>;
   filesystem?: RecoveryToolFilesystem;
-  /** First path segment → absolute tree. Writes to these mounts are denied. */
+  /** First path segment → absolute tree. Writes to these mounts are denied unless listed in `writableMounts`. */
   mounts?: Readonly<Record<string, string>>;
+  /** Mount first segments that `edit`/`write` may target when `allowWrite` also returns true. */
+  writableMounts?: readonly string[];
   allowWrite?: (relativePath: string) => boolean;
   completionPaths?: ReadonlySet<string>;
   denyDestructiveOnPrefix?: readonly string[];
@@ -139,7 +141,7 @@ export function recoveryTools(
     findTool(ctx),
     editTool(ctx),
     writeTool(ctx),
-    powershellTool(ctx),
+    ...(options.allowShell ? [powershellTool(ctx)] : []),
   ];
 }
 
@@ -679,7 +681,7 @@ function shellExecDescription(ctx: RecoveryToolContext): string {
   const lock = readonly.length
     ? ` Read-only mounts (${readonly.join(", ")}) must not be mutated. Write only staging files the role allows (Comparison: scratch/, work/comparison-plan.md, report.html).`
     : "";
-  return `Run one host-shell command with cwd locked to staging. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided.${lock}`;
+  return `Run one host-shell command with cwd locked to staging. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. Sensitive-file and read-only-mount checks match the command text, not a semantic sandbox.${lock}`;
 }
 
 function workspaceRelative(input: string): string | { root: true } | undefined {
@@ -706,9 +708,11 @@ function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath 
   const mountRoot = ctx.mounts[parts[0] ?? ""];
   if (mountRoot) {
     const rest = parts.slice(1).join("/");
-    if (!rest) return { absolute: resolve(mountRoot), relative: parts[0]!, writable: false, containmentRoot: resolve(mountRoot) };
+    const mountName = parts[0]!;
+    if (!rest) return { absolute: resolve(mountRoot), relative: mountName, writable: false, containmentRoot: resolve(mountRoot) };
     const inner = containedPath(mountRoot, rest);
-    return { absolute: inner.absolute, relative: `${parts[0]}/${inner.relative}`, writable: false, containmentRoot: resolve(mountRoot) };
+    const writable = Boolean(ctx.options.writableMounts?.includes(mountName));
+    return { absolute: inner.absolute, relative: `${mountName}/${inner.relative}`, writable, containmentRoot: resolve(mountRoot) };
   }
   const inner = containedPath(ctx.root, relativePath);
   return { ...inner, writable: true, containmentRoot: ctx.root };

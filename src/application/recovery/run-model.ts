@@ -50,6 +50,12 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
     budget: { timeoutMs: input.recovery.timeoutMs ?? 600_000 },
     allowModelText: input.taskCase.privacy.allowModelText,
     continuityKey: input.experimentId,
+    evidence: {
+      catalogCount: facts.catalog.length,
+      verifiedCount: facts.verifiedEvidence.length,
+      evidenceRefs: facts.evidenceRefs,
+      verified: facts.verifiedEvidence.map((item) => ({ ref: item.ref, kind: item.kind })),
+    },
   };
 }
 

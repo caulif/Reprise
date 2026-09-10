@@ -108,6 +108,14 @@ export const ControllerObservationReadPayloadSchema = Type.Object({
   evidenceRefs: Type.Array(EvidenceRefSchema),
 });
 export type ControllerObservationReadPayload = Static<typeof ControllerObservationReadPayloadSchema>;
+export const ControllerWorkspaceWritePayloadSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  requestId: Id,
+  runId: Id,
+  tool: Type.Union([Type.Literal("edit"), Type.Literal("write")]),
+  path: Type.String({ minLength: 1, maxLength: 512 }),
+});
+export type ControllerWorkspaceWritePayload = Static<typeof ControllerWorkspaceWritePayloadSchema>;
 export const ControllerReadArtifactSchema = Type.Object({
   path: Type.String({ minLength: 1 }), offset: Type.Integer({ minimum: 0 }),
   content: Type.String(),
@@ -116,7 +124,6 @@ export const ControllerReadArtifactSchema = Type.Object({
     Type.Object({ type: Type.Literal("image"), data: Type.String(), mimeType: Type.String() }),
   ]))),
 });
-export const ControllerShellArtifactSchema = Type.Object({ schemaVersion: Type.Literal(1), command: Type.String({ minLength: 1 }), cwd: Type.Literal("."), exitCode: Type.Integer(), stdoutBytes: Type.Integer({ minimum: 0 }), stderrBytes: Type.Integer({ minimum: 0 }), truncated: Type.Boolean(), content: Type.String() });
 export const ComparisonRequestedPayloadSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   requestId: Id,

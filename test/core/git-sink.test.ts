@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { sha256 } from "../../src/core/identity.js";
 import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import { gitSinkRoot, isolateGitTopology } from "../../src/environment/git-sink.js";
 import { isolateCandidateProcessEnv } from "../../src/infrastructure/process/spawn.js";
@@ -62,6 +63,26 @@ test("prepareRun retargets nested origin to a harness sink and does not advance 
   await git(["push", userRemote, "HEAD"], environment.root, candidateEnv);
   assert.equal(await git(["--git-dir", userRemote, "rev-parse", "refs/heads/main"]), userHead);
   assert.equal(await git(["--git-dir", nestedRemote, "rev-parse", "refs/heads/main"]), nestedHead);
+});
+
+test("isolateGitTopology hashes nested sink names and does not clone --bare", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "reprise-git-nested-"));
+  const nestedRemote = join(tmp, "nested-remote.git");
+  const source = join(tmp, "source");
+  const paper = join(source, "caulif", "themes", "PaperMod");
+  await git(["init", "--bare", nestedRemote]);
+  await initRepo(paper, nestedRemote);
+  const sinks = join(tmp, "git-sinks", "baseline-case-f4452141a0bc4dd0");
+  const record = await isolateGitTopology(source, sinks);
+  const nested = record.repos.find((repo) => repo.relative === "caulif/themes/PaperMod");
+  assert.ok(nested);
+  assert.equal(basename(nested.sink), `${sha256("caulif/themes/PaperMod").slice(0, 12)}.git`);
+  assert.doesNotMatch(basename(nested.sink), /PaperMod|themes|__/);
+  const index = await readFile(join(sinks, "INDEX.tsv"), "utf8");
+  assert.match(index, /caulif\/themes\/PaperMod/);
+  await isolateGitTopology(source, sinks);
+  const sourceText = await readFile(join(process.cwd(), "src/environment/git-sink.ts"), "utf8");
+  assert.doesNotMatch(sourceText, /clone", "--bare"/);
 });
 
 test("isolateGitTopology is a no-op without git metadata", async () => {

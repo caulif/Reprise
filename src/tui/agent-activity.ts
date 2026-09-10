@@ -138,18 +138,6 @@ export function lastLiveVerb(entries: readonly TimelineEntry[]): string | undefi
   return undefined;
 }
 
-export function actorVerb(entries: readonly TimelineEntry[], lane: AgentLane): string | undefined {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (!entry || entry.hidden) continue;
-    if (lane === 'controller' && (isDecision(entry) || entry.title.startsWith('Input to Target'))) {
-      return isDecision(entry) ? verbFromTitle(entry.title) : 'send';
-    }
-    if (entry.lane === lane) return verbFromTitle(entry.title);
-  }
-  return undefined;
-}
-
 function laneLabel(lane: AgentLane): string {
   return lane === 'recovery' ? 'Recovery' : lane === 'controller' ? 'Controller' : 'Comparison';
 }
@@ -249,10 +237,6 @@ function joinOriginal(left: string | undefined, right: string | undefined): stri
 function verbFromTitle(title: string): string {
   const at = title.indexOf(' · ');
   return at >= 0 ? title.slice(at + 3) : title.replace(/^Decision:\s*/, '');
-}
-
-function isDecision(entry: TimelineEntry | undefined): boolean {
-  return Boolean(entry?.title.startsWith('Decision:'));
 }
 
 

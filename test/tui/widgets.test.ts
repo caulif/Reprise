@@ -219,6 +219,15 @@ test('the error page names a Windows baseline lock without dumping the staging p
   assert.doesNotMatch(text, /vironment/);
 });
 
+test('the error page names a Git sink path overflow without dumping clone output', () => {
+  const theme = createTheme(120, false);
+  const error = new Error("Command failed: git clone --bare --local\nfatal: cannot write keep file\n'C:/Users/example/.reprise/experiments/recovery-1/environment/git-sinks/baseline-case-f4452141a0bc4dd0/repos/caulif__themes__PaperMod.git/objects/pack/pack-1e4f159b3c65312458a0a98214612ef5cacfea54.keep': Filename too long\nfatal: fetch-pack: invalid index-pack output");
+  const text = renderFailure(theme, 120, operatorErrorMessage(error, 'zh')).join('\n');
+  assert.match(text, /路径超限/);
+  assert.doesNotMatch(text, /clone --bare/);
+  assert.doesNotMatch(text, /pack-1e4f159b/);
+});
+
 test('stateRail wraps on segment boundaries at compact width', () => {
   const theme = createTheme(60, false);
   const lines = stateRail(theme, 'launching', 60);

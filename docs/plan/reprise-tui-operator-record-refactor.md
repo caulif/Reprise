@@ -1,6 +1,6 @@
 # TUI 操作者记录面全面重构
 
-面向执行重构的 coding agent。只读本文、当前 `src/tui/` 与文内链接即可开工。信息取舍以[操作者画布](./reprise-tui-operator-canvas.md)为准，按键与阅读合同以[阅读与交互](./reprise-tui-design.md)为准，此刻行协议以[此刻行与已结算画布](../decisions/accepted/2026-09-10-tui-live-now-row.md)为准。落地操作以[产品 TUI](../product/tui.md)为准，本计划改的是目标页图与投影，不能把目标写成已上线行为。
+面向执行重构的 coding agent。只读本文、当前 `src/tui/` 与文内链接即可开工。信息取舍以[操作者画布](./reprise-tui-operator-canvas.md)为准，按键与阅读合同以[阅读与交互](./reprise-tui-design.md)为准，此刻行协议以[此刻行与已结算画布](../decisions/accepted/2026-09-10-tui-live-now-row.md)为准。恢复、模拟用户与对照短句脊在落地前以[内部 Agent Trace](./reprise-tui-recovery-trace.md)为准，与此刻行记录中「内部 assistant_visible 不进主列」冲突时按该计划实施并另写 ADR。落地操作以[产品 TUI](../product/tui.md)为准，本计划改的是目标页图与投影，不能把目标写成已上线行为。
 
 本机 HTML 草图（`docs/research/reprise-tui-operator-canvas.html`）只演示过程怎么长出来，不受控，不拥有验收，不能当终端证据。
 
@@ -39,7 +39,7 @@
 | 内部模型 | 三个内部角色共用配置；候选目录不出现。 | `config` |
 | 历史 | 打开实验即同一套记录投影，定位最后结果，可向上滚全过程。 | `history` 列表；详情不是第二套语义 |
 | 恢复 / 候选协作 / 对照过程 | **同一阅读面**：分段标题 + 此刻行 + 已结算组。顶栏：任务、阶段、产品、状态、耗时。恢复阶段不写轮次。 | `running` 为唯一阅读面 |
-| 候选产品 / 模型 / 确认 | 分层选择叠在记录尾；顶栏任务与已写下的恢复内容可滚回。确认只复述产品、模型、恢复终态、费用、「原目录不变」。 | 可保留独立 `WorkbenchPage`，禁止清掉记录 |
+| 候选产品 / 模型 | 只两页，叠在恢复记录尾。选完模型进入模拟用户，不要确认页。模拟用户页不带恢复色块。 | 可保留独立 `WorkbenchPage`；选择页禁止清掉恢复，运行页重新开始 |
 | 结果 | 叠在记录底部：任务判断、技术终止、清理；短标签打开产物；跳过对照写「对照未运行」，`c` 追加对照。 | 禁止用独立结果页替换画布 |
 | 失败 / 中断 | 恢复不足、取消中 / 已取消、端点不可达、清理失败各用一句人话。 | `error` 仅无法进入记录时 |
 | 深层记录 | 原始事件入口，不是首页导航。 | overlay `viewer` |
@@ -83,7 +83,7 @@ Pack 动词映射（Claude `tool_use`、Codex `item/started`）已由 Adapter �
 |---|---|---|---|
 | R1 记录壳 | 一个实验一条可滚记录 | `running` 为阅读面；对照不再必经换页；结果段叠在时间线底；历史打开同一投影 | `page-input`、`codex-intake-commands`、`local-history`；封面/运行/结果帧 |
 | R2 此刻行 | 任何进行中声部主列不空 | chrome 与 30 秒文案；live 行钉尾；组折叠与失败合并不被此刻行打断 | `timeline`、`agent-activity-canvas`、`narrative-canvas`、`public-live-protocol`；运行帧含 `working` / `live` |
-| R3 选择不丢记录 | 选候选时仍能滚回恢复 | 产品 / 模型 / 确认叠在记录尾 | 候选选择帧；核对恢复标题仍可见 |
+| R3 选择不丢记录 | 选候选时仍能滚回恢复 | 产品 / 模型叠在记录尾；模拟用户页清空恢复色块 | 候选选择帧；核对恢复标题仍可见 |
 | R4 主路径单列 | 默认阅读不被第二栏或角色层挡住 | 运行面去掉主路径过滤/角色 overlay；Tab/Enter 展开；`viewer` 留深层 | 运行帧无角色层；`actors` 不出现在默认 hints |
 | R5 终态 | 判断 / 终止 / 清理 / 短标签 | 结果段文案；OSC 8；失败与中断投影 | `tui-workflow`、结果/失败帧 |
 | R6 选择面密度 | 封面与来源符合阅读规划 | 封面命令与最近实验一行；项目详情层次；空态三类；降级手填 source | `product-first-intake`、会话帧（含 CJK） |
@@ -95,9 +95,9 @@ R1 必须先于 R3、R5。R2 可紧挨 R1，但不要和 R7 抢同一批帧。R6
 
 ### R1 记录壳
 
-阅读 [`workbench.ts`](../../src/tui/workbench.ts) 的 `WorkbenchPage` 与 `renderBody`。目标：`compare-gate` 不再清空记录；`c` 从结果段启动对照并继续追加同一时间线。`result` 渲染为时间线 + 末段 summary，历史重开走 `projectPersistedTimeline`。对照仍是独立 Workflow 启动，只改呈现位置。
+阅读 [`workbench.ts`](../../src/tui/workbench.ts) 的 `WorkbenchPage` 与 `renderBody`。目标：`compare-gate` 不再挡住结果。`c` 从结果段启动对照；对照进行中主列只投影对照 Agent，不带控制 Agent 的 Input 与候选回复。`result` 在 skipped 写未运行，完成后换 headline。历史重开走 `projectPersistedTimeline`。对照仍是独立 Workflow。
 
-反向：默认路径再把对照做成必经换页并丢掉恢复/协作条目，则红。
+反向：默认路径再把对照做成空白门页并丢掉结果框，或对照页再铺 Input 卡，则红。
 
 ### R2 此刻行
 
@@ -107,9 +107,9 @@ R1 必须先于 R3、R5。R2 可紧挨 R1，但不要和 R7 抢同一批帧。R6
 
 ### R3 选择不丢记录
 
-候选产品 / 模型 / 确认可以仍是独立 `WorkbenchPage`，但布局必须带当前任务短句，并允许滚回已投影的恢复段（或把选择做成记录尾 overlay，不得 `innerHTML` 式清屏）。确认页不出现候选计费墙文案。无 accept 的恢复失败禁止进入隔离候选，原因一句人话。
+候选产品 / 模型可以仍是独立 `WorkbenchPage`，但布局必须带当前任务短句，并允许滚回已投影的恢复段（或把选择做成记录尾 overlay，不得 `innerHTML` 式清屏）。选完模型 Enter 开跑，不要第三页确认。进入模拟用户后主列不投影恢复色块。无 accept 的恢复失败禁止进入隔离候选，原因一句人话。
 
-反向：确认页在 `status` 无 accept 时仍可 Start，则红（沿用已有恢复失败门）。
+反向：模型页在 `status` 无 accept 时仍可开跑，则红（沿用已有恢复失败门）。
 
 ### R4 主路径单列
 

@@ -72,12 +72,16 @@ function capturingSpawner(capture: {
 }
 
 
-test("shell_exec is always registered on the Recovery workspace surface", async (t) => {
+test("shell_exec is registered only when allowShell is true", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  assert.equal(recoveryTools(root).some((item) => item.name === "shell_exec"), true);
+  assert.equal(recoveryTools(root).some((item) => item.name === "shell_exec"), false);
   assert.deepEqual(
     recoveryTools(root).map((item) => item.name).sort(),
+    ["edit", "find", "grep", "ls", "read", "write"],
+  );
+  assert.deepEqual(
+    recoveryTools(root, { allowShell: true }).map((item) => item.name).sort(),
     ["edit", "find", "grep", "ls", "read", "shell_exec", "write"],
   );
 });
@@ -415,7 +419,7 @@ test("recovery catalog assigns stable Host refs to transcript and id-less histor
 
 test("workspace factory does not register frozen-history paging tools", () => {
   const names = recoveryTools("TMP").map((item) => item.name).sort();
-  assert.deepEqual(names, ["edit", "find", "grep", "ls", "read", "shell_exec", "write"]);
+  assert.deepEqual(names, ["edit", "find", "grep", "ls", "read", "write"]);
   assert.equal(names.includes("read_observation"), false);
 });
 

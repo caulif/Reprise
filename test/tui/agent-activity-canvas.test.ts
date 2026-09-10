@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { EventEnvelope } from '../../src/core/schema.js';
 import { matchesFilter } from '../../src/tui/scrollback.js';
-import { renderActors } from '../../src/tui/pages/actors.js';
+import { lastLiveVerb } from '../../src/tui/agent-activity.js';
 import { renderTimeline, runningChrome } from '../../src/tui/pages/run.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { appendTimelineEntries, projectTimelineEvent, type TimelineEntry } from '../../src/tui/timeline.js';
@@ -134,17 +134,11 @@ test('comparison header does not keep the candidate turn chrome', () => {
   assert.match(text, /对照结论/);
 });
 
-test('actors overlay shows the current controller verb', () => {
-  const theme = createTheme(80, false);
+test('controller inspect live verb is readable from the activity canvas', () => {
   const entries = collect([
     event('agent.tool_called', { role: 'controller', tool: 'read', params: { path: 'history/outline.tsv' } }),
   ]);
-  const text = renderActors(theme, 56, {
-    entries,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
-    currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1, max: 3 }, detailExpanded: false,
-  }, 'zh').join('\n');
-  assert.match(text, /inspect|outline/);
+  assert.match(lastLiveVerb(entries) ?? '', /inspect|outline|read/);
 });
 
 

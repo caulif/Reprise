@@ -101,7 +101,7 @@ export async function loadProductSessions(c: IntakeTui, productId: string, mode:
     c.activateProductSessions(productId, listed, false);
   } catch (error) {
     if (token !== c.generation || abort.signal.aborted) return;
-    const message = operatorErrorMessage(error);
+    const message = operatorErrorMessage(error, c.locale);
     c.productDiscovery.set(productId, { status: "error", root, message });
     c.intakeLevel = "products";
     c.activeProductId = "";

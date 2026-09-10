@@ -20,6 +20,7 @@ export type RunInspection = {
   finalMessage?: string;
   changedPaths: readonly string[];
   runtimeGeneratedPaths: readonly string[];
+  controllerWritePaths?: readonly string[];
   commands: readonly string[];
   rejectedApprovals: number;
   turns: number;

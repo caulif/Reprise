@@ -68,7 +68,7 @@ test('controller contract lane covers 12 cases and one fact-changing variant eac
         total += score(result.value, expected);
         if (!item.id.endsWith('-variant')) assert.deepEqual(result.value.evidenceRefs, item.expected.evidenceRefs);
       }
-      agents.controller.release?.(RUN_ID);
+      await agents.controller.release?.(RUN_ID);
     }
   }
   const runs = all.length * 3;
@@ -103,7 +103,7 @@ test('controller rejects ungrounded evidence and unsafe message output', async (
   ]));
   const first = await agents.controller.decide(controllerEvalContext('invalid-evidence', 'known'));
   assert.equal(first.status, 'failed');
-  agents.controller.release?.(RUN_ID);
+  await agents.controller.release?.(RUN_ID);
   const second = await agents.controller.decide(controllerEvalContext('unsafe-message', 'known'));
   assert.equal(second.status, 'failed');
 });

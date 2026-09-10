@@ -13,7 +13,7 @@
 3. 每个 CandidateRun 使用独立的 Controller session，候选之间不共享隐藏状态；同一 Experiment 的候选共享同一份已解析 Controller 配置。
 4. Pi Agent Host 随项目正常更新，不要求恢复或固定历史 Host 版本，也不作为目标 Runtime 的比较变量。
 5. Controller 可以且必须通过稳定的用户输入索引访问 TaskCase 中的完整原始会话。用户输入是理解目标、知识、偏好、纠正方式和验收习惯的证据；Target Runtime 收到的用户消息全部由 Controller 写出，包括第一句。历史 Agent 输出、工具过程和交付物按需读取，不在每轮全部内联。
-6. 完整原始会话的使用边界由 canonical system prompt 明确限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停，不是用完 `historicalUserTurns`。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。Controller 只在候选 turn 稳定完成后，先看 Host 的用户视图快照，再按需读取用户可访问材料；不读取流式中间内容。第一版不设计未来信息检测、答案泄漏评分、第二审查 Agent 或人工用户策略规则。
+6. 完整原始会话的使用边界由 canonical system prompt 明确限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停，不是 briefing 里是否还有未读的历史用户文件。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。Controller 只在候选 turn 稳定完成后，先看 Host 的用户视图快照，再按需读取用户可访问材料；不读取流式中间内容。第一版不设计未来信息检测、答案泄漏评分、第二审查 Agent 或人工用户策略规则。
 7. “同等人类能力”不能被证明，只能被操作化。产品实现的是固定条件下的适应性用户协作模拟，不声称精确预测真实用户在反事实情境中的唯一输入。
 8. Controller 使用什么模型不属于 Harness 的产品判断，取决于用户通过 Pi 能访问什么模型。Harness 不捆绑、推荐或评价 Controller 模型。
 
@@ -88,9 +88,9 @@ Pi Agent Host 是 Harness 的实现基础设施，不是需要恢复的历史 Ag
 
 ## 4. Controller 工具集合
 
-Controller 工具让扮演用户的模型能看见隔离副本里一个真实用户本来就能看见的证据。工具名是工作区七件套，不含 `read_observation`（见 [Controller 七工具](../decisions/accepted/2026-09-03-controller-seven-workspace-tools.md)）。不能绕过 Target Runtime 执行任务。
+Controller 工具让扮演用户的模型能看见隔离副本，并像真人一样修改工作区文件。注册集合等于可执行集合，不含 `read_observation`，默认不含 `shell_exec`（见 [协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)）。不能绕过 Target Runtime 执行任务。
 
-Host 暴露工作区七件套。`read_observation` 不注册。历史与本 run 原文在 briefing 目录，用 `read` 读取。`powershell` 的 cwd 锁在隔离副本（`project/` 挂载），净化环境、不给凭据、stdout/时限有界。briefing 根与 `project/` 均拒写。不按工具调用次数截断；上下文走 Pi 压缩。
+Host 把工作区工具挂在 briefing 根上。`project/` 是隔离副本挂载：可读，且 `edit`/`write` 仅允许该挂载下的文件。briefing 根拒写。历史与本 run 原文用 `read` 读取。不按工具调用次数截断；上下文走 Pi 压缩。
 
 工具边界：
 
@@ -101,7 +101,7 @@ Host 暴露工作区七件套。`read_observation` 不注册。历史与本 run 
 - 确定性 renderer 可以生成派生预览，但预览必须成为带 provenance 的新 artifact；
 - 工具能力配置在同一 Experiment 的候选间一致，实际调用次数不要求一致。
 
-当前环境和候选轨迹的轻量摘要可以出现在 INDEX、用户视图快照与 THIS-TURN 文件里。工具用于按需读用户可访问原文，不应该让 Controller 在整个工作区里漫游。视图快照在候选 turn 稳定完成后由 Host 写入，代表用户此刻能看到的状态、回复、交付入口和可见提示。
+当前环境和候选轨迹的轻量入口出现在 INDEX 与用户视图快照里。Host snapshot 中的 `current.summary` 不内联命令或路径计数。`project/` 可读范围是整棵隔离副本；用户可见表面由 `current-user-view.md` 承担。Controller 对 `project/` 的写入记入 `controller.workspace_write` 与 `run/controller-writes.jsonl`。
 
 ## 5. 原始会话可见范围
 
@@ -113,10 +113,11 @@ Controller 对原始会话采用“完整可访问”，而不是“每轮把所
 - 从 `initialInput` 到会话结束的全部原始消息和事件都可以读取；
 - 不隐藏原始会话中的未来用户输入或原 Agent 结果；那些材料在 briefing 的 `history/` 下按需 `read`，由 Controller 决定是否说、怎么说；
 - Host 不因「还有未使用的历史用户句」拒绝 `done`，也不按序强制投递；
-- `current.summary` 投影结算、命令、路径和后续用户句条数，不把候选终态自述当作完成信号；
+- `current.summary` 只指向 `current-user-view.md` 与结算状态，不把命令数、路径数或候选终态自述当作完成信号；
 - 摘要不能替代 transcript，也不能成为唯一仍可访问的历史；
-- 每次读取保留消息 ID、顺序和 provenance；
-- privacy policy 可以在发送给外部 provider 前脱敏，但脱敏事实必须可见。
+- 每次读取保留消息 ID、顺序和 provenance；opening 与 steering 读取 briefing 材料时记 `source=briefing_read` 的 observation evidence，可被当轮决策引用；
+- privacy policy 可以在发送给外部 provider 前脱敏，但脱敏事实必须可见；
+- `privacy.allowModelText=false` 关闭正文（写成 `[REDACTED]`），不隐藏会话结构（id、role、顺序、字节数）。
 
 默认上下文组装为：
 
@@ -176,7 +177,7 @@ interface AgentBudget {
 
 产品可以继续使用“同等人类能力”这一简洁名称，但架构和报告中的准确表述应是：
 
-> Harness 使用用户选择且在 Experiment 内保持一致的 Controller 配置。Controller 基于完整原始会话、同一任务事实、当前候选轨迹和只读结果证据，模拟具有原用户目标、知识、偏好、权限和实际协作能力的用户，动态生成下一条输入。
+> Harness 使用用户选择且在 Experiment 内保持一致的 Controller 配置。Controller 基于完整原始会话、同一任务事实、当前候选轨迹、用户可见表面和隔离副本（可 edit/write），模拟具有原用户目标、知识、偏好、权限和实际协作能力的用户，动态生成下一条输入。
 
 这是一种可记录、可解释的操作化条件，不是对真实用户反应的证明。报告应显示 Controller 的请求模型、解析后身份、配置 hash、工具能力、预算配置（默认无限制）和压缩策略，使用户知道比较是在什么协作条件下产生的；不需要给 Controller 的“等同性”打分。
 

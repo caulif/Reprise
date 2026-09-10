@@ -168,6 +168,15 @@ test('store rejects malformed Controller request and observation payloads', asyn
     );
     await assert.rejects(
       store.append({
+        type: 'controller.workspace_write',
+        runId: 'run-1',
+        operationId: 'controller-request-run-1-1-write-1',
+        payload: { schemaVersion: 1, requestId: 'controller-request-run-1-1', path: 'project/a.txt' },
+      }),
+      /controller.workspace_write payload does not satisfy its schema/,
+    );
+    await assert.rejects(
+      store.append({
         type: 'comparison.requested',
         runId: 'run-1',
         operationId: 'comparison-requested',
@@ -200,7 +209,6 @@ test('store reconstructs a Controller request from persisted events including ob
         initialInput: { id: 'message-1', role: 'user', text: 'Implement it.' },
         baseline: { status: 'unavailable', artifactRefs: [], evidenceRefs: [] },
         privacy: { allowModelText: true, allowBinary: false, redactions: [] },
-        historicalUserTurns: [],
       },
       current: { summary: 'Waiting.', evidenceRefs: ['event:current-1'] },
       trajectory: { summary: 'None.', evidenceRefs: [] },

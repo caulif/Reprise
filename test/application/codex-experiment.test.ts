@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ComparisonAgentPort } from "../../src/agents/comparison-agent.js";
 import { ControllerAgent, type ControllerPort } from "../../src/agents/controller-agent.js";
-import { controllerReadEvidenceOnRequest, reconstructControllerRequest } from "../../src/application/controller-request.js";
+import { reconstructControllerRequest } from "../../src/application/controller-request.js";
 import { preflightExperiment } from "../../src/application/experiment-preflight.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
 import { startExperiment } from "../../src/application/experiment.js";
@@ -368,9 +368,7 @@ test("a scripted Controller run persists controller.requested and reconstructs i
                 intent: "continue",
               });
             }
-            await session.tools.find((entry) => entry.name === 'shell_exec')!.execute({ command: process.platform === 'win32' ? 'Get-Content -LiteralPath README.md' : 'cat README.md' }, new AbortController().signal);
-            const tool = session.tools.find((entry) => entry.name === "read")!;
-            await tool.execute({ path: "run/turns/0001/visible.txt" }, new AbortController().signal);
+            await session.tools.find((entry) => entry.name === "read")!.execute({ path: "run/turns/0001/visible.txt" }, new AbortController().signal);
             return JSON.stringify({ type: "done", reason: "satisfied" });
           },
           cancel() {},
@@ -401,15 +399,7 @@ test("a scripted Controller run persists controller.requested and reconstructs i
     assert.match(readContent.content, /Focused change completed/);
     const corrected = reconstructControllerRequest(events, 'controller-request-run-1-2');
     assert.doesNotMatch(String(corrected.snapshot.promptContent), /Host completion feedback/);
-    const shellEvent = events.find((event) => event.type === 'controller.observation_read' && (event.payload as { source: string }).source === 'workspace_shell');
-    assert.ok(shellEvent);
-    assert.equal(controllerReadEvidenceOnRequest([shellEvent], 'run-1', 'controller-request-run-1-2'), false);
-    const shellPayload = shellEvent.payload as { evidenceRefs: string[]; requestId: string };
-    assert.equal(shellPayload.requestId, 'controller-request-run-1-2');
-    const shellArtifact = JSON.parse((await store.readArtifact({ artifactId: shellPayload.evidenceRefs[0]!.slice('artifact:'.length), experimentId: 'experiment-1', runId: 'run-1' })).toString()) as { content: string; exitCode: number; cwd: string };
-    assert.match(shellArtifact.content, /# source/);
-    assert.equal(shellArtifact.exitCode, 0);
-    assert.equal(shellArtifact.cwd, '.');
+    assert.equal(events.some((event) => event.type === 'controller.observation_read' && (event.payload as { source: string }).source === 'workspace_shell'), false);
     const decision = events.find((event) => event.type === "controller.decision");
     const submitted = events.find((event) => event.type === "input.submitted");
     assert.ok(decision && submitted);

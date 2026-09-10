@@ -84,7 +84,7 @@ export function IntakeTui_showError(this: IntakeTui, error: unknown, returnPage:
     this.page = "error";
     this.message = error instanceof Error && error.name === 'HarnessProbeError'
       ? formatHarnessFailure(this.locale, 'probe', classifyAgentFailure(error.cause))
-      : sessionReplayErrorMessage(error, this.locale) ?? operatorErrorMessage(error);
+      : sessionReplayErrorMessage(error, this.locale) ?? operatorErrorMessage(error, this.locale);
   }
 
 export function IntakeTui_returnFromError(this: IntakeTui): { consume: true } {
@@ -109,7 +109,6 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.hideHelp();
     this.hideCommandOverlay();
     this.viewer = undefined;
-    this.actorsOpen = false;
     this.page = "home";
     this.composer = "";
     this.composerCursor = 0;
