@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { TargetRunner } from "../src/core/runtime.js";
-import { CodexProductRuntime } from "../src/products/codex/runtime-port.js";
-import { candidateLaunchFor } from "../src/application/candidate-launch.js";
+import { CodexProductRuntime } from "../src/products/packs/codex/runtime.js";
+import { candidateLaunchFor } from "../src/application/recovery/launch-context.js";
 
 export const fixturePath = new URL(
   "./fixtures/codex-session.fixture.json",

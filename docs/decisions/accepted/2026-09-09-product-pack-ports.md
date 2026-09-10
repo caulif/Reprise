@@ -10,7 +10,7 @@ Application 需要产品无关端口来发现历史、选择模型和创建候�
 
 ## 决定
 
-`reprise/pack-api` 的 `PACK_API_MAJOR` 为 2。`ProductPack` 端口是 `history: ProductHistoryReader`、`runtime: ProductRuntime`、`projection: UserSurfaceProjection`。访问函数是 `packHistory`、`packRuntime`、`packProjection`。持久化的候选交接对象是 `CandidateLaunchContext` 与 `CandidateSessionHandle`，读写经过 `Value.Check`。不导出 `SessionSourceAdapter`、`RuntimePort`、`TargetActivityTranslator` 或 `packSessions` / `packActivity`。Application 与 TUI 不导入产品私有实现。
+`reprise/pack-api` 的 `PACK_API_MAJOR` 为 3。投影端口与正式时间线见 [UserVisibleTurn 时间线](./2026-09-10-user-visible-turn-timeline.md)。`ProductPack` 端口是 `history: ProductHistoryReader`、`runtime: ProductRuntime`、`projection: UserSurfaceProjection`。访问函数是 `packHistory`、`packRuntime`、`packProjection`。持久化的候选交接对象是 `CandidateLaunchContext` 与 `CandidateSessionHandle`，读写经过 `Value.Check`。不导出 `SessionSourceAdapter`、`RuntimePort`、`TargetActivityTranslator`、`TargetActivity` 或 `packSessions` / `packActivity`。Application 与 TUI 不导入产品私有实现。
 
 ## 备选方案
 
@@ -20,8 +20,8 @@ Application 需要产品无关端口来发现历史、选择模型和创建候�
 
 ## 影响
 
-本地插件必须声明 `apiMajor: 2` 并导出 `history` / `projection`。能力校验按新字段失败。用户可见 TUI 词表 `TargetActivity` 仍由 `UserSurfaceProjection.translate` 产出，直到后续阶段改为 `UserVisibleTurn` 文件投影。
+本地插件必须声明 `apiMajor: 3`，并同时导出 `history`、`runtime` 与 `projection`。缺任一口径记为 `capability_mismatch`。
 
 ## 验证
 
-`test/product-pack-ports.test.ts`、`test/architecture.test.ts`（禁止旧接口名）、`test/pack-api-resolve.test.ts`（`PACK_API_MAJOR === 2`）、`test/product-registry.test.ts`（`apiMajor: 1` 记为 incompatible）。
+`test/product-pack-ports.test.ts`、`test/architecture.test.ts`（禁止旧接口名）、`test/pack-api-resolve.test.ts`（`PACK_API_MAJOR === 3`）、`test/product-registry.test.ts`（`apiMajor: 1` 记为 incompatible）。

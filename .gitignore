@@ -85,7 +85,10 @@ pnpm-debug.log*
 /docs/tui-loop/
 /docs/evidence/
 
-# Local scratch files
+# Local leftover experiment trees and TUI audit fake experiment roots.
+# `audit-root` is only a fake experimentRoot label in audit scripts.
+/audit-root/
+/unused/
 /scripts/tui-live-run.mjs
 /test-output.txt
 /pack-dry-run.json

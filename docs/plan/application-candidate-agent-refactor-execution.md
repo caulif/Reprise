@@ -1,6 +1,6 @@
 # Application 与受控候选 Agent 链全面重构执行指南
 
-状态：proposed，供执行 Agent 按阶段实施。
+本文件是阶段清单。跨边界对象、事件类型和目录以 `docs/decisions/accepted/2026-09-09-*.md` 为准。
 
 ## 1. 任务边界
 
@@ -79,10 +79,11 @@ interface ProductPack {
   readonly manifest: ProductManifest;
   readonly history: ProductHistoryReader;
   readonly runtime: ProductRuntime;
+  readonly projection: UserSurfaceProjection;
 }
 ```
 
-`history` 负责本地会话发现与读取；`runtime` 负责可用性、模型目录、候选校验和新 Session；投影器属于 runtime 的产品实现。Registry 统一查找，未知产品返回结构化错误；Application 只依赖合约。用户本地凭据/登录状态直接使用，任何凭据不落盘。
+`history` 负责本地会话发现与读取；`runtime` 负责可用性、模型目录、候选校验和新 Session；`projection` 是 Pack 的独立端口，消费标准 Runtime 事件并在 settlement 后生成 `UserVisibleTurn`。Registry 统一查找，未知产品返回结构化错误；Application 只依赖合约。用户本地凭据/登录状态直接使用，任何凭据不落盘。
 
 验收：Fake Pack 可完成发现、读取、列模型、解析候选和创建 Runner；无 Application 产品类型分支。
 
@@ -164,18 +165,16 @@ src/products/packs/<product>/projection.ts
 src/application/candidate-run-events.ts
 ```
 
-Adapter 将原始消息转换为：
+Adapter 将原始消息转换为 Journal 行：`EventEnvelope`（`type` 为 `runtime.<CandidateRuntimeEventType>`）加上 payload `CandidateRuntimeEvent`：
 
 ```ts
 type CandidateRuntimeEvent = {
-  eventId: string; sequence: number; type: CandidateRuntimeEventType;
-  occurredAt: string; sessionId: string; turnId?: string;
-  messageId?: string; callId?: string; payload: unknown;
+  sessionId: string; turnId?: string; messageId?: string; callId?: string;
   evidenceRefs: readonly string[];
 };
 ```
 
-事件类型覆盖 Session、消息投递、turn、工具摘要、可见输出/提示、用量、失败、停止和关闭。影响状态、Controller 视图、Comparison 判断、清理或审计复原的事件进入 Journal；原始包体、心跳、内部重试、未稳定 token、私有 UI 树和凭据只在 Adapter 内部保留。
+事件类型覆盖 Session、消息投递、turn、工具摘要、可见输出/提示、用量、失败、停止和关闭。影响状态、Controller 视图、Comparison 判断、清理或审计复原的事件进入 Journal；原始包体、心跳、内部重试、未稳定 token、私有 UI 树和凭据只在 Adapter 内部保留。身份字段在 payload 上，见 [Journal payload](../decisions/accepted/2026-09-10-candidate-runtime-journal-payload.md)。
 
 每个 Pack 的 Projection 消费标准事件，只在 settlement 后生成 `UserVisibleTurn`（公开助手文本、状态、确认/授权/拒绝提示、交付入口和观察时间）。写入不可变：
 
@@ -315,4 +314,4 @@ docs/progress/
 
 ## 6. 冲突检查
 
-每阶段结束检查：Reprise AgentHost 是否仍只服务内部 Agent；ProductPack 是否同时提供 history/runtime/projection；Recovery 是否只读受控 observations；候选是否始终新 Session；CandidateRun 是否唯一状态/清理边界；事件、视图和 Comparison 材料是否可复原；TUI/CLI 是否只调用 Application；是否引入产品分支、重复事实源、绕过状态机、并行候选、Agent 消息总线或旧兼容路径。
+每阶段结束检查：Reprise AgentHost 是否仍只服务内部 Agent；ProductPack 是否同时提供 history/runtime/projection；Recovery 是否只读受控 observations；候选是否始终新 Session；CandidateRun 是否唯一状态/清理边界；事件、视图和 Comparison 材料是否可复原；TUI/CLI 是否只调用 Application；是否引入产品分支、重复事实源、绕过状态机、并行候选、Agent 消息总线或旧兼容路径。产品协议解析与 UI Projection 留在各 Pack。进程生命周期、turn wait、catalog TTL、隔离工作区校验和 Session listing 摘要装配在 `products/shared/` 与 `infrastructure/process/terminate.ts`，见 [Pack 共享宿主](../decisions/accepted/2026-09-10-pack-shared-runtime-host.md)。

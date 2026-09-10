@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { CLAUDE_REQUIRED_ARGS } from '../src/products/claude-code/runtime-port.js';
+import { CLAUDE_REQUIRED_ARGS } from '../src/products/packs/claude-code/protocol.js';
 
 const exe = process.env.REPRISE_CLAUDE_EXECUTABLE ?? join(homedir(), '.local', 'bin', 'claude.exe');
 const cwd = await mkdtemp(join(tmpdir(), 'reprise-claude-diag-'));

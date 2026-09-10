@@ -1,4 +1,4 @@
-import { EXPERIMENT_APPLICATION_EFFORT, EXPERIMENT_APPLICATION_MODEL } from '../src/products/codex/text-caller.js';
+import { EXPERIMENT_APPLICATION_EFFORT, EXPERIMENT_APPLICATION_MODEL } from '../src/products/packs/codex/text-caller.js';
 import { runToollessCodexProbe } from './codex-real-runner.js';
 
 const SMOKE_PROMPT = 'Reply with exactly REPRISE_CODEX_PROTOCOL_SMOKE_OK. Do not invoke tools or access files.';

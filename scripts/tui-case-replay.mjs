@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { IntakeTui } from '../dist/src/tui/intake-app.js';
 import { createHarnessWorkflow } from '../dist/src/application/experiment-workflow.js';
 import { startRunSetup } from '../dist/src/tui/controller-run.js';
-import { CodexProductRuntime } from '../dist/src/products/codex/runtime-port.js';
+import { CodexProductRuntime } from '../dist/src/products/packs/codex/runtime.js';
 import { mockTui, pageHtml, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
 Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });

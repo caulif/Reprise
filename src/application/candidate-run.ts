@@ -1,18 +1,25 @@
 import { SAFE_ID } from '../core/identity.js';
 import { assertTransition } from '../core/state-machine.js';
 import type { ArtifactRef, CandidateRunState, CandidateSessionHandle, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
-import type { DeliveryReceipt, MessageIdentity, RuntimeFailureKind, RuntimeStopReason, TargetRunner, TurnSettlement, UserMessage } from '../core/runtime.js';
+import type { DeliveryReceipt, MessageIdentity, RuntimeStopReason, TargetRunner, TurnSettlement, UserMessage } from '../core/runtime.js';
+import { cleanupCandidateRun, DEFAULT_CLEANUP_TIMEOUT_MS } from './candidate-run-cleanup.js';
+import {
+  annotateRuntimeError,
+  assessmentFor,
+  errorFact,
+  finishFromSettlement,
+  messageFact,
+  terminationFor,
+} from './candidate-run-facts.js';
 
 const deliveryValues = new Set(['accepted', 'rejected', 'unknown']);
 const settlementValues = new Set(['completed', 'failed', 'waiting_input', 'aborted']);
 
 export type CandidateRunPolicy = { turnTimeoutMs: number; maxTargetTurns: number; cleanupTimeoutMs?: number };
-const DEFAULT_CLEANUP_TIMEOUT_MS = 10_000;
 type Cleanup = { status: 'released' | 'already_released' };
 type RecordedEvent = Pick<EventEnvelope, 'eventId' | 'sequence'>;
 type JournalEvent = { type: string; runId: string; operationId: string; payload: unknown };
 type Assessment = RunOutcome['task'];
-type Termination = RunOutcome['termination'];
 
 /** The minimal persistence surface CandidateRun needs; ExperimentStore already satisfies it. */
 export interface CandidateRunJournal {
@@ -203,7 +210,16 @@ export class CandidateRun {
     this.#stageReached = stageReached;
     await this.#append('run.stop_requested', { code, reason }, `stop-${code}`);
     if (this.#state !== 'finalizing') await this.#move('finalizing');
-    const cleanup = await this.#cleanup(reason);
+    const cleanup = await cleanupCandidateRun(reason, {
+      runner: this.#runner,
+      ...(this.#release ? { release: this.#release } : {}),
+      timeoutMs: this.#policy.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS,
+      appendCleanup: async (type, payload, operationId) => {
+        const event = await this.#append(type, payload, operationId);
+        return event?.eventId;
+      },
+      captureArtifacts: () => this.#captureArtifacts(),
+    });
     const termination = terminationFor(code, cause);
     this.#outcome = { task: this.#assessment ?? assessmentFor(code, this.#settledTurns > 0, Boolean(this.#persistence?.manifest)), termination, cleanup };
     await this.#append('run.outcome_created', this.#outcome, 'outcome');
@@ -211,73 +227,6 @@ export class CandidateRun {
     this.#record = this.#buildRecord();
     if (this.#record) await this.#append('run.finished', this.#record, 'finished');
     return this.#state;
-  }
-
-  async #cleanup(reason: RuntimeStopReason): Promise<RunOutcome['cleanup']> {
-    const evidenceRefs: string[] = [];
-    const appendCleanup = async (type: string, payload: unknown, operationId: string): Promise<void> => {
-      const event = await this.#append(type, payload, operationId);
-      if (event) evidenceRefs.push(`event:${event.eventId}`);
-    };
-    const stopped = await this.#stopRuntime(reason, appendCleanup);
-    let status = stopped.status;
-    await this.#captureArtifacts();
-    if (this.#release) {
-      try {
-        await this.#release();
-        await appendCleanup('environment.release_completed', {}, 'environment-release');
-      } catch (error) {
-        if (status === 'complete') status = 'incomplete';
-        await appendCleanup('environment.release_failed', errorFact(error), 'environment-release-failed');
-      }
-    }
-    return { status, remainingResourceIds: stopped.remainingResourceIds, evidenceRefs };
-  }
-
-  async #stopRuntime(
-    reason: RuntimeStopReason,
-    appendCleanup: (type: string, payload: unknown, operationId: string) => Promise<void>,
-  ): Promise<{ status: 'complete' | 'incomplete' | 'unknown'; remainingResourceIds: string[] }> {
-    const timeoutMs = this.#policy.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
-    let timedOut = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const stop = this.#runner.stop(reason);
-    void stop.catch(() => undefined);
-    try {
-      await Promise.race([
-        stop,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            timedOut = true;
-            reject(new Error('cleanup_timeout'));
-          }, timeoutMs);
-          timer.unref();
-        }),
-      ]);
-      await appendCleanup('runtime.stop_completed', { reason }, 'runtime-stop');
-      await this.#closeRuntime();
-      return { status: 'complete', remainingResourceIds: [] };
-    } catch (error) {
-      const remainingResourceIds = timedOut ? ['runtime'] : remainingResources(error);
-      const status = timedOut ? 'unknown' as const : 'incomplete' as const;
-      await appendCleanup(
-        'runtime.stop_failed',
-        timedOut ? { reason: 'cleanup_timeout', remainingResourceIds } : { ...errorFact(error), remainingResourceIds },
-        'runtime-stop-failed',
-      );
-      if (!timedOut) await this.#closeRuntime();
-      return { status, remainingResourceIds };
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-
-  async #closeRuntime(): Promise<void> {
-    try {
-      await this.#runner.close();
-    } catch {
-      // stop() already recorded runtime failure; close is best-effort session teardown.
-    }
   }
 
   #assertHandle(): void {
@@ -405,77 +354,3 @@ function isTimeout(error: unknown): boolean {
   return error instanceof Error && error.message === 'turn timeout';
 }
 
-function messageFact(message: UserMessage, identity: MessageIdentity): Record<string, unknown> {
-  return { messageId: message.id, clientMessageId: identity.clientMessageId, turnIndex: identity.turnIndex, text: message.text };
-}
-
-function errorFact(error: unknown): { message: string } {
-  return { message: error instanceof Error ? error.message : String(error) };
-}
-
-function remainingResources(error: unknown): string[] {
-  if (!error || typeof error !== 'object' || !('remainingResourceIds' in error)) return [];
-  const value: unknown = (error as { remainingResourceIds?: unknown }).remainingResourceIds;
-  if (!Array.isArray(value)) return [];
-  const ids = value.filter((id): id is string => typeof id === 'string' && SAFE_ID.test(id));
-  return ids.length === value.length ? ids : [];
-}
-
-function terminationFor(code: string, cause: unknown): Termination {
-  if (code.startsWith('completed.')) return { kind: 'completed', code, initiatedBy: 'controller' };
-  if (code.startsWith('limit.')) return { kind: 'limit_reached', code, initiatedBy: 'harness' };
-  if (code.startsWith('cancelled.')) return { kind: 'cancelled', code, initiatedBy: 'user' };
-  if (code.startsWith('blocked.')) return { kind: 'blocked', code, initiatedBy: 'controller' };
-  if (code.startsWith('stalled.')) return { kind: 'stalled', code, initiatedBy: code === 'stalled.controller_no_further_value' ? 'controller' : 'harness' };
-  if (code === 'failed.controller') {
-    const inner = hasFailureCode(cause) ? cause.code : 'agent_failure';
-    return { kind: 'failed', code, initiatedBy: 'controller', failure: { origin: 'controller', code: inner, message: errorFact(cause).message, evidenceRefs: [] } };
-  }
-  if (code.startsWith('uncertain.')) return { kind: 'uncertain', code, initiatedBy: 'harness' };
-  return { kind: 'failed', code, initiatedBy: 'harness', failure: { origin: 'runtime', code: specificFailureCode(code, cause), message: errorFact(cause).message, evidenceRefs: [] } };
-}
-
-function finishFromSettlement(settlement: TurnSettlement): { code: string; cause: Error } {
-  const specific = runtimeFailureCode(settlement.failure?.kind);
-  const message = settlement.failure?.summary ?? `Target turn settled as ${settlement.status}.`;
-  return { code: 'failed.runtime', cause: Object.assign(new Error(message), { code: specific }) };
-}
-
-function annotateRuntimeError(error: unknown): unknown {
-  if (!(error instanceof Error)) return error;
-  if (hasFailureCode(error)) return error;
-  const specific = runtimeFailureCode(kindFromThrownMessage(error.message));
-  if (specific === 'failed.runtime') return error;
-  return Object.assign(error, { code: specific });
-}
-
-function specificFailureCode(code: string, cause: unknown): string {
-  return hasFailureCode(cause) ? cause.code : code;
-}
-
-function runtimeFailureCode(kind: RuntimeFailureKind | undefined): string {
-  if (kind === 'upstream') return 'failed.runtime.upstream_unavailable';
-  if (kind === 'authentication') return 'failed.runtime.authentication';
-  if (kind === 'protocol') return 'failed.runtime.protocol';
-  if (kind === 'process') return 'failed.runtime.process';
-  return 'failed.runtime';
-}
-
-function kindFromThrownMessage(message: string): RuntimeFailureKind | undefined {
-  if (/unrecognized turn|invalid json-rpc|protocol error/i.test(message)) return 'protocol';
-  if (/app-server exited|process exited|failed to start:|EPIPE/i.test(message)) return 'process';
-  if (/HTTP\s*503|\b503\b|temporarily unavailable/i.test(message)) return 'upstream';
-  if (/unauthorized|invalid api key|HTTP\s*401/i.test(message)) return 'authentication';
-  return undefined;
-}
-
-function hasFailureCode(value: unknown): value is { code: string } {
-  if (!value || typeof value !== 'object' || !('code' in value)) return false;
-  return typeof value.code === 'string' && value.code.length > 0;
-}
-
-function assessmentFor(code: string, settled: boolean, hasManifest: boolean): Assessment {
-  if (!hasManifest) return { status: 'not_assessed', evidenceRefs: [] };
-  if (code.startsWith('limit.') && settled) return { status: 'incomplete', evidenceRefs: [] };
-  return { status: settled ? 'indeterminate' : 'not_assessed', evidenceRefs: [] };
-}

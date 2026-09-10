@@ -18,7 +18,7 @@ Pi Agent Core、pi-ai、pi-tui 分别用于执行循环、模型适配与终端�
 
 TypeBox 验证磁盘、外部协议与模型输出；同进程已类型化调用不重复加运行时校验。当前字段由 [schema.ts](../../src/core/schema.ts)及其引用定义拥有。JSON/JSONL、附件和写者锁见[持久化规范](./persistence-and-crash-consistency.md)。
 
-使用 Node 进程与文件能力，具体跨平台行为见[本机平台边界](./cross-platform.md)。Windows shim 通过[产品进程 helper](../../src/products/shared/process.ts)启动，不能假设 .cmd 等同于原生 executable。目标支持不等于已完成真实终端与 Runtime 验证。
+使用 Node 进程与文件能力，具体跨平台行为见[本机平台边界](./cross-platform.md)。Windows shim 通过[Runtime spawn](../../src/infrastructure/process/spawn.ts)启动，不能假设 .cmd 等同于原生 executable。目标支持不等于已完成真实终端与 Runtime 验证。
 
 ## Product Pack 加载
 

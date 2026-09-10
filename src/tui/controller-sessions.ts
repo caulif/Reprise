@@ -1,7 +1,6 @@
-import { resolve } from "node:path";
 import type { IntakeTui } from "./intake-tui.js";
-import { packHistory } from "../products/pack-access.js";
-import { compareSessionSummaries, type DiscoveryDiagnostic, type SessionDiscoveryQuery } from "../products/contract.js";
+import { compareSessionSummaries } from "../application/intake-catalog.js";
+import type { DiscoveryDiagnostic, SessionDiscoveryQuery } from "../products/contract.js";
 import { operatorErrorMessage } from "./format.js";
 import { t } from "./i18n.js";
 
@@ -51,8 +50,8 @@ type SessionLoadMode = "initial" | "more" | "refresh";
 export async function loadProductSessions(c: IntakeTui, productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
   const pack = c.packs.find((item) => item.manifest.productId === productId);
   if (!pack?.history) return;
-  const sessions = packHistory(pack);
-  const root = resolve(c.sessionsRoots[productId] ?? sessions.defaultRoot);
+  if (!c.workflow) throw new Error("Experiment workflow is required to discover sessions.");
+  const root = c.workflow.sourceRoot(productId, c.sessionsRoots);
   const state = c.productDiscovery.get(productId);
   const cached = c.productSessions.get(productId);
   if (mode === "initial" && state?.status === "ready" && state.root === root && cached) {
@@ -69,7 +68,7 @@ export async function loadProductSessions(c: IntakeTui, productId: string, mode:
   c.productDiscovery.set(productId, { status: "loading", root, ...(state?.nextCursor ? { nextCursor: state.nextCursor } : {}) });
   c.render();
   try {
-    const discovered = await sessions.discover(sessionDiscoveryQuery({
+    const discovered = await c.workflow.discoverSource(productId, sessionDiscoveryQuery({
       root,
       dataDir: c.dataDir,
       signal: abort.signal,

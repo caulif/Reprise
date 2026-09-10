@@ -5,7 +5,7 @@ import { ControllerReadArtifactSchema, ControllerShellArtifactSchema } from "../
 import type { ComparisonAgentPort, ComparisonResult } from "../agents/comparison-agent.js";
 import { type ControllerDecision, type ControllerPort, type SteeringContext } from "../agents/controller-agent.js";
 import { materializeIsolatedStart } from "./session-start-workspace.js";
-import { commitCandidateLaunchContext } from "./candidate-launch.js";
+import { commitCandidateLaunchContext } from "./recovery/launch-context.js";
 import { persistExperimentSpec, persistRunPreflight } from "./experiment-layout.js";
 import { CandidateRun } from "./candidate-run.js";
 import {
@@ -20,7 +20,7 @@ import {
   writeSettledTurnBriefing,
 } from "./controller-briefing.js";
 import { observationReadRecord } from "./controller-request.js";
-import { persistPublicActivities } from "./public-activity.js";
+import { assertCandidateRuntimeJournal, candidateRuntimeJournalPayload } from "./candidate-run-events.js";
 import { sha256 } from "../core/identity.js";
 import type { CandidateLaunchContext, CandidateSpec, EventEnvelope, RunManifest, RunPolicy, RunRecord, TaskCase } from "../core/schema.js";
 import { isCandidateRuntimeJournalType, type ProductRuntime, type TargetEvent, type TargetEventSink } from "../core/runtime.js";
@@ -33,8 +33,6 @@ import {
 import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { ExperimentStore } from "../infrastructure/store/experiment-store.js";
-import { findProductPack } from "../products/index.js";
-import { packProjection } from "../products/pack-access.js";
 import type { ProductPack } from "../products/contract.js";
 import {
   historicalCwdOf,
@@ -49,7 +47,7 @@ import {
   persistUserVisibleTurn,
   unstartedControllerObservation,
   type ControllerObservation,
-} from "./experiment-inspection.js";
+} from "./controller-queries.js";
 import {
   preflightFromBaseline,
   resolveVerifiedCandidate,
@@ -443,7 +441,7 @@ async function startCandidateRun(args: {
         experimentId: input.experimentId,
       }
     : undefined;
-  const pack = input.pack ?? findProductPack(input.candidate.productId);
+  const runnerRef: { session(): { sessionId: string } } = { session: () => ({ sessionId: "unstarted" }) };
   const sink: TargetEventSink = {
     append: async (targetEvent: TargetEvent): Promise<void> => {
       if (!isCandidateRuntimeJournalType(targetEvent.type)) {
@@ -452,14 +450,15 @@ async function startCandidateRun(args: {
       const event = await store.append({
         type: targetEvent.type,
         runId: input.runId,
-        payload: targetEvent.payload,
+        payload: candidateRuntimeJournalPayload(runnerRef.session().sessionId, targetEvent.payload),
         occurredAt: targetEvent.occurredAt,
       });
+      assertCandidateRuntimeJournal(event);
       targetEvents.push(`event:${event.eventId}`);
-      await persistPublicActivities({ store, envelope: event, translator: packProjection(pack) });
     },
   };
   const runner = await input.runtime.createRunner(resolved, environment, sink, launch);
+  runnerRef.session = () => runner.session();
   return new CandidateRun({
     runner,
     policy: {

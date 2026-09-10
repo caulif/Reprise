@@ -1,6 +1,6 @@
 # Application 层与受控候选 Agent 链整体重构计划
 
-状态：proposed，尚未实施
+本文件是候选链的目标架构与验收清单。端口、落盘路径和事件类型以 `docs/decisions/accepted/2026-09-09-*.md` 与源码为准。
 
 ## 目标
 
@@ -73,12 +73,12 @@ type CandidateSessionHandle = {
 
 ```ts
 type CandidateRuntimeEvent = {
-  eventId: string; sequence: number; type: CandidateRuntimeEventType;
-  occurredAt: string; sessionId: string; turnId?: string;
-  messageId?: string; callId?: string; payload: unknown;
+  sessionId: string; turnId?: string; messageId?: string; callId?: string;
   evidenceRefs: readonly string[];
 };
 ```
+
+`eventId`、`sequence`、`type` 与 `occurredAt` 属于 `EventEnvelope`。身份在 payload 上，见 [Journal payload](../decisions/accepted/2026-09-10-candidate-runtime-journal-payload.md)。
 
 事件 ID 唯一，sequence 在 CandidateRun 内递增；标识不得猜测或复用。最小类型：session_started/failed、message_submitted、delivery_observed、turn_started、tool_started/finished、visible_output/prompt、turn_settled、usage_reported、runtime_failed、session_stopped/closed。影响状态、Controller 视图、Comparison 判断、清理或审计复原的事件必须进入 Journal；原始包体、心跳、内部重试、未稳定 token、私有 UI 树和凭据只留 Adapter 内部。
 

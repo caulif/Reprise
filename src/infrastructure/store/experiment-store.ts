@@ -5,7 +5,6 @@ import { hostname } from 'node:os';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { SAFE_ID, sha256, eventEnvelopeChecksum, writeAtomic } from '../../core/identity.js';
-import { PublicActivityPayloadSchema } from '../../core/public-activity.js';
 import {
   ArtifactRefSchema,
   EventEnvelopeSchema,
@@ -15,6 +14,7 @@ import {
   ControllerRequestedPayloadSchema,
   RunAttemptSchema,
   RunManifestSchema,
+  UserVisibleTurnSchema,
   type ArtifactRef,
   type EventEnvelope,
   type RunAttempt,
@@ -295,7 +295,7 @@ export class ExperimentStore {
     if (event.type === 'controller.observation_read' && !Value.Check(ControllerObservationReadPayloadSchema, event.payload)) throw new Error('controller.observation_read payload does not satisfy its schema.');
     if (event.type === 'comparison.requested' && !Value.Check(ComparisonRequestedPayloadSchema, event.payload)) throw new Error('comparison.requested payload does not satisfy its schema.');
     if ((event.type === 'comparison.plan_requested' || event.type === 'comparison.report_requested') && !Value.Check(ComparisonPhaseRequestedPayloadSchema, event.payload)) throw new Error(`${event.type} payload does not satisfy its schema.`);
-    if (event.type === 'runtime.public_activity' && !Value.Check(PublicActivityPayloadSchema, event.payload)) throw new Error('runtime.public_activity payload does not satisfy its schema.');
+    if (event.type === 'candidate.user_view_persisted' && !Value.Check(UserVisibleTurnSchema, event.payload)) throw new Error('candidate.user_view_persisted payload does not satisfy its schema.');
     await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);
     for (const listener of this.#listeners) {

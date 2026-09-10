@@ -39,18 +39,14 @@ export const CandidateRuntimeEventTypeSchema = Type.Union([
 ]);
 export type CandidateRuntimeEventType = Static<typeof CandidateRuntimeEventTypeSchema>;
 
+/** Journal payload for `runtime.<CandidateRuntimeEventType>` EventEnvelope rows. Envelope owns eventId, sequence, type, and occurredAt. */
 export const CandidateRuntimeEventSchema = Type.Object({
-  eventId: Type.String({ minLength: 1 }),
-  sequence: Type.Integer({ minimum: 1 }),
-  type: CandidateRuntimeEventTypeSchema,
-  occurredAt: Type.String({ minLength: 1 }),
   sessionId: Type.String({ minLength: 1 }),
   turnId: Type.Optional(Type.String({ minLength: 1 })),
   messageId: Type.Optional(Type.String({ minLength: 1 })),
   callId: Type.Optional(Type.String({ minLength: 1 })),
-  payload: Type.Unknown(),
   evidenceRefs: Type.Array(Type.String()),
-});
+}, { additionalProperties: true });
 export type CandidateRuntimeEvent = Static<typeof CandidateRuntimeEventSchema>;
 
 export const UserVisibleTurnSchema = Type.Object({

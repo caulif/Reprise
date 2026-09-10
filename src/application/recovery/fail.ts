@@ -15,7 +15,8 @@ import type { StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import { ExperimentStore, writeImmutableJson } from "../../infrastructure/store/experiment-store.js";
 import type { RecoveryOrchestrator, RecoveryLifecycleState } from "./orchestrator.js";
 import type { RecoveryReadinessResult } from "./readiness.js";
-import type { RecoveryAttempt, RecoveryAttemptInput } from "./types.js";
+import type { RecoveryAttempt } from "./types.js";
+import type { RecoveryAttemptInput } from "./input.js";
 
 export type FailRecoverExperimentInput = {
   error: unknown;

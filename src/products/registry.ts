@@ -5,7 +5,6 @@ import { extname, isAbsolute, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { Type } from "@sinclair/typebox";
 import { PACK_API_MAJOR, type ProductPack } from "./contract.js";
-import { packHas } from "./pack-access.js";
 
 export type PackLoadDiagnostic = {
   readonly specifier: string;
@@ -126,22 +125,17 @@ function acceptPack(pack: ProductPack, specifier: string, packs: ProductPack[], 
 }
 
 function capabilityMismatch(pack: ProductPack): string | undefined {
-  if (packHas(pack, "import")) {
-    if (!pack.history) return "import capability requires history.";
-    if (typeof pack.history.discover !== "function" || typeof pack.history.inspect !== "function" || typeof pack.history.import !== "function") {
-      return "import capability requires discover, inspect, and import functions.";
-    }
+  if (!pack.history || typeof pack.history.discover !== "function" || typeof pack.history.inspect !== "function" || typeof pack.history.import !== "function") {
+    return "ProductPack requires history.discover, inspect, and import.";
   }
-  if (packHas(pack, "runtime")) {
-    if (!pack.runtime || !pack.defaultCandidate || !pack.projection) {
-      return "runtime capability requires runtime, projection, and defaultCandidate.";
-    }
-    if (typeof pack.runtime.validateCandidate !== "function" || typeof pack.runtime.listCatalog !== "function" || typeof pack.runtime.createRunner !== "function") {
-      return "runtime capability requires validateCandidate, listCatalog, and createRunner.";
-    }
-    if (typeof pack.projection.translate !== "function" || typeof pack.projection.projectTurn !== "function") {
-      return "runtime capability requires projection.translate and projection.projectTurn.";
-    }
+  if (!pack.runtime || typeof pack.defaultCandidate !== "function" || !pack.projection || typeof pack.recoveryPlaybook !== "function") {
+    return "ProductPack requires runtime, projection, defaultCandidate, and recoveryPlaybook.";
+  }
+  if (typeof pack.runtime.validateCandidate !== "function" || typeof pack.runtime.listCatalog !== "function" || typeof pack.runtime.createRunner !== "function") {
+    return "runtime requires validateCandidate, listCatalog, and createRunner.";
+  }
+  if (typeof pack.projection.inspectRunFacts !== "function" || typeof pack.projection.projectTurn !== "function") {
+    return "projection requires inspectRunFacts and projectTurn.";
   }
   if (pack.manifest.capabilities.length === 0) return "capabilities must not be empty.";
   return undefined;

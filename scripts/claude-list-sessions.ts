@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isEligibleSession } from '../src/products/contract.js';
-import { claudeSessionAdapter } from '../src/products/claude-code/sessions.js';
+import { claudeSessionAdapter } from '../src/products/packs/claude-code/sessions.js';
 
 const summaries = await claudeSessionAdapter.discover({ limit: 30 });
 const rows = [];

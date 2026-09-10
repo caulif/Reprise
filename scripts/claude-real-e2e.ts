@@ -7,8 +7,8 @@ import { historicalCwdOf } from '../src/application/replay-conditions.js';
 import { readHarnessModelConfig } from '../src/infrastructure/harness-model-config.js';
 import { PiModelCaller } from '../src/infrastructure/agent/model-caller.js';
 import { freezeCase } from '../src/products/shared/freeze.js';
-import { claudeCodeProductPack } from '../src/products/claude-code/pack.js';
-import { importClaudeSession } from '../src/products/claude-code/sessions.js';
+import { claudeCodeProductPack } from '../src/products/packs/claude-code/pack.js';
+import { importClaudeSession } from '../src/products/packs/claude-code/sessions.js';
 import type { SourceRootKind } from '../src/application/replay-conditions.js';
 
 const SESSION = 'C:\\Users\\15893\\.claude\\projects\\C--obsidian-LLM---papers\\9d3832ba-ef2f-4a51-9f1c-fe2ced0a8c86.jsonl';

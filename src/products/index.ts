@@ -1,5 +1,5 @@
-import { claudeCodeProductPack } from "./claude-code/pack.js";
-import { codexProductPack } from "./codex/pack.js";
+import { claudeCodeProductPack } from "./packs/claude-code/pack.js";
+import { codexProductPack } from "./packs/codex/pack.js";
 import type { ProductPack } from "./contract.js";
 import { importPacks, packHistory } from "./pack-access.js";
 import { assembleProductPacks, type PackLoadDiagnostic } from "./registry.js";

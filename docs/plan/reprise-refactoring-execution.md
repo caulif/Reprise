@@ -41,7 +41,7 @@ M1.1–M7 实施步骤已关闭。未关闭的是 TUI 真终端、未通过的 C
 | 产品兼容 | [Pack 契约](../../src/products/contract.ts)、[Runtime 端口](../../src/core/runtime.ts)、[注册](../../src/products/index.ts) | 从静态注册接向显式本地加载，保持宿主产品无关 |
 | 用户入口 | [CLI](../../src/cli/main.ts)、[TUI](../../src/tui/intake-tui.ts)、[intake](../../src/tui/intake-app.ts) | 纯 CLI 与 TUI 调用同一业务操作，选择与阅读状态留在 TUI |
 | 投影与终端 | [timeline](../../src/tui/timeline.ts)、[projection](../../src/tui/view-projection.ts)、[viewport](../../src/tui/viewport.ts) | 单条持久化时间线，稳定阅读锚点，键盘与原生选区优先 |
-| 本机能力 | [platform](../../src/infrastructure/platform.ts)、[process runner](../../src/infrastructure/process-runner.ts)、[Pack 进程 helper](../../src/products/shared/process.ts) | 统一 PowerShell/Bash 语义，验证进程树和本机控制端点 |
+| 本机能力 | [platform](../../src/infrastructure/platform.ts)、[process runner](../../src/infrastructure/process-runner.ts)、[Runtime spawn](../../src/infrastructure/process/spawn.ts) | 统一 PowerShell/Bash 语义，验证进程树和本机控制端点 |
 
 现有 Host 已提供 createSession 和 request，但部分 session 结束事件随 request 发出，消息/工具记录有摘要与散列，不能据此认定全过程可重建。Controller 已保留会话，但独立 understand、账本和完成反馈仍在实验调用链中。Comparison 有规划/报告路径。迁移必须检查这些实际行为，避免重复建设已有连续会话能力。
 

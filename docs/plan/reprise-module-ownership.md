@@ -18,7 +18,7 @@
 - 不立刻重排全部顶层目录（`cli` / `agents` / `environment` / `products` 按现有边界保留，除非某批明确搬迁）。
 - 不引入状态管理库、DI 容器或新的 workflow engine。
 - 不把 `state-machine.ts` 悄悄搬走：根 [AGENTS.md](../../AGENTS.md) 要求 CandidateRun 状态变化只经 `src/core/state-machine.ts` 的 `assertTransition`；移动必须同批改约束、调用方与架构测试。
-- 不机械重命名 `products/codex/` 与 Codex 专属测试里的产品名。
+- 不机械重命名 `products/packs/codex/` 与 Codex 专属测试里的产品名。
 - 不单独大搬家 `test/` 或 `scripts/`；测试与脚本随业务批次走。
 - 不另建 archive 或第二套总计划目录；文档生命周期继续按[文档结构](../documentation-structure.md)。
 - 不在本计划关闭真终端、付费 Controller lane 或 Runtime smoke。
@@ -36,7 +36,7 @@
 | 批次 | 出口 | 主要改动 | 验证 |
 |---|---|---|---|
 | O1 所有者先于搬家 | 活动身份、取消与参数职责有单一应用所有者 | 对照[进一步审查](./2026-09-08-further-architecture-refactoring-review.md)未关闭的 F 项；CLI/TUI 只订阅，不推导 `operationId` | 现有 `experiment-activity` / `control-ipc` / CLI 协议测试；缺口才补反向用例 |
-| O2 去掉空转发 | 调用方直接导入所有者 | 删除 TUI/application 空转发桶；通用类型用产品中立名，产品专属名留在 `products/codex/` | `architecture`、CLI/TUI 入口测试；禁止别名回归 |
+| O2 去掉空转发 | 调用方直接导入所有者 | 删除 TUI/application 空转发桶；通用类型用产品中立名，产品专属名留在 `products/packs/codex/` | `architecture`、CLI/TUI 入口测试；禁止别名回归 |
 | O3 Recovery 归组 | Recovery 流程可沿一条目录走完 | `application/recovery/` 按审计、失败分类、评估、checkpoint、受控写入、diff、调查材料分文件；角色判断仍在 [`agents/recovery-agent.ts`](../../src/agents/recovery-agent.ts) | Recovery 相关测试随路径更新 |
 | O4 收缩 experiment 入口 | 没有「凡事经 experiment.ts」 | 调用方改引真正模块；[`experiment.ts`](../../src/application/experiment.ts) 只保留执行装配与本文件拥有的类型 | import 图与 `architecture` 测试 |
 | O5 TUI 状态权限 | 函数不能改无关实例字段 | 配置 / 来源 / 时间线用明确参数；最外层只导航、终端生命周期、调用 Workflow。先缩可变状态，再考虑 `tui/config|intake|history|timeline|terminal/`。`pages/` 保持纯渲染 | `page-input`、intake、workflow 测试；不把 `.call(this)` 换目录当完成 |

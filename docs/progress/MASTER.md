@@ -6,9 +6,28 @@
 
 ## 当前批次
 
-Application / 候选链重构：阶段 B–L 代码已接入；Adapter 将候选事件标准化为 `runtime.<CandidateRuntimeEventType>` 再写入 Journal。规划见 [Application 与候选链](../plan/application-candidate-agent-refactor.md)。
+Application / 候选链：按执行指南对齐目标树（history discover/read/normalize、process spawn/terminate/stdio、Pack runner/protocol、controller-queries、recovery/input、测试分目录）。规划见 [Application 与候选链](../plan/application-candidate-agent-refactor.md) 与 [执行指南](../plan/application-candidate-agent-refactor-execution.md)。
 
 ## 验证记录
+
+2026-09-10 抽取 Claude Code 与 Codex 共享宿主（进程关闭、turn wait、可用性探测、Session listing 摘要）；`protocol`/`projection` 仍在 Pack。仓库根 `audit-root/`、`unused/` 加入 `.gitignore`。ADR：[Pack 共享宿主](../decisions/accepted/2026-09-10-pack-shared-runtime-host.md)。`npm run check` 静态/jscpd/knip/审计通过（jscpd 16 clones、0.44% duplicated tokens）；`npm run test:only` 835 pass / 4 skip。
+
+2026-09-10 Controller 用户视图唯一入口 `current-user-view.md`；`CandidateRuntimeEvent` 为 Journal payload。ADR：[用户视图](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[Journal payload](../decisions/accepted/2026-09-10-candidate-runtime-journal-payload.md)。`npm run check` 17 门禁通过（827 pass / 4 skip）。
+
+2026-09-10 Application/候选链阶段 10 收口：TUI/CLI 除进程根外走 `application/intake-catalog` 与 `experiment-queries`；Host `discoverProductSessions` 稳定排序。ADR：[候选链模块目录](../decisions/accepted/2026-09-10-candidate-chain-module-layout.md)。`npm run check` 17 门禁通过（826 pass / 4 skip）。
+
+2026-09-10 Application/候选链阶段 10 目标树：history `{discover,read,normalize}`、`infrastructure/process/{spawn,terminate,stdio}`、Pack `{runner,protocol}`、`controller-queries`、`recovery/input`、`test/{core,products,application,candidate,tui,cli}`。ADR：[候选链模块目录](../decisions/accepted/2026-09-10-candidate-chain-module-layout.md)。`npm run check` 17 门禁通过（825 pass / 4 skip）。
+
+2026-09-10 Application/候选链阶段 10 拆分：`candidate-run-cleanup`/`candidate-run-facts`、`recovery/admission`、`history/{types,source-refs}`、`environment/snapshots`；`ProductPack` 必填 history/runtime/projection，去掉 `CompleteProductPack`。ADR：[候选链模块目录](../decisions/accepted/2026-09-10-candidate-chain-module-layout.md)。`npm run check` 17 门禁通过（824 pass / 4 skip）。
+
+2026-09-10 Application/候选链阶段 L 历史端口：TUI 发现/检查/冻结与 CLI 查询导入走 `ExperimentWorkflow`；architecture 禁止 TUI/CLI 直接调用 `packHistory`/`freezeCase`/`importVerifiedSession`。`npm run check` 17 门禁通过（824 pass / 4 skip）。
+
+2026-09-10 Application/候选链阶段 10 目录：内置 Pack 在 `src/products/packs/`；observations 在 `src/products/history/`；launch/staging/journal 文件名对齐执行指南。ADR：[候选链模块目录](../decisions/accepted/2026-09-10-candidate-chain-module-layout.md)。`npm run check` 17 门禁通过（824 pass / 4 skip）。
+
+2026-09-10 Application/候选链阶段 10：删除 `TargetActivity`/`runtime.public_activity`/`UserSurfaceProjection.translate`；TUI 正式时间线读 `candidate.user_view_persisted`。ADR：[UserVisibleTurn 时间线](../decisions/accepted/2026-09-10-user-visible-turn-timeline.md)。
+
+
+2026-09-10 Application/候选链 Journal：落盘 payload 含 `sessionId`/`evidenceRefs`，写入后按 `CandidateRuntimeEvent` 校验。`npm run check` 17 门禁通过（829 pass / 4 skip）。
 
 2026-09-09 Application/候选链阶段 F.2：Adapter 只向 Journal 写 `runtime.<CandidateRuntimeEventType>`；Application 拒绝产品私有类型；TUI 时间线不把原始 runtime 帧当 Activity。ADR：[Runtime 事件](../decisions/accepted/2026-09-09-candidate-runtime-events.md)。`npm run check` 17 门禁通过（828 pass / 4 skip）。
 

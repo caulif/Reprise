@@ -1,20 +1,19 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkClaudeAuth, claudeCodeProductPack } from '../src/products/claude-code/pack.js';
+import { checkClaudeAuth, claudeCodeProductPack } from '../src/products/packs/claude-code/pack.js';
+import { CLAUDE_DISALLOWED_TOOLS, CLAUDE_REQUIRED_ARGS } from '../src/products/packs/claude-code/protocol.js';
 import {
-  CLAUDE_DISALLOWED_TOOLS,
-  CLAUDE_REQUIRED_ARGS,
   ClaudeCodeProductRuntime,
   clearClaudeCatalogCache,
-} from '../src/products/claude-code/runtime-port.js';
+} from '../src/products/packs/claude-code/runtime.js';
 import {
   assertClaudeSmokeAcceptanceRecord,
   checkClaudeSmokeGate,
   type ClaudeSmokeAcceptanceRecord,
-} from '../src/products/claude-code/smoke-gate.js';
+} from '../src/products/packs/claude-code/smoke-gate.js';
 import type { TargetEvent } from '../src/core/runtime.js';
-import { candidateLaunchFor } from '../src/application/candidate-launch.js';
+import { candidateLaunchFor } from '../src/application/recovery/launch-context.js';
 
 const PROMPT = 'Create a file named ping.txt whose entire contents are exactly pong. Do nothing else.';
 

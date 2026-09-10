@@ -13,7 +13,7 @@ import {
   type ComparisonResult,
 } from '../agents/comparison-agent.js';
 import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/agent/host.js';
-import { recoveryEvidenceCatalog } from '../infrastructure/recovery-tools.js';
+import { recoveryEvidenceCatalog } from '../products/history/source-refs.js';
 
 export type RunInspection = {
   runId: string;

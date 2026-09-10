@@ -30,7 +30,7 @@ Recovery 不增加 Todo、Plan 或 Goal 工具，也不维护复杂业务状态�
 
 | 入口 | 要求 |
 |---|---|
-| [系统提示词](../../src/agents/recovery-agent.ts)、[Codex Playbook](../../src/products/codex/recovery/SKILL.md)、[Claude Code Playbook](../../src/products/claude-code/recovery/SKILL.md) | 同步起点时间与降级边界；允许主动反推、整体清理和必要环境重建；替换无关当前文件默认保留的规则。 |
+| [系统提示词](../../src/agents/recovery-agent.ts)、[Codex Playbook](../../src/products/packs/codex/recovery/SKILL.md)、[Claude Code Playbook](../../src/products/packs/claude-code/recovery/SKILL.md) | 同步起点时间与降级边界；允许主动反推、整体清理和必要环境重建；替换无关当前文件默认保留的规则。 |
 | [调查与候选](../../src/application/recovery/investigation.ts) | 证据是调查材料，已有 patch 或预设候选不能成为探索上限；复用现有工具循环。 |
 | [就绪检查](../../src/application/recovery/readiness.ts)、[Verifier](../../src/application/recovery/verifier.ts) | 路径存在、发生变更或测试通过不是起点等价的充分条件；零变更也可能正确。机械检查不替 Agent 决定缺口的任务影响。 |
 | [发布流程](../../src/application/recovery/run-finalize.ts)与候选启动 | Agent 判断缺口影响任务则停止，不影响则继续；结构合法性、隔离和持久化完整性仍由 Host 验证。prompt、结果协议和启动判断在同一实施批次同步。 |

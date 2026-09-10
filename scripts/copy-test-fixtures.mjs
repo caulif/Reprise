@@ -11,16 +11,16 @@ await copyFile(
   "dist/test/fixtures/recovery-truth-dataset.json",
 );
 
-await mkdir("dist/src/products/codex/recovery", { recursive: true });
+await mkdir("dist/src/products/packs/codex/recovery", { recursive: true });
 await copyFile(
-  "src/products/codex/recovery/SKILL.md",
-  "dist/src/products/codex/recovery/SKILL.md",
+  "src/products/packs/codex/recovery/SKILL.md",
+  "dist/src/products/packs/codex/recovery/SKILL.md",
 );
 
-await mkdir("dist/src/products/claude-code/recovery", { recursive: true });
+await mkdir("dist/src/products/packs/claude-code/recovery", { recursive: true });
 await copyFile(
-  "src/products/claude-code/recovery/SKILL.md",
-  "dist/src/products/claude-code/recovery/SKILL.md",
+  "src/products/packs/claude-code/recovery/SKILL.md",
+  "dist/src/products/packs/claude-code/recovery/SKILL.md",
 );
 
 await mkdir("dist/test/fixtures/fake-pack/sessions", { recursive: true });

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase } from '../core/schema.js';
 import type { ResolvedRuntime, RuntimeAvailability, RuntimeModelOffer, ProductRuntime } from '../core/runtime.js';
@@ -11,9 +12,19 @@ import type { RecoveryAttempt } from './recovery/types.js';
 import { comparePersistedExperiment } from './experiment-compare-persisted.js';
 import type { ExperimentResult } from './experiment.js';
 import type { EnvironmentBaseline } from '../environment/local-workspace-provider.js';
-import type { ProductPack } from '../products/contract.js';
+import type {
+  ProductPack,
+  SessionDiscoveryPage,
+  SessionDiscoveryQuery,
+  SessionInspection,
+  SessionPrivacy,
+  SessionSummary,
+} from '../products/contract.js';
 import type { ProductLookup } from '../products/index.js';
-import { packDefaultCandidate, packRuntime } from '../products/pack-access.js';
+import { packDefaultCandidate, packHistory, packRuntime } from '../products/pack-access.js';
+import { discoverProductSessions, resolveHistoryRoot } from '../products/history/discover.js';
+import { inspectProductSession, readImportedSession } from '../products/history/read.js';
+import { freezeCase } from '../products/shared/freeze.js';
 import type { SourceRootKind } from './replay-conditions.js';
 import { assertCandidateStartAllowed, candidateGateFromAttempt } from './candidate-start.js';
 import { activityControlReady, registerActivity, type ExperimentActivity } from './experiment-activity.js';
@@ -62,6 +73,17 @@ export type ExperimentWorkflow = {
   acceptRecovery(experimentId: string): Promise<EnvironmentBaseline | undefined>;
   start(input: ExperimentRequest): Promise<ExperimentHandle>;
   comparePersisted(experimentId: string, onEvent?: (event: EventEnvelope) => void, signal?: AbortSignal, runId?: string, onActivity?: (activity: ExperimentActivity) => void): Promise<ExperimentResult>;
+  sourceRoot(productId: string, sessionsRoots?: Readonly<Record<string, string>>): string;
+  discoverSource(productId: string, query: SessionDiscoveryQuery): Promise<SessionDiscoveryPage>;
+  inspectSource(ref: { productId: string; sessionId: string; sourcePath: string }): Promise<SessionInspection>;
+  freezeSource(input: {
+    productId: string;
+    session: Pick<SessionSummary, 'productId' | 'sessionId' | 'sourcePath' | 'availability' | 'evidenceLevel' | 'recoveryReadiness'>;
+    sourcePath: string;
+    privacy: SessionPrivacy;
+    now: string;
+    initialMessageId?: string;
+  }): Promise<{ taskCase: TaskCase; reused: boolean }>;
 };
 
 export function createExperimentWorkflow(input: {
@@ -136,7 +158,7 @@ export function createExperimentWorkflow(input: {
       if (live) ownedRecoveries.take(live.experimentId);
       return handle;
     },
-    async comparePersisted(experimentId, onEvent, signal, runId, onActivity): Promise<ExperimentResult> {
+    comparePersisted(experimentId, onEvent, signal, runId, onActivity): Promise<ExperimentResult> {
       signal?.throwIfAborted();
       return comparePersistedExperiment({
         dataDir: input.dataDir, experimentId, policy, now: input.now(),
@@ -145,6 +167,31 @@ export function createExperimentWorkflow(input: {
           return { comparison: agents.comparison, agentConfig: agents.config };
         },
         ...(runId ? { runId } : {}), ...(signal ? { signal } : {}), ...(onEvent ? { onEvent } : {}), ...(onActivity ? { onActivity } : {}),
+      });
+    },
+    ...sourceHistoryPorts(input.dataDir, packFor),
+  };
+}
+
+function sourceHistoryPorts(dataDir: string, packFor: (productId: string) => ProductPack) {
+  return {
+    sourceRoot(productId: string, sessionsRoots?: Readonly<Record<string, string>>) {
+      return resolveHistoryRoot(packHistory(packFor(productId)), sessionsRoots, productId);
+    },
+    discoverSource(productId: string, query: Parameters<ExperimentWorkflow["discoverSource"]>[1]) {
+      return discoverProductSessions(packHistory(packFor(productId)), {
+        ...query,
+        dataDir,
+      });
+    },
+    inspectSource(ref: Parameters<ExperimentWorkflow["inspectSource"]>[0]) {
+      return inspectProductSession(packHistory(packFor(ref.productId)), ref);
+    },
+    async freezeSource(request: Parameters<ExperimentWorkflow["freezeSource"]>[0]) {
+      const imported = await readImportedSession(packHistory(packFor(request.productId)), request.session, request.sourcePath);
+      return freezeCase(imported, join(dataDir, 'cases'), request.privacy, request.now, {
+        ...(request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),
+        reuseExisting: true,
       });
     },
   };

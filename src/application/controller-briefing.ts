@@ -85,10 +85,10 @@ export function renderIndexMarkdown(latestTurnRelative: string | undefined): str
     "Historical agent discoveries (not this user's prior knowledge): outline rows with role=assistant and their transcript files.",
     "",
     "Current candidate facts:",
-    "- view.txt — Host snapshot of the user-visible surface; read this before other details",
+    "- current-user-view.md — Host snapshot of the current user-visible turn; read this before other details",
     "- permissions.txt — Controller tools stay read-only; candidate runtime uses Host-fixed historical session settings",
     "- run/sent-user-messages.jsonl — user messages already submitted this run",
-    "- run/turns/NNNN/visible.txt, event-index.tsv, changed-paths.txt — one settled candidate turn",
+    "- run/turns/NNNN/user-view.md, visible.txt, event-index.tsv, changed-paths.txt — one settled candidate turn",
     "- THIS-TURN.txt — relative path of the latest turn directory, empty before the first settlement",
     "- project/ — current replica; project/imported-inputs/ may be absent",
     "- project-root.txt, replay.txt, manifest.json — Host path and isolation facts",
@@ -219,47 +219,6 @@ function renderPermissionsTxt(taskCase: TaskCase): string {
   ].join("\n");
 }
 
-function renderViewSnapshot(input: {
-  phase: "opening" | "steering";
-  surface: "empty" | "unavailable" | "waiting" | "failed" | "completed" | "aborted";
-  latestTurnRelative?: string;
-  visibleText?: string;
-  changedPaths?: readonly string[];
-  prompt?: string;
-}): string {
-  if (input.phase === "opening") {
-    return [
-      "surface=empty",
-      "candidate_turn=none",
-      "user_visible=empty",
-      "deliverable_paths=(none)",
-      "prompt=(none)",
-      "user_inputs=history/user-inputs/INDEX.tsv",
-      "permissions=permissions.txt",
-      "",
-    ].join("\n");
-  }
-  const paths = input.changedPaths?.length ? input.changedPaths.join("\n") : "(none)";
-  const visible = input.visibleText?.trim() ? input.visibleText.trimEnd() : "(empty)";
-  const prompt = input.prompt?.trim() ? input.prompt.trimEnd() : "(none)";
-  return [
-    `surface=${input.surface}`,
-    `latest_turn=${input.latestTurnRelative ?? ""}`,
-    "permissions=permissions.txt",
-    `prompt=${prompt === "(none)" ? "(none)" : "see below"}`,
-    "",
-    "# Visible assistant text",
-    visible,
-    "",
-    "# Visible prompt",
-    prompt,
-    "",
-    "# Deliverable paths",
-    paths,
-    "",
-  ].join("\n");
-}
-
 function renderUserViewMarkdown(view: UserVisibleTurn): string {
   return [
     "# User visible turn",
@@ -303,7 +262,6 @@ export async function writeOpeningBriefing(input: {
   }
   await writeAtomic(join(userInputs, "INDEX.tsv"), renderUserInputIndexTsv(input.taskCase.transcript));
   await writeAtomic(join(input.briefingRoot, "permissions.txt"), renderPermissionsTxt(input.taskCase));
-  await writeAtomic(join(input.briefingRoot, "view.txt"), renderViewSnapshot({ phase: "opening", surface: "empty" }));
   await writeAtomic(join(input.briefingRoot, "project-root.txt"), `${input.replicaRoot}\n`);
   const cwdLine = input.historicalCwd ? `historicalCwd=${input.historicalCwd}\n` : "";
   await writeAtomic(
@@ -355,17 +313,6 @@ export async function writeSettledTurnBriefing(input: {
   const viewMarkdown = renderUserViewMarkdown(userView);
   await writeAtomic(join(turnDir, "user-view.md"), viewMarkdown);
   await writeAtomic(join(input.briefingRoot, "current-user-view.md"), viewMarkdown);
-  await writeAtomic(
-    join(input.briefingRoot, "view.txt"),
-    renderViewSnapshot({
-      phase: "steering",
-      surface,
-      latestTurnRelative: turnRelative,
-      visibleText: visible,
-      changedPaths: input.changedPaths,
-      ...(input.prompt ? { prompt: input.prompt } : {}),
-    }),
-  );
   const indexMarkdown = renderIndexMarkdown(turnRelative);
   await writeAtomic(join(input.briefingRoot, "INDEX.md"), indexMarkdown);
   await writeBriefingManifest(input.briefingRoot);
@@ -384,7 +331,6 @@ async function digestBriefing(briefingRoot: string, turnRelative: string | undef
   const relative = [
     "INDEX.md",
     "THIS-TURN.txt",
-    "view.txt",
     "current-user-view.md",
     "permissions.txt",
     "history/user-inputs/INDEX.tsv",

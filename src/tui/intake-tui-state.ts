@@ -1,8 +1,20 @@
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
-import { productPacks } from "../products/index.js";
-import { importPacks } from "../products/pack-access.js";
+import { createExperimentWorkflow } from "../application/experiment-workflow.js";
+import { importPacks } from "../application/intake-catalog.js";
+import { createProductLookup, productPacks } from "../products/index.js";
 import type { IntakeTui, IntakeTuiOptions } from "./intake-tui.js";
 import { Workbench } from "./workbench.js";
+
+function sourceHistoryWorkflow(packs: IntakeTui["packs"], dataDir: string, now: () => string) {
+  return createExperimentWorkflow({
+    dataDir,
+    lookup: createProductLookup(packs),
+    now,
+    agents: async () => {
+      throw new Error("Harness agents are required to start an experiment.");
+    },
+  });
+}
 
 function wireIntakeTui(target: IntakeTui, options: IntakeTuiOptions): void {
   target.dataDir = options.dataDir;
@@ -29,7 +41,17 @@ function wireIntakeTui(target: IntakeTui, options: IntakeTuiOptions): void {
   target.nowMs = options.nowMs ?? Date.now;
   target.displayCwd = options.displayCwd ?? process.cwd();
   target.piModels = options.piModels;
-  target.workflow = options.workflow;
+  const history = sourceHistoryWorkflow(target.packs, options.dataDir, target.now);
+  target.canStartExperiment = Boolean(options.workflow);
+  target.workflow = options.workflow
+    ? {
+        ...options.workflow,
+        sourceRoot: (productId, sessionsRoots) => history.sourceRoot(productId, sessionsRoots),
+        discoverSource: (productId, query) => history.discoverSource(productId, query),
+        inspectSource: (ref) => history.inspectSource(ref),
+        freezeSource: (request) => history.freezeSource(request),
+      }
+    : history;
   target.autoCompare = Boolean(options.autoCompare);
   target.queueTimelineRender =
     options.queueTimelineRender ??

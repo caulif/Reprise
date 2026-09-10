@@ -1,7 +1,7 @@
 import { sha256 } from "../../core/identity.js";
 import type { RecoveryContext } from "../../agents/recovery-agent.js";
 import { recoveryWorkingSet } from "../../agents/recovery-working-set.js";
-import { OBSERVATIONS_MOUNT, recoveryObservationsRoot, writeFrozenObservationTree } from "../observation-files.js";
+import { OBSERVATIONS_MOUNT, recoveryObservationsRoot, writeFrozenObservationTree } from "../../products/history/observations-materializer.js";
 import { recoveryTools } from "../../infrastructure/recovery-tools.js";
 import { persistRecoveryControlledWriteBlob } from "./writes.js";
 import { recoveryClues } from "./investigation.js";

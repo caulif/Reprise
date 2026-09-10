@@ -13,7 +13,7 @@ export function enterCommand(app: IntakeTui, command: string): void {
 
 export async function waitFor(condition: () => boolean): Promise<void> {
   // The full gate runs test files concurrently; allow a busy Windows worker to render before declaring a UI failure.
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (condition()) return;
     await new Promise<void>((resolve) => setTimeout(resolve, 10));

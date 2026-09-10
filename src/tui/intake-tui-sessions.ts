@@ -1,5 +1,5 @@
 import type { IntakeTui } from "./intake-tui.js";
-import { importPacks, packHistory } from "../products/pack-access.js";
+import { importPacks } from "../application/intake-catalog.js";
 import { type DiscoveryDiagnostic, type SessionSummary } from "../products/contract.js";
 import { type SessionProject, selectDefaultProjectIndex } from "./pages/intake.js";
 import { readLocalHistory } from "./local-history.js";
@@ -252,7 +252,8 @@ async function IntakeTui_openSessionInspection(this: IntakeTui, session: Session
   this.message = t(this.locale, "inspectingSelectedSession");
   this.render(true);
   try {
-    const inspected = await packHistory(pack).inspect({
+    if (!this.workflow) throw new Error('Experiment workflow is required to inspect a session.');
+    const inspected = await this.workflow.inspectSource({
       productId: session.productId,
       sessionId: session.sessionId,
       sourcePath: session.sourcePath,

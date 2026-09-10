@@ -1,15 +1,15 @@
-import type { ProductAuthStatus, CompleteProductPack } from '../../../src/products/contract.js';
-import { fakeActivityTranslator } from './activity.js';
+import type { ProductAuthStatus, ProductPack } from '../../../src/products/contract.js';
+import { fakeActivityTranslator } from './projection.js';
 import { FakeProductRuntime } from './runtime.js';
 import { fakeSessionAdapter } from './sessions.js';
 
-export const fakeProductPack: CompleteProductPack = {
+export const fakeProductPack: ProductPack = {
   manifest: {
     productId: 'fake',
     displayName: 'Fake',
     packVersion: '0.0.0',
     schemaVersion: 1,
-    apiMajor: 2,
+    apiMajor: 3,
     capabilities: ['import', 'runtime'],
     sessionSchemaVersions: ['fake-session-jsonl/v1'],
   },

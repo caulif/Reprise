@@ -4,9 +4,8 @@ import { SAFE_ID, sha256, sha256File } from '../core/identity.js';
 import { dirname, join, resolve } from 'node:path';
 import { relativeInside } from '../core/paths.js';
 import { isRecoveryPath } from '../infrastructure/recovery-tools.js';
+import { SNAPSHOT_LIMITS } from './snapshots.js';
 import {
-  MAX_INLINE_HASH_BYTES,
-  SNAPSHOT_LIMITS,
   type EnvironmentBaseline,
   type EnvironmentFingerprint,
   type FingerprintEntry,
@@ -14,6 +13,7 @@ import {
   type SensitiveFileCategory,
   type WorkspaceBudget,
   type WorkspaceExclusion,
+  MAX_INLINE_HASH_BYTES,
 } from './local-workspace-provider.js';
 
 export function recoveryPath(root: string, relativePath: string): string {

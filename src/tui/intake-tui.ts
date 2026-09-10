@@ -86,6 +86,7 @@ export class IntakeTui {
   displayCwd!: string;
   piModels: PiModels | undefined;
   workflow: ExperimentWorkflow | undefined;
+  canStartExperiment = false;
   queueTimelineRender!: (callback: () => void) => void;
   page: Page = "loading";
   sessions: readonly SessionSummary[] = [];

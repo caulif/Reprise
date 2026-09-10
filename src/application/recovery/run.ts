@@ -4,16 +4,18 @@ import {
   failRecoveryRunSession,
   type RecoveryRunSession,
 } from "./session.js";
-import { beginRecoveryStaging, tryHostCheckpointRecovery } from "./run-preflight.js";
+import { beginRecoveryStaging, tryHostCheckpointRecovery } from "./staging.js";
 import { runRecoveryForensics } from "./run-forensics.js";
 import { enforceRecoveryReadiness, invokeRecoveryAgent } from "./run-model.js";
 import { finalizeRecoveredCandidate } from "./run-finalize.js";
 import { classifyRecoveryFailureStage } from "./fail.js";
 import { finishExperimentActivity, registerActivity, activityControlReady } from "../experiment-activity.js";
-import type { RecoveryAttempt, RecoveryAttemptInput } from "./types.js";
+import type { RecoveryAttemptInput } from "./input.js";
+import type { RecoveryAttempt } from "./types.js";
 
 export { classifyRecoveryFailureStage };
-export type { RecoveryAttempt, RecoveryAttemptInput, RecoveryAttemptMode } from "./types.js";
+export type { RecoveryAttempt } from "./types.js";
+export type { RecoveryAttemptInput, RecoveryAttemptMode } from "./input.js";
 
 /** Runs Recovery only in unpublished Provider staging. The caller must explicitly accept the returned preview. */
 export async function recoverExperiment(

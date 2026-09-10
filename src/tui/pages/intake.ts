@@ -1,12 +1,14 @@
 import { basename } from 'node:path';
 import { asPosixPath, canonicalRecordedRoot, pathContainedBy } from '../../core/paths.js';
-import { compareSessionSummaries, type SessionDiscoveryProject, type SessionInspection, type SessionPrivacy, type SessionSummary } from '../../products/contract.js';
 import {
+  compareSessionSummaries,
+  firstReplayUserMessage,
   isUnknownProjectKey,
+  looksLikeInjectedInstruction,
   PROJECTLESS_PROJECT_KEY,
   sessionGroupingKey,
-} from '../../products/shared/session-project.js';
-import { looksLikeInjectedInstruction, firstReplayUserMessage } from '../../products/shared/replay-user-input.js';
+} from '../../application/intake-catalog.js';
+import type { SessionDiscoveryProject, SessionInspection, SessionPrivacy, SessionSummary } from '../../products/contract.js';
 import { compact, truncateFit } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import { caretAt } from '../text-edit.js';

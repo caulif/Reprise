@@ -1,14 +1,23 @@
-import { join, resolve } from "node:path";
-import { findProductPack, productPacks, defaultSessionsRoots, packLoadDiagnostics } from "../products/index.js";
-import { packHas, packRoles, packRuntime, packHistory } from "../products/pack-access.js";
+import { findProductPack, createProductLookup, productPacks, defaultSessionsRoots, packLoadDiagnostics } from "../products/index.js";
+import { packHas, packRoles } from "../products/pack-access.js";
 import type { SessionDiscoveryProject, SessionSummary } from "../products/contract.js";
-import { freezeCase } from "../products/shared/freeze.js";
-import { importVerifiedSession } from "../products/shared/session-recovery.js";
 import { readHarnessModelConfig, publicHarnessConfig, saveHarnessModelConfig, configForDraft, emptyHarnessConfigDraft, type HarnessConfigDraft } from "../infrastructure/harness-model-config.js";
 import { readLocalHistory, type HistoryExperiment } from "./experiment-history-list.js";
 import { CliError } from "./cli-error.js";
+import { createExperimentWorkflow, type ExperimentWorkflow } from "./experiment-workflow.js";
 
 export type Page<T> = { readonly items: readonly T[]; readonly nextCursor?: string };
+
+function queryWorkflow(dataDir: string): ExperimentWorkflow {
+  return createExperimentWorkflow({
+    dataDir,
+    lookup: createProductLookup(productPacks, packLoadDiagnostics),
+    now: () => new Date().toISOString(),
+    agents: async () => {
+      throw new Error("Query commands do not start experiments.");
+    },
+  });
+}
 
 function paginate<T>(items: readonly T[], limit: number | undefined, cursor: string | undefined, id: (item: T) => string): Page<T> {
   const start = cursor ? items.findIndex((item) => id(item) === cursor) + 1 : 0;
@@ -18,6 +27,20 @@ function paginate<T>(items: readonly T[], limit: number | undefined, cursor: str
   const last = slice.at(-1);
   const more = start + slice.length < items.length;
   return { items: slice, ...(more && last ? { nextCursor: id(last) } : {}) };
+}
+
+export function defaultSourceRoots(): Record<string, string> {
+  return { ...defaultSessionsRoots() };
+}
+
+export function requireRegisteredProduct(productId: string): void {
+  findProductPack(productId);
+}
+
+export function firstRegisteredProductId(): string {
+  const productId = productPacks[0]?.manifest.productId;
+  if (!productId) throw new Error("No product packs are registered.");
+  return productId;
 }
 
 export function listProducts(): {
@@ -34,10 +57,10 @@ export function listProducts(): {
   };
 }
 
-export async function listCandidateModels(productId: string): Promise<readonly { readonly value: string; readonly displayName: string }[]> {
+export async function listCandidateModels(productId: string, dataDir = "."): Promise<readonly { readonly value: string; readonly displayName: string }[]> {
   const pack = findProductPack(productId);
   if (!packHas(pack, "runtime")) throw new CliError("usage", `Product '${productId}' has no runtime capability.`);
-  const offers = await packRuntime(pack).listCatalog();
+  const offers = await queryWorkflow(dataDir).listCatalog(productId);
   return offers.map((offer) => ({ value: offer.value, displayName: offer.displayName }));
 }
 
@@ -121,12 +144,10 @@ async function discoverSource(input: {
 }) {
   const pack = findProductPack(input.productId);
   if (!packHas(pack, "import")) throw new CliError("usage", `Product '${input.productId}' has no import capability.`);
-  const sessions = packHistory(pack);
+  const workflow = queryWorkflow(input.dataDir);
   const roots = { ...defaultSessionsRoots(), ...input.sessionsRoots };
-  const root = resolve(roots[input.productId] ?? sessions.defaultRoot);
-  return sessions.discover({
-    root,
-    excludeRoots: [resolve(input.dataDir)],
+  return workflow.discoverSource(input.productId, {
+    root: workflow.sourceRoot(input.productId, roots),
     ...(input.limit ? { limit: input.limit } : {}),
     ...(input.cursor ? { cursor: input.cursor } : {}),
   });
@@ -170,7 +191,7 @@ export async function inspectSourceSession(input: {
   const listed = await listSourceSessions(input);
   const session = listed.items[0];
   if (!session) throw new CliError("not_found", `Unknown sourcePath '${input.sourcePath}'.`);
-  return packHistory(findProductPack(input.productId)).inspect({
+  return queryWorkflow(input.dataDir).inspectSource({
     productId: session.productId,
     sessionId: session.sessionId,
     sourcePath: session.sourcePath,
@@ -187,7 +208,11 @@ export async function importSourceSession(input: {
   const listed = await listSourceSessions(input);
   const session = listed.items[0];
   if (!session) throw new CliError("not_found", `Unknown sourcePath '${input.sourcePath}'.`);
-  const pack = findProductPack(input.productId);
-  const imported = await importVerifiedSession(packHistory(pack), session, session.sourcePath);
-  return freezeCase(imported, join(input.dataDir, "cases"), { allowModelText: true, allowBinary: false, redactions: [] }, input.now ?? new Date().toISOString(), { reuseExisting: true });
+  return queryWorkflow(input.dataDir).freezeSource({
+    productId: input.productId,
+    session,
+    sourcePath: session.sourcePath,
+    privacy: { allowModelText: true, allowBinary: false, redactions: [] },
+    now: input.now ?? new Date().toISOString(),
+  });
 }

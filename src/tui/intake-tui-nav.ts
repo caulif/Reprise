@@ -1,5 +1,5 @@
 import type { IntakeTui } from "./intake-tui.js";
-import { importPacks } from "../products/pack-access.js";
+import { importPacks } from "../application/intake-catalog.js";
 import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harness-model-config.js";
 import { classifyAgentFailure } from '../infrastructure/agent/failure.js';
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";

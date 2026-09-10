@@ -7,7 +7,7 @@ import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonBriefingContextSchema, ComparisonLinksSchema, type ComparisonLinkRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
 import type { ArtifactManifest } from "../infrastructure/store/experiment-store.js";
 import { briefingComparisonContext } from "./comparison.js";
-import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "./observation-files.js";
+import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
 
 export type ComparisonLink = ComparisonLinkRecord;
 

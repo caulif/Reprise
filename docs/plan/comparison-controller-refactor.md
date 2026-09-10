@@ -100,7 +100,7 @@ Comparison 的完整架构拆解见[Comparison Agent 全面重构方案](./compa
 |---|---|
 | [Comparison Agent](../../src/agents/comparison-agent.ts) | 当前 compare 发起一次结构化请求；目标是一个 Session 四次顺序委托，仅最后一次解析信封；替换旧身份、禁选赢家和固定阅读顺序等 prompt 约束 |
 | [通用 Session Host](../../src/infrastructure/agent/host.ts) | 当前 request 要求 schema 并解码最终文本；需要通用的自由文本 turn 能力，复用 append、工具 loop、审计、取消和压缩，不绕过通用层另造 loop |
-| [输入装配](../../src/application/comparison-briefing.ts)、[观察文件](../../src/application/observation-files.ts) | 建立完整用户输入索引，稳定引用现有正文或必要的用户原文投影；保留顺序、角色、附件与关联入口，避免全文双份复制 |
+| [输入装配](../../src/application/comparison-briefing.ts)、[观察文件](../../src/products/history/observations-materializer.ts) | 建立完整用户输入索引，稳定引用现有正文或必要的用户原文投影；保留顺序、角色、附件与关联入口，避免全文双份复制 |
 | [比较事实](../../src/application/comparison.ts) | 双方指标采集与投影、来源和缺失语义；旧记录缺值也能比较 |
 | [报告执行与发布](../../src/application/experiment-report.ts) | 四轮结束才发布；scratch、工作笔记与报告的实际写权限；草稿、资源和链接发布后的可用性 |
 | [独立比较入口](../../src/application/experiment-compare-persisted.ts) | 离开原运行进程仍可执行相同四轮，不依赖活动 Runtime |
@@ -155,7 +155,7 @@ Host 提供事实与确定性算术，Agent 解读体验。核实已有采集再
 
 人工或显式 opt-in 的真实模型评价至少覆盖：结果好但过程费劲、表达漂亮却核心失败、两边相近、历史产物缺失，以及有视觉交付物的任务。核对是否展示真实反差、是否理解全部需求、建议是否有依据；不要求按固定答案评分或强选赢家。实际模型调用继续遵循[真实调用规则](../codex-smoke-gate.md)，不限制预算不等于自动授权启动计费验证。
 
-相关已有测试入口：[Comparison Session](../../test/comparison-agent-phases.test.ts)、[报告](../../test/comparison-report.test.ts)、[观察文件](../../test/observation-files.test.ts)、[Session 生命周期](../../test/agent-session-lifecycle.test.ts)。只补能验证改变行为的用例，不创建通用评测平台。源码变更先构建，再运行项目要求的 npm run check；纯文档执行 npm run verify:docs。
+相关已有测试入口：[Comparison Session](../../test/application/comparison-agent-phases.test.ts)、[报告](../../test/application/comparison-report.test.ts)、[观察文件](../../test/products/observation-files.test.ts)、[Session 生命周期](../../test/application/agent-session-lifecycle.test.ts)。只补能验证改变行为的用例，不创建通用评测平台。源码变更先构建，再运行项目要求的 npm run check；纯文档执行 npm run verify:docs。
 
 ## 参考资料
 

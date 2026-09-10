@@ -1,5 +1,5 @@
 import { dirname } from 'node:path';
-import { runtimePacks } from '../products/pack-access.js';
+import { runtimePacks } from '../application/intake-catalog.js';
 import { isFsAbsolute } from '../core/paths.js';
 import { matchesKey } from '@earendil-works/pi-tui';
 import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
@@ -91,6 +91,7 @@ export type ControllerHandle = {
   compareChoice: { resolve(run: boolean): void } | undefined;
   runFromSource: boolean;
   readonly workflow: ExperimentWorkflow | undefined;
+  canStartExperiment: boolean;
   generation: number;
   recoveryView: RecoveryView | undefined;
   selectedCandidate: import('../core/schema.js').CandidateSpec | undefined;

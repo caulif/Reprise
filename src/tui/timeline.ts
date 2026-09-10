@@ -1,5 +1,3 @@
-import { Value } from '@sinclair/typebox/value';
-import { PublicActivityPayloadSchema, type TargetActivity } from '../core/public-activity.js';
 import { record, text, type JsonRecord } from '../core/json.js';
 import type { EventEnvelope } from '../core/schema.js';
 import {
@@ -16,7 +14,6 @@ import { projectAssistantVisible } from './fold-process.js';
 const MAX_ORIGINAL_CHARS = 32_768;
 const PREVIEW_LINES = 6;
 const PREVIEW_CHARS = 1_200;
-const OUTPUT_LINE_CHARS = 160;
 
 export type TimelineSource = 'HARNESS' | 'CONTROLLER' | 'TARGET';
 
@@ -154,32 +151,14 @@ const SILENT_TIMELINE_TYPES = new Set([
 
 export function projectPersistedTimeline(events: readonly EventEnvelope[]): TimelineEntry[] {
   const timeline: TimelineEntry[] = [];
-  const legacyProductFallback = !events.some((event) => event.type === 'runtime.public_activity');
-  for (const event of events) appendTimelineEntries(timeline, projectTimelineEvent(event, { legacyProductFallback }));
+  for (const event of events) appendTimelineEntries(timeline, projectTimelineEvent(event));
   return timeline;
 }
 
-export function projectTimelineEvent(event: EventEnvelope, options: { legacyProductFallback?: boolean } = {}): readonly TimelineEntry[] {
+export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEntry[] {
   if (SILENT_TIMELINE_TYPES.has(event.type)) return [];
   const payload = record(event.payload);
-  const entry = (
-    source: TimelineSource,
-    title: string,
-    detail?: string,
-    extra?: EntryExtra,
-  ): TimelineEntry => ({
-    sequence: event.sequence, occurredAt: event.occurredAt, source, title,
-    ...(detail ? { detail } : {}),
-    ...(extra?.original ? { original: extra.original } : {}),
-    ...(extra?.level ? { level: extra.level } : {}),
-    ...(extra?.hidden ? { hidden: true } : {}),
-    ...(extra?.itemId ? { itemId: extra.itemId } : {}),
-    ...(extra?.patch ? { patch: extra.patch } : {}),
-    ...(extra?.placeholder ? { placeholder: true } : {}),
-    ...(extra?.lane ? { lane: extra.lane } : {}),
-    ...(extra?.kind ? { kind: extra.kind } : {}),
-    ...(extra?.count !== undefined ? { count: extra.count } : {}),
-  });
+  const entry = timelineEntryFactory(event);
 
   switch (event.type) {
     case 'recovery.started':
@@ -215,7 +194,8 @@ export function projectTimelineEvent(event: EventEnvelope, options: { legacyProd
       return prompt ? emitPresented(entry, 'TARGET', promptTitle(prompt), prompt) : [];
     }
     case 'candidate.session_bound': return [entry('HARNESS', `Candidate session · ${text(payload.sessionId) ?? '?'}`, text(payload.productId), { hidden: true })];
-    case 'candidate.user_view_persisted': return [entry('HARNESS', `User view · ${text(payload.status) ?? 'unknown'}`, undefined, { hidden: true })];
+    case 'candidate.user_view_persisted':
+      return projectUserView(entry, payload);
     case 'runtime.delivery_observed': {
       const delivery = text(record(payload.receipt).delivery) ?? 'unknown';
       if (delivery === 'accepted') return [entry('HARNESS', `Delivery: ${delivery}`, undefined, { hidden: true })];
@@ -239,8 +219,10 @@ export function projectTimelineEvent(event: EventEnvelope, options: { legacyProd
       return projectOutcome(entry, payload);
     case 'run.finished':
       return [entry('HARNESS', 'Candidate run finished', undefined, { hidden: true })];
-    case 'runtime.public_activity':
-      return projectPublicActivity(event, entry);
+    case 'runtime.runtime_failed':
+      return [entry('TARGET', 'Runtime failed', text(payload.message), { level: 'error' })];
+    case 'runtime.session_failed':
+      return [entry('TARGET', 'Session failed', text(payload.message), { level: 'error' })];
     case 'report.created':
       return [entry('HARNESS', 'Report created', text(payload.path))];
     case 'controller.started':
@@ -256,8 +238,43 @@ export function projectTimelineEvent(event: EventEnvelope, options: { legacyProd
     case 'comparison.completed':
       return projectComparisonCompleted(entry, payload);
     default:
-      return event.type.startsWith('runtime.') ? [] : projectUnknownActivity(event, entry, options.legacyProductFallback === true);
+      return [];
   }
+}
+
+function timelineEntryFactory(event: EventEnvelope): MakeEntry {
+  return (source, title, detail, extra) => ({
+    sequence: event.sequence, occurredAt: event.occurredAt, source, title,
+    ...(detail ? { detail } : {}),
+    ...(extra?.original ? { original: extra.original } : {}),
+    ...(extra?.level ? { level: extra.level } : {}),
+    ...(extra?.hidden ? { hidden: true } : {}),
+    ...(extra?.itemId ? { itemId: extra.itemId } : {}),
+    ...(extra?.patch ? { patch: extra.patch } : {}),
+    ...(extra?.placeholder ? { placeholder: true } : {}),
+    ...(extra?.lane ? { lane: extra.lane } : {}),
+    ...(extra?.kind ? { kind: extra.kind } : {}),
+    ...(extra?.count !== undefined ? { count: extra.count } : {}),
+  });
+}
+
+function projectUserView(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
+  const status = text(payload.status) ?? 'unknown';
+  const assistant = text(payload.assistantText);
+  const prompt = text(payload.prompt);
+  if (status === 'unavailable') {
+    return [entry('TARGET', 'User view unavailable', undefined, { level: 'error' })];
+  }
+  const rows: TimelineEntry[] = [];
+  if (prompt) rows.push(...emitPresented(entry, 'TARGET', promptTitle(prompt), prompt));
+  if (assistant) rows.push(...emitPresented(entry, 'TARGET', 'Visible response', assistant));
+  else if (status === 'empty') rows.push(entry('TARGET', 'User view empty'));
+  else if (status === 'failed' || status === 'aborted') {
+    rows.push(entry('TARGET', `User view · ${status}`, undefined, { level: 'error' }));
+  } else if (!prompt) {
+    rows.push(entry('TARGET', `User view · ${status}`));
+  }
+  return rows;
 }
 
 function projectOutcome(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
@@ -288,144 +305,6 @@ function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): read
   })];
 }
 
-function projectPublicActivity(event: EventEnvelope, entry: MakeEntry): readonly TimelineEntry[] {
-  if (!Value.Check(PublicActivityPayloadSchema, event.payload)) {
-    return [entry('TARGET', 'Activity · unreadable', event.type)];
-  }
-  const payload = event.payload;
-  if (payload.activity.kind === 'thinking') return [];
-  return renderActivity({
-    activity: payload.activity,
-    ...(payload.correlationId ? { correlationId: payload.correlationId } : {}),
-    ...(payload.merge ? { merge: payload.merge } : {}),
-  }, entry);
-}
-
-const HARNESS_EVENT_PREFIXES = [
-  'agent.', 'artifact.', 'comparison.', 'controller.', 'environment.', 'experiment.',
-  'input.', 'recovery.', 'report.', 'run.', 'runtime.',
-];
-
-function projectUnknownActivity(event: EventEnvelope, entry: MakeEntry, legacyProductFallback: boolean): readonly TimelineEntry[] {
-  if (HARNESS_EVENT_PREFIXES.some((prefix) => event.type.startsWith(prefix))) return [];
-  if (/delta|stderr/i.test(event.type)) return [];
-  if (!legacyProductFallback) return [];
-  const payload = record(event.payload);
-  const detail = text(payload.message) ?? text(payload.line) ?? text(payload.text);
-  return [entry('TARGET', `Activity · ${event.type}`, detail)];
-}
-
-type PublicActivityItem = {
-  readonly activity: TargetActivity;
-  readonly correlationId?: string;
-  readonly merge?: 'replace' | 'append';
-};
-
-function renderActivity(item: PublicActivityItem, entry: MakeEntry): readonly TimelineEntry[] {
-  const extra: EntryExtra = {
-    ...(item.correlationId ? { itemId: item.correlationId } : {}),
-    ...(item.merge ? { patch: item.merge } : {}),
-  };
-  if (item.merge === 'append') {
-    const detail = appendedDetail(item.activity);
-    return detail ? [entry('TARGET', 'Streaming', detail, extra)] : [];
-  }
-  return renderTargetActivity(item.activity, entry, extra);
-}
-
-function appendedDetail(activity: TargetActivity): string | undefined {
-  if (activity.kind === 'message') return activity.text;
-  if (activity.kind === 'thinking') return activity.text;
-  if (activity.kind === 'command') return activity.output;
-  return undefined;
-}
-
-function renderTargetActivity(activity: TargetActivity, entry: MakeEntry, extra: EntryExtra): readonly TimelineEntry[] {
-  switch (activity.kind) {
-    case 'prompt':
-      return emitPresented(entry, 'TARGET', promptTitle(activity.text), activity.text, extra);
-    case 'thinking':
-      return [];
-    case 'message': {
-      if (activity.streaming && !activity.text) {
-        return [entry('TARGET', extra.itemId ? 'Writing' : 'Working', extra.itemId ? 'The target is writing a reply.' : 'The target is running this turn.', { ...extra, placeholder: true })];
-      }
-      if (activity.streaming) return emitPresented(entry, 'TARGET', extra.itemId ? 'Writing' : 'Working', activity.text ?? '', extra);
-      return activity.text ? emitPresented(entry, 'TARGET', 'Visible response', activity.text, extra) : [];
-    }
-    case 'command':
-      return renderCommand(activity, entry, extra);
-    case 'file_change': {
-      const body = fileChangeBody(activity.changes);
-      return [entry('TARGET', activity.completed === false ? 'Changing files' : 'File change', body.detail, { ...extra, ...(body.original ? { original: body.original } : {}) })];
-    }
-    case 'web_search':
-      return activity.query
-        ? emitPresented(entry, 'TARGET', activity.completed ? 'Web search' : 'Searching', activity.query, extra)
-        : [entry('TARGET', activity.completed ? 'Web search' : 'Searching', undefined, extra)];
-    case 'tool_call': {
-      const failed = activity.status === 'failed';
-      return activity.body
-        ? emitPresented(entry, 'TARGET', activity.name, activity.body, { ...extra, ...(failed ? { level: 'warning' as const } : {}) })
-        : [entry('TARGET', activity.name, undefined, { ...extra, ...(failed ? { level: 'warning' as const } : {}) })];
-    }
-    case 'subtask':
-      return [entry('TARGET', `Subtask · ${activity.name}`, activity.body, extra)];
-    case 'schedule':
-      return [entry('TARGET', `Schedule · ${activity.name}`, activity.body, extra)];
-    case 'plan':
-      return [entry('TARGET', 'Plan updated', activity.steps.map((step) => `${step.status} · ${step.step}`).join('\n'), extra)];
-    case 'token_usage': {
-      const lines = [
-        `total ${formatCount(activity.total)}`,
-        `input ${formatCount(activity.input ?? 0)}${activity.cached ? ` · cached ${formatCount(activity.cached)}` : ''}`,
-        `output ${formatCount(activity.output ?? 0)}${activity.reasoning ? ` · reasoning ${formatCount(activity.reasoning)}` : ''}`,
-      ];
-      return [entry('TARGET', `Tokens · ${formatCount(activity.total)}`, lines.join('\n'), extra)];
-    }
-    case 'sandbox_notice':
-      return renderSandbox(activity, entry, extra);
-    case 'runtime_error':
-      return [entry('TARGET', 'Protocol error', activity.message, { ...extra, level: 'error' })];
-    case 'other':
-      return activity.body
-        ? emitPresented(entry, 'TARGET', activity.label, activity.body, extra)
-        : [entry('TARGET', activity.label, undefined, extra)];
-  }
-}
-
-function renderCommand(
-  activity: Extract<TargetActivity, { kind: 'command' }>,
-  entry: MakeEntry,
-  extra: EntryExtra,
-): readonly TimelineEntry[] {
-  const completed = activity.status !== 'started';
-  const title = completed ? commandIdentity(activity.command) : commandTitle(activity.command);
-  const level = activity.status === 'failed' && activity.blockedBySandbox
-    ? 'warning' as const
-    : activity.status === 'failed'
-      ? 'error' as const
-      : undefined;
-  const body = completed
-    ? commandDetail(activity)
-    : presentCommand(activity.command);
-  return [entry('TARGET', title, body.detail, { ...extra, ...(body.original ? { original: body.original } : {}), ...(level ? { level } : {}) })];
-}
-
-function renderSandbox(
-  activity: Extract<TargetActivity, { kind: 'sandbox_notice' }>,
-  entry: MakeEntry,
-  extra: EntryExtra,
-): readonly TimelineEntry[] {
-  const title = activity.label === 'danger-full-access'
-    ? 'Sandbox · full access'
-    : activity.label === 'workspace-write'
-      ? 'Sandbox · workspace-write'
-      : `Sandbox · ${activity.label}`;
-  const detail = [activity.identity, activity.caveat].filter(Boolean).join('\n') || undefined;
-  return [entry('HARNESS', title, detail, extra)];
-}
-
 function controllerEntries(event: EventEnvelope, payload: JsonRecord): readonly TimelineEntry[] {
   if (text(payload.status) === 'failed') return [];
   const decision = record(payload.value);
@@ -452,97 +331,6 @@ function promptTitle(prompt: string): string {
   return first ? `Prompt · ${first}` : 'Prompt';
 }
 
-function commandIdentity(command: string): string {
-  const exe = executableName(command);
-  const verb = powershellVerb(command);
-  const label = verb && /^pwsh$/i.test(exe) ? `${exe} · ${verb}` : exe;
-  const short = label.length > 48 ? `${label.slice(0, 47)}...` : label;
-  return short || 'command';
-}
-
-function commandTitle(command: string): string {
-  return `Running · ${commandIdentity(command)}`;
-}
-
-function executableName(command: string): string {
-  const compact = command.replace(/\s+/g, ' ').trim();
-  if (!/[\\/]/.test(compact) && compact.length <= 48) return compact;
-  const quoted = compact.match(/^"([^"]+)"/)?.[1] ?? compact.match(/^'([^']+)'/)?.[1];
-  const path = quoted ?? compact.split(' ')[0] ?? compact;
-  const base = path.replace(/^.*[\\/]/, '').replace(/\.(exe|cmd|bat|ps1)$/i, '');
-  return base || compact;
-}
-
-function powershellVerb(command: string): string | undefined {
-  const body = unwrapCommand(command);
-  return body.match(/\b(Get-ChildItem|Get-Content|Copy-Item|Remove-Item|Set-Content|Get-[A-Za-z]+)\b/)?.[1]
-    ?? body.match(/\b([A-Z][A-Za-z]+-[A-Za-z]+)\b/)?.[1];
-}
-
-function oneLineCommand(command: string): string {
-  return unwrapCommand(command).replace(/\s+/g, ' ').trim();
-}
-
-/** Operator line: the verb, not the quoting wrapper or pwsh.exe path. */
-function displayCommand(command: string): string {
-  const body = oneLineCommand(command);
-  const verb = powershellVerb(command);
-  if (verb && body.length > 72) {
-    const at = body.indexOf(verb);
-    if (at > 0) return body.slice(at);
-  }
-  return body;
-}
-
-function commandDetail(activity: Extract<TargetActivity, { kind: 'command' }>): { detail: string; original?: string } {
-  const output = activity.output;
-  const sandbox = activity.blockedBySandbox === true;
-  const outputPreview = output && !sandbox ? previewLines(output, PREVIEW_LINES) : undefined;
-  const status = [
-    typeof activity.exitCode === 'number' ? `exit ${activity.exitCode}` : undefined,
-    typeof activity.durationMs === 'number' ? `${activity.durationMs}ms` : undefined,
-  ].filter((part): part is string => Boolean(part)).join(' · ');
-  const lines = [`$ ${displayCommand(activity.command)}`];
-  if (sandbox) {
-    lines.push('| Sandbox blocked a path outside the isolated workspace.');
-    if (/apply deny-read ACLs/i.test(output ?? '')) lines.push('| Windows could not apply deny-read ACLs.');
-  } else if (outputPreview) {
-    for (const row of outputPreview.preview.split('\n')) {
-      const clipped = row.length > OUTPUT_LINE_CHARS ? `${row.slice(0, OUTPUT_LINE_CHARS - 1)}...` : row;
-      lines.push(`| ${clipped}`);
-    }
-    if (outputPreview.omitted > 0) lines.push(`... +${outputPreview.omitted} lines`);
-  }
-  if (status) lines.push(status);
-  const original = [
-    activity.command,
-    activity.cwd ? `cwd  ${activity.cwd}` : undefined,
-    typeof activity.exitCode === 'number' ? `exit ${activity.exitCode}` : undefined,
-    typeof activity.durationMs === 'number' ? `time ${activity.durationMs}ms` : undefined,
-    activity.actions?.join('\n'),
-    output,
-  ].filter((part): part is string => Boolean(part)).join('\n');
-  const detail = lines.join('\n');
-  return original && original !== detail ? { detail, original: clampOriginal(original) } : { detail };
-}
-
-type FileChange = Extract<TargetActivity, { kind: 'file_change' }>['changes'][number];
-
-function fileChangeBody(changes: readonly FileChange[]): { detail: string; original?: string } {
-  const full = fileChangeDetail(changes);
-  const headings = full.split(/\n\n/).map((block) => block.split(/\r?\n/).find((line) => line.trim()) ?? '').filter(Boolean);
-  const preview = headings.slice(0, PREVIEW_LINES).join('\n');
-  if (full.split(/\r?\n/).length <= PREVIEW_LINES && full.length <= PREVIEW_CHARS) return { detail: full };
-  return { detail: withOpenHint(preview || previewLines(full, PREVIEW_LINES).preview, omittedLines(full, preview)), original: clampOriginal(full) };
-}
-
-function fileChangeDetail(changes: readonly FileChange[]): string {
-  const lines = changes.map((change) => (
-    change.diff ? `${change.kind ?? 'changed'}  ${change.path}\n${change.diff}` : `${change.kind ?? 'changed'}  ${change.path}`
-  ));
-  return lines.join('\n\n') || 'File change';
-}
-
 function clampOriginal(detail: string): string {
   if (detail.length <= MAX_ORIGINAL_CHARS) return detail;
   return `${detail.slice(0, MAX_ORIGINAL_CHARS)}\n... truncated ${detail.length - MAX_ORIGINAL_CHARS} characters; remainder is in the run trace.`;
@@ -565,11 +353,6 @@ function presentText(body: string): { detail: string; original?: string } {
   return { detail: withOpenHint(preview, omitted), original: clampOriginal(body) };
 }
 
-function presentCommand(command: string): { detail: string; original?: string } {
-  const detail = `$ ${displayCommand(command)}`;
-  return command !== detail ? { detail, original: clampOriginal(command) } : { detail };
-}
-
 function previewLines(text: string, limit: number, maxChars = PREVIEW_CHARS): { preview: string; omitted: number } {
   const lines = text.split(/\r?\n/);
   if (lines.length <= limit && text.length <= maxChars) return { preview: text, omitted: 0 };
@@ -586,10 +369,6 @@ function previewLines(text: string, limit: number, maxChars = PREVIEW_CHARS): { 
   return { preview, omitted };
 }
 
-function omittedLines(full: string, preview: string): number {
-  return Math.max(0, full.split(/\r?\n/).length - preview.split(/\r?\n/).length);
-}
-
 function withOpenHint(preview: string, omitted: number): string {
   if (omitted <= 0) return preview;
   return `${preview}\n... +${omitted} lines`;
@@ -600,13 +379,6 @@ function livePreview(text: string): string {
   if (text.length <= PREVIEW_CHARS && lines.length <= PREVIEW_LINES) return text;
   const tail = lines.slice(-PREVIEW_LINES).join('\n');
   return `... live\n${tail}`;
-}
-
-function unwrapCommand(command: string): string {
-  const match = /(?:^|\s)-Command\s+(?:\/[a-z]\s+)?([\s\S]+)$/i.exec(command);
-  const body = match?.[1]?.trim() ?? command.replace(/\s+/g, ' ').trim();
-  if ((body.startsWith('"') && body.endsWith('"')) || (body.startsWith("'") && body.endsWith("'"))) return body.slice(1, -1);
-  return body;
 }
 
 function requestedModel(payload: JsonRecord): string | undefined {
@@ -662,10 +434,6 @@ function mergeEntry(previous: TimelineEntry, next: TimelineEntry): TimelineEntry
     ...(next.kind ? { kind: next.kind } : previous.kind ? { kind: previous.kind } : {}),
     ...(next.count !== undefined ? { count: next.count } : previous.count !== undefined ? { count: previous.count } : {}),
   };
-}
-
-function formatCount(value: number): string {
-  return value.toLocaleString('en-US');
 }
 
 export function eventOriginalText(entry: TimelineEntry | undefined): string | undefined {

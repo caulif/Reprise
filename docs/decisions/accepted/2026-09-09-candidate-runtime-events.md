@@ -12,7 +12,7 @@
 
 `ProductRuntime.createRunner` 必须接收已准入的 `CandidateLaunchContext`，并在 `workspaceRoot` 启动新 Session。`TargetRunner` 提供 `session`、`start`/`send`、delivery、原生 `waitForTurn`、必选 `cancelWait`、`inspect`、`stop` 和 `close`。
 
-标准化事件以 `CandidateRuntimeEvent` 描述（eventId、单调 sequence、时间、sessionId、可选 turn/message/call、payload、evidenceRefs）。产品 Adapter 先映射为 `runtime.<CandidateRuntimeEventType>`，Journal 只接受该集合；流式 delta、心跳、stderr 与隐藏 reasoning 留在 Adapter 内。Application 不解析产品私有帧。
+标准化事件以 `CandidateRuntimeEvent` 描述（eventId、单调 sequence、时间、sessionId、可选 turn/message/call、payload、evidenceRefs）。产品 Adapter 先映射为 `runtime.<CandidateRuntimeEventType>`。Journal 写入后必须能还原为 `CandidateRuntimeEvent`（含 sessionId 与 evidenceRefs）；流式 delta、心跳、stderr 与隐藏 reasoning 留在 Adapter 内。Application 不解析产品私有帧。
 
 只在原生 settlement 之后由 `UserSurfaceProjection.projectTurn` 生成 `UserVisibleTurn`。投影失败记为 `unavailable`，不得当成空输出。持久化 `controller-briefing/current-user-view.md` 与 `run/turns/{n}/user-view.md`。流式 `translate` 只写公开活动，不作为 Controller 决策输入。
 

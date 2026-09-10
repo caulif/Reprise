@@ -37,7 +37,7 @@ Product Pack
 - `recovery/SKILL.md`：Recovery Agent 使用的产品知识；
 - `fixtures`：session 解析与 Runtime 适配器契约测试样例。
 
-Product Pack 不提供 Controller 或 Comparison 的产品专属策略。它不能修改 Core 状态机、放宽隔离策略、安装 Runtime，或自行决定 fidelity。
+Product Pack 不提供 Controller 或 Comparison 的产品专属策略。它不能修改 Core 状态机、放宽隔离策略、安装 Runtime，或自行决定 fidelity。内置实现位于 `src/products/packs/{codex,claude-code}/`，物化入口见 `src/products/history/`。进程生命周期、可用性探测、turn wait 与 Session listing 摘要装配在 `src/products/shared/` 与 `src/infrastructure/process/`；产品协议解析与 Projection 仍只属于各 Pack。
 
 ## 3. Manifest
 
@@ -61,7 +61,7 @@ interface RecoveryPlaybookDescriptor {
 }
 ```
 
-Manifest 不声明历史 Runtime 版本矩阵。公共 Pack API 为 `PACK_API_MAJOR` 2，端口字段见 [ProductPack 端口](../decisions/accepted/2026-09-09-product-pack-ports.md)。Runtime 适配器是否仍兼容当前产品，由固定原生事件 fixtures、最小契约测试和可选的本机 smoke 验证；失败时返回明确 diagnostic，不用一个宽泛版本范围假装兼容。
+Manifest 不声明历史 Runtime 版本矩阵。公共 Pack API 为 `PACK_API_MAJOR` 3，端口字段见 [ProductPack 端口](../decisions/accepted/2026-09-09-product-pack-ports.md) 与 [UserVisibleTurn 时间线](../decisions/accepted/2026-09-10-user-visible-turn-timeline.md)。Runtime 适配器是否仍兼容当前产品，由固定原生事件 fixtures、最小契约测试和可选的本机 smoke 验证；失败时返回明确 diagnostic，不用一个宽泛版本范围假装兼容。
 
 ## 4. 两类 Runtime 事实
 

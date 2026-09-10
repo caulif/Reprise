@@ -168,7 +168,7 @@ Publisher 不检查 HTML 章节、组件、颜色或推荐文案，不从 HTML �
 ### 扩展
 
 - 扩展 `src/infrastructure/agent/host.ts`，加入 FreeformWorkRequest；保持 Controller/Recovery 结构化路径不变。
-- 扩展 `src/application/observation-files.ts`，物化用户输入索引并保持 privacy/ownership 边界。
+- 扩展 `src/products/history/observations-materializer.ts`，物化用户输入索引并保持 privacy/ownership 边界。
 - 按事实证据最小扩展 `src/application/comparison.ts` 和 `src/core/comparison-schema.ts` 的指标投影。
 - 核对 `src/application/harness-agents.ts` 的 Comparison 无 deadline 装配，不影响其他角色。
 

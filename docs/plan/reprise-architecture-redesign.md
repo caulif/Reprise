@@ -31,7 +31,7 @@ CLI 与 TUI 功能对等，全部配置、发现、执行、取消、历史和�
 
 TUI 不启动 CLI 子进程执行业务，CLI 不导入 TUI 页面或模拟按键。配置、查询、规范化活动和错误分类由两种入口共同消费。插件注册表由启动装配处加载并注入；查询已保存历史无需执行插件代码。
 
-源码落点以现有模块为起点：[Agent Host](../../src/infrastructure/agent/host.ts)、[Pi 调用](../../src/infrastructure/agent/model-caller.ts)、[编排](../../src/application/experiment.ts)、[平台](../../src/infrastructure/platform.ts)、[产品进程](../../src/products/shared/process.ts)。先调整职责和实际调用链，目录搬迁仅在能让所有权更清楚时进行。
+源码落点以现有模块为起点：[Agent Host](../../src/infrastructure/agent/host.ts)、[Pi 调用](../../src/infrastructure/agent/model-caller.ts)、[编排](../../src/application/experiment.ts)、[平台](../../src/infrastructure/platform.ts)、[Runtime spawn](../../src/infrastructure/process/spawn.ts)。先调整职责和实际调用链，目录搬迁仅在能让所有权更清楚时进行。
 
 ## 3. Agent 执行机制
 

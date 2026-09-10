@@ -1,8 +1,8 @@
 import {
   isRelativePath,
-  recoveryEvidenceCatalog,
   type ResolvedRecoveryFacts,
 } from "../../infrastructure/recovery-tools.js";
+import { recoveryEvidenceCatalog } from "../../products/history/source-refs.js";
 import type { TaskCase } from "../../core/schema.js";
 
 export const INVESTIGATION_PACKET_MAX_PATHS = 48;

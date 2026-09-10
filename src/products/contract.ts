@@ -34,22 +34,6 @@ export type KnownInstant = {
   readonly source: 'event' | 'file-mtime' | 'filename';
 };
 
-/** Orders discovery and UI summaries by known latest activity, then source path. */
-export function compareSessionSummaries(left: SessionSummary, right: SessionSummary): number {
-  const leftTime = knownSessionTime(left);
-  const rightTime = knownSessionTime(right);
-  if (leftTime !== undefined && rightTime !== undefined && leftTime !== rightTime) return rightTime - leftTime;
-  if (leftTime !== undefined && rightTime === undefined) return -1;
-  if (leftTime === undefined && rightTime !== undefined) return 1;
-  return left.sourcePath.localeCompare(right.sourcePath);
-}
-
-function knownSessionTime(session: SessionSummary): number | undefined {
-  const value = session.updatedAt ?? session.startedAt;
-  const timestamp = value ? Date.parse(value) : Number.NaN;
-  return Number.isFinite(timestamp) ? timestamp : undefined;
-}
-
 export type SessionSummary = {
   readonly productId: string;
   readonly sessionId: string;
@@ -214,64 +198,15 @@ export type ProductHistoryReader = {
   import(ref: SessionRef): Promise<ImportedSession>;
 };
 
-export type FileChange = {
-  readonly path: string;
-  readonly kind?: string;
-  readonly diff?: string;
-};
-
-export type ActivityStatus = 'started' | 'completed' | 'failed';
-
-/** TUI-owned closed vocabulary. Packs may only choose from these kinds. */
-export type TargetActivity =
-  | { readonly kind: 'prompt'; readonly text: string }
-  | { readonly kind: 'thinking'; readonly text?: string; readonly streaming?: true }
-  | { readonly kind: 'message'; readonly text?: string; readonly streaming?: true }
-  | {
-    readonly kind: 'command';
-    readonly command: string;
-    readonly status: ActivityStatus;
-    readonly output?: string;
-    readonly cwd?: string;
-    readonly exitCode?: number;
-    readonly durationMs?: number;
-    readonly blockedBySandbox?: true;
-    readonly actions?: readonly string[];
-  }
-  | { readonly kind: 'file_change'; readonly changes: readonly FileChange[]; readonly completed?: boolean }
-  | { readonly kind: 'web_search'; readonly query?: string; readonly completed: boolean }
-  | { readonly kind: 'tool_call'; readonly name: string; readonly status: ActivityStatus; readonly body?: string }
-  | { readonly kind: 'subtask'; readonly name: string; readonly status: ActivityStatus; readonly body?: string }
-  | { readonly kind: 'schedule'; readonly name: string; readonly status: ActivityStatus; readonly body?: string }
-  | { readonly kind: 'plan'; readonly steps: readonly { readonly status: string; readonly step: string }[] }
-  | {
-    readonly kind: 'token_usage';
-    readonly total: number;
-    readonly input?: number;
-    readonly output?: number;
-    readonly reasoning?: number;
-    readonly cached?: number;
-  }
-  | { readonly kind: 'sandbox_notice'; readonly label: string; readonly identity?: string; readonly caveat?: string }
-  | { readonly kind: 'runtime_error'; readonly message: string }
-  | { readonly kind: 'other'; readonly label: string; readonly body?: string };
-
-export type TargetActivityEntry = {
-  readonly activity: TargetActivity;
-  readonly correlationId?: string;
-  readonly merge?: 'replace' | 'append';
-};
-
 export type TargetRunFacts = {
   readonly finalMessage?: string;
+  readonly prompt?: string;
   readonly commands: readonly string[];
   readonly rejectedApprovals: number;
   readonly evidenceEvents: readonly EventEnvelope[];
 };
 
 export interface UserSurfaceProjection {
-  /** Only this pack's namespace. Empty means keep the event in the trace, not the timeline. */
-  translate(event: EventEnvelope): readonly TargetActivityEntry[];
   inspectRunFacts(events: readonly EventEnvelope[]): TargetRunFacts;
   projectTurn(input: {
     turnIndex: number;
@@ -305,14 +240,21 @@ export function projectUserVisibleTurn(input: {
     };
   }
   const text = input.facts.finalMessage?.trim() ?? '';
+  const prompt = input.facts.prompt?.trim() ?? '';
   if (mapped === 'completed' && !text) {
-    return { turnIndex: input.turnIndex, status: 'empty', observedAt: input.settlement.observedAt };
+    return {
+      turnIndex: input.turnIndex,
+      status: 'empty',
+      observedAt: input.settlement.observedAt,
+      ...(prompt ? { prompt } : {}),
+    };
   }
   return {
     turnIndex: input.turnIndex,
     status: mapped,
     observedAt: input.settlement.observedAt,
     ...(text ? { assistantText: text } : {}),
+    ...(prompt ? { prompt } : {}),
   };
 }
 
@@ -323,7 +265,7 @@ export type ProductAuthStatus = {
   readonly detail?: string;
 };
 
-export const PACK_API_MAJOR = 2;
+export const PACK_API_MAJOR = 3;
 
 export type PackCapability = "import" | "runtime";
 
@@ -345,18 +287,10 @@ export type RecoveryPlaybookDescriptor = {
 
 export interface ProductPack {
   readonly manifest: ProductPackManifest;
-  readonly history?: ProductHistoryReader;
-  readonly runtime?: ProductRuntime;
-  readonly projection?: UserSurfaceProjection;
-  recoveryPlaybook?(): RecoveryPlaybookDescriptor;
-  checkAuth?(): Promise<ProductAuthStatus>;
-  defaultCandidate?(): CandidateSpec;
-}
-
-export type CompleteProductPack = ProductPack & {
   readonly history: ProductHistoryReader;
   readonly runtime: ProductRuntime;
   readonly projection: UserSurfaceProjection;
   recoveryPlaybook(): RecoveryPlaybookDescriptor;
+  checkAuth?(): Promise<ProductAuthStatus>;
   defaultCandidate(): CandidateSpec;
-};
+}

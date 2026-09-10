@@ -54,7 +54,7 @@ Controller 代表真实用户完成一项任务：先理解整个历史会话中
 
 ## Host 用户视图快照
 
-候选 turn 稳定完成后，Host 从已有公开事件、交付和 TUI/view projection 生成不可变快照，例如 `view.txt`，并在 Controller 工作区的 `INDEX.md` 中标出当前路径。快照只表达用户当前能看到的内容：最终回复、用户可见状态、可见交付入口、错误/等待/授权提示和可访问路径。
+候选 turn 稳定完成后，Host 从已有公开事件、交付和 Pack Projection 生成不可变 `current-user-view.md`，并在 Controller 工作区的 `INDEX.md` 中标出当前路径。快照只表达用户当前能看到的内容：最终回复、用户可见状态、可见交付入口、错误/等待/授权提示和可访问路径。
 
 快照不包含隐藏推理、内部审计字段、完整工具参数或 Host 诊断。路径是按需读取入口，不等于已经观察文件内容。媒体是否可见由 provider 和通用工具能力决定；Controller 只能描述实际看到的内容。
 
@@ -67,7 +67,7 @@ controller-briefing/
 ├── INDEX.md
 ├── history/user-inputs/INDEX.tsv
 ├── history/user-inputs/{turn-id}.txt
-├── view.txt
+├── current-user-view.md
 ├── permissions.txt
 ├── run/turns/{n}/visible.txt
 └── project/                 # 用户可访问的隔离副本，只读
@@ -88,7 +88,7 @@ RunOrchestrator
   │    └─ Session append：opening prompt → ControllerDecision(send)
   ├─ 发送 send.message 给 Target Runtime
   ├─ 等待稳定 TurnSettlement
-  ├─ Host 写入新的 view.txt、THIS-TURN 和 turn 文件
+  ├─ Host 写入新的 current-user-view.md、THIS-TURN 和 turn 文件
   └─ decide(steering) 循环
        └─ Session append：循环 prompt + INDEX → send 或 done
 ```
@@ -101,13 +101,13 @@ RunOrchestrator
 
 ### 用户视图快照生产
 
-候选 Runtime 报告稳定 settlement 后，Orchestrator 调用 briefing writer：从用户可见的 settled turn 文本、可见状态、可访问交付入口和公开提示生成不可变 `view.txt`，再更新 `THIS-TURN` 与 `INDEX.md`。Controller 决策期间不重写该快照；下一次 settlement 才生成下一版。流式输出、未完成工具结果和内部诊断不得触发 writer。
+候选 Runtime 报告稳定 settlement 后，Orchestrator 调用 briefing writer：从用户可见的 settled turn 文本、可见状态、可访问交付入口和公开提示生成不可变 `current-user-view.md`，再更新 `THIS-TURN` 与 `INDEX.md`。Controller 决策期间不重写该快照；下一次 settlement 才生成下一版。流式输出、未完成工具结果和内部诊断不得触发 writer。
 
 视图投影应复用 TUI/view projection 的公开事实，但不能直接把 TUI 的展示字符串当作长期协议；为 Controller 生成稳定、可审计的文本投影，并保留来源事件与可访问路径。视图缺失时显示明确的 unavailable/empty 状态，不由 Controller 猜测。
 
 ### 权限快照与授权路径
 
-准备阶段从历史会话提交的有效设置生成 `permissions.txt`，并把同一权限快照交给 Candidate Runtime 的 Environment/approval 层执行。Controller 读到的是固定事实，不能通过自然语言扩大权限。Target 的可见确认、授权或拒绝请求进入 `view.txt`；Controller 可以代表历史用户发送回应，Host 在真正执行前仍强制安全策略。历史设置不完整时，Host 记录不确定性并采用当前安全上限，不让 Controller 补授予权限。
+准备阶段从历史会话提交的有效设置生成 `permissions.txt`，并把同一权限快照交给 Candidate Runtime 的 Environment/approval 层执行。Controller 读到的是固定事实，不能通过自然语言扩大权限。Target 的可见确认、授权或拒绝请求进入 `current-user-view.md`；Controller 可以代表历史用户发送回应，Host 在真正执行前仍强制安全策略。历史设置不完整时，Host 记录不确定性并采用当前安全上限，不让 Controller 补授予权限。
 
 ### 失败、取消与恢复
 

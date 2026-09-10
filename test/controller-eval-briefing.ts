@@ -111,15 +111,21 @@ export async function packControllerEvalCase(root: string, item: ControllerEvalC
     await writeAtomic(path, body);
   }
   const latestVisible = files.turns[files.latestTurn.slice("run/turns/".length)]?.visible ?? "";
-  await writeAtomic(join(briefingRoot, "view.txt"), [
-    "surface=completed",
-    `latest_turn=${files.latestTurn}`,
-    "permissions=permissions.txt",
+  const userView = [
+    "# User visible turn",
+    "status=completed",
+    `turnIndex=${Number(files.latestTurn.slice("run/turns/".length))}`,
+    "observedAt=settled",
     "",
-    "# Visible assistant text",
+    "# Assistant",
     latestVisible,
     "",
-  ].join("\n"));
+    "# Prompt",
+    "(none)",
+    "",
+  ].join("\n");
+  await writeAtomic(join(briefingRoot, "current-user-view.md"), userView);
+  await writeAtomic(join(briefingRoot, files.latestTurn, "user-view.md"), userView);
   await mkdir(join(briefingRoot, "history", "user-inputs"), { recursive: true });
   const userIndex = ["turn_id\torder\trole\tsource\tpath\tattachments\trelated"];
   let order = 0;

@@ -11,15 +11,6 @@ Reprise   Candidate running · Codex                                            
 ▎ Run the focused test.                                                                                                 
                                                                                                                         
 ▎ Codex                                                                                                                 
-▎ $ Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name                                                         
-▎ ⎿ Mode  Length LastWriteTime         Name                                                                             
-▎ ⎿ ----  ------ -------------         ----                                                                             
-▎ ⎿ -a---   1200 8/13/2026 12:00:00 AM  file-1.txt                                                                      
-▎ ⎿ -a---   1201 8/13/2026 12:00:00 AM  file-2.txt                                                                      
-▎ ⎿ -a---   1202 8/13/2026 12:00:00 AM  file-3.txt                                                                      
-▎ ⎿ -a---   1203 8/13/2026 12:00:00 AM  file-4.txt                                                                      
-▎ ... 20 more lines                                                                                                     
-▎ exit 0 · 476ms                                                                                                        
 ▎ public response line 1                                                                                                
 ▎ public response line 2                                                                                                
 ▎ public response line 3                                                                                                

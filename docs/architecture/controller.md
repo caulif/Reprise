@@ -16,7 +16,7 @@ Controller 回答一个问题：
 
 ```text
 原始 TaskCase
-+ Host 用户视图快照（view.txt）
++ Host 用户视图快照（current-user-view.md）
 + 用户可访问材料（按需）
 + 已发送的用户消息
 + Host 固定权限
@@ -155,7 +155,7 @@ Controller opening send persisted
 → Controller 返回 send 或 done
 ```
 
-候选进程与 Controller session 在准备阶段一同拉起。第一条用户输入之前，首次 `decide` 在本 run 的同一 Session 内先做一轮自由理解（读取完整历史用户输入，不交决策信封），再返回 opening `send`。没有独立 Understanding schema 或账本。Controller 只在 `awaiting_controller` 上做后续决策，并先看 Host 生成的 `view.txt`。以下都不能触发后续决策：
+候选进程与 Controller session 在准备阶段一同拉起。第一条用户输入之前，首次 `decide` 在本 run 的同一 Session 内先做一轮自由理解（读取完整历史用户输入，不交决策信封），再返回 opening `send`。没有独立 Understanding schema 或账本。Controller 只在 `awaiting_controller` 上做后续决策，并先看 Host 生成的 `current-user-view.md`。以下都不能触发后续决策：
 
 - Runtime 只接受了消息但 turn 尚未开始；
 - 模型刚输出一段流式文本；
@@ -277,7 +277,7 @@ Host 在读取前执行 run ownership、路径边界、类型、大小和 privac
 
 ## 7. SteeringContext
 
-Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`view.txt` 是用户可见表面快照：可见助手文本只取最近一次 settlement 事件区间，确认/授权请求写入 Visible prompt。`permissions.txt` 分 Controller 只读工具与候选运行权限；后者来自历史会话已解析设置，缺失时标 unconfirmed。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)。
+Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`current-user-view.md` 是用户可见表面快照：可见助手文本只取最近一次 settlement 事件区间，确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 只读工具与候选运行权限；后者来自历史会话已解析设置，缺失时标 unconfirmed。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)。
 
 ```ts
 interface SteeringContext {
@@ -359,7 +359,7 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 ## 9. 决策过程
 
-首次 `decide` 先在同一 Session 自由理解完整历史用户输入，再返回 opening `send`。后续只在稳定 settlement 后，先看 `view.txt`，再按需读取用户可访问材料。判断顺序由 prompt 约束，不在 Core 写成规则引擎：
+首次 `decide` 先在同一 Session 自由理解完整历史用户输入，再返回 opening `send`。后续只在稳定 settlement 后，先看 `current-user-view.md`，再按需读取用户可访问材料。判断顺序由 prompt 约束，不在 Core 写成规则引擎：
 
 ```text
 1. 当前用户可见结果是否已经满足这项历史任务？候选自称完成不够。
@@ -374,7 +374,7 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 可执行 system prompt 与 Turn 1 / opening / 循环 prompt 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。
 
-briefing INDEX 把材料分成三类，不得混用：历史用户要求（`history/user-inputs/` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`view.txt`、`run/turns/` 与 `project/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。模型可见请求是决策段加 INDEX.md，不把 SteeringContext JSON 或隐藏字段内联进 prompt。
+briefing INDEX 把材料分成三类，不得混用：历史用户要求（`history/user-inputs/` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`current-user-view.md`、`run/turns/` 与 `project/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。模型可见请求是决策段加 INDEX.md，不把 SteeringContext JSON 或隐藏字段内联进 prompt。
 
 Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `CONTROLLER_PROMPT_DIGEST` 相同）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
 

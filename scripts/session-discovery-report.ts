@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { claudeSessionAdapter } from '../src/products/claude-code/sessions.js';
-import { codexSessionAdapter } from '../src/products/codex/sessions.js';
+import { claudeSessionAdapter } from '../src/products/packs/claude-code/sessions.js';
+import { codexSessionAdapter } from '../src/products/packs/codex/sessions.js';
 import { resetSessionDiscoveryCacheStats, sessionDiscoveryCacheStats, sessionDiscoveryDiagnosticDetails } from '../src/products/shared/session-files.js';
 
 const args = new Map<string, string>();

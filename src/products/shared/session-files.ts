@@ -4,7 +4,8 @@ import { opendir, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { isRecord, type JsonRecord } from '../../core/json.js';
-import { compareSessionSummaries, type DiscoveryDiagnostic, type DiscoveryDiagnosticCode, type SessionDiscoveryPage, type SessionSummary } from '../contract.js';
+import { compareSessionSummaries } from '../history/normalize.js';
+import type { DiscoveryDiagnostic, DiscoveryDiagnosticCode, SessionDiscoveryPage, SessionSummary } from '../contract.js';
 
 const DIRECTORY_CONCURRENCY = 8;
 const SUMMARY_INDEX_CACHE_LIMIT = 4;

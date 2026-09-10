@@ -78,7 +78,9 @@ async function queryData(command: string, values: {
   "from-sequence"?: string;
 }): Promise<unknown> {
   if (command === "products") return listProducts();
-  if (command === "models") return { productId: requireProduct(values.product), models: await listCandidateModels(requireProduct(values.product)) };
+  if (command === "models") {
+    return { productId: requireProduct(values.product), models: await listCandidateModels(requireProduct(values.product), values.dataDir) };
+  }
   if (command === "projects") {
     const productId = requireProduct(values.product);
     return { productId, ...await listSourceProjects({

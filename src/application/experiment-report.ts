@@ -15,7 +15,7 @@ import {
 import type { ExperimentInput, ExperimentResult } from "./experiment.js";
 import type { ExperimentPreflight } from "./experiment-preflight.js";
 import { experimentAgentAuditSink, invocationFact, isMissing } from "./experiment-helpers.js";
-import { inspectRun } from "./experiment-inspection.js";
+import { inspectRun } from "./controller-queries.js";
 import type { SourceRootKind } from "./replay-conditions.js";
 import { comparisonOrientation, newComparisonAttempt, writeComparisonBriefing } from "./comparison-briefing.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";

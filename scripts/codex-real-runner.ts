@@ -1,5 +1,5 @@
-import type { CodexReasoningEffort, CodexRuntimeOptions } from '../src/products/codex/runtime-port.js';
-import { CodexTextCaller } from '../src/products/codex/text-caller.js';
+import type { CodexReasoningEffort, CodexRuntimeOptions } from '../src/products/packs/codex/runtime.js';
+import { CodexTextCaller } from '../src/products/packs/codex/text-caller.js';
 
 /** Runs one tool-less app-server exchange; Host tools are intentionally outside this protocol smoke. */
 export async function runToollessCodexProbe(input: { model: string; effort: CodexReasoningEffort; systemPrompt: string; context: unknown; options?: CodexRuntimeOptions }): Promise<string> {

@@ -35,12 +35,6 @@ export {
 
 
 export const MAX_INLINE_HASH_BYTES = 8 * 1024 * 1024;
-// ponytail: fixed budgets make snapshot cost predictable without silently changing the copied tree.
-export const SNAPSHOT_LIMITS = {
-  files: 50_000,
-  totalBytes: 1024 * 1024 * 1024,
-  fileBytes: 512 * 1024 * 1024,
-} as const;
 
 export class RecoveryValidationError extends Error {
   constructor(readonly code: 'source_tripwire_failed' | 'provider_validation_failed', message: string) {

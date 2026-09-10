@@ -4,7 +4,8 @@ import { persistRecoveryEvaluation, recoveryEvaluationCase, recoveryTimingSummar
 import { validateRecoveryEvidence, type RecoveryEvidenceVerification } from "../../infrastructure/recovery-tools.js";
 import { writeImmutableJson } from "../../infrastructure/store/experiment-store.js";
 import type { RecoveryManifest } from "../../core/schema.js";
-import type { RecoveryAttempt, RecoveryAttemptInput } from "./types.js";
+import type { RecoveryAttempt } from "./types.js";
+import type { RecoveryAttemptInput } from "./input.js";
 import type { RecoveryResult } from "../../agents/recovery-agent.js";
 import type { StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import type { ExperimentStore } from "../../infrastructure/store/experiment-store.js";

@@ -19,16 +19,10 @@ export function runtimePacks(packs: readonly ProductPack[]): ProductPack[] {
 }
 
 export function packProjection(pack: ProductPack) {
-  if (!pack.projection) {
-    throw new Error(`Product '${pack.manifest.productId}' has no user-surface projection.`);
-  }
   return pack.projection;
 }
 
 export function packRecoveryPlaybook(pack: ProductPack) {
-  if (!pack.recoveryPlaybook) {
-    throw new Error(`Product '${pack.manifest.productId}' has no recovery playbook.`);
-  }
   return pack.recoveryPlaybook();
 }
 
@@ -47,7 +41,7 @@ export function packRuntime(pack: ProductPack): ProductRuntime {
 }
 
 export function packDefaultCandidate(pack: ProductPack): CandidateSpec {
-  const candidate = pack.defaultCandidate?.();
+  const candidate = pack.defaultCandidate();
   if (!candidate || !packHas(pack, "runtime")) {
     throw new Error(`Product '${pack.manifest.productId}' has no runtime capability.`);
   }

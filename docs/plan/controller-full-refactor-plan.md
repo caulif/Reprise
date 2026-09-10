@@ -26,7 +26,7 @@ Controller 不是历史消息播放器、目标任务执行者、模型评分器
 |---|---|---|
 | `src/agents/controller-agent.ts` | 已有单 Session、结构化 `ControllerDecision`、opening/steering、工具和校验；system prompt 仍混有旧式固定决策说明 | 薄 system prompt；首次 decide 在同一 Session 先自由理解再结构化 opening；后续使用统一循环 prompt |
 | `src/infrastructure/agent/host.ts` | `request` 主要围绕 schema 解码和修复 | 增加通用自由文本 append/工作委托，复用工具、压缩、审计、取消和错误处理；不在 Controller 复制 loop |
-| `src/application/controller-briefing.ts` | 已有 `view.txt`、`permissions.txt`、历史 outline、`history/user-inputs/INDEX.tsv`、settled turn 文件 | 保持统一稳定路径；核对视图内容只包含用户可见事实，稳定边界更新，索引明确按需入口 |
+| `src/application/controller-briefing.ts` | 已有 `current-user-view.md`、`permissions.txt`、历史 outline、`history/user-inputs/INDEX.tsv`、settled turn 文件 | 保持统一稳定路径；核对视图内容只包含用户可见事实，稳定边界更新，索引明确按需入口 |
 | `src/application/experiment.ts` | 在 `awaiting_controller` 循环调用 `decide` 并投递消息 | 保持状态机所有权；确保 opening 理解失败不投递，settlement 后写视图再触发下一决策，done/取消/错误路径幂等 |
 | `src/application/candidate-run.ts`、Runtime | 已有稳定 settlement 和状态迁移 | 不让流式事件、未确认 delivery 或 finalizing 触发 Controller |
 | `src/core/schema.ts` / 事件 schema | 已有决策、请求和观察事件 | 仅按需补 schema；保留 send/done、授权和读取事实，避免新增理解账本 |
@@ -47,7 +47,7 @@ opening decide
 
 候选执行
   └─ 等待 delivery accepted → Target started → turn settled
-  └─ Host 写入不可变 run/turns/{n}、view.txt、THIS-TURN、INDEX
+  └─ Host 写入不可变 run/turns/{n}、current-user-view.md、THIS-TURN、INDEX
 
 steering decide（重复）
   └─ append 循环 prompt + 当前 view 状态
@@ -104,7 +104,7 @@ controller-briefing/
 ├── history/user-inputs/{turn-id}.txt
 ├── history/outline.tsv
 ├── history/transcript/{id}.txt
-├── view.txt
+├── current-user-view.md
 ├── permissions.txt
 ├── run/sent-user-messages.jsonl
 ├── run/turns/{nnnn}/visible.txt
@@ -115,7 +115,7 @@ controller-briefing/
 
 `INDEX.md` 只做导航：说明每类文件是什么、属于历史还是候选、稳定路径和读取工具。用户输入索引按顺序列出全部 user turn、稳定 ID、正文路径、附件和关联入口。历史 Agent 内容不伪装成用户知识。
 
-### view.txt 生产
+### current-user-view.md 生产
 
 候选 turn settlement 后由 Host 从规范化公开事件、最终回复、用户可见交付入口、可见状态和提示生成 view 快照。它应能回答“用户此刻看到什么”，而不是“Host 知道什么”。禁止写入隐藏推理、内部审计、完整工具参数、未公开诊断或未稳定内容。快照在 Controller 决策期间不改写，下一次 settlement 再写新版本；保留来源 ref 供审计。
 
@@ -123,7 +123,7 @@ controller-briefing/
 
 ### permissions.txt
 
-准备阶段从历史会话有效设置生成 Host 固定权限快照，并将相同设置交给 Candidate Environment/approval 层。Controller 可读到该事实但不能修改。用户可见授权请求写入 view；Controller 的普通消息表达批准或拒绝，Host 在实际执行前再次强制安全策略。历史设置不完整时记录差异并采用当前安全上限，绝不让 Controller 猜测扩大权限。
+准备阶段从历史会话有效设置生成 Host 固定权限快照，并将相同设置交给 Candidate Environment/approval 层。Controller 可读到该事实但不能修改。用户可见授权请求写入 `current-user-view.md`；Controller 的普通消息表达批准或拒绝，Host 在实际执行前再次强制安全策略。历史设置不完整时记录差异并采用当前安全上限，绝不让 Controller 猜测扩大权限。
 
 ## Prompt 实施要求
 

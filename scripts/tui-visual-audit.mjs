@@ -3,7 +3,6 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { IntakeTui } from '../dist/src/tui/intake-app.js';
-import { findProductPack } from '../dist/src/products/index.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
 import { compareFrames, mockTui, pageHtml, selfTestCompareFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
@@ -26,28 +25,6 @@ let stabilize = (text) => text;
 function enterCommand(app, command) {
   app.handleInput(command);
   app.handleInput('\r');
-}
-
-function emitPublicActivities(onEvent, envelope, sequence) {
-  let next = sequence;
-  for (const item of findProductPack('codex').projection.translate(envelope)) {
-    onEvent({
-      ...envelope,
-      sequence: next,
-      eventId: `pub-${next}`,
-      type: 'runtime.public_activity',
-      payload: {
-        schemaVersion: 1,
-        sourceEventId: envelope.eventId,
-        sourceEventType: envelope.type,
-        activity: item.activity,
-        ...(item.correlationId ? { correlationId: item.correlationId } : {}),
-        ...(item.merge ? { merge: item.merge } : {}),
-      },
-    });
-    next += 1;
-  }
-  return next;
 }
 
 function replaceField(app, value) {
@@ -360,10 +337,19 @@ async function main() {
         checksum: 'c'.repeat(64),
       };
       input.onEvent(commandEvent);
-      emitPublicActivities(input.onEvent, commandEvent, 7);
       const messageEvent = { schemaVersion: 1, sequence: 6, eventId: 'event-6', occurredAt: '2026-08-11T00:10:02.000Z', type: 'runtime.visible_output', payload: { item: { type: 'agentMessage', text: fullPublicResponse } }, checksum: 'd'.repeat(64) };
       input.onEvent(messageEvent);
-      emitPublicActivities(input.onEvent, messageEvent, 8);
+      input.onEvent({
+        schemaVersion: 1, sequence: 7, eventId: 'event-7', occurredAt: '2026-08-11T00:10:02.000Z',
+        type: 'candidate.user_view_persisted',
+        payload: {
+          turnIndex: 1,
+          status: 'completed',
+          observedAt: '2026-08-11T00:10:02.000Z',
+          assistantText: fullPublicResponse,
+        },
+        checksum: 'e'.repeat(64),
+      });
       await new Promise((resolve) => { releaseStart = resolve; });
       return { cancel: async () => {}, result: new Promise((resolve) => { resolveResult = resolve; }) };
     },
@@ -410,14 +396,15 @@ async function main() {
   runApp.handleInput('\r');
   await waitFor(() => /Copying isolated workspace/.test(run.render(120)), 'candidate preparation after confirmation');
   await push('21-running-start', 120, run.render(120));
-  releaseCopy?.();
-  await waitFor(() => Boolean(releaseStart), 'candidate start handle');
+  await waitFor(() => Boolean(releaseCopy), { describe: 'candidate copy handle', timeoutMs: 30_000 });
+  releaseCopy();
+  await waitFor(() => Boolean(releaseStart), { describe: 'candidate start handle', timeoutMs: 30_000 });
   releaseStart?.();
   await waitFor(() => /Candidate running/.test(run.render(120)), 'candidate replay after preparation');
   await new Promise((resolve) => setTimeout(resolve, 40));
   await push('22-running-wide', 120, run.render(120));
   runApp.handleInput('\u001b[A');
-  await waitFor(() => /Get-ChildItem/.test(run.render(120)));
+  await waitFor(() => /Visible response|public response/.test(run.render(120)));
   await push('22b-running-command-detail', 120, run.render(120));
   await push('22c-running-command-compact', 60, run.render(60));
   runApp.handleInput('l');

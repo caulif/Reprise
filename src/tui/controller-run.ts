@@ -1,12 +1,10 @@
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { isFsAbsolute } from '../core/paths.js';
 import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import { candidateSpecFromOffer, catalogCursor } from '../application/candidate-spec.js';
 import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
-import { packDefaultCandidate, packHistory, runtimePacks } from '../products/pack-access.js';
-import { freezeCase } from '../products/shared/freeze.js';
-import { importVerifiedSession, listSummaryIncomplete } from '../products/shared/session-recovery.js';
+import { listSummaryIncomplete, packDefaultCandidate, runtimePacks } from '../application/intake-catalog.js';
 import { errorMessage } from './format.js';
 import { t, type Locale } from './i18n.js';
 import { projectLabel } from './pages/intake.js';
@@ -88,14 +86,18 @@ export async function freeze(
     const alreadyInspected = c.inspection?.sourcePath === sourcePath;
     c.message = t(c.locale, !alreadyInspected && listSummaryIncomplete(session) ? 'inspectingIncompleteSummary' : 'inspectingSelectedSession');
     c.render(true);
-    const imported = await importVerifiedSession(packHistory(pack), session, sourcePath);
-    const result = await freezeCase(imported, join(c.dataDir, 'cases'), c.privacy, c.now(), {
+    if (!c.workflow) throw new Error('Experiment workflow is required to freeze a session.');
+    const result = await c.workflow.freezeSource({
+      productId: pack.manifest.productId,
+      session,
+      sourcePath,
+      privacy: c.privacy,
+      now: c.now(),
       ...(input.initialMessageId ? { initialMessageId: input.initialMessageId } : {}),
-      reuseExisting: true,
     });
     if (token !== c.generation) return;
     c.taskCase = result.taskCase;
-    if (input.thenRun && c.workflow) {
+    if (input.thenRun && c.canStartExperiment) {
       startRunSetup(c, { afterFreeze: true });
       return;
     }

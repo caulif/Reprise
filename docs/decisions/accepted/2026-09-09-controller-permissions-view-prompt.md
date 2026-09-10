@@ -11,7 +11,7 @@
 
 - `permissions.txt` 分两层：Controller 工具始终 `controller.writes=denied` 且 `project/` 只读；候选运行权限来自 TaskCase 已解析的历史设置（`taskContext` 与历史事件中的 sandbox / permissionMode / approvalPolicy），缺失时标 `unconfirmed` 并注明 Host 安全上限，不把候选写成一律禁止写入。
 - 当前 `view.txt` 的可见助手文本只来自最近一次 `runtime.turn_settled` 对应的事件区间；整次运行的 `finalMessage` 仍供 Comparison 使用。
-- `view.txt` 的 Visible prompt 来自该区间的 `runtime.public_activity`（`kind=prompt`），缺失时再回退 Pack 对同区间事件的公开投影。
+- `view.txt` 的 Visible prompt 来自该区间投影出的 `UserVisibleTurn.prompt`（Pack 从 `runtime.visible_prompt` 收集）。
 
 ## 备选方案
 
@@ -26,5 +26,5 @@
 ## 验证
 
 - `test/controller-briefing.test.ts`：Controller 只读与历史 full access 的候选 `writes=allowed`；waiting 视图含确认提示且无旧回复。
-- `test/experiment-inspection.test.ts`：后一轮失败不沿用上一轮 `turnVisibleText`；prompt 来自公开活动。
+- `test/experiment-inspection.test.ts`：后一轮失败不沿用上一轮 `turnVisibleText`；prompt 来自 `runtime.visible_prompt`。
 - `npm run check`。

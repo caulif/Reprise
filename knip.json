@@ -18,7 +18,7 @@
     "scripts/tui-live-run.mjs",
     "src/application/recovery/run-forensics.ts",
     "src/application/recovery/run-model.ts",
-    "src/application/recovery/run-preflight.ts",
+    "src/application/recovery/staging.ts",
     "src/application/recovery/session.ts"
   ],
   "rules": {
