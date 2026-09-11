@@ -1,13 +1,13 @@
 Reprise   Run result   C:\reprise
 00:00   * done
 ------------------------------------------------------------
- public response line 1                                     
- public response line 2                                     
- public response line 3                                     
- public response line 4                                     
- public response line 5                                     
- public response line 6                                     
- ... +35 lines                                              
+: public response line 1                                    
+  public response line 2                                    
+  public response line 3                                    
+  public response line 4                                    
+  public response line 5                                    
+  public response line 6                                    
+ * Codex · working                                     00:00
 
 [ Run result - completed ]
     + completed
@@ -29,4 +29,4 @@ Reprise   Run result   C:\reprise
    run-1
  Experiment finished. Open the report from the short label.
 ------------------------------------------------------------
- [o] Open report  [t] Open trace  [w] Open replica
+ [Esc] Home

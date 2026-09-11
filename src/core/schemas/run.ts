@@ -69,6 +69,15 @@ export const RunManifestSchema = Type.Object({
   environment: Type.Object({
     environmentId: Id,
     workspacePath: Type.String({ minLength: 1 }),
+    gitSink: Type.Optional(Type.Object({
+      status: Type.Union([
+        Type.Literal("ready"),
+        Type.Literal("partial"),
+        Type.Literal("failed"),
+        Type.Literal("missing"),
+      ]),
+      catalog: Type.Literal("git-sink-manifest.json"),
+    })),
   }),
   controller: ResolvedAgentConfigSchema,
   comparison: ResolvedAgentConfigSchema,

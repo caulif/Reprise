@@ -13,6 +13,8 @@ export type CanvasHit = {
   readonly itemId?: string;
 };
 
+type GutterSlot = 'host' | 'candidate' | 'input' | 'fail' | 'fold-host' | 'fold-cand' | 'none';
+
 function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.hidden) return undefined;
   if (isQuietMcpStatus(entry)) return undefined;
@@ -80,8 +82,9 @@ export function renderScrollback(
   tick = 0,
   readingOffset = 0,
   elapsed = '00:00',
+  following = true,
 ): string[] {
-  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed).lines;
+  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed, following).lines;
 }
 
 export function layoutScrollback(
@@ -95,10 +98,12 @@ export function layoutScrollback(
   tick = 0,
   readingOffset = 0,
   elapsed = '00:00',
-): { lines: string[]; hits: CanvasHit[] } {
+  following = true,
+): { lines: string[]; hits: CanvasHit[]; selectedAt: number; start: number; total: number; chrome: number } {
   const lines: string[] = [];
   const hits: CanvasHit[] = [];
   let selectedAt = 0;
+  let behind = 0;
   const seenInput = new Set<string>();
   for (const [index, entry] of entries.entries()) {
     if (!voiceOf(entry)) continue;
@@ -107,8 +112,9 @@ export function layoutScrollback(
       if (key && seenInput.has(key)) continue;
       if (key) seenInput.add(key);
     }
-    const painted = paintEntry(theme, entry, index === selected, width, locale, product, tick, elapsed);
+    const painted = paintEntry(theme, entry, index === selected, width, locale, product, tick);
     if (index === selected) selectedAt = lines.length;
+    if (index > selected) behind += 1;
     hits.push({
       y: lines.length,
       index,
@@ -118,19 +124,44 @@ export function layoutScrollback(
     lines.push(...painted);
   }
   const live = visibleNow(entries);
-  if (live || entries.length) {
-    lines.push(fillCanvas(theme, liveStatusLine(theme, live, locale, elapsed, tick, product), width));
-  }
+  const status = fillCanvas(theme, liveStatusLine(theme, live, locale, elapsed, tick, product, width), width);
+  const showFollow = !following && behind > 0;
+  const follow = showFollow
+    ? fillCanvas(theme, theme.style.muted(pad(` ${theme.framed ? '▼' : '↓'} ${t(locale, 'followNew', { count: behind })}`, width, theme.glyphs.ellipsis)), width)
+    : undefined;
+  const chrome = 1 + (follow ? 1 : 0);
   if (!lines.length) {
-    const empty = [fillCanvas(theme, liveStatusLine(theme, undefined, locale, elapsed, tick, product), width)];
-    return { lines: empty, hits };
+    const empty = follow ? [status, follow] : [status];
+    return { lines: empty, hits, selectedAt: 0, start: 0, total: empty.length, chrome };
   }
-  if (height === undefined || lines.length <= height) return { lines, hits };
-  const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - height));
+  if (height === undefined || lines.length + chrome <= height) {
+    return {
+      lines: follow ? [...lines, status, follow] : [...lines, status],
+      hits, selectedAt, start: 0, total: lines.length, chrome,
+    };
+  }
+  const window = Math.max(1, height - chrome);
+  const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - window));
+  const sliced = lines.slice(start, start + window);
   return {
-    lines: lines.slice(start, start + height),
-    hits: hits.map((hit) => ({ ...hit, y: hit.y - start })).filter((hit) => hit.y >= 0 && hit.y < height),
+    lines: follow ? [...sliced, status, follow] : [...sliced, status],
+    hits: hits.map((hit) => ({ ...hit, y: hit.y - start })).filter((hit) => hit.y >= 0 && hit.y < window),
+    selectedAt,
+    start,
+    total: lines.length,
+    chrome,
   };
+}
+
+/** Keep `selectedAt` inside the sliced window; return the offset consumed by `layoutScrollback`. */
+export function keepSelectedVisible(selectedAt: number, offset: number, total: number, height: number): number {
+  if (height <= 0 || total <= height) return 0;
+  const maxStart = Math.max(0, total - height);
+  let start = Math.max(0, Math.min(selectedAt + offset, maxStart));
+  if (selectedAt < start) start = selectedAt;
+  else if (selectedAt >= start + height) start = selectedAt - height + 1;
+  start = Math.max(0, Math.min(start, maxStart));
+  return start - selectedAt;
 }
 
 export function hitAtBodyRow(hits: readonly CanvasHit[], bodyRow: number): CanvasHit | undefined {
@@ -150,62 +181,100 @@ function paintEntry(
   locale: Locale,
   product: string,
   tick: number,
-  elapsed: string,
 ): string[] {
   const inner = Math.max(8, width - 4);
+  const failed = entry.level === 'error' || commandFailed(entry);
   const candidate = isCandidate(entry);
-  const paint = entry.level === 'error'
-    ? theme.style.danger
-    : candidate
-      ? theme.style.target
-      : theme.style.harness;
+  const slot = gutterSlot(entry, failed, candidate);
   if (voiceOf(entry) === 'input') {
     return wrapBodyLine(inputText(entry), inner).map((line, index) => {
-      const prefix = index === 0 ? (theme.framed ? '▎ ' : '| ') : '  ';
+      const prefix = index === 0 ? gutter(theme, 'input') : '  ';
       const row = `${prefix}${line}`;
-      return selected ? theme.style.fillInputSelected(pad(row, width, theme.glyphs.ellipsis)) : theme.style.fillInput(pad(row, width, theme.glyphs.ellipsis));
+      const fill = selected ? theme.style.fillInputSelected : theme.style.fillInput;
+      return fill(pad(row, width, theme.glyphs.ellipsis));
     });
   }
   if (entry.title.startsWith('⎿ ')) {
-    const row = `   ${theme.style.muted(compact(entry.title, inner, theme.glyphs.ellipsis))}`;
-    return [fillCanvas(theme, selected ? theme.style.strong(row) : row, width)];
+    const row = `${gutter(theme, 'none')}${theme.style.muted(compact(entry.title, inner, theme.glyphs.ellipsis))}`;
+    return [paintPlain(theme, row, width, selected)];
   }
   if (entry.kind === 'fold' || entry.title.startsWith('▸')) {
     const title = entry.title.startsWith('▸') ? entry.title : `▸ ${entry.title}`;
-    const row = ` ${paint(compact(title, inner, theme.glyphs.ellipsis))}`;
-    return [fillCanvas(theme, selected ? theme.style.strong(row) : row, width)];
+    const row = `${gutter(theme, slot)}${theme.style.muted(compact(title, inner, theme.glyphs.ellipsis))}`;
+    return [paintPlain(theme, row, width, selected)];
   }
   if (entry.kind === 'live' || entry.placeholder) {
-    const pulse = Math.floor(tick / 400) % 2 === 0 ? paint(theme.glyphs.dot) : theme.style.muted(theme.glyphs.empty);
-    const caption = liveCaption(entry, elapsed);
-    const row = ` ${pulse} ${paint(compact(caption, inner - 4, theme.glyphs.ellipsis))}`;
-    return [fillCanvas(theme, selected ? theme.style.strong(row) : row, width)];
+    const color = candidate ? theme.style.gutterTarget : theme.style.gutterHost;
+    const pulse = Math.floor(tick / 400) % 2 === 0 ? color(theme.glyphs.dot) : theme.style.muted(theme.glyphs.empty);
+    const caption = liveCaption(entry);
+    const row = `${gutter(theme, slot)}${pulse} ${compact(caption, inner - 4, theme.glyphs.ellipsis)}`;
+    return [theme.style.fillLive(pad(row, width, theme.glyphs.ellipsis))];
   }
   if (entry.kind === 'narrate') {
     const text = (entry.detail ?? entry.title).trim();
-    return wrapBodyLine(text, inner).map((line) => fillCanvas(theme, selected ? theme.style.strong(` ${line}`) : ` ${line}`, width));
+    return wrapBodyLine(text, inner).map((line, index) =>
+      paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${line}`, width, selected));
   }
-  if (entry.kind === 'deliver' && (entry.title.startsWith('DONE ·') || entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复' || entry.title === '对照完成' || entry.title === '证据不足' || entry.title === '对照失败')) {
-    const lines = wrapBodyLine(entry.title, inner).map((line) => fillCanvas(theme, ` ${theme.style.ok(line)}`, width));
+  if (entry.kind === 'deliver' && isDeliverHeadline(entry.title)) {
+    const paint = failedTitle(entry.title) ? theme.style.danger : theme.style.ok;
+    const lines = wrapBodyLine(entry.title, inner).map((line, index) =>
+      paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${paint(line)}`, width, selected));
     if (!entry.detail || !selected) return lines;
-    return [...lines, ...wrapBodyLine(entry.detail, inner).map((line) => fillCanvas(theme, ` ${theme.style.muted(line)}`, width))];
+    return [...lines, ...wrapBodyLine(entry.detail, inner).map((line) =>
+      paintPlain(theme, `  ${theme.style.muted(line)}`, width, false))];
   }
   if (isCommand(entry)) {
-    const status = commandFailed(entry) ? ` ${theme.style.danger(t(locale, 'failed'))}` : '';
-    return [fillCanvas(theme, ` ${paint(compact(commandLine(entry), inner - 8, theme.glyphs.ellipsis))}${status}`, width)];
+    const status = failed ? ` ${theme.style.danger(t(locale, 'failed'))}` : '';
+    const row = `${gutter(theme, slot)}${compact(commandLine(entry), inner - 8, theme.glyphs.ellipsis)}${status}`;
+    return [paintPlain(theme, row, width, selected)];
   }
   if (isMessage(entry)) {
     const text = entry.detail?.trim() || (entry.title === 'Writing' ? t(locale, 'writing', { product }) : entry.title);
-    return wrapBodyLine(text, inner).map((line) => fillCanvas(theme, ` ${paint(line)}`, width));
+    return wrapBodyLine(text, inner).map((line, index) =>
+      paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${line}`, width, selected));
   }
   const fallback = entry.detail?.split(/\r?\n/)[0] || entry.title;
-  const line = compact(fallback, inner, theme.glyphs.ellipsis);
-  return [fillCanvas(theme, ` ${selected ? theme.style.strong(line) : paint(line)}`, width)];
+  const body = failed ? theme.style.danger(compact(fallback, inner, theme.glyphs.ellipsis)) : compact(fallback, inner, theme.glyphs.ellipsis);
+  return [paintPlain(theme, `${gutter(theme, slot)}${selected ? theme.style.strong(body) : body}`, width, selected)];
 }
 
-function liveCaption(entry: TimelineEntry, elapsed?: string): string {
+function isDeliverHeadline(title: string): boolean {
+  return title.startsWith('DONE ·') || title === '已恢复' || title === '部分恢复' || title === '无法恢复'
+    || title === '对照完成' || title === '证据不足' || title === '对照失败';
+}
+
+function failedTitle(title: string): boolean {
+  return title === '无法恢复' || title === '对照失败' || title === '证据不足';
+}
+
+function gutterSlot(entry: TimelineEntry, failed: boolean, candidate: boolean): GutterSlot {
+  if (failed) return 'fail';
+  if (entry.title.startsWith('⎿ ')) return 'none';
+  if (entry.kind === 'fold' || entry.title.startsWith('▸')) return candidate ? 'fold-cand' : 'fold-host';
+  if (voiceOf(entry) === 'input') return 'input';
+  return candidate ? 'candidate' : 'host';
+}
+
+function gutter(theme: Theme, slot: GutterSlot): string {
+  if (slot === 'none') return '  ';
+  const compactMark = slot === 'candidate' || slot === 'fold-cand' ? ':' : '|';
+  const mark = theme.framed ? '▎' : compactMark;
+  if (slot === 'input') return `${theme.style.muted(mark)} `;
+  if (slot === 'fail') return `${theme.style.danger(mark)} `;
+  if (slot === 'fold-host') return `${theme.style.gutterFoldHost(mark)} `;
+  if (slot === 'fold-cand') return `${theme.style.gutterFoldTarget(mark)} `;
+  if (slot === 'candidate') return `${theme.style.gutterTarget(mark)} `;
+  return `${theme.style.gutterHost(mark)} `;
+}
+
+function paintPlain(theme: Theme, row: string, width: number, selected: boolean): string {
+  const padded = pad(row, width, theme.glyphs.ellipsis);
+  return selected ? theme.style.fillLive(padded) : fillCanvas(theme, padded, width);
+}
+
+function liveCaption(entry: TimelineEntry): string {
   const title = entry.title.replace(/^Candidate · /, '');
-  if (title === 'working') return elapsed ? `working · ${elapsed}` : 'working';
+  if (title === 'working') return 'working';
   return entry.detail ? `${title} ${entry.detail}` : title;
 }
 
@@ -219,11 +288,23 @@ function visibleNow(entries: readonly TimelineEntry[]): TimelineEntry | undefine
   return undefined;
 }
 
-function liveStatusLine(theme: Theme, live: TimelineEntry | undefined, locale: Locale, elapsed: string, tick: number, product: string): string {
+function liveStatusLine(
+  theme: Theme,
+  live: TimelineEntry | undefined,
+  locale: Locale,
+  elapsed: string,
+  tick: number,
+  product: string,
+  width: number,
+): string {
   const pulse = Math.floor(tick / 400) % 2 === 0 ? '*' : theme.glyphs.empty;
   const role = liveStatusRole(live, locale, product);
   const action = live ? liveCaption(live) : 'working';
-  return ` ${pulse} ${role} · ${action} · ${elapsed}`;
+  const left = ` ${pulse} ${role} · ${action}`;
+  const clock = elapsed.trim() || '00:00';
+  const clockWidth = Math.max(5, clock.length);
+  const leftWidth = Math.max(8, width - clockWidth - 1);
+  return `${pad(left, leftWidth, theme.glyphs.ellipsis)} ${clock}`;
 }
 
 function liveStatusRole(live: TimelineEntry | undefined, locale: Locale, product: string): string {

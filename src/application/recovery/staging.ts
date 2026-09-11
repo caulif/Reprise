@@ -2,8 +2,6 @@ import { resolve } from "node:path";
 import type { AgentAuditEvent, AgentAuditSink } from "../../infrastructure/agent/host.js";
 import { findProductPack } from "../../products/index.js";
 import { packRecoveryPlaybook } from "../../products/pack-access.js";
-import { completeHostCheckpointRecovery } from "./checkpoint.js";
-import type { RecoveryAttempt } from "./types.js";
 import { retryRecoveryPreflight } from "./staging-diagnostic.js";
 import { persistAgentAuditEvent } from "../experiment-helpers.js";
 import {
@@ -82,30 +80,5 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
       },
       excludedEntries: session.staging.sourceBudget.excludedEntries ?? [],
     },
-  });
-}
-
-export async function tryHostCheckpointRecovery(
-  session: RecoveryRunSession,
-): Promise<RecoveryAttempt | undefined> {
-  const staging = session.staging;
-  const activeStaging = session.activeStaging;
-  if (!staging || !activeStaging) throw new Error("Recovery staging was not prepared.");
-  return completeHostCheckpointRecovery({
-    input: session.input,
-    staging,
-    experimentRoot: session.experimentRoot,
-    store: session.store,
-    provider: session.provider,
-    activeStaging,
-    recoveryOrchestrator: session.recoveryOrchestrator,
-    forensicsCompleted: session.forensicsCompleted,
-    evidenceSourcesAttempted: session.evidenceSourcesAttempted,
-    evidenceSourcesAvailable: session.evidenceSourcesAvailable,
-    hypothesisCount: session.hypothesisCount,
-    candidateCount: session.candidateCount,
-    verifierRejectionReasons: session.verifierRejectionReasons,
-    providerFailureRetryable: session.providerFailureRetryable,
-    pathBoundaryRejected: session.pathBoundaryRejected,
   });
 }

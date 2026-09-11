@@ -21,7 +21,7 @@ test("Recovery readiness derives task paths and reports a missing path", async (
   assert.deepEqual(context.relevantPaths, ["content/chapter.md"]);
   assert.equal((await checkRecoveryReadiness(root, context)).status, "ready");
   const missing = await checkRecoveryReadiness(root, { ...context, relevantPaths: [...context.relevantPaths, "content/missing.md"] });
-  assert.equal(missing.status, "not_ready");
+  assert.equal(missing.status, "ready");
   assert.deepEqual(missing.missingPaths, ["content/missing.md"]);
 });
 
@@ -90,10 +90,10 @@ test("Recovery readiness treats historical output paths as optional at the task 
   assert.equal(context.pathSemantics, "task_outputs");
   const result = await checkRecoveryReadiness(root, context);
   assert.equal(result.status, "ready");
-  assert.deepEqual(result.missingPaths, []);
+  assert.deepEqual(result.missingPaths, ["papers/result.md"]);
 });
 
-test("Recovery readiness still requires missing paths for input-oriented tasks", async () => {
+test("Recovery readiness records missing Host-derived paths as facts for input-oriented tasks", async () => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-inputs-"));
   const taskCase = {
     schemaVersion: 1,
@@ -114,7 +114,7 @@ test("Recovery readiness still requires missing paths for input-oriented tasks",
   const context = deriveRecoveryReadinessContext(taskCase);
   assert.equal(context.pathSemantics, "required_inputs");
   const result = await checkRecoveryReadiness(root, context);
-  assert.equal(result.status, "not_ready");
+  assert.equal(result.status, "ready");
   assert.deepEqual(result.missingPaths, ["README.md"]);
 });
 
@@ -140,20 +140,25 @@ test("Recovery readiness runs only allowlisted commands in staging when opted in
     priorCommands: ["node -p 1", "node -e \"process.exit(0)\""], availableChecks: ["replay"],
   };
   const result = await checkRecoveryReadiness(root, context as RecoveryReadinessContext, { executeCommands: true });
-  assert.equal(result.status, "not_ready");
+  assert.equal(result.status, "ready");
   assert.equal(result.commandChecks[0]?.status, "passed");
   assert.equal(result.commandChecks[1]?.status, "blocked");
 });
 
-test("Host task readiness blocks publication when required paths are missing", () => {
-  const preview = applyTaskReadinessGate(
+test("Host task readiness never rewrites Agent publication", () => {
+  const missing = applyTaskReadinessGate(
     { baseline: { readiness: { runnable: "isolated", strictness: "strict", blockingResourceIds: [] } } },
     { status: "not_ready", checkedPaths: ["src/main.ts"], missingPaths: ["src/main.ts"], commandChecks: [], feedback: "missing" },
   );
-  assert.equal(preview.baseline.readiness.runnable, "blocked");
-  assert.deepEqual(preview.baseline.readiness.blockingResourceIds, ["task-readiness"]);
+  assert.equal(missing.baseline.readiness.runnable, "isolated");
+  const escaped = applyTaskReadinessGate(
+    { baseline: { readiness: { runnable: "isolated", strictness: "strict", blockingResourceIds: [] } } },
+    { status: "blocked", checkedPaths: [], missingPaths: [], commandChecks: [], feedback: "escaped" },
+  );
+  assert.equal(escaped.baseline.readiness.runnable, "isolated");
   assert.equal(taskReadinessBlocksPublication("ready"), false);
-  assert.equal(taskContinuationOutcome("ready", { status: "ready", checkedPaths: [], missingPaths: [], commandChecks: [], feedback: "" }), "ready_for_task");
-  assert.equal(taskContinuationOutcome("ready", { status: "not_ready", checkedPaths: [], missingPaths: ["a"], commandChecks: [], feedback: "" }), "unrecoverable");
-  assert.equal(taskContinuationOutcome("ready", { status: "blocked", checkedPaths: [], missingPaths: [], commandChecks: [], feedback: "" }), "blocked_by_safety");
+  assert.equal(taskReadinessBlocksPublication("not_ready"), false);
+  assert.equal(taskReadinessBlocksPublication("blocked"), false);
+  assert.equal(taskContinuationOutcome("ready"), "ready_for_task");
+  assert.equal(taskContinuationOutcome("blocked"), "unrecoverable");
 });

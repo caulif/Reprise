@@ -239,7 +239,7 @@ system prompt 要求先读 `current-user-view.md`。Host **不强制**该 `read`
 
 若只是软引导：规范写明「prompt 要求先看视图，Host 不强制」，并接受模型可以摘要直接决策。不要口头硬边界、实现软边界。
 
-相关：[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[可见表面与 Git sink](./2026-09-10-visible-surface-and-git-sink.md)。
+相关：[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[按 settlement 取视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)。
 
 ---
 

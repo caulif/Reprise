@@ -82,6 +82,7 @@ export function isolateCandidateProcessEnv(
   for (const key of Object.keys(next)) {
     if (GITHUB_TOKEN_KEYS.has(key.toUpperCase())) delete next[key];
   }
+  next.GIT_NO_LAZY_FETCH = '1';
   if (!cwd) return next;
   const home = join(dirname(dirname(resolve(cwd))), 'git-sinks', basename(resolve(cwd)));
   const gitconfig = join(home, 'gitconfig');

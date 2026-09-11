@@ -27,6 +27,7 @@ import {
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
+import { hostMetricsMismatch, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 
 export { comparisonCandidateMount };
 
@@ -137,6 +138,7 @@ function experimentResult(
       ...(inspection.tokenCount === undefined
         ? {}
         : { tokenCount: inspection.tokenCount }),
+      ...(inspection.costUsd === undefined ? {} : { costUsd: inspection.costUsd }),
     },
   };
 }
@@ -200,7 +202,13 @@ async function compareExperimentOutcome(
     snapshotStatus: input.candidateSnapshotStatus,
   });
   await persistComparisonRequest(input.store, input.input.runId, attemptId, briefingContext);
-  const compareContext = withOrientation(context, input, attemptId, attemptRoot, briefing.indexMarkdown);
+  const compareContext = {
+    ...withOrientation(context, input, attemptId, attemptRoot, briefing.indexMarkdown),
+    reportShellHtml: renderComparisonReportShell({
+      task: context.task.summary,
+      metrics: metricsFromReportFacts(context.reportFacts),
+    }),
+  };
   let comparisonResult: AgentInvocation<ComparisonResult>;
   try {
     comparisonResult = input.signal?.aborted
@@ -208,19 +216,8 @@ async function compareExperimentOutcome(
       : await invokeCompare(input, compareContext, attemptRoot, attemptId);
     if (input.signal?.aborted) comparisonResult = { status: "cancelled" };
     if (comparisonResult.status === "completed") assertComparisonResult(comparisonResult.value, context);
-    if (
-      comparisonResult.status === "completed" &&
-      !(await reportExists(attemptRoot, comparisonResult.value.reportPath))
-    ) {
-      comparisonResult = {
-        status: "failed",
-        sessionId: comparisonResult.sessionId,
-        failure: {
-          code: "agent_failure",
-          message: "Comparison agent completed without writing report.html.",
-          attempts: 1,
-        },
-      };
+    if (comparisonResult.status === "completed") {
+      comparisonResult = await enforcePublishedReport(comparisonResult, attemptRoot, context);
     }
     if (comparisonResult.status === "completed") await publishComparisonReport(attemptRoot, input.experimentRoot);
   } finally {
@@ -266,6 +263,35 @@ function withOrientation(
       baselineAvailable: input.taskCase.baseline.status === "available",
       candidateAvailable: context.candidates.length > 0,
     }),
+  };
+}
+
+async function enforcePublishedReport(
+  result: AgentInvocation<ComparisonResult>,
+  attemptRoot: string,
+  context: ComparisonContext,
+): Promise<AgentInvocation<ComparisonResult>> {
+  if (result.status !== "completed") return result;
+  if (!(await reportExists(attemptRoot, result.value.reportPath))) {
+    return {
+      status: "failed",
+      sessionId: result.sessionId,
+      failure: {
+        code: "agent_failure",
+        message: "Comparison agent completed without writing report.html.",
+        attempts: 1,
+      },
+    };
+  }
+  const mismatch = hostMetricsMismatch(
+    await readFile(join(attemptRoot, "report.html"), "utf8"),
+    metricsFromReportFacts(context.reportFacts),
+  );
+  if (!mismatch) return result;
+  return {
+    status: "failed",
+    sessionId: result.sessionId,
+    failure: { code: "invalid_output", message: mismatch, attempts: 1 },
   };
 }
 

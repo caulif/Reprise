@@ -1,0 +1,160 @@
+import { dirname } from 'node:path';
+import { createTheme } from './theme.js';
+import { foldProcessEntries, selectedIndexAfterFold } from './fold-process.js';
+import { dispatchHomeComposer, dispatchListPointer, type Consume } from './page-input.js';
+import { homePointerAction } from './pages/home.js';
+import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
+import { resultPointerAction, renderResult } from './pages/result.js';
+import { hitAtBodyRow, keepSelectedVisible, layoutScrollback } from './scrollback.js';
+import { timelineIdentity } from './timeline-read.js';
+import { bodyHeight } from './viewport.js';
+import { workbenchBodyOrigin } from './workbench.js';
+import type { ControllerHandle } from './controller-input.js';
+
+export function consumeWheel(data: string): Consume | undefined {
+  return dispatchListPointer(data) ? { consume: true } : undefined;
+}
+
+export function applyResultPointer(c: ControllerHandle, data: string): Consume | undefined {
+  const pointer = dispatchListPointer(data);
+  if (!pointer) return undefined;
+  if (pointer.action === 'up' || pointer.action === 'down') {
+    c.timelineReadOffset = Math.max(0, (c.timelineReadOffset ?? 0) + (pointer.action === 'up' ? -1 : 1));
+    c.render();
+    return { consume: true };
+  }
+  if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
+  if (!c.result) return { consume: true };
+  const cell = pointerBodyCell(c, pointer.row, pointer.col);
+  const lines = renderResult(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
+  const action = resultPointerAction(lines, cell.bodyRow + (c.timelineReadOffset ?? 0), cell.col, c.locale);
+  if (action === 'compare') {
+    if (c.compareChoice) {
+      c.compareChoice.resolve(true);
+      c.compareChoice = undefined;
+    }
+    return { consume: true };
+  }
+  if (action === 'open-report') {
+    return c.openReport(c.result.experimentRoot ?? dirname(c.result.reportPath), c.result.reportPath);
+  }
+  if (action === 'open-trace') return c.openTrace();
+  if (action === 'open-replica') return c.openReplica();
+  return { consume: true };
+}
+
+export function applyHomePointer(c: ControllerHandle, data: string): Consume | undefined {
+  const pointer = dispatchListPointer(data);
+  if (!pointer) return undefined;
+  if (pointer.action === 'up' || pointer.action === 'down') {
+    if (c.showSuggestions) {
+      const cycled = dispatchHomeComposer({
+        composer: c.composer,
+        cursor: c.composerCursor,
+        showSuggestions: true,
+      }, pointer.action === 'up' ? '\x1b[A' : '\x1b[B');
+      if (cycled) {
+        c.composer = cycled.state.composer;
+        c.composerCursor = cycled.state.cursor;
+        c.showSuggestions = cycled.state.showSuggestions;
+        c.syncCommandOverlay();
+        c.render();
+      }
+    }
+    return { consume: true };
+  }
+  if (pointer.action !== 'click' || pointer.row === undefined) return { consume: true };
+  const cell = pointerBodyCell(c, pointer.row, pointer.col ?? 1);
+  if (homePointerAction({
+    taskCase: c.taskCase,
+    recentExperiment: c.recentExperiment,
+    hasApiConfig: true,
+    composer: c.composer,
+    showSuggestions: c.showSuggestions,
+    locale: c.locale,
+  }, cell.bodyRow) === 'open-recent') {
+    return c.openRecentExperiment();
+  }
+  return { consume: true };
+}
+
+export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Consume | undefined {
+  const pointer = dispatchListPointer(data);
+  if (!pointer) return undefined;
+  if (pointer.action === 'up' || pointer.action === 'down') return undefined;
+  if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
+  if (!c.historyDetail) return { consume: true };
+  const cell = pointerBodyCell(c, pointer.row, pointer.col);
+  const lines = renderHistoryDetail(createTheme(cell.width), cell.width, c.historyDetail, c.locale);
+  const action = historyDetailPointerAction(lines, cell.bodyRow, cell.col);
+  if (action === 'open-report' && !('taskCase' in c.historyDetail)) {
+    return c.openReport(c.historyDetail.path, c.historyDetail.reportPath);
+  }
+  if (action === 'open-local') return c.openLocal(c.historyDetail.path);
+  return undefined;
+}
+
+export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume {
+  const visible = c.visibleTimeline();
+  const folded = foldProcessEntries(visible, new Set(c.expandedFolds));
+  const selected = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
+  const window = canvasWindow(c);
+  const layout = layoutScrollback(createTheme(window.width), window.width, folded, selected, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing);
+  const cell = pointerBodyCell(c, terminalRow, 1);
+  const hit = hitAtBodyRow(layout.hits, cell.bodyRow);
+  if (hit?.fold && hit.itemId) {
+    c.expandedFolds = c.expandedFolds.includes(hit.itemId)
+      ? c.expandedFolds.filter((id) => id !== hit.itemId)
+      : [...c.expandedFolds, hit.itemId];
+  }
+  const target = hit ? folded[hit.index] : undefined;
+  if (target) {
+    const identity = timelineIdentity(target);
+    const raw = visible.findIndex((entry) => timelineIdentity(entry) === identity);
+    c.timelineSelected = raw >= 0 ? raw : Math.min(hit?.index ?? 0, Math.max(0, visible.length - 1));
+    c.timelineAnchor = identity;
+    c.timelineFollowing = false;
+  }
+  c.render();
+  return { consume: true };
+}
+
+export function moveTimelineVisible(c: ControllerHandle, amount: number): Consume {
+  if (c.readingMode && Math.abs(amount) >= 10) {
+    c.timelineReadOffset = Math.max(0, (c.timelineReadOffset ?? 0) + amount);
+    c.timelineFollowing = false;
+    c.render();
+    return { consume: true };
+  }
+  const entries = c.visibleTimeline();
+  const next = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
+  const window = canvasWindow(c);
+  const folded = foldProcessEntries(entries, new Set(c.expandedFolds));
+  const selectedFolded = selectedIndexAfterFold(entries, folded, entries[next] ?? entries[c.timelineSelected]);
+  const layout = layoutScrollback(createTheme(window.width), window.width, folded, selectedFolded, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing);
+  c.timelineReadOffset = keepSelectedVisible(layout.selectedAt, c.timelineReadOffset ?? 0, layout.total, Math.max(1, window.height - layout.chrome));
+  c.timelineSelected = next;
+  c.timelineFollowing = c.timelineSelected === Math.max(0, entries.length - 1);
+  const current = entries[c.timelineSelected];
+  if (current) c.timelineAnchor = timelineIdentity(current);
+  c.render();
+  return { consume: true };
+}
+
+function pointerBodyCell(c: ControllerHandle, terminalRow: number, terminalCol: number): { bodyRow: number; col: number; width: number } {
+  const width = c.columns();
+  const height = c.viewport().height;
+  const origin = workbenchBodyOrigin(c.view(), width, height);
+  return {
+    bodyRow: Math.max(0, terminalRow - 1 - origin.header - origin.rail),
+    col: terminalCol,
+    width,
+  };
+}
+
+function canvasWindow(c: ControllerHandle): { width: number; height: number } {
+  const width = c.columns();
+  const height = c.viewport().height ?? 24;
+  const origin = workbenchBodyOrigin(c.view(), width, height);
+  return { width, height: bodyHeight({ width, height }, 0, origin.header + origin.rail) ?? 16 };
+}

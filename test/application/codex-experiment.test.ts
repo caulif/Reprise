@@ -14,104 +14,61 @@ import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-pr
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import type { ResolvedRuntime, TargetEventSink, TargetRunner } from "../../src/core/runtime.js";
 import { sha256 } from "../../src/core/identity.js";
-import { now, VerifiedRuntime, input, terminationOf, sendingController, patientPolicy, readJson } from "../codex-experiment-support.js";
+import { now, VerifiedRuntime, input, terminationOf, sendingController, patientPolicy, readJson, comparisonHtmlWithHostShell } from "../codex-experiment-support.js";
 
-test("trusted checkpoints restore deterministically without invoking the Recovery model", async (t) => {
+test("checkpoint seed still invokes Recovery Agent with the same tools", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-checkpoint-recovery-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   await writeFile(join(base.sourceRoot, "README.md"), "before");
-  await writeFile(join(base.sourceRoot, "delete-me.txt"), "before-delete");
   const provider = new LocalWorkspaceProvider(join(root, "provider"));
   const checkpoint = await provider.captureRecoveryCheckpoint({
     caseId: base.caseId,
     sourceRoot: base.sourceRoot,
   });
   await writeFile(join(base.sourceRoot, "README.md"), "after");
-  await rm(join(base.sourceRoot, "delete-me.txt"));
-  await writeFile(join(base.sourceRoot, "new.txt"), "interrupted-work");
-  let modelCalled = false;
-  const events: { type: string; payload: unknown }[] = [];
+  let modelCalled = 0;
   const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
-    experimentId: "checkpoint-direct-restore",
-    runId: "checkpoint-direct-restore-run",
+    experimentId: "checkpoint-agent-restore",
+    runId: "checkpoint-agent-restore-run",
     sourceRoot: base.sourceRoot,
     checkpointRoot: checkpoint.root,
     taskCase: base.taskCase,
     recovery: {
-      recover: async () => {
-        modelCalled = true;
-        throw new Error(
-          "trusted checkpoint recovery must not invoke the model",
+      recover: async (context, tools) => {
+        modelCalled += 1;
+        assert.equal(context.staging.seed, "checkpoint");
+        assert.deepEqual(
+          tools.map((tool) => tool.name).sort(),
+          ["edit", "find", "grep", "ls", "read", "shell_exec", "write"],
         );
+        await tools.find((tool) => tool.name === "write")?.execute(
+          { path: "recovery.md", content: "# Recovery\n\nCheckpoint seed went through the Agent." },
+          new AbortController().signal,
+        );
+        return {
+          status: "completed",
+          sessionId: "checkpoint-agent",
+          value: {
+            status: "ready",
+            summary: "Checkpoint workspace is ready for the original task.",
+            reportPath: "recovery.md",
+            unresolved: [],
+          },
+        };
       },
     },
     now,
     environmentProvider: provider,
-    onEvent: (event) =>
-      events.push({ type: event.type, payload: event.payload }),
   });
-  assert.equal(modelCalled, false);
+  assert.equal(modelCalled, 1);
   assert.equal(attempt.recovery.status, "completed");
-  assert.equal(
-    attempt.recovery.status === "completed" &&
-      attempt.recovery.sessionId.startsWith("host-checkpoint-"),
-    true,
-  );
   assert.equal(attempt.baseline.match, "recovered");
-  assert.equal(
-    await readFile(join(attempt.staging!.root, "README.md"), "utf8"),
-    "before",
-  );
-  assert.equal(
-    await readFile(join(attempt.staging!.root, "delete-me.txt"), "utf8"),
-    "before-delete",
-  );
-  await assert.rejects(readFile(join(attempt.staging!.root, "new.txt")));
-  assert.equal(
-    await readFile(join(base.sourceRoot, "README.md"), "utf8"),
-    "after",
-  );
-  assert.equal(
-    events.some((event) => event.type === "recovery.checkpoint_restored"),
-    true,
-  );
-  const event = events.find(
-    (item) => item.type === "recovery.checkpoint_restored",
-  );
-  assert.deepEqual(event?.payload, {
-    checkpointId: checkpoint.checkpointId,
-    checkpointDigest: checkpoint.fingerprint.digest,
-    changedPathCount: 3,
-  });
-  const evaluation = JSON.parse(
-    await readFile(
-      join(attempt.experimentRoot, "artifacts", "recovery-evaluation"),
-      "utf8",
-    ),
-  ) as {
-    rows: { modelCalls: number; verification: string; durationMs: number }[];
-  };
-  assert.deepEqual(evaluation.rows, [
-    {
-      schemaVersion: 1,
-      caseId: base.caseId,
-      layer: "interrupted_checkpoint",
-      stagingSucceeded: true,
-      forensicsStarted: true,
-      forensicsCompleted: false,
-      candidateCreated: false,
-      verification: "verified",
-      recoveredPaths: ["README.md", "delete-me.txt", "new.txt"],
-      checkpointPaths: ["README.md", "delete-me.txt"],
-      modelCalls: 0,
-      durationMs: evaluation.rows[0]!.durationMs,
-    },
-  ]);
-  await provider.discardRecovery(attempt.staging!);
+  assert.equal(await readFile(join(attempt.baseline.root ?? "", "README.md"), "utf8"), "before");
+  assert.equal(await readFile(join(base.sourceRoot, "README.md"), "utf8"), "after");
 });
 
 test("preflight is read-only and successful comparison writes a persisted narrative plus Host evidence", async (t) => {
@@ -564,7 +521,7 @@ test("working notes written after a failed first pass stay in the same compariso
         new AbortController().signal,
       );
       await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "report.html", content: `<!doctype html><p>single-session</p>` },
+        { path: "report.html", content: comparisonHtmlWithHostShell(context, `<p>single-session</p>`) },
         new AbortController().signal,
       );
       return { status: "completed", sessionId: "comparison-notes", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };

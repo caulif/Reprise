@@ -35,6 +35,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
         sessionId: "recovery-1",
         value: {
           status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: [],
         },
@@ -112,6 +113,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
           );
           return JSON.stringify({
             status: "blocked",
+            summary: "Ready for the original task.",
             reportPath: "recovery.md",
             unresolved: ["No historical commit."],
             evidenceRefs: [],
@@ -201,6 +203,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
           sessionId: "recovery-history",
           value: {
             status: "blocked",
+            summary: "Ready for the original task.",
             reportPath: "recovery.md",
             unresolved: ["No recoverable baseline found after forensics."],
           },
@@ -286,6 +289,7 @@ test("Recovery runs maximum-effort forensics even with an empty transcript and e
           sessionId: "recovery-empty",
           value: {
             status: "blocked",
+            summary: "Ready for the original task.",
             reportPath: "recovery.md",
             unresolved: ["Forensics found no historical baseline."],
           },
@@ -381,6 +385,7 @@ test("Recovery retries a transient staging failure before maximum-effort forensi
         sessionId: "recovery-preflight-retry",
         value: {
           status: "blocked",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: ["No trusted historical baseline."],
         },
@@ -516,6 +521,7 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
         sessionId: "recovery-path-boundary-metric",
         value: {
           status: "blocked",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: ["no candidate justified"],
         },
@@ -532,7 +538,7 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
     recovery,
     now,
   });
-  assert.equal(attempt.baseline.match, "current_state_fallback");
+  assert.equal(attempt.baseline.match, "observational");
   const evaluation = JSON.parse(
     await readFile(
       join(attempt.experimentRoot, "artifacts", "recovery-evaluation"),
@@ -606,6 +612,7 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
         sessionId: "recovery-auto-ready",
         value: {
           status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: [],
         },
@@ -668,6 +675,7 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
         sessionId: "recovery-keep-envelope",
         value: {
           status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: ["README.md is not reconstructed"],
         },
@@ -756,6 +764,7 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
         sessionId: `readiness-no-progress-${calls}`,
         value: {
           status: "blocked",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: ["README.md is not available"],
         },
@@ -803,6 +812,7 @@ test("insufficient evidence does not loop for missing paths and cannot be accept
         sessionId: "insufficient-stop",
         value: {
           status: "blocked",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: ["checked git, transcript, and workspace; no rewindable start"],
         },
@@ -829,7 +839,7 @@ test("insufficient evidence does not loop for missing paths and cannot be accept
 });
 
 
-test("Recovery classifies a readiness boundary violation as blocked by safety", async (t) => {
+test("Host readiness path escape does not override an Agent ready envelope", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-readiness-blocked-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
@@ -841,14 +851,15 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
   const recovery: RecoveryAgentPort = {
     recover: async (_context, tools) => {
       await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "recovery.md", content: "# Recovery\n\nThe requested path is outside staging." },
+        { path: "recovery.md", content: "# Recovery\n\nWorkspace is a reasonable starting environment." },
         new AbortController().signal,
       );
       return {
         status: "completed",
         sessionId: "readiness-blocked",
         value: {
-          status: "blocked",
+          status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: ["outside path is not inspected"],
         },
@@ -866,8 +877,11 @@ test("Recovery classifies a readiness boundary violation as blocked by safety", 
     maxModelAttempts: 2,
     now,
   });
-  assert.equal(attempt.baseline.recovery?.taskOutcome, "blocked_by_safety");
-  assert.equal(attempt.baseline.recovery?.status, "blocked");
+  assert.equal(attempt.taskReadiness?.status, "blocked");
+  assert.equal(attempt.acceptedAutomatically, true);
+  assert.equal(attempt.baseline.recovery?.taskOutcome, "ready_for_task");
+  assert.equal(attempt.baseline.recovery?.status, "ready");
+  assert.equal(attempt.baseline.readiness.runnable, "isolated");
 });
 
 

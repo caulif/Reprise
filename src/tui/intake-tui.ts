@@ -278,6 +278,10 @@ export class IntakeTui {
   muteNodeWarnings(): void { intakeMethods.IntakeTui_muteNodeWarnings.call(this); }
   restoreNodeWarnings(): void { intakeMethods.IntakeTui_restoreNodeWarnings.call(this); }
   viewport(): { height?: number } { return intakeMethods.IntakeTui_viewport.call(this); }
+  columns(): number {
+    const terminal = (this.tui as { terminal?: { columns?: number } } | undefined)?.terminal;
+    return terminal?.columns && terminal.columns > 0 ? terminal.columns : 80;
+  }
   setMouseReporting(enabled: boolean): void { intakeMethods.IntakeTui_setMouseReporting.call(this, enabled); }
   render(immediate = false): void { intakeMethods.IntakeTui_render.call(this, immediate); }
   productContext(): { productLabel?: string; productConfigured?: boolean } { return intakeMethods.IntakeTui_productContext.call(this); }

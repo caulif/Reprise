@@ -24,7 +24,7 @@ export type RecoveryAttemptInput = {
   attemptMode?: RecoveryAttemptMode;
   /** Bounds retries after transient Recovery model failures; each attempt is independently audited. */
   maxModelAttempts?: number;
-  /** Explicit Host capability for legacy shell-based diagnostics; disabled by default. */
+  /** Recovery 生产路径默认开启 shell；此字段保留给测试夹具覆盖。 */
   allowShell?: boolean;
   /** Explicit opt-in for replaying allowlisted historical commands inside recovery staging. */
   executeReadinessCommands?: boolean;

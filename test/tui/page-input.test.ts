@@ -9,6 +9,7 @@ import {
   dispatchHistoryDetailInput,
   dispatchHomeComposer,
   dispatchInspectionInput,
+  dispatchListPointer,
   dispatchPreflightInput,
   dispatchResultKeys,
   dispatchRunningKeys,
@@ -154,7 +155,16 @@ test('SGR wheel moves the canvas selection; click reports a row; running o does 
   const click = dispatchCanvasInput(idle, '\x1b[<0;4;8M', false);
   assert.equal(click?.action, 'click');
   assert.equal(click?.row, 8);
+  assert.equal(click?.col, 4);
   assert.equal(dispatchRunningKeys('o'), undefined);
   assert.equal(dispatchRunningKeys('\r')?.action, 'toggle-fold');
+});
+
+test('list pages consume SGR wheel as up and down', () => {
+  assert.equal(dispatchListPointer('\x1b[<64;1;2M')?.action, 'up');
+  assert.equal(dispatchListPointer('\x1b[<65;1;2M')?.action, 'down');
+  assert.equal(dispatchSessionsInput({ query: '', cursor: 0, searching: false, canLeaveProject: false }, '\x1b[<65;1;2M')?.action, 'down');
+  assert.equal(dispatchCandidatePickerInput('\x1b[<64;1;2M')?.action, 'up');
+  assert.equal(dispatchCandidatePickerInput('\x1b[<0;2;3M')?.action, 'consume');
 });
 

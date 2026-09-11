@@ -77,7 +77,7 @@ ComparisonApplication
 observations/user-inputs/INDEX.tsv
 ```
 
-按顺序读取全部用户输入文件。索引至少记录稳定 turn ID、顺序、角色、来源、正文路径、附件入口和关联产物入口。历史真人输入与候选 Controller 输入必须可区分。
+从该索引按需读取用户输入原文。索引至少记录稳定 turn ID、顺序、角色、来源、正文路径、附件入口和关联产物入口。历史真人输入与候选 Controller 输入必须可区分。
 
 用户完整会话是任务标准。不能只读取第一条输入，也不把后续输入硬分成“澄清”或“新增”。历史 Agent 输出、工具过程、候选响应、交付物和媒体按需读取。`briefing/INDEX.md` 只负责导航，`facts/context.json` 只提供 Host 事实投影，不能替代原始证据。
 

@@ -1,6 +1,18 @@
 import { Type } from "@sinclair/typebox";
 const EvidenceRefSchema = Type.String({ pattern: "^(event|artifact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" });
 
+const MetricSideSchema = Type.Object({
+  elapsedMs: Type.Optional(Type.Number()),
+  tokens: Type.Optional(Type.Object({
+    total: Type.Number(),
+    input: Type.Optional(Type.Number()),
+    output: Type.Optional(Type.Number()),
+    cached: Type.Optional(Type.Number()),
+    reasoning: Type.Optional(Type.Number()),
+  })),
+  costUsd: Type.Optional(Type.Number()),
+});
+
 const ComparisonReportFactsSchema = Type.Object({
   run: Type.Object({ runId: Type.String(), outcome: Type.String(), terminationCode: Type.String(), initiatedBy: Type.String(), elapsedMs: Type.Optional(Type.Number()), candidateElapsedMs: Type.Optional(Type.Number()) }),
   models: Type.Object({ candidate: Type.String(), controller: Type.Optional(Type.String()), comparison: Type.Optional(Type.String()) }),
@@ -10,15 +22,8 @@ const ComparisonReportFactsSchema = Type.Object({
   delivery: Type.Object({ changedPaths: Type.Array(Type.String()), targetArtifactStatus: Type.String(), verificationStatus: Type.String() }),
   replay: Type.Object({ sourceRootKind: Type.Optional(Type.String()), conditions: Type.Array(Type.String()), baselineEvidence: Type.String(), candidateEvidence: Type.String() }),
   metrics: Type.Optional(Type.Object({
-    tokens: Type.Optional(Type.Object({
-      total: Type.Optional(Type.Number()),
-      input: Type.Optional(Type.Number()),
-      output: Type.Optional(Type.Number()),
-      cached: Type.Optional(Type.Number()),
-      reasoning: Type.Optional(Type.Number()),
-    })),
-    cost: Type.Optional(Type.Object({ amount: Type.Number(), currency: Type.Optional(Type.String()) })),
-    generationRate: Type.Optional(Type.Object({ outputTokens: Type.Number(), durationMs: Type.Number() })),
+    baseline: Type.Optional(MetricSideSchema),
+    candidate: Type.Optional(MetricSideSchema),
   })),
 });
 export const ComparisonBriefingContextSchema = Type.Object({

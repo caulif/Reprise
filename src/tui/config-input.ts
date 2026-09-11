@@ -4,6 +4,7 @@ import type { HarnessConfigDraft, HarnessConfigField, HarnessModelConfig } from 
 import { configFieldValue, configFieldsForKind, emptyHarnessConfigDraft, languageFieldIndex, setConfigField } from '../infrastructure/harness-model-config.js';
 import type { Option } from './types.js';
 import { matchesKey } from '@earendil-works/pi-tui';
+import { parseSgrMouse } from './page-input.js';
 
 export type ConfigInputState = {
   readonly draft: HarnessConfigDraft;
@@ -28,7 +29,11 @@ export function handleConfigInput(state: ConfigInputState, data: string, refresh
   const input = unwrapBracketedPaste(data);
   const fields = configFieldsForKind(state.draft.kind);
   const languageIndex = languageFieldIndex(state.draft.kind);
-  if (state.editing) return editConfigValue(state, input, fields);
+  const mouse = parseSgrMouse(input);
+  if (state.editing) {
+    if (mouse) return { state, consume: true };
+    return editConfigValue(state, input, fields);
+  }
   if (state.leaveConfirm) return handleLeaveConfirm(state, input);
   if (state.pendingToggle) {
     if (matchesKey(input, 'enter')) return applyProviderToggle(state, refreshModels);
@@ -36,7 +41,12 @@ export function handleConfigInput(state: ConfigInputState, data: string, refresh
     return handleConfigInput({ ...state, pendingToggle: false }, input, refreshModels) ?? { state: { ...state, pendingToggle: false }, consume: true };
   }
   if (matchesKey(input, 'escape')) return leaveConfig(state);
-  if (matchesKey(input, 'up') || matchesKey(input, 'down')) return { state: { ...state, selected: Math.max(0, Math.min(languageIndex, state.selected + (matchesKey(input, 'up') ? -1 : 1))) }, consume: true };
+  const wheel = mouse?.button === 64 ? -1 : mouse?.button === 65 ? 1 : 0;
+  if (matchesKey(input, 'up') || matchesKey(input, 'down') || wheel !== 0) {
+    const delta = matchesKey(input, 'up') || wheel < 0 ? -1 : 1;
+    return { state: { ...state, selected: Math.max(0, Math.min(languageIndex, state.selected + delta)) }, consume: true };
+  }
+  if (mouse) return { state, consume: true };
   if (matchesKey(input, 'ctrl+t')) return { state, action: 'test', consume: true };
   if (matchesKey(input, 'ctrl+s')) return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
   if (!matchesKey(input, 'enter')) return undefined;

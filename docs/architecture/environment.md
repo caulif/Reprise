@@ -327,15 +327,15 @@ Recovery 使用一个连续 Session 和一个工作副本。Agent 自主完成�
 
 Provider 为每次恢复创建并持有下列目录，均不暴露给 Candidate Runtime：
 
-- `rs/<recoveryId>`：从用户源目录复制出的可写工作副本；
+- `rs/<recoveryId>`：可写 Recovery 工作区。源目录在复制预算内时可以整树复制；超预算时从空或稀疏目录开始，由 Agent 按需填充。
 - `rt/<recoveryId>`：shell 的临时 `HOME` 与配置根；
-- 用户源目录：恢复前后均 fingerprint，作为只读 tripwire。
+- 用户源目录：恢复前后均 fingerprint，作为只读 tripwire；Agent 通过只读 `source/` 挂载按需读取，shell cwd 不得指向该目录。
 
-工具集合以[工作区工具注册](../../src/infrastructure/recovery-workspace-tools.ts)为准；shell 的公开工具名为 `shell_exec`。Recovery 默认不注册 `shell_exec`，只有 Host 显式 `allowShell: true` 才加入工具面。Comparison 在工厂调用里显式打开 shell。Controller 默认不注册 `shell_exec`，`edit`/`write` 仅 `project/`，见 [协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)。三个内部角色通过各自权限配置复用工作区工具（[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)）。cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。首包只含任务、起点线索、工作副本摘要、能力边界、Playbook 元数据、少量 evidence ref 和 `observations/` 入口；全文 catalog 与 playbook 正文不进入模型上下文。截断后的任务句指向 `observations/task/initial-input.txt`。冻结 transcript 与 historical events 写成只读 `observations/`，模型用 `read` / `grep` 按需取一句。`write` 到工作副本根 `recovery.md` 是报告通道。Agent 可在 `.reprise/recovery-work/` 写短记录；封存前删除该目录。`ready` 不要求发生文件变更。`blocked` 不发布可启动 baseline。伪造路径或改写用户源目录不得进入 published baseline。机械检查失败且可修复时，Host 把事实反馈同一 Session。模型请求失败时保留同一 Session 与工作副本；只有工作副本机械损坏时才丢弃 Session 并重置副本。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库。`powershell` 的 cwd 固定为工作副本。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供凭据。内部 Agent 不按工具调用次数或破坏性次数截断；上下文压力走 Pi 压缩与模型窗口。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作工作副本根；`..`、绝对路径和反斜杠仍拒绝。
+工具集合以[工作区工具注册](../../src/infrastructure/recovery-workspace-tools.ts)为准；shell 的公开工具名为 `shell_exec`。Recovery 生产路径默认注册 `shell_exec`。Comparison 在工厂调用里显式打开 shell。Controller 默认不注册 `shell_exec`，`edit`/`write` 仅 `project/`，见 [协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)。三个内部角色通过各自权限配置复用工作区工具（[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)）。cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。大仓库按需恢复与只读源目录见 [稀疏 source mount](../decisions/accepted/2026-09-11-recovery-sparse-source-mount.md) 与 [三 Agent 契约清理](../decisions/accepted/2026-09-11-three-agent-contract-cleanup.md)。首包只含任务、起点线索、工作区种子、source 摘要、能力边界、Playbook 元数据、少量 evidence ref 和 `observations/` 入口；全文 catalog、playbook 正文和完整源目录清单不进入模型上下文。截断后的任务句指向 `observations/task/initial-input.txt`。冻结 transcript 与 historical events 写成只读 `observations/`，模型用 `read` / `grep` 按需取一句。`write` 到工作副本根 `recovery.md` 是报告通道。Agent 可在 `.reprise/recovery-work/` 写短记录；封存前删除该目录。`ready` 不要求发生文件变更，也不要求复制整个源目录。`blocked` 不发布可启动 baseline。伪造路径或改写用户源目录不得进入 published baseline。机械检查失败且可修复时，Host 把事实反馈同一 Session。模型请求失败时保留同一 Session 与工作副本；只有工作副本机械损坏时才丢弃 Session 并重置副本。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库。`powershell` 的 cwd 固定为工作副本。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供凭据。内部 Agent 不按工具调用次数或破坏性次数截断；上下文压力走 Pi 压缩与模型窗口。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作工作副本根，`workspace/` 是同一根的别名；`source/` 指向用户源目录。`..`、绝对路径仍拒绝；反斜杠在工具边界规范为斜杠。
 
-子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`ls`、`read`、`grep`、`find`、`edit` 和 `write` 对相对路径实施 containment 与符号链接检查；`recovery.md` 由 `write` 写出。`shell_exec` 对凭据文件名和只读 mount 的拦截匹配命令文本，不能当作语义沙箱；cwd 与环境净化也不能机械阻止恶意或失控命令尝试写 staging 外任意绝对路径。实现不把这种预防误称为强隔离。
+子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`ls`、`read`、`grep`、`find`、`edit` 和 `write` 对相对路径实施 containment 与符号链接检查；`recovery.md` 由 `write` 写出。Recovery 期间 Provider 对用户 source 施加 NTFS 拒绝写入 ACL，并在封存前核对 fingerprint；`shell_exec` 对凭据文件名的拦截仍匹配命令文本。cwd 与环境净化不能机械阻止恶意命令写 staging 外任意绝对路径。实现不把凭据文本拦截或 ACL 误称为容器级全局隔离。见 [source ACL 与诊断 readiness](../decisions/accepted/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md)。
 
-最终保证采用检测加回退：Provider 重扫 staging（无符号链接、预算和可重复 fingerprint）、重新 fingerprint 用户源目录，并检查报告存在、路径边界、schema 与可封存性。Host 再测量任务继续 readiness；`not_ready` 或 `blocked` 时不得把 baseline 标为 `runnable: isolated`，不得自动 accept，Candidate 启动门同样拒绝。source tripwire 变化、扫描失败或其他机械检查失败都会丢弃 staging 与临时根，绝不发布半恢复结果；上层必须显式回退到当前状态 baseline 并记录警告。该机制确定性阻止已检出的源目录变化被发布为 Recovery baseline，但不能撤销已发生的源目录写入，也不能替代容器级全局写入隔离。不从 evidence ranking 或 changed paths 推导 Agent 信封的 `ready` / `blocked`。
+最终保证采用检测加回退：Provider 重扫 staging（无符号链接、预算和可重复 fingerprint）、重新 fingerprint 用户源目录，并检查报告存在、路径边界、schema 与可封存性。Host 可测量任务相关路径与命令作为可检查事实，写入事件与诊断；该测量不得改写 Agent 信封，不得把 `runnable` 标为 `blocked`，也不得拒绝自动 accept 或 Candidate 启动。source tripwire 变化、报告缺失、扫描失败或其他机械检查失败才会丢弃 staging 与临时根，绝不发布半恢复结果；上层必须显式回退到当前状态 baseline 并记录警告。该机制确定性阻止已检出的源目录变化被发布为 Recovery baseline，但不能撤销已发生的源目录写入，也不能替代容器级全局写入隔离。不从 evidence ranking、changed paths 或 Host 派生路径清单推导 Agent 信封的 `ready` / `blocked`。见 [可观察判断](../decisions/accepted/2026-09-11-recovery-observable-judgment.md) 与 [source ACL 与诊断 readiness](../decisions/accepted/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md)。
 
 ### 7.2 Product Recovery Playbook
 
@@ -355,7 +355,7 @@ ProductHistoryReader 负责确定性发现本机实际路径、解析已知格�
 
 在 staging 中，Recovery Agent 在一个连续 Session 和一个工作副本里自主调查、清理、恢复、重建和自检。三个 turn 都允许使用七件套工作区工具。它自己判断哪些内容应保留、恢复、清除或按需重建，并判断剩余缺口是否影响原始任务。环境准备不能替候选完成原始任务。
 
-最终信封只有 `ready` 和 `blocked`。`match` 由 Provider 根据信封机械派生：`ready` 对应 `recovered`，`blocked` 对应 `current_state_fallback`。Agent 不能改写用户源目录，也不能把推断写成已冻结事实。
+最终信封只有 `ready` 和 `blocked`，并带一句话 `summary`。`match` 由 Provider 根据信封机械派生：`ready` 对应 `recovered`，`blocked` 与失败新写入对应 `observational`。历史磁盘上的 `current_state_fallback` / `recovered_partial` 只在读取旧 baseline 时兼容。Agent 不能改写用户源目录，也不能把推断写成已冻结事实。Host 不改写 `summary` 或报告正文。
 
 ### 7.4 Provider 验证与封存
 
@@ -366,7 +366,7 @@ Recovery Agent 返回后，Provider 只做机械检查：
 - staging 重扫后是否没有符号链接、是否符合 snapshot 预算、且 fingerprint 可重复读取；
 - 只读观察材料是否未被改写。
 
-Host 不以证据评分、changed path 数量或零变更否决改写 `ready` / `blocked`。`blocked` 不得发布可启动 baseline。机械检查失败且可修复时，把事实反馈同一 Session。验证时读取报告，并在封存前删除 `recovery.md`、`.reprise/recovery-work/` 与临时 HOME。校验通过且状态为 `ready` 时 publish canonical baseline。Candidate Runtime 只得到 `prepareRun` 从封存起点复制的独立副本。
+Host 不以证据评分、changed path 数量、零变更、Host 派生路径缺失或命令失败改写 `ready` / `blocked`。`blocked` 不得发布可启动 baseline。机械检查失败且可修复时，把事实反馈同一 Session。验证时读取报告，并在封存前删除 `recovery.md`、`.reprise/recovery-work/` 与临时 HOME。校验通过且状态为 `ready` 时 publish canonical baseline。Candidate Runtime 只得到 `prepareRun` 从封存起点复制的独立副本。
 
 ## 8. prepareRun
 
@@ -389,7 +389,7 @@ Host 不以证据评分、changed path 数量或零变更否决改写 `ready` / 
 - baseline digest 变化：拒绝静默继续，重新 resolve 或降级为 mismatch；
 - 目标 run 目录已经存在：先按 manifest 和 run ID 核查，不覆盖不明目录。
 - 活源目录缺失时，`resolveBaseline` 只核验已发布封存与 marker；指纹不符或缺文件则拒绝，不从原会话目录再推导起点。
-- 副本与已发布 baseline、Recovery staging 的 Git `origin`/`pushurl` 必须指向本实验 `environment/git-sinks/` 下的 Harness bare sink；对用户真实 origin 的 push 不得更新该远端。sink 叶子名为相对路径哈希，`INDEX.tsv` 保留相对路径。见 [可见表面与 Git sink](../decisions/accepted/2026-09-10-visible-surface-and-git-sink.md)。
+- 副本与已发布 baseline、Recovery staging 的 Git `origin`/`pushurl` 必须指向本实验 `environment/git-sinks/{id}` 下的 Harness bare sink；Host 生成 `git-sink-manifest.json` 与 `git-sink-refs.txt`。对用户真实 origin 的 push 不得更新该远端。越界 gitdir 与符号链接 `.git` 跳过。对象库不完整（partial clone / promisor / shallow）时仍改写 remote，sink 可为 receive-only；`status: partial` 不阻止 Recovery 与 `prepareRun`。仅当仍有未改写的外网 remote 时硬失败并删除本次 sink。成功后 sink 保留到 Comparison 读取，随实验目录删除。见 [Git 隔离不变量](../decisions/accepted/2026-09-11-git-isolation-invariants.md) 与 [Git sink catalog](../decisions/accepted/2026-09-11-git-sink-catalog.md)。
 
 不同候选模型不能共享可写工作目录。否则前一个候选的修改会成为后一个候选的起点。
 

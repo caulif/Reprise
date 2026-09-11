@@ -57,6 +57,15 @@ export function operatorErrorMessage(error: unknown, locale: Locale = 'en'): str
   if (code === 'ENAMETOOLONG' || /filename too long|invalid index-pack/i.test(message)) {
     return t(locale, 'errorGitSinkPathTooLong');
   }
+  if (message.includes('git_remote_unprotected')) {
+    return t(locale, 'errorGitRemoteUnprotected');
+  }
+  if (message.includes('incomplete_object_store')) {
+    return t(locale, 'errorGitObjectStoreIncomplete');
+  }
+  if (/GitSinkManifestSchema/.test(message)) {
+    return t(locale, 'errorGitSinkCatalogInvalid');
+  }
   return message;
 }
 
@@ -72,4 +81,30 @@ export function fileLink(label: string, absolutePath: string): string {
   if (!href || /[\u0000-\u001f\u007f]/.test(href)) return stripTerminalSequences(absolutePath);
   if (getCapabilities().hyperlinks) return hyperlink(safeLabel, href);
   return stripTerminalSequences(absolutePath);
+}
+
+const OSC8 = /\x1b\]8;;([^\x07\x1b]*)(?:\x07|\x1b\\)([\s\S]*?)\x1b\]8;;(?:\x07|\x1b\\)/g;
+
+/** 1-based visible columns of OSC 8 labels on a rendered line. */
+function fileLinkSpans(line: string): readonly { x0: number; x1: number; href: string }[] {
+  const spans: { x0: number; x1: number; href: string }[] = [];
+  const osc8 = new RegExp(OSC8.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = osc8.exec(line))) {
+    const href = match[1] ?? '';
+    const label = match[2] ?? '';
+    if (!href || !label) continue;
+    const x0 = visibleWidth(stripOsc8(line.slice(0, match.index))) + 1;
+    const x1 = x0 + Math.max(1, visibleWidth(label)) - 1;
+    spans.push({ x0, x1, href });
+  }
+  return spans;
+}
+
+export function hitFileLink(line: string, col: number): string | undefined {
+  return fileLinkSpans(line).find((span) => col >= span.x0 && col <= span.x1)?.href;
+}
+
+function stripOsc8(text: string): string {
+  return text.replace(new RegExp(OSC8.source, 'g'), '$2');
 }

@@ -15,14 +15,30 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { SNAPSHOT_LIMITS } from "../../src/environment/snapshots.js";
 import {
   calculateWorkspaceBudget,
   LocalWorkspaceProvider,
   publishDirectory,
 } from "../../src/environment/local-workspace-provider.js";
-import { candidateChangedPaths } from "../../src/environment/local-workspace-fs.js";
+import { candidateChangedPaths, baselineMatchFromRecoveryStatus } from "../../src/environment/local-workspace-fs.js";
 import { sha256 } from "../../src/core/identity.js";
+
+const exec = promisify(execFile);
+
+async function overwriteEvenIfLocked(root: string, filePath: string, content: string): Promise<void> {
+  try {
+    await writeFile(filePath, content);
+    return;
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "EPERM")) throw error;
+  }
+  const icacls = join(process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows", "System32", "icacls.exe");
+  await exec(icacls, [root, "/remove:d", "*S-1-1-0", "/T", "/C", "/Q"], { windowsHide: true });
+  await writeFile(filePath, content);
+}
 
 async function directories(): Promise<{ root: string; source: string }> {
   const root = await mkdtemp(join(tmpdir(), "reprise-env-"));
@@ -432,6 +448,15 @@ test("workspace budget blocks each configured snapshot limit before copying", ()
   assert.equal(budget.blockedReasons.length, 3);
 });
 
+test("recovery match mapping does not mint current_state_fallback", () => {
+  assert.equal(baselineMatchFromRecoveryStatus("ready"), "recovered");
+  assert.equal(baselineMatchFromRecoveryStatus("blocked"), "observational");
+  assert.equal(baselineMatchFromRecoveryStatus("failed"), "observational");
+  assert.equal(baselineMatchFromRecoveryStatus("partial"), "recovered_partial");
+  assert.equal(baselineMatchFromRecoveryStatus("insufficient_evidence"), "observational");
+  assert.equal(baselineMatchFromRecoveryStatus(undefined), "matched");
+});
+
 test("Recovery uses a Host-owned checkpoint instead of the mutated source", async (t) => {
   const { root, source } = await directories();
   t.after(async () => {
@@ -524,6 +549,7 @@ test("Recovery validates isolated git checkout, report, accept, and marker reuse
     staging,
     {
       status: "ready",
+      summary: "Ready for the original task.",
       reportPath: "recovery.md",
       unresolved: [],
     },
@@ -558,6 +584,7 @@ test("Recovery provider accepts extra changed paths and zero-change ready envelo
   const provider = new LocalWorkspaceProvider(root);
   const envelope = {
     status: "ready" as const,
+    summary: "Ready for the original task.",
     reportPath: "recovery.md" as const,
     unresolved: ["No strong preimage."],
   };
@@ -575,7 +602,7 @@ test("Recovery provider accepts extra changed paths and zero-change ready envelo
 
   const unchanged = await provider.beginRecovery({ caseId: "case-manifest-unchanged", sourceRoot: source });
   await writeFile(join(unchanged.root, "recovery.md"), "# ready\r\n");
-  const zeroChange = await provider.validateRecovery(unchanged, { status: "ready", reportPath: "recovery.md", unresolved: [] });
+  const zeroChange = await provider.validateRecovery(unchanged, { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] });
   assert.equal(zeroChange.baseline.match, "recovered");
   assert.equal(zeroChange.baseline.recovery?.status, "ready");
 });
@@ -595,7 +622,7 @@ test("Recovery sealing keeps migrated files, drops leftover work records, and pr
   await writeFile(join(staging.root, ".reprise", "keep.json"), '{"keep":true}');
   await writeFile(join(staging.root, "kept.txt"), "kept");
   await writeFile(join(staging.root, "recovery.md"), "# ready\r\n");
-  const preview = await provider.validateRecovery(staging, { status: "ready", reportPath: "recovery.md", unresolved: [] });
+  const preview = await provider.validateRecovery(staging, { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] });
   const accepted = await provider.acceptRecovery(preview);
   await assert.rejects(stat(join(accepted.root ?? "", ".reprise", "recovery-work")));
   await assert.rejects(stat(join(accepted.root ?? "", ".reprise", "recovery-work", "notes.md")));
@@ -632,6 +659,7 @@ test("Recovery provider rejects unverified complete envelopes and preserves acce
   await assert.rejects(
     provider.validateRecovery(invalid, {
       status: "blocked",
+      summary: "Ready for the original task.",
       reportPath: "recovery.md",
       unresolved: [],
     }),
@@ -648,6 +676,7 @@ test("Recovery provider rejects unverified complete envelopes and preserves acce
     staging,
     {
       status: "ready",
+      summary: "Ready for the original task.",
       reportPath: "recovery.md",
       unresolved: ["No commit metadata."],
     },
@@ -801,6 +830,7 @@ test("Recovery records verified source tripwire and Playbook provenance", async 
     staging,
     {
       status: "ready",
+      summary: "Ready for the original task.",
       reportPath: "recovery.md",
       unresolved: ["No historical preimage."],
     },
@@ -825,7 +855,7 @@ test("Recovery discards staging and temporary HOME when the source tripwire chan
     caseId: "case-recovery-tripwire",
     sourceRoot: source,
   });
-  await writeFile(join(source, "input.txt"), "out-of-bounds change");
+  await overwriteEvenIfLocked(source, join(source, "input.txt"), "out-of-bounds change");
   await writeFile(join(staging.root, "recovery.md"), "# Recovery\r\n");
 
   await assert.rejects(
@@ -833,6 +863,7 @@ test("Recovery discards staging and temporary HOME when the source tripwire chan
       staging,
       {
         status: "ready",
+        summary: "Ready for the original task.",
         reportPath: "recovery.md",
         unresolved: ["Source was altered."],
       },
@@ -857,10 +888,12 @@ test("blocked Recovery keeps diagnosis and does not publish a runnable baseline"
   await writeFile(join(staging.root, "recovery.md"), "# blocked\r\n");
   const preview = await provider.validateRecovery(staging, {
     status: "blocked",
+    summary: "Required input is missing from source.",
     reportPath: "recovery.md",
     unresolved: ["critical input missing"],
   });
-  assert.equal(preview.baseline.match, "current_state_fallback");
+  assert.equal(preview.baseline.match, "observational");
+  assert.equal(preview.baseline.recovery?.summary, "Required input is missing from source.");
   assert.equal(preview.baseline.recovery?.status, "blocked");
   assert.equal(preview.baseline.readiness.runnable, "blocked");
   await assert.rejects(provider.acceptRecovery(preview), /Blocked Recovery/);

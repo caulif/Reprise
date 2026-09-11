@@ -1,4 +1,4 @@
-import { compact, formatBytes, missing } from '../format.js';
+import { compact, formatBytes, missing, hitFileLink } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import type { HistoryCase, HistoryExperiment } from '../local-history.js';
 import { showsDetailPane, type Theme } from '../theme.js';
@@ -70,12 +70,18 @@ export function historyHints(locale: Locale = 'en'): readonly (readonly [string,
 }
 
 export function historyDetailHints(isCase: boolean, hasReport = false, locale: Locale = 'en'): readonly (readonly [string, string])[] {
+  void hasReport;
   return isCase
-    ? [['Enter', t(locale, 'hintUseCase')], ['t', t(locale, 'hintOpenPath')], ['Esc', t(locale, 'hintBack')]]
-    : [...(hasReport ? [['o', t(locale, 'hintReport')]] as const : []), ['t', t(locale, 'hintOpenPath')], ['Esc', t(locale, 'hintBack')]];
+    ? [['Enter', t(locale, 'hintUseCase')], ['Esc', t(locale, 'hintBack')]]
+    : [['Esc', t(locale, 'hintBack')]];
 }
 
-
+export function historyDetailPointerAction(lines: readonly string[], row: number, col: number): 'open-report' | 'open-local' | undefined {
+  const href = hitFileLink(lines[row] ?? '', col);
+  if (!href) return undefined;
+  if (/report\.html/i.test(href)) return 'open-report';
+  return 'open-local';
+}
 
 function visibleRange<T>(items: readonly T[], selected: number, limit = 8): { start: number; end: number } {
   if (items.length <= limit) return { start: 0, end: items.length };

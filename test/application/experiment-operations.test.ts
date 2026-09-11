@@ -104,7 +104,7 @@ test('candidate start gate stays on application owners', () => {
     }) ?? '',
     /runnable workspace/,
   );
-  assert.match(
+  assert.equal(
     candidateStartBlocked({
       blockedReasons: [],
       recovery: {
@@ -114,9 +114,9 @@ test('candidate start gate stays on application owners', () => {
         envelopeStatus: 'ready',
         runnable: 'isolated',
         userStatus: 'recovered',
-        taskReadinessStatus: 'not_ready',
+        taskReadinessStatus: 'blocked',
       },
-    }) ?? '',
-    /task continuation readiness/,
+    }),
+    undefined,
   );
 });

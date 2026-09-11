@@ -131,6 +131,10 @@ export type SessionsAction =
   | 'consume';
 
 export function dispatchSessionsInput(state: SessionsInputState, data: string): { state: SearchFieldState; action: SessionsAction; consume: true } | undefined {
+  const pointer = dispatchListPointer(data);
+  if (pointer?.action === 'up') return { state, action: 'up', consume: true };
+  if (pointer?.action === 'down') return { state, action: 'down', consume: true };
+  if (pointer) return { state, action: 'consume', consume: true };
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'ctrl+f')) return { state, action: 'toggle-filter', consume: true };
   if (matchesKey(input, 'ctrl+n')) return { state, action: 'more', consume: true };
@@ -188,9 +192,21 @@ export function dispatchConfirmInput(data: string): { action: ConfirmAction; con
   return undefined;
 }
 
-export type CandidatePickerAction = 'home' | 'up' | 'down' | 'enter' | 'back';
+export type CandidatePickerAction = 'home' | 'up' | 'down' | 'enter' | 'back' | 'consume';
+
+export function dispatchListPointer(data: string): { action: 'up' | 'down' | 'click' | 'ignore'; row?: number; col?: number; consume: true } | undefined {
+  const mouse = parseSgrMouse(unwrapBracketedPaste(data));
+  if (!mouse) return undefined;
+  if (mouse.button === 64) return { action: 'up', consume: true };
+  if (mouse.button === 65) return { action: 'down', consume: true };
+  if (mouse.button === 0 && !mouse.release) return { action: 'click', row: mouse.row, col: mouse.col, consume: true };
+  return { action: 'ignore', consume: true };
+}
 
 export function dispatchCandidatePickerInput(data: string): { action: CandidatePickerAction; consume: true } | undefined {
+  const pointer = dispatchListPointer(data);
+  if (pointer?.action === 'up' || pointer?.action === 'down') return { action: pointer.action, consume: true };
+  if (pointer) return { action: 'consume', consume: true };
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
   if (matchesKey(input, 'b')) return { action: 'back', consume: true };
@@ -233,7 +249,7 @@ export type SgrMouse = {
 };
 
 /** SGR mouse: `\x1b[<btn;col;rowM` (press) / `m` (release). Wheel is 64/65. */
-function parseSgrMouse(data: string): SgrMouse | undefined {
+export function parseSgrMouse(data: string): SgrMouse | undefined {
   const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
   if (!match) return undefined;
   return {

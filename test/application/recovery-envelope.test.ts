@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Value } from "@sinclair/typebox/value";
+import { RecoveryAgentEnvelopeSchema } from "../../src/core/schema.js";
 import { RecoveryAgent, RECOVERY_TURN_PROMPTS, type RecoveryContext } from "../../src/agents/recovery-agent.js";
 import { PiAgentHost, type PiTextCaller } from "../../src/infrastructure/agent/host.js";
 
@@ -32,6 +34,7 @@ function recoveryContext(): RecoveryContext {
 
 const readyEnvelope = JSON.stringify({
   status: "ready",
+  summary: "Ready for the original task.",
   reportPath: "recovery.md",
   unresolved: [],
 });
@@ -56,9 +59,9 @@ test("Recovery uses three turns and only validates the final envelope", async ()
   assert.equal(result.status, "completed");
   if (result.status === "completed") assert.equal(result.value.status, "ready");
   assert.equal(appended.length, 3);
-  assert.match(appended[0] ?? "", /先理解任务/);
+  assert.match(appended[0] ?? "", /Understand the original task/);
   assert.match(appended[1] ?? "", new RegExp(RECOVERY_TURN_PROMPTS.restore.slice(0, 12)));
-  assert.match(appended[2] ?? "", /ready 或 blocked/);
+  assert.match(appended[2] ?? "", /ready when you have a reasonable executable starting point/);
   assert.doesNotMatch(appended[0] ?? "", /Return only JSON matching the contract|输出契约/);
 });
 
@@ -67,6 +70,7 @@ test("Recovery accepts ready with unrelated unresolved gaps", async () => {
     host: new PiAgentHost(
       caller(["ok", "ok", JSON.stringify({
         status: "ready",
+        summary: "Ready for the original task.",
         reportPath: "recovery.md",
         unresolved: ["cache layout unknown"],
       })]),
@@ -137,8 +141,8 @@ test("model request failure keeps the Session and retries remaining turns", asyn
   const second = await recovery.recover(context, []);
   assert.equal(second.status, "completed");
   assert.equal(created, 1);
-  assert.match(appended[0] ?? "", /先理解任务/);
-  assert.match(appended[1] ?? "", /先理解任务/);
+  assert.match(appended[0] ?? "", /Understand the original task/);
+  assert.match(appended[1] ?? "", /Understand the original task/);
   assert.match(appended[2] ?? "", new RegExp(RECOVERY_TURN_PROMPTS.restore.slice(0, 12)));
   recovery.releasePreparation("case-1");
 });
@@ -170,6 +174,64 @@ test("failed envelope keeps the Session and does not replay completed freeform t
   const second = await recovery.recover(context, []);
   assert.equal(second.status, "completed");
   assert.equal(created, 1);
-  assert.equal(appended.filter((item) => item.includes("先理解任务")).length, 1);
+  assert.equal(appended.filter((item) => item.includes("Understand the original task")).length, 1);
   recovery.releasePreparation("case-1");
+});
+
+test("Recovery envelope rejects empty, overlong, and multi-sentence summaries", () => {
+  const base = { status: "ready" as const, reportPath: "recovery.md" as const, unresolved: [] };
+  assert.equal(Value.Check(RecoveryAgentEnvelopeSchema, { ...base, summary: "Ready for the original task." }), true);
+  assert.equal(Value.Check(RecoveryAgentEnvelopeSchema, { ...base, summary: "" }), false);
+  assert.equal(Value.Check(RecoveryAgentEnvelopeSchema, { ...base, summary: "x".repeat(241) }), false);
+  assert.equal(Value.Check(RecoveryAgentEnvelopeSchema, { ...base, summary: "One. Two." }), false);
+  assert.equal(Value.Check(RecoveryAgentEnvelopeSchema, {
+    status: "blocked",
+    summary: "Ready for the original task.",
+    reportPath: "recovery.md",
+    unresolved: [],
+  }), false);
+});
+
+test("Recovery investigation restart after releasePreparation begins at the understand turn", async () => {
+  let created = 0;
+  const appended: string[] = [];
+  const recovery = new RecoveryAgent({
+    host: new PiAgentHost({
+      createSession() {
+        created += 1;
+        return {
+          append: async ({ content }) => {
+            appended.push(content);
+            if (appended.length % 3 !== 0) return "working";
+            return readyEnvelope;
+          },
+          cancel() {},
+        };
+      },
+    }),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const context = recoveryContext();
+  await recovery.recover(context, []);
+  recovery.releasePreparation("case-1");
+  await recovery.recover(context, []);
+  assert.equal(created, 2);
+  assert.equal(appended.filter((item) => item.includes("Understand the original task")).length, 2);
+  recovery.releasePreparation("case-1");
+});
+
+test("invalid summary fails the last turn without rewriting Host text", async () => {
+  const recovery = new RecoveryAgent({
+    host: new PiAgentHost(caller(["ok", "ok", JSON.stringify({
+      status: "ready",
+      summary: "Too long. And two sentences.",
+      reportPath: "recovery.md",
+      unresolved: [],
+    })])),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const result = await recovery.recover(recoveryContext(), []);
+  assert.equal(result.status, "failed");
 });

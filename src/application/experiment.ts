@@ -55,6 +55,7 @@ export type ExperimentResult = {
     controllerCalls: number;
     wallClockMs?: number;
     tokenCount?: number;
+    costUsd?: number;
   };
 };
 export type ExperimentInput = {
@@ -354,6 +355,7 @@ async function openExperimentSession(input: {
     environment: {
       environmentId: environment.environmentId,
       workspacePath: environment.root,
+      ...(environment.gitSink ? { gitSink: environment.gitSink } : {}),
     },
     controller: experiment.agentConfig,
     comparison: comparisonAgentConfig,

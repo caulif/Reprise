@@ -201,7 +201,7 @@ test('closing preserves a late Recovery staging reference when cleanup fails', a
     experimentId: 'late-cleanup',
     experimentRoot: dataDir,
     baseline: { mode: 'canonical' },
-    recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', reportPath: 'recovery.md', unresolved: [] } },
+    recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready for the original task.', reportPath: 'recovery.md', unresolved: [] } },
     staging: { recoveryId: 'r', caseId: 'c', sourceRoot: dataDir, root: dataDir },
   };
   const app = new IntakeTui({ dataDir, tui: mockTui().tui as never, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, workflow: {
@@ -244,7 +244,7 @@ test('Ctrl+C while accepting Recovery prevents experiment startup', async () => 
     experimentId: 'cancel-accept',
     experimentRoot: 'unused',
     baseline: { mode: 'canonical' },
-    recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', reportPath: 'recovery.md', unresolved: [] } },
+    recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready for the original task.', reportPath: 'recovery.md', unresolved: [] } },
     hasAccept: true,
     staging: { recoveryId: 'r', caseId: 'c', sourceRoot: '/', root: '/' },
   } as unknown as RecoveryView;
@@ -315,7 +315,7 @@ test('close discards cached recovery and preserves a failed cleanup for review',
       experimentId: 'cached',
       experimentRoot: 'unused',
       baseline: { mode: 'canonical' },
-      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', reportPath: 'recovery.md', unresolved: [] } },
+      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready for the original task.', reportPath: 'recovery.md', unresolved: [] } },
       hasAccept: false,
       staging: { recoveryId: 'r', caseId: 'c', sourceRoot: '/', root: '/' },
     } as unknown as RecoveryView;

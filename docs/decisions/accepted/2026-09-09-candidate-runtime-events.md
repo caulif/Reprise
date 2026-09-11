@@ -14,7 +14,7 @@
 
 标准化事件以 `CandidateRuntimeEvent` 描述（eventId、单调 sequence、时间、sessionId、可选 turn/message/call、payload、evidenceRefs）。产品 Adapter 先映射为 `runtime.<CandidateRuntimeEventType>`。Journal 写入后必须能还原为 `CandidateRuntimeEvent`（含 sessionId 与 evidenceRefs）；流式 delta、心跳、stderr 与隐藏 reasoning 留在 Adapter 内。Application 不解析产品私有帧。
 
-只在原生 settlement 之后由 `UserSurfaceProjection.projectTurn` 生成 `UserVisibleTurn`。投影失败记为 `unavailable`，不得当成空输出。持久化 `controller-briefing/current-user-view.md` 与 `run/turns/{n}/user-view.md`。流式 `translate` 只写公开活动，不作为 Controller 决策输入。
+只在原生 settlement 之后由 `UserSurfaceProjection.projectTurn` 生成 `UserVisibleTurn`。投影失败记为 `unavailable`，不得当成空输出。`assistantText` 是该 turn 切片上公开 `text` 的拼接，不是最后一段；整次 run 的 `finalMessage` 仍是最后一段。持久化 `controller-briefing/current-user-view.md` 与 `run/turns/{n}/user-view.md`。流式 `translate` 只写公开活动，不作为 Controller 决策输入。
 
 ## 备选方案
 

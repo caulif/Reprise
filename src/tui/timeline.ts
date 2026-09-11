@@ -189,14 +189,15 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
       const unresolved = Array.isArray(value.unresolved)
         ? value.unresolved.filter((item): item is string => typeof item === 'string')
         : [];
-      const excerpt = text(payload.reportText) ?? text(value.reportText);
+      const excerpt = text(value.summary) ?? text(payload.summary) ?? text(payload.reportText) ?? text(value.reportText);
       const failed = finalStatus === '无法恢复' || text(payload.status) === 'failed';
+      const blocked = finalStatus === '恢复受阻' || text(value.status) === 'blocked';
       return [
         entry('HARNESS', finalStatus, excerpt, {
           lane: 'recovery',
           kind: 'deliver',
           ...(excerpt ? { original: excerpt } : {}),
-          ...(failed ? { level: 'error' as const } : {}),
+          ...(failed && !blocked ? { level: 'error' as const } : {}),
         }),
         ...unresolved.map((item) => entry('HARNESS', item, undefined, { lane: 'recovery', kind: 'narrate' })),
         clearNow(entry, 'recovery'),
@@ -489,7 +490,8 @@ function doneReason(reason: string | undefined): string {
 function recoveryUserWord(payload: JsonRecord, value: JsonRecord): string {
   const envelope = text(value.status) ?? text(payload.status);
   if (envelope === 'partial' || envelope === 'recovered_partial') return '部分恢复';
-  if (envelope === 'failed' || envelope === 'blocked' || envelope === 'insufficient_evidence') return '无法恢复';
+  if (envelope === 'blocked') return '恢复受阻';
+  if (envelope === 'failed' || envelope === 'insufficient_evidence') return '无法恢复';
   if (envelope === 'recovered' || envelope === 'ready' || envelope === 'completed') return '已恢复';
   return '无法恢复';
 }

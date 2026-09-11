@@ -133,6 +133,13 @@ test('recovery.completed uses the user-facing recovery word', () => {
   assert.equal(row?.title, '部分恢复');
   const recovered = projectTimelineEvent(event('recovery.completed', { status: 'recovered' }))[0];
   assert.equal(recovered?.title, '已恢复');
+  const blocked = projectTimelineEvent(event('recovery.completed', {
+    status: 'completed',
+    value: { status: 'blocked', summary: 'Required input is missing from source.' },
+  }))[0];
+  assert.equal(blocked?.title, '恢复受阻');
+  assert.notEqual(blocked?.level, 'error');
+  assert.equal(blocked?.detail, 'Required input is missing from source.');
 });
 
 test('controller send is an Input card without Decision: SEND', () => {
@@ -306,7 +313,9 @@ test('candidate working row without live includes elapsed', () => {
     productLabel: 'Claude Code',
     locale: 'zh',
   }).join('\n');
-  assert.match(painted, /working · 03:21/);
+  assert.match(painted, /working/);
+  assert.match(painted, /03:21/);
+  assert.doesNotMatch(painted, /working · 03:21/);
   assert.doesNotMatch(painted, /Candidate · working/);
 });
 
@@ -405,5 +414,44 @@ test('clicking a fold hit writes that itemId into expandedFolds', () => {
 test('timeline projection never reads message.content', () => {
   const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../src/tui/timeline.ts'), 'utf8');
   assert.doesNotMatch(source, /message\.content/);
+});
+
+test('scrollback gutter keeps body default, mutes folds, and pins the clock', () => {
+  const previous = process.env.FORCE_COLOR;
+  process.env.FORCE_COLOR = '3';
+  try {
+    const colored = createTheme(100, true);
+    assert.notEqual(colored.style.danger('x'), colored.style.target('x'));
+    const stamp = timestamp;
+    const say: TimelineEntry = {
+      sequence: 1, occurredAt: stamp, source: 'HARNESS', kind: 'narrate', lane: 'recovery', title: '先看隔离副本。',
+    };
+    const fold: TimelineEntry = {
+      sequence: 2, occurredAt: stamp, source: 'HARNESS', kind: 'fold', lane: 'recovery', title: '▸ 阅读证据 · 12', itemId: 'fold:1',
+    };
+    const reply: TimelineEntry = {
+      sequence: 3, occurredAt: stamp, source: 'TARGET', title: 'Visible response', detail: '长回复像告警墙', voice: 'candidate',
+    };
+    const now: TimelineEntry = {
+      sequence: 4, occurredAt: stamp, source: 'TARGET', kind: 'live', title: 'working', itemId: 'now:target', placeholder: true, voice: 'candidate',
+    };
+    const painted = renderScrollback(colored, 80, [say, fold, reply, now], 3, 'zh', 'Claude Code', undefined, 0, 0, '25:10', true);
+    const body = painted.join('\n');
+    assert.match(body, /先看隔离副本/);
+    assert.doesNotMatch(body, /\u001b\[38;2;167;217;190m先看|\u001b\[36m先看/);
+    assert.doesNotMatch(body, /\u001b\[38;2;238;176;155m长回复|\u001b\[33m长回复/);
+    assert.match(body, /\u001b\[90m[^\n]*▸ 阅读证据|\u001b\[38;2;74;92;86m/);
+    const status = painted.at(-1) ?? '';
+    assert.match(status.replace(/\u001b\[[0-9;]*m/g, ''), /25:10\s*$/);
+    assert.doesNotMatch(status.replace(/\u001b\[[0-9;]*m/g, ''), /working · 25:10/);
+    const behind = renderScrollback(colored, 80, [say, fold], 0, 'zh', 'Codex', undefined, 0, 0, '00:08', false).join('\n');
+    assert.match(behind, /▼|↓/);
+    assert.match(behind, /新 1|1 new/);
+    const host = createTheme(80, true, true);
+    assert.doesNotMatch(host.style.fillCanvas('hello'), /48;2;12;16;18/);
+  } finally {
+    if (previous === undefined) delete process.env.FORCE_COLOR;
+    else process.env.FORCE_COLOR = previous;
+  }
 });
 

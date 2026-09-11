@@ -1,6 +1,6 @@
 # Reprise TUI 操作者画布
 
-本文是目标信息设计，不覆盖当前产品规范。按键、页图与阅读合同仍以[阅读与交互](./reprise-tui-design.md)为准；画布与页图收口见[操作者记录面全面重构](./reprise-tui-operator-record-refactor.md)；命令与来源层改法见[界面重构](./reprise-tui-surface-refactor.md)。本机 HTML 草图在 `docs/research/reprise-tui-operator-canvas.html`，不受控，不拥有验收。恢复、模拟用户与对照的短句脊、执行条、Input 卡见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。
+本文是目标信息设计，不覆盖当前产品规范。按键、页图与阅读合同仍以[阅读与交互](./reprise-tui-design.md)为准；画布与页图收口见[操作者记录面全面重构](./reprise-tui-operator-record-refactor.md)；命令与来源层改法见[界面重构](./reprise-tui-surface-refactor.md)。本机 HTML 草图在 `docs/research/reprise-tui-operator-canvas.html`，不受控，不拥有验收。运行页画法（gutter、明暗、列尾时钟）见[gutter 与层次](./reprise-tui-gutter-chrome.md)，对应草图 `docs/research/reprise-tui-gutter-preview.html`。恢复、模拟用户与对照的短句脊、执行条、Input 卡见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。
 
 操作者不是在写代码，而是在观看一次隔离对照。界面回答五个问题即可：任务是什么、此刻谁在干活、有没有卡住、人类在原产品里会看到什么、结束后打开什么。
 
@@ -54,7 +54,7 @@ Controller 决策输入与正式时间线仍只使用已校验的 `candidate.use
 
 **对照。** 按 `c` 后新开对照页，不带控制 Agent 的 Input 与候选回复。对照 Agent 探路与恢复同构同色。顶栏「正在写对照报告」。终态：对照完成 / 证据不足 / 对照失败，并摘录 `headline`。字段见[内部 Agent Trace](./reprise-tui-recovery-trace.md)。不把 Host 四次委托画成章节，不把 `headline` 写成任务判断。
 
-**结果。** 三行人话：任务判断、运行终止、清理。token / cost 未采集写 `not recorded`。产物用短标签超链接：`报告`、`隔离副本`、`记录`。标签走已验证绝对路径的 OSC 8 `file:` URI；终端不支持超链接时显示完整可复制路径。键盘 `o` / `t` / `w` 与点击打开同一目标。不把对照 `headline` 写成任务判断。跳过对照写「对照未运行」，并保留 `c`；对照完成后框内换成终态词 + `headline`。
+**结果。** 三行人话：任务判断、运行终止、清理。token / cost 未采集写 `not recorded`。产物用短标签超链接：`报告`、`隔离副本`、`记录`。标签走已验证绝对路径的 OSC 8 `file:` URI；终端不支持超链接时显示完整可复制路径。键盘 `o` / `t` / `w` 与**单击短标签**打开同一目标（鼠标报告开启时由应用命中，不依赖宿主跟 OSC 8）。不把对照 `headline` 写成任务判断。跳过对照写「对照未运行」，并保留可点「开始对照」或 `c`；对照完成后框内换成终态词 + `headline`。指针、视口与查找范围见[指针、视口与查找](./reprise-tui-pointer-scroll-find.md)。
 
 ## 截图对应的失败
 
@@ -62,4 +62,4 @@ Controller 决策输入与正式时间线仍只使用已校验的 `candidate.use
 
 ## 验收（假终端）
 
-默认帧不含 argv、git 开关或 `compact tail`。候选 `runtime.tool_started` 期间帧上有此刻行。`user_view_persisted` 后此刻行消失、可见回复出现。结果短标签含 OSC 8；无能力时退回完整路径。反向：把工具 stdout 画进默认列，或等待期间画布无此刻行，则红。真终端点击与 IME 仍按[平台矩阵](./2026-09-08-platform-evidence-matrix.md)，HTML 不算关闭。
+默认帧不含 argv、git 开关或 `compact tail`。候选 `runtime.tool_started` 期间帧上有此刻行。`user_view_persisted` 后此刻行消失、可见回复出现。结果短标签含 OSC 8；无能力时退回完整路径。假终端单击短标签走到打开产物。反向：把工具 stdout 画进默认列，或等待期间画布无此刻行，则红。真终端点击与 IME 仍按[平台矩阵](./2026-09-08-platform-evidence-matrix.md)，HTML 不算关闭。

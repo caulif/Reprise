@@ -40,10 +40,15 @@ export interface Theme {
     readonly danger: StyleFn;
     readonly selected: StyleFn;
     readonly fillCanvas: StyleFn;
+    readonly fillLive: StyleFn;
     readonly fillInput: StyleFn;
     readonly fillProduct: StyleFn;
     readonly fillInputSelected: StyleFn;
     readonly fillProductSelected: StyleFn;
+    readonly gutterHost: StyleFn;
+    readonly gutterTarget: StyleFn;
+    readonly gutterFoldHost: StyleFn;
+    readonly gutterFoldTarget: StyleFn;
   };
 }
 
@@ -68,9 +73,11 @@ const GROK = {
   target: { ansi: '33', rgb: [238, 176, 155] },
   ok: { ansi: '32', rgb: [167, 217, 190] },
   warn: { ansi: '33', rgb: [238, 176, 155] },
-  danger: { ansi: '31', rgb: [238, 176, 155] },
+  danger: { ansi: '31', rgb: [224, 122, 122] },
+  foldHost: { ansi: '90', rgb: [74, 92, 86] },
+  foldTarget: { ansi: '90', rgb: [106, 83, 76] },
   selectedFg: { rgb: [220, 226, 223] },
-  selectedBg: { rgb: [23, 29, 32] },
+  selectedBg: { rgb: [30, 38, 42] },
   canvasBg: { rgb: [12, 16, 18] },
   voiceInBg: { rgb: [23, 29, 32] },
   voiceOutBg: { rgb: [16, 22, 24] },
@@ -118,15 +125,19 @@ export function enableTerminalColor(): void {
 /** Themes are immutable and depend only on density and color mode, so the variants can be shared. */
 const themes = new Map<string, Theme>();
 
-export function createTheme(width: number, colored = colorSupported()): Theme {
+export function createTheme(width: number, colored = colorSupported(), hostBackground = hostBackgroundRequested()): Theme {
   const density = resolveDensity(width);
   const mode = colored ? paintMode() : 'off';
-  const key = `${density}:${mode}`;
+  const key = `${density}:${mode}:${hostBackground ? 'host' : 'canvas'}`;
   const cached = themes.get(key);
   if (cached) return cached;
-  const theme = buildTheme(density, mode);
+  const theme = buildTheme(density, mode, hostBackground);
   themes.set(key, theme);
   return theme;
+}
+
+function hostBackgroundRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.REPRISE_TUI_HOST_BG === '1' || env.REPRISE_TUI_HOST_BG === 'true';
 }
 
 function paintMode(env: NodeJS.ProcessEnv = process.env): ColorMode {
@@ -137,8 +148,11 @@ function paintMode(env: NodeJS.ProcessEnv = process.env): ColorMode {
   return 'ansi';
 }
 
-function buildTheme(density: Density, mode: ColorMode): Theme {
+function buildTheme(density: Density, mode: ColorMode, hostBackground: boolean): Theme {
   const framed = density === 'regular' || density === 'wide';
+  const identity = (text: string) => text;
+  const fillOrPlain = (rgb: readonly [number, number, number]): StyleFn =>
+    hostBackground ? identity : fillPaint(mode, rgb);
   return {
     density,
     framed,
@@ -155,11 +169,16 @@ function buildTheme(density: Density, mode: ColorMode): Theme {
       warn: paint(mode, GROK.warn.ansi, GROK.warn.rgb),
       danger: paint(mode, GROK.danger.ansi, GROK.danger.rgb),
       selected: selectedPaint(mode),
-      fillCanvas: fillPaint(mode, GROK.canvasBg.rgb),
-      fillInput: fillPaint(mode, GROK.voiceInBg.rgb),
-      fillProduct: fillPaint(mode, GROK.voiceOutBg.rgb),
-      fillInputSelected: fillPaint(mode, GROK.voiceInSel.rgb),
-      fillProductSelected: fillPaint(mode, GROK.voiceOutSel.rgb),
+      fillCanvas: fillOrPlain(GROK.canvasBg.rgb),
+      fillLive: hostBackground ? selectedPaint(mode) : fillPaint(mode, GROK.selectedBg.rgb),
+      fillInput: fillOrPlain(GROK.voiceInBg.rgb),
+      fillProduct: fillOrPlain(GROK.voiceOutBg.rgb),
+      fillInputSelected: hostBackground ? selectedPaint(mode) : fillPaint(mode, GROK.voiceInSel.rgb),
+      fillProductSelected: hostBackground ? selectedPaint(mode) : fillPaint(mode, GROK.voiceOutSel.rgb),
+      gutterHost: paint(mode, GROK.harness.ansi, GROK.harness.rgb),
+      gutterTarget: paint(mode, GROK.target.ansi, GROK.target.rgb),
+      gutterFoldHost: paint(mode, GROK.foldHost.ansi, GROK.foldHost.rgb),
+      gutterFoldTarget: paint(mode, GROK.foldTarget.ansi, GROK.foldTarget.rgb),
     },
   };
 }

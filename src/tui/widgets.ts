@@ -272,7 +272,7 @@ export function kv(theme: Theme, key: string, value: string, width: number): str
   void width;
   const labelWidth = Math.max(12, visibleWidth(key));
   const label = pad(key, labelWidth, theme.glyphs.ellipsis);
-  return ` ${label} ${value}`;
+  return ` ${theme.style.muted(label)} ${value}`;
 }
 
 /** Label plus wrapped value; continuation lines indent under the value, not under a mid-glyph. */
@@ -284,7 +284,7 @@ export function kvBlock(theme: Theme, key: string, value: string, width: number)
   const indent = ' '.repeat(labelWidth);
   return wrapped.map((line, index) => (
     index === 0
-      ? ` ${pad(key, labelWidth, theme.glyphs.ellipsis)} ${line}`
+      ? ` ${theme.style.muted(pad(key, labelWidth, theme.glyphs.ellipsis))} ${line}`
       : ` ${indent} ${line}`
   ));
 }
@@ -301,7 +301,7 @@ export function kvLinkBlock(theme: Theme, key: string, label: string, absolutePa
   return wrapped.map((line, index) => {
     const linked = fileLink(theme.style.accent(line), absolutePath);
     return index === 0
-      ? ` ${pad(key, labelWidth, theme.glyphs.ellipsis)} ${linked}`
+      ? ` ${theme.style.muted(pad(key, labelWidth, theme.glyphs.ellipsis))} ${linked}`
       : ` ${indent} ${linked}`;
   });
 }

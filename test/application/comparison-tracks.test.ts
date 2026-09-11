@@ -210,4 +210,6 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
   assert.match(await read("evidence/artifact-tracks"), /artifact body/);
   assert.match(await read("candidate/workspace-file.txt"), /candidate workspace snapshot/);
   assert.match(await read("briefing/candidate/SNAPSHOT.txt"), /snapshotStatus=complete/);
+  assert.match(await read("briefing/candidate/git-sink-refs.txt"), /status\t/);
+  assert.match(await read("briefing/candidate/git-sink-manifest.json"), /schemaVersion/);
 });

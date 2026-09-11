@@ -3,7 +3,7 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
  Internal model  needs config
 
  Continue
- Enter    Latest replay  record unread
+ ·        Latest replay  record unread
  /config  Open /config  needs credential
 
 ┌─ Recent experiments · Storage 0.0 MiB ────────────────────────────┐ ┌─ Experiment ───────────────────────────────────┐

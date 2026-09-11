@@ -2,7 +2,7 @@ import { sha256 } from "../../core/identity.js";
 import type { RecoveryContext } from "../../agents/recovery-agent.js";
 import { recoveryWorkingSet } from "../../agents/recovery-working-set.js";
 import { OBSERVATIONS_MOUNT, recoveryObservationsRoot, writeFrozenObservationTree } from "../../products/history/observations-materializer.js";
-import { recoveryTools } from "../../infrastructure/recovery-tools.js";
+import { recoveryTools, SOURCE_MOUNT } from "../../infrastructure/recovery-tools.js";
 import { persistRecoveryControlledWriteBlob } from "./writes.js";
 import { recoveryClues } from "./investigation.js";
 import {
@@ -20,8 +20,11 @@ import { writeImmutableJson } from "../../infrastructure/store/experiment-store.
 import { join } from "node:path";
 import { recoveryAttemptRecord } from "./orchestrator.js";
 import { packRuntime } from "../../products/pack-access.js";
-import type { AgentToolDefinition } from "../../infrastructure/agent/host.js";
+import type { AgentToolDefinition, StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import { RecoveryValidationError } from "../../environment/local-workspace-provider.js";
+import { ProcessBoundaryError } from "../../infrastructure/process-runner.js";
+import { stat } from "node:fs/promises";
+import type { RecoveryResult } from "../../agents/recovery-agent.js";
 
 export function buildRecoveryAgentContext(session: RecoveryRunSession): RecoveryContext {
   const { input, facts, pack, playbook, staging } = session;
@@ -41,8 +44,19 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
     runtimeCapabilities: packRuntime(pack).recoveryCapabilities(),
     playbook,
     staging: {
-      fileCount: staging.sourceBudget.fileCount,
-      totalBytes: staging.sourceBudget.totalBytes,
+      seed: staging.workspaceSeed,
+      fileCount: staging.workspaceSeed === "sparse" ? 0 : staging.sourceBudget.fileCount,
+      totalBytes: staging.workspaceSeed === "sparse" ? 0 : staging.sourceBudget.totalBytes,
+      sourceMount: "source",
+      workspaceAlias: "workspace",
+      summaryPath: ".reprise/recovery-work/source-summary.json",
+      source: {
+        copyEligible: staging.sourceSummary.copyEligible,
+        budgetExceeded: staging.sourceSummary.budgetExceeded,
+        fileCount: staging.sourceBudget.fileCount,
+        totalBytes: staging.sourceBudget.totalBytes,
+        summary: staging.sourceSummary,
+      },
       ...(staging.sourceBudget.excludedEntries?.length
         ? { excludedEntries: staging.sourceBudget.excludedEntries }
         : {}),
@@ -65,9 +79,14 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
   const workspaceRoot = staging.root;
   session.tools = recoveryTools(workspaceRoot, {
     allowBinary: input.taskCase.privacy.allowBinary,
-    mounts: { [OBSERVATIONS_MOUNT]: recoveryObservationsRoot(session.experimentRoot, input.runId) },
-    denyDestructiveOnPrefix: [OBSERVATIONS_MOUNT],
-    ...(input.allowShell ? { allowShell: true } : {}),
+    workspaceAlias: true,
+    mounts: {
+      [OBSERVATIONS_MOUNT]: recoveryObservationsRoot(session.experimentRoot, input.runId),
+      [SOURCE_MOUNT]: staging.sourceRoot,
+    },
+    denyDestructiveOnPrefix: [OBSERVATIONS_MOUNT, SOURCE_MOUNT],
+    allowShell: true,
+    shellEnv: { REPRISE_SOURCE_MOUNT: staging.sourceRoot },
     ...(activeStaging?.temporaryRoot ? { homeRoot: activeStaging.temporaryRoot } : {}),
     onControlledWrite: async (entry) => {
       const persistedEntry = await persistRecoveryControlledWriteBlob(store, workspaceRoot, entry, {
@@ -136,13 +155,21 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
       }),
     );
     const retryFailure = retryableRecoveryFailure(session.recovery);
-    retryModel = retryFailure !== undefined && session.modelAttempts < maxModelAttempts;
+    const workspaceDamaged = await recoveryWorkspaceNeedsReset(staging.root, session.recovery);
+    retryModel = session.modelAttempts < maxModelAttempts && (retryFailure !== undefined || workspaceDamaged);
     if (!retryModel) continue;
+    if (workspaceDamaged && retryFailure === undefined) {
+      await restartRecoveryWorkspace(session);
+    }
     await store.append({
       type: "recovery.model_retry",
       runId: input.runId,
       operationId: `recovery-model-retry-${session.modelAttempts + 1}`,
-      payload: { caseId: input.caseId, attempt: session.modelAttempts + 1, previousFailure: retryFailure },
+      payload: {
+        caseId: input.caseId,
+        attempt: session.modelAttempts + 1,
+        previousFailure: retryFailure ?? "workspace_damaged",
+      },
     });
   }
   if (!session.recovery) throw new Error("Recovery model did not return an invocation result.");
@@ -212,6 +239,12 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
     } catch (error) {
       if (error instanceof RecoveryValidationError && error.code === "source_tripwire_failed") throw error;
       attempts += 1;
+      if (await recoveryWorkspaceNeedsReset(staging.root, undefined, error)) {
+        if (attempts >= (session.maxModelAttempts ?? 2)) throw error;
+        await restartRecoveryWorkspace(session);
+        await runRecoveryModelAttempts(session);
+        continue;
+      }
       if (attempts >= (session.maxModelAttempts ?? 2)) throw error;
       const facts = error instanceof Error ? error.message : "mechanical check failed";
       session.context = {
@@ -286,4 +319,35 @@ async function persistMechanicalFeedbackInput(session: RecoveryRunSession, nextA
       facts,
     },
   });
+}
+
+async function restartRecoveryWorkspace(session: RecoveryRunSession): Promise<void> {
+  const { staging, input } = session;
+  if (!staging) throw new Error("Recovery staging was not prepared.");
+  await session.provider.resetRecoveryWorkspace(staging);
+  input.recovery.releasePreparation?.(input.experimentId);
+  session.context = buildRecoveryAgentContext(session);
+  buildRecoveryAgentTools(session);
+}
+
+async function recoveryWorkspaceNeedsReset(
+  root: string,
+  recovery?: StructuredAgentResult<RecoveryResult>,
+  error?: unknown,
+): Promise<boolean> {
+  if (recovery?.status === "completed" && error === undefined) return false;
+  if (error instanceof ProcessBoundaryError) return true;
+  try {
+    const info = await stat(root);
+    if (!info.isDirectory()) return true;
+  } catch {
+    return true;
+  }
+  const message = [
+    recovery?.status === "failed" ? recovery.failure.message : "",
+    error instanceof Error ? error.message : "",
+  ].join(" ");
+  return /workspace (is )?(damaged|corrupt|missing)|staging (root|workspace) (is )?(missing|unreadable|not a directory)|Process boundary failed/i.test(
+    message,
+  );
 }

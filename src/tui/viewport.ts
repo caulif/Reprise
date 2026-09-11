@@ -17,7 +17,8 @@ export function bodyHeight(viewport: Viewport, messageRows: number, headerRows =
   return Math.max(1, viewport.height - headerRows - FOOTER_ROWS - messageRows);
 }
 
-export function clipLines(lines: readonly string[], height: number | undefined): string[] {
+export function clipLines(lines: readonly string[], height: number | undefined, offset = 0): string[] {
   if (height === undefined || lines.length <= height) return [...lines];
-  return lines.slice(0, height);
+  const start = Math.max(0, Math.min(offset, lines.length - height));
+  return lines.slice(start, start + height);
 }

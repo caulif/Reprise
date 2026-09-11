@@ -48,6 +48,8 @@ export {
   type RecoveryEvaluationTerminalCase,
   RecoveryReadinessContextSchema,
   type RecoveryReadinessContext,
+  RecoveryAgentEnvelopeSchema,
+  type RecoveryAgentEnvelope,
 } from "./schemas/recovery.js";
 export {
   ArtifactRefSchema,
@@ -91,6 +93,18 @@ export {
   ObservationSessionManifestSchema,
   type ObservationSessionManifest,
 } from "./schemas/observations.js";
+export {
+  GitSinkManifestSchema,
+  GitSinkManifestV1Schema,
+  type GitSinkManifest,
+  type GitSinkManifestV1,
+  type GitSinkRepoRecord,
+  type GitSinkRef,
+  type GitSinkRefChange,
+  type GitSinkSkipped,
+  type GitSinkIssue,
+  type GitSinkIssueCode,
+} from "./schemas/git-sink.js";
 export const ControllerRequestedPayloadSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   toolSetVersion: Type.Literal(1),

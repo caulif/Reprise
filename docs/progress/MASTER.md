@@ -6,9 +6,23 @@
 
 ## 当前批次
 
-Git sink 短哈希目录与 Windows 长路径：`init`+`fetch`、`core.longpaths`；TUI 不倾倒 clone 原文。
+无开放 Recovery 信封批次；已落地规则见 [summary 与 seed 同构](../decisions/accepted/2026-09-11-recovery-envelope-summary.md)。
 
 ## 验证记录
+
+2026-09-11 Git 隔离不变量：ADR [Git 隔离不变量](../decisions/accepted/2026-09-11-git-isolation-invariants.md)。catalog v2 含 isolation/objectStore/completeness/issues；incomplete 仓改写 remote、receive-only sink；`partial` 可进 Recovery/`prepareRun`；I1 失败删本次 sink。`npm run check` 17 门禁通过（937 pass / 4 skip）。
+
+2026-09-11 三 Agent 契约清理：ADR [三 Agent 契约清理](../decisions/accepted/2026-09-11-three-agent-contract-cleanup.md)。source 复制预算不再把 inspect 标成 `runnable=blocked`；新 baseline 不写 `current_state_fallback`；`ready` 不因 skipped link 变成用户 `partial`；Controller/Comparison 按需阅读。`npm run check` 17 门禁通过（933 pass / 4 skip）。
+
+2026-09-11 运行画布 gutter 与层次：左缘两列分声部，正文默认色，折叠 muted，失败独立红，列尾右时钟，未跟随 `▼ N`。ADR：[gutter 与层次](../decisions/accepted/2026-09-11-tui-gutter-chrome.md)。`npm run check` 17 门禁通过（925 pass / 4 skip）。
+
+2026-09-11 Recovery 信封 summary 与 seed 同构：ADR [summary 与 seed 同构](../decisions/accepted/2026-09-11-recovery-envelope-summary.md)。信封含一句话 `summary`；checkpoint 走同一 Agent；新 blocked/失败 `match` 为 `observational`；workspace 损坏才重置。`npm run check` 17 门禁通过（919 pass / 4 skip）。
+
+2026-09-11 TUI 指针、视口与查找：恢复页无 `/`；结果页 SGR 单击短标签打开产物，空白不打开；滚轮先移选中、贴边改 `readingOffset`；页脚只列点不到的键。ADR：[指针视口查找](../decisions/accepted/2026-09-11-tui-pointer-scroll-find.md)。`npm run check` 17 门禁通过（912 pass / 4 skip）。真终端滚轮与单击仍走平台矩阵。
+
+2026-09-11 Git sink catalog：ADR [Git sink catalog](../decisions/accepted/2026-09-11-git-sink-catalog.md)。`isolateGitTopology` 拒绝越界 gitdir；sink 写入 schema 校验的 `git-sink-manifest.json`；`sealCandidateSnapshot` 生成最终 refs；Comparison 读 `briefing/candidate/git-sink-manifest.json`；`RunManifest.environment.gitSink` 记录 isolation。`npm run build`、`npm run verify:docs`、`git diff --check` 通过；`test/core/git-sink.test.ts` 9 pass。
+
+2026-09-11 大仓库按需恢复：ADR [稀疏 source mount](../decisions/accepted/2026-09-11-recovery-sparse-source-mount.md)。源目录预算只挡住整树复制；Agent 从 `source/` 按需读取。计划见 [大仓库重构](../plan/recovery-large-repository-refactor.md)。`npm run check` 17 门禁通过（901 pass / 4 skip）。
 
 2026-09-10 方案 A 树时间线：主列去满宽色块与运行页 `[o]` overlay；内部薄荷 / 候选桃色；`tool_finished` 保留叶名；SGR 滚轮移选中。ADR：[方案 A 树](../decisions/accepted/2026-09-10-tui-option-a-tree.md)。`npm run check` 17 门禁通过（886 pass / 4 skip）。
 
@@ -16,9 +30,9 @@ Git sink 短哈希目录与 Windows 长路径：`init`+`fetch`、`core.longpaths
 
 2026-09-10 Controller 协作工具面：注册 ls/read/grep/find/edit/write，`edit`/`write` 仅 `project/`，不注册 `shell_exec`；opening briefing `read` 记 `briefing_read`；删除 `historicalUserTurns`；`release` 等待 session close。ADR：[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)。`npm run check` 17 门禁通过（869 pass / 4 skip）。
 
-2026-09-10 Git sink 路径超限：嵌套仓 sink 名为相对路径 SHA-256 前 12 位；`ensureBareSink` 用 `init --bare` + `fetch`，Git `-c core.longpaths=true`。ADR：[可见表面与 Git sink](../decisions/accepted/2026-09-10-visible-surface-and-git-sink.md)。`npm run check` 17 门禁通过（864 pass / 4 skip）。
+2026-09-10 Git sink 路径超限：嵌套仓 sink 名为相对路径 SHA-256 前 12 位；`ensureBareSink` 用 `init --bare` + `fetch`，Git `-c core.longpaths=true`。后续 catalog 见 [Git sink catalog](../decisions/accepted/2026-09-11-git-sink-catalog.md)。`npm run check` 17 门禁通过（864 pass / 4 skip）。
 
-2026-09-10 可见表面拼接与 Git sink：一轮公开 text 进 `UserVisibleTurn.assistantText`；`prepareRun` 将 origin 改到 `environment/git-sinks/`。ADR：[可见表面与 Git sink](../decisions/accepted/2026-09-10-visible-surface-and-git-sink.md)。`npm run check` 17 门禁通过（855 pass / 4 skip）。
+2026-09-10 可见表面拼接与 Git sink：一轮公开 text 进 `UserVisibleTurn.assistantText`；`prepareRun` 将 origin 改到 `environment/git-sinks/`。可见表面见 [按 settlement 取视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)；Git sink 见 [Git sink catalog](../decisions/accepted/2026-09-11-git-sink-catalog.md)。`npm run check` 17 门禁通过（855 pass / 4 skip）。
 
 2026-09-10 二次审查：Comparison 从 attempt 根按 INDEX 挂载读取双轨材料；Runtime Journal 校验 turn/message/call 与 session 生命周期；终态由 `candidateRunDisplayFromEvents` 投影，TUI 不再解析时间线 `State:`；规划文档 `projection` 与 `runtime` 并列。ADR：[Journal 归属](../decisions/accepted/2026-09-10-runtime-journal-affiliation.md)、[阶段查询](../decisions/accepted/2026-09-10-candidate-run-phase-query.md)。`audit-root/` 与 `unused/` 已在 `.gitignore`。`npm run check` 17 门禁通过（847 pass / 4 skip）。
 

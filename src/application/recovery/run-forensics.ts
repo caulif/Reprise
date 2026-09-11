@@ -34,7 +34,7 @@ export async function startRecoveryForensics(session: RecoveryRunSession): Promi
     },
   });
   const forensicsStartedAt = Date.now();
-  session.facts = await resolvedRecoveryFacts(staging.root, input.taskCase);
+  session.facts = await resolvedRecoveryFacts(staging.sourceRoot, input.taskCase);
   await recordRecoveryAttempt(
     session,
     recoveryAttemptRecord({

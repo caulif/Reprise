@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import { isRecord } from "../core/json.js";
 import { SAFE_ID, sha256 } from "../core/identity.js";
-import type { EventEnvelope, TaskCase } from "../core/schema.js";
+import type { TaskCase } from "../core/schema.js";
 import type { AgentAuditSink, StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { type ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { isFrozenCase, publishFrozenCase } from "../products/shared/freeze.js";
@@ -93,67 +93,6 @@ export async function persistTaskCase(path: string, taskCase: TaskCase): Promise
     throw error;
   }
   throw new Error(`TaskCase ${taskCase.caseId} is an unpublished incomplete freeze.`);
-}
-
-export function totalTokenCount(
-  events: readonly EventEnvelope[],
-): number | undefined {
-  return collectedTokenFacts(events)?.total;
-}
-
-export function collectedTokenFacts(
-  events: readonly EventEnvelope[],
-): {
-  total?: number;
-  input?: number;
-  output?: number;
-  cached?: number;
-  reasoning?: number;
-} | undefined {
-  let latest: ReturnType<typeof tokenFactsFromValue>;
-  for (const event of events) {
-    const facts = tokenFactsFromValue(event.payload);
-    if (facts) latest = facts;
-  }
-  return latest;
-}
-
-function tokenFactsFromValue(value: unknown): {
-  total?: number;
-  input?: number;
-  output?: number;
-  cached?: number;
-  reasoning?: number;
-} | undefined {
-  const payload = recordValue(value);
-  const usage = {
-    ...recordValue(payload.tokenUsage),
-    ...recordValue(recordValue(payload.tokenUsage).total),
-    ...recordValue(payload.usage),
-    ...recordValue(recordValue(payload.info).total_token_usage),
-  };
-  const facts = {
-    ...(nonNegative(usage.totalTokens) ?? nonNegative(usage.total_tokens) ?? nonNegative(usage.tokenCount) ?? nonNegative(usage.token_count) ?? nonNegative(usage.total)
-      ? { total: (nonNegative(usage.totalTokens) ?? nonNegative(usage.total_tokens) ?? nonNegative(usage.tokenCount) ?? nonNegative(usage.token_count) ?? nonNegative(usage.total))! }
-      : {}),
-    ...(nonNegative(usage.inputTokens) ?? nonNegative(usage.input_tokens)
-      ? { input: (nonNegative(usage.inputTokens) ?? nonNegative(usage.input_tokens))! }
-      : {}),
-    ...(nonNegative(usage.outputTokens) ?? nonNegative(usage.output_tokens)
-      ? { output: (nonNegative(usage.outputTokens) ?? nonNegative(usage.output_tokens))! }
-      : {}),
-    ...(nonNegative(usage.cachedInputTokens) ?? nonNegative(usage.cache_read_input_tokens) ?? nonNegative(usage.cached)
-      ? { cached: (nonNegative(usage.cachedInputTokens) ?? nonNegative(usage.cache_read_input_tokens) ?? nonNegative(usage.cached))! }
-      : {}),
-    ...(nonNegative(usage.reasoningOutputTokens) ?? nonNegative(usage.reasoning)
-      ? { reasoning: (nonNegative(usage.reasoningOutputTokens) ?? nonNegative(usage.reasoning))! }
-      : {}),
-  };
-  return Object.keys(facts).length ? facts : undefined;
-}
-
-function nonNegative(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 export async function persistAgentAuditEvent(store: ExperimentStore, runId: string, event: Parameters<AgentAuditSink["append"]>[0]): Promise<void> {

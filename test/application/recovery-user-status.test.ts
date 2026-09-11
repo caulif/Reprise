@@ -34,7 +34,7 @@ test('user recovery status maps complete recovery, skipped links, and missing so
       },
     }),
     transcriptOk: true,
-  }), 'partial');
+  }), 'recovered');
   assert.equal(userRecoveryStatus({
     baseline: baseline({ mode: 'unsupported', match: 'observational', readiness: { runnable: 'unsupported', strictness: 'strict', blockingResourceIds: ['workspace'] } }),
     transcriptOk: true,
@@ -43,6 +43,32 @@ test('user recovery status maps complete recovery, skipped links, and missing so
     baseline: baseline({ match: 'recovered' }),
     transcriptOk: false,
   }), 'failed');
+  assert.equal(userRecoveryStatus({
+    baseline: baseline({
+      match: 'observational',
+      recovery: {
+        status: 'blocked',
+        summary: 'Required input is missing.',
+        unresolved: ['sheet.xlsx'],
+        sourceDigest: 'a'.repeat(64),
+        recoveredDigest: 'a'.repeat(64),
+      },
+    }),
+    transcriptOk: true,
+  }), 'failed');
+  assert.equal(diagnosisReasonCode({
+    baseline: baseline({
+      match: 'observational',
+      recovery: {
+        status: 'blocked',
+        summary: 'Required input is missing.',
+        unresolved: ['sheet.xlsx'],
+        sourceDigest: 'a'.repeat(64),
+        recoveredDigest: 'a'.repeat(64),
+      },
+    }),
+    transcriptOk: true,
+  }), 'recovery_agent.blocked');
 });
 
 test('insufficient evidence stays failed even when an accept handle exists', () => {
@@ -115,7 +141,7 @@ test('diagnosis reason prefers failureStage over skipped symlink', () => {
       },
     }),
     transcriptOk: true,
-  }), 'workspace.symlink_skipped');
+  }), 'recovered');
   assert.equal(diagnosisReasonCode({
     baseline: baseline({
       match: 'recovered_partial',

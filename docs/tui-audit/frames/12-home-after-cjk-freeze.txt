@@ -18,4 +18,4 @@ Reprise v0.1.0   C:\reprise                              gpt-5.6-terra · medium
  ❯ Type /command, Tab to complete
  TaskCase reprise is current (case-f6e814335fe91d8f).
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [/] Command  [Tab] Complete  [Enter] Run command  [?] Keys  [Ctrl+C] Exit
+ [/] Command  [Ctrl+C] Exit

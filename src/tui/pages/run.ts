@@ -16,6 +16,7 @@ export type { CandidateRunPhase };
 export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
 export type RecoveryPreviewModel = {
   readonly status: 'ready' | 'blocked' | 'recovered' | 'partial' | 'insufficient_evidence' | 'failed';
+  readonly summary?: string;
   readonly reportText?: string;
   readonly unresolved: readonly string[];
   readonly changedPathCount: number;
@@ -121,12 +122,15 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
   const product = model.productLabel ?? t(locale, 'unknownAgent');
   const recovery = model.recovery;
   const canStart = confirmCanStart(model);
-  const recoveryRunnable = model.preflight.comparisonClass !== 'observational' && recovery?.status !== 'failed';
+  const recoveryRunnable = model.preflight.comparisonClass !== 'observational' && recovery?.status !== 'failed' && recovery?.status !== 'blocked';
+  const blockedRecovery = recovery?.status === 'blocked';
   const cross = Boolean(model.sourceProductLabel && model.sourceProductLabel !== product);
   const startWarning = !canStart
     ? (model.harnessAuthOk === false
       ? t(locale, 'warningCannotStart', { product })
-      : (recovery?.failureSummary ?? t(locale, 'warningCannotStartFailedRecovery', { product })))
+      : blockedRecovery
+        ? (recovery?.summary ?? t(locale, 'warningCannotStartBlockedRecovery', { product }))
+        : (recovery?.failureSummary ?? t(locale, 'warningCannotStartFailedRecovery', { product })))
     : t(locale, 'warningStartsProcess', { product });
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
@@ -134,11 +138,12 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), [
       kv(theme, t(locale, 'candidateLabel'), candidateSummary(model.candidate, product, model.preflight.resolved.resolvedModel, locale), width - 2),
       kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
+      ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
       ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
       ...(cross ? [kv(theme, t(locale, 'sourceProductLabel'), `${model.sourceProductLabel}  →  ${product}`, width - 2)] : []),
       '',
       ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
-      canStart ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`) : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`),
+      canStart || blockedRecovery ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`) : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`),
       ...(canStart ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'confirmCopySafe')}`)] : []),
     ], width),
   ];
@@ -147,7 +152,7 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
 export function confirmCanStart(model: ConfirmModel): boolean {
   if (model.harnessAuthOk === false) return false;
   if (model.preflight.comparisonClass === 'observational') return false;
-  if (model.recovery?.status === 'failed') return false;
+  if (model.recovery?.status === 'failed' || model.recovery?.status === 'blocked') return false;
   if (model.recovery && !model.candidate) return false;
   return true;
 }
@@ -155,6 +160,8 @@ export function confirmCanStart(model: ConfirmModel): boolean {
 function recoveryWord(model: ConfirmModel, locale: Locale): string {
   const status = model.recovery?.status;
   if (status === 'partial') return t(locale, 'userPartial');
+  if (status === 'blocked') return t(locale, 'userBlocked');
+  if (status === 'ready') return t(locale, 'userRecovered');
   if (status === 'failed') return t(locale, 'userFailed');
   if (status === 'recovered') return t(locale, 'userRecovered');
   return userRecoveryHeadline(model.preflight.comparisonClass, locale);
@@ -231,9 +238,9 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
     : recovering && !visible.length
       ? [
           theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
-          pad(` ${theme.style.harness(theme.glyphs.dot)} working`, width, theme.glyphs.ellipsis),
+          pad(` ${theme.glyphs.dot} working`, width, theme.glyphs.ellipsis),
         ]
-      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed);
+      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, model.following);
   return [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
@@ -303,13 +310,16 @@ export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (
   return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
 }
 
-export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
+export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false, allowFind = true): readonly (readonly [string, string])[] {
   const stop = ['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const;
   if (reading) return [['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')], stop];
   if (finding) {
     return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
   }
-  return [stop, ['/', t(locale, 'hintTimelineFind')], ['Enter', t(locale, 'hintExpand')], ['v', t(locale, 'hintReadingMode')]];
+  const expand = ['Enter', t(locale, 'hintExpand')] as const;
+  const read = ['v', t(locale, 'hintReadingMode')] as const;
+  if (!allowFind) return [stop, expand, read];
+  return [stop, ['/', t(locale, 'hintTimelineFind')], expand, read];
 }
 
 export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {

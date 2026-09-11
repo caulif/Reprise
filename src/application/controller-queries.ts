@@ -1,6 +1,7 @@
 import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
+import { gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
 import type { RunInspection } from "./comparison.js";
 import { Value } from "@sinclair/typebox/value";
 import { UserVisibleTurnSchema, type EventEnvelope, type RunRecord, type UserVisibleTurn } from "../core/schema.js";
@@ -14,7 +15,8 @@ import { findProductPack } from "../products/index.js";
 import { packProjection } from "../products/pack-access.js";
 import { joinPublicAssistantSurface } from "../products/contract.js";
 import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./replay-conditions.js";
-import { recordValue, strings, collectedTokenFacts, totalTokenCount } from "./experiment-helpers.js";
+import { recordValue, strings } from "./experiment-helpers.js";
+import { aggregateEventUsage, factsFromUsage, usageCostUsd } from "./session-usage.js";
 
 export type ControllerObservation = RunInspection & {
   evidenceRefs: string[];
@@ -72,8 +74,10 @@ export async function inspectRun(
     ? await readWorkspaceScope(store, record)
     : await inspectWorkspace(workspace);
   const wallClockMs = elapsedWallClock(events, settled);
-  const tokenCount = totalTokenCount(events);
-  const tokenUsage = collectedTokenFacts(events);
+  const usage = aggregateEventUsage(events);
+  const tokenUsage = factsFromUsage(usage);
+  const tokenCount = tokenUsage?.total;
+  const costUsd = usageCostUsd(usage, replay?.resolvedModel ?? replay?.requestedModel);
   const replayConditions = replay
     ? hostReplayConditions({
         sourceRootKind: replay.sourceRootKind,
@@ -95,6 +99,7 @@ export async function inspectRun(
     ...(wallClockMs === undefined ? {} : { wallClockMs }),
     ...(tokenCount === undefined ? {} : { tokenCount }),
     ...(tokenUsage ? { tokenUsage } : {}),
+    ...(costUsd === undefined ? {} : { costUsd }),
     ...workspaceFacts,
     ...(replayConditions?.length ? { replayConditions } : {}),
     controllerWritePaths: controllerWritePathsFromEvents(events),
@@ -249,10 +254,8 @@ function elapsedWallClock(
   events: readonly EventEnvelope[],
   settled: readonly EventEnvelope[],
 ): number | undefined {
-  const start = events.find(
-    (event) =>
-      event.type === "input.submitted" || event.type === "run.state_changed",
-  );
+  const start = events.find((event) => event.type === "input.submitted")
+    ?? events.find((event) => event.type === "run.state_changed");
   const end = settled.at(-1);
   if (!start || !end) return undefined;
   const startedAt = Date.parse(start.occurredAt);
@@ -291,6 +294,19 @@ export async function captureWorkspaceScope(input: {
       .slice(0, 16)
       .map((path) => textSnapshot(input.environment.root, path)),
   );
+  const artifactRefs: RunRecord["artifactRefs"] = [];
+  const catalog = await readGitSinkManifest(gitSinkRoot(resolve(input.environment.root, "..", ".."), input.runId));
+  if (catalog) {
+    const gitSinkArtifactId = "git-sink-manifest.json";
+    await input.store.commitArtifact({
+      artifactId: gitSinkArtifactId,
+      runId: input.runId,
+      kind: "git_sink_manifest",
+      mediaType: "application/json",
+      bytes: Buffer.from(`${JSON.stringify(catalog, null, 2)}\n`, "utf8"),
+    });
+    artifactRefs.push({ artifactId: gitSinkArtifactId, experimentId: input.experimentId, runId: input.runId });
+  }
   const artifactId = "candidate-workspace-scope.json";
   await input.store.commitArtifact({
     artifactId,
@@ -322,7 +338,8 @@ export async function captureWorkspaceScope(input: {
       "utf8",
     ),
   });
-  return [{ artifactId, experimentId: input.experimentId, runId: input.runId }];
+  artifactRefs.push({ artifactId, experimentId: input.experimentId, runId: input.runId });
+  return artifactRefs;
 }
 
 function fingerprintEntries(

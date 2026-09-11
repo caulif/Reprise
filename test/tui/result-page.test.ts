@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setCapabilities } from '@earendil-works/pi-tui';
 import { renderResult } from '../../src/tui/pages/result.js';
 import { createTheme } from '../../src/tui/theme.js';
+import { kv } from '../../src/tui/widgets.js';
 
 test('result page uses comparison headline and hides satisfied rationale', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });
@@ -64,4 +65,81 @@ test('Controller opening failure names the stage and retryability without a cand
   assert.match(text, /Controller 开场理解.*暂时失败/);
   assert.match(text, /not_assessed/);
   assert.doesNotMatch(text, /provider detail/);
+});
+
+test('result metrics show collected token totals and priced cost', () => {
+  const text = renderResult(createTheme(120, false), 120, {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
+    comparison: { result: { status: 'completed' } },
+    facts: { wallClockMs: 49_000, turns: 1, controllerCalls: 1, tokenCount: 256, costUsd: 0.49 },
+  } as never).join('\n');
+  assert.match(text, /256 tokens/);
+  assert.match(text, /\$0\.49/);
+  assert.doesNotMatch(text, /not recorded tokens/);
+  assert.doesNotMatch(text, /not recorded cost/);
+});
+
+test('compact result keeps Trace on one line', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const theme = createTheme(60, false);
+  const text = renderResult(theme, 60, {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-6d6a47ae-e824-4f40-b1ad-35565ba8943c' },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
+    comparison: { result: { status: 'completed' } },
+    facts: { wallClockMs: 49_000, turns: 1, controllerCalls: 1 },
+  } as never).join('\n');
+  assert.match(text, /49s/);
+  assert.match(text, /not recorded tokens/);
+  assert.match(text, /Trace\s+.*runs\/run-6d6a47ae/);
+  assert.doesNotMatch(text, /\n\s+runs\//);
+});
+
+test('result metrics name candidate time when comparison made the experiment longer', () => {
+  const text = renderResult(createTheme(120, false), 120, {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
+    comparison: { result: { status: 'completed' } },
+    facts: { wallClockMs: 72_000, elapsedMs: 148_000, turns: 1, controllerCalls: 1 },
+  } as never).join('\n');
+  assert.match(text, /148s/);
+  assert.match(text, /candidate 72s/);
+});
+
+test('result banners use the fail slot and mute kv keys', () => {
+  const previous = process.env.FORCE_COLOR;
+  process.env.FORCE_COLOR = '3';
+  try {
+    const theme = createTheme(120, true);
+    const text = renderResult(theme, 120, {
+      record: {
+        attempt: { runId: 'run-1' },
+        outcome: { task: { status: 'incomplete' }, termination: { kind: 'stalled', code: 'stalled.controller_no_further_value' }, cleanup: { status: 'complete' } },
+      },
+      decision: { status: 'completed', value: { type: 'done', reason: 'no_further_value' } },
+      comparison: { result: { status: 'skipped' } },
+    } as never).join('\n');
+    assert.match(text, /\u001b\[31m|\u001b\[38;2;224;122;122m/);
+    const banner = text.split('\n').find((line) => /stalled/.test(line) && /⚠|!/.test(line)) ?? '';
+    assert.doesNotMatch(banner, /\u001b\[33m|\u001b\[38;2;238;176;155m/);
+    assert.match(kv(theme, 'Task', 'incomplete', 80), /\u001b\[90m|\u001b\[38;2;139;153;149m/);
+  } finally {
+    if (previous === undefined) delete process.env.FORCE_COLOR;
+    else process.env.FORCE_COLOR = previous;
+  }
 });

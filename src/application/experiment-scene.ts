@@ -54,7 +54,7 @@ export async function loadSealedScene(dataDir: string, experimentId: string): Pr
   const baseline = await loadSealedBaseline(descriptorValue.caseId, baselineRoot, recorded);
   const attempt: RecoveryAttempt = {
     baseline,
-    recovery: { status: "completed", sessionId: `scene-${experimentId}`, value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
+    recovery: { status: "completed", sessionId: `scene-${experimentId}`, value: { status: "ready", summary: baseline.recovery?.summary ?? "Sealed baseline is ready for the original task.", reportPath: "recovery.md", unresolved: [] } },
     experimentRoot,
     experimentId,
     provider,

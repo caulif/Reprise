@@ -2,7 +2,7 @@
 
 状态：proposed
 
-本文是交给实施 Agent 的完整任务说明。实施前必须阅读[Recovery 起点恢复目标](./recovery-initial-environment.md)、[单工作副本自主三轮循环决策](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md)、[Environment 架构](../architecture/environment.md)、[Agent 职责与提示词](../architecture/agent-roles-and-system-prompts.md)、[持久化与崩溃一致性](../architecture/persistence-and-crash-consistency.md)以及仓库根部 `AGENTS.md`。本文描述目标重构，不表示代码已经符合。
+本文是交给实施 Agent 的完整任务说明。实施前必须阅读[Recovery 起点恢复目标](./recovery-initial-environment.md)、[单工作副本自主三轮循环决策](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md)、[Environment 架构](../architecture/environment.md)、[Agent 职责与提示词](../architecture/agent-roles-and-system-prompts.md)、[持久化与崩溃一致性](../architecture/persistence-and-crash-consistency.md)以及仓库根部 `AGENTS.md`。本文描述目标重构，不表示代码已经符合。所有任务类型共用一条 Recovery 流程；大仓库按需读取只是工作区准备方式，不是产品分流。
 
 ## 1. 目标
 
@@ -13,7 +13,7 @@
 - Recovery 在一个连续 Session、一个工作副本中自主调查、清理、恢复、重建和自检。
 - 三个 turn 固定存在：理解与侦察、恢复与准备、自检与结论；每轮 prompt 结构不同，但每轮都允许使用工具、调查、修改或验证。
 - Agent 自己判断哪些内容应保留、恢复、清除或按需重建，自己判断缺口是否影响任务。
-- 最终结论只有 `ready` 和 `blocked`。
+- 最终结论只有 `ready` 和 `blocked`，并带一句话 `summary`（最多 240 字符）、`reportPath` 和 `unresolved`。
 - Host 只负责不可逆安全边界、工具承载、运行控制、审计、持久化和机械检查；不以证据评分或业务 Verifier 推翻 Agent 判断。
 - 恢复结果封存为可复用起点；后续运行从起点复制独立副本，轻量检查发现必要运行条件缺失时才修补，不重新恢复整个目录。
 
@@ -253,7 +253,11 @@ Prompt 要求 Agent 自选检查方式，确认输入、问题、后继成果、
 
 完成条件：`rg` 不再找到生产路径中的旧候选选择和三态 Recovery 协议；文档、schema、prompt、测试和实现一致。
 
-## 8. 测试与验证
+## 8. 用户可见结果
+
+Recovery 的最后一个 turn 同时写入 `recovery.md` 并返回一句话 `summary`。不增加专门的摘要或报告 LLM 调用，不由 Host 重写 Agent 文字。`ready` 直接进入候选准备；`blocked` 直接展示 Agent 的 summary 和报告。部分恢复但 Agent 判断不影响任务时仍返回 `ready`，问题列入 `unresolved`。
+
+## 9. 测试与验证
 
 每个阶段只运行直接相关检查；修改源码必须先 `npm run build`，测试读取 `dist/`。最终至少运行：
 
@@ -268,7 +272,7 @@ Prompt 要求 Agent 自选检查方式，确认输入、问题、后继成果、
 
 真实 Runtime 或模型调用仍需显式 opt-in；默认验证不得产生外部费用。
 
-## 9. 风险与处理
+## 10. 风险与处理
 
 - **恢复误删**：所有操作先在 Harness 工作副本中进行；保留完整审计和失败诊断，用户源目录不直接修改。
 - **Agent 误把推断当事实**：Prompt、报告要求和审计分开记录观察、推断和未知；Host 不替它编造证据。
@@ -276,6 +280,6 @@ Prompt 要求 Agent 自选检查方式，确认输入、问题、后继成果、
 - **本机环境变化**：baseline 只封存文件起点；复用前轻量检查，缺失时修补运行条件，不重写起点。
 - **历史 ADR 漂移**：不修改历史理由，新增替代 ADR 并更新文档入口。
 
-## 10. 交付报告
+## 11. 交付报告
 
 实施 Agent 每阶段结束都必须报告：修改文件、删除的旧路径、验证命令和结果、尚未迁移的协议、剩余风险。最终报告必须区分“代码已实现并验证”和“仅完成文档或计划”，不得用模型自述替代测试证据。

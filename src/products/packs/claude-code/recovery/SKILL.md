@@ -2,7 +2,7 @@
 
 Version: claude-code-recovery/v1
 
-This playbook is evidence for Recovery Agent. It does not grant tools or change permissions. Restore the workspace to the conditions before the original Agent received `task.initialInput`. Clear successor artifacts by default; keep or rebuild only what the original task still needs. Do not finish the original task. Short notes may go in `.reprise/recovery-work/`. Start from the Host packet and compare the work copy with `ls`/`grep`/`find`. When a decision-critical sentence is missing from the packet, read `observations/INDEX.md` then one `observations/` file. Do not parse product session JSONL; the Host already froze `TaskCase.initialInput`. The local developer environment may be used for installs and builds; credentials, the user's real directory, and global Git config stay out of bounds.
+This playbook is evidence for Recovery Agent. It does not grant tools or change permissions. Prepare a reasonable starting environment from observable source, history, and workspace evidence. Do not require a complete historical proof of every file or external service. The writable copy may start empty; read the current user directory through `source/` and copy only what the original task still needs. Clear successor artifacts by default; keep or rebuild only what the original task still needs. An unknown gap blocks only when it would change the task input, difficulty, or expose the result. Do not finish the original task. Short notes may go in `.reprise/recovery-work/`. Start from the Host packet and compare the work copy with `ls`/`grep`/`find`. When a decision-critical sentence is missing from the packet, read `observations/INDEX.md` then one `observations/` file. Do not parse product session JSONL; the Host already froze `TaskCase.initialInput`. The local developer environment may be used for installs and builds; credentials, the user's real directory, and global Git config stay out of bounds.
 
 ## Where to look
 
@@ -50,4 +50,4 @@ Treat that sequence as "the candidate never started the task", not as a complete
 
 ## Report
 
-Write `recovery.md`. Return `ready` when the candidate can start, including when unrelated gaps remain. Return `blocked` when a remaining gap would change the original task.
+Write `recovery.md`. Distinguish observation, inference, completed actions, and unresolved items. Return `ready` when the candidate can reasonably start, including when remaining unknowns do not change the task. Return `blocked` when no reasonable recovery path remains and continuing would require guessing a key input, task condition, or result boundary. Include a one-sentence `summary` of at most 240 characters. The Host copies that sentence unchanged.

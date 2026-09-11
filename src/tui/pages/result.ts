@@ -1,12 +1,13 @@
 import { join } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
-import { compact } from '../format.js';
+import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
 import { kv, kvLinkBlock, panel, wrapBodyLine } from '../widgets.js';
+import type { ResultAction } from '../page-input.js';
 
-export function renderResult(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string): string[] {
+export function renderResult(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string, comparePending = false): string[] {
   const kind = result.record.outcome.termination.kind;
   const vacant = theme.framed ? '—' : '-';
   const skipped = result.comparison.result.status === 'skipped';
@@ -32,24 +33,37 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
     ...(headline ? ['', ...wrapBodyLine(headline, inner).map((line) => ` ${line}`)] : []),
     ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
     ...(skipped ? ['', kv(theme, t(locale, 'resultComparison'), t(locale, 'comparisonSkipped'), width - 2)] : []),
+    ...(comparePending ? ['', ` ${theme.style.accent(t(locale, 'hintCompare'))}`] : []),
     ...(skipped ? [] : kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), report, result.reportPath, width)),
     ...kvLinkBlock(theme, t(locale, 'resultReplica'), replicaLabel(runId, theme, width, vacant), replicaAbs, width),
     ...kvLinkBlock(theme, t(locale, 'resultTrace'), trace, traceAbs, width),
   ], width);
 }
 
-export function resultHints(locale: Locale = 'en', comparisonSkipped = false, comparePending = false): readonly (readonly [string, string])[] {
-  const rest: readonly (readonly [string, string])[] = [
-    ['t', t(locale, 'hintTrace')],
-    ['w', t(locale, 'hintReplica')],
-    ['Enter', t(locale, 'hintHome')],
-    ['Esc', t(locale, 'hintHome')],
-    ['b', t(locale, 'hintHome')],
-  ];
-  const report = comparisonSkipped ? rest : [['o', t(locale, 'hintReport')] as const, ...rest];
-  return comparePending || comparisonSkipped
-    ? [['c', t(locale, 'hintCompare')], ...report]
-    : report;
+export function resultHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
+  return [['Esc', t(locale, 'hintHome')]];
+}
+
+export function resultPointerAction(
+  lines: readonly string[],
+  row: number,
+  col: number,
+  locale: Locale = 'en',
+): ResultAction | undefined {
+  const line = lines[row];
+  if (!line) return undefined;
+  const compare = t(locale, 'hintCompare');
+  if (stripForHit(line).includes(compare)) return 'compare';
+  const href = hitFileLink(line, col);
+  if (!href) return undefined;
+  if (/environment[/\\]runs[/\\]/i.test(href)) return 'open-replica';
+  if (/report\.html/i.test(href)) return 'open-report';
+  if (/[/\\]runs[/\\]/i.test(href)) return 'open-trace';
+  return undefined;
+}
+
+function stripForHit(line: string): string {
+  return line.replace(/\u001b\[[0-9;]*m/g, '').replace(/\u001b\]8;;[^\u0007\u001b]*(?:\u0007|\u001b\\)/g, '');
 }
 
 export function renderFailure(theme: Theme, width: number, message: string, locale: Locale = 'en'): string[] {
@@ -67,10 +81,7 @@ export function failureHints(locale: Locale = 'en'): readonly (readonly [string,
 
 function terminationBanner(theme: Theme, kind: string): string {
   if (kind === 'completed') return theme.style.ok(` ${theme.glyphs.ok} ${kind}`);
-  if (kind === 'cancelled' || kind === 'blocked' || kind === 'stalled') {
-    return theme.style.warn(` ${theme.glyphs.warn} ${kind}`);
-  }
-  return theme.style.danger(` ${theme.glyphs.err} ${kind}`);
+  return theme.style.danger(` ${kind === 'failed' ? theme.glyphs.err : theme.glyphs.warn} ${kind}`);
 }
 
 function comparisonWord(comparison: ExperimentResult['comparison']['result'], locale: Locale): string {
@@ -103,7 +114,7 @@ function metricsLine(theme: Theme, result: ExperimentResult, locale: Locale): st
     `${facts.turns} turn${facts.turns === 1 ? '' : 's'}`,
     `${facts.controllerCalls} controller`,
     facts.tokenCount === undefined ? `${missing} tokens` : `${facts.tokenCount} tokens`,
-    `${missing} cost`,
+    facts.costUsd === undefined ? `${missing} cost` : `$${facts.costUsd.toFixed(2)}`,
   ].filter((part): part is string => Boolean(part));
   return parts.join(` ${theme.glyphs.sep} `);
 }

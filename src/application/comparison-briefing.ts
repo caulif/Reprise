@@ -4,12 +4,12 @@ import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import type { ComparisonContext } from "../agents/comparison-agent.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { ComparisonBriefingContextSchema, ComparisonLinksSchema, type ComparisonLinkRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
+import { ComparisonBriefingContextSchema, ComparisonLinksSchema, GitSinkManifestSchema, type ComparisonLinkRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
 import type { ArtifactManifest } from "../infrastructure/store/experiment-store.js";
 import { briefingComparisonContext } from "./comparison.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
-import { gitSinkRefsListing, gitSinkRoot } from "../environment/git-sink.js";
+import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
 
 export type ComparisonLink = ComparisonLinkRecord;
 
@@ -20,7 +20,7 @@ export function comparisonOrientation(input: {
   candidateAvailable: boolean;
 }): string {
   return [
-    "Compare this real task's historical outcome with the candidate run. Read observations/user-inputs/INDEX.tsv first, then every user turn in index order.",
+    "Compare this real task's historical outcome with the candidate run. Start from observations/user-inputs/INDEX.tsv and read user turns as needed.",
     `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
     `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
     "Hard metrics live in briefing/facts/context.json (Host projection; missing stays missing).",
@@ -105,6 +105,7 @@ export async function writeComparisonBriefing(input: {
   const factsContext = `${JSON.stringify(briefingComparisonContext(input.context), null, 2)}\n`;
   const factsLinks = `${JSON.stringify(links, null, 2)}\n`;
   const candidateProcess = processIndex(input.events);
+  const gitSink = await loadGitSinkBriefing(input.experimentRoot, input.record.attempt.runId);
   const files: Record<string, string> = {
     "INDEX.md": indexMarkdown,
     "task/initial-input.txt": input.taskCase.privacy.allowModelText ? input.taskCase.initialInput.text : "[REDACTED]",
@@ -112,6 +113,8 @@ export async function writeComparisonBriefing(input: {
     "facts/context.json": factsContext,
     "facts/comparison-links.json": factsLinks,
     "candidate/SNAPSHOT.txt": `snapshotStatus=${snapshotStatus}\ncleanupStatus=${cleanupStatus}\n`,
+    "candidate/git-sink-refs.txt": gitSink.refsListing,
+    "candidate/git-sink-manifest.json": gitSink.catalogJson,
   };
   for (const [path, body] of Object.entries(files)) await writeAtomic(join(briefingRoot, ...path.split("/")), body);
   await mkdir(join(input.attemptRoot, "history"), { recursive: true });
@@ -132,7 +135,7 @@ export async function writeComparisonBriefing(input: {
     "",
     "Process index: candidate/process-index.tsv and briefing/candidate/process-index.tsv",
     "User views: turns/*/user-view.md (controller-briefing/run/turns mount)",
-    "Git experiment remotes: candidate/git-sink-refs.txt",
+    "Git experiment remotes: briefing/candidate/git-sink-refs.txt and briefing/candidate/git-sink-manifest.json",
     "Controller messages: run/sent-user-messages.jsonl and observations/user-inputs/",
     "",
   ].join("\n"));
@@ -154,10 +157,8 @@ export async function writeComparisonBriefing(input: {
     "utf8",
   ).catch(() => "");
   if (userView) await writeAtomic(join(input.attemptRoot, "candidate", "user-view.md"), userView);
-  await writeAtomic(
-    join(input.attemptRoot, "candidate", "git-sink-refs.txt"),
-    await gitSinkRefsListing(gitSinkRoot(join(input.experimentRoot, "environment"), input.record.attempt.runId)),
-  );
+  await writeAtomic(join(input.attemptRoot, "candidate", "git-sink-refs.txt"), gitSink.refsListing);
+  await writeAtomic(join(input.attemptRoot, "candidate", "git-sink-manifest.json"), gitSink.catalogJson);
   return { indexMarkdown, links, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
 }
 
@@ -196,7 +197,8 @@ function comparisonIndex(snapshotStatus: "complete" | "incomplete" | "unknown", 
     "- observations/INDEX.md — frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/ — frozen historical conversation (read-only mount)",
     "- turns/ — candidate settled-turn briefing including each user-view.md (read-only mount)",
-    "- candidate/git-sink-refs.txt — Harness Git sink refs for this run (not the user's GitHub)",
+    "- briefing/candidate/git-sink-refs.txt — Host catalog of initial and final Harness sink refs by repository relative path (not the user's GitHub); objectStore may be not_seeded",
+    "- briefing/candidate/git-sink-manifest.json — structured sink catalog including isolation, objectStore, completeness, issues.code, and ref changes; incomplete_object_store is not a capability difference; do not assume a branch named main",
     "- run/sent-user-messages.jsonl — Controller messages sent this run (read-only mount)",
     "- candidate/ — retained candidate workspace snapshot (read-only mount)",
     "- evidence/ — materialized Host artifacts (read-only mount)",
@@ -284,3 +286,21 @@ async function comparisonLinks(input: {
 }
 
 function slash(path: string): string { return path.replaceAll("\\", "/"); }
+
+async function loadGitSinkBriefing(experimentRoot: string, runId: string): Promise<{ refsListing: string; catalogJson: string }> {
+  const sinkRoot = gitSinkRoot(join(experimentRoot, "environment"), runId);
+  await finalizeGitSinkCatalog(sinkRoot);
+  const catalog = await readGitSinkManifest(sinkRoot) ?? {
+    schemaVersion: 2 as const,
+    sinkId: runId,
+    treeRoot: sinkRoot,
+    sinkRoot,
+    status: "missing" as const,
+    finalized: true,
+    repos: [],
+    skipped: [],
+    errors: ["manifest_missing"],
+  };
+  if (!Value.Check(GitSinkManifestSchema, catalog)) throw new Error("Git sink catalog does not satisfy GitSinkManifestSchema.");
+  return { refsListing: await gitSinkRefsListing(sinkRoot), catalogJson: `${JSON.stringify(catalog, null, 2)}\n` };
+}

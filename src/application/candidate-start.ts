@@ -19,7 +19,7 @@ export type CandidateStartGate = {
 /** Candidate start is an application rule: no runnable sealed scene, no CandidateRun. */
 export function candidateStartBlocked(input: CandidateStartGate): string | undefined {
   if (input.recovery) {
-    if (input.recovery.envelopeStatus === "blocked" || input.recovery.envelopeStatus === "insufficient_evidence") {
+    if (input.recovery.envelopeStatus === "blocked") {
       return "Candidate was not started because recovery did not produce a runnable workspace.";
     }
     if (input.recovery.baselineMode === "unsupported" || input.recovery.runnable === "unsupported" || input.recovery.runnable === "blocked") {
@@ -30,9 +30,6 @@ export function candidateStartBlocked(input: CandidateStartGate): string | undef
     }
     if (!input.recovery.hasAccept || input.recovery.userStatus === "failed") {
       return "Candidate was not started because recovery did not produce a runnable workspace.";
-    }
-    if (input.recovery.taskReadinessStatus === "not_ready" || input.recovery.taskReadinessStatus === "blocked") {
-      return "Candidate was not started because Host task continuation readiness is not ready.";
     }
     return undefined;
   }

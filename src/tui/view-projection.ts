@@ -189,7 +189,14 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     },
   };
   if (input.page === 'running') return { ...base, running: runningModel(input) };
-  if (input.page === 'result' && input.result) return { ...base, running: runningModel(input), result: input.result };
+  if (input.page === 'result' && input.result) {
+    return {
+      ...base,
+      running: runningModel(input),
+      result: input.result,
+      ...(input.timelineReadOffset ? { bodyOffset: input.timelineReadOffset } : {}),
+    };
+  }
   return base;
 }
 
@@ -203,6 +210,11 @@ function recoveryModel(input: Input): import('./pages/run.js').RecoveryPreviewMo
     })),
     ...(input.recoveryView.providerPreview?.reportText ? { reportText: input.recoveryView.providerPreview.reportText } : {}),
     unresolved: input.recoveryView.baseline.recovery.unresolved,
+    ...(input.recoveryView.baseline.recovery.summary
+      ? { summary: input.recoveryView.baseline.recovery.summary }
+      : input.recoveryView.recovery?.status === 'completed' && input.recoveryView.recovery.value.summary
+        ? { summary: input.recoveryView.recovery.value.summary }
+        : {}),
     changedPathCount: input.recoveryView.providerPreview?.changedPaths.length ?? 0,
     skippedPaths: [...(input.recoveryView.baseline.budget?.excludedEntries ?? [])],
     ...(input.recoveryView.baseline.recovery.failureStage

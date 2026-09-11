@@ -108,9 +108,7 @@ export async function checkRecoveryReadiness(root: string, context: RecoveryRead
       feedback: "No extra task paths were derived; Host already accepted the recovered workspace fingerprint.",
     };
   }
-  if (missingPaths.length > 0 && context.pathSemantics !== "task_outputs") return { status: "not_ready", checkedPaths, missingPaths, commandChecks, feedback: `Missing or empty task-relevant paths: ${missingPaths.join(", ")}` };
-  if (context.pathSemantics === "task_outputs") missingPaths.length = 0;
-  if (options.executeCommands && context.priorCommands.length > 0) {
+  if (options.executeCommands && missingPaths.length === 0 && context.priorCommands.length > 0) {
     for (const command of context.priorCommands) {
       const parsed = parseReadinessCommand(command);
       if (!parsed) {
@@ -144,23 +142,27 @@ ${result.stderr}`),
   } else {
     commandChecks.push(...context.priorCommands.map((command) => ({ command, status: "not_run" as const, reason: "explicit staging command execution was not enabled" })));
   }
+  const missingNote = missingPaths.length > 0 ? ` Host-derived paths missing from staging: ${missingPaths.join(", ")}.` : "";
   const failedCommands = commandChecks.filter((check) => check.status === "failed" || check.status === "blocked");
-  if (failedCommands.length > 0) {
-    return { status: "not_ready", checkedPaths, missingPaths, commandChecks, feedback: `Task paths are present, but ${failedCommands.length} readiness command check(s) did not pass.` };
-  }
-  return { status: "ready", checkedPaths, missingPaths, commandChecks, feedback: `All ${checkedPaths.length} task-relevant paths are present and readable${commandChecks.some((check) => check.status === "passed") ? "; readiness commands passed." : "."}` };
+  const commandNote = failedCommands.length > 0
+    ? ` ${failedCommands.length} readiness command check(s) did not pass; Host does not rewrite the Agent envelope.`
+    : "";
+  return {
+    status: "ready",
+    checkedPaths,
+    missingPaths,
+    commandChecks,
+    feedback: `Host recorded ${checkedPaths.length} inspectable path fact(s).${missingNote}${commandNote}${commandChecks.some((check) => check.status === "passed") ? " Some readiness commands passed." : ""}`.trim(),
+  };
 }
 
-export function taskReadinessBlocksPublication(status: RecoveryReadinessResult["status"]): boolean {
-  return status !== "ready";
+export function taskReadinessBlocksPublication(_status: RecoveryReadinessResult["status"]): boolean {
+  return false;
 }
 
 export function taskContinuationOutcome(
   envelopeStatus: string,
-  readiness: RecoveryReadinessResult,
 ): "ready_for_task" | "unrecoverable" | "blocked_by_safety" {
-  if (readiness.status === "blocked") return "blocked_by_safety";
-  if (readiness.status === "not_ready") return "unrecoverable";
   return envelopeStatus === "ready" ? "ready_for_task" : "unrecoverable";
 }
 
@@ -178,23 +180,12 @@ export function applyTaskReadinessGate<T extends {
   baseline: {
     readiness: { runnable: string; strictness: string; blockingResourceIds: string[] };
   };
-}>(preview: T, readiness: RecoveryReadinessResult): T {
-  if (!taskReadinessBlocksPublication(readiness.status)) return preview;
-  return {
-    ...preview,
-    baseline: {
-      ...preview.baseline,
-      readiness: {
-        ...preview.baseline.readiness,
-        runnable: "blocked",
-        blockingResourceIds: [...new Set([...preview.baseline.readiness.blockingResourceIds, "task-readiness"])],
-      },
-    },
-  };
+}>(preview: T, _readiness: RecoveryReadinessResult): T {
+  return preview;
 }
 
 function isOutputProducingTask(text: string): boolean {
-  return /(?:下载|整睆|创建|生戝|写入|导出|保存|download|organize|create|generate|write|export|save)/i.test(text);
+  return /(?:下载|整理|创建|生成|写入|导出|保存|download|organize|create|generate|write|export|save)/i.test(text);
 }
 
 function parseReadinessCommand(command: string, platform: NodeJS.Platform = process.platform): { command: string; args: string[] } | undefined {

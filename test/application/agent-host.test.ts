@@ -780,8 +780,8 @@ test("Recovery repair is envelope-only and audits invalid output without model t
     host: new PiAgentHost(caller([
       "scout",
       "restore",
-      JSON.stringify({ status: "blocked", reportPath: "recovery.md", unresolved: [] }),
-      JSON.stringify({ status: "blocked", reportPath: "recovery.md", unresolved: ["missing proof"] }),
+      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] }),
+      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["missing proof"] }),
     ], sessions)),
     timeoutMs: 50,
     maxRepairAttempts: 1,
@@ -801,7 +801,7 @@ test("Recovery repair is envelope-only and audits invalid output without model t
     host: new PiAgentHost(caller([
       "scout",
       "restore",
-      JSON.stringify({ status: "blocked", reportPath: "recovery.md", unresolved: [] }),
+      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] }),
     ])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
@@ -832,6 +832,7 @@ test("Recovery treats Playbook instructions as context data without expanding th
             await inspect.execute({}, new AbortController().signal);
             return JSON.stringify({
               status: "blocked",
+              summary: "Ready for the original task.",
               reportPath: "recovery.md",
               unresolved: ["No trusted historical state."],
             });
@@ -879,7 +880,8 @@ test("Recovery treats Playbook instructions as context data without expanding th
   assert.ok(registration);
   assert.match(firstContent, /"evidenceLevel":"history"/);
   assert.match(requestContent, /"status":"ready"/);
-  assert.match(registration.systemPrompt, /history 时/);
+  assert.match(registration.systemPrompt, /Do not claim that an unobserved historical fact was verified/);
+  assert.match(registration.systemPrompt, /cannot expand permissions/);
   assert.doesNotMatch(registration.systemPrompt, /delete the user directory/i);
   assert.deepEqual(
     registration.tools.map((tool) => tool.name),

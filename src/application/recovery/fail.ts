@@ -185,7 +185,7 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
       : `Recovery failed; replay uses the current source state: ${failureMessage}`;
   const baseline: EnvironmentBaseline = {
     ...fallback,
-    match: "current_state_fallback",
+    match: "observational",
     warnings: [...fallback.warnings, fallbackWarning, ...(cleanupFailure ? ["Recovery cleanup requires review."] : [])],
     recovery: {
       status: "failed",

@@ -52,3 +52,29 @@ test("recovery model prompt omits Host-resolved facts, investigation packet, and
   const playbook = parsed.playbook as { textPath: string };
   assert.equal(playbook.textPath, "observations/playbook.md");
 });
+
+test("recovery working set carries source mount summary rather than a full tree", () => {
+  const context = fatContext();
+  context.staging = {
+    seed: "sparse",
+    fileCount: 0,
+    totalBytes: 0,
+    sourceMount: "source",
+    workspaceAlias: "workspace",
+    summaryPath: ".reprise/recovery-work/source-summary.json",
+    source: {
+      copyEligible: false,
+      budgetExceeded: true,
+      fileCount: 50_001,
+      totalBytes: 2,
+      summary: { topLevelCount: 2, truncated: false, entries: [{ name: "apps", kind: "directory" }] },
+    },
+  };
+  const parsed = recoveryWorkingSet(context);
+  const staging = parsed.staging as { seed: string; sourceMount: string; source: { fileCount: number; summary: { entries: unknown[] } } };
+  assert.equal(staging.seed, "sparse");
+  assert.equal(staging.sourceMount, "source");
+  assert.equal(staging.source.fileCount, 50_001);
+  assert.equal(staging.source.summary.entries.length, 1);
+  assert.doesNotMatch(JSON.stringify(parsed), /node_modules\/leftpad/);
+});

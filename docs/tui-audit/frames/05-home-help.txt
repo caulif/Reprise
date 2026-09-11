@@ -31,4 +31,4 @@ Reprise v0.1.0   C:\reprise                   gpt-5.6-terra · medium   ⚠ Harn
  ❯ Type /command, Tab to complete
  Welcome back. Use /help to see the available local workflows.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [/] Command  [Tab] Complete  [Enter] Run command  [?] Keys  [Ctrl+C] Exit
+ [/] Command  [Ctrl+C] Exit

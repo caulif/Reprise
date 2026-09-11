@@ -248,6 +248,41 @@ test("Comparison draft written in round two is readable later in the same Sessio
   assert.equal(await readFile(join(root, "report.html"), "utf8"), "<p>draft</p>");
 });
 
+test("Comparison writes the Host metrics shell before the compose turn", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-comparison-shell-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = recoveryTools(root, {
+    allowWrite: (path) => path === "report.html",
+    completionPaths: new Set(["report.html"]),
+  });
+  const shell = "<html data-host-shell=\"1\"><section data-host=\"metrics\"></section></html>";
+  let round = 0;
+  let composeSawShell = false;
+  const comparison = new ComparisonAgent({
+    host: new PiAgentHost({
+      createSession: (input) => ({
+        append: async () => {
+          round += 1;
+          if (round === 3) {
+            const page = await input.tools.find((tool) => tool.name === "read")?.execute({ path: "report.html" }, new AbortController().signal);
+            composeSawShell = (page?.content ?? "").includes("data-host=\"metrics\"");
+          }
+          if (round < 4) return "working";
+          return JSON.stringify({ status: "completed", reportPath: "report.html", evidenceRefs: [] });
+        },
+        cancel() {},
+      }),
+    }),
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+  });
+  const result = await comparison.compare({ ...context(), reportShellHtml: shell }, tools);
+  assert.equal(result.status, "completed");
+  assert.equal(composeSawShell, true);
+  assert.match(await readFile(join(root, "report.html"), "utf8"), /data-host="metrics"/);
+});
+
 test("Comparison stops later turns when the first freeform request is cancelled", async () => {
   let appends = 0;
   const ac = new AbortController();

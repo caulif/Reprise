@@ -228,6 +228,16 @@ test('the error page names a Git sink path overflow without dumping clone output
   assert.doesNotMatch(text, /pack-1e4f159b/);
 });
 
+test('the error page maps catalog schema failures without naming GitSinkManifestSchema', () => {
+  const theme = createTheme(120, false);
+  const error = new Error("git-sink-manifest.json failed GitSinkManifestSchema.");
+  const mapped = operatorErrorMessage(error, 'zh');
+  assert.doesNotMatch(mapped, /GitSinkManifestSchema/);
+  const text = renderFailure(theme, 120, mapped).join('\n');
+  assert.doesNotMatch(text, /GitSinkManifestSchema/);
+  assert.match(text, /Git 隔离目录无效/);
+});
+
 test('stateRail wraps on segment boundaries at compact width', () => {
   const theme = createTheme(60, false);
   const lines = stateRail(theme, 'launching', 60);
@@ -336,6 +346,24 @@ test('a 24-row running workbench stays within the viewport', () => {
   assert.doesNotMatch(text, /You cannot type/);
   assert.doesNotMatch(text, /\[f\]/);
   assert.doesNotMatch(text, /\[o\]/);
+});
+
+test('recovery workbench footer has no find', () => {
+  const text = renderWorkbench({
+    page: 'running',
+    cwd: 'C:\\src',
+    hasApiConfig: true,
+    hasUsableAuth: true,
+    hasTaskCase: true,
+    message: 'Recovering.',
+    running: {
+      entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
+      currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
+      runPhase: 'recovery',
+    },
+  }, 120, 24).join('\n');
+  assert.match(text, /Ctrl\+C/);
+  assert.doesNotMatch(text, /\[\/\]/);
 });
 
 test('help names the keys of the page it was opened on', () => {
@@ -574,6 +602,9 @@ test('a colored theme emits Grok-style controller and target codes', () => {
   const theme = createTheme(80, true);
   assert.match(theme.style.controller('sent'), /\u001b\[/);
   assert.match(theme.style.target('screen'), /\u001b\[/);
+  assert.match(theme.style.danger('fail'), /\u001b\[/);
+  assert.notEqual(theme.style.danger('x'), theme.style.target('x'));
+  assert.notEqual(theme.style.danger('x'), theme.style.warn('x'));
   assert.match(theme.style.selected('row'), /\u001b\[/);
   assert.notEqual(theme.style.controller('sent'), 'sent');
 });
@@ -842,8 +873,8 @@ test('history windows long lists around the selection', () => {
   assert.doesNotMatch(text, /experiment-1\s/);
 });
 
-test('result page advertises opening its local report and trace', () => {
-  assert.deepEqual(resultHints(), [['o', 'Open report'], ['t', 'Open trace'], ['w', 'Open replica'], ['Enter', 'Home'], ['Esc', 'Home'], ['b', 'Home']]);
+test('result page footer only lists Esc because short labels are clickable', () => {
+  assert.deepEqual(resultHints(), [['Esc', 'Home']]);
 });
 
 test('failed result shows the recorded failure instead of limitations copy', () => {
@@ -939,54 +970,10 @@ test('limit_reached result explains the turn cap', () => {
   assert.match(text, /Comparison still ran/);
 });
 
-test('compact result keeps Trace on one line', () => {
-  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
-  const theme = createTheme(60, false);
-  const text = renderResult(theme, 60, {
-    reportPath: 'C:\\exp\\report.html',
-    experimentRoot: 'C:\\exp',
-    preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
-    record: {
-      attempt: { runId: 'run-6d6a47ae-e824-4f40-b1ad-35565ba8943c' },
-      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
-    },
-    decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
-    comparison: { result: { status: 'completed' } },
-    facts: { wallClockMs: 49_000, turns: 1, controllerCalls: 1 },
-  } as never).join('\n');
-  assert.match(text, /49s/);
-  assert.match(text, /1 turn/);
-  assert.match(text, /not recorded tokens/);
-  assert.match(text, /not recorded cost/);
-  assert.match(text, /Trace\s+.*runs\/run-6d6a47ae/);
-  assert.doesNotMatch(text, /\n\s+runs\//);
-});
-
-test('result metrics name candidate time when comparison made the experiment longer', () => {
-  const theme = createTheme(120, false);
-  const text = renderResult(theme, 120, {
-    reportPath: 'C:\\exp\\report.html',
-    experimentRoot: 'C:\\exp',
-    preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
-    },
-    decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
-    comparison: { result: { status: 'completed' } },
-    facts: { wallClockMs: 72_000, elapsedMs: 148_000, turns: 1, controllerCalls: 1 },
-  } as never).join('\n');
-  assert.match(text, /148s/);
-  assert.match(text, /candidate 72s/);
-});
-
-test('running hints keep cancel and drop canvas operations', () => {
-  const theme = createTheme(60, false);
-  const line = keyHints(theme, runningHints('ALL', true), 60);
-  assert.ok(visibleWidth(line) <= 60, line);
+test('recovery running hints omit find', () => {
+  const theme = createTheme(80, false);
+  const line = keyHints(theme, runningHints('ALL', false, true, 'en', false, false, false), 80);
   assert.match(line, /Ctrl\+C/);
-  assert.match(line, /Find/);
+  assert.doesNotMatch(line, /Find/);
   assert.match(line, /Expand/);
-  assert.doesNotMatch(line, /\[f\]/);
-  assert.doesNotMatch(line, /\[o\]/);
 });

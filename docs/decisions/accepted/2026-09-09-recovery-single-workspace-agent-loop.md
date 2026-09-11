@@ -10,9 +10,9 @@
 
 ## 决定
 
-Recovery 使用一个连续 Session 和一个工作副本，固定进行三个 turn：理解与侦察、恢复与准备、自检与结论。每轮 prompt 只描述当轮目的，Agent 自己决定调查、修改或验证。最终结论为 `ready` 或 `blocked`，由 Agent 判断缺口是否影响任务；无关缺口可以出现在 `ready` 的 `unresolved` 中。Host 只负责不可逆安全边界、运行控制、审计、持久化和机械检查，不按证据等级、changed path 或零变更改写结论。
+Recovery 使用一个连续 Session 和一个工作副本，固定进行三个 turn：理解与侦察、恢复与准备、自检与结论。每轮 prompt 只描述当轮目的，Agent 自己决定调查、修改或验证。最终结论为 `ready` 或 `blocked`，并带一句话 `summary`，由 Agent 判断缺口是否影响任务；无关缺口可以出现在 `ready` 的 `unresolved` 中。Host 只负责不可逆安全边界、运行控制、审计、持久化和机械检查，不按证据等级、changed path 或零变更改写结论，也不改写 Agent 的 summary 或报告。
 
-System Prompt 不包含任务资源清单、轮次动作或输出 JSON。任务资源由第一轮推导，输出契约由最后一轮请求提供。Agent 可在 `.reprise/recovery-work/` 留下短记录，封存前清理；必要内容由 Agent 自行迁移。机械检查失败且可修复时，把具体事实追加到同一 Session，不另开业务评审 Session。封存后的起点供 `prepareRun` 复制独立副本；复用正常时不重新恢复。
+System Prompt 不包含任务资源清单、轮次动作或输出 JSON。任务资源由第一轮推导，输出契约由最后一轮请求提供。Agent 可在 `.reprise/recovery-work/` 留下短记录，封存前清理；必要内容由 Agent 自行迁移。机械检查失败且可修复时，把具体事实追加到同一 Session，不另开业务评审 Session。封存后的起点供 `prepareRun` 复制独立副本；复用正常时不重新恢复。信封与 seed 同构见 [summary 与 seed 同构](./2026-09-11-recovery-envelope-summary.md)。
 
 ## 备选方案
 

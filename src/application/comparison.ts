@@ -14,6 +14,13 @@ import {
 } from '../agents/comparison-agent.js';
 import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/agent/host.js';
 import { recoveryEvidenceCatalog } from '../products/history/source-refs.js';
+import {
+  aggregateHistoricalUsage,
+  busyMsFromHistoricalEvents,
+  factsFromUsage,
+  usageCostUsd,
+} from './session-usage.js';
+import type { ComparisonMetricSide } from '../agents/comparison-agent.js';
 
 export type RunInspection = {
   runId: string;
@@ -27,6 +34,7 @@ export type RunInspection = {
   wallClockMs?: number;
   tokenCount?: number;
   tokenUsage?: { total?: number; input?: number; output?: number; cached?: number; reasoning?: number };
+  costUsd?: number;
   generationMs?: number;
   replayConditions?: readonly string[];
   workspaceEvidenceStatus?: 'available' | 'not_collected' | 'unavailable';
@@ -89,7 +97,7 @@ function buildReportFacts(run: RunRecord | undefined, inspection: RunInspection 
     replay: { conditions: [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: 'unavailable' },
   };
   const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
-  const metrics = projectedMetrics(inspection);
+  const metrics = projectedMetrics(taskCase, inspection);
   return {
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
     models: { candidate: run.manifest?.resolvedModel.resolved ?? run.attempt.candidate.requestedModel, ...(run.manifest ? { controller: run.manifest.controller.requestedModel, comparison: run.manifest.comparison.requestedModel } : {}) },
@@ -102,17 +110,45 @@ function buildReportFacts(run: RunRecord | undefined, inspection: RunInspection 
   };
 }
 
-function projectedMetrics(inspection: RunInspection | undefined): ComparisonReportFacts['metrics'] {
-  const tokens = inspection?.tokenUsage;
-  if (!tokens) return undefined;
-  const generationRate =
-    tokens.output !== undefined && inspection?.generationMs !== undefined
-      ? { outputTokens: tokens.output, durationMs: inspection.generationMs }
-      : undefined;
-  return {
-    tokens,
-    ...(generationRate ? { generationRate } : {}),
+function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefined): ComparisonReportFacts['metrics'] {
+  const baselineUsage = aggregateHistoricalUsage(taskCase.historicalEvents);
+  const baselineBusy = busyMsFromHistoricalEvents(taskCase.historicalEvents);
+  const baselineTokens = factsFromUsage(baselineUsage);
+  const baselineCost = usageCostUsd(baselineUsage, taskCase.sourceRuntimeEvidence.model);
+  const baseline = sideMetrics(baselineBusy, baselineTokens, baselineCost);
+  const candidate = sideMetrics(inspection?.wallClockMs, inspection?.tokenUsage, inspection?.costUsd);
+  const metrics = {
+    ...(baseline ? { baseline } : {}),
+    ...(candidate ? { candidate } : {}),
   };
+  return Object.keys(metrics).length ? metrics : undefined;
+}
+
+function sideMetrics(
+  elapsedMs: number | undefined,
+  tokens: RunInspection['tokenUsage'] | undefined,
+  costUsd: number | undefined,
+): ComparisonMetricSide | undefined {
+  const side: ComparisonMetricSide = {
+    ...(elapsedMs === undefined ? {} : { elapsedMs }),
+    ...(tokens === undefined || tokenTotal(tokens) === undefined ? {} : {
+      tokens: {
+        total: tokenTotal(tokens)!,
+        ...(tokens.input === undefined ? {} : { input: tokens.input }),
+        ...(tokens.output === undefined ? {} : { output: tokens.output }),
+        ...(tokens.cached === undefined ? {} : { cached: tokens.cached }),
+        ...(tokens.reasoning === undefined ? {} : { reasoning: tokens.reasoning }),
+      },
+    }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+  };
+  return side.elapsedMs !== undefined || side.tokens !== undefined || side.costUsd !== undefined ? side : undefined;
+}
+
+function tokenTotal(tokens: NonNullable<RunInspection['tokenUsage']>): number | undefined {
+  if (tokens.total !== undefined) return tokens.total;
+  if (tokens.input === undefined && tokens.output === undefined && tokens.cached === undefined) return undefined;
+  return (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cached ?? 0);
 }
 
 function evidenceLevel(refs: readonly string[]): string {
@@ -166,6 +202,7 @@ export function briefingComparisonContext(context: ComparisonContext): Compariso
   const briefing = { ...context };
   delete briefing.ownedEvidenceRefs;
   delete briefing.attemptId;
+  delete briefing.reportShellHtml;
   return briefing;
 }
 

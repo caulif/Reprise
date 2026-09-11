@@ -4,7 +4,7 @@
 
 ## 按任务阅读
 
-Recovery 需求与实施差异见[起点恢复目标](./plan/recovery-initial-environment.md)，当前行为仍以环境规范和代码为准。
+Recovery 需求与实施差异见[起点恢复目标](./plan/recovery-initial-environment.md)，当前行为以[环境](./architecture/environment.md)、[稀疏 source mount](./decisions/accepted/2026-09-11-recovery-sparse-source-mount.md)、[三 Agent 契约清理](./decisions/accepted/2026-09-11-three-agent-contract-cleanup.md)、[信封 summary](./decisions/accepted/2026-09-11-recovery-envelope-summary.md)、[可观察判断](./decisions/accepted/2026-09-11-recovery-observable-judgment.md) 和 [source ACL 与诊断 readiness](./decisions/accepted/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md) 为准。
 
 | 要做什么 | 先读 | 再读 |
 |---|---|---|
@@ -13,12 +13,13 @@ Recovery 需求与实施差异见[起点恢复目标](./plan/recovery-initial-en
 | 修改存储或运行 | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md)、[环境](./architecture/environment.md) |
 | 修改模拟用户或对照 | [Controller](./architecture/controller.md)、[Comparison](./architecture/comparison.md) | [实验条件](./architecture/controller-experiment-conditions.md)、[验证边界](./architecture/validation.md) |
 | 按 Controller 源码审查改工具面或证据模型 | [源码审查后续修改](./plan/2026-09-10-controller-source-review-followup.md) | [协作工具面](./decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[实验条件](./architecture/controller-experiment-conditions.md) |
-| 修候选可见表面或 Git 远端隔离 | [可见表面与 Git sink](./plan/2026-09-10-visible-surface-and-git-sink.md) | [用户可见回合](./decisions/accepted/2026-09-09-candidate-runtime-events.md)、[环境](./architecture/environment.md) |
+| 修候选 Git 远端隔离 | [Git sink catalog](./decisions/accepted/2026-09-11-git-sink-catalog.md) | [环境](./architecture/environment.md) |
+| 改 Git 隔离不变量（安全 / 证据 / 对象库） | [Git 隔离不变量](./plan/2026-09-11-git-isolation-invariants.md) | [Git sink catalog](./decisions/accepted/2026-09-11-git-sink-catalog.md)、[环境](./architecture/environment.md) |
 | 重构 Controller Agent | [Controller 重构实施参考](./plan/controller-agent-reconstruction.md) | [Controller 架构](./architecture/controller.md)、[实验条件](./architecture/controller-experiment-conditions.md) |
 | 全面重构 Controller | [全面重构计划](./plan/controller-full-refactor-plan.md) | [重构实施参考](./plan/controller-agent-reconstruction.md)、[Controller 架构](./architecture/controller.md) |
-| 阅读比较卡与 Controller 编排 | [对照](./architecture/comparison.md)、[Controller](./architecture/controller.md) | [可分享比较卡](./decisions/accepted/2026-09-09-comparison-shareable-task-card.md)、[Controller 先理解再决策](./decisions/accepted/2026-09-09-controller-understand-then-view.md)；Comparison 全面重构见[实施方案](./plan/comparison-agent-full-refactor.md) |
+| 阅读比较卡与 Controller 编排 | [对照](./architecture/comparison.md)、[Controller](./architecture/controller.md) | [可分享比较卡](./decisions/accepted/2026-09-09-comparison-shareable-task-card.md)、[指标壳](./decisions/accepted/2026-09-11-comparison-host-metrics-shell.md)、[Controller 先理解再决策](./decisions/accepted/2026-09-09-controller-understand-then-view.md)；Comparison 全面重构见[实施方案](./plan/comparison-agent-full-refactor.md) |
 | 接入产品或平台 | [Product Pack](./architecture/product-plugin-compatibility.md) | [本机平台边界](./architecture/cross-platform.md) |
-| 核对验收缺口 | [架构目标与 A1–A18](./plan/reprise-architecture-redesign.md)、[TUI 目标](./plan/reprise-tui-design.md)、[操作者画布](./plan/reprise-tui-operator-canvas.md) | [内部 Agent Trace](./plan/reprise-tui-recovery-trace.md)、[方案 A：树时间线](./plan/reprise-tui-live-expand.md)、[操作者记录面全面重构](./plan/reprise-tui-operator-record-refactor.md)、[TUI 界面重构步骤](./plan/reprise-tui-surface-refactor.md)、[模块所有权归组](./plan/reprise-module-ownership.md)、[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)、[进度](./progress/MASTER.md)、[已关闭实施批次](./plan/reprise-refactoring-execution.md) |
+| 核对验收缺口 | [架构目标与 A1–A18](./plan/reprise-architecture-redesign.md)、[TUI 目标](./plan/reprise-tui-design.md)、[操作者画布](./plan/reprise-tui-operator-canvas.md) | [内部 Agent Trace](./plan/reprise-tui-recovery-trace.md)、[方案 A：树时间线](./plan/reprise-tui-live-expand.md)、[gutter 与层次](./plan/reprise-tui-gutter-chrome.md)、[指针、视口与查找](./plan/reprise-tui-pointer-scroll-find.md)、[操作者记录面全面重构](./plan/reprise-tui-operator-record-refactor.md)、[TUI 界面重构步骤](./plan/reprise-tui-surface-refactor.md)、[模块所有权归组](./plan/reprise-module-ownership.md)、[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)、[进度](./progress/MASTER.md)、[已关闭实施批次](./plan/reprise-refactoring-execution.md) |
 | 提交与审查 | [贡献指南](./CONTRIBUTING.md)、[工程门禁](./engineering-gates.md) | [任务 brief](./plan/task-brief-template.md)、[治理](./GOVERNANCE.md) |
 | 维护文档或发布 | [文档结构](./documentation-structure.md)、[文档指令](./AGENTS.md) | [发布检查](./release-checklist.md)、[Changelog](./CHANGELOG.md)、[事故复盘](./postmortem-template.md) |
 

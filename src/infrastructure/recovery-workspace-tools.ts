@@ -28,6 +28,8 @@ const POWERSHELL_UTF8_PREFIX = "try { [Console]::OutputEncoding=[System.Text.Enc
 const LONG_CWD_POWERSHELL =
   "Set-Location -LiteralPath $env:REPRISE_RECOVERY_CWD; Invoke-Expression $env:REPRISE_RECOVERY_COMMAND; exit $LASTEXITCODE";
 const HOST_RESERVED = new Set(["recovery-manifest.json"]);
+export const SOURCE_MOUNT = "source";
+const WORKSPACE_ALIAS = "workspace";
 
 export type RecoveryToolOperation = {
   operation: "workspace_tree" | "directory_list" | "file_read";
@@ -64,6 +66,8 @@ export type RecoveryToolOptions = {
   spawnProcess?: ProcessSpawner;
   /** When set, shell_exec cwd is this directory instead of `root`. */
   shellCwd?: string;
+  /** When true, `workspace/` is an alias of the writable tool root. */
+  workspaceAlias?: boolean;
   /** Explicit task-scoped variables added after environment sanitization. */
   shellEnv?: Readonly<Record<string, string>>;
   /** Whether this role may send file bytes to the model as native image blocks. */
@@ -149,7 +153,7 @@ function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { root, limit, boundedRead } = ctx;
   return {
     name: "ls",
-    description: "List a bounded directory within staging. Paths must be relative.",
+    description: "List a bounded directory. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
     parameters: Type.Object({
       path: Type.Optional(Type.String({ maxLength: 512 })),
       depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 4 })),
@@ -227,7 +231,7 @@ function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { root, limit, boundedRead, readRegularFile } = ctx;
   return {
     name: "grep",
-    description: "Search file contents in staging; returns a bounded list of path:line matches.",
+    description: "Search file contents; returns a bounded list of path:line matches. Prefix source/ to search the read-only user directory.",
     parameters: Type.Object({
       query: Type.String({ minLength: 1, maxLength: 256 }),
       path: Type.Optional(Type.String({ maxLength: 512 })),
@@ -274,7 +278,7 @@ function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { root, limit, boundedRead } = ctx;
   return {
     name: "find",
-    description: "Find staging paths whose names contain a bounded substring.",
+    description: "Find paths whose names contain a bounded substring. Prefix source/ to search the read-only user directory.",
     parameters: Type.Object({
       name: Type.String({ minLength: 1, maxLength: 256 }),
       path: Type.Optional(Type.String({ maxLength: 512 })),
@@ -391,7 +395,7 @@ function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { root, options, limit, ensureHome } = ctx;
   return {
     name: "shell_exec",
-    description: shellExecDescription(ctx),
+    description: shellExecDescription(),
     parameters: Type.Object({
       command: Type.String({ minLength: 1, maxLength: MAX_COMMAND_BYTES }),
     }),
@@ -602,6 +606,7 @@ function sanitizedEnvironment(home: string): NodeJS.ProcessEnv {
   env.GIT_CONFIG_GLOBAL = resolve(home, "gitconfig");
   env.GIT_CONFIG_SYSTEM = resolve(home, "missing-system-gitconfig");
   env.GIT_CONFIG_NOSYSTEM = "1";
+  env.GIT_NO_LAZY_FETCH = "1";
   return env;
 }
 
@@ -627,10 +632,9 @@ function assertWritablePath(ctx: RecoveryToolContext, path: { relative: string; 
 function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command: string): void {
   const prefixes = ctx.options.denyDestructiveOnPrefix ?? Object.keys(ctx.mounts);
   if (!prefixes.length) return;
-  const mutates = /\b(Remove-Item|Set-Content|Add-Content|Out-File|New-Item|Move-Item|Copy-Item|Rename-Item|rmdir|\brm\b|\bdel\b|\brd\b)\b/i.test(
-    command,
-  );
-  if (!mutates) return;
+  if (!/\b(Remove-Item|Set-Content|Add-Content|Out-File|New-Item|Move-Item|Copy-Item|Rename-Item|rmdir|\brm\b|\bdel\b|\brd\b)\b/i.test(command)) {
+    return;
+  }
   for (const prefix of prefixes) {
     if (command.includes(prefix) || command.includes(ctx.mounts[prefix] ?? ""))
       throw new Error("write_denied: shell_exec must not mutate a read-only mount.");
@@ -674,14 +678,8 @@ type ResolvedWorkspacePath = {
   containmentRoot: string;
 };
 
-function shellExecDescription(ctx: RecoveryToolContext): string {
-  const mounts = Object.keys(ctx.mounts);
-  const denied = ctx.options.denyDestructiveOnPrefix ?? [];
-  const readonly = [...new Set([...mounts, ...denied])];
-  const lock = readonly.length
-    ? ` Read-only mounts (${readonly.join(", ")}) must not be mutated. Write only staging files the role allows (Comparison: scratch/, work/comparison-plan.md, report.html).`
-    : "";
-  return `Run one host-shell command with cwd locked to staging. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. Sensitive-file and read-only-mount checks match the command text, not a semantic sandbox.${lock}`;
+function shellExecDescription(): string {
+  return `Run one host-shell command with cwd locked to the writable workspace. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. Sensitive-file checks match the command text. Read-only mounts are not writable through workspace tools. Recovery also denies source writes with a filesystem ACL and then verifies the source fingerprint.`;
 }
 
 function workspaceRelative(input: string): string | { root: true } | undefined {
@@ -705,6 +703,12 @@ function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath 
   if (typeof relativePath !== "string")
     return { absolute: ctx.root, relative: "", writable: true, containmentRoot: ctx.root };
   const parts = relativePath.split("/");
+  if (ctx.options.workspaceAlias && parts[0] === WORKSPACE_ALIAS) {
+    const rest = parts.slice(1).join("/");
+    if (!rest) return { absolute: ctx.root, relative: "", writable: true, containmentRoot: ctx.root };
+    const inner = containedPath(ctx.root, rest);
+    return { ...inner, writable: true, containmentRoot: ctx.root };
+  }
   const mountRoot = ctx.mounts[parts[0] ?? ""];
   if (mountRoot) {
     const rest = parts.slice(1).join("/");
@@ -755,18 +759,20 @@ async function listTree(ctx: RecoveryToolContext, prefix: string, depth: number)
   const output: string[] = [];
   const seen = new Set<string>();
   for (const entry of entries) {
+    if (output.length >= MAX_LIST_ENTRIES) break;
     const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
     seen.add(entry.name);
     if (entry.isSymbolicLink()) throw new Error(`Symbolic link encountered: ${relativePath}`);
     output.push(`${entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other"} ${relativePath}`);
-    if (entry.isDirectory() && depth > 0 && output.length < MAX_LIST_ENTRIES)
-      output.push(...(await listTree(ctx, relativePath, depth - 1)));
+    if (entry.isDirectory() && depth > 0 && output.length < MAX_LIST_ENTRIES) {
+      const nested = await listTree(ctx, relativePath, depth - 1);
+      output.push(...nested.slice(0, MAX_LIST_ENTRIES - output.length));
+    }
   }
   if (!prefix) {
     for (const mount of Object.keys(ctx.mounts)) {
       if (seen.has(mount)) continue;
       output.unshift(`directory ${mount}`);
-      if (depth > 0 && output.length < MAX_LIST_ENTRIES) output.push(...(await listTree(ctx, mount, depth - 1)));
     }
   }
   return output;

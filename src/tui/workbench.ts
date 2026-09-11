@@ -53,6 +53,7 @@ export type WorkbenchView = {
   readonly confirm?: ConfirmModel;
   readonly running?: RunningModel;
   readonly comparePending?: boolean;
+  readonly bodyOffset?: number;
   readonly result?: ExperimentResult;
   readonly cancelling?: boolean;
 };
@@ -276,7 +277,7 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
     return renderTimeline(theme, width, view.running, height);
   }
   if (view.page === 'result' && view.result) {
-    const summary = renderResult(theme, width, view.result, view.locale ?? 'en', view.productLabel);
+    const summary = renderResult(theme, width, view.result, view.locale ?? 'en', view.productLabel, Boolean(view.comparePending));
     if (!view.running?.entries.length) return summary;
     return [...renderTimeline(theme, width, view.running, height === undefined ? undefined : Math.max(6, height - summary.length - 1)), '', ...summary];
   }
@@ -285,7 +286,17 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
 
 function renderLayoutList(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
   if (view.page === 'running' && view.running) return clipLines(renderTimeline(theme, width, view.running, height), height);
-  return clipLines(renderBody(theme, view, width, height), height);
+  return clipLines(renderBody(theme, view, width, height), height, view.bodyOffset ?? 0);
+}
+
+export function workbenchBodyOrigin(view: WorkbenchView, width: number, height?: number): { header: number; rail: number } {
+  const short = isShortViewport(height);
+  const theme = createTheme(width);
+  const header = trimChrome(renderHeader(theme, view, width), short, 'head').length;
+  const rail = view.page === 'running' && view.running
+    ? runningChrome(theme, width, view.running).length
+    : 0;
+  return { header, rail };
 }
 
 function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string, string])[] {
@@ -316,14 +327,11 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
       locale,
       Boolean(view.running.finding),
       Boolean(view.running.readingMode),
+      !isRecoveryChrome(view.running),
     );
   }
   if (view.page === 'result') {
-    return resultHints(
-      locale,
-      view.result?.comparison.result.status === 'skipped',
-      Boolean(view.comparePending),
-    );
+    return resultHints(locale);
   }
   if (view.page === 'error') return failureHints(locale);
   return [['b', t(locale, 'hintBack')], ['Ctrl+C', t(locale, 'hintExit')]];

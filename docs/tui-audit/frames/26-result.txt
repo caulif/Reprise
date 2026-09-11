@@ -2,14 +2,14 @@ Reprise   Run result                                                            
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ▎ Fix the failing test.                                                                                                 
 ▎ Run the focused test.                                                                                                 
- public response line 1                                                                                                 
- public response line 2                                                                                                 
- public response line 3                                                                                                 
- public response line 4                                                                                                 
- public response line 5                                                                                                 
- public response line 6                                                                                                 
- ... +35 lines                                                                                                          
- * Codex · working · 00:00                                                                                              
+▎ public response line 1                                                                                                
+  public response line 2                                                                                                
+  public response line 3                                                                                                
+  public response line 4                                                                                                
+  public response line 5                                                                                                
+  public response line 6                                                                                                
+  ... +35 lines                                                                                                         
+ * Codex · working                                                                                                 00:00
 
 ┌─ Run result ─ completed ─────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ✓ completed                                                                                                          │
@@ -24,4 +24,4 @@ Reprise   Run result                                                            
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Experiment finished. Open the report from the short label.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [o] Open report  [t] Open trace  [w] Open replica  [Enter] Home  [Esc] Home  [b] Home
+ [Esc] Home

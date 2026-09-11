@@ -1,9 +1,7 @@
 import { persistRecoveryEvaluation, recoveryEvaluationCase, recoveryTimingSummary } from "./evaluation.js";
 import {
-  applyTaskReadinessGate,
   measureRecoveryStagingReadiness,
   taskContinuationOutcome,
-  taskReadinessBlocksPublication,
 } from "./readiness.js";
 import {
   diagnosisReasonCode,
@@ -41,7 +39,7 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
       commandCheckCount: session.readinessResult.commandChecks.length,
     },
   });
-  session.activeProviderPreview = applyTaskReadinessGate(validated, session.readinessResult);
+  session.activeProviderPreview = validated;
   await recordRecoveryAttempt(
     session,
     recoveryAttemptRecord({
@@ -56,7 +54,7 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   );
   moveRecoveryState(session, recovery.value.status === "ready" ? "candidate_verified" : "candidate_pending_review");
   session.verification = recovery.value.status === "ready" ? "verified" : "rejected";
-  session.taskOutcome = taskContinuationOutcome(recovery.value.status, session.readinessResult);
+  session.taskOutcome = taskContinuationOutcome(recovery.value.status);
   const preview = session.activeProviderPreview;
   if (preview.baseline.recovery && session.taskOutcome) {
     const baseline = {
@@ -65,8 +63,7 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
     };
     session.activeProviderPreview = { ...preview, baseline };
   }
-  const mayAccept =
-    recovery.value.status === "ready" && !taskReadinessBlocksPublication(session.readinessResult.status);
+  const mayAccept = recovery.value.status === "ready";
   if (mayAccept) {
     moveRecoveryState(session, "selected_checkpoint");
     moveRecoveryState(session, "ready_for_task");

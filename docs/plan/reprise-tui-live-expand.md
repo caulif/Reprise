@@ -2,7 +2,7 @@
 
 本文是方案 A 的目标合同。选定 **方案 A**：运行页主列是**一条**可滚时间线。恢复、模拟用户、对照三页的探路同构：**Reprise 内部 Agent 共用一种子弹色**，**候选 Agent 用另一种**；不再用满宽填色声部卡，也不再给恢复 / 控制 / 对照各画一色。列尾**一行**活着状态。操作者不学「全文 overlay」。
 
-短句脊、flush 成 `▸`、页面衔接仍以[内部 Agent Trace](./reprise-tui-recovery-trace.md)为准；候选正式正文仍只来自 `candidate.user_view_persisted`，进行中只读 `payload.live`，见[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)。按键合同以[阅读与交互](./reprise-tui-design.md)为准，下文与之冲突处以本文为目标。真终端点击、滚轮与拖选见[阅读锚点](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)与[平台矩阵](./2026-09-08-platform-evidence-matrix.md)。本机草图：`docs/research/reprise-tui-operator-canvas.html`（「目标逐步」= 方案 A）。HTML 不受控，不拥有验收。
+短句脊、flush 成 `▸`、页面衔接仍以[内部 Agent Trace](./reprise-tui-recovery-trace.md)为准；候选正式正文仍只来自 `candidate.user_view_persisted`，进行中只读 `payload.live`，见[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)。按键合同以[阅读与交互](./reprise-tui-design.md)为准，下文与之冲突处以本文为目标。查找范围、点开产物、滚轮带动视口见[指针、视口与查找](./reprise-tui-pointer-scroll-find.md)。运行页左缘分色与层次见[gutter 与层次](./reprise-tui-gutter-chrome.md)。真终端点击、滚轮与拖选见[阅读锚点](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)与[平台矩阵](./2026-09-08-platform-evidence-matrix.md)。本机草图：`docs/research/reprise-tui-operator-canvas.html`（「目标逐步」= 方案 A）；画法草图 `docs/research/reprise-tui-gutter-preview.html`。HTML 不受控，不拥有验收。
 
 主列默认仍不铺 inspect 账本、argv、compact、thinking、`message.content`。不改 Pack API major、信封 schema、不解析 `message.content`。
 
@@ -74,20 +74,9 @@ TUI **禁止**把 Claude `message.content` / Codex reasoning 当主列。候选�
 
 不把 Host 的控制Agent 短句画进候选子弹。不把 Input 再画一遍到候选树。
 
-## 滚轮为什么没动
+## 滚轮与点击的剩余合同
 
-运行页开启 SGR 鼠标报告（含 1003 全运动）。Windows Terminal 因此把滚轮交给应用，不再滚原生缓冲。`dispatchCanvasInput` 不识别滚轮按钮（SGR 64/65）。`ScrollView` 的 `follow: 'none'` 也没有接到这些事件。方向键能移选中，滚轮两头落空。
-
-目标：
-
-| 输入 | 行为 |
-|---|---|
-| 滚轮上/下 | 与 ↑ ↓ 相同：移动时间选中并暂停跟随；内容超出视口时带动 `readingOffset` |
-| PageUp / PageDown | 已有，保持 |
-| 单击 `▸` | 切换展开（主列子行，不是 overlay） |
-| 拖动 / 阅读模式 `v` | 不把 move 当单击；`v` 关闭鼠标报告，滚轮交还终端原生滚动（若宿主支持） |
-
-假终端注入 SGR 滚轮序列必须能改变 `timelineSelected` 或 `readingOffset`。真终端 Windows 滚轮仍走平台矩阵。
+SGR 64/65 与单击 `▸` 的运行页语义见[键盘与鼠标](#键盘与鼠标)。视口必须跟着滚、结果页必须点开短标签、恢复页不得提供查找：见[指针、视口与查找](./reprise-tui-pointer-scroll-find.md)。真终端仍走平台矩阵。
 
 ## 主列为什么显得乱
 

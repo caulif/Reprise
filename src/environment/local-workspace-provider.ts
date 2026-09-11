@@ -27,8 +27,14 @@ import {
   assertRecoveryPathBoundary as assertRecoveryPathBoundary,
   changedPaths as changedPaths,
   cleanupRecoveryTransients as cleanupRecoveryTransients,
+  summarizeSourceRoot as summarizeSourceRoot,
+  writeSourceSummary as writeSourceSummary,
+  baselineMatchFromRecoveryStatus as baselineMatchFromRecoveryStatus,
+  type SourceDirectorySummary,
 } from './local-workspace-fs.js';
-import { gitSinkRoot, isolateGitTopology } from './git-sink.js';
+import { finalizeGitSinkCatalog, gitSinkRoot, isolateGitTopology, removeGitSink, GitIsolationError, type GitIsolationRecord } from './git-sink.js';
+import { SNAPSHOT_LIMITS, type SnapshotLimits } from './snapshots.js';
+import { lockSourceWrites, type SourceWriteLock } from './source-write-lock.js';
 export {
   publishDirectory as publishDirectory,
   calculateWorkspaceBudget as calculateWorkspaceBudget,
@@ -107,7 +113,9 @@ export type EnvironmentBaseline = {
   recovery?: {
     /** New writes are ready | blocked | failed; recovered | partial | insufficient_evidence are disk-read only. */
     status: 'ready' | 'blocked' | 'failed' | 'recovered' | 'partial' | 'insufficient_evidence';
-    /** Host-owned task continuation outcome; agent status alone is not task readiness. */
+    /** Agent one-sentence summary; Host copies this unchanged when present. */
+    summary?: string;
+    /** Host-recorded inspectable facts; Agent envelope decides publication except mechanical safety. */
     taskOutcome?: 'ready_for_task' | 'unrecoverable' | 'blocked_by_safety' | 'runner_failed';
     reportRef?: string;
     unresolved: string[];
@@ -132,17 +140,21 @@ export type PreparedEnvironmentRef = {
   resources: [{ resourceId: string; mode: 'isolated'; bindingRef: string; writable: true; owner: 'harness' }];
   manifestRef: string;
   beforeFingerprint: EnvironmentFingerprint;
+  gitSink?: { status: 'ready' | 'partial' | 'failed' | 'missing'; catalog: 'git-sink-manifest.json' };
 };
 
 export type ReleaseResult = { status: 'released' | 'already_released'; environmentId: string };
 
 export type RecoveryEnvelope = {
   status: 'ready' | 'blocked';
+  summary: string;
   reportPath: 'recovery.md';
   unresolved: string[];
   evidenceRefs?: string[];
   manifestPath?: 'recovery-manifest.json';
 };
+
+export type RecoveryWorkspaceSeed = 'copied' | 'sparse' | 'checkpoint';
 
 export type RecoveryStaging = {
   recoveryId: string;
@@ -152,6 +164,8 @@ export type RecoveryStaging = {
   sourceFingerprint: EnvironmentFingerprint;
   sourceBudget: WorkspaceBudget;
   sourceTripwireBefore: EnvironmentFingerprint;
+  workspaceSeed: RecoveryWorkspaceSeed;
+  sourceSummary: SourceDirectorySummary;
   checkpointRoot?: string;
   checkpointId?: string;
   checkpointFingerprint?: EnvironmentFingerprint;
@@ -170,14 +184,25 @@ export type RecoveryPreview = {
 export class LocalWorkspaceProvider {
   readonly #root: string;
   readonly #copyTree: TreeCopier;
+  readonly #copyLimits: SnapshotLimits;
   readonly #preparedRoots = new Map<string, string>();
   readonly #recoveryStaging = new Map<string, RecoveryStaging>();
   readonly #recoveryCheckpoints = new Map<string, RecoveryCheckpoint>();
+  readonly #sourceLocks = new Map<string, SourceWriteLock>();
 
-  constructor(root: string, copy = copyTree) {
+  constructor(root: string, copy = copyTree, copyLimits: SnapshotLimits = SNAPSHOT_LIMITS) {
     if (!isAbsolute(root)) throw new Error('Environment root must be an absolute path.');
     this.#root = resolve(root);
     this.#copyTree = copy;
+    this.#copyLimits = copyLimits;
+  }
+
+  #fingerprintTree(root: string) {
+    return fingerprintTree(root, SNAPSHOT_LIMITS);
+  }
+
+  #inspectSource(root: string) {
+    return fingerprintTree(root, this.#copyLimits);
   }
 
   /**
@@ -198,7 +223,7 @@ export class LocalWorkspaceProvider {
     if (sourceRoot === this.#root || isInside(this.#root, sourceRoot) || isInside(sourceRoot, this.#root)) {
       throw new Error('Environment source and provider workspace must not overlap.');
     }
-    const captured = await fingerprintTree(sourceRoot);
+    const captured = await this.#inspectSource(sourceRoot);
     const { fingerprint, budget } = captured;
     const excluded = budget.excludedEntries ?? [];
     return {
@@ -207,7 +232,7 @@ export class LocalWorkspaceProvider {
       mode: 'canonical',
       match: 'matched',
       resources: [],
-      readiness: { runnable: budget.blockedReasons.length ? 'blocked' : 'isolated', strictness: 'strict', blockingResourceIds: budget.blockedReasons.length ? ['workspace-budget'] : [] },
+      readiness: { runnable: 'isolated', strictness: 'strict', blockingResourceIds: [] },
       fingerprint,
       budget,
       capabilities: { canFork: true, fingerprints: ['file_tree'], externalSideEffects: 'none' },
@@ -228,7 +253,7 @@ export class LocalWorkspaceProvider {
     try {
       await mkdir(root);
       await this.#copyTree(resolve(source.sourceRoot), root);
-      const captured = await fingerprintTree(root);
+      const captured = await this.#fingerprintTree(root);
       if (captured.fingerprint.digest !== inspected.fingerprint.digest)
         throw new Error('Recovery checkpoint changed while it was being captured.');
       const checkpoint = { checkpointId, caseId: source.caseId, root, fingerprint: captured.fingerprint, budget: captured.budget };
@@ -244,7 +269,7 @@ export class LocalWorkspaceProvider {
   /** Captures a reviewed provider-owned staging tree without treating it as the user source. */
   async captureRecoveryCheckpointFromStaging(staging: RecoveryStaging): Promise<RecoveryCheckpoint> {
     this.#assertRecoveryStaging(staging);
-    const captured = await fingerprintTree(staging.root);
+    const captured = await this.#fingerprintTree(staging.root);
     const checkpointId = `checkpoint-${staging.caseId}-review-${randomUUID()}`;
     const root = join(this.#root, 'recovery-checkpoints', checkpointId);
     await mkdir(dirname(root), { recursive: true });
@@ -303,13 +328,12 @@ export class LocalWorkspaceProvider {
     return join(this.#root, 'recovery-checkpoints', `${checkpointId}.json`);
   }
   /**
-   * Creates an unpublished, provider-owned recovery copy.  The caller may only
-   * obtain this path to pass it to the Recovery tool whitelist; publishing still
-   * requires validateRecovery() and acceptRecovery().
+   * Creates an unpublished, provider-owned recovery workspace. Large sources
+   * start sparse with a read-only source mount; small sources may be copied.
    */
   async beginRecovery(source: EnvironmentSource, clues: EnvironmentClue[] = [], policy: EnvironmentPolicy = {}): Promise<RecoveryStaging> {
     const inspected = await this.inspectBaseline(source, clues, policy);
-    if (inspected.mode !== 'canonical' || inspected.readiness.runnable !== 'isolated') {
+    if (inspected.mode !== 'canonical') {
       throw new Error(`Environment source for ${source.caseId} cannot be recovered.`);
     }
     const recoveriesRoot = join(this.#root, 'rs');
@@ -324,29 +348,55 @@ export class LocalWorkspaceProvider {
       const checkpointRoot = source.checkpointRoot ? resolve(source.checkpointRoot) : undefined;
       let checkpointId: string | undefined;
       let checkpointFingerprint: EnvironmentFingerprint | undefined;
+      let workspaceSeed: RecoveryWorkspaceSeed;
       if (checkpointRoot) {
         if (!isInside(this.#root, checkpointRoot) || checkpointRoot === this.#root || isInside(this.#root, sourceRoot) || isInside(sourceRoot, checkpointRoot))
           throw new Error('Recovery checkpoint must be an independent provider-owned directory.');
         const checkpointRecord = await this.#resolveRecoveryCheckpoint(checkpointRoot, source.caseId);
         const checkpointInfo = await lstat(checkpointRoot);
         if (!checkpointInfo.isDirectory()) throw new Error('Recovery checkpoint must be a directory.');
-        const checkpoint = await fingerprintTree(checkpointRoot);
+        const checkpoint = await this.#fingerprintTree(checkpointRoot);
         if (checkpoint.budget.blockedReasons.length) throw new Error('Recovery checkpoint exceeds workspace budget.');
         if (checkpoint.fingerprint.digest !== checkpointRecord.fingerprint.digest)
           throw new Error('Recovery checkpoint fingerprint does not match its captured digest.');
         checkpointId = checkpointRecord.checkpointId;
         checkpointFingerprint = checkpoint.fingerprint;
         await this.#copyTree(checkpointRoot, root);
-      } else {
+        workspaceSeed = 'checkpoint';
+      } else if (inspected.budget.blockedReasons.length === 0) {
         await this.#copyTree(sourceRoot, root);
+        workspaceSeed = 'copied';
+      } else {
+        workspaceSeed = 'sparse';
       }
-      await isolateGitTopology(root, gitSinkRoot(this.#root, recoveryId));
-      const staging: RecoveryStaging = { recoveryId, caseId: source.caseId, sourceRoot, root, sourceFingerprint: inspected.fingerprint, sourceBudget: inspected.budget, sourceTripwireBefore: inspected.fingerprint, ...(checkpointRoot ? { checkpointRoot } : {}), ...(checkpointId ? { checkpointId } : {}), ...(checkpointFingerprint ? { checkpointFingerprint } : {}), temporaryRoot, ...(source.playbook ? { playbook: source.playbook } : {}) };
+      const sourceSummary = await summarizeSourceRoot(sourceRoot, inspected.budget);
+      if (workspaceSeed === 'sparse') await writeSourceSummary(root, sourceSummary);
+      await this.#isolateOwned(root, recoveryId);
+      const staging: RecoveryStaging = {
+        recoveryId,
+        caseId: source.caseId,
+        sourceRoot,
+        root,
+        sourceFingerprint: inspected.fingerprint,
+        sourceBudget: inspected.budget,
+        sourceTripwireBefore: inspected.fingerprint,
+        workspaceSeed,
+        sourceSummary,
+        ...(checkpointRoot ? { checkpointRoot } : {}),
+        ...(checkpointId ? { checkpointId } : {}),
+        ...(checkpointFingerprint ? { checkpointFingerprint } : {}),
+        temporaryRoot,
+        ...(source.playbook ? { playbook: source.playbook } : {}),
+      };
+      await this.#lockSource(staging);
       this.#recoveryStaging.set(recoveryId, staging);
       return staging;
     } catch (error) {
+      this.#recoveryStaging.delete(recoveryId);
+      await this.#unlockSource(recoveryId);
       await rm(root, { recursive: true, force: true });
       await rm(temporaryRoot, { recursive: true, force: true });
+      await removeGitSink(gitSinkRoot(this.#root, recoveryId));
       throw error;
     }
   }
@@ -364,7 +414,7 @@ export class LocalWorkspaceProvider {
     expectedDigest?: string,
   ): Promise<EnvironmentFingerprint> {
     this.#assertRecoveryStaging(staging);
-    const current = (await fingerprintTree(staging.root)).fingerprint;
+    const current = (await this.#fingerprintTree(staging.root)).fingerprint;
     const baselineDigest = expectedDigest ?? staging.checkpointFingerprint?.digest ?? staging.sourceFingerprint.digest;
     if (current.digest !== baselineDigest)
       throw new Error('Recovery delta base fingerprint does not match the owned staging tree.');
@@ -390,7 +440,7 @@ export class LocalWorkspaceProvider {
         await ensureRegularRecoveryTarget(target);
         await writeAtomic(target, state.bytes);
       }
-      const result = (await fingerprintTree(temporary)).fingerprint;
+      const result = (await this.#fingerprintTree(temporary)).fingerprint;
       await rm(staging.root, { recursive: true, force: true });
       await rename(temporary, staging.root);
       return result;
@@ -399,17 +449,22 @@ export class LocalWorkspaceProvider {
       throw error;
     }
   }
-  /** Recopy the user source onto staging. Callers must also `releasePreparation` so Recovery restarts all three turns. */
+  /** Recopy the original seed onto staging. Callers must also `releasePreparation` so Recovery restarts all three turns. */
   async resetRecoveryWorkspace(staging: RecoveryStaging): Promise<void> {
     this.#assertRecoveryStaging(staging);
     const temporary = join(this.#root, 'rt', `${staging.recoveryId}-reset-${randomUUID()}`);
     await mkdir(temporary, { recursive: true });
     try {
-      await this.#copyTree(staging.sourceRoot, temporary);
+      if (staging.workspaceSeed === 'checkpoint' && staging.checkpointRoot) {
+        await this.#copyTree(staging.checkpointRoot, temporary);
+      } else if (staging.workspaceSeed === 'copied') {
+        await this.#copyTree(staging.sourceRoot, temporary);
+      }
       await rm(staging.root, { recursive: true, force: true });
       await mkdir(staging.root, { recursive: true });
-      await this.#copyTree(temporary, staging.root);
-      await isolateGitTopology(staging.root, gitSinkRoot(this.#root, staging.recoveryId));
+      if (staging.workspaceSeed !== 'sparse') await this.#copyTree(temporary, staging.root);
+      if (staging.workspaceSeed === 'sparse') await writeSourceSummary(staging.root, staging.sourceSummary);
+      await this.#isolateOwned(staging.root, staging.recoveryId);
     } finally {
       await rm(temporary, { recursive: true, force: true });
     }
@@ -417,7 +472,7 @@ export class LocalWorkspaceProvider {
 
   async fingerprintRecoveryStaging(staging: RecoveryStaging): Promise<EnvironmentFingerprint> {
     this.#assertRecoveryStaging(staging);
-    return (await fingerprintTree(staging.root)).fingerprint;
+    return (await this.#fingerprintTree(staging.root)).fingerprint;
   }
 
   /** Mechanical checks only; never ranks evidence or rewrites ready/blocked from changed paths. */
@@ -428,16 +483,17 @@ export class LocalWorkspaceProvider {
     try {
       await this.probeRecovery(staging, result);
       if (!isRecoveryEnvelope(result)) throw new Error('Recovery result is invalid.');
-      sourceTripwireAfter = (await fingerprintTree(staging.sourceRoot)).fingerprint;
+      sourceTripwireAfter = (await this.#inspectSource(staging.sourceRoot)).fingerprint;
       reportText = await readRecoveryReport(staging.root);
       await cleanupRecoveryTransients(staging.root);
       if (staging.temporaryRoot) await rm(staging.temporaryRoot, { recursive: true, force: true });
-      const captured = await fingerprintTree(staging.root);
+      const captured = await this.#fingerprintTree(staging.root);
       if (captured.budget.blockedReasons.length) throw new Error(captured.budget.blockedReasons.join(' '));
       const changed = changedPaths(staging.sourceFingerprint, captured.fingerprint).filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json' && path !== '.reprise/recovery-work' && !path.startsWith('.reprise/recovery-work/'));
       assertRecoveryPathBoundary(changed);
       const recovery: NonNullable<EnvironmentBaseline['recovery']> = {
         status: result.status,
+        summary: result.summary,
         ...(reportText ? { reportRef: 'recovery-md' } : {}),
         unresolved: [...result.unresolved],
         sourceDigest: staging.sourceFingerprint.digest,
@@ -445,7 +501,7 @@ export class LocalWorkspaceProvider {
         sourceTripwire: { before: staging.sourceTripwireBefore.digest, after: sourceTripwireAfter.digest },
         ...(staging.playbook ? { playbook: staging.playbook } : {}),
       };
-      const match = result.status === 'ready' ? 'recovered' : 'current_state_fallback';
+      const match = result.status === 'ready' ? 'recovered' : 'observational';
       const baseline: EnvironmentBaseline = {
         baselineId: `baseline-${staging.caseId}`, caseId: staging.caseId, mode: 'canonical', match, resources: [],
         readiness: {
@@ -470,7 +526,7 @@ export class LocalWorkspaceProvider {
     const root = staging.root;
     try {
       if (!isRecoveryEnvelope(result)) throw new RecoveryValidationError("provider_validation_failed", "Recovery result is invalid.");
-      const sourceTripwireAfter = (await fingerprintTree(staging.sourceRoot)).fingerprint;
+      const sourceTripwireAfter = (await this.#inspectSource(staging.sourceRoot)).fingerprint;
       if (sourceTripwireAfter.digest !== staging.sourceTripwireBefore.digest) throw new RecoveryValidationError("source_tripwire_failed", "Recovery changed the user source directory; staging will be discarded.");
       try {
         await readRecoveryReport(root);
@@ -478,7 +534,7 @@ export class LocalWorkspaceProvider {
         const message = error instanceof Error ? error.message : String(error);
         throw new RecoveryValidationError("provider_validation_failed", message.includes("ENOENT") || message.includes("no such file") ? "Recovery report recovery.md is missing." : message);
       }
-      const captured = await fingerprintTree(root);
+      const captured = await this.#fingerprintTree(root);
       if (captured.budget.blockedReasons.length) throw new RecoveryValidationError("provider_validation_failed", captured.budget.blockedReasons.join(" "));
       const changed = candidateChangedPaths(staging.sourceFingerprint, captured.fingerprint)
         .filter((path) => path !== "recovery.md" && path !== "recovery-manifest.json" && !path.startsWith(".reprise/recovery-work"));
@@ -499,14 +555,17 @@ export class LocalWorkspaceProvider {
     const baselineRoot = join(this.#root, 'baselines', staging.caseId);
     const markerPath = join(dirname(baselineRoot), `${staging.caseId}.marker.json`);
     if (await exists(baselineRoot) || await exists(markerPath)) throw new Error(`A baseline already exists for ${staging.caseId}.`);
+    await this.#unlockSource(staging.recoveryId);
     await mkdir(dirname(baselineRoot), { recursive: true });
     try {
       await publishDirectory(staging.root, baselineRoot);
-      await isolateGitTopology(baselineRoot, gitSinkRoot(this.#root, `baseline-${staging.caseId}`));
+      await this.#isolateOwned(baselineRoot, `baseline-${staging.caseId}`);
       await writeFile(markerPath, JSON.stringify({ sourceFingerprint: staging.sourceFingerprint.digest, recovery: preview.baseline.recovery }), { flag: 'wx' });
       this.#recoveryStaging.delete(staging.recoveryId);
+      await removeGitSink(gitSinkRoot(this.#root, preview.recoveryId));
       return { ...preview.baseline, root: baselineRoot };
     } catch (error) {
+      await removeGitSink(gitSinkRoot(this.#root, `baseline-${staging.caseId}`));
       await removeCaptureArtifacts(staging.root, baselineRoot, markerPath);
       this.#recoveryStaging.delete(staging.recoveryId);
       throw error;
@@ -517,13 +576,27 @@ export class LocalWorkspaceProvider {
     const owned = this.#recoveryStaging.get(staging.recoveryId);
     if (!owned || owned.root !== staging.root) return;
     this.#recoveryStaging.delete(staging.recoveryId);
+    await this.#unlockSource(staging.recoveryId);
     await rm(staging.root, { recursive: true, force: true });
     if (staging.temporaryRoot) await rm(staging.temporaryRoot, { recursive: true, force: true });
+    await removeGitSink(gitSinkRoot(this.#root, staging.recoveryId));
   }
 
   #assertRecoveryStaging(staging: RecoveryStaging): void {
     const owned = this.#recoveryStaging.get(staging.recoveryId);
     if (!owned || owned.root !== staging.root || !isInside(this.#root, staging.root)) throw new Error('Recovery staging is not owned by this provider.');
+  }
+
+  async #lockSource(staging: RecoveryStaging): Promise<void> {
+    const lock = await lockSourceWrites(staging.sourceRoot, join(this.#root, 'sl', staging.recoveryId));
+    this.#sourceLocks.set(staging.recoveryId, lock);
+  }
+
+  async #unlockSource(recoveryId: string): Promise<void> {
+    const lock = this.#sourceLocks.get(recoveryId);
+    if (!lock) return;
+    this.#sourceLocks.delete(recoveryId);
+    await lock.release();
   }
 
   /** Copies a previously inspected source into provider-owned baseline storage. */
@@ -538,7 +611,7 @@ export class LocalWorkspaceProvider {
       if (recorded && baselineExists) return loadSealedBaseline(source.caseId, baselineRoot, recorded);
       return inspected;
     }
-    if (inspected.readiness.runnable === 'blocked') return inspected;
+    if (inspected.budget.blockedReasons.length) return inspected;
     await mkdir(baselinesRoot, { recursive: true });
 
     if (recorded !== undefined && recorded.sourceFingerprint !== inspected.fingerprint.digest) {
@@ -555,18 +628,19 @@ export class LocalWorkspaceProvider {
         await mkdir(stagingRoot);
         await this.#copyTree(resolve(source.sourceRoot), stagingRoot);
         await publishDirectory(stagingRoot, baselineRoot);
-        await isolateGitTopology(baselineRoot, gitSinkRoot(this.#root, `baseline-${source.caseId}`));
+        await this.#isolateOwned(baselineRoot, `baseline-${source.caseId}`);
         await rm(markerPath, { force: true });
         await writeFile(markerPath, JSON.stringify({ sourceFingerprint: inspected.fingerprint.digest, ...(recorded?.recovery ? { recovery: recorded.recovery } : {}) }), { flag: 'wx' });
       } catch (error) {
+        await removeGitSink(gitSinkRoot(this.#root, `baseline-${source.caseId}`));
         await removeCaptureArtifacts(stagingRoot, baselineRoot, markerPath);
         throw error;
       }
     }
 
     try {
-      const { fingerprint } = await fingerprintTree(baselineRoot);
-      return { ...inspected, fingerprint, root: baselineRoot, ...(recorded?.recovery ? { recovery: recorded.recovery, match: recorded.recovery.status === 'ready' || recorded.recovery.status === 'recovered' ? 'recovered' : recorded.recovery.status === 'partial' ? 'recovered_partial' : 'current_state_fallback' } : {}) };
+      const { fingerprint } = await this.#fingerprintTree(baselineRoot);
+      return { ...inspected, fingerprint, root: baselineRoot, ...(recorded?.recovery ? { recovery: recorded.recovery, match: baselineMatchFromRecoveryStatus(recorded.recovery.status) } : {}) };
     } catch (error) {
       if (recorded === undefined) await removeCaptureArtifacts(undefined, baselineRoot, markerPath);
       throw error;
@@ -580,16 +654,20 @@ export class LocalWorkspaceProvider {
     const baselineRoot = resolve(baseline.root);
     if (!isInside(this.#root, baselineRoot)) throw new Error('Environment baseline is outside the provider workspace.');
     const runRoot = join(this.#root, 'runs', runId);
+    const sink = gitSinkRoot(this.#root, runId);
     await mkdir(dirname(runRoot), { recursive: true });
     await mkdir(runRoot);
     let beforeFingerprint: EnvironmentFingerprint;
+    let isolationStatus: 'ready' | 'partial' | 'failed' | 'missing';
     try {
       await this.#copyTree(baselineRoot, runRoot);
       await cleanupRecoveryTransients(runRoot);
-      await isolateGitTopology(runRoot, gitSinkRoot(this.#root, runId));
-      beforeFingerprint = (await fingerprintTree(runRoot)).fingerprint;
+      const isolation = await this.#isolateOwned(runRoot, runId);
+      isolationStatus = isolation.status;
+      beforeFingerprint = (await this.#fingerprintTree(runRoot)).fingerprint;
     } catch (error) {
       await rm(runRoot, { recursive: true, force: true });
+      await removeGitSink(sink);
       throw error;
     }
     this.#preparedRoots.set(`environment-${runId}`, runRoot);
@@ -602,6 +680,7 @@ export class LocalWorkspaceProvider {
       resources: [{ resourceId: 'workspace', mode: 'isolated', bindingRef: runRoot, writable: true, owner: 'harness' }],
       manifestRef: `environment:${runId}`,
       beforeFingerprint,
+      gitSink: { status: isolationStatus, catalog: 'git-sink-manifest.json' },
     };
   }
 
@@ -626,6 +705,7 @@ export class LocalWorkspaceProvider {
     const completeMarker = join(snapshotsRoot, `${environment.runId}.complete`);
     const incompleteMarker = join(snapshotsRoot, `${environment.runId}.incomplete`);
     try {
+      await finalizeGitSinkCatalog(gitSinkRoot(this.#root, environment.runId));
       await mkdir(snapshotsRoot, { recursive: true });
       await mkdir(staging);
       await this.#copyTree(environment.root, staging);
@@ -643,6 +723,12 @@ export class LocalWorkspaceProvider {
     }
   }
 
+  async #isolateOwned(tree: string, sinkId: string): Promise<GitIsolationRecord> {
+    const isolation = await isolateGitTopology(tree, gitSinkRoot(this.#root, sinkId));
+    if (isolation.status === 'failed') throw new GitIsolationError();
+    return isolation;
+  }
+
   // ponytail: ownership is process-local until a run manifest exists; later recovery can validate that manifest before cleanup.
   #assertOwnedEnvironment(environment: PreparedEnvironmentRef): void {
     const expectedRoot = this.#preparedRoots.get(environment.environmentId);
@@ -658,7 +744,7 @@ export class LocalWorkspaceProvider {
       if (isMissing(error)) throw new Error(`Environment workspace is unavailable: ${environment.root}`, { cause: error });
       throw error;
     }
-    return (await fingerprintTree(environment.root)).fingerprint;
+    return (await this.#fingerprintTree(environment.root)).fingerprint;
   }
 
   async release(environment: PreparedEnvironmentRef): Promise<ReleaseResult> {

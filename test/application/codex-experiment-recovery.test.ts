@@ -14,6 +14,20 @@ import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
 import { RecoveryAgent } from '../../src/agents/recovery-agent.js';
 import { PiAgentHost } from '../../src/infrastructure/agent/host.js';
 
+const exec = promisify(execFile);
+
+async function overwriteEvenIfLocked(root: string, filePath: string, content: string): Promise<void> {
+  try {
+    await writeFile(filePath, content);
+    return;
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "EPERM")) throw error;
+  }
+  const icacls = join(process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows", "System32", "icacls.exe");
+  await exec(icacls, [root, "/remove:d", "*S-1-1-0", "/T", "/C", "/Q"], { windowsHide: true });
+  await writeFile(filePath, content);
+}
+
 test("Recovery preserves a known verifier rejection as provider validation", () => {
   assert.equal(
     classifyRecoveryFailureStage(
@@ -63,6 +77,7 @@ test("Recovery records Provider validation failure separately from a completed A
       sessionId: "recovery-1",
       value: {
         status: "ready",
+        summary: "Ready for the original task.",
         reportPath: "recovery.md",
         unresolved: [],
       },
@@ -143,6 +158,7 @@ test("Recovery rejects an unproven recovered no-op before Provider promotion", a
       sessionId: "recovery-runner-crash",
       value: {
         status: "ready",
+        summary: "Ready for the original task.",
         reportPath: "recovery.md",
         unresolved: [],
         evidenceRefs: [evidenceRef],
@@ -258,12 +274,13 @@ test("Recovery source tripwire falls back to current state and records a warning
   const base = input(root, new VerifiedRuntime());
   const recovery: RecoveryAgentPort = {
     recover: async () => {
-      await writeFile(join(base.sourceRoot, "README.md"), "# out-of-bounds\n");
+      await overwriteEvenIfLocked(base.sourceRoot, join(base.sourceRoot, "README.md"), "# out-of-bounds\n");
       return {
         status: "completed",
         sessionId: "recovery-tripwire",
         value: {
           status: "blocked",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: ["No historical state."],
           evidenceRefs: [],
@@ -343,6 +360,7 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
         sessionId: "recovery-golden",
         value: {
           status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: [],
           evidenceRefs: ["artifact:historical-commit"],
@@ -437,6 +455,7 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
         sessionId: "recovery-candidate",
         value: {
           status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: ["Current task transcript does not prove the preimage."],
         },

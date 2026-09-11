@@ -22,6 +22,7 @@ export type RecoveryPreflightDiagnostic = {
     | "source_workspace_overlap"
     | "source_budget_blocked"
     | "filesystem_error"
+    | "git_remote_unprotected"
     | "unknown";
   operation: string;
   exitCategory: "hard_failure";
@@ -37,9 +38,11 @@ export function recoveryPreflightDiagnostic(
   const reasonCode = message.includes("cannot be recovered")
     ? "source_budget_blocked"
     : message.includes("must be a directory")
-      ? "source_not_directory"
-      : message.includes("must not overlap")
-        ? "source_workspace_overlap"
+    ? "source_not_directory"
+    : message.includes("must not overlap")
+      ? "source_workspace_overlap"
+      : message.includes("git_remote_unprotected")
+        ? "git_remote_unprotected"
         : message.includes("ENOENT") || facts.codes.includes("ENOENT")
           ? "source_unavailable"
           : operation === "begin_recovery_staging" &&

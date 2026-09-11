@@ -1,4 +1,5 @@
 import { matchesKey } from '@earendil-works/pi-tui';
+import { parseSgrMouse } from './page-input.js';
 
 export type HistoryTab = 'runs' | 'cases';
 
@@ -15,6 +16,10 @@ export type HistoryInputResult<T> = {
 
 /** Applies keyboard navigation without coupling it to history storage or TUI rendering. */
 export function handleHistoryInput<T>(state: HistoryInputState, data: string, items: readonly T[]): HistoryInputResult<T> | undefined {
+  const mouse = parseSgrMouse(data);
+  if (mouse?.button === 64) return move(state, items.length, -1);
+  if (mouse?.button === 65) return move(state, items.length, 1);
+  if (mouse) return { state, consume: true };
   if (matchesKey(data, 'up')) return move(state, items.length, -1);
   if (matchesKey(data, 'down')) return move(state, items.length, 1);
   if (matchesKey(data, 'tab')) return { state: { tab: state.tab === 'runs' ? 'cases' : 'runs', selected: 0 }, consume: true };

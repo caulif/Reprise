@@ -323,18 +323,6 @@ function uniqueRefs(
   return [...new Set(evidence.map((item) => item.ref))];
 }
 
-export function validateRecoveryEvidence(
-  _knownRefs: readonly string[],
-  result: {
-    status: "ready" | "blocked";
-    unresolved: readonly string[];
-  },
-): void {
-  if (result.status === "blocked" && result.unresolved.length === 0) {
-    throw new RecoveryEvidenceValidationError("blocked status requires unresolved items.");
-  }
-}
-
 /** A manifest path is always a candidate-visible, slash-relative staging path. */
 export function isRecoveryPath(path: string): boolean {
   return isRelativePath(path) && !path.startsWith(".git/") && path !== ".git";
@@ -484,4 +472,4 @@ export function integer(
 }
 
 
-export { recoveryTools, type RecoveryToolOptions, type RecoveryToolFilesystem, type RecoveryToolOperation } from "./recovery-workspace-tools.js";
+export { recoveryTools, SOURCE_MOUNT, type RecoveryToolOptions, type RecoveryToolFilesystem, type RecoveryToolOperation } from "./recovery-workspace-tools.js";

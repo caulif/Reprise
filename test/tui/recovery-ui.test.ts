@@ -166,6 +166,32 @@ test('confirmation with workspace changes still reports validation failure', () 
   assert.doesNotMatch(text, /没有观察到隔离工作区变更/);
 });
 
+test("confirmation for blocked recovery shows the Agent summary without crash copy", () => {
+  const theme = createTheme(120, false);
+  const text = renderConfirmation(theme, 120, {
+    candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
+    step: 3,
+    sourceRoot: String.raw`C:\workspace`,
+    effort: 'high',
+    harnessModel: 'gpt-5',
+    harnessAuthOk: true,
+    productLabel: 'Codex',
+    locale: 'en',
+    recovery: {
+      status: 'blocked',
+      summary: 'The original spreadsheet is missing from source.',
+      unresolved: ['workbook.xlsx'],
+      changedPathCount: 0,
+    },
+    policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
+    preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
+  } as never).join('\n');
+  assert.match(text, /Recovery blocked/);
+  assert.match(text, /The original spreadsheet is missing from source\./);
+  assert.doesNotMatch(text, /Could not recover/);
+  assert.doesNotMatch(text, /provider_validation_failed/);
+});
+
 test('generic failure page does not misclassify every phase as recovery', () => {
   const theme = createTheme(120, false);
   const text = renderFailure(theme, 120, 'workspace.symlink_skipped').join('\n');

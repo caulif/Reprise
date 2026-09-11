@@ -24,6 +24,7 @@ import {
 import { sha256 } from "../../src/core/identity.js";
 import { replayControlledRecoveryDeltaBytes } from "../../src/infrastructure/recovery-write-journal.js";
 import type { TaskCase } from "../../src/core/schema.js";
+import { lockSourceWrites } from "../../src/environment/source-write-lock.js";
 
 const exec = promisify(execFile);
 
@@ -44,6 +45,25 @@ function tool(root: string, name: string, options = {}) {
   );
   assert.ok(found, `missing ${name}`);
   return found;
+}
+
+function shellExitCode(result: { details?: unknown }): number | undefined {
+  const details = result.details;
+  if (!details || typeof details !== "object" || !("exitCode" in details)) return undefined;
+  const code = (details as { exitCode?: unknown }).exitCode;
+  return typeof code === "number" ? code : undefined;
+}
+
+async function assertShellLeftSourceIntact(
+  shell: { execute: (params: { command: string }, signal: AbortSignal) => Promise<{ details?: unknown }> },
+  command: string,
+  signal: AbortSignal,
+  file: string,
+  expected: string,
+): Promise<void> {
+  const result = await shell.execute({ command }, signal);
+  assert.notEqual(shellExitCode(result), 0, command);
+  assert.equal(await readFile(file, "utf8"), expected);
 }
 
 function nodeCommand(script: string): string {
@@ -785,6 +805,125 @@ test("ls treats omitted path, dot, and dot-slash as the staging root", async (t)
   await assert.rejects(listing.execute({ path: "C:/outside" }, signal));
 });
 
+test("source mount is readable and not writable; workspace alias writes the copy", async (t) => {
+  const root = await workspace();
+  const source = await mkdtemp(join(tmpdir(), "reprise-source-mount-"));
+  const lockDir = await mkdtemp(join(tmpdir(), "reprise-source-lock-"));
+  await mkdir(join(source, "deep", "task"), { recursive: true });
+  await writeFile(join(source, "deep", "task", "input.txt"), "needed\n");
+  await writeFile(join(source, "huge-cache.bin"), "cache");
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await rm(source, { recursive: true, force: true });
+    await rm(lockDir, { recursive: true, force: true });
+  });
+  const options = {
+    workspaceAlias: true,
+    mounts: { source, observations: source },
+    denyDestructiveOnPrefix: ["source", "observations"],
+    allowShell: true,
+    shellEnv: { REPRISE_SOURCE_MOUNT: source },
+  };
+  const signal = new AbortController().signal;
+  const listing = JSON.parse((await tool(root, "ls", options).execute({}, signal)).content) as string[];
+  assert.equal(listing.includes("directory source"), true);
+  assert.equal(listing.some((entry) => entry.includes("huge-cache.bin")), false);
+  const deep = await tool(root, "read", options).execute({ path: "source/deep/task/input.txt" }, signal);
+  assert.match(deep.content, /needed/);
+  const aliased = await tool(root, "read", options).execute({ path: "workspace/input.txt" }, signal);
+  assert.match(aliased.content, /original/);
+  await tool(root, "write", options).execute({ path: "workspace/copied.txt", content: "from-source" }, signal);
+  assert.equal(await readFile(join(root, "copied.txt"), "utf8"), "from-source");
+  await assert.rejects(
+    tool(root, "write", options).execute({ path: "source/deep/task/input.txt", content: "nope" }, signal),
+    /write_denied/,
+  );
+  await assert.rejects(
+    tool(root, "write", options).execute({ path: "observations/INDEX.md", content: "nope" }, signal),
+    /write_denied/,
+  );
+  assert.equal(await readFile(join(source, "deep", "task", "input.txt"), "utf8"), "needed\n");
+  if (process.platform !== "win32") return;
+  const lock = await lockSourceWrites(source, lockDir);
+  t.after(() => lock.release());
+  const shell = tool(root, "shell_exec", options);
+  await shell.execute(
+    { command: "Copy-Item -LiteralPath \"$env:REPRISE_SOURCE_MOUNT\\deep\\task\\input.txt\" -Destination .\\task-input.txt" },
+    signal,
+  );
+  assert.equal(await readFile(join(root, "task-input.txt"), "utf8"), "needed\n");
+  const protectedFile = join(source, "deep", "task", "input.txt");
+  await assert.rejects(
+    tool(root, "edit", options).execute({ path: "source/deep/task/input.txt", oldText: "needed", newText: "nope" }, signal),
+    /write_denied/,
+  );
+  await assertShellLeftSourceIntact(
+    shell,
+    "Set-Content -LiteralPath \"$env:REPRISE_SOURCE_MOUNT\\deep\\task\\input.txt\" -Value 'mutated'",
+    signal,
+    protectedFile,
+    "needed\n",
+  );
+  await assertShellLeftSourceIntact(
+    shell,
+    "Push-Location $env:REPRISE_SOURCE_MOUNT; ni leaked.txt",
+    signal,
+    protectedFile,
+    "needed\n",
+  );
+  await assertShellLeftSourceIntact(
+    shell,
+    "echo leaked > $env:REPRISE_SOURCE_MOUNT\\deep\\task\\hacked.txt",
+    signal,
+    protectedFile,
+    "needed\n",
+  );
+  await assertShellLeftSourceIntact(
+    shell,
+    "$p=$env:REPRISE_SOURCE_MOUNT; Set-Content -LiteralPath \"$p\\leaked.txt\" -Value x",
+    signal,
+    protectedFile,
+    "needed\n",
+  );
+  await assertShellLeftSourceIntact(
+    shell,
+    "[IO.File]::WriteAllText(\"$env:REPRISE_SOURCE_MOUNT\\bytes.txt\", \"x\")",
+    signal,
+    protectedFile,
+    "needed\n",
+  );
+  assert.equal(await readFile(protectedFile, "utf8"), "needed\n");
+  await assert.rejects(
+    tool(root, "read", options).execute({ path: source }, signal),
+    /relative path/,
+  );
+});
 
-
-
+test("source mount does not follow an escaping junction as a writable path", async (t) => {
+  const root = await workspace();
+  const source = await mkdtemp(join(tmpdir(), "reprise-source-link-"));
+  const outside = await mkdtemp(join(tmpdir(), "reprise-outside-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+    await rm(source, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  });
+  await writeFile(join(outside, "secret.txt"), "secret");
+  try {
+    await symlink(outside, join(source, "escape"), "junction");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && ["EPERM", "EACCES"].includes(String(error.code))) {
+      t.skip("directory junction creation is unavailable in this environment");
+      return;
+    }
+    throw error;
+  }
+  const options = { mounts: { source }, denyDestructiveOnPrefix: ["source"] };
+  const signal = new AbortController().signal;
+  await assert.rejects(tool(root, "read", options).execute({ path: "source/escape/secret.txt" }, signal));
+  await assert.rejects(
+    tool(root, "write", options).execute({ path: "source/escape/secret.txt", content: "no" }, signal),
+    /write_denied/,
+  );
+  assert.equal(await readFile(join(outside, "secret.txt"), "utf8"), "secret");
+});

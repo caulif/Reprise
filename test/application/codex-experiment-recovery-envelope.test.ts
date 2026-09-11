@@ -24,6 +24,7 @@ test("Recovery mechanical feedback reuses the same recover() after a missing rep
           sessionId: "recovery-keep-probed",
           value: {
             status: "ready",
+            summary: "Ready for the original task.",
             reportPath: "recovery.md",
             unresolved: [],
           },
@@ -39,6 +40,7 @@ test("Recovery mechanical feedback reuses the same recover() after a missing rep
         sessionId: "recovery-keep-probed-later",
         value: {
           status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: [],
         },
@@ -68,8 +70,8 @@ test("Recovery mechanical feedback reuses the same recover() after a missing rep
   );
 });
 
-test("ready envelope does not auto-accept when Host task readiness is not_ready", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-readiness-gate-"));
+test("ready envelope auto-accepts when a Host-derived path is missing", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-readiness-facts-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
@@ -81,16 +83,16 @@ test("ready envelope does not auto-accept when Host task readiness is not_ready"
       );
       return {
         status: "completed",
-        sessionId: "recovery-not-ready-gate",
-        value: { status: "ready", reportPath: "recovery.md", unresolved: [] },
+        sessionId: "recovery-ready-missing-host-path",
+        value: { status: "ready", summary: "Cache layout is unknown but the original task can start.", reportPath: "recovery.md", unresolved: ["content/required.md was not copied"] },
       };
     },
   };
   const attempt = await recoverExperiment({
     dataDir: base.dataDir,
     caseId: base.caseId,
-    experimentId: "recovery-not-ready-gate",
-    runId: "recovery-not-ready-run",
+    experimentId: "recovery-ready-missing-host-path",
+    runId: "recovery-ready-missing-host-path-run",
     sourceRoot: base.sourceRoot,
     taskCase: {
       ...base.taskCase,
@@ -99,11 +101,14 @@ test("ready envelope does not auto-accept when Host task readiness is not_ready"
     recovery,
     now,
   });
-  assert.equal(attempt.acceptedAutomatically, undefined);
-  assert.equal(attempt.accept === undefined, true);
-  assert.equal(attempt.taskReadiness?.status, "not_ready");
-  assert.equal(attempt.baseline.readiness.runnable, "blocked");
-  assert.equal(attempt.baseline.recovery?.taskOutcome, "unrecoverable");
+  assert.equal(attempt.acceptedAutomatically, true);
+  assert.equal(attempt.accept !== undefined, true);
+  assert.equal(attempt.taskReadiness?.status, "ready");
+  assert.deepEqual(attempt.taskReadiness?.missingPaths, ["content/required.md"]);
+  assert.equal(attempt.baseline.readiness.runnable, "isolated");
+  assert.equal(attempt.baseline.recovery?.status, "ready");
+  assert.equal(attempt.baseline.recovery?.summary, "Cache layout is unknown but the original task can start.");
+  assert.equal(attempt.baseline.recovery?.taskOutcome, "ready_for_task");
 });
 
 test("Recovery still falls back when the only completed envelope fails probe", async (t) => {
@@ -118,6 +123,7 @@ test("Recovery still falls back when the only completed envelope fails probe", a
         sessionId: "recovery-only-invalid",
         value: {
           status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           unresolved: [],
         },
@@ -136,7 +142,7 @@ test("Recovery still falls back when the only completed envelope fails probe", a
   });
   assert.equal(attempt.accept === undefined, true);
   assert.equal(attempt.acceptedAutomatically, undefined);
-  assert.equal(attempt.baseline.match, "current_state_fallback");
+  assert.equal(attempt.baseline.match, "observational");
 });
 
 test("Recovery still completes after more than sixteen destructive shell_exec calls", async (t) => {
@@ -170,6 +176,7 @@ test("Recovery still completes after more than sixteen destructive shell_exec ca
         sessionId: "recovery-delete-uncapped",
         value: {
           status: "ready",
+          summary: "Ready for the original task.",
           reportPath: "recovery.md",
           manifestPath: "recovery-manifest.json",
           unresolved: ["README.md is not reconstructed"],
@@ -191,6 +198,43 @@ test("Recovery still completes after more than sixteen destructive shell_exec ca
   });
   assert.ok(calls >= 1);
   assert.equal(attempt.accept !== undefined, true);
+});
+
+test("Host readiness path escape is diagnostic and does not block Agent ready", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-ready-escaped-host-path-"));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  const recovery: RecoveryAgentPort = {
+    recover: async (_context, tools) => {
+      await tools.find((tool) => tool.name === "write")?.execute(
+        { path: "recovery.md", content: "# Recovery\n\nHost path hints are outside staging." },
+        new AbortController().signal,
+      );
+      return {
+        status: "completed",
+        sessionId: "recovery-ready-escaped-host-path",
+        value: { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] },
+      };
+    },
+  };
+  const attempt = await recoverExperiment({
+    dataDir: base.dataDir,
+    caseId: base.caseId,
+    experimentId: "recovery-ready-escaped-host-path",
+    runId: "recovery-ready-escaped-host-path-run",
+    sourceRoot: base.sourceRoot,
+    taskCase: {
+      ...base.taskCase,
+      taskContext: { ...base.taskCase.taskContext, relevantPaths: ["../outside.txt"] },
+    },
+    recovery,
+    now,
+  });
+  assert.equal(attempt.taskReadiness?.status, "blocked");
+  assert.equal(attempt.acceptedAutomatically, true);
+  assert.equal(attempt.baseline.readiness.runnable, "isolated");
+  assert.equal(attempt.baseline.recovery?.taskOutcome, "ready_for_task");
 });
 
 

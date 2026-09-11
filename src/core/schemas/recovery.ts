@@ -1,6 +1,29 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, Hash, Id, Timestamp } from "./ids.js";
 
+/** One sentence, 1–240 characters, no newline. Host copies this string unchanged. */
+const RecoverySummarySchema = Type.String({
+  minLength: 1,
+  maxLength: 240,
+  pattern: "^[^\\r\\n.。!?！？]+[.。!?！？]?$",
+});
+export const RecoveryAgentEnvelopeSchema = Type.Union([
+  Type.Object({
+    status: Type.Literal("ready"),
+    summary: RecoverySummarySchema,
+    reportPath: Type.Literal("recovery.md"),
+    unresolved: Type.Array(Type.String()),
+  }),
+  Type.Object({
+    status: Type.Literal("blocked"),
+    summary: RecoverySummarySchema,
+    reportPath: Type.Literal("recovery.md"),
+    unresolved: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+  }),
+]);
+export type RecoveryAgentEnvelope = Static<typeof RecoveryAgentEnvelopeSchema>;
+
+
 const RecoveryReadinessSchema = Type.Union([
   Type.Literal("verified"),
   Type.Literal("best-effort"),

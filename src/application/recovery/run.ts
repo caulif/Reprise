@@ -4,7 +4,7 @@ import {
   failRecoveryRunSession,
   type RecoveryRunSession,
 } from "./session.js";
-import { beginRecoveryStaging, tryHostCheckpointRecovery } from "./staging.js";
+import { beginRecoveryStaging } from "./staging.js";
 import { runRecoveryForensics } from "./run-forensics.js";
 import { enforceRecoveryReadiness, invokeRecoveryAgent } from "./run-model.js";
 import { finalizeRecoveredCandidate } from "./run-finalize.js";
@@ -74,9 +74,6 @@ async function runRecoverExperiment(session: RecoveryRunSession): Promise<Recove
   session.input.signal?.throwIfAborted();
   await beginRecoveryStaging(session);
   session.input.signal?.throwIfAborted();
-  const checkpoint = await tryHostCheckpointRecovery(session);
-  session.input.signal?.throwIfAborted();
-  if (checkpoint) return checkpoint;
   await runRecoveryForensics(session);
   session.input.signal?.throwIfAborted();
   await invokeRecoveryAgent(session);

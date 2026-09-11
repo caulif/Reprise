@@ -407,7 +407,7 @@ async function main() {
         experimentRoot: "audit-root",
         baseline: { match: "recovered", warnings: [], mode: "canonical" },
         staging: { recoveryId: "audit-recovery" },
-        recovery: { status: "completed", sessionId: "s", value: { status: "ready", reportPath: "recovery.md", unresolved: [] } },
+        recovery: { status: "completed", sessionId: "s", value: { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] } },
         accept: async () => ({ match: "recovered", warnings: [], mode: "canonical" }),
       };
     },

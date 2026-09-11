@@ -36,7 +36,7 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
   await assert.rejects(write.execute({ path: 'candidate/kept.txt', content: 'nope' }, new AbortController().signal), /write_denied/);
   const shellTool = tools.find((tool) => tool.name === 'shell_exec');
   assert.ok(shellTool);
-  assert.match(shellTool.description, /Read-only mounts/);
+  assert.match(shellTool.description, /filesystem ACL|Read-only mounts/);
   await assert.rejects(
     shellTool.execute({ command: 'Remove-Item candidate/kept.txt' }, new AbortController().signal),
     /write_denied/,
@@ -87,21 +87,17 @@ test('reportFacts preserve missing measurements and project known run facts', ()
   assert.equal(facts.metrics, undefined);
 });
 
-test('reportFacts project collected token parts and omit speed without a generation interval', () => {
+test('reportFacts project collected token parts without inventing speed or cost', () => {
   const totalOnly = buildComparisonContext(taskCase(), [runRecord()], [{
     runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, tokenUsage: { total: 256 },
   }]).reportFacts;
-  assert.deepEqual(totalOnly.metrics?.tokens, { total: 256 });
-  assert.equal(totalOnly.metrics?.generationRate, undefined);
-  assert.equal(totalOnly.metrics?.cost, undefined);
+  assert.deepEqual(totalOnly.metrics?.candidate?.tokens, { total: 256 });
+  assert.equal(totalOnly.metrics?.candidate?.costUsd, undefined);
+  assert.equal(totalOnly.metrics?.baseline, undefined);
   const withClock = buildComparisonContext(taskCase(), [runRecord()], [{
     runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 4_000, tokenUsage: { total: 256 },
   }]).reportFacts;
-  assert.equal(withClock.metrics?.generationRate, undefined);
-  const rate = buildComparisonContext(taskCase(), [runRecord()], [{
-    runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, generationMs: 2_000, tokenUsage: { output: 80, total: 256 },
-  }]).reportFacts;
-  assert.deepEqual(rate.metrics?.generationRate, { outputTokens: 80, durationMs: 2_000 });
+  assert.equal(withClock.metrics?.candidate?.elapsedMs, 4_000);
 });
 
 test('comparison envelope accepts Host-owned observation refs and rejects only-unknown refs', () => {
@@ -124,6 +120,9 @@ test('comparison orchestration rejects envelope citations outside persisted fact
 
 test('comparison prompt points workspace tools at the sealed snapshot mount', () => {
   assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed end-of-run snapshot/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /data-host="metrics"/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /incomplete_object_store/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /objectStore=not_seeded/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /comparison-sandbox\/candidate/);
 });
@@ -141,12 +140,37 @@ test('comparison orientation does not inline the initial task and points at user
   assert.match(prompt, /observations\/user-inputs\/INDEX\.tsv/);
   assert.match(prompt, /briefingRoot=/);
   assert.match(prompt, /facts\/context\.json/);
+  assert.doesNotMatch(prompt, /every user turn in index order/);
 });
 
 test('comparison briefing names incomplete and unknown snapshots', async () => {
   const { comparisonSnapshotLabel } = await import('../../src/application/comparison-briefing.js');
   assert.equal(comparisonSnapshotLabel('missing'), 'unknown');
   assert.equal(comparisonSnapshotLabel('incomplete'), 'incomplete');
+});
+
+test('Host metrics shell matches the projected fingerprint and fails when numbers change', async () => {
+  const { hostMetricsMismatch, renderComparisonReportShell } = await import('../../src/application/comparison-report-shell.js');
+  const historical = taskCase();
+  historical.historicalEvents = [
+    { timestamp: '2026-09-11T00:00:00.000Z', type: 'event_msg', payload: { type: 'task_started' } },
+    { timestamp: '2026-09-11T00:02:00.000Z', type: 'event_msg', payload: { type: 'task_complete' } },
+    { timestamp: '2026-09-11T00:02:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 100, output_tokens: 20, cached_input_tokens: 10 } } } },
+  ];
+  historical.sourceRuntimeEvidence.model = 'gpt-5';
+  const facts = buildComparisonContext(historical, [runRecord()], [{
+    runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 13 * 60_000, tokenUsage: { total: 256 }, costUsd: 0.49,
+  }]).reportFacts;
+  const html = renderComparisonReportShell({ task: historical.initialInput.text, metrics: facts.metrics ?? {} });
+  assert.match(html, /white-space:nowrap/);
+  assert.match(html, /data-host="metrics"/);
+  assert.equal(hostMetricsMismatch(html, facts.metrics ?? {}), undefined);
+  assert.match(html, /2<span class="unit">分/);
+  assert.match(html, /13<span class="unit">分/);
+  assert.match(html, /0\.49<span class="unit">\$/);
+  const tampered = html.replace('0.49', '9.99');
+  assert.equal(hostMetricsMismatch(tampered, facts.metrics ?? {}), 'Host metrics numbers were modified.');
+  assert.equal(hostMetricsMismatch('<html></html>', facts.metrics ?? {}), 'Host metrics block is missing.');
 });
 
 

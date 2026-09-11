@@ -13,6 +13,17 @@ import type {
 } from "../src/core/runtime.js";
 import type { TaskCase } from "../src/core/schema.js";
 import { ScriptedRunner } from "./support/scripted-runtime.js";
+export function comparisonHtmlWithHostShell(context: { reportShellHtml?: string }, body: string): string {
+  const shell = context.reportShellHtml;
+  if (!shell) return body;
+  if (shell.includes('data-slot="body"')) {
+    return shell.replace(
+      '<div class="agent-slot" data-slot="body"></div>',
+      `<div class="agent-slot" data-slot="body">${body}</div>`,
+    );
+  }
+  return `${shell}${body}`;
+}
 export const now = "2026-08-11T12:00:00.000Z";
 export class VerifiedRuntime implements ProductRuntime {
   readonly id = "verified-test";
@@ -119,7 +130,7 @@ const controller: ControllerPort = {
         },
 };
 const comparison: ComparisonAgentPort = {
-  compare: async (_context, tools = []) => {
+  compare: async (context, tools = []) => {
     const reader = tools.find((tool) => tool.name === "read")!;
     for (const path of ["briefing/facts/context.json", "briefing/facts/comparison-links.json", "briefing/candidate/process-index.tsv"]) {
       const read = await reader.execute({ path }, new AbortController().signal);
@@ -136,7 +147,7 @@ const comparison: ComparisonAgentPort = {
       new AbortController().signal,
     );
     await writer?.execute(
-      { path: "report.html", content: '<!doctype html><style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>' },
+      { path: "report.html", content: comparisonHtmlWithHostShell(context, '<style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>') },
       new AbortController().signal,
     );
     return {

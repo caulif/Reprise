@@ -124,7 +124,7 @@ export async function createRecoveryRunSession(
     ...(input.onEvent ? { unsubscribe: store.subscribe(input.onEvent) } : {}),
     candidateCreated: false,
     recoveredPaths: [],
-    verification: "insufficient_evidence",
+    verification: "rejected",
     forensicsCompleted: false,
     providerFailureRetryable: undefined,
     writerAcquired: false,

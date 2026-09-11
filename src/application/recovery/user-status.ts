@@ -17,15 +17,15 @@ export function userRecoveryStatus(input: {
 }): UserRecoveryStatus {
   if (!input.transcriptOk) return "failed";
   if (input.baseline.mode === "unsupported") return "failed";
-  if (input.baseline.recovery?.status === "blocked" || input.baseline.recovery?.status === "insufficient_evidence") return "failed";
+  if (input.baseline.recovery?.status === "blocked") return "failed";
+  if (input.baseline.recovery?.status === "insufficient_evidence") return "failed";
   if (input.baseline.readiness?.runnable === "blocked") return "failed";
-  const excluded = input.baseline.budget?.excludedEntries?.length ?? 0;
   const recovery = input.baseline.recovery?.status;
   const match = input.baseline.match;
   const hasAccept = input.hasAccept === true;
-  if ((recovery === "failed" || match === "current_state_fallback") && !hasAccept) return "failed";
-  if (excluded > 0 || recovery === "partial" || match === "recovered_partial") return "partial";
   if (recovery === "ready" || recovery === "recovered" || match === "recovered") return "recovered";
+  if (recovery === "partial" || match === "recovered_partial") return "partial";
+  if ((recovery === "failed" || match === "current_state_fallback") && !hasAccept) return "failed";
   return hasAccept ? "partial" : "failed";
 }
 
@@ -55,6 +55,7 @@ export function diagnosisReasonCode(input: {
     transcriptOk: input.transcriptOk,
     ...(input.hasAccept !== undefined ? { hasAccept: input.hasAccept } : {}),
   });
+  if (input.baseline.recovery?.status === "blocked") return "recovery_agent.blocked";
   if (status === "recovered") return "recovered";
   if (status === "partial") {
     const excluded = input.baseline.budget?.excludedEntries?.[0]?.reasonCode;

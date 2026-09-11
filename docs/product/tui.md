@@ -109,7 +109,7 @@ reprise compare
 
 Harness 展示 Controller 的可见工作过程，但不依赖或承诺获取 provider 的隐藏 reasoning token。无进行中工具时，各声部共用一条此刻行 `working`。内部 Agent 的 `agent.assistant_visible` 钉在主列；候选 thinking 不进主列。候选进行中只投影校验过的 `payload.live`，不解析产品私有帧。
 
-主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：进行中只留一行执行条，两次短句之间的成功探路收成 `▸ 阅读证据 · N` 或 `▸ 写入 {叶名}`。工具 stdout 与上下文 JSON 不进主列，运行页不设全文 overlay；排障打开结果页记录目录。一个实验一条单列连续记录：恢复、模拟用户投递、用户可见回合、结果与可选对照按持久化顺序追加；模拟用户页与对照页不把上一声部过程带进主列。投递消息走 Input 声部，不得画成候选桃色。内部 Agent 子弹为薄荷，候选用桃色。候选用户可见内容来自已校验的 `candidate.user_view_persisted`；重开只读事件日志，不加载 Pack。未公开 reasoning 与产品私有 runtime payload 不进主列。Comparison 叠在同一时间线：结果段按 `c` 才开对照，跳过则对照为未运行。滚动按条目身份保存阅读位置；向上阅读暂停跟随，Home 到最早可见条，End 或 `l` 跟随最新。滚轮与 ↑↓ 相同。实验内 `/` 搜索已投影的可见标题与短文案（含折叠组内标题与尚未展开的记录），不搜索长工具原文或 `original`。Enter / Shift+Enter 在命中间移动并展开所在组。`v` 关闭鼠标报告并暂停当前视图重绘，后台仍追加持久化事件；退出后提示暂停期间的新活动条数。查找中的 `v` 写入查询，不进入阅读模式。本地产物链接：路径须为已验证绝对路径，支持 OSC 8 时输出 `file:` URI，否则显示完整可复制路径，并去掉控制序列。进程 `exit`、未捕获异常会调用 `tui.stop()` 以恢复终端模式。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)与[可见短句与显式对照](../decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)与[UserVisibleTurn 时间线](../decisions/accepted/2026-09-10-user-visible-turn-timeline.md)与[内部短句主列](../decisions/accepted/2026-09-10-internal-agent-narrate-spine.md)与[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)与[方案 A 树](../decisions/accepted/2026-09-10-tui-option-a-tree.md)与[阅读锚点、搜索与终端恢复](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)。
+主时间线不直接倾倒底层 event payload。内部 Agent 的 `agent.tool_*` 按 `payload.role` 分轨：进行中只留一行执行条，两次短句之间的成功探路收成 `▸ 阅读证据 · N` 或 `▸ 写入 {叶名}`。工具 stdout 与上下文 JSON 不进主列，运行页不设全文 overlay；排障打开结果页记录目录。一个实验一条单列连续记录：恢复、模拟用户投递、用户可见回合、结果与可选对照按持久化顺序追加；模拟用户页与对照页不把上一声部过程带进主列。投递消息走 Input 声部，不得画成候选桃色。内部 Agent 子弹为薄荷，候选用桃色。运行主列用左缘两列分声部，正文默认前景；折叠 `▸` 与叶名变暗；失败独立红；列尾行左动作、右时钟；向上阅读暂停跟随时画 `▼ N`。见[gutter 与层次](../decisions/accepted/2026-09-11-tui-gutter-chrome.md)。候选用户可见内容来自已校验的 `candidate.user_view_persisted`；重开只读事件日志，不加载 Pack。未公开 reasoning 与产品私有 runtime payload 不进主列。Comparison 叠在同一时间线：结果段按 `c` 才开对照，跳过则对照为未运行。滚动按条目身份保存阅读位置；向上阅读暂停跟随，Home 到最早可见条，End 或 `l` 跟随最新。滚轮与 ↑↓ 相同：先移选中，贴边时改视口偏移。实验内 `/` 只在候选运行与对照过程搜索已投影的可见标题与短文案（含折叠组内标题与尚未展开的记录），不搜索长工具原文或 `original`；恢复与准备检查不进入查找。结果页单击产物短标签与 `o` / `t` / `w` 打开同一目标；未命中不打开文件。Enter / Shift+Enter 在命中间移动并展开所在组。`v` 关闭鼠标报告并暂停当前视图重绘，后台仍追加持久化事件；退出后提示暂停期间的新活动条数。查找中的 `v` 写入查询，不进入阅读模式。本地产物链接：路径须为已验证绝对路径，支持 OSC 8 时输出 `file:` URI，否则显示完整可复制路径，并去掉控制序列。进程 `exit`、未捕获异常会调用 `tui.stop()` 以恢复终端模式。压缩粒度见[内部 Agent 运行画布](../decisions/accepted/2026-09-01-internal-agent-activity-canvas.md)与[可见短句与显式对照](../decisions/accepted/2026-09-02-visible-process-and-optional-comparison.md)与[UserVisibleTurn 时间线](../decisions/accepted/2026-09-10-user-visible-turn-timeline.md)与[内部短句主列](../decisions/accepted/2026-09-10-internal-agent-narrate-spine.md)与[此刻行](../decisions/accepted/2026-09-10-tui-live-now-row.md)与[方案 A 树](../decisions/accepted/2026-09-10-tui-option-a-tree.md)与[gutter 与层次](../decisions/accepted/2026-09-11-tui-gutter-chrome.md)与[指针、视口与查找](../decisions/accepted/2026-09-11-tui-pointer-scroll-find.md)与[阅读锚点、搜索与终端恢复](../decisions/accepted/2026-09-08-tui-reading-search-terminal.md)。
 
 恢复页标题绑定 `runPhase==='recovery'`（以及准备态 `preparePhase==='check'`），文案是「正在恢复会话」。该阶段列尾写恢复，空画布不得写成候选正在写回复。选完模型进入候选运行，标题是「候选运行中 · {候选产品}」或「正在启动 {候选产品}」；顶栏任务短句用候选产品显示名，不用来源会话产品。用户终态为无法恢复或没有 accept 时，禁止启动隔离候选，标题不得声称已准备隔离对照，原因留一句人话（校验失败时附代码）：变更为 0 时说明没有观察到隔离工作区变更，有变更才强调工作区校验未通过；禁止只显示 `provider_validation_failed`，见[无 accept 的恢复失败不得启动隔离候选](../decisions/accepted/2026-08-30-recovery-failed-blocks-candidate.md)。`partial` 且校验通过的 preview 必须暴露 accept，见[Partial 额外路径](../decisions/accepted/2026-08-30-recovery-partial-extra-paths.md)。运行栏显示当前阶段、最近 Runtime 事件和重连次数；超过 120 秒无新事件时提示可 Ctrl+C。封面、列表、核对、恢复、选择、运行、对照过程与结果的可滚动区都接鼠标滚轮。候选失败时 `termination.code` 保持 `failed.runtime`，类别与脱敏摘要写在 `failure`；上游暂时不可用由用户重新启动候选，不自动重试。见[候选 Runtime 失败分类](../decisions/accepted/2026-08-28-recovery-candidate-runtime-failure.md)。
 
@@ -249,9 +249,8 @@ Controller 的最终决定是一级事件，真正发送给 Target 的内容必�
 
 | 页面 | 页脚键 | 作用 |
 |---|---|---|
-| 封面 | Enter | 打开最近一次实验记录末尾（若有） |
+| 封面 | `/` / Ctrl+C | 命令入口（不是时间线查找）/ 退出；最近实验行可点则不写 Enter |
 | 封面（输入 `/`） | Tab / Enter / Esc | 补全命令 / 提交 / 清空 |
-| 封面 | `/` | 命令入口（`/intake` `/history` `/config` `/lang` `/help`），不是时间线查找 |
 | 配置 | ↑↓ / Enter | 选字段 / 编辑或切换 |
 | 配置 | Ctrl+T / Ctrl+S / Esc | 测连接 / 保存到本机 / 回封面 |
 | 会话（产品） | ↑↓ / Enter / Esc | 选择 / 打开产品 / 回封面 |
@@ -260,15 +259,16 @@ Controller 的最终决定是一级事件，真正发送给 Target 的内容必�
 | 会话（搜索中） | Esc / ↑↓ / Enter | 退出搜索 / 选择 / 打开 |
 | 核对 | Enter / d / t / Esc | 冻结并准备 / 展开结局 / 切换模型正文 / 回会话 |
 | 历史 | Tab / ↑↓ / Enter / Esc | 实验与用例 / 选择 / 打开记录末尾 / 回封面 |
-| 历史详情（用例） | Enter / t / Esc | 使用该用例 / 打开路径 / 返回 |
-| 历史详情（实验） | o / t / Esc | 打开报告（若有）/ 打开路径 / 返回 |
+| 历史详情（用例） | Enter / Esc | 使用该用例 / 返回；路径短标签可点 |
+| 历史详情（实验） | Esc | 返回；报告与路径短标签可点 |
 | 源目录 | Enter / Backspace / Esc | 开始隔离运行 / 改路径 / 回封面（非首页入口） |
 | 预检 | Esc / b | 回封面 |
 | 候选产品 | ↑↓ / Enter / b / Esc | 选择 / 进模型 / 返回 / 回封面 |
 | 候选模型 | ↑↓ / Enter / b / Esc | 选择 / 确认 / 改产品 / 回封面 |
 | 确认 | Enter / b / Esc | 开跑（被挡时仍按 Enter 只提示） / 改模型 / 回封面 |
-| 运行（含恢复） | `/` / Enter / `v` / Ctrl+C | 查找时间线 / 展开 `▸` / 阅读模式 / 请求取消；Esc 不取消 |
-| 结果 | c / o / t / w / Esc | 对照（待选择时）/ 报告 / 记录目录 / 隔离副本 / 回封面 |
+| 运行（恢复） | Enter / `v` / Ctrl+C | 展开 `▸` / 阅读模式 / 请求取消；无查找 |
+| 运行（候选 / 对照过程） | `/` / Enter / `v` / Ctrl+C | 查找时间线 / 展开 `▸` / 阅读模式 / 请求取消；Esc 不取消 |
+| 结果 | Esc | 回封面；报告 / 记录 / 副本 / 开始对照为可点短标签，键盘 `o` `t` `w` `c` 仍有效 |
 | 错误 | Enter / b / Esc | 返回 |
 
 运行页是只读观看面：不向目标 Runtime 打字，续问由 Controller 产生。帮助层按当前页面显示。运行阶段由共享 Runtime 生命周期事件投影，适用于所有 Pack。

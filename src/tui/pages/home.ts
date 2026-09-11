@@ -65,21 +65,22 @@ export function homeHints(locale: Locale = 'en', model?: HomeModel): readonly (r
       ['Esc', t(locale, 'hintEsc')],
     ];
   }
-  const enter = model?.recentExperiment ? t(locale, 'hintOpenRecent') : t(locale, 'hintEnter');
   return [
     ['/', t(locale, 'hintCommand')],
-    ['Tab', t(locale, 'hintTab')],
-    ['Enter', enter],
-    ['?', t(locale, 'hintKeys')],
     ['Ctrl+C', t(locale, 'hintExit')],
   ];
+}
+
+export function homePointerAction(model: HomeModel, bodyRow: number): 'open-recent' | undefined {
+  if (!model.recentExperiment) return undefined;
+  return bodyRow === 3 ? 'open-recent' : undefined;
 }
 
 function continueLines(theme: Theme, model: HomeModel, locale: Locale): string[] {
   const rows: string[] = [];
   if (model.recentExperiment) {
     const title = compact(model.recentExperiment.outcome ?? t(locale, 'recentRun'), 36, theme.glyphs.ellipsis);
-    rows.push(row(theme, 'Enter', t(locale, 'recentRun'), title));
+    rows.push(row(theme, '·', t(locale, 'recentRun'), title));
   } else {
     rows.push(row(theme, '/history', t(locale, 'historyDesc'), theme.style.muted(t(locale, 'noExperiments'))));
   }
