@@ -88,20 +88,20 @@ Pi Agent Host 是 Harness 的实现基础设施，不是需要恢复的历史 Ag
 
 ## 4. Controller 工具集合
 
-Controller 工具让扮演用户的模型能看见隔离副本，并像真人一样修改工作区文件。注册集合等于可执行集合，不含 `read_observation`，默认不含 `shell_exec`（见 [协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)）。不能绕过 Target Runtime 执行任务。
+Controller 工具让扮演用户的模型能看见隔离副本，并像真人一样修改工作区文件、调查其他可读材料。注册集合等于可执行集合，含 `shell_exec`，不含 `read_observation`（见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)）。不能绕过 Target Runtime 执行任务。
 
-Host 把工作区工具挂在 briefing 根上。`project/` 是隔离副本挂载：可读，且 `edit`/`write` 仅允许该挂载下的文件。briefing 根拒写。历史与本 run 原文用 `read` 读取。不按工具调用次数截断；上下文走 Pi 压缩。
+Host 把工作区工具挂在 briefing 根上。`project/` 是隔离副本挂载：可读，且 `edit`/`write` 仅允许该挂载下的文件。briefing 根拒写。`ls`/`read`/`grep`/`find` 与 `shell_exec` 读取不受工作区 containment 限制。不按工具调用次数截断；上下文走 Pi 压缩。
 
 工具边界：
 
-- 不得写用户源目录、不得调用 Target 工具、不得直接改 CandidateRun 状态机；发给候选的唯一用户输入仍是信封 `message`；
-- 不能读取 Case/Run 所有权之外的路径；
+- 不得用 `edit`/`write` 写用户源目录、不得调用 Target 工具、不得直接改 CandidateRun 状态机；发给候选的唯一用户输入仍是信封 `message`；
+- 读取可指向当前进程可读路径；写入仍只在隔离候选副本；
 - 路径、读取范围、类型和大小在 Host 边界验证；
 - 未支持的二进制内容返回 metadata 或 unavailable，不让模型猜测；
 - 确定性 renderer 可以生成派生预览，但预览必须成为带 provenance 的新 artifact；
 - 工具能力配置在同一 Experiment 的候选间一致，实际调用次数不要求一致。
 
-当前环境和候选轨迹的轻量入口出现在 INDEX 与用户视图快照里。Host snapshot 中的 `current.summary` 不内联命令或路径计数。`project/` 可读范围是整棵隔离副本；用户可见表面由 `current-user-view.md` 承担。Controller 对 `project/` 的写入记入 `controller.workspace_write` 与 `run/controller-writes.jsonl`。
+当前环境和候选轨迹的轻量入口出现在 INDEX 与用户视图快照里。Host snapshot 中的 `current.summary` 不内联命令或路径计数。`project/` 可读范围是整棵隔离副本；用户可见表面由 `current-user-view.md` 承担。Controller 对 `project/` 的 Host 控制写入记入 `controller.workspace_write` 与 `run/controller-writes.jsonl`。shell 在副本外的写入记入 `controller.external_write`，并出现在 Comparison 输入的 `controllerExternalWritePaths`。
 
 ## 5. 原始会话可见范围
 

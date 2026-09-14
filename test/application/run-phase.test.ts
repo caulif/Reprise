@@ -52,9 +52,29 @@ test('recovery runPhase keeps the recovering header after preparePhase is cleare
     },
   }, 120).join('\n');
   assert.match(text, /正在恢复会话/);
+  assert.equal([...text.matchAll(/正在恢复会话|仍在恢复会话/g)].length, 1);
   assert.doesNotMatch(text, /候选运行中/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /正在写回复/);
+});
+
+test('recovery header switches to still recovering without a second canvas title', () => {
+  const now = Date.parse('2026-08-28T00:02:10.000Z');
+  const text = renderWorkbench({
+    page: 'running', cwd: 'C:\\repo', hasApiConfig: true, hasTaskCase: true, locale: 'zh', message: '',
+    inlineHelp: false,
+    running: {
+      entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
+      currentState: undefined, elapsed: '00:35', turns: { used: 0 }, calls: { used: 0 },
+      productLabel: 'Codex',
+      runPhase: 'recovery',
+      runStartedAt: now - 35_000,
+      tick: now,
+    },
+  }, 120).join('\n');
+  assert.match(text, /仍在恢复会话/);
+  assert.doesNotMatch(text, /正在恢复会话/);
+  assert.equal([...text.matchAll(/仍在恢复会话/g)].length, 1);
 });
 
 test('upstream runtime failure names the temporary outage on the result page', () => {

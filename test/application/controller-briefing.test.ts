@@ -8,6 +8,7 @@ import {
   assertBriefingOutsideReplica,
   controllerPromptContent,
   controllerViewSurface,
+  historicalRequirementRefs,
   outlineRows,
   renderIndexMarkdown,
   renderOutlineTsv,
@@ -39,6 +40,13 @@ function taskCase(textAfter: string): TaskCase {
   };
 }
 
+test("historical requirement refs list user inputs without judging completion", () => {
+  const refs = historicalRequirementRefs(taskCase("第二页太空了。"));
+  assert.deepEqual(refs.map((row) => row.id), ["message-1", "message-3"]);
+  assert.equal(refs.every((row) => row.status === "unknown"), true);
+  assert.equal(refs[0]?.path, "history/user-inputs/message-1.txt");
+});
+
 test("outline marks user lines after the first non-empty assistant text", () => {
   const rows = outlineRows(taskCase("第二页太空了。").transcript);
   assert.equal(rows[0]?.afterFirstDeliverable, false);
@@ -61,6 +69,8 @@ test("INDEX lists transcript directory and project mount prefix", () => {
   assert.match(renderIndexMarkdown("run/turns/0001"), /run\/turns\/0001/);
   assert.match(renderIndexMarkdown(undefined), /imported-inputs/);
   assert.match(renderIndexMarkdown(undefined), /current-user-view\.md/);
+  assert.match(renderIndexMarkdown(undefined), /shell_exec/);
+  assert.doesNotMatch(renderIndexMarkdown(undefined), /There is no `shell_exec`/);
   assert.doesNotMatch(renderIndexMarkdown(undefined), /view\.txt/);
 });
 
@@ -100,6 +110,7 @@ test("opening briefing lives outside the replica and opening prompt omits later 
   assert.doesNotMatch(indexOnDisk, /view\.txt/);
   const permissions = await readFile(join(briefingRoot, "permissions.txt"), "utf8");
   assert.match(permissions, /controller\.writes=project/);
+  assert.match(permissions, /controller\.shell=allowed/);
   assert.match(permissions, /candidate\.writes=unconfirmed/);
   assert.match(permissions, /candidate\.source=unconfirmed/);
   assert.match(permissions, /privacy\.allowModelText=1/);
@@ -270,9 +281,11 @@ test("Controller tools read briefing history, write project/, and deny briefing 
     allowWrite: controllerProjectWriteAllowed,
     writableMounts: ["project"],
     mounts: { project: replicaRoot },
+    allowShell: true,
+    unrestrictedRead: true,
   });
   assert.equal(tools.some((tool) => tool.name === "read_observation"), false);
-  assert.equal(tools.some((tool) => tool.name === "shell_exec"), false);
+  assert.equal(tools.some((tool) => tool.name === "shell_exec"), true);
   const read = tools.find((tool) => tool.name === "read");
   const write = tools.find((tool) => tool.name === "write");
   assert.ok(read);

@@ -1,5 +1,7 @@
 import { sha256 } from "../../core/identity.js";
-import type { RecoveryContext } from "../../agents/recovery-agent.js";
+import type { RecoveryContext, RecoveryResult } from "../../agents/recovery-agent.js";
+import type { RecoveryDecision } from "../../core/schema.js";
+import { completedRecoveryFreeformTurns } from "../../agents/recovery-agent.js";
 import { recoveryWorkingSet } from "../../agents/recovery-working-set.js";
 import { OBSERVATIONS_MOUNT, recoveryObservationsRoot, writeFrozenObservationTree } from "../../products/history/observations-materializer.js";
 import { recoveryTools, SOURCE_MOUNT } from "../../infrastructure/recovery-tools.js";
@@ -24,7 +26,6 @@ import type { AgentToolDefinition, StructuredAgentResult } from "../../infrastru
 import { RecoveryValidationError } from "../../environment/local-workspace-provider.js";
 import { ProcessBoundaryError } from "../../infrastructure/process-runner.js";
 import { stat } from "node:fs/promises";
-import type { RecoveryResult } from "../../agents/recovery-agent.js";
 
 export function buildRecoveryAgentContext(session: RecoveryRunSession): RecoveryContext {
   const { input, facts, pack, playbook, staging } = session;
@@ -64,6 +65,7 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
     budget: { timeoutMs: input.recovery.timeoutMs ?? 600_000 },
     allowModelText: input.taskCase.privacy.allowModelText,
     continuityKey: input.experimentId,
+    completedFreeformTurns: completedRecoveryFreeformTurns(session.store.events(input.runId)),
     evidence: {
       catalogCount: facts.catalog.length,
       verifiedCount: facts.verifiedEvidence.length,
@@ -122,6 +124,10 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
   while (retryModel) {
     input.signal?.throwIfAborted();
     session.modelAttempts += 1;
+    session.context = {
+      ...session.context,
+      completedFreeformTurns: completedRecoveryFreeformTurns(store.events(input.runId)),
+    };
     const context = session.context;
     const tools = session.tools;
     if (!context || !tools) throw new Error("Recovery retry context was not prepared.");
@@ -139,7 +145,7 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
       }),
     );
     const modelStartedAt = Date.now();
-    session.recovery = await input.recovery.recover(context, tools, audit, input.signal);
+    session.recovery = normalizeRecoveryInvocation(await input.recovery.recover(context, tools, audit, input.signal));
     if (session.recovery.status === "completed") session.lastCompletedRecovery = session.recovery;
     await recordRecoveryAttempt(
       session,
@@ -174,6 +180,15 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
   }
   if (!session.recovery) throw new Error("Recovery model did not return an invocation result.");
   await writeImmutableJson(join(experimentRoot, "recovery.json"), session.recovery);
+  if (session.recovery.status === "completed") {
+    const decision = session.recovery.value;
+    await store.append({
+      type: "recovery.decision_submitted",
+      runId: input.runId,
+      operationId: "recovery-decision-submitted",
+      payload: { status: decision.status, summary: decision.summary, unresolvedCount: decision.unresolved.length },
+    });
+  }
   await store.append({
     type: "recovery.completed",
     runId: input.runId,
@@ -234,7 +249,7 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
   let attempts = 0;
   while (attempts < (session.maxModelAttempts ?? 2)) {
     try {
-      await session.provider.probeRecovery(staging, requireCompletedEnvelope(session));
+      await session.provider.probeRecovery(staging);
       return;
     } catch (error) {
       if (error instanceof RecoveryValidationError && error.code === "source_tripwire_failed") throw error;
@@ -259,7 +274,7 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
       const previousCompleted = session.lastCompletedRecovery ?? (session.recovery?.status === "completed" ? session.recovery : undefined);
       try {
         input.signal?.throwIfAborted();
-        session.recovery = await input.recovery.recover(session.context, tools, audit, input.signal);
+        session.recovery = normalizeRecoveryInvocation(await input.recovery.recover(session.context, tools, audit, input.signal));
       } catch (feedbackError) {
         session.recovery = recoveryFailedFromThrown(
           feedbackError,
@@ -275,9 +290,11 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
   }
 }
 
-function requireCompletedEnvelope(session: RecoveryRunSession) {
-  if (session.recovery?.status !== "completed") throw new Error("Recovery envelope was not completed.");
-  return session.recovery.value;
+function normalizeRecoveryInvocation(
+  invocation: StructuredAgentResult<RecoveryDecision>,
+): StructuredAgentResult<RecoveryResult> {
+  if (invocation.status !== "completed") return invocation;
+  return { ...invocation, value: { ...invocation.value, reportPath: "recovery.md" } };
 }
 
 async function persistMechanicalFeedbackInput(session: RecoveryRunSession, nextAttempt: number, facts: string): Promise<void> {
@@ -325,7 +342,13 @@ async function restartRecoveryWorkspace(session: RecoveryRunSession): Promise<vo
   const { staging, input } = session;
   if (!staging) throw new Error("Recovery staging was not prepared.");
   await session.provider.resetRecoveryWorkspace(staging);
-  input.recovery.releasePreparation?.(input.experimentId);
+  await session.store.append({
+    type: "recovery.workspace_reset",
+    runId: input.runId,
+    operationId: `recovery-workspace-reset-${session.modelAttempts}`,
+    payload: { caseId: input.caseId },
+  });
+  await Promise.resolve(input.recovery.releasePreparation?.(input.experimentId));
   session.context = buildRecoveryAgentContext(session);
   buildRecoveryAgentTools(session);
 }

@@ -171,17 +171,21 @@ export function runningChrome(theme: Theme, width: number, model: RunningModel):
   if (isPreparing(model)) return [];
   const locale = model.locale ?? 'en';
   const product = model.productLabel ?? t(locale, 'unknownAgent');
+  const wait = waitLine(model, locale);
+  if (model.runPhase === 'recovery') {
+    return wait
+      ? [theme.style.fillCanvas(pad(theme.style.muted(` ${wait}`), width, theme.glyphs.ellipsis))]
+      : [];
+  }
   const special = model.runPhase === 'candidate_reconnecting'
     || model.runPhase === 'candidate_starting'
-    || model.preparePhase === 'compare'
-    || model.runPhase === 'recovery';
+    || model.preparePhase === 'compare';
   const task = model.taskTitle
     ? truncateFit(model.taskTitle, Math.max(8, width - product.length - 10), theme.glyphs.ellipsis)
     : '';
   const line = special
     ? phaseLine(model, locale, product)
     : (task ? `${task} · ${product} · ${model.elapsed}` : `${product} · ${model.elapsed}`);
-  const wait = waitLine(model, locale);
   return [line, ...(wait ? [theme.style.muted(` ${wait}`)] : [])].map((row) =>
     theme.style.fillCanvas(pad(row.startsWith(' ') ? row : ` ${row}`, width, theme.glyphs.ellipsis)),
   );
@@ -198,10 +202,6 @@ function phaseLine(model: RunningModel, locale: Locale, product: string): string
   if (model.runPhase === 'candidate_starting') return t(locale, 'candidateStarting', { product });
   if (model.preparePhase === 'compare') {
     return t(locale, 'comparingTitle');
-  }
-  if (model.runPhase === 'recovery') {
-    const sinceStart = (model.tick ?? Date.now()) - (model.runStartedAt ?? Date.now());
-    return sinceStart >= 30_000 ? t(locale, 'stillRecoveringTitle') : t(locale, 'recoveringTitle');
   }
   return t(locale, 'candidateRunningTitle', { product });
 }

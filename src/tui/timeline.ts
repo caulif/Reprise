@@ -440,13 +440,12 @@ function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): read
   const value = record(payload.value);
   const valueStatus = text(value.status);
   const headline = text(value.headline);
-  const codes = Array.isArray(value.limitationCodes) ? value.limitationCodes.filter((item): item is string => typeof item === 'string') : [];
   const failed = invocation === 'failed';
   const title = failed ? '对照失败' : valueStatus === 'insufficient_evidence' ? '证据不足' : '对照完成';
   return [entry('CONTROLLER', title, headline ?? (failed ? text(failure.message) : undefined), {
     lane: 'comparison',
     kind: 'deliver',
-    ...(codes.length ? { original: codes.join(' · ') } : headline ? { original: headline } : {}),
+    ...(headline ? { original: headline } : {}),
     ...(failed ? { level: 'error' as const } : {}),
   })];
 }
@@ -563,7 +562,7 @@ function settleLiveId(entry: TimelineEntry): TimelineEntry {
   return rest;
 }
 
-function isNowRow(entry: TimelineEntry): boolean {
+export function isNowRow(entry: TimelineEntry): boolean {
   return Boolean(entry.itemId?.startsWith('now:') && (entry.kind === 'live' || entry.placeholder));
 }
 

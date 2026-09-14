@@ -7,11 +7,13 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startExperiment } from '../../src/application/experiment.js';
+import { extractHostZoneSnapshot, renderComparisonReportShell } from '../../src/application/comparison-report-shell.js';
 import { input, patientPolicy, VerifiedRuntime } from '../codex-experiment-support.js';
 
 function context(): ComparisonContext {
   return {
     task: { caseId: "case-1", summary: "Compare." },
+    attemptId: "attempt-1",
     baseline: { summary: "Baseline.", evidenceRefs: [] },
     candidates: [], telemetry: [], artifactRefs: [], allowModelText: true,
     replayScope: { historical: "baseline", candidate: "candidate" },
@@ -74,9 +76,22 @@ test("Comparison reuses one Session for an attempt and isolates different attemp
   assert.match(sessions[0]?.appended[2] ?? "", /report\.html/);
   assert.match(sessions[0]?.appended[3] ?? "", /headline/);
   assert.doesNotMatch(sessions[0]?.appended[0] ?? "", /Return only JSON matching the contract/);
-  assert.match(sessions[0]?.input.systemPrompt ?? "", /四次连续的工作委托/);
+  assert.match(sessions[0]?.input.systemPrompt ?? "", /最后一轮不能使用工具/);
   assert.match(sessions[0]?.input.systemPrompt ?? "", /configuration/);
   assert.equal(comparison.timeoutMs, 0);
+});
+
+test("Comparison refuses to start a Session without attemptId", async () => {
+  const comparison = new ComparisonAgent({
+    host: new PiAgentHost({ createSession: () => ({ append: async () => "", cancel() {} }) }),
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+  });
+  const { attemptId: _omit, ...rest } = context();
+  await assert.rejects(
+    comparison.compare(rest as ComparisonContext),
+    /attemptId is required/,
+  );
 });
 
 test("Comparison freeform turns ignore invalid JSON and only the envelope round validates", async () => {
@@ -106,15 +121,14 @@ test("Comparison freeform turns ignore invalid JSON and only the envelope round 
   assert.match(appended[0] ?? "", new RegExp(COMPARISON_TURN_PROMPTS.understand.slice(0, 12)));
 });
 
-test("Comparison keeps owned observation refs and drops unknown extras", async () => {
-  const owned = "event:run-owned-1";
+test("Comparison keeps owned short refs and drops unknown extras", async () => {
+  const owned = "ev-01";
   const keep = new ComparisonAgent({
     host: new PiAgentHost({
       createSession: () => ({
         append: async () => JSON.stringify({
           status: "completed",
-          reportPath: "report.html",
-          evidenceRefs: [owned, "event:foreign-1"],
+          evidenceRefs: [owned, "ev-99", "event:foreign-1"],
         }),
         cancel() {},
       }),
@@ -122,7 +136,7 @@ test("Comparison keeps owned observation refs and drops unknown extras", async (
     timeoutMs: 5_000,
     maxRepairAttempts: 0,
   });
-  const kept = await keep.compare({ ...context(), ownedEvidenceRefs: [owned] });
+  const kept = await keep.compare({ ...context(), shortEvidenceRefs: [owned] });
   assert.equal(kept.status, "completed");
   if (kept.status === "completed") assert.deepEqual(kept.value.evidenceRefs, [owned]);
   const reject = new ComparisonAgent({
@@ -130,8 +144,7 @@ test("Comparison keeps owned observation refs and drops unknown extras", async (
       createSession: () => ({
         append: async () => JSON.stringify({
           status: "completed",
-          reportPath: "report.html",
-          evidenceRefs: ["event:foreign-1"],
+          evidenceRefs: ["ev-99"],
         }),
         cancel() {},
       }),
@@ -139,9 +152,9 @@ test("Comparison keeps owned observation refs and drops unknown extras", async (
     timeoutMs: 5_000,
     maxRepairAttempts: 0,
   });
-  const rejected = await reject.compare({ ...context(), ownedEvidenceRefs: [owned] });
-  assert.equal(rejected.status, "failed");
-  if (rejected.status === "failed") assert.match(rejected.failure.message, /unknown evidence reference/);
+  const dropped = await reject.compare({ ...context(), shortEvidenceRefs: [owned] });
+  assert.equal(dropped.status, "completed");
+  if (dropped.status === "completed") assert.deepEqual(dropped.value.evidenceRefs, []);
 });
 
 test("Comparison drops path-shaped evidence refs when none remain owned", async () => {
@@ -307,4 +320,47 @@ test("Comparison stops later turns when the first freeform request is cancelled"
   const result = await comparison.compare(context(), [], undefined, ac.signal);
   assert.equal(result.status, "cancelled");
   assert.equal(appends, 1);
+});
+
+test("Host zone edits trigger one extra repair turn in the same Session", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-host-zone-repair-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = recoveryTools(root, {
+    allowWrite: (path) => path === "report.html",
+    completionPaths: new Set(["report.html"]),
+  });
+  const shell = renderComparisonReportShell({
+    task: context().task.summary,
+    facts: context().reportFacts,
+    metrics: {},
+  });
+  const snapshot = extractHostZoneSnapshot(shell);
+  assert.ok(snapshot);
+  const prompts: string[] = [];
+  const comparison = new ComparisonAgent({
+    host: new PiAgentHost({
+      createSession: (input) => ({
+        append: async ({ content }) => {
+          prompts.push(content);
+          if (prompts.length === 3) {
+            const page = await input.tools.find((tool) => tool.name === "read")?.execute({ path: "report.html" }, new AbortController().signal);
+            await input.tools.find((tool) => tool.name === "write")?.execute({
+              path: "report.html",
+              content: (page?.content ?? shell).replace('data-id="host-header"', 'data-id="host-header" data-edited="1"'),
+            }, new AbortController().signal);
+          }
+          if (prompts.length < 5) return "working";
+          return JSON.stringify({ status: "completed", evidenceRefs: [] });
+        },
+        cancel() {},
+      }),
+    }),
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+  });
+  const result = await comparison.compare({ ...context(), reportShellHtml: shell, ...(snapshot ? { hostZoneSnapshot: snapshot } : {}) }, tools);
+  assert.equal(result.status, "completed");
+  assert.equal(prompts.length, 5);
+  assert.match(prompts[3] ?? "", /Host 区域被改动/);
 });

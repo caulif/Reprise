@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const taskCase = makeTaskCase(caseId, historicalCommit);
   const agents = createHarnessAgents(config);
   const attempt = await recoverExperiment({
-    dataDir, caseId, experimentId, runId, sourceRoot, taskCase, recovery: agents.recovery,
+    dataDir, caseId, experimentId, runId, sourceRoot, taskCase, recovery: agents.recovery, diagnosis: agents.diagnosis,
     now,
   });
   await assertRecovery(attempt, sourceRoot, dataDir, experimentId);
@@ -134,3 +134,4 @@ main().catch((error: unknown) => {
   console.error(`Real Recovery smoke failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });
+

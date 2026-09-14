@@ -18,10 +18,13 @@ import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./re
 import { recordValue, strings } from "./experiment-helpers.js";
 import { aggregateEventUsage, factsFromUsage, usageCostUsd } from "./session-usage.js";
 
+export type RecentToolError = { tool: string; message: string };
+
 export type ControllerObservation = RunInspection & {
   evidenceRefs: string[];
   currentSummary: string;
   trajectorySummary: string;
+  recentToolErrors?: RecentToolError[];
   settlementStatus?: string;
   /** Visible assistant text from the latest settled turn only; empty when that turn has none. */
   turnVisibleText?: string;
@@ -103,6 +106,7 @@ export async function inspectRun(
     ...workspaceFacts,
     ...(replayConditions?.length ? { replayConditions } : {}),
     controllerWritePaths: controllerWritePathsFromEvents(events),
+    controllerExternalWritePaths: controllerExternalWritePathsFromEvents(events),
   };
   const evidenceRefs = facts.evidenceEvents
     .map((event) => `event:${event.eventId}`);
@@ -121,6 +125,7 @@ export async function inspectRun(
   const trajectorySummary = `Settled turns: ${inspection.turns}. Read current-user-view.md and THIS-TURN.txt.`;
   return {
     ...inspection,
+    recentToolErrors: recentToolErrorsFromEvents(events),
     evidenceRefs,
     currentSummary,
     trajectorySummary,
@@ -187,6 +192,23 @@ export async function persistUserVisibleTurn(
     runId,
     payload: userView,
   });
+}
+
+export function recentToolErrorsFromEvents(events: readonly EventEnvelope[]): RecentToolError[] {
+  const rows: RecentToolError[] = [];
+  for (const event of events) {
+    if (event.type === "agent.tool_failed") {
+      const payload = recordValue(event.payload);
+      rows.push({
+        tool: typeof payload.tool === "string" ? payload.tool : "unknown",
+        message: typeof payload.message === "string" ? payload.message : "tool failed",
+      });
+    }
+    if (event.type === "runtime.runtime_failed") {
+      rows.push({ tool: "runtime", message: "runtime.runtime_failed" });
+    }
+  }
+  return rows.slice(-8);
 }
 
 function userVisiblePrompt(userView: UserVisibleTurn | undefined): string | undefined {
@@ -383,6 +405,19 @@ function controllerWritePathsFromEvents(events: readonly EventEnvelope[]): strin
     if (typeof path !== "string" || seen.has(path)) continue;
     seen.add(path);
     paths.push(path);
+  }
+  return paths;
+}
+
+function controllerExternalWritePathsFromEvents(events: readonly EventEnvelope[]): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (event.type !== "controller.external_write") continue;
+    const pathRef = recordValue(event.payload).pathRef;
+    if (typeof pathRef !== "string" || seen.has(pathRef)) continue;
+    seen.add(pathRef);
+    paths.push(pathRef);
   }
   return paths;
 }

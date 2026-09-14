@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { assertComparisonResult, COMPARISON_SYSTEM_PROMPT } from '../../src/agents/comparison-agent.js';
+import { assertComparisonResult, COMPARISON_SYSTEM_PROMPT, ComparisonAgent } from '../../src/agents/comparison-agent.js';
 import { buildComparisonContext, comparePersistedFacts, type RunInspection } from '../../src/application/comparison.js';
 import { fingerprintTree } from '../../src/environment/local-workspace-fs.js';
 import { recoveryTools } from '../../src/infrastructure/recovery-tools.js';
+import { PiAgentHost } from '../../src/infrastructure/agent/host.js';
+import { startExperiment } from '../../src/application/experiment.js';
+import { comparisonHtmlWithHostShell, input, VerifiedRuntime } from '../codex-experiment-support.js';
 import type { ComparisonAgentPort } from '../../src/agents/comparison-agent.js';
 import type { RunRecord, TaskCase } from '../../src/core/schema.js';
 
@@ -70,8 +73,8 @@ test('comparison write policy uses the first path segment, not a string prefix',
 test('comparison envelope accepts only report.html', () => {
   const context = buildComparisonContext(taskCase(), [runRecord()]);
   assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, context));
-  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [], headline: 'Same files, fewer turns.' }, context));
-  assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: '../report.html', evidenceRefs: [] }, context), /schema validation failed/);
+  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', evidenceRefs: [], headline: 'Same files, fewer turns.' }, context));
+  assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'other.html', evidenceRefs: [] }, context), /schema validation failed/);
   assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [], headline: 'x'.repeat(281) }, context), /schema validation failed/);
 });
 
@@ -84,7 +87,27 @@ test('reportFacts preserve missing measurements and project known run facts', ()
   assert.equal(facts.limits.triggered[0], 'limit.turns');
   assert.deepEqual(facts.delivery.changedPaths, ['src/a.ts']);
   assert.equal(facts.replay.baselineEvidence, 'verifiable');
-  assert.equal(facts.metrics, undefined);
+  assert.equal(facts.metrics?.candidate?.usageStatus, 'not_collected');
+  assert.equal(facts.metrics?.baseline?.usageStatus, 'not_collected');
+  assert.equal(facts.metrics?.candidate?.toolCostsIncluded, false);
+  assert.equal(facts.metrics?.candidate?.tokens, undefined);
+});
+
+test('reportFacts mark untotalable tokenUsage as unknown', () => {
+  const facts = buildComparisonContext(taskCase(), [runRecord()], [{
+    runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, tokenUsage: {},
+  }]).reportFacts;
+  assert.equal(facts.metrics?.candidate?.usageStatus, 'unknown');
+  assert.equal(facts.metrics?.candidate?.tokens, undefined);
+});
+
+test('reportFacts mark cost without token totals as unknown', () => {
+  const facts = buildComparisonContext(taskCase(), [runRecord()], [{
+    runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, costUsd: 0.12,
+  }]).reportFacts;
+  assert.equal(facts.metrics?.candidate?.usageStatus, 'unknown');
+  assert.equal(facts.metrics?.candidate?.tokens, undefined);
+  assert.equal(facts.metrics?.candidate?.costUsd, 0.12);
 });
 
 test('reportFacts project collected token parts without inventing speed or cost', () => {
@@ -92,35 +115,46 @@ test('reportFacts project collected token parts without inventing speed or cost'
     runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, tokenUsage: { total: 256 },
   }]).reportFacts;
   assert.deepEqual(totalOnly.metrics?.candidate?.tokens, { total: 256 });
+  assert.equal(totalOnly.metrics?.candidate?.usageStatus, 'collected');
+  assert.equal(totalOnly.metrics?.candidate?.toolCostsIncluded, false);
   assert.equal(totalOnly.metrics?.candidate?.costUsd, undefined);
-  assert.equal(totalOnly.metrics?.baseline, undefined);
+  assert.equal(totalOnly.metrics?.baseline?.usageStatus, 'not_collected');
   const withClock = buildComparisonContext(taskCase(), [runRecord()], [{
     runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 4_000, tokenUsage: { total: 256 },
   }]).reportFacts;
   assert.equal(withClock.metrics?.candidate?.elapsedMs, 4_000);
 });
 
-test('comparison envelope accepts Host-owned observation refs and rejects only-unknown refs', () => {
-  const owned = 'event:transcript-0-aaaaaaaaaaaaaaaa';
+test('comparison envelope accepts short evidence refs and rejects long event ids', () => {
   const context = {
     ...buildComparisonContext(taskCase(), [runRecord()]),
-    ownedEvidenceRefs: [owned],
+    shortEvidenceRefs: ['ev-01'],
   };
-  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [owned] }, context));
+  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-01'] }, context));
   assert.throws(
     () => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['event:foreign-1'] }, context),
-    /unknown evidence reference/,
+    /schema validation failed/,
   );
 });
 
-test('comparison orchestration rejects envelope citations outside persisted facts', async () => {
+test('comparison orchestration rejects long event ids in the envelope', async () => {
   const agent: ComparisonAgentPort = { compare: async () => ({ status: 'completed', sessionId: 'comparison-1', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: ['event:foreign-1'] } }) };
-  await assert.rejects(comparePersistedFacts({ taskCase: taskCase(), runs: [runRecord()], agent }), /unknown evidence reference/);
+  await assert.rejects(comparePersistedFacts({ taskCase: taskCase(), runs: [runRecord()], agent, attemptId: 'attempt-1' }), /schema validation failed/);
+});
+
+test('comparePersistedFacts requires an explicit attemptId', async () => {
+  const agent: ComparisonAgentPort = { compare: async () => ({ status: 'completed', sessionId: 'comparison-1', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } }) };
+  await assert.rejects(
+    comparePersistedFacts({ taskCase: taskCase(), runs: [runRecord()], agent, attemptId: '' }),
+    /Comparison attemptId is required/,
+  );
 });
 
 test('comparison prompt points workspace tools at the sealed snapshot mount', () => {
   assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed end-of-run snapshot/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /data-host="metrics"/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /data-host-zone/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /data-agent-zone/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /统一风格的报告模板/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /incomplete_object_store/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /objectStore=not_seeded/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
@@ -139,7 +173,7 @@ test('comparison orientation does not inline the initial task and points at user
   assert.doesNotMatch(prompt, /修复报告/);
   assert.match(prompt, /observations\/user-inputs\/INDEX\.tsv/);
   assert.match(prompt, /briefingRoot=/);
-  assert.match(prompt, /facts\/context\.json/);
+  assert.match(prompt, /facts\/media\.json/);
   assert.doesNotMatch(prompt, /every user turn in index order/);
 });
 
@@ -161,16 +195,65 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   const facts = buildComparisonContext(historical, [runRecord()], [{
     runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 13 * 60_000, tokenUsage: { total: 256 }, costUsd: 0.49,
   }]).reportFacts;
-  const html = renderComparisonReportShell({ task: historical.initialInput.text, metrics: facts.metrics ?? {} });
+  const html = renderComparisonReportShell({
+    task: historical.initialInput.text,
+    facts,
+    metrics: facts.metrics ?? {},
+  });
   assert.match(html, /white-space:nowrap/);
-  assert.match(html, /data-host="metrics"/);
+  assert.match(html, /data-host="status"/);
+  assert.match(html, /data-agent-zone="key-differences"/);
+  assert.match(html, /data-host-zone="metrics"/);
   assert.equal(hostMetricsMismatch(html, facts.metrics ?? {}), undefined);
   assert.match(html, /2<span class="unit">分/);
   assert.match(html, /13<span class="unit">分/);
   assert.match(html, /0\.49<span class="unit">\$/);
+  assert.match(html, /费用不含工具调用成本/);
+  assert.match(html, /2026-09-11-cc-switch-semantic/);
   const tampered = html.replace('0.49', '9.99');
   assert.equal(hostMetricsMismatch(tampered, facts.metrics ?? {}), 'Host metrics numbers were modified.');
   assert.equal(hostMetricsMismatch('<html></html>', facts.metrics ?? {}), 'Host metrics block is missing.');
+});
+
+test('invalid comparison JSON keeps the already written report.html', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-invalid-envelope-'));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  await mkdir(join(root, 'source'), { recursive: true });
+  await writeFile(join(root, 'source', 'README.md'), '# source\n');
+  let round = 0;
+  const comparison = new ComparisonAgent({
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+    host: new PiAgentHost({
+      createSession: (session) => ({
+        append: async () => {
+          round += 1;
+          if (round === 3) {
+            const read = session.tools?.find((tool) => tool.name === 'read');
+            const write = session.tools?.find((tool) => tool.name === 'write');
+            const page = await read?.execute({ path: 'report.html' }, new AbortController().signal);
+            await write?.execute({
+              path: 'report.html',
+              content: comparisonHtmlWithHostShell(
+                page?.content ? { reportShellHtml: page.content } : {},
+                '<p>kept-page</p>',
+              ),
+            }, new AbortController().signal);
+          }
+          if (round < 4) return 'working';
+          return 'not-json';
+        },
+        cancel() {},
+      }),
+    }),
+  });
+  const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
+  assert.equal(result.comparison.result.status, 'failed');
+  assert.equal(result.comparison.result.status === 'failed' ? result.comparison.result.failure.code : undefined, 'invalid_envelope');
+  const attempts = join(result.experimentRoot, 'comparison-attempts');
+  const dirs = await readdir(attempts);
+  const draft = await readFile(join(attempts, dirs[0] ?? '', 'report.html'), 'utf8');
+  assert.match(draft, /kept-page/);
 });
 
 

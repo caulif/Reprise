@@ -1,4 +1,3 @@
-import { persistRecoveryEvaluation, recoveryEvaluationCase, recoveryTimingSummary } from "./evaluation.js";
 import {
   measureRecoveryStagingReadiness,
   taskContinuationOutcome,
@@ -17,11 +16,15 @@ import {
   type RecoveryRunSession,
 } from "./session.js";
 import type { RecoveryAttempt } from "./types.js";
+import type { RecoveryEnvelope } from "../../environment/local-workspace-provider.js";
+import { access, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export async function finalizeRecoveredCandidate(session: RecoveryRunSession): Promise<RecoveryAttempt> {
   const { input, store, provider, staging, recovery, facts } = session;
   if (!staging || !recovery || recovery.status !== "completed" || !facts)
     throw new Error("Recovery finalize was not prepared.");
+  await ensureRecoveryReport(staging.root, recovery.value);
   session.failureStage = "provider_validation_failed";
   const providerVerificationStartedAt = Date.now();
   const validated = await provider.validateRecovery(staging, recovery.value);
@@ -87,11 +90,30 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   return completeRecoveryAttempt(session);
 }
 
+async function ensureRecoveryReport(
+  root: string,
+  decision: RecoveryEnvelope,
+): Promise<void> {
+  const reportPath = join(root, "recovery.md");
+  try {
+    await access(reportPath);
+    return;
+  } catch {
+    // The report path is Host-owned in the envelope. If the model completed a
+    // valid decision but omitted the optional narrative artifact, preserve the
+    // decision and materialize a minimal auditable report from it.
+  }
+  const unresolved = decision.unresolved.length
+    ? `\n\nUnresolved:\n${decision.unresolved.map((item) => `- ${item}`).join("\n")}`
+    : "";
+  await writeFile(reportPath, `# Recovery report\n\n${decision.summary}${unresolved}\n`, "utf8");
+}
+
 async function persistRecoveryCompletionArtifacts(
   session: RecoveryRunSession,
   activeProviderPreview: NonNullable<RecoveryRunSession["activeProviderPreview"]>,
 ): Promise<void> {
-  const { input, store, staging, recovery } = session;
+  const { input, store, recovery } = session;
   const attemptsArtifact = Buffer.from(
     JSON.stringify({ schemaVersion: 1, state: lifecycleState(session), attempts: session.recoveryOrchestrator.attempts }),
     "utf8",
@@ -136,34 +158,6 @@ async function persistRecoveryCompletionArtifacts(
       hasAccept,
     }),
   );
-  if (session.writerAcquired)
-    await persistRecoveryEvaluation(
-      store,
-      [
-        recoveryEvaluationCase({
-          caseId: input.caseId,
-          staging,
-          candidateCreated: session.candidateCreated,
-          recoveredPaths: session.recoveredPaths,
-          verification: session.verification,
-          forensicsCompleted: session.forensicsCompleted,
-          evidenceSourcesAttempted: session.evidenceSourcesAttempted,
-          evidenceSourcesAvailable: session.evidenceSourcesAvailable,
-          hypothesisCount: session.hypothesisCount,
-          candidateCount: session.candidateCount,
-          verifierRejectionReasons: session.verifierRejectionReasons,
-          providerFailureRetryable: session.providerFailureRetryable,
-          pathBoundaryRejected: session.pathBoundaryRejected,
-          ...(session.readinessResult ? { readiness: session.readinessResult } : {}),
-          ...(session.taskOutcome ? { taskOutcome: session.taskOutcome } : {}),
-          modelCalls: session.modelAttempts,
-          startedAt: input.now,
-          timings: recoveryTimingSummary(session.recoveryOrchestrator.attempts),
-        }),
-      ],
-      undefined,
-      store.events(input.runId),
-    );
 }
 
 function completeRecoveryAttempt(session: RecoveryRunSession): RecoveryAttempt {

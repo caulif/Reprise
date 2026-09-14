@@ -12,7 +12,7 @@
 
 - 声部只留左缘两列：内部薄荷、候选桃、Input 中性。短句、可见回复、执行条正文用默认前景。
 - 折叠 `▸` 与 `⎿` 叶名 muted；live 执行条与当前选中条用可见底。失败用独立红，不与候选桃共用 RGB。
-- 列尾行左动作、右时钟。`timelineFollowing === false` 且后方还有条时，列尾下画 `▼ N`（compact 为 `↓`）。End / `l` 仍清跟随，本决定不改 `readingOffset` 规则。
+- 列尾行左动作、右时钟。`now:*` 只画在列尾，不进主列。`timelineFollowing === false` 且后方还有条时，列尾下画 `▼ N`（compact 为 `↓`）。End / `l` 仍清跟随，本决定不改 `readingOffset` 规则。
 - 结果页 kv 键 muted、值正文、短标签 accent；`⚠` 走失败色。
 - 默认仍铺深画布底。`REPRISE_TUI_HOST_BG=1` 不铺 `fillCanvas`，选中改 reverse / 对比底。
 

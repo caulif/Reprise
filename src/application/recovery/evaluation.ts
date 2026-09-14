@@ -11,8 +11,6 @@ import {
   type RecoveryEvaluationTerminalCase,
 } from '../../core/schema.js';
 import { writeAtomic } from '../../core/identity.js';
-import type { EnvironmentBaseline, RecoveryStaging } from '../../environment/local-workspace-provider.js';
-import type { RecoveryReadinessResult } from './readiness.js';
 
 export type RecoveryEvaluationMetrics = {
   fixtureCount: number;
@@ -436,93 +434,4 @@ async function writeCaseJson(
   try { await stat(target); throw new Error(`Recovery evaluation record already exists: ${name}.`); }
   catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
   await writeAtomic(target, `${JSON.stringify(value)}\n`);
-}
-
-export function recoveryTimingSummary(
-  attempts: readonly import("../../core/schema.js").RecoveryLifecycleAttempt[],
-): {
-  forensicsMs?: number;
-  modelRequestMs?: number;
-  candidateMaterializationMs?: number;
-} {
-  const sum = (operation: import("../../core/schema.js").RecoveryLifecycleAttempt["operation"]): number | undefined => {
-    const values = attempts
-      .filter((attempt) => attempt.operation === operation && attempt.result !== "started")
-      .map((attempt) => attempt.durationMs);
-    return values.length ? values.reduce((total, value) => total + value, 0) : undefined;
-  };
-  const forensicsMs = sum("resolve_facts");
-  const modelRequestMs = sum("invoke_model");
-  const candidateMaterializationMs = sum("create_candidate");
-  return {
-    ...(forensicsMs === undefined ? {} : { forensicsMs }),
-    ...(modelRequestMs === undefined ? {} : { modelRequestMs }),
-    ...(candidateMaterializationMs === undefined ? {} : { candidateMaterializationMs }),
-  };
-}
-
-export function recoveryEvaluationCase(input: {
-  caseId: string;
-  staging?: RecoveryStaging | undefined;
-  candidateCreated: boolean;
-  recoveredPaths: string[];
-  verification:
-    "verified" | "pending_user_review" | "rejected" | "insufficient_evidence";
-  forensicsCompleted: boolean;
-  evidenceSourcesAttempted?: number | undefined;
-  evidenceSourcesAvailable?: number | undefined;
-  hypothesisCount?: number | undefined;
-  candidateCount?: number | undefined;
-  verifierRejectionReasons?: readonly string[] | undefined;
-  providerFailureRetryable?: boolean | undefined;
-  pathBoundaryRejected?: boolean | undefined;
-  readiness?: RecoveryReadinessResult;
-  taskOutcome?: NonNullable<EnvironmentBaseline["recovery"]>["taskOutcome"];
-  modelCalls: number;
-  startedAt: string;
-  timings?: { forensicsMs?: number; modelRequestMs?: number; candidateMaterializationMs?: number; };
-}): import("../../core/schema.js").RecoveryEvaluationCase {
-  const common = {
-    schemaVersion: 1 as const,
-    caseId: input.caseId,
-    stagingSucceeded: Boolean(input.staging),
-    forensicsStarted: Boolean(input.staging),
-    forensicsCompleted: input.forensicsCompleted,
-    ...(input.evidenceSourcesAttempted === undefined
-      ? {}
-      : { evidenceSourcesAttempted: input.evidenceSourcesAttempted }),
-    ...(input.evidenceSourcesAvailable === undefined
-      ? {}
-      : { evidenceSourcesAvailable: input.evidenceSourcesAvailable }),
-    ...(input.hypothesisCount === undefined
-      ? {}
-      : { hypothesisCount: input.hypothesisCount }),
-    ...(input.candidateCount === undefined
-      ? {}
-      : { candidateCount: input.candidateCount }),
-    ...(input.verifierRejectionReasons?.length
-      ? { verifierRejectionReasons: [...input.verifierRejectionReasons] }
-      : {}),
-    ...(input.providerFailureRetryable === undefined
-      ? {}
-      : { providerFailureRetryable: input.providerFailureRetryable }),
-    ...(input.pathBoundaryRejected === undefined
-      ? {}
-      : { pathBoundaryRejected: input.pathBoundaryRejected }),
-    ...(input.readiness ? { readinessStatus: input.readiness.status, readinessCheckedPaths: input.readiness.checkedPaths, readinessMissingPaths: input.readiness.missingPaths } : {}),
-    ...(input.taskOutcome ? { taskOutcome: input.taskOutcome } : {}),
-    candidateCreated: input.candidateCreated,
-    verification: input.verification,
-    recoveredPaths: [...new Set(input.recoveredPaths)],
-    modelCalls: input.modelCalls,
-    durationMs: Math.max(0, Date.now() - Date.parse(input.startedAt)),
-    ...(input.timings && Object.keys(input.timings).length ? { timings: input.timings } : {}),
-  };
-  const checkpointPaths =
-    input.staging?.checkpointFingerprint?.resources
-      .filter((resource) => resource.kind === "file")
-      .map((resource) => resource.path) ?? [];
-  if (checkpointPaths.length > 0)
-    return { ...common, layer: "interrupted_checkpoint", checkpointPaths };
-  return { ...common, layer: "history_completed" };
 }

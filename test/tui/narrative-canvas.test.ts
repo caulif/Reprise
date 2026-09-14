@@ -442,8 +442,10 @@ test('scrollback gutter keeps body default, mutes folds, and pins the clock', ()
     assert.doesNotMatch(body, /\u001b\[38;2;238;176;155m长回复|\u001b\[33m长回复/);
     assert.match(body, /\u001b\[90m[^\n]*▸ 阅读证据|\u001b\[38;2;74;92;86m/);
     const status = painted.at(-1) ?? '';
+    const plain = painted.map((line) => line.replace(/\u001b\[[0-9;]*m/g, '')).join('\n');
     assert.match(status.replace(/\u001b\[[0-9;]*m/g, ''), /25:10\s*$/);
     assert.doesNotMatch(status.replace(/\u001b\[[0-9;]*m/g, ''), /working · 25:10/);
+    assert.equal([...plain.matchAll(/working/g)].length, 1);
     const behind = renderScrollback(colored, 80, [say, fold], 0, 'zh', 'Codex', undefined, 0, 0, '00:08', false).join('\n');
     assert.match(behind, /▼|↓/);
     assert.match(behind, /新 1|1 new/);

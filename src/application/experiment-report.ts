@@ -5,7 +5,7 @@ import type { ControllerDecision } from "../agents/controller-agent.js";
 import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObservationRefs } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { ComparisonInvocationSchema, type ArtifactRef, type TaskCase } from "../core/schema.js";
+import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type TaskCase } from "../core/schema.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { recoveryTools } from "../infrastructure/recovery-tools.js";
 import {
@@ -27,7 +27,13 @@ import {
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
-import { hostMetricsMismatch, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
+import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
+import {
+  comparisonFailureDiagnostic,
+  persistComparisonReportModel,
+  publishComparisonArtifacts,
+  verifyAndRenderComparisonReport,
+} from "./comparison-publication.js";
 
 export { comparisonCandidateMount };
 
@@ -191,6 +197,7 @@ async function compareExperimentOutcome(
   const events = input.store.events(input.input.runId);
   const context: ComparisonContext = {
     ...buildComparisonContext(input.taskCase, [record], [inspection]),
+    attemptId,
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
   const briefingContext = briefingComparisonContext(context);
@@ -201,50 +208,97 @@ async function compareExperimentOutcome(
     artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
     snapshotStatus: input.candidateSnapshotStatus,
   });
-  await persistComparisonRequest(input.store, input.input.runId, attemptId, briefingContext);
+  const reportShellHtml = renderComparisonReportShell({
+    task: context.task.summary,
+    facts: context.reportFacts,
+    metrics: metricsFromReportFacts(context.reportFacts),
+    evidence: briefing.links,
+    media: briefing.media,
+  });
+  const hostZoneSnapshot = extractHostZoneSnapshot(reportShellHtml);
+  const compareFacts = {
+    ...context,
+    media: briefing.media,
+    shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
+    attemptRoot,
+    ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
+  };
+  await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
   const compareContext = {
-    ...withOrientation(context, input, attemptId, attemptRoot, briefing.indexMarkdown),
-    reportShellHtml: renderComparisonReportShell({
-      task: context.task.summary,
-      metrics: metricsFromReportFacts(context.reportFacts),
-    }),
+    ...withOrientation(compareFacts, input, attemptId, attemptRoot, briefing.indexMarkdown),
+    reportShellHtml,
   };
   let comparisonResult: AgentInvocation<ComparisonResult>;
   try {
     comparisonResult = input.signal?.aborted
       ? { status: "cancelled" }
-      : await invokeCompare(input, compareContext, attemptRoot, attemptId);
+      : await invokeCompare(input, compareContext, attemptRoot, attemptId, briefing.media.some((item) => item.available));
     if (input.signal?.aborted) comparisonResult = { status: "cancelled" };
-    if (comparisonResult.status === "completed") assertComparisonResult(comparisonResult.value, context);
+    comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(attemptRoot, "report.html"));
+    if (comparisonResult.status === "completed") assertComparisonResult(comparisonResult.value, compareFacts);
     if (comparisonResult.status === "completed") {
-      comparisonResult = await enforcePublishedReport(comparisonResult, attemptRoot, context);
+      comparisonResult = await enforcePublishedReport(comparisonResult, attemptRoot, compareFacts, briefing);
     }
-    if (comparisonResult.status === "completed") await publishComparisonReport(attemptRoot, input.experimentRoot);
+    if (comparisonResult.status === "completed") {
+      await publishComparisonArtifacts({
+        attemptRoot,
+        experimentRoot: input.experimentRoot,
+        html: await readFile(join(attemptRoot, "report.html"), "utf8"),
+      });
+      await persistPublishedReportModel(attemptRoot, input.experimentRoot);
+    }
   } finally {
-    input.input.comparison.release?.(attemptId);
+    await input.input.comparison.release?.(attemptId);
   }
+  return persistComparisonInvocation({
+    store: input.store,
+    runId: input.input.runId,
+    experimentRoot: input.experimentRoot,
+    attemptId,
+    attemptRoot,
+    comparisonResult,
+    facts: context.reportFacts,
+  });
+}
+
+async function persistComparisonInvocation(input: {
+  store: ExperimentStore;
+  runId: string;
+  experimentRoot: string;
+  attemptId: string;
+  attemptRoot: string;
+  comparisonResult: AgentInvocation<ComparisonResult>;
+  facts: ComparisonContext["reportFacts"];
+}) {
   await input.store.append({
     type: "comparison.completed",
-    runId: input.input.runId,
-    operationId: `comparison-completed-${attemptId}`,
-    payload: { attemptId, ...invocationFact(comparisonResult) },
+    runId: input.runId,
+    operationId: `comparison-completed-${input.attemptId}`,
+    payload: { attemptId: input.attemptId, ...invocationFact(input.comparisonResult) },
   });
-  if (!Value.Check(ComparisonInvocationSchema, comparisonResult)) throw new Error("Comparison result does not satisfy ComparisonInvocationSchema.");
-  await writeAtomic(join(input.experimentRoot, "comparison.json"), `${JSON.stringify(comparisonResult)}\n`);
-  const completedComparison = comparisonResult.status === "completed" ? comparisonResult.value : undefined;
-  const reportPath = completedComparison
+  const status = input.comparisonResult.status;
+  if (!Value.Check(ComparisonInvocationSchema, input.comparisonResult)) throw new Error("Comparison result does not satisfy ComparisonInvocationSchema.");
+  await writeAtomic(join(input.experimentRoot, "comparison.json"), `${JSON.stringify(input.comparisonResult)}\n`);
+  const completed = status === "completed";
+  const reportPath = completed
     ? join(input.experimentRoot, "report.html")
     : join(input.experimentRoot, "comparison-failure.html");
-  if (!completedComparison) {
-    await writeComparisonFailurePage(reportPath, comparisonResult);
+  if (!completed) {
+    await writeComparisonFailurePage({
+      reportPath,
+      result: input.comparisonResult,
+      facts: input.facts,
+      attemptId: input.attemptId,
+      attemptRoot: input.attemptRoot,
+    });
   }
   await input.store.append({
     type: "report.created",
-    runId: input.input.runId,
-    operationId: `report-created-${attemptId}`,
-    payload: { path: reportPath, attemptId },
+    runId: input.runId,
+    operationId: `report-created-${input.attemptId}`,
+    payload: { path: reportPath, attemptId: input.attemptId },
   });
-  return { comparisonResult, reportPath };
+  return { comparisonResult: input.comparisonResult, reportPath };
 }
 
 function withOrientation(
@@ -270,6 +324,7 @@ async function enforcePublishedReport(
   result: AgentInvocation<ComparisonResult>,
   attemptRoot: string,
   context: ComparisonContext,
+  briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[] },
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (result.status !== "completed") return result;
   if (!(await reportExists(attemptRoot, result.value.reportPath))) {
@@ -283,16 +338,45 @@ async function enforcePublishedReport(
       },
     };
   }
-  const mismatch = hostMetricsMismatch(
-    await readFile(join(attemptRoot, "report.html"), "utf8"),
-    metricsFromReportFacts(context.reportFacts),
-  );
-  if (!mismatch) return result;
-  return {
-    status: "failed",
-    sessionId: result.sessionId,
-    failure: { code: "invalid_output", message: mismatch, attempts: 1 },
-  };
+  const verified = await verifyAndRenderComparisonReport({
+    html: await readFile(join(attemptRoot, "report.html"), "utf8"),
+    facts: context.reportFacts,
+    result: result.value,
+    attemptRoot,
+    media: briefing.media,
+    evidence: briefing.links,
+    ...(context.hostZoneSnapshot ? { hostZoneSnapshot: context.hostZoneSnapshot } : {}),
+  });
+  if ("failureClass" in verified) {
+    return {
+      status: "failed",
+      sessionId: result.sessionId,
+      failure: {
+        code: verified.code,
+        message: verified.message,
+        attempts: 1,
+      },
+    };
+  }
+  await writeAtomic(join(attemptRoot, "report.html"), verified.html);
+  await persistComparisonReportModel(attemptRoot, verified.model);
+  return result;
+}
+
+function remapInvalidEnvelope(result: AgentInvocation<ComparisonResult>, reportPresent: boolean): AgentInvocation<ComparisonResult> {
+  if (result.status !== "failed" || !reportPresent) return result;
+  const message = result.failure.message;
+  if (result.failure.code !== "invalid_output" && message !== "invalid JSON" && !message.includes("schema validation failed")) return result;
+  return { ...result, failure: { ...result.failure, code: "invalid_envelope" } };
+}
+
+async function persistPublishedReportModel(attemptRoot: string, experimentRoot: string): Promise<void> {
+  try {
+    await persistComparisonReportModel(experimentRoot, readReportModel(await readFile(join(attemptRoot, "report-model.json"), "utf8")));
+  } catch (error) {
+    if (isMissing(error)) return;
+    throw error;
+  }
 }
 
 async function invokeCompare(
@@ -300,11 +384,12 @@ async function invokeCompare(
   context: ComparisonContext,
   attemptRoot: string,
   attemptId: string,
+  allowBinary: boolean,
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (input.signal?.aborted) return { status: "cancelled" };
   return input.input.comparison.compare(
     context,
-    comparisonTools(input, attemptRoot),
+    comparisonTools(input, attemptRoot, allowBinary),
     comparisonAudit(input, attemptId),
     input.signal,
   );
@@ -316,7 +401,7 @@ function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]):
     : join(input.experimentRoot, "comparison-attempts", "candidate-snapshot-unavailable");
 }
 
-function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptRoot: string): AgentToolDefinition[] {
+function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptRoot: string, allowBinary: boolean): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
   const mounts = comparisonAttemptMounts({
@@ -329,7 +414,7 @@ function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptR
   const candidateRoot = mounts.candidate;
   return [
     ...recoveryTools(attemptRoot, {
-      allowBinary: input.taskCase.privacy.allowBinary,
+      allowBinary: input.taskCase.privacy.allowBinary || allowBinary,
       mounts,
       allowWrite: comparisonAttemptWriteAllowed,
       completionPaths: new Set(["work/comparison-plan.md", "report.html"]),
@@ -391,45 +476,37 @@ async function materializeComparisonSandbox(
   }
 }
 
-async function publishComparisonReport(attemptRoot: string, experimentRoot: string): Promise<void> {
-  try {
-    await writeAtomic(join(experimentRoot, "report.html"), await readFile(join(attemptRoot, "report.html"), "utf8"));
-  } catch (error) {
-    if (isMissing(error)) return;
-    throw error;
-  }
-}
-
 function languageOf(text: string): "zh" | "en" {
   return /[\u4e00-\u9fff]/.test(text) ? "zh" : "en";
 }
 
-async function writeComparisonFailurePage(
-  reportPath: string,
-  result: StructuredAgentResult<unknown>,
-): Promise<void> {
-  const failed = result.status === "failed" ? result.failure : undefined;
-  const reason = failed?.message ?? "Comparison did not return a completed report.";
-  const category =
-    failed?.code === "invalid_output" && failed.message === "invalid JSON"
-      ? "invalid_json"
-      : failed?.message === "invalid JSON"
-        ? "invalid_json"
-        : failed?.message.startsWith("schema validation failed")
-          ? "schema_validation"
-          : undefined;
-  const facts = [
-    failed ? `code=${escapeHtml(failed.code)}` : undefined,
-    category ? `category=${escapeHtml(category)}` : undefined,
-    failed?.kind ? `kind=${escapeHtml(failed.kind)}` : undefined,
-    failed ? `attempts=${failed.attempts}` : undefined,
-  ].filter((item): item is string => Boolean(item));
-  const detail = facts.length ? `<p>${facts.join(" · ")}</p>` : "";
-  await writeFile(reportPath, `<!doctype html><html lang="en"><meta charset="utf-8"><title>Comparison unavailable</title><main><h1>Comparison unavailable</h1><p>${escapeHtml(reason)}</p>${detail}<p>Open the experiment trace and artifacts to inspect the recorded evidence. If report.html already exists, it belongs to an earlier successful attempt.</p></main></html>`, "utf8");
+function readReportModel(raw: string): import("../core/schema.js").ComparisonReportModel {
+  const value = JSON.parse(raw) as unknown;
+  if (!Value.Check(ComparisonReportModelSchema, value)) throw new Error("Comparison report model does not satisfy ComparisonReportModelSchema.");
+  return value;
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+async function writeComparisonFailurePage(input: {
+  reportPath: string;
+  result: StructuredAgentResult<unknown>;
+  facts: ComparisonContext["reportFacts"];
+  attemptId: string;
+  attemptRoot: string;
+}): Promise<void> {
+  const reportPresent = await reportExists(input.attemptRoot, "report.html");
+  const html = renderComparisonReportShell({
+    title: "Comparison unavailable",
+    task: "对照未能完成这次比较",
+    facts: input.facts,
+    metrics: metricsFromReportFacts(input.facts),
+    diagnostic: comparisonFailureDiagnostic({
+      result: input.result,
+      facts: input.facts,
+      reportPresent,
+      attemptId: input.attemptId,
+    }),
+  });
+  await writeFile(input.reportPath, html, "utf8");
 }
 
 /** Comparison may write only this attempt's scratch tree, working notes, and report.html. */

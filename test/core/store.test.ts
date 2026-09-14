@@ -177,6 +177,15 @@ test('store rejects malformed Controller request and observation payloads', asyn
     );
     await assert.rejects(
       store.append({
+        type: 'controller.external_write',
+        runId: 'run-1',
+        operationId: 'controller-request-run-1-1-ext-1',
+        payload: { schemaVersion: 1, requestId: 'controller-request-run-1-1', tool: 'shell_exec' },
+      }),
+      /controller.external_write payload does not satisfy its schema/,
+    );
+    await assert.rejects(
+      store.append({
         type: 'comparison.requested',
         runId: 'run-1',
         operationId: 'comparison-requested',

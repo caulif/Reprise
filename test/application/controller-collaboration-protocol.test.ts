@@ -29,6 +29,28 @@ function steering(runId: string): SteeringContext {
   };
 }
 
+test('Controller request snapshot records hostFacts without judging requirements', () => {
+  const snapshot = controllerRequestSnapshot({
+    ...steering('run-1'),
+    hostFacts: {
+      changedPaths: ['a.ts'],
+      requestId: 'controller-request-run-1-2',
+      runId: 'run-1',
+      phase: 'steering',
+      recentToolErrors: [{ tool: 'read', message: 'not found' }],
+      historicalRequirementRefs: [{ id: 'message-1', path: 'history/user-inputs/message-1.txt', status: 'unknown' }],
+    },
+  });
+  assert.deepEqual(
+    (snapshot.hostFacts as { recentToolErrors: unknown }).recentToolErrors,
+    [{ tool: 'read', message: 'not found' }],
+  );
+  assert.equal(
+    (snapshot.hostFacts as { historicalRequirementRefs: { status: string }[] }).historicalRequirementRefs[0]?.status,
+    'unknown',
+  );
+});
+
 test('Controller request snapshot records the live prompt digest', () => {
   assert.equal(CONTROLLER_PROMPT_DIGEST, sha256(CONTROLLER_SYSTEM_PROMPT));
   const snapshot = controllerRequestSnapshot(steering('run-1'));

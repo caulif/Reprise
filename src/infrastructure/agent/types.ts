@@ -16,10 +16,16 @@ export type AgentFailureCode =
   | "agent_timeout"
   | "agent_failure"
   | "invalid_output"
+  | "invalid_envelope"
   | "privacy_blocked"
   | "audit_failure"
   | "session_closed"
-  | "concurrent_invocation";
+  | "concurrent_invocation"
+  | "host_zone_modified"
+  | "evidence_unresolved"
+  | "media_unavailable"
+  | "report_incomplete"
+  | "publication_failed";
 
 export type AgentFailure = {
   kind?: AgentFailureKind;
@@ -134,6 +140,7 @@ export type StructuredWorkRequest<T> = {
   promptContent?: string;
   promptImages?: readonly ImageContent[];
   normalize?: (value: unknown) => unknown;
+  allowTools?: boolean;
   signal?: AbortSignal;
   requestId?: string;
 };
@@ -166,6 +173,7 @@ export interface ProviderSession {
   append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal }): Promise<string>;
   cancel(): void;
   waitForIdle?(): Promise<void>;
+  setToolsEnabled?(enabled: boolean): void;
 }
 
 export type InvocationCursor = {
@@ -205,3 +213,6 @@ export interface ProviderAdapter {
 /** Compatibility names during migration; public contracts do not require Pi types. */
 export type PiTextSession = ProviderSession;
 export type PiTextCaller = ProviderAdapter;
+
+
+

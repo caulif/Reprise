@@ -431,7 +431,7 @@ function stringField(
     if (typeof value[key] === "string" && value[key]) return value[key];
   return undefined;
 }
-export function isRelativePath(value: string): boolean {
+function isRelativePath(value: string): boolean {
   return (
     Boolean(value) &&
     !isAbsolute(value) &&

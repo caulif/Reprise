@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import { createTheme } from './theme.js';
 import { foldProcessEntries, selectedIndexAfterFold } from './fold-process.js';
-import { dispatchHomeComposer, dispatchListPointer, type Consume } from './page-input.js';
+import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
 import { homePointerAction } from './pages/home.js';
 import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
 import { resultPointerAction, renderResult } from './pages/result.js';
@@ -13,6 +13,32 @@ import type { ControllerHandle } from './controller-input.js';
 
 export function consumeWheel(data: string): Consume | undefined {
   return dispatchListPointer(data) ? { consume: true } : undefined;
+}
+
+type ViewportPointerHost = {
+  handleViewportInput?: (data: string) => { consume?: true } | undefined;
+};
+
+/** pi-tui registers `handleViewportInput` first and consumes SGR; yield wheel/click to the app. */
+export function yieldPointerToApp(host: object): void {
+  const target = host as ViewportPointerHost;
+  const inner = target.handleViewportInput;
+  if (typeof inner !== 'function') return;
+  target.handleViewportInput = (data: string) => {
+    if (isAppOwnedPointer(data)) return undefined;
+    return inner.call(target, data);
+  };
+}
+
+function isAppOwnedPointer(data: string): boolean {
+  const mouse = parseSgrMouse(data);
+  if (!mouse) return isX10Wheel(data);
+  return mouse.button === 64 || mouse.button === 65 || (mouse.button === 0 && !mouse.release);
+}
+
+function isX10Wheel(data: string): boolean {
+  if (data.length !== 6 || !data.startsWith('\x1b[M')) return false;
+  return ((data.charCodeAt(3) - 32) & 64) !== 0;
 }
 
 export function applyResultPointer(c: ControllerHandle, data: string): Consume | undefined {

@@ -117,12 +117,14 @@ test('internal agents share workspace tools without read_observation', async () 
     allowWrite: controllerProjectWriteAllowed,
     writableMounts: ['project'],
     mounts: { project: 'REPLICA' },
+    allowShell: true,
+    unrestrictedRead: true,
   })
     .map((tool) => tool.name)
     .sort();
   assert.deepEqual(recovery, withoutShell);
   assert.deepEqual(recoveryShell, seven);
-  assert.deepEqual(controller, withoutShell);
+  assert.deepEqual(controller, seven);
   assert.equal(controller.includes('read_observation'), false);
   const registered = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
   assert.doesNotMatch(registered, /name:\s*["']read_observation["']/);
@@ -136,6 +138,17 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.match(loop, /controllerBriefingRoot/);
   assert.match(loop, /assertBriefingOutsideReplica/);
   assert.doesNotMatch(loop, /allowShell:\s*true/);
+  const controllerTools = await readFile(join(SRC, 'application/controller-tools.ts'), 'utf8');
+  assert.match(controllerTools, /allowShell:\s*true/);
+  assert.match(controllerTools, /unrestrictedRead:\s*true/);
+  assert.match(controllerTools, /controller\.external_write/);
+  assert.doesNotMatch(controllerTools, /没有 shell_exec/);
+  const controllerAgent = await readFile(join(SRC, 'agents/controller-agent.ts'), 'utf8');
+  assert.doesNotMatch(controllerAgent, /没有 shell_exec/);
+  assert.match(controllerAgent, /shell_exec/);
+  const briefing = await readFile(join(SRC, 'application/controller-briefing.ts'), 'utf8');
+  assert.doesNotMatch(briefing, /There is no `shell_exec`/);
+  assert.match(briefing, /controller\.shell=allowed/);
   assert.doesNotMatch(loop, /observationTools/);
   assert.doesNotMatch(loop, /recoveryTools\(\s*input\.environment\.root/);
   const caller = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');
@@ -160,7 +173,7 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.doesNotMatch(agent, /Type\.Literal\("recovered"\)/);
   assert.doesNotMatch(agent, /insufficient_evidence/);
   assert.match(agent, /\.work\(/);
-  assert.match(agent, /RecoveryAgentEnvelopeSchema/);
+  assert.match(agent, /RecoveryAgentEnvelope/);
   assert.doesNotMatch(agent, /必须证明起点|完整证明起点|推导任务开始前必须具备/);
   assert.match(agent, /reasonable starting environment/);
   assert.match(agent, /Do not claim that an unobserved historical fact was verified/);
@@ -175,9 +188,8 @@ test('Recovery production path does not reintroduce candidate selection or three
   const forensics = await readFile(join(SRC, 'application/recovery/run-forensics.ts'), 'utf8');
   assert.doesNotMatch(forensics, /materializeRecoveryCandidates/);
   assert.doesNotMatch(forensics, /decideRecoverySearch/);
-  const verifier = await readFile(join(SRC, 'application/recovery/verifier.ts'), 'utf8');
-  assert.doesNotMatch(verifier, /no_task_path_outcome/);
-  assert.doesNotMatch(verifier, /strong_evidence_complete/);
+  await assert.rejects(stat(join(SRC, 'application/recovery/verifier.ts')));
+  await assert.rejects(stat(join(SRC, 'application/recovery/investigation-packet.ts')));
   const provider = await readFile(join(SRC, 'environment/local-workspace-provider.ts'), 'utf8');
   const beginRecovery = provider.match(/async beginRecovery[\s\S]*?\n {2}async applyControlledRecoveryDelta/)?.[0] ?? "";
   assert.doesNotMatch(beginRecovery, /runnable !== ['"]isolated['"]/);
@@ -388,11 +400,19 @@ test('opt-in agent context probe stays outside engineering gates', async () => {
   assert.doesNotMatch(gates, /agent-context-probe|REPRISE_AGENT_CONTEXT_PROBE/);
 });
 
-test('CI test matrix covers three operating systems', async () => {
+test('CI test matrix includes Windows as the supported platform', async () => {
   const workflow = await readFile(join(process.cwd(), '.github', 'workflows', 'check.yml'), 'utf8');
   assert.match(workflow, /windows-latest/);
-  assert.match(workflow, /macos-latest/);
-  assert.match(workflow, /ubuntu-latest/);
+});
+
+test('gate fast mode is a subset that still scans secrets', async () => {
+  const gates = await readFile(join(process.cwd(), 'scripts/run-gates.mjs'), 'utf8');
+  assert.match(gates, /fast: \['build', 'typecheck', 'lint', 'test', 'verify:secrets', 'verify:imports'\]/);
+  assert.match(gates, /check: CHECK_IDS/);
+  assert.match(gates, /full: CHECK_IDS/);
+  const { spawnSync } = await import('node:child_process');
+  const unknown = spawnSync(process.execPath, [join(process.cwd(), 'scripts/run-gates.mjs'), 'nosuch'], { encoding: 'utf8' });
+  assert.notEqual(unknown.status, 0);
 });
 
 test('agent execution does not import experiment application', async () => {
@@ -422,7 +442,20 @@ test('agent foundation uses sequential Pi Agent and never AgentHarness', async (
   for (const name of ['controller-agent.ts', 'comparison-agent.ts', 'recovery-agent.ts']) {
     const source = await readFile(join(SRC, 'agents', name), 'utf8');
     assert.doesNotMatch(source, /\.value\.text/);
+    assert.match(source, /RoleSessions/);
   }
+  const recoveryAgent = await readFile(join(SRC, 'agents/recovery-agent.ts'), 'utf8');
+  assert.doesNotMatch(recoveryAgent, /#freeformTurns/);
+  assert.match(recoveryAgent, /completedRecoveryFreeformTurns/);
+  const recoveryWorkingSet = await readFile(join(SRC, 'agents/recovery-working-set.ts'), 'utf8');
+  assert.doesNotMatch(recoveryWorkingSet, /completedFreeformTurns/);
+  const sessionHost = await readFile(join(SRC, 'infrastructure/agent/session.ts'), 'utf8');
+  assert.doesNotMatch(sessionHost, /completedFreeformTurns/);
+  const roleSessions = await readFile(join(SRC, 'infrastructure/agent/role-sessions.ts'), 'utf8');
+  assert.doesNotMatch(roleSessions, /\bdrop\(/);
+  const comparisonFacts = await readFile(join(SRC, 'application/comparison.ts'), 'utf8');
+  assert.doesNotMatch(comparisonFacts, /randomUUID/);
+  assert.match(comparisonFacts, /Comparison attemptId is required/);
 });
 
 test('product packs do not import TUI or experiment workflow', async () => {

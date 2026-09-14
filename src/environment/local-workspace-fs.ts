@@ -9,7 +9,6 @@ import {
   type EnvironmentBaseline,
   type EnvironmentFingerprint,
   type FingerprintEntry,
-  type RecoveryEnvelope,
   type SensitiveFileCategory,
   type WorkspaceBudget,
   type WorkspaceExclusion,
@@ -152,19 +151,6 @@ export async function readBaselineMarker(path: string): Promise<BaselineMarker |
   const marker = parsed !== null && typeof parsed === 'object' ? parsed as { sourceFingerprint?: unknown; recovery?: unknown } : undefined;
   if (typeof marker?.sourceFingerprint !== 'string' || !marker.sourceFingerprint) throw new Error(`Baseline marker ${path} is unreadable. Delete its directory to recapture the baseline.`);
   return marker.recovery && isRecoveryMarker(marker.recovery) ? { sourceFingerprint: marker.sourceFingerprint, recovery: marker.recovery } : { sourceFingerprint: marker.sourceFingerprint };
-}
-
-const RECOVERY_SUMMARY_PATTERN = /^[^\r\n.。!?！？]+[.。!?！？]?$/u;
-
-function isRecoverySummary(value: unknown): value is string {
-  return typeof value === 'string' && value.length >= 1 && value.length <= 240 && RECOVERY_SUMMARY_PATTERN.test(value);
-}
-
-export function isRecoveryEnvelope(value: RecoveryEnvelope): boolean {
-  const unresolvedOk = Array.isArray(value.unresolved) && value.unresolved.every((item) => typeof item === 'string');
-  if (value.reportPath !== 'recovery.md' || !unresolvedOk || !isRecoverySummary(value.summary)) return false;
-  if (value.status === 'ready') return true;
-  return value.status === 'blocked' && value.unresolved.length > 0 && value.unresolved.every((item) => item.length > 0);
 }
 
 export async function cleanupRecoveryTransients(root: string): Promise<void> {

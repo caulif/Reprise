@@ -210,7 +210,7 @@ async function executeOne(product, item, ordinal, agents, alias, expectedSession
   try {
     attempt = await recoverExperiment({
       dataDir: executionDataDir, caseId: frozen.taskCase.caseId, experimentId: `eval-${alias}`, runId: `recovery-${alias}`,
-      sourceRoot, taskCase: frozen.taskCase, recovery: agents.recovery, executeReadinessCommands: process.env.REPRISE_RUN_RECOVERY_CONTINUATION_CHECKS === '1',
+      sourceRoot, taskCase: frozen.taskCase, recovery: agents.recovery, diagnosis: agents.diagnosis, executeReadinessCommands: process.env.REPRISE_RUN_RECOVERY_CONTINUATION_CHECKS === '1',
       now: new Date().toISOString(),
     });
   } catch (error) {
@@ -451,3 +451,4 @@ async function main() {
 - 恢复跳过已持久化终态：${persistedRows.length > 0 ? '是' : '否'}\n- 说明：仅在隔离 staging 中执行 Recovery；没有接受或写回任何用户源目录。\n- 结果详情见 sample alias 的机械审计与独立评估。\n`, 'utf8');
 }
 main().catch((error) => { console.error(JSON.stringify({ status: 'failed', reason: safeError(error), errorName: error instanceof Error ? error.name : 'unknown', errorLength: error instanceof Error ? error.message.length : 0, errorDigest: error instanceof Error ? digest(error.message).slice(0, 12) : null })); process.exitCode = 1; });
+

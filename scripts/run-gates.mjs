@@ -24,9 +24,15 @@ const GATES = [
   { id: 'verify:tracked-source', label: 'tracked source', command: 'node', args: ['scripts/verify-tracked-source.mjs'] },
 ];
 
+const CHECK_IDS = ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:generated', 'knip', 'jscpd', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'];
+
 const MODES = {
   docs: ['verify:docs'],
-  check: ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:generated', 'knip', 'jscpd', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'],
+  // Daily subset. lint is included because tsc does not enforce ESLint.
+  fast: ['build', 'typecheck', 'lint', 'test', 'verify:secrets', 'verify:imports'],
+  // Compatibility default. full is the same list until TUI/jscpd/knip leave this entry.
+  check: CHECK_IDS,
+  full: CHECK_IDS,
   static: ['typecheck', 'lint', 'verify:docs', 'build', 'verify:generated', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'],
   test: ['build', 'test', 'check:node'],
   audit: ['build', 'audit:tui:check', 'audit:tui:analyze'],
@@ -188,6 +194,9 @@ async function main() {
   const mode = process.argv[2] ?? 'check';
   const ids = MODES[mode];
   if (!ids) throw new Error(`unknown mode: ${mode}`);
+  if (mode === 'fast' && (!ids.includes('verify:secrets') || !ids.includes('lint') || ids.includes('knip'))) {
+    throw new Error('fast mode must include secret scan and lint, and exclude knip');
+  }
   const selected = GATES.filter((gate) => ids.includes(gate.id));
   validate(selected);
   const runtime = collectRuntime();

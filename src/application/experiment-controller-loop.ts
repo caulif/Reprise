@@ -6,6 +6,7 @@ import {
   controllerPromptContent,
   controllerRequestSnapshot,
   controllerViewSurface,
+  historicalRequirementRefs,
   writeOpeningBriefing,
   writeSettledTurnBriefing,
 } from "./controller-briefing.js";
@@ -21,6 +22,7 @@ import {
   eventsForLatestSettledTurn,
   inspectRun,
   persistUserVisibleTurn,
+  recentToolErrorsFromEvents,
   unstartedControllerObservation,
   type ControllerObservation,
 } from "./controller-queries.js";
@@ -50,7 +52,12 @@ export async function runControllerLoop(input: {
   const startedAt = Date.now();
   const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   const bindings = createControllerToolBindings();
-  const tools = controllerDecisionTools(input, briefingRoot, bindings);
+  const historicalCwd = historicalCwdOf(input.taskCase);
+  const tools = controllerDecisionTools(
+    historicalCwd ? { ...input, sourceRoot: historicalCwd } : input,
+    briefingRoot,
+    bindings,
+  );
   await input.store.append({
     type: "controller.started",
     runId: input.runId,
@@ -234,7 +241,7 @@ async function packControllerBriefing(
   phase: "opening" | "steering",
   briefingRoot: string,
 ): Promise<{
-  observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths">;
+    observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths"> & Partial<Pick<ControllerObservation, "runtimeGeneratedPaths" | "settlementStatus">>;
   indexMarkdown: string;
   fileDigests: Record<string, string>;
   briefingRoot: string;
@@ -288,7 +295,7 @@ function steeringContextFrom(
   controllerCalls: number,
   phase: "opening" | "steering",
   packed: {
-    observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths">;
+    observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths"> & Partial<Pick<ControllerObservation, "runtimeGeneratedPaths" | "settlementStatus">>;
     indexMarkdown: string;
     fileDigests: Record<string, string>; briefingRoot: string;
   },
@@ -332,6 +339,16 @@ function steeringContextFrom(
       changedPaths: observation.changedPaths,
       workspaceRoot: input.environment.root,
       ...(historicalCwd ? { historicalCwd } : {}),
+    },
+    hostFacts: {
+      changedPaths: observation.changedPaths,
+      requestId: `controller-request-${input.runId}-${controllerCalls + 1}`,
+      runId: input.runId,
+      phase,
+      recentToolErrors: recentToolErrorsFromEvents(input.store.events(input.runId)),
+      historicalRequirementRefs: historicalRequirementRefs(input.taskCase),
+      ...("runtimeGeneratedPaths" in observation ? { runtimeGeneratedPaths: observation.runtimeGeneratedPaths } : {}),
+      ...("settlementStatus" in observation && observation.settlementStatus ? { settlementStatus: observation.settlementStatus } : {}),
     },
   };
 }

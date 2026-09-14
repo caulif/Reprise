@@ -29,6 +29,18 @@ export function assertBriefingOutsideReplica(briefingRoot: string, replicaRoot: 
   }
 }
 
+/** Host lists historical user-input paths; it does not judge which remain unmet. */
+export function historicalRequirementRefs(taskCase: Pick<TaskCase, "transcript" | "initialInput">): { id: string; path: string; status: "unknown" }[] {
+  const seen = new Set<string>();
+  const refs: { id: string; path: string; status: "unknown" }[] = [];
+  for (const message of [taskCase.initialInput, ...taskCase.transcript]) {
+    if (message.role !== "user" || seen.has(message.id)) continue;
+    seen.add(message.id);
+    refs.push({ id: message.id, path: `history/user-inputs/${message.id}.txt`, status: "unknown" });
+  }
+  return refs;
+}
+
 export function outlineRows(transcript: TaskCase["transcript"]): OutlineRow[] {
   let deliverableSeen = false;
   const rows: OutlineRow[] = [];
@@ -73,7 +85,8 @@ export function renderIndexMarkdown(latestTurnRelative: string | undefined): str
     "# Controller briefing map",
     "",
     "Host-owned, invisible to the candidate. `project/` is the isolated replica: readable, and writable with edit/write.",
-    "Read with workspace tools (`read`, `ls`, `grep`, `find`). edit/write only under `project/`. There is no `shell_exec` and no `read_observation`.",
+    "Controller may use `ls`, `read`, `grep`, `find`, and `shell_exec` to inspect the replica, historical materials, and other host-readable paths. Reads are not workspace-contained; results have size, timeout, credential, and audit limits. edit/write stay under `project/`. shell_exec must never mutate the historical source directory; use the matching path under `project/`. There is no `read_observation`.",
+    "Do not guess which historical paths exist. List, find, or shell-check first, then read what is actually present.",
     "",
     "Historical user requirements:",
     "- history/user-inputs/INDEX.tsv — complete user demand in session order",
@@ -205,7 +218,7 @@ function renderPermissionsTxt(taskCase: TaskCase): string {
     "# Controller tools",
     "controller.writes=project",
     "controller.project=writable",
-    "controller.shell=denied",
+    "controller.shell=allowed",
     "",
     "# Candidate runtime",
     "# Historical session inference, not this run's launch grant.",
@@ -438,5 +451,6 @@ export function controllerRequestSnapshot(context: SteeringContext): Record<stri
     evidenceCatalog: context.evidenceCatalog,
     budget: context.budget,
     ...(context.replay ? { replay: context.replay } : {}),
+    ...(context.hostFacts ? { hostFacts: context.hostFacts } : {}),
   };
 }

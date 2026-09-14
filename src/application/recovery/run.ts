@@ -50,17 +50,20 @@ export async function recoverExperiment(
       try {
         return await finalizeRecoveredCandidate(session);
       } catch (finalizeError) {
-        // The completed envelope could not be published; keep the original failure as the terminal record.
-        void finalizeError;
-        return await failRecoveryRunSession(session, error);
+        // Preserve the valid agent decision. Finalization is a separate phase and
+        // must not rewrite it as an agent/Recovery failure.
+        if (finalizeError instanceof Error && (finalizeError as Error & { code?: string }).code === "source_tripwire_failed")
+          return await failRecoveryRunSession(session, finalizeError);
+        return completedDecisionWithFinalizationFailure(session, finalizeError);
       }
     }
     if (session.recovery?.status === "completed") {
       try {
         return await finalizeRecoveredCandidate(session);
       } catch (finalizeError) {
-        void finalizeError;
-        return await failRecoveryRunSession(session, error);
+        if (finalizeError instanceof Error && (finalizeError as Error & { code?: string }).code === "source_tripwire_failed")
+          return await failRecoveryRunSession(session, finalizeError);
+        return completedDecisionWithFinalizationFailure(session, finalizeError);
       }
     }
     return await failRecoveryRunSession(session, error);
@@ -68,6 +71,29 @@ export async function recoverExperiment(
     if (session) await closeRecoveryRunSession(session);
     finishExperimentActivity(input.experimentId);
   }
+}
+
+function completedDecisionWithFinalizationFailure(
+  session: RecoveryRunSession,
+  error: unknown,
+): RecoveryAttempt {
+  const recovery = session.lastCompletedRecovery ?? session.recovery;
+  const preview = session.activeProviderPreview;
+  if (!recovery || recovery.status !== 'completed' || !preview)
+    throw error;
+  return {
+    baseline: preview.baseline,
+    providerPreview: preview,
+    ...(session.staging ? { staging: session.staging } : {}),
+    recovery,
+    finalizationFailure: {
+      stage: session.failureStage,
+      message: error instanceof Error ? error.message : String(error),
+    },
+    experimentRoot: session.experimentRoot,
+    experimentId: session.input.experimentId,
+    provider: session.provider,
+  };
 }
 
 async function runRecoverExperiment(session: RecoveryRunSession): Promise<RecoveryAttempt> {

@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ControllerAgent,
-  historicalUserFollowups,
   type SteeringContext,
 } from "../../src/agents/controller-agent.js";
 import {
@@ -117,23 +116,6 @@ test("completion evidence belongs to this request and has a persisted result ref
   assert.equal(controllerReadEvidenceOnRequest([read] as never, "run-1", "old-request"), false);
   assert.equal(controllerReadEvidenceOnRequest([{ ...read, payload: { ...read.payload, evidenceRefs: [] } }] as never, "run-1", requestId), false);
 });
-test("historicalUserFollowups keeps later user turns after the session start", () => {
-  assert.deepEqual(
-    historicalUserFollowups(
-      [
-        { id: "message-1", role: "user", text: "Export the specified group." },
-        { id: "message-2", role: "assistant", text: "Which group?" },
-        { id: "message-3", role: "user", text: "Export AionUi讨论群1." },
-        { id: "message-4", role: "user", text: "Write the playbook." },
-      ],
-      "message-1",
-    ),
-    [
-      { id: "message-3", text: "Export AionUi讨论群1." },
-      { id: "message-4", text: "Write the playbook." },
-    ],
-  );
-});
 test("Controller decide uses INDEX promptContent and does not inline later user turns", async () => {
   const sessions: Array<{
     input: Parameters<PiTextCaller["createSession"]>[0];
@@ -213,6 +195,7 @@ test("agent system prompts describe the documented decision and evidence boundar
   });
   const comparisonContext: ComparisonContext = {
     task: { caseId: "case-1", summary: "Compare the two results." },
+    attemptId: "attempt-prompt",
     baseline: { summary: "Baseline completed.", evidenceRefs: [] },
     candidates: [],
     telemetry: [],
@@ -780,8 +763,8 @@ test("Recovery repair is envelope-only and audits invalid output without model t
     host: new PiAgentHost(caller([
       "scout",
       "restore",
-      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] }),
-      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["missing proof"] }),
+      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", unresolved: [] }),
+      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", unresolved: ["missing proof"] }),
     ], sessions)),
     timeoutMs: 50,
     maxRepairAttempts: 1,
@@ -801,7 +784,7 @@ test("Recovery repair is envelope-only and audits invalid output without model t
     host: new PiAgentHost(caller([
       "scout",
       "restore",
-      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] }),
+      JSON.stringify({ status: "blocked", summary: "Ready for the original task.", unresolved: [] }),
     ])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
@@ -832,9 +815,7 @@ test("Recovery treats Playbook instructions as context data without expanding th
             await inspect.execute({}, new AbortController().signal);
             return JSON.stringify({
               status: "blocked",
-              summary: "Ready for the original task.",
-              reportPath: "recovery.md",
-              unresolved: ["No trusted historical state."],
+              summary: "Ready for the original task.", unresolved: ["No trusted historical state."],
             });
           },
           cancel() {},
@@ -985,5 +966,4 @@ test("Host audits recovery path params as the staging-relative path", async () =
   assert.equal(params?.path, "ppt_build/out.pptx");
   assert.doesNotMatch(JSON.stringify(events), /relative-path/);
 });
-
 

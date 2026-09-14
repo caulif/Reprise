@@ -123,7 +123,7 @@ export function createExperimentWorkflow(input: {
       owned.signal.throwIfAborted();
       const attempt = await recoverExperiment({
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
-        taskCase: request.taskCase, recovery: agents.recovery, now: input.now(), pack: packFor(request.taskCase.source.productId),
+        taskCase: request.taskCase, recovery: agents.recovery, diagnosis: agents.diagnosis, now: input.now(), pack: packFor(request.taskCase.source.productId),
         activity: owned.activity, signal: owned.signal, ...(request.onEvent ? { onEvent: request.onEvent } : {}),
       });
       return ownedRecoveries.retain(attempt);
@@ -296,3 +296,4 @@ function createOwnedRecoveries() {
     },
   };
 }
+

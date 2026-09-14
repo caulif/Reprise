@@ -17,7 +17,7 @@ Host 在第三轮开始前把 `report.html` 写成壳，并填好 `data-host="me
 
 `reportFacts` 投影双侧时间、token、费用；TUI 结果行与卡读同一套。Token 与费用算法跟 cc-switch 会话账：展示值为 fresh 输入 + 输出 + cache creation + cache read；Codex 优先对每条 `last_token_usage` 加总，`total_token_usage` 只作无 last 时的水位；Claude 对各条 `usage` 相加。费用用内嵌单价表 × 分项，不用 Claude `total_cost_usd`。无分项或无单价则该侧保持缺失。
 
-本决定替代 [自由报告形式](./2026-09-02-comparison-free-report-form.md) 中「Agent 发明整页首屏、不规定组件」对硬指标条的范围；替代 [Agent 创作 HTML](./2026-08-15-comparison-agent-authored-html.md) 中「Host 不检查指标卡」；收窄 [可分享比较卡](./2026-09-09-comparison-shareable-task-card.md) 里由 Agent 并列时间/token/速度/费用的首屏职责。卡下内容、薄信封、失败不覆盖成功报告仍按上述记录。
+本决定替代 [自由报告形式](./2026-09-02-comparison-free-report-form.md) 中「Agent 发明整页首屏、不规定组件」对硬指标条的范围；替代 [Agent 创作 HTML](./2026-08-15-comparison-agent-authored-html.md) 中「Host 不检查指标卡」。页面结构、Host 区域与发布校验见 [直接编辑 HTML 与 Host 区域](./2026-09-13-comparison-host-zones-and-direct-html.md)。卡下差异判断、薄信封、失败不覆盖成功报告仍按上述记录。
 
 ## 备选方案
 

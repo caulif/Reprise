@@ -9,6 +9,7 @@ import {
   assertComparisonResult,
   type ComparisonAgentPort,
   type ComparisonContext,
+  type ComparisonFactsContext,
   type ComparisonReportFacts,
   type ComparisonResult,
 } from '../agents/comparison-agent.js';
@@ -20,7 +21,9 @@ import {
   factsFromUsage,
   usageCostUsd,
 } from './session-usage.js';
+import { MODEL_PRICING_TABLE_VERSION } from './model-pricing.js';
 import type { ComparisonMetricSide } from '../agents/comparison-agent.js';
+import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from './comparison-report-shell.js';
 
 export type RunInspection = {
   runId: string;
@@ -28,6 +31,7 @@ export type RunInspection = {
   changedPaths: readonly string[];
   runtimeGeneratedPaths: readonly string[];
   controllerWritePaths?: readonly string[];
+  controllerExternalWritePaths?: readonly string[];
   commands: readonly string[];
   rejectedApprovals: number;
   turns: number;
@@ -40,7 +44,7 @@ export type RunInspection = {
   workspaceEvidenceStatus?: 'available' | 'not_collected' | 'unavailable';
 };
 
-export function buildComparisonContext(taskCase: TaskCase, runs: readonly RunRecord[], inspections: readonly RunInspection[] = []): ComparisonContext {
+export function buildComparisonContext(taskCase: TaskCase, runs: readonly RunRecord[], inspections: readonly RunInspection[] = []): ComparisonFactsContext {
   assertFacts(taskCase, runs);
   const byRunId = new Map(inspections.map((inspection) => [inspection.runId, inspection]));
   const primary = runs[0];
@@ -82,8 +86,22 @@ export async function comparePersistedFacts(input: {
   tools?: readonly AgentToolDefinition[];
   inspections?: readonly RunInspection[];
   audit?: AgentAuditSink;
+  attemptId: string;
 }): Promise<{ context: ComparisonContext; result: StructuredAgentResult<ComparisonResult> }> {
-  const context = buildComparisonContext(input.taskCase, input.runs, input.inspections);
+  if (!input.attemptId) throw new Error("Comparison attemptId is required.");
+  const facts = buildComparisonContext(input.taskCase, input.runs, input.inspections);
+  const reportShellHtml = renderComparisonReportShell({
+    task: facts.task.summary,
+    facts: facts.reportFacts,
+    metrics: metricsFromReportFacts(facts.reportFacts),
+  });
+  const hostZoneSnapshot = extractHostZoneSnapshot(reportShellHtml);
+  const context: ComparisonContext = {
+    ...facts,
+    attemptId: input.attemptId,
+    reportShellHtml,
+    ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
+  };
   const result = await input.agent.compare(context, input.tools, input.audit);
   if (result.status === 'completed') assertComparisonResult(result.value, context);
   return { context, result };
@@ -97,7 +115,7 @@ function buildReportFacts(run: RunRecord | undefined, inspection: RunInspection 
     replay: { conditions: [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: 'unavailable' },
   };
   const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
-  const metrics = projectedMetrics(taskCase, inspection);
+  const metrics = projectedMetrics(taskCase, inspection, run);
   return {
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
     models: { candidate: run.manifest?.resolvedModel.resolved ?? run.attempt.candidate.requestedModel, ...(run.manifest ? { controller: run.manifest.controller.requestedModel, comparison: run.manifest.comparison.requestedModel } : {}) },
@@ -110,39 +128,56 @@ function buildReportFacts(run: RunRecord | undefined, inspection: RunInspection 
   };
 }
 
-function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefined): ComparisonReportFacts['metrics'] {
+function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefined, run: RunRecord): ComparisonReportFacts['metrics'] {
   const baselineUsage = aggregateHistoricalUsage(taskCase.historicalEvents);
   const baselineBusy = busyMsFromHistoricalEvents(taskCase.historicalEvents);
   const baselineTokens = factsFromUsage(baselineUsage);
   const baselineCost = usageCostUsd(baselineUsage, taskCase.sourceRuntimeEvidence.model);
-  const baseline = sideMetrics(baselineBusy, baselineTokens, baselineCost);
-  const candidate = sideMetrics(inspection?.wallClockMs, inspection?.tokenUsage, inspection?.costUsd);
-  const metrics = {
-    ...(baseline ? { baseline } : {}),
-    ...(candidate ? { candidate } : {}),
+  const lastHistorical = taskCase.historicalEvents.at(-1);
+  const baselineCollectedAt = typeof lastHistorical?.timestamp === "string" ? lastHistorical.timestamp : undefined;
+  return {
+    baseline: sideMetrics(baselineBusy, baselineTokens, baselineCost, {
+      provider: taskCase.source.productId,
+      usagePresent: baselineUsage !== undefined,
+      ...(baselineCollectedAt ? { collectedAt: baselineCollectedAt } : {}),
+    }),
+    candidate: sideMetrics(inspection?.wallClockMs, inspection?.tokenUsage, inspection?.costUsd, {
+      provider: run.attempt.candidate.productId,
+      usagePresent: inspection?.tokenUsage !== undefined || inspection?.costUsd !== undefined,
+      collectedAt: run.attempt.createdAt,
+    }),
   };
-  return Object.keys(metrics).length ? metrics : undefined;
 }
 
 function sideMetrics(
   elapsedMs: number | undefined,
   tokens: RunInspection['tokenUsage'] | undefined,
   costUsd: number | undefined,
-): ComparisonMetricSide | undefined {
-  const side: ComparisonMetricSide = {
+  meta: { provider: string; collectedAt?: string; usagePresent: boolean },
+): ComparisonMetricSide {
+  const total = tokens === undefined ? undefined : tokenTotal(tokens);
+  const usageStatus = total !== undefined
+    ? "collected" as const
+    : meta.usagePresent
+      ? "unknown" as const
+      : "not_collected" as const;
+  return {
     ...(elapsedMs === undefined ? {} : { elapsedMs }),
-    ...(tokens === undefined || tokenTotal(tokens) === undefined ? {} : {
+    ...(total === undefined || tokens === undefined ? {} : {
       tokens: {
-        total: tokenTotal(tokens)!,
+        total,
         ...(tokens.input === undefined ? {} : { input: tokens.input }),
         ...(tokens.output === undefined ? {} : { output: tokens.output }),
         ...(tokens.cached === undefined ? {} : { cached: tokens.cached }),
         ...(tokens.reasoning === undefined ? {} : { reasoning: tokens.reasoning }),
       },
     }),
-    ...(costUsd === undefined ? {} : { costUsd }),
+    ...(costUsd === undefined ? {} : { costUsd, pricingVersion: MODEL_PRICING_TABLE_VERSION }),
+    usageStatus,
+    toolCostsIncluded: false,
+    provider: meta.provider,
+    ...(meta.collectedAt ? { collectedAt: meta.collectedAt } : {}),
   };
-  return side.elapsedMs !== undefined || side.tokens !== undefined || side.costUsd !== undefined ? side : undefined;
 }
 
 function tokenTotal(tokens: NonNullable<RunInspection['tokenUsage']>): number | undefined {
@@ -167,6 +202,9 @@ function inspectionSummary(run: RunRecord, inspection: RunInspection | undefined
   const facts = [`task=${run.outcome.task.status}`, `termination=${run.outcome.termination.code}`];
   if (!inspection) return `${facts.join('; ')}.`;
   facts.push(`turns=${inspection.turns}`, `changedFiles=${inspection.changedPaths.length}`, `commands=${inspection.commands.length}`);
+  if (inspection.controllerExternalWritePaths?.length) {
+    facts.push(`externalShellWrites=${inspection.controllerExternalWritePaths.length}`);
+  }
   if (inspection.rejectedApprovals) facts.push(`rejectedApprovals=${inspection.rejectedApprovals}`);
   if (allowModelText && inspection.finalMessage) facts.push(`finalMessage=${inspection.finalMessage}`);
   if (inspection.replayConditions?.length) facts.push(`hostConditions=${inspection.replayConditions.join(' | ')}`);
@@ -198,11 +236,11 @@ export function comparisonOwnedObservationRefs(
   ]);
 }
 
-export function briefingComparisonContext(context: ComparisonContext): ComparisonContext {
-  const briefing = { ...context };
-  delete briefing.ownedEvidenceRefs;
-  delete briefing.attemptId;
-  delete briefing.reportShellHtml;
+export function briefingComparisonContext(context: ComparisonContext | ComparisonFactsContext): ComparisonFactsContext {
+  const { attemptId: _attemptId, ownedEvidenceRefs: _owned, reportShellHtml: _shell, hostZoneSnapshot: _zones, attemptRoot: _root, ...briefing } = {
+    attemptId: "",
+    ...context,
+  };
   return briefing;
 }
 

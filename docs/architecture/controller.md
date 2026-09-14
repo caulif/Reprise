@@ -1,10 +1,12 @@
 # 同等人类能力与 Controller 设计
-`r`n> 统一设计规划见 [Controller 与 Comparison Agent 统一设计规划](../plan/controller-comparison-agent-design.md)。`r`n
+
+> 统一设计规划见 [Controller 与 Comparison Agent 统一设计规划](../plan/controller-comparison-agent-design.md)。
+
 本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前模块设计
 
-本文完整定义产品无关的同等人类能力模块：它如何读取规范化历史任务、理解 Target Runner 的输入边界、构造观察、调用 Pi Agent、生成下一条用户消息并留下证据。公共领域类型、七状态模型和端口所有权以[架构总览](./overview.md)为准；本文只细化 Controller 所需的视图和交互协议。Controller 的实验级配置、工具、完整会话可见性、预算与压缩细节见[Controller 实验条件](./controller-experiment-conditions.md)。
+时间范围：下文区分 **current**（代码行为）与 **planned**（未实现的 Adapter 分层）。类型以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 的 `SteeringContext` / `ControllerDecision` 为准，不在本文维护 TypeScript 副本。
 
 ## 1. 模块目标
 
@@ -30,29 +32,26 @@ Controller 回答一个问题：
 
 ```mermaid
 flowchart LR
-    CASE[TaskCase View] --> ASSEMBLER[Observation Assembler]
-    EVENTS[Target Events] --> ADAPTERS[Observation Adapters]
-    ARTIFACTS[Artifacts] --> ADAPTERS
-    ENV[Environment Observation] --> ADAPTERS
-    ADAPTERS --> ASSEMBLER
-    HISTORY[Prior Decisions] --> ASSEMBLER
-    ASSEMBLER --> CONTEXT[SteeringContext]
-    CONTEXT --> CTRL[Pi Controller Session]
+    CASE[TaskCase] --> HOST[inspectRun + briefing files]
+    EVENTS[Target Events] --> HOST
+    ARTIFACTS[Artifacts] --> HOST
+    ENV[Workspace fingerprint] --> HOST
+    HOST --> CONTEXT[SteeringContext]
+    CONTEXT --> CTRL[Controller Session]
     CTRL --> DECISION[ControllerDecision]
     DECISION --> ORCH[RunOrchestrator]
 ```
 
 Controller 模块负责：
 
-- 从 `TaskCase` 构造用户能力和历史任务视图；
-- 接收 Runtime/Environment 已采集的事实；
-- 通过 Observation Adapter 整理 Controller 可理解的观察；
+- 从 `TaskCase` 与 Host briefing 构造历史任务视图；
+- 接收 Runtime/Environment 已采集的事实（`inspectRun` 写入 `changedPaths`、产物路径、用户可见表面）；
 - 管理本 CandidateRun 的 Controller session；
 - 调用 Pi Agent Host 并验证结构化输出；
 - 返回 `ControllerDecision`；
 - 为每次决策生成可追溯事件和上下文引用。
 
-Controller 模块不依赖具体 Product Pack。ProductHistoryReader 和 ProductRuntime 先把产品私有数据转换成 `ImportedSession`、`TargetEvent`、`TurnSettlement` 与 artifact 引用；随后由本模块的 Observation Assembler 统一构造 `SteeringContext`。这样 Codex、Claude Code 或其他产品不会获得不同的 Controller 上下文规则。
+Controller 模块不依赖具体 Product Pack。ProductHistoryReader 和 ProductRuntime 先把产品私有数据转换成公共会话与 turn 事实；Host 再组装 briefing 与 `SteeringContext`。Codex、Claude Code 或其他产品不会获得不同的 Controller 上下文规则。
 
 Controller 模块不负责：
 
@@ -87,22 +86,7 @@ Controller 可以直接读取原始会话，并自主判断哪些历史内容表
 
 ## 4. TaskCase（任务胶囊）视图
 
-`TaskCase` 是 Controller 的历史事实来源，也是早期设计所称 Task Capsule 的统一名称。Controller 不重新提炼一份替代 transcript 的任务说明，而是在完整材料上使用一个只读视图：
-
-```ts
-interface ControllerTaskView {
-  caseId: string;
-  source: SessionRef;
-  initialInput: UserMessage;
-  transcript: TranscriptView;
-  historicalEvents: HistoricalEventView[];
-  baseline: BaselineEvidenceView;
-  taskContext?: TaskContext;
-  sourceRuntimeSummary: SourceRuntimeEvidenceSummary;
-  environmentSummary: EnvironmentBaselineSummary;
-  privacy: EffectivePrivacyPolicy;
-}
-```
+`TaskCase` 是 Controller 的历史事实来源。字段以 [`src/core/schema.ts`](../../src/core/schema.ts) 为准。Controller 不重新提炼一份替代 transcript 的任务说明；briefing 提供 `history/user-inputs/`、`initial-input.txt` 与按需可读材料。
 
 ### 4.1 完整会话与 initialInput
 
@@ -195,108 +179,29 @@ Controller 不直接调用 Runtime 的 approval API；它只能通过普通用�
 
 `DeliveryReceipt.delivery === "unknown"` 时，RunOrchestrator 不会调用 Controller 生成替代消息。它先要求 ProductRuntime 核查旧 message/turn；仍无法确认则进入 `finalizing`。这样避免同一纠正或授权被发送两次。
 
-## 6. Observation Adapter
+## 6. 观察与工具面（current）
 
-Controller 不能只读 Target 的最终自述，也不应获得 `shell_exec`。Observation Adapter 是 Controller 模块内部的产品无关组件：它只处理 ProductRuntime、Environment 和 ArtifactStore 已经规范化的事实。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本；不注册 `read_observation` 与 `shell_exec`。见 [协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)。
+Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本；读取工具与 `shell_exec` 可以访问当前进程可读路径。不注册名为 Observation Adapter 的组件。见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)。
 
-```text
-TargetEventSink / Environment fingerprint / ArtifactStore
-                         ↓
-               Observation Adapters
-                         ↓
-                 TargetObservation
-                         ↓
-                Observation Assembler
-                         ↓
-                  SteeringContext
-```
+当前事实供给：
 
-### 6.1 设计原则
+- [`inspectRun`](../../src/application/controller-queries.ts) 从事件与 fingerprint 派生 `changedPaths`、产物路径、usage 与用户可见表面；
+- 文件入口是 `current-user-view.md`、`THIS-TURN.txt`、`changed-paths.txt` 与 INDEX；
+- 成功 `read` 记 `controller.observation_read`；`edit`/`write` 记 `controller.workspace_write`；shell 在副本外的写入记 `controller.external_write`。
 
-1. **事实优先**：保留 Agent 自述、工具结果、Harness 观察和独立检查的证据来源。
-2. **轻量内联**：消息、状态和短摘要内联；长日志、diff、截图和二进制内容使用引用。
-3. **Adapter 不替 Target 干活**：Observation Adapter 不修改候选环境、不替 Target 执行修复。Controller 工作区 `edit`/`write` 是用户侧协作，仍不得调用 Target Runtime。
-4. **按需展开**：Controller 可读取允许的 artifact 引用，不把所有历史内容塞进每轮 prompt。
-5. **产品隔离**：Claude/Codex 私有事件先由 ProductHistoryReader 或 ProductRuntime 归一化；Controller 不解析私有 JSONL，也不加载产品专属 Controller Playbook。
-6. **诚实缺失**：无法采集的事实标记 unavailable，不根据 Agent 文字推断为已验证。
+**planned / 未实现：** 独立 `TargetObservation`、六类 Observation Adapter、`ControllerArtifactReader` 接口。不要把这些名称当成当前代码中的类型。视觉与浏览器探测不在本轮范围。
 
-### 6.2 TargetObservation
-
-```ts
-interface TargetObservation {
-  turn: {
-    index: number;
-    settlement: TurnSettlement;
-  };
-  messages: MessageObservation[];
-  toolCalls: ToolCallObservation[];
-  claims: AgentClaim[];
-  checks: CheckObservation[];
-  blockers: BlockerObservation[];
-  artifacts: ArtifactSummary[];
-  telemetry: TurnTelemetry;
-  rawRefs: ArtifactRef[];
-}
-```
-
-`TargetObservation` 只描述当前 turn 及其必要上下文。完整候选轨迹由 trace 引用，Observation Assembler 根据上下文预算提供相关窗口。
-
-### 6.3 Adapter 类型
-
-第一版不建立复杂插件框架，只需要一组显式注册的普通 adapter：
-
-| Adapter | 输入 | 输出示例 |
-|---|---|---|
-| message | 规范化 Target events | assistant 消息、澄清、完成声明 |
-| tool | tool start/result events | 工具名、状态、短结果、错误引用 |
-| filesystem | before/after fingerprint、artifact | 文件变化、diff 引用、输出文件 |
-| check | 命令或 Runtime 事件 | 测试、构建、lint、验收结果 |
-| visual | screenshot/document preview artifact | 页面、幻灯片、文档预览引用 |
-| browser | 浏览器 observation artifact | URL、页面状态、截图 |
-
-未支持的任务类型仍可通过原生 artifact 和 Target 消息运行，不要求先发明新领域类型。
-
-### 6.4 被动观察与主动探测
-
-默认使用执行过程中自然产生的被动事实。只有任务判断确实需要、且用户正常会查看某项结果时，Observation Adapter 才能请求声明式只读探测。探测能力必须标明输入、可能副作用和证据来源。
-
-Controller 不获得 `shell_exec`。需要 Target 建立证据时发送 `verify` 消息；报告阶段由 Comparison 写 `report.html`，不把两者混进 Controller。
-
-### 6.5 Artifact 解析
-
-`ArtifactRef` 只是一条受保护引用。Pi Controller 通过 Controller Host 提供的只读 resolver 读取允许内容：
-
-```ts
-interface ControllerArtifactReader {
-  readText(ref: ArtifactRef, limit: ReadLimit): Promise<TextArtifactView>;
-  renderPreview(ref: ArtifactRef, options?: PreviewOptions): Promise<PreviewRef>;
-}
-```
-
-Host 在读取前执行 run ownership、路径边界、类型、大小和 privacy policy 校验。Controller 看不到 Trace Store 或文件系统的可变句柄。
+Controller 需要 Target 建立证据时发送 `verify` 消息；报告由 Comparison 写 `report.html`。
 
 ## 7. SteeringContext
 
 Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 的 `project/` 写入与候选运行权限；后者是历史会话推断，缺失时标 unconfirmed，不是本次 launch 授权证明。`allowModelText=false` 只红acted 正文，outline 仍含结构。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`；这些 briefing `read` 记 `briefing_read` evidence。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash；`current.summary` 不内联命令或路径计数。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)。
 
-```ts
-interface SteeringContext {
-  runId: string;
-  task: ControllerTaskView;
-  current: TargetObservation;
-  trajectory: TrajectoryWindow;
-  environment: EnvironmentObservation;
-  priorDecisions: ControllerDecisionRecord[];
-  budget: RunBudgetSnapshot;
-  permissions: ControllerPermissionView;
-}
-```
+字段定义见 [`SteeringContext`](../../src/agents/controller-agent.ts)。当前对象是 `current.summary` / `trajectory.summary` 字符串、briefing 路径、digest 与可选 `replay.changedPaths`，不是独立的 TargetObservation / TrajectoryWindow 类型。
 
-- `trajectory` 包含相关的近期消息、早期阶段摘要和 trace 引用；
-- `environment` 是只读的候选产物与 mismatch 观察，不是 Environment 句柄；
-- `priorDecisions` 防止重复纠正，并帮助维持同一个用户的连续性；
-- `budget` 供 Host 记录调用次数与可选显式上限，不写入模型可见 prompt；
-- `permissions` 表明哪些决定必须交还真实用户。
+- `current` / `trajectory` 摘要指向文件，不内联命令计数；
+- `budget` 供 Host 记录调用次数与可选显式上限；
+- 权限以 briefing `permissions.txt` 为准，不是 `SteeringContext.permissions` 字段。
 
 上下文裁剪顺序：
 
@@ -309,31 +214,7 @@ interface SteeringContext {
 
 ## 8. Canonical ControllerDecision
 
-Controller 对外只暴露一个决策方法。以下接口与架构总览完全一致，Controller 实现直接导入公共类型：
-
-```ts
-interface ControllerPort {
-  decide(context: SteeringContext): Promise<ControllerDecision>;
-}
-
-type ControllerDecision =
-  | {
-      type: "send";
-      message: string;
-      intent: "continue" | "inform" | "correct" | "verify";
-      rationale?: string;
-      evidenceRefs?: EvidenceRef[];
-    }
-  | {
-      type: "done";
-      reason:
-        | "satisfied"
-        | "blocked"
-        | "requires_real_user_decision"
-        | "no_further_value";
-      rationale?: string;
-    };
-```
+`ControllerPort.decide` 与 `ControllerDecision` 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 的 TypeBox schema 为准。`send` 含 intent 与可选 evidenceRefs；`done` 含 reason。
 
 只有 `send.message` 发送给 Target Agent；intent、rationale 和 evidenceRefs 只写入 trace。`wait` 是 Runner 状态，不是 Controller decision。
 
@@ -376,7 +257,7 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 briefing INDEX 把材料分成三类，不得混用：历史用户要求（`history/user-inputs/` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`current-user-view.md`、`run/turns/` 与 `project/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。模型可见请求是决策段加 INDEX.md，不把 SteeringContext JSON 或隐藏字段内联进 prompt。
 
-Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `CONTROLLER_PROMPT_DIGEST` 相同）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
+Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `CONTROLLER_PROMPT_DIGEST` 相同）以及 Host 观察 `hostFacts`（changed paths、最近工具失败、历史用户输入路径；路径 `status=unknown` 表示 Host 不判断该要求是否已满足）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
 
 机械协议由 `test/controller-collaboration-protocol.test.ts`、`test/candidate-run.test.ts` 与合同 lane `test/controller-capability-evaluation.test.ts` 覆盖。合同 lane 的样例族覆盖已满足用户、尚需核验、无继续价值、授权不足、历史 agent 结论不可信；该 lane 用脚本输出，不证明与真人协作等价。真实模型能力评估入口为 `npm run evaluate:controller -- <dataDir> <绝对报告路径>`，要求 `REPRISE_REAL_MODEL=1`，不进入 `npm run check`；报告只记类型/理由/intent 是否匹配，不含模型原文。见 [能力评估分层](../decisions/accepted/2026-08-22-controller-capability-evaluation-lane.md) 与 [协作协议](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md)。
 
@@ -389,7 +270,7 @@ Controller 通过 Reprise `AgentHost` / `AgentSession` 管理模型调用、sess
 Host 负责：
 
 - 创建具有固定 system prompt、模型和配置的 session；
-- 注入只读 artifact reader；
+- 通过 briefing 工具读取允许的文件，而不是独立 ArtifactReader 类型；
 - 捕获模型调用和工具生命周期遥测；
 - 使用 schema 验证结构化输出；
 - 将输入快照和原始输出保存为受保护 artifact；
@@ -407,11 +288,12 @@ Recovery Agent 和 Comparison Agent 复用同一个 AgentHost 实现，但使用
 controller.requested
 controller.observation_read
 controller.workspace_write
+controller.external_write
 controller.decision
 controller.completed | controller.failed
 ```
 
-`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把本轮成功的 briefing `read` 或候选观察记入 catalog。`controller.workspace_write` 记录 Controller 对 `project/` 的 edit/write。离线重建只读事件日志和已保存 artifacts，并校验 digest。
+`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把本轮成功的 briefing、候选或外部 `read`，以及 shell 调查记入 catalog。`controller.workspace_write` 记录 Controller 对 `project/` 的 edit/write。`controller.external_write` 记录 shell 在隔离副本外的写入摘要。离线重建只读事件日志和已保存 artifacts，并校验 digest。
 
 事件引用：
 
@@ -429,9 +311,8 @@ Controller 产生的耗时和成本单独展示，不混入 Target 模型的过�
 
 - 结构化输出不合法：不发送半截文本；允许一次同上下文修复调用，仍失败则结束为 controller failure。
 - Controller provider 失败：根据 Controller 自己的 `AgentBudget.maxProviderRetries` 允许有限重试；`RunPolicy` 只约束 Target Runtime。不能自动换模型后仍声称 Controller 条件相同。
-- Artifact 不可读：保留 unavailable，Controller 基于其余证据判断。
-- Observation Adapter 失败：记录 adapter 和原始引用；必要观察缺失时可以结束为 blocked。
-- 重复调用：以 `runId + turnIndex + observationHash` 关联；已持久化 decision 不重新生成。
+- 工具读取失败：保留 unavailable，Controller 基于其余证据判断。
+- 重复调用：以 `runId` + `requestId` 关联；已持久化 decision 不重新生成。不存在 `observationHash` 字段。
 - Candidate 已进入 finalizing：迟到的 Controller 输出只保存 raw artifact，不执行。
 
 Controller failure 与 Target failure、Runtime failure 和报告 failure 分开记录。
@@ -458,16 +339,9 @@ Comparison Agent: 为了让用户直接比较结果，应该展示什么以及�
 
 Comparison Agent 不读取 Product Pack 或产品私有日志，也不改变运行结果、质量打分或 fidelity。它失败时报告退化为客观遥测、原始消息和 artifact 列表；CandidateRun 仍然完成。完整设计见[Comparison 专题](./comparison.md)。
 
-## 16. 最小实现顺序
+## 16. 已落地范围
 
-1. 从一个已有 `TaskCase` 构造 `ControllerTaskView`；
-2. 接收 ProductRuntime 的规范化 turn 和 message/tool 事件；
-3. 实现轻量 `TargetObservation` 与 artifact 引用；
-4. 构造可 hash 的 `SteeringContext`；
-5. 用 AgentHost 实现一次 schema-constrained decision；
-6. 将 decision 先写 trace，再交给 RunOrchestrator；
-7. 覆盖 satisfied、纠偏、验证、真实用户授权和 controller failure 场景；
-8. 再按实际任务增加视觉、浏览器或文档 Observation Adapter。
+上述 1–7 项已由当前 Controller 路径覆盖。视觉、浏览器 Observation Adapter 仍为 planned，不作为当前验收。
 
 ## 17. 模块验收条件
 
@@ -476,7 +350,7 @@ Comparison Agent 不读取 Product Pack 或产品私有日志，也不改变运�
 - Controller 只在稳定 settlement 后调用；
 - decision 公共 schema 与架构总览一致；
 - Target 只收到普通用户消息，不收到 intent 或 rationale；
-- Controller 能读取允许的产物证据，但不能修改环境或调用 Target 工具；
+- Controller 能读取允许的产物证据，并可对隔离副本 `project/` 做协作写入；不得写用户源目录或调用 Target 工具；
 - 已持久化 decision 在恢复后不会重复生成或重复发送；
 - 高影响且无历史授权的决定返回 `requires_real_user_decision`；
 - Controller 遥测与 Target 遥测可分开查看；

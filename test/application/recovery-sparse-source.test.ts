@@ -121,7 +121,7 @@ test("source tripwire still discards staging when the real user directory change
   await overwriteEvenIfLocked(source, join(source, "a.txt"), "mutated");
   await writeFile(join(staging.root, "recovery.md"), "# ready\r\n");
   await assert.rejects(
-    provider.probeRecovery(staging, { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] }),
+    provider.probeRecovery(staging),
     /source directory/,
   );
 });

@@ -1,4 +1,4 @@
-import { RecoveryAgentEnvelopeSchema, type RecoveryAgentEnvelope } from "../core/schema.js";
+import { RecoveryDecisionSchema, type RecoveryAgentEnvelope, type RecoveryDecision } from "../core/schema.js";
 import type { TaskCase } from "../core/schema.js";
 import {
   AgentSessionHost,
@@ -7,10 +7,9 @@ import {
   type AgentInvocation,
   type AgentToolDefinition,
 } from "../infrastructure/agent/host.js";
+import { RoleSessions } from "../infrastructure/agent/role-sessions.js";
 import { recoveryModelPrompt } from "./recovery-working-set.js";
 import { VISIBLE_PROCESS_NARRATION } from "./visible-process.js";
-
-const RecoveryResultSchema = RecoveryAgentEnvelopeSchema;
 
 export type RecoveryResult = RecoveryAgentEnvelope;
 
@@ -73,6 +72,11 @@ export type RecoveryContext = {
   };
   /** Host mechanical-check facts for a follow-up turn on the same Session. */
   mechanicalFeedback?: RecoveryMechanicalFeedback;
+  /**
+   * Completed understand/restore freeform turns derived from the event log.
+   * Omitted from the model working set.
+   */
+  completedFreeformTurns?: number;
 };
 
 export interface RecoveryAgentPort {
@@ -82,8 +86,8 @@ export interface RecoveryAgentPort {
     tools: readonly AgentToolDefinition[],
     audit?: AgentAuditSink,
     signal?: AbortSignal,
-  ): Promise<AgentInvocation<RecoveryResult>>;
-  releasePreparation?(experimentId: string): void;
+  ): Promise<AgentInvocation<RecoveryDecision>>;
+  releasePreparation?(experimentId: string): void | Promise<void>;
 }
 
 export const RECOVERY_SYSTEM_PROMPT = `Work from the original task and the available workspace evidence to prepare a reasonable starting environment for that task.
@@ -122,20 +126,52 @@ export const RECOVERY_TURN_PROMPTS = {
     "Make the final recovery decision from the workspace and evidence you can actually inspect.",
     "",
     "Check the task's necessary inputs and runtime conditions, whether later results or answer material remain visible, whether the original task would still be a meaningful task for the candidate, and whether any unresolved gap materially changes that task. Repair safe, concrete problems before deciding.",
-    "Write recovery.md with what you observed, what you changed or rebuilt, what remains uncertain, and why those uncertainties do or do not block restarting the task. Return ready when you have a reasonable executable starting point. Return blocked only when no reasonable path remains and continuing would require guessing a key input, task condition, or result boundary. Include one short summary sentence in the final envelope.",
+    "Write recovery.md with what you observed, what you changed or rebuilt, what remains uncertain, and why those uncertainties do or do not block restarting the task. Return ready when you have a reasonable executable starting point. Return blocked only when no reasonable path remains and continuing would require guessing a key input, task condition, or result boundary. Your final response is only the RecoveryDecision JSON: status, summary, unresolved. Do not include reportPath, recoveryPath, decision, absolute paths, Markdown fences, or explanation text.",
   ].join("\n"),
 } as const;
+
+export const RECOVERY_FREEFORM_REQUEST_IDS = {
+  understand: "recovery-freeform-understand",
+  restore: "recovery-freeform-restore",
+} as const;
+
+/** Count understand/restore completions from audit or store events. Workspace reset clears the count. */
+export function completedRecoveryFreeformTurns(
+  events: readonly { type: string; role?: string; payload?: unknown }[],
+): number {
+  let completed = 0;
+  for (const event of events) {
+    const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+      ? event.payload as Record<string, unknown>
+      : {};
+    const previousFailure = payload.previousFailure;
+    if (
+      event.type === "recovery.workspace_reset"
+      || (event.type === "recovery.model_retry" && previousFailure === "workspace_damaged")
+    ) {
+      completed = 0;
+      continue;
+    }
+    if (event.type !== "agent.invocation_completed") continue;
+    const role = event.role ?? (typeof payload.role === "string" ? payload.role : undefined);
+    if (role !== undefined && role !== "recovery") continue;
+    const requestId = typeof payload.requestId === "string" ? payload.requestId : undefined;
+    if (requestId === RECOVERY_FREEFORM_REQUEST_IDS.understand) completed = Math.max(completed, 1);
+    if (requestId === RECOVERY_FREEFORM_REQUEST_IDS.restore) completed = Math.max(completed, 2);
+  }
+  return completed;
+}
 
 const RECOVERY_COMPACTION =
   "Preserve the recovery goal, invariants, verified facts, completed actions, remaining checks, and blocking reasons. Drop long tool bodies that can be reread by path.";
 
 const OUTPUT_CONTRACT = [
   "After all tool calls, the last assistant message is exactly one JSON object. Intermediate assistant messages may be short process sentences.",
-  "Write recovery.md first. Copy reportPath exactly. Do not include evidenceRefs.",
-  "summary is one sentence, 1 to 240 characters, with no newline. Host copies it unchanged.",
-  '{"status":"ready","summary":"Workspace is ready for the original task.","reportPath":"recovery.md","unresolved":[]}',
-  '{"status":"ready","summary":"Cache layout is unknown but the original task can start.","reportPath":"recovery.md","unresolved":["gap that does not block the original task"]}',
-  '{"status":"blocked","summary":"Required input is missing from source and history.","reportPath":"recovery.md","unresolved":["critical gap that blocks the original task"]}',
+  "Write recovery.md first. The final JSON contains only status, summary, and unresolved.",
+  "summary is one sentence, 1 to 240 characters, with no newline. Do not include reportPath or recoveryPath.",
+  '{"status":"ready","summary":"Workspace is ready for the original task.","unresolved":[]}',
+  '{"status":"ready","summary":"Cache layout is unknown but the original task can start.","unresolved":["gap that does not block the original task"]}',
+  '{"status":"blocked","summary":"Required input is missing from source and history.","unresolved":["critical gap that blocks the original task"]}',
   "ready means a reasonable executable starting point. blocked means continuing would require guessing a key input, task condition, or result boundary. Unknowns that do not change the task may stay on ready. blocked requires a non-empty unresolved list.",
 ].join("\n");
 
@@ -143,8 +179,7 @@ export class RecoveryAgent implements RecoveryAgentPort {
   readonly #host: AgentHost;
   readonly timeoutMs: number;
   readonly #maxRepairAttempts: number;
-  readonly #sessions = new Map<string, Promise<AgentSessionHost>>();
-  readonly #freeformTurns = new Map<string, number>();
+  readonly #sessions = new RoleSessions();
 
   constructor(input: {
     host: AgentHost;
@@ -161,20 +196,12 @@ export class RecoveryAgent implements RecoveryAgentPort {
     tools: readonly AgentToolDefinition[],
     audit?: AgentAuditSink,
     signal?: AbortSignal,
-  ): Promise<AgentInvocation<RecoveryResult>> {
+  ): Promise<AgentInvocation<RecoveryDecision>> {
     return this.#recover(context, tools, audit, signal);
   }
 
-  releasePreparation(experimentId: string): void {
-    for (const key of [...this.#sessions.keys()]) {
-      if (key !== experimentId && !key.startsWith(`${experimentId}:`)) continue;
-      const pending = this.#sessions.get(key);
-      if (pending) void pending.then((session) => session.close()).catch(() => {
-        // Session creation failed; recover already returned that error.
-      });
-      this.#sessions.delete(key);
-      this.#freeformTurns.delete(key);
-    }
+  async releasePreparation(experimentId: string): Promise<void> {
+    await this.#sessions.releaseWhere((key) => key === experimentId || key.startsWith(`${experimentId}:`));
   }
 
   async #recover(
@@ -182,9 +209,8 @@ export class RecoveryAgent implements RecoveryAgentPort {
     tools: readonly AgentToolDefinition[],
     audit?: AgentAuditSink,
     signal?: AbortSignal,
-  ): Promise<AgentInvocation<RecoveryResult>> {
+  ): Promise<AgentInvocation<RecoveryDecision>> {
     const session = await this.#sessionFor(context, tools, audit);
-    const key = context.continuityKey;
     const briefing = recoveryModelPrompt(context);
     if (context.mechanicalFeedback) {
       return this.#requestEnvelope(session, context, signal, [
@@ -193,19 +219,19 @@ export class RecoveryAgent implements RecoveryAgentPort {
         context.mechanicalFeedback.missingReport ? "recovery.md is missing from the workspace root." : "",
       ].filter(Boolean).join("\n\n"));
     }
-    const completed = this.#freeformTurns.get(key) ?? 0;
-    const remaining = [
-      ...(completed < 1 ? [`${briefing}\n\n${RECOVERY_TURN_PROMPTS.understand}`] : []),
-      ...(completed < 2 ? [RECOVERY_TURN_PROMPTS.restore] : []),
+    const completed = context.completedFreeformTurns ?? 0;
+    const remaining: { promptContent: string; requestId: string }[] = [
+      ...(completed < 1 ? [{ promptContent: `${briefing}\n\n${RECOVERY_TURN_PROMPTS.understand}`, requestId: RECOVERY_FREEFORM_REQUEST_IDS.understand }] : []),
+      ...(completed < 2 ? [{ promptContent: RECOVERY_TURN_PROMPTS.restore, requestId: RECOVERY_FREEFORM_REQUEST_IDS.restore }] : []),
     ];
-    for (const promptContent of remaining) {
+    for (const stepPrompt of remaining) {
       const step = await session.work({
-        promptContent,
+        promptContent: stepPrompt.promptContent,
         timeoutMs: this.timeoutMs,
+        requestId: stepPrompt.requestId,
         ...(signal ? { signal } : {}),
       });
       if (step.status !== "completed") return step;
-      this.#freeformTurns.set(key, (this.#freeformTurns.get(key) ?? 0) + 1);
     }
     return this.#requestEnvelope(session, context, signal, RECOVERY_TURN_PROMPTS.conclude);
   }
@@ -215,16 +241,16 @@ export class RecoveryAgent implements RecoveryAgentPort {
     context: RecoveryContext,
     signal: AbortSignal | undefined,
     promptContent: string,
-  ): Promise<AgentInvocation<RecoveryResult>> {
-    const result = await session.request<RecoveryResult>({
+  ): Promise<AgentInvocation<RecoveryDecision>> {
+    const result = await session.request<RecoveryDecision>({
       ...(signal ? { signal } : {}),
       context,
-      schema: RecoveryResultSchema,
+      schema: RecoveryDecisionSchema,
       timeoutMs: this.timeoutMs,
       maxRepairAttempts: this.#maxRepairAttempts,
       promptContent,
       outputContract: OUTPUT_CONTRACT,
-      repairInstruction: "Do not call tools during repair; correct only the final envelope. summary must be one sentence of 1-240 characters with no newline. blocked requires a non-empty unresolved list; ready may list unrelated gaps.",
+      repairInstruction: "Do not call tools during repair; correct only the final RecoveryDecision. Output one JSON object with exactly status, summary, and unresolved. Do not include reportPath, recoveryPath, decision, Markdown fences, or explanation text. summary must be one sentence of 1-240 characters with no newline. blocked requires a non-empty unresolved list; ready may list unrelated gaps.",
     });
     return result;
   }
@@ -235,23 +261,13 @@ export class RecoveryAgent implements RecoveryAgentPort {
     audit?: AgentAuditSink,
   ): Promise<AgentSessionHost> {
     const key = context.continuityKey;
-    let pending = this.#sessions.get(key);
-    if (!pending) {
-      pending = this.#host.createSession({
-        role: "recovery",
-        systemPrompt: RECOVERY_SYSTEM_PROMPT,
-        allowModelText: context.allowModelText,
-        compactionInstructions: RECOVERY_COMPACTION,
-        tools,
-        ...(audit ? { audit } : {}),
-      });
-      this.#sessions.set(key, pending);
-    }
-    try {
-      return await pending;
-    } catch (error) {
-      if (this.#sessions.get(key) === pending) this.#sessions.delete(key);
-      throw error;
-    }
+    return this.#sessions.get(key, () => this.#host.createSession({
+      role: "recovery",
+      systemPrompt: RECOVERY_SYSTEM_PROMPT,
+      allowModelText: context.allowModelText,
+      compactionInstructions: RECOVERY_COMPACTION,
+      tools,
+      ...(audit ? { audit } : {}),
+    }));
   }
 }

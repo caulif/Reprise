@@ -2,14 +2,16 @@ import { mkdir, stat, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
-import type { ComparisonContext } from "../agents/comparison-agent.js";
+import type { ComparisonContext, ComparisonFactsContext } from "../agents/comparison-agent.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { ComparisonBriefingContextSchema, ComparisonLinksSchema, GitSinkManifestSchema, type ComparisonLinkRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
+import { ComparisonBriefingContextSchema, ComparisonLinksSchema, GitSinkManifestSchema, type ComparisonLinkRecord, type ComparisonMediaRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
 import type { ArtifactManifest } from "../infrastructure/store/experiment-store.js";
 import { briefingComparisonContext } from "./comparison.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
 import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
+import { materializeComparisonMedia } from "./comparison-media.js";
+import { withEvidenceShortRefs, withMediaShortRefs } from "./comparison-short-refs.js";
 
 export type ComparisonLink = ComparisonLinkRecord;
 
@@ -24,6 +26,7 @@ export function comparisonOrientation(input: {
     `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
     `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
     "Hard metrics live in briefing/facts/context.json (Host projection; missing stays missing).",
+    "Registered evidence short refs live in briefing/facts/evidence-index.json (ev-01). Registered media short refs live in briefing/facts/media.json (media-01).",
     `briefingRoot=${input.briefingRoot}`,
     "",
     "# INDEX.md",
@@ -77,11 +80,11 @@ export async function writeComparisonBriefing(input: {
   workspaceRoot: string;
   taskCase: TaskCase;
   record: RunRecord;
-  context: ComparisonContext;
+  context: ComparisonContext | ComparisonFactsContext;
   events: readonly EventEnvelope[];
   artifacts: readonly ArtifactManifest[];
   snapshotStatus: "complete" | "incomplete" | "missing";
-}): Promise<{ indexMarkdown: string; links: ComparisonLink[]; fileDigests: Record<string, string> }> {
+}): Promise<{ indexMarkdown: string; links: ComparisonLink[]; media: ComparisonMediaRecord[]; fileDigests: Record<string, string> }> {
   const briefingRoot = join(input.attemptRoot, "briefing");
   await Promise.all([
     mkdir(join(briefingRoot, "task"), { recursive: true }),
@@ -96,14 +99,29 @@ export async function writeComparisonBriefing(input: {
     taskCase: input.taskCase,
     runEvents: input.events,
   });
-  const links = await comparisonLinks(input);
+  const links = withEvidenceShortRefs(await comparisonLinks(input));
   if (!Value.Check(ComparisonLinksSchema, links)) throw new Error("Comparison links do not satisfy ComparisonLinksSchema.");
-  if (!Value.Check(ComparisonBriefingContextSchema, briefingComparisonContext(input.context))) throw new Error("Comparison context does not satisfy ComparisonBriefingContextSchema.");
+  const media = withMediaShortRefs(await materializeComparisonMedia({
+    attemptRoot: input.attemptRoot,
+    workspaceRoot: input.workspaceRoot,
+    links,
+  }));
+  const briefingContext = {
+    ...briefingComparisonContext(input.context),
+    media,
+  };
+  if (!Value.Check(ComparisonBriefingContextSchema, briefingContext)) throw new Error("Comparison context does not satisfy ComparisonBriefingContextSchema.");
   const snapshotStatus = comparisonSnapshotLabel(input.snapshotStatus);
   const cleanupStatus = input.record.outcome.cleanup.status;
   const indexMarkdown = comparisonIndex(snapshotStatus, cleanupStatus);
-  const factsContext = `${JSON.stringify(briefingComparisonContext(input.context), null, 2)}\n`;
+  const factsContext = `${JSON.stringify(briefingContext, null, 2)}\n`;
   const factsLinks = `${JSON.stringify(links, null, 2)}\n`;
+  const factsMedia = `${JSON.stringify(media, null, 2)}\n`;
+  const factsEvidence = `${JSON.stringify(links.map((link) => ({
+    shortRef: link.shortRef, label: link.label, side: link.side, inspectPath: link.inspectPath,
+    ...(link.reportHref ? { reportHref: link.reportHref } : {}),
+    ...(link.evidenceRef ? { canonicalRef: link.evidenceRef } : {}),
+  })), null, 2)}\n`;
   const candidateProcess = processIndex(input.events);
   const gitSink = await loadGitSinkBriefing(input.experimentRoot, input.record.attempt.runId);
   const files: Record<string, string> = {
@@ -112,17 +130,45 @@ export async function writeComparisonBriefing(input: {
     "candidate/process-index.tsv": candidateProcess,
     "facts/context.json": factsContext,
     "facts/comparison-links.json": factsLinks,
+    "facts/media.json": factsMedia,
+    "facts/evidence-index.json": factsEvidence,
     "candidate/SNAPSHOT.txt": `snapshotStatus=${snapshotStatus}\ncleanupStatus=${cleanupStatus}\n`,
     "candidate/git-sink-refs.txt": gitSink.refsListing,
     "candidate/git-sink-manifest.json": gitSink.catalogJson,
   };
   for (const [path, body] of Object.entries(files)) await writeAtomic(join(briefingRoot, ...path.split("/")), body);
+  await writeAttemptSidecars(input, {
+    factsContext, factsLinks, factsMedia, factsEvidence, candidateProcess, snapshotStatus, cleanupStatus, gitSink,
+  });
+  return { indexMarkdown, links, media, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
+}
+
+async function writeAttemptSidecars(
+  input: {
+    attemptRoot: string;
+    experimentRoot: string;
+    taskCase: TaskCase;
+    record: RunRecord;
+  },
+  files: {
+    factsContext: string;
+    factsLinks: string;
+    factsMedia: string;
+    factsEvidence: string;
+    candidateProcess: string;
+    snapshotStatus: string;
+    cleanupStatus: string;
+    gitSink: { refsListing: string; catalogJson: string };
+  },
+): Promise<void> {
   await mkdir(join(input.attemptRoot, "history"), { recursive: true });
   await mkdir(join(input.attemptRoot, "candidate"), { recursive: true });
   await mkdir(join(input.attemptRoot, "facts"), { recursive: true });
   await writeAtomic(join(input.attemptRoot, "INDEX.md"), comparisonAttemptIndex());
-  await writeAtomic(join(input.attemptRoot, "facts", "context.json"), factsContext);
-  await writeAtomic(join(input.attemptRoot, "facts", "comparison-links.json"), factsLinks);
+  await writeAtomic(join(input.attemptRoot, "facts", "context.json"), files.factsContext);
+  await writeAtomic(join(input.attemptRoot, "facts", "comparison-links.json"), files.factsLinks);
+  await writeAtomic(join(input.attemptRoot, "facts", "media.json"), files.factsMedia);
+  await writeAtomic(join(input.attemptRoot, "facts", "evidence-index.json"), files.factsEvidence);
   await writeAtomic(join(input.attemptRoot, "history", "INDEX.md"), [
     "# History track",
     "",
@@ -139,27 +185,23 @@ export async function writeComparisonBriefing(input: {
     "Controller messages: run/sent-user-messages.jsonl and observations/user-inputs/",
     "",
   ].join("\n"));
-  await writeAtomic(join(input.attemptRoot, "candidate", "process-index.tsv"), candidateProcess);
+  await writeAtomic(join(input.attemptRoot, "candidate", "process-index.tsv"), files.candidateProcess);
   await writeAtomic(
     join(input.attemptRoot, "history", "messages.tsv"),
     ["id\trole\tbytes", ...input.taskCase.transcript.map((message) => `${message.id}\t${message.role}\t${Buffer.byteLength(message.text)}`)].join("\n") + "\n",
   );
-  await writeAtomic(
-    join(input.attemptRoot, "candidate", "outcome.json"),
-    `${JSON.stringify(input.record.outcome, null, 2)}\n`,
-  );
+  await writeAtomic(join(input.attemptRoot, "candidate", "outcome.json"), `${JSON.stringify(input.record.outcome, null, 2)}\n`);
   await writeAtomic(
     join(input.attemptRoot, "candidate", "SNAPSHOT.txt"),
-    `snapshotStatus=${snapshotStatus}\ncleanupStatus=${cleanupStatus}\n`,
+    `snapshotStatus=${files.snapshotStatus}\ncleanupStatus=${files.cleanupStatus}\n`,
   );
   const userView = await readFile(
     join(input.experimentRoot, "runs", input.record.attempt.runId, "controller-briefing", "current-user-view.md"),
     "utf8",
   ).catch(() => "");
   if (userView) await writeAtomic(join(input.attemptRoot, "candidate", "user-view.md"), userView);
-  await writeAtomic(join(input.attemptRoot, "candidate", "git-sink-refs.txt"), gitSink.refsListing);
-  await writeAtomic(join(input.attemptRoot, "candidate", "git-sink-manifest.json"), gitSink.catalogJson);
-  return { indexMarkdown, links, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
+  await writeAtomic(join(input.attemptRoot, "candidate", "git-sink-refs.txt"), files.gitSink.refsListing);
+  await writeAtomic(join(input.attemptRoot, "candidate", "git-sink-manifest.json"), files.gitSink.catalogJson);
 }
 
 export function comparisonSnapshotLabel(status: "complete" | "incomplete" | "missing"): "complete" | "incomplete" | "unknown" {
@@ -192,6 +234,8 @@ function comparisonIndex(snapshotStatus: "complete" | "incomplete" | "unknown", 
     "- briefing/task/initial-input.txt — frozen initial task",
     "- briefing/facts/context.json — bounded Host projection, not a substitute for direct evidence",
     "- briefing/facts/comparison-links.json — inspect paths and stable report links",
+    "- briefing/facts/media.json — registered images/previews, shortRef media-01, reportHref, and availability",
+    "- briefing/facts/evidence-index.json — short evidence refs ev-01 with descriptive names",
     "- briefing/candidate/process-index.tsv — complete run event index including post-settlement events",
     "- observations/user-inputs/INDEX.tsv — complete user demand in session order (historical_user vs controller)",
     "- observations/INDEX.md — frozen transcript, historical events, and this run's events (read-only)",
@@ -222,7 +266,7 @@ async function comparisonLinks(input: {
   workspaceRoot: string;
   taskCase: TaskCase;
   record: RunRecord;
-  context: ComparisonContext;
+  context: ComparisonContext | ComparisonFactsContext;
   events: readonly EventEnvelope[];
   artifacts: readonly ArtifactManifest[];
 }): Promise<ComparisonLink[]> {

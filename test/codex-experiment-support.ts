@@ -16,6 +16,18 @@ import { ScriptedRunner } from "./support/scripted-runtime.js";
 export function comparisonHtmlWithHostShell(context: { reportShellHtml?: string }, body: string): string {
   const shell = context.reportShellHtml;
   if (!shell) return body;
+  if (shell.includes('data-agent-zone="key-differences"')) {
+    return shell.replace(
+      /<section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><\/section>/,
+      `<section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences">${body}</section>`,
+    );
+  }
+  if (shell.includes('data-slot="key-differences"')) {
+    return shell.replace(
+      /<section class="slot" data-slot="key-differences"><\/section>/,
+      `<section class="slot" data-slot="key-differences">${body}</section>`,
+    );
+  }
   if (shell.includes('data-slot="body"')) {
     return shell.replace(
       '<div class="agent-slot" data-slot="body"></div>',

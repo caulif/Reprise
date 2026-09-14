@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import type { RecoveryResult } from "../../agents/recovery-agent.js";
-import { persistRecoveryEvaluation, recoveryEvaluationCase, recoveryTimingSummary } from "./evaluation.js";
+import type { RecoveryDiagnosisContext } from "../../core/schemas/recovery.js";
 import { persistRecoveryValidationArtifacts } from "./writes.js";
 import { recoveryPreflightDiagnostic } from "./staging-diagnostic.js";
 import {
@@ -50,8 +50,42 @@ export type FailRecoverExperimentInput = {
   lastToolFailureCategory: string | undefined;
 };
 
+
+async function diagnoseFailure(input: FailRecoverExperimentInput, stage: string, fallback: string) {
+  const diagnosis = input.attemptInput.diagnosis;
+  if (!diagnosis) return { summary: fallback, source: "host_fallback" as const };
+  const context: RecoveryDiagnosisContext = {
+    schemaVersion: 1,
+    status: stage === "runner_crashed" ? "failed" : "blocked",
+    stage: stage === "preflight_failed" ? "workspace" : "agent",
+    reason: stage,
+    taskSummary: input.attemptInput.taskCase.initialInput?.text,
+    initialInputAvailable: Boolean(input.attemptInput.taskCase.initialInput?.text),
+    completedTurnCount: input.attemptInput.taskCase.transcript.filter((entry) => entry.role === "assistant").length,
+    workspace: { readable: Boolean(input.staging), writable: Boolean(input.staging), gitAvailable: false },
+    modelStarted: input.modelAttempts > 0,
+    stagingStarted: Boolean(input.staging),
+    facts: [fallback],
+  };
+  try {
+    const result = await diagnosis.diagnose(context);
+    return result.status === "completed" ? { summary: result.value.summary, source: "model" as const } : { summary: fallback, source: "host_fallback" as const };
+  } catch {
+    // Diagnosis is explanatory only; its failure must preserve the original Host failure.
+    return { summary: fallback, source: "host_fallback" as const };
+  }
+}
 export async function failRecoverExperiment(input: FailRecoverExperimentInput): Promise<RecoveryAttempt> {
   const settled = await settleFailedRecovery(input);
+  const diagnosis = await diagnoseFailure(input, settled.failureStage, settled.failureMessage);
+  await writeImmutableJson(join(input.experimentRoot, "recovery-explanation.json"), {
+    schemaVersion: 1,
+    status: settled.failureStage === "runner_crashed" ? "failed" : "blocked",
+    stage: settled.failureStage === "preflight_failed" ? "workspace" : "agent",
+    reason: settled.failureStage,
+    summary: diagnosis.summary,
+    diagnosis: diagnosis.source,
+  });
   const failed = input.recovery ?? {
     status: "failed" as const,
     failure: {
@@ -66,26 +100,10 @@ export async function failRecoverExperiment(input: FailRecoverExperimentInput): 
     attemptInput: input.attemptInput,
     failed,
     failureStage: settled.failureStage,
-    failureMessage: settled.failureMessage,
+    failureMessage: diagnosis.summary,
     error: input.error,
     preflightOperation: input.preflightOperation,
-    writerAcquired: input.writerAcquired,
-    staging: input.staging,
-    candidateCreated: input.candidateCreated,
-    recoveredPaths: input.recoveredPaths,
-    verification: input.verification,
-    forensicsCompleted: input.forensicsCompleted,
-    evidenceSourcesAttempted: input.evidenceSourcesAttempted,
-    evidenceSourcesAvailable: input.evidenceSourcesAvailable,
-    hypothesisCount: input.hypothesisCount,
-    candidateCount: input.candidateCount,
     verifierRejectionReasons: input.verifierRejectionReasons,
-    providerFailureRetryable: settled.providerFailureRetryable,
-    pathBoundaryRejected: input.pathBoundaryRejected,
-    readinessResult: input.readinessResult,
-    taskOutcome: settled.taskOutcome,
-    modelAttempts: input.modelAttempts,
-    recoveryOrchestrator: input.recoveryOrchestrator,
   });
   await persistRecoveryAttemptDiagnosis(
     input.experimentRoot,
@@ -217,23 +235,7 @@ type PersistFailedRecoveryArtifactsInput = {
   failureMessage: string;
   error: unknown;
   preflightOperation: string;
-  writerAcquired: boolean;
-  staging: RecoveryStaging | undefined;
-  candidateCreated: boolean;
-  recoveredPaths: string[];
-  verification: "verified" | "pending_user_review" | "rejected" | "insufficient_evidence";
-  forensicsCompleted: boolean;
-  evidenceSourcesAttempted: number | undefined;
-  evidenceSourcesAvailable: number | undefined;
-  hypothesisCount: number | undefined;
-  candidateCount: number | undefined;
   verifierRejectionReasons: string[] | undefined;
-  providerFailureRetryable: boolean | undefined;
-  pathBoundaryRejected: boolean | undefined;
-  readinessResult: RecoveryReadinessResult | undefined;
-  taskOutcome: NonNullable<EnvironmentBaseline["recovery"]>["taskOutcome"] | undefined;
-  modelAttempts: number;
-  recoveryOrchestrator: RecoveryOrchestrator;
 };
 
 async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifactsInput): Promise<void> {
@@ -246,23 +248,7 @@ async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifa
     failureMessage,
     error,
     preflightOperation,
-    writerAcquired,
-    staging,
-    candidateCreated,
-    recoveredPaths,
-    verification,
-    forensicsCompleted,
-    evidenceSourcesAttempted,
-    evidenceSourcesAvailable,
-    hypothesisCount,
-    candidateCount,
     verifierRejectionReasons,
-    providerFailureRetryable,
-    pathBoundaryRejected,
-    readinessResult,
-    taskOutcome,
-    modelAttempts,
-    recoveryOrchestrator,
   } = input;
   await writeImmutableJson(join(experimentRoot, "recovery-validation.json"), {
     status: "failed",
@@ -300,32 +286,6 @@ async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifa
         : {}),
     },
   });
-  if (writerAcquired)
-    await persistRecoveryEvaluation(store, [
-      recoveryEvaluationCase({
-        caseId: attemptInput.caseId,
-        staging,
-        candidateCreated,
-        recoveredPaths,
-        verification,
-        forensicsCompleted,
-        evidenceSourcesAttempted,
-        evidenceSourcesAvailable,
-        hypothesisCount,
-        candidateCount,
-        verifierRejectionReasons,
-        providerFailureRetryable,
-        pathBoundaryRejected,
-        ...(readinessResult ? { readiness: readinessResult } : {}),
-        ...(taskOutcome ? { taskOutcome } : {}),
-        modelCalls: modelAttempts,
-        startedAt: attemptInput.now,
-        timings: recoveryTimingSummary(recoveryOrchestrator.attempts),
-      }),
-    ],
-    undefined,
-    store.events(attemptInput.runId),
-  );
 }
 
 export function recoveryInvocationFailureStage(
@@ -424,3 +384,8 @@ function safeRecoveryFailureSummary(
     ? "Recovery agent was cancelled."
     : "Recovery agent or tool execution failed.";
 }
+
+
+
+
+

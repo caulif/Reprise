@@ -241,13 +241,13 @@ Core 只看环境基线和候选副本，不编排 Recovery Agent 的内部 loop
 
 `release` 结束 Harness 对本 run 隔离副本的活动句柄，不删除该副本，也不回滚用户目录或外部服务副作用。完整设计见[Environment 专题](./environment.md)。
 
-Environment 以资源级证据描述恢复结果：`EnvironmentResource` 同时保存 `requestedState`、`recoveredState`、`method`、`confidence`、证据引用和限制；某次 CandidateRun 的具体目录、挂载或外部句柄另由 `PreparedResource` 绑定。候选运行必须使用 Harness 创建的隔离副本，或只读/受控的 observational 绑定；无法提供二者时为 `unsupported`，不允许直接在用户当前工作目录运行。
+当前 EnvironmentBaseline 由 Recovery 信封 `ready` / `blocked`（外加 Host 机械失败）与 Provider fingerprint 描述，不维护资源级 `EnvironmentResource` 评分。基线类型见 [`local-workspace-provider.ts`](../../src/environment/local-workspace-provider.ts)。候选运行必须使用 Harness 创建的隔离副本，或只读/受控的 observational 绑定；无法提供二者时为 `unsupported`，不允许直接在用户当前工作目录运行。资源枚举模型仍出现在旧计划中，不是当前写入路径。
 
 ## 9. 三个 Agent Module 与 Pi Agent Host
 
 三个 Agent Module 是一等业务模块，不是 Orchestrator 内部的临时模型调用。它们共享 Pi Agent Host 的基础能力，但各自拥有端口和领域契约；当前不建立万能 `AgentModule<I, O>` 工作流抽象。
 
-Environment 子系统通过内部端口调用 Recovery Agent。一次恢复使用一个连续 Session 和一个工作副本，三个 turn 为理解与侦察、恢复与准备、自检与结论；Host 只在机械检查失败时反馈同一 Session。信封为 `ready` / `blocked`。
+Environment 子系统通过内部端口调用 Recovery Agent。一次恢复使用一个连续 Session 和一个工作副本，三个 turn 为理解与侦察、恢复与准备、自检与结论；自由轮次进度从事件日志恢复。Host 只在机械检查失败时反馈同一 Session。信封为 `ready` / `blocked`。
 
 Recovery Agent 使用产品 Recovery Playbook 和现有工作区工具，自主调查、修改、恢复和验证；Host 只负责运行控制、不可逆边界、审计、持久化和机械检查。Provider 保存可复用 baseline。Recovery 的目标和三轮 prompt 设计见[Recovery 起点恢复目标](../plan/recovery-initial-environment.md)与[单工作副本自主三轮循环](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md)。
 
@@ -259,7 +259,7 @@ Product Pack 只交付规范化会话和 Target events；产品无关的 Observa
 Comparison 发生在 CandidateRun 结束之后，也使用产品无关的公共接口：
 
 
-Comparison Agent 每次 attempt 使用一个连续 Session，顺序发送四条工作委托，仅末轮解析薄信封；`report.html` 是真实任务比较卡。薄信封返回状态、引用和可选 `headline`。Host 校验路径、文件可读性与证据归属，不解析或重排报告内容。它不接触 ProductRuntime、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 每次 attempt 使用一个连续 Session，顺序发送理解、调查、创作报告，必要时恢复 Host 区域，末轮只交薄信封；`report.html` 是真实任务比较卡。薄信封返回状态、引用和可选 `headline`。Host 校验 Host 区域、短引用与文件可读性，不解析或重排报告内容。它不接触 ProductRuntime、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
 Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Agent Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型
@@ -390,8 +390,8 @@ sequenceDiagram
 
 - 所有外部输入、路径、artifact 引用、Product Pack 事件和模型结构化输出都在适配器边界验证。
 - Product Pack 的 ProductRuntime 只能获得本次 `PreparedEnvironmentRef` 和明确配置，不能默认遍历用户全局目录。
-- Recovery Agent 只写 Environment staging；历史证据和用户原目录保持只读。
-- Controller 工具只读证据与候选结果，不能写隔离副本或用户源目录。
+- Recovery Agent 只写 Environment staging；历史证据和用户原目录保持只读。所选源目录受写保护；staging 内 `shell_exec` 在本机运行，其余用户可写路径与网络未做容器级隔离。
+- Controller 工具可读 briefing、候选隔离副本和当前进程可读路径；`project/` 的 `edit`/`write` 记入 `controller.workspace_write`；shell 外部写入记入 `controller.external_write`。不能调用 Target 工具，也不能用 `edit`/`write` 写用户源目录。
 - Comparison 只写本次 attempt 目录中 Host 允许的相对路径；接受恢复、投递候选、发布报告由 application/harness 执行，不经统一业务 Verifier。
 - Candidate Runtime 永远不获得用户当前工作目录；无法建立隔离副本或受控观察绑定时，运行状态为 `unsupported`。
 - Controller 的工具与权限由[角色定义](../../src/agents/controller-agent.ts)及其 Host 注册拥有；不能调用 Target 工具或写用户源目录。
@@ -411,13 +411,13 @@ src/
 ├── application/          # Case Preparation、Candidate Run、Comparison 编排
 ├── products/             # Codex 等 Product Pack 的会话/Runtime/Playbook
 ├── environment/          # Provider、baseline、候选副本和 Recovery 接入
-├── agents/               # Recovery、Controller、Comparison 的独立模块
+├── agents/               # 三个角色的 prompt、信封 schema 与 Session 包装
 ├── infrastructure/       # Store、Agent Host、process/path 等平台适配
-├── report/               # Projection 验证与确定性渲染
-└── cli/                  # 用户入口、TUI 和显式装配
+├── tui/                  # 事件日志的只读投影
+└── cli/                  # 无头入口与显式装配
 ```
 
-目录表达依赖方向，不要求每个目录成为包或每个概念成为 class。Core 不导入具体 Product Pack、Pi、存储或报告实现。Controller 和 Comparison 不导入 products；Environment 只通过 RecoveryAgentPort 与产品 Playbook 引用接入恢复能力。
+没有独立的 `src/report/`；比较报告由 application 写出、Comparison Agent 填充。目录表达依赖方向，不要求每个目录成为包或每个概念成为 class。Core 不导入具体 Product Pack、Pi、存储或报告实现。Controller 和 Comparison 不导入 products；Environment 只通过 RecoveryAgentPort 与产品 Playbook 引用接入恢复能力。
 
 ## 16. 当前不做
 

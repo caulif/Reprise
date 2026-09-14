@@ -50,6 +50,8 @@ export {
   type RecoveryReadinessContext,
   RecoveryAgentEnvelopeSchema,
   type RecoveryAgentEnvelope,
+  RecoveryDecisionSchema,
+  type RecoveryDecision,
 } from "./schemas/recovery.js";
 export {
   ArtifactRefSchema,
@@ -130,6 +132,16 @@ export const ControllerWorkspaceWritePayloadSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 512 }),
 });
 export type ControllerWorkspaceWritePayload = Static<typeof ControllerWorkspaceWritePayloadSchema>;
+export const ControllerExternalWritePayloadSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  requestId: Id,
+  runId: Id,
+  tool: Type.Literal("shell_exec"),
+  pathClass: Type.Union([Type.Literal("absolute"), Type.Literal("unc"), Type.Literal("wsl")]),
+  pathRef: Type.String({ minLength: 1, maxLength: 512 }),
+  commandDigest: Hash,
+});
+export type ControllerExternalWritePayload = Static<typeof ControllerExternalWritePayloadSchema>;
 export const ControllerReadArtifactSchema = Type.Object({
   path: Type.String({ minLength: 1 }), offset: Type.Integer({ minimum: 0 }),
   content: Type.String(),
@@ -166,8 +178,19 @@ const ComparisonLinkSchema = Type.Object({
   mediaType: Type.Optional(Type.String({ minLength: 1 })),
   byteLength: Type.Optional(Type.Integer({ minimum: 0 })),
   evidenceRef: Type.Optional(EvidenceRefSchema),
+  shortRef: Type.Optional(Type.String({ pattern: "^ev-[0-9]{2}$" })),
+  label: Type.Optional(Type.String({ minLength: 1 })),
 });
 export const ComparisonLinksSchema = Type.Array(ComparisonLinkSchema);
 export type ComparisonLinkRecord = Static<typeof ComparisonLinkSchema>;
-export { ComparisonBriefingContextSchema, ComparisonInvocationSchema } from "./comparison-schema.js";
+export {
+  ComparisonBriefingContextSchema,
+  ComparisonInvocationSchema,
+  ComparisonMediaRecordSchema,
+  ComparisonReportModelSchema,
+  ComparisonShortRefSchema,
+} from "./comparison-schema.js";
+export type { ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+
+
 

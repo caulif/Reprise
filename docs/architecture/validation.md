@@ -39,7 +39,7 @@ Schema 验证只判断输出是否可执行，不判断内容是否聪明或措�
 
 Agent 只能使用 Host 显式提供的能力：
 
-- Controller 注册 `ls`/`read`/`grep`/`find`/`edit`/`write`，`edit`/`write` 仅 `project/`；不注册 `shell_exec`；不得写用户源目录、不得调用 Target 工具或改 CandidateRun 状态机；
+- Controller 注册 `ls`/`read`/`grep`/`find`/`edit`/`write`/`shell_exec`，`edit`/`write` 仅 `project/`；不得用结构化写入改用户源目录、不得调用 Target 工具或改 CandidateRun 状态机；
 - Comparison 使用同一七个工具名；`candidate/` 只读挂载，只许写本次 attempt 的 `scratch/`、`work/comparison-plan.md` 与 `report.html`；不得改实验状态或排名候选；
 - Recovery 的写入能力只作用于 Harness 持有的 staging；
 - 路径、ownership、隐私和大小限制由工具实现验证；目录包含用规范化后的真实路径关系，不用简单字符串前缀；

@@ -1,5 +1,6 @@
 import { ComparisonAgent } from '../agents/comparison-agent.js';
 import { RecoveryAgent } from '../agents/recovery-agent.js';
+import { RecoveryDiagnosisAgent } from '../agents/diagnosis-agent.js';
 import { ControllerAgent } from '../agents/controller-agent.js';
 import { AgentHost, type ProviderAdapter } from '../infrastructure/agent/host.js';
 import { PiModelCaller } from '../infrastructure/agent/model-caller.js';
@@ -10,6 +11,7 @@ export type HarnessAgents = {
   readonly controller: ControllerAgent;
   readonly comparison: ComparisonAgent;
   readonly recovery: RecoveryAgent;
+  readonly diagnosis: RecoveryDiagnosisAgent;
   readonly config: {
     readonly providerId: string;
     readonly requestedModel: string;
@@ -32,6 +34,8 @@ export function createHarnessAgents(config: HarnessModelConfig, caller: Provider
     comparison: new ComparisonAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts }),
     controller: new ControllerAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts }),
     recovery: new RecoveryAgent({ host, timeoutMs: recoveryBudget.callTimeoutMs, maxRepairAttempts: recoveryBudget.maxStructuredRepairAttempts }),
+    diagnosis: new RecoveryDiagnosisAgent(host, recoveryBudget.callTimeoutMs),
     config: { providerId: config.providerId, requestedModel: config.modelId, budget, recoveryBudget },
   };
 }
+

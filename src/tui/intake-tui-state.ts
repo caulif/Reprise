@@ -3,6 +3,7 @@ import { createExperimentWorkflow } from "../application/experiment-workflow.js"
 import { importPacks } from "../application/intake-catalog.js";
 import { createProductLookup, productPacks } from "../products/index.js";
 import type { IntakeTui, IntakeTuiOptions } from "./intake-tui.js";
+import { yieldPointerToApp } from "./pointer-dispatch.js";
 import { Workbench } from "./workbench.js";
 
 function sourceHistoryWorkflow(packs: IntakeTui["packs"], dataDir: string, now: () => string) {
@@ -33,6 +34,7 @@ function wireIntakeTui(target: IntakeTui, options: IntakeTuiOptions): void {
         target.openFileUrl(url);
       },
     });
+  yieldPointerToApp(target.tui);
   target.workbench = new Workbench(
     () => target.view(),
     () => target.viewport(),

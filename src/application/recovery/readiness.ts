@@ -33,6 +33,13 @@ export type RecoveryReadinessOptions = {
 };
 
 const COMMAND_PATTERN = /(?:^|\n)\s*(?:\$\s*)?((?:npm|pnpm|yarn|node|python|pytest|cargo|go|make)\s+[^\n`]{1,200})/g;
+const READINESS_LIMITS = { summary: 4096, workspace: 512, path: 512, command: 2048, check: 2048 } as const;
+
+function boundedStrings(values: readonly unknown[], maxLength: number, maxItems: number): string[] {
+  return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0)
+    .map((value) => value.slice(0, maxLength)))]
+    .slice(0, maxItems);
+}
 
 /** Derives conservative, inspectable continuation hints; it never invents file contents. */
 export function deriveRecoveryReadinessContext(taskCase: TaskCase, cwd?: string): RecoveryReadinessContext {
@@ -55,18 +62,20 @@ export function deriveRecoveryReadinessContext(taskCase: TaskCase, cwd?: string)
     const candidate = relative(historicalCwd, path).replaceAll("\\", "/");
     return candidate && candidate !== "." && candidate !== ".." && !candidate.startsWith("../") ? [candidate] : [];
   }) : [];
-  const relevantPaths = [...new Set([...explicitPaths, ...derivedPaths])].slice(0, 256);
+  const relevantPaths = boundedStrings([...explicitPaths, ...derivedPaths], READINESS_LIMITS.path, 256);
   const pathSemantics = isOutputProducingTask(text) ? "task_outputs" as const : "required_inputs" as const;
   const historicalCommands = historicalRecord?.commands;
-  const priorCommands = [...new Set([
+  const priorCommands = boundedStrings([
     ...(Array.isArray(historicalCommands) ? historicalCommands.filter((value): value is string => typeof value === "string") : []),
     ...[...text.matchAll(COMMAND_PATTERN)].map((match) => match[1]?.trim()).filter((value): value is string => Boolean(value)),
-  ])].slice(0, 64);
-  const observedWorkspaces = cwd ? [cwd] : [];
-  const availableChecks = priorCommands.length > 0 ? priorCommands.map((command) => `replayable command: ${command}`) : ["inspect required paths and task inputs"];
+  ], READINESS_LIMITS.command, 64);
+  const observedWorkspaces = cwd ? boundedStrings([cwd], READINESS_LIMITS.workspace, 32) : [];
+  const availableChecks = priorCommands.length > 0
+    ? boundedStrings(priorCommands.map((command) => `replayable command: ${command}`), READINESS_LIMITS.check, 64)
+    : ["inspect required paths and task inputs"];
   const context: RecoveryReadinessContext = {
     schemaVersion: 1,
-    taskSummary: taskCase.initialInput.text.trim().slice(0, 4096) || "Continue the historical task from its recovered workspace.",
+    taskSummary: taskCase.initialInput.text.trim().slice(0, READINESS_LIMITS.summary) || "Continue the historical task from its recovered workspace.",
     observedWorkspaces,
     relevantPaths,
     pathSemantics,
@@ -171,9 +180,15 @@ export async function measureRecoveryStagingReadiness(
   taskCase: TaskCase,
   options: { executeCommands?: boolean; cwd?: string } = {},
 ): Promise<RecoveryReadinessResult> {
-  return checkRecoveryReadiness(root, deriveRecoveryReadinessContext(taskCase, options.cwd), {
-    executeCommands: Boolean(options.executeCommands),
-  });
+  // Readiness is a Host mechanical check. Do not derive replayable commands
+  // from the full historical transcript during the live Recovery path.
+  const derived = deriveRecoveryReadinessContext(taskCase, options.cwd);
+  const context: RecoveryReadinessContext = {
+    ...derived,
+    priorCommands: [],
+    availableChecks: ["inspect required paths and task inputs"],
+  };
+  return checkRecoveryReadiness(root, context, { executeCommands: false });
 }
 
 export function applyTaskReadinessGate<T extends {

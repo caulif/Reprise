@@ -21,7 +21,6 @@ import {
   removeCaptureArtifacts as removeCaptureArtifacts,
   readBaselineMarker as readBaselineMarker,
   loadSealedBaseline as loadSealedBaseline,
-  isRecoveryEnvelope as isRecoveryEnvelope,
   readRecoveryReport as readRecoveryReport,
   candidateChangedPaths as candidateChangedPaths,
   assertRecoveryPathBoundary as assertRecoveryPathBoundary,
@@ -481,8 +480,7 @@ export class LocalWorkspaceProvider {
     let reportText: string | undefined;
     let sourceTripwireAfter: EnvironmentFingerprint;
     try {
-      await this.probeRecovery(staging, result);
-      if (!isRecoveryEnvelope(result)) throw new Error('Recovery result is invalid.');
+      await this.probeRecovery(staging);
       sourceTripwireAfter = (await this.#inspectSource(staging.sourceRoot)).fingerprint;
       reportText = await readRecoveryReport(staging.root);
       await cleanupRecoveryTransients(staging.root);
@@ -521,11 +519,10 @@ export class LocalWorkspaceProvider {
   }
 
   /** Same checks as validateRecovery, but never unlinks sinks or discards staging. */
-  async probeRecovery(staging: RecoveryStaging, result: RecoveryEnvelope): Promise<void> {
+  async probeRecovery(staging: RecoveryStaging): Promise<void> {
     this.#assertRecoveryStaging(staging);
     const root = staging.root;
     try {
-      if (!isRecoveryEnvelope(result)) throw new RecoveryValidationError("provider_validation_failed", "Recovery result is invalid.");
       const sourceTripwireAfter = (await this.#inspectSource(staging.sourceRoot)).fingerprint;
       if (sourceTripwireAfter.digest !== staging.sourceTripwireBefore.digest) throw new RecoveryValidationError("source_tripwire_failed", "Recovery changed the user source directory; staging will be discarded.");
       try {

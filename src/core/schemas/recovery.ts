@@ -5,8 +5,24 @@ import { EvidenceRefSchema, Hash, Id, Timestamp } from "./ids.js";
 const RecoverySummarySchema = Type.String({
   minLength: 1,
   maxLength: 240,
-  pattern: "^[^\\r\\n.。!?！？]+[.。!?！？]?$",
+  // Paths and filenames are valid evidence in a summary; only line breaks are
+  // forbidden. Requiring punctuation only at the end rejected otherwise valid
+  // recovery decisions such as `question-1/README.md`.
+  pattern: "^[^\\r\\n]+$",
 });
+export const RecoveryDecisionSchema = Type.Union([
+  Type.Object({
+    status: Type.Literal("ready"),
+    summary: RecoverySummarySchema,
+    unresolved: Type.Array(Type.String()),
+  }, { additionalProperties: false }),
+  Type.Object({
+    status: Type.Literal("blocked"),
+    summary: RecoverySummarySchema,
+    unresolved: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+  }, { additionalProperties: false }),
+]);
+export type RecoveryDecision = Static<typeof RecoveryDecisionSchema>;
 export const RecoveryAgentEnvelopeSchema = Type.Union([
   Type.Object({
     status: Type.Literal("ready"),
@@ -687,3 +703,18 @@ export const RecoveryReadinessContextSchema = Type.Object({
   availableChecks: Type.Array(Type.String({ minLength: 1, maxLength: 2048 }), { maxItems: 64 }),
 }, { additionalProperties: false });
 export type RecoveryReadinessContext = Static<typeof RecoveryReadinessContextSchema>;
+
+const RecoveryDiagnosisContextSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  status: Type.Union([Type.Literal("blocked"), Type.Literal("invalid"), Type.Literal("failed")]),
+  stage: Type.Union([Type.Literal("freeze"), Type.Literal("workspace"), Type.Literal("agent"), Type.Literal("finalize")]),
+  reason: Type.String({ minLength: 1, maxLength: 128 }),
+  taskSummary: Type.Optional(Type.String({ maxLength: 4096 })),
+  initialInputAvailable: Type.Boolean(), completedTurnCount: Type.Integer({ minimum: 0 }),
+  workspace: Type.Object({ readable: Type.Boolean(), writable: Type.Boolean(), gitAvailable: Type.Boolean(), fileCount: Type.Optional(Type.Integer({ minimum: 0 })), totalBytes: Type.Optional(Type.Integer({ minimum: 0 })) }),
+  modelStarted: Type.Boolean(), stagingStarted: Type.Boolean(), facts: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { maxItems: 16 }),
+}, { additionalProperties: false });
+export type RecoveryDiagnosisContext = Static<typeof RecoveryDiagnosisContextSchema>;
+export const RecoveryDiagnosisResultSchema = Type.Object({ summary: Type.String({ minLength: 1, maxLength: 240 }) }, { additionalProperties: false });
+export type RecoveryDiagnosisResult = Static<typeof RecoveryDiagnosisResultSchema>;
+

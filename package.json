@@ -36,6 +36,8 @@
     "gen:docs": "node scripts/gen-docs.mjs",
     "verify:generated": "node scripts/gen-docs.mjs --check",
     "check": "node scripts/run-gates.mjs check",
+    "check:fast": "node scripts/run-gates.mjs fast",
+    "check:full": "node scripts/run-gates.mjs full",
     "postbuild": "node scripts/copy-test-fixtures.mjs",
     "audit:tui": "npm run build && node scripts/tui-visual-audit.mjs && node scripts/tui-audit-analyze.mjs",
     "audit:tui:check": "npm run build && node scripts/tui-visual-audit.mjs --check && node scripts/tui-audit-analyze.mjs",

@@ -35,9 +35,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
         sessionId: "recovery-1",
         value: {
           status: "ready",
-          summary: "Ready for the original task.",
-          reportPath: "recovery.md",
-          unresolved: [],
+          summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [],
         },
       };
     },
@@ -113,10 +111,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
           );
           return JSON.stringify({
             status: "blocked",
-            summary: "Ready for the original task.",
-            reportPath: "recovery.md",
-            unresolved: ["No historical commit."],
-            evidenceRefs: [],
+            summary: "Ready for the original task.", unresolved: ["No historical commit."],
           });
         },
         cancel() {},
@@ -203,9 +198,7 @@ test("Recovery investigates history-only inputs in maximum-effort-safe mode", as
           sessionId: "recovery-history",
           value: {
             status: "blocked",
-            summary: "Ready for the original task.",
-            reportPath: "recovery.md",
-            unresolved: ["No recoverable baseline found after forensics."],
+            summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["No recoverable baseline found after forensics."],
           },
         };
       },
@@ -289,9 +282,7 @@ test("Recovery runs maximum-effort forensics even with an empty transcript and e
           sessionId: "recovery-empty",
           value: {
             status: "blocked",
-            summary: "Ready for the original task.",
-            reportPath: "recovery.md",
-            unresolved: ["Forensics found no historical baseline."],
+            summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["Forensics found no historical baseline."],
           },
         };
       },
@@ -385,9 +376,7 @@ test("Recovery retries a transient staging failure before maximum-effort forensi
         sessionId: "recovery-preflight-retry",
         value: {
           status: "blocked",
-          summary: "Ready for the original task.",
-          reportPath: "recovery.md",
-          unresolved: ["No trusted historical baseline."],
+          summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["No trusted historical baseline."],
         },
       };
       },
@@ -486,19 +475,10 @@ test("Recovery records a redacted preflight diagnostic after staging retry is ex
     events.some((event) => event.type.startsWith("recovery.forensics_")),
     false,
   );
-  const evaluation = JSON.parse(
-    await readFile(
-      join(attempt.experimentRoot, "artifacts", "recovery-evaluation"),
-      "utf8",
-    ),
-  ) as {
-    rows: {
-      providerFailureRetryable?: boolean;
-      pathBoundaryRejected?: boolean;
-    }[];
-  };
-  assert.equal(evaluation.rows[0]?.providerFailureRetryable, true);
-  assert.equal("pathBoundaryRejected" in (evaluation.rows[0] ?? {}), false);
+  await assert.rejects(
+    readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8"),
+  );
+  assert.equal(attempt.baseline.recovery?.failureDetail?.retryable, true);
 });
 
 test("Recovery evaluation records path-boundary rejection without accepting the plan", async (t) => {
@@ -521,9 +501,7 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
         sessionId: "recovery-path-boundary-metric",
         value: {
           status: "blocked",
-          summary: "Ready for the original task.",
-          reportPath: "recovery.md",
-          unresolved: ["no candidate justified"],
+          summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["no candidate justified"],
         },
       };
     },
@@ -539,19 +517,9 @@ test("Recovery evaluation records path-boundary rejection without accepting the 
     now,
   });
   assert.equal(attempt.baseline.match, "observational");
-  const evaluation = JSON.parse(
-    await readFile(
-      join(attempt.experimentRoot, "artifacts", "recovery-evaluation"),
-      "utf8",
-    ),
-  ) as {
-    rows: {
-      providerFailureRetryable?: boolean;
-      pathBoundaryRejected?: boolean;
-    }[];
-  };
-  assert.equal(evaluation.rows[0]?.pathBoundaryRejected, undefined);
-  assert.equal("providerFailureRetryable" in (evaluation.rows[0] ?? {}), false);
+  await assert.rejects(
+    readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8"),
+  );
 });
 
 test("Recovery maps a cancelled Agent invocation to the cancelled failure stage", async (t) => {
@@ -612,9 +580,7 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
         sessionId: "recovery-auto-ready",
         value: {
           status: "ready",
-          summary: "Ready for the original task.",
-          reportPath: "recovery.md",
-          unresolved: [],
+          summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [],
         },
       };
     },
@@ -641,8 +607,9 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
   assert.equal(lifecycle.state, "accepted");
   assert.ok(events.some((event) => event.type === "recovery.lifecycle_completed"));
   assert.equal(events.filter((event) => event.type === "recovery.lifecycle_completed").length, 1);
-  const evaluation = JSON.parse(await readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8")) as { rows: { taskOutcome?: string }[] };
-  assert.equal(evaluation.rows[0]?.taskOutcome, "ready_for_task");
+  await assert.rejects(
+    readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8"),
+  );
   assert.equal((await attempt.accept?.())?.root, attempt.baseline.root);
 });
 
@@ -675,9 +642,7 @@ test("Recovery keeps the first TypeBox-valid envelope when a later model request
         sessionId: "recovery-keep-envelope",
         value: {
           status: "ready",
-          summary: "Ready for the original task.",
-          reportPath: "recovery.md",
-          unresolved: ["README.md is not reconstructed"],
+          summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["README.md is not reconstructed"],
         },
       };
     },
@@ -764,9 +729,7 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
         sessionId: `readiness-no-progress-${calls}`,
         value: {
           status: "blocked",
-          summary: "Ready for the original task.",
-          reportPath: "recovery.md",
-          unresolved: ["README.md is not available"],
+          summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["README.md is not available"],
         },
       };
     },
@@ -786,8 +749,9 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
   assert.equal(calls, 1);
   assert.equal(attempt.baseline.recovery?.taskOutcome, "unrecoverable");
   assert.equal(events.filter((event) => event.type === "recovery.readiness_feedback").length, 0);
-  const evaluation = JSON.parse(await readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8")) as { rows: { taskOutcome?: string }[] };
-  assert.equal(evaluation.rows[0]?.taskOutcome, "unrecoverable");
+  await assert.rejects(
+    readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8"),
+  );
 });
 
 test("insufficient evidence does not loop for missing paths and cannot be accepted", async (t) => {
@@ -812,9 +776,7 @@ test("insufficient evidence does not loop for missing paths and cannot be accept
         sessionId: "insufficient-stop",
         value: {
           status: "blocked",
-          summary: "Ready for the original task.",
-          reportPath: "recovery.md",
-          unresolved: ["checked git, transcript, and workspace; no rewindable start"],
+          summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["checked git, transcript, and workspace; no rewindable start"],
         },
       };
     },
@@ -859,9 +821,7 @@ test("Host readiness path escape does not override an Agent ready envelope", asy
         sessionId: "readiness-blocked",
         value: {
           status: "ready",
-          summary: "Ready for the original task.",
-          reportPath: "recovery.md",
-          unresolved: ["outside path is not inspected"],
+          summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: ["outside path is not inspected"],
         },
       };
     },
@@ -883,6 +843,4 @@ test("Host readiness path escape does not override an Agent ready envelope", asy
   assert.equal(attempt.baseline.recovery?.status, "ready");
   assert.equal(attempt.baseline.readiness.runnable, "isolated");
 });
-
-
 

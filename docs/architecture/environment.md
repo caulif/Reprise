@@ -151,7 +151,9 @@ interface EnvironmentClue {
 
 ### 5.2 资源、状态与证据
 
-环境资源不是简单的路径清单。每个资源必须同时表达任务开始时所需的状态、实际恢复出的状态、恢复方法和可信度。这样 Orchestrator 可以决定能否运行，Comparison 可以判断环境缺口是否影响结果。
+**current：** `EnvironmentBaseline.resources` 为空数组。恢复结论是 Agent 信封 `ready` / `blocked` 加 Host 机械检查，不是资源级 `method`/`confidence` 评分。类型见 [`local-workspace-provider.ts`](../../src/environment/local-workspace-provider.ts)。
+
+**planned / superseded：** 下列 `EnvironmentResource` / 八种 `RecoveryMethod` 来自早期设计，当前实现不写入这些字段。保留名称仅供阅读旧计划，不要当成 on-disk 合同。
 
 ```ts
 interface ResourceIdentity {
@@ -198,6 +200,10 @@ interface EnvironmentResource {
 第一版故意只保留三个 resource kind。浏览器 profile、数据库、容器和远程服务先作为 `external` 描述；当出现可执行 Provider 后再增加具体类型。不设计环境恢复总分：缺失的 required 资源不能被其他资源抵消，报告直接展示资源级状态和限制。
 
 ### 5.3 EnvironmentBaseline
+
+当前字段以 [`EnvironmentBaseline`](../../src/environment/local-workspace-provider.ts) 为准：`mode` 为 `canonical | unsupported`；`match` 含 `recovered` / `recovered_partial` / `current_state_fallback`；`readiness.runnable` 为 `isolated | blocked | unsupported`。`recovery.status` 新写入是 `ready | blocked | failed`。
+
+下列接口块描述早期资源列表基线，不是当前 TypeBox/磁盘形状。
 
 ```ts
 interface EnvironmentBaseline {
@@ -257,7 +263,7 @@ interface PreparedResource {
 }
 ```
 
-`EnvironmentResource` 描述冻结基线中的恢复和验证结果；`PreparedResource` 描述某次 CandidateRun 如何实际使用该资源。run 的临时目录、挂载和外部句柄不能写回 baseline。
+`EnvironmentResource` 资源列表不是当前冻结基线的写入合同。某次 CandidateRun 的目录与 Git sink 由 `PreparedEnvironmentRef` 绑定，不能写回 baseline。
 
 Runtime 只获得 `PreparedEnvironmentRef` 中策略允许的正常工作路径和绑定，不获得 Recovery staging、历史证据目录、用户当前工作目录或其他 CandidateRun 的副本。
 
@@ -321,7 +327,7 @@ Resolver 处理不完整证据并建立一个可操作的恢复工作副本，�
 
 Environment Resolver 通过独立的 `RecoveryAgentPort` 使用 Pi 驱动的 Recovery Agent，因为真实历史状态经常需要组合 Git、文件历史、会话工具记录和任务语义。Agent 不只生成一份脆弱的恢复 DSL，而是在 Harness 自有、未发布的 staging 副本中完成恢复工作。
 
-Recovery 使用一个连续 Session 和一个工作副本。Agent 自主完成三轮工作：理解与侦察、恢复与准备、自检与结论；每轮都可调查、修改或验证。最终结论为 `ready` 或 `blocked`，由 Agent 判断缺口是否影响原始任务。Host 不使用独立证据评分推翻该判断，只做机械检查并在可修复失败时反馈同一 Session。
+Recovery 使用一个连续 Session 和一个工作副本。Agent 自主完成三轮工作：理解与侦察、恢复与准备、自检与结论；每轮都可调查、修改或验证。understand/restore 是否已完成由事件日志推导（`agent.invocation_completed.requestId`），不由 Session 内存计数；工作区重置后进度归零。见 [自由轮次从事件恢复](../decisions/accepted/2026-09-12-recovery-freeform-progress-from-events.md)。最终结论为 `ready` 或 `blocked`，由 Agent 判断缺口是否影响原始任务。Host 不使用独立证据评分推翻该判断，只做机械检查并在可修复失败时反馈同一 Session。
 
 ### 7.1 内部工作空间与实际边界
 
@@ -331,7 +337,7 @@ Provider 为每次恢复创建并持有下列目录，均不暴露给 Candidate 
 - `rt/<recoveryId>`：shell 的临时 `HOME` 与配置根；
 - 用户源目录：恢复前后均 fingerprint，作为只读 tripwire；Agent 通过只读 `source/` 挂载按需读取，shell cwd 不得指向该目录。
 
-工具集合以[工作区工具注册](../../src/infrastructure/recovery-workspace-tools.ts)为准；shell 的公开工具名为 `shell_exec`。Recovery 生产路径默认注册 `shell_exec`。Comparison 在工厂调用里显式打开 shell。Controller 默认不注册 `shell_exec`，`edit`/`write` 仅 `project/`，见 [协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)。三个内部角色通过各自权限配置复用工作区工具（[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)）。cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。大仓库按需恢复与只读源目录见 [稀疏 source mount](../decisions/accepted/2026-09-11-recovery-sparse-source-mount.md) 与 [三 Agent 契约清理](../decisions/accepted/2026-09-11-three-agent-contract-cleanup.md)。首包只含任务、起点线索、工作区种子、source 摘要、能力边界、Playbook 元数据、少量 evidence ref 和 `observations/` 入口；全文 catalog、playbook 正文和完整源目录清单不进入模型上下文。截断后的任务句指向 `observations/task/initial-input.txt`。冻结 transcript 与 historical events 写成只读 `observations/`，模型用 `read` / `grep` 按需取一句。`write` 到工作副本根 `recovery.md` 是报告通道。Agent 可在 `.reprise/recovery-work/` 写短记录；封存前删除该目录。`ready` 不要求发生文件变更，也不要求复制整个源目录。`blocked` 不发布可启动 baseline。伪造路径或改写用户源目录不得进入 published baseline。机械检查失败且可修复时，Host 把事实反馈同一 Session。模型请求失败时保留同一 Session 与工作副本；只有工作副本机械损坏时才丢弃 Session 并重置副本。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库。`powershell` 的 cwd 固定为工作副本。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供凭据。内部 Agent 不按工具调用次数或破坏性次数截断；上下文压力走 Pi 压缩与模型窗口。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作工作副本根，`workspace/` 是同一根的别名；`source/` 指向用户源目录。`..`、绝对路径仍拒绝；反斜杠在工具边界规范为斜杠。
+工具集合以[工作区工具注册](../../src/infrastructure/recovery-workspace-tools.ts)为准；shell 的公开工具名为 `shell_exec`。Recovery 生产路径默认注册 `shell_exec`。Comparison 与 Controller 在工厂调用里显式打开 shell。Controller 的 `ls`/`read`/`grep`/`find` 不设工作区 containment，`edit`/`write` 仅 `project/`，见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)。三个内部角色通过各自权限配置复用工作区工具（[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)）。cwd 与写策略按角色不同（[八工具决策](../decisions/accepted/2026-08-31-internal-agent-eight-tools.md)）。大仓库按需恢复与只读源目录见 [稀疏 source mount](../decisions/accepted/2026-09-11-recovery-sparse-source-mount.md) 与 [三 Agent 契约清理](../decisions/accepted/2026-09-11-three-agent-contract-cleanup.md)。首包只含任务、起点线索、工作区种子、source 摘要、能力边界、Playbook 元数据、少量 evidence ref 和 `observations/` 入口；全文 catalog、playbook 正文和完整源目录清单不进入模型上下文。截断后的任务句指向 `observations/task/initial-input.txt`。冻结 transcript 与 historical events 写成只读 `observations/`，模型用 `read` / `grep` 按需取一句。`write` 到工作副本根 `recovery.md` 是报告通道。Agent 可在 `.reprise/recovery-work/` 写短记录；封存前删除该目录。`ready` 不要求发生文件变更，也不要求复制整个源目录。`blocked` 不发布可启动 baseline。伪造路径或改写用户源目录不得进入 published baseline。机械检查失败且可修复时，Host 把事实反馈同一 Session。模型请求失败时保留同一 Session 与工作副本；只有工作副本机械损坏时才丢弃 Session 并重置副本。`resolvedRecoveryFacts.git.isRepo` 仅当 **source root 自身** 是 Git 仓库。`powershell` 的 cwd 固定为工作副本。单命令时限与 stdout/stderr 大小受限，所有工具调用进入 AgentAuditSink；网络默认开放，但 Host 不提供凭据。内部 Agent 不按工具调用次数或破坏性次数截断；上下文压力走 Pi 压缩与模型窗口。Windows `powershell` 先 `where pwsh.exe`，再 `%ProgramFiles%\PowerShell\7\pwsh.exe`，再 `where powershell.exe`，再 `SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`；均不存在时工具失败，文案含 `ENOENT` 与「未找到 PowerShell」。`where` 超时不视为未安装。短 cwd 用 `-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`，命令（含 UTF-8 `OutputEncoding` 前缀）走 argv。CreateProcess 的工作目录不能超过 MAX_PATH：staging 更长时在短目录启动进程，再 `Set-Location` 到 staging（不把完整 cwd 写入事件）。净化环境必须带上 `SystemRoot`、`WINDIR`、`ComSpec`（缺则按大小写不敏感从 `process.env` 补），且不得灌入完整 `process.env`。`ls` / `grep` / `find` 把省略路径、`""`、`.`、`./` 当作工作副本根，`workspace/` 是同一根的别名；`source/` 指向用户源目录。`..`、绝对路径仍拒绝；反斜杠在工具边界规范为斜杠。
 
 子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`ls`、`read`、`grep`、`find`、`edit` 和 `write` 对相对路径实施 containment 与符号链接检查；`recovery.md` 由 `write` 写出。Recovery 期间 Provider 对用户 source 施加 NTFS 拒绝写入 ACL，并在封存前核对 fingerprint；`shell_exec` 对凭据文件名的拦截仍匹配命令文本。cwd 与环境净化不能机械阻止恶意命令写 staging 外任意绝对路径。实现不把凭据文本拦截或 ACL 误称为容器级全局隔离。见 [source ACL 与诊断 readiness](../decisions/accepted/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md)。
 

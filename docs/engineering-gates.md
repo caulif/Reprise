@@ -6,7 +6,9 @@
 
 | 意图 | 命令 |
 |---|---|
-| 改源码后的本地全量 | `npm run check` |
+| 日常迭代 | `npm run check:fast`（含 lint；`tsc` 不代替 ESLint） |
+| 改源码后的本地全量（兼容入口） | `npm run check` |
+| 发布前 / 周期性 | `npm run check:full`（迁移期与 `check` 同一列表，见[门禁分层](./decisions/accepted/2026-09-12-gate-fast-full-layers.md)） |
 | 只改文档 | `npm run verify:docs` |
 | 只跑某一 lane | `node scripts/run-gates.mjs <mode>`，mode 为 `docs` / `check` / `static` / `test` / `audit` |
 | 覆盖率 | `npm run test:coverage`（CI 单独 lane；本地 `check` 不跑） |

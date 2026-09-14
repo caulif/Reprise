@@ -4,7 +4,7 @@ import { setCapabilities } from '@earendil-works/pi-tui';
 import type { ControllerHandle } from '../../src/tui/controller-input.js';
 import { hitFileLink } from '../../src/tui/format.js';
 import { homeHints } from '../../src/tui/pages/home.js';
-import { applyResultPointer } from '../../src/tui/pointer-dispatch.js';
+import { applyResultPointer, yieldPointerToApp } from '../../src/tui/pointer-dispatch.js';
 import { resultPointerAction, renderResult } from '../../src/tui/pages/result.js';
 import { keepSelectedVisible } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
@@ -113,5 +113,62 @@ test('result SGR wheel changes the reading offset', () => {
   assert.equal(handle.timelineReadOffset, 1);
   applyResultPointer(handle, '\x1b[<64;1;2M');
   assert.equal(handle.timelineReadOffset, 0);
+});
+
+test('viewport TUI swallows SGR wheel unless yielded to the application', () => {
+  const host = {
+    handleViewportInput(_data: string) {
+      return { consume: true as const };
+    },
+  };
+  const seen: string[] = [];
+  const listeners = new Set<(data: string) => { consume?: true } | undefined>();
+  listeners.add((data) => {
+    seen.push('viewport');
+    return host.handleViewportInput(data);
+  });
+  listeners.add(() => {
+    seen.push('app');
+    return { consume: true };
+  });
+  let consumed = false;
+  for (const listener of listeners) {
+    const result = listener('\x1b[<64;1;2M');
+    if (result?.consume) {
+      consumed = true;
+      break;
+    }
+  }
+  assert.equal(consumed, true);
+  assert.deepEqual(seen, ['viewport']);
+});
+
+test('viewport TUI yields SGR wheel to the application listener', () => {
+  const host = {
+    handleViewportInput(_data: string) {
+      return { consume: true as const };
+    },
+  };
+  const seen: string[] = [];
+  const listeners = new Set<(data: string) => { consume?: true } | undefined>();
+  listeners.add((data) => {
+    seen.push('viewport');
+    return host.handleViewportInput(data);
+  });
+  listeners.add((data) => {
+    seen.push('app');
+    return data.includes('<64;') ? { consume: true } : undefined;
+  });
+  yieldPointerToApp(host);
+  let consumed = false;
+  for (const listener of listeners) {
+    const result = listener('\x1b[<64;1;2M');
+    if (result?.consume) {
+      consumed = true;
+      break;
+    }
+  }
+  assert.equal(consumed, true);
+  assert.deepEqual(seen, ['viewport', 'app']);
 });
 

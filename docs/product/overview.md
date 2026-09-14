@@ -136,7 +136,7 @@ Runtime 的 CLI 兼容性不建立独立的运行前验证产品。Claude Code�
 
 ## 11. 安全与隐私
 
-- 默认在 Harness 拥有的隔离目录中恢复和执行，不直接覆盖用户当前工作区。
+- 候选与恢复在本机副本中运行，所选源目录受写保护，其余路径与网络未隔离；不直接覆盖用户当前工作区。Comparison 报告由模型生成，可含脚本，Host 不做 sanitizer。
 - 原始凭据不写入 trace、prompt 或报告；发送给外部模型的内容受 `TaskCase` 隐私策略约束。`privacy.allowModelText=false` 关闭历史与候选正文，briefing 仍保留消息 id、role、顺序和字节数。
 - Harness 不下载或切换 Runtime 版本，也不修改用户的全局 Runtime 安装；候选配置只写入隔离运行环境。
 - 真实发布、删除、付款、迁移或权限扩大不能由 Controller 推测授权。

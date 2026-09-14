@@ -111,7 +111,7 @@ test("ready envelope auto-accepts when a Host-derived path is missing", async (t
   assert.equal(attempt.baseline.recovery?.taskOutcome, "ready_for_task");
 });
 
-test("Recovery still falls back when the only completed envelope fails probe", async (t) => {
+test("Recovery accepts a completed envelope after Host materializes its report", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-only-invalid-envelope-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
@@ -140,9 +140,9 @@ test("Recovery still falls back when the only completed envelope fails probe", a
     recovery,
     now,
   });
-  assert.equal(attempt.accept === undefined, true);
-  assert.equal(attempt.acceptedAutomatically, undefined);
-  assert.equal(attempt.baseline.match, "observational");
+  assert.equal(attempt.accept === undefined, false);
+  assert.equal(attempt.acceptedAutomatically, true);
+  assert.equal(attempt.baseline.match, "recovered");
 });
 
 test("Recovery still completes after more than sixteen destructive shell_exec calls", async (t) => {

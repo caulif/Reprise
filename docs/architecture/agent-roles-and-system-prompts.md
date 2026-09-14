@@ -8,7 +8,7 @@
 |---|---|---|
 | Recovery | [环境与恢复](./environment.md) | [Recovery Agent](../../src/agents/recovery-agent.ts)与[工作集](../../src/agents/recovery-working-set.ts)；一次准备一个 Session、三轮委托，见[自主三轮循环](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md) |
 | Controller | [协作行为](./controller.md)与[实验条件](./controller-experiment-conditions.md) | [Controller Agent](../../src/agents/controller-agent.ts)；连续 Session 先自由理解再决策，见[先理解再按视图决策](../decisions/accepted/2026-09-09-controller-understand-then-view.md) |
-| Comparison | [对照](./comparison.md) | [Comparison Agent](../../src/agents/comparison-agent.ts)；一次 attempt 一个 Session、四轮委托，见[可分享比较卡](../decisions/accepted/2026-09-09-comparison-shareable-task-card.md)、[指标壳](../decisions/accepted/2026-09-11-comparison-host-metrics-shell.md) 与 [单 Session](../decisions/accepted/2026-09-08-comparison-single-session.md) |
+| Comparison | [对照](./comparison.md) | [Comparison Agent](../../src/agents/comparison-agent.ts)；一次 attempt 一个 Session，理解/调查/创作后必要时恢复 Host 区域，末轮只交薄信封，见[可分享比较卡](../decisions/accepted/2026-09-09-comparison-shareable-task-card.md)、[Host 区域与直接 HTML](../decisions/accepted/2026-09-13-comparison-host-zones-and-direct-html.md) 与 [单 Session](../decisions/accepted/2026-09-08-comparison-single-session.md) |
 
 候选 coding agent 是 Product Pack 控制的外部产品，不是第四个内部模型角色。共享执行机制见 [AgentHost](../../src/infrastructure/agent/host.ts)，产品协议不进入内部角色。
 
@@ -22,3 +22,7 @@ Recovery 的 prompt、三轮编排和发布判断见[起点恢复目标](../plan
 
 修改 prompt 时修改上述代码中的唯一文本源，并同步对应角色规范和 ADR；文档只保留语义约束及短例子，不建立另一份“推荐 prompt”。回归检查应能暴露权限扩大、输入遗漏或输出边界变化；纯字符串相等不能代替行为检查。Controller 模拟用户语义的机械合同 lane 与仓库外真实模型能力 lane 分开报告，见 [协作协议](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md)；不声称模拟测试证明与真人一致。
 
+
+## Recovery failure diagnosis
+
+Recovery failures that happen before or during recovery may invoke a lightweight Diagnosis Agent once. It receives only Host-owned facts, has no tools or workspace, and returns one short user-facing summary. The Host remains authoritative for status, stage, and reason; a diagnosis failure falls back to a deterministic Host message and never changes the Recovery outcome.

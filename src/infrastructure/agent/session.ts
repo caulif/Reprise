@@ -222,6 +222,7 @@ export class AgentSessionHost {
     deadline: number | undefined,
     cancelled: () => boolean,
   ): Promise<{ done: true; result: AgentInvocation<T> | FreeformInvocation } | { done: false; lastError: string }> {
+    this.#session!.setToolsEnabled?.((request as { allowTools?: boolean }).allowTools !== false);
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, this.#abort.signal, ...(request.signal ? [request.signal] : [])]);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -261,30 +262,14 @@ export class AgentSessionHost {
         payload: { schemaVersion: 1, invocationId, requestIndex: this.#cursor.requestIndex, body: inlineBody(text) },
       });
       if (request.kind === "freeform") {
-        await this.#audit?.append({
-          type: "agent.invocation_completed",
-          sessionId: this.#sessionId,
-          role: this.#role,
-          payload: { invocationId, attempts: attempts + 1, modelRequests: this.#cursor.requestIndex },
-        });
-        return {
-          done: true,
-          result: { status: "completed", value: { text }, sessionId: this.#sessionId, invocationId },
-        };
+        await this.#appendCompleted(request, invocationId, attempts);
+        return { done: true, result: { status: "completed", value: { text }, sessionId: this.#sessionId, invocationId } };
       }
       const decoded = decodeStructured(request.schema, text, request.normalize);
       const error = decoded.error ?? request.validate?.(decoded.value as T);
       if (!error && decoded.value !== undefined) {
-        await this.#audit?.append({
-          type: "agent.invocation_completed",
-          sessionId: this.#sessionId,
-          role: this.#role,
-          payload: { invocationId, attempts: attempts + 1, modelRequests: this.#cursor.requestIndex },
-        });
-        return {
-          done: true,
-          result: { status: "completed", value: decoded.value as T, sessionId: this.#sessionId, invocationId },
-        };
+        await this.#appendCompleted(request, invocationId, attempts);
+        return { done: true, result: { status: "completed", value: decoded.value as T, sessionId: this.#sessionId, invocationId } };
       }
       const repairError = error ?? "schema validation failed";
       if (attempts === request.maxRepairAttempts) {
@@ -310,6 +295,25 @@ export class AgentSessionHost {
       if (timer) clearTimeout(timer);
       if (request.timeoutMs > 0) controller.abort();
     }
+  }
+
+  async #appendCompleted(
+    request: { requestId?: string; kind: string },
+    invocationId: string,
+    attempts: number,
+  ): Promise<void> {
+    await this.#audit?.append({
+      type: "agent.invocation_completed",
+      sessionId: this.#sessionId,
+      role: this.#role,
+      payload: {
+        invocationId,
+        attempts: attempts + 1,
+        modelRequests: this.#cursor.requestIndex,
+        ...(request.requestId ? { requestId: request.requestId } : {}),
+        kind: request.kind,
+      },
+    });
   }
 
   async #failed(
@@ -357,7 +361,10 @@ function assertRequest<T>(request: InternalSessionRequest<T>): void {
 
 function capabilityAwarePrompt(content: string, inputCapabilities: readonly string[]): string {
   if (!inputCapabilities.length) return content;
-  return `modelInputCapabilities=${inputCapabilities.join(",")}\nOnly request or interpret native media whose type is listed above.\n\n${content}`;
+  return `modelInputCapabilities=${inputCapabilities.join(",")}
+Only request or interpret native media whose type is listed above.
+
+${content}`;
 }
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -386,3 +393,7 @@ function isAuditError(error: unknown): boolean {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+
+
+

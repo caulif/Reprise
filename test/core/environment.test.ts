@@ -640,7 +640,7 @@ test("Recovery sealing keeps migrated files, drops leftover work records, and pr
   assert.equal(await readFile(join(accepted.root ?? "", "kept.txt"), "utf8"), "kept");
 });
 
-test("Recovery provider rejects unverified complete envelopes and preserves accepted recovered baselines", async (t) => {
+test("Recovery provider trusts the Host envelope and preserves accepted recovered baselines", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-provider-"));
   const source = await mkdtemp(
     join(tmpdir(), "reprise-recovery-provider-source-"),
@@ -656,15 +656,14 @@ test("Recovery provider rejects unverified complete envelopes and preserves acce
     sourceRoot: source,
   });
   await writeFile(join(invalid.root, "recovery.md"), "# invalid\r\n");
-  await assert.rejects(
-    provider.validateRecovery(invalid, {
+  const invalidPreview = await provider.validateRecovery(invalid, {
       status: "blocked",
       summary: "Ready for the original task.",
       reportPath: "recovery.md",
       unresolved: [],
-    }),
-    /invalid/i,
-  );
+    });
+  assert.equal(invalidPreview.baseline.recovery?.status, "blocked");
+  await provider.discardRecovery(invalid);
   const staging = await provider.beginRecovery({
     caseId: "case-preserve-recovery",
     sourceRoot: source,

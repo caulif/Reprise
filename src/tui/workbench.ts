@@ -158,8 +158,11 @@ function identityStatus(theme: Theme, view: WorkbenchView): string {
   return `${harnessStatus(theme, view)}  ${product}  ${task}`;
 }
 
-function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'candidateStartingTitle' | 'comparingTitle' | 'candidateRunningTitle' {
-  if (isRecoveryChrome(running)) return 'recoveringTitle';
+function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'stillRecoveringTitle' | 'candidateStartingTitle' | 'comparingTitle' | 'candidateRunningTitle' {
+  if (isRecoveryChrome(running)) {
+    const sinceStart = (running.tick ?? Date.now()) - (running.runStartedAt ?? Date.now());
+    return sinceStart >= 30_000 ? 'stillRecoveringTitle' : 'recoveringTitle';
+  }
   if (running.preparePhase === 'copy') return 'candidateStartingTitle';
   if (running.preparePhase === 'compare') return 'comparingTitle';
   return 'candidateRunningTitle';

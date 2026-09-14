@@ -1,27 +1,21 @@
 # Reprise 文档
 
-当前实现规范与重构目标分开维护。开始任务先确认是在修复现有行为，还是实施一个已确认迁移批次；不要按文件修改时间选择规范。
+当前实现在 `product/` 与 `architecture/`；尚未落地的目标在 `plan/`；选择理由在 `decisions/`。开始任务先确认是修复当前行为还是实施计划，不要按文件修改时间选择规范。
 
-## 按任务阅读
+## 按模块阅读
 
-Recovery 需求与实施差异见[起点恢复目标](./plan/recovery-initial-environment.md)，当前行为以[环境](./architecture/environment.md)、[稀疏 source mount](./decisions/accepted/2026-09-11-recovery-sparse-source-mount.md)、[三 Agent 契约清理](./decisions/accepted/2026-09-11-three-agent-contract-cleanup.md)、[信封 summary](./decisions/accepted/2026-09-11-recovery-envelope-summary.md)、[可观察判断](./decisions/accepted/2026-09-11-recovery-observable-judgment.md) 和 [source ACL 与诊断 readiness](./decisions/accepted/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md) 为准。
-
-| 要做什么 | 先读 | 再读 |
+| 模块 | 当前规范 | 入口 |
 |---|---|---|
-| 使用与配置 | [产品定义](./product/overview.md)、[TUI](./product/tui.md) | [支持](./SUPPORT.md)、[真实调用准入](./codex-smoke-gate.md) |
-| 理解代码边界 | [架构总览](./architecture/overview.md) | [技术基线](./architecture/technology-selection.md)、[角色与 prompt 入口](./architecture/agent-roles-and-system-prompts.md)、[基座 Host](./decisions/accepted/2026-09-09-agent-foundation-host.md) |
-| 修改存储或运行 | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md)、[环境](./architecture/environment.md) |
-| 修改模拟用户或对照 | [Controller](./architecture/controller.md)、[Comparison](./architecture/comparison.md) | [实验条件](./architecture/controller-experiment-conditions.md)、[验证边界](./architecture/validation.md) |
-| 按 Controller 源码审查改工具面或证据模型 | [源码审查后续修改](./plan/2026-09-10-controller-source-review-followup.md) | [协作工具面](./decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[实验条件](./architecture/controller-experiment-conditions.md) |
-| 修候选 Git 远端隔离 | [Git sink catalog](./decisions/accepted/2026-09-11-git-sink-catalog.md) | [环境](./architecture/environment.md) |
-| 改 Git 隔离不变量（安全 / 证据 / 对象库） | [Git 隔离不变量](./plan/2026-09-11-git-isolation-invariants.md) | [Git sink catalog](./decisions/accepted/2026-09-11-git-sink-catalog.md)、[环境](./architecture/environment.md) |
-| 重构 Controller Agent | [Controller 重构实施参考](./plan/controller-agent-reconstruction.md) | [Controller 架构](./architecture/controller.md)、[实验条件](./architecture/controller-experiment-conditions.md) |
-| 全面重构 Controller | [全面重构计划](./plan/controller-full-refactor-plan.md) | [重构实施参考](./plan/controller-agent-reconstruction.md)、[Controller 架构](./architecture/controller.md) |
-| 阅读比较卡与 Controller 编排 | [对照](./architecture/comparison.md)、[Controller](./architecture/controller.md) | [可分享比较卡](./decisions/accepted/2026-09-09-comparison-shareable-task-card.md)、[指标壳](./decisions/accepted/2026-09-11-comparison-host-metrics-shell.md)、[Controller 先理解再决策](./decisions/accepted/2026-09-09-controller-understand-then-view.md)；Comparison 全面重构见[实施方案](./plan/comparison-agent-full-refactor.md) |
-| 接入产品或平台 | [Product Pack](./architecture/product-plugin-compatibility.md) | [本机平台边界](./architecture/cross-platform.md) |
-| 核对验收缺口 | [架构目标与 A1–A18](./plan/reprise-architecture-redesign.md)、[TUI 目标](./plan/reprise-tui-design.md)、[操作者画布](./plan/reprise-tui-operator-canvas.md) | [内部 Agent Trace](./plan/reprise-tui-recovery-trace.md)、[方案 A：树时间线](./plan/reprise-tui-live-expand.md)、[gutter 与层次](./plan/reprise-tui-gutter-chrome.md)、[指针、视口与查找](./plan/reprise-tui-pointer-scroll-find.md)、[操作者记录面全面重构](./plan/reprise-tui-operator-record-refactor.md)、[TUI 界面重构步骤](./plan/reprise-tui-surface-refactor.md)、[模块所有权归组](./plan/reprise-module-ownership.md)、[迁移差异表](./plan/documentation-reconciliation-for-session-harness-workflow.md)、[进度](./progress/MASTER.md)、[已关闭实施批次](./plan/reprise-refactoring-execution.md) |
-| 提交与审查 | [贡献指南](./CONTRIBUTING.md)、[工程门禁](./engineering-gates.md) | [任务 brief](./plan/task-brief-template.md)、[治理](./GOVERNANCE.md) |
-| 维护文档或发布 | [文档结构](./documentation-structure.md)、[文档指令](./AGENTS.md) | [发布检查](./release-checklist.md)、[Changelog](./CHANGELOG.md)、[事故复盘](./postmortem-template.md) |
+| 产品与安全口径 | [产品定义](./product/overview.md) | [TUI](./product/tui.md) |
+| 跨模块生命周期 | [架构总览](./architecture/overview.md) | [角色与 prompt](./architecture/agent-roles-and-system-prompts.md) |
+| 持久化与 CandidateRun | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md) |
+| Recovery / 环境 | [环境](./architecture/environment.md) | [Git sink catalog](./decisions/accepted/2026-09-11-git-sink-catalog.md) |
+| Controller | [Controller](./architecture/controller.md) | [实验条件](./architecture/controller-experiment-conditions.md) |
+| Comparison | [对照](./architecture/comparison.md) | [Host 区域与直接 HTML](./decisions/accepted/2026-09-13-comparison-host-zones-and-direct-html.md) |
+| Product Pack / 平台 | [Pack 契约](./architecture/product-plugin-compatibility.md) | [本机平台](./architecture/cross-platform.md) |
+| 工程 | [贡献](./CONTRIBUTING.md) | [门禁](./engineering-gates.md) |
+| 文档维护 | [文档结构](./documentation-structure.md) | [文档指令](./AGENTS.md) |
+| 进度与目标 | [MASTER](./progress/MASTER.md) | [架构目标计划](./plan/reprise-architecture-redesign.md) |
 
 ## 权威与迁移
 

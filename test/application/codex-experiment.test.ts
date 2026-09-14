@@ -379,10 +379,24 @@ test("a scripted Controller run persists controller.requested and reconstructs i
     const rebuilt = reconstructControllerRequest(events, requested.operationId);
     assert.equal(rebuilt.requestId, requested.operationId);
     assert.equal(rebuilt.runId, "run-1");
-    const snapshot = rebuilt.snapshot as { promptContent?: string; briefingRoot?: string; promptDigest?: string };
+    const snapshot = rebuilt.snapshot as {
+      promptContent?: string;
+      briefingRoot?: string;
+      promptDigest?: string;
+      hostFacts?: {
+        runId?: string;
+        changedPaths?: unknown;
+        historicalRequirementRefs?: { status: string }[];
+        recentToolErrors?: unknown;
+      };
+    };
     assert.match(snapshot.promptContent ?? "", /INDEX\.md/);
     assert.ok(snapshot.briefingRoot);
     assert.equal(snapshot.promptDigest?.length, 64);
+    assert.equal(snapshot.hostFacts?.runId, "run-1");
+    assert.ok(Array.isArray(snapshot.hostFacts?.changedPaths));
+    assert.ok(Array.isArray(snapshot.hostFacts?.recentToolErrors));
+    assert.ok(snapshot.hostFacts?.historicalRequirementRefs?.every((row) => row.status === "unknown"));
     assert.equal(sha256(JSON.stringify((requested.payload as { snapshot: unknown }).snapshot)), rebuilt.inputDigest);
   } finally {
     await store.close();

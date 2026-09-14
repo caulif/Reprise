@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { writeAtomic } from "../core/identity.js";
-import { pathContainedBy, relativeInside, stripWindowsExtendedPrefix } from "../core/paths.js";
+import { asPosixPath, isFsAbsolute, pathContainedBy, relativeInside, stripWindowsExtendedPrefix } from "../core/paths.js";
 import {
   journalControlledRecoveryWrite,
   type RecoveryControlledWriteHook,
@@ -52,6 +52,8 @@ export type RecoveryToolOptions = {
   shellExecutable?: string;
   homeRoot?: string;
   allowShell?: boolean;
+  /** When true, ls/read/grep/find accept absolute and other host-readable paths without write containment. */
+  unrestrictedRead?: boolean;
   onControlledWrite?: RecoveryControlledWriteHook;
   onOperation?: (operation: RecoveryToolOperation) => Promise<void>;
   filesystem?: RecoveryToolFilesystem;
@@ -150,24 +152,26 @@ export function recoveryTools(
 }
 
 function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, limit, boundedRead } = ctx;
+  const { limit, boundedRead } = ctx;
   return {
     name: "ls",
-    description: "List a bounded directory. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
+    description: ctx.options.unrestrictedRead
+      ? "List a bounded directory. Relative paths are against the briefing root; project/ is the isolated replica. Absolute, UNC, and other host-readable paths are allowed. Results are size-capped."
+      : "List a bounded directory. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
     parameters: Type.Object({
-      path: Type.Optional(Type.String({ maxLength: 512 })),
+      path: Type.Optional(Type.String({ maxLength: pathMaxLength(ctx) })),
       depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 4 })),
     }),
     execute: async (params) =>
       limit(async () => {
         const value = params as { path?: unknown; depth?: unknown };
-        const path = value.path === undefined ? { absolute: root, relative: "", writable: true, containmentRoot: root } : pathIn(ctx, requiredString(value.path, "path"));
+        const path = value.path === undefined ? workspaceRootPath(ctx) : resolveReadPath(ctx, requiredString(value.path, "path"));
         const depth = value.depth === undefined ? 1 : integer(value.depth, undefined, "depth", 0, 4);
         const entries = await boundedRead("directory_list", async () => {
-          await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
-          return listTree(ctx, path.relative, depth);
+          await assertReadSymlinkPolicy(path);
+          return listTree(ctx, path, depth);
         });
-        return directoryReadResult(path.relative || ".", entries);
+        return directoryReadResult(path.relative || ".", entries, readUnavailableReason(path));
       })(),
   };
 }
@@ -176,9 +180,11 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { limit, boundedRead, readRegularFile } = ctx;
   return {
     name: "read",
-    description: "Read a bounded byte range from a regular file, or return the whole file as a native Pi image block when format=image is authorized.",
+    description: ctx.options.unrestrictedRead
+      ? "Read a bounded byte range from a regular file. Relative paths are against the briefing root; project/ is the isolated replica. Absolute, UNC, and other host-readable paths are allowed. Image format is native Pi blocks when authorized."
+      : "Read a bounded byte range from a regular file, or return the whole file as a native Pi image block when format=image is authorized.",
     parameters: Type.Object({
-      path: Type.String({ minLength: 1, maxLength: 512 }),
+      path: Type.String({ minLength: 1, maxLength: pathMaxLength(ctx) }),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
       maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_BYTES })),
       format: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("image")])),
@@ -187,8 +193,8 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
     execute: async (params) =>
       limit(async () => {
         const value = params as { path?: unknown; offset?: unknown; maxBytes?: unknown; format?: unknown; mimeType?: unknown };
-        const path = pathIn(ctx, requiredString(value.path, "path"));
-        if (isSensitiveRecoveryPath(path.relative))
+        const path = resolveReadPath(ctx, requiredString(value.path, "path"));
+        if (isSensitiveRecoveryPath(path.relative) || isSensitiveRecoveryPath(path.absolute))
           throw recoveryToolError("credential_read_denied", "Known credential files are not readable by the Recovery model.", {
             path: "<credential-file>",
           });
@@ -196,11 +202,11 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
         const maxBytes =
           value.maxBytes === undefined ? DEFAULT_READ_BYTES : integer(value.maxBytes, undefined, "maxBytes", 1, MAX_BYTES);
         const bytes = await boundedRead("file_read", async () => {
-          await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
+          await assertReadSymlinkPolicy(path);
           await assertRegular(path.absolute);
           return readRegularFile(path.absolute);
         });
-        if (!bytes) return unavailableFileReadResult(path.relative, offset);
+        if (!bytes) return unavailableFileReadResult(path.relative, offset, readUnavailableReason(path));
         if (value.format === "image") {
           if (!ctx.options.allowBinary) throw new Error("binary_read_denied: image content is not authorized for this task.");
           if (offset !== 0 || bytes.length > maxBytes) throw new Error(`image_read_requires_whole_file: image must fit within ${maxBytes} bytes.`);
@@ -228,30 +234,32 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
 }
 
 function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, limit, boundedRead, readRegularFile } = ctx;
+  const { limit, boundedRead, readRegularFile } = ctx;
   return {
     name: "grep",
-    description: "Search file contents; returns a bounded list of path:line matches. Prefix source/ to search the read-only user directory.",
+    description: ctx.options.unrestrictedRead
+      ? "Search file contents; returns a bounded list of path:line matches. Relative paths are against the briefing root. Absolute and other host-readable starts are allowed. Match count is capped."
+      : "Search file contents; returns a bounded list of path:line matches. Prefix source/ to search the read-only user directory.",
     parameters: Type.Object({
       query: Type.String({ minLength: 1, maxLength: 256 }),
-      path: Type.Optional(Type.String({ maxLength: 512 })),
+      path: Type.Optional(Type.String({ maxLength: pathMaxLength(ctx) })),
     }),
     execute: async (params) =>
       limit(async () => {
         const value = params as { query?: unknown; path?: unknown };
         const query = requiredString(value.query, "query");
         const requested = value.path === undefined ? "" : requiredString(value.path, "path");
-        const start = requested ? pathIn(ctx, requested) : { absolute: root, relative: "", containmentRoot: root, writable: true };
+        const start = requested ? resolveReadPath(ctx, requested) : workspaceRootPath(ctx);
         const entries = await boundedRead("directory_list", async () => {
-          await assertNoSymlinkAncestors(start.containmentRoot, start.absolute);
-          return listTree(ctx, start.relative, 4);
+          await assertReadSymlinkPolicy(start);
+          return listTree(ctx, start, 4);
         });
         const matches: string[] = [];
         for (const entry of entries ?? []) {
           if (!entry.startsWith("file ") || matches.length >= MAX_GREP_MATCHES) continue;
           const relativePath = entry.slice(5);
           if (isSensitiveRecoveryPath(relativePath) || HOST_RESERVED.has(basename(relativePath))) continue;
-          const absolute = pathIn(ctx, relativePath).absolute;
+          const absolute = resolveReadPath(ctx, relativePath).absolute;
           const bytes = await boundedRead("file_read", async () => {
             await assertRegular(absolute);
             return readRegularFile(absolute);
@@ -275,23 +283,25 @@ function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
 }
 
 function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
-  const { root, limit, boundedRead } = ctx;
+  const { limit, boundedRead } = ctx;
   return {
     name: "find",
-    description: "Find paths whose names contain a bounded substring. Prefix source/ to search the read-only user directory.",
+    description: ctx.options.unrestrictedRead
+      ? "Find paths whose names contain a bounded substring. Relative paths are against the briefing root. Absolute and other host-readable starts are allowed. Result count is capped."
+      : "Find paths whose names contain a bounded substring. Prefix source/ to search the read-only user directory.",
     parameters: Type.Object({
       name: Type.String({ minLength: 1, maxLength: 256 }),
-      path: Type.Optional(Type.String({ maxLength: 512 })),
+      path: Type.Optional(Type.String({ maxLength: pathMaxLength(ctx) })),
     }),
     execute: async (params) =>
       limit(async () => {
         const value = params as { name?: unknown; path?: unknown };
         const needle = requiredString(value.name, "name").toLowerCase();
         const requested = value.path === undefined ? "" : requiredString(value.path, "path");
-        const start = requested ? pathIn(ctx, requested) : { absolute: root, relative: "", containmentRoot: root, writable: true };
+        const start = requested ? resolveReadPath(ctx, requested) : workspaceRootPath(ctx);
         const entries = await boundedRead("directory_list", async () => {
-          await assertNoSymlinkAncestors(start.containmentRoot, start.absolute);
-          return listTree(ctx, start.relative, 4);
+          await assertReadSymlinkPolicy(start);
+          return listTree(ctx, start, 4);
         });
         const hits = (entries ?? [])
           .map((entry) => entry.replace(/^(?:file|directory|other) /, ""))
@@ -318,7 +328,7 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
     execute: async (params) =>
       limit(async () => {
         const value = params as { path?: unknown; oldText?: unknown; newText?: unknown };
-        const path = pathIn(ctx, requiredString(value.path, "path"));
+        const path = resolveWritePath(ctx, requiredString(value.path, "path"));
         assertWritablePath(ctx, path);
         if (HOST_RESERVED.has(basename(path.relative)))
           throw recoveryToolError("recovery_sink_reserved", "Host-owned contract files cannot be edited.", {
@@ -326,7 +336,8 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
           });
         const oldText = requiredString(value.oldText, "oldText");
         const newText = requiredString(value.newText, "newText");
-        await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
+        const containmentRoot = writeContainmentRoot(path);
+        await assertNoSymlinkAncestors(containmentRoot, path.absolute);
         await assertRegular(path.absolute);
         const current = await readFile(path.absolute, "utf8");
         const index = current.indexOf(oldText);
@@ -343,7 +354,7 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
           },
           options.onControlledWrite,
         );
-        await assertStillInside(path.containmentRoot, path.absolute);
+        await assertStillInside(containmentRoot, path.absolute);
         return { content: "Edited file.", details: { path: path.relative, byteLength: Buffer.byteLength(next) } };
       })(),
   };
@@ -361,7 +372,7 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
     execute: async (params) =>
       limit(async () => {
         const value = params as { path?: unknown; content?: unknown };
-        const path = pathIn(ctx, requiredString(value.path, "path"));
+        const path = resolveWritePath(ctx, requiredString(value.path, "path"));
         assertWritablePath(ctx, path);
         if (HOST_RESERVED.has(basename(path.relative)) && !path.relative.includes("/"))
           throw recoveryToolError("recovery_sink_reserved", "recovery-manifest.json is Host-owned.", {
@@ -370,7 +381,8 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
           });
         const content = requiredString(value.content, "content");
         if (Buffer.byteLength(content) > MAX_BYTES) throw new Error(`content exceeds ${MAX_BYTES} bytes.`);
-        await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
+        const containmentRoot = writeContainmentRoot(path);
+        await assertNoSymlinkAncestors(containmentRoot, path.absolute);
         await assertWritableFile(path.absolute);
         await mkdir(resolve(path.absolute, ".."), { recursive: true });
         await journalControlledRecoveryWrite(
@@ -382,7 +394,7 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
           },
           options.onControlledWrite,
         );
-        await assertStillInside(path.containmentRoot, path.absolute);
+        await assertStillInside(containmentRoot, path.absolute);
         return {
           content: `Wrote ${Buffer.byteLength(content)} bytes.`,
           details: { path: path.relative, byteLength: Buffer.byteLength(content) },
@@ -395,7 +407,7 @@ function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { root, options, limit, ensureHome } = ctx;
   return {
     name: "shell_exec",
-    description: shellExecDescription(),
+    description: shellExecDescription(ctx.options.unrestrictedRead),
     parameters: Type.Object({
       command: Type.String({ minLength: 1, maxLength: MAX_COMMAND_BYTES }),
     }),
@@ -629,6 +641,11 @@ function assertWritablePath(ctx: RecoveryToolContext, path: { relative: string; 
     throw new Error("write_denied: path is outside the Host write policy.");
 }
 
+function writeContainmentRoot(path: ResolvedWorkspacePath): string {
+  if (!path.containmentRoot) throw new Error("write_denied: path is outside the Host write policy.");
+  return path.containmentRoot;
+}
+
 function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command: string): void {
   const prefixes = ctx.options.denyDestructiveOnPrefix ?? Object.keys(ctx.mounts);
   if (!prefixes.length) return;
@@ -639,6 +656,11 @@ function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command
     if (command.includes(prefix) || command.includes(ctx.mounts[prefix] ?? ""))
       throw new Error("write_denied: shell_exec must not mutate a read-only mount.");
   }
+}
+
+async function assertReadSymlinkPolicy(path: ResolvedWorkspacePath): Promise<void> {
+  if (!path.containmentRoot) return;
+  await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
 }
 
 async function assertNoSymlinkAncestors(root: string, target: string): Promise<void> {
@@ -675,10 +697,14 @@ type ResolvedWorkspacePath = {
   absolute: string;
   relative: string;
   writable: boolean;
-  containmentRoot: string;
+  containmentRoot?: string;
+  kind: "workspace" | "mount" | "external";
 };
 
-function shellExecDescription(): string {
+function shellExecDescription(unrestrictedRead: boolean | undefined): string {
+  if (unrestrictedRead) {
+    return `Run one host-shell command with cwd locked to the isolated candidate replica. Reads may use any host-readable path. Writes outside the replica are external/unobserved and are not Host-controlled workspace writes. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. Sensitive-file checks match the command text.`;
+  }
   return `Run one host-shell command with cwd locked to the writable workspace. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. Sensitive-file checks match the command text. Read-only mounts are not writable through workspace tools. Recovery also denies source writes with a filesystem ACL and then verifies the source fingerprint.`;
 }
 
@@ -696,30 +722,91 @@ function workspaceRelative(input: string): string | { root: true } | undefined {
   return kept.length === 0 ? { root: true } : kept.join("/");
 }
 
+function pathMaxLength(ctx: RecoveryToolContext): number {
+  return ctx.options.unrestrictedRead ? 4096 : 512;
+}
+
+function workspaceRootPath(ctx: RecoveryToolContext): ResolvedWorkspacePath {
+  return { absolute: ctx.root, relative: "", writable: true, containmentRoot: ctx.root, kind: "workspace" };
+}
+
+function resolveWritePath(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath {
+  return pathIn(ctx, input);
+}
+
+function resolveReadPath(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath {
+  if (!ctx.options.unrestrictedRead) return pathIn(ctx, input);
+  const trimmed = input.trim();
+  if (!trimmed || trimmed === "." || trimmed === "./") return workspaceRootPath(ctx);
+  if (isWslStylePath(trimmed) || isFsAbsolute(trimmed)) {
+    const classified = classifyResolvedRead(ctx, hostResolve(trimmed));
+    if (classified.kind === "external" && isWslStylePath(trimmed)) {
+      return { ...classified, relative: trimmed };
+    }
+    return classified;
+  }
+  const slash = asPosixPath(trimmed);
+  if (slash.split("/").includes("..")) return classifyResolvedRead(ctx, resolve(ctx.root, trimmed));
+  return pathIn(ctx, trimmed);
+}
+
+function hostResolve(input: string): string {
+  if (process.platform === "win32") return resolve(input);
+  if (isFsAbsolute(input)) return stripWindowsExtendedPrefix(input);
+  return resolve(input);
+}
+
+function isWslStylePath(input: string): boolean {
+  const posix = asPosixPath(stripWindowsExtendedPrefix(input));
+  return /^\/\/wsl/i.test(posix) || /^\/mnt\/[a-zA-Z](\/|$)/.test(posix);
+}
+
+function classifyResolvedRead(ctx: RecoveryToolContext, absolute: string): ResolvedWorkspacePath {
+  for (const [name, mountRoot] of Object.entries(ctx.mounts)) {
+    const rel = relativeInside(mountRoot, absolute);
+    if (rel === undefined) continue;
+    return {
+      absolute,
+      relative: rel ? `${name}/${rel}` : name,
+      writable: Boolean(ctx.options.writableMounts?.includes(name)),
+      containmentRoot: resolve(mountRoot),
+      kind: "mount",
+    };
+  }
+  const briefingRel = relativeInside(ctx.root, absolute);
+  if (briefingRel !== undefined) {
+    return { absolute, relative: briefingRel, writable: true, containmentRoot: ctx.root, kind: "workspace" };
+  }
+  return { absolute, relative: absolute, writable: false, kind: "external" };
+}
+
+function readUnavailableReason(path: ResolvedWorkspacePath): "filesystem_error" | "wsl_unavailable" {
+  return path.kind === "external" && isWslStylePath(path.relative) ? "wsl_unavailable" : "filesystem_error";
+}
+
 function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath {
   const relativePath = workspaceRelative(input);
   if (relativePath === undefined)
     throw new Error("Path must be a slash-separated relative path without .. or backslashes.");
-  if (typeof relativePath !== "string")
-    return { absolute: ctx.root, relative: "", writable: true, containmentRoot: ctx.root };
+  if (typeof relativePath !== "string") return workspaceRootPath(ctx);
   const parts = relativePath.split("/");
   if (ctx.options.workspaceAlias && parts[0] === WORKSPACE_ALIAS) {
     const rest = parts.slice(1).join("/");
-    if (!rest) return { absolute: ctx.root, relative: "", writable: true, containmentRoot: ctx.root };
+    if (!rest) return workspaceRootPath(ctx);
     const inner = containedPath(ctx.root, rest);
-    return { ...inner, writable: true, containmentRoot: ctx.root };
+    return { ...inner, writable: true, containmentRoot: ctx.root, kind: "workspace" };
   }
   const mountRoot = ctx.mounts[parts[0] ?? ""];
   if (mountRoot) {
     const rest = parts.slice(1).join("/");
     const mountName = parts[0]!;
-    if (!rest) return { absolute: resolve(mountRoot), relative: mountName, writable: false, containmentRoot: resolve(mountRoot) };
+    if (!rest) return { absolute: resolve(mountRoot), relative: mountName, writable: false, containmentRoot: resolve(mountRoot), kind: "mount" };
     const inner = containedPath(mountRoot, rest);
     const writable = Boolean(ctx.options.writableMounts?.includes(mountName));
-    return { absolute: inner.absolute, relative: `${mountName}/${inner.relative}`, writable, containmentRoot: resolve(mountRoot) };
+    return { absolute: inner.absolute, relative: `${mountName}/${inner.relative}`, writable, containmentRoot: resolve(mountRoot), kind: "mount" };
   }
   const inner = containedPath(ctx.root, relativePath);
-  return { ...inner, writable: true, containmentRoot: ctx.root };
+  return { ...inner, writable: true, containmentRoot: ctx.root, kind: "workspace" };
 }
 
 function containedPath(root: string, input: string): { absolute: string; relative: string } {
@@ -736,8 +823,9 @@ function recoveryReadBoundaryError(error: unknown): boolean {
 function directoryReadResult(
   path: string,
   entries: string[] | undefined,
+  unavailableReason: "filesystem_error" | "wsl_unavailable" = "filesystem_error",
 ): { content: string; details: Record<string, unknown> } {
-  if (!entries) return { content: "[]", details: { path, available: false, reason: "filesystem_error" } };
+  if (!entries) return { content: "[]", details: { path, available: false, reason: unavailableReason } };
   return {
     content: JSON.stringify(entries.slice(0, MAX_LIST_ENTRIES)),
     details: {
@@ -749,27 +837,37 @@ function directoryReadResult(
   };
 }
 
-function unavailableFileReadResult(path: string, offset: number): { content: string; details: Record<string, unknown> } {
-  return { content: "", details: { path, offset, available: false, reason: "filesystem_error" } };
+function unavailableFileReadResult(
+  path: string,
+  offset: number,
+  reason: "filesystem_error" | "wsl_unavailable" = "filesystem_error",
+): { content: string; details: Record<string, unknown> } {
+  return { content: "", details: { path, offset, available: false, reason } };
 }
 
-async function listTree(ctx: RecoveryToolContext, prefix: string, depth: number): Promise<string[]> {
-  const start = prefix ? pathIn(ctx, prefix) : { absolute: ctx.root, relative: "", containmentRoot: ctx.root, writable: true };
+async function listTree(ctx: RecoveryToolContext, start: ResolvedWorkspacePath, depth: number): Promise<string[]> {
   const entries = await ctx.readDirectory(start.absolute);
   const output: string[] = [];
   const seen = new Set<string>();
   for (const entry of entries) {
     if (output.length >= MAX_LIST_ENTRIES) break;
-    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const relativePath = start.relative ? `${start.relative}/${entry.name}` : entry.name;
     seen.add(entry.name);
     if (entry.isSymbolicLink()) throw new Error(`Symbolic link encountered: ${relativePath}`);
     output.push(`${entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other"} ${relativePath}`);
     if (entry.isDirectory() && depth > 0 && output.length < MAX_LIST_ENTRIES) {
-      const nested = await listTree(ctx, relativePath, depth - 1);
+      const child: ResolvedWorkspacePath = {
+        absolute: join(start.absolute, entry.name),
+        relative: relativePath,
+        writable: start.writable,
+        kind: start.kind,
+        ...(start.containmentRoot ? { containmentRoot: start.containmentRoot } : {}),
+      };
+      const nested = await listTree(ctx, child, depth - 1);
       output.push(...nested.slice(0, MAX_LIST_ENTRIES - output.length));
     }
   }
-  if (!prefix) {
+  if (!start.relative && start.kind !== "external") {
     for (const mount of Object.keys(ctx.mounts)) {
       if (seen.has(mount)) continue;
       output.unshift(`directory ${mount}`);

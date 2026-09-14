@@ -41,6 +41,7 @@ export class PiProviderAdapter implements ProviderAdapter {
     const models = this.#models;
     const effort = this.#config.effort;
     let active = true;
+    let toolsEnabled = true;
     const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })))) / 3);
     const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
     const agent = createPiAgent({
@@ -62,6 +63,7 @@ export class PiProviderAdapter implements ProviderAdapter {
       convertToLlm,
       beforeToolCall: async ({ toolCall }) => {
         if (!active) return { block: true, reason: "Agent session is no longer active.", terminate: true };
+        if (!toolsEnabled) return { block: true, reason: "Tools are disabled for this invocation.", terminate: true };
         await input.onBeforeToolCall?.({ tool: toolCall.name });
         return undefined;
       },
@@ -126,6 +128,7 @@ export class PiProviderAdapter implements ProviderAdapter {
         agent.abort();
       },
       waitForIdle: () => agent.waitForIdle(),
+      setToolsEnabled(enabled: boolean): void { toolsEnabled = enabled; },
     };
   }
 }
@@ -215,4 +218,7 @@ function abortError(): Error {
   error.name = "AbortError";
   return error;
 }
+
+
+
 

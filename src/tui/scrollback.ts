@@ -1,7 +1,7 @@
 import { compact, type TimelineFilter } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
-import type { TimelineEntry } from './timeline.js';
+import { isNowRow, type TimelineEntry } from './timeline.js';
 import { pad, wrapBodyLine } from './widgets.js';
 
 export type Voice = 'input' | 'product' | 'summary' | 'controller';
@@ -107,6 +107,10 @@ export function layoutScrollback(
   const seenInput = new Set<string>();
   for (const [index, entry] of entries.entries()) {
     if (!voiceOf(entry)) continue;
+    if (isNowRow(entry)) {
+      if (index === selected) selectedAt = lines.length;
+      continue;
+    }
     if (voiceOf(entry) === 'input') {
       const key = inputText(entry).replace(/\s+/g, ' ').trim();
       if (key && seenInput.has(key)) continue;
@@ -135,8 +139,9 @@ export function layoutScrollback(
     return { lines: empty, hits, selectedAt: 0, start: 0, total: empty.length, chrome };
   }
   if (height === undefined || lines.length + chrome <= height) {
+    const padded = padBodyToHeight(theme, lines, width, height, chrome);
     return {
-      lines: follow ? [...lines, status, follow] : [...lines, status],
+      lines: follow ? [...padded, status, follow] : [...padded, status],
       hits, selectedAt, start: 0, total: lines.length, chrome,
     };
   }
@@ -151,6 +156,13 @@ export function layoutScrollback(
     total: lines.length,
     chrome,
   };
+}
+
+function padBodyToHeight(theme: Theme, lines: readonly string[], width: number, height: number | undefined, chrome: number): string[] {
+  if (height === undefined) return [...lines];
+  const gap = height - lines.length - chrome;
+  if (gap <= 0) return [...lines];
+  return [...lines, ...Array.from({ length: gap }, () => fillCanvas(theme, '', width))];
 }
 
 /** Keep `selectedAt` inside the sliced window; return the offset consumed by `layoutScrollback`. */

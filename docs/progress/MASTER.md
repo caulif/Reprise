@@ -10,6 +10,12 @@
 
 ## 验证记录
 
+2026-09-13 Comparison 直接编辑 HTML 与 Host 区域：ADR [Host 区域与直接 HTML](../decisions/accepted/2026-09-13-comparison-host-zones-and-direct-html.md)。Agent 只写 `data-agent-zone`；未知短引用降级；invalid JSON 保留已写页面。`npm run check` 17 门禁通过（967 pass / 4 skip）。
+
+2026-09-12 Controller 读取放宽与 `shell_exec`：`ls`/`read`/`grep`/`find` 走独立 read path，可访问宿主可读路径；`edit`/`write` 仍仅 `project/`；shell cwd 为隔离副本，外部写入记 `controller.external_write`。ADR：[读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)。`npm run check` 17 门禁通过（954 pass / 4 skip）。
+
+2026-09-12 审查修正：Recovery 自由轮次从 `agent.invocation_completed.requestId` 推导；已创建 Session 失败走 `RoleSessions.discard`/`close`；`comparePersistedFacts` 必填 `attemptId`；`check:fast` 含 lint；`check`/`check:full` 为迁移重叠。ADR：[自由轮次从事件恢复](../decisions/accepted/2026-09-12-recovery-freeform-progress-from-events.md)、[失败 Session 关闭](../decisions/accepted/2026-09-12-role-sessions-discard-closes.md)。`npm run check` 17 门禁通过（946 pass / 4 skip）。
+
 2026-09-11 Git 隔离不变量：ADR [Git 隔离不变量](../decisions/accepted/2026-09-11-git-isolation-invariants.md)。catalog v2 含 isolation/objectStore/completeness/issues；incomplete 仓改写 remote、receive-only sink；`partial` 可进 Recovery/`prepareRun`；I1 失败删本次 sink。`npm run check` 17 门禁通过（937 pass / 4 skip）。
 
 2026-09-11 三 Agent 契约清理：ADR [三 Agent 契约清理](../decisions/accepted/2026-09-11-three-agent-contract-cleanup.md)。source 复制预算不再把 inspect 标成 `runnable=blocked`；新 baseline 不写 `current_state_fallback`；`ready` 不因 skipped link 变成用户 `partial`；Controller/Comparison 按需阅读。`npm run check` 17 门禁通过（933 pass / 4 skip）。

@@ -12,6 +12,11 @@ export type { RecoveryAttemptInput, RecoveryAttemptMode } from "./input.js";
 
 export type RecoveryAttempt = {
   readonly cleanupFailed?: boolean;
+  /** The agent decision was valid, but publishing/verifying the candidate failed afterwards. */
+  readonly finalizationFailure?: {
+    stage: NonNullable<EnvironmentBaseline['recovery']>['failureStage'];
+    message: string;
+  };
   readonly baseline: EnvironmentBaseline;
   readonly providerPreview?: RecoveryPreview;
   readonly staging?: RecoveryStaging;
