@@ -1,17 +1,17 @@
-Reprise v0.1.0   C:\reprise                     gpt-5.6-terra · medium   ⚠ Harness env unset  ○ Product unset  ○ No task
+Reprise v0.1.0   C:\reprise                    gpt-5.6-terra · medium   ⚠ 内部模型环境变量未设  ○ 未选会话产品  ○ 无任务
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Internal model  gpt-5.6-terra
+ 内部模型  gpt-5.6-terra
 
- Continue
- /history Local experiments  no local experiments
- /config  Open /config  env unset
+ 继续
+ /history 本机实验记录  还没有本地对照
+ /config  打开 /config  环境变量未设
 
-┌─ Editing API key ────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Current  env:OPENAI_API_KEY  ✓                                                                                       │
+┌─ 正在编辑 API 密钥 ──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 当前值  env:OPENAI_API_KEY  ✓                                                                                        │
 │                                                                                                                      │
 │ ❯ e▌                                                                                                                 │
-│ Saved in .reprise/harness-model.json (gitignored). env:NAME still works.                                             │
+│ 保存在 .reprise/harness-model.json（已被 git 忽略）。env:NAME 仍可用。                                               │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Editing API key. Type to change the visible value. Enter applies it. Esc keeps the previous value.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Enter] Apply  [Ctrl+U] Clear  [Esc] Keep previous
+ [Enter] 应用  [Ctrl+U] 清空  [Esc] 保留原值

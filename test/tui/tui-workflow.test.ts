@@ -108,7 +108,7 @@ test('Ctrl+C during Recovery aborts preparation and never enters candidate selec
   await app.recoveryFinished;
   assert.equal(signal?.aborted, true);
   assert.equal(app.page, 'home');
-  assert.match(app.message, /Recovery cancelled/);
+  assert.match(app.message, /Recovery cancelled|恢复已取消/);
   assert.equal(app.cancelling, false);
   assert.equal(app.recoveryAbort, undefined);
 });
@@ -216,7 +216,7 @@ test('closing preserves a late Recovery staging reference when cleanup fails', a
   startRunSetup(app);
   await waitFor(() => recovering);
   app.close();
-  const rejected = assert.rejects(app.closing, /Cleanup did not complete/);
+  const rejected = assert.rejects(app.closing, /Cleanup did not complete|清理未完成/);
   release();
   await rejected;
   assert.equal(app.recoveryView?.experimentId, 'late-cleanup');
@@ -321,7 +321,7 @@ test('close discards cached recovery and preserves a failed cleanup for review',
     } as unknown as RecoveryView;
     app.close();
     if (fails) {
-      await assert.rejects(app.closing, /Cleanup did not complete/);
+      await assert.rejects(app.closing, /Cleanup did not complete|清理未完成/);
       assert.equal(app.recoveryView?.experimentId, 'cached');
       assert.doesNotMatch(app.message, /private provider detail/);
     } else {
@@ -369,7 +369,7 @@ test('closing during startup waits for the late handle and its cleanup result', 
     app.close();
     let closed = false;
     const completion = app.closing.then(() => { closed = true; });
-    const failure = cleanupStatus === 'failed' ? assert.rejects(completion, /Cleanup did not complete/) : undefined;
+    const failure = cleanupStatus === 'failed' ? assert.rejects(completion, /Cleanup did not complete|清理未完成/) : undefined;
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(closed, false);
     releaseStart();

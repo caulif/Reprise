@@ -22,6 +22,10 @@ await copyFile(
   "src/products/packs/claude-code/recovery/SKILL.md",
   "dist/src/products/packs/claude-code/recovery/SKILL.md",
 );
+await copyFile(
+  "src/products/packs/claude-code/README.md",
+  "dist/src/products/packs/claude-code/README.md",
+);
 
 await mkdir("dist/test/fixtures/fake-pack/sessions", { recursive: true });
 await copyFile(

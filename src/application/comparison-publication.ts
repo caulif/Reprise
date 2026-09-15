@@ -10,13 +10,13 @@ import {
 } from "../core/schema.js";
 import { writeAtomic } from "../core/identity.js";
 import { isMissing } from "./experiment-helpers.js";
+import type { AgentLocale } from "../agents/language.js";
+import { candidateStatusLabel, reportString } from "./comparison-report-strings.js";
 import {
   AGENT_ZONES,
-  candidateStatusLabel,
   extractInner,
   extractOuter,
   hostMetricsMismatch,
-  hostStatusMismatch,
   hostZonesMismatch,
   missingComparisonSlots,
   metricsFromReportFacts,
@@ -91,32 +91,47 @@ export async function verifyAndRenderComparisonReport(input: {
   media: readonly ComparisonMediaRecord[];
   evidence?: readonly ComparisonLinkRecord[];
   hostZoneSnapshot?: HostZoneSnapshot;
+  locale?: AgentLocale;
 }): Promise<
   { html: string; model: ComparisonReportModel }
   | { failureClass: ComparisonFailureClass; code: ComparisonPublishCode; message: string }
 > {
+  const locale = input.locale ?? "zh";
   const metrics = metricsFromReportFacts(input.facts);
   const zoneError = input.hostZoneSnapshot
-    ? hostZonesMismatch(input.html, input.hostZoneSnapshot, metrics)
-    : missingComparisonSlots(input.html) ?? hostMetricsMismatch(input.html, metrics) ?? hostStatusMismatch(input.html, input.facts);
+    ? hostZonesMismatch(input.html, input.hostZoneSnapshot, metrics, locale)
+    : missingComparisonSlots(input.html) ?? hostMetricsMismatch(input.html, metrics, locale);
   if (zoneError) {
     const code: ComparisonPublishCode = zoneError.includes("missing data-agent-zone") ? "report_incomplete" : "host_zone_modified";
     return { failureClass: code === "report_incomplete" ? "publication" : "metrics", code, message: zoneError };
   }
-  const incomplete = incompleteKeyDifferences(input.html);
+  const incomplete = incompleteAboveTheFold(input.html);
   if (incomplete) return { failureClass: "publication", code: "report_incomplete", message: incomplete };
+  const unexpected = unexpectedAgentZones(input.html);
+  if (unexpected) return { failureClass: "publication", code: "report_incomplete", message: unexpected };
+  const leaked = leakedInternalRunInfo(input.html);
+  if (leaked) return { failureClass: "publication", code: "report_incomplete", message: leaked };
+  const structuredEvidence = claimsVerifiedWithoutResolvableEvidence(input.html, input.evidence ?? []);
+  if (structuredEvidence) return { failureClass: "evidence", code: "evidence_unresolved", message: structuredEvidence };
+  const structuredVisual = claimsVisualWithoutUsableMedia(input.html, input.media);
+  if (structuredVisual) return { failureClass: "media", code: "media_unavailable", message: structuredVisual };
+  const visualClaim = claimsVisualWithoutMedia(input.html, input.media, locale);
+  if (visualClaim) return { failureClass: "media", code: "media_unavailable", message: visualClaim };
   const rewritten = await rewritePublishableHtml(input);
   if (hasExternalNetwork(rewritten.html)) {
     return { failureClass: "publication", code: "publication_failed", message: "Comparison report contains external network resources." };
   }
-  if (claimsVerifiedWithoutEvidence(input.html, rewritten.unresolvedEvidence) && rewritten.unresolvedEvidence.length > 0) {
+  if (claimsVerifiedWithoutEvidence(input.html, rewritten.unresolvedEvidence, locale) && rewritten.unresolvedEvidence.length > 0) {
     return { failureClass: "evidence", code: "evidence_unresolved", message: "Comparison claimed verification but related evidence is unresolved." };
   }
-  if (citedMediaAllUnresolved(input.html, rewritten.unresolvedMedia)) {
+  if (wordlistVerifiedWithoutResolvableEvidence(input.html, input.evidence ?? [], locale)) {
+    return { failureClass: "evidence", code: "evidence_unresolved", message: "Comparison claimed verification but related evidence is unresolved." };
+  }
+  if (citedMediaAllUnresolved(input.html, rewritten.unresolvedMedia, locale)) {
     return { failureClass: "media", code: "media_unavailable", message: "Comparison cited media that is not available." };
   }
-  const html = markUnresolvedInHostEvidence(rewritten.html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia]);
-  const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence);
+  const html = markUnresolvedInHostEvidence(rewritten.html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia], locale);
+  const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
   return { html, model };
 }
 
@@ -150,6 +165,7 @@ export function comparisonReportModelFromHtml(
   result: ComparisonResult,
   media: readonly ComparisonMediaRecord[],
   evidence: readonly ComparisonLinkRecord[] = [],
+  locale: AgentLocale = "zh",
 ): ComparisonReportModel {
   const slots = {
     header: extractInner(html, "data-host-zone", "header"),
@@ -165,12 +181,14 @@ export function comparisonReportModelFromHtml(
     return hit ? [hit] : [];
   });
   const mediaRefs = media.filter((item) => html.includes(item.reportHref) || (item.shortRef && html.includes(item.shortRef))).map((item) => item.ref);
+  const slotHeadline = oneLineFromHtml(extractInner(html, "data-agent-slot", "headline"));
+  const headline = result.headline ?? (slotHeadline.length > 0 && slotHeadline.length <= 280 ? slotHeadline : undefined);
   return {
     schemaVersion: 1,
-    task: facts.run.runId ? oneLineFromHtml(slots.header) || "对照" : "对照",
+    task: oneLineFromHtml(extractInner(html, "data-agent-slot", "task")) || oneLineFromHtml(extractInner(html, "data-slot", "task")) || reportString(locale, "defaultCategory"),
     status: {
       baseline: facts.replay.baselineEvidence,
-      candidate: candidateStatusLabel(facts.run.outcome, facts.run.terminationCode),
+      candidate: candidateStatusLabel(facts.run.outcome, facts.run.terminationCode, locale),
       candidateOutcome: facts.run.outcome,
       terminationCode: facts.run.terminationCode,
     },
@@ -178,7 +196,7 @@ export function comparisonReportModelFromHtml(
     slots,
     evidenceRefs,
     mediaRefs,
-    ...(result.headline ? { headline: result.headline } : {}),
+    ...(headline ? { headline } : {}),
   };
 }
 
@@ -187,13 +205,17 @@ export function comparisonFailureDiagnostic(input: {
   facts: ComparisonReportFacts;
   reportPresent: boolean;
   attemptId: string;
+  draftHtml?: string;
+  locale?: AgentLocale;
 }): ComparisonReportDiagnostic {
   const classified = classifyComparisonFailure(input);
   const failed = input.result.status === "failed" ? input.result.failure : undefined;
+  const draftAnalysis = input.draftHtml ? extraAgentAnalysis(input.draftHtml) : undefined;
+  const locale = input.locale ?? "zh";
   return {
     failureClass: classified.failureClass,
     phase: classified.phase,
-    candidateCompleted: candidateStatusLabel(input.facts.run.outcome, input.facts.run.terminationCode),
+    candidateCompleted: candidateStatusLabel(input.facts.run.outcome, input.facts.run.terminationCode, locale),
     reason: failed?.message
       ?? (input.result.status === "cancelled" ? "Comparison was cancelled." : "Comparison did not return a completed report."),
     details: [
@@ -208,7 +230,31 @@ export function comparisonFailureDiagnostic(input: {
       "artifacts: comparison-attempts/ and evidence/",
       input.reportPresent ? "draft: comparison-attempts/*/report.html" : "draft: none",
     ],
+    ...(draftAnalysis ? { draftAnalysis } : {}),
   };
+}
+
+export function draftAgentSlots(html: string | undefined): Partial<Record<(typeof AGENT_ZONES)[number] | "headline", string>> {
+  if (!html) return {};
+  const slots: Partial<Record<(typeof AGENT_ZONES)[number] | "headline", string>> = {};
+  const headline = extractInner(html, "data-agent-slot", "headline");
+  if (oneLineFromHtml(headline)) slots.headline = headline;
+  for (const zone of AGENT_ZONES) {
+    const inner = extractInner(html, "data-agent-zone", zone);
+    if (oneLineFromHtml(inner)) slots[zone] = inner;
+  }
+  return slots;
+}
+
+function extraAgentAnalysis(html: string): string | undefined {
+  const chunks: string[] = [];
+  for (const match of html.matchAll(/<(?:section|article|div)\b[^>]*data-agent-zone=["']([^"']+)["'][^>]*>([\s\S]*?)<\/(?:section|article|div)>/gi)) {
+    const zone = match[1] ?? "";
+    if ((AGENT_ZONES as readonly string[]).includes(zone)) continue;
+    const text = oneLineFromHtml(match[2] ?? "");
+    if (text) chunks.push(`${zone}: ${text.slice(0, 1000)}`);
+  }
+  return chunks.length ? chunks.join("\n") : undefined;
 }
 
 async function rewritePublishableHtml(input: {
@@ -258,38 +304,192 @@ function rewriteAgentZones(html: string, rewrite: (inner: string) => string): st
   return next;
 }
 
+function unexpectedAgentZones(html: string): string | undefined {
+  const found = [...html.matchAll(/\bdata-agent-zone\s*=\s*(["'])([^"']+)\1/gi)].map((match) => match[2] ?? "");
+  const extra = found.find((zone) => zone && !(AGENT_ZONES as readonly string[]).includes(zone));
+  if (!extra) return undefined;
+  return `Comparison report contains unsupported data-agent-zone="${extra}".`;
+}
+
+function incompleteAboveTheFold(html: string): string | undefined {
+  const headline = oneLineFromHtml(extractInner(html, "data-agent-slot", "headline"));
+  if (!headline) return "Comparison report is missing headline.";
+  const differences = incompleteKeyDifferences(html);
+  if (differences) return differences;
+  return undefined;
+}
+
 function incompleteKeyDifferences(html: string): string | undefined {
   const inner = extractInner(html, "data-agent-zone", "key-differences");
   const text = oneLineFromHtml(inner);
   if (text.length > 0) return undefined;
-  return 'Comparison report is missing key differences (or an explicit "无法判断").';
+  return 'Comparison report is missing key differences (or an explicit "cannot be determined").';
 }
 
-function claimsVerifiedWithoutEvidence(html: string, unresolved: readonly string[]): boolean {
+function leakedInternalRunInfo(html: string): string | undefined {
+  const fold = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-zone", "key-differences")}${extractInner(html, "data-agent-slot", "headline")}`;
+  if (/\battemptId\b|\brunId\b|comparison-attempts\/|\\runs\\/i.test(fold) || /attempt-[a-z0-9-]{8,}/i.test(fold)) {
+    return "Comparison above-the-fold content contains internal run identifiers.";
+  }
+  const turns = fold.match(/第\s*[一二三四五六七八九十0-9]+\s*轮/g) ?? [];
+  if (turns.length >= 5) return "Comparison above-the-fold restates the full process.";
+  return undefined;
+}
+
+function claimsVisualWithoutMedia(html: string, media: readonly ComparisonMediaRecord[], locale: AgentLocale): string | undefined {
+  if (media.some((item) => item.available)) return undefined;
+  const body = `${extractInner(html, "data-agent-zone", "visual-evidence")}${extractInner(html, "data-agent-zone", "key-differences")}`;
+  const pattern = locale === "en"
+    ? /(visual inspection|looked at (?:the )?(?:PPT|slides|page|UI)|completed visual)/i
+    : /(已完成视觉|看过(?:了)?(?:PPT|幻灯片|网页|UI)|视觉检查)/;
+  if (pattern.test(body)) {
+    return "Comparison claimed visual inspection without available media.";
+  }
+  return undefined;
+}
+
+function verifiedWordlist(locale: AgentLocale): RegExp {
+  return locale === "en" ? /\bverified\b/i : /已核验|已经核验|\bverified\b/i;
+}
+
+function claimsVerifiedWithoutEvidence(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {
   const body = extractInner(html, "data-agent-zone", "key-differences");
-  if (!/已核验|已经核验|\bverified\b/i.test(body)) return false;
+  if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-evidence-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   if (cited.length === 0) return false;
   const missing = new Set(unresolved);
   return cited.every((ref) => missing.has(ref));
 }
 
-function citedMediaAllUnresolved(html: string, unresolved: readonly string[]): boolean {
+function wordlistVerifiedWithoutResolvableEvidence(
+  html: string,
+  evidence: readonly ComparisonLinkRecord[],
+  locale: AgentLocale,
+): boolean {
+  const body = extractInner(html, "data-agent-zone", "key-differences");
+  if (!verifiedWordlist(locale).test(body)) return false;
+  const cited = unique([...body.matchAll(/\bdata-evidence-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
+  const resolvable = new Set(evidence.filter((item) => item.shortRef && (item.reportHref || item.inspectPath)).map((item) => item.shortRef as string));
+  if (cited.some((ref) => resolvable.has(ref))) return false;
+  return true;
+}
+
+function claimsVerifiedWithoutResolvableEvidence(html: string, evidence: readonly ComparisonLinkRecord[]): string | undefined {
+  const resolvable = (ref: string) => evidence.some((item) => item.shortRef === ref && Boolean(item.reportHref || item.inspectPath));
+  if (claimMissingResolvedRef(html, "verified", "data-evidence-ref", resolvable)) {
+    return "Comparison claimed verification without resolvable evidence.";
+  }
+  return undefined;
+}
+
+function claimsVisualWithoutUsableMedia(html: string, media: readonly ComparisonMediaRecord[]): string | undefined {
+  const usable = (ref: string) => media.some((item) => (item.shortRef === ref || item.ref === ref) && item.available);
+  if (claimMissingResolvedRef(html, "visual", "data-media-ref", usable)) {
+    return "Comparison claimed visual inspection without available media.";
+  }
+  return undefined;
+}
+
+const VOID_TAGS = new Set(["img", "br", "hr", "input", "meta", "link", "source"]);
+
+function claimMissingResolvedRef(
+  html: string,
+  kind: "verified" | "visual",
+  attr: "data-evidence-ref" | "data-media-ref",
+  resolve: (ref: string) => boolean,
+): boolean {
+  const claimRe = new RegExp(`\\bdata-claim\\s*=\\s*(["'])${kind}\\1`, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = claimRe.exec(html))) {
+    if (insideHtmlComment(html, match.index)) continue;
+    const tagStart = html.lastIndexOf("<", match.index);
+    const tagEnd = html.indexOf(">", match.index);
+    if (tagStart < 0 || tagEnd < 0) continue;
+    const open = html.slice(tagStart, tagEnd + 1);
+    const name = open.match(/^<\/?([a-zA-Z][\w:-]*)/)?.[1]?.toLowerCase() ?? "span";
+    let elementEnd = tagEnd + 1;
+    if (!open.endsWith("/>") && !VOID_TAGS.has(name)) {
+      elementEnd = matchingClose(html, name, tagEnd + 1) ?? tagEnd + 1;
+    }
+    const element = html.slice(tagStart, elementEnd);
+    const own = [...element.matchAll(new RegExp(`\\b${attr}\\s*=\\s*(["'])([^"']+)\\1`, "gi"))].map((hit) => hit[2] ?? "");
+    const ancestors = ancestorAttribute(html, tagStart, attr);
+    const refs = unique([...own, ...ancestors]);
+    if (refs.length === 0 || !refs.some(resolve)) return true;
+  }
+  return false;
+}
+
+function insideHtmlComment(html: string, pos: number): boolean {
+  const open = html.lastIndexOf("<!--", pos);
+  if (open < 0) return false;
+  const close = html.lastIndexOf("-->", pos);
+  return open > close;
+}
+
+function matchingClose(html: string, name: string, from: number): number | undefined {
+  const re = new RegExp(`<(/)?${escapeRegExp(name)}\\b[^>]*>`, "gi");
+  re.lastIndex = from;
+  let depth = 1;
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(html))) {
+    if (found[1]) {
+      depth -= 1;
+      if (depth === 0) return re.lastIndex;
+    } else if (!found[0].endsWith("/>")) {
+      depth += 1;
+    }
+  }
+  return undefined;
+}
+
+function ancestorAttribute(html: string, pos: number, attr: string): string[] {
+  const stack: string[] = [];
+  const re = /<!--[\s\S]*?-->|<\/?([a-zA-Z][\w:-]*)\b([^>]*)>/g;
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(html)) && found.index < pos) {
+    if (found[0].startsWith("<!--")) continue;
+    const name = found[1]!.toLowerCase();
+    const attrs = found[2] ?? "";
+    const closing = found[0].startsWith("</");
+    const selfClosing = found[0].endsWith("/>") || VOID_TAGS.has(name);
+    if (closing) {
+      for (let index = stack.length - 1; index >= 0; index -= 1) {
+        if (stack[index]!.startsWith(`${name}\0`)) {
+          stack.length = index;
+          break;
+        }
+      }
+    } else if (!selfClosing) {
+      stack.push(`${name}\0${attrs}`);
+    }
+  }
+  const refs: string[] = [];
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    const attrs = stack[index]!.slice(stack[index]!.indexOf("\0") + 1);
+    const hit = attrs.match(new RegExp(`\\b${attr}\\s*=\\s*(["'])([^"']*)\\1`, "i"));
+    if (hit?.[2]) refs.push(hit[2]);
+  }
+  return refs;
+}
+
+function citedMediaAllUnresolved(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {
   if (unresolved.length === 0) return false;
   const body = `${extractInner(html, "data-agent-zone", "visual-evidence")}${extractInner(html, "data-agent-zone", "key-differences")}`;
-  if (!/已核验|已经核验|\bverified\b/i.test(body)) return false;
+  if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-media-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   if (cited.length === 0) return false;
   const missing = new Set(unresolved);
   return cited.every((ref) => missing.has(ref));
 }
 
-function markUnresolvedInHostEvidence(html: string, unresolved: readonly string[]): string {
+function markUnresolvedInHostEvidence(html: string, unresolved: readonly string[], locale: AgentLocale): string {
   if (unresolved.length === 0) return html;
   const outer = extractOuter(html, "data-host-zone", "evidence");
   if (!outer) return html;
-  const note = `<p data-host="unresolved-evidence">证据未解析：${escapeText(unresolved.join("、"))}</p>`;
-  if (outer.includes("证据未解析")) return html;
+  if (outer.includes('data-host="unresolved-evidence"')) return html;
+  const refs = unresolved.join(locale === "zh" ? "、" : ", ");
+  const note = `<p data-host="unresolved-evidence">${escapeText(reportString(locale, "unresolvedEvidence", { refs }))}</p>`;
   return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${note}</section>`));
 }
 
@@ -367,5 +567,5 @@ function mediaHrefs(html: string): string[] {
 }
 
 function oneLineFromHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return html.replace(/<!--[\s\S]*?-->/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }

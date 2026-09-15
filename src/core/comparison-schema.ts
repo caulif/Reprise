@@ -18,19 +18,33 @@ const MetricSideSchema = Type.Object({
     Type.Literal("not_collected"),
     Type.Literal("unknown"),
   ])),
+  pricingStatus: Type.Optional(Type.Union([
+    Type.Literal("collected"),
+    Type.Literal("not_collected"),
+    Type.Literal("pricing_unavailable"),
+    Type.Literal("unknown"),
+  ])),
   pricingVersion: Type.Optional(Type.String()),
   collectedAt: Type.Optional(Type.String()),
   provider: Type.Optional(Type.String()),
+  pricingModelId: Type.Optional(Type.String()),
+  pricingSource: Type.Optional(Type.String()),
+  pricingRates: Type.Optional(Type.Object({
+    input: Type.Number(),
+    output: Type.Number(),
+    cacheRead: Type.Number(),
+    cacheCreation: Type.Number(),
+  })),
   toolCostsIncluded: Type.Optional(Type.Boolean()),
 });
 
 const ComparisonReportFactsSchema = Type.Object({
   run: Type.Object({ runId: Type.String(), outcome: Type.String(), terminationCode: Type.String(), initiatedBy: Type.String(), elapsedMs: Type.Optional(Type.Number()), candidateElapsedMs: Type.Optional(Type.Number()) }),
-  models: Type.Object({ candidate: Type.String(), controller: Type.Optional(Type.String()), comparison: Type.Optional(Type.String()) }),
+  models: Type.Object({ candidate: Type.String(), baseline: Type.Optional(Type.String()), controller: Type.Optional(Type.String()), comparison: Type.Optional(Type.String()) }),
   activity: Type.Object({ candidateTurns: Type.Optional(Type.Integer({ minimum: 0 })), controllerCalls: Type.Optional(Type.Integer({ minimum: 0 })), toolCalls: Type.Optional(Type.Object({ total: Type.Integer({ minimum: 0 }), succeeded: Type.Integer({ minimum: 0 }), failed: Type.Integer({ minimum: 0 }), rejectedApprovals: Type.Integer({ minimum: 0 }) })) }),
   limits: Type.Object({ wallClockMs: Type.Optional(Type.Number()), maxTargetTurns: Type.Optional(Type.Integer({ minimum: 0 })), maxModelCalls: Type.Optional(Type.Integer({ minimum: 0 })), triggered: Type.Array(Type.String()) }),
   runtime: Type.Object({ productId: Type.String(), sandbox: Type.Optional(Type.String()), approvalPolicy: Type.Optional(Type.String()), network: Type.Optional(Type.String()) }),
-  delivery: Type.Object({ changedPaths: Type.Array(Type.String()), targetArtifactStatus: Type.String(), verificationStatus: Type.String() }),
+  delivery: Type.Object({ changedPaths: Type.Array(Type.String()), targetArtifactStatus: Type.String(), verificationStatus: Type.String(), changedPathsIndexed: Type.Optional(Type.Integer({ minimum: 0 })), changedPathsOmitted: Type.Optional(Type.Integer({ minimum: 0 })) }),
   replay: Type.Object({ sourceRootKind: Type.Optional(Type.String()), conditions: Type.Array(Type.String()), baselineEvidence: Type.String(), candidateEvidence: Type.String() }),
   metrics: Type.Optional(Type.Object({
     baseline: Type.Optional(MetricSideSchema),
@@ -83,7 +97,7 @@ export const ComparisonBriefingContextSchema = Type.Object({
   artifactRefs: Type.Array(Type.String()), allowModelText: Type.Boolean(), replayScope: Type.Object({ historical: Type.String(), candidate: Type.String() }), hostReplay: Type.Optional(Type.Object({ sourceRootKind: Type.String(), stopKind: Type.String(), conditions: Type.Array(Type.String()) })), promptContent: Type.Optional(Type.String()),
   media: Type.Optional(Type.Array(ComparisonMediaRecordSchema)),
 });
-export const ComparisonShortRefSchema = Type.String({ pattern: "^ev-[0-9]{2,3}$" });
+export const ComparisonShortRefSchema = Type.String({ pattern: "^ev-[0-9]{2,6}$" });
 const ComparisonOutputSchema = Type.Object({
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
   reportPath: Type.Literal("report.html"),

@@ -1,18 +1,18 @@
 Reprise v0.1.0   C:\reprise
-gpt-5.6-terra - medium   ! Harness key missing  * Codex  ...
+gpt-5.6-terra - medium   ! 内部模型缺少密钥  * Codex  * ...
 ------------------------------------------------------------
- Internal model  gpt-5.6-terra
+ 内部模型  gpt-5.6-terra
 
- Continue
- /history Local experiments  no local experiments
- /config  Open /config  needs credential
+ 继续
+ /history 本机实验记录  还没有本地对照
+ /config  打开 /config  需要凭据
 
-[ Run · choose candidate product ]
-    Task         Fix the bug.
-    Source session Codex
+[ 开跑 · 选候选产品 ]
+    题目         Fix the bug.
+    来源会话     Codex
    
-   > Codex                    source session  available     
-     Claude Code                              available     
- Recovered. Choose a candidate product and model to start.
+   > Codex                    来源会话        可用          
+     Claude Code                              可用          
+ 已恢复。选候选产品和模型后即可开跑。
 ------------------------------------------------------------
- [↑↓] Select  [Enter] Choose models  [b] Back  [Esc] Home
+ [↑↓] 选择  [Enter] 选模型  [b] 返回  [Esc] 封面

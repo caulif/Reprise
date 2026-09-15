@@ -156,8 +156,8 @@ function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
   return {
     name: "ls",
     description: ctx.options.unrestrictedRead
-      ? "List a bounded directory. Relative paths are against the briefing root; project/ is the isolated replica. Absolute, UNC, and other host-readable paths are allowed. Results are size-capped."
-      : "List a bounded directory. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
+      ? "List a directory; the result is capped. Relative paths are against the briefing root; project/ is the isolated replica; absolute, UNC, and other host-readable paths are accepted."
+      : "List a directory; the result is capped. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
     parameters: Type.Object({
       path: Type.Optional(Type.String({ maxLength: pathMaxLength(ctx) })),
       depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 4 })),
@@ -181,8 +181,8 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
   return {
     name: "read",
     description: ctx.options.unrestrictedRead
-      ? "Read a bounded byte range from a regular file. Relative paths are against the briefing root; project/ is the isolated replica. Absolute, UNC, and other host-readable paths are allowed. Image format is native Pi blocks when authorized."
-      : "Read a bounded byte range from a regular file, or return the whole file as a native Pi image block when format=image is authorized.",
+      ? "Read a byte range of a regular file. Relative paths are against the briefing root; project/ is the isolated replica; host-readable absolute paths are accepted. format=image returns a native image block when authorized."
+      : "Read a byte range of a regular file, or return the whole file as a native image block when format=image is authorized.",
     parameters: Type.Object({
       path: Type.String({ minLength: 1, maxLength: pathMaxLength(ctx) }),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -238,8 +238,8 @@ function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
   return {
     name: "grep",
     description: ctx.options.unrestrictedRead
-      ? "Search file contents; returns a bounded list of path:line matches. Relative paths are against the briefing root. Absolute and other host-readable starts are allowed. Match count is capped."
-      : "Search file contents; returns a bounded list of path:line matches. Prefix source/ to search the read-only user directory.",
+      ? "Search file contents; returns a capped list of path:line matches. Relative paths are against the briefing root; host-readable absolute paths are accepted."
+      : "Search file contents; returns a capped list of path:line matches. Prefix source/ to search the read-only user directory.",
     parameters: Type.Object({
       query: Type.String({ minLength: 1, maxLength: 256 }),
       path: Type.Optional(Type.String({ maxLength: pathMaxLength(ctx) })),
@@ -287,8 +287,8 @@ function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
   return {
     name: "find",
     description: ctx.options.unrestrictedRead
-      ? "Find paths whose names contain a bounded substring. Relative paths are against the briefing root. Absolute and other host-readable starts are allowed. Result count is capped."
-      : "Find paths whose names contain a bounded substring. Prefix source/ to search the read-only user directory.",
+      ? "Find paths whose names contain a substring; the result is capped. Relative paths are against the briefing root; host-readable absolute paths are accepted."
+      : "Find paths whose names contain a substring; the result is capped. Prefix source/ to search the read-only user directory.",
     parameters: Type.Object({
       name: Type.String({ minLength: 1, maxLength: 256 }),
       path: Type.Optional(Type.String({ maxLength: pathMaxLength(ctx) })),
@@ -319,7 +319,9 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { options, limit } = ctx;
   return {
     name: "edit",
-    description: "Replace one exact text span in an existing staging file.",
+    description: ctx.options.unrestrictedRead
+      ? "Replace one exact text span in an existing file. Only project/ and notes/ are writable."
+      : "Replace one exact text span in an existing file. Only writable paths are accepted.",
     parameters: Type.Object({
       path: Type.String({ minLength: 1, maxLength: 512 }),
       oldText: Type.String({ minLength: 1, maxLength: MAX_BYTES }),
@@ -364,7 +366,9 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { options, limit } = ctx;
   return {
     name: "write",
-    description: "Create or overwrite one explicit regular file in staging. recovery.md is the report sink.",
+    description: ctx.options.unrestrictedRead
+      ? "Create or overwrite one regular file. Only project/ and notes/ are writable."
+      : "Create or overwrite one regular file. Only writable paths are accepted.",
     parameters: Type.Object({
       path: Type.String({ minLength: 1, maxLength: 512 }),
       content: Type.String({ maxLength: MAX_BYTES }),
@@ -703,9 +707,9 @@ type ResolvedWorkspacePath = {
 
 function shellExecDescription(unrestrictedRead: boolean | undefined): string {
   if (unrestrictedRead) {
-    return `Run one host-shell command with cwd locked to the isolated candidate replica. Reads may use any host-readable path. Writes outside the replica are external/unobserved and are not Host-controlled workspace writes. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. Sensitive-file checks match the command text.`;
+    return "Run one shell command with cwd fixed to the isolated replica; the Host selects PowerShell or a POSIX shell. Reads may use any host-readable path; writes outside the replica are external, unobserved, and not Host-controlled. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names.";
   }
-  return `Run one host-shell command with cwd locked to the writable workspace. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. Sensitive-file checks match the command text. Read-only mounts are not writable through workspace tools. Recovery also denies source writes with a filesystem ACL and then verifies the source fingerprint.`;
+  return "Run one shell command with cwd fixed to the writable copy; the Host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.";
 }
 
 function workspaceRelative(input: string): string | { root: true } | undefined {

@@ -1,11 +1,11 @@
-Reprise   Recovering session                                                                           00:00   ● running
+Reprise   正在恢复会话                                                                                  00:00   ● 进行中
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Recovering session                                                                                                     
+ 正在恢复会话                                                                                                           
                                                                                                                         
- Session      Fix the bug.                                                                                              
- Project      source                                                                                                    
- Status       Preparing recovery environment                                                                            
+ 会话         Fix the bug.                                                                                              
+ 项目         source                                                                                                    
+ 状态         准备恢复环境                                                                                              
                                                                                                                         
- Recovering the isolated workspace from this session. Your original files stay unchanged.                               
+ 正在根据这次会话恢复隔离工作区，不改你原来的文件。                                                                     
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Cancel  [Enter] Expand  [v] Select
+ [Ctrl+C] 取消  [Enter] 展开  [v] 选择

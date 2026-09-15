@@ -12,6 +12,9 @@ import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/hist
 import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
 import { materializeComparisonMedia } from "./comparison-media.js";
 import { withEvidenceShortRefs, withMediaShortRefs } from "./comparison-short-refs.js";
+import { isComparisonChangedPath } from "./controller-queries.js";
+
+export const MAX_COMPARISON_LINKS = 64;
 
 export type ComparisonLink = ComparisonLinkRecord;
 
@@ -22,12 +25,10 @@ export function comparisonOrientation(input: {
   candidateAvailable: boolean;
 }): string {
   return [
-    "Compare this real task's historical outcome with the candidate run. Start from observations/user-inputs/INDEX.tsv and read user turns as needed.",
+    "Compare this real task's historical outcome with the candidate run.",
     `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
     `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
-    "Hard metrics live in briefing/facts/context.json (Host projection; missing stays missing).",
-    "Registered evidence short refs live in briefing/facts/evidence-index.json (ev-01). Registered media short refs live in briefing/facts/media.json (media-01).",
-    `briefingRoot=${input.briefingRoot}`,
+    "Navigation for the attempt root is in INDEX.md below.",
     "",
     "# INDEX.md",
     input.indexMarkdown,
@@ -99,21 +100,38 @@ export async function writeComparisonBriefing(input: {
     taskCase: input.taskCase,
     runEvents: input.events,
   });
-  const links = withEvidenceShortRefs(await comparisonLinks(input));
-  if (!Value.Check(ComparisonLinksSchema, links)) throw new Error("Comparison links do not satisfy ComparisonLinksSchema.");
+  const selected = await comparisonLinks(input);
+  const rawLinks = withEvidenceShortRefs(selected.links);
+  const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
+  const invalidLinkCount = rawLinks.length - links.length;
   const media = withMediaShortRefs(await materializeComparisonMedia({
     attemptRoot: input.attemptRoot,
     workspaceRoot: input.workspaceRoot,
     links,
   }));
+  const context = briefingComparisonContext(input.context);
   const briefingContext = {
-    ...briefingComparisonContext(input.context),
+    ...context,
+    reportFacts: {
+      ...context.reportFacts,
+      delivery: {
+        ...context.reportFacts.delivery,
+        changedPaths: selected.links.flatMap((link) => link.path ? [link.path] : []),
+        changedPathsIndexed: selected.changedPathsIndexed,
+        changedPathsOmitted: selected.omitted + invalidLinkCount,
+      },
+    },
     media,
   };
   if (!Value.Check(ComparisonBriefingContextSchema, briefingContext)) throw new Error("Comparison context does not satisfy ComparisonBriefingContextSchema.");
   const snapshotStatus = comparisonSnapshotLabel(input.snapshotStatus);
   const cleanupStatus = input.record.outcome.cleanup.status;
-  const indexMarkdown = comparisonIndex(snapshotStatus, cleanupStatus);
+  const indexMarkdown = comparisonIndex(snapshotStatus, cleanupStatus, {
+    links: links.length,
+    changedPathsIndexed: selected.changedPathsIndexed,
+    omitted: selected.omitted + invalidLinkCount,
+    limit: MAX_COMPARISON_LINKS,
+  });
   const factsContext = `${JSON.stringify(briefingContext, null, 2)}\n`;
   const factsLinks = `${JSON.stringify(links, null, 2)}\n`;
   const factsMedia = `${JSON.stringify(media, null, 2)}\n`;
@@ -132,6 +150,7 @@ export async function writeComparisonBriefing(input: {
     "facts/comparison-links.json": factsLinks,
     "facts/media.json": factsMedia,
     "facts/evidence-index.json": factsEvidence,
+    "facts/links-diagnostics.json": `${JSON.stringify({ schemaVersion: 1, indexed: links.length, omitted: selected.omitted, invalidDropped: invalidLinkCount, limit: MAX_COMPARISON_LINKS }, null, 2)}\n`,
     "candidate/SNAPSHOT.txt": `snapshotStatus=${snapshotStatus}\ncleanupStatus=${cleanupStatus}\n`,
     "candidate/git-sink-refs.txt": gitSink.refsListing,
     "candidate/git-sink-manifest.json": gitSink.catalogJson,
@@ -172,16 +191,16 @@ async function writeAttemptSidecars(
   await writeAtomic(join(input.attemptRoot, "history", "INDEX.md"), [
     "# History track",
     "",
-    "Read observations/ for the frozen historical session and this run's imported events.",
-    "User turns: observations/user-inputs/INDEX.tsv",
+    "The frozen historical session and this run's imported events are under observations/.",
+    "User inputs: observations/user-inputs/INDEX.tsv",
     "",
   ].join("\n"));
   await writeAtomic(join(input.attemptRoot, "candidate", "INDEX.md"), [
     "# Candidate track",
     "",
     "Process index: candidate/process-index.tsv and briefing/candidate/process-index.tsv",
-    "User views: turns/*/user-view.md (controller-briefing/run/turns mount)",
-    "Git experiment remotes: briefing/candidate/git-sink-refs.txt and briefing/candidate/git-sink-manifest.json",
+    "User views: turns/*/user-view.md",
+    "Experiment Git remotes: briefing/candidate/git-sink-refs.txt and briefing/candidate/git-sink-manifest.json",
     "Controller messages: run/sent-user-messages.jsonl and observations/user-inputs/",
     "",
   ].join("\n"));
@@ -212,42 +231,41 @@ function comparisonAttemptIndex(): string {
   return [
     "# Comparison attempt",
     "",
-    "- INDEX.md — this map",
-    "- facts/ — Host projection; missing metrics stay missing",
-    "- history/ — historical messages and observations",
-    "- candidate/ — process index, user view, outcome, and SNAPSHOT.txt",
-    "- work/ — Comparison working notes",
-    "- briefing/ — Agent-facing navigation used by tools",
+    "Navigation is in briefing/INDEX.md. facts/, history/, and candidate/ are side copies of the same Host projection for human audit.",
     "",
   ].join("\n");
 }
 
-function comparisonIndex(snapshotStatus: "complete" | "incomplete" | "unknown", cleanupStatus: string): string {
+function comparisonIndex(
+  snapshotStatus: "complete" | "incomplete" | "unknown",
+  cleanupStatus: string,
+  evidence: { links: number; changedPathsIndexed: number; omitted: number; limit: number },
+): string {
   return [
     "# Comparison briefing map",
     "",
-    "Read only what can change the comparison. The historical and candidate process bodies are mounted separately; this directory contains navigation and Host facts.",
+    "Read only what can change the comparison. Historical and candidate process bodies are mounted separately; this directory holds navigation and Host facts.",
+    "All paths below are relative to the attempt root, not to briefingRoot.",
     "",
-    "All tool paths below are relative to the attempt root, not briefingRoot.",
-    `- candidate/SNAPSHOT.txt — snapshotStatus=${snapshotStatus} cleanupStatus=${cleanupStatus}`,
-    "- briefing/INDEX.md — this navigation map",
-    "- briefing/task/initial-input.txt — frozen initial task",
-    "- briefing/facts/context.json — bounded Host projection, not a substitute for direct evidence",
-    "- briefing/facts/comparison-links.json — inspect paths and stable report links",
-    "- briefing/facts/media.json — registered images/previews, shortRef media-01, reportHref, and availability",
-    "- briefing/facts/evidence-index.json — short evidence refs ev-01 with descriptive names",
-    "- briefing/candidate/process-index.tsv — complete run event index including post-settlement events",
-    "- observations/user-inputs/INDEX.tsv — complete user demand in session order (historical_user vs controller)",
-    "- observations/INDEX.md — frozen transcript, historical events, and this run's events (read-only)",
-    "- history/outline.tsv and history/transcript/ — frozen historical conversation (read-only mount)",
-    "- turns/ — candidate settled-turn briefing including each user-view.md (read-only mount)",
-    "- briefing/candidate/git-sink-refs.txt — Host catalog of initial and final Harness sink refs by repository relative path (not the user's GitHub); objectStore may be not_seeded",
-    "- briefing/candidate/git-sink-manifest.json — structured sink catalog including isolation, objectStore, completeness, issues.code, and ref changes; incomplete_object_store is not a capability difference; do not assume a branch named main",
-    "- run/sent-user-messages.jsonl — Controller messages sent this run (read-only mount)",
-    "- candidate/ — retained candidate workspace snapshot (read-only mount)",
-    "- evidence/ — materialized Host artifacts (read-only mount)",
-    "- work/comparison-plan.md — revisable working notes in this Session",
-    "- scratch/ — unrestricted temporary analysis files; PowerShell starts here",
+    `- candidate/SNAPSHOT.txt: snapshotStatus=${snapshotStatus} cleanupStatus=${cleanupStatus}`,
+    "- briefing/task/initial-input.txt: frozen initial task",
+    `- briefing/facts/context.json: bounded Host projection; delivery.changedPathsIndexed=${evidence.changedPathsIndexed} delivery.changedPathsOmitted=${evidence.omitted}`,
+    `- briefing/facts/links-diagnostics.json: evidence index ${evidence.links}/${evidence.limit}; omitted=${evidence.omitted}`,
+    "- briefing/facts/comparison-links.json: inspect paths and stable report links; not the full workspace listing",
+    "- briefing/facts/media.json: registered images and previews, shortRef media-01, reportHref, availability",
+    "- briefing/facts/evidence-index.json: short evidence refs ev-01 with descriptive names",
+    "- briefing/candidate/process-index.tsv: complete run event index including post-settlement events",
+    "- observations/user-inputs/INDEX.tsv: complete user demand in session order (historical_user vs controller)",
+    "- observations/INDEX.md: frozen transcript, historical events, and this run's events (read-only)",
+    "- history/outline.tsv and history/transcript/: frozen historical conversation (read-only mount)",
+    "- turns/: candidate settled-turn briefing including each user-view.md (read-only mount)",
+    "- briefing/candidate/git-sink-refs.txt: Host catalog of initial and final sink refs by repository relative path (not the user's GitHub); objectStore may be not_seeded",
+    "- briefing/candidate/git-sink-manifest.json: structured sink catalog with isolation, objectStore, completeness, issues.code, and ref changes; do not assume a branch named main",
+    "- run/sent-user-messages.jsonl: Controller messages sent this run (read-only mount)",
+    "- candidate/: retained candidate workspace snapshot (read-only mount)",
+    "- evidence/: materialized Host artifacts (read-only mount)",
+    "- work/comparison-plan.md: revisable working notes for this session",
+    "- scratch/: unrestricted temporary analysis files; the shell starts here",
     "",
   ].join("\n");
 }
@@ -269,15 +287,22 @@ async function comparisonLinks(input: {
   context: ComparisonContext | ComparisonFactsContext;
   events: readonly EventEnvelope[];
   artifacts: readonly ArtifactManifest[];
-}): Promise<ComparisonLink[]> {
-  const links: ComparisonLink[] = [];
+}): Promise<{ links: ComparisonLink[]; changedPathsIndexed: number; omitted: number }> {
+  const ranked: { rank: number; link: ComparisonLink; changedPath?: boolean }[] = [];
+  const seen = new Set<string>();
+  const push = (rank: number, link: ComparisonLink, changedPath = false): void => {
+    const key = `${link.side}\0${link.inspectPath}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    ranked.push({ rank, link, changedPath });
+  };
   const controllerRoot = join(input.experimentRoot, "runs", input.record.attempt.runId, "controller-briefing");
   if (input.taskCase.baseline.status === "available") {
     const lastAssistant = [...input.taskCase.transcript].reverse().find((message) => message.role === "assistant");
     const inspectPath = lastAssistant ? `history/transcript/${lastAssistant.id}.txt` : "history/outline.tsv";
     const absolute = join(controllerRoot, ...inspectPath.split("/"));
     const info = await stat(absolute).catch(() => undefined);
-    if (info?.isFile()) links.push({
+    if (info?.isFile()) push(0, {
       side: "baseline",
       inspectPath,
       reportHref: slash(relative(input.experimentRoot, absolute)),
@@ -291,7 +316,7 @@ async function comparisonLinks(input: {
     const inspectPath = `turns/${String(turns).padStart(4, "0")}/visible.txt`;
     const absolute = join(controllerRoot, "run", inspectPath);
     const info = await stat(absolute).catch(() => undefined);
-    if (info?.isFile()) links.push({
+    if (info?.isFile()) push(1, {
       side: "candidate",
       inspectPath,
       reportHref: slash(relative(input.experimentRoot, absolute)),
@@ -300,8 +325,26 @@ async function comparisonLinks(input: {
       ...(input.context.candidates[0]?.evidenceRefs[0] ? { evidenceRef: input.context.candidates[0].evidenceRefs[0] } : {}),
     });
   }
+  const changedPaths = input.context.reportFacts.delivery.changedPaths.filter(isComparisonChangedPath);
+  for (const path of changedPaths) {
+    const absolute = join(input.workspaceRoot, ...path.split("/"));
+    const info = await stat(absolute).catch(() => undefined);
+    if (!info?.isFile()) continue;
+    const evidenceRef = input.record.outcome.task.evidenceRefs[0]
+      ?? (input.events.at(-1) ? `event:${input.events.at(-1)!.eventId}` : undefined);
+    push(2, {
+      side: "candidate",
+      inspectPath: `candidate/${path}`,
+      reportHref: slash(relative(input.experimentRoot, absolute)),
+      path,
+      byteLength: info.size,
+      ...(evidenceRef ? { evidenceRef } : {}),
+    }, true);
+  }
   for (const manifest of input.artifacts) {
-    links.push({
+    const media = manifest.mediaType ?? "";
+    const rank = media.startsWith("image/") || media.includes("html") ? 3 : 4;
+    push(rank, {
       side: "candidate",
       inspectPath: `evidence/${manifest.artifactId}`,
       reportHref: slash(relative(input.experimentRoot, join(input.attemptRoot, "evidence", manifest.artifactId))),
@@ -311,23 +354,15 @@ async function comparisonLinks(input: {
       evidenceRef: `artifact:${manifest.artifactId}`,
     });
   }
-  for (const path of input.context.reportFacts.delivery.changedPaths) {
-    const absolute = join(input.workspaceRoot, ...path.split("/"));
-    const info = await stat(absolute).catch(() => undefined);
-    if (!info?.isFile()) continue;
-    const evidenceRef = input.record.outcome.task.evidenceRefs[0]
-      ?? (input.events.at(-1) ? `event:${input.events.at(-1)!.eventId}` : undefined);
-    links.push({
-      side: "candidate",
-      inspectPath: `candidate/${path}`,
-      reportHref: slash(relative(input.experimentRoot, absolute)),
-      path,
-      byteLength: info.size,
-      ...(evidenceRef ? { evidenceRef } : {}),
-    });
-  }
-  return links;
+  ranked.sort((left, right) => left.rank - right.rank);
+  const selected = ranked.slice(0, MAX_COMPARISON_LINKS);
+  return {
+    links: selected.map((item) => item.link),
+    changedPathsIndexed: selected.filter((item) => item.changedPath).length,
+    omitted: ranked.length - selected.length + (input.context.reportFacts.delivery.changedPaths.length - changedPaths.length),
+  };
 }
+
 
 function slash(path: string): string { return path.replaceAll("\\", "/"); }
 

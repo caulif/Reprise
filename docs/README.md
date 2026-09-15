@@ -11,7 +11,7 @@
 | 持久化与 CandidateRun | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md) |
 | Recovery / 环境 | [环境](./architecture/environment.md) | [Git sink catalog](./decisions/accepted/2026-09-11-git-sink-catalog.md) |
 | Controller | [Controller](./architecture/controller.md) | [实验条件](./architecture/controller-experiment-conditions.md) |
-| Comparison | [对照](./architecture/comparison.md) | [Host 区域与直接 HTML](./decisions/accepted/2026-09-13-comparison-host-zones-and-direct-html.md) |
+| Comparison | [对照](./architecture/comparison.md) | [价格快照与 ID 清洗](./decisions/accepted/2026-09-14-comparison-pricing-snapshot-and-id-cleaning.md)、[操作者覆盖](./decisions/accepted/2026-09-14-comparison-operator-pricing-override.md)、[可分享卡版式](./decisions/accepted/2026-09-14-comparison-share-card-layout.md) |
 | Product Pack / 平台 | [Pack 契约](./architecture/product-plugin-compatibility.md) | [本机平台](./architecture/cross-platform.md) |
 | 工程 | [贡献](./CONTRIBUTING.md) | [门禁](./engineering-gates.md) |
 | 文档维护 | [文档结构](./documentation-structure.md) | [文档指令](./AGENTS.md) |

@@ -76,21 +76,21 @@ test("Codex intake TUI uses an ASCII narrow-terminal fallback and states the min
 
   await app.start();
   const narrow = document?.render(60).join("\n") ?? "";
-  assert.match(narrow, /Continue|Browse|\/ command/);
+  assert.match(narrow, /Continue|Browse|\/ command|继续|浏览|\/命令/);
   assert.doesNotMatch(narrow, /[┌┐└┘│─❯●✓…]/);
-  assert.match(narrow, /Continue|Browse|Internal model/);
+  assert.match(narrow, /Continue|Browse|Internal model|继续|浏览|内部模型/);
   assert.match(narrow.replace(/\u001b\[[0-9;]*m/g, ''), /^Reprise v0\.1\.0/m);
   assert.doesNotMatch(narrow.split("\n")[0] ?? "", /No configured model|gpt-/);
   assert.match(
     narrow.split("\n")[1] ?? "",
-    /No configured model|API not configured/,
+    /No configured model|API not configured|尚未配置模型/,
   );
   assert.match(
     document?.render(31).join("\n") ?? "",
-    /Resize to at least 32 columns/,
+    /Resize to at least 32 columns|请把宽度调到至少 32 列/,
   );
   app.handleInput("?");
-  assert.match(document?.render(60).join("\n") ?? "", /Keys/);
+  assert.match(document?.render(60).join("\n") ?? "", /Keys|按键/);
 });
 
 test("Codex intake TUI uses framed panels at normal terminal widths", async (t) => {
@@ -118,7 +118,7 @@ test("Codex intake TUI uses framed panels at normal terminal widths", async (t) 
 
   await app.start();
   const wide = document?.render(120).join("\n") ?? "";
-  assert.match(wide, /Continue|Browse|\/ command/);
+  assert.match(wide, /Continue|Browse|\/ command|继续|浏览|\/命令/);
   assert.match(wide, /\/config|\/intake|\/lang/);
 });
 
@@ -231,21 +231,21 @@ test("Codex intake TUI only reads before explicit freeze and leaves no ambiguous
   });
 
   await app.start();
-  assert.match(rendered, /Continue|Browse|\/ command/);
+  assert.match(rendered, /Continue|Browse|\/ command|继续|浏览|\/命令/);
   assert.match(rendered, /\/intake|i\s+Import a Codex session/);
   await enterIntake(app);
   await waitFor(() => /Fix the bug\./.test(rendered));
   assert.equal(await readFile(source, "utf8"), raw);
 
   app.handleInput("\r");
-  await waitFor(() => /Session start:/.test(rendered));
-  assert.match(rendered, /Session start:/);
-  assert.match(rendered, /Review session/);
+  await waitFor(() => /Session start:|会话起点：/.test(rendered));
+  assert.match(rendered, /Session start:|会话起点：/);
+  assert.match(rendered, /Review session|核对会话/);
   assert.equal(await readFile(source, "utf8"), raw);
 
   app.handleInput("\r");
-  await waitFor(() => /is current/.test(rendered));
-  assert.match(rendered, /is current/);
+  await waitFor(() => /is current|当前任务/.test(rendered));
+  assert.match(rendered, /is current|当前任务/);
   assert.equal(await readFile(source, "utf8"), raw);
   const caseId = (await readdir(join(root, "data", "cases")))[0];
   assert.ok(caseId);

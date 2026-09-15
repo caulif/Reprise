@@ -1,15 +1,15 @@
-Reprise v0.1.0   C:\reprise                                    No configured model   ○ Harness unset  ● Codex  ○ No task
+Reprise v0.1.0   C:\reprise                                           尚未配置模型   ○ 内部模型未配置  ● Codex  ○ 无任务
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Internal model  needs config
+ 内部模型  需要先配置
 
- Continue
- /history Local experiments  no local experiments
- /config  Open /config  needs credential
+ 继续
+ /history 本机实验记录  还没有本地对照
+ /config  打开 /config  需要凭据
 
-┌─ Select agent product ───────────────────────────────────────────────────────────────────────────────────────────────┐
+┌─ 选择 Agent 产品 ────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │❯ Codex                                                                           pack 0.1.0  error: ENOTDIR: not a d…│
-│  Claude Code                                                                     pack 0.1.0  sessions not scanned    │
+│  Claude Code                                                                     pack 0.1.0  尚未扫描会话            │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- Select an agent product.
+ 请选择 Agent 产品。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Open product  [Esc] Home
+ [↑↓] 选择  [Enter] 打开产品  [Esc] 封面

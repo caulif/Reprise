@@ -123,7 +123,7 @@ test('recovery timeline keeps live tools and failures visible', () => {
   const listed = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'ls', params: { path: '.' } }))[0];
   const deleted = projectTimelineEvent(event('agent.tool_called', { role: 'recovery', tool: 'shell_exec', params: { command: 'Remove-Item ppt_build/out.pptx' } }))[0];
   const reported = projectTimelineEvent(event('agent.tool_completed', { role: 'recovery', tool: 'write', params: { path: 'recovery.md' } }))[0];
-  const failed = projectTimelineEvent(event('agent.tool_failed', { role: 'recovery', tool: 'read_observation', message: 'tool budget exhausted' }))[0];
+  const failed = projectTimelineEvent(event('agent.tool_failed', { role: 'recovery', tool: 'read', message: 'tool budget exhausted' }))[0];
   assert.equal(listed?.hidden, undefined);
   assert.match(listed?.title ?? '', /阅读/);
   assert.equal(deleted?.hidden, undefined);

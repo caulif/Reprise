@@ -767,10 +767,10 @@ test('production layout root paints Home through a fake terminal', async (t) => 
   });
   await app.start();
   const frame = renderFrame(tui, term, 30, 120);
-  assert.match(frame, /Continue|Browse|\/ command/);
+  assert.match(frame, /Continue|Browse|\/ command|继续|浏览|\/命令/);
   assert.match(frame, /\/config|\/intake|\/lang/);
   app.handleInput('?');
-  assert.match(app.preview(120), /Commands: \/intake, \/history, \/config, \/lang, \/help/);
+  assert.match(app.preview(120), /Commands: \/intake, \/history, \/config, \/lang, \/help|命令：\/intake, \/history, \/config, \/lang, \/help/);
 });
 
 
@@ -789,7 +789,7 @@ test('production layout accepts bracketed paste and completes a unique Home comm
   app.handleInput('\x1b[200~/c\x1b[201~');
   app.handleInput('\r');
   let frame = renderFrame(tui, term, 30, 120);
-  assert.match(frame, /Internal Agent model/);
+  assert.match(frame, /Internal Agent model|内部 Agent 模型/);
 
   app.handleInput('\r');
   app.handleInput('\x15');

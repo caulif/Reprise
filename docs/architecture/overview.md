@@ -259,7 +259,7 @@ Product Pack 只交付规范化会话和 Target events；产品无关的 Observa
 Comparison 发生在 CandidateRun 结束之后，也使用产品无关的公共接口：
 
 
-Comparison Agent 每次 attempt 使用一个连续 Session，顺序发送理解、调查、创作报告，必要时恢复 Host 区域，末轮只交薄信封；`report.html` 是真实任务比较卡。薄信封返回状态、引用和可选 `headline`。Host 校验 Host 区域、短引用与文件可读性，不解析或重排报告内容。它不接触 ProductRuntime、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
+Comparison Agent 每次 attempt 使用一个连续 Session，顺序发送理解、调查、创作报告，必要时恢复 Host 区域，审阅轮改页后交薄信封；`report.html` 首屏是任务、结论、指标和关键差异。薄信封返回状态、引用和可选 `headline`。Host 校验 Host 区域、短引用与文件可读性，不解析或重排报告内容。它不接触 ProductRuntime、产品私有日志或 CandidateRun 状态，也不判定 `FidelityAssessment`。完整设计见[Comparison 专题](./comparison.md)。
 
 Recovery、Controller 和 Comparison 可以复用一个 Pi Agent Host 实现，但必须使用独立 session、system prompt、上下文、工具权限和 trace。Agent Host 是基础设施，不是领域服务定位器。
 ## 10. CandidateRun 七状态模型

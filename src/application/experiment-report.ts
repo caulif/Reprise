@@ -28,8 +28,12 @@ import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
+import { readOperatorLocale } from "./operator-locale.js";
+import { reportString } from "./comparison-report-strings.js";
+import type { AgentLocale } from "../agents/language.js";
 import {
   comparisonFailureDiagnostic,
+  draftAgentSlots,
   persistComparisonReportModel,
   publishComparisonArtifacts,
   verifyAndRenderComparisonReport,
@@ -166,6 +170,7 @@ async function inspectExperimentRun(
         ? { resolvedModel: record.manifest.resolvedModel.resolved }
         : {}),
       lang: languageOf(input.taskCase.initialInput.text),
+      dataDir: input.input.dataDir,
     },
   );
 }
@@ -195,58 +200,44 @@ async function compareExperimentOutcome(
     }), { recursive: true });
   }
   const events = input.store.events(input.input.runId);
+  const locale = await readOperatorLocale(input.input.dataDir);
   const context: ComparisonContext = {
-    ...buildComparisonContext(input.taskCase, [record], [inspection]),
+    ...buildComparisonContext(input.taskCase, [record], [inspection], { dataDir: input.input.dataDir }),
     attemptId,
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
-  const briefingContext = briefingComparisonContext(context);
-  const materializedIds = new Set(record.artifactRefs.map((ref) => ref.artifactId));
-  const briefing = await writeComparisonBriefing({
-    attemptRoot, experimentRoot: input.experimentRoot, workspaceRoot: comparisonWorkspaceRoot(input),
-    taskCase: input.taskCase, record, context: briefingContext, events,
-    artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
-    snapshotStatus: input.candidateSnapshotStatus,
-  });
-  const reportShellHtml = renderComparisonReportShell({
-    task: context.task.summary,
-    facts: context.reportFacts,
-    metrics: metricsFromReportFacts(context.reportFacts),
-    evidence: briefing.links,
-    media: briefing.media,
-  });
-  const hostZoneSnapshot = extractHostZoneSnapshot(reportShellHtml);
-  const compareFacts = {
-    ...context,
-    media: briefing.media,
-    shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
-    attemptRoot,
-    ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
-  };
-  await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
-  const compareContext = {
-    ...withOrientation(compareFacts, input, attemptId, attemptRoot, briefing.indexMarkdown),
-    reportShellHtml,
-  };
   let comparisonResult: AgentInvocation<ComparisonResult>;
   try {
-    comparisonResult = input.signal?.aborted
-      ? { status: "cancelled" }
-      : await invokeCompare(input, compareContext, attemptRoot, attemptId, briefing.media.some((item) => item.available));
-    if (input.signal?.aborted) comparisonResult = { status: "cancelled" };
-    comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(attemptRoot, "report.html"));
-    if (comparisonResult.status === "completed") assertComparisonResult(comparisonResult.value, compareFacts);
-    if (comparisonResult.status === "completed") {
-      comparisonResult = await enforcePublishedReport(comparisonResult, attemptRoot, compareFacts, briefing);
-    }
-    if (comparisonResult.status === "completed") {
-      await publishComparisonArtifacts({
-        attemptRoot,
-        experimentRoot: input.experimentRoot,
-        html: await readFile(join(attemptRoot, "report.html"), "utf8"),
-      });
-      await persistPublishedReportModel(attemptRoot, input.experimentRoot);
-    }
+    const briefingContext = briefingComparisonContext(context);
+    const materializedIds = new Set(record.artifactRefs.map((ref) => ref.artifactId));
+    const briefing = await writeComparisonBriefing({
+      attemptRoot, experimentRoot: input.experimentRoot, workspaceRoot: comparisonWorkspaceRoot(input),
+      taskCase: input.taskCase, record, context: briefingContext, events,
+      artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
+      snapshotStatus: input.candidateSnapshotStatus,
+    });
+    const reportShellHtml = renderComparisonReportShell({
+      task: context.task.summary,
+      facts: context.reportFacts,
+      metrics: metricsFromReportFacts(context.reportFacts),
+      evidence: briefing.links,
+      media: briefing.media,
+      locale,
+    });
+    const hostZoneSnapshot = extractHostZoneSnapshot(reportShellHtml);
+    const compareFacts = {
+      ...context,
+      media: briefing.media,
+      shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
+      attemptRoot,
+      ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
+    };
+    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
+    comparisonResult = await runComparisonAttempt({
+      host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
+    });
+  } catch (error) {
+    comparisonResult = comparisonFailed("publication_failed", error);
   } finally {
     await input.input.comparison.release?.(attemptId);
   }
@@ -258,7 +249,51 @@ async function compareExperimentOutcome(
     attemptRoot,
     comparisonResult,
     facts: context.reportFacts,
+    locale,
   });
+}
+
+async function runComparisonAttempt(input: {
+  host: Parameters<typeof finishExperiment>[0];
+  attemptId: string;
+  attemptRoot: string;
+  briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[]; indexMarkdown: string };
+  compareFacts: ComparisonContext;
+  reportShellHtml: string;
+  locale: AgentLocale;
+}): Promise<AgentInvocation<ComparisonResult>> {
+  const compareContext = {
+    ...withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown),
+    reportShellHtml: input.reportShellHtml,
+  };
+  try {
+    let comparisonResult: AgentInvocation<ComparisonResult> = input.host.signal?.aborted
+      ? { status: "cancelled" }
+      : await invokeCompare(input.host, compareContext, input.attemptRoot, input.attemptId, input.briefing.media.some((item) => item.available));
+    if (input.host.signal?.aborted) comparisonResult = { status: "cancelled" };
+    comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(input.attemptRoot, "report.html"));
+    if (comparisonResult.status === "completed") {
+      try {
+        assertComparisonResult(comparisonResult.value, input.compareFacts);
+      } catch (error) {
+        comparisonResult = comparisonFailed("invalid_envelope", error, comparisonResult.sessionId);
+      }
+    }
+    if (comparisonResult.status === "completed") {
+      comparisonResult = await enforcePublishedReport(comparisonResult, input.attemptRoot, input.compareFacts, input.briefing, input.locale);
+    }
+    if (comparisonResult.status === "completed") {
+      await publishComparisonArtifacts({
+        attemptRoot: input.attemptRoot,
+        experimentRoot: input.host.experimentRoot,
+        html: await readFile(join(input.attemptRoot, "report.html"), "utf8"),
+      });
+      await persistPublishedReportModel(input.attemptRoot, input.host.experimentRoot);
+    }
+    return comparisonResult;
+  } catch (error) {
+    return comparisonFailed("agent_failure", error);
+  }
 }
 
 async function persistComparisonInvocation(input: {
@@ -269,6 +304,7 @@ async function persistComparisonInvocation(input: {
   attemptRoot: string;
   comparisonResult: AgentInvocation<ComparisonResult>;
   facts: ComparisonContext["reportFacts"];
+  locale: AgentLocale;
 }) {
   await input.store.append({
     type: "comparison.completed",
@@ -290,6 +326,7 @@ async function persistComparisonInvocation(input: {
       facts: input.facts,
       attemptId: input.attemptId,
       attemptRoot: input.attemptRoot,
+      locale: input.locale,
     });
   }
   await input.store.append({
@@ -325,6 +362,7 @@ async function enforcePublishedReport(
   attemptRoot: string,
   context: ComparisonContext,
   briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[] },
+  locale: AgentLocale,
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (result.status !== "completed") return result;
   if (!(await reportExists(attemptRoot, result.value.reportPath))) {
@@ -345,6 +383,7 @@ async function enforcePublishedReport(
     attemptRoot,
     media: briefing.media,
     evidence: briefing.links,
+    locale,
     ...(context.hostZoneSnapshot ? { hostZoneSnapshot: context.hostZoneSnapshot } : {}),
   });
   if ("failureClass" in verified) {
@@ -480,6 +519,19 @@ function languageOf(text: string): "zh" | "en" {
   return /[\u4e00-\u9fff]/.test(text) ? "zh" : "en";
 }
 
+function comparisonFailed(
+  code: "publication_failed" | "agent_failure" | "invalid_envelope",
+  error: unknown,
+  sessionId?: string,
+): AgentInvocation<ComparisonResult> {
+  const message = error instanceof Error ? error.message : "Comparison host failed.";
+  return {
+    status: "failed",
+    ...(sessionId ? { sessionId } : {}),
+    failure: { code, message, attempts: 0 },
+  };
+}
+
 function readReportModel(raw: string): import("../core/schema.js").ComparisonReportModel {
   const value = JSON.parse(raw) as unknown;
   if (!Value.Check(ComparisonReportModelSchema, value)) throw new Error("Comparison report model does not satisfy ComparisonReportModelSchema.");
@@ -492,19 +544,30 @@ async function writeComparisonFailurePage(input: {
   facts: ComparisonContext["reportFacts"];
   attemptId: string;
   attemptRoot: string;
+  locale: AgentLocale;
 }): Promise<void> {
   const reportPresent = await reportExists(input.attemptRoot, "report.html");
+  const draftHtml = reportPresent
+    ? await readFile(join(input.attemptRoot, "report.html"), "utf8").catch((error) => {
+      if (isMissing(error)) return undefined;
+      throw error;
+    })
+    : undefined;
   const html = renderComparisonReportShell({
     title: "Comparison unavailable",
-    task: "对照未能完成这次比较",
+    task: reportString(input.locale, "diagFailed"),
     facts: input.facts,
     metrics: metricsFromReportFacts(input.facts),
+    locale: input.locale,
     diagnostic: comparisonFailureDiagnostic({
       result: input.result,
       facts: input.facts,
       reportPresent,
       attemptId: input.attemptId,
+      locale: input.locale,
+      ...(draftHtml ? { draftHtml } : {}),
     }),
+    slots: draftAgentSlots(draftHtml),
   });
   await writeFile(input.reportPath, html, "utf8");
 }

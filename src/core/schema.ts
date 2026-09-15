@@ -48,6 +48,8 @@ export {
   type RecoveryEvaluationTerminalCase,
   RecoveryReadinessContextSchema,
   type RecoveryReadinessContext,
+  RecoveryExplanationSchema,
+  type RecoveryExplanation,
   RecoveryAgentEnvelopeSchema,
   type RecoveryAgentEnvelope,
   RecoveryDecisionSchema,
@@ -178,7 +180,7 @@ const ComparisonLinkSchema = Type.Object({
   mediaType: Type.Optional(Type.String({ minLength: 1 })),
   byteLength: Type.Optional(Type.Integer({ minimum: 0 })),
   evidenceRef: Type.Optional(EvidenceRefSchema),
-  shortRef: Type.Optional(Type.String({ pattern: "^ev-[0-9]{2}$" })),
+  shortRef: Type.Optional(Type.String({ pattern: "^ev-[0-9]{2,6}$" })),
   label: Type.Optional(Type.String({ minLength: 1 })),
 });
 export const ComparisonLinksSchema = Type.Array(ComparisonLinkSchema);

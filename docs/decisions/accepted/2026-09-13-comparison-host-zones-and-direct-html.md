@@ -15,7 +15,7 @@ Host 写模板时保存 Host 区域快照。compose 后 Host 用与发布相同�
 
 证据与媒体使用 briefing 短名 `ev-01`、`media-01`。HTML 用 `data-evidence-ref` / `data-media-ref`。发布时 Host 换成可访问 href/src。未知引用去掉链接或破图，保留文字，并在 Host 证据区标记「证据未解析」；单个坏引用不让整次比较失败。仅当正文声称已核验且相关证据全部无效时才用 `evidence_unresolved`。
 
-Agent 审阅信封只有 `status`、`evidenceRefs`（短名）、可选 `headline`。Host 固定补 `reportPath: "report.html"`。JSON 无法解析时保留已写页面，只要求再交合法对象；仍失败则 `invalid_envelope`，不丢稿。其他失败码：`media_unavailable`、`report_incomplete`、`publication_failed`。529 仍是 Provider，不进入本协议。
+Agent 审阅信封只有 `status`、`evidenceRefs`（短名）、可选 `headline`。Host 固定补 `reportPath: "report.html"`。JSON 无法解析时保留已写页面，只要求再交合法对象；仍失败则 `invalid_envelope`，不丢稿。其他失败码：`media_unavailable`、`report_incomplete`、`publication_failed`。529 仍是 Provider，不进入本协议。可见 status 卡与审阅轮禁用工具的范围见 [首屏清晰度与审阅改页](./2026-09-14-comparison-report-clarity-and-review.md)。
 
 ## 备选方案
 

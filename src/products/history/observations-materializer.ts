@@ -99,12 +99,11 @@ export async function writeFrozenObservationTree(input: {
   const index = [
     "# Frozen observations",
     "",
-    "Host-owned copies of the frozen session. This tree is not the candidate workspace.",
-    "Read INDEX.md then a single file with `read`. Grep when you need one sentence or ref.",
-    "Do not treat this directory as task output. Envelope refs are the `ref` field inside each JSON file.",
+    "Host-owned copies of the frozen session. This tree is not the candidate workspace and not task output.",
+    "Read this file first, then single files with read; use grep when you need one sentence or one ref.",
     "User demand is indexed at user-inputs/INDEX.tsv; read those files in order before other evidence.",
-    "The full task sentence is task/initial-input.txt even when the working set truncates it.",
-    "Credentials and product original session paths are not copied here.",
+    "The full task sentence is task/initial-input.txt even when the briefing truncates it.",
+    "Credentials and the product's original session paths are not copied here.",
     "",
     `- transcript files: ${catalog.filter((entry) => entry.source === "transcript").length}`,
     `- historical event files: ${catalog.filter((entry) => entry.source === "historical_events").length}`,
@@ -112,13 +111,11 @@ export async function writeFrozenObservationTree(input: {
     `- user input files: ${userInputs.turnCount}`,
     `- owned files: ${(input.ownedFiles ?? []).length}`,
     `- missing: ${missing.length}`,
-    input.playbookText ? "- playbook.md — product recovery playbook text" : "",
+    ...(input.playbookText ? ["- playbook.md: product recovery playbook"] : []),
     "",
     "Layout: session.json, task/, user-inputs/, transcript/, events/, artifacts/, files/, metadata/, source-refs/",
     "",
-  ]
-    .filter((line) => line !== undefined)
-    .join("\n");
+  ].join("\n");
   await writeAtomic(join(input.root, "INDEX.md"), `${index}\n`);
   await writeAtomic(join(input.root, "INDEX.tsv"), `${rows.join("\n")}\n`);
   fileCount += 2;

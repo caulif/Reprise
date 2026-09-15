@@ -6,11 +6,13 @@ import { TaskCaseSchema, type EventEnvelope, type TaskCase } from "../core/schem
 import { CLI_EXIT, exitCodeForKind, type CliActivity, type CliOutputMode } from "../core/cli-protocol.js";
 import { classifyCliError, CliError } from "../application/cli-error.js";
 import { createHarnessWorkflow, type ExperimentWorkflow } from "../application/experiment-workflow.js";
+import { saveTuiPreferences } from "../tui/preferences.js";
 import { assertExclusiveRunInputs, compareExperiment, prepareExperiment, runFullExperiment, runSealedScenario } from "../application/experiment-operations.js";
 import { importSourceSession, inspectSourceSession } from "../application/experiment-queries.js";
 import { activityControlReady, type ExperimentActivity } from "../application/experiment-activity.js";
 import { createProductLookup, loadAndActivateProductPacks, packLoadDiagnostics, productPacks } from "../products/index.js";
 import { errorBody, parseOutputMode, writeActivity, writeEnd, writeEvent, writeJsonResult, type ProtocolIo } from "./protocol.js";
+import { operatorLocaleFromFlag } from "./locale-flag.js";
 
 export type HeadlessContext = {
   readonly now?: string;
@@ -31,6 +33,7 @@ const headlessOptions = {
   compare: { type: "boolean" },
   json: { type: "boolean" },
   jsonl: { type: "boolean" },
+  locale: { type: "string" },
   "timeout-ms": { type: "string" },
   help: { type: "boolean", short: "h" },
 } as const;
@@ -48,11 +51,14 @@ export async function runHeadlessCommand(command: "prepare" | "run" | "compare",
     const timeout = timeoutSignal(values["timeout-ms"]);
     if (timeout) foreground.follow(timeout);
     const dataDir = resolve(values["data-dir"] ?? process.env.REPRISE_DATA_DIR ?? ".reprise");
+    const locale = operatorLocaleFromFlag(values.locale);
+    if (locale) await saveTuiPreferences(dataDir, { locale });
     await loadAndActivateProductPacks(dataDir);
     const workflow = context.workflow ?? createHarnessWorkflow({
       dataDir,
       lookup: createProductLookup(productPacks, packLoadDiagnostics),
       now: context.now ? () => context.now! : () => new Date().toISOString(),
+      ...(locale ? { locale } : {}),
     });
     if (command === "compare" && values.experiment) {
       return await runPersistedCompare(workflow, values.experiment, values.run, io, mode, foreground.signal);
@@ -264,9 +270,9 @@ function installForegroundCancel(): ForegroundCancel {
 }
 
 function headlessUsage(command: "prepare" | "run" | "compare"): string {
-  if (command === "prepare") return "Usage: reprise prepare (--source-root <dir> --task-case <file.json> | --source-product <id> --source-path <path> [--source-root <dir>]) [--data-dir <dir>] [--json|--jsonl]";
-  if (command === "compare") return "Usage: reprise compare (--experiment <id> [--run <runId>] | --source-root <dir> --task-case <file.json>) [--data-dir <dir>] [--json|--jsonl]";
-  return "Usage: reprise run (--source-root <dir> --task-case <file.json> | --scenario <experimentId>) [--data-dir <dir>] [--product <id> --model <id>] [--compare] [--json|--jsonl]";
+  if (command === "prepare") return "Usage: reprise prepare (--source-root <dir> --task-case <file.json> | --source-product <id> --source-path <path> [--source-root <dir>]) [--data-dir <dir>] [--locale <en|zh>] [--json|--jsonl]";
+  if (command === "compare") return "Usage: reprise compare (--experiment <id> [--run <runId>] | --source-root <dir> --task-case <file.json>) [--data-dir <dir>] [--locale <en|zh>] [--json|--jsonl]";
+  return "Usage: reprise run (--source-root <dir> --task-case <file.json> | --scenario <experimentId>) [--data-dir <dir>] [--product <id> --model <id>] [--compare] [--locale <en|zh>] [--json|--jsonl]";
 }
 
 async function resolvePrepareSource(values: { "source-root"?: string; "task-case"?: string; "source-path"?: string; "source-product"?: string }, dataDir: string): Promise<{ taskCase: TaskCase; sourceRoot: string }> {

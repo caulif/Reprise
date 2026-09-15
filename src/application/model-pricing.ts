@@ -1,4 +1,14 @@
-export const MODEL_PRICING_TABLE_VERSION = "2026-09-11-cc-switch-semantic";
+import { loadPricingCatalog, type PricingRecord } from "./pricing-catalog.js";
+import {
+  type OperatorOverrideRecord,
+  type OperatorPricingOverride,
+} from "./pricing-override.js";
+
+export { loadOperatorPricingOverride, OPERATOR_PRICING_OVERRIDE_FILE } from "./pricing-override.js";
+export type { OperatorPricingOverride } from "./pricing-override.js";
+
+const CATALOG = loadPricingCatalog();
+export const MODEL_PRICING_TABLE_VERSION = CATALOG.version;
 
 export type ModelPricing = {
   input: number;
@@ -14,16 +24,20 @@ export type TokenBill = {
   cacheCreation: number;
 };
 
-/** USD per million tokens. Unknown models stay unpriced; do not borrow another model's row. */
-const PRICING: Record<string, ModelPricing> = {
-  "gpt-5": { input: 1.25, output: 10, cacheRead: 0.125, cacheCreation: 0 },
-  "gpt-5.1": { input: 1.25, output: 10, cacheRead: 0.125, cacheCreation: 0 },
-  "gpt-5.2": { input: 1.75, output: 14, cacheRead: 0.175, cacheCreation: 0 },
-  "claude-sonnet-4-5": { input: 3, output: 15, cacheRead: 0.3, cacheCreation: 3.75 },
-  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheCreation: 1.25 },
-  "claude-opus-4-1": { input: 15, output: 75, cacheRead: 1.5, cacheCreation: 18.75 },
-  "claude-opus-4": { input: 15, output: 75, cacheRead: 1.5, cacheCreation: 18.75 },
+export type PricingSource = PricingRecord["source"] | "config";
+
+export type PricingResolution =
+  | { kind: "hit"; modelId: string; rates: ModelPricing; source: PricingSource; version?: string }
+  | { kind: "invalid"; modelId: string; source: PricingSource }
+  | { kind: "unavailable"; modelId: string; source: PricingSource }
+  | { kind: "miss" };
+
+export type PricingResolveOptions = {
+  override?: OperatorPricingOverride;
+  productId?: string;
 };
+
+const SNAPSHOT = new Map(CATALOG.models.map((row) => [row.modelId, row]));
 
 const ALIASES: Record<string, string> = {
   "gpt-5-codex": "gpt-5",
@@ -36,14 +50,50 @@ const ALIASES: Record<string, string> = {
   "claude-opus-4.1": "claude-opus-4-1",
 };
 
+/** Same rules as cc-switch `clean_model_id_for_pricing`. Does not map a family onto a sibling SKU. */
+export function cleanModelIdForPricing(modelId: string | undefined): string {
+  if (!modelId?.trim()) return "";
+  const afterSlash = modelId.slice(modelId.lastIndexOf("/") + 1);
+  const beforeColon = afterSlash.split(":")[0] ?? "";
+  let normalized = beforeColon.trim().replace(/@/g, "-").toLowerCase();
+  if (normalized.endsWith("[1m]")) normalized = normalized.slice(0, -"[1m]".length).trim();
+  return normalized;
+}
+
+export function resolveModelPricing(
+  modelId: string | undefined,
+  table?: Record<string, ModelPricing>,
+  options?: PricingResolveOptions,
+): PricingResolution {
+  const cleaned = cleanModelIdForPricing(modelId);
+  if (!cleaned) return { kind: "miss" };
+  const aliased = ALIASES[cleaned] ?? cleaned;
+  if (table) return fromRates(aliased, table[aliased] ?? table[cleaned], "config");
+  if (options?.override?.status === "unreadable") {
+    return { kind: "invalid", modelId: aliased, source: "operator-config" };
+  }
+  const overrideRow = findOverride(options?.override, cleaned, aliased, options?.productId);
+  if (overrideRow) {
+    const version = options?.override?.status === "ready" ? options.override.version : undefined;
+    return fromOverride(overrideRow, version);
+  }
+  const row = SNAPSHOT.get(aliased) ?? SNAPSHOT.get(cleaned);
+  if (!row) return { kind: "miss" };
+  return fromRates(row.modelId, {
+    input: row.input,
+    output: row.output,
+    cacheRead: row.cacheRead,
+    cacheCreation: row.cacheCreation,
+  }, row.source, CATALOG.version);
+}
+
 export function lookupModelPricing(
   modelId: string | undefined,
-  table: Record<string, ModelPricing> = PRICING,
+  table?: Record<string, ModelPricing>,
+  options?: PricingResolveOptions,
 ): ModelPricing | undefined {
-  if (!modelId?.trim()) return undefined;
-  const key = modelId.trim().toLowerCase();
-  const aliased = ALIASES[key] ?? key;
-  return table[aliased] ?? table[key];
+  const resolved = resolveModelPricing(modelId, table, options);
+  return resolved.kind === "hit" ? resolved.rates : undefined;
 }
 
 export function calculateUsageCostUsd(
@@ -65,4 +115,53 @@ export function calculateUsageCostUsd(
       cacheCreation * pricing.cacheCreation) /
     million;
   return base * multiplier;
+}
+
+function fromOverride(row: OperatorOverrideRecord, version: string | undefined): PricingResolution {
+  const modelId = cleanModelIdForPricing(row.modelId);
+  const rates = { input: row.input, output: row.output, cacheRead: row.cacheRead, cacheCreation: row.cacheCreation };
+  if (allZero(rates) && row.free !== true) {
+    return { kind: "unavailable", modelId, source: "operator-config" };
+  }
+  return { kind: "hit", modelId, rates, source: "operator-config", ...(version ? { version } : {}) };
+}
+
+function findOverride(
+  override: OperatorPricingOverride | undefined,
+  cleaned: string,
+  aliased: string,
+  productId: string | undefined,
+): OperatorOverrideRecord | undefined {
+  if (override?.status !== "ready") return undefined;
+  if (productId) {
+    const specific = override.models.find((row) => row.productId === productId && matchesOverrideId(row, cleaned, aliased));
+    if (specific) return specific;
+  }
+  return override.models.find((row) => row.productId === undefined && matchesOverrideId(row, cleaned, aliased));
+}
+
+function matchesOverrideId(row: OperatorOverrideRecord, cleaned: string, aliased: string): boolean {
+  const id = cleanModelIdForPricing(row.modelId);
+  return id === aliased || id === cleaned;
+}
+
+function fromRates(
+  modelId: string,
+  rates: ModelPricing | undefined,
+  source: PricingSource,
+  version?: string,
+): PricingResolution {
+  if (!rates) return { kind: "miss" };
+  if (![rates.input, rates.output, rates.cacheRead, rates.cacheCreation].every(finiteNonNegative)) {
+    return { kind: "invalid", modelId, source };
+  }
+  return { kind: "hit", modelId, rates, source, ...(version ? { version } : {}) };
+}
+
+function allZero(rates: ModelPricing): boolean {
+  return rates.input === 0 && rates.output === 0 && rates.cacheRead === 0 && rates.cacheCreation === 0;
+}
+
+function finiteNonNegative(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
 }

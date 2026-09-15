@@ -22,8 +22,14 @@ test("RoleSessions reuses one in-flight create per key", async () => {
     created += 1;
     return session("a-other");
   });
-  assert.equal(await first, await second);
+  const [left, right] = await Promise.all([first, second]);
+  assert.equal(left.session, right.session);
+  assert.equal(left.created, true);
+  assert.equal(right.created, false);
   assert.equal(created, 1);
+  const again = await sessions.get("a", async () => session("a-new"));
+  assert.equal(again.created, false);
+  assert.equal(again.session, left.session);
 });
 
 test("RoleSessions drops a failed create so the next get retries", async () => {
@@ -37,7 +43,8 @@ test("RoleSessions drops a failed create so the next get retries", async () => {
     attempts += 1;
     return session("a");
   });
-  assert.equal(recovered.sessionId, "a");
+  assert.equal(recovered.session.sessionId, "a");
+  assert.equal(recovered.created, true);
   assert.equal(attempts, 2);
 });
 

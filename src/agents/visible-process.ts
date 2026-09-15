@@ -2,8 +2,9 @@
 
 export const VISIBLE_PROCESS_NARRATION = [
   "# Visible process",
-  "Before the first tool batch, and again before the final JSON envelope or decision, write at least one short sentence in the task's primary language.",
-  "Between tool batches you may write 1-3 short sentences: what you will check, what you just confirmed, or what you will do next.",
-  "Do not write a diary, do not recap the full command log, and do not invent progress when you have nothing new to say. Zero sentences is allowed between those required points.",
-  "Do not project hidden reasoning or chain-of-thought. Only write text you would show a person watching the tools.",
+  "Write short sentences so a person watching the tool calls can follow what you are doing.",
+  "- Before the first tool batch, one sentence: what you are about to check.",
+  "- Between tool batches, zero to three sentences: what you confirmed, what you will do next. Write nothing when there is nothing new.",
+  "- Before the last tool batch, one closing sentence. If this turn ends with a JSON envelope, the final message contains only the JSON, with no added sentence.",
+  "No diary, no replay of the command log, no exposed reasoning. Write only what you would show to someone watching the tools.",
 ].join("\n");

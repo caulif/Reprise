@@ -23,7 +23,7 @@ Host 指标壳在数字卡外注明费用不含工具成本及价格表版本。
 
 ## 影响
 
-`MetricSideSchema` 增加可选 `provider` 与 `toolCostsIncluded`。旧报告没有这些字段仍可按 schema 读取。
+`MetricSideSchema` 增加可选 `provider` 与 `toolCostsIncluded`。旧报告没有这些字段仍可按 schema 读取。费用卡把价格缺失显示成「价格未配置」的范围见 [首屏清晰度与审阅改页](./2026-09-14-comparison-report-clarity-and-review.md)。
 
 ## 验证
 

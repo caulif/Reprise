@@ -2,8 +2,9 @@ import { record, text } from "../core/json.js";
 import type { EventEnvelope } from "../core/schema.js";
 import {
   calculateUsageCostUsd,
-  lookupModelPricing,
+  resolveModelPricing,
   type ModelPricing,
+  type PricingResolveOptions,
 } from "./model-pricing.js";
 
 export type UsageParts = {
@@ -65,15 +66,44 @@ export function busyMsFromHistoricalEvents(events: readonly Record<string, unkno
   return paired ? total : undefined;
 }
 
+export type UsagePricing = {
+  lookup: "hit" | "miss" | "invalid";
+  costUsd?: number;
+  pricingModelId?: string;
+  pricingSource?: string;
+  pricingVersion?: string;
+  rates?: ModelPricing;
+};
+
+export function usagePricing(
+  usage: AggregatedUsage | undefined,
+  modelId: string | undefined,
+  pricingTable?: Record<string, ModelPricing>,
+  options?: PricingResolveOptions,
+): UsagePricing {
+  if (!usage) return { lookup: "miss" };
+  const resolved = resolveModelPricing(modelId, pricingTable, options);
+  if (resolved.kind === "miss" || resolved.kind === "unavailable") return { lookup: "miss" };
+  if (resolved.kind === "invalid") {
+    return { lookup: "invalid", pricingModelId: resolved.modelId, pricingSource: resolved.source };
+  }
+  return {
+    lookup: "hit",
+    costUsd: calculateUsageCostUsd(usage.parts, resolved.rates, usage.inputIncludesCache),
+    pricingModelId: resolved.modelId,
+    pricingSource: resolved.source,
+    ...(resolved.version ? { pricingVersion: resolved.version } : {}),
+    rates: resolved.rates,
+  };
+}
+
 export function usageCostUsd(
   usage: AggregatedUsage | undefined,
   modelId: string | undefined,
   pricingTable?: Record<string, ModelPricing>,
+  options?: PricingResolveOptions,
 ): number | undefined {
-  if (!usage) return undefined;
-  const pricing = lookupModelPricing(modelId, pricingTable);
-  if (!pricing) return undefined;
-  return calculateUsageCostUsd(usage.parts, pricing, usage.inputIncludesCache);
+  return usagePricing(usage, modelId, pricingTable, options).costUsd;
 }
 
 export function factsFromUsage(usage: AggregatedUsage | undefined): {

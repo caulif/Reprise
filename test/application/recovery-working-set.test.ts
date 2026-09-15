@@ -25,35 +25,29 @@ function fatContext(): RecoveryContext {
   };
 }
 
-test("recovery model prompt omits Host-resolved facts, investigation packet, and playbook body", () => {
+test("recovery model prompt is a text briefing without Host JSON fields", () => {
   const context = fatContext();
   const prompt = recoveryModelPrompt(context);
+  assert.match(prompt, /^# Recovery briefing\n/);
+  assert.match(prompt, /Task: Write slides\./);
+  assert.match(prompt, /\(truncated; full text at observations\/task\/initial-input\.txt\)/);
+  assert.match(prompt, /Evidence level: transcript; 715 historical messages, 553 historical events/);
+  assert.match(prompt, /Clues: cwd=unknown; historicalCommit=unknown; sourceVersion=unknown/);
+  assert.match(prompt, /Playbook: codex v1, text at observations\/playbook\.md/);
+  assert.match(prompt, /sample refs: event:transcript-0-aaaa/);
+  assert.doesNotMatch(prompt, /schemaVersion/);
+  assert.doesNotMatch(prompt, /allowModelText/);
+  assert.doesNotMatch(prompt, /timeoutMs/);
   assert.doesNotMatch(prompt, /continuityKey/);
-  assert.doesNotMatch(prompt, /"resolved"\s*:/);
   assert.doesNotMatch(prompt, /investigationPacket/);
   assert.doesNotMatch(prompt, /playbook body that must not enter/);
-  assert.doesNotMatch(prompt, /full catalog row that must not enter/);
   assert.ok(!prompt.includes(context.playbook.text));
-  const parsed = JSON.parse(prompt) as ReturnType<typeof recoveryWorkingSet>;
-  assert.equal("resolved" in parsed, false);
-  assert.equal("investigationPacket" in parsed, false);
-  const task = parsed.task as { initialInput: { truncated: boolean; text: string; fullTextPath: string } };
-  assert.equal(task.initialInput.truncated, true);
-  assert.ok(task.initialInput.text.length < context.task.initialInput.text.length);
-  assert.equal(task.initialInput.fullTextPath, "observations/task/initial-input.txt");
+  assert.ok(!prompt.includes(context.playbook.sha256));
+  assert.ok(prompt.length < context.task.initialInput.text.length);
   assert.ok(Buffer.byteLength(prompt) < 80_000);
-  const observations = parsed.observations as { root: string; index: string };
-  assert.equal(observations.root, "observations");
-  assert.equal(observations.index, "observations/INDEX.md");
-  const evidence = parsed.evidence as { catalogCount: number; catalogIndex: string; evidenceRefs: string[] };
-  assert.equal(evidence.catalogCount, 2);
-  assert.equal(evidence.catalogIndex, "observations/INDEX.tsv");
-  assert.deepEqual(evidence.evidenceRefs, ["event:transcript-0-aaaa"]);
-  const playbook = parsed.playbook as { textPath: string };
-  assert.equal(playbook.textPath, "observations/playbook.md");
 });
 
-test("recovery working set carries source mount summary rather than a full tree", () => {
+test("recovery briefing includes source summary facts without dumping the tree JSON", () => {
   const context = fatContext();
   context.staging = {
     seed: "sparse",
@@ -70,11 +64,12 @@ test("recovery working set carries source mount summary rather than a full tree"
       summary: { topLevelCount: 2, truncated: false, entries: [{ name: "apps", kind: "directory" }] },
     },
   };
+  const prompt = recoveryModelPrompt(context);
+  assert.match(prompt, /Work copy seed: sparse; currently 0 files, 0 bytes/);
+  assert.match(prompt, /Source directory: 50001 files, 2 bytes; whole-tree copy eligible=no; copy budget exceeded=yes/);
+  assert.doesNotMatch(prompt, /node_modules\/leftpad/);
   const parsed = recoveryWorkingSet(context);
-  const staging = parsed.staging as { seed: string; sourceMount: string; source: { fileCount: number; summary: { entries: unknown[] } } };
+  const staging = parsed.staging as { seed: string; source: { fileCount: number } };
   assert.equal(staging.seed, "sparse");
-  assert.equal(staging.sourceMount, "source");
   assert.equal(staging.source.fileCount, 50_001);
-  assert.equal(staging.source.summary.entries.length, 1);
-  assert.doesNotMatch(JSON.stringify(parsed), /node_modules\/leftpad/);
 });

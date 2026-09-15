@@ -122,10 +122,11 @@ Controller 对原始会话采用“完整可访问”，而不是“每轮把所
 默认上下文组装为：
 
 ```text
-决策段 + INDEX.md（每次 append）
+opening：决策段 + 完整 INDEX.md
+steering：决策段 + Latest turn 行（不重发 INDEX.md）
 + current-user-view.md / permissions.txt（Host 快照）
 + briefing 上的 history/user-inputs/、history/、run/turns/、THIS-TURN（按需 read）
-+ project/ 隔离副本（按需 read）
++ project/ 隔离副本与 notes/ 工作笔记（按需 read；edit/write 可写）
 → 模型可见输入；SteeringContext 其余字段（含 budget）供 Host 校验，不 JSON 进 prompt
 ```
 

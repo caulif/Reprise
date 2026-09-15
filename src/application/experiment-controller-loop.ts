@@ -43,6 +43,7 @@ export async function runControllerLoop(input: {
   resolvedModel: string;
   candidateProductId: string;
   experimentRoot: string;
+  dataDir?: string;
   maxControllerCalls?: number;
 }): Promise<{
   decision: StructuredAgentResult<ControllerDecision>;
@@ -245,6 +246,7 @@ async function packControllerBriefing(
   indexMarkdown: string;
   fileDigests: Record<string, string>;
   briefingRoot: string;
+  turnRelative?: string;
 }> {
   if (phase === "opening") {
     const historicalCwd = historicalCwdOf(input.taskCase);
@@ -271,6 +273,7 @@ async function packControllerBriefing(
       sourceRootKind: input.sourceRootKind,
       requestedModel: input.requestedModel,
       resolvedModel: input.resolvedModel,
+      ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     },
   );
   const turnText = inspection.turnVisibleText ?? "";
@@ -298,6 +301,7 @@ function steeringContextFrom(
     observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths"> & Partial<Pick<ControllerObservation, "runtimeGeneratedPaths" | "settlementStatus">>;
     indexMarkdown: string;
     fileDigests: Record<string, string>; briefingRoot: string;
+    turnRelative?: string;
   },
 ): SteeringContext {
   const historicalCwd = historicalCwdOf(input.taskCase);
@@ -328,6 +332,7 @@ function steeringContextFrom(
       phase,
       briefingRoot: packed.briefingRoot,
       indexMarkdown: packed.indexMarkdown,
+      ...(packed.turnRelative ? { latestTurnRelative: packed.turnRelative } : {}),
     }),
     briefingRoot: packed.briefingRoot,
     fileDigests: packed.fileDigests,

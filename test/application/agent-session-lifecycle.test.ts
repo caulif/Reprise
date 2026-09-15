@@ -6,8 +6,8 @@ import { projectTimelineEvent } from '../../src/tui/timeline.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
 
 const schema = Type.Object({ ok: Type.Boolean() });
-function request(overrides: { timeoutMs?: number; maxRepairAttempts?: number; signal?: AbortSignal } = {}) {
-  return { context: {}, schema, timeoutMs: overrides.timeoutMs ?? 50, maxRepairAttempts: overrides.maxRepairAttempts ?? 0, ...(overrides.signal ? { signal: overrides.signal } : {}) };
+function request(overrides: { timeoutMs?: number; maxRepairAttempts?: number; signal?: AbortSignal; promptContent?: string } = {}) {
+  return { context: {}, schema, timeoutMs: overrides.timeoutMs ?? 50, maxRepairAttempts: overrides.maxRepairAttempts ?? 0, promptContent: overrides.promptContent ?? 'Return JSON.', ...(overrides.signal ? { signal: overrides.signal } : {}) };
 }
 
 test('two Host requests on one Session share transcript and keep distinct invocation ids', async () => {
@@ -109,6 +109,7 @@ test('one-shot Host.request closes the Session after the invocation', async () =
     timeoutMs: 50,
     maxRepairAttempts: 0,
     allowModelText: true,
+    promptContent: 'Return JSON.',
     audit: { append: async (event) => { events.push(event); } },
   });
   assert.equal(result.status, 'completed');

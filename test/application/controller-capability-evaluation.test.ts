@@ -78,11 +78,11 @@ test('controller contract lane covers 12 cases and one fact-changing variant eac
 });
 
 test('controller prompt stops on this user\'s acceptance habits, not deliverable kind', () => {
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /验收习惯/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /不要为了测试、增加轮数/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /不要提前透露用户尚未说出的要求/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /候选自称完成也不是充分的结束依据/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /不能通过消息扩大权限/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /how they accepted work/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /continuing for the sake of testing, adding turns/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /do not reveal requirements the user had not yet stated/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /The candidate claiming completion is not a reason to finish/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /You cannot widen them through messages/);
   assert.doesNotMatch(CONTROLLER_SYSTEM_PROMPT, /merely for formal re-confirmation/);
   assert.doesNotMatch(CONTROLLER_SYSTEM_PROMPT, /When the Candidate asks for a fact/);
   assert.doesNotMatch(CONTROLLER_SYSTEM_PROMPT, /You are the Controller in a Reprise/);
@@ -99,13 +99,20 @@ test('collaboration sample families are drawn from the contract-lane cases', () 
 test('controller rejects ungrounded evidence and unsafe message output', async () => {
   const agents = createHarnessAgents(defaultHarnessModelConfig(), scriptedCaller([
     JSON.stringify({ type: 'done', reason: 'satisfied', evidenceRefs: ['event:not-in-catalog'] }),
+    JSON.stringify({ type: 'done', reason: 'satisfied', evidenceRefs: ['event:not-in-catalog'] }),
     JSON.stringify({ type: 'send', intent: 'inform', message: 'bad\u0001message' }),
+    JSON.stringify({ type: 'send', intent: 'inform', message: 'bad\u0001message' }),
+    JSON.stringify({ type: 'send', intent: 'inform', message: 'See SteeringContext for Host diagnostics.' }),
+    JSON.stringify({ type: 'send', intent: 'inform', message: 'See SteeringContext for Host diagnostics.' }),
   ]));
   const first = await agents.controller.decide(controllerEvalContext('invalid-evidence', 'known'));
   assert.equal(first.status, 'failed');
   await agents.controller.release?.(RUN_ID);
   const second = await agents.controller.decide(controllerEvalContext('unsafe-message', 'known'));
   assert.equal(second.status, 'failed');
+  await agents.controller.release?.(RUN_ID);
+  const third = await agents.controller.decide(controllerEvalContext('host-term', 'known'));
+  assert.equal(third.status, 'failed');
 });
 
 test('controller capability lane is opt-in and outside engineering gates', async () => {
@@ -129,7 +136,8 @@ test('capability eval briefing exposes INDEX and read tools', async (t) => {
   const item = CONTROLLER_EVAL_CASES.find((row) => row.id === '01-complete');
   assert.ok(item);
   const packed = await packControllerEvalCase(root, item);
-  assert.match(packed.context.promptContent ?? '', /INDEX\.md/);
+  assert.doesNotMatch(packed.context.promptContent ?? '', /# INDEX\.md/);
+  assert.match(packed.context.promptContent ?? '', /Latest turn:/);
   assert.match(packed.context.promptContent ?? '', /briefingRoot=/);
   assert.equal(packed.tools.some((tool) => tool.name === 'read'), true);
   assert.equal(packed.tools.every((tool) => ['ls', 'read', 'grep', 'find'].includes(tool.name)), true);

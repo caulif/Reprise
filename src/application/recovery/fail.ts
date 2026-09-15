@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
+import { Value } from "@sinclair/typebox/value";
 import type { RecoveryResult } from "../../agents/recovery-agent.js";
-import type { RecoveryDiagnosisContext } from "../../core/schemas/recovery.js";
+import { RecoveryExplanationSchema, type RecoveryExplanation } from "../../core/schema.js";
 import { persistRecoveryValidationArtifacts } from "./writes.js";
 import { recoveryPreflightDiagnostic } from "./staging-diagnostic.js";
 import {
@@ -51,41 +52,76 @@ export type FailRecoverExperimentInput = {
 };
 
 
-async function diagnoseFailure(input: FailRecoverExperimentInput, stage: string, fallback: string) {
-  const diagnosis = input.attemptInput.diagnosis;
-  if (!diagnosis) return { summary: fallback, source: "host_fallback" as const };
-  const context: RecoveryDiagnosisContext = {
-    schemaVersion: 1,
-    status: stage === "runner_crashed" ? "failed" : "blocked",
-    stage: stage === "preflight_failed" ? "workspace" : "agent",
-    reason: stage,
-    taskSummary: input.attemptInput.taskCase.initialInput?.text,
-    initialInputAvailable: Boolean(input.attemptInput.taskCase.initialInput?.text),
-    completedTurnCount: input.attemptInput.taskCase.transcript.filter((entry) => entry.role === "assistant").length,
-    workspace: { readable: Boolean(input.staging), writable: Boolean(input.staging), gitAvailable: false },
-    modelStarted: input.modelAttempts > 0,
-    stagingStarted: Boolean(input.staging),
-    facts: [fallback],
-  };
-  try {
-    const result = await diagnosis.diagnose(context);
-    return result.status === "completed" ? { summary: result.value.summary, source: "model" as const } : { summary: fallback, source: "host_fallback" as const };
-  } catch {
-    // Diagnosis is explanatory only; its failure must preserve the original Host failure.
-    return { summary: fallback, source: "host_fallback" as const };
+export type RecoveryExplanationKey =
+  | "recoveryReportMissing"
+  | "recoverySourceChanged"
+  | "recoveryStagingInvalid"
+  | "recoveryPreflightFailed"
+  | "harnessTransient"
+  | "harnessAuthentication"
+  | "harnessProtocol"
+  | "harnessFailure";
+
+export function failureExplanationKey(
+  stage: string,
+  failure?: { kind?: string; code?: string; message?: string },
+): { key: RecoveryExplanationKey; params?: Record<string, string | number> } {
+  if (stage === "source_tripwire_failed" || failure?.code === "source_tripwire_failed") {
+    return { key: "recoverySourceChanged" };
   }
+  if (stage === "provider_validation_failed" || failure?.code === "provider_validation_failed") {
+    if (failure?.message && /recovery\.md is missing/i.test(failure.message)) return { key: "recoveryReportMissing" };
+    return { key: "recoveryStagingInvalid" };
+  }
+  if (stage === "preflight_failed") return { key: "recoveryPreflightFailed" };
+  if (stage === "agent_invalid_output") return { key: "harnessProtocol" };
+  if (stage === "runner_crashed") return { key: "harnessFailure" };
+  const kind = failure?.kind;
+  if (kind === "authentication") return { key: "harnessAuthentication" };
+  if (kind === "transient_network" || kind === "transient_upstream" || kind === "timeout" || kind === "rate_limited") {
+    return { key: "harnessTransient" };
+  }
+  if (kind === "protocol") return { key: "harnessProtocol" };
+  return { key: "harnessFailure" };
 }
+
+function recoveryExplanation(input: FailRecoverExperimentInput, stage: string): RecoveryExplanation {
+  const status = stage === "runner_crashed" ? "failed" : "blocked";
+  const workspaceStage = stage === "preflight_failed" ? "workspace" : "agent";
+  if (input.recovery?.status === "completed") {
+    return {
+      schemaVersion: 1,
+      status,
+      stage: workspaceStage,
+      reason: stage,
+      summary: input.recovery.value.summary,
+    };
+  }
+  const failed = input.recovery?.status === "failed" ? input.recovery.failure : undefined;
+  const validation = input.error instanceof RecoveryValidationError ? input.error : undefined;
+  const mapped = failureExplanationKey(stage, {
+    ...(failed?.kind ? { kind: failed.kind } : {}),
+    ...(validation?.code ? { code: validation.code } : {}),
+    ...(input.error instanceof Error ? { message: input.error.message } : failed?.message ? { message: failed.message } : {}),
+  });
+  return {
+    schemaVersion: 1,
+    status,
+    stage: workspaceStage,
+    reason: stage,
+    summary: mapped.key,
+    ...(mapped.params ? { summaryParams: mapped.params } : {}),
+    diagnosis: "host",
+  };
+}
+
 export async function failRecoverExperiment(input: FailRecoverExperimentInput): Promise<RecoveryAttempt> {
   const settled = await settleFailedRecovery(input);
-  const diagnosis = await diagnoseFailure(input, settled.failureStage, settled.failureMessage);
-  await writeImmutableJson(join(input.experimentRoot, "recovery-explanation.json"), {
-    schemaVersion: 1,
-    status: settled.failureStage === "runner_crashed" ? "failed" : "blocked",
-    stage: settled.failureStage === "preflight_failed" ? "workspace" : "agent",
-    reason: settled.failureStage,
-    summary: diagnosis.summary,
-    diagnosis: diagnosis.source,
-  });
+  const explanation = recoveryExplanation(input, settled.failureStage);
+  if (!Value.Check(RecoveryExplanationSchema, explanation)) {
+    throw new Error("Recovery explanation does not match RecoveryExplanationSchema.");
+  }
+  await writeImmutableJson(join(input.experimentRoot, "recovery-explanation.json"), explanation);
   const failed = input.recovery ?? {
     status: "failed" as const,
     failure: {
@@ -94,13 +130,19 @@ export async function failRecoverExperiment(input: FailRecoverExperimentInput): 
       attempts: 1,
     },
   };
+  const baseline = settled.baseline.recovery
+    ? {
+        ...settled.baseline,
+        recovery: { ...settled.baseline.recovery, summary: explanation.summary },
+      }
+    : settled.baseline;
   await persistFailedRecoveryArtifacts({
     experimentRoot: input.experimentRoot,
     store: input.store,
     attemptInput: input.attemptInput,
     failed,
     failureStage: settled.failureStage,
-    failureMessage: diagnosis.summary,
+    failureMessage: settled.failureMessage,
     error: input.error,
     preflightOperation: input.preflightOperation,
     verifierRejectionReasons: input.verifierRejectionReasons,
@@ -122,7 +164,7 @@ export async function failRecoverExperiment(input: FailRecoverExperimentInput): 
     }),
   );
   return {
-    baseline: settled.baseline,
+    baseline,
     ...(settled.cleanupFailure ? { cleanupFailed: true, ...(input.staging ? { staging: input.staging } : {}) } : {}),
     recovery: failed,
     experimentRoot: input.experimentRoot,

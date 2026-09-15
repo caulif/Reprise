@@ -128,9 +128,11 @@ export class AgentHost implements AgentHostPort {
         ...(request.validate ? { validate: request.validate } : {}),
         ...(request.outputContract ? { outputContract: request.outputContract } : {}),
         ...(request.repairInstruction ? { repairInstruction: request.repairInstruction } : {}),
-        ...(request.promptContent ? { promptContent: request.promptContent } : {}),
+        promptContent: request.promptContent,
         ...(request.promptImages ? { promptImages: request.promptImages } : {}),
         ...(request.normalize ? { normalize: request.normalize } : {}),
+        ...(request.allowTools !== undefined ? { allowTools: request.allowTools } : {}),
+        ...(request.allowToolsOnRepair !== undefined ? { allowToolsOnRepair: request.allowToolsOnRepair } : {}),
       });
     } finally {
       await session.close();

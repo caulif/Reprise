@@ -8,7 +8,7 @@ import { claudeProjection } from './projection.js';
 import { ClaudeCodeProductRuntime } from './runtime.js';
 import { claudeSessionAdapter } from './sessions.js';
 
-const PLAYBOOK_VERSION = 'claude-code-recovery/v1';
+const PLAYBOOK_VERSION = 'claude-code-recovery/v2';
 const DEFAULT_CANDIDATE: CandidateSpec = { candidateId: 'claude-code-sonnet', productId: 'claude-code', requestedModel: 'sonnet' };
 
 function claudeRecoveryPlaybook(): RecoveryPlaybookDescriptor {

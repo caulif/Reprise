@@ -46,6 +46,7 @@ export function controllerEvalContext(caseId: string, evidenceId: string): Steer
     trajectory: { summary: "候选已完成一轮；这是脚本化评估轨迹。", evidenceRefs: [evidence] },
     evidenceCatalog: [{ ref: evidence, runId: "controller-eval-run", source: "initial" }],
     budget: { decisionsUsed: 1, decisionsLimit: 12 },
+    promptContent: `phase=steering\ncase=${caseId}\n`,
   };
 }
 

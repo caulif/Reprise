@@ -49,8 +49,8 @@ export function stripThinkMarkup(text: string): string {
     .trim();
 }
 
-/** Drop thinking markup and oversized tool bodies; optionally shrink a JSON working-set user message. */
-export function prunePiMessagesForBudget(messages: AgentMessage[], aggressive = false): { changed: boolean; summary: string } {
+/** Drop thinking markup and oversized tool bodies. */
+export function prunePiMessagesForBudget(messages: AgentMessage[]): { changed: boolean; summary: string } {
   const notes: string[] = [];
   for (const message of messages) {
     if (message.role === "assistant") {
@@ -76,77 +76,7 @@ export function prunePiMessagesForBudget(messages: AgentMessage[], aggressive = 
       }
     }
   }
-  if (shrinkWorkingSetMessage(messages, aggressive)) notes.push(aggressive ? "shrunk working set" : "trimmed working set");
   return { changed: notes.length > 0, summary: [...new Set(notes)].join("; ") || "unchanged" };
-}
-
-export function shrinkWorkingSetMessage(messages: AgentMessage[], aggressive: boolean): boolean {
-  const first = messages.find((message) => message.role === "user");
-  if (!first) return false;
-  const text = userText(first);
-  if (!text.startsWith("{")) return false;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return false;
-  }
-  if (!parsed || typeof parsed !== "object") return false;
-  const record = parsed as Record<string, unknown>;
-  let changed = false;
-  const packet = record.investigationPacket;
-  if (packet && typeof packet === "object") {
-    const pack = packet as Record<string, unknown>;
-    const keep = aggressive ? 0 : 8;
-    if (Array.isArray(pack.candidatePaths) && pack.candidatePaths.length > keep) {
-      pack.candidatePaths = pack.candidatePaths.slice(0, keep);
-      pack.truncated = true;
-      changed = true;
-    }
-    if (aggressive && Array.isArray(pack.laterUserTurns) && pack.laterUserTurns.length > 0) {
-      pack.laterUserTurns = [];
-      pack.truncated = true;
-      changed = true;
-    }
-  }
-  const playbook = record.playbook;
-  if (playbook && typeof playbook === "object" && "text" in playbook) {
-    delete (playbook as Record<string, unknown>).text;
-    changed = true;
-  }
-  const resolved = record.resolved;
-  if (resolved && typeof resolved === "object") {
-    const facts = resolved as Record<string, unknown>;
-    for (const key of ["catalog", "verifiedEvidence", "operations"]) {
-      if (key in facts) {
-        delete facts[key];
-        changed = true;
-      }
-    }
-    if (Array.isArray(facts.evidenceRefs) && facts.evidenceRefs.length > 8) {
-      facts.evidenceRefs = facts.evidenceRefs.slice(0, 8);
-      changed = true;
-    }
-  }
-  if (!changed) return false;
-  writeUserText(first, JSON.stringify(record));
-  return true;
-}
-
-function userText(message: Extract<AgentMessage, { role: "user" }>): string {
-  if (typeof message.content === "string") return message.content;
-  if (!Array.isArray(message.content)) return "";
-  return message.content
-    .map((block) => (block && typeof block === "object" && "text" in block && typeof block.text === "string" ? block.text : ""))
-    .join("");
-}
-
-function writeUserText(message: Extract<AgentMessage, { role: "user" }>, text: string): void {
-  if (typeof message.content === "string") {
-    message.content = text;
-    return;
-  }
-  message.content = [{ type: "text", text }];
 }
 
 export async function compactPiMessages(input: {

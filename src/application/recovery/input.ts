@@ -1,5 +1,4 @@
 import type { RecoveryAgentPort } from "../../agents/recovery-agent.js";
-import type { RecoveryDiagnosisAgentPort } from "../../agents/diagnosis-agent.js";
 import type { EventEnvelope, TaskCase } from "../../core/schema.js";
 import type { LocalWorkspaceProvider } from "../../environment/local-workspace-provider.js";
 import type { ProductPack } from "../../products/contract.js";
@@ -21,7 +20,6 @@ export type RecoveryAttemptInput = {
   checkpointRoot?: string;
   taskCase: TaskCase;
   recovery: RecoveryAgentPort;
-  diagnosis?: RecoveryDiagnosisAgentPort;
   /** Defaults to safe maximum-effort investigation in isolated staging. */
   attemptMode?: RecoveryAttemptMode;
   /** Bounds retries after transient Recovery model failures; each attempt is independently audited. */

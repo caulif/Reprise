@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ControllerAgent, type SteeringContext } from '../../src/agents/controller-agent.js';
+import { ControllerAgent, controllerMessageHasHostTerms, type SteeringContext } from '../../src/agents/controller-agent.js';
 import { PiAgentHost, type PiTextCaller } from '../../src/infrastructure/agent/host.js';
 
 function context(): SteeringContext {
@@ -18,6 +18,7 @@ function context(): SteeringContext {
     trajectory: { summary: 'Settled turns: 0.', evidenceRefs: [] },
     evidenceCatalog: [],
     budget: { decisionsUsed: 0, decisionsLimit: 3 },
+    promptContent: 'phase=opening\n',
   };
 }
 
@@ -57,4 +58,47 @@ test('Controller opening rejects done and requires created', async () => {
     () => send.decide({ ...opening, runState: 'launching' }),
     /Opening Controller decision requires CandidateRun created/,
   );
+});
+
+test('Controller send.message rejects Host terms and keeps ordinary user language', async () => {
+  const leaks = [
+    'Set briefingRoot first.',
+    'The SteeringContext is wrong.',
+    'CandidateRun is waiting.',
+    'Open controller-briefing next.',
+    'Read current-user-view.md',
+    'Check THIS-TURN.txt',
+    'Ask AgentHost.',
+    'This TaskCase is done.',
+    'Set allowModelText please.',
+    'Use evidenceCatalog.',
+    'Follow outputContract.',
+    'Stay in data-host-zone.',
+    'Leave data-agent-zone.',
+    'See recovery-work.',
+    'Please read INDEX.md',
+  ];
+  for (const message of leaks) {
+    assert.equal(controllerMessageHasHostTerms(message), true, message);
+  }
+  const ordinary = [
+    'please continue',
+    'look at README.md',
+    'run the tests',
+    'the host will review this tomorrow',
+    'dump the json',
+    'the index of sections is incomplete',
+    'please look at src/app.ts',
+  ];
+  for (const message of ordinary) {
+    assert.equal(controllerMessageHasHostTerms(message), false, message);
+  }
+  const leaked = new ControllerAgent({
+    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: 'Read current-user-view.md', intent: 'continue' })])),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const rejected = await leaked.decide(context());
+  assert.equal(rejected.status, 'failed');
+  if (rejected.status === 'failed') assert.match(rejected.failure.message, /message contains a Host term/);
 });

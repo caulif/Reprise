@@ -1,27 +1,27 @@
-Reprise v0.1.0   C:\reprise                            No configured model   ○ Harness unset  ○ Product unset  ○ No task
+Reprise v0.1.0   C:\reprise                                    尚未配置模型   ○ 内部模型未配置  ○ 未选会话产品  ○ 无任务
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Internal model  needs config
+ 内部模型  需要先配置
 
- Continue
- /history Local experiments  no local experiments
- /config  Open /config  needs credential
+ 继续
+ /history 本机实验记录  还没有本地对照
+ /config  打开 /config  需要凭据
 
-┌─ Internal Agent model ───────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Shared by recovery, simulated user, and comparison. Candidate models are chosen later.                               │
-│ Endpoint   Pi catalog amazon-bedrock                                                                                 │
-│ Internal model      au.anthropic.claude-opus-4-6-v1 · medium                                                         │
-│ Secret     Pi manages credentials                                                                                    │
-│ Sign in with pi /login, then press Ctrl+T to test. Reprise does not store ChatGPT or Codex CLI tokens.               │
+┌─ 内部 Agent 模型 ────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 恢复、模拟用户与对照共用。候选模型稍后单独选择。                                                                     │
+│ 端点   Pi catalog amazon-bedrock                                                                                     │
+│ 内部模型      au.anthropic.claude-opus-4-6-v1 · medium                                                               │
+│ 密钥     凭据由目录管理                                                                                              │
+│ 先在 Pi 执行 /login，再按 Ctrl+T 测试连接。Reprise 不保存 ChatGPT 或 Codex CLI 令牌。                                │
 │                                                                                                                      │
-│ ❯ provider type      pi-catalog  [Enter] toggles                                                                     │
-│   provider label     amazon-bedrock                                                                                  │
-│   model              au.anthropic.claude-opus-4-6-v1                                                                 │
-│   effort             medium  [Enter] toggles                                                                         │
-│   Language           English  [Enter] toggles                                                                        │
+│ ❯ 服务商类型         pi-catalog  [Enter] 切换                                                                        │
+│   服务商标签         amazon-bedrock                                                                                  │
+│   模型               au.anthropic.claude-opus-4-6-v1                                                                 │
+│   力度               medium  [Enter] 切换                                                                            │
+│   语言               中文  [Enter] 切换                                                                              │
 │                                                                                                                      │
-│ ● Unsaved draft                                                                                                      │
-│ Configuration file: .reprise/harness-model.json                                                                      │
+│ ● 未保存草稿                                                                                                         │
+│ 配置文件：.reprise/harness-model.json                                                                                │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Pi catalog selected. Sign in with pi /login, then test the connection.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [↑↓] Select  [Enter] Toggle provider  [Ctrl+T] Test connection  [Ctrl+S] Save locally  [Esc] Home
+ [↑↓] 选择  [Enter] 切换服务商  [Ctrl+T] 测试连接  [Ctrl+S] 保存到本地  [Esc] 封面

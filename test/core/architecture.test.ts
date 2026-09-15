@@ -234,7 +234,8 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.doesNotMatch(readiness, /blockingResourceIds: \["task-readiness"\]/);
   assert.match(readiness, /taskReadinessBlocksPublication[\s\S]*return false/);
   const workspaceTools = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
-  assert.match(workspaceTools, /lockSourceWrites|filesystem ACL/);
+  assert.doesNotMatch(workspaceTools, /filesystem ACL/);
+  assert.match(agent, /verifies its fingerprint afterwards/);
   assert.match(provider, /lockSourceWrites/);
   const runFinalize = await readFile(join(SRC, 'application/recovery/run-finalize.ts'), 'utf8');
   assert.doesNotMatch(runFinalize, /verifiedEvidence/);

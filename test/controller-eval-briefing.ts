@@ -154,7 +154,12 @@ export async function packControllerEvalCase(root: string, item: ControllerEvalC
     requestId: `controller-request-${item.id}`,
     runId,
     phase: "steering",
-    promptContent: controllerPromptContent({ phase: "steering", briefingRoot, indexMarkdown }),
+    promptContent: controllerPromptContent({
+      phase: "steering",
+      briefingRoot,
+      indexMarkdown,
+      latestTurnRelative: files.latestTurn,
+    }),
     briefingRoot,
     current: { summary: "Latest settled turn is named in THIS-TURN.txt.", evidenceRefs: [...catalogRefs] },
     trajectory: { summary: "Read run/turns and project/; do not trust summaries over files.", evidenceRefs: [...catalogRefs] },

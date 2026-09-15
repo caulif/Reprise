@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
-import { compactPiMessages, needsPiCompaction, prunePiMessagesForBudget, shrinkWorkingSetMessage, stripThinkMarkup } from '../../src/infrastructure/agent/compaction.js';
+import { compactPiMessages, needsPiCompaction, prunePiMessagesForBudget, stripThinkMarkup } from '../../src/infrastructure/agent/compaction.js';
 import { PiAgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Api, Model, Models } from '@earendil-works/pi-ai';
@@ -94,6 +94,7 @@ test('Host records agent.context_compacted from the Pi session compact hook', as
     timeoutMs: 50,
     maxRepairAttempts: 0,
     allowModelText: true,
+    promptContent: 'return json',
     audit: {
       append: async (event) => {
         events.push(event);
@@ -151,15 +152,11 @@ test('stripThinkMarkup drops think blocks including MiniMax closures', () => {
   assert.match(stripThinkMarkup('a <mm:think>x</mm:think> b'), /^a\s+b$/);
 });
 
-test('prunePiMessagesForBudget stubs oversized tool bodies and can shrink a working set', () => {
+test('prunePiMessagesForBudget stubs oversized tool bodies and strips thinking', () => {
   const messages: AgentMessage[] = [
     {
       role: 'user',
-      content: JSON.stringify({
-        investigationPacket: { candidatePaths: Array.from({ length: 20 }, (_, index) => `path-${index}.html`), laterUserTurns: ['later'] },
-        playbook: { text: 'full playbook', version: 'v1' },
-        resolved: { catalog: [{ ref: 'event:transcript-0-aaaaaaaaaaaaaaaa' }], evidenceRefs: Array.from({ length: 20 }, (_, index) => `event:transcript-${index}-aaaaaaaaaaaaaaaa`) },
-      }),
+      content: '# Recovery briefing\nTask: Write slides.',
       timestamp: 1,
     },
     {
@@ -176,22 +173,13 @@ test('prunePiMessagesForBudget stubs oversized tool bodies and can shrink a work
       timestamp: 3,
     },
   ];
-  const pruned = prunePiMessagesForBudget(messages, false);
+  const pruned = prunePiMessagesForBudget(messages);
   assert.equal(pruned.changed, true);
   assert.match(pruned.summary, /stripped thinking/);
   const tool = messages[2] as { content: Array<{ text: string }> };
   assert.match(tool.content[0]?.text ?? '', /"stub":true/);
-  const aggressive = prunePiMessagesForBudget(messages, true);
-  assert.equal(aggressive.changed, true);
-  assert.equal(shrinkWorkingSetMessage(messages, true), false);
-  const working = JSON.parse((messages[0] as { content: string }).content) as {
-    investigationPacket: { candidatePaths: string[]; laterUserTurns: string[] };
-    playbook: { text?: string };
-    resolved: { catalog?: unknown; evidenceRefs: string[] };
-  };
-  assert.equal(working.investigationPacket.candidatePaths.length, 0);
-  assert.deepEqual(working.investigationPacket.laterUserTurns, []);
-  assert.equal('text' in working.playbook, false);
-  assert.equal('catalog' in working.resolved, false);
-  assert.ok(working.resolved.evidenceRefs.length <= 8);
+  const assistant = messages[1] as { content: Array<{ text: string }> };
+  assert.equal(assistant.content[0]?.text.includes('<think>'), false);
+  const again = prunePiMessagesForBudget(messages);
+  assert.equal(again.changed, false);
 });

@@ -8,6 +8,7 @@ import type { EventEnvelope, TaskCase, UserVisibleTurn } from "../core/schema.js
 import type { SourceRootKind } from "./replay-conditions.js";
 
 export const CONTROLLER_PROJECT_MOUNT = "project";
+export const CONTROLLER_NOTES_MOUNT = "notes";
 
 const ISOLATION =
   "Writes stay in the isolated replica and never land in the original user directory.";
@@ -80,32 +81,31 @@ export function controllerViewSurface(
 }
 
 export function renderIndexMarkdown(latestTurnRelative: string | undefined): string {
-  const latest = latestTurnRelative ?? "(none — opening; THIS-TURN.txt is empty)";
+  const latest = latestTurnRelative ?? "(none; opening, THIS-TURN.txt is empty)";
   return [
     "# Controller briefing map",
     "",
-    "Host-owned, invisible to the candidate. `project/` is the isolated replica: readable, and writable with edit/write.",
-    "Controller may use `ls`, `read`, `grep`, `find`, and `shell_exec` to inspect the replica, historical materials, and other host-readable paths. Reads are not workspace-contained; results have size, timeout, credential, and audit limits. edit/write stay under `project/`. shell_exec must never mutate the historical source directory; use the matching path under `project/`. There is no `read_observation`.",
-    "Do not guess which historical paths exist. List, find, or shell-check first, then read what is actually present.",
+    "Host-owned; invisible to the candidate. Relative paths are against this directory.",
     "",
     "Historical user requirements:",
-    "- history/user-inputs/INDEX.tsv — complete user demand in session order",
-    "- history/user-inputs/{turn-id}.txt — that user input body",
-    "- history/initial-input.txt — frozen first user task sentence",
-    "- history/outline.tsv — id, role, bytes, after_first_deliverable",
-    "- history/transcript/{id}.txt — full text for that outline id (user or assistant)",
+    "- history/user-inputs/INDEX.tsv: complete user demand in session order",
+    "- history/user-inputs/{turn-id}.txt: that user input's text",
+    "- history/initial-input.txt: the frozen first task sentence",
+    "- history/outline.tsv: id, role, bytes, after_first_deliverable",
+    "- history/transcript/{id}.txt: full text for that outline id (user or assistant)",
     "",
     "Historical agent discoveries (not this user's prior knowledge): outline rows with role=assistant and their transcript files.",
     "",
     "Current candidate facts:",
-    "- current-user-view.md — Host snapshot of the current user-visible turn; read this before other details",
-    "- permissions.txt — Controller may write project/; candidate fields are historical-session inference",
-    "- run/sent-user-messages.jsonl — user messages already submitted this run",
-    "- run/controller-writes.jsonl — Controller edit/write audit (Host-owned)",
-    "- run/turns/NNNN/user-view.md, visible.txt, event-index.tsv, changed-paths.txt — one settled candidate turn",
-    "- THIS-TURN.txt — relative path of the latest turn directory, empty before the first settlement",
-    "- project/ — current replica; project/imported-inputs/ may be absent",
-    "- project-root.txt, replay.txt, manifest.json — Host path and isolation facts",
+    "- current-user-view.md: Host snapshot of the current user-visible turn; read this first",
+    "- permissions.txt: Controller may write project/ and notes/; candidate fields are historical-session inference",
+    "- run/sent-user-messages.jsonl: user messages already submitted this run",
+    "- run/controller-writes.jsonl: Controller edit/write audit",
+    "- run/turns/NNNN/user-view.md, visible.txt, event-index.tsv, changed-paths.txt: one settled candidate turn",
+    "- THIS-TURN.txt: relative path of the latest turn directory; empty before the first settlement",
+    "- project/: the current replica; project/imported-inputs/ may be absent",
+    "- notes/: your working notes",
+    "- project-root.txt, replay.txt, manifest.json: Host path and isolation facts",
     "",
     `Latest turn: ${latest}`,
     "",
@@ -116,9 +116,17 @@ export function controllerPromptContent(input: {
   phase: "opening" | "steering";
   briefingRoot: string;
   indexMarkdown: string;
+  latestTurnRelative?: string;
 }): string {
   const decision = input.phase === "opening" ? CONTROLLER_TURN_PROMPTS.opening : CONTROLLER_TURN_PROMPTS.steering;
-  return `${decision}\n\nbriefingRoot=${input.briefingRoot}\nphase=${input.phase}\n\n# INDEX.md\n${input.indexMarkdown}`;
+  const header = `${decision}\n\nbriefingRoot=${input.briefingRoot}\nphase=${input.phase}`;
+  if (input.phase === "opening") {
+    return `${header}\n\n# INDEX.md\n${input.indexMarkdown}`;
+  }
+  const latest = input.latestTurnRelative
+    ?? input.indexMarkdown.match(/^Latest turn: (.+)$/m)?.[1]
+    ?? "(none; opening, THIS-TURN.txt is empty)";
+  return `${header}\nLatest turn: ${latest}`;
 }
 
 function visibleText(text: string, allowModelText: boolean): string {
@@ -216,12 +224,12 @@ function renderPermissionsTxt(taskCase: TaskCase): string {
   const privacy = taskCase.privacy;
   return [
     "# Controller tools",
-    "controller.writes=project",
+    "controller.writes=project,notes",
     "controller.project=writable",
     "controller.shell=allowed",
     "",
     "# Candidate runtime",
-    "# Historical session inference, not this run's launch grant.",
+    "# Historical-session inference, not this run's launch grant.",
     `candidate.source=${candidate.source}`,
     `candidate.sandbox=${candidate.sandbox}`,
     `candidate.permissionMode=${candidate.permissionMode}`,
@@ -262,6 +270,7 @@ export async function writeOpeningBriefing(input: {
   const history = join(input.briefingRoot, "history");
   const transcriptDir = join(history, "transcript");
   await mkdir(join(input.briefingRoot, "run", "turns"), { recursive: true });
+  await mkdir(join(input.briefingRoot, CONTROLLER_NOTES_MOUNT), { recursive: true });
   await mkdir(transcriptDir, { recursive: true });
   const allow = input.taskCase.privacy.allowModelText;
   await writeAtomic(join(history, "initial-input.txt"), visibleText(input.taskCase.initialInput.text, allow));
@@ -404,16 +413,22 @@ async function digestBriefing(briefingRoot: string, turnRelative: string | undef
     "project-root.txt",
     "replay.txt",
     "manifest.json",
+    "notes/understanding.md",
   ];
   if (turnRelative) {
     relative.push(`${turnRelative}/visible.txt`, `${turnRelative}/changed-paths.txt`, `${turnRelative}/event-index.tsv`, `${turnRelative}/user-view.md`);
   }
   const fileDigests: Record<string, string> = {};
   for (const path of relative) {
+    if (briefingPathIsNotes(path)) continue;
     const body = await readFile(join(briefingRoot, path), "utf8").catch(() => "");
     fileDigests[path] = sha256(body);
   }
   return fileDigests;
+}
+
+function briefingPathIsNotes(path: string): boolean {
+  return path.replaceAll("\\", "/").split("/").filter(Boolean)[0] === CONTROLLER_NOTES_MOUNT;
 }
 
 async function writeBriefingManifest(briefingRoot: string): Promise<void> {

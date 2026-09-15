@@ -1,0 +1,56 @@
+import type { AgentLocale } from "../agents/language.js";
+
+type Msg = { readonly en: string; readonly zh: string };
+
+const M = {
+  htmlLang: { en: "en", zh: "zh-CN" },
+  defaultCategory: { en: "Comparison", zh: "对照" },
+  failedCategory: { en: "Comparison failed", zh: "对照失败" },
+  titleVs: { en: "{category} · {baseline} vs {candidate}", zh: "{category} · {baseline} vs {candidate} 对比" },
+  metricTime: { en: "Time", zh: "时间" },
+  metricTokens: { en: "Tokens", zh: "Token" },
+  metricCost: { en: "Cost", zh: "费用" },
+  unitMinutes: { en: "min", zh: "分" },
+  unitSeconds: { en: "s", zh: "秒" },
+  missing: { en: "not collected", zh: "未采集" },
+  pricingUnavailable: { en: "no price configured", zh: "价格未配置" },
+  costUnknown: { en: "not computable", zh: "不可计算" },
+  auditSummary: { en: "Prices and evidence", zh: "价格与证据" },
+  costNote: {
+    en: 'Cost uses the pinned price snapshot and excludes tool calls. No tokens shows "not collected"; tokens without a price shows "no price configured". Price table {version}.',
+    zh: "费用按本次钉住的价格快照计算，不含工具调用成本。无 Token 显示未采集；有 Token 无价格显示价格未配置。价格表 {version}。",
+  },
+  runDiagnostics: { en: "Run diagnostics", zh: "运行诊断" },
+  evidencePaths: { en: "Real paths and files", zh: "真实路径与文件" },
+  registeredMedia: { en: "Registered media", zh: "已注册媒体" },
+  unresolvedEvidence: { en: "Unresolved evidence: {refs}", zh: "证据未解析：{refs}" },
+  diagFailed: { en: "Comparison could not be completed", zh: "对照未能完成" },
+  diagClassPhase: { en: "Failure class: {class}. Phase: {phase}.", zh: "对照失败分类：{class}。失败阶段：{phase}。" },
+  diagDraft: { en: "Existing analysis (report structure incompatible)", zh: "已有分析（报告结构未兼容）" },
+  diagCandidateCompleted: { en: "Candidate task completed: {value}", zh: "候选任务是否完成：{value}" },
+  diagProcessHint: {
+    en: "Open the trace and artifacts in the experiment directory to continue; an existing successful report.html belongs to an earlier attempt.",
+    zh: "打开实验目录中的 trace 与 artifacts 继续排查；若已有成功 report.html，它属于更早一次 attempt。",
+  },
+  sideHistorical: { en: "historical", zh: "历史" },
+  sideCandidate: { en: "candidate", zh: "候选" },
+  candidateTaskCompleted: { en: "Candidate task completed", zh: "候选任务已完成" },
+  candidateTaskIncomplete: { en: "Candidate task incomplete ({code})", zh: "候选任务未完成（{code}）" },
+  candidateTaskOutcome: { en: "Candidate task status: {outcome}", zh: "候选任务状态：{outcome}" },
+} as const satisfies Record<string, Msg>;
+
+export type ComparisonReportStringKey = keyof typeof M;
+
+export function reportString(locale: AgentLocale, key: ComparisonReportStringKey, vars?: Record<string, string | number>): string {
+  let text: string = M[key][locale] ?? M[key].en;
+  if (vars) {
+    for (const [name, value] of Object.entries(vars)) text = text.replaceAll(`{${name}}`, String(value));
+  }
+  return text;
+}
+
+export function candidateStatusLabel(outcome: string, terminationCode: string, locale: AgentLocale = "zh"): string {
+  if (outcome === "completed" || outcome === "satisfied") return reportString(locale, "candidateTaskCompleted");
+  if (outcome === "incomplete" || outcome === "failed") return reportString(locale, "candidateTaskIncomplete", { code: terminationCode });
+  return reportString(locale, "candidateTaskOutcome", { outcome });
+}

@@ -1,4 +1,4 @@
-Reprise   Candidate running · Codex                                                                    00:00   ● running
+Reprise   候选运行中 · Codex                                                                            00:00   ● 进行中
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ▎ Fix the failing test.                                                                                                 
 ▎ Run the focused test.                                                                                                 
@@ -27,6 +27,6 @@ Reprise   Candidate running · Codex                                            
                                                                                                                         
                                                                                                                         
  * Codex · working                                                                                                 00:00
- ▼ 1 new                                                                                                                
+ ▼ 新 1                                                                                                                 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Stop  [/] Find  [Enter] Expand  [v] Select
+ [Ctrl+C] 停止  [/] 查找  [Enter] 展开  [v] 选择

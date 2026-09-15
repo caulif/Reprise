@@ -1,7 +1,7 @@
 import { ComparisonAgent } from '../agents/comparison-agent.js';
 import { RecoveryAgent } from '../agents/recovery-agent.js';
-import { RecoveryDiagnosisAgent } from '../agents/diagnosis-agent.js';
 import { ControllerAgent } from '../agents/controller-agent.js';
+import type { AgentLocale } from '../agents/language.js';
 import { AgentHost, type ProviderAdapter } from '../infrastructure/agent/host.js';
 import { PiModelCaller } from '../infrastructure/agent/model-caller.js';
 import type { HarnessModelConfig } from '../infrastructure/harness-model-config.js';
@@ -11,7 +11,6 @@ export type HarnessAgents = {
   readonly controller: ControllerAgent;
   readonly comparison: ComparisonAgent;
   readonly recovery: RecoveryAgent;
-  readonly diagnosis: RecoveryDiagnosisAgent;
   readonly config: {
     readonly providerId: string;
     readonly requestedModel: string;
@@ -26,16 +25,20 @@ export type HarnessAgents = {
  */
 const DEFAULT_BUDGET: AgentBudget = { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 };
 
-export function createHarnessAgents(config: HarnessModelConfig, caller: ProviderAdapter = new PiModelCaller(config), limits: { budget?: AgentBudget; recoveryBudget?: AgentBudget } = {}): HarnessAgents {
+export function createHarnessAgents(
+  config: HarnessModelConfig,
+  caller: ProviderAdapter = new PiModelCaller(config),
+  limits: { budget?: AgentBudget; recoveryBudget?: AgentBudget } = {},
+  options: { locale?: AgentLocale } = {},
+): HarnessAgents {
   const host = new AgentHost(caller);
   const budget = limits.budget ?? DEFAULT_BUDGET;
   const recoveryBudget = limits.recoveryBudget ?? budget;
+  const locale = options.locale ?? 'zh';
   return {
-    comparison: new ComparisonAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts }),
-    controller: new ControllerAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts }),
-    recovery: new RecoveryAgent({ host, timeoutMs: recoveryBudget.callTimeoutMs, maxRepairAttempts: recoveryBudget.maxStructuredRepairAttempts }),
-    diagnosis: new RecoveryDiagnosisAgent(host, recoveryBudget.callTimeoutMs),
+    comparison: new ComparisonAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts, locale }),
+    controller: new ControllerAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts, locale }),
+    recovery: new RecoveryAgent({ host, timeoutMs: recoveryBudget.callTimeoutMs, maxRepairAttempts: recoveryBudget.maxStructuredRepairAttempts, locale }),
     config: { providerId: config.providerId, requestedModel: config.modelId, budget, recoveryBudget },
   };
 }
-

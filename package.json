@@ -25,7 +25,7 @@
     "dist/src"
   ],
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })\" && tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })\" && tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('src/application/pricing-catalog.json','dist/src/application/pricing-catalog.json')\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test scripts eslint.config.js",
     "test": "npm run build && node --test \"dist/test/**/*.test.js\"",

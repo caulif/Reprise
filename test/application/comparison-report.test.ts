@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { assertComparisonResult, COMPARISON_SYSTEM_PROMPT, ComparisonAgent } from '../../src/agents/comparison-agent.js';
+import { assertComparisonResult, COMPARISON_SYSTEM_PROMPT, COMPARISON_TURN_PROMPTS, ComparisonAgent } from '../../src/agents/comparison-agent.js';
 import { buildComparisonContext, comparePersistedFacts, type RunInspection } from '../../src/application/comparison.js';
 import { fingerprintTree } from '../../src/environment/local-workspace-fs.js';
 import { recoveryTools } from '../../src/infrastructure/recovery-tools.js';
@@ -98,6 +98,7 @@ test('reportFacts mark untotalable tokenUsage as unknown', () => {
     runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, tokenUsage: {},
   }]).reportFacts;
   assert.equal(facts.metrics?.candidate?.usageStatus, 'unknown');
+  assert.equal(facts.metrics?.candidate?.pricingStatus, 'unknown');
   assert.equal(facts.metrics?.candidate?.tokens, undefined);
 });
 
@@ -108,6 +109,7 @@ test('reportFacts mark cost without token totals as unknown', () => {
   assert.equal(facts.metrics?.candidate?.usageStatus, 'unknown');
   assert.equal(facts.metrics?.candidate?.tokens, undefined);
   assert.equal(facts.metrics?.candidate?.costUsd, 0.12);
+  assert.equal(facts.metrics?.candidate?.pricingStatus, 'unknown');
 });
 
 test('reportFacts project collected token parts without inventing speed or cost', () => {
@@ -118,11 +120,18 @@ test('reportFacts project collected token parts without inventing speed or cost'
   assert.equal(totalOnly.metrics?.candidate?.usageStatus, 'collected');
   assert.equal(totalOnly.metrics?.candidate?.toolCostsIncluded, false);
   assert.equal(totalOnly.metrics?.candidate?.costUsd, undefined);
+  assert.equal(totalOnly.metrics?.candidate?.pricingStatus, 'pricing_unavailable');
   assert.equal(totalOnly.metrics?.baseline?.usageStatus, 'not_collected');
+  assert.equal(totalOnly.metrics?.baseline?.pricingStatus, 'not_collected');
   const withClock = buildComparisonContext(taskCase(), [runRecord()], [{
     runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 4_000, tokenUsage: { total: 256 },
   }]).reportFacts;
   assert.equal(withClock.metrics?.candidate?.elapsedMs, 4_000);
+});
+
+test('comparison envelope keeps valid short refs when no allowlist is provided', () => {
+  const context = buildComparisonContext(taskCase(), [runRecord()]);
+  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-01'] }, context));
 });
 
 test('comparison envelope accepts short evidence refs and rejects long event ids', () => {
@@ -151,12 +160,12 @@ test('comparePersistedFacts requires an explicit attemptId', async () => {
 });
 
 test('comparison prompt points workspace tools at the sealed snapshot mount', () => {
-  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed end-of-run snapshot/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /data-host-zone/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /data-agent-zone/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /统一风格的报告模板/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /incomplete_object_store/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed read-only snapshot/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /objectStore=not_seeded/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /incomplete_object_store/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /In this session you will receive, in order/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /最后一轮不能使用工具/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /read_observation/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /comparison-sandbox\/candidate/);
 });
@@ -172,8 +181,8 @@ test('comparison orientation does not inline the initial task and points at user
   assert.doesNotMatch(prompt, /initialTask=/);
   assert.doesNotMatch(prompt, /修复报告/);
   assert.match(prompt, /observations\/user-inputs\/INDEX\.tsv/);
-  assert.match(prompt, /briefingRoot=/);
-  assert.match(prompt, /facts\/media\.json/);
+  assert.match(prompt, /Navigation for the attempt root is in INDEX\.md below/);
+  assert.doesNotMatch(prompt, /briefingRoot=/);
   assert.doesNotMatch(prompt, /every user turn in index order/);
 });
 
@@ -181,6 +190,21 @@ test('comparison briefing names incomplete and unknown snapshots', async () => {
   const { comparisonSnapshotLabel } = await import('../../src/application/comparison-briefing.js');
   assert.equal(comparisonSnapshotLabel('missing'), 'unknown');
   assert.equal(comparisonSnapshotLabel('incomplete'), 'incomplete');
+});
+
+test('comparison short refs and path facts stay bounded and ignore workspace internals', async () => {
+  const { Value } = await import('@sinclair/typebox/value');
+  const { ComparisonLinksSchema } = await import('../../src/core/schema.js');
+  const { isComparisonChangedPath } = await import('../../src/application/controller-queries.js');
+  assert.equal(isComparisonChangedPath('.git/objects/abc'), false);
+  assert.equal(isComparisonChangedPath('.pytest_cache/state'), false);
+  assert.equal(isComparisonChangedPath('pkg/.git/objects/abc'), false);
+  assert.equal(isComparisonChangedPath('src/__pycache__/mod.pyc'), false);
+  assert.equal(isComparisonChangedPath('app/.venv/lib/site.py'), false);
+  assert.equal(isComparisonChangedPath('src/report.md'), true);
+  assert.equal(Value.Check(ComparisonLinksSchema, [{ side: 'candidate', inspectPath: 'candidate/x', shortRef: 'ev-100' }]), true);
+  assert.equal(Value.Check(ComparisonLinksSchema, [{ side: 'candidate', inspectPath: 'candidate/x', shortRef: 'ev-999999' }]), true);
+  assert.equal(Value.Check(ComparisonLinksSchema, [{ side: 'candidate', inspectPath: 'candidate/x', shortRef: 'ev-1' }]), false);
 });
 
 test('Host metrics shell matches the projected fingerprint and fails when numbers change', async () => {
@@ -201,18 +225,60 @@ test('Host metrics shell matches the projected fingerprint and fails when number
     metrics: facts.metrics ?? {},
   });
   assert.match(html, /white-space:nowrap/);
-  assert.match(html, /data-host="status"/);
+  assert.doesNotMatch(html, /data-host="status"/);
+  assert.match(html, /data-agent-slot="headline"/);
   assert.match(html, /data-agent-zone="key-differences"/);
   assert.match(html, /data-host-zone="metrics"/);
   assert.equal(hostMetricsMismatch(html, facts.metrics ?? {}), undefined);
   assert.match(html, /2<span class="unit">分/);
   assert.match(html, /13<span class="unit">分/);
   assert.match(html, /0\.49<span class="unit">\$/);
-  assert.match(html, /费用不含工具调用成本/);
-  assert.match(html, /2026-09-11-cc-switch-semantic/);
+  assert.match(html, /钉住的价格快照/);
+  assert.match(html, /\.num\.miss \{[^}]*white-space:nowrap/);
+  assert.match(html, /2026-09-14-models-dev-snapshot/);
+  assert.match(html, /cacheRead /);
+  assert.match(html, /cacheCreation /);
+  assert.equal(facts.models.baseline, 'gpt-5');
+  assert.match(html, /<div class="who">gpt-5<\/div>/);
+  assert.match(html, /<div class="who">gpt-5\.6<\/div>/);
+  assert.doesNotMatch(html, />Baseline</);
   const tampered = html.replace('0.49', '9.99');
   assert.equal(hostMetricsMismatch(tampered, facts.metrics ?? {}), 'Host metrics numbers were modified.');
   assert.equal(hostMetricsMismatch('<html></html>', facts.metrics ?? {}), 'Host metrics block is missing.');
+});
+
+test('cost card distinguishes missing usage from missing prices', async () => {
+  const { renderComparisonReportShell, formatCost } = await import('../../src/application/comparison-report-shell.js');
+  assert.equal(formatCost({ pricingStatus: 'not_collected' }).text, '未采集');
+  assert.equal(formatCost({ tokens: { total: 10 }, pricingStatus: 'pricing_unavailable' }).text, '价格未配置');
+  assert.equal(formatCost({ pricingStatus: 'unknown' }).text, '不可计算');
+  assert.equal(formatCost({ costUsd: 0.42, pricingStatus: 'collected' }).text, '0.42');
+  assert.equal(formatCost({ pricingStatus: 'not_collected' }, 'en').text, 'not collected');
+  assert.equal(formatCost({ tokens: { total: 10 }, pricingStatus: 'pricing_unavailable' }, 'en').text, 'no price configured');
+  const facts = buildComparisonContext(taskCase(), [runRecord()], [{
+    runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, tokenUsage: { total: 256 },
+  }]).reportFacts;
+  const html = renderComparisonReportShell({ task: '修复报告。', facts, metrics: facts.metrics ?? {} });
+  assert.match(html, /价格未配置/);
+});
+
+test('compose and review prompts require a compressed page and allow review tools', () => {
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /headline/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /pair-pages/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /historical model on the left/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /Must be non-empty/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="verified"/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not create new top-level data-agent-zone/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /最重要的 2–4 个差异/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /The left side is always the model of the historical session/);
+  assert.match(COMPARISON_TURN_PROMPTS.understand, /work\/comparison-plan\.md/);
+  assert.match(COMPARISON_TURN_PROMPTS.investigate, /changedPathsOmitted/);
+  assert.match(COMPARISON_TURN_PROMPTS.investigate, /finals of the same kind/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /reopen report\.html/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /editing the page directly/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /data-claim/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /已禁用工具/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.investigate, /最多四个候选差异/);
 });
 
 test('invalid comparison JSON keeps the already written report.html', async (t) => {

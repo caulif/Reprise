@@ -19,11 +19,12 @@ import {
   aggregateHistoricalUsage,
   busyMsFromHistoricalEvents,
   factsFromUsage,
-  usageCostUsd,
+  usagePricing,
 } from './session-usage.js';
-import { MODEL_PRICING_TABLE_VERSION } from './model-pricing.js';
+import { loadOperatorPricingOverride, MODEL_PRICING_TABLE_VERSION } from './model-pricing.js';
 import type { ComparisonMetricSide } from '../agents/comparison-agent.js';
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from './comparison-report-shell.js';
+import { readOperatorLocale } from './operator-locale.js';
 
 export type RunInspection = {
   runId: string;
@@ -39,12 +40,22 @@ export type RunInspection = {
   tokenCount?: number;
   tokenUsage?: { total?: number; input?: number; output?: number; cached?: number; reasoning?: number };
   costUsd?: number;
+  pricingLookup?: "hit" | "miss" | "invalid";
+  pricingModelId?: string;
+  pricingSource?: string;
+  pricingVersion?: string;
+  pricingRates?: { input: number; output: number; cacheRead: number; cacheCreation: number };
   generationMs?: number;
   replayConditions?: readonly string[];
   workspaceEvidenceStatus?: 'available' | 'not_collected' | 'unavailable';
 };
 
-export function buildComparisonContext(taskCase: TaskCase, runs: readonly RunRecord[], inspections: readonly RunInspection[] = []): ComparisonFactsContext {
+export function buildComparisonContext(
+  taskCase: TaskCase,
+  runs: readonly RunRecord[],
+  inspections: readonly RunInspection[] = [],
+  pricing?: { dataDir?: string },
+): ComparisonFactsContext {
   assertFacts(taskCase, runs);
   const byRunId = new Map(inspections.map((inspection) => [inspection.runId, inspection]));
   const primary = runs[0];
@@ -68,7 +79,7 @@ export function buildComparisonContext(taskCase: TaskCase, runs: readonly RunRec
       evidenceRefs: runEvidence(run),
     })),
     telemetry: runs.map((run) => ({ runId: run.attempt.runId, summary: telemetrySummary(run, byRunId.get(run.attempt.runId)) })),
-    reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay),
+    reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay, pricing?.dataDir),
     artifactRefs: unique(runs.flatMap((run) => run.artifactRefs.map((ref) => `artifact:${ref.artifactId}`))),
     allowModelText: taskCase.privacy.allowModelText,
     replayScope: {
@@ -87,13 +98,16 @@ export async function comparePersistedFacts(input: {
   inspections?: readonly RunInspection[];
   audit?: AgentAuditSink;
   attemptId: string;
+  dataDir?: string;
 }): Promise<{ context: ComparisonContext; result: StructuredAgentResult<ComparisonResult> }> {
   if (!input.attemptId) throw new Error("Comparison attemptId is required.");
-  const facts = buildComparisonContext(input.taskCase, input.runs, input.inspections);
+  const facts = buildComparisonContext(input.taskCase, input.runs, input.inspections, input.dataDir ? { dataDir: input.dataDir } : undefined);
+  const locale = input.dataDir ? await readOperatorLocale(input.dataDir) : "zh";
   const reportShellHtml = renderComparisonReportShell({
     task: facts.task.summary,
     facts: facts.reportFacts,
     metrics: metricsFromReportFacts(facts.reportFacts),
+    locale,
   });
   const hostZoneSnapshot = extractHostZoneSnapshot(reportShellHtml);
   const context: ComparisonContext = {
@@ -107,45 +121,102 @@ export async function comparePersistedFacts(input: {
   return { context, result };
 }
 
-function buildReportFacts(run: RunRecord | undefined, inspection: RunInspection | undefined, taskCase: TaskCase, hostReplay: ComparisonContext['hostReplay']): ComparisonReportFacts {
+function buildReportFacts(
+  run: RunRecord | undefined,
+  inspection: RunInspection | undefined,
+  taskCase: TaskCase,
+  hostReplay: ComparisonContext['hostReplay'],
+  dataDir?: string,
+): ComparisonReportFacts {
   if (!run) return {
     run: { runId: 'unavailable', outcome: 'unavailable', terminationCode: 'unavailable', initiatedBy: 'unavailable' },
-    models: { candidate: 'unavailable' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
+    models: comparisonModels(taskCase, undefined), activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
     delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' },
     replay: { conditions: [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: 'unavailable' },
   };
   const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
-  const metrics = projectedMetrics(taskCase, inspection, run);
+  const metrics = projectedMetrics(taskCase, inspection, run, dataDir);
   return {
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
-    models: { candidate: run.manifest?.resolvedModel.resolved ?? run.attempt.candidate.requestedModel, ...(run.manifest ? { controller: run.manifest.controller.requestedModel, comparison: run.manifest.comparison.requestedModel } : {}) },
+    models: comparisonModels(taskCase, run),
     activity: { ...(inspection ? { candidateTurns: inspection.turns } : {}) },
     limits: { wallClockMs: run.attempt.policy.wallClockMs, maxTargetTurns: run.attempt.policy.maxTargetTurns, maxModelCalls: run.attempt.policy.maxModelCalls, triggered },
     runtime: { productId: run.attempt.candidate.productId },
-    delivery: { changedPaths: inspection?.changedPaths ?? [], targetArtifactStatus: run.artifactRefs.length ? 'artifacts_recorded' : 'not_collected', verificationStatus: run.outcome.task.status },
+    delivery: {
+      changedPaths: inspection?.changedPaths ?? [],
+      targetArtifactStatus: run.artifactRefs.length ? 'artifacts_recorded' : 'not_collected',
+      verificationStatus: run.outcome.task.status,
+      ...(inspection ? { changedPathsIndexed: inspection.changedPaths.length } : {}),
+    },
     replay: { ...(hostReplay?.sourceRootKind ? { sourceRootKind: hostReplay.sourceRootKind } : {}), conditions: hostReplay?.conditions ?? [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: evidenceLevel(run.outcome.task.evidenceRefs) },
     ...(metrics ? { metrics } : {}),
   };
 }
 
-function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefined, run: RunRecord): ComparisonReportFacts['metrics'] {
+function comparisonModels(taskCase: TaskCase, run: RunRecord | undefined): ComparisonReportFacts["models"] {
+  const baseline = taskCase.sourceRuntimeEvidence.model;
+  if (!run) {
+    return { candidate: "unavailable", ...(baseline ? { baseline } : {}) };
+  }
+  return {
+    candidate: run.manifest?.resolvedModel.resolved ?? run.attempt.candidate.requestedModel,
+    ...(baseline ? { baseline } : {}),
+    ...(run.manifest ? { controller: run.manifest.controller.requestedModel, comparison: run.manifest.comparison.requestedModel } : {}),
+  };
+}
+
+function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefined, run: RunRecord, dataDir?: string): ComparisonReportFacts['metrics'] {
   const baselineUsage = aggregateHistoricalUsage(taskCase.historicalEvents);
   const baselineBusy = busyMsFromHistoricalEvents(taskCase.historicalEvents);
   const baselineTokens = factsFromUsage(baselineUsage);
-  const baselineCost = usageCostUsd(baselineUsage, taskCase.sourceRuntimeEvidence.model);
+  const override = dataDir ? loadOperatorPricingOverride(dataDir) : undefined;
+  const baselinePriced = usagePricing(baselineUsage, taskCase.sourceRuntimeEvidence.model, undefined, {
+    productId: taskCase.source.productId,
+    ...(override ? { override } : {}),
+  });
   const lastHistorical = taskCase.historicalEvents.at(-1);
   const baselineCollectedAt = typeof lastHistorical?.timestamp === "string" ? lastHistorical.timestamp : undefined;
   return {
-    baseline: sideMetrics(baselineBusy, baselineTokens, baselineCost, {
+    baseline: sideMetrics(baselineBusy, baselineTokens, baselinePriced.costUsd, {
       provider: taskCase.source.productId,
       usagePresent: baselineUsage !== undefined,
       ...(baselineCollectedAt ? { collectedAt: baselineCollectedAt } : {}),
+      ...pricingFields(baselinePriced),
     }),
     candidate: sideMetrics(inspection?.wallClockMs, inspection?.tokenUsage, inspection?.costUsd, {
       provider: run.attempt.candidate.productId,
       usagePresent: inspection?.tokenUsage !== undefined || inspection?.costUsd !== undefined,
       collectedAt: run.attempt.createdAt,
+      ...pricingFields({
+        lookup: inspection?.pricingLookup ?? (inspection?.costUsd !== undefined ? "hit" : "miss"),
+        ...(inspection?.pricingModelId ? { pricingModelId: inspection.pricingModelId } : {}),
+        ...(inspection?.pricingSource ? { pricingSource: inspection.pricingSource } : {}),
+        ...(inspection?.pricingVersion ? { pricingVersion: inspection.pricingVersion } : {}),
+        ...(inspection?.pricingRates ? { rates: inspection.pricingRates } : {}),
+      }),
     }),
+  };
+}
+
+function pricingFields(priced: {
+  lookup: "hit" | "miss" | "invalid";
+  pricingModelId?: string;
+  pricingSource?: string;
+  pricingVersion?: string;
+  rates?: { input: number; output: number; cacheRead: number; cacheCreation: number };
+}): {
+  pricingLookup?: "invalid";
+  pricingModelId?: string;
+  pricingSource?: string;
+  pricingVersion?: string;
+  rates?: { input: number; output: number; cacheRead: number; cacheCreation: number };
+} {
+  return {
+    ...(priced.lookup === "invalid" ? { pricingLookup: "invalid" as const } : {}),
+    ...(priced.pricingModelId ? { pricingModelId: priced.pricingModelId } : {}),
+    ...(priced.pricingSource ? { pricingSource: priced.pricingSource } : {}),
+    ...(priced.pricingVersion ? { pricingVersion: priced.pricingVersion } : {}),
+    ...(priced.rates ? { rates: priced.rates } : {}),
   };
 }
 
@@ -153,7 +224,16 @@ function sideMetrics(
   elapsedMs: number | undefined,
   tokens: RunInspection['tokenUsage'] | undefined,
   costUsd: number | undefined,
-  meta: { provider: string; collectedAt?: string; usagePresent: boolean },
+  meta: {
+    provider: string;
+    collectedAt?: string;
+    usagePresent: boolean;
+    pricingLookup?: "invalid";
+    pricingModelId?: string;
+    pricingSource?: string;
+    pricingVersion?: string;
+    rates?: { input: number; output: number; cacheRead: number; cacheCreation: number };
+  },
 ): ComparisonMetricSide {
   const total = tokens === undefined ? undefined : tokenTotal(tokens);
   const usageStatus = total !== undefined
@@ -161,6 +241,15 @@ function sideMetrics(
     : meta.usagePresent
       ? "unknown" as const
       : "not_collected" as const;
+  const pricingStatus = meta.pricingLookup === "invalid"
+    ? "unknown" as const
+    : total !== undefined && costUsd !== undefined
+      ? "collected" as const
+      : total !== undefined
+        ? "pricing_unavailable" as const
+        : meta.usagePresent || costUsd !== undefined
+          ? "unknown" as const
+          : "not_collected" as const;
   return {
     ...(elapsedMs === undefined ? {} : { elapsedMs }),
     ...(total === undefined || tokens === undefined ? {} : {
@@ -172,11 +261,15 @@ function sideMetrics(
         ...(tokens.reasoning === undefined ? {} : { reasoning: tokens.reasoning }),
       },
     }),
-    ...(costUsd === undefined ? {} : { costUsd, pricingVersion: MODEL_PRICING_TABLE_VERSION }),
+    ...(costUsd === undefined ? {} : { costUsd, pricingVersion: meta.pricingVersion ?? MODEL_PRICING_TABLE_VERSION }),
     usageStatus,
+    pricingStatus,
     toolCostsIncluded: false,
     provider: meta.provider,
     ...(meta.collectedAt ? { collectedAt: meta.collectedAt } : {}),
+    ...(meta.pricingModelId ? { pricingModelId: meta.pricingModelId } : {}),
+    ...(meta.pricingSource ? { pricingSource: meta.pricingSource } : {}),
+    ...(meta.rates ? { pricingRates: meta.rates } : {}),
   };
 }
 

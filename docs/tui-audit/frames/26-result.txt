@@ -1,4 +1,4 @@
-Reprise   Run result                                                                                      00:00   ● done
+Reprise   对照结果                                                                                        00:00   ● 完成
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ▎ Fix the failing test.                                                                                                 
 ▎ Run the focused test.                                                                                                 
@@ -16,17 +16,17 @@ Reprise   Run result                                                            
                                                                                                                         
  * Codex · working                                                                                                 00:00
 
-┌─ Run result ─ completed ─────────────────────────────────────────────────────────────────────────────────────────────┐
+┌─ 对照结果 ─ completed ───────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ✓ completed                                                                                                          │
-│ Task         apparently_completed                                                                                    │
-│ Termination  completed · completed.controller_satisfied                                                              │
-│ Cleanup      complete                                                                                                │
-│ Comparison   Comparison complete                                                                                     │
-│ Report       TMP\data\experiments\fixture\report.html         │
-│ Replica                                                                                                              │
+│ 任务判断     apparently_completed                                                                                    │
+│ 运行终止     completed · completed.controller_satisfied                                                              │
+│ 清理         complete                                                                                                │
+│ 对照         对照完成                                                                                                │
+│ 报告         TMP\data\experiments\fixture\report.html         │
+│ 隔离副本                                                                                                             │
 │TMP\data\experiments\fixture\environment\runs\run-1            │
-│ Trace        TMP\data\experiments\fixture\runs\run-1          │
+│ 记录         TMP\data\experiments\fixture\runs\run-1          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- Experiment finished. Open the report from the short label.
+ 对照结束。用短标签打开报告。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Esc] Home
+ [Esc] 封面

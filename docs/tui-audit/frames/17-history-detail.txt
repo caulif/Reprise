@@ -1,14 +1,14 @@
-Reprise v0.1.0   C:\reprise                            No configured model   ○ Harness unset  ○ Product unset  ○ No task
+Reprise v0.1.0   C:\reprise                                    尚未配置模型   ○ 内部模型未配置  ○ 未选会话产品  ○ 无任务
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Internal model  needs config
+ 内部模型  需要先配置
 
- Continue
- ·        Latest replay  record unread
- /config  Open /config  needs credential
+ 继续
+ ·        最近一次对照  record unread
+ /config  打开 /config  需要凭据
 
-┌─ TaskCases · Storage 0.0 MiB ─────────────────────────────────────┐ ┌─ TaskCase ─────────────────────────────────────┐
+┌─ 任务 · 占用 0.0 MiB ─────────────────────────────────────────────┐ ┌─ 任务 ─────────────────────────────────────────┐
 │ ❯ case-history · Inspect a focused regression.                    │ │ TaskCase: case-history                         │
-│     imported 2026-08-11T00:00:00.000Z                             │ │ Task         Inspect a focused regression.     │
+│     导入于 2026-08-11T00:00:00.000Z                               │ │ Task         Inspect a focused regression.     │
 │ 1/1                                                               │ │ Source       codex · session-history           │
 │                                                                   │ │ Frozen       2026-08-11T00:00:00.000Z          │
 │                                                                   │ │ Path                                           │
@@ -28,6 +28,6 @@ Reprise v0.1.0   C:\reprise                            No configured model   ○
 │                                                                   │ │reprise-tui-audit-TMP\history-data\cases\    │
 │                                                                   │ │case-history\case.json                          │
 └───────────────────────────────────────────────────────────────────┘ └────────────────────────────────────────────────┘
- Experiment record. Opening history does not resume a process.
+ 实验记录。打开历史不会续跑进程。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Enter] Use this TaskCase  [Esc] Back
+ [Enter] 使用这个任务  [Esc] 返回

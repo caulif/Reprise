@@ -125,7 +125,7 @@ async function main() {
   const configApp = new IntakeTui(tuiOptions(join(root, 'data-config'), { tui: config.tui }));
   await configApp.start();
   enterCommand(configApp, '/config');
-  await waitFor(() => /Internal Agent model/.test(config.render(120)));
+  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(config.render(120)));
   configApp.handleInput('\u001b[A');
   configApp.handleInput('\u001b[A');
   configApp.handleInput('\u001b[A');
@@ -167,7 +167,7 @@ async function main() {
   await envApp.start();
   await push('01b-home-env-unset', 120, envHome.render(120));
   enterCommand(envApp, '/config');
-  await waitFor(() => /Internal Agent model/.test(envHome.render(120)));
+  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(envHome.render(120)));
   await push('06b-config-status-env-unset', 120, envHome.render(120));
   envApp.handleInput('\u001b[B');
   envApp.handleInput('\u001b[B');
@@ -195,47 +195,47 @@ async function main() {
   }));
   await intakeApp.start();
   enterCommand(intakeApp, '/intake');
-  await waitFor(() => /Select agent product/.test(intake.render(120)), 'product list');
+  await waitFor(() => /Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list');
   await push('08c-products-wide', 120, intake.render(120));
   await push('08d-products-compact', 60, intake.render(60));
   intakeApp.handleInput('\u001b[B');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a project/.test(intake.render(120)), 'Claude project list');
+  await waitFor(() => /Choose a project|先选项目/.test(intake.render(120)), 'Claude project list');
   await push('08e-claude-projects-wide', 120, intake.render(120));
   intakeApp.handleInput('\r');
   await waitFor(() => /Review the product intake flow/.test(intake.render(120)), 'Claude session list');
   await push('08f-claude-sessions-wide', 120, intake.render(120));
   intakeApp.handleInput('\b');
   intakeApp.handleInput('\b');
-  await waitFor(() => /Select agent product/.test(intake.render(120)), 'product list after Claude');
+  await waitFor(() => /Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list after Claude');
   intakeApp.handleInput('\u001b[A');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a project/.test(intake.render(120)), 'Codex project list');
+  await waitFor(() => /Choose a project|先选项目/.test(intake.render(120)), 'Codex project list');
   intakeApp.handleInput('\u001b[B');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a historical session/.test(intake.render(120)), 'CJK session list');
+  await waitFor(() => /Choose a historical session|选择一条历史会话/.test(intake.render(120)), 'CJK session list');
   await push('09-sessions-wide', 120, intake.render(120));
   await push('10-sessions-compact', 60, intake.render(60));
   await push('11-sessions-cjk-selected', 120, intake.render(120));
   intakeApp.handleInput('\r');
-  await waitFor(() => /Session start:/.test(intake.render(120)), 'CJK inspection');
+  await waitFor(() => /Session start:|会话起点：/.test(intake.render(120)), 'CJK inspection');
   await push('11b-inspection-review', 120, intake.render(120));
   intakeApp.handleInput('\r');
-  await waitFor(() => /is current/.test(intake.render(120)), { describe: 'home after CJK freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
+  await waitFor(() => /is current|当前任务/.test(intake.render(120)), { describe: 'home after CJK freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('12-home-after-cjk-freeze', 120, intake.render(120));
   enterCommand(intakeApp, '/intake');
-  await waitFor(() => /Select agent product/.test(intake.render(120)), 'product list after freeze');
+  await waitFor(() => /Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list after freeze');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a historical session|Choose a project/.test(intake.render(120)), 'intake after freeze');
-  if (/Choose a historical session/.test(intake.render(120))) intakeApp.handleInput('\u001b');
-  await waitFor(() => /Choose a project/.test(intake.render(120)), 'project list after freeze');
+  await waitFor(() => /Choose a historical session|Choose a project|选择一条历史会话|先选项目/.test(intake.render(120)), 'intake after freeze');
+  if (/Choose a historical session|选择一条历史会话/.test(intake.render(120))) intakeApp.handleInput('\u001b');
+  await waitFor(() => /Choose a project|先选项目/.test(intake.render(120)), 'project list after freeze');
   intakeApp.handleInput('\u001b[A');
   intakeApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(intake.render(120)), 'English session list');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Session start:/.test(intake.render(120)), 'English inspection');
+  await waitFor(() => /Session start:|会话起点：/.test(intake.render(120)), 'English inspection');
   intakeApp.handleInput('\r');
-  await waitFor(() => /is current/.test(intake.render(120)), { describe: 'home after English freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
+  await waitFor(() => /is current|当前任务/.test(intake.render(120)), { describe: 'home after English freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('13-home-after-freeze', 120, intake.render(120));
   await push('18-home-with-taskcase', 120, intake.render(120));
 
@@ -274,7 +274,7 @@ async function main() {
   const historyApp = new IntakeTui(tuiOptions(historyRoot, { tui: history.tui }));
   await historyApp.start();
   enterCommand(historyApp, '/history');
-  await waitFor(() => /Recent experiments/.test(history.render(120)));
+  await waitFor(() => /Recent experiments|最近对照/.test(history.render(120)));
   await push('15-history-runs', 120, history.render(120));
   historyApp.handleInput('\t');
   await push('16-history-cases', 120, history.render(120));
@@ -361,26 +361,26 @@ async function main() {
   }));
   await runApp.start();
   enterCommand(runApp, '/intake');
-  await waitFor(() => /Select agent product/.test(run.render(120)), 'run product list');
+  await waitFor(() => /Select agent product|选择 Agent 产品/.test(run.render(120)), 'run product list');
   runApp.handleInput('\r');
-  await waitFor(() => /Choose a project/.test(run.render(120)), 'run project list');
+  await waitFor(() => /Choose a project|先选项目/.test(run.render(120)), 'run project list');
   runApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(run.render(120)), 'run session list');
   runApp.handleInput('\r');
-  await waitFor(() => /Session start:/.test(run.render(120)), 'run inspection');
+  await waitFor(() => /Session start:|会话起点：/.test(run.render(120)), 'run inspection');
   runApp.handleInput('\r');
   await waitFor(() => {
     const frame = run.render(120);
-    return /Recovering session|Preparing recovery environment|TaskCase frozen|Starting environment recovery/.test(frame);
+    return /Recovering session|Preparing recovery environment|TaskCase frozen|Starting environment recovery|正在恢复会话|准备恢复环境|已冻结，进入环境恢复/.test(frame);
   }, { describe: 'auto recovery after freeze with selected product', timeoutMs: 30_000, frame: () => run.render(120) });
   await push('19-running-check', 120, run.render(120));
   await push('19b-running-check-compact', 60, run.render(60));
   releasePreflight?.();
-  await waitFor(() => /Running recovery agent/.test(run.render(120)), 'automatic environment preparation after preflight');
+  await waitFor(() => /Running recovery agent|正在运行恢复/.test(run.render(120)), 'automatic environment preparation after preflight');
   await push('20-running-copy', 120, run.render(120));
   releaseRecovery?.();
-  await waitFor(() => /choose candidate product/.test(run.render(120)), { describe: 'candidate product after recovery', frame: () => run.render(120) });
-  await waitFor(() => /source session\s+available/.test(run.render(120)), {
+  await waitFor(() => /choose candidate product|选候选产品/.test(run.render(120)), { describe: 'candidate product after recovery', frame: () => run.render(120) });
+  await waitFor(() => /source session\s+available|来源会话[\s\S]{0,80}可用/.test(run.render(120)), {
     describe: 'candidate availability settled',
     timeoutMs: 15_000,
     frame: () => run.render(120),
@@ -388,17 +388,17 @@ async function main() {
   await push('29-candidate-product', 120, run.render(120));
   await push('29b-candidate-product-narrow', 60, run.render(60));
   runApp.handleInput('\r');
-  await waitFor(() => /choose candidate model/.test(run.render(120)), { describe: 'candidate model after product', frame: () => run.render(120) });
+  await waitFor(() => /choose candidate model|选候选模型/.test(run.render(120)), { describe: 'candidate model after product', frame: () => run.render(120) });
   await push('30-candidate-model', 120, run.render(120));
   await push('30b-candidate-model-narrow', 60, run.render(60));
   runApp.handleInput('\r');
-  await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay/.test(run.render(120)), 'candidate preparation after model selection');
+  await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay|正在复制隔离工作区|候选运行中|正在准备对照/.test(run.render(120)), 'candidate preparation after model selection');
   await push('21-running-start', 120, run.render(120));
   await waitFor(() => Boolean(releaseCopy), { describe: 'candidate copy handle', timeoutMs: 30_000 });
   releaseCopy();
   await waitFor(() => Boolean(releaseStart), { describe: 'candidate start handle', timeoutMs: 30_000 });
   releaseStart?.();
-  await waitFor(() => /Candidate running/.test(run.render(120)), 'candidate replay after preparation');
+  await waitFor(() => /Candidate running|候选运行中/.test(run.render(120)), 'candidate replay after preparation');
   await new Promise((resolve) => setTimeout(resolve, 40));
   await push('22-running-wide', 120, run.render(120));
   runApp.handleInput('\u001b[A');
@@ -425,7 +425,7 @@ async function main() {
     decision: { status: 'completed', value: { type: 'done' }, usedFallback: false },
     comparison: { result: { status: 'completed', usedFallback: false } },
   });
-  await waitFor(() => /Experiment finished/.test(run.render(120)));
+  await waitFor(() => /Experiment finished|对照结束/.test(run.render(120)));
   await push('26-result', 120, run.render(120));
   await push('26b-result-compact', 60, run.render(60));
 
@@ -437,7 +437,7 @@ async function main() {
   }));
   await errApp.start();
   enterCommand(errApp, '/intake');
-  await waitFor(() => /Select agent product/.test(err.render(120)));
+  await waitFor(() => /Select agent product|选择 Agent 产品/.test(err.render(120)));
   errApp.handleInput('\r');
   await waitFor(() => /ENOTDIR|not a directory|Error/i.test(err.render(120)));
   await push('27-product-discovery-error', 120, err.render(120));

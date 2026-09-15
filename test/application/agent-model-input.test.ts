@@ -58,7 +58,7 @@ test('reconstructed requests include a repair prompt and a compacted working set
       invocationId: 'inv-1',
       requestIndex: 2,
       repair: true,
-      body: inlineBody('Your prior response was invalid. Return only JSON.'),
+      body: inlineBody('Your previous reply was invalid: invalid JSON. Return only JSON that matches the contract.'),
     }),
     envelope(5, 'agent.context_compacted', {
       sessionId: 'session-1',
@@ -254,6 +254,7 @@ test('Host does not report success if model output cannot be recorded', async ()
     timeoutMs: 50,
     maxRepairAttempts: 0,
     allowModelText: true,
+    promptContent: 'return json',
     audit: {
       append: async (event) => {
         types.push(event.type);
@@ -298,7 +299,7 @@ test('an empty process rebuilds compacted and repaired requests from the event l
       type: 'agent.message_appended',
       sessionId,
       role: 'recovery',
-      payload: { invocationId: 'inv-1', requestIndex: 2, repair: true, body: inlineBody('Your prior response was invalid. Return only JSON.') },
+      payload: { invocationId: 'inv-1', requestIndex: 2, repair: true, body: inlineBody('Your previous reply was invalid: invalid JSON. Return only JSON that matches the contract.') },
     });
     await persistAgentAuditEvent(store, 'run-1', {
       type: 'agent.context_compacted',

@@ -107,19 +107,19 @@ test("Codex intake TUI keeps non-command input local and makes help and unknown 
   await app.start();
   app.handleInput("explain this task");
   app.handleInput("\r");
-  assert.match(rendered, /benchmark workbench/i);
+  assert.match(rendered, /benchmark workbench|对照工作台/i);
   assert.doesNotMatch(rendered, /explain this task/);
   assert.deepEqual(await readdir(root), []);
 
   enterCommand(app, "/unknown");
-  assert.match(rendered, /Unknown command: \/unknown/);
+  assert.match(rendered, /Unknown command: \/unknown|未知命令：\/unknown/);
   enterCommand(app, "/run");
-  assert.match(rendered, /Unknown command: \/run/);
+  assert.match(rendered, /Unknown command: \/run|未知命令：\/run/);
   app.handleInput("?");
-  assert.match(rendered, /Commands: \/intake, \/history, \/config, \/lang, \/help/);
+  assert.match(rendered, /Commands: \/intake, \/history, \/config, \/lang, \/help|命令：\/intake, \/history, \/config, \/lang, \/help/);
   app.handleInput("\x1b");
   assert.doesNotMatch(rendered, /This page \(home\)/);
-  assert.match(rendered, /Unknown command: \/run/);
+  assert.match(rendered, /Unknown command: \/run|未知命令：\/run/);
 });
 
 test("Codex intake TUI opens Home without configuration and only enters config on an explicit command", async (t) => {
@@ -163,10 +163,10 @@ test("Codex intake TUI opens Home without configuration and only enters config o
   });
 
   await app.start();
-  assert.match(rendered, /Continue|Browse|\/ command/);
+  assert.match(rendered, /Continue|Browse|\/ command|继续|浏览|\/命令/);
   assert.doesNotMatch(rendered, /Configuration file:|\.reprise\/harness-model\.json/);
   enterCommand(app, "/config");
-  await waitFor(() => /Internal Agent model/.test(rendered));
+  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(rendered));
   assert.match(rendered, /openai-compatible/);
   app.handleInput("\u001b[A");
   app.handleInput("\u001b[A");
@@ -174,7 +174,7 @@ test("Codex intake TUI opens Home without configuration and only enters config o
   app.handleInput("\r");
   assert.match(rendered, /provider-a/);
   app.handleInput("\x13");
-  await waitFor(() => /Configuration saved locally/.test(rendered));
+  await waitFor(() => /Configuration saved locally|配置已保存到本机/.test(rendered));
   assert.deepEqual(
     await readFile(join(root, "data", "harness-model.json"), "utf8").then(
       JSON.parse,
@@ -186,11 +186,11 @@ test("Codex intake TUI opens Home without configuration and only enters config o
       effort: "medium",
     },
   );
-  assert.match(rendered, /Continue|Browse|\/ command/);
+  assert.match(rendered, /Continue|Browse|\/ command|继续|浏览|\/命令/);
   enterCommand(app, "/config");
-  await waitFor(() => /Internal Agent model/.test(rendered));
+  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(rendered));
   assert.doesNotMatch(rendered, /Unsaved draft/);
-  assert.match(rendered, /Saved locally/);
+  assert.match(rendered, /Saved locally|已保存在本地/);
 });
 
 test("Codex intake TUI prefills the historical source, shows current-state limits, live facts, and report summary", async (t) => {
@@ -386,21 +386,21 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   await enterIntake(app);
   await waitFor(() => /Make a focused change\./.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Session start:/.test(rendered));
+  await waitFor(() => /Session start:|会话起点：/.test(rendered));
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Restore the task start/);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|Codex/.test(rendered));
+  await waitFor(() => /Preparing replay|Copy isolated workspace|正在准备对照|复制隔离工作区|Codex/.test(rendered));
   await waitFor(() => sourceRoot === "C:/not-automatic");
   emitEvent?.({ schemaVersion: 1, sequence: 6, eventId: 'shared-delivery', occurredAt: '2026-08-11T00:10:03.000Z', type: 'runtime.delivery_observed', payload: { status: 'accepted' }, checksum: 'd'.repeat(64) });
   assert.equal(app.runPhase, 'candidate_generating');
   app.handleInput("\u0003");
   assert.equal(stops, 0);
   assert.equal(cancellations, 0);
-  assert.match(rendered, /Press Ctrl\+C again to force exit/);
+  assert.match(rendered, /Press Ctrl\+C again to force exit|再按一次 Ctrl\+C 会强制退出/);
   releaseStart?.();
   await waitFor(() => cancellations === 1);
-  assert.match(rendered, /Cancellation requested/);
+  assert.match(rendered, /Cancellation requested|已请求取消/);
   assert.equal(sourceRoot, "C:/not-automatic");
   assert.equal(allowModelText, false);
   assert.doesNotMatch(rendered, /State: created → launching/);
@@ -425,7 +425,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   assert.equal(requestedRenders, 1);
   app.handleInput("/");
   for (const ch of "public response") app.handleInput(ch);
-  assert.match(rendered, /Find:/);
+  assert.match(rendered, /Find:|查找：/);
   assert.match(rendered, /public response line 1/);
   assert.match(rendered, /Fix the failing test/);
   app.handleInput("\x1b");
@@ -455,7 +455,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   );
   app.handleInput("pageUp");
   app.handleInput("l");
-  assert.match(rendered, /Following latest/);
+  assert.match(rendered, /Following latest|已跟随最新已写入事件/);
   // Test seam intentionally supplies a partial result; the TUI must not assume optional display data exists.
   resolveResult?.({
     reportPath: join(root, "data", "experiments", "fixture", "report.html"),
@@ -477,7 +477,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
       usedFallback: false,
     },
   });
-  await waitFor(() => /Experiment finished/.test(rendered));
+  await waitFor(() => /Experiment finished|对照结束/.test(rendered));
   assert.match(rendered, /report\.html/);
   app.handleInput('\x1b');
   assert.equal(app.page, 'home');
@@ -600,11 +600,11 @@ test("Codex intake TUI automatically prepares every session with Recovery before
   await enterIntake(app);
   await waitFor(() => /Restore the task start/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Session start:/.test(rendered));
+  await waitFor(() => /Session start:|会话起点：/.test(rendered));
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   assert.equal(recoveryCalls, 1);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Recovery preview is ready/);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|Experiment finished|Run result/.test(rendered) || app.page === "running" || app.page === "result");
+  await waitFor(() => /Preparing replay|Copy isolated workspace|Experiment finished|Run result|正在准备对照|复制隔离工作区|对照结束|对照结果/.test(rendered) || app.page === "running" || app.page === "result");
   assert.equal(discarded, 0);
 });

@@ -137,10 +137,11 @@ export type StructuredWorkRequest<T> = {
   validate?: (value: T) => string | undefined;
   outputContract?: string;
   repairInstruction?: string;
-  promptContent?: string;
+  promptContent: string;
   promptImages?: readonly ImageContent[];
   normalize?: (value: unknown) => unknown;
   allowTools?: boolean;
+  allowToolsOnRepair?: boolean;
   signal?: AbortSignal;
   requestId?: string;
 };

@@ -11,7 +11,7 @@ import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
-import { formatRecoveryFailureSummary, type Locale } from './i18n.js';
+import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
 
@@ -202,6 +202,10 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
 
 function recoveryModel(input: Input): import('./pages/run.js').RecoveryPreviewModel | undefined {
   if (!input.recoveryView?.baseline.recovery) return undefined;
+  const locale = input.locale ?? 'en';
+  const stored = input.recoveryView.baseline.recovery.summary
+    ?? (input.recoveryView.recovery?.status === 'completed' ? input.recoveryView.recovery.value.summary : undefined);
+  const explanationKey = stored && isHostExplanationKey(stored) ? stored : undefined;
   return {
     status: previewStatus(userRecoveryStatus({
       baseline: input.recoveryView.baseline,
@@ -210,19 +214,16 @@ function recoveryModel(input: Input): import('./pages/run.js').RecoveryPreviewMo
     })),
     ...(input.recoveryView.providerPreview?.reportText ? { reportText: input.recoveryView.providerPreview.reportText } : {}),
     unresolved: input.recoveryView.baseline.recovery.unresolved,
-    ...(input.recoveryView.baseline.recovery.summary
-      ? { summary: input.recoveryView.baseline.recovery.summary }
-      : input.recoveryView.recovery?.status === 'completed' && input.recoveryView.recovery.value.summary
-        ? { summary: input.recoveryView.recovery.value.summary }
-        : {}),
+    ...(stored && !explanationKey ? { summary: stored } : {}),
     changedPathCount: input.recoveryView.providerPreview?.changedPaths.length ?? 0,
     skippedPaths: [...(input.recoveryView.baseline.budget?.excludedEntries ?? [])],
     ...(input.recoveryView.baseline.recovery.failureStage
-        ? { failureSummary: formatRecoveryFailureSummary(input.locale ?? 'en', input.recoveryView.baseline.recovery.failureStage, {
+        ? { failureSummary: formatRecoveryFailureSummary(locale, input.recoveryView.baseline.recovery.failureStage, {
             changedPathCount: input.recoveryView.providerPreview?.changedPaths.length ?? 0,
             ...(input.recoveryView.recovery?.status === 'failed' && input.recoveryView.recovery.failure.kind ? { agentFailureKind: input.recoveryView.recovery.failure.kind } : {}),
+            ...(explanationKey ? { explanationKey } : {}),
           }) }
-      : {}),
+      : explanationKey ? { failureSummary: t(locale, explanationKey) } : {}),
   };
 }
 

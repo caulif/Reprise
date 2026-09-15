@@ -1,10 +1,12 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import type { AgentLocale } from "../agents/language.js";
 import { createHarnessWorkflow } from "../application/experiment-workflow.js";
 import { formatCancelResult, requestCancel } from "../application/experiment-cancel.js";
 import { classifyCliError } from "../application/cli-error.js";
 import { CLI_EXIT, exitCodeForKind } from "../core/cli-protocol.js";
 import { runHeadlessCommand, type HeadlessContext } from "./headless.js";
+import { operatorLocaleFromFlag } from "./locale-flag.js";
 import { runQueryCommand } from "./query.js";
 import { createProductLookup, loadAndActivateProductPacks, packLoadDiagnostics, productPacks } from "../products/index.js";
 import { parseSessionsDirs } from "./sessions-dirs.js";
@@ -20,6 +22,7 @@ const commandOptions = {
   compare: { type: "boolean" },
   json: { type: "boolean" },
   jsonl: { type: "boolean" },
+  locale: { type: "string" },
   help: { type: "boolean", short: "h" },
   version: { type: "boolean", short: "v" },
 } as const;
@@ -30,6 +33,7 @@ type CommandValues = {
   readonly compare?: boolean;
   readonly json?: boolean;
   readonly jsonl?: boolean;
+  readonly locale?: string;
   readonly help?: boolean;
   readonly version?: boolean;
 };
@@ -40,7 +44,7 @@ export interface CliIo {
 }
 
 export interface CliContext extends HeadlessContext {
-  readonly runTui?: (input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string; autoCompare?: boolean }) => Promise<void>;
+  readonly runTui?: (input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string; autoCompare?: boolean; locale?: AgentLocale }) => Promise<void>;
 }
 
 export function assertSupportedNodeVersion(version = process.versions.node): void {
@@ -62,7 +66,7 @@ export function helpText(): string {
     "Reprise — local-first agent runtime replay and inspection",
     "",
     "Usage:",
-    "  reprise [--data-dir <dir>] [--sessions-dir <productId>=<path>] [--compare]",
+    "  reprise [--data-dir <dir>] [--sessions-dir <productId>=<path>] [--compare] [--locale <en|zh>]",
     "  reprise products|models|projects|sessions|inspect|import|history|events|auth [--json]",
     "  reprise config get|set [--json]",
     "  reprise prepare (--source-root <dir> --task-case <file.json> | --source-product <id> --source-path <path>) [--json|--jsonl]",
@@ -98,6 +102,11 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
     }
     parseOutputMode(values);
     const dataDir = values["data-dir"] ?? process.env.REPRISE_DATA_DIR ?? ".reprise";
+    const locale = operatorLocaleFromFlag(values.locale);
+    if (locale) {
+      const { saveTuiPreferences } = await import("../tui/preferences.js");
+      await saveTuiPreferences(resolve(dataDir), { locale });
+    }
     const sessionsRoots = parseSessionsDirs(values["sessions-dir"]);
     await loadAndActivateProductPacks(resolve(dataDir));
     await (context.runTui ?? runBenchmarkWorkbenchTui)({
@@ -106,6 +115,7 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
       sessionsRoots,
       ...(values.compare ? { autoCompare: true } : {}),
       ...(context.now ? { now: context.now } : {}),
+      ...(locale ? { locale } : {}),
     });
     io.stdout("TUI closed.");
     return CLI_EXIT.ok;
@@ -116,7 +126,7 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
   }
 }
 
-async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string; autoCompare?: boolean }): Promise<void> {
+async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string; autoCompare?: boolean; locale?: AgentLocale }): Promise<void> {
   const { IntakeTui } = await import("../tui/intake-app.js");
   const dataDir = resolve(input.dataDir);
   await new IntakeTui({
@@ -127,6 +137,7 @@ async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: 
       dataDir,
       lookup: createProductLookup(productPacks, packLoadDiagnostics),
       now: input.now ? () => input.now! : () => new Date().toISOString(),
+      ...(input.locale ? { locale: input.locale } : {}),
     }),
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     now: input.now ? () => input.now! : () => new Date().toISOString(),

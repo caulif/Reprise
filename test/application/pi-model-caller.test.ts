@@ -77,6 +77,9 @@ test('modelsForConfig registers an OpenAI-compatible model whose key only resolv
   assert.equal(auth?.source, 'REPRISE_TEST_KEY');
   assert.equal(auth?.auth.apiKey, 'actual-secret-value');
   assert.doesNotMatch(JSON.stringify(provider), /actual-secret-value/);
+  const registered = provider.getModels()[0];
+  assert.ok(registered);
+  assert.equal(Object.hasOwn(registered, 'cost'), false);
 });
 
 test('modelsForConfig resolves an API key stored in the local config file', async () => {

@@ -1,31 +1,30 @@
-Reprise v0.1.0   C:\reprise                           gpt-5.6-terra · medium   ⚠ Harness key missing  ● Codex  ○ No task
+Reprise v0.1.0   C:\reprise                               gpt-5.6-terra · medium   ⚠ 内部模型缺少密钥  ● Codex  ○ 无任务
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Internal model  gpt-5.6-terra
+ 内部模型  gpt-5.6-terra
 
- Continue
- /history Local experiments  no local experiments
- /config  Open /config  needs credential
+ 继续
+ /history 本机实验记录  还没有本地对照
+ /config  打开 /config  需要凭据
 
-┌─ reprise · 1 sessions · filter: all ──────┐ ┌─ Review session · reprise ─────────────────────────────────────────────┐
-│❯ 4d ago      修复这个回归… u1 a1 t0       │ │ Enter freezes this session. Replay starts at the first user task, not  │
-│ 1/1                                       │ │product-injected instruction blocks. Later user turns stay in the case  │
-│                                           │ │for the Controller. The Runtime does not start yet.                     │
-│                                           │ │ reprise · 4d ago · u1 a1 t0                                            │
+┌─ reprise · 1 会话 · 过滤: 全部 ───────────┐ ┌─ 核对会话 · reprise ───────────────────────────────────────────────────┐
+│❯ 4 天前      修复这个回归… u1 a1 t0       │ │ 按 Enter 冻结整段会话。回放起点是第一条用户任务句，                    │
+│ 1/1                                       │ │不是产品自动注入的指令块。后面的用户轮次留给 Controller。此时不会启动   │
+│                                           │ │Runtime。                                                               │
+│                                           │ │ reprise · 4 天前 · u1 a1 t0                                            │
 │                                           │ │────────────────────────────────────────────────────────────────────────│
-│                                           │ │ Session start:                                                         │
+│                                           │ │ 会话起点：                                                             │
 │                                           │ │ 修复这个回归缺陷并验证测试全部通过                                     │
 │                                           │ │────────────────────────────────────────────────────────────────────────│
-│                                           │ │ Later user turns (Controller will see these)                           │
-│                                           │ │ none                                                                   │
+│                                           │ │ 后续用户轮次（Controller 会看到）                                      │
+│                                           │ │ 无                                                                     │
 │                                           │ │────────────────────────────────────────────────────────────────────────│
-│                                           │ │ Outcome    已修复，并补了回归测试。                                    │
-│                                           │ │ Privacy    model text blocked · binary blocked · literal redactions    │
-│                                           │ │none                                                                    │
-│                                           │ │ Nothing is written until you press Enter.                              │
-│                                           │ │ Source:                                                                │
+│                                           │ │ 结果    已修复，并补了回归测试。                                       │
+│                                           │ │ 隐私    模型文本 禁止 · 二进制 禁止 · 字面量脱敏 无                    │
+│                                           │ │ 按 Enter 之前不会写入任何东西。                                        │
+│                                           │ │ 来源：                                                                 │
 │                                           │ │TMP\sessions\    │
 │                                           │ │rollout-session-cjk.jsonl                                               │
 └───────────────────────────────────────────┘ └────────────────────────────────────────────────────────────────────────┘
- Choose a historical session. Enter opens the review; Enter again freezes and starts recovery.
+ 选择一条历史会话。Enter 打开核对页；再按 Enter 冻结并开始恢复。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Enter] Freeze and recover  [d] Expand outcome  [t] Toggle model text  [Esc] Back
+ [Enter] 冻结并恢复  [d] 展开结果  [t] 切换正文分享  [Esc] 返回

@@ -11,6 +11,10 @@ const M = {
   harnessAuthentication: { en: 'Check the Harness provider credentials.', zh: '请检查 Harness 模型服务凭据。' },
   harnessProtocol: { en: 'Check the context budget and model response diagnostics.', zh: '请检查上下文预算和模型响应诊断。' },
   harnessFailure: { en: 'Failed; review the saved diagnostics.', zh: '失败；请查看已保存的诊断。' },
+  recoveryReportMissing: { en: 'recovery.md is missing from the work copy.', zh: '工作副本根目录缺少 recovery.md。' },
+  recoverySourceChanged: { en: 'Recovery changed the user source directory.', zh: '恢复改动了用户源目录。' },
+  recoveryStagingInvalid: { en: 'The recovered work copy did not pass Host validation.', zh: '恢复后的工作副本未通过 Host 校验。' },
+  recoveryPreflightFailed: { en: 'Recovery could not prepare the isolated workspace.', zh: '无法准备隔离工作区。' },
   continue: { en: 'Continue', zh: '继续' },
   browse: { en: 'Browse', zh: '浏览' },
   commands: { en: 'Commands', zh: '命令' },
@@ -543,16 +547,36 @@ export function sessionReplayErrorMessage(error: unknown, locale: Locale): strin
   return error.message;
 }
 
+const HOST_EXPLANATION_KEYS = new Set<MessageKey>([
+  'recoveryReportMissing',
+  'recoverySourceChanged',
+  'recoveryStagingInvalid',
+  'recoveryPreflightFailed',
+  'harnessTransient',
+  'harnessAuthentication',
+  'harnessProtocol',
+  'harnessFailure',
+]);
+
+export function isHostExplanationKey(value: string): value is MessageKey {
+  return HOST_EXPLANATION_KEYS.has(value as MessageKey);
+}
+
 export function formatRecoveryFailureSummary(
   locale: Locale,
   stage: string,
-  detail?: { changedPathCount?: number; agentFailureKind?: string },
+  detail?: { changedPathCount?: number; agentFailureKind?: string; explanationKey?: MessageKey },
 ): string {
+  if (detail?.explanationKey) return t(locale, detail.explanationKey);
   if (detail?.agentFailureKind && (stage === 'agent_model_failed' || stage === 'agent_timeout')) return formatHarnessFailure(locale, 'recovery', detail.agentFailureKind);
+  if (stage === 'source_tripwire_failed') return t(locale, 'recoverySourceChanged');
+  if (stage === 'preflight_failed') return t(locale, 'recoveryPreflightFailed');
+  if (stage === 'agent_invalid_output') return formatHarnessFailure(locale, 'recovery', 'protocol');
+  if (stage === 'runner_crashed') return t(locale, 'harnessFailure');
   const noWorkspaceChange = stage === 'provider_validation_failed' && (detail?.changedPathCount ?? -1) === 0;
   const reason = noWorkspaceChange
     ? t(locale, 'recoveryReasonNoWorkspaceChange')
-    : stage === 'provider_validation_failed' ? t(locale, 'recoveryReasonValidationFailed')
+    : stage === 'provider_validation_failed' ? t(locale, 'recoveryStagingInvalid')
     : /budget/.test(stage) ? t(locale, 'recoveryReasonBudget')
     : stage === 'agent_model_failed' || stage === 'agent_timeout' ? t(locale, 'recoveryReasonModelFailed')
     : stage === 'agent_tool_failed' ? t(locale, 'recoveryReasonToolFailed')

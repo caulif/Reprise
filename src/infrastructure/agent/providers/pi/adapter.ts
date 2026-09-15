@@ -145,7 +145,7 @@ async function compactInto(
   availableWindow: number,
 ): Promise<boolean> {
   if (availableWindow <= 0) throw new Error("Context budget: system prompt, tools and output reserve exceed the model window.");
-  const pruned = prunePiMessagesForBudget(live, false);
+  const pruned = prunePiMessagesForBudget(live);
   if (pruned.changed) {
     agent.state.messages = live;
     await onContextCompact?.({ summary: pruned.summary, tokensBefore: estimatedMessageTokens(live), retainedCount: live.length, reason: "prune", retainedTail: [...live] });
@@ -153,10 +153,10 @@ async function compactInto(
   if (!needsPiCompaction(live, availableWindow)) return pruned.changed;
   const compacted = await compactPiMessages({ messages: live, models, model, thinkingLevel, ...(customInstructions ? { customInstructions } : {}), ...(signal ? { signal } : {}) });
   if (!compacted) {
-    const shrink = prunePiMessagesForBudget(live, true);
+    const shrink = prunePiMessagesForBudget(live);
     agent.state.messages = live;
     await onContextCompact?.({
-      summary: shrink.changed ? `Host working-set shrink after empty Pi history. ${shrink.summary}` : "Host working-set shrink after empty Pi history.",
+      summary: shrink.changed ? `Host prune after empty Pi compaction. ${shrink.summary}` : "Host prune after empty Pi compaction",
       tokensBefore: estimatedMessageTokens(live),
       retainedCount: live.length,
       reason: "shrink",

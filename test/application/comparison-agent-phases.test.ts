@@ -76,7 +76,9 @@ test("Comparison reuses one Session for an attempt and isolates different attemp
   assert.match(sessions[0]?.appended[2] ?? "", /report\.html/);
   assert.match(sessions[0]?.appended[3] ?? "", /headline/);
   assert.doesNotMatch(sessions[0]?.appended[0] ?? "", /Return only JSON matching the contract/);
-  assert.match(sessions[0]?.input.systemPrompt ?? "", /最后一轮不能使用工具/);
+  assert.match(sessions[0]?.input.systemPrompt ?? "", /In this session you will receive, in order/);
+  assert.doesNotMatch(sessions[0]?.input.systemPrompt ?? "", /最后一轮不能使用工具/);
+  assert.doesNotMatch(sessions[0]?.input.systemPrompt ?? "", /read_observation/);
   assert.match(sessions[0]?.input.systemPrompt ?? "", /configuration/);
   assert.equal(comparison.timeoutMs, 0);
 });
@@ -157,6 +159,22 @@ test("Comparison keeps owned short refs and drops unknown extras", async () => {
   if (dropped.status === "completed") assert.deepEqual(dropped.value.evidenceRefs, []);
 });
 
+test("Comparison keeps valid short refs when the Host did not provide an allowlist", async () => {
+  const agent = new ComparisonAgent({
+    host: new PiAgentHost({
+      createSession: () => ({
+        append: async () => JSON.stringify({ status: "completed", evidenceRefs: ["ev-01", "event:foreign-1"] }),
+        cancel() {},
+      }),
+    }),
+    timeoutMs: 5_000,
+    maxRepairAttempts: 0,
+  });
+  const result = await agent.compare(context());
+  assert.equal(result.status, "completed");
+  if (result.status === "completed") assert.deepEqual(result.value.evidenceRefs, ["ev-01"]);
+});
+
 test("Comparison drops path-shaped evidence refs when none remain owned", async () => {
   const agent = new ComparisonAgent({
     host: new PiAgentHost({
@@ -186,11 +204,12 @@ test("Host records Pi model input capabilities without inventing a Reprise capab
   const result = await host.request({
     role: "comparison", systemPrompt: "test", context: {}, schema: Type.Object({ ok: Type.Boolean() }),
     timeoutMs: 5_000, maxRepairAttempts: 0, allowModelText: true,
+    promptContent: "return json",
     audit: { append: async (event) => { audit.push(event); } },
   });
   assert.equal(result.status, "completed");
   assert.deepEqual(audit.find((event) => event.type === "agent.session_started")?.payload.inputCapabilities, ["text", "image"]);
-  assert.match(prompt, /^modelInputCapabilities=text,image\n/);
+  assert.match(prompt, /^Native media types this model accepts: text,image\./);
 });
 
 test("Host preserves native image blocks in prompts and tool results without auditing their bytes", async () => {
@@ -210,6 +229,7 @@ test("Host preserves native image blocks in prompts and tool results without aud
   const result = await host.request({
     role: "test", systemPrompt: "test", context: {}, schema: Type.Object({ ok: Type.Boolean() }),
     timeoutMs: 5_000, maxRepairAttempts: 0, allowModelText: true, promptImages: [image],
+    promptContent: "return json",
     tools: [{ name: "preview", description: "return an image", parameters: Type.Object({}), execute: async () => ({ content: "image preview", contentBlocks: [{ type: "text", text: "image preview" }, image], details: { evidenceRefs: ["artifact:image-1"] } }) }],
     audit: { append: async (event) => { events.push(event); } },
   });
@@ -290,7 +310,7 @@ test("Comparison writes the Host metrics shell before the compose turn", async (
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  const result = await comparison.compare({ ...context(), reportShellHtml: shell }, tools);
+  const result = await comparison.compare({ ...context(), reportShellHtml: shell, attemptRoot: root }, tools);
   assert.equal(result.status, "completed");
   assert.equal(composeSawShell, true);
   assert.match(await readFile(join(root, "report.html"), "utf8"), /data-host="metrics"/);
@@ -350,6 +370,12 @@ test("Host zone edits trigger one extra repair turn in the same Session", async 
               content: (page?.content ?? shell).replace('data-id="host-header"', 'data-id="host-header" data-edited="1"'),
             }, new AbortController().signal);
           }
+          if (content.includes("A Host zone was altered")) {
+            await input.tools.find((tool) => tool.name === "write")?.execute({
+              path: "report.html",
+              content: shell,
+            }, new AbortController().signal);
+          }
           if (prompts.length < 5) return "working";
           return JSON.stringify({ status: "completed", evidenceRefs: [] });
         },
@@ -359,8 +385,93 @@ test("Host zone edits trigger one extra repair turn in the same Session", async 
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  const result = await comparison.compare({ ...context(), reportShellHtml: shell, ...(snapshot ? { hostZoneSnapshot: snapshot } : {}) }, tools);
+  const result = await comparison.compare({ ...context(), reportShellHtml: shell, attemptRoot: root, ...(snapshot ? { hostZoneSnapshot: snapshot } : {}) }, tools);
   assert.equal(result.status, "completed");
   assert.equal(prompts.length, 5);
-  assert.match(prompts[3] ?? "", /Host 区域被改动/);
+  assert.match(prompts[3] ?? "", /A Host zone was altered/);
+});
+
+test("review turn can read and rewrite Agent regions of report.html", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-comparison-review-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = recoveryTools(root, {
+    allowWrite: (path) => path === "report.html",
+    completionPaths: new Set(["report.html"]),
+  });
+  const shell = renderComparisonReportShell({
+    task: context().task.summary,
+    facts: context().reportFacts,
+    metrics: {},
+    slots: { headline: "初稿结论。", "key-differences": "<p>初稿差异</p>" },
+  });
+  let reviewWrote = false;
+  let reviewHadTools = false;
+  const comparison = new ComparisonAgent({
+    host: new PiAgentHost({
+      createSession: (input) => ({
+        append: async ({ content }) => {
+          if (content.includes("reopen report.html")) {
+            reviewHadTools = Boolean(input.tools.find((tool) => tool.name === "read") && input.tools.find((tool) => tool.name === "write"));
+            const page = await input.tools.find((tool) => tool.name === "read")?.execute({ path: "report.html" }, new AbortController().signal);
+            await input.tools.find((tool) => tool.name === "write")?.execute({
+              path: "report.html",
+              content: (page?.content ?? shell).replace("初稿差异", "审阅后的差异"),
+            }, new AbortController().signal);
+            reviewWrote = true;
+          }
+          if (!content.includes("status")) return "working";
+          return JSON.stringify({ status: "completed", evidenceRefs: [], headline: "审阅后的结论。" });
+        },
+        cancel() {},
+      }),
+    }),
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+  });
+  const result = await comparison.compare({ ...context(), reportShellHtml: shell, attemptRoot: root }, tools);
+  assert.equal(result.status, "completed");
+  assert.equal(reviewHadTools, true);
+  assert.equal(reviewWrote, true);
+  assert.match(await readFile(join(root, "report.html"), "utf8"), /审阅后的差异/);
+});
+
+test("invalid review JSON is salvaged once without discarding report.html", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-comparison-json-salvage-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = recoveryTools(root, {
+    allowWrite: (path) => path === "report.html",
+    completionPaths: new Set(["report.html"]),
+  });
+  const shell = renderComparisonReportShell({
+    task: context().task.summary,
+    facts: context().reportFacts,
+    metrics: {},
+    slots: { headline: "保留结论。", "key-differences": "<p>保留差异</p>" },
+  });
+  const pages: string[] = [];
+  const comparison = new ComparisonAgent({
+    host: new PiAgentHost({
+      createSession: (input) => ({
+        append: async ({ content }) => {
+          pages.push(content);
+          if (pages.length === 3) {
+            await input.tools.find((tool) => tool.name === "write")?.execute({ path: "report.html", content: shell }, new AbortController().signal);
+          }
+          if (pages.length < 4) return "working";
+          if (pages.length === 4) return "not-json";
+          return JSON.stringify({ status: "completed", evidenceRefs: [], headline: "保留结论。" });
+        },
+        cancel() {},
+      }),
+    }),
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+  });
+  const result = await comparison.compare({ ...context(), reportShellHtml: shell, attemptRoot: root }, tools);
+  assert.equal(result.status, "completed");
+  assert.equal(pages.length, 5);
+  assert.match(pages[4] ?? "", /Do not read or modify report\.html/);
+  assert.match(await readFile(join(root, "report.html"), "utf8"), /保留差异/);
 });

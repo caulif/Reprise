@@ -16,9 +16,16 @@ import { ScriptedRunner } from "./support/scripted-runtime.js";
 export function comparisonHtmlWithHostShell(context: { reportShellHtml?: string }, body: string): string {
   const shell = context.reportShellHtml;
   if (!shell) return body;
-  if (shell.includes('data-agent-zone="key-differences"')) {
-    return shell.replace(
-      /<section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><\/section>/,
+  let next = shell;
+  if (next.includes('data-agent-slot="headline"')) {
+    next = next.replace(
+      /<p[^>]*data-agent-slot="headline"[^>]*><\/p>/,
+      '<p class="note" data-agent-slot="headline">对照结论。</p>',
+    );
+  }
+  if (next.includes('data-agent-zone="key-differences"')) {
+    return next.replace(
+      /<section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences">(?:<!--[\s\S]*?-->)?<\/section>/,
       `<section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences">${body}</section>`,
     );
   }
@@ -149,7 +156,7 @@ const comparison: ComparisonAgentPort = {
       if (!(read.details as { available?: boolean }).available) throw new Error(`Comparison briefing unavailable: ${path}`);
     }
     const index = await reader.execute({ path: "briefing/INDEX.md" }, new AbortController().signal);
-    for (const match of index.content.matchAll(/^- (briefing\/\S+)/gm)) {
+    for (const match of index.content.matchAll(/^- (briefing\/[^\s:]+)/gm)) {
       const read = await reader.execute({ path: match[1] }, new AbortController().signal);
       if (!(read.details as { available?: boolean }).available) throw new Error(`Comparison indexed path unavailable: ${match[1]}`);
     }

@@ -181,12 +181,12 @@ Controller 不直接调用 Runtime 的 approval API；它只能通过普通用�
 
 ## 6. 观察与工具面（current）
 
-Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本；读取工具与 `shell_exec` 可以访问当前进程可读路径。不注册名为 Observation Adapter 的组件。见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)。
+Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本，`notes/` 可写工作笔记；读取工具与 `shell_exec` 可以访问当前进程可读路径。不注册名为 Observation Adapter 的组件。见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)、[英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)。
 
 当前事实供给：
 
 - [`inspectRun`](../../src/application/controller-queries.ts) 从事件与 fingerprint 派生 `changedPaths`、产物路径、usage 与用户可见表面；
-- 文件入口是 `current-user-view.md`、`THIS-TURN.txt`、`changed-paths.txt` 与 INDEX；
+- 文件入口是 `current-user-view.md`、`THIS-TURN.txt`、`changed-paths.txt` 与 INDEX；`notes/` 是 Controller 工作笔记，Host digest 不收录；
 - 成功 `read` 记 `controller.observation_read`；`edit`/`write` 记 `controller.workspace_write`；shell 在副本外的写入记 `controller.external_write`。
 
 **planned / 未实现：** 独立 `TargetObservation`、六类 Observation Adapter、`ControllerArtifactReader` 接口。不要把这些名称当成当前代码中的类型。视觉与浏览器探测不在本轮范围。
@@ -195,7 +195,7 @@ Controller 需要 Target 建立证据时发送 `verify` 消息；报告由 Compa
 
 ## 7. SteeringContext
 
-Host 每次结构化 `append` 给模型的用户消息是固定决策段加 INDEX.md，不是本对象的 JSON。首次 `decide` 另有一轮自由理解委托。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 的 `project/` 写入与候选运行权限；后者是历史会话推断，缺失时标 unconfirmed，不是本次 launch 授权证明。`allowModelText=false` 只红acted 正文，outline 仍含结构。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`；这些 briefing `read` 记 `briefing_read` evidence。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash；`current.summary` 不内联命令或路径计数。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)。
+Host 每次结构化 `append` 给模型的用户消息是英文决策段，不是本对象的 JSON。opening 附完整 INDEX.md；steering 只附 `Latest turn:` 行，不重发 `# INDEX.md`。首次 `decide` 另有一轮自由理解委托，结论写入 `notes/understanding.md`。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 的 `project/` 与 `notes/` 写入与候选运行权限；后者是历史会话推断，缺失时标 unconfirmed，不是本次 launch 授权证明。`allowModelText=false` 只 redacted 正文，outline 仍含结构。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`；这些 briefing `read` 记 `briefing_read` evidence。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash（不含 `notes/`）；`current.summary` 不内联命令或路径计数。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[Controller 英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)。
 
 字段定义见 [`SteeringContext`](../../src/agents/controller-agent.ts)。当前对象是 `current.summary` / `trajectory.summary` 字符串、briefing 路径、digest 与可选 `replay.changedPaths`，不是独立的 TargetObservation / TrajectoryWindow 类型。
 
@@ -253,9 +253,9 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 ## 10. Prompt 与评估分层
 
-可执行 system prompt 与 Turn 1 / opening / 循环 prompt 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。
+可执行 system prompt 与 understand / opening / steering 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。指令为英文。System Prompt 组成顺序是角色正文、`# Workspace`、locale 语言块、可见过程规则。过程叙述与 `rationale` 随操作者 locale；`send.message` 跟随历史用户当时的语言，见 [内部 Agent locale](../decisions/accepted/2026-09-15-internal-agent-locale.md)。
 
-briefing INDEX 把材料分成三类，不得混用：历史用户要求（`history/user-inputs/` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`current-user-view.md`、`run/turns/` 与 `project/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。模型可见请求是决策段加 INDEX.md，不把 SteeringContext JSON 或隐藏字段内联进 prompt。
+briefing INDEX 只做导航，把材料分成三类，不得混用：历史用户要求（`history/user-inputs/` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`current-user-view.md`、`run/turns/`、`project/` 与 `notes/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。opening 的模型可见请求是决策段加 INDEX.md；steering 不重发 INDEX。不把 SteeringContext JSON 或隐藏字段内联进 prompt。
 
 Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `CONTROLLER_PROMPT_DIGEST` 相同）以及 Host 观察 `hostFacts`（changed paths、最近工具失败、历史用户输入路径；路径 `status=unknown` 表示 Host 不判断该要求是否已满足）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
 
@@ -293,7 +293,7 @@ controller.decision
 controller.completed | controller.failed
 ```
 
-`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把本轮成功的 briefing、候选或外部 `read`，以及 shell 调查记入 catalog。`controller.workspace_write` 记录 Controller 对 `project/` 的 edit/write。`controller.external_write` 记录 shell 在隔离副本外的写入摘要。离线重建只读事件日志和已保存 artifacts，并校验 digest。
+`controller.requested` 保存去标识化快照与 digest。同一 `requestId` 的 `controller.observation_read` 把本轮成功的 briefing、候选或外部 `read`，以及 shell 调查记入 catalog。`controller.workspace_write` 记录 Controller 对 `project/` 与 `notes/` 的 edit/write。`controller.external_write` 记录 shell 在隔离副本外的写入摘要。离线重建只读事件日志和已保存 artifacts，并校验 digest。
 
 事件引用：
 
@@ -350,7 +350,7 @@ Comparison Agent 不读取 Product Pack 或产品私有日志，也不改变运�
 - Controller 只在稳定 settlement 后调用；
 - decision 公共 schema 与架构总览一致；
 - Target 只收到普通用户消息，不收到 intent 或 rationale；
-- Controller 能读取允许的产物证据，并可对隔离副本 `project/` 做协作写入；不得写用户源目录或调用 Target 工具；
+- Controller 能读取允许的产物证据，并可对隔离副本 `project/` 与 briefing `notes/` 做协作写入；不得写用户源目录或调用 Target 工具；
 - 已持久化 decision 在恢复后不会重复生成或重复发送；
 - 高影响且无历史授权的决定返回 `requires_real_user_decision`；
 - Controller 遥测与 Target 遥测可分开查看；

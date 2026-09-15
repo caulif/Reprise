@@ -504,6 +504,7 @@ async function finishCandidateRun(args: {
         resolvedModel: resolved.resolvedModel,
         candidateProductId: input.candidate.productId,
         experimentRoot,
+        dataDir: input.dataDir,
         ...(input.agentConfig.budget.maxCalls !== undefined
           ? { maxControllerCalls: input.agentConfig.budget.maxCalls }
           : {}),

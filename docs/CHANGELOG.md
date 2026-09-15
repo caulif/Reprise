@@ -6,6 +6,9 @@
 
 ### Changed
 
+- TUI 与内部 Agent 缺省 locale 为简体中文；指令为英文，面向操作者的输出随 locale。CLI `--locale <en|zh>` 写入同一份 preferences。发给候选的消息跟随历史用户语言，不跟随该 locale。
+- Recovery 失败解释由 Host i18n 键或 Agent `summary` 承担，不再调用 Diagnosis Agent。
+- 对照报告壳文案随 locale；声称「已核实 / 看见」用 `data-claim` 校验。
 - Harness 内部模型默认按第三方网关注册（`reasoning` 缺省关闭）；官方订阅改走 Pi catalog 与 `pi /login`。
 - 运行主列用左缘分内部 / 候选，正文不再整句染色；折叠变暗；失败独立红；列尾时钟钉在右侧。此刻行只留列尾，恢复标题只留顶栏。
 - 真终端滚轮与单击交给应用：视口库不再先消费 SGR 64/65。
@@ -14,7 +17,7 @@
 - 内部 Agent 同批读可并行、写顺序执行；上下文用 Pi compact（summary + tail）而不是 digest 占位；不再用工具调用次数或相同输入拦截截断。
 - 恢复、控制器和对照进行中的 TUI 显示压缩后的工具过程（动词、对象、阶段），而不是只显示工具名或空白。
 
-- 对照报告由 Host 模板渲染任务、状态、指标和差异插槽；失败页共用该外壳并区分失败类别。
+- 对照报告按钉住的价格快照计算费用；本机 `{dataDir}/model-pricing.override.json` 可覆盖单价。有 Token 无目录行仍显示价格未配置。详细证据列出四类费率。
 - Recovery 在源目录超过复制预算时改为稀疏工作区加只读 `source/`，不再把整树复制失败当成无法启动。
 - Recovery 最终信封带一句话 `summary`；checkpoint 种子也走同一 Agent；blocked 与失败的新 baseline `match` 为 `observational`。
 - Recovery 按可观察材料建立合理起点：未知缺口不自动阻塞；Host 路径清单与命令失败不改写 Agent 结论；`blocked` 作为正常停手展示。

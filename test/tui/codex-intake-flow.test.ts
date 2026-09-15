@@ -119,14 +119,14 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
   await enterIntake(app);
   await waitFor(() => /Cancel this run/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Session start:/.test(rendered));
+  await waitFor(() => /Session start:|会话起点：/.test(rendered));
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
-  await waitFor(() => /Preparing replay|Copy isolated workspace/.test(rendered));
+  await waitFor(() => /Preparing replay|Copy isolated workspace|正在准备对照|复制隔离工作区/.test(rendered));
   app.handleInput("\u0003");
   releaseStart?.();
   await waitFor(() => cancelCalls === 1);
-  assert.match(rendered, /Press Ctrl\+C again to force exit/);
+  assert.match(rendered, /Press Ctrl\+C again to force exit|再按一次 Ctrl\+C 会强制退出/);
   app.handleInput("\u0003");
   assert.equal(stops, 1);
 });
@@ -252,11 +252,11 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   await enterIntake(app);
   await waitFor(() => /Patch the missing path/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Session start:/.test(rendered));
+  await waitFor(() => /Session start:|会话起点：/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Source root|Historical cwd is missing/.test(rendered));
-  assert.match(rendered, /Source root/);
-  assert.match(rendered, /Historical cwd is missing/);
+  await waitFor(() => /Source root|Historical cwd is missing|源目录|历史工作目录缺失/.test(rendered));
+  assert.match(rendered, /Source root|源目录/);
+  assert.match(rendered, /Historical cwd is missing|历史工作目录缺失/);
   app.handleInput("b");
   assert.match(rendered, /│ b▌/);
   assert.doesNotMatch(rendered, /Welcome \/ Recent runs/);
@@ -269,7 +269,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   app.handleInput("C:\\explicit-source");
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|Codex/.test(rendered));
+  await waitFor(() => /Preparing replay|Copy isolated workspace|正在准备对照|复制隔离工作区|Codex/.test(rendered));
   releaseStart?.();
   await waitFor(() => sourceRoot === "C:\\explicit-source");
   assert.equal(sourceRoot, "C:\\explicit-source");
@@ -464,18 +464,18 @@ test("Codex intake TUI browses validated local history and selects a TaskCase wi
   });
   await app.start();
   enterCommand(app, "/history");
-  await waitFor(() => /Recent experiments/.test(rendered));
+  await waitFor(() => /Recent experiments|最近对照/.test(rendered));
   assert.match(rendered, /exp-history/);
   app.handleInput('\x1b');
   assert.equal(app.page, 'home');
   enterCommand(app, '/history');
   await waitFor(() => app.page === 'history');
   app.handleInput("\t");
-  assert.match(rendered, /TaskCases/);
+  assert.match(rendered, /TaskCases|任务/);
   app.handleInput("\r");
   assert.match(rendered, /TaskCase: case-history/);
   app.handleInput("\r");
-  assert.match(rendered, /TaskCase case-history/);
+  assert.match(rendered, /TaskCase case-history|当前任务是 case-history/);
 });
 
 test("Codex intake TUI saves an OpenAI-compatible draft without a secret or connection request", async (t) => {
@@ -512,7 +512,7 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   };
   await app.start();
   enterCommand(app, "/config");
-  await waitFor(() => /Internal Agent model/.test(rendered));
+  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(rendered));
   app.handleInput("\u001b[A");
   app.handleInput("\u001b[A");
   app.handleInput("\r");
@@ -530,7 +530,7 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   app.handleInput("\r");
   replaceField("env:REPRISE_PRIVATE_KEY");
   app.handleInput("\x13");
-  await waitFor(() => /Configuration saved locally/.test(rendered));
+  await waitFor(() => /Configuration saved locally|配置已保存到本机/.test(rendered));
   const saved = await readFile(
     join(root, "data", "harness-model.json"),
     "utf8",
@@ -602,15 +602,15 @@ test("intake search accepts a slash after search has started", async (t) => {
   await app.start();
   await enterIntake(app);
   await waitFor(() =>
-    /Choose a historical session|Choose a project/.test(rendered),
+    /Choose a historical session|Choose a project|选择一条历史会话|先选项目/.test(rendered),
   );
   app.handleInput("/");
   app.handleInput("/");
   app.handleInput("src");
-  assert.match(rendered, /Search: \/src/);
+  assert.match(rendered, /Search: \/src|搜索： \/src/);
 });
 
-test("TUI language defaults to English and /lang zh switches the cover without mixing copy", async (t) => {
+test("TUI language defaults to Chinese and /lang en switches the cover without mixing copy", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-tui-lang-"));
   t.after(async () =>
     rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }),
@@ -640,18 +640,18 @@ test("TUI language defaults to English and /lang zh switches the cover without m
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
   });
   await app.start();
-  assert.match(rendered, /Continue/);
-  assert.match(rendered, /Browse/);
-  assert.doesNotMatch(rendered, /继续|浏览|当前任务/);
-  enterCommand(app, "/lang zh");
-  await waitFor(() => /继续/.test(rendered));
   assert.match(rendered, /继续/);
   assert.match(rendered, /浏览/);
-  assert.match(rendered, /语言：中文/);
   assert.doesNotMatch(rendered, /Continue|Browse|Last task/);
+  enterCommand(app, "/lang en");
+  await waitFor(() => /Continue/.test(rendered));
+  assert.match(rendered, /Continue/);
+  assert.match(rendered, /Browse/);
+  assert.match(rendered, /Language: English/);
+  assert.doesNotMatch(rendered, /继续|浏览|当前任务/);
   enterCommand(app, "/config");
-  await waitFor(() => /语言/.test(rendered));
-  assert.match(rendered, /语言/);
-  assert.match(rendered, /中文/);
-  assert.doesNotMatch(rendered, /Internal Agent model|Language/);
+  await waitFor(() => /Language/.test(rendered));
+  assert.match(rendered, /Language/);
+  assert.match(rendered, /English/);
+  assert.doesNotMatch(rendered, /内部 Agent 模型|语言/);
 });

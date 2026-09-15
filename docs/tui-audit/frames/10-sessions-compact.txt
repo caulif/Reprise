@@ -1,22 +1,22 @@
 Reprise v0.1.0   C:\reprise
-gpt-5.6-terra - medium   ! Harness key missing  * Codex  ...
+gpt-5.6-terra - medium   ! 内部模型缺少密钥  * Codex  o ...
 ------------------------------------------------------------
- Internal model  gpt-5.6-terra
+ 内部模型  gpt-5.6-terra
 
- Continue
- /history Local experiments  no local experiments
- /config  Open /config  needs credential
+ 继续
+ /history 本机实验记录  还没有本地对照
+ /config  打开 /config  需要凭据
 
-[ reprise - 1 sessions - filter: all ]
-   > 4d ago      修复这个回归缺陷并验证测... u1 a1 t0      
+[ reprise - 1 会话 - 过滤: 全部 ]
+   > 4 天前      修复这个回归缺陷并验证测... u1 a1 t0      
     1/1
 
- > Type to filter
- Choose a historical session. Enter opens the review; Enter
-again freezes and starts recovery.
- Loaded 3 projects and 2 sessions.
- 2 shown · 0 skipped · 2 scanned.
- The catalog is complete; Ctrl+N does not paginate.
- Diagnostics: catalog index unavailable (not this row) (1).
+ > 输入以筛选
+ 选择一条历史会话。Enter 打开核对页；再按 Enter 冻结并开始恢
+复。
+ 已加载 3 个项目、2 个会话。
+ 已显示 2 条 · 已跳过 0 条 · 已扫描 2 条.
+ 目录已完整；Ctrl+N 不会分页。
+ 诊断：目录索引不可用（不是当前行损坏） (1).
 ------------------------------------------------------------
- [↑↓] Select  [Enter] Inspect  [type] Search
+ [↑↓] 选择  [Enter] 查看  [type] 搜索  [Ctrl+N] 还有更多

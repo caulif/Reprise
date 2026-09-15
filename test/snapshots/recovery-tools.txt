@@ -1,7 +1,7 @@
 [
   {
     "name": "ls",
-    "description": "List a bounded directory. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
+    "description": "List a directory; the result is capped. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -19,7 +19,7 @@
   },
   {
     "name": "read",
-    "description": "Read a bounded byte range from a regular file, or return the whole file as a native Pi image block when format=image is authorized.",
+    "description": "Read a byte range of a regular file, or return the whole file as a native image block when format=image is authorized.",
     "parameters": {
       "type": "object",
       "required": [
@@ -61,7 +61,7 @@
   },
   {
     "name": "grep",
-    "description": "Search file contents; returns a bounded list of path:line matches. Prefix source/ to search the read-only user directory.",
+    "description": "Search file contents; returns a capped list of path:line matches. Prefix source/ to search the read-only user directory.",
     "parameters": {
       "type": "object",
       "required": [
@@ -82,7 +82,7 @@
   },
   {
     "name": "find",
-    "description": "Find paths whose names contain a bounded substring. Prefix source/ to search the read-only user directory.",
+    "description": "Find paths whose names contain a substring; the result is capped. Prefix source/ to search the read-only user directory.",
     "parameters": {
       "type": "object",
       "required": [
@@ -103,7 +103,7 @@
   },
   {
     "name": "edit",
-    "description": "Replace one exact text span in an existing staging file.",
+    "description": "Replace one exact text span in an existing file. Only writable paths are accepted.",
     "parameters": {
       "type": "object",
       "required": [
@@ -131,7 +131,7 @@
   },
   {
     "name": "write",
-    "description": "Create or overwrite one explicit regular file in staging. recovery.md is the report sink.",
+    "description": "Create or overwrite one regular file. Only writable paths are accepted.",
     "parameters": {
       "type": "object",
       "required": [
@@ -153,7 +153,7 @@
   },
   {
     "name": "shell_exec",
-    "description": "Run one host-shell command with cwd locked to the writable workspace. The host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. Sensitive-file checks match the command text. Read-only mounts are not writable through workspace tools. Recovery also denies source writes with a filesystem ACL and then verifies the source fingerprint.",
+    "description": "Run one shell command with cwd fixed to the writable copy; the Host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.",
     "parameters": {
       "type": "object",
       "required": [

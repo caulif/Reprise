@@ -72,7 +72,7 @@ test("historical Codex task_started/task_complete pairs sum busy time and ignore
 });
 
 test("unknown model prices stay uncollected and tests can inject a fixed table", () => {
-  assert.match(MODEL_PRICING_TABLE_VERSION, /^2026-09-11/);
+  assert.match(MODEL_PRICING_TABLE_VERSION, /^2026-09-14/);
   const usage = aggregateHistoricalUsage([
     { type: "result", usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 } },
   ]);

@@ -47,9 +47,9 @@ function policyStub(): PiTextCaller {
     createSession(session) {
       return {
         append: async ({ content }) => {
-          assert.match(session.systemPrompt, /验收习惯/);
+          assert.match(session.systemPrompt, /how they accepted work/);
           assert.doesNotMatch(content, /第二页太空了/);
-          assert.match(content, /INDEX\.md/);
+          assert.match(content, /Latest turn:/);
           const firstPass = /Latest turn: run\/turns\/0001/.test(content);
           if (firstPass) {
             return JSON.stringify({ type: 'send', intent: 'correct', message: '第二页按上次那样补上内容。' });
@@ -110,13 +110,13 @@ test('without later user steering, the same first pass may stop', async () => {
 });
 
 test('controller prompt does not treat unused historical user turns as a stop reason', () => {
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /不要机械重放原句/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /不要为了测试、增加轮数/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /候选自称完成也不是充分的结束依据/);
-  assert.match(CONTROLLER_SYSTEM_PROMPT, /验收习惯/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not copy original sentences mechanically/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /continuing for the sake of testing, adding turns/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /The candidate claiming completion is not a reason to finish/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /how they accepted work/);
 });
 
-test('Controller without promptContent still does not dump historical user turns', async () => {
+test('Controller without promptContent throws instead of dumping context JSON', async () => {
   const marker = 'MARKER_MUST_NOT_INLINE';
   const appended: string[] = [];
   const controller = new ControllerAgent({
@@ -137,15 +137,18 @@ test('Controller without promptContent still does not dump historical user turns
   const ctx = briefing({ includeFollowupInIndex: false, settledTurns: 1 });
   const { promptContent: _unused, ...rest } = ctx;
   void _unused;
-  const result = await controller.decide({
-    ...rest,
-    task: {
-      ...ctx.task,
-    },
-  });
-  assert.equal(result.status, 'completed');
-  assert.doesNotMatch(appended[0] ?? '', new RegExp(marker));
-  assert.doesNotMatch(appended[0] ?? '', /finalMessage/);
+  await assert.rejects(
+    () => controller.decide({
+      ...rest,
+      task: {
+        ...ctx.task,
+      },
+    }),
+    /requires promptContent/,
+  );
+  assert.equal(appended.length, 0);
+  assert.doesNotMatch(appended.join('\n'), new RegExp(marker));
+  assert.doesNotMatch(appended.join('\n'), /finalMessage/);
 });
 
 test('opening and later decide share one Controller Session without a private understanding pass', async () => {
@@ -197,5 +200,6 @@ test('opening and later decide share one Controller Session without a private un
   assert.match(appended[0] ?? '', /history\/user-inputs\/INDEX\.tsv/);
   assert.doesNotMatch(appended[0] ?? '', /Return send/);
   assert.doesNotMatch(appended[0] ?? '', /output contract/);
-  assert.match(appended[1] ?? '', /第一条自然用户消息/);
+  assert.match(appended[1] ?? '', /Opening: send the first user message/);
+  assert.doesNotMatch(appended[2] ?? '', /# INDEX\.md/);
 });

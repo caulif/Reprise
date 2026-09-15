@@ -7,12 +7,13 @@ type PromptRequest<T> = ({ kind: "freeform" } & FreeformWorkRequest) | ({ kind: 
 
 export function promptBody<T>(request: PromptRequest<T>, attempts: number, lastError: string | undefined): string {
   if (request.kind === "freeform") return request.promptContent;
-  const context = request.promptContent ?? JSON.stringify(request.context);
+  if (typeof request.promptContent !== "string" || !request.promptContent.trim()) {
+    throw new Error("Structured agent request requires promptContent.");
+  }
   const contract = request.outputContract ? `${request.outputContract.trim()}\n\n` : "";
-  if (!attempts) return `${contract}${context}`;
-  const reason = lastError ? ` (${lastError})` : "";
+  if (!attempts) return `${contract}${request.promptContent}`;
   const repair = request.repairInstruction ? ` ${request.repairInstruction.trim()}` : "";
-  return `${contract}Your prior response was invalid${reason}. Return only JSON matching the contract.${repair}\n\n${context}`;
+  return `${contract}Your previous reply was invalid: ${lastError ?? ""}. Return only JSON that matches the contract.${repair}`;
 }
 
 export function decodeStructured(

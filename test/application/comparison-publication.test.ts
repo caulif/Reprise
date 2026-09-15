@@ -11,7 +11,6 @@ import {
 } from "../../src/application/comparison-publication.js";
 import {
   extractHostZoneSnapshot,
-  hostStatusMismatch,
   hostZonesMismatch,
   metricsFromReportFacts,
   renderComparisonReportFromModel,
@@ -59,20 +58,53 @@ function facts() {
   return buildComparisonContext(taskCase(), [runRecord()], [inspection]).reportFacts;
 }
 
-test("Host status fingerprint fails when outcome text is edited", () => {
+function filledSlots(extra: Record<string, string> = {}) {
+  return {
+    headline: "候选把讨论推进成了可继续使用的文件。",
+    "key-differences": "<p>候选有交付物，历史没有。</p>",
+    ...extra,
+  };
+}
+
+test("Host template has no visible status cards and keeps facts in the model", () => {
   const reportFacts = facts();
-  const html = renderComparisonReportShell({ task: "修复报告。", facts: reportFacts, metrics: reportFacts.metrics ?? {} });
-  assert.equal(hostStatusMismatch(html, reportFacts), undefined);
-  assert.equal(hostStatusMismatch(html.replace("incomplete", "completed"), reportFacts), "Host status values were modified.");
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  assert.doesNotMatch(html, /data-host-zone="status"/);
+  assert.doesNotMatch(html, /历史证据不足/);
+  assert.doesNotMatch(html, /apparently_completed/);
+  assert.doesNotMatch(html, /completed\.controller_satisfied/);
+  assert.match(html, /data-agent-slot="headline"/);
+  assert.match(html, /data-component-template="difference-card"/);
+  const header = html.indexOf('data-host-zone="header"');
+  const metrics = html.indexOf('data-host-zone="metrics"');
+  const diffs = html.indexOf('data-agent-zone="key-differences"');
+  const headline = html.indexOf('<p class="note" data-agent-slot="headline"');
+  assert.ok(header < diffs && diffs < headline && headline < metrics);
+  assert.equal(header < metrics && metrics < diffs, false);
+  assert.match(html, /data-agent-slot="category"/);
+  assert.match(html, /data-component-template="pair-pages"/);
+  assert.match(html, /gpt-5\.6/);
+  assert.doesNotMatch(html, />Baseline</);
+  assert.doesNotMatch(html, />Candidate</);
+  const envelope = { status: "completed" as const, reportPath: "report.html" as const, evidenceRefs: [] };
+  const model = comparisonReportModelFromHtml(html, reportFacts, envelope, []);
+  assert.equal(model.status.candidateOutcome, "incomplete");
+  assert.equal(model.status.terminationCode, "limit.turns");
+  assert.match(html, /data-host="run-diagnostics"/);
 });
 
-test("the same report model re-renders identical Host metrics and status", () => {
+test("the same report model re-renders identical Host metrics", () => {
   const reportFacts = facts();
   const first = renderComparisonReportShell({
     task: "修复报告。",
     facts: reportFacts,
     metrics: reportFacts.metrics ?? {},
-    slots: { "key-differences": "<p data-component=\"short-prose\">差异甲</p>" },
+    slots: filledSlots({ "key-differences": "<p data-component=\"short-prose\">差异甲</p>" }),
   });
   const envelope = { status: "completed" as const, reportPath: "report.html" as const, evidenceRefs: [] };
   const model = comparisonReportModelFromHtml(first, reportFacts, envelope, []);
@@ -91,10 +123,7 @@ test("broken image references are stripped and the page can still publish", asyn
     task: "修复报告。",
     facts: reportFacts,
     metrics: reportFacts.metrics ?? {},
-    slots: {
-      "key-differences": "<p>候选完成了交付。</p>",
-      "visual-evidence": '<img src="media/missing.png" alt="preview">',
-    },
+    slots: filledSlots({ "visual-evidence": '<img src="media/missing.png" alt="preview">' }),
   });
   const verified = await verifyAndRenderComparisonReport({
     html,
@@ -114,7 +143,7 @@ test("broken image references are stripped and the page can still publish", asyn
   if ("html" in verified) {
     assert.doesNotMatch(verified.html, /<img\b[^>]*src="media\/missing\.png"/);
     assert.match(verified.html, /证据未解析/);
-    assert.match(verified.html, /候选完成了交付/);
+    assert.match(verified.html, /候选有交付物/);
   }
 });
 
@@ -128,7 +157,7 @@ test("registered media that exists can be published", async (t) => {
     task: "修复报告。",
     facts: reportFacts,
     metrics: reportFacts.metrics ?? {},
-    slots: { "visual-evidence": '<img src="media/ok.png" alt="preview">', "key-differences": "<p>候选完成了交付。</p>" },
+    slots: filledSlots({ "visual-evidence": '<img src="media/ok.png" alt="preview">' }),
   });
   const verified = await verifyAndRenderComparisonReport({
     html,
@@ -170,13 +199,90 @@ test("failure classes distinguish provider, protocol, evidence, metrics, and med
   }).failureClass, "media");
 });
 
+test("failure diagnostics retain useful analysis from non-standard Agent zones", async () => {
+  const { comparisonFailureDiagnostic } = await import("../../src/application/comparison-publication.js");
+  const diagnostic = comparisonFailureDiagnostic({
+    result: { status: "failed", failure: { code: "report_incomplete", message: "missing key differences", attempts: 1 } },
+    facts: facts(),
+    reportPresent: true,
+    attemptId: "attempt-1",
+    draftHtml: '<section data-agent-zone="verdict"><h2>候选有实际交付</h2><p>历史仅给出建议。</p></section>',
+  });
+  assert.match(diagnostic.draftAnalysis ?? "", /候选有实际交付/);
+  assert.match(diagnostic.draftAnalysis ?? "", /历史仅给出建议/);
+  const page = renderComparisonReportShell({
+    title: "Comparison unavailable",
+    task: "对照未能完成这次比较",
+    facts: facts(),
+    metrics: metricsFromReportFacts(facts()),
+    diagnostic,
+  });
+  assert.match(page, /已有分析/);
+  assert.match(page, /候选有实际交付/);
+  assert.doesNotMatch(page, /data-host-zone="status"/);
+});
+
+test("failure pages keep standard Agent zone analysis", async () => {
+  const { comparisonFailureDiagnostic, draftAgentSlots } = await import("../../src/application/comparison-publication.js");
+  const draftHtml = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: facts(),
+    metrics: metricsFromReportFacts(facts()),
+    slots: filledSlots({ "key-differences": "<p>候选写出了可继续使用的文件。</p>" }),
+  });
+  const diagnostic = comparisonFailureDiagnostic({
+    result: { status: "failed", failure: { code: "host_zone_modified", message: "Host zone was modified.", attempts: 1 } },
+    facts: facts(),
+    reportPresent: true,
+    attemptId: "attempt-1",
+    draftHtml,
+  });
+  const page = renderComparisonReportShell({
+    title: "Comparison unavailable",
+    task: "对照未能完成这次比较",
+    facts: facts(),
+    metrics: metricsFromReportFacts(facts()),
+    diagnostic,
+    slots: draftAgentSlots(draftHtml),
+  });
+  assert.match(page, /候选写出了可继续使用的文件/);
+  assert.match(page, /对照未能完成/);
+});
+
+test("unsupported top-level Agent zones are not published", async () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  }).replace(
+    "</body>",
+    '<section data-agent-zone="verdict"><p>额外判断</p></section></body>',
+  );
+  const snapshot = extractHostZoneSnapshot(html);
+  const verified = await verifyAndRenderComparisonReport({
+    html,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+    ...(snapshot ? { hostZoneSnapshot: snapshot } : {}),
+  });
+  assert.equal("html" in verified, false);
+  if (!("html" in verified)) {
+    assert.equal(verified.code, "report_incomplete");
+    assert.match(verified.message, /unsupported data-agent-zone="verdict"/);
+  }
+});
+
 test("Host zone delete, move, and value edits fail closed", () => {
   const reportFacts = facts();
   const html = renderComparisonReportShell({
     task: "修复报告。",
     facts: reportFacts,
     metrics: reportFacts.metrics ?? {},
-    slots: { "key-differences": "<p>差异</p>" },
+    slots: filledSlots(),
   });
   const snapshot = extractHostZoneSnapshot(html);
   assert.ok(snapshot);
@@ -193,16 +299,31 @@ test("Host zone delete, move, and value edits fail closed", () => {
   assert.equal(hostZonesMismatch(edited, snapshot, metrics), 'Host zone "header" was modified.');
 });
 
+test("Host zone serialization differences are semantic, while metric edits still fail", () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({ task: "修复报告。", facts: reportFacts, metrics: reportFacts.metrics ?? {}, slots: filledSlots() });
+  const snapshot = extractHostZoneSnapshot(html);
+  assert.ok(snapshot);
+  const reformatted = html
+    .replaceAll('data-id="host-metrics"', "data-id='host-metrics'")
+    .replaceAll('data-host-zone="metrics"', "data-host-zone='metrics'")
+    .replaceAll('data-host-zone="header"', "data-host-zone='header'");
+  assert.equal(hostZonesMismatch(reformatted, snapshot, metricsFromReportFacts(reportFacts)), undefined);
+  const spaced = html.replace(/></g, ">\n  <");
+  assert.equal(hostZonesMismatch(spaced, snapshot, metricsFromReportFacts(reportFacts)), undefined);
+  assert.equal(hostZonesMismatch(reformatted.replace('data-fingerprint=', 'data-fingerprint="tampered" data-old='), snapshot, metricsFromReportFacts(reportFacts)) !== undefined, true);
+});
+
 test("unknown evidence and media refs degrade instead of failing the report", async () => {
   const reportFacts = facts();
   const html = renderComparisonReportShell({
     task: "修复报告。",
     facts: reportFacts,
     metrics: reportFacts.metrics ?? {},
-    slots: {
+    slots: filledSlots({
       "key-differences": '<p>结论成立。<a data-evidence-ref="ev-99">坏链</a></p>',
       "visual-evidence": '<img data-media-ref="media-99" alt="missing preview">',
-    },
+    }),
   });
   const snapshot = extractHostZoneSnapshot(html);
   const verified = await verifyAndRenderComparisonReport({
@@ -222,4 +343,198 @@ test("unknown evidence and media refs degrade instead of failing the report", as
     assert.doesNotMatch(verified.html, /data-media-ref="media-99"/);
     assert.match(verified.html, /证据未解析/);
   }
+});
+
+test("filling headline does not count as a Host zone edit", () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const snapshot = extractHostZoneSnapshot(html);
+  assert.ok(snapshot);
+  const filled = html.replace(
+    '<p class="note" data-agent-slot="headline">候选把讨论推进成了可继续使用的文件。</p>',
+    '<p class="note" data-agent-slot="headline">改写后的结论。</p>',
+  );
+  assert.equal(hostZonesMismatch(filled, snapshot, metricsFromReportFacts(reportFacts)), undefined);
+});
+
+test("copied component templates keep component CSS hooks", () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({
+      "key-differences": '<article data-component="difference-card"><h3>实际交付</h3><p>候选有文件。</p></article>',
+    }),
+  });
+  assert.match(html, /\[data-component="difference-card"\]/);
+  assert.match(html, /data-component="difference-card"/);
+  assert.match(html, /<template data-component-template="headline"/);
+});
+
+test("empty headline or key-differences fail closed", async () => {
+  const reportFacts = facts();
+  const emptyHeadline = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: { "key-differences": "<p>有差异</p>" },
+  });
+  const missingHeadline = await verifyAndRenderComparisonReport({
+    html: emptyHeadline,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in missingHeadline, false);
+  if (!("html" in missingHeadline)) assert.match(missingHeadline.message, /headline/);
+  const emptyDiffs = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: { headline: "一句结论。" },
+  });
+  const missingDiffs = await verifyAndRenderComparisonReport({
+    html: emptyDiffs,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in missingDiffs, false);
+  if (!("html" in missingDiffs)) assert.match(missingDiffs.message, /key differences/);
+});
+
+test("above-the-fold process dump and visual claims without media fail closed", async () => {
+  const reportFacts = facts();
+  const processDump = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({
+      "key-differences": "<p>第1轮 第2轮 第3轮 第4轮 第5轮 第6轮 第7轮 第8轮 第9轮</p>",
+    }),
+  });
+  const dumped = await verifyAndRenderComparisonReport({
+    html: processDump,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in dumped, false);
+  if (!("html" in dumped)) assert.match(dumped.message, /full process/);
+  const visual = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({ "key-differences": "<p>已完成视觉检查，看过PPT。</p>" }),
+  });
+  const claimed = await verifyAndRenderComparisonReport({
+    html: visual,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in claimed, false);
+  if (!("html" in claimed)) {
+    assert.equal(claimed.code, "media_unavailable");
+  }
+});
+
+test("metrics before key-differences fail share-card order", async () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const metrics = html.match(/<section class="board" data-host-zone="metrics"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(metrics);
+  const without = html.replace(metrics, "");
+  const headerClose = without.indexOf("</header>");
+  assert.ok(headerClose > 0);
+  const swapped = `${without.slice(0, headerClose + "</header>".length)}${metrics}${without.slice(headerClose + "</header>".length)}`;
+  const verified = await verifyAndRenderComparisonReport({
+    html: swapped,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in verified, false);
+  if (!("html" in verified)) assert.match(verified.message, /Share card order/);
+});
+
+test("data-claim publication checks and English report shell fail closed", async () => {
+  const reportFacts = facts();
+  const verifiedBare = renderComparisonReportShell({
+    task: "Fix the report.",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({
+      "key-differences": '<p><span data-claim="verified">The file exists.</span></p>',
+    }),
+  });
+  const missingEvidence = await verifyAndRenderComparisonReport({
+    html: verifiedBare,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+    evidence: [],
+  });
+  assert.equal("html" in missingEvidence, false);
+  if (!("html" in missingEvidence)) {
+    assert.equal(missingEvidence.code, "evidence_unresolved");
+  }
+  const visualBare = renderComparisonReportShell({
+    task: "Fix the report.",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({
+      "key-differences": '<p><span data-claim="visual">The slide is red.</span></p>',
+    }),
+  });
+  const missingMedia = await verifyAndRenderComparisonReport({
+    html: visualBare,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in missingMedia, false);
+  if (!("html" in missingMedia)) {
+    assert.equal(missingMedia.code, "media_unavailable");
+  }
+  const english = renderComparisonReportShell({
+    task: "Fix the report.",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({ headline: "The candidate wrote a usable file.", "key-differences": "<p>The candidate delivered a file.</p>" }),
+    locale: "en",
+  });
+  assert.match(english, /lang="en"/);
+  assert.doesNotMatch(english, /[\u3400-\u9FFF]/);
+  const snapshot = extractHostZoneSnapshot(english);
+  assert.ok(snapshot);
+  assert.equal(hostZonesMismatch(english, snapshot, metricsFromReportFacts(reportFacts), "en"), undefined);
+  const zh = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const zhSnapshot = extractHostZoneSnapshot(zh);
+  assert.ok(zhSnapshot);
+  assert.match(zh, /<!-- Core differences/);
+  assert.equal(hostZonesMismatch(zh, zhSnapshot, metricsFromReportFacts(reportFacts)), undefined);
 });

@@ -39,7 +39,7 @@ import { candidateLaunchFor } from "../../src/application/recovery/launch-contex
 
 test("Codex Recovery Playbook has stable provenance and is included in build output", async () => {
   const playbook = codexProductPack.recoveryPlaybook();
-  assert.equal(playbook.version, "codex-recovery/v1");
+  assert.equal(playbook.version, "codex-recovery/v2");
   assert.equal(playbook.sha256, sha256(playbook.text));
   assert.match(playbook.text, /Codex/i);
   const builtPlaybook = await readFile(

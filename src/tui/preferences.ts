@@ -11,14 +11,14 @@ export type TuiPreferences = {
 };
 
 function defaultTuiPreferences(): TuiPreferences {
-  return { locale: 'en' };
+  return { locale: 'zh' };
 }
 
 export async function readTuiPreferences(dataDir: string): Promise<TuiPreferences> {
   try {
     const value = JSON.parse(await readFile(join(dataDir, FILE_NAME), 'utf8')) as unknown;
     if (!isRecord(value)) return defaultTuiPreferences();
-    return { locale: parseLocale(typeof value.locale === 'string' ? value.locale : undefined) ?? 'en' };
+    return { locale: parseLocale(typeof value.locale === 'string' ? value.locale : undefined) ?? 'zh' };
   } catch (error) {
     if (isMissing(error)) return defaultTuiPreferences();
     return defaultTuiPreferences();

@@ -1,13 +1,13 @@
-Reprise   Starting candidate · Codex                                                                   00:00   ● running
+Reprise   正在启动候选 · Codex                                                                          00:00   ● 进行中
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Task  Fix the bug.                                                                                                     
- Will replay this task in Codex with the candidate model. Your original repo is left unchanged.                         
+ 题目  Fix the bug.                                                                                                     
+ 将在 Codex 里用候选模型重做这道题，不改你原来的仓库。                                                                  
                                                                                                                         
- Copying isolated workspace · step 2 / 4 · 111 files · 66.4 MiB                                                         
+ 正在复制隔离工作区 · 第 2 / 4 步 · 111 files · 66.4 MiB                                                                
                                                                                                                         
- ✓  Restore historical environment  done                                                                                
- ●  Copy isolated workspace  in progress                                                                                
- ○  Write candidate config  waiting                                                                                     
- ○  Start Codex  waiting                                                                                                
+ ✓  恢复历史环境  完成                                                                                                  
+ ●  复制隔离工作区  进行中                                                                                              
+ ○  写入候选配置  等待                                                                                                  
+ ○  启动 Codex  等待                                                                                                    
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] Cancel  [/] Find  [Enter] Expand  [v] Select
+ [Ctrl+C] 取消  [/] 查找  [Enter] 展开  [v] 选择

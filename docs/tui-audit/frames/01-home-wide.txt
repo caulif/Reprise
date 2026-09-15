@@ -1,21 +1,21 @@
-Reprise v0.1.0   C:\reprise                   gpt-5.6-terra · medium   ⚠ Harness key missing  ○ Product unset  ○ No task
+Reprise v0.1.0   C:\reprise                        gpt-5.6-terra · medium   ⚠ 内部模型缺少密钥  ○ 未选会话产品  ○ 无任务
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Internal model  gpt-5.6-terra
+ 内部模型  gpt-5.6-terra
 
- Continue
- /history Local experiments  no local experiments
- /config  Open /config  needs credential
+ 继续
+ /history 本机实验记录  还没有本地对照
+ /config  打开 /config  需要凭据
 
- Browse
- /intake    Import a historical agent session
- /history   Local experiments
- /config    Internal Agent model
- /lang      Switch language
- /help      Show keys and commands
+ 浏览
+ /intake    导入历史 Agent 会话
+ /history   本机实验记录
+ /config    内部 Agent 模型
+ /lang      切换语言
+ /help      显示按键与命令
 
- Next: add the API key in /config
+ 下一步：在 /config 写入 API 密钥
 
- ❯ Type /command, Tab to complete
- Welcome back. Use /help to see the available local workflows.
+ ❯ 输入 /命令，Tab 补全
+ 欢迎回来。输入 /help 查看本地流程。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [/] Command  [Ctrl+C] Exit
+ [/] 命令  [Ctrl+C] 退出

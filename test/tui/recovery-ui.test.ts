@@ -162,7 +162,7 @@ test('confirmation with workspace changes still reports validation failure', () 
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
   assert.match(text, /无法启动隔离候选/);
-  assert.match(text, /工作区校验未通过/);
+  assert.match(text, /恢复后的工作副本未通过 Host 校验/);
   assert.doesNotMatch(text, /没有观察到隔离工作区变更/);
 });
 

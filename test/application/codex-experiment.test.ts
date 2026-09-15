@@ -529,7 +529,7 @@ test("working notes written after a failed first pass stay in the same compariso
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const comparison: ComparisonAgentPort = {
     compare: async (context, tools = []) => {
-      assert.match(context.promptContent ?? "", /briefingRoot=/);
+      assert.match(context.promptContent ?? "", /# INDEX\.md/);
       await tools.find((tool) => tool.name === "write")?.execute(
         { path: "work/comparison-plan.md", content: "# Working notes\n" },
         new AbortController().signal,

@@ -4,14 +4,15 @@ import type { AgentSessionHost } from "./session.js";
 export class RoleSessions {
   readonly #sessions = new Map<string, Promise<AgentSessionHost>>();
 
-  async get(key: string, create: () => Promise<AgentSessionHost>): Promise<AgentSessionHost> {
+  async get(key: string, create: () => Promise<AgentSessionHost>): Promise<{ session: AgentSessionHost; created: boolean }> {
     let pending = this.#sessions.get(key);
+    const created = !pending;
     if (!pending) {
       pending = create();
       this.#sessions.set(key, pending);
     }
     try {
-      return await pending;
+      return { session: await pending, created };
     } catch (error) {
       if (this.#sessions.get(key) === pending) this.#sessions.delete(key);
       throw error;

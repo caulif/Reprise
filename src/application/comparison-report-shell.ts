@@ -1,19 +1,21 @@
-import type { ComparisonReportFacts } from "../agents/comparison-agent.js";
+import type { AgentLocale } from "../agents/language.js";
+import type { ComparisonMetricSide, ComparisonReportFacts } from "../agents/comparison-agent.js";
 import {
   hostZoneIntegrityError,
+  extractOuter,
   type AgentZoneName,
   type HostZoneName,
   type HostZoneSnapshot,
 } from "../core/comparison-html.js";
 import type { ComparisonMediaRecord, ComparisonReportModel } from "../core/schema.js";
 import { MODEL_PRICING_TABLE_VERSION } from "./model-pricing.js";
+import { reportString } from "./comparison-report-strings.js";
 
 export {
   AGENT_ZONES,
   extractHostZoneSnapshot,
   extractInner,
   extractOuter,
-  HOST_ZONES,
   missingComparisonSlots,
 } from "../core/comparison-html.js";
 export type { AgentZoneName, HostZoneName, HostZoneSnapshot };
@@ -22,6 +24,7 @@ export type MetricSideProjection = {
   elapsedMs?: number;
   tokens?: { total: number };
   costUsd?: number;
+  pricingStatus?: "collected" | "not_collected" | "pricing_unavailable" | "unknown";
 };
 
 export type ComparisonReportDiagnostic = {
@@ -31,9 +34,8 @@ export type ComparisonReportDiagnostic = {
   reason: string;
   details: readonly string[];
   traces: readonly string[];
+  draftAnalysis?: string;
 };
-
-const MISSING = "未采集";
 
 export function renderComparisonReportShell(input: {
   title?: string;
@@ -45,16 +47,22 @@ export function renderComparisonReportShell(input: {
   };
   evidence?: readonly { side: string; inspectPath: string; reportHref?: string }[];
   media?: readonly ComparisonMediaRecord[];
-  slots?: Partial<Record<AgentZoneName | HostZoneName, string>>;
+  slots?: Partial<Record<AgentZoneName | HostZoneName | "headline" | "category" | "task", string>>;
   diagnostic?: ComparisonReportDiagnostic;
+  locale?: AgentLocale;
 }): string {
-  const task = oneLine(input.task);
-  const title = oneLine(input.title ?? (input.diagnostic ? "Comparison unavailable" : "对照"));
+  const locale = input.locale ?? "zh";
+  const labels = comparisonSideLabels(input.facts, locale);
+  const category = oneLine(input.slots?.category ?? reportString(locale, input.diagnostic ? "failedCategory" : "defaultCategory"));
+  const task = oneLine(input.slots?.task ?? input.task);
+  const title = oneLine(input.title ?? (input.diagnostic
+    ? "Comparison unavailable"
+    : reportString(locale, "titleVs", { category, baseline: labels.baseline, candidate: labels.candidate })));
   const slots = input.slots ?? {};
-  const header = slots.header ?? defaultHeader(title, task, input.diagnostic);
-  const status = renderStatus(input.facts);
+  const header = slots.header ?? defaultHeader(labels, category, task, locale, input.diagnostic);
+  const headline = slots.headline ?? (input.diagnostic ? escapeHtml(input.diagnostic.reason) : "");
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(reportString(locale, "htmlLang"))}">
 <head>
 <meta charset="utf-8">
 <title>${escapeHtml(title)}</title>
@@ -63,17 +71,26 @@ ${REPORT_CSS}
 </style>
 </head>
 <body${input.diagnostic ? ' data-report="diagnostic"' : ""}>
+${COMPONENT_TEMPLATE_HTML}
 <div class="page">
-  <header data-host-zone="header" data-id="host-header">${header}</header>
-  ${status}
-  ${renderMetricsBoard(input.metrics)}
-  <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">费用不含工具调用成本。价格表 ${escapeHtml(MODEL_PRICING_TABLE_VERSION)}。缺测降低权重，不把可计算费用显示成未采集。</p>
-  <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences">${slots["key-differences"] ?? (input.diagnostic ? diagnosticDifferences(input.diagnostic) : "")}</section>
-  <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence">${slots["visual-evidence"] ?? ""}</section>
-  <section class="slot" data-agent-zone="delivery" data-id="agent-delivery">${slots.delivery ?? (input.diagnostic ? diagnosticDelivery(input.diagnostic) : "")}</section>
-  <section class="slot" data-agent-zone="limitations" data-id="agent-limitations">${slots.limitations ?? (input.diagnostic ? diagnosticLimitations(input.diagnostic) : "")}</section>
-  <section class="slot" data-host-zone="evidence" data-id="host-evidence">${renderEvidenceCatalog(input.evidence)}${renderMediaCatalog(input.media)}</section>
-  <section class="slot" data-host-zone="process" data-id="host-process">${slots.process ?? (input.diagnostic ? diagnosticProcess(input.diagnostic) : "")}</section>
+  <article class="share">
+    <header data-host-zone="header" data-id="host-header">${header}</header>
+    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Core differences. Must be non-empty; if no comparison is possible, say so and why. -->${[
+      input.diagnostic ? diagnosticDifferences(input.diagnostic, locale) : "",
+      slots["key-differences"] ?? "",
+    ].filter(Boolean).join("")}</section>
+    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals: historical left, candidate right. Without paired images use split-compare or leave empty. -->${slots["visual-evidence"] ?? ""}</section>
+    <section class="slot" data-agent-zone="delivery" data-id="agent-delivery"><!-- What each side delivered and what the user still has to do. -->${slots.delivery ?? (input.diagnostic ? diagnosticDelivery(input.diagnostic, locale) : "")}</section>
+    <section class="slot" data-agent-zone="limitations" data-id="agent-limitations"><!-- Replay limitations, configuration differences, truncated evidence; paths and internal IDs go here. -->${slots.limitations ?? (input.diagnostic ? diagnosticLimitations(input.diagnostic) : "")}</section>
+    <p class="note" data-agent-slot="headline">${headline}</p>
+    ${renderMetricsBoard(input.metrics, labels, locale)}
+  </article>
+  <details class="audit">
+    <summary>${escapeHtml(reportString(locale, "auditSummary"))}</summary>
+    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">${escapeHtml(reportString(locale, "costNote", { version: MODEL_PRICING_TABLE_VERSION }))}</p>
+    <section class="slot" data-host-zone="evidence" data-id="host-evidence">${renderRunDiagnostics(input.facts, locale)}${renderEvidenceCatalog(input.evidence, locale)}${renderMediaCatalog(input.media, locale)}</section>
+    <section class="slot" data-host-zone="process" data-id="host-process">${slots.process ?? (input.diagnostic ? diagnosticProcess(input.diagnostic, locale) : "")}</section>
+  </details>
 </div>
 </body>
 </html>
@@ -86,16 +103,21 @@ export function renderComparisonReportFromModel(input: {
   evidence?: readonly { side: string; inspectPath: string; reportHref?: string }[];
   media?: readonly ComparisonMediaRecord[];
   diagnostic?: ComparisonReportDiagnostic;
+  locale?: AgentLocale;
 }): string {
   return renderComparisonReportShell({
-    title: input.model.headline ?? (input.diagnostic ? "Comparison unavailable" : "对照"),
+    ...(input.diagnostic ? { title: "Comparison unavailable" } : {}),
     task: input.model.task,
     facts: input.facts,
     metrics: metricsFromReportFacts(input.facts),
     ...(input.evidence ? { evidence: input.evidence } : {}),
     ...(input.media ? { media: input.media } : {}),
-    slots: input.model.slots,
+    slots: {
+      ...input.model.slots,
+      ...(input.model.headline ? { headline: escapeHtml(input.model.headline) } : {}),
+    },
     ...(input.diagnostic ? { diagnostic: input.diagnostic } : {}),
+    ...(input.locale ? { locale: input.locale } : {}),
   });
 }
 
@@ -109,61 +131,57 @@ function hostMetricsFingerprint(metrics: {
   });
 }
 
-function hostStatusFingerprint(facts: ComparisonReportFacts): string {
-  return JSON.stringify({
-    baseline: facts.replay.baselineEvidence,
-    outcome: facts.run.outcome,
-    termination: facts.run.terminationCode,
-    initiatedBy: facts.run.initiatedBy,
-  });
-}
-
 export function hostMetricsMismatch(html: string, metrics: {
   baseline?: MetricSideProjection;
   candidate?: MetricSideProjection;
-}): string | undefined {
-  const block = html.match(/<section class="board"[^>]*data-host-zone="metrics"[^>]*>[\s\S]*?<\/section>/)
-    ?? html.match(/<section class="board" data-host="metrics"[^>]*>[\s\S]*?<\/section>/);
+}, locale: AgentLocale = "zh"): string | undefined {
+  const block = extractOuter(html, "data-host-zone", "metrics")
+    ?? extractOuter(html, "data-host", "metrics");
   if (!block) return "Host metrics block is missing.";
-  const match = block[0].match(/data-fingerprint="([^"]*)"/);
+  const fingerprint = attributeValue(block, "data-fingerprint");
   const expected = hostMetricsFingerprint(metrics);
-  if (!match || decodeHtml(match[1] ?? "") !== expected) return "Host metrics numbers were modified.";
-  for (const visible of visibleMetricTexts(metrics)) {
-    if (!block[0].includes(visible.text)) return "Host metrics numbers were modified.";
-    if (visible.unit && !block[0].includes(`class="unit">${visible.unit}<`)) return "Host metrics numbers were modified.";
+  if (!fingerprint) return "Host metrics numbers were modified.";
+  try {
+    if (JSON.stringify(JSON.parse(decodeHtml(fingerprint))) !== JSON.stringify(JSON.parse(expected))) return "Host metrics numbers were modified.";
+  } catch {
+    return "Host metrics numbers were modified.";
+  }
+  const normalizedBlock = block.replace(/\s+/g, " ");
+  for (const visible of visibleMetricTexts(metrics, locale)) {
+    if (visible.missing) continue;
+    if (!normalizedBlock.includes(visible.text)) return "Host metrics numbers were modified.";
   }
   return undefined;
 }
 
-export function hostStatusMismatch(html: string, facts: ComparisonReportFacts): string | undefined {
-  const block = html.match(/<section[^>]*data-host-zone="status"[^>]*>[\s\S]*?<\/section>/)
-    ?? html.match(/<section[^>]*data-host="status"[^>]*>[\s\S]*?<\/section>/);
-  if (!block) return "Host status block is missing.";
-  const match = block[0].match(/data-fingerprint="([^"]*)"/);
-  if (!match || decodeHtml(match[1] ?? "") !== hostStatusFingerprint(facts)) {
-    return "Host status values were modified.";
-  }
-  return undefined;
+function attributeValue(html: string, name: string): string | undefined {
+  const escaped = escapeRegExp(name);
+  const match = html.match(new RegExp(`\\b${escaped}\\s*=\\s*(["'])(.*?)\\1`, "i"));
+  return match?.[2];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
 }
 
 export function hostZonesMismatch(html: string, snapshot: HostZoneSnapshot, metrics: {
   baseline?: MetricSideProjection;
   candidate?: MetricSideProjection;
-}): string | undefined {
-  return hostZoneIntegrityError(html, snapshot) ?? hostMetricsMismatch(html, metrics);
+}, locale: AgentLocale = "zh"): string | undefined {
+  return hostZoneIntegrityError(html, snapshot) ?? hostMetricsMismatch(html, metrics, locale);
 }
 
 function visibleMetricTexts(metrics: {
   baseline?: MetricSideProjection;
   candidate?: MetricSideProjection;
-}): FormattedMetric[] {
+}, locale: AgentLocale): FormattedMetric[] {
   return [
-    formatTime(metrics.baseline?.elapsedMs),
-    formatTime(metrics.candidate?.elapsedMs),
-    formatTokens(metrics.baseline?.tokens?.total),
-    formatTokens(metrics.candidate?.tokens?.total),
-    formatCost(metrics.baseline?.costUsd),
-    formatCost(metrics.candidate?.costUsd),
+    formatTime(metrics.baseline?.elapsedMs, locale),
+    formatTime(metrics.candidate?.elapsedMs, locale),
+    formatTokens(metrics.baseline?.tokens?.total, locale),
+    formatTokens(metrics.candidate?.tokens?.total, locale),
+    formatCost(metrics.baseline, locale),
+    formatCost(metrics.candidate, locale),
   ];
 }
 
@@ -180,41 +198,52 @@ export function metricsFromReportFacts(facts: ComparisonReportFacts): {
 function renderMetricsBoard(metrics: {
   baseline?: MetricSideProjection;
   candidate?: MetricSideProjection;
-}): string {
+}, labels: { baseline: string; candidate: string }, locale: AgentLocale): string {
   const fingerprint = escapeHtml(hostMetricsFingerprint(metrics));
-  return `<section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="${fingerprint}" aria-label="时间、token、费用对照">
-    ${card("时间", formatTime(metrics.baseline?.elapsedMs), formatTime(metrics.candidate?.elapsedMs))}
-    ${card("Token", formatTokens(metrics.baseline?.tokens?.total), formatTokens(metrics.candidate?.tokens?.total))}
-    ${card("费用", formatCost(metrics.baseline?.costUsd), formatCost(metrics.candidate?.costUsd))}
+  const aria = escapeHtml(`${reportString(locale, "metricTime")}, ${reportString(locale, "metricTokens")}, ${reportString(locale, "metricCost")}`);
+  return `<section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="${fingerprint}" aria-label="${aria}">
+    ${card(reportString(locale, "metricTime"), formatTime(metrics.baseline?.elapsedMs, locale), formatTime(metrics.candidate?.elapsedMs, locale), labels)}
+    ${card(reportString(locale, "metricTokens"), formatTokens(metrics.baseline?.tokens?.total, locale), formatTokens(metrics.candidate?.tokens?.total, locale), labels)}
+    ${card(reportString(locale, "metricCost"), formatCost(metrics.baseline, locale), formatCost(metrics.candidate, locale), labels)}
   </section>`;
 }
 
-function renderStatus(facts: ComparisonReportFacts): string {
-  const fingerprint = escapeHtml(hostStatusFingerprint(facts));
-  const baseline = facts.replay.baselineEvidence === "verifiable" ? "历史证据可核对" : "历史证据不足";
-  const candidate = candidateStatusLabel(facts.run.outcome, facts.run.terminationCode);
-  return `<section class="status" data-host-zone="status" data-id="host-status" data-host="status" data-fingerprint="${fingerprint}" aria-label="双方状态">
-    <div class="status-grid">
-      <article class="status-card">
-        <div class="who">Baseline</div>
-        <div class="state">${escapeHtml(baseline)}</div>
-      </article>
-      <article class="status-card">
-        <div class="who">Candidate</div>
-        <div class="state">${escapeHtml(candidate)}</div>
-        <div class="muted">${escapeHtml(facts.run.outcome)} · ${escapeHtml(facts.run.terminationCode)}</div>
-      </article>
-    </div>
-  </section>`;
+function comparisonSideLabels(facts: ComparisonReportFacts, locale: AgentLocale): { baseline: string; candidate: string } {
+  return {
+    baseline: usableModelId(facts.models.baseline) ?? reportString(locale, "sideHistorical"),
+    candidate: usableModelId(facts.models.candidate) ?? reportString(locale, "sideCandidate"),
+  };
 }
 
-export function candidateStatusLabel(outcome: string, terminationCode: string): string {
-  if (outcome === "completed" || outcome === "satisfied") return "候选任务已完成";
-  if (outcome === "incomplete" || outcome === "failed") return `候选任务未完成（${terminationCode}）`;
-  return `候选任务状态：${outcome}`;
+function usableModelId(value: string | undefined): string | undefined {
+  if (!value || value === "unavailable") return undefined;
+  return value;
 }
 
-function renderEvidenceCatalog(entries: readonly { side: string; inspectPath: string; reportHref?: string; shortRef?: string; label?: string }[] | undefined): string {
+function renderRunDiagnostics(facts: ComparisonReportFacts, locale: AgentLocale): string {
+  const labels = comparisonSideLabels(facts, locale);
+  const baselinePrice = pricingEvidence(facts.metrics?.baseline);
+  const candidatePrice = pricingEvidence(facts.metrics?.candidate);
+  return `<details class="evidence-expand" data-host="run-diagnostics"><summary>${escapeHtml(reportString(locale, "runDiagnostics"))}</summary><ul class="kv-list">
+    <li><span class="who">${escapeHtml(labels.baseline)}</span> ${escapeHtml(facts.replay.baselineEvidence)}</li>
+    <li><span class="who">${escapeHtml(labels.candidate)}</span> ${escapeHtml(facts.run.outcome)} · ${escapeHtml(facts.run.terminationCode)} · ${escapeHtml(facts.run.initiatedBy)}</li>
+    <li><span class="who">${escapeHtml(labels.baseline)} price</span> ${escapeHtml(baselinePrice)}</li>
+    <li><span class="who">${escapeHtml(labels.candidate)} price</span> ${escapeHtml(candidatePrice)}</li>
+  </ul></details>`;
+}
+
+function pricingEvidence(side: ComparisonMetricSide | undefined): string {
+  if (!side) return "unavailable";
+  const model = side.pricingModelId ?? "unresolved";
+  const source = side.pricingSource ?? side.pricingStatus ?? "unknown";
+  const version = side.pricingVersion ?? MODEL_PRICING_TABLE_VERSION;
+  const rates = side.pricingRates
+    ? ` · in ${side.pricingRates.input} / out ${side.pricingRates.output} / cacheRead ${side.pricingRates.cacheRead} / cacheCreation ${side.pricingRates.cacheCreation}`
+    : "";
+  return `${model} · ${source} · ${version}${rates}`;
+}
+
+function renderEvidenceCatalog(entries: readonly { side: string; inspectPath: string; reportHref?: string; shortRef?: string; label?: string }[] | undefined, locale: AgentLocale): string {
   if (!entries?.length) return "";
   const rows = entries.map((entry) => {
     const name = entry.label ?? entry.inspectPath;
@@ -222,10 +251,10 @@ function renderEvidenceCatalog(entries: readonly { side: string; inspectPath: st
     const href = entry.reportHref ? `<a class="path-link" href="${escapeHtml(entry.reportHref)}">${escapeHtml(entry.inspectPath)}</a>` : escapeHtml(entry.inspectPath);
     return `<li data-component="path-link" data-evidence-ref="${escapeHtml(entry.shortRef ?? "")}"><span class="who">${escapeHtml(entry.side)}</span> ${escapeHtml(ref)}${escapeHtml(name)} ${href}</li>`;
   }).join("");
-  return `<details class="evidence-expand" data-component="evidence-expand" data-host="evidence-paths"><summary>真实路径与文件</summary><ul class="kv-list">${rows}</ul></details>`;
+  return `<details class="evidence-expand" data-component="evidence-expand" data-host="evidence-paths"><summary>${escapeHtml(reportString(locale, "evidencePaths"))}</summary><ul class="kv-list">${rows}</ul></details>`;
 }
 
-function renderMediaCatalog(media: readonly ComparisonMediaRecord[] | undefined): string {
+function renderMediaCatalog(media: readonly ComparisonMediaRecord[] | undefined, locale: AgentLocale): string {
   if (!media?.length) return "";
   const rows = media.map((item) => {
     const state = item.available ? "available" : "unavailable";
@@ -234,47 +263,62 @@ function renderMediaCatalog(media: readonly ComparisonMediaRecord[] | undefined)
       : escapeHtml(item.inspectPath);
     return `<li data-media-ref="${escapeHtml(item.shortRef ?? item.ref)}"><span class="who">${escapeHtml(item.side)}</span> ${escapeHtml(item.shortRef ?? item.ref)} ${href} <span class="muted">${escapeHtml(item.mediaType)} · ${state}</span></li>`;
   }).join("");
-  return `<details class="evidence-expand" data-host="media-catalog"><summary>已注册媒体</summary><ul class="kv-list">${rows}</ul></details>`;
+  return `<details class="evidence-expand" data-host="media-catalog"><summary>${escapeHtml(reportString(locale, "registeredMedia"))}</summary><ul class="kv-list">${rows}</ul></details>`;
 }
 
-function defaultHeader(title: string, task: string, diagnostic?: ComparisonReportDiagnostic): string {
-  const kicker = diagnostic ? `Comparison · ${diagnostic.failureClass}` : "Comparison";
-  return `<p class="kicker">${escapeHtml(kicker)}</p>
-  <h1 data-slot="title">${escapeHtml(title)}</h1>
-  <p class="task" data-slot="task">${escapeHtml(task)}</p>`;
+function defaultHeader(
+  labels: { baseline: string; candidate: string },
+  category: string,
+  task: string,
+  locale: AgentLocale,
+  diagnostic?: ComparisonReportDiagnostic,
+): string {
+  const kicker = diagnostic ? `<p class="kicker">Comparison · ${escapeHtml(diagnostic.failureClass)}</p>` : "";
+  const vs = reportString(locale, "titleVs", { category: "", baseline: labels.baseline, candidate: labels.candidate })
+    .replace(/^\s*·\s*/, "");
+  return `${kicker}<h1><span data-agent-slot="category">${escapeHtml(category)}</span> · ${escapeHtml(vs)}</h1>
+  <p class="task" data-slot="task" data-agent-slot="task">${escapeHtml(task)}</p>`;
 }
 
-function diagnosticDifferences(diagnostic: ComparisonReportDiagnostic): string {
-  return `<article class="result-card" data-component="result-card" data-failure-class="${escapeHtml(diagnostic.failureClass)}" data-failure-phase="${escapeHtml(diagnostic.phase)}">
-    <p><strong>Comparison unavailable</strong></p>
-    <p>对照失败分类：${escapeHtml(diagnostic.failureClass)}。失败阶段：${escapeHtml(diagnostic.phase)}。</p>
-    <p>${escapeHtml(diagnostic.reason)}</p>
+function diagnosticDifferences(diagnostic: ComparisonReportDiagnostic, locale: AgentLocale): string {
+  const draft = diagnostic.draftAnalysis
+    ? `<p><strong>${escapeHtml(reportString(locale, "diagDraft"))}</strong></p><pre>${escapeHtml(diagnostic.draftAnalysis)}</pre>`
+    : "";
+  return `<article class="result-card" data-component="difference-card" data-failure-class="${escapeHtml(diagnostic.failureClass)}" data-failure-phase="${escapeHtml(diagnostic.phase)}">
+    <h3>${escapeHtml(reportString(locale, "diagFailed"))}</h3>
+    <p>${escapeHtml(reportString(locale, "diagClassPhase", { class: diagnostic.failureClass, phase: diagnostic.phase }))}</p>
+    <p>${escapeHtml(diagnostic.reason)}</p>${draft}
   </article>`;
 }
 
-function diagnosticDelivery(diagnostic: ComparisonReportDiagnostic): string {
-  return `<p>候选任务是否完成：${escapeHtml(diagnostic.candidateCompleted)}</p>`;
+function diagnosticDelivery(diagnostic: ComparisonReportDiagnostic, locale: AgentLocale): string {
+  return `<p>${escapeHtml(reportString(locale, "diagCandidateCompleted", { value: diagnostic.candidateCompleted }))}</p>`;
 }
 
 function diagnosticLimitations(diagnostic: ComparisonReportDiagnostic): string {
   return `<ul>${diagnostic.details.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
-function diagnosticProcess(diagnostic: ComparisonReportDiagnostic): string {
-  if (!diagnostic.traces.length) return "<p>打开实验目录中的 trace 与 artifacts 继续排查；若已有成功 report.html，它属于更早一次 attempt。</p>";
+function diagnosticProcess(diagnostic: ComparisonReportDiagnostic, locale: AgentLocale): string {
+  if (!diagnostic.traces.length) return `<p>${escapeHtml(reportString(locale, "diagProcessHint"))}</p>`;
   return `<ul>${diagnostic.traces.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
-function card(label: string, baseline: FormattedMetric, candidate: FormattedMetric): string {
+function card(
+  label: string,
+  baseline: FormattedMetric,
+  candidate: FormattedMetric,
+  labels: { baseline: string; candidate: string },
+): string {
   return `<article class="card">
       <div class="label">${label}</div>
       <div class="pair">
         <div class="col">
-          <div class="who">Baseline</div>
+          <div class="who">${escapeHtml(labels.baseline)}</div>
           ${metricHtml(baseline)}
         </div>
         <div class="col">
-          <div class="who">Candidate</div>
+          <div class="who">${escapeHtml(labels.candidate)}</div>
           ${metricHtml(candidate)}
         </div>
       </div>
@@ -284,35 +328,39 @@ function card(label: string, baseline: FormattedMetric, candidate: FormattedMetr
 type FormattedMetric = { text: string; unit?: string; missing: boolean };
 
 function metricHtml(value: FormattedMetric): string {
-  if (value.missing) return `<div class="num miss">${MISSING}</div>`;
+  if (value.missing) return `<div class="num miss">${escapeHtml(value.text)}</div>`;
   const unit = value.unit ? `<span class="unit">${escapeHtml(value.unit)}</span>` : "";
   return `<div class="num">${escapeHtml(value.text)}${unit}</div>`;
 }
 
-function formatTime(ms: number | undefined): FormattedMetric {
-  if (ms === undefined) return { text: MISSING, missing: true };
-  if (ms >= 60_000) return { text: String(Math.round(ms / 60_000)), unit: "分", missing: false };
-  return { text: String(Math.round(ms / 1000)), unit: "秒", missing: false };
+function formatTime(ms: number | undefined, locale: AgentLocale = "zh"): FormattedMetric {
+  if (ms === undefined) return { text: reportString(locale, "missing"), missing: true };
+  if (ms >= 60_000) return { text: String(Math.round(ms / 60_000)), unit: reportString(locale, "unitMinutes"), missing: false };
+  return { text: String(Math.round(ms / 1000)), unit: reportString(locale, "unitSeconds"), missing: false };
 }
 
-function formatTokens(total: number | undefined): FormattedMetric {
-  if (total === undefined) return { text: MISSING, missing: true };
+function formatTokens(total: number | undefined, locale: AgentLocale = "zh"): FormattedMetric {
+  if (total === undefined) return { text: reportString(locale, "missing"), missing: true };
   if (total >= 1_000_000) {
     return { text: trimDecimals((total / 1_000_000).toFixed(2)), unit: "M", missing: false };
   }
   return { text: String(Math.round(total)), missing: false };
 }
 
-function formatCost(amount: number | undefined): FormattedMetric {
-  if (amount === undefined) return { text: MISSING, missing: true };
-  return { text: amount.toFixed(2), unit: "$", missing: false };
+export function formatCost(side: MetricSideProjection | undefined, locale: AgentLocale = "zh"): FormattedMetric {
+  if (side?.pricingStatus === "pricing_unavailable") return { text: reportString(locale, "pricingUnavailable"), missing: true };
+  if (side?.pricingStatus === "unknown") return { text: reportString(locale, "costUnknown"), missing: true };
+  if (side?.costUsd !== undefined) return { text: side.costUsd.toFixed(2), unit: "$", missing: false };
+  if (side?.tokens) return { text: reportString(locale, "pricingUnavailable"), missing: true };
+  return { text: reportString(locale, "missing"), missing: true };
 }
 
-function sideFingerprint(side: MetricSideProjection | undefined): [number | null, number | null, number | null] {
+function sideFingerprint(side: MetricSideProjection | undefined): [number | null, number | null, number | null, string | null] {
   return [
     side?.elapsedMs ?? null,
     side?.tokens?.total ?? null,
     side?.costUsd ?? null,
+    side?.pricingStatus ?? null,
   ];
 }
 
@@ -343,32 +391,73 @@ function decodeHtml(value: string): string {
     .replaceAll("&amp;", "&");
 }
 
+const COMPONENT_TEMPLATE_HTML = `<!-- Component prototypes: copy into a data-agent-zone; omit what you do not use.
+     pair-pages: left historical final page / right candidate final page, page by page
+     split-compare: side-by-side text
+     difference-card: one difference with impact
+     diff-table / timeline / media-compare / headline: as needed
+     Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside;
+     wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside. -->
+<template data-component-template="headline">
+  <div data-component="judgment"><strong>Judgment</strong><p></p></div>
+</template>
+<template data-component-template="difference-card">
+  <article data-component="difference-card"><h3></h3><p></p></article>
+</template>
+<template data-component-template="split-compare">
+  <div data-component="split-compare"><section></section><section></section></div>
+</template>
+<template data-component-template="diff-table">
+  <table data-component="diff-table"><thead></thead><tbody></tbody></table>
+</template>
+<template data-component-template="timeline">
+  <ol data-component="timeline"><li></li></ol>
+</template>
+<template data-component-template="media-compare">
+  <figure data-component="media-compare"><img data-media-ref="media-01" alt=""><figcaption></figcaption></figure>
+</template>
+<template data-component-template="pair-pages">
+  <div data-component="page-row">
+    <div class="cell"><div class="who"></div><img data-media-ref="" alt=""></div>
+    <div class="cell"><div class="who"></div><img data-media-ref="" alt=""></div>
+  </div>
+</template>
+`;
+
 const REPORT_CSS = `
-:root { --paper:#f3efe6; --card:#fffcf7; --ink:#1c1915; --soft:#5c574e; --faint:#8a8478; --line:rgba(28,25,21,.08); --hair:rgba(28,25,21,.12); --shadow:0 18px 40px rgba(40,32,18,.08); --accent:#5b4630; --risk:#8b2e2e; --ok:#2f5d3a; }
+:root { --paper:#efe8dc; --card:#fffcf7; --ink:#1a1714; --soft:#5a544b; --faint:#8a8378; --line:rgba(26,23,20,.08); --hair:rgba(26,23,20,.12); --shadow:0 22px 50px rgba(40,32,18,.1); --accent:#5b4630; --risk:#8b2e2e; --ok:#2f5d3a; }
 * { box-sizing:border-box; }
 html,body { margin:0; background:var(--paper); color:var(--ink); font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Songti SC","Source Han Serif SC",serif; }
-.page { max-width:1080px; margin:0 auto; padding:56px 32px 72px; }
+.page { max-width:980px; margin:0 auto; padding:36px 20px 72px; }
+.share { background:var(--card); border:1px solid var(--line); border-radius:28px; box-shadow:var(--shadow); padding:28px 28px 24px; }
 .kicker { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin:0 0 12px; }
-h1 { font-size:34px; font-weight:600; letter-spacing:-.03em; line-height:1.15; margin:0 0 10px; }
-.task { margin:0 0 28px; font-size:16px; color:var(--soft); white-space:nowrap; }
-.board { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin: 8px 0 12px; }
-.card,.status-card,.result-card { background:var(--card); border-radius:22px; box-shadow:var(--shadow); border:1px solid var(--line); padding:22px 22px 20px; }
-.card { min-height:168px; }
-.card .label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin-bottom:18px; }
+h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; margin:0 0 8px; }
+.task { margin:0 0 22px; font-size:16px; color:var(--soft); line-height:1.45; white-space:nowrap; }
+.note,[data-agent-slot="headline"] { margin:16px 0 18px; font-size:16px; line-height:1.5; }
+.board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
+.card,.result-card,[data-component="difference-card"] { background:#f7f3ea; border-radius:18px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; }
+.card { min-height:0; }
+.card .label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:12px; }
 .pair { display:grid; grid-template-columns:1fr 1fr; }
-.col { padding-right:16px; }
-.col + .col { padding-right:0; padding-left:18px; border-left:1px solid var(--hair); }
-.who { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.08em; color:var(--faint); margin-bottom:6px; }
-.num { font-variant-numeric:tabular-nums; font-size:40px; line-height:.95; letter-spacing:-.04em; font-weight:600; }
-.num.miss { font-size:28px; color:#b3ada2; letter-spacing:-.02em; }
-.unit { font-size:16px; font-weight:500; color:var(--soft); margin-left:2px; }
-.status { margin: 0 0 22px; }
-.status-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-.state { font-size:20px; font-weight:600; }
+.col { padding-right:8px; }
+.col + .col { padding-right:0; padding-left:12px; border-left:1px solid var(--hair); }
+.who { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.08em; color:var(--faint); margin-bottom:4px; }
+.num { font-variant-numeric:tabular-nums; font-size:28px; line-height:1; letter-spacing:-.03em; font-weight:600; }
+.num.miss { font-size:16px; color:#b3ada2; letter-spacing:0; font-weight:500; white-space:nowrap; }
+.unit { font-size:13px; font-weight:500; color:var(--soft); margin-left:2px; }
 .muted,[data-component="muted"] { color:var(--faint); font-size:14px; }
-.slot { margin-top:28px; }
+.slot { margin-top:14px; }
+.pages { display:flex; flex-direction:column; gap:14px; }
+[data-component="page-row"] { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:stretch; }
+.cell { border:1px solid var(--hair); border-radius:16px; overflow:hidden; background:#fff; }
+.cell .who { padding:8px 12px 0; }
+.cell img,[data-component="page-row"] img { width:100%; height:200px; object-fit:contain; object-position:top; display:block; background:#fff; }
+.audit { margin-top:20px; color:var(--soft); }
 .cost-note { margin: 0 0 8px; }
 strong,[data-component="judgment"] { font-weight:700; }
+[data-component="judgment"] { margin:0 0 16px; }
+[data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
+[data-component="difference-card"] p { margin:0; color:var(--soft); }
 [data-component="highlight"] { background:rgba(91,70,48,.12); padding:0 .2em; }
 [data-component="strike"] { text-decoration:line-through; color:var(--soft); }
 [data-component="quote"] { border-left:3px solid var(--hair); padding-left:12px; color:var(--soft); }
@@ -386,10 +475,11 @@ code,[data-component="code"] { font-family:"Cascadia Code","Sarasa Mono SC",mono
 .evidence-expand { margin-top:16px; }
 .path-link { color:var(--accent); }
 .kv-list { padding-left:18px; }
-body[data-report="diagnostic"] .num.miss { font-size:24px; }
-@media (max-width:900px) {
-  .board,.status-grid,[data-component="split-compare"] { grid-template-columns:1fr; }
-  .num { font-size:36px; }
+body[data-report="diagnostic"] .num.miss { font-size:16px; }
+@media (max-width:760px) {
+  .board,[data-component="split-compare"],[data-component="page-row"] { grid-template-columns:1fr; }
+  .num { font-size:24px; }
   .task { white-space:normal; }
+  .cell img,[data-component="page-row"] img { height:160px; }
 }
 `;

@@ -50,12 +50,15 @@ async function fixture() {
   return { root, briefingRoot, replicaRoot, sourceRoot, events, artifacts, store, bindings, tools };
 }
 
-test("controllerProjectWriteAllowed only allows files under project/", () => {
+test("controllerProjectWriteAllowed allows files under project/ and notes/", () => {
   assert.equal(controllerProjectWriteAllowed("project/a.txt"), true);
+  assert.equal(controllerProjectWriteAllowed("notes/understanding.md"), true);
   assert.equal(controllerProjectWriteAllowed("project"), false);
+  assert.equal(controllerProjectWriteAllowed("notes"), false);
   assert.equal(controllerProjectWriteAllowed("INDEX.md"), false);
   assert.equal(controllerProjectWriteAllowed("history/user-inputs/a.txt"), false);
   assert.equal(controllerProjectWriteAllowed("project-evil/a.txt"), false);
+  assert.equal(controllerProjectWriteAllowed("notes-evil/a.txt"), false);
 });
 
 test("reads classify briefing, replica, and external paths without gating on changedPaths", () => {
@@ -78,6 +81,9 @@ test("Controller registers shell_exec, writes project, and rejects briefing", as
     assert.ok(write);
     const signal = new AbortController().signal;
     await assert.rejects(() => write.execute({ path: "INDEX.md", content: "no" }, signal), /write_denied/);
+    await assert.rejects(() => write.execute({ path: "history/user-inputs/a.txt", content: "no" }, signal), /write_denied/);
+    const notes = await write.execute({ path: "notes/understanding.md", content: "task goal" }, signal);
+    assert.match(notes.content, /Wrote/);
     const written = await write.execute({ path: "project/note.txt", content: "user edit" }, signal);
     assert.match(written.content, /Wrote/);
     assert.equal(

@@ -57,9 +57,9 @@ test("Recovery uses three turns and only validates the final envelope", async ()
   assert.equal(result.status, "completed");
   if (result.status === "completed") assert.equal(result.value.status, "ready");
   assert.equal(appended.length, 3);
-  assert.match(appended[0] ?? "", /Understand the original task/);
+  assert.match(appended[0] ?? "", /Turn 1: understand the task/);
   assert.match(appended[1] ?? "", new RegExp(RECOVERY_TURN_PROMPTS.restore.slice(0, 12)));
-  assert.match(appended[2] ?? "", /ready when you have a reasonable executable starting point/);
+  assert.match(appended[2] ?? "", /Turn 3: check your work/);
   assert.doesNotMatch(appended[0] ?? "", /Return only JSON matching the contract|输出契约/);
 });
 
@@ -106,7 +106,7 @@ test("Recovery investigation and mechanical feedback reuse one Pi session", asyn
   await recovery.recover({ ...context, mechanicalFeedback: { facts: "recovery.md is missing" } }, []);
   assert.equal(created, 1);
   assert.equal(appended.length, 4);
-  assert.match(appended[3] ?? "", /mechanical check failed|recovery.md is missing/i);
+  assert.match(appended[3] ?? "", /The Host's mechanical check failed|recovery.md is missing/);
   await recovery.releasePreparation("case-1");
 });
 
@@ -137,8 +137,8 @@ test("model request failure keeps the Session and retries remaining turns", asyn
   const second = await recovery.recover(context, []);
   assert.equal(second.status, "completed");
   assert.equal(created, 1);
-  assert.match(appended[0] ?? "", /Understand the original task/);
-  assert.match(appended[1] ?? "", /Understand the original task/);
+  assert.match(appended[0] ?? "", /Turn 1: understand the task/);
+  assert.match(appended[1] ?? "", /Turn 1: understand the task/);
   assert.match(appended[2] ?? "", new RegExp(RECOVERY_TURN_PROMPTS.restore.slice(0, 12)));
   await recovery.releasePreparation("case-1");
 });
@@ -175,7 +175,7 @@ test("failed envelope keeps the Session and does not replay completed freeform t
   }, [], audit);
   assert.equal(second.status, "completed");
   assert.equal(created, 1);
-  assert.equal(appended.filter((item) => item.includes("Understand the original task")).length, 1);
+  assert.equal(appended.filter((item) => item.includes("Turn 1: understand the task")).length, 1);
   await recovery.releasePreparation("case-1");
 });
 
@@ -232,7 +232,7 @@ test("Recovery investigation restart after releasePreparation begins at the unde
   await recovery.releasePreparation("case-1");
   await recovery.recover(context, []);
   assert.equal(created, 2);
-  assert.equal(appended.filter((item) => item.includes("Understand the original task")).length, 2);
+  assert.equal(appended.filter((item) => item.includes("Turn 1: understand the task")).length, 2);
   await recovery.releasePreparation("case-1");
 });
 
@@ -249,4 +249,41 @@ test("invalid summary fails the last turn without rewriting Host text", async ()
   });
   const result = await recovery.recover(recoveryContext(), []);
   assert.equal(result.status, "failed");
+});
+
+test("new Session after two completed freeform turns prepends the recovery briefing", async () => {
+  let created = 0;
+  const appended: string[] = [];
+  const auditEvents: { type: string; role?: string; payload?: unknown }[] = [];
+  const recovery = new RecoveryAgent({
+    host: new PiAgentHost({
+      createSession() {
+        created += 1;
+        return {
+          append: async ({ content }) => {
+            appended.push(content);
+            if (created === 1 && appended.length < 3) return "working";
+            return readyEnvelope;
+          },
+          cancel() {},
+        };
+      },
+    }),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const context = recoveryContext();
+  const audit = { append: async (event: (typeof auditEvents)[number]) => { auditEvents.push(event); } };
+  await recovery.recover(context, [], audit);
+  await recovery.releasePreparation("case-1");
+  const second = await recovery.recover({
+    ...context,
+    completedFreeformTurns: completedRecoveryFreeformTurns(auditEvents),
+  }, [], audit);
+  assert.equal(second.status, "completed");
+  assert.equal(created, 2);
+  assert.equal(completedRecoveryFreeformTurns(auditEvents), 2);
+  assert.match(appended[3] ?? "", /# Recovery briefing/);
+  assert.match(appended[3] ?? "", /Turn 3: check your work/);
+  await recovery.releasePreparation("case-1");
 });

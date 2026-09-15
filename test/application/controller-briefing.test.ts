@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -63,14 +63,15 @@ test("view surface maps settlement without leaking Host diagnostics", () => {
   assert.equal(controllerViewSurface("completed", "done", false), "unavailable");
 });
 
-test("INDEX lists transcript directory and project mount prefix", () => {
+test("INDEX is navigation only and lists notes/", () => {
   assert.match(renderIndexMarkdown(undefined), /history\/transcript\/\{id\}\.txt/);
   assert.match(renderIndexMarkdown("run/turns/0001"), /project\//);
   assert.match(renderIndexMarkdown("run/turns/0001"), /run\/turns\/0001/);
   assert.match(renderIndexMarkdown(undefined), /imported-inputs/);
   assert.match(renderIndexMarkdown(undefined), /current-user-view\.md/);
-  assert.match(renderIndexMarkdown(undefined), /shell_exec/);
-  assert.doesNotMatch(renderIndexMarkdown(undefined), /There is no `shell_exec`/);
+  assert.match(renderIndexMarkdown(undefined), /notes\//);
+  assert.doesNotMatch(renderIndexMarkdown(undefined), /read_observation/);
+  assert.doesNotMatch(renderIndexMarkdown(undefined), /There is no/);
   assert.doesNotMatch(renderIndexMarkdown(undefined), /view\.txt/);
 });
 
@@ -109,7 +110,7 @@ test("opening briefing lives outside the replica and opening prompt omits later 
   assert.match(indexOnDisk, /current-user-view\.md/);
   assert.doesNotMatch(indexOnDisk, /view\.txt/);
   const permissions = await readFile(join(briefingRoot, "permissions.txt"), "utf8");
-  assert.match(permissions, /controller\.writes=project/);
+  assert.match(permissions, /controller\.writes=project,notes/);
   assert.match(permissions, /controller\.shell=allowed/);
   assert.match(permissions, /candidate\.writes=unconfirmed/);
   assert.match(permissions, /candidate\.source=unconfirmed/);
@@ -119,10 +120,12 @@ test("opening briefing lives outside the replica and opening prompt omits later 
   assert.match(indexOnDisk, /Current candidate facts/);
   assert.match(prompt, /INDEX\.md/);
   assert.match(prompt, /history\/initial-input\.txt/);
-  assert.match(prompt, /第一条自然用户消息/);
+  assert.match(prompt, /Opening: send the first user message/);
   assert.doesNotMatch(indexOnDisk, /controller-understanding/);
   assert.doesNotMatch(prompt, /understandingDelta/);
   assert.doesNotMatch(prompt, new RegExp(marker));
+  assert.equal((await stat(join(briefingRoot, "notes"))).isDirectory(), true);
+  assert.equal(Object.keys(written.fileDigests).some((path) => path.startsWith("notes/")), false);
   assert.equal(existsSync(join(replicaRoot, "INDEX.md")), false);
   await assert.rejects(
     () => writeOpeningBriefing({
@@ -188,6 +191,53 @@ test("settled-turn digest changes when visible.txt changes", async () => {
   assert.match(await readFile(join(briefingRoot, "current-user-view.md"), "utf8"), /second pass html/);
 });
 
+test("steering promptContent does not resend INDEX.md and digest omits notes/", async () => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-briefing-steering-"));
+  const briefingRoot = join(root, "briefing");
+  const replicaRoot = join(root, "replica");
+  await mkdir(replicaRoot, { recursive: true });
+  const opening = await writeOpeningBriefing({
+    briefingRoot,
+    replicaRoot,
+    taskCase: taskCase("第二页太空了。"),
+    sourceRootKind: "historical_start",
+  });
+  const openingPrompt = controllerPromptContent({
+    phase: "opening",
+    briefingRoot,
+    indexMarkdown: opening.indexMarkdown,
+  });
+  assert.match(openingPrompt, /# INDEX\.md/);
+  const settled = await writeSettledTurnBriefing({
+    briefingRoot,
+    turnIndex: 1,
+    visibleText: "first pass html",
+    events: [],
+    changedPaths: ["out.html"],
+    allowModelText: true,
+  });
+  await mkdir(join(briefingRoot, "notes"), { recursive: true });
+  await writeFile(join(briefingRoot, "notes", "understanding.md"), "private notes\n");
+  const afterNotes = await writeSettledTurnBriefing({
+    briefingRoot,
+    turnIndex: 1,
+    visibleText: "first pass html",
+    events: [],
+    changedPaths: ["out.html"],
+    allowModelText: true,
+  });
+  const steering = controllerPromptContent({
+    phase: "steering",
+    briefingRoot,
+    indexMarkdown: settled.indexMarkdown,
+    latestTurnRelative: settled.turnRelative,
+  });
+  assert.doesNotMatch(steering, /# INDEX\.md/);
+  assert.match(steering, /Latest turn: run\/turns\/0001/);
+  assert.equal(Object.keys(afterNotes.fileDigests).some((path) => path.startsWith("notes/")), false);
+  assert.equal(afterNotes.fileDigests["notes/understanding.md"], undefined);
+});
+
 test("staging a settled turn does not replace the previous live Controller view", async () => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-interrupt-"));
   const briefingRoot = join(root, "briefing");
@@ -228,8 +278,8 @@ test("permissions.txt keeps Controller writes on project/ when the historical ca
     sourceRootKind: "historical_start",
   });
   const permissions = await readFile(join(briefingRoot, "permissions.txt"), "utf8");
-  assert.match(permissions, /controller\.writes=project/);
-  assert.match(permissions, /Historical session inference/);
+  assert.match(permissions, /controller\.writes=project,notes/);
+  assert.match(permissions, /Historical-session inference/);
   assert.match(permissions, /candidate\.source=historical_session/);
   assert.match(permissions, /candidate\.sandbox=danger-full-access/);
   assert.match(permissions, /candidate\.writes=allowed/);

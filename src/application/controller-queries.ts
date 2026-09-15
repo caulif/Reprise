@@ -16,7 +16,8 @@ import { packProjection } from "../products/pack-access.js";
 import { joinPublicAssistantSurface } from "../products/contract.js";
 import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./replay-conditions.js";
 import { recordValue, strings } from "./experiment-helpers.js";
-import { aggregateEventUsage, factsFromUsage, usageCostUsd } from "./session-usage.js";
+import { aggregateEventUsage, factsFromUsage, usagePricing, type AggregatedUsage, type UsagePricing } from "./session-usage.js";
+import { loadOperatorPricingOverride } from "./model-pricing.js";
 
 export type RecentToolError = { tool: string; message: string };
 
@@ -51,6 +52,7 @@ export async function inspectRun(
     requestedModel: string;
     resolvedModel?: string;
     lang?: ReplayLang;
+    dataDir?: string;
   },
 ): Promise<ControllerObservation> {
   const runId = record?.attempt.runId ?? workspace?.runId;
@@ -80,7 +82,7 @@ export async function inspectRun(
   const usage = aggregateEventUsage(events);
   const tokenUsage = factsFromUsage(usage);
   const tokenCount = tokenUsage?.total;
-  const costUsd = usageCostUsd(usage, replay?.resolvedModel ?? replay?.requestedModel);
+  const priced = priceRunUsage(usage, productId, replay);
   const replayConditions = replay
     ? hostReplayConditions({
         sourceRootKind: replay.sourceRootKind,
@@ -102,7 +104,7 @@ export async function inspectRun(
     ...(wallClockMs === undefined ? {} : { wallClockMs }),
     ...(tokenCount === undefined ? {} : { tokenCount }),
     ...(tokenUsage ? { tokenUsage } : {}),
-    ...(costUsd === undefined ? {} : { costUsd }),
+    ...pricingAudit(usage, priced),
     ...workspaceFacts,
     ...(replayConditions?.length ? { replayConditions } : {}),
     controllerWritePaths: controllerWritePathsFromEvents(events),
@@ -133,6 +135,32 @@ export async function inspectRun(
     ...(turnVisibleText ? { turnVisibleText } : {}),
     ...(turnPrompt ? { turnPrompt } : {}),
     ...(userView ? { userView } : {}),
+  };
+}
+
+function priceRunUsage(
+  usage: ReturnType<typeof aggregateEventUsage>,
+  productId: string,
+  replay: {
+    requestedModel: string;
+    resolvedModel?: string;
+    dataDir?: string;
+  } | undefined,
+) {
+  return usagePricing(usage, replay?.resolvedModel ?? replay?.requestedModel, undefined, {
+    productId,
+    ...(replay?.dataDir ? { override: loadOperatorPricingOverride(replay.dataDir) } : {}),
+  });
+}
+
+function pricingAudit(usage: AggregatedUsage | undefined, priced: UsagePricing): Partial<RunInspection> {
+  return {
+    ...(priced.costUsd === undefined ? {} : { costUsd: priced.costUsd }),
+    ...(usage ? { pricingLookup: priced.lookup } : {}),
+    ...(priced.pricingModelId ? { pricingModelId: priced.pricingModelId } : {}),
+    ...(priced.pricingSource ? { pricingSource: priced.pricingSource } : {}),
+    ...(priced.pricingVersion ? { pricingVersion: priced.pricingVersion } : {}),
+    ...(priced.rates ? { pricingRates: priced.rates } : {}),
   };
 }
 
@@ -241,11 +269,10 @@ async function inspectWorkspace(
     workspace.environment.beforeFingerprint,
     after,
   );
+  const classified = classifyChangedPaths(paths);
   return {
-    changedPaths: paths.filter((path) => !path.startsWith("node_modules/")),
-    runtimeGeneratedPaths: paths.filter((path) =>
-      path.startsWith("node_modules/"),
-    ),
+    changedPaths: classified.changedPaths,
+    runtimeGeneratedPaths: classified.runtimeGeneratedPaths,
     workspaceEvidenceStatus: "available" as const,
   };
 }
@@ -263,7 +290,7 @@ async function readWorkspaceScope(
       JSON.parse(Buffer.from(await store.readArtifact(ref)).toString("utf8")),
     );
     return {
-      changedPaths: strings(scope.changedPaths),
+      changedPaths: strings(scope.changedPaths).filter(isComparisonChangedPath),
       runtimeGeneratedPaths: strings(scope.runtimeGeneratedPaths),
       workspaceEvidenceStatus: "available" as const,
     };
@@ -303,12 +330,8 @@ export async function captureWorkspaceScope(input: {
     input.environment.beforeFingerprint,
     after,
   );
-  const runtimeGeneratedPaths = allChangedPaths.filter((path) =>
-    path.startsWith("node_modules/"),
-  );
-  const changedPaths = allChangedPaths.filter(
-    (path) => !path.startsWith("node_modules/"),
-  );
+  const classified = classifyChangedPaths(allChangedPaths);
+  const { changedPaths, runtimeGeneratedPaths } = classified;
   const before = fingerprintEntries(input.environment.beforeFingerprint);
   const current = fingerprintEntries(after);
   const snapshots = await Promise.all(
@@ -440,4 +463,33 @@ function changedPathsBetween(
   return [...new Set([...initial.keys(), ...current.keys()])]
     .filter((path) => initial.get(path) !== current.get(path))
     .sort();
+}
+
+const COMPARISON_INTERNAL_SEGMENTS = new Set([
+  ".git", ".reprise", ".codex", ".cache", "node_modules", "__pycache__",
+  ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".venv", "venv",
+  "coverage", "dist", "build", "tmp", "temp",
+]);
+
+/** Paths useful for comparison describe user-visible work, not runtime internals. */
+export function isComparisonChangedPath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\//, "");
+  if (!normalized || normalized.startsWith("/") || normalized.startsWith("//") || /^[A-Za-z]:\//.test(normalized) || normalized.split("/").some((part) => part === "..")) return false;
+  if (normalized.split("/").some((part) => COMPARISON_INTERNAL_SEGMENTS.has(part.toLowerCase()))) return false;
+  if (/(^|\/)(?:\.DS_Store|Thumbs\.db|npm-debug\.log|yarn-debug\.log|yarn-error\.log)$/.test(normalized)) return false;
+  return true;
+}
+
+function classifyChangedPaths(paths: readonly string[]): { changedPaths: string[]; runtimeGeneratedPaths: string[] } {
+  const changedPaths: string[] = [];
+  const runtimeGeneratedPaths: string[] = [];
+  for (const path of paths) {
+    const normalized = path.replaceAll("\\", "/");
+    if (normalized.split("/").some((part) => part.toLowerCase() === "node_modules")) {
+      runtimeGeneratedPaths.push(normalized);
+    } else if (isComparisonChangedPath(normalized)) {
+      changedPaths.push(normalized);
+    }
+  }
+  return { changedPaths: [...new Set(changedPaths)].sort(), runtimeGeneratedPaths: [...new Set(runtimeGeneratedPaths)].sort() };
 }

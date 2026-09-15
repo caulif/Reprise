@@ -55,8 +55,9 @@ test('Controller request snapshot records the live prompt digest', () => {
   assert.equal(CONTROLLER_PROMPT_DIGEST, sha256(CONTROLLER_SYSTEM_PROMPT));
   const snapshot = controllerRequestSnapshot(steering('run-1'));
   assert.equal(snapshot.promptDigest, CONTROLLER_PROMPT_DIGEST);
-  assert.match(String(snapshot.promptContent), /不要因为候选自称完成而跳过必要检查/);
-  assert.match(String(snapshot.promptContent), /Current candidate facts/);
+  assert.doesNotMatch(String(snapshot.promptContent), /# INDEX\.md/);
+  assert.match(String(snapshot.promptContent), /Latest turn: run\/turns\/0001/);
+  assert.match(String(snapshot.promptContent), /Read current-user-view\.md first/);
 });
 
 test('distinct CandidateRun ids do not share a Controller Session', async () => {

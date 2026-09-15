@@ -29,7 +29,7 @@ Host 在第三轮开始前把 `report.html` 写成壳，并填好 `data-host="me
 
 ## 影响
 
-Comparison 仍是卡下 HTML 的作者。briefing 继续提供 `reportFacts`；壳上的数字以 Host 投影为准。审美与真实模型比较卡内容不进确定性门禁。
+Comparison 仍是卡下 HTML 的作者。briefing 继续提供 `reportFacts`；壳上的数字以 Host 投影为准。可见列名与阅读顺序见[可分享卡版式](./2026-09-14-comparison-share-card-layout.md)。审美与真实模型比较卡内容不进确定性门禁。单价表查找方式见 [价格快照与 ID 清洗](./2026-09-14-comparison-pricing-snapshot-and-id-cleaning.md)。
 
 ## 验证
 

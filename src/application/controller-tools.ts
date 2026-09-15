@@ -9,7 +9,7 @@ import {
 } from "../core/schema.js";
 import { sha256 } from "../core/identity.js";
 import { asPosixPath, isFsAbsolute, pathContainedBy } from "../core/paths.js";
-import { CONTROLLER_PROJECT_MOUNT } from "./controller-briefing.js";
+import { CONTROLLER_NOTES_MOUNT, CONTROLLER_PROJECT_MOUNT } from "./controller-briefing.js";
 import { observationReadRecord } from "./controller-request.js";
 import type { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { recoveryTools } from "../infrastructure/recovery-tools.js";
@@ -33,7 +33,7 @@ export function createControllerToolBindings(): ControllerToolBindings {
 
 export function controllerProjectWriteAllowed(relativePath: string): boolean {
   const parts = relativePath.replaceAll("\\", "/").split("/").filter(Boolean);
-  return parts[0] === CONTROLLER_PROJECT_MOUNT && parts.length > 1;
+  return (parts[0] === CONTROLLER_PROJECT_MOUNT || parts[0] === CONTROLLER_NOTES_MOUNT) && parts.length > 1;
 }
 
 export function controllerReadEvidenceSource(

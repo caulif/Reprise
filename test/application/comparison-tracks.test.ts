@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildComparisonContext } from "../../src/application/comparison.js";
@@ -213,3 +213,71 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
   assert.match(await read("briefing/candidate/git-sink-refs.txt"), /status\t/);
   assert.match(await read("briefing/candidate/git-sink-manifest.json"), /schemaVersion/);
 });
+
+test("comparison links stay bounded and drop workspace internals", async (t) => {
+  const { MAX_COMPARISON_LINKS } = await import("../../src/application/comparison-briefing.js");
+  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-comparison-links-"));
+  t.after(() => rm(experimentRoot, { recursive: true, force: true }));
+  const runId = "run-tracks";
+  const snapshotRoot = join(experimentRoot, "environment", "snapshots", runId);
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-bound");
+  await mkdir(join(snapshotRoot, ".git", "objects"), { recursive: true });
+  await mkdir(join(snapshotRoot, "src"), { recursive: true });
+  await writeFile(join(snapshotRoot, ".git", "objects", "abc"), "blob\n");
+  const delivery: string[] = [];
+  for (let index = 0; index < 80; index += 1) {
+    const rel = `src/file-${String(index).padStart(3, "0")}.txt`;
+    delivery.push(rel);
+    await writeFile(join(snapshotRoot, ...rel.split("/")), `body ${index}\n`);
+  }
+  const internals = [
+    ...Array.from({ length: 400 }, (_, index) => `.git/objects/${index}`),
+    ...Array.from({ length: 167 }, (_, index) => `pkg/.git/objects/${index}`),
+  ];
+  const artifacts = Array.from({ length: 70 }, (_, index) => ({
+    artifactId: `artifact${String(index).padStart(3, "0")}`,
+    schemaVersion: 1,
+    kind: "host_trace",
+    byteLength: 4,
+    contentHash: "a".repeat(64),
+    createdAt: timestamp,
+    owner: { experimentId: "experiment-tracks", runId },
+    sourceEventId: "event-1",
+    path: `artifacts/artifact${index}`,
+  }));
+  const caseValue = taskCase();
+  const record = runRecord();
+  const context = buildComparisonContext(caseValue, [record], [{
+    runId,
+    changedPaths: [...internals, ...delivery],
+    runtimeGeneratedPaths: [],
+    commands: [],
+    rejectedApprovals: 0,
+    turns: 0,
+  }]);
+  const briefing = await writeComparisonBriefing({
+    attemptRoot,
+    experimentRoot,
+    workspaceRoot: snapshotRoot,
+    taskCase: caseValue,
+    record,
+    context,
+    events: [],
+    artifacts,
+    snapshotStatus: "complete",
+  });
+  assert.equal(briefing.links.length <= MAX_COMPARISON_LINKS, true);
+  assert.equal(briefing.links.some((link) => link.inspectPath.includes(".git/")), false);
+  assert.equal(briefing.links.some((link) => link.path?.startsWith("src/")), true);
+  const facts = JSON.parse(await readFile(join(attemptRoot, "briefing", "facts", "context.json"), "utf8")) as {
+    reportFacts: { delivery: { changedPaths: string[]; changedPathsIndexed: number; changedPathsOmitted: number } };
+  };
+  assert.equal(facts.reportFacts.delivery.changedPaths.length <= MAX_COMPARISON_LINKS, true);
+  assert.equal(facts.reportFacts.delivery.changedPaths.every((path) => path.startsWith("src/")), true);
+  assert.equal(facts.reportFacts.delivery.changedPathsIndexed > 0, true);
+  assert.equal(facts.reportFacts.delivery.changedPathsOmitted > 0, true);
+  const index = await readFile(join(attemptRoot, "briefing", "INDEX.md"), "utf8");
+  assert.match(index, /links-diagnostics\.json/);
+  assert.match(index, /changedPathsOmitted=/);
+});
+

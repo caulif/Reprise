@@ -4,7 +4,9 @@ import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase } f
 import type { ResolvedRuntime, RuntimeAvailability, RuntimeModelOffer, ProductRuntime } from '../core/runtime.js';
 import { readHarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { PiModelCaller } from '../infrastructure/agent/model-caller.js';
+import type { AgentLocale } from '../agents/language.js';
 import { createHarnessAgents, type HarnessAgents } from './harness-agents.js';
+import { readOperatorLocale } from './operator-locale.js';
 import { startExperiment, type ExperimentHandle } from './experiment.js';
 import { preflightExperiment, type ExperimentPreflight } from './experiment-preflight.js';
 import { recoverExperiment } from './recovery/recover.js';
@@ -123,7 +125,7 @@ export function createExperimentWorkflow(input: {
       owned.signal.throwIfAborted();
       const attempt = await recoverExperiment({
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
-        taskCase: request.taskCase, recovery: agents.recovery, diagnosis: agents.diagnosis, now: input.now(), pack: packFor(request.taskCase.source.productId),
+        taskCase: request.taskCase, recovery: agents.recovery, now: input.now(), pack: packFor(request.taskCase.source.productId),
         activity: owned.activity, signal: owned.signal, ...(request.onEvent ? { onEvent: request.onEvent } : {}),
       });
       return ownedRecoveries.retain(attempt);
@@ -207,6 +209,7 @@ export function createHarnessWorkflow(input: {
   defaults?: ExperimentDefaults;
   budget?: AgentBudget;
   recoveryBudget?: AgentBudget;
+  locale?: AgentLocale;
 }): ExperimentWorkflow {
   let validated: { key: string; agents: HarnessAgents } | undefined;
   return createExperimentWorkflow({
@@ -214,7 +217,8 @@ export function createHarnessWorkflow(input: {
     agents: async (signal) => {
       const config = await readHarnessModelConfig(input.dataDir);
       if (!config) throw new Error('Harness Pi setup is required before an experiment can start.');
-      const key = JSON.stringify(config);
+      const locale = input.locale ?? await readOperatorLocale(input.dataDir);
+      const key = JSON.stringify({ config, locale });
       if (validated?.key === key) return validated.agents;
       const caller = new PiModelCaller(config);
       // The connection check is a real, billable request, so it is repeated only when the configuration changes.
@@ -224,7 +228,7 @@ export function createHarnessWorkflow(input: {
         signal?.throwIfAborted();
         throw Object.assign(new Error('Harness connection probe failed.', { cause: error }), { name: 'HarnessProbeError' });
       }
-      validated = { key, agents: createHarnessAgents(config, caller, input) };
+      validated = { key, agents: createHarnessAgents(config, caller, input, { locale }) };
       return validated.agents;
     },
   });

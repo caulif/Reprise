@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   const taskCase = makeTaskCase(caseId, historicalCommit);
   const agents = createHarnessAgents(config);
   const attempt = await recoverExperiment({
-    dataDir, caseId, experimentId, runId, sourceRoot, taskCase, recovery: agents.recovery, diagnosis: agents.diagnosis,
+    dataDir, caseId, experimentId, runId, sourceRoot, taskCase, recovery: agents.recovery,
     now,
   });
   await assertRecovery(attempt, sourceRoot, dataDir, experimentId);

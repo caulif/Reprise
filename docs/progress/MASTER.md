@@ -10,6 +10,20 @@
 
 ## 验证记录
 
+2026-09-15 内部 Agent 收尾：CLI `--locale`；opening 预建 `notes/`；`send.message` Host 术语护栏；TUI 去掉 `read_observation` 映射；Pi 空压缩审计改为 prune；评审稿移出受控 `plan/`。`npm run check` 17 门禁通过（1010 pass / 4 skip）。
+
+2026-09-15 内部 Agent 四批次已关闭：基础设施与 locale、删除 Diagnosis；Recovery 文本简报 / resume / Playbook v2；Controller 英文提示词与 `notes/`；Comparison 分层 prompt、报告壳 locale 与 `data-claim`。ADR [内部 Agent locale](../decisions/accepted/2026-09-15-internal-agent-locale.md)、[删除 Diagnosis](../decisions/accepted/2026-09-15-delete-recovery-diagnosis-agent.md)、[修复轮禁工具](../decisions/accepted/2026-09-15-structured-repair-disables-tools.md)、[文本简报与 Playbook v2](../decisions/accepted/2026-09-15-recovery-text-briefing-and-playbook-v2.md)、[Controller 英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)、[Comparison 分层与 data-claim](../decisions/accepted/2026-09-15-comparison-prompt-layers-and-data-claim.md)。`npm run check` 17 门禁通过（1005 pass / 4 skip）。
+
+2026-09-14 Comparison 可分享卡版式：标题为类别一词与两个模型 ID；对照区在 headline 与卡底指标之前；`reportFacts.models.baseline` 入壳；pair-pages；prompt 要求左历史右候选终稿。ADR [可分享卡版式](../decisions/accepted/2026-09-14-comparison-share-card-layout.md)。`npm run check` 17 门禁通过（995 pass / 4 skip）。
+
+2026-09-14 Comparison 操作者价格覆盖、证据费率与 Pi 零价：`{dataDir}/model-pricing.override.json` 优先于快照；全 0 未声明 `free` 不算免费；详细证据列出四类单价；自定义 openai-compatible 不注册 `cost: 0`。ADR [操作者覆盖](../decisions/accepted/2026-09-14-comparison-operator-pricing-override.md)。`npm run check` 17 门禁通过（994 pass / 4 skip）。
+
+2026-09-14 Comparison 价格快照与模型 ID 清洗：目录 `2026-09-14-models-dev-snapshot`；cc-switch 同构清洗；显式别名；N7/N1 模型可计价。ADR [价格快照与 ID 清洗](../decisions/accepted/2026-09-14-comparison-pricing-snapshot-and-id-cleaning.md)。`npm run check` 17 门禁通过（990 pass / 4 skip）。
+
+2026-09-14 Comparison 有界证据索引与语义 Host 校验：ADR [有界证据索引与语义 Host 校验](../decisions/accepted/2026-09-14-comparison-bounded-evidence-and-semantic-host-check.md)。links 上限 64；任意路径段内部目录不进默认证据；briefing `changedPaths` 仅为已索引交付；失败页保留标准 Agent 区域。`npm run check` 17 门禁通过（983 pass / 4 skip）。
+
+2026-09-14 Comparison 报告首屏清晰度与审阅改页：ADR [首屏清晰度与审阅改页](../decisions/accepted/2026-09-14-comparison-report-clarity-and-review.md)。去掉可见 status 卡；隐藏组件原型；审阅轮可读写 `report.html`；invalid JSON 保留页面并做一次 JSON 补救。`npm run check` 17 门禁通过（975 pass / 4 skip）。
+
 2026-09-13 Comparison 直接编辑 HTML 与 Host 区域：ADR [Host 区域与直接 HTML](../decisions/accepted/2026-09-13-comparison-host-zones-and-direct-html.md)。Agent 只写 `data-agent-zone`；未知短引用降级；invalid JSON 保留已写页面。`npm run check` 17 门禁通过（967 pass / 4 skip）。
 
 2026-09-12 Controller 读取放宽与 `shell_exec`：`ls`/`read`/`grep`/`find` 走独立 read path，可访问宿主可读路径；`edit`/`write` 仍仅 `project/`；shell cwd 为隔离副本，外部写入记 `controller.external_write`。ADR：[读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)。`npm run check` 17 门禁通过（954 pass / 4 skip）。

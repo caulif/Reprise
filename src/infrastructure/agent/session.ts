@@ -222,7 +222,7 @@ export class AgentSessionHost {
     deadline: number | undefined,
     cancelled: () => boolean,
   ): Promise<{ done: true; result: AgentInvocation<T> | FreeformInvocation } | { done: false; lastError: string }> {
-    this.#session!.setToolsEnabled?.((request as { allowTools?: boolean }).allowTools !== false);
+    this.#session!.setToolsEnabled?.(toolsEnabledForAttempt(request, attempts));
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, this.#abort.signal, ...(request.signal ? [request.signal] : [])]);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -357,12 +357,19 @@ function assertRequest<T>(request: InternalSessionRequest<T>): void {
   if (!Number.isInteger(request.maxRepairAttempts) || request.maxRepairAttempts < 0) {
     throw new Error("Agent request limits are invalid.");
   }
+  if (typeof request.promptContent !== "string" || !request.promptContent.trim()) {
+    throw new Error("Structured agent request requires promptContent.");
+  }
+}
+
+function toolsEnabledForAttempt<T>(request: InternalSessionRequest<T>, attempts: number): boolean {
+  if (request.kind === "structured" && attempts > 0) return request.allowToolsOnRepair === true;
+  return (request as { allowTools?: boolean }).allowTools !== false;
 }
 
 function capabilityAwarePrompt(content: string, inputCapabilities: readonly string[]): string {
   if (!inputCapabilities.length) return content;
-  return `modelInputCapabilities=${inputCapabilities.join(",")}
-Only request or interpret native media whose type is listed above.
+  return `Native media types this model accepts: ${inputCapabilities.join(",")}. Request or interpret only the types listed above.
 
 ${content}`;
 }

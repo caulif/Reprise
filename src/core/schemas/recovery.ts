@@ -704,17 +704,14 @@ export const RecoveryReadinessContextSchema = Type.Object({
 }, { additionalProperties: false });
 export type RecoveryReadinessContext = Static<typeof RecoveryReadinessContextSchema>;
 
-const RecoveryDiagnosisContextSchema = Type.Object({
+export const RecoveryExplanationSchema = Type.Object({
   schemaVersion: Type.Literal(1),
-  status: Type.Union([Type.Literal("blocked"), Type.Literal("invalid"), Type.Literal("failed")]),
-  stage: Type.Union([Type.Literal("freeze"), Type.Literal("workspace"), Type.Literal("agent"), Type.Literal("finalize")]),
+  status: Type.Union([Type.Literal("blocked"), Type.Literal("failed")]),
+  stage: Type.Union([Type.Literal("workspace"), Type.Literal("agent")]),
   reason: Type.String({ minLength: 1, maxLength: 128 }),
-  taskSummary: Type.Optional(Type.String({ maxLength: 4096 })),
-  initialInputAvailable: Type.Boolean(), completedTurnCount: Type.Integer({ minimum: 0 }),
-  workspace: Type.Object({ readable: Type.Boolean(), writable: Type.Boolean(), gitAvailable: Type.Boolean(), fileCount: Type.Optional(Type.Integer({ minimum: 0 })), totalBytes: Type.Optional(Type.Integer({ minimum: 0 })) }),
-  modelStarted: Type.Boolean(), stagingStarted: Type.Boolean(), facts: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { maxItems: 16 }),
+  summary: Type.String({ minLength: 1, maxLength: 240 }),
+  summaryParams: Type.Optional(Type.Record(Type.String({ minLength: 1 }), Type.Union([Type.String(), Type.Number()]))),
+  diagnosis: Type.Optional(Type.Literal("host")),
 }, { additionalProperties: false });
-export type RecoveryDiagnosisContext = Static<typeof RecoveryDiagnosisContextSchema>;
-export const RecoveryDiagnosisResultSchema = Type.Object({ summary: Type.String({ minLength: 1, maxLength: 240 }) }, { additionalProperties: false });
-export type RecoveryDiagnosisResult = Static<typeof RecoveryDiagnosisResultSchema>;
+export type RecoveryExplanation = Static<typeof RecoveryExplanationSchema>;
 

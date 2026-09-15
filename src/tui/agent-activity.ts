@@ -183,7 +183,7 @@ function toolKind(lane: AgentLane, tool: string, command: string | undefined): A
 
 function toolVerb(tool: string, object: { verb?: string }): string {
   if (tool === 'write' || tool === 'edit') return '写入';
-  if (INVESTIGATE.has(tool) || tool === 'read_observation') return '阅读';
+  if (INVESTIGATE.has(tool)) return '阅读';
   if (tool === 'shell_exec') return object.verb === 'shell_exec' || !object.verb ? '检查' : object.verb;
   return object.verb ?? tool;
 }
@@ -191,10 +191,6 @@ function toolVerb(tool: string, object: { verb?: string }): string {
 function toolObject(payload: JsonRecord, tool: string): { short: string; original?: string; command?: string; verb?: string } {
   const params = record(payload.params);
   const details = record(payload.details);
-  const source = text(params.source) ?? text(details.source);
-  if (tool === 'read_observation') {
-    return { short: source ?? 'observation', verb: 'inspect', ...(source ? { original: source } : {}) };
-  }
   const path = text(params.path) ?? text(details.path);
   if (path) return { short: leaf(path), original: path, verb: tool === 'write' || tool === 'edit' ? '写入' : '阅读' };
   const command = text(params.command);

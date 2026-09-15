@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertSupportedNodeVersion, runCli, type CliIo } from '../../src/cli/main.js';
@@ -27,6 +27,7 @@ test('CLI help documents TUI entry and shared prepare/run/compare operations', a
   assert.match(output.join('\n'), /Usage:/);
   assert.match(output.join('\n'), /reprise prepare/);
   assert.match(output.join('\n'), /reprise run/);
+  assert.match(output.join('\n'), /--locale <en\|zh>/);
   assert.doesNotMatch(output.join('\n'), /smoke-record/);
   assert.doesNotMatch(output.join('\n'), /stderr:/);
 });
@@ -105,4 +106,34 @@ test('CLI json and jsonl together is usage', async () => {
   const captured = ioCapture();
   assert.equal(await runCli(['products', '--json', '--jsonl'], captured.io), 2);
   assert.match(captured.stderr.join('\n'), /either --json or --jsonl/);
+});
+
+test('CLI rejects unknown --locale as usage', async () => {
+  const captured = ioCapture();
+  assert.equal(await runCli(['--locale', 'foo'], captured.io, { runTui: async () => {} }), 2);
+  assert.match(captured.stderr.join('\n'), /Invalid --locale/);
+  assert.match(captured.stderr.join('\n'), /en, zh/);
+  assert.doesNotMatch(captured.stdout.join('\n'), /TUI closed/);
+});
+
+test('CLI --locale en persists tui-preferences before TUI', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'reprise-cli-locale-'));
+  t.after(async () => rm(dataDir, { recursive: true, force: true }));
+  const captured = ioCapture();
+  assert.equal(await runCli(['--data-dir', dataDir, '--locale', 'en'], captured.io, {
+    runTui: async () => {},
+  }), 0);
+  const saved = JSON.parse(await readFile(join(dataDir, 'tui-preferences.json'), 'utf8')) as { locale: string };
+  assert.equal(saved.locale, 'en');
+  assert.match(captured.stdout.join('\n'), /TUI closed/);
+});
+
+test('CLI prepare run compare reject unknown --locale as usage', async () => {
+  for (const command of ['prepare', 'run', 'compare'] as const) {
+    const captured = ioCapture();
+    assert.equal(await runCli([command, '--locale', 'foo'], captured.io), 2);
+    assert.match(captured.stderr.join('\n'), /Invalid --locale/);
+    assert.match(captured.stderr.join('\n'), /en, zh/);
+    assert.doesNotMatch(captured.stdout.join('\n'), /TUI closed/);
+  }
 });
