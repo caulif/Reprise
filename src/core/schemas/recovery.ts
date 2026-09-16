@@ -704,6 +704,17 @@ export const RecoveryReadinessContextSchema = Type.Object({
 }, { additionalProperties: false });
 export type RecoveryReadinessContext = Static<typeof RecoveryReadinessContextSchema>;
 
+export const RecoveryPreTaskDiagnosisSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  readyAllowed: Type.Boolean(),
+  reasons: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { maxItems: 32 }),
+  dirtyPaths: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 64 }),
+  head: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  preTaskCommit: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  taskCommit: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+}, { additionalProperties: false });
+export type RecoveryPreTaskDiagnosis = Static<typeof RecoveryPreTaskDiagnosisSchema>;
+
 export const RecoveryExplanationSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   status: Type.Union([Type.Literal("blocked"), Type.Literal("failed")]),

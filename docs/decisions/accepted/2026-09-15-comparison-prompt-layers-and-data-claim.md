@@ -11,7 +11,7 @@ Comparison 把同一条规则写在 System Prompt、轮次委托、INDEX 和模�
 
 System Prompt 只保留身份、判断纪律、工作区静态事实；与 Recovery 相同，再拼 locale 语言块和可见过程规则。轮次委托只写本轮动作与落盘位置。INDEX 只导航。compose 映射各 Agent 区，并要求 `key-differences` 非空。模板顶部与四个 Agent 区各有一行英文注释；Host 快照忽略 Agent 区正文，判空前剥离 HTML 注释。
 
-声称核验或视觉观察时，Agent 使用 `data-claim="verified"` / `data-claim="visual"`，并分别带可解析的 `data-evidence-ref` 与可用的 `data-media-ref`。Host 按属性检查；现有中英词表按操作者 locale 作兜底。报告壳 `lang`、指标标签、缺失值、cost-note 与诊断文案来自 application 层 `{ en, zh }` 表，缺省 `zh`。
+声称核验或视觉观察时，Agent 使用 `data-claim="verified"` / `data-claim="visual"`，并分别带可解析的 `data-evidence-ref` 与可用的 `data-media-ref`。Host 按属性检查声明元素、祖先，以及紧随其后的证据/媒体锚点，见 [紧随其后的证据锚点](./2026-09-15-comparison-claim-trailing-citation.md)。现有中英词表按操作者 locale 作兜底。报告壳 `lang`、指标标签、缺失值、cost-note 与诊断文案来自 application 层 `{ en, zh }` 表，缺省 `zh`。
 
 ## 备选方案
 

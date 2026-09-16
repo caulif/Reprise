@@ -24,6 +24,7 @@ import { recoveryAttemptRecord } from "./orchestrator.js";
 import { packRuntime } from "../../products/pack-access.js";
 import type { AgentToolDefinition, StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import { RecoveryValidationError } from "../../environment/local-workspace-provider.js";
+import { assertRecoveryReadyPreconditions } from "../../environment/recovery-pre-task.js";
 import { ProcessBoundaryError } from "../../infrastructure/process-runner.js";
 import { stat } from "node:fs/promises";
 
@@ -250,6 +251,9 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
   while (attempts < (session.maxModelAttempts ?? 2)) {
     try {
       await session.provider.probeRecovery(staging);
+      if (session.recovery?.status === "completed" && session.recovery.value.status === "ready") {
+        await assertRecoveryReadyPreconditions(staging.root, input.taskCase);
+      }
       return;
     } catch (error) {
       if (error instanceof RecoveryValidationError && error.code === "source_tripwire_failed") throw error;

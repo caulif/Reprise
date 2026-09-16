@@ -281,3 +281,45 @@ test("comparison links stay bounded and drop workspace internals", async (t) => 
   assert.match(index, /changedPathsOmitted=/);
 });
 
+test("sealed historical images enter baseline media without a double extension", async (t) => {
+  const { comparisonMediaFileName } = await import("../../src/application/comparison-media.js");
+  assert.equal(comparisonMediaFileName("candidate--montage.png", ".png"), "candidate--montage.png");
+  assert.equal(comparisonMediaFileName("page-1", ".png"), "page-1.png");
+  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-comparison-media-"));
+  t.after(() => rm(experimentRoot, { recursive: true, force: true }));
+  const runId = "run-tracks";
+  const snapshotRoot = join(experimentRoot, "environment", "snapshots", runId);
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-media");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await mkdir(join(experimentRoot, "environment", "baselines"), { recursive: true });
+  await mkdir(join(experimentRoot, "runs", runId, "controller-briefing", "history", "transcript"), { recursive: true });
+  await mkdir(snapshotRoot, { recursive: true });
+  await writeFile(join(experimentRoot, "environment", "baselines", "slide-1.png"), png);
+  await writeFile(
+    join(experimentRoot, "runs", runId, "controller-briefing", "history", "transcript", "message-2.txt"),
+    "预览在 slide-1.png\n",
+  );
+  const caseValue = taskCase();
+  caseValue.baseline.finalMessage = "已导出 slide-1.png";
+  const record = runRecord();
+  const context = buildComparisonContext(caseValue, [record], [{
+    runId, changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 0,
+  }]);
+  const briefing = await writeComparisonBriefing({
+    attemptRoot,
+    experimentRoot,
+    workspaceRoot: snapshotRoot,
+    taskCase: caseValue,
+    record,
+    context,
+    events: [],
+    artifacts: [],
+    snapshotStatus: "complete",
+  });
+  const baseline = briefing.media.filter((item) => item.side === "baseline");
+  assert.equal(baseline.length, 1);
+  assert.equal(baseline[0]?.available, true);
+  assert.equal(baseline[0]?.reportHref, "media/history-media-slide-1.png");
+  assert.doesNotMatch(baseline[0]?.reportHref ?? "", /\.png\.png$/);
+});
+

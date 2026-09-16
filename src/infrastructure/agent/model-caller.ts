@@ -3,7 +3,7 @@ import { classifyAgentFailure } from './failure.js';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
-import { contentText, createProvider, type Model, type Models, type MutableModels } from '@earendil-works/pi-ai';
+import { contentText, createProvider, type Models, type MutableModels } from '@earendil-works/pi-ai';
 import type { AgentToolDefinition, PiTextCaller, PiTextSession } from './host.js';
 import { environmentNameForKeyRef, type HarnessModelConfig } from '../harness-model-config.js';
 import { PiProviderAdapter } from './providers/pi/adapter.js';
@@ -50,8 +50,9 @@ export function modelsForConfig(config: HarnessModelConfig, models: MutablePiMod
       id: config.modelId, name: config.modelId, api, provider: config.provider.id, baseUrl,
       reasoning: config.reasoning === true, input: ['text'],
       contextWindow: overlay.contextWindow ?? 128_000, maxTokens: overlay.maxTokens ?? 16_384,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       ...(config.compat ? { compat: config.compat } : {}),
-    } as Model<typeof api>],
+    }],
     api: api === 'openai-responses' ? openAIResponsesApi() : openAICompletionsApi(),
   }));
   return models;

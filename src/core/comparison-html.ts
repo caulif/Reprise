@@ -34,12 +34,24 @@ export function missingComparisonSlots(html: string): string | undefined {
 
 function shareCardLayoutError(html: string): string | undefined {
   const header = tagMarkerIndex(html, "data-host-zone", "header");
-  const diffs = tagMarkerIndex(html, "data-agent-zone", "key-differences");
   const headline = tagMarkerIndex(html, "data-agent-slot", "headline");
+  const diffs = tagMarkerIndex(html, "data-agent-zone", "key-differences");
+  const visual = tagMarkerIndex(html, "data-agent-zone", "visual-evidence");
   const metrics = tagMarkerIndex(html, "data-host-zone", "metrics");
+  const delivery = tagMarkerIndex(html, "data-agent-zone", "delivery");
+  const limitations = tagMarkerIndex(html, "data-agent-zone", "limitations");
   if (header < 0 || diffs < 0 || headline < 0 || metrics < 0) return undefined;
-  if (!(header < diffs && diffs < headline && headline < metrics)) {
-    return "Share card order must be header, agent contrast, headline, then metrics.";
+  if (!(header < headline && headline < diffs && diffs < metrics)) {
+    return "Share card order must be header, headline, agent contrast, then metrics.";
+  }
+  if (visual >= 0 && !(diffs < visual && visual < metrics)) {
+    return "Share card order must be header, headline, agent contrast, then metrics.";
+  }
+  if (delivery >= 0 && delivery < metrics) {
+    return "Delivery and limitations must stay outside the share card.";
+  }
+  if (limitations >= 0 && limitations < metrics) {
+    return "Delivery and limitations must stay outside the share card.";
   }
   return undefined;
 }

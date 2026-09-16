@@ -10,6 +10,12 @@
 
 ## 验证记录
 
+2026-09-16 按 [单卡与 N6 复刻](../plan/2026-09-16-share-card-and-n6-replay.md) 落地：单卡壳（去算子行、任务描述/主要结论、历史会话/当前会话、审计 hidden）；astra / flash 定价；冻结嵌套 Git；Recovery 任务前 HEAD；Controller 开场不得引未发生建议。ADR [历史会话 / 当前会话](../decisions/accepted/2026-09-16-comparison-session-labels.md)、[冻结嵌套 Git](../decisions/accepted/2026-09-16-freeze-nested-git-discovery.md)、[任务前 HEAD](../decisions/accepted/2026-09-16-recovery-pre-task-head.md)、[开场不得引用未发生的候选建议](../decisions/accepted/2026-09-16-controller-opening-no-unseen-advice.md)、[astra 与 `[1m]` 别名](../decisions/accepted/2026-09-16-pricing-astra-and-1m-alias.md)、[卡面图片必须成对](../decisions/accepted/2026-09-16-comparison-paired-visual-only.md)。`npm run check` 通过（1023 pass / 4 skip）。
+
+2026-09-15 Comparison `data-claim` 接受紧随其后的证据锚点；无引用仍失败。ADR [紧随锚点](../decisions/accepted/2026-09-15-comparison-claim-trailing-citation.md)。`npm run check` 17 门禁通过（1010 pass / 4 skip）。
+
+2026-09-15 Pi 自定义 openai-compatible 模型注册零费率 `cost`，避免 `calculateCost` 读 `tiers` 崩溃。Comparison 仍不计 Pi 账单。ADR [Pi 自定义模型必须带 cost](../decisions/accepted/2026-09-15-pi-custom-model-requires-cost.md)。`npm run check` 17 门禁通过（1010 pass / 4 skip）。
+
 2026-09-15 内部 Agent 收尾：CLI `--locale`；opening 预建 `notes/`；`send.message` Host 术语护栏；TUI 去掉 `read_observation` 映射；Pi 空压缩审计改为 prune；评审稿移出受控 `plan/`。`npm run check` 17 门禁通过（1010 pass / 4 skip）。
 
 2026-09-15 内部 Agent 四批次已关闭：基础设施与 locale、删除 Diagnosis；Recovery 文本简报 / resume / Playbook v2；Controller 英文提示词与 `notes/`；Comparison 分层 prompt、报告壳 locale 与 `data-claim`。ADR [内部 Agent locale](../decisions/accepted/2026-09-15-internal-agent-locale.md)、[删除 Diagnosis](../decisions/accepted/2026-09-15-delete-recovery-diagnosis-agent.md)、[修复轮禁工具](../decisions/accepted/2026-09-15-structured-repair-disables-tools.md)、[文本简报与 Playbook v2](../decisions/accepted/2026-09-15-recovery-text-briefing-and-playbook-v2.md)、[Controller 英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)、[Comparison 分层与 data-claim](../decisions/accepted/2026-09-15-comparison-prompt-layers-and-data-claim.md)。`npm run check` 17 门禁通过（1005 pass / 4 skip）。

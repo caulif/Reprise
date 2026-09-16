@@ -121,6 +121,8 @@ test("opening briefing lives outside the replica and opening prompt omits later 
   assert.match(prompt, /INDEX\.md/);
   assert.match(prompt, /history\/initial-input\.txt/);
   assert.match(prompt, /Opening: send the first user message/);
+  assert.match(prompt, /task shape must match initialInput/);
+  assert.match(prompt, /Do not cite the candidate's suggestions, priorities, or checklists/);
   assert.doesNotMatch(indexOnDisk, /controller-understanding/);
   assert.doesNotMatch(prompt, /understandingDelta/);
   assert.doesNotMatch(prompt, new RegExp(marker));

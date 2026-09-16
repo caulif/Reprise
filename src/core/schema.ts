@@ -48,6 +48,8 @@ export {
   type RecoveryEvaluationTerminalCase,
   RecoveryReadinessContextSchema,
   type RecoveryReadinessContext,
+  RecoveryPreTaskDiagnosisSchema,
+  type RecoveryPreTaskDiagnosis,
   RecoveryExplanationSchema,
   type RecoveryExplanation,
   RecoveryAgentEnvelopeSchema,

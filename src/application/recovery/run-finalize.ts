@@ -1,3 +1,9 @@
+import { Value } from "@sinclair/typebox/value";
+import {
+  RecoveryPreTaskDiagnosisSchema,
+} from "../../core/schema.js";
+import { writeImmutableJson } from "../../infrastructure/store/experiment-store.js";
+import { evaluateRecoveryPreTaskConditions } from "../../environment/recovery-pre-task.js";
 import {
   measureRecoveryStagingReadiness,
   taskContinuationOutcome,
@@ -55,9 +61,11 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
       recordedAt: new Date().toISOString(),
     }),
   );
-  moveRecoveryState(session, recovery.value.status === "ready" ? "candidate_verified" : "candidate_pending_review");
-  session.verification = recovery.value.status === "ready" ? "verified" : "rejected";
-  session.taskOutcome = taskContinuationOutcome(recovery.value.status);
+  const preTaskBlocksReady = await applyPreTaskReadyGate(session, recovery.value.status);
+  const hostReady = recovery.value.status === "ready" && !preTaskBlocksReady;
+  moveRecoveryState(session, hostReady ? "candidate_verified" : "candidate_pending_review");
+  session.verification = hostReady ? "verified" : "rejected";
+  session.taskOutcome = preTaskBlocksReady ? "blocked_by_safety" : taskContinuationOutcome(recovery.value.status);
   const preview = session.activeProviderPreview;
   if (preview.baseline.recovery && session.taskOutcome) {
     const baseline = {
@@ -66,7 +74,7 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
     };
     session.activeProviderPreview = { ...preview, baseline };
   }
-  const mayAccept = recovery.value.status === "ready";
+  const mayAccept = hostReady;
   if (mayAccept) {
     moveRecoveryState(session, "selected_checkpoint");
     moveRecoveryState(session, "ready_for_task");
@@ -88,6 +96,55 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   }
   await persistRecoveryCompletionArtifacts(session, session.activeProviderPreview);
   return completeRecoveryAttempt(session);
+}
+
+async function applyPreTaskReadyGate(
+  session: RecoveryRunSession,
+  envelopeStatus: string,
+): Promise<boolean> {
+  const { input, store, staging, activeProviderPreview } = session;
+  if (envelopeStatus !== "ready" || !staging || !activeProviderPreview) return false;
+  const preTask = await evaluateRecoveryPreTaskConditions(staging.root, input.taskCase);
+  if (preTask.readyAllowed) return false;
+  if (!Value.Check(RecoveryPreTaskDiagnosisSchema, preTask)) {
+    throw new Error("Recovery pre-task diagnosis does not match RecoveryPreTaskDiagnosisSchema.");
+  }
+  await writeImmutableJson(join(session.experimentRoot, "recovery-pre-task.json"), preTask);
+  await store.append({
+    type: "recovery.warning",
+    runId: input.runId,
+    operationId: "recovery-pre-task-head",
+    payload: {
+      summary: preTask.reasons[0] ?? "Work-copy HEAD is not the pre-task commit.",
+      head: preTask.head,
+      taskCommit: preTask.taskCommit,
+      preTaskCommit: preTask.preTaskCommit,
+      dirtyPathCount: preTask.dirtyPaths.length,
+    },
+  });
+  session.activeProviderPreview = {
+    ...activeProviderPreview,
+    baseline: {
+      ...activeProviderPreview.baseline,
+      match: "observational",
+      warnings: [...activeProviderPreview.baseline.warnings, ...preTask.reasons],
+      readiness: {
+        ...activeProviderPreview.baseline.readiness,
+        runnable: "blocked",
+        blockingResourceIds: ["recovery-pre-task-head"],
+      },
+      ...(activeProviderPreview.baseline.recovery
+        ? {
+            recovery: {
+              ...activeProviderPreview.baseline.recovery,
+              status: "blocked",
+              unresolved: [...activeProviderPreview.baseline.recovery.unresolved, ...preTask.reasons],
+            },
+          }
+        : {}),
+    },
+  };
+  return true;
 }
 
 async function ensureRecoveryReport(

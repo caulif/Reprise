@@ -54,7 +54,7 @@ export function buildComparisonContext(
   taskCase: TaskCase,
   runs: readonly RunRecord[],
   inspections: readonly RunInspection[] = [],
-  pricing?: { dataDir?: string },
+  pricing?: { dataDir?: string; comparisonModel?: string },
 ): ComparisonFactsContext {
   assertFacts(taskCase, runs);
   const byRunId = new Map(inspections.map((inspection) => [inspection.runId, inspection]));
@@ -79,7 +79,7 @@ export function buildComparisonContext(
       evidenceRefs: runEvidence(run),
     })),
     telemetry: runs.map((run) => ({ runId: run.attempt.runId, summary: telemetrySummary(run, byRunId.get(run.attempt.runId)) })),
-    reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay, pricing?.dataDir),
+    reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay, pricing),
     artifactRefs: unique(runs.flatMap((run) => run.artifactRefs.map((ref) => `artifact:${ref.artifactId}`))),
     allowModelText: taskCase.privacy.allowModelText,
     replayScope: {
@@ -99,9 +99,13 @@ export async function comparePersistedFacts(input: {
   audit?: AgentAuditSink;
   attemptId: string;
   dataDir?: string;
+  comparisonModel?: string;
 }): Promise<{ context: ComparisonContext; result: StructuredAgentResult<ComparisonResult> }> {
   if (!input.attemptId) throw new Error("Comparison attemptId is required.");
-  const facts = buildComparisonContext(input.taskCase, input.runs, input.inspections, input.dataDir ? { dataDir: input.dataDir } : undefined);
+  const facts = buildComparisonContext(input.taskCase, input.runs, input.inspections, {
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    ...(input.comparisonModel ? { comparisonModel: input.comparisonModel } : {}),
+  });
   const locale = input.dataDir ? await readOperatorLocale(input.dataDir) : "zh";
   const reportShellHtml = renderComparisonReportShell({
     task: facts.task.summary,
@@ -126,19 +130,19 @@ function buildReportFacts(
   inspection: RunInspection | undefined,
   taskCase: TaskCase,
   hostReplay: ComparisonContext['hostReplay'],
-  dataDir?: string,
+  pricing?: { dataDir?: string; comparisonModel?: string },
 ): ComparisonReportFacts {
   if (!run) return {
     run: { runId: 'unavailable', outcome: 'unavailable', terminationCode: 'unavailable', initiatedBy: 'unavailable' },
-    models: comparisonModels(taskCase, undefined), activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
+    models: comparisonModels(taskCase, undefined, pricing?.comparisonModel), activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
     delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' },
     replay: { conditions: [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: 'unavailable' },
   };
   const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
-  const metrics = projectedMetrics(taskCase, inspection, run, dataDir);
+  const metrics = projectedMetrics(taskCase, inspection, run, pricing?.dataDir);
   return {
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
-    models: comparisonModels(taskCase, run),
+    models: comparisonModels(taskCase, run, pricing?.comparisonModel),
     activity: { ...(inspection ? { candidateTurns: inspection.turns } : {}) },
     limits: { wallClockMs: run.attempt.policy.wallClockMs, maxTargetTurns: run.attempt.policy.maxTargetTurns, maxModelCalls: run.attempt.policy.maxModelCalls, triggered },
     runtime: { productId: run.attempt.candidate.productId },
@@ -153,16 +157,24 @@ function buildReportFacts(
   };
 }
 
-function comparisonModels(taskCase: TaskCase, run: RunRecord | undefined): ComparisonReportFacts["models"] {
+function comparisonModels(taskCase: TaskCase, run: RunRecord | undefined, comparisonModel?: string): ComparisonReportFacts["models"] {
   const baseline = taskCase.sourceRuntimeEvidence.model;
+  const comparison = usableComparisonModel(comparisonModel);
   if (!run) {
-    return { candidate: "unavailable", ...(baseline ? { baseline } : {}) };
+    return { candidate: "unavailable", ...(baseline ? { baseline } : {}), ...(comparison ? { comparison } : {}) };
   }
   return {
     candidate: run.manifest?.resolvedModel.resolved ?? run.attempt.candidate.requestedModel,
     ...(baseline ? { baseline } : {}),
-    ...(run.manifest ? { controller: run.manifest.controller.requestedModel, comparison: run.manifest.comparison.requestedModel } : {}),
+    ...(run.manifest ? { controller: run.manifest.controller.requestedModel } : {}),
+    ...(comparison ? { comparison } : {}),
   };
+}
+
+function usableComparisonModel(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === "unavailable") return undefined;
+  return trimmed;
 }
 
 function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefined, run: RunRecord, dataDir?: string): ComparisonReportFacts['metrics'] {

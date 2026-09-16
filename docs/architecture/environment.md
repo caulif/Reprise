@@ -20,7 +20,7 @@
 历史会话与本机证据
 → Environment Resolver
 → Recovery Agent 仅在 Harness staging 中恢复
-→ Provider 做机械检查（边界、tripwire、报告、预算、schema、可封存性）
+→ Provider 做机械检查（边界、tripwire、报告、预算、schema、可封存性、任务前 HEAD 与任务后脏树）
 → 机械检查通过后 Host 自动 publish EnvironmentBaseline
 → 每个 CandidateRun 独立 prepareRun
 → before/after fingerprint
@@ -78,7 +78,7 @@ Environment 子系统不负责：
 Session Source Adapter 针对整段逻辑会话提取：
 
 - 会话开始时的 cwd 和 workspace roots；
-- Git repository、HEAD、branch、worktree 和未提交状态线索；
+- Git：`historicalCwd` 及其子目录上的仓库、HEAD 与未提交状态；嵌套仓以相对路径加 HEAD 写入 Case，`session_meta.git.commit` 写入 `historicalCommit`，见[冻结嵌套 Git](../decisions/accepted/2026-09-16-freeze-nested-git-discovery.md)；
 - 首条用户输入之前已存在的输入文件和依赖；
 - 会话中首次修改文件时可获得的 preimage 或 file-history；
 - 浏览器、数据库、API、MCP 和其他外部资源；
@@ -341,7 +341,7 @@ Provider 为每次恢复创建并持有下列目录，均不暴露给 Candidate 
 
 子进程仅继承净化后的环境，且 `HOME`、Git global/system config 等配置根指向 Provider 临时目录。`ls`、`read`、`grep`、`find`、`edit` 和 `write` 对相对路径实施 containment 与符号链接检查；`recovery.md` 由 `write` 写出。Recovery 期间 Provider 对用户 source 施加 NTFS 拒绝写入 ACL，并在封存前核对 fingerprint；`shell_exec` 对凭据文件名的拦截仍匹配命令文本。cwd 与环境净化不能机械阻止恶意命令写 staging 外任意绝对路径。实现不把凭据文本拦截或 ACL 误称为容器级全局隔离。见 [source ACL 与诊断 readiness](../decisions/accepted/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md)。
 
-最终保证采用检测加回退：Provider 重扫 staging（无符号链接、预算和可重复 fingerprint）、重新 fingerprint 用户源目录，并检查报告存在、路径边界、schema 与可封存性。Host 可测量任务相关路径与命令作为可检查事实，写入事件与诊断；该测量不得改写 Agent 信封，不得把 `runnable` 标为 `blocked`，也不得拒绝自动 accept 或 Candidate 启动。source tripwire 变化、报告缺失、扫描失败或其他机械检查失败才会丢弃 staging 与临时根，绝不发布半恢复结果；上层必须显式回退到当前状态 baseline 并记录警告。该机制确定性阻止已检出的源目录变化被发布为 Recovery baseline，但不能撤销已发生的源目录写入，也不能替代容器级全局写入隔离。不从 evidence ranking、changed paths 或 Host 派生路径清单推导 Agent 信封的 `ready` / `blocked`。见 [可观察判断](../decisions/accepted/2026-09-11-recovery-observable-judgment.md) 与 [source ACL 与诊断 readiness](../decisions/accepted/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md)。
+最终保证采用检测加回退：Provider 重扫 staging（无符号链接、预算和可重复 fingerprint）、重新 fingerprint 用户源目录，并检查报告存在、路径边界、schema 与可封存性。Host 可测量任务相关路径与命令作为可检查事实，写入事件与诊断；路径清单与命令回放不得改写 Agent 信封，也不得单独拒绝 accept。任务前 HEAD 与任务后脏树除外：见 [任务前 HEAD](../decisions/accepted/2026-09-16-recovery-pre-task-head.md)。source tripwire 变化、报告缺失、扫描失败或其他机械检查失败才会丢弃 staging 与临时根，绝不发布半恢复结果；上层必须显式回退到当前状态 baseline 并记录警告。该机制确定性阻止已检出的源目录变化被发布为 Recovery baseline，但不能撤销已发生的源目录写入，也不能替代容器级全局写入隔离。不从 evidence ranking、changed paths 或 Host 派生路径清单推导 Agent 信封的 `ready` / `blocked`。见 [可观察判断](../decisions/accepted/2026-09-11-recovery-observable-judgment.md) 与 [source ACL 与诊断 readiness](../decisions/accepted/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md)。
 
 ### 7.2 Product Recovery Playbook
 
@@ -371,8 +371,9 @@ Recovery Agent 返回后，Provider 只做机械检查：
 - 用户源目录 tripwire 在恢复前后是否一致；
 - staging 重扫后是否没有符号链接、是否符合 snapshot 预算、且 fingerprint 可重复读取；
 - 只读观察材料是否未被改写。
+- 工作副本 HEAD 是否为任务开始前的提交；HEAD 已含历史任务提交，或任务结束后的脏文件仍留在候选可见树（运行依赖目录除外）时，不得发布 `ready`。见 [任务前 HEAD](../decisions/accepted/2026-09-16-recovery-pre-task-head.md)。
 
-Host 不以证据评分、changed path 数量、零变更、Host 派生路径缺失或命令失败改写 `ready` / `blocked`。`blocked` 不得发布可启动 baseline。机械检查失败且可修复时，把事实反馈同一 Session。验证时读取报告，并在封存前删除 `recovery.md`、`.reprise/recovery-work/` 与临时 HOME。校验通过且状态为 `ready` 时 publish canonical baseline。Candidate Runtime 只得到 `prepareRun` 从封存起点复制的独立副本。
+Host 不以证据评分、changed path 数量、零变更、Host 派生路径缺失或命令失败改写 Agent 信封的 `ready` / `blocked`。`blocked` 不得发布可启动 baseline。任务前 HEAD 与任务后脏树是额外的机械门：不改写 `summary`，但拒绝自动 accept。机械检查失败且可修复时，把事实反馈同一 Session。验证时读取报告，并在封存前删除 `recovery.md`、`.reprise/recovery-work/` 与临时 HOME。校验通过且状态为 `ready`、且任务前条件成立时 publish canonical baseline。Candidate Runtime 只得到 `prepareRun` 从封存起点复制的独立副本。
 
 ## 8. prepareRun
 

@@ -71,26 +71,26 @@ ${REPORT_CSS}
 </style>
 </head>
 <body${input.diagnostic ? ' data-report="diagnostic"' : ""}>
-${COMPONENT_TEMPLATE_HTML}
+${componentTemplateHtml(locale)}
 <div class="page">
   <article class="share">
     <header data-host-zone="header" data-id="host-header">${header}</header>
-    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Core differences. Must be non-empty; if no comparison is possible, say so and why. -->${[
+    <p class="field-label">${escapeHtml(reportString(locale, "headlineLabel"))}</p>
+    <p class="note" data-agent-slot="headline">${headline}</p>
+    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Core differences. Must be non-empty; if no comparison is possible, say so and why. Prefer one or two sentences; a table of at most five rows only when parallel items would tangle. No process rows. -->${[
       input.diagnostic ? diagnosticDifferences(input.diagnostic, locale) : "",
       slots["key-differences"] ?? "",
     ].filter(Boolean).join("")}</section>
-    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals: historical left, candidate right. Without paired images use split-compare or leave empty. -->${slots["visual-evidence"] ?? ""}</section>
-    <section class="slot" data-agent-zone="delivery" data-id="agent-delivery"><!-- What each side delivered and what the user still has to do. -->${slots.delivery ?? (input.diagnostic ? diagnosticDelivery(input.diagnostic, locale) : "")}</section>
-    <section class="slot" data-agent-zone="limitations" data-id="agent-limitations"><!-- Replay limitations, configuration differences, truncated evidence; paths and internal IDs go here. -->${slots.limitations ?? (input.diagnostic ? diagnosticLimitations(input.diagnostic) : "")}</section>
-    <p class="note" data-agent-slot="headline">${headline}</p>
+    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Leave empty without paired images. One-sided previews do not belong on the card. -->${slots["visual-evidence"] ?? ""}</section>
     ${renderMetricsBoard(input.metrics, labels, locale)}
   </article>
-  <details class="audit">
-    <summary>${escapeHtml(reportString(locale, "auditSummary"))}</summary>
+  <div class="audit" hidden>
     <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">${escapeHtml(reportString(locale, "costNote", { version: MODEL_PRICING_TABLE_VERSION }))}</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence">${renderRunDiagnostics(input.facts, locale)}${renderEvidenceCatalog(input.evidence, locale)}${renderMediaCatalog(input.media, locale)}</section>
+    <section class="slot" data-agent-zone="delivery" data-id="agent-delivery"><!-- Deliveries, paths, and runId. Hidden; not on the card face. -->${slots.delivery ?? (input.diagnostic ? diagnosticDelivery(input.diagnostic, locale) : "")}</section>
+    <section class="slot" data-agent-zone="limitations" data-id="agent-limitations"><!-- Replay limitations, including git-sink initial equal to a historical commit. Hidden. -->${slots.limitations ?? (input.diagnostic ? diagnosticLimitations(input.diagnostic) : "")}</section>
     <section class="slot" data-host-zone="process" data-id="host-process">${slots.process ?? (input.diagnostic ? diagnosticProcess(input.diagnostic, locale) : "")}</section>
-  </details>
+  </div>
 </div>
 </body>
 </html>
@@ -277,6 +277,8 @@ function defaultHeader(
   const vs = reportString(locale, "titleVs", { category: "", baseline: labels.baseline, candidate: labels.candidate })
     .replace(/^\s*·\s*/, "");
   return `${kicker}<h1><span data-agent-slot="category">${escapeHtml(category)}</span> · ${escapeHtml(vs)}</h1>
+  <p class="sessions" data-host="session-labels"><span>${escapeHtml(reportString(locale, "sessionHistorical"))}</span><span>${escapeHtml(reportString(locale, "sessionCurrent"))}</span></p>
+  <p class="field-label">${escapeHtml(reportString(locale, "taskLabel"))}</p>
   <p class="task" data-slot="task" data-agent-slot="task">${escapeHtml(task)}</p>`;
 }
 
@@ -391,15 +393,18 @@ function decodeHtml(value: string): string {
     .replaceAll("&amp;", "&");
 }
 
-const COMPONENT_TEMPLATE_HTML = `<!-- Component prototypes: copy into a data-agent-zone; omit what you do not use.
+function componentTemplateHtml(locale: AgentLocale): string {
+  const historical = escapeHtml(reportString(locale, "sessionHistorical"));
+  const current = escapeHtml(reportString(locale, "sessionCurrent"));
+  return `<!-- Component prototypes: copy into a data-agent-zone; omit what you do not use.
      pair-pages: left historical final page / right candidate final page, page by page
      split-compare: side-by-side text
      difference-card: one difference with impact
      diff-table / timeline / media-compare / headline: as needed
-     Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside;
-     wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside. -->
+     Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside or immediately after;
+     wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside or immediately after. -->
 <template data-component-template="headline">
-  <div data-component="judgment"><strong>Judgment</strong><p></p></div>
+  <div data-component="judgment"><p></p></div>
 </template>
 <template data-component-template="difference-card">
   <article data-component="difference-card"><h3></h3><p></p></article>
@@ -418,11 +423,12 @@ const COMPONENT_TEMPLATE_HTML = `<!-- Component prototypes: copy into a data-age
 </template>
 <template data-component-template="pair-pages">
   <div data-component="page-row">
-    <div class="cell"><div class="who"></div><img data-media-ref="" alt=""></div>
-    <div class="cell"><div class="who"></div><img data-media-ref="" alt=""></div>
+    <div class="cell"><div class="who">${historical}</div><img data-media-ref="" alt=""></div>
+    <div class="cell"><div class="who">${current}</div><img data-media-ref="" alt=""></div>
   </div>
 </template>
 `;
+}
 
 const REPORT_CSS = `
 :root { --paper:#efe8dc; --card:#fffcf7; --ink:#1a1714; --soft:#5a544b; --faint:#8a8378; --line:rgba(26,23,20,.08); --hair:rgba(26,23,20,.12); --shadow:0 22px 50px rgba(40,32,18,.1); --accent:#5b4630; --risk:#8b2e2e; --ok:#2f5d3a; }
@@ -430,10 +436,14 @@ const REPORT_CSS = `
 html,body { margin:0; background:var(--paper); color:var(--ink); font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Songti SC","Source Han Serif SC",serif; }
 .page { max-width:980px; margin:0 auto; padding:36px 20px 72px; }
 .share { background:var(--card); border:1px solid var(--line); border-radius:28px; box-shadow:var(--shadow); padding:28px 28px 24px; }
+.share a { color:inherit; text-decoration:none; }
 .kicker { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin:0 0 12px; }
 h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; margin:0 0 8px; }
-.task { margin:0 0 22px; font-size:16px; color:var(--soft); line-height:1.45; white-space:nowrap; }
-.note,[data-agent-slot="headline"] { margin:16px 0 18px; font-size:16px; line-height:1.5; }
+.sessions { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:8px 0 12px; font-size:14px; color:var(--soft); }
+.field-label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:13px; color:var(--faint); margin:12px 0 4px; }
+.task { margin:0 0 8px; font-size:16px; color:var(--soft); line-height:1.45; }
+.note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:16px; line-height:1.5; }
+[data-agent-slot="headline"] strong,[data-component="diff-table"] strong,[data-claim] { font-weight:inherit; }
 .board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
 .card,.result-card,[data-component="difference-card"] { background:#f7f3ea; border-radius:18px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; }
 .card { min-height:0; }
@@ -454,7 +464,7 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .cell img,[data-component="page-row"] img { width:100%; height:200px; object-fit:contain; object-position:top; display:block; background:#fff; }
 .audit { margin-top:20px; color:var(--soft); }
 .cost-note { margin: 0 0 8px; }
-strong,[data-component="judgment"] { font-weight:700; }
+[data-component="judgment"] { font-weight:700; }
 [data-component="judgment"] { margin:0 0 16px; }
 [data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
 [data-component="difference-card"] p { margin:0; color:var(--soft); }
@@ -467,7 +477,8 @@ code,[data-component="code"] { font-family:"Cascadia Code","Sarasa Mono SC",mono
 [data-component="tag-tradeoff"] { background:rgba(91,70,48,.12); }
 [data-component="tag-risk"] { background:rgba(139,46,46,.12); color:var(--risk); }
 [data-component="diff-table"] { width:100%; border-collapse:collapse; }
-[data-component="diff-table"] th,[data-component="diff-table"] td { border-bottom:1px solid var(--hair); padding:10px 8px; vertical-align:top; }
+[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
+[data-component="diff-table"] .who { letter-spacing:0; text-transform:none; font-size:16px; }
 [data-component="split-compare"] { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 [data-component="timeline"] { border-left:2px solid var(--hair); padding-left:16px; }
 [data-component="media-compare"],[data-component="media-grid"] { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }

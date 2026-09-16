@@ -84,8 +84,18 @@ test("Host template has no visible status cards and keeps facts in the model", (
   const metrics = html.indexOf('data-host-zone="metrics"');
   const diffs = html.indexOf('data-agent-zone="key-differences"');
   const headline = html.indexOf('<p class="note" data-agent-slot="headline"');
-  assert.ok(header < diffs && diffs < headline && headline < metrics);
+  assert.ok(header < headline && headline < diffs && diffs < metrics);
   assert.equal(header < metrics && metrics < diffs, false);
+  const delivery = html.indexOf('data-agent-zone="delivery"');
+  assert.ok(metrics < delivery);
+  assert.match(html, /class="audit" hidden/);
+  assert.doesNotMatch(html, /<summary>价格与证据<\/summary>/);
+  assert.doesNotMatch(html, /本卡由/);
+  assert.doesNotMatch(html, /历史侧|候选侧/);
+  assert.match(html, /任务描述/);
+  assert.match(html, /主要结论/);
+  assert.match(html, /历史会话/);
+  assert.match(html, /当前会话/);
   assert.match(html, /data-agent-slot="category"/);
   assert.match(html, /data-component-template="pair-pages"/);
   assert.match(html, /gpt-5\.6/);
@@ -151,6 +161,50 @@ test("registered media that exists can be published", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-media-ok-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "media"), { recursive: true });
+  await writeFile(join(root, "media", "history.png"), Buffer.from([137, 80, 78, 71]));
+  await writeFile(join(root, "media", "ok.png"), Buffer.from([137, 80, 78, 71]));
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({
+      "visual-evidence": '<img src="media/history.png" alt="historical preview"><img src="media/ok.png" alt="preview">',
+    }),
+  });
+  const verified = await verifyAndRenderComparisonReport({
+    html,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: root,
+    media: [
+      {
+        ref: "media:history",
+        shortRef: "media-01",
+        side: "baseline",
+        inspectPath: "history/media/history.png",
+        reportHref: "media/history.png",
+        mediaType: "image/png",
+        available: true,
+      },
+      {
+        ref: "media:ok",
+        shortRef: "media-02",
+        side: "candidate",
+        inspectPath: "evidence/ok.png",
+        reportHref: "media/ok.png",
+        mediaType: "image/png",
+        available: true,
+      },
+    ],
+  });
+  assert.equal("html" in verified, true);
+});
+
+test("one-sided share-card images fail publication", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-media-one-side-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "ok.png"), Buffer.from([137, 80, 78, 71]));
   const reportFacts = facts();
   const html = renderComparisonReportShell({
@@ -166,6 +220,7 @@ test("registered media that exists can be published", async (t) => {
     attemptRoot: root,
     media: [{
       ref: "media:ok",
+      shortRef: "media-01",
       side: "candidate",
       inspectPath: "evidence/ok.png",
       reportHref: "media/ok.png",
@@ -173,7 +228,11 @@ test("registered media that exists can be published", async (t) => {
       available: true,
     }],
   });
-  assert.equal("html" in verified, true);
+  assert.equal("html" in verified, false);
+  if (!("html" in verified)) {
+    assert.equal(verified.code, "report_incomplete");
+    assert.match(verified.message, /one-sided previews/);
+  }
 });
 
 test("failure classes distinguish provider, protocol, evidence, metrics, and media", () => {
@@ -474,6 +533,140 @@ test("metrics before key-differences fail share-card order", async () => {
   if (!("html" in verified)) assert.match(verified.message, /Share card order/);
 });
 
+test("delivery inside the share card fails publication", async () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const delivery = html.match(/<section class="slot" data-agent-zone="delivery"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(delivery);
+  const without = html.replace(delivery, "");
+  const headerClose = without.indexOf("</header>");
+  const misplaced = `${without.slice(0, headerClose + "</header>".length)}${delivery}${without.slice(headerClose + "</header>".length)}`;
+  const verified = await verifyAndRenderComparisonReport({
+    html: misplaced,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in verified, false);
+  if (!("html" in verified)) assert.match(verified.message, /outside the share card/);
+});
+
+test("current harness comparison model is not the candidate vs title", () => {
+  const reportFacts = buildComparisonContext(taskCase(), [runRecord()], [inspection], {
+    comparisonModel: "deepseek-flash",
+  }).reportFacts;
+  assert.equal(reportFacts.models.comparison, "deepseek-flash");
+  assert.notEqual(reportFacts.models.candidate, "deepseek-flash");
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  assert.doesNotMatch(html, /本卡由/);
+  assert.doesNotMatch(html, /data-host="comparison-operator"/);
+  assert.match(html, /vs gpt-5\.6/);
+  assert.doesNotMatch(html, /vs deepseek-flash/);
+});
+
+test("share-card presentation reverse cases fail publication", async () => {
+  const reportFacts = facts();
+  const base = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const strongHeadline = base.replace(
+    '<p class="note" data-agent-slot="headline">候选把讨论推进成了可继续使用的文件。</p>',
+    '<p class="note" data-agent-slot="headline"><strong>候选把讨论推进成了可继续使用的文件。</strong></p>',
+  );
+  const strong = await verifyAndRenderComparisonReport({
+    html: strongHeadline,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in strong, false);
+  if (!("html" in strong)) assert.match(strong.message, /strong/i);
+
+  const underlined = base.replace(
+    "<p>候选有交付物，历史没有。</p>",
+    '<p>候选有交付物，<a href="environment/build.py" style="text-decoration:underline">历史没有</a>。</p>',
+  );
+  const underline = await verifyAndRenderComparisonReport({
+    html: underlined,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in underline, false);
+  if (!("html" in underline)) assert.match(underline.message, /underline/);
+
+  const writtenBy = base.replace(
+    '<p class="note" data-agent-slot="headline">候选把讨论推进成了可继续使用的文件。</p>',
+    '<p class="note" data-agent-slot="headline">本卡由 deepseek-flash 写出</p>',
+  );
+  const byline = await verifyAndRenderComparisonReport({
+    html: writtenBy,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in byline, false);
+  if (!("html" in byline)) assert.match(byline.message, /who wrote the card/);
+
+  const sideLabel = base.replace(
+    "<p>候选有交付物，历史没有。</p>",
+    "<p>历史侧有交付物，候选侧没有。</p>",
+  );
+  const sides = await verifyAndRenderComparisonReport({
+    html: sideLabel,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in sides, false);
+  if (!("html" in sides)) assert.match(sides.message, /历史侧|候选侧/);
+
+  const hiddenSides = base.replace(
+    'data-id="agent-limitations"><!-- Replay limitations, including git-sink initial equal to a historical commit. Hidden. -->',
+    'data-id="agent-limitations"><!-- Replay limitations, including git-sink initial equal to a historical commit. Hidden. --><p>历史侧自述未改正文。</p>',
+  );
+  const hiddenOk = await verifyAndRenderComparisonReport({
+    html: hiddenSides,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in hiddenOk, true);
+
+  const ok = await verifyAndRenderComparisonReport({
+    html: base,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in ok, true);
+  if ("html" in ok) {
+    assert.match(ok.html, /\.share a \{ color:inherit; text-decoration:none; \}/);
+    assert.doesNotMatch(ok.html, /本卡由/);
+    assert.doesNotMatch(ok.html, /历史侧|候选侧/);
+  }
+});
+
 test("data-claim publication checks and English report shell fail closed", async () => {
   const reportFacts = facts();
   const verifiedBare = renderComparisonReportShell({
@@ -515,6 +708,35 @@ test("data-claim publication checks and English report shell fail closed", async
   if (!("html" in missingMedia)) {
     assert.equal(missingMedia.code, "media_unavailable");
   }
+  const parenthetical = renderComparisonReportShell({
+    task: "Fix the report.",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({
+      "key-differences": '<p><span data-claim="verified">The generator emptied add_pie</span>（<a data-evidence-ref="ev-03">candidate generator</a>）</p>',
+    }),
+  });
+  const parentheticalOk = await verifyAndRenderComparisonReport({
+    html: parenthetical,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: ["ev-03"] },
+    attemptRoot: ".",
+    media: [],
+    evidence: [{ side: "candidate", shortRef: "ev-03", inspectPath: "candidate/build.py", reportHref: "environment/build.py" }],
+  });
+  assert.equal("html" in parentheticalOk, true);
+  const parentheticalUnknown = await verifyAndRenderComparisonReport({
+    html: parenthetical,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+    evidence: [],
+  });
+  assert.equal("html" in parentheticalUnknown, false);
+  if (!("html" in parentheticalUnknown)) {
+    assert.equal(parentheticalUnknown.code, "evidence_unresolved");
+  }
   const english = renderComparisonReportShell({
     task: "Fix the report.",
     facts: reportFacts,
@@ -523,6 +745,10 @@ test("data-claim publication checks and English report shell fail closed", async
     locale: "en",
   });
   assert.match(english, /lang="en"/);
+  assert.match(english, />Task</);
+  assert.match(english, />Main conclusion</);
+  assert.match(english, />Historical session</);
+  assert.match(english, />Current session</);
   assert.doesNotMatch(english, /[\u3400-\u9FFF]/);
   const snapshot = extractHostZoneSnapshot(english);
   assert.ok(snapshot);

@@ -82,12 +82,12 @@ export const CONTROLLER_TURN_PROMPTS = {
     '',
     'Read all user inputs in the order of history/user-inputs/INDEX.tsv, and the corresponding historical replies and deliverables as needed. Work out what the user ultimately wants, what kind of result is useful to them, how they raise requirements and give feedback step by step, and when they continue, check, revise, or stop.',
     '',
-    'Do not treat the first input as the whole task, and do not treat the historical messages as a script to send verbatim. This turn sends no message and returns no JSON. Write your judgment of the task goal, the user\'s habits, and which requirements appeared only later to notes/understanding.md; the opening request follows.',
+    'Do not treat the first input as the whole task, and do not treat the historical messages as a script to send verbatim. This turn sends no message and returns no JSON. Write your judgment of the task goal, the user\'s habits, the task shape of initialInput, and which requirements appeared only later to notes/understanding.md; the opening request follows.',
   ].join('\n'),
   opening: [
     'Opening: send the first user message.',
     '',
-    'The candidate has not started; current-user-view.md is empty. Using the understanding you formed, write the first thing this user would say now: state the task and include the information and material the user would supply at the start, without revealing requirements that came later. Permissions are as in permissions.txt. This turn allows send only.',
+    'The candidate has not started; current-user-view.md is empty and visible candidate turns are 0. Using the understanding you formed, write the first thing this user would say now: the task shape must match initialInput (same kind of ask; sample: analyse first, do not edit yet). Include information and material the user would supply at the start. Do not replay initialInput verbatim. Do not cite the candidate\'s suggestions, priorities, or checklists, and do not write as if following advice from a prior turn of this candidate. Do not reveal requirements that came later. Permissions are as in permissions.txt. This turn allows send only.',
   ].join('\n'),
   steering: [
     'The candidate has just finished a settled turn. Read current-user-view.md first.',
@@ -102,7 +102,7 @@ export const CONTROLLER_TURN_PROMPTS = {
 
 export const CONTROLLER_SYSTEM_PROMPT = `You act as a real user who wants a candidate agent to complete a historical task.
 
-Your basis is what this user showed across the whole historical session: goals, knowledge, preferences, what they authorized, how they accepted work, and the order in which information appeared. The history is for understanding the person, not a script to replay. Do not copy original sentences mechanically, do not reveal requirements the user had not yet stated at that point in the original session, and do not treat what the original agent discovered later as something the user knew from the start. When the candidate takes a different but valid path, respond to the current result.
+Your basis is what this user showed across the whole historical session: goals, knowledge, preferences, what they authorized, how they accepted work, and the order in which information appeared. The history is for understanding the person, not a script to replay. Do not copy original sentences mechanically, do not reveal requirements the user had not yet stated at that point in the original session, and do not treat what the original agent discovered later as something the user knew from the start. The opening message must have the same task shape as initialInput. Do not refer to the candidate's suggestions, priorities, or checklists unless this candidate has already written them in a visible turn. When the candidate takes a different but valid path, respond to the current result.
 
 Before every decision, look first at what the user can see on screen right now (current-user-view.md). Read user-accessible material (deliverables, files, command output) only when a real user would check it to get the task done. Do not decide on things the user cannot see: hidden reasoning, internal audit, unpublished tool parameters, and Host diagnostics do not count.
 
@@ -144,6 +144,13 @@ export function controllerMessageHasHostTerms(message: string): boolean {
   return HOST_TERMS_IN_MESSAGE.test(message);
 }
 
+/** Shallow opening leak: citing advice the candidate has not produced yet. */
+const OPENING_UNSEEN_CANDIDATE_ADVICE = /按你(?:上次)?(?:的)?建议|你建议的优先级|(?:follow(?:ing)?|per) your (?:last |previous )?suggest/i;
+
+export function openingSendCitesUnseenCandidateAdvice(message: string): boolean {
+  return OPENING_UNSEEN_CANDIDATE_ADVICE.test(message);
+}
+
 function ownedToolRefs(runId: string, details: unknown): string[] {
   if (!details || typeof details !== 'object') return [];
   const record = details as { runId?: unknown; evidenceRefs?: unknown };
@@ -173,7 +180,11 @@ function validateControllerDecision(
   if (!decision.message.trim()) return 'message must not be blank';
   if (Buffer.byteLength(decision.message) > MAX_CONTROLLER_MESSAGE_BYTES) return `message exceeds ${MAX_CONTROLLER_MESSAGE_BYTES} bytes`;
   if (DISALLOWED_CONTROL.test(decision.message)) return 'message contains a disallowed control character';
-  return controllerMessageHasHostTerms(decision.message) ? 'message contains a Host term' : undefined;
+  if (controllerMessageHasHostTerms(decision.message)) return 'message contains a Host term';
+  if (opening && openingSendCitesUnseenCandidateAdvice(decision.message)) {
+    return 'opening message cites candidate advice that does not exist yet';
+  }
+  return undefined;
 }
 
 export class ControllerAgent implements ControllerPort {

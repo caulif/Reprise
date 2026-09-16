@@ -10,10 +10,14 @@
 html,body { margin:0; background:var(--paper); color:var(--ink); font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Songti SC","Source Han Serif SC",serif; }
 .page { max-width:980px; margin:0 auto; padding:36px 20px 72px; }
 .share { background:var(--card); border:1px solid var(--line); border-radius:28px; box-shadow:var(--shadow); padding:28px 28px 24px; }
+.share a { color:inherit; text-decoration:none; }
 .kicker { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin:0 0 12px; }
 h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; margin:0 0 8px; }
-.task { margin:0 0 22px; font-size:16px; color:var(--soft); line-height:1.45; white-space:nowrap; }
-.note,[data-agent-slot="headline"] { margin:16px 0 18px; font-size:16px; line-height:1.5; }
+.sessions { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:8px 0 12px; font-size:14px; color:var(--soft); }
+.field-label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:13px; color:var(--faint); margin:12px 0 4px; }
+.task { margin:0 0 8px; font-size:16px; color:var(--soft); line-height:1.45; }
+.note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:16px; line-height:1.5; }
+[data-agent-slot="headline"] strong,[data-component="diff-table"] strong,[data-claim] { font-weight:inherit; }
 .board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
 .card,.result-card,[data-component="difference-card"] { background:#f7f3ea; border-radius:18px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; }
 .card { min-height:0; }
@@ -34,7 +38,7 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .cell img,[data-component="page-row"] img { width:100%; height:200px; object-fit:contain; object-position:top; display:block; background:#fff; }
 .audit { margin-top:20px; color:var(--soft); }
 .cost-note { margin: 0 0 8px; }
-strong,[data-component="judgment"] { font-weight:700; }
+[data-component="judgment"] { font-weight:700; }
 [data-component="judgment"] { margin:0 0 16px; }
 [data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
 [data-component="difference-card"] p { margin:0; color:var(--soft); }
@@ -47,7 +51,8 @@ code,[data-component="code"] { font-family:"Cascadia Code","Sarasa Mono SC",mono
 [data-component="tag-tradeoff"] { background:rgba(91,70,48,.12); }
 [data-component="tag-risk"] { background:rgba(139,46,46,.12); color:var(--risk); }
 [data-component="diff-table"] { width:100%; border-collapse:collapse; }
-[data-component="diff-table"] th,[data-component="diff-table"] td { border-bottom:1px solid var(--hair); padding:10px 8px; vertical-align:top; }
+[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
+[data-component="diff-table"] .who { letter-spacing:0; text-transform:none; font-size:16px; }
 [data-component="split-compare"] { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 [data-component="timeline"] { border-left:2px solid var(--hair); padding-left:16px; }
 [data-component="media-compare"],[data-component="media-grid"] { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
@@ -71,10 +76,10 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
      split-compare: side-by-side text
      difference-card: one difference with impact
      diff-table / timeline / media-compare / headline: as needed
-     Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside;
-     wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside. -->
+     Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside or immediately after;
+     wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside or immediately after. -->
 <template data-component-template="headline">
-  <div data-component="judgment"><strong>Judgment</strong><p></p></div>
+  <div data-component="judgment"><p></p></div>
 </template>
 <template data-component-template="difference-card">
   <article data-component="difference-card"><h3></h3><p></p></article>
@@ -93,20 +98,21 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
 </template>
 <template data-component-template="pair-pages">
   <div data-component="page-row">
-    <div class="cell"><div class="who"></div><img data-media-ref="" alt=""></div>
-    <div class="cell"><div class="who"></div><img data-media-ref="" alt=""></div>
+    <div class="cell"><div class="who">历史会话</div><img data-media-ref="" alt=""></div>
+    <div class="cell"><div class="who">当前会话</div><img data-media-ref="" alt=""></div>
   </div>
 </template>
 
 <div class="page">
   <article class="share">
     <header data-host-zone="header" data-id="host-header"><h1><span data-agent-slot="category">对照</span> · gpt-5 vs gpt-5.6 对比</h1>
+  <p class="sessions" data-host="session-labels"><span>历史会话</span><span>当前会话</span></p>
+  <p class="field-label">任务描述</p>
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
-    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Core differences. Must be non-empty; if no comparison is possible, say so and why. --><p>The candidate delivered a file; history did not.</p></section>
-    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals: historical left, candidate right. Without paired images use split-compare or leave empty. --></section>
-    <section class="slot" data-agent-zone="delivery" data-id="agent-delivery"><!-- What each side delivered and what the user still has to do. --></section>
-    <section class="slot" data-agent-zone="limitations" data-id="agent-limitations"><!-- Replay limitations, configuration differences, truncated evidence; paths and internal IDs go here. --></section>
+    <p class="field-label">主要结论</p>
     <p class="note" data-agent-slot="headline">The candidate produced a usable file.</p>
+    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Core differences. Must be non-empty; if no comparison is possible, say so and why. Prefer one or two sentences; a table of at most five rows only when parallel items would tangle. No process rows. --><p>The candidate delivered a file; history did not.</p></section>
+    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Leave empty without paired images. One-sided previews do not belong on the card. --></section>
     <section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="{&quot;b&quot;:[null,null,null,&quot;not_collected&quot;],&quot;c&quot;:[4000,null,null,&quot;not_collected&quot;]}" aria-label="时间, Token, 费用">
     <article class="card">
       <div class="label">时间</div>
@@ -149,17 +155,18 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     </article>
   </section>
   </article>
-  <details class="audit">
-    <summary>价格与证据</summary>
-    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">费用按本次钉住的价格快照计算，不含工具调用成本。无 Token 显示未采集；有 Token 无价格显示价格未配置。价格表 2026-09-14-models-dev-snapshot。</p>
+  <div class="audit" hidden>
+    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">费用按本次钉住的价格快照计算，不含工具调用成本。无 Token 显示未采集；有 Token 无价格显示价格未配置。价格表 2026-09-16-models-dev-snapshot。</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>运行诊断</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
     <li><span class="who">gpt-5.6</span> incomplete · limit.turns · harness</li>
-    <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-09-14-models-dev-snapshot</li>
-    <li><span class="who">gpt-5.6 price</span> unresolved · not_collected · 2026-09-14-models-dev-snapshot</li>
+    <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-09-16-models-dev-snapshot</li>
+    <li><span class="who">gpt-5.6 price</span> unresolved · not_collected · 2026-09-16-models-dev-snapshot</li>
   </ul></details></section>
+    <section class="slot" data-agent-zone="delivery" data-id="agent-delivery"><!-- Deliveries, paths, and runId. Hidden; not on the card face. --></section>
+    <section class="slot" data-agent-zone="limitations" data-id="agent-limitations"><!-- Replay limitations, including git-sink initial equal to a historical commit. Hidden. --></section>
     <section class="slot" data-host-zone="process" data-id="host-process"></section>
-  </details>
+  </div>
 </div>
 </body>
 </html>

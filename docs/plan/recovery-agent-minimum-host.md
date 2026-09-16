@@ -46,7 +46,7 @@ Host 不负责：
 - 决定哪些文件属于起点；
 - 预先创建多个候选或 hypothesis；
 - 按 `.gitignore`、transcript 路径或文件类型剔除 source；
-- 预先 checkout Git commit；
+- 预先 checkout Git commit 并把它宣称为恢复结果（Host 仍可拒绝「HEAD 已含历史任务提交」的 `ready`，见 [任务前 HEAD](../decisions/accepted/2026-09-16-recovery-pre-task-head.md)）；
 - 用 evidence score、changed path 数量或独立 Verifier 推翻 Agent 的业务结论；
 - 因为零变更而判定恢复失败。
 

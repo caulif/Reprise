@@ -1,6 +1,8 @@
 # Comparison 可分享卡：模型对照与首屏版式
 
-本文是下一步实施的目标计划。当前规则仍以 [Comparison 架构](../architecture/comparison.md) 与 [首屏清晰度](../decisions/accepted/2026-09-14-comparison-report-clarity-and-review.md) 为准。可执行 prompt 仍只在 [`src/agents/comparison-agent.ts`](../../src/agents/comparison-agent.ts)；落地后更新该文件与 `test/snapshots/comparison-system-prompt.txt`，不另维护逐字副本。
+壳顺序、模型 ID 入标题、pair-pages 已按本文落地。卡面仍把 delivery / limitations 平铺、写卡算子与候选混淆，后续以 [十秒比较卡](./2026-09-15-comparison-ten-second-card.md) 为准。
+
+本文其余段落保留当时目标。当前规则仍以 [Comparison 架构](../architecture/comparison.md) 与 [首屏清晰度](../decisions/accepted/2026-09-14-comparison-report-clarity-and-review.md) 为准。可执行 prompt 仍只在 [`src/agents/comparison-agent.ts`](../../src/agents/comparison-agent.ts)；落地后更新该文件与 `test/snapshots/comparison-system-prompt.txt`，不另维护逐字副本。
 
 指标投影、价格三态、Host 区域保护、短引用、四轮单 Session、失败不覆盖成功报告：**不重做**。旧稿 [visual-refactor](./comparison-report-visual-refactor.md) 里已落地的事实层不再列入本计划。
 

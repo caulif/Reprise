@@ -1,7 +1,7 @@
-import { stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { SAFE_ID } from '../../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../../core/json.js';
 import { runProcess } from '../../../infrastructure/process-runner.js';
@@ -566,11 +566,44 @@ async function historicalEnvironment(cwd: string | undefined): Promise<JsonRecor
   let info;
   try { info = await stat(cwd); } catch (error) { return { cwd: { status: isMissing(error) ? 'missing' : 'unavailable' } }; }
   if (!info.isDirectory()) return { cwd: { status: 'not_directory' } };
+  const nested = await discoverNestedGit(cwd);
+  const nestedGit = nested.length ? { nested } : {};
   const repository = await git(cwd, ['rev-parse', '--is-inside-work-tree']);
-  if (repository !== 'true') return { cwd: { status: 'available', git: { isRepository: false } } };
+  if (repository !== 'true') return { cwd: { status: 'available', git: { isRepository: false, ...nestedGit } } };
   const head = await git(cwd, ['rev-parse', 'HEAD']);
   const status = await git(cwd, ['status', '--porcelain']);
-  return { cwd: { status: 'available', git: { isRepository: true, ...(head && GIT_COMMIT.test(head) ? { head } : {}), ...(status !== undefined ? { dirty: Boolean(status) } : {}) } } };
+  return { cwd: { status: 'available', git: { isRepository: true, ...(head && GIT_COMMIT.test(head) ? { head } : {}), ...(status !== undefined ? { dirty: Boolean(status) } : {}), ...nestedGit } } };
+}
+
+async function discoverNestedGit(root: string): Promise<JsonRecord[]> {
+  const found: JsonRecord[] = [];
+  async function walk(dir: string): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      // Unreadable historical subdirectory is optional probe context; freeze still records the cwd.
+      return;
+    }
+    const gitEntry = entries.find((entry) => entry.name === '.git');
+    if (gitEntry && !gitEntry.isSymbolicLink() && dir !== root) {
+      const inside = await git(dir, ['rev-parse', '--is-inside-work-tree']);
+      if (inside === 'true') {
+        const relativePath = relative(root, dir).replaceAll('\\', '/');
+        if (relativePath && relativePath !== '.' && !relativePath.startsWith('..') && !relativePath.startsWith('../')) {
+          const head = await git(dir, ['rev-parse', 'HEAD']);
+          found.push({ relativePath, ...(head && GIT_COMMIT.test(head) ? { head } : {}) });
+        }
+      }
+    }
+    for (const entry of entries) {
+      if (entry.name === '.git' || !entry.isDirectory() || entry.isSymbolicLink()) continue;
+      await walk(join(dir, entry.name));
+    }
+  }
+  await walk(root);
+  found.sort((left, right) => String(left.relativePath).localeCompare(String(right.relativePath)));
+  return found;
 }
 
 async function git(cwd: string, args: string[]): Promise<string | undefined> {

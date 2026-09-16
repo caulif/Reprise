@@ -1,4 +1,4 @@
-import { mkdir, stat, readFile } from "node:fs/promises";
+import { mkdir, stat, readFile, readdir, copyFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
@@ -311,6 +311,9 @@ async function comparisonLinks(input: {
       ...(input.taskCase.baseline.evidenceRefs[0] ? { evidenceRef: input.taskCase.baseline.evidenceRefs[0] } : {}),
     });
   }
+  for (const link of await sealedBaselineImageLinks(input)) {
+    push(0, link);
+  }
   const turns = input.context.reportFacts.activity.candidateTurns;
   if (typeof turns === "number" && turns > 0) {
     const inspectPath = `turns/${String(turns).padStart(4, "0")}/visible.txt`;
@@ -363,6 +366,77 @@ async function comparisonLinks(input: {
   };
 }
 
+
+const IMAGE_BASENAME = /([^\\/:"<>|\s*]+\.(?:png|jpe?g|gif|webp|svg))/gi;
+
+async function sealedBaselineImageLinks(input: {
+  attemptRoot: string;
+  experimentRoot: string;
+  taskCase: TaskCase;
+  record: RunRecord;
+}): Promise<ComparisonLink[]> {
+  const names = historicalImageBasenames(input.taskCase);
+  const controllerRoot = join(input.experimentRoot, "runs", input.record.attempt.runId, "controller-briefing");
+  await collectImageBasenamesFromDir(join(controllerRoot, "history"), names);
+  if (names.size === 0) return [];
+  const mediaRoot = join(input.attemptRoot, "history", "media");
+  await mkdir(mediaRoot, { recursive: true });
+  const links: ComparisonLink[] = [];
+  for (const name of names) {
+    const source = await findSealedImage(input.experimentRoot, input.record.attempt.runId, name);
+    const dest = join(mediaRoot, name);
+    if (source) await copyFile(source, dest);
+    const info = source ? await stat(dest).catch(() => undefined) : undefined;
+    links.push({
+      side: "baseline",
+      inspectPath: `history/media/${name}`,
+      mediaType: "image/png",
+      ...(info?.isFile() ? { byteLength: info.size } : {}),
+    });
+  }
+  return links;
+}
+
+function historicalImageBasenames(taskCase: TaskCase): Set<string> {
+  const names = new Set<string>();
+  addImageBasenames(taskCase.initialInput.text, names);
+  addImageBasenames(taskCase.baseline.finalMessage ?? "", names);
+  for (const message of taskCase.transcript) addImageBasenames(message.text, names);
+  return names;
+}
+
+function addImageBasenames(text: string, names: Set<string>): void {
+  for (const match of text.matchAll(IMAGE_BASENAME)) {
+    const base = (match[1] ?? "").split(/[/\\]/).pop();
+    if (base && !base.startsWith(".")) names.add(base);
+  }
+}
+
+async function collectImageBasenamesFromDir(root: string, names: Set<string>): Promise<void> {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".txt")) continue;
+    const parent = "parentPath" in entry && typeof entry.parentPath === "string" ? entry.parentPath : root;
+    const body = await readFile(join(parent, entry.name), "utf8").catch(() => "");
+    addImageBasenames(body, names);
+  }
+}
+
+async function findSealedImage(experimentRoot: string, runId: string, basename: string): Promise<string | undefined> {
+  const roots = [
+    join(experimentRoot, "environment", "baselines"),
+    join(experimentRoot, "runs", runId, "controller-briefing", "history"),
+  ];
+  for (const root of roots) {
+    const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isFile() || entry.name !== basename) continue;
+      const parent = "parentPath" in entry && typeof entry.parentPath === "string" ? entry.parentPath : root;
+      return join(parent, entry.name);
+    }
+  }
+  return undefined;
+}
 
 function slash(path: string): string { return path.replaceAll("\\", "/"); }
 

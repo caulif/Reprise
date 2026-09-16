@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ControllerAgent, controllerMessageHasHostTerms, type SteeringContext } from '../../src/agents/controller-agent.js';
+import { ControllerAgent, controllerMessageHasHostTerms, openingSendCitesUnseenCandidateAdvice, type SteeringContext } from '../../src/agents/controller-agent.js';
 import { PiAgentHost, type PiTextCaller } from '../../src/infrastructure/agent/host.js';
 
 function context(): SteeringContext {
@@ -101,4 +101,33 @@ test('Controller send.message rejects Host terms and keeps ordinary user languag
   const rejected = await leaked.decide(context());
   assert.equal(rejected.status, 'failed');
   if (rejected.status === 'failed') assert.match(rejected.failure.message, /message contains a Host term/);
+});
+
+test('opening send that cites unseen candidate advice is rejected', async () => {
+  const leak = '按你建议的优先级来，先做第 1 和第 2 项。';
+  assert.equal(openingSendCitesUnseenCandidateAdvice(leak), true);
+  assert.equal(openingSendCitesUnseenCandidateAdvice('如何优化这个 blog 的 SEO，给出思路，先不修改。'), false);
+  const leaked = new ControllerAgent({
+    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: leak, intent: 'continue' })])),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const rejected = await leaked.decide(context());
+  assert.equal(rejected.status, 'failed');
+  if (rejected.status === 'failed') assert.match(rejected.failure.message, /opening message cites candidate advice that does not exist yet/);
+  const afterTurn = new ControllerAgent({
+    host: new PiAgentHost(caller([JSON.stringify({ type: 'send', message: leak, intent: 'continue' })])),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const allowed = await afterTurn.decide({
+    ...context(),
+    runState: 'awaiting_controller',
+    phase: 'steering',
+    promptContent: 'phase=steering\n',
+    current: { summary: 'Candidate listed priorities.', evidenceRefs: [] },
+    trajectory: { summary: 'Settled turns: 1.', evidenceRefs: [] },
+    budget: { decisionsUsed: 1, decisionsLimit: 3 },
+  });
+  assert.equal(allowed.status, 'completed');
 });

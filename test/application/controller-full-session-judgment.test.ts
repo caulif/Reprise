@@ -114,6 +114,8 @@ test('controller prompt does not treat unused historical user turns as a stop re
   assert.match(CONTROLLER_SYSTEM_PROMPT, /continuing for the sake of testing, adding turns/);
   assert.match(CONTROLLER_SYSTEM_PROMPT, /The candidate claiming completion is not a reason to finish/);
   assert.match(CONTROLLER_SYSTEM_PROMPT, /how they accepted work/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /same task shape as initialInput/);
+  assert.match(CONTROLLER_SYSTEM_PROMPT, /Do not refer to the candidate's suggestions, priorities, or checklists/);
 });
 
 test('Controller without promptContent throws instead of dumping context JSON', async () => {

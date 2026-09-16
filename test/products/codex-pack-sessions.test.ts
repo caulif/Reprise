@@ -321,3 +321,98 @@ test("Codex rollout discovery and freeze are read-only, complete, redacted, and 
     /no completed turn/,
   );
 });
+
+test("Codex freeze records nested Git under historicalCwd when the root is not a repository", async (t) => {
+  try {
+    await execFileAsync("git", ["--version"]);
+  } catch {
+    t.skip("git is unavailable on PATH");
+    return;
+  }
+  const root = await mkdtemp(join(tmpdir(), "reprise-nested-git-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const historicalCwd = join(root, "blog");
+  const nested = join(historicalCwd, "caulif");
+  await mkdir(nested, { recursive: true });
+  await writeFile(join(historicalCwd, "README.md"), "not a git root\n");
+  await execFileAsync("git", ["init", nested]);
+  await execFileAsync("git", ["-C", nested, "config", "user.email", "test@example.invalid"]);
+  await execFileAsync("git", ["-C", nested, "config", "user.name", "Reprise test"]);
+  await writeFile(join(nested, "index.md"), "site\n");
+  await execFileAsync("git", ["-C", nested, "add", "."]);
+  await execFileAsync("git", ["-C", nested, "commit", "-m", "nested"]);
+  const nestedHead = await gitHead(nested);
+  const source = join(root, "rollout-nested-git.jsonl");
+  await writeFile(
+    source,
+    [
+      JSON.stringify({
+        timestamp: "2026-09-16T00:00:00.000Z",
+        type: "session_meta",
+        payload: { id: "nested-git-session", cwd: historicalCwd },
+      }),
+      JSON.stringify({
+        timestamp: "2026-09-16T00:00:01.000Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "Optimize SEO without editing yet." },
+      }),
+      JSON.stringify({
+        timestamp: "2026-09-16T00:00:02.000Z",
+        type: "event_msg",
+        payload: { type: "task_complete" },
+      }),
+    ].join("\n") + "\n",
+  );
+  const frozen = await freezeCodexSession({
+    sourcePath: source,
+    casesRoot: join(root, "cases"),
+    now: "2026-09-16T00:01:00.000Z",
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  assert.equal(Value.Check(TaskCaseSchema, frozen.taskCase), true);
+  const context = frozen.taskCase.taskContext as Record<string, unknown>;
+  assert.equal(context.historicalCommit, undefined);
+  assert.deepEqual(context.historicalEnvironment, {
+    cwd: {
+      status: "available",
+      git: {
+        isRepository: false,
+        nested: [{ relativePath: "caulif", head: nestedHead }],
+      },
+    },
+  });
+
+  const metaCommit = "b".repeat(40);
+  const withCommit = join(root, "rollout-nested-git-commit.jsonl");
+  await writeFile(
+    withCommit,
+    [
+      JSON.stringify({
+        timestamp: "2026-09-16T00:00:00.000Z",
+        type: "session_meta",
+        payload: { id: "nested-git-commit-session", cwd: historicalCwd, git: { commit: metaCommit } },
+      }),
+      JSON.stringify({
+        timestamp: "2026-09-16T00:00:01.000Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "Optimize SEO without editing yet." },
+      }),
+      JSON.stringify({
+        timestamp: "2026-09-16T00:00:02.000Z",
+        type: "event_msg",
+        payload: { type: "task_complete" },
+      }),
+    ].join("\n") + "\n",
+  );
+  const frozenWithCommit = await freezeCodexSession({
+    sourcePath: withCommit,
+    casesRoot: join(root, "cases-commit"),
+    now: "2026-09-16T00:01:00.000Z",
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  assert.equal(Value.Check(TaskCaseSchema, frozenWithCommit.taskCase), true);
+  assert.equal(
+    (frozenWithCommit.taskCase.taskContext as Record<string, unknown>).historicalCommit,
+    metaCommit,
+  );
+});

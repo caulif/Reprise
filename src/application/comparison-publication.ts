@@ -111,6 +111,8 @@ export async function verifyAndRenderComparisonReport(input: {
   if (unexpected) return { failureClass: "publication", code: "report_incomplete", message: unexpected };
   const leaked = leakedInternalRunInfo(input.html);
   if (leaked) return { failureClass: "publication", code: "report_incomplete", message: leaked };
+  const presentation = shareCardPresentationError(input.html, locale);
+  if (presentation) return { failureClass: "publication", code: "report_incomplete", message: presentation };
   const structuredEvidence = claimsVerifiedWithoutResolvableEvidence(input.html, input.evidence ?? []);
   if (structuredEvidence) return { failureClass: "evidence", code: "evidence_unresolved", message: structuredEvidence };
   const structuredVisual = claimsVisualWithoutUsableMedia(input.html, input.media);
@@ -130,6 +132,8 @@ export async function verifyAndRenderComparisonReport(input: {
   if (citedMediaAllUnresolved(input.html, rewritten.unresolvedMedia, locale)) {
     return { failureClass: "media", code: "media_unavailable", message: "Comparison cited media that is not available." };
   }
+  const unpairedVisual = unpairedShareCardImages(rewritten.html, input.media);
+  if (unpairedVisual) return { failureClass: "publication", code: "report_incomplete", message: unpairedVisual };
   const html = markUnresolvedInHostEvidence(rewritten.html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia], locale);
   const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
   return { html, model };
@@ -326,8 +330,41 @@ function incompleteKeyDifferences(html: string): string | undefined {
   return 'Comparison report is missing key differences (or an explicit "cannot be determined").';
 }
 
+function shareCardPresentationError(html: string, locale: AgentLocale): string | undefined {
+  const headline = extractInner(html, "data-agent-slot", "headline");
+  if (/<strong\b/i.test(headline)) return "Headline must not contain <strong>.";
+  const style = extractInner(html, "data-host-zone", "style");
+  if (!/\.share\s+a\s*\{[^}]*text-decoration\s*:\s*none/i.test(style)) {
+    return "Share card links must not use underline.";
+  }
+  const share = shareArticleHtml(html);
+  for (const anchor of share.match(/<a\b[^>]*>/gi) ?? []) {
+    if (/text-decoration\s*:\s*underline/i.test(anchor)) return "Share card links must not use underline.";
+  }
+  if (/<u\b/i.test(share)) return "Share card links must not use underline.";
+  const page = html.replace(/<!--[\s\S]*?-->/g, " ").replace(/<template[\s\S]*?<\/template>/gi, " ");
+  if (/<summary[^>]*>\s*(价格与证据|Prices and evidence)\s*<\/summary>/i.test(page)) {
+    return "Share card must not show a prices-and-evidence summary.";
+  }
+  if (/本卡由|Written by /i.test(page)) return "Share card must not print who wrote the card.";
+  const visible = share.replace(/<!--[\s\S]*?-->/g, " ");
+  if (/历史侧|候选侧/.test(visible)) return "Share card must not use 历史侧 or 候选侧.";
+  const labels = locale === "en"
+    ? ["Task", "Main conclusion", "Historical session", "Current session"] as const
+    : ["任务描述", "主要结论", "历史会话", "当前会话"] as const;
+  for (const label of labels) {
+    if (!visible.includes(label)) return `Share card is missing Host label "${label}".`;
+  }
+  return undefined;
+}
+
+function shareArticleHtml(html: string): string {
+  const match = html.match(/<article\b[^>]*\bclass=["'][^"']*\bshare\b[^"']*["'][^>]*>([\s\S]*?)<\/article>/i);
+  return match?.[1] ?? "";
+}
+
 function leakedInternalRunInfo(html: string): string | undefined {
-  const fold = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-zone", "key-differences")}${extractInner(html, "data-agent-slot", "headline")}`;
+  const fold = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "key-differences")}${extractInner(html, "data-agent-zone", "visual-evidence")}`;
   if (/\battemptId\b|\brunId\b|comparison-attempts\/|\\runs\\/i.test(fold) || /attempt-[a-z0-9-]{8,}/i.test(fold)) {
     return "Comparison above-the-fold content contains internal run identifiers.";
   }
@@ -414,7 +451,8 @@ function claimMissingResolvedRef(
     const element = html.slice(tagStart, elementEnd);
     const own = [...element.matchAll(new RegExp(`\\b${attr}\\s*=\\s*(["'])([^"']+)\\1`, "gi"))].map((hit) => hit[2] ?? "");
     const ancestors = ancestorAttribute(html, tagStart, attr);
-    const refs = unique([...own, ...ancestors]);
+    const trailing = trailingCitationRefs(html, elementEnd, attr);
+    const refs = unique([...own, ...ancestors, ...trailing]);
     if (refs.length === 0 || !refs.some(resolve)) return true;
   }
   return false;
@@ -441,6 +479,31 @@ function matchingClose(html: string, name: string, from: number): number | undef
     }
   }
   return undefined;
+}
+
+function trailingCitationRefs(html: string, from: number, attr: "data-evidence-ref" | "data-media-ref"): string[] {
+  const refs: string[] = [];
+  let pos = from;
+  const skip = /[\s\u3000（）()[\]【】、,，:：;；]/;
+  while (pos < html.length) {
+    while (pos < html.length && skip.test(html[pos]!)) pos += 1;
+    if (html[pos] !== "<") break;
+    const tagEnd = html.indexOf(">", pos);
+    if (tagEnd < 0) break;
+    const open = html.slice(pos, tagEnd + 1);
+    if (open.startsWith("</")) break;
+    const name = open.match(/^<([a-zA-Z][\w:-]*)/)?.[1]?.toLowerCase();
+    if (name !== "a" && name !== "img") break;
+    const hits = [...open.matchAll(new RegExp(`\\b${attr}\\s*=\\s*(["'])([^"']+)\\1`, "gi"))].map((hit) => hit[2] ?? "").filter(Boolean);
+    if (hits.length === 0) break;
+    refs.push(...hits);
+    if (name === "img" || open.endsWith("/>") || VOID_TAGS.has(name)) {
+      pos = tagEnd + 1;
+      continue;
+    }
+    pos = matchingClose(html, name, tagEnd + 1) ?? tagEnd + 1;
+  }
+  return unique(refs);
 }
 
 function ancestorAttribute(html: string, pos: number, attr: string): string[] {
@@ -471,6 +534,25 @@ function ancestorAttribute(html: string, pos: number, attr: string): string[] {
     if (hit?.[2]) refs.push(hit[2]);
   }
   return refs;
+}
+
+function unpairedShareCardImages(html: string, media: readonly ComparisonMediaRecord[]): string | undefined {
+  const face = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "key-differences")}${extractInner(html, "data-agent-zone", "visual-evidence")}`;
+  const imgs = [...face.matchAll(/<img\b[^>]*>/gi)].map((match) => match[0] ?? "");
+  if (imgs.length === 0) return undefined;
+  const byShort = new Map(media.filter((item) => item.shortRef).map((item) => [item.shortRef as string, item]));
+  const byHref = new Map(media.map((item) => [item.reportHref.replaceAll("\\", "/"), item]));
+  const sides = new Set<"baseline" | "candidate">();
+  for (const img of imgs) {
+    const ref = img.match(/\bdata-media-ref=["']([^"']+)["']/i)?.[1];
+    const src = img.match(/\bsrc=["']([^"']+)["']/i)?.[1]?.replaceAll("\\", "/").replace(/^\.\//, "");
+    const record = (ref ? byShort.get(ref) : undefined)
+      ?? (src ? byHref.get(src) : undefined);
+    if (record?.side === "baseline" || record?.side === "candidate") sides.add(record.side);
+  }
+  if (sides.size === 2) return undefined;
+  if (sides.size === 0) return undefined;
+  return "Share card images must pair a historical final with a candidate final; one-sided previews are not a comparison.";
 }
 
 function citedMediaAllUnresolved(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {

@@ -35,7 +35,7 @@ export async function materializeComparisonMedia(input: {
         : undefined,
     ]);
     const ext = extname(link.inspectPath) || extensionFor(link.mediaType);
-    const fileName = `${id}${ext}`;
+    const fileName = comparisonMediaFileName(id, ext);
     const reportHref = `media/${fileName}`;
     const available = source !== undefined;
     if (source) await copyFile(source, join(mediaRoot, fileName));
@@ -67,6 +67,12 @@ async function firstExistingFile(paths: readonly (string | undefined)[]): Promis
 function mediaId(link: ComparisonLinkRecord): string {
   const raw = (link.artifactId ?? link.inspectPath).replaceAll("\\", "/");
   return raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+/, "").slice(0, 80) || "image";
+}
+
+export function comparisonMediaFileName(id: string, ext: string): string {
+  const suffix = ext.startsWith(".") ? ext : `.${ext}`;
+  if (id.toLowerCase().endsWith(suffix.toLowerCase())) return id;
+  return `${id}${suffix}`;
 }
 
 function extensionFor(mediaType: string | undefined): string {

@@ -13,9 +13,9 @@ Host 把指标放在关键差异之前，列名写 Baseline / Candidate，标题
 
 历史模型 ID 来自 `taskCase.sourceRuntimeEvidence.model`，写入 `reportFacts.models.baseline`；候选仍用 `models.candidate`。指标列名与标题使用同一套字符串；缺失时写「历史」或「候选」，不用 Pack / harness 名。
 
-Agent 拥有 `data-agent-slot` 的 category、task、headline，以及既有 Agent 区域。headline 在对照区之后、指标之前，不在 header 内。左右栏语义固定：左为历史终稿，右为候选终稿。成对页使用 `pair-pages` 原型。Host 不匹配截图。
+Agent 拥有 `data-agent-slot` 的 category、task、headline，以及既有 Agent 区域。headline 在对照区之前、标题之后。左右栏语义固定：左为历史终稿，右为候选终稿。成对页使用 `pair-pages` 原型。Host 不匹配截图。
 
-Host 区域集合不变。DOM 中 `data-host-zone` 出现顺序仍为 style、header、metrics、cost-note、evidence、process；Agent 区插在 header 与 metrics 之间。发布校验拒绝 metrics 回到关键差异之前。
+Host 区域集合不变。DOM 中 `data-host-zone` 出现顺序仍为 style、header、metrics、cost-note、evidence、process。卡面 Agent 区与折叠审计区的划分见 [十秒比较卡](./2026-09-15-comparison-ten-second-card.md)。发布校验拒绝 metrics 回到关键差异之前。
 
 ## 备选方案
 

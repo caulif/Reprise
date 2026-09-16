@@ -201,8 +201,12 @@ async function compareExperimentOutcome(
   }
   const events = input.store.events(input.input.runId);
   const locale = await readOperatorLocale(input.input.dataDir);
+  const comparisonModel = (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel;
   const context: ComparisonContext = {
-    ...buildComparisonContext(input.taskCase, [record], [inspection], { dataDir: input.input.dataDir }),
+    ...buildComparisonContext(input.taskCase, [record], [inspection], {
+      dataDir: input.input.dataDir,
+      comparisonModel,
+    }),
     attemptId,
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };

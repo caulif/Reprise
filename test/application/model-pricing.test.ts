@@ -42,10 +42,21 @@ test("cleanModelIdForPricing matches cc-switch slash colon at-sign and 1m rules"
 test("snapshot catalog validates and does not map sibling SKUs", () => {
   const catalog = loadPricingCatalog();
   assert.equal(catalog.version, MODEL_PRICING_TABLE_VERSION);
-  assert.equal(MODEL_PRICING_TABLE_VERSION, "2026-09-14-models-dev-snapshot");
+  assert.equal(MODEL_PRICING_TABLE_VERSION, "2026-09-16-models-dev-snapshot");
   assert.equal(resolveModelPricing("gpt-5.5").kind, "hit");
   assert.equal(resolveModelPricing("MiniMax-M3").kind, "hit");
   assert.equal(resolveModelPricing("gpt-5.6-terra").kind, "hit");
+  assert.equal(resolveModelPricing("gpt-5.6-sol").kind, "hit");
+  assert.equal(resolveModelPricing("gpt-6-astra").kind, "hit");
+  assert.equal(resolveModelPricing("deepseek-flash").kind, "hit");
+  const terra = resolveModelPricing("gpt-5.6-terra");
+  const sol = resolveModelPricing("gpt-5.6-sol");
+  assert.equal(terra.kind, "hit");
+  assert.equal(sol.kind, "hit");
+  if (terra.kind === "hit" && sol.kind === "hit") {
+    assert.notDeepEqual(terra.rates, sol.rates);
+  }
+  assert.equal(resolveModelPricing("gpt-5.6-luna").kind, "miss");
   const five = resolveModelPricing("gpt-5");
   const fiveFive = resolveModelPricing("gpt-5.5");
   assert.equal(five.kind, "hit");
@@ -57,6 +68,52 @@ test("snapshot catalog validates and does not map sibling SKUs", () => {
   assert.equal(resolveModelPricing("claude-sonnet-4-5-20250929").kind, "miss");
   assert.equal(lookupModelPricing("claude-sonnet-4.5")?.input, 3);
   assert.equal(lookupModelPricing("gpt-5.2-codex")?.input, 1.75);
+});
+
+test("gpt-6-astra hits its own snapshot row and not terra or sol", () => {
+  const astra = resolveModelPricing("gpt-6-astra");
+  const terra = resolveModelPricing("gpt-5.6-terra");
+  const sol = resolveModelPricing("gpt-5.6-sol");
+  assert.equal(astra.kind, "hit");
+  assert.equal(terra.kind, "hit");
+  assert.equal(sol.kind, "hit");
+  if (astra.kind === "hit" && terra.kind === "hit" && sol.kind === "hit") {
+    assert.equal(astra.rates.input, 10);
+    assert.equal(astra.rates.output, 50);
+    assert.equal(astra.rates.cacheRead, 1);
+    assert.equal(astra.rates.cacheCreation, 12.5);
+    assert.notDeepEqual(astra.rates, terra.rates);
+    assert.notDeepEqual(astra.rates, sol.rates);
+  }
+  assert.equal(resolveModelPricing("gpt-6-luna").kind, "miss");
+});
+
+test("bracket 1m suffix uses the same catalog row as the cleaned id", () => {
+  const flash = resolveModelPricing("deepseek-flash");
+  const flash1m = resolveModelPricing("deepseek-flash[1m]");
+  const prefixed = resolveModelPricing("deepseek/deepseek-flash[1m]");
+  const astra = resolveModelPricing("gpt-6-astra");
+  const astra1m = resolveModelPricing("gpt-6-astra[1m]");
+  const terra = resolveModelPricing("gpt-5.6-terra");
+  const terra1m = resolveModelPricing("gpt-5.6-terra[1m]");
+  assert.equal(flash.kind, "hit");
+  assert.equal(flash1m.kind, "hit");
+  assert.equal(prefixed.kind, "hit");
+  assert.equal(astra.kind, "hit");
+  assert.equal(astra1m.kind, "hit");
+  assert.equal(terra.kind, "hit");
+  assert.equal(terra1m.kind, "hit");
+  if (flash.kind === "hit" && flash1m.kind === "hit" && prefixed.kind === "hit") {
+    assert.deepEqual(flash1m.rates, flash.rates);
+    assert.deepEqual(prefixed.rates, flash.rates);
+    assert.equal(flash.modelId, "deepseek-v4-flash");
+  }
+  if (astra.kind === "hit" && astra1m.kind === "hit") {
+    assert.deepEqual(astra1m.rates, astra.rates);
+  }
+  if (terra.kind === "hit" && terra1m.kind === "hit") {
+    assert.deepEqual(terra1m.rates, terra.rates);
+  }
 });
 
 test("slash-prefixed DeepSeek id hits the flash snapshot row", () => {
