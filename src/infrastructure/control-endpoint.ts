@@ -1,7 +1,6 @@
 import { chmod, mkdir, unlink } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import {
   CONTROL_CLIENT_TIMEOUT_MS,
@@ -18,13 +17,15 @@ export function controlIpcDir(dataDir: string, ownerInstanceId: string): string 
   return join(dataDir, "ipc", ownerInstanceId);
 }
 
-/** Darwin `sockaddr_un.sun_path` is 104 bytes; deep mkdtemp paths truncate and collide. */
+/** Darwin `sockaddr_un.sun_path` is 104 bytes; deep mkdtemp and `os.tmpdir()` `/var/folders` paths truncate. */
 export const UNIX_CONTROL_SOCK_MAX = 96;
 
-export function controlUnixSocketPath(ownerInstanceId: string, tmp = tmpdir()): string {
+export function controlUnixSocketPath(ownerInstanceId: string, tmp = "/tmp"): string {
   const id = ownerInstanceId.replace(/^own-/, "").replace(/[^A-Za-z0-9-]/g, "");
-  const candidates = [join(tmp, `${id}.sock`), join("/tmp", `${id}.sock`), join("/tmp", `${id.slice(-12)}.sock`)];
-  return candidates.find((path) => path.length <= UNIX_CONTROL_SOCK_MAX) ?? join("/tmp", `${id.slice(-12)}.sock`);
+  const compact = `rp-${id.replace(/-/g, "").slice(0, 24)}`;
+  const preferred = posix.join(tmp, `${compact}.sock`);
+  if (preferred.length <= UNIX_CONTROL_SOCK_MAX) return preferred;
+  return posix.join("/tmp", `${compact.slice(-12)}.sock`);
 }
 
 export function controlEndpointFor(
@@ -48,7 +49,10 @@ export async function listenControlEndpoint(input: {
       if (error.code !== "ENOENT") throw error;
     });
   }
+  const connections = new Set<Socket>();
   const server = createServer((socket) => {
+    connections.add(socket);
+    socket.once("close", () => connections.delete(socket));
     void serveSocket(socket, input.onRequest);
   });
   await bindEndpoint(server, input.endpoint);
@@ -56,9 +60,7 @@ export async function listenControlEndpoint(input: {
   if (input.endpoint.kind === "unix") await chmodQuiet(input.endpoint.path, 0o700);
   return {
     close: async () => {
-      await new Promise<void>((resolveClose, reject) => {
-        server.close((error) => error ? reject(error) : resolveClose());
-      });
+      await closeListeningServer(server, connections);
       if (input.endpoint.kind !== "unix") return;
       await unlink(input.endpoint.path).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== "ENOENT") throw error;
@@ -91,6 +93,24 @@ export async function sendControlRequest(
     if (timer) clearTimeout(timer);
     socket.destroy();
   }
+}
+
+function closeListeningServer(server: Server, connections: Set<Socket>): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    for (const socket of connections) socket.destroy();
+    server.close((error) => {
+      // Darwin can leave a half-open unix client after cancel; the owner is retiring this endpoint.
+      void error;
+      finish();
+    });
+    setTimeout(finish, 250).unref();
+  });
 }
 
 function bindEndpoint(server: Server, endpoint: ControlEndpoint): Promise<void> {

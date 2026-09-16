@@ -12,7 +12,13 @@ import {
   registerActivity,
 } from "../../src/application/experiment-activity.js";
 import { requestCancel } from "../../src/application/experiment-cancel.js";
-import { sendControlRequest, controlIpcDir, controlEndpointFor } from "../../src/infrastructure/control-endpoint.js";
+import {
+  sendControlRequest,
+  controlIpcDir,
+  controlEndpointFor,
+  controlUnixSocketPath,
+  UNIX_CONTROL_SOCK_MAX,
+} from "../../src/infrastructure/control-endpoint.js";
 import { listControlRecords, writeControlFinished, experimentRootFor } from "../../src/infrastructure/control-store.js";
 import { runCli } from "../../src/cli/main.js";
 
@@ -41,9 +47,12 @@ test("unix control socket path fits Darwin sockaddr_un", () => {
   );
   const nested = controlEndpointFor(owner, deepIpc, "darwin");
   assert.equal(nested.kind, "unix");
-  assert.ok(nested.path.length <= 96, nested.path);
-  assert.doesNotMatch(nested.path, /reprise-recovery-readiness/);
-  assert.ok(join(deepIpc, "sock").length > 96);
+  assert.ok(nested.path.length <= UNIX_CONTROL_SOCK_MAX, nested.path);
+  assert.equal(nested.path, controlUnixSocketPath(owner));
+  assert.match(nested.path, /^\/tmp\/rp-[0-9a-z]{1,24}\.sock$/);
+  assert.doesNotMatch(nested.path, /var\/folders|reprise-recovery-readiness/);
+  assert.ok(join(deepIpc, "sock").length > UNIX_CONTROL_SOCK_MAX);
+  assert.ok(join("/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T", `${owner}.sock`).length > 80);
 });
 
 test("two processes cancel prepare, run, and compare without touching writer.lock", async (t) => {

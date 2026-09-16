@@ -7,7 +7,7 @@
 
 GitHub Windows runner 上 `os.tmpdir()` / `mkdtemp` 常给出 `C:\Users\RUNNER~1\...`，PowerShell 与 `git rev-parse --show-toplevel` 给出 `C:\Users\runneradmin\...`。`sameFsPath` 只做记录路径的斜杠与大小写归一，把同一目录判成不同路径。Recovery 因此把未出生的 Git 仓当成非仓库，也不挂 `artifact:historical-commit`。TUI 帧基线里的 `C:\user\...` 与 CI 生成的 `RUNNER~1` 只差路径拼写和列宽。
 
-`git cat-file -e HASH^{commit}` 与 `rev-parse HASH^{commit}` / `HASH^` 在部分 Windows Git 包装下会丢掉 `^`。shell_exec 只在 Windows 把非零退出当结果返回，POSIX 直接抛错，覆盖率 lane 无法观察 `exitCode`。`runProcess`、CandidateRun cleanup、control 客户端超时与 `AbortSignal.timeout()` 的 `unref()` 后，事件循环可在超时触发前结束。macOS 上 `/var` 与 `/private/var` 是同一目录的两种拼写，catalog id map 与 `process.cwd()` 字面比较会失败。Darwin `sockaddr_un.sun_path` 只有 104 字节；把 sock 放在深层 mkdtemp 下会截断并 `EADDRINUSE`。Unix control socket 改走短路径（`tmpdir`/`/tmp` + owner id）。
+`git cat-file -e HASH^{commit}` 与 `rev-parse HASH^{commit}` / `HASH^` 在部分 Windows Git 包装下会丢掉 `^`。shell_exec 只在 Windows 把非零退出当结果返回，POSIX 直接抛错，覆盖率 lane 无法观察 `exitCode`。`runProcess`、CandidateRun cleanup、control 客户端超时与 `AbortSignal.timeout()` 的 `unref()` 后，事件循环可在超时触发前结束。macOS 上 `/var` 与 `/private/var` 是同一目录的两种拼写，catalog id map 与 `process.cwd()` 字面比较会失败。Darwin `sockaddr_un.sun_path` 只有 104 字节；把 sock 放在深层 mkdtemp 或 macOS `os.tmpdir()`（`/var/folders/.../T`）下会截断并 `EADDRINUSE`，且 `server.close()` 可能在跨进程 cancel 后挂起。Unix control socket 固定走 `/tmp/rp-*.sock`，close 时 `closeAllConnections` 并限时结束。
 
 ## 决定
 
@@ -38,4 +38,4 @@ GitHub Windows runner 上 `os.tmpdir()` / `mkdtemp` 常给出 `C:\Users\RUNNER~1
 - `git status` 刷新 index 后 source fingerprint digest 不变（忽略 `.git/`）。
 - 相对 `experimentRoot` 的 `persistPreparedScene` 不创建 `/cases`；绝对 `experiments/{id}` 根写入 `scene.json`。`EACCES mkdir /cases` 只在 win32 映射成 Windows 文件锁文案。
 - 两个 dataDir 并发 `registerActivity` 各有一条 control record，不抛 `EADDRINUSE`。
-- 深层 mkdtemp `ipcDir` 上的 unix socket 路径 ≤ 96；旧的 `join(ipcDir, "sock")` 超长。
+- 深层 mkdtemp `ipcDir` 上的 unix socket 路径 ≤ 96，且落在 `/tmp/rp-*.sock`，不含 `/var/folders`；旧的 `join(ipcDir, "sock")` 超长。

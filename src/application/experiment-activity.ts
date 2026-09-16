@@ -136,7 +136,9 @@ async function handleOwnerControlCancel(operationId: string): Promise<ControlRes
   }
   if (activity.status !== "cancel_requested") {
     activity.status = "cancel_requested";
-    void activity.cancel();
+    setImmediate(() => {
+      void activity.cancel();
+    });
   }
   return { protocolVersion: CONTROL_PROTOCOL_VERSION, status: "accepted", operationId, knownState: "cancel_requested" };
 }
