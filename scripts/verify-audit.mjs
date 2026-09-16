@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execPath } from "node:process";
+import { resolveNpmCliJs } from "./npm-cli.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -17,7 +18,7 @@ export function auditExitCodeFromReport(report) {
 }
 
 function npmCli() {
-  return join(dirname(execPath), "node_modules", "npm", "bin", "npm-cli.js");
+  return resolveNpmCliJs(execPath);
 }
 
 export function parseAuditStdout(stdout, status) {

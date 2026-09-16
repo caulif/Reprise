@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execPath } from "node:process";
+import { resolveNpmCliJs } from "./npm-cli.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ALLOWED = [
@@ -43,7 +44,7 @@ export function checkRequiredPackedPaths(paths, options = {}) {
 }
 
 function npmCli() {
-  return join(dirname(execPath), "node_modules", "npm", "bin", "npm-cli.js");
+  return resolveNpmCliJs(execPath);
 }
 
 function readBinTarget() {

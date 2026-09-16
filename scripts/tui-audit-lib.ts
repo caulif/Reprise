@@ -1,9 +1,43 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { realpathSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export function toLf(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+const WINDOWS_TEMP = /[A-Za-z]:\\Users\\[^\\\s│]+\\AppData\\Local\\Temp/gi;
+const WINDOWS_HOME = /[A-Za-z]:\\Users\\[^\\\s│]+/gi;
+
+function trimTrailingBoxPad(line: string): string {
+  return line.replace(/[ \t]+│[ \t]*$/, ' │');
+}
+
+function pathForms(value: string): string[] {
+  const forms = [value, value.replaceAll('/', '\\'), value.replaceAll('\\', '/')];
+  try {
+    const real = realpathSync(value);
+    forms.push(real, real.replaceAll('/', '\\'), real.replaceAll('\\', '/'));
+  } catch {
+    // display-only prefixes may not exist on disk
+  }
+  return [...new Set(forms.filter(Boolean))];
+}
+
+/** Collapse host temp/home spellings (8.3 vs long) and right-box padding before frame compare. */
+export function canonicalizeAuditFrame(text: string, aliases: ReadonlyArray<readonly [string, string]> = []): string {
+  let next = toLf(text);
+  const pairs: { from: string; to: string }[] = [];
+  for (const [from, to] of aliases) {
+    for (const form of pathForms(from)) pairs.push({ from: form, to });
+  }
+  for (const form of pathForms(homedir())) pairs.push({ from: form, to: String.raw`C:\user` });
+  for (const form of pathForms(tmpdir())) pairs.push({ from: form, to: String.raw`C:\user\AppData\Local\Temp` });
+  pairs.sort((left, right) => right.from.length - left.from.length);
+  for (const { from, to } of pairs) next = next.split(from).join(to);
+  next = next.replace(WINDOWS_TEMP, String.raw`C:\user\AppData\Local\Temp`).replace(WINDOWS_HOME, String.raw`C:\user`);
+  return next.split('\n').map(trimTrailingBoxPad).join('\n');
 }
 
 function firstLineDiff(expected: string, actual: string): { line: number; expected: string | undefined; actual: string | undefined } | undefined {
@@ -30,8 +64,8 @@ export async function compareFrames(generated: string, baseline: string): Promis
   }
   for (const name of generatedFiles) {
     if (!baselineFiles.has(name)) continue;
-    const expected = toLf(await readFile(join(baseline, name), 'utf8'));
-    const actual = toLf(await readFile(join(generated, name), 'utf8'));
+    const expected = canonicalizeAuditFrame(await readFile(join(baseline, name), 'utf8'));
+    const actual = canonicalizeAuditFrame(await readFile(join(generated, name), 'utf8'));
     if (expected === actual) continue;
     const diff = firstLineDiff(expected, actual);
     stale.push(diff
@@ -44,22 +78,31 @@ export async function compareFrames(generated: string, baseline: string): Promis
 
 export async function selfTestCompareFrames(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'reprise-frame-self-test-'));
-  const generated = join(root, 'generated');
-  const baseline = join(root, 'baseline');
-  await mkdir(generated);
-  await mkdir(baseline);
-  await writeFile(join(generated, 'probe.txt'), 'generated\n', 'utf8');
-  await writeFile(join(baseline, 'probe.txt'), 'baseline\n', 'utf8');
   try {
-    await compareFrames(generated, baseline);
-    throw new Error('compareFrames accepted a mismatched frame');
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('accepted a mismatched')) throw error;
-    if (!(error instanceof Error) || !error.message.includes('TUI frames are stale')) throw error;
+    const generated = join(root, 'generated');
+    const baseline = join(root, 'baseline');
+    await mkdir(generated);
+    await mkdir(baseline);
+    await writeFile(join(generated, 'probe.txt'), 'generated\n', 'utf8');
+    await writeFile(join(baseline, 'probe.txt'), 'baseline\n', 'utf8');
+    try {
+      await compareFrames(generated, baseline);
+      throw new Error('compareFrames accepted a mismatched frame');
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('accepted a mismatched')) throw error;
+      if (!(error instanceof Error) || !error.message.includes('TUI frames are stale')) throw error;
+    }
+    const tempGenerated = join(root, 'temp-generated');
+    const tempBaseline = join(root, 'temp-baseline');
+    await mkdir(tempGenerated);
+    await mkdir(tempBaseline);
+    await writeFile(join(tempGenerated, 'home.txt'), String.raw`│ C:\Users\RUNNER~1\AppData\Local\Temp\foo    │` + '\n', 'utf8');
+    await writeFile(join(tempBaseline, 'home.txt'), String.raw`│ C:\user\AppData\Local\Temp\foo │` + '\n', 'utf8');
+    await compareFrames(tempGenerated, tempBaseline);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-  console.log('tui-visual-audit self-test: mismatched frames are rejected');
+  console.log('tui-visual-audit self-test: mismatched frames are rejected; 8.3 temp paths compare equal');
 }
 
 export function mockTui(rowsOrTerminal?: number | { rows: number; columns: number }): {

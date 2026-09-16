@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { IntakeTui } from '../dist/src/tui/intake-app.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
-import { compareFrames, mockTui, pageHtml, selfTestCompareFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
+import { canonicalizeAuditFrame, compareFrames, mockTui, pageHtml, selfTestCompareFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
 Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
 process.env.TERM = process.env.TERM && process.env.TERM !== 'dumb' ? process.env.TERM : 'xterm-256color';
@@ -65,12 +65,12 @@ async function main() {
     ...extra,
   });
 
-  stabilize = (text) => {
-    const posix = root.replaceAll('\\', '/');
-    const win = root.replaceAll('/', '\\');
-    const cwd = process.cwd();
-    const home = homedir();
-    return text
+  const posix = root.replaceAll('\\', '/');
+  const win = root.replaceAll('/', '\\');
+  const cwd = process.cwd();
+  const home = homedir();
+  stabilize = (text) => canonicalizeAuditFrame(
+    text
       .replace(/\u001b\[[0-9;]*m/g, '')
       .split(pathToFileURL(root).href).join('file:///TMP')
       .split(win).join('TMP')
@@ -79,8 +79,9 @@ async function main() {
       .split(cwd.replaceAll('\\', '/')).join(DISPLAY_CWD)
       .split(home.replaceAll('/', '\\')).join('C:\\user')
       .split(home.replaceAll('\\', '/')).join('C:/user')
-      .replace(/reprise-tui-audit-[A-Za-z0-9]+/g, 'reprise-tui-audit-TMP');
-  };
+      .replace(/reprise-tui-audit-[A-Za-z0-9]+/g, 'reprise-tui-audit-TMP'),
+    [[root, 'TMP'], [cwd, DISPLAY_CWD], [home, 'C:\\user']],
+  );
   await saveHarnessModelConfig(join(root, 'data'), defaultHarnessModelConfig());
   await writeFile(join(sessionsRoot, 'rollout-session-1.jsonl'), [
     JSON.stringify({ timestamp: '2026-08-11T00:00:00.000Z', type: 'session_meta', payload: { id: 'session-1', cwd: 'C:/source', cli_version: '0.1.0' } }),

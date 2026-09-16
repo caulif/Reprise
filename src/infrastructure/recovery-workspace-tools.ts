@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { writeAtomic } from "../core/identity.js";
 import { asPosixPath, isFsAbsolute, pathContainedBy, relativeInside, stripWindowsExtendedPrefix } from "../core/paths.js";
@@ -487,7 +487,7 @@ function runShell(
     args: windows ? invocation!.args : portableShell!.args,
     cwd: windows ? invocation!.spawnCwd : root,
     env: { ...sanitizedEnvironment(home), ...options.shellEnv, ...(windows ? invocation!.extraEnv : {}) },
-    allowNonzeroExit: windows,
+    allowNonzeroExit: true,
     killTree: true,
     signal,
     timeoutMs,
@@ -715,7 +715,7 @@ function shellExecDescription(unrestrictedRead: boolean | undefined): string {
 }
 
 function workspaceRelative(input: string): string | { root: true } | undefined {
-  if (isAbsolute(input)) return undefined;
+  if (isFsAbsolute(input)) return undefined;
   const slash = input.replaceAll("\\", "/");
   if (slash.includes("\\")) return undefined;
   if (slash === "" || slash === "." || slash === "./") return { root: true };

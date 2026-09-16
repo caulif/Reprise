@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { resolveNpmCliJs, selfTestNpmCli } from './npm-cli.mjs';
 
 const GATES = [
   { id: 'build', label: 'build', command: 'npm', args: ['run', 'build'] },
@@ -89,13 +90,9 @@ function formatFailure(gate, result, runtime) {
   return lines.join('\n');
 }
 
-function npmCliJs() {
-  return join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-}
-
 function resolveLaunch(gate) {
   if (gate.command === 'npm') {
-    return { command: process.execPath, args: [npmCliJs(), ...(gate.args ?? [])] };
+    return { command: process.execPath, args: [resolveNpmCliJs(), ...(gate.args ?? [])] };
   }
   return { command: gate.command, args: gate.args ?? [] };
 }
@@ -159,11 +156,12 @@ async function selfTest() {
   if (!spaceResult.ok) {
     throw new Error('带空格参数在 shell:false 下应当原样传递');
   }
+  selfTestNpmCli();
+  const npmResult = await runCommand({ id: 'self-test-npm', label: 'npm via npm-cli.js', command: 'npm', args: ['-v'] }, { stdio: 'ignore' });
+  if (!npmResult.ok) {
+    throw new Error('node npm-cli.js + shell:false 应当能运行');
+  }
   if (process.platform === 'win32') {
-    const npmResult = await runCommand({ id: 'self-test-npm', label: 'npm via npm-cli.js', command: 'npm', args: ['-v'] }, { stdio: 'ignore' });
-    if (!npmResult.ok) {
-      throw new Error('Windows 下 node npm-cli.js + shell:false 应当能运行');
-    }
     const dir = join(tmpdir(), `reprise gate ${process.pid}`);
     mkdirSync(dir, { recursive: true });
     const shim = join(dir, 'ok.cmd');

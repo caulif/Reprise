@@ -14,7 +14,7 @@
 
 ## 不变量
 
-操作路径使用宿主路径语义并经过受控目录检查；持久化的历史路径身份与本机打开路径分开，见[路径比较决策](../decisions/accepted/2026-08-14-host-independent-recorded-paths.md)。大小写、链接、文件锁与权限不能由 OS 名称推断成功。模型可见平台信息必须在事件中可复原。
+操作路径使用宿主路径语义并经过受控目录检查；持久化的历史路径身份与本机打开路径分开，见[路径比较决策](../decisions/accepted/2026-08-14-host-independent-recorded-paths.md)。活文件系统上的 8.3 短名与长路径由 [realpath 比较](../decisions/accepted/2026-09-16-live-fs-path-identity.md) 判定为同一文件。大小写、链接、文件锁与权限不能由 OS 名称推断成功。模型可见平台信息必须在事件中可复原。
 
 结构化 Runtime 协议优先，不解析原生 ANSI 画面决定投递或 turn settlement。平台基础设施不理解具体产品业务，不因为 shell 可执行就授予工具额外权限。取消请求、进程结束与残留资源事实分开。
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { asPosixPath } from '../../src/core/paths.js';
 import { Value } from '@sinclair/typebox/value';
 import { TaskCaseSchema, type EventEnvelope } from '../../src/core/schema.js';
 import { resolvedRecoveryFacts } from '../../src/infrastructure/recovery-tools.js';
@@ -229,7 +230,10 @@ test('Claude discovery builds the complete catalog without requiring a continuat
 });
 
 test('Claude default root honors an explicit config directory without reading credentials', () => {
-  assert.equal(defaultClaudeSessionsRoot('C:\\Users\\demo\\.claude-alt'), 'C:\\Users\\demo\\.claude-alt\\projects');
+  assert.equal(
+    asPosixPath(defaultClaudeSessionsRoot('C:\\Users\\demo\\.claude-alt')),
+    'C:/Users/demo/.claude-alt/projects',
+  );
 });
 
 test('Claude discovery keeps a session whose cwd is excluded and still rejects incomplete freeze', async (t) => {

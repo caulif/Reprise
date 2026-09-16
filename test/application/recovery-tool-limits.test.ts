@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
+import { hostShellDelete } from "../host-shell.js";
 import { recoveryToolFailureCategory } from "../../src/application/recovery/staging.js";
 
 async function workspace(): Promise<string> {
@@ -26,7 +27,7 @@ test("workspace tools do not cap investigation or destructive shell_exec calls",
   for (let index = 0; index < 17; index += 1) {
     const path = `scratch-${index}.txt`;
     await writeFile(join(root, path), "x\n");
-    await shell.execute({ command: `Remove-Item -LiteralPath ${path}` }, signal);
+    await shell.execute({ command: hostShellDelete(path) }, signal);
     await list.execute({}, signal);
   }
   await report.execute({ path: "recovery.md", content: "# Recovery\n" }, signal);
