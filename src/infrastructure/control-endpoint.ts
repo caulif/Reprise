@@ -1,5 +1,6 @@
 import { chmod, mkdir, unlink } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import {
@@ -17,13 +18,22 @@ export function controlIpcDir(dataDir: string, ownerInstanceId: string): string 
   return join(dataDir, "ipc", ownerInstanceId);
 }
 
+/** Darwin `sockaddr_un.sun_path` is 104 bytes; deep mkdtemp paths truncate and collide. */
+export const UNIX_CONTROL_SOCK_MAX = 96;
+
+export function controlUnixSocketPath(ownerInstanceId: string, tmp = tmpdir()): string {
+  const id = ownerInstanceId.replace(/^own-/, "").replace(/[^A-Za-z0-9-]/g, "");
+  const candidates = [join(tmp, `${id}.sock`), join("/tmp", `${id}.sock`), join("/tmp", `${id.slice(-12)}.sock`)];
+  return candidates.find((path) => path.length <= UNIX_CONTROL_SOCK_MAX) ?? join("/tmp", `${id.slice(-12)}.sock`);
+}
+
 export function controlEndpointFor(
   ownerInstanceId: string,
-  ipcDir: string,
+  _ipcDir: string,
   platform: NodeJS.Platform = process.platform,
 ): ControlEndpoint {
   if (platform === "win32") return { kind: "pipe", name: `\\\\.\\pipe\\reprise-${ownerInstanceId}` };
-  return { kind: "unix", path: join(ipcDir, "sock") };
+  return { kind: "unix", path: controlUnixSocketPath(ownerInstanceId) };
 }
 
 export async function listenControlEndpoint(input: {
@@ -45,9 +55,15 @@ export async function listenControlEndpoint(input: {
   server.unref();
   if (input.endpoint.kind === "unix") await chmodQuiet(input.endpoint.path, 0o700);
   return {
-    close: () => new Promise<void>((resolveClose, reject) => {
-      server.close((error) => error ? reject(error) : resolveClose());
-    }),
+    close: async () => {
+      await new Promise<void>((resolveClose, reject) => {
+        server.close((error) => error ? reject(error) : resolveClose());
+      });
+      if (input.endpoint.kind !== "unix") return;
+      await unlink(input.endpoint.path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    },
   };
 }
 

@@ -12,7 +12,7 @@ import {
   registerActivity,
 } from "../../src/application/experiment-activity.js";
 import { requestCancel } from "../../src/application/experiment-cancel.js";
-import { sendControlRequest, controlIpcDir } from "../../src/infrastructure/control-endpoint.js";
+import { sendControlRequest, controlIpcDir, controlEndpointFor } from "../../src/infrastructure/control-endpoint.js";
 import { listControlRecords, writeControlFinished, experimentRootFor } from "../../src/infrastructure/control-store.js";
 import { runCli } from "../../src/cli/main.js";
 
@@ -27,6 +27,23 @@ test("control endpoint is a local pipe or unix socket, never a TCP port", () => 
   assert.doesNotMatch(source, /listen\(\s*\d+/);
   assert.doesNotMatch(source, /createServer\(\s*\{[^}]*port/);
   assert.doesNotMatch(source, /timer\.unref/);
+  assert.doesNotMatch(source, /join\(ipcDir, ["']sock["']\)/);
+});
+
+test("unix control socket path fits Darwin sockaddr_un", () => {
+  const owner = `own-${"a".repeat(36)}`;
+  const deepIpc = join(
+    "/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T",
+    "reprise-recovery-readiness-no-progress-XXXXXX",
+    "data",
+    "ipc",
+    owner,
+  );
+  const nested = controlEndpointFor(owner, deepIpc, "darwin");
+  assert.equal(nested.kind, "unix");
+  assert.ok(nested.path.length <= 96, nested.path);
+  assert.doesNotMatch(nested.path, /reprise-recovery-readiness/);
+  assert.ok(join(deepIpc, "sock").length > 96);
 });
 
 test("two processes cancel prepare, run, and compare without touching writer.lock", async (t) => {
