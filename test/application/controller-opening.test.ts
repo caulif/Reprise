@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ControllerAgent, controllerMessageHasHostTerms, openingSendCitesUnseenCandidateAdvice, type SteeringContext } from '../../src/agents/controller-agent.js';
+import { ControllerAgent, type SteeringContext } from '../../src/agents/controller-agent.js';
 import { PiAgentHost, type PiTextCaller } from '../../src/infrastructure/agent/host.js';
 
 function context(): SteeringContext {
@@ -60,74 +60,25 @@ test('Controller opening rejects done and requires created', async () => {
   );
 });
 
-test('Controller send.message rejects Host terms and keeps ordinary user language', async () => {
-  const leaks = [
-    'Set briefingRoot first.',
-    'The SteeringContext is wrong.',
-    'CandidateRun is waiting.',
-    'Open controller-briefing next.',
-    'Read current-user-view.md',
-    'Check THIS-TURN.txt',
-    'Ask AgentHost.',
-    'This TaskCase is done.',
-    'Set allowModelText please.',
-    'Use evidenceCatalog.',
-    'Follow outputContract.',
-    'Stay in data-host-zone.',
-    'Leave data-agent-zone.',
-    'See recovery-work.',
-    'Please read INDEX.md',
-  ];
-  for (const message of leaks) {
-    assert.equal(controllerMessageHasHostTerms(message), true, message);
-  }
-  const ordinary = [
-    'please continue',
-    'look at README.md',
-    'run the tests',
-    'the host will review this tomorrow',
-    'dump the json',
-    'the index of sections is incomplete',
-    'please look at src/app.ts',
-  ];
-  for (const message of ordinary) {
-    assert.equal(controllerMessageHasHostTerms(message), false, message);
-  }
+test('Controller send.message no longer rejects Host-term wording', async () => {
   const leaked = new ControllerAgent({
-    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: 'Read current-user-view.md', intent: 'continue' })])),
+    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: 'Please read INDEX.md', intent: 'continue' })])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
-  const rejected = await leaked.decide(context());
-  assert.equal(rejected.status, 'failed');
-  if (rejected.status === 'failed') assert.match(rejected.failure.message, /message contains a Host term/);
+  const accepted = await leaked.decide(context());
+  assert.equal(accepted.status, 'completed');
+  if (accepted.status === 'completed') assert.equal(accepted.value.type === 'send' ? accepted.value.message : '', 'Please read INDEX.md');
 });
 
-test('opening send that cites unseen candidate advice is rejected', async () => {
+test('opening send that cites unseen candidate advice is no longer a runtime rejection', async () => {
   const leak = '按你建议的优先级来，先做第 1 和第 2 项。';
-  assert.equal(openingSendCitesUnseenCandidateAdvice(leak), true);
-  assert.equal(openingSendCitesUnseenCandidateAdvice('如何优化这个 blog 的 SEO，给出思路，先不修改。'), false);
   const leaked = new ControllerAgent({
     host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: leak, intent: 'continue' })])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
-  const rejected = await leaked.decide(context());
-  assert.equal(rejected.status, 'failed');
-  if (rejected.status === 'failed') assert.match(rejected.failure.message, /opening message cites candidate advice that does not exist yet/);
-  const afterTurn = new ControllerAgent({
-    host: new PiAgentHost(caller([JSON.stringify({ type: 'send', message: leak, intent: 'continue' })])),
-    timeoutMs: 50,
-    maxRepairAttempts: 0,
-  });
-  const allowed = await afterTurn.decide({
-    ...context(),
-    runState: 'awaiting_controller',
-    phase: 'steering',
-    promptContent: 'phase=steering\n',
-    current: { summary: 'Candidate listed priorities.', evidenceRefs: [] },
-    trajectory: { summary: 'Settled turns: 1.', evidenceRefs: [] },
-    budget: { decisionsUsed: 1, decisionsLimit: 3 },
-  });
-  assert.equal(allowed.status, 'completed');
+  const accepted = await leaked.decide(context());
+  assert.equal(accepted.status, 'completed');
+  if (accepted.status === 'completed' && accepted.value.type === 'send') assert.equal(accepted.value.message, leak);
 });

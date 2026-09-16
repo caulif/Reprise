@@ -134,22 +134,6 @@ const OUTPUT_CONTRACT = [
 const MAX_CONTROLLER_MESSAGE_BYTES = 65_536;
 const CONTROLLER_COMPACTION = 'Preserve the user-input index path, notes/understanding.md, confirmed user goals and acceptance habits, the locations of current-user-view.md and permissions.txt, the current CandidateRun state, messages already sent, verified current artifacts and evidence refs, and the next decision. Drop tool bodies that can be reread from briefing paths. The summary is not the only remaining source of those facts.';
 const DISALLOWED_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
-const HOST_TERMS_IN_MESSAGE = new RegExp([
-  String.raw`\b(?:briefingRoot|SteeringContext|CandidateRun|controller-briefing|AgentHost|TaskCase|allowModelText|evidenceCatalog|outputContract)\b`,
-  String.raw`(?<![A-Za-z0-9_])(?:current-user-view\.md|THIS-TURN\.txt|INDEX\.md)(?![A-Za-z0-9_])`,
-  String.raw`\b(?:data-host-zone|data-agent-zone|recovery-work)\b`,
-].join('|'));
-
-export function controllerMessageHasHostTerms(message: string): boolean {
-  return HOST_TERMS_IN_MESSAGE.test(message);
-}
-
-/** Shallow opening leak: citing advice the candidate has not produced yet. */
-const OPENING_UNSEEN_CANDIDATE_ADVICE = /按你(?:上次)?(?:的)?建议|你建议的优先级|(?:follow(?:ing)?|per) your (?:last |previous )?suggest/i;
-
-export function openingSendCitesUnseenCandidateAdvice(message: string): boolean {
-  return OPENING_UNSEEN_CANDIDATE_ADVICE.test(message);
-}
 
 function ownedToolRefs(runId: string, details: unknown): string[] {
   if (!details || typeof details !== 'object') return [];
@@ -180,10 +164,6 @@ function validateControllerDecision(
   if (!decision.message.trim()) return 'message must not be blank';
   if (Buffer.byteLength(decision.message) > MAX_CONTROLLER_MESSAGE_BYTES) return `message exceeds ${MAX_CONTROLLER_MESSAGE_BYTES} bytes`;
   if (DISALLOWED_CONTROL.test(decision.message)) return 'message contains a disallowed control character';
-  if (controllerMessageHasHostTerms(decision.message)) return 'message contains a Host term';
-  if (opening && openingSendCitesUnseenCandidateAdvice(decision.message)) {
-    return 'opening message cites candidate advice that does not exist yet';
-  }
   return undefined;
 }
 
