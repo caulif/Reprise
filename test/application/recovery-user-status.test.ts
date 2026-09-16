@@ -55,7 +55,7 @@ test('user recovery status maps complete recovery, skipped links, and missing so
       },
     }),
     transcriptOk: true,
-  }), 'failed');
+  }), 'blocked');
   assert.equal(diagnosisReasonCode({
     baseline: baseline({
       match: 'observational',

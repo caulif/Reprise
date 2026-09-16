@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { Value } from "@sinclair/typebox/value";
 import { RecoveryAgentEnvelopeSchema } from "../../src/core/schema.js";
 import { RecoveryAgent, RECOVERY_TURN_PROMPTS, RECOVERY_FREEFORM_REQUEST_IDS, completedRecoveryFreeformTurns, type RecoveryContext } from "../../src/agents/recovery-agent.js";
-import { PiAgentHost, type PiTextCaller } from "../../src/infrastructure/agent/host.js";
+import { AgentHost, type ProviderAdapter } from "../../src/infrastructure/agent/host.js";
 
-function caller(responses: string[]): PiTextCaller {
+function caller(responses: string[]): ProviderAdapter {
   return {
     createSession() {
       return {
@@ -40,7 +40,7 @@ const readyEnvelope = JSON.stringify({
 test("Recovery uses three turns and only validates the final envelope", async () => {
   const appended: string[] = [];
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async ({ content }) => {
           appended.push(content);
@@ -65,7 +65,7 @@ test("Recovery uses three turns and only validates the final envelope", async ()
 
 test("Recovery accepts ready with unrelated unresolved gaps", async () => {
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost(
+    host: new AgentHost(
       caller(["ok", "ok", JSON.stringify({
         status: "ready",
         summary: "Ready for the original task.", unresolved: ["cache layout unknown"],
@@ -86,7 +86,7 @@ test("Recovery investigation and mechanical feedback reuse one Pi session", asyn
   let created = 0;
   const appended: string[] = [];
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession() {
         created += 1;
         return {
@@ -114,7 +114,7 @@ test("model request failure keeps the Session and retries remaining turns", asyn
   let created = 0;
   const appended: string[] = [];
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession() {
         created += 1;
         return {
@@ -148,7 +148,7 @@ test("failed envelope keeps the Session and does not replay completed freeform t
   const appended: string[] = [];
   const auditEvents: { type: string; role?: string; payload?: unknown }[] = [];
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession() {
         created += 1;
         return {
@@ -211,7 +211,7 @@ test("Recovery investigation restart after releasePreparation begins at the unde
   let created = 0;
   const appended: string[] = [];
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession() {
         created += 1;
         return {
@@ -238,7 +238,7 @@ test("Recovery investigation restart after releasePreparation begins at the unde
 
 test("invalid summary fails the last turn without rewriting Host text", async () => {
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost(caller(["ok", "ok", JSON.stringify({
+    host: new AgentHost(caller(["ok", "ok", JSON.stringify({
       status: "ready",
       summary: "Too long. And two sentences.",
       reportPath: "recovery.md",
@@ -256,7 +256,7 @@ test("new Session after two completed freeform turns prepends the recovery brief
   const appended: string[] = [];
   const auditEvents: { type: string; role?: string; payload?: unknown }[] = [];
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession() {
         created += 1;
         return {

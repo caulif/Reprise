@@ -472,4 +472,4 @@ export function integer(
 }
 
 
-export { recoveryTools, SOURCE_MOUNT, type RecoveryToolOptions, type RecoveryToolFilesystem, type RecoveryToolOperation } from "./recovery-workspace-tools.js";
+export { workspaceTools, SOURCE_MOUNT, type RecoveryToolOptions, type RecoveryToolFilesystem, type RecoveryToolOperation } from "./recovery-workspace-tools.js";

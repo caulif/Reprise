@@ -22,6 +22,8 @@ export {
   type RecoveryFact,
   RecoveryLifecycleAttemptSchema,
   type RecoveryLifecycleAttempt,
+  RecoveryTaskOutcomeSchema,
+  type RecoveryTaskOutcome,
   type RecoveryPlan,
   type RecoveryCandidate,
   type RecoveryCandidateGraph,
@@ -63,6 +65,7 @@ export {
   type CaseArtifactRef,
   TaskCaseSchema,
   type TaskCase,
+  FROZEN_ALLOW_MODEL_TEXT,
   CandidateSpecSchema,
   type CandidateSpec,
 } from "./schemas/task-case.js";

@@ -33,17 +33,12 @@ export type FailRecoverExperimentInput = {
   failureStage: NonNullable<EnvironmentBaseline["recovery"]>["failureStage"];
   preflightOperation: string;
   writerAcquired: boolean;
-  candidateCreated: boolean;
   recoveredPaths: string[];
   verification: "verified" | "pending_user_review" | "rejected" | "insufficient_evidence";
   forensicsCompleted: boolean;
   evidenceSourcesAttempted: number | undefined;
   evidenceSourcesAvailable: number | undefined;
-  hypothesisCount: number | undefined;
-  candidateCount: number | undefined;
-  verifierRejectionReasons: string[] | undefined;
   providerFailureRetryable: boolean | undefined;
-  pathBoundaryRejected: boolean | undefined;
   readinessResult: RecoveryReadinessResult | undefined;
   taskOutcome: NonNullable<EnvironmentBaseline["recovery"]>["taskOutcome"] | undefined;
   modelAttempts: number;
@@ -145,7 +140,6 @@ export async function failRecoverExperiment(input: FailRecoverExperimentInput): 
     failureMessage: settled.failureMessage,
     error: input.error,
     preflightOperation: input.preflightOperation,
-    verifierRejectionReasons: input.verifierRejectionReasons,
   });
   await persistRecoveryAttemptDiagnosis(
     input.experimentRoot,
@@ -177,8 +171,6 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
   const failureStage = classifyRecoveryFailureStage(
     input.failureStage ?? "preflight_failed",
     input.error,
-    input.verifierRejectionReasons,
-    input.recovery?.status === "completed" && input.candidateCreated,
   );
   let providerFailureRetryable = input.providerFailureRetryable;
   let taskOutcome = input.taskOutcome;
@@ -215,10 +207,8 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
     {},
   );
   const stateAtFailure = input.lifecycleState();
-  if (stateAtFailure === "candidate_verified")
-    input.moveRecoveryState("review_required");
-  else if (stateAtFailure !== "accepted" && stateAtFailure !== "review_required" && stateAtFailure !== "exhausted")
-    input.moveRecoveryState("exhausted");
+  if (stateAtFailure !== "accepted" && stateAtFailure !== "failed")
+    input.moveRecoveryState("failed");
   const failedAttemptsArtifact = Buffer.from(JSON.stringify({ schemaVersion: 1, state: input.lifecycleState(), terminalReason: failureStage, attempts: input.recoveryOrchestrator.attempts }), "utf8");
   await input.store.commitArtifact({ artifactId: "recovery-attempts", kind: "recovery_attempts", mediaType: "application/json", bytes: failedAttemptsArtifact, operationId: "recovery-attempts-failed-created" });
   if (failureStage === "agent_model_failed" && input.forensicsCompleted) {
@@ -228,8 +218,6 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
       operationId: "recovery-model-fallback",
       payload: {
         forensicsCompleted: true,
-        hypothesisCount: input.hypothesisCount ?? 0,
-        candidateCount: input.candidateCount ?? 0,
         modelAttempts: input.modelAttempts,
         ...([...input.toolFailureByTool.values()].reduce((total, count) => total + count, 0) > 0
           ? { toolFailureCount: [...input.toolFailureByTool.values()].reduce((total, count) => total + count, 0) }
@@ -277,7 +265,6 @@ type PersistFailedRecoveryArtifactsInput = {
   failureMessage: string;
   error: unknown;
   preflightOperation: string;
-  verifierRejectionReasons: string[] | undefined;
 };
 
 async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifactsInput): Promise<void> {
@@ -290,7 +277,6 @@ async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifa
     failureMessage,
     error,
     preflightOperation,
-    verifierRejectionReasons,
   } = input;
   await writeImmutableJson(join(experimentRoot, "recovery-validation.json"), {
     status: "failed",
@@ -298,10 +284,7 @@ async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifa
     agentInvocation: failed,
     ...(failureStage === "provider_validation_failed"
       ? {
-          validationFailureReason:
-            verifierRejectionReasons?.length
-              ? [...verifierRejectionReasons]
-              : ["provider_validation_failed"],
+          validationFailureReason: ["provider_validation_failed"],
         }
       : {}),
     ...(failureStage === "preflight_failed"
@@ -361,22 +344,13 @@ export function classifyRecoveryFailureStage(
     NonNullable<EnvironmentBaseline["recovery"]>["failureStage"]
   >,
   error: unknown,
-  verifierRejectionReasons?: readonly string[],
-  agentCompletedWithCandidate = false,
 ): NonNullable<NonNullable<EnvironmentBaseline["recovery"]>["failureStage"]> {
   if (recoveryModelRequestError(error)) return "agent_model_failed";
-  if (
-    stage === "provider_validation_failed" &&
-    verifierRejectionReasons?.length
-  )
-    return "provider_validation_failed";
   if (
     error instanceof RecoveryValidationError &&
     error.code === "source_tripwire_failed"
   )
     return "source_tripwire_failed";
-  if (stage === "provider_validation_failed" && agentCompletedWithCandidate)
-    return "provider_validation_failed";
   if (
     stage === "provider_validation_failed" &&
     !(error instanceof RecoveryValidationError) &&
@@ -426,8 +400,4 @@ function safeRecoveryFailureSummary(
     ? "Recovery agent was cancelled."
     : "Recovery agent or tool execution failed.";
 }
-
-
-
-
 

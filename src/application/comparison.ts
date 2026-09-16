@@ -75,13 +75,12 @@ export function buildComparisonContext(
     },
     candidates: runs.map((run) => ({
       runId: run.attempt.runId,
-      summary: inspectionSummary(run, byRunId.get(run.attempt.runId), taskCase.privacy.allowModelText),
       evidenceRefs: runEvidence(run),
     })),
-    telemetry: runs.map((run) => ({ runId: run.attempt.runId, summary: telemetrySummary(run, byRunId.get(run.attempt.runId)) })),
+    telemetry: runs.map((run) => ({ runId: run.attempt.runId })),
     reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay, pricing),
     artifactRefs: unique(runs.flatMap((run) => run.artifactRefs.map((ref) => `artifact:${ref.artifactId}`))),
-    allowModelText: taskCase.privacy.allowModelText,
+    allowModelText: true,
     replayScope: {
       historical: 'TaskCase transcript, baseline.finalMessage, and baseline evidenceRefs are the frozen original session. They are not this candidate\'s actions.',
       candidate: 'This replay is only the inspection, run record, host-trace.json, candidate-workspace-scope.json, and run events. changedPaths are files the candidate wrote after Host rewound the replica to the session start. Isolation paths are not a capability difference.',
@@ -117,7 +116,6 @@ export async function comparePersistedFacts(input: {
   const context: ComparisonContext = {
     ...facts,
     attemptId: input.attemptId,
-    reportShellHtml,
     ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
   };
   const result = await input.agent.compare(context, input.tools, input.audit);
@@ -303,24 +301,6 @@ function assertFacts(taskCase: TaskCase, runs: readonly RunRecord[]): void {
   }
 }
 
-function inspectionSummary(run: RunRecord, inspection: RunInspection | undefined, allowModelText: boolean): string {
-  const facts = [`task=${run.outcome.task.status}`, `termination=${run.outcome.termination.code}`];
-  if (!inspection) return `${facts.join('; ')}.`;
-  facts.push(`turns=${inspection.turns}`, `changedFiles=${inspection.changedPaths.length}`, `commands=${inspection.commands.length}`);
-  if (inspection.controllerExternalWritePaths?.length) {
-    facts.push(`externalShellWrites=${inspection.controllerExternalWritePaths.length}`);
-  }
-  if (inspection.rejectedApprovals) facts.push(`rejectedApprovals=${inspection.rejectedApprovals}`);
-  if (allowModelText && inspection.finalMessage) facts.push(`finalMessage=${inspection.finalMessage}`);
-  if (inspection.replayConditions?.length) facts.push(`hostConditions=${inspection.replayConditions.join(' | ')}`);
-  return `${facts.join('; ')}.`;
-}
-
-function telemetrySummary(run: RunRecord, inspection: RunInspection | undefined): string {
-  if (!inspection) return `Trace events ${run.trace.firstSequence}-${run.trace.lastSequence}.`;
-  return [`turns=${inspection.turns}`, inspection.wallClockMs === undefined ? undefined : `wallClockMs=${inspection.wallClockMs}`, inspection.tokenCount === undefined ? undefined : `tokens=${inspection.tokenCount}`].filter((value): value is string => Boolean(value)).join('; ');
-}
-
 function runEvidence(run: RunRecord): string[] {
   return unique([
     ...run.outcome.task.evidenceRefs,
@@ -342,7 +322,7 @@ export function comparisonOwnedObservationRefs(
 }
 
 export function briefingComparisonContext(context: ComparisonContext | ComparisonFactsContext): ComparisonFactsContext {
-  const { attemptId: _attemptId, ownedEvidenceRefs: _owned, reportShellHtml: _shell, hostZoneSnapshot: _zones, attemptRoot: _root, ...briefing } = {
+  const { attemptId: _attemptId, ownedEvidenceRefs: _owned, hostZoneSnapshot: _zones, ...briefing } = {
     attemptId: "",
     ...context,
   };

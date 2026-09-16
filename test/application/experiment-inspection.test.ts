@@ -29,7 +29,7 @@ test('latest settled turn does not reuse a previous assistant reply', async () =
   ];
   const store = { events: () => events } as unknown as ExperimentStore;
   const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
-  const observation = await inspectRun(store, record, true, 'codex');
+  const observation = await inspectRun(store, record, 'codex');
   assert.equal(observation.finalMessage, 'FIRST_REPLY');
   assert.equal(observation.turnVisibleText, undefined);
   assert.equal(observation.settlementStatus, 'failed');
@@ -47,7 +47,7 @@ test('latest settled turn prompt comes from visible_prompt, not the previous rep
   ];
   const store = { events: () => events } as unknown as ExperimentStore;
   const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
-  const observation = await inspectRun(store, record, true, 'codex');
+  const observation = await inspectRun(store, record, 'codex');
   assert.equal(observation.turnVisibleText, undefined);
   assert.equal(observation.turnPrompt, 'Approve editing README.md?');
   assert.equal(observation.settlementStatus, 'waiting_input');
@@ -61,7 +61,7 @@ test('inspectRun current summary does not inline candidate final text', async ()
   ];
   const store = { events: () => events } as unknown as ExperimentStore;
   const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
-  const observation = await inspectRun(store, record, true, 'codex');
+  const observation = await inspectRun(store, record, 'codex');
   assert.equal(observation.finalMessage, marker);
   assert.doesNotMatch(observation.currentSummary, new RegExp(marker));
   assert.match(observation.currentSummary, /Read current-user-view.md/);
@@ -73,8 +73,8 @@ test('inspectRun uses the candidate product translator, not the source session p
   })];
   const store = { events: () => events } as unknown as ExperimentStore;
   const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
-  const asSourcePack = await inspectRun(store, record, true, 'codex');
-  const asCandidatePack = await inspectRun(store, record, true, 'claude-code');
+  const asSourcePack = await inspectRun(store, record, 'codex');
+  const asCandidatePack = await inspectRun(store, record, 'claude-code');
   assert.equal(asSourcePack.commands.length, 0);
   assert.deepEqual(asCandidatePack.commands, ['ls workspace']);
 });
@@ -82,7 +82,7 @@ test('inspectRun uses the candidate product translator, not the source session p
 test('inspectRun distinguishes workspace evidence that was not collected', async () => {
   const store = { events: () => [] } as unknown as ExperimentStore;
   const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
-  const observation = await inspectRun(store, record, true, 'codex');
+  const observation = await inspectRun(store, record, 'codex');
   assert.equal(observation.workspaceEvidenceStatus, 'not_collected');
   assert.match(observation.currentSummary, /Read current-user-view.md/);
   assert.doesNotMatch(observation.currentSummary, /Workspace evidence/);

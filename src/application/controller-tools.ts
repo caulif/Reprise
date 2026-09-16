@@ -12,7 +12,7 @@ import { asPosixPath, isFsAbsolute, pathContainedBy } from "../core/paths.js";
 import { CONTROLLER_NOTES_MOUNT, CONTROLLER_PROJECT_MOUNT } from "./controller-briefing.js";
 import { observationReadRecord } from "./controller-request.js";
 import type { ExperimentStore } from "../infrastructure/store/experiment-store.js";
-import { recoveryTools } from "../infrastructure/recovery-tools.js";
+import { workspaceTools } from "../infrastructure/recovery-tools.js";
 import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/agent/host.js";
 
 const SHELL_WRITE_LIKE =
@@ -66,7 +66,8 @@ export function controllerDecisionTools(
   briefingRoot: string,
   bindings: ControllerToolBindings,
 ): readonly AgentToolDefinition[] {
-  return recoveryTools(briefingRoot, {
+  return workspaceTools(briefingRoot, {
+    role: "controller",
     allowBinary: input.taskCase.privacy.allowBinary,
     allowShell: true,
     unrestrictedRead: true,

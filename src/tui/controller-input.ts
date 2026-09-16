@@ -379,12 +379,6 @@ function applySessions(c: ControllerHandle, data: string): Consume | undefined {
 function applyInspection(c: ControllerHandle, data: string): Consume | undefined {
   const result = dispatchInspectionInput(data, Boolean(c.inspection));
   if (!result) return undefined;
-  if (result.action === 'toggle-model-text') {
-    c.privacy = { ...c.privacy, allowModelText: !c.privacy.allowModelText };
-    c.message = t(c.locale, c.privacy.allowModelText ? 'modelTextAllowed' : 'modelTextBlocked');
-    c.render();
-    return { consume: true };
-  }
   if (result.action === 'toggle-outcome') {
     c.inspectionShowOutcome = !c.inspectionShowOutcome;
     c.render();

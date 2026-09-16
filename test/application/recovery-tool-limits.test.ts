@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { recoveryTools } from "../../src/infrastructure/recovery-tools.js";
+import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import { recoveryToolFailureCategory } from "../../src/application/recovery/staging.js";
 
 async function workspace(): Promise<string> {
@@ -15,7 +15,7 @@ async function workspace(): Promise<string> {
 test("workspace tools do not cap investigation or destructive shell_exec calls", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const tools = recoveryTools(root, { allowShell: true });
+  const tools = workspaceTools(root, { allowShell: true });
   const shell = tools.find((item) => item.name === "shell_exec");
   const list = tools.find((item) => item.name === "ls");
   const report = tools.find((item) => item.name === "write");
@@ -35,7 +35,7 @@ test("workspace tools do not cap investigation or destructive shell_exec calls",
 test("identical ls calls are not rejected", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const list = recoveryTools(root).find((item) => item.name === "ls");
+  const list = workspaceTools(root).find((item) => item.name === "ls");
   assert.ok(list);
   const signal = new AbortController().signal;
   await list.execute({}, signal);
@@ -43,7 +43,7 @@ test("identical ls calls are not rejected", async (t) => {
 });
 
 test("old tool names are not registered", () => {
-  const names = recoveryTools(".").map((item) => item.name);
+  const names = workspaceTools(".").map((item) => item.name);
   for (const name of ["delete_file", "list_dir", "write_file", "write_recovery_manifest", "staging_shell"]) {
     assert.equal(names.includes(name), false, name);
   }

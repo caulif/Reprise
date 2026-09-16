@@ -45,22 +45,19 @@ export async function recoverExperiment(
       session.recovery = { status: 'cancelled' };
       return await failRecoveryRunSession(session, error);
     }
-    if (session.lastCompletedRecovery?.status === "completed") {
-      session.recovery = session.lastCompletedRecovery;
+    if (session.lastCompletedRecovery?.status === "completed" || session.recovery?.status === "completed") {
+      const completed = session.lastCompletedRecovery?.status === "completed"
+        ? session.lastCompletedRecovery
+        : session.recovery;
+      if (!completed || completed.status !== "completed") {
+        return await failRecoveryRunSession(session, error);
+      }
+      session.recovery = completed;
       try {
         return await finalizeRecoveredCandidate(session);
       } catch (finalizeError) {
         // Preserve the valid agent decision. Finalization is a separate phase and
         // must not rewrite it as an agent/Recovery failure.
-        if (finalizeError instanceof Error && (finalizeError as Error & { code?: string }).code === "source_tripwire_failed")
-          return await failRecoveryRunSession(session, finalizeError);
-        return completedDecisionWithFinalizationFailure(session, finalizeError);
-      }
-    }
-    if (session.recovery?.status === "completed") {
-      try {
-        return await finalizeRecoveredCandidate(session);
-      } catch (finalizeError) {
         if (finalizeError instanceof Error && (finalizeError as Error & { code?: string }).code === "source_tripwire_failed")
           return await failRecoveryRunSession(session, finalizeError);
         return completedDecisionWithFinalizationFailure(session, finalizeError);

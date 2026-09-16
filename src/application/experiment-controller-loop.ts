@@ -150,12 +150,9 @@ async function deliverSteering(
   decisions.push(decision);
   await persistControllerDecision(input, calls, decision);
   if (decision.status !== "completed") {
-    const next =
-      decision.status === "failed"
-        ? await input.run.failController({ code: decision.failure.code, message: decision.failure.message })
-        : decision.status === "cancelled"
-          ? await input.run.cancel()
-          : await input.run.stopByHarness("stalled.no_progress");
+    const next = decision.status === "failed"
+      ? await input.run.failController({ code: decision.failure.code, message: decision.failure.message })
+      : await input.run.cancel();
     return { state: next, controllerCalls: calls, followupSubmission: false, stop: true };
   }
   if (decision.value.type === "done") {
@@ -262,7 +259,6 @@ async function packControllerBriefing(
   const inspection = await inspectRun(
     input.store,
     undefined,
-    input.taskCase.privacy.allowModelText,
     input.candidateProductId,
     {
       runId: input.runId,
@@ -283,8 +279,7 @@ async function packControllerBriefing(
     visibleText: turnText,
     events: eventsForLatestSettledTurn(input.store.events(input.runId)),
     changedPaths: inspection.changedPaths,
-    allowModelText: input.taskCase.privacy.allowModelText,
-    surface: controllerViewSurface(inspection.settlementStatus, turnText, input.taskCase.privacy.allowModelText),
+    surface: controllerViewSurface(inspection.settlementStatus, turnText),
     ...(inspection.turnPrompt ? { prompt: inspection.turnPrompt } : {}),
     ...(inspection.userView ? { userView: inspection.userView } : {}),
   });
@@ -359,7 +354,7 @@ function steeringContextFrom(
 }
 
 async function persistControllerRequested(input: LoopInput, context: SteeringContext): Promise<void> {
-  const snapshot = controllerRequestSnapshot(context);
+  const snapshot = controllerRequestSnapshot(context, input.controller.systemPromptDigest);
   await input.store.append({
     type: "controller.requested",
     runId: input.runId,

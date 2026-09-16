@@ -40,6 +40,32 @@ const M = {
   candidateTaskCompleted: { en: "Candidate task completed", zh: "候选任务已完成" },
   candidateTaskIncomplete: { en: "Candidate task incomplete ({code})", zh: "候选任务未完成（{code}）" },
   candidateTaskOutcome: { en: "Candidate task status: {outcome}", zh: "候选任务状态：{outcome}" },
+  hostLimitationHeadlineMissing: { en: "Main conclusion is missing.", zh: "主要结论缺失" },
+  hostLimitationCannotDetermine: { en: "cannot be determined", zh: "无法判断" },
+  hostLimitationLeakedInternal: {
+    en: "Above-the-fold content contained internal run identifiers or restated the full process.",
+    zh: "首屏含内部运行标识或复述了完整过程。",
+  },
+  hostLimitationShareCardPresentation: {
+    en: "Share-card presentation could not be fully repaired.",
+    zh: "分享卡版式未能完全修好。",
+  },
+  hostLimitationVerifiedWordlist: {
+    en: "The report used verification wording without resolvable evidence.",
+    zh: "正文使用了核验措辞但没有可解析证据。",
+  },
+  hostLimitationVisualWordlist: {
+    en: "The report claimed visual inspection without available media.",
+    zh: "正文声称已做视觉检查但没有可用媒体。",
+  },
+  hostLimitationCitedMediaUnresolved: {
+    en: "Cited media could not be resolved.",
+    zh: "引用的媒体未能解析。",
+  },
+  hostLimitationUnpairedImages: {
+    en: "Share-card images were not a historical/candidate pair and were removed.",
+    zh: "首屏图片未成对，已从对照卡去掉。",
+  },
 } as const satisfies Record<string, Msg>;
 
 export type ComparisonReportStringKey = keyof typeof M;

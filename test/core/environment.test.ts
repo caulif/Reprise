@@ -524,7 +524,7 @@ test("Recovery validates isolated git checkout, report, accept, and marker reuse
     sourceRoot: source,
   });
   const shell = (await import("../../src/infrastructure/recovery-tools.js"))
-    .recoveryTools(
+    .workspaceTools(
       staging.root,
       staging.temporaryRoot ? { homeRoot: staging.temporaryRoot, allowShell: true } : { allowShell: true },
     )

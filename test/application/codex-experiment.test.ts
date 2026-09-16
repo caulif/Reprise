@@ -9,10 +9,11 @@ import { reconstructControllerRequest } from "../../src/application/controller-r
 import { preflightExperiment } from "../../src/application/experiment-preflight.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
 import { startExperiment } from "../../src/application/experiment.js";
-import { PiAgentHost } from "../../src/infrastructure/agent/host.js";
+import { AgentHost } from "../../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import type { ResolvedRuntime, TargetEventSink, TargetRunner } from "../../src/core/runtime.js";
+import { runtimeTargetEvent } from "../../src/core/runtime.js";
 import { sha256 } from "../../src/core/identity.js";
 import { now, VerifiedRuntime, input, terminationOf, sendingController, patientPolicy, readJson, comparisonHtmlWithHostShell } from "../codex-experiment-support.js";
 
@@ -187,8 +188,11 @@ test("records the latest cumulative Codex token count", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-tokens-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
-  const result = await startExperiment(input(root, new TokenRuntime()))
-    .result;
+  const experiment = input(root, new TokenRuntime());
+  const result = await startExperiment({
+    ...experiment,
+    policy: { ...experiment.policy, maxModelCalls: 8 },
+  }).result;
   assert.equal(result.facts?.tokenCount, 256);
 });
 
@@ -245,6 +249,41 @@ test("the Harness stops the run when the Controller call budget is spent", async
   assert.equal(termination.code, "limit.controller_calls");
 });
 
+test("consecutive identical replica fingerprints stop the run as stalled.no_progress", async (t) => {
+  const termination = await terminationOf(t, {
+    controller: sendingController(),
+    policy: { ...patientPolicy, maxConsecutiveNoProgress: 1, maxTargetTurns: 8 },
+    turns: 4,
+  });
+  assert.equal(termination.kind, "stalled");
+  assert.equal(termination.code, "stalled.no_progress");
+});
+
+test("a Runtime without model-call journal events is not truncated by maxModelCalls", async (t) => {
+  const termination = await terminationOf(t, {
+    controller: sendingController(),
+    policy: { ...patientPolicy, maxModelCalls: 1, maxTargetTurns: 3, maxConsecutiveNoProgress: 8 },
+    turns: 3,
+  });
+  assert.equal(termination.kind, "limit_reached");
+  assert.equal(termination.code, "limit.target_turns");
+});
+
+test("countable Target model-call events stop the run as limit.model_calls", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-model-calls-"));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  await mkdir(join(root, "source"));
+  await writeFile(join(root, "source", "README.md"), "# source\n");
+  const result = await startExperiment({
+    ...input(root, new VerifiedRuntime()),
+    runtime: new TurnStartedRuntime(),
+    controller: sendingController(),
+    policy: { ...patientPolicy, maxModelCalls: 1, maxConsecutiveNoProgress: 8 },
+  }).result;
+  assert.equal(result.record.outcome.termination.kind, "limit_reached");
+  assert.equal(result.record.outcome.termination.code, "limit.model_calls");
+});
+
 test("the Controller may repeat a message when the candidate needs another turn", async (t) => {
   let calls = 0;
   const repeatTwice: ControllerPort = {
@@ -257,7 +296,7 @@ test("the Controller may repeat a message when the candidate needs another turn"
   };
   const termination = await terminationOf(t, {
     controller: repeatTwice,
-    policy: { ...patientPolicy, maxConsecutiveNoProgress: 1 },
+    policy: patientPolicy,
   });
   assert.equal(termination.kind, "completed");
   assert.equal(termination.code, "completed.controller_satisfied");
@@ -305,7 +344,7 @@ test("a scripted Controller run persists controller.requested and reconstructs i
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const controller = new ControllerAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (session) => {
         let calls = 0;
         return {
@@ -412,7 +451,7 @@ test("done/satisfied is accepted without a Host ledger or unread-file guard", as
       await writeFile(join(root, 'source', 'README.md'), '# source\n');
       let calls = 0;
       const controller = new ControllerAgent({
-        host: new PiAgentHost({ createSession: () => ({
+        host: new AgentHost({ createSession: () => ({
           append: async () => {
             calls += 1;
             if (calls === 1) return 'Working understanding of the historical user demand.';
@@ -457,7 +496,7 @@ test("cancelling an in-flight Controller request discards a late send before Can
     started = done;
   });
   const controller = new ControllerAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async () => {
           started();
@@ -495,7 +534,7 @@ test("cancelling an in-flight Controller request discards a late send before Can
   }
 });
 
-test("a completed comparison without report.html is recorded as an Agent failure, not a fallback narrative", async (t) => {
+test("a completed comparison that never fills Agent slots still publishes the Host shell, not a fallback narrative", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-experiment-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
@@ -510,16 +549,16 @@ test("a completed comparison without report.html is recorded as an Agent failure
         evidenceRefs: [],
       },
     }),
+    cancel: async () => {},
   };
   const result = await startExperiment({
     ...input(root, runtime),
     comparison: silent,
   }).result;
-  assert.equal(result.comparison.result.status, "failed");
-  assert.match(
-    await readFile(result.reportPath, "utf8"),
-    /Comparison unavailable/,
-  );
+  assert.equal(result.comparison.result.status, "completed");
+  const html = await readFile(result.reportPath, "utf8");
+  assert.doesNotMatch(html, /Comparison unavailable/);
+  assert.match(html, /data-host-zone|data-host=/);
 });
 
 test("working notes written after a failed first pass stay in the same comparison attempt", async (t) => {
@@ -534,12 +573,17 @@ test("working notes written after a failed first pass stay in the same compariso
         { path: "work/comparison-plan.md", content: "# Working notes\n" },
         new AbortController().signal,
       );
+      const shell = await tools.find((tool) => tool.name === "read")?.execute(
+        { path: "report.html" },
+        new AbortController().signal,
+      );
       await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "report.html", content: comparisonHtmlWithHostShell(context, `<p>single-session</p>`) },
+        { path: "report.html", content: comparisonHtmlWithHostShell(shell?.content, `<p>single-session</p>`) },
         new AbortController().signal,
       );
       return { status: "completed", sessionId: "comparison-notes", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };
     },
+    cancel: async () => {},
   };
   const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
   assert.equal(result.comparison.result.status, "completed");
@@ -567,6 +611,7 @@ test("a failed later comparison attempt does not overwrite the last successful r
   await writeFile(join(experimentRoot, "comparison.json"), JSON.stringify({ status: "completed", sessionId: "old", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } }));
   const failed: ComparisonAgentPort = {
     compare: async () => ({ status: "failed", sessionId: "comparison-failed", failure: { code: "agent_failure", message: "failed", attempts: 1 } }),
+    cancel: async () => {},
   };
   const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison: failed }).result;
   assert.equal(result.comparison.result.status, "failed");
@@ -765,6 +810,7 @@ test("comparison does not start unless compare is set", async (t) => {
         value: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
       };
     },
+    cancel: async () => {},
   };
   const result = await startExperiment({
     ...input(root, new VerifiedRuntime()),
@@ -780,3 +826,20 @@ test("comparison does not start unless compare is set", async (t) => {
     await store.close();
   }
 });
+
+class TurnStartedRuntime extends VerifiedRuntime {
+  override async createRunner(
+    runtime: ResolvedRuntime,
+    environment: { environmentId: string; runId: string; root: string },
+    sink: TargetEventSink,
+    launch: import("../../src/core/schema.js").CandidateLaunchContext,
+  ): Promise<TargetRunner> {
+    const runner = await super.createRunner(runtime, environment, sink, launch);
+    const wait = runner.waitForTurn.bind(runner);
+    runner.waitForTurn = async () => {
+      await sink.append(runtimeTargetEvent("turn_started", { sessionId: runner.session().sessionId, evidenceRefs: [] }));
+      return wait();
+    };
+    return runner;
+  }
+}

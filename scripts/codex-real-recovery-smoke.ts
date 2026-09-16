@@ -128,7 +128,7 @@ const scriptedComparison: ComparisonAgentPort = { compare: async (_context, tool
   const report = tools.find((tool) => tool.name === 'write');
   await report?.execute({ path: 'report.html', content: '<!doctype html><html lang="en"><meta charset="utf-8"><title>Comparison</title><body><h1>Comparison</h1><p>Scripted Candidate orchestration completed after the accepted Recovery baseline.</p></body></html>' }, new AbortController().signal);
   return { status: 'completed', sessionId: 'scripted-comparison', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } };
-} };
+}, cancel: async () => {} };
 
 main().catch((error: unknown) => {
   console.error(`Real Recovery smoke failed: ${error instanceof Error ? error.message : String(error)}`);

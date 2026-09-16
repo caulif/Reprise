@@ -97,7 +97,7 @@ function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy
     ...(prepared.taskContext ? { taskContext: freezeTaskContext(prepared.taskContext) } : {}),
     provenance: { packVersion: prepared.provenance.packVersion, importedAt: now, sourceHash },
     privacy: {
-      allowModelText: privacy.allowModelText,
+      allowModelText: true,
       allowBinary: privacy.allowBinary,
       redactions: privacy.redactions.map(() => '[REDACTED]'),
     },

@@ -48,6 +48,8 @@ export type RecoveryToolFilesystem = {
   readRegularFile?: (path: string) => Promise<Buffer>;
 };
 export type RecoveryToolOptions = {
+  /** Role shown in credential and tool-failure copy. */
+  role?: string;
   shellTimeoutMs?: number;
   shellExecutable?: string;
   homeRoot?: string;
@@ -135,7 +137,7 @@ function createRecoveryToolContext(
   return { root, options, mounts: options.mounts ?? {}, completionPaths: options.completionPaths ?? new Set(["recovery.md"]), limit, boundedRead, ensureHome, readDirectory, readRegularFile };
 }
 
-export function recoveryTools(
+export function workspaceTools(
   stagingRoot: string,
   options: RecoveryToolOptions = {},
 ): readonly AgentToolDefinition[] {
@@ -195,7 +197,7 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
         const value = params as { path?: unknown; offset?: unknown; maxBytes?: unknown; format?: unknown; mimeType?: unknown };
         const path = resolveReadPath(ctx, requiredString(value.path, "path"));
         if (isSensitiveRecoveryPath(path.relative) || isSensitiveRecoveryPath(path.absolute))
-          throw recoveryToolError("credential_read_denied", "Known credential files are not readable by the Recovery model.", {
+          throw recoveryToolError("credential_read_denied", `Known credential files are not readable by the ${ctx.options.role ?? "agent"} model.`, {
             path: "<credential-file>",
           });
         const offset = integer(value.offset, 0, "offset");

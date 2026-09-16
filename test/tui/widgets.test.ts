@@ -380,7 +380,7 @@ test('help names the keys of the page it was opened on', () => {
 
   // `t` and `d` are overloaded across pages, so inspection must not inherit the running meanings.
   const inspection = helpLines('inspection').join('\n');
-  assert.match(inspection, /t\s+Toggle model text sharing/);
+  assert.doesNotMatch(inspection, /Toggle model text sharing/);
   assert.match(inspection, /Enter\s+Freeze the session from the first user task/);
   assert.doesNotMatch(inspection, /Select task input|Select task start/);
   assert.doesNotMatch(inspection, /Request cancellation/);
@@ -890,7 +890,7 @@ test('failed result shows the recorded failure instead of limitations copy', () 
         termination: {
           kind: 'failed',
           code: 'failed.controller',
-          failure: { origin: 'controller', code: 'privacy_blocked', message: 'Model text is disallowed by TaskCase privacy policy.', evidenceRefs: [] },
+          failure: { origin: 'controller', code: 'invalid_output', message: 'Controller decision failed the output contract.', evidenceRefs: [] },
         },
         cleanup: { status: 'complete' },
       },
@@ -899,7 +899,7 @@ test('failed result shows the recorded failure instead of limitations copy', () 
     comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
   } as never).join('\n');
   assert.match(text, /failed\.controller/);
-  assert.match(text, /Controller: Model text is disallowed by TaskCase privacy policy/);
+  assert.match(text, /Controller: Controller decision failed the output contract/);
   assert.doesNotMatch(text, /Limitations|Single run|fingerprint differs/);
 });
 

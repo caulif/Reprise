@@ -201,7 +201,7 @@ test("registered media that exists can be published", async (t) => {
   assert.equal("html" in verified, true);
 });
 
-test("one-sided share-card images fail publication", async (t) => {
+test("one-sided share-card images are stripped and still publish", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-media-one-side-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "media"), { recursive: true });
@@ -228,10 +228,11 @@ test("one-sided share-card images fail publication", async (t) => {
       available: true,
     }],
   });
-  assert.equal("html" in verified, false);
-  if (!("html" in verified)) {
-    assert.equal(verified.code, "report_incomplete");
-    assert.match(verified.message, /one-sided previews/);
+  assert.equal("html" in verified, true);
+  if ("html" in verified) {
+    assert.doesNotMatch(verified.html, /<img\b[^>]*src="media\/ok\.png"/);
+    assert.match(verified.html, /data-host-limitation/);
+    assert.match(verified.html, /首屏图片未成对/);
   }
 });
 
@@ -436,7 +437,7 @@ test("copied component templates keep component CSS hooks", () => {
   assert.match(html, /<template data-component-template="headline"/);
 });
 
-test("empty headline or key-differences fail closed", async () => {
+test("empty headline or key-differences still publish after Host repair", async () => {
   const reportFacts = facts();
   const emptyHeadline = renderComparisonReportShell({
     task: "修复报告。",
@@ -447,12 +448,27 @@ test("empty headline or key-differences fail closed", async () => {
   const missingHeadline = await verifyAndRenderComparisonReport({
     html: emptyHeadline,
     facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [], headline: "信封里的主要结论。" },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in missingHeadline, true);
+  if ("html" in missingHeadline) {
+    assert.match(missingHeadline.html, /信封里的主要结论/);
+    assert.match(missingHeadline.html, /有差异/);
+  }
+  const emptyHeadlineNoEnvelope = await verifyAndRenderComparisonReport({
+    html: emptyHeadline,
+    facts: reportFacts,
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in missingHeadline, false);
-  if (!("html" in missingHeadline)) assert.match(missingHeadline.message, /headline/);
+  assert.equal("html" in emptyHeadlineNoEnvelope, true);
+  if ("html" in emptyHeadlineNoEnvelope) {
+    assert.match(emptyHeadlineNoEnvelope.html, /data-host-limitation/);
+    assert.match(emptyHeadlineNoEnvelope.html, /主要结论缺失/);
+  }
   const emptyDiffs = renderComparisonReportShell({
     task: "修复报告。",
     facts: reportFacts,
@@ -466,11 +482,14 @@ test("empty headline or key-differences fail closed", async () => {
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in missingDiffs, false);
-  if (!("html" in missingDiffs)) assert.match(missingDiffs.message, /key differences/);
+  assert.equal("html" in missingDiffs, true);
+  if ("html" in missingDiffs) {
+    assert.match(missingDiffs.html, /无法判断/);
+    assert.match(missingDiffs.html, /一句结论/);
+  }
 });
 
-test("above-the-fold process dump and visual claims without media fail closed", async () => {
+test("above-the-fold process dump and visual claims without media still publish", async () => {
   const reportFacts = facts();
   const processDump = renderComparisonReportShell({
     task: "修复报告。",
@@ -487,8 +506,11 @@ test("above-the-fold process dump and visual claims without media fail closed", 
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in dumped, false);
-  if (!("html" in dumped)) assert.match(dumped.message, /full process/);
+  assert.equal("html" in dumped, true);
+  if ("html" in dumped) {
+    assert.match(dumped.html, /data-host-limitation/);
+    assert.match(dumped.html, /复述了完整过程/);
+  }
   const visual = renderComparisonReportShell({
     task: "修复报告。",
     facts: reportFacts,
@@ -502,9 +524,10 @@ test("above-the-fold process dump and visual claims without media fail closed", 
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in claimed, false);
-  if (!("html" in claimed)) {
-    assert.equal(claimed.code, "media_unavailable");
+  assert.equal("html" in claimed, true);
+  if ("html" in claimed) {
+    assert.match(claimed.html, /data-host-limitation/);
+    assert.match(claimed.html, /视觉检查/);
   }
 });
 
@@ -575,7 +598,7 @@ test("current harness comparison model is not the candidate vs title", () => {
   assert.doesNotMatch(html, /vs deepseek-flash/);
 });
 
-test("share-card presentation reverse cases fail publication", async () => {
+test("share-card presentation reverse cases still publish after Host repair", async () => {
   const reportFacts = facts();
   const base = renderComparisonReportShell({
     task: "修复报告。",
@@ -594,8 +617,11 @@ test("share-card presentation reverse cases fail publication", async () => {
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in strong, false);
-  if (!("html" in strong)) assert.match(strong.message, /strong/i);
+  assert.equal("html" in strong, true);
+  if ("html" in strong) {
+    assert.doesNotMatch(strong.html, /<strong>/i);
+    assert.match(strong.html, /候选把讨论推进成了可继续使用的文件/);
+  }
 
   const underlined = base.replace(
     "<p>候选有交付物，历史没有。</p>",
@@ -608,8 +634,10 @@ test("share-card presentation reverse cases fail publication", async () => {
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in underline, false);
-  if (!("html" in underline)) assert.match(underline.message, /underline/);
+  assert.equal("html" in underline, true);
+  if ("html" in underline) {
+    assert.doesNotMatch(underline.html, /text-decoration:underline/);
+  }
 
   const writtenBy = base.replace(
     '<p class="note" data-agent-slot="headline">候选把讨论推进成了可继续使用的文件。</p>',
@@ -622,8 +650,10 @@ test("share-card presentation reverse cases fail publication", async () => {
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in byline, false);
-  if (!("html" in byline)) assert.match(byline.message, /who wrote the card/);
+  assert.equal("html" in byline, true);
+  if ("html" in byline) {
+    assert.doesNotMatch(byline.html, /本卡由/);
+  }
 
   const sideLabel = base.replace(
     "<p>候选有交付物，历史没有。</p>",
@@ -636,8 +666,12 @@ test("share-card presentation reverse cases fail publication", async () => {
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in sides, false);
-  if (!("html" in sides)) assert.match(sides.message, /历史侧|候选侧/);
+  assert.equal("html" in sides, true);
+  if ("html" in sides) {
+    assert.doesNotMatch(sides.html, /历史侧|候选侧/);
+    assert.match(sides.html, /历史会话/);
+    assert.match(sides.html, /当前会话/);
+  }
 
   const hiddenSides = base.replace(
     'data-id="agent-limitations"><!-- Replay limitations, including git-sink initial equal to a historical commit. Hidden. -->',

@@ -4,6 +4,7 @@ import { classifyAgentFailure } from "./failure.js";
 import { hostContext } from "../platform.js";
 import { redactModelVisibleText } from "./model-input.js";
 import { callerLoopHooks } from "./audit.js";
+import { promptDigest } from "./prompt-digest.js";
 import { AgentSessionHost } from "./session.js";
 import { instrumentTools } from "./tools.js";
 import type {
@@ -24,22 +25,17 @@ export type {
   AgentInvocation,
   AgentSession,
   AgentSessionOptions,
-  AgentSessionRequest,
   AgentToolDefinition,
   AgentToolResult,
   CompactionPolicy,
-  FreeformAgentInvocation,
   FreeformInvocation,
   FreeformWorkRequest,
   ModelConfigSnapshot,
   PrivacyPolicy,
   ProviderAdapter,
   ProviderSession,
-  PiTextCaller,
-  PiTextSession,
   StructuredAgentRequest,
   StructuredAgentResult,
-  StructuredInvocation,
   StructuredWorkRequest,
 } from "./types.js";
 export type { AgentFailureKind } from "./failure.js";
@@ -58,16 +54,6 @@ export class AgentHost implements AgentHostPort {
       throw new Error("Agent role and system prompt are required.");
     }
     const sessionId = randomUUID();
-    const allowModelText = input.privacy?.allowModelText ?? input.allowModelText ?? true;
-    if (!allowModelText) {
-      await input.audit?.append({
-        type: "agent.session_failed",
-        sessionId,
-        role: input.role,
-        payload: { code: "privacy_blocked" },
-      });
-      return AgentSessionHost.blocked(sessionId, input.role, input.audit);
-    }
     const cursor: InvocationCursor = { requestIndex: 0 };
     const tools = instrumentTools(input.tools ?? [], sessionId, input.role, cursor, input.audit);
     const compactionInstructions = input.compaction?.instructions ?? input.compactionInstructions;
@@ -85,7 +71,7 @@ export class AgentHost implements AgentHostPort {
         role: input.role,
         payload: {
           toolNames: tools.map((tool) => tool.name),
-          promptDigest: sha256(input.systemPrompt),
+          promptDigest: promptDigest(input.systemPrompt),
           toolPolicyDigest: sha256(tools.map((tool) => `${tool.name}\n${tool.description}`).join("\n")),
           systemPrompt: redactModelVisibleText(input.systemPrompt).text,
           tools: input.tools?.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) ?? [],
@@ -121,7 +107,6 @@ export class AgentHost implements AgentHostPort {
     try {
       return await session.request({
         ...(request.signal ? { signal: request.signal } : {}),
-        context: request.context,
         schema: request.schema,
         timeoutMs: request.timeoutMs,
         maxRepairAttempts: request.maxRepairAttempts,
@@ -139,6 +124,3 @@ export class AgentHost implements AgentHostPort {
     }
   }
 }
-
-/** Compatibility alias while callers migrate off the Pi-prefixed Host name. */
-export class PiAgentHost extends AgentHost {}

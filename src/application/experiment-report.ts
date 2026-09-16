@@ -7,7 +7,7 @@ import type { CandidateRun } from "./candidate-run.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type TaskCase } from "../core/schema.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
-import { recoveryTools } from "../infrastructure/recovery-tools.js";
+import { workspaceTools } from "../infrastructure/recovery-tools.js";
 import {
   writeImmutableJson,
   type ExperimentStore,
@@ -62,6 +62,7 @@ export async function finishExperiment(input: {
   candidateSnapshotRoot: string;
   candidateSnapshotStatus: "complete" | "incomplete" | "missing";
   compare?: boolean;
+  onComparisonAttempt?: (attemptId: string) => void;
 }): Promise<ExperimentResult> {
   const finishedRecord = input.run.result().record;
   if (!finishedRecord)
@@ -160,7 +161,6 @@ async function inspectExperimentRun(
   return inspectRun(
     input.store,
     record,
-    input.taskCase.privacy.allowModelText,
     input.input.candidate.productId,
     undefined,
     {
@@ -181,6 +181,7 @@ async function compareExperimentOutcome(
   inspection: Awaited<ReturnType<typeof inspectRun>>,
 ) {
   const { attemptId, attemptRoot } = newComparisonAttempt(input.experimentRoot);
+  input.onComparisonAttempt?.(attemptId);
   await input.store.append({
     type: "comparison.started",
     runId: input.input.runId,
@@ -233,7 +234,6 @@ async function compareExperimentOutcome(
       ...context,
       media: briefing.media,
       shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
-      attemptRoot,
       ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
     };
     await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
@@ -266,11 +266,9 @@ async function runComparisonAttempt(input: {
   reportShellHtml: string;
   locale: AgentLocale;
 }): Promise<AgentInvocation<ComparisonResult>> {
-  const compareContext = {
-    ...withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown),
-    reportShellHtml: input.reportShellHtml,
-  };
+  const compareContext = withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown);
   try {
+    await writeAtomic(join(input.attemptRoot, "report.html"), input.reportShellHtml);
     let comparisonResult: AgentInvocation<ComparisonResult> = input.host.signal?.aborted
       ? { status: "cancelled" }
       : await invokeCompare(input.host, compareContext, input.attemptRoot, input.attemptId, input.briefing.media.some((item) => item.available));
@@ -456,7 +454,8 @@ function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptR
   });
   const candidateRoot = mounts.candidate;
   return [
-    ...recoveryTools(attemptRoot, {
+    ...workspaceTools(attemptRoot, {
+      role: "comparison",
       allowBinary: input.taskCase.privacy.allowBinary || allowBinary,
       mounts,
       allowWrite: comparisonAttemptWriteAllowed,

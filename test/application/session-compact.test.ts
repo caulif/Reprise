@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
 import { compactPiMessages, needsPiCompaction, prunePiMessagesForBudget, stripThinkMarkup } from '../../src/infrastructure/agent/compaction.js';
-import { PiAgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
+import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Api, Model, Models } from '@earendil-works/pi-ai';
 
@@ -77,7 +77,7 @@ test('compactPiMessages forwards phase-specific summary instructions', async () 
 test('Host records agent.context_compacted from the Pi session compact hook', async () => {
   const events: AgentAuditEvent[] = [];
   let compact: ((payload: { summary: string; tokensBefore: number; retainedCount: number }) => Promise<void>) | undefined;
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: (input) => {
       compact = input.onContextCompact;
       return {
@@ -89,7 +89,6 @@ test('Host records agent.context_compacted from the Pi session compact hook', as
   const result = await host.request({
     role: 'recovery',
     systemPrompt: 'fixed prompt',
-    context: {},
     schema: Type.Object({ ok: Type.Boolean() }),
     timeoutMs: 50,
     maxRepairAttempts: 0,

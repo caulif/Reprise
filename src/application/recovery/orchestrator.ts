@@ -7,32 +7,20 @@ import {
 export type RecoveryLifecycleState =
   | "created"
   | "staged"
-  | "forensics_running"
-  | "hypotheses_ready"
-  | "candidate_running"
-  | "candidate_verified"
-  | "candidate_pending_review"
-  | "candidate_rejected"
-  | "selected_checkpoint"
-  | "ready_for_task"
+  | "forensics"
+  | "model"
+  | "validated"
   | "accepted"
-  | "review_required"
-  | "exhausted";
+  | "failed";
 
 const transitions: Record<RecoveryLifecycleState, readonly RecoveryLifecycleState[]> = {
-  created: ["staged", "exhausted"],
-  staged: ["forensics_running", "exhausted"],
-  forensics_running: ["hypotheses_ready", "exhausted"],
-  hypotheses_ready: ["candidate_running", "exhausted"],
-  candidate_running: ["candidate_verified", "candidate_pending_review", "candidate_rejected", "exhausted"],
-  candidate_verified: ["selected_checkpoint", "review_required"],
-  candidate_pending_review: ["selected_checkpoint", "review_required", "candidate_running", "exhausted"],
-  candidate_rejected: ["candidate_running", "exhausted"],
-  selected_checkpoint: ["ready_for_task", "accepted", "review_required"],
-  ready_for_task: ["accepted", "review_required"],
+  created: ["staged", "failed"],
+  staged: ["forensics", "failed"],
+  forensics: ["model", "failed"],
+  model: ["validated", "failed"],
+  validated: ["accepted", "failed"],
   accepted: [],
-  review_required: ["selected_checkpoint", "accepted"],
-  exhausted: [],
+  failed: [],
 };
 
 export type RecoveryOrchestratorOptions = {
@@ -76,9 +64,9 @@ export class RecoveryOrchestrator {
   }
 
   /** Moves an unfinished run to the only meaningful terminal outcome. */
-  public fail(reviewRequired: boolean): void {
-    if (["accepted", "exhausted", "review_required"].includes(this.currentState)) return;
-    this.transition(reviewRequired ? "review_required" : "exhausted");
+  public fail(): void {
+    if (this.currentState === "accepted" || this.currentState === "failed") return;
+    this.transition("failed");
   }
 }
 
@@ -95,10 +83,9 @@ export function transitionRecoveryState(
 export function recoveryAttemptRecord(
   input: Omit<RecoveryLifecycleAttempt, "schemaVersion">,
 ): RecoveryLifecycleAttempt {
-  const record = { schemaVersion: 1 as const, ...input };
+  const record = { schemaVersion: 2 as const, ...input };
   if (!Value.Check(RecoveryLifecycleAttemptSchema, record)) {
     throw new Error("Recovery lifecycle attempt is invalid.");
   }
   return record;
 }
-

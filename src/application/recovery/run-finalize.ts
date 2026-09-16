@@ -53,8 +53,8 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
     session,
     recoveryAttemptRecord({
       attemptId: "recovery-attempt-provider-verification",
-      phase: "verification",
-      operation: "validate_candidate",
+      phase: "validated",
+      operation: "validate",
       attemptNumber: 1,
       result: "succeeded",
       durationMs: Math.max(0, Date.now() - providerVerificationStartedAt),
@@ -63,7 +63,7 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   );
   const preTaskBlocksReady = await applyPreTaskReadyGate(session, recovery.value.status);
   const hostReady = recovery.value.status === "ready" && !preTaskBlocksReady;
-  moveRecoveryState(session, hostReady ? "candidate_verified" : "candidate_pending_review");
+  moveRecoveryState(session, "validated");
   session.verification = hostReady ? "verified" : "rejected";
   session.taskOutcome = preTaskBlocksReady ? "blocked_by_safety" : taskContinuationOutcome(recovery.value.status);
   const preview = session.activeProviderPreview;
@@ -76,8 +76,6 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   }
   const mayAccept = hostReady;
   if (mayAccept) {
-    moveRecoveryState(session, "selected_checkpoint");
-    moveRecoveryState(session, "ready_for_task");
     session.automaticallyAcceptedBaseline = await provider.acceptRecovery(session.activeProviderPreview);
     if (session.automaticallyAcceptedBaseline.recovery && session.taskOutcome) {
       session.automaticallyAcceptedBaseline = {

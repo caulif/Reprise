@@ -60,6 +60,8 @@ export const TaskCaseSchema = Type.Object({
   contentHash: Hash,
 });
 export type TaskCase = Static<typeof TaskCaseSchema>;
+/** Fossil TaskCase key. Host always persists and treats session body text as allowed. */
+export const FROZEN_ALLOW_MODEL_TEXT = true as const;
 export const CandidateSpecSchema = Type.Object({
   candidateId: Id,
   productId: Id,

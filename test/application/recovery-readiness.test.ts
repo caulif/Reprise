@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { checkRecoveryReadiness, deriveRecoveryReadinessContext, applyTaskReadinessGate, taskContinuationOutcome, taskReadinessBlocksPublication } from "../../src/application/recovery/readiness.js";
+import { checkRecoveryReadiness, deriveRecoveryReadinessContext, taskContinuationOutcome } from "../../src/application/recovery/readiness.js";
 import type { TaskCase, RecoveryReadinessContext } from "../../src/core/schema.js";
 
 test("Recovery readiness derives task paths and reports a missing path", async () => {
@@ -145,20 +145,8 @@ test("Recovery readiness runs only allowlisted commands in staging when opted in
   assert.equal(result.commandChecks[1]?.status, "blocked");
 });
 
-test("Host task readiness never rewrites Agent publication", () => {
-  const missing = applyTaskReadinessGate(
-    { baseline: { readiness: { runnable: "isolated", strictness: "strict", blockingResourceIds: [] } } },
-    { status: "not_ready", checkedPaths: ["src/main.ts"], missingPaths: ["src/main.ts"], commandChecks: [], feedback: "missing" },
-  );
-  assert.equal(missing.baseline.readiness.runnable, "isolated");
-  const escaped = applyTaskReadinessGate(
-    { baseline: { readiness: { runnable: "isolated", strictness: "strict", blockingResourceIds: [] } } },
-    { status: "blocked", checkedPaths: [], missingPaths: [], commandChecks: [], feedback: "escaped" },
-  );
-  assert.equal(escaped.baseline.readiness.runnable, "isolated");
-  assert.equal(taskReadinessBlocksPublication("ready"), false);
-  assert.equal(taskReadinessBlocksPublication("not_ready"), false);
-  assert.equal(taskReadinessBlocksPublication("blocked"), false);
+test("Host task continuation maps envelope status without collapsing blocked", () => {
   assert.equal(taskContinuationOutcome("ready"), "ready_for_task");
-  assert.equal(taskContinuationOutcome("blocked"), "unrecoverable");
+  assert.equal(taskContinuationOutcome("blocked"), "blocked");
+  assert.equal(taskContinuationOutcome("failed"), "unrecoverable");
 });

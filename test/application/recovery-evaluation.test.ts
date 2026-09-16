@@ -78,9 +78,7 @@ test('Recovery evaluation reports weak-evidence effort metrics without inventing
   assert.equal(metrics.historyCompleted.forensicsCompletionCoverage.value, 0.5);
   assert.equal(metrics.historyCompleted.pendingUserReviewCount, 1);
   assert.equal(metrics.historyCompleted.verifiedCount, 0);
-  assert.deepEqual(metrics.historyCompleted.verifierRejectionReasons, { path_mismatch: 2, test_failed: 1 });
   assert.equal(metrics.historyCompleted.retryableProviderFailureRate.value, 0.5);
-  assert.equal(metrics.historyCompleted.pathBoundaryRejectionRate.value, 0.5);
 });
 
 test('Recovery evaluation rejects malformed fixture rows instead of manufacturing a metric', () => {

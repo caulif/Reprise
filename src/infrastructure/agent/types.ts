@@ -43,11 +43,6 @@ export type AgentInvocation<T> =
 export type StructuredAgentResult<T> = AgentInvocation<T>;
 /** Optional visible diagnostic for audit; business agents must not depend on `text`. */
 export type FreeformInvocation = AgentInvocation<{ text?: string }>;
-export type StructuredInvocation<T> = AgentInvocation<T>;
-export type FreeformAgentInvocation =
-  | { status: "completed"; sessionId: string; invocationId?: string }
-  | { status: "failed"; failure: AgentFailure; sessionId?: string; invocationId?: string }
-  | { status: "cancelled"; factRef?: string; sessionId?: string; invocationId?: string };
 
 export type AgentToolDefinition = {
   name: string;
@@ -130,7 +125,6 @@ export type FreeformWorkRequest = {
 };
 
 export type StructuredWorkRequest<T> = {
-  context: unknown;
   schema: TSchema;
   timeoutMs: number;
   maxRepairAttempts: number;
@@ -146,8 +140,6 @@ export type StructuredWorkRequest<T> = {
   requestId?: string;
 };
 
-export type AgentSessionRequest<T> = StructuredWorkRequest<T>;
-
 export type StructuredAgentRequest<T> = StructuredWorkRequest<T> & {
   role: string;
   systemPrompt: string;
@@ -160,7 +152,7 @@ export type StructuredAgentRequest<T> = StructuredWorkRequest<T> & {
 export interface AgentSession {
   readonly sessionId: string;
   work(input: FreeformWorkRequest): Promise<FreeformInvocation>;
-  request<T>(input: StructuredWorkRequest<T>): Promise<StructuredInvocation<T>>;
+  request<T>(input: StructuredWorkRequest<T>): Promise<AgentInvocation<T>>;
   cancel(reason?: string, requestId?: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -211,9 +203,6 @@ export interface ProviderAdapter {
   }): Promise<ProviderSession> | ProviderSession;
 }
 
-/** Compatibility names during migration; public contracts do not require Pi types. */
-export type PiTextSession = ProviderSession;
-export type PiTextCaller = ProviderAdapter;
 
 
 

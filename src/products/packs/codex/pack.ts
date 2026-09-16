@@ -201,7 +201,7 @@ export async function importCodexFixture(path: FixturePath, now = new Date().toI
       artifactRefs: [],
     },
     provenance: { packVersion: codexProductPack.manifest.packVersion, importedAt: now, sourceHash },
-    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+    privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     contentHash: sourceHash,
   };
   return { taskCase, rawSession };

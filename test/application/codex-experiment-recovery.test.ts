@@ -12,7 +12,7 @@ import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-pr
 import { sha256 } from "../../src/core/identity.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
 import { RecoveryAgent } from '../../src/agents/recovery-agent.js';
-import { PiAgentHost } from '../../src/infrastructure/agent/host.js';
+import { AgentHost } from '../../src/infrastructure/agent/host.js';
 
 const exec = promisify(execFile);
 
@@ -28,30 +28,13 @@ async function overwriteEvenIfLocked(root: string, filePath: string, content: st
   await writeFile(filePath, content);
 }
 
-test("Recovery preserves a known verifier rejection as provider validation", () => {
-  assert.equal(
-    classifyRecoveryFailureStage(
-      "provider_validation_failed",
-      new Error("known verifier rejection"),
-      ["weak_or_incomplete_evidence"],
-    ),
-    "provider_validation_failed",
-  );
+test("Recovery classifies provider validation vs runner crash vs context overflow", () => {
   assert.equal(
     classifyRecoveryFailureStage(
       "provider_validation_failed",
       new Error("unknown provider failure"),
     ),
     "runner_crashed",
-  );
-  assert.equal(
-    classifyRecoveryFailureStage(
-      "provider_validation_failed",
-      new Error("provider adapter rejected completed output"),
-      undefined,
-      true,
-    ),
-    "provider_validation_failed",
   );
   assert.equal(
     classifyRecoveryFailureStage(
@@ -116,7 +99,7 @@ test('Recovery cancellation aborts a pending model call, persists cancellation a
   const provider = new LocalWorkspaceProvider(join(root, 'provider'));
   const discard = provider.discardRecovery.bind(provider);
   t.mock.method(provider, 'discardRecovery', async (...args: Parameters<typeof discard>) => { discarded += 1; return discard(...args); });
-  const recovery = new RecoveryAgent({ host: new PiAgentHost({ createSession: () => ({
+  const recovery = new RecoveryAgent({ host: new AgentHost({ createSession: () => ({
     append: ({ signal }) => { assert.equal(signal.aborted, false); started(); return new Promise<string>(() => {}); }, cancel() {},
   }) }), timeoutMs: 0, maxRepairAttempts: 1 });
   const pending = recoverExperiment({ dataDir: base.dataDir, caseId: base.caseId, experimentId: 'recovery-cancel', runId: 'recovery-cancel-run', sourceRoot: base.sourceRoot, taskCase: base.taskCase, recovery, environmentProvider: provider, now, signal: abort.signal });
@@ -237,8 +220,6 @@ test("Recovery classifies a structured model request failure separately from too
     events.find((event) => event.type === "recovery.model_fallback")?.payload,
     {
       forensicsCompleted: true,
-      hypothesisCount: 0,
-      candidateCount: 0,
       modelAttempts: 2,
     },
   );

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
 import { ControllerAgent, CONTROLLER_SYSTEM_PROMPT, type SteeringContext } from '../../src/agents/controller-agent.js';
-import { PiAgentHost, type PiTextCaller } from '../../src/infrastructure/agent/host.js';
+import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
 import { controllerPromptContent, renderIndexMarkdown } from '../../src/application/controller-briefing.js';
 
 function briefing(input: { includeFollowupInIndex: boolean; settledTurns: number }): SteeringContext {
@@ -42,7 +42,7 @@ function briefing(input: { includeFollowupInIndex: boolean; settledTurns: number
   };
 }
 
-function policyStub(): PiTextCaller {
+function policyStub(): ProviderAdapter {
   return {
     createSession(session) {
       return {
@@ -65,7 +65,7 @@ function policyStub(): PiTextCaller {
 test('session callbacks are bound to the actual tool and current request', async () => {
   const callbacks: string[] = [];
   let calls = 0;
-  const controller = new ControllerAgent({ host: new PiAgentHost({ createSession: (session) => ({
+  const controller = new ControllerAgent({ host: new AgentHost({ createSession: (session) => ({
     append: async () => {
       calls += 1;
       const name = calls === 1 ? 'ls' : 'read';
@@ -87,7 +87,7 @@ test('session callbacks are bound to the actual tool and current request', async
 
 test('first-pass same-kind deliverable with historical user steering is send, not done', async () => {
   const controller = new ControllerAgent({
-    host: new PiAgentHost(policyStub()),
+    host: new AgentHost(policyStub()),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
@@ -99,7 +99,7 @@ test('first-pass same-kind deliverable with historical user steering is send, no
 
 test('without later user steering, the same first pass may stop', async () => {
   const controller = new ControllerAgent({
-    host: new PiAgentHost(policyStub()),
+    host: new AgentHost(policyStub()),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
@@ -122,7 +122,7 @@ test('Controller without promptContent throws instead of dumping context JSON', 
   const marker = 'MARKER_MUST_NOT_INLINE';
   const appended: string[] = [];
   const controller = new ControllerAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession() {
         return {
           append: async ({ content }) => {
@@ -157,7 +157,7 @@ test('opening and later decide share one Controller Session without a private un
   let sessions = 0;
   const appended: string[] = [];
   const controller = new ControllerAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession() {
         sessions += 1;
         return {

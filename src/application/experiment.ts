@@ -7,6 +7,7 @@ import { commitCandidateLaunchContext } from "./recovery/launch-context.js";
 import { persistExperimentSpec, persistRunPreflight } from "./experiment-layout.js";
 import { CandidateRun } from "./candidate-run.js";
 import { createCandidateRuntimeSink } from "./candidate-run-events.js";
+import { progressDigestFromFingerprint } from "./candidate-run-safety.js";
 import type { CandidateLaunchContext, CandidateSpec, EventEnvelope, RunManifest, RunPolicy, RunRecord, TaskCase } from "../core/schema.js";
 import type { ProductRuntime } from "../core/runtime.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
@@ -112,6 +113,7 @@ type ExperimentControl = {
   signal: AbortSignal;
   setActive(run: ActiveRun): void;
   setController(controller: ControllerPort, runId: string): void;
+  setComparisonAttempt(attemptId: string): void;
   cancelled(): boolean;
   waitForComparison(partial: ExperimentResult): Promise<boolean>;
   ready(): Promise<void>;
@@ -127,6 +129,7 @@ export function startExperiment(
   let active: ActiveRun | undefined;
   let activeController: ControllerPort | undefined;
   let activeRunId: string | undefined;
+  let comparisonAttemptId: string | undefined;
   let cancelRequested = false;
   let decideComparison: ((run: boolean) => void) | undefined;
   const comparisonDecision = input.deferComparison
@@ -144,7 +147,7 @@ export function startExperiment(
     cancelRequested = true;
     abort.abort();
     decideComparison?.(false);
-    await input.comparison.cancel?.();
+    if (comparisonAttemptId) await input.comparison.cancel(comparisonAttemptId);
     if (activeController && activeRunId)
       await activeController.cancel?.(
         activeRunId,
@@ -171,6 +174,9 @@ export function startExperiment(
     setController(controller, runId) {
       activeController = controller;
       activeRunId = runId;
+    },
+    setComparisonAttempt(attemptId) {
+      comparisonAttemptId = attemptId;
     },
     cancelled() {
       return cancelRequested;
@@ -435,8 +441,11 @@ async function startCandidateRun(args: {
     policy: {
       turnTimeoutMs: input.policy.turnTimeoutMs,
       maxTargetTurns: input.policy.maxTargetTurns,
+      maxModelCalls: input.policy.maxModelCalls,
+      maxConsecutiveNoProgress: input.policy.maxConsecutiveNoProgress,
     },
     release,
+    progressFingerprint: async () => progressDigestFromFingerprint(await provider.fingerprint(environment)),
     persistence: {
       journal: store,
       attempt,
@@ -526,6 +535,7 @@ async function finishCandidateRun(args: {
     candidateSnapshotRoot: snapshot.root,
     candidateSnapshotStatus: snapshot.status,
     compare: false as const,
+    onComparisonAttempt: (attemptId: string) => control.setComparisonAttempt(attemptId),
   };
   const partial = await finishExperiment(finishInput);
   if (!(await control.waitForComparison(partial))) return partial;

@@ -59,6 +59,21 @@ function toLf(text) {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
+function formatRunPolicy(policy) {
+  const hours = (ms) => ms / 3_600_000;
+  return [
+    '| 字段 | 默认值 |',
+    '|---|---|',
+    `| \`wallClockMs\` | ${policy.wallClockMs}（${hours(policy.wallClockMs)} 小时） |`,
+    `| \`maxTargetTurns\` | ${policy.maxTargetTurns} |`,
+    `| \`maxModelCalls\` | ${policy.maxModelCalls}（仅 Target；journal 无数则不截） |`,
+    `| \`turnTimeoutMs\` | ${policy.turnTimeoutMs}（${hours(policy.turnTimeoutMs)} 小时） |`,
+    `| \`maxConsecutiveNoProgress\` | ${policy.maxConsecutiveNoProgress} |`,
+    '',
+    'token 与成本上限默认不启用。Controller / Comparison 单次 `timeoutMs` 为 0。',
+  ].join('\n');
+}
+
 function selfTest() {
   const slug = 'event-catalog';
   const original = `${BEGIN(slug)}\nGARBAGE\n${END(slug)}`;
@@ -66,11 +81,25 @@ function selfTest() {
   if (!next.includes('| field |') || next.includes('GARBAGE') || toLf(original) === toLf(next)) {
     throw new Error('gen-docs self-test: replaceRegion did not replace a marked region');
   }
+  const policyBody = formatRunPolicy({
+    wallClockMs: 99,
+    maxTargetTurns: 11,
+    maxModelCalls: 22,
+    turnTimeoutMs: 3_600_000,
+    maxConsecutiveNoProgress: 4,
+  });
+  if (!policyBody.includes('99') || !policyBody.includes('11') || !policyBody.includes('22') || !policyBody.includes('4')) {
+    throw new Error('gen-docs self-test: formatRunPolicy ignored DEFAULT_RUN_POLICY fields');
+  }
+  if (policyBody.includes('30 分钟') || policyBody.includes('始终有限')) {
+    throw new Error('gen-docs self-test: formatRunPolicy leaked superseded timeout wording');
+  }
   console.log('gen-docs self-test: replaceRegion updates marked regions');
 }
 
 async function generate() {
   const schema = await import(pathToFileURL(join(ROOT, 'dist/src/core/schema.js')).href);
+  const { DEFAULT_RUN_POLICY } = await import(pathToFileURL(join(ROOT, 'dist/src/application/default-run-policy.js')).href);
   const eventBody = table(fieldsOf(schema.EventEnvelopeSchema));
   const recordBody = [
     '### TaskCase',
@@ -83,6 +112,7 @@ async function generate() {
   const files = [
     ['docs/architecture/persistence-and-crash-consistency.md', 'event-catalog', eventBody],
     ['docs/architecture/run-outcome.md', 'record-fields', recordBody],
+    ['docs/architecture/overview.md', 'default-run-policy', formatRunPolicy(DEFAULT_RUN_POLICY)],
   ];
   const written = [];
   for (const [relative, slug, body] of files) {

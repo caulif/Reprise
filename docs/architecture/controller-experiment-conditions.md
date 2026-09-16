@@ -13,7 +13,7 @@
 3. 每个 CandidateRun 使用独立的 Controller session，候选之间不共享隐藏状态；同一 Experiment 的候选共享同一份已解析 Controller 配置。
 4. Pi Agent Host 随项目正常更新，不要求恢复或固定历史 Host 版本，也不作为目标 Runtime 的比较变量。
 5. Controller 可以且必须通过稳定的用户输入索引访问 TaskCase 中的完整原始会话。用户输入是理解目标、知识、偏好、纠正方式和验收习惯的证据；Target Runtime 收到的用户消息全部由 Controller 写出，包括第一句。历史 Agent 输出、工具过程和交付物按需读取，不在每轮全部内联。
-6. 完整原始会话的使用边界由 canonical system prompt 明确限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停，不是 briefing 里是否还有未读的历史用户文件。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。候选第一条用户消息的任务形状须与 `initialInput` 同类，且不得引用候选尚未写出的建议、优先级或清单；Host 对 opening 做浅层匹配并走 structured repair，耗尽则拒绝开场，不静默投递，见[开场不得引用未发生的候选建议](../decisions/accepted/2026-09-16-controller-opening-no-unseen-advice.md)。Controller 只在候选 turn 稳定完成后，先看 Host 的用户视图快照，再按需读取用户可访问材料；不读取流式中间内容。第一版不做全程泄漏评分、第二审查 Agent 或人工用户策略规则。
+6. 完整原始会话的使用边界由 canonical system prompt 明确限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停，不是 briefing 里是否还有未读的历史用户文件。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。候选第一条用户消息的任务形状须与 `initialInput` 同类，且不得引用候选尚未写出的建议、优先级或清单；这是 prompt 纪律，Host 运行时不再用措辞正则拒绝 opening send，见[开场不得引用未发生的候选建议](../decisions/accepted/2026-09-16-controller-opening-no-unseen-advice.md) 与[运行时仅合同](../decisions/accepted/2026-09-16-controller-runtime-contracts-only.md)。Controller 只在候选 turn 稳定完成后，先看 Host 的用户视图快照，再按需读取用户可访问材料；不读取流式中间内容。第一版不做全程泄漏评分、第二审查 Agent 或人工用户策略规则。
 7. “同等人类能力”不能被证明，只能被操作化。产品实现的是固定条件下的适应性用户协作模拟，不声称精确预测真实用户在反事实情境中的唯一输入。
 8. Controller 使用什么模型不属于 Harness 的产品判断，取决于用户通过 Pi 能访问什么模型。Harness 不捆绑、推荐或评价 Controller 模型。
 
@@ -117,7 +117,7 @@ Controller 对原始会话采用“完整可访问”，而不是“每轮把所
 - 摘要不能替代 transcript，也不能成为唯一仍可访问的历史；
 - 每次读取保留消息 ID、顺序和 provenance；opening 与 steering 读取 briefing 材料时记 `source=briefing_read` 的 observation evidence，可被当轮决策引用；
 - privacy policy 可以在发送给外部 provider 前脱敏，但脱敏事实必须可见；
-- `privacy.allowModelText=false` 关闭正文（写成 `[REDACTED]`），不隐藏会话结构（id、role、顺序、字节数）。
+- `privacy.allowModelText` 是化石键，读取恒为允许正文；凭据仍走 `redactModelVisibleText`。见 [allowModelText 化石](../decisions/accepted/2026-09-16-allow-model-text-fossil.md)。
 
 默认上下文组装为：
 
@@ -152,7 +152,7 @@ interface AgentBudget {
 - `maxCalls`、`maxTokens` 和 `maxCost` 默认未设置，即 Controller 资源预算无限制；
 - `maxStructuredRepairAttempts` 限制 schema 修复调用，`maxProviderRetries` 限制瞬时 provider 错误重试；两者第一版都保持很小且分别计数；
 - `callTimeoutMs` 仅在用户显式配置时限制单次调用；默认快照写一个很大的安全阀数字，实际 Host 调用为 `timeoutMs: 0`；
-- CandidateRun 的 `RunPolicy` 约束 Target Runtime 的墙钟、turn 和模型调用；Controller 决策次数只用 `controller.budget.maxCalls`（未设置则不截断）；
+- CandidateRun 的 `RunPolicy` 约束 Target Runtime 的墙钟、turn 和模型调用（`maxModelCalls` 只数 Target journal 的 `runtime.turn_started` / `runtime.usage_reported`，数不到则不截）；无进展按隔离副本指纹，见 [RunPolicy 只约束 Target](../decisions/accepted/2026-09-16-runpolicy-target-only-safety-valves.md)；Controller 决策次数只用 `controller.budget.maxCalls`（未设置则不截断）；
 - RunOrchestrator 执行 CandidateRun 限制；Controller 只能看到对应的运行快照并据此判断是否继续。
 
 所有候选使用相同的显式 Agent 预算配置（默认均为无限制），但实际消费分别记录。Controller token、成本和耗时必须与 Target 指标分开，同时可以提供端到端总量。若用户配置了 Agent 预算，上限耗尽是独立终止原因，不能伪装成 `done` 或任务完成。

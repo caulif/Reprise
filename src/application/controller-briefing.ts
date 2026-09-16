@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { CONTROLLER_PROMPT_DIGEST, CONTROLLER_TURN_PROMPTS, type SteeringContext } from "../agents/controller-agent.js";
+import { CONTROLLER_TURN_PROMPTS, controllerSystemPromptDigest, type SteeringContext } from "../agents/controller-agent.js";
 import { record, text } from "../core/json.js";
 import type { EventEnvelope, TaskCase, UserVisibleTurn } from "../core/schema.js";
 import type { SourceRootKind } from "./replay-conditions.js";
@@ -70,9 +70,7 @@ export type ControllerViewSurface = "empty" | "unavailable" | "waiting" | "faile
 export function controllerViewSurface(
   settlementStatus: string | undefined,
   visibleText: string | undefined,
-  allowModelText: boolean,
 ): ControllerViewSurface {
-  if (!allowModelText) return "unavailable";
   if (settlementStatus === "waiting_input") return "waiting";
   if (settlementStatus === "failed") return "failed";
   if (settlementStatus === "aborted") return "aborted";
@@ -129,9 +127,6 @@ export function controllerPromptContent(input: {
   return `${header}\nLatest turn: ${latest}`;
 }
 
-function visibleText(text: string, allowModelText: boolean): string {
-  return allowModelText ? text : "[REDACTED]";
-}
 
 function renderUserInputIndexTsv(transcript: TaskCase["transcript"]): string {
   const lines = ["turn_id\torder\trole\tsource\tpath\tattachments\trelated"];
@@ -237,7 +232,7 @@ function renderPermissionsTxt(taskCase: TaskCase): string {
     `candidate.network=${candidate.network}`,
     `candidate.writes=${candidate.writes}`,
     `candidate.uncertainty=${candidate.uncertainty}`,
-    `privacy.allowModelText=${privacy.allowModelText ? "1" : "0"}`,
+    `privacy.allowModelText=1`,
     `privacy.allowBinary=${privacy.allowBinary ? "1" : "0"}`,
     "",
   ].join("\n");
@@ -272,18 +267,17 @@ export async function writeOpeningBriefing(input: {
   await mkdir(join(input.briefingRoot, "run", "turns"), { recursive: true });
   await mkdir(join(input.briefingRoot, CONTROLLER_NOTES_MOUNT), { recursive: true });
   await mkdir(transcriptDir, { recursive: true });
-  const allow = input.taskCase.privacy.allowModelText;
-  await writeAtomic(join(history, "initial-input.txt"), visibleText(input.taskCase.initialInput.text, allow));
+  await writeAtomic(join(history, "initial-input.txt"), input.taskCase.initialInput.text);
   const rows = outlineRows(input.taskCase.transcript);
   await writeAtomic(join(history, "outline.tsv"), renderOutlineTsv(rows));
   for (const message of input.taskCase.transcript) {
-    await writeAtomic(join(transcriptDir, `${message.id}.txt`), visibleText(message.text, allow));
+    await writeAtomic(join(transcriptDir, `${message.id}.txt`), message.text);
   }
   const userInputs = join(history, "user-inputs");
   await mkdir(userInputs, { recursive: true });
   for (const message of input.taskCase.transcript) {
     if (message.role !== "user") continue;
-    await writeAtomic(join(userInputs, `${message.id}.txt`), visibleText(message.text, allow));
+    await writeAtomic(join(userInputs, `${message.id}.txt`), message.text);
   }
   await writeAtomic(join(userInputs, "INDEX.tsv"), renderUserInputIndexTsv(input.taskCase.transcript));
   await writeAtomic(join(input.briefingRoot, "permissions.txt"), renderPermissionsTxt(input.taskCase));
@@ -314,7 +308,7 @@ export async function writeSettledTurnBriefing(input: {
   visibleText: string;
   events: readonly EventEnvelope[];
   changedPaths: readonly string[];
-  allowModelText: boolean;
+  allowModelText?: boolean;
   surface?: "empty" | "unavailable" | "waiting" | "failed" | "completed" | "aborted";
   prompt?: string;
   userView?: UserVisibleTurn;
@@ -335,7 +329,7 @@ export async function stageSettledTurnBriefing(input: {
   visibleText: string;
   events: readonly EventEnvelope[];
   changedPaths: readonly string[];
-  allowModelText: boolean;
+  allowModelText?: boolean;
   surface?: "empty" | "unavailable" | "waiting" | "failed" | "completed" | "aborted";
   prompt?: string;
   userView?: UserVisibleTurn;
@@ -343,13 +337,13 @@ export async function stageSettledTurnBriefing(input: {
   const turnRelative = `run/turns/${String(input.turnIndex).padStart(4, "0")}`;
   const turnDir = join(input.briefingRoot, ...turnRelative.split("/"));
   await mkdir(turnDir, { recursive: true });
-  const visible = visibleText(input.visibleText, input.allowModelText);
+  const visible = input.visibleText;
   await writeAtomic(join(turnDir, "visible.txt"), visible);
-  const eventIndex = ["sequence\ttype\tevent_id\tmodel_visible", ...input.events.map((event) => `${event.sequence}\t${event.type}\t${event.eventId}\t${input.allowModelText ? "1" : "0"}`)];
+  const eventIndex = ["sequence\ttype\tevent_id\tmodel_visible", ...input.events.map((event) => `${event.sequence}\t${event.type}\t${event.eventId}\t1`)];
   await writeAtomic(join(turnDir, "event-index.tsv"), `${eventIndex.join("\n")}\n`);
   await writeAtomic(join(turnDir, "changed-paths.txt"), `${input.changedPaths.join("\n")}${input.changedPaths.length ? "\n" : ""}`);
   const surface = input.surface
-    ?? (!input.allowModelText ? "unavailable" : input.visibleText.trim() ? "completed" : "empty");
+    ?? (input.visibleText.trim() ? "completed" : "empty");
   const userView = input.userView ?? {
     schemaVersion: 1,
     turnIndex: input.turnIndex,
@@ -449,11 +443,11 @@ async function writeBriefingManifest(briefingRoot: string): Promise<void> {
   await writeAtomic(join(briefingRoot, "manifest.json"), JSON.stringify({ schemaVersion: 1, files }, null, 2));
 }
 
-export function controllerRequestSnapshot(context: SteeringContext): Record<string, unknown> {
+export function controllerRequestSnapshot(context: SteeringContext, promptDigestValue?: string): Record<string, unknown> {
   return {
     schemaVersion: 1,
     toolSetVersion: 1,
-    promptDigest: CONTROLLER_PROMPT_DIGEST,
+    promptDigest: promptDigestValue ?? controllerSystemPromptDigest("zh"),
     requestId: context.requestId,
     runId: context.runId,
     runState: context.runState,

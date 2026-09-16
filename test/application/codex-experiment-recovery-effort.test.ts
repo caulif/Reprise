@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { RecoveryAgent, type RecoveryAgentPort } from "../../src/agents/recovery-agent.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
 import { startExperiment } from "../../src/application/experiment.js";
-import { PiAgentHost } from "../../src/infrastructure/agent/host.js";
+import { AgentHost } from "../../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import { isRecord } from "../../src/core/json.js";
@@ -89,7 +89,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
   const command = "echo recovery-audit-marker";
   const base = input(root, new VerifiedRuntime());
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (session) => ({
         append: async () => {
           const shell = session.tools.find(
@@ -706,7 +706,7 @@ test("Recovery classifies a first-turn context-length error as agent_model_faile
 
 
 
-test("Recovery stops a readiness loop with an unrecoverable task outcome", async (t) => {
+test("Recovery stops a readiness loop with a blocked task outcome", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-readiness-no-progress-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
@@ -747,7 +747,7 @@ test("Recovery stops a readiness loop with an unrecoverable task outcome", async
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
   assert.equal(calls, 1);
-  assert.equal(attempt.baseline.recovery?.taskOutcome, "unrecoverable");
+  assert.equal(attempt.baseline.recovery?.taskOutcome, "blocked");
   assert.equal(events.filter((event) => event.type === "recovery.readiness_feedback").length, 0);
   await assert.rejects(
     readFile(join(attempt.experimentRoot, "artifacts", "recovery-evaluation"), "utf8"),
@@ -797,7 +797,7 @@ test("insufficient evidence does not loop for missing paths and cannot be accept
   assert.equal(attempt.acceptedAutomatically, undefined);
   assert.equal(attempt.baseline.recovery?.status, "blocked");
   const diagnosis = JSON.parse(await readFile(join(attempt.experimentRoot, "recovery-diagnosis.json"), "utf8")) as { finalStatus: string };
-  assert.equal(diagnosis.finalStatus, "failed");
+  assert.equal(diagnosis.finalStatus, "blocked");
 });
 
 

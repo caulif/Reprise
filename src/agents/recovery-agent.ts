@@ -245,7 +245,7 @@ export class RecoveryAgent implements RecoveryAgentPort {
     const { session, created } = await this.#sessionFor(context, tools, audit);
     const briefing = recoveryModelPrompt(context);
     if (context.mechanicalFeedback) {
-      return this.#requestEnvelope(session, context, signal, RECOVERY_TURN_PROMPTS.mechanicalFeedback(context.mechanicalFeedback));
+      return this.#requestEnvelope(session, signal, RECOVERY_TURN_PROMPTS.mechanicalFeedback(context.mechanicalFeedback));
     }
     const completed = context.completedFreeformTurns ?? 0;
     const remaining: { promptContent: string; requestId: string }[] = [
@@ -258,30 +258,26 @@ export class RecoveryAgent implements RecoveryAgentPort {
         remaining[0] = { ...remaining[0]!, promptContent: `${resume}\n\n${remaining[0]!.promptContent}` };
       }
     }
-    for (const stepPrompt of remaining) {
-      const step = await session.work({
-        promptContent: stepPrompt.promptContent,
-        timeoutMs: this.timeoutMs,
-        requestId: stepPrompt.requestId,
-        ...(signal ? { signal } : {}),
-      });
-      if (step.status !== "completed") return step;
-    }
+    const prefix = await session.runTurns(remaining.map((stepPrompt) => ({
+      promptContent: stepPrompt.promptContent,
+      timeoutMs: this.timeoutMs,
+      requestId: stepPrompt.requestId,
+      ...(signal ? { signal } : {}),
+    })));
+    if (prefix.status !== "completed") return prefix;
     const conclude = created && completed > 0 && remaining.length === 0
       ? `${RECOVERY_TURN_PROMPTS.resume(completed, briefing)}\n\n${RECOVERY_TURN_PROMPTS.conclude}`
       : RECOVERY_TURN_PROMPTS.conclude;
-    return this.#requestEnvelope(session, context, signal, conclude);
+    return this.#requestEnvelope(session, signal, conclude);
   }
 
   async #requestEnvelope(
     session: AgentSessionHost,
-    context: RecoveryContext,
     signal: AbortSignal | undefined,
     promptContent: string,
   ): Promise<AgentInvocation<RecoveryDecision>> {
     const result = await session.request<RecoveryDecision>({
       ...(signal ? { signal } : {}),
-      context,
       schema: RecoveryDecisionSchema,
       timeoutMs: this.timeoutMs,
       maxRepairAttempts: this.#maxRepairAttempts,

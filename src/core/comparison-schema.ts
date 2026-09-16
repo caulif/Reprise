@@ -93,7 +93,7 @@ export const ComparisonReportModelSchema = Type.Object({
 export type ComparisonReportModel = Static<typeof ComparisonReportModelSchema>;
 export const ComparisonBriefingContextSchema = Type.Object({
   task: Type.Object({ caseId: Type.String(), summary: Type.String() }), baseline: Type.Object({ summary: Type.String(), evidenceRefs: Type.Array(Type.String()) }),
-  candidates: Type.Array(Type.Object({ runId: Type.String(), summary: Type.String(), evidenceRefs: Type.Array(Type.String()) })), telemetry: Type.Array(Type.Object({ runId: Type.String(), summary: Type.String() })), reportFacts: ComparisonReportFactsSchema,
+  candidates: Type.Array(Type.Object({ runId: Type.String(), evidenceRefs: Type.Array(Type.String()) })), telemetry: Type.Array(Type.Object({ runId: Type.String() })), reportFacts: ComparisonReportFactsSchema,
   artifactRefs: Type.Array(Type.String()), allowModelText: Type.Boolean(), replayScope: Type.Object({ historical: Type.String(), candidate: Type.String() }), hostReplay: Type.Optional(Type.Object({ sourceRootKind: Type.String(), stopKind: Type.String(), conditions: Type.Array(Type.String()) })), promptContent: Type.Optional(Type.String()),
   media: Type.Optional(Type.Array(ComparisonMediaRecordSchema)),
 });

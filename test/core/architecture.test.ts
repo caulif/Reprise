@@ -107,13 +107,13 @@ async function relativeImports(file: string): Promise<string[]> {
 }
 
 test('internal agents share workspace tools without read_observation', async () => {
-  const { recoveryTools } = await import('../../src/infrastructure/recovery-tools.js');
+  const { workspaceTools } = await import('../../src/infrastructure/recovery-tools.js');
   const seven = ['edit', 'find', 'grep', 'ls', 'read', 'shell_exec', 'write'];
   const withoutShell = ['edit', 'find', 'grep', 'ls', 'read', 'write'];
-  const recovery = recoveryTools('TMP').map((tool) => tool.name).sort();
-  const recoveryShell = recoveryTools('TMP', { allowShell: true }).map((tool) => tool.name).sort();
+  const recovery = workspaceTools('TMP').map((tool) => tool.name).sort();
+  const recoveryShell = workspaceTools('TMP', { allowShell: true }).map((tool) => tool.name).sort();
   const { controllerProjectWriteAllowed } = await import('../../src/application/controller-tools.js');
-  const controller = recoveryTools('TMP', {
+  const controller = workspaceTools('TMP', {
     allowWrite: controllerProjectWriteAllowed,
     writableMounts: ['project'],
     mounts: { project: 'REPLICA' },
@@ -137,7 +137,14 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.match(loop, /experimentAgentAuditSink/);
   assert.match(loop, /controllerBriefingRoot/);
   assert.match(loop, /assertBriefingOutsideReplica/);
+  assert.match(loop, /limit\.wall_clock/);
+  assert.doesNotMatch(loop, /stopByHarness\(["']stalled\.no_progress["']\)/);
   assert.doesNotMatch(loop, /allowShell:\s*true/);
+  const host = await readFile(join(SRC, 'infrastructure/agent/host.ts'), 'utf8');
+  assert.doesNotMatch(host, /privacy_blocked/);
+  assert.doesNotMatch(host, /AgentSessionHost\.blocked/);
+  const pageInput = await readFile(join(SRC, 'tui/page-input.ts'), 'utf8');
+  assert.doesNotMatch(pageInput, /toggle-model-text/);
   const controllerTools = await readFile(join(SRC, 'application/controller-tools.ts'), 'utf8');
   assert.match(controllerTools, /allowShell:\s*true/);
   assert.match(controllerTools, /unrestrictedRead:\s*true/);
@@ -149,8 +156,9 @@ test('internal agents share workspace tools without read_observation', async () 
   const briefing = await readFile(join(SRC, 'application/controller-briefing.ts'), 'utf8');
   assert.doesNotMatch(briefing, /There is no `shell_exec`/);
   assert.match(briefing, /controller\.shell=allowed/);
+  assert.doesNotMatch(briefing, /\[REDACTED\]/);
   assert.doesNotMatch(loop, /observationTools/);
-  assert.doesNotMatch(loop, /recoveryTools\(\s*input\.environment\.root/);
+  assert.doesNotMatch(loop, /workspaceTools\(\s*input\.environment\.root/);
   const caller = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');
   assert.match(caller, /transformContext/);
   assert.match(caller, /compactPiMessages/);
@@ -172,7 +180,7 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.doesNotMatch(agent, /select_recovery_candidate/);
   assert.doesNotMatch(agent, /Type\.Literal\("recovered"\)/);
   assert.doesNotMatch(agent, /insufficient_evidence/);
-  assert.match(agent, /\.work\(/);
+  assert.match(agent, /runTurns/);
   assert.match(agent, /RecoveryAgentEnvelope/);
   assert.doesNotMatch(agent, /必须证明起点|完整证明起点|推导任务开始前必须具备/);
   assert.match(agent, /reasonable starting environment/);
@@ -217,6 +225,13 @@ test('Recovery production path does not reintroduce candidate selection or three
   const statusFn = userStatus.match(/export function userRecoveryStatus[\s\S]*?\n}/)?.[0] ?? "";
   assert.doesNotMatch(statusFn, /excluded > 0/);
   const fail = await readFile(join(SRC, 'application/recovery/fail.ts'), 'utf8');
+  const orchestrator = await readFile(join(SRC, 'application/recovery/orchestrator.ts'), 'utf8');
+  assert.doesNotMatch(orchestrator, /forensics_running|hypotheses_ready|candidate_verified|candidate_rejected|review_required|exhausted/);
+  assert.match(orchestrator, /"created"/);
+  assert.match(orchestrator, /"staged"/);
+  assert.match(orchestrator, /"forensics"/);
+  assert.match(orchestrator, /"model"/);
+  assert.match(orchestrator, /"validated"/);
   assert.doesNotMatch(fail, /status:\s*["'](?:recovered|partial|insufficient_evidence)["']/);
   assert.doesNotMatch(fail, /match:\s*["']current_state_fallback["']/);
   const run = await readFile(join(SRC, 'application/recovery/run.ts'), 'utf8');
@@ -232,7 +247,8 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.doesNotMatch(readiness, /return status !== "ready"/);
   assert.doesNotMatch(readiness, /Missing or empty task-relevant paths/);
   assert.doesNotMatch(readiness, /blockingResourceIds: \["task-readiness"\]/);
-  assert.match(readiness, /taskReadinessBlocksPublication[\s\S]*return false/);
+  assert.doesNotMatch(readiness, /taskReadinessBlocksPublication/);
+  assert.doesNotMatch(readiness, /applyTaskReadinessGate/);
   const workspaceTools = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
   assert.doesNotMatch(workspaceTools, /filesystem ACL/);
   assert.match(agent, /verifies its fingerprint afterwards/);
@@ -263,6 +279,8 @@ test('role write policy stays on application owners without a shared Verifier', 
   const comparisonAgent = await readFile(join(SRC, 'agents/comparison-agent.ts'), 'utf8');
   assert.doesNotMatch(comparisonAgent, /#host\.request/);
   assert.match(comparisonAgent, /createSession/);
+  assert.doesNotMatch(comparisonAgent, /node:fs|writeAtomic/);
+  assert.match(report, /writeAtomic\(join\(input\.attemptRoot, "report\.html"/);
   const loop = await readFile(join(SRC, 'application/experiment-controller-loop.ts'), 'utf8');
   assert.match(loop, /controllerProjectWriteAllowed|controllerDecisionTools/);
   assert.doesNotMatch(loop, /allowWrite:\s*\(\)\s*=>\s*false/);
@@ -452,6 +470,16 @@ test('agent foundation uses sequential Pi Agent and never AgentHarness', async (
   assert.doesNotMatch(recoveryWorkingSet, /completedFreeformTurns/);
   const sessionHost = await readFile(join(SRC, 'infrastructure/agent/session.ts'), 'utf8');
   assert.doesNotMatch(sessionHost, /completedFreeformTurns/);
+  assert.doesNotMatch(sessionHost, /requestFreeform/);
+  assert.match(sessionHost, /async runTurns/);
+  assert.doesNotMatch(host, /export class PiAgentHost/);
+  assert.doesNotMatch(types, /PiTextCaller|PiTextSession|AgentSessionRequest|export type StructuredInvocation/);
+  assert.doesNotMatch(types, /context:\s*unknown/);
+  const controllerAgentSource = await readFile(join(SRC, 'agents', 'controller-agent.ts'), 'utf8');
+  assert.match(controllerAgentSource, /export type ControllerRequest/);
+  assert.doesNotMatch(controllerAgentSource, /sha256\(CONTROLLER_SYSTEM_PROMPT\)/);
+  const comparisonSchema = await readFile(join(SRC, 'core/comparison-schema.ts'), 'utf8');
+  assert.doesNotMatch(comparisonSchema, /runId: Type.String\(\), summary: Type.String\(\)/);
   const roleSessions = await readFile(join(SRC, 'infrastructure/agent/role-sessions.ts'), 'utf8');
   assert.doesNotMatch(roleSessions, /\bdrop\(/);
   const comparisonFacts = await readFile(join(SRC, 'application/comparison.ts'), 'utf8');

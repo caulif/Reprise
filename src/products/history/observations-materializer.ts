@@ -3,6 +3,7 @@ import { dirname, join, posix } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { writeAtomic } from "../../core/identity.js";
 import {
+  FROZEN_ALLOW_MODEL_TEXT,
   ObservationSessionManifestSchema,
   type EventEnvelope,
   type ObservationSessionManifest,
@@ -39,7 +40,6 @@ export async function writeFrozenObservationTree(input: {
   playbookText?: string;
   ownedFiles?: readonly ObservationOwnedFile[];
 }): Promise<{ fileCount: number }> {
-  const allowText = input.taskCase.privacy.allowModelText;
   const catalog = recoveryEvidenceCatalog(input.taskCase);
   const rows: string[] = ["ref\tsource\tpath\tbytes"];
   await mkdir(join(input.root, "transcript"), { recursive: true });
@@ -54,8 +54,8 @@ export async function writeFrozenObservationTree(input: {
   for (const entry of catalog) {
     const observation =
       entry.source === "transcript"
-        ? visibleTranscript(input.taskCase.transcript[entry.index], allowText)
-        : visibleValue(input.taskCase.historicalEvents[entry.index], allowText);
+        ? visibleTranscript(input.taskCase.transcript[entry.index])
+        : visibleValue(input.taskCase.historicalEvents[entry.index]);
     const transcriptId = entry.source === "transcript" ? input.taskCase.transcript[entry.index]?.id : undefined;
     const relative = observationRelativePath(entry.ref, entry.source, transcriptId);
     await writeObservationFile(join(input.root, ...relative.split("/")), {
@@ -69,7 +69,7 @@ export async function writeFrozenObservationTree(input: {
   }
   for (const event of input.runEvents ?? []) {
     const relative = observationRelativePath(`event:${event.eventId}`, "run_events");
-    const observation = visibleValue(event, allowText);
+    const observation = visibleValue(event);
     await writeObservationFile(join(input.root, ...relative.split("/")), {
       ref: `event:${event.eventId}`,
       source: "run_events",
@@ -133,7 +133,7 @@ async function writeSessionManifest(root: string, taskCase: TaskCase, missing: s
     ...(taskCase.evidenceLevel ? { evidenceLevel: taskCase.evidenceLevel } : {}),
     provenance: taskCase.provenance,
     privacy: {
-      allowModelText: taskCase.privacy.allowModelText,
+      allowModelText: FROZEN_ALLOW_MODEL_TEXT,
       allowBinary: taskCase.privacy.allowBinary,
     },
     missing,
@@ -311,25 +311,10 @@ function fileStem(ref: string): string {
 
 function visibleTranscript(
   message: TaskCase["transcript"][number] | undefined,
-  allowText: boolean,
 ): unknown {
-  if (!message) return null;
-  if (allowText || message.role !== "assistant") return message;
-  return { ...message, text: "[REDACTED]" };
+  return message ?? null;
 }
 
-function visibleValue(value: unknown, allowText: boolean): unknown {
-  if (allowText) return value;
-  return redactTextFields(value);
-}
-
-function redactTextFields(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactTextFields);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value).map(([key, child]) => [
-      key,
-      key === "text" && typeof child === "string" ? "[REDACTED]" : redactTextFields(child),
-    ]),
-  );
+function visibleValue(value: unknown): unknown {
+  return value;
 }

@@ -12,11 +12,18 @@ import {
   messageFact,
   terminationFor,
 } from './candidate-run-facts.js';
+import { nextNoProgressStreak, shouldStopForTargetModelCalls } from './candidate-run-safety.js';
 
 const deliveryValues = new Set(['accepted', 'rejected', 'unknown']);
 const settlementValues = new Set(['completed', 'failed', 'waiting_input', 'aborted']);
 
-export type CandidateRunPolicy = { turnTimeoutMs: number; maxTargetTurns: number; cleanupTimeoutMs?: number };
+export type CandidateRunPolicy = {
+  turnTimeoutMs: number;
+  maxTargetTurns: number;
+  maxModelCalls?: number;
+  maxConsecutiveNoProgress?: number;
+  cleanupTimeoutMs?: number;
+};
 type Cleanup = { status: 'released' | 'already_released' };
 type RecordedEvent = Pick<EventEnvelope, 'eventId' | 'sequence'>;
 type JournalEvent = { type: string; runId: string; operationId?: string; payload: unknown; occurredAt?: string };
@@ -48,10 +55,13 @@ export class CandidateRun {
   readonly #policy: CandidateRunPolicy;
   readonly #release: (() => Promise<Cleanup>) | undefined;
   readonly #persistence: CandidateRunPersistence | undefined;
+  readonly #progressFingerprint: (() => Promise<string>) | undefined;
   #state: CandidateRunState = 'created';
   #states: CandidateRunState[] = ['created'];
   #turns = 0;
   #settledTurns = 0;
+  #lastProgressFingerprint: string | undefined;
+  #noProgressStreak = 0;
   #outcome: RunOutcome | undefined;
   #record: RunRecord | undefined;
   #artifactRefs: readonly ArtifactRef[];
@@ -63,7 +73,13 @@ export class CandidateRun {
   #messages = new Map<string, MessageCall>();
   #handle: CandidateSessionHandle | undefined;
 
-  constructor(input: { runner: TargetRunner; policy: CandidateRunPolicy; release?: () => Promise<Cleanup>; persistence?: CandidateRunPersistence }) {
+  constructor(input: {
+    runner: TargetRunner;
+    policy: CandidateRunPolicy;
+    release?: () => Promise<Cleanup>;
+    persistence?: CandidateRunPersistence;
+    progressFingerprint?: () => Promise<string>;
+  }) {
     assertPolicy(input.policy);
     if (input.persistence?.manifest && input.persistence.manifest.attempt.runId !== input.persistence.attempt.runId) {
       throw new Error('RunManifest must belong to the persisted RunAttempt.');
@@ -73,6 +89,7 @@ export class CandidateRun {
     this.#policy = input.policy;
     this.#release = input.release;
     this.#persistence = input.persistence;
+    this.#progressFingerprint = input.progressFingerprint;
     this.#artifactRefs = [...(input.persistence?.artifactRefs ?? [])];
   }
 
@@ -191,7 +208,8 @@ export class CandidateRun {
         return this.#finish(mapped.code, 'failed', mapped.cause);
       }
       this.#settledTurns += 1;
-      if (this.#turns >= this.#policy.maxTargetTurns) return this.#finish('limit.target_turns', 'shutdown');
+      const limit = await this.#targetSafetyLimit();
+      if (limit) return this.#finish(limit, 'shutdown');
       await this.#move('awaiting_controller');
       return this.#state;
     } catch (error) {
@@ -338,6 +356,30 @@ export class CandidateRun {
   #ensure(expected: CandidateRunState): void {
     if (this.#state !== expected) throw new Error(`CandidateRun is ${this.#state}, expected ${expected}.`);
   }
+
+  async #targetSafetyLimit(): Promise<'limit.target_turns' | 'limit.model_calls' | 'stalled.no_progress' | undefined> {
+    if (this.#turns >= this.#policy.maxTargetTurns) return 'limit.target_turns';
+    if (this.#modelCallLimitReached()) return 'limit.model_calls';
+    if (await this.#noProgressLimitReached()) return 'stalled.no_progress';
+    return undefined;
+  }
+
+  #modelCallLimitReached(): boolean {
+    const max = this.#policy.maxModelCalls;
+    const persistence = this.#persistence;
+    if (max === undefined || !persistence) return false;
+    return shouldStopForTargetModelCalls(persistence.journal.events(persistence.attempt.runId), max);
+  }
+
+  async #noProgressLimitReached(): Promise<boolean> {
+    const max = this.#policy.maxConsecutiveNoProgress;
+    const fingerprint = this.#progressFingerprint;
+    if (max === undefined || !fingerprint) return false;
+    const current = await fingerprint();
+    this.#noProgressStreak = nextNoProgressStreak(this.#lastProgressFingerprint, current, this.#noProgressStreak);
+    this.#lastProgressFingerprint = current;
+    return this.#noProgressStreak >= max;
+  }
 }
 
 function assertPolicy(policy: CandidateRunPolicy): void {
@@ -345,6 +387,12 @@ function assertPolicy(policy: CandidateRunPolicy): void {
     throw new Error('CandidateRun policy must contain positive integer limits.');
   }
   if (policy.cleanupTimeoutMs !== undefined && (!Number.isInteger(policy.cleanupTimeoutMs) || policy.cleanupTimeoutMs < 1)) {
+    throw new Error('CandidateRun policy must contain positive integer limits.');
+  }
+  if (policy.maxModelCalls !== undefined && (!Number.isInteger(policy.maxModelCalls) || policy.maxModelCalls < 1)) {
+    throw new Error('CandidateRun policy must contain positive integer limits.');
+  }
+  if (policy.maxConsecutiveNoProgress !== undefined && (!Number.isInteger(policy.maxConsecutiveNoProgress) || policy.maxConsecutiveNoProgress < 1)) {
     throw new Error('CandidateRun policy must contain positive integer limits.');
   }
 }

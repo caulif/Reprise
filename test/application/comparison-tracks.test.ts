@@ -14,7 +14,7 @@ import {
   writeSettledTurnBriefing,
 } from "../../src/application/controller-briefing.js";
 import { recoveryEvidenceCatalog } from "../../src/products/history/source-refs.js";
-import { recoveryTools } from "../../src/infrastructure/recovery-tools.js";
+import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import type { EventEnvelope, RunRecord, TaskCase } from "../../src/core/schema.js";
 
 const timestamp = "2026-09-10T12:00:00.000Z";
@@ -149,6 +149,8 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
     rejectedApprovals: 0,
     turns: 2,
   }]);
+  assert.equal(context.candidates.some((candidate) => "summary" in candidate), false);
+  assert.equal(context.telemetry.some((row) => "summary" in row), false);
   await writeComparisonBriefing({
     attemptRoot,
     experimentRoot,
@@ -168,7 +170,7 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
     candidateSnapshotStatus: "complete",
     candidateSnapshotRoot: snapshotRoot,
   });
-  const tools = recoveryTools(attemptRoot, {
+  const tools = workspaceTools(attemptRoot, {
     mounts,
     denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns", "run", "observations"],
   });

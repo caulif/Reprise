@@ -115,7 +115,7 @@ export type EnvironmentBaseline = {
     /** Agent one-sentence summary; Host copies this unchanged when present. */
     summary?: string;
     /** Host-recorded inspectable facts; Agent envelope decides publication except mechanical safety. */
-    taskOutcome?: 'ready_for_task' | 'unrecoverable' | 'blocked_by_safety' | 'runner_failed';
+    taskOutcome?: 'ready_for_task' | 'blocked' | 'unrecoverable' | 'blocked_by_safety' | 'runner_failed';
     reportRef?: string;
     unresolved: string[];
     sourceDigest: string;

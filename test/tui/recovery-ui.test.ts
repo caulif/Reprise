@@ -186,7 +186,7 @@ test("confirmation for blocked recovery shows the Agent summary without crash co
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
-  assert.match(text, /Recovery blocked/);
+  assert.match(text, /Missing a required input; retry after it is supplied/);
   assert.match(text, /The original spreadsheet is missing from source\./);
   assert.doesNotMatch(text, /Could not recover/);
   assert.doesNotMatch(text, /provider_validation_failed/);

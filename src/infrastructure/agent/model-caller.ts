@@ -4,7 +4,7 @@ import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { contentText, createProvider, type Models, type MutableModels } from '@earendil-works/pi-ai';
-import type { AgentToolDefinition, PiTextCaller, PiTextSession } from './host.js';
+import type { AgentToolDefinition, ProviderAdapter, ProviderSession } from './host.js';
 import { environmentNameForKeyRef, type HarnessModelConfig } from '../harness-model-config.js';
 import { PiProviderAdapter } from './providers/pi/adapter.js';
 
@@ -62,7 +62,7 @@ export function modelsForConfig(config: HarnessModelConfig, models: MutablePiMod
  * Pi adapter for internal Agent sessions. `completeSimple` is intentionally
  * retained only for the connection probe and Pi compaction summaries; product agents run through Agent.
  */
-export class PiModelCaller implements PiTextCaller {
+export class PiModelCaller implements ProviderAdapter {
   readonly #models: PiModels;
   readonly #config: HarnessModelConfig;
 
@@ -141,7 +141,7 @@ export class PiModelCaller implements PiTextCaller {
     onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
     onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
     onModelRequest?: (payload: { model: string; digest: string; messageCount: number }) => Promise<void>;
-  }): PiTextSession {
+  }): ProviderSession {
     return new PiProviderAdapter({ models: this.#models, config: this.#config, model: this.#model() }).createSession(input);
   }
 

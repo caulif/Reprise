@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ControllerAgent, CONTROLLER_PROMPT_DIGEST, CONTROLLER_SYSTEM_PROMPT } from '../../src/agents/controller-agent.js';
-import { PiAgentHost } from '../../src/infrastructure/agent/host.js';
+import { ControllerAgent, CONTROLLER_SYSTEM_PROMPT, composeControllerSystemPrompt, type SteeringContext } from '../../src/agents/controller-agent.js';
+import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { controllerPromptContent, controllerRequestSnapshot, renderIndexMarkdown } from '../../src/application/controller-briefing.js';
-import { sha256 } from '../../src/core/identity.js';
-import type { SteeringContext } from '../../src/agents/controller-agent.js';
+import { promptDigest } from '../../src/infrastructure/agent/prompt-digest.js';
 
 function steering(runId: string): SteeringContext {
   return {
@@ -52,9 +51,9 @@ test('Controller request snapshot records hostFacts without judging requirements
 });
 
 test('Controller request snapshot records the live prompt digest', () => {
-  assert.equal(CONTROLLER_PROMPT_DIGEST, sha256(CONTROLLER_SYSTEM_PROMPT));
   const snapshot = controllerRequestSnapshot(steering('run-1'));
-  assert.equal(snapshot.promptDigest, CONTROLLER_PROMPT_DIGEST);
+  assert.equal(snapshot.promptDigest, promptDigest(composeControllerSystemPrompt('zh')));
+  assert.notEqual(snapshot.promptDigest, promptDigest(CONTROLLER_SYSTEM_PROMPT));
   assert.doesNotMatch(String(snapshot.promptContent), /# INDEX\.md/);
   assert.match(String(snapshot.promptContent), /Latest turn: run\/turns\/0001/);
   assert.match(String(snapshot.promptContent), /Read current-user-view\.md first/);
@@ -62,7 +61,7 @@ test('Controller request snapshot records the live prompt digest', () => {
 
 test('distinct CandidateRun ids do not share a Controller Session', async () => {
   let sessions = 0;
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession() {
       sessions += 1;
       return {

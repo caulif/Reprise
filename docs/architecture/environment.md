@@ -201,7 +201,7 @@ interface EnvironmentResource {
 
 ### 5.3 EnvironmentBaseline
 
-当前字段以 [`EnvironmentBaseline`](../../src/environment/local-workspace-provider.ts) 为准：`mode` 为 `canonical | unsupported`；`match` 含 `recovered` / `recovered_partial` / `current_state_fallback`；`readiness.runnable` 为 `isolated | blocked | unsupported`。`recovery.status` 新写入是 `ready | blocked | failed`。
+当前字段以 [`EnvironmentBaseline`](../../src/environment/local-workspace-provider.ts) 为准：`mode` 为 `canonical | unsupported`；`match` 含 `recovered` / `recovered_partial` / `current_state_fallback`；`readiness.runnable` 为 `isolated | blocked | unsupported`。`recovery.status` 新写入是 `ready | blocked | failed`。`recovery.taskOutcome` 为 `ready_for_task | blocked | unrecoverable | blocked_by_safety | runner_failed`；信封 `blocked` 是缺关键输入、补上后可重跑，与安全闸 `blocked_by_safety` 不同。Host 应用层生命周期是 `created → staged → forensics → model → validated → accepted | failed`。见 [线性生命周期与 blocked](../decisions/accepted/2026-09-16-recovery-linear-lifecycle-and-blocked.md)。
 
 下列接口块描述早期资源列表基线，不是当前 TypeBox/磁盘形状。
 

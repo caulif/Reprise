@@ -11,7 +11,7 @@ export type CandidateStartGate = {
     baselineMode: string;
     runnable?: string;
     envelopeStatus?: string;
-    userStatus?: "recovered" | "partial" | "failed";
+    userStatus?: "recovered" | "partial" | "blocked" | "failed";
     taskReadinessStatus?: "ready" | "not_ready" | "blocked";
   };
 };
@@ -28,7 +28,7 @@ export function candidateStartBlocked(input: CandidateStartGate): string | undef
     if (!input.recovery.hasStaging) {
       return "Candidate was not started because recovery staging is incomplete.";
     }
-    if (!input.recovery.hasAccept || input.recovery.userStatus === "failed") {
+    if (!input.recovery.hasAccept || input.recovery.userStatus === "failed" || input.recovery.userStatus === "blocked") {
       return "Candidate was not started because recovery did not produce a runnable workspace.";
     }
     return undefined;
