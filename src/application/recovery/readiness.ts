@@ -165,14 +165,12 @@ ${result.stderr}`),
   };
 }
 
-export function taskReadinessBlocksPublication(_status: RecoveryReadinessResult["status"]): boolean {
-  return false;
-}
-
 export function taskContinuationOutcome(
   envelopeStatus: string,
-): "ready_for_task" | "unrecoverable" | "blocked_by_safety" {
-  return envelopeStatus === "ready" ? "ready_for_task" : "unrecoverable";
+): "ready_for_task" | "blocked" | "unrecoverable" | "blocked_by_safety" {
+  if (envelopeStatus === "ready") return "ready_for_task";
+  if (envelopeStatus === "blocked") return "blocked";
+  return "unrecoverable";
 }
 
 export async function measureRecoveryStagingReadiness(
@@ -189,14 +187,6 @@ export async function measureRecoveryStagingReadiness(
     availableChecks: ["inspect required paths and task inputs"],
   };
   return checkRecoveryReadiness(root, context, { executeCommands: false });
-}
-
-export function applyTaskReadinessGate<T extends {
-  baseline: {
-    readiness: { runnable: string; strictness: string; blockingResourceIds: string[] };
-  };
-}>(preview: T, _readiness: RecoveryReadinessResult): T {
-  return preview;
 }
 
 function isOutputProducingTask(text: string): boolean {

@@ -184,7 +184,7 @@ const M = {
   userRecovered: { en: 'Recovered', zh: '已恢复' },
   userPartial: { en: 'Partial recovery', zh: '部分恢复' },
   userFailed: { en: 'Could not recover', zh: '无法恢复' },
-  userBlocked: { en: 'Recovery blocked', zh: '恢复受阻' },
+  userBlocked: { en: 'Missing a required input; retry after it is supplied', zh: '缺关键输入，补上后可重跑' },
   notReplayableNoUserInput: { en: 'Cannot replay: no eligible user input.', zh: '无法回放：没有合法用户输入' },
   notReplayableCorrupt: { en: 'Cannot replay: transcript is corrupt.', zh: '无法回放：正文损坏' },
   notReplayableUnreadable: { en: 'Cannot replay: source is unreadable.', zh: '无法回放：来源不可读' },

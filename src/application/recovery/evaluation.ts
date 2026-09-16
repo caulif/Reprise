@@ -32,14 +32,10 @@ export type RecoveryEvaluationMetrics = {
   stagingSuccessRate: Ratio;
   forensicsCompletionCoverage: Ratio;
   evidenceSourceCoverage: Ratio;
-  averageHypothesisCount: number;
-  averageCandidateCount: number;
-  verifierRejectionReasons: Record<string, number>;
   pendingUserReviewCount: number;
   verifiedCount: number;
   taskOutcomeCounts: Record<string, number>;
   retryableProviderFailureRate: Ratio;
-  pathBoundaryRejectionRate: Ratio;
   /** 95% Wilson intervals are reported only for truth-bearing checkpoint metrics. */
   truthRecoveryRate: Ratio;
   truthRecoveryRateWilson95: ConfidenceInterval | undefined;
@@ -104,14 +100,10 @@ function metrics(cases: readonly RecoveryEvaluationCase[]): RecoveryEvaluationMe
     stagingSuccessRate: booleanRate(cases, (row) => row.stagingSucceeded),
     forensicsCompletionCoverage: booleanRate(cases, (row) => row.forensicsCompleted),
     evidenceSourceCoverage: evidenceCoverage(cases),
-    averageHypothesisCount: averageOptional(cases.map((row) => row.hypothesisCount)),
-    averageCandidateCount: averageOptional(cases.map((row) => row.candidateCount)),
-    verifierRejectionReasons: rejectionReasons(cases),
     pendingUserReviewCount: cases.filter((row) => row.verification === 'pending_user_review').length,
     verifiedCount: cases.filter((row) => row.verification === 'verified').length,
     taskOutcomeCounts: taskOutcomeCounts(cases),
     retryableProviderFailureRate: booleanRate(cases, (row) => row.providerFailureRetryable),
-    pathBoundaryRejectionRate: booleanRate(cases, (row) => row.pathBoundaryRejected),
     truthRecoveryRate,
     truthRecoveryRateWilson95: wilson95(truthRecoveryRate.numerator, truthRecoveryRate.denominator),
     verifiedPathPrecisionWilson95: wilson95(truePositive, predicted.size),
@@ -161,23 +153,11 @@ function evidenceCoverage(cases: readonly RecoveryEvaluationCase[]): Ratio {
   return ratio(available, attempted);
 }
 
-function averageOptional(values: readonly (number | undefined)[]): number {
-  return average(values.filter((value): value is number => value !== undefined));
-}
-
 function taskOutcomeCounts(cases: readonly RecoveryEvaluationCase[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const row of cases) {
     const outcome = row.taskOutcome ?? "unclassified";
     counts[outcome] = (counts[outcome] ?? 0) + 1;
-  }
-  return counts;
-}
-
-function rejectionReasons(cases: readonly RecoveryEvaluationCase[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const caseRow of cases) {
-    for (const reason of caseRow.verifierRejectionReasons ?? []) counts[reason] = (counts[reason] ?? 0) + 1;
   }
   return counts;
 }

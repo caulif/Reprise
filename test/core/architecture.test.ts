@@ -225,6 +225,13 @@ test('Recovery production path does not reintroduce candidate selection or three
   const statusFn = userStatus.match(/export function userRecoveryStatus[\s\S]*?\n}/)?.[0] ?? "";
   assert.doesNotMatch(statusFn, /excluded > 0/);
   const fail = await readFile(join(SRC, 'application/recovery/fail.ts'), 'utf8');
+  const orchestrator = await readFile(join(SRC, 'application/recovery/orchestrator.ts'), 'utf8');
+  assert.doesNotMatch(orchestrator, /forensics_running|hypotheses_ready|candidate_verified|candidate_rejected|review_required|exhausted/);
+  assert.match(orchestrator, /"created"/);
+  assert.match(orchestrator, /"staged"/);
+  assert.match(orchestrator, /"forensics"/);
+  assert.match(orchestrator, /"model"/);
+  assert.match(orchestrator, /"validated"/);
   assert.doesNotMatch(fail, /status:\s*["'](?:recovered|partial|insufficient_evidence)["']/);
   assert.doesNotMatch(fail, /match:\s*["']current_state_fallback["']/);
   const run = await readFile(join(SRC, 'application/recovery/run.ts'), 'utf8');
@@ -240,7 +247,8 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.doesNotMatch(readiness, /return status !== "ready"/);
   assert.doesNotMatch(readiness, /Missing or empty task-relevant paths/);
   assert.doesNotMatch(readiness, /blockingResourceIds: \["task-readiness"\]/);
-  assert.match(readiness, /taskReadinessBlocksPublication[\s\S]*return false/);
+  assert.doesNotMatch(readiness, /taskReadinessBlocksPublication/);
+  assert.doesNotMatch(readiness, /applyTaskReadinessGate/);
   const workspaceTools = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
   assert.doesNotMatch(workspaceTools, /filesystem ACL/);
   assert.match(agent, /verifies its fingerprint afterwards/);

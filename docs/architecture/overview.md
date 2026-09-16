@@ -247,7 +247,7 @@ Core 只看环境基线和候选副本，不编排 Recovery Agent 的内部 loop
 
 三个 Agent Module 是一等业务模块，不是 Orchestrator 内部的临时模型调用。它们共享 Pi Agent Host 的基础能力，但各自拥有端口和领域契约；当前不建立万能 `AgentModule<I, O>` 工作流抽象。
 
-Environment 子系统通过内部端口调用 Recovery Agent。一次恢复使用一个连续 Session 和一个工作副本，三个 turn 为理解与侦察、恢复与准备、自检与结论；自由轮次进度从事件日志恢复。Host 只在机械检查失败时反馈同一 Session。信封为 `ready` / `blocked`。
+Environment 子系统通过内部端口调用 Recovery Agent。一次恢复使用一个连续 Session 和一个工作副本，三个 turn 为理解与侦察、恢复与准备、自检与结论；自由轮次进度从事件日志恢复。Host 只在机械检查失败时反馈同一 Session。信封为 `ready` / `blocked`。Host 应用层生命周期为 `created → staged → forensics → model → validated → accepted | failed`；`taskOutcome=blocked` 表示缺关键输入、补上后可重跑。见 [线性生命周期与 blocked](../decisions/accepted/2026-09-16-recovery-linear-lifecycle-and-blocked.md)。
 
 Recovery Agent 使用产品 Recovery Playbook 和现有工作区工具，自主调查、修改、恢复和验证；Host 只负责运行控制、不可逆边界、审计、持久化和机械检查。Provider 保存可复用 baseline。Recovery 的目标和三轮 prompt 设计见[Recovery 起点恢复目标](../plan/recovery-initial-environment.md)与[单工作副本自主三轮循环](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md)。
 

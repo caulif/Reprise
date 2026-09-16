@@ -22,6 +22,8 @@ export {
   type RecoveryFact,
   RecoveryLifecycleAttemptSchema,
   type RecoveryLifecycleAttempt,
+  RecoveryTaskOutcomeSchema,
+  type RecoveryTaskOutcome,
   type RecoveryPlan,
   type RecoveryCandidate,
   type RecoveryCandidateGraph,

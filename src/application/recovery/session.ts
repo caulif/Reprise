@@ -41,18 +41,12 @@ export type RecoveryRunSession = {
   staging?: RecoveryStaging;
   recovery?: StructuredAgentResult<RecoveryResult>;
   lastCompletedRecovery?: StructuredAgentResult<RecoveryResult>;
-  haltReadinessFeedback?: boolean;
-  candidateCreated: boolean;
   recoveredPaths: string[];
   verification: "verified" | "pending_user_review" | "rejected" | "insufficient_evidence";
   forensicsCompleted: boolean;
   evidenceSourcesAttempted?: number;
   evidenceSourcesAvailable?: number;
-  hypothesisCount?: number;
-  candidateCount?: number;
-  verifierRejectionReasons?: string[];
   providerFailureRetryable: boolean | undefined;
-  pathBoundaryRejected?: boolean;
   readinessResult?: RecoveryReadinessResult;
   taskOutcome?: NonNullable<EnvironmentBaseline["recovery"]>["taskOutcome"];
   automaticallyAcceptedBaseline?: EnvironmentBaseline;
@@ -72,8 +66,6 @@ export type RecoveryRunSession = {
   facts?: RecoveryFacts;
   context?: RecoveryContext;
   tools?: readonly AgentToolDefinition[];
-  readinessSignature?: string;
-  noProgressTurns?: number;
   activeProviderPreview?: RecoveryPreview;
 };
 
@@ -122,7 +114,6 @@ export async function createRecoveryRunSession(
     provider,
     store,
     ...(input.onEvent ? { unsubscribe: store.subscribe(input.onEvent) } : {}),
-    candidateCreated: false,
     recoveredPaths: [],
     verification: "rejected",
     forensicsCompleted: false,
@@ -165,17 +156,12 @@ export async function failRecoveryRunSession(
     failureStage: session.failureStage,
     preflightOperation: session.preflightOperation,
     writerAcquired: session.writerAcquired,
-    candidateCreated: session.candidateCreated,
     recoveredPaths: session.recoveredPaths,
     verification: session.verification,
     forensicsCompleted: session.forensicsCompleted,
     evidenceSourcesAttempted: session.evidenceSourcesAttempted,
     evidenceSourcesAvailable: session.evidenceSourcesAvailable,
-    hypothesisCount: session.hypothesisCount,
-    candidateCount: session.candidateCount,
-    verifierRejectionReasons: session.verifierRejectionReasons,
     providerFailureRetryable: session.providerFailureRetryable,
-    pathBoundaryRejected: session.pathBoundaryRejected,
     readinessResult: session.readinessResult,
     taskOutcome: session.taskOutcome,
     modelAttempts: session.modelAttempts,

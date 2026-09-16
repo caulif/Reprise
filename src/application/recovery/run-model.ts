@@ -137,7 +137,7 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
       session,
       recoveryAttemptRecord({
         attemptId: `recovery-attempt-model-${session.modelAttempts}-started`,
-        phase: "candidate",
+        phase: "model",
         operation: "invoke_model",
         attemptNumber: session.modelAttempts,
         result: "started",
@@ -152,7 +152,7 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
       session,
       recoveryAttemptRecord({
         attemptId: `recovery-attempt-model-${session.modelAttempts}-completed`,
-        phase: "candidate",
+        phase: "model",
         operation: "invoke_model",
         attemptNumber: session.modelAttempts,
         result: session.recovery.status === "completed" ? "succeeded" : "failed",

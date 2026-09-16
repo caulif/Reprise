@@ -283,6 +283,6 @@ function chromeProductLabel(input: Input): string | undefined {
   return input.productLabel;
 }
 
-function previewStatus(status: 'recovered' | 'partial' | 'failed'): 'recovered' | 'partial' | 'failed' {
+function previewStatus(status: 'recovered' | 'partial' | 'blocked' | 'failed'): 'recovered' | 'partial' | 'blocked' | 'failed' {
   return status;
 }

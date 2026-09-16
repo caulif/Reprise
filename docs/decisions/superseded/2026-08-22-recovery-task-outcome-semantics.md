@@ -1,7 +1,9 @@
 # Recovery task outcome semantics
 
-- 状态：accepted
-- 日期：2026-08-22
+状态：superseded
+日期：2026-08-22
+
+替代：[线性生命周期与 blocked](../accepted/2026-09-16-recovery-linear-lifecycle-and-blocked.md)
 
 ## 决策
 

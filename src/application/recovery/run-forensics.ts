@@ -11,7 +11,7 @@ import { sha256 } from "../../core/identity.js";
 export async function startRecoveryForensics(session: RecoveryRunSession): Promise<void> {
   const { input, store, staging, attemptMode } = session;
   if (!staging) throw new Error("Recovery staging was not prepared.");
-  moveRecoveryState(session, "forensics_running");
+  moveRecoveryState(session, "forensics");
   await recordRecoveryAttempt(
     session,
     recoveryAttemptRecord({
@@ -47,7 +47,6 @@ export async function startRecoveryForensics(session: RecoveryRunSession): Promi
       recordedAt: new Date().toISOString(),
     }),
   );
-  moveRecoveryState(session, "hypotheses_ready");
   session.preflightOperation = "recovery_build_investigation";
   const facts = session.facts;
   session.evidenceSourcesAttempted = 4;
@@ -63,7 +62,7 @@ export async function persistRecoveryInvestigation(session: RecoveryRunSession):
   const { input, store, facts, staging } = session;
   if (!facts || !staging) throw new Error("Recovery forensics was not prepared.");
   session.preflightOperation = "recovery_persist_investigation";
-  moveRecoveryState(session, "candidate_running");
+  moveRecoveryState(session, "model");
   const summary = {
     schemaVersion: 1,
     caseId: input.caseId,

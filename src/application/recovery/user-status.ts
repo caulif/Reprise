@@ -17,7 +17,7 @@ export function userRecoveryStatus(input: {
 }): UserRecoveryStatus {
   if (!input.transcriptOk) return "failed";
   if (input.baseline.mode === "unsupported") return "failed";
-  if (input.baseline.recovery?.status === "blocked") return "failed";
+  if (input.baseline.recovery?.status === "blocked") return "blocked";
   if (input.baseline.recovery?.status === "insufficient_evidence") return "failed";
   if (input.baseline.readiness?.runnable === "blocked") return "failed";
   const recovery = input.baseline.recovery?.status;

@@ -28,30 +28,13 @@ async function overwriteEvenIfLocked(root: string, filePath: string, content: st
   await writeFile(filePath, content);
 }
 
-test("Recovery preserves a known verifier rejection as provider validation", () => {
-  assert.equal(
-    classifyRecoveryFailureStage(
-      "provider_validation_failed",
-      new Error("known verifier rejection"),
-      ["weak_or_incomplete_evidence"],
-    ),
-    "provider_validation_failed",
-  );
+test("Recovery classifies provider validation vs runner crash vs context overflow", () => {
   assert.equal(
     classifyRecoveryFailureStage(
       "provider_validation_failed",
       new Error("unknown provider failure"),
     ),
     "runner_crashed",
-  );
-  assert.equal(
-    classifyRecoveryFailureStage(
-      "provider_validation_failed",
-      new Error("provider adapter rejected completed output"),
-      undefined,
-      true,
-    ),
-    "provider_validation_failed",
   );
   assert.equal(
     classifyRecoveryFailureStage(
@@ -237,8 +220,6 @@ test("Recovery classifies a structured model request failure separately from too
     events.find((event) => event.type === "recovery.model_fallback")?.payload,
     {
       forensicsCompleted: true,
-      hypothesisCount: 0,
-      candidateCount: 0,
       modelAttempts: 2,
     },
   );

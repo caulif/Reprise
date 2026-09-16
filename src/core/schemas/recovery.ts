@@ -212,6 +212,7 @@ export const RecoveryAttemptDiagnosisSchema = Type.Object({
   finalStatus: Type.Union([
     Type.Literal("recovered"),
     Type.Literal("partial"),
+    Type.Literal("blocked"),
     Type.Literal("failed"),
   ]),
   retryable: Type.Boolean(),
@@ -296,25 +297,29 @@ const RecoveryFactSchema = Type.Object({
   summary: Type.String({ minLength: 1 }),
 });
 export type RecoveryFact = Static<typeof RecoveryFactSchema>;
+export const RecoveryTaskOutcomeSchema = Type.Union([
+  Type.Literal("ready_for_task"),
+  Type.Literal("blocked"),
+  Type.Literal("unrecoverable"),
+  Type.Literal("blocked_by_safety"),
+  Type.Literal("runner_failed"),
+]);
+export type RecoveryTaskOutcome = Static<typeof RecoveryTaskOutcomeSchema>;
 /** A single Host-audited operation in the Recovery lifecycle. */
 export const RecoveryLifecycleAttemptSchema = Type.Object({
-  schemaVersion: Type.Literal(1),
+  schemaVersion: Type.Literal(2),
   attemptId: Id,
   phase: Type.Union([
     Type.Literal("staging"),
     Type.Literal("forensics"),
-    Type.Literal("hypothesis"),
-    Type.Literal("candidate"),
-    Type.Literal("verification"),
-    Type.Literal("promotion"),
+    Type.Literal("model"),
+    Type.Literal("validated"),
   ]),
   operation: Type.Union([
     Type.Literal("begin_staging"),
     Type.Literal("resolve_facts"),
-    Type.Literal("create_candidate"),
     Type.Literal("invoke_model"),
-    Type.Literal("validate_candidate"),
-    Type.Literal("promote_checkpoint"),
+    Type.Literal("validate"),
   ]),
   candidateId: Type.Optional(Id),
   attemptNumber: Type.Integer({ minimum: 1 }),
@@ -533,12 +538,7 @@ const RecoveryEvaluationCommonSchema = {
   ])),
   readinessCheckedPaths: Type.Optional(Type.Array(RecoveryEvaluationPathSchema, { uniqueItems: true })),
   readinessMissingPaths: Type.Optional(Type.Array(RecoveryEvaluationPathSchema, { uniqueItems: true })),
-  taskOutcome: Type.Optional(Type.Union([
-    Type.Literal("ready_for_task"),
-    Type.Literal("unrecoverable"),
-    Type.Literal("blocked_by_safety"),
-    Type.Literal("runner_failed"),
-  ])),
+  taskOutcome: Type.Optional(RecoveryTaskOutcomeSchema),
   candidateCreated: Type.Boolean(),
   candidateAcceptedByUser: Type.Optional(Type.Boolean()),
   candidateReplayPassed: Type.Optional(Type.Boolean()),

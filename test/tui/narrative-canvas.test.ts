@@ -137,7 +137,7 @@ test('recovery.completed uses the user-facing recovery word', () => {
     status: 'completed',
     value: { status: 'blocked', summary: 'Required input is missing from source.' },
   }))[0];
-  assert.equal(blocked?.title, '恢复受阻');
+  assert.equal(blocked?.title, '缺关键输入，补上后可重跑');
   assert.notEqual(blocked?.level, 'error');
   assert.equal(blocked?.detail, 'Required input is missing from source.');
 });
