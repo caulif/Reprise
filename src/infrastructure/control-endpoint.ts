@@ -1,6 +1,6 @@
 import { chmod, mkdir, unlink } from "node:fs/promises";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import {
   CONTROL_CLIENT_TIMEOUT_MS,
@@ -17,13 +17,24 @@ export function controlIpcDir(dataDir: string, ownerInstanceId: string): string 
   return join(dataDir, "ipc", ownerInstanceId);
 }
 
+/** Darwin `sockaddr_un.sun_path` is 104 bytes; deep mkdtemp and `os.tmpdir()` `/var/folders` paths truncate. */
+export const UNIX_CONTROL_SOCK_MAX = 96;
+
+export function controlUnixSocketPath(ownerInstanceId: string, tmp = "/tmp"): string {
+  const id = ownerInstanceId.replace(/^own-/, "").replace(/[^A-Za-z0-9-]/g, "");
+  const compact = `rp-${id.replace(/-/g, "").slice(0, 24)}`;
+  const preferred = posix.join(tmp, `${compact}.sock`);
+  if (preferred.length <= UNIX_CONTROL_SOCK_MAX) return preferred;
+  return posix.join("/tmp", `${compact.slice(-12)}.sock`);
+}
+
 export function controlEndpointFor(
   ownerInstanceId: string,
-  ipcDir: string,
+  _ipcDir: string,
   platform: NodeJS.Platform = process.platform,
 ): ControlEndpoint {
   if (platform === "win32") return { kind: "pipe", name: `\\\\.\\pipe\\reprise-${ownerInstanceId}` };
-  return { kind: "unix", path: join(ipcDir, "sock") };
+  return { kind: "unix", path: controlUnixSocketPath(ownerInstanceId) };
 }
 
 export async function listenControlEndpoint(input: {
@@ -38,16 +49,23 @@ export async function listenControlEndpoint(input: {
       if (error.code !== "ENOENT") throw error;
     });
   }
+  const connections = new Set<Socket>();
   const server = createServer((socket) => {
+    connections.add(socket);
+    socket.once("close", () => connections.delete(socket));
     void serveSocket(socket, input.onRequest);
   });
   await bindEndpoint(server, input.endpoint);
   server.unref();
   if (input.endpoint.kind === "unix") await chmodQuiet(input.endpoint.path, 0o700);
   return {
-    close: () => new Promise<void>((resolveClose, reject) => {
-      server.close((error) => error ? reject(error) : resolveClose());
-    }),
+    close: async () => {
+      await closeListeningServer(server, connections);
+      if (input.endpoint.kind !== "unix") return;
+      await unlink(input.endpoint.path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    },
   };
 }
 
@@ -57,17 +75,42 @@ export async function sendControlRequest(
   timeoutMs = CONTROL_CLIENT_TIMEOUT_MS,
 ): Promise<ControlResponse | { status: "unreachable" } | { status: "timeout" }> {
   const socket = connectEndpoint(endpoint);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const payload = await Promise.race([
       writeAndRead(socket, request),
-      sleepStatus(timeoutMs, socket),
+      new Promise<{ status: "timeout" }>((resolve) => {
+        timer = setTimeout(() => {
+          socket.destroy();
+          resolve({ status: "timeout" });
+        }, timeoutMs);
+      }),
     ]);
     return payload;
   } catch {
     return { status: "unreachable" };
   } finally {
+    if (timer) clearTimeout(timer);
     socket.destroy();
   }
+}
+
+function closeListeningServer(server: Server, connections: Set<Socket>): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    for (const socket of connections) socket.destroy();
+    server.close((error) => {
+      // Darwin can leave a half-open unix client after cancel; the owner is retiring this endpoint.
+      void error;
+      finish();
+    });
+    setTimeout(finish, 250).unref();
+  });
 }
 
 function bindEndpoint(server: Server, endpoint: ControlEndpoint): Promise<void> {
@@ -111,16 +154,6 @@ async function writeAndRead(socket: Socket, request: ControlRequest): Promise<Co
   } catch {
     return { status: "unreachable" };
   }
-}
-
-function sleepStatus(timeoutMs: number, socket: Socket): Promise<{ status: "timeout" }> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      socket.destroy();
-      resolve({ status: "timeout" });
-    }, timeoutMs);
-    timer.unref();
-  });
 }
 
 function readLimitedJson(socket: Socket, maxBytes: number): Promise<unknown> {

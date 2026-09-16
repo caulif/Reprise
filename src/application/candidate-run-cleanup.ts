@@ -53,7 +53,6 @@ async function stopCandidateRuntime(
           timedOut = true;
           reject(new Error("cleanup_timeout"));
         }, ports.timeoutMs);
-        timer.unref();
       }),
     ]);
     await appendCleanup("runtime.stop_completed", { reason }, "runtime-stop");

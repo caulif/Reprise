@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
 const WINDOWS_ABS = /^[A-Za-z]:[\\/]|^\\\\/;
@@ -33,6 +34,19 @@ export function pathContainedBy(root: string, target: string): boolean {
 /** True when both recorded paths name the same file after host-independent normalization. */
 export function sameFsPath(left: string, right: string): boolean {
   return pathContainedBy(left, right) && pathContainedBy(right, left);
+}
+
+/** True when both live paths name the same file after realpath (8.3 vs long, symlink). */
+export async function sameLiveFsPath(left: string, right: string): Promise<boolean> {
+  return (await liveCompareKey(left)) === (await liveCompareKey(right));
+}
+
+async function liveCompareKey(value: string): Promise<string> {
+  try {
+    return compareKey(await realpath(value));
+  } catch {
+    return compareKey(value);
+  }
 }
 
 /** Relative path from `root` to `target` using `/`, or undefined if target is outside root. */

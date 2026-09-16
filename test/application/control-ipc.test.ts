@@ -12,7 +12,13 @@ import {
   registerActivity,
 } from "../../src/application/experiment-activity.js";
 import { requestCancel } from "../../src/application/experiment-cancel.js";
-import { sendControlRequest, controlIpcDir } from "../../src/infrastructure/control-endpoint.js";
+import {
+  sendControlRequest,
+  controlIpcDir,
+  controlEndpointFor,
+  controlUnixSocketPath,
+  UNIX_CONTROL_SOCK_MAX,
+} from "../../src/infrastructure/control-endpoint.js";
 import { listControlRecords, writeControlFinished, experimentRootFor } from "../../src/infrastructure/control-store.js";
 import { runCli } from "../../src/cli/main.js";
 
@@ -26,6 +32,27 @@ test("control endpoint is a local pipe or unix socket, never a TCP port", () => 
   assert.match(source, /kind === "unix"/);
   assert.doesNotMatch(source, /listen\(\s*\d+/);
   assert.doesNotMatch(source, /createServer\(\s*\{[^}]*port/);
+  assert.doesNotMatch(source, /timer\.unref/);
+  assert.doesNotMatch(source, /join\(ipcDir, ["']sock["']\)/);
+});
+
+test("unix control socket path fits Darwin sockaddr_un", () => {
+  const owner = `own-${"a".repeat(36)}`;
+  const deepIpc = join(
+    "/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T",
+    "reprise-recovery-readiness-no-progress-XXXXXX",
+    "data",
+    "ipc",
+    owner,
+  );
+  const nested = controlEndpointFor(owner, deepIpc, "darwin");
+  assert.equal(nested.kind, "unix");
+  assert.ok(nested.path.length <= UNIX_CONTROL_SOCK_MAX, nested.path);
+  assert.equal(nested.path, controlUnixSocketPath(owner));
+  assert.match(nested.path, /^\/tmp\/rp-[0-9a-z]{1,24}\.sock$/);
+  assert.doesNotMatch(nested.path, /var\/folders|reprise-recovery-readiness/);
+  assert.ok(join(deepIpc, "sock").length > UNIX_CONTROL_SOCK_MAX);
+  assert.ok(join("/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T", `${owner}.sock`).length > 80);
 });
 
 test("two processes cancel prepare, run, and compare without touching writer.lock", async (t) => {
@@ -166,6 +193,37 @@ test("unreachable control record does not delete the lock or kill a pid", async 
   const result = await requestCancel("experiment-dead", dataDir);
   assert.ok(result.status === "unreachable" || result.status === "timeout");
   assert.equal(await readFile(lockPath, "utf8"), "keep\n");
+});
+
+test("concurrent dataDirs keep separate unix sockets", async (t) => {
+  const left = await mkdtemp(join(tmpdir(), "reprise-ipc-left-"));
+  const right = await mkdtemp(join(tmpdir(), "reprise-ipc-right-"));
+  t.after(async () => {
+    await rm(left, { recursive: true, force: true });
+    await rm(right, { recursive: true, force: true });
+  });
+  const cancelled: string[] = [];
+  const a = registerActivity({
+    kind: "prepare",
+    experimentId: "experiment-left",
+    runId: "run-left",
+    dataDir: left,
+    cancel: async () => { cancelled.push("left"); },
+  });
+  const b = registerActivity({
+    kind: "prepare",
+    experimentId: "experiment-right",
+    runId: "run-right",
+    dataDir: right,
+    cancel: async () => { cancelled.push("right"); },
+  });
+  await Promise.all([activityControlReady(a), activityControlReady(b)]);
+  assert.equal((await listControlRecords(left)).length, 1);
+  assert.equal((await listControlRecords(right)).length, 1);
+  assert.deepEqual(cancelled, []);
+  finishExperimentActivity("experiment-left");
+  finishExperimentActivity("experiment-right");
+  await Promise.all([activityControlReady(a), activityControlReady(b)]);
 });
 
 test("cancel client source never kills pids or unlinks writer.lock", async () => {

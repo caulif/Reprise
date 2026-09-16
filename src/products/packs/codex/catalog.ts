@@ -171,7 +171,13 @@ function rolloutMatchesThread(
 }
 
 export function catalogPathKey(path: string): string {
-  return stripWindowsExtendedPrefix(path).replaceAll('\\', '/').toLowerCase();
+  let value = stripWindowsExtendedPrefix(path);
+  try {
+    value = stripWindowsExtendedPrefix(realpathSync(path));
+  } catch {
+    // listed or sqlite paths may already be gone; keep the recorded spelling
+  }
+  return value.replaceAll('\\', '/').toLowerCase();
 }
 
 function instant(value: unknown): string | undefined {

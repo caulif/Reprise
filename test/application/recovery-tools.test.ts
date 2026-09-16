@@ -25,6 +25,7 @@ import { sha256 } from "../../src/core/identity.js";
 import { replayControlledRecoveryDeltaBytes } from "../../src/infrastructure/recovery-write-journal.js";
 import type { TaskCase } from "../../src/core/schema.js";
 import { lockSourceWrites } from "../../src/environment/source-write-lock.js";
+import { hostNodeCommand, hostShellDelete, hostShellPipeAlpha, hostShellWriteFile } from "../host-shell.js";
 
 const exec = promisify(execFile);
 
@@ -67,8 +68,7 @@ async function assertShellLeftSourceIntact(
 }
 
 function nodeCommand(script: string): string {
-  const executable = process.execPath.replaceAll("'", "''");
-  return `& '${executable}' -e ${JSON.stringify(script)}`;
+  return hostNodeCommand(script);
 }
 
 function capturingSpawner(capture: {
@@ -235,7 +235,7 @@ test("shell_exec deletes are unobserved by the controlled-write journal", async 
   const shell = tool(root, "shell_exec", {
     onControlledWrite: async (entry: unknown) => entries.push(entry),
   });
-  await shell.execute({ command: "Remove-Item -LiteralPath input.txt" }, new AbortController().signal);
+  await shell.execute({ command: hostShellDelete("input.txt") }, new AbortController().signal);
   await assert.rejects(readFile(join(root, "input.txt")));
   assert.deepEqual(entries, []);
 });
@@ -272,7 +272,7 @@ test("shell_exec runs arbitrary staging commands with a clean temporary environm
 
   const shell = tool(root, "shell_exec", { homeRoot });
   await shell.execute(
-    { command: "Set-Content -LiteralPath shell-output.txt -Value 'from-shell'" },
+    { command: hostShellWriteFile("shell-output.txt", "from-shell") },
     new AbortController().signal,
   );
   assert.equal(
@@ -309,7 +309,7 @@ test("shell_exec runs arbitrary staging commands with a clean temporary environm
   assert.doesNotMatch(redactedDetails.command, /ultra-secret-token/);
 
   const pipeline = await shell.execute(
-    { command: "Write-Output alpha | findstr.exe alpha | Set-Content -LiteralPath pipe-output.txt" },
+    { command: hostShellPipeAlpha("pipe-output.txt") },
     new AbortController().signal,
   );
   assert.equal((pipeline.details as { exitCode: number }).exitCode, 0);

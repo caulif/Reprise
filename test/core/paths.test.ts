@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isFsAbsolute, isNativeHostPath, isWslHost, pathContainedBy, relativeInside, sameFsPath, stripWindowsExtendedPrefix } from '../../src/core/paths.js';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { isFsAbsolute, isNativeHostPath, isWslHost, pathContainedBy, relativeInside, sameFsPath, sameLiveFsPath, stripWindowsExtendedPrefix } from '../../src/core/paths.js';
 
 test('Windows drive paths stay absolute on any host', () => {
   assert.equal(isFsAbsolute('C:/source'), true);
@@ -19,6 +22,7 @@ test('Windows recorded cwd is not treated as under the POSIX process cwd', () =>
   assert.equal(sameFsPath('C:/work/app', 'C:/work/app2'), false);
   assert.equal(sameFsPath(String.raw`\\?\C:\source\app`, 'C:/source/app'), true);
   assert.equal(sameFsPath(String.raw`\\?\UNC\server\share\a`, String.raw`\\server\share\a`), true);
+  assert.equal(sameFsPath(String.raw`C:\Users\RUNNER~1\a`, String.raw`C:\Users\runneradmin\a`), false);
 });
 
 test('relativeInside keeps POSIX separators and rejects escapes', () => {
@@ -36,4 +40,21 @@ test('WSL host rejects Windows drive and /mnt drive mounts', () => {
   assert.equal(isNativeHostPath(String.raw`C:\Users\x\codex.cmd`, 'linux', wsl), false);
   assert.equal(isNativeHostPath(String.raw`C:\Users\x\codex.cmd`, 'win32', {}), true);
   assert.equal(isNativeHostPath('/usr/bin/codex', 'darwin', {}), true);
+});
+
+test('sameLiveFsPath follows a symlink that sameFsPath treats as distinct recorded paths', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-live-path-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const target = join(root, 'target.txt');
+  const link = join(root, 'link.txt');
+  await writeFile(target, 'ok\n');
+  try {
+    await symlink(target, link);
+  } catch {
+    t.skip('symlink unavailable');
+    return;
+  }
+  assert.equal(sameFsPath(link, target), false);
+  assert.equal(await sameLiveFsPath(link, target), true);
+  assert.equal(await sameLiveFsPath(target, target), true);
 });

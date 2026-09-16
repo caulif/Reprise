@@ -86,7 +86,6 @@ export async function runProcess(input: {
       timedOut = true;
       terminateProcessTree(child, input.killTree === true);
     }, input.timeoutMs);
-    timer.unref();
     attachProcessIo(child, input, stdout, stderr, output, maxOutputBytes, boundary);
     child.on('close', (code) => settleProcessClose(input, { timedOut, cancelled, code, stdout, stderr, truncated: output.truncated }, finish, boundary));
     if (input.signal?.aborted) abort();

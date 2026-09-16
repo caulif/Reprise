@@ -1,6 +1,6 @@
 import { access, readFile, stat } from "node:fs/promises";
-import { isAbsolute, resolve, relative } from "node:path";
-import { pathContainedBy } from "../../core/paths.js";
+import { resolve } from "node:path";
+import { asPosixPath, isFsAbsolute, pathContainedBy, relativeInside } from "../../core/paths.js";
 import { Value } from "@sinclair/typebox/value";
 import { sha256 } from "../../core/identity.js";
 import { ProcessBoundaryError, runProcess } from "../../infrastructure/process-runner.js";
@@ -57,10 +57,10 @@ export function deriveRecoveryReadinessContext(taskCase: TaskCase, cwd?: string)
     : [];
   const historicalCwd = typeof taskHints.historicalCwd === "string" ? taskHints.historicalCwd : cwd;
   const derivedPaths = taskCase.evidenceLevel && typeof taskHints.historicalCwd === "string" ? touchedPaths.flatMap((path) => {
-    if (!isAbsolute(path)) return [path.replaceAll("\\", "/")];
-    if (!historicalCwd || !isAbsolute(historicalCwd)) return [];
-    const candidate = relative(historicalCwd, path).replaceAll("\\", "/");
-    return candidate && candidate !== "." && candidate !== ".." && !candidate.startsWith("../") ? [candidate] : [];
+    if (!isFsAbsolute(path)) return [asPosixPath(path)];
+    if (!historicalCwd || !isFsAbsolute(historicalCwd)) return [];
+    const candidate = relativeInside(historicalCwd, path);
+    return candidate ? [candidate] : [];
   }) : [];
   const relevantPaths = boundedStrings([...explicitPaths, ...derivedPaths], READINESS_LIMITS.path, 256);
   const pathSemantics = isOutputProducingTask(text) ? "task_outputs" as const : "required_inputs" as const;

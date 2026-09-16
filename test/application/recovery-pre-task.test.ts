@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -143,4 +143,12 @@ test("Recovery does not accept ready when staging HEAD is the historical task co
   assert.notEqual(attempt.baseline.recovery?.status, "ready");
   assert.equal(attempt.baseline.readiness.runnable, "blocked");
   assert.match(attempt.baseline.warnings.join("\n"), /historical task commit/);
+});
+
+test("pre-task git probes do not pass caret peel to git.cmd", async () => {
+  const source = await readFile(join(process.cwd(), "src/environment/recovery-pre-task.ts"), "utf8");
+  assert.doesNotMatch(source, /\^\{commit\}/);
+  assert.doesNotMatch(source, /taskCommit\}\^/);
+  assert.match(source, /cat-file", "-t"/);
+  assert.match(source, /~1/);
 });

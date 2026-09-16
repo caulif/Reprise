@@ -34,15 +34,13 @@ export async function evaluateRecoveryPreTaskConditions(
   const recorded = recordedEventCommits(taskCase.historicalEvents);
   const existingRecorded: string[] = [];
   for (const commit of recorded) {
-    const full = await gitOutput(root, ["rev-parse", "--verify", `${commit}^{commit}`]);
+    const full = await peelCommit(root, commit);
     if (full) existingRecorded.push(full);
   }
   const taskCommit = existingRecorded.length ? await earliestCommit(root, existingRecorded) : undefined;
   const historical = recordedHistoricalCommit(taskCase);
-  const historicalFull = historical
-    ? await gitOutput(root, ["rev-parse", "--verify", `${historical}^{commit}`])
-    : undefined;
-  const parentOfTask = taskCommit ? await gitOutput(root, ["rev-parse", `${taskCommit}^`]) : undefined;
+  const historicalFull = historical ? await peelCommit(root, historical) : undefined;
+  const parentOfTask = taskCommit ? await gitOutput(root, ["rev-parse", `${taskCommit}~1`]) : undefined;
   const preTaskCommit = historicalFull && historicalFull !== taskCommit
     ? historicalFull
     : parentOfTask;
@@ -155,6 +153,12 @@ function isDependencyPath(posix: string): boolean {
   return DEPENDENCY_PREFIXES.some((prefix) => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix));
 }
 
+async function peelCommit(root: string, object: string): Promise<string | undefined> {
+  const kind = await gitOutput(root, ["cat-file", "-t", object]);
+  if (kind !== "commit") return undefined;
+  return gitOutput(root, ["rev-parse", "--verify", object]);
+}
+
 async function gitOutput(root: string, args: readonly string[]): Promise<string | undefined> {
   try {
     const stdout = (await git(root, args)).trim();
@@ -173,5 +177,6 @@ async function git(root: string, args: readonly string[]): Promise<string> {
     cwd: root,
     timeoutMs: 5_000,
     maxOutputBytes: 64 * 1024,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
   })).stdout;
 }

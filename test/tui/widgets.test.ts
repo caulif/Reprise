@@ -210,6 +210,15 @@ test('wrapBodyLine prefers path separators over a mid-segment break', () => {
   assert.doesNotMatch(lines.map((line) => line.trimStart()).join('\n'), /^vironment/m);
 });
 
+test('EACCES maps to a Windows baseline lock only on win32', () => {
+  const error = Object.assign(new Error("EACCES: permission denied, mkdir '/cases'"), { code: 'EACCES' });
+  if (process.platform === 'win32') {
+    assert.match(operatorErrorMessage(error), /lock on the copied files/);
+  } else {
+    assert.equal(operatorErrorMessage(error), error.message);
+  }
+});
+
 test('the error page names a Windows baseline lock without dumping the staging path', () => {
   const theme = createTheme(120, false);
   const error = Object.assign(new Error("EPERM: operation not permitted, rename 'C:\\Users\\example\\Documents\\model-test\\Reprise\\.reprise\\experiments\\experiment-2af2ed5b\\environment\\baselines\\.case.staging' -> 'C:\\Users\\example\\Documents\\model-test\\Reprise\\.reprise\\experiments\\experiment-2af2ed5b\\environment\\baselines\\case'"), { code: 'EPERM' });

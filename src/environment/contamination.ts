@@ -39,7 +39,8 @@ async function gitSignal(root: string, historicalCommit: string | undefined): Pr
   if (!historicalCommit) return undefined;
   try {
     const currentHead = (await git(root, ['rev-parse', 'HEAD'])).trim();
-    await git(root, ['cat-file', '-e', `${historicalCommit}^{commit}`]);
+    const kind = (await git(root, ['cat-file', '-t', historicalCommit])).trim();
+    if (kind !== 'commit') throw new Error('historical object is not a commit');
     if (currentHead === historicalCommit) return { historicalCommit, currentHead, relation: 'same' };
     const ancestor = await succeeds(() => git(root, ['merge-base', '--is-ancestor', historicalCommit, currentHead]));
     return { historicalCommit, currentHead, relation: ancestor ? 'ancestor' : 'diverged' };
@@ -81,6 +82,7 @@ function latestHistoricalTime(taskCase: TaskCase): string | undefined {
 async function git(root: string, args: readonly string[]): Promise<string> {
   return (await runProcess({
     operation: 'contamination_git_probe', executableKind: 'git', command: 'git', args, cwd: root, timeoutMs: 5_000, maxOutputBytes: 64 * 1024,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
   })).stdout;
 }
 async function succeeds(action: () => Promise<unknown>): Promise<boolean> { try { await action(); return true; } catch { return false; } }

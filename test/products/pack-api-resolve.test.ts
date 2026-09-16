@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
@@ -17,8 +17,10 @@ test("published pack-api export resolves from dist without source paths", async 
   const href = pathToFileURL(join(root, "dist/src/products/contract.js")).href;
   const api = await import(href) as { PACK_API_MAJOR?: number };
   assert.equal(api.PACK_API_MAJOR, 3);
-  const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
-  const packed = await exec(process.execPath, [npmCli, "pack", "--dry-run", "--json"], {
+  const { resolveNpmCliJs } = await import(pathToFileURL(join(root, "scripts/npm-cli.mjs")).href) as {
+    resolveNpmCliJs: (execPath?: string) => string;
+  };
+  const packed = await exec(process.execPath, [resolveNpmCliJs(), "pack", "--dry-run", "--json"], {
     cwd: root,
     encoding: "utf8",
     windowsHide: true,

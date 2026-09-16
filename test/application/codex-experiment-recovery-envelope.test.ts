@@ -7,6 +7,7 @@ import type { RecoveryAgentPort } from "../../src/agents/recovery-agent.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
 import type { TaskCase } from "../../src/core/schema.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
+import { hostShellDelete } from "../host-shell.js";
 
 test("Recovery mechanical feedback reuses the same recover() after a missing report", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-keep-probed-envelope-"));
@@ -165,7 +166,7 @@ test("Recovery still completes after more than sixteen destructive shell_exec ca
       const remove = tools.find((tool) => tool.name === "shell_exec");
       const signal = new AbortController().signal;
       for (let index = 0; index < 17; index += 1) {
-        await remove?.execute({ command: `Remove-Item -LiteralPath scratch-${index}.txt` }, signal);
+        await remove?.execute({ command: hostShellDelete(`scratch-${index}.txt`) }, signal);
       }
       await tools.find((tool) => tool.name === "write")?.execute(
         { path: "recovery.md", content: "# Recovery\n\nDeletes are not capped by a Host tool budget." },

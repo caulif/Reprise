@@ -41,6 +41,7 @@ const headlessOptions = {
 export async function runHeadlessCommand(command: "prepare" | "run" | "compare", args: readonly string[], io: ProtocolIo, context: HeadlessContext = {}): Promise<number> {
   let mode: CliOutputMode = "json";
   const foreground = installForegroundCancel();
+  let timeout: { signal: AbortSignal; stop: () => void } | undefined;
   try {
     const values = parseArgs({ args: [...args], options: headlessOptions, allowPositionals: false, strict: true }).values;
     if (values.help) {
@@ -48,8 +49,8 @@ export async function runHeadlessCommand(command: "prepare" | "run" | "compare",
       return CLI_EXIT.ok;
     }
     mode = parseOutputMode(values);
-    const timeout = timeoutSignal(values["timeout-ms"]);
-    if (timeout) foreground.follow(timeout);
+    timeout = timeoutSignal(values["timeout-ms"]);
+    if (timeout) foreground.follow(timeout.signal);
     const dataDir = resolve(values["data-dir"] ?? process.env.REPRISE_DATA_DIR ?? ".reprise");
     const locale = operatorLocaleFromFlag(values.locale);
     if (locale) await saveTuiPreferences(dataDir, { locale });
@@ -83,6 +84,7 @@ export async function runHeadlessCommand(command: "prepare" | "run" | "compare",
   } catch (error: unknown) {
     return failCommand(command, error, io, mode);
   } finally {
+    timeout?.stop();
     foreground.stop();
   }
 }
@@ -240,11 +242,16 @@ function failCommand(command: string, error: unknown, io: ProtocolIo, mode: CliO
   return exitCodeForKind(classified.kind);
 }
 
-function timeoutSignal(value: string | undefined): AbortSignal | undefined {
+function timeoutSignal(value: string | undefined): { signal: AbortSignal; stop: () => void } | undefined {
   if (!value) return undefined;
   const ms = Number(value);
   if (!Number.isInteger(ms) || ms < 1) throw new CliError("usage", "--timeout-ms must be a positive integer.");
-  return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    stop() { clearTimeout(timer); },
+  };
 }
 
 type ForegroundCancel = { readonly signal: AbortSignal; follow(other: AbortSignal): void; stop(): void };

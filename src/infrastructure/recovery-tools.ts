@@ -1,7 +1,7 @@
 import { isAbsolute } from "node:path";
 import { sha256 } from "../core/identity.js";
 import { recoveryEvidenceCatalog, type RecoveryEvidenceCatalogEntry } from "../products/history/source-refs.js";
-import { sameFsPath } from "../core/paths.js";
+import { sameLiveFsPath } from "../core/paths.js";
 import { type TaskCase } from "../core/schema.js";
 import { ProcessBoundaryError, runProcess } from "./process-runner.js";
 
@@ -108,7 +108,7 @@ async function probeGit(
   ];
   if (!inside.ok || inside.stdout.trim() !== "true") return unavailableGit(operations, historicalCommit);
   const toplevel = await gitProbe(root, ["rev-parse", "--show-toplevel"], "toplevel", true);
-  if (!toplevel.ok || !sameFsPath(toplevel.stdout.trim(), root)) return unavailableGit(operations, historicalCommit);
+  if (!toplevel.ok || !(await sameLiveFsPath(toplevel.stdout.trim(), root))) return unavailableGit(operations, historicalCommit);
   const head = await gitProbe(
     root,
     ["rev-parse", "--verify", "HEAD"],
@@ -238,6 +238,7 @@ async function gitProbe(
         cwd: root,
         timeoutMs: 5_000,
         maxOutputBytes: MAX_BYTES,
+        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
       });
       return { ok: true, stdout: result.stdout, attempts: attempt };
     } catch (error) {
@@ -267,12 +268,9 @@ async function gitProbe(
 }
 
 async function gitObjectProbe(root: string, object: string): Promise<GitProbe> {
-  return gitProbe(
-    root,
-    ["cat-file", "-e", `${object}^{commit}`],
-    "object",
-    true,
-  );
+  const probe = await gitProbe(root, ["cat-file", "-t", object], "object", true);
+  if (!probe.ok || probe.stdout.trim() === "commit") return probe;
+  return { ...probe, ok: false, failure: probe.failure ?? "nonzero_exit" };
 }
 function gitNonzeroExit(error: unknown): boolean {
   return (

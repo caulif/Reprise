@@ -1,6 +1,6 @@
 # 工程门禁
 
-本地全量入口是 `npm run check`，编排在 [`scripts/run-gates.mjs`](../scripts/run-gates.mjs)。CI 分 lane 的入口在 [`.github/workflows/check.yml`](../.github/workflows/check.yml)。不要在文档里复述门禁 id 列表——以这两个文件为准。
+本地全量入口是 `npm run check`，编排在 [`scripts/run-gates.mjs`](../scripts/run-gates.mjs)。CI 分 lane 的入口在 [`.github/workflows/check.yml`](../.github/workflows/check.yml)。不要在文档里复述门禁 id 列表——以这两个文件为准。`npm` 经 [`scripts/npm-cli.mjs`](../scripts/npm-cli.mjs) 解析 `npm-cli.js` 后由 `node` + `shell:false` 启动，见[hostedtoolcache npm 布局](./decisions/accepted/2026-09-16-hostedtoolcache-npm-cli.md)。
 
 ## 怎么跑
 
@@ -19,7 +19,7 @@
 
 - **静态**：`tsc --noEmit`、eslint、文档链接与预算、schema 生成区。
 - **测试**：`dist/test/**/*.test.js` 与 CLI `--version`。平台矩阵由上述 CI workflow 拥有；模拟测试不构成真实 Runtime 或 TUI 的支持承诺，见[支持边界](./SUPPORT.md)。
-- **TUI 帧**：Windows 上逐字节比对 [`docs/tui-audit/frames/`](./tui-audit/frames/)，再跑启发式分析（行宽溢出、面板错位、compact 禁用字符）。基线是 Windows 产物，见[帧基线决策](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)。
+- **TUI 帧**：Windows 上比对 [`docs/tui-audit/frames/`](./tui-audit/frames/)，再跑启发式分析（行宽溢出、面板错位、compact 禁用字符）。基线是 Windows 产物，见[帧基线决策](./decisions/accepted/2026-08-15-tui-frame-baseline-windows-only.md)。比对前会把用户 temp 路径（含 8.3 短名）收成稳定前缀，见[活路径身份](./decisions/accepted/2026-09-16-live-fs-path-identity.md)。非 Windows 宿主的 `audit:tui:check` 只生成+自检，不与 Windows 基线逐字节比对。
 - **覆盖率**：总体 lines / branches / functions 阈值，见[覆盖率决策](./decisions/accepted/2026-08-14-coverage-thresholds.md)。
 - **未使用导出与重复**：`knip` 与 `jscpd` 进入 `check`；失败即红。`jscpd` 的 `--threshold` 是棘轮，只降不升。跨 Pack 的进程生命周期、turn wait 与 Session listing 摘要走 `products/shared/`，不靠忽略清单消音；产品协议解析与 Projection 仍允许各 Pack 独立实现。
 - **供应链与边界**：`verify-pack`、`verify-audit`、`verify-secrets`、`verify-layer-imports`、`verify-source-size`、`verify-tracked-source` 进入 `static`/`check`。各自带 `--self-test` 反向用例。真实 Runtime smoke 仍不在默认 CI。`src/**/*.ts` 与 `test/**/*.ts` 文件超过 1000 行、`src/**/*.ts` 函数/方法跨度超过 100 行且未在 [`scripts/source-size-allowlist.json`](../scripts/source-size-allowlist.json) 登记，或例外已到期，门禁失败。`src/` 与 `test/` 不得有被 Git 忽略的 TypeScript；受控源码的相对导入目标必须受 Git 控制；ESLint ignore 以实际配置解析为准，不得覆盖受控 `src/`/`test/` TypeScript；`tsconfig.exclude` 不得列出 `src/` 或 `test/` 路径。见[函数长度与受控源码](./decisions/accepted/2026-08-25-source-size-functions-and-tracked-source.md)。

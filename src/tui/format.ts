@@ -51,7 +51,9 @@ export function operatorErrorMessage(error: unknown, locale: Locale = 'en'): str
   const codeValue = error instanceof Error && 'code' in error ? (error as { code?: unknown }).code : undefined;
   const code = typeof codeValue === 'string' ? codeValue : '';
   const message = errorMessage(error);
-  if (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || /operation not permitted, rename/i.test(message)) {
+  const windowsLock = code === 'EPERM' || code === 'EBUSY' || /operation not permitted, rename/i.test(message)
+    || (code === 'EACCES' && process.platform === 'win32');
+  if (windowsLock) {
     return t(locale, 'errorBaselineLock');
   }
   if (code === 'ENAMETOOLONG' || /filename too long|invalid index-pack/i.test(message)) {

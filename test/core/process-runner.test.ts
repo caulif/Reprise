@@ -6,6 +6,7 @@ import { mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProcessBoundaryError, runProcess, windowsTaskkillExecutable, type ProcessSpawner } from '../../src/infrastructure/process-runner.js';
+import { sameLiveFsPath } from '../../src/core/paths.js';
 
 function fakeSpawner(child: EventEmitter & { stdin: Duplex; stdout: PassThrough; stderr: PassThrough; kill(): boolean }): ProcessSpawner {
   return (() => child) as unknown as ProcessSpawner;
@@ -132,7 +133,7 @@ test('runProcess keeps spaced cwd and argv without a shell string', async (t) =>
     timeoutMs: 8_000,
   });
   assert.equal(result.exitCode, 0);
-  assert.equal(result.stdout.toLowerCase(), root.toLowerCase());
+  assert.equal(await sameLiveFsPath(result.stdout, root), true);
 });
 
 test('runProcess classifies a missing executable as spawn_error ENOENT', async (t) => {

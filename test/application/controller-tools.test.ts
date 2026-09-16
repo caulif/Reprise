@@ -12,6 +12,8 @@ import {
 } from "../../src/application/controller-tools.js";
 import type { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
+import { sameLiveFsPath } from "../../src/core/paths.js";
+import { hostShellMissingExecutable, hostShellPwd, hostShellReadFile, hostShellSleep } from "../host-shell.js";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "reprise-controller-tools-"));
@@ -186,15 +188,14 @@ test("Controller shell_exec uses replica cwd, can read external paths, and diagn
     const signal = new AbortController().signal;
     const shell = ctx.tools.find((tool) => tool.name === "shell_exec");
     assert.ok(shell);
-    const cwd = await shell.execute({ command: "(Get-Location).Path" }, signal);
-    assert.match(cwd.content.replaceAll("/", "\\"), new RegExp(ctx.replicaRoot.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&"), "i"));
-    const escaped = marker.replaceAll("'", "''");
-    const external = await shell.execute({ command: `Get-Content -LiteralPath '${escaped}'` }, signal);
+    const cwd = await shell.execute({ command: hostShellPwd() }, signal);
+    assert.equal(await sameLiveFsPath(cwd.content.trim(), ctx.replicaRoot), true);
+    const external = await shell.execute({ command: hostShellReadFile(marker) }, signal);
     assert.match(external.content, /from-outside/);
     assert.doesNotMatch(external.content, /slash-separated relative path/);
     const nonzero = await shell.execute({ command: "exit 9" }, signal);
     assert.equal((nonzero.details as { exitCode?: number }).exitCode, 9);
-    const missing = await shell.execute({ command: "& 'C:\\reprise-missing-shell-exec.exe'" }, signal);
+    const missing = await shell.execute({ command: hostShellMissingExecutable() }, signal);
     assert.notEqual((missing.details as { exitCode?: number }).exitCode, 0);
     const timed = workspaceTools(ctx.briefingRoot, {
       allowShell: true,
@@ -204,7 +205,7 @@ test("Controller shell_exec uses replica cwd, can read external paths, and diagn
     }).find((tool) => tool.name === "shell_exec");
     assert.ok(timed);
     await assert.rejects(
-      () => timed.execute({ command: "Start-Sleep -Seconds 5" }, signal),
+      () => timed.execute({ command: hostShellSleep(5) }, signal),
       /timed out/i,
     );
   } finally {

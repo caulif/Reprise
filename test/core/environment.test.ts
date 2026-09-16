@@ -23,7 +23,7 @@ import {
   LocalWorkspaceProvider,
   publishDirectory,
 } from "../../src/environment/local-workspace-provider.js";
-import { candidateChangedPaths, baselineMatchFromRecoveryStatus } from "../../src/environment/local-workspace-fs.js";
+import { candidateChangedPaths, baselineMatchFromRecoveryStatus, fingerprintTree } from "../../src/environment/local-workspace-fs.js";
 import { sha256 } from "../../src/core/identity.js";
 
 const exec = promisify(execFile);
@@ -841,6 +841,20 @@ test("Recovery records verified source tripwire and Playbook provenance", async 
   );
   assert.deepEqual(preview.baseline.recovery?.playbook, playbook);
   await provider.discardRecovery(staging);
+});
+
+test("source fingerprint digest is stable across git status index refresh", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-fingerprint-git-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "README.md"), "# src\n");
+  await exec("git", ["init"], { cwd: root, windowsHide: true });
+  await exec("git", ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "add", "README.md"], { cwd: root, windowsHide: true });
+  await exec("git", ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "init"], { cwd: root, windowsHide: true });
+  const before = await fingerprintTree(root);
+  await exec("git", ["status", "--porcelain"], { cwd: root, windowsHide: true });
+  const after = await fingerprintTree(root);
+  assert.equal(after.fingerprint.digest, before.fingerprint.digest);
+  assert.equal(after.fingerprint.resources.some((item) => item.path === ".git" || item.path.startsWith(".git/")), false);
 });
 
 test("Recovery discards staging and temporary HOME when the source tripwire changes", async (t) => {

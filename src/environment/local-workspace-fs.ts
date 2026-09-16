@@ -584,6 +584,7 @@ async function collectFingerprintMetadata(
       continue;
     }
     if (info.isDirectory()) {
+      if (entry.name === ".git") continue;
       resources.push({ path: relativePath, kind: 'directory', size: 0 });
       await collectFingerprintMetadata(sourceRoot, path, relativePath, resources, totals, sensitiveFileCounts, excludedEntries, nextChain, limits);
     } else if (info.isFile()) {

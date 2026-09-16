@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,4 +97,10 @@ test("contamination detects newer source timestamps and historical artifacts wit
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("contamination git probes do not pass caret peel to git.cmd", async () => {
+  const source = await readFile(join(process.cwd(), "src/environment/contamination.ts"), "utf8");
+  assert.doesNotMatch(source, /\^\{commit\}/);
+  assert.match(source, /cat-file', '-t'/);
 });
