@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { writeAtomic } from "../src/core/identity.js";
 import { controllerPromptContent, renderIndexMarkdown } from "../src/application/controller-briefing.js";
-import { recoveryTools } from "../src/infrastructure/recovery-workspace-tools.js";
+import { workspaceTools } from "../src/infrastructure/recovery-workspace-tools.js";
 import type { AgentToolDefinition } from "../src/infrastructure/agent/host.js";
 import type { SteeringContext } from "../src/agents/controller-agent.js";
 import { controllerEvalContext, type ControllerEvalCase } from "./controller-eval-cases.js";
@@ -166,7 +166,7 @@ export async function packControllerEvalCase(root: string, item: ControllerEvalC
     evidenceCatalog: [...catalogRefs].map((ref) => ({ ref, runId, source: "initial" as const })),
     task: { ...base.task, initialInput: { id: "initial", role: "user", text: TASK } },
   };
-  const tools = recoveryTools(briefingRoot, {
+  const tools = workspaceTools(briefingRoot, {
     allowBinary: false,
     homeRoot: join(root, "home"),
     mounts: { project: replicaRoot },

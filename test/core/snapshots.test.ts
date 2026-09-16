@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { composeControllerSystemPrompt } from '../../src/agents/controller-agent.js';
 import { composeComparisonSystemPrompt } from '../../src/agents/comparison-agent.js';
 import { composeRecoverySystemPrompt } from '../../src/agents/recovery-agent.js';
-import { recoveryTools } from '../../src/infrastructure/recovery-tools.js';
+import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
 import { buildComparisonContext, type RunInspection } from '../../src/application/comparison.js';
 import { renderComparisonReportShell } from '../../src/application/comparison-report-shell.js';
 import type { RunRecord, TaskCase } from '../../src/core/schema.js';
@@ -79,5 +79,5 @@ test('comparison report shells match committed snapshots', async () => {
 });
 
 test('runtime-facing tool schemas match committed snapshots', async () => {
-  await assertSnapshot('recovery-tools', toolCatalog(recoveryTools('TMP', { allowShell: true })));
+  await assertSnapshot('recovery-tools', toolCatalog(workspaceTools('TMP', { allowShell: true })));
 });

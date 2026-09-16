@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ControllerAgent, type SteeringContext } from '../../src/agents/controller-agent.js';
-import { PiAgentHost, type PiTextCaller } from '../../src/infrastructure/agent/host.js';
+import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
 
 function context(): SteeringContext {
   return {
@@ -22,7 +22,7 @@ function context(): SteeringContext {
   };
 }
 
-function caller(responses: string[]): PiTextCaller {
+function caller(responses: string[]): ProviderAdapter {
   return {
     createSession() {
       return {
@@ -40,7 +40,7 @@ function caller(responses: string[]): PiTextCaller {
 test('Controller opening rejects done and requires created', async () => {
   const opening = context();
   const done = new ControllerAgent({
-    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'done', reason: 'satisfied' })])),
+    host: new AgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'done', reason: 'satisfied' })])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
@@ -48,7 +48,7 @@ test('Controller opening rejects done and requires created', async () => {
   assert.equal(rejected.status, 'failed');
   if (rejected.status === 'failed') assert.match(rejected.failure.message, /opening decision must be send/);
   const send = new ControllerAgent({
-    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: 'Work in this directory.', intent: 'continue' })])),
+    host: new AgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: 'Work in this directory.', intent: 'continue' })])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
@@ -62,7 +62,7 @@ test('Controller opening rejects done and requires created', async () => {
 
 test('Controller send.message no longer rejects Host-term wording', async () => {
   const leaked = new ControllerAgent({
-    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: 'Please read INDEX.md', intent: 'continue' })])),
+    host: new AgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: 'Please read INDEX.md', intent: 'continue' })])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });
@@ -74,7 +74,7 @@ test('Controller send.message no longer rejects Host-term wording', async () => 
 test('opening send that cites unseen candidate advice is no longer a runtime rejection', async () => {
   const leak = '按你建议的优先级来，先做第 1 和第 2 项。';
   const leaked = new ControllerAgent({
-    host: new PiAgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: leak, intent: 'continue' })])),
+    host: new AgentHost(caller(['understood the historical user demand.', JSON.stringify({ type: 'send', message: leak, intent: 'continue' })])),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });

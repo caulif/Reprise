@@ -1,9 +1,6 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { hostZonesChanged, type HostZoneSnapshot } from '../core/comparison-html.js';
-import { writeAtomic } from '../core/identity.js';
 import { ComparisonShortRefSchema } from '../core/schema.js';
 import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
@@ -23,8 +20,8 @@ export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { r
 export type ComparisonContext = {
   task: { caseId: string; summary: string };
   baseline: { summary: string; evidenceRefs: readonly string[] };
-  candidates: readonly { runId: string; summary: string; evidenceRefs: readonly string[] }[];
-  telemetry: readonly { runId: string; summary: string }[];
+  candidates: readonly { runId: string; evidenceRefs: readonly string[] }[];
+  telemetry: readonly { runId: string }[];
   reportFacts: ComparisonReportFacts;
   artifactRefs: readonly string[];
   allowModelText: boolean;
@@ -41,12 +38,8 @@ export type ComparisonContext = {
   media?: readonly { ref: string; shortRef?: string }[];
   shortEvidenceRefs?: readonly string[];
   hostZoneSnapshot?: HostZoneSnapshot;
-  /** Attempt workspace root; Host reads report.html from here. Omitted from the model briefing JSON. */
-  attemptRoot?: string;
   /** One Comparison Session per attempt. Host must mint this before compare(). */
   attemptId: string;
-  /** Host-authored report.html shell; omitted from the model briefing JSON. */
-  reportShellHtml?: string;
 };
 
 export type ComparisonFactsContext = Omit<ComparisonContext, "attemptId">;
@@ -210,44 +203,30 @@ export class ComparisonAgent implements ComparisonAgentPort {
     if (!attemptId) throw new Error("Comparison attemptId is required.");
     const available = comparisonEvidenceAllowlist(context);
     const session = await this.#sessionFor(attemptId, context, tools, audit);
-    const freeform = [
-      context.promptContent
-        ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}`
-        : COMPARISON_TURN_PROMPTS.understand,
-      COMPARISON_TURN_PROMPTS.investigate,
-    ];
-    for (const promptContent of freeform) {
-      const step = await session.work({
-        promptContent,
+    const prefix = await session.runTurns([
+      {
+        promptContent: context.promptContent
+          ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}`
+          : COMPARISON_TURN_PROMPTS.understand,
         timeoutMs: this.#timeoutMs,
         ...(signal ? { signal } : {}),
-      });
-      if (step.status !== 'completed') {
-        if (step.status === 'failed') await this.#sessions.discard(attemptId);
-        return step;
-      }
+      },
+      {
+        promptContent: COMPARISON_TURN_PROMPTS.investigate,
+        timeoutMs: this.#timeoutMs,
+        ...(signal ? { signal } : {}),
+      },
+      {
+        promptContent: COMPARISON_TURN_PROMPTS.compose,
+        timeoutMs: this.#timeoutMs,
+        ...(signal ? { signal } : {}),
+      },
+    ]);
+    if (prefix.status !== 'completed') {
+      if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
+      return prefix;
     }
-    try {
-      await writeHostReportShell(context);
-    } catch (error) {
-      await this.#sessions.discard(attemptId);
-      const message = error instanceof Error ? error.message : "Comparison report shell write failed.";
-      return {
-        status: 'failed',
-        sessionId: session.sessionId,
-        failure: { code: 'agent_failure', message, attempts: 1 },
-      };
-    }
-    const compose = await session.work({
-      promptContent: COMPARISON_TURN_PROMPTS.compose,
-      timeoutMs: this.#timeoutMs,
-      ...(signal ? { signal } : {}),
-    });
-    if (compose.status !== 'completed') {
-      if (compose.status === 'failed') await this.#sessions.discard(attemptId);
-      return compose;
-    }
-    const afterCompose = await readAttemptReport(context, tools, signal);
+    const afterCompose = await readAttemptReport(tools, signal);
     if (afterCompose && hostZonesChanged(afterCompose, context.hostZoneSnapshot)) {
       const repair = await session.work({
         promptContent: HOST_ZONE_REPAIR_PROMPT,
@@ -258,7 +237,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         if (repair.status === 'failed') await this.#sessions.discard(attemptId);
         return repair;
       }
-      const afterRepair = await readAttemptReport(context, tools, signal);
+      const afterRepair = await readAttemptReport(tools, signal);
       if (!afterRepair || hostZonesChanged(afterRepair, context.hostZoneSnapshot)) {
         await this.#sessions.discard(attemptId);
         return {
@@ -275,7 +254,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     }
     const envelopeRequest = {
       ...(signal ? { signal } : {}),
-      context, schema: ComparisonResultSchema,
+      schema: ComparisonResultSchema,
       timeoutMs: this.#timeoutMs,
       outputContract: OUTPUT_CONTRACT,
       normalize: (value: unknown) => normalizeComparisonEvidence(value, available),
@@ -286,7 +265,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       maxRepairAttempts: 0,
       promptContent: COMPARISON_TURN_PROMPTS.review,
     });
-    if (result.status === 'failed' && isInvalidEnvelopeFailure(result.failure.message) && await readAttemptReport(context, tools, signal)) {
+    if (result.status === 'failed' && isInvalidEnvelopeFailure(result.failure.message) && await readAttemptReport(tools, signal)) {
       result = await session.request<ComparisonAgentEnvelope>({
         ...envelopeRequest,
         allowTools: false,
@@ -322,24 +301,10 @@ export class ComparisonAgent implements ComparisonAgentPort {
   }
 }
 
-async function writeHostReportShell(context: ComparisonContext): Promise<void> {
-  if (!context.reportShellHtml || !context.attemptRoot) return;
-  await writeAtomic(join(context.attemptRoot, 'report.html'), context.reportShellHtml);
-}
-
 async function readAttemptReport(
-  context: ComparisonContext,
   tools: readonly AgentToolDefinition[],
   signal?: AbortSignal,
 ): Promise<string | undefined> {
-  if (context.attemptRoot) {
-    try {
-      return await readFile(join(context.attemptRoot, "report.html"), "utf8");
-    } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
-      throw error;
-    }
-  }
   const read = tools.find((tool) => tool.name === 'read');
   if (!read) return undefined;
   const result = await read.execute({ path: 'report.html', maxBytes: 262_144 }, signal ?? new AbortController().signal);

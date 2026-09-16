@@ -107,13 +107,13 @@ async function relativeImports(file: string): Promise<string[]> {
 }
 
 test('internal agents share workspace tools without read_observation', async () => {
-  const { recoveryTools } = await import('../../src/infrastructure/recovery-tools.js');
+  const { workspaceTools } = await import('../../src/infrastructure/recovery-tools.js');
   const seven = ['edit', 'find', 'grep', 'ls', 'read', 'shell_exec', 'write'];
   const withoutShell = ['edit', 'find', 'grep', 'ls', 'read', 'write'];
-  const recovery = recoveryTools('TMP').map((tool) => tool.name).sort();
-  const recoveryShell = recoveryTools('TMP', { allowShell: true }).map((tool) => tool.name).sort();
+  const recovery = workspaceTools('TMP').map((tool) => tool.name).sort();
+  const recoveryShell = workspaceTools('TMP', { allowShell: true }).map((tool) => tool.name).sort();
   const { controllerProjectWriteAllowed } = await import('../../src/application/controller-tools.js');
-  const controller = recoveryTools('TMP', {
+  const controller = workspaceTools('TMP', {
     allowWrite: controllerProjectWriteAllowed,
     writableMounts: ['project'],
     mounts: { project: 'REPLICA' },
@@ -158,7 +158,7 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.match(briefing, /controller\.shell=allowed/);
   assert.doesNotMatch(briefing, /\[REDACTED\]/);
   assert.doesNotMatch(loop, /observationTools/);
-  assert.doesNotMatch(loop, /recoveryTools\(\s*input\.environment\.root/);
+  assert.doesNotMatch(loop, /workspaceTools\(\s*input\.environment\.root/);
   const caller = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');
   assert.match(caller, /transformContext/);
   assert.match(caller, /compactPiMessages/);
@@ -279,6 +279,8 @@ test('role write policy stays on application owners without a shared Verifier', 
   const comparisonAgent = await readFile(join(SRC, 'agents/comparison-agent.ts'), 'utf8');
   assert.doesNotMatch(comparisonAgent, /#host\.request/);
   assert.match(comparisonAgent, /createSession/);
+  assert.doesNotMatch(comparisonAgent, /node:fs|writeAtomic/);
+  assert.match(report, /writeAtomic\(join\(input\.attemptRoot, "report\.html"/);
   const loop = await readFile(join(SRC, 'application/experiment-controller-loop.ts'), 'utf8');
   assert.match(loop, /controllerProjectWriteAllowed|controllerDecisionTools/);
   assert.doesNotMatch(loop, /allowWrite:\s*\(\)\s*=>\s*false/);
@@ -468,6 +470,16 @@ test('agent foundation uses sequential Pi Agent and never AgentHarness', async (
   assert.doesNotMatch(recoveryWorkingSet, /completedFreeformTurns/);
   const sessionHost = await readFile(join(SRC, 'infrastructure/agent/session.ts'), 'utf8');
   assert.doesNotMatch(sessionHost, /completedFreeformTurns/);
+  assert.doesNotMatch(sessionHost, /requestFreeform/);
+  assert.match(sessionHost, /async runTurns/);
+  assert.doesNotMatch(host, /export class PiAgentHost/);
+  assert.doesNotMatch(types, /PiTextCaller|PiTextSession|AgentSessionRequest|export type StructuredInvocation/);
+  assert.doesNotMatch(types, /context:\s*unknown/);
+  const controllerAgentSource = await readFile(join(SRC, 'agents', 'controller-agent.ts'), 'utf8');
+  assert.match(controllerAgentSource, /export type ControllerRequest/);
+  assert.doesNotMatch(controllerAgentSource, /sha256\(CONTROLLER_SYSTEM_PROMPT\)/);
+  const comparisonSchema = await readFile(join(SRC, 'core/comparison-schema.ts'), 'utf8');
+  assert.doesNotMatch(comparisonSchema, /runId: Type.String\(\), summary: Type.String\(\)/);
   const roleSessions = await readFile(join(SRC, 'infrastructure/agent/role-sessions.ts'), 'utf8');
   assert.doesNotMatch(roleSessions, /\bdrop\(/);
   const comparisonFacts = await readFile(join(SRC, 'application/comparison.ts'), 'utf8');

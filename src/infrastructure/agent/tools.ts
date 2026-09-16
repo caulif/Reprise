@@ -3,8 +3,8 @@ import { redactToolResultForModel, toolResultBody } from "./model-input.js";
 import type { AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
 
 class AgentToolFailure extends Error {
-  constructor(cause: unknown) {
-    super("Recovery agent tool execution failed.", { cause });
+  constructor(role: string, cause: unknown) {
+    super(`${role} agent tool execution failed.`, { cause });
     this.name = "AgentToolFailure";
   }
 }
@@ -68,7 +68,7 @@ export function instrumentTools(
               ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
             },
           });
-          throw new AgentToolFailure(error);
+          throw new AgentToolFailure(role, error);
         }
       },
     };

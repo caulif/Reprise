@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { assertComparisonResult, COMPARISON_SYSTEM_PROMPT, COMPARISON_TURN_PROMPTS, ComparisonAgent } from '../../src/agents/comparison-agent.js';
 import { buildComparisonContext, comparePersistedFacts, type RunInspection } from '../../src/application/comparison.js';
 import { fingerprintTree } from '../../src/environment/local-workspace-fs.js';
-import { recoveryTools } from '../../src/infrastructure/recovery-tools.js';
-import { PiAgentHost } from '../../src/infrastructure/agent/host.js';
+import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
+import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { startExperiment } from '../../src/application/experiment.js';
 import { comparisonHtmlWithHostShell, input, VerifiedRuntime } from '../codex-experiment-support.js';
 import type { ComparisonAgentPort } from '../../src/agents/comparison-agent.js';
@@ -24,7 +24,7 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
   await mkdir(candidate, { recursive: true });
   await writeFile(join(candidate, 'kept.txt'), 'keep');
   const html = '<!doctype html><style>body{color:red}</style><svg><path /></svg><script>window.ok=true</script>';
-  const tools = recoveryTools(root, {
+  const tools = workspaceTools(root, {
     mounts: { candidate },
     allowWrite: (path) => path === 'report.html',
     completionPaths: new Set(['report.html']),
@@ -57,7 +57,7 @@ test('comparison write policy uses the first path segment, not a string prefix',
   assert.equal(comparisonAttemptWriteAllowed('report.html'), true);
   const root = await mkdtemp(join(tmpdir(), 'reprise-scratch-prefix-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const write = recoveryTools(root, {
+  const write = workspaceTools(root, {
     allowWrite: comparisonAttemptWriteAllowed,
   }).find((tool) => tool.name === 'write');
   assert.ok(write);
@@ -306,7 +306,7 @@ test('invalid comparison JSON keeps the already written report.html', async (t) 
   const comparison = new ComparisonAgent({
     timeoutMs: 0,
     maxRepairAttempts: 0,
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (session) => ({
         append: async () => {
           round += 1;

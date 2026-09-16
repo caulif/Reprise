@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { RecoveryAgent, type RecoveryAgentPort } from "../../src/agents/recovery-agent.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
 import { startExperiment } from "../../src/application/experiment.js";
-import { PiAgentHost } from "../../src/infrastructure/agent/host.js";
+import { AgentHost } from "../../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import { isRecord } from "../../src/core/json.js";
@@ -89,7 +89,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
   const command = "echo recovery-audit-marker";
   const base = input(root, new VerifiedRuntime());
   const recovery = new RecoveryAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (session) => ({
         append: async () => {
           const shell = session.tools.find(

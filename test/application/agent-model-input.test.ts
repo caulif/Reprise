@@ -8,7 +8,7 @@ import { sha256 } from '../../src/core/identity.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
 import { persistAgentAuditEvent, experimentModelInputResolver } from '../../src/application/experiment-helpers.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
-import { PiAgentHost } from '../../src/infrastructure/agent/host.js';
+import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import {
   INCOMPLETE_MODEL_INPUT_COPY,
   INLINE_MODEL_INPUT_BYTES,
@@ -169,7 +169,7 @@ test('incomplete tails, illegal JSON, and missing attachments are diagnosed', as
 test('Host records filtered user text before calling the model and refuses to call if that write fails', async () => {
   let modelCalls = 0;
   const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: () => ({
       append: async ({ content }) => {
         modelCalls += 1;
@@ -182,7 +182,6 @@ test('Host records filtered user text before calling the model and refuses to ca
   const failed = await host.request({
     role: 'recovery',
     systemPrompt: 'fixed',
-    context: {},
     schema: Type.Object({ ok: Type.Boolean() }),
     timeoutMs: 50,
     maxRepairAttempts: 0,
@@ -199,7 +198,6 @@ test('Host records filtered user text before calling the model and refuses to ca
   const ok = await host.request({
     role: 'recovery',
     systemPrompt: 'fixed',
-    context: {},
     schema: Type.Object({ ok: Type.Boolean() }),
     timeoutMs: 50,
     maxRepairAttempts: 0,
@@ -237,7 +235,7 @@ test('checksum mismatches on resolved artifacts are diagnosed', async () => {
 test('Host does not report success if model output cannot be recorded', async () => {
   let modelCalls = 0;
   const types: string[] = [];
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: () => ({
       append: async () => {
         modelCalls += 1;
@@ -249,7 +247,6 @@ test('Host does not report success if model output cannot be recorded', async ()
   const result = await host.request({
     role: 'recovery',
     systemPrompt: 'fixed',
-    context: {},
     schema: Type.Object({ ok: Type.Boolean() }),
     timeoutMs: 50,
     maxRepairAttempts: 0,

@@ -8,7 +8,7 @@ import { verifyAndRenderComparisonReport } from "../../src/application/compariso
 import { extractHostZoneSnapshot, renderComparisonReportShell } from "../../src/application/comparison-report-shell.js";
 import type { RunRecord, TaskCase } from "../../src/core/schema.js";
 import { ComparisonAgent } from "../../src/agents/comparison-agent.js";
-import { PiAgentHost } from "../../src/infrastructure/agent/host.js";
+import { AgentHost } from "../../src/infrastructure/agent/host.js";
 
 const timestamp = "2026-08-15T00:00:00.000Z";
 function taskCase(): TaskCase {
@@ -181,7 +181,7 @@ test("Comparison cancel requires attemptId and does not cancel other attempts", 
   const readyA = new Promise<void>((resolve) => { startedA = resolve; });
   const readyB = new Promise<void>((resolve) => { startedB = resolve; });
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => {
         const which = created++ === 0 ? "a" : "b";
         return {

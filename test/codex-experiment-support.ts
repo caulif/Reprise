@@ -13,8 +13,8 @@ import type {
 } from "../src/core/runtime.js";
 import type { TaskCase } from "../src/core/schema.js";
 import { ScriptedRunner } from "./support/scripted-runtime.js";
-export function comparisonHtmlWithHostShell(context: { reportShellHtml?: string }, body: string): string {
-  const shell = context.reportShellHtml;
+export function comparisonHtmlWithHostShell(context: { reportShellHtml?: string } | string | undefined, body: string): string {
+  const shell = typeof context === "string" ? context : context?.reportShellHtml;
   if (!shell) return body;
   let next = shell;
   if (next.includes('data-agent-slot="headline"')) {
@@ -149,7 +149,7 @@ const controller: ControllerPort = {
         },
 };
 const comparison: ComparisonAgentPort = {
-  compare: async (context, tools = []) => {
+  compare: async (_context, tools = []) => {
     const reader = tools.find((tool) => tool.name === "read")!;
     for (const path of ["briefing/facts/context.json", "briefing/facts/comparison-links.json", "briefing/candidate/process-index.tsv"]) {
       const read = await reader.execute({ path }, new AbortController().signal);
@@ -165,8 +165,9 @@ const comparison: ComparisonAgentPort = {
       { path: "work/comparison-plan.md", content: "# Plan\n\nCompare the delivered files and the final settled turn.\n" },
       new AbortController().signal,
     );
+    const shell = await reader.execute({ path: "report.html" }, new AbortController().signal);
     await writer?.execute(
-      { path: "report.html", content: comparisonHtmlWithHostShell(context, '<style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>') },
+      { path: "report.html", content: comparisonHtmlWithHostShell(shell.content, '<style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>') },
       new AbortController().signal,
     );
     return {

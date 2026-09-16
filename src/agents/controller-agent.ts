@@ -1,9 +1,9 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { unknownEvidenceRefMessage } from '../core/evidence-refs.js';
-import { sha256 } from '../core/identity.js';
 import { EvidenceRefSchema, type CandidateRunState, type TaskCase } from '../core/schema.js';
 import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition, type AgentToolResult } from '../infrastructure/agent/host.js';
+import { promptDigest } from '../infrastructure/agent/prompt-digest.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
 import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
 import { LANGUAGE_BLOCK, type AgentLocale } from './language.js';
@@ -25,14 +25,12 @@ const ControllerDecisionSchema = Type.Union([
 ]);
 export type ControllerDecision = Static<typeof ControllerDecisionSchema>;
 
-export type SteeringContext = {
+export type ControllerRequest = {
   /** Host-generated identifier for this one decision request. */
   requestId: string;
   runId: string;
   runState: CandidateRunState;
   task: Pick<TaskCase, 'initialInput' | 'baseline' | 'privacy'>;
-  current: { summary: string; evidenceRefs: readonly string[] };
-  trajectory: { summary: string; evidenceRefs: readonly string[] };
   /** Host-owned refs with run ownership for this request only. */
   evidenceCatalog: readonly { ref: string; runId: string; source: 'initial' | 'tool' }[];
   budget: { decisionsUsed: number; decisionsLimit?: number; callTimeoutMs?: number };
@@ -40,6 +38,12 @@ export type SteeringContext = {
   phase?: 'opening' | 'steering';
   /** Host-built user message: decision instructions + INDEX.md. Not JSON of this object. */
   promptContent?: string;
+};
+
+export type SteeringContext = ControllerRequest & {
+  task: Pick<TaskCase, 'initialInput' | 'baseline' | 'privacy'>;
+  current: { summary: string; evidenceRefs: readonly string[] };
+  trajectory: { summary: string; evidenceRefs: readonly string[] };
   briefingRoot?: string;
   fileDigests?: Readonly<Record<string, string>>;
   /** Host observation for this decision; not a quality verdict. */
@@ -65,7 +69,7 @@ export type SteeringContext = {
   };
 };
 
-function isOpeningContext(context: Pick<SteeringContext, 'phase' | 'runState'>): boolean {
+function isOpeningContext(context: Pick<ControllerRequest, 'phase' | 'runState'>): boolean {
   return context.phase === 'opening' || (context.phase !== 'steering' && context.runState === 'created');
 }
 
@@ -74,6 +78,8 @@ export interface ControllerPort {
   cancel?(runId: string, factRef?: string): Promise<void>;
   /** Drops the per-run session once the run is terminal, so a long-lived TUI does not accumulate them. */
   release?(runId: string): void | Promise<void>;
+  /** Digest of the composed system prompt this instance sends. Same definition as agent.session_started.promptDigest. */
+  readonly systemPromptDigest?: string;
 }
 
 export const CONTROLLER_TURN_PROMPTS = {
@@ -121,7 +127,9 @@ export function composeControllerSystemPrompt(locale: AgentLocale): string {
   return `${CONTROLLER_SYSTEM_PROMPT}\n\n${LANGUAGE_BLOCK(locale, 'controller')}\n\n${VISIBLE_PROCESS_NARRATION}`;
 }
 
-export const CONTROLLER_PROMPT_DIGEST = sha256(CONTROLLER_SYSTEM_PROMPT);
+export function controllerSystemPromptDigest(locale: AgentLocale): string {
+  return promptDigest(composeControllerSystemPrompt(locale));
+}
 
 const OUTPUT_CONTRACT = [
   STRUCTURED_FINAL_RULE,
@@ -188,6 +196,10 @@ export class ControllerAgent implements ControllerPort {
     return this.#timeoutMs;
   }
 
+  get systemPromptDigest(): string {
+    return controllerSystemPromptDigest(this.#locale);
+  }
+
   async decide(context: SteeringContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink): Promise<AgentInvocation<ControllerDecision>> {
     const opening = isOpeningContext(context);
     if (opening) {
@@ -212,26 +224,24 @@ export class ControllerAgent implements ControllerPort {
     }
   }
 
-  async #decide(context: SteeringContext, tools: readonly AgentToolDefinition[], available: Set<string>, audit?: AgentAuditSink): Promise<AgentInvocation<ControllerDecision>> {
+  async #decide(context: ControllerRequest, tools: readonly AgentToolDefinition[], available: Set<string>, audit?: AgentAuditSink): Promise<AgentInvocation<ControllerDecision>> {
     if (typeof context.promptContent !== 'string' || !context.promptContent.trim()) {
       throw new Error('Structured agent request requires promptContent.');
     }
     const session = await this.#sessionFor(context, tools, audit);
     const opening = isOpeningContext(context);
     const timeoutMs = context.budget.callTimeoutMs === undefined ? this.#timeoutMs : Math.min(this.#timeoutMs || Infinity, context.budget.callTimeoutMs);
-    if (opening) {
-      const understood = await session.work({
-        promptContent: CONTROLLER_TURN_PROMPTS.understand,
-        timeoutMs,
-        requestId: `${context.requestId}-understand`,
-      });
-      if (understood.status !== 'completed') {
-        if (understood.status === 'failed') await this.#sessions.discard(context.runId);
-        return understood;
-      }
+    const prefix = await session.runTurns(opening ? [{
+      promptContent: CONTROLLER_TURN_PROMPTS.understand,
+      timeoutMs,
+      requestId: `${context.requestId}-understand`,
+    }] : []);
+    if (prefix.status !== 'completed') {
+      if (prefix.status === 'failed') await this.#sessions.discard(context.runId);
+      return prefix;
     }
     const result = await session.request<ControllerDecision>({
-      context, schema: ControllerDecisionSchema, timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
+      schema: ControllerDecisionSchema, timeoutMs, maxRepairAttempts: this.#maxRepairAttempts,
       outputContract: OUTPUT_CONTRACT, requestId: context.requestId,
       promptContent: context.promptContent,
       normalize: dropMalformedEvidenceRefs,
@@ -241,7 +251,7 @@ export class ControllerAgent implements ControllerPort {
     return result;
   }
 
-  async #sessionFor(context: SteeringContext, tools: readonly AgentToolDefinition[], audit?: AgentAuditSink): Promise<AgentSessionHost> {
+  async #sessionFor(context: ControllerRequest, tools: readonly AgentToolDefinition[], audit?: AgentAuditSink): Promise<AgentSessionHost> {
     const { session } = await this.#sessions.get(context.runId, () => this.#host.createSession({
       role: 'controller',
       systemPrompt: composeControllerSystemPrompt(this.#locale),

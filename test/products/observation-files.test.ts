@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recoveryEvidenceCatalog } from "../../src/products/history/source-refs.js";
-import { recoveryTools } from "../../src/infrastructure/recovery-tools.js";
+import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../../src/products/history/observations-materializer.js";
 import type { EventEnvelope, TaskCase } from "../../src/core/schema.js";
 
@@ -66,7 +66,7 @@ test("frozen observation files carry Host refs and truncate oversized bodies", a
   assert.ok((history.observation.excerpt?.length ?? 0) <= 8_000);
   const workspace = await mkdtemp(join(tmpdir(), "reprise-obs-ws-"));
   t.after(() => rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  const tools = recoveryTools(workspace, { mounts: { [OBSERVATIONS_MOUNT]: root } });
+  const tools = workspaceTools(workspace, { mounts: { [OBSERVATIONS_MOUNT]: root } });
   const read = tools.find((tool) => tool.name === "read");
   assert.ok(read);
   const listed = await tools.find((tool) => tool.name === "ls")!.execute({ path: "observations" }, new AbortController().signal);

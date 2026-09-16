@@ -7,7 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import { copyTree } from "../../src/environment/local-workspace-fs.js";
-import { recoveryTools, SOURCE_MOUNT } from "../../src/infrastructure/recovery-tools.js";
+import { workspaceTools, SOURCE_MOUNT } from "../../src/infrastructure/recovery-tools.js";
 import { SNAPSHOT_LIMITS } from "../../src/environment/snapshots.js";
 import { preflightFromBaseline } from "../../src/application/experiment-preflight.js";
 
@@ -65,7 +65,7 @@ test("over-budget source starts sparse staging instead of failing Recovery", asy
   );
   const names = await readdir(staging.root);
   assert.deepEqual(names.filter((name) => name !== ".reprise"), []);
-  const tools = recoveryTools(staging.root, {
+  const tools = workspaceTools(staging.root, {
     workspaceAlias: true,
     mounts: { [SOURCE_MOUNT]: staging.sourceRoot },
     denyDestructiveOnPrefix: [SOURCE_MOUNT],

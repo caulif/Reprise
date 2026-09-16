@@ -11,7 +11,7 @@ import {
   shellExternalWriteRefs,
 } from "../../src/application/controller-tools.js";
 import type { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
-import { recoveryTools } from "../../src/infrastructure/recovery-tools.js";
+import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "reprise-controller-tools-"));
@@ -196,7 +196,7 @@ test("Controller shell_exec uses replica cwd, can read external paths, and diagn
     assert.equal((nonzero.details as { exitCode?: number }).exitCode, 9);
     const missing = await shell.execute({ command: "& 'C:\\reprise-missing-shell-exec.exe'" }, signal);
     assert.notEqual((missing.details as { exitCode?: number }).exitCode, 0);
-    const timed = recoveryTools(ctx.briefingRoot, {
+    const timed = workspaceTools(ctx.briefingRoot, {
       allowShell: true,
       unrestrictedRead: true,
       shellCwd: ctx.replicaRoot,
@@ -300,11 +300,11 @@ test("unrestricted reads do not loosen Recovery default containment or write pol
     const outside = join(root, "..", `outside-${Date.now()}.txt`);
     await writeFile(outside, "out\n");
     const signal = new AbortController().signal;
-    const contained = recoveryTools(root).find((tool) => tool.name === "read");
+    const contained = workspaceTools(root).find((tool) => tool.name === "read");
     assert.ok(contained);
     await assert.rejects(() => contained.execute({ path: resolve(outside) }, signal), /relative path/);
-    const open = recoveryTools(root, { unrestrictedRead: true }).find((tool) => tool.name === "read");
-    const write = recoveryTools(root, { unrestrictedRead: true }).find((tool) => tool.name === "write");
+    const open = workspaceTools(root, { unrestrictedRead: true }).find((tool) => tool.name === "read");
+    const write = workspaceTools(root, { unrestrictedRead: true }).find((tool) => tool.name === "write");
     assert.ok(open && write);
     const got = await open.execute({ path: resolve(outside) }, signal);
     assert.match(got.content, /out/);

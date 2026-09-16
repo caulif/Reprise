@@ -9,7 +9,7 @@ import { reconstructControllerRequest } from "../../src/application/controller-r
 import { preflightExperiment } from "../../src/application/experiment-preflight.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
 import { startExperiment } from "../../src/application/experiment.js";
-import { PiAgentHost } from "../../src/infrastructure/agent/host.js";
+import { AgentHost } from "../../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import type { ResolvedRuntime, TargetEventSink, TargetRunner } from "../../src/core/runtime.js";
@@ -344,7 +344,7 @@ test("a scripted Controller run persists controller.requested and reconstructs i
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
   const controller = new ControllerAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (session) => {
         let calls = 0;
         return {
@@ -451,7 +451,7 @@ test("done/satisfied is accepted without a Host ledger or unread-file guard", as
       await writeFile(join(root, 'source', 'README.md'), '# source\n');
       let calls = 0;
       const controller = new ControllerAgent({
-        host: new PiAgentHost({ createSession: () => ({
+        host: new AgentHost({ createSession: () => ({
           append: async () => {
             calls += 1;
             if (calls === 1) return 'Working understanding of the historical user demand.';
@@ -496,7 +496,7 @@ test("cancelling an in-flight Controller request discards a late send before Can
     started = done;
   });
   const controller = new ControllerAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async () => {
           started();
@@ -574,8 +574,12 @@ test("working notes written after a failed first pass stay in the same compariso
         { path: "work/comparison-plan.md", content: "# Working notes\n" },
         new AbortController().signal,
       );
+      const shell = await tools.find((tool) => tool.name === "read")?.execute(
+        { path: "report.html" },
+        new AbortController().signal,
+      );
       await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "report.html", content: comparisonHtmlWithHostShell(context, `<p>single-session</p>`) },
+        { path: "report.html", content: comparisonHtmlWithHostShell(shell?.content, `<p>single-session</p>`) },
         new AbortController().signal,
       );
       return { status: "completed", sessionId: "comparison-notes", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };

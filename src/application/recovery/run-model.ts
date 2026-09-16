@@ -4,7 +4,7 @@ import type { RecoveryDecision } from "../../core/schema.js";
 import { completedRecoveryFreeformTurns } from "../../agents/recovery-agent.js";
 import { recoveryWorkingSet } from "../../agents/recovery-working-set.js";
 import { OBSERVATIONS_MOUNT, recoveryObservationsRoot, writeFrozenObservationTree } from "../../products/history/observations-materializer.js";
-import { recoveryTools, SOURCE_MOUNT } from "../../infrastructure/recovery-tools.js";
+import { workspaceTools, SOURCE_MOUNT } from "../../infrastructure/recovery-tools.js";
 import { persistRecoveryControlledWriteBlob } from "./writes.js";
 import { recoveryClues } from "./investigation.js";
 import {
@@ -80,7 +80,8 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
   const { input, store, staging, activeStaging } = session;
   if (!staging) throw new Error("Recovery staging was not prepared.");
   const workspaceRoot = staging.root;
-  session.tools = recoveryTools(workspaceRoot, {
+  session.tools = workspaceTools(workspaceRoot, {
+    role: "recovery",
     allowBinary: input.taskCase.privacy.allowBinary,
     workspaceAlias: true,
     mounts: {

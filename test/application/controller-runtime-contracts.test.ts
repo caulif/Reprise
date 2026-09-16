@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ControllerAgent, type SteeringContext } from "../../src/agents/controller-agent.js";
-import { PiAgentHost, type PiTextCaller } from "../../src/infrastructure/agent/host.js";
+import { AgentHost, type ProviderAdapter } from "../../src/infrastructure/agent/host.js";
 
 function context(overrides: Partial<SteeringContext> = {}): SteeringContext {
   return {
@@ -23,7 +23,7 @@ function context(overrides: Partial<SteeringContext> = {}): SteeringContext {
   };
 }
 
-function caller(responses: string[]): PiTextCaller {
+function caller(responses: string[]): ProviderAdapter {
   return {
     createSession() {
       return {
@@ -40,7 +40,7 @@ function caller(responses: string[]): PiTextCaller {
 
 function agent(responses: string[]): ControllerAgent {
   return new ControllerAgent({
-    host: new PiAgentHost(caller(responses)),
+    host: new AgentHost(caller(responses)),
     timeoutMs: 50,
     maxRepairAttempts: 0,
   });

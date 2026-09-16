@@ -197,7 +197,7 @@ Controller 需要 Target 建立证据时发送 `verify` 消息；报告由 Compa
 
 Host 每次结构化 `append` 给模型的用户消息是英文决策段，不是本对象的 JSON。opening 附完整 INDEX.md；steering 只附 `Latest turn:` 行，不重发 `# INDEX.md`。首次 `decide` 另有一轮自由理解委托，结论写入 `notes/understanding.md`。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 的 `project/` 与 `notes/` 写入与候选运行权限；后者是历史会话推断，缺失时标 unconfirmed，不是本次 launch 授权证明。`allowModelText` 是化石键，Host 恒允许正文。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`；这些 briefing `read` 记 `briefing_read` evidence。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash（不含 `notes/`）；`current.summary` 不内联命令或路径计数。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[Controller 英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)。
 
-字段定义见 [`SteeringContext`](../../src/agents/controller-agent.ts)。当前对象是 `current.summary` / `trajectory.summary` 字符串、briefing 路径、digest 与可选 `replay.changedPaths`，不是独立的 TargetObservation / TrajectoryWindow 类型。
+字段定义见 [`controller-agent.ts`](../../src/agents/controller-agent.ts)。`decide()` 只接收 `ControllerRequest`（requestId、runId、phase、promptContent、evidenceCatalog、budget、privacy）。`SteeringContext` 是请求加上审计快照（`current` / `trajectory` 摘要、briefing 路径、digest、`hostFacts`、可选 `replay.changedPaths`），不是独立的 TargetObservation / TrajectoryWindow 类型。模型只看 `promptContent`。
 
 - `current` / `trajectory` 摘要指向文件，不内联命令计数；
 - `budget` 供 Host 记录调用次数与可选显式上限；
@@ -257,7 +257,7 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 briefing INDEX 只做导航，把材料分成三类，不得混用：历史用户要求（`history/user-inputs/` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`current-user-view.md`、`run/turns/`、`project/` 与 `notes/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。opening 的模型可见请求是决策段加 INDEX.md；steering 不重发 INDEX。不把 SteeringContext JSON 或隐藏字段内联进 prompt。
 
-Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `CONTROLLER_PROMPT_DIGEST` 相同）以及 Host 观察 `hostFacts`（changed paths、最近工具失败、历史用户输入路径；路径 `status=unknown` 表示 Host 不判断该要求是否已满足）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
+Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `agent.session_started.promptDigest` 相同，均为 composed system prompt 的 digest）以及 Host 观察 `hostFacts`（changed paths、最近工具失败、历史用户输入路径；路径 `status=unknown` 表示 Host 不判断该要求是否已满足）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
 
 机械协议由 `test/controller-collaboration-protocol.test.ts`、`test/candidate-run.test.ts` 与合同 lane `test/controller-capability-evaluation.test.ts` 覆盖。合同 lane 的样例族覆盖已满足用户、尚需核验、无继续价值、授权不足、历史 agent 结论不可信；该 lane 用脚本输出，不证明与真人协作等价。真实模型能力评估入口为 `npm run evaluate:controller -- <dataDir> <绝对报告路径>`，要求 `REPRISE_REAL_MODEL=1`，不进入 `npm run check`；报告只记类型/理由/intent 是否匹配，不含模型原文。见 [能力评估分层](../decisions/accepted/2026-08-22-controller-capability-evaluation-lane.md) 与 [协作协议](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md)。
 

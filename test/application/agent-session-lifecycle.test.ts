@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
-import { PiAgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
+import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 import { projectTimelineEvent } from '../../src/tui/timeline.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
 
 const schema = Type.Object({ ok: Type.Boolean() });
 function request(overrides: { timeoutMs?: number; maxRepairAttempts?: number; signal?: AbortSignal; promptContent?: string } = {}) {
-  return { context: {}, schema, timeoutMs: overrides.timeoutMs ?? 50, maxRepairAttempts: overrides.maxRepairAttempts ?? 0, promptContent: overrides.promptContent ?? 'Return JSON.', ...(overrides.signal ? { signal: overrides.signal } : {}) };
+  return { schema, timeoutMs: overrides.timeoutMs ?? 50, maxRepairAttempts: overrides.maxRepairAttempts ?? 0, promptContent: overrides.promptContent ?? 'Return JSON.', ...(overrides.signal ? { signal: overrides.signal } : {}) };
 }
 
 test('two Host requests on one Session share transcript and keep distinct invocation ids', async () => {
   const appended: string[] = [];
   const events: AgentAuditEvent[] = [];
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: () => ({
       append: async ({ content }) => {
         appended.push(content);
@@ -51,7 +51,7 @@ test('two Host requests on one Session share transcript and keep distinct invoca
 
 test('a second concurrent invocation on the same Session is rejected', async () => {
   let resolve!: (value: string) => void;
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: () => ({
       append: async () => await new Promise<string>((done) => { resolve = done; }),
       cancel() {},
@@ -73,7 +73,7 @@ test('a second concurrent invocation on the same Session is rejected', async () 
 test('late provider text after cancel cannot complete the invocation', async () => {
   let resolve!: (value: string) => void;
   const events: AgentAuditEvent[] = [];
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: () => ({
       append: async () => await new Promise<string>((done) => { resolve = done; }),
       cancel() {},
@@ -98,13 +98,12 @@ test('late provider text after cancel cannot complete the invocation', async () 
 
 test('one-shot Host.request closes the Session after the invocation', async () => {
   const events: AgentAuditEvent[] = [];
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: () => ({ append: async () => JSON.stringify({ ok: true }), cancel() {} }),
   });
   const result = await host.request({
     role: 'comparison',
     systemPrompt: 'fixed',
-    context: {},
     schema,
     timeoutMs: 50,
     maxRepairAttempts: 0,
@@ -149,7 +148,7 @@ test('invocation started is a working now-row; other invocation lifecycle stays 
 test('Host freeform request completes without JSON repair', async () => {
   const events: AgentAuditEvent[] = [];
   const appended: string[] = [];
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: () => ({
       append: async ({ content }) => {
         appended.push(content);
@@ -164,12 +163,11 @@ test('Host freeform request completes without JSON repair', async () => {
     allowModelText: true,
     audit: { append: async (event) => { events.push(event); } },
   });
-  const result = await session.requestFreeform({
+  const result = await session.work({
     promptContent: 'Read observations/user-inputs/INDEX.tsv first.',
     timeoutMs: 50,
   });
   assert.equal(result.status, 'completed');
-  if (result.status === 'completed') assert.equal('value' in result, false);
   assert.deepEqual(appended, ['Read observations/user-inputs/INDEX.tsv first.']);
   assert.ok(events.some((event) => event.type === 'agent.message_appended'));
   assert.ok(events.some((event) => event.type === 'agent.model_output'));
@@ -179,17 +177,40 @@ test('Host freeform request completes without JSON repair', async () => {
 });
 
 test('Host freeform request rejects JSON repair attempts', async () => {
-  const host = new PiAgentHost({
+  const host = new AgentHost({
     createSession: () => ({ append: async () => 'unused', cancel() {} }),
   });
   const session = await host.createSession({ role: 'comparison', systemPrompt: 'fixed', allowModelText: true });
   await assert.rejects(
-    () => session.requestFreeform({
+    () => session.work({
       promptContent: 'Do not return JSON.',
       timeoutMs: 50,
       maxRepairAttempts: 1,
     }),
     /cannot run JSON repair/,
   );
+  await session.close();
+});
+
+test('runTurns stops on the first incomplete freeform step', async () => {
+  const appended: string[] = [];
+  const host = new AgentHost({
+    createSession: () => ({
+      append: async ({ content }) => {
+        appended.push(content);
+        if (content === 'second') throw new Error('boom');
+        return 'ok';
+      },
+      cancel() {},
+    }),
+  });
+  const session = await host.createSession({ role: 'recovery', systemPrompt: 'fixed', allowModelText: true });
+  const result = await session.runTurns([
+    { promptContent: 'first', timeoutMs: 50 },
+    { promptContent: 'second', timeoutMs: 50 },
+    { promptContent: 'third', timeoutMs: 50 },
+  ]);
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(appended, ['first', 'second']);
   await session.close();
 });

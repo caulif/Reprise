@@ -17,7 +17,7 @@ import { promisify } from "node:util";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import type { ProcessSpawner } from "../../src/infrastructure/process-runner.js";
 import {
-  recoveryTools,
+  workspaceTools,
   resolvedRecoveryFacts,
   verifyRecoveryEvidence,
 } from "../../src/infrastructure/recovery-tools.js";
@@ -40,7 +40,7 @@ async function workspace(): Promise<string> {
 
 function tool(root: string, name: string, options = {}) {
   const toolOptions = name === "shell_exec" ? { allowShell: true, ...options } : options;
-  const found = recoveryTools(root, toolOptions).find(
+  const found = workspaceTools(root, toolOptions).find(
     (item) => item.name === name,
   );
   assert.ok(found, `missing ${name}`);
@@ -95,13 +95,13 @@ function capturingSpawner(capture: {
 test("shell_exec is registered only when allowShell is true", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
-  assert.equal(recoveryTools(root).some((item) => item.name === "shell_exec"), false);
+  assert.equal(workspaceTools(root).some((item) => item.name === "shell_exec"), false);
   assert.deepEqual(
-    recoveryTools(root).map((item) => item.name).sort(),
+    workspaceTools(root).map((item) => item.name).sort(),
     ["edit", "find", "grep", "ls", "read", "write"],
   );
   assert.deepEqual(
-    recoveryTools(root, { allowShell: true }).map((item) => item.name).sort(),
+    workspaceTools(root, { allowShell: true }).map((item) => item.name).sort(),
     ["edit", "find", "grep", "ls", "read", "shell_exec", "write"],
   );
 });
@@ -171,12 +171,15 @@ test("structured recovery tools reject traversal, absolute paths and symlink tar
   );
 });
 
-test("Recovery model cannot read credential-class files", async (t) => {
+test("workspace tool credential errors name the role", async (t) => {
   const root = await workspace();
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   await writeFile(join(root, ".env"), "TOKEN=do-not-read");
-  const read = tool(root, "read");
-  await assert.rejects(read.execute({ path: ".env" }, new AbortController().signal), /credential_read_denied/i);
+  const read = tool(root, "read", { role: "controller" });
+  await assert.rejects(
+    read.execute({ path: ".env" }, new AbortController().signal),
+    /not readable by the controller model/,
+  );
 });
 
 test("direct Recovery writes journal schema-validated pre/post hashes", async (t) => {
@@ -355,7 +358,7 @@ test("shell_exec times out individual commands and marks truncated output", asyn
 test("write still succeeds after 64 investigation calls", async () => {
   const root = await workspace();
   try {
-    const tools = recoveryTools(root);
+    const tools = workspaceTools(root);
     const list = tools.find((item) => item.name === "ls");
     const report = tools.find((item) => item.name === "write");
     assert.ok(list && report);
@@ -438,7 +441,7 @@ test("recovery catalog assigns stable Host refs to transcript and id-less histor
 });
 
 test("workspace factory does not register frozen-history paging tools", () => {
-  const names = recoveryTools("TMP").map((item) => item.name).sort();
+  const names = workspaceTools("TMP").map((item) => item.name).sort();
   assert.deepEqual(names, ["edit", "find", "grep", "ls", "read", "write"]);
   assert.equal(names.includes("read_observation"), false);
 });
@@ -644,7 +647,7 @@ test("workspace listing stays bounded and shell_exec git log omits blob bodies",
 });
 
 test("retired Recovery tools are not registered", () => {
-  const names = recoveryTools(".").map((item) => item.name);
+  const names = workspaceTools(".").map((item) => item.name);
   for (const name of ["submit_recovery_plan", "write_binary_file", "rename_file", "inspect_workspace"]) {
     assert.equal(names.includes(name), false);
   }

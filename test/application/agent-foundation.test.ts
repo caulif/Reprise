@@ -19,7 +19,7 @@ test("fake adapter supports sequential work then structured request on one Sessi
   const work = await session.work({ promptContent: "look around", timeoutMs: 50 });
   assert.equal(work.status, "completed");
   if (work.status === "completed") assert.equal(work.value.text, "investigating");
-  const asked = await session.request({ context: {}, schema, timeoutMs: 50, maxRepairAttempts: 0, outputContract: "JSON", promptContent: "return the object" });
+  const asked = await session.request({ schema, timeoutMs: 50, maxRepairAttempts: 0, outputContract: "JSON", promptContent: "return the object" });
   assert.equal(asked.status, "completed");
   await session.close();
   await session.close();
@@ -33,7 +33,6 @@ test("structured repair stays on the same Session and Invocation", async () => {
   const host = new AgentHost(new FakeProviderAdapter(() => replies.shift() ?? ""));
   const session = await host.createSession({ role: "recovery", systemPrompt: "fixed", allowModelText: true });
   const result = await session.request({
-    context: {},
     schema,
     timeoutMs: 50,
     maxRepairAttempts: 1,
@@ -54,7 +53,6 @@ test("structured request without promptContent throws", async () => {
   const session = await host.createSession({ role: "recovery", systemPrompt: "fixed", allowModelText: true });
   await assert.rejects(
     () => session.request({
-      context: { secret: "must-not-dump" },
       schema,
       timeoutMs: 50,
       maxRepairAttempts: 0,
@@ -64,7 +62,6 @@ test("structured request without promptContent throws", async () => {
   );
   await assert.rejects(
     () => session.request({
-      context: { secret: "must-not-dump" },
       schema,
       timeoutMs: 50,
       maxRepairAttempts: 0,
@@ -106,7 +103,6 @@ test("repair turns do not emit agent.tool_called", async () => {
     audit: { append: async (event) => { events.push(event); } },
   });
   const result = await session.request({
-    context: {},
     schema,
     timeoutMs: 50,
     maxRepairAttempts: 1,

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Type } from "@sinclair/typebox";
 import { ComparisonAgent, COMPARISON_TURN_PROMPTS, type ComparisonContext } from "../../src/agents/comparison-agent.js";
-import { PiAgentHost, type AgentAuditEvent, type PiTextCaller } from "../../src/infrastructure/agent/host.js";
+import { AgentHost, type AgentAuditEvent, type ProviderAdapter } from "../../src/infrastructure/agent/host.js";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,7 +30,7 @@ test('experiment cancellation interrupts Comparison without changing the candida
   let started!: () => void;
   const ready = new Promise<void>((resolve) => { started = resolve; });
   let signal: AbortSignal | undefined;
-  const comparison = new ComparisonAgent({ timeoutMs: 0, maxRepairAttempts: 0, host: new PiAgentHost({ createSession: () => ({
+  const comparison = new ComparisonAgent({ timeoutMs: 0, maxRepairAttempts: 0, host: new AgentHost({ createSession: () => ({
     append: async (request) => {
       signal = request.signal;
       started();
@@ -52,9 +52,9 @@ test('experiment cancellation interrupts Comparison without changing the candida
 
 test("Comparison reuses one Session for an attempt and isolates different attempts", async () => {
   const envelope = JSON.stringify({ status: "completed", reportPath: "report.html", evidenceRefs: [] });
-  const sessions: Array<{ input: Parameters<PiTextCaller["createSession"]>[0]; appended: string[] }> = [];
+  const sessions: Array<{ input: Parameters<ProviderAdapter["createSession"]>[0]; appended: string[] }> = [];
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({ createSession(input) {
+    host: new AgentHost({ createSession(input) {
       const record = { input, appended: [] as string[] };
       sessions.push(record);
       return { append: async ({ content }) => { record.appended.push(content); return envelope; }, cancel() {} };
@@ -85,7 +85,7 @@ test("Comparison reuses one Session for an attempt and isolates different attemp
 
 test("Comparison refuses to start a Session without attemptId", async () => {
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({ createSession: () => ({ append: async () => "", cancel() {} }) }),
+    host: new AgentHost({ createSession: () => ({ append: async () => "", cancel() {} }) }),
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
@@ -105,7 +105,7 @@ test("Comparison freeform turns ignore invalid JSON and only the envelope round 
   ];
   const appended: string[] = [];
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async ({ content }) => {
           appended.push(content);
@@ -126,7 +126,7 @@ test("Comparison freeform turns ignore invalid JSON and only the envelope round 
 test("Comparison keeps owned short refs and drops unknown extras", async () => {
   const owned = "ev-01";
   const keep = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async () => JSON.stringify({
           status: "completed",
@@ -142,7 +142,7 @@ test("Comparison keeps owned short refs and drops unknown extras", async () => {
   assert.equal(kept.status, "completed");
   if (kept.status === "completed") assert.deepEqual(kept.value.evidenceRefs, [owned]);
   const reject = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async () => JSON.stringify({
           status: "completed",
@@ -161,7 +161,7 @@ test("Comparison keeps owned short refs and drops unknown extras", async () => {
 
 test("Comparison keeps valid short refs when the Host did not provide an allowlist", async () => {
   const agent = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async () => JSON.stringify({ status: "completed", evidenceRefs: ["ev-01", "event:foreign-1"] }),
         cancel() {},
@@ -177,7 +177,7 @@ test("Comparison keeps valid short refs when the Host did not provide an allowli
 
 test("Comparison drops path-shaped evidence refs when none remain owned", async () => {
   const agent = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async () => JSON.stringify({
           status: "completed",
@@ -198,11 +198,11 @@ test("Comparison drops path-shaped evidence refs when none remain owned", async 
 test("Host records Pi model input capabilities without inventing a Reprise capability enum", async () => {
   const audit: AgentAuditEvent[] = [];
   let prompt = "";
-  const host = new PiAgentHost({ createSession: () => ({
+  const host = new AgentHost({ createSession: () => ({
     inputCapabilities: ["text", "image"], append: async ({ content }) => { prompt = content; return JSON.stringify({ ok: true }); }, cancel() {},
   }) });
   const result = await host.request({
-    role: "comparison", systemPrompt: "test", context: {}, schema: Type.Object({ ok: Type.Boolean() }),
+    role: "comparison", systemPrompt: "test", schema: Type.Object({ ok: Type.Boolean() }),
     timeoutMs: 5_000, maxRepairAttempts: 0, allowModelText: true,
     promptContent: "return json",
     audit: { append: async (event) => { audit.push(event); } },
@@ -217,7 +217,7 @@ test("Host preserves native image blocks in prompts and tool results without aud
   const image = { type: "image" as const, data: Buffer.from("pixel-bytes").toString("base64"), mimeType: "image/png" };
   let promptImageData = "";
   let toolImageData = "";
-  const host = new PiAgentHost({ createSession: (input) => ({
+  const host = new AgentHost({ createSession: (input) => ({
     append: async ({ images }) => {
       promptImageData = images?.[0]?.data ?? "";
       const result = await input.tools[0]?.execute({}, new AbortController().signal);
@@ -227,7 +227,7 @@ test("Host preserves native image blocks in prompts and tool results without aud
     cancel() {},
   }) });
   const result = await host.request({
-    role: "test", systemPrompt: "test", context: {}, schema: Type.Object({ ok: Type.Boolean() }),
+    role: "test", systemPrompt: "test", schema: Type.Object({ ok: Type.Boolean() }),
     timeoutMs: 5_000, maxRepairAttempts: 0, allowModelText: true, promptImages: [image],
     promptContent: "return json",
     tools: [{ name: "preview", description: "return an image", parameters: Type.Object({}), execute: async () => ({ content: "image preview", contentBlocks: [{ type: "text", text: "image preview" }, image], details: { evidenceRefs: ["artifact:image-1"] } }) }],
@@ -246,14 +246,14 @@ test("Host preserves native image blocks in prompts and tool results without aud
 test("Comparison draft written in round two is readable later in the same Session", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-comparison-draft-"));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
-  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
-  const tools = recoveryTools(root, {
+  const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = workspaceTools(root, {
     allowWrite: (path) => path === "report.html",
     completionPaths: new Set(["report.html"]),
   });
   let round = 0;
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (input) => ({
         append: async () => {
           round += 1;
@@ -281,11 +281,11 @@ test("Comparison draft written in round two is readable later in the same Sessio
   assert.equal(await readFile(join(root, "report.html"), "utf8"), "<p>draft</p>");
 });
 
-test("Comparison writes the Host metrics shell before the compose turn", async (t) => {
+test("compose turn sees the Host metrics shell already on disk", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-comparison-shell-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
-  const tools = recoveryTools(root, {
+  const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = workspaceTools(root, {
     allowWrite: (path) => path === "report.html",
     completionPaths: new Set(["report.html"]),
   });
@@ -293,7 +293,7 @@ test("Comparison writes the Host metrics shell before the compose turn", async (
   let round = 0;
   let composeSawShell = false;
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (input) => ({
         append: async () => {
           round += 1;
@@ -310,7 +310,8 @@ test("Comparison writes the Host metrics shell before the compose turn", async (
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  const result = await comparison.compare({ ...context(), reportShellHtml: shell, attemptRoot: root }, tools);
+  await writeFile(join(root, "report.html"), shell);
+  const result = await comparison.compare(context(), tools);
   assert.equal(result.status, "completed");
   assert.equal(composeSawShell, true);
   assert.match(await readFile(join(root, "report.html"), "utf8"), /data-host="metrics"/);
@@ -320,7 +321,7 @@ test("Comparison stops later turns when the first freeform request is cancelled"
   let appends = 0;
   const ac = new AbortController();
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: () => ({
         append: async ({ signal }) => {
           appends += 1;
@@ -345,8 +346,8 @@ test("Comparison stops later turns when the first freeform request is cancelled"
 test("Host zone edits trigger one extra repair turn in the same Session", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-host-zone-repair-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
-  const tools = recoveryTools(root, {
+  const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = workspaceTools(root, {
     allowWrite: (path) => path === "report.html",
     completionPaths: new Set(["report.html"]),
   });
@@ -359,7 +360,7 @@ test("Host zone edits trigger one extra repair turn in the same Session", async 
   assert.ok(snapshot);
   const prompts: string[] = [];
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (input) => ({
         append: async ({ content }) => {
           prompts.push(content);
@@ -385,7 +386,8 @@ test("Host zone edits trigger one extra repair turn in the same Session", async 
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  const result = await comparison.compare({ ...context(), reportShellHtml: shell, attemptRoot: root, ...(snapshot ? { hostZoneSnapshot: snapshot } : {}) }, tools);
+  await writeFile(join(root, "report.html"), shell);
+  const result = await comparison.compare({ ...context(), ...(snapshot ? { hostZoneSnapshot: snapshot } : {}) }, tools);
   assert.equal(result.status, "completed");
   assert.equal(prompts.length, 5);
   assert.match(prompts[3] ?? "", /A Host zone was altered/);
@@ -394,8 +396,8 @@ test("Host zone edits trigger one extra repair turn in the same Session", async 
 test("review turn can read and rewrite Agent regions of report.html", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-comparison-review-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
-  const tools = recoveryTools(root, {
+  const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = workspaceTools(root, {
     allowWrite: (path) => path === "report.html",
     completionPaths: new Set(["report.html"]),
   });
@@ -408,7 +410,7 @@ test("review turn can read and rewrite Agent regions of report.html", async (t) 
   let reviewWrote = false;
   let reviewHadTools = false;
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (input) => ({
         append: async ({ content }) => {
           if (content.includes("reopen report.html")) {
@@ -429,7 +431,8 @@ test("review turn can read and rewrite Agent regions of report.html", async (t) 
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  const result = await comparison.compare({ ...context(), reportShellHtml: shell, attemptRoot: root }, tools);
+  await writeFile(join(root, "report.html"), shell);
+  const result = await comparison.compare(context(), tools);
   assert.equal(result.status, "completed");
   assert.equal(reviewHadTools, true);
   assert.equal(reviewWrote, true);
@@ -439,8 +442,8 @@ test("review turn can read and rewrite Agent regions of report.html", async (t) 
 test("invalid review JSON is salvaged once without discarding report.html", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-comparison-json-salvage-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
-  const tools = recoveryTools(root, {
+  const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const tools = workspaceTools(root, {
     allowWrite: (path) => path === "report.html",
     completionPaths: new Set(["report.html"]),
   });
@@ -452,7 +455,7 @@ test("invalid review JSON is salvaged once without discarding report.html", asyn
   });
   const pages: string[] = [];
   const comparison = new ComparisonAgent({
-    host: new PiAgentHost({
+    host: new AgentHost({
       createSession: (input) => ({
         append: async ({ content }) => {
           pages.push(content);
@@ -469,7 +472,8 @@ test("invalid review JSON is salvaged once without discarding report.html", asyn
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  const result = await comparison.compare({ ...context(), reportShellHtml: shell, attemptRoot: root }, tools);
+  await writeFile(join(root, "report.html"), shell);
+  const result = await comparison.compare(context(), tools);
   assert.equal(result.status, "completed");
   assert.equal(pages.length, 5);
   assert.match(pages[4] ?? "", /Do not read or modify report\.html/);

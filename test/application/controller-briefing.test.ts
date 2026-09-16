@@ -327,9 +327,9 @@ test("Controller tools read briefing history, write project/, and deny briefing 
     taskCase: taskCase("第二页太空了。"),
     sourceRootKind: "historical_start",
   });
-  const { recoveryTools } = await import("../../src/infrastructure/recovery-tools.js");
+  const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
   const { controllerProjectWriteAllowed } = await import("../../src/application/controller-tools.js");
-  const tools = recoveryTools(briefingRoot, {
+  const tools = workspaceTools(briefingRoot, {
     allowWrite: controllerProjectWriteAllowed,
     writableMounts: ["project"],
     mounts: { project: replicaRoot },

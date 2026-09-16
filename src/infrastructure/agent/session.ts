@@ -7,7 +7,6 @@ import type {
   AgentAuditSink,
   AgentFailure,
   AgentInvocation,
-  FreeformAgentInvocation,
   FreeformInvocation,
   FreeformWorkRequest,
   InvocationCursor,
@@ -114,14 +113,20 @@ export class AgentSessionHost {
     return this.#dispatch({ kind: "structured", ...request });
   }
 
-  async requestFreeform(request: FreeformWorkRequest): Promise<FreeformAgentInvocation> {
-    const result = await this.work(request);
-    if (result.status !== "completed") return result;
-    return {
-      status: "completed",
-      sessionId: result.sessionId,
-      ...(result.invocationId ? { invocationId: result.invocationId } : {}),
-    };
+  /**
+   * Run freeform steps in order. Returns the first incomplete invocation, or the
+   * last completed one. An empty `steps` list completes without calling the model.
+   */
+  async runTurns(steps: readonly FreeformWorkRequest[]): Promise<FreeformInvocation> {
+    if (steps.length === 0) {
+      return { status: "completed", sessionId: this.#sessionId, value: {} };
+    }
+    let last!: FreeformInvocation;
+    for (const step of steps) {
+      last = await this.work(step);
+      if (last.status !== "completed") return last;
+    }
+    return last;
   }
 
   async #dispatch(request: { kind: "freeform" } & FreeformWorkRequest): Promise<FreeformInvocation>;

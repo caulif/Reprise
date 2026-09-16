@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { CONTROLLER_PROMPT_DIGEST, CONTROLLER_TURN_PROMPTS, type SteeringContext } from "../agents/controller-agent.js";
+import { CONTROLLER_TURN_PROMPTS, controllerSystemPromptDigest, type SteeringContext } from "../agents/controller-agent.js";
 import { record, text } from "../core/json.js";
 import type { EventEnvelope, TaskCase, UserVisibleTurn } from "../core/schema.js";
 import type { SourceRootKind } from "./replay-conditions.js";
@@ -443,11 +443,11 @@ async function writeBriefingManifest(briefingRoot: string): Promise<void> {
   await writeAtomic(join(briefingRoot, "manifest.json"), JSON.stringify({ schemaVersion: 1, files }, null, 2));
 }
 
-export function controllerRequestSnapshot(context: SteeringContext): Record<string, unknown> {
+export function controllerRequestSnapshot(context: SteeringContext, promptDigestValue?: string): Record<string, unknown> {
   return {
     schemaVersion: 1,
     toolSetVersion: 1,
-    promptDigest: CONTROLLER_PROMPT_DIGEST,
+    promptDigest: promptDigestValue ?? controllerSystemPromptDigest("zh"),
     requestId: context.requestId,
     runId: context.runId,
     runState: context.runState,

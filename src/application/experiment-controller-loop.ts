@@ -354,7 +354,7 @@ function steeringContextFrom(
 }
 
 async function persistControllerRequested(input: LoopInput, context: SteeringContext): Promise<void> {
-  const snapshot = controllerRequestSnapshot(context);
+  const snapshot = controllerRequestSnapshot(context, input.controller.systemPromptDigest);
   await input.store.append({
     type: "controller.requested",
     runId: input.runId,

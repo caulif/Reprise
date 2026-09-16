@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { record, text } from '../../../core/json.js';
-import type { AgentToolDefinition, PiTextCaller, PiTextSession } from '../../../infrastructure/agent/host.js';
+import type { AgentToolDefinition, ProviderAdapter, ProviderSession } from '../../../infrastructure/agent/host.js';
 import {
   CodexAppServerClient,
   CodexRuntimeUnavailableError,
@@ -23,7 +23,7 @@ const EXPERIMENT_APPLICATION_TURN_TIMEOUT_MS = 10 * 60_000;
  * A text-only Experiment Application caller backed by the current Codex app-server.
  * Each request gets an ephemeral, empty, read-only thread and never approves tools.
  */
-export class CodexTextCaller implements PiTextCaller {
+export class CodexTextCaller implements ProviderAdapter {
   readonly #options: CodexRuntimeOptions;
   readonly #model: string;
   readonly #effort: CodexReasoningEffort;
@@ -38,7 +38,7 @@ export class CodexTextCaller implements PiTextCaller {
       : EXPERIMENT_APPLICATION_TURN_TIMEOUT_MS;
   }
 
-  createSession(input: { sessionId: string; systemPrompt: string; tools: readonly AgentToolDefinition[] }): PiTextSession {
+  createSession(input: { sessionId: string; systemPrompt: string; tools: readonly AgentToolDefinition[] }): ProviderSession {
     if (input.tools.length > 0) throw new Error('CodexTextCaller cannot expose Host tools through the app-server protocol.');
     let controller: AbortController | undefined;
     return {

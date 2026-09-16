@@ -12,7 +12,7 @@ import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-pr
 import { sha256 } from "../../src/core/identity.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
 import { RecoveryAgent } from '../../src/agents/recovery-agent.js';
-import { PiAgentHost } from '../../src/infrastructure/agent/host.js';
+import { AgentHost } from '../../src/infrastructure/agent/host.js';
 
 const exec = promisify(execFile);
 
@@ -99,7 +99,7 @@ test('Recovery cancellation aborts a pending model call, persists cancellation a
   const provider = new LocalWorkspaceProvider(join(root, 'provider'));
   const discard = provider.discardRecovery.bind(provider);
   t.mock.method(provider, 'discardRecovery', async (...args: Parameters<typeof discard>) => { discarded += 1; return discard(...args); });
-  const recovery = new RecoveryAgent({ host: new PiAgentHost({ createSession: () => ({
+  const recovery = new RecoveryAgent({ host: new AgentHost({ createSession: () => ({
     append: ({ signal }) => { assert.equal(signal.aborted, false); started(); return new Promise<string>(() => {}); }, cancel() {},
   }) }), timeoutMs: 0, maxRepairAttempts: 1 });
   const pending = recoverExperiment({ dataDir: base.dataDir, caseId: base.caseId, experimentId: 'recovery-cancel', runId: 'recovery-cancel-run', sourceRoot: base.sourceRoot, taskCase: base.taskCase, recovery, environmentProvider: provider, now, signal: abort.signal });
