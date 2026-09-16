@@ -96,13 +96,12 @@ test('collaboration sample families are drawn from the contract-lane cases', () 
   }
 });
 
-test('controller rejects ungrounded evidence and unsafe message output', async () => {
+test('controller rejects ungrounded evidence and control characters, not Host wording', async () => {
   const agents = createHarnessAgents(defaultHarnessModelConfig(), scriptedCaller([
     JSON.stringify({ type: 'done', reason: 'satisfied', evidenceRefs: ['event:not-in-catalog'] }),
     JSON.stringify({ type: 'done', reason: 'satisfied', evidenceRefs: ['event:not-in-catalog'] }),
     JSON.stringify({ type: 'send', intent: 'inform', message: 'bad\u0001message' }),
     JSON.stringify({ type: 'send', intent: 'inform', message: 'bad\u0001message' }),
-    JSON.stringify({ type: 'send', intent: 'inform', message: 'See SteeringContext for Host diagnostics.' }),
     JSON.stringify({ type: 'send', intent: 'inform', message: 'See SteeringContext for Host diagnostics.' }),
   ]));
   const first = await agents.controller.decide(controllerEvalContext('invalid-evidence', 'known'));
@@ -112,7 +111,7 @@ test('controller rejects ungrounded evidence and unsafe message output', async (
   assert.equal(second.status, 'failed');
   await agents.controller.release?.(RUN_ID);
   const third = await agents.controller.decide(controllerEvalContext('host-term', 'known'));
-  assert.equal(third.status, 'failed');
+  assert.equal(third.status, 'completed');
 });
 
 test('controller capability lane is opt-in and outside engineering gates', async () => {

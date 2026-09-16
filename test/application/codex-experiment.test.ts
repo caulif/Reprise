@@ -534,7 +534,7 @@ test("cancelling an in-flight Controller request discards a late send before Can
   }
 });
 
-test("a completed comparison without report.html is recorded as an Agent failure, not a fallback narrative", async (t) => {
+test("a completed comparison that never fills Agent slots still publishes the Host shell, not a fallback narrative", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-experiment-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
@@ -555,11 +555,10 @@ test("a completed comparison without report.html is recorded as an Agent failure
     ...input(root, runtime),
     comparison: silent,
   }).result;
-  assert.equal(result.comparison.result.status, "failed");
-  assert.match(
-    await readFile(result.reportPath, "utf8"),
-    /Comparison unavailable/,
-  );
+  assert.equal(result.comparison.result.status, "completed");
+  const html = await readFile(result.reportPath, "utf8");
+  assert.doesNotMatch(html, /Comparison unavailable/);
+  assert.match(html, /data-host-zone|data-host=/);
 });
 
 test("working notes written after a failed first pass stay in the same comparison attempt", async (t) => {

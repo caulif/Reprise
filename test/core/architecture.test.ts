@@ -180,7 +180,7 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.doesNotMatch(agent, /select_recovery_candidate/);
   assert.doesNotMatch(agent, /Type\.Literal\("recovered"\)/);
   assert.doesNotMatch(agent, /insufficient_evidence/);
-  assert.match(agent, /\.work\(/);
+  assert.match(agent, /runTurns/);
   assert.match(agent, /RecoveryAgentEnvelope/);
   assert.doesNotMatch(agent, /必须证明起点|完整证明起点|推导任务开始前必须具备/);
   assert.match(agent, /reasonable starting environment/);
