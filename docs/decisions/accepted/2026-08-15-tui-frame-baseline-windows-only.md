@@ -28,3 +28,4 @@ CI 的 `audit` lane 跑在 `windows-latest`。帧基线是平台相关产物，�
 
 - `.github/workflows/check.yml` 里 `audit.runs-on` 为 `windows-latest`。
 - `test` job 仍使用 `windows-latest` 与 `ubuntu-latest` 矩阵。
+- `audit:tui:check` 在非 Windows 宿主生成帧并跑 compare 自检，但不把产物与 Windows 基线逐字节比对。反向：`shouldCompareAuditFrames('linux')` 为 true 则红。

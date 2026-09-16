@@ -21,7 +21,7 @@ npm run check
 | TypeScript / 测试 / 脚本门禁 | `npm run check`；窄回归可用 `npm run build` 后对受影响的 `dist/test/**/*.test.js` 跑 `node --test` | 真实 Runtime smoke |
 | Schema / 事件 / on-disk / 提示词 / 工具面 | 完整 `npm run check`，并新增或更新 `docs/decisions/` | 手改生成文档 |
 | Pack / Runtime / 凭据 | 完整 `npm run check` 加 fixture | 未 opt-in 的真实 smoke |
-| TUI 渲染 | `npm run audit:tui:check` | 在 Ubuntu 上期待帧逐字节一致 |
+| TUI 渲染 | `npm run audit:tui:check`（Windows；其他宿主只生成+自检，不比对 Windows 基线） | 在 Ubuntu 上期待 `$env:` / 反斜杠与 Windows 基线逐字节一致 |
 
 真实 Codex / Claude smoke 必须显式设置环境变量（见 [`codex-smoke-gate.md`](./codex-smoke-gate.md) 与根 README）。默认路径不得产生外部费用；CI 默认也不跑它们。
 

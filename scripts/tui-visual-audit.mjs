@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { IntakeTui } from '../dist/src/tui/intake-app.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
-import { canonicalizeAuditFrame, compareFrames, mockTui, pageHtml, selfTestCompareFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
+import { canonicalizeAuditFrame, compareFrames, mockTui, pageHtml, selfTestCompareFrames, shouldCompareAuditFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
 
 Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
 process.env.TERM = process.env.TERM && process.env.TERM !== 'dumb' ? process.env.TERM : 'xterm-256color';
@@ -469,7 +469,11 @@ ${captures.map((item) => `<li><a href="html/${item.name}.html">${item.name}</a> 
   }
   if (checkMode) {
     await selfTestCompareFrames();
-    await compareFrames(framesDir, baselineDir);
+    if (shouldCompareAuditFrames()) {
+      await compareFrames(framesDir, baselineDir);
+    } else {
+      console.log('audit:tui:check: generated frames; skip Windows baseline byte-compare on this host');
+    }
   }
   await rm(root, { recursive: true, force: true });
   if (checkMode) await rm(generatedRoot, { recursive: true, force: true });

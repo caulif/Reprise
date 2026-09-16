@@ -40,6 +40,11 @@ export function canonicalizeAuditFrame(text: string, aliases: ReadonlyArray<read
   return next.split('\n').map(trimTrailingBoxPad).join('\n');
 }
 
+/** Byte-compare committed frames only on the Windows baseline host. */
+export function shouldCompareAuditFrames(platform = process.platform): boolean {
+  return platform === 'win32';
+}
+
 function firstLineDiff(expected: string, actual: string): { line: number; expected: string | undefined; actual: string | undefined } | undefined {
   const left = expected.split('\n');
   const right = actual.split('\n');
@@ -102,7 +107,10 @@ export async function selfTestCompareFrames(): Promise<void> {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-  console.log('tui-visual-audit self-test: mismatched frames are rejected; 8.3 temp paths compare equal');
+  if (shouldCompareAuditFrames('linux') || shouldCompareAuditFrames('darwin') || !shouldCompareAuditFrames('win32')) {
+    throw new Error('frame byte-compare is Windows-only');
+  }
+  console.log('tui-visual-audit self-test: mismatched frames are rejected; 8.3 temp paths compare equal; byte-compare is Windows-only');
 }
 
 export function mockTui(rowsOrTerminal?: number | { rows: number; columns: number }): {

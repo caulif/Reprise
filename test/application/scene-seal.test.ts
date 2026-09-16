@@ -171,6 +171,9 @@ test('persistPreparedScene writes scene.json under an absolute experiments root'
     'C:/not-automatic',
     frozen,
   );
-  assert.equal(JSON.parse(await readFile(join(experimentRoot, 'scene.json'), 'utf8')).sourceRoot, 'C:/not-automatic');
+  assert.equal(
+    (JSON.parse(await readFile(join(experimentRoot, 'scene.json'), 'utf8')) as { sourceRoot: string }).sourceRoot,
+    'C:/not-automatic',
+  );
   assert.equal(existsSync(join(dataDir, 'cases', frozen.caseId, 'case.complete')), true);
 });
