@@ -549,6 +549,7 @@ test("a completed comparison without report.html is recorded as an Agent failure
         evidenceRefs: [],
       },
     }),
+    cancel: async () => {},
   };
   const result = await startExperiment({
     ...input(root, runtime),
@@ -579,6 +580,7 @@ test("working notes written after a failed first pass stay in the same compariso
       );
       return { status: "completed", sessionId: "comparison-notes", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };
     },
+    cancel: async () => {},
   };
   const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
   assert.equal(result.comparison.result.status, "completed");
@@ -606,6 +608,7 @@ test("a failed later comparison attempt does not overwrite the last successful r
   await writeFile(join(experimentRoot, "comparison.json"), JSON.stringify({ status: "completed", sessionId: "old", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } }));
   const failed: ComparisonAgentPort = {
     compare: async () => ({ status: "failed", sessionId: "comparison-failed", failure: { code: "agent_failure", message: "failed", attempts: 1 } }),
+    cancel: async () => {},
   };
   const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison: failed }).result;
   assert.equal(result.comparison.result.status, "failed");
@@ -804,6 +807,7 @@ test("comparison does not start unless compare is set", async (t) => {
         value: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
       };
     },
+    cancel: async () => {},
   };
   const result = await startExperiment({
     ...input(root, new VerifiedRuntime()),

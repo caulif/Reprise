@@ -179,6 +179,7 @@ const comparison: ComparisonAgentPort = {
       },
     };
   },
+  cancel: async () => {},
 };
 function taskCase(): TaskCase {
   return {

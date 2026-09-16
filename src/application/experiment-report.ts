@@ -62,6 +62,7 @@ export async function finishExperiment(input: {
   candidateSnapshotRoot: string;
   candidateSnapshotStatus: "complete" | "incomplete" | "missing";
   compare?: boolean;
+  onComparisonAttempt?: (attemptId: string) => void;
 }): Promise<ExperimentResult> {
   const finishedRecord = input.run.result().record;
   if (!finishedRecord)
@@ -180,6 +181,7 @@ async function compareExperimentOutcome(
   inspection: Awaited<ReturnType<typeof inspectRun>>,
 ) {
   const { attemptId, attemptRoot } = newComparisonAttempt(input.experimentRoot);
+  input.onComparisonAttempt?.(attemptId);
   await input.store.append({
     type: "comparison.started",
     runId: input.input.runId,

@@ -147,12 +147,12 @@ test('comparison envelope accepts short evidence refs and rejects long event ids
 });
 
 test('comparison orchestration rejects long event ids in the envelope', async () => {
-  const agent: ComparisonAgentPort = { compare: async () => ({ status: 'completed', sessionId: 'comparison-1', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: ['event:foreign-1'] } }) };
+  const agent: ComparisonAgentPort = { compare: async () => ({ status: 'completed', sessionId: 'comparison-1', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: ['event:foreign-1'] } }), cancel: async () => {} };
   await assert.rejects(comparePersistedFacts({ taskCase: taskCase(), runs: [runRecord()], agent, attemptId: 'attempt-1' }), /schema validation failed/);
 });
 
 test('comparePersistedFacts requires an explicit attemptId', async () => {
-  const agent: ComparisonAgentPort = { compare: async () => ({ status: 'completed', sessionId: 'comparison-1', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } }) };
+  const agent: ComparisonAgentPort = { compare: async () => ({ status: 'completed', sessionId: 'comparison-1', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } }), cancel: async () => {} };
   await assert.rejects(
     comparePersistedFacts({ taskCase: taskCase(), runs: [runRecord()], agent, attemptId: '' }),
     /Comparison attemptId is required/,

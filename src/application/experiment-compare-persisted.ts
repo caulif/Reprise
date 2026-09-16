@@ -35,12 +35,17 @@ export async function comparePersistedExperiment(input: {
   const unsubscribe = input.onEvent ? store.subscribe(input.onEvent) : undefined;
   const localAbort = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, localAbort.signal]) : localAbort.signal;
+  let comparison: ComparisonAgentPort | undefined;
+  let comparisonAttemptId: string | undefined;
   const activity = registerActivity({
     kind: "compare",
     experimentId: input.experimentId,
     runId: loaded.record.attempt.runId,
     dataDir: input.dataDir,
-    cancel: async () => { localAbort.abort(); },
+    cancel: async () => {
+      localAbort.abort();
+      if (comparison && comparisonAttemptId) await comparison.cancel(comparisonAttemptId);
+    },
   });
   input.onActivity?.(activity);
   try {
@@ -48,6 +53,7 @@ export async function comparePersistedExperiment(input: {
     const agents = input.comparison && input.agentConfig
       ? { comparison: input.comparison, agentConfig: input.agentConfig }
       : await resolveCompareAgents(input.resolveAgents, signal);
+    comparison = agents.comparison;
     signal.throwIfAborted();
     await store.acquireWriter();
     const provider = new LocalWorkspaceProvider(join(experimentRoot, "environment"));
@@ -68,6 +74,7 @@ export async function comparePersistedExperiment(input: {
       candidateSnapshotRoot: snapshot.root,
       candidateSnapshotStatus: snapshot.status,
       compare: true as const,
+      onComparisonAttempt: (attemptId: string) => { comparisonAttemptId = attemptId; },
     };
     return await attachExperimentComparison(finishInput as unknown as Parameters<typeof attachExperimentComparison>[0], loaded.record);
   } finally {

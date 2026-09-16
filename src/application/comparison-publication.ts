@@ -11,7 +11,7 @@ import {
 import { writeAtomic } from "../core/identity.js";
 import { isMissing } from "./experiment-helpers.js";
 import type { AgentLocale } from "../agents/language.js";
-import { candidateStatusLabel, reportString } from "./comparison-report-strings.js";
+import { candidateStatusLabel, reportString, type ComparisonReportStringKey } from "./comparison-report-strings.js";
 import {
   AGENT_ZONES,
   extractInner,
@@ -102,39 +102,49 @@ export async function verifyAndRenderComparisonReport(input: {
     ? hostZonesMismatch(input.html, input.hostZoneSnapshot, metrics, locale)
     : missingComparisonSlots(input.html) ?? hostMetricsMismatch(input.html, metrics, locale);
   if (zoneError) {
-    const code: ComparisonPublishCode = zoneError.includes("missing data-agent-zone") ? "report_incomplete" : "host_zone_modified";
+    const incompleteSlot = /missing data-(?:agent|host)-zone|missing data-agent-slot|missing component template|Share card order|outside the share card/.test(zoneError);
+    const code: ComparisonPublishCode = incompleteSlot ? "report_incomplete" : "host_zone_modified";
     return { failureClass: code === "report_incomplete" ? "publication" : "metrics", code, message: zoneError };
   }
-  const incomplete = incompleteAboveTheFold(input.html);
-  if (incomplete) return { failureClass: "publication", code: "report_incomplete", message: incomplete };
   const unexpected = unexpectedAgentZones(input.html);
   if (unexpected) return { failureClass: "publication", code: "report_incomplete", message: unexpected };
-  const leaked = leakedInternalRunInfo(input.html);
-  if (leaked) return { failureClass: "publication", code: "report_incomplete", message: leaked };
-  const presentation = shareCardPresentationError(input.html, locale);
-  if (presentation) return { failureClass: "publication", code: "report_incomplete", message: presentation };
   const structuredEvidence = claimsVerifiedWithoutResolvableEvidence(input.html, input.evidence ?? []);
   if (structuredEvidence) return { failureClass: "evidence", code: "evidence_unresolved", message: structuredEvidence };
   const structuredVisual = claimsVisualWithoutUsableMedia(input.html, input.media);
   if (structuredVisual) return { failureClass: "media", code: "media_unavailable", message: structuredVisual };
-  const visualClaim = claimsVisualWithoutMedia(input.html, input.media, locale);
-  if (visualClaim) return { failureClass: "media", code: "media_unavailable", message: visualClaim };
   const rewritten = await rewritePublishableHtml(input);
   if (hasExternalNetwork(rewritten.html)) {
     return { failureClass: "publication", code: "publication_failed", message: "Comparison report contains external network resources." };
   }
-  if (claimsVerifiedWithoutEvidence(input.html, rewritten.unresolvedEvidence, locale) && rewritten.unresolvedEvidence.length > 0) {
-    return { failureClass: "evidence", code: "evidence_unresolved", message: "Comparison claimed verification but related evidence is unresolved." };
+  let html = rewritten.html;
+  const limitations: ComparisonReportStringKey[] = [];
+  const incomplete = repairIncompleteAboveTheFold(html, input.result.headline, locale);
+  html = incomplete.html;
+  limitations.push(...incomplete.limitations);
+  const leaked = repairLeakedInternalRunInfo(html);
+  html = leaked.html;
+  limitations.push(...leaked.limitations);
+  const presentation = repairShareCardPresentation(html, locale);
+  html = presentation.html;
+  limitations.push(...presentation.limitations);
+  if (claimsVerifiedWithoutEvidence(html, rewritten.unresolvedEvidence, locale) && rewritten.unresolvedEvidence.length > 0) {
+    limitations.push("hostLimitationVerifiedWordlist");
   }
-  if (wordlistVerifiedWithoutResolvableEvidence(input.html, input.evidence ?? [], locale)) {
-    return { failureClass: "evidence", code: "evidence_unresolved", message: "Comparison claimed verification but related evidence is unresolved." };
+  if (wordlistVerifiedWithoutResolvableEvidence(html, input.evidence ?? [], locale)) {
+    limitations.push("hostLimitationVerifiedWordlist");
   }
-  if (citedMediaAllUnresolved(input.html, rewritten.unresolvedMedia, locale)) {
-    return { failureClass: "media", code: "media_unavailable", message: "Comparison cited media that is not available." };
+  if (claimsVisualWithoutMedia(html, input.media, locale)) {
+    limitations.push("hostLimitationVisualWordlist");
   }
-  const unpairedVisual = unpairedShareCardImages(rewritten.html, input.media);
-  if (unpairedVisual) return { failureClass: "publication", code: "report_incomplete", message: unpairedVisual };
-  const html = markUnresolvedInHostEvidence(rewritten.html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia], locale);
+  if (citedMediaAllUnresolved(html, rewritten.unresolvedMedia, locale)) {
+    limitations.push("hostLimitationCitedMediaUnresolved");
+  }
+  if (unpairedShareCardImages(html, input.media)) {
+    html = stripFoldImages(html);
+    limitations.push("hostLimitationUnpairedImages");
+  }
+  html = markUnresolvedInHostEvidence(html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia], locale);
+  html = appendHostLimitations(html, locale, limitations);
   const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
   return { html, model };
 }
@@ -308,26 +318,136 @@ function rewriteAgentZones(html: string, rewrite: (inner: string) => string): st
   return next;
 }
 
+function replaceZoneInner(html: string, attr: string, name: string, nextInner: string): string {
+  const outer = extractOuter(html, attr, name);
+  if (!outer) return html;
+  const open = outer.match(new RegExp(`^<(${ZONE_TAG})\\b[^>]*>`, "i"));
+  if (!open) return html;
+  const tag = open[1] ?? "section";
+  return html.replace(outer, `${open[0]}${nextInner}</${tag}>`);
+}
+
+const ZONE_TAG = "header|section|style|p|span";
+
+function appendHostLimitations(html: string, locale: AgentLocale, keys: readonly ComparisonReportStringKey[]): string {
+  const uniqueKeys = [...new Set(keys)];
+  if (uniqueKeys.length === 0) return html;
+  const outer = extractOuter(html, "data-agent-zone", "limitations");
+  if (!outer) return html;
+  const notes = uniqueKeys.map((key) => `<p data-host-limitation>${escapeText(reportString(locale, key))}</p>`).join("");
+  return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${notes}</section>`));
+}
+
+function repairIncompleteAboveTheFold(
+  html: string,
+  envelopeHeadline: string | undefined,
+  locale: AgentLocale,
+): { html: string; limitations: ComparisonReportStringKey[] } {
+  const limitations: ComparisonReportStringKey[] = [];
+  let next = html;
+  if (!oneLineFromHtml(extractInner(next, "data-agent-slot", "headline"))) {
+    const fromEnvelope = envelopeHeadline?.trim() ?? "";
+    if (fromEnvelope) next = replaceZoneInner(next, "data-agent-slot", "headline", escapeText(fromEnvelope));
+    else limitations.push("hostLimitationHeadlineMissing");
+  }
+  if (!oneLineFromHtml(extractInner(next, "data-agent-zone", "key-differences"))) {
+    next = replaceZoneInner(
+      next,
+      "data-agent-zone",
+      "key-differences",
+      `<p>${escapeText(reportString(locale, "hostLimitationCannotDetermine"))}</p>`,
+    );
+  }
+  return { html: next, limitations };
+}
+
+function stripInternalRunTokens(value: string): string {
+  return value
+    .replace(/\battemptId\b|\brunId\b|comparison-attempts\/|\\runs\\/gi, "")
+    .replace(/attempt-[a-z0-9-]{8,}/gi, "");
+}
+
+function repairLeakedInternalRunInfo(html: string): { html: string; limitations: ComparisonReportStringKey[] } {
+  let next = html;
+  for (const [attr, name] of [
+    ["data-agent-slot", "headline"],
+    ["data-agent-zone", "key-differences"],
+    ["data-agent-zone", "visual-evidence"],
+  ] as const) {
+    const inner = extractInner(next, attr, name);
+    if (!inner) continue;
+    const stripped = stripInternalRunTokens(inner);
+    if (stripped !== inner) next = replaceZoneInner(next, attr, name, stripped);
+  }
+  return { html: next, limitations: leakedInternalRunInfo(next) ? ["hostLimitationLeakedInternal"] : [] };
+}
+
+function unwrapTag(html: string, tag: string): string {
+  return html.replace(new RegExp(`<${tag}\\b[^>]*>`, "gi"), "").replace(new RegExp(`</${tag}>`, "gi"), "");
+}
+
+function applyShareCardPresentationFixes(html: string, locale: AgentLocale): string {
+  let next = html;
+  const headline = extractInner(next, "data-agent-slot", "headline");
+  if (/<strong\b/i.test(headline)) {
+    next = replaceZoneInner(next, "data-agent-slot", "headline", unwrapTag(headline, "strong"));
+  }
+  const style = extractInner(next, "data-host-zone", "style");
+  if (style && !/\.share\s+a\s*\{[^}]*text-decoration\s*:\s*none/i.test(style)) {
+    next = replaceZoneInner(next, "data-host-zone", "style", `${style}\n.share a { color:inherit; text-decoration:none; }`);
+  }
+  const share = shareArticleHtml(next);
+  if (share) {
+    const shareFixed = share
+      .replace(/\sstyle=(["'])[^"']*text-decoration\s*:\s*underline[^"']*\1/gi, "")
+      .replace(/<u\b[^>]*>/gi, "")
+      .replace(/<\/u>/gi, "");
+    if (shareFixed !== share) next = next.replace(share, shareFixed);
+  }
+  next = next.replace(/<summary[^>]*>\s*(价格与证据|Prices and evidence)\s*<\/summary>/gi, "");
+  next = next.replace(/本卡由/g, "").replace(/Written by /gi, "");
+  const historical = reportString(locale, "sessionHistorical");
+  const current = reportString(locale, "sessionCurrent");
+  for (const [attr, name] of [
+    ["data-agent-slot", "headline"],
+    ["data-agent-zone", "key-differences"],
+    ["data-agent-zone", "visual-evidence"],
+  ] as const) {
+    const inner = extractInner(next, attr, name);
+    if (!inner) continue;
+    const replaced = inner.replaceAll("历史侧", historical).replaceAll("候选侧", current);
+    if (replaced !== inner) next = replaceZoneInner(next, attr, name, replaced);
+  }
+  return next;
+}
+
+function repairShareCardPresentation(html: string, locale: AgentLocale): { html: string; limitations: ComparisonReportStringKey[] } {
+  let next = applyShareCardPresentationFixes(html, locale);
+  if (!shareCardPresentationError(next, locale)) return { html: next, limitations: [] };
+  next = applyShareCardPresentationFixes(next, locale);
+  return { html: next, limitations: shareCardPresentationError(next, locale) ? ["hostLimitationShareCardPresentation"] : [] };
+}
+
+function stripFoldImages(html: string): string {
+  let next = html;
+  for (const [attr, name] of [
+    ["data-host-zone", "header"],
+    ["data-agent-slot", "headline"],
+    ["data-agent-zone", "key-differences"],
+    ["data-agent-zone", "visual-evidence"],
+  ] as const) {
+    const inner = extractInner(next, attr, name);
+    if (!inner || !/<img\b/i.test(inner)) continue;
+    next = replaceZoneInner(next, attr, name, inner.replace(/<img\b[^>]*>/gi, ""));
+  }
+  return next;
+}
+
 function unexpectedAgentZones(html: string): string | undefined {
   const found = [...html.matchAll(/\bdata-agent-zone\s*=\s*(["'])([^"']+)\1/gi)].map((match) => match[2] ?? "");
   const extra = found.find((zone) => zone && !(AGENT_ZONES as readonly string[]).includes(zone));
   if (!extra) return undefined;
   return `Comparison report contains unsupported data-agent-zone="${extra}".`;
-}
-
-function incompleteAboveTheFold(html: string): string | undefined {
-  const headline = oneLineFromHtml(extractInner(html, "data-agent-slot", "headline"));
-  if (!headline) return "Comparison report is missing headline.";
-  const differences = incompleteKeyDifferences(html);
-  if (differences) return differences;
-  return undefined;
-}
-
-function incompleteKeyDifferences(html: string): string | undefined {
-  const inner = extractInner(html, "data-agent-zone", "key-differences");
-  const text = oneLineFromHtml(inner);
-  if (text.length > 0) return undefined;
-  return 'Comparison report is missing key differences (or an explicit "cannot be determined").';
 }
 
 function shareCardPresentationError(html: string, locale: AgentLocale): string | undefined {

@@ -113,6 +113,7 @@ type ExperimentControl = {
   signal: AbortSignal;
   setActive(run: ActiveRun): void;
   setController(controller: ControllerPort, runId: string): void;
+  setComparisonAttempt(attemptId: string): void;
   cancelled(): boolean;
   waitForComparison(partial: ExperimentResult): Promise<boolean>;
   ready(): Promise<void>;
@@ -128,6 +129,7 @@ export function startExperiment(
   let active: ActiveRun | undefined;
   let activeController: ControllerPort | undefined;
   let activeRunId: string | undefined;
+  let comparisonAttemptId: string | undefined;
   let cancelRequested = false;
   let decideComparison: ((run: boolean) => void) | undefined;
   const comparisonDecision = input.deferComparison
@@ -145,7 +147,7 @@ export function startExperiment(
     cancelRequested = true;
     abort.abort();
     decideComparison?.(false);
-    await input.comparison.cancel?.();
+    if (comparisonAttemptId) await input.comparison.cancel(comparisonAttemptId);
     if (activeController && activeRunId)
       await activeController.cancel?.(
         activeRunId,
@@ -172,6 +174,9 @@ export function startExperiment(
     setController(controller, runId) {
       activeController = controller;
       activeRunId = runId;
+    },
+    setComparisonAttempt(attemptId) {
+      comparisonAttemptId = attemptId;
     },
     cancelled() {
       return cancelRequested;
@@ -530,6 +535,7 @@ async function finishCandidateRun(args: {
     candidateSnapshotRoot: snapshot.root,
     candidateSnapshotStatus: snapshot.status,
     compare: false as const,
+    onComparisonAttempt: (attemptId: string) => control.setComparisonAttempt(attemptId),
   };
   const partial = await finishExperiment(finishInput);
   if (!(await control.waitForComparison(partial))) return partial;

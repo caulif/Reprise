@@ -82,7 +82,7 @@ export type ComparisonMetricSide = {
 
 export interface ComparisonAgentPort {
   compare(context: ComparisonContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonResult>>;
-  cancel?(attemptId?: string, factRef?: string): Promise<void>;
+  cancel(attemptId: string, factRef?: string): Promise<void>;
   release?(attemptId: string): void | Promise<void>;
 }
 
@@ -312,11 +312,9 @@ export class ComparisonAgent implements ComparisonAgentPort {
     return session;
   }
 
-  async cancel(attemptId?: string, factRef?: string): Promise<void> {
-    const keys = attemptId ? [attemptId] : this.#sessions.keys();
-    for (const key of keys) {
-      await this.#sessions.cancel(key, (session) => session.cancel(factRef));
-    }
+  async cancel(attemptId: string, factRef?: string): Promise<void> {
+    if (!attemptId) throw new Error("Comparison cancel requires attemptId.");
+    await this.#sessions.cancel(attemptId, (session) => session.cancel(factRef));
   }
 
   async release(attemptId: string): Promise<void> {
