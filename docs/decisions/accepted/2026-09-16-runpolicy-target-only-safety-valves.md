@@ -38,4 +38,4 @@
 
 ## 验证
 
-`test/application/candidate-run-safety.test.ts`：可数事件超限为 true；无数事件不截；`.reprise/` 不进指纹；有改动则连续计数清零。`test/candidate/candidate-run.test.ts`：journal 含 `runtime.turn_started` 达上限 → `limit.model_calls`；无数则继续；连续相同指纹 → `stalled.no_progress`。`test/application/codex-experiment.test.ts`：墙钟与 Controller `maxCalls` 仍独立截断；重复用户句在指纹变化或阈值未到时不因措辞停。`npm run check` 必须通过。
+`test/application/candidate-run-safety.test.ts`：可数事件超限为 true；无数事件不截；`.reprise/` 不进指纹；有改动则连续计数清零。`test/candidate/run-policy-safety-valves.test.ts`：journal 含 `runtime.turn_started` 达上限 → `limit.model_calls`；无数则继续；连续相同指纹 → `stalled.no_progress`（独立文件，避免与 `hangStop` 同文件被 cancelledByParent）。`test/application/codex-experiment.test.ts`：墙钟与 Controller `maxCalls` 仍独立截断；重复用户句在指纹变化或阈值未到时不因措辞停。`npm run check` 必须通过。
