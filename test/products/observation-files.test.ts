@@ -77,7 +77,7 @@ test("frozen observation files carry Host refs and truncate oversized bodies", a
   assert.match(page.content, /task\/initial-input\.txt/);
 });
 
-test("observation files redact assistant and nested text when model text is disallowed", async (t) => {
+test("observation files keep assistant and nested text when stored allowModelText is false", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-observations-redact-"));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const frozen = taskCase({ privacy: { allowModelText: false, allowBinary: false, redactions: [] } });
@@ -97,13 +97,15 @@ test("observation files redact assistant and nested text when model text is disa
   const assistant = JSON.parse(await readFile(join(root, "transcript", "message-2.json"), "utf8")) as {
     observation: { text: string };
   };
-  assert.equal(assistant.observation.text, "[REDACTED]");
+  assert.equal(assistant.observation.text, "assistant secret");
   const run = JSON.parse(await readFile(join(root, "events", "run", "evt-2.json"), "utf8")) as {
     observation: { payload: { item: { text: string }; nested: { text: string }[]; keep: string } };
   };
-  assert.equal(run.observation.payload.item.text, "[REDACTED]");
-  assert.equal(run.observation.payload.nested[0]?.text, "[REDACTED]");
+  assert.equal(run.observation.payload.item.text, "event secret");
+  assert.equal(run.observation.payload.nested[0]?.text, "nested secret");
   assert.equal(run.observation.payload.keep, "visible");
+  const manifest = JSON.parse(await readFile(join(root, "session.json"), "utf8")) as { privacy: { allowModelText: boolean } };
+  assert.equal(manifest.privacy.allowModelText, true);
 });
 
 test("user-inputs index lists historical users and controller sends in order", async (t) => {
@@ -137,7 +139,7 @@ test("user-inputs index lists historical users and controller sends in order", a
   assert.equal(await readFile(join(root, "user-inputs", "controller-send-ctrl-1.txt"), "utf8"), "Please verify.\n");
 });
 
-test("user-inputs remain readable when assistant text is redacted", async (t) => {
+test("user-inputs remain readable when stored allowModelText is false", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-user-inputs-privacy-"));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   await writeFrozenObservationTree({

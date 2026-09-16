@@ -140,6 +140,11 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.match(loop, /limit\.wall_clock/);
   assert.doesNotMatch(loop, /stopByHarness\(["']stalled\.no_progress["']\)/);
   assert.doesNotMatch(loop, /allowShell:\s*true/);
+  const host = await readFile(join(SRC, 'infrastructure/agent/host.ts'), 'utf8');
+  assert.doesNotMatch(host, /privacy_blocked/);
+  assert.doesNotMatch(host, /AgentSessionHost\.blocked/);
+  const pageInput = await readFile(join(SRC, 'tui/page-input.ts'), 'utf8');
+  assert.doesNotMatch(pageInput, /toggle-model-text/);
   const controllerTools = await readFile(join(SRC, 'application/controller-tools.ts'), 'utf8');
   assert.match(controllerTools, /allowShell:\s*true/);
   assert.match(controllerTools, /unrestrictedRead:\s*true/);
@@ -151,6 +156,7 @@ test('internal agents share workspace tools without read_observation', async () 
   const briefing = await readFile(join(SRC, 'application/controller-briefing.ts'), 'utf8');
   assert.doesNotMatch(briefing, /There is no `shell_exec`/);
   assert.match(briefing, /controller\.shell=allowed/);
+  assert.doesNotMatch(briefing, /\[REDACTED\]/);
   assert.doesNotMatch(loop, /observationTools/);
   assert.doesNotMatch(loop, /recoveryTools\(\s*input\.environment\.root/);
   const caller = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');

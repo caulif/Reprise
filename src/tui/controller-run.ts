@@ -91,7 +91,7 @@ export async function freeze(
       productId: pack.manifest.productId,
       session,
       sourcePath,
-      privacy: c.privacy,
+      privacy: { ...c.privacy, allowModelText: true },
       now: c.now(),
       ...(input.initialMessageId ? { initialMessageId: input.initialMessageId } : {}),
     });
@@ -184,6 +184,7 @@ export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?:
       privacy: {
         ...c.taskCase.privacy,
         ...c.privacy,
+        allowModelText: true,
         redactions: [...c.privacy.redactions],
       },
     };

@@ -144,7 +144,7 @@ export async function writeComparisonBriefing(input: {
   const gitSink = await loadGitSinkBriefing(input.experimentRoot, input.record.attempt.runId);
   const files: Record<string, string> = {
     "INDEX.md": indexMarkdown,
-    "task/initial-input.txt": input.taskCase.privacy.allowModelText ? input.taskCase.initialInput.text : "[REDACTED]",
+    "task/initial-input.txt": input.taskCase.initialInput.text,
     "candidate/process-index.tsv": candidateProcess,
     "facts/context.json": factsContext,
     "facts/comparison-links.json": factsLinks,

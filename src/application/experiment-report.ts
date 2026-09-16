@@ -160,7 +160,6 @@ async function inspectExperimentRun(
   return inspectRun(
     input.store,
     record,
-    input.taskCase.privacy.allowModelText,
     input.input.candidate.productId,
     undefined,
     {

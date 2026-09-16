@@ -135,13 +135,14 @@ test('UserVisibleTurn projection is deterministic for the Fake event sequence', 
     allowModelText: true,
   });
   assert.deepEqual(view, again);
-  const blocked = fakeActivityTranslator.projectTurn({
+  const fossil = fakeActivityTranslator.projectTurn({
     turnIndex: 1,
     settlement,
     events,
     allowModelText: false,
   });
-  assert.equal(blocked.status, 'unavailable');
+  assert.equal(fossil.status, 'completed');
+  assert.equal(fossil.assistantText, 'Done.');
 });
 
 test('CandidateRuntimeEvent schema is the journal payload, not a top-level envelope', () => {

@@ -303,7 +303,7 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
     ...laterLines,
     rule,
     ` ${t(locale, 'outcomeLabel')}    ${outcome}`,
-    ` ${t(locale, 'privacyLabel')}    ${t(locale, 'fieldModelText')} ${privacy.allowModelText ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldBinary')} ${privacy.allowBinary ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldRedactions')} ${privacy.redactions.length || t(locale, 'noneWord')}`,
+    ` ${t(locale, 'privacyLabel')}    ${t(locale, 'fieldModelText')} ${t(locale, 'allowed')} ${theme.glyphs.sep} ${t(locale, 'fieldBinary')} ${privacy.allowBinary ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldRedactions')} ${privacy.redactions.length || t(locale, 'noneWord')}`,
     ` ${t(locale, 'nothingWritten')}`,
     ...(inspection.recoveryDiagnostics?.length
       ? [` ${t(locale, 'recoveryDiagnostics')} ${inspection.recoveryDiagnostics.map((item) => item.code).join(' / ')}`]
@@ -327,7 +327,7 @@ export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): rea
 }
 
 export function inspectionHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Enter', t(locale, 'hintFreeze')], ['d', t(locale, 'hintExpandOutcome')], ['t', t(locale, 'hintToggleText')], ['Esc', t(locale, 'hintBack')]];
+  return [['Enter', t(locale, 'hintFreeze')], ['d', t(locale, 'hintExpandOutcome')], ['Esc', t(locale, 'hintBack')]];
 }
 
 

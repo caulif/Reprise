@@ -63,6 +63,7 @@ export {
   type CaseArtifactRef,
   TaskCaseSchema,
   type TaskCase,
+  FROZEN_ALLOW_MODEL_TEXT,
   CandidateSpecSchema,
   type CandidateSpec,
 } from "./schemas/task-case.js";

@@ -21,7 +21,7 @@ import { Type } from "@sinclair/typebox";
 import { controllerRequestSnapshot } from "../../src/application/controller-briefing.js";
 import { observationReadRecord, reconstructControllerRequest, controllerReadEvidenceOnRequest } from "../../src/application/controller-request.js";
 import { sha256 } from "../../src/core/identity.js";
-function context(allowModelText = true): SteeringContext {
+function context(): SteeringContext {
   return {
     requestId: "controller-request-run-1-1",
     runId: "run-1",
@@ -29,7 +29,7 @@ function context(allowModelText = true): SteeringContext {
     task: {
       initialInput: { id: "message-1", role: "user", text: "Implement it." },
       baseline: { status: "unavailable", artifactRefs: [], evidenceRefs: [] },
-      privacy: { allowModelText, allowBinary: false, redactions: [] },
+      privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     },
     current: {
       summary: "Target is waiting.",
@@ -380,7 +380,7 @@ test('Controller cancellation releases a provider that never settles and aborts 
   assert.equal((await pending).status, 'cancelled');
 });
 
-test("failed, timeout, and privacy-blocked requests never manufacture a Controller decision", async () => {
+test("failed and timeout requests never manufacture a Controller decision", async () => {
   const invalid = new ControllerAgent({
     host: new PiAgentHost(
       caller([
@@ -457,22 +457,6 @@ test("failed, timeout, and privacy-blocked requests never manufacture a Controll
   });
   const unboundedResult = await unbounded.decide(context());
   assert.equal(unboundedResult.status, "completed");
-  let calls = 0;
-  const blocked = new ControllerAgent({
-    host: new PiAgentHost({
-      createSession: () => {
-        calls += 1;
-        throw new Error("must not be called");
-      },
-    }),
-    timeoutMs: 50,
-    maxRepairAttempts: 0,
-  });
-  const blockedResult = await blocked.decide(context(false));
-  assert.equal(blockedResult.status, "failed");
-  if (blockedResult.status === "failed")
-    assert.equal(blockedResult.failure.code, "privacy_blocked");
-  assert.equal(calls, 0);
 });
 test("a JSON answer wrapped in a Markdown fence is accepted without spending a repair attempt", async () => {
   const sessions: Array<{

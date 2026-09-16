@@ -56,11 +56,11 @@ test("outline marks user lines after the first non-empty assistant text", () => 
 });
 
 test("view surface maps settlement without leaking Host diagnostics", () => {
-  assert.equal(controllerViewSurface("waiting_input", "ok?", true), "waiting");
-  assert.equal(controllerViewSurface("failed", "error", true), "failed");
-  assert.equal(controllerViewSurface("aborted", "stop", true), "aborted");
-  assert.equal(controllerViewSurface("completed", "", true), "empty");
-  assert.equal(controllerViewSurface("completed", "done", false), "unavailable");
+  assert.equal(controllerViewSurface("waiting_input", "ok?"), "waiting");
+  assert.equal(controllerViewSurface("failed", "error"), "failed");
+  assert.equal(controllerViewSurface("aborted", "stop"), "aborted");
+  assert.equal(controllerViewSurface("completed", ""), "empty");
+  assert.equal(controllerViewSurface("completed", "done"), "completed");
 });
 
 test("INDEX is navigation only and lists notes/", () => {

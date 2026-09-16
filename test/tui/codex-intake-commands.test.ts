@@ -402,7 +402,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   await waitFor(() => cancellations === 1);
   assert.match(rendered, /Cancellation requested|已请求取消/);
   assert.equal(sourceRoot, "C:/not-automatic");
-  assert.equal(allowModelText, false);
+  assert.equal(allowModelText, true);
   assert.doesNotMatch(rendered, /State: created → launching/);
   assert.match(rendered, /Prompt|Codex|public response line 1/);
   assert.match(rendered, /public response line 1/);

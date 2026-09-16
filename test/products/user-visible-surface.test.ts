@@ -100,7 +100,6 @@ test("Controller turnVisibleText and briefing files keep the joined surface", as
   const observation = await inspectRun(
     { events: () => events } as unknown as ExperimentStore,
     { attempt: { runId: "run-1" }, artifactRefs: [] } as unknown as RunRecord,
-    true,
     "codex",
   );
   assert.equal(observation.finalMessage, CLOSING);

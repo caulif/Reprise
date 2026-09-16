@@ -44,7 +44,6 @@ export type WorkspaceInspection = {
 export async function inspectRun(
   store: ExperimentStore,
   record: RunRecord | undefined,
-  allowModelText: boolean,
   productId: string,
   workspace?: WorkspaceInspection,
   replay?: {
@@ -69,11 +68,9 @@ export async function inspectRun(
   const turnEvents = eventsForLatestSettledTurn(events);
   const turnFacts = translator.inspectRunFacts(turnEvents);
   const latestSettlement = settled.at(-1);
-  const userView = projectLatestUserView(translator, settled.length, latestSettlement, turnEvents, allowModelText);
-  const turnVisibleText = allowModelText
-    ? joinPublicAssistantSurface(turnFacts.assistantTexts) ?? turnFacts.finalMessage
-    : undefined;
-  const turnPrompt = allowModelText ? userVisiblePrompt(userView) : undefined;
+  const userView = projectLatestUserView(translator, settled.length, latestSettlement, turnEvents);
+  const turnVisibleText = joinPublicAssistantSurface(turnFacts.assistantTexts) ?? turnFacts.finalMessage;
+  const turnPrompt = userVisiblePrompt(userView);
   const rejectedApprovals = facts.rejectedApprovals;
   const workspaceFacts = record
     ? await readWorkspaceScope(store, record)
@@ -97,7 +94,7 @@ export async function inspectRun(
     : undefined;
   const inspection: RunInspection = {
     runId,
-    ...(allowModelText && finalMessage ? { finalMessage } : {}),
+    ...(finalMessage ? { finalMessage } : {}),
     commands,
     rejectedApprovals,
     turns: settled.length,
@@ -120,7 +117,7 @@ export async function inspectRun(
   const currentSummary = [
     `Latest target settlement: ${status}.`,
     "Read current-user-view.md for the user-visible surface.",
-    allowModelText && turnVisibleText
+    turnVisibleText
       ? "Visible assistant text is in current-user-view.md."
       : "No model text is available to the Controller.",
   ].join(" ");
@@ -179,7 +176,6 @@ function projectLatestUserView(
   turnIndex: number,
   latestSettlement: EventEnvelope | undefined,
   turnEvents: readonly EventEnvelope[],
-  allowModelText: boolean,
 ): UserVisibleTurn | undefined {
   if (!latestSettlement || turnIndex < 1) return undefined;
   const payload = recordValue(latestSettlement.payload);
@@ -199,7 +195,7 @@ function projectLatestUserView(
       turnIndex,
       settlement,
       events: turnEvents,
-      allowModelText,
+      allowModelText: true,
     });
   } catch {
     return { schemaVersion: 1, turnIndex, status: "unavailable", observedAt: settlement.observedAt };

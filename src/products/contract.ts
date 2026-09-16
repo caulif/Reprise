@@ -238,11 +238,8 @@ export function projectUserVisibleTurn(input: {
   turnIndex: number;
   settlement: Pick<TurnSettlement, 'status' | 'observedAt' | 'failure'>;
   facts: TargetRunFacts;
-  allowModelText: boolean;
+  allowModelText?: boolean;
 }): UserVisibleTurn {
-  if (!input.allowModelText) {
-    return { schemaVersion: 1, turnIndex: input.turnIndex, status: 'unavailable', observedAt: input.settlement.observedAt };
-  }
   const mapped =
     input.settlement.status === 'waiting_input' ? 'waiting'
     : input.settlement.status === 'failed' ? 'failed'

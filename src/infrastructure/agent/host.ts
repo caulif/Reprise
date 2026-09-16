@@ -58,16 +58,6 @@ export class AgentHost implements AgentHostPort {
       throw new Error("Agent role and system prompt are required.");
     }
     const sessionId = randomUUID();
-    const allowModelText = input.privacy?.allowModelText ?? input.allowModelText ?? true;
-    if (!allowModelText) {
-      await input.audit?.append({
-        type: "agent.session_failed",
-        sessionId,
-        role: input.role,
-        payload: { code: "privacy_blocked" },
-      });
-      return AgentSessionHost.blocked(sessionId, input.role, input.audit);
-    }
     const cursor: InvocationCursor = { requestIndex: 0 };
     const tools = instrumentTools(input.tools ?? [], sessionId, input.role, cursor, input.audit);
     const compactionInstructions = input.compaction?.instructions ?? input.compactionInstructions;

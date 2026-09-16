@@ -75,13 +75,13 @@ export function buildComparisonContext(
     },
     candidates: runs.map((run) => ({
       runId: run.attempt.runId,
-      summary: inspectionSummary(run, byRunId.get(run.attempt.runId), taskCase.privacy.allowModelText),
+      summary: inspectionSummary(run, byRunId.get(run.attempt.runId)),
       evidenceRefs: runEvidence(run),
     })),
     telemetry: runs.map((run) => ({ runId: run.attempt.runId, summary: telemetrySummary(run, byRunId.get(run.attempt.runId)) })),
     reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay, pricing),
     artifactRefs: unique(runs.flatMap((run) => run.artifactRefs.map((ref) => `artifact:${ref.artifactId}`))),
-    allowModelText: taskCase.privacy.allowModelText,
+    allowModelText: true,
     replayScope: {
       historical: 'TaskCase transcript, baseline.finalMessage, and baseline evidenceRefs are the frozen original session. They are not this candidate\'s actions.',
       candidate: 'This replay is only the inspection, run record, host-trace.json, candidate-workspace-scope.json, and run events. changedPaths are files the candidate wrote after Host rewound the replica to the session start. Isolation paths are not a capability difference.',
@@ -303,7 +303,7 @@ function assertFacts(taskCase: TaskCase, runs: readonly RunRecord[]): void {
   }
 }
 
-function inspectionSummary(run: RunRecord, inspection: RunInspection | undefined, allowModelText: boolean): string {
+function inspectionSummary(run: RunRecord, inspection: RunInspection | undefined): string {
   const facts = [`task=${run.outcome.task.status}`, `termination=${run.outcome.termination.code}`];
   if (!inspection) return `${facts.join('; ')}.`;
   facts.push(`turns=${inspection.turns}`, `changedFiles=${inspection.changedPaths.length}`, `commands=${inspection.commands.length}`);
@@ -311,7 +311,7 @@ function inspectionSummary(run: RunRecord, inspection: RunInspection | undefined
     facts.push(`externalShellWrites=${inspection.controllerExternalWritePaths.length}`);
   }
   if (inspection.rejectedApprovals) facts.push(`rejectedApprovals=${inspection.rejectedApprovals}`);
-  if (allowModelText && inspection.finalMessage) facts.push(`finalMessage=${inspection.finalMessage}`);
+  if (inspection.finalMessage) facts.push(`finalMessage=${inspection.finalMessage}`);
   if (inspection.replayConditions?.length) facts.push(`hostConditions=${inspection.replayConditions.join(' | ')}`);
   return `${facts.join('; ')}.`;
 }

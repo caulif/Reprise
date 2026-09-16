@@ -81,7 +81,7 @@ test('global input routes ctrl+c and overlay escapes before page keys', () => {
 
 test('inspection, preflight, confirm, running, result, and error dispatch the operator keys', () => {
   assert.equal(dispatchResultKeys('\x1b')?.action, 'home');
-  assert.equal(dispatchInspectionInput('t', true)?.action, 'toggle-model-text');
+  assert.equal(dispatchInspectionInput('t', true), undefined);
   assert.equal(dispatchInspectionInput('\r', true)?.action, 'freeze');
   assert.equal(dispatchInspectionInput('\r', false), undefined);
   assert.equal(dispatchPreflightInput('2'), undefined);

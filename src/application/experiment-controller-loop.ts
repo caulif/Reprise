@@ -259,7 +259,6 @@ async function packControllerBriefing(
   const inspection = await inspectRun(
     input.store,
     undefined,
-    input.taskCase.privacy.allowModelText,
     input.candidateProductId,
     {
       runId: input.runId,
@@ -280,8 +279,7 @@ async function packControllerBriefing(
     visibleText: turnText,
     events: eventsForLatestSettledTurn(input.store.events(input.runId)),
     changedPaths: inspection.changedPaths,
-    allowModelText: input.taskCase.privacy.allowModelText,
-    surface: controllerViewSurface(inspection.settlementStatus, turnText, input.taskCase.privacy.allowModelText),
+    surface: controllerViewSurface(inspection.settlementStatus, turnText),
     ...(inspection.turnPrompt ? { prompt: inspection.turnPrompt } : {}),
     ...(inspection.userView ? { userView: inspection.userView } : {}),
   });

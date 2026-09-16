@@ -117,7 +117,7 @@ Controller 对原始会话采用“完整可访问”，而不是“每轮把所
 - 摘要不能替代 transcript，也不能成为唯一仍可访问的历史；
 - 每次读取保留消息 ID、顺序和 provenance；opening 与 steering 读取 briefing 材料时记 `source=briefing_read` 的 observation evidence，可被当轮决策引用；
 - privacy policy 可以在发送给外部 provider 前脱敏，但脱敏事实必须可见；
-- `privacy.allowModelText=false` 关闭正文（写成 `[REDACTED]`），不隐藏会话结构（id、role、顺序、字节数）。
+- `privacy.allowModelText` 是化石键，读取恒为允许正文；凭据仍走 `redactModelVisibleText`。见 [allowModelText 化石](../decisions/accepted/2026-09-16-allow-model-text-fossil.md)。
 
 默认上下文组装为：
 

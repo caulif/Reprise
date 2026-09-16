@@ -162,11 +162,10 @@ export function dispatchSessionsInput(state: SessionsInputState, data: string): 
   return undefined;
 }
 
-export type InspectionAction = 'toggle-model-text' | 'toggle-outcome' | 'back-sessions' | 'freeze';
+export type InspectionAction = 'toggle-outcome' | 'back-sessions' | 'freeze';
 
 export function dispatchInspectionInput(data: string, hasInspection: boolean): { action: InspectionAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 't')) return { action: 'toggle-model-text', consume: true };
   if (matchesKey(input, 'd')) return { action: 'toggle-outcome', consume: true };
   if (matchesKey(input, 'escape')) return { action: 'back-sessions', consume: true };
   if (matchesKey(input, 'enter') && hasInspection) return { action: 'freeze', consume: true };

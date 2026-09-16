@@ -51,16 +51,6 @@ export class AgentSessionHost {
     this.#cursor = cursor;
   }
 
-  static blocked(sessionId: string, role: string, audit?: AgentAuditSink): AgentSessionHost {
-    return new AgentSessionHost(sessionId, role, undefined, audit, toAgentFailure({
-      code: "privacy_blocked",
-      message: "Model text is disallowed by TaskCase privacy policy.",
-      attempts: 0,
-      kind: "privacy",
-      retryable: false,
-    }));
-  }
-
   static failed(
     sessionId: string,
     role: string,
