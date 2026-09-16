@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { CONTROL_PROTOCOL_VERSION, type ControlResponse } from "../core/control-protocol.js";
 import { controlEndpointFor, controlIpcDir, listenControlEndpoint } from "../infrastructure/control-endpoint.js";
 import {
@@ -18,8 +19,16 @@ type OwnerHost = {
   close: () => Promise<void>;
 };
 
-let host: OwnerHost | undefined;
+const hosts = new Map<string, OwnerHost>();
 let chain = Promise.resolve();
+
+export function liveDataDirKey(dataDir: string): string {
+  try {
+    return realpathSync(dataDir);
+  } catch {
+    return dataDir;
+  }
+}
 
 export function enqueueControlWork(work: () => Promise<void>): Promise<void> {
   const next = chain.then(work, work);
@@ -62,20 +71,32 @@ export async function retireActivityControl(activity: ExperimentActivity, dataDi
   await deleteControlRecord(experimentRoot);
 }
 
-export async function stopControlHostIfIdle(runningCount: number): Promise<void> {
-  if (runningCount > 0 || !host) return;
-  const closing = host;
-  host = undefined;
-  await closing.close();
-  await removeOwnerIpc(controlIpcDir(closing.dataDir, closing.ownerInstanceId));
+export async function stopControlHostIfIdle(runningCount: number, dataDir?: string): Promise<void> {
+  if (runningCount > 0) return;
+  if (dataDir) {
+    const key = liveDataDirKey(dataDir);
+    const closing = hosts.get(key);
+    if (!closing) return;
+    hosts.delete(key);
+    await closing.close();
+    await removeOwnerIpc(controlIpcDir(closing.dataDir, closing.ownerInstanceId));
+    return;
+  }
+  const closing = [...hosts.values()];
+  hosts.clear();
+  for (const item of closing) {
+    await item.close();
+    await removeOwnerIpc(controlIpcDir(item.dataDir, item.ownerInstanceId));
+  }
 }
 
 async function ensureHost(
   dataDir: string,
   onCancel: (operationId: string) => Promise<ControlResponse>,
 ): Promise<OwnerHost> {
-  if (host && host.dataDir === dataDir) return host;
-  if (host) await stopControlHostIfIdle(0);
+  const key = liveDataDirKey(dataDir);
+  const existing = hosts.get(key);
+  if (existing) return existing;
   const ownerInstanceId = `own-${randomUUID()}`;
   const token = randomBytes(32).toString("hex");
   const ipcDir = controlIpcDir(dataDir, ownerInstanceId);
@@ -91,6 +112,7 @@ async function ensureHost(
       return onCancel(request.operationId);
     },
   });
-  host = { ownerInstanceId, dataDir, endpoint, close: listener.close };
-  return host;
+  const created = { ownerInstanceId, dataDir: key, endpoint, close: listener.close };
+  hosts.set(key, created);
+  return created;
 }

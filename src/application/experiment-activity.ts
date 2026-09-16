@@ -3,6 +3,7 @@ import { SAFE_ID } from "../core/identity.js";
 import { CONTROL_PROTOCOL_VERSION, type ControlResponse } from "../core/control-protocol.js";
 import {
   enqueueControlWork,
+  liveDataDirKey,
   publishActivityControl,
   retireActivityControl,
   stopControlHostIfIdle,
@@ -88,7 +89,11 @@ export function finishExperimentActivity(experimentId: string): void {
     if (!dataDir) continue;
     publishes.set(activity, enqueueControlWork(async () => {
       await retireActivityControl(activity, dataDir, listRunningActivities().some((item) => item.experimentId === experimentId));
-      await stopControlHostIfIdle(listRunningActivities().length);
+      const live = liveDataDirKey(dataDir);
+      await stopControlHostIfIdle(
+        listRunningActivities().filter((item) => item.dataDir && liveDataDirKey(item.dataDir) === live).length,
+        dataDir,
+      );
     }));
   }
 }

@@ -169,6 +169,37 @@ test("unreachable control record does not delete the lock or kill a pid", async 
   assert.equal(await readFile(lockPath, "utf8"), "keep\n");
 });
 
+test("concurrent dataDirs keep separate unix sockets", async (t) => {
+  const left = await mkdtemp(join(tmpdir(), "reprise-ipc-left-"));
+  const right = await mkdtemp(join(tmpdir(), "reprise-ipc-right-"));
+  t.after(async () => {
+    await rm(left, { recursive: true, force: true });
+    await rm(right, { recursive: true, force: true });
+  });
+  const cancelled: string[] = [];
+  const a = registerActivity({
+    kind: "prepare",
+    experimentId: "experiment-left",
+    runId: "run-left",
+    dataDir: left,
+    cancel: async () => { cancelled.push("left"); },
+  });
+  const b = registerActivity({
+    kind: "prepare",
+    experimentId: "experiment-right",
+    runId: "run-right",
+    dataDir: right,
+    cancel: async () => { cancelled.push("right"); },
+  });
+  await Promise.all([activityControlReady(a), activityControlReady(b)]);
+  assert.equal((await listControlRecords(left)).length, 1);
+  assert.equal((await listControlRecords(right)).length, 1);
+  assert.deepEqual(cancelled, []);
+  finishExperimentActivity("experiment-left");
+  finishExperimentActivity("experiment-right");
+  await Promise.all([activityControlReady(a), activityControlReady(b)]);
+});
+
 test("cancel client source never kills pids or unlinks writer.lock", async () => {
   const source = await readFile(join(repoSrc, "application/experiment-cancel.ts"), "utf8");
   assert.doesNotMatch(source, /taskkill|writer\.lock|process\.kill/);
