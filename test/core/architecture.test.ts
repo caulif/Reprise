@@ -137,6 +137,8 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.match(loop, /experimentAgentAuditSink/);
   assert.match(loop, /controllerBriefingRoot/);
   assert.match(loop, /assertBriefingOutsideReplica/);
+  assert.match(loop, /limit\.wall_clock/);
+  assert.doesNotMatch(loop, /stopByHarness\(["']stalled\.no_progress["']\)/);
   assert.doesNotMatch(loop, /allowShell:\s*true/);
   const controllerTools = await readFile(join(SRC, 'application/controller-tools.ts'), 'utf8');
   assert.match(controllerTools, /allowShell:\s*true/);

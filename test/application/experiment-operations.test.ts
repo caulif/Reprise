@@ -23,7 +23,11 @@ async function runnableAttempt(t: { after: (fn: () => Promise<void>) => void }):
 }
 
 test('default run policy is a last-resort safety valve owned by the experiment workflow', () => {
+  assert.equal(DEFAULT_RUN_POLICY.wallClockMs, 24 * 60 * 60_000);
   assert.equal(DEFAULT_RUN_POLICY.maxTargetTurns, 256);
+  assert.equal(DEFAULT_RUN_POLICY.maxModelCalls, 256);
+  assert.equal(DEFAULT_RUN_POLICY.turnTimeoutMs, 2 * 60 * 60_000);
+  assert.equal(DEFAULT_RUN_POLICY.maxConsecutiveNoProgress, 2);
   assert.equal(typeof createExperimentWorkflow, 'function');
 });
 

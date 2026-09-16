@@ -152,7 +152,7 @@ interface AgentBudget {
 - `maxCalls`、`maxTokens` 和 `maxCost` 默认未设置，即 Controller 资源预算无限制；
 - `maxStructuredRepairAttempts` 限制 schema 修复调用，`maxProviderRetries` 限制瞬时 provider 错误重试；两者第一版都保持很小且分别计数；
 - `callTimeoutMs` 仅在用户显式配置时限制单次调用；默认快照写一个很大的安全阀数字，实际 Host 调用为 `timeoutMs: 0`；
-- CandidateRun 的 `RunPolicy` 约束 Target Runtime 的墙钟、turn 和模型调用；Controller 决策次数只用 `controller.budget.maxCalls`（未设置则不截断）；
+- CandidateRun 的 `RunPolicy` 约束 Target Runtime 的墙钟、turn 和模型调用（`maxModelCalls` 只数 Target journal 的 `runtime.turn_started` / `runtime.usage_reported`，数不到则不截）；无进展按隔离副本指纹，见 [RunPolicy 只约束 Target](../decisions/accepted/2026-09-16-runpolicy-target-only-safety-valves.md)；Controller 决策次数只用 `controller.budget.maxCalls`（未设置则不截断）；
 - RunOrchestrator 执行 CandidateRun 限制；Controller 只能看到对应的运行快照并据此判断是否继续。
 
 所有候选使用相同的显式 Agent 预算配置（默认均为无限制），但实际消费分别记录。Controller token、成本和耗时必须与 Target 指标分开，同时可以提供端到端总量。若用户配置了 Agent 预算，上限耗尽是独立终止原因，不能伪装成 `done` 或任务完成。

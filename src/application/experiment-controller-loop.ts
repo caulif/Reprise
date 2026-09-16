@@ -150,12 +150,9 @@ async function deliverSteering(
   decisions.push(decision);
   await persistControllerDecision(input, calls, decision);
   if (decision.status !== "completed") {
-    const next =
-      decision.status === "failed"
-        ? await input.run.failController({ code: decision.failure.code, message: decision.failure.message })
-        : decision.status === "cancelled"
-          ? await input.run.cancel()
-          : await input.run.stopByHarness("stalled.no_progress");
+    const next = decision.status === "failed"
+      ? await input.run.failController({ code: decision.failure.code, message: decision.failure.message })
+      : await input.run.cancel();
     return { state: next, controllerCalls: calls, followupSubmission: false, stop: true };
   }
   if (decision.value.type === "done") {

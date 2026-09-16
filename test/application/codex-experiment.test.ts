@@ -13,6 +13,7 @@ import { PiAgentHost } from "../../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import type { ResolvedRuntime, TargetEventSink, TargetRunner } from "../../src/core/runtime.js";
+import { runtimeTargetEvent } from "../../src/core/runtime.js";
 import { sha256 } from "../../src/core/identity.js";
 import { now, VerifiedRuntime, input, terminationOf, sendingController, patientPolicy, readJson, comparisonHtmlWithHostShell } from "../codex-experiment-support.js";
 
@@ -187,8 +188,11 @@ test("records the latest cumulative Codex token count", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-tokens-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
-  const result = await startExperiment(input(root, new TokenRuntime()))
-    .result;
+  const experiment = input(root, new TokenRuntime());
+  const result = await startExperiment({
+    ...experiment,
+    policy: { ...experiment.policy, maxModelCalls: 8 },
+  }).result;
   assert.equal(result.facts?.tokenCount, 256);
 });
 
@@ -245,6 +249,41 @@ test("the Harness stops the run when the Controller call budget is spent", async
   assert.equal(termination.code, "limit.controller_calls");
 });
 
+test("consecutive identical replica fingerprints stop the run as stalled.no_progress", async (t) => {
+  const termination = await terminationOf(t, {
+    controller: sendingController(),
+    policy: { ...patientPolicy, maxConsecutiveNoProgress: 1, maxTargetTurns: 8 },
+    turns: 4,
+  });
+  assert.equal(termination.kind, "stalled");
+  assert.equal(termination.code, "stalled.no_progress");
+});
+
+test("a Runtime without model-call journal events is not truncated by maxModelCalls", async (t) => {
+  const termination = await terminationOf(t, {
+    controller: sendingController(),
+    policy: { ...patientPolicy, maxModelCalls: 1, maxTargetTurns: 3, maxConsecutiveNoProgress: 8 },
+    turns: 3,
+  });
+  assert.equal(termination.kind, "limit_reached");
+  assert.equal(termination.code, "limit.target_turns");
+});
+
+test("countable Target model-call events stop the run as limit.model_calls", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-model-calls-"));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  await mkdir(join(root, "source"));
+  await writeFile(join(root, "source", "README.md"), "# source\n");
+  const result = await startExperiment({
+    ...input(root, new VerifiedRuntime()),
+    runtime: new TurnStartedRuntime(),
+    controller: sendingController(),
+    policy: { ...patientPolicy, maxModelCalls: 1, maxConsecutiveNoProgress: 8 },
+  }).result;
+  assert.equal(result.record.outcome.termination.kind, "limit_reached");
+  assert.equal(result.record.outcome.termination.code, "limit.model_calls");
+});
+
 test("the Controller may repeat a message when the candidate needs another turn", async (t) => {
   let calls = 0;
   const repeatTwice: ControllerPort = {
@@ -257,7 +296,7 @@ test("the Controller may repeat a message when the candidate needs another turn"
   };
   const termination = await terminationOf(t, {
     controller: repeatTwice,
-    policy: { ...patientPolicy, maxConsecutiveNoProgress: 1 },
+    policy: patientPolicy,
   });
   assert.equal(termination.kind, "completed");
   assert.equal(termination.code, "completed.controller_satisfied");
@@ -780,3 +819,20 @@ test("comparison does not start unless compare is set", async (t) => {
     await store.close();
   }
 });
+
+class TurnStartedRuntime extends VerifiedRuntime {
+  override async createRunner(
+    runtime: ResolvedRuntime,
+    environment: { environmentId: string; runId: string; root: string },
+    sink: TargetEventSink,
+    launch: import("../../src/core/schema.js").CandidateLaunchContext,
+  ): Promise<TargetRunner> {
+    const runner = await super.createRunner(runtime, environment, sink, launch);
+    const wait = runner.waitForTurn.bind(runner);
+    runner.waitForTurn = async () => {
+      await sink.append(runtimeTargetEvent("turn_started", { sessionId: runner.session().sessionId, evidenceRefs: [] }));
+      return wait();
+    };
+    return runner;
+  }
+}

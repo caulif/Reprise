@@ -137,7 +137,7 @@ Comparison Agent 只读取规范化的任务、结果、artifact、遥测和 fid
 ### 4.2 ExperimentSpec、CandidateSpec 与 Agent 配置
 
 
-`ExperimentSpec` 表达用户想比较什么。Controller 和 Comparison 的请求配置在 Experiment 创建时冻结；Controller 在首个候选运行前解析，Comparison 在比较调用前解析，并分别保存实际模型与配置 hash。Recovery 属于 Case Preparation，它的 `ResolvedAgentConfig` 保存在 `TaskCase.provenance`，不进入 `ExperimentSpec`。三个 Agent 的总调用、token 和成本上限默认未设置。Controller 与 Recovery 的单次调用 timeout、结构化修复次数和 provider 重试次数始终有限；Comparison 使用 Host 无请求截止（`timeoutMs: 0`），仍响应取消与传输失败。`RunPolicy` 只约束 Target Runtime，不能作为内部 Agent 的预算或重试策略。
+`ExperimentSpec` 表达用户想比较什么。Controller 和 Comparison 的请求配置在 Experiment 创建时冻结；Controller 在首个候选运行前解析，Comparison 在比较调用前解析，并分别保存实际模型与配置 hash。Recovery 属于 Case Preparation，它的 `ResolvedAgentConfig` 保存在 `TaskCase.provenance`，不进入 `ExperimentSpec`。三个 Agent 的总调用、token 和成本上限默认未设置。Controller 与 Comparison 的单次调用 `timeoutMs` 为 0（无截止），仍响应取消与传输失败；Recovery 单次 `callTimeoutMs`、三者的结构化修复次数和 provider 重试次数有限。`RunPolicy` 只约束 Target Runtime，不能作为内部 Agent 的预算或重试策略。
 
 用户从 Pi 可用的 provider 与模型中选择内部 Agent 配置；Harness 不指定、捆绑或评价这些模型。同一 Experiment 的所有候选共享同一份 Controller 配置，但各自使用独立 session。Comparison 在运行结束后使用冻结的 Comparison 配置；setup 中后来发生的默认值变化不得静默改变已有 TaskCase 或 Experiment。
 
@@ -300,7 +300,21 @@ created
 7. `finished` 后迟到的原生事实可追加为 late event，但不能改变 RunOutcome。
 8. 报告生成不属于状态机。
 
-默认 `RunPolicy` 是：30 分钟墙钟、12 个 target turns、100 次模型调用、单 turn 5 分钟、heartbeat 60 秒、连续 3 次无进展；token 与成本上限默认不启用。用户可以调整，但使用默认值时不需要额外交互。预算停止必须记录为 budget termination，不能伪装成 Controller 或 Target 完成。
+默认 `RunPolicy` 由 [`DEFAULT_RUN_POLICY`](../../src/application/default-run-policy.ts) 拥有，`gen:docs` 抽出：
+
+<!-- BEGIN GENERATED default-run-policy (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
+| 字段 | 默认值 |
+|---|---|
+| `wallClockMs` | 86400000（24 小时） |
+| `maxTargetTurns` | 256 |
+| `maxModelCalls` | 256（仅 Target；journal 无数则不截） |
+| `turnTimeoutMs` | 7200000（2 小时） |
+| `maxConsecutiveNoProgress` | 2 |
+
+token 与成本上限默认不启用。Controller / Comparison 单次 `timeoutMs` 为 0。
+<!-- END GENERATED default-run-policy -->
+
+用户可以调整，但使用默认值时不需要额外交互。`maxModelCalls` 只数 Target journal 中的 `runtime.turn_started` 或（若无前者）`runtime.usage_reported`；数不到则不截断。`maxConsecutiveNoProgress` 比较隔离副本内容指纹（排除 `.reprise/`）。预算停止必须记录为 budget termination，不能伪装成 Controller 或 Target 完成。见 [RunPolicy 只约束 Target](../decisions/accepted/2026-09-16-runpolicy-target-only-safety-valves.md)。
 
 生命周期状态不是结果。预算、无进展、取消、阻塞、技术失败和 delivery unknown 通过 `RunTermination` 区分；任务是否看起来完成由 `TaskAssessment` 表达，清理失败只写 `CleanupResult`。详细协议见[CandidateRun 结果与终止协议](./run-outcome.md)。
 

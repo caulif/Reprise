@@ -88,7 +88,7 @@ reprise compare
 实验内一致性            stable
 隔离副本                creatable
 候选配置                run-local
-预计上限                30 分钟
+预计上限                24 小时
 
 [准备并开始]
 ```

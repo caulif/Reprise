@@ -7,6 +7,7 @@ import { commitCandidateLaunchContext } from "./recovery/launch-context.js";
 import { persistExperimentSpec, persistRunPreflight } from "./experiment-layout.js";
 import { CandidateRun } from "./candidate-run.js";
 import { createCandidateRuntimeSink } from "./candidate-run-events.js";
+import { progressDigestFromFingerprint } from "./candidate-run-safety.js";
 import type { CandidateLaunchContext, CandidateSpec, EventEnvelope, RunManifest, RunPolicy, RunRecord, TaskCase } from "../core/schema.js";
 import type { ProductRuntime } from "../core/runtime.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
@@ -435,8 +436,11 @@ async function startCandidateRun(args: {
     policy: {
       turnTimeoutMs: input.policy.turnTimeoutMs,
       maxTargetTurns: input.policy.maxTargetTurns,
+      maxModelCalls: input.policy.maxModelCalls,
+      maxConsecutiveNoProgress: input.policy.maxConsecutiveNoProgress,
     },
     release,
+    progressFingerprint: async () => progressDigestFromFingerprint(await provider.fingerprint(environment)),
     persistence: {
       journal: store,
       attempt,

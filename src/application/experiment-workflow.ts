@@ -27,20 +27,12 @@ import { packDefaultCandidate, packHistory, packRuntime } from '../products/pack
 import { discoverProductSessions, resolveHistoryRoot } from '../products/history/discover.js';
 import { inspectProductSession, readImportedSession } from '../products/history/read.js';
 import { freezeCase } from '../products/shared/freeze.js';
+import { DEFAULT_RUN_POLICY } from './default-run-policy.js';
 import type { SourceRootKind } from './replay-conditions.js';
 import { assertCandidateStartAllowed, candidateGateFromAttempt } from './candidate-start.js';
 import { activityControlReady, registerActivity, type ExperimentActivity } from './experiment-activity.js';
 
-/** Last-resort safety valve. Completion is a Controller decision, not these numbers. */
-export const DEFAULT_RUN_POLICY: RunPolicy = {
-  wallClockMs: 24 * 60 * 60_000,
-  maxTargetTurns: 256,
-  maxModelCalls: 256,
-  turnTimeoutMs: 2 * 60 * 60_000,
-  maxConsecutiveNoProgress: 2,
-};
-
-export const TUI_RUN_POLICY = DEFAULT_RUN_POLICY;
+export { DEFAULT_RUN_POLICY, TUI_RUN_POLICY } from './default-run-policy.js';
 
 type ExperimentDefaults = { readonly candidate?: CandidateSpec; readonly policy: RunPolicy };
 export type ExperimentRequest = {
