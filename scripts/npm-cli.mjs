@@ -45,8 +45,10 @@ function cliFromPathEnv(tried) {
 /** Locate npm-cli.js without spawning `npm.cmd` (Windows `shell:false`). */
 export function resolveNpmCliJs(execPath = process.execPath) {
   const tried = [];
-  const envHit = existingFile(process.env.npm_execpath, tried);
-  if (envHit) return envHit;
+  if (execPath === process.execPath) {
+    const envHit = existingFile(process.env.npm_execpath, tried);
+    if (envHit) return envHit;
+  }
   for (const candidate of npmCliCandidates(execPath)) {
     const hit = existingFile(candidate, tried);
     if (hit) return hit;
@@ -54,8 +56,10 @@ export function resolveNpmCliJs(execPath = process.execPath) {
   const bundled = join(dirname(execPath), process.platform === 'win32' ? 'npm.cmd' : 'npm');
   const fromBundled = cliFromShim(bundled, tried);
   if (fromBundled) return fromBundled;
-  const fromPath = cliFromPathEnv(tried);
-  if (fromPath) return fromPath;
+  if (execPath === process.execPath) {
+    const fromPath = cliFromPathEnv(tried);
+    if (fromPath) return fromPath;
+  }
   throw new Error(`Cannot locate npm-cli.js next to ${execPath}. Tried: ${tried.join(', ')}`);
 }
 
@@ -87,6 +91,17 @@ export function selfTestNpmCli() {
     writeFileSync(unixCli, 'ok\n');
     if (resolveNpmCliJs(unixNode) !== realpathSync(unixCli)) {
       throw new Error('Unix hostedtoolcache 布局必须解析到 npm-cli.js');
+    }
+
+    const savedExecpath = process.env.npm_execpath;
+    process.env.npm_execpath = unixCli;
+    try {
+      if (resolveNpmCliJs(winNode) !== realpathSync(winCli)) {
+        throw new Error('假节点树不得被 npm_execpath 抢先匹配');
+      }
+    } finally {
+      if (savedExecpath === undefined) delete process.env.npm_execpath;
+      else process.env.npm_execpath = savedExecpath;
     }
 
     const winOnlyOnUnix = npmCliCandidates(unixNode)[0];
