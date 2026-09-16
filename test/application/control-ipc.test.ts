@@ -26,6 +26,7 @@ test("control endpoint is a local pipe or unix socket, never a TCP port", () => 
   assert.match(source, /kind === "unix"/);
   assert.doesNotMatch(source, /listen\(\s*\d+/);
   assert.doesNotMatch(source, /createServer\(\s*\{[^}]*port/);
+  assert.doesNotMatch(source, /timer\.unref/);
 });
 
 test("two processes cancel prepare, run, and compare without touching writer.lock", async (t) => {

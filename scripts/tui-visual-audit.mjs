@@ -68,7 +68,7 @@ async function main() {
   const posix = root.replaceAll('\\', '/');
   const win = root.replaceAll('/', '\\');
   const cwd = process.cwd();
-  const home = homedir();
+  const userHome = homedir();
   stabilize = (text) => canonicalizeAuditFrame(
     text
       .replace(/\u001b\[[0-9;]*m/g, '')
@@ -77,10 +77,10 @@ async function main() {
       .split(posix).join('TMP')
       .split(cwd.replaceAll('/', '\\')).join(DISPLAY_CWD)
       .split(cwd.replaceAll('\\', '/')).join(DISPLAY_CWD)
-      .split(home.replaceAll('/', '\\')).join('C:\\user')
-      .split(home.replaceAll('\\', '/')).join('C:/user')
+      .split(userHome.replaceAll('/', '\\')).join('C:\\user')
+      .split(userHome.replaceAll('\\', '/')).join('C:/user')
       .replace(/reprise-tui-audit-[A-Za-z0-9]+/g, 'reprise-tui-audit-TMP'),
-    [[root, 'TMP'], [cwd, DISPLAY_CWD], [home, 'C:\\user']],
+    [[root, 'TMP'], [cwd, DISPLAY_CWD], [userHome, 'C:\\user']],
   );
   await saveHarnessModelConfig(join(root, 'data'), defaultHarnessModelConfig());
   await writeFile(join(sessionsRoot, 'rollout-session-1.jsonl'), [

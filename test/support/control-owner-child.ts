@@ -24,7 +24,12 @@ const activity = registerActivity({
   },
 });
 await activityControlReady(activity);
-process.stdout.write(`${JSON.stringify({ operationId: activity.operationId, experimentId, runId, kind })}\n`);
+await new Promise<void>((resolve, reject) => {
+  process.stdout.write(`${JSON.stringify({ operationId: activity.operationId, experimentId, runId, kind })}\n`, (error) => {
+    if (error) reject(error);
+    else resolve();
+  });
+});
 await done;
 clearInterval(keepAlive);
 finishExperimentActivity(experimentId);

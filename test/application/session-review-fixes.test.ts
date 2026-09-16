@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { closeSync, openSync, statSync, writeSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -67,6 +67,22 @@ test('catalog uses the rollout id map instead of peeking a file whose id is past
   });
   assert.equal(mapped.sessions[0]?.availability, 'indexed');
   assert.equal(catalogPathKey(mapped.sessions[0]?.sourcePath ?? ''), catalogPathKey(file));
+});
+
+test('catalogPathKey follows realpath so aliased temp spellings share an id map key', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-catalog-key-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const target = join(root, 'rollout.jsonl');
+  const link = join(root, 'alias.jsonl');
+  await writeFile(target, '{}\n');
+  try {
+    await symlink(target, link);
+  } catch {
+    t.skip('symlink unavailable');
+    return;
+  }
+  assert.equal(catalogPathKey(link), catalogPathKey(target));
+  assert.notEqual(link, target);
 });
 
 test('cwd matching is one-way and prefers the longest project root', () => {

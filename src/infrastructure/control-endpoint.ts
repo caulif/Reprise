@@ -57,15 +57,22 @@ export async function sendControlRequest(
   timeoutMs = CONTROL_CLIENT_TIMEOUT_MS,
 ): Promise<ControlResponse | { status: "unreachable" } | { status: "timeout" }> {
   const socket = connectEndpoint(endpoint);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const payload = await Promise.race([
       writeAndRead(socket, request),
-      sleepStatus(timeoutMs, socket),
+      new Promise<{ status: "timeout" }>((resolve) => {
+        timer = setTimeout(() => {
+          socket.destroy();
+          resolve({ status: "timeout" });
+        }, timeoutMs);
+      }),
     ]);
     return payload;
   } catch {
     return { status: "unreachable" };
   } finally {
+    if (timer) clearTimeout(timer);
     socket.destroy();
   }
 }
@@ -111,16 +118,6 @@ async function writeAndRead(socket: Socket, request: ControlRequest): Promise<Co
   } catch {
     return { status: "unreachable" };
   }
-}
-
-function sleepStatus(timeoutMs: number, socket: Socket): Promise<{ status: "timeout" }> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      socket.destroy();
-      resolve({ status: "timeout" });
-    }, timeoutMs);
-    timer.unref();
-  });
 }
 
 function readLimitedJson(socket: Socket, maxBytes: number): Promise<unknown> {

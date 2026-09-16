@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -259,5 +259,11 @@ test("CLI JSON envelopes reject empty command at the public schema boundary", as
     () => writeJsonResult({ stdout: () => {}, stderr: () => {} }, { ok: true, command: "" }),
     CliError,
   );
+});
+
+test("headless timeout keeps a referenced timer instead of AbortSignal.timeout", async () => {
+  const source = await readFile(join(process.cwd(), "src/cli/headless.ts"), "utf8");
+  assert.doesNotMatch(source, /AbortSignal\.timeout/);
+  assert.match(source, /timeout\?\.stop/);
 });
 

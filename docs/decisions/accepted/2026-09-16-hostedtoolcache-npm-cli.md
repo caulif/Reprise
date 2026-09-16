@@ -9,7 +9,7 @@
 
 ## 决定
 
-`scripts/npm-cli.mjs` 按顺序解析：`npm_execpath`、Windows `node.exe` 旁布局、Unix `lib/node_modules/npm` 布局、与 `node` 同目录的 `npm` shim、`PATH` 上的 npm 入口。门禁、`verify-pack`、`verify-audit` 与 pack-api 测试共用该解析。继续用 `node` + `npm-cli.js` + `shell:false`，不改回 `npm.cmd`。
+`scripts/npm-cli.mjs` 按顺序解析：当前进程的 `npm_execpath`（仅当 `execPath === process.execPath`）、Windows `node.exe` 旁布局、Unix `lib/node_modules/npm` 布局、与该 `execPath` 同目录的 `npm` shim、当前进程 `PATH` 上的 npm 入口。假节点树自检不得被 `npm run` 注入的 `npm_execpath` 抢先匹配。门禁、`verify-pack`、`verify-audit` 与 pack-api 测试共用该解析。继续用 `node` + `npm-cli.js` + `shell:false`，不改回 `npm.cmd`。
 
 ## 备选方案
 
@@ -26,6 +26,6 @@
 
 ## 验证
 
-- `selfTestNpmCli`：假 Windows 树与假 Unix 树都能解析；Unix 树不满足仅 Windows 候选。
+- `selfTestNpmCli`：假 Windows 树与假 Unix 树都能解析；Unix 树不满足仅 Windows 候选；`npm_execpath` 指向 Unix CLI 时假 Windows 树仍解析到自己的 `npm-cli.js`。
 - `node scripts/run-gates.mjs --self-test` 在当前宿主能跑 `npm -v`。
 - 反向：候选列表去掉 `lib/node_modules/npm` 时，Unix 假树解析失败或落到错误路径。

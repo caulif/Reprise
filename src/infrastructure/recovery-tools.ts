@@ -238,6 +238,7 @@ async function gitProbe(
         cwd: root,
         timeoutMs: 5_000,
         maxOutputBytes: MAX_BYTES,
+        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
       });
       return { ok: true, stdout: result.stdout, attempts: attempt };
     } catch (error) {
