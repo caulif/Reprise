@@ -28,4 +28,4 @@ Comparison system prompt 写明 `candidate/` 是封存快照。结果页打开 `
 
 ## 验证
 
-`test/scene-seal.test.ts`：源搬走后封存可跑；指纹不符拒绝；半成品不进列表；`persistTaskCase` 拒绝未发布目录；对照 incomplete 不挂 live run。`test/environment.test.ts`：两次 `prepareRun` 起点指纹相同且互不污染。`test/local-history.test.ts`：列出 History 不删除封存 baseline。`test/comparison-report.test.ts` 与 snapshot：prompt 含 sealed snapshot，不含 live isolated replica。反向：缺 `case.complete` 的目录出现在列表、或 incomplete 快照仍挂 `runs/{runId}` 则红。
+`test/scene-seal.test.ts`：源搬走后封存可跑；指纹不符拒绝；半成品不进列表；`persistTaskCase` 拒绝未发布目录；对照 incomplete 不挂 live run；相对 `experimentRoot` 不得 `mkdir /cases`。`test/environment.test.ts`：两次 `prepareRun` 起点指纹相同且互不污染。`test/local-history.test.ts`：列出 History 不删除封存 baseline。`test/comparison-report.test.ts` 与 snapshot：prompt 含 sealed snapshot，不含 live isolated replica。反向：缺 `case.complete` 的目录出现在列表、或 incomplete 快照仍挂 `runs/{runId}` 则红。

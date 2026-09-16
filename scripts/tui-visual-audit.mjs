@@ -310,7 +310,7 @@ async function main() {
       await new Promise((resolve) => { releaseRecovery = resolve; });
       return {
         experimentId: 'audit-recovery',
-        experimentRoot: 'audit-root',
+        experimentRoot: join(root, 'data-run', 'experiments', 'audit-recovery'),
         baseline: { match: 'recovered', warnings: [] },
         staging: { recoveryId: 'audit-recovery' },
         recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready for the original task.', reportPath: 'recovery.md', unresolved: [] } },

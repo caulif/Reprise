@@ -11,7 +11,7 @@ GitHub Windows runner 上 `os.tmpdir()` / `mkdtemp` 常给出 `C:\Users\RUNNER~1
 
 ## 决定
 
-活文件系统比较用 `realpath`（`sameLiveFsPath`）。记录路径仍用 `sameFsPath`，8.3 与长名字符串不相等。Git toplevel 与 historical commit 探测走活路径；commit 存在性用 `git cat-file -t`，父提交用 `HASH~1`，避免 `^`。Git 探测带 `GIT_OPTIONAL_LOCKS=0`。Source fingerprint 忽略 `.git/`，避免 Host 自己的 `git status` 触发 source tripwire。Codex catalog 的路径键同样 `realpath`。TUI 帧比对先把 Users/temp 前缀（含 8.3）收成 `C:\user\...`，再去掉行末 `│` 前的多余空白。`shell_exec` 在所有宿主返回非零退出码。进程超时定时器保持引用，直到该次 `runProcess` / cleanup / headless `--timeout-ms` / control 客户端等待结束。
+活文件系统比较用 `realpath`（`sameLiveFsPath`）。记录路径仍用 `sameFsPath`，8.3 与长名字符串不相等。Git toplevel 与 historical commit 探测走活路径；commit 存在性用 `git cat-file -t`，父提交用 `HASH~1`，避免 `^`。Git 探测带 `GIT_OPTIONAL_LOCKS=0`。Source fingerprint 忽略 `.git/`，避免 Host 自己的 `git status` 触发 source tripwire。Codex catalog 的路径键同样 `realpath`。TUI 帧比对先把 Users/temp 前缀（含 8.3）收成 `C:\user\...`，再去掉行末 `│` 前的多余空白。`shell_exec` 在所有宿主返回非零退出码。进程超时定时器保持引用，直到该次 `runProcess` / cleanup / headless `--timeout-ms` / control 客户端等待结束。`persistPreparedScene` 只在绝对 `experiments/{id}` 根下写盘；相对 fixture 根不得 `resolve(.., ..)` 到文件系统根去 `mkdir /cases`。记录的 `sourceRoot` 若已是 Windows/POSIX 绝对路径则保持原样，不在 POSIX 上 `path.resolve('C:/...')`。
 
 ## 备选方案
 
@@ -36,3 +36,4 @@ GitHub Windows runner 上 `os.tmpdir()` / `mkdtemp` 常给出 `C:\Users\RUNNER~1
 - `catalogPathKey` 对符号链接与目标给出同一键；headless `--timeout-ms` 源码不含 `AbortSignal.timeout`。
 - pre-task / contamination 源码不含 `^{commit}` 或 `HASH^`。
 - `git status` 刷新 index 后 source fingerprint digest 不变（忽略 `.git/`）。
+- 相对 `experimentRoot` 的 `persistPreparedScene` 不创建 `/cases`；绝对 `experiments/{id}` 根写入 `scene.json`。`EACCES mkdir /cases` 只在 win32 映射成 Windows 文件锁文案。

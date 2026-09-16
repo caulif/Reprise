@@ -1,6 +1,7 @@
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { writeAtomic } from "../core/identity.js";
+import { isFsAbsolute } from "../core/paths.js";
 import { SceneDescriptorSchema, TaskCaseSchema, type SceneDescriptor, type TaskCase } from "../core/schema.js";
 import { LocalWorkspaceProvider, type RecoveryStaging } from "../environment/local-workspace-provider.js";
 import { loadSealedBaseline, readBaselineMarker } from "../environment/local-workspace-fs.js";
@@ -11,6 +12,18 @@ import { resolvedExperimentRoot } from "./experiment-layout.js";
 import { candidateStartBlocked, candidateGateFromAttempt } from "./candidate-start.js";
 import type { RecoveryAttempt } from "./recovery/types.js";
 
+function recordedFsPath(path: string): string {
+  const trimmed = path.trim();
+  return isFsAbsolute(trimmed) ? trimmed : resolve(trimmed);
+}
+
+function casesRootForExperiment(experimentRoot: string): string | undefined {
+  if (!isFsAbsolute(experimentRoot)) return undefined;
+  const experimentsDir = dirname(experimentRoot);
+  if (basename(experimentsDir) !== "experiments") return undefined;
+  return join(dirname(experimentsDir), "cases");
+}
+
 export async function persistPreparedScene(attempt: RecoveryAttempt, sourceRoot: string, taskCase: TaskCase): Promise<SceneDescriptor> {
   const sealed = attempt.baseline
     ? candidateStartBlocked(candidateGateFromAttempt(attempt, Boolean(taskCase.initialInput?.text))) === undefined
@@ -20,15 +33,17 @@ export async function persistPreparedScene(attempt: RecoveryAttempt, sourceRoot:
     experimentId: attempt.experimentId || "pending",
     caseId: taskCase.caseId || "pending",
     runId: attempt.experimentId || "pending",
-    sourceRoot: resolve(sourceRoot),
+    sourceRoot: recordedFsPath(sourceRoot),
     sealed,
   };
   if (!Value.Check(SceneDescriptorSchema, descriptor)) throw new Error("Generated scene descriptor does not satisfy SceneDescriptorSchema.");
-  if (!attempt.experimentRoot || !taskCase.caseId) return descriptor;
-  if (Value.Check(TaskCaseSchema, taskCase)) {
-    await persistTaskCase(join(resolve(attempt.experimentRoot, "..", ".."), "cases", taskCase.caseId, "case.json"), taskCase);
+  const experimentRoot = attempt.experimentRoot?.trim() ?? "";
+  if (!isFsAbsolute(experimentRoot) || !taskCase.caseId) return descriptor;
+  const casesRoot = casesRootForExperiment(experimentRoot);
+  if (casesRoot && Value.Check(TaskCaseSchema, taskCase)) {
+    await persistTaskCase(join(casesRoot, taskCase.caseId, "case.json"), taskCase);
   }
-  await writeAtomic(join(attempt.experimentRoot, "scene.json"), `${JSON.stringify(descriptor)}\n`);
+  await writeAtomic(join(experimentRoot, "scene.json"), `${JSON.stringify(descriptor)}\n`);
   return descriptor;
 }
 

@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { persistTaskCase } from '../../src/application/experiment-helpers.js';
+import { persistPreparedScene } from '../../src/application/experiment-scene.js';
 import { comparisonCandidateMount } from '../../src/application/experiment-report.js';
 import { LocalWorkspaceProvider } from '../../src/environment/local-workspace-provider.js';
 import { listPublishedFrozenCases } from '../../src/products/shared/freeze.js';
@@ -131,4 +133,44 @@ test('comparison does not mount the live run directory when the snapshot is inco
     }),
     sealed,
   );
+});
+
+test('persistPreparedScene does not mkdir /cases from a relative experimentRoot', async () => {
+  const relativeRoot = `reprise-scene-relative-${process.pid}`;
+  const descriptor = await persistPreparedScene(
+    {
+      experimentId: 'codex-luna-high',
+      experimentRoot: relativeRoot,
+      baseline: { match: 'recovered', warnings: [], mode: 'canonical' },
+      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready.', reportPath: 'recovery.md', unresolved: [] } },
+      accept: async () => ({ match: 'recovered' }),
+      staging: { recoveryId: 'r', caseId: 'c', sourceRoot: 'C:/source', root: 'C:/source' },
+    } as never,
+    'C:/not-automatic',
+    taskCase('case-relative-scene'),
+  );
+  assert.equal(descriptor.sourceRoot, 'C:/not-automatic');
+  assert.equal(existsSync('/cases'), false);
+  assert.equal(existsSync(join(process.cwd(), relativeRoot)), false);
+});
+
+test('persistPreparedScene writes scene.json under an absolute experiments root', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'reprise-scene-abs-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const experimentRoot = join(dataDir, 'experiments', 'exp-1');
+  const frozen = taskCase('case-abs-scene');
+  await persistPreparedScene(
+    {
+      experimentId: 'exp-1',
+      experimentRoot,
+      baseline: { match: 'recovered', warnings: [], mode: 'canonical' },
+      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready.', reportPath: 'recovery.md', unresolved: [] } },
+      accept: async () => ({ match: 'recovered' }),
+      staging: { recoveryId: 'r', caseId: frozen.caseId, sourceRoot: dataDir, root: dataDir },
+    } as never,
+    'C:/not-automatic',
+    frozen,
+  );
+  assert.equal(JSON.parse(await readFile(join(experimentRoot, 'scene.json'), 'utf8')).sourceRoot, 'C:/not-automatic');
+  assert.equal(existsSync(join(dataDir, 'cases', frozen.caseId, 'case.complete')), true);
 });
