@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [工作集与观察文件](./2026-09-07-recovery-working-set-and-observation-files.md)。目标见 [Application 与候选链重构](../../plan/application-candidate-agent-refactor.md) 阶段 C。
+延续 [工作集与观察文件](./2026-09-07-recovery-working-set-and-observation-files.md)。
 
 ## 问题
 

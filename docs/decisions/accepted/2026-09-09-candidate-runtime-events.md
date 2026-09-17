@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [ProductPack 端口](./2026-09-09-product-pack-ports.md) 与 [LaunchContext](./2026-09-09-candidate-launch-context.md)。目标见 [Application 与候选链重构](../../plan/application-candidate-agent-refactor.md) 阶段 E–F。
+延续 [ProductPack 端口](./2026-09-09-product-pack-ports.md) 与 [LaunchContext](./2026-09-09-candidate-launch-context.md)。
 
 ## 问题
 

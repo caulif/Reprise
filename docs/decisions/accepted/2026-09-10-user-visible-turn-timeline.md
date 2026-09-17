@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [Runtime 事件与用户可见回合](./2026-09-09-candidate-runtime-events.md) 与 [ProductPack 端口](./2026-09-09-product-pack-ports.md)。目标见 [Application 与候选链](../../plan/application-candidate-agent-refactor.md) 阶段 F/L。
+延续 [Runtime 事件与用户可见回合](./2026-09-09-candidate-runtime-events.md) 与 [ProductPack 端口](./2026-09-09-product-pack-ports.md)。
 
 ## 问题
 

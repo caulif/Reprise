@@ -8,7 +8,7 @@
 
 ## 决定
 
-按[内部 Agent Trace](../../plan/reprise-tui-recovery-trace.md)落地；候选 live 仍以[此刻行](./2026-09-10-tui-live-now-row.md)为准。内部 Agent 主列以 `agent.assistant_visible` 的 `payload.text` 为脊（`kind: narrate`）。进行中工具只占一行执行条（`itemId: now:{lane}`）。下一段短句到来时，两次短句之间的成功探路收成 `▸ 阅读证据 · N` 或 `▸ 写入 {叶名}`。`agent.context_compacted` 不进主列。失败行单独露出。
+候选 live 仍以[此刻行](./2026-09-10-tui-live-now-row.md)为准。内部 Agent 主列以 `agent.assistant_visible` 的 `payload.text` 为脊（`kind: narrate`）。进行中工具只占一行执行条（`itemId: now:{lane}`）。下一段短句到来时，两次短句之间的成功探路收成 `▸ 阅读证据 · N` 或 `▸ 写入 {叶名}`。`agent.context_compacted` 不进主列。失败行单独露出。
 
 模拟用户另钉 Input 卡（`controller.decision` `type=send` 的 `message`）和候选 `user_view_persisted`。有 Input 卡不再画 `Decision: SEND`。DONE 用人话，不用 `no_further_value` 当主句。对照钉 `headline`，不把 Host 四次委托画成章节。候选 thinking 与产品私有 `message.content` 仍不进主列。
 

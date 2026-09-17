@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [CandidateRun 活动所有权](./2026-09-08-candidate-run-activity-ownership.md)。目标见 [Application 与候选链重构](../../plan/application-candidate-agent-refactor.md) 阶段 D。
+延续 [CandidateRun 活动所有权](./2026-09-08-candidate-run-activity-ownership.md)。
 
 ## 问题
 

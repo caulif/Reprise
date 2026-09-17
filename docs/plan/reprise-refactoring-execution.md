@@ -2,7 +2,7 @@
 
 本文供执行重构的 coding agent 使用。它把[架构目标](./reprise-architecture-redesign.md)的七批迁移拆成执行步骤，不重新定义产品需求、公共字段或验收编号。目标语义以该文档及 [TUI 目标](./reprise-tui-design.md)为准；当前差异见[迁移边界](./documentation-reconciliation-for-session-harness-workflow.md)，唯一完成记录在 [MASTER](../progress/MASTER.md)。
 
-M1.1–M7 实施步骤已关闭。未关闭的是 TUI 真终端、未通过的 Controller 真实模型 lane，以及未授权的 Runtime smoke，见 MASTER。下文各节是已执行批次的记录与验证命令，不是尚未开工的待办清单。
+未关闭原因：TUI 真终端、Controller 真实模型 lane、Runtime smoke 与生产模型输入对拍仍缺完整证据，统一见[证据矩阵](./2026-09-08-platform-evidence-matrix.md)。M1.1–M7 实施步骤已关闭；下文仅保留既有 ADR 引用的批次定位，不是尚未开工的待办清单。
 
 ## 1. 执行规则与完成单位
 

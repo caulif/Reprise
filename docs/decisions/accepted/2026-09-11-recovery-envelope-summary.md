@@ -2,7 +2,7 @@
 
 状态：accepted
 
-承接 [单工作副本自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md) 与 [稀疏 source mount](./2026-09-11-recovery-sparse-source-mount.md)。实施入口见 [后续代码修改清单](../../plan/recovery-agent-next-code-changes.md)。
+承接 [单工作副本自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md) 与 [稀疏 source mount](./2026-09-11-recovery-sparse-source-mount.md)。
 
 ## 问题
 

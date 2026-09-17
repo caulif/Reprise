@@ -1,7 +1,5 @@
 # Comparison Agent 设计
 
-> 统一设计规划见 [Controller 与 Comparison Agent 统一设计规划](../plan/controller-comparison-agent-design.md)。
-
 本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。卡面十秒可读见 [十秒比较卡](../decisions/accepted/2026-09-15-comparison-ten-second-card.md)。可见身份为历史会话 / 当前会话、不印写卡行、Token 直接对照，见 [历史会话 / 当前会话](../decisions/accepted/2026-09-16-comparison-session-labels.md)。
 
 状态：当前模块设计

@@ -19,6 +19,8 @@ docs/
 ├── documentation-structure.md       # 本文
 ├── codex-smoke-gate.md              # 真实计费运行的准入程序与验收记录
 ├── engineering-gates.md             # 本地与 CI 门禁契约
+├── development.md                   # 开发环境与日常验证
+├── cookbook/                        # 少量高频操作，链接事实来源
 ├── product/                         # 产品目标、用户路径和非目标
 ├── architecture/                    # 当前跨模块与专题架构规范
 ├── decisions/                       # 决策记录
@@ -34,7 +36,7 @@ docs/
 
 ## 受控边界
 
-product、architecture、decisions、plan、progress 及上列治理文档属于长期受控材料。docs/.local 保存一次性审查和已结束计划，不受控；不得从受控文档链接到它。research 仅允许忽略的本机交互草图，不拥有设计事实，不是开源检出的必需文件。
+product、architecture、decisions、plan、progress、cookbook 及上列开发与治理文档属于长期受控材料。decisions/README 是 ADR 的触发与检索入口，不复制各记录正文。docs/.local 保存一次性审查和已结束计划，不受控；不得从受控文档链接到它。research 仅允许忽略的本机交互草图，不拥有设计事实，不是开源检出的必需文件。
 
 生成的 HTML、截图和运行记录不受控；tui-audit/frames 是逐字节审计基线例外，受控。HTML 不得拥有独立验收编号；手工原型若只覆盖部分场景，必须标为示例并链接 Markdown，不能声称完整同步。发布说明不依赖本机原型存在。
 
@@ -71,7 +73,7 @@ proposed 包括未拍板提案，以及已确认但等待实施生效的目标�
 ## 验证
 ```
 
-备选方案每段以粗体名称开头，只记录真实考虑过的取舍。验证写可观察条件，不用“已完成”代替证据。accepted 用现在时。协议、格式、提示词契约、工具面、工程流程或门禁变化须同批新增或更新 ADR；纯机械改动豁免。
+备选方案每段以粗体名称开头，只记录真实考虑过的取舍。验证写可观察条件，不用“已完成”代替证据。accepted 用现在时。触发、豁免与检索见 [ADR 入口](./decisions/README.md#何时写)。
 
 不得将旧决定改成相反内容。新决定指向旧记录，旧记录在移入 superseded 时补替代链接并冻结；之后只修断链或元数据，不修改历史理由。部分迁移不能整份宣布旧决定失效，说明仍有效范围。2026-08-23 起的 proposed/accepted 检查五节模板，更早记录保留格式兼容；superseded 不检查模板。
 

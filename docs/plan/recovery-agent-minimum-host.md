@@ -2,7 +2,7 @@
 
 状态：proposed
 
-本文承接[Recovery Agent 模块重构实施计划](./recovery-agent-refactor.md)，并吸收 Cursor 会话 `73cf42d3-0987-434c-89ed-33b622793c72` 中确认的最新设计。若本文与旧 Recovery 规划冲突，以本文为目标设计；历史 accepted ADR 不直接改写，实施时新增替代 ADR 并移动旧决定。
+未关闭原因：§9.1 默认空 staging 尚未实施；[beginRecovery](../../src/environment/local-workspace-provider.ts) 仍复制预算内 source 或 checkpoint，超预算才使用 sparse。§9.5 的复用条件检查与缺失修补也须独立验收。本文是目标，不是当前行为；当前规则见[单工作副本循环](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md)、[稀疏 source mount](../decisions/accepted/2026-09-11-recovery-sparse-source-mount.md)与[任务前 HEAD](../decisions/accepted/2026-09-16-recovery-pre-task-head.md)。
 
 ## 1. 核心结论
 

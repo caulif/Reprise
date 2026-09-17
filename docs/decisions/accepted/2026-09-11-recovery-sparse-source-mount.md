@@ -2,7 +2,7 @@
 
 状态：accepted
 
-实施入口见 [Recovery 大仓库按需恢复重构](../../plan/recovery-large-repository-refactor.md)。单工作副本与三轮 Session 仍有效，见 [自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。
+单工作副本与三轮 Session 仍有效，见 [自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。
 
 ## 问题
 

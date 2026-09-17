@@ -18,7 +18,7 @@ TUI 是事件日志的只读投影，不持有实验状态机，不伪造未公�
 
 真实 Runtime 调用必须显式 opt-in（环境变量），默认路径不产生外部费用（[smoke](docs/codex-smoke-gate.md)）。
 
-改动跨模块协议、on-disk 格式、提示词契约、工具面、工程流程时，同一次变更必须新增或更新 `docs/decisions/`（[决策记录](docs/documentation-structure.md#决策记录)）。
+双重防线：测试证明当下没坏；ADR 防止以后重复错决策。跨模块协议、on-disk、提示词契约、工具面、架构边界或工程流程变化，同批新增或更新 ADR；无契约变化的小修豁免（[触发与检索](docs/decisions/README.md)）。
 
 Windows 11 是唯一已验证平台；路径拼接和进程启动按 Windows 优先（`.cmd` 走 `spawnRuntimeProcess`）（[技术选型](docs/architecture/technology-selection.md)）。
 
