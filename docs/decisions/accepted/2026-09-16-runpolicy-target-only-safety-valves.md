@@ -34,7 +34,7 @@
 
 ## 影响
 
-[`DEFAULT_RUN_POLICY`](../../../src/application/experiment-workflow.ts)、[`CandidateRun`](../../../src/application/candidate-run.ts)、[架构总览](../../architecture/overview.md)。TUI 预计上限与默认政策一致。不改 Comparison resume，不改 Controller 决策语义。
+[`DEFAULT_RUN_POLICY`](../../../src/application/default-run-policy.ts)（[`experiment-workflow.ts`](../../../src/application/experiment-workflow.ts) 再导出）、[`CandidateRun`](../../../src/application/candidate-run.ts)、[架构总览](../../architecture/overview.md)。TUI 预计上限与默认政策一致。不改 Comparison resume，不改 Controller 决策语义。
 
 ## 验证
 
