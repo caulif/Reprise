@@ -128,28 +128,40 @@ export function layoutScrollback(
     lines.push(...painted);
   }
   const live = visibleNow(entries);
-  const status = fillCanvas(theme, liveStatusLine(theme, live, locale, elapsed, tick, product, width), width);
+  // Only paint the live now-row when one exists. A missing now-row must not fall back
+  // to "<product> · working" — that falsely lingers on the result page after terminal outcome.
+  const status = live
+    ? fillCanvas(theme, liveStatusLine(theme, live, locale, elapsed, tick, product, width), width)
+    : undefined;
   const showFollow = !following && behind > 0;
   const follow = showFollow
     ? fillCanvas(theme, theme.style.muted(pad(` ${theme.framed ? '▼' : '↓'} ${t(locale, 'followNew', { count: behind })}`, width, theme.glyphs.ellipsis)), width)
     : undefined;
-  const chrome = 1 + (follow ? 1 : 0);
+  const chrome = (status ? 1 : 0) + (follow ? 1 : 0);
+  const withChrome = (body: string[]): string[] => {
+    if (status && follow) return [...body, status, follow];
+    if (status) return [...body, status];
+    if (follow) return [...body, follow];
+    return [...body];
+  };
   if (!lines.length) {
-    const empty = follow ? [status, follow] : [status];
-    return { lines: empty, hits, selectedAt: 0, start: 0, total: empty.length, chrome };
+    const empty = withChrome([]);
+    // Keep a blank canvas row when there is no body and no chrome so callers still get a frame.
+    const linesOut = empty.length ? empty : [fillCanvas(theme, '', width)];
+    return { lines: linesOut, hits, selectedAt: 0, start: 0, total: linesOut.length, chrome };
   }
   if (height === undefined || lines.length + chrome <= height) {
     const padded = padBodyToHeight(theme, lines, width, height, chrome);
     return {
-      lines: follow ? [...padded, status, follow] : [...padded, status],
+      lines: withChrome(padded),
       hits, selectedAt, start: 0, total: lines.length, chrome,
     };
   }
-  const window = Math.max(1, height - chrome);
+  const window = Math.max(1, height - Math.max(chrome, 0));
   const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - window));
   const sliced = lines.slice(start, start + window);
   return {
-    lines: follow ? [...sliced, status, follow] : [...sliced, status],
+    lines: withChrome(sliced),
     hits: hits.map((hit) => ({ ...hit, y: hit.y - start })).filter((hit) => hit.y >= 0 && hit.y < window),
     selectedAt,
     start,

@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { setCapabilities, resetCapabilitiesCache } from '@earendil-works/pi-tui';
 import { coveringFoldIds, foldProcessEntries, selectedIndexAfterFold } from '../../src/tui/fold-process.js';
 import { fileLink } from '../../src/tui/format.js';
+import { upgradeTerminalCapabilities } from '../../src/tui/terminal-capabilities.js';
 import {
   canvasHitIndices,
   corpusMatchesQuery,
@@ -120,4 +121,22 @@ test('terminal restore guard stops once on uncaughtException', () => {
   uninstall();
   assert.equal(mouseReportingSequence(false), DISABLE_MOUSE_REPORTING);
   assert.match(mouseReportingSequence(true), /\x1b\[\?1000h/);
+});
+
+test('upgradeTerminalCapabilities enables OSC 8 fileLink for WT_PROFILE_ID hosts', () => {
+  const abs = process.platform === 'win32' ? 'C:\\data\\报告.html' : '/data/报告.html';
+  try {
+    resetCapabilitiesCache();
+    setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+    assert.equal(fileLink('报告', abs).includes('\x1b]8;;'), false);
+    upgradeTerminalCapabilities({ WT_PROFILE_ID: '{abc}' }, 'win32');
+    const linked = fileLink('报告', abs);
+    assert.match(linked, /\x1b]8;;/);
+    assert.equal(linked.includes(pathToFileURL(abs).href), true);
+    if (process.platform === 'win32') {
+      assert.match(pathToFileURL(abs).href, /^file:\/\/\/C:/);
+    }
+  } finally {
+    resetCapabilitiesCache();
+  }
 });

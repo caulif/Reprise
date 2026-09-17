@@ -668,6 +668,8 @@ export function filterTraceForSurface(
       if (entry.lane === 'recovery' || entry.itemId === 'now:recovery') return false;
       if (entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复') return false;
       if (surface === 'result' && (entry.lane === 'comparison' || entry.itemId === 'now:comparison')) return false;
+      // Result page is terminal: suppress live now-rows so product "working" chrome cannot linger.
+      if (surface === 'result' && entry.itemId?.startsWith('now:')) return false;
       return true;
     });
   }
