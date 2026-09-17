@@ -10,7 +10,7 @@
 
 ## 已验证的历史 C 纵切片
 
-在 2026-08-10，Reprise 从 `C:\DaoFocus` 的 `9752d2b` 冻结 source archive，并在独立临时 workspace 重放历史 C（storage / quotes）任务。Luna/high 只修改四个允许源文件；聚焦测试为 2 files / 12 tests 通过，全量测试为 9 files / 52 tests 通过。scope artifact 记录 4 个允许源码路径、1 个运行时缓存路径、0 个越界路径，patch artifact 已保存。
+在 2026-08-10，Reprise 从 `<frozen-archive>` 的 `9752d2b` 冻结 source archive，并在独立临时 workspace 重放历史 C（storage / quotes）任务。Luna/high 只修改四个允许源文件；聚焦测试为 2 files / 12 tests 通过，全量测试为 9 files / 52 tests 通过。scope artifact 记录 4 个允许源码路径、1 个运行时缓存路径、0 个越界路径，patch artifact 已保存。
 
 本次真实运行共保留 10,307 条事件；独立复核确认每一行可 JSON 解析、checksum/sequence 连续，并可用 `ExperimentStore.open(...).replay(runId)` 重建 attempt、manifest、terminal record 与两个 artifact refs。Controller 与 Comparison 均发生安全 fallback，验收结论仍只依赖持久化的运行事实。当前 Windows `workspace-write` sandbox 无法应用 deny-read ACL，因此该次隔离测试显式使用 `danger-full-access`；隔离依赖冻结 archive、临时 workspace 和 scope 审计，不能将此设置推广为默认。
 
