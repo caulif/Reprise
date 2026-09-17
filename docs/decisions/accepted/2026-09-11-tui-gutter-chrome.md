@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标见[gutter 与层次](../../plan/reprise-tui-gutter-chrome.md)。树内容仍以[方案 A](./2026-09-10-tui-option-a-tree.md)为准。
+树内容仍以[方案 A](./2026-09-10-tui-option-a-tree.md)为准。
 
 ## 问题
 

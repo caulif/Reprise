@@ -1,6 +1,6 @@
 # Reprise 架构重构规划
 
-状态：目标设计已由用户确认，供后续实施；本文不宣称代码已完成迁移，也不覆盖当前架构规范。
+未关闭原因：真实终端、Controller 真实模型 lane、Runtime smoke 与生产模型输入对拍缺少完整通过证据，集中见[证据矩阵](./2026-09-08-platform-evidence-matrix.md)。本文保留目标验收语义，不把已关闭施工清单作为重新开工指令，也不覆盖当前架构规范。
 
 本文是本轮重构目标与验收的唯一文字来源。选择理由见[Session harness workflow](../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。当前实现依据仍为[架构总览](../architecture/overview.md)。未关闭的真终端与 Runtime 行见[平台证据矩阵](./2026-09-08-platform-evidence-matrix.md)。
 

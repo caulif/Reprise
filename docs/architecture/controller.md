@@ -1,7 +1,5 @@
 # 同等人类能力与 Controller 设计
 
-> 统一设计规划见 [Controller 与 Comparison Agent 统一设计规划](../plan/controller-comparison-agent-design.md)。
-
 本文约束当前实现。未关闭验收见 [MASTER](../progress/MASTER.md)。
 
 状态：当前模块设计

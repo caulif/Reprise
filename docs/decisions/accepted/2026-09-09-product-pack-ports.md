@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [版本化本地 Pack 边界](./2026-09-08-versioned-local-pack-boundary.md) 与 [候选产品与模型选择](./2026-09-02-candidate-product-and-model-picker.md)。目标见 [Application 与候选链重构](../../plan/application-candidate-agent-refactor.md)。
+延续 [版本化本地 Pack 边界](./2026-09-08-versioned-local-pack-boundary.md) 与 [候选产品与模型选择](./2026-09-02-candidate-product-and-model-picker.md)。
 
 ## 问题
 

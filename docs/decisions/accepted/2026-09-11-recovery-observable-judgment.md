@@ -3,7 +3,7 @@
 状态：accepted
 日期：2026-09-11
 
-承接 [信封 summary 与 seed 同构](./2026-09-11-recovery-envelope-summary.md) 与 [单工作副本自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。实施入口见 [正确性与可完成性后续规划](../../plan/recovery-agent-correctness-followup.md)。
+承接 [信封 summary 与 seed 同构](./2026-09-11-recovery-envelope-summary.md) 与 [单工作副本自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。
 
 ## 问题
 

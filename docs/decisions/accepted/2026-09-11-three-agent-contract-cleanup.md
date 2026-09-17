@@ -2,7 +2,7 @@
 
 状态：accepted
 
-承接 [稀疏 source mount](./2026-09-11-recovery-sparse-source-mount.md)、[可观察判断](./2026-09-11-recovery-observable-judgment.md) 与 [先理解再按视图决策](./2026-09-09-controller-understand-then-view.md)。规划见 [三 Agent 统一设计](../../plan/controller-comparison-agent-design.md)。
+承接 [稀疏 source mount](./2026-09-11-recovery-sparse-source-mount.md)、[可观察判断](./2026-09-11-recovery-observable-judgment.md) 与 [先理解再按视图决策](./2026-09-09-controller-understand-then-view.md)。
 
 ## 问题
 

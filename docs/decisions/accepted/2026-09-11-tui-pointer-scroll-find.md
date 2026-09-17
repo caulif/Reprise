@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标见[指针、视口与查找](../../plan/reprise-tui-pointer-scroll-find.md)。延续[方案 A 树](./2026-09-10-tui-option-a-tree.md)与[阅读锚点](./2026-09-08-tui-reading-search-terminal.md)。
+延续[方案 A 树](./2026-09-10-tui-option-a-tree.md)与[阅读锚点](./2026-09-08-tui-reading-search-terminal.md)。
 
 ## 问题
 

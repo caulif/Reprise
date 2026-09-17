@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标见[方案 A](../../plan/reprise-tui-live-expand.md)。延续[阅读锚点](./2026-09-08-tui-reading-search-terminal.md)与[此刻行](./2026-09-10-tui-live-now-row.md)。
+延续[阅读锚点](./2026-09-08-tui-reading-search-terminal.md)与[此刻行](./2026-09-10-tui-live-now-row.md)。
 
 ## 问题
 

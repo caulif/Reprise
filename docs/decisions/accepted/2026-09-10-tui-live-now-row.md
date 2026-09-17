@@ -4,7 +4,7 @@
 
 范围：候选 live 仍按本文。运行页树、无 overlay 与滚轮见[方案 A 树](./2026-09-10-tui-option-a-tree.md)。内部 Agent 短句见[内部短句主列](./2026-09-10-internal-agent-narrate-spine.md)。
 
-目标见[操作者画布](../../plan/reprise-tui-operator-canvas.md)与[TUI 阅读](../../plan/reprise-tui-design.md)。延续[正式时间线只投影 UserVisibleTurn](./2026-09-10-user-visible-turn-timeline.md)与[标准 Runtime 事件](./2026-09-09-candidate-runtime-events.md)。
+目标见[TUI 阅读](../../plan/reprise-tui-design.md)。延续[正式时间线只投影 UserVisibleTurn](./2026-09-10-user-visible-turn-timeline.md)与[标准 Runtime 事件](./2026-09-09-candidate-runtime-events.md)。
 
 ## 问题
 

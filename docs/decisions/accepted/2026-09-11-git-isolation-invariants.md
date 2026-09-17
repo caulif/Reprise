@@ -9,7 +9,7 @@
 
 ## 决定
 
-隔离遵守六条不变量，细节见[目标计划](../../plan/2026-09-11-git-isolation-invariants.md)：
+隔离遵守六条不变量：
 
 - **I1** 树内可写 remote 必须改写到本实验 sink，并挂 `insteadOf`、去掉 `GITHUB_TOKEN` / `GH_TOKEN`。对象库不完整不能跳过改写。
 - **I2** 播种与探测使用 `GIT_NO_LAZY_FETCH=1`，不为补对象访问用户远端。

@@ -1,55 +1,37 @@
 # 贡献指南
 
-先读根 [`README.md`](../README.md) 和本文件，再读任务触及的 [`AGENTS.md`](../AGENTS.md)、[`src/AGENTS.md`](../src/AGENTS.md) 或 [`docs/AGENTS.md`](./AGENTS.md)。产品与架构以 [`docs/README.md`](./README.md) 导航的规范为准，不要在 PR 里复制它们。
+先读[根 README](../README.md)，再按[文档导航](./README.md)找任务相关的当前规范。Coding agent 还须读取[根指令](../AGENTS.md)及适用的[代码指令](../src/AGENTS.md)或[文档指令](./AGENTS.md)，不要求通读全部 ADR。
 
-**Node.js `>=22.19.0`** 是运行时基线。CI 的 test matrix 覆盖 Windows、macOS 和 Ubuntu，作为可移植性回归门禁；真实 Runtime smoke、TUI 帧和平台专用权限行为仍需在目标宿主上显式验证。其他未列入 CI 的 OS 上的失败可报告，不构成回归门禁。
+## 开发环境与验证命令
 
-## 开发环境
+安装、构建、窄回归与收尾检查统一见[日常开发](./development.md)，门禁语义见[工程门禁](./engineering-gates.md)。Windows 11 真实验证与跨平台 CI 的区别见[支持说明](./SUPPORT.md)。真实 Runtime smoke 必须显式 opt-in；默认开发验证不调用计费模型。
 
-```text
-npm ci
-npm run check
-```
+## 单人日常（默认）
 
-不要提交 `.reprise/`、凭据、真实 smoke 输出或本地数据目录。Harness 模型密钥只存在本机 Git 忽略的 `.reprise/harness-model.json` 或 `env:NAME`；官方登录只在 Pi `auth.json`。不得打印、复制进事件、artifact、报告或 PR。Reprise 不读取、不保存 Codex CLI 凭据。
+1. 明确这是当前行为修复，还是目标迁移批次；前者读当前产品/架构规范，后者还要读对应计划与[迁移边界](./plan/documentation-reconciliation-for-session-harness-workflow.md)。不能把目标能力写成当前事实。
+2. 做最小改动，按改动面验证；行为变化同步其唯一文档归宿。无需为每次小修开 Issue、建独立计划或填写完整 PR 模板。
+3. 按主题、协议名或路径检索相关 ADR；触发条件与豁免以 [ADR 指南](./decisions/README.md)为准。同批新增或更新所需 ADR，无契约变化的小修不写流水账决策。
+4. 收尾记录改动范围、实际命令与结果、未验证风险，以及 ADR 链接或豁免理由。单人也要检查代码和证据，不把 Agent 总结当验收。
 
-## 验证命令
+非平凡任务用[任务简报模板](./plan/task-brief-template.md)整理目标、边界、可观察的 Done means 与回滚；可放在已有任务说明中，不必另建文件。该模板是门禁要求的稳定入口，cookbook 不替代它。
 
-| 改动 | 本地命令 | 不要跑 |
-|---|---|---|
-| 仅 `docs/` | `npm run verify:docs` | `npm run check`、真实 smoke |
-| TypeScript / 测试 / 脚本门禁 | `npm run check`；窄回归可用 `npm run build` 后对受影响的 `dist/test/**/*.test.js` 跑 `node --test` | 真实 Runtime smoke |
-| Schema / 事件 / on-disk / 提示词 / 工具面 | 完整 `npm run check`，并新增或更新 `docs/decisions/` | 手改生成文档 |
-| Pack / Runtime / 凭据 | 完整 `npm run check` 加 fixture | 未 opt-in 的真实 smoke |
-| TUI 渲染 | `npm run audit:tui:check`（Windows；其他宿主只生成+自检，不比对 Windows 基线） | 在 Ubuntu 上期待 `$env:` / 反斜杠与 Windows 基线逐字节一致 |
+## 外部贡献与 PR
 
-真实 Codex / Claude smoke 必须显式设置环境变量（见 [`codex-smoke-gate.md`](./codex-smoke-gate.md) 与根 README）。默认路径不得产生外部费用；CI 默认也不跑它们。
+在默认流程上补充可供维护者审查的材料：
 
-## 任务入口
+- 提交 PR 前说明用户问题、范围与非目标；较大方向先在 Issue 中确认，避免未经确认的大规模重构。
+- 使用 [PR 模板](../.github/PULL_REQUEST_TEMPLATE.md)，链接 Issue 或任务简报；平凡改动可说明免 brief 的理由。
+- 勾选当前修复或目标迁移、已检索 ADR、已新增/更新 ADR 或豁免理由。跨模块协议、on-disk 格式、提示词契约、工具面、架构边界、工程流程与门禁变化按 [ADR 指南](./decisions/README.md)处理。
+- 给出实际运行的命令、结果与失败证据；未跑检查注明原因，不将说明当作门禁通过。新增或修改门禁必须同批提供能让它失败的自动化用例，不能降低覆盖率阈值。
+- 用户可见变化同步 [CHANGELOG](./CHANGELOG.md)，不适用则说明；生成区只改源并重新生成，不手改产物。
+- 人类审查代码、日志和剩余风险，不能仅凭 Agent 报告、截图或未复现的 smoke 合并。审查与权限归属见[治理说明](./GOVERNANCE.md)。
 
-非平凡改动先有 Issue 或填写 [`plan/task-brief-template.md`](./plan/task-brief-template.md)。Done-means 写成命令、fixture、期望退出码或快照，不要写「验证通过」。协议、持久化、提示词或工具面变化必须带 decision。
+## 安全、发布与交接
 
-## 提交与 PR
+不提交数据目录、凭据、真实会话或未经清理的 smoke 产物；凭据规则以[产品定义](./product/overview.md#13-凭据)为准。安全问题走[私下报告渠道](./SECURITY.md)，普通问题走[支持入口](./SUPPORT.md)。
 
-- 提交说明只描述实际变更，不用「完成全部优化」这类标题。
-- PR 使用 [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md)。跳过的检查必须写原因。
-- generated docs 只改源和生成命令，不手改产物。
-- Agent 提交的 PR 必须由人类确认：审查代码与日志，不把 agent 报告、截图或未复现的 smoke 当作唯一证据。
-
-## 发布与回滚
-
-用户可见变更写入 [`CHANGELOG.md`](./CHANGELOG.md)。发 npm 包前走 [`release-checklist.md`](./release-checklist.md)。回滚优先 `npm deprecate` 故障版本并安装上一版本；on-disk 不兼容时按 changelog 的迁移回退步骤操作，不要在用户数据目录上做无备份删除。
-
-## Agent 输出
-
-agent 在收尾时给出：摘要、改动文件、验证命令与结果、未验证风险、是否涉及协议/持久化/提示词/工具面、是否需要 decision。跨会话事实写入 Issue 或 [`progress/MASTER.md`](./progress/MASTER.md)，不要把「已实现/待办」复制到多份文档。
-
-## 文档与 coding agent 维护
-
-任务先声明“当前行为修复”或“目标迁移批次”，按[文档导航](./README.md)读取对应规范，不批量加载全部 ADR。行为、输入契约或存储变化同批更新其唯一归宿；prompt 和类型改代码源，不在文档复制全文。完成证据链接提交或 PR 与可复现命令，不能只留在聊天或本机 HTML 中。
-
-PR 说明文档归宿是否变化；无需更新时解释原因。维护者检查目标是否被误写为已可用命令，旧规则是否已按迁移边界处理，演示数据是否冒充真实验证。每次发布核对活跃计划与支持声明，已结束的计划退出活跃目录。规则见[文档生命周期](./documentation-structure.md#防止漂移)。
+发布走[发布检查单](./release-checklist.md)。PR 应说明如何撤回、是否涉及持久化兼容与数据备份；不要为回滚无备份删除用户数据。跨会话进度只进入相关 Issue 或[进度入口](./progress/MASTER.md)，不复制成多份状态台账。
 
 ## 审查顺序
 
-先范围与 YAGNI，再契约与 owner，再失败与安全，再证据，最后简化。提示词、工具面、事件和 on-disk 格式必须能链到 decision 与回归测试。
+先范围与必要性，再契约与所有者，再失败与安全，再验证证据，最后简化。人工检查当前修复是否遵守现行规范、目标迁移是否保留尚未替代的不变量，以及 ADR 弃案是否反映真实取舍；文档门禁不能代替这些判断。

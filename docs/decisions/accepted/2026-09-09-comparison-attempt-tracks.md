@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [LaunchContext](./2026-09-09-candidate-launch-context.md) 与 [Runtime 事件与用户可见回合](./2026-09-09-candidate-runtime-events.md)。目标见 [Application 与候选链重构](../../plan/application-candidate-agent-refactor.md) 阶段 I。
+延续 [LaunchContext](./2026-09-09-candidate-launch-context.md) 与 [Runtime 事件与用户可见回合](./2026-09-09-candidate-runtime-events.md)。
 
 ## 问题
 
