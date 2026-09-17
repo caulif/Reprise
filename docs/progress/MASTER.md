@@ -13,11 +13,11 @@
 
 ## 最近完成证据
 
-2026-09-17 文档与协作流程（Phase 0–4）：计划目录从 42 份收敛为 8 份开放目标与 1 份可复用模板；N6、平台与 Recovery 缺口保留。`npm run verify:docs` 退出 0（8 种坏输入自检均被拒绝），`git diff --check` 退出 0。范围仅文档与协作入口，未运行代码门禁或付费验收；立场见[轻量流程决策](../decisions/accepted/2026-09-17-docs-workflow-solo-to-oss.md)。
+2026-09-17 文档与协作流程（Phase 0–4）：计划目录从 42 份收敛为 7 份开放目标、1 份历史批次索引与 1 份可复用模板；N6、平台与 Recovery 缺口保留。`npm run verify:docs` 退出 0（8 种坏输入自检均被拒绝），`git diff --check` 退出 0。范围仅文档与协作入口，未运行代码门禁或付费验收；立场见[轻量流程决策](../decisions/accepted/2026-09-17-docs-workflow-solo-to-oss.md)。
 
 历史记录（非本批重跑）：2026-09-16 `npm run check` 为 1023 pass / 4 skip；对应[历史会话与当前会话标签](../decisions/accepted/2026-09-16-comparison-session-labels.md)、[冻结嵌套 Git](../decisions/accepted/2026-09-16-freeze-nested-git-discovery.md)、[任务前 HEAD](../decisions/accepted/2026-09-16-recovery-pre-task-head.md)和[开场约束](../decisions/accepted/2026-09-16-controller-opening-no-unseen-advice.md)。这不是平台、模型能力或全部 Recovery 目标的完成证明。
 
-M1.1–M7 的实施关闭记录见[重构实施计划](../plan/reprise-refactoring-execution.md)与[M7 收口决策](../decisions/accepted/2026-09-08-m7-delivery-and-acceptance-gaps.md)。未关闭证据以上述入口为准，不重新执行已关闭施工清单。
+M1.1–M7 实施步骤已关闭；[历史批次索引](../plan/reprise-refactoring-execution.md)仅保留 ADR 定位，完整施工正文见该路径 Git 历史，收口边界见[M7 收口决策](../decisions/accepted/2026-09-08-m7-delivery-and-acceptance-gaps.md)。未关闭证据以上述入口为准，不重新执行已关闭施工清单。
 
 ## 更新约定
 

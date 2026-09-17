@@ -1,6 +1,6 @@
 # AGENTS.md — 代码层
 
-依赖只能向下：`cli` → `tui` → `application` → `infrastructure` / `products` / `environment` / `agents` / `report` → `core`。禁止反向 import。
+依赖只能向下：`cli` → `tui` → `application` → `infrastructure` / `products` / `environment` / `agents` → `core`。禁止反向 import。没有独立的 `src/report/`；[导入门禁](../scripts/verify-layer-imports.mjs)的 RANK 保留历史层名，不代表现存目录。
 
 `products/packs/` 下每个 Pack 必须实现同一份 [`contract.ts`](products/contract.ts)，不在 Pack 外复制产品私有类型。本地 Pack 经 `{dataDir}/plugins.json` 由 [`registry.ts`](products/registry.ts) 组装；公共类型从 `reprise/pack-api` 解析。应用层与 TUI 不按 `productId` 分支。
 
