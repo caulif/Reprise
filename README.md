@@ -1,12 +1,14 @@
 # Reprise
 
+[![check](https://github.com/caulif/Reprise/actions/workflows/check.yml/badge.svg)](https://github.com/caulif/Reprise/actions/workflows/check.yml)
+
 Reprise 是本机优先的 Agent 任务重放与对照工具：选择历史会话，恢复任务起点，在隔离副本中运行候选 coding agent，由模拟用户继续协作，再查看结果或按需生成对照报告。它面向个人真实任务，不提供公共排名，也不把一次对照解释为纯模型能力的因果结论。
 
 ## 从源码开始
 
-用 Git 检出仓库后，在仓库根目录执行以下命令。需要 Node.js `>=22.19.0` 和 npm，版本要求以 [package.json](./package.json) 为准；此步骤不需要模型密钥或产品登录。
+**以源码构建为准。** 用 Git 检出仓库后，在仓库根目录执行以下命令。需要 Node.js `>=22.19.0` 和 npm，版本要求以 [package.json](./package.json) 为准；此步骤不需要模型密钥或产品登录。
 
-包名是 scoped `@caulif/reprise`（因 npmjs 上已有无关的 `reprise` 包）。**当前尚未发布到 npm**；请从源码安装与运行，不要执行 `npm install reprise`（会装到别人的包）。发布后安装示例为 `npm i @caulif/reprise`，CLI 命令名仍为 `reprise`。
+包名是 scoped `@caulif/reprise`（因 npmjs 上已有无关的裸名包 `reprise`）。**当前尚未发布到 npm**；请从源码安装与运行，**不要**执行 `npm i reprise` / `npm install reprise`（会装到别人的包）。发布后安装示例为 `npm i @caulif/reprise`，CLI 命令名仍为 `reprise`。
 
 ```text
 npm ci
@@ -26,7 +28,7 @@ node dist/src/cli/main.js
 
 ## 使用边界
 
-Windows 11 是唯一经过真实使用验证的平台；跨平台 CI 模拟测试不等于 macOS/Linux 真实终端或 Runtime 已获验证，详见[支持说明](./docs/SUPPORT.md)。
+Windows 11 是唯一经过真实使用验证的平台。上方 CI badge 只表示 [check](./.github/workflows/check.yml) 工作流状态：**CI 绿灯 ≠ 真终端 / 真 Runtime 已在三平台验证**（详见[支持说明](./docs/SUPPORT.md) 开篇「CI … 不证明三平台的真实 Runtime…」）。
 
 默认开发验证与 CI 不运行真实 Runtime smoke，不产生模型调用费用；真实 smoke 必须通过环境变量显式 opt-in，遵守[准入程序](./docs/codex-smoke-gate.md)。隔离副本不是隐私清洗或外部副作用回滚：实际运行前检查输入、权限与预算。凭据处理见[产品安全边界](./docs/product/overview.md#13-凭据)，漏洞请按[安全政策](./docs/SECURITY.md)私下报告。
 
