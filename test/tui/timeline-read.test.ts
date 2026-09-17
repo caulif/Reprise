@@ -129,7 +129,7 @@ test('upgradeTerminalCapabilities enables OSC 8 fileLink for WT_PROFILE_ID hosts
     resetCapabilitiesCache();
     setCapabilities({ images: null, trueColor: false, hyperlinks: false });
     assert.equal(fileLink('报告', abs).includes('\x1b]8;;'), false);
-    upgradeTerminalCapabilities({ WT_PROFILE_ID: '{abc}' }, 'win32');
+    upgradeTerminalCapabilities({ WT_PROFILE_ID: '{abc}' });
     const linked = fileLink('报告', abs);
     assert.match(linked, /\x1b]8;;/);
     assert.equal(linked.includes(pathToFileURL(abs).href), true);

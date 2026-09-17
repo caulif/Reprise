@@ -157,7 +157,7 @@ export function layoutScrollback(
       hits, selectedAt, start: 0, total: lines.length, chrome,
     };
   }
-  const window = Math.max(1, height - Math.max(chrome, 0));
+  const window = Math.max(1, height - chrome);
   const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - window));
   const sliced = lines.slice(start, start + window);
   return {
