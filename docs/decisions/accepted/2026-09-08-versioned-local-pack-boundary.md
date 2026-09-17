@@ -10,7 +10,7 @@
 
 ## 决定
 
-- 公共 Pack API 是 `reprise/pack-api`（`ProductPack` 与 `PACK_API_MAJOR`）。不把宿主内部模块当作插件面。
+- 公共 Pack API 是 `@caulif/reprise/pack-api`（`ProductPack` 与 `PACK_API_MAJOR`）。不把宿主内部模块当作插件面。
 - Manifest 含 `apiMajor` 与 `capabilities`（`import` | `runtime`）。能力与导出必须匹配；产品安装、认证和模型目录按所需能力检查。
 - `{dataDir}/plugins.json`（`schemaVersion: 1`）列出相对 dataDir 的 `module` 或包名 `package`。只加载 JavaScript / 已编译输出 / 已安装包；拒绝原始 `.ts`。不下载、不热加载。
 - 内置与外部走同一 `assembleProductPacks`。重复 `productId` 保留先注册者并记诊断，不静默替换。导出错误、major 不符、加载失败逐条诊断，不推翻已接受的 Pack。

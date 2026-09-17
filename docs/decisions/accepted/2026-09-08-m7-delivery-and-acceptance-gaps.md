@@ -24,7 +24,7 @@
 
 ## 影响
 
-TUI 测试仍可注入 session 适配器。CLI 生产路径继续 `sessionsRoots`。公开检出以 Markdown 与 `reprise/pack-api` 为准。
+TUI 测试仍可注入 session 适配器。CLI 生产路径继续 `sessionsRoots`。公开检出以 Markdown 与 `@caulif/reprise/pack-api` 为准。
 
 ## 验证
 

@@ -6,6 +6,8 @@ Reprise 是本机优先的 Agent 任务重放与对照工具：选择历史会�
 
 用 Git 检出仓库后，在仓库根目录执行以下命令。需要 Node.js `>=22.19.0` 和 npm，版本要求以 [package.json](./package.json) 为准；此步骤不需要模型密钥或产品登录。
 
+包名是 scoped `@caulif/reprise`（因 npmjs 上已有无关的 `reprise` 包）。**当前尚未发布到 npm**；请从源码安装与运行，不要执行 `npm install reprise`（会装到别人的包）。发布后安装示例为 `npm i @caulif/reprise`，CLI 命令名仍为 `reprise`。
+
 ```text
 npm ci
 npm run build
@@ -18,7 +20,7 @@ node dist/src/cli/main.js --help
 node dist/src/cli/main.js
 ```
 
-无子命令打开 TUI；源码检出无需全局安装 `reprise`。执行真实任务前，需自行安装并登录所选产品（内置 Codex、Claude Code），通过 `/config` 配置 Harness 内部模型，再通过 `/intake` 选择来源产品、项目与历史会话。恢复环境、执行候选和生成对照都可能调用模型并产生费用；操作与确认边界见 [TUI 使用说明](./docs/product/tui.md)。
+无子命令打开 TUI；源码检出无需全局安装 CLI；需要时用源码构建产物或（发布后）`npm i -g @caulif/reprise`。执行真实任务前，需自行安装并登录所选产品（内置 Codex、Claude Code），通过 `/config` 配置 Harness 内部模型，再通过 `/intake` 选择来源产品、项目与历史会话。恢复环境、执行候选和生成对照都可能调用模型并产生费用；操作与确认边界见 [TUI 使用说明](./docs/product/tui.md)。
 
 默认数据目录是 `.reprise`，可用 `--data-dir` 或 `REPRISE_DATA_DIR` 指定。无头命令以 `--help` 和 [CLI 源码](./src/cli/main.ts) 为准；产品主路径与非目标见[产品定义](./docs/product/overview.md)。
 

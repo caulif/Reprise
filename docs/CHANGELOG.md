@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- 包名改为 scoped `@caulif/reprise`（避开 npmjs 无关同名包 `reprise`）。
+
 ### Changed
 
 - TUI 与内部 Agent 缺省 locale 为简体中文；指令为英文，面向操作者的输出随 locale。CLI `--locale <en|zh>` 写入同一份 preferences。发给候选的消息跟随历史用户语言，不跟随该 locale。
