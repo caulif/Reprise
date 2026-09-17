@@ -10,7 +10,7 @@ Application 需要产品无关端口来发现历史、选择模型和创建候�
 
 ## 决定
 
-`reprise/pack-api` 的 `PACK_API_MAJOR` 为 3。投影端口与正式时间线见 [UserVisibleTurn 时间线](./2026-09-10-user-visible-turn-timeline.md)。`ProductPack` 端口是 `history: ProductHistoryReader`、`runtime: ProductRuntime`、`projection: UserSurfaceProjection`。访问函数是 `packHistory`、`packRuntime`、`packProjection`。持久化的候选交接对象是 `CandidateLaunchContext` 与 `CandidateSessionHandle`，读写经过 `Value.Check`。不导出 `SessionSourceAdapter`、`RuntimePort`、`TargetActivityTranslator`、`TargetActivity` 或 `packSessions` / `packActivity`。Application 与 TUI 不导入产品私有实现。
+`@caulif/reprise/pack-api` 的 `PACK_API_MAJOR` 为 3。投影端口与正式时间线见 [UserVisibleTurn 时间线](./2026-09-10-user-visible-turn-timeline.md)。`ProductPack` 端口是 `history: ProductHistoryReader`、`runtime: ProductRuntime`、`projection: UserSurfaceProjection`。访问函数是 `packHistory`、`packRuntime`、`packProjection`。持久化的候选交接对象是 `CandidateLaunchContext` 与 `CandidateSessionHandle`，读写经过 `Value.Check`。不导出 `SessionSourceAdapter`、`RuntimePort`、`TargetActivityTranslator`、`TargetActivity` 或 `packSessions` / `packActivity`。Application 与 TUI 不导入产品私有实现。
 
 ## 备选方案
 

@@ -10,7 +10,7 @@ Pack `translate` 把产品 payload 写成 `TargetActivity`，Application 再落 
 
 ## 决定
 
-`reprise/pack-api` 的 `PACK_API_MAJOR` 为 3。`UserSurfaceProjection` 只提供 `inspectRunFacts` 与 `projectTurn`。Journal 只接受 `runtime.<CandidateRuntimeEventType>`。正式时间线只投影已校验的 `candidate.user_view_persisted`（`UserVisibleTurn`）以及产品无关的 Harness/Controller 事件。不再写入或读取 `runtime.public_activity`，不导出 `TargetActivity`。
+`@caulif/reprise/pack-api` 的 `PACK_API_MAJOR` 为 3。`UserSurfaceProjection` 只提供 `inspectRunFacts` 与 `projectTurn`。Journal 只接受 `runtime.<CandidateRuntimeEventType>`。正式时间线只投影已校验的 `candidate.user_view_persisted`（`UserVisibleTurn`）以及产品无关的 Harness/Controller 事件。不再写入或读取 `runtime.public_activity`，不导出 `TargetActivity`。
 
 ## 备选方案
 

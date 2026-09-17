@@ -22,7 +22,7 @@
 
 ## 影响
 
-`reprise/pack-api` 的 major 仍为 3。Application、测试、脚本和文档链接改到新路径。`test/core/architecture.test.ts` 禁止再出现旧目录。
+`@caulif/reprise/pack-api` 的 major 仍为 3。Application、测试、脚本和文档链接改到新路径。`test/core/architecture.test.ts` 禁止再出现旧目录。
 
 ## 验证
 
