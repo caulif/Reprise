@@ -22,8 +22,9 @@ export function visualEvidenceUnavailableReason(
   if (baselineAvailable && candidateAvailable) return undefined;
   if (baselineAvailable) return reportString(locale, "visualCandidateMissing");
   if (candidateAvailable) return reportString(locale, "visualBaselineMissing");
-  const registered = media.some((item) => item.available);
-  if (registered) return reportString(locale, "visualRegisteredUnavailable");
+  if (media.some((item) => item.side === "baseline" || item.side === "candidate")) {
+    return reportString(locale, "visualRegisteredUnavailable");
+  }
   return reportString(locale, "visualSourcesMissing");
 }
 
