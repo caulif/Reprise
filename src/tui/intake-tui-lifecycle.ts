@@ -4,6 +4,7 @@ import { draftForConfig, readHarnessModelConfig, safeConfigError } from "../infr
 import { errorMessage } from "./format.js";
 import { t } from "./i18n.js";
 import { readTuiPreferences } from "./preferences.js";
+import { upgradeTerminalCapabilities } from "./terminal-capabilities.js";
 import { enableTerminalColor } from "./theme.js";
 import { installTerminalRestoreGuard } from "./terminal-guard.js";
 import { mountWorkbench } from "./workbench.js";
@@ -18,6 +19,7 @@ import {
 export async function IntakeTui_start(this: IntakeTui): Promise<void> {
     if (this.started) return;
     this.started = true;
+    upgradeTerminalCapabilities();
     enableTerminalColor();
     mountWorkbench(this.tui, this.workbench);
     this.tui.addInputListener((data) => this.handleInput(data));

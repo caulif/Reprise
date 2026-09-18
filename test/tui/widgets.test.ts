@@ -319,7 +319,10 @@ test('successful messages containing fail are not painted as errors', () => {
 test('running timeline names a missing state origin as created', () => {
   const theme = createTheme(120, false);
   const text = renderTimeline(theme, 120, {
-    entries: [{ sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'HARNESS', title: 'State: ? → launching' }],
+    entries: [
+      { sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'HARNESS', title: 'State: ? → launching' },
+      { sequence: 2, occurredAt: '2026-08-11T00:10:00.000Z', source: 'TARGET', title: 'working', kind: 'live', placeholder: true, itemId: 'now:target', voice: 'candidate' },
+    ],
     selected: 0, filter: 'ALL', following: true, cancelling: false,
     currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
@@ -668,8 +671,12 @@ test('header names no default product before the user selects one', () => {
 
 test('running timeline uses the selected product and has no Codex fallback', () => {
   const theme = createTheme(120, false);
+  const now = {
+    sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'TARGET' as const,
+    title: 'working', kind: 'live' as const, placeholder: true as const, itemId: 'now:target', voice: 'candidate' as const,
+  };
   const base = {
-    entries: [], selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
+    entries: [now], selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
     currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   };
   const claude = renderTimeline(theme, 120, { ...base, productLabel: 'Claude Code' }).join('\n');

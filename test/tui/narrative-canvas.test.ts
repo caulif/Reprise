@@ -457,3 +457,40 @@ test('scrollback gutter keeps body default, mutes folds, and pins the clock', ()
   }
 });
 
+test('result surface hides live product working now-row after terminal outcome', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', {
+    turnIndex: 0, text: '在吗',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('candidate.user_view_persisted', {
+    turnIndex: 0, status: 'completed', observedAt: timestamp, assistantText: '你好',
+  })));
+  // Re-introduce a stale live now-row the way a late tool event can leave one visible.
+  timeline.push({
+    sequence: 99,
+    occurredAt: timestamp,
+    source: 'TARGET',
+    title: 'working',
+    kind: 'live',
+    placeholder: true,
+    itemId: 'now:target',
+    voice: 'candidate',
+  });
+  const onResult = filterTraceForSurface(timeline.filter((entry) => !entry.hidden), 'result');
+  assert.equal(onResult.some((entry) => entry.itemId?.startsWith('now:')), false);
+  const painted = layoutScrollback(
+    createTheme(100, false),
+    100,
+    onResult,
+    0,
+    'zh',
+    'Claude Code',
+    undefined,
+    0,
+    0,
+    '12:00',
+    true,
+  ).lines.join('\n');
+  assert.doesNotMatch(painted, /Claude Code · working/);
+  assert.doesNotMatch(painted, /working/);
+});
