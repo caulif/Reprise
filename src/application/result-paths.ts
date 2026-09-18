@@ -3,9 +3,8 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import type { RunInspection } from "./comparison.js";
 import type { ExperimentResult } from "./experiment.js";
-import { isComparisonImagePath } from "./comparison-media.js";
 import { resolveHistoricalFinalPath } from "./historical-final-discovery.js";
-import { finalDeliverableRank, isOpenableFinalPath } from "./openable-final-path.js";
+import { finalDeliverableRank, isHistoricalVisualPath } from "./openable-final-path.js";
 import type { TaskCase } from "../core/schema.js";
 
 export type ResultPathLinks = {
@@ -63,7 +62,7 @@ async function resolveCandidateFinal(input: {
   workspaceRoot: string;
 }): Promise<string | undefined> {
   const ranked = [...input.inspection.changedPaths]
-    .filter((path) => isOpenableFinalPath(path) || isComparisonImagePath(path))
+    .filter((path) => isHistoricalVisualPath(path))
     .sort((left, right) => finalDeliverableRank(left) - finalDeliverableRank(right));
   for (const path of ranked) {
     const absolutePath = join(input.workspaceRoot, ...path.split("/"));

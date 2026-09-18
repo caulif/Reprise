@@ -11,7 +11,6 @@ import { controllerBriefingRoot } from "./controller-briefing.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
 import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
 import {
-  COMPARISON_IMAGE_BASENAME_RE,
   isComparisonImagePath,
   mediaTypeForComparisonPath,
   sniffComparisonImageMediaType,
@@ -22,7 +21,12 @@ import {
   augmentComparisonOpenableMedia,
   discoverOpenableSources,
 } from "./comparison-openable-media.js";
-import { findFileInHistoricalRoots } from "./historical-final-discovery.js";
+import {
+  collectHistoricalDeliverableNames,
+  findFileInHistoricalRoots,
+  isHistoricalImageFile,
+} from "./historical-final-discovery.js";
+import { addHistoricalImageBasenames } from "./openable-final-path.js";
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -184,10 +188,7 @@ async function comparisonMediaBundle(
     changedPaths: input.context.reportFacts.delivery.changedPaths.filter(isComparisonChangedPath),
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     caseId: input.taskCase.caseId,
-    baselineArtifactNames: [
-      ...input.taskCase.baseline.artifactRefs.map((ref) => ref.artifactId),
-      ...input.taskCase.sourceRuntimeEvidence.artifactRefs.map((ref) => ref.artifactId),
-    ].filter((name): name is string => Boolean(name)),
+    baselineArtifactNames: [...collectHistoricalDeliverableNames(input.taskCase, "openable-baseline")],
   });
   const augmented = await augmentComparisonOpenableMedia({
     attemptRoot: input.attemptRoot,
@@ -416,13 +417,7 @@ async function sealedBaselineImageLinks(input: {
   taskCase: TaskCase;
   record: RunRecord;
 }): Promise<ComparisonLink[]> {
-  const names = historicalImageBasenames(input.taskCase);
-  for (const ref of input.taskCase.baseline.artifactRefs) {
-    if (ref.artifactId) names.add(ref.artifactId);
-  }
-  for (const ref of input.taskCase.sourceRuntimeEvidence.artifactRefs) {
-    if (ref.artifactId) names.add(ref.artifactId);
-  }
+  const names = collectHistoricalDeliverableNames(input.taskCase, "image");
   const controllerRoot = join(input.experimentRoot, "runs", input.record.attempt.runId, "controller-briefing");
   await collectImageBasenamesFromDir(join(controllerRoot, "history"), names);
   await collectImageFileBasenames(join(controllerRoot, "history"), names);
@@ -456,19 +451,8 @@ async function sealedBaselineImageLinks(input: {
   return links;
 }
 
-function historicalImageBasenames(taskCase: TaskCase): Set<string> {
-  const names = new Set<string>();
-  addImageBasenames(taskCase.initialInput.text, names);
-  addImageBasenames(taskCase.baseline.finalMessage ?? "", names);
-  for (const message of taskCase.transcript) addImageBasenames(message.text, names);
-  return names;
-}
-
 function addImageBasenames(text: string, names: Set<string>): void {
-  for (const match of text.matchAll(COMPARISON_IMAGE_BASENAME_RE)) {
-    const base = (match[1] ?? "").split(/[/\\]/).pop();
-    if (base && !base.startsWith(".")) names.add(base);
-  }
+  addHistoricalImageBasenames(text, names);
 }
 
 async function collectImageBasenamesFromDir(root: string, names: Set<string>): Promise<void> {
@@ -504,8 +488,7 @@ async function findSealedImage(input: {
 }): Promise<string | undefined> {
   const absolutePath = await findFileInHistoricalRoots(input);
   if (!absolutePath) return undefined;
-  if (isComparisonImagePath(absolutePath)) return absolutePath;
-  return (await sniffComparisonImageMediaType(absolutePath)) ? absolutePath : undefined;
+  return (await isHistoricalImageFile(absolutePath)) ? absolutePath : undefined;
 }
 
 function slash(path: string): string { return path.replaceAll("\\", "/"); }

@@ -1,26 +1,50 @@
 import { constants } from "node:fs";
-import { access, readdir } from "node:fs/promises";
+import { access, copyFile, mkdir, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { TaskCase } from "../core/schema.js";
 import { sha256File } from "../core/identity.js";
-import { isComparisonImagePath } from "./comparison-media.js";
-import { finalDeliverableRank, isOpenableFinalPath } from "./openable-final-path.js";
+import { sniffComparisonImageMediaType } from "./comparison-media.js";
+import {
+  addHistoricalDeliverableBasenames,
+  addHistoricalImageBasenames,
+  finalDeliverableRank,
+  isHistoricalImagePath,
+  isHistoricalVisualPath,
+  isOpenableFinalPath,
+} from "./openable-final-path.js";
 
-export function collectHistoricalFinalNames(taskCase: TaskCase): Set<string> {
+export type HistoricalDeliverableKind = "final" | "openable-baseline" | "image";
+
+export type HistoricalSearchRoot = {
+  root: string;
+  mode: "direct-basename" | "recursive-basename";
+};
+
+export function collectHistoricalDeliverableNames(taskCase: TaskCase, kind: HistoricalDeliverableKind): Set<string> {
   const names = new Set<string>();
   for (const ref of taskCase.baseline.artifactRefs) {
     if (ref.artifactId) names.add(ref.artifactId);
   }
-  addDeliverableNames(taskCase.baseline.finalMessage ?? "", names);
-  for (const message of taskCase.transcript) addDeliverableNames(message.text, names);
+  if (kind === "openable-baseline" || kind === "image") {
+    for (const ref of taskCase.sourceRuntimeEvidence.artifactRefs) {
+      if (ref.artifactId) names.add(ref.artifactId);
+    }
+  }
+  if (kind === "final") {
+    addHistoricalDeliverableBasenames(taskCase.baseline.finalMessage ?? "", names);
+    for (const message of taskCase.transcript) addHistoricalDeliverableBasenames(message.text, names);
+    return names;
+  }
+  if (kind === "image") {
+    addHistoricalImageBasenames(taskCase.initialInput.text, names);
+    addHistoricalImageBasenames(taskCase.baseline.finalMessage ?? "", names);
+    for (const message of taskCase.transcript) addHistoricalImageBasenames(message.text, names);
+  }
   return names;
 }
 
-function addDeliverableNames(text: string, names: Set<string>): void {
-  for (const match of text.matchAll(/([^\\/\s:"<>|]+\.(?:html|htm|xhtml|png|jpe?g|gif|webp|svg|avif))/gi)) {
-    const base = match[1]?.split(/[/\\]/).pop();
-    if (base && !base.startsWith(".")) names.add(base);
-  }
+export function collectHistoricalFinalNames(taskCase: TaskCase): Set<string> {
+  return collectHistoricalDeliverableNames(taskCase, "final");
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -43,14 +67,31 @@ export function historicalFinalSearchRoots(input: {
   caseId: string;
   dataDir?: string;
   attemptRoot?: string;
-}): string[] {
+}): HistoricalSearchRoot[] {
   const controllerRoot = join(input.experimentRoot, "runs", input.runId, "controller-briefing");
-  const roots: string[] = [];
-  if (input.attemptRoot) roots.push(join(input.attemptRoot, "history", "finals"));
-  roots.push(join(controllerRoot, "history"));
-  if (input.dataDir) roots.push(join(input.dataDir, "cases", input.caseId, "baseline-artifacts"));
-  roots.push(join(input.experimentRoot, "environment", "baselines"));
+  const roots: HistoricalSearchRoot[] = [];
+  if (input.attemptRoot) {
+    roots.push({ root: join(input.attemptRoot, "history", "finals"), mode: "direct-basename" });
+  }
+  roots.push({ root: join(controllerRoot, "history"), mode: "recursive-basename" });
+  if (input.dataDir) {
+    roots.push({ root: join(input.dataDir, "cases", input.caseId, "baseline-artifacts"), mode: "recursive-basename" });
+  }
+  roots.push({ root: join(input.experimentRoot, "environment", "baselines"), mode: "recursive-basename" });
   return roots;
+}
+
+export async function lookupBasename(
+  roots: readonly HistoricalSearchRoot[],
+  basenameTarget: string,
+): Promise<string | undefined> {
+  for (const entry of roots) {
+    const absolutePath = entry.mode === "direct-basename"
+      ? join(entry.root, basenameTarget)
+      : await findFileByBasename(entry.root, basenameTarget);
+    if (absolutePath && await fileExists(absolutePath)) return absolutePath;
+  }
+  return undefined;
 }
 
 export async function findFileInHistoricalRoots(input: {
@@ -61,14 +102,7 @@ export async function findFileInHistoricalRoots(input: {
   attemptRoot?: string;
   basename: string;
 }): Promise<string | undefined> {
-  const roots = historicalFinalSearchRoots(input);
-  for (const root of roots) {
-    const absolutePath = root.endsWith("finals")
-      ? join(root, input.basename)
-      : await findFileByBasename(root, input.basename);
-    if (absolutePath && await fileExists(absolutePath)) return absolutePath;
-  }
-  return undefined;
+  return lookupBasename(historicalFinalSearchRoots(input), input.basename);
 }
 
 export async function resolveHistoricalFinalPath(input: {
@@ -78,7 +112,7 @@ export async function resolveHistoricalFinalPath(input: {
   dataDir?: string;
   attemptRoot?: string;
 }): Promise<string | undefined> {
-  const names = [...collectHistoricalFinalNames(input.taskCase)].sort(
+  const names = [...collectHistoricalDeliverableNames(input.taskCase, "final")].sort(
     (left, right) => finalDeliverableRank(left) - finalDeliverableRank(right),
   );
   if (!names.length) return undefined;
@@ -90,14 +124,9 @@ export async function resolveHistoricalFinalPath(input: {
     ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
   });
   for (const name of names) {
-    for (const root of roots) {
-      const absolutePath = root.endsWith("finals")
-        ? join(root, name)
-        : await findFileByBasename(root, name);
-      if (!absolutePath || !(await fileExists(absolutePath))) continue;
-      if (!isOpenableFinalPath(absolutePath) && !isComparisonImagePath(absolutePath)) continue;
-      return absolutePath;
-    }
+    const absolutePath = await lookupBasename(roots, name);
+    if (!absolutePath || !isHistoricalVisualPath(absolutePath)) continue;
+    return absolutePath;
   }
   return undefined;
 }
@@ -119,14 +148,9 @@ export async function discoverBaselineOpenableSources(input: {
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
   });
   for (const name of input.baselineArtifactNames) {
-    for (const root of roots) {
-      const absolutePath = root.endsWith("finals")
-        ? join(root, name)
-        : await findFileByBasename(root, name);
-      if (!absolutePath || !(await fileExists(absolutePath)) || !isOpenableFinalPath(absolutePath)) continue;
-      baselineSources.push({ inspectPath: sealedInspectPath(absolutePath, name), absolutePath });
-      break;
-    }
+    const absolutePath = await lookupBasename(roots, name);
+    if (!absolutePath || !isOpenableFinalPath(absolutePath)) continue;
+    baselineSources.push({ inspectPath: sealedInspectPath(absolutePath, name), absolutePath });
   }
   return baselineSources;
 }
@@ -144,8 +168,12 @@ export async function sealBaselineOpenablePath(sealedRoot: string, absolutePath:
     if (existingHash === incomingHash) return dest;
     throw new Error(`Duplicate baseline final basename "${name}" under ${sealedRoot}`);
   }
-  const { copyFile, mkdir } = await import("node:fs/promises");
   await mkdir(sealedRoot, { recursive: true });
   await copyFile(absolutePath, dest);
   return dest;
+}
+
+export async function isHistoricalImageFile(path: string): Promise<boolean> {
+  if (isHistoricalImagePath(path)) return true;
+  return Boolean(await sniffComparisonImageMediaType(path));
 }

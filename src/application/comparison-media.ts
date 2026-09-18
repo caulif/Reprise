@@ -3,19 +3,14 @@ import { copyFile, mkdir, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { ComparisonMediaRecordSchema, type ComparisonLinkRecord, type ComparisonMediaRecord } from "../core/schema.js";
+import { historicalImageBasenameRe, isHistoricalImagePath } from "./openable-final-path.js";
 
-const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"]);
-const IMAGE_EXT_PATTERN = "png|jpe?g|gif|webp|svg|avif";
-
-export const COMPARISON_IMAGE_BASENAME_RE = new RegExp(
-  `([^\\\\/:"<>|\\s*]+\\.(?:${IMAGE_EXT_PATTERN}))`,
-  "gi",
-);
+export const COMPARISON_IMAGE_BASENAME_RE = historicalImageBasenameRe;
 
 const SNIFF_BYTES = 256;
 
 export function isComparisonImagePath(path: string): boolean {
-  return isComparisonImage({ path });
+  return isHistoricalImagePath(path);
 }
 
 export function mediaTypeForComparisonPath(path: string): string | undefined {
@@ -32,8 +27,7 @@ export function mediaTypeForComparisonPath(path: string): string | undefined {
 
 function isComparisonImage(input: { mediaType?: string; path?: string }): boolean {
   if (input.mediaType?.startsWith("image/")) return true;
-  const ext = extname((input.path ?? "").replaceAll("\\", "/")).toLowerCase();
-  return IMAGE_EXT.has(ext);
+  return isHistoricalImagePath(input.path ?? "");
 }
 
 export async function materializeComparisonMedia(input: {

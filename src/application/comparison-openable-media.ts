@@ -1,5 +1,5 @@
 import { mkdir, stat } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { basename, join } from "node:path";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
 import { captureHeadlessScreenshot, type HeadlessScreenshotResult } from "../infrastructure/headless-screenshot.js";
 import { comparisonMediaFileName, isComparisonImagePath, materializeComparisonMedia } from "./comparison-media.js";
@@ -8,7 +8,7 @@ import {
   discoverBaselineOpenableSources,
   sealBaselineOpenablePath,
 } from "./historical-final-discovery.js";
-import { isOpenableFinalPath } from "./openable-final-path.js";
+import { isOpenableFinalPath, isScreenshotOpenablePath, isHistoricalVisualPath } from "./openable-final-path.js";
 
 export class ComparisonVisualMediaError extends Error {
   readonly code = "media_unavailable" as const;
@@ -19,7 +19,7 @@ export class ComparisonVisualMediaError extends Error {
 }
 
 function isVisualDeliverablePath(path: string): boolean {
-  return isOpenableFinalPath(path) || isComparisonImagePath(path);
+  return isHistoricalVisualPath(path);
 }
 
 export async function augmentComparisonOpenableMedia(input: {
@@ -48,7 +48,7 @@ export async function augmentComparisonOpenableMedia(input: {
   for (const side of ["baseline", "candidate"] as const) {
     const sources = side === "baseline" ? input.baselineSources : input.candidateSources;
     for (const source of sources) {
-      if (!shouldScreenshotOpenable(source.absolutePath)) continue;
+      if (!isScreenshotOpenablePath(source.absolutePath)) continue;
       const name = basename(source.absolutePath);
       if (linkedImageBasenames.has(name)) continue;
       const info = await stat(source.absolutePath).catch(() => undefined);
@@ -120,12 +120,7 @@ function formatScreenshotFailure(
 
 function isVisualLink(link: ComparisonLinkRecord): boolean {
   if (link.mediaType?.startsWith("image/")) return true;
-  return isVisualDeliverablePath(link.inspectPath);
-}
-
-function shouldScreenshotOpenable(path: string): boolean {
-  const ext = extname(path.replaceAll("\\", "/")).toLowerCase();
-  return ext === ".html" || ext === ".htm" || ext === ".xhtml";
+  return isHistoricalVisualPath(link.inspectPath);
 }
 
 export async function discoverOpenableSources(input: {

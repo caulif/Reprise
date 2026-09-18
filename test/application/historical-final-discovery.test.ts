@@ -3,8 +3,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { TaskCase } from "../../src/core/schema.js";
 import {
+  collectHistoricalDeliverableNames,
   findFileInHistoricalRoots,
+  lookupBasename,
+  historicalFinalSearchRoots,
+  resolveHistoricalFinalPath,
   sealBaselineOpenablePath,
 } from "../../src/application/historical-final-discovery.js";
 
@@ -12,6 +17,87 @@ const MINIMAL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
+
+const taskCase = (): TaskCase => ({
+  schemaVersion: 1,
+  caseId: "case-1",
+  source: { productId: "codex", sessionId: "session-1" },
+  initialInput: { id: "m1", role: "user", text: "做 deck.html" },
+  transcript: [{ id: "m2", role: "assistant", text: "导出 slide.png" }],
+  historicalEvents: [],
+  baseline: {
+    status: "available",
+    artifactRefs: [{ artifactId: "artifact-final.html", caseId: "case-1" }, { artifactId: "deck.html", caseId: "case-1" }],
+    finalMessage: "见 preview.svg",
+    evidenceRefs: [],
+  },
+  sourceRuntimeEvidence: { productId: "codex", artifactRefs: [{ artifactId: "runtime-shot.png", caseId: "case-1" }] },
+  provenance: { packVersion: "test", importedAt: "2026-09-18T00:00:00.000Z", sourceHash: "a".repeat(64) },
+  privacy: { allowModelText: true, allowBinary: false, redactions: [] },
+  contentHash: "b".repeat(64),
+});
+
+test("collectHistoricalDeliverableNames shares baseline artifact refs across kinds", () => {
+  const value = taskCase();
+  const finalNames = collectHistoricalDeliverableNames(value, "final");
+  const openableNames = collectHistoricalDeliverableNames(value, "openable-baseline");
+  const imageNames = collectHistoricalDeliverableNames(value, "image");
+  assert.ok(finalNames.has("artifact-final.html"));
+  assert.ok(finalNames.has("deck.html"));
+  assert.ok(openableNames.has("artifact-final.html"));
+  assert.ok(openableNames.has("deck.html"));
+  assert.ok(imageNames.has("artifact-final.html"));
+  assert.ok(imageNames.has("deck.html"));
+  assert.ok(openableNames.has("runtime-shot.png"));
+  assert.ok(imageNames.has("runtime-shot.png"));
+  assert.ok(!finalNames.has("runtime-shot.png"));
+  assert.ok(finalNames.has("preview.svg"));
+  assert.ok(imageNames.has("slide.png"));
+});
+
+test("lookupBasename uses direct-basename mode for attempt finals", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-lookup-mode-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const experimentRoot = join(root, "experiment");
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
+  await mkdir(join(attemptRoot, "history", "finals"), { recursive: true });
+  const sealed = join(attemptRoot, "history", "finals", "deck.html");
+  await writeFile(sealed, "<!doctype html><title>sealed</title>", "utf8");
+  const roots = historicalFinalSearchRoots({
+    experimentRoot,
+    runId: "run-1",
+    caseId: "case-1",
+    attemptRoot,
+  });
+  assert.equal(roots[0]?.mode, "direct-basename");
+  assert.equal(await lookupBasename(roots, "deck.html"), sealed);
+});
+
+test("resolveHistoricalFinalPath and findFileInHistoricalRoots agree on discovered paths", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-lookup-agree-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const experimentRoot = join(root, "experiment");
+  const baselineDir = join(experimentRoot, "environment", "baselines");
+  await mkdir(baselineDir, { recursive: true });
+  const baselineHtml = join(baselineDir, "deck.html");
+  await writeFile(baselineHtml, "<!doctype html><title>deck</title>", "utf8");
+  const value = taskCase();
+  const search = {
+    experimentRoot,
+    runId: "run-1",
+    caseId: value.caseId,
+  };
+  const resolved = await resolveHistoricalFinalPath({ ...search, taskCase: value });
+  const found = await findFileInHistoricalRoots({ ...search, basename: "deck.html" });
+  assert.equal(resolved, baselineHtml);
+  assert.equal(found, baselineHtml);
+});
 
 test("sealBaselineOpenablePath rejects conflicting basenames", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-seal-conflict-"));
