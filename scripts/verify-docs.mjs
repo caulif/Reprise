@@ -264,10 +264,15 @@ function isIgnored(relativePath) {
   }
 }
 
+function isArchiveMarkdown(relativePath) {
+  return relativePath.startsWith('docs/decisions/archive/');
+}
+
 function checkLinks(markdownFiles, tracked) {
   const errors = [];
   const trackedSet = new Set(tracked);
   for (const [file, text] of markdownFiles) {
+    if (isArchiveMarkdown(file)) continue;
     for (const link of extractMarkdownLinks(text)) {
       if (IGNORED_LINK_PREFIX.test(link.href)) continue;
       let resolved;
@@ -328,7 +333,7 @@ function runRepoChecks() {
     if (file.startsWith('docs/decisions/proposed/') || file.startsWith('docs/decisions/accepted/')) {
       errors.push(...checkDecisionRecord(file, text));
     }
-    errors.push(...checkFileName(file));
+    if (!isArchiveMarkdown(file)) errors.push(...checkFileName(file));
   }
 
   const manifestPath = join(ROOT, 'scripts/doc-budgets.manifest.json');

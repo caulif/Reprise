@@ -19,7 +19,7 @@ Recovery 应用层仍持有 13 态假设/候选/验证器状态机（`forensics_
 
 **on-disk。** `RecoveryLifecycleAttempt.schemaVersion` 升为 2。phase 仅为 `staging | forensics | model | validated`；operation 仅为 `begin_staging | resolve_facts | invoke_model | validate`。新写入经 `Value.Check` **拒绝** v1 与旧 phase/operation（`hypothesis`、`candidate`、`verification`、`promotion`、`create_candidate`、`validate_candidate`、`promote_checkpoint`）。历史 `events.jsonl` 的 `payload` 仍是 `unknown`，旧实验可读，但 Host 不得再写出旧形。不迁移磁盘。删除无写入方字段（`hypothesisCount`、`candidateCount`、`verifierRejectionReasons`、`pathBoundaryRejected`、`haltReadinessFeedback`、`readinessSignature`、`noProgressTurns`、`candidateCreated`）及对应评估指标。不改 Recovery Agent 模型轮次语义。
 
-本决定替代 [task outcome 语义](../superseded/2026-08-22-recovery-task-outcome-semantics.md) 中「非 ready 即 unrecoverable」以及 [lifecycle attempts](./2026-08-19-recovery-lifecycle-attempts-and-path-outcomes.md) 中的 13 态转移表与候选拒绝回流。attempt 记录本身仍由 Orchestrator 校验后落盘。
+本决定替代 [task outcome 语义](../archive/superseded/2026-08-22-recovery-task-outcome-semantics.md) 中「非 ready 即 unrecoverable」以及 [lifecycle attempts](../archive/accepted-2026-09/2026-08-19-recovery-lifecycle-attempts-and-path-outcomes.md) 中的 13 态转移表与候选拒绝回流。attempt 记录本身仍由 Orchestrator 校验后落盘。
 
 ## 备选方案
 

@@ -93,7 +93,7 @@ Controller 可以直接读取原始会话，并自主判断哪些历史内容表
 3. Pi Agent Host 随项目正常更新，不作为被测变量。
 4. Controller 必须通过 briefing 与工具访问 TaskCase 中的完整原始会话；Target Runtime 收到的用户消息全部由 Controller 写出，包括第一句。
 5. 「同等人类能力」只能被操作化，不声称精确预测真实用户在反事实情境中的唯一输入。
-6. 完整原始会话的使用边界由 canonical system prompt 限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。候选第一条用户消息的任务形状须与 `initialInput` 同类，且不得引用候选尚未写出的建议、优先级或清单；见[开场不得引用未发生的候选建议](../decisions/accepted/2026-09-16-controller-opening-no-unseen-advice.md) 与[运行时仅合同](../decisions/accepted/2026-09-16-controller-runtime-contracts-only.md)。Controller 只在候选 turn 稳定完成后，先看 Host 的用户视图快照，再按需读取用户可访问材料。
+6. 完整原始会话的使用边界由 canonical system prompt 限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。候选第一条用户消息的任务形状须与 `initialInput` 同类，且不得引用候选尚未写出的建议、优先级或清单；见[开场不得引用未发生的候选建议](../decisions/accepted/2026-09-16-controller-opening-no-unseen-advice.md) 与运行时仅合同。Controller 只在候选 turn 稳定完成后，先看 Host 的用户视图快照，再按需读取用户可访问材料。
 7. Harness 不捆绑、推荐或评价 Controller 模型。
 
 ### 4.2 实验内固定与配置归属
@@ -110,7 +110,7 @@ Pi Agent Host 是实现基础设施，不是需要恢复的历史 Agent Runtime�
 
 ### 4.4 Controller 工具集合
 
-Controller 工具让扮演用户的模型能看见隔离副本，并像真人一样修改工作区文件、调查其他可读材料。注册集合等于可执行集合：`ls`/`read`/`grep`/`find`/`edit`/`write`/`shell_exec`，含 `shell_exec`，不含 `read_observation`（见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)）。不能绕过 Target Runtime 执行任务。
+Controller 工具让扮演用户的模型能看见隔离副本，并像真人一样修改工作区文件、调查其他可读材料。注册集合等于可执行集合：`ls`/`read`/`grep`/`find`/`edit`/`write`/`shell_exec`，含 `shell_exec`，不含 `read_observation`（见 读取与 shell）。不能绕过 Target Runtime 执行任务。
 
 Host 把工作区工具挂在 briefing 根上。`project/` 是隔离副本挂载：`edit`/`write` 仅允许该挂载下的文件；briefing 根拒写。`ls`/`read`/`grep`/`find` 与 `shell_exec` 读取不受工作区 containment 限制。不按工具调用次数截断；上下文走 Pi 压缩。
 
@@ -270,7 +270,7 @@ Controller 不直接调用 Runtime 的 approval API；它只能通过普通用�
 
 ## 7. 观察与工具面
 
-Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本，`notes/` 可写工作笔记；读取工具与 `shell_exec` 可以访问当前进程可读路径。不注册名为 Observation Adapter 的组件。见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)、[英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)。
+Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本，`notes/` 可写工作笔记；读取工具与 `shell_exec` 可以访问当前进程可读路径。不注册名为 Observation Adapter 的组件。见 读取与 shell、协作工具面、路径 briefing、英文提示词与 notes。
 
 当前事实供给：
 
@@ -282,7 +282,7 @@ Controller 需要 Target 建立证据时发送 `verify` 消息；报告由 Compa
 
 ## 8. SteeringContext
 
-Host 每次结构化 `append` 给模型的用户消息是英文决策段，不是本对象的 JSON。opening 附完整 INDEX.md；steering 只附 `Latest turn:` 行，不重发 `# INDEX.md`。首次 `decide` 另有一轮自由理解委托，结论写入 `notes/understanding.md`。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 的 `project/` 与 `notes/` 写入与候选运行权限；后者是历史会话推断，缺失时标 unconfirmed，不是本次 launch 授权证明。`allowModelText` 是化石键，Host 恒允许正文。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`；这些 briefing `read` 记 `briefing_read` evidence。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash（不含 `notes/`）；`current.summary` 不内联命令或路径计数。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[Controller 英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)。
+Host 每次结构化 `append` 给模型的用户消息是英文决策段，不是本对象的 JSON。opening 附完整 INDEX.md；steering 只附 `Latest turn:` 行，不重发 `# INDEX.md`。首次 `decide` 另有一轮自由理解委托，结论写入 `notes/understanding.md`。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 的 `project/` 与 `notes/` 写入与候选运行权限；后者是历史会话推断，缺失时标 unconfirmed，不是本次 launch 授权证明。`allowModelText` 是化石键，Host 恒允许正文。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`；这些 briefing `read` 记 `briefing_read` evidence。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash（不含 `notes/`）；`current.summary` 不内联命令或路径计数。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 权限快照与当前视图、唯一用户视图入口、briefing 原子发布、协作工具面、Controller 英文提示词与 notes。
 
 字段定义见 [`controller-agent.ts`](../../src/agents/controller-agent.ts)。`decide()` 只接收 `ControllerRequest`（requestId、runId、phase、promptContent、evidenceCatalog、budget、privacy）。`SteeringContext` 是请求加上审计快照（`current` / `trajectory` 摘要、briefing 路径、digest、`hostFacts`、可选 `replay.changedPaths`），不是独立的 TargetObservation / TrajectoryWindow 类型。模型只看 `promptContent`。
 
@@ -323,7 +323,7 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 预算、timeout、Runtime failure 和 user abort 是 Orchestrator stop reason，不伪装成 Controller done。
 
-有效的非 satisfied 判断表示任务 incomplete。Host 接受 Controller 的 `done` 作为停止决定，不因未读 briefing 文件、缺失账本或省略 `understandingDelta` 而拒绝。历史记录中的 `controller.understanding` 与账本事件仍可只读展示。具体取舍见 [先理解再按视图决策](../decisions/accepted/2026-09-09-controller-understand-then-view.md)。
+有效的非 satisfied 判断表示任务 incomplete。Host 接受 Controller 的 `done` 作为停止决定，不因未读 briefing 文件、缺失账本或省略 `understandingDelta` 而拒绝。历史记录中的 `controller.understanding` 与账本事件仍可只读展示。具体取舍见 先理解再按视图决策。
 
 ## 10. 决策过程
 
@@ -340,13 +340,13 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 ## 11. Prompt 与评估分层
 
-可执行 system prompt 与 understand / opening / steering 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。指令为英文。System Prompt 组成顺序是角色正文、`# Workspace`、locale 语言块、可见过程规则。过程叙述与 `rationale` 随操作者 locale；`send.message` 跟随历史用户当时的语言，见 [内部 Agent locale](../decisions/accepted/2026-09-15-internal-agent-locale.md)。
+可执行 system prompt 与 understand / opening / steering 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。指令为英文。System Prompt 组成顺序是角色正文、`# Workspace`、locale 语言块、可见过程规则。过程叙述与 `rationale` 随操作者 locale；`send.message` 跟随历史用户当时的语言，见 内部 Agent locale。
 
 briefing INDEX 只做导航，把材料分成三类，不得混用：历史用户要求（`history/user-inputs/` 与 `initial-input.txt`）、历史 agent 发现（`role=assistant`，不是模拟用户的先验）、当前候选事实（`current-user-view.md`、`run/turns/`、`project/` 与 `notes/`）。历史用户句不是按序重放队列；发完历史句不是完成条件。高影响授权仍要求历史会话已体现。opening 的模型可见请求是决策段加 INDEX.md；steering 不重发 INDEX。不把 SteeringContext JSON 或隐藏字段内联进 prompt。
 
 Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消或 `unknown` 投递不重发。`controller.requested` 快照含 `promptDigest`（与 `agent.session_started.promptDigest` 相同，均为 composed system prompt 的 digest）以及 Host 观察 `hostFacts`（changed paths、最近工具失败、历史用户输入路径；路径 `status=unknown` 表示 Host 不判断该要求是否已满足）。Invocation 完成记录 `modelRequests`；压缩记录 `tokensBefore`。每个 CandidateRun 独立 Controller Session。
 
-机械协议由 `test/controller-collaboration-protocol.test.ts`、`test/candidate-run.test.ts` 与合同 lane `test/controller-capability-evaluation.test.ts` 覆盖。合同 lane 的样例族覆盖已满足用户、尚需核验、无继续价值、授权不足、历史 agent 结论不可信；该 lane 用脚本输出，不证明与真人协作等价。真实模型能力评估入口为 `npm run evaluate:controller -- <dataDir> <绝对报告路径>`，要求 `REPRISE_REAL_MODEL=1`，不进入 `npm run check`；报告只记类型/理由/intent 是否匹配，不含模型原文。见 [能力评估分层](../decisions/accepted/2026-08-22-controller-capability-evaluation-lane.md) 与 [协作协议](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md)。
+机械协议由 `test/controller-collaboration-protocol.test.ts`、`test/candidate-run.test.ts` 与合同 lane `test/controller-capability-evaluation.test.ts` 覆盖。合同 lane 的样例族覆盖已满足用户、尚需核验、无继续价值、授权不足、历史 agent 结论不可信；该 lane 用脚本输出，不证明与真人协作等价。真实模型能力评估入口为 `npm run evaluate:controller -- <dataDir> <绝对报告路径>`，要求 `REPRISE_REAL_MODEL=1`，不进入 `npm run check`；报告只记类型/理由/intent 是否匹配，不含模型原文。见 能力评估分层 与 [协作协议](../decisions/accepted/2026-09-08-controller-collaboration-protocol.md)。
 
 实现时把 schema、有效 reason、任务数据和权限边界作为独立结构化上下文提供，不在 prompt 文本中拼接不可信内容。
 

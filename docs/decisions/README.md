@@ -2,6 +2,27 @@
 
 ADR（Architecture Decision Record，架构决策记录）回答「为什么选择 A、放弃 B」。它是仓库唯一因果层；当前行为见 [architecture](../architecture/overview.md) 与 [product](../product/overview.md)，未关闭目标见 [MASTER](../progress/MASTER.md)。无需读完全部 ADR 才能开工。
 
+## 热集与冷库
+
+| 目录 | 用途 |
+|---|---|
+| [accepted](./accepted/) | **热集**（≤ 40）：仍频繁约束实现；navigation 与 architecture/product 只链此目录 |
+| [archive/accepted-2026-09/](./archive/accepted-2026-09/) | **冷库**：仍有效但已沉入 architecture 或极少改动的旧 accepted；**不进** `docs/README` 与根 AGENTS 导航 |
+| [archive/superseded/](./archive/superseded/) | 已有替代规则的历史记录；**不进**导航 |
+| [proposed](./proposed/) | 未拍板，或已确认但尚未实施生效 |
+
+冷热分离立场见 [ADR 热集与冷库分离](./accepted/2026-09-18-adr-hot-cold-split.md)。不建 `.agents/notes/` 平行树，不维护手写全局 INDEX。
+
+### 什么进热集
+
+满足**任一**即可留在 `accepted/`：
+
+- 仍约束跨模块协议、on-disk、prompt、工具面或门禁
+- 仍被 architecture / product / 根或 docs AGENTS / 门禁文档引用
+- 安全、凭据、平台支持、费用 opt-in
+
+其余（一次性修复叙事、细节已被更新 ADR/architecture 覆盖、纯措辞/版式史）→ `archive/`。移冷库用 `git mv`，不删历史。
+
 ## 何时写
 
 跨模块协议、on-disk 格式、提示词契约、工具面、架构边界、工程流程或门禁变化，同批新增或更新相关 ADR；行为变化同时更新唯一事实归宿。测试证明当前行为，ADR 保存取舍，两者不能互相替代。
@@ -13,8 +34,8 @@ ADR（Architecture Decision Record，架构决策记录）回答「为什么选�
 | 目录 | 含义 |
 |---|---|
 | [proposed](./proposed/) | 未拍板，或已确认但尚未实施生效；写清生效验收 |
-| [accepted](./accepted/) | 当前仍约束实现 |
-| [superseded](./superseded/) | 已有替代规则，保留历史与替代链接 |
+| [accepted](./accepted/) | 热集：当前仍约束实现 |
+| [archive/superseded/](./archive/superseded/) | 已有替代规则，保留历史与替代链接 |
 
 日期不随移动改变；部分迁移不能宣布整份旧决定失效。五节格式、命名及历史兼容规则由[文档结构](../documentation-structure.md#决策记录)定义。[写 ADR](../cookbook/add-adr.md)提供操作步骤。
 
@@ -22,10 +43,13 @@ ADR（Architecture Decision Record，架构决策记录）回答「为什么选�
 
 ## 如何检索
 
-从契约名、模块名、类型或失败语义搜索 accepted 与 superseded，再按需看 proposed。例如在仓库根运行：
+1. 先读 architecture/product 中的现行规范；只有需要取舍理由或怕重复弃案时再查 ADR。
+2. 热集：`git grep -n "关键词" -- docs/decisions/accepted`
+3. 冷库与替代历史：`git grep -n "关键词" -- docs/decisions/archive/`
+4. 未落地提案：`git grep -n "关键词" -- docs/decisions/proposed`
 
 ```text
-git grep -n "CandidateRun" -- docs/decisions/accepted docs/decisions/superseded
+git grep -n "CandidateRun" -- docs/decisions/accepted docs/decisions/archive
 git grep -n "Session" -- docs/decisions/proposed
 ```
 

@@ -5,7 +5,7 @@
 
 ## 问题
 
-[Git sink catalog](./2026-09-11-git-sink-catalog.md) 把「从副本 `fetch` 进 bare sink」当成隔离成功的前置。嵌套 partial clone / promisor / shallow 不能当完整 fetch 源时，Recovery 与 baseline 捕获在写 catalog 前中止；git stderr 又撑破 schema。对象不完整是源树事实，不是必须补全的 GitHub 历史。
+[Git sink catalog](../archive/accepted-2026-09/2026-09-11-git-sink-catalog.md) 把「从副本 `fetch` 进 bare sink」当成隔离成功的前置。嵌套 partial clone / promisor / shallow 不能当完整 fetch 源时，Recovery 与 baseline 捕获在写 catalog 前中止；git stderr 又撑破 schema。对象不完整是源树事实，不是必须补全的 GitHub 历史。
 
 ## 决定
 
@@ -34,7 +34,7 @@
 
 ## 影响
 
-[环境](../../architecture/environment.md)、[Comparison](../../architecture/comparison.md)、[Git sink catalog](./2026-09-11-git-sink-catalog.md)（发现、改写、保留窗口仍有效）。
+[环境](../../architecture/environment.md)、[Comparison](../../architecture/comparison.md)、[Git sink catalog](../archive/accepted-2026-09/2026-09-11-git-sink-catalog.md)（发现、改写、保留窗口仍有效）。
 
 ## 验证
 

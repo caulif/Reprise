@@ -15,7 +15,7 @@
 
 ## 决定
 
-`docs/decisions/{proposed|accepted|superseded}/YYYY-MM-DD-topic.md` 承载长期约束实现的选择。生命周期由目录表达，状态变化就是移动文件；日期是首次提出的日期，移动时不改。
+`docs/decisions/{proposed|accepted|archive/}/YYYY-MM-DD-topic.md` 承载长期约束实现的选择；热集在 `accepted/`（≤ 40），冷库在 `archive/`，见 [ADR 热集与冷库分离](./2026-09-18-adr-hot-cold-split.md)。
 
 正文固定五节：`## 问题` / `## 决定` / `## 备选方案` / `## 影响` / `## 验证`。`## 备选方案` 强制存在，且只记录真实考虑过的方案——没有记录到被否方案的决策会被反复重新讨论。格式与触发条件的完整定义见[文档结构与路径约定](../../documentation-structure.md#决策记录)，由 `npm run verify:docs` 检查。
 
@@ -38,7 +38,7 @@
 - 每次非机械改动多写约 200 字，换来的是同一问题不再被重新讨论。
 - `docs/documentation-structure.md` 中「当前不建立正式 `decisions/` 目录」的段落被本记录取代，该文件已相应改写。
 - `docs/analysis/` 目录取消：仍有未闭合工作的 4 份移入 `plan/`，其余 5 份移入 `docs/.local/`。
-- `decisions/superseded/` 收纳既有的两份历史决策：早期架构决策记录（原 `archive/2026-08-07/design-decisions.md`）和极简报告设计（原 `archive/2026-08-13/designs/report-design.md`）。它们冻结，不检查格式。
+- `decisions/archive/superseded/` 收纳既有的两份历史决策：早期架构决策记录（原 `archive/2026-08-07/design-decisions.md`）和极简报告设计（原 `archive/2026-08-13/designs/report-design.md`）。它们冻结，不检查格式。
 - 新增一个会失败的门禁：格式不符或状态与目录不一致时 `npm run verify:docs` 失败。
 
 ## 验证
