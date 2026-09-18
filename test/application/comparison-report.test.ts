@@ -231,8 +231,8 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   assert.match(html, /data-agent-zone="key-differences"/);
   assert.match(html, /data-host-zone="metrics"/);
   assert.equal(hostMetricsMismatch(html, facts.metrics ?? {}), undefined);
-  assert.match(html, /2<span class="unit">分/);
-  assert.match(html, /13<span class="unit">分/);
+  assert.match(html, /2 min/);
+  assert.match(html, /13 min/);
   assert.match(html, /0\.49<span class="unit">\$/);
   assert.match(html, /钉住的价格快照/);
   assert.match(html, /\.num\.miss \{[^}]*white-space:nowrap/);

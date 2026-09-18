@@ -10,8 +10,28 @@ const M = {
   metricTime: { en: "Time", zh: "时间" },
   metricTokens: { en: "Tokens", zh: "Token" },
   metricCost: { en: "Cost", zh: "费用" },
-  unitMinutes: { en: "min", zh: "分" },
-  unitSeconds: { en: "s", zh: "秒" },
+  unitMinutes: { en: "min", zh: "min" },
+  unitSeconds: { en: "s", zh: "s" },
+  visualNoMediaRegistered: {
+    en: "No preview images were registered for this comparison.",
+    zh: "本次对照未登记可用的预览图。",
+  },
+  visualBaselineMissing: {
+    en: "Candidate preview is available, but no paired historical final image was registered.",
+    zh: "候选侧已有预览图，但历史侧缺少可配对的终稿图。",
+  },
+  visualCandidateMissing: {
+    en: "Historical preview is available, but no paired candidate final image was registered.",
+    zh: "历史侧已有预览图，但候选侧缺少可配对的终稿图。",
+  },
+  visualRegisteredUnavailable: {
+    en: "Preview images were registered but their source files are unavailable.",
+    zh: "预览图已登记，但源文件不可用。",
+  },
+  visualSourcesMissing: {
+    en: "Preview images were referenced but could not be solidified into comparison media.",
+    zh: "引用了预览图，但未能固化到对照媒体索引。",
+  },
   missing: { en: "not collected", zh: "未采集" },
   pricingUnavailable: { en: "no price configured", zh: "价格未配置" },
   costUnknown: { en: "not computable", zh: "不可计算" },

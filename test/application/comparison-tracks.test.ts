@@ -325,3 +325,86 @@ test("sealed historical images enter baseline media without a double extension",
   assert.doesNotMatch(baseline[0]?.reportHref ?? "", /\.png\.png$/);
 });
 
+test("baseline artifact refs and sealed image files enter media without transcript mentions", async (t) => {
+  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-comparison-baseline-artifact-"));
+  const dataDir = await mkdtemp(join(tmpdir(), "reprise-comparison-case-dir-"));
+  t.after(() => Promise.all([
+    rm(experimentRoot, { recursive: true, force: true }),
+    rm(dataDir, { recursive: true, force: true }),
+  ]));
+  const runId = "run-tracks";
+  const snapshotRoot = join(experimentRoot, "environment", "snapshots", runId);
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-baseline-artifact");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await mkdir(join(dataDir, "cases", "case-tracks", "baseline-artifacts"), { recursive: true });
+  await mkdir(join(experimentRoot, "runs", runId, "controller-briefing", "history", "media"), { recursive: true });
+  await mkdir(snapshotRoot, { recursive: true });
+  await writeFile(join(dataDir, "cases", "case-tracks", "baseline-artifacts", "screenshot-1"), png);
+  await writeFile(join(experimentRoot, "runs", runId, "controller-briefing", "history", "media", "slide-2.png"), png);
+  const caseValue = taskCase();
+  caseValue.baseline.artifactRefs = [{ artifactId: "screenshot-1", caseId: "case-tracks" }];
+  const record = runRecord();
+  const context = buildComparisonContext(caseValue, [record], [{
+    runId, changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 0,
+  }]);
+  const briefing = await writeComparisonBriefing({
+    attemptRoot,
+    experimentRoot,
+    workspaceRoot: snapshotRoot,
+    dataDir,
+    taskCase: caseValue,
+    record,
+    context,
+    events: [],
+    artifacts: [],
+    snapshotStatus: "complete",
+  });
+  const baseline = briefing.media.filter((item) => item.side === "baseline");
+  assert.equal(baseline.length, 2);
+  assert.ok(baseline.some((item) => item.inspectPath === "history/media/screenshot-1" && item.available));
+  assert.ok(baseline.some((item) => item.inspectPath === "history/media/slide-2.png" && item.available));
+});
+
+test("evidence artifacts without mediaType are solidified when bytes are image previews", async (t) => {
+  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-comparison-evidence-image-"));
+  t.after(() => rm(experimentRoot, { recursive: true, force: true }));
+  const runId = "run-tracks";
+  const snapshotRoot = join(experimentRoot, "environment", "snapshots", runId);
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-evidence-image");
+  const artifactId = "mi-preview-bytes";
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await mkdir(join(attemptRoot, "evidence"), { recursive: true });
+  await mkdir(snapshotRoot, { recursive: true });
+  await writeFile(join(attemptRoot, "evidence", artifactId), png);
+  const caseValue = taskCase();
+  const record = runRecord();
+  const context = buildComparisonContext(caseValue, [record], [{
+    runId, changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 0,
+  }]);
+  const briefing = await writeComparisonBriefing({
+    attemptRoot,
+    experimentRoot,
+    workspaceRoot: snapshotRoot,
+    taskCase: caseValue,
+    record,
+    context,
+    events: [],
+    artifacts: [{
+      artifactId,
+      schemaVersion: 1,
+      kind: "agent_model_input",
+      byteLength: png.byteLength,
+      contentHash: "a".repeat(64),
+      createdAt: timestamp,
+      owner: { experimentId: "experiment-tracks", runId },
+      sourceEventId: "event-1",
+      path: `artifacts/${artifactId}`,
+    }],
+    snapshotStatus: "complete",
+  });
+  const candidate = briefing.media.filter((item) => item.side === "candidate");
+  assert.equal(candidate.length, 1);
+  assert.equal(candidate[0]?.available, true);
+  assert.match(candidate[0]?.reportHref ?? "", /media\/mi-preview-bytes\.png$/);
+});
+

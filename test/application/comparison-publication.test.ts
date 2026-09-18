@@ -157,6 +157,90 @@ test("broken image references are stripped and the page can still publish", asyn
   }
 });
 
+test("Host seeds paired visual evidence and explicit reasons before publication repair", async () => {
+  const reportFacts = facts();
+  const media = [
+    {
+      ref: "media:history",
+      shortRef: "media-01",
+      side: "baseline" as const,
+      inspectPath: "history/media/history.png",
+      reportHref: "media/history.png",
+      mediaType: "image/png",
+      available: true,
+    },
+    {
+      ref: "media:ok",
+      shortRef: "media-02",
+      side: "candidate" as const,
+      inspectPath: "evidence/ok.png",
+      reportHref: "media/ok.png",
+      mediaType: "image/png",
+      available: true,
+    },
+  ];
+  const seeded = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    media,
+    slots: filledSlots(),
+  });
+  assert.match(seeded, /data-component="page-row"/);
+  assert.match(seeded, /data-media-ref="media-01"/);
+  assert.match(seeded, /data-media-ref="media-02"/);
+  const oneSided = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    media: [media[1]!],
+    slots: filledSlots(),
+  });
+  assert.match(oneSided, /data-host="visual-unavailable"/);
+  assert.match(oneSided, /候选侧已有预览图/);
+  const repaired = await verifyAndRenderComparisonReport({
+    html: renderComparisonReportShell({
+      task: "修复报告。",
+      facts: reportFacts,
+      metrics: reportFacts.metrics ?? {},
+      media: [media[1]!],
+      slots: filledSlots(),
+    }).replace(/<section class="slot" data-agent-zone="visual-evidence"[\s\S]*?<\/section>/, '<section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"></section>'),
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [media[1]!],
+  });
+  assert.equal("html" in repaired, true);
+  if ("html" in repaired) {
+    assert.match(repaired.html, /data-host="visual-unavailable"/);
+    assert.match(repaired.html, /候选侧已有预览图/);
+  }
+});
+
+test("comparison metrics use English-style min and s units", () => {
+  const reportFacts = buildComparisonContext(taskCase(), [runRecord()], [{
+    runId: "run-1", changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 120_000,
+  }]).reportFacts;
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+    locale: "zh",
+  });
+  assert.match(html, />2 min</);
+  assert.doesNotMatch(html, />2<span class="unit">分<\/span>/);
+  const short = renderComparisonReportShell({
+    task: "Fix the report.",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+    locale: "en",
+  });
+  assert.match(short, />2 min</);
+});
+
 test("registered media that exists can be published", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-media-ok-"));
   t.after(() => rm(root, { recursive: true, force: true }));

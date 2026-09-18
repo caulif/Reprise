@@ -10,6 +10,7 @@ import {
 import type { ComparisonMediaRecord, ComparisonReportModel } from "../core/schema.js";
 import { MODEL_PRICING_TABLE_VERSION } from "./model-pricing.js";
 import { reportString } from "./comparison-report-strings.js";
+import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
 
 export {
   AGENT_ZONES,
@@ -61,6 +62,7 @@ export function renderComparisonReportShell(input: {
   const slots = input.slots ?? {};
   const header = slots.header ?? defaultHeader(labels, category, task, locale, input.diagnostic);
   const headline = slots.headline ?? (input.diagnostic ? escapeHtml(input.diagnostic.reason) : "");
+  const visualEvidence = slots["visual-evidence"] ?? renderVisualEvidenceSeed(input.media, locale);
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(reportString(locale, "htmlLang"))}">
 <head>
@@ -81,7 +83,7 @@ ${componentTemplateHtml(locale)}
       input.diagnostic ? diagnosticDifferences(input.diagnostic, locale) : "",
       slots["key-differences"] ?? "",
     ].filter(Boolean).join("")}</section>
-    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Leave empty without paired images. One-sided previews do not belong on the card. -->${slots["visual-evidence"] ?? ""}</section>
+    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Host seeds pair-pages when both sides have previews; otherwise show why images are absent. -->${visualEvidence}</section>
     ${renderMetricsBoard(input.metrics, labels, locale)}
   </article>
   <div class="audit" hidden>
@@ -337,8 +339,10 @@ function metricHtml(value: FormattedMetric): string {
 
 function formatTime(ms: number | undefined, locale: AgentLocale = "zh"): FormattedMetric {
   if (ms === undefined) return { text: reportString(locale, "missing"), missing: true };
-  if (ms >= 60_000) return { text: String(Math.round(ms / 60_000)), unit: reportString(locale, "unitMinutes"), missing: false };
-  return { text: String(Math.round(ms / 1000)), unit: reportString(locale, "unitSeconds"), missing: false };
+  if (ms >= 60_000) {
+    return { text: `${String(Math.round(ms / 60_000))} ${reportString(locale, "unitMinutes")}`, missing: false };
+  }
+  return { text: `${String(Math.round(ms / 1000))} ${reportString(locale, "unitSeconds")}`, missing: false };
 }
 
 function formatTokens(total: number | undefined, locale: AgentLocale = "zh"): FormattedMetric {

@@ -1,4 +1,4 @@
-import { copyFile, mkdir, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { ComparisonMediaRecordSchema, type ComparisonLinkRecord, type ComparisonMediaRecord } from "../core/schema.js";
@@ -21,20 +21,21 @@ export async function materializeComparisonMedia(input: {
   const media: ComparisonMediaRecord[] = [];
   const seen = new Set<string>();
   for (const link of input.links) {
-    if (!isComparisonImage({
-      ...(link.mediaType ? { mediaType: link.mediaType } : {}),
-      path: link.inspectPath,
-    })) continue;
-    const id = mediaId(link);
-    if (seen.has(id)) continue;
-    seen.add(id);
     const source = await firstExistingFile([
       join(input.attemptRoot, ...link.inspectPath.split("/")),
       link.inspectPath.startsWith("candidate/")
         ? join(input.workspaceRoot, ...link.inspectPath.slice("candidate/".length).split("/"))
         : undefined,
     ]);
-    const ext = extname(link.inspectPath) || extensionFor(link.mediaType);
+    const mediaType = link.mediaType ?? (source ? await sniffImageMediaType(source) : undefined);
+    if (!isComparisonImage({
+      ...(mediaType ? { mediaType } : {}),
+      path: link.inspectPath,
+    }) && !(source && await looksLikeImageFile(source))) continue;
+    const id = mediaId(link);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const ext = extname(link.inspectPath) || extensionFor(mediaType);
     const fileName = comparisonMediaFileName(id, ext);
     const reportHref = `media/${fileName}`;
     const available = source !== undefined;
@@ -45,7 +46,7 @@ export async function materializeComparisonMedia(input: {
       side: link.side,
       inspectPath: link.inspectPath,
       reportHref,
-      mediaType: link.mediaType ?? "image/*",
+      mediaType: mediaType ?? "image/*",
       available,
       ...(info?.isFile() ? { byteLength: info.size } : {}),
     };
@@ -80,4 +81,22 @@ function extensionFor(mediaType: string | undefined): string {
   if (mediaType === "image/svg+xml") return ".svg";
   if (mediaType?.startsWith("image/")) return `.${mediaType.slice("image/".length)}`;
   return ".png";
+}
+
+async function looksLikeImageFile(path: string): Promise<boolean> {
+  return (await sniffImageMediaType(path)) !== undefined;
+}
+
+async function sniffImageMediaType(path: string): Promise<string | undefined> {
+  const head = await readFile(path).then((bytes) => bytes.subarray(0, 16)).catch(() => undefined);
+  if (!head || head.length < 4) return undefined;
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return "image/png";
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
+  if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) return "image/gif";
+  if (head.length >= 12 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) {
+    return "image/webp";
+  }
+  const text = head.toString("utf8").trimStart();
+  if (text.startsWith("<svg") || text.startsWith("<?xml")) return "image/svg+xml";
+  return undefined;
 }

@@ -112,7 +112,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     <p class="field-label">Main conclusion</p>
     <p class="note" data-agent-slot="headline">The candidate produced a usable file.</p>
     <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Core differences. Must be non-empty; if no comparison is possible, say so and why. Prefer one or two sentences; a table of at most five rows only when parallel items would tangle. No process rows. --><p>The candidate delivered a file; history did not.</p></section>
-    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Leave empty without paired images. One-sided previews do not belong on the card. --></section>
+    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Host seeds pair-pages when both sides have previews; otherwise show why images are absent. --></section>
     <section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="{&quot;b&quot;:[null,null,null,&quot;not_collected&quot;],&quot;c&quot;:[4000,null,null,&quot;not_collected&quot;]}" aria-label="Time, Tokens, Cost">
     <article class="card">
       <div class="label">Time</div>
@@ -123,7 +123,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
         </div>
         <div class="col">
           <div class="who">gpt-5.6</div>
-          <div class="num">4<span class="unit">s</span></div>
+          <div class="num">4 s</div>
         </div>
       </div>
     </article>
