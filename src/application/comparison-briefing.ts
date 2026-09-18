@@ -10,7 +10,7 @@ import { briefingComparisonContext } from "./comparison.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
 import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
-import { materializeComparisonMedia } from "./comparison-media.js";
+import { isComparisonImagePath, materializeComparisonMedia, mediaTypeForComparisonPath, sniffComparisonImageMediaType } from "./comparison-media.js";
 import { withEvidenceShortRefs, withMediaShortRefs } from "./comparison-short-refs.js";
 import { isComparisonChangedPath } from "./controller-queries.js";
 
@@ -337,15 +337,17 @@ async function comparisonLinks(input: {
   for (const path of changedPaths) {
     const absolute = join(input.workspaceRoot, ...path.split("/"));
     const info = await stat(absolute).catch(() => undefined);
-    if (!info?.isFile()) continue;
+    const imagePath = isComparisonImagePath(path);
+    if (!info?.isFile() && !imagePath) continue;
     const evidenceRef = input.record.outcome.task.evidenceRefs[0]
       ?? (input.events.at(-1) ? `event:${input.events.at(-1)!.eventId}` : undefined);
+    const mediaType = mediaTypeForComparisonPath(path);
     push(2, {
       side: "candidate",
       inspectPath: `candidate/${path}`,
-      reportHref: slash(relative(input.experimentRoot, absolute)),
+      ...(info?.isFile() ? { reportHref: slash(relative(input.experimentRoot, absolute)), byteLength: info.size } : {}),
       path,
-      byteLength: info.size,
+      ...(mediaType ? { mediaType } : {}),
       ...(evidenceRef ? { evidenceRef } : {}),
     }, true);
   }
@@ -387,6 +389,9 @@ async function sealedBaselineImageLinks(input: {
   for (const ref of input.taskCase.baseline.artifactRefs) {
     if (ref.artifactId) names.add(ref.artifactId);
   }
+  for (const ref of input.taskCase.sourceRuntimeEvidence.artifactRefs) {
+    if (ref.artifactId) names.add(ref.artifactId);
+  }
   const controllerRoot = join(input.experimentRoot, "runs", input.record.attempt.runId, "controller-briefing");
   await collectImageBasenamesFromDir(join(controllerRoot, "history"), names);
   await collectImageFileBasenames(join(controllerRoot, "history"), names);
@@ -407,10 +412,13 @@ async function sealedBaselineImageLinks(input: {
     const dest = join(mediaRoot, name);
     if (source) await copyFile(source, dest);
     const info = source ? await stat(dest).catch(() => undefined) : undefined;
+    const mediaType = source
+      ? await sniffComparisonImageMediaType(source)
+      : mediaTypeForComparisonPath(name);
     links.push({
       side: "baseline",
       inspectPath: `history/media/${name}`,
-      mediaType: "image/png",
+      ...(mediaType ? { mediaType } : {}),
       ...(info?.isFile() ? { byteLength: info.size } : {}),
     });
   }

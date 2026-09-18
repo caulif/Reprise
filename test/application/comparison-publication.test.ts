@@ -9,6 +9,7 @@ import {
   comparisonReportModelFromHtml,
   verifyAndRenderComparisonReport,
 } from "../../src/application/comparison-publication.js";
+import { renderVisualEvidenceSeed } from "../../src/application/comparison-visual-evidence.js";
 import {
   extractHostZoneSnapshot,
   hostZonesMismatch,
@@ -155,6 +156,12 @@ test("broken image references are stripped and the page can still publish", asyn
     assert.match(verified.html, /证据未解析/);
     assert.match(verified.html, /候选有交付物/);
   }
+});
+
+test("empty media catalog shows an explicit visual-unavailable reason", () => {
+  assert.match(renderVisualEvidenceSeed([], "zh"), /data-host="visual-unavailable"/);
+  assert.match(renderVisualEvidenceSeed([], "zh"), /本次对照未登记可用的预览图/);
+  assert.match(renderVisualEvidenceSeed(undefined, "en"), /No preview images were registered/);
 });
 
 test("Host seeds paired visual evidence and explicit reasons before publication repair", async () => {

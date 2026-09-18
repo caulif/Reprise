@@ -27,16 +27,23 @@ export function visualEvidenceUnavailableReason(
   return reportString(locale, "visualSourcesMissing");
 }
 
+function renderVisualEvidenceUnavailable(
+  media: readonly ComparisonMediaRecord[],
+  locale: AgentLocale,
+): string {
+  const reason = visualEvidenceUnavailableReason(media, locale);
+  return reason ? `<p class="muted" data-host="visual-unavailable">${escapeHtml(reason)}</p>` : "";
+}
+
 export function renderVisualEvidenceSeed(
   media: readonly ComparisonMediaRecord[] | undefined,
   locale: AgentLocale,
 ): string {
-  if (!media?.length) return "";
-  const baseline = media.filter((item) => item.side === "baseline" && item.available);
-  const candidate = media.filter((item) => item.side === "candidate" && item.available);
+  const items = media ?? [];
+  const baseline = items.filter((item) => item.side === "baseline" && item.available);
+  const candidate = items.filter((item) => item.side === "candidate" && item.available);
   if (baseline.length === 0 || candidate.length === 0) {
-    const reason = visualEvidenceUnavailableReason(media, locale);
-    return reason ? `<p class="muted" data-host="visual-unavailable">${escapeHtml(reason)}</p>` : "";
+    return renderVisualEvidenceUnavailable(items, locale);
   }
   const historical = escapeHtml(reportString(locale, "sessionHistorical"));
   const current = escapeHtml(reportString(locale, "sessionCurrent"));

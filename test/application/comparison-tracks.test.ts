@@ -408,3 +408,77 @@ test("evidence artifacts without mediaType are solidified when bytes are image p
   assert.match(candidate[0]?.reportHref ?? "", /media\/mi-preview-bytes\.png$/);
 });
 
+test("paired SVG animation deliverables enter baseline and candidate media", async (t) => {
+  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-comparison-svg-animation-"));
+  const dataDir = await mkdtemp(join(tmpdir(), "reprise-comparison-svg-case-"));
+  t.after(() => Promise.all([
+    rm(experimentRoot, { recursive: true, force: true }),
+    rm(dataDir, { recursive: true, force: true }),
+  ]));
+  const runId = "run-tracks";
+  const snapshotRoot = join(experimentRoot, "environment", "snapshots", runId);
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-svg-animation");
+  const baselineSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"8\" cy=\"8\" r=\"6\"/></svg>";
+  const candidateSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"12\" height=\"12\"/></svg>";
+  await mkdir(join(dataDir, "cases", "case-tracks", "baseline-artifacts"), { recursive: true });
+  await mkdir(snapshotRoot, { recursive: true });
+  await writeFile(join(dataDir, "cases", "case-tracks", "baseline-artifacts", "historical-animation"), baselineSvg);
+  await writeFile(join(snapshotRoot, "animation.svg"), candidateSvg);
+  const caseValue = taskCase();
+  caseValue.baseline.artifactRefs = [{ artifactId: "historical-animation", caseId: "case-tracks" }];
+  const record = runRecord();
+  const context = buildComparisonContext(caseValue, [record], [{
+    runId, changedPaths: ["animation.svg"], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 0,
+  }]);
+  const briefing = await writeComparisonBriefing({
+    attemptRoot,
+    experimentRoot,
+    workspaceRoot: snapshotRoot,
+    dataDir,
+    taskCase: caseValue,
+    record,
+    context,
+    events: [],
+    artifacts: [],
+    snapshotStatus: "complete",
+  });
+  const baseline = briefing.media.filter((item) => item.side === "baseline");
+  const candidate = briefing.media.filter((item) => item.side === "candidate");
+  assert.equal(baseline.length, 1);
+  assert.equal(candidate.length, 1);
+  assert.equal(baseline[0]?.available, true);
+  assert.equal(candidate[0]?.available, true);
+  assert.equal(baseline[0]?.mediaType, "image/svg+xml");
+  assert.equal(candidate[0]?.mediaType, "image/svg+xml");
+  assert.match(candidate[0]?.reportHref ?? "", /animation\.svg$/);
+});
+
+test("missing candidate SVG deliverable is still registered as unavailable media", async (t) => {
+  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-comparison-svg-missing-"));
+  t.after(() => rm(experimentRoot, { recursive: true, force: true }));
+  const runId = "run-tracks";
+  const snapshotRoot = join(experimentRoot, "environment", "snapshots", runId);
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-svg-missing");
+  await mkdir(snapshotRoot, { recursive: true });
+  const caseValue = taskCase();
+  const record = runRecord();
+  const context = buildComparisonContext(caseValue, [record], [{
+    runId, changedPaths: ["animation.svg"], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 0,
+  }]);
+  const briefing = await writeComparisonBriefing({
+    attemptRoot,
+    experimentRoot,
+    workspaceRoot: snapshotRoot,
+    taskCase: caseValue,
+    record,
+    context,
+    events: [],
+    artifacts: [],
+    snapshotStatus: "incomplete",
+  });
+  const candidate = briefing.media.filter((item) => item.side === "candidate");
+  assert.equal(candidate.length, 1);
+  assert.equal(candidate[0]?.available, false);
+  assert.equal(candidate[0]?.mediaType, "image/svg+xml");
+});
+

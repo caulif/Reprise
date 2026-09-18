@@ -5,6 +5,22 @@ import { ComparisonMediaRecordSchema, type ComparisonLinkRecord, type Comparison
 
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"]);
 
+export function isComparisonImagePath(path: string): boolean {
+  return isComparisonImage({ path });
+}
+
+export function mediaTypeForComparisonPath(path: string): string | undefined {
+  if (!isComparisonImagePath(path)) return undefined;
+  const ext = extname(path.replaceAll("\\", "/")).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".avif") return "image/avif";
+  return "image/*";
+}
+
 function isComparisonImage(input: { mediaType?: string; path?: string }): boolean {
   if (input.mediaType?.startsWith("image/")) return true;
   const ext = extname((input.path ?? "").replaceAll("\\", "/")).toLowerCase();
@@ -27,7 +43,7 @@ export async function materializeComparisonMedia(input: {
         ? join(input.workspaceRoot, ...link.inspectPath.slice("candidate/".length).split("/"))
         : undefined,
     ]);
-    const mediaType = link.mediaType ?? (source ? await sniffImageMediaType(source) : undefined);
+    const mediaType = link.mediaType ?? (source ? await sniffComparisonImageMediaType(source) : undefined);
     if (!isComparisonImage({
       ...(mediaType ? { mediaType } : {}),
       path: link.inspectPath,
@@ -84,10 +100,10 @@ function extensionFor(mediaType: string | undefined): string {
 }
 
 async function looksLikeImageFile(path: string): Promise<boolean> {
-  return (await sniffImageMediaType(path)) !== undefined;
+  return (await sniffComparisonImageMediaType(path)) !== undefined;
 }
 
-async function sniffImageMediaType(path: string): Promise<string | undefined> {
+export async function sniffComparisonImageMediaType(path: string): Promise<string | undefined> {
   const head = await readFile(path).then((bytes) => bytes.subarray(0, 16)).catch(() => undefined);
   if (!head || head.length < 4) return undefined;
   if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return "image/png";
