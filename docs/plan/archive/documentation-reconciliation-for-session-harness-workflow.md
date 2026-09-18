@@ -1,6 +1,8 @@
 # 重构的规范迁移边界
 
-未关闭原因：真实运行证据尚未闭环，Recovery 空 staging 与基线复用条件修补仍有目标差异。本文只连接当前规范与开放目标，不维护已关闭施工清单。
+> **历史归档：** 本文仅供追溯；当前规范见 product/ 与 architecture/，开放验收见 [MASTER](../../progress/MASTER.md) 与 plan/ 白名单。
+
+本文曾连接当时规范与目标差异的快照表，不维护已关闭施工清单。
 
 ## 当前到目标
 
@@ -10,7 +12,7 @@
 | Recovery staging | [环境](../../architecture/environment.md)、[稀疏 source mount](../../decisions/accepted/2026-09-11-recovery-sparse-source-mount.md) | [最小 Host](../recovery-agent-minimum-host.md)：默认空 staging，不能把超预算 sparse 当作全面完成 |
 | Recovery 基线复用 | [场景封存](../../decisions/accepted/2026-09-08-scene-seal-and-repeat-runs.md) | [起点恢复目标](../recovery-initial-environment.md)：复用前运行条件检查、缺失时修补且不污染 baseline |
 
-目标验收语义见[架构目标](./reprise-architecture-redesign.md)与[TUI 目标](./reprise-tui-design.md)，当前批次与完成证据见[MASTER](../../progress/MASTER.md)。已生效规则以当前规范和对应 accepted ADR 为准，目标不得作为当前操作能力。
+同期目标验收语义见[架构目标](./reprise-architecture-redesign.md)与[TUI 目标](./reprise-tui-design.md)。已生效规则以当前规范和对应 accepted ADR 为准，目标不得作为当前操作能力。
 
 ## 关闭规则
 

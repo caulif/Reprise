@@ -1,8 +1,8 @@
 # Reprise 架构重构规划
 
-未关闭原因：真实终端、Controller 真实模型 lane、Runtime smoke 与生产模型输入对拍缺少完整通过证据，集中见[证据矩阵](../2026-09-08-platform-evidence-matrix.md)。本文保留目标验收语义，不把已关闭施工清单作为重新开工指令，也不覆盖当前架构规范。
+> **历史归档：** 本文仅供追溯与 ADR 入站锚点；当前规范见[架构总览](../../architecture/overview.md)，开放验收见 [MASTER](../../progress/MASTER.md) 与 plan/ 白名单。
 
-本文是本轮重构目标与验收的唯一文字来源。选择理由见[Session harness workflow](../../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。当前实现依据仍为[架构总览](../../architecture/overview.md)。未关闭的真终端与 Runtime 行见[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)。
+本文曾记录本轮重构的目标验收语义，不作为现行权威。选择理由见[Session harness workflow](../../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。当时仍缺的真终端与 Runtime 证据见[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)（开放项以 MASTER 为准）。
 
 ## 1. 产品边界
 

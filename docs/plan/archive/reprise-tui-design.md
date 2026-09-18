@@ -1,6 +1,8 @@
 # Reprise TUI 阅读与交互规划
 
-本文是目标设计，与[整体重构规划](./reprise-architecture-redesign.md)配套，不覆盖当前产品规范。未关闭原因：真终端验收矩阵（IME、滚轮、拖选、退出恢复）未完成，见[证据矩阵](../2026-09-08-platform-evidence-matrix.md)。阅读与折叠合同见[公开活动时间线](../../decisions/accepted/2026-09-08-public-activity-timeline.md)。
+> **历史归档：** 本文仅供追溯；现行操作见 [TUI 产品规范](../../product/tui.md)，开放验收见 [MASTER](../../progress/MASTER.md) 与[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)。
+
+本文曾记录与[整体重构规划](./reprise-architecture-redesign.md)配套的目标交互设计，不覆盖当前产品规范。阅读与折叠合同见[公开活动时间线](../../decisions/accepted/2026-09-08-public-activity-timeline.md)。
 
 ## 信息与页面
 
