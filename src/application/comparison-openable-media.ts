@@ -8,7 +8,7 @@ import {
   discoverBaselineOpenableSources,
   sealBaselineOpenablePath,
 } from "./historical-final-discovery.js";
-import { isOpenableFinalPath, isScreenshotOpenablePath, isHistoricalVisualPath } from "./openable-final-path.js";
+import { isOpenableFinalPath, isScreenshotOpenablePath, isHistoricalImagePath, isHistoricalVisualPath } from "./openable-final-path.js";
 
 export class ComparisonVisualMediaError extends Error {
   readonly code = "media_unavailable" as const;
@@ -120,7 +120,7 @@ function formatScreenshotFailure(
 
 function isVisualLink(link: ComparisonLinkRecord): boolean {
   if (link.mediaType?.startsWith("image/")) return true;
-  return isHistoricalVisualPath(link.inspectPath);
+  return isHistoricalImagePath(link.inspectPath);
 }
 
 export async function discoverOpenableSources(input: {

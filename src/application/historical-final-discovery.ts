@@ -1,15 +1,16 @@
 import { constants } from "node:fs";
-import { access, copyFile, mkdir, readdir } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { TaskCase } from "../core/schema.js";
+import type { ComparisonLinkRecord, TaskCase } from "../core/schema.js";
 import { sha256File } from "../core/identity.js";
-import { sniffComparisonImageMediaType } from "./comparison-media.js";
+import { mediaTypeForComparisonPath, sniffComparisonImageMediaType } from "./comparison-media.js";
 import {
-  addHistoricalDeliverableBasenames,
   addHistoricalImageBasenames,
+  addHistoricalDeliverableBasenames,
   finalDeliverableRank,
   isHistoricalImagePath,
   isHistoricalVisualPath,
+  isImageDeliverableName,
   isOpenableFinalPath,
 } from "./openable-final-path.js";
 
@@ -22,29 +23,30 @@ export type HistoricalSearchRoot = {
 
 export function collectHistoricalDeliverableNames(taskCase: TaskCase, kind: HistoricalDeliverableKind): Set<string> {
   const names = new Set<string>();
-  for (const ref of taskCase.baseline.artifactRefs) {
-    if (ref.artifactId) names.add(ref.artifactId);
-  }
-  if (kind === "openable-baseline" || kind === "image") {
-    for (const ref of taskCase.sourceRuntimeEvidence.artifactRefs) {
-      if (ref.artifactId) names.add(ref.artifactId);
-    }
-  }
-  if (kind === "final") {
-    addHistoricalDeliverableBasenames(taskCase.baseline.finalMessage ?? "", names);
-    for (const message of taskCase.transcript) addHistoricalDeliverableBasenames(message.text, names);
-    return names;
-  }
   if (kind === "image") {
+    for (const ref of taskCase.baseline.artifactRefs) {
+      if (ref.artifactId && isImageDeliverableName(ref.artifactId)) names.add(ref.artifactId);
+    }
+    for (const ref of taskCase.sourceRuntimeEvidence.artifactRefs) {
+      if (ref.artifactId && isImageDeliverableName(ref.artifactId)) names.add(ref.artifactId);
+    }
     addHistoricalImageBasenames(taskCase.initialInput.text, names);
     addHistoricalImageBasenames(taskCase.baseline.finalMessage ?? "", names);
     for (const message of taskCase.transcript) addHistoricalImageBasenames(message.text, names);
+    return names;
   }
+  for (const ref of taskCase.baseline.artifactRefs) {
+    if (ref.artifactId) names.add(ref.artifactId);
+  }
+  if (kind === "openable-baseline") {
+    for (const ref of taskCase.sourceRuntimeEvidence.artifactRefs) {
+      if (ref.artifactId) names.add(ref.artifactId);
+    }
+    return names;
+  }
+  addHistoricalDeliverableBasenames(taskCase.baseline.finalMessage ?? "", names);
+  for (const message of taskCase.transcript) addHistoricalDeliverableBasenames(message.text, names);
   return names;
-}
-
-export function collectHistoricalFinalNames(taskCase: TaskCase): Set<string> {
-  return collectHistoricalDeliverableNames(taskCase, "final");
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -103,6 +105,106 @@ export async function findFileInHistoricalRoots(input: {
   basename: string;
 }): Promise<string | undefined> {
   return lookupBasename(historicalFinalSearchRoots(input), input.basename);
+}
+
+export async function enrichHistoricalImageNamesFromRoots(input: {
+  experimentRoot: string;
+  runId: string;
+  caseId: string;
+  dataDir?: string;
+  attemptRoot?: string;
+  names: Set<string>;
+}): Promise<void> {
+  for (const entry of historicalFinalSearchRoots(input)) {
+    const entries = await readdir(entry.root, { recursive: true, withFileTypes: true }).catch(() => []);
+    for (const file of entries) {
+      if (!file.isFile()) continue;
+      const parent = "parentPath" in file && typeof file.parentPath === "string" ? file.parentPath : entry.root;
+      const absolutePath = join(parent, file.name);
+      if (file.name.endsWith(".txt")) {
+        const body = await readFile(absolutePath, "utf8").catch(() => "");
+        addHistoricalImageBasenames(body, input.names);
+        continue;
+      }
+      if (await isHistoricalImageFile(absolutePath)) input.names.add(file.name);
+    }
+  }
+}
+
+export async function collectHistoricalImageNames(input: {
+  taskCase: TaskCase;
+  experimentRoot: string;
+  runId: string;
+  caseId: string;
+  dataDir?: string;
+  attemptRoot?: string;
+}): Promise<Set<string>> {
+  const names = collectHistoricalDeliverableNames(input.taskCase, "image");
+  await enrichHistoricalImageNamesFromRoots({
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    caseId: input.caseId,
+    ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    names,
+  });
+  return names;
+}
+
+export async function resolveHistoricalImagePath(input: {
+  experimentRoot: string;
+  runId: string;
+  caseId: string;
+  dataDir?: string;
+  attemptRoot?: string;
+  basename: string;
+}): Promise<string | undefined> {
+  const absolutePath = await findFileInHistoricalRoots(input);
+  if (!absolutePath) return undefined;
+  return (await isHistoricalImageFile(absolutePath)) ? absolutePath : undefined;
+}
+
+export async function buildSealedBaselineImageLinks(input: {
+  attemptRoot: string;
+  experimentRoot: string;
+  dataDir?: string;
+  taskCase: TaskCase;
+  runId: string;
+}): Promise<ComparisonLinkRecord[]> {
+  const names = await collectHistoricalImageNames({
+    taskCase: input.taskCase,
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    caseId: input.taskCase.caseId,
+    attemptRoot: input.attemptRoot,
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+  });
+  if (names.size === 0) return [];
+  const mediaRoot = join(input.attemptRoot, "history", "media");
+  await mkdir(mediaRoot, { recursive: true });
+  const links: ComparisonLinkRecord[] = [];
+  for (const name of names) {
+    const source = await resolveHistoricalImagePath({
+      attemptRoot: input.attemptRoot,
+      experimentRoot: input.experimentRoot,
+      runId: input.runId,
+      caseId: input.taskCase.caseId,
+      basename: name,
+      ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    });
+    if (!source) continue;
+    const dest = join(mediaRoot, name);
+    await copyFile(source, dest);
+    const info = await stat(dest).catch(() => undefined);
+    const mediaType = await sniffComparisonImageMediaType(source) ?? mediaTypeForComparisonPath(name);
+    links.push({
+      side: "baseline",
+      inspectPath: `history/media/${name}`,
+      ...(mediaType ? { mediaType } : {}),
+      ...(info?.isFile() ? { byteLength: info.size } : {}),
+    });
+  }
+  return links;
 }
 
 export async function resolveHistoricalFinalPath(input: {

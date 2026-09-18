@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskCase } from "../../src/core/schema.js";
 import {
+  buildSealedBaselineImageLinks,
   collectHistoricalDeliverableNames,
+  enrichHistoricalImageNamesFromRoots,
   findFileInHistoricalRoots,
   lookupBasename,
   historicalFinalSearchRoots,
@@ -46,8 +48,8 @@ test("collectHistoricalDeliverableNames shares baseline artifact refs across kin
   assert.ok(finalNames.has("deck.html"));
   assert.ok(openableNames.has("artifact-final.html"));
   assert.ok(openableNames.has("deck.html"));
-  assert.ok(imageNames.has("artifact-final.html"));
-  assert.ok(imageNames.has("deck.html"));
+  assert.ok(!imageNames.has("artifact-final.html"));
+  assert.ok(!imageNames.has("deck.html"));
   assert.ok(openableNames.has("runtime-shot.png"));
   assert.ok(imageNames.has("runtime-shot.png"));
   assert.ok(!finalNames.has("runtime-shot.png"));
@@ -158,4 +160,74 @@ test("findFileInHistoricalRoots prefers attempt history finals over baselines", 
     basename: "slide.png",
   });
   assert.equal(found, sealedImage);
+});
+
+test("buildSealedBaselineImageLinks skips missing HTML artifact stubs", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-sealed-image-stub-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const experimentRoot = join(root, "experiment");
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
+  await mkdir(attemptRoot, { recursive: true });
+  const htmlOnlyCase: TaskCase = {
+    ...taskCase(),
+    baseline: {
+      status: "available",
+      artifactRefs: [{ artifactId: "deck.html", caseId: "case-1" }],
+      evidenceRefs: [],
+    },
+    initialInput: { id: "m1", role: "user", text: "task only" },
+    transcript: [],
+  };
+  const links = await buildSealedBaselineImageLinks({
+    attemptRoot,
+    experimentRoot,
+    taskCase: htmlOnlyCase,
+    runId: "run-1",
+  });
+  assert.equal(links.length, 0);
+});
+
+test("enrichHistoricalImageNamesFromRoots scans baseline-artifacts before baselines", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-enrich-artifacts-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const experimentRoot = join(root, "experiment");
+  const dataDir = join(root, "data");
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
+  const artifactDir = join(dataDir, "cases", "case-1", "baseline-artifacts");
+  await mkdir(artifactDir, { recursive: true });
+  await mkdir(attemptRoot, { recursive: true });
+  await writeFile(join(artifactDir, "screenshot-1"), MINIMAL_PNG);
+  const names = new Set<string>();
+  await enrichHistoricalImageNamesFromRoots({
+    experimentRoot,
+    runId: "run-1",
+    caseId: "case-1",
+    dataDir,
+    attemptRoot,
+    names,
+  });
+  assert.ok(names.has("screenshot-1"));
+  const links = await buildSealedBaselineImageLinks({
+    attemptRoot,
+    experimentRoot,
+    dataDir,
+    taskCase: {
+      ...taskCase(),
+      baseline: {
+        status: "available",
+        artifactRefs: [{ artifactId: "screenshot-1", caseId: "case-1" }],
+        evidenceRefs: [],
+      },
+    },
+    runId: "run-1",
+  });
+  assert.equal(links.length, 1);
+  assert.equal(links[0]?.inspectPath, "history/media/screenshot-1");
+  assert.equal(links[0]?.mediaType, "image/png");
 });

@@ -117,6 +117,67 @@ test("augmentComparisonOpenableMedia screenshots dual html when links only refer
   assert.ok(result.media.some((item: ComparisonMediaRecord) => item.side === "candidate" && item.available));
 });
 
+test("assertPairedVisualMediaOrThrow ignores unresolved HTML baseline image link stubs", () => {
+  assert.doesNotThrow(() => assertPairedVisualMediaOrThrow({
+    baselineSources: [],
+    candidateSources: [{ inspectPath: "candidate/out.png", absolutePath: "/tmp/out.png" }],
+    links: [
+      { side: "baseline", inspectPath: "history/media/deck.html" },
+      { side: "candidate", inspectPath: "candidate/out.png", mediaType: "image/png" },
+    ],
+    media: [
+      {
+        ref: "media:c",
+        side: "candidate",
+        inspectPath: "candidate/out.png",
+        reportHref: "media/c.png",
+        mediaType: "image/png",
+        available: true,
+      },
+    ],
+  }));
+});
+
+test("assertPairedVisualMediaOrThrow still pairs when baseline image links resolve", () => {
+  const media: ComparisonMediaRecord[] = [
+    { ref: "media:a", side: "baseline", inspectPath: "history/media/slide.png", reportHref: "media/a.png", mediaType: "image/png", available: true },
+    { ref: "media:b", side: "candidate", inspectPath: "candidate/out.png", reportHref: "media/b.png", mediaType: "image/png", available: true },
+  ];
+  assert.doesNotThrow(() => assertPairedVisualMediaOrThrow({
+    baselineSources: [],
+    candidateSources: [{ inspectPath: "candidate/out.png", absolutePath: "/tmp/out.png" }],
+    links: [
+      { side: "baseline", inspectPath: "history/media/slide.png", mediaType: "image/png" },
+      { side: "candidate", inspectPath: "candidate/out.png", mediaType: "image/png" },
+    ],
+    media,
+  }));
+});
+
+test("assertPairedVisualMediaOrThrow fails when baseline image link exists without available media", () => {
+  assert.throws(
+    () => assertPairedVisualMediaOrThrow({
+      baselineSources: [],
+      candidateSources: [{ inspectPath: "candidate/out.png", absolutePath: "/tmp/out.png" }],
+      links: [
+        { side: "baseline", inspectPath: "history/media/slide.png", mediaType: "image/png" },
+        { side: "candidate", inspectPath: "candidate/out.png", mediaType: "image/png" },
+      ],
+      media: [
+        {
+          ref: "media:b",
+          side: "candidate",
+          inspectPath: "candidate/out.png",
+          reportHref: "media/b.png",
+          mediaType: "image/png",
+          available: true,
+        },
+      ],
+    }),
+    ComparisonVisualMediaError,
+  );
+});
+
 test("augmentComparisonOpenableMedia reports no_browser separately from capture_failed", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-openable-fail-"));
   t.after(async () => {

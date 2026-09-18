@@ -43,6 +43,12 @@ export function finalDeliverableRank(path: string): number {
   return 2;
 }
 
+export function isImageDeliverableName(name: string): boolean {
+  if (isHistoricalImagePath(name)) return true;
+  if (isOpenableFinalPath(name) && !isHistoricalImagePath(name)) return false;
+  return true;
+}
+
 export function addHistoricalDeliverableBasenames(text: string, names: Set<string>): void {
   for (const match of text.matchAll(historicalDeliverableBasenameRe)) {
     const base = match[1]?.split(/[/\\]/).pop();
