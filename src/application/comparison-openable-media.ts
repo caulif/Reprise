@@ -1,7 +1,7 @@
 import { mkdir, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
-import { captureHeadlessScreenshot } from "../infrastructure/headless-screenshot.js";
+import { captureHeadlessScreenshot, type HeadlessScreenshotResult } from "../infrastructure/headless-screenshot.js";
 import { comparisonMediaFileName, isComparisonImagePath, materializeComparisonMedia } from "./comparison-media.js";
 import { withMediaShortRefs } from "./comparison-short-refs.js";
 import {
@@ -9,8 +9,9 @@ import {
   sealBaselineOpenablePath,
   sealedInspectPath,
 } from "./historical-final-discovery.js";
+import { isOpenableFinalPath } from "./openable-final-path.js";
 
-const OPENABLE_EXT = new Set([".html", ".htm", ".xhtml", ".svg"]);
+export { isOpenableFinalPath } from "./openable-final-path.js";
 
 export class ComparisonVisualMediaError extends Error {
   readonly code = "media_unavailable" as const;
@@ -18,11 +19,6 @@ export class ComparisonVisualMediaError extends Error {
     super(message);
     this.name = "ComparisonVisualMediaError";
   }
-}
-
-export function isOpenableFinalPath(path: string): boolean {
-  const ext = extname(path.replaceAll("\\", "/")).toLowerCase();
-  return OPENABLE_EXT.has(ext);
 }
 
 function isVisualDeliverablePath(path: string): boolean {
@@ -35,7 +31,9 @@ export async function augmentComparisonOpenableMedia(input: {
   links: readonly ComparisonLinkRecord[];
   baselineSources: readonly { inspectPath: string; absolutePath: string }[];
   candidateSources: readonly { inspectPath: string; absolutePath: string }[];
+  captureScreenshot?: (sourcePath: string, destPng: string) => Promise<HeadlessScreenshotResult>;
 }): Promise<{ links: ComparisonLinkRecord[]; media: ComparisonMediaRecord[] }> {
+  const captureScreenshot = input.captureScreenshot ?? captureHeadlessScreenshot;
   const sealedRoot = join(input.attemptRoot, "history", "finals");
   await mkdir(sealedRoot, { recursive: true });
   for (const source of input.baselineSources) {
@@ -45,9 +43,9 @@ export async function augmentComparisonOpenableMedia(input: {
   const augmentedLinks = [...input.links];
   const screenshotLinks: ComparisonLinkRecord[] = [];
   const screenshotFailures: string[] = [];
-  const linkedBasenames = new Set(
+  const linkedImageBasenames = new Set(
     input.links
-      .filter((link) => isVisualLink(link))
+      .filter((link) => link.mediaType?.startsWith("image/") || isComparisonImagePath(link.inspectPath))
       .map((link) => basename(link.inspectPath.replaceAll("\\", "/"))),
   );
   for (const side of ["baseline", "candidate"] as const) {
@@ -55,14 +53,14 @@ export async function augmentComparisonOpenableMedia(input: {
     for (const source of sources) {
       if (!shouldScreenshotOpenable(source.absolutePath)) continue;
       const name = basename(source.absolutePath);
-      if (linkedBasenames.has(name)) continue;
+      if (linkedImageBasenames.has(name)) continue;
       const info = await stat(source.absolutePath).catch(() => undefined);
       if (!info?.isFile()) continue;
       const id = `${side}-${basename(source.inspectPath).replace(/[^A-Za-z0-9._-]+/g, "-")}`;
       const pngName = comparisonMediaFileName(id, ".png");
       const pngPath = join(input.attemptRoot, "media", pngName);
       await mkdir(join(input.attemptRoot, "media"), { recursive: true });
-      const captured = await captureHeadlessScreenshot(source.absolutePath, pngPath);
+      const captured = await captureScreenshot(source.absolutePath, pngPath);
       if (!captured.ok) {
         screenshotFailures.push(formatScreenshotFailure(side, source.inspectPath, captured.failure));
         continue;
@@ -157,4 +155,3 @@ export async function discoverOpenableSources(input: {
   return { baselineSources, candidateSources };
 }
 
-export { collectHistoricalFinalNames, resolveHistoricalFinalPath } from "./historical-final-discovery.js";

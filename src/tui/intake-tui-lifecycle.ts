@@ -11,6 +11,7 @@ import { mountWorkbench } from "./workbench.js";
 import {
   openAllowedFileUrl,
   openAllowedLocalPath,
+  localPathFromFileUrl,
   openExperimentArtifact,
   openExperimentReport,
   openExperimentReplica,
@@ -157,7 +158,7 @@ export function IntakeTui_openResultArtifact(this: IntakeTui, side: "history" | 
       this.render();
       return { consume: true };
     }
-    void openExperimentArtifact(experimentRoot, target)
+    void openExperimentArtifact(experimentRoot, target, undefined, { dataDir: this.dataDir })
       .then(() => {
         this.message = t(this.locale, "requestedOpenArtifact");
         this.render();
@@ -168,6 +169,48 @@ export function IntakeTui_openResultArtifact(this: IntakeTui, side: "history" | 
       });
     return { consume: true };
   }
+
+export function IntakeTui_openResultArtifactHref(
+  this: IntakeTui,
+  href: string | undefined,
+  side: "history" | "candidate",
+): { consume: true } {
+  const experimentRoot =
+    this.result?.experimentRoot ??
+    (this.result ? dirname(this.result.reportPath) : undefined);
+  if (!experimentRoot || !this.result) {
+    this.message = t(this.locale, "noLocalPath");
+    this.render();
+    return { consume: true };
+  }
+  let target: string | undefined;
+  if (href) {
+    try {
+      target = localPathFromFileUrl(href);
+    } catch {
+      target = undefined;
+    }
+  }
+  if (!target) {
+    const links = resolveResultPathLinks(this.result);
+    target = side === "history" ? links.historyFinal : links.candidateFinal;
+  }
+  if (!target) {
+    this.message = t(this.locale, side === "history" ? "noHistoryFinal" : "noCandidateFinal");
+    this.render();
+    return { consume: true };
+  }
+  void openExperimentArtifact(experimentRoot, target, undefined, { dataDir: this.dataDir })
+    .then(() => {
+      this.message = t(this.locale, "requestedOpenArtifact");
+      this.render();
+    })
+    .catch((error: unknown) => {
+      this.message = t(this.locale, "couldNotOpenArtifact", { error: errorMessage(error) });
+      this.render(true);
+    });
+  return { consume: true };
+}
 
 export function IntakeTui_openLocal(this: IntakeTui, target: string | undefined): { consume: true } {
     if (!target) {

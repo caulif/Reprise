@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
 import { createTheme } from './theme.js';
 import { foldProcessEntries, selectedIndexAfterFold } from './fold-process.js';
+import { hitFileLink } from './format.js';
 import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
 import { homePointerAction } from './pages/home.js';
 import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
@@ -53,7 +54,10 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (!c.result) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
   const lines = renderResult(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
-  const action = resultPointerAction(lines, cell.bodyRow + (c.timelineReadOffset ?? 0), cell.col, c.locale);
+  const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
+  const line = lines[bodyRow];
+  const href = line ? hitFileLink(line, cell.col) : undefined;
+  const action = resultPointerAction(lines, bodyRow, cell.col, c.locale);
   if (action === 'compare') {
     if (c.compareChoice) {
       c.compareChoice.resolve(true);
@@ -64,8 +68,8 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (action === 'open-report') {
     return c.openReport(c.result.experimentRoot ?? dirname(c.result.reportPath), c.result.reportPath);
   }
-  if (action === 'open-history-final') return c.openResultArtifact('history');
-  if (action === 'open-candidate-final') return c.openResultArtifact('candidate');
+  if (action === 'open-history-final') return c.openResultArtifactHref(href, 'history');
+  if (action === 'open-candidate-final') return c.openResultArtifactHref(href, 'candidate');
   if (action === 'open-trace') return c.openTrace();
   if (action === 'open-replica') return c.openReplica();
   return { consume: true };

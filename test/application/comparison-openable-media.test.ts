@@ -5,10 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assertPairedVisualMediaOrThrow,
+  augmentComparisonOpenableMedia,
   ComparisonVisualMediaError,
   isOpenableFinalPath,
 } from "../../src/application/comparison-openable-media.js";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../../src/core/schema.js";
+
+const MINIMAL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 test("isOpenableFinalPath recognizes html and svg deliverables", () => {
   assert.equal(isOpenableFinalPath("deck/page-1.html"), true);
@@ -54,7 +60,6 @@ test("sealed baseline html is copied into attempt history finals", async (t) => 
   const baselineHtml = join(root, "baseline.html");
   await mkdir(join(attemptRoot, "history", "finals"), { recursive: true });
   await writeFile(baselineHtml, "<!doctype html><title>baseline</title>", "utf8");
-  const { augmentComparisonOpenableMedia } = await import("../../src/application/comparison-openable-media.js");
   await augmentComparisonOpenableMedia({
     attemptRoot,
     workspaceRoot: root,
@@ -67,6 +72,84 @@ test("sealed baseline html is copied into attempt history finals", async (t) => 
   const sealed = join(attemptRoot, "history", "finals", "baseline.html");
   const body = await readFile(sealed, "utf8");
   assert.match(body, /baseline/);
+});
+
+test("augmentComparisonOpenableMedia screenshots dual html when links only reference html", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-openable-dual-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const captureCalls: { source: string; dest: string }[] = [];
+  const attemptRoot = join(root, "attempt");
+  const baselineHtml = join(root, "baseline", "deck.html");
+  const candidateHtml = join(root, "workspace", "deck.html");
+  await mkdir(join(root, "baseline"), { recursive: true });
+  await mkdir(join(root, "workspace"), { recursive: true });
+  await writeFile(baselineHtml, "<!doctype html><title>baseline deck</title>", "utf8");
+  await writeFile(candidateHtml, "<!doctype html><title>candidate deck</title>", "utf8");
+  const result = await augmentComparisonOpenableMedia({
+    attemptRoot,
+    workspaceRoot: join(root, "workspace"),
+    links: [
+      { side: "candidate", inspectPath: "candidate/deck.html", reportHref: "candidate/deck.html" },
+    ],
+    baselineSources: [{ inspectPath: "history/finals/deck.html", absolutePath: baselineHtml }],
+    candidateSources: [{ inspectPath: "candidate/deck.html", absolutePath: candidateHtml }],
+    captureScreenshot: async (sourcePath, destPng) => {
+      captureCalls.push({ source: sourcePath, dest: destPng });
+      await writeFile(destPng, MINIMAL_PNG);
+      return { ok: true };
+    },
+  });
+  assert.equal(captureCalls.length, 2);
+  assert.ok(result.media.some((item: ComparisonMediaRecord) => item.side === "baseline" && item.available));
+  assert.ok(result.media.some((item: ComparisonMediaRecord) => item.side === "candidate" && item.available));
+});
+
+test("augmentComparisonOpenableMedia reports no_browser separately from capture_failed", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-openable-fail-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const baselineHtml = join(root, "baseline.html");
+  const candidateHtml = join(root, "candidate.html");
+  await writeFile(baselineHtml, "<!doctype html><title>b</title>", "utf8");
+  await writeFile(candidateHtml, "<!doctype html><title>c</title>", "utf8");
+  const sources = {
+    baselineSources: [{ inspectPath: "history/finals/baseline.html", absolutePath: baselineHtml }],
+    candidateSources: [{ inspectPath: "candidate/candidate.html", absolutePath: candidateHtml }],
+  };
+  await assert.rejects(
+    () => augmentComparisonOpenableMedia({
+      attemptRoot: join(root, "attempt-no-browser"),
+      workspaceRoot: root,
+      links: [],
+      ...sources,
+      captureScreenshot: async () => ({ ok: false, failure: { kind: "no_browser" } }),
+    }),
+    (error: unknown) => {
+      if (!(error instanceof ComparisonVisualMediaError)) return false;
+      return /no headless browser/.test(error.message);
+    },
+  );
+  await assert.rejects(
+    () => augmentComparisonOpenableMedia({
+      attemptRoot: join(root, "attempt-capture-failed"),
+      workspaceRoot: root,
+      links: [],
+      ...sources,
+      captureScreenshot: async () => ({
+        ok: false,
+        failure: { kind: "capture_failed", message: "timeout" },
+      }),
+    }),
+    (error: unknown) => {
+      if (!(error instanceof ComparisonVisualMediaError)) return false;
+      return /timeout/.test(error.message) && !/no headless browser/.test(error.message);
+    },
+  );
 });
 
 async function readFile(path: string, encoding: BufferEncoding): Promise<string> {

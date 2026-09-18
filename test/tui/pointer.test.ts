@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setCapabilities } from '@earendil-works/pi-tui';
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 import type { ControllerHandle } from '../../src/tui/controller-input.js';
 import { hitFileLink } from '../../src/tui/format.js';
 import { homeHints } from '../../src/tui/pages/home.js';
@@ -49,6 +51,41 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
   assert.equal(resultPointerAction(lines, compareLine, 4, 'en'), 'compare');
 });
 
+test('result pointer treats environment baselines html as history final', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const baselinePath = 'C:\\exp\\environment\\baselines\\deck.html';
+  const href = pathToFileURL(baselinePath).href;
+  const theme = createTheme(120, false);
+  const lines = renderResult(theme, 120, {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    pathLinks: {
+      report: 'C:\\exp\\report.html',
+      historyFinal: baselinePath,
+      candidateFinal: 'C:\\exp\\environment\\runs\\run-1\\deck.html',
+      trace: 'C:\\exp\\runs\\run-1',
+      replica: 'C:\\exp\\environment\\runs\\run-1',
+    },
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed' },
+    comparison: { result: { status: 'completed' } },
+  } as never, 'en');
+  const historyLine = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
+  assert.ok(historyLine >= 0);
+  let hitCol = 0;
+  for (let col = 1; col <= 120; col += 1) {
+    if (hitFileLink(lines[historyLine] ?? '', col) === href) {
+      hitCol = col;
+      break;
+    }
+  }
+  assert.ok(hitCol > 0);
+  assert.equal(resultPointerAction(lines, historyLine, hitCol, 'en'), 'open-history-final');
+});
+
 const resultFixture = {
   reportPath: 'C:\\exp\\report.html',
   experimentRoot: 'C:\\exp',
@@ -60,7 +97,7 @@ const resultFixture = {
   comparison: { result: { status: 'completed' } },
 } as never;
 
-function resultController(opened: { report: number }): ControllerHandle {
+function resultController(opened: { report: number; artifact?: string | undefined }): ControllerHandle {
   const view: WorkbenchView = { page: 'result', cwd: 'C:/', hasApiConfig: true, hasTaskCase: false, message: '' };
   return {
     locale: 'en',
@@ -81,8 +118,52 @@ function resultController(opened: { report: number }): ControllerHandle {
     openReplica() {
       return { consume: true };
     },
+    openResultArtifactHref(href: string | undefined, _side: 'history' | 'candidate') {
+      opened.artifact = href;
+      return { consume: true };
+    },
   } as unknown as ControllerHandle;
 }
+
+test('result SGR click on history final opens the clicked href', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const opened = { report: 0, artifact: undefined as string | undefined };
+  const handle = resultController(opened);
+  const baselinePath = join('C:\\exp', 'environment', 'baselines', 'deck.html');
+  const resultWithBaselines = {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    pathLinks: {
+      report: 'C:\\exp\\report.html',
+      historyFinal: baselinePath,
+      candidateFinal: join('C:\\exp', 'environment', 'runs', 'run-1', 'deck.html'),
+      trace: 'C:\\exp\\runs\\run-1',
+      replica: 'C:\\exp\\environment\\runs\\run-1',
+    },
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed' },
+    comparison: { result: { status: 'completed' } },
+  } as typeof resultFixture;
+  handle.result = resultWithBaselines;
+  const origin = workbenchBodyOrigin(handle.view(), 120, 40);
+  const lines = renderResult(createTheme(120), 120, resultWithBaselines, 'en', undefined, false);
+  const historyLine = lines.findIndex((line) => line.includes('deck.html'));
+  assert.ok(historyLine >= 0);
+  const href = pathToFileURL(baselinePath).href;
+  let hitCol = 0;
+  for (let col = 1; col <= 120; col += 1) {
+    if (hitFileLink(lines[historyLine] ?? '', col) === href) {
+      hitCol = col;
+      break;
+    }
+  }
+  assert.ok(hitCol > 0);
+  applyResultPointer(handle, `\x1b[<0;${hitCol};${historyLine + 1 + origin.header}M`);
+  assert.equal(opened.artifact, href);
+});
 
 test('result SGR click on a short label opens the report; a blank cell does not', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });

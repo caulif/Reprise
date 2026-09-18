@@ -2,15 +2,8 @@ import { constants } from "node:fs";
 import { access, readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { TaskCase } from "../core/schema.js";
-import { isOpenableFinalPath } from "./comparison-openable-media.js";
 import { isComparisonImagePath } from "./comparison-media.js";
-
-const FINAL_RANK = (path: string): number => {
-  const lower = path.toLowerCase();
-  if (/\.(html|htm|xhtml)$/.test(lower)) return 0;
-  if (/\.(png|jpe?g|gif|webp|svg|avif)$/.test(lower)) return 1;
-  return 2;
-};
+import { finalDeliverableRank, isOpenableFinalPath } from "./openable-final-path.js";
 
 export function collectHistoricalFinalNames(taskCase: TaskCase): Set<string> {
   const names = new Set<string>();
@@ -43,6 +36,22 @@ async function findFileByBasename(root: string, basenameTarget: string): Promise
   return undefined;
 }
 
+export function historicalFinalSearchRoots(input: {
+  experimentRoot: string;
+  runId: string;
+  caseId: string;
+  dataDir?: string;
+  attemptRoot?: string;
+}): string[] {
+  const controllerRoot = join(input.experimentRoot, "runs", input.runId, "controller-briefing");
+  const roots: string[] = [];
+  if (input.attemptRoot) roots.push(join(input.attemptRoot, "history", "finals"));
+  roots.push(join(controllerRoot, "history"));
+  if (input.dataDir) roots.push(join(input.dataDir, "cases", input.caseId, "baseline-artifacts"));
+  roots.push(join(input.experimentRoot, "environment", "baselines"));
+  return roots;
+}
+
 export async function resolveHistoricalFinalPath(input: {
   experimentRoot: string;
   runId: string;
@@ -50,14 +59,17 @@ export async function resolveHistoricalFinalPath(input: {
   dataDir?: string;
   attemptRoot?: string;
 }): Promise<string | undefined> {
-  const names = [...collectHistoricalFinalNames(input.taskCase)].sort((left, right) => FINAL_RANK(left) - FINAL_RANK(right));
+  const names = [...collectHistoricalFinalNames(input.taskCase)].sort(
+    (left, right) => finalDeliverableRank(left) - finalDeliverableRank(right),
+  );
   if (!names.length) return undefined;
-  const controllerRoot = join(input.experimentRoot, "runs", input.runId, "controller-briefing");
-  const roots: string[] = [];
-  if (input.attemptRoot) roots.push(join(input.attemptRoot, "history", "finals"));
-  roots.push(join(controllerRoot, "history"));
-  if (input.dataDir) roots.push(join(input.dataDir, "cases", input.taskCase.caseId, "baseline-artifacts"));
-  roots.push(join(input.experimentRoot, "environment", "baselines"));
+  const roots = historicalFinalSearchRoots({
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    caseId: input.taskCase.caseId,
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
+  });
   for (const name of names) {
     for (const root of roots) {
       const absolutePath = root.endsWith("finals")
@@ -80,10 +92,13 @@ export async function discoverBaselineOpenableSources(input: {
   baselineArtifactNames: readonly string[];
 }): Promise<{ inspectPath: string; absolutePath: string }[]> {
   const baselineSources: { inspectPath: string; absolutePath: string }[] = [];
-  const controllerRoot = join(input.experimentRoot, "runs", input.runId, "controller-briefing");
-  const roots: string[] = [join(input.attemptRoot, "history", "finals"), join(controllerRoot, "history")];
-  if (input.dataDir) roots.push(join(input.dataDir, "cases", input.caseId, "baseline-artifacts"));
-  roots.push(join(input.experimentRoot, "environment", "baselines"));
+  const roots = historicalFinalSearchRoots({
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    caseId: input.caseId,
+    attemptRoot: input.attemptRoot,
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+  });
   for (const name of input.baselineArtifactNames) {
     for (const root of roots) {
       const absolutePath = root.endsWith("finals")

@@ -126,6 +126,7 @@ async function experimentResult(
   compared: {
     comparisonResult: ExperimentResult["comparison"]["result"];
     reportPath: string;
+    attemptRoot?: string;
   },
 ): Promise<ExperimentResult> {
   const controllerCalls = input.store
@@ -161,6 +162,7 @@ async function experimentResult(
       inspection,
       workspaceRoot: input.workspaceRoot,
       dataDir: input.input.dataDir,
+      ...(compared.attemptRoot ? { attemptRoot: compared.attemptRoot } : {}),
     }),
   };
 }
@@ -351,7 +353,7 @@ async function persistComparisonInvocation(input: {
     operationId: `report-created-${input.attemptId}`,
     payload: { path: reportPath, attemptId: input.attemptId },
   });
-  return { comparisonResult: input.comparisonResult, reportPath };
+  return { comparisonResult: input.comparisonResult, reportPath, attemptRoot: input.attemptRoot };
 }
 
 function withOrientation(

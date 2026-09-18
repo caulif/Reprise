@@ -148,6 +148,7 @@ export type ControllerHandle = {
   syncIntakeLevel(): void;
   openReport(experimentRoot: string | undefined, reportPath: string | undefined): Consume;
   openResultArtifact(side: 'history' | 'candidate'): Consume;
+  openResultArtifactHref(href: string | undefined, side: 'history' | 'candidate'): Consume;
   openTrace(): Consume;
   openReplica(): Consume;
   openLocal(target: string | undefined): Consume;

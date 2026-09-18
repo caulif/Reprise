@@ -1,6 +1,7 @@
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks } from '../../application/result-paths.js';
+import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
@@ -57,15 +58,27 @@ export function resultPointerAction(
   if (stripForHit(line).includes(compare)) return 'compare';
   const href = hitFileLink(line, col);
   if (!href) return undefined;
-  if (/report\.html|comparison-failure\.html/i.test(href)) return 'open-report';
-  if (/environment[/\\]runs[/\\]/i.test(href) && !/\.[a-z0-9]+$/i.test(href)) return 'open-replica';
-  if (/[/\\]runs[/\\]/i.test(href) && !/\.[a-z0-9]+$/i.test(href)) return 'open-trace';
-  if (/\.(html|htm|png|jpe?g|gif|webp|svg|avif|json|md|txt)$/i.test(href)) {
-    if (/controller-briefing[/\\]history|baseline-artifacts|history[/\\]finals/i.test(href)) return 'open-history-final';
-    if (/environment[/\\]runs[/\\]/i.test(href)) return 'open-candidate-final';
+  const pathHint = pointerHrefPath(href);
+  if (/report\.html|comparison-failure\.html/i.test(pathHint)) return 'open-report';
+  if (/environment[/\\]runs[/\\]/i.test(pathHint) && !/\.[a-z0-9]+$/i.test(pathHint)) return 'open-replica';
+  if (/[/\\]runs[/\\]/i.test(pathHint) && !/\.[a-z0-9]+$/i.test(pathHint)) return 'open-trace';
+  if (/\.(html|htm|png|jpe?g|gif|webp|svg|avif|json|md|txt)$/i.test(pathHint)) {
+    if (/controller-briefing[/\\]history|baseline-artifacts|history[/\\]finals|environment[/\\]baselines/i.test(pathHint)) return 'open-history-final';
+    if (/environment[/\\]runs[/\\]/i.test(pathHint)) return 'open-candidate-final';
     return 'open-candidate-final';
   }
   return undefined;
+}
+
+function pointerHrefPath(href: string): string {
+  if (/^file:/i.test(href)) {
+    try {
+      return localPathFromFileUrl(href).replaceAll('\\', '/');
+    } catch {
+      return href.replaceAll('\\', '/');
+    }
+  }
+  return href.replaceAll('\\', '/');
 }
 
 function candidateDisplayLabel(result: ExperimentResult, productLabel: string | undefined): string | undefined {
