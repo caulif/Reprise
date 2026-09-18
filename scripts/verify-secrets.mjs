@@ -13,7 +13,7 @@ const TEXT_EXT = new Set([
 ]);
 const SKIP_PATH = /^(?:dist\/|node_modules\/|package-lock\.json$)/;
 const ABSOLUTE_PATH_SCAN_PREFIXES = ["src/", "scripts/", "test/"];
-const SYNTHETIC_WINDOWS_USERS = new Set([
+const SYNTHETIC_PATH_USERS = new Set([
   "RUNNER~1",
   "runneradmin",
   "demo",
@@ -21,7 +21,7 @@ const SYNTHETIC_WINDOWS_USERS = new Set([
   "name with space",
   "example",
 ]);
-const WINDOWS_USERS_PATH = /(?:^|[^A-Za-z0-9])C:[\\/]Users[\\/]([^\\/]+)/g;
+const WINDOWS_USERS_PATH = /(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]Users[\\/]([^\\/]+)/g;
 const UNIX_USERS_PATH = /(?<![a-z:])\/Users\/([^/\s"'`]+)/g;
 const UNIX_HOME_PATH = /(?<![a-z:])\/home\/([^/\s"'`]+)/g;
 const RULES = [
@@ -74,9 +74,9 @@ function collectAbsolutePathRules(text, pattern, ruleName, whitelist) {
 
 export function absolutePathFindings(text) {
   const hits = [];
-  hits.push(...collectAbsolutePathRules(text, WINDOWS_USERS_PATH, "windows-users-path", SYNTHETIC_WINDOWS_USERS));
-  hits.push(...collectAbsolutePathRules(text, UNIX_USERS_PATH, "unix-users-path", null));
-  hits.push(...collectAbsolutePathRules(text, UNIX_HOME_PATH, "unix-home-path", null));
+  hits.push(...collectAbsolutePathRules(text, WINDOWS_USERS_PATH, "windows-users-path", SYNTHETIC_PATH_USERS));
+  hits.push(...collectAbsolutePathRules(text, UNIX_USERS_PATH, "unix-users-path", SYNTHETIC_PATH_USERS));
+  hits.push(...collectAbsolutePathRules(text, UNIX_HOME_PATH, "unix-home-path", SYNTHETIC_PATH_USERS));
   return hits;
 }
 
@@ -263,6 +263,14 @@ function selfTestAbsolutePaths() {
   if (absolutePathFindings(synthetic).length) {
     throw new Error("合成 Windows demo 路径必须放行");
   }
+  const syntheticUnixUsers = "/Users/demo/.codex/sessions/a.jsonl";
+  if (absolutePathFindings(syntheticUnixUsers).length) {
+    throw new Error("合成 Unix /Users/demo 路径必须放行");
+  }
+  const syntheticUnixHome = "/home/example/project";
+  if (absolutePathFindings(syntheticUnixHome).length) {
+    throw new Error("合成 Unix /home/example 路径必须放行");
+  }
   const wsl = "/mnt/c/Users/x/codex.cmd";
   if (absolutePathFindings(wsl).length) {
     throw new Error("WSL /mnt/c/Users/x 路径必须放行");
@@ -270,6 +278,10 @@ function selfTestAbsolutePaths() {
   const realWindows = ["C:\\Users\\", "15893", "\\.claude\\projects\\sample.jsonl"].join("");
   if (!absolutePathFindings(realWindows).includes("windows-users-path")) {
     throw new Error("真实形态 Windows 用户路径必须被拒绝");
+  }
+  const realWindowsLowerDrive = ["c:\\Users\\", "15893", "\\.claude\\projects\\sample.jsonl"].join("");
+  if (!absolutePathFindings(realWindowsLowerDrive).includes("windows-users-path")) {
+    throw new Error("小写盘符 Windows 用户路径必须被拒绝");
   }
   const realUnixUsers = ["/", "Users", "/jane/Documents/project"].join("");
   if (!absolutePathFindings(realUnixUsers).includes("unix-users-path")) {
