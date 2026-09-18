@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildResultPathLinks } from "../../src/application/result-paths.js";
 import type { RunInspection } from "../../src/application/comparison.js";
@@ -19,8 +21,14 @@ const taskCase = (): TaskCase => ({
   contentHash: "b".repeat(64),
 });
 
-test("buildResultPathLinks prioritizes report and final artifact files", () => {
-  const experimentRoot = "C:\\exp\\run-1";
+test("buildResultPathLinks prioritizes report and final artifact files", async () => {
+  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-result-paths-"));
+  const workspaceRoot = join(experimentRoot, "environment", "runs", "run-1");
+  const baselineDir = join(experimentRoot, "environment", "baselines");
+  await mkdir(baselineDir, { recursive: true });
+  await writeFile(join(baselineDir, "deck.html"), "<!doctype html><title>deck</title>", "utf8");
+  await mkdir(join(workspaceRoot, "slides"), { recursive: true });
+  await writeFile(join(workspaceRoot, "slides", "final.html"), "<!doctype html><title>final</title>", "utf8");
   const inspection: RunInspection = {
     runId: "run-1",
     changedPaths: ["slides/final.html"],
@@ -29,16 +37,16 @@ test("buildResultPathLinks prioritizes report and final artifact files", () => {
     rejectedApprovals: 0,
     turns: 1,
   };
-  const links = buildResultPathLinks({
+  const links = await buildResultPathLinks({
     experimentRoot,
     runId: "run-1",
     reportPath: join(experimentRoot, "report.html"),
     taskCase: taskCase(),
     inspection,
-    workspaceRoot: join(experimentRoot, "environment", "runs", "run-1"),
+    workspaceRoot,
   });
   assert.equal(links.report, join(experimentRoot, "report.html"));
-  assert.match(links.historyFinal ?? "", /deck\.html$/);
-  assert.match(links.candidateFinal ?? "", /final\.html$/);
+  assert.equal(links.historyFinal, join(baselineDir, "deck.html"));
+  assert.equal(links.candidateFinal, join(workspaceRoot, "slides", "final.html"));
   assert.match(links.trace ?? "", /runs[/\\]run-1$/);
 });

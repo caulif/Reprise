@@ -1,13 +1,14 @@
-import { execFile } from "node:child_process";
-import { access, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
+import { captureHeadlessScreenshot } from "../infrastructure/headless-screenshot.js";
 import { comparisonMediaFileName, isComparisonImagePath, materializeComparisonMedia } from "./comparison-media.js";
 import { withMediaShortRefs } from "./comparison-short-refs.js";
-
-const execFileAsync = promisify(execFile);
+import {
+  discoverBaselineOpenableSources,
+  sealBaselineOpenablePath,
+  sealedInspectPath,
+} from "./historical-final-discovery.js";
 
 const OPENABLE_EXT = new Set([".html", ".htm", ".xhtml", ".svg"]);
 
@@ -39,11 +40,11 @@ export async function augmentComparisonOpenableMedia(input: {
   await mkdir(sealedRoot, { recursive: true });
   for (const source of input.baselineSources) {
     if (!isOpenableFinalPath(source.absolutePath)) continue;
-    const dest = join(sealedRoot, basename(source.absolutePath));
-    await copyFile(source.absolutePath, dest);
+    await sealBaselineOpenablePath(sealedRoot, source.absolutePath);
   }
   const augmentedLinks = [...input.links];
   const screenshotLinks: ComparisonLinkRecord[] = [];
+  const screenshotFailures: string[] = [];
   const linkedBasenames = new Set(
     input.links
       .filter((link) => isVisualLink(link))
@@ -61,11 +62,14 @@ export async function augmentComparisonOpenableMedia(input: {
       const pngName = comparisonMediaFileName(id, ".png");
       const pngPath = join(input.attemptRoot, "media", pngName);
       await mkdir(join(input.attemptRoot, "media"), { recursive: true });
-      const captured = await captureOpenableScreenshot(source.absolutePath, pngPath);
-      if (!captured) continue;
+      const captured = await captureHeadlessScreenshot(source.absolutePath, pngPath);
+      if (!captured.ok) {
+        screenshotFailures.push(formatScreenshotFailure(side, source.inspectPath, captured.failure));
+        continue;
+      }
       screenshotLinks.push({
         side,
-        inspectPath: side === "baseline" ? `history/finals/${basename(source.absolutePath)}` : source.inspectPath,
+        inspectPath: side === "baseline" ? sealedInspectPath(source.absolutePath) : source.inspectPath,
         reportHref: `media/${pngName}`,
         mediaType: "image/png",
         byteLength: (await stat(pngPath)).size,
@@ -84,6 +88,7 @@ export async function augmentComparisonOpenableMedia(input: {
     candidateSources: input.candidateSources,
     links: augmentedLinks,
     media,
+    screenshotFailures,
   });
   return { links: augmentedLinks, media };
 }
@@ -93,6 +98,7 @@ export function assertPairedVisualMediaOrThrow(input: {
   candidateSources: readonly { inspectPath: string; absolutePath: string }[];
   links: readonly ComparisonLinkRecord[];
   media: readonly ComparisonMediaRecord[];
+  screenshotFailures?: readonly string[];
 }): void {
   const baselineVisual = input.baselineSources.some((item) => isVisualDeliverablePath(item.absolutePath))
     || input.links.some((link) => link.side === "baseline" && isVisualLink(link));
@@ -102,9 +108,19 @@ export function assertPairedVisualMediaOrThrow(input: {
   const baselineAvailable = input.media.some((item) => item.side === "baseline" && item.available);
   const candidateAvailable = input.media.some((item) => item.side === "candidate" && item.available);
   if (baselineAvailable && candidateAvailable) return;
+  const details = input.screenshotFailures?.length ? ` ${input.screenshotFailures.join("; ")}` : "";
   throw new ComparisonVisualMediaError(
-    "Visual deliverables exist on both sides but paired previews were not registered in media.json.",
+    `Visual deliverables exist on both sides but paired previews were not registered in media.json.${details}`,
   );
+}
+
+function formatScreenshotFailure(
+  side: string,
+  inspectPath: string,
+  failure: { kind: string; message?: string },
+): string {
+  if (failure.kind === "no_browser") return `${side} ${inspectPath}: no headless browser`;
+  return `${side} ${inspectPath}: ${failure.message ?? "capture failed"}`;
 }
 
 function isVisualLink(link: ComparisonLinkRecord): boolean {
@@ -130,23 +146,8 @@ export async function discoverOpenableSources(input: {
   baselineSources: { inspectPath: string; absolutePath: string }[];
   candidateSources: { inspectPath: string; absolutePath: string }[];
 }> {
-  const baselineSources: { inspectPath: string; absolutePath: string }[] = [];
+  const baselineSources = await discoverBaselineOpenableSources(input);
   const candidateSources: { inspectPath: string; absolutePath: string }[] = [];
-  const controllerRoot = join(input.experimentRoot, "runs", input.runId, "controller-briefing");
-  const roots: string[] = [];
-  if (input.dataDir) roots.push(join(input.dataDir, "cases", input.caseId, "baseline-artifacts"));
-  roots.push(
-    join(input.experimentRoot, "environment", "baselines"),
-    join(controllerRoot, "history"),
-  );
-  for (const name of input.baselineArtifactNames) {
-    for (const root of roots) {
-      const absolutePath = await findFileByBasename(root, name);
-      if (!absolutePath || !isOpenableFinalPath(absolutePath)) continue;
-      baselineSources.push({ inspectPath: `history/finals/${basename(absolutePath)}`, absolutePath });
-      break;
-    }
-  }
   for (const path of input.changedPaths) {
     const absolutePath = join(input.workspaceRoot, ...path.split("/"));
     const info = await stat(absolutePath).catch(() => undefined);
@@ -156,70 +157,4 @@ export async function discoverOpenableSources(input: {
   return { baselineSources, candidateSources };
 }
 
-async function findFileByBasename(root: string, basenameTarget: string): Promise<string | undefined> {
-  const { readdir } = await import("node:fs/promises");
-  const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.isFile() || entry.name !== basenameTarget) continue;
-    const parent = "parentPath" in entry && typeof entry.parentPath === "string" ? entry.parentPath : root;
-    return join(parent, entry.name);
-  }
-  return undefined;
-}
-
-async function captureOpenableScreenshot(sourcePath: string, destPng: string): Promise<boolean> {
-  const browser = await resolveHeadlessBrowser();
-  if (!browser) return false;
-  const ext = extname(sourcePath).toLowerCase();
-  const target = ext === ".svg"
-    ? await svgPreviewHtml(sourcePath)
-    : sourcePath;
-  try {
-    const width = 1280;
-    const height = 900;
-    await execFileAsync(browser, [
-      "--headless=new",
-      "--disable-gpu",
-      "--hide-scrollbars",
-      "--force-device-scale-factor=1",
-      `--window-size=${width},${height}`,
-      `--screenshot=${destPng}`,
-      pathToFileURL(target).href,
-    ], { timeout: 20_000 });
-    await access(destPng);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    if (target !== sourcePath) {
-      await import("node:fs/promises").then(({ rm }) => rm(target, { force: true }).catch(() => undefined));
-    }
-  }
-}
-
-async function svgPreviewHtml(svgPath: string): Promise<string> {
-  const body = await readFile(svgPath, "utf8");
-  const preview = join(svgPath, "..", `.reprise-openable-${basename(svgPath)}.html`);
-  await writeFile(preview, `<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#fff}svg{max-width:100%}</style>${body}`, "utf8");
-  return preview;
-}
-
-async function resolveHeadlessBrowser(): Promise<string | undefined> {
-  const candidates = process.platform === "win32"
-    ? [
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-      join(process.env.LOCALAPPDATA ?? "", "Google\\Chrome\\Application\\chrome.exe"),
-      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    ]
-    : [
-      "/usr/bin/google-chrome",
-      "/usr/bin/chromium",
-      "/usr/bin/chromium-browser",
-      "/snap/bin/chromium",
-    ];
-  for (const candidate of candidates) {
-    if (await access(candidate).then(() => true, () => false)) return candidate;
-  }
-  return undefined;
-}
+export { collectHistoricalFinalNames, resolveHistoricalFinalPath } from "./historical-final-discovery.js";

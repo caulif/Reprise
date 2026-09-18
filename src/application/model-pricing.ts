@@ -49,7 +49,6 @@ const ALIASES: Record<string, string> = {
   "claude-4-haiku": "claude-haiku-4-5",
   "claude-opus-4.1": "claude-opus-4-1",
   "deepseek-flash": "deepseek-v4-flash",
-  "deepseek-v4.1-flash": "deepseek-v4-flash",
 };
 
 /** Same rules as cc-switch `clean_model_id_for_pricing`. Does not map a family onto a sibling SKU. */

@@ -19,14 +19,16 @@ Reprise   对照结果   C:\reprise
    C:\user\AppData\Local\Temp\
    reprise-tui-audit-TMP\data\experiments\fixture\
    report.html
-    隔离副本     
-   C:\user\AppData\Local\Temp\
-   reprise-tui-audit-TMP\data\experiments\fixture\
-   environment\runs\run-1
-    记录         
+    历史终稿     -
+    候选终稿     -
+    记录（排查） 
    C:\user\AppData\Local\Temp\
    reprise-tui-audit-TMP\data\experiments\fixture\runs\
    run-1
+    隔离副本... 
+   C:\user\AppData\Local\Temp\
+   reprise-tui-audit-TMP\data\experiments\fixture\
+   environment\runs\run-1
  对照结束。用短标签打开报告。
 ------------------------------------------------------------
  [Esc] 封面

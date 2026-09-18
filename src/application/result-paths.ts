@@ -1,8 +1,10 @@
+import { constants } from "node:fs";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
 import type { RunInspection } from "./comparison.js";
 import type { ExperimentResult } from "./experiment.js";
 import { isComparisonImagePath } from "./comparison-media.js";
-import { isOpenableFinalPath } from "./comparison-openable-media.js";
+import { isOpenableFinalPath, resolveHistoricalFinalPath } from "./comparison-openable-media.js";
 import type { TaskCase } from "../core/schema.js";
 
 export type ResultPathLinks = {
@@ -20,16 +22,22 @@ const FINAL_RANK = (path: string): number => {
   return 2;
 };
 
-export function buildResultPathLinks(input: {
+export async function buildResultPathLinks(input: {
   experimentRoot: string;
   runId: string;
   reportPath?: string;
   taskCase: TaskCase;
   inspection: RunInspection;
   workspaceRoot: string;
-}): ResultPathLinks {
-  const historyFinal = resolveHistoricalFinal(input);
-  const candidateFinal = resolveCandidateFinal(input);
+  dataDir?: string;
+}): Promise<ResultPathLinks> {
+  const historyFinal = await resolveHistoricalFinalPath({
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    taskCase: input.taskCase,
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+  });
+  const candidateFinal = await resolveCandidateFinal(input);
   return {
     ...(input.reportPath?.trim() ? { report: input.reportPath.trim() } : {}),
     ...(historyFinal ? { historyFinal } : {}),
@@ -52,49 +60,18 @@ export function resolveResultPathLinks(result: ExperimentResult): ResultPathLink
   };
 }
 
-function resolveHistoricalFinal(input: {
-  experimentRoot: string;
-  runId: string;
-  taskCase: TaskCase;
-}): string | undefined {
-  const names = collectHistoricalFinalNames(input.taskCase);
-  const ranked = [...names].sort((left, right) => FINAL_RANK(left) - FINAL_RANK(right));
-  const best = ranked[0];
-  if (!best) return undefined;
-  const roots = [
-    join(input.experimentRoot, "runs", input.runId, "controller-briefing", "history", best),
-    join(input.experimentRoot, "environment", "baselines", best),
-  ];
-  return roots[0];
-}
-
-function resolveCandidateFinal(input: {
+async function resolveCandidateFinal(input: {
   experimentRoot: string;
   runId: string;
   inspection: RunInspection;
   workspaceRoot: string;
-}): string | undefined {
+}): Promise<string | undefined> {
   const ranked = [...input.inspection.changedPaths]
     .filter((path) => isOpenableFinalPath(path) || isComparisonImagePath(path))
     .sort((left, right) => FINAL_RANK(left) - FINAL_RANK(right));
-  const best = ranked[0];
-  if (!best) return undefined;
-  return join(input.workspaceRoot, ...best.split("/"));
-}
-
-function collectHistoricalFinalNames(taskCase: TaskCase): Set<string> {
-  const names = new Set<string>();
-  for (const ref of taskCase.baseline.artifactRefs) {
-    if (ref.artifactId) names.add(ref.artifactId);
+  for (const path of ranked) {
+    const absolutePath = join(input.workspaceRoot, ...path.split("/"));
+    if (await access(absolutePath, constants.F_OK).then(() => true, () => false)) return absolutePath;
   }
-  addDeliverableNames(taskCase.baseline.finalMessage ?? "", names);
-  for (const message of taskCase.transcript) addDeliverableNames(message.text, names);
-  return names;
-}
-
-function addDeliverableNames(text: string, names: Set<string>): void {
-  for (const match of text.matchAll(/([^\\/\s:"<>|]+\.(?:html|htm|xhtml|png|jpe?g|gif|webp|svg|avif))/gi)) {
-    const base = match[1]?.split(/[/\\]/).pop();
-    if (base && !base.startsWith(".")) names.add(base);
-  }
+  return undefined;
 }

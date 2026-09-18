@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execPath, platform } from "node:process";
 import { resolveNpmCliJs } from "./npm-cli.mjs";
+import { nodeVersionAtLeast, semverFromVersionOutput } from "./node-version.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ALLOWED = [
@@ -111,6 +112,16 @@ function selfTest() {
   if (complete.length) {
     throw new Error(`完整发布清单不应当失败: ${complete.join("; ")}`);
   }
+  if (!nodeVersionAtLeast("23.0.0", [22, 19, 0])) {
+    throw new Error("nodeVersionAtLeast 应当接受 23.0.0 >= 22.19.0");
+  }
+  if (nodeVersionAtLeast("22.18.0", [22, 19, 0])) {
+    throw new Error("nodeVersionAtLeast 应当拒绝 22.18.0 < 22.19.0");
+  }
+  const semver = semverFromVersionOutput("reprise 0.1.0 (Node.js 22.19.0)");
+  if (semver !== "0.1.0") {
+    throw new Error(`semverFromVersionOutput 应当提取 0.1.0，实际 ${semver ?? "undefined"}`);
+  }
   console.log("verify-pack self-test: 坏包路径、空壳包、缺 bin 与缺 types 被拒绝");
 }
 
@@ -120,9 +131,7 @@ function smokeVersion(binTarget) {
     return;
   }
   const min = [22, 19, 0];
-  const actual = process.versions.node.split(".").map(Number);
-  const supported = actual.every((part, index) => part >= (min[index] ?? 0));
-  if (!supported) {
+  if (!nodeVersionAtLeast(process.versions.node, min)) {
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     if (typeof pkg.version !== "string" || !/^\d+\.\d+\.\d+/.test(pkg.version)) {
       throw new Error("package.json.version 缺失或无效");
@@ -134,10 +143,11 @@ function smokeVersion(binTarget) {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
-  if (!/^\d+\.\d+\.\d+/.test(version)) {
+  const semver = semverFromVersionOutput(version);
+  if (!semver) {
     throw new Error(`reprise --version 输出异常: ${version}`);
   }
-  console.log(`verify-pack: reprise --version ok (${version})`);
+  console.log(`verify-pack: reprise --version ok (${semver})`);
 }
 
 function main() {

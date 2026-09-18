@@ -104,7 +104,7 @@ export async function attachExperimentComparison(
   record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
 ): Promise<ExperimentResult> {
   const inspection = await inspectExperimentRun(input, record);
-  return experimentResult(
+  return await experimentResult(
     input,
     record,
     inspection,
@@ -119,7 +119,7 @@ function skippedComparison(experimentRoot: string) {
   };
 }
 
-function experimentResult(
+async function experimentResult(
   input: Parameters<typeof finishExperiment>[0],
   record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
   inspection: Awaited<ReturnType<typeof inspectRun>>,
@@ -127,7 +127,7 @@ function experimentResult(
     comparisonResult: ExperimentResult["comparison"]["result"];
     reportPath: string;
   },
-): ExperimentResult {
+): Promise<ExperimentResult> {
   const controllerCalls = input.store
     .events(input.input.runId)
     .filter((event) => event.type === "controller.decision").length;
@@ -153,13 +153,14 @@ function experimentResult(
         : { tokenCount: inspection.tokenCount }),
       ...(inspection.costUsd === undefined ? {} : { costUsd: inspection.costUsd }),
     },
-    pathLinks: buildResultPathLinks({
+    pathLinks: await buildResultPathLinks({
       experimentRoot: input.experimentRoot,
       runId: input.input.runId,
       reportPath: compared.reportPath,
       taskCase: input.taskCase,
       inspection,
       workspaceRoot: input.workspaceRoot,
+      dataDir: input.input.dataDir,
     }),
   };
 }
