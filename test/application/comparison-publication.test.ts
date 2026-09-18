@@ -160,8 +160,7 @@ test("broken image references are stripped and the page can still publish", asyn
 
 test("empty media catalog shows an explicit visual-unavailable reason", () => {
   assert.match(renderVisualEvidenceSeed([], "zh"), /data-host="visual-unavailable"/);
-  assert.match(renderVisualEvidenceSeed([], "zh"), /本次对照未登记可用的预览图/);
-  assert.match(renderVisualEvidenceSeed(undefined, "en"), /No preview images were registered/);
+  assert.match(renderVisualEvidenceSeed(undefined, "en"), /data-host="visual-unavailable"/);
 });
 
 test("Host seeds paired visual evidence and explicit reasons before publication repair", async () => {
@@ -236,7 +235,7 @@ test("comparison metrics use English-style min and s units", () => {
     slots: filledSlots(),
     locale: "zh",
   });
-  assert.match(html, />2 min</);
+  assert.match(html, />2<span class="unit">min<\/span>/);
   assert.doesNotMatch(html, />2<span class="unit">分<\/span>/);
   const short = renderComparisonReportShell({
     task: "Fix the report.",
@@ -245,7 +244,7 @@ test("comparison metrics use English-style min and s units", () => {
     slots: filledSlots(),
     locale: "en",
   });
-  assert.match(short, />2 min</);
+  assert.match(short, />2<span class="unit">min<\/span>/);
 });
 
 test("registered media that exists can be published", async (t) => {

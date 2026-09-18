@@ -340,9 +340,9 @@ function metricHtml(value: FormattedMetric): string {
 function formatTime(ms: number | undefined, locale: AgentLocale = "zh"): FormattedMetric {
   if (ms === undefined) return { text: reportString(locale, "missing"), missing: true };
   if (ms >= 60_000) {
-    return { text: `${String(Math.round(ms / 60_000))} ${reportString(locale, "unitMinutes")}`, missing: false };
+    return { text: String(Math.round(ms / 60_000)), unit: reportString(locale, "unitMinutes"), missing: false };
   }
-  return { text: `${String(Math.round(ms / 1000))} ${reportString(locale, "unitSeconds")}`, missing: false };
+  return { text: String(Math.round(ms / 1000)), unit: reportString(locale, "unitSeconds"), missing: false };
 }
 
 function formatTokens(total: number | undefined, locale: AgentLocale = "zh"): FormattedMetric {

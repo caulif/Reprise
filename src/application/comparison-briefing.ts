@@ -1,5 +1,5 @@
 import { mkdir, stat, readFile, readdir, copyFile } from "node:fs/promises";
-import { extname, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import type { ComparisonContext, ComparisonFactsContext } from "../agents/comparison-agent.js";
@@ -10,7 +10,13 @@ import { briefingComparisonContext } from "./comparison.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
 import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
-import { isComparisonImagePath, materializeComparisonMedia, mediaTypeForComparisonPath, sniffComparisonImageMediaType } from "./comparison-media.js";
+import {
+  COMPARISON_IMAGE_BASENAME_RE,
+  isComparisonImagePath,
+  materializeComparisonMedia,
+  mediaTypeForComparisonPath,
+  sniffComparisonImageMediaType,
+} from "./comparison-media.js";
 import { withEvidenceShortRefs, withMediaShortRefs } from "./comparison-short-refs.js";
 import { isComparisonChangedPath } from "./controller-queries.js";
 
@@ -101,10 +107,7 @@ export async function writeComparisonBriefing(input: {
     taskCase: input.taskCase,
     runEvents: input.events,
   });
-  const selected = await comparisonLinks({
-    ...input,
-    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-  });
+  const selected = await comparisonLinks(input);
   const rawLinks = withEvidenceShortRefs(selected.links);
   const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
   const invalidLinkCount = rawLinks.length - links.length;
@@ -375,8 +378,6 @@ async function comparisonLinks(input: {
 }
 
 
-const IMAGE_BASENAME = /([^\\/:"<>|\s*]+\.(?:png|jpe?g|gif|webp|svg))/gi;
-
 async function sealedBaselineImageLinks(input: {
   attemptRoot: string;
   experimentRoot: string;
@@ -404,7 +405,6 @@ async function sealedBaselineImageLinks(input: {
     const source = await findSealedImage({
       experimentRoot: input.experimentRoot,
       runId: input.record.attempt.runId,
-      workspaceRoot: input.workspaceRoot,
       caseId: input.taskCase.caseId,
       ...(input.dataDir ? { dataDir: input.dataDir } : {}),
       basename: name,
@@ -434,7 +434,7 @@ function historicalImageBasenames(taskCase: TaskCase): Set<string> {
 }
 
 function addImageBasenames(text: string, names: Set<string>): void {
-  for (const match of text.matchAll(IMAGE_BASENAME)) {
+  for (const match of text.matchAll(COMPARISON_IMAGE_BASENAME_RE)) {
     const base = (match[1] ?? "").split(/[/\\]/).pop();
     if (base && !base.startsWith(".")) names.add(base);
   }
@@ -453,40 +453,31 @@ async function collectImageBasenamesFromDir(root: string, names: Set<string>): P
 async function collectImageFileBasenames(root: string, names: Set<string>): Promise<void> {
   const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
-    if (!entry.isFile() || !/\.(?:png|jpe?g|gif|webp|svg|avif)$/i.test(entry.name)) continue;
+    if (!entry.isFile() || !isComparisonImagePath(entry.name)) continue;
     names.add(entry.name);
   }
 }
 
 function manifestImageType(manifest: ArtifactManifest): string | undefined {
   if (manifest.mediaType?.startsWith("image/")) return manifest.mediaType;
-  const ext = extname(manifest.path || manifest.artifactId).toLowerCase();
-  if (ext === ".png") return "image/png";
-  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
-  if (ext === ".gif") return "image/gif";
-  if (ext === ".webp") return "image/webp";
-  if (ext === ".svg") return "image/svg+xml";
-  if (ext === ".avif") return "image/avif";
-  if (/screenshot|preview|image/i.test(manifest.kind)) return "image/png";
-  return undefined;
+  return mediaTypeForComparisonPath(manifest.path || manifest.artifactId);
 }
 
 async function findSealedImage(input: {
   experimentRoot: string;
   runId: string;
-  workspaceRoot: string;
   caseId: string;
   dataDir?: string;
   basename: string;
 }): Promise<string | undefined> {
-  const roots = [
-    join(input.experimentRoot, "environment", "baselines"),
-    join(input.experimentRoot, "runs", input.runId, "controller-briefing", "history"),
-    input.workspaceRoot,
-  ];
+  const roots: string[] = [];
   if (input.dataDir) {
     roots.push(join(input.dataDir, "cases", input.caseId, "baseline-artifacts"));
   }
+  roots.push(
+    join(input.experimentRoot, "environment", "baselines"),
+    join(input.experimentRoot, "runs", input.runId, "controller-briefing", "history"),
+  );
   for (const root of roots) {
     const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
     for (const entry of entries) {

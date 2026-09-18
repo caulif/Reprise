@@ -1,9 +1,18 @@
-import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
+import { copyFile, mkdir, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { ComparisonMediaRecordSchema, type ComparisonLinkRecord, type ComparisonMediaRecord } from "../core/schema.js";
 
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"]);
+const IMAGE_EXT_PATTERN = "png|jpe?g|gif|webp|svg|avif";
+
+export const COMPARISON_IMAGE_BASENAME_RE = new RegExp(
+  `([^\\\\/:"<>|\\s*]+\\.(?:${IMAGE_EXT_PATTERN}))`,
+  "gi",
+);
+
+const SNIFF_BYTES = 256;
 
 export function isComparisonImagePath(path: string): boolean {
   return isComparisonImage({ path });
@@ -43,11 +52,14 @@ export async function materializeComparisonMedia(input: {
         ? join(input.workspaceRoot, ...link.inspectPath.slice("candidate/".length).split("/"))
         : undefined,
     ]);
-    const mediaType = link.mediaType ?? (source ? await sniffComparisonImageMediaType(source) : undefined);
+    const sniffed = source ? await sniffComparisonImageMediaType(source) : undefined;
+    const mediaType = sniffed
+      ?? link.mediaType
+      ?? mediaTypeForComparisonPath(link.inspectPath);
     if (!isComparisonImage({
       ...(mediaType ? { mediaType } : {}),
       path: link.inspectPath,
-    }) && !(source && await looksLikeImageFile(source))) continue;
+    }) && !sniffed) continue;
     const id = mediaId(link);
     if (seen.has(id)) continue;
     seen.add(id);
@@ -99,20 +111,23 @@ function extensionFor(mediaType: string | undefined): string {
   return ".png";
 }
 
-async function looksLikeImageFile(path: string): Promise<boolean> {
-  return (await sniffComparisonImageMediaType(path)) !== undefined;
-}
-
 export async function sniffComparisonImageMediaType(path: string): Promise<string | undefined> {
-  const head = await readFile(path).then((bytes) => bytes.subarray(0, 16)).catch(() => undefined);
-  if (!head || head.length < 4) return undefined;
-  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return "image/png";
-  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
-  if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) return "image/gif";
-  if (head.length >= 12 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) {
-    return "image/webp";
+  const handle = await open(path, "r").catch(() => undefined);
+  if (!handle) return undefined;
+  try {
+    const buffer = Buffer.alloc(SNIFF_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, SNIFF_BYTES, 0);
+    if (bytesRead < 4) return undefined;
+    const head = buffer.subarray(0, bytesRead);
+    if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return "image/png";
+    if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return "image/jpeg";
+    if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) return "image/gif";
+    if (head.length >= 12 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) {
+      return "image/webp";
+    }
+    if (/<svg\b/i.test(head.toString("utf8"))) return "image/svg+xml";
+    return undefined;
+  } finally {
+    await handle.close();
   }
-  const text = head.toString("utf8").trimStart();
-  if (text.startsWith("<svg") || text.startsWith("<?xml")) return "image/svg+xml";
-  return undefined;
 }
