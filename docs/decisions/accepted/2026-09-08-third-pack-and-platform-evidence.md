@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M6.4](../../plan/reprise-refactoring-execution.md#m64-独立第三-pack-与平台证明)。
+目标批次见 [M6.4](../../plan/archive/reprise-refactoring-execution.md#m64-独立第三-pack-与平台证明)。
 
 ## 问题
 

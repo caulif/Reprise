@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M5.2](../../plan/reprise-refactoring-execution.md#m52-cli-查询配置与机器协议)。
+目标批次见 [M5.2](../../plan/archive/reprise-refactoring-execution.md#m52-cli-查询配置与机器协议)。
 
 ## 问题
 

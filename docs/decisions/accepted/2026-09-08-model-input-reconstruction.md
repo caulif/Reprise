@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [事实源与身份草案](./2026-09-08-session-fact-owner-and-identity.md) 与 [生命周期](./2026-09-08-session-invocation-lifecycle.md)。目标批次见 [M1.3](../../plan/reprise-refactoring-execution.md#m13-完整记录并可重建模型输入)。
+延续 [事实源与身份草案](./2026-09-08-session-fact-owner-and-identity.md) 与 [生命周期](./2026-09-08-session-invocation-lifecycle.md)。目标批次见 [M1.3](../../plan/archive/reprise-refactoring-execution.md#m13-完整记录并可重建模型输入)。
 
 ## 问题
 

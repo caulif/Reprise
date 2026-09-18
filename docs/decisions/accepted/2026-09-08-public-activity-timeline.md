@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M5.4](../../plan/reprise-refactoring-execution.md#m54-单实验连续时间线)。
+目标批次见 [M5.4](../../plan/archive/reprise-refactoring-execution.md#m54-单实验连续时间线)。
 
 ## 问题
 

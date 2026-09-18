@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M2.1](../../plan/reprise-refactoring-execution.md#m21-收拢业务所有权)。
+目标批次见 [M2.1](../../plan/archive/reprise-refactoring-execution.md#m21-收拢业务所有权)。
 
 ## 问题
 

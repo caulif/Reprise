@@ -1,6 +1,6 @@
 # 本机平台边界
 
-本文描述当前平台基础设施。**产品支持声明：** 首版已验证平台是 Windows 11。macOS 与 Linux 代码路径若被调用应返回明确的 `unsupported_platform` 或保持 unverified，不得宣称为已支持。CI 仍对三平台跑模拟测试；那不构成真实 Runtime 或 TUI 支持。已确认的 PowerShell/Bash 目标及更广验收由[重构规划](../plan/reprise-architecture-redesign.md)拥有，不在这里定义另一套 Host 端口。
+本文描述当前平台基础设施。**产品支持声明：** 首版已验证平台是 Windows 11。macOS 与 Linux 代码路径若被调用应返回明确的 `unsupported_platform` 或保持 unverified，不得宣称为已支持。CI 仍对三平台跑模拟测试；那不构成真实 Runtime 或 TUI 支持。未关闭真终端与 Runtime 验收见[平台证据矩阵](../plan/2026-09-08-platform-evidence-matrix.md)与 [MASTER](../progress/MASTER.md)。
 
 ## 代码入口与实际边界
 

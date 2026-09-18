@@ -64,7 +64,7 @@ const ASCII_GLYPHS: Glyphs = {
 
 export const FORBIDDEN_COMPACT = /[┌┐└┘│─❯●✓…]/;
 
-/** Matches docs/plan/reprise-tui-design.md: low-chroma body, one accent. */
+/** Matches docs/plan/archive/reprise-tui-design.md: low-chroma body, one accent. */
 const GROK = {
   accent: { ansi: '36;1', rgb: [167, 217, 190] },
   muted: { ansi: '90', rgb: [139, 153, 149] },

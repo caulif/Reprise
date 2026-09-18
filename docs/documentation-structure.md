@@ -27,7 +27,7 @@ docs/
 │   ├── proposed/
 │   ├── accepted/
 │   └── superseded/
-├── plan/                            # 唯一活跃总计划、目标设计与 task brief
+├── plan/                            # 开放验收与 task brief；历史目标在 plan/archive/
 ├── progress/MASTER.md               # 稳定进度入口
 └── tui-audit/frames/                # TUI 快照基线（受控）
 ```
@@ -55,7 +55,7 @@ product、architecture、decisions、plan、progress、cookbook 及上列开发�
 
 当前规范描述已存在的边界，目标计划描述经确认要改变的边界，两者不是同一时间范围。任务开始先确定修复当前还是实施目标。文档与代码冲突时标明证据并修正；不能以代码偶然行为自动授权改变产品语义，也不能把目标命令写成已可用能力。用户明确授权优先于仓库工作流偏好。
 
-迁移差异由[规范迁移边界](./plan/documentation-reconciliation-for-session-harness-workflow.md)集中维护，不在每个专题重述目标。AGENTS 保留短入口；不要求每次任务读完全部 ADR。不能按修改日期判断权威。
+未关闭目标与证据由 [MASTER](./progress/MASTER.md) 与 plan/ 白名单集中维护，不在每个专题重述目标。AGENTS 保留短入口；不要求每次任务读完全部 ADR。不能按修改日期判断权威。
 
 ## 决策记录
 

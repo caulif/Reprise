@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M2.3](../../plan/reprise-refactoring-execution.md#m23-场景封存与重复运行)。
+目标批次见 [M2.3](../../plan/archive/reprise-refactoring-execution.md#m23-场景封存与重复运行)。
 
 ## 问题
 

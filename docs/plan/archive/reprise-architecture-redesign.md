@@ -1,8 +1,8 @@
 # Reprise 架构重构规划
 
-未关闭原因：真实终端、Controller 真实模型 lane、Runtime smoke 与生产模型输入对拍缺少完整通过证据，集中见[证据矩阵](./2026-09-08-platform-evidence-matrix.md)。本文保留目标验收语义，不把已关闭施工清单作为重新开工指令，也不覆盖当前架构规范。
+未关闭原因：真实终端、Controller 真实模型 lane、Runtime smoke 与生产模型输入对拍缺少完整通过证据，集中见[证据矩阵](../2026-09-08-platform-evidence-matrix.md)。本文保留目标验收语义，不把已关闭施工清单作为重新开工指令，也不覆盖当前架构规范。
 
-本文是本轮重构目标与验收的唯一文字来源。选择理由见[Session harness workflow](../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。当前实现依据仍为[架构总览](../architecture/overview.md)。未关闭的真终端与 Runtime 行见[平台证据矩阵](./2026-09-08-platform-evidence-matrix.md)。
+本文是本轮重构目标与验收的唯一文字来源。选择理由见[Session harness workflow](../../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。当前实现依据仍为[架构总览](../../architecture/overview.md)。未关闭的真终端与 Runtime 行见[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)。
 
 ## 1. 产品边界
 
@@ -31,7 +31,7 @@ CLI 与 TUI 功能对等，全部配置、发现、执行、取消、历史和�
 
 TUI 不启动 CLI 子进程执行业务，CLI 不导入 TUI 页面或模拟按键。配置、查询、规范化活动和错误分类由两种入口共同消费。插件注册表由启动装配处加载并注入；查询已保存历史无需执行插件代码。
 
-源码落点以现有模块为起点：[Agent Host](../../src/infrastructure/agent/host.ts)、[Pi 调用](../../src/infrastructure/agent/model-caller.ts)、[编排](../../src/application/experiment.ts)、[平台](../../src/infrastructure/platform.ts)、[Runtime spawn](../../src/infrastructure/process/spawn.ts)。先调整职责和实际调用链，目录搬迁仅在能让所有权更清楚时进行。
+源码落点以现有模块为起点：[Agent Host](../../../src/infrastructure/agent/host.ts)、[Pi 调用](../../../src/infrastructure/agent/model-caller.ts)、[编排](../../../src/application/experiment.ts)、[平台](../../../src/infrastructure/platform.ts)、[Runtime spawn](../../../src/infrastructure/process/spawn.ts)。先调整职责和实际调用链，目录搬迁仅在能让所有权更清楚时进行。
 
 ## 3. Agent 执行机制
 
@@ -297,14 +297,14 @@ Codex、Claude 及外部插件都通过同一套公共契约注册。核心程�
 | A17 | 冻结后移走历史来源仍可从场景执行；修改候选工作目录不改变封存对照输入；移除 Pack 后仍可读旧实验与已保存报告 |
 | A18 | 插件共用契约检查 admission、settlement、错误、取消、清理和遮蔽；声明与实际能力分别记录，三平台按实测支持组合准入 |
 
-实际 Controller 行为还需固定历史样例的人工语义评估，机械检查只证明调用与边界，不声称证明“像原用户”。真实 Runtime 验证依照[smoke 准入](../codex-smoke-gate.md)，不在默认门禁中产生外部费用。新增或修改工程门禁同批附反向用例，不降低覆盖率阈值。
+实际 Controller 行为还需固定历史样例的人工语义评估，机械检查只证明调用与边界，不声称证明“像原用户”。真实 Runtime 验证依照[smoke 准入](../../codex-smoke-gate.md)，不在默认门禁中产生外部费用。新增或修改工程门禁同批附反向用例，不降低覆盖率阈值。
 
 ## 11. 参考依据
 
-- [Pi 依赖基线](../../package.json)、[现有 Pi 封装](../../src/infrastructure/agent/model-caller.ts)：复用范围以安装版本实现及可运行检查为准。
+- [Pi 依赖基线](../../../package.json)、[现有 Pi 封装](../../../src/infrastructure/agent/model-caller.ts)：复用范围以安装版本实现及可运行检查为准。
 - [Codex App Server](https://developers.openai.com/codex/app-server/)：Thread / Turn / Item 的归属，以及读取历史与恢复执行的分离。
 - [Codex 平台隔离](https://learn.chatgpt.com/docs/agent-approvals-security)与[Windows sandbox](https://developers.openai.com/codex/windows/)：统一权限目标与平台原生实现分离。
-- [现有持久化规范](../architecture/persistence-and-crash-consistency.md)、[运行结果](../architecture/run-outcome.md)、[技术选型](../architecture/technology-selection.md)：迁移需要守住的事实与当前实现边界。
-- [无头 CLI 协议](../decisions/accepted/2026-09-08-cli-query-config-protocol.md)：共同应用操作、机器输出、稳定身份及每实验单写者。
-- [产品兼容性](../architecture/product-plugin-compatibility.md)、[现有 ProductPack 契约](../../src/products/contract.ts)：来源与候选身份分离、规范化 Runtime 事实、旧记录独立可读。
-- [封存与重复运行](../decisions/accepted/2026-09-08-scene-seal-and-repeat-runs.md)：冻结后不回源猜起点、封存结果、对照输入与场景身份分离。
+- [现有持久化规范](../../architecture/persistence-and-crash-consistency.md)、[运行结果](../../architecture/run-outcome.md)、[技术选型](../../architecture/technology-selection.md)：迁移需要守住的事实与当前实现边界。
+- [无头 CLI 协议](../../decisions/accepted/2026-09-08-cli-query-config-protocol.md)：共同应用操作、机器输出、稳定身份及每实验单写者。
+- [产品兼容性](../../architecture/product-plugin-compatibility.md)、[现有 ProductPack 契约](../../../src/products/contract.ts)：来源与候选身份分离、规范化 Runtime 事实、旧记录独立可读。
+- [封存与重复运行](../../decisions/accepted/2026-09-08-scene-seal-and-repeat-runs.md)：冻结后不回源猜起点、封存结果、对照输入与场景身份分离。

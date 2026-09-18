@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M7](../../plan/reprise-refactoring-execution.md#9-m7旧实现删除规范生效与交付)。
+目标批次见 [M7](../../plan/archive/reprise-refactoring-execution.md#9-m7旧实现删除规范生效与交付)。
 
 ## 问题
 

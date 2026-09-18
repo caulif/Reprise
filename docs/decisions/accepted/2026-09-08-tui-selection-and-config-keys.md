@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M5.3](../../plan/reprise-refactoring-execution.md#m53-tui-选择与配置流程)。
+目标批次见 [M5.3](../../plan/archive/reprise-refactoring-execution.md#m53-tui-选择与配置流程)。
 
 ## 问题
 

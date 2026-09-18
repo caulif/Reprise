@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M6.2](../../plan/reprise-refactoring-execution.md#m62-跨终端-cancel)。
+目标批次见 [M6.2](../../plan/archive/reprise-refactoring-execution.md#m62-跨终端-cancel)。
 
 ## 问题
 

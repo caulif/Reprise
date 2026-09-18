@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M6.1](../../plan/reprise-refactoring-execution.md#m61-明确原生平台语义)。
+目标批次见 [M6.1](../../plan/archive/reprise-refactoring-execution.md#m61-明确原生平台语义)。
 
 ## 问题
 

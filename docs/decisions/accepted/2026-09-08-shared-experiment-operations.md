@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M5.1](../../plan/reprise-refactoring-execution.md#m51-提取与界面无关的应用操作)。
+目标批次见 [M5.1](../../plan/archive/reprise-refactoring-execution.md#m51-提取与界面无关的应用操作)。
 
 ## 问题
 
