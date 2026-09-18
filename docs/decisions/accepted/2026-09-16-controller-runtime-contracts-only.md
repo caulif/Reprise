@@ -30,7 +30,7 @@
 
 ## 影响
 
-[`controller-agent.ts`](../../../src/agents/controller-agent.ts)、[实验条件](../../architecture/controller-experiment-conditions.md) 第 6 条。不改 Comparison 发布，不改 Recovery 模型轮次。
+[`controller-agent.ts`](../../../src/agents/controller-agent.ts)、[实验条件](../../architecture/controller.md#4-实验条件) 第 6 条。不改 Comparison 发布，不改 Recovery 模型轮次。
 
 ## 验证
 

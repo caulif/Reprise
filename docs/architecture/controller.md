@@ -4,7 +4,7 @@
 
 状态：当前模块设计
 
-时间范围：下文区分 **current**（代码行为）与 **planned**（未实现的 Adapter 分层）。类型以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 的 `SteeringContext` / `ControllerDecision` 为准，不在本文维护 TypeScript 副本。
+类型以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 的 `SteeringContext` / `ControllerDecision` 为准，不在本文维护 TypeScript 副本。
 
 ## 1. 模块目标
 
@@ -80,13 +80,104 @@ Controller 模型由用户从自己通过 Pi 可用的 provider 与模型中选�
 - 候选 Agent 自己已经发现的信息；
 - 因候选轨迹不同而产生的纠正、确认和验收请求。
 
-Controller 可以直接读取原始会话，并自主判断哪些历史内容表达用户能力、哪些只属于原轨迹。这里不实现复杂的未来信息检测、泄漏评分或人工规则引擎；行为边界由 system prompt、只读观察能力和 trace 可追溯性保证。
+Controller 可以直接读取原始会话，并自主判断哪些历史内容表达用户能力、哪些只属于原轨迹。行为边界由 system prompt、只读观察能力和 trace 可追溯性保证。
 
-## 4. TaskCase（任务胶囊）视图
+## 4. 实验条件
+
+本文 §4 子节与独立「实验条件」专题旧稿 **§1–§8** 一一对应为 **§4.1–§4.8**。ADR 正文中的裸「§N」（如 §4–§5、§6、「第 6 条」）指旧稿 §N，即本文 **§4.N**（「第 6 条」= §4.1 第 6 条）。
+
+### 4.1 已确认结论
+
+1. Controller 模型由用户配置，直接复用 Pi provider 与 model API。
+2. 「固定 Controller」指同一 Experiment 内将 Controller 作为控制变量；每个 CandidateRun 使用独立 session，候选共享同一份已解析 `ResolvedAgentConfig`。
+3. Pi Agent Host 随项目正常更新，不作为被测变量。
+4. Controller 必须通过 briefing 与工具访问 TaskCase 中的完整原始会话；Target Runtime 收到的用户消息全部由 Controller 写出，包括第一句。
+5. 「同等人类能力」只能被操作化，不声称精确预测真实用户在反事实情境中的唯一输入。
+6. 完整原始会话的使用边界由 canonical system prompt 限制：用户句是协作与验收习惯的证据，不是必须按序打完的队列；停止条件是这个人面对当前轨迹会不会停。历史后续轨迹用于理解目标、知识、偏好和协作方式，不得把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。候选第一条用户消息的任务形状须与 `initialInput` 同类，且不得引用候选尚未写出的建议、优先级或清单；见[开场不得引用未发生的候选建议](../decisions/accepted/2026-09-16-controller-opening-no-unseen-advice.md) 与[运行时仅合同](../decisions/accepted/2026-09-16-controller-runtime-contracts-only.md)。Controller 只在候选 turn 稳定完成后，先看 Host 的用户视图快照，再按需读取用户可访问材料。
+7. Harness 不捆绑、推荐或评价 Controller 模型。
+
+### 4.2 实验内固定与配置归属
+
+用户在创建 Experiment 时选择 Controller provider、模型及必要参数。Harness 在首个候选运行前解析得到 `ResolvedAgentConfig`；所有候选各自创建 session，但引用同一配置快照。
+
+固定的是实验条件：请求与解析后的模型身份、canonical system prompt hash、工具能力边界、原始会话可见范围、可选 Agent 预算、上下文压缩策略与 privacy 策略。不要求实际行为相同：不同候选的决策次数、token、成本、延迟、工具调用与压缩时刻可以不同，这些差异进入 trace。
+
+Controller 配置属于 `ExperimentSpec`，在首个候选运行前解析；Recovery 配置保存在 `TaskCase.provenance`；Comparison 配置在比较调用前解析。setup 默认值后来变化不能静默覆盖这些快照。Harness 不保存 provider secret，只保存 Pi 能安全持久化的标识、请求模型、解析后身份、非敏感参数与配置 hash。
+
+### 4.3 Pi Agent Host 版本
+
+Pi Agent Host 是实现基础设施，不是需要恢复的历史 Agent Runtime。RunManifest 记录 Harness 版本或构建标识、Pi 依赖版本与 Controller prompt hash，供问题排查；同一正在执行的 Experiment 默认由当前安装版本完成。
+
+### 4.4 Controller 工具集合
+
+Controller 工具让扮演用户的模型能看见隔离副本，并像真人一样修改工作区文件、调查其他可读材料。注册集合等于可执行集合：`ls`/`read`/`grep`/`find`/`edit`/`write`/`shell_exec`，含 `shell_exec`，不含 `read_observation`（见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)）。不能绕过 Target Runtime 执行任务。
+
+Host 把工作区工具挂在 briefing 根上。`project/` 是隔离副本挂载：`edit`/`write` 仅允许该挂载下的文件；briefing 根拒写。`ls`/`read`/`grep`/`find` 与 `shell_exec` 读取不受工作区 containment 限制。不按工具调用次数截断；上下文走 Pi 压缩。
+
+工具边界：不得用 `edit`/`write` 写用户源目录、不得调用 Target 工具、不得直接改 CandidateRun 状态机；发给候选的唯一用户输入仍是信封 `message`。路径、读取范围、类型和大小在 Host 边界验证。工具能力配置在同一 Experiment 的候选间一致，实际调用次数不要求一致。
+
+`project/` 可读范围是整棵隔离副本；用户可见表面由 `current-user-view.md` 承担。Controller 对 `project/` 的 Host 控制写入记入 `controller.workspace_write` 与 `run/controller-writes.jsonl`。shell 在副本外的写入记入 `controller.external_write`，并出现在 Comparison 输入的 `controllerExternalWritePaths`。
+
+### 4.5 原始会话可见范围
+
+Controller 对原始会话采用「完整可访问」，而不是「每轮把所有 token 永久塞进 prompt」。
+
+- 完整 transcript 是不可变事实源；`history/` 下按需 `read`，由 Controller 决定是否说、怎么说；
+- Host 不因「还有未使用的历史用户句」拒绝 `done`，也不按序强制投递；
+- `current.summary` 只指向 `current-user-view.md` 与结算状态；
+- opening 与 steering 读取 briefing 材料时记 `source=briefing_read` 的 observation evidence；
+- `privacy.allowModelText` 是化石键，读取恒为允许正文；凭据仍走 `redactModelVisibleText`。见 [allowModelText 化石](../decisions/accepted/2026-09-16-allow-model-text-fossil.md)。
+
+默认上下文组装：
+
+```text
+opening：决策段 + 完整 INDEX.md
+steering：决策段 + Latest turn 行（不重发 INDEX.md）
++ current-user-view.md / permissions.txt（Host 快照）
++ briefing 上的 history/user-inputs/、history/、run/turns/、THIS-TURN（按需 read）
++ project/ 隔离副本与 notes/ 工作笔记（按需 read；edit/write 可写）
+→ 模型可见输入；SteeringContext 其余字段（含 budget）供 Host 校验，不 JSON 进 prompt
+```
+
+窗口不够时靠 Pi 压缩，不以摘要替代磁盘原文。不同 CandidateRun 各自从同一个不可变 transcript 开始，不能看到其他候选轨迹或 Comparison 结果。
+
+### 4.6 Controller 预算
+
+Controller、Recovery 和 Comparison 的资源预算默认均不设上限。`timeoutMs: 0` 表示单次调用不设定时器，仍可由用户取消或 session abort 结束。结构化输出修复只在同一次 `append` 已返回但信封不合规时发生；超时或 `append` 抛错不得在同一条 Pi session 上立刻再 `prompt()`。
+
+```ts
+interface AgentBudget {
+  maxCalls?: number;
+  maxTokens?: number;
+  maxCost?: number;
+  callTimeoutMs: number;
+  maxStructuredRepairAttempts: number;
+  maxProviderRetries: number;
+}
+```
+
+- `maxCalls`、`maxTokens` 和 `maxCost` 默认未设置；
+- `maxStructuredRepairAttempts` 限制 schema 修复调用，`maxProviderRetries` 限制瞬时 provider 错误重试；两者分别计数且保持很小；
+- `callTimeoutMs` 仅在用户显式配置时限制单次调用；实际 Host 调用为 `timeoutMs: 0`；
+- `RunPolicy` 只约束 Target Runtime（见 [RunPolicy 只约束 Target](../decisions/accepted/2026-09-16-runpolicy-target-only-safety-valves.md)）；Controller 决策次数只用 `controller.budget.maxCalls`（未设置则不截断）。
+
+所有候选使用相同的显式 Agent 预算配置（默认均为无限制），但实际消费分别记录。Controller token、成本和耗时必须与 Target 指标分开。若用户配置了 Agent 预算，上限耗尽是独立终止原因，不能伪装成 `done` 或任务完成。
+
+### 4.7 上下文压缩
+
+第一版直接复用 Pi 的上下文管理和压缩能力。同一 Experiment 固定压缩策略，而不是压缩结果：每个候选拥有独立 Controller session；system prompt、任务目标、安全边界、当前 turn 和 Controller 已发送消息具有更高保留优先级；较早的候选轨迹可以压缩，但 trace 与 artifact 引用必须保留；原始 transcript 始终可通过只读工具重新读取。
+
+### 4.8 操作化表述
+
+> Harness 使用用户选择且在 Experiment 内保持一致的 Controller 配置。Controller 基于完整原始会话、同一任务事实、当前候选轨迹、用户可见表面和隔离副本（可 edit/write），模拟具有原用户目标、知识、偏好、权限和实际协作能力的用户，动态生成下一条输入。
+
+这是一种可记录、可解释的操作化条件，不是对真实用户反应的证明。报告应显示 Controller 的请求模型、解析后身份、配置 hash、工具能力、预算配置（默认无限制）和压缩策略。
+
+## 5. TaskCase（任务胶囊）视图
 
 `TaskCase` 是 Controller 的历史事实来源。字段以 [`src/core/schema.ts`](../../src/core/schema.ts) 为准。Controller 不重新提炼一份替代 transcript 的任务说明；briefing 提供 `history/user-inputs/`、`initial-input.txt` 与按需可读材料。
 
-### 4.1 完整会话与 initialInput
+### 5.1 完整会话与 initialInput
 
 用户选择的完整逻辑会话就是 TaskCase 表示的任务。Controller 必须同时理解两种不同用途：
 
@@ -103,7 +194,7 @@ TaskCase.initialInput             TaskCase.transcript
 
 Controller 不选择会话内任务边界，也不为 Target 补造会话开始前上下文。resume、fork 或 parent session 是否属于同一个逻辑会话，由 ProductHistoryReader 在导入时确定并留下 provenance。
 
-### 4.2 用户能力证据
+### 5.2 用户能力证据
 
 Controller 可以从原会话自然理解：
 
@@ -115,13 +206,13 @@ Controller 可以从原会话自然理解：
 
 `taskContext` 可以包含用户确认的备注或导入 Agent 的摘要，但摘要不能替代原始 transcript。推断内容保留 provenance，不能伪装成用户明确说过的话。
 
-### 4.3 BaselineEvidence
+### 5.3 BaselineEvidence
 
 Baseline 保存原始完成结果，是候选结果的比较对象，但不是要求复刻的标准答案。更强的候选模型可以采用不同路径、产生更好的结果，Controller 不应把原 Agent 后来调查得到的答案或实现路径当作用户原本知道的事实直接提供给候选。这个边界由 canonical system prompt 约束，不增加未来信息检测或第二审查 Agent。
 
 历史产物缺失时，Controller 只能依据仍然存在的消息和引用；不得把缺失的文件、截图或检查结果补造成事实。
 
-## 5. Target Runner 交互生命周期
+## 6. Target Runner 交互生命周期
 
 TargetRunner 的公共协议定义在[架构总览](./overview.md)。从 Controller 视角，一轮协作经历：
 
@@ -146,7 +237,7 @@ Controller opening send persisted
 - Harness 尚未确认 delivery；
 - CandidateRun 已进入 `finalizing` 或 `finished`。
 
-### 5.1 可产生决策的 settlement
+### 6.1 可产生决策的 settlement
 
 ```ts
 type TurnSettlementStatus =
@@ -163,7 +254,7 @@ type TurnSettlementStatus =
 
 Runtime 产品的 turn 数和模型调用数不等价。Controller 的一次决策对应一个稳定用户输入边界，而不是某个固定模型调用次数。
 
-### 5.2 approval 与真实用户决定
+### 6.2 approval 与真实用户决定
 
 如果 Target 等待的是低风险、可逆且原会话已体现授权倾向的普通选择，Controller 可以发送自然语言确认。遇到真实发布、删除、付款、权限扩大、数据迁移或其他高影响动作，而原会话没有明确授权时，Controller 必须返回：
 
@@ -173,11 +264,11 @@ Runtime 产品的 turn 数和模型调用数不等价。Controller 的一次决�
 
 Controller 不直接调用 Runtime 的 approval API；它只能通过普通用户消息表达原用户有能力作出的决定。
 
-### 5.3 delivery unknown
+### 6.3 delivery unknown
 
 `DeliveryReceipt.delivery === "unknown"` 时，RunOrchestrator 不会调用 Controller 生成替代消息。它先要求 ProductRuntime 核查旧 message/turn；仍无法确认则进入 `finalizing`。这样避免同一纠正或授权被发送两次。
 
-## 6. 观察与工具面（current）
+## 7. 观察与工具面
 
 Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本，`notes/` 可写工作笔记；读取工具与 `shell_exec` 可以访问当前进程可读路径。不注册名为 Observation Adapter 的组件。见 [读取与 shell](../decisions/accepted/2026-09-12-controller-unrestricted-read-and-shell.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[路径 briefing](../decisions/accepted/2026-09-03-controller-path-briefing.md)、[英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)。
 
@@ -187,11 +278,9 @@ Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 b
 - 文件入口是 `current-user-view.md`、`THIS-TURN.txt`、`changed-paths.txt` 与 INDEX；`notes/` 是 Controller 工作笔记，Host digest 不收录；
 - 成功 `read` 记 `controller.observation_read`；`edit`/`write` 记 `controller.workspace_write`；shell 在副本外的写入记 `controller.external_write`。
 
-**planned / 未实现：** 独立 `TargetObservation`、六类 Observation Adapter、`ControllerArtifactReader` 接口。不要把这些名称当成当前代码中的类型。视觉与浏览器探测不在本轮范围。
-
 Controller 需要 Target 建立证据时发送 `verify` 消息；报告由 Comparison 写 `report.html`。
 
-## 7. SteeringContext
+## 8. SteeringContext
 
 Host 每次结构化 `append` 给模型的用户消息是英文决策段，不是本对象的 JSON。opening 附完整 INDEX.md；steering 只附 `Latest turn:` 行，不重发 `# INDEX.md`。首次 `decide` 另有一轮自由理解委托，结论写入 `notes/understanding.md`。`current-user-view.md` 是用户可见表面快照：可见助手文本取最近一次 settlement 事件区间内的全部公开正文（段间拼接），确认/授权请求写入 Prompt。`permissions.txt` 分 Controller 的 `project/` 与 `notes/` 写入与候选运行权限；后者是历史会话推断，缺失时标 unconfirmed，不是本次 launch 授权证明。`allowModelText` 是化石键，Host 恒允许正文。历史正文与本 run 回合在 briefing 文件里，由 Controller 先看快照再按需 `read`；这些 briefing `read` 记 `briefing_read` evidence。`controller.requested` snapshot 含 `promptContent`、`briefingRoot` 与所列文件 hash（不含 `notes/`）；`current.summary` 不内联命令或路径计数。settled turn 先写不可变 turn 目录，再发布 `current-user-view.md` / `THIS-TURN.txt` / `INDEX.md`。见 [权限快照与当前视图](../decisions/accepted/2026-09-09-controller-permissions-view-prompt.md)、[唯一用户视图入口](../decisions/accepted/2026-09-10-controller-current-user-view.md)、[briefing 原子发布](../decisions/accepted/2026-09-10-controller-briefing-atomic-publish.md)、[协作工具面](../decisions/accepted/2026-09-10-controller-collaboration-workspace-tools.md)、[Controller 英文提示词与 notes](../decisions/accepted/2026-09-15-controller-english-prompts-and-notes.md)。
 
@@ -210,13 +299,13 @@ Host 每次结构化 `append` 给模型的用户消息是英文决策段，不�
 5. 只按需读取长 artifact；
 6. 不因预算不足删除安全和授权边界。
 
-## 8. Canonical ControllerDecision
+## 9. Canonical ControllerDecision
 
 `ControllerPort.decide` 与 `ControllerDecision` 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 的 TypeBox schema 为准。`send` 含 intent 与可选 evidenceRefs；`done` 含 reason。
 
 只有 `send.message` 发送给 Target Agent；intent、rationale 和 evidenceRefs 只写入 trace。`wait` 是 Runner 状态，不是 Controller decision。
 
-### 8.1 四类发送意图
+### 9.1 四类发送意图
 
 - `continue`：方向正确且继续自主执行仍有价值；
 - `inform`：补充原用户知道、但 Candidate 当前缺少的事实或约束；
@@ -225,7 +314,7 @@ Host 每次结构化 `append` 给模型的用户消息是英文决策段，不�
 
 intent 是可观测解释，不是硬编码的行为策略。Controller 仍通过 Agent 判断最自然的具体消息。
 
-### 8.2 done 理由
+### 9.2 done 理由
 
 - `satisfied`：目标和必要证据已经足够；
 - `blocked`：Target 或环境无法继续，普通用户输入不能解决；
@@ -236,7 +325,7 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 有效的非 satisfied 判断表示任务 incomplete。Host 接受 Controller 的 `done` 作为停止决定，不因未读 briefing 文件、缺失账本或省略 `understandingDelta` 而拒绝。历史记录中的 `controller.understanding` 与账本事件仍可只读展示。具体取舍见 [先理解再按视图决策](../decisions/accepted/2026-09-09-controller-understand-then-view.md)。
 
-## 9. 决策过程
+## 10. 决策过程
 
 首次 `decide` 先在同一 Session 自由理解完整历史用户输入，再返回 opening `send`。后续只在稳定 settlement 后，先看 `current-user-view.md`，再按需读取用户可访问材料。判断顺序由 prompt 约束，不在 Core 写成规则引擎：
 
@@ -249,7 +338,7 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 
 不要按历史用户句下标重放。候选走了不同但有效的路径时，根据当前结果回应。不要为了增加轮数或追求无关完美而继续。
 
-## 10. Prompt 与评估分层
+## 11. Prompt 与评估分层
 
 可执行 system prompt 与 understand / opening / steering 以 [`controller-agent.ts`](../../src/agents/controller-agent.ts) 为准，门禁快照为 [`controller-system-prompt.txt`](../../test/snapshots/controller-system-prompt.txt)。本文不复制全文。指令为英文。System Prompt 组成顺序是角色正文、`# Workspace`、locale 语言块、可见过程规则。过程叙述与 `rationale` 随操作者 locale；`send.message` 跟随历史用户当时的语言，见 [内部 Agent locale](../decisions/accepted/2026-09-15-internal-agent-locale.md)。
 
@@ -261,7 +350,7 @@ Host 先持久化 `controller.decision` 再按 `clientMessageId` 投递；取消
 
 实现时把 schema、有效 reason、任务数据和权限边界作为独立结构化上下文提供，不在 prompt 文本中拼接不可信内容。
 
-## 11. AgentHost
+## 12. AgentHost
 
 Controller 通过 Reprise `AgentHost` / `AgentSession` 管理模型调用、session、上下文和工具生命周期。每个 CandidateRun 使用独立 Controller session；不同候选模型不能共享模型隐藏状态，但必须使用 Experiment 已解析的同一 Controller 配置。
 
@@ -278,7 +367,7 @@ Controller session 不是可恢复实验状态。Orchestrator 只信任已经持
 
 Recovery Agent 和 Comparison Agent 复用同一个 AgentHost 实现，但使用独立 session、prompt、上下文和工具，不与 Controller 共享对话。Controller 的 prompt 属于 Controller 模块，不由 Product Pack 提供。执行循环由 Pi 适配器驱动，见[基座 Host](../decisions/accepted/2026-09-09-agent-foundation-host.md)。
 
-## 12. Trace 与遥测
+## 13. Trace 与遥测
 
 每次 Controller 调用至少追加：
 
@@ -305,7 +394,7 @@ controller.completed | controller.failed
 
 Controller 产生的耗时和成本单独展示，不混入 Target 模型的过程效率。用户关心使用候选模型的实际体验时，报告可以同时显示 target-only 和 end-to-end 两种墙钟时间。
 
-## 13. 失败与重试
+## 14. 失败与重试
 
 - 结构化输出不合法：不发送半截文本；允许一次同上下文修复调用，仍失败则结束为 controller failure。
 - Controller provider 失败：根据 Controller 自己的 `AgentBudget.maxProviderRetries` 允许有限重试；`RunPolicy` 只约束 Target Runtime。不能自动换模型后仍声称 Controller 条件相同。
@@ -315,7 +404,7 @@ Controller 产生的耗时和成本单独展示，不混入 Target 模型的过�
 
 Controller failure 与 Target failure、Runtime failure 和报告 failure 分开记录。
 
-## 14. 安全与隐私
+## 15. 安全与隐私
 
 - Controller 输入先应用 `TaskCase.privacy`；密钥和凭据不进入模型上下文。
 - Controller 工具只能作用于本 run 的隔离副本与 Host 允许的观察源；不得写用户源目录或调用 Target 工具。
@@ -324,7 +413,7 @@ Controller failure 与 Target failure、Runtime failure 和报告 failure 分开
 - Controller 消息经过长度、空文本和控制字符验证后才能发送给 Runtime。
 - 模型输出中的路径、artifact ID 和 evidence ref 均视为不可信输入并校验。
 
-## 15. 与 Comparison 的关系
+## 16. 与 Comparison 的关系
 
 Controller 可以要求 Target 验证工作，但不决定最终报告布局。运行结束后，产品无关的 Comparison Agent 读取 baseline、RunRecord、规范化 artifacts、客观遥测和 FidelityAssessment，选择值得并排展示的结果证据。
 
@@ -337,11 +426,11 @@ Comparison Agent: 为了让用户直接比较结果，应该展示什么以及�
 
 Comparison Agent 不读取 Product Pack 或产品私有日志，也不改变运行结果、质量打分或 fidelity。它失败时报告退化为客观遥测、原始消息和 artifact 列表；CandidateRun 仍然完成。完整设计见[Comparison 专题](./comparison.md)。
 
-## 16. 已落地范围
+## 17. 已落地范围
 
-上述 1–7 项已由当前 Controller 路径覆盖。视觉、浏览器 Observation Adapter 仍为 planned，不作为当前验收。
+上述 §1–§8 与 §10–§13 已由当前 Controller 路径覆盖。视觉、浏览器 Observation Adapter 仍属后续范围，不作为当前验收。
 
-## 17. 模块验收条件
+## 18. 模块验收条件
 
 - 同一原始会话面对两条不同候选轨迹可以生成不同且合理的消息；
 - 原始后续消息不会被机械 replay；

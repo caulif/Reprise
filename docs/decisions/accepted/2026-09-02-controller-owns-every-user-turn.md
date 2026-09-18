@@ -24,7 +24,7 @@
 
 ## 影响
 
-[Controller 设计](../../architecture/controller.md) §4.1 与 §5。[架构总览](../../architecture/overview.md) 的候选启动输入。[Controller 实验条件](../../architecture/controller-experiment-conditions.md)。
+[Controller 设计](../../architecture/controller.md) §4.1 与 §5。[架构总览](../../architecture/overview.md) 的候选启动输入。[Controller 实验条件](../../architecture/controller.md#4-实验条件)。
 
 ## 验证
 

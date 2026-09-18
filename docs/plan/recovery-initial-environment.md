@@ -4,7 +4,7 @@
 
 ## 相关文档索引
 
-设计入口是本文与[环境架构](../architecture/environment.md)。角色提示词边界见[Agent 职责与提示词](../architecture/agent-roles-and-system-prompts.md)，跨模块所有权见[架构总览](../architecture/overview.md)，持久化事实见[持久化与崩溃一致性](../architecture/persistence-and-crash-consistency.md)，运行结果边界见[结果与终止](../architecture/run-outcome.md)，安全与可比性见[验证边界](../architecture/validation.md)。
+设计入口是本文与[环境架构](../architecture/environment.md)。角色提示词边界见[Agent 职责与提示词](../architecture/agent-roles-and-system-prompts.md)，跨模块所有权见[架构总览](../architecture/overview.md)，持久化事实见[持久化与崩溃一致性](../architecture/persistence-and-crash-consistency.md)，运行结果边界见[结果与终止](../architecture/run-outcome.md)，安全与可比性见[验证边界](../architecture/overview.md#附录最小验证边界)。
 
 未关闭原因：基线复用前的轻量运行条件检查、缺失时修补运行副本或本机环境仍须实现与验收，不能以独立副本复制替代证明。默认空 staging 目标集中在[最小 Host](./recovery-agent-minimum-host.md)，本文件保留复用与恢复语义的验收要求。当前规则是[自主三轮循环](../decisions/accepted/2026-09-09-recovery-single-workspace-agent-loop.md)、[连续 Session](../decisions/accepted/2026-09-08-recovery-continuous-session.md)、[工作集与观察文件](../decisions/accepted/2026-09-07-recovery-working-set-and-observation-files.md)和[checkpoint 恢复](../decisions/accepted/2026-08-18-recovery-checkpoint-restore.md)。
 

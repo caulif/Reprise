@@ -35,7 +35,7 @@ Controller 模拟真实用户协作：
 
 ## 影响
 
-[实验条件](../../architecture/controller-experiment-conditions.md) §4–5、[Controller 设计](../../architecture/controller.md)、[validation Capability](../../architecture/validation.md)、[环境 §7.1](../../architecture/environment.md#71-内部工作空间与实际边界)。
+[实验条件](../../architecture/controller.md#4-实验条件) §4–5、[Controller 设计](../../architecture/controller.md)、[validation Capability](../../architecture/overview.md#附录最小验证边界)、[环境 §7.1](../../architecture/environment.md#71-内部工作空间与实际边界)。
 
 ## 验证
 
