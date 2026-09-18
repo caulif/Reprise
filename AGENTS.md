@@ -1,5 +1,7 @@
 # AGENTS.md
 
+默认只读 product/ 与 architecture/ 等事实层；ADR 仅在触及跨模块契约或门禁时再按需检索 [decisions/README](docs/decisions/README.md)。
+
 改代码后跑 `npm run check`（[门禁](docs/engineering-gates.md)）。只改文档跑 `npm run verify:docs`。不要为一次改动默认跑全套。新增或修改门禁时，同一次变更必须附一个能让该门禁失败的自动化用例（[反向用例](docs/decisions/accepted/2026-08-15-gate-reverse-tests.md)）。覆盖率阈值只能升不能降（[覆盖率](docs/decisions/accepted/2026-08-14-coverage-thresholds.md)）。
 
 测试读的是 `dist/`。改完源码必须先 `npm run build`；`node --test` 直接跑 `.ts` 不成立（[`package.json`](package.json)）。
