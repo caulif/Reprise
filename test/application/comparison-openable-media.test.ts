@@ -7,8 +7,8 @@ import {
   assertPairedVisualMediaOrThrow,
   augmentComparisonOpenableMedia,
   ComparisonVisualMediaError,
-  isOpenableFinalPath,
 } from "../../src/application/comparison-openable-media.js";
+import { isOpenableFinalPath } from "../../src/application/openable-final-path.js";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../../src/core/schema.js";
 
 const MINIMAL_PNG = Buffer.from(
@@ -103,6 +103,16 @@ test("augmentComparisonOpenableMedia screenshots dual html when links only refer
     },
   });
   assert.equal(captureCalls.length, 2);
+  for (const item of result.media.filter((entry: ComparisonMediaRecord) => entry.available)) {
+    assert.match(item.reportHref, /\.png$/);
+    assert.match(item.inspectPath, /^media\/.+\.png$/);
+    const materialized = join(attemptRoot, item.reportHref);
+    const bytes = await readBytes(materialized);
+    assert.equal(bytes[0], 0x89);
+    assert.equal(bytes[1], 0x50);
+    assert.equal(bytes[2], 0x4e);
+    assert.equal(bytes[3], 0x47);
+  }
   assert.ok(result.media.some((item: ComparisonMediaRecord) => item.side === "baseline" && item.available));
   assert.ok(result.media.some((item: ComparisonMediaRecord) => item.side === "candidate" && item.available));
 });
@@ -155,4 +165,9 @@ test("augmentComparisonOpenableMedia reports no_browser separately from capture_
 async function readFile(path: string, encoding: BufferEncoding): Promise<string> {
   const { readFile: read } = await import("node:fs/promises");
   return read(path, encoding);
+}
+
+async function readBytes(path: string): Promise<Buffer> {
+  const { readFile: read } = await import("node:fs/promises");
+  return read(path);
 }

@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
-import { access, readdir, stat } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { TaskCase } from "../core/schema.js";
+import { sha256File } from "../core/identity.js";
 import { isComparisonImagePath } from "./comparison-media.js";
 import { finalDeliverableRank, isOpenableFinalPath } from "./openable-final-path.js";
 
@@ -50,6 +51,24 @@ export function historicalFinalSearchRoots(input: {
   if (input.dataDir) roots.push(join(input.dataDir, "cases", input.caseId, "baseline-artifacts"));
   roots.push(join(input.experimentRoot, "environment", "baselines"));
   return roots;
+}
+
+export async function findFileInHistoricalRoots(input: {
+  experimentRoot: string;
+  runId: string;
+  caseId: string;
+  dataDir?: string;
+  attemptRoot?: string;
+  basename: string;
+}): Promise<string | undefined> {
+  const roots = historicalFinalSearchRoots(input);
+  for (const root of roots) {
+    const absolutePath = root.endsWith("finals")
+      ? join(root, input.basename)
+      : await findFileByBasename(root, input.basename);
+    if (absolutePath && await fileExists(absolutePath)) return absolutePath;
+  }
+  return undefined;
 }
 
 export async function resolveHistoricalFinalPath(input: {
@@ -121,9 +140,8 @@ export async function sealBaselineOpenablePath(sealedRoot: string, absolutePath:
   const name = basename(absolutePath);
   const dest = join(sealedRoot, name);
   if (await fileExists(dest)) {
-    const existing = await stat(dest);
-    const incoming = await stat(absolutePath);
-    if (existing.size === incoming.size && existing.mtimeMs === incoming.mtimeMs) return dest;
+    const [existingHash, incomingHash] = await Promise.all([sha256File(dest), sha256File(absolutePath)]);
+    if (existingHash === incomingHash) return dest;
     throw new Error(`Duplicate baseline final basename "${name}" under ${sealedRoot}`);
   }
   const { copyFile, mkdir } = await import("node:fs/promises");

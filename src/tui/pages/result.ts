@@ -1,6 +1,7 @@
+import { resolve, normalize } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
-import { resolveResultPathLinks } from '../../application/result-paths.js';
+import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
 import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
@@ -51,6 +52,7 @@ export function resultPointerAction(
   row: number,
   col: number,
   locale: Locale = 'en',
+  paths?: ResultPathLinks,
 ): ResultAction | undefined {
   const line = lines[row];
   if (!line) return undefined;
@@ -58,16 +60,36 @@ export function resultPointerAction(
   if (stripForHit(line).includes(compare)) return 'compare';
   const href = hitFileLink(line, col);
   if (!href) return undefined;
-  const pathHint = pointerHrefPath(href);
-  if (/report\.html|comparison-failure\.html/i.test(pathHint)) return 'open-report';
-  if (/environment[/\\]runs[/\\]/i.test(pathHint) && !/\.[a-z0-9]+$/i.test(pathHint)) return 'open-replica';
-  if (/[/\\]runs[/\\]/i.test(pathHint) && !/\.[a-z0-9]+$/i.test(pathHint)) return 'open-trace';
-  if (/\.(html|htm|png|jpe?g|gif|webp|svg|avif|json|md|txt)$/i.test(pathHint)) {
-    if (/controller-briefing[/\\]history|baseline-artifacts|history[/\\]finals|environment[/\\]baselines/i.test(pathHint)) return 'open-history-final';
-    if (/environment[/\\]runs[/\\]/i.test(pathHint)) return 'open-candidate-final';
-    return 'open-candidate-final';
+  if (paths) {
+    const action = resolveResultLinkAction(href, paths);
+    if (action) return action;
   }
   return undefined;
+}
+
+export function resolveResultLinkAction(href: string, paths: ResultPathLinks): ResultAction | undefined {
+  const target = normalizeLinkTarget(href);
+  const candidates: readonly [ResultAction, string | undefined][] = [
+    ['open-report', paths.report],
+    ['open-history-final', paths.historyFinal],
+    ['open-candidate-final', paths.candidateFinal],
+    ['open-trace', paths.trace],
+    ['open-replica', paths.replica],
+  ];
+  for (const [action, path] of candidates) {
+    const normalized = normalizeStoredPath(path);
+    if (normalized && normalized === target) return action;
+  }
+  return undefined;
+}
+
+function normalizeLinkTarget(href: string): string {
+  return normalizeStoredPath(pointerHrefPath(href)) ?? pointerHrefPath(href).replaceAll('\\', '/').toLowerCase();
+}
+
+function normalizeStoredPath(path: string | undefined): string | undefined {
+  if (!path?.trim()) return undefined;
+  return normalize(resolve(path.trim())).replaceAll('\\', '/').toLowerCase();
 }
 
 function pointerHrefPath(href: string): string {

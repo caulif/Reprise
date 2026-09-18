@@ -47,6 +47,9 @@ export async function materializeComparisonMedia(input: {
   const seen = new Set<string>();
   for (const link of input.links) {
     const source = await firstExistingFile([
+      link.reportHref?.startsWith("media/")
+        ? join(input.attemptRoot, ...link.reportHref.split("/"))
+        : undefined,
       join(input.attemptRoot, ...link.inspectPath.split("/")),
       link.inspectPath.startsWith("candidate/")
         ? join(input.workspaceRoot, ...link.inspectPath.slice("candidate/".length).split("/"))

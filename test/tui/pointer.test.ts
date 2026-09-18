@@ -7,7 +7,7 @@ import type { ControllerHandle } from '../../src/tui/controller-input.js';
 import { hitFileLink } from '../../src/tui/format.js';
 import { homeHints } from '../../src/tui/pages/home.js';
 import { applyResultPointer, yieldPointerToApp } from '../../src/tui/pointer-dispatch.js';
-import { resultPointerAction, renderResult } from '../../src/tui/pages/result.js';
+import { resultPointerAction, renderResult, resolveResultLinkAction } from '../../src/tui/pages/result.js';
 import { keepSelectedVisible } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
@@ -32,9 +32,15 @@ test('home idle footer does not repeat Enter', () => {
 test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const theme = createTheme(120, false);
+  const pathLinks = {
+    report: 'C:\\exp\\report.html',
+    trace: 'C:\\exp\\runs\\run-1',
+    replica: 'C:\\exp\\environment\\runs\\run-1',
+  };
   const lines = renderResult(theme, 120, {
     reportPath: 'C:\\exp\\report.html',
     experimentRoot: 'C:\\exp',
+    pathLinks,
     record: {
       attempt: { runId: 'run-1' },
       outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
@@ -44,28 +50,37 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
   } as never, 'en', 'Codex', true);
   const reportLine = lines.findIndex((line) => line.includes('report.html'));
   assert.ok(reportLine >= 0);
-  assert.equal(resultPointerAction(lines, reportLine, 20, 'en'), 'open-report');
-  assert.equal(resultPointerAction(lines, 0, 2, 'en'), undefined);
+  let hitCol = 0;
+  for (let col = 1; col <= 120; col += 1) {
+    if (hitFileLink(lines[reportLine] ?? '', col)?.includes('report.html')) {
+      hitCol = col;
+      break;
+    }
+  }
+  assert.ok(hitCol > 0);
+  assert.equal(resultPointerAction(lines, reportLine, hitCol, 'en', pathLinks), 'open-report');
+  assert.equal(resultPointerAction(lines, 0, 2, 'en', pathLinks), undefined);
   const compareLine = lines.findIndex((line) => line.includes('Start comparison'));
   assert.ok(compareLine >= 0);
-  assert.equal(resultPointerAction(lines, compareLine, 4, 'en'), 'compare');
+  assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks), 'compare');
 });
 
 test('result pointer treats environment baselines html as history final', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const baselinePath = 'C:\\exp\\environment\\baselines\\deck.html';
   const href = pathToFileURL(baselinePath).href;
+  const pathLinks = {
+    report: 'C:\\exp\\report.html',
+    historyFinal: baselinePath,
+    candidateFinal: 'C:\\exp\\environment\\runs\\run-1\\deck.html',
+    trace: 'C:\\exp\\runs\\run-1',
+    replica: 'C:\\exp\\environment\\runs\\run-1',
+  };
   const theme = createTheme(120, false);
   const lines = renderResult(theme, 120, {
     reportPath: 'C:\\exp\\report.html',
     experimentRoot: 'C:\\exp',
-    pathLinks: {
-      report: 'C:\\exp\\report.html',
-      historyFinal: baselinePath,
-      candidateFinal: 'C:\\exp\\environment\\runs\\run-1\\deck.html',
-      trace: 'C:\\exp\\runs\\run-1',
-      replica: 'C:\\exp\\environment\\runs\\run-1',
-    },
+    pathLinks,
     record: {
       attempt: { runId: 'run-1' },
       outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
@@ -83,7 +98,8 @@ test('result pointer treats environment baselines html as history final', () => 
     }
   }
   assert.ok(hitCol > 0);
-  assert.equal(resultPointerAction(lines, historyLine, hitCol, 'en'), 'open-history-final');
+  assert.equal(resultPointerAction(lines, historyLine, hitCol, 'en', pathLinks), 'open-history-final');
+  assert.equal(resolveResultLinkAction(href, pathLinks), 'open-history-final');
 });
 
 const resultFixture = {

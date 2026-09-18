@@ -22,6 +22,7 @@ import {
   augmentComparisonOpenableMedia,
   discoverOpenableSources,
 } from "./comparison-openable-media.js";
+import { findFileInHistoricalRoots } from "./historical-final-discovery.js";
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -432,6 +433,7 @@ async function sealedBaselineImageLinks(input: {
   const links: ComparisonLink[] = [];
   for (const name of names) {
     const source = await findSealedImage({
+      attemptRoot: input.attemptRoot,
       experimentRoot: input.experimentRoot,
       runId: input.record.attempt.runId,
       caseId: input.taskCase.caseId,
@@ -493,29 +495,17 @@ function manifestImageType(manifest: ArtifactManifest): string | undefined {
 }
 
 async function findSealedImage(input: {
+  attemptRoot: string;
   experimentRoot: string;
   runId: string;
   caseId: string;
   dataDir?: string;
   basename: string;
 }): Promise<string | undefined> {
-  const roots: string[] = [];
-  if (input.dataDir) {
-    roots.push(join(input.dataDir, "cases", input.caseId, "baseline-artifacts"));
-  }
-  roots.push(
-    join(input.experimentRoot, "environment", "baselines"),
-    join(input.experimentRoot, "runs", input.runId, "controller-briefing", "history"),
-  );
-  for (const root of roots) {
-    const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (!entry.isFile() || entry.name !== input.basename) continue;
-      const parent = "parentPath" in entry && typeof entry.parentPath === "string" ? entry.parentPath : root;
-      return join(parent, entry.name);
-    }
-  }
-  return undefined;
+  const absolutePath = await findFileInHistoricalRoots(input);
+  if (!absolutePath) return undefined;
+  if (isComparisonImagePath(absolutePath)) return absolutePath;
+  return (await sniffComparisonImageMediaType(absolutePath)) ? absolutePath : undefined;
 }
 
 function slash(path: string): string { return path.replaceAll("\\", "/"); }

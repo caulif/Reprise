@@ -7,11 +7,8 @@ import { withMediaShortRefs } from "./comparison-short-refs.js";
 import {
   discoverBaselineOpenableSources,
   sealBaselineOpenablePath,
-  sealedInspectPath,
 } from "./historical-final-discovery.js";
 import { isOpenableFinalPath } from "./openable-final-path.js";
-
-export { isOpenableFinalPath } from "./openable-final-path.js";
 
 export class ComparisonVisualMediaError extends Error {
   readonly code = "media_unavailable" as const;
@@ -67,7 +64,7 @@ export async function augmentComparisonOpenableMedia(input: {
       }
       screenshotLinks.push({
         side,
-        inspectPath: side === "baseline" ? sealedInspectPath(source.absolutePath) : source.inspectPath,
+        inspectPath: `media/${pngName}`,
         reportHref: `media/${pngName}`,
         mediaType: "image/png",
         byteLength: (await stat(pngPath)).size,

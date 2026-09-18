@@ -5,6 +5,7 @@ import { hitFileLink } from './format.js';
 import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
 import { homePointerAction } from './pages/home.js';
 import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
+import { resolveResultPathLinks } from '../application/result-paths.js';
 import { resultPointerAction, renderResult } from './pages/result.js';
 import { hitAtBodyRow, keepSelectedVisible, layoutScrollback } from './scrollback.js';
 import { timelineIdentity } from './timeline-read.js';
@@ -57,7 +58,8 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
   const line = lines[bodyRow];
   const href = line ? hitFileLink(line, cell.col) : undefined;
-  const action = resultPointerAction(lines, bodyRow, cell.col, c.locale);
+  const paths = resolveResultPathLinks(c.result);
+  const action = resultPointerAction(lines, bodyRow, cell.col, c.locale, paths);
   if (action === 'compare') {
     if (c.compareChoice) {
       c.compareChoice.resolve(true);
