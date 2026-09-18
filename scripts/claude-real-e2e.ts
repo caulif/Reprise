@@ -11,13 +11,21 @@ import { claudeCodeProductPack } from '../src/products/packs/claude-code/pack.js
 import { importClaudeSession } from '../src/products/packs/claude-code/sessions.js';
 import type { SourceRootKind } from '../src/application/replay-conditions.js';
 
-const SESSION = 'C:\\Users\\15893\\.claude\\projects\\C--obsidian-LLM---papers\\9d3832ba-ef2f-4a51-9f1c-fe2ced0a8c86.jsonl';
+function resolveSessionPath(): string {
+  const session = process.env.REPRISE_CLAUDE_REAL_E2E_SESSION?.trim();
+  if (session) return session;
+  console.error(`Claude e2e requires a local Claude Code session export path.
+Set REPRISE_RUN_CLAUDE_E2E=1 and REPRISE_CLAUDE_REAL_E2E_SESSION to an absolute .jsonl path, then run:
+  npm run smoke:claude:e2e`);
+  process.exitCode = 1;
+  throw new Error('REPRISE_CLAUDE_REAL_E2E_SESSION is not set.');
+}
 
 async function main(): Promise<void> {
   if (process.env.REPRISE_RUN_CLAUDE_E2E !== '1') {
     throw new Error('Set REPRISE_RUN_CLAUDE_E2E=1 to run the real Claude Code end-to-end check.');
   }
-  const imported = await importClaudeSession(SESSION);
+  const imported = await importClaudeSession(resolveSessionPath());
   const dataDir = await mkdtemp(join(tmpdir(), 'reprise-claude-e2e-'));
   await copyFile(resolve('.reprise/harness-model.json'), join(dataDir, 'harness-model.json'));
   const frozen = await freezeCase(imported, join(dataDir, 'cases'), {

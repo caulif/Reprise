@@ -9,6 +9,8 @@
 
 ## 最近完成证据
 
+2026-09-18 OSS P0 本地路径只向前修：`claude-real-e2e` 改由 `REPRISE_CLAUDE_REAL_E2E_SESSION` 注入；`verify-secrets` 拒绝 `src/`/`scripts/`/`test/` 内真实形态本机绝对路径。见[决策](../decisions/accepted/2026-09-18-oss-local-path-forward-fix.md)。
+
 2026-09-18 文档计划出清（Phase B）：`docs/plan/` 活跃文件压至 5 份；历史目标与迁移表迁入 `docs/plan/archive/`。`npm run verify:docs` 退出 0。范围仅文档与导航，未运行代码门禁或付费验收。
 
 2026-09-17 文档与协作流程（Phase 0–4）：计划目录从 42 份收敛为 8 份开放目标与 1 份模板；立场见[轻量流程决策](../decisions/accepted/2026-09-17-docs-workflow-solo-to-oss.md)。
