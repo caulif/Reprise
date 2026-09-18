@@ -7,22 +7,29 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
  /config  打开 /config  需要凭据
 
 ┌─ 最近对照 · 占用 0.0 MiB ─────────────────────────────────────────┐ ┌─ 对照 ─────────────────────────────────────────┐
-│ ❯ exp-history · record unread                                     │ │ ID           exp-history │
-│     任务 case-history · 时间未知 · 0.0 MiB                        │ │ TaskCase     case-history │
-│ 1/1                                                               │ │ Run          run-history │
-│                                                                   │ │ Outcome      record unread │
-│                                                                   │ │ Started      unavailable │
-│                                                                   │ │ Report       not generated │
-│                                                                   │ │ Stored       0.0 MiB │
-│                                                                   │ │ Path │
-│                                                                   │ │TMP/history-data/ │
-│                                                                   │ │experiments/exp-history │
-│                                                                   │ │ │
-│                                                                   │ │TMP/history-data/ │
-│                                                                   │ │experiments/exp-history │
-│                                                                   │ │ │
-│                                                                   │ │TMP/history-data/ │
-│                                                                   │ │experiments/exp-history │
+│ ❯ exp-history · record unread                                     │ │ ID           exp-history                       │
+│     任务 case-history · 时间未知 · 0.0 MiB                        │ │ TaskCase     case-history                      │
+│ 1/1                                                               │ │ Run          run-history                       │
+│                                                                   │ │ Outcome      record unread                     │
+│                                                                   │ │ Started      unavailable                       │
+│                                                                   │ │ Report       not generated                     │
+│                                                                   │ │ Stored       0.0 MiB                           │
+│                                                                   │ │ Path                                           │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\          │
+│                                                                   │ │experiments\exp-history                         │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\          │
+│                                                                   │ │experiments\exp-history                         │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\          │
+│                                                                   │ │experiments\exp-history                         │
+│                                                                   │ │                                                │
+│                                                                   │ │C:\user\AppData\Local\Temp\              │
+│                                                                   │ │reprise-tui-audit-TMP\history-data\          │
+│                                                                   │ │experiments\exp-history                         │
 └───────────────────────────────────────────────────────────────────┘ └────────────────────────────────────────────────┘
  浏览本地对照，或按 Tab 切换到任务。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

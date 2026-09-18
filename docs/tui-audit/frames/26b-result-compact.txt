@@ -1,8 +1,6 @@
 Reprise   对照结果   C:\reprise
 00:00   * 完成
 ------------------------------------------------------------
-| Fix the failing test.                                     
-| Run the focused test.                                     
 : public response line 1                                    
   public response line 2                                    
   public response line 3                                    
@@ -10,7 +8,6 @@ Reprise   对照结果   C:\reprise
   public response line 5                                    
   public response line 6                                    
   ... +35 lines                                             
-                                                            
 
 [ 对照结果 - completed ]
     + completed
@@ -19,14 +16,17 @@ Reprise   对照结果   C:\reprise
     清理         complete
     对照         对照完成
     报告         
-   TMP/data/experiments/fixture/
+   C:\user\AppData\Local\Temp\
+   reprise-tui-audit-TMP\data\experiments\fixture\
    report.html
     隔离副本     
-   TMP/data/experiments/fixture/
-   environment/runs/run-1
+   C:\user\AppData\Local\Temp\
+   reprise-tui-audit-TMP\data\experiments\fixture\
+   environment\runs\run-1
     记录         
-   TMP/data/experiments/fixture/
-   runs/run-1
+   C:\user\AppData\Local\Temp\
+   reprise-tui-audit-TMP\data\experiments\fixture\runs\
+   run-1
  对照结束。用短标签打开报告。
 ------------------------------------------------------------
  [Esc] 封面
