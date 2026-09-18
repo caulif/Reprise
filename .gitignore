@@ -72,7 +72,9 @@ pnpm-debug.log*
 
 # 一次性材料的本地保留区：已执行完毕的审查、被取代的计划、体验记录。
 # 它们仍在磁盘上可查，但不进入 git，因此不会成为 review 噪音。
+# 规范路径是 docs/.local/；docs/local/ 是历史误拼，同样忽略。
 /docs/.local/
+/docs/local/
 /docs/analysis/
 
 # TUI 与验收产物：由脚本重新生成，不受控。
@@ -102,4 +104,3 @@ pnpm-debug.log*
 /scripts/split-class-in-place.mjs
 /src/tui/controller-state.ts
 /scripts/alias-controller-imports.mjs
-/docs/local/

@@ -36,9 +36,9 @@ docs/
 
 ## 受控边界
 
-product、architecture、decisions、plan、progress、cookbook 及上列开发与治理文档属于长期受控材料。decisions/README 是 ADR 的触发与检索入口，不复制各记录正文。docs/.local 保存一次性审查和已结束计划，不受控；不得从受控文档链接到它。research 仅允许忽略的本机交互草图，不拥有设计事实，不是开源检出的必需文件。
+product、architecture、decisions、plan、progress、cookbook 及上列开发与治理文档属于长期受控材料。decisions/README 是 ADR 的触发与检索入口，不复制各记录正文；accepted/ 下大量 ADR 按需检索，不是默认通读清单。docs/.local 保存一次性审查和已结束计划，不受控；不得从受控文档链接到它。docs/local 是 docs/.local 的历史误拼路径，同样不受控，请只用 docs/.local。research 仅允许忽略的本机交互草图，不拥有设计事实，不是开源检出的必需文件。
 
-生成的 HTML、截图和运行记录不受控；tui-audit/frames 是逐字节审计基线例外，受控。HTML 不得拥有独立验收编号；手工原型若只覆盖部分场景，必须标为示例并链接 Markdown，不能声称完整同步。发布说明不依赖本机原型存在。
+生成的 HTML、截图和运行记录不受控；tui-audit/frames 是 CI 逐字节审计基线例外，受控但非阅读材料。HTML 不得拥有独立验收编号；手工原型若只覆盖部分场景，必须标为示例并链接 Markdown，不能声称完整同步。发布说明不依赖本机原型存在。
 
 ## 权威与冲突
 

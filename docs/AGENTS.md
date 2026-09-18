@@ -1,6 +1,6 @@
 # AGENTS.md — 文档层
 
-本文只包含写 `docs/` 时才需要的规则。目录模型、权威层级和受控边界的完整定义见[文档结构与路径约定](./documentation-structure.md)。仓库级规则见[根 AGENTS.md](../AGENTS.md)。
+本文只包含写 `docs/` 时才需要的规则。目录模型、权威层级和受控边界的完整定义见[文档结构与路径约定](./documentation-structure.md)。仓库级规则与默认阅读范围见[根 AGENTS.md](../AGENTS.md)。
 
 ## 放置决策树
 
