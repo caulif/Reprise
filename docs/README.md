@@ -23,7 +23,7 @@
 | 产品与安全 | [产品定义](./product/overview.md) | [TUI 操作](./product/tui.md) |
 | 跨模块生命周期 | [架构总览](./architecture/overview.md) | [角色与 prompt](./architecture/agent-roles-and-system-prompts.md) |
 | 持久化与 CandidateRun | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md) |
-| Recovery / 环境 | [环境](./architecture/environment.md) | [架构总览 §14](./architecture/overview.md#14-安全边界) |
+| Recovery / 环境 | [环境](./architecture/environment.md) | [最小验证边界](./architecture/overview.md#附录最小验证边界) |
 | Controller | [Controller](./architecture/controller.md) | — |
 | Comparison | [对照](./architecture/comparison.md) | — |
 | Product Pack / 平台 | [平台与 Pack](./architecture/platform-and-packs.md) | — |

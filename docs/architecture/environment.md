@@ -155,34 +155,15 @@ interface EnvironmentClue {
 
 ### 5.3 EnvironmentBaseline
 
-当前字段以 [`EnvironmentBaseline`](../../src/environment/local-workspace-provider.ts) 为准：`mode` 为 `canonical | unsupported`；`match` 含 `recovered` / `recovered_partial` / `current_state_fallback`；`readiness.runnable` 为 `isolated | blocked | unsupported`。`recovery.status` 新写入是 `ready | blocked | failed`。`recovery.taskOutcome` 为 `ready_for_task | blocked | unrecoverable | blocked_by_safety | runner_failed`；信封 `blocked` 是缺关键输入、补上后可重跑，与安全闸 `blocked_by_safety` 不同。Host 应用层生命周期是 `created → staged → forensics → model → validated → accepted | failed`。见 [线性生命周期与 blocked](../decisions/accepted/2026-09-16-recovery-linear-lifecycle-and-blocked.md)。
+当前字段以 [`EnvironmentBaseline`](../../src/environment/local-workspace-provider.ts) 为准：`mode` 为 `canonical | unsupported`；`match` 含 `matched` / `observational` / `recovered` / `recovered_partial` / `current_state_fallback`；`readiness.runnable` 为 `isolated | blocked | unsupported`。`recovery.status` 新写入是 `ready | blocked | failed`。`recovery.taskOutcome` 为 `ready_for_task | blocked | unrecoverable | blocked_by_safety | runner_failed`；信封 `blocked` 是缺关键输入、补上后可重跑，与安全闸 `blocked_by_safety` 不同。Host 应用层生命周期是 `created → staged → forensics → model → validated → accepted | failed`。见 [线性生命周期与 blocked](../decisions/accepted/2026-09-16-recovery-linear-lifecycle-and-blocked.md)。
 
 `match` 是 Environment 维度事实，由 RunRecord 的 `FidelityAssessment` 直接引用，不表示任务成功。
 
 ### 5.4 PreparedEnvironmentRef
 
-```ts
-interface PreparedEnvironmentRef {
-  environmentId: string;
-  baselineId: string;
-  runId: string;
-  mode: "isolated" | "observational";
-  root?: PathRef;
-  resources: PreparedResource[];
-  manifestRef: ArtifactRef;
-  beforeFingerprint: EnvironmentFingerprint;
-}
+当前 `PreparedEnvironmentRef` 的 `mode` 恒为 `isolated`；字段见 [`local-workspace-provider.ts`](../../src/environment/local-workspace-provider.ts)。
 
-interface PreparedResource {
-  resourceId: string;
-  mode: "isolated" | "observational";
-  bindingRef?: PathRef | ExternalBindingRef;
-  writable: boolean;
-  owner: "harness" | "external";
-}
-```
-
-`EnvironmentResource` 资源列表不是当前冻结基线的写入合同。某次 CandidateRun 的目录与 Git sink 由 `PreparedEnvironmentRef` 绑定，不能写回 baseline。
+`EnvironmentBaseline.resources` 恒为空数组；某次 CandidateRun 的目录与 Git sink 由 `PreparedEnvironmentRef` 绑定，不能写回 baseline。
 
 Runtime 只获得 `PreparedEnvironmentRef` 中策略允许的正常工作路径和绑定，不获得 Recovery staging、历史证据目录、用户当前工作目录或其他 CandidateRun 的副本。
 
@@ -267,7 +248,7 @@ ProductHistoryReader 负责确定性发现本机实际路径、解析已知格�
 
 在 staging 中，Recovery Agent 在一个连续 Session 和一个工作副本里自主调查、清理、恢复、重建和自检。三个 turn 都允许使用七件套工作区工具。它自己判断哪些内容应保留、恢复、清除或按需重建，并判断剩余缺口是否影响原始任务。环境准备不能替候选完成原始任务。
 
-最终信封只有 `ready` 和 `blocked`，并带一句话 `summary`。`match` 由 Provider 根据信封机械派生：`ready` 对应 `recovered`，`blocked` 与失败新写入对应 `observational`。历史磁盘上的 `current_state_fallback` / `recovered_partial` 只在读取旧 baseline 时兼容。Agent 不能改写用户源目录，也不能把推断写成已冻结事实。Host 不改写 `summary` 或报告正文。
+最终信封只有 `ready` 和 `blocked`，并带一句话 `summary`。`match` 由 Provider 根据 recovery status 机械派生：`ready`/`recovered` 对应 `recovered`，`partial` 对应 `recovered_partial`，`blocked`/`failed` 等新写入对应 `observational`。历史磁盘上的 `current_state_fallback` 只在读取旧 baseline 时兼容。Agent 不能改写用户源目录，也不能把推断写成已冻结事实。Host 不改写 `summary` 或报告正文。
 
 ### 7.4 Provider 验证与封存
 
@@ -286,20 +267,19 @@ Host 不以证据评分、changed path 数量、零变更、Host 派生路径缺
 `prepareRun` 从同一个 EnvironmentBaseline 为每个 CandidateRun 建立隔离环境：
 
 ```text
-校验 baseline fingerprint
-→ 创建 runId 对应目标目录或隔离句柄
-→ fork/copy/绑定 observational resource
-→ 写 environment manifest
+校验 baseline.mode === canonical 且 readiness.runnable === isolated
+→ 创建 runId 对应 runs/{runId} 目录
+→ 从 baselines/{caseId} copy 到 runs/{runId}
+→ Git sink 隔离与 manifest
 → fingerprint(before)
-→ 返回 PreparedEnvironmentRef
+→ 返回 PreparedEnvironmentRef（mode: isolated）
 ```
 
 策略：
 
-- `canonical + canFork`：从冻结基线 fork；封存树留在 `baselines/{caseId}`，`prepareRun` 不得删除它；
-- `copy`：从记录的近似来源重新 copy，并再次记录 mismatch；
-- `observational`：只绑定用户明确允许的只读或受控观察资源，不声称隔离；无法提供这种绑定时为 `unsupported`；
-- baseline digest 变化：拒绝静默继续，重新 resolve 或降级为 mismatch；
+- `canonical` 且 `readiness.runnable === isolated`：从已发布封存树 copy 到 `runs/{runId}`；封存树留在 `baselines/{caseId}`，`prepareRun` 不得删除它；
+- `mode === unsupported` 或 `readiness.runnable !== isolated`：`prepareRun` 拒绝，不能启动候选 Runtime；
+- baseline digest 变化：拒绝静默继续，须重新 resolve；
 - 目标 run 目录已经存在：先按 manifest 和 run ID 核查，不覆盖不明目录。
 - 活源目录缺失时，`resolveBaseline` 只核验已发布封存与 marker；指纹不符或缺文件则拒绝，不从原会话目录再推导起点。
 - 副本与已发布 baseline、Recovery staging 的 Git `origin`/`pushurl` 必须指向本实验 `environment/git-sinks/{id}` 下的 Harness bare sink；Host 生成 `git-sink-manifest.json` 与 `git-sink-refs.txt`。对用户真实 origin 的 push 不得更新该远端。越界 gitdir 与符号链接 `.git` 跳过。对象库不完整（partial clone / promisor / shallow）时仍改写 remote，sink 可为 receive-only；`status: partial` 不阻止 Recovery 与 `prepareRun`。仅当仍有未改写的外网 remote 时硬失败并删除本次 sink。成功后 sink 保留到 Comparison 读取，随实验目录删除。见 [Git 隔离不变量](../decisions/accepted/2026-09-11-git-isolation-invariants.md) 与 [Git sink catalog](../decisions/accepted/2026-09-11-git-sink-catalog.md)。
