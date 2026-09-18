@@ -17,9 +17,24 @@
   "bin": {
     "reprise": "dist/src/cli/main.js"
   },
+  "author": "caulif (https://github.com/caulif)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caulif/Reprise.git"
+  },
+  "bugs": {
+    "url": "https://github.com/caulif/Reprise/issues"
+  },
+  "homepage": "https://github.com/caulif/Reprise#readme",
   "exports": {
-    ".": "./dist/src/cli/main.js",
-    "./pack-api": "./dist/src/products/contract.js"
+    ".": {
+      "types": "./dist/src/cli/main.d.ts",
+      "default": "./dist/src/cli/main.js"
+    },
+    "./pack-api": {
+      "types": "./dist/src/products/contract.d.ts",
+      "default": "./dist/src/products/contract.js"
+    }
   },
   "files": [
     "dist/src"

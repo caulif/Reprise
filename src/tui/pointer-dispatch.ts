@@ -64,6 +64,8 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (action === 'open-report') {
     return c.openReport(c.result.experimentRoot ?? dirname(c.result.reportPath), c.result.reportPath);
   }
+  if (action === 'open-history-final') return c.openResultArtifact('history');
+  if (action === 'open-candidate-final') return c.openResultArtifact('candidate');
   if (action === 'open-trace') return c.openTrace();
   if (action === 'open-replica') return c.openReplica();
   return { consume: true };

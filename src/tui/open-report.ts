@@ -86,6 +86,18 @@ export async function openScratchText(
   return target;
 }
 
+export async function openExperimentArtifact(
+  experimentRoot: string,
+  artifactPath: string | undefined,
+  start: ReportSpawner = spawn,
+): Promise<void> {
+  if (!artifactPath?.trim()) throw new Error('Artifact path is unavailable.');
+  const root = resolve(experimentRoot);
+  const target = isAbsolute(artifactPath) ? artifactPath : resolve(root, artifactPath);
+  assertPathInsideRoot(root, target);
+  await openLocalPath(target, start);
+}
+
 export function assertExperimentReportPath(experimentRoot: string, reportPath: string): void {
   const root = resolve(experimentRoot);
   const allowed = new Set(['report.html', 'comparison-failure.html'].map((name) => resolve(root, name)));

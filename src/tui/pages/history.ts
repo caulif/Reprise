@@ -70,10 +70,13 @@ export function historyHints(locale: Locale = 'en'): readonly (readonly [string,
 }
 
 export function historyDetailHints(isCase: boolean, hasReport = false, locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  void hasReport;
-  return isCase
-    ? [['Enter', t(locale, 'hintUseCase')], ['Esc', t(locale, 'hintBack')]]
-    : [['Esc', t(locale, 'hintBack')]];
+  if (isCase) {
+    return [['Enter', t(locale, 'hintUseCase')], ['Esc', t(locale, 'hintBack')]];
+  }
+  return [
+    ...(hasReport ? [['o', t(locale, 'hintOpenReport')]] as const : []),
+    ['Esc', t(locale, 'hintBack')],
+  ];
 }
 
 export function historyDetailPointerAction(lines: readonly string[], row: number, col: number): 'open-report' | 'open-local' | undefined {

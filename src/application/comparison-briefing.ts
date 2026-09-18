@@ -13,12 +13,15 @@ import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkMan
 import {
   COMPARISON_IMAGE_BASENAME_RE,
   isComparisonImagePath,
-  materializeComparisonMedia,
   mediaTypeForComparisonPath,
   sniffComparisonImageMediaType,
 } from "./comparison-media.js";
-import { withEvidenceShortRefs, withMediaShortRefs } from "./comparison-short-refs.js";
+import { withEvidenceShortRefs } from "./comparison-short-refs.js";
 import { isComparisonChangedPath } from "./controller-queries.js";
+import {
+  augmentComparisonOpenableMedia,
+  discoverOpenableSources,
+} from "./comparison-openable-media.js";
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -108,14 +111,10 @@ export async function writeComparisonBriefing(input: {
     runEvents: input.events,
   });
   const selected = await comparisonLinks(input);
-  const rawLinks = withEvidenceShortRefs(selected.links);
-  const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
-  const invalidLinkCount = rawLinks.length - links.length;
-  const media = withMediaShortRefs(await materializeComparisonMedia({
-    attemptRoot: input.attemptRoot,
-    workspaceRoot: input.workspaceRoot,
-    links,
-  }));
+  const mediaBundle = await comparisonMediaBundle(input, selected);
+  const links = mediaBundle.links;
+  const media = mediaBundle.media;
+  const invalidLinkCount = mediaBundle.invalidLinkCount;
   const context = briefingComparisonContext(input.context);
   const briefingContext = {
     ...context,
@@ -167,6 +166,36 @@ export async function writeComparisonBriefing(input: {
     factsContext, factsLinks, factsMedia, factsEvidence, candidateProcess, snapshotStatus, cleanupStatus, gitSink,
   });
   return { indexMarkdown, links, media, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
+}
+
+async function comparisonMediaBundle(
+  input: Parameters<typeof writeComparisonBriefing>[0],
+  selected: Awaited<ReturnType<typeof comparisonLinks>>,
+): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number }> {
+  const rawLinks = withEvidenceShortRefs(selected.links);
+  const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
+  const invalidLinkCount = rawLinks.length - links.length;
+  const openable = await discoverOpenableSources({
+    attemptRoot: input.attemptRoot,
+    experimentRoot: input.experimentRoot,
+    workspaceRoot: input.workspaceRoot,
+    runId: input.record.attempt.runId,
+    changedPaths: input.context.reportFacts.delivery.changedPaths.filter(isComparisonChangedPath),
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    caseId: input.taskCase.caseId,
+    baselineArtifactNames: [
+      ...input.taskCase.baseline.artifactRefs.map((ref) => ref.artifactId),
+      ...input.taskCase.sourceRuntimeEvidence.artifactRefs.map((ref) => ref.artifactId),
+    ].filter((name): name is string => Boolean(name)),
+  });
+  const augmented = await augmentComparisonOpenableMedia({
+    attemptRoot: input.attemptRoot,
+    workspaceRoot: input.workspaceRoot,
+    links,
+    baselineSources: openable.baselineSources,
+    candidateSources: openable.candidateSources,
+  });
+  return { links: augmented.links, media: augmented.media, invalidLinkCount };
 }
 
 async function writeAttemptSidecars(

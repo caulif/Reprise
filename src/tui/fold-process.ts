@@ -148,6 +148,16 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
   return out;
 }
 
+export function collapseEndedThinkFolds(entries: readonly TimelineEntry[], expandedIds: readonly string[]): string[] {
+  const turns = groupTurns(entries);
+  if (turns.length <= 1) return [...expandedIds];
+  const stale = new Set<string>();
+  for (const turn of turns.slice(0, -1)) {
+    if (turn.some((entry) => entry.kind === "investigate")) stale.add(thinkFoldId(turn));
+  }
+  return expandedIds.filter((id) => !stale.has(id));
+}
+
 function thinkFoldId(turn: readonly TimelineEntry[]): string {
   return `fold:think:${turn[0]?.sequence ?? 0}`;
 }

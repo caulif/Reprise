@@ -84,6 +84,7 @@ function runningModel(input: Input) {
     ...(input.runStartedAt ? { runStartedAt: input.runStartedAt } : {}),
     ...(input.expandedFolds?.length ? { expandedFolds: input.expandedFolds } : {}),
     locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
+    ...(input.candidate?.requestedModel ? { candidateModel: input.candidate.requestedModel } : {}),
     ...(input.taskCase ? {
       taskTitle: taskDisplaySummary(
         input.taskCase.initialInput.text,

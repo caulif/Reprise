@@ -121,7 +121,7 @@ test("slash-prefixed DeepSeek id hits the flash snapshot row", () => {
     { type: "result", usage: { input_tokens: 1_000_000, output_tokens: 0 } },
   ]);
   assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4-flash"), 0.15);
-  assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4.1-flash"), undefined);
+  assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4.1-flash"), 0.15);
 });
 
 test("MiniMax-M3 is not priced as Claude Sonnet", () => {

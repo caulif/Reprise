@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execPath } from "node:process";
+import { execPath, platform } from "node:process";
 import { resolveNpmCliJs } from "./npm-cli.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -40,7 +40,15 @@ export function checkRequiredPackedPaths(paths, options = {}) {
   const binTarget = normalizePackedPath(options.binTarget ?? "dist/src/cli/main.js");
   if (!set.has(binTarget)) errors.push(`缺少 bin 目标 ${binTarget}`);
   if (!files.some((path) => path.startsWith("dist/src/"))) errors.push("缺少 dist/src/ 文件");
+  const typesEntry = normalizePackedPath(options.typesEntry ?? "dist/src/products/contract.d.ts");
+  if (options.requireTypes !== false && !set.has(typesEntry)) errors.push(`缺少 types 入口 ${typesEntry}`);
   return errors;
+}
+
+export function checkBinShebang(binPath) {
+  const head = readFileSync(binPath, "utf8").slice(0, 80);
+  if (!head.startsWith("#!/usr/bin/env node")) return "bin 首行必须是 #!/usr/bin/env node";
+  return undefined;
 }
 
 function npmCli() {
@@ -86,17 +94,63 @@ function selfTest() {
   if (!missingBin.some((error) => error.includes("dist/src/cli/main.js"))) {
     throw new Error("bin 指向不存在文件时必须失败");
   }
-  const complete = checkRequiredPackedPaths(["package.json", "README.md", "LICENSE", "dist/src/cli/main.js"]);
+  const missingTypes = checkRequiredPackedPaths(
+    ["package.json", "README.md", "LICENSE", "dist/src/cli/main.js", "dist/src/products/contract.js"],
+    { binTarget: "dist/src/cli/main.js", typesEntry: "dist/src/products/contract.d.ts" },
+  );
+  if (!missingTypes.some((error) => error.includes("contract.d.ts"))) {
+    throw new Error("缺少 pack-api .d.ts 时必须失败");
+  }
+  const complete = checkRequiredPackedPaths([
+    "package.json",
+    "README.md",
+    "LICENSE",
+    "dist/src/cli/main.js",
+    "dist/src/products/contract.d.ts",
+  ]);
   if (complete.length) {
     throw new Error(`完整发布清单不应当失败: ${complete.join("; ")}`);
   }
-  console.log("verify-pack self-test: 坏包路径、空壳包与缺 bin 包被拒绝");
+  console.log("verify-pack self-test: 坏包路径、空壳包、缺 bin 与缺 types 被拒绝");
+}
+
+function smokeVersion(binTarget) {
+  if (platform === "win32") {
+    console.log("verify-pack: skip reprise --version smoke on Windows");
+    return;
+  }
+  const min = [22, 19, 0];
+  const actual = process.versions.node.split(".").map(Number);
+  const supported = actual.every((part, index) => part >= (min[index] ?? 0));
+  if (!supported) {
+    const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+    if (typeof pkg.version !== "string" || !/^\d+\.\d+\.\d+/.test(pkg.version)) {
+      throw new Error("package.json.version 缺失或无效");
+    }
+    console.log(`verify-pack: skip reprise --version smoke on Node ${process.versions.node}; package version ${pkg.version}`);
+    return;
+  }
+  const version = execFileSync(execPath, [join(ROOT, binTarget), "--version"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+  if (!/^\d+\.\d+\.\d+/.test(version)) {
+    throw new Error(`reprise --version 输出异常: ${version}`);
+  }
+  console.log(`verify-pack: reprise --version ok (${version})`);
 }
 
 function main() {
   selfTest();
   if (process.argv.includes("--self-test")) return;
   const binTarget = readBinTarget();
+  const binPath = join(ROOT, ...binTarget.split("/"));
+  const shebangError = checkBinShebang(binPath);
+  if (shebangError) {
+    console.error(`verify-pack: ${shebangError}`);
+    process.exitCode = 1;
+    return;
+  }
   const files = listPackedFiles();
   const rejected = checkPackedPaths(files);
   if (rejected.length) {
@@ -110,6 +164,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
+  smokeVersion(binTarget);
   console.log(`verify-pack: ok (${files.length} files)`);
 }
 

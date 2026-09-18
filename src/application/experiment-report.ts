@@ -24,6 +24,8 @@ import {
   newComparisonAttempt,
   writeComparisonBriefing,
 } from "./comparison-briefing.js";
+import { ComparisonVisualMediaError } from "./comparison-openable-media.js";
+import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
@@ -151,6 +153,14 @@ function experimentResult(
         : { tokenCount: inspection.tokenCount }),
       ...(inspection.costUsd === undefined ? {} : { costUsd: inspection.costUsd }),
     },
+    pathLinks: buildResultPathLinks({
+      experimentRoot: input.experimentRoot,
+      runId: input.input.runId,
+      reportPath: compared.reportPath,
+      taskCase: input.taskCase,
+      inspection,
+      workspaceRoot: input.workspaceRoot,
+    }),
   };
 }
 
@@ -242,7 +252,9 @@ async function compareExperimentOutcome(
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
     });
   } catch (error) {
-    comparisonResult = comparisonFailed("publication_failed", error);
+    comparisonResult = error instanceof ComparisonVisualMediaError
+      ? comparisonFailed("media_unavailable", error)
+      : comparisonFailed("publication_failed", error);
   } finally {
     await input.input.comparison.release?.(attemptId);
   }
@@ -524,7 +536,7 @@ function languageOf(text: string): "zh" | "en" {
 }
 
 function comparisonFailed(
-  code: "publication_failed" | "agent_failure" | "invalid_envelope",
+  code: "publication_failed" | "agent_failure" | "invalid_envelope" | "media_unavailable",
   error: unknown,
   sessionId?: string,
 ): AgentInvocation<ComparisonResult> {

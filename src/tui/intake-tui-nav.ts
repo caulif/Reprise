@@ -13,6 +13,7 @@ import { matchesFilter } from "./scrollback.js";
 import { mouseReportingSequence } from "./terminal-guard.js";
 import { createTheme } from "./theme.js";
 import { filterTraceForSurface, type TimelineEntry } from "./timeline.js";
+import { collapseEndedThinkFolds } from "./fold-process.js";
 import { type WorkbenchView } from "./workbench.js";
 type Page = import("./workbench.js").WorkbenchView["page"];
 
@@ -54,6 +55,7 @@ export function IntakeTui_scheduleTimelineRender(this: IntakeTui): void {
 export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEntry[] {
     const filter = TIMELINE_FILTERS[this.timelineFilterIndex] ?? "ALL";
     const visible = this.timeline.filter((entry) => matchesFilter(entry, filter));
+    this.expandedFolds = collapseEndedThinkFolds(visible, this.expandedFolds);
     const comparing = this.preparePhase === "compare";
     const recovering = this.runPhase === "recovery" || this.preparePhase === "check";
     const surface = this.page === "candidate-product" || this.page === "candidate-model"
