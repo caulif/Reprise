@@ -22,7 +22,7 @@
 
 ## 影响
 
-[Controller 设计](../../architecture/controller.md) §9–10。[实验条件](../../architecture/controller.md#4-实验条件) §1.6 与 §5。
+[Controller 设计](../../architecture/controller.md) §9–10。[实验条件](../../architecture/controller.md#4-实验条件) §4.1 第 6 条与 §4.5。
 
 ## 验证
 
