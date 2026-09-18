@@ -151,92 +151,11 @@ interface EnvironmentClue {
 
 ### 5.2 资源、状态与证据
 
-**current：** `EnvironmentBaseline.resources` 为空数组。恢复结论是 Agent 信封 `ready` / `blocked` 加 Host 机械检查，不是资源级 `method`/`confidence` 评分。类型见 [`local-workspace-provider.ts`](../../src/environment/local-workspace-provider.ts)。
-
-**planned / superseded：** 下列 `EnvironmentResource` / 八种 `RecoveryMethod` 来自早期设计，当前实现不写入这些字段。保留名称仅供阅读旧计划，不要当成 on-disk 合同。
-
-```ts
-interface ResourceIdentity {
-  resourceId: string;
-  kind: "workspace" | "file_set" | "external";
-  logicalLocator: string;
-  scope: "case" | "machine" | "account" | "remote";
-}
-
-interface StateEvidence {
-  stateKind: string;
-  digest?: string;
-  facts: Record<string, unknown>;
-  artifactRefs: ArtifactRef[];
-  completeness: "full" | "partial" | "metadata_only";
-}
-
-type RecoveryMethod =
-  | "snapshot"
-  | "git_commit"
-  | "git_commit_plus_patch"
-  | "file_history"
-  | "copy_current"
-  | "rebuild"
-  | "readonly_bind"
-  | "none";
-
-type RecoveryConfidence = "verified" | "inferred" | "partial" | "unavailable";
-
-interface EnvironmentResource {
-  identity: ResourceIdentity;
-  role: "required" | "optional" | "observed";
-  requestedState: StateEvidence;
-  recoveredState?: StateEvidence;
-  method: RecoveryMethod;
-  confidence: RecoveryConfidence;
-  sourceEvidence: EvidenceRef[];
-  limitations: string[];
-}
-```
-
-`requestedState` 表示根据完整历史会话、Product Pack 和 Recovery Agent 识别出的任务要求；`recoveredState` 表示 Provider 实际恢复并重新读取到的状态。Recovery Agent 可以提出恢复计划和解释，但不能自行把推断提升为 `verified`；最终可信度由 Provider 根据可重读事实确认。
-
-第一版故意只保留三个 resource kind。浏览器 profile、数据库、容器和远程服务先作为 `external` 描述；当出现可执行 Provider 后再增加具体类型。不设计环境恢复总分：缺失的 required 资源不能被其他资源抵消，报告直接展示资源级状态和限制。
+`EnvironmentBaseline.resources` 为空数组。恢复结论是 Agent 信封 `ready` / `blocked` 加 Host 机械检查。类型与字段见 [`local-workspace-provider.ts`](../../src/environment/local-workspace-provider.ts)。Recovery Agent 可以提出恢复计划和解释，但不能自行把推断提升为 `verified`；最终可信度由 Provider 根据可重读事实确认。
 
 ### 5.3 EnvironmentBaseline
 
 当前字段以 [`EnvironmentBaseline`](../../src/environment/local-workspace-provider.ts) 为准：`mode` 为 `canonical | unsupported`；`match` 含 `recovered` / `recovered_partial` / `current_state_fallback`；`readiness.runnable` 为 `isolated | blocked | unsupported`。`recovery.status` 新写入是 `ready | blocked | failed`。`recovery.taskOutcome` 为 `ready_for_task | blocked | unrecoverable | blocked_by_safety | runner_failed`；信封 `blocked` 是缺关键输入、补上后可重跑，与安全闸 `blocked_by_safety` 不同。Host 应用层生命周期是 `created → staged → forensics → model → validated → accepted | failed`。见 [线性生命周期与 blocked](../decisions/accepted/2026-09-16-recovery-linear-lifecycle-and-blocked.md)。
-
-下列接口块描述早期资源列表基线，不是当前 TypeBox/磁盘形状。
-
-```ts
-interface EnvironmentBaseline {
-  baselineId: string;
-  caseId: string;
-  mode: "canonical" | "copy" | "observational" | "unsupported";
-  match: "matched" | "partial" | "mismatched" | "observational";
-  resources: EnvironmentResource[];
-  readiness: BaselineReadiness;
-  canonicalRef?: ArtifactRef;
-  fingerprint: EnvironmentFingerprint;
-  capabilities: EnvironmentCapabilities;
-  warnings: EnvironmentWarning[];
-  createdAt: string;
-}
-
-interface BaselineReadiness {
-  runnable: "isolated" | "observational" | "unsupported";
-  strictness: "strict" | "exploratory";
-  blockingResourceIds: string[];
-}
-
-interface EnvironmentCapabilities {
-  canFork: boolean;
-  fingerprints: Array<"git" | "file_tree" | "external_observation">;
-  externalSideEffects: "none" | "possible" | "uncontrolled";
-}
-```
-
-- `canonical`：存在经过验证、由 Harness 持有的冻结基线；
-- `copy`：只能从当前或近似资源建立隔离副本，保证隔离但不保证历史匹配；
-- `observational`：不能安全复制，但可以通过只读或受控绑定观察；不保证任务可完成。
-- `unsupported`：既不能创建安全隔离副本，也不能提供受控观察绑定，不能启动候选 Runtime。
 
 `match` 是 Environment 维度事实，由 RunRecord 的 `FidelityAssessment` 直接引用，不表示任务成功。
 
@@ -308,20 +227,7 @@ Resolver 处理不完整证据并建立一个可操作的恢复工作副本，�
 → 保存可复用 baseline，或因关键缺口停止
 ```
 
-已有 checkpoint 是可直接复用的加速路径，不是 Agent 必须选择的多候选流程。Recovery 默认只有一个工作副本，主动从当前环境和可观察历史反推起点。
-
-旧的候选优先级：
-
-```text
-用户提供的不可变快照
-→ 可验证 Git commit + 已保存未提交状态
-→ Git commit + 可验证 file-history/preimage
-→ 当前目录副本 + 可验证历史文件覆盖
-→ 当前目录副本
-→ observational / unavailable
-```
-
-该顺序只作为历史材料的可用性提示，不生成多个候选，也不由 Host 以证据评分替代 Recovery 的任务判断。Host 只检查来源、路径、安全边界和持久化完整性。
+已有 checkpoint 是可直接复用的加速路径。Recovery 默认只有一个工作副本，主动从当前环境和可观察历史反推起点。Host 只检查来源、路径、安全边界和持久化完整性，不以证据评分替代 Recovery 的任务判断。
 
 ## 7. Recovery Agent
 

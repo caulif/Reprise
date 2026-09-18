@@ -4,7 +4,7 @@
 
 Reprise 是本机优先的个人任务对照工具。Windows 11 是唯一经过真实使用验证的平台；macOS/Linux 的真实终端与 Runtime 尚未得到同等验证，不能称为已支持。
 
-CI 在 Windows、macOS、Ubuntu 运行模拟测试，具体矩阵以 [check.yml](../.github/workflows/check.yml) 为准；TUI 帧审计使用 Windows 基线。CI 绿灯不证明三平台的真实 Runtime、文件权限或终端 IME、滚轮、拖选均已验证。边界与待补证据见[本机平台规范](./architecture/cross-platform.md)及[平台证据矩阵](./plan/2026-09-08-platform-evidence-matrix.md)。
+CI 在 Windows、macOS、Ubuntu 运行模拟测试，具体矩阵以 [check.yml](../.github/workflows/check.yml) 为准；TUI 帧审计使用 Windows 基线。CI 绿灯不证明三平台的真实 Runtime、文件权限或终端 IME、滚轮、拖选均已验证。边界与待补证据见[本机平台规范](./architecture/platform-and-packs.md#12-本机平台边界)及[平台证据矩阵](./plan/2026-09-08-platform-evidence-matrix.md)。
 
 Node 要求以 [package.json](../package.json) 的 engines 为准。默认开发验证与 CI 不运行真实 Runtime smoke，不产生模型调用费用；真实 smoke 必须经环境变量显式 opt-in，见[准入程序](./codex-smoke-gate.md)。实际产品任务可能计费，费用由操作者自行确认并承担。
 

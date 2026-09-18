@@ -27,7 +27,7 @@
 
 ## 影响
 
-[Controller 设计](../../architecture/controller.md)、[实验条件](../../architecture/controller-experiment-conditions.md) §5–6。
+[Controller 设计](../../architecture/controller.md)、[实验条件](../../architecture/controller.md#4-实验条件) §5–6。
 
 ## 验证
 

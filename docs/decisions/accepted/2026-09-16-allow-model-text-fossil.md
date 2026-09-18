@@ -21,7 +21,7 @@
 
 ## 影响
 
-冻结写入 [`FROZEN_ALLOW_MODEL_TEXT`](../../../src/core/schemas/task-case.ts)。[Host](../../../src/infrastructure/agent/host.ts)、[Controller briefing](../../../src/application/controller-briefing.ts)、[Comparison briefing](../../../src/application/comparison-briefing.ts)、observations 与用户可见表面不再按该字段降级正文。[产品总览](../../product/overview.md) 与 [Controller 实验条件](../../architecture/controller-experiment-conditions.md) 改为化石字段说明。不改 Comparison resume，不改凭据红acted。
+冻结写入 [`FROZEN_ALLOW_MODEL_TEXT`](../../../src/core/schemas/task-case.ts)。[Host](../../../src/infrastructure/agent/host.ts)、[Controller briefing](../../../src/application/controller-briefing.ts)、[Comparison briefing](../../../src/application/comparison-briefing.ts)、observations 与用户可见表面不再按该字段降级正文。[产品总览](../../product/overview.md) 与 [Controller 实验条件](../../architecture/controller.md#4-实验条件) 改为化石字段说明。不改 Comparison resume，不改凭据红acted。
 
 ## 验证
 

@@ -23,7 +23,7 @@ Controller 写出候选收到的每一句，包括第一句，但不重放 `init
 
 ## 影响
 
-[实验条件](../../architecture/controller-experiment-conditions.md) 第 6 条。不改 Comparison 卡面，不改 Recovery 信封。浅层正则不是全程泄漏评分。
+[实验条件](../../architecture/controller.md#4-实验条件) 第 6 条。不改 Comparison 卡面，不改 Recovery 信封。浅层正则不是全程泄漏评分。
 
 ## 验证
 

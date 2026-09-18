@@ -23,10 +23,10 @@
 | 产品与安全 | [产品定义](./product/overview.md) | [TUI 操作](./product/tui.md) |
 | 跨模块生命周期 | [架构总览](./architecture/overview.md) | [角色与 prompt](./architecture/agent-roles-and-system-prompts.md) |
 | 持久化与 CandidateRun | [持久化](./architecture/persistence-and-crash-consistency.md) | [结果与终止](./architecture/run-outcome.md) |
-| Recovery / 环境 | [环境](./architecture/environment.md) | [验证](./architecture/validation.md) |
-| Controller | [Controller](./architecture/controller.md) | [实验条件](./architecture/controller-experiment-conditions.md) |
+| Recovery / 环境 | [环境](./architecture/environment.md) | [架构总览 §14](./architecture/overview.md#14-安全边界) |
+| Controller | [Controller](./architecture/controller.md) | — |
 | Comparison | [对照](./architecture/comparison.md) | — |
-| Product Pack / 平台 | [Pack 契约](./architecture/product-plugin-compatibility.md) | [本机平台](./architecture/cross-platform.md) |
+| Product Pack / 平台 | [平台与 Pack](./architecture/platform-and-packs.md) | — |
 | 日常开发 | [开发环境与验证](./development.md) | [按改动跑门禁](./cookbook/verify-change.md) |
 | 贡献与维护 | [贡献指南](./CONTRIBUTING.md) | [治理](./GOVERNANCE.md)、[门禁契约](./engineering-gates.md) |
 | 文档维护 | [文档结构](./documentation-structure.md) | [文档指令](./AGENTS.md)、[写 ADR](./cookbook/add-adr.md) |

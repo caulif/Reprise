@@ -22,7 +22,7 @@
 
 ## 影响
 
-[八工具决策](./2026-08-31-internal-agent-eight-tools.md) 对 Controller 不再要求第八个名字。[路径 briefing](./2026-09-03-controller-path-briefing.md)。[实验条件](../../architecture/controller-experiment-conditions.md) §4。
+[八工具决策](./2026-08-31-internal-agent-eight-tools.md) 对 Controller 不再要求第八个名字。[路径 briefing](./2026-09-03-controller-path-briefing.md)。[实验条件](../../architecture/controller.md#4-实验条件) §4。
 
 ## 验证
 

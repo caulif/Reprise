@@ -27,7 +27,7 @@ Controller 读取与写入分成两条解析路径。`ls`、`read`、`grep`、`f
 
 ## 影响
 
-[Controller 设计](../../architecture/controller.md)、[实验条件](../../architecture/controller-experiment-conditions.md)、[环境 §7.1](../../architecture/environment.md#71-内部工作空间与实际边界)、[总览安全边界](../../architecture/overview.md#14-安全边界)、[validation Capability](../../architecture/validation.md)。
+[Controller 设计](../../architecture/controller.md)、[实验条件](../../architecture/controller.md#4-实验条件)、[环境 §7.1](../../architecture/environment.md#71-内部工作空间与实际边界)、[总览安全边界](../../architecture/overview.md#14-安全边界)、[validation Capability](../../architecture/overview.md#附录最小验证边界)。
 
 ## 验证
 

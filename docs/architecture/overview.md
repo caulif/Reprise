@@ -241,7 +241,7 @@ Core 只看环境基线和候选副本，不编排 Recovery Agent 的内部 loop
 
 `release` 结束 Harness 对本 run 隔离副本的活动句柄，不删除该副本，也不回滚用户目录或外部服务副作用。完整设计见[Environment 专题](./environment.md)。
 
-当前 EnvironmentBaseline 由 Recovery 信封 `ready` / `blocked`（外加 Host 机械失败）与 Provider fingerprint 描述，不维护资源级 `EnvironmentResource` 评分。基线类型见 [`local-workspace-provider.ts`](../../src/environment/local-workspace-provider.ts)。候选运行必须使用 Harness 创建的隔离副本，或只读/受控的 observational 绑定；无法提供二者时为 `unsupported`，不允许直接在用户当前工作目录运行。资源枚举模型仍出现在旧计划中，不是当前写入路径。
+当前 EnvironmentBaseline 由 Recovery 信封 `ready` / `blocked`（外加 Host 机械失败）与 Provider fingerprint 描述。基线类型见 [`local-workspace-provider.ts`](../../src/environment/local-workspace-provider.ts)。候选运行必须使用 Harness 创建的隔离副本，或只读/受控的 observational 绑定；无法提供二者时为 `unsupported`，不允许直接在用户当前工作目录运行。
 
 ## 9. 三个 Agent Module 与 Pi Agent Host
 
@@ -413,7 +413,7 @@ sequenceDiagram
 - 权限扩大、真实发布、付款、删除和不可逆迁移必须来自真实用户授权。
 - trace 和错误信息不得保存密钥、凭据或不必要的个人信息。
 
-随机 Agent 的输出只在 Schema、Capability、Lifecycle 和 Fact integrity 四类确定性边界内验证；不测试固定措辞、推理路径或语义策略。完整原则见[最小验证边界](./validation.md)。
+随机 Agent 的输出只在 Schema、Capability、Lifecycle 和 Fact integrity 四类确定性边界内验证；不测试固定措辞、推理路径或语义策略。完整原则见[附录：最小验证边界](#附录最小验证边界)。
 
 ## 15. 代码组织
 
@@ -445,4 +445,30 @@ src/
 - 为尚未支持的环境预建空接口。
 
 未关闭验收（TUI 真终端、opt-in Runtime smoke、未跑的 Controller 真实模型 lane）见 [MASTER](../progress/MASTER.md)与[平台证据矩阵](../plan/2026-09-08-platform-evidence-matrix.md)。
+
+## 附录：最小验证边界
+
+Harness 验证包含非确定性 Agent 的系统时，相信 Agent 完成语义判断；确定性代码只守住不可交给概率行为负责的边界。Controller 自主决定下一条输入或结束，Recovery Agent 自主分析恢复方法，Comparison Agent 自主选择值得展示的差异。测试不约束它们的具体措辞、推理路径或固定策略。
+
+Harness 只验证四类不变量：Schema（输出符合公共协议）、Capability（只能使用 Host 显式提供的能力）、Lifecycle（合法状态迁移与幂等副作用）、Fact integrity（Agent 可解释事实但不能创建或提升事实）。
+
+非法输出可以由 Pi Agent Host 在相同上下文中进行有限次数修复；达到上限后使用确定性 fallback。Orchestrator 测试可使用极小的 `ScriptedRuntime` 触发 accepted、settled、crash 等边界；它不模拟具体产品，也不是生产架构组件。每个 Product Pack 可提供可选的真实 Runtime smoke（启动、接受输入、识别 turn settlement、多轮提交、停止），依赖本机安装与 opt-in，不作为普通 CI 必过项。
+
+第一版不建立 Controller 纠正方式、Recovery 恢复路径、Comparison 展示选择、固定措辞或 prompt 质量评分等测试；这些属于模型与 Agent 的实际能力，也是 Harness 希望让用户在真实任务中观察的部分。
+
+## 附录：技术选型与实现基线
+
+单一 TypeScript/ESM npm 包，保持模块化单体。版本与脚本以 [package.json](../../package.json)、[lockfile](../../package-lock.json)为准，不复制第二份依赖 JSON。Node 最低版本为 engines 声明的基线。
+
+Pi Agent Core、pi-ai、pi-tui 分别用于执行循环、模型适配与终端组件。三个内部角色共用 [AgentHost](../../src/infrastructure/agent/host.ts)；Pi 仅出现在 `providers/pi/` 适配器。Session 事实写入 Experiment `events.jsonl`，不以 Pi JSONL 为权威，见[事实源决策](../decisions/accepted/2026-09-08-session-fact-owner-and-identity.md)与[基座 Host](../decisions/accepted/2026-09-09-agent-foundation-host.md)。模型可见试卷从同一日志与 `agent_model_input` 附件重建，见[模型输入重建](../decisions/accepted/2026-09-08-model-input-reconstruction.md)。
+
+[CLI 入口](../../src/cli/main.ts)使用 `node:util.parseArgs`。无子命令打开 TUI。查询、配置、prepare、run、compare、cancel 不加载 TUI。机器输出是互斥的 `--json` 单结果或 `--jsonl` 事件流；诊断在 stderr。退出码与字段见[CLI 协议决策](../decisions/accepted/2026-09-08-cli-query-config-protocol.md)。当前界面见 [TUI](../product/tui.md)。
+
+TypeBox 验证磁盘、外部协议与模型输出；同进程已类型化调用不重复加运行时校验。当前字段由 [schema.ts](../../src/core/schema.ts)及其引用定义拥有。JSON/JSONL、附件和写者锁见[持久化规范](./persistence-and-crash-consistency.md)。
+
+使用 Node 进程与文件能力，具体跨平台行为见[平台与 Pack](./platform-and-packs.md#12-本机平台边界)。Windows shim 通过[Runtime spawn](../../src/infrastructure/process/spawn.ts)启动，不能假设 .cmd 等同于原生 executable。
+
+内置 Codex 与 Claude Code 与 `{dataDir}/plugins.json` 列出的本地模块走同一 [registry](../../src/products/index.ts)。契约见[平台与 Pack](./platform-and-packs.md)。加载规则见[版本化本地 Pack 边界](../decisions/accepted/2026-09-08-versioned-local-pack-boundary.md)。不执行原始 TypeScript，不远程发现，不热加载。
+
+对照报告归 Comparison attempt，HTML 与证据链接按[对照规范](./comparison.md)发布。报告失败不覆盖候选结果或旧成功报告。保留一个 npm 发布入口；发布前按[发布检查](../release-checklist.md)验证。
 

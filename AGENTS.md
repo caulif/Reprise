@@ -6,7 +6,7 @@
 
 测试读的是 `dist/`。改完源码必须先 `npm run build`；`node --test` 直接跑 `.ts` 不成立（[`package.json`](package.json)）。
 
-新增 Runtime 能力先改 `src/core/runtime.ts` 端口，再改内置 Pack；不在应用层判断产品类型（[兼容性](docs/architecture/product-plugin-compatibility.md)）。
+新增 Runtime 能力先改 `src/core/runtime.ts` 端口，再改内置 Pack；不在应用层判断产品类型（[平台与 Pack](docs/architecture/platform-and-packs.md)）。
 
 持久化、模型输出、外部 JSON 的读写必须过 `src/core/schema.ts` 的 `Value.Check`；同进程内的类型化边界不加运行时校验（[持久化](docs/architecture/persistence-and-crash-consistency.md)）。
 
@@ -22,7 +22,7 @@ TUI 是事件日志的只读投影，不持有实验状态机，不伪造未公�
 
 双重防线：测试证明当下没坏；ADR 防止以后重复错决策。跨模块协议、on-disk、提示词契约、工具面、架构边界或工程流程变化，同批新增或更新 ADR；无契约变化的小修豁免（[触发与检索](docs/decisions/README.md)）。
 
-Windows 11 是唯一已验证平台；路径拼接和进程启动按 Windows 优先（`.cmd` 走 `spawnRuntimeProcess`）（[技术选型](docs/architecture/technology-selection.md)）。
+Windows 11 是唯一已验证平台；路径拼接和进程启动按 Windows 优先（`.cmd` 走 `spawnRuntimeProcess`）（[技术选型](docs/architecture/overview.md#附录技术选型与实现基线)）。
 
 不注释代码本身已经说清的事实。空 `catch` 必须写明它吞掉了什么、以及为什么其他情况到不了这里。
 
