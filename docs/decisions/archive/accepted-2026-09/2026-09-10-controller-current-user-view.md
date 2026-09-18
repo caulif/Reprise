@@ -20,7 +20,7 @@ Controller、审计 digest 与回放只依赖 `controller-briefing/current-user-
 
 ## 影响
 
-[Controller 设计](../../architecture/controller.md)、[实验条件](../../architecture/controller.md#4-实验条件)。
+[Controller 设计](../../../architecture/controller.md)、[实验条件](../../../architecture/controller.md#4-实验条件)。
 
 ## 验证
 

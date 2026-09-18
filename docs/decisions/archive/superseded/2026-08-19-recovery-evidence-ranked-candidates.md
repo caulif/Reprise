@@ -2,7 +2,7 @@
 
 状态：superseded
 
-被 [单工作副本自主三轮循环](../accepted/2026-09-09-recovery-single-workspace-agent-loop.md) 取代。下文冻结。
+被 [单工作副本自主三轮循环](../../accepted/2026-09-09-recovery-single-workspace-agent-loop.md) 取代。下文冻结。
 - 日期：2026-08-19
 - 范围：Recovery investigation 与 candidate staging 编排
 

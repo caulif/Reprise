@@ -18,7 +18,7 @@
 
 删除 `HOST_TERMS_IN_MESSAGE` 与 `OPENING_UNSEEN_CANDIDATE_ADVICE` 及其导出函数。命中原禁词或「按你建议」不再触发 structured repair。System prompt 与 opening 委托仍禁止泄漏 Host 术语、仍禁止引用候选尚未写出的建议；默认不新增运行时正则作补丁。离线观察或评测可以另做，不进入 `decide()`。
 
-替代 [开场不得引用未发生的候选建议](./2026-09-16-controller-opening-no-unseen-advice.md) 中「Host 浅层失败并走 structured repair」的条款；该决定的 prompt 约束仍有效。
+替代 [开场不得引用未发生的候选建议](../../accepted/2026-09-16-controller-opening-no-unseen-advice.md) 中「Host 浅层失败并走 structured repair」的条款；该决定的 prompt 约束仍有效。
 
 ## 备选方案
 
@@ -30,7 +30,7 @@
 
 ## 影响
 
-[`controller-agent.ts`](../../../src/agents/controller-agent.ts)、[实验条件](../../architecture/controller.md#4-实验条件) 第 6 条。不改 Comparison 发布，不改 Recovery 模型轮次。
+[`controller-agent.ts`](../../../../src/agents/controller-agent.ts)、[实验条件](../../../architecture/controller.md#4-实验条件) 第 6 条。不改 Comparison 发布，不改 Recovery 模型轮次。
 
 ## 验证
 

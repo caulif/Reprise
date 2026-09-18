@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M2.4](../../plan/archive/reprise-refactoring-execution.md#m24-candidaterun-与活动所有权)。
+目标批次见 [M2.4](../../../plan/archive/reprise-refactoring-execution.md#m24-candidaterun-与活动所有权)。
 
 ## 问题
 
@@ -12,7 +12,7 @@ CandidateRun 状态必须只经 `assertTransition` 写入。UI 回调若直接�
 
 - CandidateRun 先提交 attempt/manifest 和 `input.submitted`，再调用 Runtime。状态只在 CandidateRun 内转换。TUI 只订阅事件。
 - `accepted` / `rejected` / `unknown` 保持协议语义；`unknown` 与 `rejected` 进入终态，相同 `clientMessageId` 不重发。
-- 进程内活动表登记 `operationId`（`op-prepare|run|compare-…`）、`experimentId`、`runId`。`reprise cancel <id>` 解析这三类身份。已结束的 operationId 返回 already_finished，不取消后续操作。第二进程经本机端点请求当前 owner；不可达、过期或认证失败不删除 `writer.lock`、不按历史 PID 杀进程。端点规则见[跨终端 cancel](./2026-09-08-cross-terminal-cancel.md)。
+- 进程内活动表登记 `operationId`（`op-prepare|run|compare-…`）、`experimentId`、`runId`。`reprise cancel <id>` 解析这三类身份。已结束的 operationId 返回 already_finished，不取消后续操作。第二进程经本机端点请求当前 owner；不可达、过期或认证失败不删除 `writer.lock`、不按历史 PID 杀进程。端点规则见[跨终端 cancel](../../accepted/2026-09-08-cross-terminal-cancel.md)。
 - `run.cancel_requested` 与终态取消分开。取消与自然完成竞态时，先进入 `#finish` 的结果保留；晚到 delivery/settlement 不改写终态。
 - `writer.lock` 在实验目录。存在即拒绝新写者，不按 PID、TTL 或损坏内容自动夺锁。不同实验目录可并行持锁。
 

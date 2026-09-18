@@ -2,7 +2,7 @@
 
 状态：accepted
 
-Agent 首包不再包含调查包，见[单工作副本自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。生成函数仍可用于 Host 侧材料准备与测试。
+Agent 首包不再包含调查包，见[单工作副本自主三轮循环](../../accepted/2026-09-09-recovery-single-workspace-agent-loop.md)。生成函数仍可用于 Host 侧材料准备与测试。
 
 ## 问题
 

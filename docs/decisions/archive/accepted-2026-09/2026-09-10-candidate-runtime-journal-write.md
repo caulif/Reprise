@@ -18,7 +18,7 @@ Product Adapter 与 Application 都曾直接 `store.append` `runtime.*` Envelope
 
 ## 影响
 
-[`candidate-run-events.ts`](../../../src/application/candidate-run-events.ts) 拥有写入；`experiment.ts` 只创建 sink。协议解析仍在 Pack。
+[`candidate-run-events.ts`](../../../../src/application/candidate-run-events.ts) 拥有写入；`experiment.ts` 只创建 sink。协议解析仍在 Pack。
 
 ## 验证
 

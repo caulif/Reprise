@@ -23,7 +23,7 @@
 
 ## 影响
 
-[TUI 最短路径](../../product/tui.md#32-每次比较)。[Product Pack 兼容性](../../architecture/platform-and-packs.md#5-pack-选择流程) 的候选运行步骤。`CandidateSpec.productId` 决定 Runtime；`recover` 仍用来源 Pack。确认页、运行页顶栏与画布图例用候选 Pack 显示名，不用 `TaskCase.source.productId`。
+[TUI 最短路径](../../../product/tui.md#32-每次比较)。[Product Pack 兼容性](../../../architecture/platform-and-packs.md#5-pack-选择流程) 的候选运行步骤。`CandidateSpec.productId` 决定 Runtime；`recover` 仍用来源 Pack。确认页、运行页顶栏与画布图例用候选 Pack 显示名，不用 `TaskCase.source.productId`。
 
 ## 验证
 

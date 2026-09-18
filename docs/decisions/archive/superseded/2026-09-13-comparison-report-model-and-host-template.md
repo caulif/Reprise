@@ -3,7 +3,7 @@
 状态：superseded
 日期：2026-09-13
 
-替代：[直接编辑 HTML 与 Host 区域](../accepted/2026-09-13-comparison-host-zones-and-direct-html.md)
+替代：[直接编辑 HTML 与 Host 区域](../accepted-2026-09/2026-09-13-comparison-host-zones-and-direct-html.md)
 
 ## 问题
 
@@ -33,7 +33,7 @@ Host 注册媒体，写入 `briefing/facts/media.json`，把可用图片复制�
 
 ## 影响
 
-薄信封仍含 `status`、`reportPath: "report.html"`、`evidenceRefs`、可选 `headline` / `limitationCodes`，并增加可选 `mediaRefs`。失败仍不覆盖已发布成功 `report.html`。指标算法仍见 [usage 三态](../accepted/2026-09-12-comparison-usage-status.md) 与 [指标壳](../accepted/2026-09-11-comparison-host-metrics-shell.md)；本决定替代指标壳中「Agent 在卡下追加整页正文、Host 不解析页面结构」的范围。
+薄信封仍含 `status`、`reportPath: "report.html"`、`evidenceRefs`、可选 `headline` / `limitationCodes`，并增加可选 `mediaRefs`。失败仍不覆盖已发布成功 `report.html`。指标算法仍见 [usage 三态](../accepted-2026-09/2026-09-12-comparison-usage-status.md) 与 [指标壳](../accepted-2026-09/2026-09-11-comparison-host-metrics-shell.md)；本决定替代指标壳中「Agent 在卡下追加整页正文、Host 不解析页面结构」的范围。
 
 ## 验证
 

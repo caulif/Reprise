@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M2.2](../../plan/archive/reprise-refactoring-execution.md#m22-recovery-连续-session-与停止语义)。
+目标批次见 [M2.2](../../../plan/archive/reprise-refactoring-execution.md#m22-recovery-连续-session-与停止语义)。
 
 ## 问题
 
@@ -10,7 +10,7 @@
 
 ## 决定
 
-`RecoveryAgent` 按 `RecoveryContext.continuityKey` 复用 `AgentSessionHost`。一次准备的三轮委托与机械检查反馈共用同一 `experimentId`。结构化修复仍在同一次 Invocation 内。准备结束时 `releasePreparation(experimentId)` 关闭该实验下全部 Recovery Session。`continuityKey` 不进入模型工作集。编排见[自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。
+`RecoveryAgent` 按 `RecoveryContext.continuityKey` 复用 `AgentSessionHost`。一次准备的三轮委托与机械检查反馈共用同一 `experimentId`。结构化修复仍在同一次 Invocation 内。准备结束时 `releasePreparation(experimentId)` 关闭该实验下全部 Recovery Session。`continuityKey` 不进入模型工作集。编排见[自主三轮循环](../../accepted/2026-09-09-recovery-single-workspace-agent-loop.md)。
 
 信封 `blocked` 不发布可启动 baseline，不暴露 `accept`。TUI/CLI 不传入 `allowCurrentStateFallback`。`userRecoveryStatus` 对 `blocked` 和 `runnable=blocked` 恒为 failed。Schema 修复仍走 Host 有界 repair；机械失败可反馈同一 Session。
 

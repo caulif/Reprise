@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M5.1](../../plan/archive/reprise-refactoring-execution.md#m51-提取与界面无关的应用操作)。
+目标批次见 [M5.1](../../../plan/archive/reprise-refactoring-execution.md#m51-提取与界面无关的应用操作)。
 
 ## 问题
 
@@ -24,7 +24,7 @@
 
 ## 影响
 
-查询、JSON/JSONL、历史 run 对照与分页属于后续 CLI 协议批次。本机跨终端 cancel 见[跨终端 cancel](./2026-09-08-cross-terminal-cancel.md)。
+查询、JSON/JSONL、历史 run 对照与分页属于后续 CLI 协议批次。本机跨终端 cancel 见[跨终端 cancel](../../accepted/2026-09-08-cross-terminal-cancel.md)。
 
 ## 验证
 

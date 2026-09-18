@@ -8,7 +8,7 @@
 
 ## 决定
 
-已确认的目标边界见[重构规划](../../plan/archive/reprise-architecture-redesign.md)。本记录约束现行入口与所有权；未关闭的真实证据列在文末，不能写成已支持。
+已确认的目标边界见[重构规划](../../../plan/archive/reprise-architecture-redesign.md)。本记录约束现行入口与所有权；未关闭的真实证据列在文末，不能写成已支持。
 
 以 Pi 可用 Agent 能力为底座，Reprise 管理 Session 记录和执行约束；业务检查与 CandidateRun 状态由 harness 拥有，普通 workflow 组织用户入口。三个角色共用模型配置，各自连续使用独立 Session；Controller 模拟原用户，不强制独立 Understanding、Host 账本完成守卫或 Planner/Reporter 双会话。
 
@@ -18,7 +18,7 @@ CLI 与 TUI 共用应用操作并功能对等，完整 run 与 prepare → run -
 
 Product Pack 通过显式配置的本地 JavaScript、TypeScript 编译产物或已安装包启动加载，首版作为可信本地代码。采用版本化窄契约、独立能力声明与公共活动数据。旧实验查看不依赖原插件。对照消费封存快照。
 
-TUI 采用键盘优先的斜杠入口、分层列表选择和本地产物链接。阅读与折叠见[公开活动时间线](./2026-09-08-public-activity-timeline.md)与[TUI 规划](../../plan/archive/reprise-tui-design.md)。真实终端交互以[平台证据矩阵](../../plan/2026-09-08-platform-evidence-matrix.md)为准。
+TUI 采用键盘优先的斜杠入口、分层列表选择和本地产物链接。阅读与折叠见[公开活动时间线](./2026-09-08-public-activity-timeline.md)与[TUI 规划](../../../plan/archive/reprise-tui-design.md)。真实终端交互以[平台证据矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)为准。
 
 ## 备选方案
 

@@ -29,7 +29,7 @@ Provider 校验通过且 Agent 信封为 `ready` 之后，Host 必须测量任�
 
 ## 影响
 
-[Environment §7.1](../../architecture/environment.md#71-内部工作空间与实际边界) 的工具注册、工作集字段和 baseline 发布条件。`candidateStartBlocked` 读取 `taskReadinessStatus`。空路径仍可开跑。
+[Environment §7.1](../../../architecture/environment.md#71-内部工作空间与实际边界) 的工具注册、工作集字段和 baseline 发布条件。`candidateStartBlocked` 读取 `taskReadinessStatus`。空路径仍可开跑。
 
 ## 验证
 

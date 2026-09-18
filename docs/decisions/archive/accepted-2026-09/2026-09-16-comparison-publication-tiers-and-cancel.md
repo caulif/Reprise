@@ -9,7 +9,7 @@
 
 ## 决定
 
-发布分成两级。合同失败才拒发并写 `comparison-failure.html`；版式/措辞由 Host 确定修则修，修不了则在已有 `data-agent-zone="limitations"` 内追加 `data-host-limitation`，**仍发布**成功 `report.html`。Host limitations 文案只从 [`comparison-report-strings.ts`](../../../src/application/comparison-report-strings.ts) 取。
+发布分成两级。合同失败才拒发并写 `comparison-failure.html`；版式/措辞由 Host 确定修则修，修不了则在已有 `data-agent-zone="limitations"` 内追加 `data-host-limitation`，**仍发布**成功 `report.html`。Host limitations 文案只从 [`comparison-report-strings.ts`](../../../../src/application/comparison-report-strings.ts) 取。
 
 **合同拒发：** `hostZonesMismatch` / `hostMetricsMismatch`；`missingComparisonSlots`（含壳必填 slot、组件模板、分享卡 DOM 顺序、delivery/limitations 出现在 metrics 之前）；未知 `data-agent-zone`；`data-claim="verified"` 无任何可解析 `data-evidence-ref`；`data-claim="visual"` 无任何可用 `data-media-ref`；`rewritePublishableHtml` 剥外链后 `hasExternalNetwork` 仍为真。
 
@@ -29,7 +29,7 @@
 
 ## 影响
 
-[`verifyAndRenderComparisonReport`](../../../src/application/comparison-publication.ts)、[`ComparisonAgentPort`](../../../src/agents/comparison-agent.ts)、[对照模块](../../architecture/comparison.md)。不改 Comparison resume，不改四轮模型语义，不做双实验并发产品测试。
+[`verifyAndRenderComparisonReport`](../../../../src/application/comparison-publication.ts)、[`ComparisonAgentPort`](../../../../src/agents/comparison-agent.ts)、[对照模块](../../../architecture/comparison.md)。不改 Comparison resume，不改四轮模型语义，不做双实验并发产品测试。
 
 ## 验证
 

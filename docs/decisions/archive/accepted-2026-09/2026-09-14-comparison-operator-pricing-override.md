@@ -3,7 +3,7 @@
 状态：accepted
 日期：2026-09-14
 
-「自定义 Pi 模型不注册 `cost`」由 [Pi 自定义模型必须带 cost](./2026-09-15-pi-custom-model-requires-cost.md) 替代。操作者覆盖与 Comparison 不计 Pi 账单仍有效。
+「自定义 Pi 模型不注册 `cost`」由 [Pi 自定义模型必须带 cost](../../accepted/2026-09-15-pi-custom-model-requires-cost.md) 替代。操作者覆盖与 Comparison 不计 Pi 账单仍有效。
 
 ## 问题
 
@@ -15,7 +15,7 @@
 
 命中时 Host 把四类单价写入 `pricingRates`，详细证据列出 input / output / cacheRead / cacheCreation。费用卡仍只显示金额或空态。打开已发布报告不重算。
 
-自定义 Pi 模型向 Pi 注册 `cost` 的契约见 [Pi 自定义模型必须带 cost](./2026-09-15-pi-custom-model-requires-cost.md)。Comparison 费用只走 Host 解析器，不读 Pi usage cost。夹具里的 `cost: 0` 仍只服务测试。
+自定义 Pi 模型向 Pi 注册 `cost` 的契约见 [Pi 自定义模型必须带 cost](../../accepted/2026-09-15-pi-custom-model-requires-cost.md)。Comparison 费用只走 Host 解析器，不读 Pi usage cost。夹具里的 `cost: 0` 仍只服务测试。
 
 ## 备选方案
 
@@ -31,4 +31,4 @@
 
 ## 验证
 
-`test/application/model-pricing.test.ts`：覆盖压过快照；`(productId, id)` 优先于裸 id；全 0 且无 `free` 无费用且不借用快照；`free: true` 允许 0；损坏文件为 unreadable。`test/application/comparison-report.test.ts`：证据区含四类费率。自定义模型的 Pi `cost` 字段见 [Pi 自定义模型必须带 cost](./2026-09-15-pi-custom-model-requires-cost.md)。反向：未声明免费的 0 显示 `$0.00` 则红。`npm run check` 必须通过。
+`test/application/model-pricing.test.ts`：覆盖压过快照；`(productId, id)` 优先于裸 id；全 0 且无 `free` 无费用且不借用快照；`free: true` 允许 0；损坏文件为 unreadable。`test/application/comparison-report.test.ts`：证据区含四类费率。自定义模型的 Pi `cost` 字段见 [Pi 自定义模型必须带 cost](../../accepted/2026-09-15-pi-custom-model-requires-cost.md)。反向：未声明免费的 0 显示 `$0.00` 则红。`npm run check` 必须通过。

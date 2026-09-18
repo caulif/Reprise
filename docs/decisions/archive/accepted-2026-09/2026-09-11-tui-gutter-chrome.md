@@ -26,7 +26,7 @@
 
 ## 影响
 
-`theme.ts` 色槽、`scrollback.ts` 树行与列尾、`pages/result.ts` 横幅、`widgets.ts` kv。真终端浅色底仍按[平台矩阵](../../plan/2026-09-08-platform-evidence-matrix.md)。
+`theme.ts` 色槽、`scrollback.ts` 树行与列尾、`pages/result.ts` 横幅、`widgets.ts` kv。真终端浅色底仍按[平台矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)。
 
 ## 验证
 

@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [ProductPack 端口](./2026-09-09-product-pack-ports.md) 与 [UserVisibleTurn 时间线](./2026-09-10-user-visible-turn-timeline.md)。
+延续 [ProductPack 端口](../../accepted/2026-09-09-product-pack-ports.md) 与 [UserVisibleTurn 时间线](../../accepted/2026-09-10-user-visible-turn-timeline.md)。
 
 ## 问题
 

@@ -18,7 +18,7 @@ Journal 在落盘前额外校验：缺 `turnId`/`messageId`/`callId` 的事件�
 
 ## 影响
 
-[`src/application/candidate-run-events.ts`](../../../src/application/candidate-run-events.ts)。错误码增加 `turn`、`message`、`call`、`lifecycle`。
+[`src/application/candidate-run-events.ts`](../../../../src/application/candidate-run-events.ts)。错误码增加 `turn`、`message`、`call`、`lifecycle`。
 
 ## 验证
 

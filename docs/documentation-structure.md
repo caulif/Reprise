@@ -62,7 +62,7 @@ product、architecture、decisions、plan（含 plan/archive/）、progress、co
 
 路径：decisions/{proposed|accepted}/YYYY-MM-DD-topic.md；冷库在 decisions/archive/accepted-2026-09/；superseded 在 decisions/archive/superseded/。日期为首次提出日期，移动不改日期，不加分类子目录。
 
-proposed 包括未拍板提案，以及已确认但等待实施生效的目标；后者必须在决定中明确确认情况和生效验收。accepted 热集表示当前生效规则；archive/superseded 表示已有替代规则。设计确认不等于实现完成，不要求重复批准。
+proposed 包括未拍板提案，以及已确认但等待实施生效的目标；后者必须在决定中明确确认情况和生效验收。**accepted 热集**是 navigation 默认链到的现行约束。**archive/accepted-2026-09/** 收纳仍有效但已沉入 fact 层或极少改动的旧 accepted。**archive/superseded/** 收纳已有替代规则的记录。设计确认不等于实现完成，不要求重复批准。
 
 文件格式：第一行 # 决策：标题，第三行 状态：proposed|accepted|superseded，与目录一致。正文依次为：
 

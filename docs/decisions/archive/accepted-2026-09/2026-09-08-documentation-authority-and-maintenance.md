@@ -8,9 +8,9 @@
 
 ## 决定
 
-文档按[结构与生命周期](../../documentation-structure.md)维护。当前规则、目标计划、理由与完成证据分别有唯一归宿；README 提供按任务阅读路径。proposed 允许承载已确认但未实施的目标，必须明确确认状态与生效条件。
+文档按[结构与生命周期](../../../documentation-structure.md)维护。当前规则、目标计划、理由与完成证据分别有唯一归宿；README 提供按任务阅读路径。proposed 允许承载已确认但未实施的目标，必须明确确认状态与生效条件。
 
-当前到目标的差异集中在[迁移边界](../../plan/archive/documentation-reconciliation-for-session-harness-workflow.md)，已确认设计不因旧 ADR 存在而重新审批，也不因改文档而宣布代码已迁移。目标细节恢复到架构与 TUI 两份各司其职的计划，A1–A18 属于架构目标验收。
+当前到目标的差异集中在[迁移边界](../../../plan/archive/documentation-reconciliation-for-session-harness-workflow.md)，已确认设计不因旧 ADR 存在而重新审批，也不因改文档而宣布代码已迁移。目标细节恢复到架构与 TUI 两份各司其职的计划，A1–A18 属于架构目标验收。
 
 类型、工具注册、prompt、依赖和 CI 配置由代码拥有。文档保留语义、权限与失败边界，链接实际定义，删除重复全文和独立专题路线。受控说明不依赖被忽略的本机 HTML，原型只演示目标的部分交互。
 

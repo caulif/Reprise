@@ -29,7 +29,7 @@ Windows 上 Recovery `powershell` 必须在 Harness 自有 staging 里跑起来�
 
 ## 影响
 
-[Environment §7.1](../../architecture/environment.md#71-内部工作空间与实际边界) 的目录名与 shell 启动语义。[Windows shell 与点路径](./2026-08-31-recovery-windows-shell-and-dot-paths.md) 不再描述可执行文件发现与 argv。
+[Environment §7.1](../../../architecture/environment.md#71-内部工作空间与实际边界) 的目录名与 shell 启动语义。[Windows shell 与点路径](./2026-08-31-recovery-windows-shell-and-dot-paths.md) 不再描述可执行文件发现与 argv。
 
 ## 验证
 

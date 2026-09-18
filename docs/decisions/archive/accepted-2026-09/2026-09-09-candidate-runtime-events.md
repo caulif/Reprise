@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [ProductPack 端口](./2026-09-09-product-pack-ports.md) 与 [LaunchContext](./2026-09-09-candidate-launch-context.md)。
+延续 [ProductPack 端口](../../accepted/2026-09-09-product-pack-ports.md) 与 [LaunchContext](./2026-09-09-candidate-launch-context.md)。
 
 ## 问题
 

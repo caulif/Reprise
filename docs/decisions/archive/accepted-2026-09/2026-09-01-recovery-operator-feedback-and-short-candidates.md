@@ -25,7 +25,7 @@
 
 ## 影响
 
-[Environment §7.1](../../architecture/environment.md#71-内部工作空间与实际边界) 的 `rc` 段名。[TUI](../../product/tui.md) 的确认卡片、时间线、项目默认光标与摘要徽章。诊断 schema 的 `reasonCode` 仍是自由字符串。
+[Environment §7.1](../../../architecture/environment.md#71-内部工作空间与实际边界) 的 `rc` 段名。[TUI](../../../product/tui.md) 的确认卡片、时间线、项目默认光标与摘要徽章。诊断 schema 的 `reasonCode` 仍是自由字符串。
 
 ## 验证
 

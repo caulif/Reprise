@@ -272,7 +272,6 @@ function checkLinks(markdownFiles, tracked) {
   const errors = [];
   const trackedSet = new Set(tracked);
   for (const [file, text] of markdownFiles) {
-    if (isArchiveMarkdown(file)) continue;
     for (const link of extractMarkdownLinks(text)) {
       if (IGNORED_LINK_PREFIX.test(link.href)) continue;
       let resolved;

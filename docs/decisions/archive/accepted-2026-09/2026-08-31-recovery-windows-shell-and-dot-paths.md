@@ -22,7 +22,7 @@
 
 ## 影响
 
-[Environment §7.1](../../architecture/environment.md#71-内部工作空间与实际边界)、Playbook / Recovery prompt、确认页与核对页文案。
+[Environment §7.1](../../../architecture/environment.md#71-内部工作空间与实际边界)、Playbook / Recovery prompt、确认页与核对页文案。
 
 ## 验证
 

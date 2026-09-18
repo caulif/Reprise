@@ -17,11 +17,11 @@ ADR（Architecture Decision Record，架构决策记录）回答「为什么选�
 
 满足**任一**即可留在 `accepted/`：
 
-- 仍约束跨模块协议、on-disk、prompt、工具面或门禁
-- 仍被 architecture / product / 根或 docs AGENTS / 门禁文档引用
+- 仍约束跨模块协议、on-disk、prompt、工具面或门禁，且 fact 层仍可能挂 Markdown 链
+- 仍被 architecture / product / 根或 docs AGENTS / 门禁文档 **Markdown 链接**
 - 安全、凭据、平台支持、费用 opt-in
 
-其余（一次性修复叙事、细节已被更新 ADR/architecture 覆盖、纯措辞/版式史）→ `archive/`。移冷库用 `git mv`，不删历史。
+其余 → `archive/`。**工具面 / 协议类 ADR** 若规则已完全沉入 architecture/product 且 fact 层不再挂链、也不留标题伪引用，可入 `archive/accepted-2026-09/`（仍有效，仅退出默认视线）。移冷库用 `git mv`，不删历史。
 
 ## 何时写
 
@@ -34,8 +34,9 @@ ADR（Architecture Decision Record，架构决策记录）回答「为什么选�
 | 目录 | 含义 |
 |---|---|
 | [proposed](./proposed/) | 未拍板，或已确认但尚未实施生效；写清生效验收 |
-| [accepted](./accepted/) | 热集：当前仍约束实现 |
-| [archive/superseded/](./archive/superseded/) | 已有替代规则，保留历史与替代链接 |
+| [accepted](./accepted/) | **热集**：navigation 默认链到的现行约束（≤ 40） |
+| [archive/accepted-2026-09/](./archive/accepted-2026-09/) | **冷 accepted**：仍有效、已沉入 fact 层或极少改动；不进导航 |
+| [archive/superseded/](./archive/superseded/) | 已有替代规则；保留历史与替代链接 |
 
 日期不随移动改变；部分迁移不能宣布整份旧决定失效。五节格式、命名及历史兼容规则由[文档结构](../documentation-structure.md#决策记录)定义。[写 ADR](../cookbook/add-adr.md)提供操作步骤。
 

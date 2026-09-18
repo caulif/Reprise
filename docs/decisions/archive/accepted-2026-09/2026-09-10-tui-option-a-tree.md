@@ -27,7 +27,7 @@
 
 ## 影响
 
-`timeline.ts` 投影、`scrollback.ts` 树渲染、`page-input.ts` SGR、`docs/product/tui.md` 运行页键位。真终端滚轮与单击仍按[平台矩阵](../../plan/2026-09-08-platform-evidence-matrix.md)。
+`timeline.ts` 投影、`scrollback.ts` 树渲染、`page-input.ts` SGR、`docs/product/tui.md` 运行页键位。真终端滚轮与单击仍按[平台矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)。
 
 ## 验证
 

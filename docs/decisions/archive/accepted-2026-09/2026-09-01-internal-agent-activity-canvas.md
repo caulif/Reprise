@@ -24,7 +24,7 @@ Recovery / Controller / Comparison 的工具事件曾一律标成 Harness，非�
 
 ## 影响
 
-[TUI §4.1](../../product/tui.md#41-主活动时间线) 的投影与声部。[TUI §4.2](../../product/tui.md#42-决策与实际输入) 的决策与投递分轨。实现：`src/tui/timeline.ts`、`src/tui/agent-activity.ts`、`src/tui/scrollback.ts`。
+[TUI §4.1](../../../product/tui.md#41-主活动时间线) 的投影与声部。[TUI §4.2](../../../product/tui.md#42-决策与实际输入) 的决策与投递分轨。实现：`src/tui/timeline.ts`、`src/tui/agent-activity.ts`、`src/tui/scrollback.ts`。
 
 ## 验证
 

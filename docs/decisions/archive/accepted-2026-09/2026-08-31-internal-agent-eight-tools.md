@@ -24,7 +24,7 @@ Comparison 报告沙箱的 `candidate/` 是现有隔离副本的只读挂载（�
 
 ## 影响
 
-[`controller.md#4-实验条件`](../../architecture/controller.md#4-实验条件) §4、[`最小验证边界`](../../architecture/overview.md#附录最小验证边界)、[`comparison.md`](../../architecture/comparison.md)、[`overview.md`](../../architecture/overview.md) 中「只读、不提供 shell」改为写策略与状态机边界。Environment §7.1 的 Recovery 八工具句保持，并适用于同一组名字。
+[`controller.md#4-实验条件`](../../../architecture/controller.md#4-实验条件) §4、[`最小验证边界`](../../../architecture/overview.md#附录最小验证边界)、[`comparison.md`](../../../architecture/comparison.md)、[`overview.md`](../../../architecture/overview.md) 中「只读、不提供 shell」改为写策略与状态机边界。Environment §7.1 的 Recovery 八工具句保持，并适用于同一组名字。
 
 ## 验证
 

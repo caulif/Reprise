@@ -25,7 +25,7 @@
 
 ## 影响
 
-`page-input.ts` SGR、`pointer-dispatch.ts`、`scrollback.ts` 视口、`pages/result.ts` 命中、`docs/product/tui.md` 页脚。真终端仍按[平台矩阵](../../plan/2026-09-08-platform-evidence-matrix.md)。
+`page-input.ts` SGR、`pointer-dispatch.ts`、`scrollback.ts` 视口、`pages/result.ts` 命中、`docs/product/tui.md` 页脚。真终端仍按[平台矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)。
 
 ## 验证
 

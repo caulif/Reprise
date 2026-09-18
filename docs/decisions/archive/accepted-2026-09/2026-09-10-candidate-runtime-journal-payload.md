@@ -20,7 +20,7 @@
 
 ## 影响
 
-[`src/core/schemas/candidate.ts`](../../../src/core/schemas/candidate.ts)、[`src/application/candidate-run-events.ts`](../../../src/application/candidate-run-events.ts)。
+[`src/core/schemas/candidate.ts`](../../../../src/core/schemas/candidate.ts)、[`src/application/candidate-run-events.ts`](../../../../src/application/candidate-run-events.ts)。
 
 ## 验证
 

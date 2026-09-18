@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M5.5](../../plan/archive/reprise-refactoring-execution.md#m55-阅读搜索与终端交互)。
+目标批次见 [M5.5](../../../plan/archive/reprise-refactoring-execution.md#m55-阅读搜索与终端交互)。
 
 ## 问题
 

@@ -2,13 +2,13 @@
 
 状态：superseded
 
-本提案由[真实任务比较卡](../accepted/2026-09-09-comparison-shareable-task-card.md)替代。正文保留为历史设计，不作为实施要求。
+本提案由[真实任务比较卡](../../accepted/2026-09-09-comparison-shareable-task-card.md)替代。正文保留为历史设计，不作为实施要求。
 
 ## 问题
 
 用户希望运行结束后知道：这个模型在自己的真实任务上好不好用，是否值得用于下一次类似任务，以及相比历史方案究竟改变了什么。报告需要直接作出有依据的取舍，并用易读的 HTML 呈现两边差异。
 
-[当前 Comparison 设计](../../architecture/comparison.md)以调查差异、供用户自行判断为目标。[提示词](../../../src/agents/comparison-agent.ts)明确禁止评分、排名和选赢家；[事实投影](../../../src/application/comparison.ts)提供运行与交付线索。这些能力能支撑调查，但没有要求评委回答“是否值得使用”。仅改页面样式不足以填补这个目标差距。
+[当前 Comparison 设计](../../../architecture/comparison.md)以调查差异、供用户自行判断为目标。[提示词](../../../../src/agents/comparison-agent.ts)明确禁止评分、排名和选赢家；[事实投影](../../../../src/application/comparison.ts)提供运行与交付线索。这些能力能支撑调查，但没有要求评委回答“是否值得使用”。仅改页面样式不足以填补这个目标差距。
 
 本提案承接已确认的方向：依据任务性质作出取舍，展示时间、token、速度等硬指标，最终仍由 Comparison 生成可视化 HTML。下文定义目标方案，不表示这些能力已经存在；本次只形成设计文档，不变更运行行为。
 
@@ -138,9 +138,9 @@ Controller 的交互只能支持“模拟用户提出了这些纠偏”的观察
 
 ### 7. 与现有架构衔接
 
-复用 [单 Session attempt](../accepted/2026-09-08-comparison-single-session.md)、封存快照、briefing 索引、证据引用、失败不覆盖成功报告，以及 [Agent 编写 HTML](../accepted/2026-08-15-comparison-agent-authored-html.md) 的所有权。
+复用 [单 Session attempt](../accepted-2026-09/2026-09-08-comparison-single-session.md)、封存快照、briefing 索引、证据引用、失败不覆盖成功报告，以及 [Agent 编写 HTML](../accepted-2026-09/2026-08-15-comparison-agent-authored-html.md) 的所有权。
 
-实施时调整提示词目标：允许基于任务和证据推荐一方，要求先定标准并解释取舍；继续禁止虚假观察、能力误归因和篡改结果。该调整涉及 [自由报告形式](../accepted/2026-09-02-comparison-free-report-form.md) 的相关表述，生效时须精确说明替代范围，而非整体废弃 HTML 自由创作。
+实施时调整提示词目标：允许基于任务和证据推荐一方，要求先定标准并解释取舍；继续禁止虚假观察、能力误归因和篡改结果。该调整涉及 [自由报告形式](../accepted-2026-09/2026-09-02-comparison-free-report-form.md) 的相关表述，生效时须精确说明替代范围，而非整体废弃 HTML 自由创作。
 
 初始方案尽量沿用薄信封：一行摘要可承载使用建议，完整理由在 HTML 中。不为页面设计新建通用评分协议或渲染引擎。如果后续确有跨报告检索、聚合建议的需求，再定义结构化判断与迁移；机器消费者不能通过解析 HTML 猜建议。
 

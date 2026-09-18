@@ -26,11 +26,11 @@
 
 ## 影响
 
-[环境](../../architecture/environment.md)、[Comparison](../../architecture/comparison.md)、[按 settlement 取视图](./2026-09-09-controller-permissions-view-prompt.md)。
+[环境](../../../architecture/environment.md)、[Comparison](../../../architecture/comparison.md)、[按 settlement 取视图](./2026-09-09-controller-permissions-view-prompt.md)。
 
 未知且未记录过的 GitHub URL 仍可能指向真实远端。
 
-「必须从副本 `fetch` 才能隔离」、以及用 git 子进程原文充当 catalog 错误字段，由 [Git 隔离不变量](./2026-09-11-git-isolation-invariants.md) 替代。发现边界、sink 命名、remote 改写、`insteadOf`、token 剥离、越界 skip、Comparison 只读 catalog、sink 保留窗口仍以本文为准。
+「必须从副本 `fetch` 才能隔离」、以及用 git 子进程原文充当 catalog 错误字段，由 [Git 隔离不变量](../../accepted/2026-09-11-git-isolation-invariants.md) 替代。发现边界、sink 命名、remote 改写、`insteadOf`、token 剥离、越界 skip、Comparison 只读 catalog、sink 保留窗口仍以本文为准。
 
 ## 验证
 

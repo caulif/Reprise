@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M4](../../plan/archive/reprise-refactoring-execution.md#6-m4comparison-单-session-与独立执行)。取代 [双 session attempt](../superseded/2026-09-05-comparison-two-phase-attempts-and-pi-media.md)。Pi 原生媒体块、attempt 目录、原子发布与只读封存挂载仍有效。
+目标批次见 [M4](../../../plan/archive/reprise-refactoring-execution.md#6-m4comparison-单-session-与独立执行)。取代 [双 session attempt](../superseded/2026-09-05-comparison-two-phase-attempts-and-pi-media.md)。Pi 原生媒体块、attempt 目录、原子发布与只读封存挂载仍有效。
 
 ## 问题
 

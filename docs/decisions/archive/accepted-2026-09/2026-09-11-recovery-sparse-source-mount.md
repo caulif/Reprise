@@ -2,7 +2,7 @@
 
 状态：accepted
 
-单工作副本与三轮 Session 仍有效，见 [自主三轮循环](./2026-09-09-recovery-single-workspace-agent-loop.md)。
+单工作副本与三轮 Session 仍有效，见 [自主三轮循环](../../accepted/2026-09-09-recovery-single-workspace-agent-loop.md)。
 
 ## 问题
 
