@@ -31,7 +31,7 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
   const languageIndex = languageFieldIndex(model.draft.kind);
   const field = fields[model.selected] ?? 'provider type';
   if (model.editing) {
-    const reason = fieldReason(field, model.buffer, model.draft.kind);
+    const reason = fieldReason(field, model.buffer, model.draft.kind, locale);
     return panel(theme, t(locale, 'editingField', { field: fieldLabel(locale, field) }), [
       ` ${t(locale, 'currentValue')}  ${fieldValue(theme, field, configFieldValue(model.draft, field), model.draft.kind, locale)}`,
       '',
@@ -44,7 +44,7 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
     const marker = index === model.selected ? theme.glyphs.cursor : ' ';
     const hint = fieldHint(item, locale);
     const value = fieldValue(theme, item, configFieldValue(model.draft, item), model.draft.kind, locale);
-    const reason = fieldReason(item, configFieldValue(model.draft, item), model.draft.kind);
+    const reason = fieldReason(item, configFieldValue(model.draft, item), model.draft.kind, locale);
     const line = ` ${marker} ${pad(fieldLabel(locale, item), 18, theme.glyphs.ellipsis)} ${value}${hint ? `  ${theme.style.muted(hint)}` : ''}`;
     const painted = index === model.selected ? theme.style.selected(line) : line;
     return reason ? [painted, `     ${theme.style.warn(`${theme.glyphs.warn} ${reason}`)}`] : [painted];
@@ -142,14 +142,15 @@ function fieldValue(theme: Theme, field: ConfigField, value: string, kind: Harne
   return value || t(locale, 'required');
 }
 
-function fieldReason(field: ConfigField, value: string, kind: HarnessConfigDraft['kind']): string | undefined {
+function fieldReason(field: ConfigField, value: string, kind: HarnessConfigDraft['kind'], locale: Locale = 'en'): string | undefined {
   if (field === 'API key' && kind === 'openai-compatible') {
     const validity = apiKeyValidity(value);
     return validity.ok || !value ? undefined : validity.reason;
   }
   if (field === 'base URL' && kind === 'openai-compatible') {
     const validity = baseUrlValidity(value);
-    return validity.ok || !value ? undefined : validity.reason;
+    if (validity.ok || !value) return undefined;
+    return validity.reason === 'invalid URL' ? t(locale, 'baseUrlInvalid') : validity.reason;
   }
   return undefined;
 }

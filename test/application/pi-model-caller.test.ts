@@ -20,10 +20,12 @@ test('Harness model config persists only the selected non-secret Pi model', asyn
   const migrated = await readHarnessModelConfig(root);
   assert.equal(migrated && migrated.schemaVersion === 2 ? migrated.provider.kind : undefined, 'pi-catalog');
   assert.equal(migrated?.baseUrl, undefined);
-  for (const baseUrl of ['http://example.test', 'https://key@example.test', 'https://example.test/?api_key=x', 'not-a-url']) {
+  for (const baseUrl of ['https://key@example.test', 'http://user@example.test/v1', 'https://example.test/?api_key=x', 'http://example.test/?api_key=x', 'not-a-url', 'ftp://example.test/v1']) {
     await writeFile(configPath(root), JSON.stringify({ schemaVersion: 2, provider: { kind: 'openai-compatible', id: 'private-api' }, modelId: 'model-a', effort: 'medium', baseUrl, apiKey: 'file-secret-value' }));
     await assert.rejects(readHarnessModelConfig(root), /baseUrl/);
   }
+  await writeFile(configPath(root), JSON.stringify({ schemaVersion: 2, provider: { kind: 'openai-compatible', id: 'private-api' }, modelId: 'model-a', effort: 'medium', baseUrl: 'http://localhost:8080/v1', apiKey: 'file-secret-value' }));
+  assert.equal((await readHarnessModelConfig(root))?.baseUrl, 'http://localhost:8080/v1');
 });
 
 test('Harness model config migrates v1 and saves v2 without a secret', async (t) => {

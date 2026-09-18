@@ -139,7 +139,7 @@ async function main() {
   replaceField(configApp, 'private-gateway');
   configApp.handleInput('\u001b[B');
   configApp.handleInput('\r');
-  replaceField(configApp, 'http://insecure.example/v1');
+  replaceField(configApp, 'not-a-url');
   configApp.handleInput('\u001b[B');
   configApp.handleInput('\r');
   replaceField(configApp, 'model-private');
