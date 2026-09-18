@@ -2,7 +2,7 @@
 
 > **历史归档：** 本文仅供追溯与 ADR 入站锚点；当前规范见[架构总览](../../architecture/overview.md)，开放验收见 [MASTER](../../progress/MASTER.md) 与 plan/ 白名单。
 
-本文曾记录本轮重构的目标验收语义，不作为现行权威。选择理由见[Session harness workflow](../../decisions/accepted/2026-09-07-reprise-session-harness-workflow.md)。当时仍缺的真终端与 Runtime 证据见[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)（开放项以 MASTER 为准）。
+本文曾记录本轮重构的目标验收语义，不作为现行权威。选择理由见[Session harness workflow](../../decisions/archive/accepted-2026-09/2026-09-07-reprise-session-harness-workflow.md)。当时仍缺的真终端与 Runtime 证据见[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)（开放项以 MASTER 为准）。
 
 ## 1. 产品边界
 
@@ -307,4 +307,4 @@ Codex、Claude 及外部插件都通过同一套公共契约注册。核心程�
 - [现有持久化规范](../../architecture/persistence-and-crash-consistency.md)、[运行结果](../../architecture/run-outcome.md)、[技术选型](../../architecture/overview.md#附录技术选型与实现基线)：迁移需要守住的事实与当前实现边界。
 - [无头 CLI 协议](../../decisions/accepted/2026-09-08-cli-query-config-protocol.md)：共同应用操作、机器输出、稳定身份及每实验单写者。
 - [产品兼容性](../../architecture/platform-and-packs.md)、[现有 ProductPack 契约](../../../src/products/contract.ts)：来源与候选身份分离、规范化 Runtime 事实、旧记录独立可读。
-- [封存与重复运行](../../decisions/accepted/2026-09-08-scene-seal-and-repeat-runs.md)：冻结后不回源猜起点、封存结果、对照输入与场景身份分离。
+- [封存与重复运行](../../decisions/archive/accepted-2026-09/2026-09-08-scene-seal-and-repeat-runs.md)：冻结后不回源猜起点、封存结果、对照输入与场景身份分离。

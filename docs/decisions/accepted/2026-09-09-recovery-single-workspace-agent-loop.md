@@ -2,7 +2,7 @@
 
 状态：accepted
 
-取代多候选物化、Host 证据评分、三态信封和固定就绪反馈循环。历史记录见 [证据排序候选](../superseded/2026-08-19-recovery-evidence-ranked-candidates.md)、[候选选择与信息增益](../superseded/2026-08-19-recovery-candidate-selection-and-information-gain.md)、[双层评估混用业务裁决](../superseded/2026-08-18-recovery-two-layer-evaluation.md)、[任务就绪反馈循环](../superseded/2026-08-22-recovery-task-readiness-feedback-loop.md)、[Host 引导调查工具](../superseded/2026-08-18-recovery-host-guided-investigation.md)、[多假设隔离候选](../superseded/2026-08-18-recovery-isolated-candidates.md)、[recovered 带 unresolved 收成 partial](../superseded/2026-09-07-recovery-envelope-recovered-unresolved-to-partial.md) 与 [recovered 缺强证据收成 partial](../superseded/2026-09-07-recovery-recovered-without-strong-evidence-to-partial.md)。连续 Session 与七件套工作区工具仍有效，见 [连续 Session](./2026-09-08-recovery-continuous-session.md) 与 [工作集](./2026-09-07-recovery-working-set-and-observation-files.md)。
+取代多候选物化、Host 证据评分、三态信封和固定就绪反馈循环。历史记录见 [证据排序候选](../archive/superseded/2026-08-19-recovery-evidence-ranked-candidates.md)、[候选选择与信息增益](../archive/superseded/2026-08-19-recovery-candidate-selection-and-information-gain.md)、[双层评估混用业务裁决](../archive/superseded/2026-08-18-recovery-two-layer-evaluation.md)、[任务就绪反馈循环](../archive/superseded/2026-08-22-recovery-task-readiness-feedback-loop.md)、[Host 引导调查工具](../archive/superseded/2026-08-18-recovery-host-guided-investigation.md)、[多假设隔离候选](../archive/superseded/2026-08-18-recovery-isolated-candidates.md)、[recovered 带 unresolved 收成 partial](../archive/superseded/2026-09-07-recovery-envelope-recovered-unresolved-to-partial.md) 与 [recovered 缺强证据收成 partial](../archive/superseded/2026-09-07-recovery-recovered-without-strong-evidence-to-partial.md)。连续 Session 与七件套工作区工具仍有效，见 [连续 Session](../archive/accepted-2026-09/2026-09-08-recovery-continuous-session.md) 与 [工作集](../archive/accepted-2026-09/2026-09-07-recovery-working-set-and-observation-files.md)。
 
 ## 问题
 
@@ -12,7 +12,7 @@
 
 Recovery 使用一个连续 Session 和一个工作副本，固定进行三个 turn：理解与侦察、恢复与准备、自检与结论。每轮 prompt 只描述当轮目的，Agent 自己决定调查、修改或验证。最终结论为 `ready` 或 `blocked`，并带一句话 `summary`，由 Agent 判断缺口是否影响任务；无关缺口可以出现在 `ready` 的 `unresolved` 中。Host 只负责不可逆安全边界、运行控制、审计、持久化和机械检查，不按证据等级、changed path 或零变更改写结论，也不改写 Agent 的 summary 或报告。
 
-System Prompt 不包含任务资源清单、轮次动作或输出 JSON。任务资源由第一轮推导，输出契约由最后一轮请求提供。Agent 可在 `.reprise/recovery-work/` 留下短记录，封存前清理；必要内容由 Agent 自行迁移。机械检查失败且可修复时，把具体事实追加到同一 Session，不另开业务评审 Session。封存后的起点供 `prepareRun` 复制独立副本；复用正常时不重新恢复。信封与 seed 同构见 [summary 与 seed 同构](./2026-09-11-recovery-envelope-summary.md)。
+System Prompt 不包含任务资源清单、轮次动作或输出 JSON。任务资源由第一轮推导，输出契约由最后一轮请求提供。Agent 可在 `.reprise/recovery-work/` 留下短记录，封存前清理；必要内容由 Agent 自行迁移。机械检查失败且可修复时，把具体事实追加到同一 Session，不另开业务评审 Session。封存后的起点供 `prepareRun` 复制独立副本；复用正常时不重新恢复。信封与 seed 同构见 [summary 与 seed 同构](../archive/accepted-2026-09/2026-09-11-recovery-envelope-summary.md)。
 
 ## 备选方案
 

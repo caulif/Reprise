@@ -35,11 +35,12 @@
 
 ### 默认不要通读（按需检索）
 
-`decisions/accepted/` 是受控的现行规则归档，但约两百份 ADR **不是**默认通读清单。先读 [decisions/README](./decisions/README.md) 的触发与检索说明；任务触及时再 `git grep` 打开单篇。
+`decisions/accepted/` 是热集（≤ 40 篇现行规则），不是默认通读清单。先读 [decisions/README](./decisions/README.md) 的触发与检索说明；任务触及时再 `git grep` 打开单篇。冷库在 `decisions/archive/`，不进导航。
 
 | 路径 | 说明 |
 |---|---|
-| `docs/decisions/accepted/` 全文 | 因果层归档；单篇 ADR 在触发时按需打开，不必前置通读 |
+| `docs/decisions/accepted/` | 热集 ADR；navigation 只链此目录 |
+| `docs/decisions/archive/` | 冷归档 ADR（含 superseded）；靠 `git grep` 检索，不必通读 |
 
 ### 非规范 / 不进 git
 

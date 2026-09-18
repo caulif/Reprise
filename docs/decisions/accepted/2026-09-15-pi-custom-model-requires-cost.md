@@ -3,7 +3,7 @@
 状态：accepted
 日期：2026-09-15
 
-替代 [操作者覆盖](./2026-09-14-comparison-operator-pricing-override.md) 中「自定义 Pi 模型不注册 `cost`」一条。该记录的操作者覆盖文件、全 0 须 `free: true`、以及 Comparison 不计 Pi 账单仍有效。
+替代 [操作者覆盖](../archive/accepted-2026-09/2026-09-14-comparison-operator-pricing-override.md) 中「自定义 Pi 模型不注册 `cost`」一条。该记录的操作者覆盖文件、全 0 须 `free: true`、以及 Comparison 不计 Pi 账单仍有效。
 
 ## 问题
 

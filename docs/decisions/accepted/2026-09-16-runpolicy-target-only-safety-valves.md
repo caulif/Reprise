@@ -5,7 +5,7 @@
 
 ## 问题
 
-`RunPolicy.maxModelCalls` 与 `maxConsecutiveNoProgress` 写在 schema 和默认值里，但 CandidateRun 不执行；文档仍写「30 分钟 / 12 轮 / 单次 timeout 始终有限」。Controller 循环里 `stalled.no_progress` 分支对 `completed | failed | cancelled` 不可达。若把调用次数改去截 Controller，会推翻 [Controller briefing](./2026-09-03-controller-path-briefing.md) 已拍板的「`maxModelCalls` 只约束 Target」。
+`RunPolicy.maxModelCalls` 与 `maxConsecutiveNoProgress` 写在 schema 和默认值里，但 CandidateRun 不执行；文档仍写「30 分钟 / 12 轮 / 单次 timeout 始终有限」。Controller 循环里 `stalled.no_progress` 分支对 `completed | failed | cancelled` 不可达。若把调用次数改去截 Controller，会推翻 [Controller briefing](../archive/accepted-2026-09/2026-09-03-controller-path-briefing.md) 已拍板的「`maxModelCalls` 只约束 Target」。
 
 ## 决定
 
@@ -28,7 +28,7 @@
 
 **数不到模型调用时改截 Controller。** 与 2026-09-03 冲突，且把内部决策次数绑到 Target 政策。
 
-**用 Controller 消息重复当无进展。** 已由 [briefing 与无进展解耦](./2026-09-05-controller-briefing-manifest-and-no-progress.md) 否决。
+**用 Controller 消息重复当无进展。** 已由 [briefing 与无进展解耦](../archive/accepted-2026-09/2026-09-05-controller-briefing-manifest-and-no-progress.md) 否决。
 
 **给 Controller 单次有限 `timeoutMs`。** 长决策会被误杀；取消与传输失败仍有效。
 

@@ -25,8 +25,8 @@ docs/
 ├── architecture/                    # 当前跨模块与专题架构规范
 ├── decisions/                       # 决策记录
 │   ├── proposed/
-│   ├── accepted/
-│   └── superseded/
+│   ├── accepted/                    # 热集（≤40，导航只链此目录）
+│   └── archive/                     # 冷库（不进导航；含 accepted-2026-09/ 与 superseded/）
 ├── plan/                            # 开放验收与 task brief；历史目标在 plan/archive/
 ├── progress/MASTER.md               # 稳定进度入口
 └── tui-audit/frames/                # TUI 快照基线（受控）
@@ -36,7 +36,7 @@ docs/
 
 ## 受控边界
 
-product、architecture、decisions、plan（含 plan/archive/）、progress、cookbook 及上列开发与治理文档属于长期受控材料。decisions/README 是 ADR 的触发与检索入口，不复制各记录正文；accepted/ 下大量 ADR 按需检索，不是默认通读清单。plan/archive/ 保留仍有 ADR 入站依赖的历史计划，不进导航。docs/.local 保存一次性审查且无入站依赖的已结束材料，不受控；不得从受控文档链接到它。docs/local 是 docs/.local 的历史误拼路径，同样不受控，请只用 docs/.local。research 仅允许忽略的本机交互草图，不拥有设计事实，不是开源检出的必需文件。
+product、architecture、decisions、plan（含 plan/archive/）、progress、cookbook 及上列开发与治理文档属于长期受控材料。decisions/README 是 ADR 的触发与检索入口，不复制各记录正文；accepted/ 热集按需检索，archive/ 不进导航。plan/archive/ 保留仍有 ADR 入站依赖的历史计划，不进导航。docs/.local 保存一次性审查且无入站依赖的已结束材料，不受控；不得从受控文档链接到它。docs/local 是 docs/.local 的历史误拼路径，同样不受控，请只用 docs/.local。research 仅允许忽略的本机交互草图，不拥有设计事实，不是开源检出的必需文件。
 
 生成的 HTML、截图和运行记录不受控；tui-audit/frames 是 CI 逐字节审计基线例外，受控但非阅读材料。HTML 不得拥有独立验收编号；手工原型若只覆盖部分场景，必须标为示例并链接 Markdown，不能声称完整同步。发布说明不依赖本机原型存在。
 
@@ -60,9 +60,9 @@ product、architecture、decisions、plan（含 plan/archive/）、progress、co
 
 ## 决策记录
 
-路径：decisions/{proposed|accepted|superseded}/YYYY-MM-DD-topic.md。日期为首次提出日期，移动不改日期，不加分类子目录。
+路径：decisions/{proposed|accepted}/YYYY-MM-DD-topic.md；冷库在 decisions/archive/accepted-2026-09/；superseded 在 decisions/archive/superseded/。日期为首次提出日期，移动不改日期，不加分类子目录。
 
-proposed 包括未拍板提案，以及已确认但等待实施生效的目标；后者必须在决定中明确确认情况和生效验收。accepted 表示当前生效规则，superseded 表示已有替代规则。设计确认不等于实现完成，不要求重复批准。
+proposed 包括未拍板提案，以及已确认但等待实施生效的目标；后者必须在决定中明确确认情况和生效验收。**accepted 热集**是 navigation 默认链到的现行约束。**archive/accepted-2026-09/** 收纳仍有效但已沉入 fact 层或极少改动的旧 accepted。**archive/superseded/** 收纳已有替代规则的记录。设计确认不等于实现完成，不要求重复批准。
 
 文件格式：第一行 # 决策：标题，第三行 状态：proposed|accepted|superseded，与目录一致。正文依次为：
 
@@ -96,6 +96,6 @@ proposed 包括未拍板提案，以及已确认但等待实施生效的目标�
 
 ## 迁移规则
 
-先确定唯一新归宿，保留仍有效的不变量，再迁移文档并更新引用与验证。仍有 ADR 或其它受控入站依赖的历史计划迁入 plan/archive/（受控、可检索，不进导航）。一次性已完成审查且无入站依赖的材料迁入 docs/.local（不受控）。已替代 ADR 移入 superseded/。不新建按日期分层的 archive 子树。只为仍有真实入站依赖的路径保留简短重定向，不长期保存空的“兼容入口”。
+先确定唯一新归宿，保留仍有效的不变量，再迁移文档并更新引用与验证。仍有 ADR 或其它受控入站依赖的历史计划迁入 plan/archive/（受控、可检索，不进导航）。一次性已完成审查且无入站依赖的材料迁入 docs/.local（不受控）。已替代 ADR 移入 decisions/archive/superseded/；仍有效但少改动的 accepted 移入 decisions/archive/ 下 dated 包（如 accepted-2026-09/）。不手写全局 ADR INDEX。
 
 

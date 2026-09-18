@@ -2,7 +2,7 @@
 
 状态：accepted
 
-承接 [稀疏 source mount](./2026-09-11-recovery-sparse-source-mount.md)、[可观察判断](./2026-09-11-recovery-observable-judgment.md) 与 [先理解再按视图决策](./2026-09-09-controller-understand-then-view.md)。
+承接 [稀疏 source mount](../archive/accepted-2026-09/2026-09-11-recovery-sparse-source-mount.md)、[可观察判断](../archive/accepted-2026-09/2026-09-11-recovery-observable-judgment.md) 与 [先理解再按视图决策](../archive/accepted-2026-09/2026-09-09-controller-understand-then-view.md)。
 
 ## 问题
 
@@ -10,7 +10,7 @@
 
 ## 决定
 
-`inspectBaseline` 把复制预算只记在 `budget.blockedReasons`；`runnable` 保持 `isolated`，除非源目录本身不可用。`resolveBaseline` 仍用复制预算跳过整树复制，但不把 source 标成业务 blocked。新写入的 baseline `match`：`ready`/`recovered` 为 `recovered`，磁盘遗留 `partial` 为 `recovered_partial`，其余（含 `blocked`）为 `observational`，不再新写 `current_state_fallback`。用户状态在 Agent `ready` 时为 `recovered`，不因 `excludedEntries` 降为 `partial`。历史磁盘上的 `partial` / `recovered_partial` / `insufficient_evidence` 仍只读兼容。source 写锁 ACE 以 [source ACL](./2026-09-11-recovery-source-acl-and-diagnostic-readiness.md) 为准，必须允许 Host fingerprint 读取。
+`inspectBaseline` 把复制预算只记在 `budget.blockedReasons`；`runnable` 保持 `isolated`，除非源目录本身不可用。`resolveBaseline` 仍用复制预算跳过整树复制，但不把 source 标成业务 blocked。新写入的 baseline `match`：`ready`/`recovered` 为 `recovered`，磁盘遗留 `partial` 为 `recovered_partial`，其余（含 `blocked`）为 `observational`，不再新写 `current_state_fallback`。用户状态在 Agent `ready` 时为 `recovered`，不因 `excludedEntries` 降为 `partial`。历史磁盘上的 `partial` / `recovered_partial` / `insufficient_evidence` 仍只读兼容。source 写锁 ACE 以 [source ACL](../archive/accepted-2026-09/2026-09-11-recovery-source-acl-and-diagnostic-readiness.md) 为准，必须允许 Host fingerprint 读取。
 
 Controller 与 Comparison 的首轮委托要求从用户输入索引出发按需阅读，不规定读完全部 turn 的顺序。Host 不按历史下标投递。Comparison 不预生成差异结论或评分。
 

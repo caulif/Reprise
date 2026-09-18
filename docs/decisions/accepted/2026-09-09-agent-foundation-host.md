@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [Session 事实源](./2026-09-08-session-fact-owner-and-identity.md) 与 [内部 Agent 对齐 Pi 循环](./2026-09-02-internal-agent-pi-alignment.md)。
+延续 [Session 事实源](./2026-09-08-session-fact-owner-and-identity.md) 与 [内部 Agent 对齐 Pi 循环](../archive/accepted-2026-09/2026-09-02-internal-agent-pi-alignment.md)。
 
 ## 问题
 
