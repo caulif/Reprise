@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, writeFile, rm, cp } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -17,6 +17,7 @@ const DISPLAY_CWD = 'C:\\reprise';
 const checkMode = process.argv.includes('--check');
 const outDir = join(process.cwd(), 'docs', 'tui-audit');
 const baselineDir = join(outDir, 'frames');
+const framesGeneratedDir = join(outDir, 'frames-generated');
 const generatedRoot = checkMode ? await mkdtemp(join(tmpdir(), 'reprise-tui-check-')) : outDir;
 const framesDir = checkMode ? join(generatedRoot, 'frames') : join(outDir, 'frames');
 const htmlDir = checkMode ? join(generatedRoot, 'html') : join(outDir, 'html');
@@ -43,6 +44,16 @@ async function capture(name, width, frame) {
     issues.push('compact frame still contains wide glyphs');
   }
   return { name, width, rows: lines.length, issues };
+}
+
+async function dumpGeneratedFrames(sourceDir, targetDir) {
+  await rm(targetDir, { recursive: true, force: true });
+  await mkdir(targetDir, { recursive: true });
+  for (const name of await readdir(sourceDir)) {
+    if (!name.endsWith('.txt')) continue;
+    await cp(join(sourceDir, name), join(targetDir, name));
+  }
+  console.log(`audit:tui:check: wrote generated frames to ${targetDir}`);
 }
 
 async function main() {
@@ -470,7 +481,12 @@ ${captures.map((item) => `<li><a href="html/${item.name}.html">${item.name}</a> 
   if (checkMode) {
     await selfTestCompareFrames();
     if (shouldCompareAuditFrames()) {
-      await compareFrames(framesDir, baselineDir);
+      try {
+        await compareFrames(framesDir, baselineDir);
+      } catch (error) {
+        await dumpGeneratedFrames(framesDir, framesGeneratedDir);
+        throw error;
+      }
     } else {
       console.log('audit:tui:check: generated frames; skip Windows baseline byte-compare on this host');
     }
