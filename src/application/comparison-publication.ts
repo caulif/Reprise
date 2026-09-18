@@ -23,6 +23,7 @@ import {
   type ComparisonReportDiagnostic,
   type HostZoneSnapshot,
 } from "./comparison-report-shell.js";
+import { isVisualEvidenceEmpty, renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 
 export type ComparisonFailureClass =
@@ -143,6 +144,8 @@ export async function verifyAndRenderComparisonReport(input: {
     html = stripFoldImages(html);
     limitations.push("hostLimitationUnpairedImages");
   }
+  const visual = repairEmptyVisualEvidence(html, input.media, locale);
+  html = visual.html;
   html = markUnresolvedInHostEvidence(html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia], locale);
   html = appendHostLimitations(html, locale, limitations);
   const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
@@ -336,6 +339,20 @@ function appendHostLimitations(html: string, locale: AgentLocale, keys: readonly
   if (!outer) return html;
   const notes = uniqueKeys.map((key) => `<p data-host-limitation>${escapeText(reportString(locale, key))}</p>`).join("");
   return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${notes}</section>`));
+}
+
+function repairEmptyVisualEvidence(
+  html: string,
+  media: readonly ComparisonMediaRecord[],
+  locale: AgentLocale,
+): { html: string; limitations: ComparisonReportStringKey[] } {
+  if (!isVisualEvidenceEmpty(html)) return { html, limitations: [] };
+  const seeded = renderVisualEvidenceSeed(media, locale);
+  if (!seeded) return { html, limitations: [] };
+  return {
+    html: replaceZoneInner(html, "data-agent-zone", "visual-evidence", seeded),
+    limitations: [],
+  };
 }
 
 function repairIncompleteAboveTheFold(

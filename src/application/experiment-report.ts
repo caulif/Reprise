@@ -217,6 +217,7 @@ async function compareExperimentOutcome(
     const materializedIds = new Set(record.artifactRefs.map((ref) => ref.artifactId));
     const briefing = await writeComparisonBriefing({
       attemptRoot, experimentRoot: input.experimentRoot, workspaceRoot: comparisonWorkspaceRoot(input),
+      dataDir: input.input.dataDir,
       taskCase: input.taskCase, record, context: briefingContext, events,
       artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
       snapshotStatus: input.candidateSnapshotStatus,
