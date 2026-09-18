@@ -33,13 +33,22 @@
 
 ## 不要读什么
 
-以下路径可能在检出目录里出现，但**不是**现行规范或日常读物：
+### 默认不要通读（按需检索）
+
+`decisions/accepted/` 是受控的现行规则归档，但约两百份 ADR **不是**默认通读清单。先读 [decisions/README](./decisions/README.md) 的触发与检索说明；任务触及时再 `git grep` 打开单篇。
 
 | 路径 | 说明 |
 |---|---|
-| `docs/decisions/accepted/` 全文 | 约两百份 ADR 是因果层归档；默认只读 [decisions/README](./decisions/README.md) 的触发与检索说明，再 `git grep` 按需打开单篇 |
+| `docs/decisions/accepted/` 全文 | 因果层归档；单篇 ADR 在触发时按需打开，不必前置通读 |
+
+### 非规范 / 不进 git
+
+以下路径**不是**现行规范或日常读物；多数已忽略，公开检出通常不存在：
+
+| 路径 | 说明 |
+|---|---|
 | `docs/tui-audit/frames/` | **CI 门禁基线**（`audit:tui` 逐字节比对），不是 UI 设计文档；改动 TUI 渲染后由脚本重新生成并提交 |
-| `docs/.local/` | 本机一次性审查与已结束计划；公开检出通常不存在，受控文档不得链接 |
+| `docs/.local/` | 本机一次性审查与已结束计划；受控文档不得链接 |
 | `docs/local/` | `docs/.local/` 的历史误拼路径，已在 `.gitignore` 忽略；以 `docs/.local/` 为准 |
 | `docs/analysis/`、`docs/research/`、`docs/tui-loop/`、`docs/evidence/` 等 | 本机实验与证据产物，已忽略，不进 git |
 | `docs/tui-full-flow/`、`docs/tui-intake-review/`、`docs/tui-live-run/` | TUI 验收脚本输出目录，已忽略 |
