@@ -7,25 +7,25 @@ Reprise v0.1.0   C:\reprise                    gpt-5.6-terra · medium   ⚠ 内
  /config  打开 /config  环境变量未设
 
 ┌─ 内部 Agent 模型 ────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 恢复、模拟用户与对照共用。候选模型稍后单独选择。                                                                     │
-│ 端点   https://api.dzzzz.cf                                                                                          │
-│ 内部模型      gpt-5.6-terra · medium                                                                                 │
-│ 密钥     env OPENAI_API_KEY   ⚠ 当前终端未设置                                                                       │
-│ $env:OPENAI_API_KEY = '<value>'   （不要把值贴到这里）                                                               │
-│                                                                                                                      │
-│   服务商类型         openai-compatible  [Enter] 切换                                                                 │
-│   服务商标签         dzzzz-openai                                                                                    │
-│   接口地址           https://api.dzzzz.cf  ✓                                                                         │
-│ ❯ 模型               gpt-5.6-terra                                                                                   │
-│   接口类型           openai-completions  [Enter] 切换                                                                │
-│   推理               false  [Enter] 切换                                                                             │
-│   力度               medium  [Enter] 切换                                                                            │
-│   API 密钥           env:OPENAI_API_KEY  ✓                                                                           │
-│   语言               中文  [Enter] 切换                                                                              │
-│                                                                                                                      │
-│ ● 未保存草稿                                                                                                         │
-│ 配置文件：.reprise/harness-model.json                                                                                │
+│ 恢复、模拟用户与对照共用。候选模型稍后单独选择。 │
+│ 端点   https://api.dzzzz.cf │
+│ 内部模型      gpt-5.6-terra · medium │
+│ 密钥     env OPENAI_API_KEY   ⚠ 当前终端未设置 │
+│ export OPENAI_API_KEY='<value>'   （不要把值贴到这里） │
+│ │
+│   服务商类型         openai-compatible  [Enter] 切换 │
+│   服务商标签         dzzzz-openai │
+│   接口地址           https://api.dzzzz.cf  ✓ │
+│ ❯ 模型               gpt-5.6-terra │
+│   接口类型           openai-completions  [Enter] 切换 │
+│   推理               false  [Enter] 切换 │
+│   力度               medium  [Enter] 切换 │
+│   API 密钥           env:OPENAI_API_KEY  ✓ │
+│   语言               中文  [Enter] 切换 │
+│ │
+│ ● 未保存草稿 │
+│ 配置文件：.reprise/harness-model.json │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
- 当前终端未设置 OPENAI_API_KEY。$env:OPENAI_API_KEY = '<value>'  也可以把 API 密钥贴到本页并保存。
+ 当前终端未设置 OPENAI_API_KEY。export OPENAI_API_KEY='<value>'  也可以把 API 密钥贴到本页并保存。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [↑↓] 选择  [Enter] 编辑  [Ctrl+T] 测试连接  [Ctrl+S] 保存到本地  [Esc] 封面

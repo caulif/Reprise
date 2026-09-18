@@ -15,17 +15,17 @@ Reprise   对照结果                                                          
                                                                                                                         
                                                                                                                         
                                                                                                                         
+                                                                                                                        
 
 ┌─ 对照结果 ─ completed ───────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ✓ completed                                                                                                          │
-│ 任务判断     apparently_completed                                                                                    │
-│ 运行终止     completed · completed.controller_satisfied                                                              │
-│ 清理         complete                                                                                                │
-│ 对照         对照完成                                                                                                │
-│ 报告         TMP\data\experiments\fixture\report.html         │
-│ 隔离副本                                                                                                             │
-│TMP\data\experiments\fixture\environment\runs\run-1            │
-│ 记录         TMP\data\experiments\fixture\runs\run-1          │
+│ ✓ completed │
+│ 任务判断     apparently_completed │
+│ 运行终止     completed · completed.controller_satisfied │
+│ 清理         complete │
+│ 对照         对照完成 │
+│ 报告         TMP/data/experiments/fixture/report.html │
+│ 隔离副本     TMP/data/experiments/fixture/environment/runs/run-1 │
+│ 记录         TMP/data/experiments/fixture/runs/run-1 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  对照结束。用短标签打开报告。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

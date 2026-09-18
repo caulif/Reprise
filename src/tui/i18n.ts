@@ -331,6 +331,7 @@ const M = {
   fieldReasoning: { en: 'reasoning', zh: '推理' },
   fieldEffort: { en: 'effort', zh: '力度' },
   fieldKeyRef: { en: 'API key', zh: 'API 密钥' },
+  baseUrlInvalid: { en: 'invalid URL', zh: '无效的 URL' },
   currentValue: { en: 'Current', zh: '当前值' },
   endpointLabel: { en: 'Endpoint', zh: '端点' },
   modelLabel: { en: 'Model', zh: '模型' },

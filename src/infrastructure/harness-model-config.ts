@@ -165,14 +165,18 @@ function readCredential(value: unknown): { keyRef?: string; apiKey?: string } {
   return KEY_REF.test(value) ? { keyRef: value } : { apiKey: value };
 }
 
+function isAllowedBaseUrl(url: URL): boolean {
+  return (url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password && !url.search && !url.hash;
+}
+
 function optionalBaseUrl(value: unknown): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== 'string') throw new Error('expected baseUrl to be an absolute HTTPS URL without credentials, query, or fragment');
+  if (typeof value !== 'string') throw new Error('expected baseUrl to be an absolute http or https URL without credentials, query, or fragment');
   try {
     const url = new URL(value);
-    if (url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) return value;
+    if (isAllowedBaseUrl(url)) return value;
   } catch { /* handled below */ }
-  throw new Error('expected baseUrl to be an absolute HTTPS URL without credentials, query, or fragment');
+  throw new Error('expected baseUrl to be an absolute http or https URL without credentials, query, or fragment');
 }
 
 function optionalPositiveInt(value: unknown, label: string): number | undefined {
@@ -349,14 +353,12 @@ export function publicHarnessConfig(config: HarnessModelConfig | undefined): {
 }
 
 export function baseUrlValidity(value: string): FieldValidity {
-  if (!value) return { ok: false, display: 'required for OpenAI-compatible', reason: 'not an https URL' };
+  if (!value) return { ok: false, display: 'required for OpenAI-compatible', reason: 'invalid URL' };
   try {
     const url = new URL(value);
-    if (url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) {
-      return { ok: true, display: value };
-    }
+    if (isAllowedBaseUrl(url)) return { ok: true, display: value };
   } catch { /* invalid */ }
-  return { ok: false, display: '', reason: 'not an https URL' };
+  return { ok: false, display: '', reason: 'invalid URL' };
 }
 
 /** Redacts endpoints and secret-shaped tokens from configuration errors shown in the TUI. */
