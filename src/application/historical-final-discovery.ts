@@ -1,4 +1,5 @@
 import { constants } from "node:fs";
+import type { Dirent } from "node:fs";
 import { access, copyFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { ComparisonLinkRecord, TaskCase } from "../core/schema.js";
@@ -19,6 +20,10 @@ export type HistoricalDeliverableKind = "final" | "openable-baseline" | "image";
 export type HistoricalSearchRoot = {
   root: string;
   mode: "direct-basename" | "recursive-basename";
+};
+
+export type HistoricalRootIndex = {
+  pathsByBasename: ReadonlyMap<string, string>;
 };
 
 export function collectHistoricalDeliverableNames(taskCase: TaskCase, kind: HistoricalDeliverableKind): Set<string> {
@@ -53,14 +58,71 @@ async function fileExists(path: string): Promise<boolean> {
   return access(path, constants.F_OK).then(() => true, () => false);
 }
 
-async function findFileByBasename(root: string, basenameTarget: string): Promise<string | undefined> {
-  const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.isFile() || entry.name !== basenameTarget) continue;
-    const parent = "parentPath" in entry && typeof entry.parentPath === "string" ? entry.parentPath : root;
-    return join(parent, entry.name);
+function direntAbsolutePath(entry: Dirent, root: string): string {
+  const parent = "parentPath" in entry && typeof entry.parentPath === "string" ? entry.parentPath : root;
+  return join(parent, entry.name);
+}
+
+async function considerIndexedFile(
+  file: Dirent,
+  root: string,
+  pathsByBasename: Map<string, string>,
+  enrichImageNames?: Set<string>,
+): Promise<void> {
+  if (!file.isFile()) return;
+  const absolutePath = join(root, file.name);
+  if (!pathsByBasename.has(file.name)) pathsByBasename.set(file.name, absolutePath);
+  if (!enrichImageNames) return;
+  if (file.name.endsWith(".txt")) {
+    const body = await readFile(absolutePath, "utf8").catch(() => "");
+    addHistoricalImageBasenames(body, enrichImageNames);
+    return;
   }
-  return undefined;
+  if (await isHistoricalImageFile(absolutePath)) enrichImageNames.add(file.name);
+}
+
+async function considerIndexedRecursiveFile(
+  file: Dirent,
+  root: string,
+  pathsByBasename: Map<string, string>,
+  enrichImageNames?: Set<string>,
+): Promise<void> {
+  if (!file.isFile()) return;
+  const absolutePath = direntAbsolutePath(file, root);
+  if (!pathsByBasename.has(file.name)) pathsByBasename.set(file.name, absolutePath);
+  if (!enrichImageNames) return;
+  if (file.name.endsWith(".txt")) {
+    const body = await readFile(absolutePath, "utf8").catch(() => "");
+    addHistoricalImageBasenames(body, enrichImageNames);
+    return;
+  }
+  if (await isHistoricalImageFile(absolutePath)) enrichImageNames.add(file.name);
+}
+
+export async function indexHistoricalRoots(
+  roots: readonly HistoricalSearchRoot[],
+  options?: { enrichImageNames?: Set<string> },
+): Promise<HistoricalRootIndex> {
+  const pathsByBasename = new Map<string, string>();
+  const enrichImageNames = options?.enrichImageNames;
+  for (const entry of roots) {
+    if (entry.mode === "direct-basename") {
+      const files = await readdir(entry.root, { withFileTypes: true }).catch(() => []);
+      for (const file of files) {
+        await considerIndexedFile(file, entry.root, pathsByBasename, enrichImageNames);
+      }
+      continue;
+    }
+    const files = await readdir(entry.root, { recursive: true, withFileTypes: true }).catch(() => []);
+    for (const file of files) {
+      await considerIndexedRecursiveFile(file, entry.root, pathsByBasename, enrichImageNames);
+    }
+  }
+  return { pathsByBasename };
+}
+
+export function lookupBasenameFromIndex(index: HistoricalRootIndex, basenameTarget: string): string | undefined {
+  return index.pathsByBasename.get(basenameTarget);
 }
 
 export function historicalFinalSearchRoots(input: {
@@ -86,14 +148,13 @@ export function historicalFinalSearchRoots(input: {
 export async function lookupBasename(
   roots: readonly HistoricalSearchRoot[],
   basenameTarget: string,
+  index?: HistoricalRootIndex,
 ): Promise<string | undefined> {
-  for (const entry of roots) {
-    const absolutePath = entry.mode === "direct-basename"
-      ? join(entry.root, basenameTarget)
-      : await findFileByBasename(entry.root, basenameTarget);
-    if (absolutePath && await fileExists(absolutePath)) return absolutePath;
-  }
-  return undefined;
+  const resolved = index
+    ? lookupBasenameFromIndex(index, basenameTarget)
+    : lookupBasenameFromIndex(await indexHistoricalRoots(roots), basenameTarget);
+  if (!resolved || !(await fileExists(resolved))) return undefined;
+  return resolved;
 }
 
 export async function findFileInHistoricalRoots(input: {
@@ -104,7 +165,9 @@ export async function findFileInHistoricalRoots(input: {
   attemptRoot?: string;
   basename: string;
 }): Promise<string | undefined> {
-  return lookupBasename(historicalFinalSearchRoots(input), input.basename);
+  const roots = historicalFinalSearchRoots(input);
+  const index = await indexHistoricalRoots(roots);
+  return lookupBasename(roots, input.basename, index);
 }
 
 export async function enrichHistoricalImageNamesFromRoots(input: {
@@ -115,20 +178,7 @@ export async function enrichHistoricalImageNamesFromRoots(input: {
   attemptRoot?: string;
   names: Set<string>;
 }): Promise<void> {
-  for (const entry of historicalFinalSearchRoots(input)) {
-    const entries = await readdir(entry.root, { recursive: true, withFileTypes: true }).catch(() => []);
-    for (const file of entries) {
-      if (!file.isFile()) continue;
-      const parent = "parentPath" in file && typeof file.parentPath === "string" ? file.parentPath : entry.root;
-      const absolutePath = join(parent, file.name);
-      if (file.name.endsWith(".txt")) {
-        const body = await readFile(absolutePath, "utf8").catch(() => "");
-        addHistoricalImageBasenames(body, input.names);
-        continue;
-      }
-      if (await isHistoricalImageFile(absolutePath)) input.names.add(file.name);
-    }
-  }
+  await indexHistoricalRoots(historicalFinalSearchRoots(input), { enrichImageNames: input.names });
 }
 
 export async function collectHistoricalImageNames(input: {
@@ -138,17 +188,17 @@ export async function collectHistoricalImageNames(input: {
   caseId: string;
   dataDir?: string;
   attemptRoot?: string;
-}): Promise<Set<string>> {
+}): Promise<{ names: Set<string>; index: HistoricalRootIndex }> {
   const names = collectHistoricalDeliverableNames(input.taskCase, "image");
-  await enrichHistoricalImageNamesFromRoots({
+  const roots = historicalFinalSearchRoots({
     experimentRoot: input.experimentRoot,
     runId: input.runId,
     caseId: input.caseId,
     ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-    names,
   });
-  return names;
+  const index = await indexHistoricalRoots(roots, { enrichImageNames: names });
+  return { names, index };
 }
 
 export async function resolveHistoricalImagePath(input: {
@@ -158,8 +208,12 @@ export async function resolveHistoricalImagePath(input: {
   dataDir?: string;
   attemptRoot?: string;
   basename: string;
+  index?: HistoricalRootIndex;
 }): Promise<string | undefined> {
-  const absolutePath = await findFileInHistoricalRoots(input);
+  const roots = historicalFinalSearchRoots(input);
+  const absolutePath = input.index
+    ? lookupBasenameFromIndex(input.index, input.basename)
+    : await lookupBasename(roots, input.basename);
   if (!absolutePath) return undefined;
   return (await isHistoricalImageFile(absolutePath)) ? absolutePath : undefined;
 }
@@ -171,7 +225,7 @@ export async function buildSealedBaselineImageLinks(input: {
   taskCase: TaskCase;
   runId: string;
 }): Promise<ComparisonLinkRecord[]> {
-  const names = await collectHistoricalImageNames({
+  const { names, index } = await collectHistoricalImageNames({
     taskCase: input.taskCase,
     experimentRoot: input.experimentRoot,
     runId: input.runId,
@@ -190,6 +244,7 @@ export async function buildSealedBaselineImageLinks(input: {
       runId: input.runId,
       caseId: input.taskCase.caseId,
       basename: name,
+      index,
       ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     });
     if (!source) continue;
@@ -225,9 +280,11 @@ export async function resolveHistoricalFinalPath(input: {
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
   });
+  const index = await indexHistoricalRoots(roots);
   for (const name of names) {
-    const absolutePath = await lookupBasename(roots, name);
+    const absolutePath = lookupBasenameFromIndex(index, name);
     if (!absolutePath || !isHistoricalVisualPath(absolutePath)) continue;
+    if (!(await fileExists(absolutePath))) continue;
     return absolutePath;
   }
   return undefined;
@@ -249,9 +306,10 @@ export async function discoverBaselineOpenableSources(input: {
     attemptRoot: input.attemptRoot,
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
   });
+  const index = await indexHistoricalRoots(roots);
   for (const name of input.baselineArtifactNames) {
-    const absolutePath = await lookupBasename(roots, name);
-    if (!absolutePath || !isOpenableFinalPath(absolutePath)) continue;
+    const absolutePath = lookupBasenameFromIndex(index, name);
+    if (!absolutePath || !(await fileExists(absolutePath)) || !isOpenableFinalPath(absolutePath)) continue;
     baselineSources.push({ inspectPath: sealedInspectPath(absolutePath, name), absolutePath });
   }
   return baselineSources;

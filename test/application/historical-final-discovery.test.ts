@@ -9,11 +9,14 @@ import {
   collectHistoricalDeliverableNames,
   enrichHistoricalImageNamesFromRoots,
   findFileInHistoricalRoots,
+  indexHistoricalRoots,
   lookupBasename,
+  lookupBasenameFromIndex,
   historicalFinalSearchRoots,
   resolveHistoricalFinalPath,
   sealBaselineOpenablePath,
 } from "../../src/application/historical-final-discovery.js";
+import { isImageDeliverableName } from "../../src/application/openable-final-path.js";
 
 const MINIMAL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -230,4 +233,62 @@ test("enrichHistoricalImageNamesFromRoots scans baseline-artifacts before baseli
   assert.equal(links.length, 1);
   assert.equal(links[0]?.inspectPath, "history/media/screenshot-1");
   assert.equal(links[0]?.mediaType, "image/png");
+});
+
+test("isImageDeliverableName rejects non-image artifact ids", () => {
+  assert.equal(isImageDeliverableName("report.pdf"), false);
+  assert.equal(isImageDeliverableName("notes.txt"), false);
+  assert.equal(isImageDeliverableName("artifact-final.html"), false);
+  assert.equal(isImageDeliverableName("runtime-shot.png"), true);
+});
+
+test("collectHistoricalDeliverableNames image kind skips opaque artifact ids", () => {
+  const value: TaskCase = {
+    ...taskCase(),
+    baseline: {
+      status: "available",
+      artifactRefs: [
+        { artifactId: "opaque-id-123", caseId: "case-1" },
+        { artifactId: "report.pdf", caseId: "case-1" },
+        { artifactId: "runtime-shot.png", caseId: "case-1" },
+      ],
+      evidenceRefs: [],
+    },
+    sourceRuntimeEvidence: { productId: "codex", artifactRefs: [] },
+    initialInput: { id: "m1", role: "user", text: "task only" },
+    transcript: [],
+  };
+  const imageNames = collectHistoricalDeliverableNames(value, "image");
+  assert.ok(!imageNames.has("opaque-id-123"));
+  assert.ok(!imageNames.has("report.pdf"));
+  assert.ok(imageNames.has("runtime-shot.png"));
+});
+
+test("indexHistoricalRoots shares one scan for enrich and lookup", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-index-shared-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const experimentRoot = join(root, "experiment");
+  const dataDir = join(root, "data");
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
+  const artifactDir = join(dataDir, "cases", "case-1", "baseline-artifacts");
+  await mkdir(artifactDir, { recursive: true });
+  await mkdir(attemptRoot, { recursive: true });
+  await writeFile(join(artifactDir, "screenshot-1"), MINIMAL_PNG);
+  await writeFile(join(artifactDir, "runtime-shot.png"), MINIMAL_PNG);
+  const roots = historicalFinalSearchRoots({
+    experimentRoot,
+    runId: "run-1",
+    caseId: "case-1",
+    dataDir,
+    attemptRoot,
+  });
+  const names = new Set<string>();
+  const index = await indexHistoricalRoots(roots, { enrichImageNames: names });
+  assert.ok(names.has("screenshot-1"));
+  assert.ok(names.has("runtime-shot.png"));
+  assert.equal(lookupBasenameFromIndex(index, "screenshot-1"), join(artifactDir, "screenshot-1"));
+  assert.equal(lookupBasenameFromIndex(index, "runtime-shot.png"), join(artifactDir, "runtime-shot.png"));
 });

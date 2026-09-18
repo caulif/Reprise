@@ -44,9 +44,7 @@ export function finalDeliverableRank(path: string): number {
 }
 
 export function isImageDeliverableName(name: string): boolean {
-  if (isHistoricalImagePath(name)) return true;
-  if (isOpenableFinalPath(name) && !isHistoricalImagePath(name)) return false;
-  return true;
+  return isHistoricalImagePath(name);
 }
 
 export function addHistoricalDeliverableBasenames(text: string, names: Set<string>): void {
