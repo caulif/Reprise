@@ -12,6 +12,18 @@ const TEXT_EXT = new Set([
   ".example", ".txt", ".xml", ".svg",
 ]);
 const SKIP_PATH = /^(?:dist\/|node_modules\/|package-lock\.json$)/;
+const ABSOLUTE_PATH_SCAN_PREFIXES = ["src/", "scripts/", "test/"];
+const SYNTHETIC_PATH_USERS = new Set([
+  "RUNNER~1",
+  "runneradmin",
+  "demo",
+  "x",
+  "name with space",
+  "example",
+]);
+const WINDOWS_USERS_PATH = /(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]Users[\\/]([^\\/]+)/g;
+const UNIX_USERS_PATH = /(?<![a-z:])\/Users\/([^/\s"'`]+)/g;
+const UNIX_HOME_PATH = /(?<![a-z:])\/home\/([^/\s"'`]+)/g;
 const RULES = [
   { name: "openai-legacy", pattern: /\bsk-[A-Za-z0-9]{20,}\b/g },
   { name: "openai-project", pattern: /\bsk-proj-[A-Za-z0-9_-]{20,}\b/g },
@@ -41,6 +53,35 @@ export function isSecretScanPath(name) {
   if (SKIP_PATH.test(normalized)) return false;
   const ext = extname(normalized).toLowerCase();
   return TEXT_EXT.has(ext) || normalized.endsWith(".env");
+}
+
+export function isAbsolutePathScanPath(name) {
+  const normalized = name.replaceAll("\\", "/");
+  return ABSOLUTE_PATH_SCAN_PREFIXES.some((prefix) => normalized.startsWith(prefix)) && isSecretScanPath(name);
+}
+
+function collectAbsolutePathRules(text, pattern, ruleName, whitelist) {
+  const hits = [];
+  pattern.lastIndex = 0;
+  for (const match of text.matchAll(pattern)) {
+    const segment = match[1];
+    if (whitelist && whitelist.has(segment)) continue;
+    hits.push(ruleName);
+    break;
+  }
+  return hits;
+}
+
+export function absolutePathFindings(text) {
+  const hits = [];
+  hits.push(...collectAbsolutePathRules(text, WINDOWS_USERS_PATH, "windows-users-path", SYNTHETIC_PATH_USERS));
+  hits.push(...collectAbsolutePathRules(text, UNIX_USERS_PATH, "unix-users-path", SYNTHETIC_PATH_USERS));
+  hits.push(...collectAbsolutePathRules(text, UNIX_HOME_PATH, "unix-home-path", SYNTHETIC_PATH_USERS));
+  return hits;
+}
+
+export function formatAbsolutePathHits(path, origin, rules) {
+  return rules.map((rule) => `${path} (${origin})  [${rule}]`);
 }
 
 function gitZ(root, args) {
@@ -80,6 +121,16 @@ export function scanSecretSources(sources) {
   return hits;
 }
 
+export function scanAbsolutePathSources(sources) {
+  const hits = [];
+  for (const source of sources) {
+    if (!isAbsolutePathScanPath(source.path)) continue;
+    const rules = absolutePathFindings(source.text);
+    if (rules.length) hits.push(...formatAbsolutePathHits(source.path, source.origin, rules));
+  }
+  return hits;
+}
+
 function readIndexBlob(root, file) {
   try {
     return execFileSync("git", ["show", `:${file}`], {
@@ -95,7 +146,7 @@ function readIndexBlob(root, file) {
   }
 }
 
-export function collectSecretHits(root) {
+function collectScanSources(root) {
   const listFiles = (args) => gitZ(root, args);
   const sources = [];
   for (const file of listWorkingTreeScanPaths(listFiles)) {
@@ -115,7 +166,20 @@ export function collectSecretHits(root) {
     if (text == null) continue;
     sources.push({ path: file, origin: "index", text });
   }
-  return scanSecretSources(sources);
+  return sources;
+}
+
+export function collectSecretHits(root) {
+  return scanSecretSources(collectScanSources(root));
+}
+
+export function collectAbsolutePathHits(root) {
+  return scanAbsolutePathSources(collectScanSources(root));
+}
+
+export function collectVerifySecretsHits(root) {
+  const sources = collectScanSources(root);
+  return [...scanSecretSources(sources), ...scanAbsolutePathSources(sources)];
 }
 
 function selfTestIndexDivergence() {
@@ -190,15 +254,62 @@ function selfTest() {
     throw new Error("index 与 working tree 分歧时，index secret 必须被拒绝");
   }
   selfTestIndexDivergence();
-  console.log("verify-secrets self-test: 未跟踪文件、test fixture 与新型 token 被拒绝；index 与 working tree 分歧时，index secret 被拒绝，且不打印 secret");
+  selfTestAbsolutePaths();
+  console.log("verify-secrets self-test: 未跟踪文件、test fixture 与新型 token 被拒绝；index 与 working tree 分歧时，index secret 被拒绝；合成绝对路径放行、真实形态绝对路径被拒绝；且不打印 secret");
+}
+
+function selfTestAbsolutePaths() {
+  const synthetic = String.raw`C:\Users\demo\.codex\sessions\a.jsonl`;
+  if (absolutePathFindings(synthetic).length) {
+    throw new Error("合成 Windows demo 路径必须放行");
+  }
+  const syntheticUnixUsers = "/Users/demo/.codex/sessions/a.jsonl";
+  if (absolutePathFindings(syntheticUnixUsers).length) {
+    throw new Error("合成 Unix /Users/demo 路径必须放行");
+  }
+  const syntheticUnixHome = "/home/example/project";
+  if (absolutePathFindings(syntheticUnixHome).length) {
+    throw new Error("合成 Unix /home/example 路径必须放行");
+  }
+  const wsl = "/mnt/c/Users/x/codex.cmd";
+  if (absolutePathFindings(wsl).length) {
+    throw new Error("WSL /mnt/c/Users/x 路径必须放行");
+  }
+  const realWindows = ["C:\\Users\\", "15893", "\\.claude\\projects\\sample.jsonl"].join("");
+  if (!absolutePathFindings(realWindows).includes("windows-users-path")) {
+    throw new Error("真实形态 Windows 用户路径必须被拒绝");
+  }
+  const realWindowsLowerDrive = ["c:\\Users\\", "15893", "\\.claude\\projects\\sample.jsonl"].join("");
+  if (!absolutePathFindings(realWindowsLowerDrive).includes("windows-users-path")) {
+    throw new Error("小写盘符 Windows 用户路径必须被拒绝");
+  }
+  const realUnixUsers = ["/", "Users", "/jane/Documents/project"].join("");
+  if (!absolutePathFindings(realUnixUsers).includes("unix-users-path")) {
+    throw new Error("真实形态 /Users 路径必须被拒绝");
+  }
+  const realUnixHome = ["/", "home", "/ubuntu/project"].join("");
+  if (!absolutePathFindings(realUnixHome).includes("unix-home-path")) {
+    throw new Error("真实形态 /home 路径必须被拒绝");
+  }
+  const injected = scanAbsolutePathSources([
+    { path: "scripts/probe.ts", origin: "working-tree", text: "export const ok = 1;\n" },
+    {
+      path: "scripts/probe.ts",
+      origin: "index",
+      text: `const session = '${realWindows}';\n`,
+    },
+  ]);
+  if (!injected.includes("scripts/probe.ts (index)  [windows-users-path]")) {
+    throw new Error("index 与 working tree 分歧时，index 绝对路径必须被拒绝");
+  }
 }
 
 function main() {
   selfTest();
   if (process.argv.includes("--self-test")) return;
-  const hits = collectSecretHits(ROOT);
+  const hits = collectVerifySecretsHits(ROOT);
   if (hits.length) {
-    console.error(`verify-secrets: 待提交文本疑似含有 secret:\n${hits.join("\n")}`);
+    console.error(`verify-secrets: 待提交文本疑似含有 secret 或本机绝对路径:\n${hits.join("\n")}`);
     process.exitCode = 1;
     return;
   }
