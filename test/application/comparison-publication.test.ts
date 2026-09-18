@@ -81,9 +81,9 @@ test("Host template has no visible status cards and keeps facts in the model", (
   assert.doesNotMatch(html, /completed\.controller_satisfied/);
   assert.match(html, /data-agent-slot="headline"/);
   assert.match(html, /data-component-template="difference-card"/);
-  const header = html.indexOf('data-host-zone="header"');
-  const metrics = html.indexOf('data-host-zone="metrics"');
-  const diffs = html.indexOf('data-agent-zone="key-differences"');
+  const header = html.indexOf('data-id="host-header"');
+  const metrics = html.indexOf('data-id="host-metrics"');
+  const diffs = html.indexOf('data-id="agent-key-differences"');
   const headline = html.indexOf('<p class="note" data-agent-slot="headline"');
   assert.ok(header < headline && headline < diffs && diffs < metrics);
   assert.equal(header < metrics && metrics < diffs, false);

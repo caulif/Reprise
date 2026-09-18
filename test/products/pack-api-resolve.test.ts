@@ -13,7 +13,10 @@ test("published pack-api export resolves from dist without source paths", async 
   const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
     exports?: Record<string, string>;
   };
-  assert.equal(pkg.exports?.["./pack-api"], "./dist/src/products/contract.js");
+  assert.deepEqual(pkg.exports?.["./pack-api"], {
+    types: "./dist/src/products/contract.d.ts",
+    default: "./dist/src/products/contract.js",
+  });
   const href = pathToFileURL(join(root, "dist/src/products/contract.js")).href;
   const api = await import(href) as { PACK_API_MAJOR?: number };
   assert.equal(api.PACK_API_MAJOR, 3);
