@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import {
-  assertExperimentReportPath, assertExperimentTracePath, assertExperimentReplicaPath, assertPathInsideRoot,
-  localPathFromFileUrl, openAllowedFileUrl, openExperimentReport, openExperimentTrace, openScratchText,
+  assertExperimentReportPath, assertExperimentTracePath, assertExperimentReplicaPath, assertPathInsideAnyRoot, assertPathInsideRoot,
+  localPathFromFileUrl, openAllowedFileUrl, openExperimentArtifact, openExperimentReport, openExperimentTrace, openScratchText,
   type ReportSpawner,
 } from '../../src/tui/open-report.js';
 
@@ -59,8 +59,20 @@ test('replica opener only accepts the isolated run workspace inside the selected
 test('local file URLs must stay inside the allowed data directory', () => {
   assert.doesNotThrow(() => assertPathInsideRoot(DATA_ROOT, REPORT_PATH));
   assert.throws(() => assertPathInsideRoot(DATA_ROOT, join(OTHER_ROOT, 'report.html')), /outside/);
+  assert.doesNotThrow(() => assertPathInsideAnyRoot([EXPERIMENT_ROOT, DATA_ROOT], join(DATA_ROOT, 'cases', 'case-1', 'baseline-artifacts', 'deck.html')));
+  assert.throws(() => assertPathInsideAnyRoot([EXPERIMENT_ROOT], join(DATA_ROOT, 'cases', 'case-1', 'baseline-artifacts', 'deck.html')), /outside/);
   assert.throws(() => localPathFromFileUrl('https://example.com/report.html'), /local files/);
   assert.equal(localPathFromFileUrl(pathToFileURL(REPORT_PATH).href), REPORT_PATH);
+});
+
+test('experiment artifact opener accepts paths under dataDir when provided', async () => {
+  const child = reportProcess();
+  const { start, calls } = recordingSpawner(child);
+  const artifactPath = join(DATA_ROOT, 'cases', 'case-1', 'baseline-artifacts', 'deck.html');
+  const opening = openExperimentArtifact(EXPERIMENT_ROOT, artifactPath, start, { dataDir: DATA_ROOT });
+  child.emit('spawn');
+  await assert.doesNotReject(opening);
+  assert.equal(calls[0]?.args[0], artifactPath);
 });
 
 test('report opener resolves after the operating system accepts the spawn request', async () => {

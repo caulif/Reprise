@@ -1,4 +1,4 @@
-import { mkdir, stat, readFile, readdir, copyFile } from "node:fs/promises";
+import { mkdir, stat, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
@@ -11,14 +11,19 @@ import { controllerBriefingRoot } from "./controller-briefing.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
 import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
 import {
-  COMPARISON_IMAGE_BASENAME_RE,
   isComparisonImagePath,
-  materializeComparisonMedia,
   mediaTypeForComparisonPath,
-  sniffComparisonImageMediaType,
 } from "./comparison-media.js";
-import { withEvidenceShortRefs, withMediaShortRefs } from "./comparison-short-refs.js";
+import { withEvidenceShortRefs } from "./comparison-short-refs.js";
 import { isComparisonChangedPath } from "./controller-queries.js";
+import {
+  augmentComparisonOpenableMedia,
+  discoverOpenableSources,
+} from "./comparison-openable-media.js";
+import {
+  buildSealedBaselineImageLinks,
+  collectHistoricalDeliverableNames,
+} from "./historical-final-discovery.js";
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -108,14 +113,10 @@ export async function writeComparisonBriefing(input: {
     runEvents: input.events,
   });
   const selected = await comparisonLinks(input);
-  const rawLinks = withEvidenceShortRefs(selected.links);
-  const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
-  const invalidLinkCount = rawLinks.length - links.length;
-  const media = withMediaShortRefs(await materializeComparisonMedia({
-    attemptRoot: input.attemptRoot,
-    workspaceRoot: input.workspaceRoot,
-    links,
-  }));
+  const mediaBundle = await comparisonMediaBundle(input, selected);
+  const links = mediaBundle.links;
+  const media = mediaBundle.media;
+  const invalidLinkCount = mediaBundle.invalidLinkCount;
   const context = briefingComparisonContext(input.context);
   const briefingContext = {
     ...context,
@@ -167,6 +168,33 @@ export async function writeComparisonBriefing(input: {
     factsContext, factsLinks, factsMedia, factsEvidence, candidateProcess, snapshotStatus, cleanupStatus, gitSink,
   });
   return { indexMarkdown, links, media, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
+}
+
+async function comparisonMediaBundle(
+  input: Parameters<typeof writeComparisonBriefing>[0],
+  selected: Awaited<ReturnType<typeof comparisonLinks>>,
+): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number }> {
+  const rawLinks = withEvidenceShortRefs(selected.links);
+  const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
+  const invalidLinkCount = rawLinks.length - links.length;
+  const openable = await discoverOpenableSources({
+    attemptRoot: input.attemptRoot,
+    experimentRoot: input.experimentRoot,
+    workspaceRoot: input.workspaceRoot,
+    runId: input.record.attempt.runId,
+    changedPaths: input.context.reportFacts.delivery.changedPaths.filter(isComparisonChangedPath),
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    caseId: input.taskCase.caseId,
+    baselineArtifactNames: [...collectHistoricalDeliverableNames(input.taskCase, "openable-baseline")],
+  });
+  const augmented = await augmentComparisonOpenableMedia({
+    attemptRoot: input.attemptRoot,
+    workspaceRoot: input.workspaceRoot,
+    links,
+    baselineSources: openable.baselineSources,
+    candidateSources: openable.candidateSources,
+  });
+  return { links: augmented.links, media: augmented.media, invalidLinkCount };
 }
 
 async function writeAttemptSidecars(
@@ -319,7 +347,13 @@ async function comparisonLinks(input: {
       ...(input.taskCase.baseline.evidenceRefs[0] ? { evidenceRef: input.taskCase.baseline.evidenceRefs[0] } : {}),
     });
   }
-  for (const link of await sealedBaselineImageLinks(input)) {
+  for (const link of await buildSealedBaselineImageLinks({
+    attemptRoot: input.attemptRoot,
+    experimentRoot: input.experimentRoot,
+    taskCase: input.taskCase,
+    runId: input.record.attempt.runId,
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+  })) {
     push(0, link);
   }
   const turns = input.context.reportFacts.activity.candidateTurns;
@@ -378,116 +412,11 @@ async function comparisonLinks(input: {
 }
 
 
-async function sealedBaselineImageLinks(input: {
-  attemptRoot: string;
-  experimentRoot: string;
-  workspaceRoot: string;
-  dataDir?: string;
-  taskCase: TaskCase;
-  record: RunRecord;
-}): Promise<ComparisonLink[]> {
-  const names = historicalImageBasenames(input.taskCase);
-  for (const ref of input.taskCase.baseline.artifactRefs) {
-    if (ref.artifactId) names.add(ref.artifactId);
-  }
-  for (const ref of input.taskCase.sourceRuntimeEvidence.artifactRefs) {
-    if (ref.artifactId) names.add(ref.artifactId);
-  }
-  const controllerRoot = join(input.experimentRoot, "runs", input.record.attempt.runId, "controller-briefing");
-  await collectImageBasenamesFromDir(join(controllerRoot, "history"), names);
-  await collectImageFileBasenames(join(controllerRoot, "history"), names);
-  await collectImageFileBasenames(join(input.experimentRoot, "environment", "baselines"), names);
-  if (names.size === 0) return [];
-  const mediaRoot = join(input.attemptRoot, "history", "media");
-  await mkdir(mediaRoot, { recursive: true });
-  const links: ComparisonLink[] = [];
-  for (const name of names) {
-    const source = await findSealedImage({
-      experimentRoot: input.experimentRoot,
-      runId: input.record.attempt.runId,
-      caseId: input.taskCase.caseId,
-      ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-      basename: name,
-    });
-    const dest = join(mediaRoot, name);
-    if (source) await copyFile(source, dest);
-    const info = source ? await stat(dest).catch(() => undefined) : undefined;
-    const mediaType = source
-      ? await sniffComparisonImageMediaType(source)
-      : mediaTypeForComparisonPath(name);
-    links.push({
-      side: "baseline",
-      inspectPath: `history/media/${name}`,
-      ...(mediaType ? { mediaType } : {}),
-      ...(info?.isFile() ? { byteLength: info.size } : {}),
-    });
-  }
-  return links;
-}
-
-function historicalImageBasenames(taskCase: TaskCase): Set<string> {
-  const names = new Set<string>();
-  addImageBasenames(taskCase.initialInput.text, names);
-  addImageBasenames(taskCase.baseline.finalMessage ?? "", names);
-  for (const message of taskCase.transcript) addImageBasenames(message.text, names);
-  return names;
-}
-
-function addImageBasenames(text: string, names: Set<string>): void {
-  for (const match of text.matchAll(COMPARISON_IMAGE_BASENAME_RE)) {
-    const base = (match[1] ?? "").split(/[/\\]/).pop();
-    if (base && !base.startsWith(".")) names.add(base);
-  }
-}
-
-async function collectImageBasenamesFromDir(root: string, names: Set<string>): Promise<void> {
-  const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".txt")) continue;
-    const parent = "parentPath" in entry && typeof entry.parentPath === "string" ? entry.parentPath : root;
-    const body = await readFile(join(parent, entry.name), "utf8").catch(() => "");
-    addImageBasenames(body, names);
-  }
-}
-
-async function collectImageFileBasenames(root: string, names: Set<string>): Promise<void> {
-  const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (!entry.isFile() || !isComparisonImagePath(entry.name)) continue;
-    names.add(entry.name);
-  }
-}
-
 function manifestImageType(manifest: ArtifactManifest): string | undefined {
   if (manifest.mediaType?.startsWith("image/")) return manifest.mediaType;
   return mediaTypeForComparisonPath(manifest.path || manifest.artifactId);
 }
 
-async function findSealedImage(input: {
-  experimentRoot: string;
-  runId: string;
-  caseId: string;
-  dataDir?: string;
-  basename: string;
-}): Promise<string | undefined> {
-  const roots: string[] = [];
-  if (input.dataDir) {
-    roots.push(join(input.dataDir, "cases", input.caseId, "baseline-artifacts"));
-  }
-  roots.push(
-    join(input.experimentRoot, "environment", "baselines"),
-    join(input.experimentRoot, "runs", input.runId, "controller-briefing", "history"),
-  );
-  for (const root of roots) {
-    const entries = await readdir(root, { recursive: true, withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (!entry.isFile() || entry.name !== input.basename) continue;
-      const parent = "parentPath" in entry && typeof entry.parentPath === "string" ? entry.parentPath : root;
-      return join(parent, entry.name);
-    }
-  }
-  return undefined;
-}
 
 function slash(path: string): string { return path.replaceAll("\\", "/"); }
 

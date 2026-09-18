@@ -1,6 +1,8 @@
-import { join } from 'node:path';
+import { resolve, normalize } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
+import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
+import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
@@ -14,29 +16,30 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
   const comparison = result.comparison.result;
   const failed = comparison.status === 'failed';
   const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
-  const report = shortPath(result.reportPath, experimentRoot, vacant);
+  const paths = resolveResultPathLinks(result);
   const runId = result.record.attempt?.runId;
-  const trace = tracePath(runId, theme, width, vacant);
-  const traceAbs = runId && experimentRoot ? join(experimentRoot, 'runs', runId) : undefined;
-  const replicaAbs = runId && experimentRoot ? join(experimentRoot, 'environment', 'runs', runId) : undefined;
   const inner = Math.max(20, width - 4);
   const headline = skipped ? undefined : envelopeHeadline(result);
   const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
   const metrics = metricsLine(theme, result, locale);
+  const candidateLabel = candidateDisplayLabel(result, productLabel);
   return panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, [
     terminationBanner(theme, kind),
     kv(theme, t(locale, 'resultTask'), result.record.outcome.task.status, width - 2),
     kv(theme, t(locale, 'resultTermination'), `${kind} · ${result.record.outcome.termination.code}`, width - 2),
     kv(theme, t(locale, 'resultCleanup'), result.record.outcome.cleanup?.status ?? vacant, width - 2),
+    ...(candidateLabel ? [kv(theme, t(locale, 'candidateLabel'), candidateLabel, width - 2)] : []),
     ...(!skipped ? [kv(theme, t(locale, 'resultComparison'), comparisonWord(comparison, locale), width - 2)] : []),
     ...(metrics ? [`     ${metrics}`] : []),
     ...(headline ? ['', ...wrapBodyLine(headline, inner).map((line) => ` ${line}`)] : []),
     ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
     ...(skipped ? ['', kv(theme, t(locale, 'resultComparison'), t(locale, 'comparisonSkipped'), width - 2)] : []),
     ...(comparePending ? ['', ` ${theme.style.accent(t(locale, 'hintCompare'))}`] : []),
-    ...(skipped ? [] : kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), report, result.reportPath, width)),
-    ...kvLinkBlock(theme, t(locale, 'resultReplica'), replicaLabel(runId, theme, width, vacant), replicaAbs, width),
-    ...kvLinkBlock(theme, t(locale, 'resultTrace'), trace, traceAbs, width),
+    ...(skipped ? [] : kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), shortPath(paths.report, experimentRoot, vacant), paths.report, width)),
+    ...kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortPath(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width),
+    ...kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width),
+    ...kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width),
+    ...kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width),
   ], width);
 }
 
@@ -49,6 +52,7 @@ export function resultPointerAction(
   row: number,
   col: number,
   locale: Locale = 'en',
+  paths?: ResultPathLinks,
 ): ResultAction | undefined {
   const line = lines[row];
   if (!line) return undefined;
@@ -56,10 +60,56 @@ export function resultPointerAction(
   if (stripForHit(line).includes(compare)) return 'compare';
   const href = hitFileLink(line, col);
   if (!href) return undefined;
-  if (/environment[/\\]runs[/\\]/i.test(href)) return 'open-replica';
-  if (/report\.html/i.test(href)) return 'open-report';
-  if (/[/\\]runs[/\\]/i.test(href)) return 'open-trace';
+  if (paths) {
+    const action = resolveResultLinkAction(href, paths);
+    if (action) return action;
+  }
   return undefined;
+}
+
+export function resolveResultLinkAction(href: string, paths: ResultPathLinks): ResultAction | undefined {
+  const target = normalizeLinkTarget(href);
+  const candidates: readonly [ResultAction, string | undefined][] = [
+    ['open-report', paths.report],
+    ['open-history-final', paths.historyFinal],
+    ['open-candidate-final', paths.candidateFinal],
+    ['open-trace', paths.trace],
+    ['open-replica', paths.replica],
+  ];
+  for (const [action, path] of candidates) {
+    const normalized = normalizeStoredPath(path);
+    if (normalized && normalized === target) return action;
+  }
+  return undefined;
+}
+
+function normalizeLinkTarget(href: string): string {
+  return normalizeStoredPath(pointerHrefPath(href)) ?? pointerHrefPath(href).replaceAll('\\', '/').toLowerCase();
+}
+
+function normalizeStoredPath(path: string | undefined): string | undefined {
+  if (!path?.trim()) return undefined;
+  return normalize(resolve(path.trim())).replaceAll('\\', '/').toLowerCase();
+}
+
+function pointerHrefPath(href: string): string {
+  if (/^file:/i.test(href)) {
+    try {
+      return localPathFromFileUrl(href).replaceAll('\\', '/');
+    } catch {
+      return href.replaceAll('\\', '/');
+    }
+  }
+  return href.replaceAll('\\', '/');
+}
+
+function candidateDisplayLabel(result: ExperimentResult, productLabel: string | undefined): string | undefined {
+  const candidate = result.record.attempt?.candidate;
+  if (!candidate) return undefined;
+  const product = productLabel ?? candidate.productId;
+  const model = candidate.requestedModel?.trim();
+  if (!model) return product;
+  return `${product} · ${model}`;
 }
 
 function stripForHit(line: string): string {

@@ -57,6 +57,7 @@ jobs:
         with:
           name: tui-audit
           path: docs/tui-audit/
+          # includes frames-generated/ when Windows compareFrames fails
           retention-days: 7
 
   coverage:

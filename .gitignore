@@ -80,6 +80,7 @@ pnpm-debug.log*
 
 # TUI 与验收产物：由脚本重新生成，不受控。
 # 例外是 docs/tui-audit/frames/——它是 CI 比对的快照基线，必须受控。
+# frames-generated/ 仅 Windows audit:tui:check 失败时 dump，由 CI artifact 携带，不入库。
 /docs/tui-audit/*
 !/docs/tui-audit/frames/
 /docs/tui-full-flow/

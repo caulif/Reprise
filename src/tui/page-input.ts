@@ -310,12 +310,14 @@ export function dispatchRunningKeys(data: string): { action: RunningAction; cons
   return undefined;
 }
 
-export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'compare' | 'home';
+export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'open-history-final' | 'open-candidate-final' | 'compare' | 'home';
 
 export function dispatchResultKeys(data: string): { action: ResultAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (input === 'c' || input === 'C') return { action: 'compare', consume: true };
   if (matchesKey(input, 'o')) return { action: 'open-report', consume: true };
+  if (matchesKey(input, 'h')) return { action: 'open-history-final', consume: true };
+  if (matchesKey(input, 'f')) return { action: 'open-candidate-final', consume: true };
   if (matchesKey(input, 't')) return { action: 'open-trace', consume: true };
   if (matchesKey(input, 'w')) return { action: 'open-replica', consume: true };
   if (matchesKey(input, 'enter') || matchesKey(input, 'b') || matchesKey(input, 'escape')) return { action: 'home', consume: true };

@@ -32,6 +32,7 @@ import {
   resolveVerifiedCandidate,
 } from "./experiment-preflight.js";
 import type { ExperimentPreflight } from "./experiment-preflight.js";
+import type { ResultPathLinks } from "./result-paths.js";
 import { finishExperimentActivity, registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
 import { finishExperiment, attachExperimentComparison } from "./experiment-report.js";
 export type ExperimentAgentConfig = {
@@ -58,6 +59,7 @@ export type ExperimentResult = {
     tokenCount?: number;
     costUsd?: number;
   };
+  pathLinks?: ResultPathLinks;
 };
 export type ExperimentInput = {
   dataDir: string;

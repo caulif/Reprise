@@ -95,7 +95,7 @@ test("layout-only failures still return success html with Host limitations", asy
   }).html);
   assert.equal("html" in leaked, true);
   if ("html" in leaked) {
-    const diffs = leaked.html.match(/data-agent-zone="key-differences"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+    const diffs = leaked.html.match(/data-id="agent-key-differences"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
     assert.doesNotMatch(diffs, /comparison-attempts\//);
     assert.doesNotMatch(diffs, /\brunId\b/);
     assert.match(diffs, /见/);

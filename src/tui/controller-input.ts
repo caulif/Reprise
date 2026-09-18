@@ -147,6 +147,8 @@ export type ControllerHandle = {
   sessionsMessage(): string;
   syncIntakeLevel(): void;
   openReport(experimentRoot: string | undefined, reportPath: string | undefined): Consume;
+  openResultArtifact(side: 'history' | 'candidate'): Consume;
+  openResultArtifactHref(href: string | undefined, side: 'history' | 'candidate'): Consume;
   openTrace(): Consume;
   openReplica(): Consume;
   openLocal(target: string | undefined): Consume;
@@ -213,6 +215,8 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
         c.result?.reportPath,
       );
     }
+    if (result.action === 'open-history-final') return c.openResultArtifact('history');
+    if (result.action === 'open-candidate-final') return c.openResultArtifact('candidate');
     if (result.action === 'open-trace') return c.openTrace();
     if (result.action === 'open-replica') return c.openReplica();
     if (c.compareChoice) {

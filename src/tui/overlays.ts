@@ -54,8 +54,10 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
   result: [
     'c          Start comparison when offered',
     'o          Open report.html',
-    't          Open trace folder',
-    'w          Open isolated replica',
+    'h          Open history final artifact',
+    'f          Open candidate final artifact',
+    't          Open trace folder (troubleshoot)',
+    'w          Open isolated replica (troubleshoot)',
     'Esc        Back to Home',
   ],
   error: ['Enter / b / Esc  Back to Home'],

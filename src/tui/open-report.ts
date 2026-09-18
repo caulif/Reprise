@@ -86,6 +86,20 @@ export async function openScratchText(
   return target;
 }
 
+export async function openExperimentArtifact(
+  experimentRoot: string,
+  artifactPath: string | undefined,
+  start: ReportSpawner = spawn,
+  options?: { dataDir?: string },
+): Promise<void> {
+  if (!artifactPath?.trim()) throw new Error('Artifact path is unavailable.');
+  const root = resolve(experimentRoot);
+  const target = isAbsolute(artifactPath) ? artifactPath : resolve(root, artifactPath);
+  const allowedRoots = [root, ...(options?.dataDir ? [resolve(options.dataDir)] : [])];
+  assertPathInsideAnyRoot(allowedRoots, target);
+  await openLocalPath(target, start);
+}
+
 export function assertExperimentReportPath(experimentRoot: string, reportPath: string): void {
   const root = resolve(experimentRoot);
   const allowed = new Set(['report.html', 'comparison-failure.html'].map((name) => resolve(root, name)));
@@ -116,6 +130,15 @@ export function assertPathInsideRoot(root: string, target: string): string {
   const rel = relative(resolvedRoot, resolvedTarget);
   if (rel.startsWith('..') || isAbsolute(rel)) throw new Error('Path is outside the local Reprise data directory.');
   return resolvedTarget;
+}
+
+export function assertPathInsideAnyRoot(roots: readonly string[], target: string): string {
+  const resolvedTarget = resolve(target);
+  for (const root of roots) {
+    const rel = relative(resolve(root), resolvedTarget);
+    if (!rel.startsWith('..') && !isAbsolute(rel)) return resolvedTarget;
+  }
+  throw new Error('Path is outside the local Reprise data directory.');
 }
 
 export function localPathFromFileUrl(url: string): string {

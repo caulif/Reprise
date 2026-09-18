@@ -122,6 +122,7 @@ test("slash-prefixed DeepSeek id hits the flash snapshot row", () => {
   ]);
   assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4-flash"), 0.15);
   assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4.1-flash"), undefined);
+  assert.equal(resolveModelPricing("deepseek/deepseek-v4.1-flash").kind, "miss");
 });
 
 test("MiniMax-M3 is not priced as Claude Sonnet", () => {

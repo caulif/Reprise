@@ -56,6 +56,7 @@ export type RunningModel = {
   readonly taskTitle?: string;
   readonly workspaceProject?: string;
   readonly productLabel?: string;
+  readonly candidateModel?: string;
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
@@ -171,6 +172,7 @@ export function runningChrome(theme: Theme, width: number, model: RunningModel):
   if (isPreparing(model)) return [];
   const locale = model.locale ?? 'en';
   const product = model.productLabel ?? t(locale, 'unknownAgent');
+  const agent = model.candidateModel ? `${product} · ${model.candidateModel}` : product;
   const wait = waitLine(model, locale);
   if (model.runPhase === 'recovery') {
     return wait
@@ -181,11 +183,11 @@ export function runningChrome(theme: Theme, width: number, model: RunningModel):
     || model.runPhase === 'candidate_starting'
     || model.preparePhase === 'compare';
   const task = model.taskTitle
-    ? truncateFit(model.taskTitle, Math.max(8, width - product.length - 10), theme.glyphs.ellipsis)
+    ? truncateFit(model.taskTitle, Math.max(8, width - agent.length - 10), theme.glyphs.ellipsis)
     : '';
   const line = special
-    ? phaseLine(model, locale, product)
-    : (task ? `${task} · ${product} · ${model.elapsed}` : `${product} · ${model.elapsed}`);
+    ? phaseLine(model, locale, agent)
+    : (task ? `${task} · ${agent} · ${model.elapsed}` : `${agent} · ${model.elapsed}`);
   return [line, ...(wait ? [theme.style.muted(` ${wait}`)] : [])].map((row) =>
     theme.style.fillCanvas(pad(row.startsWith(' ') ? row : ` ${row}`, width, theme.glyphs.ellipsis)),
   );
@@ -303,7 +305,7 @@ export function sourceHints(locale: Locale = 'en'): readonly (readonly [string, 
 }
 
 export function preflightHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Esc', t(locale, 'hintHome')], ['b', t(locale, 'hintHome')]];
+  return [['Esc', t(locale, 'hintHome')]];
 }
 
 export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {

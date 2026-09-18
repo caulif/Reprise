@@ -24,6 +24,8 @@ import {
   newComparisonAttempt,
   writeComparisonBriefing,
 } from "./comparison-briefing.js";
+import { ComparisonVisualMediaError } from "./comparison-openable-media.js";
+import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
@@ -102,7 +104,7 @@ export async function attachExperimentComparison(
   record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
 ): Promise<ExperimentResult> {
   const inspection = await inspectExperimentRun(input, record);
-  return experimentResult(
+  return await experimentResult(
     input,
     record,
     inspection,
@@ -117,15 +119,16 @@ function skippedComparison(experimentRoot: string) {
   };
 }
 
-function experimentResult(
+async function experimentResult(
   input: Parameters<typeof finishExperiment>[0],
   record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
   inspection: Awaited<ReturnType<typeof inspectRun>>,
   compared: {
     comparisonResult: ExperimentResult["comparison"]["result"];
     reportPath: string;
+    attemptRoot?: string;
   },
-): ExperimentResult {
+): Promise<ExperimentResult> {
   const controllerCalls = input.store
     .events(input.input.runId)
     .filter((event) => event.type === "controller.decision").length;
@@ -151,6 +154,16 @@ function experimentResult(
         : { tokenCount: inspection.tokenCount }),
       ...(inspection.costUsd === undefined ? {} : { costUsd: inspection.costUsd }),
     },
+    pathLinks: await buildResultPathLinks({
+      experimentRoot: input.experimentRoot,
+      runId: input.input.runId,
+      reportPath: compared.reportPath,
+      taskCase: input.taskCase,
+      inspection,
+      workspaceRoot: input.workspaceRoot,
+      dataDir: input.input.dataDir,
+      ...(compared.attemptRoot ? { attemptRoot: compared.attemptRoot } : {}),
+    }),
   };
 }
 
@@ -242,7 +255,9 @@ async function compareExperimentOutcome(
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
     });
   } catch (error) {
-    comparisonResult = comparisonFailed("publication_failed", error);
+    comparisonResult = error instanceof ComparisonVisualMediaError
+      ? comparisonFailed("media_unavailable", error)
+      : comparisonFailed("publication_failed", error);
   } finally {
     await input.input.comparison.release?.(attemptId);
   }
@@ -338,7 +353,7 @@ async function persistComparisonInvocation(input: {
     operationId: `report-created-${input.attemptId}`,
     payload: { path: reportPath, attemptId: input.attemptId },
   });
-  return { comparisonResult: input.comparisonResult, reportPath };
+  return { comparisonResult: input.comparisonResult, reportPath, attemptRoot: input.attemptRoot };
 }
 
 function withOrientation(
@@ -524,7 +539,7 @@ function languageOf(text: string): "zh" | "en" {
 }
 
 function comparisonFailed(
-  code: "publication_failed" | "agent_failure" | "invalid_envelope",
+  code: "publication_failed" | "agent_failure" | "invalid_envelope" | "media_unavailable",
   error: unknown,
   sessionId?: string,
 ): AgentInvocation<ComparisonResult> {

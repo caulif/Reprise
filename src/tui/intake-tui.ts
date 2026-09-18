@@ -248,6 +248,12 @@ export class IntakeTui {
   openReport(experimentRoot: string | undefined, reportPath: string | undefined): { consume: true } {
     return intakeMethods.IntakeTui_openReport.call(this, experimentRoot, reportPath);
   }
+  openResultArtifact(side: "history" | "candidate"): { consume: true } {
+    return intakeMethods.IntakeTui_openResultArtifact.call(this, side);
+  }
+  openResultArtifactHref(href: string | undefined, side: "history" | "candidate"): { consume: true } {
+    return intakeMethods.IntakeTui_openResultArtifactHref.call(this, href, side);
+  }
   openTrace(): { consume: true } { return intakeMethods.IntakeTui_openTrace.call(this); }
   openReplica(): { consume: true } { return intakeMethods.IntakeTui_openReplica.call(this); }
   openLocal(target: string | undefined): { consume: true } { return intakeMethods.IntakeTui_openLocal.call(this, target); }

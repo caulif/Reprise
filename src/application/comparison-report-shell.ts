@@ -465,7 +465,10 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 [data-component="page-row"] { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:stretch; }
 .cell { border:1px solid var(--hair); border-radius:16px; overflow:hidden; background:#fff; }
 .cell .who { padding:8px 12px 0; }
-.cell img,[data-component="page-row"] img { width:100%; height:200px; object-fit:contain; object-position:top; display:block; background:#fff; }
+.cell img,[data-component="page-row"] img { width:100%; height:280px; object-fit:contain; object-position:top; display:block; background:#fff; }
+[data-agent-zone="key-differences"] p,[data-agent-zone="key-differences"] li { font-size:15px; line-height:1.45; color:var(--soft); max-width:52em; }
+[data-agent-zone="visual-evidence"] { margin-top:6px; }
+.share [data-component="diff-table"] { display:none; }
 .audit { margin-top:20px; color:var(--soft); }
 .cost-note { margin: 0 0 8px; }
 [data-component="judgment"] { font-weight:700; }
