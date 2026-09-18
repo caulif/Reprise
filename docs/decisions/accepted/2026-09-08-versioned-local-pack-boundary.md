@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M6.3](../../plan/reprise-refactoring-execution.md#m63-版本化本地插件边界)。
+目标批次见 [M6.3](../../plan/archive/reprise-refactoring-execution.md#m63-版本化本地插件边界)。
 
 ## 问题
 

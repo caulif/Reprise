@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M2.4](../../plan/reprise-refactoring-execution.md#m24-candidaterun-与活动所有权)。
+目标批次见 [M2.4](../../plan/archive/reprise-refactoring-execution.md#m24-candidaterun-与活动所有权)。
 
 ## 问题
 

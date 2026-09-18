@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M2.2](../../plan/reprise-refactoring-execution.md#m22-recovery-连续-session-与停止语义)。
+目标批次见 [M2.2](../../plan/archive/reprise-refactoring-execution.md#m22-recovery-连续-session-与停止语义)。
 
 ## 问题
 

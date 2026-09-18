@@ -2,7 +2,7 @@
 
 状态：accepted
 
-目标批次见 [M3.2](../../plan/reprise-refactoring-execution.md#m32-验证协作语义和投递边界)。
+目标批次见 [M3.2](../../plan/archive/reprise-refactoring-execution.md#m32-验证协作语义和投递边界)。
 
 ## 问题
 

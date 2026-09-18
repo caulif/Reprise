@@ -444,5 +444,5 @@ src/
 - 自动回滚外部世界；
 - 为尚未支持的环境预建空接口。
 
-未关闭验收（TUI 真终端、opt-in Runtime smoke、未跑的 Controller 真实模型 lane）见[架构目标](../plan/reprise-architecture-redesign.md)与 [MASTER](../progress/MASTER.md)。
+未关闭验收（TUI 真终端、opt-in Runtime smoke、未跑的 Controller 真实模型 lane）见 [MASTER](../progress/MASTER.md)与[平台证据矩阵](../plan/2026-09-08-platform-evidence-matrix.md)。
 

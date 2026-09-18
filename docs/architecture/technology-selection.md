@@ -1,6 +1,6 @@
 # 技术选型与实现基线
 
-本文解释当前依赖与基础设施选择。领域规范见[架构总览](./overview.md)，目标变化见[重构规划](../plan/reprise-architecture-redesign.md)。
+本文解释当前依赖与基础设施选择。领域规范见[架构总览](./overview.md)；未关闭目标见 [MASTER](../progress/MASTER.md)。
 
 ## 运行时与依赖
 
@@ -10,7 +10,7 @@ Pi Agent Core、pi-ai、pi-tui 分别用于执行循环、模型适配与终端�
 
 ## CLI 与 TUI
 
-[CLI 入口](../../src/cli/main.ts)使用 `node:util.parseArgs`。无子命令打开 TUI。查询、配置、prepare、run、compare、cancel 不加载 TUI。机器输出是互斥的 `--json` 单结果或 `--jsonl` 事件流；诊断在 stderr。退出码与字段见[CLI 协议决策](../decisions/accepted/2026-09-08-cli-query-config-protocol.md)。当前界面见 [TUI](../product/tui.md)。选择与配置按键见[TUI 选择与配置按键](../decisions/accepted/2026-09-08-tui-selection-and-config-keys.md)。目标交互见 [TUI 规划](../plan/reprise-tui-design.md)。
+[CLI 入口](../../src/cli/main.ts)使用 `node:util.parseArgs`。无子命令打开 TUI。查询、配置、prepare、run、compare、cancel 不加载 TUI。机器输出是互斥的 `--json` 单结果或 `--jsonl` 事件流；诊断在 stderr。退出码与字段见[CLI 协议决策](../decisions/accepted/2026-09-08-cli-query-config-protocol.md)。当前界面见 [TUI](../product/tui.md)。选择与配置按键见[TUI 选择与配置按键](../decisions/accepted/2026-09-08-tui-selection-and-config-keys.md)。目标交互见 [TUI 产品规范](../product/tui.md)与 [MASTER](../progress/MASTER.md)。
 
 渲染从记录与公共活动投影，不从终端屏幕推断产品输入是否接受；不建设通用 PTY 或第二个控制面。只在具体产品确有需求时评估产品内适配，不提前添加 native helper 依赖。
 

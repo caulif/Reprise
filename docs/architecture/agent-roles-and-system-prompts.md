@@ -1,6 +1,6 @@
 # Agent 职责与提示词维护
 
-本文维护当前角色边界与 prompt 的代码入口，不复制可执行 prompt。目标 Session 安排见[重构规划](../plan/reprise-architecture-redesign.md#4-三个角色与业务检查)，迁移差异见[文档迁移表](../plan/documentation-reconciliation-for-session-harness-workflow.md)。
+本文维护当前角色边界与 prompt 的代码入口，不复制可执行 prompt。未关闭 Recovery 目标见[起点恢复目标](../plan/recovery-initial-environment.md)与 [MASTER](../progress/MASTER.md)。
 
 ## 角色归属
 

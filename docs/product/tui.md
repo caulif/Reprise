@@ -1,6 +1,6 @@
 # TUI 与最小用户交互规划
 
-本文是当前产品规范；目标行为见[规范迁移边界](../plan/documentation-reconciliation-for-session-harness-workflow.md)，不能把目标能力作为当前操作使用。
+本文是当前产品规范；未关闭目标见 [MASTER](../progress/MASTER.md)，不能把目标能力作为当前操作使用。
 
 状态：当前产品规划
 

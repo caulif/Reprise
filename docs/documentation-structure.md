@@ -27,7 +27,7 @@ docs/
 │   ├── proposed/
 │   ├── accepted/
 │   └── superseded/
-├── plan/                            # 唯一活跃总计划、目标设计与 task brief
+├── plan/                            # 开放验收与 task brief；历史目标在 plan/archive/
 ├── progress/MASTER.md               # 稳定进度入口
 └── tui-audit/frames/                # TUI 快照基线（受控）
 ```
@@ -36,7 +36,7 @@ docs/
 
 ## 受控边界
 
-product、architecture、decisions、plan、progress、cookbook 及上列开发与治理文档属于长期受控材料。decisions/README 是 ADR 的触发与检索入口，不复制各记录正文；accepted/ 下大量 ADR 按需检索，不是默认通读清单。docs/.local 保存一次性审查和已结束计划，不受控；不得从受控文档链接到它。docs/local 是 docs/.local 的历史误拼路径，同样不受控，请只用 docs/.local。research 仅允许忽略的本机交互草图，不拥有设计事实，不是开源检出的必需文件。
+product、architecture、decisions、plan（含 plan/archive/）、progress、cookbook 及上列开发与治理文档属于长期受控材料。decisions/README 是 ADR 的触发与检索入口，不复制各记录正文；accepted/ 下大量 ADR 按需检索，不是默认通读清单。plan/archive/ 保留仍有 ADR 入站依赖的历史计划，不进导航。docs/.local 保存一次性审查且无入站依赖的已结束材料，不受控；不得从受控文档链接到它。docs/local 是 docs/.local 的历史误拼路径，同样不受控，请只用 docs/.local。research 仅允许忽略的本机交互草图，不拥有设计事实，不是开源检出的必需文件。
 
 生成的 HTML、截图和运行记录不受控；tui-audit/frames 是 CI 逐字节审计基线例外，受控但非阅读材料。HTML 不得拥有独立验收编号；手工原型若只覆盖部分场景，必须标为示例并链接 Markdown，不能声称完整同步。发布说明不依赖本机原型存在。
 
@@ -47,7 +47,8 @@ product、architecture、decisions、plan、progress、cookbook 及上列开发�
 | 当前产品目标、用户操作与安全限制 | product/ |
 | 当前跨模块语义、所有者与生命周期 | architecture/overview.md；专题只细化本模块 |
 | 实际类型、字段、工具注册、prompt、依赖与 CI 矩阵 | 对应代码或配置；文档链接，不维护全文副本 |
-| 尚未实施的目标、迁移顺序与验收 | plan/ 的对应主题总计划 |
+| 尚未实施的目标、迁移顺序与验收 | [MASTER](./progress/MASTER.md) 与 plan/ 白名单 |
+| 历史目标与批次锚点（不进导航） | plan/archive/ |
 | 选择理由与替代关系 | decisions/ |
 | 当前批次与完成证据 | progress/MASTER.md |
 | 贡献与门禁 | CONTRIBUTING.md、engineering-gates.md |
@@ -55,7 +56,7 @@ product、architecture、decisions、plan、progress、cookbook 及上列开发�
 
 当前规范描述已存在的边界，目标计划描述经确认要改变的边界，两者不是同一时间范围。任务开始先确定修复当前还是实施目标。文档与代码冲突时标明证据并修正；不能以代码偶然行为自动授权改变产品语义，也不能把目标命令写成已可用能力。用户明确授权优先于仓库工作流偏好。
 
-迁移差异由[规范迁移边界](./plan/documentation-reconciliation-for-session-harness-workflow.md)集中维护，不在每个专题重述目标。AGENTS 保留短入口；不要求每次任务读完全部 ADR。不能按修改日期判断权威。
+未关闭目标与证据由 [MASTER](./progress/MASTER.md) 与 plan/ 白名单集中维护，不在每个专题重述目标。AGENTS 保留短入口；不要求每次任务读完全部 ADR。不能按修改日期判断权威。
 
 ## 决策记录
 
@@ -95,6 +96,6 @@ proposed 包括未拍板提案，以及已确认但等待实施生效的目标�
 
 ## 迁移规则
 
-先确定唯一新归宿，保留仍有效的不变量，再移动已完成计划到 docs/.local 或已替代 ADR 到 superseded，更新引用并验证。Git 保留历史，不新建 archive 日期树。只为仍有真实入站依赖的路径保留简短重定向，不长期保存空的“兼容入口”。
+先确定唯一新归宿，保留仍有效的不变量，再迁移文档并更新引用与验证。仍有 ADR 或其它受控入站依赖的历史计划迁入 plan/archive/（受控、可检索，不进导航）。一次性已完成审查且无入站依赖的材料迁入 docs/.local（不受控）。已替代 ADR 移入 superseded/。不新建按日期分层的 archive 子树。只为仍有真实入站依赖的路径保留简短重定向，不长期保存空的“兼容入口”。
 
 

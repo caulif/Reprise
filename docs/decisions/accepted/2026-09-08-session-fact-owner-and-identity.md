@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [内部 Agent 对齐 Pi 循环](./2026-09-02-internal-agent-pi-alignment.md)。目标批次见 [M1.1](../../plan/reprise-refactoring-execution.md#m11-建立基线并验证-pi-的实际能力)。
+延续 [内部 Agent 对齐 Pi 循环](./2026-09-02-internal-agent-pi-alignment.md)。目标批次见 [M1.1](../../plan/archive/reprise-refactoring-execution.md#m11-建立基线并验证-pi-的实际能力)。
 
 ## 问题
 

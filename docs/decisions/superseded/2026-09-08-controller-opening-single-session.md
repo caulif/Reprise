@@ -4,7 +4,7 @@
 
 被 [连续 Session 先理解再决策](../accepted/2026-09-09-controller-understand-then-view.md) 取代。下文冻结。
 
-目标批次见 [M3.1](../../plan/reprise-refactoring-execution.md#m31-合并首次理解与-opening)。取代 [独立理解回合](./2026-09-04-controller-understanding-pass.md) 与 [完成证据护栏](./2026-09-06-controller-completion-evidence-guard.md)。
+目标批次见 [M3.1](../../plan/archive/reprise-refactoring-execution.md#m31-合并首次理解与-opening)。取代 [独立理解回合](./2026-09-04-controller-understanding-pass.md) 与 [完成证据护栏](./2026-09-06-controller-completion-evidence-guard.md)。
 
 ## 问题
 

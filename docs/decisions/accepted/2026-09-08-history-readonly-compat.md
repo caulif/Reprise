@@ -2,7 +2,7 @@
 
 状态：accepted
 
-延续 [模型输入重建](./2026-09-08-model-input-reconstruction.md) 与 [生命周期](./2026-09-08-session-invocation-lifecycle.md)。目标批次见 [M1.4](../../plan/reprise-refactoring-execution.md#m14-历史兼容与只读重开)。
+延续 [模型输入重建](./2026-09-08-model-input-reconstruction.md) 与 [生命周期](./2026-09-08-session-invocation-lifecycle.md)。目标批次见 [M1.4](../../plan/archive/reprise-refactoring-execution.md#m14-历史兼容与只读重开)。
 
 ## 问题
 
