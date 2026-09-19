@@ -43,21 +43,38 @@ function injectActiveThinkingRows(folded: readonly TimelineEntry[], full: readon
   return [...folded.slice(0, nowIndex), ...thinking, ...folded.slice(nowIndex)];
 }
 
+/** Tip-only: one live tool tip (latest leaf); completed peers collapse to a single L3 fold. */
 function thinkingRowsFromFlush(flush: TimelineEntry): TimelineEntry[] {
   const write = flush.itemId?.startsWith('flush-write:');
   const names = uniqueLeafNames((flush.detail ?? '').split(/[·,]/));
   if (!names.length) return [];
   const lane = flush.lane;
   const voice = flush.voice ?? (flush.source === 'TARGET' ? 'candidate' : undefined);
-  return names.map((name, index) => ({
+  const latest = names[names.length - 1]!;
+  const base = {
     sequence: flush.sequence,
     occurredAt: flush.occurredAt,
     source: flush.source,
-    title: write ? '写入' : '阅读',
-    detail: name,
-    kind: 'thinking',
-    itemId: `thinking:${flush.itemId}:${index}`,
     ...(lane ? { lane } : {}),
     ...(voice ? { voice } : {}),
-  }));
+  };
+  const rows: TimelineEntry[] = [];
+  if (names.length > 1) {
+    rows.push({
+      ...base,
+      title: write ? `▸ 写入 · ${names.length}` : `▸ 阅读证据 · ${names.length}`,
+      kind: 'fold',
+      itemId: `live-fold:${flush.itemId}`,
+      count: names.length,
+      ...(flush.detail ? { detail: flush.detail } : {}),
+    });
+  }
+  rows.push({
+    ...base,
+    title: write ? '写入' : '阅读',
+    detail: latest,
+    kind: 'thinking',
+    itemId: `thinking:${flush.itemId}:tip`,
+  });
+  return rows;
 }
