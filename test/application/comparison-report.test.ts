@@ -182,7 +182,7 @@ test('comparePersistedFacts requires an explicit attemptId', async () => {
 });
 
 test('comparison prompt points workspace tools at the sealed snapshot mount', () => {
-  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed candidate/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed read-only/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /finals\//);
   assert.match(COMPARISON_SYSTEM_PROMPT, /render_artifact/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /register_evidence/);

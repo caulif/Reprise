@@ -12,7 +12,8 @@
 
 - 唯一可执行文本源仍是 [`comparison-agent.ts`](../../../src/agents/comparison-agent.ts)：`COMPARISON_SYSTEM_PROMPT`、`COMPARISON_TURN_PROMPTS`、`COMPARISON_COMPACTION`、Host-zone repair、JSON-only repair。
 - System Prompt 以任务成功标准与用户后果为中心；证据形式由 Agent 选择；图片非每任务必选；单侧可展示并就近说明限制；禁止跨任务排名与伪造观察。
-- Workspace 指向 `facts/` catalog、`finals/`、`history/`、`candidate/`，并点名 `render_artifact` / `register_evidence` / `preview_report`。
+- Workspace 指向 `facts/` catalog、`finals/`、`history/`、`candidate/`（sealed read-only snapshot），并点名 `render_artifact` / `register_evidence` / `preview_report`。
+- Host 投影的 `reportFacts` 为硬事实；简报摘要为 claims until checked。差异先归入 result / process / replay limitation / configuration 四类。
 - 四轮保持 understand → investigate → compose → review；compose 写 `data-agent-zone="comparison"` 与可选 `details`；review 必须 `preview_report`，改稿后重检。
 - `getEvidenceCatalog()`（同进程）优先于一次性 `shortEvidenceRefs`；非法短引用不得静默滤成空数组后成功，须提示未知 ref 与当前 catalog，并走既有有限 JSON repair（禁工具）。
 - Host-zone repair 保留 Agent 的 comparison/details 创作，只恢复 Host 区域。
