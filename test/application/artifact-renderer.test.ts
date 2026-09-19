@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createSocket } from "node:dgram";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -152,6 +152,38 @@ test("renderFrozenArtifact copies raster without browser", async (t) => {
   assert.equal(result.frames.length, 1);
   assert.equal(result.measured.origin, "raster-copy");
   assert.deepEqual(await readFile(result.frames[0]!.pngPath), MINIMAL_PNG);
+});
+
+test("renderFrozenArtifact rejects raster entry symlink without following target", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-render-raster-symlink-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const outside = join(root, "outside-secret.txt");
+  await writeFile(outside, "TOP_SECRET_CREDENTIAL=1\n", "utf8");
+  const bundle = join(root, "bundle");
+  const outputRoot = join(root, "out");
+  await mkdir(bundle);
+  try {
+    await symlink(outside, join(bundle, "escape.png"));
+  } catch {
+    t.skip("symlink creation unavailable");
+    return;
+  }
+  const result = await renderFrozenArtifact({
+    bundleRoot: bundle,
+    entryRelativePath: "escape.png",
+    viewport: DEFAULT_RENDER_VIEWPORT,
+    sampleTimesMs: [0],
+    outputRoot,
+    signal: new AbortController().signal,
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.failure.kind, "invalid_request");
+  assert.match(result.failure.message, /symlink rejected/i);
+  await assert.rejects(() => access(join(outputRoot, "frame-000.png")));
 });
 
 test("renderFrozenArtifact cancels before work", async (t) => {

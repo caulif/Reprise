@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import { sha256, sha256File } from "../core/identity.js";
@@ -143,6 +143,14 @@ async function renderRasterFrame(request: RenderRequest): Promise<RenderResult> 
     const absolute = join(rootReal, ...request.entryRelativePath.split("/"));
     if (!pathContainedBy(rootReal, absolute)) {
       return { ok: false, failure: { kind: "invalid_request", message: "entry escapes bundle root" }, diagnostics };
+    }
+    // Match bundle static serving: never follow entry symlinks (copyFile would).
+    const entryInfo = await lstat(absolute);
+    if (entryInfo.isSymbolicLink()) {
+      return { ok: false, failure: { kind: "invalid_request", message: "symlink rejected" }, diagnostics };
+    }
+    if (!entryInfo.isFile()) {
+      return { ok: false, failure: { kind: "invalid_request", message: "entry is not a file" }, diagnostics };
     }
     await mkdir(request.outputRoot, { recursive: true });
     const pngPath = join(request.outputRoot, "frame-000.png");
