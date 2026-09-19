@@ -39,6 +39,7 @@ export type ConfirmModel = PreflightModel & {
   readonly policy?: RunPolicy;
   readonly harnessAuthOk?: boolean;
   readonly sourceProductLabel?: string;
+  readonly experimentId?: string;
 };
 export type RunningModel = {
   readonly entries: readonly TimelineEntry[];
@@ -128,6 +129,7 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
   const canStart = confirmCanStart(model);
   const recoveryRunnable = model.preflight.comparisonClass !== 'observational' && recovery?.status !== 'failed' && recovery?.status !== 'blocked';
   const blockedRecovery = recovery?.status === 'blocked';
+  const failedRecovery = recovery?.status === 'failed';
   const cross = Boolean(model.sourceProductLabel && model.sourceProductLabel !== product);
   const startWarning = !canStart
     ? (model.harnessAuthOk === false
@@ -136,20 +138,29 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
         ? (recovery?.summary ?? t(locale, 'warningCannotStartBlockedRecovery', { product }))
         : (recovery?.failureSummary ?? t(locale, 'warningCannotStartFailedRecovery', { product })))
     : t(locale, 'warningStartsProcess', { product });
+  const warningLine = canStart || blockedRecovery
+    ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`)
+    : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`);
+  const diagnosisHint = failedRecovery && model.experimentId
+    ? theme.style.muted(` ${t(locale, 'diagnosisSavedHint', { experimentId: model.experimentId })}`)
+    : undefined;
+  const fields = [
+    kv(theme, t(locale, 'candidateLabel'), candidateSummary(model.candidate, product, model.preflight.resolved.resolvedModel, locale), width - 2),
+    kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
+    ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
+    ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
+    ...(cross ? [kv(theme, t(locale, 'sourceProductLabel'), `${model.sourceProductLabel}  →  ${product}`, width - 2)] : []),
+  ];
+  const crossNote = cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : [];
+  const startOk = canStart ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'confirmCopySafe')}`)] : [];
+  // Failed confirm: human failure reason is L1 — before candidate/recovery fields so the fold above cannot outrank it.
+  const body = failedRecovery && !canStart
+    ? [warningLine, ...(diagnosisHint ? [diagnosisHint] : []), '', ...fields, ...crossNote, ...startOk]
+    : [...fields, '', ...crossNote, warningLine, ...startOk];
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
-    ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), [
-      kv(theme, t(locale, 'candidateLabel'), candidateSummary(model.candidate, product, model.preflight.resolved.resolvedModel, locale), width - 2),
-      kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
-      ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
-      ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
-      ...(cross ? [kv(theme, t(locale, 'sourceProductLabel'), `${model.sourceProductLabel}  →  ${product}`, width - 2)] : []),
-      '',
-      ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
-      canStart || blockedRecovery ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`) : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`),
-      ...(canStart ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'confirmCopySafe')}`)] : []),
-    ], width),
+    ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), body, width),
   ];
 }
 
@@ -231,9 +242,13 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const visible = model.filter === 'ALL'
     ? model.entries
     : model.entries.filter((entry) => matchesFilter(entry, model.filter));
-  const selected = model.filter === 'ALL'
-    ? Math.max(0, Math.min(model.selected, Math.max(0, visible.length - 1)))
-    : Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
+  // selected < 0 means no highlight (failed confirm stack); do not clamp to 0.
+  const noHighlight = model.selected < 0;
+  const selected = noHighlight
+    ? -1
+    : model.filter === 'ALL'
+      ? Math.max(0, Math.min(model.selected, Math.max(0, visible.length - 1)))
+      : Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
   const recovering = model.runPhase === 'recovery';
   const hits = canvasHitIndices(visible, model.findQuery ?? '');
   const hitAt = hits.indexOf(selected < 0 ? -1 : selected);
@@ -243,7 +258,11 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const expanded = new Set(model.expandedFolds ?? []);
   const timelineRevision = model.timelineRevision ?? -1;
   const folded = projectTimelineView(model.sourceTimeline ?? model.entries, visible, expanded, timelineRevision);
-  const selectedFolded = selectedIndexAfterFold(visible, folded, visible[selected] ?? model.entries[model.selected]);
+  const selectedFolded = noHighlight
+    ? -1
+    : selectedIndexAfterFold(visible, folded, visible[selected] ?? model.entries[model.selected]);
+  // selected < 0 would otherwise count every row as "behind" and paint a false ▼ 新 N.
+  const following = noHighlight || model.following;
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
     : recovering && !visible.length
@@ -251,7 +270,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
           theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
           pad(` ${theme.glyphs.dot} working`, width, theme.glyphs.ellipsis),
         ]
-      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, model.following, timelineRevision);
+      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, following, timelineRevision);
   return [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
