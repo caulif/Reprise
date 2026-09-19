@@ -1,40 +1,28 @@
-import { createHash } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
+import { sha256 } from "../../core/identity.js";
 import {
   HistoricalArtifactManifestSchema,
   type HistoricalArtifact,
   type HistoricalArtifactManifest,
 } from "../../core/schemas/historical-artifacts.js";
 import type { HistoricalArtifactExtractResult } from "../contract.js";
+import { validateLogicalPath } from "./historical-artifact-apply.js";
 import type { FrozenFile } from "./freeze.js";
 
 export const BASELINE_ARTIFACTS_MANIFEST = "baseline-artifacts/manifest.json";
 export const BASELINE_ARTIFACTS_FILES_PREFIX = "baseline-artifacts/files";
 
-/** Reject path escape / absolute / ADS / UNC before sealing bytes. */
+/** Reject path escape / absolute / ADS / UNC before sealing or joining bytes (B1 validator). */
 export function assertSafeLogicalPath(logicalPath: string): void {
-  const normalized = logicalPath.replace(/\\/g, "/");
-  if (!normalized || normalized.length > 512) {
-    throw new Error(`Historical artifact logicalPath is invalid: ${logicalPath}`);
-  }
-  if (normalized.startsWith("/") || normalized.startsWith("//") || /^[A-Za-z]:/.test(normalized)) {
-    throw new Error(`Historical artifact logicalPath must be relative: ${logicalPath}`);
-  }
-  if (normalized.includes("\0") || normalized.includes("..") || /[:*?"<>|]/.test(normalized)) {
-    throw new Error(`Historical artifact logicalPath is unsafe: ${logicalPath}`);
-  }
-  if (normalized.split("/").some((segment) => segment === "" || segment === "." || segment.includes(":"))) {
-    throw new Error(`Historical artifact logicalPath has an unsafe segment: ${logicalPath}`);
+  const result = validateLogicalPath(logicalPath);
+  if (!result.ok) {
+    throw new Error(`Historical artifact logicalPath is unsafe (${result.reason}): ${logicalPath}`);
   }
 }
 
 export function frozenRelativePathForArtifact(artifact: HistoricalArtifact): string {
   assertSafeLogicalPath(artifact.logicalPath);
   return `${BASELINE_ARTIFACTS_FILES_PREFIX}/${artifact.bundleId}/${artifact.logicalPath}`;
-}
-
-export function sha256Buffer(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function bytesForArtifact(
@@ -75,7 +63,7 @@ export function validateHistoricalExtraction(
     if (bytes.byteLength !== artifact.byteLength) {
       throw new Error(`Historical artifact byteLength mismatch for ${artifact.artifactId}`);
     }
-    if (sha256Buffer(bytes) !== artifact.contentHash) {
+    if (sha256(bytes) !== artifact.contentHash) {
       throw new Error(`Historical artifact contentHash mismatch for ${artifact.artifactId}`);
     }
   }

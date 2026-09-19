@@ -1,20 +1,10 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { Value } from "@sinclair/typebox/value";
-import { assertSafeLogicalPath } from "../../src/products/shared/historical-artifact-files.js";
-import {
-  HistoricalArtifactManifestSchema,
-  type TaskCase,
-} from "../../src/core/schema.js";
 import { freezeCodexSession } from "../../src/products/packs/codex/sessions.js";
 import { extractCodexHistoricalArtifacts } from "../../src/products/packs/codex/historical-artifacts.js";
 import { prepareHistoricalArtifacts } from "../../src/application/prepare-historical-artifacts.js";
+import { assertSafeLogicalPath } from "../../src/products/shared/historical-artifact-files.js";
 import {
   collectHistoricalDeliverableNames,
+  discoverBaselineOpenableSources,
   historicalFinalSearchRoots,
   lookupBasenameResult,
   indexHistoricalRoots,
@@ -24,6 +14,17 @@ import {
 import { comparisonAttemptMounts } from "../../src/application/comparison-briefing.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import { bundleIdForPath } from "../../src/products/shared/historical-artifact-apply.js";
+import {
+  HistoricalArtifactManifestSchema,
+  type TaskCase,
+} from "../../src/core/schema.js";
+import { Value } from "@sinclair/typebox/value";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import assert from "node:assert/strict";
 import {
   addFilePatch,
   buildDirectApplyPatchRollout,
@@ -152,6 +153,8 @@ test("prepareHistoricalArtifacts derives into attempt without rewriting case", a
   assert.equal(prepared.source, "derived");
   assert.ok(prepared.manifest);
   assert.ok(prepared.manifest.artifacts.some((item) => item.logicalPath === HISTORICAL_ANIMATION_NAME));
+  assert.equal(prepared.finalsRoot, join(attemptRoot, "finals"));
+  assert.ok(prepared.openableNames.includes(HISTORICAL_ANIMATION_NAME));
   const derivedFile = join(
     attemptRoot,
     "derived-history",
@@ -159,11 +162,57 @@ test("prepareHistoricalArtifacts derives into attempt without rewriting case", a
     bundleIdForPath(HISTORICAL_ANIMATION_NAME),
     HISTORICAL_ANIMATION_NAME,
   );
+  const finalsFile = join(attemptRoot, "finals", HISTORICAL_ANIMATION_NAME);
   assert.equal(
     normalizeNewlines((await readFile(derivedFile)).toString("utf8")),
     normalizeNewlines(html),
   );
+  assert.equal(
+    normalizeNewlines((await readFile(finalsFile)).toString("utf8")),
+    normalizeNewlines(html),
+  );
   await assert.rejects(readFile(join(caseDir, "baseline-artifacts", "manifest.json")));
+});
+
+test("prepare openableNames unlock discovery for empty-refs old cases", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-b2-openable-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const { sourcePath } = await writeDirectRollout(root, "b2-openable-session");
+  const frozen = await freezeCodexSession({
+    sourcePath,
+    casesRoot: join(root, "cases"),
+    now: timestamp,
+    privacy: { allowModelText: true, allowBinary: false, redactions: [] },
+  });
+  assert.equal(collectHistoricalDeliverableNames(frozen.taskCase, "openable-baseline").size, 0);
+  const attemptRoot = join(root, "comparison-attempts", "a1");
+  await mkdir(attemptRoot, { recursive: true });
+  const prepared = await prepareHistoricalArtifacts({
+    taskCase: frozen.taskCase,
+    caseDir: join(root, "cases", frozen.taskCase.caseId),
+    attemptRoot,
+    extract: extractCodexHistoricalArtifacts,
+  });
+  assert.ok(prepared.openableNames.length > 0);
+  const sources = await discoverBaselineOpenableSources({
+    attemptRoot,
+    experimentRoot: join(root, "experiment"),
+    runId: "run-1",
+    dataDir: root,
+    caseId: frozen.taskCase.caseId,
+    baselineArtifactNames: prepared.openableNames,
+    finalsRoot: prepared.finalsRoot,
+  });
+  assert.ok(sources.length >= 1);
+  const baseline = sources[0];
+  assert.ok(baseline);
+  assert.equal(baseline.inspectPath, `finals/${HISTORICAL_ANIMATION_NAME}`);
+  assert.match(await readFile(baseline.absolutePath, "utf8"), /Synthetic SVG bounce/);
+});
+
+test("assertSafeLogicalPath rejects traversal that schema alone may accept", () => {
+  assert.throws(() => assertSafeLogicalPath("../etc/passwd"));
+  assert.throws(() => assertSafeLogicalPath("/tmp/x.html"));
 });
 
 test("env baselines alone do not resolve as historical finals", async (t) => {

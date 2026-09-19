@@ -96,6 +96,8 @@ export async function writeComparisonBriefing(input: {
   workspaceRoot: string;
   dataDir?: string;
   finalsRoot?: string;
+  /** Extra openable-baseline names from prepare manifest (old-case derive). */
+  openableBaselineNames?: readonly string[];
   taskCase: TaskCase;
   record: RunRecord;
   context: ComparisonContext | ComparisonFactsContext;
@@ -191,7 +193,10 @@ async function comparisonMediaBundle(
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
     caseId: input.taskCase.caseId,
-    baselineArtifactNames: [...collectHistoricalDeliverableNames(input.taskCase, "openable-baseline")],
+    baselineArtifactNames: [
+      ...collectHistoricalDeliverableNames(input.taskCase, "openable-baseline"),
+      ...(input.openableBaselineNames ?? []),
+    ],
   });
   const augmented = await augmentComparisonOpenableMedia({
     attemptRoot: input.attemptRoot,

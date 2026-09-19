@@ -10,9 +10,9 @@ Comparison 与 TUI 需要同一份可打开的历史终稿来源。旧 Case 在 
 
 - 新 Case：在隐私脱敏之后、分配 `caseId` 之后，通过 Pack 可选同步 `extractHistoricalArtifacts`（`HistoricalArtifactExtractInput` → `HistoricalArtifactExtractResult`，见 B1）提取规范化产物；`freezeCase` 只接收类型化回调，shared freeze 不 import registry、不按 `productId` 分支。
 - 落盘：`baseline-artifacts/manifest.json` + `baseline-artifacts/files/<bundleId>/<logicalPath>`；`CaseArtifactRef.caseId` 必须是真实 caseId。manifest 的 `sourceHash` 是 extractor 对 transcript/events 的摘要（`sourceHashForExtract`），不是 case `provenance.sourceHash`。
-- 旧 Case：新 comparison attempt 在简报前调用 `prepareHistoricalArtifacts`；有合法 case manifest 且文件核 hash 通过则复用；否则从**已冻结** transcript/events 提取到 attempt `derived-history/`，不写回旧 Case，不重新 import 实时会话。
-- 发现：manifest 的 artifactId / logicalPath / bundle 优先；同名 basename 多候选视为歧义，不挑第一个。`environment/baselines` 仅作任务起点，不得自动当作历史终稿。
-- 挂载：保留 `history/` 为历史过程；新增只读 `finals/`（及 `REPRISE_FINALS_ROOT`）指向本 attempt 的冻结/派生产物根。封存 openable 写到 `attemptRoot/finals/`，工具路径为 `finals/...`。
+- 旧 Case：新 comparison attempt 在简报前调用 `prepareHistoricalArtifacts`；有合法 case manifest 且文件核 hash 通过则复用；否则从**已冻结** transcript/events 提取到 attempt `derived-history/`，不写回旧 Case，不重新 import 实时会话。无论来源，prepare 都把工具可读字节物化到**同一** attempt 树 `finals/manifest.json` + `finals/<logicalPath>`；挂载、`REPRISE_FINALS_ROOT`、seal 与 `finals/...` inspect 路径都指向该树。
+- 发现：manifest 的 artifactId / logicalPath / bundle 优先；同名 basename 多候选视为歧义，不挑第一个。`environment/baselines` 仅作任务起点，不得自动当作历史终稿。old-case 空 refs 时，prepare 返回的 openableNames（来自 manifest）喂给 openable-baseline discovery。
+- 挂载：保留 `history/` 为历史过程；新增只读 `finals/`（及 `REPRISE_FINALS_ROOT`）始终指向 `attemptRoot/finals`。
 
 ## 备选方案
 

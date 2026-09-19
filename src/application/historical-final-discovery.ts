@@ -7,6 +7,8 @@ import type { ComparisonLinkRecord, HistoricalArtifactManifest, TaskCase } from 
 import { HistoricalArtifactManifestSchema } from "../core/schema.js";
 import { sha256File } from "../core/identity.js";
 import { mediaTypeForComparisonPath, sniffComparisonImageMediaType } from "./comparison-media.js";
+import { DERIVED_HISTORY_DIR } from "./prepare-historical-artifacts.js";
+import { validateLogicalPath } from "../products/shared/historical-artifact-apply.js";
 import {
   addHistoricalImageBasenames,
   addHistoricalDeliverableBasenames,
@@ -16,7 +18,6 @@ import {
   isImageDeliverableName,
   isOpenableFinalPath,
 } from "./openable-final-path.js";
-import { DERIVED_HISTORY_DIR } from "./prepare-historical-artifacts.js";
 
 export type HistoricalDeliverableKind = "final" | "openable-baseline" | "image";
 
@@ -38,8 +39,6 @@ export type BasenameLookup =
 
 export type HistoricalSourceResolution =
   | { kind: "manifest"; artifactId: string; logicalPath: string; absolutePath: string }
-  | { kind: "basename-legacy"; basename: string; absolutePath: string }
-  | { kind: "ambiguous"; basename: string; candidates: readonly string[] }
   | { kind: "unavailable"; reason: string };
 
 export function collectHistoricalDeliverableNames(taskCase: TaskCase, kind: HistoricalDeliverableKind): Set<string> {
@@ -275,8 +274,25 @@ async function loadManifestFromRoot(root: string): Promise<HistoricalArtifactMan
     if (!Value.Check(HistoricalArtifactManifestSchema, raw)) return undefined;
     return raw;
   } catch {
+    // Missing/unreadable/invalid JSON at this root is a normal miss; try the next root.
     return undefined;
   }
+}
+
+async function absolutePathForManifestArtifact(
+  root: string,
+  artifact: { bundleId: string; logicalPath: string },
+): Promise<string | undefined> {
+  const pathCheck = validateLogicalPath(artifact.logicalPath);
+  if (!pathCheck.ok) return undefined;
+  const logical = pathCheck.path;
+  const segments = logical.split("/");
+  // Attempt-local finals use flat logicalPath; case/derived keep files/<bundleId>/…
+  const flat = join(root, ...segments);
+  if (await fileExists(flat)) return flat;
+  const nested = join(root, "files", artifact.bundleId, ...segments);
+  if (await fileExists(nested)) return nested;
+  return undefined;
 }
 
 export async function resolveFromHistoricalManifest(input: {
@@ -293,7 +309,9 @@ export async function resolveFromHistoricalManifest(input: {
     if (!manifest) continue;
     for (const artifact of manifest.artifacts) {
       if (artifact.finality !== "final") continue;
-      const logical = artifact.logicalPath.replace(/\\/g, "/");
+      const pathCheck = validateLogicalPath(artifact.logicalPath);
+      if (!pathCheck.ok) continue;
+      const logical = pathCheck.path;
       const base = basename(logical);
       if (
         artifact.artifactId !== input.nameOrLogicalPath
@@ -302,8 +320,8 @@ export async function resolveFromHistoricalManifest(input: {
       ) {
         continue;
       }
-      const absolutePath = join(root, "files", artifact.bundleId, ...logical.split("/"));
-      if (!(await fileExists(absolutePath))) {
+      const absolutePath = await absolutePathForManifestArtifact(root, artifact);
+      if (!absolutePath) {
         return { kind: "unavailable", reason: `manifest entry missing on disk: ${logical}` };
       }
       return {
@@ -410,7 +428,7 @@ export async function resolveHistoricalFinalPath(input: {
     if (fromManifest?.kind === "manifest" && isHistoricalVisualPath(fromManifest.absolutePath)) {
       return fromManifest.absolutePath;
     }
-    if (fromManifest?.kind === "unavailable" || fromManifest?.kind === "ambiguous") continue;
+    if (fromManifest?.kind === "unavailable") continue;
   }
 
   const roots = historicalFinalSearchRoots({
@@ -461,7 +479,7 @@ export async function discoverBaselineOpenableSources(input: {
       if (seen.has(fromManifest.absolutePath)) continue;
       seen.add(fromManifest.absolutePath);
       baselineSources.push({
-        inspectPath: sealedInspectPath(fromManifest.absolutePath, basename(fromManifest.logicalPath)),
+        inspectPath: sealedInspectPath(fromManifest.absolutePath, fromManifest.logicalPath),
         absolutePath: fromManifest.absolutePath,
       });
       continue;
@@ -488,9 +506,9 @@ export async function discoverBaselineOpenableSources(input: {
   return baselineSources;
 }
 
-export function sealedInspectPath(absolutePath: string, fallbackBasename?: string): string {
-  const name = basename(absolutePath) || fallbackBasename || "artifact";
-  return `finals/${name}`;
+export function sealedInspectPath(absolutePath: string, logicalOrBasename?: string): string {
+  const relative = (logicalOrBasename ?? basename(absolutePath)).replace(/\\/g, "/").replace(/^\/+/, "");
+  return `finals/${relative || "artifact"}`;
 }
 
 export async function sealBaselineOpenablePath(sealedRoot: string, absolutePath: string): Promise<string> {
