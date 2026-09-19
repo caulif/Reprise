@@ -1,5 +1,8 @@
 # 决策：内置 Pack 共享进程与 Session 文件宿主
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 延续 [候选链模块目录](./2026-09-10-candidate-chain-module-layout.md)。

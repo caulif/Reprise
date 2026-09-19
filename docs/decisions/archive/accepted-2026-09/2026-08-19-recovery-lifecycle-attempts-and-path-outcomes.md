@@ -1,5 +1,8 @@
 # 2026-08-19 Recovery lifecycle attempts and path outcomes
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。 本文相关条款已由[后续决定](../../accepted/2026-09-16-recovery-linear-lifecycle-and-blocked.md)替代，未涉及的内容仍需按当前事实核对。
+
+
 ## Context
 
 Recovery already preserved isolated candidates, controlled-write journals, and Provider verification, but its persisted review artifacts did not distinguish task recovery effects from delivery files such as `recovery.md`. Operation failures also lacked one uniform, schema-checked lifecycle record.

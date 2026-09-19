@@ -1,5 +1,8 @@
 # 决策：开源协作入口放在 docs/ 与 .github/
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 ## 问题
@@ -10,7 +13,7 @@
 
 协作与治理 Markdown 放在 `docs/`，使用 GitHub 能发现的文件名：`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`、`SUPPORT.md`、`GOVERNANCE.md`、`CHANGELOG.md`。这些名字是 kebab-case 规则的显式例外，由 `scripts/verify-docs.mjs` 登记。根 `README.md` 只做入口，不复制流程正文。
 
-Issue / PR 模板和 `CODEOWNERS` 放在 `.github/`。任务 brief 模板放在 [`docs/plan/task-brief-template.md`](../../../plan/task-brief-template.md)。`npm run verify:docs` 检查这些路径存在，并检查文档或模板含有规定标记；缺少任一路径或必填标记时门禁失败。
+Issue / PR 模板和 `CODEOWNERS` 放在 `.github/`。任务 brief 模板放在 [`docs/plan/task-brief-template.md`](../../../CONTRIBUTING.md)。`npm run verify:docs` 检查这些路径存在，并检查文档或模板含有规定标记；缺少任一路径或必填标记时门禁失败。
 
 当前唯一 CODEOWNER 是 `@caulif`。不引入审批机器人或委员会。
 

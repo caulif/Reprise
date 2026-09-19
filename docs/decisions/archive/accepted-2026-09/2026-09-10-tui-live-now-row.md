@@ -1,5 +1,8 @@
 # 决策：此刻行与已结算画布
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 范围：候选 live 仍按本文。运行页树、无 overlay 与滚轮见[方案 A 树](./2026-09-10-tui-option-a-tree.md)。内部 Agent 短句见[内部短句主列](./2026-09-10-internal-agent-narrate-spine.md)。

@@ -16,10 +16,10 @@
 
 ## 凭据与运行边界
 
-凭据存放与禁止输出范围以[产品定义](./product/overview.md#13-凭据)为准；不要向维护者发送登录文件或 API key。若凭据泄露，先在服务方撤销或轮换，再提交脱敏报告。
+凭据存放与禁止输出范围以[产品定义](usage.md#边界)为准；不要向维护者发送登录文件或 API key。若凭据泄露，先在服务方撤销或轮换，再提交脱敏报告。
 
-隔离工作区不保证隐私清洗，也不能回滚外部服务副作用。默认开发验证不调用计费 Runtime；真实 smoke 必须显式 opt-in 并遵守[准入程序](./codex-smoke-gate.md)。
+隔离工作区不保证隐私清洗，也不能回滚外部服务副作用。默认开发验证不调用计费 Runtime；真实 smoke 必须显式 opt-in 并遵守[准入程序](development.md)。
 
 ## 修复与披露
 
-修复附带能够捕获该缺陷的回归证据；门禁改动还须满足[反向用例要求](./engineering-gates.md#门禁必须能失败)。公开披露通过 GitHub Security Advisory 协调，用户可见说明写入 [CHANGELOG](./CHANGELOG.md)，不得夹带秘密或私有会话。普通使用问题见[支持说明](./SUPPORT.md)。
+修复附带能够捕获该缺陷的回归证据；门禁改动还须满足[反向用例要求](development.md#工程门禁)。公开披露通过 GitHub Security Advisory 协调，用户可见说明写入 [CHANGELOG](./CHANGELOG.md)，不得夹带秘密或私有会话。普通使用问题见[支持说明](../README.md)。

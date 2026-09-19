@@ -1,5 +1,8 @@
 # 决策：阅读锚点、搜索与终端恢复
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 目标批次见 [M5.5](../../../plan/archive/reprise-refactoring-execution.md#m55-阅读搜索与终端交互)。

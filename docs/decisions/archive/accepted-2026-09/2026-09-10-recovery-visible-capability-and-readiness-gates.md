@@ -1,5 +1,8 @@
 # 决策：Recovery 工具面、工作集证据与任务继续门
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-10
 
@@ -29,7 +32,7 @@ Provider 校验通过且 Agent 信封为 `ready` 之后，Host 必须测量任�
 
 ## 影响
 
-[Environment §7.1](../../../architecture/environment.md#71-内部工作空间与实际边界) 的工具注册、工作集字段和 baseline 发布条件。`candidateStartBlocked` 读取 `taskReadinessStatus`。空路径仍可开跑。
+[Environment §7.1](../../../architecture/recovery.md#隔离边界) 的工具注册、工作集字段和 baseline 发布条件。`candidateStartBlocked` 读取 `taskReadinessStatus`。空路径仍可开跑。
 
 ## 验证
 

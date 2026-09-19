@@ -1,5 +1,8 @@
 # 决策：Controller 读取不设工作区 containment，并注册 shell_exec
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-12
 
@@ -27,7 +30,7 @@ Controller 读取与写入分成两条解析路径。`ls`、`read`、`grep`、`f
 
 ## 影响
 
-[Controller 设计](../../../architecture/controller.md)、[实验条件](../../../architecture/controller.md#4-实验条件)、[环境 §7.1](../../../architecture/environment.md#71-内部工作空间与实际边界)、[总览安全边界](../../../architecture/overview.md#14-安全边界)、[validation Capability](../../../architecture/overview.md#附录最小验证边界)。
+[Controller 设计](../../../architecture/execution.md)、[实验条件](../../../architecture/execution.md#controller-时机与权限)、[环境 §7.1](../../../architecture/recovery.md#隔离边界)、[总览安全边界](../../../architecture/overview.md#不变量)、[validation Capability](../../../architecture/overview.md#不变量)。
 
 ## 验证
 

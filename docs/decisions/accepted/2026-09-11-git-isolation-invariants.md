@@ -34,7 +34,7 @@
 
 ## 影响
 
-[环境](../../architecture/environment.md)、[Comparison](../../architecture/comparison.md)、[Git sink catalog](../archive/accepted-2026-09/2026-09-11-git-sink-catalog.md)（发现、改写、保留窗口仍有效）。
+[环境](../../architecture/recovery.md)、[Comparison](../../architecture/evidence-and-comparison.md)、[Git sink catalog](../archive/accepted-2026-09/2026-09-11-git-sink-catalog.md)（发现、改写、保留窗口仍有效）。
 
 ## 验证
 

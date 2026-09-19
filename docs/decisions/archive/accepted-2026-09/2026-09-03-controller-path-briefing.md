@@ -1,5 +1,8 @@
 # 决策：Controller 用 briefing 目录与 INDEX.md，不用 JSON 内联历史正文
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-03
 
@@ -27,7 +30,7 @@
 
 ## 影响
 
-[Controller 设计](../../../architecture/controller.md)、[实验条件](../../../architecture/controller.md#4-实验条件) §5–6。
+[Controller 设计](../../../architecture/execution.md)、[实验条件](../../../architecture/execution.md#controller-时机与权限) §5–6。
 
 ## 验证
 

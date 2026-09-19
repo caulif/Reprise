@@ -1,8 +1,8 @@
 # Reprise 架构重构规划
 
-> **历史归档：** 本文仅供追溯与 ADR 入站锚点；当前规范见[架构总览](../../architecture/overview.md)，开放验收见 [MASTER](../../progress/MASTER.md) 与 plan/ 白名单。
+> **历史归档：** 本文仅供追溯与 ADR 入站锚点；当前规范见[架构总览](../../architecture/overview.md)，开放验收见 [MASTER](../../roadmap.md) 与 plan/ 白名单。
 
-本文曾记录本轮重构的目标验收语义，不作为现行权威。选择理由见[Session harness workflow](../../decisions/archive/accepted-2026-09/2026-09-07-reprise-session-harness-workflow.md)。当时仍缺的真终端与 Runtime 证据见[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)（开放项以 MASTER 为准）。
+本文曾记录本轮重构的目标验收语义，不作为现行权威。选择理由见[Session harness workflow](../../decisions/archive/accepted-2026-09/2026-09-07-reprise-session-harness-workflow.md)。当时仍缺的真终端与 Runtime 证据见[平台证据矩阵](../../roadmap.md)（开放项以 MASTER 为准）。
 
 ## 1. 产品边界
 
@@ -297,14 +297,14 @@ Codex、Claude 及外部插件都通过同一套公共契约注册。核心程�
 | A17 | 冻结后移走历史来源仍可从场景执行；修改候选工作目录不改变封存对照输入；移除 Pack 后仍可读旧实验与已保存报告 |
 | A18 | 插件共用契约检查 admission、settlement、错误、取消、清理和遮蔽；声明与实际能力分别记录，三平台按实测支持组合准入 |
 
-实际 Controller 行为还需固定历史样例的人工语义评估，机械检查只证明调用与边界，不声称证明“像原用户”。真实 Runtime 验证依照[smoke 准入](../../codex-smoke-gate.md)，不在默认门禁中产生外部费用。新增或修改工程门禁同批附反向用例，不降低覆盖率阈值。
+实际 Controller 行为还需固定历史样例的人工语义评估，机械检查只证明调用与边界，不声称证明“像原用户”。真实 Runtime 验证依照[smoke 准入](../../development.md)，不在默认门禁中产生外部费用。新增或修改工程门禁同批附反向用例，不降低覆盖率阈值。
 
 ## 11. 参考依据
 
 - [Pi 依赖基线](../../../package.json)、[现有 Pi 封装](../../../src/infrastructure/agent/model-caller.ts)：复用范围以安装版本实现及可运行检查为准。
 - [Codex App Server](https://developers.openai.com/codex/app-server/)：Thread / Turn / Item 的归属，以及读取历史与恢复执行的分离。
 - [Codex 平台隔离](https://learn.chatgpt.com/docs/agent-approvals-security)与[Windows sandbox](https://developers.openai.com/codex/windows/)：统一权限目标与平台原生实现分离。
-- [现有持久化规范](../../architecture/persistence-and-crash-consistency.md)、[运行结果](../../architecture/run-outcome.md)、[技术选型](../../architecture/overview.md#附录技术选型与实现基线)：迁移需要守住的事实与当前实现边界。
+- [现有持久化规范](../../architecture/evidence-and-comparison.md)、[运行结果](../../architecture/execution.md)、[技术选型](../../architecture/overview.md#pack-边界)：迁移需要守住的事实与当前实现边界。
 - [无头 CLI 协议](../../decisions/accepted/2026-09-08-cli-query-config-protocol.md)：共同应用操作、机器输出、稳定身份及每实验单写者。
-- [产品兼容性](../../architecture/platform-and-packs.md)、[现有 ProductPack 契约](../../../src/products/contract.ts)：来源与候选身份分离、规范化 Runtime 事实、旧记录独立可读。
+- [产品兼容性](../../architecture/overview.md)、[现有 ProductPack 契约](../../../src/products/contract.ts)：来源与候选身份分离、规范化 Runtime 事实、旧记录独立可读。
 - [封存与重复运行](../../decisions/archive/accepted-2026-09/2026-09-08-scene-seal-and-repeat-runs.md)：冻结后不回源猜起点、封存结果、对照输入与场景身份分离。

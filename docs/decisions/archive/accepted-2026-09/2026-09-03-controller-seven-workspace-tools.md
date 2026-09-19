@@ -1,5 +1,8 @@
 # 决策：Controller 只注册工作区七工具，不注册 read_observation
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-03
 
@@ -22,7 +25,7 @@
 
 ## 影响
 
-[八工具决策](./2026-08-31-internal-agent-eight-tools.md) 对 Controller 不再要求第八个名字。[路径 briefing](./2026-09-03-controller-path-briefing.md)。[实验条件](../../../architecture/controller.md#4-实验条件) §4。
+[八工具决策](./2026-08-31-internal-agent-eight-tools.md) 对 Controller 不再要求第八个名字。[路径 briefing](./2026-09-03-controller-path-briefing.md)。[实验条件](../../../architecture/execution.md#controller-时机与权限) §4。
 
 ## 验证
 

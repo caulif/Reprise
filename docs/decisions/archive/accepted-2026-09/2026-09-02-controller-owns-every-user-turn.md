@@ -1,5 +1,8 @@
 # 决策：Controller 写出每一条用户输入
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 ## 问题
@@ -24,7 +27,7 @@
 
 ## 影响
 
-[Controller 设计](../../../architecture/controller.md) §4.1 与 §5。[架构总览](../../../architecture/overview.md) 的候选启动输入。[Controller 实验条件](../../../architecture/controller.md#4-实验条件)。
+[Controller 设计](../../../architecture/execution.md) §4.1 与 §5。[架构总览](../../../architecture/overview.md) 的候选启动输入。[Controller 实验条件](../../../architecture/execution.md#controller-时机与权限)。
 
 ## 验证
 

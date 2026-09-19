@@ -1,11 +1,14 @@
 # 决策：Recovery ready 必须交出任务前 HEAD
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-16
 
 ## 问题
 
-N6 的 Git sink `initial` 等于历史会话自己的 SEO 提交。Recovery 把当时活 cwd 的 HEAD 与任务之后的脏文件交给候选，信封仍可 `ready`。[最小 Host](../../../plan/recovery-agent-minimum-host.md) 禁止 Host 预先 checkout 并宣布恢复完成，但不能把「必须交出 `initialInput` 之前的任务条件」也一并放弃。
+N6 的 Git sink `initial` 等于历史会话自己的 SEO 提交。Recovery 把当时活 cwd 的 HEAD 与任务之后的脏文件交给候选，信封仍可 `ready`。[最小 Host](../../../roadmap.md) 禁止 Host 预先 checkout 并宣布恢复完成，但不能把「必须交出 `initialInput` 之前的任务条件」也一并放弃。
 
 ## 决定
 
@@ -30,7 +33,7 @@ Agent 信封仍只有 `ready` / `blocked`。不重新引入 `partial` 作为放�
 
 ## 影响
 
-替代 [最小 Host](../../../plan/recovery-agent-minimum-host.md) 与 [单工作副本循环](../../accepted/2026-09-09-recovery-single-workspace-agent-loop.md) 中「Host 绝不预先 checkout / 不否决 ready」在**任务前 HEAD 与任务后脏树**上的范围：Host 仍不替 Agent 选内容、不把 checkout 当作恢复结论，但可以拒绝「HEAD 已含历史成果」的 `ready`。source tripwire、报告、预算等既有机械门不变。Codex 冻结探测与 Comparison HTML 不在本决定范围。
+替代 [最小 Host](../../../roadmap.md) 与 [单工作副本循环](../../accepted/2026-09-09-recovery-single-workspace-agent-loop.md) 中「Host 绝不预先 checkout / 不否决 ready」在**任务前 HEAD 与任务后脏树**上的范围：Host 仍不替 Agent 选内容、不把 checkout 当作恢复结论，但可以拒绝「HEAD 已含历史成果」的 `ready`。source tripwire、报告、预算等既有机械门不变。Codex 冻结探测与 Comparison HTML 不在本决定范围。
 
 ## 验证
 

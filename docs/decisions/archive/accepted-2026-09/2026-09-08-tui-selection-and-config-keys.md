@@ -1,5 +1,8 @@
 # 决策：TUI 选择与配置键盘流程
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 目标批次见 [M5.3](../../../plan/archive/reprise-refactoring-execution.md#m53-tui-选择与配置流程)。

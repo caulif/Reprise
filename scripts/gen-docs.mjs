@@ -32,7 +32,7 @@ function table(rows) {
   return [
     '| 字段 | 类型 | 可选 |',
     '|---|---|---|',
-    ...rows.map((row) => `| \`${row.name}\` | ${row.type} | ${row.optional ? '是' : '否'} |`),
+    ...rows.map((row) => `| \`${row.name}\` | ${row.type.replace(/\|/g, '\\|')} | ${row.optional ? '是' : '否'} |`),
     '',
   ].join('\n');
 }
@@ -75,6 +75,10 @@ function formatRunPolicy(policy) {
 }
 
 function selfTest() {
+  const unionTable = table(fieldsOf({ properties: { state: { anyOf: [{ const: 'a' }, { const: 'b' }] } } }));
+  if (!unionTable.includes('"a" \\| "b"')) {
+    throw new Error('gen-docs self-test: union pipes must not create extra Markdown columns');
+  }
   const slug = 'event-catalog';
   const original = `${BEGIN(slug)}\nGARBAGE\n${END(slug)}`;
   const next = replaceRegion(original, slug, '| field |');
@@ -110,8 +114,8 @@ async function generate() {
     table(fieldsOf(schema.RunRecordSchema)),
   ].join('\n');
   const files = [
-    ['docs/architecture/persistence-and-crash-consistency.md', 'event-catalog', eventBody],
-    ['docs/architecture/run-outcome.md', 'record-fields', recordBody],
+    ['docs/architecture/evidence-and-comparison.md', 'event-catalog', eventBody],
+    ['docs/architecture/execution.md', 'record-fields', recordBody],
     ['docs/architecture/overview.md', 'default-run-policy', formatRunPolicy(DEFAULT_RUN_POLICY)],
   ];
   const written = [];

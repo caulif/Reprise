@@ -1,6 +1,6 @@
 # Reprise TUI 阅读与交互规划
 
-> **历史归档：** 本文仅供追溯；现行操作见 [TUI 产品规范](../../product/tui.md)，开放验收见 [MASTER](../../progress/MASTER.md) 与[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)。
+> **历史归档：** 本文仅供追溯；现行操作见 [TUI 产品规范](../../usage.md)，开放验收见 [MASTER](../../roadmap.md) 与[平台证据矩阵](../../roadmap.md)。
 
 本文曾记录与[整体重构规划](./reprise-architecture-redesign.md)配套的目标交互设计，不覆盖当前产品规范。阅读与折叠合同见[公开活动时间线](../../decisions/archive/accepted-2026-09/2026-09-08-public-activity-timeline.md)。
 
@@ -44,7 +44,7 @@
 
 运行中只查看与取消，无聊天输入框，无原生产品第二窗口。Ctrl+C 请求取消，展示取消中，只有所有者确认终态才显示已取消；另一终端 cancel 的结果经同一记录显示。强制退出、中断、不可达、清理失败分别说明，不视为成功或自动续跑。浏览记录不是关闭执行所有者；只读观察窗口退出不得取消其他进程的实验。所有业务操作复用 CLI 的应用服务，TUI 不持有实验状态机。
 
-Product Pack 将公开消息、工具、结果、文件变化和状态规范化；宿主统一布局与措辞，不嵌入产品原生 ANSI 画面。保留来源、顺序和稳定活动身份以支持流式更新与去重。正常产品扩展不要求新增 TUI 分支。协议决策沿用[Session harness workflow](../../decisions/archive/accepted-2026-09/2026-09-07-reprise-session-harness-workflow.md)。真终端范围见[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)。
+Product Pack 将公开消息、工具、结果、文件变化和状态规范化；宿主统一布局与措辞，不嵌入产品原生 ANSI 画面。保留来源、顺序和稳定活动身份以支持流式更新与去重。正常产品扩展不要求新增 TUI 分支。协议决策沿用[Session harness workflow](../../decisions/archive/accepted-2026-09/2026-09-07-reprise-session-harness-workflow.md)。真终端范围见[平台证据矩阵](../../roadmap.md)。
 
 ## 视觉与验收
 

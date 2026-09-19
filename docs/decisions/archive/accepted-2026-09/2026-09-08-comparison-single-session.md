@@ -1,5 +1,8 @@
 # 决策：Comparison 每次 attempt 一个连续 Session
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 目标批次见 [M4](../../../plan/archive/reprise-refactoring-execution.md#6-m4comparison-单-session-与独立执行)。取代 [双 session attempt](../superseded/2026-09-05-comparison-two-phase-attempts-and-pi-media.md)。Pi 原生媒体块、attempt 目录、原子发布与只读封存挂载仍有效。

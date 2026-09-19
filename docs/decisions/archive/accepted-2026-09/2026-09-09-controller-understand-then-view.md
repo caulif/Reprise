@@ -1,5 +1,8 @@
 # 决策：Controller 连续 Session 先理解再按视图决策
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 取代 [首次 Invocation 同时完成理解与 opening](../superseded/2026-09-08-controller-opening-single-session.md) 中「同一请求既调查又返回 send」的编排。无账本、实验入口只 `decide`、每 run 一个 Session、Host 不因未读文件拒绝 `done` 仍有效。独立 Understanding JSON 与完成护栏仍见已冻结记录。

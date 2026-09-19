@@ -1,5 +1,8 @@
 # 决策：角色副作用所有权与路径包含
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。 本文相关条款已由[后续决定](2026-09-12-controller-unrestricted-read-and-shell.md)替代，未涉及的内容仍需按当前事实核对。
+
+
 状态：accepted
 
 目标批次见 [M2.1](../../../plan/archive/reprise-refactoring-execution.md#m21-收拢业务所有权)。

@@ -1,5 +1,8 @@
 # 决策：运行画布 gutter 与层次
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 树内容仍以[方案 A](./2026-09-10-tui-option-a-tree.md)为准。
@@ -26,7 +29,7 @@
 
 ## 影响
 
-`theme.ts` 色槽、`scrollback.ts` 树行与列尾、`pages/result.ts` 横幅、`widgets.ts` kv。真终端浅色底仍按[平台矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)。
+`theme.ts` 色槽、`scrollback.ts` 树行与列尾、`pages/result.ts` 横幅、`widgets.ts` kv。真终端浅色底仍按[平台矩阵](../../../roadmap.md)。
 
 ## 验证
 

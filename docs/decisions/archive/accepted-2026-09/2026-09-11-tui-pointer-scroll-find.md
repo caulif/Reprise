@@ -1,5 +1,8 @@
 # 决策：指针命中打开产物、视口滚动与查找范围
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 延续[方案 A 树](./2026-09-10-tui-option-a-tree.md)与[阅读锚点](./2026-09-08-tui-reading-search-terminal.md)。
@@ -25,7 +28,7 @@
 
 ## 影响
 
-`page-input.ts` SGR、`pointer-dispatch.ts`、`scrollback.ts` 视口、`pages/result.ts` 命中、`docs/product/tui.md` 页脚。真终端仍按[平台矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)。
+`page-input.ts` SGR、`pointer-dispatch.ts`、`scrollback.ts` 视口、`pages/result.ts` 命中、`docs/product/tui.md` 页脚。真终端仍按[平台矩阵](../../../roadmap.md)。
 
 ## 验证
 

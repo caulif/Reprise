@@ -1,5 +1,8 @@
 # Reprise 设计决策记录
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：ADR (Architecture Decision Record) v1.0
 日期：2026-08-07
 

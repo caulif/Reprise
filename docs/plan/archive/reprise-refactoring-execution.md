@@ -1,6 +1,6 @@
 # Reprise 重构实施计划（历史索引）
 
-> **历史归档：** 本文仅供 ADR 批次锚点；当前规范见[架构总览](../../architecture/overview.md)与[产品定义](../../product/overview.md)，开放验收见 [MASTER](../../progress/MASTER.md)。
+> **历史归档：** 本文仅供 ADR 批次锚点；当前规范见[架构总览](../../architecture/overview.md)与[产品定义](../../usage.md)，开放验收见 [MASTER](../../roadmap.md)。
 
 M1.1–M7 实施步骤已于 2026-09-08 关闭。本文仅供既有 ADR 的批次定位，**不是**待办清单，**不要**重跑 M1.1–M7 施工步骤。同期目标语义见[架构目标](./reprise-architecture-redesign.md)、[TUI 目标](./reprise-tui-design.md)与[迁移边界](./documentation-reconciliation-for-session-harness-workflow.md)。M7 收口见[M7 收口决策](../../decisions/archive/accepted-2026-09/2026-09-08-m7-delivery-and-acceptance-gaps.md)。
 
@@ -116,4 +116,4 @@ M1.1–M7 实施步骤已于 2026-09-08 关闭。本文仅供既有 ADR 的批�
 
 ## 9. M7：旧实现删除、规范生效与交付
 
-已关闭（2026-09-08）。仍开放的验收项见[平台证据矩阵](../2026-09-08-platform-evidence-matrix.md)与 [M7 收口](../../decisions/archive/accepted-2026-09/2026-09-08-m7-delivery-and-acceptance-gaps.md)。
+已关闭（2026-09-08）。仍开放的验收项见[平台证据矩阵](../../roadmap.md)与 [M7 收口](../../decisions/archive/accepted-2026-09/2026-09-08-m7-delivery-and-acceptance-gaps.md)。

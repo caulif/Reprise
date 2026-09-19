@@ -6,34 +6,27 @@ Reprise 是本机优先的 Agent 任务重放与对照工具：选择历史会�
 
 ## 从源码开始
 
-**以源码构建为准。** 用 Git 检出仓库后，在仓库根目录执行以下命令。需要 Node.js `>=22.19.0` 和 npm，版本要求以 [package.json](./package.json) 为准；此步骤不需要模型密钥或产品登录。
-
-包名是 scoped `@caulif/reprise`（因 npmjs 上已有无关的裸名包 `reprise`）。**当前尚未发布到 npm**；请从源码安装与运行，**不要**执行 `npm i reprise` / `npm install reprise`（会装到别人的包）。发布后安装示例为 `npm i @caulif/reprise`，CLI 命令名仍为 `reprise`。
+需要 Git、Node.js 和 npm，版本要求见 [package.json](./package.json)。包名为 `@caulif/reprise`，CLI 名为 `reprise`。当前以源码构建为准；npm 上的裸名 `reprise` 是其他项目。
 
 ```text
 npm ci
 npm run build
 node dist/src/cli/main.js --help
-```
-
-构建和查看帮助不调用模型。准备体验交互界面时，在真实终端运行：
-
-```text
 node dist/src/cli/main.js
 ```
 
-无子命令打开 TUI；源码检出无需全局安装 CLI；需要时用源码构建产物或（发布后）`npm i -g @caulif/reprise`。执行真实任务前，需自行安装并登录所选产品（内置 Codex、Claude Code），通过 `/config` 配置 Harness 内部模型，再通过 `/intake` 选择来源产品、项目与历史会话。恢复环境、执行候选和生成对照都可能调用模型并产生费用；操作与确认边界见 [TUI 使用说明](./docs/product/tui.md)。
+构建与查看帮助不调用模型。最后一条命令在真实终端打开 TUI。先安装并登录所选目标产品（内置 Codex、Claude Code），用 `/config` 配置内部模型，再用 `/intake` 选择历史会话。恢复、候选运行、连接测试和对照都可能计费。
 
-默认数据目录是 `.reprise`，可用 `--data-dir` 或 `REPRISE_DATA_DIR` 指定。无头命令以 `--help` 和 [CLI 源码](./src/cli/main.ts) 为准；产品主路径与非目标见[产品定义](./docs/product/overview.md)。
+默认数据目录为 `.reprise`，可用 `--data-dir` 或 `REPRISE_DATA_DIR` 指定。操作、模型与凭据配置见[使用指南](./docs/usage.md)。
 
 ## 使用边界
 
-Windows 11 是唯一经过真实使用验证的平台。上方 CI badge 只表示 [check](./.github/workflows/check.yml) 工作流状态：**CI 绿灯 ≠ 真终端 / 真 Runtime 已在三平台验证**（详见[支持说明](./docs/SUPPORT.md) 开篇「CI … 不证明三平台的真实 Runtime…」）。
+Windows 11 是唯一经过真实使用验证的平台。CI 模拟测试通过不代表其他平台的真实 Runtime、终端和权限行为已验证；开放验证与已知问题见[路线图](./docs/roadmap.md)。
 
-默认开发验证与 CI 不运行真实 Runtime smoke，不产生模型调用费用；真实 smoke 必须通过环境变量显式 opt-in，遵守[准入程序](./docs/codex-smoke-gate.md)。隔离副本不是隐私清洗或外部副作用回滚：实际运行前检查输入、权限与预算。凭据处理见[产品安全边界](./docs/product/overview.md#13-凭据)，漏洞请按[安全政策](./docs/SECURITY.md)私下报告。
+隔离副本不是隐私清洗或外部副作用回滚。实际运行前检查任务材料与权限。默认开发检查不调用计费模型，真实验证需要显式 opt-in，见[开发指南](./docs/development.md#真实调用与费用)。
 
-## 了解与贡献
+## 支持与贡献
 
-从[文档导航](./docs/README.md)的 **30 分钟路径**进入[产品定义](./docs/product/overview.md)、[架构总览](./docs/architecture/overview.md)与[日常开发](./docs/development.md)。`docs/tui-audit/frames/` 等列在导航的「不要读什么」里：它们是 **CI 门禁基线**，不是阅读材料。coding agent 先读 [AGENTS.md](./AGENTS.md)，再读任务直接相关的规范。
+先查[使用指南](./docs/usage.md)与已有 Issues。报告问题请提供提交或版本、Node/OS/终端、最小复现、预期与实际结果、脱敏命令和退出码；优先使用本地 fixture。功能建议说明用户问题和替代方案。项目由单人维护，不承诺响应时限、代付模型费用或产品账号支持。
 
-项目使用 [MIT 许可证](./LICENSE)。参与讨论与贡献请遵守[行为准则](./docs/CODE_OF_CONDUCT.md)；维护与决策方式见[治理说明](./docs/GOVERNANCE.md)。
+漏洞走[私下安全渠道](./docs/SECURITY.md)，不要公开凭据或私有会话。贡献与维护职责见[贡献指南](./docs/CONTRIBUTING.md)，深入实现见[文档导航](./docs/README.md)。Coding agent 先读 [AGENTS.md](./AGENTS.md)。项目使用 [MIT](./LICENSE)，参与者遵守[行为准则](./docs/CODE_OF_CONDUCT.md)。

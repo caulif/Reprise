@@ -1,5 +1,8 @@
 # 决策：Controller 权限快照分层、按 settlement 取视图、确认提示进 view
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。 本文相关条款已由[后续决定](2026-09-12-controller-unrestricted-read-and-shell.md)替代，未涉及的内容仍需按当前事实核对。
+
+
 状态：accepted
 日期：2026-09-09
 
@@ -21,7 +24,7 @@
 
 ## 影响
 
-[Controller 设计](../../../architecture/controller.md)、[实验条件](../../../architecture/controller.md#4-实验条件)。
+[Controller 设计](../../../architecture/execution.md)、[实验条件](../../../architecture/execution.md#controller-时机与权限)。
 
 ## 验证
 

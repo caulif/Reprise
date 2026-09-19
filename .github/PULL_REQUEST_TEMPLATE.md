@@ -4,7 +4,7 @@
 
 ## 范围与时间边界
 
-- Issue 或[任务简报](../docs/plan/task-brief-template.md)：
+- Issue 或[任务简报](../docs/CONTRIBUTING.md)：
 - 无 brief 时，说明为何属于平凡改动：
 - 主要改动与明确不做：
 - [ ] 当前行为修复：已核对相关产品/架构规范，未把目标计划当当前事实。
@@ -49,4 +49,4 @@
 
 - [ ] 合入前，人类已审阅代码、日志与剩余风险，而不是仅看 Agent 总结或截图。
 
-审查所有者及实际权限边界见[治理说明](../docs/GOVERNANCE.md)。
+审查所有者及实际权限边界见[治理说明](../docs/CONTRIBUTING.md)。

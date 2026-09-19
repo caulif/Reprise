@@ -1,5 +1,8 @@
 # 决策：Recovery 准入后的不可变 CandidateLaunchContext
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 延续 [CandidateRun 活动所有权](./2026-09-08-candidate-run-activity-ownership.md)。

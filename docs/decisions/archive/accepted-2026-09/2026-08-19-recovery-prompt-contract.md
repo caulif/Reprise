@@ -1,5 +1,8 @@
 # Recovery Agent 上下文与候选边界提示词契约
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 - 日期：2026-08-19
 - 状态：accepted
 - 范围：Recovery system prompt 的证据层、候选隔离和外部副作用声明

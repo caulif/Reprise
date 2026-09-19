@@ -1,5 +1,8 @@
 # Controller 请求事实与边界
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 ## 决策
 
 每轮 Controller 请求由 Host 生成 requestId，并记录 `controller.requested` 事件。事件只保存去标识化的观察快照、预算、回放事实、本轮 evidence catalog 与输入 digest，不保存完整 Prompt、凭据或模型输出。`controller.observation_read` 记录该 `requestId` 下成功的观察读取及其属于当前 run 的 event refs。`reconstructControllerRequest` 用事件日志（及已保存 artifacts）离线校验 digest，并把该 `requestId` 的观察读取折入 catalog；不重读 live workspace。

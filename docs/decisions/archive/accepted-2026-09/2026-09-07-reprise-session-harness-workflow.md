@@ -1,5 +1,8 @@
 # 决策：以 Session、Reprise harness 和 workflow 收敛重构目标
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 ## 问题
@@ -18,7 +21,7 @@ CLI 与 TUI 共用应用操作并功能对等，完整 run 与 prepare → run -
 
 Product Pack 通过显式配置的本地 JavaScript、TypeScript 编译产物或已安装包启动加载，首版作为可信本地代码。采用版本化窄契约、独立能力声明与公共活动数据。旧实验查看不依赖原插件。对照消费封存快照。
 
-TUI 采用键盘优先的斜杠入口、分层列表选择和本地产物链接。阅读与折叠见[公开活动时间线](./2026-09-08-public-activity-timeline.md)与[TUI 规划](../../../plan/archive/reprise-tui-design.md)。真实终端交互以[平台证据矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)为准。
+TUI 采用键盘优先的斜杠入口、分层列表选择和本地产物链接。阅读与折叠见[公开活动时间线](./2026-09-08-public-activity-timeline.md)与[TUI 规划](../../../plan/archive/reprise-tui-design.md)。真实终端交互以[平台证据矩阵](../../../roadmap.md)为准。
 
 ## 备选方案
 

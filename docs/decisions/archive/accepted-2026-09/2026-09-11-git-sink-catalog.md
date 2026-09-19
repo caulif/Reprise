@@ -1,5 +1,8 @@
 # 决策：Git sink catalog、发现边界与保留窗口
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-11
 
@@ -26,7 +29,7 @@
 
 ## 影响
 
-[环境](../../../architecture/environment.md)、[Comparison](../../../architecture/comparison.md)、[按 settlement 取视图](./2026-09-09-controller-permissions-view-prompt.md)。
+[环境](../../../architecture/recovery.md)、[Comparison](../../../architecture/evidence-and-comparison.md)、[按 settlement 取视图](./2026-09-09-controller-permissions-view-prompt.md)。
 
 未知且未记录过的 GitHub URL 仍可能指向真实远端。
 
