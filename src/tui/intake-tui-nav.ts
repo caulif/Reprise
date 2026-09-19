@@ -14,6 +14,7 @@ import { mouseReportingSequence } from "./terminal-guard.js";
 import { createTheme } from "./theme.js";
 import { filterTraceForSurface, type TimelineEntry } from "./timeline.js";
 import { collapseEndedThinkFolds } from "./fold-process.js";
+import { expandedFoldsKey } from "./timeline-revision.js";
 import { type WorkbenchView } from "./workbench.js";
 type Page = import("./workbench.js").WorkbenchView["page"];
 
@@ -54,27 +55,22 @@ export function IntakeTui_scheduleTimelineRender(this: IntakeTui): void {
 
 export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEntry[] {
     const filterIndex = this.timelineFilterIndex;
-    const timelineLength = this.timeline.length;
-    const lastEntry = this.timeline.at(-1);
-    const lastSequence = lastEntry?.sequence ?? 0;
-    const lastDetailLength = lastEntry?.detail?.length ?? 0;
+    const filter = TIMELINE_FILTERS[filterIndex] ?? "ALL";
+    const visible = this.timeline.filter((entry) => !entry.hidden && matchesFilter(entry, filter));
+    this.expandedFolds = collapseEndedThinkFolds(visible, this.expandedFolds);
+    const foldsKey = expandedFoldsKey(this.expandedFolds);
     const cache = this.visibleTimelineCache;
     if (
       cache
-      && cache.timelineLength === timelineLength
-      && cache.lastSequence === lastSequence
-      && cache.lastDetailLength === lastDetailLength
+      && cache.timelineRevision === this.timelineRevision
       && cache.filterIndex === filterIndex
       && cache.page === this.page
       && cache.preparePhase === this.preparePhase
       && cache.runPhase === this.runPhase
-      && cache.expandedFolds === this.expandedFolds
+      && cache.expandedFoldsKey === foldsKey
     ) {
       return cache.result;
     }
-    const filter = TIMELINE_FILTERS[filterIndex] ?? "ALL";
-    const visible = this.timeline.filter((entry) => !entry.hidden && matchesFilter(entry, filter));
-    this.expandedFolds = collapseEndedThinkFolds(visible, this.expandedFolds);
     const comparing = this.preparePhase === "compare";
     const recovering = this.runPhase === "recovery" || this.preparePhase === "check";
     const surface = this.page === "candidate-product" || this.page === "candidate-model"
@@ -90,14 +86,12 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
               : "picker";
     const result = filterTraceForSurface(visible, surface);
     this.visibleTimelineCache = {
-      timelineLength,
-      lastSequence,
-      lastDetailLength,
+      timelineRevision: this.timelineRevision,
       filterIndex,
       page: this.page,
       preparePhase: this.preparePhase,
       runPhase: this.runPhase,
-      expandedFolds: this.expandedFolds,
+      expandedFoldsKey: foldsKey,
       result,
     };
     return result;

@@ -88,6 +88,7 @@ export type ControllerHandle = {
   result: ExperimentResult | undefined;
   message: string;
   timeline: TimelineEntry[];
+  timelineRevision: number;
   timelineSelected: number;
   timelineFollowing: boolean;
   timelineFilterIndex: number;
@@ -584,7 +585,7 @@ function clearFind(c: ControllerHandle): Consume {
 
 function toggleSelectedFold(c: ControllerHandle): Consume {
   const visible = c.visibleTimeline();
-  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds));
+  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds), c.timelineRevision);
   const selected = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
   const entry = folded[selected];
   if (entry?.kind === 'fold' && entry.itemId) {
@@ -644,7 +645,7 @@ function followTimeline(c: ControllerHandle): Consume {
 
 function cycleFoldSelection(c: ControllerHandle, direction: 1 | -1): Consume {
   const visible = c.visibleTimeline();
-  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds));
+  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds), c.timelineRevision);
   const foldIndices = folded.flatMap((entry, index) => entry.kind === 'fold' ? [index] : []);
   if (!foldIndices.length) {
     c.render();

@@ -74,6 +74,7 @@ export type RunningModel = {
   readonly expandedFolds?: readonly string[];
   readonly candidateSessionId?: string;
   readonly sourceTimeline?: readonly TimelineEntry[];
+  readonly timelineRevision?: number;
 };
 
 function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string], locale: Locale): string {
@@ -226,6 +227,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const locale = model.locale ?? 'en';
   const product = model.productLabel ?? t(locale, 'unknownAgent');
   if (isPreparing(model)) return renderPrepare(theme, width, model, locale, product);
+  // visibleTimeline already applies ALL filtering; keep the branch for non-ALL replay surfaces.
   const visible = model.filter === 'ALL'
     ? model.entries
     : model.entries.filter((entry) => matchesFilter(entry, model.filter));
@@ -239,7 +241,8 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const header = [...findBar, ...(findBar.length ? [''] : [])];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
   const expanded = new Set(model.expandedFolds ?? []);
-  const folded = projectTimelineView(model.sourceTimeline ?? model.entries, visible, expanded);
+  const timelineRevision = model.timelineRevision ?? -1;
+  const folded = projectTimelineView(model.sourceTimeline ?? model.entries, visible, expanded, timelineRevision);
   const selectedFolded = selectedIndexAfterFold(visible, folded, visible[selected] ?? model.entries[model.selected]);
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
@@ -248,7 +251,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
           theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
           pad(` ${theme.glyphs.dot} working`, width, theme.glyphs.ellipsis),
         ]
-      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, model.following);
+      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, model.following, timelineRevision);
   return [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),

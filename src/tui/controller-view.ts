@@ -191,6 +191,7 @@ export function view(c: IntakeTui): WorkbenchView {
     ...(c.reconnectCount ? { reconnectCount: c.reconnectCount } : {}),
     ...(c.reconnectTotal ? { reconnectTotal: c.reconnectTotal } : {}),
     timeline: c.timeline,
+    timelineRevision: c.timelineRevision,
     visibleTimeline: c.visibleTimeline(),
     timelineSelected: c.timelineSelected,
     timelineFilterIndex: c.timelineFilterIndex,

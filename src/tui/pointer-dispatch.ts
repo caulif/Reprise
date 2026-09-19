@@ -131,10 +131,10 @@ export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Co
 
 export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume {
   const visible = c.visibleTimeline();
-  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds));
+  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds), c.timelineRevision);
   const selected = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
   const window = canvasWindow(c);
-  const layout = layoutScrollback(createTheme(window.width), window.width, folded, selected, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing);
+  const layout = layoutScrollback(createTheme(window.width), window.width, folded, selected, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing, c.timelineRevision);
   const cell = pointerBodyCell(c, terminalRow, 1);
   const hit = hitAtBodyRow(layout.hits, cell.bodyRow);
   if (hit?.fold && hit.itemId) {
@@ -164,9 +164,9 @@ export function moveTimelineVisible(c: ControllerHandle, amount: number): Consum
   const entries = c.visibleTimeline();
   const next = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
   const window = canvasWindow(c);
-  const folded = projectTimelineView(c.timeline, entries, new Set(c.expandedFolds));
+  const folded = projectTimelineView(c.timeline, entries, new Set(c.expandedFolds), c.timelineRevision);
   const selectedFolded = selectedIndexAfterFold(entries, folded, entries[next] ?? entries[c.timelineSelected]);
-  const layout = layoutScrollback(createTheme(window.width), window.width, folded, selectedFolded, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing);
+  const layout = layoutScrollback(createTheme(window.width), window.width, folded, selectedFolded, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing, c.timelineRevision);
   c.timelineReadOffset = keepSelectedVisible(layout.selectedAt, c.timelineReadOffset ?? 0, layout.total, Math.max(1, window.height - layout.chrome));
   c.timelineSelected = next;
   c.timelineFollowing = c.timelineSelected === Math.max(0, entries.length - 1);

@@ -107,22 +107,9 @@ export function renderScrollback(
   readingOffset = 0,
   elapsed = '00:00',
   following = true,
+  timelineRevision = -1,
 ): string[] {
-  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed, following).lines;
-}
-
-function scrollbackBodyKey(
-  entries: readonly TimelineEntry[],
-  selected: number,
-  width: number,
-  locale: Locale,
-  product: string,
-): string {
-  const tail = entries.slice(-4);
-  const tailSig = tail.map((entry) =>
-    `${timelineIdentity(entry)}:${entry.sequence}:${entry.detail?.length ?? 0}:${entry.title.length}:${entry.kind ?? ''}`,
-  ).join(';');
-  return `${entries.length}:${selected}:${width}:${locale}:${product}:${tailSig}`;
+  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed, following, timelineRevision).lines;
 }
 
 function layoutScrollbackBody(
@@ -133,10 +120,11 @@ function layoutScrollbackBody(
   locale: Locale,
   product: string,
   tick: number,
+  timelineRevision: number,
 ): ScrollbackBody {
-  const key = scrollbackBodyKey(entries, selected, width, locale, product);
+  const key = timelineRevision >= 0 ? `${timelineRevision}:${selected}:${width}:${locale}:${product}` : '';
   const cached = scrollbackBodyCache;
-  if (cached?.key === key) return cached.body;
+  if (key && cached?.key === key) return cached.body;
   const lines: string[] = [];
   const hits: CanvasHit[] = [];
   let selectedAt = 0;
@@ -153,7 +141,7 @@ function layoutScrollbackBody(
       if (inputKey && seenInput.has(inputKey)) continue;
       if (inputKey) seenInput.add(inputKey);
     }
-    const painted = paintEntryCached(theme, entry, index === selected, width, locale, product, tick);
+    const painted = paintEntryCached(theme, entry, index === selected, width, locale, product, tick, timelineRevision);
     if (index === selected) selectedAt = lines.length;
     if (index > selected) behind += 1;
     hits.push({
@@ -166,7 +154,7 @@ function layoutScrollbackBody(
   }
   const live = visibleNow(entries);
   const body: ScrollbackBody = live ? { lines, hits, selectedAt, behind, live } : { lines, hits, selectedAt, behind };
-  scrollbackBodyCache = { key, body };
+  if (key) scrollbackBodyCache = { key, body };
   return body;
 }
 
@@ -182,8 +170,9 @@ export function layoutScrollback(
   readingOffset = 0,
   elapsed = '00:00',
   following = true,
+  timelineRevision = -1,
 ): { lines: string[]; hits: CanvasHit[]; selectedAt: number; start: number; total: number; chrome: number } {
-  const { lines, hits, selectedAt, behind, live } = layoutScrollbackBody(theme, width, entries, selected, locale, product, tick);
+  const { lines, hits, selectedAt, behind, live } = layoutScrollbackBody(theme, width, entries, selected, locale, product, tick, timelineRevision);
   // Only paint the live now-row when one exists. A missing now-row must not fall back
   // to "<product> · working" — that falsely lingers on the result page after terminal outcome.
   const status = live
@@ -261,9 +250,11 @@ function paintEntryCached(
   locale: Locale,
   product: string,
   tick: number,
+  timelineRevision: number,
 ): string[] {
   const pulse = Math.floor(tick / 400);
-  const cacheKey = `${timelineIdentity(entry)}:${entry.sequence}:${selected}:${width}:${locale}:${product}:${pulse}:${entry.detail?.length ?? 0}:${entry.title.length}:${entry.kind ?? ''}`;
+  if (timelineRevision < 0) return paintEntry(theme, entry, selected, width, locale, product, tick);
+  const cacheKey = `${timelineRevision}:${timelineIdentity(entry)}:${entry.sequence}:${selected}:${width}:${locale}:${product}:${pulse}:${entry.detail?.length ?? 0}:${entry.title.length}:${entry.kind ?? ''}`;
   const cached = entryPaintCache.get(cacheKey);
   if (cached) return cached;
   const painted = paintEntry(theme, entry, selected, width, locale, product, tick);

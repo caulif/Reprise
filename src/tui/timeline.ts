@@ -13,6 +13,7 @@ import {
   type AgentLane,
   type TimelineVoice,
 } from './agent-activity.js';
+import { bumpTimelineRevision, type TimelineRevisionState } from './timeline-revision.js';
 
 /** Full event text kept off the default column; the visible pane only shows a short structured preview. */
 const MAX_ORIGINAL_CHARS = 32_768;
@@ -60,7 +61,11 @@ type EntryExtra = {
 type MakeEntry = (source: TimelineSource, title: string, detail?: string, extra?: EntryExtra) => TimelineEntry;
 
 /** Projects persisted public facts into an operator timeline; unknown and noisy delta events stay in trace only. */
-export function appendTimelineEntries(timeline: TimelineEntry[], incoming: readonly TimelineEntry[]): void {
+export function appendTimelineEntries(
+  timeline: TimelineEntry[],
+  incoming: readonly TimelineEntry[],
+  revision?: TimelineRevisionState,
+): void {
   const seen = new Set(timeline.filter((entry) => entry.title.startsWith('Prompt ·')).map((entry) => entry.title));
   for (const entry of incoming) {
     if (shouldFlushBefore(entry) || (entry.hidden && entry.itemId?.startsWith('now:'))) {
@@ -94,6 +99,7 @@ export function appendTimelineEntries(timeline: TimelineEntry[], incoming: reado
     if (!collapsed) timeline.push(settled);
     pinNowRows(timeline);
   }
+  if (incoming.length > 0 && revision) bumpTimelineRevision(revision);
 }
 
 function collapsePresentedInput(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
