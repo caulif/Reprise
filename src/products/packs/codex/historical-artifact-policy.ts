@@ -10,9 +10,21 @@ export function isCodexApplyPatchTool(name: string): boolean {
   return lower === "apply_patch" || lower.endsWith("apply_patch");
 }
 
+/** Exact Codex shell-tool names (case-insensitive). Additive rows only — no substring matching. */
+const CODEX_SHELL_TOOLS = new Set([
+  "shell",
+  "bash",
+  "shell_command",
+  "local_shell",
+  "exec_command",
+  "powershell",
+  "pwsh",
+  "cmd",
+]);
+
 /** Tools that may run host commands; success defaults to unsupported mutation. */
 export function isCodexShellTool(name: string): boolean {
-  return /(?:shell|command|exec|bash|powershell|pwsh|\bcmd\b)/i.test(name);
+  return CODEX_SHELL_TOOLS.has(name.trim().toLowerCase());
 }
 
 export type ShellCommandClass =

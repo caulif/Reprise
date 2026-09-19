@@ -9,6 +9,7 @@ import { sha256 } from "../../src/core/identity.js";
 import { codexSessionAdapter } from "../../src/products/packs/codex/sessions.js";
 import { claudeSessionAdapter } from "../../src/products/packs/claude-code/sessions.js";
 import { extractStaticApplyPatchFromExec } from "../../src/products/packs/codex/historical-artifacts.js";
+import { isCodexShellTool } from "../../src/products/packs/codex/historical-artifact-policy.js";
 import { fakeSessionAdapter } from "../fixtures/fake-pack/sessions.js";
 import type { HistoricalArtifactExtractInput } from "../../src/products/contract.js";
 
@@ -339,6 +340,27 @@ test("Codex shell fail-closed: python sed bash and co-mutators drop prior finals
     const result = codexSessionAdapter.extractHistoricalArtifacts!(input);
     assert.equal(result.manifest.artifacts.length, 0, item.name);
     assert.ok(result.manifest.issues.some((issue) => issue.code === "unsupported_write"), item.name);
+  }
+});
+
+test("Codex shell allowlist rejects execute and mcp_exec substring over-match", () => {
+  assert.equal(isCodexShellTool("bash"), true);
+  assert.equal(isCodexShellTool("shell_command"), true);
+  assert.equal(isCodexShellTool("execute"), false);
+  assert.equal(isCodexShellTool("mcp_exec"), false);
+  assert.equal(isCodexShellTool("container.exec"), false);
+  for (const [index, name] of ["execute", "mcp_exec"].entries()) {
+    const input: HistoricalArtifactExtractInput = {
+      transcript: [],
+      historicalEvents: [
+        codexCall("c1", "apply_patch", { patch: addPatch("keep.txt", "safe") }),
+        codexOutput("c1", "ok"),
+        codexCall(`c2-${index}`, name, { command: "not-a-shell" }),
+        codexOutput(`c2-${index}`, "ok"),
+      ],
+    };
+    const result = codexSessionAdapter.extractHistoricalArtifacts!(input);
+    assert.equal(bytesOf(result, "keep.txt", result.manifest).toString("utf8"), "safe", name);
   }
 });
 
