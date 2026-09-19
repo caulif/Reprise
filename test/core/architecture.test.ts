@@ -543,6 +543,7 @@ test('core schema concepts are split under schemas/', async () => {
   assert.match(schema, /from ['"]\.\/schemas\/run\.js['"]/);
   assert.match(schema, /from ['"]\.\/schemas\/candidate\.js['"]/);
   assert.match(schema, /from ['"]\.\/schemas\/observations\.js['"]/);
+  assert.match(schema, /from ['"]\.\/schemas\/historical-artifacts\.js['"]/);
   await stat(join(SRC, 'core/schemas/ids.ts'));
   await stat(join(SRC, 'core/schemas/scene.ts'));
   await stat(join(SRC, 'core/schemas/event.ts'));
@@ -551,6 +552,7 @@ test('core schema concepts are split under schemas/', async () => {
   await stat(join(SRC, 'core/schemas/run.ts'));
   await stat(join(SRC, 'core/schemas/candidate.ts'));
   await stat(join(SRC, 'core/schemas/observations.ts'));
+  await stat(join(SRC, 'core/schemas/historical-artifacts.ts'));
 });
 
 test('ProductPack contract uses history, ProductRuntime, and projection without legacy aliases', async () => {
@@ -558,6 +560,7 @@ test('ProductPack contract uses history, ProductRuntime, and projection without 
   const runtime = await readFile(join(SRC, 'core/runtime.ts'), 'utf8');
   const access = await readFile(join(SRC, 'products/pack-access.ts'), 'utf8');
   assert.match(contract, /export type ProductHistoryReader/);
+  assert.match(contract, /extractHistoricalArtifacts\?/);
   assert.match(contract, /readonly history: ProductHistoryReader/);
   assert.match(contract, /readonly projection: UserSurfaceProjection/);
   assert.doesNotMatch(runtime, /UserSurfaceProjection/);
