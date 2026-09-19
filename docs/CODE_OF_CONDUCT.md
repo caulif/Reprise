@@ -8,6 +8,8 @@
 
 ## 报告行为问题
 
-**最短路径：** 在 [GitHub Discussions](https://github.com/caulif/Reprise/discussions) 发起私信请求，或开 Issue 时选择「贡献指南」旁的联系方式，**仅说明需要私下沟通**，不公开受影响者身份或敏感证据。维护者会在确认后提供私下渠道。
+本项目**没有**为行为问题提供 GitHub 私信或私密工单。[GitHub Discussions](https://github.com/caulif/Reprise/discussions) 与 Issue **均为公开页面**，Discussions 不支持私信。
 
-安全漏洞使用[安全政策](./SECURITY.md)的私有报告入口，不要用行为问题渠道提交漏洞细节。普通使用问题见[根 README](../README.md#了解支持与贡献)。
+**最短路径：** 在 Discussions 发一篇**仅含最少文字**的公开帖，例如「需要就行为问题联系维护者」，**不要**写入当事人身份、聊天记录、截图、链接或任何可识别细节。维护者看到后会通过其认为合适的方式私下跟进。开 Issue 时勿用 Bug/Feature 表单填写行为细节；可在 Issue 列表页使用「行为问题（公开请求联系）」链接。
+
+安全漏洞请使用[安全政策](./SECURITY.md)的**私有**报告入口，不要用本渠道提交漏洞或凭据。普通使用问题见[根 README](../README.md#了解支持与贡献)。

@@ -1,5 +1,14 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
+import {
+  ComparisonBriefingContextSchema,
+  ComparisonInvocationSchema,
+  ComparisonMediaDerivationSchema,
+  ComparisonMediaRecordSchema,
+  ComparisonMediaShortRefSchema,
+  ComparisonReportModelSchema,
+  ComparisonShortRefSchema,
+} from "./comparison-schema.js";
 export { EvidenceRefSchema, type EvidenceRef } from "./schemas/ids.js";
 export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js";
 export { EventEnvelopeSchema, type EventEnvelope } from "./schemas/event.js";
@@ -188,8 +197,21 @@ export const ComparisonPhaseRequestedPayloadSchema = Type.Object({
   byteLength: Type.Integer({ minimum: 1 }),
 });
 export type ComparisonPhaseRequestedPayload = Static<typeof ComparisonPhaseRequestedPayloadSchema>;
+export const ComparisonEvidenceOriginSchema = Type.Union([
+  Type.Literal("historical_artifact"),
+  Type.Literal("reconstructed_from_history"),
+  Type.Literal("candidate_delivery"),
+  Type.Literal("derived_analysis"),
+  Type.Literal("host_review"),
+]);
+export type ComparisonEvidenceOrigin = Static<typeof ComparisonEvidenceOriginSchema>;
 const ComparisonLinkSchema = Type.Object({
-  side: Type.Union([Type.Literal("baseline"), Type.Literal("candidate")]),
+  side: Type.Union([
+    Type.Literal("baseline"),
+    Type.Literal("candidate"),
+    Type.Literal("host"),
+    Type.Literal("derived"),
+  ]),
   inspectPath: Type.String({ minLength: 1 }),
   reportHref: Type.Optional(Type.String({ minLength: 1 })),
   artifactId: Type.Optional(Id),
@@ -199,17 +221,53 @@ const ComparisonLinkSchema = Type.Object({
   evidenceRef: Type.Optional(EvidenceRefSchema),
   shortRef: Type.Optional(Type.String({ pattern: "^ev-[0-9]{2,6}$" })),
   label: Type.Optional(Type.String({ minLength: 1 })),
+  origin: Type.Optional(ComparisonEvidenceOriginSchema),
+  contentHash: Type.Optional(Hash),
+  sourceRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 32 })),
 });
 export const ComparisonLinksSchema = Type.Array(ComparisonLinkSchema);
 export type ComparisonLinkRecord = Static<typeof ComparisonLinkSchema>;
+export const ComparisonEvidenceCatalogSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  attemptId: Id,
+  revision: Type.Integer({ minimum: 0 }),
+  links: ComparisonLinksSchema,
+  media: Type.Array(ComparisonMediaRecordSchema),
+});
+export type ComparisonEvidenceCatalogSnapshot = Static<typeof ComparisonEvidenceCatalogSchema>;
+export const ComparisonEvidenceRegistrationDerivationSchema = Type.Object({
+  kind: Type.Literal("register_evidence"),
+  relativePath: Type.String({ minLength: 1, maxLength: 512 }),
+  dedupeKey: Type.String({ minLength: 1, maxLength: 512 }),
+  toolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+});
+export type ComparisonEvidenceRegistrationDerivation = Static<typeof ComparisonEvidenceRegistrationDerivationSchema>;
+export const ComparisonEvidenceRegisteredPayloadSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  attemptId: Id,
+  revision: Type.Integer({ minimum: 1 }),
+  shortRef: Type.String({ minLength: 1, maxLength: 32 }),
+  kind: Type.Union([Type.Literal("evidence"), Type.Literal("media")]),
+  origin: ComparisonEvidenceOriginSchema,
+  contentHash: Hash,
+  sourceRefs: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 32 }),
+  artifactRefs: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 16 }),
+  derivation: Type.Optional(Type.Union([
+    ComparisonEvidenceRegistrationDerivationSchema,
+    ComparisonMediaDerivationSchema,
+  ])),
+});
+export type ComparisonEvidenceRegisteredPayload = Static<typeof ComparisonEvidenceRegisteredPayloadSchema>;
 export {
   ComparisonBriefingContextSchema,
   ComparisonInvocationSchema,
+  ComparisonMediaDerivationSchema,
   ComparisonMediaRecordSchema,
+  ComparisonMediaShortRefSchema,
   ComparisonReportModelSchema,
   ComparisonShortRefSchema,
-} from "./comparison-schema.js";
-export type { ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+};
+export type { ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
 export {
   ModelInputCapabilitiesSchema,
   modelAcceptsImage,

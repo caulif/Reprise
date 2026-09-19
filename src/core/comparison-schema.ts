@@ -51,20 +51,48 @@ const ComparisonReportFactsSchema = Type.Object({
     candidate: Type.Optional(MetricSideSchema),
   })),
 });
+export const ComparisonMediaShortRefSchema = Type.String({ pattern: "^media-[0-9]{2,6}$" });
+export const ComparisonMediaDerivationSchema = Type.Object({
+  kind: Type.Union([
+    Type.Literal("original"),
+    Type.Literal("headless_screenshot"),
+    Type.Literal("render_preview"),
+    Type.Literal("host_review"),
+  ]),
+  rendererVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  viewport: Type.Optional(Type.Object({
+    width: Type.Integer({ minimum: 1, maximum: 8192 }),
+    height: Type.Integer({ minimum: 1, maximum: 8192 }),
+    scale: Type.Number({ exclusiveMinimum: 0, maximum: 4 }),
+  })),
+  sampleTimesMs: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: 60_000 }), { maxItems: 16 })),
+  capturedAt: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+});
+export type ComparisonMediaDerivation = Static<typeof ComparisonMediaDerivationSchema>;
 export const ComparisonMediaRecordSchema = Type.Object({
   ref: ComparisonMediaRefSchema,
-  shortRef: Type.Optional(Type.String({ pattern: "^media-[0-9]{2,3}$" })),
+  shortRef: Type.Optional(ComparisonMediaShortRefSchema),
   label: Type.Optional(Type.String({ minLength: 1 })),
-  side: Type.Union([Type.Literal("baseline"), Type.Literal("candidate"), Type.Literal("host")]),
+  side: Type.Union([
+    Type.Literal("baseline"),
+    Type.Literal("candidate"),
+    Type.Literal("host"),
+    Type.Literal("derived"),
+  ]),
   inspectPath: Type.String({ minLength: 1 }),
   reportHref: Type.String({ minLength: 1 }),
   mediaType: Type.String({ minLength: 1 }),
   available: Type.Boolean(),
   byteLength: Type.Optional(Type.Integer({ minimum: 0 })),
+  sourceRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+  contentHash: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
+  derivation: Type.Optional(ComparisonMediaDerivationSchema),
 });
 export type ComparisonMediaRecord = Static<typeof ComparisonMediaRecordSchema>;
 export const ComparisonReportModelSchema = Type.Object({
   schemaVersion: Type.Literal(1),
+  /** 2 = autonomous comparison/details zones. Absent or 1 = legacy four-zone audit files (readable, not rewritten). */
+  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])),
   headline: Type.Optional(Type.String({ minLength: 1, maxLength: 280 })),
   task: Type.String(),
   status: Type.Object({
@@ -79,6 +107,9 @@ export const ComparisonReportModelSchema = Type.Object({
   })),
   slots: Type.Object({
     header: Type.Optional(Type.String()),
+    comparison: Type.Optional(Type.String()),
+    details: Type.Optional(Type.String()),
+    /** Legacy slots retained so old report-model.json remains Value.Check-valid. */
     "key-differences": Type.Optional(Type.String()),
     "visual-evidence": Type.Optional(Type.String()),
     delivery: Type.Optional(Type.String()),

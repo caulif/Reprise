@@ -47,12 +47,6 @@
 - **修复完成条件：** 确定启动尝试的边界并形成一致终态。相关顺序位于 [experiment.ts](../src/application/experiment.ts) 和 [candidate-run.ts](../src/application/candidate-run.ts)。
 - **当前验证范围：** 代码审查与离线行为观察；无统一回归用例。
 
-### 对照报告发布事务缺陷
-
-- **用户影响：** 重生成对照时，若媒体复制失败，旧的成功报告可能丢失或与新旧内容混用。
-- **修复完成条件：** 先在 attempt 独有路径准备完整媒体，再原子切换公开 HTML。发布逻辑在 [comparison-publication.ts](../src/application/comparison-publication.ts)。
-- **当前验证范围：** 离线复现已确认先写 HTML、再复制媒体的顺序风险；重要报告重生成前请自行备份。
-
 修复后应补回归用例，并按变更风险运行构建、相关测试和门禁。
 
 ## 验证记录要求

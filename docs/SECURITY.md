@@ -4,7 +4,7 @@
 
 漏洞请通过 [GitHub 私有安全报告](https://github.com/caulif/Reprise/security/advisories/new) 提交给维护者，不要开公开漏洞 Issue。
 
-若私有入口不可用，可在 [GitHub Discussions](https://github.com/caulif/Reprise/discussions) 或仓库 Issue 中**仅请求私下联系渠道**，不贴漏洞细节或敏感证据。维护者会在确认后提供私下沟通方式。
+若私有入口不可用，可在公开 [GitHub Discussions](https://github.com/caulif/Reprise/discussions) 或 Issue 中**仅发帖请求维护者提供私下联系渠道**，不贴漏洞细节或敏感证据。这些页面均为公开、不支持私信；不要在此处描述漏洞。
 
 报告包含影响版本或提交、影响范围、最少复现步骤、预期与实际结果、是否已有公开利用以及可用的缓解措施。使用合成或脱敏输入，不提交有效密钥、认证文件、完整私有会话、prompt 或本机绝对路径；复现不需要真实计费时使用 fixture。
 

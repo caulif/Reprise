@@ -107,7 +107,6 @@ Recovery、Controller、Comparison 会将完成任务所需的历史内容、工
 ## 当前试用限制
 
 - **同一 Experiment 的重复完整运行**可能失败（`controller-started` 与实验级 operation 去重冲突）。详情见 [路线图：已知实现问题](./roadmap.md#已知实现问题)。
-- **对照报告重生成**存在发布事务缺陷；媒体复制失败时旧报告可能不可用。重要报告重生成前请自行备份。
 
 不要把未验证的 workaround 当作已修复；是否等待修复后再使用由你决定。
 

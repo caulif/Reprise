@@ -1,5 +1,6 @@
-import { cp, mkdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { basename, extname, join, relative, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
 import {
@@ -14,6 +15,7 @@ import type { AgentLocale } from "../agents/language.js";
 import { candidateStatusLabel, reportString, type ComparisonReportStringKey } from "./comparison-report-strings.js";
 import {
   AGENT_ZONES,
+  agentZoneBlank,
   extractInner,
   extractOuter,
   hostMetricsMismatch,
@@ -23,7 +25,7 @@ import {
   type ComparisonReportDiagnostic,
   type HostZoneSnapshot,
 } from "./comparison-report-shell.js";
-import { isVisualEvidenceEmpty, renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
+import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 
 export type ComparisonFailureClass =
@@ -103,7 +105,7 @@ export async function verifyAndRenderComparisonReport(input: {
     ? hostZonesMismatch(input.html, input.hostZoneSnapshot, metrics, locale)
     : missingComparisonSlots(input.html) ?? hostMetricsMismatch(input.html, metrics, locale);
   if (zoneError) {
-    const incompleteSlot = /missing data-(?:agent|host)-zone|missing data-agent-slot|missing component template|Share card order|outside the share card/.test(zoneError);
+    const incompleteSlot = /missing data-(?:agent|host)-zone|missing data-agent-slot|missing component template|Share card order|outside the share card|data-report-format/.test(zoneError);
     const code: ComparisonPublishCode = incompleteSlot ? "report_incomplete" : "host_zone_modified";
     return { failureClass: code === "report_incomplete" ? "publication" : "metrics", code, message: zoneError };
   }
@@ -119,6 +121,8 @@ export async function verifyAndRenderComparisonReport(input: {
   }
   let html = rewritten.html;
   const limitations: ComparisonReportStringKey[] = [];
+  const visual = repairEmptyComparisonZone(html, input.media, locale);
+  html = visual.html;
   const incomplete = repairIncompleteAboveTheFold(html, input.result.headline, locale);
   html = incomplete.html;
   limitations.push(...incomplete.limitations);
@@ -140,14 +144,21 @@ export async function verifyAndRenderComparisonReport(input: {
   if (citedMediaAllUnresolved(html, rewritten.unresolvedMedia, locale)) {
     limitations.push("hostLimitationCitedMediaUnresolved");
   }
-  if (unpairedShareCardImages(html, input.media)) {
-    html = stripFoldImages(html);
+  const unpaired = unpairedShareCardImages(html, input.media);
+  if (unpaired === "missing_note") {
+    limitations.push("hostLimitationOneSidedMissingNote");
+  } else if (unpaired === "one_sided") {
     limitations.push("hostLimitationUnpairedImages");
   }
-  const visual = repairEmptyVisualEvidence(html, input.media, locale);
-  html = visual.html;
   html = markUnresolvedInHostEvidence(html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia], locale);
   html = appendHostLimitations(html, locale, limitations);
+  if (agentZoneBlank(html, "comparison")) {
+    return {
+      failureClass: "publication",
+      code: "report_incomplete",
+      message: 'Agent comparison zone is empty; fill data-agent-zone="comparison" with the task comparison (comments alone do not count).',
+    };
+  }
   const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
   return { html, model };
 }
@@ -161,19 +172,106 @@ export async function publishComparisonArtifacts(input: {
   attemptRoot: string;
   experimentRoot: string;
   html: string;
-}): Promise<void> {
-  await writeAtomic(join(input.experimentRoot, "report.html"), input.html);
-  await copyPublishedMedia(input.attemptRoot, input.experimentRoot);
+  media?: readonly ComparisonMediaRecord[];
+  model?: ComparisonReportModel;
+}): Promise<{ html: string }> {
+  const staged = await stagePublishedMedia({
+    attemptRoot: input.attemptRoot,
+    experimentRoot: input.experimentRoot,
+    html: input.html,
+    media: input.media ?? [],
+  });
+  if (input.model) {
+    await persistComparisonReportModel(
+      input.experimentRoot,
+      rewriteReportModelMediaHrefs(input.model, staged.hrefMap),
+    );
+  }
+  await writeAtomic(join(input.experimentRoot, "report.html"), staged.html);
+  return { html: staged.html };
 }
 
-async function copyPublishedMedia(attemptRoot: string, experimentRoot: string): Promise<void> {
-  try {
-    await mkdir(join(experimentRoot, "media"), { recursive: true });
-    await cp(join(attemptRoot, "media"), join(experimentRoot, "media"), { recursive: true });
-  } catch (error) {
-    if (isMissing(error)) return;
-    throw error;
+async function stagePublishedMedia(input: {
+  attemptRoot: string;
+  experimentRoot: string;
+  html: string;
+  media: readonly ComparisonMediaRecord[];
+}): Promise<{ html: string; hrefMap: ReadonlyMap<string, string> }> {
+  const mediaRoot = join(input.experimentRoot, "media");
+  await mkdir(mediaRoot, { recursive: true });
+  const byHref = new Map(input.media.map((item) => [item.reportHref.replaceAll("\\", "/").replace(/^\.\//, ""), item]));
+  let html = input.html;
+  const published = new Map<string, string>();
+  for (const href of mediaHrefs(html)) {
+    if (href.startsWith("#")) continue;
+    if (href.startsWith("data:")) {
+      throw new Error("Comparison report contains unregistered data URL media.");
+    }
+    if (/^(https?:|\/\/)/i.test(href)) {
+      throw new Error("Comparison report contains external network resources.");
+    }
+    const normalized = href.replaceAll("\\", "/").replace(/^\.\//, "");
+    if (published.has(normalized)) {
+      html = rewriteMediaHref(html, href, published.get(normalized)!);
+      continue;
+    }
+    const record = byHref.get(normalized);
+    if (!record?.available) {
+      throw new Error(`Comparison media reference is not publishable: ${normalized}`);
+    }
+    const source = resolve(input.attemptRoot, ...normalized.split("/"));
+    const attemptRootResolved = resolve(input.attemptRoot);
+    const rel = relative(attemptRootResolved, source);
+    if (!rel || rel.startsWith("..") || rel.includes("..")) {
+      throw new Error(`Comparison media path escapes attempt root: ${normalized}`);
+    }
+    const bytes = await readFile(source);
+    const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 24);
+    const extension = extname(basename(normalized)) || extensionForMediaType(record.mediaType);
+    const publishedHref = `media/${digest}${extension}`;
+    const destination = join(input.experimentRoot, publishedHref);
+    await mkdir(join(input.experimentRoot, "media"), { recursive: true });
+    try {
+      await copyFile(source, destination);
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      throw new Error(`Comparison media file missing at publish time: ${normalized}`, { cause: error });
+    }
+    published.set(normalized, publishedHref);
+    html = rewriteMediaHref(html, href, publishedHref);
   }
+  return { html, hrefMap: published };
+}
+
+function rewriteReportModelMediaHrefs(
+  model: ComparisonReportModel,
+  hrefMap: ReadonlyMap<string, string>,
+): ComparisonReportModel {
+  if (hrefMap.size === 0) return model;
+  const slots: ComparisonReportModel["slots"] = { ...model.slots };
+  for (const key of Object.keys(slots) as (keyof ComparisonReportModel["slots"])[]) {
+    const value = slots[key];
+    if (typeof value !== "string") continue;
+    let next = value;
+    for (const [from, to] of hrefMap) next = rewriteMediaHref(next, from, to);
+    slots[key] = next;
+  }
+  return { ...model, slots };
+}
+
+function rewriteMediaHref(html: string, from: string, to: string): string {
+  const escaped = escapeRegExp(from);
+  return html
+    .replace(new RegExp(`(\\b(?:src|href)\\s*=\\s*["'])${escaped}(["'])`, "gi"), `$1${to}$2`)
+    .replace(new RegExp(`url\\((['"]?)${escaped}\\1\\)`, "gi"), `url($1${to}$1)`);
+}
+
+function extensionForMediaType(mediaType: string): string {
+  if (/svg/i.test(mediaType)) return ".svg";
+  if (/webp/i.test(mediaType)) return ".webp";
+  if (/gif/i.test(mediaType)) return ".gif";
+  if (/jpe?g/i.test(mediaType)) return ".jpg";
+  return ".png";
 }
 
 export function comparisonReportModelFromHtml(
@@ -186,10 +284,8 @@ export function comparisonReportModelFromHtml(
 ): ComparisonReportModel {
   const slots = {
     header: extractInner(html, "data-host-zone", "header"),
-    "key-differences": extractInner(html, "data-agent-zone", "key-differences"),
-    "visual-evidence": extractInner(html, "data-agent-zone", "visual-evidence"),
-    delivery: extractInner(html, "data-agent-zone", "delivery"),
-    limitations: extractInner(html, "data-agent-zone", "limitations"),
+    comparison: extractInner(html, "data-agent-zone", "comparison"),
+    details: extractInner(html, "data-agent-zone", "details"),
     evidence: extractInner(html, "data-host-zone", "evidence"),
     process: extractInner(html, "data-host-zone", "process"),
   };
@@ -202,6 +298,7 @@ export function comparisonReportModelFromHtml(
   const headline = result.headline ?? (slotHeadline.length > 0 && slotHeadline.length <= 280 ? slotHeadline : undefined);
   return {
     schemaVersion: 1,
+    formatVersion: 2,
     task: oneLineFromHtml(extractInner(html, "data-agent-slot", "task")) || oneLineFromHtml(extractInner(html, "data-slot", "task")) || reportString(locale, "defaultCategory"),
     status: {
       baseline: facts.replay.baselineEvidence,
@@ -335,22 +432,22 @@ const ZONE_TAG = "header|section|style|p|span";
 function appendHostLimitations(html: string, locale: AgentLocale, keys: readonly ComparisonReportStringKey[]): string {
   const uniqueKeys = [...new Set(keys)];
   if (uniqueKeys.length === 0) return html;
-  const outer = extractOuter(html, "data-agent-zone", "limitations");
+  const outer = extractOuter(html, "data-agent-zone", "comparison");
   if (!outer) return html;
   const notes = uniqueKeys.map((key) => `<p data-host-limitation>${escapeText(reportString(locale, key))}</p>`).join("");
   return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${notes}</section>`));
 }
 
-function repairEmptyVisualEvidence(
+function repairEmptyComparisonZone(
   html: string,
   media: readonly ComparisonMediaRecord[],
   locale: AgentLocale,
 ): { html: string; limitations: ComparisonReportStringKey[] } {
-  if (!isVisualEvidenceEmpty(html)) return { html, limitations: [] };
+  if (!agentZoneBlank(html, "comparison")) return { html, limitations: [] };
   const seeded = renderVisualEvidenceSeed(media, locale);
   if (!seeded) return { html, limitations: [] };
   return {
-    html: replaceZoneInner(html, "data-agent-zone", "visual-evidence", seeded),
+    html: replaceZoneInner(html, "data-agent-zone", "comparison", seeded),
     limitations: [],
   };
 }
@@ -367,11 +464,11 @@ function repairIncompleteAboveTheFold(
     if (fromEnvelope) next = replaceZoneInner(next, "data-agent-slot", "headline", escapeText(fromEnvelope));
     else limitations.push("hostLimitationHeadlineMissing");
   }
-  if (!oneLineFromHtml(extractInner(next, "data-agent-zone", "key-differences"))) {
+  if (agentZoneBlank(next, "comparison")) {
     next = replaceZoneInner(
       next,
       "data-agent-zone",
-      "key-differences",
+      "comparison",
       `<p>${escapeText(reportString(locale, "hostLimitationCannotDetermine"))}</p>`,
     );
   }
@@ -388,8 +485,7 @@ function repairLeakedInternalRunInfo(html: string): { html: string; limitations:
   let next = html;
   for (const [attr, name] of [
     ["data-agent-slot", "headline"],
-    ["data-agent-zone", "key-differences"],
-    ["data-agent-zone", "visual-evidence"],
+    ["data-agent-zone", "comparison"],
   ] as const) {
     const inner = extractInner(next, attr, name);
     if (!inner) continue;
@@ -427,8 +523,7 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
   const current = reportString(locale, "sessionCurrent");
   for (const [attr, name] of [
     ["data-agent-slot", "headline"],
-    ["data-agent-zone", "key-differences"],
-    ["data-agent-zone", "visual-evidence"],
+    ["data-agent-zone", "comparison"],
   ] as const) {
     const inner = extractInner(next, attr, name);
     if (!inner) continue;
@@ -443,21 +538,6 @@ function repairShareCardPresentation(html: string, locale: AgentLocale): { html:
   if (!shareCardPresentationError(next, locale)) return { html: next, limitations: [] };
   next = applyShareCardPresentationFixes(next, locale);
   return { html: next, limitations: shareCardPresentationError(next, locale) ? ["hostLimitationShareCardPresentation"] : [] };
-}
-
-function stripFoldImages(html: string): string {
-  let next = html;
-  for (const [attr, name] of [
-    ["data-host-zone", "header"],
-    ["data-agent-slot", "headline"],
-    ["data-agent-zone", "key-differences"],
-    ["data-agent-zone", "visual-evidence"],
-  ] as const) {
-    const inner = extractInner(next, attr, name);
-    if (!inner || !/<img\b/i.test(inner)) continue;
-    next = replaceZoneInner(next, attr, name, inner.replace(/<img\b[^>]*>/gi, ""));
-  }
-  return next;
 }
 
 function unexpectedAgentZones(html: string): string | undefined {
@@ -501,7 +581,7 @@ function shareArticleHtml(html: string): string {
 }
 
 function leakedInternalRunInfo(html: string): string | undefined {
-  const fold = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "key-differences")}${extractInner(html, "data-agent-zone", "visual-evidence")}`;
+  const fold = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "comparison")}`;
   if (/\battemptId\b|\brunId\b|comparison-attempts\/|\\runs\\/i.test(fold) || /attempt-[a-z0-9-]{8,}/i.test(fold)) {
     return "Comparison above-the-fold content contains internal run identifiers.";
   }
@@ -512,7 +592,7 @@ function leakedInternalRunInfo(html: string): string | undefined {
 
 function claimsVisualWithoutMedia(html: string, media: readonly ComparisonMediaRecord[], locale: AgentLocale): string | undefined {
   if (media.some((item) => item.available)) return undefined;
-  const body = `${extractInner(html, "data-agent-zone", "visual-evidence")}${extractInner(html, "data-agent-zone", "key-differences")}`;
+  const body = extractInner(html, "data-agent-zone", "comparison");
   const pattern = locale === "en"
     ? /(visual inspection|looked at (?:the )?(?:PPT|slides|page|UI)|completed visual)/i
     : /(已完成视觉|看过(?:了)?(?:PPT|幻灯片|网页|UI)|视觉检查)/;
@@ -527,7 +607,7 @@ function verifiedWordlist(locale: AgentLocale): RegExp {
 }
 
 function claimsVerifiedWithoutEvidence(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {
-  const body = extractInner(html, "data-agent-zone", "key-differences");
+  const body = extractInner(html, "data-agent-zone", "comparison");
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-evidence-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   if (cited.length === 0) return false;
@@ -540,7 +620,7 @@ function wordlistVerifiedWithoutResolvableEvidence(
   evidence: readonly ComparisonLinkRecord[],
   locale: AgentLocale,
 ): boolean {
-  const body = extractInner(html, "data-agent-zone", "key-differences");
+  const body = extractInner(html, "data-agent-zone", "comparison");
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-evidence-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   const resolvable = new Set(evidence.filter((item) => item.shortRef && (item.reportHref || item.inspectPath)).map((item) => item.shortRef as string));
@@ -673,8 +753,11 @@ function ancestorAttribute(html: string, pos: number, attr: string): string[] {
   return refs;
 }
 
-function unpairedShareCardImages(html: string, media: readonly ComparisonMediaRecord[]): string | undefined {
-  const face = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "key-differences")}${extractInner(html, "data-agent-zone", "visual-evidence")}`;
+function unpairedShareCardImages(
+  html: string,
+  media: readonly ComparisonMediaRecord[],
+): "one_sided" | "missing_note" | undefined {
+  const face = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "comparison")}`;
   const imgs = [...face.matchAll(/<img\b[^>]*>/gi)].map((match) => match[0] ?? "");
   if (imgs.length === 0) return undefined;
   const byShort = new Map(media.filter((item) => item.shortRef).map((item) => [item.shortRef as string, item]));
@@ -689,12 +772,13 @@ function unpairedShareCardImages(html: string, media: readonly ComparisonMediaRe
   }
   if (sides.size === 2) return undefined;
   if (sides.size === 0) return undefined;
-  return "Share card images must pair a historical final with a candidate final; one-sided previews are not a comparison.";
+  const hasMissingNote = /data-host="visual-unavailable"|data-host-limitation|缺失|missing|未能恢复|could not be recovered|unrecoverable|unavailable/i.test(face);
+  return hasMissingNote ? "one_sided" : "missing_note";
 }
 
 function citedMediaAllUnresolved(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {
   if (unresolved.length === 0) return false;
-  const body = `${extractInner(html, "data-agent-zone", "visual-evidence")}${extractInner(html, "data-agent-zone", "key-differences")}`;
+  const body = extractInner(html, "data-agent-zone", "comparison");
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-media-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   if (cited.length === 0) return false;
@@ -721,7 +805,12 @@ async function stripBrokenMedia(
   const allowed = new Map(media.map((item) => [item.reportHref.replaceAll("\\", "/"), item]));
   let next = html;
   for (const href of mediaHrefs(html)) {
-    if (href.startsWith("data:") || href.startsWith("#")) continue;
+    if (href.startsWith("#")) continue;
+    if (href.startsWith("data:")) {
+      unresolved.push(href.slice(0, 32));
+      next = next.replace(new RegExp(`<img\\b[^>]*\\bsrc=["']${escapeRegExp(href)}["'][^>]*>`, "gi"), "");
+      continue;
+    }
     const normalized = href.replaceAll("\\", "/").replace(/^\.\//, "");
     const item = allowed.get(normalized);
     const readable = item?.available ? await fileReadable(attemptRoot, normalized) : false;

@@ -9,6 +9,10 @@
 - 包名改为 scoped `@caulif/reprise`（避开 npmjs 无关同名包 `reprise`），并提供 TUI、headless `prepare`/`run`/`compare`、查询和取消命令。
 - openai-compatible 内部模型可声明「支持图片输入」（`inputCapabilities`）；默认仍为仅 text。Pi catalog 视觉能力以目录为准。text-only 会话不向模型发送原生 image block。
 
+### Added
+
+- Comparison attempt 动态证据 catalog：append-only 短引用、`register_evidence`、事件 `comparison.evidence_registered`；`render_artifact` / `preview_report` 占位至渲染包。
+
 ### Changed
 
 - TUI 从历史会话核对页冻结 `TaskCase`，在隔离副本中恢复后让用户选择候选 Product Pack 与该 Pack 的模型；确认页 `Enter` 才启动候选，运行页保持只读。

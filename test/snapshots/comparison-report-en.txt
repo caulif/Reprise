@@ -36,12 +36,15 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .cell { border:1px solid var(--hair); border-radius:16px; overflow:hidden; background:#fff; }
 .cell .who { padding:8px 12px 0; }
 .cell img,[data-component="page-row"] img { width:100%; height:320px; object-fit:contain; object-position:top; display:block; background:#fff; }
-[data-agent-zone="visual-evidence"] { margin-top:0; margin-bottom:12px; }
-[data-agent-zone="visual-evidence"] [data-host="visual-unavailable"] { margin:0; font-size:14px; }
-[data-agent-zone="key-differences"] p,[data-agent-zone="key-differences"] li { font-size:14px; line-height:1.4; color:var(--soft); max-width:48em; }
-.share [data-component="diff-table"],.share [data-component="split-compare"],.share [data-component="timeline"],.share [data-component="difference-card"] { display:none; }
-.audit { margin-top:20px; color:var(--soft); }
-.cost-note { margin: 0 0 8px; }
+[data-agent-zone="comparison"] { margin-top:0; margin-bottom:12px; }
+[data-agent-zone="comparison"] p,[data-agent-zone="comparison"] li { font-size:14px; line-height:1.4; color:var(--soft); max-width:48em; }
+[data-agent-zone="comparison"] [data-host="visual-unavailable"],[data-agent-zone="comparison"] [data-host="pairing-hint"] { margin:0 0 8px; font-size:14px; }
+[data-agent-zone="comparison"] table,[data-component="diff-table"] { width:100%; border-collapse:collapse; margin:8px 0; }
+[data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
+.details { margin-top:20px; color:var(--soft); background:var(--card); border:1px solid var(--line); border-radius:18px; padding:12px 18px 16px; }
+.details > summary { cursor:pointer; font-family:"Segoe UI","PingFang SC",sans-serif; font-size:14px; color:var(--accent); list-style:none; }
+.details > summary::-webkit-details-marker { display:none; }
+.cost-note { margin: 12px 0 8px; }
 [data-component="judgment"] { font-weight:700; }
 [data-component="judgment"] { margin:0 0 16px; }
 [data-host="diagnostic-card"] h3,[data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
@@ -54,8 +57,6 @@ code,[data-component="code"] { font-family:"Cascadia Code","Sarasa Mono SC",mono
 [data-component="tag-improve"] { background:rgba(47,93,58,.12); color:var(--ok); }
 [data-component="tag-tradeoff"] { background:rgba(91,70,48,.12); }
 [data-component="tag-risk"] { background:rgba(139,46,46,.12); color:var(--risk); }
-[data-component="diff-table"] { width:100%; border-collapse:collapse; }
-[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
 [data-component="diff-table"] .who { letter-spacing:0; text-transform:none; font-size:16px; }
 [data-component="split-compare"] { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 [data-component="timeline"] { border-left:2px solid var(--hair); padding-left:16px; }
@@ -71,13 +72,15 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
   .task { white-space:normal; }
   .cell img,[data-component="page-row"] img { height:160px; }
 }
+@media print {
+  .details { break-inside:avoid; }
+  .share { box-shadow:none; }
+}
 
 </style>
 </head>
 <body>
-<!-- Component prototypes: reference only; the share card uses pair-pages in visual-evidence and plain sentences in key-differences.
-     pair-pages: left historical final page / right candidate final page, page by page
-     diff-table / split-compare / timeline / difference-card / media-compare / headline: not for the share card face (hidden by CSS)
+<!-- Component prototypes: reference only. Agent authors data-agent-zone="comparison" with any useful combination (pair-pages, tables, excerpts, steps). Host CSS does not hide diff-table / split-compare / timeline / difference-card inside .share.
      Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside or immediately after;
      wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside or immediately after. -->
 <template data-component-template="headline">
@@ -105,7 +108,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
   </div>
 </template>
 
-<div class="page">
+<main class="page" data-report-format="2">
   <article class="share">
     <header data-host-zone="header" data-id="host-header"><h1><span data-agent-slot="category">Comparison</span> · gpt-5 vs gpt-5.6</h1>
   <p class="sessions" data-host="session-labels"><span>Historical session</span><span>Current session</span></p>
@@ -113,8 +116,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
     <p class="field-label">Main conclusion</p>
     <p class="note" data-agent-slot="headline">The candidate produced a usable file.</p>
-    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Host seeds pair-pages when both sides have previews; otherwise show why images are absent. --><p class="muted" data-host="visual-unavailable">No preview images were registered for this comparison.</p></section>
-    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Short contrast after visuals. Must be non-empty; if no comparison is possible, say so and why. When paired finals exist, caption them in one or two sentences; no tables on the card face. No process rows. --><p>The candidate delivered a file; history did not.</p></section>
+    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><!-- Author the main comparison here: paired visuals, tables, excerpts, or steps. Keep limitations that change the choice nearby. Components are optional conveniences. --><p>The candidate delivered a file; history did not.</p></section>
     <section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="{&quot;b&quot;:[null,null,null,&quot;not_collected&quot;],&quot;c&quot;:[4000,null,null,&quot;not_collected&quot;]}" aria-label="Time, Tokens, Cost">
     <article class="card">
       <div class="label">Time</div>
@@ -157,7 +159,9 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     </article>
   </section>
   </article>
-  <div class="audit" hidden>
+  <details class="details">
+    <summary>Evidence and extras</summary>
+    <section class="slot" data-agent-zone="details" data-id="agent-details"><!-- Optional longer methods, file listings, and investigation detail. Host evidence and process follow below. --></section>
     <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">Cost uses the pinned price snapshot and excludes tool calls. No tokens shows &quot;not collected&quot;; tokens without a price shows &quot;no price configured&quot;. Price table 2026-09-19-cc-switch-seed.</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>Run diagnostics</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
@@ -165,10 +169,8 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
     <li><span class="who">gpt-5.6 price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
   </ul></details></section>
-    <section class="slot" data-agent-zone="delivery" data-id="agent-delivery"><!-- Deliveries, paths, and runId. Hidden; not on the card face. --></section>
-    <section class="slot" data-agent-zone="limitations" data-id="agent-limitations"><!-- Replay limitations, including git-sink initial equal to a historical commit. Hidden. --></section>
     <section class="slot" data-host-zone="process" data-id="host-process"></section>
-  </div>
-</div>
+  </details>
+</main>
 </body>
 </html>

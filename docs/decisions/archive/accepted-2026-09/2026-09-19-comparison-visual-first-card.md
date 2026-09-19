@@ -1,6 +1,8 @@
 # 决策：对照卡视觉优先版式
 
-状态：accepted
+状态：superseded
+
+> 报告区与发布条款已被 [自主任务比较报告区与安全发布](../../accepted/2026-09-19-comparison-autonomous-report-zones.md) 替代（固定四区顺序、卡面隐藏组件、「不成对则去掉图片」）。Prompt 契约已被 [自主任务比较 Prompt 与四轮闭环](../../accepted/2026-09-19-comparison-autonomous-prompt-loop.md) 替代（pair-pages only、单侧留空、固定 visual→diffs 指令）。Host 身份与事实纪律仍有效。
 
 ## 问题
 
@@ -20,13 +22,13 @@
 
 **只靠 prompt 压缩 prose，不改 DOM 顺序。** 无法改变首屏扫读路径；发布门禁也无法校验区块顺序。
 
-**无图时仍显示空 `pair-pages` 格。** 已在 [成对视觉 only](../archive/accepted-2026-09/2026-09-16-comparison-paired-visual-only.md) 弃用；继续用 Host 原因段落。
+**无图时仍显示空 `pair-pages` 格。** 已在 [成对视觉 only](./2026-09-16-comparison-paired-visual-only.md) 弃用；继续用 Host 原因段落。
 
 ## 影响
 
 - `comparison-report-shell.ts` 模板顺序与 CSS；`comparison-html.ts` 分享卡顺序校验。
 - `comparison-agent.ts` 各轮 prompt；`comparison-system-prompt.txt` 与报告壳快照随实现更新。
-- 替代 [十秒比较卡](../archive/accepted-2026-09/2026-09-15-comparison-ten-second-card.md) 中 `key-differences` 先于 `visual-evidence` 的 DOM 顺序部分；成对图纪律仍有效。
+- 替代 [十秒比较卡](./2026-09-15-comparison-ten-second-card.md) 中 `key-differences` 先于 `visual-evidence` 的 DOM 顺序部分；成对图纪律仍有效。
 
 ## 验证
 
