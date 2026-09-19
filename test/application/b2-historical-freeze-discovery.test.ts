@@ -22,7 +22,7 @@ import { Value } from "@sinclair/typebox/value";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -201,7 +201,6 @@ test("prepare openableNames unlock discovery for empty-refs old cases", async (t
     dataDir: root,
     caseId: frozen.taskCase.caseId,
     baselineArtifactNames: prepared.openableNames,
-    finalsRoot: prepared.finalsRoot,
   });
   assert.ok(sources.length >= 1);
   const baseline = sources[0];
@@ -295,7 +294,6 @@ test("comparison finals mount exposes sealed deliverables; history stays process
     attemptRoot,
     candidateSnapshotStatus: "missing",
     candidateSnapshotRoot: join(attemptRoot, "candidate-missing"),
-    finalsRoot,
   });
   assert.equal(mounts.finals, finalsRoot);
   assert.equal(mounts.history, controllerHistory);
@@ -331,6 +329,134 @@ test("openable-baseline names stay empty without artifact refs even when transcr
   const finalNames = collectHistoricalDeliverableNames(taskCase, "final");
   assert.equal(openable.size, 0);
   assert.ok(finalNames.has("pelican.html"));
+});
+
+test("nested same-basename finals seal without flattening abort", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-b2-nested-seal-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const caseId = "case-nested";
+  const caseDir = join(root, "cases", caseId);
+  const attemptRoot = join(root, "comparison-attempts", "a1");
+  const experimentRoot = join(root, "experiment");
+  await mkdir(attemptRoot, { recursive: true });
+  const htmlA = "<!doctype html><title>a</title>\n";
+  const htmlB = "<!doctype html><title>b</title>\n";
+  const artifactA = {
+    artifactId: "ha-aaaaaaaaaaaaaaaaaaaaaaaa",
+    bundleId: bundleIdForPath("a/index.html"),
+    logicalPath: "a/index.html",
+    contentHash: sha256(Buffer.from(htmlA)),
+    byteLength: Buffer.byteLength(htmlA),
+    mediaType: "text/html",
+    origin: "reconstructed_from_history" as const,
+    finality: "final" as const,
+    sourceRefs: ["ref:a"],
+  };
+  const artifactB = {
+    artifactId: "ha-bbbbbbbbbbbbbbbbbbbbbbbb",
+    bundleId: bundleIdForPath("b/index.html"),
+    logicalPath: "b/index.html",
+    contentHash: sha256(Buffer.from(htmlB)),
+    byteLength: Buffer.byteLength(htmlB),
+    mediaType: "text/html",
+    origin: "reconstructed_from_history" as const,
+    finality: "final" as const,
+    sourceRefs: ["ref:b"],
+  };
+  const manifest = {
+    schemaVersion: 1 as const,
+    sourceHash: "c".repeat(64),
+    extractorVersion: "test-1",
+    artifacts: [artifactA, artifactB],
+    issues: [],
+  };
+  assert.ok(Value.Check(HistoricalArtifactManifestSchema, manifest));
+  await mkdir(join(caseDir, "baseline-artifacts"), { recursive: true });
+  await writeFile(join(caseDir, "baseline-artifacts", "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  for (const artifact of [artifactA, artifactB]) {
+    const body = artifact.logicalPath.startsWith("a/") ? htmlA : htmlB;
+    const filePath = join(caseDir, "baseline-artifacts", "files", artifact.bundleId, ...artifact.logicalPath.split("/"));
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, body, "utf8");
+  }
+  const taskCase: TaskCase = {
+    schemaVersion: 1,
+    caseId,
+    source: { productId: "codex", sessionId: "nested" },
+    initialInput: { id: "m1", role: "user", text: "task" },
+    transcript: [],
+    historicalEvents: [],
+    baseline: {
+      status: "available",
+      artifactRefs: [
+        { artifactId: artifactA.artifactId, caseId },
+        { artifactId: artifactB.artifactId, caseId },
+      ],
+      evidenceRefs: [],
+    },
+    sourceRuntimeEvidence: { productId: "codex", artifactRefs: [] },
+    provenance: { packVersion: "test", importedAt: timestamp, sourceHash: "a".repeat(64) },
+    privacy: { allowModelText: true, allowBinary: false, redactions: [] },
+    contentHash: "b".repeat(64),
+  };
+  const prepared = await prepareHistoricalArtifacts({ taskCase, caseDir, attemptRoot });
+  assert.equal(prepared.source, "case-manifest");
+  assert.equal(prepared.finalsRoot, join(attemptRoot, "finals"));
+  assert.ok(await readFile(join(prepared.finalsRoot, "a", "index.html"), "utf8").then((body) => body.includes("<title>a</title>")));
+  assert.ok(await readFile(join(prepared.finalsRoot, "b", "index.html"), "utf8").then((body) => body.includes("<title>b</title>")));
+  const sources = await discoverBaselineOpenableSources({
+    attemptRoot,
+    experimentRoot,
+    runId: "run-1",
+    dataDir: root,
+    caseId,
+    baselineArtifactNames: prepared.openableNames,
+  });
+  const openable = sources.filter((source) => /finals\/[ab]\/index\.html$/.test(source.inspectPath.replace(/\\/g, "/")));
+  assert.equal(openable.length, 2);
+  const { augmentComparisonOpenableMedia } = await import("../../src/application/comparison-openable-media.js");
+  await assert.doesNotReject(() =>
+    augmentComparisonOpenableMedia({
+      attemptRoot,
+      workspaceRoot: attemptRoot,
+      links: [],
+      baselineSources: openable,
+      candidateSources: [],
+    }),
+  );
+  assert.equal(sealedInspectPath(join(prepared.finalsRoot, "a", "index.html"), "a/index.html"), "finals/a/index.html");
+  const mounts = comparisonAttemptMounts({
+    experimentRoot,
+    runId: "run-1",
+    attemptRoot,
+    candidateSnapshotStatus: "missing",
+    candidateSnapshotRoot: join(attemptRoot, "candidate-missing"),
+  });
+  const tools = workspaceTools(attemptRoot, {
+    mounts,
+    denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
+  });
+  const reader = tools.find((tool) => tool.name === "read");
+  assert.ok(reader);
+  const signal = new AbortController().signal;
+  const bodyA = await reader.execute({ path: "finals/a/index.html" }, signal);
+  const bodyB = await reader.execute({ path: "finals/b/index.html" }, signal);
+  assert.match(bodyA.content, /<title>a<\/title>/);
+  assert.match(bodyB.content, /<title>b<\/title>/);
+  // Flat basename must not appear as a second layout.
+  await assert.rejects(readFile(join(prepared.finalsRoot, "index.html")));
+});
+
+test("historicalFinalSearchRoots lists attempt finals once via context", () => {
+  const roots = historicalFinalSearchRoots({
+    experimentRoot: "/exp",
+    runId: "run-1",
+    caseId: "case-1",
+    attemptRoot: "/exp/comparison-attempts/a1",
+  });
+  const finals = roots.filter((root) => root.root.replace(/\\/g, "/") === "/exp/comparison-attempts/a1/finals");
+  assert.equal(finals.length, 1);
+  assert.equal(finals[0]?.mode, "recursive-basename");
 });
 
 test("historicalFinalSearchRoots marks environment baselines as start-state-only", () => {

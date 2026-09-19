@@ -1,13 +1,19 @@
 import { constants } from "node:fs";
 import type { Dirent } from "node:fs";
 import { access, copyFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import type { ComparisonLinkRecord, HistoricalArtifactManifest, TaskCase } from "../core/schema.js";
 import { HistoricalArtifactManifestSchema } from "../core/schema.js";
 import { sha256File } from "../core/identity.js";
+import { pathContainedBy, relativeInside } from "../core/paths.js";
 import { mediaTypeForComparisonPath, sniffComparisonImageMediaType } from "./comparison-media.js";
-import { DERIVED_HISTORY_DIR } from "./prepare-historical-artifacts.js";
+import {
+  ATTEMPT_FINALS_DIR,
+  CASE_BASELINE_ARTIFACTS_DIR,
+  DERIVED_HISTORY_DIR,
+  attemptFinalsRoot,
+} from "./prepare-historical-artifacts.js";
 import { validateLogicalPath } from "../products/shared/historical-artifact-apply.js";
 import {
   addHistoricalImageBasenames,
@@ -40,6 +46,48 @@ export type BasenameLookup =
 export type HistoricalSourceResolution =
   | { kind: "manifest"; artifactId: string; logicalPath: string; absolutePath: string }
   | { kind: "unavailable"; reason: string };
+
+/**
+ * Post-prepare discovery context. `finalsRoot` is always `attemptRoot/finals` when
+ * an attempt is present — callers never spray an optional override.
+ */
+export type HistoricalFinalsContext = {
+  readonly experimentRoot: string;
+  readonly runId: string;
+  readonly caseId: string;
+  readonly attemptRoot?: string;
+  readonly dataDir?: string;
+  readonly finalsRoot?: string;
+  readonly derivedRoot?: string;
+  readonly caseArtifactsRoot?: string;
+};
+
+export function historicalFinalsContext(input: {
+  experimentRoot: string;
+  runId: string;
+  caseId: string;
+  attemptRoot?: string;
+  dataDir?: string;
+}): HistoricalFinalsContext {
+  return {
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    caseId: input.caseId,
+    ...(input.attemptRoot
+      ? {
+          attemptRoot: input.attemptRoot,
+          finalsRoot: attemptFinalsRoot(input.attemptRoot),
+          derivedRoot: join(input.attemptRoot, DERIVED_HISTORY_DIR),
+        }
+      : {}),
+    ...(input.dataDir
+      ? {
+          dataDir: input.dataDir,
+          caseArtifactsRoot: join(input.dataDir, "cases", input.caseId, CASE_BASELINE_ARTIFACTS_DIR),
+        }
+      : {}),
+  };
+}
 
 export function collectHistoricalDeliverableNames(taskCase: TaskCase, kind: HistoricalDeliverableKind): Set<string> {
   const names = new Set<string>();
@@ -102,32 +150,14 @@ function recordBasename(
   if (!existing.includes(absolutePath)) existing.push(absolutePath);
 }
 
-async function considerIndexedFile(
+async function considerIndexedEntry(
   file: Dirent,
   root: string,
+  absolutePath: string,
   index: MutableHistoricalRootIndex,
   enrichImageNames?: Set<string>,
 ): Promise<void> {
   if (!file.isFile()) return;
-  const absolutePath = join(root, file.name);
-  recordBasename(index, file.name, absolutePath, root);
-  if (!enrichImageNames) return;
-  if (file.name.endsWith(".txt")) {
-    const body = await readFile(absolutePath, "utf8").catch(() => "");
-    addHistoricalImageBasenames(body, enrichImageNames);
-    return;
-  }
-  if (await isHistoricalImageFile(absolutePath)) enrichImageNames.add(file.name);
-}
-
-async function considerIndexedRecursiveFile(
-  file: Dirent,
-  root: string,
-  index: MutableHistoricalRootIndex,
-  enrichImageNames?: Set<string>,
-): Promise<void> {
-  if (!file.isFile()) return;
-  const absolutePath = direntAbsolutePath(file, root);
   recordBasename(index, file.name, absolutePath, root);
   if (!enrichImageNames) return;
   if (file.name.endsWith(".txt")) {
@@ -152,13 +182,13 @@ export async function indexHistoricalRoots(
     if (entry.mode === "direct-basename") {
       const files = await readdir(entry.root, { withFileTypes: true }).catch(() => []);
       for (const file of files) {
-        await considerIndexedFile(file, entry.root, index, enrichImageNames);
+        await considerIndexedEntry(file, entry.root, join(entry.root, file.name), index, enrichImageNames);
       }
       continue;
     }
     const files = await readdir(entry.root, { recursive: true, withFileTypes: true }).catch(() => []);
     for (const file of files) {
-      await considerIndexedRecursiveFile(file, entry.root, index, enrichImageNames);
+      await considerIndexedEntry(file, entry.root, direntAbsolutePath(file, entry.root), index, enrichImageNames);
     }
   }
   return { pathsByBasename: index.pathsByBasename };
@@ -177,28 +207,30 @@ export function lookupBasenameFromIndex(index: HistoricalRootIndex, basenameTarg
   return result.status === "found" ? result.path : undefined;
 }
 
+/** Ordered search roots from a post-prepare context. Attempt finals appear once (recursive). */
 export function historicalFinalSearchRoots(input: {
   experimentRoot: string;
   runId: string;
   caseId: string;
   dataDir?: string;
   attemptRoot?: string;
-  finalsRoot?: string;
 }): HistoricalSearchRoot[] {
+  const ctx = historicalFinalsContext(input);
   const controllerRoot = join(input.experimentRoot, "runs", input.runId, "controller-briefing");
   const roots: HistoricalSearchRoot[] = [];
-  if (input.finalsRoot) {
-    roots.push({ root: input.finalsRoot, mode: "recursive-basename" });
+  if (ctx.finalsRoot) {
+    roots.push({ root: ctx.finalsRoot, mode: "recursive-basename" });
+  }
+  if (ctx.derivedRoot) {
+    roots.push({ root: ctx.derivedRoot, mode: "recursive-basename" });
   }
   if (input.attemptRoot) {
-    roots.push({ root: join(input.attemptRoot, "finals"), mode: "direct-basename" });
-    roots.push({ root: join(input.attemptRoot, DERIVED_HISTORY_DIR), mode: "recursive-basename" });
     // Legacy seal location retained for already-materialized attempts.
-    roots.push({ root: join(input.attemptRoot, "history", "finals"), mode: "direct-basename" });
+    roots.push({ root: join(input.attemptRoot, "history", ATTEMPT_FINALS_DIR), mode: "direct-basename" });
   }
   roots.push({ root: join(controllerRoot, "history"), mode: "recursive-basename" });
-  if (input.dataDir) {
-    roots.push({ root: join(input.dataDir, "cases", input.caseId, "baseline-artifacts"), mode: "recursive-basename" });
+  if (ctx.caseArtifactsRoot) {
+    roots.push({ root: ctx.caseArtifactsRoot, mode: "recursive-basename" });
   }
   roots.push({
     root: join(input.experimentRoot, "environment", "baselines"),
@@ -226,7 +258,6 @@ export async function findFileInHistoricalRoots(input: {
   caseId: string;
   dataDir?: string;
   attemptRoot?: string;
-  finalsRoot?: string;
   basename: string;
 }): Promise<string | undefined> {
   const roots = historicalFinalSearchRoots(input);
@@ -240,7 +271,6 @@ export async function enrichHistoricalImageNamesFromRoots(input: {
   caseId: string;
   dataDir?: string;
   attemptRoot?: string;
-  finalsRoot?: string;
   names: Set<string>;
 }): Promise<void> {
   await indexHistoricalRoots(historicalFinalSearchRoots(input), { enrichImageNames: input.names });
@@ -253,7 +283,6 @@ export async function collectHistoricalImageNames(input: {
   caseId: string;
   dataDir?: string;
   attemptRoot?: string;
-  finalsRoot?: string;
 }): Promise<{ names: Set<string>; index: HistoricalRootIndex }> {
   const names = collectHistoricalDeliverableNames(input.taskCase, "image");
   const roots = historicalFinalSearchRoots({
@@ -262,7 +291,6 @@ export async function collectHistoricalImageNames(input: {
     caseId: input.caseId,
     ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-    ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
   });
   const index = await indexHistoricalRoots(roots, { enrichImageNames: names });
   return { names, index };
@@ -295,7 +323,13 @@ async function absolutePathForManifestArtifact(
   return undefined;
 }
 
-export async function resolveFromHistoricalManifest(input: {
+type ManifestCandidate = {
+  artifactId: string;
+  logicalPath: string;
+  absolutePath: string;
+};
+
+async function resolveFromHistoricalManifest(input: {
   finalsRoot?: string;
   caseArtifactsRoot?: string;
   derivedRoot?: string;
@@ -307,29 +341,42 @@ export async function resolveFromHistoricalManifest(input: {
   for (const root of roots) {
     const manifest = await loadManifestFromRoot(root);
     if (!manifest) continue;
+    const exact: ManifestCandidate[] = [];
+    const byBasename: ManifestCandidate[] = [];
+    const missingLogical: string[] = [];
     for (const artifact of manifest.artifacts) {
       if (artifact.finality !== "final") continue;
       const pathCheck = validateLogicalPath(artifact.logicalPath);
       if (!pathCheck.ok) continue;
       const logical = pathCheck.path;
       const base = basename(logical);
-      if (
-        artifact.artifactId !== input.nameOrLogicalPath
-        && logical !== input.nameOrLogicalPath
-        && base !== input.nameOrLogicalPath
-      ) {
-        continue;
-      }
+      const exactHit = artifact.artifactId === input.nameOrLogicalPath || logical === input.nameOrLogicalPath;
+      const baseHit = base === input.nameOrLogicalPath;
+      if (!exactHit && !baseHit) continue;
       const absolutePath = await absolutePathForManifestArtifact(root, artifact);
       if (!absolutePath) {
-        return { kind: "unavailable", reason: `manifest entry missing on disk: ${logical}` };
+        missingLogical.push(logical);
+        continue;
       }
-      return {
-        kind: "manifest",
-        artifactId: artifact.artifactId,
-        logicalPath: logical,
-        absolutePath,
-      };
+      const candidate = { artifactId: artifact.artifactId, logicalPath: logical, absolutePath };
+      if (exactHit) exact.push(candidate);
+      else byBasename.push(candidate);
+    }
+    if (exact.length === 1) {
+      return { kind: "manifest", ...exact[0]! };
+    }
+    if (exact.length > 1) {
+      return { kind: "unavailable", reason: `ambiguous manifest match for ${input.nameOrLogicalPath}` };
+    }
+    if (byBasename.length === 1) {
+      return { kind: "manifest", ...byBasename[0]! };
+    }
+    if (byBasename.length > 1) {
+      // Same basename under nested logicalPaths — refuse first-match; index path also fail-closes.
+      return { kind: "unavailable", reason: `ambiguous basename "${input.nameOrLogicalPath}" in manifest` };
+    }
+    if (missingLogical.length > 0) {
+      return { kind: "unavailable", reason: `manifest entry missing on disk: ${missingLogical[0]}` };
     }
   }
   return undefined;
@@ -341,7 +388,6 @@ export async function resolveHistoricalImagePath(input: {
   caseId: string;
   dataDir?: string;
   attemptRoot?: string;
-  finalsRoot?: string;
   basename: string;
   index?: HistoricalRootIndex;
 }): Promise<string | undefined> {
@@ -359,7 +405,6 @@ export async function buildSealedBaselineImageLinks(input: {
   dataDir?: string;
   taskCase: TaskCase;
   runId: string;
-  finalsRoot?: string;
 }): Promise<ComparisonLinkRecord[]> {
   const { names, index } = await collectHistoricalImageNames({
     taskCase: input.taskCase,
@@ -368,7 +413,6 @@ export async function buildSealedBaselineImageLinks(input: {
     caseId: input.taskCase.caseId,
     attemptRoot: input.attemptRoot,
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-    ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
   });
   if (names.size === 0) return [];
   const mediaRoot = join(input.attemptRoot, "history", "media");
@@ -383,7 +427,6 @@ export async function buildSealedBaselineImageLinks(input: {
       basename: name,
       index,
       ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-      ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
     });
     if (!source) continue;
     const dest = join(mediaRoot, name);
@@ -406,24 +449,26 @@ export async function resolveHistoricalFinalPath(input: {
   taskCase: TaskCase;
   dataDir?: string;
   attemptRoot?: string;
-  finalsRoot?: string;
 }): Promise<string | undefined> {
   const names = [...collectHistoricalDeliverableNames(input.taskCase, "final")].sort(
     (left, right) => finalDeliverableRank(left) - finalDeliverableRank(right),
   );
   if (!names.length) return undefined;
 
-  const caseArtifactsRoot = input.dataDir
-    ? join(input.dataDir, "cases", input.taskCase.caseId, "baseline-artifacts")
-    : undefined;
-  const derivedRoot = input.attemptRoot ? join(input.attemptRoot, DERIVED_HISTORY_DIR) : undefined;
+  const ctx = historicalFinalsContext({
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    caseId: input.taskCase.caseId,
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
+  });
 
   for (const name of names) {
     const fromManifest = await resolveFromHistoricalManifest({
       nameOrLogicalPath: name,
-      ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
-      ...(caseArtifactsRoot ? { caseArtifactsRoot } : {}),
-      ...(derivedRoot ? { derivedRoot } : {}),
+      ...(ctx.finalsRoot ? { finalsRoot: ctx.finalsRoot } : {}),
+      ...(ctx.caseArtifactsRoot ? { caseArtifactsRoot: ctx.caseArtifactsRoot } : {}),
+      ...(ctx.derivedRoot ? { derivedRoot: ctx.derivedRoot } : {}),
     });
     if (fromManifest?.kind === "manifest" && isHistoricalVisualPath(fromManifest.absolutePath)) {
       return fromManifest.absolutePath;
@@ -437,7 +482,6 @@ export async function resolveHistoricalFinalPath(input: {
     caseId: input.taskCase.caseId,
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
-    ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
   });
   const index = await indexHistoricalRoots(roots);
   for (const name of names) {
@@ -458,21 +502,23 @@ export async function discoverBaselineOpenableSources(input: {
   dataDir?: string;
   caseId: string;
   baselineArtifactNames: readonly string[];
-  finalsRoot?: string;
 }): Promise<{ inspectPath: string; absolutePath: string }[]> {
   const baselineSources: { inspectPath: string; absolutePath: string }[] = [];
-  const caseArtifactsRoot = input.dataDir
-    ? join(input.dataDir, "cases", input.caseId, "baseline-artifacts")
-    : undefined;
-  const derivedRoot = join(input.attemptRoot, DERIVED_HISTORY_DIR);
+  const ctx = historicalFinalsContext({
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    caseId: input.caseId,
+    attemptRoot: input.attemptRoot,
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+  });
   const seen = new Set<string>();
 
   for (const name of input.baselineArtifactNames) {
     const fromManifest = await resolveFromHistoricalManifest({
       nameOrLogicalPath: name,
-      ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
-      ...(caseArtifactsRoot ? { caseArtifactsRoot } : {}),
-      derivedRoot,
+      ...(ctx.finalsRoot ? { finalsRoot: ctx.finalsRoot } : {}),
+      ...(ctx.caseArtifactsRoot ? { caseArtifactsRoot: ctx.caseArtifactsRoot } : {}),
+      ...(ctx.derivedRoot ? { derivedRoot: ctx.derivedRoot } : {}),
     });
     if (fromManifest?.kind === "manifest") {
       if (!isOpenableFinalPath(fromManifest.absolutePath)) continue;
@@ -492,7 +538,6 @@ export async function discoverBaselineOpenableSources(input: {
     caseId: input.caseId,
     attemptRoot: input.attemptRoot,
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-    ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
   });
   const index = await indexHistoricalRoots(roots);
   for (const name of input.baselineArtifactNames) {
@@ -511,17 +556,41 @@ export function sealedInspectPath(absolutePath: string, logicalOrBasename?: stri
   return `finals/${relative || "artifact"}`;
 }
 
-export async function sealBaselineOpenablePath(sealedRoot: string, absolutePath: string): Promise<string> {
-  const name = basename(absolutePath);
-  const dest = join(sealedRoot, name);
+/**
+ * Seal an openable baseline into `sealedRoot/<logicalPath>` (default: basename).
+ * Sources already under `sealedRoot` are left in place — prepare materializes the tree.
+ */
+export async function sealBaselineOpenablePath(
+  sealedRoot: string,
+  absolutePath: string,
+  logicalPath?: string,
+): Promise<string> {
+  if (pathContainedBy(sealedRoot, absolutePath) && !sameLeafAsRoot(sealedRoot, absolutePath)) {
+    return absolutePath;
+  }
+  let relativeDest: string;
+  if (logicalPath) {
+    const pathCheck = validateLogicalPath(logicalPath);
+    if (!pathCheck.ok) {
+      throw new Error(`Rejected seal logicalPath "${logicalPath}": ${pathCheck.reason}`);
+    }
+    relativeDest = pathCheck.path;
+  } else {
+    relativeDest = basename(absolutePath);
+  }
+  const dest = join(sealedRoot, ...relativeDest.split("/"));
   if (await fileExists(dest)) {
     const [existingHash, incomingHash] = await Promise.all([sha256File(dest), sha256File(absolutePath)]);
     if (existingHash === incomingHash) return dest;
-    throw new Error(`Duplicate baseline final basename "${name}" under ${sealedRoot}`);
+    throw new Error(`Duplicate baseline final path "${relativeDest}" under ${sealedRoot}`);
   }
-  await mkdir(sealedRoot, { recursive: true });
+  await mkdir(dirname(dest), { recursive: true });
   await copyFile(absolutePath, dest);
   return dest;
+}
+
+function sameLeafAsRoot(root: string, target: string): boolean {
+  return relativeInside(root, target) === "";
 }
 
 export async function isHistoricalImageFile(path: string): Promise<boolean> {

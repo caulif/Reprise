@@ -24,6 +24,7 @@ import {
   buildSealedBaselineImageLinks,
   collectHistoricalDeliverableNames,
 } from "./historical-final-discovery.js";
+import { attemptFinalsRoot } from "./prepare-historical-artifacts.js";
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -77,14 +78,13 @@ export function comparisonAttemptMounts(input: {
   attemptRoot: string;
   candidateSnapshotStatus: "complete" | "incomplete" | "missing";
   candidateSnapshotRoot: string;
-  finalsRoot?: string;
 }): ComparisonAttemptMounts {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   return {
     candidate: comparisonCandidateMount(input),
     evidence: join(input.attemptRoot, "evidence"),
     history: join(controllerRoot, "history"),
-    finals: input.finalsRoot ?? join(input.attemptRoot, "finals"),
+    finals: attemptFinalsRoot(input.attemptRoot),
     turns: join(controllerRoot, "run", "turns"),
     run: join(controllerRoot, "run"),
   };
@@ -95,7 +95,6 @@ export async function writeComparisonBriefing(input: {
   experimentRoot: string;
   workspaceRoot: string;
   dataDir?: string;
-  finalsRoot?: string;
   /** Extra openable-baseline names from prepare manifest (old-case derive). */
   openableBaselineNames?: readonly string[];
   taskCase: TaskCase;
@@ -191,7 +190,6 @@ async function comparisonMediaBundle(
     runId: input.record.attempt.runId,
     changedPaths: input.context.reportFacts.delivery.changedPaths.filter(isComparisonChangedPath),
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-    ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
     caseId: input.taskCase.caseId,
     baselineArtifactNames: [
       ...collectHistoricalDeliverableNames(input.taskCase, "openable-baseline"),
@@ -330,7 +328,6 @@ async function comparisonLinks(input: {
   experimentRoot: string;
   workspaceRoot: string;
   dataDir?: string;
-  finalsRoot?: string;
   taskCase: TaskCase;
   record: RunRecord;
   context: ComparisonContext | ComparisonFactsContext;
@@ -366,7 +363,6 @@ async function comparisonLinks(input: {
     taskCase: input.taskCase,
     runId: input.record.attempt.runId,
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
-    ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
   })) {
     push(0, link);
   }

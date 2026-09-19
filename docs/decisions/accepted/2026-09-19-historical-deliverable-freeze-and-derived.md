@@ -13,6 +13,8 @@ Comparison 与 TUI 需要同一份可打开的历史终稿来源。旧 Case 在 
 - 旧 Case：新 comparison attempt 在简报前调用 `prepareHistoricalArtifacts`；有合法 case manifest 且文件核 hash 通过则复用；否则从**已冻结** transcript/events 提取到 attempt `derived-history/`，不写回旧 Case，不重新 import 实时会话。无论来源，prepare 都把工具可读字节物化到**同一** attempt 树 `finals/manifest.json` + `finals/<logicalPath>`；挂载、`REPRISE_FINALS_ROOT`、seal 与 `finals/...` inspect 路径都指向该树。
 - 发现：manifest 的 artifactId / logicalPath / bundle 优先；同名 basename 多候选视为歧义，不挑第一个。`environment/baselines` 仅作任务起点，不得自动当作历史终稿。old-case 空 refs 时，prepare 返回的 openableNames（来自 manifest）喂给 openable-baseline discovery。
 - 挂载：保留 `history/` 为历史过程；新增只读 `finals/`（及 `REPRISE_FINALS_ROOT`）始终指向 `attemptRoot/finals`。
+- seal：源已在 `attemptRoot/finals` 下则不再拷贝；否则按 `logicalPath` 写入同一树，禁止 basename 压平。
+- 发现：`historicalFinalsContext` 派生 finals/derived/case 根；搜索根只列一次 attempt `finals/`（recursive），不再喷洒可选 `finalsRoot?`。
 
 ## 备选方案
 
@@ -30,6 +32,6 @@ Comparison 与 TUI 需要同一份可打开的历史终稿来源。旧 Case 在 
 
 ## 验证
 
-- `test/application/b2-historical-freeze-discovery.test.ts`：freeze 封存、reuse 哈希不变、prepare 派生、basename 歧义、env baselines 降级、`finals/` 挂载可读。
-- `test/application/historical-final-discovery.test.ts`：与 case artifacts 一致解析；attempt finals 优先。
+- `test/application/b2-historical-freeze-discovery.test.ts`：freeze 封存、reuse 哈希不变、prepare 派生、basename 歧义、env baselines 降级、`finals/` 挂载可读、嵌套同 basename seal 不 abort。
+- `test/application/historical-final-discovery.test.ts`：与 case artifacts 一致解析；attempt finals 优先；logicalPath seal / skip-under-finals。
 - `test/application/comparison-tracks.test.ts`：INDEX 含 `finals/`。

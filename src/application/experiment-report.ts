@@ -244,7 +244,6 @@ async function compareExperimentOutcome(
     const briefing = await writeComparisonBriefing({
       attemptRoot, experimentRoot: input.experimentRoot, workspaceRoot: comparisonWorkspaceRoot(input),
       dataDir: input.input.dataDir,
-      finalsRoot: preparedHistory.finalsRoot,
       openableBaselineNames: preparedHistory.openableNames,
       taskCase: input.taskCase, record, context: briefingContext, events,
       artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
@@ -268,7 +267,6 @@ async function compareExperimentOutcome(
     await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
     comparisonResult = await runComparisonAttempt({
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
-      finalsRoot: preparedHistory.finalsRoot,
     });
   } catch (error) {
     comparisonResult = error instanceof ComparisonVisualMediaError
@@ -297,7 +295,6 @@ async function runComparisonAttempt(input: {
   compareFacts: ComparisonContext;
   reportShellHtml: string;
   locale: AgentLocale;
-  finalsRoot: string;
 }): Promise<AgentInvocation<ComparisonResult>> {
   const compareContext = withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown);
   const catalog = await ComparisonEvidenceCatalog.create({
@@ -331,7 +328,6 @@ async function runComparisonAttempt(input: {
         input.attemptId,
         catalog.snapshot().media.some((item) => item.available),
         catalog,
-        input.finalsRoot,
       );
     if (input.host.signal?.aborted) comparisonResult = { status: "cancelled" };
     comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(input.attemptRoot, "report.html"));
@@ -494,12 +490,11 @@ async function invokeCompare(
   attemptId: string,
   allowBinary: boolean,
   catalog: ComparisonEvidenceCatalog,
-  finalsRoot: string,
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (input.signal?.aborted) return { status: "cancelled" };
   return input.input.comparison.compare(
     context,
-    comparisonTools(input, attemptRoot, allowBinary, catalog, finalsRoot),
+    comparisonTools(input, attemptRoot, allowBinary, catalog),
     comparisonAudit(input, attemptId),
     input.signal,
     { getEvidenceCatalog: () => catalog.snapshot() },
@@ -517,7 +512,6 @@ function comparisonTools(
   attemptRoot: string,
   allowBinary: boolean,
   catalog: ComparisonEvidenceCatalog,
-  finalsRoot: string,
 ): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
@@ -527,7 +521,6 @@ function comparisonTools(
     attemptRoot,
     candidateSnapshotStatus: input.candidateSnapshotStatus,
     candidateSnapshotRoot: input.candidateSnapshotRoot,
-    finalsRoot,
   });
   const candidateRoot = mounts.candidate;
   return [

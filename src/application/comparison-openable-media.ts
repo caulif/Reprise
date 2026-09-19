@@ -35,7 +35,10 @@ export async function augmentComparisonOpenableMedia(input: {
   await mkdir(sealedRoot, { recursive: true });
   for (const source of input.baselineSources) {
     if (!isOpenableFinalPath(source.absolutePath)) continue;
-    await sealBaselineOpenablePath(sealedRoot, source.absolutePath);
+    const logical = source.inspectPath.replace(/\\/g, "/").startsWith("finals/")
+      ? source.inspectPath.replace(/\\/g, "/").slice("finals/".length)
+      : undefined;
+    await sealBaselineOpenablePath(sealedRoot, source.absolutePath, logical || undefined);
   }
   const augmentedLinks = [...input.links];
   const screenshotLinks: ComparisonLinkRecord[] = [];
@@ -130,14 +133,20 @@ export async function discoverOpenableSources(input: {
   runId: string;
   changedPaths: readonly string[];
   dataDir?: string;
-  finalsRoot?: string;
   caseId: string;
   baselineArtifactNames: readonly string[];
 }): Promise<{
   baselineSources: { inspectPath: string; absolutePath: string }[];
   candidateSources: { inspectPath: string; absolutePath: string }[];
 }> {
-  const baselineSources = await discoverBaselineOpenableSources(input);
+  const baselineSources = await discoverBaselineOpenableSources({
+    attemptRoot: input.attemptRoot,
+    experimentRoot: input.experimentRoot,
+    runId: input.runId,
+    caseId: input.caseId,
+    baselineArtifactNames: input.baselineArtifactNames,
+    ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+  });
   const candidateSources: { inspectPath: string; absolutePath: string }[] = [];
   for (const path of input.changedPaths) {
     const absolutePath = join(input.workspaceRoot, ...path.split("/"));
