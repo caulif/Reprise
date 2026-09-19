@@ -144,17 +144,22 @@ async function renderRasterFrame(request: RenderRequest): Promise<RenderResult> 
     if (!pathContainedBy(rootReal, absolute)) {
       return { ok: false, failure: { kind: "invalid_request", message: "entry escapes bundle root" }, diagnostics };
     }
-    // Match bundle static serving: never follow entry symlinks (copyFile would).
+    // Match bundle static serving: deny leaf symlinks, then realpath+contain (intermediate links).
     const entryInfo = await lstat(absolute);
     if (entryInfo.isSymbolicLink()) {
       return { ok: false, failure: { kind: "invalid_request", message: "symlink rejected" }, diagnostics };
     }
-    if (!entryInfo.isFile()) {
+    const targetReal = await realpath(absolute);
+    if (!pathContainedBy(rootReal, targetReal)) {
+      return { ok: false, failure: { kind: "invalid_request", message: "entry escapes bundle root" }, diagnostics };
+    }
+    const targetInfo = await lstat(targetReal);
+    if (!targetInfo.isFile()) {
       return { ok: false, failure: { kind: "invalid_request", message: "entry is not a file" }, diagnostics };
     }
     await mkdir(request.outputRoot, { recursive: true });
     const pngPath = join(request.outputRoot, "frame-000.png");
-    await copyFile(absolute, pngPath);
+    await copyFile(targetReal, pngPath);
     const byteLength = (await readFile(pngPath)).byteLength;
     const contentHash = await sha256File(pngPath);
     const frame: RenderFrame = {
