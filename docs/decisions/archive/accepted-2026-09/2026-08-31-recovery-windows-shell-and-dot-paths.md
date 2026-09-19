@@ -1,5 +1,8 @@
 # 决策：Windows PowerShell 回退、`.` 为 staging 根
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 ## 问题
@@ -22,7 +25,7 @@
 
 ## 影响
 
-[Environment §7.1](../../../architecture/environment.md#71-内部工作空间与实际边界)、Playbook / Recovery prompt、确认页与核对页文案。
+[Environment §7.1](../../../architecture/recovery.md#隔离边界)、Playbook / Recovery prompt、确认页与核对页文案。
 
 ## 验证
 

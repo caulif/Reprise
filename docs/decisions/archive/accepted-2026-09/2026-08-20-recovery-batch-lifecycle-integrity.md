@@ -1,5 +1,8 @@
 # 2026-08-20：Recovery 批量评估按 case 关联生命周期证据
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 ## 背景
 
 Recovery 的终态行曾只在单 case 时与 `recovery.*` 生命周期事件交叉校验。批量评估可因此发布一个无法证明来源的 aggregate；真实 runner 也没有把每个 case 的事件交给 batch 校验。

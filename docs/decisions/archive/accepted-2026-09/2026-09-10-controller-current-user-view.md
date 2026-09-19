@@ -1,5 +1,8 @@
 # 决策：Controller 用户视图只读 current-user-view.md
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 延续 [先理解再按视图决策](./2026-09-09-controller-understand-then-view.md) 与 [权限快照与当前视图](./2026-09-09-controller-permissions-view-prompt.md)。替代其中把用户可见快照落在 `view.txt` 的路径约定；按 settlement 区间取助手文本与 `UserVisibleTurn.prompt` 的规则仍有效。
@@ -20,7 +23,7 @@ Controller、审计 digest 与回放只依赖 `controller-briefing/current-user-
 
 ## 影响
 
-[Controller 设计](../../../architecture/controller.md)、[实验条件](../../../architecture/controller.md#4-实验条件)。
+[Controller 设计](../../../architecture/execution.md)、[实验条件](../../../architecture/execution.md#controller-时机与权限)。
 
 ## 验证
 

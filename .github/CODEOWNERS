@@ -12,6 +12,7 @@
 /package-lock.json @caulif
 /.github/ @caulif
 /docs/architecture/ @caulif
-/docs/product/ @caulif
+/docs/usage.md @caulif
 /docs/decisions/ @caulif
-/docs/engineering-gates.md @caulif
+/docs/development.md @caulif
+

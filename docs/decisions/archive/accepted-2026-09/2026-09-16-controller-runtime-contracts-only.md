@@ -1,5 +1,8 @@
 # 决策：Controller 运行时只保留合同校验
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-16
 
@@ -30,7 +33,7 @@
 
 ## 影响
 
-[`controller-agent.ts`](../../../../src/agents/controller-agent.ts)、[实验条件](../../../architecture/controller.md#4-实验条件) 第 6 条。不改 Comparison 发布，不改 Recovery 模型轮次。
+[`controller-agent.ts`](../../../../src/agents/controller-agent.ts)、[实验条件](../../../architecture/execution.md#controller-时机与权限) 第 6 条。不改 Comparison 发布，不改 Recovery 模型轮次。
 
 ## 验证
 

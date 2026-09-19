@@ -1,5 +1,8 @@
 # 决策：Controller 首次 Invocation 同时完成理解与 opening
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：superseded
 
 被 [连续 Session 先理解再决策](../accepted-2026-09/2026-09-09-controller-understand-then-view.md) 取代。下文冻结。

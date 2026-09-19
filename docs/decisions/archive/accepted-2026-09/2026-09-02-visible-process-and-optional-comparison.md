@@ -1,5 +1,8 @@
 # 决策：内部 Agent 可见短句、运行分屏与显式对照
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 ## 问题
@@ -24,7 +27,7 @@ Host 只把最后一条 assistant JSON 当完成合同，中间可见短句不�
 
 ## 影响
 
-[TUI §3.2](../../../product/tui.md#32-每次比较)、[TUI §4.1](../../../product/tui.md#41-主活动时间线)。[架构总览](../../../architecture/overview.md) 的 Comparison 启动时机。实现：`src/infrastructure/agent/model-caller.ts`、`src/application/experiment-report.ts`、`src/tui/pages/run.ts`。
+[TUI §3.2](../../../usage.md#tui-路径)、[TUI §4.1](../../../usage.md#tui-路径)。[架构总览](../../../architecture/overview.md) 的 Comparison 启动时机。实现：`src/infrastructure/agent/model-caller.ts`、`src/application/experiment-report.ts`、`src/tui/pages/run.ts`。
 
 ## 验证
 

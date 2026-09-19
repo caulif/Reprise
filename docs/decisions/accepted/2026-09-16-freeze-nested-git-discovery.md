@@ -21,7 +21,7 @@
 
 ## 影响
 
-[环境](../../architecture/environment.md) 的会话线索包含嵌套仓。Recovery 规则 5（任务前 HEAD / `ready`）仍另批；本决定只保证 Case 能看见仓库位置与 HEAD。旧 Case 缺 `nested` 时行为与冻结当时一致，不回写。
+[环境](../../architecture/recovery.md) 的会话线索包含嵌套仓。Recovery 规则 5（任务前 HEAD / `ready`）仍另批；本决定只保证 Case 能看见仓库位置与 HEAD。旧 Case 缺 `nested` 时行为与冻结当时一致，不回写。
 
 ## 验证
 

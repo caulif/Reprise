@@ -1,5 +1,8 @@
 # 决策：Comparison 发布合同/版式分级与 cancel(attemptId)
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-16
 
@@ -29,7 +32,7 @@
 
 ## 影响
 
-[`verifyAndRenderComparisonReport`](../../../../src/application/comparison-publication.ts)、[`ComparisonAgentPort`](../../../../src/agents/comparison-agent.ts)、[对照模块](../../../architecture/comparison.md)。不改 Comparison resume，不改四轮模型语义，不做双实验并发产品测试。
+[`verifyAndRenderComparisonReport`](../../../../src/application/comparison-publication.ts)、[`ComparisonAgentPort`](../../../../src/agents/comparison-agent.ts)、[对照模块](../../../architecture/evidence-and-comparison.md)。不改 Comparison resume，不改四轮模型语义，不做双实验并发产品测试。
 
 ## 验证
 

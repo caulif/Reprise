@@ -1,5 +1,8 @@
 # 决策：Controller 按这个人的验收习惯停，不按种类或剧本
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-03
 
@@ -22,7 +25,7 @@
 
 ## 影响
 
-[Controller 设计](../../../architecture/controller.md) §9–10。[实验条件](../../../architecture/controller.md#4-实验条件) §4.1 第 6 条与 §4.5。
+[Controller 设计](../../../architecture/execution.md) §9–10。[实验条件](../../../architecture/execution.md#controller-时机与权限) §4.1 第 6 条与 §4.5。
 
 ## 验证
 

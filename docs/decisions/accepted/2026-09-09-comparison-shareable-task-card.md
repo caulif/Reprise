@@ -2,7 +2,7 @@
 
 状态：accepted
 
-它替代[任务建议与可视化报告旧提案](../archive/superseded/2026-09-08-comparison-task-verdict-and-visual-report.md)。当前运行规范见[Comparison 架构](../../architecture/comparison.md)。可执行 prompt 以 [`comparison-agent.ts`](../../../src/agents/comparison-agent.ts) 为准。
+它替代[任务建议与可视化报告旧提案](../archive/superseded/2026-09-08-comparison-task-verdict-and-visual-report.md)。当前运行规范见[Comparison 架构](../../architecture/evidence-and-comparison.md)。可执行 prompt 以 [`comparison-agent.ts`](../../../src/agents/comparison-agent.ts) 为准。
 
 ## 问题
 
@@ -22,7 +22,7 @@ Comparison 的 HTML 首屏定位为**真实任务比较卡**。传播力来自�
 
 一次 attempt 创建一个连续 Session，Host 依次发送四条工作委托：理解任务、调查与准备、创作比较卡、审阅并交付信封。turn 指一次完整工作委托，内部可以包含多次模型请求和工具调用。前三轮是自由文本；第四轮才校验薄信封。不设置 Comparison 专属执行预算或请求截止。`observations/user-inputs/INDEX.tsv` 在第一轮之前落盘。
 
-完整阅读层级、资料入口与表达纪律见[Comparison 架构](../../architecture/comparison.md)。
+完整阅读层级、资料入口与表达纪律见[Comparison 架构](../../architecture/evidence-and-comparison.md)。
 
 ## 备选方案
 

@@ -17,13 +17,12 @@ const NAME_EXCEPTIONS = new Set([
   'CHANGELOG.md',
 ]);
 const COLLABORATION_FILES = [
-  { path: 'docs/CONTRIBUTING.md', needles: ['开发环境', '验证命令', '真实'] },
+  { path: 'docs/CONTRIBUTING.md', needles: ['开发环境', '验证命令', '真实', '决策', 'Done means', 'Rollback'] },
   { path: 'docs/SECURITY.md', needles: ['报告渠道', '受支持版本'] },
   { path: 'docs/CODE_OF_CONDUCT.md', needles: ['不可接受'] },
-  { path: 'docs/SUPPORT.md', needles: ['当前阶段'] },
-  { path: 'docs/GOVERNANCE.md', needles: ['决策'] },
+  { path: 'README.md', needles: ['支持与贡献', 'Windows 11'] },
+  { path: 'docs/development.md', needles: ['真实调用与费用', '门禁必须能失败', '发布与回滚'] },
   { path: 'docs/CHANGELOG.md', needles: ['Unreleased'] },
-  { path: 'docs/plan/task-brief-template.md', needles: ['Done means', 'Rollback'] },
   { path: '.github/PULL_REQUEST_TEMPLATE.md', needles: ['Goal / user impact', 'Verification', 'Rollback'] },
   { path: '.github/ISSUE_TEMPLATE/bug.yml', needles: ['复现', '影响', '证据', '环境'] },
   { path: '.github/ISSUE_TEMPLATE/feature.yml', needles: ['用户问题', '非目标', '替代方案'] },
@@ -397,6 +396,17 @@ function selfTest() {
   expectFail('协作入口缺失', checkCollaborationFiles(() => {
     throw new Error('missing');
   }));
+  const collaborationFixture = new Map(COLLABORATION_FILES.map(({ path, needles }) => [path, needles.join('\n')]));
+  if (checkCollaborationFiles((path) => collaborationFixture.get(path)).length) {
+    failures.push('合并后的协作入口: 完整材料应通过');
+  }
+  for (const path of ['README.md', 'docs/CONTRIBUTING.md', 'docs/development.md']) {
+    const entry = COLLABORATION_FILES.find((item) => item.path === path);
+    for (const needle of entry.needles) {
+      expectFail(`合并入口缺少 ${path}:${needle}`, checkCollaborationFiles((file) =>
+        file === path ? collaborationFixture.get(file).replace(needle, '') : collaborationFixture.get(file)));
+    }
+  }
   if (existingFiles(['docs/README.md', 'docs/missing.md']).join(',') !== 'docs/README.md') {
     failures.push('已删除的跟踪文档: 不应被当作可读取文件');
   }
@@ -405,7 +415,7 @@ function selfTest() {
     process.exitCode = 1;
     return;
   }
-  console.log('verify-docs self-test: 8 种坏输入均被拒绝，已删除跟踪文档被跳过');
+  console.log('verify-docs self-test: 基础坏输入及合并入口缺项均被拒绝，完整入口通过，已删除跟踪文档被跳过');
 }
 
 function main() {

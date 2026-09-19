@@ -1,5 +1,8 @@
 # Decision: Recovery M0 maximum-effort forensics and safe diagnostics
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 Status: accepted
 
 ## Context

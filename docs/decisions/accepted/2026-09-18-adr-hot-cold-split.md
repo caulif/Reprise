@@ -2,6 +2,8 @@
 
 状态：accepted
 
+> 部分规则已被[按读者任务组织文档](./2026-09-19-reader-oriented-documentation.md)取代：目录、开放目标归宿和热集数量以该决定为准；本文保留历史取舍。
+
 ## 问题
 
 约 192 份 `accepted/` ADR 与 architecture/product 同树展示，开源读者与 Agent 默认视线被因果层淹没。DSH 用 `.agents/notes/` 物理分离因果与事实，但 Reprise 已选定 `docs/decisions/` 为唯一因果层，不宜再建平行 notes 树。需要在不删 git 历史、不手写全局 INDEX 的前提下，让人与 Agent 默认只触达仍频繁约束实现的热集。

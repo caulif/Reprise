@@ -1,5 +1,8 @@
 # Recovery Host 引导调查与计划提交
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：superseded
 
 被 [单工作副本自主三轮循环](../../accepted/2026-09-09-recovery-single-workspace-agent-loop.md) 取代。下文冻结。

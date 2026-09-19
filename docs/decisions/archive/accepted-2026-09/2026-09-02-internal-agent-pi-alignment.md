@@ -1,5 +1,8 @@
 # 决策：内部 Agent 对齐 Pi 循环
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。 本文相关条款已由[后续决定](../../accepted/2026-09-09-agent-foundation-host.md)替代，未涉及的内容仍需按当前事实核对。
+
+
 状态：accepted
 
 取代 [轮间 digest 占位](../superseded/2026-08-31-internal-agent-turn-compaction.md)。修订 [候选选择与信息增益](../superseded/2026-08-19-recovery-candidate-selection-and-information-gain.md) 中关于重复工具调用与 `maxToolCalls` 的历史条款。

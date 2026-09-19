@@ -1,5 +1,8 @@
 # 决策：恢复后选择候选产品与模型
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 ## 问题
@@ -23,7 +26,7 @@
 
 ## 影响
 
-[TUI 最短路径](../../../product/tui.md#32-每次比较)。[Product Pack 兼容性](../../../architecture/platform-and-packs.md#5-pack-选择流程) 的候选运行步骤。`CandidateSpec.productId` 决定 Runtime；`recover` 仍用来源 Pack。确认页、运行页顶栏与画布图例用候选 Pack 显示名，不用 `TaskCase.source.productId`。
+[TUI 最短路径](../../../usage.md#tui-路径)。[Product Pack 兼容性](../../../architecture/overview.md#pack-边界) 的候选运行步骤。`CandidateSpec.productId` 决定 Runtime；`recover` 仍用来源 Pack。确认页、运行页顶栏与画布图例用候选 Pack 显示名，不用 `TaskCase.source.productId`。
 
 ## 验证
 

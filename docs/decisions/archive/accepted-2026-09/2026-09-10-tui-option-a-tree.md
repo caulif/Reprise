@@ -1,5 +1,8 @@
 # 决策：运行页方案 A 树时间线
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 延续[阅读锚点](./2026-09-08-tui-reading-search-terminal.md)与[此刻行](./2026-09-10-tui-live-now-row.md)。
@@ -27,7 +30,7 @@
 
 ## 影响
 
-`timeline.ts` 投影、`scrollback.ts` 树渲染、`page-input.ts` SGR、`docs/product/tui.md` 运行页键位。真终端滚轮与单击仍按[平台矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)。
+`timeline.ts` 投影、`scrollback.ts` 树渲染、`page-input.ts` SGR、`docs/product/tui.md` 运行页键位。真终端滚轮与单击仍按[平台矩阵](../../../roadmap.md)。
 
 ## 验证
 

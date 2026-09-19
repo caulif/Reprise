@@ -1,5 +1,8 @@
 # 决策：Recovery 调查包是进入模型的 Host 事实
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 Agent 首包不再包含调查包，见[单工作副本自主三轮循环](../../accepted/2026-09-09-recovery-single-workspace-agent-loop.md)。生成函数仍可用于 Host 侧材料准备与测试。

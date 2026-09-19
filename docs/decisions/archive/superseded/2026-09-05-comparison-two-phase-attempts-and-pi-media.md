@@ -1,5 +1,8 @@
 # 决策：Comparison 使用双 session attempt，并复用 Pi 原生内容与生命周期
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：superseded
 
 被 [单 Session 对照](../accepted-2026-09/2026-09-08-comparison-single-session.md) 取代。下文冻结，描述被放弃的 Planner/Reporter 双 Session 强制要求。attempt 目录、原子发布与 Pi 原生媒体块由替代决策保留。

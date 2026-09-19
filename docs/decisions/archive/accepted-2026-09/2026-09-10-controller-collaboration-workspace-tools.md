@@ -1,5 +1,8 @@
 # 决策：Controller 按真实用户协作开放 project 写入，不注册 shell
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。 本文相关条款已由[后续决定](2026-09-12-controller-unrestricted-read-and-shell.md)替代，未涉及的内容仍需按当前事实核对。
+
+
 状态：accepted
 日期：2026-09-10
 
@@ -35,7 +38,7 @@ Controller 模拟真实用户协作：
 
 ## 影响
 
-[实验条件](../../../architecture/controller.md#4-实验条件) §4–5、[Controller 设计](../../../architecture/controller.md)、[validation Capability](../../../architecture/overview.md#附录最小验证边界)、[环境 §7.1](../../../architecture/environment.md#71-内部工作空间与实际边界)。
+[实验条件](../../../architecture/execution.md#controller-时机与权限) §4–5、[Controller 设计](../../../architecture/execution.md)、[validation Capability](../../../architecture/overview.md#不变量)、[环境 §7.1](../../../architecture/recovery.md#隔离边界)。
 
 ## 验证
 

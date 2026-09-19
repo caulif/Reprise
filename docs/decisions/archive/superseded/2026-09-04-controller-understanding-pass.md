@@ -1,5 +1,8 @@
 # 决策：Controller 私有任务理解回合
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：superseded
 
 被 [opening 同 Session](./2026-09-08-controller-opening-single-session.md) 取代，后者再被 [先理解再按视图决策](../accepted-2026-09/2026-09-09-controller-understand-then-view.md) 取代。下文冻结，描述被放弃的独立 understand 回合。

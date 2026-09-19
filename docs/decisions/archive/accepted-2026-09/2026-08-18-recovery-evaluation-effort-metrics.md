@@ -1,5 +1,8 @@
 # Recovery Evaluation 最大努力指标
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。 本文相关条款已由[后续决定](../../accepted/2026-09-16-recovery-linear-lifecycle-and-blocked.md)替代，未涉及的内容仍需按当前事实核对。
+
+
 状态：accepted
 
 日期：2026-08-18

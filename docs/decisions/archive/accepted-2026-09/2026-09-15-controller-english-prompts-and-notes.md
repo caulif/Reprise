@@ -1,5 +1,8 @@
 # 决策：Controller 英文提示词、notes/ 落盘与 steering 不重发 INDEX
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 日期：2026-09-15
 

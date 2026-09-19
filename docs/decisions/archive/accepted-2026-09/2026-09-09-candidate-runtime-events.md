@@ -1,5 +1,8 @@
 # 决策：标准 Runtime 事件与用户可见回合
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 延续 [ProductPack 端口](../../accepted/2026-09-09-product-pack-ports.md) 与 [LaunchContext](./2026-09-09-candidate-launch-context.md)。

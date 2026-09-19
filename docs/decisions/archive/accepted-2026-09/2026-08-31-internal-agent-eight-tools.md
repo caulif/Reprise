@@ -1,5 +1,8 @@
 # 决策：三个内部 Agent 共用八工具名与写策略
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。 本文相关条款已由[后续决定](../../accepted/2026-09-05-cross-platform-host-and-agent-tools.md)替代，未涉及的内容仍需按当前事实核对。
+
+
 状态：accepted
 
 ## 问题
@@ -24,7 +27,7 @@ Comparison 报告沙箱的 `candidate/` 是现有隔离副本的只读挂载（�
 
 ## 影响
 
-[`controller.md#4-实验条件`](../../../architecture/controller.md#4-实验条件) §4、[`最小验证边界`](../../../architecture/overview.md#附录最小验证边界)、[`comparison.md`](../../../architecture/comparison.md)、[`overview.md`](../../../architecture/overview.md) 中「只读、不提供 shell」改为写策略与状态机边界。Environment §7.1 的 Recovery 八工具句保持，并适用于同一组名字。
+[`controller.md#4-实验条件`](../../../architecture/execution.md#controller-时机与权限) §4、[`最小验证边界`](../../../architecture/overview.md#不变量)、[`comparison.md`](../../../architecture/evidence-and-comparison.md)、[`overview.md`](../../../architecture/overview.md) 中「只读、不提供 shell」改为写策略与状态机边界。Environment §7.1 的 Recovery 八工具句保持，并适用于同一组名字。
 
 ## 验证
 

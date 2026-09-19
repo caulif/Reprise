@@ -1,5 +1,8 @@
 # 决策：Controller 内部完成纠错与有界证据分页
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 Controller 账本、独立 understand 与 Host 完成护栏由 [opening 同 Session](../superseded/2026-09-08-controller-opening-single-session.md) 取代；编排见 [先理解再按视图决策](./2026-09-09-controller-understand-then-view.md)。下文这些条款冻结。分页、工具路径、Pi 预算与观察登记仍约束实现。

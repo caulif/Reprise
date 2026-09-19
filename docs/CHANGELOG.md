@@ -4,32 +4,19 @@
 
 ## [Unreleased]
 
+- 包名改为 scoped `@caulif/reprise`，并提供 TUI、headless `prepare`/`run`/`compare`、查询和取消命令。
 - 包名改为 scoped `@caulif/reprise`（避开 npmjs 无关同名包 `reprise`）。
 - openai-compatible 内部模型可声明「支持图片输入」（`inputCapabilities`）；默认仍为仅 text。Pi catalog 视觉能力以目录为准。text-only 会话不向模型发送原生 image block。
 
-### Fixed
-
-- 模型调用 HTTP 520 归入 `transient_upstream`，Recovery 可走既有有界重试，不再误判为不可重试的 `unknown`。
-
 ### Changed
 
-- 恢复 / 运行 realtime：工具主列 tip-only——只保留最新一条「阅读/写入 {叶}」，历史同质探路收成一条 `▸ 阅读证据 · N`，不再倾倒逐文件行。
-- 结果页路径始终显示短标签；终端无 OSC 8 时不再改成绝对路径。跳过对照仍列出报告 / 历史终稿 / 候选终稿。页脚列出 `o` / `h` / `f`。
-- TUI 与内部 Agent 缺省 locale 为简体中文；指令为英文，面向操作者的输出随 locale。CLI `--locale <en|zh>` 写入同一份 preferences。发给候选的消息跟随历史用户语言，不跟随该 locale。
-- Recovery 失败解释由 Host i18n 键或 Agent `summary` 承担，不再调用 Diagnosis Agent。
-- 对照报告壳文案随 locale；声称「已核实 / 看见」用 `data-claim` 校验。
-- Harness 内部模型默认按第三方网关注册（`reasoning` 缺省关闭）；官方订阅改走 Pi catalog 与 `pi /login`。
-- 运行主列用左缘分内部 / 候选，正文不再整句染色；折叠变暗；失败独立红；列尾时钟钉在右侧。此刻行只留列尾，恢复标题只留顶栏。
-- 真终端滚轮与单击交给应用：视口库不再先消费 SGR 64/65。
-- 运行页页脚只保留取消与按键说明，去掉不能可靠操作的画布快捷键和伪输入行。结果页不再列出查找。
-- 候选隔离副本在 run 结束后保留在 `environment/runs/{runId}`，`release` 只结束活动句柄，不删除该目录。结果页列出该路径并用 `w` 打开；Comparison 的 `candidate/` 读这棵活副本。
-- 内部 Agent 同批读可并行、写顺序执行；上下文用 Pi compact（summary + tail）而不是 digest 占位；不再用工具调用次数或相同输入拦截截断。
-- 恢复、控制器和对照进行中的 TUI 显示压缩后的工具过程（动词、对象、阶段），而不是只显示工具名或空白。
+- TUI 从历史会话核对页冻结 `TaskCase`，在隔离副本中恢复后让用户选择候选 Product Pack 与该 Pack 的模型；确认页 `Enter` 才启动候选，运行页保持只读。
+- Recovery、Controller、Comparison 共用 Harness 内部模型配置；第三方凭据可保存于 Git 忽略的 `.reprise/harness-model.json` 或使用 `env:NAME`，官方 Pi catalog 使用 `pi /login`。密钥不进入事件、artifact 或报告。
+- 恢复、候选运行和对照在同一实验时间线中显示压缩后的工具活动、Controller 决策、候选可见事件、结果和本地报告入口；候选隔离副本在运行后保留供排障，对照读取封存快照。
+- Comparison 使用固定价格快照计算可用的成本信息；缺少 token 或价格目录时明确显示未记录或未配置。
+- Recovery 在源目录超过复制预算时使用稀疏工作区与只读 `source/`，并以 `ready`/`blocked` 结论和简短摘要结束；源目录写保护、凭据边界和真实调用显式 opt-in 保持有效。
 
-- 对照报告按钉住的价格快照计算费用；本机 `{dataDir}/model-pricing.override.json` 可覆盖单价。有 Token 无目录行仍显示价格未配置。详细证据列出四类费率。
-- 价格快照改为钉住的 cc-switch 默认定价表（`2026-09-19-cc-switch-seed`），覆盖主流网关 ID；`deepseek-v4.1-flash` 使用独立 V4.1 Flash 高峰档费率，不借用 V4 行。
-- Recovery 在源目录超过复制预算时改为稀疏工作区加只读 `source/`，不再把整树复制失败当成无法启动。
-- Recovery 最终信封带一句话 `summary`；checkpoint 种子也走同一 Agent；blocked 与失败的新 baseline `match` 为 `observational`。
-- Recovery 按可观察材料建立合理起点：未知缺口不自动阻塞；Host 路径清单与命令失败不改写 Agent 结论；`blocked` 作为正常停手展示。
-- Recovery 期间用 NTFS ACL 拒绝写入用户 source，不再靠 shell 命令文本识别写操作；readiness 只写入诊断，不阻止 `ready` 发布。
-- 发布清单、事故复盘模板，以及 pack allowlist / production audit / secret 扫描 / 分层 import 门禁。
+### Fixed
+
+- HTTP 520 归入 `transient_upstream`，Recovery 可使用既有有界重试，不再误判为不可重试的 `unknown`。
+

@@ -1,5 +1,8 @@
 # 决策：M7 收口后的现行路径与未关闭验收
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 目标批次见 [M7](../../../plan/archive/reprise-refactoring-execution.md#9-m7旧实现删除规范生效与交付)。
@@ -12,7 +15,7 @@
 
 - 无名 `sessionsRoot` 绑定显式 `pack`，否则绑定当前列表中第一个具备 import 能力的 Pack；`sessionsRoots` 可覆盖。不按 `productId === "codex"` 猜测。
 - Harness 停止码不含 `stalled.controller_completion_guard`。账本守卫条款仍冻结在 [PPT 分页决策](./2026-09-06-ppt-flow-convergence-and-observation-bounds.md) 被取代段落，不作为新写路径。
-- 目标 ADR 已迁入 accepted，未关闭项写在该记录与[平台证据矩阵](../../../plan/2026-09-08-platform-evidence-matrix.md)：TUI macOS/Linux 真终端与 opt-in Runtime smoke 未关闭；Controller 真实模型 lane 须 `REPRISE_REAL_MODEL=1`。MiniMax-M3 在 INDEX+只读工具代表样例上 1/5 匹配；其余为 intent 不符、schema 联合校验失败或 `agent_failure`，不能写成已生效。A11 以 CI 三 OS 模拟为准，不与 TUI IME 混写。
+- 目标 ADR 已迁入 accepted，未关闭项写在该记录与[平台证据矩阵](../../../roadmap.md)：TUI macOS/Linux 真终端与 opt-in Runtime smoke 未关闭；Controller 真实模型 lane 须 `REPRISE_REAL_MODEL=1`。MiniMax-M3 在 INDEX+只读工具代表样例上 1/5 匹配；其余为 intent 不符、schema 联合校验失败或 `agent_failure`，不能写成已生效。A11 以 CI 三 OS 模拟为准，不与 TUI IME 混写。
 - `npm run evaluate:controller` 要求 `REPRISE_REAL_MODEL=1`，不进入 `npm run check`。
 - 实施计划 M1–M7 作为已关闭批次日志保留在 `plan/`，供 ADR 锚点；活跃导航指向未关闭验收，不指向下一批代码迁移。
 

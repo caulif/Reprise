@@ -1,5 +1,8 @@
 # 决策：内部 Agent 运行画布的压缩与分轨
 
+> 历史记录：正文保留当时的设计，不能据 accepted 或归档目录推定全部条款仍有效。当前规则从[文档导航](../../../README.md)进入。
+
+
 状态：accepted
 
 ## 问题
@@ -24,7 +27,7 @@ Recovery / Controller / Comparison 的工具事件曾一律标成 Harness，非�
 
 ## 影响
 
-[TUI §4.1](../../../product/tui.md#41-主活动时间线) 的投影与声部。[TUI §4.2](../../../product/tui.md#42-决策与实际输入) 的决策与投递分轨。实现：`src/tui/timeline.ts`、`src/tui/agent-activity.ts`、`src/tui/scrollback.ts`。
+[TUI §4.1](../../../usage.md#tui-路径) 的投影与声部。[TUI §4.2](../../../usage.md#tui-路径) 的决策与投递分轨。实现：`src/tui/timeline.ts`、`src/tui/agent-activity.ts`、`src/tui/scrollback.ts`。
 
 ## 验证
 
