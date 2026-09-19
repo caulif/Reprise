@@ -13,6 +13,7 @@
 2. 裸 `<img data-media-ref>`（无人声称视觉观察）不要求 Session 交付；text-only 路径可照常改写 `src` 并内容寻址发布字节。
 3. Comparison 审计 sink 从本 Session 的 `agent.message_appended.images` 与仍含 image 的 `agent.tool_completed` body 收集 contentHash；text-only 剥离后集合为空。
 4. 原生 image 的 `contentHash` 改为对 **解码后字节** 取 sha256，与 Comparison media `contentHash` 同一口径，便于关联。
+5. Briefing/seed 路径 `materializeComparisonMedia` 在物化成功文件时写入 `contentHash`（及 `byteLength`），使生产侧始终传入的 delivery Set 能与 catalog media 正向绑定。
 
 ## 备选方案
 

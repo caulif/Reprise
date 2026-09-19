@@ -247,3 +247,53 @@ test("C1: visual claim accepted when cited media contentHash was delivered to th
   if (!("html" in verified)) return;
   assert.match(verified.html, /src="media\/history\.png"/);
 });
+
+test("C1: materializeComparisonMedia seeds contentHash so visual claims can bind to delivery", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-c1-seed-hash-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const attemptRoot = join(root, "attempt");
+  const workspaceRoot = join(root, "workspace");
+  await mkdir(join(workspaceRoot, "out"), { recursive: true });
+  await writeFile(join(workspaceRoot, "out", "shot.png"), PNG_BYTES);
+  const { materializeComparisonMedia } = await import("../../src/application/comparison-media.js");
+  const media = await materializeComparisonMedia({
+    attemptRoot,
+    workspaceRoot,
+    links: [{
+      side: "candidate",
+      inspectPath: "candidate/out/shot.png",
+      mediaType: "image/png",
+    }],
+  });
+  assert.equal(media.length, 1);
+  assert.equal(media[0]?.available, true);
+  assert.equal(media[0]?.contentHash, sha256(PNG_BYTES));
+  assert.equal(media[0]?.byteLength, PNG_BYTES.byteLength);
+
+  const html = shell(
+    '<p><span data-claim="visual" data-media-ref="media-01">画面为红色。</span></p>'
+    + '<img data-media-ref="media-01" alt="candidate preview">',
+  );
+  const withShort = media.map((item, index) => ({ ...item, shortRef: `media-0${index + 1}` }));
+  const rejected = await verifyAndRenderComparisonReport({
+    html,
+    facts: facts(),
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot,
+    media: withShort,
+    deliveredImageContentHashes: new Set(),
+  });
+  assert.equal("html" in rejected, false);
+  if ("html" in rejected) return;
+  assert.equal(rejected.code, "media_unavailable");
+
+  const accepted = await verifyAndRenderComparisonReport({
+    html,
+    facts: facts(),
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot,
+    media: withShort,
+    deliveredImageContentHashes: new Set([sha256(PNG_BYTES)]),
+  });
+  assert.equal("html" in accepted, true);
+});

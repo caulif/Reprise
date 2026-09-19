@@ -1,7 +1,8 @@
-import { open } from "node:fs/promises";
-import { copyFile, mkdir, stat } from "node:fs/promises";
+import { open, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
+import { sha256 } from "../core/identity.js";
 import { ComparisonMediaRecordSchema, type ComparisonLinkRecord, type ComparisonMediaRecord } from "../core/schema.js";
 import { historicalImageBasenameRe, isHistoricalImagePath } from "./openable-final-path.js";
 
@@ -63,9 +64,18 @@ export async function materializeComparisonMedia(input: {
     const ext = extname(link.inspectPath) || extensionFor(mediaType);
     const fileName = comparisonMediaFileName(id, ext);
     const reportHref = `media/${fileName}`;
-    const available = source !== undefined;
-    if (source) await copyFile(source, join(mediaRoot, fileName));
-    const info = source ? await stat(source).catch(() => undefined) : undefined;
+    let available = false;
+    let byteLength: number | undefined;
+    let contentHash: string | undefined;
+    if (source) {
+      const bytes = await readFile(source);
+      await writeFile(join(mediaRoot, fileName), bytes);
+      available = true;
+      byteLength = bytes.byteLength;
+      contentHash = sha256(bytes);
+    } else if (typeof link.contentHash === "string" && /^[a-f0-9]{64}$/.test(link.contentHash)) {
+      contentHash = link.contentHash;
+    }
     const record: ComparisonMediaRecord = {
       ref: `media:${id}`,
       side: link.side,
@@ -73,7 +83,8 @@ export async function materializeComparisonMedia(input: {
       reportHref,
       mediaType: mediaType ?? "image/*",
       available,
-      ...(info?.isFile() ? { byteLength: info.size } : {}),
+      ...(byteLength !== undefined ? { byteLength } : {}),
+      ...(contentHash ? { contentHash } : {}),
     };
     if (!Value.Check(ComparisonMediaRecordSchema, record)) throw new Error("Comparison media record does not satisfy ComparisonMediaRecordSchema.");
     media.push(record);
