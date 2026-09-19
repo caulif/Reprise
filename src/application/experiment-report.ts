@@ -492,20 +492,13 @@ async function invokeCompare(
   attemptRoot: string,
   attemptId: string,
   allowBinary: boolean,
-<<<<<<< HEAD
   catalog: ComparisonEvidenceCatalog,
-=======
   finalsRoot: string,
->>>>>>> e93fa55 (feat(history): seal and mount historical finals for new and old cases (B2))
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (input.signal?.aborted) return { status: "cancelled" };
   return input.input.comparison.compare(
     context,
-<<<<<<< HEAD
-    comparisonTools(input, attemptRoot, allowBinary, catalog),
-=======
-    comparisonTools(input, attemptRoot, allowBinary, finalsRoot),
->>>>>>> e93fa55 (feat(history): seal and mount historical finals for new and old cases (B2))
+    comparisonTools(input, attemptRoot, allowBinary, catalog, finalsRoot),
     comparisonAudit(input, attemptId),
     input.signal,
     { getEvidenceCatalog: () => catalog.snapshot() },
@@ -522,11 +515,8 @@ function comparisonTools(
   input: Parameters<typeof finishExperiment>[0],
   attemptRoot: string,
   allowBinary: boolean,
-<<<<<<< HEAD
   catalog: ComparisonEvidenceCatalog,
-=======
   finalsRoot: string,
->>>>>>> e93fa55 (feat(history): seal and mount historical finals for new and old cases (B2))
 ): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
