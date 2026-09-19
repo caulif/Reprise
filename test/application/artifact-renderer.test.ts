@@ -186,6 +186,42 @@ test("renderFrozenArtifact rejects raster entry symlink without following target
   await assert.rejects(() => access(join(outputRoot, "frame-000.png")));
 });
 
+test("renderFrozenArtifact rejects raster via intermediate directory symlink", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-render-raster-dirlink-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const outsideDir = join(root, "outside-dir");
+  await mkdir(outsideDir);
+  const secretBytes = Buffer.from("TOP_SECRET_VIA_DIR=1\n", "utf8");
+  await writeFile(join(outsideDir, "secret.png"), secretBytes);
+  const bundle = join(root, "bundle");
+  const outputRoot = join(root, "out");
+  await mkdir(bundle);
+  try {
+    await symlink(outsideDir, join(bundle, "subdir"));
+  } catch {
+    t.skip("symlink creation unavailable");
+    return;
+  }
+  const result = await renderFrozenArtifact({
+    bundleRoot: bundle,
+    entryRelativePath: "subdir/secret.png",
+    viewport: DEFAULT_RENDER_VIEWPORT,
+    sampleTimesMs: [0],
+    outputRoot,
+    signal: new AbortController().signal,
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.failure.kind, "invalid_request");
+  assert.match(result.failure.message, /escapes bundle root/i);
+  const framePath = join(outputRoot, "frame-000.png");
+  await assert.rejects(() => access(framePath));
+  assert.deepEqual(await readFile(join(outsideDir, "secret.png")), secretBytes);
+});
+
 test("renderFrozenArtifact cancels before work", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-render-cancel-"));
   t.after(async () => {
