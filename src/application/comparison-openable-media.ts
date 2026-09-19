@@ -31,7 +31,7 @@ export async function augmentComparisonOpenableMedia(input: {
   captureScreenshot?: (sourcePath: string, destPng: string) => Promise<HeadlessScreenshotResult>;
 }): Promise<{ links: ComparisonLinkRecord[]; media: ComparisonMediaRecord[] }> {
   const captureScreenshot = input.captureScreenshot ?? captureHeadlessScreenshot;
-  const sealedRoot = join(input.attemptRoot, "history", "finals");
+  const sealedRoot = join(input.attemptRoot, "finals");
   await mkdir(sealedRoot, { recursive: true });
   for (const source of input.baselineSources) {
     if (!isOpenableFinalPath(source.absolutePath)) continue;
@@ -130,6 +130,7 @@ export async function discoverOpenableSources(input: {
   runId: string;
   changedPaths: readonly string[];
   dataDir?: string;
+  finalsRoot?: string;
   caseId: string;
   baselineArtifactNames: readonly string[];
 }): Promise<{

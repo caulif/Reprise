@@ -79,6 +79,19 @@ export {
   type CandidateSpec,
 } from "./schemas/task-case.js";
 export {
+  HistoricalArtifactSchema,
+  HistoricalArtifactManifestSchema,
+  HistoricalArtifactIssueSchema,
+  type HistoricalArtifact,
+  type HistoricalArtifactManifest,
+  type HistoricalArtifactIssue,
+  type HistoricalArtifactExtraction,
+  type HistoricalArtifactExtractInput,
+  type HistoricalArtifactExtractor,
+  type HistoricalArtifactOrigin,
+  type HistoricalArtifactFinality,
+} from "./schemas/historical-artifacts.js";
+export {
   ExperimentSpecSchema,
   type ExperimentSpec,
   type AgentBudget,

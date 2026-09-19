@@ -25,6 +25,7 @@ import {
   writeComparisonBriefing,
 } from "./comparison-briefing.js";
 import { ComparisonVisualMediaError } from "./comparison-openable-media.js";
+import { prepareHistoricalArtifacts } from "./prepare-historical-artifacts.js";
 import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
@@ -216,6 +217,15 @@ async function compareExperimentOutcome(
       attemptRoot,
     }), { recursive: true });
   }
+  const preparedHistory = await prepareHistoricalArtifacts({
+    taskCase: input.taskCase,
+    caseDir: join(input.input.dataDir, "cases", input.taskCase.caseId),
+    attemptRoot,
+    ...(input.input.extractHistoricalArtifacts
+      ? { extract: input.input.extractHistoricalArtifacts }
+      : {}),
+  });
+  await mkdir(preparedHistory.finalsRoot, { recursive: true });
   const events = input.store.events(input.input.runId);
   const locale = await readOperatorLocale(input.input.dataDir);
   const comparisonModel = (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel;
@@ -234,6 +244,7 @@ async function compareExperimentOutcome(
     const briefing = await writeComparisonBriefing({
       attemptRoot, experimentRoot: input.experimentRoot, workspaceRoot: comparisonWorkspaceRoot(input),
       dataDir: input.input.dataDir,
+      finalsRoot: preparedHistory.finalsRoot,
       taskCase: input.taskCase, record, context: briefingContext, events,
       artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
       snapshotStatus: input.candidateSnapshotStatus,
@@ -256,6 +267,7 @@ async function compareExperimentOutcome(
     await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
     comparisonResult = await runComparisonAttempt({
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
+      finalsRoot: preparedHistory.finalsRoot,
     });
   } catch (error) {
     comparisonResult = error instanceof ComparisonVisualMediaError
@@ -284,6 +296,7 @@ async function runComparisonAttempt(input: {
   compareFacts: ComparisonContext;
   reportShellHtml: string;
   locale: AgentLocale;
+  finalsRoot: string;
 }): Promise<AgentInvocation<ComparisonResult>> {
   const compareContext = withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown);
   const catalog = await ComparisonEvidenceCatalog.create({
@@ -317,6 +330,7 @@ async function runComparisonAttempt(input: {
         input.attemptId,
         catalog.snapshot().media.some((item) => item.available),
         catalog,
+        input.finalsRoot,
       );
     if (input.host.signal?.aborted) comparisonResult = { status: "cancelled" };
     comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(input.attemptRoot, "report.html"));
@@ -478,12 +492,20 @@ async function invokeCompare(
   attemptRoot: string,
   attemptId: string,
   allowBinary: boolean,
+<<<<<<< HEAD
   catalog: ComparisonEvidenceCatalog,
+=======
+  finalsRoot: string,
+>>>>>>> e93fa55 (feat(history): seal and mount historical finals for new and old cases (B2))
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (input.signal?.aborted) return { status: "cancelled" };
   return input.input.comparison.compare(
     context,
+<<<<<<< HEAD
     comparisonTools(input, attemptRoot, allowBinary, catalog),
+=======
+    comparisonTools(input, attemptRoot, allowBinary, finalsRoot),
+>>>>>>> e93fa55 (feat(history): seal and mount historical finals for new and old cases (B2))
     comparisonAudit(input, attemptId),
     input.signal,
     { getEvidenceCatalog: () => catalog.snapshot() },
@@ -500,7 +522,11 @@ function comparisonTools(
   input: Parameters<typeof finishExperiment>[0],
   attemptRoot: string,
   allowBinary: boolean,
+<<<<<<< HEAD
   catalog: ComparisonEvidenceCatalog,
+=======
+  finalsRoot: string,
+>>>>>>> e93fa55 (feat(history): seal and mount historical finals for new and old cases (B2))
 ): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
@@ -510,6 +536,7 @@ function comparisonTools(
     attemptRoot,
     candidateSnapshotStatus: input.candidateSnapshotStatus,
     candidateSnapshotRoot: input.candidateSnapshotRoot,
+    finalsRoot,
   });
   const candidateRoot = mounts.candidate;
   return [
@@ -519,12 +546,15 @@ function comparisonTools(
       mounts,
       allowWrite: comparisonAttemptWriteAllowed,
       completionPaths: new Set(["work/comparison-plan.md", "report.html"]),
-      denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns", "run", "observations"],
+      denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
       allowShell: true,
       shellCwd: scratchRoot,
       shellEnv: {
-        REPRISE_BASELINE_ROOT: join(controllerRoot, "history"), REPRISE_CANDIDATE_ROOT: candidateRoot,
-        REPRISE_EVIDENCE_ROOT: join(attemptRoot, "evidence"), REPRISE_SCRATCH_ROOT: scratchRoot,
+        REPRISE_BASELINE_ROOT: join(controllerRoot, "history"),
+        REPRISE_FINALS_ROOT: mounts.finals,
+        REPRISE_CANDIDATE_ROOT: candidateRoot,
+        REPRISE_EVIDENCE_ROOT: join(attemptRoot, "evidence"),
+        REPRISE_SCRATCH_ROOT: scratchRoot,
       },
       homeRoot: join(attemptRoot, ".home"),
     }),

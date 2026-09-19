@@ -5,10 +5,11 @@ import { tmpdir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { copyAtomic, sha256, sha256File, writeImmutable } from '../../core/identity.js';
-import type { TaskCase } from '../../core/schema.js';
+import type { HistoricalArtifactExtractor, TaskCase } from '../../core/schema.js';
 import type { JsonRecord } from '../../core/json.js';
 import type { ImportedSession, SessionMessage, SessionPrivacy } from '../contract.js';
 import { firstReplayUserMessage } from './replay-user-input.js';
+import { frozenFilesFromExtraction } from './historical-artifact-files.js';
 
 export type FrozenFile = {
   readonly relativePath: string;
@@ -76,7 +77,14 @@ function redactText(value: string, redactions: readonly string[]): string {
   return redactions.reduce((result, secret) => result.split(secret).join('[REDACTED]'), value);
 }
 
-function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy, now: string, sourceHash: string, initialMessageId?: string): TaskCase {
+function taskCaseFromPrepared(
+  prepared: ImportedSession,
+  privacy: SessionPrivacy,
+  now: string,
+  sourceHash: string,
+  initialMessageId: string | undefined,
+  artifactRefs: TaskCase['baseline']['artifactRefs'],
+): TaskCase {
   if (prepared.evidenceLevel !== 'history' && !prepared.signals.completedTurns) {
     throw new Error('Session has no completed turn and cannot become a historical TaskCase.');
   }
@@ -92,7 +100,10 @@ function taskCaseFromPrepared(prepared: ImportedSession, privacy: SessionPrivacy
     initialInput: initial,
     transcript: [...prepared.transcript],
     historicalEvents: [...prepared.historicalEvents],
-    baseline: prepared.baseline,
+    baseline: {
+      ...prepared.baseline,
+      artifactRefs: artifactRefs.map((ref) => ({ artifactId: ref.artifactId, caseId })),
+    },
     sourceRuntimeEvidence: prepared.sourceRuntimeEvidence,
     ...(prepared.taskContext ? { taskContext: freezeTaskContext(prepared.taskContext) } : {}),
     provenance: { packVersion: prepared.provenance.packVersion, importedAt: now, sourceHash },
@@ -143,16 +154,47 @@ export async function freezeCase(
   casesRoot: string,
   privacy: SessionPrivacy,
   now: string,
-  options: { initialMessageId?: string; write?: typeof writeImmutable; reuseExisting?: boolean; errorLabel?: string } = {},
+  options: {
+    initialMessageId?: string;
+    write?: typeof writeImmutable;
+    reuseExisting?: boolean;
+    errorLabel?: string;
+    extractHistoricalArtifacts?: HistoricalArtifactExtractor;
+  } = {},
 ): Promise<{ taskCase: TaskCase; reused: boolean }> {
   assertSessionPrivacy(privacy);
   const prepared = redactImported(imported, privacy.redactions);
   const raw = await materializeRawFile(prepared, privacy.redactions);
   try {
-    const taskCase = taskCaseFromPrepared(prepared, privacy, now, raw.hash, options.initialMessageId);
+    const extractionFiles: FrozenFile[] = [];
+    let artifactRefs = prepared.baseline.artifactRefs;
+    if (options.extractHistoricalArtifacts) {
+      const extraction = await options.extractHistoricalArtifacts({
+        transcript: prepared.transcript,
+        historicalEvents: prepared.historicalEvents,
+        sourceHash: raw.hash,
+        privacy: { allowBinary: privacy.allowBinary },
+        ...(prepared.taskContext ? { taskContext: prepared.taskContext as Record<string, unknown> } : {}),
+      });
+      const sealed = frozenFilesFromExtraction(extraction, raw.hash);
+      extractionFiles.push(...sealed.files);
+      artifactRefs = sealed.finalArtifacts.map((artifact) => ({
+        artifactId: artifact.artifactId,
+        caseId: `case-${raw.hash.slice(0, 16)}`,
+      }));
+    }
+    const taskCase = taskCaseFromPrepared(
+      prepared,
+      privacy,
+      now,
+      raw.hash,
+      options.initialMessageId,
+      artifactRefs,
+    );
     const files: FrozenFile[] = [
       raw.file,
       ...(prepared.extraFiles ?? []).map((file) => ({ relativePath: file.relativePath, content: file.bytes })),
+      ...extractionFiles,
     ];
     const reuseExisting = options.reuseExisting ?? true;
     if (reuseExisting) {

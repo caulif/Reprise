@@ -68,8 +68,8 @@ test("lookupBasename uses direct-basename mode for attempt finals", async (t) =>
   });
   const experimentRoot = join(root, "experiment");
   const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
-  await mkdir(join(attemptRoot, "history", "finals"), { recursive: true });
-  const sealed = join(attemptRoot, "history", "finals", "deck.html");
+  await mkdir(join(attemptRoot, "finals"), { recursive: true });
+  const sealed = join(attemptRoot, "finals", "deck.html");
   await writeFile(sealed, "<!doctype html><title>sealed</title>", "utf8");
   const roots = historicalFinalSearchRoots({
     experimentRoot,
@@ -77,7 +77,7 @@ test("lookupBasename uses direct-basename mode for attempt finals", async (t) =>
     caseId: "case-1",
     attemptRoot,
   });
-  assert.equal(roots[0]?.mode, "direct-basename");
+  assert.equal(roots.some((entry) => entry.root === join(attemptRoot, "finals") && entry.mode === "direct-basename"), true);
   assert.equal(await lookupBasename(roots, "deck.html"), sealed);
 });
 
@@ -88,20 +88,22 @@ test("resolveHistoricalFinalPath and findFileInHistoricalRoots agree on discover
     await rm(root, { recursive: true, force: true });
   });
   const experimentRoot = join(root, "experiment");
-  const baselineDir = join(experimentRoot, "environment", "baselines");
-  await mkdir(baselineDir, { recursive: true });
-  const baselineHtml = join(baselineDir, "deck.html");
-  await writeFile(baselineHtml, "<!doctype html><title>deck</title>", "utf8");
+  const dataDir = join(root, "data");
+  const artifactDir = join(dataDir, "cases", "case-1", "baseline-artifacts");
+  await mkdir(artifactDir, { recursive: true });
+  const artifactHtml = join(artifactDir, "deck.html");
+  await writeFile(artifactHtml, "<!doctype html><title>deck</title>", "utf8");
   const value = taskCase();
   const search = {
     experimentRoot,
     runId: "run-1",
     caseId: value.caseId,
+    dataDir,
   };
   const resolved = await resolveHistoricalFinalPath({ ...search, taskCase: value });
   const found = await findFileInHistoricalRoots({ ...search, basename: "deck.html" });
-  assert.equal(resolved, baselineHtml);
-  assert.equal(found, baselineHtml);
+  assert.equal(resolved, artifactHtml);
+  assert.equal(found, artifactHtml);
 });
 
 test("sealBaselineOpenablePath rejects conflicting basenames", async (t) => {

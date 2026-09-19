@@ -65,6 +65,8 @@ export type ComparisonAttemptMounts = {
   readonly candidate: string;
   readonly evidence: string;
   readonly history: string;
+  /** Frozen / derived historical deliverables for this attempt (not controller process history). */
+  readonly finals: string;
   readonly turns: string;
   readonly run: string;
 };
@@ -75,12 +77,14 @@ export function comparisonAttemptMounts(input: {
   attemptRoot: string;
   candidateSnapshotStatus: "complete" | "incomplete" | "missing";
   candidateSnapshotRoot: string;
+  finalsRoot?: string;
 }): ComparisonAttemptMounts {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   return {
     candidate: comparisonCandidateMount(input),
     evidence: join(input.attemptRoot, "evidence"),
     history: join(controllerRoot, "history"),
+    finals: input.finalsRoot ?? join(input.attemptRoot, "finals"),
     turns: join(controllerRoot, "run", "turns"),
     run: join(controllerRoot, "run"),
   };
@@ -91,6 +95,7 @@ export async function writeComparisonBriefing(input: {
   experimentRoot: string;
   workspaceRoot: string;
   dataDir?: string;
+  finalsRoot?: string;
   taskCase: TaskCase;
   record: RunRecord;
   context: ComparisonContext | ComparisonFactsContext;
@@ -184,6 +189,7 @@ async function comparisonMediaBundle(
     runId: input.record.attempt.runId,
     changedPaths: input.context.reportFacts.delivery.changedPaths.filter(isComparisonChangedPath),
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
     caseId: input.taskCase.caseId,
     baselineArtifactNames: [...collectHistoricalDeliverableNames(input.taskCase, "openable-baseline")],
   });
@@ -266,7 +272,7 @@ function comparisonAttemptIndex(): string {
   return [
     "# Comparison attempt",
     "",
-    "Navigation is in briefing/INDEX.md. facts/, history/, and candidate/ are side copies of the same Host projection for human audit.",
+    "Navigation is in briefing/INDEX.md. facts/, history/, finals/, and candidate/ are Host projections for human audit.",
     "",
   ].join("\n");
 }
@@ -293,6 +299,7 @@ function comparisonIndex(
     "- observations/user-inputs/INDEX.tsv: complete user demand in session order (historical_user vs controller)",
     "- observations/INDEX.md: frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/: frozen historical conversation (read-only mount)",
+    "- finals/: frozen or attempt-derived historical deliverables (read-only mount; use REPRISE_FINALS_ROOT in shell)",
     "- turns/: candidate settled-turn briefing including each user-view.md (read-only mount)",
     "- briefing/candidate/git-sink-refs.txt: Host catalog of initial and final sink refs by repository relative path (not the user's GitHub); objectStore may be not_seeded",
     "- briefing/candidate/git-sink-manifest.json: structured sink catalog with isolation, objectStore, completeness, issues.code, and ref changes; do not assume a branch named main",
@@ -318,6 +325,7 @@ async function comparisonLinks(input: {
   experimentRoot: string;
   workspaceRoot: string;
   dataDir?: string;
+  finalsRoot?: string;
   taskCase: TaskCase;
   record: RunRecord;
   context: ComparisonContext | ComparisonFactsContext;
@@ -353,6 +361,7 @@ async function comparisonLinks(input: {
     taskCase: input.taskCase,
     runId: input.record.attempt.runId,
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
+    ...(input.finalsRoot ? { finalsRoot: input.finalsRoot } : {}),
   })) {
     push(0, link);
   }

@@ -13,7 +13,7 @@ import type { ExperimentInput, ExperimentResult, ExperimentAgentConfig } from ".
 import type { ExperimentPreflight } from "./experiment-preflight.js";
 import type { ComparisonAgentPort } from "../agents/comparison-agent.js";
 import type { ControllerPort } from "../agents/controller-agent.js";
-import type { RunPolicy } from "../core/schema.js";
+import type { HistoricalArtifactExtractor, RunPolicy } from "../core/schema.js";
 import type { ProductRuntime } from "../core/runtime.js";
 
 export async function comparePersistedExperiment(input: {
@@ -28,6 +28,8 @@ export async function comparePersistedExperiment(input: {
   readonly signal?: AbortSignal;
   readonly onEvent?: (event: EventEnvelope) => void;
   readonly onActivity?: (activity: ExperimentActivity) => void;
+  readonly extractHistoricalArtifacts?: HistoricalArtifactExtractor;
+  readonly resolveExtractHistoricalArtifacts?: (productId: string) => HistoricalArtifactExtractor | undefined;
 }): Promise<ExperimentResult> {
   const experimentRoot = resolvedExperimentRoot(input.dataDir, input.experimentId);
   const loaded = await loadFinishedRun(experimentRoot, input.experimentId, input.runId);
@@ -58,9 +60,16 @@ export async function comparePersistedExperiment(input: {
     await store.acquireWriter();
     const provider = new LocalWorkspaceProvider(join(experimentRoot, "environment"));
     const snapshot = await provider.candidateSnapshot(loaded.record.attempt.runId);
+    const extractHistoricalArtifacts = input.extractHistoricalArtifacts
+      ?? input.resolveExtractHistoricalArtifacts?.(loaded.taskCase.source.productId);
     const finishInput = {
       signal,
-      input: experimentInput({ ...input, comparison: agents.comparison, agentConfig: agents.agentConfig }, loaded, experimentRoot),
+      input: experimentInput({
+        ...input,
+        comparison: agents.comparison,
+        agentConfig: agents.agentConfig,
+        ...(extractHistoricalArtifacts ? { extractHistoricalArtifacts } : {}),
+      }, loaded, experimentRoot),
       taskCase: loaded.taskCase,
       preflight: loaded.preflight,
       store,
@@ -129,7 +138,15 @@ function isPreflight(value: unknown): value is ExperimentPreflight {
 }
 
 function experimentInput(
-  input: { dataDir: string; comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig; policy: RunPolicy; now: string; onEvent?: (event: EventEnvelope) => void },
+  input: {
+    dataDir: string;
+    comparison: ComparisonAgentPort;
+    agentConfig: ExperimentAgentConfig;
+    policy: RunPolicy;
+    now: string;
+    onEvent?: (event: EventEnvelope) => void;
+    extractHistoricalArtifacts?: HistoricalArtifactExtractor;
+  },
   loaded: { spec: ExperimentSpec; record: RunRecord; taskCase: TaskCase },
   experimentRoot: string,
 ): ExperimentInput {
@@ -150,6 +167,9 @@ function experimentInput(
     comparison: input.comparison,
     now: input.now,
     ...(input.onEvent ? { onEvent: input.onEvent } : {}),
+    ...(input.extractHistoricalArtifacts
+      ? { extractHistoricalArtifacts: input.extractHistoricalArtifacts }
+      : {}),
     compare: true,
   };
 }
