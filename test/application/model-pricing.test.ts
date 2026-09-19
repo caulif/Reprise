@@ -42,21 +42,33 @@ test("cleanModelIdForPricing matches cc-switch slash colon at-sign and 1m rules"
 test("snapshot catalog validates and does not map sibling SKUs", () => {
   const catalog = loadPricingCatalog();
   assert.equal(catalog.version, MODEL_PRICING_TABLE_VERSION);
-  assert.equal(MODEL_PRICING_TABLE_VERSION, "2026-09-16-models-dev-snapshot");
+  assert.equal(MODEL_PRICING_TABLE_VERSION, "2026-09-19-cc-switch-seed");
+  assert.ok(catalog.models.length >= 180);
+  assert.ok(catalog.models.every((row) => row.source === "cc-switch-seed"));
   assert.equal(resolveModelPricing("gpt-5.5").kind, "hit");
   assert.equal(resolveModelPricing("MiniMax-M3").kind, "hit");
   assert.equal(resolveModelPricing("gpt-5.6-terra").kind, "hit");
   assert.equal(resolveModelPricing("gpt-5.6-sol").kind, "hit");
+  assert.equal(resolveModelPricing("gpt-5.6-luna").kind, "hit");
   assert.equal(resolveModelPricing("gpt-6-astra").kind, "hit");
   assert.equal(resolveModelPricing("deepseek-flash").kind, "hit");
+  assert.equal(resolveModelPricing("gemini-3.8-flash").kind, "hit");
+  assert.equal(resolveModelPricing("grok-4.6").kind, "hit");
+  assert.equal(resolveModelPricing("qwen3.8-max").kind, "hit");
+  assert.equal(resolveModelPricing("claude-opus-4-8").kind, "hit");
+  assert.equal(resolveModelPricing("kimi-k3").kind, "hit");
   const terra = resolveModelPricing("gpt-5.6-terra");
   const sol = resolveModelPricing("gpt-5.6-sol");
+  const luna = resolveModelPricing("gpt-5.6-luna");
   assert.equal(terra.kind, "hit");
   assert.equal(sol.kind, "hit");
+  assert.equal(luna.kind, "hit");
   if (terra.kind === "hit" && sol.kind === "hit") {
     assert.notDeepEqual(terra.rates, sol.rates);
   }
-  assert.equal(resolveModelPricing("gpt-5.6-luna").kind, "miss");
+  if (luna.kind === "hit" && terra.kind === "hit") {
+    assert.notDeepEqual(luna.rates, terra.rates);
+  }
   const five = resolveModelPricing("gpt-5");
   const fiveFive = resolveModelPricing("gpt-5.5");
   assert.equal(five.kind, "hit");
@@ -65,7 +77,8 @@ test("snapshot catalog validates and does not map sibling SKUs", () => {
     assert.notDeepEqual(five.rates, fiveFive.rates);
   }
   assert.equal(resolveModelPricing("unknown-model-xyz").kind, "miss");
-  assert.equal(resolveModelPricing("claude-sonnet-4-5-20250929").kind, "miss");
+  assert.equal(resolveModelPricing("claude-sonnet-4-5-20250929").kind, "hit");
+  assert.equal(resolveModelPricing("claude-sonnet-4-5-20991231").kind, "miss");
   assert.equal(lookupModelPricing("claude-sonnet-4.5")?.input, 3);
   assert.equal(lookupModelPricing("gpt-5.2-codex")?.input, 1.75);
 });
@@ -116,13 +129,30 @@ test("bracket 1m suffix uses the same catalog row as the cleaned id", () => {
   }
 });
 
-test("slash-prefixed DeepSeek id hits the flash snapshot row", () => {
+test("slash-prefixed DeepSeek v4 and v4.1 flash hit their own catalog rows", () => {
   const usage = aggregateHistoricalUsage([
     { type: "result", usage: { input_tokens: 1_000_000, output_tokens: 0 } },
   ]);
-  assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4-flash"), 0.15);
-  assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4.1-flash"), undefined);
-  assert.equal(resolveModelPricing("deepseek/deepseek-v4.1-flash").kind, "miss");
+  const v4 = resolveModelPricing("deepseek/deepseek-v4-flash");
+  const v41 = resolveModelPricing("deepseek/deepseek-v4.1-flash");
+  const v41Bracket = resolveModelPricing("deepseek/deepseek-v4.1-flash[1m]");
+  assert.equal(v4.kind, "hit");
+  assert.equal(v41.kind, "hit");
+  assert.equal(v41Bracket.kind, "hit");
+  if (v4.kind === "hit" && v41.kind === "hit" && v41Bracket.kind === "hit") {
+    assert.equal(v4.modelId, "deepseek-v4-flash");
+    assert.equal(v41.modelId, "deepseek-v4.1-flash");
+    assert.equal(v41Bracket.modelId, "deepseek-v4.1-flash");
+    assert.notEqual(v41.modelId, v4.modelId);
+    assert.equal(v41.rates.input, 0.3);
+    assert.equal(v41.rates.output, 1.2);
+    assert.equal(v41.rates.cacheRead, 0.006);
+    assert.equal(v41.rates.cacheCreation, 0);
+    assert.equal(v41.source, "cc-switch-seed");
+    assert.deepEqual(v41Bracket.rates, v41.rates);
+  }
+  assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4-flash"), 0.3);
+  assert.equal(usageCostUsd(usage, "deepseek/deepseek-v4.1-flash"), 0.3);
 });
 
 test("MiniMax-M3 is not priced as Claude Sonnet", () => {

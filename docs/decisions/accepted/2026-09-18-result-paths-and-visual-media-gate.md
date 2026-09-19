@@ -11,7 +11,7 @@ TUI 结果页需要打开**文件**（报告、历史终稿、候选终稿），
 - `buildResultPathLinks` 异步解析路径：`resolveHistoricalFinalPath` 与 `discoverOpenableSources` 共用 `historical-final-discovery.ts` 的搜索顺序与存在性检查；无匹配则不写链接。
 - baseline HTML 封存到 attempt `history/finals/` 时，同名 basename 冲突且字节不同则失败，避免错误绑定。
 - 无头截图经 `src/infrastructure/headless-screenshot.ts`；失败区分 `no_browser` 与 `capture_failed`，诊断写入 `ComparisonVisualMediaError` 消息。
-- `deepseek-v4.1-flash` 仍按 [2026-09-14 对照定价快照](../archive/accepted-2026-09/2026-09-14-comparison-pricing-snapshot-and-id-cleaning.md) 保持 `miss`，不借用 `deepseek-v4-flash` 费率。
+- `deepseek-v4.1-flash` 不得借用 `deepseek-v4-flash` 费率；独立目录行见 [2026-09-19 价格目录同步 cc-switch](../archive/accepted-2026-09/2026-09-19-pricing-catalog-cc-switch-seed.md)。
 
 ## 备选方案
 
@@ -25,7 +25,7 @@ TUI 结果页需要打开**文件**（报告、历史终稿、候选终稿），
 
 - TUI 结果页：`pathLinks` 提供 report / historyFinal / candidateFinal 文件路径；Trace/Replica 标签带「排查」。
 - Comparison：`historical-final-discovery.ts` 与 openable 管线共用发现逻辑；HTML 截图走 infrastructure 层。
-- 定价：`deepseek-v4.1-flash` 继续 `miss`；`verify-pack` 使用 `semverFromVersionOutput` 与 `nodeVersionAtLeast`。
+- 定价：`deepseek-v4.1-flash` 使用独立目录行，不借用 V4；`verify-pack` 使用 `semverFromVersionOutput` 与 `nodeVersionAtLeast`。
 - TUI 帧 `26-result` / `26b-result-compact` 须与 Windows 生成一致（见 [TUI 帧基线只在 Windows runner 上比对](2026-08-15-tui-frame-baseline-windows-only.md)）。
 
 ## 验证
