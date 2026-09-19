@@ -13,25 +13,12 @@ function kvLinkValueStart(labelWidth: number): number {
   return labelWidth + 3;
 }
 
-/** Column offset from a panel body line to the final rendered screen row. */
-export function panelBodyChrome(theme: Theme): { readonly row: number; readonly col: number } {
-  return { row: 1, col: theme.framed ? 1 : 3 };
-}
-
 function panelInnerWidth(theme: Theme, width: number): number {
   return Math.max(1, width - (theme.framed ? 2 : 3));
 }
 
-/** First screen row (0-based inside the panel body) for each pre-panel body line after wrap. */
-export function panelBodyScreenRows(theme: Theme, body: readonly string[], width: number): readonly number[] {
-  const inner = panelInnerWidth(theme, width);
-  const rows: number[] = [];
-  let screenRow = 0;
-  for (const line of body) {
-    rows.push(screenRow);
-    screenRow += wrapBodyLine(line, inner).length;
-  }
-  return rows;
+function panelBodyCol(theme: Theme): number {
+  return theme.framed ? 1 : 3;
 }
 
 export function pad(text: string, width: number, ellipsis = '…'): string {
@@ -43,19 +30,66 @@ export function pad(text: string, width: number, ellipsis = '…'): string {
 }
 
 export function panel(theme: Theme, title: string, body: readonly string[], width: number): string[] {
+  return [...panelWithHits(theme, title, body, width).lines];
+}
+
+/**
+ * One wrap pass owns both paint and pointer geometry.
+ * Body-line hits (1-based cols inside the pre-chrome body line) map onto every
+ * post-wrap screen row they intersect, with x clipped into that segment.
+ */
+export function panelWithHits<T extends LinkValueHit>(
+  theme: Theme,
+  title: string,
+  body: readonly string[],
+  width: number,
+  bodyHits: ReadonlyMap<number, readonly T[]> = new Map(),
+): { readonly lines: readonly string[]; readonly rowHits: ReadonlyMap<number, readonly T[]> } {
+  const inner = panelInnerWidth(theme, width);
+  const col = panelBodyCol(theme);
+  const rowHits = new Map<number, readonly T[]>();
+  const painted: string[] = [];
+  let bodyScreenRow = 0;
+  for (let bodyRow = 0; bodyRow < body.length; bodyRow += 1) {
+    const line = body[bodyRow] ?? '';
+    const parts = wrapBodyLine(line, inner);
+    const hits = bodyHits.get(bodyRow);
+    let visibleStart = 0;
+    for (const part of parts) {
+      const partWidth = Math.max(0, visibleWidth(part));
+      if (hits?.length) {
+        const partStart = visibleStart + 1;
+        const partEnd = visibleStart + Math.max(1, partWidth);
+        const clipped: T[] = [];
+        for (const hit of hits) {
+          if (hit.x1 < partStart || hit.x0 > partEnd) continue;
+          const local0 = Math.max(hit.x0, partStart) - visibleStart;
+          const local1 = Math.min(hit.x1, partEnd) - visibleStart;
+          clipped.push({ ...hit, x0: local0 + col, x1: local1 + col });
+        }
+        if (clipped.length) rowHits.set(1 + bodyScreenRow, clipped);
+      }
+      painted.push(part);
+      visibleStart += partWidth;
+      bodyScreenRow += 1;
+    }
+  }
   const heading = ` ${title.trim()} `;
   if (!theme.framed) {
-    const inner = Math.max(1, width - 3);
-    return [`[ ${title.trim()} ]`, ...body.flatMap((line) => wrapBodyLine(line, inner)).map((line) => `   ${line}`)];
+    return {
+      lines: [`[ ${title.trim()} ]`, ...painted.map((line) => `   ${line}`)],
+      rowHits,
+    };
   }
-  const inner = Math.max(1, width - 2);
   const g = theme.glyphs;
   const headingText = `${g.h}${heading}`;
   const topPad = Math.max(0, inner - visibleWidth(headingText));
   const top = `${g.tl}${headingText}${g.h.repeat(topPad)}${g.tr}`;
   const bottom = `${g.bl}${g.h.repeat(inner)}${g.br}`;
-  const wrapped = body.flatMap((line) => wrapBodyLine(line, inner)).map((line) => `${g.v}${pad(line, inner, g.ellipsis)}${g.v}`);
-  return [top, ...wrapped, bottom];
+  return {
+    lines: [top, ...painted.map((line) => `${g.v}${pad(line, inner, g.ellipsis)}${g.v}`), bottom],
+    rowHits,
+  };
 }
 
 

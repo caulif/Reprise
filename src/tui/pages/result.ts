@@ -6,7 +6,7 @@ import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
-import { kv, kvLinkBlock, panel, panelBodyChrome, panelBodyScreenRows, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
+import { kv, kvLinkBlock, panel, panelWithHits, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
 
 export type ResultPointerHit = { readonly action: ResultAction; readonly x0: number; readonly x1: number };
@@ -70,20 +70,7 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
   pushLink('open-candidate-final', kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width));
   pushLink('open-trace', kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width));
   pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width));
-  const lines = panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width);
-  const rowHits = new Map<number, readonly ResultPointerHit[]>();
-  const chrome = panelBodyChrome(theme);
-  const bodyScreenRows = panelBodyScreenRows(theme, body, width);
-  for (const [bodyRow, hits] of bodyHits) {
-    const screenRow = bodyScreenRows[bodyRow];
-    if (screenRow === undefined) continue;
-    rowHits.set(chrome.row + screenRow, hits.map((hit) => ({
-      action: hit.action,
-      x0: hit.x0 + chrome.col,
-      x1: hit.x1 + chrome.col,
-    })));
-  }
-  return { lines, rowHits };
+  return panelWithHits(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width, bodyHits);
 }
 
 export function resultHints(locale: Locale = 'en', comparePending = false): readonly (readonly [string, string])[] {
