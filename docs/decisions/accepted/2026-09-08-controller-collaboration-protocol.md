@@ -14,10 +14,13 @@
 - Host 先写入 `controller.decision`，再按唯一 `clientMessageId` 投递。`unknown` 与取消不重发。不同 `runId` 不共享 Controller Session。
 - `controller.requested` 快照记录 `promptDigest`。用量以 Invocation `modelRequests` 和压缩 `tokensBefore` 为准。
 - 合同 lane 覆盖五类判断样例，只验证协议与分类边界。真实模型语义评估经 `npm run evaluate:controller` 写出调用方指定路径，不进入 `npm run check`，不与合同 lane 合成总分。
+- 非法或未观察的 `evidenceRefs` 不得静默过滤；路径不是 artifact id。合法观察引用须出现在模型可见工具返回正文。无后续历史用户句不构成验收证明。
 
 ## 备选方案
 
 **用脚本分数宣称协作习惯已验证。** 无法区分协议回归与真人语义，故不采用。
+
+**静默丢弃畸形 evidenceRefs 后宣布成功。** 证据链断裂且模型看不到真实引用，故不采用。
 
 ## 影响
 
@@ -25,4 +28,4 @@
 
 ## 验证
 
-`test/controller-collaboration-protocol.test.ts`、`test/controller-capability-evaluation.test.ts`、`test/candidate-run.test.ts`、`test/codex-experiment.test.ts` 覆盖协议；随后 `npm run check`。
+`test/controller-collaboration-protocol.test.ts`、`test/controller-capability-evaluation.test.ts`、`test/candidate-run.test.ts`、`test/codex-experiment.test.ts`、`test/application/agent-host.test.ts`（路径伪引用修复 / 持续非法失败）、`test/application/controller-tools.test.ts`（模型可见 Evidence refs）覆盖协议；随后 `npm run check`。

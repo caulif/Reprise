@@ -4,16 +4,25 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  appendEvidenceRefsFooter,
   controllerDecisionTools,
   controllerProjectWriteAllowed,
   controllerReadEvidenceSource,
   createControllerToolBindings,
   shellExternalWriteRefs,
 } from "../../src/application/controller-tools.js";
+import type { AgentToolResult } from "../../src/infrastructure/agent/host.js";
+import { toPiTool } from "../../src/infrastructure/agent/providers/pi/tool-adapter.js";
 import type { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import { sameLiveFsPath } from "../../src/core/paths.js";
 import { hostShellMissingExecutable, hostShellPwd, hostShellReadFile, hostShellSleep } from "../host-shell.js";
+
+function toolBodyWithoutEvidenceFooter(content: string): string {
+  const marker = "\n\nEvidence refs:";
+  const index = content.lastIndexOf(marker);
+  return index === -1 ? content : content.slice(0, index);
+}
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "reprise-controller-tools-"));
@@ -25,9 +34,9 @@ async function fixture() {
   await mkdir(sourceRoot, { recursive: true });
   await writeFile(join(briefingRoot, "INDEX.md"), "index\n");
   const events: unknown[] = [];
-  const artifacts: { artifactId: string; runId: string }[] = [];
+  const artifacts: { artifactId: string; runId: string; bytes?: Buffer }[] = [];
   const store = {
-    commitArtifact: async (input: { artifactId: string; runId: string }) => {
+    commitArtifact: async (input: { artifactId: string; runId: string; bytes: Buffer }) => {
       artifacts.push(input);
     },
     append: async (event: unknown) => {
@@ -124,11 +133,54 @@ test("Controller read/ls/grep/find can use host-readable paths outside project/"
     assert.equal(readEvent?.payload?.runId, "run-1");
     assert.equal(readEvent?.payload?.evidenceRefs?.[0]?.startsWith("artifact:"), true);
     assert.equal(ctx.artifacts.every((item) => item.runId === "run-1"), true);
-    const details = got.details as { evidenceRefs?: string[]; runId?: string };
+    const details = got.details as { evidenceRefs?: string[]; runId?: string; resultHash?: string };
     assert.equal(details.runId, "run-1");
     assert.deepEqual(details.evidenceRefs, readEvent?.payload?.evidenceRefs);
+    assert.match(got.content, /needle-from-history/);
+    assert.match(got.content, /Evidence refs: artifact:controller-read-/);
+    const sealed = JSON.parse(ctx.artifacts[0]!.bytes!.toString("utf8")) as { content: string };
+    assert.match(sealed.content, /needle-from-history/);
+    assert.doesNotMatch(sealed.content, /Evidence refs/);
   } finally {
     await rm(ctx.root, { recursive: true, force: true });
+  }
+});
+
+test("Evidence refs footer is visible in Pi tool adapter content text, not only details", async () => {
+  const result: AgentToolResult = {
+    content: "file body",
+    details: { path: "project/a.txt", available: true },
+  };
+  appendEvidenceRefsFooter(result, ["artifact:controller-read-abc"]);
+  const pi = toPiTool({
+    name: "read",
+    description: "read",
+    parameters: { type: "object", properties: {} } as never,
+    execute: async () => result,
+  });
+  const adapted = await pi.execute("call-1", {}, new AbortController().signal);
+  assert.equal(adapted.content.length, 1);
+  assert.equal(adapted.content[0]?.type, "text");
+  if (adapted.content[0]?.type === "text") {
+    assert.match(adapted.content[0].text, /file body/);
+    assert.match(adapted.content[0].text, /Evidence refs: artifact:controller-read-abc/);
+  }
+  assert.deepEqual((adapted.details as { path?: string }).path, "project/a.txt");
+});
+
+test("Evidence refs footer with contentBlocks stays out of sealed image bytes path", () => {
+  const result: AgentToolResult = {
+    content: "caption",
+    contentBlocks: [{ type: "image", data: "abc", mimeType: "image/png" }],
+    details: {},
+  };
+  appendEvidenceRefsFooter(result, ["artifact:controller-read-xyz"]);
+  assert.match(result.content, /Evidence refs: artifact:controller-read-xyz/);
+  assert.equal(result.contentBlocks?.length, 2);
+  assert.equal(result.contentBlocks?.[0]?.type, "image");
+  assert.equal(result.contentBlocks?.[1]?.type, "text");
+  if (result.contentBlocks?.[1]?.type === "text") {
+    assert.equal(result.contentBlocks[1].text, "Evidence refs: artifact:controller-read-xyz");
   }
 });
 
@@ -161,9 +213,11 @@ test("large, binary, and credential files keep read boundaries", async () => {
     const big = join(ctx.root, "big.txt");
     await writeFile(big, `${"a".repeat(70_000)}TAIL`);
     const sliced = await read.execute({ path: big, maxBytes: 16 }, signal);
-    const slicedDetails = sliced.details as { truncated?: boolean };
-    assert.equal(sliced.content, "a".repeat(16));
+    const slicedDetails = sliced.details as { truncated?: boolean; evidenceRefs?: string[] };
+    assert.equal(toolBodyWithoutEvidenceFooter(sliced.content), "a".repeat(16));
+    assert.match(sliced.content, /Evidence refs: artifact:controller-read-/);
     assert.equal(slicedDetails.truncated, true);
+    assert.ok(slicedDetails.evidenceRefs?.[0]?.startsWith("artifact:"));
     const binary = join(ctx.root, "blob.bin");
     await writeFile(binary, Buffer.from([0x00, 0x01, 0x02, 0xff]));
     await assert.rejects(
@@ -189,9 +243,11 @@ test("Controller shell_exec uses replica cwd, can read external paths, and diagn
     const shell = ctx.tools.find((tool) => tool.name === "shell_exec");
     assert.ok(shell);
     const cwd = await shell.execute({ command: hostShellPwd() }, signal);
-    assert.equal(await sameLiveFsPath(cwd.content.trim(), ctx.replicaRoot), true);
+    assert.equal(await sameLiveFsPath(toolBodyWithoutEvidenceFooter(cwd.content).trim(), ctx.replicaRoot), true);
+    assert.match(cwd.content, /Evidence refs: artifact:controller-shell-/);
     const external = await shell.execute({ command: hostShellReadFile(marker) }, signal);
-    assert.match(external.content, /from-outside/);
+    assert.match(toolBodyWithoutEvidenceFooter(external.content), /from-outside/);
+    assert.match(external.content, /Evidence refs: artifact:controller-shell-/);
     assert.doesNotMatch(external.content, /slash-separated relative path/);
     const nonzero = await shell.execute({ command: "exit 9" }, signal);
     assert.equal((nonzero.details as { exitCode?: number }).exitCode, 9);
