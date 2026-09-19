@@ -95,6 +95,12 @@ export async function verifyAndRenderComparisonReport(input: {
   evidence?: readonly ComparisonLinkRecord[];
   hostZoneSnapshot?: HostZoneSnapshot;
   locale?: AgentLocale;
+  /**
+   * When set (including empty), `data-claim="visual"` also requires the cited media
+   * `contentHash` to appear in this Session's delivered native-image set.
+   * Bare `<img data-media-ref>` for human readers does not need delivery.
+   */
+  deliveredImageContentHashes?: ReadonlySet<string>;
 }): Promise<
   { html: string; model: ComparisonReportModel }
   | { failureClass: ComparisonFailureClass; code: ComparisonPublishCode; message: string }
@@ -113,7 +119,7 @@ export async function verifyAndRenderComparisonReport(input: {
   if (unexpected) return { failureClass: "publication", code: "report_incomplete", message: unexpected };
   const structuredEvidence = claimsVerifiedWithoutResolvableEvidence(input.html, input.evidence ?? []);
   if (structuredEvidence) return { failureClass: "evidence", code: "evidence_unresolved", message: structuredEvidence };
-  const structuredVisual = claimsVisualWithoutUsableMedia(input.html, input.media);
+  const structuredVisual = claimsVisualWithoutUsableMedia(input.html, input.media, input.deliveredImageContentHashes);
   if (structuredVisual) return { failureClass: "media", code: "media_unavailable", message: structuredVisual };
   const rewritten = await rewritePublishableHtml(input);
   if (hasExternalNetwork(rewritten.html)) {
@@ -646,9 +652,21 @@ function claimsVerifiedWithoutResolvableEvidence(html: string, evidence: readonl
   return undefined;
 }
 
-function claimsVisualWithoutUsableMedia(html: string, media: readonly ComparisonMediaRecord[]): string | undefined {
-  const usable = (ref: string) => media.some((item) => (item.shortRef === ref || item.ref === ref) && item.available);
+function claimsVisualWithoutUsableMedia(
+  html: string,
+  media: readonly ComparisonMediaRecord[],
+  deliveredImageContentHashes?: ReadonlySet<string>,
+): string | undefined {
+  const usable = (ref: string) => {
+    const item = media.find((record) => (record.shortRef === ref || record.ref === ref) && record.available);
+    if (!item) return false;
+    if (!deliveredImageContentHashes) return true;
+    return Boolean(item.contentHash && deliveredImageContentHashes.has(item.contentHash));
+  };
   if (claimMissingResolvedRef(html, "visual", "data-media-ref", usable)) {
+    if (deliveredImageContentHashes && media.some((item) => item.available)) {
+      return "Comparison claimed visual inspection without session-delivered media.";
+    }
     return "Comparison claimed visual inspection without available media.";
   }
   return undefined;

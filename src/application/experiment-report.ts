@@ -319,16 +319,21 @@ async function runComparisonAttempt(input: {
   const getEvidenceCatalog = (): ComparisonCatalogSnapshot => catalog.snapshot();
   try {
     await writeAtomic(join(input.attemptRoot, "report.html"), input.reportShellHtml);
+    let deliveredImageContentHashes = new Set<string>();
     let comparisonResult: AgentInvocation<ComparisonResult> = input.host.signal?.aborted
       ? { status: "cancelled" }
-      : await invokeCompare(
-        input.host,
-        compareContext,
-        input.attemptRoot,
-        input.attemptId,
-        catalog.snapshot().media.some((item) => item.available),
-        catalog,
-      );
+      : await (async () => {
+        const invoked = await invokeCompare(
+          input.host,
+          compareContext,
+          input.attemptRoot,
+          input.attemptId,
+          catalog.snapshot().media.some((item) => item.available),
+          catalog,
+        );
+        deliveredImageContentHashes = invoked.deliveredImageContentHashes;
+        return invoked.result;
+      })();
     if (input.host.signal?.aborted) comparisonResult = { status: "cancelled" };
     comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(input.attemptRoot, "report.html"));
     if (comparisonResult.status === "completed") {
@@ -346,6 +351,7 @@ async function runComparisonAttempt(input: {
         input.compareFacts,
         { links: finalCatalog.links, media: finalCatalog.media },
         input.locale,
+        deliveredImageContentHashes,
       );
     }
     if (comparisonResult.status === "completed") {
@@ -437,6 +443,7 @@ async function enforcePublishedReport(
   context: ComparisonContext,
   briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[] },
   locale: AgentLocale,
+  deliveredImageContentHashes: ReadonlySet<string>,
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (result.status !== "completed") return result;
   if (!(await reportExists(attemptRoot, result.value.reportPath))) {
@@ -458,6 +465,7 @@ async function enforcePublishedReport(
     media: briefing.media,
     evidence: briefing.links,
     locale,
+    deliveredImageContentHashes,
     ...(context.hostZoneSnapshot ? { hostZoneSnapshot: context.hostZoneSnapshot } : {}),
   });
   if ("failureClass" in verified) {
@@ -490,15 +498,19 @@ async function invokeCompare(
   attemptId: string,
   allowBinary: boolean,
   catalog: ComparisonEvidenceCatalog,
-): Promise<AgentInvocation<ComparisonResult>> {
-  if (input.signal?.aborted) return { status: "cancelled" };
-  return input.input.comparison.compare(
+): Promise<{ result: AgentInvocation<ComparisonResult>; deliveredImageContentHashes: Set<string> }> {
+  const deliveredImageContentHashes = new Set<string>();
+  if (input.signal?.aborted) {
+    return { result: { status: "cancelled" }, deliveredImageContentHashes };
+  }
+  const result = await input.input.comparison.compare(
     context,
     comparisonTools(input, attemptRoot, allowBinary, catalog),
-    comparisonAudit(input, attemptId),
+    comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
     { getEvidenceCatalog: () => catalog.snapshot() },
   );
+  return { result, deliveredImageContentHashes };
 }
 
 function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]): string {
@@ -636,9 +648,58 @@ function previewReportStubTool(): AgentToolDefinition {
   };
 }
 
-function comparisonAudit(input: Parameters<typeof finishExperiment>[0], attemptId: string): AgentAuditSink {
+function comparisonAudit(
+  input: Parameters<typeof finishExperiment>[0],
+  attemptId: string,
+  deliveredImageContentHashes: Set<string>,
+): AgentAuditSink {
   const sink = experimentAgentAuditSink(input.store, input.input.runId);
-  return { append: (event) => sink.append({ ...event, payload: { attemptId, ...event.payload } }) };
+  return {
+    append: async (event) => {
+      recordDeliveredImageContentHashes(event, deliveredImageContentHashes);
+      await sink.append({ ...event, payload: { attemptId, ...event.payload } });
+    },
+    ...(sink.commitModelInput ? { commitModelInput: (bytes) => sink.commitModelInput!(bytes) } : {}),
+  };
+}
+
+function recordDeliveredImageContentHashes(
+  event: { type: string; payload: Record<string, unknown> },
+  delivered: Set<string>,
+): void {
+  if (event.type === "agent.message_appended") {
+    const images = event.payload.images;
+    if (!Array.isArray(images)) return;
+    for (const image of images) {
+      if (image && typeof image === "object" && typeof (image as { contentHash?: unknown }).contentHash === "string") {
+        delivered.add((image as { contentHash: string }).contentHash);
+      }
+    }
+    return;
+  }
+  if (event.type !== "agent.tool_completed") return;
+  const types = event.payload.contentTypes;
+  if (!Array.isArray(types) || !types.includes("image")) return;
+  const body = event.payload.body;
+  if (!body || typeof body !== "object" || (body as { encoding?: unknown }).encoding !== "inline") return;
+  const text = (body as { text?: unknown }).text;
+  if (typeof text !== "string") return;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!Array.isArray(parsed)) return;
+    for (const block of parsed) {
+      if (
+        block
+        && typeof block === "object"
+        && (block as { type?: unknown }).type === "image"
+        && typeof (block as { contentHash?: unknown }).contentHash === "string"
+      ) {
+        delivered.add((block as { contentHash: string }).contentHash);
+      }
+    }
+  } catch {
+    // Tool body is not JSON image blocks; nothing to record for visual-claim delivery.
+  }
 }
 
 async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown): Promise<void> {
