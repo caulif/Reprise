@@ -107,33 +107,24 @@ function groupTurns(entries: readonly TimelineEntry[]): TimelineEntry[][] {
 function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySet<string>): TimelineEntry[] {
   const out: TimelineEntry[] = [];
   let tools: TimelineEntry[] = [];
-  const flush = () => {
+  const releaseActive = () => {
+    if (!tools.length) return;
+    out.push(...tools);
+    tools = [];
+  };
+  const flushEnded = () => {
     if (!tools.length) return;
     if (tools.length < 2 || expandedIds.has(thinkFoldId(tools))) {
       out.push(...tools);
       tools = [];
       return;
     }
-    const lane = tools[0]?.lane;
-    const write = tools.find((item) => item.kind === 'deliver' || /写入/.test(item.title));
-    const title = write && tools.every((item) => item.kind === 'deliver' || /写入/.test(item.title))
-      ? `▸ 写入 ${write.detail ?? write.title}`
-      : `▸ 阅读证据 · ${tools.length}`;
-    out.push({
-      sequence: tools.at(-1)?.sequence ?? 0,
-      occurredAt: tools.at(-1)?.occurredAt ?? "",
-      source: tools[0]?.source ?? "HARNESS",
-      title,
-      ...(lane ? { lane } : {}),
-      kind: "fold",
-      itemId: thinkFoldId(tools),
-      count: tools.length,
-    });
+    out.push(thinkFoldRow(tools));
     tools = [];
   };
   for (const entry of turn) {
     if (entry.kind === "live" && entry.itemId?.startsWith("now:")) {
-      flush();
+      releaseActive();
       out.push(entry);
       continue;
     }
@@ -141,11 +132,31 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
       tools.push(entry);
       continue;
     }
-    flush();
+    flushEnded();
     out.push(entry);
   }
-  flush();
+  const endsWithNow = turn.at(-1)?.kind === "live" && turn.at(-1)?.itemId?.startsWith("now:");
+  if (endsWithNow) releaseActive();
+  else flushEnded();
   return out;
+}
+
+function thinkFoldRow(tools: readonly TimelineEntry[]): TimelineEntry {
+  const lane = tools[0]?.lane;
+  const write = tools.find((item) => item.kind === 'deliver' || /写入/.test(item.title));
+  const title = write && tools.every((item) => item.kind === 'deliver' || /写入/.test(item.title))
+    ? `▸ 写入 ${write.detail ?? write.title}`
+    : `▸ 阅读证据 · ${tools.length}`;
+  return {
+    sequence: tools.at(-1)?.sequence ?? 0,
+    occurredAt: tools.at(-1)?.occurredAt ?? "",
+    source: tools[0]?.source ?? "HARNESS",
+    title,
+    ...(lane ? { lane } : {}),
+    kind: "fold",
+    itemId: thinkFoldId(tools),
+    count: tools.length,
+  };
 }
 
 export function collapseEndedThinkFolds(entries: readonly TimelineEntry[], expandedIds: readonly string[]): string[] {
@@ -158,8 +169,9 @@ export function collapseEndedThinkFolds(entries: readonly TimelineEntry[], expan
   return expandedIds.filter((id) => !stale.has(id));
 }
 
-function thinkFoldId(turn: readonly TimelineEntry[]): string {
-  return `fold:think:${turn[0]?.sequence ?? 0}`;
+function thinkFoldId(entries: readonly TimelineEntry[]): string {
+  const anchor = entries.find((entry) => entry.kind === "investigate") ?? entries[0];
+  return `fold:think:${anchor?.sequence ?? 0}`;
 }
 
 function foldLeafNames(detail: string | undefined): string[] {
@@ -188,12 +200,19 @@ function expandFoldLeaves(entries: readonly TimelineEntry[], expandedIds: Readon
 function wouldHideInThinkFold(turn: readonly TimelineEntry[], target: TimelineEntry): boolean {
   let tools: TimelineEntry[] = [];
   for (const entry of turn) {
-    if (entry.kind === "investigate" || entry.kind === "live") {
+    if (entry.kind === "live" && entry.itemId?.startsWith("now:")) {
+      if (tools.some((item) => item.sequence === target.sequence)) return false;
+      tools = [];
+      continue;
+    }
+    if (entry.kind === "investigate") {
       tools.push(entry);
       continue;
     }
     if (tools.length >= 2 && tools.some((item) => item.sequence === target.sequence)) return true;
     tools = [];
   }
+  const endsWithNow = turn.at(-1)?.kind === "live" && turn.at(-1)?.itemId?.startsWith("now:");
+  if (endsWithNow && tools.some((item) => item.sequence === target.sequence)) return false;
   return tools.length >= 2 && tools.some((item) => item.sequence === target.sequence);
 }
