@@ -25,7 +25,7 @@ import {
   type ComparisonReportDiagnostic,
   type HostZoneSnapshot,
 } from "./comparison-report-shell.js";
-import { isComparisonZoneEmpty, renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
+import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 
 export type ComparisonFailureClass =
@@ -152,7 +152,7 @@ export async function verifyAndRenderComparisonReport(input: {
   }
   html = markUnresolvedInHostEvidence(html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia], locale);
   html = appendHostLimitations(html, locale, limitations);
-  if (agentZoneBlank(html, "comparison") || isComparisonZoneEmpty(html)) {
+  if (agentZoneBlank(html, "comparison")) {
     return {
       failureClass: "publication",
       code: "report_incomplete",
@@ -182,7 +182,10 @@ export async function publishComparisonArtifacts(input: {
     media: input.media ?? [],
   });
   if (input.model) {
-    await persistComparisonReportModel(input.experimentRoot, input.model);
+    await persistComparisonReportModel(
+      input.experimentRoot,
+      rewriteReportModelMediaHrefs(input.model, staged.hrefMap),
+    );
   }
   await writeAtomic(join(input.experimentRoot, "report.html"), staged.html);
   return { html: staged.html };
@@ -193,7 +196,7 @@ async function stagePublishedMedia(input: {
   experimentRoot: string;
   html: string;
   media: readonly ComparisonMediaRecord[];
-}): Promise<{ html: string }> {
+}): Promise<{ html: string; hrefMap: ReadonlyMap<string, string> }> {
   const mediaRoot = join(input.experimentRoot, "media");
   await mkdir(mediaRoot, { recursive: true });
   const byHref = new Map(input.media.map((item) => [item.reportHref.replaceAll("\\", "/").replace(/^\.\//, ""), item]));
@@ -237,7 +240,23 @@ async function stagePublishedMedia(input: {
     published.set(normalized, publishedHref);
     html = rewriteMediaHref(html, href, publishedHref);
   }
-  return { html };
+  return { html, hrefMap: published };
+}
+
+function rewriteReportModelMediaHrefs(
+  model: ComparisonReportModel,
+  hrefMap: ReadonlyMap<string, string>,
+): ComparisonReportModel {
+  if (hrefMap.size === 0) return model;
+  const slots: ComparisonReportModel["slots"] = { ...model.slots };
+  for (const key of Object.keys(slots) as (keyof ComparisonReportModel["slots"])[]) {
+    const value = slots[key];
+    if (typeof value !== "string") continue;
+    let next = value;
+    for (const [from, to] of hrefMap) next = rewriteMediaHref(next, from, to);
+    slots[key] = next;
+  }
+  return { ...model, slots };
 }
 
 function rewriteMediaHref(html: string, from: string, to: string): string {
@@ -424,7 +443,7 @@ function repairEmptyComparisonZone(
   media: readonly ComparisonMediaRecord[],
   locale: AgentLocale,
 ): { html: string; limitations: ComparisonReportStringKey[] } {
-  if (!isComparisonZoneEmpty(html)) return { html, limitations: [] };
+  if (!agentZoneBlank(html, "comparison")) return { html, limitations: [] };
   const seeded = renderVisualEvidenceSeed(media, locale);
   if (!seeded) return { html, limitations: [] };
   return {
@@ -445,7 +464,7 @@ function repairIncompleteAboveTheFold(
     if (fromEnvelope) next = replaceZoneInner(next, "data-agent-slot", "headline", escapeText(fromEnvelope));
     else limitations.push("hostLimitationHeadlineMissing");
   }
-  if (!oneLineFromHtml(extractInner(next, "data-agent-zone", "comparison"))) {
+  if (agentZoneBlank(next, "comparison")) {
     next = replaceZoneInner(
       next,
       "data-agent-zone",

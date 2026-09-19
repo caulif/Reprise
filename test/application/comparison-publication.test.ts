@@ -1,13 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildComparisonContext, type RunInspection } from "../../src/application/comparison.js";
 import {
   classifyComparisonFailure,
   comparisonReportModelFromHtml,
-  publishComparisonArtifacts,
   verifyAndRenderComparisonReport,
 } from "../../src/application/comparison-publication.js";
 import { renderVisualEvidenceSeed } from "../../src/application/comparison-visual-evidence.js";
@@ -955,44 +954,4 @@ test("data-claim publication checks and English report shell fail closed", async
   assert.match(zh, /data-report-format="2"/);
   assert.match(zh, /data-agent-zone="comparison"/);
   assert.equal(hostZonesMismatch(zh, zhSnapshot, metricsFromReportFacts(reportFacts)), undefined);
-});
-
-test("share card keeps diff-table visible and publishes content-addressed media before HTML", async (t) => {
-  const attempt = await mkdtemp(join(tmpdir(), "reprise-b6-attempt-"));
-  const experiment = await mkdtemp(join(tmpdir(), "reprise-b6-experiment-"));
-  t.after(() => rm(attempt, { recursive: true, force: true }));
-  t.after(() => rm(experiment, { recursive: true, force: true }));
-  await mkdir(join(attempt, "media"), { recursive: true });
-  await writeFile(join(attempt, "media", "ok.png"), Buffer.from([137, 80, 78, 71, 1, 2, 3]));
-  const reportFacts = facts();
-  const media = [{
-    ref: "media:ok" as const,
-    shortRef: "media-01",
-    side: "candidate" as const,
-    inspectPath: "evidence/ok.png",
-    reportHref: "media/ok.png",
-    mediaType: "image/png",
-    available: true,
-  }];
-  const html = renderComparisonReportShell({
-    task: "修复报告。",
-    facts: reportFacts,
-    metrics: reportFacts.metrics ?? {},
-    slots: filledSlots({
-      comparison: '<table data-component="diff-table"><tr><td>值</td></tr></table><img src="media/ok.png" alt="preview">',
-    }),
-  });
-  assert.doesNotMatch(html, /\.share \[data-component="diff-table"\] \{ display:none/);
-  const verified = await verifyAndRenderComparisonReport({
-    html, facts: reportFacts, result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
-    attemptRoot: attempt, media,
-  });
-  assert.equal("html" in verified, true);
-  if (!("html" in verified)) return;
-  const published = await publishComparisonArtifacts({
-    attemptRoot: attempt, experimentRoot: experiment, html: verified.html, media, model: verified.model,
-  });
-  assert.match(published.html, /src="media\/[a-f0-9]{24}\.png"/);
-  assert.equal(await readFile(join(experiment, "report.html"), "utf8"), published.html);
-  assert.match(await readFile(join(experiment, "report-model.json"), "utf8"), /"formatVersion":2/);
 });

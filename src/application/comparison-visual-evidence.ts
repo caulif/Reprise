@@ -99,10 +99,3 @@ export function renderVisualEvidenceSeed(
   const note = `<p class="muted" data-host="pairing-hint">${escapeHtml(reportString(locale, "visualPairingHint"))}</p>`;
   return `${note}<div class="pages" data-host="visual-candidates">${candidates.join("")}</div>`;
 }
-
-export function isComparisonZoneEmpty(html: string): boolean {
-  const match = html.match(/data-id="agent-comparison"[^>]*>([\s\S]*?)<\/section>/i)
-    ?? html.match(/<section\b[^>]*\bdata-agent-zone="comparison"[^>]*>([\s\S]*?)<\/section>/i);
-  const inner = (match?.[1] ?? "").replace(/<!--[\s\S]*?-->/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  return inner.length === 0;
-}
