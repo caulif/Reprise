@@ -68,7 +68,9 @@ function runningModel(input: Input) {
   const productLabel = chromeProductLabel(input);
   const candidateSessionId = candidateSessionIdFrom(input.timeline);
   return {
-    entries: input.visibleTimeline, selected: input.timelineSelected, filter: 'ALL' as const,
+    entries: input.visibleTimeline,
+    sourceTimeline: input.timeline,
+    selected: input.timelineSelected, filter: 'ALL' as const,
     following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
     elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },

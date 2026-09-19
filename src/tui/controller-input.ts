@@ -9,7 +9,8 @@ import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
 import type { TaskCase, CandidateRunState } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
-import { coveringFoldIds, foldProcessEntries, selectedIndexAfterFold } from './fold-process.js';
+import { coveringFoldIds, selectedIndexAfterFold } from './fold-process.js';
+import { projectTimelineView } from './timeline-view.js';
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
@@ -583,7 +584,7 @@ function clearFind(c: ControllerHandle): Consume {
 
 function toggleSelectedFold(c: ControllerHandle): Consume {
   const visible = c.visibleTimeline();
-  const folded = foldProcessEntries(visible, new Set(c.expandedFolds));
+  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds));
   const selected = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
   const entry = folded[selected];
   if (entry?.kind === 'fold' && entry.itemId) {
@@ -643,7 +644,7 @@ function followTimeline(c: ControllerHandle): Consume {
 
 function cycleFoldSelection(c: ControllerHandle, direction: 1 | -1): Consume {
   const visible = c.visibleTimeline();
-  const folded = foldProcessEntries(visible, new Set(c.expandedFolds));
+  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds));
   const foldIndices = folded.flatMap((entry, index) => entry.kind === 'fold' ? [index] : []);
   if (!foldIndices.length) {
     c.render();

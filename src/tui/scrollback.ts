@@ -29,6 +29,11 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
     if (entry.lane === 'recovery') return 'summary';
     return 'controller';
   }
+  if (entry.kind === 'thinking') {
+    if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
+    if (entry.voice === 'candidate' || entry.source === 'TARGET') return 'product';
+    return 'controller';
+  }
   if (entry.kind === 'fold') {
     if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
     if (entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane)) return 'product';
@@ -227,6 +232,11 @@ function paintEntry(
     const row = `${gutter(theme, slot)}${theme.style.muted(compact(title, inner, theme.glyphs.ellipsis))}`;
     return [paintPlain(theme, row, width, selected)];
   }
+  if (entry.kind === 'thinking') {
+    const caption = entry.detail ? `${entry.title} ${entry.detail}` : entry.title;
+    const row = `${gutter(theme, slot)}${compact(caption, inner, theme.glyphs.ellipsis)}`;
+    return [paintPlain(theme, row, width, selected)];
+  }
   if (entry.kind === 'live' || entry.placeholder) {
     const color = candidate ? theme.style.gutterTarget : theme.style.gutterHost;
     const pulse = Math.floor(tick / 400) % 2 === 0 ? color(theme.glyphs.dot) : theme.style.muted(theme.glyphs.empty);
@@ -273,6 +283,7 @@ function failedTitle(title: string): boolean {
 
 function gutterSlot(entry: TimelineEntry, failed: boolean, candidate: boolean): GutterSlot {
   if (failed) return 'fail';
+  if (entry.kind === 'thinking') return candidate ? 'candidate' : 'host';
   if (entry.title.startsWith('⎿ ')) return 'none';
   if (entry.kind === 'fold' || entry.title.startsWith('▸')) return candidate ? 'fold-cand' : 'fold-host';
   if (voiceOf(entry) === 'input') return 'input';

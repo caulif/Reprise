@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
 import { createTheme } from './theme.js';
-import { foldProcessEntries, selectedIndexAfterFold } from './fold-process.js';
+import { selectedIndexAfterFold } from './fold-process.js';
+import { projectTimelineView } from './timeline-view.js';
 import { hitFileLink } from './format.js';
 import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
 import { homePointerAction } from './pages/home.js';
@@ -130,7 +131,7 @@ export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Co
 
 export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume {
   const visible = c.visibleTimeline();
-  const folded = foldProcessEntries(visible, new Set(c.expandedFolds));
+  const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds));
   const selected = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
   const window = canvasWindow(c);
   const layout = layoutScrollback(createTheme(window.width), window.width, folded, selected, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing);
@@ -163,7 +164,7 @@ export function moveTimelineVisible(c: ControllerHandle, amount: number): Consum
   const entries = c.visibleTimeline();
   const next = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
   const window = canvasWindow(c);
-  const folded = foldProcessEntries(entries, new Set(c.expandedFolds));
+  const folded = projectTimelineView(c.timeline, entries, new Set(c.expandedFolds));
   const selectedFolded = selectedIndexAfterFold(entries, folded, entries[next] ?? entries[c.timelineSelected]);
   const layout = layoutScrollback(createTheme(window.width), window.width, folded, selectedFolded, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing);
   c.timelineReadOffset = keepSelectedVisible(layout.selectedAt, c.timelineReadOffset ?? 0, layout.total, Math.max(1, window.height - layout.chrome));
