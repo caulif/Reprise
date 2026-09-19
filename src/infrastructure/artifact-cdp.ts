@@ -237,24 +237,25 @@ export async function configurePageSession(
 
   session.on("Runtime.exceptionThrown", (params) => {
     const details = params.exceptionDetails as { text?: string; exception?: { description?: string } } | undefined;
-    const text = details?.exception?.description ?? details?.text ?? "page exception";
+    const text = cdpUnknownText(details?.exception?.description ?? details?.text) || "page exception";
     consoleErrors.push(text);
   });
   session.on("Runtime.consoleAPICalled", (params) => {
     if (params.type !== "error") return;
     const args = Array.isArray(params.args) ? params.args as { value?: unknown; description?: string }[] : [];
-    const text = args.map((arg) => String(arg.value ?? arg.description ?? "")).join(" ");
+    const text = args.map((arg) => cdpUnknownText(arg.value ?? arg.description)).join(" ");
     if (text) consoleErrors.push(text);
   });
   session.on("Network.loadingFailed", (params) => {
-    const url = String(params.errorText ?? "resource failed");
-    resourceFailures.push(`${String(params.type ?? "Resource")}: ${url}`);
+    const url = cdpUnknownText(params.errorText) || "resource failed";
+    const kind = cdpUnknownText(params.type) || "Resource";
+    resourceFailures.push(`${kind}: ${url}`);
   });
   session.on("Fetch.requestPaused", (params, eventSessionId) => {
     void (async () => {
-      const requestId = String(params.requestId ?? "");
+      const requestId = cdpUnknownText(params.requestId);
       const request = params.request as { url?: string } | undefined;
-      const url = request?.url ?? "";
+      const url = typeof request?.url === "string" ? request.url : "";
       const sid = eventSessionId ?? pageSessionId;
       if (!requestId) return;
       if (isAllowedBundleUrl(url, allowedOrigin)) {
@@ -369,6 +370,17 @@ function isAllowedBundleUrl(url: string, allowedOrigin: string): boolean {
     return parsed.origin === allowedOrigin;
   } catch {
     return false;
+  }
+}
+
+function cdpUnknownText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === undefined || value === null) return "";
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "[unserializable]";
   }
 }
 
