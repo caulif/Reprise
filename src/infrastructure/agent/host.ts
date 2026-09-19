@@ -6,7 +6,8 @@ import { redactModelVisibleText } from "./model-input.js";
 import { callerLoopHooks } from "./audit.js";
 import { promptDigest } from "./prompt-digest.js";
 import { AgentSessionHost } from "./session.js";
-import { instrumentTools } from "./tools.js";
+import { instrumentTools, type MediaCapabilityGate } from "./tools.js";
+import { modelAcceptsImage } from "../../core/schemas/model-input-capabilities.js";
 import type {
   AgentHost as AgentHostPort,
   AgentInvocation,
@@ -55,7 +56,8 @@ export class AgentHost implements AgentHostPort {
     }
     const sessionId = randomUUID();
     const cursor: InvocationCursor = { requestIndex: 0 };
-    const tools = instrumentTools(input.tools ?? [], sessionId, input.role, cursor, input.audit);
+    const mediaGate: MediaCapabilityGate = { acceptsImage: false };
+    const tools = instrumentTools(input.tools ?? [], sessionId, input.role, cursor, input.audit, mediaGate);
     const compactionInstructions = input.compaction?.instructions ?? input.compactionInstructions;
     try {
       const session = await this.#caller.createSession({
@@ -65,6 +67,7 @@ export class AgentHost implements AgentHostPort {
         ...(compactionInstructions ? { compactionInstructions } : {}),
         ...callerLoopHooks(sessionId, input.role, cursor, input.audit),
       });
+      mediaGate.acceptsImage = modelAcceptsImage(session.inputCapabilities);
       await input.audit?.append({
         type: "agent.session_started",
         sessionId,

@@ -44,7 +44,7 @@ Recovery、Controller、Comparison 默认使用此配置
 [完成]
 ```
 
-第三方密钥保存在 Git 忽略的 `.reprise/harness-model.json`，或使用 `env:NAME`。`baseUrl` 接受 `http://` 与 `https://`；本地或内网网关可用 HTTP，公网生产环境仍应优先 HTTPS。官方目录（ChatGPT Codex、Claude 订阅等）的登录只存在 Pi 的 `~/.pi/agent/auth.json`；在 Pi 里 `/login` 后再把配置切到 Pi catalog。Reprise 不读取 Codex CLI 或 Claude Code 的登录文件。高级用户之后可以分别覆盖三个内部 Agent 的模型、预算和上下文设置；三个 Agent 的总调用、token 与成本预算默认均不设上限。
+第三方密钥保存在 Git 忽略的 `.reprise/harness-model.json`，或使用 `env:NAME`。`baseUrl` 接受 `http://` 与 `https://`；本地或内网网关可用 HTTP，公网生产环境仍应优先 HTTPS。openai-compatible 可勾选「支持图片输入」声明原生 image；默认关闭（仅 text）。Pi catalog 的视觉能力以目录 `model.input` 为准，配置页不提供覆盖开关。官方目录（ChatGPT Codex、Claude 订阅等）的登录只存在 Pi 的 `~/.pi/agent/auth.json`；在 Pi 里 `/login` 后再把配置切到 Pi catalog。Reprise 不读取 Codex CLI 或 Claude Code 的登录文件。高级用户之后可以分别覆盖三个内部 Agent 的模型、预算和上下文设置；三个 Agent 的总调用、token 与成本预算默认均不设上限。
 
 ### 3.2 每次比较
 

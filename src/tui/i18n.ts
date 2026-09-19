@@ -328,6 +328,7 @@ const M = {
   fieldModel: { en: 'model', zh: '模型' },
   fieldApi: { en: 'API', zh: '接口类型' },
   fieldReasoning: { en: 'reasoning', zh: '推理' },
+  fieldImageInput: { en: 'image input', zh: '支持图片输入' },
   fieldEffort: { en: 'effort', zh: '力度' },
   fieldKeyRef: { en: 'API key', zh: 'API 密钥' },
   baseUrlInvalid: { en: 'invalid URL', zh: '无效的 URL' },

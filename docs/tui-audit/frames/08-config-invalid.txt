@@ -20,6 +20,7 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
 │   模型               model-private                                                                                   │
 │   接口类型           openai-completions  [Enter] 切换                                                                │
 │   推理               false  [Enter] 切换                                                                             │
+│   支持图片输入       false  [Enter] 切换                                                                             │
 │   力度               medium  [Enter] 切换                                                                            │
 │ ❯ API 密钥           ••••••••  ✓                                                                                     │
 │   语言               中文  [Enter] 切换                                                                              │

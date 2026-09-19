@@ -273,3 +273,71 @@ test('relay probes retry without forcing thinking', async () => {
   assert.equal(options.maxRetries, 3);
   assert.equal(options.reasoning, undefined);
 });
+
+test('modelsForConfig defaults custom input to text and registers declared image capability', () => {
+  const providers: unknown[] = [];
+  const models = { setProvider(provider: unknown) { providers.push(provider); } } as never;
+  modelsForConfig({
+    schemaVersion: 2, provider: { kind: 'openai-compatible', id: 'private-api' }, providerId: 'private-api',
+    modelId: 'model-a', effort: 'medium', baseUrl: 'https://example.test/v1', apiKey: 'file-secret-value',
+  }, models);
+  const textOnly = (providers[0] as { getModels(): Array<{ input: string[] }> }).getModels()[0];
+  assert.deepEqual(textOnly?.input, ['text']);
+  providers.length = 0;
+  modelsForConfig({
+    schemaVersion: 2, provider: { kind: 'openai-compatible', id: 'private-api' }, providerId: 'private-api',
+    modelId: 'model-a', effort: 'medium', baseUrl: 'https://example.test/v1', apiKey: 'file-secret-value',
+    inputCapabilities: ['text', 'image'],
+  }, models);
+  const withImage = (providers[0] as { getModels(): Array<{ input: string[] }> }).getModels()[0];
+  assert.deepEqual(withImage?.input, ['text', 'image']);
+});
+
+test('old configs omit inputCapabilities and unknown values are rejected', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-input-cap-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await writeFile(configPath(root), JSON.stringify({
+    schemaVersion: 2, provider: { kind: 'openai-compatible', id: 'private-api' },
+    modelId: 'model-a', effort: 'medium', baseUrl: 'https://example.test/v1', apiKey: 'file-secret-value',
+  }));
+  const loaded = await readHarnessModelConfig(root);
+  assert.equal(loaded && loaded.schemaVersion === 2 ? loaded.inputCapabilities : 'x', undefined);
+  await writeFile(configPath(root), JSON.stringify({
+    schemaVersion: 2, provider: { kind: 'openai-compatible', id: 'private-api' },
+    modelId: 'model-a', effort: 'medium', baseUrl: 'https://example.test/v1', apiKey: 'file-secret-value',
+    inputCapabilities: ['text', 'audio'],
+  }));
+  await assert.rejects(readHarnessModelConfig(root), /inputCapabilities/);
+  await writeFile(configPath(root), JSON.stringify({
+    schemaVersion: 2, provider: { kind: 'openai-compatible', id: 'private-api' },
+    modelId: 'model-a', effort: 'medium', baseUrl: 'https://example.test/v1', apiKey: 'file-secret-value',
+    inputCapabilities: ['image'],
+  }));
+  await assert.rejects(readHarnessModelConfig(root), /inputCapabilities/);
+  await writeFile(configPath(root), JSON.stringify({
+    schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'openai-codex' },
+    modelId: 'gpt-5.6-terra', effort: 'medium', inputCapabilities: ['text', 'image'],
+  }));
+  const catalog = await readHarnessModelConfig(root);
+  assert.equal(catalog && catalog.schemaVersion === 2 ? catalog.inputCapabilities : 'x', undefined);
+});
+
+test('catalog sessions keep Pi model.input and are not overridden by harness switches', async () => {
+  const vision = { id: 'model-v', name: 'Vision', input: ['text', 'image'] as const };
+  const models = {
+    getProviders: () => [{ id: 'provider-a', name: 'Provider A' }],
+    getModels: () => [vision],
+    getModel: () => vision,
+    getAuth: async () => ({ auth: { apiKey: 'x' }, source: 'test' }),
+    streamSimple: async () => { throw new Error('must not call'); },
+    completeSimple: async () => ({ stopReason: 'stop', content: [{ type: 'text', text: 'OK' }] }),
+  } as unknown as Pick<Models, 'getProviders' | 'getModels' | 'getModel' | 'getAuth' | 'completeSimple' | 'streamSimple'>;
+  const caller = new PiModelCaller({
+    schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'provider-a' }, providerId: 'provider-a',
+    modelId: 'model-v', effort: 'medium',
+  }, models);
+  const session = caller.createSession({
+    sessionId: 's1', systemPrompt: 'test', tools: [],
+  });
+  assert.deepEqual(session.inputCapabilities, ['text', 'image']);
+});

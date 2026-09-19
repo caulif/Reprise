@@ -48,7 +48,7 @@ export function modelsForConfig(config: HarnessModelConfig, models: MutablePiMod
     },
     models: [{
       id: config.modelId, name: config.modelId, api, provider: config.provider.id, baseUrl,
-      reasoning: config.reasoning === true, input: ['text'],
+      reasoning: config.reasoning === true, input: config.inputCapabilities ?? ['text'],
       contextWindow: overlay.contextWindow ?? 128_000, maxTokens: overlay.maxTokens ?? 16_384,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       ...(config.compat ? { compat: config.compat } : {}),

@@ -14,6 +14,7 @@ const draft: HarnessConfigDraft = {
   keyRef: '',
   api: 'openai-completions',
   reasoning: false,
+  supportsImage: false,
 };
 
 function refresh(next: HarnessConfigDraft) {
@@ -23,7 +24,7 @@ function refresh(next: HarnessConfigDraft) {
 function editingState(overrides: Partial<ConfigInputState> = {}): ConfigInputState {
   return {
     draft,
-    selected: 7,
+    selected: 8,
     editing: true,
     buffer: '',
     cursor: 0,
@@ -40,7 +41,7 @@ function caretLine(text: string): string {
 test('config editor paints the raw buffer instead of keyRef validity copy', () => {
   const theme = createTheme(120);
   const text = renderConfig(theme, 120, {
-    draft, selected: 7, editing: true, buffer: 'e', cursor: 1, dirty: true, saved: false,
+    draft, selected: 8, editing: true, buffer: 'e', cursor: 1, dirty: true, saved: false,
   }).join('\n');
   const caret = caretLine(text);
   assert.match(caret, /e/);
@@ -49,17 +50,17 @@ test('config editor paints the raw buffer instead of keyRef validity copy', () =
 });
 
 test('typing e keeps the letter visible in the editor buffer', () => {
-  const result = handleConfigInput(editingState(), 'e', refresh);
+  const result = handleConfigInput(editingState({ selected: 8 }), 'e', refresh);
   assert.equal(result?.state.buffer, 'e');
   const theme = createTheme(120);
   const caret = caretLine(renderConfig(theme, 120, {
-    draft, selected: 7, editing: true, buffer: result?.state.buffer ?? '', cursor: result?.state.cursor ?? 0, dirty: true, saved: false,
+    draft, selected: 8, editing: true, buffer: result?.state.buffer ?? '', cursor: result?.state.cursor ?? 0, dirty: true, saved: false,
   }).join('\n'));
   assert.match(caret, /e/);
 });
 
 test('applying a pasted secret writes it into the local draft', () => {
-  const result = handleConfigInput(editingState({ buffer: 'sk-abc' }), '\r', refresh);
+  const result = handleConfigInput(editingState({ selected: 8, buffer: 'sk-abc' }), '\r', refresh);
   assert.equal(result?.state.editing, false);
   assert.equal(result?.state.draft.keyRef, 'sk-abc');
   assert.match(result?.message ?? '', /local config file/);
@@ -88,7 +89,7 @@ test('switching provider with an existing URL requires a second Enter', () => {
 test('opening a text field prefills the current value', () => {
   const result = handleConfigInput({
     draft: { ...draft, keyRef: 'env:OPENAI_API_KEY' },
-    selected: 7, editing: false, buffer: '', cursor: 0, providers: [], models: [],
+    selected: 8, editing: false, buffer: '', cursor: 0, providers: [], models: [],
   }, '\r', refresh);
   assert.equal(result?.state.editing, true);
   assert.equal(result?.state.buffer, 'env:OPENAI_API_KEY');
@@ -105,12 +106,12 @@ test('config editor supports cursor movement, insertion, and delete', () => {
 });
 
 test('Pi catalog hides the API key and asks the operator to log in with Pi', () => {
-  const catalog = { ...draft, kind: 'pi-catalog' as const, providerId: 'catalog', keyRef: '' };
+  const catalog = { ...draft, kind: 'pi-catalog' as const, providerId: 'catalog', keyRef: '', supportsImage: false };
   const theme = createTheme(120);
   const text = renderConfig(theme, 120, {
     draft: catalog, selected: 0, editing: false, buffer: '', dirty: false, saved: false,
   }).join('\n');
-  assert.doesNotMatch(text, /API key|base URL/);
+  assert.doesNotMatch(text, /API key|base URL|image input|支持图片输入/);
   assert.match(text, /pi \/login/i);
 });
 
@@ -123,6 +124,34 @@ test('Enter cycles API type and reasoning on an OpenAI-compatible draft', () => 
     draft, selected: 5, editing: false, buffer: '', cursor: 0, providers: [], models: [],
   }, '\r', refresh);
   assert.equal(reasoning?.state.draft.reasoning, true);
+});
+
+test('Enter toggles image input and draft/config round-trip keeps it', async () => {
+  const { draftForConfig, configForDraft, saveHarnessModelConfig, readHarnessModelConfig, configPath } = await import('../../src/infrastructure/harness-model-config.js');
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const toggled = handleConfigInput({
+    draft, selected: 6, editing: false, buffer: '', cursor: 0, providers: [], models: [],
+  }, '\r', refresh);
+  assert.equal(toggled?.state.draft.supportsImage, true);
+  const config = configForDraft({ ...toggled!.state.draft, keyRef: 'env:REPRISE_TEST_KEY' });
+  assert.deepEqual(config.schemaVersion === 2 ? config.inputCapabilities : undefined, ['text', 'image']);
+  assert.equal(draftForConfig(config).supportsImage, true);
+  const root = await mkdtemp(join(tmpdir(), 'reprise-image-input-'));
+  try {
+    await saveHarnessModelConfig(root, config);
+    const loaded = await readHarnessModelConfig(root);
+    assert.deepEqual(loaded && loaded.schemaVersion === 2 ? loaded.inputCapabilities : undefined, ['text', 'image']);
+    assert.equal(draftForConfig(loaded!).supportsImage, true);
+    const off = configForDraft({ ...draftForConfig(loaded!), supportsImage: false });
+    await saveHarnessModelConfig(root, off);
+    const again = await readHarnessModelConfig(root);
+    assert.equal(again && again.schemaVersion === 2 ? again.inputCapabilities : 'missing', undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+  void configPath;
 });
 
 test('config save and test use control chords, not letters', () => {

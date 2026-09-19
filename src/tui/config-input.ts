@@ -92,6 +92,9 @@ function beginConfigEdit(state: ConfigInputState, refreshModels: (draft: Harness
   if (field === 'reasoning') {
     return { state: { ...state, draft: { ...state.draft, reasoning: !state.draft.reasoning } }, message: 'Reasoning changed in the draft.', consume: true };
   }
+  if (field === 'image input') {
+    return { state: { ...state, draft: { ...state.draft, supportsImage: !state.draft.supportsImage } }, message: 'Image input changed in the draft.', consume: true };
+  }
   if (state.draft.kind === 'pi-catalog' && field === 'provider label') {
     const provider = nextOption(state.providers, state.draft.providerId);
     if (!provider) return { state, consume: true };

@@ -218,6 +218,7 @@ test("Host preserves native image blocks in prompts and tool results without aud
   let promptImageData = "";
   let toolImageData = "";
   const host = new AgentHost({ createSession: (input) => ({
+    inputCapabilities: ["text", "image"],
     append: async ({ images }) => {
       promptImageData = images?.[0]?.data ?? "";
       const result = await input.tools[0]?.execute({}, new AbortController().signal);

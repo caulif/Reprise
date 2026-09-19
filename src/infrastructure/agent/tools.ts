@@ -2,6 +2,9 @@ import { sha256 } from "../../core/identity.js";
 import { redactToolResultForModel, toolResultBody } from "./model-input.js";
 import type { AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
 
+/** Filled after ProviderSession is created; gates native image blocks in tool results. */
+export type MediaCapabilityGate = { acceptsImage: boolean };
+
 class AgentToolFailure extends Error {
   constructor(role: string, cause: unknown) {
     super(`${role} agent tool execution failed.`, { cause });
@@ -15,6 +18,7 @@ export function instrumentTools(
   role: string,
   cursor: InvocationCursor,
   audit?: AgentAuditSink,
+  mediaGate?: MediaCapabilityGate,
 ): AgentToolDefinition[] {
   const names = new Set<string>();
   return tools.map((tool) => {
@@ -38,7 +42,8 @@ export function instrumentTools(
           },
         });
         try {
-          const result = await tool.execute(params, signal);
+          const raw = await tool.execute(params, signal);
+          const result = mediaGate && !mediaGate.acceptsImage ? stripImageBlocksForTextOnly(raw) : raw;
           const visible = redactToolResultForModel(result);
           await tool.onCompleted?.(visible);
           await audit?.append({
@@ -73,6 +78,21 @@ export function instrumentTools(
       },
     };
   });
+}
+
+const IMAGE_OMITTED_NOTE = "Image content omitted: this model session does not accept image input.";
+
+function stripImageBlocksForTextOnly(result: AgentToolResult): AgentToolResult {
+  if (!result.contentBlocks?.some((block) => block.type === "image")) return result;
+  const textBlocks = result.contentBlocks.filter((block) => block.type === "text");
+  const content = result.content.includes(IMAGE_OMITTED_NOTE)
+    ? result.content
+    : `${result.content}\n${IMAGE_OMITTED_NOTE}`.trim();
+  return {
+    content,
+    contentBlocks: [...textBlocks, { type: "text" as const, text: IMAGE_OMITTED_NOTE }],
+    ...(result.details === undefined ? {} : { details: result.details }),
+  };
 }
 
 function contentByteLength(result: AgentToolResult): number {

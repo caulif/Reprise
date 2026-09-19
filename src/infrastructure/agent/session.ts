@@ -3,6 +3,8 @@ import { classifyAgentFailure, toAgentFailure, type AgentFailureKind } from "./f
 import { inlineBody, redactModelVisibleText } from "./model-input.js";
 import { recordedImageRefs } from "./artifacts.js";
 import { decodeStructured, invalidOutputAudit, invalidOutputCategory, promptBody } from "./structured.js";
+import { modelAcceptsImage } from "../../core/schemas/model-input-capabilities.js";
+import { sha256 } from "../../core/identity.js";
 import type {
   AgentAuditSink,
   AgentFailure,
@@ -13,7 +15,7 @@ import type {
   ProviderSession,
   StructuredWorkRequest,
 } from "./types.js";
-
+import type { ImageContent } from "@earendil-works/pi-ai";
 type InternalSessionRequest<T> =
   | ({ kind: "freeform" } & FreeformWorkRequest)
   | ({ kind: "structured" } & StructuredWorkRequest<T>);
@@ -26,6 +28,8 @@ export class AgentSessionHost {
   readonly #failure: AgentFailure | undefined;
   readonly #inputCapabilities: readonly string[];
   readonly #cursor: InvocationCursor;
+  /** Content hashes of images actually delivered to this session's model. */
+  readonly #deliveredImageHashes = new Set<string>();
   #cancelled = false;
   #closed = false;
   #busy = false;
@@ -48,6 +52,11 @@ export class AgentSessionHost {
     this.#failure = failure;
     this.#inputCapabilities = inputCapabilities;
     this.#cursor = cursor;
+  }
+
+  /** Image content hashes delivered to the model in this session (not a global flag). */
+  deliveredImageContentHashes(): readonly string[] {
+    return [...this.#deliveredImageHashes];
   }
 
   static failed(
@@ -224,6 +233,7 @@ export class AgentSessionHost {
     try {
       this.#cursor.requestIndex += 1;
       const content = redactModelVisibleText(capabilityAwarePrompt(promptBody(request, attempts, lastError), this.#inputCapabilities)).text;
+      const outboundImages = outboundPromptImages(request.promptImages, this.#inputCapabilities);
       await this.#audit?.append({
         type: "agent.message_appended",
         sessionId: this.#sessionId,
@@ -235,7 +245,7 @@ export class AgentSessionHost {
           byteLength: Buffer.byteLength(content),
           repair: attempts > 0,
           body: inlineBody(content),
-          images: await recordedImageRefs(request.promptImages, this.#audit),
+          images: await recordedImageRefs(outboundImages, this.#audit),
         },
       });
       if (request.timeoutMs > 0) {
@@ -245,9 +255,10 @@ export class AgentSessionHost {
       }
       if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
       const text = await abortable(
-        this.#session!.append({ content, ...(request.promptImages ? { images: request.promptImages } : {}), signal }),
+        this.#session!.append({ content, ...(outboundImages?.length ? { images: outboundImages } : {}), signal }),
         signal,
       );
+      recordDeliveredImages(this.#deliveredImageHashes, outboundImages);
       if (controller.signal.aborted) throw timeoutError();
       if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
       await this.#audit?.append({
@@ -367,6 +378,20 @@ function capabilityAwarePrompt(content: string, inputCapabilities: readonly stri
   return `Native media types this model accepts: ${inputCapabilities.join(",")}. Request or interpret only the types listed above.
 
 ${content}`;
+}
+
+function outboundPromptImages(
+  images: readonly ImageContent[] | undefined,
+  inputCapabilities: readonly string[],
+): readonly ImageContent[] | undefined {
+  if (!images?.length || !modelAcceptsImage(inputCapabilities)) return undefined;
+  return images;
+}
+
+function recordDeliveredImages(store: Set<string>, images: readonly ImageContent[] | undefined): void {
+  for (const image of images ?? []) {
+    store.add(sha256(image.data));
+  }
 }
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
