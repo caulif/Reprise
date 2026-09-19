@@ -1,7 +1,8 @@
 /**
  * B9 acceptance matrix (handoff §12.2).
- * Rows pin owning suites on main (including B4 render/preview). Pointers only —
- * this file alone is not §12.4 complete; Review CLEAR still required to merge.
+ * OWNED = owning suites cover mustProve core on default CI.
+ * PARTIAL = mechanism + pointers exist, but Host stubs / opt-in / mustProve gaps remain.
+ * Pointers only — this file alone is not §12.4 complete; Review CLEAR still required.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -22,8 +23,14 @@ type MatrixCase = {
 
 const ROOT = join(process.cwd());
 
-/** Empty after B4 #46 merge — retained so callers can detect regressions. */
+/**
+ * Empty after B4 #46 merge (package landed). Residual mustProve gaps use
+ * PARTIAL_IDS — do not resurrect PENDING_B4 for Host stub / opt-in holes.
+ */
 export const PENDING_B4_IDS = new Set<string>();
+
+/** Rows whose mustProve is not fully locked on default CI (honest residual). */
+export const PARTIAL_IDS = new Set<string>(["V1", "V2", "P2", "S1"]);
 
 export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
   {
@@ -31,7 +38,7 @@ export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
     title: "dual HTML, history patch only, empty refs",
     depends: ["B1", "B2", "B3", "B4", "B6"],
     mustProve: "history restore → register → render → dual images; baseline still empty",
-    status: "owned",
+    status: "partial",
     owningSuites: [
       "test/application/comparison-historical-baseline.test.ts",
       "test/application/b2-historical-freeze-discovery.test.ts",
@@ -45,11 +52,10 @@ export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
     title: "dual animation, script/CSS diverge",
     depends: ["B4", "B6"],
     mustProve: "multi-frame sampling with explicit source/conditions; no static PNG as motion proof",
-    status: "owned",
+    status: "partial",
     owningSuites: [
       "test/application/artifact-renderer.test.ts",
       "test/application/comparison-render-tools.test.ts",
-      "test/application/headless-screenshot.test.ts",
     ],
   },
   {
@@ -147,7 +153,7 @@ export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
     title: "cancel / no browser / render failure",
     depends: ["B4"],
     mustProve: "no leaked subprocess; no half-registered facts; CandidateRun untouched",
-    status: "owned",
+    status: "partial",
     owningSuites: [
       "test/application/artifact-renderer.test.ts",
       "test/application/comparison-render-tools.test.ts",
@@ -159,7 +165,7 @@ export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
     title: "malicious history JS / path / HTML network",
     depends: ["B1", "B4"],
     mustProve: "no log program exec; no escape from evidence root; no credential leak; no external write",
-    status: "owned",
+    status: "partial",
     owningSuites: [
       "test/products/historical-artifacts-extract.test.ts",
       "test/application/artifact-renderer.test.ts",
@@ -198,11 +204,22 @@ test("acceptance matrix dependency tags stay within B1–B8", () => {
   }
 });
 
-test("PENDING_B4_IDS is empty after B4 merge; every row is OWNED", () => {
+test("PENDING_B4_IDS empty; PARTIAL_IDS matches partial rows", () => {
   assert.equal(PENDING_B4_IDS.size, 0);
+  for (const id of PARTIAL_IDS) {
+    const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === id);
+    assert.ok(row, `unknown partial id ${id}`);
+    assert.equal(row.status, "partial", `${id} must be partial`);
+    assert.ok(row.owningSuites.length > 0, `${id} partial must still list suites`);
+  }
   for (const row of COMPARISON_ACCEPTANCE_MATRIX) {
-    assert.equal(row.status, "owned", `${row.id} must be owned`);
-    assert.ok(row.owningSuites.length > 0, `${row.id} must claim owning suites`);
+    if (row.status === "partial") {
+      assert.ok(PARTIAL_IDS.has(row.id), `${row.id} partial missing from PARTIAL_IDS`);
+    } else {
+      assert.equal(row.status, "owned", `${row.id} unexpected status`);
+      assert.ok(!PARTIAL_IDS.has(row.id), `${row.id} owned but in PARTIAL_IDS`);
+      assert.ok(row.owningSuites.length > 0, `${row.id} owned must claim suites`);
+    }
   }
 });
 
@@ -223,15 +240,17 @@ test("every matrix owning suite path exists", async () => {
   }
 });
 
-test("matrix V1 OWNED: history/freeze/catalog/render suites exist", async () => {
+test("matrix V1 PARTIAL: history/catalog/render pointers; Host render E2E still open", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "V1");
-  assert.equal(row?.status, "owned");
+  assert.equal(row?.status, "partial");
+  assert.ok(PARTIAL_IDS.has("V1"));
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix V2 OWNED: multi-frame render suites exist", async () => {
+test("matrix V2 PARTIAL: multi-frame factory suites; no static-PNG-as-motion lock on default CI", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "V2");
-  assert.equal(row?.status, "owned");
+  assert.equal(row?.status, "partial");
+  assert.ok(PARTIAL_IDS.has("V2"));
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
@@ -253,7 +272,7 @@ test("matrix N1 OWNED: non-visual compose suites exist", async () => {
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix N2 OWNED: text/table visibility suites exist", async () => {
+test("matrix N2 OWNED: text/translation visibility suites exist", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "N2");
   assert.equal(row?.status, "owned");
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
@@ -283,14 +302,16 @@ test("matrix P1 OWNED: publish immutability suites exist", async () => {
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix P2 OWNED: cancel / no_browser / render failure suites exist", async () => {
+test("matrix P2 PARTIAL: cancel/no_browser pieces; CandidateRun/leak mustProve open", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "P2");
-  assert.equal(row?.status, "owned");
+  assert.equal(row?.status, "partial");
+  assert.ok(PARTIAL_IDS.has("P2"));
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix S1 OWNED: extract safety + network gate suites exist", async () => {
+test("matrix S1 PARTIAL: extract safety owned; HTML network gate opt-in only", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "S1");
-  assert.equal(row?.status, "owned");
+  assert.equal(row?.status, "partial");
+  assert.ok(PARTIAL_IDS.has("S1"));
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
