@@ -17,12 +17,12 @@ const M = {
     zh: "本次对照未登记可用的预览图。",
   },
   visualBaselineMissing: {
-    en: "Candidate preview is available, but no paired historical final image was registered.",
-    zh: "候选侧已有预览图，但历史侧缺少可配对的终稿图。",
+    en: "Candidate preview is available; the historical final image could not be recovered or rendered.",
+    zh: "候选侧已有预览图；历史侧终稿图未能恢复或渲染。",
   },
   visualCandidateMissing: {
-    en: "Historical preview is available, but no paired candidate final image was registered.",
-    zh: "历史侧已有预览图，但候选侧缺少可配对的终稿图。",
+    en: "Historical preview is available; the candidate final image could not be recovered or rendered.",
+    zh: "历史侧已有预览图；候选侧终稿图未能恢复或渲染。",
   },
   visualRegisteredUnavailable: {
     en: "Preview images were registered but their source files are unavailable.",
@@ -31,6 +31,30 @@ const M = {
   visualSourcesMissing: {
     en: "Preview images were referenced but could not be solidified into comparison media.",
     zh: "引用了预览图，但未能固化到对照媒体索引。",
+  },
+  visualPairingHint: {
+    en: "Host listed candidate pairings from registered media. Choose verified same-kind sources; index order is not proof they are comparable.",
+    zh: "Host 列出了已登记媒体的候选配对。请选用已核验的同类来源；数组顺序不证明业务可比。",
+  },
+  visualDerivedPreview: {
+    en: "Derived preview (not an original historical screenshot).",
+    zh: "派生预览（不是历史当时截图）。",
+  },
+  visualLoadFailed: {
+    en: "Registered image failed to load from the attempt media root.",
+    zh: "已登记图片未能从 attempt 媒体根加载。",
+  },
+  detailsSummary: {
+    en: "Evidence and extras",
+    zh: "查看依据与补充",
+  },
+  comparisonZoneComment: {
+    en: "Author the main comparison here: paired visuals, tables, excerpts, or steps. Keep limitations that change the choice nearby. Components are optional conveniences.",
+    zh: "在此撰写主体对照：并排图、表格、片段或步骤。影响取舍的限制就近写明。组件只是可选便利，不是必填段落。",
+  },
+  detailsZoneComment: {
+    en: "Optional longer methods, file listings, and investigation detail. Host evidence and process follow below.",
+    zh: "可选：较长方法、文件清单与调查细节。Host 证据与过程区在下方。",
   },
   missing: { en: "not collected", zh: "未采集" },
   pricingUnavailable: { en: "no price configured", zh: "价格未配置" },
@@ -83,8 +107,12 @@ const M = {
     zh: "引用的媒体未能解析。",
   },
   hostLimitationUnpairedImages: {
-    en: "Share-card images were not a historical/candidate pair and were removed.",
-    zh: "首屏图片未成对，已从对照卡去掉。",
+    en: "Share-card shows one side's result only; the missing side and reason must stay visible next to it.",
+    zh: "首屏仅展示一侧结果；缺失方及原因须就近可见。",
+  },
+  hostLimitationOneSidedMissingNote: {
+    en: "One-sided preview is shown without an explicit nearby note naming the missing side.",
+    zh: "单侧预览已展示，但附近未明确写明缺失方。",
   },
 } as const satisfies Record<string, Msg>;
 

@@ -31,7 +31,7 @@ Comparison 简报一次性写出 links/media 后，`compare()` 开头拍下的�
 
 - `comparison-evidence.ts`、`comparison-short-refs.ts`、`experiment-report.ts` 工具装配、`comparison-agent.ts` 动态白名单、`experiment-store` 事件校验、`comparison-schema` / `schema` 字段。
 - 事实归宿：[证据、持久化与 Comparison](../../architecture/evidence-and-comparison.md)。历史终稿封存与 `finals/` 挂载由相邻包补齐；本记录覆盖动态 catalog 与派生注册。
-- 不替代 [可分享任务比较卡](./2026-09-09-comparison-shareable-task-card.md) 的产品目标；不整份抹掉 [视觉优先版式](./2026-09-19-comparison-visual-first-card.md) 的卡面顺序（自主主体区由后续包调整）。
+- 不替代 [可分享任务比较卡](./2026-09-09-comparison-shareable-task-card.md) 的产品目标；[视觉优先版式](../archive/accepted-2026-09/2026-09-19-comparison-visual-first-card.md) 的固定四区顺序由 [自主任务比较报告区与安全发布](./2026-09-19-comparison-autonomous-report-zones.md) 替代，本记录不改版式契约。
 
 ## 验证
 

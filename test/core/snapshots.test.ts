@@ -73,7 +73,7 @@ test('comparison report shells match committed snapshots', async () => {
     runId: 'run-1', changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 4000,
   };
   const facts = buildComparisonContext(taskCase, [runRecord], [inspection]).reportFacts;
-  const slots = { headline: 'The candidate produced a usable file.', 'key-differences': '<p>The candidate delivered a file; history did not.</p>' };
+  const slots = { headline: 'The candidate produced a usable file.', comparison: '<p>The candidate delivered a file; history did not.</p>' };
   await assertSnapshot('comparison-report-zh', renderComparisonReportShell({ task: 'Fix the report.', facts, metrics: facts.metrics ?? {}, slots, locale: 'zh' }));
   await assertSnapshot('comparison-report-en', renderComparisonReportShell({ task: 'Fix the report.', facts, metrics: facts.metrics ?? {}, slots, locale: 'en' }));
 });

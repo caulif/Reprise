@@ -23,6 +23,12 @@ export function comparisonHtmlWithHostShell(context: { reportShellHtml?: string 
       '<p class="note" data-agent-slot="headline">对照结论。</p>',
     );
   }
+  if (next.includes('data-agent-zone="comparison"')) {
+    return next.replace(
+      /<section class="slot" data-agent-zone="comparison" data-id="agent-comparison">(?:<!--[\s\S]*?-->)?[\s\S]*?<\/section>/,
+      `<section class="slot" data-agent-zone="comparison" data-id="agent-comparison">${body}</section>`,
+    );
+  }
   if (next.includes('data-agent-zone="key-differences"')) {
     return next.replace(
       /<section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences">(?:<!--[\s\S]*?-->)?<\/section>/,

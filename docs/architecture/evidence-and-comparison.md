@@ -20,11 +20,11 @@ TUI 读取这些事实并投影状态。它不持有 CandidateRun 状态机，�
 
 Attempt 作用域持有可修订的证据 catalog：权威 revision 落在 `facts/evidence-catalog/rev-N.json`，`CURRENT` 在 facts 镜像写完后原子切换；`briefing/facts/` 与 `facts/` 的 `media.json` / `evidence-index.json` 由同一 revision 派生。短引用 `ev-*` / `media-*` 为 2–6 位数字，append-only，不复用已分配编号。调查中可通过 `register_evidence` 追加派生分析（Host 强制 `origin=derived_analysis`）；成功注册写入 `comparison.evidence_registered`（attemptId、revision、source refs、content hash、artifact refs；不含 base64 或私人绝对路径）。mutate/persist 后若 emit 失败，同内容重试必须补发事件。`render_artifact` / `preview_report` 为受控预览入口（渲染实现另包）。媒体记录可带 `sourceRef` / `contentHash` / `derivation`。`available=true` 本身不构成向模型发送图片的授权；另需 privacy/发送策略与模型 `inputCapabilities`。
 
-Host 预置 HTML 模板并拥有 header、metrics、evidence、process 等区域；Agent 只能编辑约定的 agent zones 和 slot。输出经过 schema、HTML 契约和 evidence/media 引用检查。契约失败拒绝发布；展示问题由 Host 确定性修复，无法修复时记录 limitations 并仍可发布，不能把所有样式问题提升为失败门禁。Agent 的自然语言判断不能覆盖确定性事实，证据缺失必须明确说明，不得伪造引用。
+Host 预置 HTML 模板并拥有 header、metrics、cost-note、evidence、process 等区域；新报告 `data-report-format="2"` 的 Agent 区为 `comparison`（主创作）与可选 `details`（可见 `<details>`）。Agent 在 `comparison` 内自主选择并排图、表格、短片段或步骤；无图时不强制空视觉段；单侧真实结果可保留但须就近写明缺失方。输出经过 schema、HTML 契约和 evidence/media 引用检查。契约失败拒绝发布；展示问题由 Host 确定性修复，无法修复时记录 limitations 并仍可发布，不能把所有样式问题提升为失败门禁。Agent 的自然语言判断不能覆盖确定性事实，证据缺失必须明确说明，不得伪造引用。版式与发布取舍见[自主任务比较报告区与安全发布](../decisions/accepted/2026-09-19-comparison-autonomous-report-zones.md)。
 
 ## 报告发布
 
-正式报告是 experiment 根部的 `report.html` 及其媒体。理想发布顺序是先在 attempt 专属路径准备并校验完整媒体，再原子切换正式 HTML，从而保留旧成功版本。当前 `publishComparisonArtifacts` 先写正式 HTML、再复制共享媒体；媒体复制失败会覆盖旧 HTML，属于已复现的发布事务缺陷。调用方不能把一次失败重生成当成旧报告仍完整可读。
+正式报告是 experiment 根部的 `report.html` 及其媒体。`publishComparisonArtifacts` 先把被引用媒体拷到内容寻址路径（`media/<hash>.…`）并校验，再写审计 `report-model.json`（含 `formatVersion: 2` 与 `comparison` / `details` slots；旧四区 model 仍可读），最后原子替换根 `report.html`。失败或取消不得覆盖旧成功报告仍引用的资产。
 
 Comparison 是运行后的可选证据视图，不是新的实验状态机，也不为历史 Runtime 版本提供精确复现保证。报告失败不应改写 CandidateRun 的 outcome；报告中应明确 baseline、candidate、证据缺口和 cleanup 状态。
 

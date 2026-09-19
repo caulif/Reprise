@@ -5,7 +5,7 @@ import type { ControllerDecision } from "../agents/controller-agent.js";
 import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObservationRefs } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type TaskCase } from "../core/schema.js";
+import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type ComparisonReportModel, type TaskCase } from "../core/schema.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { workspaceTools } from "../infrastructure/recovery-tools.js";
 import {
@@ -338,12 +338,20 @@ async function runComparisonAttempt(input: {
       );
     }
     if (comparisonResult.status === "completed") {
+      const publishedHtml = await readFile(join(input.attemptRoot, "report.html"), "utf8");
+      let publishedModel: ComparisonReportModel | undefined;
+      try {
+        publishedModel = readReportModel(await readFile(join(input.attemptRoot, "report-model.json"), "utf8"));
+      } catch {
+        // Attempt model should exist after enforcePublishedReport; publish still stages media then HTML.
+      }
       await publishComparisonArtifacts({
         attemptRoot: input.attemptRoot,
         experimentRoot: input.host.experimentRoot,
-        html: await readFile(join(input.attemptRoot, "report.html"), "utf8"),
+        html: publishedHtml,
+        media: input.briefing.media,
+        ...(publishedModel ? { model: publishedModel } : {}),
       });
-      await persistPublishedReportModel(input.attemptRoot, input.host.experimentRoot);
     }
     return comparisonResult;
   } catch (error) {
@@ -462,15 +470,6 @@ function remapInvalidEnvelope(result: AgentInvocation<ComparisonResult>, reportP
   const message = result.failure.message;
   if (result.failure.code !== "invalid_output" && message !== "invalid JSON" && !message.includes("schema validation failed")) return result;
   return { ...result, failure: { ...result.failure, code: "invalid_envelope" } };
-}
-
-async function persistPublishedReportModel(attemptRoot: string, experimentRoot: string): Promise<void> {
-  try {
-    await persistComparisonReportModel(experimentRoot, readReportModel(await readFile(join(attemptRoot, "report-model.json"), "utf8")));
-  } catch (error) {
-    if (isMissing(error)) return;
-    throw error;
-  }
 }
 
 async function invokeCompare(
@@ -686,7 +685,7 @@ function comparisonFailed(
   };
 }
 
-function readReportModel(raw: string): import("../core/schema.js").ComparisonReportModel {
+function readReportModel(raw: string): ComparisonReportModel {
   const value = JSON.parse(raw) as unknown;
   if (!Value.Check(ComparisonReportModelSchema, value)) throw new Error("Comparison report model does not satisfy ComparisonReportModelSchema.");
   return value;

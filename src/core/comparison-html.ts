@@ -1,5 +1,6 @@
 const HOST_ZONES = ["style", "header", "metrics", "cost-note", "evidence", "process"] as const;
-export const AGENT_ZONES = ["visual-evidence", "key-differences", "delivery", "limitations"] as const;
+/** Format-2 agent zones. Legacy visual-evidence / key-differences / delivery / limitations are not accepted on new drafts. */
+export const AGENT_ZONES = ["comparison", "details"] as const;
 const AGENT_SLOTS = ["headline", "category", "task"] as const;
 const COMPONENT_TEMPLATES = [
   "headline",
@@ -33,26 +34,38 @@ export function missingComparisonSlots(html: string): string | undefined {
 }
 
 function shareCardLayoutError(html: string): string | undefined {
+  if (!/\bdata-report-format\s*=\s*(["'])2\1/i.test(html)) {
+    return 'Share card must declare data-report-format="2".';
+  }
   const header = tagMarkerIndex(html, "data-host-zone", "header");
   const headline = tagMarkerIndex(html, "data-agent-slot", "headline");
-  const diffs = tagMarkerIndex(html, "data-agent-zone", "key-differences");
-  const visual = tagMarkerIndex(html, "data-agent-zone", "visual-evidence");
+  const comparison = tagMarkerIndex(html, "data-agent-zone", "comparison");
   const metrics = tagMarkerIndex(html, "data-host-zone", "metrics");
-  const delivery = tagMarkerIndex(html, "data-agent-zone", "delivery");
-  const limitations = tagMarkerIndex(html, "data-agent-zone", "limitations");
-  if (header < 0 || headline < 0 || visual < 0 || diffs < 0 || metrics < 0) {
-    return "Share card order must be header, headline, visual evidence, agent contrast, then metrics.";
+  const details = tagMarkerIndex(html, "data-agent-zone", "details");
+  if (header < 0 || headline < 0 || comparison < 0 || metrics < 0 || details < 0) {
+    return "Share card order must be header, headline, comparison, then metrics; details stay after the share card.";
   }
-  if (!(header < headline && headline < visual && visual < diffs && diffs < metrics)) {
-    return "Share card order must be header, headline, visual evidence, agent contrast, then metrics.";
-  }
-  if (delivery >= 0 && delivery < metrics) {
-    return "Delivery and limitations must stay outside the share card.";
-  }
-  if (limitations >= 0 && limitations < metrics) {
-    return "Delivery and limitations must stay outside the share card.";
+  if (!(header < headline && headline < comparison && comparison < metrics && metrics < details)) {
+    return "Share card order must be header, headline, comparison, then metrics; details stay after the share card.";
   }
   return undefined;
+}
+
+/** True when the zone has no visible text and no media/table after stripping comments. */
+export function agentZoneBlank(html: string, zone: AgentZoneName): boolean {
+  const outer = extractOuter(html, "data-agent-zone", zone);
+  if (!outer) return true;
+  const open = outer.match(new RegExp(`^<(${ZONE_TAG})\\b[^>]*>`, "i"));
+  if (!open) return true;
+  const tag = open[1] ?? "section";
+  const inner = outer.slice(open[0].length, outer.length - `</${tag}>`.length);
+  const stripped = inner
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripped.length > 0) return false;
+  return !/<img\b|<table\b|<svg\b|<pre\b|<code\b|<video\b/i.test(inner);
 }
 
 function tagMarkerIndex(html: string, attr: string, value: string): number {
@@ -102,7 +115,7 @@ function canonicalizeHostZone(html: string): string {
   );
   return withoutAgentContent
     .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<([A-Za-z][\w:-]*)([^>]*)>/g, (_all, tag: string, attrs: string) => `<${tag.toLowerCase()}${canonicalAttributes(attrs)}>`) 
+    .replace(/<([A-Za-z][\w:-]*)([^>]*)>/g, (_all, tag: string, attrs: string) => `<${tag.toLowerCase()}${canonicalAttributes(attrs)}>`)
     .replace(/<\/([A-Za-z][\w:-]*)>/g, (_all, tag: string) => `</${tag.toLowerCase()}>`)
     .replace(/\s+/g, " ")
     .replace(/>\s+</g, "><")

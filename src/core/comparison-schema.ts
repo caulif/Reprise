@@ -91,6 +91,8 @@ export const ComparisonMediaRecordSchema = Type.Object({
 export type ComparisonMediaRecord = Static<typeof ComparisonMediaRecordSchema>;
 export const ComparisonReportModelSchema = Type.Object({
   schemaVersion: Type.Literal(1),
+  /** 2 = autonomous comparison/details zones. Absent or 1 = legacy four-zone audit files (readable, not rewritten). */
+  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])),
   headline: Type.Optional(Type.String({ minLength: 1, maxLength: 280 })),
   task: Type.String(),
   status: Type.Object({
@@ -105,6 +107,9 @@ export const ComparisonReportModelSchema = Type.Object({
   })),
   slots: Type.Object({
     header: Type.Optional(Type.String()),
+    comparison: Type.Optional(Type.String()),
+    details: Type.Optional(Type.String()),
+    /** Legacy slots retained so old report-model.json remains Value.Check-valid. */
     "key-differences": Type.Optional(Type.String()),
     "visual-evidence": Type.Optional(Type.String()),
     delivery: Type.Optional(Type.String()),

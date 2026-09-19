@@ -228,7 +228,7 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   assert.doesNotMatch(html, /\.task \{[^}]*white-space:nowrap/);
   assert.doesNotMatch(html, /data-host="status"/);
   assert.match(html, /data-agent-slot="headline"/);
-  assert.match(html, /data-agent-zone="key-differences"/);
+  assert.match(html, /data-agent-zone="comparison"/);
   assert.match(html, /data-host-zone="metrics"/);
   assert.equal(hostMetricsMismatch(html, facts.metrics ?? {}), undefined);
   assert.match(html, /2<span class="unit">min<\/span>/);

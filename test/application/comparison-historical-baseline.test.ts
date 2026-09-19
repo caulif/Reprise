@@ -253,15 +253,42 @@ test("failed later attempt leaves published report and media bytes unchanged", a
   await mkdir(join(attemptFail, "media"), { recursive: true });
   await writeFile(join(attemptOk, "media", "baseline-ok.png"), BASELINE_PNG);
   await writeFile(join(attemptOk, "media", "candidate-ok.png"), CANDIDATE_PNG);
-  const publishedHtml = "<!doctype html><p>previous successful comparison</p>\n";
-  await publishComparisonArtifacts({
+  const media: ComparisonMediaRecord[] = [
+    {
+      ref: "media:baseline-ok",
+      shortRef: "media-01",
+      side: "baseline",
+      inspectPath: "history/media/baseline-ok.png",
+      reportHref: "media/baseline-ok.png",
+      mediaType: "image/png",
+      available: true,
+    },
+    {
+      ref: "media:candidate-ok",
+      shortRef: "media-02",
+      side: "candidate",
+      inspectPath: "evidence/candidate-ok.png",
+      reportHref: "media/candidate-ok.png",
+      mediaType: "image/png",
+      available: true,
+    },
+  ];
+  const publishedHtml =
+    '<!doctype html><img src="media/baseline-ok.png" alt="b"><img src="media/candidate-ok.png" alt="c"><p>previous successful comparison</p>\n';
+  const published = await publishComparisonArtifacts({
     attemptRoot: attemptOk,
     experimentRoot,
     html: publishedHtml,
+    media,
   });
+  assert.match(published.html, /src="media\/[a-f0-9]{24}\.png"/);
+  assert.doesNotMatch(published.html, /src="media\/(?:baseline|candidate)-ok\.png"/);
   const reportHash = sha256(await readFile(join(experimentRoot, "report.html")));
-  const mediaBaselineHash = sha256(await readFile(join(experimentRoot, "media", "baseline-ok.png")));
-  const mediaCandidateHash = sha256(await readFile(join(experimentRoot, "media", "candidate-ok.png")));
+  const publishedMedia = (await readdir(join(experimentRoot, "media"))).sort();
+  assert.equal(publishedMedia.length, 2);
+  const mediaHashes = Object.fromEntries(await Promise.all(
+    publishedMedia.map(async (name) => [name, sha256(await readFile(join(experimentRoot, "media", name)))] as const),
+  ));
 
   await writeFile(join(attemptFail, "media", "baseline-ok.png"), Buffer.from("corrupt-not-png"));
   await writeFile(join(attemptFail, "media", "candidate-ok.png"), Buffer.from("also-corrupt"));
@@ -269,9 +296,10 @@ test("failed later attempt leaves published report and media bytes unchanged", a
   await writeFile(join(experimentRoot, "comparison-failure.html"), "<!doctype html><p>failed attempt</p>\n");
 
   assert.equal(sha256(await readFile(join(experimentRoot, "report.html"))), reportHash);
-  assert.equal(sha256(await readFile(join(experimentRoot, "media", "baseline-ok.png"))), mediaBaselineHash);
-  assert.equal(sha256(await readFile(join(experimentRoot, "media", "candidate-ok.png"))), mediaCandidateHash);
-  assert.equal(await readFile(join(experimentRoot, "report.html"), "utf8"), publishedHtml);
+  assert.equal(await readFile(join(experimentRoot, "report.html"), "utf8"), published.html);
+  for (const name of publishedMedia) {
+    assert.equal(sha256(await readFile(join(experimentRoot, "media", name))), mediaHashes[name]);
+  }
 });
 
 test("openable-baseline names stay empty on frozen SVG case TaskCase shape", () => {

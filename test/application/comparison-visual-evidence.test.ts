@@ -52,3 +52,16 @@ test("renderVisualEvidenceSeed surfaces registered-but-unavailable reason", () =
   assert.match(html, /data-host="visual-unavailable"/);
   assert.match(html, /预览图已登记，但源文件不可用。/);
 });
+
+test("renderVisualEvidenceSeed lists pairing candidates without claiming index pairs are comparable", () => {
+  const html = renderVisualEvidenceSeed(
+    [
+      { ...mediaRecord("baseline", true), shortRef: "media-01" },
+      { ...mediaRecord("candidate", true), shortRef: "media-02" },
+    ],
+    "zh",
+  );
+  assert.match(html, /data-host="pairing-hint"/);
+  assert.match(html, /data-host="pairing-candidate"/);
+  assert.match(html, /数组顺序不证明业务可比/);
+});
