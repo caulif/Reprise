@@ -7,26 +7,26 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
  /config  打开 /config  需要凭据
 
 ┌─ 内部 Agent 模型 ────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 恢复、模拟用户与对照共用。候选模型稍后单独选择。 │
-│ 端点   not-a-url │
-│ 内部模型      model-private · medium │
-│ 密钥     ••••••••   已写入配置文件 │
-│ API 密钥保存在 .reprise/harness-model.json。env:NAME 仍可作为回退。 │
-│ │
-│   服务商类型         openai-compatible  [Enter] 切换 │
-│   服务商标签         private-gateway │
-│   接口地址 │
-│     ⚠ 无效的 URL │
-│   模型               model-private │
-│   接口类型           openai-completions  [Enter] 切换 │
-│   推理               false  [Enter] 切换 │
-│   支持图片输入       false  [Enter] 切换 │
-│   力度               medium  [Enter] 切换 │
-│ ❯ API 密钥           ••••••••  ✓ │
-│   语言               中文  [Enter] 切换 │
-│ │
-│ ● 未保存草稿 │
-│ 配置文件：.reprise/harness-model.json │
+│ 恢复、模拟用户与对照共用。候选模型稍后单独选择。                                                                     │
+│ 端点   not-a-url                                                                                                     │
+│ 内部模型      model-private · medium                                                                                 │
+│ 密钥     ••••••••   已写入配置文件                                                                                   │
+│ API 密钥保存在 .reprise/harness-model.json。env:NAME 仍可作为回退。                                                  │
+│                                                                                                                      │
+│   服务商类型         openai-compatible  [Enter] 切换                                                                 │
+│   服务商标签         private-gateway                                                                                 │
+│   接口地址                                                                                                           │
+│     ⚠ 无效的 URL                                                                                                  │
+│   模型               model-private                                                                                   │
+│   接口类型           openai-completions  [Enter] 切换                                                                │
+│   推理               false  [Enter] 切换                                                                             │
+│   支持图片输入       false  [Enter] 切换                                                                             │
+│   力度               medium  [Enter] 切换                                                                            │
+│ ❯ API 密钥           ••••••••  ✓                                                                                     │
+│   语言               中文  [Enter] 切换                                                                              │
+│                                                                                                                      │
+│ ● 未保存草稿                                                                                                         │
+│ 配置文件：.reprise/harness-model.json                                                                                │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Draft changed. Ctrl+S writes the local config file; Ctrl+T tests the connection.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

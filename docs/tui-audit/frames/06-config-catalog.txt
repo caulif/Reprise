@@ -7,20 +7,20 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
  /config  打开 /config  需要凭据
 
 ┌─ 内部 Agent 模型 ────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 恢复、模拟用户与对照共用。候选模型稍后单独选择。 │
-│ 端点   Pi catalog amazon-bedrock │
-│ 内部模型      au.anthropic.claude-opus-4-6-v1 · medium │
-│ 密钥     凭据由目录管理 │
-│ 先在 Pi 执行 /login，再按 Ctrl+T 测试连接。Reprise 不保存 ChatGPT 或 Codex CLI 令牌。 │
-│ │
-│ ❯ 服务商类型         pi-catalog  [Enter] 切换 │
-│   服务商标签         amazon-bedrock │
-│   模型               au.anthropic.claude-opus-4-6-v1 │
-│   力度               medium  [Enter] 切换 │
-│   语言               中文  [Enter] 切换 │
-│ │
-│ ● 未保存草稿 │
-│ 配置文件：.reprise/harness-model.json │
+│ 恢复、模拟用户与对照共用。候选模型稍后单独选择。                                                                     │
+│ 端点   Pi catalog amazon-bedrock                                                                                     │
+│ 内部模型      au.anthropic.claude-opus-4-6-v1 · medium                                                               │
+│ 密钥     凭据由目录管理                                                                                              │
+│ 先在 Pi 执行 /login，再按 Ctrl+T 测试连接。Reprise 不保存 ChatGPT 或 Codex CLI 令牌。                                │
+│                                                                                                                      │
+│ ❯ 服务商类型         pi-catalog  [Enter] 切换                                                                        │
+│   服务商标签         amazon-bedrock                                                                                  │
+│   模型               au.anthropic.claude-opus-4-6-v1                                                                 │
+│   力度               medium  [Enter] 切换                                                                            │
+│   语言               中文  [Enter] 切换                                                                              │
+│                                                                                                                      │
+│ ● 未保存草稿                                                                                                         │
+│ 配置文件：.reprise/harness-model.json                                                                                │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Pi catalog selected. Sign in with pi /login, then test the connection.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
