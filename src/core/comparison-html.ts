@@ -41,11 +41,14 @@ function shareCardLayoutError(html: string): string | undefined {
   const delivery = tagMarkerIndex(html, "data-agent-zone", "delivery");
   const limitations = tagMarkerIndex(html, "data-agent-zone", "limitations");
   if (header < 0 || diffs < 0 || headline < 0 || metrics < 0) return undefined;
-  if (!(header < headline && headline < diffs && diffs < metrics)) {
-    return "Share card order must be header, headline, agent contrast, then metrics.";
+  if (visual < 0) {
+    if (!(header < headline && headline < diffs && diffs < metrics)) {
+      return "Share card order must be header, headline, visual evidence, agent contrast, then metrics.";
+    }
+    return undefined;
   }
-  if (visual >= 0 && !(diffs < visual && visual < metrics)) {
-    return "Share card order must be header, headline, agent contrast, then metrics.";
+  if (!(header < headline && headline < visual && visual < diffs && diffs < metrics)) {
+    return "Share card order must be header, headline, visual evidence, agent contrast, then metrics.";
   }
   if (delivery >= 0 && delivery < metrics) {
     return "Delivery and limitations must stay outside the share card.";

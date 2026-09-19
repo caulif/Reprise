@@ -79,11 +79,11 @@ ${componentTemplateHtml(locale)}
     <header data-host-zone="header" data-id="host-header">${header}</header>
     <p class="field-label">${escapeHtml(reportString(locale, "headlineLabel"))}</p>
     <p class="note" data-agent-slot="headline">${headline}</p>
-    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Core differences. Must be non-empty; if no comparison is possible, say so and why. Prefer one or two sentences; a table of at most five rows only when parallel items would tangle. No process rows. -->${[
+    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Host seeds pair-pages when both sides have previews; otherwise show why images are absent. -->${visualEvidence}</section>
+    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Short contrast after visuals. Must be non-empty; if no comparison is possible, say so and why. When paired finals exist, caption them in one or two sentences; no tables on the card face. No process rows. -->${[
       input.diagnostic ? diagnosticDifferences(input.diagnostic, locale) : "",
       slots["key-differences"] ?? "",
     ].filter(Boolean).join("")}</section>
-    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Host seeds pair-pages when both sides have previews; otherwise show why images are absent. -->${visualEvidence}</section>
     ${renderMetricsBoard(input.metrics, labels, locale)}
   </article>
   <div class="audit" hidden>
@@ -401,10 +401,10 @@ function componentTemplateHtml(locale: AgentLocale): string {
   const historical = escapeHtml(reportString(locale, "sessionHistorical"));
   const current = escapeHtml(reportString(locale, "sessionCurrent"));
   return `<!-- Component prototypes: copy into a data-agent-zone; omit what you do not use.
-     pair-pages: left historical final page / right candidate final page, page by page
-     split-compare: side-by-side text
-     difference-card: one difference with impact
-     diff-table / timeline / media-compare / headline: as needed
+     pair-pages (preferred on the card face): left historical final page / right candidate final page, page by page
+     split-compare / diff-table / timeline: audit or non-visual tasks only; hidden on the share card
+     difference-card: one difference with impact; avoid when pair-pages already show the contrast
+     media-compare / headline: as needed
      Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside or immediately after;
      wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside or immediately after. -->
 <template data-component-template="headline">
@@ -462,13 +462,14 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .muted,[data-component="muted"] { color:var(--faint); font-size:14px; }
 .slot { margin-top:14px; }
 .pages { display:flex; flex-direction:column; gap:14px; }
-[data-component="page-row"] { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:stretch; }
+[data-component="page-row"] { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:stretch; }
 .cell { border:1px solid var(--hair); border-radius:16px; overflow:hidden; background:#fff; }
 .cell .who { padding:8px 12px 0; }
-.cell img,[data-component="page-row"] img { width:100%; height:280px; object-fit:contain; object-position:top; display:block; background:#fff; }
-[data-agent-zone="key-differences"] p,[data-agent-zone="key-differences"] li { font-size:15px; line-height:1.45; color:var(--soft); max-width:52em; }
-[data-agent-zone="visual-evidence"] { margin-top:6px; }
-.share [data-component="diff-table"] { display:none; }
+.cell img,[data-component="page-row"] img { width:100%; height:320px; object-fit:contain; object-position:top; display:block; background:#fff; }
+[data-agent-zone="visual-evidence"] { margin-top:0; margin-bottom:12px; }
+[data-agent-zone="visual-evidence"] [data-host="visual-unavailable"] { margin:0; font-size:14px; }
+[data-agent-zone="key-differences"] p,[data-agent-zone="key-differences"] li { font-size:14px; line-height:1.4; color:var(--soft); max-width:48em; }
+.share [data-component="diff-table"],.share [data-component="split-compare"],.share [data-component="timeline"],.share [data-component="difference-card"] { display:none; }
 .audit { margin-top:20px; color:var(--soft); }
 .cost-note { margin: 0 0 8px; }
 [data-component="judgment"] { font-weight:700; }

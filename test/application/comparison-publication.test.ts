@@ -84,9 +84,11 @@ test("Host template has no visible status cards and keeps facts in the model", (
   const header = html.indexOf('data-id="host-header"');
   const metrics = html.indexOf('data-id="host-metrics"');
   const diffs = html.indexOf('data-id="agent-key-differences"');
+  const visual = html.indexOf('data-id="agent-visual-evidence"');
   const headline = html.indexOf('<p class="note" data-agent-slot="headline"');
-  assert.ok(header < headline && headline < diffs && diffs < metrics);
+  assert.ok(header < headline && headline < visual && visual < diffs && diffs < metrics);
   assert.equal(header < metrics && metrics < diffs, false);
+  assert.equal(diffs < visual, false);
   const delivery = html.indexOf('data-agent-zone="delivery"');
   assert.ok(metrics < delivery);
   assert.match(html, /class="audit" hidden/);
@@ -621,6 +623,32 @@ test("above-the-fold process dump and visual claims without media still publish"
   }
 });
 
+test("key-differences before visual-evidence fail share-card order", async () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const visual = html.match(/<section class="slot" data-agent-zone="visual-evidence"[\s\S]*?<\/section>/)?.[0];
+  const diffs = html.match(/<section class="slot" data-agent-zone="key-differences"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(visual && diffs);
+  const swapped = html.replace(visual, "").replace(diffs, "").replace(
+    /<p class="note" data-agent-slot="headline">[\s\S]*?<\/p>/,
+    (headline) => `${headline}${diffs}${visual}`,
+  );
+  const verified = await verifyAndRenderComparisonReport({
+    html: swapped,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in verified, false);
+  if (!("html" in verified)) assert.match(verified.message, /Share card order/);
+});
+
 test("metrics before key-differences fail share-card order", async () => {
   const reportFacts = facts();
   const html = renderComparisonReportShell({
@@ -885,6 +913,6 @@ test("data-claim publication checks and English report shell fail closed", async
   });
   const zhSnapshot = extractHostZoneSnapshot(zh);
   assert.ok(zhSnapshot);
-  assert.match(zh, /<!-- Core differences/);
+  assert.match(zh, /<!-- Short contrast after visuals/);
   assert.equal(hostZonesMismatch(zh, zhSnapshot, metricsFromReportFacts(reportFacts)), undefined);
 });

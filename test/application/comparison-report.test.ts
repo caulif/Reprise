@@ -267,8 +267,10 @@ test('compose and review prompts require a compressed page and allow review tool
   assert.match(COMPARISON_TURN_PROMPTS.compose, /headline/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /pair-pages/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /historical model on the left/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /before key-differences/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /must be non-empty/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /one or two sentences/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /explicit unavailable reason/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /at most five data rows/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /git-sink initial/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /Git-sink initial/);
@@ -276,7 +278,10 @@ test('compose and review prompts require a compressed page and allow review tool
   assert.match(COMPARISON_TURN_PROMPTS.compose, /leave empty when there are no paired images/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /If only one side has images, leave this zone empty/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /no mounted preview/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /paired preview frames are the primary evidence/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /brief caption/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="verified"/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not create new top-level data-agent-zone/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /最重要的 2–4 个差异/);
