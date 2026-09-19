@@ -28,6 +28,7 @@ export class CodexTextCaller implements ProviderAdapter {
   readonly #model: string;
   readonly #effort: CodexReasoningEffort;
   readonly #turnTimeoutMs: number;
+  readonly inputCapabilities = ["text"] as const;
 
   constructor(input: { options?: CodexRuntimeOptions; model?: string; effort?: CodexReasoningEffort; turnTimeoutMs?: number } = {}) {
     this.#options = input.options ?? {};

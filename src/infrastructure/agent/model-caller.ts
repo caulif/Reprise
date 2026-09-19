@@ -71,6 +71,10 @@ export class PiModelCaller implements ProviderAdapter {
     this.#models = models ?? modelsForConfig(config);
   }
 
+  get inputCapabilities(): readonly string[] {
+    return this.#model().input;
+  }
+
   providers(): readonly PiProviderOption[] {
     return this.#models.getProviders().map((provider) => ({ id: provider.id, name: provider.name })).sort((left, right) => left.name.localeCompare(right.name));
   }

@@ -2,9 +2,6 @@ import { sha256 } from "../../core/identity.js";
 import { redactToolResultForModel, toolResultBody } from "./model-input.js";
 import type { AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
 
-/** Filled after ProviderSession is created; gates native image blocks in tool results. */
-export type MediaCapabilityGate = { acceptsImage: boolean };
-
 class AgentToolFailure extends Error {
   constructor(role: string, cause: unknown) {
     super(`${role} agent tool execution failed.`, { cause });
@@ -18,7 +15,7 @@ export function instrumentTools(
   role: string,
   cursor: InvocationCursor,
   audit?: AgentAuditSink,
-  mediaGate?: MediaCapabilityGate,
+  acceptsImage = false,
 ): AgentToolDefinition[] {
   const names = new Set<string>();
   return tools.map((tool) => {
@@ -43,7 +40,7 @@ export function instrumentTools(
         });
         try {
           const raw = await tool.execute(params, signal);
-          const result = mediaGate && !mediaGate.acceptsImage ? stripImageBlocksForTextOnly(raw) : raw;
+          const result = acceptsImage ? raw : stripImageBlocksForTextOnly(raw);
           const visible = redactToolResultForModel(result);
           await tool.onCompleted?.(visible);
           await audit?.append({
