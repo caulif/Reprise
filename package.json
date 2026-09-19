@@ -81,20 +81,20 @@
     "prepublishOnly": "npm run check"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.84.1",
-    "@earendil-works/pi-ai": "0.84.1",
-    "@earendil-works/pi-tui": "0.84.1",
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "@sinclair/typebox": "0.34.52"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@types/node": "22.20.1",
-    "eslint": "10.8.1",
-    "globals": "17.11.0",
-    "jscpd": "4.0.5",
-    "knip": "5.70.2",
+    "@types/node": "22.20.3",
+    "eslint": "10.10.0",
+    "globals": "17.12.0",
+    "jscpd": "4.3.0",
+    "knip": "5.88.1",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.67.0"
+    "typescript-eslint": "8.70.0"
   },
   "publishConfig": {
     "access": "public"
