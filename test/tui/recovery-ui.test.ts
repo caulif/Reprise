@@ -168,16 +168,16 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
     selected: 0, filter: 'ALL', following: true, cancelling: false,
     currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
-  const suppressed = renderTimeline(theme, 120, {
+  const noHighlight = renderTimeline(theme, 120, {
     entries: [foldEntry],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: -1, filter: 'ALL', following: false, cancelling: false,
     currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
-    suppressSelection: true,
   }).join('\n');
-  // Selected paint uses fillLive (30;38;42); suppressed uses canvas fill (12;16;18).
+  // Selected paint uses fillLive (30;38;42); selected:-1 uses canvas fill and must not invent ▼ 新 N.
   assert.match(selectedFold, /48;2;30;38;42/);
-  assert.doesNotMatch(suppressed, /48;2;30;38;42/);
-  assert.match(suppressed, /阅读证据 · 54/);
+  assert.doesNotMatch(noHighlight, /48;2;30;38;42/);
+  assert.match(noHighlight, /阅读证据 · 54/);
+  assert.doesNotMatch(noHighlight, /新 \d+| \d+ new/);
 
   const rendered = renderWorkbench({
     page: 'confirm',
@@ -210,9 +210,8 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
         { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'I will start by reading the task text.', lane: 'recovery', kind: 'narrate' },
         { sequence: 2, occurredAt: '2026-09-08T00:00:01.000Z', source: 'HARNESS', title: foldTitle, lane: 'recovery', kind: 'fold', itemId: 'fold:1' },
       ],
-      selected: 1, filter: 'ALL', following: true, cancelling: false,
+      selected: -1, filter: 'ALL', following: false, cancelling: false,
       currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
-      suppressSelection: true,
     },
   }, 120).join('\n');
 
@@ -221,6 +220,27 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
   assert.match(rendered, /诊断已保存 · experiments\/exp-r1b\/recovery-diagnosis\.json/);
   assert.match(rendered, /阅读证据 · 54/);
   assert.doesNotMatch(rendered, /48;2;30;38;42/);
+  assert.doesNotMatch(rendered, /新 \d+| \d+ new/);
+});
+
+test('observational confirm without failed status does not claim diagnostics saved', () => {
+  const theme = createTheme(120, false);
+  const text = renderConfirmation(theme, 120, {
+    candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
+    step: 3,
+    sourceRoot: String.raw`C:\workspace`,
+    effort: 'high',
+    harnessModel: 'gpt-5',
+    harnessAuthOk: true,
+    productLabel: 'Codex',
+    locale: 'zh',
+    experimentId: 'exp-obs',
+    policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
+    preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
+  } as never).join('\n');
+  assert.match(text, /无法启动隔离候选/);
+  assert.match(text, /Could not recover|无法恢复/);
+  assert.doesNotMatch(text, /诊断已保存/);
 });
 
 test('confirmation with workspace changes still reports validation failure', () => {
