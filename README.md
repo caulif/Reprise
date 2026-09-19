@@ -74,6 +74,6 @@ Windows 11 是唯一经过真实使用验证的平台。上方 CI badge 只表�
 
 ## 了解、支持与贡献
 
-了解、支持与贡献：从 [文档导航](./docs/README.md) 进入 [使用指南](./docs/usage.md)、[架构总览](./docs/architecture/overview.md) 与 [日常开发](./docs/development.md)。`docs/tui-audit/frames/` 等列在导航的「不要读什么」里：它们是 **CI 门禁基线**，不是阅读材料。coding agent 先读 [AGENTS.md](./AGENTS.md)，再读任务直接相关的规范。
+了解、支持与贡献：从 [文档导航](./docs/README.md) 进入 [使用指南](./docs/usage.md)、[架构总览](./docs/architecture/overview.md) 与 [日常开发](./docs/development.md)。`docs/tui-audit/frames/` 等 CI 基线与本机材料见导航的[不要读什么](./docs/README.md#不要读什么)。coding agent 先读 [AGENTS.md](./AGENTS.md)，再读任务直接相关的规范。
 
 项目使用 [MIT 许可证](./LICENSE)。参与讨论与贡献请遵守 [行为准则](./docs/CODE_OF_CONDUCT.md)；维护与决策方式见 [贡献指南](./docs/CONTRIBUTING.md)。
