@@ -56,10 +56,9 @@ export function presentableReportPath(
 
 export function resolveResultPathLinks(result: ExperimentResult): ResultPathLinks {
   if (result.pathLinks) {
-    return {
-      ...result.pathLinks,
-      report: presentableReportPath(result.pathLinks.report, result.experimentRoot),
-    };
+    const { report: storedReport, ...rest } = result.pathLinks;
+    const report = presentableReportPath(storedReport, result.experimentRoot);
+    return { ...rest, ...(report ? { report } : {}) };
   }
   const runId = result.record.attempt?.runId;
   const report = presentableReportPath(result.reportPath, result.experimentRoot);

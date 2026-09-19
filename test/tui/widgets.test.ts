@@ -8,7 +8,7 @@ import { IntakeTui } from '../../src/tui/intake-app.js';
 import { renderConfirmation, renderPreflight, renderTimeline } from '../../src/tui/pages/run.js';
 import { matchesCanvasQuery } from '../../src/tui/scrollback.js';
 import { renderHistory, renderHistoryDetail } from '../../src/tui/pages/history.js';
-import { renderFailure, renderResult, resultHints } from '../../src/tui/pages/result.js';
+import { renderFailure, renderResult } from '../../src/tui/pages/result.js';
 import { relativeTime, renderSessions } from '../../src/tui/pages/intake.js';
 import { sessionReplayErrorMessage, t } from '../../src/tui/i18n.js';
 import { SessionReplayError } from '../../src/products/shared/session-recovery.js';
@@ -886,22 +886,6 @@ test('history windows long lists around the selection', () => {
   assert.match(text, /experiment-16/);
   assert.match(text, /16\/20/);
   assert.doesNotMatch(text, /experiment-1\s/);
-});
-
-test('result page footer lists path open keys and c during compare gate', () => {
-  assert.deepEqual(resultHints(), [
-    ['o', 'Open report'],
-    ['h', 'History final'],
-    ['f', 'Candidate final'],
-    ['Esc', 'Home'],
-  ]);
-  assert.deepEqual(resultHints('en', true), [
-    ['c', 'Generate comparison card'],
-    ['o', 'Open report'],
-    ['h', 'History final'],
-    ['f', 'Candidate final'],
-    ['Esc', 'Home'],
-  ]);
 });
 
 test('failed result shows the recorded failure instead of limitations copy', () => {

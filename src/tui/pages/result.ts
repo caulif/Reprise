@@ -94,7 +94,8 @@ function hitResultPathRow(
     if (!path) continue;
     const index = keyIndex(stripped, key);
     if (index < 0) continue;
-    const valueStart = visibleWidth(stripped.slice(0, index)) + RESULT_KV_LABEL_WIDTH + 2;
+    const labelWidth = Math.max(RESULT_KV_LABEL_WIDTH, visibleWidth(key));
+    const valueStart = visibleWidth(stripped.slice(0, index)) + labelWidth + 2;
     if (col >= valueStart) return action;
   }
   return undefined;

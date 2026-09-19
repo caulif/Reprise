@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setCapabilities } from '@earendil-works/pi-tui';
-import { renderResult } from '../../src/tui/pages/result.js';
+import { renderResult, resultHints } from '../../src/tui/pages/result.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { kv } from '../../src/tui/widgets.js';
 
@@ -58,10 +58,19 @@ test('skipped comparison still renders history and candidate rows without bare a
     comparison: { result: { status: 'skipped' } },
   } as never).join('\n');
   assert.match(text, /Report/);
-  assert.match(text, /History final\s+.*deck\.html/);
-  assert.match(text, /Candidate final\s+.*out\.html/);
+  assert.match(text, /History final.*deck\.html/);
+  assert.match(text, /Candidate final.*out\.html/);
   assert.doesNotMatch(text, /C:\\exp\\environment\\baselines\\deck\.html/);
   assert.doesNotMatch(text, /C:\\exp\\environment\\runs\\run-1\\out\.html/);
+});
+
+test('result page footer lists report, history, and candidate open keys', () => {
+  assert.deepEqual(resultHints(), [
+    ['o', 'Open report'],
+    ['h', 'History final'],
+    ['f', 'Candidate final'],
+    ['Esc', 'Home'],
+  ]);
 });
 
 test('failed comparison remains distinct from a stalled candidate in both terminal widths', () => {

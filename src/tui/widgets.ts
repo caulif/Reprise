@@ -278,7 +278,7 @@ export function kv(theme: Theme, key: string, value: string, width: number): str
 /** Label plus wrapped value; continuation lines indent under the value, not under a mid-glyph. */
 export function kvBlock(theme: Theme, key: string, value: string, width: number): string[] {
   const inner = Math.max(1, width - (theme.framed ? 2 : 3));
-  const labelWidth = 12;
+  const labelWidth = Math.max(12, visibleWidth(key));
   const valueWidth = Math.max(8, inner - labelWidth - 2);
   const wrapped = wrapBodyLine(value, valueWidth);
   const indent = ' '.repeat(labelWidth);
@@ -294,7 +294,7 @@ export function kvLinkBlock(theme: Theme, key: string, label: string, absolutePa
   const vacant = theme.framed ? '—' : '-';
   if (!absolutePath || !label.trim() || label === vacant) return kvBlock(theme, key, label, width);
   const inner = Math.max(1, width - (theme.framed ? 2 : 3));
-  const labelWidth = 12;
+  const labelWidth = Math.max(12, visibleWidth(key));
   const valueWidth = Math.max(8, inner - labelWidth - 2);
   const wrapped = wrapBodyLine(label, valueWidth);
   const indent = ' '.repeat(labelWidth);
