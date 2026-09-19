@@ -37,8 +37,8 @@ function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function normalizeTrailingNewline(text: string): string {
-  return text.replace(/\n$/, "");
+function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\n$/, "");
 }
 
 async function writeDirectRollout(root: string, sessionId: string): Promise<{
@@ -94,7 +94,7 @@ test("freezeCase with real Codex extract seals manifest and files under baseline
       HISTORICAL_ANIMATION_NAME,
     ),
   );
-  assert.equal(normalizeTrailingNewline(sealed.toString("utf8")), normalizeTrailingNewline(html));
+  assert.equal(normalizeNewlines(sealed.toString("utf8")), normalizeNewlines(html));
 });
 
 test("reuseExisting freeze leaves old case hashes unchanged", async (t) => {
@@ -160,8 +160,8 @@ test("prepareHistoricalArtifacts derives into attempt without rewriting case", a
     HISTORICAL_ANIMATION_NAME,
   );
   assert.equal(
-    normalizeTrailingNewline((await readFile(derivedFile)).toString("utf8")),
-    normalizeTrailingNewline(html),
+    normalizeNewlines((await readFile(derivedFile)).toString("utf8")),
+    normalizeNewlines(html),
   );
   await assert.rejects(readFile(join(caseDir, "baseline-artifacts", "manifest.json")));
 });

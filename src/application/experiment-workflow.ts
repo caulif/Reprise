@@ -148,7 +148,10 @@ export function createExperimentWorkflow(input: {
         ...(request.compare ? { compare: true } : {}),
         ...(request.deferComparison ? { deferComparison: true } : {}),
         ...(packHistory(selected.pack).extractHistoricalArtifacts
-          ? { extractHistoricalArtifacts: packHistory(selected.pack).extractHistoricalArtifacts }
+          ? {
+            extractHistoricalArtifacts: (extractInput) =>
+              packHistory(selected.pack).extractHistoricalArtifacts!(extractInput),
+          }
           : {}),
         signal: owned.signal,
       });
@@ -163,7 +166,11 @@ export function createExperimentWorkflow(input: {
           const agents = await input.agents(combined);
           return { comparison: agents.comparison, agentConfig: agents.config };
         },
-        resolveExtractHistoricalArtifacts: (productId) => packHistory(packFor(productId)).extractHistoricalArtifacts,
+        resolveExtractHistoricalArtifacts: (productId) => {
+          const history = packHistory(packFor(productId));
+          if (!history.extractHistoricalArtifacts) return undefined;
+          return (extractInput) => history.extractHistoricalArtifacts!(extractInput);
+        },
         ...(runId ? { runId } : {}), ...(signal ? { signal } : {}), ...(onEvent ? { onEvent } : {}), ...(onActivity ? { onActivity } : {}),
       });
     },
@@ -193,7 +200,10 @@ function sourceHistoryPorts(dataDir: string, packFor: (productId: string) => Pro
         ...(request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),
         reuseExisting: true,
         ...(history.extractHistoricalArtifacts
-          ? { extractHistoricalArtifacts: history.extractHistoricalArtifacts }
+          ? {
+            extractHistoricalArtifacts: (extractInput) =>
+              history.extractHistoricalArtifacts!(extractInput),
+          }
           : {}),
       });
     },

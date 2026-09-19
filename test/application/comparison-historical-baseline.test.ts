@@ -229,8 +229,11 @@ test("empty-refs historical HTML reaches paired comparison media without stuffed
   assert.ok(openable.baselineSources.length >= 1, "historical animation.html must be discovered");
   const baselineHtmlPath = openable.baselineSources[0]?.absolutePath;
   assert.ok(baselineHtmlPath);
-  // apply_patch reconstruction may omit a trailing newline present in the source fixture.
-  assert.equal((await readFile(baselineHtmlPath, "utf8")).replace(/\n$/, ""), html.replace(/\n$/, ""));
+  // apply_patch reconstruction uses LF; fixture checkout may be CRLF on Windows.
+  assert.equal(
+    (await readFile(baselineHtmlPath, "utf8")).replace(/\r\n/g, "\n").replace(/\n$/, ""),
+    html.replace(/\r\n/g, "\n").replace(/\n$/, ""),
+  );
   assert.ok(openable.candidateSources.length >= 1);
   assert.ok(augmented.media.some((item) => item.side === "baseline" && item.available));
   assert.ok(augmented.media.some((item) => item.side === "candidate" && item.available));
