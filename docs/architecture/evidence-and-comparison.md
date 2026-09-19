@@ -34,7 +34,7 @@ TaskCase 通过 case.complete 发布，缺少标记的半成品不能作为完�
 
 进入模型的正文先经过秘密过滤，再持久化并发送；超出内联预算的内容使用带 hash/长度的附件，重建时校验。Pi 内存 transcript 不是另一份持久化真相。角色工具读取的正文同样需要可复原的事件／附件记录，仅保存可变文件路径或 digest 不足以重建输入。
 
-Comparison 每次使用独立 attempt 和连续 Session，按理解、调查、创作、审阅推进。Host 持有确定性指标和模板区域，Agent 写本次任务的差异与判断；未知 token、价格或用量不是零。候选 snapshot 缺失或不完整时明确 unavailable，不能悄悄改读可变运行副本。详情见 [attempt 装配](../../src/application/comparison.ts)、[发布](../../src/application/comparison-publication.ts)及[持久化比较入口](../../src/application/experiment-compare-persisted.ts)。
+Comparison 每次使用独立 attempt 和连续 Session，按理解、调查、创作、审阅推进。可执行 Prompt 以 [`comparison-agent.ts`](../../src/agents/comparison-agent.ts) 为唯一文本源：以任务成功标准选证据形式，点名 `render_artifact` / `register_evidence` / `preview_report`；compose 创作 `comparison` 与可选 `details`；review 须预览且改稿后重检。信封短引用取自当前 catalog（`compare` 的 `getEvidenceCatalog`），未知引用进入有限 JSON repair，不得静默丢弃。取舍见[自主 Prompt 闭环](../decisions/accepted/2026-09-19-comparison-autonomous-prompt-loop.md)。Host 持有确定性指标和模板区域，Agent 写本次任务的差异与判断；未知 token、价格或用量不是零。候选 snapshot 缺失或不完整时明确 unavailable，不能悄悄改读可变运行副本。详情见 [attempt 装配](../../src/application/comparison.ts)、[发布](../../src/application/comparison-publication.ts)及[持久化比较入口](../../src/application/experiment-compare-persisted.ts)。
 
 ## 事件信封字段
 

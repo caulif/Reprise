@@ -2,7 +2,7 @@
 
 状态：superseded
 
-> 已被 [自主任务比较报告区与安全发布](../../accepted/2026-09-19-comparison-autonomous-report-zones.md) 替代其中的固定四区顺序、卡面隐藏组件、以及「不成对则去掉图片」条款。Host 身份与事实纪律仍有效。
+> 报告区与发布条款已被 [自主任务比较报告区与安全发布](../../accepted/2026-09-19-comparison-autonomous-report-zones.md) 替代（固定四区顺序、卡面隐藏组件、「不成对则去掉图片」）。Prompt 契约已被 [自主任务比较 Prompt 与四轮闭环](../../accepted/2026-09-19-comparison-autonomous-prompt-loop.md) 替代（pair-pages only、单侧留空、固定 visual→diffs 指令）。Host 身份与事实纪律仍有效。
 
 ## 问题
 

@@ -144,6 +144,28 @@ test('comparison envelope accepts short evidence refs and rejects long event ids
     () => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['event:foreign-1'] }, context),
     /schema validation failed/,
   );
+  assert.throws(
+    () => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-99'] }, context),
+    /unknown evidence refs: ev-99/,
+  );
+});
+
+test('comparison envelope reads live getEvidenceCatalog over a stale shortEvidenceRefs snapshot', () => {
+  const context = {
+    ...buildComparisonContext(taskCase(), [runRecord()]),
+    shortEvidenceRefs: ['ev-01'],
+  };
+  assert.doesNotThrow(() => assertComparisonResult(
+    { status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-02'] },
+    context,
+    () => ({
+      links: [
+        { side: 'candidate', inspectPath: 'candidate/a', shortRef: 'ev-01' },
+        { side: 'candidate', inspectPath: 'candidate/b', shortRef: 'ev-02' },
+      ],
+      media: [],
+    }),
+  ));
 });
 
 test('comparison orchestration rejects long event ids in the envelope', async () => {
@@ -160,14 +182,18 @@ test('comparePersistedFacts requires an explicit attemptId', async () => {
 });
 
 test('comparison prompt points workspace tools at the sealed snapshot mount', () => {
-  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed read-only snapshot/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /objectStore=not_seeded/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /incomplete_object_store/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed read-only/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /finals\//);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /render_artifact/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /register_evidence/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /preview_report/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /In this session you will receive, in order/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /最后一轮不能使用工具/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /read_observation/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /comparison-sandbox\/candidate/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /pair-pages/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /at most three bullets/);
 });
 
 test('comparison orientation does not inline the initial task and points at user-inputs', async () => {
@@ -263,45 +289,36 @@ test('cost card distinguishes missing usage from missing prices', async () => {
   assert.match(html, /价格未配置/);
 });
 
-test('compose and review prompts require a compressed page and allow review tools', () => {
+test('compose and review prompts require autonomous zones and real preview', () => {
   assert.match(COMPARISON_TURN_PROMPTS.compose, /headline/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /pair-pages/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /historical model on the left/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /before key-differences/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /must be non-empty/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /one or two sentences/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /explicit unavailable reason/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /hidden on the share card/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /at most five data rows/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /git-sink initial/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /Git-sink initial/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not use <strong>/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /leave empty when there are no paired images/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /If only one side has images, leave this zone empty/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /no mounted preview/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /paired preview frames are the primary evidence/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /hidden by CSS and must not be copied onto the card face/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /at most five data rows/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /brief caption/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="comparison"/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="details"/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="verified"/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not create new top-level data-agent-zone/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="visual"/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not claim visual inspection/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /pair-pages/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /at most three bullets/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /leave empty when there are no paired images/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /If only one side has images, leave this zone empty/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /before key-differences/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /最重要的 2–4 个差异/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /positioned after the comparison/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /The left side is the historical session/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /Never write 历史侧/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /do not call them incomparable/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /reportFacts.models.comparison/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /the Host already prints it/);
-  assert.match(COMPARISON_TURN_PROMPTS.understand, /work\/comparison-plan\.md/);
-  assert.match(COMPARISON_TURN_PROMPTS.investigate, /changedPathsOmitted/);
-  assert.match(COMPARISON_TURN_PROMPTS.investigate, /finals of the same kind/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /reopen report\.html/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /editing the page directly/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /Without opening any details/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /data-claim/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /Similar results are a valid finding/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /single frame does not prove motion/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /do not make visual-quality claims/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /harness limit or missing historical evidence/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /hidden by CSS and must not be copied onto the card face/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /The left side is the historical session/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /preview_report/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /Recheck if the draft changes/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /specific\s+review limitation/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /reopen report\.html and review/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /已禁用工具/);
+  assert.match(COMPARISON_TURN_PROMPTS.understand, /work\/comparison-plan\.md/);
+  assert.match(COMPARISON_TURN_PROMPTS.investigate, /registered tools/);
+  assert.match(COMPARISON_TURN_PROMPTS.investigate, /Stop investigating when additional work/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.investigate, /changedPathsOmitted/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.investigate, /最多四个候选差异/);
 });
 
