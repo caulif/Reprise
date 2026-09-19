@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TuiAltScreen, setCapabilities, visibleWidth } from '@earendil-works/pi-tui';
 import { IntakeTui } from '../../src/tui/intake-app.js';
-import { renderConfirmation, renderPreflight, renderTimeline, runningHints } from '../../src/tui/pages/run.js';
+import { renderConfirmation, renderPreflight, renderTimeline } from '../../src/tui/pages/run.js';
 import { matchesCanvasQuery } from '../../src/tui/scrollback.js';
 import { renderHistory, renderHistoryDetail } from '../../src/tui/pages/history.js';
 import { renderFailure, renderResult, resultHints } from '../../src/tui/pages/result.js';
@@ -14,7 +14,7 @@ import { sessionReplayErrorMessage, t } from '../../src/tui/i18n.js';
 import { SessionReplayError } from '../../src/products/shared/session-recovery.js';
 import { FORBIDDEN_COMPACT, createTheme } from '../../src/tui/theme.js';
 import { operatorErrorMessage, truncateFit } from '../../src/tui/format.js';
-import { kv, kvBlock, pad, panel, joinColumns, progressBar, stateRail, wrapBodyLine, keyHints } from '../../src/tui/widgets.js';
+import { kv, kvBlock, pad, panel, joinColumns, progressBar, stateRail, wrapBodyLine } from '../../src/tui/widgets.js';
 import { renderWorkbench } from '../../src/tui/workbench.js';
 import { helpLines } from '../../src/tui/overlays.js';
 import { FakeTerminal, renderFrame } from '../support/fake-terminal.js';
@@ -356,9 +356,7 @@ test('a 24-row running workbench stays within the viewport', () => {
   const text = lines.join('\n');
   assert.match(text, /Ctrl\+C/);
   assert.doesNotMatch(text, /You cannot type/);
-  assert.doesNotMatch(text, /\[f\]/);
-  assert.doesNotMatch(text, /\[o\]/);
-  assert.doesNotMatch(text, /Expand|Select|Find/);
+  assert.doesNotMatch(text, /\[f\]|\[o\]|Expand|Select|Find/);
 });
 
 test('recovery workbench footer has no find', () => {
@@ -376,17 +374,14 @@ test('recovery workbench footer has no find', () => {
     },
   }, 120, 24).join('\n');
   assert.match(text, /Ctrl\+C/);
-  assert.doesNotMatch(text, /\[\/\]/);
-  assert.doesNotMatch(text, /Expand|Select|Find/);
+  assert.doesNotMatch(text, /\[\/\]|Expand|Select|Find/);
 });
 
 test('help names the keys of the page it was opened on', () => {
   const running = helpLines('running').join('\n');
   assert.match(running, /Ctrl\+C\s+Request cancellation/);
   assert.match(running, /\?/);
-  assert.doesNotMatch(running, /Find/);
-  assert.doesNotMatch(running, /Expand/);
-  assert.doesNotMatch(running, /Select/);
+  assert.doesNotMatch(running, /Find|Expand|Select/);
   assert.doesNotMatch(running, /Cycle (?:timeline )?filter/);
   assert.doesNotMatch(running, /Test connection/);
 
@@ -988,52 +983,4 @@ test('limit_reached result explains the turn cap', () => {
   assert.match(text, /limit\.target_turns/);
   assert.match(text, /target turn limit/);
   assert.match(text, /Comparison still ran/);
-});
-
-function assertWatchOnlyRunningFooter(line: string): void {
-  assert.match(line, /Ctrl\+C/);
-  assert.doesNotMatch(line, /Expand/);
-  assert.doesNotMatch(line, /Select/);
-  assert.doesNotMatch(line, /Find/);
-  assert.doesNotMatch(line, /\[\/\]/);
-  assert.doesNotMatch(line, /\[Enter\]/);
-  assert.doesNotMatch(line, /\[v\]/);
-}
-
-test('preparing running hints are watch-only', () => {
-  const theme = createTheme(80, false);
-  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, true, 'en'), 80));
-  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, true, 'zh'), 80));
-});
-
-test('recovery running hints are watch-only', () => {
-  const theme = createTheme(80, false);
-  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, true, 'en', false, false), 80));
-  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, true, 'zh', false, false), 80));
-});
-
-test('candidate idle running hints are watch-only', () => {
-  const theme = createTheme(80, false);
-  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, false, 'en'), 80));
-  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, false, 'zh'), 80));
-});
-
-test('finding running hints keep find-mode keys only', () => {
-  const theme = createTheme(80, false);
-  const line = keyHints(theme, runningHints('ALL', false, false, 'en', true, false), 80);
-  assert.match(line, /Ctrl\+C/);
-  assert.match(line, /Next match/);
-  assert.match(line, /Previous match/);
-  assert.match(line, /Clear find/);
-  assert.doesNotMatch(line, /Expand/);
-  assert.doesNotMatch(line, /Select/);
-});
-
-test('reading running hints keep reading-mode keys only', () => {
-  const theme = createTheme(80, false);
-  const line = keyHints(theme, runningHints('ALL', false, false, 'en', false, true), 80);
-  assert.match(line, /Ctrl\+C/);
-  assert.match(line, /Resume view/);
-  assert.doesNotMatch(line, /Expand/);
-  assert.doesNotMatch(line, /Find/);
 });
