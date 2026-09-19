@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { HarnessConfigDraft } from '../../src/infrastructure/harness-model-config.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  configForDraft,
+  draftForConfig,
+  readHarnessModelConfig,
+  saveHarnessModelConfig,
+  type HarnessConfigDraft,
+} from '../../src/infrastructure/harness-model-config.js';
 import { handleConfigInput, type ConfigInputState } from '../../src/tui/config-input.js';
 import { renderConfig } from '../../src/tui/pages/config.js';
 import { createTheme } from '../../src/tui/theme.js';
@@ -127,31 +136,28 @@ test('Enter cycles API type and reasoning on an OpenAI-compatible draft', () => 
 });
 
 test('Enter toggles image input and draft/config round-trip keeps it', async () => {
-  const { draftForConfig, configForDraft, saveHarnessModelConfig, readHarnessModelConfig, configPath } = await import('../../src/infrastructure/harness-model-config.js');
-  const { mkdtemp, rm } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
   const toggled = handleConfigInput({
     draft, selected: 6, editing: false, buffer: '', cursor: 0, providers: [], models: [],
   }, '\r', refresh);
-  assert.equal(toggled?.state.draft.supportsImage, true);
-  const config = configForDraft({ ...toggled!.state.draft, keyRef: 'env:REPRISE_TEST_KEY' });
+  assert.ok(toggled);
+  assert.equal(toggled.state.draft.supportsImage, true);
+  const config = configForDraft({ ...toggled.state.draft, keyRef: 'env:REPRISE_TEST_KEY' });
   assert.deepEqual(config.schemaVersion === 2 ? config.inputCapabilities : undefined, ['text', 'image']);
   assert.equal(draftForConfig(config).supportsImage, true);
   const root = await mkdtemp(join(tmpdir(), 'reprise-image-input-'));
   try {
     await saveHarnessModelConfig(root, config);
     const loaded = await readHarnessModelConfig(root);
-    assert.deepEqual(loaded && loaded.schemaVersion === 2 ? loaded.inputCapabilities : undefined, ['text', 'image']);
-    assert.equal(draftForConfig(loaded!).supportsImage, true);
-    const off = configForDraft({ ...draftForConfig(loaded!), supportsImage: false });
+    assert.ok(loaded);
+    assert.deepEqual(loaded.schemaVersion === 2 ? loaded.inputCapabilities : undefined, ['text', 'image']);
+    assert.equal(draftForConfig(loaded).supportsImage, true);
+    const off = configForDraft({ ...draftForConfig(loaded), supportsImage: false });
     await saveHarnessModelConfig(root, off);
     const again = await readHarnessModelConfig(root);
     assert.equal(again && again.schemaVersion === 2 ? again.inputCapabilities : 'missing', undefined);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-  void configPath;
 });
 
 test('config save and test use control chords, not letters', () => {

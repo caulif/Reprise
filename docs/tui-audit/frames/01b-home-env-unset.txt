@@ -14,7 +14,7 @@ Reprise v0.1.0   C:\reprise                    gpt-5.6-terra · medium   ⚠ 内
  /help      显示按键与命令
 
  下一步：在当前终端设置 OPENAI_API_KEY
- $env:OPENAI_API_KEY = '<value>'
+ export OPENAI_API_KEY='<value>'
 
  ❯ 输入 /命令，Tab 补全
  欢迎回来。输入 /help 查看本地流程。
