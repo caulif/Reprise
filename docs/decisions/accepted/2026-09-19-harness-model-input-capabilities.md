@@ -24,7 +24,7 @@ Privacy `allowBinary` 仍是独立授权门；本决定不改 Comparison catalog
 
 ## 影响
 
-旧配置无字段时行为不变（text-only）。打开图片输入后自定义模型向 Pi 注册 `input: ['text','image']`。`data-claim="visual"` 与报告发布仍依赖后续包；本决定只保证能力声明与发送边界。
+旧配置无字段时行为不变（text-only）。打开图片输入后自定义模型向 Pi 注册 `input: ['text','image']`。`data-claim="visual"` 与报告发布的 Session 交付关联见[视觉声明与 Session 交付](./2026-09-19-comparison-visual-claim-session-delivery.md)。
 
 ## 验证
 

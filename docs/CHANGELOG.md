@@ -7,6 +7,7 @@
 - 包名改为 scoped `@caulif/reprise`，并提供 TUI、headless `prepare`/`run`/`compare`、查询和取消命令。
 - 包名改为 scoped `@caulif/reprise`（避开 npmjs 无关同名包 `reprise`）。
 - openai-compatible 内部模型可声明「支持图片输入」（`inputCapabilities`）；默认仍为仅 text。Pi catalog 视觉能力以目录为准。text-only 会话不向模型发送原生 image block。
+- Comparison：text-only 仍可将已注册图片写入报告供人阅读；`data-claim="visual"` 须关联本 Session 实际交付的媒体 contentHash；seed/briefing 物化时对可用文件写入同口径 `contentHash`。
 
 ### Added
 

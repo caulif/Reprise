@@ -45,12 +45,17 @@ export function inlineBody(text: string): AgentTextBody {
   return { encoding: "inline", schemaVersion: 1, text: redactModelVisibleText(text).text };
 }
 
+/** Hash of decoded image bytes — same basis as Comparison media `contentHash`. */
+export function imageContentHash(base64Data: string): string {
+  return sha256(Buffer.from(base64Data, "base64"));
+}
+
 export function imageRefs(images: readonly ImageContent[] | undefined): AgentImageRef[] {
   return (images ?? []).map((image) => {
     const ref = {
       type: "image" as const,
       mimeType: image.mimeType,
-      contentHash: sha256(image.data),
+      contentHash: imageContentHash(image.data),
       byteLength: Buffer.byteLength(image.data, "base64"),
     };
     if (!Value.Check(AgentImageRefSchema, ref)) throw new Error("Image reference failed schema check.");
@@ -75,7 +80,7 @@ export function toolResultBody(result: RedactableToolResult): AgentTextBody {
     const persisted = result.contentBlocks.map((block) => (
       block.type === "text"
         ? block
-        : { type: "image", mimeType: block.mimeType, contentHash: sha256(block.data), byteLength: Buffer.byteLength(block.data, "base64") }
+        : { type: "image", mimeType: block.mimeType, contentHash: imageContentHash(block.data), byteLength: Buffer.byteLength(block.data, "base64") }
     ));
     return inlineBody(JSON.stringify(persisted));
   }
