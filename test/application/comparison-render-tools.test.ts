@@ -120,7 +120,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
 <article class="share">
 <section data-host-zone="metrics">metrics</section>
 <span>历史会话</span><span>当前会话</span>
-<section data-agent-zone="visual-evidence"><img data-media-ref="media-01" alt=""></section>
+<section data-agent-zone="comparison"><img data-media-ref="media-01" alt=""></section>
 </article>
 </body></html>`;
   await writeFile(join(root, "report.html"), draft, "utf8");
@@ -199,7 +199,8 @@ test("materializeComparisonReportPreview writes preview.html without touching dr
   });
   await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "a.png"), PNG_A);
-  const draft = `<section data-agent-zone="visual-evidence"><img data-media-ref="media-01"></section>`;
+  // Format-2 agent zones only: preparePublishableComparisonHtml rewrites refs inside comparison/details.
+  const draft = `<section data-agent-zone="comparison"><img data-media-ref="media-01"></section>`;
   await writeFile(join(root, "report.html"), draft, "utf8");
   const prepared = await materializeComparisonReportPreview({
     attemptRoot: root,
@@ -216,6 +217,7 @@ test("materializeComparisonReportPreview writes preview.html without touching dr
   });
   assert.equal(prepared.catalogRevision, 3);
   assert.match(prepared.html, /src="media\/a\.png"/);
+  assert.doesNotMatch(prepared.html, /data-media-ref=/);
   assert.equal(await readFile(join(root, "report.html"), "utf8"), draft);
   assert.match(await readFile(prepared.htmlPath, "utf8"), /src="media\/a\.png"/);
 });

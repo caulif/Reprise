@@ -12,7 +12,7 @@ Comparison 需要从已封存 HTML/SVG/raster 得到可引用预览帧，并在�
 - 只允许当前 bundle origin 与 `data:`/`blob:`（页面文档资源）；阻断 `file:`、其他 loopback 端口、外网、WebSocket、EventSource、`sendBeacon`、Worker / SharedWorker / ServiceWorker、新窗口与下载。page-world 闸拒绝 Worker·SW 构造与 `serviceWorker.register`（worker 全局不受页面闸约束，故直接禁止）；CDP 关闭 worker / service_worker / shared_worker target；Fetch 拦截页面 HTTP(S)。未能建立受控加载时返回 `capability_unavailable`，不用宽权限 `file://` 或 `--no-sandbox` 兜底。
 - 动画采样在 `Page.load` 之后按 `performance.now()` 墙钟等待请求时刻，并回报 `actualTimeMs` 与 `timing_mode=wall_clock_after_load` 诊断。当前 Chrome 在导航前 `Emulation.setVirtualTimePolicy(pause)` 会使 load 挂起，因此不采用该虚拟时刻路径。
 - Host openable 截图经同一渲染器；测试注入 fake renderer。真实浏览器多帧验收仅本地 opt-in：`REPRISE_OPT_IN_BROWSER_RENDER=1`。
-- `render_artifact` / `preview_report` 工具工厂在 `comparison-render-tools.ts`，依赖 B3 的 catalog 端口（`resolveSource` / `registerDerivedMedia` / `revision`）。`preview_report` 先用与发布相同的 `preparePublishableComparisonHtml` 物化临时 HTML；`report_review` 使用独立 `review-*` 短引用，不得 mint `media-*` 以免污染比较证据 allowlist。
+- `render_artifact` / `preview_report` 工具工厂在 `comparison-render-tools.ts`，依赖 B3 的 catalog 端口（`resolveSource` / `registerDerivedMedia` / `revision`）。`preview_report` 先用与发布相同的 `preparePublishableComparisonHtml` 物化临时 HTML（format-2：仅在 `comparison` / `details` 区内把 `data-media-ref` 写成可加载 `src`）；`report_review` 使用独立 `review-*` 短引用，不得 mint `media-*` 以免污染比较证据 allowlist。
 - 失败区分 `no_browser`、`unsupported_format`、`capability_unavailable`、`cancelled`、`timeout`、`capture_failed`、`invalid_request`；取消与 finally 清理本会话 browser/server/profile。
 
 ## 备选方案
