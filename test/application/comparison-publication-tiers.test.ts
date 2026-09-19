@@ -51,7 +51,7 @@ function facts() {
 function filledSlots(extra: Record<string, string> = {}) {
   return {
     headline: "候选把讨论推进成了可继续使用的文件。",
-    "key-differences": "<p>候选有交付物，历史没有。</p>",
+    "comparison": "<p>候选有交付物，历史没有。</p>",
     ...extra,
   };
 }
@@ -91,18 +91,18 @@ test("layout-only failures still return success html with Host limitations", asy
   }
 
   const leaked = await publish(shell({
-    "key-differences": "<p>见 comparison-attempts/attempt-abcdefgh 与 runId</p>",
+    "comparison": "<p>见 comparison-attempts/attempt-abcdefgh 与 runId</p>",
   }).html);
   assert.equal("html" in leaked, true);
   if ("html" in leaked) {
-    const diffs = leaked.html.match(/data-id="agent-key-differences"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+    const diffs = leaked.html.match(/data-id="agent-comparison"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
     assert.doesNotMatch(diffs, /comparison-attempts\//);
     assert.doesNotMatch(diffs, /\brunId\b/);
     assert.match(diffs, /见/);
   }
 
   const verifiedWord = await publish(shell({
-    "key-differences": "<p>结论已核验。</p>",
+    "comparison": "<p>结论已核验。</p>",
   }).html);
   assert.equal("html" in verifiedWord, true);
   if ("html" in verifiedWord) {
@@ -125,14 +125,14 @@ test("contract failures still reject publication", async () => {
   assert.equal("html" in unexpected, false);
 
   const verifiedBare = shell({
-    "key-differences": '<p><span data-claim="verified">The file exists.</span></p>',
+    "comparison": '<p><span data-claim="verified">The file exists.</span></p>',
   }).html;
   const missingEvidence = await publish(verifiedBare, { evidence: [] });
   assert.equal("html" in missingEvidence, false);
   if (!("html" in missingEvidence)) assert.equal(missingEvidence.code, "evidence_unresolved");
 
   const visualBare = shell({
-    "key-differences": '<p><span data-claim="visual">The slide is red.</span></p>',
+    "comparison": '<p><span data-claim="visual">The slide is red.</span></p>',
   }).html;
   const missingMedia = await publish(visualBare);
   assert.equal("html" in missingMedia, false);
@@ -147,12 +147,12 @@ test("contract failures still reject publication", async () => {
   if (!("html" in external)) assert.equal(external.code, "publication_failed");
 });
 
-test("unpaired share-card images publish after Host strips them", async (t) => {
+test("unpaired share-card images publish with nearby missing-side limitation", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-tier-unpaired-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "ok.png"), Buffer.from([137, 80, 78, 71]));
-  const { html } = shell({ "visual-evidence": '<img src="media/ok.png" alt="preview">' });
+  const { html } = shell({ comparison: '<img src="media/ok.png" alt="preview">' });
   const verified = await publish(html, {
     attemptRoot: root,
     media: [{
@@ -167,8 +167,8 @@ test("unpaired share-card images publish after Host strips them", async (t) => {
   });
   assert.equal("html" in verified, true);
   if ("html" in verified) {
-    const visual = verified.html.match(/data-agent-zone="visual-evidence"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
-    assert.doesNotMatch(visual, /<img\b/);
+    const visual = verified.html.match(/data-id="agent-comparison"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+    assert.match(visual, /<img\b/);
     assert.match(verified.html, /data-host-limitation/);
   }
 });

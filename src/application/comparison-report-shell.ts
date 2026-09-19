@@ -14,6 +14,7 @@ import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
 
 export {
   AGENT_ZONES,
+  agentZoneBlank,
   extractHostZoneSnapshot,
   extractInner,
   extractOuter,
@@ -62,7 +63,16 @@ export function renderComparisonReportShell(input: {
   const slots = input.slots ?? {};
   const header = slots.header ?? defaultHeader(labels, category, task, locale, input.diagnostic);
   const headline = slots.headline ?? (input.diagnostic ? escapeHtml(input.diagnostic.reason) : "");
-  const visualEvidence = slots["visual-evidence"] ?? renderVisualEvidenceSeed(input.media, locale);
+  const comparisonBody = [
+    input.diagnostic ? diagnosticDifferences(input.diagnostic, locale) : "",
+    slots.comparison
+      ?? (input.diagnostic ? "" : renderVisualEvidenceSeed(input.media, locale)),
+  ].filter(Boolean).join("");
+  const detailsBody = slots.details
+    ?? [
+      input.diagnostic ? diagnosticDelivery(input.diagnostic, locale) : "",
+      input.diagnostic ? diagnosticLimitations(input.diagnostic) : "",
+    ].filter(Boolean).join("");
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(reportString(locale, "htmlLang"))}">
 <head>
@@ -74,26 +84,22 @@ ${REPORT_CSS}
 </head>
 <body${input.diagnostic ? ' data-report="diagnostic"' : ""}>
 ${componentTemplateHtml(locale)}
-<div class="page">
+<main class="page" data-report-format="2">
   <article class="share">
     <header data-host-zone="header" data-id="host-header">${header}</header>
     <p class="field-label">${escapeHtml(reportString(locale, "headlineLabel"))}</p>
     <p class="note" data-agent-slot="headline">${headline}</p>
-    <section class="slot" data-agent-zone="visual-evidence" data-id="agent-visual-evidence"><!-- Paired finals only. Host seeds pair-pages when both sides have previews; otherwise show why images are absent. -->${visualEvidence}</section>
-    <section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences"><!-- Short contrast after visuals. Must be non-empty; if no comparison is possible, say so and why. When paired finals exist, caption them in one or two sentences; no tables on the card face. No process rows. -->${[
-      input.diagnostic ? diagnosticDifferences(input.diagnostic, locale) : "",
-      slots["key-differences"] ?? "",
-    ].filter(Boolean).join("")}</section>
+    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><!-- ${escapeHtml(reportString(locale, "comparisonZoneComment"))} -->${comparisonBody}</section>
     ${renderMetricsBoard(input.metrics, labels, locale)}
   </article>
-  <div class="audit" hidden>
+  <details class="details">
+    <summary>${escapeHtml(reportString(locale, "detailsSummary"))}</summary>
+    <section class="slot" data-agent-zone="details" data-id="agent-details"><!-- ${escapeHtml(reportString(locale, "detailsZoneComment"))} -->${detailsBody}</section>
     <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">${escapeHtml(reportString(locale, "costNote", { version: MODEL_PRICING_TABLE_VERSION }))}</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence">${renderRunDiagnostics(input.facts, locale)}${renderEvidenceCatalog(input.evidence, locale)}${renderMediaCatalog(input.media, locale)}</section>
-    <section class="slot" data-agent-zone="delivery" data-id="agent-delivery"><!-- Deliveries, paths, and runId. Hidden; not on the card face. -->${slots.delivery ?? (input.diagnostic ? diagnosticDelivery(input.diagnostic, locale) : "")}</section>
-    <section class="slot" data-agent-zone="limitations" data-id="agent-limitations"><!-- Replay limitations, including git-sink initial equal to a historical commit. Hidden. -->${slots.limitations ?? (input.diagnostic ? diagnosticLimitations(input.diagnostic) : "")}</section>
     <section class="slot" data-host-zone="process" data-id="host-process">${slots.process ?? (input.diagnostic ? diagnosticProcess(input.diagnostic, locale) : "")}</section>
-  </div>
-</div>
+  </details>
+</main>
 </body>
 </html>
 `;
@@ -107,6 +113,7 @@ export function renderComparisonReportFromModel(input: {
   diagnostic?: ComparisonReportDiagnostic;
   locale?: AgentLocale;
 }): string {
+  const mapped = mapLegacyModelSlots(input.model);
   return renderComparisonReportShell({
     ...(input.diagnostic ? { title: "Comparison unavailable" } : {}),
     task: input.model.task,
@@ -115,12 +122,28 @@ export function renderComparisonReportFromModel(input: {
     ...(input.evidence ? { evidence: input.evidence } : {}),
     ...(input.media ? { media: input.media } : {}),
     slots: {
-      ...input.model.slots,
+      ...mapped,
       ...(input.model.headline ? { headline: escapeHtml(input.model.headline) } : {}),
     },
     ...(input.diagnostic ? { diagnostic: input.diagnostic } : {}),
     ...(input.locale ? { locale: input.locale } : {}),
   });
+}
+
+/** Map legacy audit slots into format-2 comparison/details without rewriting on-disk models. */
+function mapLegacyModelSlots(model: ComparisonReportModel): Partial<Record<AgentZoneName | HostZoneName | "headline" | "category" | "task", string>> {
+  const slots = model.slots;
+  const comparison = slots.comparison
+    ?? [slots["visual-evidence"], slots["key-differences"]].filter(Boolean).join("");
+  const details = slots.details
+    ?? [slots.delivery, slots.limitations].filter(Boolean).join("");
+  return {
+    ...(slots.header ? { header: slots.header } : {}),
+    ...(comparison ? { comparison } : {}),
+    ...(details ? { details } : {}),
+    ...(slots.process ? { process: slots.process } : {}),
+    ...(slots.evidence ? { evidence: slots.evidence } : {}),
+  };
 }
 
 function hostMetricsFingerprint(metrics: {
@@ -400,9 +423,7 @@ function decodeHtml(value: string): string {
 function componentTemplateHtml(locale: AgentLocale): string {
   const historical = escapeHtml(reportString(locale, "sessionHistorical"));
   const current = escapeHtml(reportString(locale, "sessionCurrent"));
-  return `<!-- Component prototypes: reference only; the share card uses pair-pages in visual-evidence and plain sentences in key-differences.
-     pair-pages: left historical final page / right candidate final page, page by page
-     diff-table / split-compare / timeline / difference-card / media-compare / headline: not for the share card face (hidden by CSS)
+  return `<!-- Component prototypes: reference only. Agent authors data-agent-zone="comparison" with any useful combination (pair-pages, tables, excerpts, steps). Host CSS does not hide diff-table / split-compare / timeline / difference-card inside .share.
      Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside or immediately after;
      wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside or immediately after. -->
 <template data-component-template="headline">
@@ -464,12 +485,15 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .cell { border:1px solid var(--hair); border-radius:16px; overflow:hidden; background:#fff; }
 .cell .who { padding:8px 12px 0; }
 .cell img,[data-component="page-row"] img { width:100%; height:320px; object-fit:contain; object-position:top; display:block; background:#fff; }
-[data-agent-zone="visual-evidence"] { margin-top:0; margin-bottom:12px; }
-[data-agent-zone="visual-evidence"] [data-host="visual-unavailable"] { margin:0; font-size:14px; }
-[data-agent-zone="key-differences"] p,[data-agent-zone="key-differences"] li { font-size:14px; line-height:1.4; color:var(--soft); max-width:48em; }
-.share [data-component="diff-table"],.share [data-component="split-compare"],.share [data-component="timeline"],.share [data-component="difference-card"] { display:none; }
-.audit { margin-top:20px; color:var(--soft); }
-.cost-note { margin: 0 0 8px; }
+[data-agent-zone="comparison"] { margin-top:0; margin-bottom:12px; }
+[data-agent-zone="comparison"] p,[data-agent-zone="comparison"] li { font-size:14px; line-height:1.4; color:var(--soft); max-width:48em; }
+[data-agent-zone="comparison"] [data-host="visual-unavailable"],[data-agent-zone="comparison"] [data-host="pairing-hint"] { margin:0 0 8px; font-size:14px; }
+[data-agent-zone="comparison"] table,[data-component="diff-table"] { width:100%; border-collapse:collapse; margin:8px 0; }
+[data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
+.details { margin-top:20px; color:var(--soft); background:var(--card); border:1px solid var(--line); border-radius:18px; padding:12px 18px 16px; }
+.details > summary { cursor:pointer; font-family:"Segoe UI","PingFang SC",sans-serif; font-size:14px; color:var(--accent); list-style:none; }
+.details > summary::-webkit-details-marker { display:none; }
+.cost-note { margin: 12px 0 8px; }
 [data-component="judgment"] { font-weight:700; }
 [data-component="judgment"] { margin:0 0 16px; }
 [data-host="diagnostic-card"] h3,[data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
@@ -482,8 +506,6 @@ code,[data-component="code"] { font-family:"Cascadia Code","Sarasa Mono SC",mono
 [data-component="tag-improve"] { background:rgba(47,93,58,.12); color:var(--ok); }
 [data-component="tag-tradeoff"] { background:rgba(91,70,48,.12); }
 [data-component="tag-risk"] { background:rgba(139,46,46,.12); color:var(--risk); }
-[data-component="diff-table"] { width:100%; border-collapse:collapse; }
-[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
 [data-component="diff-table"] .who { letter-spacing:0; text-transform:none; font-size:16px; }
 [data-component="split-compare"] { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 [data-component="timeline"] { border-left:2px solid var(--hair); padding-left:16px; }
@@ -498,5 +520,9 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
   .num { font-size:24px; }
   .task { white-space:normal; }
   .cell img,[data-component="page-row"] img { height:160px; }
+}
+@media print {
+  .details { break-inside:avoid; }
+  .share { box-shadow:none; }
 }
 `;

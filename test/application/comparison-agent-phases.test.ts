@@ -408,7 +408,7 @@ test("review turn can read and rewrite Agent regions of report.html", async (t) 
     task: context().task.summary,
     facts: context().reportFacts,
     metrics: {},
-    slots: { headline: "初稿结论。", "key-differences": "<p>初稿差异</p>" },
+    slots: { headline: "初稿结论。", "comparison": "<p>初稿差异</p>" },
   });
   let reviewWrote = false;
   let reviewHadTools = false;
@@ -454,7 +454,7 @@ test("invalid review JSON is salvaged once without discarding report.html", asyn
     task: context().task.summary,
     facts: context().reportFacts,
     metrics: {},
-    slots: { headline: "保留结论。", "key-differences": "<p>保留差异</p>" },
+    slots: { headline: "保留结论。", "comparison": "<p>保留差异</p>" },
   });
   const pages: string[] = [];
   const comparison = new ComparisonAgent({
