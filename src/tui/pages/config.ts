@@ -85,7 +85,7 @@ export function configHints(
   const enter = languageSelected
     ? t(locale, 'hintToggleLang')
     : field === 'provider type' ? t(locale, 'hintToggleProvider')
-      : field === 'effort' || field === 'API' || field === 'reasoning' ? t(locale, 'hintCycleEffort')
+      : field === 'effort' || field === 'API' || field === 'reasoning' || field === 'image input' ? t(locale, 'hintCycleEffort')
         : t(locale, 'hintEdit');
   return [['↑↓', t(locale, 'hintSelect')], ['Enter', enter], ['Ctrl+T', t(locale, 'hintTest')], ['Ctrl+S', t(locale, 'hintSave')], ['Esc', t(locale, 'hintHome')]];
 }
@@ -122,6 +122,7 @@ function fieldLabel(locale: Locale, field: ConfigField): string {
   if (field === 'model') return t(locale, 'fieldModel');
   if (field === 'API') return t(locale, 'fieldApi');
   if (field === 'reasoning') return t(locale, 'fieldReasoning');
+  if (field === 'image input') return t(locale, 'fieldImageInput');
   if (field === 'effort') return t(locale, 'fieldEffort');
   return t(locale, 'fieldKeyRef');
 }
@@ -156,6 +157,6 @@ function fieldReason(field: ConfigField, value: string, kind: HarnessConfigDraft
 }
 
 function fieldHint(field: ConfigField, locale: Locale): string {
-  if (field === 'provider type' || field === 'effort' || field === 'API' || field === 'reasoning') return t(locale, 'langToggleHint');
+  if (field === 'provider type' || field === 'effort' || field === 'API' || field === 'reasoning' || field === 'image input') return t(locale, 'langToggleHint');
   return '';
 }

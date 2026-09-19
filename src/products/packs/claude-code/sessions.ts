@@ -18,6 +18,7 @@ import {
   type DiscoverySummaryState,
 } from '../../shared/session-summaries.js';
 import { assertTranscriptSessionId, discoveryFailureSummary } from '../../shared/session-recovery.js';
+import { extractClaudeHistoricalArtifacts } from './historical-artifacts.js';
 import type {
   ImportDiagnostic,
   ImportedSession,
@@ -61,6 +62,7 @@ export const claudeSessionAdapter: ProductHistoryReader = {
     assertTranscriptSessionId(ref.sessionId, imported.source.sessionId);
     return imported;
   },
+  extractHistoricalArtifacts: extractClaudeHistoricalArtifacts,
 };
 
 /** Compatibility wrapper for callers that only need the first page of Claude sessions. */

@@ -1,8 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ThinkingLevel } from '@earendil-works/pi-ai';
+import { Value } from '@sinclair/typebox/value';
 import { isRecord } from '../core/json.js';
 import { writeAtomic } from '../core/identity.js';
+import {
+  ModelInputCapabilitiesSchema,
+  modelAcceptsImage,
+  type ModelInputCapabilities,
+} from '../core/schemas/model-input-capabilities.js';
 
 const FILE_NAME = 'harness-model.json';
 const EFFORTS = new Set<ThinkingLevel>(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
@@ -40,6 +46,8 @@ type V2Config = {
   readonly maxTokens?: number;
   readonly api?: OpenAiCompatApi;
   readonly reasoning?: boolean;
+  /** Custom openai-compatible only. Catalog models use Pi `model.input`. Omit → text-only. */
+  readonly inputCapabilities?: ModelInputCapabilities;
   readonly compat?: HarnessCompat;
 };
 
@@ -83,6 +91,7 @@ export function emptyHarnessConfigDraft(): HarnessConfigDraft {
     keyRef: '',
     api: 'openai-completions',
     reasoning: false,
+    supportsImage: false,
   };
 }
 
@@ -135,6 +144,7 @@ function normalizeV2(value: Record<string, unknown>): V2Config {
   const maxTokens = optionalPositiveInt(value.maxTokens, 'maxTokens');
   const api = optionalApi(value.api);
   const reasoning = optionalBoolean(value.reasoning, 'reasoning');
+  const inputCapabilities = optionalInputCapabilities(value.inputCapabilities);
   const compat = optionalCompat(value.compat);
   return {
     schemaVersion: 2,
@@ -149,6 +159,7 @@ function normalizeV2(value: Record<string, unknown>): V2Config {
     ...(maxTokens === undefined ? {} : { maxTokens }),
     ...(api === undefined ? {} : { api }),
     ...(reasoning === undefined ? {} : { reasoning }),
+    ...(inputCapabilities === undefined ? {} : { inputCapabilities }),
     ...(compat === undefined ? {} : { compat }),
   };
 }
@@ -209,6 +220,14 @@ function optionalCompat(value: unknown): HarnessCompat | undefined {
   };
 }
 
+function optionalInputCapabilities(value: unknown): ModelInputCapabilities | undefined {
+  if (value === undefined) return undefined;
+  if (!Value.Check(ModelInputCapabilitiesSchema, value)) {
+    throw new Error('expected inputCapabilities to be ["text"] or ["text","image"]');
+  }
+  return value;
+}
+
 export type HarnessConfigDraft = {
   kind: 'pi-catalog' | 'openai-compatible';
   providerId: string;
@@ -218,10 +237,12 @@ export type HarnessConfigDraft = {
   keyRef: string;
   api: OpenAiCompatApi;
   reasoning: boolean;
+  /** openai-compatible only; catalog vision comes from Pi. Default false keeps text-only. */
+  supportsImage: boolean;
 };
 
 export const HARNESS_CONFIG_FIELDS = [
-  'provider type', 'provider label', 'base URL', 'model', 'API', 'reasoning', 'effort', 'API key',
+  'provider type', 'provider label', 'base URL', 'model', 'API', 'reasoning', 'image input', 'effort', 'API key',
 ] as const;
 export type HarnessConfigField = typeof HARNESS_CONFIG_FIELDS[number];
 
@@ -248,11 +269,12 @@ export function draftForConfig(config: HarnessModelConfig): HarnessConfigDraft {
       keyRef: config.provider.kind === 'openai-compatible' ? (config.apiKey ?? config.keyRef ?? '') : '',
       api: config.api ?? 'openai-completions',
       reasoning: config.reasoning === true,
+      supportsImage: config.provider.kind === 'openai-compatible' && modelAcceptsImage(config.inputCapabilities),
     };
   }
   return {
     kind: 'pi-catalog', providerId: config.providerId, modelId: config.modelId,
-    effort: config.effort, baseUrl: '', keyRef: '', api: 'openai-completions', reasoning: false,
+    effort: config.effort, baseUrl: '', keyRef: '', api: 'openai-completions', reasoning: false, supportsImage: false,
   };
 }
 
@@ -275,6 +297,7 @@ export function configForDraft(draft: HarnessConfigDraft): HarnessModelConfig {
     baseUrl: draft.baseUrl,
     api: draft.api,
     reasoning: draft.reasoning,
+    ...(draft.supportsImage ? { inputCapabilities: ['text', 'image'] as const } : {}),
     ...readCredential(draft.keyRef),
   };
 }
@@ -286,6 +309,7 @@ export function configFieldValue(draft: HarnessConfigDraft, field: HarnessConfig
   if (field === 'model') return draft.modelId;
   if (field === 'API') return draft.api;
   if (field === 'reasoning') return draft.reasoning ? 'true' : 'false';
+  if (field === 'image input') return draft.supportsImage ? 'true' : 'false';
   if (field === 'effort') return draft.effort;
   return draft.keyRef;
 }

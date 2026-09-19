@@ -109,7 +109,8 @@ export class PiProviderAdapter implements ProviderAdapter {
         const abort = () => agent.abort();
         signal.addEventListener("abort", abort, { once: true });
         try {
-          const prompt = toPiUserPrompt(content, images);
+          const allowed = model.input.includes("image") ? images : undefined;
+          const prompt = toPiUserPrompt(content, allowed);
           await agent.prompt(prompt.content, prompt.images);
           await recoverAgentResponse(agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
           const message = lastAssistant(agent.state.messages);

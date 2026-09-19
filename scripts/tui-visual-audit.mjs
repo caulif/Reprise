@@ -158,6 +158,7 @@ async function main() {
   configApp.handleInput('\u001b[B');
   configApp.handleInput('\u001b[B');
   configApp.handleInput('\u001b[B');
+  configApp.handleInput('\u001b[B');
   configApp.handleInput('\r');
   replaceField(configApp, 'not-a-key');
   await push('08-config-invalid', 120, config.render(120));
@@ -181,6 +182,7 @@ async function main() {
   enterCommand(envApp, '/config');
   await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(envHome.render(120)));
   await push('06b-config-status-env-unset', 120, envHome.render(120));
+  envApp.handleInput('\u001b[B');
   envApp.handleInput('\u001b[B');
   envApp.handleInput('\u001b[B');
   envApp.handleInput('\u001b[B');

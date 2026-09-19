@@ -848,6 +848,13 @@ test("source mount is readable and not writable; workspace alias writes the copy
     /write_denied/,
   );
   assert.equal(await readFile(join(source, "deep", "task", "input.txt"), "utf8"), "needed\n");
+  await assert.rejects(
+    tool(root, "shell_exec", { ...options, allowShell: true }).execute(
+      { command: "Remove-Item -LiteralPath source/deep/task/input.txt" },
+      signal,
+    ),
+    /separate shell calls|REPRISE_SOURCE_MOUNT|read-only mount/,
+  );
   if (process.platform !== "win32") return;
   const lock = await lockSourceWrites(source, lockDir);
   t.after(() => lock.release());

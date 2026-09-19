@@ -177,6 +177,8 @@ export type InvocationCursor = {
 };
 
 export interface ProviderAdapter {
+  /** Declared before createSession; Host gates tool image blocks from this. */
+  readonly inputCapabilities?: readonly string[];
   createSession(input: {
     sessionId: string;
     systemPrompt: string;

@@ -70,6 +70,8 @@ test("INDEX is navigation only and lists notes/", () => {
   assert.match(renderIndexMarkdown(undefined), /imported-inputs/);
   assert.match(renderIndexMarkdown(undefined), /current-user-view\.md/);
   assert.match(renderIndexMarkdown(undefined), /notes\//);
+  assert.match(renderIndexMarkdown(undefined), /shell_exec cwd is already that replica/);
+  assert.match(renderIndexMarkdown(undefined), /\.\/<path>/);
   assert.doesNotMatch(renderIndexMarkdown(undefined), /read_observation/);
   assert.doesNotMatch(renderIndexMarkdown(undefined), /There is no/);
   assert.doesNotMatch(renderIndexMarkdown(undefined), /view\.txt/);

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Synthetic SVG slide</title>
+  <style>
+    .disk { animation: slide 1.2s infinite alternate linear; }
+    @keyframes slide {
+      from { transform: translateX(0); }
+      to { transform: translateX(64px); }
+    }
+  </style>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" width="220" height="140" viewBox="0 0 220 140" role="img" aria-label="sliding disk">
+    <rect width="220" height="140" fill="#111827"/>
+    <circle class="disk" cx="48" cy="70" r="22" fill="#f97316"/>
+  </svg>
+</body>
+</html>

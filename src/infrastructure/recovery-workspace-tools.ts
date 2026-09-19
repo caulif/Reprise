@@ -158,7 +158,7 @@ function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
   return {
     name: "ls",
     description: ctx.options.unrestrictedRead
-      ? "List a directory; the result is capped. Relative paths are against the briefing root; project/ is the isolated replica; absolute, UNC, and other host-readable paths are accepted."
+      ? "List a directory; the result is capped. Relative paths are against the briefing root; project/ is the isolated replica for file tools (shell_exec uses ./ under the replica cwd instead). Absolute, UNC, and other host-readable paths are accepted."
       : "List a directory; the result is capped. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
     parameters: Type.Object({
       path: Type.Optional(Type.String({ maxLength: pathMaxLength(ctx) })),
@@ -183,7 +183,7 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
   return {
     name: "read",
     description: ctx.options.unrestrictedRead
-      ? "Read a byte range of a regular file. Relative paths are against the briefing root; project/ is the isolated replica; host-readable absolute paths are accepted. format=image returns a native image block when authorized."
+      ? "Read a byte range of a regular file. Relative paths are against the briefing root; project/ is the isolated replica for file tools (shell_exec uses ./ under the replica cwd instead). Host-readable absolute paths are accepted. format=image returns a native image block when authorized."
       : "Read a byte range of a regular file, or return the whole file as a native image block when format=image is authorized.",
     parameters: Type.Object({
       path: Type.String({ minLength: 1, maxLength: pathMaxLength(ctx) }),
@@ -659,8 +659,11 @@ function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command
     return;
   }
   for (const prefix of prefixes) {
-    if (command.includes(prefix) || command.includes(ctx.mounts[prefix] ?? ""))
-      throw new Error("write_denied: shell_exec must not mutate a read-only mount.");
+    if (command.includes(prefix) || command.includes(ctx.mounts[prefix] ?? "")) {
+      throw new Error(
+        "write_denied: shell_exec must not mutate a read-only mount. Keep source inspection and work-copy mutation in separate shell calls; use REPRISE_SOURCE_MOUNT for read-only source access, not a source/ directory under the work copy.",
+      );
+    }
   }
 }
 
@@ -709,9 +712,9 @@ type ResolvedWorkspacePath = {
 
 function shellExecDescription(unrestrictedRead: boolean | undefined): string {
   if (unrestrictedRead) {
-    return "Run one shell command with cwd fixed to the isolated replica; the Host selects PowerShell or a POSIX shell. Reads may use any host-readable path; writes outside the replica are external, unobserved, and not Host-controlled. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names.";
+    return "Run one shell command with cwd already set to the isolated replica; use ./<path> for replica files, not project/<path>. Briefing and notes paths belong to the file-tool workspace, not shell cwd. The Host selects PowerShell or a POSIX shell. Reads may use any host-readable path; writes outside the replica are external, unobserved, and not Host-controlled. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names.";
   }
-  return "Run one shell command with cwd fixed to the writable copy; the Host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.";
+  return "Run one shell command with cwd fixed to the writable copy; the Host selects PowerShell or a POSIX shell. For read-only source access use the REPRISE_SOURCE_MOUNT environment variable; source/ is a file-tool virtual prefix, not a directory under the work copy. Keep source inspection and work-copy mutation in separate shell calls. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.";
 }
 
 function workspaceRelative(input: string): string | { root: true } | undefined {

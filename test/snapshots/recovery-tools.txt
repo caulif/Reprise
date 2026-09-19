@@ -153,7 +153,7 @@
   },
   {
     "name": "shell_exec",
-    "description": "Run one shell command with cwd fixed to the writable copy; the Host selects PowerShell or a POSIX shell. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.",
+    "description": "Run one shell command with cwd fixed to the writable copy; the Host selects PowerShell or a POSIX shell. For read-only source access use the REPRISE_SOURCE_MOUNT environment variable; source/ is a file-tool virtual prefix, not a directory under the work copy. Keep source inspection and work-copy mutation in separate shell calls. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.",
     "parameters": {
       "type": "object",
       "required": [

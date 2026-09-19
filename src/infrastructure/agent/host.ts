@@ -7,6 +7,7 @@ import { callerLoopHooks } from "./audit.js";
 import { promptDigest } from "./prompt-digest.js";
 import { AgentSessionHost } from "./session.js";
 import { instrumentTools } from "./tools.js";
+import { modelAcceptsImage } from "../../core/schemas/model-input-capabilities.js";
 import type {
   AgentHost as AgentHostPort,
   AgentInvocation,
@@ -55,7 +56,8 @@ export class AgentHost implements AgentHostPort {
     }
     const sessionId = randomUUID();
     const cursor: InvocationCursor = { requestIndex: 0 };
-    const tools = instrumentTools(input.tools ?? [], sessionId, input.role, cursor, input.audit);
+    const acceptsImage = modelAcceptsImage(this.#caller.inputCapabilities);
+    const tools = instrumentTools(input.tools ?? [], sessionId, input.role, cursor, input.audit, acceptsImage);
     const compactionInstructions = input.compaction?.instructions ?? input.compactionInstructions;
     try {
       const session = await this.#caller.createSession({

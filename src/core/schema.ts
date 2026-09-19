@@ -103,6 +103,18 @@ export {
   type ObservationSessionManifest,
 } from "./schemas/observations.js";
 export {
+  HistoricalArtifactSchema,
+  HistoricalArtifactManifestSchema,
+  HistoricalArtifactIssueSchema,
+  HistoricalLogicalPathSchema,
+  type HistoricalArtifact,
+  type HistoricalArtifactManifest,
+  type HistoricalArtifactIssue,
+  type HistoricalArtifactIssueCode,
+  type HistoricalArtifactOrigin,
+  type HistoricalArtifactFinality,
+} from "./schemas/historical-artifacts.js";
+export {
   GitSinkManifestSchema,
   GitSinkManifestV1Schema,
   type GitSinkManifest,
@@ -198,6 +210,11 @@ export {
   ComparisonShortRefSchema,
 } from "./comparison-schema.js";
 export type { ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+export {
+  ModelInputCapabilitiesSchema,
+  modelAcceptsImage,
+  type ModelInputCapabilities,
+} from "./schemas/model-input-capabilities.js";
 
 
 

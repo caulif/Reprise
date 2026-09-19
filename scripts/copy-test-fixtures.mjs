@@ -36,3 +36,13 @@ await copyFile(
   "test/fixtures/fake-pack/package.json",
   "dist/test/fixtures/fake-pack/package.json",
 );
+
+await mkdir("dist/test/fixtures/historical-svg-animation", { recursive: true });
+await copyFile(
+  "test/fixtures/historical-svg-animation/animation.html",
+  "dist/test/fixtures/historical-svg-animation/animation.html",
+);
+await copyFile(
+  "test/fixtures/historical-svg-animation/candidate-animation.html",
+  "dist/test/fixtures/historical-svg-animation/candidate-animation.html",
+);

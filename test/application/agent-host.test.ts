@@ -400,7 +400,7 @@ test("failed and timeout requests never manufacture a Controller decision", asyn
     invalidResult.status === "failed" ? invalidResult.failure : undefined,
     {
       code: "invalid_output",
-      message: "unknown evidence reference",
+      message: "unknown evidence reference: event:foreign-1",
       attempts: 1,
       kind: "protocol",
       retryable: false,
@@ -527,7 +527,7 @@ test("Host takes the last parseable JSON after think blocks and contract samples
   assert.equal(result.status, "completed");
   if (result.status === "completed") assert.equal(result.value.type, "done");
 });
-test("Controller drops path-shaped evidence refs and keeps catalog ids", async () => {
+test("Controller rejects path-shaped evidence refs instead of silently dropping them", async () => {
   const decision = JSON.stringify({
     type: "done",
     reason: "satisfied",
@@ -539,12 +539,32 @@ test("Controller drops path-shaped evidence refs and keeps catalog ids", async (
     maxRepairAttempts: 0,
   });
   const result = await controller.decide(context());
+  assert.equal(result.status, "failed");
+  if (result.status === "failed") assert.match(result.failure.message, /schema validation failed/);
+});
+test("Controller repairs a path-shaped evidence ref to a registered catalog id", async () => {
+  const bad = JSON.stringify({
+    type: "done",
+    reason: "satisfied",
+    evidenceRefs: ["project/result.html"],
+  });
+  const good = JSON.stringify({
+    type: "done",
+    reason: "satisfied",
+    evidenceRefs: ["event:current-1"],
+  });
+  const controller = new ControllerAgent({
+    host: new AgentHost(caller([bad, good])),
+    timeoutMs: 50,
+    maxRepairAttempts: 1,
+  });
+  const result = await controller.decide(context());
   assert.equal(result.status, "completed");
   if (result.status === "completed") {
     assert.deepEqual(result.value.evidenceRefs, ["event:current-1"]);
   }
 });
-test("unknown catalog evidence ids still fail after dropping malformed refs", async () => {
+test("unknown catalog evidence ids fail validation without silent filtering", async () => {
   const decision = JSON.stringify({
     type: "done",
     reason: "satisfied",
@@ -557,7 +577,24 @@ test("unknown catalog evidence ids still fail after dropping malformed refs", as
   });
   const result = await controller.decide(context());
   assert.equal(result.status, "failed");
-  if (result.status === "failed") assert.match(result.failure.message, /unknown evidence reference/);
+  if (result.status === "failed") {
+    assert.match(result.failure.message, /unknown evidence reference/);
+    assert.match(result.failure.message, /event:not-in-catalog/);
+  }
+});
+test("Controller allows omitting evidenceRefs without inventing citations", async () => {
+  const decision = JSON.stringify({ type: "done", reason: "satisfied" });
+  const controller = new ControllerAgent({
+    host: new AgentHost(caller([decision])),
+    timeoutMs: 50,
+    maxRepairAttempts: 0,
+  });
+  const result = await controller.decide(context());
+  assert.equal(result.status, "completed");
+  if (result.status === "completed") {
+    assert.equal(result.value.type, "done");
+    assert.equal(result.value.evidenceRefs, undefined);
+  }
 });
 test("a failed Controller session creation can be retried for the same run", async () => {
   let attempts = 0;

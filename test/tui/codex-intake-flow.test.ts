@@ -527,6 +527,7 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   app.handleInput("\u001b[B");
   app.handleInput("\u001b[B");
   app.handleInput("\u001b[B");
+  app.handleInput("\u001b[B");
   app.handleInput("\r");
   replaceField("env:REPRISE_PRIVATE_KEY");
   app.handleInput("\x13");
