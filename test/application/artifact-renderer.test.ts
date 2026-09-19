@@ -281,6 +281,7 @@ try {
   pc.createDataChannel('x');
   pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(()=>{});
 } catch (e) {}
+try { new WebTransport(${JSON.stringify("https://127.0.0.1:" + stunPort + "/wt")}); } catch (e) {}
 try { window.open(${JSON.stringify(httpUrl + "?via=open")}); } catch (e) {}
 try {
   const a = document.createElement('a');
@@ -305,7 +306,7 @@ ok
   if (!result.ok) return;
   assert.equal(httpHits, 0, `external http hits=${httpHits}`);
   assert.equal(wsHits, 0, `external ws hits=${wsHits}`);
-  assert.equal(stunHits, 0, `stun udp hits=${stunHits}`);
+  assert.equal(stunHits, 0, `stun/udp hits=${stunHits}`);
   assert.ok(result.diagnostics.some((item) => item.code === "network_blocked"));
   const gateText = result.diagnostics
     .filter((item) => item.code === "console_error")
@@ -314,6 +315,7 @@ ok
   assert.match(gateText, /reprise-network-gate.*worker/i);
   assert.match(gateText, /reprise-network-gate.*serviceworker/i);
   assert.match(gateText, /reprise-network-gate.*webrtc/i);
+  assert.match(gateText, /reprise-network-gate.*webtransport/i);
   assert.match(gateText, /reprise-network-gate.*window\.open/i);
   assert.match(gateText, /reprise-network-gate.*target_blank/i);
 });

@@ -9,7 +9,7 @@ Comparison 需要从已封存 HTML/SVG/raster 得到可引用预览帧，并在�
 ## 决定
 
 - 渲染入口为 `renderFrozenArtifact`（`src/infrastructure/artifact-renderer.ts`）。对文档类产物：临时只绑定 `127.0.0.1` 的 bundle 静态服务 + 独立 Chrome/Edge profile + CDP（navigate / Fetch 拦截 / page-world 外联闸 / capture）。对已封存 raster：直接拷贝为单帧，不启动浏览器。
-- 只允许当前 bundle origin 与 `data:`/`blob:`（页面文档资源）；阻断 `file:`、其他 loopback 端口、外网、WebSocket、EventSource、`sendBeacon`、Worker / SharedWorker / ServiceWorker、新窗口与下载。page-world 闸拒绝 Worker·SW 构造与 `serviceWorker.register`（worker 全局不受页面闸约束，故直接禁止）；拒绝 `RTCPeerConnection` / `webkitRTCPeerConnection`（WebRTC STUN/TURN 走 UDP，Fetch 覆盖不到）；`window.open` 恒返回 `null`，并捕获 `target=_blank`（及命名 target）点击/提交；CDP `Target.setAutoAttach(waitForDebuggerOnStart)` 在恢复前关闭次级 page/worker target，避免关窗前导航已出网；Fetch 拦截主文档 HTTP(S)。未能建立受控加载时返回 `capability_unavailable`，不用宽权限 `file://` 或 `--no-sandbox` 兜底。
+- 只允许当前 bundle origin 与 `data:`/`blob:`（页面文档资源）；阻断 `file:`、其他 loopback 端口、外网、WebSocket、EventSource、`sendBeacon`、Worker / SharedWorker / ServiceWorker、新窗口与下载。page-world 闸拒绝 Worker·SW 构造与 `serviceWorker.register`（worker 全局不受页面闸约束，故直接禁止）；拒绝 `RTCPeerConnection` / `webkitRTCPeerConnection` / `WebTransport`（STUN/TURN/QUIC 走 UDP，Fetch 覆盖不到）；`window.open` 恒返回 `null`，并捕获 `target=_blank`（及命名 target）点击/提交；CDP `Target.setAutoAttach(waitForDebuggerOnStart)` 在恢复前关闭次级 page/worker target，避免关窗前导航已出网；Fetch 拦截主文档 HTTP(S)。未能建立受控加载时返回 `capability_unavailable`，不用宽权限 `file://` 或 `--no-sandbox` 兜底。
 - 动画采样在 `Page.load` 之后按 `performance.now()` 墙钟等待请求时刻，并回报 `actualTimeMs` 与 `timing_mode=wall_clock_after_load` 诊断。当前 Chrome 在导航前 `Emulation.setVirtualTimePolicy(pause)` 会使 load 挂起，因此不采用该虚拟时刻路径。
 - Host openable 截图经同一渲染器；测试注入 fake renderer。真实浏览器多帧验收仅本地 opt-in：`REPRISE_OPT_IN_BROWSER_RENDER=1`。
 - `render_artifact` / `preview_report` 工具工厂在 `comparison-render-tools.ts`，依赖 B3 的 catalog 端口（`resolveSource` / `registerDerivedMedia` / `revision`）。`preview_report` 先用与发布相同的 `preparePublishableComparisonHtml` 物化临时 HTML（format-2：仅在 `comparison` / `details` 区内把 `data-media-ref` 写成可加载 `src`）；`report_review` 使用独立 `review-*` 短引用，不得 mint `media-*` 以免污染比较证据 allowlist。
@@ -31,6 +31,6 @@ Comparison 需要从已封存 HTML/SVG/raster 得到可引用预览帧，并在�
 
 ## 验证
 
-- `test/application/artifact-renderer.test.ts`：fake 多帧、校验、取消、bundle 路径逃逸；opt-in 真浏览器双帧、HTTP/WebSocket、Worker·SW、WebRTC/STUN 与 `window.open` / `target=_blank` 出网阻断。
+- `test/application/artifact-renderer.test.ts`：fake 多帧、校验、取消、bundle 路径逃逸；opt-in 真浏览器双帧、HTTP/WebSocket、Worker·SW、WebRTC/STUN、WebTransport 与 `window.open` / `target=_blank` 出网阻断。
 - `test/application/comparison-render-tools.test.ts`：工具注册、去重 shortRef、preview digest、`review-*` 与 `media-*` 命名空间分离。
 - `test/application/comparison-openable-media.test.ts`：仍可注入 `captureScreenshot`；默认生产路径经受控渲染器。

@@ -424,6 +424,15 @@ test("nested same-basename finals seal without flattening abort", async (t) => {
       links: [],
       baselineSources: openable,
       candidateSources: [],
+      // Keep this unit path free of real Chrome; B4 renderer profiles must not leak under reprise-*.
+      captureScreenshot: async (_sourcePath, destPng) => {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(destPng, Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+          "base64",
+        ));
+        return { ok: true };
+      },
     }),
   );
   assert.equal(sealedInspectPath(join(prepared.finalsRoot, "a", "index.html"), "a/index.html"), "finals/a/index.html");

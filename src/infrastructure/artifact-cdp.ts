@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -25,9 +25,11 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
   const diagnostics: RenderDiagnostic[] = [];
   const browserPath = await resolveHeadlessBrowser();
   if (!browserPath) return { failure: "no_browser", message: "no headless browser", diagnostics };
+  if (signal.aborted) {
+    return { failure: "capability_unavailable", message: "cancelled before browser start", diagnostics };
+  }
 
-  const profileDir = join(tmpdir(), `reprise-render-profile-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-  await mkdir(profileDir, { recursive: true });
+  const profileDir = await mkdtemp(join(tmpdir(), "reprise-render-profile-"));
   const child = spawnRuntimeProcess(browserPath, [
     "--headless=new",
     "--disable-gpu",
@@ -57,7 +59,7 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
     void killBrowser(child, profileDir, diagnostics);
   };
   if (signal.aborted) {
-    abort();
+    await killBrowser(child, profileDir, diagnostics);
     return { failure: "capability_unavailable", message: "cancelled before browser start", diagnostics };
   }
   signal.addEventListener("abort", abort, { once: true });
@@ -352,6 +354,8 @@ function pageNetworkGateSource(allowedOrigin: string): string {
     // WebRTC ICE/STUN/TURN uses UDP outside Fetch; deny constructors rather than allowlisting.
     denyCtor("RTCPeerConnection", "webrtc");
     denyCtor("webkitRTCPeerConnection", "webrtc");
+    // WebTransport QUIC/UDP also bypasses Fetch; deny like WebRTC.
+    denyCtor("WebTransport", "webtransport");
     ${pagePopupAndServiceWorkerDenySource()}
   })();`;
 }
@@ -594,14 +598,24 @@ async function killBrowser(
       } catch {
         diagnostics.push({ code: "browser_kill_failed", message: "SIGKILL failed; process may linger" });
       }
+      await waitExit(child, 1_000);
     }
   }
-  await rm(profileDir, { recursive: true, force: true }).catch((error: unknown) => {
-    diagnostics.push({
-      code: "profile_cleanup_failed",
-      message: error instanceof Error ? error.message : String(error),
-    });
-  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await rm(profileDir, { recursive: true, force: true });
+      return;
+    } catch (error: unknown) {
+      if (attempt === 2) {
+        diagnostics.push({
+          code: "profile_cleanup_failed",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      await sleep(50);
+    }
+  }
 }
 
 function waitExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> {
