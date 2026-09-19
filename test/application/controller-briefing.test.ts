@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,8 +75,9 @@ test("INDEX is navigation only and lists notes/", () => {
   assert.doesNotMatch(renderIndexMarkdown(undefined), /view\.txt/);
 });
 
-test("opening briefing lives outside the replica and opening prompt omits later user text", async () => {
+test("opening briefing lives outside the replica and opening prompt omits later user text", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
   await mkdir(replicaRoot, { recursive: true });
@@ -155,8 +156,9 @@ test("assertBriefingOutsideReplica rejects a briefing nested in the replica", ()
   );
 });
 
-test("settled-turn digest changes when visible.txt changes", async () => {
+test("settled-turn digest changes when visible.txt changes", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-digest-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
   await mkdir(replicaRoot, { recursive: true });
@@ -193,8 +195,9 @@ test("settled-turn digest changes when visible.txt changes", async () => {
   assert.match(await readFile(join(briefingRoot, "current-user-view.md"), "utf8"), /second pass html/);
 });
 
-test("steering promptContent does not resend INDEX.md and digest omits notes/", async () => {
+test("steering promptContent does not resend INDEX.md and digest omits notes/", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-steering-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
   await mkdir(replicaRoot, { recursive: true });
@@ -240,8 +243,9 @@ test("steering promptContent does not resend INDEX.md and digest omits notes/", 
   assert.equal(afterNotes.fileDigests["notes/understanding.md"], undefined);
 });
 
-test("staging a settled turn does not replace the previous live Controller view", async () => {
+test("staging a settled turn does not replace the previous live Controller view", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-interrupt-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
   await mkdir(replicaRoot, { recursive: true });
@@ -266,8 +270,9 @@ test("staging a settled turn does not replace the previous live Controller view"
   assert.match(await readFile(join(briefingRoot, "run/turns/0001/user-view.md"), "utf8"), /partial html/);
 });
 
-test("permissions.txt keeps Controller writes on project/ when the historical candidate had full access", async () => {
+test("permissions.txt keeps Controller writes on project/ when the historical candidate had full access", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-perm-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
   await mkdir(replicaRoot, { recursive: true });
@@ -288,8 +293,9 @@ test("permissions.txt keeps Controller writes on project/ when the historical ca
   assert.match(permissions, /candidate\.approvalPolicy=on-request/);
 });
 
-test("settled view snapshot includes the turn prompt without previous-turn assistant text", async () => {
+test("settled view snapshot includes the turn prompt without previous-turn assistant text", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-prompt-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
   await mkdir(replicaRoot, { recursive: true });
@@ -316,8 +322,9 @@ test("settled view snapshot includes the turn prompt without previous-turn assis
   assert.doesNotMatch(view, /first pass html/);
 });
 
-test("Controller tools read briefing history, write project/, and deny briefing writes", async () => {
+test("Controller tools read briefing history, write project/, and deny briefing writes", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-briefing-tools-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
   await mkdir(replicaRoot, { recursive: true });

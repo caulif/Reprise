@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { checkRecoveryReadiness, deriveRecoveryReadinessContext, taskContinuationOutcome } from "../../src/application/recovery/readiness.js";
 import type { TaskCase, RecoveryReadinessContext } from "../../src/core/schema.js";
 
-test("Recovery readiness derives task paths and reports a missing path", async () => {
+test("Recovery readiness derives task paths and reports a missing path", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "content"), { recursive: true });
   await writeFile(join(root, "content", "chapter.md"), "draft\n");
   const taskCase = {
@@ -25,16 +26,18 @@ test("Recovery readiness derives task paths and reports a missing path", async (
   assert.deepEqual(missing.missingPaths, ["content/missing.md"]);
 });
 
-test("Recovery readiness blocks paths outside staging", async () => {
+test("Recovery readiness blocks paths outside staging", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const result = await checkRecoveryReadiness(root, {
     schemaVersion: 1, taskSummary: "task", observedWorkspaces: [], relevantPaths: ["../outside.txt"], priorCommands: [], availableChecks: ["inspect"],
   });
   assert.equal(result.status, "blocked");
 });
 
-test("Recovery readiness treats an empty path list as ready after Host accepted the workspace", async () => {
+test("Recovery readiness treats an empty path list as ready after Host accepted the workspace", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-no-path-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const result = await checkRecoveryReadiness(root, {
     schemaVersion: 1,
     taskSummary: "Continue the historical task.",
@@ -68,8 +71,9 @@ test("Recovery readiness derives safe historical touched paths", () => {
   assert.deepEqual(deriveRecoveryReadinessContext(taskCase).relevantPaths, ["README.md", "src/main.ts"]);
 });
 
-test("Recovery readiness treats historical output paths as optional at the task start", async () => {
+test("Recovery readiness treats historical output paths as optional at the task start", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-outputs-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const taskCase = {
     schemaVersion: 1,
     caseId: "case-output-task",
@@ -93,8 +97,9 @@ test("Recovery readiness treats historical output paths as optional at the task 
   assert.deepEqual(result.missingPaths, ["papers/result.md"]);
 });
 
-test("Recovery readiness records missing Host-derived paths as facts for input-oriented tasks", async () => {
+test("Recovery readiness records missing Host-derived paths as facts for input-oriented tasks", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-inputs-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const taskCase = {
     schemaVersion: 1,
     caseId: "case-input-task",
@@ -119,8 +124,9 @@ test("Recovery readiness records missing Host-derived paths as facts for input-o
 });
 
 
-test("Recovery readiness does not execute historical commands without explicit opt-in", async () => {
+test("Recovery readiness does not execute historical commands without explicit opt-in", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-command-disabled-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "input.txt"), "input\n");
   const context = {
     schemaVersion: 1, taskSummary: "task", observedWorkspaces: [root], relevantPaths: ["input.txt"],
@@ -132,8 +138,9 @@ test("Recovery readiness does not execute historical commands without explicit o
   assert.equal(await import("node:fs/promises").then(({ access }) => access(join(root, "unexpected.txt")).then(() => true, () => false)), false);
 });
 
-test("Recovery readiness runs only allowlisted commands in staging when opted in", async () => {
+test("Recovery readiness runs only allowlisted commands in staging when opted in", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-readiness-command-enabled-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "input.txt"), "input\n");
   const context = {
     schemaVersion: 1, taskSummary: "task", observedWorkspaces: [root], relevantPaths: ["input.txt"],

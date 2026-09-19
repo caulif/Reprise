@@ -47,8 +47,9 @@ async function initRepo(root: string, origin?: string, branch = "main"): Promise
   return git(["rev-parse", `refs/heads/${branch}`], root);
 }
 
-test("prepareRun retargets nested origin to a harness sink and does not advance the user remote", async () => {
+test("prepareRun retargets nested origin to a harness sink and does not advance the user remote", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-sink-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const userRemote = join(tmp, "user-remote.git");
   const nestedRemote = join(tmp, "nested-remote.git");
   const source = join(tmp, "source");
@@ -84,8 +85,9 @@ test("prepareRun retargets nested origin to a harness sink and does not advance 
   assert.equal(await git(["--git-dir", nestedRemote, "rev-parse", "refs/heads/main"]), nestedHead);
 });
 
-test("isolateGitTopology hashes nested sink names and does not clone --bare", async () => {
+test("isolateGitTopology hashes nested sink names and does not clone --bare", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-nested-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const nestedRemote = join(tmp, "nested-remote.git");
   const source = join(tmp, "source");
   const paper = join(source, "caulif", "themes", "PaperMod");
@@ -104,15 +106,17 @@ test("isolateGitTopology hashes nested sink names and does not clone --bare", as
   assert.doesNotMatch(sourceText, /clone", "--bare"/);
 });
 
-test("isolateGitTopology is a no-op without git metadata", async () => {
+test("isolateGitTopology is a no-op without git metadata", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-empty-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const record = await isolateGitTopology(tmp, join(tmp, "git-sinks", "empty"));
   assert.equal(record.repos.length, 0);
   assert.equal(record.status, "ready");
 });
 
-test("isolateCandidateProcessEnv drops GitHub tokens and loads sink gitconfig", async () => {
+test("isolateCandidateProcessEnv drops GitHub tokens and loads sink gitconfig", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-env-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const run = join(tmp, "runs", "run-env");
   const home = join(tmp, "git-sinks", "run-env");
   await mkdir(run, { recursive: true });
@@ -142,8 +146,9 @@ test("isolateCandidateProcessEnv drops GitHub tokens and loads sink gitconfig", 
   assert.match(spawnText, /shell:\s*false/);
 });
 
-test("git file worktree, submodule urls, new branch catalog, and github insteadOf stay on the sink", async () => {
+test("git file worktree, submodule urls, new branch catalog, and github insteadOf stay on the sink", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-catalog-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const nestedRemote = join(tmp, "nested-remote.git");
   const source = join(tmp, "source");
   await git(["init", "--bare", nestedRemote]);
@@ -199,6 +204,7 @@ test("git file worktree, submodule urls, new branch catalog, and github insteadO
 
 test("outside gitdir and symlink git are skipped; failed prepare deletes the sink", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-skip-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const outside = join(tmp, "outside");
   await initRepo(outside);
   const source = join(tmp, "source");
@@ -235,8 +241,9 @@ test("outside gitdir and symlink git are skipped; failed prepare deletes the sin
   assert.equal(existsSync(sinks), false);
 });
 
-test("corrupted git metadata records failure and is retryable after repair", async () => {
+test("corrupted git metadata records failure and is retryable after repair", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-retry-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const source = join(tmp, "source");
   await mkdir(source, { recursive: true });
   await mkdir(join(source, ".git"), { recursive: true });
@@ -250,8 +257,9 @@ test("corrupted git metadata records failure and is retryable after repair", asy
   assert.equal(recovered.repos.length, 1);
 });
 
-test("missing origin is created, linked worktree is discovered, and pull of a missing ref fails", async () => {
+test("missing origin is created, linked worktree is discovered, and pull of a missing ref fails", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-semantics-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const source = join(tmp, "source");
   await initRepo(source);
   const sinks = join(tmp, "git-sinks", "run-sem");
@@ -267,8 +275,9 @@ test("missing origin is created, linked worktree is discovered, and pull of a mi
   await assert.rejects(() => git(["fetch", "origin", "refs/heads/does-not-exist"], source, env));
 });
 
-test("relative gitdir traversal is skipped and public catalog omits credentials", async () => {
+test("relative gitdir traversal is skipped and public catalog omits credentials", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-traverse-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const outside = join(tmp, "outside");
   await initRepo(outside);
   const source = join(tmp, "source");
@@ -287,8 +296,9 @@ test("relative gitdir traversal is skipped and public catalog omits credentials"
   assert.doesNotMatch(publicText, /GITHUB_TOKEN|GH_TOKEN=/);
 });
 
-test("promisor blob:none worktrees rewrite remotes without seeding or throwing schema", async () => {
+test("promisor blob:none worktrees rewrite remotes without seeding or throwing schema", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-partial-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const source = join(tmp, "source");
   await initRepo(source);
   const nested = join(source, "vendor", "mod");
@@ -332,9 +342,10 @@ test("promisor blob:none worktrees rewrite remotes without seeding or throwing s
   await provider.discardRecovery(staging);
 });
 
-test("invalid catalog objects fail Host assert and I1 failure deletes the baseline sink", async () => {
+test("invalid catalog objects fail Host assert and I1 failure deletes the baseline sink", async (t) => {
   assert.throws(() => assertGitSinkManifest({ schemaVersion: 1 }), /GitSinkManifestSchema/);
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-unprotected-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const source = join(tmp, "source");
   await initRepo(source);
   await git(["remote", "add", "origin", "https://github.com/example/unprotected.git"], source);
@@ -346,8 +357,9 @@ test("invalid catalog objects fail Host assert and I1 failure deletes the baseli
   assert.equal(existsSync(gitSinkRoot(envRoot, "baseline-case-unprotected")), false);
 });
 
-test("v1 catalogs migrate on read", async () => {
+test("v1 catalogs migrate on read", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-v1-"));
+  t.after(async () => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const sinks = join(tmp, "git-sinks", "run-v1");
   await mkdir(sinks, { recursive: true });
   await writeFile(gitSinkManifestPath(sinks), `${JSON.stringify({

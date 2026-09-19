@@ -99,15 +99,37 @@ export class ClaudeCodeProductRuntime implements ProductRuntime {
       ...(this.#options.env ? { env: this.#options.env } : {}),
       ...(this.#options.args ? { args: this.#options.args } : {}),
     });
+    const models: ClaudeModel[] = [];
+    let primaryError: unknown;
+    let hasPrimaryError = false;
+    let cleanupError: unknown;
+    let hasCleanupError = false;
     try {
       await client.start();
       const response = record(await client.request('initialize'));
-      const models = Array.isArray(response.models) ? response.models : Array.isArray(response.data) ? response.data : [];
-      return models.map(readClaudeModel).filter((model): model is ClaudeModel => model !== undefined);
-    } finally {
-      try { await client.close(); } catch { /* catalog probe */ }
-      await rm(root, { recursive: true, force: true }).catch(() => undefined);
+      const raw = Array.isArray(response.models) ? response.models : Array.isArray(response.data) ? response.data : [];
+      models.push(...raw.map(readClaudeModel).filter((model): model is ClaudeModel => model !== undefined));
+    } catch (error) {
+      primaryError = error;
+      hasPrimaryError = true;
     }
+    try {
+      await client.close();
+    } catch (closeError) {
+      cleanupError = closeError;
+      hasCleanupError = true;
+    }
+    try {
+      await rm(root, { recursive: true, force: true });
+    } catch (removeError) {
+      if (!hasCleanupError) {
+        cleanupError = removeError;
+        hasCleanupError = true;
+      }
+    }
+    if (hasPrimaryError) throw primaryError;
+    if (hasCleanupError) throw cleanupError;
+    return models;
   }
 
   async validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime> {
