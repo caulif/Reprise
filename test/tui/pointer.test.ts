@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setCapabilities } from '@earendil-works/pi-tui';
+import { setCapabilities, stripTerminalSequences, visibleWidth } from '@earendil-works/pi-tui';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import type { ControllerHandle } from '../../src/tui/controller-input.js';
@@ -8,9 +8,30 @@ import { hitFileLink } from '../../src/tui/format.js';
 import { homeHints } from '../../src/tui/pages/home.js';
 import { applyResultPointer, yieldPointerToApp } from '../../src/tui/pointer-dispatch.js';
 import { resultPointerAction, renderResult, renderResultWithHits, resolveResultLinkAction } from '../../src/tui/pages/result.js';
+import type { ResultPathLinks } from '../../src/application/result-paths.js';
+import type { ResultAction } from '../../src/tui/page-input.js';
 import { keepSelectedVisible } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
+
+function visibleSpan(line: string, needle: string): { x0: number; x1: number } | undefined {
+  const plain = stripTerminalSequences(line);
+  const index = plain.indexOf(needle);
+  if (index < 0) return undefined;
+  const x0 = visibleWidth(plain.slice(0, index)) + 1;
+  return { x0, x1: x0 + visibleWidth(needle) - 1 };
+}
+
+function pointerAt(
+  lines: readonly string[],
+  row: number,
+  col: number,
+  locale: 'en' | 'zh',
+  pathLinks: ResultPathLinks,
+  rowHits: ReadonlyMap<number, readonly { action: ResultAction; x0: number; x1: number }[]>,
+): ResultAction | undefined {
+  return resultPointerAction(lines, row, col, locale, pathLinks, rowHits);
+}
 
 test('keepSelectedVisible only changes offset when the selection would leave the window', () => {
   assert.equal(keepSelectedVisible(0, 0, 40, 10), 0);
@@ -65,15 +86,12 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
   assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks, rowHits), 'compare');
 });
 
-test('result pointer opens short labels when the terminal has no OSC 8', () => {
+test('result pointer matches final framed screen coords without OSC 8', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: false });
   const theme = createTheme(120, false);
+  assert.equal(theme.framed, true);
   const pathLinks = {
-    report: 'C:\\exp\\report.html',
     historyFinal: 'C:\\exp\\environment\\baselines\\deck.html',
-    candidateFinal: 'C:\\exp\\environment\\runs\\run-1\\out.html',
-    trace: 'C:\\exp\\runs\\run-1',
-    replica: 'C:\\exp\\environment\\runs\\run-1',
   };
   const { lines, rowHits } = renderResultWithHits(theme, 120, {
     experimentRoot: 'C:\\exp',
@@ -85,19 +103,22 @@ test('result pointer opens short labels when the terminal has no OSC 8', () => {
     decision: { status: 'completed' },
     comparison: { result: { status: 'skipped' } },
   } as never, 'en');
-  const historyLine = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
-  const candidateLine = lines.findIndex((line) => line.includes('out.html') && line.includes('Candidate'));
-  assert.ok(historyLine >= 0);
-  assert.ok(candidateLine >= 0);
-  assert.equal(hitFileLink(lines[historyLine] ?? '', 20), undefined);
-  assert.equal(resultPointerAction(lines, historyLine, 20, 'en', pathLinks, rowHits), 'open-history-final');
-  assert.equal(resultPointerAction(lines, candidateLine, 20, 'en', pathLinks, rowHits), 'open-candidate-final');
-  assert.equal(resultPointerAction(lines, historyLine, 2, 'en', pathLinks, rowHits), undefined);
+  const row = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
+  assert.ok(row >= 0);
+  const line = lines[row] ?? '';
+  const value = visibleSpan(line, 'environment/baselines/deck.html');
+  assert.ok(value);
+  assert.equal(hitFileLink(line, value.x0), undefined);
+  assert.equal(pointerAt(lines, row, value.x0, 'en', pathLinks, rowHits), 'open-history-final');
+  assert.equal(pointerAt(lines, row, value.x1, 'en', pathLinks, rowHits), 'open-history-final');
+  assert.equal(pointerAt(lines, row, value.x0 - 1, 'en', pathLinks, rowHits), undefined);
+  assert.equal(pointerAt(lines, row, value.x0 - 2, 'en', pathLinks, rowHits), undefined);
 });
 
-test('result pointer uses structured hits when zh labels truncate at narrow width', () => {
+test('result pointer matches final unframed screen coords without OSC 8', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: false });
   const theme = createTheme(48, false);
+  assert.equal(theme.framed, false);
   const pathLinks = {
     replica: 'C:\\exp\\environment\\runs\\run-1',
   };
@@ -111,14 +132,16 @@ test('result pointer uses structured hits when zh labels truncate at narrow widt
     decision: { status: 'completed' },
     comparison: { result: { status: 'skipped' } },
   } as never, 'zh');
-  const replicaEntry = [...rowHits.entries()].find(([, hits]) => hits.some((hit) => hit.action === 'open-replica'));
-  assert.ok(replicaEntry);
-  const [replicaLine, hits] = replicaEntry;
-  const replicaHit = hits.find((hit) => hit.action === 'open-replica');
-  assert.ok(replicaHit);
-  assert.equal(resultPointerAction(lines, replicaLine, replicaHit.x0, 'zh', pathLinks, rowHits), 'open-replica');
-  assert.equal(resultPointerAction(lines, replicaLine, replicaHit.x1, 'zh', pathLinks, rowHits), 'open-replica');
-  assert.equal(resultPointerAction(lines, replicaLine, replicaHit.x0 - 1, 'zh', pathLinks, rowHits), undefined);
+  const row = lines.findIndex((line) => line.includes('environment/runs/run-1/') && line.includes('隔离副本'));
+  assert.ok(row >= 0);
+  const line = lines[row] ?? '';
+  const value = visibleSpan(line, 'environment/runs/run-1/');
+  assert.ok(value);
+  assert.equal(hitFileLink(line, value.x0), undefined);
+  assert.equal(pointerAt(lines, row, value.x0, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(pointerAt(lines, row, value.x1, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(pointerAt(lines, row, value.x0 - 1, 'zh', pathLinks, rowHits), undefined);
+  assert.equal(pointerAt(lines, row, value.x0 - 2, 'zh', pathLinks, rowHits), undefined);
 });
 
 test('result pointer treats environment baselines html as history final', () => {

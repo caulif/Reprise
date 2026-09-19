@@ -8,9 +8,14 @@ export type Row = Readonly<Record<string, string>>;
 export type LinkValueHit = { readonly x0: number; readonly x1: number };
 export type KvLinkBlock = { readonly lines: readonly string[]; readonly hits: readonly (LinkValueHit | undefined)[] };
 
-/** 1-based column where the kv value starts (` ${key} ${value}`). */
+/** 1-based column where the kv value starts in a body line (` ${key} ${value}`). */
 export function kvLinkValueStart(labelWidth: number): number {
-  return labelWidth + 2;
+  return labelWidth + 3;
+}
+
+/** Column offset from a panel body line to the final rendered screen row. */
+export function panelBodyChrome(theme: Theme): { readonly row: number; readonly col: number } {
+  return { row: 1, col: theme.framed ? 1 : 3 };
 }
 
 export function pad(text: string, width: number, ellipsis = '…'): string {

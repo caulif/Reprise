@@ -6,7 +6,7 @@ import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
-import { kv, kvLinkBlock, panel, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
+import { kv, kvLinkBlock, panel, panelBodyChrome, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
 
 export type ResultPointerHit = { readonly action: ResultAction; readonly x0: number; readonly x1: number };
@@ -65,16 +65,20 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
     push('');
     push(` ${theme.style.accent(t(locale, 'hintCompare'))}`);
   }
-  pushLink(failed ? 'open-report' : 'open-report', kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), shortPath(paths.report, experimentRoot, vacant), paths.report, width));
+  pushLink('open-report', kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), shortPath(paths.report, experimentRoot, vacant), paths.report, width));
   pushLink('open-history-final', kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortPath(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width));
   pushLink('open-candidate-final', kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width));
   pushLink('open-trace', kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width));
   pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width));
   const lines = panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width);
   const rowHits = new Map<number, readonly ResultPointerHit[]>();
-  const bodyOffset = theme.framed ? 1 : 1;
+  const chrome = panelBodyChrome(theme);
   for (const [bodyRow, hits] of bodyHits) {
-    rowHits.set(bodyOffset + bodyRow, hits);
+    rowHits.set(chrome.row + bodyRow, hits.map((hit) => ({
+      action: hit.action,
+      x0: hit.x0 + chrome.col,
+      x1: hit.x1 + chrome.col,
+    })));
   }
   return { lines, rowHits };
 }
