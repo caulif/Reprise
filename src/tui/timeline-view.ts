@@ -1,6 +1,6 @@
 import { uniqueLeafNames } from './agent-activity.js';
-import { foldProcessEntries } from './fold-process.js';
-import { isNowRow, type TimelineEntry } from './timeline.js';
+import { expandFoldLeaves, foldProcessEntries } from './fold-process.js';
+import { flushFoldTitle, isNowRow, type TimelineEntry } from './timeline.js';
 
 const FLUSH_NOW: Record<string, string> = {
   'flush:candidate': 'now:target',
@@ -21,43 +21,79 @@ export function projectTimelineView(
   timelineRevision = -1,
 ): TimelineEntry[] {
   const folded = foldProcessEntries(visible, expandedIds, timelineRevision);
-  return injectActiveThinkingRows(folded, full);
+  return injectActiveThinkingRows(folded, full, expandedIds);
 }
 
-function injectActiveThinkingRows(folded: readonly TimelineEntry[], full: readonly TimelineEntry[]): TimelineEntry[] {
+function injectActiveThinkingRows(
+  folded: readonly TimelineEntry[],
+  full: readonly TimelineEntry[],
+  expandedIds: ReadonlySet<string>,
+): TimelineEntry[] {
   const activeNow = new Set(
     full
       .filter((entry) => !entry.hidden && isNowRow(entry) && entry.itemId)
       .map((entry) => entry.itemId!),
   );
-  const thinking: TimelineEntry[] = [];
+  const injected: TimelineEntry[] = [];
   for (const entry of full) {
     if (!entry.hidden || !entry.itemId?.startsWith('flush')) continue;
     const nowId = FLUSH_NOW[entry.itemId];
     if (!nowId || !activeNow.has(nowId)) continue;
-    thinking.push(...thinkingRowsFromFlush(entry));
+    injected.push(...thinkingRowsFromFlush(entry));
   }
-  if (!thinking.length) return [...folded];
+  if (!injected.length) return [...folded];
+  // Expand only the newly injected flush-fold preview (spine folds already expanded).
+  const live = omitTipLeafWhenExpanded(expandFoldLeaves(injected, expandedIds));
   const nowIndex = folded.findIndex((entry) => isNowRow(entry));
-  if (nowIndex < 0) return [...folded, ...thinking];
-  return [...folded.slice(0, nowIndex), ...thinking, ...folded.slice(nowIndex)];
+  if (nowIndex < 0) return [...folded, ...live];
+  return [...folded.slice(0, nowIndex), ...live, ...folded.slice(nowIndex)];
 }
 
+/** Tip-only: one live tool tip (latest leaf); completed peers use the canonical flush fold preview. */
 function thinkingRowsFromFlush(flush: TimelineEntry): TimelineEntry[] {
   const write = flush.itemId?.startsWith('flush-write:');
   const names = uniqueLeafNames((flush.detail ?? '').split(/[·,]/));
   if (!names.length) return [];
   const lane = flush.lane;
   const voice = flush.voice ?? (flush.source === 'TARGET' ? 'candidate' : undefined);
-  return names.map((name, index) => ({
+  const latest = names[names.length - 1]!;
+  const base = {
     sequence: flush.sequence,
     occurredAt: flush.occurredAt,
     source: flush.source,
-    title: write ? '写入' : '阅读',
-    detail: name,
-    kind: 'thinking',
-    itemId: `thinking:${flush.itemId}:${index}`,
     ...(lane ? { lane } : {}),
     ...(voice ? { voice } : {}),
-  }));
+  };
+  const rows: TimelineEntry[] = [];
+  if (names.length > 1 && flush.itemId) {
+    const count = flush.count ?? names.length;
+    rows.push({
+      ...base,
+      title: flushFoldTitle({ ...flush, count }),
+      kind: 'fold',
+      itemId: flush.itemId,
+      count,
+      ...(flush.detail ? { detail: flush.detail } : {}),
+    });
+  }
+  rows.push({
+    ...base,
+    title: write ? '写入' : '阅读',
+    detail: latest,
+    kind: 'thinking',
+    itemId: `thinking:${flush.itemId}:tip`,
+  });
+  return rows;
+}
+
+/** When the tip row already shows the latest leaf, drop that leaf from expanded ⎿ children. */
+function omitTipLeafWhenExpanded(entries: readonly TimelineEntry[]): TimelineEntry[] {
+  const tipLeaves = new Set(
+    entries.filter((entry) => entry.kind === 'thinking' && entry.detail).map((entry) => entry.detail!),
+  );
+  if (!tipLeaves.size) return [...entries];
+  return entries.filter((entry) => {
+    if (!entry.title.startsWith('⎿ ')) return true;
+    return !tipLeaves.has(entry.title.slice(2).trim());
+  });
 }

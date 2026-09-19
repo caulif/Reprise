@@ -639,8 +639,16 @@ function mergeFlushDetail(previous: string | undefined, next: string | undefined
 }
 
 function flushLane(timeline: TimelineEntry[], lane: AgentLane | 'candidate'): void {
-  emitFlush(timeline, `flush:${lane}`, (row) => `▸ 阅读证据 · ${row.count ?? 1}`);
-  emitFlush(timeline, `flush-write:${lane}`, (row) => `▸ 写入 ${row.detail?.split(' · ')[0] ?? ''}`.trim());
+  emitFlush(timeline, `flush:${lane}`, flushFoldTitle);
+  emitFlush(timeline, `flush-write:${lane}`, flushFoldTitle);
+}
+
+/** Canonical fold title for a flush counter / settled flush fold (read count or write first leaf). */
+export function flushFoldTitle(row: TimelineEntry): string {
+  if (row.itemId?.startsWith('flush-write:')) {
+    return `▸ 写入 ${row.detail?.split(' · ')[0] ?? ''}`.trim();
+  }
+  return `▸ 阅读证据 · ${row.count ?? 1}`;
 }
 
 function emitFlush(timeline: TimelineEntry[], itemId: string, titleOf: (row: TimelineEntry) => string): void {

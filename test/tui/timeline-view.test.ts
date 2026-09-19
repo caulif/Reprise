@@ -25,7 +25,7 @@ function visibleOf(timeline: readonly TimelineEntry[]): TimelineEntry[] {
   return timeline.filter((entry) => !entry.hidden && matchesFilter(entry, 'ALL'));
 }
 
-test('candidate thinking chain is visible while the now row is live', () => {
+test('candidate live probe is tip-only: latest tip plus one fold count', () => {
   const timeline: TimelineEntry[] = [];
   appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: '在吗' }, 1)));
   appendTimelineEntries(timeline, projectTimelineEvent(event('runtime.tool_started', {
@@ -43,11 +43,12 @@ test('candidate thinking chain is visible while the now row is live', () => {
   const visible = visibleOf(timeline);
   const projected = projectTimelineView(timeline, visible, new Set());
   const thinking = projected.filter((entry) => entry.kind === 'thinking');
-  assert.equal(thinking.length, 2);
-  assert.deepEqual(thinking.map((entry) => entry.detail), ['a.md', 'b.md']);
+  assert.equal(thinking.length, 1);
+  assert.deepEqual(thinking.map((entry) => entry.detail), ['b.md']);
   assert.ok(thinking.every((entry) => matchesFilter(entry, 'ALL')));
+  const liveFold = projected.find((entry) => entry.kind === 'fold' && entry.itemId === 'flush:candidate');
+  assert.equal(liveFold?.title, '▸ 阅读证据 · 2');
   assert.equal(projected.some((entry) => entry.itemId === 'now:target'), true);
-  assert.equal(projected.some((entry) => entry.kind === 'fold'), false);
 
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: visible,
@@ -57,11 +58,12 @@ test('candidate thinking chain is visible while the now row is live', () => {
     productLabel: 'Claude Code',
     locale: 'zh',
   }).join('\n');
-  assert.match(painted, /a\.md/);
   assert.match(painted, /b\.md/);
+  assert.match(painted, /▸ 阅读证据 · 2/);
+  assert.equal((painted.match(/阅读 a\.md/g) ?? []).length, 0);
 });
 
-test('candidate thinking chain collapses after the turn settles', () => {
+test('candidate thinking chain collapses after the turn settles with stable flush itemId', () => {
   const timeline: TimelineEntry[] = [];
   appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: '在吗' }, 1)));
   appendTimelineEntries(timeline, projectTimelineEvent(event('runtime.tool_started', {
@@ -75,6 +77,10 @@ test('candidate thinking chain collapses after the turn settles', () => {
     schemaVersion: 1, sessionId: 's', evidenceRefs: [],
     live: { schemaVersion: 1, verb: 'read', leaf: 'b.md' },
   }, 4)));
+
+  const live = projectTimelineView(timeline, visibleOf(timeline), new Set());
+  assert.equal(live.find((entry) => entry.kind === 'fold')?.itemId, 'flush:candidate');
+
   appendTimelineEntries(timeline, projectTimelineEvent(event('candidate.user_view_persisted', {
     turnIndex: 0, status: 'completed', observedAt: timestamp, assistantText: '看过了。',
   }, 5)));
@@ -82,11 +88,12 @@ test('candidate thinking chain collapses after the turn settles', () => {
   const visible = visibleOf(timeline);
   const projected = projectTimelineView(timeline, visible, new Set());
   assert.equal(projected.some((entry) => entry.kind === 'thinking'), false);
-  assert.ok(projected.some((entry) => entry.kind === 'fold' && entry.title === '▸ 阅读证据 · 2'));
+  const settled = projected.find((entry) => entry.kind === 'fold' && entry.title === '▸ 阅读证据 · 2');
+  assert.equal(settled?.itemId, 'flush:candidate');
   assert.equal(projected.some((entry) => entry.itemId === 'now:target' && !entry.hidden), false);
 });
 
-test('recovery probe chain survives matchesFilter and renders on the canvas', () => {
+test('recovery probe chain is tip-only while live and folds after the next sentence', () => {
   const timeline: TimelineEntry[] = [];
   appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
     role: 'recovery', text: '先看索引。',
@@ -101,8 +108,11 @@ test('recovery probe chain survives matchesFilter and renders on the canvas', ()
   const visible = visibleOf(timeline);
   const projected = projectTimelineView(timeline, visible, new Set());
   const thinking = projected.filter((entry) => entry.kind === 'thinking');
-  assert.deepEqual(thinking.map((entry) => entry.detail), ['INDEX.md', 'session.json']);
+  assert.deepEqual(thinking.map((entry) => entry.detail), ['session.json']);
+  assert.equal(thinking.length, 1);
   assert.ok(thinking.every((entry) => matchesFilter(entry, 'ALL')));
+  assert.equal(projected.find((entry) => entry.kind === 'fold')?.itemId, 'flush:recovery');
+  assert.equal(projected.find((entry) => entry.kind === 'fold')?.title, '▸ 阅读证据 · 2');
 
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: visible,
@@ -112,8 +122,9 @@ test('recovery probe chain survives matchesFilter and renders on the canvas', ()
     runPhase: 'recovery',
     locale: 'zh',
   }).join('\n');
-  assert.match(painted, /INDEX\.md/);
   assert.match(painted, /session\.json/);
+  assert.match(painted, /▸ 阅读证据 · 2/);
+  assert.equal((painted.match(/阅读 INDEX\.md/g) ?? []).length, 0);
 
   appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
     role: 'recovery', text: '接着写报告。',
@@ -121,5 +132,84 @@ test('recovery probe chain survives matchesFilter and renders on the canvas', ()
   const endedVisible = visibleOf(timeline);
   const ended = projectTimelineView(timeline, endedVisible, new Set());
   assert.equal(ended.some((entry) => entry.kind === 'thinking'), false);
-  assert.ok(ended.some((entry) => entry.kind === 'fold' && entry.title === '▸ 阅读证据 · 2'));
+  const settled = ended.find((entry) => entry.kind === 'fold' && entry.title === '▸ 阅读证据 · 2');
+  assert.equal(settled?.itemId, 'flush:recovery');
+});
+
+test('recovery historical tool spam is not painted as peer L2 rows', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: 'I will start by reading the task text.',
+  }, 1)));
+  const leaves = [
+    'initial-input.txt', 'playbook.md', 'INDEX.md', 'source-summary.json',
+    'tool-14.json', 'history-0-9d3563dcf314e314.json', 'history-3-b9e634df.json',
+  ];
+  for (const [index, leaf] of leaves.entries()) {
+    appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_completed', {
+      role: 'recovery', tool: 'read', params: { path: leaf },
+    }, index + 2)));
+  }
+
+  const visible = visibleOf(timeline);
+  const projected = projectTimelineView(timeline, visible, new Set());
+  const thinking = projected.filter((entry) => entry.kind === 'thinking');
+  assert.equal(thinking.length, 1);
+  assert.equal(thinking[0]?.detail, 'history-3-b9e634df.json');
+  const liveFold = projected.find((entry) => entry.kind === 'fold' && entry.itemId === 'flush:recovery');
+  assert.equal(liveFold?.title, `▸ 阅读证据 · ${leaves.length}`);
+
+  const painted = renderTimeline(createTheme(120, false), 120, {
+    entries: visible,
+    sourceTimeline: timeline,
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
+    runPhase: 'recovery',
+    locale: 'zh',
+  }).join('\n');
+  for (const leaf of leaves.slice(0, -1)) {
+    assert.equal((painted.match(new RegExp(`阅读 ${leaf.replace(/\./g, '\\.')}`, 'g')) ?? []).length, 0, leaf);
+  }
+  assert.match(painted, /阅读 history-3-b9e634df\.json/);
+  assert.match(painted, new RegExp(`▸ 阅读证据 · ${leaves.length}`));
+});
+
+test('live flush fold expands leaf names via expandedIds and keeps tip without double-paint', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'recovery', text: '先看三份。',
+  }, 1)));
+  for (const [index, leaf] of ['a.md', 'b.md', 'c.md'].entries()) {
+    appendTimelineEntries(timeline, projectTimelineEvent(event('agent.tool_completed', {
+      role: 'recovery', tool: 'read', params: { path: leaf },
+    }, index + 2)));
+  }
+
+  const visible = visibleOf(timeline);
+  const collapsed = projectTimelineView(timeline, visible, new Set());
+  assert.equal(collapsed.some((entry) => entry.title.startsWith('⎿ ')), false);
+
+  const expanded = projectTimelineView(timeline, visible, new Set(['flush:recovery']));
+  assert.equal(expanded.find((entry) => entry.kind === 'fold')?.itemId, 'flush:recovery');
+  assert.deepEqual(
+    expanded.filter((entry) => entry.title.startsWith('⎿ ')).map((entry) => entry.title),
+    ['⎿ a.md', '⎿ b.md'],
+  );
+  assert.equal(expanded.filter((entry) => entry.kind === 'thinking').length, 1);
+  assert.equal(expanded.find((entry) => entry.kind === 'thinking')?.detail, 'c.md');
+  assert.equal(expanded.some((entry) => entry.title === '⎿ c.md'), false);
+
+  const painted = renderTimeline(createTheme(120, false), 120, {
+    entries: visible,
+    sourceTimeline: timeline,
+    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
+    runPhase: 'recovery',
+    locale: 'zh',
+    expandedFolds: ['flush:recovery'],
+  }).join('\n');
+  assert.match(painted, /⎿ a\.md/);
+  assert.match(painted, /⎿ b\.md/);
+  assert.match(painted, /阅读 c\.md/);
+  assert.equal((painted.match(/⎿ c\.md/g) ?? []).length, 0);
 });

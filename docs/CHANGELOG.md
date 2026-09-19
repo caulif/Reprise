@@ -8,6 +8,7 @@
 
 ### Changed
 
+- 恢复 / 运行 realtime：工具主列 tip-only——只保留最新一条「阅读/写入 {叶}」，历史同质探路收成一条 `▸ 阅读证据 · N`，不再倾倒逐文件行。
 - 结果页路径始终显示短标签；终端无 OSC 8 时不再改成绝对路径。跳过对照仍列出报告 / 历史终稿 / 候选终稿。页脚列出 `o` / `h` / `f`。
 - TUI 与内部 Agent 缺省 locale 为简体中文；指令为英文，面向操作者的输出随 locale。CLI `--locale <en|zh>` 写入同一份 preferences。发给候选的消息跟随历史用户语言，不跟随该 locale。
 - Recovery 失败解释由 Host i18n 键或 Agent `summary` 承担，不再调用 Diagnosis Agent。
