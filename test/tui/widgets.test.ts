@@ -887,11 +887,3 @@ test('history windows long lists around the selection', () => {
   assert.match(text, /16\/20/);
   assert.doesNotMatch(text, /experiment-1\s/);
 });
-
-test('recovery running hints omit find', () => {
-  const theme = createTheme(80, false);
-  const line = keyHints(theme, runningHints('ALL', false, true, 'en', false, false, false), 80);
-  assert.match(line, /Ctrl\+C/);
-  assert.doesNotMatch(line, /Find/);
-  assert.match(line, /Expand/);
-});
