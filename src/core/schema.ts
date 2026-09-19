@@ -210,6 +210,11 @@ export {
   ComparisonShortRefSchema,
 } from "./comparison-schema.js";
 export type { ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+export {
+  ModelInputCapabilitiesSchema,
+  modelAcceptsImage,
+  type ModelInputCapabilities,
+} from "./schemas/model-input-capabilities.js";
 
 
 

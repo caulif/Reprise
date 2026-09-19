@@ -19,6 +19,7 @@ Reprise v0.1.0   C:\reprise                    gpt-5.6-terra · medium   ⚠ 内
 │ ❯ 模型               gpt-5.6-terra                                                                                   │
 │   接口类型           openai-completions  [Enter] 切换                                                                │
 │   推理               false  [Enter] 切换                                                                             │
+│   支持图片输入       false  [Enter] 切换                                                                             │
 │   力度               medium  [Enter] 切换                                                                            │
 │   API 密钥           env:OPENAI_API_KEY  ✓                                                                           │
 │   语言               中文  [Enter] 切换                                                                              │
