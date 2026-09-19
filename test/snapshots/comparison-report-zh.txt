@@ -159,12 +159,12 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
   </section>
   </article>
   <div class="audit" hidden>
-    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">费用按本次钉住的价格快照计算，不含工具调用成本。无 Token 显示未采集；有 Token 无价格显示价格未配置。价格表 2026-09-16-models-dev-snapshot。</p>
+    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">费用按本次钉住的价格快照计算，不含工具调用成本。无 Token 显示未采集；有 Token 无价格显示价格未配置。价格表 2026-09-19-cc-switch-seed。</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>运行诊断</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
     <li><span class="who">gpt-5.6</span> incomplete · limit.turns · harness</li>
-    <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-09-16-models-dev-snapshot</li>
-    <li><span class="who">gpt-5.6 price</span> unresolved · not_collected · 2026-09-16-models-dev-snapshot</li>
+    <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
+    <li><span class="who">gpt-5.6 price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
   </ul></details></section>
     <section class="slot" data-agent-zone="delivery" data-id="agent-delivery"><!-- Deliveries, paths, and runId. Hidden; not on the card face. --></section>
     <section class="slot" data-agent-zone="limitations" data-id="agent-limitations"><!-- Replay limitations, including git-sink initial equal to a historical commit. Hidden. --></section>

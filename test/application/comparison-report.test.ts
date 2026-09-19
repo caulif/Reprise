@@ -236,7 +236,7 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   assert.match(html, /0\.49<span class="unit">\$/);
   assert.match(html, /钉住的价格快照/);
   assert.match(html, /\.num\.miss \{[^}]*white-space:nowrap/);
-  assert.match(html, /2026-09-16-models-dev-snapshot/);
+  assert.match(html, /2026-09-19-cc-switch-seed/);
   assert.match(html, /cacheRead /);
   assert.match(html, /cacheCreation /);
   assert.equal(facts.models.baseline, 'gpt-5');

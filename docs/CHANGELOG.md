@@ -20,6 +20,7 @@
 - 恢复、控制器和对照进行中的 TUI 显示压缩后的工具过程（动词、对象、阶段），而不是只显示工具名或空白。
 
 - 对照报告按钉住的价格快照计算费用；本机 `{dataDir}/model-pricing.override.json` 可覆盖单价。有 Token 无目录行仍显示价格未配置。详细证据列出四类费率。
+- 价格快照改为钉住的 cc-switch 默认定价表（`2026-09-19-cc-switch-seed`），覆盖主流网关 ID；`deepseek-v4.1-flash` 使用独立 V4.1 Flash 高峰档费率，不借用 V4 行。
 - Recovery 在源目录超过复制预算时改为稀疏工作区加只读 `source/`，不再把整树复制失败当成无法启动。
 - Recovery 最终信封带一句话 `summary`；checkpoint 种子也走同一 Agent；blocked 与失败的新 baseline `match` 为 `observational`。
 - Recovery 按可观察材料建立合理起点：未知缺口不自动阻塞；Host 路径清单与命令失败不改写 Agent 结论；`blocked` 作为正常停手展示。
