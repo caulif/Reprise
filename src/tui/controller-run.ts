@@ -287,6 +287,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     if (userStatus === 'failed') {
       c.page = 'confirm';
       c.message = t(c.locale, 'recoveryFailed');
+      c.timelineFollowing = false;
     } else {
       openCandidateProductPicker(c);
       c.message = userStatus === 'recovered'

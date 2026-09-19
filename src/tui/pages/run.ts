@@ -39,6 +39,7 @@ export type ConfirmModel = PreflightModel & {
   readonly policy?: RunPolicy;
   readonly harnessAuthOk?: boolean;
   readonly sourceProductLabel?: string;
+  readonly experimentId?: string;
 };
 export type RunningModel = {
   readonly entries: readonly TimelineEntry[];
@@ -75,6 +76,8 @@ export type RunningModel = {
   readonly candidateSessionId?: string;
   readonly sourceTimeline?: readonly TimelineEntry[];
   readonly timelineRevision?: number;
+  /** Confirm-after-failed-recovery: keep timeline readable but do not highlight a fold/row. */
+  readonly suppressSelection?: boolean;
 };
 
 function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string], locale: Locale): string {
@@ -128,6 +131,8 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
   const canStart = confirmCanStart(model);
   const recoveryRunnable = model.preflight.comparisonClass !== 'observational' && recovery?.status !== 'failed' && recovery?.status !== 'blocked';
   const blockedRecovery = recovery?.status === 'blocked';
+  const failedRecovery = recovery?.status === 'failed'
+    || (model.preflight.comparisonClass === 'observational' && recovery?.status !== 'blocked' && model.harnessAuthOk !== false);
   const cross = Boolean(model.sourceProductLabel && model.sourceProductLabel !== product);
   const startWarning = !canStart
     ? (model.harnessAuthOk === false
@@ -136,18 +141,27 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
         ? (recovery?.summary ?? t(locale, 'warningCannotStartBlockedRecovery', { product }))
         : (recovery?.failureSummary ?? t(locale, 'warningCannotStartFailedRecovery', { product })))
     : t(locale, 'warningStartsProcess', { product });
+  const warningLine = canStart || blockedRecovery
+    ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`)
+    : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`);
+  const diagnosisHint = !canStart && failedRecovery && model.experimentId
+    ? theme.style.muted(` ${t(locale, 'diagnosisSavedHint', { experimentId: model.experimentId })}`)
+    : undefined;
+  // Failed confirm: human failure reason is L1 — before candidate/recovery fields so the fold above cannot outrank it.
+  const failureFirst = failedRecovery && !canStart;
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
     ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), [
+      ...(failureFirst ? [warningLine, ...(diagnosisHint ? [diagnosisHint] : []), ''] : []),
       kv(theme, t(locale, 'candidateLabel'), candidateSummary(model.candidate, product, model.preflight.resolved.resolvedModel, locale), width - 2),
       kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
       ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
       ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
       ...(cross ? [kv(theme, t(locale, 'sourceProductLabel'), `${model.sourceProductLabel}  →  ${product}`, width - 2)] : []),
-      '',
+      ...(failureFirst ? [] : ['']),
       ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
-      canStart || blockedRecovery ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`) : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`),
+      ...(failureFirst ? [] : [warningLine, ...(diagnosisHint ? [diagnosisHint] : [])]),
       ...(canStart ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'confirmCopySafe')}`)] : []),
     ], width),
   ];
@@ -231,9 +245,12 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const visible = model.filter === 'ALL'
     ? model.entries
     : model.entries.filter((entry) => matchesFilter(entry, model.filter));
-  const selected = model.filter === 'ALL'
-    ? Math.max(0, Math.min(model.selected, Math.max(0, visible.length - 1)))
-    : Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
+  const suppressSelection = model.suppressSelection === true;
+  const selected = suppressSelection
+    ? -1
+    : model.filter === 'ALL'
+      ? Math.max(0, Math.min(model.selected, Math.max(0, visible.length - 1)))
+      : Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
   const recovering = model.runPhase === 'recovery';
   const hits = canvasHitIndices(visible, model.findQuery ?? '');
   const hitAt = hits.indexOf(selected < 0 ? -1 : selected);
@@ -243,7 +260,9 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const expanded = new Set(model.expandedFolds ?? []);
   const timelineRevision = model.timelineRevision ?? -1;
   const folded = projectTimelineView(model.sourceTimeline ?? model.entries, visible, expanded, timelineRevision);
-  const selectedFolded = selectedIndexAfterFold(visible, folded, visible[selected] ?? model.entries[model.selected]);
+  const selectedFolded = suppressSelection
+    ? -1
+    : selectedIndexAfterFold(visible, folded, visible[selected] ?? model.entries[model.selected]);
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]
     : recovering && !visible.length

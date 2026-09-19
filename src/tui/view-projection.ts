@@ -64,7 +64,7 @@ function homeModel(input: Input, envSet: boolean) {
   };
 }
 
-function runningModel(input: Input) {
+function runningModel(input: Input, options?: { readonly suppressSelection?: boolean }) {
   const productLabel = chromeProductLabel(input);
   const candidateSessionId = candidateSessionIdFrom(input.timeline);
   return {
@@ -103,6 +103,7 @@ function runningModel(input: Input) {
     ...(input.readingMode ? { readingMode: true } : {}),
     tick: input.nowMs ?? Date.now(),
     ...(candidateSessionId ? { candidateSessionId } : {}),
+    ...(options?.suppressSelection ? { suppressSelection: true } : {}),
   };
 }
 
@@ -185,13 +186,29 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (picker) return picker;
   const recovery = recoveryModel(input);
   if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
-  if (input.page === 'confirm' && input.preflight) return {
-    ...base,
-    ...(input.timeline.length ? { running: runningModel(input) } : {}),
-    confirm: {
-      preflight: input.preflight, candidate: input.candidate, sourceRoot: input.sourceRoot, effort: input.effort, harnessModel: input.modelConfig.modelId, harnessAuthOk: input.harnessAuthOk, ...(recovery ? { recovery } : {}), ...(input.policy ? { policy: input.policy } : {}), step: 3, locale: input.locale ?? 'en', ...(input.candidateProductLabel ? { productLabel: input.candidateProductLabel } : input.productLabel ? { productLabel: input.productLabel } : {}), ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {})
-    },
-  };
+  if (input.page === 'confirm' && input.preflight) {
+    const suppressSelection = recovery?.status === 'failed' || recovery?.status === 'blocked'
+      || input.preflight.comparisonClass === 'observational';
+    return {
+      ...base,
+      ...(input.timeline.length ? { running: runningModel(input, { suppressSelection }) } : {}),
+      confirm: {
+        preflight: input.preflight,
+        candidate: input.candidate,
+        sourceRoot: input.sourceRoot,
+        effort: input.effort,
+        harnessModel: input.modelConfig.modelId,
+        harnessAuthOk: input.harnessAuthOk,
+        ...(recovery ? { recovery } : {}),
+        ...(input.policy ? { policy: input.policy } : {}),
+        ...(input.recoveryView?.experimentId ? { experimentId: input.recoveryView.experimentId } : {}),
+        step: 3,
+        locale: input.locale ?? 'en',
+        ...(input.candidateProductLabel ? { productLabel: input.candidateProductLabel } : input.productLabel ? { productLabel: input.productLabel } : {}),
+        ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {}),
+      },
+    };
+  }
   if (input.page === 'running') return { ...base, running: runningModel(input) };
   if (input.page === 'result' && input.result) {
     return {
