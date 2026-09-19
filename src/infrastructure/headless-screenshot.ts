@@ -1,7 +1,6 @@
-import { execFile } from "node:child_process";
 import { access, constants, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -76,29 +75,19 @@ export async function resolveHeadlessBrowser(): Promise<string | undefined> {
   return undefined;
 }
 
+/**
+ * Single-frame capture used by Host openable-media.
+ * Delegates to the controlled artifact renderer (dynamic import avoids a cycle with CDP).
+ * Inject `captureScreenshot` in tests; unit suites must not hit a live browser.
+ */
 export async function captureHeadlessScreenshot(sourcePath: string, destPng: string): Promise<HeadlessScreenshotResult> {
-  const browser = await resolveHeadlessBrowser();
-  if (!browser) return { ok: false, failure: { kind: "no_browser" } };
-  try {
-    const width = 1280;
-    const height = 900;
-    await execFileAsync(browser, [
-      "--headless=new",
-      "--disable-gpu",
-      "--hide-scrollbars",
-      "--force-device-scale-factor=1",
-      `--window-size=${width},${height}`,
-      `--screenshot=${destPng}`,
-      pathToFileURL(sourcePath).href,
-    ], { timeout: 20_000 });
-    await access(destPng, constants.F_OK);
-    const info = await stat(destPng);
-    if (!info.isFile() || info.size <= 0) {
+  const { captureHeadlessScreenshotViaRenderer } = await import("./artifact-renderer.js");
+  const result = await captureHeadlessScreenshotViaRenderer(sourcePath, destPng);
+  if (result.ok) {
+    const info = await stat(destPng).catch(() => undefined);
+    if (!info?.isFile() || info.size <= 0) {
       return { ok: false, failure: { kind: "capture_failed", message: "screenshot file missing or empty" } };
     }
-    return { ok: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { ok: false, failure: { kind: "capture_failed", message } };
   }
+  return result;
 }

@@ -66,6 +66,14 @@ test("sealed baseline html is copied into attempt finals", async (t) => {
     links: [],
     baselineSources: [{ inspectPath: "finals/baseline.html", absolutePath: baselineHtml }],
     candidateSources: [],
+    captureScreenshot: async (_sourcePath, destPng) => {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(destPng, Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64",
+      ));
+      return { ok: true };
+    },
   }).catch((error: unknown) => {
     if (!(error instanceof ComparisonVisualMediaError)) throw error;
   });

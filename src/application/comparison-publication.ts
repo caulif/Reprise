@@ -371,6 +371,16 @@ function extraAgentAnalysis(html: string): string | undefined {
   return chunks.length ? chunks.join("\n") : undefined;
 }
 
+/** Shared publish/preview preprocessing: resolve short refs, strip broken media, drop external attrs. */
+export async function preparePublishableComparisonHtml(input: {
+  html: string;
+  attemptRoot: string;
+  media: readonly ComparisonMediaRecord[];
+  evidence?: readonly ComparisonLinkRecord[];
+}): Promise<{ html: string; unresolvedEvidence: string[]; unresolvedMedia: string[] }> {
+  return rewritePublishableHtml(input);
+}
+
 async function rewritePublishableHtml(input: {
   html: string;
   attemptRoot: string;
