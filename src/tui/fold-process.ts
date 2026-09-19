@@ -194,7 +194,7 @@ function foldLeafNames(detail: string | undefined): string[] {
   return uniqueLeafNames((detail ?? '').split(/[·,]/));
 }
 
-function expandFoldLeaves(entries: readonly TimelineEntry[], expandedIds: ReadonlySet<string>): TimelineEntry[] {
+export function expandFoldLeaves(entries: readonly TimelineEntry[], expandedIds: ReadonlySet<string>): TimelineEntry[] {
   const out: TimelineEntry[] = [];
   for (const entry of entries) {
     out.push(entry);
