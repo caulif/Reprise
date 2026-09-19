@@ -358,6 +358,7 @@ test('a 24-row running workbench stays within the viewport', () => {
   assert.doesNotMatch(text, /You cannot type/);
   assert.doesNotMatch(text, /\[f\]/);
   assert.doesNotMatch(text, /\[o\]/);
+  assert.doesNotMatch(text, /Expand|Select|Find/);
 });
 
 test('recovery workbench footer has no find', () => {
@@ -376,13 +377,16 @@ test('recovery workbench footer has no find', () => {
   }, 120, 24).join('\n');
   assert.match(text, /Ctrl\+C/);
   assert.doesNotMatch(text, /\[\/\]/);
+  assert.doesNotMatch(text, /Expand|Select|Find/);
 });
 
 test('help names the keys of the page it was opened on', () => {
   const running = helpLines('running').join('\n');
   assert.match(running, /Ctrl\+C\s+Request cancellation/);
-  assert.doesNotMatch(running, /Find in canvas/);
-  assert.doesNotMatch(running, /Expand command/);
+  assert.match(running, /\?/);
+  assert.doesNotMatch(running, /Find/);
+  assert.doesNotMatch(running, /Expand/);
+  assert.doesNotMatch(running, /Select/);
   assert.doesNotMatch(running, /Cycle (?:timeline )?filter/);
   assert.doesNotMatch(running, /Test connection/);
 
@@ -986,10 +990,50 @@ test('limit_reached result explains the turn cap', () => {
   assert.match(text, /Comparison still ran/);
 });
 
-test('recovery running hints omit find', () => {
-  const theme = createTheme(80, false);
-  const line = keyHints(theme, runningHints('ALL', false, true, 'en', false, false, false), 80);
+function assertWatchOnlyRunningFooter(line: string): void {
   assert.match(line, /Ctrl\+C/);
+  assert.doesNotMatch(line, /Expand/);
+  assert.doesNotMatch(line, /Select/);
   assert.doesNotMatch(line, /Find/);
-  assert.match(line, /Expand/);
+  assert.doesNotMatch(line, /\[\/\]/);
+  assert.doesNotMatch(line, /\[Enter\]/);
+  assert.doesNotMatch(line, /\[v\]/);
+}
+
+test('preparing running hints are watch-only', () => {
+  const theme = createTheme(80, false);
+  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, true, 'en'), 80));
+  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, true, 'zh'), 80));
+});
+
+test('recovery running hints are watch-only', () => {
+  const theme = createTheme(80, false);
+  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, true, 'en', false, false), 80));
+  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, true, 'zh', false, false), 80));
+});
+
+test('candidate idle running hints are watch-only', () => {
+  const theme = createTheme(80, false);
+  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, false, 'en'), 80));
+  assertWatchOnlyRunningFooter(keyHints(theme, runningHints('ALL', false, false, 'zh'), 80));
+});
+
+test('finding running hints keep find-mode keys only', () => {
+  const theme = createTheme(80, false);
+  const line = keyHints(theme, runningHints('ALL', false, false, 'en', true, false), 80);
+  assert.match(line, /Ctrl\+C/);
+  assert.match(line, /Next match/);
+  assert.match(line, /Previous match/);
+  assert.match(line, /Clear find/);
+  assert.doesNotMatch(line, /Expand/);
+  assert.doesNotMatch(line, /Select/);
+});
+
+test('reading running hints keep reading-mode keys only', () => {
+  const theme = createTheme(80, false);
+  const line = keyHints(theme, runningHints('ALL', false, false, 'en', false, true), 80);
+  assert.match(line, /Ctrl\+C/);
+  assert.match(line, /Resume view/);
+  assert.doesNotMatch(line, /Expand/);
+  assert.doesNotMatch(line, /Find/);
 });

@@ -50,7 +50,7 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
   ],
   preflight: ['Esc        Back to Home'],
   confirm: ['Enter      Start the candidate run', 'b          Change model', 'Esc        Back to Home'],
-  running: ['Ctrl+C     Request cancellation', '/          Find in timeline', 'v          Reading mode', 'Esc        Stays on the record'],
+  running: ['Ctrl+C     Request cancellation'],
   result: [
     'c          Start comparison when offered',
     'o          Open report.html',
@@ -72,11 +72,6 @@ export function helpLines(page?: string, locale: Locale = 'en'): readonly string
   ] : undefined;
   const runningKeys = page === 'running' ? [
     t(locale, 'helpCancelRun'),
-    '/          Find visible titles in this experiment (not a Home command)',
-    'v          Reading/select mode (pause redraw, disable mouse report)',
-    'Home/End   First record / follow latest',
-    'Tab        Focus expandable groups',
-    'Enter      Next find hit while searching; expand fold when not searching',
   ] : undefined;
   const keys = page === 'home' ? homeKeys : page === 'running' ? runningKeys : scoped;
   return [
