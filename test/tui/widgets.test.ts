@@ -888,8 +888,9 @@ test('history windows long lists around the selection', () => {
   assert.doesNotMatch(text, /experiment-1\s/);
 });
 
-test('result page footer only lists Esc because short labels are clickable', () => {
+test('result page footer lists c during compare gate and Esc otherwise', () => {
   assert.deepEqual(resultHints(), [['Esc', 'Home']]);
+  assert.deepEqual(resultHints('en', true), [['c', 'Generate comparison card'], ['Esc', 'Home']]);
 });
 
 test('failed result shows the recorded failure instead of limitations copy', () => {

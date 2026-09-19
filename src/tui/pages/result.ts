@@ -43,7 +43,8 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
   ], width);
 }
 
-export function resultHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
+export function resultHints(locale: Locale = 'en', comparePending = false): readonly (readonly [string, string])[] {
+  if (comparePending) return [['c', t(locale, 'hintCompare')], ['Esc', t(locale, 'hintHome')]];
   return [['Esc', t(locale, 'hintHome')]];
 }
 

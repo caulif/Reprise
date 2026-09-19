@@ -333,7 +333,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     );
   }
   if (view.page === 'result') {
-    return resultHints(locale);
+    return resultHints(locale, Boolean(view.comparePending));
   }
   if (view.page === 'error') return failureHints(locale);
   return [['b', t(locale, 'hintBack')], ['Ctrl+C', t(locale, 'hintExit')]];

@@ -325,9 +325,9 @@ async function settleRun(
   c.preparePhase = undefined;
   c.prepareDetail = undefined;
   c.message = t(c.locale, 'compareGateBody');
-  c.render(true);
   const runCompare = await new Promise<boolean>((resolve) => {
     c.compareChoice = { resolve };
+    c.render(true);
   });
   if (token !== c.generation) return undefined;
   if (runCompare) {
