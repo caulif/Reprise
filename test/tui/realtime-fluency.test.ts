@@ -131,4 +131,18 @@ describe('realtime fluency caches', () => {
     const after = layoutScrollback(theme, 80, entries, 1, 'en', 'Codex', 8, 0, 0, '00:01', true, 2);
     assert.notDeepEqual(before.lines.slice(0, -1), after.lines.slice(0, -1));
   });
+
+  it('replacing timeline content requires a revision bump to avoid fold cache hits', () => {
+    const expanded = new Set<string>();
+    const first = foldProcessEntries(sampleEntries(), expanded, 5);
+    const replaced: TimelineEntry[] = [
+      { ...sampleEntries()[0]!, title: 'Prompt · Different task', detail: 'Different task' },
+      ...sampleEntries().slice(1),
+    ];
+    const staleHit = foldProcessEntries(replaced, expanded, 5);
+    assert.equal(staleHit, first);
+    const afterBump = foldProcessEntries(replaced, expanded, 6);
+    assert.notEqual(afterBump, first);
+    assert.equal(afterBump[0]?.title, 'Prompt · Different task');
+  });
 });
