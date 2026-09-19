@@ -1,6 +1,7 @@
 import type { ExperimentPreflight } from '../../application/experiment-preflight.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
-import { foldProcessEntries, selectedIndexAfterFold } from '../fold-process.js';
+import { selectedIndexAfterFold } from '../fold-process.js';
+import { projectTimelineView } from '../timeline-view.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import { matchesFilter, renderScrollback } from '../scrollback.js';
@@ -72,6 +73,7 @@ export type RunningModel = {
   readonly runStartedAt?: number;
   readonly expandedFolds?: readonly string[];
   readonly candidateSessionId?: string;
+  readonly sourceTimeline?: readonly TimelineEntry[];
 };
 
 function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string], locale: Locale): string {
@@ -233,7 +235,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const header = [...findBar, ...(findBar.length ? [''] : [])];
   const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
   const expanded = new Set(model.expandedFolds ?? []);
-  const folded = foldProcessEntries(visible, expanded);
+  const folded = projectTimelineView(model.sourceTimeline ?? model.entries, visible, expanded);
   const selectedFolded = selectedIndexAfterFold(visible, folded, visible[selected] ?? model.entries[model.selected]);
   const empty = model.finding && (model.findQuery ?? '').trim() && !visible.length
     ? [theme.style.muted(` ${t(locale, 'findNone')}`)]

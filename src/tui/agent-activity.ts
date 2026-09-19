@@ -3,7 +3,7 @@ import { record, text, type JsonRecord } from '../core/json.js';
 import type { TimelineEntry, TimelineSource } from './timeline.js';
 
 export type AgentLane = 'recovery' | 'controller' | 'comparison';
-export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live' | 'narrate' | 'fold';
+export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live' | 'narrate' | 'fold' | 'thinking';
 export type TimelineVoice = AgentLane | 'candidate';
 
 const INVESTIGATE = new Set(['ls', 'read', 'grep', 'find']);
