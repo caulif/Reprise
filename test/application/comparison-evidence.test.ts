@@ -135,6 +135,48 @@ test("register_evidence seals scratch bytes, emits revision, and accepts new sho
   ));
 });
 
+test("emit failure after persist is retried on dedupe and still records the event", async (t) => {
+  const attemptRoot = await tempAttempt(t, "reprise-b3-emit-retry-");
+  await mkdir(join(attemptRoot, "scratch"), { recursive: true });
+  await writeFile(join(attemptRoot, "scratch", "note.txt"), "retry-me", "utf8");
+  const events: unknown[] = [];
+  let failNextEmit = true;
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-b3-emit",
+    attemptRoot,
+    links: [{ side: "candidate", inspectPath: "candidate/a", shortRef: "ev-01" }],
+    media: [],
+    emitRegistered: async (payload) => {
+      if (failNextEmit) {
+        failNextEmit = false;
+        throw new Error("simulated store.append failure");
+      }
+      assert.equal(Value.Check(ComparisonEvidenceRegisteredPayloadSchema, payload), true);
+      events.push(payload);
+    },
+  });
+
+  const first = await catalog.registerEvidence({
+    relativePath: "note.txt",
+    sourceRefs: ["ev-01"],
+    label: "first",
+  });
+  assert.equal(first.status, "rejected");
+  assert.equal(events.length, 0);
+  assert.ok(catalog.snapshot().links.some((link) => link.origin === "derived_analysis"));
+
+  const second = await catalog.registerEvidence({
+    relativePath: "note.txt",
+    sourceRefs: ["ev-01"],
+    label: "retry",
+  });
+  assert.equal(second.status, "registered");
+  if (second.status !== "registered") return;
+  assert.equal(second.deduplicated, true);
+  assert.equal(events.length, 1);
+  assert.equal((events[0] as { shortRef: string }).shortRef, second.shortRef);
+});
+
 test("duplicate register_evidence with same hash and sources reuses shortRef", async (t) => {
   const attemptRoot = await tempAttempt(t, "reprise-b3-dedupe-");
   await mkdir(join(attemptRoot, "scratch"), { recursive: true });

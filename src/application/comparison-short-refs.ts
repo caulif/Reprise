@@ -1,6 +1,8 @@
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
 
 const SHORT_REF_MAX = 999_999;
+const EVIDENCE_SHORT_REF_RE = /^ev-[0-9]{2,6}$/;
+const MEDIA_SHORT_REF_RE = /^media-[0-9]{2,6}$/;
 
 export function withEvidenceShortRefs(links: readonly ComparisonLinkRecord[]): ComparisonLinkRecord[] {
   return appendEvidenceShortRefs([], links);
@@ -15,22 +17,7 @@ export function appendEvidenceShortRefs(
   existing: readonly ComparisonLinkRecord[],
   incoming: readonly ComparisonLinkRecord[],
 ): ComparisonLinkRecord[] {
-  const used = new Set(existing.flatMap((link) => link.shortRef ? [link.shortRef] : []));
-  let next = nextShortIndex(used, "ev");
-  return incoming.map((link) => {
-    if (link.shortRef && used.has(link.shortRef)) {
-      return { ...link, label: link.label ?? evidenceLabel(link) };
-    }
-    if (link.shortRef && /^ev-[0-9]{2,6}$/.test(link.shortRef) && !used.has(link.shortRef)) {
-      used.add(link.shortRef);
-      next = Math.max(next, parseShortIndex(link.shortRef, "ev") + 1);
-      return { ...link, label: link.label ?? evidenceLabel(link) };
-    }
-    const shortRef = formatShortRef("ev", next);
-    used.add(shortRef);
-    next += 1;
-    return { ...link, shortRef, label: link.label ?? evidenceLabel(link) };
-  });
+  return appendShortRefs("ev", EVIDENCE_SHORT_REF_RE, existing, incoming, (link) => link.label ?? evidenceLabel(link));
 }
 
 /** Append-only: preserve existing shortRefs; assign the next unused number to new items. */
@@ -38,22 +25,7 @@ export function appendMediaShortRefs(
   existing: readonly ComparisonMediaRecord[],
   incoming: readonly ComparisonMediaRecord[],
 ): ComparisonMediaRecord[] {
-  const used = new Set(existing.flatMap((item) => item.shortRef ? [item.shortRef] : []));
-  let next = nextShortIndex(used, "media");
-  return incoming.map((item) => {
-    if (item.shortRef && used.has(item.shortRef)) {
-      return { ...item, label: item.label ?? mediaLabel(item) };
-    }
-    if (item.shortRef && /^media-[0-9]{2,6}$/.test(item.shortRef) && !used.has(item.shortRef)) {
-      used.add(item.shortRef);
-      next = Math.max(next, parseShortIndex(item.shortRef, "media") + 1);
-      return { ...item, label: item.label ?? mediaLabel(item) };
-    }
-    const shortRef = formatShortRef("media", next);
-    used.add(shortRef);
-    next += 1;
-    return { ...item, shortRef, label: item.label ?? mediaLabel(item) };
-  });
+  return appendShortRefs("media", MEDIA_SHORT_REF_RE, existing, incoming, (item) => item.label ?? mediaLabel(item));
 }
 
 export function formatShortRef(prefix: "ev" | "media", index: number): string {
@@ -61,6 +33,35 @@ export function formatShortRef(prefix: "ev" | "media", index: number): string {
     throw new Error(`Short ref index out of range for ${prefix}.`);
   }
   return `${prefix}-${String(index).padStart(2, "0")}`;
+}
+
+export function shortRefsFromLinks(links: readonly { shortRef?: string }[]): string[] {
+  return links.flatMap((link) => (link.shortRef ? [link.shortRef] : []));
+}
+
+function appendShortRefs<T extends { shortRef?: string; label?: string }>(
+  prefix: "ev" | "media",
+  pattern: RegExp,
+  existing: readonly T[],
+  incoming: readonly T[],
+  withLabel: (item: T) => string,
+): T[] {
+  const used = new Set(existing.flatMap((item) => (item.shortRef ? [item.shortRef] : [])));
+  let next = nextShortIndex(used, prefix);
+  return incoming.map((item) => {
+    if (item.shortRef && used.has(item.shortRef)) {
+      return { ...item, label: withLabel(item) };
+    }
+    if (item.shortRef && pattern.test(item.shortRef) && !used.has(item.shortRef)) {
+      used.add(item.shortRef);
+      next = Math.max(next, parseShortIndex(item.shortRef, prefix) + 1);
+      return { ...item, label: withLabel(item) };
+    }
+    const shortRef = formatShortRef(prefix, next);
+    used.add(shortRef);
+    next += 1;
+    return { ...item, shortRef, label: withLabel(item) };
+  });
 }
 
 function nextShortIndex(used: ReadonlySet<string>, prefix: "ev" | "media"): number {

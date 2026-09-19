@@ -1,7 +1,8 @@
 import { mkdir, readFile, realpath, stat } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { sha256, writeAtomic } from "../core/identity.js";
+import { isFsAbsolute, pathContainedBy } from "../core/paths.js";
 import {
   ComparisonEvidenceCatalogSchema,
   ComparisonEvidenceRegisteredPayloadSchema,
@@ -10,10 +11,13 @@ import {
   type ComparisonEvidenceCatalogSnapshot,
   type ComparisonEvidenceOrigin,
   type ComparisonEvidenceRegisteredPayload,
+  type ComparisonEvidenceRegistrationDerivation,
   type ComparisonLinkRecord,
+  type ComparisonMediaDerivation,
   type ComparisonMediaRecord,
   type EventEnvelope,
 } from "../core/schema.js";
+import { isMissing } from "./experiment-helpers.js";
 import { appendEvidenceShortRefs, appendMediaShortRefs } from "./comparison-short-refs.js";
 
 export const MAX_REGISTERED_EVIDENCE_BYTES = 1_048_576;
@@ -57,11 +61,26 @@ type CatalogPersister = {
   lookupToolCall?: (toolCallId: string) => Promise<{ ok: boolean; message?: string }>;
 };
 
+type CommitAppendInput = {
+  kind: "evidence" | "media";
+  origin: ComparisonEvidenceOrigin;
+  sourceRefs: readonly string[];
+  artifactRefs: readonly string[];
+  contentHash: string;
+  inspectPath: string;
+  shortRef: string;
+  derivation?: ComparisonEvidenceRegisteredPayload["derivation"];
+  apply: () => void;
+  rollback: () => void;
+};
+
 export class ComparisonEvidenceCatalog {
   #revision = 0;
   #links: ComparisonLinkRecord[] = [];
   #media: ComparisonMediaRecord[] = [];
   #queue: Promise<unknown> = Promise.resolve();
+  readonly #pendingEmits = new Map<string, ComparisonEvidenceRegisteredPayload>();
+  readonly #emittedShortRefs = new Set<string>();
   readonly #attemptRoot: string;
   readonly #attemptId: string;
   readonly #emitRegistered?: CatalogPersister["emitRegistered"];
@@ -100,7 +119,7 @@ export class ComparisonEvidenceCatalog {
       ...(input.emitRegistered ? { emitRegistered: input.emitRegistered } : {}),
       ...(input.lookupToolCall ? { lookupToolCall: input.lookupToolCall } : {}),
     });
-    await catalog.#persistRevision("seed");
+    await catalog.#persistRevision();
     return catalog;
   }
 
@@ -138,7 +157,7 @@ export class ComparisonEvidenceCatalog {
     record: Omit<ComparisonMediaRecord, "shortRef"> & { shortRef?: string };
     sourceRefs?: readonly string[];
     origin: ComparisonEvidenceOrigin;
-    derivation?: ComparisonMediaRecord["derivation"];
+    derivation?: ComparisonMediaDerivation;
   }, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
     return this.#enqueue(() => this.#registerMediaLocked(input, signal));
   }
@@ -156,24 +175,22 @@ export class ComparisonEvidenceCatalog {
     if (loaded.status === "rejected") return loaded;
     const { bytes } = loaded;
     const contentHash = sha256(bytes);
-    const dedupeKey = evidenceDedupeKey({
-      contentHash,
-      sourceRefs: input.sourceRefs,
-      origin: "derived_analysis",
-    });
+    const sourceRefs = [...input.sourceRefs];
+    const dedupeKey = evidenceDedupeKey({ contentHash, sourceRefs, origin: "derived_analysis" });
     const existing = this.#links.find((link) => link.contentHash === contentHash
       && link.origin === "derived_analysis"
-      && sameStringSet(link.sourceRefs ?? [], input.sourceRefs));
+      && sameStringSet(link.sourceRefs ?? [], sourceRefs));
     if (existing?.shortRef) {
-      return {
-        status: "registered",
-        revision: this.#revision,
+      return this.#finishExistingRegistration({
+        kind: "evidence",
         shortRef: existing.shortRef,
         contentHash,
         inspectPath: existing.inspectPath,
         origin: "derived_analysis",
-        deduplicated: true,
-      };
+        sourceRefs,
+        artifactRefs: [existing.inspectPath],
+        derivation: registrationDerivation(input, dedupeKey),
+      });
     }
 
     const inspectPath = `evidence/derived/${contentHash.slice(0, 16)}`;
@@ -185,13 +202,194 @@ export class ComparisonEvidenceCatalog {
       return { status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) };
     }
 
-    return this.#appendDerivedEvidenceLink({
-      input,
-      bytes,
+    const draft: ComparisonLinkRecord = {
+      side: "derived",
+      inspectPath,
+      reportHref: inspectPath,
+      mediaType: guessMediaType(input.relativePath, bytes),
+      byteLength: bytes.byteLength,
+      label: input.label.trim() || "derived analysis",
+      origin: "derived_analysis",
+      contentHash,
+      sourceRefs,
+    };
+    if (!Value.Check(ComparisonLinksSchema, [draft])) {
+      return { status: "rejected", code: "io_failed", message: "Derived evidence link failed schema validation." };
+    }
+    const assigned = appendEvidenceShortRefs(this.#links, [draft])[0];
+    if (!assigned?.shortRef) {
+      return { status: "rejected", code: "io_failed", message: "Failed to allocate evidence shortRef." };
+    }
+    const previous = this.#links;
+    return this.#commitAppend({
+      kind: "evidence",
+      origin: "derived_analysis",
+      sourceRefs,
+      artifactRefs: [inspectPath],
       contentHash,
       inspectPath,
-      dedupeKey,
+      shortRef: assigned.shortRef,
+      derivation: registrationDerivation(input, dedupeKey),
+      apply: () => {
+        this.#links = [...previous, assigned];
+      },
+      rollback: () => {
+        this.#links = previous;
+      },
     });
+  }
+
+  async #registerMediaLocked(input: {
+    record: Omit<ComparisonMediaRecord, "shortRef"> & { shortRef?: string };
+    sourceRefs?: readonly string[];
+    origin: ComparisonEvidenceOrigin;
+    derivation?: ComparisonMediaDerivation;
+  }, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
+    if (signal?.aborted) return { status: "rejected", code: "cancelled", message: "Registration cancelled." };
+    const sourceRefs = [...(input.sourceRefs ?? [])];
+    for (const ref of sourceRefs) {
+      if (!this.#hasSourceRef(ref)) {
+        return { status: "rejected", code: "missing_source", message: `Unknown sourceRef: ${ref}` };
+      }
+    }
+    const contentHash = input.record.contentHash;
+    if (!contentHash) {
+      return { status: "rejected", code: "io_failed", message: "Media registration requires contentHash." };
+    }
+    const derivation = input.derivation ?? input.record.derivation;
+    const existing = this.#media.find((item) =>
+      item.contentHash === contentHash
+      && item.side === input.record.side
+      && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
+    if (existing?.shortRef) {
+      return this.#finishExistingRegistration({
+        kind: "media",
+        shortRef: existing.shortRef,
+        contentHash,
+        inspectPath: existing.inspectPath,
+        origin: input.origin,
+        sourceRefs,
+        artifactRefs: [existing.reportHref],
+        ...(derivation ? { derivation } : {}),
+      });
+    }
+
+    const draft: ComparisonMediaRecord = {
+      ...input.record,
+      contentHash,
+      ...(derivation ? { derivation } : {}),
+    };
+    if (!Value.Check(ComparisonMediaRecordSchema, draft)) {
+      return { status: "rejected", code: "io_failed", message: "Media record failed schema validation." };
+    }
+    const assigned = appendMediaShortRefs(this.#media, [draft])[0];
+    if (!assigned?.shortRef) {
+      return { status: "rejected", code: "io_failed", message: "Failed to allocate media shortRef." };
+    }
+    const previous = this.#media;
+    return this.#commitAppend({
+      kind: "media",
+      origin: input.origin,
+      sourceRefs,
+      artifactRefs: [assigned.reportHref],
+      contentHash,
+      inspectPath: assigned.inspectPath,
+      shortRef: assigned.shortRef,
+      ...(derivation ? { derivation } : {}),
+      apply: () => {
+        this.#media = [...previous, assigned];
+      },
+      rollback: () => {
+        this.#media = previous;
+      },
+    });
+  }
+
+  async #finishExistingRegistration(input: {
+    kind: "evidence" | "media";
+    shortRef: string;
+    contentHash: string;
+    inspectPath: string;
+    origin: ComparisonEvidenceOrigin;
+    sourceRefs: readonly string[];
+    artifactRefs: readonly string[];
+    derivation?: ComparisonEvidenceRegisteredPayload["derivation"];
+  }): Promise<RegisterEvidenceResult> {
+    if (!this.#emittedShortRefs.has(input.shortRef)) {
+      const pending = this.#pendingEmits.get(input.shortRef) ?? {
+        schemaVersion: 1 as const,
+        attemptId: this.#attemptId,
+        revision: this.#revision,
+        shortRef: input.shortRef,
+        kind: input.kind,
+        origin: input.origin,
+        contentHash: input.contentHash,
+        sourceRefs: [...input.sourceRefs],
+        artifactRefs: [...input.artifactRefs],
+        ...(input.derivation ? { derivation: input.derivation } : {}),
+      };
+      this.#pendingEmits.set(input.shortRef, pending);
+      await this.#emit(pending);
+      this.#pendingEmits.delete(input.shortRef);
+      this.#emittedShortRefs.add(input.shortRef);
+      return {
+        status: "registered",
+        revision: pending.revision,
+        shortRef: input.shortRef,
+        contentHash: input.contentHash,
+        inspectPath: input.inspectPath,
+        origin: input.origin,
+        deduplicated: true,
+      };
+    }
+    return {
+      status: "registered",
+      revision: this.#revision,
+      shortRef: input.shortRef,
+      contentHash: input.contentHash,
+      inspectPath: input.inspectPath,
+      origin: input.origin,
+      deduplicated: true,
+    };
+  }
+
+  async #commitAppend(input: CommitAppendInput): Promise<RegisterEvidenceResult> {
+    input.apply();
+    try {
+      await this.#persistRevision();
+    } catch (error) {
+      input.rollback();
+      return { status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) };
+    }
+    const payload: ComparisonEvidenceRegisteredPayload = {
+      schemaVersion: 1,
+      attemptId: this.#attemptId,
+      revision: this.#revision,
+      shortRef: input.shortRef,
+      kind: input.kind,
+      origin: input.origin,
+      contentHash: input.contentHash,
+      sourceRefs: [...input.sourceRefs],
+      artifactRefs: [...input.artifactRefs],
+      ...(input.derivation ? { derivation: input.derivation } : {}),
+    };
+    this.#pendingEmits.set(input.shortRef, payload);
+    try {
+      await this.#emit(payload);
+    } catch (error) {
+      return { status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) };
+    }
+    this.#pendingEmits.delete(input.shortRef);
+    this.#emittedShortRefs.add(input.shortRef);
+    return {
+      status: "registered",
+      revision: this.#revision,
+      shortRef: input.shortRef,
+      contentHash: input.contentHash,
+      inspectPath: input.inspectPath,
+      origin: input.origin,
+      deduplicated: false,
+    };
   }
 
   async #validateRegisterPreconditions(input: RegisterEvidenceInput): Promise<RegisterEvidenceResult | undefined> {
@@ -213,129 +411,6 @@ export class ComparisonEvidenceCatalog {
     };
   }
 
-  async #appendDerivedEvidenceLink(input: {
-    input: RegisterEvidenceInput;
-    bytes: Buffer;
-    contentHash: string;
-    inspectPath: string;
-    dedupeKey: string;
-  }): Promise<RegisterEvidenceResult> {
-    const draft: ComparisonLinkRecord = {
-      side: "derived",
-      inspectPath: input.inspectPath,
-      reportHref: input.inspectPath,
-      mediaType: guessMediaType(input.input.relativePath, input.bytes),
-      byteLength: input.bytes.byteLength,
-      label: input.input.label.trim() || "derived analysis",
-      origin: "derived_analysis",
-      contentHash: input.contentHash,
-      sourceRefs: [...input.input.sourceRefs],
-    };
-    if (!Value.Check(ComparisonLinksSchema, [draft])) {
-      return { status: "rejected", code: "io_failed", message: "Derived evidence link failed schema validation." };
-    }
-    const assigned = appendEvidenceShortRefs(this.#links, [draft])[0];
-    if (!assigned?.shortRef) {
-      return { status: "rejected", code: "io_failed", message: "Failed to allocate evidence shortRef." };
-    }
-    this.#links = [...this.#links, assigned];
-    await this.#persistRevision("register");
-    const shortRef = assigned.shortRef;
-    await this.#emit({
-      schemaVersion: 1,
-      attemptId: this.#attemptId,
-      revision: this.#revision,
-      shortRef,
-      kind: "evidence",
-      origin: "derived_analysis",
-      contentHash: input.contentHash,
-      sourceRefs: [...input.input.sourceRefs],
-      artifactRefs: [input.inspectPath],
-      derivation: {
-        relativePath: input.input.relativePath,
-        dedupeKey: input.dedupeKey,
-        ...(input.input.toolCallId ? { toolCallId: input.input.toolCallId } : {}),
-      },
-    });
-    return {
-      status: "registered",
-      revision: this.#revision,
-      shortRef,
-      contentHash: input.contentHash,
-      inspectPath: input.inspectPath,
-      origin: "derived_analysis",
-      deduplicated: false,
-    };
-  }
-
-  async #registerMediaLocked(input: {
-    record: Omit<ComparisonMediaRecord, "shortRef"> & { shortRef?: string };
-    sourceRefs?: readonly string[];
-    origin: ComparisonEvidenceOrigin;
-    derivation?: ComparisonMediaRecord["derivation"];
-  }, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
-    if (signal?.aborted) return { status: "rejected", code: "cancelled", message: "Registration cancelled." };
-    const sourceRefs = input.sourceRefs ?? [];
-    for (const ref of sourceRefs) {
-      if (!this.#hasSourceRef(ref)) {
-        return { status: "rejected", code: "missing_source", message: `Unknown sourceRef: ${ref}` };
-      }
-    }
-    const contentHash = input.record.contentHash;
-    if (contentHash) {
-      const existing = this.#media.find((item) =>
-        item.contentHash === contentHash
-        && item.side === input.record.side
-        && JSON.stringify(item.derivation ?? null) === JSON.stringify(input.derivation ?? input.record.derivation ?? null));
-      if (existing?.shortRef) {
-        return {
-          status: "registered",
-          revision: this.#revision,
-          shortRef: existing.shortRef,
-          contentHash,
-          inspectPath: existing.inspectPath,
-          origin: input.origin,
-          deduplicated: true,
-        };
-      }
-    }
-    const draft: ComparisonMediaRecord = {
-      ...input.record,
-      ...(input.derivation ? { derivation: input.derivation } : {}),
-    };
-    if (!Value.Check(ComparisonMediaRecordSchema, draft)) {
-      return { status: "rejected", code: "io_failed", message: "Media record failed schema validation." };
-    }
-    const assigned = appendMediaShortRefs(this.#media, [draft])[0];
-    if (!assigned?.shortRef) {
-      return { status: "rejected", code: "io_failed", message: "Failed to allocate media shortRef." };
-    }
-    this.#media = [...this.#media, assigned];
-    await this.#persistRevision("register-media");
-    const shortRef = assigned.shortRef;
-    await this.#emit({
-      schemaVersion: 1,
-      attemptId: this.#attemptId,
-      revision: this.#revision,
-      shortRef,
-      kind: "media",
-      origin: input.origin,
-      contentHash: contentHash ?? sha256(Buffer.from(assigned.ref)),
-      sourceRefs: [...sourceRefs],
-      artifactRefs: [assigned.reportHref],
-      ...(assigned.derivation ? { derivation: { ...assigned.derivation } } : {}),
-    });
-    return {
-      status: "registered",
-      revision: this.#revision,
-      shortRef,
-      contentHash: contentHash ?? "",
-      inspectPath: assigned.inspectPath,
-      origin: input.origin,
-      deduplicated: false,
-    };
-  }
-
   #hasSourceRef(ref: string): boolean {
     if (this.#links.some((link) => link.shortRef === ref || link.evidenceRef === ref || link.inspectPath === ref)) return true;
     if (this.#media.some((item) => item.shortRef === ref || item.ref === ref || item.inspectPath === ref)) return true;
@@ -348,7 +423,7 @@ export class ComparisonEvidenceCatalog {
     return run;
   }
 
-  async #persistRevision(_reason: string): Promise<void> {
+  async #persistRevision(): Promise<void> {
     this.#revision += 1;
     const snap = this.snapshot();
     const catalogRoot = join(this.#attemptRoot, "facts", "evidence-catalog");
@@ -356,8 +431,8 @@ export class ComparisonEvidenceCatalog {
     const revName = `rev-${this.#revision}.json`;
     const body = `${JSON.stringify(snap, null, 2)}\n`;
     await writeAtomic(join(catalogRoot, revName), body);
-    await writeAtomic(join(catalogRoot, "CURRENT"), `${revName}\n`);
     await this.#writeDerivedFacts(snap);
+    await writeAtomic(join(catalogRoot, "CURRENT"), `${revName}\n`);
   }
 
   async #writeDerivedFacts(snap: ComparisonCatalogSnapshot): Promise<void> {
@@ -411,6 +486,33 @@ export function lookupCompletedToolCall(
   return { ok: true };
 }
 
+export function mediaDerivationKey(derivation: ComparisonMediaDerivation | undefined): string {
+  if (!derivation) return "";
+  const viewport = derivation.viewport
+    ? `${derivation.viewport.width}x${derivation.viewport.height}@${derivation.viewport.scale}`
+    : "";
+  const samples = derivation.sampleTimesMs ? [...derivation.sampleTimesMs].join(",") : "";
+  return [
+    derivation.kind,
+    derivation.rendererVersion ?? "",
+    viewport,
+    samples,
+    derivation.capturedAt ?? "",
+  ].join("|");
+}
+
+function registrationDerivation(
+  input: RegisterEvidenceInput,
+  dedupeKey: string,
+): ComparisonEvidenceRegistrationDerivation {
+  return {
+    kind: "register_evidence",
+    relativePath: input.relativePath,
+    dedupeKey,
+    ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
+  };
+}
+
 async function readScratchEvidenceBytes(
   absolute: string,
 ): Promise<{ status: "ok"; bytes: Buffer } | RegisterEvidenceResult & { status: "rejected" }> {
@@ -440,34 +542,49 @@ async function resolveScratchFile(
   if (!normalized || normalized.includes("\0") || normalized.split("/").some((part) => part === ".." || part === "")) {
     return { status: "rejected", code: "path_invalid", message: "relativePath must be a relative scratch path without .. segments." };
   }
-  if (normalized.startsWith("scratch/")) {
-    // allow scratch/... or path relative to scratch/
-  } else if (normalized.includes(":")) {
+  if (isFsAbsolute(normalized) || normalized.includes(":")) {
     return { status: "rejected", code: "path_invalid", message: "absolute or drive paths are not allowed." };
   }
+  const underScratch = normalized.startsWith("scratch/") ? normalized.slice("scratch/".length) : normalized;
   const scratchRoot = resolve(attemptRoot, "scratch");
-  const candidate = resolve(scratchRoot, normalized.startsWith("scratch/") ? normalized.slice("scratch/".length) : normalized);
-  if (!isInsideRoot(scratchRoot, candidate)) {
+  const candidate = resolve(scratchRoot, underScratch);
+  if (!pathContainedBy(scratchRoot, candidate)) {
     return { status: "rejected", code: "path_escape", message: "relativePath escapes scratch/." };
   }
+  let realScratch: string;
   try {
-    const realScratch = await realpath(scratchRoot).catch(async () => {
+    realScratch = await realpath(scratchRoot);
+  } catch (error) {
+    // Scratch may not exist yet on a fresh attempt; create it then resolve.
+    // Any other failure (EACCES, symlink loop) is still a hard reject below.
+    if (!isMissing(error)) {
+      return { status: "rejected", code: "path_invalid", message: error instanceof Error ? error.message : String(error) };
+    }
+    try {
       await mkdir(scratchRoot, { recursive: true });
-      return realpath(scratchRoot);
-    });
+      realScratch = await realpath(scratchRoot);
+    } catch (createError) {
+      return {
+        status: "rejected",
+        code: "path_invalid",
+        message: createError instanceof Error ? createError.message : String(createError),
+      };
+    }
+  }
+  try {
     const realFile = await realpath(candidate);
-    if (!isInsideRoot(realScratch, realFile)) {
+    if (!pathContainedBy(realScratch, realFile)) {
       return { status: "rejected", code: "path_escape", message: "resolved path escapes scratch/ (symlink)." };
     }
     return { status: "ok", absolute: realFile };
-  } catch {
-    return { status: "rejected", code: "path_invalid", message: "Evidence file was not found under scratch/." };
+  } catch (error) {
+    // realpath fails when the file is missing, or when an intermediate symlink is broken.
+    // Callers treat both as an invalid scratch evidence path; we never invent bytes.
+    if (isMissing(error)) {
+      return { status: "rejected", code: "path_invalid", message: "Evidence file was not found under scratch/." };
+    }
+    return { status: "rejected", code: "path_invalid", message: error instanceof Error ? error.message : String(error) };
   }
-}
-
-function isInsideRoot(root: string, target: string): boolean {
-  const rel = relative(root, target);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !rel.startsWith("../"));
 }
 
 function sameStringSet(a: readonly string[], b: readonly string[]): boolean {

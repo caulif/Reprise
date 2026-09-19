@@ -235,6 +235,13 @@ export const ComparisonEvidenceCatalogSchema = Type.Object({
   media: Type.Array(ComparisonMediaRecordSchema),
 });
 export type ComparisonEvidenceCatalogSnapshot = Static<typeof ComparisonEvidenceCatalogSchema>;
+export const ComparisonEvidenceRegistrationDerivationSchema = Type.Object({
+  kind: Type.Literal("register_evidence"),
+  relativePath: Type.String({ minLength: 1, maxLength: 512 }),
+  dedupeKey: Type.String({ minLength: 1, maxLength: 512 }),
+  toolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+});
+export type ComparisonEvidenceRegistrationDerivation = Static<typeof ComparisonEvidenceRegistrationDerivationSchema>;
 export const ComparisonEvidenceRegisteredPayloadSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   attemptId: Id,
@@ -245,7 +252,10 @@ export const ComparisonEvidenceRegisteredPayloadSchema = Type.Object({
   contentHash: Hash,
   sourceRefs: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 32 }),
   artifactRefs: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 16 }),
-  derivation: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  derivation: Type.Optional(Type.Union([
+    ComparisonEvidenceRegistrationDerivationSchema,
+    ComparisonMediaDerivationSchema,
+  ])),
 });
 export type ComparisonEvidenceRegisteredPayload = Static<typeof ComparisonEvidenceRegisteredPayloadSchema>;
 export {
@@ -257,7 +267,7 @@ export {
   ComparisonReportModelSchema,
   ComparisonShortRefSchema,
 };
-export type { ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+export type { ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
 export {
   ModelInputCapabilitiesSchema,
   modelAcceptsImage,

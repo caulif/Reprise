@@ -13,7 +13,8 @@ Comparison 简报一次性写出 links/media 后，`compare()` 开头拍下的�
 - 新增工具 `register_evidence`：只接受 scratch 相对路径与已有 sourceRefs；Host 强制 `origin=derived_analysis` / `side=derived`，禁止 Agent 自填历史原件身份。可选 `toolCallId` 必须属于本 attempt 且已 `agent.tool_completed`。
 - `render_artifact` / `preview_report` 先以 `capability_unavailable` 占位，渲染与预览体由后续包实现；工具名进入 Comparison 工具面。
 - `ComparisonAgent.compare` 通过同进程 `getEvidenceCatalog()` 读取当前白名单；该 getter 不进入 `comparison.requested` 持久化 JSON。`assertComparisonResult` 与 `enforcePublishedReport` 使用最终成功 revision。
-- 成功注册写入事件 `comparison.evidence_registered`（attemptId、revision、shortRef、hash、source/artifact refs、派生参数）；不含媒体 base64 或私人绝对路径。
+- 成功注册写入事件 `comparison.evidence_registered`（attemptId、revision、shortRef、hash、source/artifact refs、派生参数）；不含媒体 base64 或私人绝对路径。mutate/persist 后若 emit 失败，同内容重试必须补发事件，不得因 dedupe 跳过。
+- Catalog 落盘顺序为 `rev-N.json` → facts 镜像 → 原子 `CURRENT`。
 - Link `side` 扩展 `host` | `derived`；media 可带 `sourceRef` / `contentHash` / `derivation`。`available=true` 不单独构成向模型发送图片的授权。
 
 ## 备选方案
@@ -34,6 +35,6 @@ Comparison 简报一次性写出 links/media 后，`compare()` 开头拍下的�
 
 ## 验证
 
-- `test/application/comparison-evidence.test.ts`：append-only 短引用；注册后 `ev-03` 可 assert；未知 `ev-999999` 拒绝；并发注册不丢；路径穿越 / 伪造 toolCallId / 超限失败；同 hash+参数不去重错 side。
+- `test/application/comparison-evidence.test.ts`：append-only 短引用；注册后 `ev-03` 可 assert；未知 `ev-999999` 拒绝；并发注册不丢；路径穿越 / 伪造 toolCallId / 超限失败；同 hash+参数不去重错 side；emit 失败后重试仍写出 `comparison.evidence_registered`。
 - `npm run build` 后 `node --test dist/test/application/comparison-evidence.test.js`。
 - 相关源码变更批次结束跑 `npm run check`。
