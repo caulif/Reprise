@@ -9,7 +9,7 @@ export type LinkValueHit = { readonly x0: number; readonly x1: number };
 export type KvLinkBlock = { readonly lines: readonly string[]; readonly hits: readonly (LinkValueHit | undefined)[] };
 
 /** 1-based column where the kv value starts in a body line (` ${key} ${value}`). */
-export function kvLinkValueStart(labelWidth: number): number {
+function kvLinkValueStart(labelWidth: number): number {
   return labelWidth + 3;
 }
 
@@ -18,7 +18,7 @@ export function panelBodyChrome(theme: Theme): { readonly row: number; readonly 
   return { row: 1, col: theme.framed ? 1 : 3 };
 }
 
-export function panelInnerWidth(theme: Theme, width: number): number {
+function panelInnerWidth(theme: Theme, width: number): number {
   return Math.max(1, width - (theme.framed ? 2 : 3));
 }
 
