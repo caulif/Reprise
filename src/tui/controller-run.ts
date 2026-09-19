@@ -8,6 +8,7 @@ import { listSummaryIncomplete, packDefaultCandidate, runtimePacks } from '../ap
 import { errorMessage } from './format.js';
 import { t, type Locale } from './i18n.js';
 import { projectLabel } from './pages/intake.js';
+import { bumpTimelineRevision } from './timeline-revision.js';
 import { appendTimelineEntries, projectTimelineEvent } from './timeline.js';
 import { syncTimelineSelection } from './timeline-read.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
@@ -143,8 +144,8 @@ function startRunClock(c: ControllerHandle): void {
   stopRunClock(c);
   c.runStartedAt = Date.now();
   c.runClock = setInterval(() => {
-    if (c.page === 'running') c.render();
-  }, 400);
+    if (c.page === 'running') c.scheduleTimelineRender();
+  }, 250);
   c.runClock.unref?.();
 }
 
@@ -165,7 +166,7 @@ function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
     c.prepareDetail = undefined;
   }
   noteRunDiagnostics(c, event);
-  appendTimelineEntries(c.timeline, projectTimelineEvent(event));
+  appendTimelineEntries(c.timeline, projectTimelineEvent(event), c);
   syncTimelineSelection(c);
   if (c.page === 'running') c.scheduleTimelineRender();
 }
@@ -232,6 +233,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     await discardRecovery(c);
     c.timeline = [];
     c.timelineSelected = 0;
+    bumpTimelineRevision(c);
     c.timelineFollowing = true;
     resetRunDiagnostics(c);
     c.runPhase = 'recovery';

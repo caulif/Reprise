@@ -1,8 +1,28 @@
 import { compact, type TimelineFilter } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
+import { timelineIdentity } from './timeline-read.js';
+import { timelineEntriesKey } from './timeline-revision.js';
 import { isNowRow, type TimelineEntry } from './timeline.js';
 import { pad, wrapBodyLine } from './widgets.js';
+
+const MAX_ENTRY_PAINT_CACHE = 512;
+const entryPaintCache = new Map<string, string[]>();
+let scrollbackBodyCache: { key: string; body: ScrollbackBody } | undefined;
+
+type ScrollbackBody = {
+  readonly lines: string[];
+  readonly hits: CanvasHit[];
+  readonly selectedAt: number;
+  readonly behind: number;
+  readonly live?: TimelineEntry;
+};
+
+/** Test hook: reset memoized scrollback paint state between cases. */
+export function resetScrollbackLayoutCache(): void {
+  entryPaintCache.clear();
+  scrollbackBodyCache = undefined;
+}
 
 export type Voice = 'input' | 'product' | 'summary' | 'controller';
 
@@ -88,8 +108,58 @@ export function renderScrollback(
   readingOffset = 0,
   elapsed = '00:00',
   following = true,
+  timelineRevision = -1,
 ): string[] {
-  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed, following).lines;
+  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed, following, timelineRevision).lines;
+}
+
+/** Fold expand/collapse rewrites the painted entry list without bumping timelineRevision. */
+function layoutScrollbackBody(
+  theme: Theme,
+  width: number,
+  entries: readonly TimelineEntry[],
+  selected: number,
+  locale: Locale,
+  product: string,
+  tick: number,
+  timelineRevision: number,
+): ScrollbackBody {
+  const key = timelineRevision >= 0
+    ? `${timelineRevision}:${selected}:${width}:${locale}:${product}:${timelineEntriesKey(entries)}`
+    : '';
+  const cached = scrollbackBodyCache;
+  if (key && cached?.key === key) return cached.body;
+  const lines: string[] = [];
+  const hits: CanvasHit[] = [];
+  let selectedAt = 0;
+  let behind = 0;
+  const seenInput = new Set<string>();
+  for (const [index, entry] of entries.entries()) {
+    if (!voiceOf(entry)) continue;
+    if (isNowRow(entry)) {
+      if (index === selected) selectedAt = lines.length;
+      continue;
+    }
+    if (voiceOf(entry) === 'input') {
+      const inputKey = inputText(entry).replace(/\s+/g, ' ').trim();
+      if (inputKey && seenInput.has(inputKey)) continue;
+      if (inputKey) seenInput.add(inputKey);
+    }
+    const painted = paintEntryCached(theme, entry, index === selected, width, locale, product, tick, timelineRevision);
+    if (index === selected) selectedAt = lines.length;
+    if (index > selected) behind += 1;
+    hits.push({
+      y: lines.length,
+      index,
+      fold: entry.kind === 'fold' || entry.title.startsWith('▸'),
+      ...(entry.itemId ? { itemId: entry.itemId } : {}),
+    });
+    lines.push(...painted);
+  }
+  const live = visibleNow(entries);
+  const body: ScrollbackBody = live ? { lines, hits, selectedAt, behind, live } : { lines, hits, selectedAt, behind };
+  if (key) scrollbackBodyCache = { key, body };
+  return body;
 }
 
 export function layoutScrollback(
@@ -104,35 +174,9 @@ export function layoutScrollback(
   readingOffset = 0,
   elapsed = '00:00',
   following = true,
+  timelineRevision = -1,
 ): { lines: string[]; hits: CanvasHit[]; selectedAt: number; start: number; total: number; chrome: number } {
-  const lines: string[] = [];
-  const hits: CanvasHit[] = [];
-  let selectedAt = 0;
-  let behind = 0;
-  const seenInput = new Set<string>();
-  for (const [index, entry] of entries.entries()) {
-    if (!voiceOf(entry)) continue;
-    if (isNowRow(entry)) {
-      if (index === selected) selectedAt = lines.length;
-      continue;
-    }
-    if (voiceOf(entry) === 'input') {
-      const key = inputText(entry).replace(/\s+/g, ' ').trim();
-      if (key && seenInput.has(key)) continue;
-      if (key) seenInput.add(key);
-    }
-    const painted = paintEntry(theme, entry, index === selected, width, locale, product, tick);
-    if (index === selected) selectedAt = lines.length;
-    if (index > selected) behind += 1;
-    hits.push({
-      y: lines.length,
-      index,
-      fold: entry.kind === 'fold' || entry.title.startsWith('▸'),
-      ...(entry.itemId ? { itemId: entry.itemId } : {}),
-    });
-    lines.push(...painted);
-  }
-  const live = visibleNow(entries);
+  const { lines, hits, selectedAt, behind, live } = layoutScrollbackBody(theme, width, entries, selected, locale, product, tick, timelineRevision);
   // Only paint the live now-row when one exists. A missing now-row must not fall back
   // to "<product> · working" — that falsely lingers on the result page after terminal outcome.
   const status = live
@@ -200,6 +244,27 @@ export function hitAtBodyRow(hits: readonly CanvasHit[], bodyRow: number): Canva
     else break;
   }
   return hit;
+}
+
+function paintEntryCached(
+  theme: Theme,
+  entry: TimelineEntry,
+  selected: boolean,
+  width: number,
+  locale: Locale,
+  product: string,
+  tick: number,
+  timelineRevision: number,
+): string[] {
+  const pulse = Math.floor(tick / 400);
+  if (timelineRevision < 0) return paintEntry(theme, entry, selected, width, locale, product, tick);
+  const cacheKey = `${timelineRevision}:${timelineIdentity(entry)}:${entry.sequence}:${selected}:${width}:${locale}:${product}:${pulse}:${entry.detail?.length ?? 0}:${entry.title.length}:${entry.kind ?? ''}`;
+  const cached = entryPaintCache.get(cacheKey);
+  if (cached) return cached;
+  const painted = paintEntry(theme, entry, selected, width, locale, product, tick);
+  if (entryPaintCache.size >= MAX_ENTRY_PAINT_CACHE) entryPaintCache.clear();
+  entryPaintCache.set(cacheKey, painted);
+  return painted;
 }
 
 function paintEntry(

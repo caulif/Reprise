@@ -18,8 +18,9 @@ export function projectTimelineView(
   full: readonly TimelineEntry[],
   visible: readonly TimelineEntry[],
   expandedIds: ReadonlySet<string>,
+  timelineRevision = -1,
 ): TimelineEntry[] {
-  const folded = foldProcessEntries(visible, expandedIds);
+  const folded = foldProcessEntries(visible, expandedIds, timelineRevision);
   return injectActiveThinkingRows(folded, full);
 }
 

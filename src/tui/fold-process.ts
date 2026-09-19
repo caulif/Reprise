@@ -1,5 +1,6 @@
 import { projectAssistantVisible, uniqueLeafNames } from './agent-activity.js';
 import { timelineIdentity } from './timeline-read.js';
+import { expandedFoldsKey, timelineEntriesKey } from './timeline-revision.js';
 import type { TimelineEntry } from './timeline.js';
 
 export { projectAssistantVisible };
@@ -26,10 +27,35 @@ export function splitRunEntries(entries: readonly TimelineEntry[]): { left: Time
   return { left, right };
 }
 
+let foldProcessCache: {
+  timelineRevision: number;
+  expanded: string;
+  entriesKey: string;
+  result: TimelineEntry[];
+} | undefined;
+
+/** Test hook: reset memoized fold output between cases. */
+export function resetFoldProcessCache(): void {
+  foldProcessCache = undefined;
+}
+
 export function foldProcessEntries(
   entries: readonly TimelineEntry[],
   expandedIds: ReadonlySet<string>,
+  timelineRevision = -1,
 ): TimelineEntry[] {
+  const expanded = expandedFoldsKey([...expandedIds]);
+  const entriesKey = timelineEntriesKey(entries);
+  const cached = foldProcessCache;
+  if (
+    timelineRevision >= 0
+    && cached
+    && cached.timelineRevision === timelineRevision
+    && cached.expanded === expanded
+    && cached.entriesKey === entriesKey
+  ) {
+    return cached.result;
+  }
   const turns = groupTurns(entries);
   const out: TimelineEntry[] = [];
   const unfoldFrom = Math.max(0, turns.length - 2);
@@ -58,7 +84,9 @@ export function foldProcessEntries(
       count: turn.length,
     });
   }
-  return expandFoldLeaves(out, expandedIds);
+  const result = expandFoldLeaves(out, expandedIds);
+  if (timelineRevision >= 0) foldProcessCache = { timelineRevision, expanded, entriesKey, result };
+  return result;
 }
 
 export function coveringFoldIds(entries: readonly TimelineEntry[], target: TimelineEntry): string[] {

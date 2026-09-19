@@ -2,6 +2,7 @@ import { readExperimentEvents } from "../application/experiment-event-read.js";
 import { readLocalHistory, type HistoryCase, type HistoryExperiment } from "./local-history.js";
 import { handleHistoryInput } from "./history-input.js";
 import { t, type Locale } from "./i18n.js";
+import { bumpTimelineRevision } from "./timeline-revision.js";
 import { projectPersistedTimeline, type TimelineEntry } from "./timeline.js";
 import type { WorkbenchView } from "./workbench.js";
 
@@ -22,6 +23,7 @@ export type HistoryPanel = {
   historyDetail: HistoryCase | HistoryExperiment | undefined;
   recentExperiment: HistoryExperiment | undefined;
   timeline: TimelineEntry[];
+  timelineRevision: number;
   timelineSelected: number;
   timelineFollowing: boolean;
   historyItems(): readonly (HistoryCase | HistoryExperiment)[];
@@ -71,6 +73,7 @@ async function openHistoryExperiment(c: HistoryPanel, item: HistoryExperiment): 
     if (token !== c.generation) return;
     c.historyDetail = item;
     c.timeline = projectPersistedTimeline(page.events);
+    bumpTimelineRevision(c);
     const visible = c.visibleTimeline();
     c.timelineSelected = Math.max(0, visible.length - 1);
     c.timelineFollowing = true;

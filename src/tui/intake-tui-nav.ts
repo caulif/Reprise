@@ -14,6 +14,7 @@ import { mouseReportingSequence } from "./terminal-guard.js";
 import { createTheme } from "./theme.js";
 import { filterTraceForSurface, type TimelineEntry } from "./timeline.js";
 import { collapseEndedThinkFolds } from "./fold-process.js";
+import { expandedFoldsKey } from "./timeline-revision.js";
 import { type WorkbenchView } from "./workbench.js";
 type Page = import("./workbench.js").WorkbenchView["page"];
 
@@ -53,9 +54,23 @@ export function IntakeTui_scheduleTimelineRender(this: IntakeTui): void {
   }
 
 export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEntry[] {
-    const filter = TIMELINE_FILTERS[this.timelineFilterIndex] ?? "ALL";
+    const filterIndex = this.timelineFilterIndex;
+    const filter = TIMELINE_FILTERS[filterIndex] ?? "ALL";
     const visible = this.timeline.filter((entry) => !entry.hidden && matchesFilter(entry, filter));
     this.expandedFolds = collapseEndedThinkFolds(visible, this.expandedFolds);
+    const foldsKey = expandedFoldsKey(this.expandedFolds);
+    const cache = this.visibleTimelineCache;
+    if (
+      cache
+      && cache.timelineRevision === this.timelineRevision
+      && cache.filterIndex === filterIndex
+      && cache.page === this.page
+      && cache.preparePhase === this.preparePhase
+      && cache.runPhase === this.runPhase
+      && cache.expandedFoldsKey === foldsKey
+    ) {
+      return cache.result;
+    }
     const comparing = this.preparePhase === "compare";
     const recovering = this.runPhase === "recovery" || this.preparePhase === "check";
     const surface = this.page === "candidate-product" || this.page === "candidate-model"
@@ -69,7 +84,17 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
             : this.page === "running"
               ? "candidate"
               : "picker";
-    return filterTraceForSurface(visible, surface);
+    const result = filterTraceForSurface(visible, surface);
+    this.visibleTimelineCache = {
+      timelineRevision: this.timelineRevision,
+      filterIndex,
+      page: this.page,
+      preparePhase: this.preparePhase,
+      runPhase: this.runPhase,
+      expandedFoldsKey: foldsKey,
+      result,
+    };
+    return result;
   }
 
 export async function IntakeTui_setLocale(this: IntakeTui, typed: string): Promise<void> {

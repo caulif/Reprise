@@ -43,7 +43,7 @@ type Input = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
-  readonly timeline: readonly TimelineEntry[]; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
+  readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
@@ -70,6 +70,7 @@ function runningModel(input: Input) {
   return {
     entries: input.visibleTimeline,
     sourceTimeline: input.timeline,
+    timelineRevision: input.timelineRevision,
     selected: input.timelineSelected, filter: 'ALL' as const,
     following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
     elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
