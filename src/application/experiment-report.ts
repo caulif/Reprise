@@ -33,6 +33,9 @@ import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReport
 import { readOperatorLocale } from "./operator-locale.js";
 import { reportString } from "./comparison-report-strings.js";
 import type { AgentLocale } from "../agents/language.js";
+import { Type } from "@sinclair/typebox";
+import { ComparisonEvidenceCatalog, lookupCompletedToolCall } from "./comparison-evidence.js";
+import type { ComparisonCatalogSnapshot } from "./comparison-evidence.js";
 import {
   comparisonFailureDiagnostic,
   draftAgentSlots,
@@ -283,22 +286,56 @@ async function runComparisonAttempt(input: {
   locale: AgentLocale;
 }): Promise<AgentInvocation<ComparisonResult>> {
   const compareContext = withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown);
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptRoot: input.attemptRoot,
+    attemptId: input.attemptId,
+    links: input.briefing.links,
+    media: input.briefing.media,
+    emitRegistered: async (payload) => {
+      await input.host.store.append({
+        type: "comparison.evidence_registered",
+        runId: input.host.input.runId,
+        operationId: `comparison-evidence-${input.attemptId}-${payload.revision}-${payload.shortRef}`,
+        payload,
+      });
+    },
+    lookupToolCall: async (toolCallId) => lookupCompletedToolCall(
+      input.host.store.events(input.host.input.runId),
+      input.attemptId,
+      toolCallId,
+    ),
+  });
+  const getEvidenceCatalog = (): ComparisonCatalogSnapshot => catalog.snapshot();
   try {
     await writeAtomic(join(input.attemptRoot, "report.html"), input.reportShellHtml);
     let comparisonResult: AgentInvocation<ComparisonResult> = input.host.signal?.aborted
       ? { status: "cancelled" }
-      : await invokeCompare(input.host, compareContext, input.attemptRoot, input.attemptId, input.briefing.media.some((item) => item.available));
+      : await invokeCompare(
+        input.host,
+        compareContext,
+        input.attemptRoot,
+        input.attemptId,
+        catalog.snapshot().media.some((item) => item.available),
+        catalog,
+      );
     if (input.host.signal?.aborted) comparisonResult = { status: "cancelled" };
     comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(input.attemptRoot, "report.html"));
     if (comparisonResult.status === "completed") {
       try {
-        assertComparisonResult(comparisonResult.value, input.compareFacts);
+        assertComparisonResult(comparisonResult.value, input.compareFacts, getEvidenceCatalog);
       } catch (error) {
         comparisonResult = comparisonFailed("invalid_envelope", error, comparisonResult.sessionId);
       }
     }
     if (comparisonResult.status === "completed") {
-      comparisonResult = await enforcePublishedReport(comparisonResult, input.attemptRoot, input.compareFacts, input.briefing, input.locale);
+      const finalCatalog = catalog.snapshot();
+      comparisonResult = await enforcePublishedReport(
+        comparisonResult,
+        input.attemptRoot,
+        input.compareFacts,
+        { links: finalCatalog.links, media: finalCatalog.media },
+        input.locale,
+      );
     }
     if (comparisonResult.status === "completed") {
       await publishComparisonArtifacts({
@@ -442,13 +479,15 @@ async function invokeCompare(
   attemptRoot: string,
   attemptId: string,
   allowBinary: boolean,
+  catalog: ComparisonEvidenceCatalog,
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (input.signal?.aborted) return { status: "cancelled" };
   return input.input.comparison.compare(
     context,
-    comparisonTools(input, attemptRoot, allowBinary),
+    comparisonTools(input, attemptRoot, allowBinary, catalog),
     comparisonAudit(input, attemptId),
     input.signal,
+    { getEvidenceCatalog: () => catalog.snapshot() },
   );
 }
 
@@ -458,7 +497,12 @@ function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]):
     : join(input.experimentRoot, "comparison-attempts", "candidate-snapshot-unavailable");
 }
 
-function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptRoot: string, allowBinary: boolean): AgentToolDefinition[] {
+function comparisonTools(
+  input: Parameters<typeof finishExperiment>[0],
+  attemptRoot: string,
+  allowBinary: boolean,
+  catalog: ComparisonEvidenceCatalog,
+): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
   const mounts = comparisonAttemptMounts({
@@ -485,7 +529,98 @@ function comparisonTools(input: Parameters<typeof finishExperiment>[0], attemptR
       },
       homeRoot: join(attemptRoot, ".home"),
     }),
+    registerEvidenceTool(catalog),
+    renderArtifactStubTool(),
+    previewReportStubTool(),
   ];
+}
+
+const RegisterEvidenceParamsSchema = Type.Object({
+  relativePath: Type.String({ minLength: 1, maxLength: 512 }),
+  sourceRefs: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, maxItems: 32 }),
+  label: Type.String({ minLength: 1, maxLength: 200 }),
+  toolCallId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+});
+
+function registerEvidenceTool(catalog: ComparisonEvidenceCatalog): AgentToolDefinition {
+  return {
+    name: "register_evidence",
+    description: "Seal derived analysis from scratch/ into the attempt evidence catalog with source references. Host sets origin=derived_analysis; registration does not verify your interpretation.",
+    parameters: RegisterEvidenceParamsSchema,
+    async execute(params, signal) {
+      if (!Value.Check(RegisterEvidenceParamsSchema, params)) {
+        return { content: "status=rejected\ncode=path_invalid\nmessage=invalid register_evidence parameters" };
+      }
+      const result = await catalog.registerEvidence({
+        relativePath: params.relativePath,
+        sourceRefs: params.sourceRefs,
+        label: params.label,
+        ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+      }, signal);
+      if (result.status === "rejected") {
+        return {
+          content: [
+            `status=rejected`,
+            `code=${result.code}`,
+            `message=${result.message}`,
+          ].join("\n"),
+        };
+      }
+      return {
+        content: [
+          `status=registered`,
+          `revision=${result.revision}`,
+          `shortRef=${result.shortRef}`,
+          `contentHash=${result.contentHash}`,
+          `inspectPath=${result.inspectPath}`,
+          `origin=${result.origin}`,
+          `deduplicated=${result.deduplicated ? "true" : "false"}`,
+          "Re-read facts/evidence-index.json after successful registration.",
+        ].join("\n"),
+        details: result,
+      };
+    },
+  };
+}
+
+function renderArtifactStubTool(): AgentToolDefinition {
+  return {
+    name: "render_artifact",
+    description: "Derive previews from a registered sourceRef (implemented in a later package). Currently returns capability_unavailable.",
+    parameters: Type.Object({
+      sourceRef: Type.String({ minLength: 1, maxLength: 256 }),
+      viewport: Type.Optional(Type.Object({
+        width: Type.Integer({ minimum: 1, maximum: 8192 }),
+        height: Type.Integer({ minimum: 1, maximum: 8192 }),
+        scale: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 4 })),
+      })),
+      sampleTimesMs: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: 60_000 }), { maxItems: 16 })),
+    }),
+    async execute() {
+      return {
+        content: [
+          "status=capability_unavailable",
+          "reason=render_artifact body deferred to B4",
+        ].join("\n"),
+      };
+    },
+  };
+}
+
+function previewReportStubTool(): AgentToolDefinition {
+  return {
+    name: "preview_report",
+    description: "Preview the attempt report.html against the current catalog (implemented in a later package). Currently returns capability_unavailable.",
+    parameters: Type.Object({}),
+    async execute() {
+      return {
+        content: [
+          "status=capability_unavailable",
+          "reason=preview_report body deferred to B4",
+        ].join("\n"),
+      };
+    },
+  };
 }
 
 function comparisonAudit(input: Parameters<typeof finishExperiment>[0], attemptId: string): AgentAuditSink {

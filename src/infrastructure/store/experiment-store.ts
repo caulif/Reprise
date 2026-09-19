@@ -10,6 +10,7 @@ import {
   EventEnvelopeSchema,
   ComparisonPhaseRequestedPayloadSchema,
   ComparisonRequestedPayloadSchema,
+  ComparisonEvidenceRegisteredPayloadSchema,
   ControllerObservationReadPayloadSchema,
   ControllerRequestedPayloadSchema,
   ControllerWorkspaceWritePayloadSchema,
@@ -298,6 +299,7 @@ export class ExperimentStore {
     if (event.type === 'controller.workspace_write' && !Value.Check(ControllerWorkspaceWritePayloadSchema, event.payload)) throw new Error('controller.workspace_write payload does not satisfy its schema.');
     if (event.type === 'controller.external_write' && !Value.Check(ControllerExternalWritePayloadSchema, event.payload)) throw new Error('controller.external_write payload does not satisfy its schema.');
     if (event.type === 'comparison.requested' && !Value.Check(ComparisonRequestedPayloadSchema, event.payload)) throw new Error('comparison.requested payload does not satisfy its schema.');
+    if (event.type === 'comparison.evidence_registered' && !Value.Check(ComparisonEvidenceRegisteredPayloadSchema, event.payload)) throw new Error('comparison.evidence_registered payload does not satisfy its schema.');
     if ((event.type === 'comparison.plan_requested' || event.type === 'comparison.report_requested') && !Value.Check(ComparisonPhaseRequestedPayloadSchema, event.payload)) throw new Error(`${event.type} payload does not satisfy its schema.`);
     if (event.type === 'candidate.user_view_persisted' && !Value.Check(UserVisibleTurnSchema, event.payload)) throw new Error('candidate.user_view_persisted payload does not satisfy its schema.');
     await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });

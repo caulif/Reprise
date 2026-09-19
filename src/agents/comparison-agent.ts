@@ -1,7 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { hostZonesChanged, type HostZoneSnapshot } from '../core/comparison-html.js';
-import { ComparisonShortRefSchema } from '../core/schema.js';
+import { ComparisonShortRefSchema, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
 import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
 import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
@@ -74,10 +74,21 @@ export type ComparisonMetricSide = {
 };
 
 export interface ComparisonAgentPort {
-  compare(context: ComparisonContext, tools?: readonly AgentToolDefinition[], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonResult>>;
+  compare(
+    context: ComparisonContext,
+    tools?: readonly AgentToolDefinition[],
+    audit?: AgentAuditSink,
+    signal?: AbortSignal,
+    options?: ComparisonCompareOptions,
+  ): Promise<AgentInvocation<ComparisonResult>>;
   cancel(attemptId: string, factRef?: string): Promise<void>;
   release?(attemptId: string): void | Promise<void>;
 }
+
+export type ComparisonCompareOptions = {
+  /** Same-process getter; must not be persisted into comparison.requested JSON. */
+  getEvidenceCatalog?: () => Pick<ComparisonEvidenceCatalogSnapshot, "links" | "media">;
+};
 
 const COMPARISON_COMPACTION = 'Preserve the user-input index path, confirmed requirements, findings with rereadable evidence paths, the locations of work/comparison-plan.md and report.html, and the next investigation or report action. Drop long bodies that can be reread by path. The summary is not the only remaining source of those facts.';
 
@@ -200,10 +211,21 @@ export class ComparisonAgent implements ComparisonAgentPort {
     return this.#timeoutMs;
   }
 
-  async compare(context: ComparisonContext, tools: readonly AgentToolDefinition[] = [], audit?: AgentAuditSink, signal?: AbortSignal): Promise<AgentInvocation<ComparisonResult>> {
+  async compare(
+    context: ComparisonContext,
+    tools: readonly AgentToolDefinition[] = [],
+    audit?: AgentAuditSink,
+    signal?: AbortSignal,
+    options?: ComparisonCompareOptions,
+  ): Promise<AgentInvocation<ComparisonResult>> {
     const attemptId = context.attemptId;
     if (!attemptId) throw new Error("Comparison attemptId is required.");
-    const available = comparisonEvidenceAllowlist(context);
+    const currentAllowlist = (): Set<string> => {
+      if (options?.getEvidenceCatalog) {
+        return new Set(shortRefsOf(options.getEvidenceCatalog().links));
+      }
+      return comparisonEvidenceAllowlist(context);
+    };
     const session = await this.#sessionFor(attemptId, context, tools, audit);
     const prefix = await session.runTurns([
       {
@@ -259,7 +281,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       schema: ComparisonResultSchema,
       timeoutMs: this.#timeoutMs,
       outputContract: OUTPUT_CONTRACT,
-      normalize: (value: unknown) => normalizeComparisonEvidence(value, available),
+      normalize: (value: unknown) => normalizeComparisonEvidence(value, currentAllowlist()),
     };
     let result = await session.request<ComparisonAgentEnvelope>({
       ...envelopeRequest,
@@ -343,7 +365,11 @@ function completeComparisonEnvelope(value: ComparisonAgentEnvelope): ComparisonR
   };
 }
 
-export function assertComparisonResult(value: unknown, context: ComparisonFactsContext): asserts value is ComparisonResult {
+export function assertComparisonResult(
+  value: unknown,
+  context: ComparisonFactsContext,
+  getEvidenceCatalog?: ComparisonCompareOptions["getEvidenceCatalog"],
+): asserts value is ComparisonResult {
   const completed = normalizeCompletedEnvelope(value);
   if (!Value.Check(ComparisonResultSchema, completed)) {
     throw new Error("Invalid ComparisonEnvelope: schema validation failed.");
@@ -352,10 +378,16 @@ export function assertComparisonResult(value: unknown, context: ComparisonFactsC
   if (record.reportPath !== "report.html") {
     throw new Error("Invalid ComparisonEnvelope: schema validation failed.");
   }
-  const available = comparisonEvidenceAllowlist(context);
+  const available = getEvidenceCatalog
+    ? new Set(shortRefsOf(getEvidenceCatalog().links))
+    : comparisonEvidenceAllowlist(context);
   if (available.size > 0 && record.evidenceRefs.some((ref) => !available.has(ref))) {
     throw new Error("Invalid ComparisonEnvelope: schema validation failed.");
   }
+}
+
+function shortRefsOf(links: readonly { shortRef?: string }[]): string[] {
+  return links.flatMap((link) => (link.shortRef ? [link.shortRef] : []));
 }
 
 function normalizeCompletedEnvelope(value: unknown): unknown {
