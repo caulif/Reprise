@@ -235,6 +235,15 @@ export async function configurePageSession(
     deviceScaleFactor: viewport.scale,
     mobile: false,
   }, pageSessionId);
+  try {
+    await session.send("Target.setDiscoverTargets", { discover: true });
+  } catch {
+    // Discovery may already be on; worker target close still best-effort via targetCreated when emitted.
+    session.diagnostics.push({
+      code: "target_discovery_unavailable",
+      message: "Target.setDiscoverTargets unavailable",
+    });
+  }
   await installPageNetworkGate(session, pageSessionId, allowedOrigin);
   try {
     await session.send("Browser.setDownloadBehavior", { behavior: "deny", eventsEnabled: false });
@@ -261,8 +270,14 @@ async function installPageNetworkGate(
   pageSessionId: string,
   allowedOrigin: string,
 ): Promise<void> {
-  // Fetch covers HTTP(S); WebSocket/EventSource/beacon need a page-world gate installed before any document script.
-  const source = `(() => {
+  // Fetch covers page HTTP(S); WS/ES/beacon need a page-world gate; Worker/SW worlds bypass that gate, so deny them.
+  await session.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: pageNetworkGateSource(allowedOrigin),
+  }, pageSessionId);
+}
+
+function pageNetworkGateSource(allowedOrigin: string): string {
+  return `(() => {
     const allowed = ${JSON.stringify(allowedOrigin)};
     const allow = (raw) => {
       try {
@@ -310,19 +325,35 @@ async function installPageNetworkGate(
         return origBeacon(url, data);
       };
     }
-    const wrapWorker = (Orig, kind) => {
+    const denyWorker = (Orig, kind) => {
       if (typeof Orig !== "function") return Orig;
-      const Wrapped = function (url, options) {
-        if (!allow(String(url))) block(kind, url);
-        return options === undefined ? new Orig(url) : new Orig(url, options);
-      };
+      const Wrapped = function (url) { block(kind, url); };
       Wrapped.prototype = Orig.prototype;
       return Wrapped;
     };
-    globalThis.Worker = wrapWorker(globalThis.Worker, "worker");
-    globalThis.SharedWorker = wrapWorker(globalThis.SharedWorker, "sharedworker");
+    globalThis.Worker = denyWorker(globalThis.Worker, "worker");
+    globalThis.SharedWorker = denyWorker(globalThis.SharedWorker, "sharedworker");
+    if (navigator.serviceWorker) {
+      const swStub = {
+        controller: null,
+        ready: Promise.reject(new Error("blocked serviceworker")),
+        register(url) { block("serviceworker", url); },
+        getRegistration() { return Promise.resolve(undefined); },
+        getRegistrations() { return Promise.resolve([]); },
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent() { return false; },
+        startMessages() {},
+      };
+      try {
+        Object.defineProperty(navigator, "serviceWorker", {
+          configurable: true, enumerable: true, get() { return swStub; },
+        });
+      } catch (e) {
+        try { navigator.serviceWorker.register = function (url) { block("serviceworker", url); }; } catch {}
+      }
+    }
   })();`;
-  await session.send("Page.addScriptToEvaluateOnNewDocument", { source }, pageSessionId);
 }
 
 function bindPageDiagnostics(
@@ -384,15 +415,17 @@ function bindPageDiagnostics(
   session.on("Target.targetCreated", (params) => {
     const targetInfo = params.targetInfo as { targetId?: string; type?: string; url?: string } | undefined;
     if (!targetInfo?.targetId) return;
-    if (targetInfo.type === "page" || targetInfo.type === "other") {
-      // Secondary targets are closed best-effort; abort may already have torn down the browser.
-      void session.send("Target.closeTarget", { targetId: targetInfo.targetId }).catch(() => undefined);
-      session.diagnostics.push({
-        code: "popup_blocked",
-        message: "closed secondary target",
-        ...(targetInfo.url ? { detail: targetInfo.url } : {}),
-      });
-    }
+    const type = targetInfo.type ?? "";
+    const secondary = type === "page" || type === "other";
+    const workerish = type === "worker" || type === "service_worker" || type === "shared_worker";
+    if (!secondary && !workerish) return;
+    // Secondary pages and any Worker/SW targets are closed best-effort; abort may already have torn down the browser.
+    void session.send("Target.closeTarget", { targetId: targetInfo.targetId }).catch(() => undefined);
+    session.diagnostics.push({
+      code: workerish ? "worker_target_blocked" : "popup_blocked",
+      message: workerish ? "closed worker-class target" : "closed secondary target",
+      ...(targetInfo.url ? { detail: targetInfo.url } : {}),
+    });
   });
 }
 

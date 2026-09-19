@@ -246,12 +246,23 @@ test("opt-in real browser blocks external fetch, websocket, and file urls", asyn
   const wsAddress = wsProbe.address();
   assert.ok(wsAddress && typeof wsAddress !== "string");
   const fileUrl = pathToFileURL(join(root, "secret.txt")).href;
+  const httpUrl = `http://127.0.0.1:${address.port}/x`;
+  const wsUrl = `ws://127.0.0.1:${wsAddress.port}/probe`;
   await writeFile(join(root, "secret.txt"), "nope", "utf8");
+  await writeFile(join(root, "worker.js"), `try { new WebSocket(${JSON.stringify(wsUrl)}); } catch (e) {}`, "utf8");
+  await writeFile(join(root, "sw.js"), `self.addEventListener('install', () => { fetch(${JSON.stringify(httpUrl)}).catch(()=>{}); });
+fetch(${JSON.stringify(httpUrl)}).catch(()=>{});`, "utf8");
   await writeFile(join(root, "probe.html"), `<!doctype html><body>
 <script>
-fetch('http://127.0.0.1:${address.port}/x').catch(()=>{});
+fetch(${JSON.stringify(httpUrl)}).catch(()=>{});
 fetch(${JSON.stringify(fileUrl)}).catch(()=>{});
-try { new WebSocket('ws://127.0.0.1:${wsAddress.port}/probe'); } catch (e) {}
+try { new WebSocket(${JSON.stringify(wsUrl)}); } catch (e) {}
+try {
+  const blob = new Blob(['try { new WebSocket(${JSON.stringify(wsUrl)}); } catch (e) {}'], { type: 'text/javascript' });
+  new Worker(URL.createObjectURL(blob));
+} catch (e) {}
+try { new Worker('worker.js'); } catch (e) {}
+try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
 </script>
 ok
 </body>`, "utf8");
@@ -259,13 +270,19 @@ ok
     bundleRoot: root,
     entryRelativePath: "probe.html",
     viewport: { width: 320, height: 240, scale: 1 },
-    sampleTimesMs: [0],
+    sampleTimesMs: [0, 400],
     outputRoot: join(root, "out"),
     signal: AbortSignal.timeout(45_000),
   });
   assert.equal(result.ok, true, JSON.stringify(result));
   if (!result.ok) return;
-  assert.equal(httpHits, 0);
-  assert.equal(wsHits, 0);
+  assert.equal(httpHits, 0, `external http hits=${httpHits}`);
+  assert.equal(wsHits, 0, `external ws hits=${wsHits}`);
   assert.ok(result.diagnostics.some((item) => item.code === "network_blocked"));
+  const gateText = result.diagnostics
+    .filter((item) => item.code === "console_error")
+    .map((item) => item.message)
+    .join("\n");
+  assert.match(gateText, /reprise-network-gate.*worker/i);
+  assert.match(gateText, /reprise-network-gate.*serviceworker/i);
 });
