@@ -205,6 +205,7 @@ export async function configurePageSession(
   pageSessionId: string,
   viewport: RenderViewport,
   allowedOrigin: string,
+  primaryTargetId: string,
 ): Promise<{
   consoleErrors: string[];
   blockedRequests: string[];
@@ -244,6 +245,19 @@ export async function configurePageSession(
       message: "Target.setDiscoverTargets unavailable",
     });
   }
+  try {
+    // Pause secondary targets before their first navigation so close cannot race an off-bundle request.
+    await session.send("Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: true,
+      flatten: true,
+    });
+  } catch {
+    session.diagnostics.push({
+      code: "target_auto_attach_unavailable",
+      message: "Target.setAutoAttach unavailable; page-world window.open / target=_blank gate still applies",
+    });
+  }
   await installPageNetworkGate(session, pageSessionId, allowedOrigin);
   try {
     await session.send("Browser.setDownloadBehavior", { behavior: "deny", eventsEnabled: false });
@@ -260,6 +274,7 @@ export async function configurePageSession(
     blockedRequests,
     resourceFailures,
     allowedOrigin,
+    primaryTargetId,
   });
 
   return { consoleErrors, blockedRequests, resourceFailures };
@@ -337,6 +352,31 @@ function pageNetworkGateSource(allowedOrigin: string): string {
     // WebRTC ICE/STUN/TURN uses UDP outside Fetch; deny constructors rather than allowlisting.
     denyCtor("RTCPeerConnection", "webrtc");
     denyCtor("webkitRTCPeerConnection", "webrtc");
+    ${pagePopupAndServiceWorkerDenySource()}
+  })();`;
+}
+
+function pagePopupAndServiceWorkerDenySource(): string {
+  return `
+    window.open = function (url) {
+      try { console.error("[reprise-network-gate]", "window.open", String(url ?? "")); } catch {}
+      return null;
+    };
+    const blockBlankTarget = (event) => {
+      const el = event.target;
+      const node = el && el.closest ? el : null;
+      const hit = node && node.closest("a[target], area[target], form[target]");
+      if (!hit) return;
+      const t = String(hit.getAttribute("target") || "").trim().toLowerCase();
+      if (!t || t === "_self" || t === "_parent" || t === "_top") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const dest = hit.href || hit.action || t;
+      try { console.error("[reprise-network-gate]", "target_blank", String(dest)); } catch {}
+    };
+    document.addEventListener("click", blockBlankTarget, true);
+    document.addEventListener("auxclick", blockBlankTarget, true);
+    document.addEventListener("submit", blockBlankTarget, true);
     if (navigator.serviceWorker) {
       const swStub = {
         controller: null,
@@ -357,7 +397,7 @@ function pageNetworkGateSource(allowedOrigin: string): string {
         try { navigator.serviceWorker.register = function (url) { block("serviceworker", url); }; } catch {}
       }
     }
-  })();`;
+  `;
 }
 
 function bindPageDiagnostics(
@@ -368,6 +408,7 @@ function bindPageDiagnostics(
     blockedRequests: string[];
     resourceFailures: string[];
     allowedOrigin: string;
+    primaryTargetId: string;
   },
 ): void {
   session.on("Runtime.exceptionThrown", (params) => {
@@ -416,20 +457,43 @@ function bindPageDiagnostics(
       await session.send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" }, sid).catch(() => undefined);
     })();
   });
+  session.on("Target.attachedToTarget", (params) => {
+    closeSecondaryAttachedTarget(session, state, params);
+  });
   session.on("Target.targetCreated", (params) => {
     const targetInfo = params.targetInfo as { targetId?: string; type?: string; url?: string } | undefined;
-    if (!targetInfo?.targetId) return;
+    if (!targetInfo?.targetId || targetInfo.targetId === state.primaryTargetId) return;
     const type = targetInfo.type ?? "";
     const secondary = type === "page" || type === "other";
     const workerish = type === "worker" || type === "service_worker" || type === "shared_worker";
     if (!secondary && !workerish) return;
-    // Secondary pages and any Worker/SW targets are closed best-effort; abort may already have torn down the browser.
+    // Backup close if auto-attach pause was unavailable; abort may already have torn down the browser.
     void session.send("Target.closeTarget", { targetId: targetInfo.targetId }).catch(() => undefined);
     session.diagnostics.push({
       code: workerish ? "worker_target_blocked" : "popup_blocked",
       message: workerish ? "closed worker-class target" : "closed secondary target",
       ...(targetInfo.url ? { detail: targetInfo.url } : {}),
     });
+  });
+}
+
+function closeSecondaryAttachedTarget(
+  session: CdpSession,
+  state: { primaryTargetId: string },
+  params: Record<string, unknown>,
+): void {
+  const targetInfo = params.targetInfo as { targetId?: string; type?: string; url?: string } | undefined;
+  if (!targetInfo?.targetId || targetInfo.targetId === state.primaryTargetId) return;
+  const type = targetInfo.type ?? "";
+  const secondary = type === "page" || type === "other";
+  const workerish = type === "worker" || type === "service_worker" || type === "shared_worker";
+  if (!secondary && !workerish) return;
+  // Do not Runtime.runIfWaitingForDebugger — closing while paused prevents the first off-bundle navigation.
+  void session.send("Target.closeTarget", { targetId: targetInfo.targetId }).catch(() => undefined);
+  session.diagnostics.push({
+    code: workerish ? "worker_target_blocked" : "popup_blocked",
+    message: workerish ? "closed worker-class target before resume" : "closed secondary target before resume",
+    ...(targetInfo.url ? { detail: targetInfo.url } : {}),
   });
 }
 

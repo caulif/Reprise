@@ -243,7 +243,7 @@ async function openDocumentSession(
     };
   }
   const page = await createPageTarget(cdp);
-  const guards = await configurePageSession(cdp, page.sessionId, request.viewport, server.origin);
+  const guards = await configurePageSession(cdp, page.sessionId, request.viewport, server.origin, page.targetId);
   diagnostics.push({
     code: "timing_mode",
     message: "wall_clock_after_load",

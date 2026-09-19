@@ -281,6 +281,15 @@ try {
   pc.createDataChannel('x');
   pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(()=>{});
 } catch (e) {}
+try { window.open(${JSON.stringify(httpUrl + "?via=open")}); } catch (e) {}
+try {
+  const a = document.createElement('a');
+  a.href = ${JSON.stringify(httpUrl + "?via=blank")};
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+} catch (e) {}
 </script>
 ok
 </body>`, "utf8");
@@ -305,4 +314,6 @@ ok
   assert.match(gateText, /reprise-network-gate.*worker/i);
   assert.match(gateText, /reprise-network-gate.*serviceworker/i);
   assert.match(gateText, /reprise-network-gate.*webrtc/i);
+  assert.match(gateText, /reprise-network-gate.*window\.open/i);
+  assert.match(gateText, /reprise-network-gate.*target_blank/i);
 });
