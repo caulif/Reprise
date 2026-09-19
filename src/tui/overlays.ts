@@ -52,7 +52,7 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
   confirm: ['Enter      Start the candidate run', 'b          Change model', 'Esc        Back to Home'],
   running: ['Ctrl+C     Request cancellation', '/          Find in timeline', 'v          Reading mode', 'Esc        Stays on the record'],
   result: [
-    'c          Start comparison when offered',
+    'c          Generate comparison card when offered',
     'o          Open report.html',
     'h          Open history final artifact',
     'f          Open candidate final artifact',

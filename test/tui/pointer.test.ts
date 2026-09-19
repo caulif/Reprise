@@ -60,7 +60,7 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
   assert.ok(hitCol > 0);
   assert.equal(resultPointerAction(lines, reportLine, hitCol, 'en', pathLinks), 'open-report');
   assert.equal(resultPointerAction(lines, 0, 2, 'en', pathLinks), undefined);
-  const compareLine = lines.findIndex((line) => line.includes('Start comparison'));
+  const compareLine = lines.findIndex((line) => line.includes('Generate comparison card'));
   assert.ok(compareLine >= 0);
   assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks), 'compare');
 });
