@@ -84,9 +84,11 @@ test("Host template has no visible status cards and keeps facts in the model", (
   const header = html.indexOf('data-id="host-header"');
   const metrics = html.indexOf('data-id="host-metrics"');
   const diffs = html.indexOf('data-id="agent-key-differences"');
+  const visual = html.indexOf('data-id="agent-visual-evidence"');
   const headline = html.indexOf('<p class="note" data-agent-slot="headline"');
-  assert.ok(header < headline && headline < diffs && diffs < metrics);
+  assert.ok(header < headline && headline < visual && visual < diffs && diffs < metrics);
   assert.equal(header < metrics && metrics < diffs, false);
+  assert.equal(diffs < visual, false);
   const delivery = html.indexOf('data-agent-zone="delivery"');
   assert.ok(metrics < delivery);
   assert.match(html, /class="audit" hidden/);
@@ -347,6 +349,70 @@ test("failure classes distinguish provider, protocol, evidence, metrics, and med
     result: { status: "failed", failure: { code: "media_unavailable", message: "Comparison media reference is not publishable: media/x.png", attempts: 1 } },
     reportPresent: true,
   }).failureClass, "media");
+});
+
+test("Host diagnostic cards stay visible while Agent difference-card is hidden on the share card", () => {
+  const reportFacts = facts();
+  const diagnostic = {
+    failureClass: "protocol",
+    phase: "compose",
+    candidateCompleted: "no",
+    reason: "Host zone was modified.",
+    details: ["metrics tampered"],
+    traces: [],
+  };
+  const page = renderComparisonReportShell({
+    title: "Comparison unavailable",
+    task: "对照未能完成这次比较",
+    facts: reportFacts,
+    metrics: metricsFromReportFacts(reportFacts),
+    diagnostic,
+  });
+  const diagnosticBody = page.match(/data-id="agent-key-differences"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+  assert.match(diagnosticBody, /data-host="diagnostic-card"/);
+  assert.doesNotMatch(diagnosticBody, /data-component="difference-card"/);
+  assert.match(diagnosticBody, /Host zone was modified/);
+  assert.match(page, /\.share \[data-component="difference-card"\]/);
+  const agentCard = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({
+      "key-differences": '<article data-component="difference-card"><h3>实际交付</h3><p>候选有文件。</p></article>',
+    }),
+  });
+  const agentBody = agentCard.match(/data-id="agent-key-differences"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+  assert.match(agentBody, /data-component="difference-card"/);
+});
+
+test("missing visual-evidence zone fails share-card order", async () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const withoutVisual = html.replace(
+    /<section class="slot" data-agent-zone="visual-evidence"[\s\S]*?<\/section>/,
+    "",
+  );
+  const verified = await verifyAndRenderComparisonReport({
+    html: withoutVisual,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in verified, false);
+  if (!("html" in verified)) {
+    assert.match(verified.message, /Share card order|missing data-agent-zone="visual-evidence"/);
+  }
+});
+
+test("AGENT_ZONES order matches visual-first share card DOM", async () => {
+  const { AGENT_ZONES } = await import("../../src/core/comparison-html.js");
+  assert.deepEqual(AGENT_ZONES, ["visual-evidence", "key-differences", "delivery", "limitations"]);
 });
 
 test("failure diagnostics retain useful analysis from non-standard Agent zones", async () => {
@@ -621,6 +687,32 @@ test("above-the-fold process dump and visual claims without media still publish"
   }
 });
 
+test("key-differences before visual-evidence fail share-card order", async () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const visual = html.match(/<section class="slot" data-agent-zone="visual-evidence"[\s\S]*?<\/section>/)?.[0];
+  const diffs = html.match(/<section class="slot" data-agent-zone="key-differences"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(visual && diffs);
+  const swapped = html.replace(visual, "").replace(diffs, "").replace(
+    /<p class="note" data-agent-slot="headline">[\s\S]*?<\/p>/,
+    (headline) => `${headline}${diffs}${visual}`,
+  );
+  const verified = await verifyAndRenderComparisonReport({
+    html: swapped,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in verified, false);
+  if (!("html" in verified)) assert.match(verified.message, /Share card order/);
+});
+
 test("metrics before key-differences fail share-card order", async () => {
   const reportFacts = facts();
   const html = renderComparisonReportShell({
@@ -885,6 +977,6 @@ test("data-claim publication checks and English report shell fail closed", async
   });
   const zhSnapshot = extractHostZoneSnapshot(zh);
   assert.ok(zhSnapshot);
-  assert.match(zh, /<!-- Core differences/);
+  assert.match(zh, /<!-- Short contrast after visuals/);
   assert.equal(hostZonesMismatch(zh, zhSnapshot, metricsFromReportFacts(reportFacts)), undefined);
 });

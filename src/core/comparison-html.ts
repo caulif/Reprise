@@ -1,5 +1,5 @@
 const HOST_ZONES = ["style", "header", "metrics", "cost-note", "evidence", "process"] as const;
-export const AGENT_ZONES = ["key-differences", "visual-evidence", "delivery", "limitations"] as const;
+export const AGENT_ZONES = ["visual-evidence", "key-differences", "delivery", "limitations"] as const;
 const AGENT_SLOTS = ["headline", "category", "task"] as const;
 const COMPONENT_TEMPLATES = [
   "headline",
@@ -40,12 +40,11 @@ function shareCardLayoutError(html: string): string | undefined {
   const metrics = tagMarkerIndex(html, "data-host-zone", "metrics");
   const delivery = tagMarkerIndex(html, "data-agent-zone", "delivery");
   const limitations = tagMarkerIndex(html, "data-agent-zone", "limitations");
-  if (header < 0 || diffs < 0 || headline < 0 || metrics < 0) return undefined;
-  if (!(header < headline && headline < diffs && diffs < metrics)) {
-    return "Share card order must be header, headline, agent contrast, then metrics.";
+  if (header < 0 || headline < 0 || visual < 0 || diffs < 0 || metrics < 0) {
+    return "Share card order must be header, headline, visual evidence, agent contrast, then metrics.";
   }
-  if (visual >= 0 && !(diffs < visual && visual < metrics)) {
-    return "Share card order must be header, headline, agent contrast, then metrics.";
+  if (!(header < headline && headline < visual && visual < diffs && diffs < metrics)) {
+    return "Share card order must be header, headline, visual evidence, agent contrast, then metrics.";
   }
   if (delivery >= 0 && delivery < metrics) {
     return "Delivery and limitations must stay outside the share card.";
