@@ -77,15 +77,29 @@ function parseJsonlRows(rolloutText: string): Array<Record<string, unknown>> {
   return rows;
 }
 
+function toolArgumentsJson(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 /** Decode exec-wrapped rollout → `node -e` source → static `const patch` literal. */
 export function recoverExecWrappedPatchFromRollout(rolloutText: string): string | undefined {
   for (const row of parseJsonlRows(rolloutText)) {
     if (row.type !== "response_item") continue;
     const payload = row.payload as Record<string, unknown> | undefined;
     if (!payload || payload.type !== "function_call" || payload.name !== "shell_command") continue;
+    const argumentsJson = toolArgumentsJson(payload.arguments);
+    if (argumentsJson === undefined) continue;
     let args: { command?: string };
     try {
-      args = JSON.parse(String(payload.arguments ?? "{}")) as { command?: string };
+      args = JSON.parse(argumentsJson) as { command?: string };
     } catch {
       continue;
     }
@@ -110,8 +124,10 @@ export function recoverDirectApplyPatchFromRollout(rolloutText: string): string 
     if (row.type !== "response_item") continue;
     const payload = row.payload as Record<string, unknown> | undefined;
     if (!payload || payload.type !== "function_call" || payload.name !== "apply_patch") continue;
+    const argumentsJson = toolArgumentsJson(payload.arguments);
+    if (argumentsJson === undefined) continue;
     try {
-      const args = JSON.parse(String(payload.arguments ?? "{}")) as { patch?: string };
+      const args = JSON.parse(argumentsJson) as { patch?: string };
       if (typeof args.patch === "string" && args.patch.length > 0) return args.patch;
     } catch {
       continue;
