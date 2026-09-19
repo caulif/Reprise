@@ -188,7 +188,7 @@ export class HistoricalArtifactBuilder {
 export function validateLogicalPath(raw: string): { ok: true; path: string } | { ok: false; reason: PathRejectReason } {
   const trimmed = raw.trim();
   if (!trimmed) return { ok: false, reason: "empty" };
-  if (trimmed.includes("\\") || /[\0\r\n*?\"<>|]/.test(trimmed)) return { ok: false, reason: "charset" };
+  if (trimmed.includes("\\") || /[\0\r\n*?"<>|]/.test(trimmed)) return { ok: false, reason: "charset" };
   const posix = asPosixPath(trimmed);
   if (posix.startsWith("//")) return { ok: false, reason: "unc" };
   if (/^[A-Za-z]:/.test(posix)) return { ok: false, reason: "drive" };
