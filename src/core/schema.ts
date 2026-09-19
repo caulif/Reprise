@@ -103,6 +103,18 @@ export {
   type ObservationSessionManifest,
 } from "./schemas/observations.js";
 export {
+  HistoricalArtifactSchema,
+  HistoricalArtifactManifestSchema,
+  HistoricalArtifactIssueSchema,
+  HistoricalLogicalPathSchema,
+  type HistoricalArtifact,
+  type HistoricalArtifactManifest,
+  type HistoricalArtifactIssue,
+  type HistoricalArtifactIssueCode,
+  type HistoricalArtifactOrigin,
+  type HistoricalArtifactFinality,
+} from "./schemas/historical-artifacts.js";
+export {
   GitSinkManifestSchema,
   GitSinkManifestV1Schema,
   type GitSinkManifest,

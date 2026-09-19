@@ -41,6 +41,7 @@ import {
   isSyntheticCatalogSource,
 } from '../../shared/session-recovery.js';
 import { readCodexCatalog, catalogPathKey } from './catalog.js';
+import { extractCodexHistoricalArtifacts } from './historical-artifacts.js';
 
 export type CodexSessionSummary = SessionSummary;
 export type CodexSessionInspection = SessionInspection;
@@ -373,6 +374,7 @@ export const codexSessionAdapter: ProductHistoryReader = {
     assertTranscriptSessionId(ref.sessionId, imported.source.sessionId);
     return imported;
   },
+  extractHistoricalArtifacts: extractCodexHistoricalArtifacts,
 };
 
 function consumeCodexBuildRow(state: CodexBuildState, row: JsonRecord, index: number): void {

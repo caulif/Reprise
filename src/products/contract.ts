@@ -3,6 +3,7 @@ import type { JsonRecord } from '../core/json.js';
 import type {
   CandidateSpec,
   EventEnvelope,
+  HistoricalArtifactManifest,
   RecoveryDiagnostic,
   RecoveryReadiness,
   TaskCase,
@@ -192,11 +193,37 @@ export function isEligibleSession(session: SessionSummary): boolean {
     && (session.signals.assistantMessages > 0 || session.signals.toolCalls > 0);
 }
 
+/**
+ * Frozen/redacted transcript + events already owned by Host.
+ * Extractors must not read the live cwd or execute historical programs.
+ */
+export type HistoricalArtifactExtractInput = {
+  readonly transcript: readonly SessionMessage[];
+  readonly historicalEvents: readonly JsonRecord[];
+  readonly historicalCwd?: string;
+};
+
+/** Bytes stay out of the persisted manifest JSON. */
+export type HistoricalArtifactFile = {
+  readonly artifactId: string;
+  readonly bytes: Uint8Array;
+};
+
+export type HistoricalArtifactExtractResult = {
+  readonly manifest: HistoricalArtifactManifest;
+  readonly files: readonly HistoricalArtifactFile[];
+};
+
 export type ProductHistoryReader = {
   readonly defaultRoot: string;
   discover(query?: SessionDiscoveryQuery): Promise<SessionDiscoveryPage>;
   inspect(ref: SessionRef): Promise<SessionInspection>;
   import(ref: SessionRef): Promise<ImportedSession>;
+  /**
+   * Optional. Deterministic reconstruction of historical deliverable bytes.
+   * Third-party packs may omit this; Host treats absence as capability gap.
+   */
+  extractHistoricalArtifacts?(input: HistoricalArtifactExtractInput): HistoricalArtifactExtractResult;
 };
 
 export type TargetRunFacts = {

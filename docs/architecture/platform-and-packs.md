@@ -32,6 +32,7 @@ Product Pack
 
 - `manifest`：产品身份、Pack 版本和 session schema 声明；
 - `history`：`ProductHistoryReader` 发现并导入原生会话，提取来源证据；
+- `history.extractHistoricalArtifacts?`（可选）：从已冻结/脱敏的 transcript 与 historicalEvents 确定性重建历史终稿字节与 manifest；不写盘、不执行历史程序、不读 live cwd。第三方 Pack 可省略；Host 将缺失视为能力缺口，不得改走其他 Pack 猜测；
 - `runtime`：`ProductRuntime` 发现当前安装项，启动目标 CLI、提交输入、识别 turn boundary、规范化原生事件；
 - `projection`：`UserSurfaceProjection` 把标准事件译成用户可见活动；
 - `recovery/SKILL.md`：Recovery Agent 使用的产品知识；
