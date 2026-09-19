@@ -132,17 +132,45 @@ describe('realtime fluency caches', () => {
     assert.notDeepEqual(before.lines.slice(0, -1), after.lines.slice(0, -1));
   });
 
-  it('replacing timeline content requires a revision bump to avoid fold cache hits', () => {
+  it('fold cache invalidates when entry content changes without a revision bump', () => {
     const expanded = new Set<string>();
     const first = foldProcessEntries(sampleEntries(), expanded, 5);
     const replaced: TimelineEntry[] = [
       { ...sampleEntries()[0]!, title: 'Prompt · Different task', detail: 'Different task' },
       ...sampleEntries().slice(1),
     ];
-    const staleHit = foldProcessEntries(replaced, expanded, 5);
-    assert.equal(staleHit, first);
-    const afterBump = foldProcessEntries(replaced, expanded, 6);
-    assert.notEqual(afterBump, first);
-    assert.equal(afterBump[0]?.title, 'Prompt · Different task');
+    const next = foldProcessEntries(replaced, expanded, 5);
+    assert.notEqual(next, first);
+    assert.equal(next[0]?.title, 'Prompt · Different task');
+    const again = foldProcessEntries(replaced, expanded, 5);
+    assert.equal(again, next);
+  });
+
+  it('invalidates scrollback body when folded entries change without a revision bump', () => {
+    const theme = createTheme(80);
+    const collapsed = sampleEntries();
+    const first = layoutScrollback(theme, 80, collapsed, 1, 'en', 'Codex', 8, 0, 0, '00:01', true, 1);
+    const expandedView: TimelineEntry[] = [
+      collapsed[0]!,
+      {
+        sequence: 2,
+        occurredAt: '2026-08-11T00:00:01.000Z',
+        source: 'TARGET',
+        title: 'Visible response',
+        kind: 'narrate',
+        detail: 'public response line 1',
+      },
+      {
+        sequence: 4,
+        occurredAt: '2026-08-11T00:00:01.500Z',
+        source: 'TARGET',
+        title: 'Visible response continued',
+        kind: 'narrate',
+        detail: 'public response line 2 after expand',
+      },
+      collapsed[2]!,
+    ];
+    const afterExpand = layoutScrollback(theme, 80, expandedView, 1, 'en', 'Codex', 8, 0, 0, '00:01', true, 1);
+    assert.notDeepEqual(first.lines.slice(0, -1), afterExpand.lines.slice(0, -1));
   });
 });

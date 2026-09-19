@@ -2,6 +2,7 @@ import { compact, type TimelineFilter } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
 import { timelineIdentity } from './timeline-read.js';
+import { timelineEntriesKey } from './timeline-revision.js';
 import { isNowRow, type TimelineEntry } from './timeline.js';
 import { pad, wrapBodyLine } from './widgets.js';
 
@@ -112,6 +113,7 @@ export function renderScrollback(
   return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed, following, timelineRevision).lines;
 }
 
+/** Fold expand/collapse rewrites the painted entry list without bumping timelineRevision. */
 function layoutScrollbackBody(
   theme: Theme,
   width: number,
@@ -122,7 +124,9 @@ function layoutScrollbackBody(
   tick: number,
   timelineRevision: number,
 ): ScrollbackBody {
-  const key = timelineRevision >= 0 ? `${timelineRevision}:${selected}:${width}:${locale}:${product}` : '';
+  const key = timelineRevision >= 0
+    ? `${timelineRevision}:${selected}:${width}:${locale}:${product}:${timelineEntriesKey(entries)}`
+    : '';
   const cached = scrollbackBodyCache;
   if (key && cached?.key === key) return cached.body;
   const lines: string[] = [];
