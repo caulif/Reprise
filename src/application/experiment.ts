@@ -19,6 +19,7 @@ import {
 } from "../environment/local-workspace-provider.js";
 import { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import type { ProductPack } from "../products/contract.js";
+import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";
 import {
   historicalCwdOf,
   inferSourceRootKind,
@@ -86,6 +87,8 @@ export type ExperimentInput = {
   comparison: ComparisonAgentPort;
   now: string;
   onEvent?: (event: EventEnvelope) => void;
+  /** Optional Pack-bound historical deliverable extractor for old-case prepare. */
+  extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
   /** When true, Comparison runs before this handle's result settles. Default is skip. */
   compare?: boolean;
   /** Hold the isolated workspace until runComparison or skipComparison. */

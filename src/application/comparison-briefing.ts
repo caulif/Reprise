@@ -24,6 +24,7 @@ import {
   buildSealedBaselineImageLinks,
   collectHistoricalDeliverableNames,
 } from "./historical-final-discovery.js";
+import { attemptFinalsRoot } from "./prepare-historical-artifacts.js";
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -65,6 +66,8 @@ export type ComparisonAttemptMounts = {
   readonly candidate: string;
   readonly evidence: string;
   readonly history: string;
+  /** Frozen / derived historical deliverables for this attempt (not controller process history). */
+  readonly finals: string;
   readonly turns: string;
   readonly run: string;
 };
@@ -81,6 +84,7 @@ export function comparisonAttemptMounts(input: {
     candidate: comparisonCandidateMount(input),
     evidence: join(input.attemptRoot, "evidence"),
     history: join(controllerRoot, "history"),
+    finals: attemptFinalsRoot(input.attemptRoot),
     turns: join(controllerRoot, "run", "turns"),
     run: join(controllerRoot, "run"),
   };
@@ -91,6 +95,8 @@ export async function writeComparisonBriefing(input: {
   experimentRoot: string;
   workspaceRoot: string;
   dataDir?: string;
+  /** Extra openable-baseline names from prepare manifest (old-case derive). */
+  openableBaselineNames?: readonly string[];
   taskCase: TaskCase;
   record: RunRecord;
   context: ComparisonContext | ComparisonFactsContext;
@@ -185,7 +191,10 @@ async function comparisonMediaBundle(
     changedPaths: input.context.reportFacts.delivery.changedPaths.filter(isComparisonChangedPath),
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     caseId: input.taskCase.caseId,
-    baselineArtifactNames: [...collectHistoricalDeliverableNames(input.taskCase, "openable-baseline")],
+    baselineArtifactNames: [
+      ...collectHistoricalDeliverableNames(input.taskCase, "openable-baseline"),
+      ...(input.openableBaselineNames ?? []),
+    ],
   });
   const augmented = await augmentComparisonOpenableMedia({
     attemptRoot: input.attemptRoot,
@@ -266,7 +275,7 @@ function comparisonAttemptIndex(): string {
   return [
     "# Comparison attempt",
     "",
-    "Navigation is in briefing/INDEX.md. facts/, history/, and candidate/ are side copies of the same Host projection for human audit.",
+    "Navigation is in briefing/INDEX.md. facts/, history/, finals/, and candidate/ are Host projections for human audit.",
     "",
   ].join("\n");
 }
@@ -293,6 +302,7 @@ function comparisonIndex(
     "- observations/user-inputs/INDEX.tsv: complete user demand in session order (historical_user vs controller)",
     "- observations/INDEX.md: frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/: frozen historical conversation (read-only mount)",
+    "- finals/: frozen or attempt-derived historical deliverables (read-only mount; use REPRISE_FINALS_ROOT in shell)",
     "- turns/: candidate settled-turn briefing including each user-view.md (read-only mount)",
     "- briefing/candidate/git-sink-refs.txt: Host catalog of initial and final sink refs by repository relative path (not the user's GitHub); objectStore may be not_seeded",
     "- briefing/candidate/git-sink-manifest.json: structured sink catalog with isolation, objectStore, completeness, issues.code, and ref changes; do not assume a branch named main",

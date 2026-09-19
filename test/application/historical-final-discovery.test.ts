@@ -60,7 +60,7 @@ test("collectHistoricalDeliverableNames shares baseline artifact refs across kin
   assert.ok(imageNames.has("slide.png"));
 });
 
-test("lookupBasename uses direct-basename mode for attempt finals", async (t) => {
+test("lookupBasename uses recursive-basename mode for attempt finals", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-lookup-mode-"));
   t.after(async () => {
     const { rm } = await import("node:fs/promises");
@@ -68,8 +68,8 @@ test("lookupBasename uses direct-basename mode for attempt finals", async (t) =>
   });
   const experimentRoot = join(root, "experiment");
   const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
-  await mkdir(join(attemptRoot, "history", "finals"), { recursive: true });
-  const sealed = join(attemptRoot, "history", "finals", "deck.html");
+  await mkdir(join(attemptRoot, "finals", "anim"), { recursive: true });
+  const sealed = join(attemptRoot, "finals", "anim", "index.html");
   await writeFile(sealed, "<!doctype html><title>sealed</title>", "utf8");
   const roots = historicalFinalSearchRoots({
     experimentRoot,
@@ -77,8 +77,8 @@ test("lookupBasename uses direct-basename mode for attempt finals", async (t) =>
     caseId: "case-1",
     attemptRoot,
   });
-  assert.equal(roots[0]?.mode, "direct-basename");
-  assert.equal(await lookupBasename(roots, "deck.html"), sealed);
+  assert.equal(roots.some((entry) => entry.root === join(attemptRoot, "finals") && entry.mode === "recursive-basename"), true);
+  assert.equal(await lookupBasename(roots, "index.html"), sealed);
 });
 
 test("resolveHistoricalFinalPath and findFileInHistoricalRoots agree on discovered paths", async (t) => {
@@ -88,23 +88,25 @@ test("resolveHistoricalFinalPath and findFileInHistoricalRoots agree on discover
     await rm(root, { recursive: true, force: true });
   });
   const experimentRoot = join(root, "experiment");
-  const baselineDir = join(experimentRoot, "environment", "baselines");
-  await mkdir(baselineDir, { recursive: true });
-  const baselineHtml = join(baselineDir, "deck.html");
-  await writeFile(baselineHtml, "<!doctype html><title>deck</title>", "utf8");
+  const dataDir = join(root, "data");
+  const artifactDir = join(dataDir, "cases", "case-1", "baseline-artifacts");
+  await mkdir(artifactDir, { recursive: true });
+  const artifactHtml = join(artifactDir, "deck.html");
+  await writeFile(artifactHtml, "<!doctype html><title>deck</title>", "utf8");
   const value = taskCase();
   const search = {
     experimentRoot,
     runId: "run-1",
     caseId: value.caseId,
+    dataDir,
   };
   const resolved = await resolveHistoricalFinalPath({ ...search, taskCase: value });
   const found = await findFileInHistoricalRoots({ ...search, basename: "deck.html" });
-  assert.equal(resolved, baselineHtml);
-  assert.equal(found, baselineHtml);
+  assert.equal(resolved, artifactHtml);
+  assert.equal(found, artifactHtml);
 });
 
-test("sealBaselineOpenablePath rejects conflicting basenames", async (t) => {
+test("sealBaselineOpenablePath rejects conflicting flat paths", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-seal-conflict-"));
   t.after(async () => {
     const { rm } = await import("node:fs/promises");
@@ -121,8 +123,42 @@ test("sealBaselineOpenablePath rejects conflicting basenames", async (t) => {
   await sealBaselineOpenablePath(sealedRoot, first);
   await assert.rejects(
     () => sealBaselineOpenablePath(sealedRoot, second),
-    /Duplicate baseline final basename "deck.html"/,
+    /Duplicate baseline final path "deck.html"/,
   );
+});
+
+test("sealBaselineOpenablePath keeps nested logicalPaths with shared basename", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-seal-nested-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const sealedRoot = join(root, "finals");
+  const first = join(root, "src", "a", "index.html");
+  const second = join(root, "src", "b", "index.html");
+  await mkdir(join(root, "src", "a"), { recursive: true });
+  await mkdir(join(root, "src", "b"), { recursive: true });
+  await writeFile(first, "<!doctype html><title>a</title>", "utf8");
+  await writeFile(second, "<!doctype html><title>b</title>", "utf8");
+  const sealedA = await sealBaselineOpenablePath(sealedRoot, first, "a/index.html");
+  const sealedB = await sealBaselineOpenablePath(sealedRoot, second, "b/index.html");
+  assert.equal(sealedA, join(sealedRoot, "a", "index.html"));
+  assert.equal(sealedB, join(sealedRoot, "b", "index.html"));
+});
+
+test("sealBaselineOpenablePath skips copy when source is already under finals", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-seal-skip-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const sealedRoot = join(root, "finals");
+  const nested = join(sealedRoot, "anim", "index.html");
+  await mkdir(join(sealedRoot, "anim"), { recursive: true });
+  await writeFile(nested, "<!doctype html><title>anim</title>", "utf8");
+  const sealed = await sealBaselineOpenablePath(sealedRoot, nested, "anim/index.html");
+  assert.equal(sealed, nested);
+  assert.equal(await lookupBasename([{ root: sealedRoot, mode: "recursive-basename" }], "index.html"), nested);
 });
 
 test("sealBaselineOpenablePath accepts identical reseal content regardless of mtime", async (t) => {

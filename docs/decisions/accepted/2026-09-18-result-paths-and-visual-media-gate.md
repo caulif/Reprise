@@ -4,12 +4,12 @@
 
 ## 问题
 
-TUI 结果页需要打开**文件**（报告、历史终稿、候选终稿），而不是仅打开隔离目录；Trace/Replica 降为排查。Host 对照前对 HTML 终稿无头截图写入 `facts/media.json`；双侧有视觉交付但 media 为空时必须 `media_unavailable`，不能静默发纯文本卡。历史终稿路径须与 Comparison 的 openable 发现一致（封存 finals → briefing history → baseline-artifacts → baselines），且只链接磁盘上存在的文件。
+TUI 结果页需要打开**文件**（报告、历史终稿、候选终稿），而不是仅打开隔离目录；Trace/Replica 降为排查。Host 对照前对 HTML 终稿无头截图写入 `facts/media.json`；双侧有视觉交付但 media 为空时必须 `media_unavailable`，不能静默发纯文本卡。历史终稿路径须与 Comparison 的 openable 发现一致（封存 finals → derived-history → case baseline-artifacts → briefing history），且只链接磁盘上存在的文件。任务起点 `environment/baselines` 不是历史终稿。
 
 ## 决定
 
 - `buildResultPathLinks` 异步解析路径：`resolveHistoricalFinalPath` 与 `discoverOpenableSources` 共用 `historical-final-discovery.ts` 的搜索顺序与存在性检查；无匹配则不写链接。
-- baseline HTML 封存到 attempt `history/finals/` 时，同名 basename 冲突且字节不同则失败，避免错误绑定。
+- baseline HTML 封存到 attempt `finals/` 时，同名 basename 冲突且字节不同则失败，避免错误绑定。
 - 无头截图经 `src/infrastructure/headless-screenshot.ts`；失败区分 `no_browser` 与 `capture_failed`，诊断写入 `ComparisonVisualMediaError` 消息。
 - `deepseek-v4.1-flash` 不得借用 `deepseek-v4-flash` 费率；独立目录行见 [2026-09-19 价格目录同步 cc-switch](../archive/accepted-2026-09/2026-09-19-pricing-catalog-cc-switch-seed.md)。
 - `fileLink` 可见文本始终是调用方短标签；`hyperlinks` 为真才发 OSC 8，为假也不改成绝对路径。跳过对照仍渲染报告 / 历史终稿 / 候选终稿行；报告仅在路径指向报告文件（不是实验根目录）时做成链接。结果页页脚列出 `o` / `h` / `f`。

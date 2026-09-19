@@ -11,6 +11,7 @@ import {
 } from "../../src/application/comparison-openable-media.js";
 import { publishComparisonArtifacts } from "../../src/application/comparison-publication.js";
 import { freezeCodexSession } from "../../src/products/packs/codex/sessions.js";
+import { extractCodexHistoricalArtifacts } from "../../src/products/packs/codex/historical-artifacts.js";
 import type { ComparisonMediaRecord, TaskCase } from "../../src/core/schema.js";
 import {
   addFilePatch,
@@ -175,73 +176,76 @@ test("B0 baseline record: empty refs yield candidate-only media with empty env b
   assert.equal((await readdir(envBaseline)).length, 0);
 });
 
-test(
-  "empty-refs historical HTML reaches paired comparison media without stuffed baselineSources",
-  { todo: "B1/B2: extract historical Add File bytes into openable discovery (empty artifactRefs)" },
-  async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "reprise-b0-empty-refs-report-"));
-    t.after(() => rm(root, { recursive: true, force: true }));
-    const { sourcePath, html } = await writeSyntheticRollout(root, "exec");
-    const dataDir = join(root, "data");
-    const frozen = await freezeCodexSession({
-      sourcePath,
-      casesRoot: join(dataDir, "cases"),
-      now: timestamp,
-      privacy: { allowModelText: true, allowBinary: false, redactions: [] },
-    });
-    const experimentRoot = join(root, "experiment");
-    const runId = "run-b0";
-    const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
-    const workspaceRoot = join(experimentRoot, "environment", "snapshots", runId);
-    await emptyDir(join(experimentRoot, "environment", "baselines"));
-    await mkdir(workspaceRoot, { recursive: true });
-    await writeFile(join(workspaceRoot, CANDIDATE_ANIMATION_NAME), await readCandidateAnimationHtml(), "utf8");
+test("empty-refs historical HTML reaches paired comparison media without stuffed baselineSources", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-b0-empty-refs-report-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  // Direct apply_patch is B1-trusted; B0 exec-wrapped node -e + require stays fail-closed.
+  const { sourcePath, html } = await writeSyntheticRollout(root, "direct");
+  const dataDir = join(root, "data");
+  const frozen = await freezeCodexSession({
+    sourcePath,
+    casesRoot: join(dataDir, "cases"),
+    now: timestamp,
+    privacy: { allowModelText: true, allowBinary: false, redactions: [] },
+    extractHistoricalArtifacts: extractCodexHistoricalArtifacts,
+  });
+  assert.ok(frozen.taskCase.baseline.artifactRefs.length >= 1);
+  const experimentRoot = join(root, "experiment");
+  const runId = "run-b0";
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
+  const workspaceRoot = join(experimentRoot, "environment", "snapshots", runId);
+  await emptyDir(join(experimentRoot, "environment", "baselines"));
+  await mkdir(workspaceRoot, { recursive: true });
+  await writeFile(join(workspaceRoot, CANDIDATE_ANIMATION_NAME), await readCandidateAnimationHtml(), "utf8");
 
-    // Production path: names come only from openable-baseline collection (empty refs today).
-    // Do not pass complete baselineSources — that bypasses the empty-refs root cause.
-    const openable = await discoverOpenableSources({
-      attemptRoot,
-      experimentRoot,
-      workspaceRoot,
-      runId,
-      dataDir,
-      caseId: frozen.taskCase.caseId,
-      changedPaths: [CANDIDATE_ANIMATION_NAME],
-      baselineArtifactNames: [...collectHistoricalDeliverableNames(frozen.taskCase, "openable-baseline")],
-    });
-    const captureCalls: { source: string; dest: string }[] = [];
-    const augmented = await augmentComparisonOpenableMedia({
-      attemptRoot,
-      workspaceRoot,
-      links: [],
-      baselineSources: openable.baselineSources,
-      candidateSources: openable.candidateSources,
-      captureScreenshot: async (sourcePath, destPng) => {
-        captureCalls.push({ source: sourcePath, dest: destPng });
-        const isBaseline = /(?:^|[\\/])animation\.html$/i.test(sourcePath.replaceAll("\\", "/"))
-          && !/candidate-animation\.html$/i.test(sourcePath.replaceAll("\\", "/"));
-        await writeFile(destPng, isBaseline ? BASELINE_PNG : CANDIDATE_PNG);
-        return { ok: true };
-      },
-    });
+  // Production path: names come from openable-baseline after extract fills refs.
+  // Do not pass complete baselineSources — that bypasses the empty-refs root cause.
+  const openable = await discoverOpenableSources({
+    attemptRoot,
+    experimentRoot,
+    workspaceRoot,
+    runId,
+    dataDir,
+    caseId: frozen.taskCase.caseId,
+    changedPaths: [CANDIDATE_ANIMATION_NAME],
+    baselineArtifactNames: [...collectHistoricalDeliverableNames(frozen.taskCase, "openable-baseline")],
+  });
+  const captureCalls: { source: string; dest: string }[] = [];
+  const augmented = await augmentComparisonOpenableMedia({
+    attemptRoot,
+    workspaceRoot,
+    links: [],
+    baselineSources: openable.baselineSources,
+    candidateSources: openable.candidateSources,
+    captureScreenshot: async (sourcePath, destPng) => {
+      captureCalls.push({ source: sourcePath, dest: destPng });
+      const isBaseline = /(?:^|[\\/])animation\.html$/i.test(sourcePath.replaceAll("\\", "/"))
+        && !/candidate-animation\.html$/i.test(sourcePath.replaceAll("\\", "/"));
+      await writeFile(destPng, isBaseline ? BASELINE_PNG : CANDIDATE_PNG);
+      return { ok: true };
+    },
+  });
 
-    assert.ok(openable.baselineSources.length >= 1, "historical animation.html must be discovered");
-    const baselineHtmlPath = openable.baselineSources[0]?.absolutePath;
-    assert.ok(baselineHtmlPath);
-    assert.equal(await readFile(baselineHtmlPath, "utf8"), html);
-    assert.ok(openable.candidateSources.length >= 1);
-    assert.ok(augmented.media.some((item) => item.side === "baseline" && item.available));
-    assert.ok(augmented.media.some((item) => item.side === "candidate" && item.available));
-    const baselineMedia = augmented.media.find((item) => item.side === "baseline" && item.available);
-    const candidateMedia = augmented.media.find((item) => item.side === "candidate" && item.available);
-    assert.ok(baselineMedia?.reportHref);
-    assert.ok(candidateMedia?.reportHref);
-    const baselineBytes = await readFile(join(attemptRoot, baselineMedia.reportHref));
-    const candidateBytes = await readFile(join(attemptRoot, candidateMedia.reportHref));
-    assert.ok(!baselineBytes.equals(candidateBytes), "fake renderer must emit distinct images");
-    assert.equal(captureCalls.length, 2);
-  },
-);
+  assert.ok(openable.baselineSources.length >= 1, "historical animation.html must be discovered");
+  const baselineHtmlPath = openable.baselineSources[0]?.absolutePath;
+  assert.ok(baselineHtmlPath);
+  // apply_patch reconstruction uses LF; fixture checkout may be CRLF on Windows.
+  assert.equal(
+    (await readFile(baselineHtmlPath, "utf8")).replace(/\r\n/g, "\n").replace(/\n$/, ""),
+    html.replace(/\r\n/g, "\n").replace(/\n$/, ""),
+  );
+  assert.ok(openable.candidateSources.length >= 1);
+  assert.ok(augmented.media.some((item) => item.side === "baseline" && item.available));
+  assert.ok(augmented.media.some((item) => item.side === "candidate" && item.available));
+  const baselineMedia = augmented.media.find((item) => item.side === "baseline" && item.available);
+  const candidateMedia = augmented.media.find((item) => item.side === "candidate" && item.available);
+  assert.ok(baselineMedia?.reportHref);
+  assert.ok(candidateMedia?.reportHref);
+  const baselineBytes = await readFile(join(attemptRoot, baselineMedia.reportHref));
+  const candidateBytes = await readFile(join(attemptRoot, candidateMedia.reportHref));
+  assert.ok(!baselineBytes.equals(candidateBytes), "fake renderer must emit distinct images");
+  assert.equal(captureCalls.length, 2);
+});
 
 test("failed later attempt leaves published report and media bytes unchanged", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-b0-publish-immutability-"));

@@ -79,6 +79,18 @@ export {
   type CandidateSpec,
 } from "./schemas/task-case.js";
 export {
+  HistoricalArtifactSchema,
+  HistoricalArtifactManifestSchema,
+  HistoricalArtifactIssueSchema,
+  HistoricalLogicalPathSchema,
+  type HistoricalArtifact,
+  type HistoricalArtifactManifest,
+  type HistoricalArtifactIssue,
+  type HistoricalArtifactIssueCode,
+  type HistoricalArtifactOrigin,
+  type HistoricalArtifactFinality,
+} from "./schemas/historical-artifacts.js";
+export {
   ExperimentSpecSchema,
   type ExperimentSpec,
   type AgentBudget,
@@ -111,18 +123,6 @@ export {
   ObservationSessionManifestSchema,
   type ObservationSessionManifest,
 } from "./schemas/observations.js";
-export {
-  HistoricalArtifactSchema,
-  HistoricalArtifactManifestSchema,
-  HistoricalArtifactIssueSchema,
-  HistoricalLogicalPathSchema,
-  type HistoricalArtifact,
-  type HistoricalArtifactManifest,
-  type HistoricalArtifactIssue,
-  type HistoricalArtifactIssueCode,
-  type HistoricalArtifactOrigin,
-  type HistoricalArtifactFinality,
-} from "./schemas/historical-artifacts.js";
 export {
   GitSinkManifestSchema,
   GitSinkManifestV1Schema,

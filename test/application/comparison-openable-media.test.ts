@@ -25,7 +25,7 @@ test("isOpenableFinalPath recognizes html and svg deliverables", () => {
 test("assertPairedVisualMediaOrThrow fails when both sides have visuals but media is empty", () => {
   assert.throws(
     () => assertPairedVisualMediaOrThrow({
-      baselineSources: [{ inspectPath: "history/finals/a.html", absolutePath: "/tmp/a.html" }],
+      baselineSources: [{ inspectPath: "finals/a.html", absolutePath: "/tmp/a.html" }],
       candidateSources: [{ inspectPath: "candidate/out.html", absolutePath: "/tmp/out.html" }],
       links: [],
       media: [],
@@ -50,7 +50,7 @@ test("assertPairedVisualMediaOrThrow accepts paired available media", () => {
   }));
 });
 
-test("sealed baseline html is copied into attempt history finals", async (t) => {
+test("sealed baseline html is copied into attempt finals", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-openable-"));
   t.after(async () => {
     const { rm } = await import("node:fs/promises");
@@ -58,18 +58,18 @@ test("sealed baseline html is copied into attempt history finals", async (t) => 
   });
   const attemptRoot = join(root, "attempt");
   const baselineHtml = join(root, "baseline.html");
-  await mkdir(join(attemptRoot, "history", "finals"), { recursive: true });
+  await mkdir(join(attemptRoot, "finals"), { recursive: true });
   await writeFile(baselineHtml, "<!doctype html><title>baseline</title>", "utf8");
   await augmentComparisonOpenableMedia({
     attemptRoot,
     workspaceRoot: root,
     links: [],
-    baselineSources: [{ inspectPath: "history/finals/baseline.html", absolutePath: baselineHtml }],
+    baselineSources: [{ inspectPath: "finals/baseline.html", absolutePath: baselineHtml }],
     candidateSources: [],
   }).catch((error: unknown) => {
     if (!(error instanceof ComparisonVisualMediaError)) throw error;
   });
-  const sealed = join(attemptRoot, "history", "finals", "baseline.html");
+  const sealed = join(attemptRoot, "finals", "baseline.html");
   const body = await readFile(sealed, "utf8");
   assert.match(body, /baseline/);
 });
@@ -94,7 +94,7 @@ test("augmentComparisonOpenableMedia screenshots dual html when links only refer
     links: [
       { side: "candidate", inspectPath: "candidate/deck.html", reportHref: "candidate/deck.html" },
     ],
-    baselineSources: [{ inspectPath: "history/finals/deck.html", absolutePath: baselineHtml }],
+    baselineSources: [{ inspectPath: "finals/deck.html", absolutePath: baselineHtml }],
     candidateSources: [{ inspectPath: "candidate/deck.html", absolutePath: candidateHtml }],
     captureScreenshot: async (sourcePath, destPng) => {
       captureCalls.push({ source: sourcePath, dest: destPng });
@@ -189,7 +189,7 @@ test("augmentComparisonOpenableMedia reports no_browser separately from capture_
   await writeFile(baselineHtml, "<!doctype html><title>b</title>", "utf8");
   await writeFile(candidateHtml, "<!doctype html><title>c</title>", "utf8");
   const sources = {
-    baselineSources: [{ inspectPath: "history/finals/baseline.html", absolutePath: baselineHtml }],
+    baselineSources: [{ inspectPath: "finals/baseline.html", absolutePath: baselineHtml }],
     candidateSources: [{ inspectPath: "candidate/candidate.html", absolutePath: candidateHtml }],
   };
   await assert.rejects(

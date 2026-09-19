@@ -172,7 +172,7 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
   });
   const tools = workspaceTools(attemptRoot, {
     mounts,
-    denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns", "run", "observations"],
+    denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
   });
   const reader = tools.find((tool) => tool.name === "read");
   assert.ok(reader);
@@ -183,6 +183,7 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
   };
   const index = await read("INDEX.md");
   assert.match(index, /history\//);
+  assert.match(index, /finals\//);
   assert.match(index, /candidate\//);
   const briefingIndex = await read("briefing/INDEX.md");
   assert.match(briefingIndex, /turns\//);
@@ -293,15 +294,17 @@ test("sealed historical images enter baseline media without a double extension",
   const snapshotRoot = join(experimentRoot, "environment", "snapshots", runId);
   const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-media");
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
-  await mkdir(join(experimentRoot, "environment", "baselines"), { recursive: true });
+  const caseValue = taskCase();
+  const dataDir = join(experimentRoot, "data");
+  const artifactDir = join(dataDir, "cases", caseValue.caseId, "baseline-artifacts");
+  await mkdir(artifactDir, { recursive: true });
   await mkdir(join(experimentRoot, "runs", runId, "controller-briefing", "history", "transcript"), { recursive: true });
   await mkdir(snapshotRoot, { recursive: true });
-  await writeFile(join(experimentRoot, "environment", "baselines", "slide-1.png"), png);
+  await writeFile(join(artifactDir, "slide-1.png"), png);
   await writeFile(
     join(experimentRoot, "runs", runId, "controller-briefing", "history", "transcript", "message-2.txt"),
     "预览在 slide-1.png\n",
   );
-  const caseValue = taskCase();
   caseValue.baseline.finalMessage = "已导出 slide-1.png";
   const record = runRecord();
   const context = buildComparisonContext(caseValue, [record], [{
@@ -311,6 +314,7 @@ test("sealed historical images enter baseline media without a double extension",
     attemptRoot,
     experimentRoot,
     workspaceRoot: snapshotRoot,
+    dataDir,
     taskCase: caseValue,
     record,
     context,

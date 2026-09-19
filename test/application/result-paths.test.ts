@@ -33,11 +33,15 @@ const inspection = (): RunInspection => ({
 
 test("buildResultPathLinks prioritizes report and final artifact files", async (t) => {
   const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-result-paths-"));
-  t.after(async () => rm(experimentRoot, { recursive: true, force: true }));
+  const dataDir = await mkdtemp(join(tmpdir(), "reprise-result-data-"));
+  t.after(async () => {
+    await rm(experimentRoot, { recursive: true, force: true });
+    await rm(dataDir, { recursive: true, force: true });
+  });
   const workspaceRoot = join(experimentRoot, "environment", "runs", "run-1");
-  const baselineDir = join(experimentRoot, "environment", "baselines");
-  await mkdir(baselineDir, { recursive: true });
-  await writeFile(join(baselineDir, "deck.html"), "<!doctype html><title>deck</title>", "utf8");
+  const artifactDir = join(dataDir, "cases", "case-1", "baseline-artifacts");
+  await mkdir(artifactDir, { recursive: true });
+  await writeFile(join(artifactDir, "deck.html"), "<!doctype html><title>deck</title>", "utf8");
   await mkdir(join(workspaceRoot, "slides"), { recursive: true });
   await writeFile(join(workspaceRoot, "slides", "final.html"), "<!doctype html><title>final</title>", "utf8");
   const links = await buildResultPathLinks({
@@ -47,9 +51,10 @@ test("buildResultPathLinks prioritizes report and final artifact files", async (
     taskCase: taskCase(),
     inspection: inspection(),
     workspaceRoot,
+    dataDir,
   });
   assert.equal(links.report, join(experimentRoot, "report.html"));
-  assert.equal(links.historyFinal, join(baselineDir, "deck.html"));
+  assert.equal(links.historyFinal, join(artifactDir, "deck.html"));
   assert.equal(links.candidateFinal, join(workspaceRoot, "slides", "final.html"));
   assert.match(links.trace ?? "", /runs[/\\]run-1$/);
 });
@@ -73,22 +78,27 @@ test("buildResultPathLinks omits historyFinal when baseline has no deliverable n
   assert.equal(links.historyFinal, undefined);
 });
 
-test("resolveHistoricalFinalPath prefers sealed attempt finals over environment baselines", async (t) => {
+test("resolveHistoricalFinalPath prefers sealed attempt finals over case artifacts", async (t) => {
   const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-result-paths-priority-"));
-  t.after(async () => rm(experimentRoot, { recursive: true, force: true }));
+  const dataDir = await mkdtemp(join(tmpdir(), "reprise-result-data-priority-"));
+  t.after(async () => {
+    await rm(experimentRoot, { recursive: true, force: true });
+    await rm(dataDir, { recursive: true, force: true });
+  });
   const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
-  const baselineDir = join(experimentRoot, "environment", "baselines");
-  await mkdir(join(attemptRoot, "history", "finals"), { recursive: true });
-  await mkdir(baselineDir, { recursive: true });
-  await writeFile(join(attemptRoot, "history", "finals", "deck.html"), "<!doctype html><title>sealed</title>", "utf8");
-  await writeFile(join(baselineDir, "deck.html"), "<!doctype html><title>baseline</title>", "utf8");
+  const artifactDir = join(dataDir, "cases", "case-1", "baseline-artifacts");
+  await mkdir(join(attemptRoot, "finals"), { recursive: true });
+  await mkdir(artifactDir, { recursive: true });
+  await writeFile(join(attemptRoot, "finals", "deck.html"), "<!doctype html><title>sealed</title>", "utf8");
+  await writeFile(join(artifactDir, "deck.html"), "<!doctype html><title>artifact</title>", "utf8");
   const resolved = await resolveHistoricalFinalPath({
     experimentRoot,
     runId: "run-1",
     taskCase: taskCase(),
     attemptRoot,
+    dataDir,
   });
-  assert.equal(resolved, join(attemptRoot, "history", "finals", "deck.html"));
+  assert.equal(resolved, join(attemptRoot, "finals", "deck.html"));
 });
 
 test("resolveHistoricalFinalPath resolves baseline-artifacts under dataDir", async (t) => {

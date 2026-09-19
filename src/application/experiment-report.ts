@@ -25,6 +25,7 @@ import {
   writeComparisonBriefing,
 } from "./comparison-briefing.js";
 import { ComparisonVisualMediaError } from "./comparison-openable-media.js";
+import { prepareHistoricalArtifacts } from "./prepare-historical-artifacts.js";
 import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
@@ -216,6 +217,15 @@ async function compareExperimentOutcome(
       attemptRoot,
     }), { recursive: true });
   }
+  const preparedHistory = await prepareHistoricalArtifacts({
+    taskCase: input.taskCase,
+    caseDir: join(input.input.dataDir, "cases", input.taskCase.caseId),
+    attemptRoot,
+    ...(input.input.extractHistoricalArtifacts
+      ? { extract: input.input.extractHistoricalArtifacts }
+      : {}),
+  });
+  await mkdir(preparedHistory.finalsRoot, { recursive: true });
   const events = input.store.events(input.input.runId);
   const locale = await readOperatorLocale(input.input.dataDir);
   const comparisonModel = (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel;
@@ -234,6 +244,7 @@ async function compareExperimentOutcome(
     const briefing = await writeComparisonBriefing({
       attemptRoot, experimentRoot: input.experimentRoot, workspaceRoot: comparisonWorkspaceRoot(input),
       dataDir: input.input.dataDir,
+      openableBaselineNames: preparedHistory.openableNames,
       taskCase: input.taskCase, record, context: briefingContext, events,
       artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
       snapshotStatus: input.candidateSnapshotStatus,
@@ -519,12 +530,15 @@ function comparisonTools(
       mounts,
       allowWrite: comparisonAttemptWriteAllowed,
       completionPaths: new Set(["work/comparison-plan.md", "report.html"]),
-      denyDestructiveOnPrefix: ["candidate", "evidence", "history", "turns", "run", "observations"],
+      denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
       allowShell: true,
       shellCwd: scratchRoot,
       shellEnv: {
-        REPRISE_BASELINE_ROOT: join(controllerRoot, "history"), REPRISE_CANDIDATE_ROOT: candidateRoot,
-        REPRISE_EVIDENCE_ROOT: join(attemptRoot, "evidence"), REPRISE_SCRATCH_ROOT: scratchRoot,
+        REPRISE_BASELINE_ROOT: join(controllerRoot, "history"),
+        REPRISE_FINALS_ROOT: mounts.finals,
+        REPRISE_CANDIDATE_ROOT: candidateRoot,
+        REPRISE_EVIDENCE_ROOT: join(attemptRoot, "evidence"),
+        REPRISE_SCRATCH_ROOT: scratchRoot,
       },
       homeRoot: join(attemptRoot, ".home"),
     }),

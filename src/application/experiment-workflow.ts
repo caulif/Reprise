@@ -147,6 +147,12 @@ export function createExperimentWorkflow(input: {
         ...(request.sourceRootKind ? { sourceRootKind: request.sourceRootKind } : {}),
         ...(request.compare ? { compare: true } : {}),
         ...(request.deferComparison ? { deferComparison: true } : {}),
+        ...(packHistory(selected.pack).extractHistoricalArtifacts
+          ? {
+            extractHistoricalArtifacts: (extractInput) =>
+              packHistory(selected.pack).extractHistoricalArtifacts!(extractInput),
+          }
+          : {}),
         signal: owned.signal,
       });
       if (live) ownedRecoveries.take(live.experimentId);
@@ -159,6 +165,11 @@ export function createExperimentWorkflow(input: {
         resolveAgents: async (combined) => {
           const agents = await input.agents(combined);
           return { comparison: agents.comparison, agentConfig: agents.config };
+        },
+        resolveExtractHistoricalArtifacts: (productId) => {
+          const history = packHistory(packFor(productId));
+          if (!history.extractHistoricalArtifacts) return undefined;
+          return (extractInput) => history.extractHistoricalArtifacts!(extractInput);
         },
         ...(runId ? { runId } : {}), ...(signal ? { signal } : {}), ...(onEvent ? { onEvent } : {}), ...(onActivity ? { onActivity } : {}),
       });
@@ -182,10 +193,18 @@ function sourceHistoryPorts(dataDir: string, packFor: (productId: string) => Pro
       return inspectProductSession(packHistory(packFor(ref.productId)), ref);
     },
     async freezeSource(request: Parameters<ExperimentWorkflow["freezeSource"]>[0]) {
-      const imported = await readImportedSession(packHistory(packFor(request.productId)), request.session, request.sourcePath);
+      const pack = packFor(request.productId);
+      const history = packHistory(pack);
+      const imported = await readImportedSession(history, request.session, request.sourcePath);
       return freezeCase(imported, join(dataDir, 'cases'), request.privacy, request.now, {
         ...(request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),
         reuseExisting: true,
+        ...(history.extractHistoricalArtifacts
+          ? {
+            extractHistoricalArtifacts: (extractInput) =>
+              history.extractHistoricalArtifacts!(extractInput),
+          }
+          : {}),
       });
     },
   };
