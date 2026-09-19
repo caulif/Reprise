@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Synthetic SVG bounce</title>
+  <style>
+    .ball { animation: bounce 1s infinite alternate ease-in-out; }
+    @keyframes bounce {
+      from { transform: translateY(0); }
+      to { transform: translateY(36px); }
+    }
+  </style>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" width="220" height="140" viewBox="0 0 220 140" role="img" aria-label="bouncing ball">
+    <rect width="220" height="140" fill="#0f172a"/>
+    <circle class="ball" cx="110" cy="48" r="22" fill="#38bdf8"/>
+  </svg>
+</body>
+</html>
