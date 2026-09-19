@@ -9,7 +9,7 @@ offset5 真实 5+5 显示，已知失败在评估 batch 中被重建为零进度
 ## 决定
 
 - `RecoveryEvaluationError` 可附带 schema-validated progress draft。batch 将已知业务失败写为失败 terminal，同时保留 staging、forensics、candidate、model calls 与 duration；仅未知 crash 使用零进度 fallback。真实 5+5 runner 直接复制 `recovery-evaluation` artifact 的事实字段，而不再重新推断或硬编码。
-- Pi Host 优先从安全 status/code/cause 提取 408、500、502、503、504，并映射为 `transient_upstream`；Recovery 对它与 rate limit、网络、timeout 一样最多额外调用一次。401/403、协议和未知错误不重试。
+- Pi Host 优先从安全 status/code/cause 提取 408、500、502、503、504、520，并映射为 `transient_upstream`；Recovery 对它与 rate limit、网络、timeout 一样最多额外调用一次。401/403、协议和未知错误不重试。
 - 最终失败阶段只由最终 Agent failure kind 决定；工具故障只作为审计贡献信息，不能把最终 upstream/model 故障改为 tool failure。
 - `recovered`/`partial` 必须具有 Host 观测到的非 sink task-path outcome。缺少它们的声明由 Provider verifier 拒绝；Provider-validated checkpoint 的确定性 no-op 仍走独立 Host checkpoint 路径。
 - Windows `staging_shell` 明确执行 `C:\Program Files\PowerShell\7\pwsh.exe -NoProfile -NonInteractive -Command <command>`，不使用 Node 的隐式 `shell: true`；ProcessBoundaryError 继续只持久化分类、errno、可执行类型和退出类别，绝不记录完整命令、cwd 或环境。
@@ -52,3 +52,10 @@ offset5 真实 5+5 显示，已知失败在评估 batch 中被重建为零进度
 - 新增 100 个分层 checkpoint fixture（Codex/Claude Code 各 50），每例通过 TypeBox `Value.Check` 校验，并保存 baseline、truth tree hash、允许等价路径及 perturbation metadata；测试逐例验证隔离 staging 的 truth hash。
 - 该数据集用于无外部费用的 Provider/checkpoint 真值回归，不等同于真实模型发布率、失败注入率或产品能力结论。真实 Runtime 分层批次、Wilson 报告和 timeout/429/502/tool-spawn/provider-reject 注入仍须显式 opt-in 后单独记录。
 - 当前 cleanup 是 Host-owned、manifest 限定的可审计 primitive；未将其描述为已接入每条 Recovery terminal 路径的后台调度器。通用 shell sandbox 也未实现，现阶段只提供已知敏感类别的最小词法 deny。
+
+## 2026-09-19 补充：HTTP 520 为 transient_upstream
+
+- Cloudflare / 本地反代常见的 **HTTP 520**（Web Server Returned an Unknown Error）与 502/503/504 同属瞬时上游故障，归入同一 `transient_upstream` 分类，走既有 Recovery 有界重试。
+- 分类同时覆盖带 `.status===520` 的结构化错误，以及 Pi Recovery 常见的 **message-only** 形状（`HTTP 520`、`520 Web Server Returned an Unknown Error: …`）；后者在 adapter 折叠时丢掉 status，必须靠文案识别（与 bad gateway / gateway timeout 对称）。
+- 不扩展 521–524：仓库与 ADR 此前未讨论这些码；缺证据时不扩大重试面。
+- 本仓无 proxy `request-retry` 配置；若反代层也省略 520，需在反代侧单独补齐（本仓不发明 proxy 配置）。

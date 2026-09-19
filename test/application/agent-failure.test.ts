@@ -26,3 +26,42 @@ test('operator abort stays cancelled and is not retried', () => {
     failure: { code: 'agent_failure', message: 'Pi model request was aborted.', attempts: 1, kind: cancelled },
   } as never), undefined);
 });
+
+test('HTTP 520 is transient_upstream and recovery-retryable', () => {
+  const kind = classifyAgentFailure(Object.assign(new Error('HTTP 520'), { status: 520 }));
+  assert.equal(kind, 'transient_upstream');
+  assert.equal(retryableRecoveryFailure({
+    status: 'failed',
+    sessionId: 'recovery-1',
+    failure: { code: 'agent_failure', message: 'HTTP 520', attempts: 1, kind },
+  } as never), 'agent_failure');
+});
+
+test('message-only HTTP 520 (Pi Recovery shape) is transient_upstream and recovery-retryable', () => {
+  const cloudflare = classifyAgentFailure(
+    new Error('520 Web Server Returned an Unknown Error: <html>upstream blip</html>'),
+  );
+  const httpLabel = classifyAgentFailure(new Error('HTTP 520'));
+  assert.equal(cloudflare, 'transient_upstream');
+  assert.equal(httpLabel, 'transient_upstream');
+  assert.equal(retryableRecoveryFailure({
+    status: 'failed',
+    sessionId: 'recovery-1',
+    failure: {
+      code: 'agent_failure',
+      message: '520 Web Server Returned an Unknown Error: <html>upstream blip</html>',
+      attempts: 1,
+      kind: cloudflare,
+    },
+  } as never), 'agent_failure');
+});
+
+test('unknown failure kind is not recovery-retried', () => {
+  assert.equal(classifyAgentFailure(new Error('HTTP 418')), 'unknown');
+  assert.equal(classifyAgentFailure(new Error('I\'m a teapot')), 'unknown');
+  assert.equal(retryableRecoveryFailure({
+    status: 'failed',
+    sessionId: 'recovery-1',
+    failure: { code: 'agent_failure', message: 'HTTP 418', attempts: 1, kind: 'unknown' },
+  } as never), undefined);
+});
