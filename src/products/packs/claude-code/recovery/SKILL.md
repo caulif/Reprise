@@ -10,9 +10,10 @@ A frozen TaskCase contains the first executable user message, a normalized trans
 
 ## Investigation order
 
-1. Read the full task text; compare the work copy with source/ using ls, grep, and find.
-2. When a decision-critical sentence is missing, read observations/INDEX.md and then one observations/ file.
-3. Keep short notes in .reprise/recovery-work/. The local developer environment may be used for installs and builds; credentials, the user's real directory, and global Git config stay out of bounds.
+1. Read the full task text; compare the work copy with source/ using ls, grep, and find. source/ is a file-tool virtual prefix.
+2. Use shell_exec with cwd already on the writable copy; copy from REPRISE_SOURCE_MOUNT when a source file is needed. Keep source inspection and work-copy mutation in separate shell calls.
+3. When a decision-critical sentence is missing, read observations/INDEX.md and then one observations/ file.
+4. Keep short notes in .reprise/recovery-work/. The local developer environment may be used for installs and builds; credentials, the user's real directory, and global Git config stay out of bounds.
 
 ## Semantics of Claude Code history
 

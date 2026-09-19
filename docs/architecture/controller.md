@@ -270,13 +270,14 @@ Controller 不直接调用 Runtime 的 approval API；它只能通过普通用�
 
 ## 7. 观察与工具面
 
-Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本，`notes/` 可写工作笔记；读取工具与 `shell_exec` 可以访问当前进程可读路径。不注册名为 Observation Adapter 的组件。
+Controller 不能只读 Target 的最终自述。Host 把工作区工具挂在 briefing 根上，`project/` 可写挂载隔离副本，`notes/` 可写工作笔记；读取工具与 `shell_exec` 可以访问当前进程可读路径。文件工具的 `project/<path>` 指向隔离副本；`shell_exec` 的 cwd 已是该副本，相对路径用 `./<path>`，不要写 `project/<path>`。briefing 与 `notes/` 属于文件工具工作区，不是 shell cwd。不注册名为 Observation Adapter 的组件。
 
 当前事实供给：
 
 - [`inspectRun`](../../src/application/controller-queries.ts) 从事件与 fingerprint 派生 `changedPaths`、产物路径、usage 与用户可见表面；
 - 文件入口是 `current-user-view.md`、`THIS-TURN.txt`、`changed-paths.txt` 与 INDEX；`notes/` 是 Controller 工作笔记，Host digest 不收录；
-- 成功 `read` 记 `controller.observation_read`；`edit`/`write` 记 `controller.workspace_write`；shell 在副本外的写入记 `controller.external_write`。
+- 成功 `read` / `shell_exec` 观察记 `controller.observation_read`，并把注册的 `artifact:...` 短引用写进模型可见工具返回正文（`Evidence refs:`）；observation artifact 只封存原始内容，不含该 footer。`edit`/`write` 记 `controller.workspace_write`；shell 在副本外的写入记 `controller.external_write`。
+- `evidenceRefs` 可省略；路径伪引用或未观察引用不得静默丢弃，须经 schema / ownership 校验与有限 structured repair；持续非法则 decision 失败，不投递半成品。
 
 Controller 需要 Target 建立证据时发送 `verify` 消息；报告由 Comparison 写 `report.html`。
 
@@ -322,6 +323,8 @@ intent 是可观测解释，不是硬编码的行为策略。Controller 仍通�
 - `no_further_value`：继续运行预计不会增加有效结果或比较信息。
 
 预算、timeout、Runtime failure 和 user abort 是 Orchestrator stop reason，不伪装成 Controller done。
+
+历史会话没有后续用户消息，不等于用户已验收。把它当作上下文有限，不能当作核验证明。停止依据是当前用户可见交付与原始目标；区分已观察事实、候选自述与仅从源码推断的结论。只读了代码时不得声称视觉或交互核验。
 
 有效的非 satisfied 判断表示任务 incomplete。Host 接受 Controller 的 `done` 作为停止决定，不因未读 briefing 文件、缺失账本或省略 `understandingDelta` 而拒绝。历史记录中的 `controller.understanding` 与账本事件仍可只读展示。
 

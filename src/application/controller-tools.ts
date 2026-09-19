@@ -120,6 +120,7 @@ async function persistControllerRead(
   await input.store.commitArtifact({ artifactId, runId: input.runId, kind: "controller_observation", mediaType: "application/json", bytes });
   const evidenceRefs = [`artifact:${artifactId}`];
   result.details = { ...details, runId: input.runId, evidenceRefs, resultHash: sha256(bytes) };
+  appendEvidenceRefsFooter(result, evidenceRefs);
   await input.store.append(observationReadRecord({
     requestId: bindings.requestId,
     runId: input.runId,
@@ -168,6 +169,7 @@ async function persistShellObservation(
   await input.store.commitArtifact({ artifactId, runId: input.runId, kind: "controller_observation", mediaType: "application/json", bytes });
   const evidenceRefs = [`artifact:${artifactId}`];
   result.details = { ...details, runId: input.runId, evidenceRefs, resultHash: observation.resultHash };
+  appendEvidenceRefsFooter(result, evidenceRefs);
   await input.store.append(observationReadRecord({
     requestId: bindings.requestId,
     runId: input.runId,
@@ -201,6 +203,19 @@ async function persistControllerExternalWrites(
       operationId: `${bindings.requestId}-ext-${sha256(JSON.stringify(payload)).slice(0, 16)}`,
       payload,
     });
+  }
+}
+
+/** Append model-visible evidence metadata after the observation artifact is sealed. */
+export function appendEvidenceRefsFooter(
+  result: AgentToolResult,
+  evidenceRefs: readonly string[],
+): void {
+  if (evidenceRefs.length === 0) return;
+  const line = `Evidence refs: ${evidenceRefs.join(", ")}`;
+  result.content = result.content.length > 0 ? `${result.content}\n\n${line}` : line;
+  if (result.contentBlocks) {
+    result.contentBlocks = [...result.contentBlocks, { type: "text", text: line }];
   }
 }
 
