@@ -270,7 +270,7 @@ async function installPageNetworkGate(
   pageSessionId: string,
   allowedOrigin: string,
 ): Promise<void> {
-  // Fetch covers page HTTP(S); WS/ES/beacon need a page-world gate; Worker/SW worlds bypass that gate, so deny them.
+  // Fetch covers page HTTP(S); WS/ES/beacon need a page-world gate; Worker/SW/WebRTC bypass Fetch, so deny them.
   await session.send("Page.addScriptToEvaluateOnNewDocument", {
     source: pageNetworkGateSource(allowedOrigin),
   }, pageSessionId);
@@ -325,18 +325,22 @@ function pageNetworkGateSource(allowedOrigin: string): string {
         return origBeacon(url, data);
       };
     }
-    const denyWorker = (Orig, kind) => {
-      if (typeof Orig !== "function") return Orig;
-      const Wrapped = function (url) { block(kind, url); };
+    const denyCtor = (name, kind) => {
+      const Orig = globalThis[name];
+      if (typeof Orig !== "function") return;
+      const Wrapped = function () { block(kind, name); };
       Wrapped.prototype = Orig.prototype;
-      return Wrapped;
+      try { globalThis[name] = Wrapped; } catch (e) {}
     };
-    globalThis.Worker = denyWorker(globalThis.Worker, "worker");
-    globalThis.SharedWorker = denyWorker(globalThis.SharedWorker, "sharedworker");
+    denyCtor("Worker", "worker");
+    denyCtor("SharedWorker", "sharedworker");
+    // WebRTC ICE/STUN/TURN uses UDP outside Fetch; deny constructors rather than allowlisting.
+    denyCtor("RTCPeerConnection", "webrtc");
+    denyCtor("webkitRTCPeerConnection", "webrtc");
     if (navigator.serviceWorker) {
       const swStub = {
         controller: null,
-        ready: Promise.reject(new Error("blocked serviceworker")),
+        ready: new Promise(() => {}),
         register(url) { block("serviceworker", url); },
         getRegistration() { return Promise.resolve(undefined); },
         getRegistrations() { return Promise.resolve([]); },

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createSocket } from "node:dgram";
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -224,6 +225,7 @@ test("opt-in real browser blocks external fetch, websocket, and file urls", asyn
   });
   let httpHits = 0;
   let wsHits = 0;
+  let stunHits = 0;
   const external = createServer((_req, res) => {
     httpHits += 1;
     res.writeHead(200, { "Content-Type": "text/plain" });
@@ -245,9 +247,20 @@ test("opt-in real browser blocks external fetch, websocket, and file urls", asyn
   t.after(() => new Promise<void>((resolve, reject) => wsProbe.close((error) => (error ? reject(error) : resolve()))));
   const wsAddress = wsProbe.address();
   assert.ok(wsAddress && typeof wsAddress !== "string");
+  const stunProbe = createSocket("udp4");
+  stunProbe.on("message", () => {
+    stunHits += 1;
+  });
+  await new Promise<void>((resolve, reject) => {
+    stunProbe.once("error", reject);
+    stunProbe.bind(0, "127.0.0.1", () => resolve());
+  });
+  t.after(() => new Promise<void>((resolve) => stunProbe.close(() => resolve())));
+  const stunPort = stunProbe.address().port;
   const fileUrl = pathToFileURL(join(root, "secret.txt")).href;
   const httpUrl = `http://127.0.0.1:${address.port}/x`;
   const wsUrl = `ws://127.0.0.1:${wsAddress.port}/probe`;
+  const stunUrl = `stun:127.0.0.1:${stunPort}`;
   await writeFile(join(root, "secret.txt"), "nope", "utf8");
   await writeFile(join(root, "worker.js"), `try { new WebSocket(${JSON.stringify(wsUrl)}); } catch (e) {}`, "utf8");
   await writeFile(join(root, "sw.js"), `self.addEventListener('install', () => { fetch(${JSON.stringify(httpUrl)}).catch(()=>{}); });
@@ -263,6 +276,11 @@ try {
 } catch (e) {}
 try { new Worker('worker.js'); } catch (e) {}
 try { navigator.serviceWorker.register('sw.js'); } catch (e) {}
+try {
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: ${JSON.stringify(stunUrl)} }] });
+  pc.createDataChannel('x');
+  pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(()=>{});
+} catch (e) {}
 </script>
 ok
 </body>`, "utf8");
@@ -278,6 +296,7 @@ ok
   if (!result.ok) return;
   assert.equal(httpHits, 0, `external http hits=${httpHits}`);
   assert.equal(wsHits, 0, `external ws hits=${wsHits}`);
+  assert.equal(stunHits, 0, `stun udp hits=${stunHits}`);
   assert.ok(result.diagnostics.some((item) => item.code === "network_blocked"));
   const gateText = result.diagnostics
     .filter((item) => item.code === "console_error")
@@ -285,4 +304,5 @@ ok
     .join("\n");
   assert.match(gateText, /reprise-network-gate.*worker/i);
   assert.match(gateText, /reprise-network-gate.*serviceworker/i);
+  assert.match(gateText, /reprise-network-gate.*webrtc/i);
 });
