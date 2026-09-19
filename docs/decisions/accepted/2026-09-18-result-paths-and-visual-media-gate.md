@@ -10,7 +10,7 @@ TUI 结果页需要打开**文件**（报告、历史终稿、候选终稿），
 
 - `buildResultPathLinks` 异步解析路径：`resolveHistoricalFinalPath` 与 `discoverOpenableSources` 共用 `historical-final-discovery.ts` 的搜索顺序与存在性检查；无匹配则不写链接。
 - baseline HTML 封存到 attempt `finals/` 时，同名 basename 冲突且字节不同则失败，避免错误绑定。
-- 无头截图经 `src/infrastructure/headless-screenshot.ts`；失败区分 `no_browser` 与 `capture_failed`，诊断写入 `ComparisonVisualMediaError` 消息。
+- 无头截图经受控产物渲染器（`artifact-renderer.ts`，由 `headless-screenshot.ts` 解析浏览器并委托）；失败区分 `no_browser`、`capture_failed` 等，诊断写入 `ComparisonVisualMediaError` 消息。详见 [受控产物渲染与报告预览](./2026-09-19-controlled-artifact-render.md)。
 - `deepseek-v4.1-flash` 不得借用 `deepseek-v4-flash` 费率；独立目录行见 [2026-09-19 价格目录同步 cc-switch](../archive/accepted-2026-09/2026-09-19-pricing-catalog-cc-switch-seed.md)。
 - `fileLink` 可见文本始终是调用方短标签；`hyperlinks` 为真才发 OSC 8，为假也不改成绝对路径。跳过对照仍渲染报告 / 历史终稿 / 候选终稿行；报告仅在路径指向报告文件（不是实验根目录）时做成链接。结果页页脚列出 `o` / `h` / `f`。
 

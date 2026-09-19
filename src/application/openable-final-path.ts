@@ -25,7 +25,8 @@ export function isOpenableFinalPath(path: string): boolean {
 }
 
 export function isScreenshotOpenablePath(path: string): boolean {
-  return OPENABLE_HTML_EXT.has(normalizedExt(path));
+  const ext = normalizedExt(path);
+  return OPENABLE_HTML_EXT.has(ext) || ext === ".svg";
 }
 
 export function isHistoricalImagePath(path: string): boolean {
