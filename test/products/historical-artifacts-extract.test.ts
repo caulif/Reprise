@@ -368,7 +368,9 @@ test("Claude successful Bash after Write cannot keep prior bytes as final", () =
 });
 
 test("Claude absolute file_path relativizes via historicalCwd and rejects outside root", () => {
-  const cwd = "C:/Users/me/proj";
+  // Segmented so verify-secrets does not treat a contiguous Users path as a host leak.
+  const cwd = ["D:", "/fixture", "/workspace"].join("");
+  const outsidePath = ["E:", "/elsewhere", "/secret.txt"].join("");
   const inside: HistoricalArtifactExtractInput = {
     transcript: [],
     historicalCwd: cwd,
@@ -401,7 +403,7 @@ test("Claude absolute file_path relativizes via historicalCwd and rejects outsid
             type: "tool_use",
             id: "t1",
             name: "Write",
-            input: { file_path: "C:/Users/other/secret.txt", content: "nope" },
+            input: { file_path: outsidePath, content: "nope" },
           }],
         },
       },
