@@ -6,7 +6,7 @@ import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
-import { kv, kvLinkBlock, panel, panelBodyChrome, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
+import { kv, kvLinkBlock, panel, panelBodyChrome, panelBodyScreenRows, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
 
 export type ResultPointerHit = { readonly action: ResultAction; readonly x0: number; readonly x1: number };
@@ -73,8 +73,11 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
   const lines = panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width);
   const rowHits = new Map<number, readonly ResultPointerHit[]>();
   const chrome = panelBodyChrome(theme);
+  const bodyScreenRows = panelBodyScreenRows(theme, body, width);
   for (const [bodyRow, hits] of bodyHits) {
-    rowHits.set(chrome.row + bodyRow, hits.map((hit) => ({
+    const screenRow = bodyScreenRows[bodyRow];
+    if (screenRow === undefined) continue;
+    rowHits.set(chrome.row + screenRow, hits.map((hit) => ({
       action: hit.action,
       x0: hit.x0 + chrome.col,
       x1: hit.x1 + chrome.col,

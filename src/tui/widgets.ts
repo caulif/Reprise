@@ -18,6 +18,22 @@ export function panelBodyChrome(theme: Theme): { readonly row: number; readonly 
   return { row: 1, col: theme.framed ? 1 : 3 };
 }
 
+export function panelInnerWidth(theme: Theme, width: number): number {
+  return Math.max(1, width - (theme.framed ? 2 : 3));
+}
+
+/** First screen row (0-based inside the panel body) for each pre-panel body line after wrap. */
+export function panelBodyScreenRows(theme: Theme, body: readonly string[], width: number): readonly number[] {
+  const inner = panelInnerWidth(theme, width);
+  const rows: number[] = [];
+  let screenRow = 0;
+  for (const line of body) {
+    rows.push(screenRow);
+    screenRow += wrapBodyLine(line, inner).length;
+  }
+  return rows;
+}
+
 export function pad(text: string, width: number, ellipsis = '…'): string {
   if (width <= 0) return '';
   const visible = visibleWidth(text);

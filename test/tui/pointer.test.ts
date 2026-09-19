@@ -115,6 +115,53 @@ test('result pointer matches final framed screen coords without OSC 8', () => {
   assert.equal(pointerAt(lines, row, value.x0 - 2, 'en', pathLinks, rowHits), undefined);
 });
 
+test('result pointer stays aligned when metrics wrap at compact width', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const pathLinks = {
+    report: 'C:\\exp\\report.html',
+    historyFinal: 'C:\\exp\\environment\\baselines\\deck.html',
+    candidateFinal: 'C:\\exp\\environment\\runs\\run-1\\out.html',
+  };
+  const fixture = {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    pathLinks,
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'completed' } },
+    facts: { wallClockMs: 72_000, turns: 3, controllerCalls: 2, tokenCount: 4096, costUsd: 1.23 },
+  } as never;
+  for (const width of [48, 60]) {
+    const theme = createTheme(width, false);
+    assert.equal(theme.framed, false);
+    const { lines, rowHits } = renderResultWithHits(theme, width, fixture, 'en');
+    const reportRow = lines.findIndex((line) => {
+      const plain = stripTerminalSequences(line);
+      return plain.includes('report.html') && plain.includes('Report');
+    });
+    const historyRow = lines.findIndex((line) => stripTerminalSequences(line).includes('deck.html'));
+    const metricsRow = lines.findIndex((line) => stripTerminalSequences(line).includes('4096'));
+    assert.ok(reportRow >= 0, `report row at width ${width}`);
+    assert.ok(historyRow >= 0, `history row at width ${width}`);
+    assert.ok(metricsRow >= 0, `metrics row at width ${width}`);
+    const reportLine = lines[reportRow] ?? '';
+    const historyLine = lines[historyRow] ?? '';
+    const metricsLine = lines[metricsRow] ?? '';
+    const reportValue = visibleSpan(reportLine, 'report.html');
+    const historyValue = visibleSpan(historyLine, 'deck.html');
+    const metricsValue = visibleSpan(metricsLine, '4096');
+    assert.ok(reportValue);
+    assert.ok(historyValue);
+    assert.ok(metricsValue);
+    assert.equal(pointerAt(lines, metricsRow, metricsValue.x0, 'en', pathLinks, rowHits), undefined);
+    assert.equal(pointerAt(lines, reportRow, reportValue.x0, 'en', pathLinks, rowHits), 'open-report');
+    assert.equal(pointerAt(lines, historyRow, historyValue.x0, 'en', pathLinks, rowHits), 'open-history-final');
+  }
+});
+
 test('result pointer matches final unframed screen coords without OSC 8', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: false });
   const theme = createTheme(48, false);
