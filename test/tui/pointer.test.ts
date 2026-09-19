@@ -111,14 +111,14 @@ test('result pointer uses structured hits when zh labels truncate at narrow widt
     decision: { status: 'completed' },
     comparison: { result: { status: 'skipped' } },
   } as never, 'zh');
-  const replicaLine = [...rowHits.entries()].find(([, hits]) => hits.some((hit) => hit.action === 'open-replica'))?.[0];
-  assert.ok(replicaLine !== undefined);
-  const hits = rowHits.get(replicaLine!);
-  const replicaHit = hits?.find((hit) => hit.action === 'open-replica');
+  const replicaEntry = [...rowHits.entries()].find(([, hits]) => hits.some((hit) => hit.action === 'open-replica'));
+  assert.ok(replicaEntry);
+  const [replicaLine, hits] = replicaEntry;
+  const replicaHit = hits.find((hit) => hit.action === 'open-replica');
   assert.ok(replicaHit);
-  assert.equal(resultPointerAction(lines, replicaLine, replicaHit!.x0, 'zh', pathLinks, rowHits), 'open-replica');
-  assert.equal(resultPointerAction(lines, replicaLine, replicaHit!.x1, 'zh', pathLinks, rowHits), 'open-replica');
-  assert.equal(resultPointerAction(lines, replicaLine, replicaHit!.x0 - 1, 'zh', pathLinks, rowHits), undefined);
+  assert.equal(resultPointerAction(lines, replicaLine, replicaHit.x0, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(resultPointerAction(lines, replicaLine, replicaHit.x1, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(resultPointerAction(lines, replicaLine, replicaHit.x0 - 1, 'zh', pathLinks, rowHits), undefined);
 });
 
 test('result pointer treats environment baselines html as history final', () => {
