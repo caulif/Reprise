@@ -26,3 +26,21 @@ test('operator abort stays cancelled and is not retried', () => {
     failure: { code: 'agent_failure', message: 'Pi model request was aborted.', attempts: 1, kind: cancelled },
   } as never), undefined);
 });
+
+test('HTTP 520 is transient_upstream and recovery-retryable', () => {
+  const kind = classifyAgentFailure(Object.assign(new Error('HTTP 520'), { status: 520 }));
+  assert.equal(kind, 'transient_upstream');
+  assert.equal(retryableRecoveryFailure({
+    status: 'failed',
+    sessionId: 'recovery-1',
+    failure: { code: 'agent_failure', message: 'HTTP 520', attempts: 1, kind },
+  } as never), 'agent_failure');
+});
+
+test('unknown failure kind is not recovery-retried', () => {
+  assert.equal(retryableRecoveryFailure({
+    status: 'failed',
+    sessionId: 'recovery-1',
+    failure: { code: 'agent_failure', message: 'HTTP 418', attempts: 1, kind: 'unknown' },
+  } as never), undefined);
+});

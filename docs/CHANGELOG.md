@@ -6,6 +6,10 @@
 
 - 包名改为 scoped `@caulif/reprise`（避开 npmjs 无关同名包 `reprise`）。
 
+### Fixed
+
+- 模型调用 HTTP 520 归入 `transient_upstream`，Recovery 可走既有有界重试，不再误判为不可重试的 `unknown`。
+
 ### Changed
 
 - 恢复 / 运行 realtime：工具主列 tip-only——只保留最新一条「阅读/写入 {叶}」，历史同质探路收成一条 `▸ 阅读证据 · N`，不再倾倒逐文件行。

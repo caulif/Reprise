@@ -43,7 +43,7 @@ export function classifyAgentFailure(error: unknown): AgentFailureKind {
   if (status === 401 || status === 403 || /\b(unauthori[sz]ed|forbidden|invalid api key|authentication)\b/.test(details))
     return "authentication";
   if (status === 429 || /\b(rate.?limit|too many requests|quota)\b/.test(details)) return "rate_limited";
-  if ([408, 500, 502, 503, 504].includes(status ?? 0) || /\b(upstream_error|upstream request failed|service temporarily unavailable|bad gateway|gateway timeout)\b/.test(details))
+  if ([408, 500, 502, 503, 504, 520].includes(status ?? 0) || /\b(upstream_error|upstream request failed|service temporarily unavailable|bad gateway|gateway timeout)\b/.test(details))
     return "transient_upstream";
   if (isTransportFailure(details, error)) return "transient_network";
   if (isUserCancel(error, details)) return "cancelled";
