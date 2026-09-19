@@ -169,6 +169,19 @@ export class IntakeTui {
   configBusy = false;
   generation = 0;
   timelineRenderQueued = false;
+  visibleTimelineCache:
+    | {
+        timelineLength: number;
+        lastSequence: number;
+        lastDetailLength: number;
+        filterIndex: number;
+        page: Page;
+        preparePhase: PreparePhase | undefined;
+        runPhase: CandidateRunPhase | undefined;
+        expandedFolds: readonly string[];
+        result: readonly TimelineEntry[];
+      }
+    | undefined;
   runStartedAt = 0;
   runClock: ReturnType<typeof setInterval> | undefined;
   runPhase: CandidateRunPhase | undefined;

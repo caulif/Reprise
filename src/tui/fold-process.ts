@@ -26,10 +26,29 @@ export function splitRunEntries(entries: readonly TimelineEntry[]): { left: Time
   return { left, right };
 }
 
+let foldProcessCache: { signature: string; expanded: string; result: TimelineEntry[] } | undefined;
+
+function foldSignature(entries: readonly TimelineEntry[]): string {
+  const tail = entries.slice(-4);
+  const tailSig = tail.map((entry) =>
+    `${timelineIdentity(entry)}:${entry.sequence}:${entry.detail?.length ?? 0}:${entry.title.length}`,
+  ).join(';');
+  return `${entries.length}:${tailSig}`;
+}
+
+/** Test hook: reset memoized fold output between cases. */
+export function resetFoldProcessCache(): void {
+  foldProcessCache = undefined;
+}
+
 export function foldProcessEntries(
   entries: readonly TimelineEntry[],
   expandedIds: ReadonlySet<string>,
 ): TimelineEntry[] {
+  const expanded = [...expandedIds].sort().join('\0');
+  const signature = foldSignature(entries);
+  const cached = foldProcessCache;
+  if (cached && cached.signature === signature && cached.expanded === expanded) return cached.result;
   const turns = groupTurns(entries);
   const out: TimelineEntry[] = [];
   const unfoldFrom = Math.max(0, turns.length - 2);
@@ -58,7 +77,9 @@ export function foldProcessEntries(
       count: turn.length,
     });
   }
-  return expandFoldLeaves(out, expandedIds);
+  const result = expandFoldLeaves(out, expandedIds);
+  foldProcessCache = { signature, expanded, result };
+  return result;
 }
 
 export function coveringFoldIds(entries: readonly TimelineEntry[], target: TimelineEntry): string[] {

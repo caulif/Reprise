@@ -143,8 +143,8 @@ function startRunClock(c: ControllerHandle): void {
   stopRunClock(c);
   c.runStartedAt = Date.now();
   c.runClock = setInterval(() => {
-    if (c.page === 'running') c.render();
-  }, 400);
+    if (c.page === 'running') c.scheduleTimelineRender();
+  }, 250);
   c.runClock.unref?.();
 }
 

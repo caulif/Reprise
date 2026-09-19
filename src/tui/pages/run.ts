@@ -226,8 +226,12 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const locale = model.locale ?? 'en';
   const product = model.productLabel ?? t(locale, 'unknownAgent');
   if (isPreparing(model)) return renderPrepare(theme, width, model, locale, product);
-  const visible = model.entries.filter((entry) => matchesFilter(entry, model.filter));
-  const selected = Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
+  const visible = model.filter === 'ALL'
+    ? model.entries
+    : model.entries.filter((entry) => matchesFilter(entry, model.filter));
+  const selected = model.filter === 'ALL'
+    ? Math.max(0, Math.min(model.selected, Math.max(0, visible.length - 1)))
+    : Math.max(0, visible.findIndex((entry) => entry === model.entries[model.selected]));
   const recovering = model.runPhase === 'recovery';
   const hits = canvasHitIndices(visible, model.findQuery ?? '');
   const hitAt = hits.indexOf(selected < 0 ? -1 : selected);

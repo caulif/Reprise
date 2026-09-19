@@ -58,7 +58,7 @@ function wireIntakeTui(target: IntakeTui, options: IntakeTuiOptions): void {
   target.queueTimelineRender =
     options.queueTimelineRender ??
     ((callback: () => void) => {
-      setTimeout(callback, 16);
+      setImmediate(callback);
     });
 }
 
