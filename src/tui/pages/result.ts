@@ -1,4 +1,5 @@
 import { resolve, normalize } from 'node:path';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
@@ -8,6 +9,8 @@ import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
 import { kv, kvLinkBlock, panel, wrapBodyLine } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
+
+const RESULT_KV_LABEL_WIDTH = 12;
 
 export function renderResult(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string, comparePending = false): string[] {
   const kind = result.record.outcome.termination.kind;
@@ -35,7 +38,7 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
     ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
     ...(skipped ? ['', kv(theme, t(locale, 'resultComparison'), t(locale, 'comparisonSkipped'), width - 2)] : []),
     ...(comparePending ? ['', ` ${theme.style.accent(t(locale, 'hintCompare'))}`] : []),
-    ...(skipped ? [] : kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), shortPath(paths.report, experimentRoot, vacant), paths.report, width)),
+    ...kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), shortPath(paths.report, experimentRoot, vacant), paths.report, width),
     ...kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortPath(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width),
     ...kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width),
     ...kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width),
@@ -44,8 +47,13 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
 }
 
 export function resultHints(locale: Locale = 'en', comparePending = false): readonly (readonly [string, string])[] {
-  if (comparePending) return [['c', t(locale, 'hintCompare')], ['Esc', t(locale, 'hintHome')]];
-  return [['Esc', t(locale, 'hintHome')]];
+  const opens: (readonly [string, string])[] = [
+    ['o', t(locale, 'hintReport')],
+    ['h', t(locale, 'hintHistoryFinal')],
+    ['f', t(locale, 'hintCandidateFinal')],
+  ];
+  if (comparePending) return [['c', t(locale, 'hintCompare')], ...opens, ['Esc', t(locale, 'hintHome')]];
+  return [...opens, ['Esc', t(locale, 'hintHome')]];
 }
 
 export function resultPointerAction(
@@ -60,12 +68,42 @@ export function resultPointerAction(
   const compare = t(locale, 'hintCompare');
   if (stripForHit(line).includes(compare)) return 'compare';
   const href = hitFileLink(line, col);
-  if (!href) return undefined;
-  if (paths) {
+  if (href && paths) {
     const action = resolveResultLinkAction(href, paths);
     if (action) return action;
   }
+  if (paths) return hitResultPathRow(stripForHit(line), col, locale, paths);
   return undefined;
+}
+
+function hitResultPathRow(
+  stripped: string,
+  col: number,
+  locale: Locale,
+  paths: ResultPathLinks,
+): ResultAction | undefined {
+  const rows: readonly [ResultAction, string, string | undefined][] = [
+    ['open-report', t(locale, 'resultDiagnostic'), paths.report],
+    ['open-report', t(locale, 'resultReport'), paths.report],
+    ['open-history-final', t(locale, 'resultHistoryFinal'), paths.historyFinal],
+    ['open-candidate-final', t(locale, 'resultCandidateFinal'), paths.candidateFinal],
+    ['open-trace', t(locale, 'resultTraceSecondary'), paths.trace],
+    ['open-replica', t(locale, 'resultReplicaSecondary'), paths.replica],
+  ];
+  for (const [action, key, path] of rows) {
+    if (!path) continue;
+    const index = keyIndex(stripped, key);
+    if (index < 0) continue;
+    const valueStart = visibleWidth(stripped.slice(0, index)) + RESULT_KV_LABEL_WIDTH + 2;
+    if (col >= valueStart) return action;
+  }
+  return undefined;
+}
+
+function keyIndex(stripped: string, key: string): number {
+  const exact = stripped.indexOf(key);
+  if (exact >= 0) return exact;
+  return stripped.indexOf(key.slice(0, Math.min(key.length, 6)));
 }
 
 export function resolveResultLinkAction(href: string, paths: ResultPathLinks): ResultAction | undefined {

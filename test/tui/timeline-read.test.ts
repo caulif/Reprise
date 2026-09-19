@@ -103,7 +103,8 @@ test('fileLink uses OSC 8 only when capabilities allow it and strips controls', 
     setCapabilities({ images: null, trueColor: false, hyperlinks: false });
     const plain = fileLink('open', abs);
     assert.equal(plain.includes('\u001b]8;;'), false);
-    assert.equal(plain, abs);
+    assert.equal(plain, 'open');
+    assert.equal(plain.includes(abs), false);
   } finally {
     resetCapabilitiesCache();
   }

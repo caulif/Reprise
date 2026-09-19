@@ -888,9 +888,20 @@ test('history windows long lists around the selection', () => {
   assert.doesNotMatch(text, /experiment-1\s/);
 });
 
-test('result page footer lists c during compare gate and Esc otherwise', () => {
-  assert.deepEqual(resultHints(), [['Esc', 'Home']]);
-  assert.deepEqual(resultHints('en', true), [['c', 'Generate comparison card'], ['Esc', 'Home']]);
+test('result page footer lists path open keys and c during compare gate', () => {
+  assert.deepEqual(resultHints(), [
+    ['o', 'Open report'],
+    ['h', 'History final'],
+    ['f', 'Candidate final'],
+    ['Esc', 'Home'],
+  ]);
+  assert.deepEqual(resultHints('en', true), [
+    ['c', 'Generate comparison card'],
+    ['o', 'Open report'],
+    ['h', 'History final'],
+    ['f', 'Candidate final'],
+    ['Esc', 'Home'],
+  ]);
 });
 
 test('failed result shows the recorded failure instead of limitations copy', () => {

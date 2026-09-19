@@ -32,7 +32,36 @@ test('result page uses comparison headline and hides satisfied rationale', () =>
   assert.match(skipped, /not run/);
   assert.doesNotMatch(skipped, /三页 PPT/);
   assert.doesNotMatch(skipped, /Both delivered|两边都/);
-  assert.doesNotMatch(skipped, /Report/);
+  assert.match(skipped, /Report/);
+  assert.match(skipped, /History final/);
+  assert.match(skipped, /Candidate final/);
+});
+
+test('skipped comparison still renders history and candidate rows without bare absolute paths', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const theme = createTheme(120, false);
+  const historyFinal = 'C:\\exp\\environment\\baselines\\deck.html';
+  const candidateFinal = 'C:\\exp\\environment\\runs\\run-1\\out.html';
+  const text = renderResult(theme, 120, {
+    experimentRoot: 'C:\\exp',
+    pathLinks: {
+      historyFinal,
+      candidateFinal,
+      trace: 'C:\\exp\\runs\\run-1',
+      replica: 'C:\\exp\\environment\\runs\\run-1',
+    },
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'skipped' } },
+  } as never).join('\n');
+  assert.match(text, /Report/);
+  assert.match(text, /History final\s+.*deck\.html/);
+  assert.match(text, /Candidate final\s+.*out\.html/);
+  assert.doesNotMatch(text, /C:\\exp\\environment\\baselines\\deck\.html/);
+  assert.doesNotMatch(text, /C:\\exp\\environment\\runs\\run-1\\out\.html/);
 });
 
 test('failed comparison remains distinct from a stalled candidate in both terminal widths', () => {

@@ -69,7 +69,8 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
     return { consume: true };
   }
   if (action === 'open-report') {
-    return c.openReport(c.result.experimentRoot ?? dirname(c.result.reportPath), c.result.reportPath);
+    if (!paths.report) return { consume: true };
+    return c.openReport(c.result.experimentRoot ?? dirname(paths.report), paths.report);
   }
   if (action === 'open-history-final') return c.openResultArtifactHref(href, 'history');
   if (action === 'open-candidate-final') return c.openResultArtifactHref(href, 'candidate');

@@ -299,7 +299,7 @@ export function kvLinkBlock(theme: Theme, key: string, label: string, absolutePa
   const wrapped = wrapBodyLine(label, valueWidth);
   const indent = ' '.repeat(labelWidth);
   return wrapped.map((line, index) => {
-    const linked = fileLink(theme.style.accent(line), absolutePath);
+    const linked = theme.style.accent(fileLink(line, absolutePath));
     return index === 0
       ? ` ${theme.style.muted(pad(key, labelWidth, theme.glyphs.ellipsis))} ${linked}`
       : ` ${indent} ${linked}`;

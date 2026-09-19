@@ -95,6 +95,8 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchRunningKeys('\x1b')?.action, 'active-message');
   assert.equal(dispatchResultKeys('c')?.action, 'compare');
   assert.equal(dispatchResultKeys('o')?.action, 'open-report');
+  assert.equal(dispatchResultKeys('h')?.action, 'open-history-final');
+  assert.equal(dispatchResultKeys('f')?.action, 'open-candidate-final');
   assert.equal(dispatchResultKeys('t')?.action, 'open-trace');
   assert.equal(dispatchResultKeys('w')?.action, 'open-replica');
   assert.equal(dispatchErrorKeys('b')?.action, 'return');

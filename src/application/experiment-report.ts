@@ -157,7 +157,7 @@ async function experimentResult(
     pathLinks: await buildResultPathLinks({
       experimentRoot: input.experimentRoot,
       runId: input.input.runId,
-      reportPath: compared.reportPath,
+      ...(compared.comparisonResult.status === "skipped" ? {} : { reportPath: compared.reportPath }),
       taskCase: input.taskCase,
       inspection,
       workspaceRoot: input.workspaceRoot,

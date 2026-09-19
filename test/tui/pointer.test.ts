@@ -65,6 +65,36 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
   assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks), 'compare');
 });
 
+test('result pointer opens short labels when the terminal has no OSC 8', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const theme = createTheme(120, false);
+  const pathLinks = {
+    report: 'C:\\exp\\report.html',
+    historyFinal: 'C:\\exp\\environment\\baselines\\deck.html',
+    candidateFinal: 'C:\\exp\\environment\\runs\\run-1\\out.html',
+    trace: 'C:\\exp\\runs\\run-1',
+    replica: 'C:\\exp\\environment\\runs\\run-1',
+  };
+  const lines = renderResult(theme, 120, {
+    experimentRoot: 'C:\\exp',
+    pathLinks,
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed' },
+    comparison: { result: { status: 'skipped' } },
+  } as never, 'en');
+  const historyLine = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
+  const candidateLine = lines.findIndex((line) => line.includes('out.html') && line.includes('Candidate'));
+  assert.ok(historyLine >= 0);
+  assert.ok(candidateLine >= 0);
+  assert.equal(hitFileLink(lines[historyLine] ?? '', 20), undefined);
+  assert.equal(resultPointerAction(lines, historyLine, 20, 'en', pathLinks), 'open-history-final');
+  assert.equal(resultPointerAction(lines, candidateLine, 20, 'en', pathLinks), 'open-candidate-final');
+  assert.equal(resultPointerAction(lines, historyLine, 2, 'en', pathLinks), undefined);
+});
+
 test('result pointer treats environment baselines html as history final', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const baselinePath = 'C:\\exp\\environment\\baselines\\deck.html';

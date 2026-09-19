@@ -8,6 +8,7 @@
 
 ### Changed
 
+- 结果页路径始终显示短标签；终端无 OSC 8 时不再改成绝对路径。跳过对照仍列出报告 / 历史终稿 / 候选终稿。页脚列出 `o` / `h` / `f`。
 - TUI 与内部 Agent 缺省 locale 为简体中文；指令为英文，面向操作者的输出随 locale。CLI `--locale <en|zh>` 写入同一份 preferences。发给候选的消息跟随历史用户语言，不跟随该 locale。
 - Recovery 失败解释由 Host i18n 键或 Agent `summary` 承担，不再调用 Diagnosis Agent。
 - 对照报告壳文案随 locale；声称「已核实 / 看见」用 `data-claim` 校验。
