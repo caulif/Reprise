@@ -312,16 +312,13 @@ export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (
   return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
 }
 
-export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false, allowFind = true): readonly (readonly [string, string])[] {
+export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
   const stop = ['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const;
   if (reading) return [['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')], stop];
   if (finding) {
     return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
   }
-  const expand = ['Enter', t(locale, 'hintExpand')] as const;
-  const read = ['v', t(locale, 'hintReadingMode')] as const;
-  if (!allowFind) return [stop, expand, read];
-  return [stop, ['/', t(locale, 'hintTimelineFind')], expand, read];
+  return [stop];
 }
 
 export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {

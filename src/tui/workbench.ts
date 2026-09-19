@@ -330,7 +330,6 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
       locale,
       Boolean(view.running.finding),
       Boolean(view.running.readingMode),
-      !isRecoveryChrome(view.running),
     );
   }
   if (view.page === 'result') {
