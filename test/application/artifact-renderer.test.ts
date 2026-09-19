@@ -212,7 +212,7 @@ test("opt-in real browser captures two changing animation frames", async (t) => 
   assert.notEqual(result.frames[0]!.contentHash, result.frames[1]!.contentHash);
 });
 
-test("opt-in real browser blocks external fetch and file urls", async (t) => {
+test("opt-in real browser blocks external fetch, websocket, and file urls", async (t) => {
   if (process.env.REPRISE_OPT_IN_BROWSER_RENDER !== "1") {
     t.skip("set REPRISE_OPT_IN_BROWSER_RENDER=1 for live browser capture");
     return;
@@ -222,7 +222,10 @@ test("opt-in real browser blocks external fetch and file urls", async (t) => {
     const { rm } = await import("node:fs/promises");
     await rm(root, { recursive: true, force: true });
   });
+  let httpHits = 0;
+  let wsHits = 0;
   const external = createServer((_req, res) => {
+    httpHits += 1;
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("external");
   });
@@ -230,12 +233,25 @@ test("opt-in real browser blocks external fetch and file urls", async (t) => {
   t.after(() => new Promise<void>((resolve, reject) => external.close((error) => (error ? reject(error) : resolve()))));
   const address = external.address();
   assert.ok(address && typeof address !== "string");
+  const wsProbe = createServer((_req, res) => {
+    res.writeHead(426);
+    res.end();
+  });
+  wsProbe.on("upgrade", (_req, socket) => {
+    wsHits += 1;
+    socket.destroy();
+  });
+  await new Promise<void>((resolve) => wsProbe.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>((resolve, reject) => wsProbe.close((error) => (error ? reject(error) : resolve()))));
+  const wsAddress = wsProbe.address();
+  assert.ok(wsAddress && typeof wsAddress !== "string");
   const fileUrl = pathToFileURL(join(root, "secret.txt")).href;
   await writeFile(join(root, "secret.txt"), "nope", "utf8");
   await writeFile(join(root, "probe.html"), `<!doctype html><body>
 <script>
 fetch('http://127.0.0.1:${address.port}/x').catch(()=>{});
 fetch(${JSON.stringify(fileUrl)}).catch(()=>{});
+try { new WebSocket('ws://127.0.0.1:${wsAddress.port}/probe'); } catch (e) {}
 </script>
 ok
 </body>`, "utf8");
@@ -249,5 +265,7 @@ ok
   });
   assert.equal(result.ok, true, JSON.stringify(result));
   if (!result.ok) return;
+  assert.equal(httpHits, 0);
+  assert.equal(wsHits, 0);
   assert.ok(result.diagnostics.some((item) => item.code === "network_blocked"));
 });

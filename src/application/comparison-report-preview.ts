@@ -34,6 +34,7 @@ export async function materializeComparisonReportPreview(input: {
     const from = join(input.attemptRoot, item.reportHref);
     const to = join(outputRoot, item.reportHref);
     await mkdir(dirname(to), { recursive: true });
+    // Missing media is non-fatal for mechanical HTML preview; broken imgs stay visible in load diagnostics.
     await copyFile(from, to).catch(() => undefined);
   }
   await writeAtomic(join(outputRoot, "preview.html"), prepared.html);

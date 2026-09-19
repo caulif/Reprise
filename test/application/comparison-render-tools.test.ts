@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256 } from "../../src/core/identity.js";
-import { createEphemeralRenderCatalog } from "../../src/application/comparison-render-catalog-ephemeral.js";
+import { createEphemeralRenderCatalog } from "./comparison-render-catalog-ephemeral.js";
 import {
   createPreviewReportTool,
   createRenderArtifactTool,
@@ -70,9 +70,6 @@ test("render_artifact registers frames through catalog and dedupes identical der
     catalog,
     attemptRoot: root,
     render,
-    prepareReportHtml: async () => {
-      throw new Error("unused");
-    },
   });
   const first = await tool.execute({ sourceRef: "ev-01", sampleTimesMs: [0, 500] }, new AbortController().signal);
   const payload = JSON.parse(first.content) as {
@@ -104,9 +101,6 @@ test("render_artifact rejects unknown source and cancelled render", async () => 
     catalog,
     attemptRoot: "/tmp/attempt",
     render: async () => ({ ok: false, failure: { kind: "cancelled" }, diagnostics: [] }),
-    prepareReportHtml: async () => {
-      throw new Error("unused");
-    },
   });
   const missing = JSON.parse((await tool.execute({ sourceRef: "ev-99" }, new AbortController().signal)).content) as {
     status: string;
@@ -185,7 +179,8 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   assert.equal(first.draftDigest, sha256(draft));
   assert.notEqual(first.preparedDigest, first.draftDigest);
   assert.equal(first.previewMedia.kind, "report_review");
-  assert.match(first.note, /host review only/i);
+  assert.match(first.previewMedia.shortRef, /^review-\d{2}$/);
+  assert.match(first.note, /review-\*|not baseline\/candidate/i);
   assert.equal(first.mechanics.hostMetricsVisible, true);
   assert.equal(first.mechanics.imagesMissingSrc, 0);
 

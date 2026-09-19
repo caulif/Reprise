@@ -5,9 +5,12 @@ import type {
   ComparisonRenderSource,
   RegisterDerivedMediaInput,
   RegisterDerivedMediaResult,
-} from "./comparison-render-tools.js";
+} from "../../src/application/comparison-render-tools.js";
 
-/** Test/ephemeral catalog until B3 ComparisonCatalog is wired. Append-only short refs. */
+/**
+ * Test-only catalog stand-in until B3 ComparisonCatalog is wired.
+ * `artifact_preview` → `media-*`; `report_review` → `review-*` (separate counters).
+ */
 export function createEphemeralRenderCatalog(input: {
   sources: readonly ComparisonRenderSource[];
   mediaRoot: string;
@@ -17,6 +20,7 @@ export function createEphemeralRenderCatalog(input: {
 } {
   let revision = 1;
   let nextMedia = 1;
+  let nextReview = 1;
   const byRef = new Map(input.sources.map((source) => [source.sourceRef, source]));
   const media: { shortRef: string; mediaRef: string; kind: string; pngPath: string }[] = [];
   const derivationKey = new Map<string, RegisterDerivedMediaResult>();
@@ -39,10 +43,14 @@ export function createEphemeralRenderCatalog(input: {
       ].join("|");
       const existing = derivationKey.get(key);
       if (existing) return existing;
-      const shortRef = `media-${String(nextMedia).padStart(2, "0")}`;
-      nextMedia += 1;
-      const mediaRef = `media:derived-${shortRef}`;
-      const root = entry.kind === "report_review" ? input.reviewRoot : input.mediaRoot;
+      const isReview = entry.kind === "report_review";
+      const shortRef = isReview
+        ? `review-${String(nextReview).padStart(2, "0")}`
+        : `media-${String(nextMedia).padStart(2, "0")}`;
+      if (isReview) nextReview += 1;
+      else nextMedia += 1;
+      const mediaRef = isReview ? `review:derived-${shortRef}` : `media:derived-${shortRef}`;
+      const root = isReview ? input.reviewRoot : input.mediaRoot;
       await mkdir(root, { recursive: true });
       const dest = join(root, `${shortRef}.png`);
       await copyFile(entry.pngPath, dest);

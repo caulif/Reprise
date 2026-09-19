@@ -10,6 +10,10 @@ import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/age
 export type ComparisonRenderCatalogPort = {
   revision(): number;
   resolveSource(sourceRef: string): Promise<ComparisonRenderSource | undefined>;
+  /**
+   * Register derived PNG bytes. `artifact_preview` must mint `media-*` evidence refs;
+   * `report_review` must mint `review-*` (never `media-*`) so preview cannot enter the comparison allowlist.
+   */
   registerDerivedMedia(input: RegisterDerivedMediaInput): Promise<RegisterDerivedMediaResult>;
 };
 
@@ -66,13 +70,16 @@ export const PreviewReportParamsSchema = Type.Object({
 });
 export type PreviewReportParams = Static<typeof PreviewReportParamsSchema>;
 
-export type ComparisonRenderToolDeps = {
+export type ComparisonRenderToolBaseDeps = {
   catalog: ComparisonRenderCatalogPort;
   attemptRoot: string;
   render?: ArtifactRenderer;
+  now?: () => Date;
+};
+
+export type ComparisonPreviewReportToolDeps = ComparisonRenderToolBaseDeps & {
   /** Prepare draft HTML with current catalog revision (B3/B6 share this). */
   prepareReportHtml: () => Promise<PreparedReportPreview>;
-  now?: () => Date;
 };
 
 export type PreparedReportPreview = {
@@ -84,7 +91,7 @@ export type PreparedReportPreview = {
   outputRoot: string;
 };
 
-export function createRenderArtifactTool(deps: ComparisonRenderToolDeps): AgentToolDefinition {
+export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): AgentToolDefinition {
   const render = deps.render ?? renderFrozenArtifact;
   return {
     name: "render_artifact",
@@ -99,11 +106,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolDeps): AgentT
       if (!source) {
         return textResult({ status: "unknown_source", sourceRef: params.sourceRef, revision: deps.catalog.revision() });
       }
-      const viewport: RenderViewport = {
-        width: params.viewport?.width ?? DEFAULT_RENDER_VIEWPORT.width,
-        height: params.viewport?.height ?? DEFAULT_RENDER_VIEWPORT.height,
-        scale: params.viewport?.scale ?? DEFAULT_RENDER_VIEWPORT.scale,
-      };
+      const viewport = resolveViewport(params.viewport);
       const sampleTimesMs = params.sampleTimesMs ?? [0];
       const outputRoot = join(deps.attemptRoot, "scratch", "render", safeId(params.sourceRef));
       const rendered = await render({
@@ -141,6 +144,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolDeps): AgentT
             capturedAt,
           },
         });
+        assertEvidenceShortRef(registered.shortRef, "artifact_preview");
         mediaRefs.push({
           shortRef: registered.shortRef,
           mediaRef: registered.mediaRef,
@@ -165,23 +169,19 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolDeps): AgentT
   };
 }
 
-export function createPreviewReportTool(deps: ComparisonRenderToolDeps): AgentToolDefinition {
+export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): AgentToolDefinition {
   const render = deps.render ?? renderFrozenArtifact;
   return {
     name: "preview_report",
     description:
-      "Mechanically preview the current attempt report.html with the current catalog revision. Review screenshots go under review/ and are not comparison evidence.",
+      "Mechanically preview the current attempt report.html with the current catalog revision. Review screenshots use review-* refs under review/ and are not comparison evidence.",
     parameters: PreviewReportParamsSchema,
     async execute(params: unknown, signal: AbortSignal): Promise<AgentToolResult> {
       if (!Value.Check(PreviewReportParamsSchema, params)) {
         return textResult({ status: "invalid_request", message: "parameters failed schema check" });
       }
       const prepared = await deps.prepareReportHtml();
-      const viewport: RenderViewport = {
-        width: params.viewport?.width ?? DEFAULT_RENDER_VIEWPORT.width,
-        height: params.viewport?.height ?? DEFAULT_RENDER_VIEWPORT.height,
-        scale: params.viewport?.scale ?? DEFAULT_RENDER_VIEWPORT.scale,
-      };
+      const viewport = resolveViewport(params.viewport);
       const rendered = await render({
         bundleRoot: prepared.outputRoot,
         entryRelativePath: "preview.html",
@@ -225,6 +225,7 @@ export function createPreviewReportTool(deps: ComparisonRenderToolDeps): AgentTo
           capturedAt: (deps.now ?? (() => new Date()))().toISOString(),
         },
       });
+      assertEvidenceShortRef(registered.shortRef, "report_review");
       const mechanics = inspectPreparedReportMechanics(prepared.html);
       return textResult({
         status: "ok",
@@ -235,7 +236,7 @@ export function createPreviewReportTool(deps: ComparisonRenderToolDeps): AgentTo
         previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review" },
         mechanics,
         diagnostics: rendered.diagnostics,
-        note: "preview media is host review only; it is not baseline/candidate comparison evidence",
+        note: "preview media uses review-* refs only; it is not baseline/candidate comparison evidence",
       });
     },
   };
@@ -249,8 +250,24 @@ export function summarizeLimitations(diagnostics: readonly { code: string; messa
   }
   if (codes.has("console_error")) out.push("page console errors were observed");
   if (codes.has("network_blocked")) out.push("non-bundle network requests were blocked");
-  if (codes.has("virtual_time_unavailable")) out.push("controlled timing unavailable");
   return out;
+}
+
+function resolveViewport(viewport: { width?: number; height?: number; scale?: number } | undefined): RenderViewport {
+  return {
+    width: viewport?.width ?? DEFAULT_RENDER_VIEWPORT.width,
+    height: viewport?.height ?? DEFAULT_RENDER_VIEWPORT.height,
+    scale: viewport?.scale ?? DEFAULT_RENDER_VIEWPORT.scale,
+  };
+}
+
+function assertEvidenceShortRef(shortRef: string, kind: "artifact_preview" | "report_review"): void {
+  if (kind === "artifact_preview" && !/^media-\d{2,6}$/.test(shortRef)) {
+    throw new Error(`artifact_preview must mint media-* shortRef, got ${shortRef}`);
+  }
+  if (kind === "report_review" && !/^review-\d{2,6}$/.test(shortRef)) {
+    throw new Error(`report_review must mint review-* shortRef, got ${shortRef}`);
+  }
 }
 
 function inspectPreparedReportMechanics(html: string): Record<string, unknown> {

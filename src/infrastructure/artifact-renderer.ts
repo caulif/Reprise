@@ -229,6 +229,7 @@ async function openDocumentSession(
   const server = await startBundleStaticServer(rootReal);
   const cdp = await openCdpBrowserSession(watchdog);
   if ("failure" in cdp) {
+    // Browser never opened; drop the temporary loopback server without treating close races as render failures.
     await server.close().catch(() => undefined);
     return {
       ok: false,

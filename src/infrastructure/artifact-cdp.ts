@@ -217,6 +217,15 @@ export async function configurePageSession(
   await session.send("Page.enable", {}, pageSessionId);
   await session.send("Runtime.enable", {}, pageSessionId);
   await session.send("Network.enable", {}, pageSessionId);
+  try {
+    await session.send("Network.setBypassServiceWorker", { bypass: true }, pageSessionId);
+  } catch {
+    // Older Chromium builds omit Network.setBypassServiceWorker; Fetch + page gate still apply.
+    session.diagnostics.push({
+      code: "service_worker_bypass_unavailable",
+      message: "Network.setBypassServiceWorker unavailable",
+    });
+  }
   await session.send("Fetch.enable", {
     patterns: [{ urlPattern: "*", requestStage: "Request" }],
   }, pageSessionId);
@@ -226,30 +235,135 @@ export async function configurePageSession(
     deviceScaleFactor: viewport.scale,
     mobile: false,
   }, pageSessionId);
+  await installPageNetworkGate(session, pageSessionId, allowedOrigin);
   try {
     await session.send("Browser.setDownloadBehavior", { behavior: "deny", eventsEnabled: false });
   } catch {
+    // Browser domain may be unavailable on some headless builds; Fetch still denies downloads of navigations.
     session.diagnostics.push({
       code: "download_guard_unavailable",
       message: "Browser.setDownloadBehavior unavailable; downloads still blocked at Fetch layer when possible",
     });
   }
 
+  bindPageDiagnostics(session, pageSessionId, {
+    consoleErrors,
+    blockedRequests,
+    resourceFailures,
+    allowedOrigin,
+  });
+
+  return { consoleErrors, blockedRequests, resourceFailures };
+}
+
+async function installPageNetworkGate(
+  session: CdpSession,
+  pageSessionId: string,
+  allowedOrigin: string,
+): Promise<void> {
+  // Fetch covers HTTP(S); WebSocket/EventSource/beacon need a page-world gate installed before any document script.
+  const source = `(() => {
+    const allowed = ${JSON.stringify(allowedOrigin)};
+    const allow = (raw) => {
+      try {
+        if (typeof raw !== "string") return false;
+        if (raw.startsWith("data:") || raw.startsWith("blob:")) return true;
+        const u = new URL(raw, location.href);
+        if (u.protocol === "file:") return false;
+        return u.origin === allowed;
+      } catch {
+        return false;
+      }
+    };
+    const block = (kind, raw) => {
+      try { console.error("[reprise-network-gate]", kind, String(raw)); } catch {}
+      throw new Error("blocked non-bundle " + kind);
+    };
+    const OrigWS = globalThis.WebSocket;
+    if (typeof OrigWS === "function") {
+      const Wrapped = function (url, protocols) {
+        if (!allow(String(url))) block("websocket", url);
+        return protocols === undefined ? new OrigWS(url) : new OrigWS(url, protocols);
+      };
+      Wrapped.prototype = OrigWS.prototype;
+      Object.defineProperty(Wrapped, "CONNECTING", { value: OrigWS.CONNECTING });
+      Object.defineProperty(Wrapped, "OPEN", { value: OrigWS.OPEN });
+      Object.defineProperty(Wrapped, "CLOSING", { value: OrigWS.CLOSING });
+      Object.defineProperty(Wrapped, "CLOSED", { value: OrigWS.CLOSED });
+      globalThis.WebSocket = Wrapped;
+    }
+    const OrigES = globalThis.EventSource;
+    if (typeof OrigES === "function") {
+      globalThis.EventSource = function (url, config) {
+        if (!allow(String(url))) block("eventsource", url);
+        return config === undefined ? new OrigES(url) : new OrigES(url, config);
+      };
+      globalThis.EventSource.prototype = OrigES.prototype;
+    }
+    if (navigator.sendBeacon) {
+      const origBeacon = navigator.sendBeacon.bind(navigator);
+      navigator.sendBeacon = (url, data) => {
+        if (!allow(String(url))) {
+          try { console.error("[reprise-network-gate]", "beacon", String(url)); } catch {}
+          return false;
+        }
+        return origBeacon(url, data);
+      };
+    }
+    const wrapWorker = (Orig, kind) => {
+      if (typeof Orig !== "function") return Orig;
+      const Wrapped = function (url, options) {
+        if (!allow(String(url))) block(kind, url);
+        return options === undefined ? new Orig(url) : new Orig(url, options);
+      };
+      Wrapped.prototype = Orig.prototype;
+      return Wrapped;
+    };
+    globalThis.Worker = wrapWorker(globalThis.Worker, "worker");
+    globalThis.SharedWorker = wrapWorker(globalThis.SharedWorker, "sharedworker");
+  })();`;
+  await session.send("Page.addScriptToEvaluateOnNewDocument", { source }, pageSessionId);
+}
+
+function bindPageDiagnostics(
+  session: CdpSession,
+  pageSessionId: string,
+  state: {
+    consoleErrors: string[];
+    blockedRequests: string[];
+    resourceFailures: string[];
+    allowedOrigin: string;
+  },
+): void {
   session.on("Runtime.exceptionThrown", (params) => {
     const details = params.exceptionDetails as { text?: string; exception?: { description?: string } } | undefined;
     const text = cdpUnknownText(details?.exception?.description ?? details?.text) || "page exception";
-    consoleErrors.push(text);
+    state.consoleErrors.push(text);
   });
   session.on("Runtime.consoleAPICalled", (params) => {
     if (params.type !== "error") return;
     const args = Array.isArray(params.args) ? params.args as { value?: unknown; description?: string }[] : [];
     const text = args.map((arg) => cdpUnknownText(arg.value ?? arg.description)).join(" ");
-    if (text) consoleErrors.push(text);
+    if (text.includes("[reprise-network-gate]")) {
+      const url = text.replace(/^.*\[reprise-network-gate\]\s+\S+\s+/, "").trim();
+      if (url) state.blockedRequests.push(url);
+    }
+    if (text) state.consoleErrors.push(text);
   });
   session.on("Network.loadingFailed", (params) => {
     const url = cdpUnknownText(params.errorText) || "resource failed";
     const kind = cdpUnknownText(params.type) || "Resource";
-    resourceFailures.push(`${kind}: ${url}`);
+    state.resourceFailures.push(`${kind}: ${url}`);
+  });
+  session.on("Network.webSocketCreated", (params) => {
+    const url = cdpUnknownText(params.url);
+    if (!url || isAllowedBundleUrl(url, state.allowedOrigin)) return;
+    state.blockedRequests.push(url);
+    session.diagnostics.push({
+      code: "network_blocked",
+      message: "websocket created outside bundle origin",
+      detail: redactNetworkUrl(url),
+    });
   });
   session.on("Fetch.requestPaused", (params, eventSessionId) => {
     void (async () => {
@@ -258,11 +372,12 @@ export async function configurePageSession(
       const url = typeof request?.url === "string" ? request.url : "";
       const sid = eventSessionId ?? pageSessionId;
       if (!requestId) return;
-      if (isAllowedBundleUrl(url, allowedOrigin)) {
+      if (isAllowedBundleUrl(url, state.allowedOrigin)) {
+        // Abort races often reject continue/fail; the page navigation is already cancelled.
         await session.send("Fetch.continueRequest", { requestId }, sid).catch(() => undefined);
         return;
       }
-      blockedRequests.push(url);
+      state.blockedRequests.push(url);
       await session.send("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" }, sid).catch(() => undefined);
     })();
   });
@@ -270,6 +385,7 @@ export async function configurePageSession(
     const targetInfo = params.targetInfo as { targetId?: string; type?: string; url?: string } | undefined;
     if (!targetInfo?.targetId) return;
     if (targetInfo.type === "page" || targetInfo.type === "other") {
+      // Secondary targets are closed best-effort; abort may already have torn down the browser.
       void session.send("Target.closeTarget", { targetId: targetInfo.targetId }).catch(() => undefined);
       session.diagnostics.push({
         code: "popup_blocked",
@@ -278,8 +394,15 @@ export async function configurePageSession(
       });
     }
   });
+}
 
-  return { consoleErrors, blockedRequests, resourceFailures };
+function redactNetworkUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return url.slice(0, 120);
+  }
 }
 
 export async function navigateAndWait(
@@ -306,38 +429,6 @@ export async function navigateAndWait(
   await session.send("Page.navigate", { url }, pageSessionId);
   await loaded;
   return Date.now() - started;
-}
-
-export async function advanceVirtualTime(
-  session: CdpSession,
-  pageSessionId: string,
-  budgetMs: number,
-  signal: AbortSignal,
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  if (budgetMs <= 0) return { ok: true };
-  try {
-    const budgetDone = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("virtual time budget timed out")), Math.max(budgetMs * 4, 5_000));
-      const off = session.on("Emulation.virtualTimeBudgetExpired", () => {
-        clearTimeout(timer);
-        off();
-        resolve();
-      });
-      signal.addEventListener("abort", () => {
-        clearTimeout(timer);
-        off();
-        reject(new Error("cancelled during virtual time"));
-      }, { once: true });
-    });
-    await session.send("Emulation.setVirtualTimePolicy", {
-      policy: "pauseIfNetworkFetchesPending",
-      budget: budgetMs,
-    }, pageSessionId);
-    await budgetDone;
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) };
-  }
 }
 
 export async function capturePngBase64(session: CdpSession, pageSessionId: string): Promise<string> {
