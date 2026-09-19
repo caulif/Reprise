@@ -1,133 +1,62 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { ExperimentResult } from '../../src/application/experiment.js';
 import { handleControllerInput, type ControllerHandle } from '../../src/tui/controller-input.js';
+import { t } from '../../src/tui/i18n.js';
+import { renderWorkbench } from '../../src/tui/workbench.js';
 
-function compareController(resolve: (run: boolean) => void): ControllerHandle {
+const gateResult = {
+  reportPath: 'C:\\exp\\report.html',
+  experimentRoot: 'C:\\exp',
+  record: {
+    attempt: { runId: 'run-1' },
+    outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
+  },
+  decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+  comparison: { result: { status: 'skipped' } },
+} as ExperimentResult;
+
+function compareController(resolve: (run: boolean) => void, page: 'result' | 'running' = 'result'): ControllerHandle {
+  const view = { page, cwd: '/', hasApiConfig: true, hasTaskCase: false, message: '' };
   return {
-    page: 'result',
+    page,
     compareChoice: { resolve },
-    result: {
-      comparison: { result: { status: 'skipped' } },
-      record: { outcome: { termination: { kind: 'completed' } } },
-    },
+    result: gateResult,
     locale: 'en',
-    timelineReadOffset: 0,
     isEditingText: () => false,
-    view: () => ({ page: 'result', cwd: '/', hasApiConfig: true, hasTaskCase: false, message: '' }),
-    viewport: () => ({}),
-    columns: () => 120,
+    view: () => view,
     render() {},
-    close() { return { consume: true }; },
-    backToHome() { return { consume: true }; },
-    openReport() { return { consume: true }; },
-    openResultArtifact() { return { consume: true }; },
-    openTrace() { return { consume: true }; },
-    openReplica() { return { consume: true }; },
-    openLocal() { return { consume: true }; },
-    openResultArtifactHref() { return { consume: true }; },
-    returnFromError() { return { consume: true }; },
-    configPageInput() { return { consume: true }; },
-    historyInput() { return { consume: true }; },
-    setLocale: async () => {},
-    visibleTimeline: () => [],
-    scheduleTimelineRender() {},
-    setMouseReporting() {},
-    refreshProductAuth: async () => {},
-    loadSessions: async () => {},
-    loadMoreProductSessions() {},
-    refreshProductSessions() {},
-    loadHistory: async () => {},
-    openRecentExperiment() { return { consume: true }; },
-    setHomeMessage() { return { consume: true }; },
-    showError() {},
-    beginNavigation: () => 0,
-    hideHelp() {},
-    showHelp() { return { consume: true }; },
-    hideCommandOverlay() {},
-    syncCommandOverlay() {},
-    openConfig: async () => {},
-    move() { return { consume: true }; },
-    openIntakeSelection() { return { consume: true }; },
-    canLeaveProject: () => false,
-    backToProjects() { return { consume: true }; },
-    sessionsMessage: () => '',
-    syncIntakeLevel() {},
-    workflow: undefined,
-    dataDir: 'unused',
-    packs: [],
-    sessions: [],
-    now: () => new Date().toISOString(),
-    generation: 0,
-    recoveryAbort: undefined,
-    startupAbort: undefined,
-    recoveryFinished: undefined,
-    workflowFinished: undefined,
-    helpOverlay: undefined,
-    inlineHelp: false,
-    composer: '',
-    composerCursor: 0,
-    showSuggestions: false,
-    sourceRoot: '',
-    sourceCursor: 0,
-    searching: false,
-    searchQuery: '',
-    searchCursor: 0,
-    selected: 0,
-    filterEligible: false,
-    inspection: undefined,
-    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
-    inspectionShowOutcome: false,
-    preflight: undefined,
-    historyDetail: undefined,
-    taskCase: undefined,
-    finding: false,
-    findQuery: '',
-    findCursor: 0,
-    readingMode: false,
-    readingVisibleAt: 0,
-    timelineAnchor: undefined,
-    preparePhase: undefined,
-    prepareDetail: undefined,
-    message: '',
-    timeline: [],
-    timelineSelected: 0,
-    timelineFollowing: true,
-    timelineFilterIndex: 0,
-    expandedFolds: [],
-    autoCompare: false,
-    runFromSource: false,
-    canStartExperiment: false,
-    recoveryView: undefined,
-    selectedCandidate: undefined,
-    candidateProductId: '',
-    candidateProductCursor: 0,
-    candidateAvailability: {},
-    candidateModelOffers: [],
-    candidateModelCursor: 0,
-    candidateCatalogStatus: 'idle',
-    candidateCatalogError: undefined,
-    candidateSuggestedValue: undefined,
-    candidateCatalogGeneration: 0,
-    candidateAvailabilityGeneration: 0,
-    activeExperiment: undefined,
-    recentExperiment: undefined,
-    runStartedAt: 0,
-    runClock: undefined,
-    cancelling: false,
-    runPhase: undefined,
-    machineState: undefined,
-    runFailed: false,
-    cleanupStatus: undefined,
-    lastRuntimeEventAt: undefined,
-    lastRuntimeEventKind: undefined,
-    modelOutputSeen: false,
-    reconnectCount: 0,
-    reconnectTotal: 0,
-    modelConfig: { schemaVersion: 2, provider: { kind: 'openai-compatible' }, model: 'test', effort: 'medium' },
-    configDraft: { kind: 'openai-compatible', model: 'test', effort: 'medium' },
-    configEditing: false,
-  } as never;
+  } as unknown as ControllerHandle;
 }
+
+function renderCompareGateFooter(comparePending: boolean): string {
+  return renderWorkbench({
+    page: 'result',
+    cwd: '/workspace',
+    hasApiConfig: true,
+    hasTaskCase: true,
+    message: t('en', 'compareGateBody'),
+    comparePending,
+    result: gateResult,
+  }, 120, 30).join('\n');
+}
+
+test('compare gate footer shows c only after compareChoice is armed', () => {
+  assert.doesNotMatch(renderCompareGateFooter(false), /\[c\]/);
+  assert.match(renderCompareGateFooter(true), /\[c\]/);
+});
+
+test('compare gate paints footer c before awaiting operator choice', async () => {
+  const rendered: string[] = [];
+  let compareChoice: { resolve(run: boolean): void } | undefined;
+  const gate = new Promise<boolean>((resolve) => {
+    compareChoice = { resolve };
+    rendered.push(renderCompareGateFooter(Boolean(compareChoice)));
+  });
+  assert.match(rendered.at(-1)!, /\[c\]/);
+  compareChoice!.resolve(false);
+  await gate;
+});
 
 test('result compare gate resolves true when c is pressed', () => {
   let chosen: boolean | undefined;
@@ -140,8 +69,7 @@ test('result compare gate resolves true when c is pressed', () => {
 
 test('running compare gate resolves true when c is pressed', () => {
   let chosen: boolean | undefined;
-  const c = compareController((run) => { chosen = run; });
-  c.page = 'running';
+  const c = compareController((run) => { chosen = run; }, 'running');
   const handled = handleControllerInput(c, 'c');
   assert.deepEqual(handled, { consume: true });
   assert.equal(chosen, true);
