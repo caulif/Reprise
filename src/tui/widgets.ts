@@ -5,6 +5,21 @@ import type { Theme } from './theme.js';
 
 export type Column = { readonly key: string; readonly width?: number; readonly flex?: number };
 export type Row = Readonly<Record<string, string>>;
+export type LinkValueHit = { readonly x0: number; readonly x1: number };
+export type KvLinkBlock = { readonly lines: readonly string[]; readonly hits: readonly (LinkValueHit | undefined)[] };
+
+/** 1-based column where the kv value starts in a body line (` ${key} ${value}`). */
+function kvLinkValueStart(labelWidth: number): number {
+  return labelWidth + 3;
+}
+
+function panelInnerWidth(theme: Theme, width: number): number {
+  return Math.max(1, width - (theme.framed ? 2 : 3));
+}
+
+function panelBodyCol(theme: Theme): number {
+  return theme.framed ? 1 : 3;
+}
 
 export function pad(text: string, width: number, ellipsis = '…'): string {
   if (width <= 0) return '';
@@ -15,19 +30,66 @@ export function pad(text: string, width: number, ellipsis = '…'): string {
 }
 
 export function panel(theme: Theme, title: string, body: readonly string[], width: number): string[] {
+  return [...panelWithHits(theme, title, body, width).lines];
+}
+
+/**
+ * One wrap pass owns both paint and pointer geometry.
+ * Body-line hits (1-based cols inside the pre-chrome body line) map onto every
+ * post-wrap screen row they intersect, with x clipped into that segment.
+ */
+export function panelWithHits<T extends LinkValueHit>(
+  theme: Theme,
+  title: string,
+  body: readonly string[],
+  width: number,
+  bodyHits: ReadonlyMap<number, readonly T[]> = new Map(),
+): { readonly lines: readonly string[]; readonly rowHits: ReadonlyMap<number, readonly T[]> } {
+  const inner = panelInnerWidth(theme, width);
+  const col = panelBodyCol(theme);
+  const rowHits = new Map<number, readonly T[]>();
+  const painted: string[] = [];
+  let bodyScreenRow = 0;
+  for (let bodyRow = 0; bodyRow < body.length; bodyRow += 1) {
+    const line = body[bodyRow] ?? '';
+    const parts = wrapBodyLine(line, inner);
+    const hits = bodyHits.get(bodyRow);
+    let visibleStart = 0;
+    for (const part of parts) {
+      const partWidth = Math.max(0, visibleWidth(part));
+      if (hits?.length) {
+        const partStart = visibleStart + 1;
+        const partEnd = visibleStart + Math.max(1, partWidth);
+        const clipped: T[] = [];
+        for (const hit of hits) {
+          if (hit.x1 < partStart || hit.x0 > partEnd) continue;
+          const local0 = Math.max(hit.x0, partStart) - visibleStart;
+          const local1 = Math.min(hit.x1, partEnd) - visibleStart;
+          clipped.push({ ...hit, x0: local0 + col, x1: local1 + col });
+        }
+        if (clipped.length) rowHits.set(1 + bodyScreenRow, clipped);
+      }
+      painted.push(part);
+      visibleStart += partWidth;
+      bodyScreenRow += 1;
+    }
+  }
   const heading = ` ${title.trim()} `;
   if (!theme.framed) {
-    const inner = Math.max(1, width - 3);
-    return [`[ ${title.trim()} ]`, ...body.flatMap((line) => wrapBodyLine(line, inner)).map((line) => `   ${line}`)];
+    return {
+      lines: [`[ ${title.trim()} ]`, ...painted.map((line) => `   ${line}`)],
+      rowHits,
+    };
   }
-  const inner = Math.max(1, width - 2);
   const g = theme.glyphs;
   const headingText = `${g.h}${heading}`;
   const topPad = Math.max(0, inner - visibleWidth(headingText));
   const top = `${g.tl}${headingText}${g.h.repeat(topPad)}${g.tr}`;
   const bottom = `${g.bl}${g.h.repeat(inner)}${g.br}`;
-  const wrapped = body.flatMap((line) => wrapBodyLine(line, inner)).map((line) => `${g.v}${pad(line, inner, g.ellipsis)}${g.v}`);
-  return [top, ...wrapped, bottom];
+  return {
+    lines: [top, ...painted.map((line) => `${g.v}${pad(line, inner, g.ellipsis)}${g.v}`), bottom],
+    rowHits,
+  };
 }
 
 
@@ -278,7 +340,7 @@ export function kv(theme: Theme, key: string, value: string, width: number): str
 /** Label plus wrapped value; continuation lines indent under the value, not under a mid-glyph. */
 export function kvBlock(theme: Theme, key: string, value: string, width: number): string[] {
   const inner = Math.max(1, width - (theme.framed ? 2 : 3));
-  const labelWidth = 12;
+  const labelWidth = Math.max(12, visibleWidth(key));
   const valueWidth = Math.max(8, inner - labelWidth - 2);
   const wrapped = wrapBodyLine(value, valueWidth);
   const indent = ' '.repeat(labelWidth);
@@ -290,18 +352,26 @@ export function kvBlock(theme: Theme, key: string, value: string, width: number)
 }
 
 /** Like kvBlock, but each wrapped visible segment opens the same local path. */
-export function kvLinkBlock(theme: Theme, key: string, label: string, absolutePath: string | undefined, width: number): string[] {
+export function kvLinkBlock(theme: Theme, key: string, label: string, absolutePath: string | undefined, width: number): KvLinkBlock {
   const vacant = theme.framed ? '—' : '-';
-  if (!absolutePath || !label.trim() || label === vacant) return kvBlock(theme, key, label, width);
+  if (!absolutePath || !label.trim() || label === vacant) {
+    const lines = kvBlock(theme, key, label, width);
+    return { lines, hits: lines.map(() => undefined) };
+  }
   const inner = Math.max(1, width - (theme.framed ? 2 : 3));
-  const labelWidth = 12;
+  const labelWidth = Math.max(12, visibleWidth(key));
   const valueWidth = Math.max(8, inner - labelWidth - 2);
   const wrapped = wrapBodyLine(label, valueWidth);
   const indent = ' '.repeat(labelWidth);
-  return wrapped.map((line, index) => {
-    const linked = fileLink(theme.style.accent(line), absolutePath);
-    return index === 0
+  const valueStart = kvLinkValueStart(labelWidth);
+  const lines: string[] = [];
+  const hits: (LinkValueHit | undefined)[] = [];
+  for (const [index, segment] of wrapped.entries()) {
+    const linked = theme.style.accent(fileLink(segment, absolutePath));
+    lines.push(index === 0
       ? ` ${theme.style.muted(pad(key, labelWidth, theme.glyphs.ellipsis))} ${linked}`
-      : ` ${indent} ${linked}`;
-  });
+      : ` ${indent} ${linked}`);
+    hits.push({ x0: valueStart, x1: valueStart + Math.max(1, visibleWidth(segment)) - 1 });
+  }
+  return { lines, hits };
 }

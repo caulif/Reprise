@@ -74,6 +74,8 @@ const M = {
   hintBack: { en: 'Back', zh: '返回' },
   hintHome: { en: 'Home', zh: '封面' },
   hintReport: { en: 'Open report', zh: '打开报告' },
+  hintHistoryFinal: { en: 'History final', zh: '历史终稿' },
+  hintCandidateFinal: { en: 'Candidate final', zh: '候选终稿' },
   hintTrace: { en: 'Open trace', zh: '打开记录' },
   hintReplica: { en: 'Open replica', zh: '打开副本' },
   plainRejected: { en: 'This is a benchmark workbench. Use /help to see local commands.', zh: '这是对照工作台。请用 /help 查看本地命令。' },

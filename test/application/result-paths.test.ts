@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildResultPathLinks } from "../../src/application/result-paths.js";
+import { buildResultPathLinks, presentableReportPath, resolveResultPathLinks } from "../../src/application/result-paths.js";
 import { resolveHistoricalFinalPath } from "../../src/application/historical-final-discovery.js";
 import type { RunInspection } from "../../src/application/comparison.js";
 import type { TaskCase } from "../../src/core/schema.js";
@@ -108,4 +108,18 @@ test("resolveHistoricalFinalPath resolves baseline-artifacts under dataDir", asy
     dataDir,
   });
   assert.equal(resolved, join(artifactDir, "deck.html"));
+});
+
+test("presentableReportPath omits the experiment root used as a skipped-comparison placeholder", () => {
+  assert.equal(presentableReportPath("C:\\exp\\report.html", "C:\\exp"), "C:\\exp\\report.html");
+  assert.equal(presentableReportPath("C:\\exp", "C:\\exp"), undefined);
+  assert.equal(presentableReportPath(undefined, "C:\\exp"), undefined);
+  const links = resolveResultPathLinks({
+    experimentRoot: "C:\\exp",
+    reportPath: "C:\\exp",
+    pathLinks: { report: "C:\\exp", historyFinal: "C:\\exp\\deck.html" },
+    record: { attempt: { runId: "run-1" } },
+  } as never);
+  assert.equal(links.report, undefined);
+  assert.equal(links.historyFinal, "C:\\exp\\deck.html");
 });

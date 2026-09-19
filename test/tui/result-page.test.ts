@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setCapabilities } from '@earendil-works/pi-tui';
-import { renderResult } from '../../src/tui/pages/result.js';
+import { setCapabilities, visibleWidth } from '@earendil-works/pi-tui';
+import { renderResult, resultHints } from '../../src/tui/pages/result.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { kv } from '../../src/tui/widgets.js';
 
@@ -32,7 +32,52 @@ test('result page uses comparison headline and hides satisfied rationale', () =>
   assert.match(skipped, /not run/);
   assert.doesNotMatch(skipped, /三页 PPT/);
   assert.doesNotMatch(skipped, /Both delivered|两边都/);
-  assert.doesNotMatch(skipped, /Report/);
+  assert.match(skipped, /Report/);
+  assert.match(skipped, /History final/);
+  assert.match(skipped, /Candidate final/);
+});
+
+test('skipped comparison still renders history and candidate rows without bare absolute paths', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const theme = createTheme(120, false);
+  const historyFinal = 'C:\\exp\\environment\\baselines\\deck.html';
+  const candidateFinal = 'C:\\exp\\environment\\runs\\run-1\\out.html';
+  const text = renderResult(theme, 120, {
+    experimentRoot: 'C:\\exp',
+    pathLinks: {
+      historyFinal,
+      candidateFinal,
+      trace: 'C:\\exp\\runs\\run-1',
+      replica: 'C:\\exp\\environment\\runs\\run-1',
+    },
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'skipped' } },
+  } as never).join('\n');
+  assert.match(text, /Report/);
+  assert.match(text, /History final.*deck\.html/);
+  assert.match(text, /Candidate final.*out\.html/);
+  assert.doesNotMatch(text, /C:\\exp\\environment\\baselines\\deck\.html/);
+  assert.doesNotMatch(text, /C:\\exp\\environment\\runs\\run-1\\out\.html/);
+});
+
+test('result page footer lists path open keys and c during compare gate', () => {
+  assert.deepEqual(resultHints(), [
+    ['o', 'Open report'],
+    ['h', 'History final'],
+    ['f', 'Candidate final'],
+    ['Esc', 'Home'],
+  ]);
+  assert.deepEqual(resultHints('en', true), [
+    ['c', 'Generate comparison card'],
+    ['o', 'Open report'],
+    ['h', 'History final'],
+    ['f', 'Candidate final'],
+    ['Esc', 'Home'],
+  ]);
 });
 
 test('failed comparison remains distinct from a stalled candidate in both terminal widths', () => {
@@ -119,6 +164,99 @@ test('result metrics name candidate time when comparison made the experiment lon
   } as never).join('\n');
   assert.match(text, /148s/);
   assert.match(text, /candidate 72s/);
+});
+
+test('failed result shows the recorded failure instead of limitations copy', () => {
+  const theme = createTheme(120, false);
+  const text = renderResult(theme, 120, {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: ['fingerprint differs'] },
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: {
+        task: { status: 'indeterminate' },
+        termination: {
+          kind: 'failed',
+          code: 'failed.controller',
+          failure: { origin: 'controller', code: 'invalid_output', message: 'Controller decision failed the output contract.', evidenceRefs: [] },
+        },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'failed' },
+    comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
+  } as never).join('\n');
+  assert.match(text, /failed\.controller/);
+  assert.match(text, /Controller: Controller decision failed the output contract/);
+  assert.doesNotMatch(text, /Limitations|Single run|fingerprint differs/);
+});
+
+test('runtime failure identifies the selected product rather than Codex', () => {
+  const theme = createTheme(120, false);
+  const text = renderResult(theme, 120, {
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: {
+        task: { status: 'indeterminate' },
+        termination: {
+          kind: 'failed', code: 'failed.runtime',
+          failure: { origin: 'runtime', code: 'runtime.invalid_json', message: 'invalid JSON', evidenceRefs: [] },
+        },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'failed' },
+    comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
+  } as never, 'en', 'Claude Code').join('\n');
+  assert.match(text, /Claude Code: invalid JSON/);
+  assert.match(text, /not a Claude Code runtime crash/);
+  assert.doesNotMatch(text, /Codex/);
+});
+
+test('blocked result is a warning with controller reason and short paths', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const theme = createTheme(120, false);
+  const lines = renderResult(theme, 120, {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'blocked', rationale: 'Sandbox denied the WeChat data path.' } },
+    comparison: { result: { status: 'completed' } },
+  } as never);
+  for (const line of lines) assert.equal(visibleWidth(line), 120, line);
+  const text = lines.join('\n');
+  assert.match(text, /blocked\.controller_done/);
+  assert.match(text, /Sandbox denied the WeChat data path/);
+  assert.match(text, /Report\s+.*report\.html/);
+  assert.match(text, /Trace\s+.*runs\/run-1\//);
+  assert.match(text, /\u001b\]8;;file:\/\/\/.*report\.html\u001b\\/);
+  assert.match(text, /\u001b\]8;;file:\/\/\/.*runs[/\\]run-1\u001b\\/);
+  assert.doesNotMatch(text, /C:\\exp\\report\.html/);
+  assert.doesNotMatch(text, /✗ blocked/);
+  assert.doesNotMatch(text, /Cost not recorded|not recorded/);
+});
+
+test('limit_reached result explains the turn cap', () => {
+  const theme = createTheme(120, false);
+  const text = renderResult(theme, 120, {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'incomplete' }, termination: { kind: 'limit_reached', code: 'limit.target_turns' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'send', message: 'Continue.' } },
+    comparison: { result: { status: 'completed' } },
+  } as never).join('\n');
+  assert.match(text, /limit\.target_turns/);
+  assert.match(text, /target turn limit/);
+  assert.match(text, /Comparison still ran/);
 });
 
 test('result banners use the fail slot and mute kv keys', () => {

@@ -75,14 +75,14 @@ export function missing(value: string | undefined, empty = '—'): string {
   return value?.trim() ? value : empty;
 }
 
-/** Visible label plus OSC 8 file:// link when the terminal supports it. Wrap the label first. */
+/** Visible short label plus OSC 8 file:// link when the terminal supports it. Never replace the label with the absolute path. */
 export function fileLink(label: string, absolutePath: string): string {
   const safeLabel = stripTerminalSequences(label);
   if (!safeLabel || !absolutePath || !isFsAbsolute(absolutePath)) return safeLabel;
   const href = stripTerminalSequences(pathToFileURL(absolutePath).href);
-  if (!href || /[\u0000-\u001f\u007f]/.test(href)) return stripTerminalSequences(absolutePath);
+  if (!href || /[\u0000-\u001f\u007f]/.test(href)) return safeLabel;
   if (getCapabilities().hyperlinks) return hyperlink(safeLabel, href);
-  return stripTerminalSequences(absolutePath);
+  return safeLabel;
 }
 
 const OSC8 = /\x1b\]8;;([^\x07\x1b]*)(?:\x07|\x1b\\)([\s\S]*?)\x1b\]8;;(?:\x07|\x1b\\)/g;

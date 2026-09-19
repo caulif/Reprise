@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
+import { sameFsPath } from "../core/paths.js";
 import type { RunInspection } from "./comparison.js";
 import type { ExperimentResult } from "./experiment.js";
 import { resolveHistoricalFinalPath } from "./historical-final-discovery.js";
@@ -33,8 +34,9 @@ export async function buildResultPathLinks(input: {
     ...(input.attemptRoot ? { attemptRoot: input.attemptRoot } : {}),
   });
   const candidateFinal = await resolveCandidateFinal(input);
+  const report = presentableReportPath(input.reportPath, input.experimentRoot);
   return {
-    ...(input.reportPath?.trim() ? { report: input.reportPath.trim() } : {}),
+    ...(report ? { report } : {}),
     ...(historyFinal ? { historyFinal } : {}),
     ...(candidateFinal ? { candidateFinal } : {}),
     trace: join(input.experimentRoot, "runs", input.runId),
@@ -42,14 +44,29 @@ export async function buildResultPathLinks(input: {
   };
 }
 
+/** Report file path, or undefined when the stored path is the experiment root (skipped comparison). */
+export function presentableReportPath(
+  report: string | undefined,
+  experimentRoot: string | undefined,
+): string | undefined {
+  if (!report?.trim()) return undefined;
+  if (experimentRoot && sameFsPath(report, experimentRoot)) return undefined;
+  return report.trim();
+}
+
 export function resolveResultPathLinks(result: ExperimentResult): ResultPathLinks {
-  if (result.pathLinks) return result.pathLinks;
+  if (result.pathLinks) {
+    const { report: storedReport, ...rest } = result.pathLinks;
+    const report = presentableReportPath(storedReport, result.experimentRoot);
+    return { ...rest, ...(report ? { report } : {}) };
+  }
   const runId = result.record.attempt?.runId;
+  const report = presentableReportPath(result.reportPath, result.experimentRoot);
   if (!runId || !result.experimentRoot) {
-    return { ...(result.reportPath ? { report: result.reportPath } : {}) };
+    return { ...(report ? { report } : {}) };
   }
   return {
-    ...(result.reportPath ? { report: result.reportPath } : {}),
+    ...(report ? { report } : {}),
     trace: join(result.experimentRoot, "runs", runId),
     replica: join(result.experimentRoot, "environment", "runs", runId),
   };

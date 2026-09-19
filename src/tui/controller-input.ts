@@ -3,6 +3,7 @@ import { runtimePacks } from '../application/intake-catalog.js';
 import { isFsAbsolute } from '../core/paths.js';
 import { matchesKey } from '@earendil-works/pi-tui';
 import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
+import { resolveResultPathLinks } from '../application/result-paths.js';
 import type { ExperimentPreflight } from '../application/experiment-preflight.js';
 import type { RecoveryView } from '../application/recovery/view.js';
 import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
@@ -210,10 +211,10 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
       return { consume: true };
     }
     if (result.action === 'open-report') {
-      if (c.result?.comparison.result.status === 'skipped') return undefined;
+      const paths = c.result ? resolveResultPathLinks(c.result) : {};
       return c.openReport(
-        c.result?.experimentRoot ?? (c.result ? dirname(c.result.reportPath) : undefined),
-        c.result?.reportPath,
+        c.result?.experimentRoot ?? (paths.report ? dirname(paths.report) : undefined),
+        paths.report,
       );
     }
     if (result.action === 'open-history-final') return c.openResultArtifact('history');

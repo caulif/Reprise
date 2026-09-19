@@ -1,16 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setCapabilities } from '@earendil-works/pi-tui';
+import { setCapabilities, stripTerminalSequences, visibleWidth } from '@earendil-works/pi-tui';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import type { ControllerHandle } from '../../src/tui/controller-input.js';
 import { hitFileLink } from '../../src/tui/format.js';
 import { homeHints } from '../../src/tui/pages/home.js';
 import { applyResultPointer, yieldPointerToApp } from '../../src/tui/pointer-dispatch.js';
-import { resultPointerAction, renderResult, resolveResultLinkAction } from '../../src/tui/pages/result.js';
+import { resultPointerAction, renderResult, renderResultWithHits, resolveResultLinkAction } from '../../src/tui/pages/result.js';
+import type { ResultPathLinks } from '../../src/application/result-paths.js';
+import type { ResultAction } from '../../src/tui/page-input.js';
 import { keepSelectedVisible } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
+
+function visibleSpan(line: string, needle: string): { x0: number; x1: number } | undefined {
+  const plain = stripTerminalSequences(line);
+  const index = plain.indexOf(needle);
+  if (index < 0) return undefined;
+  const x0 = visibleWidth(plain.slice(0, index)) + 1;
+  return { x0, x1: x0 + visibleWidth(needle) - 1 };
+}
+
+function pointerAt(
+  lines: readonly string[],
+  row: number,
+  col: number,
+  locale: 'en' | 'zh',
+  pathLinks: ResultPathLinks,
+  rowHits: ReadonlyMap<number, readonly { action: ResultAction; x0: number; x1: number }[]>,
+): ResultAction | undefined {
+  return resultPointerAction(lines, row, col, locale, pathLinks, rowHits);
+}
 
 test('keepSelectedVisible only changes offset when the selection would leave the window', () => {
   assert.equal(keepSelectedVisible(0, 0, 40, 10), 0);
@@ -37,7 +58,7 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
     trace: 'C:\\exp\\runs\\run-1',
     replica: 'C:\\exp\\environment\\runs\\run-1',
   };
-  const lines = renderResult(theme, 120, {
+  const { lines, rowHits } = renderResultWithHits(theme, 120, {
     reportPath: 'C:\\exp\\report.html',
     experimentRoot: 'C:\\exp',
     pathLinks,
@@ -58,11 +79,116 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
     }
   }
   assert.ok(hitCol > 0);
-  assert.equal(resultPointerAction(lines, reportLine, hitCol, 'en', pathLinks), 'open-report');
-  assert.equal(resultPointerAction(lines, 0, 2, 'en', pathLinks), undefined);
+  assert.equal(resultPointerAction(lines, reportLine, hitCol, 'en', pathLinks, rowHits), 'open-report');
+  assert.equal(resultPointerAction(lines, 0, 2, 'en', pathLinks, rowHits), undefined);
   const compareLine = lines.findIndex((line) => line.includes('Generate comparison card'));
   assert.ok(compareLine >= 0);
-  assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks), 'compare');
+  assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks, rowHits), 'compare');
+});
+
+test('result pointer matches final framed screen coords without OSC 8', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const theme = createTheme(120, false);
+  assert.equal(theme.framed, true);
+  const pathLinks = {
+    historyFinal: 'C:\\exp\\environment\\baselines\\deck.html',
+  };
+  const { lines, rowHits } = renderResultWithHits(theme, 120, {
+    experimentRoot: 'C:\\exp',
+    pathLinks,
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed' },
+    comparison: { result: { status: 'skipped' } },
+  } as never, 'en');
+  const row = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
+  assert.ok(row >= 0);
+  const line = lines[row] ?? '';
+  const value = visibleSpan(line, 'environment/baselines/deck.html');
+  assert.ok(value);
+  assert.equal(hitFileLink(line, value.x0), undefined);
+  assert.equal(pointerAt(lines, row, value.x0, 'en', pathLinks, rowHits), 'open-history-final');
+  assert.equal(pointerAt(lines, row, value.x1, 'en', pathLinks, rowHits), 'open-history-final');
+  assert.equal(pointerAt(lines, row, value.x0 - 1, 'en', pathLinks, rowHits), undefined);
+  assert.equal(pointerAt(lines, row, value.x0 - 2, 'en', pathLinks, rowHits), undefined);
+});
+
+test('result pointer stays aligned when metrics wrap at compact width', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const pathLinks = {
+    report: 'C:\\exp\\report.html',
+    historyFinal: 'C:\\exp\\environment\\baselines\\deck.html',
+    candidateFinal: 'C:\\exp\\environment\\runs\\run-1\\out.html',
+  };
+  const fixture = {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    pathLinks,
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'completed' } },
+    facts: { wallClockMs: 72_000, turns: 3, controllerCalls: 2, tokenCount: 4096, costUsd: 1.23 },
+  } as never;
+  for (const width of [48, 60]) {
+    const theme = createTheme(width, false);
+    assert.equal(theme.framed, false);
+    const { lines, rowHits } = renderResultWithHits(theme, width, fixture, 'en');
+    const reportRow = lines.findIndex((line) => {
+      const plain = stripTerminalSequences(line);
+      return plain.includes('report.html') && plain.includes('Report');
+    });
+    const historyRow = lines.findIndex((line) => stripTerminalSequences(line).includes('deck.html'));
+    const metricsRow = lines.findIndex((line) => stripTerminalSequences(line).includes('4096'));
+    assert.ok(reportRow >= 0, `report row at width ${width}`);
+    assert.ok(historyRow >= 0, `history row at width ${width}`);
+    assert.ok(metricsRow >= 0, `metrics row at width ${width}`);
+    const reportLine = lines[reportRow] ?? '';
+    const historyLine = lines[historyRow] ?? '';
+    const metricsLine = lines[metricsRow] ?? '';
+    const reportValue = visibleSpan(reportLine, 'report.html');
+    const historyValue = visibleSpan(historyLine, 'deck.html');
+    const metricsValue = visibleSpan(metricsLine, '4096');
+    assert.ok(reportValue);
+    assert.ok(historyValue);
+    assert.ok(metricsValue);
+    assert.equal(pointerAt(lines, metricsRow, metricsValue.x0, 'en', pathLinks, rowHits), undefined);
+    assert.equal(pointerAt(lines, reportRow, reportValue.x0, 'en', pathLinks, rowHits), 'open-report');
+    assert.equal(pointerAt(lines, historyRow, historyValue.x0, 'en', pathLinks, rowHits), 'open-history-final');
+  }
+});
+
+test('result pointer matches final unframed screen coords without OSC 8', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const theme = createTheme(48, false);
+  assert.equal(theme.framed, false);
+  const pathLinks = {
+    replica: 'C:\\exp\\environment\\runs\\run-1',
+  };
+  const { lines, rowHits } = renderResultWithHits(theme, 48, {
+    experimentRoot: 'C:\\exp',
+    pathLinks,
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed' },
+    comparison: { result: { status: 'skipped' } },
+  } as never, 'zh');
+  const row = lines.findIndex((line) => line.includes('environment/runs/run-1/') && line.includes('隔离副本'));
+  assert.ok(row >= 0);
+  const line = lines[row] ?? '';
+  const value = visibleSpan(line, 'environment/runs/run-1/');
+  assert.ok(value);
+  assert.equal(hitFileLink(line, value.x0), undefined);
+  assert.equal(pointerAt(lines, row, value.x0, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(pointerAt(lines, row, value.x1, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(pointerAt(lines, row, value.x0 - 1, 'zh', pathLinks, rowHits), undefined);
+  assert.equal(pointerAt(lines, row, value.x0 - 2, 'zh', pathLinks, rowHits), undefined);
 });
 
 test('result pointer treats environment baselines html as history final', () => {
@@ -77,7 +203,7 @@ test('result pointer treats environment baselines html as history final', () => 
     replica: 'C:\\exp\\environment\\runs\\run-1',
   };
   const theme = createTheme(120, false);
-  const lines = renderResult(theme, 120, {
+  const { lines, rowHits } = renderResultWithHits(theme, 120, {
     reportPath: 'C:\\exp\\report.html',
     experimentRoot: 'C:\\exp',
     pathLinks,
@@ -98,7 +224,7 @@ test('result pointer treats environment baselines html as history final', () => 
     }
   }
   assert.ok(hitCol > 0);
-  assert.equal(resultPointerAction(lines, historyLine, hitCol, 'en', pathLinks), 'open-history-final');
+  assert.equal(resultPointerAction(lines, historyLine, hitCol, 'en', pathLinks, rowHits), 'open-history-final');
   assert.equal(resolveResultLinkAction(href, pathLinks), 'open-history-final');
 });
 
