@@ -8,15 +8,11 @@ export const HistoricalArtifactExtractorVersionSchema = Type.String({
   pattern: "^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$",
 });
 
-export const HistoricalArtifactOriginSchema = Type.Union([
-  Type.Literal("historical_artifact"),
-  Type.Literal("reconstructed_from_history"),
-]);
+/** B1 produces reconstructed bytes only; sealed original artifacts are a later path. */
+export const HistoricalArtifactOriginSchema = Type.Literal("reconstructed_from_history");
 
-export const HistoricalArtifactFinalitySchema = Type.Union([
-  Type.Literal("final"),
-  Type.Literal("unknown"),
-]);
+/** Unknown paths are issues, never artifact rows with unknown finality. */
+export const HistoricalArtifactFinalitySchema = Type.Literal("final");
 
 /**
  * Logical path relative to the task root.
@@ -36,7 +32,6 @@ export const HistoricalArtifactIssueCodeSchema = Type.Union([
   Type.Literal("path_rejected"),
   Type.Literal("path_conflict"),
   Type.Literal("failed_tool"),
-  Type.Literal("capability_unavailable"),
 ]);
 
 export const HistoricalArtifactIssueSchema = Type.Object({

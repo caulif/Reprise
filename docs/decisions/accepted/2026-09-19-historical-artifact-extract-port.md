@@ -10,7 +10,7 @@
 
 ## 决定
 
-在 `ProductHistoryReader` 上增加**可选**方法 `extractHistoricalArtifacts`。输入为 Host 已冻结/脱敏的 transcript、historicalEvents 与可选 historical cwd 线索；输出为 `HistoricalArtifactManifest`（schemaVersion 1，经 `Value.Check`）与配对字节（manifest JSON 不含 base64）。内置 Codex/Claude Pack 实现确定性解码：只应用有成功结果佐证的写入；静态 `apply_patch` 与 Claude Write/Edit；拒绝 `eval`、动态拼接与未知 shell 改写下的假 final。公共 schema 位于 `src/core/schemas/historical-artifacts.ts`。`PACK_API_MAJOR` 不变；registry 仍只硬性检查 discover/inspect/import。
+在 `ProductHistoryReader` 上增加**可选**方法 `extractHistoricalArtifacts`。输入为 Host 已冻结/脱敏的 transcript、historicalEvents 与可选 `historicalCwd`（用于把会话内绝对路径安全相对化到任务根，仍拒越界/`..`）；输出为 `HistoricalArtifactManifest`（schemaVersion 1，经 `Value.Check`）与配对字节（manifest JSON 不含 base64）。内置 Codex/Claude Pack 实现确定性解码：只应用有成功结果佐证的写入；仅**整段**静态 `apply_patch` 的 shell 可信，其余成功 shell/Bash 一律 fail-closed（issue，不得假 final）；Claude Write/Edit/Delete 同理。B1 schema 只产出 `origin=reconstructed_from_history` 与 `finality=final`；未知状态只进 issues。公共 schema 位于 `src/core/schemas/historical-artifacts.ts`。`PACK_API_MAJOR` 不变；registry 仍只硬性检查 discover/inspect/import。
 
 ## 备选方案
 

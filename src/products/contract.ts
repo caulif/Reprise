@@ -196,6 +196,7 @@ export function isEligibleSession(session: SessionSummary): boolean {
 /**
  * Frozen/redacted transcript + events already owned by Host.
  * Extractors must not read the live cwd or execute historical programs.
+ * `historicalCwd` relativizes absolute tool paths that stay inside that root.
  */
 export type HistoricalArtifactExtractInput = {
   readonly transcript: readonly SessionMessage[];

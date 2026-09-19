@@ -313,3 +313,110 @@ test("tool call without result is not sealed as final", () => {
   assert.equal(result.manifest.artifacts.length, 0);
   assert.ok(result.manifest.issues.some((issue) => issue.code === "ambiguous_version"));
 });
+
+test("Codex shell fail-closed: python sed bash and co-mutators drop prior finals", () => {
+  const cases: Array<{ name: string; args: unknown }> = [
+    { name: "shell_command", args: { command: 'python -c "open(\'a.txt\',\'w\').write(\'x\')"' } },
+    { name: "shell_command", args: { command: "sed -i 's/v1/v2/' a.txt" } },
+    { name: "bash", args: { command: 'python -c "open(\'a.txt\',\'w\').write(\'x\')"' } },
+    {
+      name: "shell_command",
+      args: {
+        command: `const patch = ${JSON.stringify(addPatch("a.txt", "from-patch"))};\napply_patch(patch);\nrequire('fs').writeFileSync('a.txt','mutated')`,
+      },
+    },
+  ];
+  for (const [index, item] of cases.entries()) {
+    const input: HistoricalArtifactExtractInput = {
+      transcript: [],
+      historicalEvents: [
+        codexCall("c1", "apply_patch", { patch: addPatch("a.txt", "v1") }),
+        codexOutput("c1", "ok"),
+        codexCall(`c2-${index}`, item.name, item.args),
+        codexOutput(`c2-${index}`, "ok"),
+      ],
+    };
+    const result = codexSessionAdapter.extractHistoricalArtifacts!(input);
+    assert.equal(result.manifest.artifacts.length, 0, item.name);
+    assert.ok(result.manifest.issues.some((issue) => issue.code === "unsupported_write"), item.name);
+  }
+});
+
+test("Claude successful Bash after Write cannot keep prior bytes as final", () => {
+  const input: HistoricalArtifactExtractInput = {
+    transcript: [],
+    historicalEvents: [
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "t1", name: "Write", input: { file_path: "out/hi.txt", content: "alpha" } }],
+        },
+      },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "Wrote" }] } },
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "t2", name: "Bash", input: { command: "echo mutated > out/hi.txt" } }],
+        },
+      },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t2", content: "ok" }] } },
+    ],
+  };
+  const result = claudeSessionAdapter.extractHistoricalArtifacts!(input);
+  assert.equal(result.manifest.artifacts.length, 0);
+  assert.ok(result.manifest.issues.some((issue) => issue.code === "unsupported_write"));
+});
+
+test("Claude absolute file_path relativizes via historicalCwd and rejects outside root", () => {
+  const cwd = "C:/Users/me/proj";
+  const inside: HistoricalArtifactExtractInput = {
+    transcript: [],
+    historicalCwd: cwd,
+    historicalEvents: [
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "t1",
+            name: "Write",
+            input: { file_path: `${cwd}/out/hi.txt`, content: "abs-ok" },
+          }],
+        },
+      },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "Wrote" }] } },
+    ],
+  };
+  const ok = claudeSessionAdapter.extractHistoricalArtifacts!(inside);
+  assert.equal(bytesOf(ok, "out/hi.txt", ok.manifest).toString("utf8"), "abs-ok");
+
+  const outside: HistoricalArtifactExtractInput = {
+    transcript: [],
+    historicalCwd: cwd,
+    historicalEvents: [
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "t1",
+            name: "Write",
+            input: { file_path: "C:/Users/other/secret.txt", content: "nope" },
+          }],
+        },
+      },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "Wrote" }] } },
+    ],
+  };
+  const rejected = claudeSessionAdapter.extractHistoricalArtifacts!(outside);
+  assert.equal(rejected.manifest.artifacts.length, 0);
+  assert.ok(rejected.manifest.issues.some((issue) => issue.code === "path_rejected"));
+
+  const noCwd: HistoricalArtifactExtractInput = {
+    transcript: [],
+    historicalEvents: outside.historicalEvents,
+  };
+  const missing = claudeSessionAdapter.extractHistoricalArtifacts!(noCwd);
+  assert.equal(missing.manifest.artifacts.length, 0);
+  assert.ok(missing.manifest.issues.some((issue) => issue.code === "path_rejected"));
+});

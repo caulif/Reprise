@@ -11,7 +11,10 @@ import {
 
 export const CLAUDE_HISTORICAL_ARTIFACTS_VERSION = "claude-historical-artifacts/v1";
 
-type PendingWrite = {
+const FILE_TOOLS = new Set(["Write", "Edit", "Delete"]);
+const MUTATING_SHELL_TOOLS = new Set(["Bash", "Shell", "bash", "shell"]);
+
+type PendingTool = {
   readonly toolUseId: string;
   readonly name: string;
   readonly input: JsonRecord;
@@ -20,14 +23,15 @@ type PendingWrite = {
 
 /**
  * Reconstruct deliverable bytes from frozen Claude Code transcript/events.
- * Maps complete Write and unique Edit; does not reuse Codex patch syntax.
+ * Maps complete Write and unique Edit; successful Bash invalidates priors (fail-closed).
  */
 export function extractClaudeHistoricalArtifacts(input: HistoricalArtifactExtractInput): HistoricalArtifactExtractResult {
   const builder = new HistoricalArtifactBuilder({
     sourceHash: sourceHashForExtract(input),
     extractorVersion: CLAUDE_HISTORICAL_ARTIFACTS_VERSION,
+    ...(input.historicalCwd ? { historicalCwd: input.historicalCwd } : {}),
   });
-  const pending = new Map<string, PendingWrite>();
+  const pending = new Map<string, PendingTool>();
   for (const [index, row] of input.historicalEvents.entries()) {
     if (!isRecord(row)) continue;
     const sourceRef = `event:history-${index}`;
@@ -45,13 +49,13 @@ export function extractClaudeHistoricalArtifacts(input: HistoricalArtifactExtrac
   return builder.finish();
 }
 
-function collectAssistantTools(pending: Map<string, PendingWrite>, row: JsonRecord, sourceRef: string): void {
+function collectAssistantTools(pending: Map<string, PendingTool>, row: JsonRecord, sourceRef: string): void {
   const content = record(row.message).content;
   if (!Array.isArray(content)) return;
   for (const [blockIndex, part] of content.entries()) {
     if (!isRecord(part) || part.type !== "tool_use") continue;
     const name = text(part.name);
-    if (!name || !["Write", "Edit", "Delete", "NotebookEdit"].includes(name)) continue;
+    if (!name || (!FILE_TOOLS.has(name) && !MUTATING_SHELL_TOOLS.has(name))) continue;
     const toolUseId = text(part.id) ?? `tool-${sourceRef}-${blockIndex}`;
     pending.set(toolUseId, { toolUseId, name, input: record(part.input), sourceRef });
   }
@@ -59,7 +63,7 @@ function collectAssistantTools(pending: Map<string, PendingWrite>, row: JsonReco
 
 function applyToolResults(
   builder: HistoricalArtifactBuilder,
-  pending: Map<string, PendingWrite>,
+  pending: Map<string, PendingTool>,
   row: JsonRecord,
   sourceRef: string,
 ): void {
@@ -77,11 +81,15 @@ function applyToolResults(
       builder.issue("failed_tool", refs);
       continue;
     }
+    if (MUTATING_SHELL_TOOLS.has(call.name)) {
+      builder.markAllUnknown(refs, "unsupported_write");
+      continue;
+    }
     applyClaudeWrite(builder, call, refs);
   }
 }
 
-function applyClaudeWrite(builder: HistoricalArtifactBuilder, call: PendingWrite, refs: readonly string[]): void {
+function applyClaudeWrite(builder: HistoricalArtifactBuilder, call: PendingTool, refs: readonly string[]): void {
   const path = text(call.input.file_path) ?? text(call.input.path);
   if (!path) {
     builder.markAllUnknown(refs, "unsupported_write");

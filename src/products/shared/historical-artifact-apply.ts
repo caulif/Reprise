@@ -1,12 +1,10 @@
 import { sha256 } from "../../core/identity.js";
-import { asPosixPath, isFsAbsolute } from "../../core/paths.js";
+import { asPosixPath, isFsAbsolute, relativeInside } from "../../core/paths.js";
 import type {
   HistoricalArtifact,
-  HistoricalArtifactFinality,
   HistoricalArtifactIssue,
   HistoricalArtifactIssueCode,
   HistoricalArtifactManifest,
-  HistoricalArtifactOrigin,
 } from "../../core/schema.js";
 import type { HistoricalArtifactExtractResult, HistoricalArtifactFile } from "../contract.js";
 
@@ -19,13 +17,12 @@ export type NormalizedWrite = {
   /** Full replacement body for add, or unique update when preimage+patch applied externally. */
   readonly bytes?: Uint8Array;
   readonly sourceRefs: readonly string[];
-  readonly origin?: HistoricalArtifactOrigin;
 };
 
 export type PathRejectReason = "absolute" | "traversal" | "unc" | "drive" | "ads" | "empty" | "charset";
 
 type FileState =
-  | { readonly status: "known"; readonly bytes: Uint8Array; readonly sourceRefs: string[]; readonly origin: HistoricalArtifactOrigin }
+  | { readonly status: "known"; readonly bytes: Uint8Array; readonly sourceRefs: string[] }
   | { readonly status: "unknown"; readonly sourceRefs: string[]; readonly reason: HistoricalArtifactIssueCode };
 
 export class HistoricalArtifactBuilder {
@@ -34,10 +31,12 @@ export class HistoricalArtifactBuilder {
   private readonly issues: HistoricalArtifactIssue[] = [];
   private readonly sourceHash: string;
   private readonly extractorVersion: string;
+  private readonly historicalCwd: string | undefined;
 
-  constructor(input: { sourceHash: string; extractorVersion: string }) {
+  constructor(input: { sourceHash: string; extractorVersion: string; historicalCwd?: string }) {
     this.sourceHash = input.sourceHash;
     this.extractorVersion = input.extractorVersion;
+    this.historicalCwd = input.historicalCwd;
   }
 
   issue(code: HistoricalArtifactIssueCode, sourceRefs: readonly string[], logicalPath?: string, message?: string): void {
@@ -50,7 +49,7 @@ export class HistoricalArtifactBuilder {
   }
 
   applyWrite(write: NormalizedWrite): void {
-    const pathCheck = validateLogicalPath(write.logicalPath);
+    const pathCheck = resolveTaskRelativePath(write.logicalPath, this.historicalCwd);
     if (!pathCheck.ok) {
       this.issue("path_rejected", write.sourceRefs, undefined, pathCheck.reason);
       return;
@@ -80,13 +79,12 @@ export class HistoricalArtifactBuilder {
       status: "known",
       bytes: write.bytes,
       sourceRefs: [...write.sourceRefs],
-      origin: write.origin ?? "reconstructed_from_history",
     });
     this.caseIndex.set(path.toLowerCase(), path);
   }
 
   markUnknown(logicalPath: string, sourceRefs: readonly string[], reason: HistoricalArtifactIssueCode): void {
-    const pathCheck = validateLogicalPath(logicalPath);
+    const pathCheck = resolveTaskRelativePath(logicalPath, this.historicalCwd);
     if (!pathCheck.ok) {
       this.issue("path_rejected", sourceRefs, undefined, pathCheck.reason);
       return;
@@ -107,7 +105,7 @@ export class HistoricalArtifactBuilder {
   }
 
   knownBytes(logicalPath: string): Uint8Array | undefined {
-    const pathCheck = validateLogicalPath(logicalPath);
+    const pathCheck = resolveTaskRelativePath(logicalPath, this.historicalCwd);
     if (!pathCheck.ok) return undefined;
     const state = this.files.get(pathCheck.path);
     return state?.status === "known" ? state.bytes : undefined;
@@ -121,7 +119,6 @@ export class HistoricalArtifactBuilder {
       const artifactId = artifactIdForPath(logicalPath);
       const bundleId = bundleIdForPath(logicalPath);
       const contentHash = sha256(state.bytes);
-      const finality: HistoricalArtifactFinality = "final";
       const mediaType = guessMediaType(logicalPath);
       artifacts.push({
         artifactId,
@@ -129,9 +126,9 @@ export class HistoricalArtifactBuilder {
         bundleId,
         contentHash,
         byteLength: state.bytes.byteLength,
-        origin: state.origin,
+        origin: "reconstructed_from_history",
         sourceRefs: state.sourceRefs,
-        finality,
+        finality: "final",
         ...(mediaType ? { mediaType } : {}),
       });
       files.push({ artifactId, bytes: state.bytes });
@@ -157,7 +154,7 @@ export class HistoricalArtifactBuilder {
       this.markUnknown(fromPath, write.sourceRefs, "unsupported_write");
       return;
     }
-    const destCheck = validateLogicalPath(write.destinationPath);
+    const destCheck = resolveTaskRelativePath(write.destinationPath, this.historicalCwd);
     if (!destCheck.ok) {
       this.issue("path_rejected", write.sourceRefs, undefined, destCheck.reason);
       this.markUnknown(fromPath, write.sourceRefs, "path_rejected");
@@ -175,7 +172,6 @@ export class HistoricalArtifactBuilder {
       logicalPath: destCheck.path,
       bytes: state.bytes,
       sourceRefs: [...new Set([...state.sourceRefs, ...write.sourceRefs])],
-      origin: state.origin,
     });
   }
 
@@ -183,6 +179,31 @@ export class HistoricalArtifactBuilder {
     const existing = this.caseIndex.get(path.toLowerCase());
     return existing && existing !== path ? existing : undefined;
   }
+}
+
+/**
+ * Map a transcript path to a task-relative logical path.
+ * Absolute paths require historicalCwd and must stay inside that root.
+ */
+export function resolveTaskRelativePath(
+  raw: string,
+  historicalCwd?: string,
+): { ok: true; path: string } | { ok: false; reason: PathRejectReason } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: false, reason: "empty" };
+  const posix = asPosixPath(trimmed);
+  if (isAbsoluteHistoricalPath(posix)) {
+    if (!historicalCwd) return { ok: false, reason: "absolute" };
+    const relative = relativeInside(historicalCwd, posix);
+    if (relative === undefined) return { ok: false, reason: "absolute" };
+    if (!relative) return { ok: false, reason: "empty" };
+    return validateLogicalPath(relative);
+  }
+  return validateLogicalPath(posix);
+}
+
+function isAbsoluteHistoricalPath(posix: string): boolean {
+  return posix.startsWith("//") || /^[A-Za-z]:/.test(posix) || posix.startsWith("/") || isFsAbsolute(posix);
 }
 
 export function validateLogicalPath(raw: string): { ok: true; path: string } | { ok: false; reason: PathRejectReason } {

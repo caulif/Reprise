@@ -72,18 +72,11 @@ export function parseApplyPatchText(raw: string): ParsePatchResult {
         if (next.startsWith("*** ") && !next.startsWith("*** End of File")) break;
         if (next.startsWith("@@")) {
           index += 1;
-          const hunkLines: PatchLine[] = [];
-          while (index < lines.length) {
-            const row = lines[index] ?? "";
-            if (row.startsWith("@@") || (row.startsWith("*** ") && !row.startsWith("*** End of File"))) break;
-            if (row.startsWith(" ")) hunkLines.push({ kind: "context", text: row.slice(1) });
-            else if (row.startsWith("-")) hunkLines.push({ kind: "remove", text: row.slice(1) });
-            else if (row.startsWith("+")) hunkLines.push({ kind: "add", text: row.slice(1) });
-            else if (row === "") hunkLines.push({ kind: "context", text: "" });
-            else return { ok: false, reason: "malformed" };
-            index += 1;
-          }
-          hunks.push({ lines: hunkLines });
+          const read = readHunkLines(lines, index, (row) =>
+            row.startsWith("@@") || (row.startsWith("*** ") && !row.startsWith("*** End of File")));
+          if ("error" in read) return { ok: false, reason: "malformed" };
+          hunks.push({ lines: read.lines });
+          index = read.nextIndex;
           continue;
         }
         if (next.startsWith("*** End of File")) {
@@ -92,18 +85,10 @@ export function parseApplyPatchText(raw: string): ParsePatchResult {
         }
         // Bare update without @@: treat remaining + / - / context until next *** as one hunk.
         if (next.startsWith("+") || next.startsWith("-") || next.startsWith(" ")) {
-          const hunkLines: PatchLine[] = [];
-          while (index < lines.length) {
-            const row = lines[index] ?? "";
-            if (row.startsWith("*** ")) break;
-            if (row.startsWith(" ")) hunkLines.push({ kind: "context", text: row.slice(1) });
-            else if (row.startsWith("-")) hunkLines.push({ kind: "remove", text: row.slice(1) });
-            else if (row.startsWith("+")) hunkLines.push({ kind: "add", text: row.slice(1) });
-            else if (row === "") hunkLines.push({ kind: "context", text: "" });
-            else return { ok: false, reason: "malformed" };
-            index += 1;
-          }
-          hunks.push({ lines: hunkLines });
+          const read = readHunkLines(lines, index, (row) => row.startsWith("*** "));
+          if ("error" in read) return { ok: false, reason: "malformed" };
+          hunks.push({ lines: read.lines });
+          index = read.nextIndex;
           continue;
         }
         return { ok: false, reason: "malformed" };
@@ -118,19 +103,39 @@ export function parseApplyPatchText(raw: string): ParsePatchResult {
   return ops.length ? { ok: true, ops } : { ok: false, reason: "empty" };
 }
 
+function readHunkLines(
+  lines: readonly string[],
+  start: number,
+  shouldStop: (row: string) => boolean,
+): { readonly lines: PatchLine[]; readonly nextIndex: number } | { readonly error: "malformed" } {
+  const hunkLines: PatchLine[] = [];
+  let index = start;
+  while (index < lines.length) {
+    const row = lines[index] ?? "";
+    if (shouldStop(row)) break;
+    if (row.startsWith(" ")) hunkLines.push({ kind: "context", text: row.slice(1) });
+    else if (row.startsWith("-")) hunkLines.push({ kind: "remove", text: row.slice(1) });
+    else if (row.startsWith("+")) hunkLines.push({ kind: "add", text: row.slice(1) });
+    else if (row === "") hunkLines.push({ kind: "context", text: "" });
+    else return { error: "malformed" };
+    index += 1;
+  }
+  return { lines: hunkLines, nextIndex: index };
+}
+
 export function applyUpdateHunks(preimage: Uint8Array, hunks: readonly PatchHunk[]): Uint8Array | undefined {
   const original = Buffer.from(preimage).toString("utf8");
   const hadTrailingNewline = original.endsWith("\n");
-  const lines = hadTrailingNewline ? original.slice(0, -1).split("\n") : original.split("\n");
+  const fileLines = hadTrailingNewline ? original.slice(0, -1).split("\n") : original.split("\n");
   for (const hunk of hunks) {
     const oldLines = hunk.lines.filter((line) => line.kind !== "add").map((line) => line.text);
     const newLines = hunk.lines.filter((line) => line.kind !== "remove").map((line) => line.text);
     if (!oldLines.length) return undefined;
-    const start = findUniqueSubsequence(lines, oldLines);
+    const start = findUniqueSubsequence(fileLines, oldLines);
     if (start === undefined) return undefined;
-    lines.splice(start, oldLines.length, ...newLines);
+    fileLines.splice(start, oldLines.length, ...newLines);
   }
-  let result = lines.join("\n");
+  let result = fileLines.join("\n");
   if (hadTrailingNewline) result += "\n";
   return Buffer.from(result, "utf8");
 }
