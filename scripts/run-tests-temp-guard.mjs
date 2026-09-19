@@ -1,9 +1,31 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { assertNoNewRepriseTempDirs, snapshotRepriseTempDirs } from "./reprise-temp-guard.mjs";
+import {
+  assertNoNewRepriseTempDirs,
+  selfTestRepriseTempGuard,
+  snapshotRepriseTempDirs,
+} from "./reprise-temp-guard.mjs";
+
+selfTestRepriseTempGuard();
+
+const coverage = process.argv.includes("--coverage");
+const nodeArgs = coverage
+  ? [
+      "--test",
+      "--experimental-test-coverage",
+      "--test-coverage-lines=88",
+      "--test-coverage-branches=76",
+      "--test-coverage-functions=87",
+      "--test-coverage-exclude=dist/test/**",
+      "--test-coverage-exclude=dist/scripts/**",
+      "--test-coverage-exclude=dist/src/**/types.js",
+      "--test-coverage-exclude=dist/src/cli/main.js",
+      "dist/test/**/*.test.js",
+    ]
+  : ["--test", "dist/test/**/*.test.js"];
 
 const baseline = snapshotRepriseTempDirs();
-const child = spawn(process.execPath, ["--test", "dist/test/**/*.test.js"], {
+const child = spawn(process.execPath, nodeArgs, {
   stdio: "inherit",
   shell: false,
   windowsHide: true,

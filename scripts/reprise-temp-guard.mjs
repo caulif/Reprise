@@ -38,7 +38,7 @@ export function assertNoNewRepriseTempDirs(baseline, tempRoot = tmpdir()) {
   throw new Error(lines.join("\n"));
 }
 
-function selfTest() {
+export function selfTestRepriseTempGuard() {
   const tempRoot = tmpdir();
   const baseline = snapshotRepriseTempDirs(tempRoot);
   const leak = mkdtempSync(join(tempRoot, `${REPRISE_TEMP_PREFIX}self-test-leak-`));
@@ -56,5 +56,5 @@ function selfTest() {
 }
 
 if (process.argv.includes("--self-test")) {
-  selfTest();
+  selfTestRepriseTempGuard();
 }
