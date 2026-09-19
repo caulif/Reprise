@@ -82,12 +82,11 @@ export {
   HistoricalArtifactSchema,
   HistoricalArtifactManifestSchema,
   HistoricalArtifactIssueSchema,
+  HistoricalLogicalPathSchema,
   type HistoricalArtifact,
   type HistoricalArtifactManifest,
   type HistoricalArtifactIssue,
-  type HistoricalArtifactExtraction,
-  type HistoricalArtifactExtractInput,
-  type HistoricalArtifactExtractor,
+  type HistoricalArtifactIssueCode,
   type HistoricalArtifactOrigin,
   type HistoricalArtifactFinality,
 } from "./schemas/historical-artifacts.js";
@@ -124,18 +123,6 @@ export {
   ObservationSessionManifestSchema,
   type ObservationSessionManifest,
 } from "./schemas/observations.js";
-export {
-  HistoricalArtifactSchema,
-  HistoricalArtifactManifestSchema,
-  HistoricalArtifactIssueSchema,
-  HistoricalLogicalPathSchema,
-  type HistoricalArtifact,
-  type HistoricalArtifactManifest,
-  type HistoricalArtifactIssue,
-  type HistoricalArtifactIssueCode,
-  type HistoricalArtifactOrigin,
-  type HistoricalArtifactFinality,
-} from "./schemas/historical-artifacts.js";
 export {
   GitSinkManifestSchema,
   GitSinkManifestV1Schema,

@@ -8,7 +8,7 @@ import { persistExperimentSpec, persistRunPreflight } from "./experiment-layout.
 import { CandidateRun } from "./candidate-run.js";
 import { createCandidateRuntimeSink } from "./candidate-run-events.js";
 import { progressDigestFromFingerprint } from "./candidate-run-safety.js";
-import type { CandidateLaunchContext, CandidateSpec, EventEnvelope, HistoricalArtifactExtractor, RunManifest, RunPolicy, RunRecord, TaskCase } from "../core/schema.js";
+import type { CandidateLaunchContext, CandidateSpec, EventEnvelope, RunManifest, RunPolicy, RunRecord, TaskCase } from "../core/schema.js";
 import type { ProductRuntime } from "../core/runtime.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import {
@@ -19,6 +19,7 @@ import {
 } from "../environment/local-workspace-provider.js";
 import { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import type { ProductPack } from "../products/contract.js";
+import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";
 import {
   historicalCwdOf,
   inferSourceRootKind,
@@ -87,7 +88,7 @@ export type ExperimentInput = {
   now: string;
   onEvent?: (event: EventEnvelope) => void;
   /** Optional Pack-bound historical deliverable extractor for old-case prepare. */
-  extractHistoricalArtifacts?: HistoricalArtifactExtractor;
+  extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
   /** When true, Comparison runs before this handle's result settles. Default is skip. */
   compare?: boolean;
   /** Hold the isolated workspace until runComparison or skipComparison. */

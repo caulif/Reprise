@@ -4,32 +4,50 @@ import { Value } from "@sinclair/typebox/value";
 import { writeAtomic } from "../core/identity.js";
 import {
   HistoricalArtifactManifestSchema,
-  type HistoricalArtifactExtractor,
   type HistoricalArtifactIssue,
+  type HistoricalArtifactIssueCode,
   type HistoricalArtifactManifest,
   type TaskCase,
 } from "../core/schema.js";
+import type { HistoricalArtifactExtractResult } from "../products/contract.js";
+import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";
 import {
   frozenRelativePathForArtifact,
   sha256Buffer,
   validateHistoricalExtraction,
 } from "../products/shared/historical-artifact-files.js";
+import { historicalCwdOf } from "./replay-conditions.js";
 
 export const DERIVED_HISTORY_DIR = "derived-history";
 export const CASE_BASELINE_ARTIFACTS_DIR = "baseline-artifacts";
+
+/** Host prepare diagnostics; pack manifest issues stay on HistoricalArtifactIssueCode. */
+export type PrepareHistoricalIssueCode =
+  | HistoricalArtifactIssueCode
+  | "hash_mismatch"
+  | "missing_file"
+  | "extractor_unavailable"
+  | "extraction_failed";
+
+export type PrepareHistoricalIssue = {
+  readonly code: PrepareHistoricalIssueCode;
+  readonly logicalPath?: string;
+  readonly sourceRefs: readonly string[];
+  readonly message?: string;
+};
 
 export type PrepareHistoricalArtifactsInput = {
   readonly taskCase: TaskCase;
   readonly caseDir: string;
   readonly attemptRoot: string;
-  readonly extract?: HistoricalArtifactExtractor;
+  readonly extract?: HistoricalArtifactExtractFn;
 };
 
 export type PrepareHistoricalArtifactsResult = {
   /** Root that Comparison/TUI should mount as finals (case sealed or attempt-derived). */
   readonly finalsRoot: string;
   readonly manifest: HistoricalArtifactManifest | undefined;
-  readonly issues: readonly HistoricalArtifactIssue[];
+  readonly issues: readonly PrepareHistoricalIssue[];
   readonly source: "case-manifest" | "derived" | "unavailable";
 };
 
@@ -48,8 +66,8 @@ async function readCaseManifest(caseDir: string): Promise<HistoricalArtifactMani
 async function verifyManifestFiles(
   artifactsRoot: string,
   manifest: HistoricalArtifactManifest,
-): Promise<HistoricalArtifactIssue[]> {
-  const issues: HistoricalArtifactIssue[] = [];
+): Promise<PrepareHistoricalIssue[]> {
+  const issues: PrepareHistoricalIssue[] = [];
   for (const artifact of manifest.artifacts) {
     if (artifact.finality !== "final") continue;
     const filePath = join(artifactsRoot, "files", artifact.bundleId, ...artifact.logicalPath.split("/"));
@@ -73,18 +91,24 @@ async function verifyManifestFiles(
   return issues;
 }
 
+function bytesForArtifact(
+  extraction: HistoricalArtifactExtractResult,
+  artifactId: string,
+): Uint8Array | undefined {
+  return extraction.files.find((file) => file.artifactId === artifactId)?.bytes;
+}
+
 async function writeDerivedHistory(
   attemptRoot: string,
-  extraction: Awaited<ReturnType<HistoricalArtifactExtractor>>,
-  sourceHash: string,
+  extraction: HistoricalArtifactExtractResult,
 ): Promise<{ root: string; manifest: HistoricalArtifactManifest }> {
-  const manifest = validateHistoricalExtraction(extraction, sourceHash);
+  const manifest = validateHistoricalExtraction(extraction);
   const root = join(attemptRoot, DERIVED_HISTORY_DIR);
   await mkdir(join(root, "files"), { recursive: true });
   await writeAtomic(join(root, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const artifact of manifest.artifacts) {
     if (artifact.finality !== "final") continue;
-    const bytes = extraction.files.get(artifact.artifactId);
+    const bytes = bytesForArtifact(extraction, artifact.artifactId);
     if (!bytes) continue;
     const relative = frozenRelativePathForArtifact(artifact).replace(/^baseline-artifacts\//, "");
     const destination = join(root, ...relative.split("/"));
@@ -98,15 +122,17 @@ async function writeDerivedHistory(
  * Prefer a valid case-level historical manifest; otherwise derive into this
  * attempt's derived-history/ from the frozen transcript. Never rewrites the
  * published case and never re-imports a live product session.
+ *
+ * Manifest `sourceHash` is the extractor transcript digest, not case provenance.sourceHash.
  */
 export async function prepareHistoricalArtifacts(
   input: PrepareHistoricalArtifactsInput,
 ): Promise<PrepareHistoricalArtifactsResult> {
   const caseArtifactsRoot = join(input.caseDir, CASE_BASELINE_ARTIFACTS_DIR);
   const caseManifest = await readCaseManifest(input.caseDir);
-  if (caseManifest && caseManifest.sourceHash === input.taskCase.provenance.sourceHash) {
-    const issues = await verifyManifestFiles(caseArtifactsRoot, caseManifest);
-    if (issues.length === 0) {
+  if (caseManifest) {
+    const fileIssues = await verifyManifestFiles(caseArtifactsRoot, caseManifest);
+    if (fileIssues.length === 0) {
       return {
         finalsRoot: caseArtifactsRoot,
         manifest: caseManifest,
@@ -126,25 +152,20 @@ export async function prepareHistoricalArtifacts(
   }
 
   try {
-    const extraction = await input.extract({
+    const historicalCwd = historicalCwdOf(input.taskCase);
+    const extraction = input.extract({
       transcript: input.taskCase.transcript,
       historicalEvents: input.taskCase.historicalEvents,
-      sourceHash: input.taskCase.provenance.sourceHash,
-      privacy: { allowBinary: input.taskCase.privacy.allowBinary },
-      ...(input.taskCase.taskContext ? { taskContext: input.taskCase.taskContext } : {}),
+      ...(historicalCwd ? { historicalCwd } : {}),
     });
-    const derived = await writeDerivedHistory(
-      input.attemptRoot,
-      extraction,
-      input.taskCase.provenance.sourceHash,
-    );
+    const derived = await writeDerivedHistory(input.attemptRoot, extraction);
     return {
       finalsRoot: derived.root,
       manifest: derived.manifest,
       issues: derived.manifest.issues,
       source: "derived",
     };
-  } catch (error) {
+  } catch {
     return {
       finalsRoot: join(input.attemptRoot, "finals"),
       manifest: undefined,
@@ -153,3 +174,6 @@ export async function prepareHistoricalArtifacts(
     };
   }
 }
+
+/** Re-export pack issue shape for callers that only need sealed manifest rows. */
+export type { HistoricalArtifactIssue };

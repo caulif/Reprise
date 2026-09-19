@@ -11,7 +11,8 @@ import {
 } from "../../src/application/comparison-openable-media.js";
 import { publishComparisonArtifacts } from "../../src/application/comparison-publication.js";
 import { freezeCodexSession } from "../../src/products/packs/codex/sessions.js";
-import type { ComparisonMediaRecord, HistoricalArtifactExtractor, TaskCase } from "../../src/core/schema.js";
+import { extractCodexHistoricalArtifacts } from "../../src/products/packs/codex/historical-artifacts.js";
+import type { ComparisonMediaRecord, TaskCase } from "../../src/core/schema.js";
 import {
   addFilePatch,
   BASELINE_PNG,
@@ -178,39 +179,15 @@ test("B0 baseline record: empty refs yield candidate-only media with empty env b
 test("empty-refs historical HTML reaches paired comparison media without stuffed baselineSources", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-b0-empty-refs-report-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const { sourcePath, html } = await writeSyntheticRollout(root, "exec");
+  // Direct apply_patch is B1-trusted; B0 exec-wrapped node -e + require stays fail-closed.
+  const { sourcePath, html } = await writeSyntheticRollout(root, "direct");
   const dataDir = join(root, "data");
-  const htmlBytes = Buffer.from(html, "utf8");
-  const extract: HistoricalArtifactExtractor = async (input) => {
-    const artifactId = HISTORICAL_ANIMATION_NAME;
-    const contentHash = sha256(htmlBytes);
-    return {
-      manifest: {
-        schemaVersion: 1,
-        sourceHash: input.sourceHash,
-        extractorVersion: "b2-stub",
-        artifacts: [{
-          artifactId,
-          logicalPath: HISTORICAL_ANIMATION_NAME,
-          bundleId: "bundle-svg",
-          mediaType: "text/html",
-          contentHash,
-          byteLength: htmlBytes.byteLength,
-          origin: "reconstructed_from_history",
-          sourceRefs: ["message-2"],
-          finality: "final",
-        }],
-        issues: [],
-      },
-      files: new Map([[artifactId, htmlBytes]]),
-    };
-  };
   const frozen = await freezeCodexSession({
     sourcePath,
     casesRoot: join(dataDir, "cases"),
     now: timestamp,
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
-    extractHistoricalArtifacts: extract,
+    extractHistoricalArtifacts: extractCodexHistoricalArtifacts,
   });
   assert.ok(frozen.taskCase.baseline.artifactRefs.length >= 1);
   const experimentRoot = join(root, "experiment");
@@ -252,7 +229,8 @@ test("empty-refs historical HTML reaches paired comparison media without stuffed
   assert.ok(openable.baselineSources.length >= 1, "historical animation.html must be discovered");
   const baselineHtmlPath = openable.baselineSources[0]?.absolutePath;
   assert.ok(baselineHtmlPath);
-  assert.equal(await readFile(baselineHtmlPath, "utf8"), html);
+  // apply_patch reconstruction may omit a trailing newline present in the source fixture.
+  assert.equal((await readFile(baselineHtmlPath, "utf8")).replace(/\n$/, ""), html.replace(/\n$/, ""));
   assert.ok(openable.candidateSources.length >= 1);
   assert.ok(augmented.media.some((item) => item.side === "baseline" && item.available));
   assert.ok(augmented.media.some((item) => item.side === "candidate" && item.available));

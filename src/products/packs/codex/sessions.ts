@@ -31,8 +31,7 @@ import type {
   ProductHistoryReader,
   SessionSummary,
 } from '../../contract.js';
-import { freezeCase } from '../../shared/freeze.js';
-import type { HistoricalArtifactExtractor } from '../../../core/schema.js';
+import { freezeCase, type HistoricalArtifactExtractFn } from '../../shared/freeze.js';
 import { peekCodexSessionMetaId } from './protocol.js';
 import { forEachJsonlRecordLenient, withStableJsonlRead } from '../../shared/jsonl-io.js';
 import {
@@ -337,7 +336,7 @@ export async function freezeCodexSession(input: {
   now: string;
   privacy: CodexSessionPrivacy;
   initialMessageId?: string;
-  extractHistoricalArtifacts?: HistoricalArtifactExtractor;
+  extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
 }): Promise<{ taskCase: TaskCase; reused: boolean }> {
   const imported = await importCodexSession(input.sourcePath);
   if (!imported.signals.completedTurns) throw new Error('Codex session has no completed turn and cannot become a historical TaskCase.');

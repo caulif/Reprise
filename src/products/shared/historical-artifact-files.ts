@@ -3,9 +3,9 @@ import { Value } from "@sinclair/typebox/value";
 import {
   HistoricalArtifactManifestSchema,
   type HistoricalArtifact,
-  type HistoricalArtifactExtraction,
   type HistoricalArtifactManifest,
 } from "../../core/schemas/historical-artifacts.js";
+import type { HistoricalArtifactExtractResult } from "../contract.js";
 import type { FrozenFile } from "./freeze.js";
 
 export const BASELINE_ARTIFACTS_MANIFEST = "baseline-artifacts/manifest.json";
@@ -33,19 +33,27 @@ export function frozenRelativePathForArtifact(artifact: HistoricalArtifact): str
   return `${BASELINE_ARTIFACTS_FILES_PREFIX}/${artifact.bundleId}/${artifact.logicalPath}`;
 }
 
-export function sha256Buffer(bytes: Buffer): string {
+export function sha256Buffer(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function bytesForArtifact(
+  extraction: HistoricalArtifactExtractResult,
+  artifactId: string,
+): Uint8Array | undefined {
+  const match = extraction.files.find((file) => file.artifactId === artifactId);
+  return match?.bytes;
+}
+
+/**
+ * Validate Pack extract output before sealing. `sourceHash` on the manifest is the
+ * extractor's transcript/events digest (see sourceHashForExtract), not the raw session file hash.
+ */
 export function validateHistoricalExtraction(
-  extraction: HistoricalArtifactExtraction,
-  expectedSourceHash: string,
+  extraction: HistoricalArtifactExtractResult,
 ): HistoricalArtifactManifest {
   if (!Value.Check(HistoricalArtifactManifestSchema, extraction.manifest)) {
     throw new Error("Historical artifact manifest failed schema validation.");
-  }
-  if (extraction.manifest.sourceHash !== expectedSourceHash) {
-    throw new Error("Historical artifact manifest sourceHash does not match the frozen session.");
   }
   const seenIds = new Set<string>();
   const seenPaths = new Set<string>();
@@ -60,7 +68,7 @@ export function validateHistoricalExtraction(
       throw new Error(`Conflicting historical logicalPath: ${artifact.logicalPath}`);
     }
     seenPaths.add(pathKey);
-    const bytes = extraction.files.get(artifact.artifactId);
+    const bytes = bytesForArtifact(extraction, artifact.artifactId);
     if (!bytes) {
       throw new Error(`Historical extraction missing bytes for ${artifact.artifactId}`);
     }
@@ -71,19 +79,18 @@ export function validateHistoricalExtraction(
       throw new Error(`Historical artifact contentHash mismatch for ${artifact.artifactId}`);
     }
   }
-  for (const artifactId of extraction.files.keys()) {
-    if (!seenIds.has(artifactId)) {
-      throw new Error(`Historical extraction has orphan bytes for ${artifactId}`);
+  for (const file of extraction.files) {
+    if (!seenIds.has(file.artifactId)) {
+      throw new Error(`Historical extraction has orphan bytes for ${file.artifactId}`);
     }
   }
   return extraction.manifest;
 }
 
 export function frozenFilesFromExtraction(
-  extraction: HistoricalArtifactExtraction,
-  expectedSourceHash: string,
+  extraction: HistoricalArtifactExtractResult,
 ): { manifest: HistoricalArtifactManifest; files: FrozenFile[]; finalArtifacts: readonly HistoricalArtifact[] } {
-  const manifest = validateHistoricalExtraction(extraction, expectedSourceHash);
+  const manifest = validateHistoricalExtraction(extraction);
   const finalArtifacts = manifest.artifacts.filter((artifact) => artifact.finality === "final");
   const files: FrozenFile[] = [
     {
@@ -91,21 +98,13 @@ export function frozenFilesFromExtraction(
       content: `${JSON.stringify(manifest, null, 2)}\n`,
     },
     ...finalArtifacts.map((artifact) => {
-      const bytes = extraction.files.get(artifact.artifactId);
+      const bytes = bytesForArtifact(extraction, artifact.artifactId);
       if (!bytes) throw new Error(`Missing bytes for ${artifact.artifactId}`);
       return {
         relativePath: frozenRelativePathForArtifact(artifact),
-        content: bytes,
+        content: Buffer.from(bytes),
       };
     }),
   ];
   return { manifest, files, finalArtifacts };
-}
-
-export function absolutePathForManifestArtifact(
-  artifactsRoot: string,
-  artifact: HistoricalArtifact,
-): string {
-  assertSafeLogicalPath(artifact.logicalPath);
-  return `${artifactsRoot.replace(/[/\\]+$/, "")}/files/${artifact.bundleId}/${artifact.logicalPath}`.replace(/\\/g, "/");
 }

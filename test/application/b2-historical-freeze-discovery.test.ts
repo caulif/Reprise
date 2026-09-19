@@ -5,15 +5,13 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
-import { freezeCase } from "../../src/products/shared/freeze.js";
+import { freezeCase, type HistoricalArtifactExtractFn } from "../../src/products/shared/freeze.js";
 import { assertSafeLogicalPath } from "../../src/products/shared/historical-artifact-files.js";
 import {
   HistoricalArtifactManifestSchema,
-  type HistoricalArtifactExtraction,
-  type HistoricalArtifactExtractor,
   type TaskCase,
 } from "../../src/core/schema.js";
-import type { ImportedSession, SessionMessage } from "../../src/products/contract.js";
+import type { HistoricalArtifactExtractResult, ImportedSession, SessionMessage } from "../../src/products/contract.js";
 import { prepareHistoricalArtifacts } from "../../src/application/prepare-historical-artifacts.js";
 import {
   collectHistoricalDeliverableNames,
@@ -25,6 +23,7 @@ import {
 } from "../../src/application/historical-final-discovery.js";
 import { comparisonAttemptMounts } from "../../src/application/comparison-briefing.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
+import { artifactIdForPath, bundleIdForPath } from "../../src/products/shared/historical-artifact-apply.js";
 
 function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -56,32 +55,30 @@ function imported(transcript: readonly SessionMessage[]): ImportedSession {
   };
 }
 
-function stubExtractor(bytes: Buffer, logicalPath = "anim/index.html"): HistoricalArtifactExtractor {
+function stubExtractor(bytes: Buffer, logicalPath = "anim/index.html"): HistoricalArtifactExtractFn {
   const contentHash = sha256(bytes);
-  return async (input) => {
-    const artifactId = "hist-anim-index-html";
-    const extraction: HistoricalArtifactExtraction = {
-      manifest: {
-        schemaVersion: 1,
-        sourceHash: input.sourceHash,
-        extractorVersion: "stub-1",
-        artifacts: [{
-          artifactId,
-          logicalPath,
-          bundleId: "bundle-anim",
-          mediaType: "text/html",
-          contentHash,
-          byteLength: bytes.byteLength,
-          origin: "reconstructed_from_history",
-          sourceRefs: ["message:a1"],
-          finality: "final",
-        }],
-        issues: [],
-      },
-      files: new Map([[artifactId, bytes]]),
-    };
-    return extraction;
-  };
+  const artifactId = artifactIdForPath(logicalPath);
+  const bundleId = bundleIdForPath(logicalPath);
+  return (): HistoricalArtifactExtractResult => ({
+    manifest: {
+      schemaVersion: 1,
+      sourceHash: "c".repeat(64),
+      extractorVersion: "stub-1",
+      artifacts: [{
+        artifactId,
+        logicalPath,
+        bundleId,
+        mediaType: "text/html",
+        contentHash,
+        byteLength: bytes.byteLength,
+        origin: "reconstructed_from_history",
+        sourceRefs: ["message:a1"],
+        finality: "final",
+      }],
+      issues: [],
+    },
+    files: [{ artifactId, bytes }],
+  });
 }
 
 test("assertSafeLogicalPath rejects traversal and absolute paths", () => {
@@ -95,6 +92,7 @@ test("freezeCase with extractor seals manifest and files under baseline-artifact
   const root = await mkdtemp(join(tmpdir(), "reprise-b2-freeze-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const html = Buffer.from("<!doctype html><title>history</title>\n", "utf8");
+  const logicalPath = "anim/index.html";
   const session = imported([
     message("u1", "user", "make anim/index.html"),
     message("a1", "assistant", "Delivered anim/index.html"),
@@ -104,7 +102,7 @@ test("freezeCase with extractor seals manifest and files under baseline-artifact
     root,
     { allowModelText: true, allowBinary: false, redactions: [] },
     "2026-09-19T00:00:00.000Z",
-    { extractHistoricalArtifacts: stubExtractor(html), reuseExisting: false },
+    { extractHistoricalArtifacts: stubExtractor(html, logicalPath), reuseExisting: false },
   );
   assert.equal(frozen.reused, false);
   assert.equal(frozen.taskCase.baseline.artifactRefs.length, 1);
@@ -114,8 +112,10 @@ test("freezeCase with extractor seals manifest and files under baseline-artifact
   const parsed: unknown = JSON.parse(await readFile(join(caseDir, "baseline-artifacts", "manifest.json"), "utf8"));
   const manifest = Value.Parse(HistoricalArtifactManifestSchema, parsed);
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.artifacts[0]?.logicalPath, "anim/index.html");
-  const sealed = await readFile(join(caseDir, "baseline-artifacts", "files", "bundle-anim", "anim", "index.html"));
+  assert.equal(manifest.artifacts[0]?.logicalPath, logicalPath);
+  const sealed = await readFile(
+    join(caseDir, "baseline-artifacts", "files", bundleIdForPath(logicalPath), "anim", "index.html"),
+  );
   assert.equal(sha256(sealed), sha256(html));
 });
 
@@ -123,6 +123,7 @@ test("reuseExisting freeze leaves old case hashes unchanged", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-b2-reuse-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const html = Buffer.from("<!doctype html><title>v1</title>\n", "utf8");
+  const logicalPath = "anim/index.html";
   const session = imported([
     message("u1", "user", "make anim/index.html"),
     message("a1", "assistant", "Delivered anim/index.html"),
@@ -132,19 +133,23 @@ test("reuseExisting freeze leaves old case hashes unchanged", async (t) => {
     root,
     { allowModelText: true, allowBinary: false, redactions: [] },
     "2026-09-19T00:00:00.000Z",
-    { extractHistoricalArtifacts: stubExtractor(html) },
+    { extractHistoricalArtifacts: stubExtractor(html, logicalPath) },
   );
   const caseDir = join(root, first.taskCase.caseId);
-  const before = await readFile(join(caseDir, "baseline-artifacts", "files", "bundle-anim", "anim", "index.html"));
+  const before = await readFile(
+    join(caseDir, "baseline-artifacts", "files", bundleIdForPath(logicalPath), "anim", "index.html"),
+  );
   const second = await freezeCase(
     session,
     root,
     { allowModelText: true, allowBinary: false, redactions: [] },
     "2026-09-19T01:00:00.000Z",
-    { extractHistoricalArtifacts: stubExtractor(Buffer.from("<!doctype html><title>v2</title>\n", "utf8")) },
+    { extractHistoricalArtifacts: stubExtractor(Buffer.from("<!doctype html><title>v2</title>\n", "utf8"), logicalPath) },
   );
   assert.equal(second.reused, true);
-  const after = await readFile(join(caseDir, "baseline-artifacts", "files", "bundle-anim", "anim", "index.html"));
+  const after = await readFile(
+    join(caseDir, "baseline-artifacts", "files", bundleIdForPath(logicalPath), "anim", "index.html"),
+  );
   assert.equal(sha256(after), sha256(before));
 });
 
@@ -156,6 +161,7 @@ test("prepareHistoricalArtifacts derives into attempt without rewriting case", a
   await mkdir(caseDir, { recursive: true });
   await mkdir(attemptRoot, { recursive: true });
   const html = Buffer.from("<!doctype html><title>derived</title>\n", "utf8");
+  const logicalPath = "anim/index.html";
   const sourceHash = "a".repeat(64);
   const taskCase: TaskCase = {
     schemaVersion: 1,
@@ -178,11 +184,18 @@ test("prepareHistoricalArtifacts derives into attempt without rewriting case", a
     taskCase,
     caseDir,
     attemptRoot,
-    extract: stubExtractor(html),
+    extract: stubExtractor(html, logicalPath),
   });
   assert.equal(prepared.source, "derived");
   assert.ok(prepared.manifest);
-  const derivedFile = join(attemptRoot, "derived-history", "files", "bundle-anim", "anim", "index.html");
+  const derivedFile = join(
+    attemptRoot,
+    "derived-history",
+    "files",
+    bundleIdForPath(logicalPath),
+    "anim",
+    "index.html",
+  );
   assert.equal(sha256(await readFile(derivedFile)), sha256(html));
   // Case dir still has no baseline-artifacts rewrite.
   await assert.rejects(readFile(join(caseDir, "baseline-artifacts", "manifest.json")));

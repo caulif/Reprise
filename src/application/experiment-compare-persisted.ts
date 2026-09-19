@@ -13,7 +13,8 @@ import type { ExperimentInput, ExperimentResult, ExperimentAgentConfig } from ".
 import type { ExperimentPreflight } from "./experiment-preflight.js";
 import type { ComparisonAgentPort } from "../agents/comparison-agent.js";
 import type { ControllerPort } from "../agents/controller-agent.js";
-import type { HistoricalArtifactExtractor, RunPolicy } from "../core/schema.js";
+import type { RunPolicy } from "../core/schema.js";
+import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";
 import type { ProductRuntime } from "../core/runtime.js";
 
 export async function comparePersistedExperiment(input: {
@@ -28,8 +29,8 @@ export async function comparePersistedExperiment(input: {
   readonly signal?: AbortSignal;
   readonly onEvent?: (event: EventEnvelope) => void;
   readonly onActivity?: (activity: ExperimentActivity) => void;
-  readonly extractHistoricalArtifacts?: HistoricalArtifactExtractor;
-  readonly resolveExtractHistoricalArtifacts?: (productId: string) => HistoricalArtifactExtractor | undefined;
+  readonly extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
+  readonly resolveExtractHistoricalArtifacts?: (productId: string) => HistoricalArtifactExtractFn | undefined;
 }): Promise<ExperimentResult> {
   const experimentRoot = resolvedExperimentRoot(input.dataDir, input.experimentId);
   const loaded = await loadFinishedRun(experimentRoot, input.experimentId, input.runId);
@@ -145,7 +146,7 @@ function experimentInput(
     policy: RunPolicy;
     now: string;
     onEvent?: (event: EventEnvelope) => void;
-    extractHistoricalArtifacts?: HistoricalArtifactExtractor;
+    extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
   },
   loaded: { spec: ExperimentSpec; record: RunRecord; taskCase: TaskCase },
   experimentRoot: string,

@@ -5,11 +5,22 @@ import { tmpdir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { copyAtomic, sha256, sha256File, writeImmutable } from '../../core/identity.js';
-import type { HistoricalArtifactExtractor, TaskCase } from '../../core/schema.js';
+import type { TaskCase } from '../../core/schema.js';
 import type { JsonRecord } from '../../core/json.js';
-import type { ImportedSession, SessionMessage, SessionPrivacy } from '../contract.js';
+import type {
+  HistoricalArtifactExtractInput,
+  HistoricalArtifactExtractResult,
+  ImportedSession,
+  SessionMessage,
+  SessionPrivacy,
+} from '../contract.js';
 import { firstReplayUserMessage } from './replay-user-input.js';
 import { frozenFilesFromExtraction } from './historical-artifact-files.js';
+
+/** Pack-bound extract callback; sync per ProductHistoryReader port. */
+export type HistoricalArtifactExtractFn = (
+  input: HistoricalArtifactExtractInput,
+) => HistoricalArtifactExtractResult;
 
 export type FrozenFile = {
   readonly relativePath: string;
@@ -159,7 +170,7 @@ export async function freezeCase(
     write?: typeof writeImmutable;
     reuseExisting?: boolean;
     errorLabel?: string;
-    extractHistoricalArtifacts?: HistoricalArtifactExtractor;
+    extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
   } = {},
 ): Promise<{ taskCase: TaskCase; reused: boolean }> {
   assertSessionPrivacy(privacy);
@@ -169,14 +180,13 @@ export async function freezeCase(
     const extractionFiles: FrozenFile[] = [];
     let artifactRefs = prepared.baseline.artifactRefs;
     if (options.extractHistoricalArtifacts) {
-      const extraction = await options.extractHistoricalArtifacts({
+      const historicalCwd = historicalCwdFromTaskContext(prepared.taskContext);
+      const extraction = options.extractHistoricalArtifacts({
         transcript: prepared.transcript,
         historicalEvents: prepared.historicalEvents,
-        sourceHash: raw.hash,
-        privacy: { allowBinary: privacy.allowBinary },
-        ...(prepared.taskContext ? { taskContext: prepared.taskContext } : {}),
+        ...(historicalCwd ? { historicalCwd } : {}),
       });
-      const sealed = frozenFilesFromExtraction(extraction, raw.hash);
+      const sealed = frozenFilesFromExtraction(extraction);
       extractionFiles.push(...sealed.files);
       artifactRefs = sealed.finalArtifacts.map((artifact) => ({
         artifactId: artifact.artifactId,
@@ -316,6 +326,11 @@ async function readExistingCase(caseDir: string, sourceHash: string): Promise<Ta
   } catch (error) {
     throw new Error(`Existing case cannot be safely reused: ${errorMessage(error)}`, { cause: error });
   }
+}
+
+function historicalCwdFromTaskContext(taskContext: JsonRecord | undefined): string | undefined {
+  const value = taskContext?.historicalCwd;
+  return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
 function isMissing(error: unknown): boolean {
