@@ -4,13 +4,24 @@
 
 ## 开放目标
 
-### N6 Recovery + Controller 新复刻
+### 任务起点恢复与首轮指令一致性验证
 
-用 N6 历史任务做一次新的、经授权且显式 opt-in 的完整 Recovery + Controller 运行，并保存可复核证据：任务前 baseline 与 Git sink initial 不含历史任务提交或任务后脏文件；候选在尚未提出建议时，从本次事件和用户输入得到“先分析、先不修改”的开场。旧 sink、旧轨迹和重渲染卡面都不能替代新证据。两项必须在同一次新运行中成立；记录运行标识、模型、授权范围、baseline、Git sink initial 和实际 opening。旧 N6 sink 曾含任务后的 SEO 提交，旧开场曾引用未发生的建议，不能复用旧轨迹充当新证据。
+**要避免的问题：** 候选在尚未提出建议时，不应看到任务后的结果；Controller 开场不应引用候选尚未说过的建议。
+
+**验收：** 在一次经授权且显式 opt-in 的完整 Recovery + Controller 运行中，同时满足：
+
+1. 任务前 baseline 与 Git sink initial 不含历史任务提交或任务后脏文件。
+2. 候选收到的开场来自本次事件和用户输入，体现「先分析、先不修改」。
+
+旧 sink、旧轨迹和重渲染卡面都不能替代新证据。记录运行标识、模型、授权范围、baseline、Git sink initial 和实际 opening。内部案例别名：N6。
+
+**贡献入口：** Provider 历史导入、Controller opening 提示词、真实终端授权 smoke 记录。见 [开发指南](./development.md#真实调用与费用) 中的 opt-in 命令。
 
 ### 平台与真实 Runtime 证据
 
 补齐 Windows 真终端的真人键盘导航、IME 组字、拖选复制和异常退出恢复证据；为候选 Runtime 启停、取消和非零退出取得授权 smoke 记录；Controller 真实模型 lane 和生产 provider 输入对拍仍需记录模型、工具面、预期、实际结果及失败项。macOS 与 Linux 的同一终端矩阵尚未验证。2026-09-08 的 Windows Terminal 历史观察只覆盖启动、中文渲染与部分鼠标事件进入 ConPTY；不证明真人 IME、选区或剪贴板。Controller 历史评估包含多项 protocol/invalid_output 失败；只读工具夹具的一次合法 done 不能关闭生产工具面的能力验收。
+
+**贡献入口：** `probe:tui-terminal`、`evaluate:controller`、`agent-context-probe` 等脚本在授权环境下的记录与失败项说明。
 
 ### Recovery 默认空 staging
 
@@ -22,11 +33,27 @@
 
 ## 已知实现问题
 
-- 同一 Experiment 的第二次完整运行会因固定的 `controller-started` 与实验级 operation 去重冲突而失败。问题涉及 [experiment-controller-loop.ts](../src/application/experiment-controller-loop.ts) 和 [experiment-store.ts](../src/infrastructure/store/experiment-store.ts) 的 operation 身份作用域；需要统一 run 局部 ID，同时保留同一操作重放的幂等检查。
-- Runtime 解析等早期准备失败发生在 CandidateRun/attempt 持久化之前，失败启动无法从 attempt 列表解释。相关顺序位于 [experiment.ts](../src/application/experiment.ts) 和 [candidate-run.ts](../src/application/candidate-run.ts)；需要确定启动尝试的边界并形成一致终态。
-- Comparison 发布先替换正式 HTML、再复制媒体，媒体失败会使旧成功报告丢失或与新内容混用。发布逻辑在 [comparison-publication.ts](../src/application/comparison-publication.ts)；应先在 attempt 独有路径准备完整媒体，再原子切换公开 HTML。
+每项包含用户影响、修复完成条件和当前验证范围。
 
-这些问题来自离线复现，尚未通过真实 Runtime 或付费模型验证。修复后应补回归用例，并按变更风险运行构建、相关测试和门禁。
+### 同一 Experiment 重复运行失败
+
+- **用户影响：** 在同一 Experiment 上发起第二次完整候选运行时，可能因 operation 去重冲突而失败，无法在不新建实验的情况下重试。
+- **修复完成条件：** 统一 run 局部 operation ID，同时保留同一操作重放的幂等检查。涉及 [experiment-controller-loop.ts](../src/application/experiment-controller-loop.ts) 和 [experiment-store.ts](../src/infrastructure/store/experiment-store.ts)。
+- **当前验证范围：** 离线复现已确认固定 `controller-started` 与实验级去重冲突；尚未通过真实 Runtime 或付费模型验证修复。
+
+### 早期准备失败缺少 attempt 记录
+
+- **用户影响：** Runtime 解析等早期准备失败发生在 CandidateRun/attempt 持久化之前，失败启动无法从 attempt 列表解释。
+- **修复完成条件：** 确定启动尝试的边界并形成一致终态。相关顺序位于 [experiment.ts](../src/application/experiment.ts) 和 [candidate-run.ts](../src/application/candidate-run.ts)。
+- **当前验证范围：** 代码审查与离线行为观察；无统一回归用例。
+
+### 对照报告发布事务缺陷
+
+- **用户影响：** 重生成对照时，若媒体复制失败，旧的成功报告可能丢失或与新旧内容混用。
+- **修复完成条件：** 先在 attempt 独有路径准备完整媒体，再原子切换公开 HTML。发布逻辑在 [comparison-publication.ts](../src/application/comparison-publication.ts)。
+- **当前验证范围：** 离线复现已确认先写 HTML、再复制媒体的顺序风险；重要报告重生成前请自行备份。
+
+修复后应补回归用例，并按变更风险运行构建、相关测试和门禁。
 
 ## 验证记录要求
 

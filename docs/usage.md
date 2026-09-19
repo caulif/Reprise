@@ -4,20 +4,24 @@ Reprise 是本地优先的任务对照工具：它从已安装 Agent 产品的�
 
 ## 开始
 
-要求 Node.js 22.19 或更高版本。Windows 11 是已验证平台；macOS 和 Linux 的真终端与 Runtime 组合保持未验证。安装依赖并构建后，直接运行 `reprise`（无子命令）进入 TUI：
+安装与构建步骤见 [根 README](../README.md#从源码开始)。摘要如下：
 
 ```powershell
+git clone https://github.com/caulif/Reprise.git
+cd Reprise
 npm ci
 npm run build
 node dist/src/cli/main.js
 ```
 
-若已将本项目的构建产物注册为 CLI，也可使用 `reprise`；裸名 npm 包不是本项目。`--data-dir` 指定本机数据目录，默认是当前目录下的 `.reprise`；`--locale zh` 或 `--locale en` 保存操作者界面语言。
+需要 Node.js **22.19** 或更高版本（以 [package.json](../package.json) 为准）。`--data-dir` 指定本机数据目录，默认是当前目录下的 `.reprise`；`--locale zh` 或 `--locale en` 保存操作者界面语言。
+
+下文中的 `reprise` 指 `node dist/src/cli/main.js`（或等价构建产物），**不是** npm 上的裸名包 `reprise`。若已将本项目注册为全局 CLI，命令名相同。
 
 ## TUI 路径
 
 1. 在封面输入 `/intake`，依次选择来源产品、项目和历史会话。会话 `Enter` 打开核对页；核对页的 `Enter` 才冻结任务并开始恢复。原始会话不会被重放。
-2. 等待恢复结论。只有 `已恢复` 或允许继续的 `部分恢复` 才能选择候选；缺关键输入或恢复被阻挡时不会启动候选。
+2. 等待恢复结论。`已恢复` 或 `部分恢复` 均可继续选择候选；`部分恢复` 表示工作区起点已建立但仍有已知缺口，不是历史兼容别名。缺关键输入或恢复被阻挡（`无法恢复`）时不会启动候选。
 3. 选择候选产品，再选择该 Pack 的模型目录项。候选目录来自 `ProductRuntime.listCatalog()`，不是 Harness 内部 Pi 模型列表。
 4. 确认页只复述候选产品、请求模型和恢复结论。确认页 `Enter` 才启动候选；`b` 返回修改模型，`Esc` 返回封面。
 5. 运行页是事件日志的只读投影。它显示 Harness、Controller 和 Target 的可见活动，不能直接给候选发送消息。运行中按 `Ctrl+C` 请求取消。
@@ -38,15 +42,61 @@ reprise config get|set
 reprise cancel <operationId|experimentId|runId>
 ```
 
-`--product` 与 `--model` 必须成对提供。`prepare` 只准备和封存，不接受候选选择；`run` 从封存场景或 TaskCase 启动候选；`compare` 生成已保存运行的对照。`--json` 与 `--jsonl` 互斥。不要把 API 密钥放进命令行参数。
+`--product` 与 `--model` 必须成对提供。`prepare` 只准备和封存，不接受候选选择；`run` 从封存场景或 TaskCase 启动候选；`compare` 对已保存运行生成对照。不要把 API 密钥放进命令行参数；`--json` 与 `--jsonl` 互斥。
+
+`compare` 有两种输入模式：
+
+- `--experiment <id>`（可选 `--run <runId>`）— 对**已有**实验目录中的封存运行生成对照；`experimentId` 来自先前 `prepare`/`run` 的输出或 `dataDir` 下的实验目录名。
+- `--source-root` + `--task-case` — 从指定 TaskCase 文件启动新的对照流程，不依赖已保存的 experiment ID。
+
+### 无费用查询示例
+
+列出当前机器可识别的来源／候选产品（不调用模型）：
+
+```powershell
+node dist/src/cli/main.js products --json
+```
+
+输出包含 `productId`（如 `codex`、`claude-code`）和 `roles`。后续 `sessions`、`projects` 等命令需要 `--product <id>`；具体参数以 `reprise <command> --help` 为准。
+
+### 可能计费的操作示例
+
+对已完成的实验生成对照（会调用 Harness 内部模型）：
+
+```powershell
+node dist/src/cli/main.js compare --experiment <experimentId> --json
+```
+
+`experimentId` 来自该次 `run` 或 TUI 流程写入 `dataDir` 的实验目录。成功时 JSON 包含报告路径；失败时保留事件日志供排障。连接测试（TUI `/config` 的 `Ctrl+T`）同样会发出最小模型请求，可能计费。
 
 ## 配置 Harness 内部模型
 
-配置页保存一份供 Recovery、Controller、Comparison 共用的默认 Harness 模型。第三方 OpenAI-compatible 服务需要 provider、model、base URL 和凭据；连接测试会发出最小请求，可能产生服务费用。配置保存在 Git 忽略的 `.reprise/harness-model.json`，也可将密钥写成 `env:NAME` 引用。密钥值不会写入事件、artifact 或报告。
+配置页（TUI 输入 `/config`）保存一份供 Recovery、Controller、Comparison 共用的默认 Harness 模型。配置写入 Git 忽略的 `{dataDir}/harness-model.json`（默认即 `.reprise/harness-model.json`），也可将密钥写成 `env:NAME` 引用。密钥值不会写入事件、artifact 或报告。
 
-官方 Pi catalog 通过 Pi 的 `/login` 管理登录，凭据由 Pi auth.json 保存；然后在配置页选择对应 catalog。Reprise 不读取或保存 Codex CLI、Claude Code 的登录文件。候选 Runtime 继续使用用户在目标产品中的登录态；Reprise 不替用户切换全局模型配置。
+### 第三方 OpenAI-compatible 服务（推荐入口）
 
-真实验证脚本要求显式 opt-in；默认开发检查使用本地 fixture。TUI 的恢复、候选运行和对照是用户主动触发的实际任务，同样可能计费，连接测试也会调用模型。
+1. 打开 TUI，输入 `/config`。
+2. 选择 **openai-compatible** 类型。
+3. 填写服务的 **base URL**、**model ID**（使用服务文档中的实际标识，不要手写会过期的推荐列表）和 **API 密钥**。
+4. 选择服务真实支持的 **API 协议**：`openai-completions` 或 `openai-responses`。协议必须与服务匹配；服务自称「兼容 OpenAI」不保证两种协议都可用。
+5. 按服务能力开启 **reasoning**（推理强度）和 **图片输入**（`inputCapabilities`）。图片能力默认仅 text；只有模型和服务支持时才启用 image，它控制是否向模型发送原生图片块，不保证能理解所有 artifact。
+6. `Ctrl+S` 保存，`Ctrl+T` 可选连接测试（可能产生服务费用）。
+
+### 官方 Pi catalog（高级路径）
+
+官方目录登录**不在 Reprise 内**完成。需先安装 [Pi](https://github.com/badlogic/pi-mono) CLI，在 Pi 交互环境中执行 `/login`，凭据由 Pi 的 `auth.json` 保存。回到 Reprise 的 `/config`，选择 **pi-catalog** 类型并挑选对应目录项。Reprise 不读取或保存 Codex CLI、Claude Code 的登录文件。
+
+候选 Runtime 继续使用用户在目标产品中的登录态；Reprise 不替用户切换全局模型配置。
+
+真实验证脚本要求显式 opt-in；默认开发检查使用本地 fixture。TUI 的恢复、候选运行和对照是用户主动触发的实际任务，同样可能计费。
+
+## 数据去向
+
+实验记录和工作副本保存在本机（`--data-dir` 指定的目录，默认 `.reprise`）。其中包含事件日志、TaskCase、隔离工作区、trace、报告和本地配置。
+
+Recovery、Controller、Comparison 会将完成任务所需的历史内容、工作区观察和工具结果发送到配置的 Harness 模型服务；候选 Runtime 的数据处理由目标产品及其登录态决定，Reprise 不统一代理。进入模型的正文先经过秘密过滤再持久化并发送（见 [`model-input.ts`](../src/infrastructure/agent/model-input.ts)），但过滤不等于会话隐私清洗，也不保证清除全部个人信息或业务内容。
+
+分享报告、trace 或隔离副本前，检查正文、截图、路径和交付物是否含有不应公开的信息。
 
 ## 边界
 
@@ -54,3 +104,21 @@ reprise cancel <operationId|experimentId|runId>
 
 报告、trace 和隔离副本是本机文件。不要把含有密钥、会话正文或私有路径的产物提交到 Git。
 
+## 当前试用限制
+
+- **同一 Experiment 的重复完整运行**可能失败（`controller-started` 与实验级 operation 去重冲突）。详情见 [路线图：已知实现问题](./roadmap.md#已知实现问题)。
+- **对照报告重生成**存在发布事务缺陷；媒体复制失败时旧报告可能不可用。重要报告重生成前请自行备份。
+
+不要把未验证的 workaround 当作已修复；是否等待修复后再使用由你决定。
+
+## 故障排查
+
+| 现象 | 处理 |
+|---|---|
+| 裸 `reprise` 找不到命令 | 使用 `node dist/src/cli/main.js`；若命令不存在，先 `npm run build` 确认 `dist/` 已生成。未全局安装时裸 `reprise` 不可用是预期行为。 |
+| 来源产品或会话列表为空 | 确认目标产品已安装且本机确有历史记录。`products` 只列出可识别产品；`sessions` 需要 `--product <id>`。发现（discovery）与导入（import）不是同一操作，见 `reprise sessions --help` 与 `reprise import --help`。 |
+| 模型连接失败 | 在 `/config` 核对 endpoint、API 协议类型（`openai-completions` / `openai-responses`）、模型 ID 和凭据来源。不要把配置全文粘贴到 Issue；用 `Ctrl+T` 连接测试并查看错误摘要。 |
+| 恢复显示「无法恢复」或 blocked | 查看 TUI 或事件日志中的缺失条件；缺关键输入时不会启动候选，没有「强行继续」开关。 |
+| 报告或图片入口不可用 | 区分未生成对照、未采集媒体、快照缺失和发布失败。空入口可能是数据尚未产生，不代表零差异。 |
+| 取消后仍在收尾 | `Ctrl+C` 或 `reprise cancel` 发起取消请求；清理与最终状态在事件日志和结果页分别显示，二者可能不同步片刻。 |
+| 同一实验再次运行失败 | 属于当前已知限制，见 [路线图](./roadmap.md#已知实现问题)。不要默认删除整个 `.reprise` 目录作为修复手段。 |

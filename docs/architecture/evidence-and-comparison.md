@@ -22,7 +22,7 @@ Host 预置 HTML 模板并拥有 header、metrics、evidence、process 等区域
 
 ## 报告发布
 
-正式报告是 experiment 根部的 `report.html` 及其媒体。理想发布顺序是先在 attempt 专属路径准备并校验完整媒体，再原子切换正式 HTML，从而保留旧成功版本。当前 `publishComparisonArtifacts` 先写正式 HTML、再复制共享媒体；媒体复制失败会覆盖旧 HTML，属于已复现的发布事务缺陷。调用方不能把一次失败重生成当成旧报告仍完整可读。
+正式报告是 experiment 根部的 `report.html` 及其媒体。当前 `publishComparisonArtifacts` 先写正式 HTML、再复制共享媒体；媒体复制失败可能使旧报告不可用。发布事务限制、用户影响与修复条件见[路线图](../roadmap.md#对照报告发布事务缺陷)。调用方不能把一次失败重生成当成旧报告仍完整可读。
 
 Comparison 是运行后的可选证据视图，不是新的实验状态机，也不为历史 Runtime 版本提供精确复现保证。报告失败不应改写 CandidateRun 的 outcome；报告中应明确 baseline、candidate、证据缺口和 cleanup 状态。
 
