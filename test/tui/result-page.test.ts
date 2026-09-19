@@ -64,8 +64,15 @@ test('skipped comparison still renders history and candidate rows without bare a
   assert.doesNotMatch(text, /C:\\exp\\environment\\runs\\run-1\\out\.html/);
 });
 
-test('result page footer lists report, history, and candidate open keys', () => {
+test('result page footer lists path open keys and c during compare gate', () => {
   assert.deepEqual(resultHints(), [
+    ['o', 'Open report'],
+    ['h', 'History final'],
+    ['f', 'Candidate final'],
+    ['Esc', 'Home'],
+  ]);
+  assert.deepEqual(resultHints('en', true), [
+    ['c', 'Generate comparison card'],
     ['o', 'Open report'],
     ['h', 'History final'],
     ['f', 'Candidate final'],
