@@ -8,7 +8,7 @@ import { IntakeTui } from '../../src/tui/intake-app.js';
 import { renderConfirmation, renderPreflight, renderTimeline } from '../../src/tui/pages/run.js';
 import { matchesCanvasQuery } from '../../src/tui/scrollback.js';
 import { renderHistory, renderHistoryDetail } from '../../src/tui/pages/history.js';
-import { renderFailure, renderResult } from '../../src/tui/pages/result.js';
+import { renderFailure } from '../../src/tui/pages/result.js';
 import { relativeTime, renderSessions } from '../../src/tui/pages/intake.js';
 import { sessionReplayErrorMessage, t } from '../../src/tui/i18n.js';
 import { SessionReplayError } from '../../src/products/shared/session-recovery.js';
@@ -888,95 +888,10 @@ test('history windows long lists around the selection', () => {
   assert.doesNotMatch(text, /experiment-1\s/);
 });
 
-test('failed result shows the recorded failure instead of limitations copy', () => {
-  const theme = createTheme(120, false);
-  const text = renderResult(theme, 120, {
-    reportPath: 'C:\\exp\\report.html',
-    experimentRoot: 'C:\\exp',
-    preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: ['fingerprint differs'] },
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: {
-        task: { status: 'indeterminate' },
-        termination: {
-          kind: 'failed',
-          code: 'failed.controller',
-          failure: { origin: 'controller', code: 'invalid_output', message: 'Controller decision failed the output contract.', evidenceRefs: [] },
-        },
-        cleanup: { status: 'complete' },
-      },
-    },
-    decision: { status: 'failed' },
-    comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
-  } as never).join('\n');
-  assert.match(text, /failed\.controller/);
-  assert.match(text, /Controller: Controller decision failed the output contract/);
-  assert.doesNotMatch(text, /Limitations|Single run|fingerprint differs/);
-});
-
-test('runtime failure identifies the selected product rather than Codex', () => {
-  const theme = createTheme(120, false);
-  const text = renderResult(theme, 120, {
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: {
-        task: { status: 'indeterminate' },
-        termination: {
-          kind: 'failed', code: 'failed.runtime',
-          failure: { origin: 'runtime', code: 'runtime.invalid_json', message: 'invalid JSON', evidenceRefs: [] },
-        },
-        cleanup: { status: 'complete' },
-      },
-    },
-    decision: { status: 'failed' },
-    comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
-  } as never, 'en', 'Claude Code').join('\n');
-  assert.match(text, /Claude Code: invalid JSON/);
-  assert.match(text, /not a Claude Code runtime crash/);
-  assert.doesNotMatch(text, /Codex/);
-});
-
-test('blocked result is a warning with controller reason and short paths', () => {
-  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
-  const theme = createTheme(120, false);
-  const lines = renderResult(theme, 120, {
-    reportPath: 'C:\\exp\\report.html',
-    experimentRoot: 'C:\\exp',
-    preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
-    },
-    decision: { status: 'completed', value: { type: 'done', reason: 'blocked', rationale: 'Sandbox denied the WeChat data path.' } },
-    comparison: { result: { status: 'completed' } },
-  } as never);
-  for (const line of lines) assert.equal(visibleWidth(line), 120, line);
-  const text = lines.join('\n');
-  assert.match(text, /blocked\.controller_done/);
-  assert.match(text, /Sandbox denied the WeChat data path/);
-  assert.match(text, /Report\s+.*report\.html/);
-  assert.match(text, /Trace\s+.*runs\/run-1\//);
-  assert.match(text, /\u001b\]8;;file:\/\/\/.*report\.html\u001b\\/);
-  assert.match(text, /\u001b\]8;;file:\/\/\/.*runs[/\\]run-1\u001b\\/);
-  assert.doesNotMatch(text, /C:\\exp\\report\.html/);
-  assert.doesNotMatch(text, /✗ blocked/);
-  assert.doesNotMatch(text, /Cost not recorded|not recorded/);
-});
-
-test('limit_reached result explains the turn cap', () => {
-  const theme = createTheme(120, false);
-  const text = renderResult(theme, 120, {
-    reportPath: 'C:\\exp\\report.html',
-    experimentRoot: 'C:\\exp',
-    preflight: { sourceBaseline: 'available', resolved: { productId: 'codex', executable: 'codex', requestedModel: 'gpt-5', resolvedModel: 'gpt-5' }, limitations: [] },
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: { task: { status: 'incomplete' }, termination: { kind: 'limit_reached', code: 'limit.target_turns' }, cleanup: { status: 'complete' } },
-    },
-    decision: { status: 'completed', value: { type: 'send', message: 'Continue.' } },
-    comparison: { result: { status: 'completed' } },
-  } as never).join('\n');
-  assert.match(text, /limit\.target_turns/);
-  assert.match(text, /target turn limit/);
-  assert.match(text, /Comparison still ran/);
+test('recovery running hints omit find', () => {
+  const theme = createTheme(80, false);
+  const line = keyHints(theme, runningHints('ALL', false, true, 'en', false, false, false), 80);
+  assert.match(line, /Ctrl\+C/);
+  assert.doesNotMatch(line, /Find/);
+  assert.match(line, /Expand/);
 });

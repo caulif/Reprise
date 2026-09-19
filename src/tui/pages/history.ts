@@ -46,7 +46,7 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
       ...kvBlock(theme, 'Task', item.taskCase.initialInput.text, width),
       kv(theme, 'Source', `${item.taskCase.source.productId} ${theme.glyphs.sep} ${item.taskCase.source.sessionId}`, width - 2),
       kv(theme, 'Frozen', item.taskCase.provenance.importedAt, width - 2),
-      ...kvLinkBlock(theme, 'Path', item.path, item.path, width),
+      ...kvLinkBlock(theme, 'Path', item.path, item.path, width).lines,
     ], width);
   }
   return panel(theme, t(locale, 'historyRunTitle'), [
@@ -59,9 +59,9 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
     ...(item.comparisonStatus ? [kv(theme, 'Comparison', `${item.comparisonStatus}${item.comparisonFailure ? ` (${item.comparisonFailure})` : ''}`, width - 2)] : []),
     ...(item.incompleteModelInput ? kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width) : []),
     ...(item.formatError ? [kv(theme, 'Format', t(locale, 'unsupportedSchema'), width - 2)] : []),
-    ...kvLinkBlock(theme, item.reportKind ?? 'Report', item.reportPath ?? 'not generated', item.reportPath, width),
+    ...kvLinkBlock(theme, item.reportKind ?? 'Report', item.reportPath ?? 'not generated', item.reportPath, width).lines,
     kv(theme, 'Stored', formatBytes(item.sizeBytes), width - 2),
-    ...kvLinkBlock(theme, 'Path', item.path, item.path, width),
+    ...kvLinkBlock(theme, 'Path', item.path, item.path, width).lines,
   ], width);
 }
 

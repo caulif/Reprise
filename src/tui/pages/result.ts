@@ -1,5 +1,4 @@
 import { resolve, normalize } from 'node:path';
-import { visibleWidth } from '@earendil-works/pi-tui';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
@@ -7,12 +6,17 @@ import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
-import { kv, kvLinkBlock, panel, wrapBodyLine } from '../widgets.js';
+import { kv, kvLinkBlock, panel, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
 
-const RESULT_KV_LABEL_WIDTH = 12;
+export type ResultPointerHit = { readonly action: ResultAction; readonly x0: number; readonly x1: number };
+export type ResultRender = { readonly lines: readonly string[]; readonly rowHits: ReadonlyMap<number, readonly ResultPointerHit[]> };
 
 export function renderResult(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string, comparePending = false): string[] {
+  return [...renderResultWithHits(theme, width, result, locale, productLabel, comparePending).lines];
+}
+
+export function renderResultWithHits(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string, comparePending = false): ResultRender {
   const kind = result.record.outcome.termination.kind;
   const vacant = theme.framed ? '—' : '-';
   const skipped = result.comparison.result.status === 'skipped';
@@ -26,24 +30,53 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
   const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
   const metrics = metricsLine(theme, result, locale);
   const candidateLabel = candidateDisplayLabel(result, productLabel);
-  return panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, [
-    terminationBanner(theme, kind),
-    kv(theme, t(locale, 'resultTask'), result.record.outcome.task.status, width - 2),
-    kv(theme, t(locale, 'resultTermination'), `${kind} · ${result.record.outcome.termination.code}`, width - 2),
-    kv(theme, t(locale, 'resultCleanup'), result.record.outcome.cleanup?.status ?? vacant, width - 2),
-    ...(candidateLabel ? [kv(theme, t(locale, 'candidateLabel'), candidateLabel, width - 2)] : []),
-    ...(!skipped ? [kv(theme, t(locale, 'resultComparison'), comparisonWord(comparison, locale), width - 2)] : []),
-    ...(metrics ? [`     ${metrics}`] : []),
-    ...(headline ? ['', ...wrapBodyLine(headline, inner).map((line) => ` ${line}`)] : []),
-    ...(summary ? ['', ...summary.map((line) => ` ${line}`)] : []),
-    ...(skipped ? ['', kv(theme, t(locale, 'resultComparison'), t(locale, 'comparisonSkipped'), width - 2)] : []),
-    ...(comparePending ? ['', ` ${theme.style.accent(t(locale, 'hintCompare'))}`] : []),
-    ...kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), shortPath(paths.report, experimentRoot, vacant), paths.report, width),
-    ...kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortPath(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width),
-    ...kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width),
-    ...kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width),
-    ...kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width),
-  ], width);
+  const body: string[] = [];
+  const bodyHits = new Map<number, readonly ResultPointerHit[]>();
+  const push = (line: string) => {
+    body.push(line);
+  };
+  const pushLink = (action: ResultAction, block: KvLinkBlock) => {
+    for (let index = 0; index < block.lines.length; index += 1) {
+      const hit = block.hits[index];
+      if (hit) bodyHits.set(body.length, [{ action, ...hit }]);
+      body.push(block.lines[index] ?? '');
+    }
+  };
+  push(terminationBanner(theme, kind));
+  push(kv(theme, t(locale, 'resultTask'), result.record.outcome.task.status, width - 2));
+  push(kv(theme, t(locale, 'resultTermination'), `${kind} · ${result.record.outcome.termination.code}`, width - 2));
+  push(kv(theme, t(locale, 'resultCleanup'), result.record.outcome.cleanup?.status ?? vacant, width - 2));
+  if (candidateLabel) push(kv(theme, t(locale, 'candidateLabel'), candidateLabel, width - 2));
+  if (!skipped) push(kv(theme, t(locale, 'resultComparison'), comparisonWord(comparison, locale), width - 2));
+  if (metrics) push(`     ${metrics}`);
+  if (headline) {
+    push('');
+    for (const line of wrapBodyLine(headline, inner)) push(` ${line}`);
+  }
+  if (summary) {
+    push('');
+    for (const line of summary) push(` ${line}`);
+  }
+  if (skipped) {
+    push('');
+    push(kv(theme, t(locale, 'resultComparison'), t(locale, 'comparisonSkipped'), width - 2));
+  }
+  if (comparePending) {
+    push('');
+    push(` ${theme.style.accent(t(locale, 'hintCompare'))}`);
+  }
+  pushLink(failed ? 'open-report' : 'open-report', kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), shortPath(paths.report, experimentRoot, vacant), paths.report, width));
+  pushLink('open-history-final', kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortPath(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width));
+  pushLink('open-candidate-final', kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width));
+  pushLink('open-trace', kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width));
+  pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width));
+  const lines = panel(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width);
+  const rowHits = new Map<number, readonly ResultPointerHit[]>();
+  const bodyOffset = theme.framed ? 1 : 1;
+  for (const [bodyRow, hits] of bodyHits) {
+    rowHits.set(bodyOffset + bodyRow, hits);
+  }
+  return { lines, rowHits };
 }
 
 export function resultHints(locale: Locale = 'en', comparePending = false): readonly (readonly [string, string])[] {
@@ -62,6 +95,7 @@ export function resultPointerAction(
   col: number,
   locale: Locale = 'en',
   paths?: ResultPathLinks,
+  rowHits?: ReadonlyMap<number, readonly ResultPointerHit[]>,
 ): ResultAction | undefined {
   const line = lines[row];
   if (!line) return undefined;
@@ -72,39 +106,12 @@ export function resultPointerAction(
     const action = resolveResultLinkAction(href, paths);
     if (action) return action;
   }
-  if (paths) return hitResultPathRow(stripForHit(line), col, locale, paths);
-  return undefined;
-}
-
-function hitResultPathRow(
-  stripped: string,
-  col: number,
-  locale: Locale,
-  paths: ResultPathLinks,
-): ResultAction | undefined {
-  const rows: readonly [ResultAction, string, string | undefined][] = [
-    ['open-report', t(locale, 'resultDiagnostic'), paths.report],
-    ['open-report', t(locale, 'resultReport'), paths.report],
-    ['open-history-final', t(locale, 'resultHistoryFinal'), paths.historyFinal],
-    ['open-candidate-final', t(locale, 'resultCandidateFinal'), paths.candidateFinal],
-    ['open-trace', t(locale, 'resultTraceSecondary'), paths.trace],
-    ['open-replica', t(locale, 'resultReplicaSecondary'), paths.replica],
-  ];
-  for (const [action, key, path] of rows) {
-    if (!path) continue;
-    const index = keyIndex(stripped, key);
-    if (index < 0) continue;
-    const labelWidth = Math.max(RESULT_KV_LABEL_WIDTH, visibleWidth(key));
-    const valueStart = visibleWidth(stripped.slice(0, index)) + labelWidth + 2;
-    if (col >= valueStart) return action;
+  const hits = rowHits?.get(row);
+  if (hits) {
+    const match = hits.find((hit) => col >= hit.x0 && col <= hit.x1);
+    if (match) return match.action;
   }
   return undefined;
-}
-
-function keyIndex(stripped: string, key: string): number {
-  const exact = stripped.indexOf(key);
-  if (exact >= 0) return exact;
-  return stripped.indexOf(key.slice(0, Math.min(key.length, 6)));
 }
 
 export function resolveResultLinkAction(href: string, paths: ResultPathLinks): ResultAction | undefined {

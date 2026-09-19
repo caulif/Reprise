@@ -7,7 +7,7 @@ import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume 
 import { homePointerAction } from './pages/home.js';
 import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
 import { resolveResultPathLinks } from '../application/result-paths.js';
-import { resultPointerAction, renderResult } from './pages/result.js';
+import { resultPointerAction, renderResultWithHits } from './pages/result.js';
 import { hitAtBodyRow, keepSelectedVisible, layoutScrollback } from './scrollback.js';
 import { timelineIdentity } from './timeline-read.js';
 import { bodyHeight } from './viewport.js';
@@ -55,12 +55,12 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
   if (!c.result) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
-  const lines = renderResult(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
+  const { lines, rowHits } = renderResultWithHits(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
   const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
   const line = lines[bodyRow];
   const href = line ? hitFileLink(line, cell.col) : undefined;
   const paths = resolveResultPathLinks(c.result);
-  const action = resultPointerAction(lines, bodyRow, cell.col, c.locale, paths);
+  const action = resultPointerAction(lines, bodyRow, cell.col, c.locale, paths, rowHits);
   if (action === 'compare') {
     if (c.compareChoice) {
       c.compareChoice.resolve(true);

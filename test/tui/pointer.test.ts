@@ -7,7 +7,7 @@ import type { ControllerHandle } from '../../src/tui/controller-input.js';
 import { hitFileLink } from '../../src/tui/format.js';
 import { homeHints } from '../../src/tui/pages/home.js';
 import { applyResultPointer, yieldPointerToApp } from '../../src/tui/pointer-dispatch.js';
-import { resultPointerAction, renderResult, resolveResultLinkAction } from '../../src/tui/pages/result.js';
+import { resultPointerAction, renderResult, renderResultWithHits, resolveResultLinkAction } from '../../src/tui/pages/result.js';
 import { keepSelectedVisible } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
@@ -37,7 +37,7 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
     trace: 'C:\\exp\\runs\\run-1',
     replica: 'C:\\exp\\environment\\runs\\run-1',
   };
-  const lines = renderResult(theme, 120, {
+  const { lines, rowHits } = renderResultWithHits(theme, 120, {
     reportPath: 'C:\\exp\\report.html',
     experimentRoot: 'C:\\exp',
     pathLinks,
@@ -58,11 +58,11 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
     }
   }
   assert.ok(hitCol > 0);
-  assert.equal(resultPointerAction(lines, reportLine, hitCol, 'en', pathLinks), 'open-report');
-  assert.equal(resultPointerAction(lines, 0, 2, 'en', pathLinks), undefined);
+  assert.equal(resultPointerAction(lines, reportLine, hitCol, 'en', pathLinks, rowHits), 'open-report');
+  assert.equal(resultPointerAction(lines, 0, 2, 'en', pathLinks, rowHits), undefined);
   const compareLine = lines.findIndex((line) => line.includes('Generate comparison card'));
   assert.ok(compareLine >= 0);
-  assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks), 'compare');
+  assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks, rowHits), 'compare');
 });
 
 test('result pointer opens short labels when the terminal has no OSC 8', () => {
@@ -75,7 +75,7 @@ test('result pointer opens short labels when the terminal has no OSC 8', () => {
     trace: 'C:\\exp\\runs\\run-1',
     replica: 'C:\\exp\\environment\\runs\\run-1',
   };
-  const lines = renderResult(theme, 120, {
+  const { lines, rowHits } = renderResultWithHits(theme, 120, {
     experimentRoot: 'C:\\exp',
     pathLinks,
     record: {
@@ -90,9 +90,35 @@ test('result pointer opens short labels when the terminal has no OSC 8', () => {
   assert.ok(historyLine >= 0);
   assert.ok(candidateLine >= 0);
   assert.equal(hitFileLink(lines[historyLine] ?? '', 20), undefined);
-  assert.equal(resultPointerAction(lines, historyLine, 20, 'en', pathLinks), 'open-history-final');
-  assert.equal(resultPointerAction(lines, candidateLine, 20, 'en', pathLinks), 'open-candidate-final');
-  assert.equal(resultPointerAction(lines, historyLine, 2, 'en', pathLinks), undefined);
+  assert.equal(resultPointerAction(lines, historyLine, 20, 'en', pathLinks, rowHits), 'open-history-final');
+  assert.equal(resultPointerAction(lines, candidateLine, 20, 'en', pathLinks, rowHits), 'open-candidate-final');
+  assert.equal(resultPointerAction(lines, historyLine, 2, 'en', pathLinks, rowHits), undefined);
+});
+
+test('result pointer uses structured hits when zh labels truncate at narrow width', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const theme = createTheme(48, false);
+  const pathLinks = {
+    replica: 'C:\\exp\\environment\\runs\\run-1',
+  };
+  const { lines, rowHits } = renderResultWithHits(theme, 48, {
+    experimentRoot: 'C:\\exp',
+    pathLinks,
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed' },
+    comparison: { result: { status: 'skipped' } },
+  } as never, 'zh');
+  const replicaLine = [...rowHits.entries()].find(([, hits]) => hits.some((hit) => hit.action === 'open-replica'))?.[0];
+  assert.ok(replicaLine !== undefined);
+  const hits = rowHits.get(replicaLine!);
+  const replicaHit = hits?.find((hit) => hit.action === 'open-replica');
+  assert.ok(replicaHit);
+  assert.equal(resultPointerAction(lines, replicaLine, replicaHit!.x0, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(resultPointerAction(lines, replicaLine, replicaHit!.x1, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(resultPointerAction(lines, replicaLine, replicaHit!.x0 - 1, 'zh', pathLinks, rowHits), undefined);
 });
 
 test('result pointer treats environment baselines html as history final', () => {
@@ -107,7 +133,7 @@ test('result pointer treats environment baselines html as history final', () => 
     replica: 'C:\\exp\\environment\\runs\\run-1',
   };
   const theme = createTheme(120, false);
-  const lines = renderResult(theme, 120, {
+  const { lines, rowHits } = renderResultWithHits(theme, 120, {
     reportPath: 'C:\\exp\\report.html',
     experimentRoot: 'C:\\exp',
     pathLinks,
@@ -128,7 +154,7 @@ test('result pointer treats environment baselines html as history final', () => 
     }
   }
   assert.ok(hitCol > 0);
-  assert.equal(resultPointerAction(lines, historyLine, hitCol, 'en', pathLinks), 'open-history-final');
+  assert.equal(resultPointerAction(lines, historyLine, hitCol, 'en', pathLinks, rowHits), 'open-history-final');
   assert.equal(resolveResultLinkAction(href, pathLinks), 'open-history-final');
 });
 

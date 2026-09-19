@@ -5,6 +5,13 @@ import type { Theme } from './theme.js';
 
 export type Column = { readonly key: string; readonly width?: number; readonly flex?: number };
 export type Row = Readonly<Record<string, string>>;
+export type LinkValueHit = { readonly x0: number; readonly x1: number };
+export type KvLinkBlock = { readonly lines: readonly string[]; readonly hits: readonly (LinkValueHit | undefined)[] };
+
+/** 1-based column where the kv value starts (` ${key} ${value}`). */
+export function kvLinkValueStart(labelWidth: number): number {
+  return labelWidth + 2;
+}
 
 export function pad(text: string, width: number, ellipsis = '…'): string {
   if (width <= 0) return '';
@@ -290,18 +297,26 @@ export function kvBlock(theme: Theme, key: string, value: string, width: number)
 }
 
 /** Like kvBlock, but each wrapped visible segment opens the same local path. */
-export function kvLinkBlock(theme: Theme, key: string, label: string, absolutePath: string | undefined, width: number): string[] {
+export function kvLinkBlock(theme: Theme, key: string, label: string, absolutePath: string | undefined, width: number): KvLinkBlock {
   const vacant = theme.framed ? '—' : '-';
-  if (!absolutePath || !label.trim() || label === vacant) return kvBlock(theme, key, label, width);
+  if (!absolutePath || !label.trim() || label === vacant) {
+    const lines = kvBlock(theme, key, label, width);
+    return { lines, hits: lines.map(() => undefined) };
+  }
   const inner = Math.max(1, width - (theme.framed ? 2 : 3));
   const labelWidth = Math.max(12, visibleWidth(key));
   const valueWidth = Math.max(8, inner - labelWidth - 2);
   const wrapped = wrapBodyLine(label, valueWidth);
   const indent = ' '.repeat(labelWidth);
-  return wrapped.map((line, index) => {
-    const linked = theme.style.accent(fileLink(line, absolutePath));
-    return index === 0
+  const valueStart = kvLinkValueStart(labelWidth);
+  const lines: string[] = [];
+  const hits: (LinkValueHit | undefined)[] = [];
+  for (const [index, segment] of wrapped.entries()) {
+    const linked = theme.style.accent(fileLink(segment, absolutePath));
+    lines.push(index === 0
       ? ` ${theme.style.muted(pad(key, labelWidth, theme.glyphs.ellipsis))} ${linked}`
-      : ` ${indent} ${linked}`;
-  });
+      : ` ${indent} ${linked}`);
+    hits.push({ x0: valueStart, x1: valueStart + Math.max(1, visibleWidth(segment)) - 1 });
+  }
+  return { lines, hits };
 }
