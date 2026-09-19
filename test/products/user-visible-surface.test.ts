@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectRun } from "../../src/application/controller-queries.js";
@@ -90,7 +90,7 @@ test("projectUserVisibleTurn does not treat last-only as the completed surface",
   assert.match(view.assistantText ?? "", new RegExp(NARRATION));
 });
 
-test("Controller turnVisibleText and briefing files keep the joined surface", async () => {
+test("Controller turnVisibleText and briefing files keep the joined surface", async (t) => {
   const events = [
     envelope("runtime.visible_output", { item: { type: "agentMessage", text: NARRATION } }, 1),
     envelope("runtime.visible_output", { item: { type: "agentMessage", text: ESSAY } }, 2),
@@ -106,6 +106,7 @@ test("Controller turnVisibleText and briefing files keep the joined surface", as
   assert.equal(observation.turnVisibleText, `${NARRATION}\n\n${ESSAY}\n\n${CLOSING}`);
   assert.notEqual(observation.turnVisibleText, CLOSING);
   const root = await mkdtemp(join(tmpdir(), "reprise-surface-briefing-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
   const briefingRoot = join(root, "briefing");
   const replicaRoot = join(root, "replica");
   await mkdir(replicaRoot, { recursive: true });

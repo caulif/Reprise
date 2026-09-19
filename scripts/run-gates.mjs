@@ -23,9 +23,10 @@ const GATES = [
   { id: 'verify:imports', label: 'layer imports', command: 'node', args: ['scripts/verify-layer-imports.mjs'] },
   { id: 'verify:source-size', label: 'source size', command: 'node', args: ['scripts/verify-source-size.mjs'] },
   { id: 'verify:tracked-source', label: 'tracked source', command: 'node', args: ['scripts/verify-tracked-source.mjs'] },
+  { id: 'verify:temp-leaks', label: 'temp leak guard', command: 'node', args: ['scripts/reprise-temp-guard.mjs', '--self-test'] },
 ];
 
-const CHECK_IDS = ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:generated', 'knip', 'jscpd', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'];
+const CHECK_IDS = ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:generated', 'knip', 'jscpd', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source', 'verify:temp-leaks'];
 
 const MODES = {
   docs: ['verify:docs'],
@@ -34,7 +35,7 @@ const MODES = {
   // Compatibility default. full is the same list until TUI/jscpd/knip leave this entry.
   check: CHECK_IDS,
   full: CHECK_IDS,
-  static: ['typecheck', 'lint', 'verify:docs', 'build', 'verify:generated', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'],
+  static: ['typecheck', 'lint', 'verify:docs', 'build', 'verify:generated', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source', 'verify:temp-leaks'],
   test: ['build', 'test', 'check:node'],
   audit: ['build', 'audit:tui:check', 'audit:tui:analyze'],
 };

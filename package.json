@@ -44,7 +44,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src test scripts eslint.config.js",
     "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
-    "test:only": "node --test \"dist/test/**/*.test.js\"",
+    "test:only": "node scripts/run-tests-temp-guard.mjs",
     "test:coverage": "npm run build && node --test --experimental-test-coverage --test-coverage-lines=88 --test-coverage-branches=76 --test-coverage-functions=87 --test-coverage-exclude=dist/test/** --test-coverage-exclude=dist/scripts/** --test-coverage-exclude=dist/src/**/types.js --test-coverage-exclude=dist/src/cli/main.js \"dist/test/**/*.test.js\"",
     "check:node": "node dist/src/cli/main.js --version",
     "verify:docs": "node scripts/verify-docs.mjs",
@@ -78,6 +78,7 @@
     "verify:imports": "node scripts/verify-layer-imports.mjs",
     "verify:source-size": "node scripts/verify-source-size.mjs",
     "verify:tracked-source": "node scripts/verify-tracked-source.mjs",
+    "verify:temp-leaks": "node scripts/reprise-temp-guard.mjs --self-test",
     "prepublishOnly": "npm run check"
   },
   "dependencies": {

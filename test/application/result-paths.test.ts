@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildResultPathLinks } from "../../src/application/result-paths.js";
@@ -31,8 +31,9 @@ const inspection = (): RunInspection => ({
   turns: 1,
 });
 
-test("buildResultPathLinks prioritizes report and final artifact files", async () => {
+test("buildResultPathLinks prioritizes report and final artifact files", async (t) => {
   const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-result-paths-"));
+  t.after(async () => rm(experimentRoot, { recursive: true, force: true }));
   const workspaceRoot = join(experimentRoot, "environment", "runs", "run-1");
   const baselineDir = join(experimentRoot, "environment", "baselines");
   await mkdir(baselineDir, { recursive: true });
@@ -53,8 +54,9 @@ test("buildResultPathLinks prioritizes report and final artifact files", async (
   assert.match(links.trace ?? "", /runs[/\\]run-1$/);
 });
 
-test("buildResultPathLinks omits historyFinal when baseline has no deliverable names", async () => {
+test("buildResultPathLinks omits historyFinal when baseline has no deliverable names", async (t) => {
   const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-result-paths-nobase-"));
+  t.after(async () => rm(experimentRoot, { recursive: true, force: true }));
   const workspaceRoot = join(experimentRoot, "environment", "runs", "run-1");
   const emptyCase: TaskCase = {
     ...taskCase(),
@@ -71,8 +73,9 @@ test("buildResultPathLinks omits historyFinal when baseline has no deliverable n
   assert.equal(links.historyFinal, undefined);
 });
 
-test("resolveHistoricalFinalPath prefers sealed attempt finals over environment baselines", async () => {
+test("resolveHistoricalFinalPath prefers sealed attempt finals over environment baselines", async (t) => {
   const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-result-paths-priority-"));
+  t.after(async () => rm(experimentRoot, { recursive: true, force: true }));
   const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
   const baselineDir = join(experimentRoot, "environment", "baselines");
   await mkdir(join(attemptRoot, "history", "finals"), { recursive: true });
@@ -88,9 +91,13 @@ test("resolveHistoricalFinalPath prefers sealed attempt finals over environment 
   assert.equal(resolved, join(attemptRoot, "history", "finals", "deck.html"));
 });
 
-test("resolveHistoricalFinalPath resolves baseline-artifacts under dataDir", async () => {
+test("resolveHistoricalFinalPath resolves baseline-artifacts under dataDir", async (t) => {
   const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-result-paths-datadir-"));
   const dataDir = await mkdtemp(join(tmpdir(), "reprise-data-"));
+  t.after(async () => {
+    await rm(experimentRoot, { recursive: true, force: true });
+    await rm(dataDir, { recursive: true, force: true });
+  });
   const artifactDir = join(dataDir, "cases", "case-1", "baseline-artifacts");
   await mkdir(artifactDir, { recursive: true });
   await writeFile(join(artifactDir, "deck.html"), "<!doctype html><title>artifact</title>", "utf8");
