@@ -759,8 +759,9 @@ test("shell_exec mutates staging when the workspace path exceeds Windows MAX_PAT
     t.skip("Windows CreateProcess MAX_PATH case");
     return;
   }
-  let root = await mkdtemp(join(tmpdir(), "reprise-maxpath-"));
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const tempBase = await mkdtemp(join(tmpdir(), "reprise-maxpath-"));
+  t.after(async () => rm(tempBase, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  let root = tempBase;
   while (root.length < 270) {
     root = join(root, "seg01234567");
     await mkdir(root, { recursive: true });
@@ -779,8 +780,9 @@ test("shell_exec long cwd keeps the command in IEX environment variables", async
     t.skip("Windows CreateProcess MAX_PATH case");
     return;
   }
-  let root = await mkdtemp(join(tmpdir(), "reprise-maxpath-iex-"));
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  const tempBase = await mkdtemp(join(tmpdir(), "reprise-maxpath-iex-"));
+  t.after(async () => rm(tempBase, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
+  let root = tempBase;
   while (root.length < 270) {
     root = join(root, "seg01234567");
     await mkdir(root, { recursive: true });
