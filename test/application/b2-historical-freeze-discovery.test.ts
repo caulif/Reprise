@@ -6,6 +6,7 @@ import {
   collectHistoricalDeliverableNames,
   discoverBaselineOpenableSources,
   historicalFinalSearchRoots,
+  historicalFinalsContext,
   lookupBasenameResult,
   indexHistoricalRoots,
   resolveHistoricalFinalPath,
@@ -448,12 +449,14 @@ test("nested same-basename finals seal without flattening abort", async (t) => {
 });
 
 test("historicalFinalSearchRoots lists attempt finals once via context", () => {
-  const roots = historicalFinalSearchRoots({
+  const ctx = historicalFinalsContext({
     experimentRoot: "/exp",
     runId: "run-1",
     caseId: "case-1",
     attemptRoot: "/exp/comparison-attempts/a1",
   });
+  assert.equal(ctx.finalsRoot, "/exp/comparison-attempts/a1/finals");
+  const roots = historicalFinalSearchRoots(ctx);
   const finals = roots.filter((root) => root.root.replace(/\\/g, "/") === "/exp/comparison-attempts/a1/finals");
   assert.equal(finals.length, 1);
   assert.equal(finals[0]?.mode, "recursive-basename");
