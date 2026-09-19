@@ -288,7 +288,7 @@ function diagnosticDifferences(diagnostic: ComparisonReportDiagnostic, locale: A
   const draft = diagnostic.draftAnalysis
     ? `<p><strong>${escapeHtml(reportString(locale, "diagDraft"))}</strong></p><pre>${escapeHtml(diagnostic.draftAnalysis)}</pre>`
     : "";
-  return `<article class="result-card" data-component="difference-card" data-failure-class="${escapeHtml(diagnostic.failureClass)}" data-failure-phase="${escapeHtml(diagnostic.phase)}">
+  return `<article class="result-card" data-host="diagnostic-card" data-failure-class="${escapeHtml(diagnostic.failureClass)}" data-failure-phase="${escapeHtml(diagnostic.phase)}">
     <h3>${escapeHtml(reportString(locale, "diagFailed"))}</h3>
     <p>${escapeHtml(reportString(locale, "diagClassPhase", { class: diagnostic.failureClass, phase: diagnostic.phase }))}</p>
     <p>${escapeHtml(diagnostic.reason)}</p>${draft}
@@ -400,11 +400,9 @@ function decodeHtml(value: string): string {
 function componentTemplateHtml(locale: AgentLocale): string {
   const historical = escapeHtml(reportString(locale, "sessionHistorical"));
   const current = escapeHtml(reportString(locale, "sessionCurrent"));
-  return `<!-- Component prototypes: copy into a data-agent-zone; omit what you do not use.
-     pair-pages (preferred on the card face): left historical final page / right candidate final page, page by page
-     split-compare / diff-table / timeline: audit or non-visual tasks only; hidden on the share card
-     difference-card: one difference with impact; avoid when pair-pages already show the contrast
-     media-compare / headline: as needed
+  return `<!-- Component prototypes: reference only; the share card uses pair-pages in visual-evidence and plain sentences in key-differences.
+     pair-pages: left historical final page / right candidate final page, page by page
+     diff-table / split-compare / timeline / difference-card / media-compare / headline: not for the share card face (hidden by CSS)
      Wrap verified statements in <span data-claim="verified"> with a data-evidence-ref inside or immediately after;
      wrap visual descriptions in <span data-claim="visual"> with a data-media-ref inside or immediately after. -->
 <template data-component-template="headline">
@@ -449,7 +447,7 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:16px; line-height:1.5; }
 [data-agent-slot="headline"] strong,[data-component="diff-table"] strong,[data-claim] { font-weight:inherit; }
 .board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
-.card,.result-card,[data-component="difference-card"] { background:#f7f3ea; border-radius:18px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; }
+.card,.result-card,[data-host="diagnostic-card"],[data-component="difference-card"] { background:#f7f3ea; border-radius:18px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; }
 .card { min-height:0; }
 .card .label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:12px; }
 .pair { display:grid; grid-template-columns:1fr 1fr; }
@@ -474,8 +472,8 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .cost-note { margin: 0 0 8px; }
 [data-component="judgment"] { font-weight:700; }
 [data-component="judgment"] { margin:0 0 16px; }
-[data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
-[data-component="difference-card"] p { margin:0; color:var(--soft); }
+[data-host="diagnostic-card"] h3,[data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
+[data-host="diagnostic-card"] p,[data-component="difference-card"] p { margin:0; color:var(--soft); }
 [data-component="highlight"] { background:rgba(91,70,48,.12); padding:0 .2em; }
 [data-component="strike"] { text-decoration:line-through; color:var(--soft); }
 [data-component="quote"] { border-left:3px solid var(--hair); padding-left:12px; color:var(--soft); }

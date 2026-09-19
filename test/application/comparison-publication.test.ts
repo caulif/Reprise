@@ -351,6 +351,70 @@ test("failure classes distinguish provider, protocol, evidence, metrics, and med
   }).failureClass, "media");
 });
 
+test("Host diagnostic cards stay visible while Agent difference-card is hidden on the share card", () => {
+  const reportFacts = facts();
+  const diagnostic = {
+    failureClass: "protocol",
+    phase: "compose",
+    candidateCompleted: "no",
+    reason: "Host zone was modified.",
+    details: ["metrics tampered"],
+    traces: [],
+  };
+  const page = renderComparisonReportShell({
+    title: "Comparison unavailable",
+    task: "对照未能完成这次比较",
+    facts: reportFacts,
+    metrics: metricsFromReportFacts(reportFacts),
+    diagnostic,
+  });
+  const diagnosticBody = page.match(/data-id="agent-key-differences"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+  assert.match(diagnosticBody, /data-host="diagnostic-card"/);
+  assert.doesNotMatch(diagnosticBody, /data-component="difference-card"/);
+  assert.match(diagnosticBody, /Host zone was modified/);
+  assert.match(page, /\.share \[data-component="difference-card"\]/);
+  const agentCard = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots({
+      "key-differences": '<article data-component="difference-card"><h3>实际交付</h3><p>候选有文件。</p></article>',
+    }),
+  });
+  const agentBody = agentCard.match(/data-id="agent-key-differences"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+  assert.match(agentBody, /data-component="difference-card"/);
+});
+
+test("missing visual-evidence zone fails share-card order", async () => {
+  const reportFacts = facts();
+  const html = renderComparisonReportShell({
+    task: "修复报告。",
+    facts: reportFacts,
+    metrics: reportFacts.metrics ?? {},
+    slots: filledSlots(),
+  });
+  const withoutVisual = html.replace(
+    /<section class="slot" data-agent-zone="visual-evidence"[\s\S]*?<\/section>/,
+    "",
+  );
+  const verified = await verifyAndRenderComparisonReport({
+    html: withoutVisual,
+    facts: reportFacts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot: ".",
+    media: [],
+  });
+  assert.equal("html" in verified, false);
+  if (!("html" in verified)) {
+    assert.match(verified.message, /Share card order|missing data-agent-zone="visual-evidence"/);
+  }
+});
+
+test("AGENT_ZONES order matches visual-first share card DOM", async () => {
+  const { AGENT_ZONES } = await import("../../src/core/comparison-html.js");
+  assert.deepEqual(AGENT_ZONES, ["visual-evidence", "key-differences", "delivery", "limitations"]);
+});
+
 test("failure diagnostics retain useful analysis from non-standard Agent zones", async () => {
   const { comparisonFailureDiagnostic } = await import("../../src/application/comparison-publication.js");
   const diagnostic = comparisonFailureDiagnostic({

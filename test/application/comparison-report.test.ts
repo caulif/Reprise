@@ -271,7 +271,8 @@ test('compose and review prompts require a compressed page and allow review tool
   assert.match(COMPARISON_TURN_PROMPTS.compose, /must be non-empty/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /one or two sentences/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /explicit unavailable reason/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /at most five data rows/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /hidden on the share card/);
+  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /at most five data rows/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /git-sink initial/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /Git-sink initial/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not use <strong>/);
@@ -279,6 +280,8 @@ test('compose and review prompts require a compressed page and allow review tool
   assert.match(COMPARISON_TURN_PROMPTS.compose, /If only one side has images, leave this zone empty/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /no mounted preview/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /paired preview frames are the primary evidence/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /hidden by CSS and must not be copied onto the card face/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /at most five data rows/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /brief caption/);

@@ -10,8 +10,9 @@
 
 - 可分享卡 DOM 顺序改为：header → headline → `visual-evidence` → `key-differences` → metrics。`delivery` 与 `limitations` 仍在 metrics 之后的隐藏 `.audit` 内。
 - Host 继续在 `visual-evidence` 预填成对 `pair-pages`；无法成对时写入 `data-host="visual-unavailable"` 与明确原因文案，不留空单元格。
-- 卡面 CSS 放大预览帧（320px 高），并在 `.share` 内隐藏 `diff-table`、`split-compare`、`timeline`、`difference-card`，避免长表挤占首屏。
-- System / compose / review prompt 要求：有成对终稿时以 `pair-pages` 为主证据，`key-differences` 仅一两句图注；有成对图时禁止卡面表格。
+- 卡面 CSS 放大预览帧（320px 高），并在 `.share` 内隐藏 Agent 复制的 `diff-table`、`split-compare`、`timeline`、`difference-card`；Host 诊断卡用 `data-host="diagnostic-card"`，不受该隐藏规则影响。
+- System / compose / review prompt 与 CSS 一致：卡面只用 `pair-pages` + 短句/至多三条 bullet；不邀请复制被 CSS 隐藏的组件。
+- `AGENT_ZONES` 与分享卡 DOM 顺序一致：`visual-evidence` 先于 `key-differences`。`shareCardLayoutError` 要求完整链 `header < headline < visual < diffs < metrics`；缺 `visual-evidence` 即失败。
 
 ## 备选方案
 
