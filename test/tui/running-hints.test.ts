@@ -13,14 +13,8 @@ function assertWatchOnly(line: string): void {
   assert.doesNotMatch(line, /Expand|Select|Find|\[\/\]|\[Enter\]|\[v\]/);
 }
 
-test('preparing running hints are watch-only', () => {
-  assertWatchOnly(footer(true, 'en'));
-  assertWatchOnly(footer(true, 'zh'));
-});
-
-test('recovery running hints are watch-only', () => {
-  assertWatchOnly(footer(true, 'en'));
-  assertWatchOnly(footer(true, 'zh'));
+test('preparing and recovery idle running hints are watch-only', () => {
+  for (const locale of ['en', 'zh'] as const) assertWatchOnly(footer(true, locale));
 });
 
 test('candidate idle running hints are watch-only', () => {
