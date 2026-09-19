@@ -174,7 +174,7 @@ export async function freezeCase(
         historicalEvents: prepared.historicalEvents,
         sourceHash: raw.hash,
         privacy: { allowBinary: privacy.allowBinary },
-        ...(prepared.taskContext ? { taskContext: prepared.taskContext as Record<string, unknown> } : {}),
+        ...(prepared.taskContext ? { taskContext: prepared.taskContext } : {}),
       });
       const sealed = frozenFilesFromExtraction(extraction, raw.hash);
       extractionFiles.push(...sealed.files);

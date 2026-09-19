@@ -4,9 +4,15 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Value } from "@sinclair/typebox/value";
 import { freezeCase } from "../../src/products/shared/freeze.js";
 import { assertSafeLogicalPath } from "../../src/products/shared/historical-artifact-files.js";
-import type { HistoricalArtifactExtraction, HistoricalArtifactExtractor } from "../../src/core/schema.js";
+import {
+  HistoricalArtifactManifestSchema,
+  type HistoricalArtifactExtraction,
+  type HistoricalArtifactExtractor,
+  type TaskCase,
+} from "../../src/core/schema.js";
 import type { ImportedSession, SessionMessage } from "../../src/products/contract.js";
 import { prepareHistoricalArtifacts } from "../../src/application/prepare-historical-artifacts.js";
 import {
@@ -19,7 +25,6 @@ import {
 } from "../../src/application/historical-final-discovery.js";
 import { comparisonAttemptMounts } from "../../src/application/comparison-briefing.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
-import type { TaskCase } from "../../src/core/schema.js";
 
 function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -106,9 +111,10 @@ test("freezeCase with extractor seals manifest and files under baseline-artifact
   assert.equal(frozen.taskCase.baseline.artifactRefs[0]?.caseId, frozen.taskCase.caseId);
   assert.notEqual(frozen.taskCase.baseline.artifactRefs[0]?.caseId, "");
   const caseDir = join(root, frozen.taskCase.caseId);
-  const manifestRaw = JSON.parse(await readFile(join(caseDir, "baseline-artifacts", "manifest.json"), "utf8"));
-  assert.equal(manifestRaw.schemaVersion, 1);
-  assert.equal(manifestRaw.artifacts[0].logicalPath, "anim/index.html");
+  const parsed: unknown = JSON.parse(await readFile(join(caseDir, "baseline-artifacts", "manifest.json"), "utf8"));
+  const manifest = Value.Parse(HistoricalArtifactManifestSchema, parsed);
+  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.artifacts[0]?.logicalPath, "anim/index.html");
   const sealed = await readFile(join(caseDir, "baseline-artifacts", "files", "bundle-anim", "anim", "index.html"));
   assert.equal(sha256(sealed), sha256(html));
 });
@@ -280,7 +286,7 @@ test("comparison finals mount exposes sealed deliverables; history stays process
   assert.match(historyBody.content, /id\trole/);
 });
 
-test("openable-baseline name collection includes transcript clues", () => {
+test("openable-baseline names stay empty without artifact refs even when transcript names exist", () => {
   const taskCase: TaskCase = {
     schemaVersion: 1,
     caseId: "case-1",
@@ -288,14 +294,16 @@ test("openable-baseline name collection includes transcript clues", () => {
     initialInput: { id: "m1", role: "user", text: "做" },
     transcript: [{ id: "m2", role: "assistant", text: "见 pelican.html" }],
     historicalEvents: [],
-    baseline: { status: "available", artifactRefs: [], evidenceRefs: [], finalMessage: "done" },
+    baseline: { status: "available", artifactRefs: [], evidenceRefs: [], finalMessage: "见 pelican.html" },
     sourceRuntimeEvidence: { productId: "codex", artifactRefs: [] },
     provenance: { packVersion: "test", importedAt: "2026-09-19T00:00:00.000Z", sourceHash: "a".repeat(64) },
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     contentHash: "b".repeat(64),
   };
-  const names = collectHistoricalDeliverableNames(taskCase, "openable-baseline");
-  assert.ok(names.has("pelican.html"));
+  const openable = collectHistoricalDeliverableNames(taskCase, "openable-baseline");
+  const finalNames = collectHistoricalDeliverableNames(taskCase, "final");
+  assert.equal(openable.size, 0);
+  assert.ok(finalNames.has("pelican.html"));
 });
 
 test("historicalFinalSearchRoots marks environment baselines as start-state-only", () => {

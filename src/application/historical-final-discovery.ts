@@ -63,8 +63,8 @@ export function collectHistoricalDeliverableNames(taskCase: TaskCase, kind: Hist
     for (const ref of taskCase.sourceRuntimeEvidence.artifactRefs) {
       if (ref.artifactId) names.add(ref.artifactId);
     }
-    addHistoricalDeliverableBasenames(taskCase.baseline.finalMessage ?? "", names);
-    for (const message of taskCase.transcript) addHistoricalDeliverableBasenames(message.text, names);
+    // Name clues from transcript alone are not openable sources; extract must
+    // materialize refs/bytes first (empty artifactRefs stay empty).
     return names;
   }
   addHistoricalDeliverableBasenames(taskCase.baseline.finalMessage ?? "", names);

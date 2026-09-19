@@ -32,6 +32,7 @@ import type {
   SessionSummary,
 } from '../../contract.js';
 import { freezeCase } from '../../shared/freeze.js';
+import type { HistoricalArtifactExtractor } from '../../../core/schema.js';
 import { peekCodexSessionMetaId } from './protocol.js';
 import { forEachJsonlRecordLenient, withStableJsonlRead } from '../../shared/jsonl-io.js';
 import {
@@ -330,14 +331,23 @@ async function importCodexSession(sourcePath: string, signal?: AbortSignal, expe
 }
 
 /** Freezes exactly the inspected rollout, applying caller-supplied literal redactions before any data is written. */
-export async function freezeCodexSession(input: { sourcePath: string; casesRoot: string; now: string; privacy: CodexSessionPrivacy; initialMessageId?: string }): Promise<{ taskCase: TaskCase; reused: boolean }> {
+export async function freezeCodexSession(input: {
+  sourcePath: string;
+  casesRoot: string;
+  now: string;
+  privacy: CodexSessionPrivacy;
+  initialMessageId?: string;
+  extractHistoricalArtifacts?: HistoricalArtifactExtractor;
+}): Promise<{ taskCase: TaskCase; reused: boolean }> {
   const imported = await importCodexSession(input.sourcePath);
   if (!imported.signals.completedTurns) throw new Error('Codex session has no completed turn and cannot become a historical TaskCase.');
   try {
+    const extract = input.extractHistoricalArtifacts;
     return await freezeCase(imported, input.casesRoot, input.privacy, input.now, {
       ...(input.initialMessageId ? { initialMessageId: input.initialMessageId } : {}),
       reuseExisting: true,
       errorLabel: 'Codex session',
+      ...(extract ? { extractHistoricalArtifacts: extract } : {}),
     });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('Selected task input')) {

@@ -131,7 +131,7 @@ export async function prepareHistoricalArtifacts(
       historicalEvents: input.taskCase.historicalEvents,
       sourceHash: input.taskCase.provenance.sourceHash,
       privacy: { allowBinary: input.taskCase.privacy.allowBinary },
-      ...(input.taskCase.taskContext ? { taskContext: input.taskCase.taskContext as Record<string, unknown> } : {}),
+      ...(input.taskCase.taskContext ? { taskContext: input.taskCase.taskContext } : {}),
     });
     const derived = await writeDerivedHistory(
       input.attemptRoot,
