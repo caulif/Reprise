@@ -2,6 +2,7 @@ import { freezeCodexSession } from "../../src/products/packs/codex/sessions.js";
 import { extractCodexHistoricalArtifacts } from "../../src/products/packs/codex/historical-artifacts.js";
 import { prepareHistoricalArtifacts } from "../../src/application/prepare-historical-artifacts.js";
 import { assertSafeLogicalPath } from "../../src/products/shared/historical-artifact-files.js";
+import { asPosixPath } from "../../src/core/paths.js";
 import {
   collectHistoricalDeliverableNames,
   discoverBaselineOpenableSources,
@@ -455,9 +456,9 @@ test("historicalFinalSearchRoots lists attempt finals once via context", () => {
     caseId: "case-1",
     attemptRoot: "/exp/comparison-attempts/a1",
   });
-  assert.equal(ctx.finalsRoot, "/exp/comparison-attempts/a1/finals");
+  assert.equal(asPosixPath(ctx.finalsRoot ?? ""), "/exp/comparison-attempts/a1/finals");
   const roots = historicalFinalSearchRoots(ctx);
-  const finals = roots.filter((root) => root.root.replace(/\\/g, "/") === "/exp/comparison-attempts/a1/finals");
+  const finals = roots.filter((root) => asPosixPath(root.root) === "/exp/comparison-attempts/a1/finals");
   assert.equal(finals.length, 1);
   assert.equal(finals[0]?.mode, "recursive-basename");
 });
