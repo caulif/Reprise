@@ -29,4 +29,6 @@
 
 ## 验证
 
-`test/application/comparison-c1-text-only-media.test.ts`：text-only 剥离 + 无 claim 发布字节；空交付集 + visual claim → `media_unavailable`；交付 hash 匹配 → 通过。不调用付费 Runtime。`npm run check` 必须通过。
+`test/application/comparison-c1-text-only-media.test.ts`：text-only 剥离 + 无 claim 发布字节；空交付集 + visual claim → `media_unavailable`；交付 hash 匹配 → 通过；`materializeComparisonMedia` seed `contentHash` 可与 delivery Set 正向绑定。
+
+`test/application/comparison-media.test.ts`：可用 seed 的 `contentHash` 与 `imageContentHash` 同口径；缺失文件无 hash 且无法通过交付门禁；空交付集仍拒绝 visual claim，裸 `<img>` 仍可发布。不调用付费 Runtime。`npm run check` 必须通过。
