@@ -307,7 +307,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
   if (view.page === 'home') return homeHints(locale, view.home);
   if (view.page === 'config' && view.config) {
     const fields = configFieldsForKind(view.config.draft.kind);
-    return configHints(view.config.editing, fields[view.config.selected], view.config.pendingToggle, view.config.selected >= languageFieldIndex(view.config.draft.kind), locale, Boolean(view.config.leaveConfirm));
+    return configHints(view.config.editing, fields[view.config.selected], view.config.pendingToggle, view.config.selected >= languageFieldIndex(view.config.draft.kind), locale, Boolean(view.config.leaveConfirm), Boolean(view.config.busy));
   }
   if (view.page === 'history') return historyHints(locale);
   if (view.page === 'history-detail') return historyDetailHints(Boolean(view.historyDetail && 'taskCase' in view.historyDetail), Boolean(view.historyDetail && !('taskCase' in view.historyDetail) && view.historyDetail.reportPath), locale);

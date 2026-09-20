@@ -22,6 +22,8 @@ import type {
 } from "../products/contract.js";
 import { initializeIntakeTui } from "./intake-tui-state.js";
 import * as intakeMethods from "./intake-tui-methods.js";
+import type { ConfigReturnTarget } from "./intake-tui-config.js";
+import type { ConfigConnectionTestStatus } from "./pages/config.js";
 import type { Locale } from "./i18n.js";
 import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
@@ -167,6 +169,12 @@ export class IntakeTui {
   timelineFollowing = true;
   cancelling = false;
   configBusy = false;
+  configBusyKind: "idle" | "save" | "test" = "idle";
+  configDraftVersion = 0;
+  configTestDraftVersion: number | undefined;
+  configTestStatus: ConfigConnectionTestStatus = "idle";
+  configTestDetail: string | undefined;
+  configReturnTarget: ConfigReturnTarget | undefined;
   generation = 0;
   timelineRenderQueued = false;
   timelineRevision = 0;
@@ -236,6 +244,7 @@ export class IntakeTui {
   loadHistory(): Promise<void> { return intakeMethods.IntakeTui_loadHistory.call(this); }
   openRecentExperiment(): { consume: true } { return intakeMethods.IntakeTui_openRecentExperiment.call(this); }
   openConfig(): Promise<void> { return intakeMethods.IntakeTui_openConfig.call(this); }
+  leaveConfig(): { consume: true } { return intakeMethods.IntakeTui_leaveConfig.call(this); }
   saveConfig(): Promise<void> { return intakeMethods.IntakeTui_saveConfig.call(this); }
   testConfigConnection(): Promise<void> { return intakeMethods.IntakeTui_testConfigConnection.call(this); }
   refreshHarnessAuth(): Promise<void> { return intakeMethods.IntakeTui_refreshHarnessAuth.call(this); }

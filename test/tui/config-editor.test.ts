@@ -11,7 +11,7 @@ import {
   type HarnessConfigDraft,
 } from '../../src/infrastructure/harness-model-config.js';
 import { handleConfigInput, type ConfigInputState } from '../../src/tui/config-input.js';
-import { renderConfig } from '../../src/tui/pages/config.js';
+import { configHints, renderConfig } from '../../src/tui/pages/config.js';
 import { createTheme } from '../../src/tui/theme.js';
 
 const draft: HarnessConfigDraft = {
@@ -175,3 +175,199 @@ test('leaving config with a dirty draft asks to save or discard', () => {
   assert.equal(handleConfigInput(prompt?.state ?? dirty, '\r', refresh)?.action, 'home');
   assert.equal(handleConfigInput({ ...dirty, leaveConfirm: true }, '\x13', refresh)?.action, 'save');
 });
+
+test('config page keeps draft, credentials, and connection test as separate lines', () => {
+  const theme = createTheme(120);
+  const text = renderConfig(theme, 120, {
+    draft: { ...draft, keyRef: 'env:OPENAI_API_KEY' },
+    selected: 0,
+    editing: false,
+    buffer: '',
+    dirty: true,
+    saved: true,
+    envName: 'OPENAI_API_KEY',
+    envSet: true,
+    connectionTest: { status: 'passed' },
+    locale: 'en',
+  }).join('\n');
+  assert.match(text, /Save status: unsaved draft/);
+  assert.match(text, /Credentials: local reference available \(not a connection test\)/);
+  assert.match(text, /Connection test: passed for this draft — not saved automatically/);
+  assert.doesNotMatch(text, /Saved locally[\s\S]*Connection verified|verified[\s\S]*Saved locally/i);
+  const hints = configHints(false, 'model', false, false, 'en', false, false);
+  assert.deepEqual(hints.find((item) => item[0] === 'Ctrl+T'), ['Ctrl+T', 'Test connection (calls model)']);
+});
+
+test('busy config disables repeated connection tests without starting another action', () => {
+  const busy = { draft, selected: 0, editing: false, buffer: '', cursor: 0, providers: [], models: [], busy: true };
+  const blocked = handleConfigInput(busy, '\x14', refresh);
+  assert.equal(blocked?.action, undefined);
+  assert.match(blocked?.message ?? '', /already in progress/i);
+  const hints = configHints(false, 'model', false, false, 'zh', false, true);
+  assert.deepEqual(hints.find((item) => item[0] === 'Ctrl+T'), ['Ctrl+T', '测试不可用（进行中）']);
+});
+
+test('stale connection test copy does not claim the current draft is verified', () => {
+  const theme = createTheme(120);
+  const text = renderConfig(theme, 120, {
+    draft,
+    selected: 0,
+    editing: false,
+    buffer: '',
+    dirty: true,
+    saved: false,
+    connectionTest: { status: 'stale' },
+    locale: 'zh',
+  }).join('\n');
+  assert.match(text, /保存状态：未保存草稿/);
+  assert.match(text, /连接测试：先前结果已过期/);
+  assert.doesNotMatch(text, /当前草稿已通过/);
+});
+
+test('failed connection test shows a redacted detail without a single shared green light', () => {
+  const theme = createTheme(120);
+  const text = renderConfig(theme, 120, {
+    draft,
+    selected: 0,
+    editing: false,
+    buffer: '',
+    dirty: false,
+    saved: true,
+    connectionTest: { status: 'failed', detail: 'provider rejected [secret redacted]' },
+    locale: 'en',
+  }).join('\n');
+  assert.match(text, /Save status: saved locally/);
+  assert.match(text, /Connection test: failed: provider rejected \[secret redacted\]/);
+  assert.doesNotMatch(text, /not saved automatically/);
+});
+
+test('openConfig remembers inspection return target and leave restores it without recovery', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-config-return-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const tui = {
+    addChild() {},
+    addInputListener() { return () => {}; },
+    start() {},
+    stop() {},
+    requestRender() {},
+    renderNow() {},
+  } as never;
+  const { IntakeTui } = await import('../../src/tui/intake-app.js');
+  const app = new IntakeTui({
+    dataDir: join(root, 'data'),
+    tui,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  app.page = 'inspection';
+  app.inspection = {
+    sourcePath: 'C:/session.jsonl',
+    transcript: [{ role: 'user', text: 'hello' }],
+    signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
+  } as never;
+  app.inspectionTaskInput = 2;
+  app.inspectionShowOutcome = true;
+  await app.openConfig();
+  assert.equal(app.page, 'config');
+  assert.deepEqual(app.configReturnTarget, {
+    page: 'inspection',
+    inspectionTaskInput: 2,
+    inspectionShowOutcome: true,
+  });
+  app.leaveConfig();
+  assert.equal(app.page, 'inspection');
+  assert.equal(app.inspectionTaskInput, 2);
+  assert.equal(app.inspectionShowOutcome, true);
+  assert.equal(app.configReturnTarget, undefined);
+  assert.match(app.message, /Review the session|核对会话/);
+});
+
+test('stale inspection return target falls back to sessions', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-config-stale-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const tui = {
+    addChild() {},
+    addInputListener() { return () => {}; },
+    start() {},
+    stop() {},
+    requestRender() {},
+    renderNow() {},
+  } as never;
+  const { IntakeTui } = await import('../../src/tui/intake-app.js');
+  const app = new IntakeTui({
+    dataDir: join(root, 'data'),
+    tui,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  app.page = 'inspection';
+  app.inspection = { sourcePath: 'C:/session.jsonl', transcript: [], signals: { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 } } as never;
+  await app.openConfig();
+  app.inspection = undefined;
+  app.leaveConfig();
+  assert.equal(app.page, 'sessions');
+  assert.match(app.message, /no longer available|已失效/);
+});
+
+test('draft changes while a connection test is pending keep the new draft unverified', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-config-race-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const tui = {
+    addChild() {},
+    addInputListener() { return () => {}; },
+    start() {},
+    stop() {},
+    requestRender() {},
+    renderNow() {},
+  } as never;
+  const piModels = {
+    getProviders: () => [{ id: 'provider-a', name: 'Provider A' }],
+    getModels: () => [{ id: 'model-a', name: 'Model A', input: ['text'] }],
+    getModel: () => ({ id: 'model-a', name: 'Model A', input: ['text'] }),
+    getAuth: async () => ({ auth: {}, source: 'fixture' }),
+    completeSimple: async () => {
+      await gate;
+      return { stopReason: 'stop', content: [{ type: 'text', text: 'OK' }] };
+    },
+  } as never;
+  const { IntakeTui } = await import('../../src/tui/intake-app.js');
+  const { saveHarnessModelConfig } = await import('../../src/infrastructure/harness-model-config.js');
+  const dataDir = join(root, 'data');
+  await saveHarnessModelConfig(dataDir, {
+    schemaVersion: 2,
+    provider: { kind: 'pi-catalog', id: 'provider-a' },
+    providerId: 'provider-a',
+    modelId: 'model-a',
+    effort: 'medium',
+  });
+  const app = new IntakeTui({
+    dataDir,
+    tui,
+    piModels,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  await app.start();
+  await app.openConfig();
+  const started = app.testConfigConnection();
+  await waitUntil(() => app.configTestStatus === 'testing');
+  assert.equal(app.configBusy, true);
+  const testedVersion = app.configTestDraftVersion;
+  assert.equal(typeof testedVersion, 'number');
+  // Mutate the draft the way the editor does: bump identity so a late success cannot verify it.
+  app.configSelected = 3; // effort field for pi-catalog
+  app.configPageInput('\r');
+  assert.notEqual(app.configDraftVersion, testedVersion);
+  release();
+  await started;
+  assert.equal(app.configTestStatus, 'stale');
+  assert.match(app.message, /previous draft|已变更前的草稿|Re-test|重新测试/);
+  assert.doesNotMatch(app.message, /^Connection test passed/);
+});
+
+async function waitUntil(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error('timed out');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}

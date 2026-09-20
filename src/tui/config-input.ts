@@ -17,6 +17,8 @@ export type ConfigInputState = {
   readonly pendingToggle?: boolean;
   readonly dirty?: boolean;
   readonly leaveConfirm?: boolean;
+  /** True while save or connection test is in flight; Ctrl+T must not start another test. */
+  readonly busy?: boolean;
 };
 export type ConfigInputResult = {
   readonly state: ConfigInputState;
@@ -47,8 +49,14 @@ export function handleConfigInput(state: ConfigInputState, data: string, refresh
     return { state: { ...state, selected: Math.max(0, Math.min(languageIndex, state.selected + delta)) }, consume: true };
   }
   if (mouse) return { state, consume: true };
-  if (matchesKey(input, 'ctrl+t')) return { state, action: 'test', consume: true };
-  if (matchesKey(input, 'ctrl+s')) return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  if (matchesKey(input, 'ctrl+t')) {
+    if (state.busy) return { state, message: 'A configuration request is already in progress.', consume: true };
+    return { state, action: 'test', consume: true };
+  }
+  if (matchesKey(input, 'ctrl+s')) {
+    if (state.busy) return { state, message: 'A configuration request is already in progress.', consume: true };
+    return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  }
   if (!matchesKey(input, 'enter')) return undefined;
   if (state.selected === languageIndex) return { state, action: 'toggle-locale', consume: true };
   return beginConfigEdit(state, refreshModels, fields);
@@ -67,7 +75,10 @@ function leaveConfig(state: ConfigInputState): ConfigInputResult {
 
 function handleLeaveConfirm(state: ConfigInputState, input: string): ConfigInputResult {
   if (matchesKey(input, 'escape')) return { state: { ...state, leaveConfirm: false }, message: 'Still editing the in-memory draft.', consume: true };
-  if (matchesKey(input, 'ctrl+s')) return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  if (matchesKey(input, 'ctrl+s')) {
+    if (state.busy) return { state, message: 'A configuration request is already in progress.', consume: true };
+    return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  }
   if (matchesKey(input, 'enter')) return { state: { ...state, leaveConfirm: false }, action: 'home', consume: true };
   return { state, consume: true };
 }

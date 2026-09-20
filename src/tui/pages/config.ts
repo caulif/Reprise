@@ -10,6 +10,8 @@ import { caretAt } from '../text-edit.js';
 export const CONFIG_FIELDS = HARNESS_CONFIG_FIELDS;
 export type ConfigField = HarnessConfigField;
 
+export type ConfigConnectionTestStatus = 'idle' | 'testing' | 'passed' | 'failed' | 'stale';
+
 export type ConfigModel = {
   readonly draft: HarnessConfigDraft;
   readonly selected: number;
@@ -23,6 +25,15 @@ export type ConfigModel = {
   readonly pendingToggle?: boolean;
   readonly leaveConfirm?: boolean;
   readonly locale?: Locale;
+  /** True only while a save or connection test request is in flight. */
+  readonly busy?: boolean;
+  readonly busyKind?: 'save' | 'test';
+  /** Local credential probe result — never means the remote connection test passed. */
+  readonly hasUsableAuth?: boolean;
+  readonly connectionTest?: {
+    readonly status: ConfigConnectionTestStatus;
+    readonly detail?: string;
+  };
 };
 
 export function renderConfig(theme: Theme, width: number, model: ConfigModel): string[] {
@@ -53,10 +64,6 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
   const languageValue = t(locale, locale === 'zh' ? 'chinese' : 'english');
   const languageLine = ` ${languageMarker} ${pad(t(locale, 'languageField'), 18, theme.glyphs.ellipsis)} ${languageValue}  ${theme.style.muted(t(locale, 'langToggleHint'))}`;
   const paintedLanguage = model.selected === languageIndex ? theme.style.selected(languageLine) : languageLine;
-  const dirty = model.dirty
-    ? theme.style.warn(` ${theme.glyphs.dot} ${t(locale, 'unsavedDraft')}`)
-    : theme.style.ok(` ${theme.glyphs.ok} ${t(locale, 'savedLocally')}`);
-  const status = model.saved || model.dirty ? dirty : ` ${theme.glyphs.dot} ${t(locale, 'inMemoryDraft')}`;
   return panel(theme, theme.style.harness(t(locale, 'configTitle')), [
     theme.style.muted(` ${t(locale, 'configSharedHint')}`),
     ...connectionStatus(theme, model, locale),
@@ -64,7 +71,7 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
     ...values,
     paintedLanguage,
     '',
-    status,
+    ...configStateLines(theme, model, locale),
     ` ${t(locale, 'configFile')}`,
     ...(model.pendingToggle ? [theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'confirmProviderSwitch')}`)] : []),
     ...(model.leaveConfirm ? [theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'unsavedLeave')}`)] : []),
@@ -78,6 +85,7 @@ export function configHints(
   languageSelected = false,
   locale: Locale = 'en',
   leaveConfirm = false,
+  busy = false,
 ): readonly (readonly [string, string])[] {
   if (editing) return [['Enter', t(locale, 'hintApply')], ['Ctrl+U', t(locale, 'hintClear')], ['Esc', t(locale, 'hintKeepPrev')]];
   if (leaveConfirm) return [['Ctrl+S', t(locale, 'hintSave')], ['Enter', t(locale, 'hintDiscardDraft')], ['Esc', t(locale, 'hintStay')]];
@@ -87,7 +95,56 @@ export function configHints(
     : field === 'provider type' ? t(locale, 'hintToggleProvider')
       : field === 'effort' || field === 'API' || field === 'reasoning' || field === 'image input' ? t(locale, 'hintCycleEffort')
         : t(locale, 'hintEdit');
-  return [['↑↓', t(locale, 'hintSelect')], ['Enter', enter], ['Ctrl+T', t(locale, 'hintTest')], ['Ctrl+S', t(locale, 'hintSave')], ['Esc', t(locale, 'hintHome')]];
+  return [
+    ['↑↓', t(locale, 'hintSelect')],
+    ['Enter', enter],
+    ['Ctrl+T', busy ? t(locale, 'hintTestBusy') : t(locale, 'hintTest')],
+    ['Ctrl+S', t(locale, 'hintSave')],
+    ['Esc', t(locale, 'hintHome')],
+  ];
+}
+
+function configStateLines(theme: Theme, model: ConfigModel, locale: Locale): readonly string[] {
+  const saveLine = model.dirty
+    ? theme.style.warn(` ${theme.glyphs.dot} ${t(locale, 'configSaveStatusUnsaved')}`)
+    : model.saved
+      ? ` ${theme.glyphs.dot} ${t(locale, 'configSaveStatusSaved')}`
+      : ` ${theme.glyphs.dot} ${t(locale, 'configSaveStatusMemory')}`;
+  const credLine = credentialStateLine(theme, model, locale);
+  const testLine = connectionTestLine(theme, model, locale);
+  const busyLine = model.busy
+    ? theme.style.warn(` ${theme.glyphs.dot} ${model.busyKind === 'save' ? t(locale, 'configSavingLocally') : t(locale, 'configTestStatusTesting')}`)
+    : undefined;
+  return busyLine ? [saveLine, credLine, testLine, busyLine] : [saveLine, credLine, testLine];
+}
+
+function credentialStateLine(theme: Theme, model: ConfigModel, locale: Locale): string {
+  if (model.draft.kind === 'pi-catalog') {
+    return ` ${theme.glyphs.dot} ${t(locale, 'configCredPi')}`;
+  }
+  const available = Boolean(model.envName && model.envSet) || hasFileApiKey(model.draft);
+  return available
+    ? ` ${theme.glyphs.dot} ${t(locale, 'configCredAvailable')}`
+    : theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'configCredMissing')}`);
+}
+
+function connectionTestLine(theme: Theme, model: ConfigModel, locale: Locale): string {
+  const status = model.connectionTest?.status ?? 'idle';
+  if (status === 'testing') {
+    return theme.style.warn(` ${theme.glyphs.dot} ${t(locale, 'configTestStatusTesting')}`);
+  }
+  if (status === 'passed') {
+    return ` ${theme.glyphs.dot} ${t(locale, 'configTestStatusPassed')}`;
+  }
+  if (status === 'failed') {
+    const detail = model.connectionTest?.detail;
+    const base = t(locale, 'configTestStatusFailed');
+    return theme.style.warn(` ${theme.glyphs.warn} ${detail ? `${base}: ${detail}` : base}`);
+  }
+  if (status === 'stale') {
+    return theme.style.warn(` ${theme.glyphs.dot} ${t(locale, 'configTestStatusStale')}`);
+  }
+  return ` ${theme.glyphs.dot} ${t(locale, 'configTestStatusIdle')}`;
 }
 
 function connectionStatus(theme: Theme, model: ConfigModel, locale: Locale): readonly string[] {
