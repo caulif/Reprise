@@ -67,7 +67,7 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
       outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed' },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
   } as never, 'en', 'Codex', true);
   const reportLine = lines.findIndex((line) => line.includes('report.html'));
   assert.ok(reportLine >= 0);
@@ -131,7 +131,7 @@ test('result pointer stays aligned when metrics wrap at compact width', () => {
       outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
     facts: { wallClockMs: 72_000, turns: 3, controllerCalls: 2, tokenCount: 4096, costUsd: 1.23 },
   } as never;
   for (const width of [48, 60]) {
@@ -212,7 +212,7 @@ test('result pointer treats environment baselines html as history final', () => 
       outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed' },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
   } as never, 'en');
   const historyLine = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
   assert.ok(historyLine >= 0);
@@ -236,7 +236,7 @@ const resultFixture = {
     outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
   },
   decision: { status: 'completed' },
-  comparison: { result: { status: 'completed' } },
+  comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
 } as never;
 
 function resultController(opened: { report: number; artifact?: string | undefined }): ControllerHandle {
@@ -287,7 +287,7 @@ test('result SGR click on history final opens the clicked href', () => {
       outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed' },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
   } as typeof resultFixture;
   handle.result = resultWithBaselines;
   const origin = workbenchBodyOrigin(handle.view(), 120, 40);
