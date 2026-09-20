@@ -5,13 +5,14 @@ import {
   activityStatusLabel,
   entryRole,
 } from './agent-activity.js';
+import { type ActionContext, helpLinesFromActions, listActions, type UiAction } from './action-model.js';
 import { slashCommands } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
 import type { TimelineEntry } from './timeline.js';
 import { panel, wrapBodyLine } from './widgets.js';
 
-/** Several keys mean different things per page (`f`, `t`, `d`), so help is scoped to where the user is. */
+/** Fallback static keys for pages not yet migrated onto the shared action model. */
 const PAGE_KEYS: Record<string, readonly string[]> = {
   home: [
     'Type       /command, then Enter',
@@ -145,7 +146,17 @@ export function showsActivityDetailSidebar(theme: Theme): boolean {
   return theme.density === 'wide';
 }
 
-export function helpLines(page?: string, locale: Locale = 'en'): readonly string[] {
+const ACTION_HELP_PAGES = new Set(['running', 'result', 'confirm']);
+
+export function helpLines(
+  page?: string,
+  locale: Locale = 'en',
+  actions?: readonly UiAction[],
+): readonly string[] {
+  if (actions) return helpLinesFromActions(actions, locale, page);
+  if (page && ACTION_HELP_PAGES.has(page)) {
+    return helpLinesFromActions(listActions({ page, locale }), locale, page);
+  }
   const scoped = page === undefined ? undefined : PAGE_KEYS[page];
   const homeKeys = page === 'home' ? [
     t(locale, 'helpTypeCommand'),
@@ -167,21 +178,35 @@ export function helpLines(page?: string, locale: Locale = 'en'): readonly string
   ];
 }
 
-export function renderHelp(theme: Theme, width: number, page?: string, locale: Locale = 'en'): string[] {
-  return panel(theme, t(locale, 'helpTitle'), helpLines(page, locale).map((line) => ` ${line}`), Math.min(64, width));
+export function renderHelp(
+  theme: Theme,
+  width: number,
+  page?: string,
+  locale: Locale = 'en',
+  actions?: readonly UiAction[],
+): string[] {
+  return panel(theme, t(locale, 'helpTitle'), helpLines(page, locale, actions).map((line) => ` ${line}`), Math.min(64, width));
 }
 
 export class HelpOverlay implements Component {
   readonly #theme: Theme;
   readonly #page: string | undefined;
   readonly #locale: Locale;
-  constructor(theme: Theme, page?: string, locale: Locale = 'en') {
+  readonly #actions: readonly UiAction[] | undefined;
+  constructor(theme: Theme, page?: string, locale: Locale = 'en', actions?: readonly UiAction[]) {
     this.#theme = theme;
     this.#page = page;
     this.#locale = locale;
+    this.#actions = actions;
   }
   invalidate(): void { /* overlay content is fixed for the page it was opened on */ }
-  render(width: number): string[] { return renderHelp(this.#theme, width, this.#page, this.#locale); }
+  render(width: number): string[] {
+    return renderHelp(this.#theme, width, this.#page, this.#locale, this.#actions);
+  }
+}
+
+export function helpActionsForContext(ctx: ActionContext): readonly UiAction[] {
+  return listActions(ctx);
 }
 
 export class ActivityDetailOverlay implements Component {

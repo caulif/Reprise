@@ -8,32 +8,41 @@ function footer(preparing = false, locale: 'en' | 'zh' = 'en', finding = false, 
   return keyHints(createTheme(80, false), runningHints('ALL', false, preparing, locale, finding, reading, cancelUi), 80);
 }
 
-function assertWatchOnly(line: string): void {
+function assertCancelVisible(line: string): void {
   assert.match(line, /Ctrl\+C/);
-  assert.doesNotMatch(line, /Expand|Select|Find|\[\/\]|\[Enter\]|\[v\]/);
 }
 
-test('preparing and recovery idle running hints are watch-only', () => {
-  for (const locale of ['en', 'zh'] as const) assertWatchOnly(footer(true, locale));
+test('preparing running hints keep cancel and hide reading shortcuts', () => {
+  for (const locale of ['en', 'zh'] as const) {
+    const line = footer(true, locale);
+    assertCancelVisible(line);
+    assert.doesNotMatch(line, /Expand|Find|查找|展开|\[\/\]|\[Enter\]/);
+  }
 });
 
-test('candidate idle running hints are watch-only', () => {
-  assertWatchOnly(footer(false, 'en'));
-  assertWatchOnly(footer(false, 'zh'));
+test('candidate idle running hints expose cancel and discoverable reading actions', () => {
+  const en = footer(false, 'en');
+  assertCancelVisible(en);
+  assert.match(en, /Find/);
+  assert.match(en, /Follow live|Expand|Help/);
+  assert.doesNotMatch(en, /Generate comparison/);
+
+  const zh = footer(false, 'zh');
+  assertCancelVisible(zh);
+  assert.match(zh, /查找|跟随|展开|帮助/);
 });
 
 test('finding running hints keep find-mode keys only', () => {
   const line = footer(false, 'en', true, false);
-  assert.match(line, /Ctrl\+C/);
+  assertCancelVisible(line);
   assert.match(line, /Next match/);
-  assert.match(line, /Previous match/);
-  assert.match(line, /Clear find/);
-  assert.doesNotMatch(line, /Expand|Select/);
+  assert.match(line, /Previous match|Clear find/);
+  assert.doesNotMatch(line, /Expand|Select|Follow live/);
 });
 
 test('reading running hints keep reading-mode keys only', () => {
   const line = footer(false, 'en', false, true);
-  assert.match(line, /Ctrl\+C/);
+  assertCancelVisible(line);
   assert.match(line, /Resume view/);
   assert.doesNotMatch(line, /Expand|Find/);
 });

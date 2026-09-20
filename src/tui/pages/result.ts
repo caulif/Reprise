@@ -2,6 +2,7 @@ import { resolve, normalize } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
+import { type ActionArtifacts, resultFooterHints } from '../action-model.js';
 import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
@@ -9,6 +10,8 @@ import type { Theme } from '../theme.js';
 import type { WorkbenchSurfaceScope } from '../workbench-layout.js';
 import { kv, kvLinkBlock, panel, panelWithHits, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
+
+export type { ActionArtifacts };
 
 export type ResultPointerHit = { readonly action: ResultAction; readonly x0: number; readonly x1: number };
 export type ResultRender = { readonly lines: readonly string[]; readonly rowHits: ReadonlyMap<number, readonly ResultPointerHit[]> };
@@ -81,7 +84,9 @@ export function renderResultWithHits(
 
   if (comparePending) {
     push('');
-    push(` ${theme.style.accent(t(locale, 'hintCompare'))}`);
+    const compareLine = ` ${theme.style.accent(t(locale, 'hintCompare'))}`;
+    bodyHits.set(body.length, [{ action: 'compare', x0: 1, x1: Math.max(1, visibleCompareEnd(compareLine)) }]);
+    push(compareLine);
   }
 
   const reportLabel = reportKind === 'diagnostic' ? t(locale, 'resultDiagnostic')
@@ -105,37 +110,40 @@ export function renderResultWithHits(
   return panelWithHits(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width, bodyHits);
 }
 
-export function resultHints(locale: Locale = 'en', comparePending = false): readonly (readonly [string, string])[] {
-  const opens: (readonly [string, string])[] = [
-    ['o', t(locale, 'hintReport')],
-    ['h', t(locale, 'hintHistoryFinal')],
-    ['f', t(locale, 'hintCandidateFinal')],
-  ];
-  if (comparePending) return [['c', t(locale, 'hintCompare')], ...opens, ['Esc', t(locale, 'hintHome')]];
-  return [...opens, ['Esc', t(locale, 'hintHome')]];
+function visibleCompareEnd(line: string): number {
+  return Math.max(1, line.replace(/\x1b\[[0-9;]*m/g, '').length - 1);
+}
+
+export function resultHints(
+  locale: Locale = 'en',
+  comparePending = false,
+  artifacts?: ActionArtifacts,
+): readonly (readonly [string, string])[] {
+  return resultFooterHints(locale, {
+    comparePending,
+    ...(artifacts !== undefined ? { artifacts } : {}),
+  });
 }
 
 export function resultPointerAction(
   lines: readonly string[],
   row: number,
   col: number,
-  locale: Locale = 'en',
+  _locale: Locale = 'en',
   paths?: ResultPathLinks,
   rowHits?: ReadonlyMap<number, readonly ResultPointerHit[]>,
 ): ResultAction | undefined {
   const line = lines[row];
   if (!line) return undefined;
-  const compare = t(locale, 'hintCompare');
-  if (stripForHit(line).includes(compare)) return 'compare';
-  const href = hitFileLink(line, col);
-  if (href && paths) {
-    const action = resolveResultLinkAction(href, paths);
-    if (action) return action;
-  }
   const hits = rowHits?.get(row);
   if (hits) {
     const match = hits.find((hit) => col >= hit.x0 && col <= hit.x1);
     if (match) return match.action;
+  }
+  const href = hitFileLink(line, col);
+  if (href && paths) {
+    const action = resolveResultLinkAction(href, paths);
+    if (action) return action;
   }
   return undefined;
 }
@@ -183,10 +191,6 @@ function candidateDisplayLabel(result: ExperimentResult, productLabel: string | 
   const model = candidate.requestedModel?.trim();
   if (!model) return product;
   return `${product} · ${model}`;
-}
-
-function stripForHit(line: string): string {
-  return line.replace(/\u001b\[[0-9;]*m/g, '').replace(/\u001b\]8;;[^\u0007\u001b]*(?:\u0007|\u001b\\)/g, '');
 }
 
 export function renderFailure(theme: Theme, width: number, message: string, locale: Locale = 'en'): string[] {

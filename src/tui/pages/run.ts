@@ -1,5 +1,6 @@
 import type { ExperimentPreflight } from '../../application/experiment-preflight.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
+import { runningFooterHints } from '../action-model.js';
 import { selectedIndexAfterFold } from '../fold-process.js';
 import { projectTimelineView } from '../timeline-view.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
@@ -405,16 +406,18 @@ export function confirmHints(canStart = true, locale: Locale = 'en', recoveryDia
 }
 
 export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false, cancelUi: 'idle' | 'requesting' | 'failed' | 'settled' = 'idle'): readonly (readonly [string, string])[] {
-  const stop = cancelUi === 'requesting'
-    ? (['Ctrl+C', t(locale, 'hintExitUiCleanupPending')] as const)
-    : cancelUi === 'failed'
-      ? (['Ctrl+C', t(locale, 'hintRetryCancel')] as const)
-      : (['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const);
-  if (reading) return [['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')], stop];
-  if (finding) {
-    return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
+  const hints = runningFooterHints(locale, {
+    preparing,
+    finding,
+    reading,
+    findAllowed: !preparing,
+    narrow: _narrow,
+  });
+  if (cancelUi === 'requesting' || cancelUi === 'failed') {
+    const label = cancelUi === 'requesting' ? t(locale, 'hintExitUiCleanupPending') : t(locale, 'hintRetryCancel');
+    return hints.map(([key, value]) => key === 'Ctrl+C' ? [key, label] as const : [key, value] as const);
   }
-  return [stop];
+  return hints;
 }
 
 export function elapsedFrom(
