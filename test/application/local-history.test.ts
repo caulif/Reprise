@@ -35,6 +35,122 @@ test('local history reports experiment and total persisted data sizes', async (t
   assert.equal(await readFile(join(experiment, 'report.html'), 'utf8'), 'report bytes');
 });
 
+test('local history treats cancelled comparison like failed for report selection', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-cancel-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const experiment = join(root, 'experiments', 'exp-cancel');
+  await mkdir(join(experiment, 'runs', 'run-1'), { recursive: true });
+  await writeFile(join(experiment, 'experiment.json'), JSON.stringify({ spec: { schemaVersion: 1, experimentId: 'exp-cancel', taskCaseId: 'case-cancel', candidates: [{ candidateId: 'candidate', productId: 'codex', requestedModel: 'model' }], controller: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, comparison: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, runPolicy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 }, outputRoot: experiment }, runIds: ['run-1'] }));
+  await writeFile(join(experiment, 'runs', 'run-1', 'record.json'), JSON.stringify({
+    attempt: {
+      schemaVersion: 1,
+      experimentId: 'exp-cancel',
+      runId: 'run-1',
+      caseId: 'case-cancel',
+      candidate: { candidateId: 'candidate', productId: 'codex', requestedModel: 'model' },
+      policy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 },
+      createdAt: '2026-09-20T00:00:00.000Z',
+    },
+    state: 'finished',
+    stageReached: 'awaiting_controller',
+    outcome: {
+      task: { status: 'apparently_completed', evidenceRefs: [] },
+      termination: { kind: 'completed', code: 'completed.controller_satisfied', initiatedBy: 'controller' },
+      cleanup: { status: 'unknown', remainingResourceIds: [], evidenceRefs: [] },
+    },
+    trace: { experimentId: 'exp-cancel', runId: 'run-1', firstSequence: 1, lastSequence: 1 },
+    artifactRefs: [],
+    warnings: [],
+  }));
+  await writeFile(join(experiment, 'report.html'), 'old success');
+  await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'cancelled' }));
+  const cancelledOnlyReport = (await readLocalHistory(root)).experiments[0]!;
+  assert.equal(cancelledOnlyReport.comparisonStatus, 'cancelled');
+  assert.equal(cancelledOnlyReport.cleanupStatus, 'unknown');
+  assert.equal(cancelledOnlyReport.reportKind, 'Previous report');
+  assert.equal(cancelledOnlyReport.reportAttemptUnconfirmed, true);
+  assert.equal(cancelledOnlyReport.reportPath, join(experiment, 'report.html'));
+  await writeFile(join(experiment, 'comparison-failure.html'), 'cancel diagnosis');
+  const cancelledDiagnostic = (await readLocalHistory(root)).experiments[0]!;
+  assert.equal(cancelledDiagnostic.reportKind, 'Diagnostic');
+  assert.equal(cancelledDiagnostic.reportPath, join(experiment, 'comparison-failure.html'));
+  assert.equal(cancelledDiagnostic.previousReportPath, join(experiment, 'report.html'));
+  assert.notEqual(cancelledDiagnostic.reportKind, 'Report');
+});
+
+test('local history records nested insufficient_evidence without promoting failure', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-insuff-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const experiment = join(root, 'experiments', 'exp-insuff');
+  await mkdir(experiment, { recursive: true });
+  await writeFile(join(experiment, 'experiment.json'), JSON.stringify({ spec: { schemaVersion: 1, experimentId: 'exp-insuff', taskCaseId: 'case-insuff', candidates: [{ candidateId: 'candidate', productId: 'codex', requestedModel: 'model' }], controller: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, comparison: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, runPolicy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 }, outputRoot: experiment }, runIds: [] }));
+  await writeFile(join(experiment, 'report.html'), 'insuff report');
+  await writeFile(join(experiment, 'comparison.json'), JSON.stringify({
+    status: 'completed',
+    sessionId: 'cmp-1',
+    value: { status: 'insufficient_evidence', reportPath: 'report.html', evidenceRefs: ['ev-01'] },
+  }));
+  const item = (await readLocalHistory(root)).experiments[0]!;
+  assert.equal(item.comparisonStatus, 'completed');
+  assert.equal(item.comparisonDetail, 'insufficient_evidence');
+  assert.equal(item.reportKind, 'Report');
+  assert.equal(item.reportPath, join(experiment, 'report.html'));
+});
+
+test('local history marks unreadable comparison leftovers as unconfirmed', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-unreadable-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const experiment = join(root, 'experiments', 'exp-bad-cmp');
+  await mkdir(experiment, { recursive: true });
+  await writeFile(join(experiment, 'experiment.json'), JSON.stringify({ spec: { schemaVersion: 1, experimentId: 'exp-bad-cmp', taskCaseId: 'case-bad', candidates: [{ candidateId: 'candidate', productId: 'codex', requestedModel: 'model' }], controller: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, comparison: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, runPolicy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 }, outputRoot: experiment }, runIds: [] }));
+  await writeFile(join(experiment, 'report.html'), 'leftover');
+  await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'nope' }));
+  const item = (await readLocalHistory(root)).experiments[0]!;
+  assert.equal(item.comparisonStatus, undefined);
+  assert.equal(item.reportAttemptUnconfirmed, true);
+  assert.equal(item.reportKind, 'Previous report');
+  assert.equal(item.reportPath, join(experiment, 'report.html'));
+});
+
+test('history detail uses shared result fact labels for cleanup and previous report', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-detail-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const experiment = join(root, 'experiments', 'exp-detail');
+  await mkdir(join(experiment, 'runs', 'run-1'), { recursive: true });
+  await writeFile(join(experiment, 'experiment.json'), JSON.stringify({ spec: { schemaVersion: 1, experimentId: 'exp-detail', taskCaseId: 'case-detail', candidates: [{ candidateId: 'candidate', productId: 'codex', requestedModel: 'model' }], controller: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, comparison: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, runPolicy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 }, outputRoot: experiment }, runIds: ['run-1'] }));
+  await writeFile(join(experiment, 'runs', 'run-1', 'record.json'), JSON.stringify({
+    attempt: {
+      schemaVersion: 1,
+      experimentId: 'exp-detail',
+      runId: 'run-1',
+      caseId: 'case-detail',
+      candidate: { candidateId: 'candidate', productId: 'codex', requestedModel: 'model' },
+      policy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 },
+      createdAt: '2026-09-20T00:00:00.000Z',
+    },
+    state: 'finished',
+    stageReached: 'awaiting_controller',
+    outcome: {
+      task: { status: 'incomplete', evidenceRefs: [] },
+      termination: { kind: 'cancelled', code: 'cancelled.user', initiatedBy: 'user' },
+      cleanup: { status: 'unknown', remainingResourceIds: [], evidenceRefs: [] },
+    },
+    trace: { experimentId: 'exp-detail', runId: 'run-1', firstSequence: 1, lastSequence: 1 },
+    artifactRefs: [],
+    warnings: [],
+  }));
+  await writeFile(join(experiment, 'report.html'), 'old');
+  await writeFile(join(experiment, 'comparison-failure.html'), 'diag');
+  await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'cancelled' }));
+  const item = (await readLocalHistory(root)).experiments[0]!;
+  const zh = renderHistoryDetail(createTheme(120, false), 120, item, 'zh').join('\n');
+  assert.match(zh, /清理/);
+  assert.match(zh, /清理状态未知/);
+  assert.match(zh, /对照已取消/);
+  assert.match(zh, /诊断/);
+  assert.match(zh, /此前报告/);
+});
+
 test('local history keeps sealed baseline copies when reporting size', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-history-reclaim-'));
   t.after(async () => rm(root, { recursive: true, force: true }));

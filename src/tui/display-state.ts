@@ -1,4 +1,5 @@
 import type { ExperimentResult } from '../application/experiment.js';
+import type { HistoryExperiment } from '../application/experiment-history-list.js';
 import type { RunOutcome } from '../core/schema.js';
 import { t, type Locale, type MessageKey } from './i18n.js';
 
@@ -56,6 +57,26 @@ export function deriveResultPresentationFromResult(
   comparePending = false,
 ): ResultPresentation {
   return deriveResultPresentation(resultPresentationInputFrom(result, comparePending), locale);
+}
+
+/** Map HistoryExperiment / recentExperiment facts into the same presentation input as live results. */
+export function resultPresentationInputFromHistory(item: HistoryExperiment): ResultPresentationInput {
+  return {
+    task: { status: historyTaskStatus(item.taskStatus) },
+    termination: {
+      kind: historyTerminationKind(item.outcome),
+      code: item.outcome?.trim() || 'history.unknown',
+    },
+    cleanup: { status: historyCleanupStatus(item.cleanupStatus) },
+    comparison: historyComparisonResult(item),
+  };
+}
+
+export function deriveResultPresentationFromHistory(
+  item: HistoryExperiment,
+  locale: Locale,
+): ResultPresentation {
+  return deriveResultPresentation(resultPresentationInputFromHistory(item), locale);
 }
 
 export function deriveResultPresentation(input: ResultPresentationInput, locale: Locale): ResultPresentation {
@@ -228,4 +249,81 @@ function comparisonLabelOf(
 function worseTone(left: ResultTone, right: ResultTone): ResultTone {
   const rank: Record<ResultTone, number> = { ok: 0, neutral: 1, warn: 2, danger: 3 };
   return rank[left] >= rank[right] ? left : right;
+}
+
+const TASK_STATUSES = new Set<RunOutcome['task']['status']>([
+  'apparently_completed',
+  'incomplete',
+  'indeterminate',
+  'not_assessed',
+]);
+
+const TERMINATION_KINDS = new Set<RunOutcome['termination']['kind']>([
+  'completed',
+  'limit_reached',
+  'stalled',
+  'cancelled',
+  'blocked',
+  'failed',
+  'uncertain',
+]);
+
+const CLEANUP_STATUSES = new Set<RunOutcome['cleanup']['status']>([
+  'not_needed',
+  'complete',
+  'incomplete',
+  'unknown',
+]);
+
+function historyTaskStatus(status: string | undefined): RunOutcome['task']['status'] {
+  if (status && TASK_STATUSES.has(status as RunOutcome['task']['status'])) {
+    return status as RunOutcome['task']['status'];
+  }
+  return 'not_assessed';
+}
+
+function historyTerminationKind(outcome: string | undefined): RunOutcome['termination']['kind'] {
+  if (outcome && TERMINATION_KINDS.has(outcome as RunOutcome['termination']['kind'])) {
+    return outcome as RunOutcome['termination']['kind'];
+  }
+  // interrupted / record unread / unknown committed outcomes are not success.
+  return 'uncertain';
+}
+
+function historyCleanupStatus(status: string | undefined): RunOutcome['cleanup']['status'] {
+  if (status && CLEANUP_STATUSES.has(status as RunOutcome['cleanup']['status'])) {
+    return status as RunOutcome['cleanup']['status'];
+  }
+  return 'unknown';
+}
+
+function historyComparisonResult(
+  item: HistoryExperiment,
+): ExperimentResult['comparison']['result'] {
+  const status = item.comparisonStatus;
+  if (!status) {
+    // Missing comparison.json is not "skipped success"; leave classify as unknown via non-union cast.
+    return { status: 'unknown' } as unknown as ExperimentResult['comparison']['result'];
+  }
+  if (status === 'skipped') return { status: 'skipped' };
+  if (status === 'cancelled') return { status: 'cancelled' };
+  if (status === 'failed') {
+    return {
+      status: 'failed',
+      failure: {
+        code: 'agent_failure',
+        message: item.comparisonFailure ?? 'history',
+        attempts: 0,
+      },
+    };
+  }
+  if (status === 'completed') {
+    const valueStatus = item.comparisonDetail === 'insufficient_evidence' ? 'insufficient_evidence' : 'completed';
+    return {
+      status: 'completed',
+      sessionId: 'history',
+      value: { status: valueStatus, reportPath: 'report.html', evidenceRefs: [] },
+    };
+  }
+  return { status: 'unknown' } as unknown as ExperimentResult['comparison']['result'];
 }
