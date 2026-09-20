@@ -308,7 +308,8 @@ export function isRecoveryChrome(model: RunningModel): boolean {
 export function renderTimeline(theme: Theme, width: number, model: RunningModel, height?: number): string[] {
   const locale = model.locale ?? 'en';
   const product = model.productLabel ?? t(locale, 'unknownAgent');
-  if (isPreparing(model)) return renderPrepare(theme, width, model, locale, product);
+  // Prepare/check/copy belongs on the recovery summary surface — not mixed into the activity stream.
+  if (isPreparing(model)) return [];
   // visibleTimeline already applies ALL filtering; keep the branch for non-ALL replay surfaces.
   const visible = model.filter === 'ALL'
     ? model.entries
@@ -375,46 +376,6 @@ function renderFindBar(model: RunningModel, locale: Locale, total: number, selec
 
 function isPreparing(model: RunningModel): boolean {
   return model.preparePhase === 'check' || model.preparePhase === 'copy';
-}
-
-function renderPrepare(theme: Theme, width: number, model: RunningModel, locale: Locale, product: string): string[] {
-  if (model.preparePhase === 'check') {
-    const detail = model.prepareDetail ? model.prepareDetail : t(locale, 'recoveryStagePrepare');
-    const project = model.workspaceProject ?? t(locale, 'projectlessSessions');
-    const session = model.taskTitle ?? t(locale, 'noTaskSummary');
-    return [
-      ` ${t(locale, 'recoveringTitle')}`,
-      '',
-      kv(theme, t(locale, 'fieldSession'), session, width),
-      kv(theme, t(locale, 'fieldProject'), project, width),
-      kv(theme, t(locale, 'statusLabel'), detail, width),
-      '',
-      ` ${theme.style.muted(t(locale, 'recoveringPrepare'))}`,
-    ].map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis)));
-  }
-  const step = model.preparePhase === 'copy' ? 2 : 1;
-  const detail = model.prepareDetail ? ` · ${model.prepareDetail}` : '';
-  const barLabel = t(locale, step === 2 ? 'preparingBar' : 'checkingBar', { step, detail });
-  const marks = [
-    stepLine(theme, 1, step, t(locale, 'stepRestore'), locale),
-    stepLine(theme, 2, step, t(locale, 'stepCopy'), locale),
-    stepLine(theme, 3, step, t(locale, 'stepConfig'), locale),
-    stepLine(theme, 4, step, t(locale, 'stepStart', { product }), locale),
-  ];
-  return [
-    model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : '',
-    ` ${t(locale, 'preparingIn', { product })}`,
-    '',
-    ` ${theme.style.muted(barLabel)}`,
-    '',
-    ...marks,
-  ].filter((line, index) => line || index > 0).map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis)));
-}
-
-function stepLine(theme: Theme, index: number, current: number, label: string, locale: Locale): string {
-  if (index < current) return ` ${theme.style.ok(theme.glyphs.ok)}  ${label}  ${theme.style.ok(t(locale, 'done'))}`;
-  if (index === current) return ` ${theme.style.target(theme.glyphs.dot)}  ${label}  ${theme.style.target(t(locale, 'inProgress'))}`;
-  return theme.style.muted(` ${theme.glyphs.empty}  ${label}  ${t(locale, 'waiting')}`);
 }
 
 export function sourceHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {

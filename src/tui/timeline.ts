@@ -849,9 +849,13 @@ function emitFlush(timeline: TimelineEntry[], itemId: string, titleOf: (row: Tim
 export function filterTraceForSurface(
   entries: readonly TimelineEntry[],
   surface: 'recovery' | 'picker' | 'candidate' | 'compare' | 'result',
+  scope: 'overview' | 'recovery' | 'candidate' | 'comparison' = 'overview',
 ): readonly TimelineEntry[] {
-  if (surface === 'compare') {
+  if (surface === 'compare' || (surface === 'result' && scope === 'comparison')) {
     return entries.filter((entry) => entry.lane === 'comparison' || entry.itemId === 'now:comparison');
+  }
+  if (surface === 'result' && scope === 'overview') {
+    return [];
   }
   if (surface === 'candidate' || surface === 'result') {
     return entries.filter((entry) => {

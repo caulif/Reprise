@@ -135,7 +135,7 @@ test('failed comparison remains distinct from a stalled candidate in both termin
       decision: { status: 'completed', value: { type: 'done', reason: 'no_further_value', rationale: 'Delivery is incomplete.' } },
       comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
     } as never).join('\n');
-    assert.match(text, /stalled/);
+    assert.match(text, /Stalled|stalled/);
     assert.match(text, /Task\s+incomplete/);
     assert.match(text, /Comparison failed/);
     assert.match(text, /protocol/);
@@ -170,7 +170,7 @@ test('result metrics show collected token totals and priced cost', () => {
   assert.match(text, /256 tokens/);
   assert.match(text, /\$0\.49/);
   assert.doesNotMatch(text, /not recorded tokens/);
-  assert.doesNotMatch(text, /not recorded cost/);
+  assert.doesNotMatch(text, /not recorded (cost|usage)/i);
 });
 
 test('compact result keeps Trace on one line', () => {
@@ -281,7 +281,7 @@ test('blocked result is a warning with controller reason and short paths', () =>
   assert.match(text, /\u001b\]8;;file:\/\/\/.*runs[/\\]run-1\u001b\\/);
   assert.doesNotMatch(text, /C:\\exp\\report\.html/);
   assert.doesNotMatch(text, /✗ blocked/);
-  assert.doesNotMatch(text, /Cost not recorded|not recorded/);
+  assert.match(text, /not recorded/);
 });
 
 test('limit_reached result explains the turn cap', () => {

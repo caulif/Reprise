@@ -16,10 +16,12 @@ import {
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
-import type { WorkbenchView } from './workbench.js';
+import type { WorkbenchView, WorkbenchSurfaceScope, ContextBarModel, StatusSummaryModel, StageRailModel, ActivityCardModel, RecoverySummaryModel } from './workbench.js';
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
+import { renderRecoverySummary } from './pages/recovery-summary.js';
+import { createTheme } from './theme.js';
 
 type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
@@ -64,6 +66,8 @@ type Input = {
   readonly timelineReadOffset?: number;
   readonly readingMode?: boolean;
   readonly cwd?: string;
+  readonly surfaceScope?: WorkbenchSurfaceScope;
+  readonly processExpanded?: boolean;
 };
 
 function homeModel(input: Input, envSet: boolean) {
@@ -161,6 +165,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   const envSet = Boolean(input.envName && process.env[input.envName]);
   const home = homeModel(input, envSet);
   const productLabel = chromeProductLabel(input);
+  const locale = input.locale ?? 'en';
+  const chrome = projectChrome(input, productLabel, locale);
   const base: WorkbenchView = {
     page: input.page, cwd: input.cwd ?? process.cwd(),
     ...(input.hasSavedModelConfig ? { modelId: input.modelConfig.modelId, effort: input.modelConfig.effort } : {}),
@@ -170,11 +176,14 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(productLabel ? { productLabel } : {}),
     ...(input.productConfigured !== undefined ? { productConfigured: input.productConfigured } : {}),
     hasTaskCase: Boolean(input.taskCase),
-    locale: input.locale ?? 'en',
+    locale,
     message: input.message,
     ...(input.inlineHelp ? { inlineHelp: true } : {}),
     cancelling: input.cancelling,
     ...(input.comparePending ? { comparePending: true } : {}),
+    ...(input.surfaceScope ? { surfaceScope: input.surfaceScope } : {}),
+    ...(input.processExpanded ? { processExpanded: true } : {}),
+    ...chrome,
     home,
   };
   if (input.page === 'home') return base;
@@ -363,6 +372,84 @@ function chromeProductLabel(input: Input): string | undefined {
     return input.candidateProductLabel || input.productLabel;
   }
   return input.productLabel;
+}
+
+function projectChrome(
+  input: Input,
+  productLabel: string | undefined,
+  locale: Locale,
+): {
+  readonly statusSummary?: StatusSummaryModel;
+  readonly contextBar?: ContextBarModel;
+  readonly stageRail?: StageRailModel;
+  readonly activityCard?: ActivityCardModel;
+  readonly recoverySummary?: RecoverySummaryModel;
+} {
+  const recovery = recoveryModel(input);
+  const contextBar = contextBarOf(input, productLabel, locale);
+  const stageRail = stageRailOf(input, locale);
+  const statusSummary = statusSummaryOf(input, locale);
+  const recoverySummary = recoverySummaryOf(input, recovery, locale);
+  return {
+    ...(statusSummary ? { statusSummary } : {}),
+    ...(contextBar ? { contextBar } : {}),
+    ...(stageRail ? { stageRail } : {}),
+    ...(recoverySummary ? { recoverySummary } : {}),
+  };
+}
+
+function contextBarOf(input: Input, productLabel: string | undefined, locale: Locale): ContextBarModel | undefined {
+  const workflowPages = new Set(['candidate-product', 'candidate-model', 'confirm', 'running', 'result', 'preflight']);
+  if (!workflowPages.has(input.page)) return undefined;
+  const taskTitle = taskTitleOf(input.taskCase, locale);
+  return {
+    ...(taskTitle ? { taskTitle } : {}),
+    ...(productLabel ? { productLabel } : {}),
+    ...(input.candidate?.requestedModel ? { modelLabel: input.candidate.requestedModel } : {}),
+    ...(input.sourceProductLabel ? { sourceLabel: input.sourceProductLabel } : {}),
+  };
+}
+
+function stageRailOf(input: Input, locale: Locale): StageRailModel | undefined {
+  if (input.page === 'running' || input.page === 'result' || input.page === 'confirm'
+    || input.page === 'candidate-product' || input.page === 'candidate-model') {
+    const compared = input.preparePhase === 'compare'
+      || (input.page === 'result' && input.result?.comparison.result.status !== 'skipped');
+    const marks = [
+      `✓ ${t(locale, 'recoveryField')}`,
+      `${input.page === 'candidate-product' ? '●' : '✓'} ${t(locale, 'candidateLabel')}`,
+      `${input.page === 'running' ? '●' : input.page === 'result' ? '✓' : '○'} ${t(locale, 'runDesc')}`,
+      `${compared ? (input.preparePhase === 'compare' ? '●' : '✓') : '○'} ${t(locale, 'resultComparison')}`,
+    ];
+    return { text: marks.join('  ') };
+  }
+  return undefined;
+}
+
+function statusSummaryOf(input: Input, locale: Locale): StatusSummaryModel | undefined {
+  if (input.page === 'result' && input.result) {
+    const cmp = input.result.comparison.result.status;
+    const label = cmp === 'cancelled' ? t(locale, 'comparisonCancelledWord')
+      : cmp === 'failed' ? t(locale, 'comparisonFailedWord')
+        : cmp === 'skipped' ? t(locale, 'candidateEndedShort')
+          : t(locale, 'done');
+    const tone = cmp === 'failed' || cmp === 'cancelled' ? 'warn' as const : 'ok' as const;
+    return { label, tone };
+  }
+  if (input.cancelling) return { label: t(locale, 'hintCancel'), tone: 'warn' };
+  return undefined;
+}
+
+function recoverySummaryOf(
+  input: Input,
+  recovery: import('./pages/run.js').RecoveryPreviewModel | undefined,
+  locale: Locale,
+): RecoverySummaryModel | undefined {
+  const picker = input.page === 'candidate-product' || input.page === 'candidate-model';
+  if (!picker || !recovery) return undefined;
+  const theme = createTheme(80, false);
+  const lines = renderRecoverySummary(theme, 80, recovery, locale);
+  return { lines, expandable: input.timeline.length > 0 };
 }
 
 function previewStatus(status: 'recovered' | 'partial' | 'blocked' | 'failed'): 'recovered' | 'partial' | 'blocked' | 'failed' {

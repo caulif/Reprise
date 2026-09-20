@@ -68,6 +68,8 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
       && cache.preparePhase === this.preparePhase
       && cache.runPhase === this.runPhase
       && cache.expandedFoldsKey === foldsKey
+      && cache.surfaceScope === this.surfaceScope
+      && cache.processExpanded === this.processExpanded
     ) {
       return cache.result;
     }
@@ -84,7 +86,12 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
             : this.page === "running"
               ? "candidate"
               : "picker";
-    const result = filterTraceForSurface(visible, surface);
+    const scope = this.page === "result"
+      ? (this.processExpanded
+        ? (this.surfaceScope === "comparison" ? "comparison" : "candidate")
+        : "overview")
+      : (this.surfaceScope || (recovering ? "recovery" : "candidate"));
+    const result = filterTraceForSurface(visible, surface, scope);
     this.visibleTimelineCache = {
       timelineRevision: this.timelineRevision,
       filterIndex,
@@ -92,6 +99,8 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
       preparePhase: this.preparePhase,
       runPhase: this.runPhase,
       expandedFoldsKey: foldsKey,
+      surfaceScope: this.surfaceScope,
+      processExpanded: this.processExpanded,
       result,
     };
     return result;

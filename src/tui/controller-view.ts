@@ -225,5 +225,7 @@ export function view(c: IntakeTui): WorkbenchView {
     ...(c.finding ? { finding: true, findQuery: c.findQuery, findCursor: c.findCursor } : {}),
     ...(c.timelineReadOffset ? { timelineReadOffset: c.timelineReadOffset } : {}),
     ...(c.readingMode ? { readingMode: true } : {}),
+    surfaceScope: c.surfaceScope,
+    ...(c.processExpanded ? { processExpanded: true } : {}),
   });
 }
