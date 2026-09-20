@@ -20,8 +20,6 @@ import type { WorkbenchView, WorkbenchSurfaceScope, ContextBarModel, StatusSumma
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
-import { renderRecoverySummary } from './pages/recovery-summary.js';
-import { createTheme } from './theme.js';
 
 type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
@@ -58,6 +56,7 @@ type Input = {
   readonly nowMs?: number;
   readonly activeParallel?: number;
   readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly activityDetail?: TimelineEntry; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
+  readonly activityDetailOffset?: number;
   readonly phaseClocks?: PhaseClockBounds;
   readonly comparisonAttemptId?: string;
   readonly finding?: boolean;
@@ -133,6 +132,7 @@ function runningModel(input: Input) {
     ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
     ...(input.expandedFolds?.length ? { expandedFolds: input.expandedFolds } : {}),
     ...(input.activityDetail ? { activityDetail: input.activityDetail } : {}),
+    ...(input.activityDetailOffset ? { activityDetailOffset: input.activityDetailOffset } : {}),
     locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
     ...(input.candidate?.requestedModel ? { candidateModel: input.candidate.requestedModel } : {}),
     ...(input.taskCase ? {
@@ -389,7 +389,7 @@ function projectChrome(
   const contextBar = contextBarOf(input, productLabel, locale);
   const stageRail = stageRailOf(input, locale);
   const statusSummary = statusSummaryOf(input, locale);
-  const recoverySummary = recoverySummaryOf(input, recovery, locale);
+  const recoverySummary = recoverySummaryOf(input, recovery);
   return {
     ...(statusSummary ? { statusSummary } : {}),
     ...(contextBar ? { contextBar } : {}),
@@ -443,13 +443,10 @@ function statusSummaryOf(input: Input, locale: Locale): StatusSummaryModel | und
 function recoverySummaryOf(
   input: Input,
   recovery: import('./pages/run.js').RecoveryPreviewModel | undefined,
-  locale: Locale,
 ): RecoverySummaryModel | undefined {
   const picker = input.page === 'candidate-product' || input.page === 'candidate-model';
   if (!picker || !recovery) return undefined;
-  const theme = createTheme(80, false);
-  const lines = renderRecoverySummary(theme, 80, recovery, locale);
-  return { lines, expandable: input.timeline.length > 0 };
+  return { recovery, expandable: input.timeline.length > 0 };
 }
 
 function previewStatus(status: 'recovered' | 'partial' | 'blocked' | 'failed'): 'recovered' | 'partial' | 'blocked' | 'failed' {

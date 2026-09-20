@@ -73,6 +73,7 @@ export type ControllerHandle = {
   helpOverlay: { hide(): void } | undefined;
   activityDetailOverlay: { hide(): void } | undefined;
   activityDetailEntry: TimelineEntry | undefined;
+  activityDetailOffset: number;
   activityDetailRestore: { anchor?: string; offset: number; following: boolean } | undefined;
   inlineHelp: boolean;
   composer: string;
@@ -220,6 +221,13 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     startupActive: Boolean(c.startupAbort),
   }, input);
   if (global) return applyGlobal(c, global.action);
+  if (c.activityDetailEntry && (matchesKey(input, 'up') || matchesKey(input, 'down') || matchesKey(input, 'pageUp') || matchesKey(input, 'pageDown'))) {
+    const delta = matchesKey(input, 'up') ? -1 : matchesKey(input, 'down') ? 1 : matchesKey(input, 'pageUp') ? -8 : 8;
+    c.activityDetailOffset = Math.max(0, c.activityDetailOffset + delta);
+    c.showActivityDetail(c.activityDetailEntry);
+    c.render();
+    return { consume: true };
+  }
   if (c.page === 'running') return applyRunning(c, input);
   if (c.page === 'config') return c.configPageInput(input);
   if (c.page === 'history') return matchesKey(input, 'escape') ? c.backToHome() : c.historyInput(input);
@@ -237,6 +245,9 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'candidate-model') return applyCandidateModel(c, input);
   if (c.page === 'confirm') return applyConfirm(c, input) ?? consumeWheel(data);
   if (c.page === 'result') {
+    // A settled compare gate still owns the keypress; do not let a second c
+    // fall through into an unrelated page action or appear to start another attempt.
+    if (!c.compareChoice && (input === 'c' || input === 'C')) return { consume: true };
     const pointed = applyResultPointer(c, data);
     if (pointed) return pointed;
     const artifacts = artifactsFromResult(c.result);
@@ -738,7 +749,7 @@ function moveTimeline(c: ControllerHandle, amount: number): Consume {
 function jumpFindHit(c: ControllerHandle, direction: 1 | -1): Consume {
   expandFoldsForQuery(c);
   const entries = c.visibleTimeline();
-  const hits = canvasHitIndices(entries, c.findQuery);
+  const hits = canvasHitIndices(entries, c.findQuery, c.timelineRevision);
   if (!hits.length) {
     // Keep the pre-find / current anchor; do not snap to live bottom.
     c.message = t(c.locale, 'findNone');

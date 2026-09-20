@@ -99,16 +99,24 @@ export function syncTimelineSelection(c: TimelineReadState): void {
   }
   const restored = restoreTimelineSelection(visible, previous, c.timelineSelected);
   c.timelineSelected = restored.selected;
-  c.timelineFollowing = restored.following;
+  // A paused reader stays paused even when filtering leaves the selected row last.
+  // Following is an explicit user intent (End), not a side effect of array shape.
+  c.timelineFollowing = false;
   const current = visible[c.timelineSelected];
   if (current) c.timelineAnchor = timelineIdentity(current);
   // Keep wrapped-line offset when the same entry stays selected; reset only on identity change.
   c.timelineReadOffset = c.timelineAnchor === previous ? previousOffset : 0;
 }
 
-export function canvasHitIndices(entries: readonly TimelineEntry[], query: string): number[] {
+let searchCache: { key: string; query: string; hits: number[] } | undefined;
+
+export function canvasHitIndices(entries: readonly TimelineEntry[], query: string, timelineRevision = 0): number[] {
   if (!query.trim()) return [];
-  return entries.flatMap((entry, index) => (matchesCanvasQuery(entry, query) ? [index] : []));
+  const corpusKey = publicSearchCorpusKey(entries, timelineRevision);
+  if (searchCache?.key === corpusKey && searchCache.query === query) return searchCache.hits;
+  const hits = entries.flatMap((entry, index) => (matchesCanvasQuery(entry, query) ? [index] : []));
+  searchCache = { key: corpusKey, query, hits };
+  return hits;
 }
 
 export function nextHitIndex(hits: readonly number[], current: number, direction: 1 | -1): number {
@@ -157,7 +165,13 @@ export function publicSearchCorpusKey(
   entries: readonly TimelineEntry[],
   timelineRevision: number,
 ): string {
-  return `${timelineRevision}:${entries.length}:${entries.map((entry) => timelineIdentity(entry)).join(',')}`;
+  const publicShape = entries.map((entry) => [
+    timelineIdentity(entry),
+    entry.title,
+    entry.detail ?? '',
+    entry.object ?? '',
+  ].join('\u0001')).join('\u0002');
+  return `${timelineRevision}:${publicShape}`;
 }
 
 function isVisibleMessage(entry: TimelineEntry): boolean {

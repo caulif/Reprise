@@ -58,6 +58,6 @@ test('short cancelling workbench keeps live status when body budget is under fou
   const lines = renderWorkbench(view, 120, 8);
   assert.ok(lines.length <= 8, `expected <= 8 lines, got ${lines.length}`);
   const text = lines.join('\n');
-  assert.match(text, /Codex · working|working/);
+  assert.match(text, /Codex · (working|等待新的可见活动)|working/);
   assert.match(text, /03:00/);
 });

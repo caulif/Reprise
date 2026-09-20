@@ -113,13 +113,13 @@ test('result page footer lists path open keys and c during compare gate', () => 
     ['o', 'Open report'],
     ['h', 'History final'],
     ['f', 'Candidate final'],
-    ['Esc', 'Home'],
+    ['?', 'Help'],
   ]);
   assert.deepEqual(resultHints('en', true, artifacts), [
     ['c', 'Generate comparison card'],
     ['o', 'Open report'],
     ['h', 'History final'],
-    ['f', 'Candidate final'],
+    ['?', 'Help'],
   ]);
   assert.deepEqual(resultHints('en', false, {}), [
     ['Esc', 'Home'],
@@ -140,7 +140,7 @@ test('failed comparison remains distinct from a stalled candidate in both termin
       comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
     } as never).join('\n');
     assert.match(text, /Stalled|stalled/);
-    assert.match(text, /Task\s+incomplete/);
+    assert.match(text, /Task\s+Incomplete/);
     assert.match(text, /Comparison failed/);
     assert.match(text, /protocol/);
     assert.match(text, /Diagnostic/);
@@ -155,7 +155,7 @@ test('Controller opening failure names the stage and retryability without a cand
     comparison: { result: { status: 'skipped' } },
   } as never, 'zh').join('\n');
   assert.match(text, /Controller 开场理解.*暂时失败/);
-  assert.match(text, /not_assessed/);
+  assert.match(text, /未评估/);
   assert.doesNotMatch(text, /provider detail/);
 });
 

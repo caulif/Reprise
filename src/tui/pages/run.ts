@@ -97,6 +97,7 @@ export type RunningModel = {
   readonly comparisonAttemptId?: string;
   readonly expandedFolds?: readonly string[];
   readonly activityDetail?: TimelineEntry;
+  readonly activityDetailOffset?: number;
   readonly candidateSessionId?: string;
   readonly sourceTimeline?: readonly TimelineEntry[];
   readonly timelineRevision?: number;
@@ -362,6 +363,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
       detailWidth,
       activityDetailModel(model.activityDetail, product, locale),
       locale,
+      Math.max(4, (height ?? 16) - 8),
     );
     return joinColumns(main, detail, mainWidth, detailWidth, 1, theme);
   }

@@ -217,6 +217,7 @@ export function view(c: IntakeTui): WorkbenchView {
     timelineFollowing: c.timelineFollowing,
     expandedFolds: c.expandedFolds,
     ...(c.activityDetailEntry ? { activityDetail: c.activityDetailEntry } : {}),
+    ...(c.activityDetailOffset > 0 ? { activityDetailOffset: c.activityDetailOffset } : {}),
     runStartedAt: c.runStartedAt,
     nowMs: c.nowMs(),
     activeParallel: activeNodes(c.activityIndex).length,

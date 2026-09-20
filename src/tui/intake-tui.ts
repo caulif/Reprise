@@ -235,6 +235,7 @@ export class IntakeTui {
   helpOverlay: OverlayHandle | undefined;
   activityDetailOverlay: OverlayHandle | undefined;
   activityDetailEntry: TimelineEntry | undefined;
+  activityDetailOffset = 0;
   activityDetailRestore: { anchor?: string; offset: number; following: boolean } | undefined;
   commandOverlay: OverlayHandle | undefined;
   commandSelectList: SelectList | undefined;

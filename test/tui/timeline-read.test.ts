@@ -70,6 +70,20 @@ test('missing id anchor keeps previous selection instead of snapping to end', ()
   assert.deepEqual(restoreTimelineSelection(rows, 'id:gone', 1), { selected: 1, following: false });
 });
 
+test('paused selection remains paused when filtering leaves it at the end', () => {
+  const rows = [entry(1, 'A'), entry(2, 'B')];
+  const state = {
+    timelineFollowing: false,
+    timelineSelected: 1,
+    timelineAnchor: timelineIdentity(rows[0]!),
+    timelineReadOffset: 0,
+    visibleTimeline: () => [rows[1]!],
+  };
+  syncTimelineSelection(state);
+  assert.equal(state.timelineSelected, 0);
+  assert.equal(state.timelineFollowing, false);
+});
+
 test('canvas find locates hits without dropping surrounding rows', () => {
   const rows = [
     entry(1, 'Visible response', { detail: 'alpha' }),
@@ -142,9 +156,10 @@ test('find hit covering a folded turn returns the fold id', () => {
   const current = entry(11, 'Input to Target', { detail: 'now', source: 'CONTROLLER', lane: 'controller' });
   const unfolded = [hidden, later, current];
   const folded = foldProcessEntries(unfolded, new Set());
-  assert.ok(folded.some((row) => row.itemId === 'fold:turn:1'));
-  assert.ok(coveringFoldIds(unfolded, hidden).includes('fold:turn:1'));
-  assert.equal(selectedIndexAfterFold(unfolded, folded, hidden), folded.findIndex((row) => row.itemId === 'fold:turn:1'));
+  const fold = folded.find((row) => row.itemId?.startsWith('fold:turn:'));
+  assert.ok(fold);
+  assert.ok(coveringFoldIds(unfolded, hidden).includes(fold.itemId!));
+  assert.equal(selectedIndexAfterFold(unfolded, folded, hidden), folded.indexOf(fold));
 });
 
 test('terminal restore guard stops once on uncaughtException', () => {

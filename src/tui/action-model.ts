@@ -98,6 +98,21 @@ export function listActions(ctx: ActionContext): readonly UiAction[] {
       return resultActions(mode, ctx.artifacts ?? {});
     case 'confirm':
       return confirmActions(mode);
+    case 'home':
+      return [action('show-help', 'hintHelp', ['?'], 'readonly', 5)];
+    case 'source':
+    case 'preflight':
+    case 'candidate-product':
+    case 'candidate-model':
+    case 'config':
+    case 'sessions':
+    case 'inspection':
+    case 'history':
+    case 'history-detail':
+      return [
+        action('back', 'hintBack', ['escape', 'b'], 'navigate', 30),
+        action('show-help', 'hintHelp', ['?'], 'readonly', 5),
+      ];
     case 'error':
       return [action('home', 'hintHome', ['escape', 'enter', 'b'], 'navigate', 10)];
     default:
@@ -221,6 +236,17 @@ export function footerHintPairs(
     const key = displayKey(item.keys[0] ?? '');
     pairs.push([key, t(locale, item.labelKey)]);
     if (pairs.length >= max) break;
+  }
+  // Artifact-heavy result pages must retain an explicit return and help slot;
+  // otherwise four openable files crowd out the only escape path.
+  const artifactCount = actions.filter((item) => item.id.startsWith('open-') && item.enabled).length;
+  if (artifactCount >= 2) {
+    const required = actions.filter((item) => item.enabled && (item.id === 'home' || item.id === 'back' || item.id === 'show-help'));
+    for (const item of required) {
+      if (pairs.some(([key]) => key === displayKey(item.keys[0] ?? ''))) continue;
+      if (pairs.length >= max) pairs.pop();
+      pairs.push([displayKey(item.keys[0] ?? ''), t(locale, item.labelKey)]);
+    }
   }
   return pairs;
 }

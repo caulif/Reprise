@@ -33,7 +33,7 @@ export function composeWorkbenchGeometry(input: {
   const messageRows = Math.max(0, input.messageRows);
   const footerRows = Math.max(0, input.footerRows);
   const chrome = headerRows + railRows + messageRows + footerRows;
-  const bodyRows = Math.max(0, height - chrome);
+  const bodyRows = Math.max(0, height - chrome - (height < 16 ? 1 : 0));
   let row = 0;
   const header = rect(row, width, headerRows);
   row += headerRows;
@@ -119,14 +119,18 @@ export function budgetChrome(height: number | undefined, request: ChromeRequest)
   let ftr = short ? Math.min(1, footer) : footer;
 
   const fixed = () => hdr + context + stage + activity + notice + ftr;
-  const bodyOf = () => Math.max(1, height - fixed());
+  // Keep one spare row on very short screens for terminal repaint/notice
+  // transitions; this prevents a four-row body from hiding the live status.
+  const bodyOf = () => Math.max(1, height - fixed() - (height < 16 ? 1 : 0));
 
   // Drop lowest-priority chrome until body stays readable (≥4 when possible).
   const minBody = height >= 16 ? 4 : 1;
   while (bodyOf() < minBody && stage > 0) stage -= 1;
   while (bodyOf() < minBody && context > 0) context -= 1;
   while (bodyOf() < minBody && activity > 1) activity -= 1;
-  while (bodyOf() < minBody && notice > 0) notice -= 1;
+  // Keep one notice row on short screens so cancellation/error state is not
+  // silently replaced by an apparently healthy live view.
+  while (bodyOf() < minBody && notice > 1) notice -= 1;
   while (bodyOf() < minBody && activity > 0) activity -= 1;
   while (bodyOf() < 1 && hdr > 1) hdr -= 1;
   while (bodyOf() < 1 && ftr > 1) ftr -= 1;

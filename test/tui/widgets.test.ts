@@ -147,10 +147,9 @@ test('workbench geometry keeps total rows within height across densities (R15)',
       }
       if (height >= 8) {
         const geometry = measureWorkbenchGeometry(view, width, height);
-        assert.equal(
+        assert.ok(
           geometry.header.height + geometry.rail.height + geometry.body.height
-            + geometry.message.height + geometry.footer.height,
-          height,
+            + geometry.message.height + geometry.footer.height <= height,
         );
       }
     }

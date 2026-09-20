@@ -286,18 +286,21 @@ export function IntakeTui_hideHelp(this: IntakeTui): void {
   }
 
 export function IntakeTui_showActivityDetail(this: IntakeTui, entry: TimelineEntry): { consume: true } {
-    this.activityDetailRestore = {
-      ...(this.timelineAnchor ? { anchor: this.timelineAnchor } : {}),
-      offset: this.timelineReadOffset,
-      following: this.timelineFollowing,
-    };
+    if (this.activityDetailEntry !== entry) {
+      this.activityDetailRestore = {
+        ...(this.timelineAnchor ? { anchor: this.timelineAnchor } : {}),
+        offset: this.timelineReadOffset,
+        following: this.timelineFollowing,
+      };
+      this.activityDetailOffset = 0;
+    }
     this.activityDetailEntry = entry;
     const theme = createTheme(this.tui.terminal?.columns ?? 120);
     const product = this.selectedCandidate?.productId
       ?? this.candidateProductId
       ?? this.activeProductId
       ?? '';
-    const model = activityDetailModel(entry, product, this.locale);
+    const model = activityDetailModel(entry, product, this.locale, this.activityDetailOffset);
     if (showsActivityDetailSidebar(theme)) {
       // Wide density: detail is rendered beside the timeline via view projection.
       this.activityDetailOverlay?.hide();
@@ -316,6 +319,7 @@ export function IntakeTui_hideActivityDetail(this: IntakeTui): void {
     this.activityDetailOverlay?.hide();
     this.activityDetailOverlay = undefined;
     this.activityDetailEntry = undefined;
+    this.activityDetailOffset = 0;
     const restore = this.activityDetailRestore;
     this.activityDetailRestore = undefined;
     if (restore) {

@@ -176,6 +176,17 @@ test('T05 fold ids use first stable event identity, not turn index', () => {
   assert.doesNotMatch(fold.itemId, /^fold:turn:\d+$/);
 });
 
+test('T05 folded activity preserves refs from every member', () => {
+  const entries: TimelineEntry[] = [
+    { sequence: 1, occurredAt: timestamp, source: 'HARNESS', title: 'Controller note', kind: 'narrate', role: 'controller', eventRefs: [{ eventId: 'input', sequence: 1 }] },
+    { sequence: 2, occurredAt: timestamp, source: 'HARNESS', title: 'Read a', kind: 'investigate', role: 'controller', eventRefs: [{ eventId: 'read-a', sequence: 2 }] },
+    { sequence: 3, occurredAt: timestamp, source: 'HARNESS', title: 'Read b', kind: 'investigate', role: 'controller', eventRefs: [{ eventId: 'read-b', sequence: 3 }] },
+  ];
+  const folded = foldProcessEntries(entries, new Set());
+  const row = folded.find((entry) => entry.kind === 'fold' && entry.itemId?.startsWith('fold:think:'));
+  assert.deepEqual(row?.eventRefs?.map((ref) => ref.eventId), ['read-a', 'read-b']);
+});
+
 test('T05 detail model exposes public refs only and never model_request payload', () => {
   const entry: TimelineEntry = {
     sequence: 9,
@@ -199,13 +210,30 @@ test('T05 detail model exposes public refs only and never model_request payload'
   assert.match(model.body, /路径不在可写范围/);
   const painted = renderActivityDetail(createTheme(80, false), 80, model, 'zh').join('\n');
   assert.match(painted, /活动详情/);
-  assert.match(painted, /打开原记录/);
+  assert.match(painted, /Refs|引用/);
   const privateRow: TimelineEntry = {
     ...entry,
     eventType: 'agent.model_request',
     detail: '{"messages":[{"role":"system","content":"SECRET"}]}',
   };
   assert.equal(activityDetailModel(privateRow, 'X', 'zh').body, privateRow.title);
+});
+
+test('T05 detail body can page through wrapped public text', () => {
+  const entry: TimelineEntry = {
+    sequence: 9,
+    occurredAt: timestamp,
+    source: 'HARNESS',
+    title: 'Public detail',
+    detail: Array.from({ length: 24 }, (_, index) => `line-${index + 1}`).join('\n'),
+    role: 'recovery',
+    kind: 'narrate',
+  };
+  const first = renderActivityDetail(createTheme(40, false), 40, activityDetailModel(entry, 'Codex', 'en', 0), 'en', 5).join('\n');
+  const later = renderActivityDetail(createTheme(40, false), 40, activityDetailModel(entry, 'Codex', 'en', 10), 'en', 5).join('\n');
+  assert.match(first, /line-1/);
+  assert.doesNotMatch(first, /line-20/);
+  assert.match(later, /line-11/);
 });
 
 test('T05 working caption waits for visible activity', () => {

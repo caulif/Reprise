@@ -482,7 +482,7 @@ function liveStatusLine(
   const pulse = Math.floor(tick / 400) % 2 === 0 ? '*' : theme.glyphs.empty;
   const role = liveStatusRole(live, locale, product);
   const action = live ? liveCaption(live, locale) : t(locale, 'waitingVisibleActivity');
-  const left = ` ${pulse} ${role} · ${action}`;
+  const left = ` ${pulse} ${sanitizeLiveCaption(`${role} · ${action}`)}`;
   const clock = sanitizeLiveCaption(elapsed.trim() || '00:00') || '00:00';
   const clockWidth = Math.max(5, visibleWidth(clock));
   const leftWidth = Math.max(8, width - clockWidth - 1);

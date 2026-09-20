@@ -9,12 +9,12 @@ import { historyDetailHints, historyHints, renderHistory, renderHistoryDetail, t
 import { homeHints, renderHome, type HomeModel } from './pages/home.js';
 import { inspectionHints, renderInspection, renderSessions, sessionsHints, type InspectionModel, type SessionsModel } from './pages/intake.js';
 import { renderFailure, renderResult, failureHints } from './pages/result.js';
-import { renderPrepareSummary } from './pages/recovery-summary.js';
+import { renderPrepareSummary, renderRecoverySummary } from './pages/recovery-summary.js';
 import { candidateModelHints, candidateProductHints, renderCandidateModelPicker, renderCandidateProductPicker, type CandidateModelPage, type CandidateProductModel } from './pages/candidate.js';
 import {
   confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderPreflight, renderSource, renderTimeline,
   runningChrome, sourceHints,
-  type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
+  type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel, type RecoveryPreviewModel,
 } from './pages/run.js';
 import { t, type Locale } from './i18n.js';
 import { OVERLAY_PAGES, overlayChromeRows, renderOverlaySheet } from './overlay-sheet.js';
@@ -60,7 +60,7 @@ export type ContextBarModel = {
 export type StageRailModel = { readonly text: string };
 export type ActivityCardModel = { readonly lines: readonly string[] };
 export type NoticeModel = { readonly text: string; readonly tone?: 'info' | 'warn' | 'danger' };
-export type RecoverySummaryModel = { readonly lines: readonly string[]; readonly expandable: boolean };
+export type RecoverySummaryModel = { readonly recovery: RecoveryPreviewModel; readonly expandable: boolean };
 
 export type WorkbenchView = {
   readonly page: WorkbenchPage;
@@ -390,13 +390,13 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
   if (view.page === 'source' && view.source) return renderSource(theme, width, view.source);
   if (view.page === 'candidate-product' && view.candidateProduct) {
     return withProcess(theme, width, [
-      ...recoverySummaryLines(view),
+      ...recoverySummaryLines(theme, view, width),
       ...renderCandidateProductPicker(theme, width, view.candidateProduct),
     ], view, height, t(locale, 'viewRecoveryProcess'));
   }
   if (view.page === 'candidate-model' && view.candidateModel) {
     return withProcess(theme, width, [
-      ...recoverySummaryLines(view),
+      ...recoverySummaryLines(theme, view, width),
       ...renderCandidateModelPicker(theme, width, view.candidateModel),
     ], view, height, t(locale, 'viewRecoveryProcess'));
   }
@@ -412,8 +412,9 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
   return [];
 }
 
-function recoverySummaryLines(view: WorkbenchView): string[] {
-  const lines = view.recoverySummary?.lines ?? [];
+function recoverySummaryLines(theme: Theme, view: WorkbenchView, width: number): string[] {
+  const summary = view.recoverySummary;
+  const lines = summary ? renderRecoverySummary(theme, width, summary.recovery, view.locale ?? 'en') : [];
   return lines.length ? [...lines, ''] : [];
 }
 

@@ -5,6 +5,7 @@ import {
   projectAssistantVisible,
   uniqueLeafNames,
 } from './agent-activity.js';
+import { mergeEventRefs } from './activity-index.js';
 import { timelineIdentity } from './timeline-read.js';
 import { expandedFoldsKey, timelineEntriesKey } from './timeline-revision.js';
 import { isNowRow, type TimelineEntry } from './timeline.js';
@@ -82,7 +83,6 @@ export function foldProcessEntries(
     const sent = turn.find((entry) => isPresentedInput(entry) && !entry.title.startsWith('Prompt ·'));
     const preview = (sent?.detail ?? sent?.title ?? '').replace(/\s+/g, ' ').slice(0, 48);
     const probe = sent?.title.includes('verify') || sent?.title.includes('探测');
-    const head = turn[0];
     out.push({
       sequence: turn.at(-1)?.sequence ?? index,
       occurredAt: turn.at(-1)?.occurredAt ?? '',
@@ -93,7 +93,7 @@ export function foldProcessEntries(
       itemId: id,
       count: turn.length,
       role: 'controller',
-      ...(head?.eventRefs?.length ? { eventRefs: head.eventRefs } : {}),
+      ...mergeRefs(turn),
     });
   }
   const result = expandFoldLeaves(out, expandedIds);
@@ -180,7 +180,7 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
       kind: 'fold',
       itemId: thinkFoldId(historical),
       count: callCount,
-      ...(historical[0]?.eventRefs?.length ? { eventRefs: historical[0].eventRefs } : {}),
+      ...mergeRefs(historical),
       ...(objects.length ? { detail: objects.join(' · '), object: objects.join(' · ') } : {}),
     });
     out.push(...active);
@@ -192,7 +192,8 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
       out.push(entry);
       continue;
     }
-    if (entry.kind === 'investigate' && entry.level !== 'error') {
+    const previous = tools.at(-1);
+    if (entry.kind === 'investigate' && entry.level !== 'error' && sameActivityScope(previous, entry)) {
       tools.push(entry);
       continue;
     }
@@ -201,6 +202,25 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
   }
   flush();
   return out;
+}
+
+function mergeRefs(entries: readonly TimelineEntry[]): { readonly eventRefs?: readonly import('./activity-index.js').ActivityEventRef[] } {
+  const refs = entries.reduce<readonly import('./activity-index.js').ActivityEventRef[]>(
+    (all, entry) => mergeEventRefs(all, entry.eventRefs),
+    [],
+  );
+  return refs.length ? { eventRefs: refs } : {};
+}
+
+function sameActivityScope(previous: TimelineEntry | undefined, next: TimelineEntry): boolean {
+  if (!previous) return true;
+  const previousRole = entryRole(previous);
+  const nextRole = entryRole(next);
+  if (previousRole !== nextRole) return false;
+  if (previous.sessionId && next.sessionId && previous.sessionId !== next.sessionId) return false;
+  if (previous.turnId && next.turnId && previous.turnId !== next.turnId) return false;
+  if (previous.lane && next.lane && previous.lane !== next.lane) return false;
+  return true;
 }
 
 export function collapseEndedThinkFolds(entries: readonly TimelineEntry[], expandedIds: readonly string[]): string[] {

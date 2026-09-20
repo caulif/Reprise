@@ -10,6 +10,7 @@ import type { Theme } from '../theme.js';
 import type { WorkbenchSurfaceScope } from '../workbench-layout.js';
 import { kv, kvLinkBlock, panel, panelWithHits, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
+import { comparisonPresentation, displayCleanupStatus, displayTaskStatus, displayTerminationKind } from '../display-copy.js';
 
 export type { ActionArtifacts };
 
@@ -207,26 +208,16 @@ export function failureHints(locale: Locale = 'en'): readonly (readonly [string,
 }
 
 function taskAssessmentWord(status: string, locale: Locale): string {
-  if (status === 'apparently_completed') return t(locale, 'taskApparentlyCompleted');
-  return status;
+  return displayTaskStatus(status, locale);
 }
 
 function terminationWord(kind: string, locale: Locale): string {
-  if (kind === 'completed') return t(locale, 'terminationCompleted');
-  if (kind === 'failed') return t(locale, 'terminationFailed');
-  if (kind === 'cancelled') return t(locale, 'terminationCancelled');
-  if (kind === 'blocked') return t(locale, 'terminationBlocked');
-  if (kind === 'stalled') return t(locale, 'terminationStalled');
-  if (kind === 'limit_reached') return t(locale, 'terminationLimit');
-  return kind;
+  return displayTerminationKind(kind, locale);
 }
 
 function cleanupWord(status: string | undefined, vacant: string, locale: Locale): string {
   if (!status) return vacant;
-  if (status === 'complete') return t(locale, 'cleanupComplete');
-  if (status === 'incomplete') return t(locale, 'cleanupIncomplete');
-  if (status === 'unknown') return t(locale, 'cleanupUnknown');
-  return status;
+  return displayCleanupStatus(status, locale);
 }
 
 function nextStepWord(_result: ExperimentResult, comparePending: boolean, locale: Locale): string {
@@ -242,16 +233,7 @@ function reportLinkKind(comparison: ExperimentResult['comparison']['result']): '
 }
 
 function comparisonWord(comparison: ExperimentResult['comparison']['result'], locale: Locale): string {
-  if (comparison.status === 'failed') {
-    return `${t(locale, 'comparisonFailedWord')} (${comparison.failure.kind ?? comparison.failure.code})`;
-  }
-  if (comparison.status === 'cancelled') return t(locale, 'comparisonCancelledWord');
-  if (comparison.status === 'skipped') return t(locale, 'comparisonSkipped');
-  if (comparison.status === 'completed' && 'value' in comparison && comparison.value?.status === 'insufficient_evidence') {
-    return t(locale, 'comparisonInsufficient');
-  }
-  if (comparison.status === 'completed') return t(locale, 'comparisonDone');
-  return t(locale, 'comparisonUnknownWord');
+  return comparisonPresentation(comparison, locale).word;
 }
 
 function envelopeHeadline(result: ExperimentResult): string | undefined {

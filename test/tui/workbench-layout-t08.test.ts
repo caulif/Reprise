@@ -71,11 +71,7 @@ test('T08: 80x24 picker keeps recovery summary and selection without dumping the
     message: '',
     locale: 'zh',
     recoverySummary: {
-      lines: [
-        ' 恢复  已恢复',
-        ' 摘要  可以继续',
-        ' 未解决  2',
-      ],
+      recovery: { status: 'ready', summary: '可以继续', unresolved: ['one', 'two'], changedPathCount: 0 },
       expandable: true,
     },
     candidateModel: {

@@ -82,9 +82,9 @@ export type ActivityDetailModel = {
   readonly sequence: number;
   readonly statusLabel: string;
   readonly eventRefs: readonly string[];
+  readonly offset?: number;
   readonly truncated?: boolean;
   readonly linkUnknown?: boolean;
-  readonly openOriginalHint: string;
 };
 
 /** Shared detail projection for overlay (<110) and wide sidebar (>=110). Public content only. */
@@ -92,6 +92,7 @@ export function activityDetailModel(
   entry: TimelineEntry,
   product: string,
   locale: Locale = 'zh',
+  offset = 0,
 ): ActivityDetailModel {
   const role = entryRole(entry);
   const body = publicDetailBody(entry);
@@ -103,9 +104,9 @@ export function activityDetailModel(
     sequence: entry.sequence,
     statusLabel: activityStatusLabel(entry.activityStatus, locale),
     eventRefs: (entry.eventRefs ?? []).map((ref) => `${ref.eventId}#${ref.sequence}`),
+    ...(offset > 0 ? { offset } : {}),
     ...(entry.truncated ? { truncated: true } : {}),
     ...(entry.linkUnknown ? { linkUnknown: true } : {}),
-    openOriginalHint: t(locale, 'openOriginalRecord'),
   };
 }
 
@@ -124,7 +125,10 @@ export function renderActivityDetail(
   width: number,
   model: ActivityDetailModel,
   locale: Locale = 'zh',
+  maxBodyLines = 12,
 ): string[] {
+  const bodyLines = wrapBodyLine(model.body, Math.max(8, width - 4));
+  const offset = Math.max(0, Math.min(model.offset ?? 0, Math.max(0, bodyLines.length - 1)));
   const lines = [
     `${t(locale, 'activityDetailRole')}: ${model.roleLabel}`,
     `${t(locale, 'activityDetailTime')}: ${model.occurredAt} · #${model.sequence}`,
@@ -134,10 +138,11 @@ export function renderActivityDetail(
       ? [`${t(locale, 'activityDetailRefs')}: ${model.eventRefs.slice(0, 8).join(', ')}${model.eventRefs.length > 8 ? '…' : ''}`]
       : []),
     '',
-    ...wrapBodyLine(model.body, Math.max(8, width - 4)),
+    ...bodyLines.slice(offset, offset + Math.max(1, maxBodyLines)),
+    ...(offset > 0 || offset + maxBodyLines < bodyLines.length
+      ? [`${offset + 1}-${Math.min(bodyLines.length, offset + maxBodyLines)}/${bodyLines.length}`]
+      : []),
     ...(model.truncated ? ['', t(locale, 'moreLines', { n: 1 })] : []),
-    '',
-    theme.style.muted(model.openOriginalHint),
   ];
   return panel(theme, t(locale, 'activityDetailTitle'), lines.map((line) => ` ${line}`), Math.min(72, width));
 }
