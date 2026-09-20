@@ -158,7 +158,10 @@ export function helpLines(
   locale: Locale = 'en',
   actions?: readonly UiAction[],
 ): readonly string[] {
-  if (actions) return helpLinesFromActions(actions, locale, page);
+  if (actions) {
+    const commandIntro = page === 'home' ? [` ${t(locale, 'helpCommands')}`, ''] : [];
+    return [...commandIntro, ...helpLinesFromActions(actions, locale, page)];
+  }
   if (page && ACTION_HELP_PAGES.has(page)) {
     return helpLinesFromActions(listActions({ page, locale }), locale, page);
   }

@@ -222,7 +222,7 @@ function renderContextBar(theme: Theme, view: WorkbenchView, width: number): str
 
 function renderStageRail(theme: Theme, view: WorkbenchView, width: number): string[] {
   if (!view.stageRail?.text) return [];
-  return [truncateFit(` ${view.stageRail.text}`, width, theme.glyphs.ellipsis)];
+  return [truncateFit(` ${compactThemeGlyphs(theme, view.stageRail.text)}`, width, theme.glyphs.ellipsis)];
 }
 
 function renderActivityCard(theme: Theme, view: WorkbenchView, width: number): string[] {
@@ -367,12 +367,22 @@ function withProcess(
 ): string[] {
   const locale = view.locale ?? 'en';
   const cue = view.processExpanded
-    ? theme.style.muted(` ${t(locale, 'hideProcess')}`)
-    : theme.style.muted(` ${expandLabel}`);
+    ? theme.style.muted(` ${compactThemeGlyphs(theme, t(locale, 'hideProcess'))}`)
+    : theme.style.muted(` ${compactThemeGlyphs(theme, expandLabel)}`);
   const head = [...primary, '', cue];
   if (!view.processExpanded || !view.running?.entries.length) return [...head];
   const remain = height === undefined ? undefined : Math.max(4, height - head.length - 1);
   return [...head, '', ...renderTimeline(theme, width, view.running, remain)];
+}
+
+function compactThemeGlyphs(theme: Theme, text: string): string {
+  return text
+    .replaceAll('✓', theme.glyphs.ok)
+    .replaceAll('●', theme.glyphs.dot)
+    .replaceAll('○', theme.glyphs.empty)
+    .replaceAll('▸', theme.glyphs.arrow)
+    .replaceAll('▾', theme.glyphs.arrow)
+    .replaceAll('…', theme.glyphs.ellipsis);
 }
 
 function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {

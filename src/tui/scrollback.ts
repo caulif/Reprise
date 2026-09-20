@@ -321,7 +321,10 @@ function paintEntry(
     return [paintPlain(theme, row, width, selected)];
   }
   if (entry.kind === 'fold' || entry.title.startsWith('▸')) {
-    const title = entry.title.startsWith('▸') ? entry.title : `▸ ${entry.title}`;
+    const foldMarker = theme.framed ? '▸' : theme.glyphs.arrow;
+    const title = entry.title.startsWith('▸')
+      ? `${foldMarker}${entry.title.slice(1)}`
+      : `${foldMarker} ${entry.title}`;
     const row = `${gutter(theme, slot)}${theme.style.muted(compact(title, inner, theme.glyphs.ellipsis))}`;
     return [paintPlain(theme, row, width, selected)];
   }

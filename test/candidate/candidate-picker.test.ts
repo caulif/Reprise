@@ -181,7 +181,7 @@ test('running canvas uses the candidate product not the source session product',
   assert.equal(view.productLabel, 'Claude Code');
   const text = renderWorkbench(view, 120).join('\n');
   assert.match(text, /候选运行中 · Claude Code/);
-  assert.match(text, /Claude Code · working/);
+  assert.match(text, /Claude Code · 等待新的可见活动/);
   assert.doesNotMatch(text, /候选运行中 · Codex/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /发给 Claude Code/);
