@@ -28,8 +28,6 @@ export type ConfigModel = {
   /** True only while a save or connection test request is in flight. */
   readonly busy?: boolean;
   readonly busyKind?: 'save' | 'test';
-  /** Local credential probe result — never means the remote connection test passed. */
-  readonly hasUsableAuth?: boolean;
   readonly connectionTest?: {
     readonly status: ConfigConnectionTestStatus;
     readonly detail?: string;

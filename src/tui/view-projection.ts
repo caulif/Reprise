@@ -150,7 +150,6 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
         locale: input.locale ?? 'en',
         busy: Boolean(input.configBusy),
         ...(input.configBusyKind === 'save' || input.configBusyKind === 'test' ? { busyKind: input.configBusyKind } : {}),
-        hasUsableAuth: input.hasSavedModelConfig && input.harnessAuthOk,
         connectionTest: {
           status: input.configTestStatus ?? 'idle',
           ...(input.configTestDetail ? { detail: input.configTestDetail } : {}),
