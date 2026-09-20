@@ -273,10 +273,11 @@ export class ExperimentStore {
     this.#assertWriter();
     const start = this.#events.length;
     const events: EventEnvelope[] = [];
+    let fresh: EventEnvelope[] = [];
     try {
       for (const input of inputs) events.push(await this.#appendOne(input, false, false));
       const batchOperationIds = new Set<string>();
-      const fresh = events.filter((event) => {
+      fresh = events.filter((event) => {
         if (event.sequence <= start) return false;
         if (!event.operationId) return true;
         if (batchOperationIds.has(event.operationId)) return false;
@@ -290,9 +291,7 @@ export class ExperimentStore {
       this.#events.splice(start);
       throw error;
     }
-    for (const event of events) {
-      if (event.sequence > start) this.#notify(event);
-    }
+    for (const event of fresh) this.#notify(event);
     return events;
   }
 
