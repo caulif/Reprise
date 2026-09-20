@@ -169,6 +169,7 @@ export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
     owningSuites: [
       "test/products/historical-artifacts-extract.test.ts",
       "test/application/artifact-renderer.test.ts",
+      "test/application/comparison-shell-deny.test.ts",
     ],
   },
 ] as const;
@@ -302,14 +303,14 @@ test("matrix P1 OWNED: publish immutability suites exist", async () => {
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix P2 PARTIAL: cancel/no_browser pieces; CandidateRun/leak mustProve open", async () => {
+test("matrix P2 PARTIAL: Host cancel/no_browser pieces (#60); CandidateRun/leak open", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "P2");
   assert.equal(row?.status, "partial");
   assert.ok(PARTIAL_IDS.has("P2"));
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix S1 PARTIAL: extract safety owned; HTML network gate opt-in only", async () => {
+test("matrix S1 PARTIAL: extract + shell deny; HTML network gate opt-in only", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "S1");
   assert.equal(row?.status, "partial");
   assert.ok(PARTIAL_IDS.has("S1"));
