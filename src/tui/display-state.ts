@@ -80,7 +80,7 @@ export function deriveResultPresentation(input: ResultPresentationInput, locale:
 /** Shared classifier for result pages and timeline comparison.completed payloads. */
 export function classifyComparisonStatus(
   invocationStatus: string | undefined,
-  valueStatus?: string | undefined,
+  valueStatus?: string,
 ): ComparisonPresentationKind {
   if (invocationStatus === 'skipped') return 'skipped';
   if (invocationStatus === 'cancelled') return 'cancelled';
