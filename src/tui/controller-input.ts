@@ -519,7 +519,11 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
     c.render();
     return { consume: true };
   }
-  if (!c.confirmStartArmed) return { consume: true };
+  // Recovery acceptance can arrive on the pre-existing confirmation surface
+  // before candidate-model verification has armed the new confirmation gate.
+  // It is safe only when the recorded recovery is ready and a candidate is
+  // already selected; blocked diagnostics still remain non-startable.
+  if (!c.confirmStartArmed && !c.selectedCandidate) return { consume: true };
   if (candidateStartBlocked(candidateGateFrom(c))) {
     c.message = t(c.locale, 'recoveryFailed');
     c.render();

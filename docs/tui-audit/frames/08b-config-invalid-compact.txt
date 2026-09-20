@@ -34,4 +34,4 @@ Reprise v0.1.0   C:\reprise
  Draft changed. Ctrl+S writes the local config file; Ctrl+T
 tests the connection.
 ------------------------------------------------------------
- [↑↓] 选择  [Enter] 编辑  [Ctrl+T] 测试连接（会请求模型）
+ [↑↓] 选择  [Enter] 编辑  [Ctrl+T] 测试连接（会调用模型）

@@ -217,7 +217,7 @@ const M = {
   sourceMustAbsolute: { en: 'Source root must be an absolute path that you explicitly provide.', zh: '源目录必须是你明确提供的绝对路径。' },
   experimentActive: { en: 'An experiment is active. Ctrl+C requests cancellation and waits for the Host terminal state.', zh: '对照进行中。Ctrl+C 请求取消，并等待主机进入结束状态。' },
   cancellationRequested: { en: 'Cancellation requested. Press Ctrl+C again to force exit.', zh: '已请求取消。再按一次 Ctrl+C 会强制退出。' },
-  cancellationFailed: { en: 'Cancellation failed: {error}', zh: '取消失败：{error}' },
+  cancellationFailed: { en: 'Cancellation failed: {error}. Retry with Ctrl+C.', zh: '取消失败：{error}。请按 Ctrl+C 重试。' },
   recoveryCancelled: { en: 'Recovery cancelled.', zh: '恢复已取消。' },
   startupCancelled: { en: 'Experiment startup cancelled.', zh: '实验启动已取消。' },
   cleanupFailed: { en: 'Cleanup did not complete. Retained resources require review.', zh: '清理未完成，请检查保留的资源。' },

@@ -7,10 +7,10 @@ Reprise v0.1.0   C:\reprise                    gpt-5.6-terra · medium   ⚠ 内
    /history  本机实验记录  尚无运行记录
 
 ┌─ 正在编辑 API 密钥 ──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 当前值  env:OPENAI_API_KEY  ✓                                                                                        │
-│                                                                                                                      │
-│ ❯ ▌                                                                                                                  │
-│ 保存在 .reprise/harness-model.json（已被 git 忽略）。env:NAME 仍可用。                                               │
+│ 当前值  env:OPENAI_API_KEY  ✓ │
+│ │
+│ ❯ ▌ │
+│ 保存在 .reprise/harness-model.json（已被 git 忽略）。env:NAME 仍可用。 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  Editing API key. Type to change the visible value. Enter applies it. Esc keeps the previous value.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
