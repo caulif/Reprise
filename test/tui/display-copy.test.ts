@@ -1,13 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  comparisonPresentation,
+  deliverTitleTone,
   displayLiveCaption,
   displayOperatorTitle,
-  displayTaskStatus,
-  resultHeaderStatus,
-  terminationTone,
+  isComparisonDeliverTitle,
 } from '../../src/tui/display-copy.js';
+import { deriveResultPresentation, pillToneOf } from '../../src/tui/display-state.js';
 import { t } from '../../src/tui/i18n.js';
 import { resultHints, renderResult } from '../../src/tui/pages/result.js';
 import { runningHints } from '../../src/tui/pages/run.js';
@@ -55,27 +54,40 @@ test('operator titles localize without changing fold identity tokens', () => {
   assert.equal(displayOperatorTitle('working', 'zh'), '正在处理');
   assert.equal(displayOperatorTitle('working', 'en'), 'Processing');
   assert.equal(displayOperatorTitle('阅读', 'en'), 'Reading evidence');
+  assert.equal(displayOperatorTitle('comparison.cancelled', 'zh'), '对照已取消');
   assert.equal(displayLiveCaption('working', 'ignored.txt', 'zh'), '正在处理');
-  assert.equal(displayTaskStatus('apparently_completed', 'zh'), '控制 Agent 判断已完成');
-  assert.equal(displayTaskStatus('apparently_completed', 'en'), 'Control agent judged complete');
-  assert.equal(terminationTone('cancelled'), 'warn');
-  assert.equal(terminationTone('failed'), 'danger');
+  assert.equal(isComparisonDeliverTitle('comparison.failed'), true);
+  assert.equal(deliverTitleTone('comparison.cancelled'), 'warn');
+  assert.equal(deliverTitleTone('comparison.failed'), 'danger');
 });
 
-test('comparison cancelled and insufficient evidence stay non-success', () => {
-  const cancelled = comparisonPresentation({ status: 'cancelled' }, 'zh');
-  assert.match(cancelled.word, /已取消/);
-  assert.equal(cancelled.tone, 'warn');
-  assert.match(cancelled.diagnostic, /诊断/);
-  const insufficient = comparisonPresentation({ status: 'completed', value: { status: 'insufficient_evidence' } }, 'en');
-  assert.equal(insufficient.tone, 'warn');
-  assert.match(insufficient.word, /Insufficient evidence/);
-  const header = resultHeaderStatus({
-    record: { outcome: { termination: { kind: 'completed' } } },
-    comparison: { result: { status: 'cancelled' } },
+test('result presentation keeps cancel and insufficient non-success', () => {
+  const cancelled = deriveResultPresentation({
+    task: { status: 'apparently_completed' },
+    termination: { kind: 'completed', code: 'completed.controller_satisfied' },
+    cleanup: { status: 'complete' },
+    comparison: { status: 'cancelled' },
   }, 'zh');
-  assert.equal(header.tone, 'warn');
-  assert.match(header.label, /已取消/);
+  assert.match(cancelled.comparisonLabel, /已取消/);
+  assert.equal(cancelled.statusTone, 'warn');
+  assert.equal(cancelled.reportKind, 'diagnostic');
+  assert.equal(pillToneOf(cancelled.statusTone), 'warn');
+  assert.match(t('zh', cancelled.statusLabelKey), /已取消/);
+
+  const insufficient = deriveResultPresentation({
+    task: { status: 'apparently_completed' },
+    termination: { kind: 'completed', code: 'completed.controller_satisfied' },
+    cleanup: { status: 'complete' },
+    comparison: { status: 'completed', value: { status: 'insufficient_evidence' } } as never,
+  }, 'en');
+  assert.equal(insufficient.statusTone, 'warn');
+  assert.match(insufficient.comparisonLabel, /Insufficient evidence/);
+});
+
+test('zh status field and report link stay distinct', () => {
+  assert.equal(t('zh', 'resultComparison'), '对照');
+  assert.equal(t('zh', 'resultReport'), '对照报告');
+  assert.notEqual(t('zh', 'resultComparison'), t('zh', 'resultReport'));
 });
 
 test('result page shows apparently_completed as controller judgment and cancel neutrally', () => {
@@ -99,6 +111,8 @@ test('result page shows apparently_completed as controller judgment and cancel n
   assert.match(text, /对照诊断（已取消）/);
   assert.doesNotMatch(text, /\bapparently_completed\b/);
   assert.doesNotMatch(text, /对照已完成|对照完成(?!（)/);
+  assert.match(text, /对照\s+对照已取消/);
+  assert.doesNotMatch(text, /对照报告\s+对照已取消/);
 });
 
 test('glossary home label is 首页 not 封面', () => {

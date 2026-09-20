@@ -1,4 +1,4 @@
-import { displayLiveCaption, displayOperatorDetail, displayOperatorTitle, severityLabel } from './display-copy.js';
+import { deliverTitleTone, displayLiveCaption, displayOperatorDetail, displayOperatorTitle, isDeliverHeadlineTitle, severityLabel } from './display-copy.js';
 import { compact, type TimelineFilter } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
@@ -77,7 +77,7 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.source === 'HARNESS' && entry.level !== 'error' && entry.lane !== 'comparison' && entry.lane !== 'recovery') {
     return undefined;
   }
-  if (entry.title.startsWith('对照') || entry.title === '证据不足' || entry.title === '对照已取消' || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
+  if (entry.title.startsWith('对照') || entry.title.startsWith('comparison.') || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
     || entry.title.startsWith('Controller done') || entry.title.startsWith('Stop requested')) {
     return 'summary';
   }
@@ -315,10 +315,11 @@ function paintEntry(
     return wrapBodyLine(text, inner).map((line, index) =>
       paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${line}`, width, selected));
   }
-  if (entry.kind === 'deliver' && isDeliverHeadline(entry.title)) {
+  if (entry.kind === 'deliver' && isDeliverHeadlineTitle(entry.title)) {
     const paintedTitle = displayOperatorTitle(entry.title, locale);
-    const paint = failedTitle(entry.title) ? theme.style.danger
-      : entry.title === '对照已取消' || entry.title === '证据不足' ? theme.style.warn
+    const tone = deliverTitleTone(entry.title);
+    const paint = tone === 'danger' ? theme.style.danger
+      : tone === 'warn' ? theme.style.warn
         : theme.style.ok;
     const lines = wrapBodyLine(paintedTitle, inner).map((line, index) =>
       paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${paint(line)}`, width, selected));
@@ -346,15 +347,6 @@ function paintEntry(
     : entry.level === 'warning' ? theme.style.warn(compact(marked, inner, theme.glyphs.ellipsis))
       : compact(marked, inner, theme.glyphs.ellipsis);
   return [paintPlain(theme, `${gutter(theme, slot)}${selected ? theme.style.strong(body) : body}`, width, selected)];
-}
-
-function isDeliverHeadline(title: string): boolean {
-  return title.startsWith('DONE ·') || title === '已恢复' || title === '部分恢复' || title === '无法恢复'
-    || title === '对照完成' || title === '对照已取消' || title === '证据不足' || title === '对照失败';
-}
-
-function failedTitle(title: string): boolean {
-  return title === '无法恢复' || title === '对照失败';
 }
 
 function gutterSlot(entry: TimelineEntry, failed: boolean, candidate: boolean): GutterSlot {

@@ -4,12 +4,10 @@ import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
 import { localPathFromFileUrl } from '../open-report.js';
 import {
-  comparisonPresentation,
-  displayCleanupStatus,
-  displayTaskStatus,
-  displayTerminationKind,
-  terminationTone,
-} from '../display-copy.js';
+  deriveResultPresentationFromResult,
+  reportLabelOf,
+  type ResultTone,
+} from '../display-state.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
@@ -24,20 +22,17 @@ export function renderResult(theme: Theme, width: number, result: ExperimentResu
 }
 
 export function renderResultWithHits(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string, comparePending = false): ResultRender {
-  const kind = result.record.outcome.termination.kind;
+  const presentation = deriveResultPresentationFromResult(result, locale, comparePending);
   const vacant = theme.framed ? '—' : '-';
-  const skipped = result.comparison.result.status === 'skipped';
-  const comparison = result.comparison.result;
-  const presented = comparisonPresentation(comparison, locale);
+  const skipped = presentation.comparisonKind === 'skipped' || presentation.comparisonKind === 'pending';
   const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
   const paths = resolveResultPathLinks(result);
   const runId = result.record.attempt?.runId;
   const inner = Math.max(20, width - 4);
-  const headline = skipped ? undefined : envelopeHeadline(result);
+  const headline = skipped ? undefined : envelopeHeadline(result, presentation.comparisonKind);
   const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
   const metrics = metricsLine(theme, result, locale);
   const candidateLabel = candidateDisplayLabel(result, productLabel);
-  const cleanupRaw = result.record.outcome.cleanup?.status;
   const body: string[] = [];
   const bodyHits = new Map<number, readonly ResultPointerHit[]>();
   const push = (line: string) => {
@@ -50,12 +45,12 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
       body.push(block.lines[index] ?? '');
     }
   };
-  push(terminationBanner(theme, kind, locale));
-  push(kv(theme, t(locale, 'resultTask'), displayTaskStatus(result.record.outcome.task.status, locale), width - 2));
-  push(kv(theme, t(locale, 'resultTermination'), `${displayTerminationKind(kind, locale)} · ${result.record.outcome.termination.code}`, width - 2));
-  push(kv(theme, t(locale, 'resultCleanup'), cleanupRaw ? displayCleanupStatus(cleanupRaw, locale) : vacant, width - 2));
+  push(terminationBanner(theme, presentation.terminationLabel, presentation.terminationTone));
+  push(kv(theme, t(locale, 'resultTask'), presentation.taskLabel, width - 2));
+  push(kv(theme, t(locale, 'resultTermination'), `${presentation.terminationLabel} · ${result.record.outcome.termination.code}`, width - 2));
+  push(kv(theme, t(locale, 'resultCleanup'), presentation.cleanupLabel, width - 2));
   if (candidateLabel) push(kv(theme, t(locale, 'candidateLabel'), candidateLabel, width - 2));
-  if (!skipped) push(kv(theme, t(locale, 'resultComparison'), presented.word, width - 2));
+  if (!skipped) push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
   if (metrics) push(`     ${metrics}`);
   if (headline) {
     push('');
@@ -67,19 +62,24 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
   }
   if (skipped) {
     push('');
-    push(kv(theme, t(locale, 'resultComparison'), presented.word, width - 2));
+    push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
   }
   if (comparePending) {
     push('');
     push(` ${theme.style.accent(t(locale, 'hintCompare'))}`);
   }
-  const reportLabel = presented.failedArtifact || comparison.status === 'failed' ? presented.diagnostic : t(locale, 'resultReport');
-  pushLink('open-report', kvLinkBlock(theme, reportLabel, shortPath(paths.report, experimentRoot, vacant), paths.report, width));
+  const reportLabel = reportLabelOf(presentation, locale);
+  const reportValue = paths.report
+    ? shortPath(paths.report, experimentRoot, vacant)
+    : presentation.reportKind === 'none'
+      ? vacant
+      : vacant;
+  pushLink('open-report', kvLinkBlock(theme, reportLabel, reportValue, paths.report, width));
   pushLink('open-history-final', kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortPath(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width));
   pushLink('open-candidate-final', kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width));
   pushLink('open-trace', kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width));
   pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width));
-  return panelWithHits(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${displayTerminationKind(kind, locale)}`, body, width, bodyHits);
+  return panelWithHits(theme, `${t(locale, presentation.titleKey)} ${theme.glyphs.h} ${presentation.terminationLabel}`, body, width, bodyHits);
 }
 
 export function resultHints(locale: Locale = 'en', comparePending = false): readonly (readonly [string, string])[] {
@@ -179,16 +179,18 @@ export function failureHints(locale: Locale = 'en'): readonly (readonly [string,
   return [['Enter', t(locale, 'hintBack')], ['b', t(locale, 'hintBack')], ['Esc', t(locale, 'hintHome')]];
 }
 
-function terminationBanner(theme: Theme, kind: string, locale: Locale): string {
-  const label = displayTerminationKind(kind, locale);
-  const tone = terminationTone(kind);
+function terminationBanner(theme: Theme, label: string, tone: ResultTone): string {
   if (tone === 'ok') return theme.style.ok(` ${theme.glyphs.ok} ${label}`);
   if (tone === 'danger') return theme.style.danger(` ${theme.glyphs.err} ${label}`);
   if (tone === 'warn') return theme.style.warn(` ${theme.glyphs.warn} ${label}`);
   return theme.style.muted(` ${theme.glyphs.dot} ${label}`);
 }
 
-function envelopeHeadline(result: ExperimentResult): string | undefined {
+function envelopeHeadline(
+  result: ExperimentResult,
+  comparisonKind: string,
+): string | undefined {
+  if (comparisonKind !== 'completed' && comparisonKind !== 'insufficient_evidence') return undefined;
   const cmp = result.comparison.result;
   if (cmp.status !== 'completed' || !('value' in cmp)) return undefined;
   const text = cmp.value?.headline?.trim();

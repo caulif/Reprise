@@ -447,17 +447,18 @@ function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): read
   const valueStatus = text(value.status);
   const headline = text(value.headline);
   const failed = invocation === 'failed';
-  const title = failed ? '对照失败'
-    : invocation === 'cancelled' ? '对照已取消'
-      : valueStatus === 'insufficient_evidence' ? '证据不足'
-        : '对照完成';
+  const title = failed ? 'comparison.failed'
+    : invocation === 'cancelled' ? 'comparison.cancelled'
+      : valueStatus === 'insufficient_evidence' ? 'comparison.insufficient'
+        : invocation === 'completed' && valueStatus === 'completed' ? 'comparison.completed'
+          : 'comparison.unknown';
   return [entry('CONTROLLER', title, headline ?? (failed ? text(failure.message) : undefined), {
     lane: 'comparison',
     kind: 'deliver',
     ...(headline ? { original: headline } : {}),
     ...(failed
       ? { level: 'error' as const }
-      : invocation === 'cancelled' || valueStatus === 'insufficient_evidence'
+      : title === 'comparison.cancelled' || title === 'comparison.insufficient' || title === 'comparison.unknown'
         ? { level: 'warning' as const }
         : {}),
   })];
@@ -610,7 +611,7 @@ function shouldFlushBefore(entry: TimelineEntry): boolean {
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')) return true;
   if (entry.title === 'Visible response') return true;
   if (entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复') return true;
-  if (entry.title === '对照完成' || entry.title === '对照已取消' || entry.title === '证据不足' || entry.title === '对照失败') return true;
+  if (entry.title.startsWith('comparison.')) return true;
   return false;
 }
 

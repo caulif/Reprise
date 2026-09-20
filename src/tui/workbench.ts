@@ -14,7 +14,7 @@ import {
   runningChrome, runningHints, sourceHints,
   type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
 } from './pages/run.js';
-import { resultHeaderStatus } from './display-copy.js';
+import { deriveResultPresentationFromResult, pillToneOf } from './display-state.js';
 import { t, type Locale } from './i18n.js';
 import { OVERLAY_PAGES, overlayChromeRows, renderOverlaySheet } from './overlay-sheet.js';
 import { createTheme, resolveDensity, showsDetailPane, type Theme } from './theme.js';
@@ -171,10 +171,10 @@ function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'stillReco
 
 function resultStatusPill(theme: Theme, view: WorkbenchView, locale: Locale): string {
   if (view.result) {
-    const status = resultHeaderStatus(view.result, locale);
-    return pill(theme, status.label, status.tone);
+    const presentation = deriveResultPresentationFromResult(view.result, locale, Boolean(view.comparePending));
+    return pill(theme, t(locale, presentation.statusLabelKey), pillToneOf(presentation.statusTone));
   }
-  return pill(theme, t(locale, 'candidateEnded'), 'ok');
+  return pill(theme, t(locale, 'resultStatusCandidateEnded'), 'ok');
 }
 
 function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[] {

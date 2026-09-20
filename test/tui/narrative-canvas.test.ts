@@ -163,7 +163,7 @@ test('comparison completion shows headline not limitation codes', () => {
     status: 'completed',
     value: { status: 'completed', headline: '候选只寒暄，没有做出两页 PPT。', limitationCodes: ['isolation'], reportPath: 'report.html' },
   }));
-  assert.equal(row?.title, '对照完成');
+  assert.equal(row?.title, 'comparison.completed');
   assert.match(row?.detail ?? '', /寒暄/);
   assert.doesNotMatch(row?.title ?? '', /report.html/);
 });
