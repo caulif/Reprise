@@ -14,14 +14,16 @@ import type { WorkbenchView } from './workbench.js';
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
-import { deriveResultPresentationFromResult } from './display-state.js';
 
 type Input = {
-  readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling?: boolean; readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled'; readonly locale?: Locale;
-  readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly homeFocus?: import('./pages/home.js').HomeActionId; readonly commandOverlay: boolean;
+  readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
+  readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
+  readonly configBusy?: 'idle' | 'save' | 'test';
+  readonly configTestStatus?: 'idle' | 'testing' | 'passed' | 'failed' | 'stale';
+  readonly configTestDetail?: string;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
-  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[]; readonly refreshFailed?: boolean; readonly discoveryNotice?: string;
+  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[];
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: ExperimentPreflight | undefined; readonly recoveryView?: RecoveryView | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly sourceProductLabel?: string;
@@ -60,7 +62,6 @@ function homeModel(input: Input, envSet: boolean) {
     ...(input.envName ? { envName: input.envName, envSet } : {}),
     ...(input.hasSavedModelConfig ? { providerLabel: input.modelConfig.providerId, modelId: input.modelConfig.modelId } : {}),
     composer: input.composer, composerCursor: input.composerCursor, showSuggestions: input.showSuggestions && !input.commandOverlay,
-    ...(input.homeFocus ? { focus: input.homeFocus } : {}),
     locale: input.locale ?? 'en',
     ...(input.recoveryView?.baseline.recovery?.status === 'failed' ? { recoveryFailed: true } : {}),
   };
@@ -74,7 +75,7 @@ function runningModel(input: Input) {
     sourceTimeline: input.timeline,
     timelineRevision: input.timelineRevision,
     selected: input.timelineSelected, filter: 'ALL' as const,
-    following: input.timelineFollowing, cancelling: input.cancelling ?? false, currentState: input.machineState,
+    following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
     elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },
@@ -109,11 +110,6 @@ function runningModel(input: Input) {
 }
 
 function candidateSessionIdFrom(entries: readonly TimelineEntry[]): string | undefined {
-  // Only candidate.session_bound carries the Runtime session — ignore agent Host sessionIds.
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.eventType === 'candidate.session_bound' && entry.sessionId) return entry.sessionId;
-  }
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const match = /^Candidate session · (.+)$/.exec(entries[index]?.title ?? '');
     if (match?.[1] && match[1] !== '?') return match[1];
@@ -137,7 +133,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     locale: input.locale ?? 'en',
     message: input.message,
     ...(input.inlineHelp ? { inlineHelp: true } : {}),
-    cancelling: input.cancelling ?? false,
+    cancelling: input.cancelling,
     ...(input.comparePending ? { comparePending: true } : {}),
     home,
   };
@@ -152,6 +148,12 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
         pendingToggle: input.configPendingToggle,
         ...(input.configLeaveConfirm ? { leaveConfirm: true } : {}),
         locale: input.locale ?? 'en',
+        busy: (input.configBusy ?? 'idle') !== 'idle',
+        ...(input.configBusy === 'save' ? { busyKind: 'save' as const } : {}),
+        connectionTest: {
+          status: input.configTestStatus ?? 'idle',
+          ...(input.configTestDetail ? { detail: input.configTestDetail } : {}),
+        },
       },
     };
   }
@@ -178,8 +180,6 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(input.discoveryStatus ? { discoveryStatus: input.discoveryStatus } : {}),
     ...(input.groupedProjectCount !== undefined ? { unfilteredCount: input.intakeLevel === 'sessions' ? input.unfilteredSessionCount : input.groupedProjectCount } : {}),
     ...(input.discoveryCodes?.length ? { discoveryCodes: input.discoveryCodes } : {}),
-    ...(input.refreshFailed ? { refreshFailed: true } : {}),
-    ...(input.discoveryNotice ? { discoveryNotice: input.discoveryNotice } : {}),
     locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}),
   };
   if (input.page === 'sessions') return { ...base, sessions };
@@ -197,12 +197,10 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'confirm' && input.preflight) return confirmWorkbenchSlice(input, base, recovery);
   if (input.page === 'running') return { ...base, running: runningModel(input) };
   if (input.page === 'result' && input.result) {
-    const locale = input.locale ?? 'en';
     return {
       ...base,
       running: runningModel(input),
       result: input.result,
-      resultPresentation: deriveResultPresentationFromResult(input.result, locale, Boolean(input.comparePending)),
       ...(input.timelineReadOffset ? { bodyOffset: input.timelineReadOffset } : {}),
     };
   }

@@ -22,18 +22,17 @@ import type {
 } from "../products/contract.js";
 import { initializeIntakeTui } from "./intake-tui-state.js";
 import * as intakeMethods from "./intake-tui-methods.js";
+import type { ConfigReturnTarget } from "./intake-tui-config.js";
+import type { ConfigBusy, ConfigConnectionTestStatus } from "./pages/config.js";
 import type { Locale } from "./i18n.js";
 import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
 import type { Option } from "./types.js";
-import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
 import type { TimelineEntry } from "./timeline.js";
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
 import type { CandidateRunPhase } from "./pages/run.js";
-import type { ConfigReturnTarget } from "./intake-tui-config.js";
-import type { ConfigBusy, ConfigConnectionTestStatus } from "./pages/config.js";
 
 type Page = WorkbenchView["page"];
 type PiModels = Pick<
@@ -53,7 +52,6 @@ export type ProductDiscoveryState = {
   readonly pageDiagnostics?: readonly DiscoveryDiagnostic[];
   readonly message?: string;
   readonly projects?: readonly SessionDiscoveryProject[];
-  readonly refreshFailed?: boolean;
 };
 
 export type SessionLoadMode = "initial" | "more" | "refresh";
@@ -136,7 +134,6 @@ export class IntakeTui {
   composer = "";
   composerCursor = 0;
   showSuggestions = false;
-  homeFocus: import("./pages/home.js").HomeActionId = "new-replay";
   taskCase: TaskCase | undefined;
   historyCases: readonly HistoryCase[] = [];
   historyExperiments: readonly HistoryExperiment[] = [];
@@ -160,9 +157,6 @@ export class IntakeTui {
   candidateSuggestedValue: string | undefined;
   candidateCatalogGeneration = 0;
   candidateAvailabilityGeneration = 0;
-  candidateVerifyPending: { generation: number; productId: string; offerValue: string } | undefined;
-  runStartPending = false;
-  confirmStartArmed = false;
   activeExperiment: ExperimentHandle | undefined;
   recoveryAbort: AbortController | undefined;
   startupAbort: AbortController | undefined;
@@ -170,11 +164,10 @@ export class IntakeTui {
   workflowFinished: Promise<void> | undefined;
   result: ExperimentResult | undefined;
   timeline: TimelineEntry[] = [];
-  activityIndex: ActivityIndexState = createActivityIndex();
   timelineSelected = 0;
   timelineFilterIndex = 0;
   timelineFollowing = true;
-  cancelUi: import("./controller-run.js").CancelUi = "idle";
+  cancelling = false;
   configBusy: ConfigBusy = "idle";
   configDraftVersion = 0;
   configTestStatus: ConfigConnectionTestStatus = "idle";

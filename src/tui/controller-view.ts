@@ -70,8 +70,7 @@ export function productItems(c: IntakeTui): import("./pages/intake.js").ProductI
     return { productId: pack.manifest.productId, displayName: pack.manifest.displayName, packVersion: pack.manifest.packVersion,
       discoveryStatus: state.status, ...(sessions ? { sessionCount: sessions.length } : {}), ...(state.scanned !== undefined ? { scanned: state.scanned } : {}),
       ...(state.nextCursor ? { limitReached: true } : {}),
-      ...(state.skipped ? { skipped: state.skipped } : {}), ...(state.message ? { diagnostic: state.message } : {}),
-      ...(state.refreshFailed ? { refreshFailed: true } : {}) };
+      ...(state.skipped ? { skipped: state.skipped } : {}), ...(state.message ? { diagnostic: state.message } : {}) };
   });
 }
 
@@ -111,48 +110,11 @@ function candidateRunFields(c: IntakeTui) {
   };
 }
 
-function discoveryViewFields(c: IntakeTui, discovery: ReturnType<IntakeTui["productDiscovery"]["get"]>, grouped: readonly SessionProject[], activeProject: SessionProject | undefined) {
-  const discoveryStatus = discovery?.status;
-  return {
-    ...(discoveryStatus ? { discoveryStatus } : {}),
-    ...(discovery?.diagnostics?.length ? { discoveryCodes: discovery.diagnostics.map((item) => item.code) } : {}),
-    ...(discovery?.refreshFailed ? { refreshFailed: true } : {}),
-    ...(discovery?.diagnostics?.length
-      ? {
-          discoveryNotice: discovery.diagnostics
-            .map((item) => `${c.discoveryDiagnosticLabel(c.locale, item.code)} (${item.count})`)
-            .join(", "),
-        }
-      : {}),
-    groupedProjectCount: grouped.length,
-    unfilteredSessionCount: activeProject?.sessions.length ?? 0,
-  };
-}
-
-function runStatusViewFields(c: IntakeTui) {
-  return {
-    ...(c.preparePhase
-      ? {
-          preparePhase: c.preparePhase,
-          ...(c.prepareDetail ? { prepareDetail: c.prepareDetail } : {}),
-        }
-      : {}),
-    ...(c.runPhase ? { runPhase: c.runPhase } : {}),
-    ...(c.machineState ? { machineState: c.machineState } : {}),
-    ...(c.runFailed ? { runFailed: true } : {}),
-    ...(c.cleanupStatus ? { cleanupStatus: c.cleanupStatus } : {}),
-    ...(c.lastRuntimeEventAt ? { lastRuntimeEventAt: c.lastRuntimeEventAt } : {}),
-    ...(c.lastRuntimeEventKind ? { lastRuntimeEventKind: c.lastRuntimeEventKind } : {}),
-    ...(c.modelOutputSeen ? { modelOutputSeen: true } : {}),
-    ...(c.reconnectCount ? { reconnectCount: c.reconnectCount } : {}),
-    ...(c.reconnectTotal ? { reconnectTotal: c.reconnectTotal } : {}),
-  };
-}
-
 export function view(c: IntakeTui): WorkbenchView {
   const envName = envNameFromConfig(c.modelConfig, c.configDraft);
   const product = c.productContext();
   const discovery = c.activeProductId ? c.productDiscovery.get(c.activeProductId) : undefined;
+  const discoveryStatus = discovery?.status;
   const grouped = c.groupedProjects();
   const activeProject = grouped.find((project) => project.key === c.activeProjectKey);
   return projectWorkbenchView({
@@ -167,12 +129,11 @@ export function view(c: IntakeTui): WorkbenchView {
     taskCase: c.taskCase,
     message: c.message,
     inlineHelp: c.inlineHelp,
-    cancelUi: c.cancelUi,
+    cancelling: c.cancelling,
     recentExperiment: c.recentExperiment,
     composer: c.composer,
     composerCursor: c.composerCursor,
     showSuggestions: c.showSuggestions,
-    homeFocus: c.homeFocus,
     commandOverlay: Boolean(c.commandOverlay),
     configDraft: c.configDraft,
     configSelected: c.configSelected,
@@ -182,6 +143,9 @@ export function view(c: IntakeTui): WorkbenchView {
     configDirty: c.configDirty(),
     configPendingToggle: c.configPendingToggle,
     ...(c.configLeaveConfirm ? { configLeaveConfirm: true } : {}),
+    configBusy: c.configBusy,
+    configTestStatus: c.configTestStatus,
+    ...(c.configTestDetail ? { configTestDetail: c.configTestDetail } : {}),
     historyTotalBytes: c.historyTotalBytes,
     historyTab: c.historyTab,
     historyItems: c.historyItems(),
@@ -197,7 +161,10 @@ export function view(c: IntakeTui): WorkbenchView {
     searchQuery: c.searchQuery,
     searchCursor: c.searchCursor,
     searching: c.searching,
-    ...discoveryViewFields(c, discovery, grouped, activeProject),
+    ...(discoveryStatus ? { discoveryStatus } : {}),
+    ...(discovery?.diagnostics?.length ? { discoveryCodes: discovery.diagnostics.map((item) => item.code) } : {}),
+    groupedProjectCount: grouped.length,
+    unfilteredSessionCount: activeProject?.sessions.length ?? 0,
     inspection: c.inspection,
     privacy: c.privacy,
     inspectionTaskInput: c.inspectionTaskInput,
@@ -209,7 +176,23 @@ export function view(c: IntakeTui): WorkbenchView {
     recoveryView: c.recoveryView,
     effort: c.modelConfig.effort,
     policy: c.workflow?.policy,
-    ...runStatusViewFields(c),
+    ...(c.preparePhase
+      ? {
+          preparePhase: c.preparePhase,
+          ...(c.prepareDetail
+            ? { prepareDetail: c.prepareDetail }
+            : {}),
+        }
+      : {}),
+    ...(c.runPhase ? { runPhase: c.runPhase } : {}),
+    ...(c.machineState ? { machineState: c.machineState } : {}),
+    ...(c.runFailed ? { runFailed: true } : {}),
+    ...(c.cleanupStatus ? { cleanupStatus: c.cleanupStatus } : {}),
+    ...(c.lastRuntimeEventAt ? { lastRuntimeEventAt: c.lastRuntimeEventAt } : {}),
+    ...(c.lastRuntimeEventKind ? { lastRuntimeEventKind: c.lastRuntimeEventKind } : {}),
+    ...(c.modelOutputSeen ? { modelOutputSeen: true } : {}),
+    ...(c.reconnectCount ? { reconnectCount: c.reconnectCount } : {}),
+    ...(c.reconnectTotal ? { reconnectTotal: c.reconnectTotal } : {}),
     timeline: c.timeline,
     timelineRevision: c.timelineRevision,
     visibleTimeline: c.visibleTimeline(),
