@@ -10,9 +10,6 @@ Reprise   运行结果
   public response line 5                                    
   public response line 6                                    
   ... +35 lines                                             
-                                                            
-                                                            
-
 
 [ 运行结果 - completed ]
     + completed
