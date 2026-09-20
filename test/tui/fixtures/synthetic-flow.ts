@@ -1,6 +1,7 @@
 /**
  * Shared TUI synthetic flow fixtures for T00+.
  * Neutral task text only — no video/private paths. No real Runtime or model.
+ * Single SoT for audit / full-flow / unit tests (consume via dist after build).
  */
 import type { EventEnvelope } from '../../../src/core/schema.js';
 import type { TimelineEntry } from '../../../src/tui/timeline.js';
@@ -93,16 +94,33 @@ export type SyntheticFlowOptions = {
   clock?: FakeClock;
   comparison?: ComparisonCase;
   candidate?: CandidateOutcomeInput;
-  /** Lines in the public candidate response (default 8; visual audits often use 40). */
+  /** Lines in the public candidate response (default 8; visual audits use 40). */
   longMessageLines?: number;
-  /** When true, attach callId on runtime/agent tool events (default false = legacy shape). */
+  /** Directory listing rows on runtime.tool_finished (default 2; audit uses 24). */
+  commandListingLines?: number;
+  commandCwd?: string;
+  /** When true, attach callId/toolCallId on tool events (default false = legacy shape). */
   includeToolCallId?: boolean;
   /** Identical recovery shell_exec failures to fold (default 0). */
   repeatedToolFailures?: number;
-  /** Emit a multi-line live caption via runtime.tool_started.live.detail (default true). */
+  /** Emit multi-line live via runtime.tool_started before tool_finished (default true). */
   multiLineLive?: boolean;
+  /** Emit candidate.user_view_persisted (default true; full-flow omits). */
+  includeUserViewPersisted?: boolean;
+  /** Emit run.outcome_created (default true; audit omits). */
+  includeOutcomeEvent?: boolean;
   runId?: string;
   experimentRoot?: string;
+};
+
+export type ScriptedWorkflowOptions = SyntheticFlowOptions & {
+  policy?: Record<string, unknown>;
+  workflowCandidate?: { candidateId: string; productId: string; requestedModel: string };
+  /** Merged into the gated preflight return (workspace, limitations, …). */
+  preflightExtras?: Record<string, unknown>;
+  /** Absolute recover experimentRoot override (audit wires a temp path). */
+  recoveryExperimentRoot?: string;
+  recoverySummary?: string;
 };
 
 const DEFAULT_TERMINATION_CODE: Record<TerminationKind, string> = {
@@ -115,6 +133,17 @@ const DEFAULT_TERMINATION_CODE: Record<TerminationKind, string> = {
   uncertain: 'uncertain.controller',
 };
 
+const DEFAULT_POLICY = {
+  maxTargetTurns: 256,
+  maxModelCalls: 256,
+  wallClockMs: 86_400_000,
+  turnTimeoutMs: 7_200_000,
+};
+
+function maybeId(include: boolean, key: string, value: string): Record<string, string> {
+  return include ? { [key]: value } : {};
+}
+
 function stamp(events: EventEnvelope[], clock: FakeClock, stepMs: number): EventEnvelope[] {
   return events.map((event, index) => {
     if (index > 0) clock.advance(stepMs);
@@ -125,6 +154,14 @@ function stamp(events: EventEnvelope[], clock: FakeClock, stepMs: number): Event
 export function longPublicResponse(lines = 8): string {
   const body = Array.from({ length: lines }, (_, index) => `public response line ${index + 1}`);
   return [...body, PUBLIC_DETAIL_END].join('\n');
+}
+
+function commandAggregatedOutput(listingLines: number): string {
+  const header = ['Mode  Length LastWriteTime         Name', '----  ------ -------------         ----'];
+  const rows = Array.from({ length: listingLines }, (_, index) => (
+    `-a--- ${String(1200 + index).padStart(6)} 8/13/2026 12:00:00 AM  file-${index + 1}.txt`
+  ));
+  return [...header, ...rows].join('\n');
 }
 
 export function syntheticCandidateOutcome(input: CandidateOutcomeInput = {}): {
@@ -172,7 +209,11 @@ export function syntheticCandidateOutcome(input: CandidateOutcomeInput = {}): {
   };
 }
 
-export function syntheticComparisonResult(comparison: ComparisonCase = { status: 'completed' }): unknown {
+/**
+ * Single ComparisonCase → invocationFact-shaped result.
+ * Used by both {@link syntheticComparisonResult} and {@link syntheticComparisonEvents}.
+ */
+function comparisonInvocation(comparison: ComparisonCase = { status: 'completed' }): Record<string, unknown> {
   if (comparison.status === 'skipped') return { status: 'skipped' };
   if (comparison.status === 'cancelled') {
     return {
@@ -201,12 +242,27 @@ export function syntheticComparisonResult(comparison: ComparisonCase = { status:
       status: valueStatus,
       reportPath: comparison.reportPath ?? 'report.html',
       evidenceRefs: ['ev-01'],
-      ...(comparison.headline ? { headline: comparison.headline } : valueStatus === 'completed'
-        ? { headline: 'Synthetic comparison headline.' }
-        : {}),
+      ...(comparison.headline
+        ? { headline: comparison.headline }
+        : valueStatus === 'completed'
+          ? { headline: 'Synthetic comparison headline.' }
+          : {}),
       ...(valueStatus === 'insufficient_evidence' ? { limitationCodes: ['missing_baseline_artifact'] } : {}),
     },
   };
+}
+
+export function syntheticComparisonResult(comparison: ComparisonCase = { status: 'completed' }): unknown {
+  return comparisonInvocation(comparison);
+}
+
+/** Absolute report/diagnostic path aligned with experiment-report persist rules. */
+export function syntheticReportPath(experimentRoot: string, comparison: ComparisonCase): string {
+  if (comparison.status === 'skipped') return experimentRoot;
+  if (comparison.status === 'failed' || comparison.status === 'cancelled') {
+    return `${experimentRoot}\\comparison-failure.html`;
+  }
+  return `${experimentRoot}\\report.html`;
 }
 
 export function syntheticExperimentResult(options: SyntheticFlowOptions = {}): Record<string, unknown> {
@@ -214,12 +270,9 @@ export function syntheticExperimentResult(options: SyntheticFlowOptions = {}): R
   const runId = options.runId ?? SYNTHETIC_RUN_ID;
   const comparison = options.comparison ?? { status: 'completed' };
   const outcome = syntheticCandidateOutcome(options.candidate);
-  const comparisonResult = syntheticComparisonResult(comparison);
-  const reportPath = comparison.status === 'failed' || comparison.status === 'cancelled'
-    ? `${experimentRoot}\\comparison-failure.html`
-    : comparison.status === 'skipped'
-      ? `${experimentRoot}\\report.html`
-      : `${experimentRoot}\\report.html`;
+  const comparisonResult = comparisonInvocation(comparison);
+  const reportPath = syntheticReportPath(experimentRoot, comparison);
+  const skipped = comparison.status === 'skipped';
   return {
     reportPath,
     experimentRoot,
@@ -252,6 +305,8 @@ export function syntheticExperimentResult(options: SyntheticFlowOptions = {}): R
       turns: 1,
     },
     pathLinks: {
+      // Match buildResultPathLinks: skip report link when comparison was skipped (reportPath === experimentRoot).
+      ...(skipped ? {} : { report: reportPath }),
       historyFinal: `${experimentRoot}\\environment\\baselines\\history-final.txt`,
       candidateFinal: `${experimentRoot}\\environment\\runs\\${runId}\\candidate-final.txt`,
       trace: `${experimentRoot}\\runs\\${runId}`,
@@ -275,13 +330,13 @@ export function syntheticRecoveryEvents(options: SyntheticFlowOptions = {}): Eve
       role: 'recovery',
       tool: 'read',
       params: { path: 'INDEX.md' },
-      ...(includeToolCallId ? { toolCallId: 'recovery-read-1' } : {}),
+      ...maybeId(includeToolCallId, 'toolCallId', 'recovery-read-1'),
     }),
     envelope('agent.tool_completed', {
       role: 'recovery',
       tool: 'read',
       params: { path: 'INDEX.md' },
-      ...(includeToolCallId ? { toolCallId: 'recovery-read-1' } : {}),
+      ...maybeId(includeToolCallId, 'toolCallId', 'recovery-read-1'),
     }),
   ];
   for (let index = 0; index < repeated; index += 1) {
@@ -289,7 +344,7 @@ export function syntheticRecoveryEvents(options: SyntheticFlowOptions = {}): Eve
       role: 'recovery',
       tool: 'shell_exec',
       message: failureMessage,
-      ...(includeToolCallId ? { toolCallId: `recovery-shell-${index + 1}` } : {}),
+      ...maybeId(includeToolCallId, 'toolCallId', `recovery-shell-${index + 1}`),
     }));
   }
   events.push(envelope('recovery.completed', { status: 'recovered' }));
@@ -299,6 +354,10 @@ export function syntheticRecoveryEvents(options: SyntheticFlowOptions = {}): Eve
 export function syntheticCandidateEvents(options: SyntheticFlowOptions = {}): EventEnvelope[] {
   const includeToolCallId = options.includeToolCallId === true;
   const multiLineLive = options.multiLineLive !== false;
+  const includeUserView = options.includeUserViewPersisted !== false;
+  const includeOutcome = options.includeOutcomeEvent !== false;
+  const listingLines = options.commandListingLines ?? 2;
+  const cwd = options.commandCwd ?? String.raw`C:\reprise`;
   const response = longPublicResponse(options.longMessageLines ?? 8);
   const liveDetail = multiLineLive
     ? 'first live line\nsecond live line\twith tab\rand CR'
@@ -312,38 +371,45 @@ export function syntheticCandidateEvents(options: SyntheticFlowOptions = {}): Ev
       sessionId: 'controller-synthetic-1',
       value: { type: 'send', rationale: 'One check remains.', message: 'Run the focused test.' },
     }),
-    envelope('runtime.tool_started', {
+  ];
+  if (multiLineLive) {
+    events.push(envelope('runtime.tool_started', {
       schemaVersion: 1,
       sessionId: 'sess-synthetic-1',
       evidenceRefs: [],
       live: { schemaVersion: 1, verb: 'check', leaf: liveDetail },
-      ...(includeToolCallId ? { callId: 'candidate-tool-1' } : {}),
-    }),
-    envelope('runtime.tool_finished', {
-      item: {
-        type: 'commandExecution',
-        command: String.raw`"C:\Program Files\PowerShell\7\pwsh.exe" -Command "Get-ChildItem"`,
-        status: 'completed',
-        cwd: String.raw`C:\reprise`,
-        exitCode: 0,
-        durationMs: 120,
-        aggregatedOutput: ['Mode  Length Name', '----  ------ ----', 'file-1.txt', 'file-2.txt'].join('\n'),
-      },
-      ...(includeToolCallId ? { callId: 'candidate-tool-1' } : {}),
-    }),
-    envelope('runtime.visible_output', {
-      item: { type: 'agentMessage', text: response },
-    }),
-    envelope('candidate.user_view_persisted', {
+      ...maybeId(includeToolCallId, 'callId', 'candidate-tool-1'),
+    }));
+  }
+  events.push(envelope('runtime.tool_finished', {
+    item: {
+      type: 'commandExecution',
+      command: String.raw`"C:\Program Files\PowerShell\7\pwsh.exe" -Command "Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name"`,
+      status: 'completed',
+      cwd,
+      exitCode: 0,
+      durationMs: listingLines > 2 ? 476 : 120,
+      aggregatedOutput: commandAggregatedOutput(listingLines),
+    },
+    ...maybeId(includeToolCallId, 'callId', 'candidate-tool-1'),
+  }));
+  events.push(envelope('runtime.visible_output', {
+    item: { type: 'agentMessage', text: response },
+  }));
+  if (includeUserView) {
+    events.push(envelope('candidate.user_view_persisted', {
       turnIndex: 1,
       status: 'completed',
+      // stamp() overwrites envelope occurredAt; observedAt filled to match after stamp via note in flow.
       observedAt: SYNTHETIC_FLOW_BASE_ISO,
       assistantText: response,
-    }),
-    envelope('run.outcome_created', {
+    }));
+  }
+  if (includeOutcome) {
+    events.push(envelope('run.outcome_created', {
       outcome: syntheticCandidateOutcome(options.candidate),
-    }),
-  ];
+    }));
+  }
   return events;
 }
 
@@ -355,40 +421,17 @@ export function syntheticComparisonEvents(options: SyntheticFlowOptions = {}): E
       role: 'comparison',
       tool: 'read',
       params: { path: 'report-facts.json' },
-      ...(includeToolCallId ? { toolCallId: 'comparison-read-1' } : {}),
+      ...maybeId(includeToolCallId, 'toolCallId', 'comparison-read-1'),
     }),
     envelope('agent.tool_completed', {
       role: 'comparison',
       tool: 'read',
       params: { path: 'report-facts.json' },
-      ...(includeToolCallId ? { toolCallId: 'comparison-read-1' } : {}),
+      ...maybeId(includeToolCallId, 'toolCallId', 'comparison-read-1'),
     }),
   ];
-  if (comparison.status === 'skipped') {
-    events.push(envelope('comparison.completed', { status: 'skipped' }));
-    return events;
-  }
-  if (comparison.status === 'cancelled') {
-    events.push(envelope('comparison.completed', {
-      status: 'cancelled',
-      ...(comparison.factRef ? { factRef: comparison.factRef } : {}),
-    }));
-    return events;
-  }
-  if (comparison.status === 'failed') {
-    events.push(envelope('comparison.completed', {
-      status: 'failed',
-      failure: {
-        code: comparison.failure?.code ?? 'agent_failure',
-        kind: comparison.failure?.kind ?? 'protocol',
-      },
-    }));
-    return events;
-  }
-  events.push(envelope('comparison.completed', {
-    status: comparison.valueStatus ?? 'completed',
-    ...(comparison.headline ? { headline: comparison.headline } : {}),
-  }));
+  // Live persist: { attemptId, ...invocationFact(result) }. Fixtures omit attemptId; keep invocationFact shape.
+  events.push(envelope('comparison.completed', comparisonInvocation(comparison)));
   return events;
 }
 
@@ -400,7 +443,12 @@ export function syntheticFlowEvents(options: SyntheticFlowOptions = {}): EventEn
     ...syntheticCandidateEvents(options),
     ...syntheticComparisonEvents(options),
   ];
-  return stamp(combined, clock, 500);
+  const stamped = stamp(combined, clock, 500);
+  return stamped.map((event) => {
+    if (event.type !== 'candidate.user_view_persisted') return event;
+    const payload = event.payload && typeof event.payload === 'object' ? event.payload as Record<string, unknown> : {};
+    return { ...event, payload: { ...payload, observedAt: event.occurredAt } };
+  });
 }
 
 export function sampleTimelineEntries(clock: FakeClock = createFakeClock()): TimelineEntry[] {
@@ -445,15 +493,20 @@ export type ScriptedWorkflowHandles = {
   releaseStart: () => void;
   resolveResult: (result?: unknown) => void;
   emitCandidateEvents: (onEvent: (event: EventEnvelope) => void) => void;
+  /** True once start() is blocked on the copy gate (for audit waitFor). */
+  copyLatched: () => boolean;
+  /** True once start() is blocked on the start gate after events were emitted. */
+  startLatched: () => boolean;
 };
 
 /**
- * Workflow stub matching visual-audit / intake-commands: gated recover/start, no real Runtime.
- * Reuses the same event list as {@link syntheticCandidateEvents}; result via {@link syntheticExperimentResult}.
+ * Gated recover/start workflow stub — shared by unit tests, visual-audit, and full-flow.
+ * Callers may spread extras (listCatalog, verifyCandidate, …) onto `workflow`.
  */
-export function createScriptedSyntheticWorkflow(options: SyntheticFlowOptions = {}): {
+export function createScriptedSyntheticWorkflow(options: ScriptedWorkflowOptions = {}): {
   workflow: {
     policy: unknown;
+    candidate?: { candidateId: string; productId: string; requestedModel: string };
     preflight: (request?: { signal?: AbortSignal }) => Promise<unknown>;
     recover: (request?: { signal?: AbortSignal }) => Promise<unknown>;
     acceptRecovery: () => Promise<unknown>;
@@ -467,6 +520,10 @@ export function createScriptedSyntheticWorkflow(options: SyntheticFlowOptions = 
   clock: FakeClock;
 } {
   const clock = options.clock ?? createFakeClock();
+  const experimentRoot = options.recoveryExperimentRoot
+    ?? options.experimentRoot
+    ?? SYNTHETIC_EXPERIMENT_ROOT;
+  const summary = options.recoverySummary ?? 'Ready for the original task.';
   let releasePreflight!: () => void;
   let releaseRecovery!: () => void;
   let releaseCopy!: () => void;
@@ -478,25 +535,43 @@ export function createScriptedSyntheticWorkflow(options: SyntheticFlowOptions = 
     releaseCopy: () => releaseCopy?.(),
     releaseStart: () => releaseStart?.(),
     resolveResult: (result) => resolveResult?.(result ?? syntheticExperimentResult(options)),
+    copyLatched: () => typeof releaseCopy === 'function',
+    startLatched: () => typeof releaseStart === 'function',
     emitCandidateEvents(onEvent) {
-      for (const event of stamp(syntheticCandidateEvents(options), clock, 500)) onEvent(event);
+      for (const event of stamp(syntheticCandidateEvents(options), clock, 500)) {
+        if (event.type === 'candidate.user_view_persisted') {
+          const payload = event.payload && typeof event.payload === 'object'
+            ? event.payload as Record<string, unknown>
+            : {};
+          onEvent({ ...event, payload: { ...payload, observedAt: event.occurredAt } });
+          continue;
+        }
+        onEvent(event);
+      }
     },
   };
   const workflow = {
-    policy: { maxTargetTurns: 256, maxModelCalls: 256, wallClockMs: 86_400_000, turnTimeoutMs: 7_200_000 },
+    ...(options.workflowCandidate ? { candidate: options.workflowCandidate } : {}),
+    policy: options.policy ?? DEFAULT_POLICY,
     preflight: async () => {
       await new Promise<void>((resolve) => { releasePreflight = resolve; });
       return {
         sourceBaseline: 'available',
-        resolved: { productId: 'codex', executable: 'fixture', requestedModel: 'gpt-test', resolvedModel: 'gpt-test' },
+        resolved: {
+          productId: options.workflowCandidate?.productId ?? 'codex',
+          executable: 'fixture',
+          requestedModel: options.workflowCandidate?.requestedModel ?? 'gpt-test',
+          resolvedModel: options.workflowCandidate?.requestedModel ?? 'gpt-test',
+        },
         limitations: [],
+        ...options.preflightExtras,
       };
     },
     recover: async () => {
       await new Promise<void>((resolve) => { releaseRecovery = resolve; });
       return {
         experimentId: 'synthetic-recovery',
-        experimentRoot: options.experimentRoot ?? SYNTHETIC_EXPERIMENT_ROOT,
+        experimentRoot,
         baseline: { match: 'recovered', warnings: [] },
         staging: { recoveryId: 'synthetic-recovery' },
         recovery: {
@@ -504,7 +579,7 @@ export function createScriptedSyntheticWorkflow(options: SyntheticFlowOptions = 
           sessionId: 's',
           value: {
             status: 'ready',
-            summary: 'Ready for the original task.',
+            summary,
             reportPath: 'recovery.md',
             unresolved: [],
           },

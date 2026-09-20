@@ -16,7 +16,7 @@ test('audit recorder seam stays on mockTui while synthetic flow supplies events'
   const clock = createFakeClock();
   clock.advance(60_000);
   const events = syntheticFlowEvents({
-    clock: createFakeClock(),
+    clock,
     comparison: { status: 'cancelled' },
     candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
     multiLineLive: true,

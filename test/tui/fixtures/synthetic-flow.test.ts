@@ -19,6 +19,7 @@ import {
   syntheticExperimentResult,
   syntheticFlowEvents,
   syntheticRecoveryEvents,
+  syntheticReportPath,
 } from './synthetic-flow.js';
 
 test('fake clock advances without sleeping and drives event timestamps', () => {
@@ -64,6 +65,46 @@ test('syntheticFlowEvents covers recovery → candidate → comparison with mono
   assert.ok(!('callId' in ((live?.payload as object) ?? {})));
   assert.match(longPublicResponse(4), new RegExp(`public response line 4\\n${PUBLIC_DETAIL_END}`));
   assert.ok(projectTimelineEvent(envelope('input.submitted', { turnIndex: 0, text: SYNTHETIC_TASK_TEXT })).length > 0);
+  const persisted = events.find((event) => event.type === 'candidate.user_view_persisted');
+  assert.equal(
+    (persisted?.payload as { observedAt?: string } | undefined)?.observedAt,
+    persisted?.occurredAt,
+  );
+});
+
+test('comparison invocation is nested for completed/insufficient_evidence and shared by result+events', () => {
+  const insufficient = { status: 'completed' as const, valueStatus: 'insufficient_evidence' as const, headline: 'Evidence was incomplete.' };
+  const resultShape = syntheticComparisonResult(insufficient) as {
+    status: string;
+    value: { status: string; headline?: string };
+  };
+  const eventPayload = syntheticComparisonEvents({ comparison: insufficient }).at(-1)?.payload as {
+    status: string;
+    value: { status: string; headline?: string };
+  };
+  assert.equal(resultShape.status, 'completed');
+  assert.equal(resultShape.value.status, 'insufficient_evidence');
+  assert.equal(resultShape.value.headline, 'Evidence was incomplete.');
+  assert.deepEqual(eventPayload, resultShape);
+  const projected = projectTimelineEvent(envelope('comparison.completed', eventPayload));
+  assert.equal(projected[0]?.title, '证据不足');
+  assert.equal(projected[0]?.detail, 'Evidence was incomplete.');
+
+  const completed = { status: 'completed' as const, headline: 'Both sides delivered.' };
+  const completedPayload = syntheticComparisonEvents({ comparison: completed }).at(-1)?.payload as {
+    status: string;
+    value: { status: string; headline?: string };
+  };
+  assert.equal(completedPayload.status, 'completed');
+  assert.equal(completedPayload.value.status, 'completed');
+  assert.equal(projectTimelineEvent(envelope('comparison.completed', completedPayload))[0]?.detail, 'Both sides delivered.');
+
+  const failedPayload = syntheticComparisonEvents({ comparison: { status: 'failed' } }).at(-1)?.payload as {
+    status: string;
+    failure: { message: string };
+  };
+  assert.equal(failedPayload.status, 'failed');
+  assert.match(failedPayload.failure.message, /Synthetic comparison failure/);
 });
 
 test('comparison and candidate outcomes parameterize independently', () => {
@@ -101,6 +142,42 @@ test('comparison and candidate outcomes parameterize independently', () => {
     ((cancelledOk.record as { outcome: { task: { status: string } } }).outcome).task.status,
     'apparently_completed',
   );
+});
+
+test('pathLinks.report aligns with production skipped/failed/cancelled report rules', () => {
+  const root = String.raw`C:\exp`;
+  const failed = syntheticExperimentResult({
+    experimentRoot: root,
+    comparison: { status: 'failed' },
+    candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+  });
+  assert.equal(failed.reportPath, syntheticReportPath(root, { status: 'failed' }));
+  assert.equal((failed.pathLinks as { report?: string }).report, failed.reportPath);
+  assert.match(String(failed.reportPath), /comparison-failure\.html$/);
+
+  const cancelled = syntheticExperimentResult({
+    experimentRoot: root,
+    comparison: { status: 'cancelled' },
+    candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+  });
+  assert.equal((cancelled.pathLinks as { report?: string }).report, cancelled.reportPath);
+  assert.match(String(cancelled.reportPath), /comparison-failure\.html$/);
+
+  const skipped = syntheticExperimentResult({
+    experimentRoot: root,
+    comparison: { status: 'skipped' },
+    candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+  });
+  assert.equal(skipped.reportPath, root);
+  assert.equal((skipped.pathLinks as { report?: string }).report, undefined);
+
+  const completed = syntheticExperimentResult({
+    experimentRoot: root,
+    comparison: { status: 'completed' },
+    candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+  });
+  assert.match(String(completed.reportPath), /report\.html$/);
+  assert.equal((completed.pathLinks as { report?: string }).report, completed.reportPath);
 });
 
 test('sampleTimelineEntries and scripted workflow stay Runtime-free', () => {

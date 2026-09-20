@@ -13,6 +13,12 @@ import { IntakeTui } from '../../src/tui/intake-app.js';
 import type { RecoveryView } from '../../src/application/recovery/view.js';
 import { mockTui } from '../../scripts/tui-audit-lib.js';
 import { waitFor } from '../codex-intake-support.js';
+import {
+  createFakeClock,
+  createScriptedSyntheticWorkflow,
+  syntheticExperimentResult,
+  syntheticFlowEvents,
+} from './fixtures/synthetic-flow.js';
 
 test('TUI run policy is a last-resort safety valve, not a completion budget', () => {
   assert.equal(TUI_RUN_POLICY.maxTargetTurns, 256);
@@ -427,12 +433,6 @@ test('blocked recovery cannot start a candidate even if an accept handle leaked'
 });
 
 test('synthetic scripted workflow emits recovery→candidate→compare fixtures without Runtime', async () => {
-  const {
-    createFakeClock,
-    createScriptedSyntheticWorkflow,
-    syntheticFlowEvents,
-    syntheticExperimentResult,
-  } = await import('./fixtures/synthetic-flow.js');
   const { workflow, handles } = createScriptedSyntheticWorkflow({
     clock: createFakeClock(),
     comparison: { status: 'failed' },
@@ -453,6 +453,7 @@ test('synthetic scripted workflow emits recovery→candidate→compare fixtures 
   });
   assert.equal((result.record as { outcome: { cleanup: { status: string } } }).outcome.cleanup.status, 'incomplete');
   assert.equal((result.comparison as { result: { status: string } }).result.status, 'failed');
+  assert.equal((result.pathLinks as { report?: string }).report, result.reportPath);
 
   const preflightPromise = workflow.preflight();
   queueMicrotask(() => handles.releasePreflight());

@@ -148,13 +148,11 @@ describe('realtime fluency caches', () => {
 
   it('projects the shared synthetic recovery→candidate→compare flow after a fake clock wait', () => {
     const clock = createFakeClock();
-    const beforeWait = clock.nowMs();
     clock.advance(121_000);
-    assert.equal(clock.nowMs() - beforeWait, 121_000);
     const timeline: TimelineEntry[] = [];
     const revision: TimelineRevisionState = { timelineRevision: 0 };
     for (const next of syntheticFlowEvents({
-      clock: createFakeClock(),
+      clock,
       repeatedToolFailures: 2,
       multiLineLive: true,
       comparison: { status: 'cancelled' },
@@ -165,6 +163,6 @@ describe('realtime fluency caches', () => {
     assert.ok(revision.timelineRevision > 0);
     assert.ok(timeline.some((entry) => /recovery|Recovery|已恢复/i.test(entry.title) || entry.itemId === 'now:recovery'));
     assert.ok(timeline.some((entry) => entry.title.includes('Visible response') || entry.detail?.includes('public response')));
-    assert.ok(timeline.some((entry) => /comparison|对照|cancelled|失败/i.test(entry.title) || entry.source === 'HARNESS'));
+    assert.ok(timeline.some((entry) => entry.title === '对照完成' || /comparison|对照/i.test(entry.title)));
   });
 });

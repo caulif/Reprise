@@ -53,10 +53,15 @@ test('synthetic fixture covers cancelled and insufficient_evidence comparison in
     'apparently_completed',
   );
   assert.match(String(cancelledFixture.reportPath), /comparison-failure\.html/);
+  assert.equal(
+    (cancelledFixture.pathLinks as { report?: string }).report,
+    cancelledFixture.reportPath,
+  );
   // Baseline (T01): cancelled currently paints as "Comparison complete" — fixture must still carry cancelled.
   const cancelledPaint = renderResult(theme, 120, cancelledFixture as never).join('\n');
   assert.match(cancelledPaint, /apparently_completed|completed\.controller_satisfied/);
   assert.match(cancelledPaint, /Comparison complete/);
+  assert.match(cancelledPaint, /comparison-failure\.html/);
 
   const insufficientFixture = syntheticExperimentResult({
     comparison: { status: 'completed', valueStatus: 'insufficient_evidence', headline: 'Evidence was incomplete.' },

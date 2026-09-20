@@ -5,6 +5,10 @@ import { pathToFileURL } from 'node:url';
 import { IntakeTui } from '../dist/src/tui/intake-app.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
 import { canonicalizeAuditFrame, compareFrames, mockTui, pageHtml, selfTestCompareFrames, shouldCompareAuditFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
+import {
+  createScriptedSyntheticWorkflow,
+  syntheticExperimentResult,
+} from '../dist/test/tui/fixtures/synthetic-flow.js';
 
 Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
 process.env.TERM = process.env.TERM && process.env.TERM !== 'dumb' ? process.env.TERM : 'xterm-256color';
@@ -295,78 +299,40 @@ async function main() {
   historyApp.handleInput('\r');
   await push('17-history-detail', 120, history.render(120));
 
-  const fullPublicResponse = `${Array.from({ length: 40 }, (_, index) => `public response line ${index + 1}`).join('\n')}\nPUBLIC_DETAIL_END`;
-  let releasePreflight;
-  let releaseRecovery;
-  let releaseCopy;
-  let releaseStart;
-  let resolveResult;
-  const workflow = {
-    candidate: { candidateId: 'codex-luna-high', productId: 'codex', requestedModel: 'gpt-5.6-luna' },
+  const { workflow: scripted, handles } = createScriptedSyntheticWorkflow({
+    longMessageLines: 40,
+    commandListingLines: 24,
+    commandCwd: String.raw`C:\reprise`,
+    multiLineLive: false,
+    includeOutcomeEvent: false,
+    includeUserViewPersisted: true,
+    recoveryExperimentRoot: join(root, 'data-run', 'experiments', 'audit-recovery'),
+    workflowCandidate: { candidateId: 'codex-luna-high', productId: 'codex', requestedModel: 'gpt-5.6-luna' },
     policy: { wallClockMs: 30 * 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10 * 60_000, maxConsecutiveNoProgress: 1 },
+    preflightExtras: {
+      comparisonClass: 'observational',
+      limitations: ['fingerprint differs'],
+      workspace: { fileCount: 111, totalBytes: Math.round(66.4 * 1024 * 1024), largestFileBytes: 1024, blockedReasons: [] },
+    },
+    comparison: { status: 'completed' },
+    candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+  });
+  const {
+    releasePreflight,
+    releaseRecovery,
+    releaseCopy,
+    releaseStart,
+    resolveResult,
+    copyLatched,
+    startLatched,
+  } = handles;
+  const workflow = {
+    ...scripted,
     listCatalog: async () => [{ value: 'gpt-5.6-luna', displayName: 'gpt-5.6-luna', resolvedModel: 'gpt-5.6-luna' }],
     inspectAvailability: async (productId) => [{ productId, status: 'available', observedAt: '2026-08-11T00:10:00.000Z' }],
     verifyCandidate: async (candidate) => ({
       productId: candidate.productId, executable: 'fixture', requestedModel: candidate.requestedModel, resolvedModel: candidate.requestedModel,
     }),
-    preflight: async () => {
-      await new Promise((resolve) => { releasePreflight = resolve; });
-      return {
-        sourceBaseline: 'available',
-        resolved: { productId: 'codex', executable: 'fixture', requestedModel: 'gpt-5.6-luna', resolvedModel: 'gpt-5.6-luna' },
-        comparisonClass: 'observational',
-        limitations: ['fingerprint differs'],
-        workspace: { fileCount: 111, totalBytes: Math.round(66.4 * 1024 * 1024), largestFileBytes: 1024, blockedReasons: [] },
-      };
-    },
-    recover: async () => {
-      await new Promise((resolve) => { releaseRecovery = resolve; });
-      return {
-        experimentId: 'audit-recovery',
-        experimentRoot: join(root, 'data-run', 'experiments', 'audit-recovery'),
-        baseline: { match: 'recovered', warnings: [] },
-        staging: { recoveryId: 'audit-recovery' },
-        recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready for the original task.', reportPath: 'recovery.md', unresolved: [] } },
-        accept: async () => ({ match: 'recovered', warnings: [] }),
-      };
-    },
-    acceptRecovery: async () => ({ match: 'recovered', warnings: [] }),
-    discardRecovery: async () => {},
-    start: async (input) => {
-      await new Promise((resolve) => { releaseCopy = resolve; });
-      input.onEvent({ schemaVersion: 1, sequence: 1, eventId: 'event-1', occurredAt: '2026-08-11T00:10:00.000Z', type: 'run.state_changed', payload: { to: 'launching' }, checksum: 'a'.repeat(64) });
-      input.onEvent({ schemaVersion: 1, sequence: 2, eventId: 'event-2', occurredAt: '2026-08-11T00:10:00.000Z', type: 'input.submitted', payload: { turnIndex: 0, text: 'Fix the failing test.' }, checksum: 'a'.repeat(64) });
-      input.onEvent({ schemaVersion: 1, sequence: 3, eventId: 'event-3', occurredAt: '2026-08-11T00:10:00.500Z', type: 'runtime.turn_started', payload: {}, checksum: 'a'.repeat(64) });
-      input.onEvent({ schemaVersion: 1, sequence: 4, eventId: 'event-4', occurredAt: '2026-08-11T00:10:01.000Z', type: 'controller.decision', payload: { status: 'completed', sessionId: 'controller-1', value: { type: 'send', rationale: 'One check remains.', message: 'Run the focused test.' } }, checksum: 'b'.repeat(64) });
-      const commandEvent = {
-        schemaVersion: 1, sequence: 5, eventId: 'event-5', occurredAt: '2026-08-11T00:10:01.500Z', type: 'runtime.tool_finished',
-        payload: {
-          item: {
-            type: 'commandExecution',
-            command: '"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe" -Command "Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name"',
-            status: 'completed', cwd: 'C:\\\\reprise', exitCode: 0, durationMs: 476,
-            aggregatedOutput: ['Mode  Length LastWriteTime         Name', '----  ------ -------------         ----', ...Array.from({ length: 24 }, (_, index) => `-a--- ${String(1200 + index).padStart(6)} 8/13/2026 12:00:00 AM  file-${index + 1}.txt`)].join('\n'),
-          },
-        },
-        checksum: 'c'.repeat(64),
-      };
-      input.onEvent(commandEvent);
-      const messageEvent = { schemaVersion: 1, sequence: 6, eventId: 'event-6', occurredAt: '2026-08-11T00:10:02.000Z', type: 'runtime.visible_output', payload: { item: { type: 'agentMessage', text: fullPublicResponse } }, checksum: 'd'.repeat(64) };
-      input.onEvent(messageEvent);
-      input.onEvent({
-        schemaVersion: 1, sequence: 7, eventId: 'event-7', occurredAt: '2026-08-11T00:10:02.000Z',
-        type: 'candidate.user_view_persisted',
-        payload: {
-          turnIndex: 1,
-          status: 'completed',
-          observedAt: '2026-08-11T00:10:02.000Z',
-          assistantText: fullPublicResponse,
-        },
-        checksum: 'e'.repeat(64),
-      });
-      await new Promise((resolve) => { releaseStart = resolve; });
-      return { cancel: async () => {}, result: new Promise((resolve) => { resolveResult = resolve; }) };
-    },
   };
   const run = mockTui(32);
   await saveHarnessModelConfig(join(root, 'data-run'), defaultHarnessModelConfig());
@@ -389,10 +355,10 @@ async function main() {
   }, { describe: 'auto recovery after freeze with selected product', timeoutMs: 30_000, frame: () => run.render(120) });
   await push('19-running-check', 120, run.render(120));
   await push('19b-running-check-compact', 60, run.render(60));
-  releasePreflight?.();
+  releasePreflight();
   await waitFor(() => /Running recovery agent|正在运行恢复/.test(run.render(120)), 'automatic environment preparation after preflight');
   await push('20-running-copy', 120, run.render(120));
-  releaseRecovery?.();
+  releaseRecovery();
   await waitFor(() => /choose candidate product|选候选产品/.test(run.render(120)), { describe: 'candidate product after recovery', frame: () => run.render(120) });
   await waitFor(() => /source session\s+available|来源会话[\s\S]{0,80}可用/.test(run.render(120)), {
     describe: 'candidate availability settled',
@@ -408,10 +374,10 @@ async function main() {
   runApp.handleInput('\r');
   await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay|正在复制隔离工作区|候选运行中|正在准备对照/.test(run.render(120)), 'candidate preparation after model selection');
   await push('21-running-start', 120, run.render(120));
-  await waitFor(() => Boolean(releaseCopy), { describe: 'candidate copy handle', timeoutMs: 30_000 });
+  await waitFor(() => copyLatched(), { describe: 'candidate copy handle', timeoutMs: 30_000 });
   releaseCopy();
-  await waitFor(() => Boolean(releaseStart), { describe: 'candidate start handle', timeoutMs: 30_000 });
-  releaseStart?.();
+  await waitFor(() => startLatched(), { describe: 'candidate start handle', timeoutMs: 30_000 });
+  releaseStart();
   await waitFor(() => /Candidate running|候选运行中/.test(run.render(120)), 'candidate replay after preparation');
   await new Promise((resolve) => setTimeout(resolve, 40));
   await push('22-running-wide', 120, run.render(120));
@@ -426,19 +392,12 @@ async function main() {
   runApp.handleInput('f');
   await push('25-running-filter-target', 120, run.render(120));
   runApp.handleInput('s');
-  resolveResult?.({
-    reportPath: join(root, 'data', 'experiments', 'fixture', 'report.html'),
+  resolveResult(syntheticExperimentResult({
     experimentRoot: join(root, 'data', 'experiments', 'fixture'),
-    preflight: {
-      sourceBaseline: 'available',
-      resolved: { productId: 'codex', executable: 'fixture', requestedModel: 'gpt-5.6-luna', resolvedModel: 'gpt-5.6-luna' },
-      comparisonClass: 'observational',
-      limitations: ['fingerprint differs'],
-    },
-    record: { attempt: { runId: 'run-1' }, outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } } },
-    decision: { status: 'completed', value: { type: 'done' }, usedFallback: false },
-    comparison: { result: { status: 'completed', usedFallback: false } },
-  });
+    runId: 'run-1',
+    comparison: { status: 'completed' },
+    candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+  }));
   await waitFor(() => /Experiment finished|对照结束/.test(run.render(120)));
   await push('26-result', 120, run.render(120));
   await push('26b-result-compact', 60, run.render(60));
