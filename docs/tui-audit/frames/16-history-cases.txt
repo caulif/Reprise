@@ -11,8 +11,9 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
 │     导入于 2026-08-11T00:00:00.000Z                               │ │ Task         Inspect a focused regression. │
 │ 1/1                                                               │ │ Source       codex · session-history │
 │                                                                   │ │ Frozen       2026-08-11T00:00:00.000Z │
-│                                                                   │ │ Path         TMP/ │
-│                                                                   │ │              history-data/cases/case-history/ │
+│                                                                   │ │ Path         C:\user\AppData\Local\ │
+│                                                                   │ │              Temp\reprise-tui-audit-TMP\ │
+│                                                                   │ │              history-data\cases\case-history\ │
 │                                                                   │ │              case.json │
 └───────────────────────────────────────────────────────────────────┘ └────────────────────────────────────────────────┘
  浏览本地对照，或按 Tab 切换到任务。
