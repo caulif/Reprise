@@ -98,7 +98,7 @@ export function candidateProductHints(locale: Locale = 'en'): readonly (readonly
 
 export function candidateModelHints(canEnter: boolean, locale: Locale = 'en'): readonly (readonly [string, string])[] {
   return [
-    ...(canEnter ? [['↑↓', t(locale, 'hintSelect')] as const, ['Enter', t(locale, 'hintStartCandidate')] as const] : []),
+    ...(canEnter ? [['↑↓', t(locale, 'hintSelect')] as const, ['Enter', t(locale, 'hintReviewRunConditions')] as const] : []),
     ['b', t(locale, 'hintChangeProduct')],
     ['Esc', t(locale, 'hintHome')],
   ];

@@ -285,6 +285,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     stopRunClock(c);
     c.selectedCandidate = undefined;
     if (userStatus === 'failed') {
+      c.confirmStartArmed = true;
       c.page = 'confirm';
       c.message = t(c.locale, 'recoveryFailed');
     } else {
@@ -367,6 +368,8 @@ function showRunResult(c: ControllerHandle, result: ExperimentResult): void {
 }
 
 export async function beginRun(c: ControllerHandle): Promise<void> {
+  if (c.runStartPending || c.startupAbort || c.activeExperiment) return;
+  c.runStartPending = true;
   void c.refreshProductAuth();
   const token = c.beginNavigation();
   const abort = new AbortController();
@@ -452,6 +455,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
       } catch (cleanupError) { c.showError(cleanupError, errorReturn); }
     } else c.showError(error, errorReturn);
   } finally {
+    c.runStartPending = false;
     if (c.startupAbort === abort) c.startupAbort = undefined;
   }
   stopRunClock(c);
@@ -577,11 +581,20 @@ export async function acceptCandidateModel(c: ControllerHandle): Promise<void> {
   const pack = c.packs.find((item) => item.manifest.productId === c.candidateProductId);
   const offer = c.candidateModelOffers[c.candidateModelCursor];
   if (!c.workflow || !pack || !offer || c.candidateCatalogStatus !== 'ready') return;
+  if (c.candidateVerifyPending) return;
   const generation = c.generation;
+  const productId = pack.manifest.productId;
+  const offerValue = offer.value;
+  c.candidateVerifyPending = { generation, productId, offerValue };
   try {
-    const spec = candidateSpecFromOffer(pack.manifest.productId, offer);
+    const spec = candidateSpecFromOffer(productId, offer);
     const resolved = await c.workflow.verifyCandidate(spec);
     if (generation !== c.generation) return;
+    const pending = c.candidateVerifyPending;
+    if (!pending || pending.generation !== generation || pending.productId !== productId || pending.offerValue !== offerValue) return;
+    if (c.candidateProductId !== productId) return;
+    const current = c.candidateModelOffers[c.candidateModelCursor];
+    if (!current || current.value !== offerValue) return;
     c.selectedCandidate = spec;
     if (c.preflight) c.preflight = { ...c.preflight, resolved };
     const blocked = candidateStartBlocked(candidateGateFrom(c));
@@ -591,12 +604,20 @@ export async function acceptCandidateModel(c: ControllerHandle): Promise<void> {
       return;
     }
     c.message = '';
-    bindWorkflow(c, beginRun(c));
+    c.confirmStartArmed = false;
+    c.page = 'confirm';
+    c.render(true);
+    c.confirmStartArmed = true;
   } catch (error) {
     if (generation !== c.generation) return;
     c.candidateCatalogStatus = 'error';
     c.candidateCatalogError = errorMessage(error);
     c.render();
+  } finally {
+    const pending = c.candidateVerifyPending;
+    if (pending && pending.generation === generation && pending.productId === productId && pending.offerValue === offerValue) {
+      c.candidateVerifyPending = undefined;
+    }
   }
 }
 

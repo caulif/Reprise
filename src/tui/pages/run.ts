@@ -40,6 +40,7 @@ export type ConfirmModel = PreflightModel & {
   readonly harnessAuthOk?: boolean;
   readonly sourceProductLabel?: string;
   readonly experimentId?: string;
+  readonly taskTitle?: string;
 };
 export type RunningModel = {
   readonly entries: readonly TimelineEntry[];
@@ -144,19 +145,25 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
   const diagnosisHint = failedRecovery && model.experimentId
     ? theme.style.muted(` ${t(locale, 'diagnosisSavedHint', { experimentId: model.experimentId })}`)
     : undefined;
+  const requested = model.candidate?.requestedModel;
+  const resolved = model.preflight.resolved.resolvedModel;
   const fields = [
-    kv(theme, t(locale, 'candidateLabel'), candidateSummary(model.candidate, product, model.preflight.resolved.resolvedModel, locale), width - 2),
+    ...(model.taskTitle ? [kv(theme, t(locale, 'taskLabel'), truncateFit(model.taskTitle, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
+    ...(model.sourceProductLabel ? [kv(theme, t(locale, 'sourceProductLabel'), model.sourceProductLabel, width - 2)] : []),
+    kv(theme, t(locale, 'candidateLabel'), product, width - 2),
+    kv(theme, t(locale, 'requestedModelLabel'), requested ?? t(locale, 'unavailableValue'), width - 2),
+    kv(theme, t(locale, 'resolvedModelLabel'), resolved || t(locale, 'unavailableValue'), width - 2),
     kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
     ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
+    kv(theme, t(locale, 'limitationsLabel'), model.preflight.limitations.length ? model.preflight.limitations.join(' | ') : t(locale, 'noneRecorded'), width - 2),
     ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
-    ...(cross ? [kv(theme, t(locale, 'sourceProductLabel'), `${model.sourceProductLabel}  →  ${product}`, width - 2)] : []),
+    ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
   ];
-  const crossNote = cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : [];
   const startOk = canStart ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'confirmCopySafe')}`)] : [];
   // Failed confirm: human failure reason is L1 — before candidate/recovery fields so the fold above cannot outrank it.
   const body = failedRecovery && !canStart
-    ? [warningLine, ...(diagnosisHint ? [diagnosisHint] : []), '', ...fields, ...crossNote, ...startOk]
-    : [...fields, '', ...crossNote, warningLine, ...startOk];
+    ? [warningLine, ...(diagnosisHint ? [diagnosisHint] : []), '', ...fields, ...startOk]
+    : [...fields, '', warningLine, ...startOk];
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
@@ -337,7 +344,14 @@ export function preflightHints(locale: Locale = 'en'): readonly (readonly [strin
 }
 
 export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
+  if (!canStart) {
+    return [['Enter', t(locale, 'hintTryBlocked')], ['Esc', t(locale, 'hintHome')]];
+  }
+  return [
+    ['Enter', t(locale, 'hintStartCandidate')],
+    ['b', t(locale, 'hintChangeModel')],
+    ['Esc', t(locale, 'hintChangeModel')],
+  ];
 }
 
 export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
@@ -376,12 +390,6 @@ export function countCalls(entries: readonly TimelineEntry[]): number {
 
 function dash(theme: Theme): string {
   return theme.framed ? '—' : '-';
-}
-
-function candidateSummary(candidate: CandidateSpec | undefined, product: string, resolvedModel: string | undefined, locale: Locale): string {
-  if (!candidate) return t(locale, 'unavailableValue');
-  const model = candidate.requestedModel;
-  return resolvedModel && resolvedModel !== model ? `${product}  ·  ${resolvedModel} (${model})` : `${product}  ·  ${model}`;
 }
 
 function userRecoveryHeadline(value: string, locale: Locale): string {

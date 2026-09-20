@@ -108,7 +108,8 @@ test('confirmation with accept stays partial and startable', () => {
   assert.doesNotMatch(text, /跳过路径/);
   assert.doesNotMatch(text, /ppt_build\/node_modules/);
   assert.doesNotMatch(text, /未决/);
-  assert.doesNotMatch(text, /extra\.txt/);
+  assert.match(text, /限制/);
+  assert.match(text, /extra\.txt/);
   assert.doesNotMatch(text, /无法启动隔离/);
   assert.match(text, /启动隔离的 Codex 候选/);
   assert.match(text, /原目录不变/);

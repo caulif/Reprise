@@ -89,6 +89,7 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchPreflightInput('b')?.action, 'home');
   assert.equal(dispatchConfirmInput('\r')?.action, 'run');
   assert.equal(dispatchConfirmInput('b')?.action, 'models');
+  assert.equal(dispatchConfirmInput('\x1b')?.action, 'models');
   assert.equal(dispatchCandidatePickerInput('b')?.action, 'back');
   assert.equal(dispatchCandidatePickerInput('\r')?.action, 'enter');
   assert.equal(dispatchRunningKeys('\t')?.action, 'cycle-fold');
