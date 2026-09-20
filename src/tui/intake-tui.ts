@@ -23,7 +23,7 @@ import type {
 import { initializeIntakeTui } from "./intake-tui-state.js";
 import * as intakeMethods from "./intake-tui-methods.js";
 import type { ConfigReturnTarget } from "./intake-tui-config.js";
-import type { ConfigConnectionTestStatus } from "./pages/config.js";
+import type { ConfigBusy, ConfigConnectionTestStatus } from "./pages/config.js";
 import type { Locale } from "./i18n.js";
 import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
@@ -168,10 +168,8 @@ export class IntakeTui {
   timelineFilterIndex = 0;
   timelineFollowing = true;
   cancelling = false;
-  configBusy = false;
-  configBusyKind: "idle" | "save" | "test" = "idle";
+  configBusy: ConfigBusy = "idle";
   configDraftVersion = 0;
-  configTestDraftVersion: number | undefined;
   configTestStatus: ConfigConnectionTestStatus = "idle";
   configTestDetail: string | undefined;
   configReturnTarget: ConfigReturnTarget | undefined;

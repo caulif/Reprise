@@ -144,7 +144,6 @@ export function view(c: IntakeTui): WorkbenchView {
     configPendingToggle: c.configPendingToggle,
     ...(c.configLeaveConfirm ? { configLeaveConfirm: true } : {}),
     configBusy: c.configBusy,
-    configBusyKind: c.configBusyKind,
     configTestStatus: c.configTestStatus,
     ...(c.configTestDetail ? { configTestDetail: c.configTestDetail } : {}),
     historyTotalBytes: c.historyTotalBytes,

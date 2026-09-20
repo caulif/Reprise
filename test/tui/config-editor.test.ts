@@ -199,12 +199,68 @@ test('config page keeps draft, credentials, and connection test as separate line
 });
 
 test('busy config disables repeated connection tests without starting another action', () => {
-  const busy = { draft, selected: 0, editing: false, buffer: '', cursor: 0, providers: [], models: [], busy: true };
+  const busy = { draft, selected: 0, editing: false, buffer: '', cursor: 0, providers: [], models: [], busy: true, locale: 'en' as const };
   const blocked = handleConfigInput(busy, '\x14', refresh);
   assert.equal(blocked?.action, undefined);
   assert.match(blocked?.message ?? '', /already in progress/i);
+  const zh = handleConfigInput({ ...busy, locale: 'zh' }, '\x14', refresh);
+  assert.match(zh?.message ?? '', /进行中/);
   const hints = configHints(false, 'model', false, false, 'zh', false, true);
   assert.deepEqual(hints.find((item) => item[0] === 'Ctrl+T'), ['Ctrl+T', '测试不可用（进行中）']);
+});
+
+test('credential gap keeps connection-test idle instead of failed', () => {
+  const theme = createTheme(120);
+  const text = renderConfig(theme, 120, {
+    draft,
+    selected: 0,
+    editing: false,
+    buffer: '',
+    dirty: true,
+    saved: false,
+    connectionTest: { status: 'idle' },
+    locale: 'en',
+  }).join('\n');
+  assert.match(text, /Credentials: missing or unset/);
+  assert.match(text, /Connection test: not run for this draft/);
+  assert.doesNotMatch(text, /Connection test: failed/);
+});
+
+test('testing paints a single connection-test line without a duplicate busy clone', () => {
+  const theme = createTheme(120);
+  const text = renderConfig(theme, 120, {
+    draft,
+    selected: 0,
+    editing: false,
+    buffer: '',
+    dirty: false,
+    saved: true,
+    busy: true,
+    connectionTest: { status: 'testing' },
+    locale: 'en',
+  }).join('\n');
+  const matches = text.match(/Connection test: in progress/g) ?? [];
+  assert.equal(matches.length, 1);
+  assert.doesNotMatch(text, /Saving configuration locally/);
+});
+
+test('save busy adds a save note without claiming connection test progress', () => {
+  const theme = createTheme(120);
+  const text = renderConfig(theme, 120, {
+    draft,
+    selected: 0,
+    editing: false,
+    buffer: '',
+    dirty: true,
+    saved: true,
+    busy: true,
+    busyKind: 'save',
+    connectionTest: { status: 'idle' },
+    locale: 'en',
+  }).join('\n');
+  assert.match(text, /Saving configuration locally/);
+  assert.match(text, /Connection test: not run for this draft/);
+  assert.doesNotMatch(text, /Connection test: in progress/);
 });
 
 test('stale connection test copy does not claim the current draft is verified', () => {
@@ -350,9 +406,8 @@ test('draft changes while a connection test is pending keep the new draft unveri
   await app.openConfig();
   const started = app.testConfigConnection();
   await waitUntil(() => app.configTestStatus === 'testing');
-  assert.equal(app.configBusy, true);
-  const testedVersion = app.configTestDraftVersion;
-  assert.equal(typeof testedVersion, 'number');
+  assert.equal(app.configBusy, 'test');
+  const testedVersion = app.configDraftVersion;
   // Mutate the draft the way the editor does: bump identity so a late success cannot verify it.
   app.configSelected = 3; // effort field for pi-catalog
   app.configPageInput('\r');
@@ -362,6 +417,110 @@ test('draft changes while a connection test is pending keep the new draft unveri
   assert.equal(app.configTestStatus, 'stale');
   assert.match(app.message, /previous draft|已变更前的草稿|Re-test|重新测试/);
   assert.doesNotMatch(app.message, /^Connection test passed/);
+});
+
+test('leave and reopen clears sticky busy so reconnect does not fake a connection test', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-config-sticky-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const tui = {
+    addChild() {},
+    addInputListener() { return () => {}; },
+    start() {},
+    stop() {},
+    requestRender() {},
+    renderNow() {},
+  } as never;
+  const piModels = {
+    getProviders: () => [{ id: 'provider-a', name: 'Provider A' }],
+    getModels: () => [{ id: 'model-a', name: 'Model A', input: ['text'] }],
+    getModel: () => ({ id: 'model-a', name: 'Model A', input: ['text'] }),
+    getAuth: async () => ({ auth: {}, source: 'fixture' }),
+    completeSimple: async () => {
+      await gate;
+      return { stopReason: 'stop', content: [{ type: 'text', text: 'OK' }] };
+    },
+  } as never;
+  const { IntakeTui } = await import('../../src/tui/intake-app.js');
+  const { saveHarnessModelConfig } = await import('../../src/infrastructure/harness-model-config.js');
+  const { view } = await import('../../src/tui/controller-view.js');
+  const { createTheme } = await import('../../src/tui/theme.js');
+  const { renderConfig } = await import('../../src/tui/pages/config.js');
+  const dataDir = join(root, 'data');
+  await saveHarnessModelConfig(dataDir, {
+    schemaVersion: 2,
+    provider: { kind: 'pi-catalog', id: 'provider-a' },
+    providerId: 'provider-a',
+    modelId: 'model-a',
+    effort: 'medium',
+  });
+  const app = new IntakeTui({
+    dataDir,
+    tui,
+    piModels,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  await app.start();
+  await app.openConfig();
+  const started = app.testConfigConnection();
+  await waitUntil(() => app.configBusy === 'test');
+  app.leaveConfig();
+  assert.equal(app.configBusy, 'idle');
+  assert.equal(app.configTestStatus, 'idle');
+  await waitUntil(() => app.page === 'home' && /background|后台/.test(app.message));
+  await app.openConfig();
+  assert.equal(app.configBusy, 'idle');
+  assert.equal(app.configTestStatus, 'idle');
+  const projected = view(app).config;
+  assert.ok(projected);
+  assert.equal(projected.busy, false);
+  assert.equal(projected.busyKind, undefined);
+  assert.equal(projected.connectionTest?.status, 'idle');
+  const text = renderConfig(createTheme(120), 120, projected).join('\n');
+  assert.match(text, /Connection test: not run for this draft|连接测试：当前草稿尚未测试/);
+  assert.doesNotMatch(text, /Connection test: in progress|连接测试：进行中/);
+  release();
+  await started;
+});
+
+test('missing credentials refuse Ctrl+T without marking connection-test failed', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-config-cred-gap-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const tui = {
+    addChild() {},
+    addInputListener() { return () => {}; },
+    start() {},
+    stop() {},
+    requestRender() {},
+    renderNow() {},
+  } as never;
+  const { IntakeTui } = await import('../../src/tui/intake-app.js');
+  const { view } = await import('../../src/tui/controller-view.js');
+  const app = new IntakeTui({
+    dataDir: join(root, 'data'),
+    tui,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  await app.start();
+  await app.openConfig();
+  // Force openai-compatible draft with empty key.
+  app.configDraft = {
+    kind: 'openai-compatible',
+    providerId: 'openai-compatible',
+    modelId: 'gpt-test',
+    effort: 'medium',
+    baseUrl: 'https://api.example.test/v1',
+    keyRef: '',
+    api: 'openai-completions',
+    reasoning: false,
+    supportsImage: false,
+  };
+  await app.testConfigConnection();
+  assert.equal(app.configTestStatus, 'idle');
+  assert.equal(app.configBusy, 'idle');
+  assert.match(app.message, /API key|env:NAME|密钥/i);
+  assert.equal(view(app).config?.connectionTest?.status, 'idle');
 });
 
 async function waitUntil(condition: () => boolean): Promise<void> {

@@ -11,6 +11,7 @@ export const CONFIG_FIELDS = HARNESS_CONFIG_FIELDS;
 export type ConfigField = HarnessConfigField;
 
 export type ConfigConnectionTestStatus = 'idle' | 'testing' | 'passed' | 'failed' | 'stale';
+export type ConfigBusy = 'idle' | 'save' | 'test';
 
 export type ConfigModel = {
   readonly draft: HarnessConfigDraft;
@@ -25,9 +26,10 @@ export type ConfigModel = {
   readonly pendingToggle?: boolean;
   readonly leaveConfirm?: boolean;
   readonly locale?: Locale;
-  /** True only while a save or connection test request is in flight. */
+  /** True while save or connection test is in flight (hints / input gate). */
   readonly busy?: boolean;
-  readonly busyKind?: 'save' | 'test';
+  /** Save-only progress chrome — test progress uses connectionTest.status. */
+  readonly busyKind?: 'save';
   readonly connectionTest?: {
     readonly status: ConfigConnectionTestStatus;
     readonly detail?: string;
@@ -110,8 +112,9 @@ function configStateLines(theme: Theme, model: ConfigModel, locale: Locale): rea
       : ` ${theme.glyphs.dot} ${t(locale, 'configSaveStatusMemory')}`;
   const credLine = credentialStateLine(theme, model, locale);
   const testLine = connectionTestLine(theme, model, locale);
-  const busyLine = model.busy
-    ? theme.style.warn(` ${theme.glyphs.dot} ${model.busyKind === 'save' ? t(locale, 'configSavingLocally') : t(locale, 'configTestStatusTesting')}`)
+  // Save-only busy note — never a second "testing" line beside connectionTest.
+  const busyLine = model.busyKind === 'save'
+    ? theme.style.warn(` ${theme.glyphs.dot} ${t(locale, 'configSavingLocally')}`)
     : undefined;
   return busyLine ? [saveLine, credLine, testLine, busyLine] : [saveLine, credLine, testLine];
 }

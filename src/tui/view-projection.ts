@@ -19,7 +19,7 @@ type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
   readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
-  readonly configBusy?: boolean; readonly configBusyKind?: 'idle' | 'save' | 'test';
+  readonly configBusy?: 'idle' | 'save' | 'test';
   readonly configTestStatus?: 'idle' | 'testing' | 'passed' | 'failed' | 'stale';
   readonly configTestDetail?: string;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
@@ -148,8 +148,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
         pendingToggle: input.configPendingToggle,
         ...(input.configLeaveConfirm ? { leaveConfirm: true } : {}),
         locale: input.locale ?? 'en',
-        busy: Boolean(input.configBusy),
-        ...(input.configBusyKind === 'save' || input.configBusyKind === 'test' ? { busyKind: input.configBusyKind } : {}),
+        busy: (input.configBusy ?? 'idle') !== 'idle',
+        ...(input.configBusy === 'save' ? { busyKind: 'save' as const } : {}),
         connectionTest: {
           status: input.configTestStatus ?? 'idle',
           ...(input.configTestDetail ? { detail: input.configTestDetail } : {}),
