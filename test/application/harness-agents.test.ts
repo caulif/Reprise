@@ -19,14 +19,22 @@ test('Harness agent factory shares one Pi session caller and persisted model cho
   });
 });
 
-test('factory does not give Controller or Comparison the candidate callTimeoutMs', () => {
+test('factory gives Comparison the harness callTimeoutMs but keeps Controller unbounded', () => {
   const budget = { callTimeoutMs: 20, maxStructuredRepairAttempts: 1 };
   const agents = createHarnessAgents(defaultHarnessModelConfig(), {
     createSession: () => ({ append: async () => '{"type":"done","reason":"satisfied"}', cancel() {} }),
   }, { budget });
-  assert.equal(agents.comparison.timeoutMs, 0);
+  assert.equal(agents.comparison.timeoutMs, budget.callTimeoutMs);
   assert.equal(agents.controller.timeoutMs, 0);
   assert.equal(agents.config.budget.callTimeoutMs, 20);
+});
+
+test('default Comparison timeout is the finite DEFAULT_BUDGET callTimeoutMs', () => {
+  const agents = createHarnessAgents(defaultHarnessModelConfig(), {
+    createSession: () => ({ append: async () => '{"type":"done","reason":"satisfied"}', cancel() {} }),
+  });
+  assert.equal(agents.comparison.timeoutMs, 24 * 60 * 60_000);
+  assert.equal(agents.controller.timeoutMs, 0);
 });
 
 test('factory recovery budget still bounds Recovery', () => {

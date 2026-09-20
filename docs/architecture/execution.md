@@ -14,7 +14,7 @@ Host 为每次 start/send 提供带 `runId`、turn index 和 client message id �
 
 开场消息由 Controller 在 `created` 状态中生成，这是 opening 例外；后续 steering 只在目标 turn settled 后、状态为 `awaiting_controller` 时发生。Controller 通过 Host 工具观察事件、历史要求、候选工作区和 briefing；其协作工具可以对 `project/` 与 notes 写入，也可以执行受边界限制的 shell。受控写工具禁止写用户 source、凭据目录或实验事实文件；shell 的命令检查不是全局容器沙箱，外部写入审计不能等同于完备隔离。
 
-Controller 的 decision 经过结构化 schema 校验。工具调用和 decision 结果进入事件审计；模型输出不直接改变 CandidateRun 状态。达到 wall-clock、Controller call 或其他 run policy 限制时，Host 停止运行并进入收尾。Controller/Comparison 的 Agent Session 当前使用 `timeoutMs: 0`；不要把通用配置中的有限 `callTimeoutMs` 当成实际单次超时。
+Controller 的 decision 经过结构化 schema 校验。工具调用和 decision 结果进入事件审计；模型输出不直接改变 CandidateRun 状态。达到 wall-clock、Controller call 或其他 run policy 限制时，Host 停止运行并进入收尾。Controller 的 Agent Session 仍使用 `timeoutMs: 0`；Comparison 使用 harness `budget.callTimeoutMs`（默认 24 小时）作为每轮模型/工具调用的有限截止时间，与 attempt 级 `AbortSignal` 共享取消路径。
 
 ## 终止与结果
 

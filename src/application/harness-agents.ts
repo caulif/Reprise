@@ -36,7 +36,12 @@ export function createHarnessAgents(
   const recoveryBudget = limits.recoveryBudget ?? budget;
   const locale = options.locale ?? 'zh';
   return {
-    comparison: new ComparisonAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts, locale }),
+    comparison: new ComparisonAgent({
+      host,
+      timeoutMs: budget.callTimeoutMs,
+      maxRepairAttempts: budget.maxStructuredRepairAttempts,
+      locale,
+    }),
     controller: new ControllerAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts, locale }),
     recovery: new RecoveryAgent({ host, timeoutMs: recoveryBudget.callTimeoutMs, maxRepairAttempts: recoveryBudget.maxStructuredRepairAttempts, locale }),
     config: { providerId: config.providerId, requestedModel: config.modelId, budget, recoveryBudget },
