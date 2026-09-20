@@ -26,6 +26,7 @@ import type { Locale } from "./i18n.js";
 import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
 import type { Option } from "./types.js";
+import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
 import type { TimelineEntry } from "./timeline.js";
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
@@ -162,6 +163,7 @@ export class IntakeTui {
   workflowFinished: Promise<void> | undefined;
   result: ExperimentResult | undefined;
   timeline: TimelineEntry[] = [];
+  activityIndex: ActivityIndexState = createActivityIndex();
   timelineSelected = 0;
   timelineFilterIndex = 0;
   timelineFollowing = true;

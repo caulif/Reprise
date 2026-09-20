@@ -48,6 +48,12 @@ export function projectAgentTool(
   lane: AgentLane;
   kind: AgentKind;
   count?: number;
+  correlationId?: string;
+  linkUnknown?: boolean;
+  role?: AgentLane;
+  verb?: 'read' | 'inspect' | 'write' | 'edit' | 'error';
+  object?: string;
+  activityStatus?: 'started' | 'completed' | 'failed';
 } } {
   const lane = agentLane(payload);
   const tool = text(payload.tool) ?? 'unknown';
@@ -57,12 +63,22 @@ export function projectAgentTool(
   const object = toolObject(payload, tool);
   const kind = toolKind(lane, tool, object.command);
   const gitMissing = isGitMissing(tool, completed, payload);
+  const toolCallId = text(payload.toolCallId);
   if (failed) {
     const failure = humanToolFailure(message);
     return {
       title: failure.title,
       ...(failure.detail ? { detail: failure.detail } : {}),
-      extra: { level: 'error', lane, kind },
+      extra: {
+        level: 'error',
+        lane,
+        kind,
+        ...(toolCallId ? { correlationId: toolCallId } : { linkUnknown: true }),
+        role: lane,
+        verb: 'error' as const,
+        activityStatus: 'failed' as const,
+        ...(object.short ? { object: object.short } : {}),
+      },
     };
   }
   const verb = toolVerb(tool, object);
@@ -81,6 +97,10 @@ export function projectAgentTool(
       lane,
       kind: keepNow ? 'live' : kind,
       count: 1,
+      role: lane,
+      activityStatus: completed ? 'completed' : 'started',
+      ...(object.short ? { object: object.short } : {}),
+      ...(toolCallId ? { correlationId: toolCallId } : {}),
       ...(keepNow ? { itemId: `now:${lane}`, patch: 'replace' as const, placeholder: true as const } : {}),
       ...(warnWrite ? { level: 'warning' as const } : {}),
     },
