@@ -9,8 +9,7 @@ import { errorMessage } from './format.js';
 import { t, type Locale } from './i18n.js';
 import { projectLabel } from './pages/intake.js';
 import { bumpTimelineRevision } from './timeline-revision.js';
-import { resetActivityIndex } from './activity-index.js';
-import { appendProjectedEvent } from './timeline.js';
+import { appendTimelineEntries, projectTimelineEvent } from './timeline.js';
 import { syncTimelineSelection } from './timeline-read.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
 import { candidateGateFromView, candidateStartBlocked, type CandidateStartGate } from '../application/candidate-start.js';
@@ -19,7 +18,6 @@ import { recoveryViewFromAttempt } from '../application/recovery/view.js';
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import { record, text } from '../core/json.js';
 import { candidateRunPhaseFromEvent, candidateRunDisplayFromEvents, isCandidateRunState } from '../application/candidate-run-phase.js';
-import { deriveResultPresentationFromResult } from './display-state.js';
 
 function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
@@ -36,7 +34,38 @@ function workspaceDetail(workspace: { fileCount: number; totalBytes: number } | 
 }
 
 function resultMessage(result: ExperimentResult, locale: Locale): string {
-  return t(locale, deriveResultPresentationFromResult(result, locale).messageKey);
+  const kind = result.record.outcome.termination.kind;
+  if (kind === 'cancelled') return t(locale, 'resultCancelled');
+  if (result.comparison.result.status === 'skipped') return t(locale, 'resultSkipped');
+  if (result.comparison.result.status === 'cancelled') return t(locale, 'resultComparisonCancelled');
+  if (kind === 'blocked') return t(locale, 'resultBlocked');
+  if (kind === 'failed') return t(locale, 'resultFailed');
+  if (kind === 'completed') return t(locale, 'resultCompleted');
+  return t(locale, 'resultOther');
+}
+
+export type CancelUi = 'idle' | 'requesting' | 'failed' | 'settled';
+
+export function resolveCompareChoice(c: ControllerHandle, run: boolean): void {
+  c.compareChoice?.resolve(run);
+  c.compareChoice = undefined;
+}
+
+export function setCancelUi(c: ControllerHandle, next: CancelUi, detail?: string): void {
+  c.cancelUi = next;
+  c.cancelling = next === 'requesting';
+  if (next === 'requesting') {
+    c.message = t(c.locale, 'cancellationRequested');
+    return;
+  }
+  if (next === 'failed') {
+    c.message = t(c.locale, 'cancellationFailed', { error: detail?.trim() || 'unknown' });
+  }
+}
+
+function clearCancelRequest(c: ControllerHandle): void {
+  c.cancelUi = 'idle';
+  c.cancelling = false;
 }
 
 export function startRunSetup(c: ControllerHandle, input: { afterFreeze?: boolean } = {}): Consume {
@@ -122,15 +151,15 @@ export async function discardRecovery(c: ControllerHandle): Promise<void> {
 }
 
 export function requestCancellation(c: ControllerHandle): Consume {
-  if (c.cancelling) return c.close();
-  c.cancelling = true;
+  if (c.cancelUi === 'requesting' || c.cancelling) return c.close();
+  resolveCompareChoice(c, false);
+  setCancelUi(c, 'requesting');
   c.startupAbort?.abort();
   c.recoveryAbort?.abort();
-  c.message = t(c.locale, 'cancellationRequested');
   c.render();
   void c.activeExperiment?.cancel().catch((error: unknown) => {
-    c.cancelling = false;
-    c.message = errorMessage(error);
+    if (c.cancelUi !== 'requesting') return;
+    setCancelUi(c, 'failed', errorMessage(error));
     c.render(true);
   });
   return { consume: true };
@@ -162,14 +191,14 @@ function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
     c.prepareDetail = undefined;
   }
   noteRunDiagnostics(c, event);
-  appendProjectedEvent(c.timeline, event, c.activityIndex, c);
+  appendTimelineEntries(c.timeline, projectTimelineEvent(event), c);
   syncTimelineSelection(c);
   if (c.page === 'running') c.scheduleTimelineRender();
 }
 
 export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?: boolean } = {}): Promise<void> {
   const token = c.beginNavigation();
-  c.cancelling = false;
+  clearCancelRequest(c);
   const errorReturn = c.runFromSource ? 'source' : 'home';
   try {
     if (!c.workflow || !c.taskCase) throw new Error('Experiment workflow is unavailable.');
@@ -198,8 +227,9 @@ export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?:
       verifyCandidate: false,
     });
     if (token !== c.generation) return;
-    if (c.cancelling) {
-      c.cancelling = false;
+    if (c.cancelling || c.cancelUi === 'requesting') {
+      clearCancelRequest(c);
+      c.cancelUi = 'settled';
       c.page = 'home';
       c.preparePhase = undefined;
       c.prepareDetail = undefined;
@@ -222,13 +252,12 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
   const token = c.beginNavigation();
   const abort = new AbortController();
   c.recoveryAbort = abort;
-  c.cancelling = false;
+  clearCancelRequest(c);
   const errorReturn = c.runFromSource ? 'source' : 'home';
   try {
     if (!c.workflow || !c.taskCase || !c.preflight) throw new Error('Recovery is unavailable before preflight.');
     await discardRecovery(c);
     c.timeline = [];
-    resetActivityIndex(c.activityIndex);
     c.timelineSelected = 0;
     bumpTimelineRevision(c);
     c.timelineFollowing = true;
@@ -282,7 +311,6 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     stopRunClock(c);
     c.selectedCandidate = undefined;
     if (userStatus === 'failed') {
-      c.confirmStartArmed = true;
       c.page = 'confirm';
       c.message = t(c.locale, 'recoveryFailed');
     } else {
@@ -301,15 +329,21 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
       c.preparePhase = undefined;
       c.prepareDetail = undefined;
       c.message = t(c.locale, 'recoveryCancelled');
+      c.cancelUi = 'settled';
     } else c.showError(error, errorReturn);
     stopRunClock(c);
   } finally {
     if (c.recoveryAbort === abort) {
       c.recoveryAbort = undefined;
+      if (c.cancelUi === 'requesting' || c.cancelling) c.cancelUi = 'settled';
       c.cancelling = false;
     }
   }
   c.render(true);
+}
+
+function cancelRequestOpen(c: ControllerHandle): boolean {
+  return c.cancelling || c.cancelUi === 'requesting';
 }
 
 async function settleRun(
@@ -317,9 +351,14 @@ async function settleRun(
   handle: ExperimentHandle,
   token: number,
 ): Promise<ExperimentResult | undefined> {
-  if (c.autoCompare || c.cancelling) return handle.result;
+  if (c.autoCompare || cancelRequestOpen(c)) return handle.result;
   const partial = await handle.candidateFinished;
-  if (token !== c.generation) return undefined;
+  if (token !== c.generation) {
+    // Navigation/close may have already decided via cancel(); settle is idempotent.
+    await handle.skipComparison();
+    return undefined;
+  }
+  if (cancelRequestOpen(c)) return handle.result;
   c.result = partial;
   c.page = 'result';
   c.preparePhase = undefined;
@@ -329,15 +368,19 @@ async function settleRun(
     c.compareChoice = { resolve };
     c.render(true);
   });
-  if (token !== c.generation) return undefined;
-  if (runCompare) {
-    c.page = 'running';
-    c.preparePhase = 'compare';
-    c.render(true);
+  // Always close the deferred comparison gate exactly once. Generation may bump
+  // from Esc/backToHome/close after the operator choice is resolved.
+  if (runCompare && !cancelRequestOpen(c)) {
+    if (token === c.generation) {
+      c.page = 'running';
+      c.preparePhase = 'compare';
+      c.render(true);
+    }
     await handle.runComparison();
   } else {
     await handle.skipComparison();
   }
+  if (token !== c.generation) return undefined;
   return handle.result;
 }
 
@@ -361,12 +404,13 @@ function showRunResult(c: ControllerHandle, result: ExperimentResult): void {
   c.finding = false;
   c.findQuery = '';
   c.findCursor = 0;
+  if (c.cancelUi === 'requesting' || c.cancelling) c.cancelUi = 'settled';
+  else if (c.cancelUi !== 'failed') c.cancelUi = 'idle';
+  c.cancelling = false;
   c.message = resultMessage(result, c.locale);
 }
 
 export async function beginRun(c: ControllerHandle): Promise<void> {
-  if (c.runStartPending || c.startupAbort || c.activeExperiment) return;
-  c.runStartPending = true;
   void c.refreshProductAuth();
   const token = c.beginNavigation();
   const abort = new AbortController();
@@ -377,7 +421,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.timelineSelected = Math.max(0, c.visibleTimeline().length - 1);
     c.timelineFilterIndex = 0;
     c.timelineFollowing = true;
-    c.cancelling = false;
+    clearCancelRequest(c);
     c.finding = false;
     c.findQuery = '';
     c.findCursor = 0;
@@ -429,8 +473,8 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
     c.activeExperiment = handle;
-    if (c.cancelling) await handle.cancel();
-    c.message = c.cancelling ? t(c.locale, 'cancellationRequested') : '';
+    if (c.cancelling || c.cancelUi === 'requesting') await handle.cancel();
+    c.message = (c.cancelling || c.cancelUi === 'requesting') ? t(c.locale, 'cancellationRequested') : '';
     c.render(true);
     const result = await settleRun(c, handle, token);
     if (!result || token !== c.generation) return;
@@ -448,11 +492,11 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
         c.preparePhase = undefined;
         c.prepareDetail = undefined;
         c.message = t(c.locale, 'startupCancelled');
+        c.cancelUi = 'settled';
         c.cancelling = false;
       } catch (cleanupError) { c.showError(cleanupError, errorReturn); }
     } else c.showError(error, errorReturn);
   } finally {
-    c.runStartPending = false;
     if (c.startupAbort === abort) c.startupAbort = undefined;
   }
   stopRunClock(c);
@@ -578,20 +622,11 @@ export async function acceptCandidateModel(c: ControllerHandle): Promise<void> {
   const pack = c.packs.find((item) => item.manifest.productId === c.candidateProductId);
   const offer = c.candidateModelOffers[c.candidateModelCursor];
   if (!c.workflow || !pack || !offer || c.candidateCatalogStatus !== 'ready') return;
-  if (c.candidateVerifyPending) return;
   const generation = c.generation;
-  const productId = pack.manifest.productId;
-  const offerValue = offer.value;
-  c.candidateVerifyPending = { generation, productId, offerValue };
   try {
-    const spec = candidateSpecFromOffer(productId, offer);
+    const spec = candidateSpecFromOffer(pack.manifest.productId, offer);
     const resolved = await c.workflow.verifyCandidate(spec);
     if (generation !== c.generation) return;
-    const pending = c.candidateVerifyPending;
-    if (!pending || pending.generation !== generation || pending.productId !== productId || pending.offerValue !== offerValue) return;
-    if (c.candidateProductId !== productId) return;
-    const current = c.candidateModelOffers[c.candidateModelCursor];
-    if (!current || current.value !== offerValue) return;
     c.selectedCandidate = spec;
     if (c.preflight) c.preflight = { ...c.preflight, resolved };
     const blocked = candidateStartBlocked(candidateGateFrom(c));
@@ -601,20 +636,12 @@ export async function acceptCandidateModel(c: ControllerHandle): Promise<void> {
       return;
     }
     c.message = '';
-    c.confirmStartArmed = false;
-    c.page = 'confirm';
-    c.render(true);
-    c.confirmStartArmed = true;
+    bindWorkflow(c, beginRun(c));
   } catch (error) {
     if (generation !== c.generation) return;
     c.candidateCatalogStatus = 'error';
     c.candidateCatalogError = errorMessage(error);
     c.render();
-  } finally {
-    const pending = c.candidateVerifyPending;
-    if (pending && pending.generation === generation && pending.productId === productId && pending.offerValue === offerValue) {
-      c.candidateVerifyPending = undefined;
-    }
   }
 }
 

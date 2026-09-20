@@ -397,7 +397,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   app.handleInput("\u0003");
   assert.equal(stops, 0);
   assert.equal(cancellations, 0);
-  assert.match(rendered, /Press Ctrl\+C again to force exit|再按一次 Ctrl\+C 会强制退出/);
+  assert.match(rendered, /Press Ctrl\+C again to leave the UI|再按一次 Ctrl\+C 退出界面/);
   releaseStart?.();
   await waitFor(() => cancellations === 1);
   assert.match(rendered, /Cancellation requested|已请求取消/);

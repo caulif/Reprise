@@ -130,6 +130,7 @@ export function view(c: IntakeTui): WorkbenchView {
     message: c.message,
     inlineHelp: c.inlineHelp,
     cancelling: c.cancelling,
+    cancelUi: c.cancelUi,
     recentExperiment: c.recentExperiment,
     composer: c.composer,
     composerCursor: c.composerCursor,

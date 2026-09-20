@@ -13,6 +13,12 @@ import { IntakeTui } from '../../src/tui/intake-app.js';
 import type { RecoveryView } from '../../src/application/recovery/view.js';
 import { mockTui } from '../../scripts/tui-audit-lib.js';
 import { waitFor } from '../codex-intake-support.js';
+import {
+  createFakeClock,
+  createScriptedSyntheticWorkflow,
+  syntheticExperimentResult,
+  syntheticFlowEvents,
+} from './fixtures/synthetic-flow.js';
 
 test('TUI run policy is a last-resort safety valve, not a completion budget', () => {
   assert.equal(TUI_RUN_POLICY.maxTargetTurns, 256);
@@ -237,7 +243,6 @@ test('Ctrl+C while accepting Recovery prevents experiment startup', async () => 
     discardRecovery: async () => { discarded += 1; },
   } as never });
   app.page = 'confirm';
-  app.confirmStartArmed = true;
   app.taskCase = { caseId: 'cancel-accept', initialInput: { text: 'Create slides' } } as never;
   app.selectedCandidate = { candidateId: 'candidate', productId: 'codex', requestedModel: 'fixture' };
   app.preflight = { sourceBaseline: 'available', limitations: [] } as never;
@@ -362,7 +367,6 @@ test('closing during startup waits for the late handle and its cleanup result', 
       },
     } as never });
     app.page = 'confirm';
-    app.confirmStartArmed = true;
     app.taskCase = { caseId: 'case-close' } as never;
     app.selectedCandidate = { candidateId: 'candidate', productId: 'codex', requestedModel: 'fixture' };
     app.preflight = { sourceBaseline: 'available', limitations: [] } as never;
@@ -428,259 +432,227 @@ test('blocked recovery cannot start a candidate even if an accept handle leaked'
   );
 });
 
-test('model Enter opens confirm without starting; confirm Enter starts once', async () => {
-  let starts = 0;
-  let verifies = 0;
-  let discarded = 0;
-  const offers = [{ value: 'sonnet', displayName: 'sonnet', resolvedModel: 'claude-sonnet-4-6' }];
+test('synthetic scripted workflow emits recovery→candidate→compare fixtures without Runtime', async () => {
+  const { workflow, handles } = createScriptedSyntheticWorkflow({
+    clock: createFakeClock(),
+    comparison: { status: 'failed' },
+    candidate: { task: 'incomplete', termination: 'stalled', cleanup: 'incomplete' },
+  });
+  const events = syntheticFlowEvents({
+    clock: createFakeClock(),
+    comparison: { status: 'failed' },
+    candidate: { task: 'incomplete', termination: 'stalled', cleanup: 'incomplete' },
+    repeatedToolFailures: 1,
+    multiLineLive: true,
+  });
+  assert.equal(events[0]?.type, 'recovery.started');
+  assert.equal(events.at(-1)?.type, 'comparison.completed');
+  const result = syntheticExperimentResult({
+    comparison: { status: 'failed' },
+    candidate: { task: 'incomplete', termination: 'stalled', cleanup: 'incomplete' },
+  });
+  assert.equal((result.record as { outcome: { cleanup: { status: string } } }).outcome.cleanup.status, 'incomplete');
+  assert.equal((result.comparison as { result: { status: string } }).result.status, 'failed');
+  assert.equal((result.pathLinks as { report?: string }).report, result.reportPath);
+
+  const preflightPromise = workflow.preflight();
+  queueMicrotask(() => handles.releasePreflight());
+  await preflightPromise;
+
+  const recoverPromise = workflow.recover();
+  queueMicrotask(() => handles.releaseRecovery());
+  const recovery = await recoverPromise as { recovery: { value: { status: string } } };
+  assert.equal(recovery.recovery.value.status, 'ready');
+
+  const seen: string[] = [];
+  const startPromise = workflow.start({ onEvent: (event) => seen.push(event.type) });
+  queueMicrotask(() => {
+    handles.releaseCopy();
+    queueMicrotask(() => handles.releaseStart());
+  });
+  const handle = await startPromise;
+  const pending = handle.result;
+  handles.resolveResult();
+  const settled = await pending as { comparison: { result: { status: string } } };
+  assert.ok(seen.includes('input.submitted'));
+  assert.equal(settled.comparison.result.status, 'failed');
+  assert.equal(typeof mockTui, 'function');
+
+test('cancel rejection restores an operable retry without restarting the experiment', async () => {
+  let rejectCancel!: (error: Error) => void;
+  let cancelCalls = 0;
+  const firstCancel = new Promise<void>((_resolve, reject) => { rejectCancel = reject; });
   const app = new IntakeTui({
     dataDir: 'unused',
-    packs: [fakeProductPack],
     tui: mockTui().tui as never,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
-    autoCompare: true,
-    workflow: {
-      policy: TUI_RUN_POLICY,
-      listCatalog: async () => offers,
-      verifyCandidate: async () => {
-        verifies += 1;
-        return { executable: 'fake', resolvedModel: 'claude-sonnet-4-6' };
-      },
-      start: async () => {
-        starts += 1;
-        return {
-          cancel: async () => undefined,
-          result: Promise.resolve({
-            record: { outcome: { cleanup: { status: 'complete' }, termination: { kind: 'completed' } }, attempt: { runId: 'r1', createdAt: '2026-09-20T00:00:00.000Z' } },
-            reportPath: 'unused/report.html',
-            experimentRoot: 'unused',
-          }),
-          candidateFinished: Promise.resolve({} as never),
-          runComparison: async () => undefined,
-          skipComparison: async () => undefined,
-        };
-      },
-      discardRecovery: async () => { discarded += 1; },
-      acceptRecovery: async () => ({}),
-    } as never,
   });
-  try {
-    app.page = 'candidate-model';
-    app.candidateProductId = 'fake';
-    app.candidateCatalogStatus = 'ready';
-    app.candidateModelOffers = offers;
-    app.candidateModelCursor = 0;
-    app.taskCase = { caseId: 'model-confirm', initialInput: { text: 'Draw slides' }, source: { productId: 'fake' }, privacy: { redactions: [] } } as never;
-    app.preflight = { sourceBaseline: 'available', limitations: ['note'], comparisonClass: 'recovered', resolved: { executable: 'fake', resolvedModel: 'pending' } } as never;
-    app.recoveryView = {
-      experimentId: 'model-confirm',
-      experimentRoot: 'unused',
-      baseline: { mode: 'canonical', readiness: { runnable: 'isolated' } },
-      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready.', reportPath: 'recovery.md', unresolved: [] } },
-      hasAccept: true,
-      staging: { recoveryId: 'r', caseId: 'c', sourceRoot: '/', root: '/' },
-    } as unknown as RecoveryView;
-
-    app.handleInput('\r');
-    await waitFor(() => app.page === 'confirm');
-    assert.equal(starts, 0);
-    assert.equal(verifies, 1);
-    assert.equal(app.selectedCandidate?.requestedModel, 'sonnet');
-    assert.equal(app.confirmStartArmed, true);
-
-    app.handleInput('b');
-    assert.equal(app.page, 'candidate-model');
-    assert.equal(discarded, 0);
-    assert.equal(app.recoveryView?.experimentId, 'model-confirm');
-    assert.equal(app.selectedCandidate?.requestedModel, 'sonnet');
-
-    app.handleInput('\r');
-    await waitFor(() => app.page === 'confirm');
-    assert.equal(starts, 0);
-
-    app.handleInput('\r');
-    await waitFor(() => starts === 1);
-    await app.workflowFinished;
-    assert.equal(starts, 1);
-  } finally {
-    app.close();
-    await app.closing.catch(() => undefined);
-  }
+  app.page = 'running';
+  app.activeExperiment = {
+    cancel: async () => {
+      cancelCalls += 1;
+      if (cancelCalls === 1) return firstCancel;
+    },
+    result: new Promise(() => {}),
+    candidateFinished: new Promise(() => {}),
+    activity: {} as never,
+    runComparison: async () => {},
+    skipComparison: async () => {},
+  };
+  app.handleInput('\u0003');
+  assert.equal(app.cancelUi, 'requesting');
+  assert.equal(app.cancelling, true);
+  assert.match(app.message, /Cancellation requested|已请求取消/);
+  app.handleInput('\u001b');
+  assert.match(app.message, /Cancellation requested|已请求取消/);
+  assert.doesNotMatch(app.message, /experiment is active|对照进行中/);
+  rejectCancel(new Error('cancel endpoint unavailable'));
+  await waitFor(() => app.cancelUi === 'failed');
+  assert.equal(app.cancelling, false);
+  assert.match(app.message, /cancel endpoint unavailable/);
+  assert.match(app.message, /Retry|重试|Ctrl\+C/);
+  assert.equal(app.page, 'running');
+  app.handleInput('\u0003');
+  await waitFor(() => cancelCalls === 2);
+  assert.equal(app.cancelUi, 'requesting');
 });
 
-test('pending model verify ignores repeat Enter and stale responses', async () => {
-  let releaseFirst!: () => void;
-  let releaseSecond!: () => void;
-  const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
-  const secondGate = new Promise<void>((resolve) => { releaseSecond = resolve; });
-  let verifyCalls = 0;
-  const offers = [
-    { value: 'sonnet', displayName: 'sonnet', resolvedModel: 'claude-sonnet-4-6' },
-    { value: 'opus', displayName: 'opus', resolvedModel: 'claude-opus-4-6' },
-  ];
+test('Esc from deferred compare gate calls skipComparison once and settles the result', async () => {
+  let skipCalls = 0;
+  let runCalls = 0;
+  let resolveCandidate!: (value: {
+    reportPath: string;
+    experimentRoot: string;
+    record: { attempt: { runId: string; createdAt: string }; outcome: { termination: { kind: string }; cleanup: { status: string }; task: { status: string } } };
+    decision: { status: string; value: { type: string; reason: string } };
+    comparison: { result: { status: string } };
+  }) => void;
+  let decideComparison: ((run: boolean) => void) | undefined;
+  const candidateFinished = new Promise<Parameters<typeof resolveCandidate>[0]>((resolve) => {
+    resolveCandidate = resolve;
+  });
+  const comparisonDecision = new Promise<boolean>((resolve) => {
+    decideComparison = resolve;
+  });
+  const partial = {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-gate', createdAt: '2026-09-20T00:00:00.000Z' },
+      outcome: {
+        task: { status: 'apparently_completed' },
+        termination: { kind: 'completed' },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'skipped' } },
+  };
+  const handleResult = (async () => {
+    await candidateFinished;
+    const run = await comparisonDecision;
+    return { ...partial, comparison: { result: { status: run ? 'completed' : 'skipped' } } };
+  })();
   const app = new IntakeTui({
     dataDir: 'unused',
-    packs: [fakeProductPack],
     tui: mockTui().tui as never,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+    autoCompare: false,
     workflow: {
       policy: TUI_RUN_POLICY,
-      verifyCandidate: async (spec: { requestedModel: string }) => {
-        verifyCalls += 1;
-        if (spec.requestedModel === 'sonnet') await firstGate;
-        else await secondGate;
-        return { executable: 'fake', resolvedModel: spec.requestedModel === 'sonnet' ? 'claude-sonnet-4-6' : 'claude-opus-4-6' };
-      },
-      start: async () => { throw new Error('must not start from model page'); },
+      verifyCandidate: async () => ({}),
+      start: async () => ({
+        cancel: async () => { decideComparison?.(false); },
+        candidateFinished,
+        result: handleResult,
+        runComparison: async () => {
+          runCalls += 1;
+          decideComparison?.(true);
+        },
+        skipComparison: async () => {
+          skipCalls += 1;
+          decideComparison?.(false);
+        },
+        activity: {} as never,
+      }),
     } as never,
   });
-  try {
-    app.page = 'candidate-model';
-    app.candidateProductId = 'fake';
-    app.candidateCatalogStatus = 'ready';
-    app.candidateModelOffers = offers;
-    app.candidateModelCursor = 0;
-    app.taskCase = { caseId: 'stale-verify', initialInput: { text: 'Draw' }, source: { productId: 'fake' }, privacy: { redactions: [] } } as never;
-    app.preflight = { sourceBaseline: 'available', limitations: [], comparisonClass: 'recovered', resolved: { executable: 'fake', resolvedModel: 'pending' } } as never;
-    app.recoveryView = {
-      experimentId: 'stale-verify',
-      experimentRoot: 'unused',
-      baseline: { mode: 'canonical', readiness: { runnable: 'isolated' } },
-      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready.', reportPath: 'recovery.md', unresolved: [] } },
-      hasAccept: true,
-      staging: { recoveryId: 'r', caseId: 'c', sourceRoot: '/', root: '/' },
-    } as unknown as RecoveryView;
-
-    app.handleInput('\r');
-    await waitFor(() => verifyCalls === 1);
-    app.handleInput('\r');
-    assert.equal(verifyCalls, 1);
-    assert.equal(app.page, 'candidate-model');
-
-    app.candidateModelCursor = 1;
-    app.candidateVerifyPending = undefined;
-    app.handleInput('\r');
-    await waitFor(() => verifyCalls === 2);
-    releaseSecond();
-    await waitFor(() => app.page === 'confirm');
-    assert.equal(app.selectedCandidate?.requestedModel, 'opus');
-    releaseFirst();
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.equal(app.selectedCandidate?.requestedModel, 'opus');
-    assert.equal(app.page, 'confirm');
-  } finally {
-    app.close();
-    await app.closing.catch(() => undefined);
-  }
+  app.page = 'confirm';
+  app.taskCase = { caseId: 'case-gate' } as never;
+  app.selectedCandidate = { candidateId: 'candidate', productId: 'codex', requestedModel: 'fixture' };
+  app.preflight = { sourceBaseline: 'available', limitations: [] } as never;
+  app.handleInput('\r');
+  await waitFor(() => app.activeExperiment !== undefined);
+  resolveCandidate(partial);
+  await waitFor(() => app.compareChoice !== undefined && app.page === 'result');
+  app.handleInput('\u001b');
+  await waitFor(() => skipCalls === 1);
+  await app.workflowFinished;
+  assert.equal(runCalls, 0);
+  assert.equal(skipCalls, 1);
+  assert.equal(app.compareChoice, undefined);
+  assert.equal(app.page, 'home');
 });
 
-test('confirm Enter is ignored until the confirm page has rendered once', async () => {
-  let starts = 0;
+test('cancellation that arrives with candidateFinished skips the compare gate', async () => {
+  let resolveCandidate!: (value: {
+    reportPath: string;
+    experimentRoot: string;
+    record: { attempt: { runId: string; createdAt: string }; outcome: { termination: { kind: string }; cleanup: { status: string }; task: { status: string } } };
+    decision: { status: string };
+    comparison: { result: { status: string } };
+  }) => void;
+  let resolveResult!: (value: Parameters<typeof resolveCandidate>[0]) => void;
+  let skipCalls = 0;
+  const candidateFinished = new Promise<Parameters<typeof resolveCandidate>[0]>((resolve) => {
+    resolveCandidate = resolve;
+  });
+  const result = new Promise<Parameters<typeof resolveCandidate>[0]>((resolve) => {
+    resolveResult = resolve;
+  });
+  const partial = {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-race', createdAt: '2026-09-20T00:00:00.000Z' },
+      outcome: {
+        task: { status: 'not_assessed' },
+        termination: { kind: 'cancelled' },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'cancelled' },
+    comparison: { result: { status: 'skipped' } },
+  };
   const app = new IntakeTui({
     dataDir: 'unused',
-    packs: [fakeProductPack],
     tui: mockTui().tui as never,
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
-    autoCompare: true,
+    autoCompare: false,
     workflow: {
       policy: TUI_RUN_POLICY,
-      verifyCandidate: async () => ({ executable: 'fake', resolvedModel: 'fixture' }),
-      start: async () => {
-        starts += 1;
-        return {
-          cancel: async () => undefined,
-          result: Promise.resolve({
-            record: { outcome: { cleanup: { status: 'complete' }, termination: { kind: 'completed' } }, attempt: { runId: 'r1', createdAt: '2026-09-20T00:00:00.000Z' } },
-            reportPath: 'unused/report.html',
-            experimentRoot: 'unused',
-          }),
-        };
-      },
-      acceptRecovery: async () => ({}),
-      discardRecovery: async () => undefined,
+      verifyCandidate: async () => ({}),
+      start: async () => ({
+        cancel: async () => {},
+        candidateFinished,
+        result,
+        runComparison: async () => {},
+        skipComparison: async () => { skipCalls += 1; },
+        activity: {} as never,
+      }),
     } as never,
   });
-  try {
-    app.page = 'confirm';
-    app.confirmStartArmed = false;
-    app.taskCase = { caseId: 'unarmed', initialInput: { text: 'x' } } as never;
-    app.selectedCandidate = { candidateId: 'fake-default', productId: 'fake', requestedModel: 'fake-model' };
-    app.preflight = { sourceBaseline: 'available', limitations: [], comparisonClass: 'recovered' } as never;
-    app.recoveryView = {
-      experimentId: 'unarmed',
-      experimentRoot: 'unused',
-      baseline: { mode: 'canonical', readiness: { runnable: 'isolated' } },
-      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready.', reportPath: 'recovery.md', unresolved: [] } },
-      hasAccept: true,
-      staging: { recoveryId: 'r', caseId: 'c', sourceRoot: '/', root: '/' },
-    } as unknown as RecoveryView;
-    app.handleInput('\r');
-    assert.equal(starts, 0);
-    assert.equal(app.page, 'confirm');
-    app.confirmStartArmed = true;
-    app.handleInput('\r');
-    await waitFor(() => starts === 1);
-    await app.workflowFinished;
-    assert.equal(starts, 1);
-  } finally {
-    app.close();
-    await app.closing.catch(() => undefined);
-  }
-});
-
-test('duplicate confirm Enter does not start a second run', async () => {
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  let starts = 0;
-  const app = new IntakeTui({
-    dataDir: 'unused',
-    packs: [fakeProductPack],
-    tui: mockTui().tui as never,
-    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
-    autoCompare: true,
-    workflow: {
-      policy: TUI_RUN_POLICY,
-      verifyCandidate: async () => {
-        await gate;
-        return { executable: 'fake', resolvedModel: 'fixture' };
-      },
-      start: async () => {
-        starts += 1;
-        return {
-          cancel: async () => undefined,
-          result: Promise.resolve({
-            record: { outcome: { cleanup: { status: 'complete' }, termination: { kind: 'completed' } }, attempt: { runId: 'r1', createdAt: '2026-09-20T00:00:00.000Z' } },
-            reportPath: 'unused/report.html',
-            experimentRoot: 'unused',
-          }),
-        };
-      },
-      acceptRecovery: async () => ({}),
-      discardRecovery: async () => undefined,
-    } as never,
-  });
-  try {
-    app.page = 'confirm';
-    app.confirmStartArmed = true;
-    app.taskCase = { caseId: 'once', initialInput: { text: 'x' } } as never;
-    app.selectedCandidate = { candidateId: 'fake-default', productId: 'fake', requestedModel: 'fake-model' };
-    app.preflight = { sourceBaseline: 'available', limitations: [], comparisonClass: 'recovered' } as never;
-    app.recoveryView = {
-      experimentId: 'once',
-      experimentRoot: 'unused',
-      baseline: { mode: 'canonical', readiness: { runnable: 'isolated' } },
-      recovery: { status: 'completed', sessionId: 's', value: { status: 'ready', summary: 'Ready.', reportPath: 'recovery.md', unresolved: [] } },
-      hasAccept: true,
-      staging: { recoveryId: 'r', caseId: 'c', sourceRoot: '/', root: '/' },
-    } as unknown as RecoveryView;
-    app.handleInput('\r');
-    await waitFor(() => app.runStartPending === true);
-    app.handleInput('\r');
-    release();
-    await app.workflowFinished;
-    assert.equal(starts, 1);
-  } finally {
-    app.close();
-    await app.closing.catch(() => undefined);
-  }
-});
+  app.page = 'confirm';
+  app.taskCase = { caseId: 'case-race' } as never;
+  app.selectedCandidate = { candidateId: 'candidate', productId: 'codex', requestedModel: 'fixture' };
+  app.preflight = { sourceBaseline: 'available', limitations: [] } as never;
+  app.handleInput('\r');
+  await waitFor(() => app.activeExperiment !== undefined);
+  app.handleInput('\u0003');
+  assert.equal(app.cancelUi, 'requesting');
+  resolveCandidate(partial);
+  resolveResult(partial);
+  await app.workflowFinished;
+  assert.equal(app.compareChoice, undefined);
+  assert.equal(skipCalls, 0);
+  assert.match(app.message, /cancellation|取消/i);

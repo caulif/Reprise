@@ -13,6 +13,7 @@ import { timelineIdentity } from './timeline-read.js';
 import { bodyCellAt } from './workbench-layout.js';
 import { measureWorkbenchGeometry } from './workbench.js';
 import type { ControllerHandle } from './controller-input.js';
+import { resolveCompareChoice } from './controller-run.js';
 
 export function consumeWheel(data: string): Consume | undefined {
   return dispatchListPointer(data) ? { consume: true } : undefined;
@@ -63,10 +64,7 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   const paths = resolveResultPathLinks(c.result);
   const action = resultPointerAction(lines, bodyRow, cell.col, c.locale, paths, rowHits);
   if (action === 'compare') {
-    if (c.compareChoice) {
-      c.compareChoice.resolve(true);
-      c.compareChoice = undefined;
-    }
+    resolveCompareChoice(c, true);
     return { consume: true };
   }
   if (action === 'open-report') {
