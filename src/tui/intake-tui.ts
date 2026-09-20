@@ -29,6 +29,7 @@ import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
 import type { Option } from "./types.js";
 import type { TimelineEntry } from "./timeline.js";
+import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
@@ -52,6 +53,7 @@ export type ProductDiscoveryState = {
   readonly pageDiagnostics?: readonly DiscoveryDiagnostic[];
   readonly message?: string;
   readonly projects?: readonly SessionDiscoveryProject[];
+  readonly refreshFailed?: boolean;
 };
 
 export type SessionLoadMode = "initial" | "more" | "refresh";
@@ -75,6 +77,7 @@ export type IntakeTuiOptions = {
 
 /** Keyboard-only Home-first benchmark workbench for configuration, intake, and isolated runs. */
 export class IntakeTui {
+  homeFocus: import("./pages/home.js").HomeActionId = "new-replay";
   dataDir!: string;
   runtimeSessionIds: readonly string[] = [];
   sessionsRoot: string | undefined;
@@ -157,6 +160,9 @@ export class IntakeTui {
   candidateSuggestedValue: string | undefined;
   candidateCatalogGeneration = 0;
   candidateAvailabilityGeneration = 0;
+  candidateVerifyPending: { generation: number; productId: string; offerValue: string } | undefined;
+  runStartPending = false;
+  confirmStartArmed = false;
   activeExperiment: ExperimentHandle | undefined;
   recoveryAbort: AbortController | undefined;
   startupAbort: AbortController | undefined;
@@ -164,9 +170,11 @@ export class IntakeTui {
   workflowFinished: Promise<void> | undefined;
   result: ExperimentResult | undefined;
   timeline: TimelineEntry[] = [];
+  activityIndex: ActivityIndexState = createActivityIndex();
   timelineSelected = 0;
   timelineFilterIndex = 0;
   timelineFollowing = true;
+  cancelUi: import("./controller-run.js").CancelUi = "idle";
   cancelling = false;
   configBusy: ConfigBusy = "idle";
   configDraftVersion = 0;
