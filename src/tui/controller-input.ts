@@ -26,7 +26,15 @@ import {
   consumeWheel,
   moveTimelineVisible,
 } from './pointer-dispatch.js';
-import { canvasHitIndices, nextHitIndex, syncTimelineSelection, timelineIdentity } from './timeline-read.js';
+import {
+  applyFindRestore,
+  captureFindRestore,
+  canvasHitIndices,
+  nextHitIndex,
+  syncTimelineSelection,
+  timelineIdentity,
+  type FindRestoreSnapshot,
+} from './timeline-read.js';
 import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, resolveCompareChoice } from './controller-run.js';
 import {
   dispatchCanvasInput,
@@ -86,6 +94,7 @@ export type ControllerHandle = {
   finding: boolean;
   findQuery: string;
   findCursor: number;
+  findRestore: FindRestoreSnapshot | undefined;
   readingMode: boolean;
   readingVisibleAt: number;
   timelineAnchor: string | undefined;
@@ -558,13 +567,14 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
 
 function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   const blocked = canvasBlocked(c);
-  if (!blocked && !c.finding) {
-    if (c.readingMode && (matchesKey(data, 'v') || matchesKey(data, 'escape'))) return exitReadingMode(c);
-    if (c.readingMode) return { consume: true };
-    if (matchesKey(data, 'v')) return enterReadingMode(c);
+  if (!blocked && !c.finding && matchesKey(data, 'v')) {
+    return c.readingMode ? exitReadingMode(c) : enterReadingMode(c);
   }
+  // Reading mode must still accept PgUp/PgDn/arrows/End via canvas; only freeze follow/anchor.
   const canvas = applyCanvas(c, data);
   if (canvas) return canvas;
+  if (c.readingMode && !c.finding && matchesKey(data, 'escape')) return exitReadingMode(c);
+  if (c.readingMode && !c.finding) return { consume: true };
   if (c.compareChoice) {
     const gate = applyCompareGate(c, data);
     if (gate) return gate;
@@ -607,8 +617,10 @@ function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
       c.finding = false;
       c.findQuery = '';
       c.findCursor = 0;
+      c.findRestore = undefined;
       return { consume: true };
     }
+    c.findRestore = captureFindRestore(c);
     c.timelineFollowing = false;
     expandFoldsForQuery(c);
     c.render();
@@ -618,9 +630,9 @@ function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'home') return homeTimeline(c);
   if (result.action === 'click') return clickCanvasAt(c, result.row ?? 1);
   if (result.action === 'edit-find') {
+    // Typing a query must not jump the body; expand folds for hits without stealing the anchor.
     c.timelineFollowing = false;
     expandFoldsForQuery(c);
-    syncTimelineSelection(c);
     c.render();
     return { consume: true };
   }
@@ -650,12 +662,17 @@ function applyHistoryDetail(c: ControllerHandle, data: string): Consume | undefi
 }
 
 function clearFind(c: ControllerHandle): Consume {
-  const current = c.visibleTimeline()[c.timelineSelected];
-  if (current) c.timelineAnchor = timelineIdentity(current);
+  const restore = c.findRestore;
   c.finding = false;
   c.findQuery = '';
   c.findCursor = 0;
-  syncTimelineSelection(c);
+  c.findRestore = undefined;
+  if (restore) applyFindRestore(c, restore);
+  else {
+    const current = c.visibleTimeline()[c.timelineSelected];
+    if (current) c.timelineAnchor = timelineIdentity(current);
+    syncTimelineSelection(c);
+  }
   c.render();
   return { consume: true };
 }
@@ -701,18 +718,20 @@ function moveTimeline(c: ControllerHandle, amount: number): Consume {
 }
 
 function jumpFindHit(c: ControllerHandle, direction: 1 | -1): Consume {
+  expandFoldsForQuery(c);
   const entries = c.visibleTimeline();
   const hits = canvasHitIndices(entries, c.findQuery);
   if (!hits.length) {
+    // Keep the pre-find / current anchor; do not snap to live bottom.
+    c.message = t(c.locale, 'findNone');
     c.render();
     return { consume: true };
   }
   c.timelineSelected = nextHitIndex(hits, c.timelineSelected, direction);
   c.timelineReadOffset = 0;
-  c.timelineFollowing = c.timelineSelected === Math.max(0, entries.length - 1);
+  c.timelineFollowing = false;
   const current = entries[c.timelineSelected];
   if (current) c.timelineAnchor = timelineIdentity(current);
-  expandFoldsForQuery(c);
   c.render();
   return { consume: true };
 }
@@ -731,8 +750,19 @@ function followTimeline(c: ControllerHandle): Consume {
   const visible = c.visibleTimeline();
   c.timelineSelected = Math.max(0, visible.length - 1);
   c.timelineFollowing = true;
+  c.timelineReadOffset = 0;
   const current = visible[c.timelineSelected];
   if (current) c.timelineAnchor = timelineIdentity(current);
+  if (c.readingMode) {
+    c.readingMode = false;
+    c.setMouseReporting(true);
+  }
+  if (c.finding) {
+    c.finding = false;
+    c.findQuery = '';
+    c.findCursor = 0;
+    c.findRestore = undefined;
+  }
   c.message = t(c.locale, 'followingLatest');
   c.render();
   return { consume: true };
@@ -782,8 +812,11 @@ function enterReadingMode(c: ControllerHandle): Consume {
   c.readingMode = true;
   c.timelineFollowing = false;
   c.readingVisibleAt = c.visibleTimeline().length;
+  const current = c.visibleTimeline()[c.timelineSelected];
+  if (current) c.timelineAnchor = timelineIdentity(current);
   c.setMouseReporting(false);
   c.message = t(c.locale, 'readingModeOn');
+  c.render();
   return { consume: true };
 }
 

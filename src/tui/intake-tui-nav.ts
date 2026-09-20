@@ -43,12 +43,12 @@ export function IntakeTui_move(this: IntakeTui, amount: number): { consume: true
   }
 
 export function IntakeTui_scheduleTimelineRender(this: IntakeTui): void {
-    if (this.readingMode) return;
+    // Reading mode freezes the body viewport (follow/anchor), not chrome. Still schedule so
+    // stage/status/new-activity count refresh while the user scrolls history.
     if (this.timelineRenderQueued) return;
     this.timelineRenderQueued = true;
     this.queueTimelineRender(() => {
       this.timelineRenderQueued = false;
-      if (this.readingMode) return;
       if (this.page === "running") this.render();
     });
   }
@@ -171,6 +171,7 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.finding = false;
     this.findQuery = "";
     this.findCursor = 0;
+    this.findRestore = undefined;
     this.readingMode = false;
     this.intakeLevel = "projects";
     this.preparePhase = undefined;
@@ -349,7 +350,7 @@ export function IntakeTui_setMouseReporting(this: IntakeTui, enabled: boolean): 
   }
 
 export function IntakeTui_render(this: IntakeTui, immediate = false): void {
-    if (this.readingMode && !immediate) return;
+    // Do not short-circuit on readingMode: fixed chrome must update while the body stays anchored.
     this.workbench.invalidate();
     if (immediate) this.tui.renderNow();
     else this.tui.requestRender();

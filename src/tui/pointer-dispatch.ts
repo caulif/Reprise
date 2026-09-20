@@ -58,6 +58,7 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (!c.result) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
   if (!cell) return { consume: true };
+  if (cell.bodyRow < 0) return { consume: true };
   const { lines, rowHits } = renderResultWithHits(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
   const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
   const line = lines[bodyRow];
@@ -182,6 +183,7 @@ export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume
   // Live status / follow chrome sits in the body allocation but is not a hit target.
   const contentRows = Math.max(0, window.height - layout.chrome);
   if (cell.bodyRow >= contentRows) return { consume: true };
+  if (cell.bodyRow < 0) return { consume: true };
   const hit = hitAtBodyRow(layout.hits, cell.bodyRow);
   if (hit?.fold && hit.itemId) {
     c.expandedFolds = c.expandedFolds.includes(hit.itemId)
@@ -201,12 +203,6 @@ export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume
 }
 
 export function moveTimelineVisible(c: ControllerHandle, amount: number): Consume {
-  if (c.readingMode && Math.abs(amount) >= 10) {
-    c.timelineReadOffset = Math.max(0, (c.timelineReadOffset ?? 0) + amount);
-    c.timelineFollowing = false;
-    c.render();
-    return { consume: true };
-  }
   const entries = c.visibleTimeline();
   const next = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
   const window = canvasWindow(c);

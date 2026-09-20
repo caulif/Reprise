@@ -330,6 +330,15 @@ test('result SGR click on a short label opens the report; a blank cell does not'
   assert.equal(opened.report, 1);
 });
 
+test('result SGR click on header chrome does not open the report', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const opened = { report: 0 };
+  const handle = resultController(opened);
+  // Row 1 is above the body origin — must not clamp into the first body line.
+  applyResultPointer(handle, '\x1b[<0;4;1M');
+  assert.equal(opened.report, 0);
+});
+
 test('result SGR wheel changes the reading offset', () => {
   const opened = { report: 0 };
   const handle = resultController(opened);

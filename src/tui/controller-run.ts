@@ -461,6 +461,7 @@ function showRunResult(c: ControllerHandle, result: ExperimentResult): void {
   c.findCursor = 0;
   if (c.cancelUi === 'requesting' || c.cancelUi === 'failed') setCancelUi(c, 'settled');
   else if (c.cancelUi !== 'settled') clearCancelRequest(c);
+  c.findRestore = undefined;
   c.message = resultMessage(result, c.locale);
 }
 
@@ -479,6 +480,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.finding = false;
     c.findQuery = '';
     c.findCursor = 0;
+    c.findRestore = undefined;
     const taskCase = c.taskCase;
     if (!c.preflight) throw new Error('Run confirmation requires a completed preflight.');
     const candidate = c.selectedCandidate;
