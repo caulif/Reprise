@@ -9,6 +9,7 @@ import {
   shouldApplyLivePhase,
   staleTier,
   uiStageFrom,
+  countActiveParallel,
 } from '../../src/tui/phase-state.js';
 import { elapsedForRunning, waitLine } from '../../src/tui/pages/run.js';
 import { t } from '../../src/tui/i18n.js';
@@ -87,6 +88,15 @@ describe('T06 display-state stages and clocks', () => {
     assert.equal(bounds.comparisonEndedAt, endedAt);
     assert.equal(bounds.comparisonStartedAt, undefined);
     assert.equal(scopedElapsedMs(bounds, 'comparison', endedAt + 60_000), undefined);
+  });
+
+  it('counts distinct active placeholder correlations only once', () => {
+    const rows = [
+      { sequence: 1, occurredAt: '', source: 'HARNESS' as const, title: 'working', placeholder: true, itemId: 'now:one', correlationId: 'call-1' },
+      { sequence: 2, occurredAt: '', source: 'HARNESS' as const, title: 'working', placeholder: true, itemId: 'now:one-copy', correlationId: 'call-1' },
+      { sequence: 3, occurredAt: '', source: 'HARNESS' as const, title: 'working', placeholder: true, itemId: 'now:two', correlationId: 'call-2' },
+    ];
+    assert.equal(countActiveParallel(rows), 2);
   });
 });
 

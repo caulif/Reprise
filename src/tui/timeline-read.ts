@@ -59,6 +59,10 @@ export type TimelineReadState = {
   timelineSelected: number;
   timelineAnchor: string | undefined;
   timelineReadOffset?: number;
+  /** Full ordered source, when filtering/folding hides the anchored entry. */
+  timelineSource?: readonly TimelineEntry[];
+  /** Backward-compatible source field used by the controller. */
+  timeline?: readonly TimelineEntry[];
   visibleTimeline(): readonly TimelineEntry[];
 };
 
@@ -97,7 +101,13 @@ export function syncTimelineSelection(c: TimelineReadState): void {
     c.timelineReadOffset = 0;
     return;
   }
-  const restored = restoreTimelineSelection(visible, previous, c.timelineSelected);
+  const source = c.timelineSource ?? c.timeline ?? visible;
+  const sourceIndex = previous
+    ? source.findIndex((entry) => timelineIdentity(entry) === previous)
+    : -1;
+  const restored = sourceIndex >= 0
+    ? restoreFromSourceOrder(visible, source, sourceIndex, c.timelineSelected)
+    : restoreTimelineSelection(visible, previous, c.timelineSelected);
   c.timelineSelected = restored.selected;
   // A paused reader stays paused even when filtering leaves the selected row last.
   // Following is an explicit user intent (End), not a side effect of array shape.
@@ -117,6 +127,21 @@ export function canvasHitIndices(entries: readonly TimelineEntry[], query: strin
   const hits = entries.flatMap((entry, index) => (matchesCanvasQuery(entry, query) ? [index] : []));
   searchCache = { key: corpusKey, query, hits };
   return hits;
+}
+
+function restoreFromSourceOrder(
+  visible: readonly TimelineEntry[],
+  source: readonly TimelineEntry[],
+  sourceIndex: number,
+  previousSelected: number,
+): { selected: number; following: boolean } {
+  let best = -1;
+  for (let index = 0; index < visible.length; index += 1) {
+    const visibleIndex = source.findIndex((entry) => timelineIdentity(entry) === timelineIdentity(visible[index]!));
+    if (visibleIndex >= 0 && visibleIndex <= sourceIndex) best = index;
+  }
+  if (best >= 0) return { selected: best, following: false };
+  return { selected: Math.max(0, Math.min(previousSelected, visible.length - 1)), following: false };
 }
 
 export function nextHitIndex(hits: readonly number[], current: number, direction: 1 | -1): number {

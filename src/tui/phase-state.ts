@@ -266,11 +266,14 @@ export function deriveStaleHint(input: {
 
 export function countActiveParallel(entries: readonly TimelineEntry[], activeCount?: number): number {
   if (activeCount !== undefined) return activeCount;
-  let count = 0;
+  const active = new Set<string>();
   for (const entry of entries) {
-    if (entry.placeholder && entry.itemId?.startsWith('now:')) count += 1;
+    if (!entry.placeholder || !entry.itemId?.startsWith('now:')) continue;
+    // A streamed placeholder can be projected more than once while its
+    // activity index is settling; count the correlation, not duplicate rows.
+    active.add(entry.correlationId ?? entry.itemId);
   }
-  return count;
+  return active.size;
 }
 
 function parseOccurredAtMs(iso: string | undefined): number | undefined {

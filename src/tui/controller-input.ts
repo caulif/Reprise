@@ -228,6 +228,10 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     c.render();
     return { consume: true };
   }
+  if (c.activityDetailEntry && (matchesKey(input, 'tab') || matchesKey(input, 'shift+tab'))) {
+    // Detail owns focus; do not cycle folds in the background timeline.
+    return { consume: true };
+  }
   if (c.page === 'running') return applyRunning(c, input);
   if (c.page === 'config') return c.configPageInput(input);
   if (c.page === 'history') return matchesKey(input, 'escape') ? c.backToHome() : c.historyInput(input);

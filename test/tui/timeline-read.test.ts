@@ -70,6 +70,24 @@ test('missing id anchor keeps previous selection instead of snapping to end', ()
   assert.deepEqual(restoreTimelineSelection(rows, 'id:gone', 1), { selected: 1, following: false });
 });
 
+test('missing id anchor uses stable source order after filtering', () => {
+  const first = entry(1, 'A', { itemId: 'a' });
+  const anchored = entry(2, 'B', { itemId: 'b' });
+  const last = entry(3, 'C', { itemId: 'c' });
+  const state = {
+    timelineFollowing: false,
+    timelineSelected: 1,
+    timelineAnchor: 'id:b',
+    timelineReadOffset: 2,
+    timeline: [first, anchored, last],
+    visibleTimeline: () => [first, last],
+  };
+  syncTimelineSelection(state);
+  assert.equal(state.timelineSelected, 0);
+  assert.equal(state.timelineFollowing, false);
+  assert.equal(state.timelineReadOffset, 0);
+});
+
 test('paused selection remains paused when filtering leaves it at the end', () => {
   const rows = [entry(1, 'A'), entry(2, 'B')];
   const state = {

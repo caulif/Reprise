@@ -85,3 +85,18 @@ test('footerHintPairs ranks by priority and caps at four', () => {
   assert.equal(pairs.length, 4);
   assert.equal(pairs[0]?.[0], 'Ctrl+C');
 });
+
+test('navigation pages share back and help actions', () => {
+  for (const page of ['home', 'source', 'preflight', 'candidate-product', 'candidate-model', 'config', 'sessions', 'inspection', 'history', 'history-detail']) {
+    const ids = listActions({ page, locale: 'en' }).map((item) => item.id);
+    assert.ok(ids.includes('show-help'), page);
+    if (page !== 'home') assert.ok(ids.includes('back'), page);
+  }
+});
+
+test('confirm action returns to model selection on Escape', () => {
+  const actions = listActions({ page: 'confirm', locale: 'en', mode: { canStartConfirm: true } });
+  const escape = actions.find((item) => item.keys.includes('escape'));
+  assert.equal(escape?.id, 'change-model');
+  assert.equal(escape?.kind, 'navigate');
+});
