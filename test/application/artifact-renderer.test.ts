@@ -244,6 +244,25 @@ test("renderFrozenArtifact cancels before work", async (t) => {
   assert.equal(result.failure.kind, "cancelled");
 });
 
+test("renderFrozenArtifact rejects a missing document entry before starting a server", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-render-missing-entry-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const result = await renderFrozenArtifact({
+    bundleRoot: root,
+    entryRelativePath: "missing.html",
+    viewport: DEFAULT_RENDER_VIEWPORT,
+    sampleTimesMs: [0],
+    outputRoot: join(root, "out"),
+    signal: new AbortController().signal,
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.failure.kind, "invalid_request");
+});
+
 test("opt-in real browser captures two changing animation frames", async (t) => {
   if (process.env.REPRISE_OPT_IN_BROWSER_RENDER !== "1") {
     t.skip("set REPRISE_OPT_IN_BROWSER_RENDER=1 for live browser capture");

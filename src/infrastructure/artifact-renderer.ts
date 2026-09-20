@@ -239,6 +239,31 @@ async function openDocumentSession(
       result: { ok: false, failure: { kind: "invalid_request", message: "entry escapes bundle root" }, diagnostics },
     };
   }
+  try {
+    const entryInfo = await lstat(entryAbsolute);
+    if (entryInfo.isSymbolicLink()) {
+      return {
+        ok: false,
+        result: { ok: false, failure: { kind: "invalid_request", message: "symlink rejected" }, diagnostics },
+      };
+    }
+    const entryReal = await realpath(entryAbsolute);
+    if (!pathContainedBy(rootReal, entryReal)) {
+      return {
+        ok: false,
+        result: { ok: false, failure: { kind: "invalid_request", message: "entry escapes bundle root" }, diagnostics },
+      };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        failure: { kind: "invalid_request", message: error instanceof Error ? error.message : String(error) },
+        diagnostics,
+      },
+    };
+  }
   const server = await startBundleStaticServer(rootReal);
   const cdp = await openCdpBrowserSession(watchdog);
   if ("failure" in cdp) {
@@ -410,11 +435,23 @@ async function waitForSampleTime(
     if (signal.aborted) throw new Error("cancelled during sample wait");
     const now = await evaluateJson<number>(session, pageSessionId, "performance.now()");
     if (now >= target) return Math.max(0, Math.round(now - originMs));
-    await sleep(Math.min(40, Math.max(1, target - now)));
+    await waitForDelay(signal, Math.min(40, Math.max(1, target - now)));
   }
   throw new Error(`timed out waiting for sample ${sampleTimeMs}ms`);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function waitForDelay(signal: AbortSignal, ms: number): Promise<void> {
+  if (signal.aborted) return Promise.reject(new Error("cancelled during sample wait"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("cancelled during sample wait"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }

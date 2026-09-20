@@ -587,7 +587,11 @@ async function killBrowser(
 ): Promise<void> {
   if (child.exitCode === null && !child.killed) {
     try {
-      child.kill("SIGTERM");
+      if (process.platform === "win32" && child.pid) {
+        await terminateWindowsProcessTree(child.pid);
+      } else {
+        child.kill("SIGTERM");
+      }
     } catch {
       diagnostics.push({ code: "browser_kill_failed", message: "SIGTERM failed" });
     }
@@ -616,6 +620,17 @@ async function killBrowser(
       await sleep(50);
     }
   }
+}
+
+async function terminateWindowsProcessTree(pid: number): Promise<void> {
+  const taskkill = spawnRuntimeProcess("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+    stdio: "ignore",
+    detached: false,
+  });
+  await new Promise<void>((resolve) => {
+    taskkill.once("exit", () => resolve());
+    taskkill.once("error", () => resolve());
+  });
 }
 
 function waitExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> {

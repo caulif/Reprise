@@ -3,11 +3,12 @@ import { dirname, join } from "node:path";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { isFsAbsolute, pathContainedBy } from "../core/paths.js";
 import type { ComparisonEvidenceOrigin, ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
-import type { ComparisonEvidenceCatalog } from "./comparison-evidence.js";
+import type { ComparisonEvidenceCatalog, RegisterMediaInput } from "./comparison-evidence.js";
 import type {
   ComparisonRenderCatalogPort,
   ComparisonRenderSource,
   RegisterDerivedMediaInput,
+  RegisterDerivedMediaBatchResult,
   RegisterDerivedMediaResult,
 } from "./comparison-render-tools.js";
 
@@ -48,6 +49,12 @@ export function createComparisonRenderCatalogPort(input: {
         );
       }
       return registerPreviewMedia(input.catalog, input.attemptRoot, entry);
+    },
+    async registerDerivedMediaBatch(entries): Promise<RegisterDerivedMediaBatchResult> {
+      if (entries.some((entry) => entry.kind !== "artifact_preview")) {
+        return { ok: false, code: "invalid_request", message: "Only artifact previews support atomic batch registration." };
+      }
+      return registerPreviewMediaBatch(input.catalog, input.attemptRoot, entries);
     },
   };
 }
@@ -329,6 +336,64 @@ async function registerPreviewMedia(
     mediaRef: recorded?.ref ?? `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
     revision: registered.revision,
   };
+}
+
+async function registerPreviewMediaBatch(
+  catalog: ComparisonEvidenceCatalog,
+  attemptRoot: string,
+  entries: readonly RegisterDerivedMediaInput[],
+): Promise<RegisterDerivedMediaBatchResult> {
+  const copied: string[] = [];
+  try {
+    const inputs: RegisterMediaInput[] = [];
+    for (const entry of entries) {
+      const fileName = `render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}.png`;
+      const inspectPath = `media/${fileName}`;
+      const absoluteOut = join(attemptRoot, ...inspectPath.split("/"));
+      await mkdir(dirname(absoluteOut), { recursive: true });
+      await copyFile(entry.pngPath, absoluteOut);
+      copied.push(absoluteOut);
+      const derivation = {
+        kind: "render_preview" as const,
+        rendererVersion: entry.derivation.rendererVersion,
+        viewport: entry.derivation.viewport,
+        sampleTimesMs: [entry.derivation.sampleTimeMs],
+      };
+      inputs.push({
+        record: {
+          ref: `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+          side: entry.side,
+          inspectPath,
+          reportHref: inspectPath,
+          mediaType: "image/png",
+          available: true,
+          contentHash: entry.contentHash,
+          sourceRef: entry.sourceRef,
+          derivation,
+        },
+        sourceRefs: [entry.sourceRef],
+        origin: evidenceOriginForSide(entry.side),
+        derivation,
+      });
+    }
+    const registered = await catalog.registerMediaBatch(inputs);
+    const rejected = registered.find((item) => item.status !== "registered");
+    if (rejected) {
+      await Promise.all(copied.map((path) => rm(path, { force: true }).catch(() => undefined)));
+      return { ok: false, code: rejected.code, message: rejected.message };
+    }
+    const successful = registered.filter((item): item is Extract<typeof item, { status: "registered" }> => item.status === "registered");
+    return {
+      ok: true,
+      items: successful.map((item) => {
+        const media = catalog.snapshot().media.find((candidate) => candidate.shortRef === item.shortRef);
+        return { ok: true as const, shortRef: item.shortRef, mediaRef: media?.ref ?? `media:${item.shortRef}`, revision: item.revision };
+      }),
+    };
+  } catch (error) {
+    await Promise.all(copied.map((path) => rm(path, { force: true }).catch(() => undefined)));
+    return { ok: false, code: "io_failed", message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function registerReviewMedia(

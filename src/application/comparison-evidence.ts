@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { sha256, writeAtomic } from "../core/identity.js";
@@ -54,10 +54,18 @@ export type RegisterEvidenceResult =
       message: string;
     };
 
+export type RegisterMediaInput = {
+  record: Omit<ComparisonMediaRecord, "shortRef"> & { shortRef?: string };
+  sourceRefs?: readonly string[];
+  origin: ComparisonEvidenceOrigin;
+  derivation?: ComparisonMediaDerivation;
+};
+
 type CatalogPersister = {
   attemptRoot: string;
   attemptId: string;
   emitRegistered?: (payload: ComparisonEvidenceRegisteredPayload) => Promise<void>;
+  emitRegisteredBatch?: (payloads: readonly ComparisonEvidenceRegisteredPayload[]) => Promise<void>;
   lookupToolCall?: (toolCallId: string) => Promise<{ ok: boolean; message?: string }>;
 };
 
@@ -84,6 +92,7 @@ export class ComparisonEvidenceCatalog {
   readonly #attemptRoot: string;
   readonly #attemptId: string;
   readonly #emitRegistered?: CatalogPersister["emitRegistered"];
+  readonly #emitRegisteredBatch?: CatalogPersister["emitRegisteredBatch"];
   readonly #lookupToolCall?: CatalogPersister["lookupToolCall"];
 
   private constructor(input: CatalogPersister & {
@@ -97,6 +106,7 @@ export class ComparisonEvidenceCatalog {
     this.#media = [...input.media];
     this.#revision = input.revision;
     this.#emitRegistered = input.emitRegistered;
+    this.#emitRegisteredBatch = input.emitRegisteredBatch;
     this.#lookupToolCall = input.lookupToolCall;
   }
 
@@ -106,6 +116,7 @@ export class ComparisonEvidenceCatalog {
     links: readonly ComparisonLinkRecord[];
     media: readonly ComparisonMediaRecord[];
     emitRegistered?: CatalogPersister["emitRegistered"];
+    emitRegisteredBatch?: CatalogPersister["emitRegisteredBatch"];
     lookupToolCall?: CatalogPersister["lookupToolCall"];
   }): Promise<ComparisonEvidenceCatalog> {
     const links = appendEvidenceShortRefs([], input.links);
@@ -117,6 +128,7 @@ export class ComparisonEvidenceCatalog {
       media,
       revision: 0,
       ...(input.emitRegistered ? { emitRegistered: input.emitRegistered } : {}),
+      ...(input.emitRegisteredBatch ? { emitRegisteredBatch: input.emitRegisteredBatch } : {}),
       ...(input.lookupToolCall ? { lookupToolCall: input.lookupToolCall } : {}),
     });
     await catalog.#persistRevision();
@@ -153,13 +165,12 @@ export class ComparisonEvidenceCatalog {
     return this.#enqueue(() => this.#registerEvidenceLocked(input, signal));
   }
 
-  async registerMedia(input: {
-    record: Omit<ComparisonMediaRecord, "shortRef"> & { shortRef?: string };
-    sourceRefs?: readonly string[];
-    origin: ComparisonEvidenceOrigin;
-    derivation?: ComparisonMediaDerivation;
-  }, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
+  async registerMedia(input: RegisterMediaInput, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
     return this.#enqueue(() => this.#registerMediaLocked(input, signal));
+  }
+
+  async registerMediaBatch(inputs: readonly RegisterMediaInput[], signal?: AbortSignal): Promise<RegisterEvidenceResult[]> {
+    return this.#enqueue(() => this.#registerMediaBatchLocked(inputs, signal));
   }
 
   async #registerEvidenceLocked(input: RegisterEvidenceInput, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
@@ -305,6 +316,81 @@ export class ComparisonEvidenceCatalog {
     });
   }
 
+  async #registerMediaBatchLocked(inputs: readonly RegisterMediaInput[], signal?: AbortSignal): Promise<RegisterEvidenceResult[]> {
+    if (inputs.length === 0) return [];
+    if (signal?.aborted) return inputs.map(() => ({ status: "rejected", code: "cancelled", message: "Registration cancelled." }));
+    const previous = this.#media;
+    const previousSnapshot = this.snapshot();
+    const drafts: ComparisonMediaRecord[] = [];
+    const results: RegisterEvidenceResult[] = [];
+    for (const input of inputs) {
+      const sourceRefs = [...(input.sourceRefs ?? [])];
+      if (sourceRefs.some((ref) => !this.#hasSourceRef(ref))) {
+        return inputs.map(() => ({ status: "rejected", code: "missing_source", message: "Unknown sourceRef for media batch." }));
+      }
+      const contentHash = input.record.contentHash;
+      if (!contentHash) return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Media registration requires contentHash." }));
+      const derivation = input.derivation ?? input.record.derivation;
+      const existing = this.#media.find((item) => item.contentHash === contentHash
+        && item.side === input.record.side
+        && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
+      if (existing?.shortRef) {
+        results.push({ status: "registered", revision: this.#revision, shortRef: existing.shortRef, contentHash, inspectPath: existing.inspectPath, origin: input.origin, deduplicated: true });
+        continue;
+      }
+      const draft: ComparisonMediaRecord = { ...input.record, contentHash, ...(derivation ? { derivation } : {}) };
+      if (!Value.Check(ComparisonMediaRecordSchema, draft)) {
+        return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Media record failed schema validation." }));
+      }
+      drafts.push(draft);
+    }
+    const assigned = appendMediaShortRefs(this.#media, drafts);
+    if (assigned.length !== drafts.length) return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Failed to allocate media shortRef." }));
+    this.#media = [...this.#media, ...assigned];
+    try {
+      await this.#persistRevision();
+    } catch (error) {
+      this.#media = previous;
+      return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
+    }
+    let assignedIndex = 0;
+    const batchPayloads: ComparisonEvidenceRegisteredPayload[] = [];
+    for (const input of inputs) {
+      const sourceRefs = [...(input.sourceRefs ?? [])];
+      const contentHash = input.record.contentHash;
+      const derivation = input.derivation ?? input.record.derivation;
+      const existing = previous.find((item) => item.contentHash === contentHash && item.side === input.record.side && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
+      if (existing?.shortRef) continue;
+      const item = assigned[assignedIndex++];
+      if (!item) continue;
+      const payload: ComparisonEvidenceRegisteredPayload = {
+        schemaVersion: 1, attemptId: this.#attemptId, revision: this.#revision, shortRef: item.shortRef!, kind: "media",
+        origin: input.origin, contentHash: item.contentHash!, sourceRefs, artifactRefs: [item.reportHref],
+        ...(derivation ? { derivation } : {}),
+      };
+      this.#pendingEmits.set(item.shortRef!, payload);
+      batchPayloads.push(payload);
+      results.push({ status: "registered", revision: this.#revision, shortRef: item.shortRef!, contentHash: item.contentHash!, inspectPath: item.inspectPath, origin: input.origin, deduplicated: false });
+    }
+    try {
+      await this.#emitBatch(batchPayloads);
+    } catch (error) {
+      this.#media = previous;
+      this.#revision = previousSnapshot.revision;
+      for (const pendingRef of assigned.map((entry) => entry.shortRef).filter((ref): ref is string => Boolean(ref))) {
+        this.#pendingEmits.delete(pendingRef);
+        this.#emittedShortRefs.delete(pendingRef);
+      }
+      await this.#restorePersistedSnapshot(previousSnapshot).catch(() => undefined);
+      return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
+    }
+    for (const payload of batchPayloads) {
+      this.#pendingEmits.delete(payload.shortRef);
+      this.#emittedShortRefs.add(payload.shortRef);
+    }
+    return results;
+  }
+
   async #finishExistingRegistration(input: {
     kind: "evidence" | "media";
     shortRef: string;
@@ -435,6 +521,14 @@ export class ComparisonEvidenceCatalog {
     await writeAtomic(join(catalogRoot, "CURRENT"), `${revName}\n`);
   }
 
+  async #restorePersistedSnapshot(snapshot: ComparisonCatalogSnapshot): Promise<void> {
+    const catalogRoot = join(this.#attemptRoot, "facts", "evidence-catalog");
+    await mkdir(catalogRoot, { recursive: true });
+    await writeAtomic(join(catalogRoot, "CURRENT"), `rev-${snapshot.revision}.json\n`);
+    await this.#writeDerivedFacts(snapshot);
+    await rm(join(catalogRoot, `rev-${snapshot.revision + 1}.json`), { force: true });
+  }
+
   async #writeDerivedFacts(snap: ComparisonCatalogSnapshot): Promise<void> {
     const factsMedia = `${JSON.stringify(snap.media, null, 2)}\n`;
     const factsLinks = `${JSON.stringify(snap.links, null, 2)}\n`;
@@ -467,6 +561,14 @@ export class ComparisonEvidenceCatalog {
       throw new Error("comparison.evidence_registered payload does not satisfy its schema.");
     }
     await this.#emitRegistered?.(payload);
+  }
+
+  async #emitBatch(payloads: readonly ComparisonEvidenceRegisteredPayload[]): Promise<void> {
+    for (const payload of payloads) {
+      if (!Value.Check(ComparisonEvidenceRegisteredPayloadSchema, payload)) throw new Error("comparison.evidence_registered payload does not satisfy its schema.");
+    }
+    if (this.#emitRegisteredBatch) return this.#emitRegisteredBatch(payloads);
+    for (const payload of payloads) await this.#emit(payload);
   }
 }
 

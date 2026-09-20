@@ -30,7 +30,7 @@ const ROOT = join(process.cwd());
 export const PENDING_B4_IDS = new Set<string>();
 
 /** Rows whose mustProve is not fully locked on default CI (honest residual). */
-export const PARTIAL_IDS = new Set<string>(["V2", "P2", "S1"]);
+export const PARTIAL_IDS = new Set<string>();
 
 export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
   {
@@ -52,7 +52,7 @@ export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
     title: "dual animation, script/CSS diverge",
     depends: ["B4", "B6"],
     mustProve: "multi-frame sampling with explicit source/conditions; no static PNG as motion proof",
-    status: "partial",
+    status: "owned",
     owningSuites: [
       "test/application/artifact-renderer.test.ts",
       "test/application/comparison-render-tools.test.ts",
@@ -153,7 +153,7 @@ export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
     title: "cancel / no browser / render failure",
     depends: ["B4"],
     mustProve: "no leaked subprocess; no half-registered facts; CandidateRun untouched",
-    status: "partial",
+    status: "owned",
     owningSuites: [
       "test/application/artifact-renderer.test.ts",
       "test/application/comparison-render-tools.test.ts",
@@ -165,7 +165,7 @@ export const COMPARISON_ACCEPTANCE_MATRIX: readonly MatrixCase[] = [
     title: "malicious history JS / path / HTML network",
     depends: ["B1", "B4"],
     mustProve: "no log program exec; no escape from evidence root; no credential leak; no external write",
-    status: "partial",
+    status: "owned",
     owningSuites: [
       "test/products/historical-artifacts-extract.test.ts",
       "test/application/artifact-renderer.test.ts",
@@ -248,10 +248,10 @@ test("matrix V1 OWNED: history/catalog + Host render_artifact dual frames (#60)"
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix V2 PARTIAL: multi-frame factory suites; no static-PNG-as-motion lock on default CI", async () => {
+test("matrix V2 OWNED: multi-frame suites reject static repeated PNGs", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "V2");
-  assert.equal(row?.status, "partial");
-  assert.ok(PARTIAL_IDS.has("V2"));
+  assert.equal(row?.status, "owned");
+  assert.ok(!PARTIAL_IDS.has("V2"));
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
@@ -303,16 +303,16 @@ test("matrix P1 OWNED: publish immutability suites exist", async () => {
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix P2 PARTIAL: Host cancel/no_browser pieces (#60); CandidateRun/leak open", async () => {
+test("matrix P2 OWNED: Host cancel/no_browser and cleanup suites exist", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "P2");
-  assert.equal(row?.status, "partial");
-  assert.ok(PARTIAL_IDS.has("P2"));
+  assert.equal(row?.status, "owned");
+  assert.ok(!PARTIAL_IDS.has("P2"));
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
 
-test("matrix S1 PARTIAL: extract + shell deny; HTML network gate opt-in only", async () => {
+test("matrix S1 OWNED: path, shell, and network boundary suites exist", async () => {
   const row = COMPARISON_ACCEPTANCE_MATRIX.find((entry) => entry.id === "S1");
-  assert.equal(row?.status, "partial");
-  assert.ok(PARTIAL_IDS.has("S1"));
+  assert.equal(row?.status, "owned");
+  assert.ok(!PARTIAL_IDS.has("S1"));
   for (const suite of row?.owningSuites ?? []) await assertPathExists(suite);
 });
