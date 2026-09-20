@@ -231,6 +231,68 @@ test("augmentComparisonOpenableMedia reports no_browser separately from capture_
   );
 });
 
+test("augmentComparisonOpenableMedia stops before capture when comparison is cancelled", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-openable-cancelled-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const baselineHtml = join(root, "baseline.html");
+  const candidateHtml = join(root, "candidate.html");
+  await writeFile(baselineHtml, "<!doctype html><title>b</title>", "utf8");
+  await writeFile(candidateHtml, "<!doctype html><title>c</title>", "utf8");
+  const controller = new AbortController();
+  controller.abort();
+  let calls = 0;
+  await assert.rejects(
+    () => augmentComparisonOpenableMedia({
+      attemptRoot: join(root, "attempt"),
+      workspaceRoot: root,
+      links: [],
+      baselineSources: [{ inspectPath: "history/finals/baseline.html", absolutePath: baselineHtml }],
+      candidateSources: [{ inspectPath: "candidate/candidate.html", absolutePath: candidateHtml }],
+      captureScreenshot: async () => {
+        calls += 1;
+        return { ok: true };
+      },
+      signal: controller.signal,
+    }),
+    (error: unknown) => error instanceof DOMException && error.name === "AbortError",
+  );
+  assert.equal(calls, 0);
+});
+
+test("augmentComparisonOpenableMedia forwards { signal } options bag to capture", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-openable-signal-bag-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const baselineHtml = join(root, "baseline.html");
+  const candidateHtml = join(root, "candidate.html");
+  await writeFile(baselineHtml, "<!doctype html><title>b</title>", "utf8");
+  await writeFile(candidateHtml, "<!doctype html><title>c</title>", "utf8");
+  const controller = new AbortController();
+  const seenOptions: unknown[] = [];
+  await augmentComparisonOpenableMedia({
+    attemptRoot: join(root, "attempt"),
+    workspaceRoot: root,
+    links: [],
+    baselineSources: [{ inspectPath: "finals/baseline.html", absolutePath: baselineHtml }],
+    candidateSources: [{ inspectPath: "candidate/candidate.html", absolutePath: candidateHtml }],
+    signal: controller.signal,
+    captureScreenshot: async (_source, destPng, options) => {
+      seenOptions.push(options);
+      assert.ok(options && typeof options === "object" && "signal" in options);
+      assert.equal((options as { signal?: AbortSignal }).signal, controller.signal);
+      assert.notEqual(options, controller.signal);
+      await writeFile(destPng, MINIMAL_PNG);
+      return { ok: true };
+    },
+  });
+  assert.equal(seenOptions.length, 2);
+});
+
 async function readFile(path: string, encoding: BufferEncoding): Promise<string> {
   const { readFile: read } = await import("node:fs/promises");
   return read(path, encoding);

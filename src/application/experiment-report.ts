@@ -248,6 +248,7 @@ async function compareExperimentOutcome(
       taskCase: input.taskCase, record, context: briefingContext, events,
       artifacts: (await input.store.listArtifacts(input.input.runId)).filter((artifact) => materializedIds.has(artifact.artifactId)),
       snapshotStatus: input.candidateSnapshotStatus,
+      ...(input.signal ? { signal: input.signal } : {}),
     });
     const reportShellHtml = renderComparisonReportShell({
       task: context.task.summary,
@@ -269,9 +270,7 @@ async function compareExperimentOutcome(
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
     });
   } catch (error) {
-    comparisonResult = error instanceof ComparisonVisualMediaError
-      ? comparisonFailed("media_unavailable", error)
-      : comparisonFailed("publication_failed", error);
+    comparisonResult = mapBriefingErrorToComparisonResult(error);
   } finally {
     await input.input.comparison.release?.(attemptId);
   }
@@ -758,6 +757,15 @@ function comparisonFailed(
     ...(sessionId ? { sessionId } : {}),
     failure: { code, message, attempts: 0 },
   };
+}
+
+/** Maps briefing/openable-media failures; AbortError stays cancelled, not publication_failed. */
+export function mapBriefingErrorToComparisonResult(
+  error: unknown,
+): AgentInvocation<ComparisonResult> {
+  if (error instanceof Error && error.name === "AbortError") return { status: "cancelled" };
+  if (error instanceof ComparisonVisualMediaError) return comparisonFailed("media_unavailable", error);
+  return comparisonFailed("publication_failed", error);
 }
 
 function readReportModel(raw: string): ComparisonReportModel {

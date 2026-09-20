@@ -103,6 +103,7 @@ export async function writeComparisonBriefing(input: {
   events: readonly EventEnvelope[];
   artifacts: readonly ArtifactManifest[];
   snapshotStatus: "complete" | "incomplete" | "missing";
+  signal?: AbortSignal;
 }): Promise<{ indexMarkdown: string; links: ComparisonLink[]; media: ComparisonMediaRecord[]; fileDigests: Record<string, string> }> {
   const briefingRoot = join(input.attemptRoot, "briefing");
   await Promise.all([
@@ -202,6 +203,7 @@ async function comparisonMediaBundle(
     links,
     baselineSources: openable.baselineSources,
     candidateSources: openable.candidateSources,
+    ...(input.signal ? { signal: input.signal } : {}),
   });
   return { links: augmented.links, media: augmented.media, invalidLinkCount };
 }
