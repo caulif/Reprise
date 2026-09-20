@@ -32,6 +32,8 @@ import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
 import type { CandidateRunPhase } from "./pages/run.js";
+import type { ConfigReturnTarget } from "./intake-tui-config.js";
+import type { ConfigBusy, ConfigConnectionTestStatus } from "./pages/config.js";
 
 type Page = WorkbenchView["page"];
 type PiModels = Pick<
@@ -173,7 +175,11 @@ export class IntakeTui {
   timelineFilterIndex = 0;
   timelineFollowing = true;
   cancelUi: import("./controller-run.js").CancelUi = "idle";
-  configBusy = false;
+  configBusy: ConfigBusy = "idle";
+  configDraftVersion = 0;
+  configTestStatus: ConfigConnectionTestStatus = "idle";
+  configTestDetail: string | undefined;
+  configReturnTarget: ConfigReturnTarget | undefined;
   generation = 0;
   timelineRenderQueued = false;
   timelineRevision = 0;
@@ -243,6 +249,7 @@ export class IntakeTui {
   loadHistory(): Promise<void> { return intakeMethods.IntakeTui_loadHistory.call(this); }
   openRecentExperiment(): { consume: true } { return intakeMethods.IntakeTui_openRecentExperiment.call(this); }
   openConfig(): Promise<void> { return intakeMethods.IntakeTui_openConfig.call(this); }
+  leaveConfig(): { consume: true } { return intakeMethods.IntakeTui_leaveConfig.call(this); }
   saveConfig(): Promise<void> { return intakeMethods.IntakeTui_saveConfig.call(this); }
   testConfigConnection(): Promise<void> { return intakeMethods.IntakeTui_testConfigConnection.call(this); }
   refreshHarnessAuth(): Promise<void> { return intakeMethods.IntakeTui_refreshHarnessAuth.call(this); }
