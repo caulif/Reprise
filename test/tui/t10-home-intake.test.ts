@@ -92,7 +92,6 @@ test('home defaults to new replay and Enter opens source intake', async (t) => {
       startedAt: '2026-08-11T00:00:00.000Z',
       taskStatus: 'apparently_completed',
       comparisonStatus: 'cancelled',
-      reportKind: 'Diagnostic',
       outcome: 'completed',
     },
     hasApiConfig: true,

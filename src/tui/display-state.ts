@@ -29,6 +29,7 @@ export type ResultPresentation = {
   readonly statusLabelKey: MessageKey;
   readonly statusTone: ResultTone;
   readonly taskLabel: string;
+  readonly terminationLabel: string;
   readonly cleanupLabel: string;
   readonly comparisonLabel: string;
   readonly comparisonKind: ComparisonPresentationKind;
@@ -89,6 +90,7 @@ export function deriveResultPresentation(input: ResultPresentationInput, locale:
     statusLabelKey: status.labelKey,
     statusTone: status.tone,
     taskLabel: taskLabelOf(input.task.status, locale),
+    terminationLabel: t(locale, statusKeyForTermination(input.termination.kind)),
     cleanupLabel: cleanupLabelOf(input.cleanup?.status, locale),
     comparisonLabel: comparisonLabelOf(comparisonKind, input.comparison, locale),
     comparisonKind,

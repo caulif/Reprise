@@ -7,6 +7,7 @@ import type { Theme } from '../theme.js';
 import { pad, panel } from '../widgets.js';
 import { shellEnvAssignment } from '../../infrastructure/harness-model-config.js';
 import { relativeTime } from './intake.js';
+import { deriveResultPresentationFromHistory } from '../display-state.js';
 
 export type HomeActionId = 'new-replay' | 'open-recent' | 'history' | 'config' | 'help';
 
@@ -148,8 +149,9 @@ export function recentResultLabel(recent: HistoryExperiment, locale: Locale = 'e
   } else if (!recent.taskStatus && recent.outcome) {
     parts.push(t(locale, 'resultOverviewCandidate', { status: recent.outcome }));
   }
-  if (recent.reportKind === 'Diagnostic') parts.push(t(locale, 'resultOverviewDiagnostic'));
-  else if (recent.reportKind) parts.push(t(locale, 'resultOverviewReport', { kind: recent.reportKind }));
+  const presentation = deriveResultPresentationFromHistory(recent, locale);
+  if (presentation.reportKind === 'diagnostic') parts.push(t(locale, 'resultOverviewDiagnostic'));
+  else if (presentation.reportKind === 'report') parts.push(t(locale, 'resultOverviewReport', { kind: 'Report' }));
   if (!parts.length) return t(locale, 'resultOverviewIncomplete');
   return parts.join(' · ');
 }
