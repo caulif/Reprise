@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { sha256, writeAtomic } from "../core/identity.js";
@@ -315,6 +315,7 @@ export class ComparisonEvidenceCatalog {
     if (inputs.length === 0) return [];
     if (signal?.aborted) return inputs.map(() => ({ status: "rejected", code: "cancelled", message: "Registration cancelled." }));
     const previous = this.#media;
+    const previousSnapshot = this.snapshot();
     const drafts: ComparisonMediaRecord[] = [];
     const results: RegisterEvidenceResult[] = [];
     for (const input of inputs) {
@@ -363,6 +364,13 @@ export class ComparisonEvidenceCatalog {
       };
       this.#pendingEmits.set(item.shortRef!, payload);
       try { await this.#emit(payload); } catch (error) {
+        this.#media = previous;
+        this.#revision = previousSnapshot.revision;
+        for (const pendingRef of assigned.map((entry) => entry.shortRef).filter((ref): ref is string => Boolean(ref))) {
+          this.#pendingEmits.delete(pendingRef);
+          this.#emittedShortRefs.delete(pendingRef);
+        }
+        await this.#restorePersistedSnapshot(previousSnapshot).catch(() => undefined);
         return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
       }
       this.#pendingEmits.delete(item.shortRef!);
@@ -421,6 +429,7 @@ export class ComparisonEvidenceCatalog {
   }
 
   async #commitAppend(input: CommitAppendInput): Promise<RegisterEvidenceResult> {
+    const previousSnapshot = this.snapshot();
     input.apply();
     try {
       await this.#persistRevision();
@@ -444,6 +453,13 @@ export class ComparisonEvidenceCatalog {
     try {
       await this.#emit(payload);
     } catch (error) {
+      if (input.kind === "media") {
+        input.rollback();
+        this.#revision = previousSnapshot.revision;
+        this.#pendingEmits.delete(input.shortRef);
+        this.#emittedShortRefs.delete(input.shortRef);
+        await this.#restorePersistedSnapshot(previousSnapshot).catch(() => undefined);
+      }
       return { status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) };
     }
     this.#pendingEmits.delete(input.shortRef);
@@ -500,6 +516,14 @@ export class ComparisonEvidenceCatalog {
     await writeAtomic(join(catalogRoot, revName), body);
     await this.#writeDerivedFacts(snap);
     await writeAtomic(join(catalogRoot, "CURRENT"), `${revName}\n`);
+  }
+
+  async #restorePersistedSnapshot(snapshot: ComparisonCatalogSnapshot): Promise<void> {
+    const catalogRoot = join(this.#attemptRoot, "facts", "evidence-catalog");
+    await mkdir(catalogRoot, { recursive: true });
+    await writeAtomic(join(catalogRoot, "CURRENT"), `rev-${snapshot.revision}.json\n`);
+    await this.#writeDerivedFacts(snapshot);
+    await rm(join(catalogRoot, `rev-${snapshot.revision + 1}.json`), { force: true });
   }
 
   async #writeDerivedFacts(snap: ComparisonCatalogSnapshot): Promise<void> {

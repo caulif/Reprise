@@ -177,6 +177,41 @@ test("emit failure after persist is retried on dedupe and still records the even
   assert.equal((events[0] as { shortRef: string }).shortRef, second.shortRef);
 });
 
+test("media emit failure rolls back the persisted media batch", async (t) => {
+  const attemptRoot = await tempAttempt(t, "reprise-b3-media-emit-rollback-");
+  let fail = true;
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-b3-media-emit",
+    attemptRoot,
+    links: [{ side: "candidate", inspectPath: "candidate/a", shortRef: "ev-01" }],
+    media: [],
+    emitRegistered: async () => {
+      if (fail) {
+        fail = false;
+        throw new Error("simulated event failure");
+      }
+    },
+  });
+  const result = await catalog.registerMedia({
+    record: {
+      ref: "media:frame",
+      side: "candidate",
+      inspectPath: "media/frame.png",
+      reportHref: "media/frame.png",
+      mediaType: "image/png",
+      available: true,
+      contentHash: "a".repeat(64),
+      sourceRef: "ev-01",
+    },
+    sourceRefs: ["ev-01"],
+    origin: "candidate_delivery",
+  });
+  assert.equal(result.status, "rejected");
+  assert.equal(catalog.snapshot().media.length, 0);
+  assert.equal(catalog.snapshot().revision, 1);
+  assert.equal(await readFile(join(attemptRoot, "facts", "evidence-catalog", "CURRENT"), "utf8"), "rev-1.json\n");
+});
+
 test("duplicate register_evidence with same hash and sources reuses shortRef", async (t) => {
   const attemptRoot = await tempAttempt(t, "reprise-b3-dedupe-");
   await mkdir(join(attemptRoot, "scratch"), { recursive: true });
