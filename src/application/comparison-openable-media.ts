@@ -28,7 +28,8 @@ export async function augmentComparisonOpenableMedia(input: {
   links: readonly ComparisonLinkRecord[];
   baselineSources: readonly { inspectPath: string; absolutePath: string }[];
   candidateSources: readonly { inspectPath: string; absolutePath: string }[];
-  captureScreenshot?: (sourcePath: string, destPng: string) => Promise<HeadlessScreenshotResult>;
+  captureScreenshot?: typeof captureHeadlessScreenshot;
+  signal?: AbortSignal;
 }): Promise<{ links: ComparisonLinkRecord[]; media: ComparisonMediaRecord[] }> {
   const captureScreenshot = input.captureScreenshot ?? captureHeadlessScreenshot;
   const sealedRoot = join(input.attemptRoot, "finals");
@@ -60,7 +61,10 @@ export async function augmentComparisonOpenableMedia(input: {
       const pngName = comparisonMediaFileName(id, ".png");
       const pngPath = join(input.attemptRoot, "media", pngName);
       await mkdir(join(input.attemptRoot, "media"), { recursive: true });
-      const captured = await captureScreenshot(source.absolutePath, pngPath);
+      input.signal?.throwIfAborted();
+      const captured = await captureScreenshot(source.absolutePath, pngPath, {
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
       if (!captured.ok) {
         screenshotFailures.push(formatScreenshotFailure(side, source.inspectPath, captured.failure));
         continue;

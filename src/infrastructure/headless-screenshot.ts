@@ -1,4 +1,4 @@
-import { access, constants, stat } from "node:fs/promises";
+import { access, constants, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -12,6 +12,12 @@ export type HeadlessScreenshotFailure =
 export type HeadlessScreenshotResult =
   | { ok: true }
   | { ok: false; failure: HeadlessScreenshotFailure };
+
+export type HeadlessScreenshotOptions = {
+  readonly signal?: AbortSignal;
+  /** Test inject for a single capture attempt. Production uses the controlled artifact renderer. */
+  readonly captureOnce?: (sourcePath: string, destPng: string, signal?: AbortSignal) => Promise<HeadlessScreenshotResult>;
+};
 
 async function pathExists(path: string): Promise<boolean> {
   return access(path, constants.F_OK).then(() => true, () => false);
@@ -75,14 +81,18 @@ export async function resolveHeadlessBrowser(): Promise<string | undefined> {
   return undefined;
 }
 
-/**
- * Single-frame capture used by Host openable-media.
- * Delegates to the controlled artifact renderer (dynamic import avoids a cycle with CDP).
- * Inject `captureScreenshot` in tests; unit suites must not hit a live browser.
- */
-export async function captureHeadlessScreenshot(sourcePath: string, destPng: string): Promise<HeadlessScreenshotResult> {
+async function captureViaRenderer(
+  sourcePath: string,
+  destPng: string,
+  signal?: AbortSignal,
+): Promise<HeadlessScreenshotResult> {
   const { captureHeadlessScreenshotViaRenderer } = await import("./artifact-renderer.js");
-  const result = await captureHeadlessScreenshotViaRenderer(sourcePath, destPng);
+  const result = await captureHeadlessScreenshotViaRenderer(
+    sourcePath,
+    destPng,
+    undefined,
+    signal ?? new AbortController().signal,
+  );
   if (result.ok) {
     const info = await stat(destPng).catch(() => undefined);
     if (!info?.isFile() || info.size <= 0) {
@@ -90,4 +100,34 @@ export async function captureHeadlessScreenshot(sourcePath: string, destPng: str
     }
   }
   return result;
+}
+
+/**
+ * Single-frame capture used by Host openable-media.
+ * Delegates to the controlled artifact renderer (dynamic import avoids a cycle with CDP).
+ * Retries a transient capture failure once; `no_browser` and aborted signals do not retry.
+ * Inject `captureOnce` in tests; unit suites must not hit a live browser.
+ */
+export async function captureHeadlessScreenshot(
+  sourcePath: string,
+  destPng: string,
+  options: HeadlessScreenshotOptions = {},
+): Promise<HeadlessScreenshotResult> {
+  const captureOnce = options.captureOnce ?? captureViaRenderer;
+  let lastFailure: HeadlessScreenshotFailure = { kind: "capture_failed", message: "capture failed" };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    options.signal?.throwIfAborted();
+    try {
+      await rm(destPng, { force: true });
+      const result = await captureOnce(sourcePath, destPng, options.signal);
+      if (result.ok) return { ok: true };
+      if (result.failure.kind === "no_browser") return result;
+      options.signal?.throwIfAborted();
+      lastFailure = result.failure;
+    } catch (error) {
+      options.signal?.throwIfAborted();
+      lastFailure = { kind: "capture_failed", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  return { ok: false, failure: lastFailure };
 }
