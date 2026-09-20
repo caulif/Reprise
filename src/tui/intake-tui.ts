@@ -205,6 +205,9 @@ export class IntakeTui {
   resolveClosed: (() => void) | undefined;
   emitWarning: typeof process.emitWarning | undefined;
   helpOverlay: OverlayHandle | undefined;
+  activityDetailOverlay: OverlayHandle | undefined;
+  activityDetailEntry: TimelineEntry | undefined;
+  activityDetailRestore: { anchor?: string; offset: number; following: boolean } | undefined;
   commandOverlay: OverlayHandle | undefined;
   commandSelectList: SelectList | undefined;
   inlineHelp = false;
@@ -292,6 +295,10 @@ export class IntakeTui {
   isEditingText(): boolean { return intakeMethods.IntakeTui_isEditingText.call(this); }
   showHelp(): { consume: true } { return intakeMethods.IntakeTui_showHelp.call(this); }
   hideHelp(): void { intakeMethods.IntakeTui_hideHelp.call(this); }
+  showActivityDetail(entry: TimelineEntry): { consume: true } {
+    return intakeMethods.IntakeTui_showActivityDetail.call(this, entry);
+  }
+  hideActivityDetail(): void { intakeMethods.IntakeTui_hideActivityDetail.call(this); }
   syncCommandOverlay(): void { intakeMethods.IntakeTui_syncCommandOverlay.call(this); }
   hideCommandOverlay(): void { intakeMethods.IntakeTui_hideCommandOverlay.call(this); }
   configDirty(): boolean { return intakeMethods.IntakeTui_configDirty.call(this); }

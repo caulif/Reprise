@@ -4,12 +4,13 @@ import { selectedIndexAfterFold } from '../fold-process.js';
 import { projectTimelineView } from '../timeline-view.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
 import { t, type Locale } from '../i18n.js';
+import { activityDetailModel, renderActivityDetail, showsActivityDetailSidebar } from '../overlays.js';
 import { matchesFilter, renderScrollback } from '../scrollback.js';
 import { canvasHitIndices } from '../timeline-read.js';
 import { caretAt } from '../text-edit.js';
 import type { Theme } from '../theme.js';
 import type { TimelineEntry } from '../timeline.js';
-import { kv, pad, panel, type PreparePhase } from '../widgets.js';
+import { joinColumns, kv, pad, panel, type PreparePhase } from '../widgets.js';
 import type { CandidateRunPhase } from '../../application/candidate-run-phase.js';
 
 export type { CandidateRunPhase };
@@ -73,6 +74,7 @@ export type RunningModel = {
   readonly reconnectTotal?: number;
   readonly runStartedAt?: number;
   readonly expandedFolds?: readonly string[];
+  readonly activityDetail?: TimelineEntry;
   readonly candidateSessionId?: string;
   readonly sourceTimeline?: readonly TimelineEntry[];
   readonly timelineRevision?: number;
@@ -270,11 +272,28 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
           theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
           pad(` ${theme.glyphs.dot} working`, width, theme.glyphs.ellipsis),
         ]
-      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, following, timelineRevision);
-  return [
+      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, following, timelineRevision, expanded);
+  const body = [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
   ];
+  if (model.activityDetail && showsActivityDetailSidebar(theme) && height !== undefined) {
+    const detailWidth = Math.max(28, Math.floor(width * 0.4));
+    const mainWidth = Math.max(32, width - detailWidth - 1);
+    const main = [
+      ...header.map((line) => theme.style.fillCanvas(pad(line, mainWidth, theme.glyphs.ellipsis))),
+      ...renderScrollback(theme, mainWidth, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, following, timelineRevision, expanded)
+        .map((line) => pad(line, mainWidth, theme.glyphs.ellipsis)),
+    ];
+    const detail = renderActivityDetail(
+      theme,
+      detailWidth,
+      activityDetailModel(model.activityDetail, product, locale),
+      locale,
+    );
+    return joinColumns(main, detail, mainWidth, detailWidth, 1, theme);
+  }
+  return body;
 }
 
 function renderFindBar(model: RunningModel, locale: Locale, total: number, selected: number): string[] {
