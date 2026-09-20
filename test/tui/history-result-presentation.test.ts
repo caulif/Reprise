@@ -7,6 +7,9 @@ import {
   deriveResultPresentationFromHistory,
   deriveResultPresentationFromResult,
 } from '../../src/tui/display-state.js';
+import { historyDetailPointerAction, renderHistoryDetail } from '../../src/tui/pages/history.js';
+import { createTheme } from '../../src/tui/theme.js';
+import { setCapabilities } from '@earendil-works/pi-tui';
 
 test('live and history share presentation semantics for cancelled comparison', () => {
   const experimentRoot = join('C:', 'exp');
@@ -68,4 +71,37 @@ test('history insufficient_evidence matches live comparison presentation', () =>
   assert.equal(fromHistory.comparisonKind, 'insufficient_evidence');
   assert.equal(fromHistory.comparisonKind, fromLive.comparisonKind);
   assert.equal(fromHistory.comparisonLabel, fromLive.comparisonLabel);
+  assert.equal(fromHistory.reportKind, 'diagnostic');
+});
+
+test('history detail pointer opens the clicked HTML path for previous report and diagnostic', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const theme = createTheme(120, false);
+  const diagnostic = 'C:\\exp\\comparison-failure.html';
+  const previous = 'C:\\exp\\report.html';
+  const item = {
+    experimentId: 'exp-1',
+    taskCaseId: 'case-1',
+    path: 'C:\\exp',
+    sizeBytes: 1,
+    comparisonStatus: 'cancelled',
+    reportPath: diagnostic,
+    previousReportPath: previous,
+  };
+  const lines = renderHistoryDetail(theme, 120, item, 'zh');
+  let diagHit: ReturnType<typeof historyDetailPointerAction>;
+  let prevHit: ReturnType<typeof historyDetailPointerAction>;
+  let pathHit: ReturnType<typeof historyDetailPointerAction>;
+  for (let row = 0; row < lines.length; row += 1) {
+    const line = lines[row] ?? '';
+    for (let col = 0; col < line.length; col += 1) {
+      const hit = historyDetailPointerAction(lines, row, col, item);
+      if (hit?.action === 'open-report' && hit.reportPath === diagnostic) diagHit = hit;
+      if (hit?.action === 'open-report' && hit.reportPath === previous) prevHit = hit;
+      if (hit?.action === 'open-local' && /Path/.test(line)) pathHit = hit;
+    }
+  }
+  assert.deepEqual(diagHit, { action: 'open-report', reportPath: diagnostic });
+  assert.deepEqual(prevHit, { action: 'open-report', reportPath: previous });
+  assert.deepEqual(pathHit, { action: 'open-local' });
 });

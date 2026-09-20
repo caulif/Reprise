@@ -18,13 +18,13 @@
 
 History 与 `readCommittedModelLog` 只读 `events.jsonl` 和已提交附件。不 acquire writer、不实例化 provider / Runtime / Product Pack、不发模型请求、不启动候选。CandidateRun 是否中断或未知只看已提交事件（`run.finished` 或 `run.attempt_created`），不看锁文件或 PID。
 
-`HistoryExperiment` 是 application→TUI 的最小只读投影，不改 on-disk 布局。对照产物选择由 `selectComparisonArtifacts` 统一：
+`HistoryExperiment` 是 application→TUI 的最小只读投影，不改 on-disk 布局。对照产物选择由 `selectComparisonArtifacts` 统一（只决定磁盘路径与归属，不存英文 UI kind）：
 
-1. `failed` / `cancelled` 或其它非 `completed` 状态：优先本次诊断 HTML；仅有旧 `report.html` 时标 `Previous report`，并置 `reportAttemptUnconfirmed`，不得标成成功 `Report`。
-2. `comparison.json` 存在但未通过 schema：已有 HTML 一律 `reportAttemptUnconfirmed`，成功文件标 `Previous report`。
-3. `completed`：`report.html` 为 `Report`；嵌套 `value.status === "insufficient_evidence"` 写入 `comparisonDetail`，不改 reportKind。
-4. 诊断与此前报告可同时暴露（`reportPath` + `previousReportPath`）；不删除或改写旧 HTML。
-5. 实时 `showRunResult` 构造的 `recentExperiment` 与 History 读取共用同一投影字段（含 task/cleanup/comparison/reportKind），缺字段保持省略，不默认成功。
+1. `failed` / `cancelled` 或其它非 `completed` 状态：优先本次诊断 HTML；仅有旧 `report.html` 时打开该文件并置 `reportAttemptUnconfirmed`，不得当作已确认成功报告。
+2. `comparison.json` 存在但未通过 schema：已有 HTML 一律 `reportAttemptUnconfirmed`。
+3. `completed`：打开 `report.html`；嵌套 `value.status === "insufficient_evidence"` 写入 `comparisonDetail`。开打标签由 T01 `deriveResultPresentation` 决定（证据不足显示诊断语义）。
+4. 诊断与此前成功报告可同时暴露（`reportPath` + `previousReportPath`）；`previousReportPath` 仅保留成功 HTML；不删除或改写旧 HTML。
+5. 实时 `showRunResult` 构造的 `recentExperiment` 与 History 读取共用同一投影字段（含 task/cleanup/comparison），缺字段保持省略，不默认成功。历史详情经 `deriveResultPresentationFromHistory` 消费 T01 presentation；点击 OSC-8 打开被点中的 HTML 路径。
 
 ## 备选方案
 
@@ -42,4 +42,4 @@ History 与 `readCommittedModelLog` 只读 `events.jsonl` 和已提交附件。�
 
 ## 验证
 
-`test/agent-model-input.test.ts`：未知信封/正文版本失败；旧 `session_completed` 不发明 assistant 文本。`test/local-history.test.ts`：无 record 时按事件标 interrupted，不改 lock；cancelled + 旧 report / diagnostic；insufficient_evidence；cleanup unknown；非法 comparison.json。`test/application/history-result-facts.test.ts`：live 与 history 同 fixture 语义字段一致。`test/widgets.test.ts`：中文详情含“该记录未保存完整内容”。`test/architecture.test.ts`：历史读模块不导入 Pack。既有 store 半行修复测试继续成立。
+`test/agent-model-input.test.ts`：未知信封/正文版本失败；旧 `session_completed` 不发明 assistant 文本。`test/local-history.test.ts`：无 record 时按事件标 interrupted，不改 lock；cancelled + 旧 report / diagnostic；insufficient_evidence；cleanup unknown；非法 comparison.json；失败 kind 展示。`test/application/history-result-facts.test.ts` / `comparison-artifacts`：产物选择与 live 投影。`test/tui/history-result-presentation.test.ts`：live/history presentation 一致；此前报告点击打开对应路径。`test/widgets.test.ts`：中文详情含“该记录未保存完整内容”。`test/architecture.test.ts`：历史读模块不导入 Pack。既有 store 半行修复测试继续成立。

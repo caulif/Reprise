@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import {
-  historyExperimentFromResult,
-  resultFactsFromHistory,
-  resultFactsFromLiveResult,
-  selectComparisonArtifacts,
-} from '../../src/application/history-result-facts.js';
+import { selectComparisonArtifacts } from '../../src/application/comparison-artifacts.js';
+import { historyExperimentFromResult } from '../../src/application/history-result-facts.js';
 import type { ExperimentResult } from '../../src/application/experiment.js';
 
 test('selectComparisonArtifacts prefers diagnostic for cancelled and keeps old report separate', () => {
@@ -15,7 +11,6 @@ test('selectComparisonArtifacts prefers diagnostic for cancelled and keeps old r
     diagnosticPath: '/exp/comparison-failure.html',
     successPath: '/exp/report.html',
   });
-  assert.equal(both.reportKind, 'Diagnostic');
   assert.equal(both.reportPath, '/exp/comparison-failure.html');
   assert.equal(both.previousReportPath, '/exp/report.html');
   assert.equal(both.reportAttemptUnconfirmed, undefined);
@@ -24,19 +19,19 @@ test('selectComparisonArtifacts prefers diagnostic for cancelled and keeps old r
     comparisonStatus: 'cancelled',
     successPath: '/exp/report.html',
   });
-  assert.equal(onlyOld.reportKind, 'Previous report');
+  assert.equal(onlyOld.reportPath, '/exp/report.html');
   assert.equal(onlyOld.reportAttemptUnconfirmed, true);
-  assert.doesNotMatch(onlyOld.reportKind ?? '', /^Report$/);
 });
 
-test('selectComparisonArtifacts does not promote unreadable comparison leftovers to Report', () => {
+test('selectComparisonArtifacts does not promote unreadable comparison leftovers to confirmed success', () => {
   const unread = selectComparisonArtifacts({
     successPath: '/exp/report.html',
     diagnosticPath: '/exp/comparison-failure.html',
     comparisonReadable: false,
   });
   assert.equal(unread.reportAttemptUnconfirmed, true);
-  assert.notEqual(unread.reportKind, 'Report');
+  assert.equal(unread.reportPath, '/exp/report.html');
+  assert.equal(unread.previousReportPath, undefined);
 });
 
 test('live and history projections share semantic fields for the same fixture', () => {
@@ -61,32 +56,28 @@ test('live and history projections share semantic fields for the same fixture', 
     },
   } as unknown as ExperimentResult;
 
-  const fromLive = resultFactsFromLiveResult(live, { experimentRoot, taskCaseId: 'case-1' });
-  const projected = historyExperimentFromResult(live, { experimentRoot, taskCaseId: 'case-1' });
-  const fromHistory = resultFactsFromHistory({
-    ...projected,
-    // History may also observe a leftover success report on disk.
+  const fromLive = historyExperimentFromResult(live, { experimentRoot, taskCaseId: 'case-1' });
+  const fromHistory = {
+    ...fromLive,
     previousReportPath: join(experimentRoot, 'report.html'),
     sizeBytes: 12,
-  });
+  };
 
   assert.equal(fromLive.outcome, 'completed');
   assert.equal(fromLive.taskStatus, 'apparently_completed');
   assert.equal(fromLive.cleanupStatus, 'unknown');
   assert.equal(fromLive.comparisonStatus, 'cancelled');
-  assert.equal(fromLive.reportKind, 'Diagnostic');
   assert.equal(fromLive.reportPath, diagnostic);
 
   assert.equal(fromHistory.outcome, fromLive.outcome);
   assert.equal(fromHistory.taskStatus, fromLive.taskStatus);
   assert.equal(fromHistory.cleanupStatus, fromLive.cleanupStatus);
   assert.equal(fromHistory.comparisonStatus, fromLive.comparisonStatus);
-  assert.equal(fromHistory.reportKind, fromLive.reportKind);
   assert.equal(fromHistory.reportPath, fromLive.reportPath);
   assert.equal(fromHistory.previousReportPath, join(experimentRoot, 'report.html'));
 });
 
-test('completed insufficient_evidence keeps Report kind and comparisonDetail', () => {
+test('completed insufficient_evidence keeps report.html path and comparisonDetail', () => {
   const experimentRoot = join('C:', 'exp');
   const report = join(experimentRoot, 'report.html');
   const live = {
@@ -108,8 +99,9 @@ test('completed insufficient_evidence keeps Report kind and comparisonDetail', (
       },
     },
   } as unknown as ExperimentResult;
-  const facts = resultFactsFromLiveResult(live, { experimentRoot, taskCaseId: 'case-1' });
-  assert.equal(facts.reportKind, 'Report');
+  const facts = historyExperimentFromResult(live, { experimentRoot, taskCaseId: 'case-1' });
+  assert.equal(facts.reportPath, report);
   assert.equal(facts.comparisonStatus, 'completed');
   assert.equal(facts.comparisonDetail, 'insufficient_evidence');
+  assert.equal(facts.reportAttemptUnconfirmed, undefined);
 });

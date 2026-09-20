@@ -122,11 +122,12 @@ export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Co
   if (!c.historyDetail) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
   const lines = renderHistoryDetail(createTheme(cell.width), cell.width, c.historyDetail, c.locale);
-  const action = historyDetailPointerAction(lines, cell.bodyRow, cell.col);
-  if (action === 'open-report' && !('taskCase' in c.historyDetail)) {
-    return c.openReport(c.historyDetail.path, c.historyDetail.reportPath);
+  const detail = c.historyDetail;
+  const action = historyDetailPointerAction(lines, cell.bodyRow, cell.col, 'taskCase' in detail ? undefined : detail);
+  if (action?.action === 'open-report' && !('taskCase' in detail)) {
+    return c.openReport(detail.path, action.reportPath);
   }
-  if (action === 'open-local') return c.openLocal(c.historyDetail.path);
+  if (action?.action === 'open-local') return c.openLocal(detail.path);
   return undefined;
 }
 
