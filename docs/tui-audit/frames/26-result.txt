@@ -8,10 +8,12 @@ Reprise   运行结果                                                          
 │ 清理         已完成 │
 │ 对照         对照完成 │
 │ 下一步       打开可用产物 │
-│ 耗时         未记录 │
+│ 耗时         72s · candidate 49s · 未记录 tokens · 未记录 用量 │
 │ 报告         report.html │
-│ 候选终稿     未定位到 │
-│ 历史终稿     未定位到 │
+│ 候选终稿     candidate-final.txt │
+│ 历史终稿     history-final.txt │
+│ │
+│ Synthetic comparison headline. │
 │ 记录（排查） runs/run-1/ │
 │ 隔离副本（排查） environment/runs/run-1/ │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
