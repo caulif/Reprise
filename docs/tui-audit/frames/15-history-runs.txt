@@ -12,7 +12,7 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
 │ 1/1                                                               │ │ Run          run-history │
 │                                                                   │ │ Outcome      record unread │
 │                                                                   │ │ Started      unavailable │
-│                                                                   │ │ Report       not generated │
+│                                                                   │ │ 报告         not generated │
 │                                                                   │ │ Stored       0.0 MiB │
 │                                                                   │ │ Path         C:\user\AppData\Local\ │
 │                                                                   │ │              Temp\reprise-tui-audit-TMP\ │
