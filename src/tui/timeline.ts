@@ -2,8 +2,25 @@ import { record, text, type JsonRecord } from '../core/json.js';
 import { publicLiveOf } from '../core/public-live.js';
 import type { EventEnvelope } from '../core/schema.js';
 import {
+  applyActivityNodeToEntries,
+  createActivityIndex,
+  deliveryIdentityFromPayload,
+  ingestActivityEvent,
+  mergeEventRefs,
+  presentedTextKey,
+  roleFromLane,
+  semanticsFromEvent,
+  type ActivityEventRef,
+  type ActivityIndexState,
+  type ActivityRole,
+  type ActivityStatus,
+  type ActivityVerb,
+  type TimelineActivitySemantics,
+} from './activity-index.js';
+import {
   captionPublicLive,
   collapseAgentRows,
+  errorFingerprint,
   laneSource,
   projectAgentTool,
   projectAssistantVisible,
@@ -14,6 +31,11 @@ import {
   type TimelineVoice,
 } from './agent-activity.js';
 import { bumpTimelineRevision, type TimelineRevisionState } from './timeline-revision.js';
+import {
+  classifyComparisonStatus,
+  comparisonKindError,
+  comparisonKindTitle,
+} from './display-state.js';
 
 /** Full event text kept off the default column; the visible pane only shows a short structured preview. */
 const MAX_ORIGINAL_CHARS = 32_768;
@@ -43,6 +65,22 @@ export interface TimelineEntry {
   readonly kind?: AgentKind;
   readonly count?: number;
   readonly voice?: TimelineVoice;
+  /** Structured display role; titles are render output, not identity. */
+  readonly role?: ActivityRole;
+  readonly verb?: ActivityVerb;
+  readonly object?: string;
+  readonly activityStatus?: ActivityStatus;
+  readonly eventType?: string;
+  readonly correlationId?: string;
+  readonly deliveryId?: string;
+  readonly sessionId?: string;
+  readonly turnId?: string;
+  readonly eventRefs?: readonly ActivityEventRef[];
+  /** Failed/native row without a trusted call identity. */
+  readonly linkUnknown?: boolean;
+  /** Controller send ↔ input.submitted pair sealed so identical text cannot collapse across turns. */
+  readonly deliveryPaired?: boolean;
+  readonly truncated?: boolean;
 }
 
 type EntryExtra = {
@@ -56,7 +94,7 @@ type EntryExtra = {
   kind?: AgentKind;
   count?: number;
   voice?: TimelineVoice;
-};
+} & TimelineActivitySemantics;
 
 type MakeEntry = (source: TimelineSource, title: string, detail?: string, extra?: EntryExtra) => TimelineEntry;
 
@@ -103,44 +141,84 @@ export function appendTimelineEntries(
 }
 
 function collapsePresentedInput(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
-  const key = presentedInputKey(entry);
-  if (!key) return false;
-  const index = timeline.findIndex((row) => presentedInputKey(row) === key);
-  if (index < 0) return false;
-  const existing = timeline[index];
-  if (entry.title.startsWith('Input to Target') && existing?.title.startsWith('Prompt ·')) {
-    timeline[index] = entry;
+  const incoming = presentedInputMeta(entry);
+  if (!incoming) return false;
+  if (incoming.deliveryId) {
+    const index = timeline.findIndex((row) => row.deliveryId === incoming.deliveryId && !row.hidden);
+    if (index >= 0) {
+      sealPresentedPair(timeline, index, entry);
+      return true;
+    }
   }
-  return true;
+  // Same delivery often lacks a shared id: pair only an unpaired peer with the same text.
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const existing = timeline[index];
+    if (!existing || existing.hidden || existing.deliveryPaired) continue;
+    const prior = presentedInputMeta(existing);
+    if (!prior || prior.textKey !== incoming.textKey) continue;
+    if (prior.kind === incoming.kind) return false;
+    sealPresentedPair(timeline, index, entry);
+    return true;
+  }
+  return false;
 }
 
-function presentedInputKey(entry: TimelineEntry): string | undefined {
-  const raw = entry.title.startsWith('Input to Target')
-    ? entry.detail
-    : entry.title.startsWith('Prompt ·')
-      ? (entry.detail ?? entry.title.slice('Prompt · '.length))
-      : undefined;
-  const key = raw?.replace(/\s+/g, ' ').trim();
-  return key || undefined;
+function sealPresentedPair(timeline: TimelineEntry[], index: number, entry: TimelineEntry): void {
+  const existing = timeline[index];
+  if (!existing) return;
+  const preferInput = entry.title.startsWith('Input to Target') && existing.title.startsWith('Prompt ·');
+  const base = preferInput ? entry : existing;
+  const other = preferInput ? existing : entry;
+  const deliveryId = base.deliveryId ?? other.deliveryId ?? existing.deliveryId ?? entry.deliveryId;
+  timeline[index] = {
+    ...base,
+    deliveryPaired: true,
+    eventRefs: mergeEventRefs(existing.eventRefs, entry.eventRefs),
+    ...(deliveryId ? { deliveryId } : {}),
+    ...(other.detail && !base.detail ? { detail: other.detail } : {}),
+    ...(other.original && !base.original ? { original: other.original } : {}),
+  };
+}
+
+function presentedInputMeta(entry: TimelineEntry): { kind: 'input' | 'prompt'; textKey: string; deliveryId?: string } | undefined {
+  const isInput = entry.title.startsWith('Input to Target');
+  const isPrompt = entry.title.startsWith('Prompt ·');
+  if (!isInput && !isPrompt) return undefined;
+  const raw = isInput ? entry.detail : (entry.detail ?? entry.title.slice('Prompt · '.length));
+  const textKey = presentedTextKey(raw);
+  if (!textKey) return undefined;
+  return {
+    kind: isInput ? 'input' : 'prompt',
+    textKey,
+    ...(entry.deliveryId ? { deliveryId: entry.deliveryId } : {}),
+  };
 }
 
 function collapseRepeatedRecoveryFailure(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
-  if (entry.hidden || entry.level !== 'error' || !/工具失败|写入失败|tool failed/.test(entry.title)) return false;
+  if (entry.hidden || entry.level !== 'error') return false;
+  if (!entry.verb && !/工具失败|写入失败|tool failed/.test(entry.title) && entry.activityStatus !== 'failed') return false;
+  const fingerprint = errorFingerprint(entry);
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const previous = timeline[index];
     if (!previous || previous.hidden || previous.placeholder || previous.kind === 'live') continue;
-    if (previous.title !== entry.title || previous.level !== 'error') return false;
-    const previousKey = recoveryFailureText(previous.detail);
-    const nextKey = recoveryFailureText(entry.detail);
-    if (previousKey !== nextKey) return false;
-    const count = recoveryFailureCount(previous.detail) + 1;
+    if (previous.level !== 'error') return false;
+    // Same fingerprint within role/attempt only — never merge across roles.
+    if (errorFingerprint(previous) !== fingerprint) return false;
+    const count = (previous.count ?? recoveryFailureCount(previous.detail)) + 1;
+    const firstAt = previous.eventRefs?.[0] ? previous.occurredAt : previous.occurredAt;
     timeline[index] = {
       ...previous,
       sequence: entry.sequence,
       occurredAt: entry.occurredAt,
-      detail: `${previousKey} ×${count}`,
+      count,
+      detail: `${recoveryFailureText(previous.detail || previous.title)} ×${count}`,
+      eventRefs: mergeEventRefs(previous.eventRefs, entry.eventRefs),
       ...(entry.original || previous.original
-        ? { original: clampOriginal(`${previous.original ?? previous.detail ?? ''}\n${entry.original ?? entry.detail ?? ''}`) }
+        ? {
+            original: clampOriginal(
+              `first=${firstAt}\nlast=${entry.occurredAt}\n${previous.original ?? previous.detail ?? ''}\n${entry.original ?? entry.detail ?? ''}`,
+            ),
+          }
         : {}),
     };
     return true;
@@ -170,10 +248,29 @@ const SILENT_TIMELINE_TYPES = new Set([
   'agent.model_request',
 ]);
 
-export function projectPersistedTimeline(events: readonly EventEnvelope[]): TimelineEntry[] {
+export function projectPersistedTimeline(
+  events: readonly EventEnvelope[],
+  index: ActivityIndexState = createActivityIndex(),
+): TimelineEntry[] {
   const timeline: TimelineEntry[] = [];
-  for (const event of events) appendTimelineEntries(timeline, projectTimelineEvent(event));
+  for (const event of events) {
+    const node = ingestActivityEvent(index, event);
+    const projected = applyActivityNodeToEntries(projectTimelineEvent(event), node);
+    appendTimelineEntries(timeline, projected);
+  }
   return timeline;
+}
+
+/** Live append path shares the same fold/reducer as persisted replay. */
+export function appendProjectedEvent(
+  timeline: TimelineEntry[],
+  event: EventEnvelope,
+  index: ActivityIndexState,
+  revision?: TimelineRevisionState,
+): void {
+  const node = ingestActivityEvent(index, event);
+  const projected = applyActivityNodeToEntries(projectTimelineEvent(event), node);
+  appendTimelineEntries(timeline, projected, revision);
 }
 
 export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEntry[] {
@@ -202,10 +299,15 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
         entry('HARNESS', finalStatus, excerpt, {
           lane: 'recovery',
           kind: 'deliver',
+          role: 'recovery',
+          verb: 'publish',
+          activityStatus: failed ? 'failed' : 'completed',
           ...(excerpt ? { original: excerpt } : {}),
           ...(failed && !blocked ? { level: 'error' as const } : {}),
         }),
-        ...unresolved.map((item) => entry('HARNESS', item, undefined, { lane: 'recovery', kind: 'narrate' })),
+        ...unresolved.map((item) => entry('HARNESS', item, undefined, {
+          lane: 'recovery', kind: 'narrate', role: 'recovery', verb: 'publish', activityStatus: 'completed',
+        })),
         clearNow(entry, 'recovery'),
       ];
     }
@@ -236,14 +338,28 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
     case 'input.submitted': {
       const prompt = text(payload.text);
       if (!prompt) return [];
+      const deliveryId = deliveryIdentityFromPayload(payload);
       return [
-        ...emitPresented(entry, 'TARGET', promptTitle(prompt), prompt),
+        ...emitPresented(entry, 'TARGET', promptTitle(prompt), prompt, {
+          role: 'candidate',
+          verb: 'send',
+          activityStatus: 'completed',
+          ...(deliveryId ? { deliveryId } : {}),
+        }),
         entry('TARGET', 'working', undefined, {
           kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace', voice: 'candidate',
+          role: 'candidate', verb: 'working', activityStatus: 'started',
         }),
       ];
     }
-    case 'candidate.session_bound': return [entry('HARNESS', `Candidate session · ${text(payload.sessionId) ?? '?'}`, text(payload.productId), { hidden: true })];
+    case 'candidate.session_bound': {
+      const sessionId = text(payload.sessionId);
+      return [entry('HARNESS', `Candidate session · ${sessionId ?? '?'}`, text(payload.productId), {
+        hidden: true,
+        role: 'system',
+        ...(sessionId ? { sessionId } : {}),
+      })];
+    }
     case 'candidate.user_view_persisted':
       return projectUserView(entry, payload);
     case 'runtime.delivery_observed': {
@@ -311,20 +427,50 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
 }
 
 function timelineEntryFactory(event: EventEnvelope): MakeEntry {
-  return (source, title, detail, extra) => ({
-    sequence: event.sequence, occurredAt: event.occurredAt, source, title,
-    ...(detail ? { detail } : {}),
-    ...(extra?.original ? { original: extra.original } : {}),
-    ...(extra?.level ? { level: extra.level } : {}),
-    ...(extra?.hidden ? { hidden: true } : {}),
-    ...(extra?.itemId ? { itemId: extra.itemId } : {}),
-    ...(extra?.patch ? { patch: extra.patch } : {}),
-    ...(extra?.placeholder ? { placeholder: true } : {}),
-    ...(extra?.lane ? { lane: extra.lane } : {}),
-    ...(extra?.kind ? { kind: extra.kind } : {}),
-    ...(extra?.count !== undefined ? { count: extra.count } : {}),
-    ...(extra?.voice ? { voice: extra.voice } : extra?.lane ? { voice: extra.lane } : {}),
-  });
+  return (source, title, detail, extra) => {
+    const semantics = semanticsFromEvent(event, {
+      role: extra?.role ?? roleFromLane(extra?.lane, source),
+      ...(extra?.verb ? { verb: extra.verb } : {}),
+      ...(extra?.object ? { object: extra.object } : {}),
+      ...(extra?.activityStatus ? { activityStatus: extra.activityStatus } : {}),
+      ...(extra?.eventType ? { eventType: extra.eventType } : {}),
+      ...(extra?.correlationId ? { correlationId: extra.correlationId } : {}),
+      ...(extra?.deliveryId ? { deliveryId: extra.deliveryId } : {}),
+      ...(extra?.sessionId ? { sessionId: extra.sessionId } : {}),
+      ...(extra?.turnId ? { turnId: extra.turnId } : {}),
+      ...(extra?.eventRefs ? { eventRefs: extra.eventRefs } : {}),
+      ...(extra?.linkUnknown ? { linkUnknown: true } : {}),
+      ...(extra?.deliveryPaired ? { deliveryPaired: true } : {}),
+      ...(extra?.truncated ? { truncated: true } : {}),
+    });
+    return {
+      sequence: event.sequence, occurredAt: event.occurredAt, source, title,
+      ...(detail ? { detail } : {}),
+      ...(extra?.original ? { original: extra.original } : {}),
+      ...(extra?.level ? { level: extra.level } : {}),
+      ...(extra?.hidden ? { hidden: true } : {}),
+      ...(extra?.itemId ? { itemId: extra.itemId } : {}),
+      ...(extra?.patch ? { patch: extra.patch } : {}),
+      ...(extra?.placeholder ? { placeholder: true } : {}),
+      ...(extra?.lane ? { lane: extra.lane } : {}),
+      ...(extra?.kind ? { kind: extra.kind } : {}),
+      ...(extra?.count !== undefined ? { count: extra.count } : {}),
+      ...(extra?.voice ? { voice: extra.voice } : extra?.lane ? { voice: extra.lane } : {}),
+      ...(semantics.role ? { role: semantics.role } : {}),
+      ...(semantics.verb ? { verb: semantics.verb } : {}),
+      ...(semantics.object ? { object: semantics.object } : {}),
+      ...(semantics.activityStatus ? { activityStatus: semantics.activityStatus } : {}),
+      ...(semantics.eventType ? { eventType: semantics.eventType } : {}),
+      ...(semantics.correlationId ? { correlationId: semantics.correlationId } : {}),
+      ...(semantics.deliveryId ? { deliveryId: semantics.deliveryId } : {}),
+      ...(semantics.sessionId ? { sessionId: semantics.sessionId } : {}),
+      ...(semantics.turnId ? { turnId: semantics.turnId } : {}),
+      ...(semantics.eventRefs?.length ? { eventRefs: semantics.eventRefs } : {}),
+      ...(semantics.linkUnknown ? { linkUnknown: true } : {}),
+      ...(semantics.deliveryPaired ? { deliveryPaired: true } : {}),
+      ...(semantics.truncated ? { truncated: true } : {}),
+    };
+  };
 }
 
 function agentLaneOf(payload: JsonRecord): AgentLane {
@@ -387,8 +533,17 @@ function projectCandidateNow(type: string, payload: JsonRecord, entry: MakeEntry
   if (!live) return [];
   const caption = captionPublicLive(live.verb, live.leaf);
   const write = live.verb === 'write' || live.verb === 'edit';
+  const verb = live.verb === 'working' ? 'working' as const
+    : live.verb === 'write' || live.verb === 'edit' ? live.verb
+    : live.verb === 'run' ? 'run' as const
+    : live.verb === 'inspect' ? 'inspect' as const
+    : 'read' as const;
   const now = entry('TARGET', caption.title, caption.detail, {
     kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace', voice: 'candidate',
+    role: 'candidate',
+    verb,
+    activityStatus: 'started',
+    ...(live.leaf ? { object: live.leaf } : {}),
   });
   if (live.verb === 'working') return [now];
   return [
@@ -400,6 +555,8 @@ function projectCandidateNow(type: string, payload: JsonRecord, entry: MakeEntry
       kind: write ? 'deliver' : 'investigate',
       count: 1,
       voice: 'candidate',
+      role: 'candidate',
+      ...(live.leaf ? { object: live.leaf } : {}),
     }),
   ];
 }
@@ -433,34 +590,31 @@ function projectOutcome(entry: MakeEntry, payload: JsonRecord): readonly Timelin
   const cleanup = text(record(payload.cleanup).status) ?? 'unknown';
   const kind = text(termination.kind) ?? 'unknown';
   const code = text(termination.code);
+  const cleanupWarn = cleanup === 'incomplete' || cleanup === 'unknown';
   return [
     entry('HARNESS', `Task · ${task}`),
     entry('HARNESS', `Termination · ${kind}`, code),
-    entry('HARNESS', `Cleanup · ${cleanup}`, undefined, cleanup === 'failed' ? { level: 'error' } : undefined),
+    entry('HARNESS', `Cleanup · ${cleanup}`, undefined, cleanupWarn ? { level: 'error' } : undefined),
   ];
 }
 
 function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
-  const invocation = text(payload.status) ?? 'unknown';
+  const invocation = text(payload.status);
   const failure = record(payload.failure);
   const value = record(payload.value);
   const valueStatus = text(value.status);
   const headline = text(value.headline);
-  const failed = invocation === 'failed';
-  const title = failed ? 'comparison.failed'
-    : invocation === 'cancelled' ? 'comparison.cancelled'
-      : valueStatus === 'insufficient_evidence' ? 'comparison.insufficient'
-        : invocation === 'completed' && valueStatus === 'completed' ? 'comparison.completed'
-          : 'comparison.unknown';
-  return [entry('CONTROLLER', title, headline ?? (failed ? text(failure.message) : undefined), {
+  const kind = classifyComparisonStatus(invocation, valueStatus);
+  const title = comparisonKindTitle(kind);
+  const detail = headline
+    ?? (kind === 'failed' ? text(failure.message) : undefined)
+    ?? (kind === 'cancelled' ? text(payload.factRef) : undefined)
+    ?? (kind === 'unknown' ? (invocation === 'completed' ? valueStatus : invocation) : undefined);
+  return [entry('CONTROLLER', title, detail, {
     lane: 'comparison',
     kind: 'deliver',
     ...(headline ? { original: headline } : {}),
-    ...(failed
-      ? { level: 'error' as const }
-      : title === 'comparison.cancelled' || title === 'comparison.insufficient' || title === 'comparison.unknown'
-        ? { level: 'warning' as const }
-        : {}),
+    ...(comparisonKindError(kind) ? { level: 'error' as const } : {}),
   })];
 }
 
@@ -474,12 +628,21 @@ function controllerEntries(event: EventEnvelope, payload: JsonRecord): readonly 
   if (kind === 'send') {
     const intent = text(decision.intent);
     const message = text(decision.message);
+    const sessionId = text(payload.sessionId);
+    const invocationId = text(payload.invocationId);
     return [{
       sequence: event.sequence, occurredAt: event.occurredAt, source: 'CONTROLLER',
       title: intent ? `Input to Target · ${intent}` : 'Input to Target',
       ...(message ? { detail: message } : {}),
       lane: 'controller',
       kind: 'deliver',
+      role: 'controller',
+      verb: 'send',
+      activityStatus: 'completed',
+      eventType: event.type,
+      eventRefs: [{ eventId: event.eventId, sequence: event.sequence }],
+      ...(sessionId ? { sessionId } : {}),
+      ...(invocationId ? { correlationId: invocationId } : {}),
     }, clearNow(make, 'controller')];
   }
   const reason = text(decision.reason);
@@ -608,10 +771,10 @@ function clearNow(entry: MakeEntry, lane: AgentLane): TimelineEntry {
 function shouldFlushBefore(entry: TimelineEntry): boolean {
   if (entry.hidden) return false;
   if (entry.kind === 'narrate') return true;
-  if (entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')) return true;
+  if (entry.lane === 'comparison' && entry.kind === 'deliver') return true;
+  if (entry.verb === 'send' || entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')) return true;
   if (entry.title === 'Visible response') return true;
   if (entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复') return true;
-  if (entry.title.startsWith('comparison.')) return true;
   return false;
 }
 
@@ -656,7 +819,12 @@ export function flushFoldTitle(row: TimelineEntry): string {
   if (row.itemId?.startsWith('flush-write:')) {
     return `▸ 写入 ${row.detail?.split(' · ')[0] ?? ''}`.trim();
   }
-  return `▸ 阅读证据 · ${row.count ?? 1}`;
+  const callCount = row.count ?? 1;
+  const objects = uniqueLeafNames((row.detail ?? '').split(/[·,]/));
+  if (objects.length > 0 && objects.length !== callCount) {
+    return `▸ 阅读证据 · ${callCount}次 · ${objects.length}项`;
+  }
+  return `▸ 阅读证据 · ${callCount}`;
 }
 
 function emitFlush(timeline: TimelineEntry[], itemId: string, titleOf: (row: TimelineEntry) => string): void {
@@ -681,9 +849,13 @@ function emitFlush(timeline: TimelineEntry[], itemId: string, titleOf: (row: Tim
 export function filterTraceForSurface(
   entries: readonly TimelineEntry[],
   surface: 'recovery' | 'picker' | 'candidate' | 'compare' | 'result',
+  scope: 'overview' | 'recovery' | 'candidate' | 'comparison' = 'overview',
 ): readonly TimelineEntry[] {
-  if (surface === 'compare') {
+  if (surface === 'compare' || (surface === 'result' && scope === 'comparison')) {
     return entries.filter((entry) => entry.lane === 'comparison' || entry.itemId === 'now:comparison');
+  }
+  if (surface === 'result' && scope === 'overview') {
+    return [];
   }
   if (surface === 'candidate' || surface === 'result') {
     return entries.filter((entry) => {
@@ -739,6 +911,15 @@ function mergeEntry(previous: TimelineEntry, next: TimelineEntry): TimelineEntry
     ...(next.kind ? { kind: next.kind } : previous.kind ? { kind: previous.kind } : {}),
     ...(next.count !== undefined ? { count: next.count } : previous.count !== undefined ? { count: previous.count } : {}),
     ...(next.voice ? { voice: next.voice } : previous.voice ? { voice: previous.voice } : {}),
+    eventRefs: mergeEventRefs(previous.eventRefs, next.eventRefs),
+    ...(next.correlationId ? { correlationId: next.correlationId } : previous.correlationId
+      ? { correlationId: previous.correlationId }
+      : {}),
+    ...(next.linkUnknown || previous.linkUnknown ? { linkUnknown: true } : {}),
+    ...(next.deliveryId ? { deliveryId: next.deliveryId } : previous.deliveryId
+      ? { deliveryId: previous.deliveryId }
+      : {}),
+    ...(next.sessionId ? { sessionId: next.sessionId } : previous.sessionId ? { sessionId: previous.sessionId } : {}),
   };
 }
 

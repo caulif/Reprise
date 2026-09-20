@@ -1,11 +1,18 @@
-import { deliverTitleTone, displayLiveCaption, displayOperatorDetail, displayOperatorTitle, isDeliverHeadlineTitle, severityLabel } from './display-copy.js';
-import { compact, type TimelineFilter } from './format.js';
+import {
+  activityRoleLabel,
+  entryRole,
+  excerptId,
+  isPresentedInput,
+  toolCaption,
+} from './agent-activity.js';
+import { compact, sanitizeLiveCaption, type TimelineFilter } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
 import { timelineIdentity } from './timeline-read.js';
 import { timelineEntriesKey } from './timeline-revision.js';
 import { isNowRow, type TimelineEntry } from './timeline.js';
 import { pad, wrapBodyLine } from './widgets.js';
+import { visibleWidth } from '@earendil-works/pi-tui';
 
 const MAX_ENTRY_PAINT_CACHE = 512;
 const entryPaintCache = new Map<string, string[]>();
@@ -39,6 +46,17 @@ type GutterSlot = 'host' | 'candidate' | 'input' | 'fail' | 'fold-host' | 'fold-
 function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.hidden) return undefined;
   if (isQuietMcpStatus(entry)) return undefined;
+  if (isPresentedInput(entry)) return 'input';
+  const role = entryRole(entry);
+  if (role === 'candidate') return 'product';
+  if (role === 'controller') return 'controller';
+  if (role === 'recovery' || role === 'comparison') return 'summary';
+  if (role === 'system') {
+    if (entry.level === 'error') return 'product';
+    if (entry.kind === 'deliver' || entry.kind === 'narrate') return 'summary';
+    return undefined;
+  }
+  // Legacy title fallback when structured role is absent.
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·')) return 'input';
   if (entry.title.startsWith('⎿ ')) {
     if (entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane)) return 'product';
@@ -46,18 +64,12 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
     return 'controller';
   }
   if (entry.kind === 'narrate') {
-    if (entry.lane === 'comparison') return 'summary';
-    if (entry.lane === 'recovery') return 'summary';
+    if (entry.lane === 'comparison' || entry.lane === 'recovery') return 'summary';
     return 'controller';
   }
-  if (entry.kind === 'thinking') {
+  if (entry.kind === 'thinking' || entry.kind === 'fold') {
     if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
     if (entry.voice === 'candidate' || entry.source === 'TARGET') return 'product';
-    return 'controller';
-  }
-  if (entry.kind === 'fold') {
-    if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'summary';
-    if (entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane)) return 'product';
     return 'controller';
   }
   if (entry.kind === 'live' || entry.placeholder) {
@@ -77,7 +89,7 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.source === 'HARNESS' && entry.level !== 'error' && entry.lane !== 'comparison' && entry.lane !== 'recovery') {
     return undefined;
   }
-  if (entry.title.startsWith('对照') || entry.title.startsWith('comparison.') || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
+  if (entry.title.startsWith('对照') || entry.title === '证据不足' || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
     || entry.title.startsWith('Controller done') || entry.title.startsWith('Stop requested')) {
     return 'summary';
   }
@@ -110,8 +122,9 @@ export function renderScrollback(
   elapsed = '00:00',
   following = true,
   timelineRevision = -1,
+  expandedIds: ReadonlySet<string> = new Set(),
 ): string[] {
-  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed, following, timelineRevision).lines;
+  return layoutScrollback(theme, width, entries, selected, locale, product, height, tick, readingOffset, elapsed, following, timelineRevision, expandedIds).lines;
 }
 
 /** Fold expand/collapse rewrites the painted entry list without bumping timelineRevision. */
@@ -124,9 +137,10 @@ function layoutScrollbackBody(
   product: string,
   tick: number,
   timelineRevision: number,
+  expandedIds: ReadonlySet<string>,
 ): ScrollbackBody {
   const key = timelineRevision >= 0
-    ? `${timelineRevision}:${selected}:${width}:${locale}:${product}:${timelineEntriesKey(entries)}`
+    ? `${timelineRevision}:${selected}:${width}:${locale}:${product}:${timelineEntriesKey(entries)}:${[...expandedIds].join(',')}`
     : '';
   const cached = scrollbackBodyCache;
   if (key && cached?.key === key) return cached.body;
@@ -146,13 +160,13 @@ function layoutScrollbackBody(
       if (inputKey && seenInput.has(inputKey)) continue;
       if (inputKey) seenInput.add(inputKey);
     }
-    const painted = paintEntryCached(theme, entry, index === selected, width, locale, product, tick, timelineRevision);
+    const painted = paintEntryCached(theme, entry, index === selected, width, locale, product, tick, timelineRevision, expandedIds);
     if (index === selected) selectedAt = lines.length;
     if (index > selected) behind += 1;
     hits.push({
       y: lines.length,
       index,
-      fold: entry.kind === 'fold' || entry.title.startsWith('▸'),
+      fold: entry.kind === 'fold' || entry.title.startsWith('▸') || expandableExcerpt(entry, width, expandedIds),
       ...(entry.itemId ? { itemId: entry.itemId } : {}),
     });
     lines.push(...painted);
@@ -176,8 +190,9 @@ export function layoutScrollback(
   elapsed = '00:00',
   following = true,
   timelineRevision = -1,
+  expandedIds: ReadonlySet<string> = new Set(),
 ): { lines: string[]; hits: CanvasHit[]; selectedAt: number; start: number; total: number; chrome: number } {
-  const { lines, hits, selectedAt, behind, live } = layoutScrollbackBody(theme, width, entries, selected, locale, product, tick, timelineRevision);
+  const { lines, hits, selectedAt, behind, live } = layoutScrollbackBody(theme, width, entries, selected, locale, product, tick, timelineRevision, expandedIds);
   // Only paint the live now-row when one exists. A missing now-row must not fall back
   // to "<product> · working" — that falsely lingers on the result page after terminal outcome.
   const status = live
@@ -198,7 +213,10 @@ export function layoutScrollback(
     const empty = withChrome([]);
     // Keep a blank canvas row when there is no body and no chrome so callers still get a frame.
     const linesOut = empty.length ? empty : [fillCanvas(theme, '', width)];
-    return { lines: linesOut, hits, selectedAt: 0, start: 0, total: linesOut.length, chrome };
+    return {
+      lines: height === undefined ? linesOut : linesOut.slice(0, Math.max(0, height)),
+      hits, selectedAt: 0, start: 0, total: linesOut.length, chrome,
+    };
   }
   if (height === undefined || lines.length + chrome <= height) {
     const padded = padBodyToHeight(theme, lines, width, height, chrome);
@@ -207,7 +225,18 @@ export function layoutScrollback(
       hits, selectedAt, start: 0, total: lines.length, chrome,
     };
   }
-  const window = Math.max(1, height - chrome);
+  // Prefer status/follow chrome over body rows when the budget is chrome-sized or smaller.
+  const window = Math.max(0, height - chrome);
+  if (window === 0) {
+    return {
+      lines: withChrome([]).slice(0, height),
+      hits: [],
+      selectedAt,
+      start: 0,
+      total: lines.length,
+      chrome,
+    };
+  }
   const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - window));
   const sliced = lines.slice(start, start + window);
   return {
@@ -256,13 +285,15 @@ function paintEntryCached(
   product: string,
   tick: number,
   timelineRevision: number,
+  expandedIds: ReadonlySet<string>,
 ): string[] {
   const pulse = Math.floor(tick / 400);
-  if (timelineRevision < 0) return paintEntry(theme, entry, selected, width, locale, product, tick);
-  const cacheKey = `${timelineRevision}:${timelineIdentity(entry)}:${entry.sequence}:${selected}:${width}:${locale}:${product}:${pulse}:${entry.detail?.length ?? 0}:${entry.title.length}:${entry.kind ?? ''}`;
+  const excerptExpanded = expandedIds.has(excerptId(entry));
+  if (timelineRevision < 0) return paintEntry(theme, entry, selected, width, locale, product, tick, excerptExpanded);
+  const cacheKey = `${timelineRevision}:${timelineIdentity(entry)}:${entry.sequence}:${selected}:${width}:${locale}:${product}:${pulse}:${entry.detail?.length ?? 0}:${entry.title.length}:${entry.kind ?? ''}:${excerptExpanded ? 1 : 0}`;
   const cached = entryPaintCache.get(cacheKey);
   if (cached) return cached;
-  const painted = paintEntry(theme, entry, selected, width, locale, product, tick);
+  const painted = paintEntry(theme, entry, selected, width, locale, product, tick, excerptExpanded);
   if (entryPaintCache.size >= MAX_ENTRY_PAINT_CACHE) entryPaintCache.clear();
   entryPaintCache.set(cacheKey, painted);
   return painted;
@@ -276,18 +307,14 @@ function paintEntry(
   locale: Locale,
   product: string,
   tick: number,
+  excerptExpanded = false,
 ): string[] {
   const inner = Math.max(8, width - 4);
   const failed = entry.level === 'error' || commandFailed(entry);
   const candidate = isCandidate(entry);
   const slot = gutterSlot(entry, failed, candidate);
   if (voiceOf(entry) === 'input') {
-    return wrapBodyLine(inputText(entry), inner).map((line, index) => {
-      const prefix = index === 0 ? gutter(theme, 'input') : '  ';
-      const row = `${prefix}${line}`;
-      const fill = selected ? theme.style.fillInputSelected : theme.style.fillInput;
-      return fill(pad(row, width, theme.glyphs.ellipsis));
-    });
+    return paintExcerptBody(theme, inputText(entry), inner, width, selected, 'input', locale, excerptExpanded);
   }
   if (entry.title.startsWith('⎿ ')) {
     const row = `${gutter(theme, 'none')}${theme.style.muted(compact(entry.title, inner, theme.glyphs.ellipsis))}`;
@@ -310,43 +337,97 @@ function paintEntry(
     const row = `${gutter(theme, slot)}${pulse} ${compact(caption, inner - 4, theme.glyphs.ellipsis)}`;
     return [theme.style.fillLive(pad(row, width, theme.glyphs.ellipsis))];
   }
-  if (entry.kind === 'narrate') {
-    const text = (entry.detail ?? entry.title).trim();
-    return wrapBodyLine(text, inner).map((line, index) =>
-      paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${line}`, width, selected));
+  if (entry.kind === 'narrate' || isMessage(entry)) {
+    const role = activityRoleLabel(entryRole(entry), product, locale);
+    const text = (entry.detail ?? entry.title).trim()
+      || (entry.title === 'Writing' ? t(locale, 'writing', { product }) : entry.title);
+    const body = paintExcerptBody(theme, text, inner, width, selected, slot, locale, excerptExpanded);
+    const header = paintPlain(theme, `${gutter(theme, slot)}${theme.style.muted(compact(role, inner, theme.glyphs.ellipsis))}`, width, selected);
+    return [header, ...body];
   }
-  if (entry.kind === 'deliver' && isDeliverHeadlineTitle(entry.title)) {
-    const paintedTitle = displayOperatorTitle(entry.title, locale);
-    const tone = deliverTitleTone(entry.title);
-    const paint = tone === 'danger' ? theme.style.danger
-      : tone === 'warn' ? theme.style.warn
-        : theme.style.ok;
-    const lines = wrapBodyLine(paintedTitle, inner).map((line, index) =>
-      paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${paint(line)}`, width, selected));
+  if (entry.kind === 'deliver' && isDeliverHeadline(entry.title)) {
+    const paint = failedTitle(entry.title) ? theme.style.danger : theme.style.ok;
+    const role = activityRoleLabel(entryRole(entry), product, locale);
+    const lines = [
+      paintPlain(theme, `${gutter(theme, slot)}${theme.style.muted(compact(role, inner, theme.glyphs.ellipsis))}`, width, selected),
+      ...wrapBodyLine(entry.title, inner).map((line, index) =>
+        paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${paint(line)}`, width, selected)),
+    ];
     if (!entry.detail || !selected) return lines;
-    const detail = displayOperatorDetail(entry.detail, locale) ?? entry.detail;
-    return [...lines, ...wrapBodyLine(detail, inner).map((line) =>
-      paintPlain(theme, `  ${theme.style.muted(line)}`, width, false))];
+    return [...lines, ...paintExcerptBody(theme, entry.detail, inner, width, false, 'none', locale, excerptExpanded)];
+  }
+  if (entry.level === 'error') {
+    const caption = toolCaption(entry, locale);
+    const count = entry.count && entry.count > 1 ? ` ×${entry.count}` : '';
+    const row = `${gutter(theme, 'fail')}${theme.style.danger(compact(`${caption}${count}`, inner, theme.glyphs.ellipsis))}`;
+    return [paintPlain(theme, row, width, selected)];
   }
   if (isCommand(entry)) {
     const status = failed ? ` ${theme.style.danger(t(locale, 'failed'))}` : '';
     const row = `${gutter(theme, slot)}${compact(commandLine(entry), inner - 8, theme.glyphs.ellipsis)}${status}`;
     return [paintPlain(theme, row, width, selected)];
   }
-  if (isMessage(entry)) {
-    const text = entry.detail?.trim() || (entry.title === 'Writing' ? t(locale, 'writing', { product }) : entry.title);
-    return wrapBodyLine(text, inner).map((line, index) =>
-      paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${line}`, width, selected));
-  }
-  const severity = severityLabel(entry.level === 'warning' || entry.level === 'error' ? entry.level : undefined, locale, theme);
-  const rawTitle = displayOperatorTitle(entry.title, locale);
-  const rawDetail = displayOperatorDetail(entry.detail?.split(/\r?\n/)[0], locale);
-  const fallback = rawDetail || rawTitle;
-  const marked = severity ? `[${severity}] ${fallback}` : fallback;
-  const body = failed ? theme.style.danger(compact(marked, inner, theme.glyphs.ellipsis))
-    : entry.level === 'warning' ? theme.style.warn(compact(marked, inner, theme.glyphs.ellipsis))
-      : compact(marked, inner, theme.glyphs.ellipsis);
+  const fallback = entry.detail?.split(/\r?\n/)[0] || entry.title;
+  const body = failed ? theme.style.danger(compact(fallback, inner, theme.glyphs.ellipsis)) : compact(fallback, inner, theme.glyphs.ellipsis);
   return [paintPlain(theme, `${gutter(theme, slot)}${selected ? theme.style.strong(body) : body}`, width, selected)];
+}
+
+const EXCERPT_LINES = 3;
+
+function expandableExcerpt(entry: TimelineEntry, width: number, expandedIds: ReadonlySet<string>): boolean {
+  if (expandedIds.has(excerptId(entry))) return true;
+  if (!(entry.kind === 'narrate' || isMessage(entry) || voiceOf(entry) === 'input')) return false;
+  const text = voiceOf(entry) === 'input' ? inputText(entry) : (entry.detail ?? entry.title);
+  const inner = Math.max(8, width - 4);
+  return wrapBodyLine(text.trim(), inner).length > EXCERPT_LINES;
+}
+
+function paintExcerptBody(
+  theme: Theme,
+  text: string,
+  inner: number,
+  width: number,
+  selected: boolean,
+  slot: GutterSlot | 'input' | 'none',
+  locale: Locale,
+  expanded: boolean,
+): string[] {
+  const wrapped = wrapBodyLine(text.trim(), inner);
+  const visible = expanded || wrapped.length <= EXCERPT_LINES
+    ? wrapped
+    : wrapped.slice(0, EXCERPT_LINES);
+  const lines = visible.map((line, index) => {
+    const prefix = index === 0
+      ? (slot === 'input' ? gutter(theme, 'input') : slot === 'none' ? '  ' : gutter(theme, slot))
+      : '  ';
+    const fill = slot === 'input'
+      ? (selected ? theme.style.fillInputSelected : theme.style.fillInput)
+      : undefined;
+    const row = `${prefix}${line}`;
+    if (fill) return fill(pad(row, width, theme.glyphs.ellipsis));
+    return paintPlain(theme, row, width, selected);
+  });
+  if (!expanded && wrapped.length > EXCERPT_LINES) {
+    const remaining = wrapped.length - EXCERPT_LINES;
+    lines.push(paintPlain(
+      theme,
+      `  ${theme.style.muted(t(locale, 'expandRemainingLines', { n: remaining }))}`,
+      width,
+      selected,
+    ));
+  } else if (expanded && wrapped.length > EXCERPT_LINES) {
+    lines.push(paintPlain(theme, `  ${theme.style.muted(t(locale, 'collapseExcerpt'))}`, width, selected));
+  }
+  return lines;
+}
+
+function isDeliverHeadline(title: string): boolean {
+  return title.startsWith('DONE ·') || title === '已恢复' || title === '部分恢复' || title === '无法恢复'
+    || title === '对照完成' || title === '证据不足' || title === '对照失败';
+}
+
+function failedTitle(title: string): boolean {
+  return title === '无法恢复' || title === '对照失败' || title === '证据不足';
 }
 
 function gutterSlot(entry: TimelineEntry, failed: boolean, candidate: boolean): GutterSlot {
@@ -375,8 +456,8 @@ function paintPlain(theme: Theme, row: string, width: number, selected: boolean)
   return selected ? theme.style.fillLive(padded) : fillCanvas(theme, padded, width);
 }
 
-function liveCaption(entry: TimelineEntry, locale: Locale): string {
-  return displayLiveCaption(entry.title, entry.detail, locale);
+function liveCaption(entry: TimelineEntry, locale: Locale = 'zh'): string {
+  return toolCaption(entry, locale);
 }
 
 function visibleNow(entries: readonly TimelineEntry[]): TimelineEntry | undefined {
@@ -400,23 +481,21 @@ function liveStatusLine(
 ): string {
   const pulse = Math.floor(tick / 400) % 2 === 0 ? '*' : theme.glyphs.empty;
   const role = liveStatusRole(live, locale, product);
-  const action = live ? liveCaption(live, locale) : t(locale, 'activityWorking');
+  const action = live ? liveCaption(live, locale) : t(locale, 'waitingVisibleActivity');
   const left = ` ${pulse} ${role} · ${action}`;
-  const clock = elapsed.trim() || '00:00';
-  const clockWidth = Math.max(5, clock.length);
+  const clock = sanitizeLiveCaption(elapsed.trim() || '00:00') || '00:00';
+  const clockWidth = Math.max(5, visibleWidth(clock));
   const leftWidth = Math.max(8, width - clockWidth - 1);
+  // pad flattens CR/LF/tab; the composed status is always one physical row.
   return `${pad(left, leftWidth, theme.glyphs.ellipsis)} ${clock}`;
 }
 
 function liveStatusRole(live: TimelineEntry | undefined, locale: Locale, product: string): string {
-  if (live?.lane === 'recovery') return t(locale, 'recoveryRole');
-  if (live?.lane === 'controller') return t(locale, 'controllerLegend');
-  if (live?.lane === 'comparison') return t(locale, 'comparisonLegend');
-  return product || t(locale, 'candidateRole');
+  return activityRoleLabel(live ? entryRole(live) : undefined, product, locale);
 }
 
 function isCandidate(entry: TimelineEntry): boolean {
-  return entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane);
+  return entryRole(entry) === 'candidate' || entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane);
 }
 
 function fillCanvas(theme: Theme, text: string, width: number): string {
