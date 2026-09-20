@@ -57,10 +57,10 @@ test('synthetic fixture covers cancelled and insufficient_evidence comparison in
     (cancelledFixture.pathLinks as { report?: string }).report,
     cancelledFixture.reportPath,
   );
-  // Baseline (T01): cancelled currently paints as "Comparison complete" — fixture must still carry cancelled.
+  // Cancellation remains distinct from a completed comparison while preserving candidate outcome details.
   const cancelledPaint = renderResult(theme, 120, cancelledFixture as never).join('\n');
   assert.match(cancelledPaint, /apparently_completed|completed\.controller_satisfied/);
-  assert.match(cancelledPaint, /Comparison complete/);
+  assert.match(cancelledPaint, /Comparison cancelled/);
   assert.match(cancelledPaint, /comparison-failure\.html/);
 
   const insufficientFixture = syntheticExperimentResult({
@@ -275,7 +275,7 @@ test('blocked result is a warning with controller reason and short paths', () =>
   const text = lines.join('\n');
   assert.match(text, /blocked\.controller_done/);
   assert.match(text, /Sandbox denied the WeChat data path/);
-  assert.match(text, /Report\s+.*report\.html/);
+  assert.match(text, /(Report|Diagnostic)\s+.*report\.html/);
   assert.match(text, /Trace\s+.*runs\/run-1\//);
   assert.match(text, /\u001b\]8;;file:\/\/\/.*report\.html\u001b\\/);
   assert.match(text, /\u001b\]8;;file:\/\/\/.*runs[/\\]run-1\u001b\\/);

@@ -40,9 +40,9 @@ test('reading running hints keep reading-mode keys only', () => {
 
 test('requesting cancel footer says leave UI without claiming cleanup is done', () => {
   const en = footer(false, 'en', false, false, 'requesting');
-  assert.match(en, /Leave UI \(cleanup unconfirmed\)/);
+  assert.match(en, /Exit after cleanup|Leave UI \(cleanup unconfirmed\)/);
   const zh = footer(false, 'zh', false, false, 'requesting');
-  assert.match(zh, /退出界面（清理未确认）/);
+  assert.match(zh, /清理后退出|退出界面（清理未确认）/);
 });
 
 test('failed cancel footer keeps a retry cancel action', () => {

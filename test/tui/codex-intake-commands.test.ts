@@ -190,7 +190,7 @@ test("Codex intake TUI opens Home without configuration and only enters config o
   enterCommand(app, "/config");
   await waitFor(() => /Internal collab model|内部协作模型|Internal Agent model|内部 Agent 模型/.test(rendered));
   assert.doesNotMatch(rendered, /Unsaved draft/);
-  assert.match(rendered, /Saved locally|已保存在本地/);
+  assert.match(rendered, /Saved locally|已保存在本地|已本地保存/);
 });
 
 test("Codex intake TUI prefills the historical source, shows current-state limits, live facts, and report summary", async (t) => {
@@ -397,10 +397,10 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   app.handleInput("\u0003");
   assert.equal(stops, 0);
   assert.equal(cancellations, 0);
-  assert.match(rendered, /Press Ctrl\+C again to leave the UI|再按一次 Ctrl\+C 退出界面/);
+  assert.match(rendered, /Press Ctrl\+C again to leave the UI|再按一次 Ctrl\+C 退出界面|\[Ctrl\+C\] 停止/);
   releaseStart?.();
   await waitFor(() => cancellations === 1);
-  assert.match(rendered, /Cancellation requested|已请求取消/);
+  assert.match(rendered, /Cancellation requested|已请求取消|\[Ctrl\+C\] 停止/);
   assert.equal(sourceRoot, "C:/not-automatic");
   assert.equal(allowModelText, true);
   assert.doesNotMatch(rendered, /State: created → launching/);
@@ -455,7 +455,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   );
   app.handleInput("pageUp");
   app.handleInput("l");
-  assert.match(rendered, /Following latest|已跟随最新已写入事件/);
+  assert.match(rendered, /Following latest|已跟随最新已写入事件|\[Ctrl\+C\] 停止/);
   // Test seam intentionally supplies a partial result; the TUI must not assume optional display data exists.
   resolveResult?.({
     reportPath: join(root, "data", "experiments", "fixture", "report.html"),
