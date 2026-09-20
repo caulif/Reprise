@@ -18,10 +18,10 @@ import { deriveResultPresentationFromResult } from './display-state.js';
 
 type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
-  readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
+  readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly homeFocus?: import('./pages/home.js').HomeActionId; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
-  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[];
+  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[]; readonly refreshFailed?: boolean; readonly discoveryNotice?: string;
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: ExperimentPreflight | undefined; readonly recoveryView?: RecoveryView | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly sourceProductLabel?: string;
@@ -60,6 +60,7 @@ function homeModel(input: Input, envSet: boolean) {
     ...(input.envName ? { envName: input.envName, envSet } : {}),
     ...(input.hasSavedModelConfig ? { providerLabel: input.modelConfig.providerId, modelId: input.modelConfig.modelId } : {}),
     composer: input.composer, composerCursor: input.composerCursor, showSuggestions: input.showSuggestions && !input.commandOverlay,
+    ...(input.homeFocus ? { focus: input.homeFocus } : {}),
     locale: input.locale ?? 'en',
     ...(input.recoveryView?.baseline.recovery?.status === 'failed' ? { recoveryFailed: true } : {}),
   };
@@ -177,6 +178,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(input.discoveryStatus ? { discoveryStatus: input.discoveryStatus } : {}),
     ...(input.groupedProjectCount !== undefined ? { unfilteredCount: input.intakeLevel === 'sessions' ? input.unfilteredSessionCount : input.groupedProjectCount } : {}),
     ...(input.discoveryCodes?.length ? { discoveryCodes: input.discoveryCodes } : {}),
+    ...(input.refreshFailed ? { refreshFailed: true } : {}),
+    ...(input.discoveryNotice ? { discoveryNotice: input.discoveryNotice } : {}),
     locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}),
   };
   if (input.page === 'sessions') return { ...base, sessions };

@@ -51,6 +51,7 @@ export type ProductDiscoveryState = {
   readonly pageDiagnostics?: readonly DiscoveryDiagnostic[];
   readonly message?: string;
   readonly projects?: readonly SessionDiscoveryProject[];
+  readonly refreshFailed?: boolean;
 };
 
 export type SessionLoadMode = "initial" | "more" | "refresh";
@@ -133,6 +134,7 @@ export class IntakeTui {
   composer = "";
   composerCursor = 0;
   showSuggestions = false;
+  homeFocus: import("./pages/home.js").HomeActionId = "new-replay";
   taskCase: TaskCase | undefined;
   historyCases: readonly HistoryCase[] = [];
   historyExperiments: readonly HistoryExperiment[] = [];

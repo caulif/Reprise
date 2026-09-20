@@ -15,6 +15,7 @@ import { projectTimelineView } from './timeline-view.js';
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
+import { homeActions } from './pages/home.js';
 import { matchesCanvasQuery, matchesFilter } from './scrollback.js';
 import {
   applyHistoryDetailPointer,
@@ -64,6 +65,7 @@ export type ControllerHandle = {
   composer: string;
   composerCursor: number;
   showSuggestions: boolean;
+  homeFocus: import('./pages/home.js').HomeActionId;
   sourceRoot: string;
   sourceCursor: number;
   searching: boolean;
@@ -133,6 +135,8 @@ export type ControllerHandle = {
   reconnectCount: number;
   reconnectTotal: number;
   modelConfig: HarnessModelConfig;
+  hasSavedModelConfig: boolean;
+  harnessAuthOk: boolean;
   configDraft: HarnessConfigDraft;
   configEditing: boolean;
   render(immediate?: boolean): void;
@@ -255,6 +259,15 @@ function applyGlobal(c: ControllerHandle, action: GlobalInputAction): Consume {
 function applyHome(c: ControllerHandle, data: string): Consume | undefined {
   const pointer = applyHomePointer(c, data);
   if (pointer) return pointer;
+  const commandMode = c.composer.startsWith('/') || c.showSuggestions;
+  if (!commandMode) {
+    const input = unwrapBracketedPaste(data);
+    if (matchesKey(input, 'up') || matchesKey(input, 'down')) {
+      moveHomeFocus(c, matchesKey(input, 'up') ? -1 : 1);
+      c.render();
+      return { consume: true };
+    }
+  }
   const result = dispatchHomeComposer({
     composer: c.composer,
     cursor: c.composerCursor,
@@ -275,6 +288,24 @@ function applyHome(c: ControllerHandle, data: string): Consume | undefined {
   return { consume: true };
 }
 
+function moveHomeFocus(c: ControllerHandle, delta: number): void {
+  const model = {
+    taskCase: c.taskCase,
+    recentExperiment: c.recentExperiment,
+    hasApiConfig: c.hasSavedModelConfig,
+    hasUsableAuth: c.hasSavedModelConfig && c.harnessAuthOk,
+    composer: c.composer,
+    showSuggestions: c.showSuggestions,
+    locale: c.locale,
+    focus: c.homeFocus,
+  };
+  const actions = homeActions(model);
+  if (!actions.length) return;
+  const current = Math.max(0, actions.indexOf(c.homeFocus));
+  const next = (current + delta + actions.length) % actions.length;
+  c.homeFocus = actions[next] ?? 'new-replay';
+}
+
 function submitComposer(c: ControllerHandle): Consume {
   const typed = c.composer.trim().toLowerCase();
   c.composer = '';
@@ -282,10 +313,7 @@ function submitComposer(c: ControllerHandle): Consume {
   c.showSuggestions = false;
   c.hideCommandOverlay();
   const command = submittedHomeCommand(typed);
-  if (command === 'empty') {
-    if (c.recentExperiment) return c.openRecentExperiment();
-    return { consume: true };
-  }
+  if (command === 'empty') return activateHomeFocus(c);
   if (command === 'plain') return c.setHomeMessage(t(c.locale, 'plainRejected'));
   if (command === 'help') return c.setHomeMessage(`${t(c.locale, 'helpCommands')}.`);
   if (command === 'config') {
@@ -299,6 +327,21 @@ function submitComposer(c: ControllerHandle): Consume {
     return { consume: true };
   }
   return c.setHomeMessage(t(c.locale, 'unknownCommand', { cmd: typed }));
+}
+
+function activateHomeFocus(c: ControllerHandle): Consume {
+  const action = c.homeFocus;
+  if (action === 'new-replay') return startSessionDiscovery(c);
+  if (action === 'open-recent') {
+    if (c.recentExperiment) return c.openRecentExperiment();
+    return { consume: true };
+  }
+  if (action === 'history') return startHistoryLoad(c);
+  if (action === 'config') {
+    void c.openConfig();
+    return { consume: true };
+  }
+  return c.setHomeMessage(`${t(c.locale, 'helpCommands')}.`);
 }
 
 function startSessionDiscovery(c: ControllerHandle): Consume {

@@ -4,7 +4,8 @@ import { selectedIndexAfterFold } from './fold-process.js';
 import { projectTimelineView } from './timeline-view.js';
 import { hitFileLink } from './format.js';
 import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
-import { homePointerAction } from './pages/home.js';
+import { homeActions, homePointerAction } from './pages/home.js';
+import { t } from './i18n.js';
 import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
 import { resolveResultPathLinks } from '../application/result-paths.js';
 import { resultPointerAction, renderResultWithHits } from './pages/result.js';
@@ -84,7 +85,7 @@ export function applyHomePointer(c: ControllerHandle, data: string): Consume | u
   const pointer = dispatchListPointer(data);
   if (!pointer) return undefined;
   if (pointer.action === 'up' || pointer.action === 'down') {
-    if (c.showSuggestions) {
+    if (c.showSuggestions || c.composer.startsWith('/')) {
       const cycled = dispatchHomeComposer({
         composer: c.composer,
         cursor: c.composerCursor,
@@ -97,22 +98,61 @@ export function applyHomePointer(c: ControllerHandle, data: string): Consume | u
         c.syncCommandOverlay();
         c.render();
       }
+      return { consume: true };
+    }
+    const model = {
+      taskCase: c.taskCase,
+      recentExperiment: c.recentExperiment,
+      hasApiConfig: c.hasSavedModelConfig,
+      hasUsableAuth: c.hasSavedModelConfig && c.harnessAuthOk,
+      composer: c.composer,
+      showSuggestions: c.showSuggestions,
+      locale: c.locale,
+      focus: c.homeFocus,
+    };
+    const actions = homeActions(model);
+    if (actions.length) {
+      const current = Math.max(0, actions.indexOf(c.homeFocus));
+      const next = (current + (pointer.action === 'up' ? -1 : 1) + actions.length) % actions.length;
+      c.homeFocus = actions[next] ?? 'new-replay';
+      c.render();
     }
     return { consume: true };
   }
   if (pointer.action !== 'click' || pointer.row === undefined) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col ?? 1);
   if (!cell) return { consume: true };
-  if (homePointerAction({
+  const action = homePointerAction({
     taskCase: c.taskCase,
     recentExperiment: c.recentExperiment,
-    hasApiConfig: true,
+    hasApiConfig: c.hasSavedModelConfig,
+    hasUsableAuth: c.hasSavedModelConfig && c.harnessAuthOk,
     composer: c.composer,
     showSuggestions: c.showSuggestions,
     locale: c.locale,
-  }, cell.bodyRow) === 'open-recent') {
-    return c.openRecentExperiment();
+    focus: c.homeFocus,
+  }, cell.bodyRow);
+  if (!action) return { consume: true };
+  c.homeFocus = action;
+  if (action === 'open-recent') return c.openRecentExperiment();
+  if (action === 'new-replay') {
+    c.message = t(c.locale, 'discoveringSessions');
+    c.render();
+    void c.loadSessions();
+    return { consume: true };
   }
+  if (action === 'history') {
+    c.message = t(c.locale, 'readingHistory');
+    c.render();
+    void c.loadHistory();
+    return { consume: true };
+  }
+  if (action === 'config') {
+    void c.openConfig();
+    return { consume: true };
+  }
+  c.message = `${t(c.locale, 'helpCommands')}.`;
+  c.render();
   return { consume: true };
 }
 

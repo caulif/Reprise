@@ -1,14 +1,16 @@
 import type { IntakeTui } from "./intake-tui.js";
 import { compareSessionSummaries } from "../application/intake-catalog.js";
-import type { DiscoveryDiagnostic, SessionDiscoveryQuery } from "../products/contract.js";
+import type { DiscoveryDiagnostic, SessionDiscoveryQuery, SessionSummary } from "../products/contract.js";
 import { operatorErrorMessage } from "./format.js";
 import { t } from "./i18n.js";
+import { productMemory, rememberProjects, rememberSessions } from "./intake-layer-memory.js";
 
 export function sessionDiscoveryQuery(input: {
   readonly root: string;
   readonly dataDir: string;
   readonly signal?: AbortSignal;
   readonly refresh?: boolean;
+  readonly cursor?: string;
   readonly excludeSessionIds?: readonly string[];
   readonly excludeSourcePaths?: readonly string[];
 }): SessionDiscoveryQuery {
@@ -19,6 +21,7 @@ export function sessionDiscoveryQuery(input: {
     ...(input.excludeSourcePaths?.length ? { excludeSourcePaths: input.excludeSourcePaths } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
     ...(input.refresh ? { refresh: true } : {}),
+    ...(input.cursor ? { cursor: input.cursor } : {}),
   };
 }
 
@@ -47,6 +50,26 @@ function mergeDiscoveryDiagnostics(
 
 type SessionLoadMode = "initial" | "more" | "refresh";
 
+function rememberCurrentSelection(c: IntakeTui): void {
+  if (!c.activeProductId) return;
+  const memory = productMemory(c.intakeMemory, c.activeProductId);
+  if (c.intakeLevel === "projects") {
+    rememberProjects(memory, c.searchQuery, c.searchCursor, c.activeProjectKey || memory.projectKey, c.selected);
+    return;
+  }
+  if (c.intakeLevel === "sessions") {
+    const selected = c.visibleSessions()[c.selected];
+    rememberSessions(
+      memory,
+      c.activeProjectKey,
+      c.searchQuery,
+      c.searchCursor,
+      selected?.sessionId ?? "",
+      c.selected,
+    );
+  }
+}
+
 export async function loadProductSessions(c: IntakeTui, productId: string, mode: SessionLoadMode = "initial"): Promise<void> {
   const pack = c.packs.find((item) => item.manifest.productId === productId);
   if (!pack?.history) return;
@@ -59,13 +82,23 @@ export async function loadProductSessions(c: IntakeTui, productId: string, mode:
     c.render(true);
     return;
   }
-  if (mode === "more") return;
+  if (mode === "more" && !state?.nextCursor) return;
+  rememberCurrentSelection(c);
   const token = c.beginNavigation();
   c.discoveryAbort?.abort();
   const abort = new AbortController();
   c.discoveryAbort = abort;
   c.activeProductId = productId;
-  c.productDiscovery.set(productId, { status: "loading", root, ...(state?.nextCursor ? { nextCursor: state.nextCursor } : {}) });
+  const previous = state?.status === "ready" ? state : undefined;
+  c.productDiscovery.set(productId, {
+    status: "loading",
+    root,
+    ...(state?.nextCursor && mode === "more" ? { nextCursor: state.nextCursor } : {}),
+    ...(previous?.diagnostics ? { diagnostics: previous.diagnostics } : {}),
+    ...(previous?.scanned !== undefined ? { scanned: previous.scanned } : {}),
+    ...(previous?.skipped !== undefined ? { skipped: previous.skipped } : {}),
+    ...(previous?.projects ? { projects: previous.projects } : {}),
+  });
   c.render();
   try {
     const discovered = await c.workflow.discoverSource(productId, sessionDiscoveryQuery({
@@ -73,17 +106,19 @@ export async function loadProductSessions(c: IntakeTui, productId: string, mode:
       dataDir: c.dataDir,
       signal: abort.signal,
       ...(mode === "refresh" ? { refresh: true } : {}),
+      ...(mode === "more" && state?.nextCursor ? { cursor: state.nextCursor } : {}),
       ...(c.runtimeSessionIds.length ? { excludeSessionIds: c.runtimeSessionIds } : {}),
     }));
     const invalid = discovered.items.find((session) => session.productId !== productId);
     if (invalid) throw new Error(`Session adapter for ${productId} returned ${invalid.productId}.`);
     if (token !== c.generation || abort.signal.aborted) return;
-    const listed = [...discovered.items]
-      .sort(compareSessionSummaries);
+    const listed = mode === "more" && cached
+      ? mergeSessionPages(cached, discovered.items)
+      : [...discovered.items].sort(compareSessionSummaries);
     const rootDiagnostics = discovered.rootDiagnostics ?? [];
     const pageDiagnostics = discovered.pageDiagnostics ?? (discovered.rootDiagnostics ? [] : discovered.diagnostics);
     const accumulatedPageDiagnostics = mergeDiscoveryDiagnostics(
-      undefined,
+      mode === "more" ? previous?.pageDiagnostics : undefined,
       pageDiagnostics,
     );
     const diagnostics = mergeDiscoveryDiagnostics(rootDiagnostics, accumulatedPageDiagnostics);
@@ -92,25 +127,49 @@ export async function loadProductSessions(c: IntakeTui, productId: string, mode:
       status: "ready", root,
       ...(discovered.nextCursor ? { nextCursor: discovered.nextCursor } : {}),
       scanned: discovered.scanned,
-      skipped: discovered.skipped,
+      skipped: mode === "more"
+        ? (previous?.skipped ?? 0) + discovered.skipped
+        : discovered.skipped,
       diagnostics,
       ...(rootDiagnostics.length ? { rootDiagnostics } : {}),
-      ...(discovered.projects ? { projects: discovered.projects } : {}),
+      ...(discovered.projects ? { projects: discovered.projects } : previous?.projects ? { projects: previous.projects } : {}),
       ...(accumulatedPageDiagnostics.length ? { pageDiagnostics: accumulatedPageDiagnostics } : {}),
     });
-    c.activateProductSessions(productId, listed, false);
+    c.activateProductSessions(productId, listed, Boolean(discovered.nextCursor));
   } catch (error) {
     if (token !== c.generation || abort.signal.aborted) return;
     const message = operatorErrorMessage(error, c.locale);
-    c.productDiscovery.set(productId, { status: "error", root, message });
-    c.intakeLevel = "products";
-    c.activeProductId = "";
-    c.selected = Math.max(0, c.packs.findIndex((item) => item.manifest.productId === productId));
-    c.message = t(c.locale, "chooseAgentProduct");
+    if ((mode === "refresh" || mode === "more") && cached && previous) {
+      c.productDiscovery.set(productId, {
+        ...previous,
+        status: "ready",
+        refreshFailed: true,
+        message,
+      });
+      c.activateProductSessions(productId, cached, Boolean(previous.nextCursor));
+      c.message = t(c.locale, "refreshFailedStale");
+    } else {
+      c.productDiscovery.set(productId, { status: "error", root, message });
+      c.intakeLevel = "products";
+      c.activeProductId = "";
+      c.selected = Math.max(0, c.packs.findIndex((item) => item.manifest.productId === productId));
+      c.message = t(c.locale, "chooseAgentProduct");
+    }
   } finally {
     if (c.discoveryAbort === abort) c.discoveryAbort = undefined;
   }
   c.render(true);
+}
+
+function mergeSessionPages(previous: readonly SessionSummary[], next: readonly SessionSummary[]): SessionSummary[] {
+  const seen = new Set(previous.map((session) => session.sessionId));
+  const merged = [...previous];
+  for (const session of next) {
+    if (seen.has(session.sessionId)) continue;
+    seen.add(session.sessionId);
+    merged.push(session);
+  }
+  return merged.sort(compareSessionSummaries);
 }
 
 export function loadMoreProductSessions(c: IntakeTui): void {

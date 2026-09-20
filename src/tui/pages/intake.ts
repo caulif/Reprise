@@ -27,6 +27,7 @@ export type ProductIntakeItem = {
   readonly limitReached?: boolean;
   readonly skipped?: number;
   readonly diagnostic?: string;
+  readonly refreshFailed?: boolean;
 };
 
 export type SessionProject = {
@@ -51,6 +52,8 @@ export type SessionsModel = {
   readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error';
   readonly unfilteredCount?: number;
   readonly discoveryCodes?: readonly string[];
+  readonly refreshFailed?: boolean;
+  readonly discoveryNotice?: string;
   readonly locale?: import('../i18n.js').Locale;
   /** Clock supplied by the workbench; inject it for deterministic visual audits. */
   readonly nowMs?: number;
@@ -281,30 +284,39 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
   const start = firstReplayUserMessage(inputs) ?? inputs[0];
   const later = start ? inputs.filter((message) => message.id !== start.id) : inputs.slice(1);
   const laterTasks = later.filter((message) => !looksLikeInjectedInstruction(message.text));
+  const injectedLater = later.filter((message) => looksLikeInjectedInstruction(message.text));
   const project = projectLabel(inspection.cwd, locale);
   const tight = height !== undefined && height < 26;
-  const freezePreview = wrapPreview(start?.text ?? t(locale, 'unavailableValue'), Math.max(20, width - 4), tight ? 2 : 4, locale);
-  const laterTotal = laterTasks.length + 1;
+  const freezePreview = wrapPreview(start?.text ?? t(locale, 'unavailableValue'), Math.max(20, width - 4), tight ? 3 : 6, locale);
   const laterLines = laterTasks.length
-    ? laterTasks.map((input, index) => ` ${index + 2}/${laterTotal}  ${compact(sessionTitle(input.text, locale), 72, theme.glyphs.ellipsis)}`)
+    ? laterTasks.map((input, index) => ` ${index + 1}. ${compact(sessionTitle(input.text, locale), 72, theme.glyphs.ellipsis)}`)
     : [` ${t(locale, 'noneWord')}`];
+  const injectedLines = injectedLater.map((input) => ` ${t(locale, 'injectedInstructionMark')} ${compact(sessionTitle(input.text, locale), 64, theme.glyphs.ellipsis)}`);
   const outcome = compact(inspection.finalMessage ?? t(locale, 'unavailableValue'), showOutcome ? 400 : 120, theme.glyphs.ellipsis);
-  const meta = ` ${project} ${theme.glyphs.sep} ${relativeTime(inspection.startedAt, model.nowMs ?? Date.now(), locale)} ${theme.glyphs.sep} u${inspection.signals.userMessages} a${inspection.signals.assistantMessages} t${inspection.signals.toolCalls}`;
+  const sourceLine = t(locale, 'sourceSummary', {
+    product: inspection.productId,
+    project,
+    when: relativeTime(inspection.startedAt, model.nowMs ?? Date.now(), locale),
+  });
   const ruleWidth = Math.max(1, width - (theme.framed ? 2 : 3));
   const rule = theme.glyphs.h.repeat(ruleWidth);
   const body = [
-    ` ${t(locale, 'freezeIntro')}`,
-    meta,
-    rule,
     ` ${t(locale, 'freezeThis')}`,
     ...freezePreview.map((line) => ` ${line}`),
     rule,
-    ` ${t(locale, 'laterUserTurns')}`,
-    ...laterLines,
+    ` ${sourceLine}`,
+    ` ${t(locale, 'taskStartBasis')}`,
     rule,
-    ` ${t(locale, 'outcomeLabel')}    ${outcome}`,
-    ` ${t(locale, 'privacyLabel')}    ${t(locale, 'fieldModelText')} ${t(locale, 'allowed')} ${theme.glyphs.sep} ${t(locale, 'fieldBinary')} ${privacy.allowBinary ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldRedactions')} ${privacy.redactions.length || t(locale, 'noneWord')}`,
+    ` ${t(locale, 'laterUserTurns', { n: laterTasks.length })}`,
+    ...laterLines,
+    ...injectedLines,
+    rule,
+    ` ${t(locale, 'freezeIntro')}`,
+    ` ${t(locale, 'privacyLabel')}    ${t(locale, 'fieldModelText')} ${privacy.allowModelText ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldBinary')} ${privacy.allowBinary ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldRedactions')} ${privacy.redactions.length || t(locale, 'noneWord')}`,
     ` ${t(locale, 'nothingWritten')}`,
+    ...(showOutcome
+      ? [` ${t(locale, 'outcomeLabel')}    ${outcome}`]
+      : [` ${theme.style.muted(t(locale, 'outcomeFolded'))}`]),
     ...(inspection.recoveryDiagnostics?.length
       ? [` ${t(locale, 'recoveryDiagnostics')} ${inspection.recoveryDiagnostics.map((item) => item.code).join(' / ')}`]
       : []),
@@ -332,29 +344,33 @@ export function inspectionHints(locale: Locale = 'en'): readonly (readonly [stri
 
 
 function renderProducts(theme: Theme, width: number, model: SessionsModel, limit: number): string[] {
+  const locale = model.locale ?? 'en';
+  const selected = (model.products ?? [])[model.selected];
   const rows = (model.products ?? []).map((product, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     product: product.displayName,
-    version: `pack ${product.packVersion}`,
     status: product.discoveryStatus === 'error'
-      ? `error: ${product.diagnostic ?? t(model.locale ?? 'en', 'sessionDiscoveryFailed')}`
+      ? `error: ${product.diagnostic ?? t(locale, 'sessionDiscoveryFailed')}`
       : product.discoveryStatus === 'ready'
-        ? `${t(model.locale ?? 'en', 'productSessionCount', { n: product.sessionCount ?? 0 })}${product.limitReached ? '+' : ''}${product.skipped ? t(model.locale ?? 'en', 'productSkippedCount', { n: product.skipped }) : ''}`
-        : product.discoveryStatus === 'loading' ? t(model.locale ?? 'en', 'sessionsLoading') : t(model.locale ?? 'en', 'sessionsNotScanned'),
+        ? `${t(locale, 'productSessionCount', { n: product.sessionCount ?? 0 })}${product.limitReached ? '+' : ''}${product.skipped ? t(locale, 'productSkippedCount', { n: product.skipped }) : ''}${product.refreshFailed ? ` · ${t(locale, 'refreshFailedStale')}` : ''}`
+        : product.discoveryStatus === 'loading' ? t(locale, 'sessionsLoading') : t(locale, 'sessionsNotScanned'),
   }));
-  const range = visibleRange(rows, model.selected, limit);
+  const range = visibleRange(rows, model.selected, Math.max(1, limit - (selected ? 1 : 0)));
   const inner = Math.max(20, width - (theme.framed ? 2 : 3));
   const body = rows.length
     ? paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
-      { key: 'marker', width: 2 }, { key: 'product', flex: 1 }, { key: 'version', width: 12 }, { key: 'status', width: 24 },
+      { key: 'marker', width: 2 }, { key: 'product', flex: 1 }, { key: 'status', width: 28 },
     ], inner), inner), range.start, model.selected)
-    : [` ${t(model.locale ?? 'en', 'noRegisteredProducts')}`];
-  return panel(theme, theme.style.harness(t(model.locale ?? 'en', 'selectAgentProduct')), body, width);
+    : [` ${t(locale, 'noRegisteredProducts')}`];
+  if (selected) body.push(theme.style.muted(` ${t(locale, 'packVersionDetail', { version: selected.packVersion })}`));
+  return panel(theme, theme.style.harness(t(locale, 'selectAgentProduct')), body, width);
 }
 
 function emptyCatalogCopy(model: SessionsModel, kind: 'projects' | 'sessions'): string {
   const locale = model.locale ?? 'en';
+  if (model.discoveryStatus === 'loading') return t(locale, 'sessionsLoading');
   if (model.discoveryStatus === 'error') return t(locale, 'discoveryReadFailed');
+  if (model.discoveryStatus === 'idle') return t(locale, 'sessionsNotScanned');
   if (model.discoveryCodes?.includes('unreadable-directory') && !(model.unfilteredCount ?? 0)) {
     return t(locale, 'discoveryNoPermission');
   }
@@ -374,6 +390,15 @@ function catalogStats(projects: readonly SessionProject[]): { projects: number; 
   };
 }
 
+function catalogNotices(theme: Theme, model: SessionsModel, stats: { unreadable: number }): string[] {
+  const locale = model.locale ?? 'en';
+  const lines: string[] = [];
+  if (model.refreshFailed) lines.push(theme.style.warn(` ${t(locale, 'refreshFailedStale')}`));
+  if (stats.unreadable > 0) lines.push(theme.style.muted(` ${t(locale, 'catalogNoticeUnreadable', { n: stats.unreadable })}`));
+  if (model.discoveryNotice) lines.push(theme.style.muted(` ${t(locale, 'catalogNoticeDetails', { diagnostics: model.discoveryNotice })}`));
+  return lines;
+}
+
 function renderProjects(theme: Theme, width: number, model: SessionsModel, limit: number, showPreview = true, showSearch = true): string[] {
   const locale = model.locale ?? 'en';
   const stats = catalogStats(model.projects);
@@ -384,6 +409,7 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
   if (!model.projects.length) {
     return [...panel(theme, title, [` ${emptyCatalogCopy(model, 'projects')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
   }
+  const notices = catalogNotices(theme, model, stats);
   const previewWidth = showPreview && showsDetailPane(theme) ? Math.max(28, Math.floor(width * 0.34)) : 0;
   const listWidth = previewWidth ? width - previewWidth - 1 : width;
   const inner = Math.max(20, listWidth - (theme.framed ? 2 : 3));
@@ -393,6 +419,13 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     ...kvBlock(theme, t(locale, 'catalogProjectName'), selected.catalogLabel, inner),
     ...kvBlock(theme, t(locale, pathLabel), selected.path ?? t(locale, 'unavailableValue'), inner),
   ] : [];
+  const header = {
+    marker: '  ',
+    name: t(locale, 'columnProject'),
+    gap: ' ',
+    count: t(locale, 'columnSessions'),
+    when: t(locale, 'columnUpdated'),
+  };
   const rows = model.projects.map((project, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     name: localizedProjectLabel(project, locale),
@@ -400,14 +433,24 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
     count: project.sessions.length ? String(project.sessions.length) : t(locale, 'emptyProjectSessions'),
     when: relativeTime(project.latestAt, model.nowMs ?? Date.now(), locale),
   }));
-  const range = visibleRange(rows, model.selected, Math.max(1, limit - compactDetail.length));
-  const listBody = paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
-    { key: 'marker', width: 2 },
-    { key: 'name', flex: 1 },
-    { key: 'gap', width: 1 },
-    { key: 'count', width: 10 },
-    { key: 'when', width: 12 },
-  ], inner), inner), range.start, model.selected);
+  const range = visibleRange(rows, model.selected, Math.max(1, limit - compactDetail.length - notices.length - 2));
+  const listBody = [
+    ...notices,
+    theme.style.muted(fitRows(table(theme, [header], [
+      { key: 'marker', width: 2 },
+      { key: 'name', flex: 1 },
+      { key: 'gap', width: 1 },
+      { key: 'count', width: 10 },
+      { key: 'when', width: 12 },
+    ], inner), inner)[0] ?? ''),
+    ...paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
+      { key: 'marker', width: 2 },
+      { key: 'name', flex: 1 },
+      { key: 'gap', width: 1 },
+      { key: 'count', width: 10 },
+      { key: 'when', width: 12 },
+    ], inner), inner), range.start, model.selected),
+  ];
   listBody.push(theme.style.muted(` ${model.selected + 1}/${rows.length}`));
   listBody.push(...compactDetail);
   const list = panel(theme, theme.style.harness(title), listBody, listWidth);
@@ -426,13 +469,22 @@ function renderProjects(theme: Theme, width: number, model: SessionsModel, limit
 function renderSessionList(theme: Theme, width: number, model: SessionsModel, limit: number, showPreview = true, showSearch = true): string[] {
   const locale = model.locale ?? 'en';
   const project = model.projects[0];
+  const stats = catalogStats(model.projects);
   const title = `${localizedProjectLabel(project, locale)} ${theme.glyphs.sep} ${model.sessions.length} ${t(locale, 'sessionsWord')} ${theme.glyphs.sep} ${t(locale, 'filterLabel')}: ${model.filterEligible ? t(locale, 'filterEligibleLabel') : t(locale, 'filterAllLabel')}`;
   if (!model.sessions.length) {
     return [...panel(theme, title, [` ${emptyCatalogCopy(model, 'sessions')}`], width), ...(showSearch ? searchLine(theme, width, model) : [])];
   }
+  const notices = catalogNotices(theme, model, stats);
   const previewWidth = showPreview && showsDetailPane(theme) ? Math.max(28, Math.floor(width * 0.34)) : 0;
   const listWidth = previewWidth ? width - previewWidth - 1 : width;
   const inner = Math.max(20, listWidth - (theme.framed ? 2 : 3));
+  const header = {
+    marker: '  ',
+    started: t(locale, 'columnStarted'),
+    summary: t(locale, 'columnSummary'),
+    gap: ' ',
+    signals: t(locale, 'columnSignals'),
+  };
   const rows = model.sessions.map((session, index) => ({
     marker: `${index === model.selected ? theme.glyphs.cursor : ' '} `,
     started: relativeTime(session.startedAt, model.nowMs ?? Date.now(), locale),
@@ -440,14 +492,24 @@ function renderSessionList(theme: Theme, width: number, model: SessionsModel, li
     gap: ' ',
     signals: formatDiscoverySignals(session),
   }));
-  const range = visibleRange(rows, model.selected, limit);
-  const listBody = paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
-    { key: 'marker', width: 2 },
-    { key: 'started', width: 12 },
-    { key: 'summary', flex: 1 },
-    { key: 'gap', width: 1 },
-    { key: 'signals', width: 14 },
-  ], inner), inner), range.start, model.selected);
+  const range = visibleRange(rows, model.selected, Math.max(1, limit - notices.length - 2));
+  const listBody = [
+    ...notices,
+    theme.style.muted(fitRows(table(theme, [header], [
+      { key: 'marker', width: 2 },
+      { key: 'started', width: 12 },
+      { key: 'summary', flex: 1 },
+      { key: 'gap', width: 1 },
+      { key: 'signals', width: 14 },
+    ], inner), inner)[0] ?? ''),
+    ...paintSelectedRows(theme, fitRows(table(theme, rows.slice(range.start, range.end), [
+      { key: 'marker', width: 2 },
+      { key: 'started', width: 12 },
+      { key: 'summary', flex: 1 },
+      { key: 'gap', width: 1 },
+      { key: 'signals', width: 14 },
+    ], inner), inner), range.start, model.selected),
+  ];
   listBody.push(theme.style.muted(` ${model.selected + 1}/${rows.length}`));
   const list = panel(theme, theme.style.harness(title), listBody, listWidth);
   const selected = model.sessions[model.selected];

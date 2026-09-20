@@ -163,19 +163,20 @@ test('inspection freezes the whole session from the first user task', () => {
   const first = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }).join('\n');
-  assert.match(first, /Session start:[\s\S]*Fix the bug\./);
-  assert.match(first, /Later user turns \(Controller will see these\)/);
-  assert.match(first, /2\/2\s+Verify the regression\./);
+  assert.match(first, /Task text:[\s\S]*Fix the bug\./);
+  assert.match(first, /Later user turns \(1\)/);
+  assert.match(first, /1\.\s+Verify the regression\./);
   assert.match(first, /Source:/);
   assert.match(first, /Review session/);
   assert.match(first, /Nothing is written until you press Enter/);
-  assert.doesNotMatch(first, /Choose task start|Select task start|Freeze this message:/);
+  assert.match(first, /Historical final \(folded/);
+  assert.doesNotMatch(first, /Choose task start|Select task start|Freeze this message:|Session start:/);
   const ignoredSelection = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 1, showOutcome: false,
   }).join('\n');
-  assert.match(ignoredSelection, /Session start:/);
+  assert.match(ignoredSelection, /Task text:/);
   assert.match(ignoredSelection, /Fix the bug\./);
-  assert.match(ignoredSelection, /Later user turns \(Controller will see these\)[\s\S]*2\/2\s+Verify the regression\./);
+  assert.match(ignoredSelection, /Later user turns \(1\)[\s\S]*1\.\s+Verify the regression\./);
 });
 
 test('inspection start skips an injected instruction block', () => {
@@ -198,10 +199,11 @@ test('inspection start skips an injected instruction block', () => {
   const text = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }).join('\n');
-  assert.match(text, /Session start:[\s\S]*Fix the login regression\./);
-  assert.doesNotMatch(text, /don't re-write it/i);
-  const laterSection = text.split(/Later user turns \(Controller will see these\)/)[1] ?? '';
-  assert.doesNotMatch(laterSection, /AGENTS\.md/);
+  assert.match(text, /Task text:[\s\S]*Fix the login regression\./);
+  assert.doesNotMatch(text.split(/Later user turns/)[0] ?? '', /don't re-write it/i);
+  const laterSection = text.split(/Later user turns \(\d+\)/)[1] ?? '';
+  assert.match(text, /\[injected instruction\]/);
+  assert.doesNotMatch(laterSection.split(/\[injected instruction\]/)[0] ?? '', /AGENTS\.md/);
 });
 
 test('a 24-row inspection still shows the freeze decision', () => {
@@ -226,7 +228,7 @@ test('a 24-row inspection still shows the freeze decision', () => {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }, 19).join('\n');
   assert.match(frame, /Nothing is written until you press Enter/);
-  assert.match(frame, /Session start:/);
+  assert.match(frame, /Task text:/);
   assert.match(frame, /Review session/);
   assert.doesNotMatch(frame, /yanjiusheng/);
 });
@@ -246,7 +248,7 @@ test('inspection without user input does not show a freeze card', () => {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }).join('\n');
   assert.match(frame, /Cannot replay: no eligible user input/);
-  assert.doesNotMatch(frame, /Session start:/);
+  assert.doesNotMatch(frame, /Task text:/);
 });
 
 function session(id: string, cwd: string | undefined, startedAt: string, summary: string) {
