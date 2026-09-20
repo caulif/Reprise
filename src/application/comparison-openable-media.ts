@@ -1,7 +1,7 @@
 import { mkdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
-import { captureHeadlessScreenshot, type HeadlessScreenshotResult } from "../infrastructure/headless-screenshot.js";
+import { captureHeadlessScreenshot } from "../infrastructure/headless-screenshot.js";
 import { comparisonMediaFileName, isComparisonImagePath, materializeComparisonMedia } from "./comparison-media.js";
 import { withMediaShortRefs } from "./comparison-short-refs.js";
 import {
