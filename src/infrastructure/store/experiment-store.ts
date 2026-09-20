@@ -262,7 +262,29 @@ export class ExperimentStore {
     return pending;
   }
 
-  async #appendOne(input: AppendEvent): Promise<EventEnvelope> {
+  async appendBatch(inputs: readonly AppendEvent[]): Promise<readonly EventEnvelope[]> {
+    const pending = this.#appendTail.then(() => this.#appendBatchOne(inputs));
+    this.#appendTail = pending.then(() => undefined, () => undefined);
+    return pending;
+  }
+
+  async #appendBatchOne(inputs: readonly AppendEvent[]): Promise<readonly EventEnvelope[]> {
+    if (inputs.length === 0) return [];
+    this.#assertWriter();
+    const start = this.#events.length;
+    const events: EventEnvelope[] = [];
+    try {
+      for (const input of inputs) events.push(await this.#appendOne(input, false, false));
+      await writeFile(this.#eventsPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, { encoding: "utf8", flag: "a" });
+    } catch (error) {
+      this.#events.splice(start);
+      throw error;
+    }
+    for (const event of events) this.#notify(event);
+    return events;
+  }
+
+  async #appendOne(input: AppendEvent, persist = true, notify = true): Promise<EventEnvelope> {
     this.#assertWriter();
     if (!input.type.trim()) throw new Error('Event type must not be empty.');
     if (input.eventId) assertId(input.eventId, 'eventId');
@@ -302,17 +324,19 @@ export class ExperimentStore {
     if (event.type === 'comparison.evidence_registered' && !Value.Check(ComparisonEvidenceRegisteredPayloadSchema, event.payload)) throw new Error('comparison.evidence_registered payload does not satisfy its schema.');
     if ((event.type === 'comparison.plan_requested' || event.type === 'comparison.report_requested') && !Value.Check(ComparisonPhaseRequestedPayloadSchema, event.payload)) throw new Error(`${event.type} payload does not satisfy its schema.`);
     if (event.type === 'candidate.user_view_persisted' && !Value.Check(UserVisibleTurnSchema, event.payload)) throw new Error('candidate.user_view_persisted payload does not satisfy its schema.');
-    await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
+    if (persist) await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);
+    if (notify) this.#notify(event);
+    return event;
+  }
+
+  #notify(event: EventEnvelope): void {
     for (const listener of this.#listeners) {
-      try {
-        listener(event);
-      } catch (error) {
+      try { listener(event); } catch (error) {
         this.#listeners.delete(listener);
         process.emitWarning(`Experiment event observer failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    return event;
   }
 
   async commitAttempt(attempt: RunAttempt, operationId = `attempt-${attempt.runId}`): Promise<EventEnvelope> {
