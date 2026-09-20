@@ -15,7 +15,12 @@ export type ComparisonRenderCatalogPort = {
    * `report_review` must mint `review-*` (never `media-*`) so preview cannot enter the comparison allowlist.
    */
   registerDerivedMedia(input: RegisterDerivedMediaInput): Promise<RegisterDerivedMediaResult>;
+  registerDerivedMediaBatch(inputs: readonly RegisterDerivedMediaInput[]): Promise<RegisterDerivedMediaBatchResult>;
 };
+
+export type RegisterDerivedMediaBatchResult =
+  | { ok: true; items: readonly Extract<RegisterDerivedMediaResult, { ok: true }>[] }
+  | { ok: false; code: string; message: string };
 
 export type ComparisonRenderSource = {
   sourceRef: string;
@@ -133,23 +138,8 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
           diagnostics: rendered.diagnostics,
         });
       }
-      if (sampleTimesMs.length > 1) {
-        const hashes = new Set(rendered.frames.map((frame) => frame.contentHash));
-        if (hashes.size < 2) {
-          return textResult({
-            status: "motion_not_proven",
-            sourceRef: source.sourceRef,
-            revision: deps.catalog.revision(),
-            message: "Multiple sample times produced identical PNG content; motion evidence was not registered.",
-            sampleTimesMs,
-            diagnostics: rendered.diagnostics,
-          });
-        }
-      }
-      const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number }[] = [];
       const capturedAt = (deps.now ?? (() => new Date()))().toISOString();
-      for (const frame of rendered.frames) {
-        const registered = await deps.catalog.registerDerivedMedia({
+      const registrations = await deps.catalog.registerDerivedMediaBatch(rendered.frames.map((frame) => ({
           side: source.side === "derived" ? "host" : source.side,
           pngPath: frame.pngPath,
           label: `${source.entryRelativePath}@${frame.sampleTimeMs}ms`,
@@ -163,16 +153,18 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
             actualTimeMs: frame.actualTimeMs,
             capturedAt,
           },
-        });
-        if (!registered.ok) {
-          return textResult({
-            status: "capture_failed",
-            sourceRef: params.sourceRef,
-            revision: deps.catalog.revision(),
-            code: registered.code,
-            message: registered.message,
-          });
-        }
+        })));
+      if (!registrations.ok) return textResult({
+        status: "capture_failed",
+        sourceRef: params.sourceRef,
+        revision: deps.catalog.revision(),
+        code: registrations.code,
+        message: registrations.message,
+      });
+      const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number }[] = [];
+      for (const [index, registered] of registrations.items.entries()) {
+        const frame = rendered.frames[index];
+        if (!frame) continue;
         assertEvidenceShortRef(registered.shortRef, "artifact_preview");
         mediaRefs.push({
           shortRef: registered.shortRef,
