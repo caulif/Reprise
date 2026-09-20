@@ -344,9 +344,16 @@ export function preflightHints(locale: Locale = 'en'): readonly (readonly [strin
   return [['Esc', t(locale, 'hintHome')]];
 }
 
-export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  if (!canStart) {
+export function confirmHints(canStart = true, locale: Locale = 'en', recoveryDiagnosis = false): readonly (readonly [string, string])[] {
+  if (recoveryDiagnosis) {
     return [['Enter', t(locale, 'hintTryBlocked')], ['Esc', t(locale, 'hintHome')]];
+  }
+  if (!canStart) {
+    return [
+      ['Enter', t(locale, 'hintTryBlocked')],
+      ['b', t(locale, 'hintChangeModel')],
+      ['Esc', t(locale, 'hintChangeModel')],
+    ];
   }
   return [
     ['Enter', t(locale, 'hintStartCandidate')],

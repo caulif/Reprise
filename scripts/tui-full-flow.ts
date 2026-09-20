@@ -468,6 +468,11 @@ async function main() {
   );
   runApp.handleInput("\r");
   await waitFor(
+    () => /Start isolated|Confirm run/.test(run.render(120)),
+    { frame: () => run.render(120) },
+  );
+  runApp.handleInput("\r");
+  await waitFor(
     () => /Copy isolated|Preparing replay|To Codex/.test(run.render(120)),
     { frame: () => run.render(120) },
   );

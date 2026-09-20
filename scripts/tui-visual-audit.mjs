@@ -372,7 +372,14 @@ async function main() {
   await push('30-candidate-model', 120, run.render(120));
   await push('30b-candidate-model-narrow', 60, run.render(60));
   runApp.handleInput('\r');
-  await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay|正在复制隔离工作区|候选运行中|正在准备对照/.test(run.render(120)), 'candidate preparation after model selection');
+  await waitFor(() => /Start isolated|Confirm run|启动隔离|确认运行/.test(run.render(120)), {
+    describe: 'confirm page after model selection',
+    frame: () => run.render(120),
+  });
+  await push('31-confirm-run', 120, run.render(120));
+  await push('31b-confirm-run-narrow', 60, run.render(60));
+  runApp.handleInput('\r');
+  await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay|正在复制隔离工作区|候选运行中|正在准备对照/.test(run.render(120)), 'candidate preparation after confirm');
   await push('21-running-start', 120, run.render(120));
   await waitFor(() => copyLatched(), { describe: 'candidate copy handle', timeoutMs: 30_000 });
   releaseCopy();
