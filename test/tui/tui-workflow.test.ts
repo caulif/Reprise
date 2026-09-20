@@ -13,6 +13,12 @@ import { IntakeTui } from '../../src/tui/intake-app.js';
 import type { RecoveryView } from '../../src/application/recovery/view.js';
 import { mockTui } from '../../scripts/tui-audit-lib.js';
 import { waitFor } from '../codex-intake-support.js';
+import {
+  createFakeClock,
+  createScriptedSyntheticWorkflow,
+  syntheticExperimentResult,
+  syntheticFlowEvents,
+} from './fixtures/synthetic-flow.js';
 
 test('TUI run policy is a last-resort safety valve, not a completion budget', () => {
   assert.equal(TUI_RUN_POLICY.maxTargetTurns, 256);
@@ -424,4 +430,51 @@ test('blocked recovery cannot start a candidate even if an accept handle leaked'
     }) ?? '',
     /runnable workspace/,
   );
+});
+
+test('synthetic scripted workflow emits recovery→candidate→compare fixtures without Runtime', async () => {
+  const { workflow, handles } = createScriptedSyntheticWorkflow({
+    clock: createFakeClock(),
+    comparison: { status: 'failed' },
+    candidate: { task: 'incomplete', termination: 'stalled', cleanup: 'incomplete' },
+  });
+  const events = syntheticFlowEvents({
+    clock: createFakeClock(),
+    comparison: { status: 'failed' },
+    candidate: { task: 'incomplete', termination: 'stalled', cleanup: 'incomplete' },
+    repeatedToolFailures: 1,
+    multiLineLive: true,
+  });
+  assert.equal(events[0]?.type, 'recovery.started');
+  assert.equal(events.at(-1)?.type, 'comparison.completed');
+  const result = syntheticExperimentResult({
+    comparison: { status: 'failed' },
+    candidate: { task: 'incomplete', termination: 'stalled', cleanup: 'incomplete' },
+  });
+  assert.equal((result.record as { outcome: { cleanup: { status: string } } }).outcome.cleanup.status, 'incomplete');
+  assert.equal((result.comparison as { result: { status: string } }).result.status, 'failed');
+  assert.equal((result.pathLinks as { report?: string }).report, result.reportPath);
+
+  const preflightPromise = workflow.preflight();
+  queueMicrotask(() => handles.releasePreflight());
+  await preflightPromise;
+
+  const recoverPromise = workflow.recover();
+  queueMicrotask(() => handles.releaseRecovery());
+  const recovery = await recoverPromise as { recovery: { value: { status: string } } };
+  assert.equal(recovery.recovery.value.status, 'ready');
+
+  const seen: string[] = [];
+  const startPromise = workflow.start({ onEvent: (event) => seen.push(event.type) });
+  queueMicrotask(() => {
+    handles.releaseCopy();
+    queueMicrotask(() => handles.releaseStart());
+  });
+  const handle = await startPromise;
+  const pending = handle.result;
+  handles.resolveResult();
+  const settled = await pending as { comparison: { result: { status: string } } };
+  assert.ok(seen.includes('input.submitted'));
+  assert.equal(settled.comparison.result.status, 'failed');
+  assert.equal(typeof mockTui, 'function');
 });

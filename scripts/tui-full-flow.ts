@@ -11,6 +11,10 @@ import {
   saveHarnessModelConfig,
 } from "../src/infrastructure/harness-model-config.js";
 import { mockTui, pageHtml, waitFor } from "./tui-audit-lib.js";
+import {
+  createScriptedSyntheticWorkflow,
+  syntheticExperimentResult,
+} from "../test/tui/fixtures/synthetic-flow.js";
 
 Object.defineProperty(process.stdout, "isTTY", {
   configurable: true,
@@ -356,14 +360,16 @@ async function main() {
   );
   await push("11-history", 120, history.render(120), "历史 overlay");
 
-  const fullPublicResponse = `${Array.from({ length: 40 }, (_, index) => `public response line ${index + 1}`).join("\n")}\nPUBLIC_DETAIL_END`;
-  let releasePreflight: (() => void) | undefined;
-  let releaseRecovery: (() => void) | undefined;
-  let releaseCopy: (() => void) | undefined;
-  let releaseStart: (() => void) | undefined;
-  let resolveResult: ((value: unknown) => void) | undefined;
-  const workflow = {
-    candidate: {
+  const { workflow: scripted, handles } = createScriptedSyntheticWorkflow({
+    longMessageLines: 40,
+    commandListingLines: 1,
+    commandCwd: String.raw`C:\work`,
+    multiLineLive: false,
+    includeOutcomeEvent: false,
+    includeUserViewPersisted: false,
+    recoveryExperimentRoot: "audit-root",
+    recoverySummary: "Ready for the original task.",
+    workflowCandidate: {
       candidateId: "codex-luna-high",
       productId: "codex",
       requestedModel: "gpt-5.6-luna",
@@ -375,133 +381,40 @@ async function main() {
       turnTimeoutMs: 10 * 60_000,
       maxConsecutiveNoProgress: 1,
     },
-    inspectAvailability: async (productId: string) => [{ productId, status: "available" as const, observedAt: "2026-08-11T00:10:00.000Z" }],
-    preflight: async () => {
-      await new Promise<void>((resolve) => {
-        releasePreflight = resolve;
-      });
-      return {
-        sourceBaseline: "available",
-        resolved: {
-          productId: "codex",
-          executable: "fixture",
-          requestedModel: "gpt-5.6-luna",
-          resolvedModel: "gpt-5.6-luna",
-        },
-        comparisonClass: "observational",
-        limitations: ["fingerprint differs"],
-        workspace: {
-          fileCount: 111,
-          totalBytes: Math.round(66.4 * 1024 * 1024),
-          largestFileBytes: 1024,
-          blockedReasons: [],
-        },
-      };
+    preflightExtras: {
+      comparisonClass: "observational",
+      limitations: ["fingerprint differs"],
+      workspace: {
+        fileCount: 111,
+        totalBytes: Math.round(66.4 * 1024 * 1024),
+        largestFileBytes: 1024,
+        blockedReasons: [],
+      },
     },
-    recover: async () => {
-      await new Promise<void>((resolve) => {
-        releaseRecovery = resolve;
-      });
-      return {
-        experimentId: "audit-recovery",
-        experimentRoot: "audit-root",
-        baseline: { match: "recovered", warnings: [], mode: "canonical" },
-        staging: { recoveryId: "audit-recovery" },
-        recovery: { status: "completed", sessionId: "s", value: { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] } },
-        accept: async () => ({ match: "recovered", warnings: [], mode: "canonical" }),
-      };
-    },
+    comparison: { status: "completed" },
+    candidate: { task: "apparently_completed", termination: "completed", cleanup: "complete" },
+  });
+  const {
+    releasePreflight,
+    releaseRecovery,
+    releaseCopy,
+    releaseStart,
+    resolveResult,
+  } = handles;
+  const workflow = {
+    ...scripted,
+    inspectAvailability: async (productId: string) => [{
+      productId,
+      status: "available" as const,
+      observedAt: "2026-08-11T00:10:00.000Z",
+    }],
     acceptRecovery: async () => ({ match: "recovered", warnings: [], mode: "canonical" }),
-    discardRecovery: async () => undefined,
-    start: async (input: { onEvent: (event: unknown) => void }) => {
-      await new Promise<void>((resolve) => {
-        releaseCopy = resolve;
-      });
-      input.onEvent({
-        schemaVersion: 1,
-        sequence: 1,
-        eventId: "event-1",
-        occurredAt: "2026-08-11T00:10:00.000Z",
-        type: "run.state_changed",
-        payload: { to: "launching" },
-        checksum: "a".repeat(64),
-      });
-      input.onEvent({
-        schemaVersion: 1,
-        sequence: 2,
-        eventId: "event-2",
-        occurredAt: "2026-08-11T00:10:00.000Z",
-        type: "input.submitted",
-        payload: { turnIndex: 0, text: "Fix the failing test." },
-        checksum: "a".repeat(64),
-      });
-      input.onEvent({
-        schemaVersion: 1,
-        sequence: 3,
-        eventId: "event-3",
-        occurredAt: "2026-08-11T00:10:00.500Z",
-        type: "runtime.turn_started",
-        payload: {},
-        checksum: "a".repeat(64),
-      });
-      input.onEvent({
-        schemaVersion: 1,
-        sequence: 4,
-        eventId: "event-4",
-        occurredAt: "2026-08-11T00:10:01.000Z",
-        type: "controller.decision",
-        payload: {
-          status: "completed",
-          sessionId: "controller-1",
-          value: {
-            type: "send",
-            rationale: "One check remains.",
-            message: "Run the focused test.",
-          },
-        },
-        checksum: "b".repeat(64),
-      });
-      input.onEvent({
-        schemaVersion: 1,
-        sequence: 5,
-        eventId: "event-5",
-        occurredAt: "2026-08-11T00:10:01.500Z",
-        type: "runtime.tool_finished",
-        payload: {
-          item: {
-            type: "commandExecution",
-            command:
-              '"C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe" -Command "Get-ChildItem | Format-Table Mode,Length,LastWriteTime,Name"',
-            status: "completed",
-            cwd: "C:\\\\work",
-            exitCode: 0,
-            durationMs: 476,
-            aggregatedOutput: [
-              "Mode  Length LastWriteTime         Name",
-              "----  ------ -------------         ----",
-              "-a---   1200 8/13/2026 12:00:00 AM  file-1.txt",
-            ].join("\n"),
-          },
-        },
-        checksum: "c".repeat(64),
-      });
-      input.onEvent({
-        schemaVersion: 1,
-        sequence: 6,
-        eventId: "event-6",
-        occurredAt: "2026-08-11T00:10:02.000Z",
-        type: "runtime.visible_output",
-        payload: { item: { type: "agentMessage", text: fullPublicResponse } },
-        checksum: "d".repeat(64),
-      });
-      await new Promise<void>((resolve) => {
-        releaseStart = resolve;
-      });
+    recover: async () => {
+      const base = await scripted.recover() as Record<string, unknown>;
       return {
-        cancel: async () => {},
-        result: new Promise((resolve) => {
-          resolveResult = resolve;
-        }),
+        ...base,
+        baseline: { match: "recovered", warnings: [], mode: "canonical" },
+        accept: async () => ({ match: "recovered", warnings: [], mode: "canonical" }),
       };
     },
   };
@@ -538,12 +451,12 @@ async function main() {
     run.render(120),
     "选会话后直接开始恢复",
   );
-  releasePreflight?.();
+  releasePreflight();
   await waitFor(
     () => /Preparing replay|Recovering session/.test(run.render(120)),
     { frame: () => run.render(120) },
   );
-  releaseRecovery?.();
+  releaseRecovery();
   await waitFor(
     () => /choose candidate product/.test(run.render(120)),
     { frame: () => run.render(120) },
@@ -559,12 +472,12 @@ async function main() {
     { frame: () => run.render(120) },
   );
   await push("15-preparing", 120, run.render(120), "准备进度");
-  releaseCopy?.();
+  releaseCopy();
   await waitFor(
     () => /To Codex|Codex/.test(run.render(120)),
     { frame: () => run.render(120) },
   );
-  releaseStart?.();
+  releaseStart();
   await new Promise((resolve) => setTimeout(resolve, 40));
   await push("16-running", 120, run.render(120), "对照画布");
   runApp.handleInput("/");
@@ -576,37 +489,12 @@ async function main() {
   runApp.handleInput("\u0007");
   await push("19-actors", 120, run.render(120), "Actors pane");
   runApp.handleInput("\x1b");
-  resolveResult?.({
-    reportPath: join(root, "data", "experiments", "fixture", "report.html"),
+  resolveResult(syntheticExperimentResult({
     experimentRoot: join(root, "data", "experiments", "fixture"),
-    preflight: {
-      sourceBaseline: "available",
-      resolved: {
-        productId: "codex",
-        executable: "fixture",
-        requestedModel: "gpt-5.6-luna",
-        resolvedModel: "gpt-5.6-luna",
-      },
-      comparisonClass: "observational",
-      limitations: ["fingerprint differs"],
-    },
-    record: {
-      attempt: { runId: "run-1" },
-      outcome: {
-        termination: {
-          kind: "completed",
-          code: "completed.controller_satisfied",
-        },
-        cleanup: { status: "complete" },
-      },
-    },
-    decision: {
-      status: "completed",
-      value: { type: "done" },
-      usedFallback: false,
-    },
-    comparison: { result: { status: "completed", usedFallback: false } },
-  });
+    runId: "run-1",
+    comparison: { status: "completed" },
+    candidate: { task: "apparently_completed", termination: "completed", cleanup: "complete" },
+  }));
   await waitFor(
     () => /Experiment finished/.test(run.render(120)),
     { frame: () => run.render(120) },
