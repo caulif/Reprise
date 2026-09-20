@@ -87,7 +87,7 @@ test('comparison invocation is nested for completed/insufficient_evidence and sh
   assert.equal(resultShape.value.headline, 'Evidence was incomplete.');
   assert.deepEqual(eventPayload, resultShape);
   const projected = projectTimelineEvent(envelope('comparison.completed', eventPayload));
-  assert.equal(projected[0]?.title, '证据不足');
+  assert.equal(projected[0]?.title, 'comparison.insufficient');
   assert.equal(projected[0]?.detail, 'Evidence was incomplete.');
 
   const completed = { status: 'completed' as const, headline: 'Both sides delivered.' };
