@@ -131,7 +131,7 @@ export function historyExperimentFromResult(
     comparison.status === "failed" && "failure" in comparison
       ? comparison.failure.kind ?? comparison.failure.code
       : undefined;
-  const detail = !skipped ? comparisonDetailOf(comparison as { status: string; value?: { status?: string } }) : undefined;
+  const detail = !skipped ? comparisonDetailOf(comparison) : undefined;
   return {
     experimentId: basename(input.experimentRoot),
     taskCaseId: input.taskCaseId,
