@@ -140,19 +140,23 @@ test('result pointer stays aligned when metrics wrap at compact width', () => {
     const { lines, rowHits } = renderResultWithHits(theme, width, fixture, 'en');
     const reportRow = lines.findIndex((line) => {
       const plain = stripTerminalSequences(line);
-      return plain.includes('report.html') && plain.includes('Report');
+      return plain.includes('report.html') && /Comparison report|Report/.test(plain);
     });
     const historyRow = lines.findIndex((line) => stripTerminalSequences(line).includes('deck.html'));
-    const metricsRow = lines.findIndex((line) => stripTerminalSequences(line).includes('4096'));
+    const metricsRow = lines.findIndex((line) => {
+      const plain = stripTerminalSequences(line);
+      return plain.includes('72s') || plain.includes('4096');
+    });
     assert.ok(reportRow >= 0, `report row at width ${width}`);
     assert.ok(historyRow >= 0, `history row at width ${width}`);
     assert.ok(metricsRow >= 0, `metrics row at width ${width}`);
+    assert.doesNotMatch(stripTerminalSequences(lines[metricsRow] ?? ''), /4096/, 'compact density drops secondary token metrics');
     const reportLine = lines[reportRow] ?? '';
     const historyLine = lines[historyRow] ?? '';
     const metricsLine = lines[metricsRow] ?? '';
     const reportValue = visibleSpan(reportLine, 'report.html');
     const historyValue = visibleSpan(historyLine, 'deck.html');
-    const metricsValue = visibleSpan(metricsLine, '4096');
+    const metricsValue = visibleSpan(metricsLine, '72s') ?? visibleSpan(metricsLine, '3 turns');
     assert.ok(reportValue);
     assert.ok(historyValue);
     assert.ok(metricsValue);

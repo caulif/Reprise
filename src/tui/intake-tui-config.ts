@@ -68,6 +68,7 @@ export function IntakeTui_configPageInput(this: ConfigPanel, data: string): { co
         pendingToggle: this.configPendingToggle,
         dirty: this.configDirty(),
         leaveConfirm: this.configLeaveConfirm,
+        locale: this.locale,
       },
       data,
       (draft) => this.modelsForDraft(draft),

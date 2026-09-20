@@ -3,6 +3,13 @@ import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
 import { localPathFromFileUrl } from '../open-report.js';
+import {
+  comparisonPresentation,
+  displayCleanupStatus,
+  displayTaskStatus,
+  displayTerminationKind,
+  terminationTone,
+} from '../display-copy.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
@@ -21,7 +28,7 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
   const vacant = theme.framed ? '—' : '-';
   const skipped = result.comparison.result.status === 'skipped';
   const comparison = result.comparison.result;
-  const failed = comparison.status === 'failed';
+  const presented = comparisonPresentation(comparison, locale);
   const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
   const paths = resolveResultPathLinks(result);
   const runId = result.record.attempt?.runId;
@@ -30,6 +37,7 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
   const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
   const metrics = metricsLine(theme, result, locale);
   const candidateLabel = candidateDisplayLabel(result, productLabel);
+  const cleanupRaw = result.record.outcome.cleanup?.status;
   const body: string[] = [];
   const bodyHits = new Map<number, readonly ResultPointerHit[]>();
   const push = (line: string) => {
@@ -42,12 +50,12 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
       body.push(block.lines[index] ?? '');
     }
   };
-  push(terminationBanner(theme, kind));
-  push(kv(theme, t(locale, 'resultTask'), result.record.outcome.task.status, width - 2));
-  push(kv(theme, t(locale, 'resultTermination'), `${kind} · ${result.record.outcome.termination.code}`, width - 2));
-  push(kv(theme, t(locale, 'resultCleanup'), result.record.outcome.cleanup?.status ?? vacant, width - 2));
+  push(terminationBanner(theme, kind, locale));
+  push(kv(theme, t(locale, 'resultTask'), displayTaskStatus(result.record.outcome.task.status, locale), width - 2));
+  push(kv(theme, t(locale, 'resultTermination'), `${displayTerminationKind(kind, locale)} · ${result.record.outcome.termination.code}`, width - 2));
+  push(kv(theme, t(locale, 'resultCleanup'), cleanupRaw ? displayCleanupStatus(cleanupRaw, locale) : vacant, width - 2));
   if (candidateLabel) push(kv(theme, t(locale, 'candidateLabel'), candidateLabel, width - 2));
-  if (!skipped) push(kv(theme, t(locale, 'resultComparison'), comparisonWord(comparison, locale), width - 2));
+  if (!skipped) push(kv(theme, t(locale, 'resultComparison'), presented.word, width - 2));
   if (metrics) push(`     ${metrics}`);
   if (headline) {
     push('');
@@ -59,18 +67,19 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
   }
   if (skipped) {
     push('');
-    push(kv(theme, t(locale, 'resultComparison'), t(locale, 'comparisonSkipped'), width - 2));
+    push(kv(theme, t(locale, 'resultComparison'), presented.word, width - 2));
   }
   if (comparePending) {
     push('');
     push(` ${theme.style.accent(t(locale, 'hintCompare'))}`);
   }
-  pushLink('open-report', kvLinkBlock(theme, failed ? t(locale, 'resultDiagnostic') : t(locale, 'resultReport'), shortPath(paths.report, experimentRoot, vacant), paths.report, width));
+  const reportLabel = presented.failedArtifact || comparison.status === 'failed' ? presented.diagnostic : t(locale, 'resultReport');
+  pushLink('open-report', kvLinkBlock(theme, reportLabel, shortPath(paths.report, experimentRoot, vacant), paths.report, width));
   pushLink('open-history-final', kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortPath(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width));
   pushLink('open-candidate-final', kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width));
   pushLink('open-trace', kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width));
   pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width));
-  return panelWithHits(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width, bodyHits);
+  return panelWithHits(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${displayTerminationKind(kind, locale)}`, body, width, bodyHits);
 }
 
 export function resultHints(locale: Locale = 'en', comparePending = false): readonly (readonly [string, string])[] {
@@ -170,19 +179,13 @@ export function failureHints(locale: Locale = 'en'): readonly (readonly [string,
   return [['Enter', t(locale, 'hintBack')], ['b', t(locale, 'hintBack')], ['Esc', t(locale, 'hintHome')]];
 }
 
-function terminationBanner(theme: Theme, kind: string): string {
-  if (kind === 'completed') return theme.style.ok(` ${theme.glyphs.ok} ${kind}`);
-  return theme.style.danger(` ${kind === 'failed' ? theme.glyphs.err : theme.glyphs.warn} ${kind}`);
-}
-
-function comparisonWord(comparison: ExperimentResult['comparison']['result'], locale: Locale): string {
-  if (comparison.status === 'failed') {
-    return `${t(locale, 'comparisonFailedWord')} (${comparison.failure.kind ?? comparison.failure.code})`;
-  }
-  if (comparison.status === 'completed' && 'value' in comparison && comparison.value?.status === 'insufficient_evidence') {
-    return t(locale, 'comparisonInsufficient');
-  }
-  return t(locale, 'comparisonDone');
+function terminationBanner(theme: Theme, kind: string, locale: Locale): string {
+  const label = displayTerminationKind(kind, locale);
+  const tone = terminationTone(kind);
+  if (tone === 'ok') return theme.style.ok(` ${theme.glyphs.ok} ${label}`);
+  if (tone === 'danger') return theme.style.danger(` ${theme.glyphs.err} ${label}`);
+  if (tone === 'warn') return theme.style.warn(` ${theme.glyphs.warn} ${label}`);
+  return theme.style.muted(` ${theme.glyphs.dot} ${label}`);
 }
 
 function envelopeHeadline(result: ExperimentResult): string | undefined {
@@ -199,13 +202,18 @@ function metricsLine(theme: Theme, result: ExperimentResult, locale: Locale): st
   const candidate = facts.wallClockMs;
   const showBoth = total !== undefined && candidate !== undefined && total - candidate >= 2000;
   const missing = t(locale, 'notRecorded');
+  const narrow = theme.density === 'minimum' || theme.density === 'compact';
   const parts = [
     total !== undefined ? `${Math.round(total / 1000)}s` : candidate === undefined ? undefined : `${Math.round(candidate / 1000)}s`,
-    showBoth && candidate !== undefined ? `candidate ${Math.round(candidate / 1000)}s` : undefined,
-    `${facts.turns} turn${facts.turns === 1 ? '' : 's'}`,
-    `${facts.controllerCalls} controller`,
-    facts.tokenCount === undefined ? `${missing} tokens` : `${facts.tokenCount} tokens`,
-    facts.costUsd === undefined ? `${missing} cost` : `$${facts.costUsd.toFixed(2)}`,
+    showBoth && candidate !== undefined ? t(locale, 'metricsCandidate', { n: Math.round(candidate / 1000) }) : undefined,
+    t(locale, facts.turns === 1 ? 'metricsTurns' : 'metricsTurnsPlural', { n: facts.turns }),
+    t(locale, 'metricsController', { n: facts.controllerCalls }),
+    narrow ? undefined : facts.tokenCount === undefined
+      ? t(locale, 'metricsTokensMissing', { missing })
+      : t(locale, 'metricsTokens', { n: facts.tokenCount }),
+    narrow ? undefined : facts.costUsd === undefined
+      ? t(locale, 'metricsCostMissing', { missing })
+      : t(locale, 'metricsCost', { amount: facts.costUsd.toFixed(2) }),
   ].filter((part): part is string => Boolean(part));
   return parts.join(` ${theme.glyphs.sep} `);
 }
@@ -216,11 +224,11 @@ function explainOutcome(result: ExperimentResult, width: number, product: string
     if (failure.origin === 'controller' && result.decision.status === 'failed' && result.decision.failure?.kind) {
       return wrapBodyLine(formatHarnessFailure(locale, result.record.outcome.task.status === 'not_assessed' ? 'opening' : 'controller', result.decision.failure.kind), width);
     }
-    const origin = failure.origin === 'controller' ? 'Controller' : failure.origin === 'runtime' ? product : failure.origin;
+    const origin = failure.origin === 'controller' ? t(locale, 'controllerLegend') : failure.origin === 'runtime' ? product : failure.origin;
     const lines = failure.code === 'failed.runtime.upstream_unavailable'
       ? [t(locale, 'upstreamUnavailable'), `${origin}: ${failure.message}`]
       : /invalid JSON|schema validation failed/i.test(failure.message)
-      ? [`${origin}: ${failure.message}`, `The Candidate turn still ran. This is a Harness-agent output error, not a ${product} runtime crash.`]
+      ? [`${origin}: ${failure.message}`, t(locale, 'explainHarnessSchema', { product })]
       : [`${origin}: ${failure.message}`];
     return lines.flatMap((line) => wrapBodyLine(line, width));
   }
@@ -230,14 +238,14 @@ function explainOutcome(result: ExperimentResult, width: number, product: string
   }
   const compared = result.comparison.result.status !== 'skipped';
   if (result.record.outcome.termination.kind === 'blocked') {
-    return wrapBodyLine(compared
-      ? 'Candidate did not finish the original task. Comparison still ran. Open the report from the short label.'
-      : 'Candidate did not finish the original task.', width);
+    return wrapBodyLine(compared ? t(locale, 'explainBlockedCompared') : t(locale, 'explainBlocked'), width);
   }
   if (result.record.outcome.termination.kind === 'limit_reached') {
     const code = result.record.outcome.termination.code;
-    const cap = code === 'limit.target_turns' ? 'Candidate reached the target turn limit.' : `Candidate reached a run limit (${code}).`;
-    return wrapBodyLine(compared ? `${cap} Comparison still ran.` : cap, width);
+    const cap = code === 'limit.target_turns'
+      ? t(locale, 'explainLimitTarget')
+      : t(locale, 'explainLimit', { code });
+    return wrapBodyLine(compared ? t(locale, 'explainLimitCompared', { cap }) : cap, width);
   }
   return undefined;
 }

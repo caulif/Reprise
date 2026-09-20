@@ -96,6 +96,11 @@ export function showsDetailPane(theme: Theme): boolean {
   return theme.density === 'regular' || theme.density === 'wide';
 }
 
+/** Exported for R15 / NO_COLOR regression checks. */
+export function resolveColorModeForTest(env: NodeJS.ProcessEnv = process.env, isTty = Boolean(process.stdout.isTTY)): ColorMode {
+  return resolveColorMode(env, isTty);
+}
+
 function colorSupported(env: NodeJS.ProcessEnv = process.env, isTty = Boolean(process.stdout.isTTY)): boolean {
   return resolveColorMode(env, isTty) !== 'off';
 }

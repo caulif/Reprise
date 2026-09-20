@@ -1,4 +1,5 @@
 import { nextOption, unwrapBracketedPaste } from './format.js';
+import { t, type Locale } from './i18n.js';
 import { applyTextEdit } from './text-edit.js';
 import type { HarnessConfigDraft, HarnessConfigField, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { configFieldValue, configFieldsForKind, emptyHarnessConfigDraft, languageFieldIndex, setConfigField } from '../infrastructure/harness-model-config.js';
@@ -17,6 +18,7 @@ export type ConfigInputState = {
   readonly pendingToggle?: boolean;
   readonly dirty?: boolean;
   readonly leaveConfirm?: boolean;
+  readonly locale?: Locale;
 };
 export type ConfigInputResult = {
   readonly state: ConfigInputState;
@@ -37,7 +39,7 @@ export function handleConfigInput(state: ConfigInputState, data: string, refresh
   if (state.leaveConfirm) return handleLeaveConfirm(state, input);
   if (state.pendingToggle) {
     if (matchesKey(input, 'enter')) return applyProviderToggle(state, refreshModels);
-    if (matchesKey(input, 'escape')) return { state: { ...state, pendingToggle: false }, message: 'Provider switch cancelled.', consume: true };
+    if (matchesKey(input, 'escape')) return { state: { ...state, pendingToggle: false }, message: t(state.locale ?? 'en', 'providerSwitchCancelled'), consume: true };
     return handleConfigInput({ ...state, pendingToggle: false }, input, refreshModels) ?? { state: { ...state, pendingToggle: false }, consume: true };
   }
   if (matchesKey(input, 'escape')) return leaveConfig(state);

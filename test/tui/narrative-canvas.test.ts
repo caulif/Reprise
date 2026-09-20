@@ -225,7 +225,7 @@ test('comparison narrate stays on the compare surface without Input cards', () =
   }).join('\n');
   assert.doesNotMatch(painted, /第 4 轮/);
   assert.doesNotMatch(painted, /inspect artifact/);
-  assert.match(painted, /对照Agent/);
+  assert.match(painted, /对照 Agent/);
 });
 
 test('candidate surface hides recovery blocks, compact, and session UUID', () => {
@@ -313,9 +313,9 @@ test('candidate working row without live includes elapsed', () => {
     productLabel: 'Claude Code',
     locale: 'zh',
   }).join('\n');
-  assert.match(painted, /working/);
+  assert.match(painted, /正在处理/);
   assert.match(painted, /03:21/);
-  assert.doesNotMatch(painted, /working · 03:21/);
+  assert.doesNotMatch(painted, /正在处理 · 03:21/);
   assert.doesNotMatch(painted, /Candidate · working/);
 });
 
@@ -444,8 +444,8 @@ test('scrollback gutter keeps body default, mutes folds, and pins the clock', ()
     const status = painted.at(-1) ?? '';
     const plain = painted.map((line) => line.replace(/\u001b\[[0-9;]*m/g, '')).join('\n');
     assert.match(status.replace(/\u001b\[[0-9;]*m/g, ''), /25:10\s*$/);
-    assert.doesNotMatch(status.replace(/\u001b\[[0-9;]*m/g, ''), /working · 25:10/);
-    assert.equal([...plain.matchAll(/working/g)].length, 1);
+    assert.doesNotMatch(status.replace(/\u001b\[[0-9;]*m/g, ''), /正在处理 · 25:10/);
+    assert.equal([...plain.matchAll(/正在处理/g)].length, 1);
     const behind = renderScrollback(colored, 80, [say, fold], 0, 'zh', 'Codex', undefined, 0, 0, '00:08', false).join('\n');
     assert.match(behind, /▼|↓/);
     assert.match(behind, /新 1|1 new/);

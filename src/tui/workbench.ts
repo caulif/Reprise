@@ -14,6 +14,7 @@ import {
   runningChrome, runningHints, sourceHints,
   type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
 } from './pages/run.js';
+import { resultHeaderStatus } from './display-copy.js';
 import { t, type Locale } from './i18n.js';
 import { OVERLAY_PAGES, overlayChromeRows, renderOverlaySheet } from './overlay-sheet.js';
 import { createTheme, resolveDensity, showsDetailPane, type Theme } from './theme.js';
@@ -168,6 +169,14 @@ function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'stillReco
   return 'candidateRunningTitle';
 }
 
+function resultStatusPill(theme: Theme, view: WorkbenchView, locale: Locale): string {
+  if (view.result) {
+    const status = resultHeaderStatus(view.result, locale);
+    return pill(theme, status.label, status.tone);
+  }
+  return pill(theme, t(locale, 'candidateEnded'), 'ok');
+}
+
 function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[] {
   const locale = view.locale ?? 'en';
   const running = view.page === 'running' || (view.page === 'result' && view.running) ? view.running : undefined;
@@ -176,8 +185,8 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
     : running
       ? `${theme.style.harness('Reprise')}   ${t(locale, runningHeaderKey(running), { product: running.productLabel ?? t(locale, 'unknownAgent') })}`
       : theme.style.harness('Reprise v0.1.0');
-  const status = view.page === 'result' && running
-    ? pill(theme, t(locale, 'done'), 'ok')
+  const status = view.page === 'result'
+    ? resultStatusPill(theme, view, locale)
     : running
       ? pill(theme, running.cancelling ? t(locale, 'hintCancel') : t(locale, 'running'), running.cancelling ? 'warn' : 'ok')
       : identityStatus(theme, view);

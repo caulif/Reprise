@@ -1,3 +1,4 @@
+import { displayLiveCaption, displayOperatorDetail, displayOperatorTitle, severityLabel } from './display-copy.js';
 import { compact, type TimelineFilter } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
@@ -76,7 +77,7 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.source === 'HARNESS' && entry.level !== 'error' && entry.lane !== 'comparison' && entry.lane !== 'recovery') {
     return undefined;
   }
-  if (entry.title.startsWith('对照') || entry.title === '证据不足' || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
+  if (entry.title.startsWith('对照') || entry.title === '证据不足' || entry.title === '对照已取消' || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
     || entry.title.startsWith('Controller done') || entry.title.startsWith('Stop requested')) {
     return 'summary';
   }
@@ -305,7 +306,7 @@ function paintEntry(
   if (entry.kind === 'live' || entry.placeholder) {
     const color = candidate ? theme.style.gutterTarget : theme.style.gutterHost;
     const pulse = Math.floor(tick / 400) % 2 === 0 ? color(theme.glyphs.dot) : theme.style.muted(theme.glyphs.empty);
-    const caption = liveCaption(entry);
+    const caption = liveCaption(entry, locale);
     const row = `${gutter(theme, slot)}${pulse} ${compact(caption, inner - 4, theme.glyphs.ellipsis)}`;
     return [theme.style.fillLive(pad(row, width, theme.glyphs.ellipsis))];
   }
@@ -315,11 +316,15 @@ function paintEntry(
       paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${line}`, width, selected));
   }
   if (entry.kind === 'deliver' && isDeliverHeadline(entry.title)) {
-    const paint = failedTitle(entry.title) ? theme.style.danger : theme.style.ok;
-    const lines = wrapBodyLine(entry.title, inner).map((line, index) =>
+    const paintedTitle = displayOperatorTitle(entry.title, locale);
+    const paint = failedTitle(entry.title) ? theme.style.danger
+      : entry.title === '对照已取消' || entry.title === '证据不足' ? theme.style.warn
+        : theme.style.ok;
+    const lines = wrapBodyLine(paintedTitle, inner).map((line, index) =>
       paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${paint(line)}`, width, selected));
     if (!entry.detail || !selected) return lines;
-    return [...lines, ...wrapBodyLine(entry.detail, inner).map((line) =>
+    const detail = displayOperatorDetail(entry.detail, locale) ?? entry.detail;
+    return [...lines, ...wrapBodyLine(detail, inner).map((line) =>
       paintPlain(theme, `  ${theme.style.muted(line)}`, width, false))];
   }
   if (isCommand(entry)) {
@@ -332,18 +337,24 @@ function paintEntry(
     return wrapBodyLine(text, inner).map((line, index) =>
       paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${line}`, width, selected));
   }
-  const fallback = entry.detail?.split(/\r?\n/)[0] || entry.title;
-  const body = failed ? theme.style.danger(compact(fallback, inner, theme.glyphs.ellipsis)) : compact(fallback, inner, theme.glyphs.ellipsis);
+  const severity = severityLabel(entry.level === 'warning' || entry.level === 'error' ? entry.level : undefined, locale, theme);
+  const rawTitle = displayOperatorTitle(entry.title, locale);
+  const rawDetail = displayOperatorDetail(entry.detail?.split(/\r?\n/)[0], locale);
+  const fallback = rawDetail || rawTitle;
+  const marked = severity ? `[${severity}] ${fallback}` : fallback;
+  const body = failed ? theme.style.danger(compact(marked, inner, theme.glyphs.ellipsis))
+    : entry.level === 'warning' ? theme.style.warn(compact(marked, inner, theme.glyphs.ellipsis))
+      : compact(marked, inner, theme.glyphs.ellipsis);
   return [paintPlain(theme, `${gutter(theme, slot)}${selected ? theme.style.strong(body) : body}`, width, selected)];
 }
 
 function isDeliverHeadline(title: string): boolean {
   return title.startsWith('DONE ·') || title === '已恢复' || title === '部分恢复' || title === '无法恢复'
-    || title === '对照完成' || title === '证据不足' || title === '对照失败';
+    || title === '对照完成' || title === '对照已取消' || title === '证据不足' || title === '对照失败';
 }
 
 function failedTitle(title: string): boolean {
-  return title === '无法恢复' || title === '对照失败' || title === '证据不足';
+  return title === '无法恢复' || title === '对照失败';
 }
 
 function gutterSlot(entry: TimelineEntry, failed: boolean, candidate: boolean): GutterSlot {
@@ -372,10 +383,8 @@ function paintPlain(theme: Theme, row: string, width: number, selected: boolean)
   return selected ? theme.style.fillLive(padded) : fillCanvas(theme, padded, width);
 }
 
-function liveCaption(entry: TimelineEntry): string {
-  const title = entry.title.replace(/^Candidate · /, '');
-  if (title === 'working') return 'working';
-  return entry.detail ? `${title} ${entry.detail}` : title;
+function liveCaption(entry: TimelineEntry, locale: Locale): string {
+  return displayLiveCaption(entry.title, entry.detail, locale);
 }
 
 function visibleNow(entries: readonly TimelineEntry[]): TimelineEntry | undefined {
@@ -399,7 +408,7 @@ function liveStatusLine(
 ): string {
   const pulse = Math.floor(tick / 400) % 2 === 0 ? '*' : theme.glyphs.empty;
   const role = liveStatusRole(live, locale, product);
-  const action = live ? liveCaption(live) : 'working';
+  const action = live ? liveCaption(live, locale) : t(locale, 'activityWorking');
   const left = ` ${pulse} ${role} · ${action}`;
   const clock = elapsed.trim() || '00:00';
   const clockWidth = Math.max(5, clock.length);

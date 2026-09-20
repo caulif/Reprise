@@ -326,7 +326,7 @@ test('running timeline names a missing state origin as created', () => {
     selected: 0, filter: 'ALL', following: true, cancelling: false,
     currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
-  assert.match(text, /Candidate|working|Unknown agent/);
+  assert.match(text, /Candidate|Processing|Unknown agent/);
   assert.doesNotMatch(text, /Codex/);
   assert.doesNotMatch(text, /State: \?/);
 });
@@ -680,9 +680,9 @@ test('running timeline uses the selected product and has no Codex fallback', () 
   };
   const claude = renderTimeline(theme, 120, { ...base, productLabel: 'Claude Code' }).join('\n');
   const unknown = renderTimeline(theme, 120, base).join('\n');
-  assert.match(claude, /Claude Code|Candidate|working/);
+  assert.match(claude, /Claude Code|Candidate|Processing/);
   assert.doesNotMatch(claude, /To Codex/);
-  assert.match(unknown, /Candidate|working|Unknown agent/);
+  assert.match(unknown, /Candidate|Processing|Unknown agent/);
   assert.doesNotMatch(unknown, /Codex/);
 });
 

@@ -36,7 +36,7 @@ test('result page uses comparison headline and hides satisfied rationale', () =>
   assert.match(skipped, /not run/);
   assert.doesNotMatch(skipped, /三页 PPT/);
   assert.doesNotMatch(skipped, /Both delivered|两边都/);
-  assert.match(skipped, /Report/);
+  assert.match(skipped, /Comparison report/);
   assert.match(skipped, /History final/);
   assert.match(skipped, /Candidate final/);
 });
@@ -100,7 +100,7 @@ test('skipped comparison still renders history and candidate rows without bare a
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
     comparison: { result: { status: 'skipped' } },
   } as never).join('\n');
-  assert.match(text, /Report/);
+  assert.match(text, /Comparison report/);
   assert.match(text, /History final.*deck\.html/);
   assert.match(text, /Candidate final.*out\.html/);
   assert.doesNotMatch(text, /C:\\exp\\environment\\baselines\\deck\.html/);
@@ -135,11 +135,11 @@ test('failed comparison remains distinct from a stalled candidate in both termin
       decision: { status: 'completed', value: { type: 'done', reason: 'no_further_value', rationale: 'Delivery is incomplete.' } },
       comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
     } as never).join('\n');
-    assert.match(text, /stalled/);
-    assert.match(text, /Task\s+incomplete/);
+    assert.match(text, /Stalled/);
+    assert.match(text, /Task\s+Incomplete/);
     assert.match(text, /Comparison failed/);
     assert.match(text, /protocol/);
-    assert.match(text, /Diagnostic/);
+    assert.match(text, /Comparison diagnostic \(failed\)/);
     assert.match(text, /comparison-failure\.html/);
   }
 });
@@ -151,7 +151,7 @@ test('Controller opening failure names the stage and retryability without a cand
     comparison: { result: { status: 'skipped' } },
   } as never, 'zh').join('\n');
   assert.match(text, /Controller 开场理解.*暂时失败/);
-  assert.match(text, /not_assessed/);
+  assert.match(text, /未评估/);
   assert.doesNotMatch(text, /provider detail/);
 });
 
@@ -188,7 +188,7 @@ test('compact result keeps Trace on one line', () => {
     facts: { wallClockMs: 49_000, turns: 1, controllerCalls: 1 },
   } as never).join('\n');
   assert.match(text, /49s/);
-  assert.match(text, /not recorded tokens/);
+  assert.doesNotMatch(text, /not recorded tokens|tokens/);
   assert.match(text, /Trace\s+.*runs\/run-6d6a47ae/);
   assert.doesNotMatch(text, /\n\s+runs\//);
 });
@@ -231,7 +231,7 @@ test('failed result shows the recorded failure instead of limitations copy', () 
     comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
   } as never).join('\n');
   assert.match(text, /failed\.controller/);
-  assert.match(text, /Controller: Controller decision failed the output contract/);
+  assert.match(text, /Control agent: Controller decision failed the output contract/);
   assert.doesNotMatch(text, /Limitations|Single run|fingerprint differs/);
 });
 
@@ -275,7 +275,7 @@ test('blocked result is a warning with controller reason and short paths', () =>
   const text = lines.join('\n');
   assert.match(text, /blocked\.controller_done/);
   assert.match(text, /Sandbox denied the WeChat data path/);
-  assert.match(text, /Report\s+.*report\.html/);
+  assert.match(text, /Comparison report\s+.*report\.html/);
   assert.match(text, /Trace\s+.*runs\/run-1\//);
   assert.match(text, /\u001b\]8;;file:\/\/\/.*report\.html\u001b\\/);
   assert.match(text, /\u001b\]8;;file:\/\/\/.*runs[/\\]run-1\u001b\\/);
@@ -307,7 +307,16 @@ test('result banners use the fail slot and mute kv keys', () => {
   process.env.FORCE_COLOR = '3';
   try {
     const theme = createTheme(120, true);
-    const text = renderResult(theme, 120, {
+    const failed = renderResult(theme, 120, {
+      record: {
+        attempt: { runId: 'run-1' },
+        outcome: { task: { status: 'incomplete' }, termination: { kind: 'failed', code: 'failed.controller' }, cleanup: { status: 'complete' } },
+      },
+      decision: { status: 'failed' },
+      comparison: { result: { status: 'skipped' } },
+    } as never).join('\n');
+    assert.match(failed, /\u001b\[31m|\u001b\[38;2;224;122;122m/);
+    const stalled = renderResult(theme, 120, {
       record: {
         attempt: { runId: 'run-1' },
         outcome: { task: { status: 'incomplete' }, termination: { kind: 'stalled', code: 'stalled.controller_no_further_value' }, cleanup: { status: 'complete' } },
@@ -315,9 +324,9 @@ test('result banners use the fail slot and mute kv keys', () => {
       decision: { status: 'completed', value: { type: 'done', reason: 'no_further_value' } },
       comparison: { result: { status: 'skipped' } },
     } as never).join('\n');
-    assert.match(text, /\u001b\[31m|\u001b\[38;2;224;122;122m/);
-    const banner = text.split('\n').find((line) => /stalled/.test(line) && /⚠|!/.test(line)) ?? '';
-    assert.doesNotMatch(banner, /\u001b\[33m|\u001b\[38;2;238;176;155m/);
+    const banner = stalled.split('\n').find((line) => /Stalled|stalled/.test(line) && /⚠|!/.test(line)) ?? '';
+    assert.match(banner, /\u001b\[33m|\u001b\[38;2;238;176;155m/);
+    assert.doesNotMatch(banner, /\u001b\[31m|\u001b\[38;2;224;122;122m/);
     assert.match(kv(theme, 'Task', 'incomplete', 80), /\u001b\[90m|\u001b\[38;2;139;153;149m/);
   } finally {
     if (previous === undefined) delete process.env.FORCE_COLOR;

@@ -268,7 +268,7 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
     : recovering && !visible.length
       ? [
           theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
-          pad(` ${theme.glyphs.dot} working`, width, theme.glyphs.ellipsis),
+          pad(` ${theme.glyphs.dot} ${t(locale, 'activityWorking')}`, width, theme.glyphs.ellipsis),
         ]
       : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, following, timelineRevision);
   return [
@@ -342,9 +342,9 @@ export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (
 
 export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
   const stop = ['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const;
-  if (reading) return [['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')], stop];
+  if (reading) return [stop, ['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')]];
   if (finding) {
-    return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
+    return [stop, ['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')]];
   }
   return [stop];
 }
