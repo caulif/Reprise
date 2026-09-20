@@ -181,12 +181,11 @@ export function dispatchPreflightInput(data: string): { action: PreflightAction;
   return undefined;
 }
 
-export type ConfirmAction = 'home' | 'models' | 'run';
+export type ConfirmAction = 'models' | 'run';
 
 export function dispatchConfirmInput(data: string): { action: ConfirmAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
-  if (matchesKey(input, 'b')) return { action: 'models', consume: true };
+  if (matchesKey(input, 'escape') || matchesKey(input, 'b')) return { action: 'models', consume: true };
   if (matchesKey(input, 'enter')) return { action: 'run', consume: true };
   return undefined;
 }

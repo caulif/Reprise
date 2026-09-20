@@ -114,6 +114,9 @@ export type ControllerHandle = {
   candidateSuggestedValue: string | undefined;
   candidateCatalogGeneration: number;
   candidateAvailabilityGeneration: number;
+  candidateVerifyPending: { generation: number; productId: string; offerValue: string } | undefined;
+  runStartPending: boolean;
+  confirmStartArmed: boolean;
   activeExperiment: ExperimentHandle | undefined;
   recentExperiment: HistoryExperiment | undefined;
   readonly dataDir: string;
@@ -471,19 +474,21 @@ function applyCompareGate(c: ControllerHandle, data: string): Consume | undefine
 function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
   const result = dispatchConfirmInput(data);
   if (!result) return undefined;
-  if (result.action === 'home') return c.backToHome();
   if (result.action === 'models') {
     if (candidateStartBlocked(candidateGateFrom(c))) return c.backToHome();
+    if (!c.selectedCandidate && !c.candidateProductId) return c.backToHome();
     c.page = c.selectedCandidate || c.candidateProductId ? 'candidate-model' : 'candidate-product';
     if (c.page === 'candidate-model' && c.candidateCatalogStatus === 'idle') void loadCandidateCatalog(c);
     c.render();
     return { consume: true };
   }
+  if (!c.confirmStartArmed) return { consume: true };
   if (candidateStartBlocked(candidateGateFrom(c))) {
     c.message = t(c.locale, 'recoveryFailed');
     c.render();
     return { consume: true };
   }
+  if (c.runStartPending || c.startupAbort || c.activeExperiment) return { consume: true };
   bindWorkflow(c, beginRun(c));
   return { consume: true };
 }

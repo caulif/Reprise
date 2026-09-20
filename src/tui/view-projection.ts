@@ -245,6 +245,8 @@ function confirmWorkbenchSlice(
   const running = input.timeline.length
     ? { ...runningModel(input), ...(clearHighlight ? { selected: -1, following: true } : {}) }
     : undefined;
+  const locale = input.locale ?? 'en';
+  const taskTitle = taskTitleOf(input.taskCase, locale);
   return {
     ...base,
     ...(running ? { running } : {}),
@@ -259,11 +261,12 @@ function confirmWorkbenchSlice(
       ...(input.policy ? { policy: input.policy } : {}),
       ...(input.recoveryView?.experimentId ? { experimentId: input.recoveryView.experimentId } : {}),
       step: 3,
-      locale: input.locale ?? 'en',
+      locale,
       ...(input.candidateProductLabel
         ? { productLabel: input.candidateProductLabel }
         : input.productLabel ? { productLabel: input.productLabel } : {}),
       ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {}),
+      ...(taskTitle ? { taskTitle } : {}),
     },
   };
 }

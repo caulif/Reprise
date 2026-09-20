@@ -156,6 +156,9 @@ export class IntakeTui {
   candidateSuggestedValue: string | undefined;
   candidateCatalogGeneration = 0;
   candidateAvailabilityGeneration = 0;
+  candidateVerifyPending: { generation: number; productId: string; offerValue: string } | undefined;
+  runStartPending = false;
+  confirmStartArmed = false;
   activeExperiment: ExperimentHandle | undefined;
   recoveryAbort: AbortController | undefined;
   startupAbort: AbortController | undefined;
