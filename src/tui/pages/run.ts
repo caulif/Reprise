@@ -1,6 +1,6 @@
 import type { ExperimentPreflight } from '../../application/experiment-preflight.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
-import { runningFooterHints } from '../action-model.js';
+import { footerHintPairs, listActions } from '../action-model.js';
 import { selectedIndexAfterFold } from '../fold-process.js';
 import { projectTimelineView } from '../timeline-view.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
@@ -337,18 +337,17 @@ export function preflightHints(locale: Locale = 'en'): readonly (readonly [strin
   return [['Esc', t(locale, 'hintHome')]];
 }
 
-export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
-}
-
 export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
-  return runningFooterHints(locale, {
-    preparing,
-    finding,
-    reading,
-    findAllowed: !preparing,
-    narrow: _narrow,
-  });
+  return footerHintPairs(listActions({
+    page: 'running',
+    locale,
+    mode: {
+      preparing,
+      finding,
+      reading,
+      findAllowed: !preparing,
+    },
+  }), locale);
 }
 
 export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {

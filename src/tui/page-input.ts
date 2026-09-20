@@ -1,8 +1,16 @@
 import { matchesKey } from '@earendil-works/pi-tui';
-import { listActions, matchActionKey, optionalMode } from './action-model.js';
+import {
+  type ActionArtifacts,
+  type ActionId,
+  type ActionMode,
+  type UiAction,
+  listActions,
+  matchActionKey,
+} from './action-model.js';
 import { applyTextEdit } from './text-edit.js';
 import { classifyHomeCommand, completeUniqueHomeCommand } from './home-command.js';
 import { isTextInput, slashCommands, unwrapBracketedPaste } from './format.js';
+import type { MessageKey } from './i18n.js';
 
 export type Consume = { consume: true };
 
@@ -110,9 +118,22 @@ export type GlobalInputAction = 'cancel' | 'close' | 'hide-help' | 'show-help';
 
 export function dispatchGlobalInput(ctx: GlobalInputContext, data: string): { action: GlobalInputAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'ctrl+c')) return { action: ctx.page === 'running' || ctx.startupActive ? 'cancel' : 'close', consume: true };
-  if (ctx.helpOpen && matchesKey(input, 'escape')) return { action: 'hide-help', consume: true };
-  if (!ctx.editingText && matchesKey(input, '?')) return { action: 'show-help', consume: true };
+  if (matchesKey(input, 'ctrl+c')) {
+    return { action: ctx.page === 'running' || ctx.startupActive ? 'cancel' : 'close', consume: true };
+  }
+  if (ctx.helpOpen) {
+    const matched = matchActionKey(listActions({ page: ctx.page, locale: 'en', mode: { helpOpen: true } }), input);
+    if (matched?.id === 'hide-help') return { action: 'hide-help', consume: true };
+  }
+  if (ctx.editingText) return undefined;
+  const migrated = ctx.page === 'running' || ctx.page === 'result' || ctx.page === 'confirm';
+  if (migrated) {
+    const matched = matchActionKey(listActions({ page: ctx.page, locale: 'en' }), input);
+    if (matched?.id === 'show-help') return { action: 'show-help', consume: true };
+    if (matched?.id === 'cancel') return { action: 'cancel', consume: true };
+    return undefined;
+  }
+  if (matchesKey(input, '?')) return { action: 'show-help', consume: true };
   return undefined;
 }
 
@@ -184,11 +205,32 @@ export function dispatchPreflightInput(data: string): { action: PreflightAction;
 
 export type ConfirmAction = 'home' | 'models' | 'run';
 
-export function dispatchConfirmInput(data: string): { action: ConfirmAction; consume: true } | undefined {
-  const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
-  if (matchesKey(input, 'b')) return { action: 'models', consume: true };
-  if (matchesKey(input, 'enter')) return { action: 'run', consume: true };
+export type ConfirmKeyContext = {
+  readonly canStart?: boolean;
+};
+
+export function dispatchConfirmInput(
+  data: string,
+  ctx: ConfirmKeyContext = {},
+): { action: ConfirmAction; consume: true; enabled?: boolean; disabledReasonKey?: MessageKey } | undefined {
+  const actions = listActions({
+    page: 'confirm',
+    locale: 'en',
+    mode: { canStartConfirm: ctx.canStart !== false },
+  });
+  const matched = matchActionKey(actions, unwrapBracketedPaste(data), { includeDisabled: true });
+  if (!matched) return undefined;
+  if (matched.id === 'show-help') return undefined;
+  if (matched.id === 'confirm-run') {
+    return {
+      action: 'run',
+      consume: true,
+      enabled: matched.enabled,
+      ...(matched.disabledReasonKey ? { disabledReasonKey: matched.disabledReasonKey } : {}),
+    };
+  }
+  if (matched.id === 'change-model') return { action: 'models', consume: true, enabled: true };
+  if (matched.id === 'home') return { action: 'home', consume: true, enabled: true };
   return undefined;
 }
 
@@ -300,52 +342,88 @@ export function dispatchCanvasInput(
   return undefined;
 }
 
-export type RunningAction = 'toggle-fold' | 'cycle-fold' | 'cycle-fold-prev' | 'active-message';
+export type RunningAction = 'toggle-fold' | 'cycle-fold' | 'cycle-fold-prev' | 'active-message' | 'enter-reading' | 'leave-reading';
 
-export function dispatchRunningKeys(data: string): { action: RunningAction; consume: true } | undefined {
-  const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'shift+tab')) return { action: 'cycle-fold-prev', consume: true };
-  if (matchesKey(input, 'tab')) return { action: 'cycle-fold', consume: true };
-  if (matchesKey(input, 'enter')) return { action: 'toggle-fold', consume: true };
-  if (matchesKey(input, 'escape')) return { action: 'active-message', consume: true };
-  return undefined;
+export type RunningKeyContext = {
+  readonly preparing?: boolean;
+  readonly finding?: boolean;
+  readonly reading?: boolean;
+  readonly findAllowed?: boolean;
+};
+
+const RUNNING_ID_TO_ACTION: Partial<Record<ActionId, RunningAction>> = {
+  'toggle-fold': 'toggle-fold',
+  'cycle-fold': 'cycle-fold',
+  'cycle-fold-prev': 'cycle-fold-prev',
+  'running-escape': 'active-message',
+  'enter-reading': 'enter-reading',
+  'leave-reading': 'leave-reading',
+};
+
+export function dispatchRunningKeys(
+  data: string,
+  ctx: RunningKeyContext = {},
+): { action: RunningAction; consume: true } | undefined {
+  const mode: ActionMode = {
+    ...(ctx.preparing !== undefined ? { preparing: ctx.preparing } : {}),
+    ...(ctx.finding !== undefined ? { finding: ctx.finding } : {}),
+    ...(ctx.reading !== undefined ? { reading: ctx.reading } : {}),
+    ...(ctx.findAllowed !== undefined ? { findAllowed: ctx.findAllowed } : {}),
+  };
+  const matched = matchActionKey(listActions({ page: 'running', locale: 'en', mode }), unwrapBracketedPaste(data));
+  if (!matched) return undefined;
+  const mapped = RUNNING_ID_TO_ACTION[matched.id];
+  if (!mapped) return undefined;
+  return { action: mapped, consume: true };
 }
 
-export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'open-history-final' | 'open-candidate-final' | 'compare' | 'home' | 'activate-primary';
+export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'open-history-final' | 'open-candidate-final' | 'compare' | 'home';
 
 export type ResultKeyContext = {
   readonly comparePending?: boolean;
-  readonly artifacts?: {
-    readonly report?: boolean;
-    readonly historyFinal?: boolean;
-    readonly candidateFinal?: boolean;
-    readonly trace?: boolean;
-    readonly replica?: boolean;
-  };
+  readonly artifacts?: ActionArtifacts;
+};
+
+export type MatchedKeyResult<T extends string> = {
+  readonly action: T;
+  readonly consume: true;
+  readonly enabled: boolean;
+  readonly disabledReasonKey?: MessageKey;
+  readonly matched: UiAction;
 };
 
 export function dispatchResultKeys(
   data: string,
   ctx: ResultKeyContext = {},
-): { action: ResultAction; consume: true; enabled?: boolean } | undefined {
+): MatchedKeyResult<ResultAction> | undefined {
   const actions = listActions({
     page: 'result',
     locale: 'en',
-    mode: optionalMode({
+    mode: {
       ...(ctx.comparePending !== undefined ? { comparePending: ctx.comparePending } : {}),
-    }),
+    },
     ...(ctx.artifacts !== undefined ? { artifacts: ctx.artifacts } : {}),
   });
-  const matched = matchActionKey(actions, data, { includeDisabled: true });
+  const matched = matchActionKey(actions, unwrapBracketedPaste(data), { includeDisabled: true });
   if (!matched) return undefined;
   if (matched.id === 'show-help') return undefined;
-  if (matched.id === 'activate-primary') {
-    return { action: 'activate-primary', consume: true, enabled: matched.enabled };
+  if (
+    matched.id !== 'compare'
+    && matched.id !== 'home'
+    && matched.id !== 'open-report'
+    && matched.id !== 'open-history-final'
+    && matched.id !== 'open-candidate-final'
+    && matched.id !== 'open-trace'
+    && matched.id !== 'open-replica'
+  ) {
+    return undefined;
   }
   return {
-    action: matched.id as ResultAction,
+    action: matched.id,
     consume: true,
     enabled: matched.enabled,
+    ...(matched.disabledReasonKey ? { disabledReasonKey: matched.disabledReasonKey } : {}),
+    matched,
   };
 }
 

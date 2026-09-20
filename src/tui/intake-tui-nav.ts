@@ -4,7 +4,7 @@ import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harne
 import { classifyAgentFailure } from '../infrastructure/agent/failure.js';
 import { artifactsFromResult, listActions } from "./action-model.js";
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
-import { HelpOverlay, commandSelectList } from "./overlays.js";
+import { HelpOverlay, commandSelectList, usesActionHelp } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
 import { productContext as activeProductContext, view as projectView } from "./controller-view.js";
 import { discardRecovery, stopRunClock } from "./controller-run.js";
@@ -226,19 +226,21 @@ export function IntakeTui_isEditingText(this: IntakeTui): boolean {
 
 export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
     const preparing = this.preparePhase === 'check' || this.preparePhase === 'copy' || this.runPhase === 'recovery';
-    const actions = listActions({
-      page: this.page,
-      locale: this.locale,
-      mode: {
-        finding: this.finding,
-        reading: this.readingMode,
-        preparing,
-        comparePending: Boolean(this.compareChoice),
-        findAllowed: !preparing,
-        helpOpen: false,
-      },
-      artifacts: artifactsFromResult(this.result),
-    });
+    const actions = usesActionHelp(this.page)
+      ? listActions({
+          page: this.page,
+          locale: this.locale,
+          mode: {
+            finding: this.finding,
+            reading: this.readingMode,
+            preparing,
+            comparePending: Boolean(this.compareChoice),
+            findAllowed: !preparing,
+            helpOpen: false,
+          },
+          artifacts: artifactsFromResult(this.result),
+        })
+      : undefined;
     if (typeof this.tui.showOverlay === "function") {
       this.hideHelp();
       this.helpOverlay = this.tui.showOverlay(

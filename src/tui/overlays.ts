@@ -1,12 +1,12 @@
 import type { Component } from '@earendil-works/pi-tui';
 import { SelectList, type SelectListTheme } from '@earendil-works/pi-tui';
-import { type ActionContext, helpLinesFromActions, listActions, type UiAction } from './action-model.js';
+import { helpLinesFromActions, type UiAction } from './action-model.js';
 import { slashCommands } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
 import { panel } from './widgets.js';
 
-/** Fallback static keys for pages not yet migrated onto the shared action model. */
+/** Static keys for pages not yet migrated onto the shared action model. */
 const PAGE_KEYS: Record<string, readonly string[]> = {
   home: [
     'Type       /command, then Enter',
@@ -55,14 +55,20 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
 
 const ACTION_HELP_PAGES = new Set(['running', 'result', 'confirm']);
 
+export function usesActionHelp(page?: string): boolean {
+  return Boolean(page && ACTION_HELP_PAGES.has(page));
+}
+
 export function helpLines(
   page?: string,
   locale: Locale = 'en',
   actions?: readonly UiAction[],
 ): readonly string[] {
-  if (actions) return helpLinesFromActions(actions, locale, page);
-  if (page && ACTION_HELP_PAGES.has(page)) {
-    return helpLinesFromActions(listActions({ page, locale }), locale, page);
+  if (usesActionHelp(page)) {
+    if (!actions) {
+      throw new Error(`helpLines(${page}) requires the shared action list`);
+    }
+    return helpLinesFromActions(actions, locale, page);
   }
   const scoped = page === undefined ? undefined : PAGE_KEYS[page];
   const homeKeys = page === 'home' ? [
@@ -106,10 +112,6 @@ export class HelpOverlay implements Component {
   render(width: number): string[] {
     return renderHelp(this.#theme, width, this.#page, this.#locale, this.#actions);
   }
-}
-
-export function helpActionsForContext(ctx: ActionContext): readonly UiAction[] {
-  return listActions(ctx);
 }
 
 export function commandSelectList(theme: Theme): SelectList {

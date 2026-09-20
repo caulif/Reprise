@@ -17,6 +17,7 @@ import { operatorErrorMessage, truncateFit } from '../../src/tui/format.js';
 import { kv, kvBlock, pad, panel, joinColumns, progressBar, stateRail, wrapBodyLine } from '../../src/tui/widgets.js';
 import { renderWorkbench } from '../../src/tui/workbench.js';
 import { helpLines } from '../../src/tui/overlays.js';
+import { listActions } from '../../src/tui/action-model.js';
 import { FakeTerminal, renderFrame } from '../support/fake-terminal.js';
 import type { TimelineEntry } from '../../src/tui/timeline.js';
 
@@ -379,7 +380,11 @@ test('recovery workbench footer has no find', () => {
 });
 
 test('help names the keys of the page it was opened on', () => {
-  const running = helpLines('running').join('\n');
+  const running = helpLines('running', 'en', listActions({
+    page: 'running',
+    locale: 'en',
+    mode: { preparing: false, findAllowed: true },
+  })).join('\n');
   assert.match(running, /Ctrl\+C\s+Stop/);
   assert.match(running, /Find|Expand|Follow live/);
   assert.match(running, /\?/);
@@ -397,7 +402,11 @@ test('help names the keys of the page it was opened on', () => {
   assert.doesNotMatch(inspection, /Select task input|Select task start/);
   assert.doesNotMatch(inspection, /Request cancellation/);
 
-  const result = helpLines('result').join('\n');
+  const result = helpLines('result', 'en', listActions({
+    page: 'result',
+    locale: 'en',
+    artifacts: { report: true, trace: true, replica: true },
+  })).join('\n');
   assert.match(result, /o\s+Open report/);
   assert.match(result, /t\s+Open trace/);
   assert.match(result, /w\s+Open replica/);

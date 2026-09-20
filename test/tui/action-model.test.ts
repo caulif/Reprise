@@ -6,32 +6,38 @@ import {
   isActionEnabled,
   listActions,
   matchActionKey,
-  resultFooterHints,
-  runningFooterHints,
 } from '../../src/tui/action-model.js';
-import { dispatchResultKeys } from '../../src/tui/page-input.js';
+import { dispatchConfirmInput, dispatchResultKeys, dispatchRunningKeys } from '../../src/tui/page-input.js';
 
 test('running footer always includes cancel and discoverable find when idle', () => {
-  const hints = runningFooterHints('en', { preparing: false });
+  const hints = footerHintPairs(listActions({
+    page: 'running',
+    locale: 'en',
+    mode: { preparing: false, findAllowed: true },
+  }), 'en');
   assert.equal(hints[0]?.[0], 'Ctrl+C');
   assert.ok(hints.some(([key]) => key === '/'));
   assert.ok(hints.length <= 4);
 });
 
 test('result footer hides missing artifacts and keeps compare when pending', () => {
-  const without = resultFooterHints('en', {
-    comparePending: false,
+  const without = footerHintPairs(listActions({
+    page: 'result',
+    locale: 'en',
+    mode: { comparePending: false },
     artifacts: { report: false, historyFinal: false, candidateFinal: false },
-  });
+  }), 'en');
   assert.deepEqual(without, [
     ['Esc', 'Home'],
     ['?', 'Help'],
   ]);
 
-  const withCompare = resultFooterHints('en', {
-    comparePending: true,
+  const withCompare = footerHintPairs(listActions({
+    page: 'result',
+    locale: 'en',
+    mode: { comparePending: true },
     artifacts: { report: true },
-  });
+  }), 'en');
   assert.equal(withCompare[0]?.[0], 'c');
   assert.ok(withCompare.some(([key]) => key === 'o'));
   assert.ok(!withCompare.some(([key]) => key === 'h' || key === 'f'));
@@ -49,13 +55,25 @@ test('disabled open-report key matches but stays disabled', () => {
   assert.equal(isActionEnabled(actions, 'open-report'), false);
 });
 
-test('dispatchResultKeys uses shared availability and activate-primary on Enter', () => {
+test('dispatchResultKeys uses shared availability and Enter activates compare when pending', () => {
   assert.equal(dispatchResultKeys('c')?.action, undefined);
   assert.equal(dispatchResultKeys('c', { comparePending: true })?.action, 'compare');
-  assert.equal(dispatchResultKeys('\r', { comparePending: true })?.action, 'activate-primary');
+  assert.equal(dispatchResultKeys('\r', { comparePending: true })?.action, 'compare');
   assert.equal(dispatchResultKeys('o', { artifacts: { report: false } })?.enabled, false);
   assert.equal(dispatchResultKeys('o', { artifacts: { report: true } })?.enabled, true);
+  assert.equal(dispatchResultKeys('o', { artifacts: { report: false } })?.disabledReasonKey, 'noReport');
   assert.equal(dispatchResultKeys('\x1b', { comparePending: true })?.action, 'home');
+});
+
+test('confirm and running keys resolve through the shared action list', () => {
+  assert.equal(dispatchConfirmInput('\r')?.action, 'run');
+  assert.equal(dispatchConfirmInput('\r', { canStart: false })?.enabled, false);
+  assert.equal(dispatchConfirmInput('b')?.action, 'models');
+  assert.equal(dispatchConfirmInput('\x1b')?.action, 'home');
+  assert.equal(dispatchRunningKeys('\t')?.action, 'cycle-fold');
+  assert.equal(dispatchRunningKeys('\x1b')?.action, 'active-message');
+  assert.equal(dispatchRunningKeys('v')?.action, 'enter-reading');
+  assert.equal(dispatchRunningKeys('v', { reading: true })?.action, 'leave-reading');
 });
 
 test('artifactsFromResult mirrors pathLinks presence', () => {

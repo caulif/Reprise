@@ -3,7 +3,7 @@ import { createTheme } from './theme.js';
 import { selectedIndexAfterFold } from './fold-process.js';
 import { projectTimelineView } from './timeline-view.js';
 import { hitFileLink } from './format.js';
-import { artifactsFromResult, isActionEnabled, listActions } from './action-model.js';
+import { artifactsFromResult, actionById, isActionEnabled, listActions } from './action-model.js';
 import { t } from './i18n.js';
 import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
 import { homePointerAction } from './pages/home.js';
@@ -72,7 +72,7 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
     artifacts,
   });
   if (!isActionEnabled(actions, action)) {
-    const reason = actions.find((item) => item.id === action)?.disabledReasonKey;
+    const reason = actionById(actions, action)?.disabledReasonKey;
     if (reason) {
       c.message = t(c.locale, reason);
       c.render();

@@ -1,8 +1,8 @@
 import { type Component, ScrollView, VStack, isViewportTUI, type TUI, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { ExperimentResult } from '../application/experiment.js';
-import { artifactsFromResult, listActions, footerHintPairs, optionalMode } from './action-model.js';
+import { artifactsFromResult, listActions, footerHintPairs } from './action-model.js';
 import { compact, truncateFit } from './format.js';
-import { renderHelp } from './overlays.js';
+import { renderHelp, usesActionHelp } from './overlays.js';
 import { configHints, renderConfig, type ConfigModel } from './pages/config.js';
 import { configFieldsForKind, languageFieldIndex } from '../infrastructure/harness-model-config.js';
 import { historyDetailHints, historyHints, renderHistory, renderHistoryDetail, type HistoryModel } from './pages/history.js';
@@ -207,29 +207,36 @@ function renderMessage(_theme: Theme, view: WorkbenchView, width: number): strin
 function renderFooter(theme: Theme, view: WorkbenchView, width: number): string[] {
   return [
     divider(theme, width),
-    keyHints(theme, hintsFor(view, theme), width),
+    keyHints(theme, hintsFor(view), width),
   ];
+}
+
+function actionContextFromView(view: WorkbenchView) {
+  const locale = view.locale ?? 'en';
+  const preparing = Boolean(view.running && (isRecoveryChrome(view.running) || view.running.preparePhase === 'copy'));
+  return {
+    page: view.page,
+    locale,
+    mode: {
+      preparing,
+      finding: Boolean(view.running?.finding),
+      reading: Boolean(view.running?.readingMode),
+      comparePending: Boolean(view.comparePending),
+      findAllowed: !preparing,
+      ...(view.page === 'confirm' ? { canStartConfirm: view.confirm ? confirmCanStart(view.confirm) : false } : {}),
+    },
+    artifacts: artifactsFromResult(view.result),
+  } as const;
 }
 
 function renderBody(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
   const page = renderPage(theme, view, width, height);
   if (!view.inlineHelp) return page;
   const locale = view.locale ?? 'en';
-  const preparing = Boolean(view.running && (isRecoveryChrome(view.running) || view.running.preparePhase === 'copy'));
-  const actions = listActions({
-    page: view.page,
-    locale,
-    mode: optionalMode({
-      preparing,
-      finding: Boolean(view.running?.finding),
-      reading: Boolean(view.running?.readingMode),
-      comparePending: Boolean(view.comparePending),
-      findAllowed: !preparing,
-      ...(view.confirm ? { canStartConfirm: confirmCanStart(view.confirm) } : {}),
-    }),
-    artifacts: artifactsFromResult(view.result),
-  });
-  return [...renderHelp(theme, width, view.page, locale, actions), '', ...page];
+  if (!usesActionHelp(view.page)) {
+    return [...renderHelp(theme, width, view.page, locale), '', ...page];
+  }
+  return [...renderHelp(theme, width, view.page, locale, listActions(actionContextFromView(view))), '', ...page];
 }
 
 function renderPage(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
@@ -318,7 +325,7 @@ export function workbenchBodyOrigin(view: WorkbenchView, width: number, height?:
   return { header, rail };
 }
 
-function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string, string])[] {
+function hintsFor(view: WorkbenchView): readonly (readonly [string, string])[] {
   const locale = view.locale ?? 'en';
   if (view.page === 'home') return homeHints(locale, view.home);
   if (view.page === 'config' && view.config) {
@@ -336,34 +343,8 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     if (!view.preflight) return [['Esc', t(locale, 'hintHome')]];
     return preflightHints(locale);
   }
-  if (view.page === 'confirm') {
-    return footerHintPairs(listActions({
-      page: 'confirm',
-      locale,
-      mode: { canStartConfirm: view.confirm ? confirmCanStart(view.confirm) : false },
-    }), locale);
-  }
-  if (view.page === 'running' && view.running) {
-    const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
-    return footerHintPairs(listActions({
-      page: 'running',
-      locale,
-      mode: {
-        preparing,
-        finding: Boolean(view.running.finding),
-        reading: Boolean(view.running.readingMode),
-        findAllowed: !preparing,
-      },
-      narrow: theme.density !== 'wide',
-    }), locale);
-  }
-  if (view.page === 'result') {
-    return footerHintPairs(listActions({
-      page: 'result',
-      locale,
-      mode: { comparePending: Boolean(view.comparePending) },
-      artifacts: artifactsFromResult(view.result),
-    }), locale);
+  if (view.page === 'confirm' || view.page === 'running' || view.page === 'result') {
+    return footerHintPairs(listActions(actionContextFromView(view)), locale);
   }
   if (view.page === 'error') return failureHints(locale);
   return [['b', t(locale, 'hintBack')], ['Ctrl+C', t(locale, 'hintExit')]];

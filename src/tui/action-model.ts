@@ -10,7 +10,6 @@ export type ActionId =
   | 'show-help'
   | 'hide-help'
   | 'home'
-  | 'back'
   | 'start-find'
   | 'clear-find'
   | 'next-hit'
@@ -21,6 +20,7 @@ export type ActionId =
   | 'toggle-fold'
   | 'cycle-fold'
   | 'cycle-fold-prev'
+  | 'running-escape'
   | 'compare'
   | 'open-report'
   | 'open-history-final'
@@ -28,10 +28,7 @@ export type ActionId =
   | 'open-trace'
   | 'open-replica'
   | 'confirm-run'
-  | 'change-model'
-  | 'activate-primary';
-
-export type ActionKind = 'readonly' | 'navigate' | 'start' | 'cancel';
+  | 'change-model';
 
 export type UiAction = {
   readonly id: ActionId;
@@ -39,8 +36,7 @@ export type UiAction = {
   readonly keys: readonly string[];
   readonly enabled: boolean;
   readonly disabledReasonKey?: MessageKey;
-  readonly kind: ActionKind;
-  /** Higher values win footer slots; 0 = help-only. */
+  /** Higher values win footer slots; 0 = help-only / non-footer. */
   readonly footerPriority: number;
 };
 
@@ -69,7 +65,6 @@ export type ActionContext = {
   readonly locale: Locale;
   readonly mode?: ActionMode;
   readonly artifacts?: ActionArtifacts;
-  readonly narrow?: boolean;
 };
 
 const FOOTER_MAX = 4;
@@ -89,7 +84,7 @@ export function artifactsFromResult(result: ExperimentResult | undefined): Actio
 export function listActions(ctx: ActionContext): readonly UiAction[] {
   const mode = ctx.mode ?? {};
   if (mode.helpOpen) {
-    return [action('hide-help', 'hintEsc', ['escape'], 'navigate', 10)];
+    return [action('hide-help', 'hintEsc', ['escape'], 10)];
   }
   switch (ctx.page) {
     case 'running':
@@ -98,43 +93,46 @@ export function listActions(ctx: ActionContext): readonly UiAction[] {
       return resultActions(mode, ctx.artifacts ?? {});
     case 'confirm':
       return confirmActions(mode);
-    case 'error':
-      return [action('home', 'hintHome', ['escape', 'enter', 'b'], 'navigate', 10)];
     default:
-      return [action('show-help', 'hintHelp', ['?'], 'readonly', 1)];
+      return [action('show-help', 'hintHelp', ['?'], 1)];
   }
 }
 
 function runningActions(mode: ActionMode): readonly UiAction[] {
   const cancelLabel: MessageKey = mode.preparing ? 'hintCancel' : 'hintStop';
-  const cancel = action('cancel', cancelLabel, ['ctrl+c'], 'cancel', 40);
-  const help = action('show-help', 'hintHelp', ['?'], 'readonly', 5);
+  const cancel = action('cancel', cancelLabel, ['ctrl+c'], 40);
+  const help = action('show-help', 'hintHelp', ['?'], 5);
   if (mode.reading) {
     return [
-      action('leave-reading', 'hintLeaveReading', ['v', 'escape'], 'navigate', 30),
+      action('leave-reading', 'hintLeaveReading', ['v', 'escape'], 30),
       cancel,
       help,
     ];
   }
   if (mode.finding) {
     return [
-      action('next-hit', 'hintNextHit', ['enter'], 'readonly', 30),
-      action('prev-hit', 'hintPrevHit', ['shift+enter'], 'readonly', 20),
-      action('clear-find', 'hintClearFind', ['escape'], 'navigate', 25),
+      action('next-hit', 'hintNextHit', ['enter'], 30),
+      action('prev-hit', 'hintPrevHit', ['shift+enter'], 20),
+      action('clear-find', 'hintClearFind', ['escape'], 25),
       cancel,
     ];
   }
   if (mode.preparing || mode.findAllowed === false) {
-    return [cancel, help];
+    return [
+      cancel,
+      help,
+      action('running-escape', 'experimentActive', ['escape'], 0),
+    ];
   }
   return [
     cancel,
-    action('start-find', 'hintFind', ['/'], 'readonly', 25),
-    action('follow', 'hintFollow', ['end'], 'navigate', 20),
-    action('toggle-fold', 'hintExpand', ['enter'], 'readonly', 15),
-    action('cycle-fold', 'hintCycleFold', ['tab'], 'readonly', 0),
-    action('cycle-fold-prev', 'hintCycleFold', ['shift+tab'], 'readonly', 0),
-    action('enter-reading', 'hintEnterReading', ['v'], 'navigate', 0),
+    action('start-find', 'hintFind', ['/'], 25),
+    action('follow', 'hintFollow', ['end'], 20),
+    action('toggle-fold', 'hintExpand', ['enter'], 15),
+    action('cycle-fold', 'hintCycleFold', ['tab'], 0),
+    action('cycle-fold-prev', 'hintCycleFold', ['shift+tab'], 0),
+    action('enter-reading', 'hintEnterReading', ['v'], 0),
+    action('running-escape', 'experimentActive', ['escape'], 0),
     help,
   ];
 }
@@ -142,33 +140,28 @@ function runningActions(mode: ActionMode): readonly UiAction[] {
 function resultActions(mode: ActionMode, artifacts: ActionArtifacts): readonly UiAction[] {
   const actions: UiAction[] = [];
   if (mode.comparePending) {
-    actions.push(action('compare', 'hintCompare', ['c'], 'start', 50));
-    actions.push(action('activate-primary', 'hintCompare', ['enter'], 'start', 0));
+    actions.push(action('compare', 'hintCompare', ['c', 'enter'], 50));
   }
   actions.push(artifactAction('open-report', 'hintReport', ['o'], artifacts.report, 'noReport'));
   actions.push(artifactAction('open-history-final', 'hintHistoryFinal', ['h'], artifacts.historyFinal, 'noHistoryFinal'));
   actions.push(artifactAction('open-candidate-final', 'hintCandidateFinal', ['f'], artifacts.candidateFinal, 'noCandidateFinal'));
   actions.push(artifactAction('open-trace', 'hintTrace', ['t'], artifacts.trace, 'noTrace'));
   actions.push(artifactAction('open-replica', 'hintReplica', ['w'], artifacts.replica, 'noReplica'));
-  actions.push(action('home', 'hintHome', mode.comparePending ? ['escape', 'b'] : ['escape', 'b', 'enter'], 'navigate', 10));
-  actions.push(action('show-help', 'hintHelp', ['?'], 'readonly', 1));
+  actions.push(action('home', 'hintHome', mode.comparePending ? ['escape', 'b'] : ['escape', 'b', 'enter'], 10));
+  actions.push(action('show-help', 'hintHelp', ['?'], 1));
   return actions;
 }
 
 function confirmActions(mode: ActionMode): readonly UiAction[] {
   const canStart = mode.canStartConfirm !== false;
-  const run: UiAction = canStart
-    ? action('confirm-run', 'hintStartCandidate', ['enter'], 'start', 40)
-    : {
-        ...action('confirm-run', 'hintTryBlocked', ['enter'], 'start', 40),
-        enabled: false,
-        disabledReasonKey: 'recoveryFailed',
-      };
+  const run = canStart
+    ? action('confirm-run', 'hintStartCandidate', ['enter'], 40)
+    : disabled('confirm-run', 'hintTryBlocked', ['enter'], 'recoveryFailed', 40);
   return [
     run,
-    action('change-model', 'hintChangeModel', ['b'], 'navigate', 20),
-    action('home', 'hintHome', ['escape'], 'navigate', 10),
-    action('show-help', 'hintHelp', ['?'], 'readonly', 1),
+    action('change-model', 'hintChangeModel', ['b'], 20),
+    action('home', 'hintHome', ['escape'], 10),
+    action('show-help', 'hintHelp', ['?'], 1),
   ];
 }
 
@@ -179,29 +172,27 @@ function artifactAction(
   available: boolean | undefined,
   missingKey: MessageKey,
 ): UiAction {
-  const enabled = Boolean(available);
-  if (enabled) {
-    return { id, labelKey, keys, enabled: true, kind: 'readonly', footerPriority: 20 };
-  }
-  return {
-    id,
-    labelKey,
-    keys,
-    enabled: false,
-    disabledReasonKey: missingKey,
-    kind: 'readonly',
-    footerPriority: 0,
-  };
+  if (available) return action(id, labelKey, keys, 20);
+  return disabled(id, labelKey, keys, missingKey, 0);
 }
 
 function action(
   id: ActionId,
   labelKey: MessageKey,
   keys: readonly string[],
-  kind: ActionKind,
   footerPriority: number,
 ): UiAction {
-  return { id, labelKey, keys, enabled: true, kind, footerPriority };
+  return { id, labelKey, keys, enabled: true, footerPriority };
+}
+
+function disabled(
+  id: ActionId,
+  labelKey: MessageKey,
+  keys: readonly string[],
+  disabledReasonKey: MessageKey,
+  footerPriority: number,
+): UiAction {
+  return { id, labelKey, keys, enabled: false, disabledReasonKey, footerPriority };
 }
 
 /** Footer pairs from the shared action list (enabled only, capped). */
@@ -234,6 +225,7 @@ export function helpLinesFromActions(
   const lines: string[] = [];
   if (page) lines.push(` ${t(locale, 'helpThisPage', { page })}`);
   for (const item of actions) {
+    if (item.footerPriority === 0 && item.id === 'running-escape') continue;
     const keys = item.keys.map(displayKey).join(' / ');
     const label = t(locale, item.labelKey);
     if (item.enabled) {
@@ -265,13 +257,13 @@ export function matchActionKey(
   opts?: { readonly includeDisabled?: boolean },
 ): UiAction | undefined {
   const includeDisabled = opts?.includeDisabled === true;
-  let disabled: UiAction | undefined;
+  let disabledHit: UiAction | undefined;
   for (const item of actions) {
     if (!item.keys.some((key) => keyMatches(data, key))) continue;
     if (item.enabled) return item;
-    if (includeDisabled && !disabled) disabled = item;
+    if (includeDisabled && !disabledHit) disabledHit = item;
   }
-  return includeDisabled ? disabled : undefined;
+  return includeDisabled ? disabledHit : undefined;
 }
 
 function keyMatches(data: string, key: string): boolean {
@@ -287,8 +279,6 @@ function displayKey(key: string): string {
   if (key === 'shift+tab') return 'S-Tab';
   if (key === 'escape') return 'Esc';
   if (key === 'enter') return 'Enter';
-  if (key === 'pageup') return 'PgUp';
-  if (key === 'pagedown') return 'PgDn';
   if (key.length === 1) return key;
   return key.replace(/^\w/, (ch) => ch.toUpperCase());
 }
@@ -296,67 +286,3 @@ function displayKey(key: string): string {
 function padKey(keys: string): string {
   return keys.length >= 10 ? keys : `${keys}${' '.repeat(10 - keys.length)}`;
 }
-
-function optionalMode(parts: {
-  preparing?: boolean;
-  finding?: boolean;
-  reading?: boolean;
-  comparePending?: boolean;
-  canStartConfirm?: boolean;
-  helpOpen?: boolean;
-  editingText?: boolean;
-  findAllowed?: boolean;
-}): ActionMode {
-  const mode: ActionMode = {};
-  if (parts.preparing !== undefined) Object.assign(mode, { preparing: parts.preparing });
-  if (parts.finding !== undefined) Object.assign(mode, { finding: parts.finding });
-  if (parts.reading !== undefined) Object.assign(mode, { reading: parts.reading });
-  if (parts.comparePending !== undefined) Object.assign(mode, { comparePending: parts.comparePending });
-  if (parts.canStartConfirm !== undefined) Object.assign(mode, { canStartConfirm: parts.canStartConfirm });
-  if (parts.helpOpen !== undefined) Object.assign(mode, { helpOpen: parts.helpOpen });
-  if (parts.editingText !== undefined) Object.assign(mode, { editingText: parts.editingText });
-  if (parts.findAllowed !== undefined) Object.assign(mode, { findAllowed: parts.findAllowed });
-  return mode;
-}
-
-export function runningFooterHints(
-  locale: Locale,
-  opts: {
-    readonly preparing?: boolean;
-    readonly finding?: boolean;
-    readonly reading?: boolean;
-    readonly findAllowed?: boolean;
-    readonly narrow?: boolean;
-  } = {},
-): readonly (readonly [string, string])[] {
-  return footerHintPairs(listActions({
-    page: 'running',
-    locale,
-    mode: optionalMode({
-      ...(opts.preparing !== undefined ? { preparing: opts.preparing } : {}),
-      ...(opts.finding !== undefined ? { finding: opts.finding } : {}),
-      ...(opts.reading !== undefined ? { reading: opts.reading } : {}),
-      ...(opts.findAllowed !== undefined ? { findAllowed: opts.findAllowed } : {}),
-    }),
-    ...(opts.narrow !== undefined ? { narrow: opts.narrow } : {}),
-  }), locale);
-}
-
-export function resultFooterHints(
-  locale: Locale,
-  opts: {
-    readonly comparePending?: boolean;
-    readonly artifacts?: ActionArtifacts;
-  } = {},
-): readonly (readonly [string, string])[] {
-  return footerHintPairs(listActions({
-    page: 'result',
-    locale,
-    mode: optionalMode({
-      ...(opts.comparePending !== undefined ? { comparePending: opts.comparePending } : {}),
-    }),
-    ...(opts.artifacts !== undefined ? { artifacts: opts.artifacts } : {}),
-  }), locale);
-}
-
-export { optionalMode };

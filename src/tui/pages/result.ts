@@ -2,7 +2,7 @@ import { resolve, normalize } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
-import { type ActionArtifacts, resultFooterHints } from '../action-model.js';
+import { type ActionArtifacts, footerHintPairs, listActions } from '../action-model.js';
 import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
@@ -87,10 +87,12 @@ export function resultHints(
   comparePending = false,
   artifacts?: ActionArtifacts,
 ): readonly (readonly [string, string])[] {
-  return resultFooterHints(locale, {
-    comparePending,
+  return footerHintPairs(listActions({
+    page: 'result',
+    locale,
+    mode: { comparePending },
     ...(artifacts !== undefined ? { artifacts } : {}),
-  });
+  }), locale);
 }
 
 export function resultPointerAction(

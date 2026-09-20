@@ -94,7 +94,7 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchRunningKeys('\t')?.action, 'cycle-fold');
   assert.equal(dispatchRunningKeys('\x1b')?.action, 'active-message');
   assert.equal(dispatchResultKeys('c', { comparePending: true })?.action, 'compare');
-  assert.equal(dispatchResultKeys('\r', { comparePending: true })?.action, 'activate-primary');
+  assert.equal(dispatchResultKeys('\r', { comparePending: true })?.action, 'compare');
   assert.equal(dispatchResultKeys('o', { artifacts: { report: true } })?.action, 'open-report');
   assert.equal(dispatchResultKeys('h', { artifacts: { historyFinal: true } })?.action, 'open-history-final');
   assert.equal(dispatchResultKeys('f', { artifacts: { candidateFinal: true } })?.action, 'open-candidate-final');

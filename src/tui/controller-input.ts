@@ -10,7 +10,7 @@ import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
 import type { TaskCase, CandidateRunState } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
-import { artifactsFromResult, listActions } from './action-model.js';
+import { artifactsFromResult } from './action-model.js';
 import { coveringFoldIds, selectedIndexAfterFold } from './fold-process.js';
 import { projectTimelineView } from './timeline-view.js';
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
@@ -210,20 +210,14 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
       artifacts,
     });
     if (!result) return undefined;
-    if (result.enabled === false) {
-      const reason = listActions({
-        page: 'result',
-        locale: c.locale,
-        mode: { comparePending: Boolean(c.compareChoice) },
-        artifacts,
-      }).find((item) => item.id === result.action)?.disabledReasonKey;
-      if (reason) {
-        c.message = t(c.locale, reason);
+    if (!result.enabled) {
+      if (result.disabledReasonKey) {
+        c.message = t(c.locale, result.disabledReasonKey);
         c.render();
       }
       return { consume: true };
     }
-    if (result.action === 'compare' || result.action === 'activate-primary') {
+    if (result.action === 'compare') {
       if (!c.compareChoice) return { consume: true };
       c.compareChoice.resolve(true);
       c.compareChoice = undefined;
@@ -485,17 +479,23 @@ function applyCompareGate(c: ControllerHandle, data: string): Consume | undefine
 }
 
 function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
-  const result = dispatchConfirmInput(data);
+  const canStart = !candidateStartBlocked(candidateGateFrom(c));
+  const result = dispatchConfirmInput(data, { canStart });
   if (!result) return undefined;
   if (result.action === 'home') return c.backToHome();
   if (result.action === 'models') {
-    if (candidateStartBlocked(candidateGateFrom(c))) return c.backToHome();
+    if (!canStart) return c.backToHome();
     c.page = c.selectedCandidate || c.candidateProductId ? 'candidate-model' : 'candidate-product';
     if (c.page === 'candidate-model' && c.candidateCatalogStatus === 'idle') void loadCandidateCatalog(c);
     c.render();
     return { consume: true };
   }
-  if (candidateStartBlocked(candidateGateFrom(c))) {
+  if (!result.enabled) {
+    c.message = t(c.locale, result.disabledReasonKey ?? 'recoveryFailed');
+    c.render();
+    return { consume: true };
+  }
+  if (!canStart) {
     c.message = t(c.locale, 'recoveryFailed');
     c.render();
     return { consume: true };
@@ -505,11 +505,19 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
 }
 
 function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
+  const preparing = c.preparePhase === 'check' || c.preparePhase === 'copy' || c.runPhase === 'recovery';
+  const runningCtx = {
+    preparing,
+    finding: Boolean(c.finding),
+    reading: Boolean(c.readingMode),
+    findAllowed: !preparing,
+  };
   const blocked = canvasBlocked(c);
-  if (!blocked && !c.finding) {
-    if (c.readingMode && (matchesKey(data, 'v') || matchesKey(data, 'escape'))) return exitReadingMode(c);
+  if (!blocked) {
+    const keyed = dispatchRunningKeys(data, runningCtx);
+    if (keyed?.action === 'leave-reading') return exitReadingMode(c);
+    if (keyed?.action === 'enter-reading') return enterReadingMode(c);
     if (c.readingMode) return { consume: true };
-    if (matchesKey(data, 'v')) return enterReadingMode(c);
   }
   const canvas = applyCanvas(c, data);
   if (canvas) return canvas;
@@ -517,15 +525,18 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
     const gate = applyCompareGate(c, data);
     if (gate) return gate;
   }
-  const result = dispatchRunningKeys(data);
+  const result = dispatchRunningKeys(data, { ...runningCtx, reading: false });
   if (!result) return undefined;
   if (result.action === 'toggle-fold') return toggleSelectedFold(c);
   if (result.action === 'cycle-fold' || result.action === 'cycle-fold-prev') {
     return cycleFoldSelection(c, result.action === 'cycle-fold-prev' ? -1 : 1);
   }
-  c.message = t(c.locale, 'experimentActive');
-  c.render();
-  return { consume: true };
+  if (result.action === 'active-message') {
+    c.message = t(c.locale, 'experimentActive');
+    c.render();
+    return { consume: true };
+  }
+  return undefined;
 }
 
 function canvasBlocked(c: ControllerHandle): boolean {
