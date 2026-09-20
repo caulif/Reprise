@@ -187,6 +187,13 @@ test('comparison prompt points workspace tools at the sealed snapshot mount', ()
   assert.match(COMPARISON_SYSTEM_PROMPT, /render_artifact/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /register_evidence/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /preview_report/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /Need screenshots or page views only through render_artifact and preview_report/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /Do not run Chrome, Edge, or Firefox binaries/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /--version/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /--dump-dom/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /user browser profile/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /If a render tool fails, record the limitation/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /do not retry via equivalent browser shell commands/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /In this session you will receive, in order/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /最后一轮不能使用工具/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /read_observation/);
@@ -194,6 +201,8 @@ test('comparison prompt points workspace tools at the sealed snapshot mount', ()
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /comparison-sandbox\/candidate/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /pair-pages/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /at most three bullets/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /msedge\.exe --version/);
+  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /npx playwright/);
 });
 
 test('comparison orientation does not inline the initial task and points at user-inputs', async () => {

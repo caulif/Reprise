@@ -74,6 +74,10 @@ File-tool paths are virtual paths relative to this briefing. shell_exec starts
 in scratch/; use the documented REPRISE_*_ROOT variables for physical source
 paths instead of treating virtual mounts as shell cwd.
 
+Need screenshots or page views only through render_artifact and preview_report.
+Do not run Chrome, Edge, or Firefox binaries; do not use --version, --dump-dom,
+or open a user browser profile. If a render tool fails, record the limitation and
+continue with text evidence; do not retry via equivalent browser shell commands.
 Use render_artifact to derive previews from registered sources. Use
 register_evidence to preserve relevant derived analysis with source references;
 registration is not independent verification of your interpretation. Use
