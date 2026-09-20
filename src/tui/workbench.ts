@@ -1,6 +1,6 @@
 import { type Component, ScrollView, VStack, isViewportTUI, type TUI, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { ExperimentResult } from '../application/experiment.js';
-import { artifactsFromResult, listActions, footerHintPairs } from './action-model.js';
+import { artifactsFromResult, listActions, footerHintPairs, type ActionContext } from './action-model.js';
 import { compact, truncateFit } from './format.js';
 import { renderHelp, usesActionHelp } from './overlays.js';
 import { configHints, renderConfig, type ConfigModel } from './pages/config.js';
@@ -211,7 +211,7 @@ function renderFooter(theme: Theme, view: WorkbenchView, width: number): string[
   ];
 }
 
-function actionContextFromView(view: WorkbenchView) {
+export function actionContextFromView(view: WorkbenchView): ActionContext {
   const locale = view.locale ?? 'en';
   const preparing = Boolean(view.running && (isRecoveryChrome(view.running) || view.running.preparePhase === 'copy'));
   return {
@@ -226,7 +226,7 @@ function actionContextFromView(view: WorkbenchView) {
       ...(view.page === 'confirm' ? { canStartConfirm: view.confirm ? confirmCanStart(view.confirm) : false } : {}),
     },
     artifacts: artifactsFromResult(view.result),
-  } as const;
+  };
 }
 
 function renderBody(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {

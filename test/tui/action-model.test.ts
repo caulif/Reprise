@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import {
   artifactsFromResult,
   footerHintPairs,
+  helpLinesFromActions,
   isActionEnabled,
   listActions,
   matchActionKey,
 } from '../../src/tui/action-model.js';
 import { dispatchConfirmInput, dispatchResultKeys, dispatchRunningKeys } from '../../src/tui/page-input.js';
+import { actionContextFromView } from '../../src/tui/workbench.js';
 
 test('running footer always includes cancel and discoverable find when idle', () => {
   const hints = footerHintPairs(listActions({
@@ -102,4 +104,41 @@ test('footerHintPairs ranks by priority and caps at four', () => {
   }), 'en', 4);
   assert.equal(pairs.length, 4);
   assert.equal(pairs[0]?.[0], 'Ctrl+C');
+});
+
+test('blocked confirm shares canStartConfirm across footer and help', () => {
+  const blocked = actionContextFromView({
+    page: 'confirm',
+    cwd: 'C:\\workspace',
+    hasApiConfig: true,
+    hasTaskCase: true,
+    message: '',
+    locale: 'en',
+    confirm: {
+      candidate: undefined,
+      step: 3,
+      sourceRoot: 'C:\\workspace',
+      effort: 'high',
+      harnessModel: 'gpt-5',
+      harnessAuthOk: true,
+      productLabel: 'Codex',
+      locale: 'en',
+      experimentId: 'exp-block',
+      recovery: { status: 'failed', unresolved: [], changedPathCount: 0 },
+      preflight: {
+        sourceBaseline: 'unavailable',
+        resolved: { executable: 'codex', resolvedModel: 'gpt-5' },
+        limitations: [],
+        comparisonClass: 'observational',
+      },
+    } as never,
+  });
+  assert.equal(blocked.mode?.canStartConfirm, false);
+  const actions = listActions(blocked);
+  assert.equal(isActionEnabled(actions, 'confirm-run'), false);
+  const footer = footerHintPairs(actions, 'en');
+  assert.ok(!footer.some(([key]) => key === 'Enter'));
+  const help = helpLinesFromActions(actions, 'en', 'confirm').join('\n');
+  assert.match(help, /Try start \(blocked\)/);
+  assert.doesNotMatch(help, /Start isolated Candidate/);
 });

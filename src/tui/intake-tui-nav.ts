@@ -2,7 +2,7 @@ import type { IntakeTui } from "./intake-tui.js";
 import { importPacks } from "../application/intake-catalog.js";
 import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harness-model-config.js";
 import { classifyAgentFailure } from '../infrastructure/agent/failure.js';
-import { artifactsFromResult, listActions } from "./action-model.js";
+import { listActions } from "./action-model.js";
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
 import { HelpOverlay, commandSelectList, usesActionHelp } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
@@ -16,7 +16,7 @@ import { createTheme } from "./theme.js";
 import { filterTraceForSurface, type TimelineEntry } from "./timeline.js";
 import { collapseEndedThinkFolds } from "./fold-process.js";
 import { expandedFoldsKey } from "./timeline-revision.js";
-import { type WorkbenchView } from "./workbench.js";
+import { actionContextFromView, type WorkbenchView } from "./workbench.js";
 type Page = import("./workbench.js").WorkbenchView["page"];
 
 export function IntakeTui_handleInput(this: IntakeTui, data: string): { consume: true } | undefined {
@@ -225,21 +225,8 @@ export function IntakeTui_isEditingText(this: IntakeTui): boolean {
   }
 
 export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
-    const preparing = this.preparePhase === 'check' || this.preparePhase === 'copy' || this.runPhase === 'recovery';
     const actions = usesActionHelp(this.page)
-      ? listActions({
-          page: this.page,
-          locale: this.locale,
-          mode: {
-            finding: this.finding,
-            reading: this.readingMode,
-            preparing,
-            comparePending: Boolean(this.compareChoice),
-            findAllowed: !preparing,
-            helpOpen: false,
-          },
-          artifacts: artifactsFromResult(this.result),
-        })
+      ? listActions(actionContextFromView(projectView(this)))
       : undefined;
     if (typeof this.tui.showOverlay === "function") {
       this.hideHelp();
