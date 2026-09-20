@@ -1,4 +1,5 @@
 import { record, text, type JsonRecord } from '../core/json.js';
+import { publicLiveOf } from '../core/public-live.js';
 import type { EventEnvelope } from '../core/schema.js';
 
 /** Display role for public activity. Memory-only; not an on-disk schema. */
@@ -165,16 +166,6 @@ export function candidateCallCorrelationKey(input: {
   return ['call', input.sessionId ?? '-', input.turnId ?? '-', input.callId].join(':');
 }
 
-export function messageCorrelationKey(input: {
-  role: ActivityRole;
-  messageId?: string;
-  itemId?: string;
-}): string | undefined {
-  if (input.messageId) return ['msg', input.role, input.messageId].join(':');
-  if (input.itemId) return ['item', input.role, input.itemId].join(':');
-  return undefined;
-}
-
 export function deliveryIdentityFromPayload(payload: JsonRecord): string | undefined {
   const clientMessageId = text(payload.clientMessageId);
   if (clientMessageId) return `client:${clientMessageId}`;
@@ -248,19 +239,27 @@ export function upsertActiveNode(
   return node;
 }
 
-export function clearActiveForRole(index: ActivityIndexState, role: ActivityRole, eventRef: ActivityEventRef, occurredAt: string): void {
+export function clearActiveForRole(
+  index: ActivityIndexState,
+  role: ActivityRole,
+  eventRef: ActivityEventRef,
+  occurredAt: string,
+  terminal: 'cancelled' | 'failed' = 'cancelled',
+): void {
   for (const [key, identity] of [...index.activeByCorrelation.entries()]) {
     const node = index.nodes.get(identity);
     if (!node || node.role !== role) continue;
     index.activeByCorrelation.delete(key);
     const { summaryDetail: priorDetail, ...rest } = node;
+    // Never invent success: remaining in-flight tools are cancelled/failed, not completed.
+    const status: ActivityStatus = node.linkUnknown ? 'failed' : terminal;
     index.nodes.set(identity, {
       ...rest,
-      status: node.linkUnknown ? 'failed' : 'completed',
+      status,
       occurredAt,
       eventRefs: mergeEventRefs(node.eventRefs, [eventRef]),
-      ...(node.linkUnknown
-        ? { summaryDetail: '调用结果未关联' }
+      ...(node.linkUnknown || status === 'failed'
+        ? { summaryDetail: priorDetail ?? '调用结果未关联' }
         : priorDetail
           ? { summaryDetail: priorDetail }
           : {}),
@@ -305,19 +304,36 @@ export function ingestActivityEvent(index: ActivityIndexState, event: EventEnvel
   }
   switch (event.type) {
     case 'agent.tool_called':
-      return ingestToolStart(index, event, payload, ref, 'started');
+      return ingestCorrelatedTool(index, event, payload, ref, {
+        status: 'started',
+        orphanPrefix: 'orphan-start',
+      });
     case 'agent.tool_completed':
-      return ingestToolEnd(index, event, payload, ref, 'completed');
-    case 'agent.tool_failed':
-      return ingestToolFailed(index, event, payload, ref);
+      return ingestCorrelatedTool(index, event, payload, ref, {
+        status: 'completed',
+        orphanPrefix: 'orphan-end',
+      });
+    case 'agent.tool_failed': {
+      const detail = text(payload.message) ?? text(payload.error);
+      return ingestCorrelatedTool(index, event, payload, ref, {
+        status: 'failed',
+        orphanPrefix: 'orphan-fail',
+        verb: 'error',
+        ...(detail ? { detail } : {}),
+      });
+    }
     case 'runtime.tool_started':
       return ingestCandidateTool(index, event, payload, ref, 'started');
     case 'runtime.tool_finished':
       return ingestCandidateTool(index, event, payload, ref, 'completed');
     case 'agent.invocation_completed':
+      clearActiveForRole(index, activityRoleFromPayload(payload), ref, event.occurredAt, 'cancelled');
+      return undefined;
     case 'agent.invocation_failed':
+      clearActiveForRole(index, activityRoleFromPayload(payload), ref, event.occurredAt, 'failed');
+      return undefined;
     case 'agent.invocation_cancelled':
-      clearActiveForRole(index, activityRoleFromPayload(payload), ref, event.occurredAt);
+      clearActiveForRole(index, activityRoleFromPayload(payload), ref, event.occurredAt, 'cancelled');
       return undefined;
     case 'candidate.session_bound': {
       const sessionId = text(payload.sessionId);
@@ -329,13 +345,11 @@ export function ingestActivityEvent(index: ActivityIndexState, event: EventEnvel
   }
 }
 
-function ingestToolStart(
-  index: ActivityIndexState,
-  event: EventEnvelope,
-  payload: JsonRecord,
-  ref: ActivityEventRef,
-  status: ActivityStatus,
-): ActivityNode {
+function resolveToolCorrelation(payload: JsonRecord): {
+  role: ActivityRole;
+  correlationKey?: string;
+  toolCallId?: string;
+} {
   const role = activityRoleFromPayload(payload);
   const toolCallId = text(payload.toolCallId);
   const sessionId = text(payload.sessionId);
@@ -346,50 +360,35 @@ function ingestToolStart(
     ...(invocationId ? { invocationId } : {}),
     ...(toolCallId ? { toolCallId } : {}),
   });
-  const identity = correlationKey ?? `orphan-start:${ref.eventId}`;
-  const verb = toolVerbOf(text(payload.tool));
-  const object = toolObjectOf(payload);
-  const summaryTitle = text(payload.tool);
-  return upsertActiveNode(index, {
-    identity,
+  return {
     role,
-    status,
-    eventType: event.type,
-    occurredAt: event.occurredAt,
-    eventRef: ref,
-    ...(verb ? { verb } : {}),
-    ...(object ? { object } : {}),
-    ...(correlationKey ? { correlationKey } : { linkUnknown: true }),
-    ...(summaryTitle ? { summaryTitle } : {}),
-    ...(object ? { summaryDetail: object } : {}),
-  });
+    ...(correlationKey ? { correlationKey } : {}),
+    ...(toolCallId ? { toolCallId } : {}),
+  };
 }
 
-function ingestToolEnd(
+function ingestCorrelatedTool(
   index: ActivityIndexState,
   event: EventEnvelope,
   payload: JsonRecord,
   ref: ActivityEventRef,
-  status: ActivityStatus,
+  options: {
+    status: ActivityStatus;
+    orphanPrefix: string;
+    verb?: ActivityVerb;
+    detail?: string;
+  },
 ): ActivityNode {
-  const role = activityRoleFromPayload(payload);
-  const toolCallId = text(payload.toolCallId);
-  const sessionId = text(payload.sessionId);
-  const invocationId = text(payload.invocationId);
-  const correlationKey = toolCorrelationKey({
-    role,
-    ...(sessionId ? { sessionId } : {}),
-    ...(invocationId ? { invocationId } : {}),
-    ...(toolCallId ? { toolCallId } : {}),
-  });
-  const verb = toolVerbOf(text(payload.tool));
+  const resolved = resolveToolCorrelation(payload);
+  const verb = options.verb ?? toolVerbOf(text(payload.tool));
   const object = toolObjectOf(payload);
-  const summaryTitle = text(payload.tool);
-  if (!correlationKey) {
+  const summaryTitle = text(payload.tool) ?? (options.status === 'failed' ? 'tool' : undefined);
+  const summaryDetail = options.detail ?? object;
+  if (!resolved.correlationKey) {
     return upsertActiveNode(index, {
-      identity: `orphan-end:${ref.eventId}`,
-      role,
-      status,
+      identity: `${options.orphanPrefix}:${ref.eventId}`,
+      role: resolved.role,
+      status: options.status,
       eventType: event.type,
       occurredAt: event.occurredAt,
       linkUnknown: true,
@@ -397,77 +396,23 @@ function ingestToolEnd(
       ...(verb ? { verb } : {}),
       ...(object ? { object } : {}),
       ...(summaryTitle ? { summaryTitle } : {}),
-      ...(object ? { summaryDetail: object } : {}),
-    });
-  }
-  const prior = nodeByCorrelation(index, correlationKey);
-  const resolvedVerb = verb ?? prior?.verb;
-  const resolvedObject = object ?? prior?.object;
-  const resolvedTitle = summaryTitle ?? prior?.summaryTitle;
-  const resolvedDetail = object ?? prior?.summaryDetail;
-  return upsertActiveNode(index, {
-    identity: prior?.identity ?? correlationKey,
-    role,
-    status,
-    eventType: event.type,
-    occurredAt: event.occurredAt,
-    correlationKey,
-    eventRef: ref,
-    ...(resolvedVerb ? { verb: resolvedVerb } : {}),
-    ...(resolvedObject ? { object: resolvedObject } : {}),
-    ...(resolvedTitle ? { summaryTitle: resolvedTitle } : {}),
-    ...(resolvedDetail ? { summaryDetail: resolvedDetail } : {}),
-  });
-}
-
-function ingestToolFailed(
-  index: ActivityIndexState,
-  event: EventEnvelope,
-  payload: JsonRecord,
-  ref: ActivityEventRef,
-): ActivityNode {
-  const role = activityRoleFromPayload(payload);
-  const toolCallId = text(payload.toolCallId);
-  const sessionId = text(payload.sessionId);
-  const invocationId = text(payload.invocationId);
-  const correlationKey = toolCorrelationKey({
-    role,
-    ...(sessionId ? { sessionId } : {}),
-    ...(invocationId ? { invocationId } : {}),
-    ...(toolCallId ? { toolCallId } : {}),
-  });
-  const object = toolObjectOf(payload);
-  const summaryTitle = text(payload.tool) ?? 'tool';
-  const summaryDetail = text(payload.message) ?? text(payload.error);
-  if (!correlationKey) {
-    // Confirmed gap: failed payload often omits toolCallId. Keep an independent error node.
-    return upsertActiveNode(index, {
-      identity: `orphan-fail:${ref.eventId}`,
-      role,
-      verb: 'error',
-      status: 'failed',
-      eventType: event.type,
-      occurredAt: event.occurredAt,
-      linkUnknown: true,
-      eventRef: ref,
-      summaryTitle,
-      ...(object ? { object } : {}),
       ...(summaryDetail ? { summaryDetail } : {}),
     });
   }
-  const prior = nodeByCorrelation(index, correlationKey);
+  const prior = nodeByCorrelation(index, resolved.correlationKey);
+  const resolvedVerb = verb ?? prior?.verb;
   const resolvedObject = object ?? prior?.object;
-  const resolvedTitle = text(payload.tool) ?? prior?.summaryTitle;
+  const resolvedTitle = summaryTitle ?? prior?.summaryTitle;
   const resolvedDetail = summaryDetail ?? prior?.summaryDetail;
   return upsertActiveNode(index, {
-    identity: prior?.identity ?? correlationKey,
-    role,
-    verb: 'error',
-    status: 'failed',
+    identity: prior?.identity ?? resolved.correlationKey,
+    role: resolved.role,
+    status: options.status,
     eventType: event.type,
     occurredAt: event.occurredAt,
-    correlationKey,
+    correlationKey: resolved.correlationKey,
     eventRef: ref,
+    ...(resolvedVerb ? { verb: resolvedVerb } : {}),
     ...(resolvedObject ? { object: resolvedObject } : {}),
     ...(resolvedTitle ? { summaryTitle: resolvedTitle } : {}),
     ...(resolvedDetail ? { summaryDetail: resolvedDetail } : {}),
@@ -489,26 +434,14 @@ function ingestCandidateTool(
     ...(turnId ? { turnId } : {}),
     ...(callId ? { callId } : {}),
   });
-  const live = record(payload.live);
-  const verb = liveVerbOf(text(live.verb));
-  const object = text(live.leaf);
-  if (!correlationKey && status === 'completed') {
-    return upsertActiveNode(index, {
-      identity: `orphan-call-end:${ref.eventId}`,
-      role: 'candidate',
-      ...(verb ? { verb } : {}),
-      ...(object ? { object } : {}),
-      status,
-      eventType: event.type,
-      occurredAt: event.occurredAt,
-      linkUnknown: true,
-      eventRef: ref,
-      ...(object ? { summaryDetail: object } : {}),
-    });
-  }
+  // Same trust boundary as timeline projection: only schema-valid public live.
+  const live = publicLiveOf(payload);
+  const verb = live ? liveVerbOf(live.verb) : undefined;
+  const object = live?.leaf;
+  const orphanPrefix = status === 'completed' ? 'orphan-call-end' : 'orphan-call-start';
   if (!correlationKey) {
     return upsertActiveNode(index, {
-      identity: `orphan-call-start:${ref.eventId}`,
+      identity: `${orphanPrefix}:${ref.eventId}`,
       role: 'candidate',
       ...(verb ? { verb } : {}),
       ...(object ? { object } : {}),
@@ -559,19 +492,45 @@ function toolObjectOf(payload: JsonRecord): string | undefined {
   return text(params.path) ?? text(details.path) ?? text(params.command);
 }
 
+/**
+ * Index owns activity identity. Copy composite identity onto timeline rows so UI
+ * and folds share one dialect (not raw toolCallId).
+ */
+export function applyActivityNodeToEntries<T extends {
+  readonly eventRefs?: readonly ActivityEventRef[];
+  readonly correlationId?: string;
+  readonly activityStatus?: ActivityStatus;
+  readonly role?: ActivityRole;
+  readonly verb?: ActivityVerb;
+  readonly object?: string;
+  readonly linkUnknown?: boolean;
+}>(entries: readonly T[], node: ActivityNode | undefined): T[] {
+  if (!node) return [...entries];
+  const identity = node.correlationKey ?? node.identity;
+  return entries.map((entry) => ({
+    ...entry,
+    correlationId: identity,
+    activityStatus: node.status,
+    eventRefs: mergeEventRefs(entry.eventRefs, node.eventRefs),
+    ...(node.role ? { role: node.role } : {}),
+    ...(node.verb ? { verb: node.verb } : {}),
+    ...(node.object ? { object: node.object } : {}),
+    ...(node.linkUnknown ? { linkUnknown: true } : {}),
+  }));
+}
+
 export function semanticsFromEvent(
   event: EventEnvelope,
   partial: TimelineActivitySemantics = {},
 ): TimelineActivitySemantics {
   const payload = record(event.payload);
   const ref = eventRefOf(event);
-  const sessionId = partial.sessionId ?? text(payload.sessionId);
+  // Do not stamp agent payload.sessionId — that is Host session, not candidate session.
+  const sessionId = partial.sessionId;
   const turnId = partial.turnId ?? text(payload.turnId);
   const deliveryId = partial.deliveryId ?? deliveryIdentityFromPayload(payload);
-  const correlationId = partial.correlationId
-    ?? text(payload.toolCallId)
-    ?? text(payload.callId)
-    ?? text(payload.messageId);
+  // Prefer composite key from caller (index). Never fall back to raw toolCallId alone.
+  const correlationId = partial.correlationId;
   return {
     ...partial,
     eventType: partial.eventType ?? event.type,

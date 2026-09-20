@@ -2,6 +2,7 @@ import { record, text, type JsonRecord } from '../core/json.js';
 import { publicLiveOf } from '../core/public-live.js';
 import type { EventEnvelope } from '../core/schema.js';
 import {
+  applyActivityNodeToEntries,
   createActivityIndex,
   deliveryIdentityFromPayload,
   ingestActivityEvent,
@@ -241,8 +242,9 @@ export function projectPersistedTimeline(
 ): TimelineEntry[] {
   const timeline: TimelineEntry[] = [];
   for (const event of events) {
-    ingestActivityEvent(index, event);
-    appendTimelineEntries(timeline, projectTimelineEvent(event));
+    const node = ingestActivityEvent(index, event);
+    const projected = applyActivityNodeToEntries(projectTimelineEvent(event), node);
+    appendTimelineEntries(timeline, projected);
   }
   return timeline;
 }
@@ -254,8 +256,9 @@ export function appendProjectedEvent(
   index: ActivityIndexState,
   revision?: TimelineRevisionState,
 ): void {
-  ingestActivityEvent(index, event);
-  appendTimelineEntries(timeline, projectTimelineEvent(event), revision);
+  const node = ingestActivityEvent(index, event);
+  const projected = applyActivityNodeToEntries(projectTimelineEvent(event), node);
+  appendTimelineEntries(timeline, projected, revision);
 }
 
 export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEntry[] {

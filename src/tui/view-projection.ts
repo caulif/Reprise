@@ -107,11 +107,11 @@ function runningModel(input: Input) {
 }
 
 function candidateSessionIdFrom(entries: readonly TimelineEntry[]): string | undefined {
+  // Only candidate.session_bound carries the Runtime session — ignore agent Host sessionIds.
   for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const sessionId = entries[index]?.sessionId;
-    if (sessionId) return sessionId;
+    const entry = entries[index];
+    if (entry?.eventType === 'candidate.session_bound' && entry.sessionId) return entry.sessionId;
   }
-  // Legacy in-memory rows without structured sessionId.
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const match = /^Candidate session · (.+)$/.exec(entries[index]?.title ?? '');
     if (match?.[1] && match[1] !== '?') return match[1];

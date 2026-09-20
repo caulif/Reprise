@@ -154,5 +154,82 @@ test('T04 structured sessionId survives candidate.session_bound projection', () 
     productId: 'fake',
   }, { sequence: 1, eventId: 'bound' }));
   assert.equal(row?.sessionId, 'structured-sess');
+  assert.equal(row?.eventType, 'candidate.session_bound');
   assert.equal(row?.eventRefs?.[0]?.eventId, 'bound');
+});
+
+test('T04 H1: candidateSessionId ignores later agent Host sessionId', () => {
+  const timeline: TimelineEntry[] = [];
+  const index = createActivityIndex();
+  appendProjectedEvent(timeline, event('candidate.session_bound', {
+    sessionId: 'candidate-sess',
+    productId: 'fake',
+  }, { sequence: 1, eventId: 'bound' }), index);
+  appendProjectedEvent(timeline, event('agent.tool_called', {
+    role: 'recovery',
+    sessionId: 'agent-host-sess',
+    tool: 'read',
+    toolCallId: 't1',
+    params: { path: 'x.md' },
+  }, { sequence: 2, eventId: 'tool' }), index);
+  assert.equal(timeline.at(-1)?.sessionId, undefined);
+  assert.equal(timeline.find((row) => row.eventType === 'candidate.session_bound')?.sessionId, 'candidate-sess');
+  // Mirrors candidateSessionIdFrom: only session_bound eventType, never latest arbitrary sessionId.
+  let picked: string | undefined;
+  for (let i = timeline.length - 1; i >= 0; i -= 1) {
+    const entry = timeline[i];
+    if (entry?.eventType === 'candidate.session_bound' && entry.sessionId) {
+      picked = entry.sessionId;
+      break;
+    }
+  }
+  assert.equal(picked, 'candidate-sess');
+  assert.notEqual(picked, 'agent-host-sess');
+});
+
+test('T04 H2: orphan tool_failed then invocation end does not complete in-flight starts', () => {
+  const index = createActivityIndex();
+  ingestActivityEvent(index, event('agent.tool_called', {
+    role: 'recovery',
+    tool: 'read',
+    toolCallId: 'still-open',
+    sessionId: 'sess',
+    invocationId: 'inv-1',
+    params: { path: 'a.md' },
+  }, { sequence: 1, eventId: 'start' }));
+  ingestActivityEvent(index, event('agent.tool_failed', {
+    role: 'recovery',
+    tool: 'read',
+    message: 'boom',
+  }, { sequence: 2, eventId: 'orphan-fail' }));
+  assert.equal(activeNodes(index).length, 1);
+  ingestActivityEvent(index, event('agent.invocation_failed', {
+    role: 'recovery',
+    sessionId: 'sess',
+    invocationId: 'inv-1',
+  }, { sequence: 3, eventId: 'inv-fail' }));
+  assert.equal(activeNodes(index).length, 0);
+  const sealed = historyNodes(index);
+  const started = sealed.find((node) => node.correlationKey?.includes('still-open'));
+  const orphan = sealed.find((node) => node.identity.startsWith('orphan-fail:'));
+  assert.equal(orphan?.status, 'failed');
+  assert.equal(started?.status, 'failed');
+  assert.notEqual(started?.status, 'completed');
+});
+
+test('T04 index composite correlationId is stamped onto timeline entries', () => {
+  const timeline: TimelineEntry[] = [];
+  const index = createActivityIndex();
+  appendProjectedEvent(timeline, event('agent.tool_called', {
+    role: 'controller',
+    tool: 'read',
+    toolCallId: 'raw-id',
+    sessionId: 'sess',
+    invocationId: 'inv',
+    params: { path: 'brief.md' },
+  }, { sequence: 1, eventId: 't1' }), index);
+  const live = timeline.find((row) => row.kind === 'live' || row.itemId === 'now:controller');
+  assert.ok(live?.correlationId?.startsWith('tool:controller:'));
+  assert.match(live?.correlationId ?? '', /raw-id$/);
+  assert.notEqual(live?.correlationId, 'raw-id');
 });

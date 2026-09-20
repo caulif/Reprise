@@ -1,5 +1,6 @@
 import { peelStructuredEnvelope } from '../infrastructure/agent/assistant-visible.js';
 import { record, text, type JsonRecord } from '../core/json.js';
+import { mergeEventRefs } from './activity-index.js';
 import type { TimelineEntry, TimelineSource } from './timeline.js';
 
 export type AgentLane = 'recovery' | 'controller' | 'comparison';
@@ -73,7 +74,8 @@ export function projectAgentTool(
         level: 'error',
         lane,
         kind,
-        ...(toolCallId ? { correlationId: toolCallId } : { linkUnknown: true }),
+        // Index owns composite correlationId; only mark unlinked failures here.
+        ...(toolCallId ? {} : { linkUnknown: true }),
         role: lane,
         verb: 'error' as const,
         activityStatus: 'failed' as const,
@@ -100,7 +102,6 @@ export function projectAgentTool(
       role: lane,
       activityStatus: completed ? 'completed' : 'started',
       ...(object.short ? { object: object.short } : {}),
-      ...(toolCallId ? { correlationId: toolCallId } : {}),
       ...(keepNow ? { itemId: `now:${lane}`, patch: 'replace' as const, placeholder: true as const } : {}),
       ...(warnWrite ? { level: 'warning' as const } : {}),
     },
@@ -125,6 +126,11 @@ export function collapseAgentRows(timeline: TimelineEntry[], entry: TimelineEntr
       occurredAt: entry.occurredAt,
       detail: mergedDetail,
       count,
+      eventRefs: mergeEventRefs(previous.eventRefs, entry.eventRefs),
+      ...(entry.correlationId ? { correlationId: entry.correlationId } : previous.correlationId
+        ? { correlationId: previous.correlationId }
+        : {}),
+      ...(entry.linkUnknown || previous.linkUnknown ? { linkUnknown: true } : {}),
       ...(entry.original || previous.original
         ? { original: joinOriginal(previous.original ?? previous.detail, entry.original ?? entry.detail) }
         : {}),
