@@ -14,6 +14,11 @@ import {
   type TimelineVoice,
 } from './agent-activity.js';
 import { bumpTimelineRevision, type TimelineRevisionState } from './timeline-revision.js';
+import {
+  classifyComparisonStatus,
+  comparisonKindError,
+  comparisonKindTitle,
+} from './display-state.js';
 
 /** Full event text kept off the default column; the visible pane only shows a short structured preview. */
 const MAX_ORIGINAL_CHARS = 32_768;
@@ -442,46 +447,22 @@ function projectOutcome(entry: MakeEntry, payload: JsonRecord): readonly Timelin
 }
 
 function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): readonly TimelineEntry[] {
-  const invocation = text(payload.status) ?? 'unknown';
+  const invocation = text(payload.status);
   const failure = record(payload.failure);
   const value = record(payload.value);
   const valueStatus = text(value.status);
   const headline = text(value.headline);
-  if (invocation === 'failed') {
-    return [entry('CONTROLLER', '对照失败', headline ?? text(failure.message), {
-      lane: 'comparison',
-      kind: 'deliver',
-      ...(headline ? { original: headline } : {}),
-      level: 'error',
-    })];
-  }
-  if (invocation === 'cancelled') {
-    return [entry('CONTROLLER', '对照已取消', headline ?? text(payload.factRef), {
-      lane: 'comparison',
-      kind: 'deliver',
-      level: 'error',
-    })];
-  }
-  if (invocation === 'completed' && valueStatus === 'insufficient_evidence') {
-    return [entry('CONTROLLER', '证据不足', headline, {
-      lane: 'comparison',
-      kind: 'deliver',
-      ...(headline ? { original: headline } : {}),
-      level: 'error',
-    })];
-  }
-  if (invocation === 'completed' && valueStatus === 'completed') {
-    return [entry('CONTROLLER', '对照完成', headline, {
-      lane: 'comparison',
-      kind: 'deliver',
-      ...(headline ? { original: headline } : {}),
-    })];
-  }
-  return [entry('CONTROLLER', '对照状态未知', headline ?? (invocation === 'completed' ? valueStatus : invocation), {
+  const kind = classifyComparisonStatus(invocation, valueStatus);
+  const title = comparisonKindTitle(kind);
+  const detail = headline
+    ?? (kind === 'failed' ? text(failure.message) : undefined)
+    ?? (kind === 'cancelled' ? text(payload.factRef) : undefined)
+    ?? (kind === 'unknown' ? (invocation === 'completed' ? valueStatus : invocation) : undefined);
+  return [entry('CONTROLLER', title, detail, {
     lane: 'comparison',
     kind: 'deliver',
     ...(headline ? { original: headline } : {}),
-    level: 'error',
+    ...(comparisonKindError(kind) ? { level: 'error' as const } : {}),
   })];
 }
 
@@ -629,10 +610,10 @@ function clearNow(entry: MakeEntry, lane: AgentLane): TimelineEntry {
 function shouldFlushBefore(entry: TimelineEntry): boolean {
   if (entry.hidden) return false;
   if (entry.kind === 'narrate') return true;
+  if (entry.lane === 'comparison' && entry.kind === 'deliver') return true;
   if (entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')) return true;
   if (entry.title === 'Visible response') return true;
   if (entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复') return true;
-  if (entry.title === '对照完成' || entry.title === '证据不足' || entry.title === '对照失败') return true;
   return false;
 }
 

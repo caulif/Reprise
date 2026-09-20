@@ -28,14 +28,12 @@ export type ResultPresentation = {
   readonly statusLabelKey: MessageKey;
   readonly statusTone: ResultTone;
   readonly taskLabel: string;
-  readonly terminationLabel: string;
   readonly cleanupLabel: string;
   readonly comparisonLabel: string;
   readonly comparisonKind: ComparisonPresentationKind;
   readonly messageKey: MessageKey;
   readonly reportKind: ReportArtifactKind;
   readonly terminationTone: ResultTone;
-  readonly cleanupTone: ResultTone;
 };
 
 export function resultPresentationInputFrom(
@@ -63,7 +61,6 @@ export function deriveResultPresentationFromResult(
 export function deriveResultPresentation(input: ResultPresentationInput, locale: Locale): ResultPresentation {
   const comparisonKind = classifyComparison(input.comparison, input.comparePending === true);
   const terminationTone = terminationToneOf(input.termination.kind);
-  const cleanupTone = cleanupToneOf(input.cleanup?.status);
   const reportKind = reportKindOf(comparisonKind);
   const status = composeStatus(input.termination.kind, comparisonKind, terminationTone);
   return {
@@ -71,15 +68,29 @@ export function deriveResultPresentation(input: ResultPresentationInput, locale:
     statusLabelKey: status.labelKey,
     statusTone: status.tone,
     taskLabel: taskLabelOf(input.task.status, locale),
-    terminationLabel: terminationLabelOf(input.termination.kind, locale),
     cleanupLabel: cleanupLabelOf(input.cleanup?.status, locale),
     comparisonLabel: comparisonLabelOf(comparisonKind, input.comparison, locale),
     comparisonKind,
     messageKey: messageKeyOf(input.termination.kind, comparisonKind),
     reportKind,
     terminationTone,
-    cleanupTone,
   };
+}
+
+/** Shared classifier for result pages and timeline comparison.completed payloads. */
+export function classifyComparisonStatus(
+  invocationStatus: string | undefined,
+  valueStatus?: string | undefined,
+): ComparisonPresentationKind {
+  if (invocationStatus === 'skipped') return 'skipped';
+  if (invocationStatus === 'cancelled') return 'cancelled';
+  if (invocationStatus === 'failed') return 'failed';
+  if (invocationStatus === 'completed') {
+    if (valueStatus === 'insufficient_evidence') return 'insufficient_evidence';
+    if (valueStatus === 'completed') return 'completed';
+    return 'unknown';
+  }
+  return 'unknown';
 }
 
 export function classifyComparison(
@@ -87,17 +98,29 @@ export function classifyComparison(
   comparePending = false,
 ): ComparisonPresentationKind {
   if (comparePending) return 'pending';
-  const status = comparison.status;
-  if (status === 'skipped') return 'skipped';
-  if (status === 'cancelled') return 'cancelled';
-  if (status === 'failed') return 'failed';
-  if (status === 'completed') {
-    if (!('value' in comparison) || !comparison.value) return 'unknown';
-    if (comparison.value.status === 'insufficient_evidence') return 'insufficient_evidence';
-    if (comparison.value.status === 'completed') return 'completed';
-    return 'unknown';
+  if (comparison.status === 'completed') {
+    const valueStatus = 'value' in comparison && comparison.value ? comparison.value.status : undefined;
+    return classifyComparisonStatus(comparison.status, valueStatus);
   }
-  return 'unknown';
+  return classifyComparisonStatus(comparison.status);
+}
+
+export function comparisonKindTitleKey(kind: ComparisonPresentationKind): MessageKey {
+  if (kind === 'failed') return 'comparisonFailedWord';
+  if (kind === 'cancelled') return 'comparisonCancelled';
+  if (kind === 'insufficient_evidence') return 'comparisonInsufficient';
+  if (kind === 'completed') return 'comparisonDone';
+  if (kind === 'skipped' || kind === 'pending') return 'comparisonSkipped';
+  return 'comparisonUnknown';
+}
+
+/** Timeline comparison titles stay zh-first (historical canvas); still routed through i18n keys. */
+export function comparisonKindTitle(kind: ComparisonPresentationKind, locale: Locale = 'zh'): string {
+  return t(locale, comparisonKindTitleKey(kind));
+}
+
+export function comparisonKindError(kind: ComparisonPresentationKind): boolean {
+  return kind === 'failed' || kind === 'cancelled' || kind === 'insufficient_evidence' || kind === 'unknown';
 }
 
 function reportKindOf(kind: ComparisonPresentationKind): ReportArtifactKind {
@@ -114,12 +137,6 @@ function terminationToneOf(kind: RunOutcome['termination']['kind']): ResultTone 
   if (kind === 'cancelled' || kind === 'blocked' || kind === 'limit_reached' || kind === 'stalled' || kind === 'uncertain') {
     return 'warn';
   }
-  return 'neutral';
-}
-
-function cleanupToneOf(status: RunOutcome['cleanup']['status'] | undefined): ResultTone {
-  if (status === 'incomplete' || status === 'unknown') return 'warn';
-  if (status === 'complete' || status === 'not_needed') return 'ok';
   return 'neutral';
 }
 
@@ -141,26 +158,16 @@ function composeStatus(
     return { labelKey: 'resultStatusCompareUnknown', tone: worseTone(terminationTone, 'warn') };
   }
   if (comparison === 'pending' || comparison === 'skipped') {
-    return { labelKey: statusKeyForTermination(termination, true), tone: terminationTone === 'ok' ? 'ok' : terminationTone };
+    return { labelKey: statusKeyForTermination(termination), tone: terminationTone === 'ok' ? 'ok' : terminationTone };
   }
   if (comparison === 'completed') {
     if (terminationTone === 'ok') return { labelKey: 'resultStatusCompareDone', tone: 'ok' };
-    return { labelKey: statusKeyForTermination(termination, false), tone: terminationTone };
+    return { labelKey: statusKeyForTermination(termination), tone: terminationTone };
   }
-  return { labelKey: statusKeyForTermination(termination, false), tone: terminationTone };
+  return { labelKey: statusKeyForTermination(termination), tone: terminationTone };
 }
 
-function statusKeyForTermination(kind: RunOutcome['termination']['kind'], awaitingCompare: boolean): MessageKey {
-  if (awaitingCompare) {
-    if (kind === 'completed') return 'resultStatusCandidateEnded';
-    if (kind === 'failed') return 'resultStatusCandidateFailed';
-    if (kind === 'cancelled') return 'resultStatusCandidateCancelled';
-    if (kind === 'blocked') return 'resultStatusCandidateBlocked';
-    if (kind === 'stalled') return 'resultStatusCandidateStalled';
-    if (kind === 'uncertain') return 'resultStatusCandidateUncertain';
-    if (kind === 'limit_reached') return 'resultStatusCandidateLimit';
-    return 'resultStatusCandidateOther';
-  }
+function statusKeyForTermination(kind: RunOutcome['termination']['kind']): MessageKey {
   if (kind === 'completed') return 'resultStatusCandidateEnded';
   if (kind === 'failed') return 'resultStatusCandidateFailed';
   if (kind === 'cancelled') return 'resultStatusCandidateCancelled';
@@ -195,17 +202,6 @@ function taskLabelOf(status: RunOutcome['task']['status'], locale: Locale): stri
   return status;
 }
 
-function terminationLabelOf(kind: RunOutcome['termination']['kind'], locale: Locale): string {
-  if (kind === 'completed') return t(locale, 'terminationCompleted');
-  if (kind === 'failed') return t(locale, 'terminationFailed');
-  if (kind === 'cancelled') return t(locale, 'terminationCancelled');
-  if (kind === 'blocked') return t(locale, 'terminationBlocked');
-  if (kind === 'stalled') return t(locale, 'terminationStalled');
-  if (kind === 'uncertain') return t(locale, 'terminationUncertain');
-  if (kind === 'limit_reached') return t(locale, 'terminationLimitReached');
-  return kind;
-}
-
 function cleanupLabelOf(status: RunOutcome['cleanup']['status'] | undefined, locale: Locale): string {
   if (status === 'complete') return t(locale, 'cleanupComplete');
   if (status === 'not_needed') return t(locale, 'cleanupNotNeeded');
@@ -219,8 +215,6 @@ function comparisonLabelOf(
   comparison: ExperimentResult['comparison']['result'],
   locale: Locale,
 ): string {
-  if (kind === 'skipped' || kind === 'pending') return t(locale, 'comparisonSkipped');
-  if (kind === 'cancelled') return t(locale, 'comparisonCancelled');
   if (kind === 'failed') {
     const failure = comparison.status === 'failed' ? comparison.failure : undefined;
     const detail = failure?.kind ?? failure?.code;
@@ -228,9 +222,7 @@ function comparisonLabelOf(
       ? `${t(locale, 'comparisonFailedWord')} (${detail})`
       : t(locale, 'comparisonFailedWord');
   }
-  if (kind === 'insufficient_evidence') return t(locale, 'comparisonInsufficient');
-  if (kind === 'completed') return t(locale, 'comparisonDone');
-  return t(locale, 'comparisonUnknown');
+  return t(locale, comparisonKindTitleKey(kind));
 }
 
 function worseTone(left: ResultTone, right: ResultTone): ResultTone {

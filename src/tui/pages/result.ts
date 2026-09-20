@@ -71,9 +71,7 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
   }
   const reportLabel = presentation.reportKind === 'diagnostic'
     ? t(locale, 'resultDiagnostic')
-    : presentation.reportKind === 'none'
-      ? t(locale, 'resultReport')
-      : t(locale, 'resultReport');
+    : t(locale, 'resultReport');
   const reportValue = paths.report
     ? shortPath(paths.report, experimentRoot, vacant)
     : presentation.reportKind === 'none'

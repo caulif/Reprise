@@ -314,8 +314,8 @@ function paintEntry(
     return wrapBodyLine(text, inner).map((line, index) =>
       paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${line}`, width, selected));
   }
-  if (entry.kind === 'deliver' && isDeliverHeadline(entry.title)) {
-    const paint = failedTitle(entry.title) ? theme.style.danger : theme.style.ok;
+  if (entry.kind === 'deliver' && isDeliverHeadline(entry)) {
+    const paint = failedDeliver(entry) ? theme.style.danger : theme.style.ok;
     const lines = wrapBodyLine(entry.title, inner).map((line, index) =>
       paintPlain(theme, `${index === 0 ? gutter(theme, slot) : '  '}${paint(line)}`, width, selected));
     if (!entry.detail || !selected) return lines;
@@ -337,13 +337,15 @@ function paintEntry(
   return [paintPlain(theme, `${gutter(theme, slot)}${selected ? theme.style.strong(body) : body}`, width, selected)];
 }
 
-function isDeliverHeadline(title: string): boolean {
-  return title.startsWith('DONE ·') || title === '已恢复' || title === '部分恢复' || title === '无法恢复'
-    || title === '对照完成' || title === '证据不足' || title === '对照失败';
+function isDeliverHeadline(entry: TimelineEntry): boolean {
+  if (entry.lane === 'comparison' && entry.kind === 'deliver') return true;
+  const title = entry.title;
+  return title.startsWith('DONE ·') || title === '已恢复' || title === '部分恢复' || title === '无法恢复';
 }
 
-function failedTitle(title: string): boolean {
-  return title === '无法恢复' || title === '对照失败' || title === '证据不足';
+function failedDeliver(entry: TimelineEntry): boolean {
+  if (entry.lane === 'comparison') return entry.level === 'error';
+  return entry.title === '无法恢复';
 }
 
 function gutterSlot(entry: TimelineEntry, failed: boolean, candidate: boolean): GutterSlot {
