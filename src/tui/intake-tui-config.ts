@@ -214,23 +214,12 @@ export function IntakeTui_leaveConfig(this: ConfigPanel): { consume: true } {
     const backgroundNote = testing
       ? t(this.locale, "configTestBackgroundPending")
       : undefined;
-    if (target?.page === "inspection") {
-      if (this.inspection) {
-        this.page = "inspection";
-        if (target.inspectionTaskInput !== undefined) {
-          this.inspectionTaskInput = target.inspectionTaskInput;
-        }
-        if (target.inspectionShowOutcome !== undefined) {
-          this.inspectionShowOutcome = target.inspectionShowOutcome;
-        }
-        this.message = backgroundNote ?? t(this.locale, "reviewSession");
-        this.render(true);
-        return { consume: true };
-      }
-      this.page = "sessions";
-      this.message = backgroundNote
+    if (applyConfigReturnTarget.call(this, target, {
+      inspectionMessage: backgroundNote ?? t(this.locale, "reviewSession"),
+      staleMessage: backgroundNote
         ? `${backgroundNote} ${t(this.locale, "configReturnStale")}`
-        : t(this.locale, "configReturnStale");
+        : t(this.locale, "configReturnStale"),
+    })) {
       this.render(true);
       return { consume: true };
     }
@@ -270,22 +259,13 @@ export async function IntakeTui_saveConfig(this: ConfigPanel): Promise<void> {
 async function restoreAfterSave(this: ConfigPanel): Promise<void> {
   const target = this.configReturnTarget;
   this.configReturnTarget = undefined;
-  if (target?.page === "inspection") {
-    if (this.inspection) {
-      this.page = "inspection";
-      if (target.inspectionTaskInput !== undefined) {
-        this.inspectionTaskInput = target.inspectionTaskInput;
-      }
-      if (target.inspectionShowOutcome !== undefined) {
-        this.inspectionShowOutcome = target.inspectionShowOutcome;
-      }
-      this.message = this.harnessAuthOk
-        ? t(this.locale, "configSavedReturn")
-        : `${t(this.locale, "configSavedReturn")} ${credentialGapMessage(this.configDraft) ?? "Harness has no usable credential."}`;
-      return;
-    }
-    this.page = "sessions";
-    this.message = t(this.locale, "configSavedReturnStale");
+  const savedOk = this.harnessAuthOk
+    ? t(this.locale, "configSavedReturn")
+    : `${t(this.locale, "configSavedReturn")} ${credentialGapMessage(this.configDraft) ?? "Harness has no usable credential."}`;
+  if (applyConfigReturnTarget.call(this, target, {
+    inspectionMessage: savedOk,
+    staleMessage: t(this.locale, "configSavedReturnStale"),
+  })) {
     return;
   }
   await this.loadHome(
@@ -293,6 +273,29 @@ async function restoreAfterSave(this: ConfigPanel): Promise<void> {
       ? t(this.locale, "configSavedIntake")
       : `Configuration saved locally. ${credentialGapMessage(this.configDraft) ?? "Harness has no usable credential."}`,
   );
+}
+
+/** Restore inspection focus when possible; otherwise climb to sessions. Returns true if handled. */
+function applyConfigReturnTarget(
+  this: ConfigPanel,
+  target: ConfigReturnTarget | undefined,
+  messages: { readonly inspectionMessage: string; readonly staleMessage: string },
+): boolean {
+  if (target?.page !== "inspection") return false;
+  if (this.inspection) {
+    this.page = "inspection";
+    if (target.inspectionTaskInput !== undefined) {
+      this.inspectionTaskInput = target.inspectionTaskInput;
+    }
+    if (target.inspectionShowOutcome !== undefined) {
+      this.inspectionShowOutcome = target.inspectionShowOutcome;
+    }
+    this.message = messages.inspectionMessage;
+    return true;
+  }
+  this.page = "sessions";
+  this.message = messages.staleMessage;
+  return true;
 }
 
 export async function IntakeTui_testConfigConnection(this: ConfigPanel): Promise<void> {
