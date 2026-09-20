@@ -477,6 +477,7 @@ test('synthetic scripted workflow emits recovery→candidate→compare fixtures 
   assert.ok(seen.includes('input.submitted'));
   assert.equal(settled.comparison.result.status, 'failed');
   assert.equal(typeof mockTui, 'function');
+});
 
 test('cancel rejection restores an operable retry without restarting the experiment', async () => {
   let rejectCancel!: (error: Error) => void;
@@ -655,6 +656,8 @@ test('cancellation that arrives with candidateFinished skips the compare gate', 
   assert.equal(app.compareChoice, undefined);
   assert.equal(skipCalls, 0);
   assert.match(app.message, /cancellation|取消/i);
+});
+
 test('failed cancel still skips the deferred compare gate after candidateFinished', async () => {
   let rejectCancel!: (error: Error) => void;
   let resolveCandidate!: (value: {
