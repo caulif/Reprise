@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it, beforeEach } from 'node:test';
-import { IntakeTui_visibleTimeline } from '../../src/tui/intake-tui-nav.js';
+import { IntakeTui_scheduleTimelineRender, IntakeTui_visibleTimeline } from '../../src/tui/intake-tui-nav.js';
 import type { IntakeTui } from '../../src/tui/intake-tui.js';
 import { foldProcessEntries, resetFoldProcessCache } from '../../src/tui/fold-process.js';
 import { layoutScrollback, resetScrollbackLayoutCache } from '../../src/tui/scrollback.js';
@@ -172,5 +172,23 @@ describe('realtime fluency caches', () => {
     ];
     const afterExpand = layoutScrollback(theme, 80, expandedView, 1, 'en', 'Codex', 8, 0, 0, '00:01', true, 1);
     assert.notDeepEqual(first.lines.slice(0, -1), afterExpand.lines.slice(0, -1));
+  });
+
+  it('scheduleTimelineRender still refreshes chrome while readingMode freezes the body', () => {
+    let rendered = 0;
+    const host = {
+      readingMode: true,
+      timelineRenderQueued: false,
+      page: 'running' as const,
+      queueTimelineRender(fn: () => void) {
+        fn();
+      },
+      render() {
+        rendered += 1;
+      },
+    };
+    IntakeTui_scheduleTimelineRender.call(host as unknown as IntakeTui);
+    assert.equal(rendered, 1);
+    assert.equal(host.timelineRenderQueued, false);
   });
 });

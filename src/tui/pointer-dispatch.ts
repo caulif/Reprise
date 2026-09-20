@@ -55,6 +55,7 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
   if (!c.result) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
+  if (cell.bodyRow < 0) return { consume: true };
   const { lines, rowHits } = renderResultWithHits(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
   const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
   const line = lines[bodyRow];
@@ -101,6 +102,7 @@ export function applyHomePointer(c: ControllerHandle, data: string): Consume | u
   }
   if (pointer.action !== 'click' || pointer.row === undefined) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col ?? 1);
+  if (cell.bodyRow < 0) return { consume: true };
   if (homePointerAction({
     taskCase: c.taskCase,
     recentExperiment: c.recentExperiment,
@@ -121,6 +123,7 @@ export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Co
   if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
   if (!c.historyDetail) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
+  if (cell.bodyRow < 0) return { consume: true };
   const lines = renderHistoryDetail(createTheme(cell.width), cell.width, c.historyDetail, c.locale);
   const action = historyDetailPointerAction(lines, cell.bodyRow, cell.col);
   if (action === 'open-report' && !('taskCase' in c.historyDetail)) {
@@ -137,6 +140,11 @@ export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume
   const window = canvasWindow(c);
   const layout = layoutScrollback(createTheme(window.width), window.width, folded, selected, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing, c.timelineRevision);
   const cell = pointerBodyCell(c, terminalRow, 1);
+  // Clicks on header/rail/status chrome are not body hits — do not expand the first row.
+  if (cell.bodyRow < 0 || cell.bodyRow >= Math.max(1, window.height)) {
+    c.render();
+    return { consume: true };
+  }
   const hit = hitAtBodyRow(layout.hits, cell.bodyRow);
   if (hit?.fold && hit.itemId) {
     c.expandedFolds = c.expandedFolds.includes(hit.itemId)
@@ -156,12 +164,6 @@ export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume
 }
 
 export function moveTimelineVisible(c: ControllerHandle, amount: number): Consume {
-  if (c.readingMode && Math.abs(amount) >= 10) {
-    c.timelineReadOffset = Math.max(0, (c.timelineReadOffset ?? 0) + amount);
-    c.timelineFollowing = false;
-    c.render();
-    return { consume: true };
-  }
   const entries = c.visibleTimeline();
   const next = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
   const window = canvasWindow(c);
@@ -181,8 +183,9 @@ function pointerBodyCell(c: ControllerHandle, terminalRow: number, terminalCol: 
   const width = c.columns();
   const height = c.viewport().height;
   const origin = workbenchBodyOrigin(c.view(), width, height);
+  // Do not clamp negative body coordinates to 0 — that made header clicks hit the first row.
   return {
-    bodyRow: Math.max(0, terminalRow - 1 - origin.header - origin.rail),
+    bodyRow: terminalRow - 1 - origin.header - origin.rail,
     col: terminalCol,
     width,
   };

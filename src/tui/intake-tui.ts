@@ -27,6 +27,7 @@ import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
 import type { Option } from "./types.js";
 import type { TimelineEntry } from "./timeline.js";
+import type { FindRestoreSnapshot } from "./timeline-read.js";
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
@@ -108,6 +109,7 @@ export class IntakeTui {
   finding = false;
   findQuery = "";
   findCursor = 0;
+  findRestore: FindRestoreSnapshot | undefined;
   readingMode = false;
   readingVisibleAt = 0;
   timelineAnchor: string | undefined;
