@@ -254,7 +254,8 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
   const hitAt = hits.indexOf(selected < 0 ? -1 : selected);
   const findBar = model.finding ? renderFindBar(model, locale, hits.length, hitAt < 0 ? 0 : hitAt) : [];
   const header = [...findBar, ...(findBar.length ? [''] : [])];
-  const bodyHeight = height === undefined ? undefined : Math.max(4, height - header.length);
+  // Honor the shared body budget exactly — a floor above it over-emits and outer clipLines drops live status.
+  const bodyHeight = height === undefined ? undefined : Math.max(0, height - header.length);
   const expanded = new Set(model.expandedFolds ?? []);
   const timelineRevision = model.timelineRevision ?? -1;
   const folded = projectTimelineView(model.sourceTimeline ?? model.entries, visible, expanded, timelineRevision);

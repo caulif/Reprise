@@ -17,7 +17,8 @@ import {
 import { t, type Locale } from './i18n.js';
 import { OVERLAY_PAGES, overlayChromeRows, renderOverlaySheet } from './overlay-sheet.js';
 import { createTheme, resolveDensity, showsDetailPane, type Theme } from './theme.js';
-import { bodyHeight, clipLines, FOOTER_ROWS, isShortViewport, MIN_VIEWPORT_ROWS } from './viewport.js';
+import { clipLines, isShortViewport, MIN_VIEWPORT_ROWS } from './viewport.js';
+import { composeWorkbenchGeometry, type WorkbenchGeometry } from './workbench-layout.js';
 import { divider, joinColumns, justify, keyHints, panel, pill } from './widgets.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { ResultPresentation, ResultTone } from './display-state.js';
@@ -89,9 +90,12 @@ export class Workbench implements Component {
     });
     const list = new LinesView((width) => {
       const viewport = this.#viewport();
-      const measuredViewport = viewport.height === undefined ? { width } : { width, height: viewport.height };
-      const height = bodyHeight(measuredViewport, 1, isShortViewport(viewport.height) ? 1 : 2);
-      return renderLayoutList(createTheme(width), this.#view(), width, height);
+      const view = this.#view();
+      // Parent VStack already reserved header/rail/message/footer; clip to the same body budget.
+      const height = viewport.height === undefined
+        ? undefined
+        : measureWorkbenchGeometry(view, width, viewport.height).body.height;
+      return renderLayoutList(createTheme(width), view, width, height);
     });
     const body = new ScrollView(list, { follow: 'none', primary: true, scrollbar: 'auto' });
     const message = new LinesView((width) => trimChrome(renderMessage(createTheme(width), this.#view(), width), short(), 'head'));
@@ -99,7 +103,7 @@ export class Workbench implements Component {
     return new VStack([
       { component: header, grow: 0, shrink: 0, basis: 'auto' },
       { component: rail, grow: 0, shrink: 0, basis: 'auto', visible: () => this.#view().page === 'running' },
-      { component: body, grow: 1, shrink: 1, minSize: 4 },
+      { component: body, grow: 1, shrink: 1, minSize: 1 },
       { component: message, grow: 0, shrink: 0, basis: 'auto' },
       { component: footer, grow: 0, shrink: 0, basis: 'auto' },
     ]);
@@ -128,10 +132,24 @@ export function renderWorkbench(view: WorkbenchView, width: number, height?: num
   const short = isShortViewport(height);
   const theme = createTheme(width);
   const header = trimChrome(renderHeader(theme, view, width), short, 'head');
+  const rail = view.page === 'running' && view.running
+    ? runningChrome(theme, width, view.running)
+    : [];
   const message = trimChrome(renderMessage(theme, view, width), short, 'head');
   const footer = trimChrome(renderFooter(theme, view, width), short, 'tail');
-  const available = bodyHeight({ width, ...(height === undefined ? {} : { height }) }, message.length + footer.length - FOOTER_ROWS, header.length);
-  return [...header, ...clipLines(renderBody(theme, view, width, available), available), ...message, ...footer];
+  const bodyRows = height === undefined
+    ? undefined
+    : composeWorkbenchGeometry({
+      width,
+      height,
+      headerRows: header.length,
+      railRows: rail.length,
+      messageRows: message.length,
+      footerRows: footer.length,
+    }).body.height;
+  const body = clipLines(renderBody(theme, view, width, bodyRows), bodyRows);
+  // Same region order as createLayoutRoot: header → rail → body → message → footer.
+  return [...header, ...rail, ...body, ...message, ...footer];
 }
 
 /** On a short viewport the dividers and wrapped status text cost more rows than the body can spare. */
@@ -314,13 +332,29 @@ function renderLayoutList(theme: Theme, view: WorkbenchView, width: number, heig
 }
 
 export function workbenchBodyOrigin(view: WorkbenchView, width: number, height?: number): { header: number; rail: number } {
+  const geometry = measureWorkbenchGeometry(view, width, height);
+  return { header: geometry.header.height, rail: geometry.rail.height };
+}
+
+/** Measure fixed chrome and body rects once for paint and pointer consumers. */
+export function measureWorkbenchGeometry(view: WorkbenchView, width: number, height?: number): WorkbenchGeometry {
   const short = isShortViewport(height);
   const theme = createTheme(width);
-  const header = trimChrome(renderHeader(theme, view, width), short, 'head').length;
-  const rail = view.page === 'running' && view.running
+  const headerRows = trimChrome(renderHeader(theme, view, width), short, 'head').length;
+  const railRows = view.page === 'running' && view.running
     ? runningChrome(theme, width, view.running).length
     : 0;
-  return { header, rail };
+  const messageRows = trimChrome(renderMessage(theme, view, width), short, 'head').length;
+  const footerRows = trimChrome(renderFooter(theme, view, width), short, 'tail').length;
+  const resolvedHeight = height ?? headerRows + railRows + messageRows + footerRows + 16;
+  return composeWorkbenchGeometry({
+    width,
+    height: resolvedHeight,
+    headerRows,
+    railRows,
+    messageRows,
+    footerRows,
+  });
 }
 
 function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string, string])[] {

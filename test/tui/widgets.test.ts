@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { TuiAltScreen, setCapabilities, visibleWidth } from '@earendil-works/pi-tui';
 import { IntakeTui } from '../../src/tui/intake-app.js';
 import { renderConfirmation, renderPreflight, renderTimeline } from '../../src/tui/pages/run.js';
-import { matchesCanvasQuery } from '../../src/tui/scrollback.js';
+import { layoutScrollback, matchesCanvasQuery } from '../../src/tui/scrollback.js';
 import { renderHistory, renderHistoryDetail } from '../../src/tui/pages/history.js';
 import { renderFailure } from '../../src/tui/pages/result.js';
 import { relativeTime, renderSessions } from '../../src/tui/pages/intake.js';
@@ -15,7 +15,7 @@ import { SessionReplayError } from '../../src/products/shared/session-recovery.j
 import { FORBIDDEN_COMPACT, createTheme } from '../../src/tui/theme.js';
 import { operatorErrorMessage, truncateFit } from '../../src/tui/format.js';
 import { kv, kvBlock, pad, panel, joinColumns, progressBar, stateRail, wrapBodyLine } from '../../src/tui/widgets.js';
-import { renderWorkbench } from '../../src/tui/workbench.js';
+import { measureWorkbenchGeometry, renderWorkbench } from '../../src/tui/workbench.js';
 import { helpLines } from '../../src/tui/overlays.js';
 import { FakeTerminal, renderFrame } from '../support/fake-terminal.js';
 import type { TimelineEntry } from '../../src/tui/timeline.js';
@@ -57,9 +57,111 @@ test('compact glyphs contain none of the wide-terminal box characters', () => {
   assert.doesNotMatch(text, FORBIDDEN_COMPACT);
 });
 
-test('pad uses visible width rather than UTF-16 length', () => {
-  const filled = pad('修复', 10);
+test('pad flattens CR/LF/tab so a layout row stays one physical terminal row', () => {
+  const filled = pad('a\r\nb\tc', 10);
+  assert.equal(filled.includes('\n'), false);
+  assert.equal(filled.includes('\r'), false);
+  assert.equal(filled.includes('\t'), false);
   assert.equal(visibleWidth(filled), 10);
+});
+
+test('live status with newlines/tabs/ANSI stays one physical layout row (R10)', () => {
+  const theme = createTheme(80, false);
+  const live = {
+    sequence: 1,
+    occurredAt: '2026-08-11T00:10:00.000Z',
+    source: 'TARGET' as const,
+    title: '阅读\r\nread',
+    detail: 'pelican.py\t--force\nprint("x")\x1b[31mRED\x1b[0m',
+    kind: 'live' as const,
+    placeholder: true as const,
+    itemId: 'now:target',
+    voice: 'candidate' as const,
+  };
+  const long = layoutScrollback(theme, 80, [live], 0, 'zh', 'Claude Code', 12, 0, 0, '05:42');
+  assert.equal(long.chrome, 1);
+  for (const line of long.lines) {
+    assert.equal(/\r|\n|\t/.test(line), false, JSON.stringify(line));
+    assert.ok(visibleWidth(line) <= 80, `overflow: ${visibleWidth(line)} ${line}`);
+  }
+  const status = long.lines.at(-1) ?? '';
+  assert.match(status, /阅读|read|pelican/);
+  assert.doesNotMatch(status, /\x1b\[31m/);
+
+  const shortLive = {
+    sequence: 1,
+    occurredAt: '2026-08-11T00:10:00.000Z',
+    source: 'TARGET' as const,
+    title: 'working',
+    kind: 'live' as const,
+    placeholder: true as const,
+    itemId: 'now:target',
+    voice: 'candidate' as const,
+  };
+  const short = layoutScrollback(theme, 80, [shortLive], 0, 'zh', 'Claude Code', 12, 0, 0, '05:42');
+  assert.equal(short.chrome, 1);
+  assert.equal(short.lines.length, long.lines.length);
+  for (const line of short.lines) {
+    assert.equal(/\r|\n|\t/.test(line), false);
+    assert.ok(visibleWidth(line) <= 80);
+  }
+});
+
+test('workbench geometry keeps total rows within height across densities (R15)', () => {
+  const view = {
+    page: 'running' as const,
+    cwd: 'C:\\src',
+    hasApiConfig: true,
+    hasUsableAuth: true,
+    hasTaskCase: true,
+    message: '',
+    productLabel: 'Claude Code',
+    locale: 'zh' as const,
+    running: {
+      entries: Array.from({ length: 30 }, (_, index) => ({
+        sequence: index + 1,
+        occurredAt: '2026-08-11T00:10:00.000Z',
+        source: 'TARGET' as const,
+        title: `行 ${index + 1} · 中文宽度`,
+        detail: 'detail',
+        voice: 'candidate' as const,
+      })),
+      selected: 29,
+      filter: 'ALL' as const,
+      following: true,
+      cancelling: false,
+      currentState: 'awaiting_target' as const,
+      elapsed: '01:02',
+      turns: { used: 1 },
+      calls: { used: 1 },
+      productLabel: 'Claude Code',
+      locale: 'zh' as const,
+    },
+  };
+  for (const width of [32, 77, 78, 109, 110, 120]) {
+    for (const height of [8, 14, 24, 30]) {
+      const lines = renderWorkbench(view, width, height);
+      assert.ok(lines.length <= height, `${width}x${height} painted ${lines.length}`);
+      for (const line of lines) {
+        assert.equal(/\r|\n/.test(line), false);
+      }
+      if (height >= 8) {
+        const geometry = measureWorkbenchGeometry(view, width, height);
+        assert.equal(
+          geometry.header.height + geometry.rail.height + geometry.body.height
+            + geometry.message.height + geometry.footer.height,
+          height,
+        );
+      }
+    }
+  }
+  // Resize path: wide → narrow → wide keeps a single-line footer budget.
+  const wide = renderWorkbench(view, 120, 24);
+  const narrow = renderWorkbench(view, 77, 24);
+  const wideAgain = renderWorkbench(view, 120, 24);
+  assert.equal(wide.length, 24);
+  assert.equal(narrow.length, 24);
+  assert.equal(wideAgain.length, 24);
 });
 
 test('a long agent message stays in the detail pane instead of exploding the list', () => {
