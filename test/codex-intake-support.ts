@@ -26,6 +26,8 @@ export async function advanceCandidatePicker(app: IntakeTui, rendered: () => str
   app.handleInput("\r");
   await waitFor(() => /choose candidate model|选候选模型/i.test(rendered()));
   app.handleInput("\r");
+  await waitFor(() => app.page === "confirm" || /Start isolated|Confirm run|启动隔离|确认运行/i.test(rendered()));
+  app.handleInput("\r");
   await waitFor(() => app.page === "running" || app.page === "result");
 }
 

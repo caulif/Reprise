@@ -475,8 +475,8 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'models') {
     if (candidateStartBlocked(candidateGateFrom(c))) return c.backToHome();
     if (!c.selectedCandidate && !c.candidateProductId) return c.backToHome();
-    c.page = c.selectedCandidate || c.candidateProductId ? 'candidate-model' : 'candidate-product';
-    if (c.page === 'candidate-model' && c.candidateCatalogStatus === 'idle') void loadCandidateCatalog(c);
+    c.page = 'candidate-model';
+    if (c.candidateCatalogStatus === 'idle') void loadCandidateCatalog(c);
     c.render();
     return { consume: true };
   }

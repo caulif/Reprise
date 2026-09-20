@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTheme } from '../../src/tui/theme.js';
-import { confirmCanStart, renderConfirmation } from '../../src/tui/pages/run.js';
-import { renderCandidateModelPicker, renderCandidateProductPicker } from '../../src/tui/pages/candidate.js';
+import { confirmCanStart, confirmHints, renderConfirmation } from '../../src/tui/pages/run.js';
+import { candidateModelHints, renderCandidateModelPicker, renderCandidateProductPicker } from '../../src/tui/pages/candidate.js';
 import { candidateSpecFromOffer } from '../../src/application/candidate-spec.js';
 import { createExperimentWorkflow, TUI_RUN_POLICY } from '../../src/application/experiment-workflow.js';
 import { fakeProductPack } from '../fixtures/fake-pack/pack.js';
@@ -60,6 +60,29 @@ test('empty catalog cannot be confirmed', () => {
     error: 'No models were listed.',
   }).join('\n');
   assert.match(text, /No models were listed/);
+});
+
+test('model picker Enter reviews run conditions instead of starting', () => {
+  const hints = candidateModelHints(true, 'zh');
+  assert.deepEqual(hints.find((row) => row[0] === 'Enter'), ['Enter', '核对运行条件']);
+  assert.equal(hints.some((row) => row[1].includes('启动')), false);
+});
+
+test('confirm hints return to models unless recovery diagnosis blocks start', () => {
+  assert.deepEqual(confirmHints(true, 'zh'), [
+    ['Enter', '启动隔离候选'],
+    ['b', '改模型'],
+    ['Esc', '改模型'],
+  ]);
+  assert.deepEqual(confirmHints(false, 'zh', true), [
+    ['Enter', '尝试开始（受阻）'],
+    ['Esc', '封面'],
+  ]);
+  assert.deepEqual(confirmHints(false, 'zh', false), [
+    ['Enter', '尝试开始（受阻）'],
+    ['b', '改模型'],
+    ['Esc', '改模型'],
+  ]);
 });
 
 test('recovered confirmation without a selected candidate cannot start', () => {
