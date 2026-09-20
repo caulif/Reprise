@@ -6,7 +6,7 @@ import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
 import { HelpOverlay, commandSelectList } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
 import { productContext as activeProductContext, view as projectView } from "./controller-view.js";
-import { discardRecovery, stopRunClock } from "./controller-run.js";
+import { discardRecovery, stopRunClock, resolveCompareChoice } from "./controller-run.js";
 import { formatHarnessFailure, nextLocale, parseLocale, sessionReplayErrorMessage, t } from "./i18n.js";
 import { saveTuiPreferences } from "./preferences.js";
 import { matchesFilter } from "./scrollback.js";
@@ -177,8 +177,7 @@ export function IntakeTui_close(this: IntakeTui): { consume: true } {
     this.recoveryAbort?.abort();
     this.generation += 1;
     this.closed = true;
-    this.compareChoice?.resolve(false);
-    this.compareChoice = undefined;
+    resolveCompareChoice(this, false);
     stopRunClock(this);
     this.hideHelp();
     this.hideCommandOverlay();
@@ -188,7 +187,7 @@ export function IntakeTui_close(this: IntakeTui): { consume: true } {
     const pending: Promise<unknown>[] = [this.closing];
     if (this.workflowFinished) pending.push(this.workflowFinished);
     if (experiment) {
-      if (!this.cancelling) pending.push(experiment.cancel());
+      if (this.cancelUi !== 'requesting') pending.push(experiment.cancel());
       pending.push(experiment.result.then((result) => {
         if (result.record.outcome.cleanup.status !== 'complete') throw new Error(t(this.locale, 'cleanupFailed'));
       }));

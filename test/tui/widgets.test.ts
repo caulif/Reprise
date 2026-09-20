@@ -171,7 +171,7 @@ test('a long agent message stays in the detail pane instead of exploding the lis
   const entry = targetEntry('Visible response', `${preview}\n... +195 lines`, { original: body });
   const lines = renderTimeline(theme, 120, {
     entries: [entry],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   });
   const text = lines.join('\n');
@@ -180,7 +180,7 @@ test('a long agent message stays in the detail pane instead of exploding the lis
   assert.doesNotMatch(text, /PUBLIC_DETAIL_END/);
   const clipped = renderTimeline(theme, 120, {
     entries: [entry],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   }, 16);
   assert.ok(clipped.length < 40, `expected a clipped running view, got ${clipped.length} lines`);
@@ -249,7 +249,7 @@ test('detail pane indents command output so it does not stick to the frame', () 
   });
   const lines = renderTimeline(theme, 120, {
     entries: [entry],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '00:34', turns: { used: 0, max: 4 }, calls: { used: 0, max: 3 },
   });
   for (const line of lines) assert.equal(visibleWidth(line), 120, line);
@@ -270,7 +270,7 @@ test('command detail paints a one-line invocation plus indented output', () => {
   });
   const text = renderTimeline(theme, 120, {
     entries: [entry],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '00:00', turns: { used: 0, max: 4 }, calls: { used: 0, max: 3 },
   }).join('\n');
   const plain = text.replace(/\u001b\[[0-9;]*m/g, '');
@@ -378,7 +378,7 @@ test('canvas find locates hits and keeps surrounding entries', () => {
   const theme = createTheme(120, false);
   const model = {
     entries: [input, product],
-    selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
+    selected: 0, filter: 'ALL' as const, following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target' as const, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
     finding: true, findQuery: 'public response', findCursor: 15,
   };
@@ -396,7 +396,7 @@ test('canvas find locates hits and keeps surrounding entries', () => {
 test('timeline extra count excludes the first detail line', () => {
   const text = renderTimeline(createTheme(120, false), 120, {
     entries: [{ sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'TARGET', title: 'Event', detail: 'first\nsecond\nthird' }],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
   assert.match(text, /Event|first|Codex/);
@@ -425,7 +425,7 @@ test('running timeline names a missing state origin as created', () => {
       { sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'HARNESS', title: 'State: ? → launching' },
       { sequence: 2, occurredAt: '2026-08-11T00:10:00.000Z', source: 'TARGET', title: 'working', kind: 'live', placeholder: true, itemId: 'now:target', voice: 'candidate' },
     ],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'launching', elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
   assert.match(text, /Candidate|working|Unknown agent/);
@@ -449,7 +449,7 @@ test('a 24-row running workbench stays within the viewport', () => {
     hasTaskCase: true,
     message: 'Candidate is running only in an isolated workspace.',
     running: {
-      entries, selected: 0, filter: 'ALL', following: true, cancelling: false,
+      entries, selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
       currentState: 'launching', elapsed: '00:05', turns: { used: 1, max: 4 },
       calls: { used: 1, max: 3 },
     },
@@ -470,7 +470,7 @@ test('recovery workbench footer has no find', () => {
     hasTaskCase: true,
     message: 'Recovering.',
     running: {
-      entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
+      entries: [], selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
       currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
       runPhase: 'recovery',
     },
@@ -777,7 +777,7 @@ test('running timeline uses the selected product and has no Codex fallback', () 
     title: 'working', kind: 'live' as const, placeholder: true as const, itemId: 'now:target', voice: 'candidate' as const,
   };
   const base = {
-    entries: [now], selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
+    entries: [now], selected: 0, filter: 'ALL' as const, following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
   };
   const claude = renderTimeline(theme, 120, { ...base, productLabel: 'Claude Code' }).join('\n');
@@ -834,7 +834,7 @@ test('running voice cards use a left bar and hide ready MCP status', () => {
       { sequence: 2, occurredAt: '2026-08-11T00:10:01.000Z', source: 'TARGET', title: 'MCP · linuxdo ready' },
       { sequence: 3, occurredAt: '2026-08-11T00:10:02.000Z', source: 'TARGET', title: 'Visible response', detail: 'public response line 1' },
     ],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 },
   }).join('\n');
   assert.match(text, /▎|Fix the failing test/);
@@ -848,7 +848,7 @@ test('a colored running card paints a voice background', () => {
     entries: [
       { sequence: 1, occurredAt: '2026-08-11T00:10:00.000Z', source: 'CONTROLLER', title: 'Input to Target', detail: 'Fix the failing test.' },
     ],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 },
   }).join('\n');
   assert.match(text, /\u001b\[48;/);
@@ -864,7 +864,7 @@ test('a following timeline keeps the latest events in a short viewport', () => {
     title: `Event ${index + 1}`,
   }));
   const text = renderTimeline(theme, 120, {
-    entries, selected: 39, filter: 'ALL', following: true, cancelling: false,
+    entries, selected: 39, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '01:12', turns: { used: 1, max: 4 },
     calls: { used: 0, max: 3 },
   }, 12).join('\n');

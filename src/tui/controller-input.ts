@@ -125,7 +125,6 @@ export type ControllerHandle = {
   readonly now: () => string;
   runStartedAt: number;
   runClock: ReturnType<typeof setInterval> | undefined;
-  cancelling: boolean;
   cancelUi: import('./controller-run.js').CancelUi;
   runPhase: CandidateRunPhase | undefined;
   machineState: CandidateRunState | undefined;
@@ -507,7 +506,7 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'cycle-fold' || result.action === 'cycle-fold-prev') {
     return cycleFoldSelection(c, result.action === 'cycle-fold-prev' ? -1 : 1);
   }
-  if (c.cancelUi === 'requesting' || c.cancelling) {
+  if (c.cancelUi === 'requesting') {
     c.message = t(c.locale, 'cancellationRequested');
   } else if (c.cancelUi === 'failed') {
     // Keep the failure notice; Esc must not look like a healthy run.

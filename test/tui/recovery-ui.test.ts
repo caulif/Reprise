@@ -17,7 +17,7 @@ test('recovery canvas does not impersonate a candidate reply', () => {
   const theme = createTheme(120, false);
   const text = renderTimeline(theme, 120, {
     entries: [],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     productLabel: 'Codex',
@@ -33,7 +33,7 @@ test('recovery prepare screen shows session and project instead of a preflight g
   const theme = createTheme(120, false);
   const text = renderTimeline(theme, 120, {
     entries: [],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
     preparePhase: 'check',
     prepareDetail: 'Preparing recovery environment',
@@ -166,12 +166,12 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
   };
   const selectedFold = renderTimeline(theme, 120, {
     entries: [foldEntry],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
   const noHighlight = renderTimeline(theme, 120, {
     entries: [foldEntry],
-    selected: -1, filter: 'ALL', following: false, cancelling: false,
+    selected: -1, filter: 'ALL', following: false, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
   // Selected paint uses fillLive (30;38;42); selected:-1 uses canvas fill and must not invent ▼ 新 N.
@@ -211,7 +211,7 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
         { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'I will start by reading the task text.', lane: 'recovery', kind: 'narrate' },
         { sequence: 2, occurredAt: '2026-09-08T00:00:01.000Z', source: 'HARNESS', title: foldTitle, lane: 'recovery', kind: 'fold', itemId: 'fold:1' },
       ],
-      selected: -1, filter: 'ALL', following: false, cancelling: false,
+      selected: -1, filter: 'ALL', following: false, cancelUi: 'idle' as const,
       currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
     },
   }, 120).join('\n');
@@ -325,7 +325,7 @@ test('workbench renders timeline above confirmation when recovery entries exist'
       entries: [
         { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'Read package.json', detail: 'Read package.json', lane: 'recovery', kind: 'narrate' },
       ],
-      selected: 0, filter: 'ALL', following: true, cancelling: false,
+      selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
       currentState: undefined, elapsed: '00:05', turns: { used: 0 }, calls: { used: 0 },
     },
   }, 120).join('\n');
