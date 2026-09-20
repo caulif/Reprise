@@ -11,9 +11,6 @@ Reprise   对照结果                                                          
   ... +35 lines                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
 
 ┌─ 对照结果 ─ completed ───────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ✓ completed │
@@ -21,9 +18,12 @@ Reprise   对照结果                                                          
 │ 运行终止     completed · completed.controller_satisfied │
 │ 清理         complete │
 │ 对照         对照完成 │
+│     72s · candidate 49s · 1 turn · 1 controller · 未采集 tokens · 未采集 cost │
+│ │
+│ Synthetic comparison headline. │
 │ 报告         report.html │
-│ 历史终稿     — │
-│ 候选终稿     — │
+│ 历史终稿     environment/baselines/history-final.txt │
+│ 候选终稿     environment/runs/run-1/candidate-final.txt │
 │ 记录（排查） runs/run-1/ │
 │ 隔离副本（排查） environment/runs/run-1/ │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
