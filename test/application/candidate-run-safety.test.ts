@@ -73,7 +73,15 @@ test("in-tree symlink content is hashed; out-of-tree symlink is omitted", async 
   const root = await mkdtemp(join(tmpdir(), "reprise-progress-link-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "target.txt"), "inside\n");
-  await symlink("target.txt", join(root, "link.txt"));
+  try {
+    await symlink("target.txt", join(root, "link.txt"));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "EPERM") {
+      t.skip("symlink creation unavailable");
+      return;
+    }
+    throw error;
+  }
   const withLink = await workspaceProgressFingerprint(root);
   await writeFile(join(root, "target.txt"), "inside-changed\n");
   assert.notEqual(await workspaceProgressFingerprint(root), withLink);

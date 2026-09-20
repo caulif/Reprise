@@ -93,6 +93,54 @@ test("render_artifact registers frames through catalog and dedupes identical der
   assert.equal(catalog.media.length, 2);
 });
 
+test("render_artifact refuses static repeated frames as motion evidence", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-render-motion-gate-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const catalog = createEphemeralRenderCatalog({
+    sources: [{
+      sourceRef: "ev-motion",
+      side: "candidate",
+      bundleRoot: root,
+      entryRelativePath: "card.html",
+      contentHash: "source-hash",
+      origin: "candidate",
+    }],
+    mediaRoot: join(root, "media"),
+    reviewRoot: join(root, "review"),
+  });
+  const render = createFakeArtifactRenderer(async (request) => {
+    await mkdir(request.outputRoot, { recursive: true });
+    const pngPath = join(request.outputRoot, "same.png");
+    await writeFile(pngPath, PNG_A);
+    return {
+      ok: true,
+      frames: request.sampleTimesMs.map((sampleTimeMs) => ({
+        sampleTimeMs,
+        actualTimeMs: sampleTimeMs,
+        pngPath,
+        byteLength: PNG_A.byteLength,
+        contentHash: sha256(PNG_A),
+      })),
+      diagnostics: [],
+      measured: { loadMs: 0, viewport: request.viewport, origin: "fake://static" },
+    };
+  });
+  const result = JSON.parse((await createRenderArtifactTool({
+    catalog,
+    attemptRoot: root,
+    render,
+  }).execute({ sourceRef: "ev-motion", sampleTimesMs: [0, 500] }, new AbortController().signal)).content) as {
+    status: string;
+    message: string;
+  };
+  assert.equal(result.status, "motion_not_proven");
+  assert.match(result.message, /identical PNG/i);
+  assert.equal(catalog.media.length, 0);
+});
+
 test("render_artifact rejects unknown source and cancelled render", async () => {
   const catalog = createEphemeralRenderCatalog({
     sources: [],

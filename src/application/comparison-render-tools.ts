@@ -133,6 +133,19 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
           diagnostics: rendered.diagnostics,
         });
       }
+      if (sampleTimesMs.length > 1) {
+        const hashes = new Set(rendered.frames.map((frame) => frame.contentHash));
+        if (hashes.size < 2) {
+          return textResult({
+            status: "motion_not_proven",
+            sourceRef: source.sourceRef,
+            revision: deps.catalog.revision(),
+            message: "Multiple sample times produced identical PNG content; motion evidence was not registered.",
+            sampleTimesMs,
+            diagnostics: rendered.diagnostics,
+          });
+        }
+      }
       const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number }[] = [];
       const capturedAt = (deps.now ?? (() => new Date()))().toISOString();
       for (const frame of rendered.frames) {
