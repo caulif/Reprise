@@ -54,6 +54,13 @@ export type RegisterEvidenceResult =
       message: string;
     };
 
+export type RegisterMediaInput = {
+  record: Omit<ComparisonMediaRecord, "shortRef"> & { shortRef?: string };
+  sourceRefs?: readonly string[];
+  origin: ComparisonEvidenceOrigin;
+  derivation?: ComparisonMediaDerivation;
+};
+
 type CatalogPersister = {
   attemptRoot: string;
   attemptId: string;
@@ -153,13 +160,12 @@ export class ComparisonEvidenceCatalog {
     return this.#enqueue(() => this.#registerEvidenceLocked(input, signal));
   }
 
-  async registerMedia(input: {
-    record: Omit<ComparisonMediaRecord, "shortRef"> & { shortRef?: string };
-    sourceRefs?: readonly string[];
-    origin: ComparisonEvidenceOrigin;
-    derivation?: ComparisonMediaDerivation;
-  }, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
+  async registerMedia(input: RegisterMediaInput, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
     return this.#enqueue(() => this.#registerMediaLocked(input, signal));
+  }
+
+  async registerMediaBatch(inputs: readonly RegisterMediaInput[], signal?: AbortSignal): Promise<RegisterEvidenceResult[]> {
+    return this.#enqueue(() => this.#registerMediaBatchLocked(inputs, signal));
   }
 
   async #registerEvidenceLocked(input: RegisterEvidenceInput, signal?: AbortSignal): Promise<RegisterEvidenceResult> {
@@ -303,6 +309,67 @@ export class ComparisonEvidenceCatalog {
         this.#media = previous;
       },
     });
+  }
+
+  async #registerMediaBatchLocked(inputs: readonly RegisterMediaInput[], signal?: AbortSignal): Promise<RegisterEvidenceResult[]> {
+    if (inputs.length === 0) return [];
+    if (signal?.aborted) return inputs.map(() => ({ status: "rejected", code: "cancelled", message: "Registration cancelled." }));
+    const previous = this.#media;
+    const drafts: ComparisonMediaRecord[] = [];
+    const results: RegisterEvidenceResult[] = [];
+    for (const input of inputs) {
+      const sourceRefs = [...(input.sourceRefs ?? [])];
+      if (sourceRefs.some((ref) => !this.#hasSourceRef(ref))) {
+        return inputs.map(() => ({ status: "rejected", code: "missing_source", message: "Unknown sourceRef for media batch." }));
+      }
+      const contentHash = input.record.contentHash;
+      if (!contentHash) return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Media registration requires contentHash." }));
+      const derivation = input.derivation ?? input.record.derivation;
+      const existing = this.#media.find((item) => item.contentHash === contentHash
+        && item.side === input.record.side
+        && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
+      if (existing?.shortRef) {
+        results.push({ status: "registered", revision: this.#revision, shortRef: existing.shortRef, contentHash, inspectPath: existing.inspectPath, origin: input.origin, deduplicated: true });
+        continue;
+      }
+      const draft: ComparisonMediaRecord = { ...input.record, contentHash, ...(derivation ? { derivation } : {}) };
+      if (!Value.Check(ComparisonMediaRecordSchema, draft)) {
+        return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Media record failed schema validation." }));
+      }
+      drafts.push(draft);
+    }
+    const assigned = appendMediaShortRefs(this.#media, drafts);
+    if (assigned.length !== drafts.length) return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Failed to allocate media shortRef." }));
+    this.#media = [...this.#media, ...assigned];
+    try {
+      await this.#persistRevision();
+    } catch (error) {
+      this.#media = previous;
+      return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
+    }
+    let assignedIndex = 0;
+    for (const input of inputs) {
+      const sourceRefs = [...(input.sourceRefs ?? [])];
+      const contentHash = input.record.contentHash;
+      const derivation = input.derivation ?? input.record.derivation;
+      const existing = previous.find((item) => item.contentHash === contentHash && item.side === input.record.side && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
+      if (existing?.shortRef) continue;
+      const item = assigned[assignedIndex++];
+      if (!item) continue;
+      const payload: ComparisonEvidenceRegisteredPayload = {
+        schemaVersion: 1, attemptId: this.#attemptId, revision: this.#revision, shortRef: item.shortRef!, kind: "media",
+        origin: input.origin, contentHash: item.contentHash!, sourceRefs, artifactRefs: [item.reportHref],
+        ...(derivation ? { derivation } : {}),
+      };
+      this.#pendingEmits.set(item.shortRef!, payload);
+      try { await this.#emit(payload); } catch (error) {
+        return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
+      }
+      this.#pendingEmits.delete(item.shortRef!);
+      this.#emittedShortRefs.add(item.shortRef!);
+      results.push({ status: "registered", revision: this.#revision, shortRef: item.shortRef!, contentHash: item.contentHash!, inspectPath: item.inspectPath, origin: input.origin, deduplicated: false });
+    }
+    return results;
   }
 
   async #finishExistingRegistration(input: {

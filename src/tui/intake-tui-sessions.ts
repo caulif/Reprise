@@ -16,7 +16,7 @@ import {
   refreshProductSessions as refetchProductSessions,
 } from "./controller-sessions.js";
 import { t, type Locale } from "./i18n.js";
-import { productMemory, rememberProjects, rememberSessions } from "./intake-layer-memory.js";
+import { productMemory, rememberProjects, rememberSessions, restoreById } from "./intake-layer-memory.js";
 type SessionLoadMode = "initial" | "more" | "refresh";
 
 export async function IntakeTui_loadHome(this: IntakeTui, initialMessage?: string): Promise<void> {
@@ -32,6 +32,9 @@ export async function IntakeTui_loadHome(this: IntakeTui, initialMessage?: strin
       this.recentExperiment = undefined;
     }
     this.page = "home";
+    this.homeFocus = this.recentExperiment && this.hasSavedModelConfig && this.harnessAuthOk
+      ? "new-replay"
+      : (!this.hasSavedModelConfig || this.harnessAuthOk === false ? "config" : "new-replay");
     this.message = initialMessage ?? t(this.locale, "welcomeBack");
   }
 
@@ -63,21 +66,51 @@ export function IntakeTui_refreshProductSessions(this: IntakeTui): void {
   }
 
 export function IntakeTui_activateProductSessions(this: IntakeTui, productId: string, sessions: readonly SessionSummary[], limitReached: boolean): void {
+    const previousLevel = this.intakeLevel;
+    const previousProjectKey = this.activeProjectKey;
+    const keepLayer = previousLevel === "sessions" || previousLevel === "projects";
     this.activeProductId = productId;
     this.lastProductId = productId;
     this.sessions = sessions;
     this.sessionLimitReached = limitReached;
-    this.intakeLevel = "projects";
+    this.intakeLevel = keepLayer ? previousLevel : "projects";
     const memory = productMemory(this.intakeMemory, productId);
-    this.searchQuery = memory.projectQuery;
-    this.searchCursor = memory.projectCursor;
-    this.searching = this.searchQuery.length > 0;
-    const projects = this.visibleProjects();
-    this.selected = selectDefaultProjectIndex(projects, this.displayCwd, memory.projectKey || this.lastProjectKey, this.dataDir);
-    this.activeProjectKey = projects[this.selected]?.key ?? memory.projectKey;
+    if (!keepLayer || previousLevel === "projects") {
+      this.searchQuery = memory.projectQuery;
+      this.searchCursor = memory.projectCursor;
+      this.searching = this.searchQuery.length > 0;
+      const projects = this.visibleProjects();
+      const restored = restoreById(
+        projects.map((project) => ({ id: project.key })),
+        memory.projectKey || this.lastProjectKey || previousProjectKey,
+        memory.projectSelectedIndex,
+      );
+      const fallback = selectDefaultProjectIndex(projects, this.displayCwd, memory.projectKey || this.lastProjectKey, this.dataDir);
+      const rememberedKey = memory.projectKey || this.lastProjectKey;
+      this.selected = rememberedKey ? restored.index : fallback;
+      this.activeProjectKey = projects[this.selected]?.key ?? memory.projectKey ?? previousProjectKey;
+      if (restored.lost && rememberedKey) {
+        this.message = t(this.locale, "projectSelectionLost");
+      } else {
+        this.message = this.sessionsMessage();
+      }
+    } else {
+      this.activeProjectKey = previousProjectKey || memory.projectKey;
+      const saved = memory.sessionByProject.get(this.activeProjectKey);
+      this.searchQuery = saved?.query ?? this.searchQuery;
+      this.searchCursor = saved?.cursor ?? this.searchCursor;
+      this.searching = this.searchQuery.length > 0;
+      const sessionList = this.visibleSessions();
+      const restored = restoreById(
+        sessionList.map((session) => ({ id: session.sessionId })),
+        saved?.sessionId ?? "",
+        saved?.selectedIndex ?? this.selected,
+      );
+      this.selected = restored.index;
+      this.message = restored.lost ? t(this.locale, "sessionSelectionLost") : this.sessionsMessage();
+    }
     this.syncIntakeLevel();
     this.page = "sessions";
-    this.message = this.sessionsMessage();
   }
 
 export function IntakeTui_openIntakeSelection(this: IntakeTui): { consume: true } {
@@ -106,7 +139,7 @@ function enterProjectSessions(c: IntakeTui): { consume: true } {
     return { consume: true };
   }
   const memory = productMemory(c.intakeMemory, c.activeProductId);
-  rememberProjects(memory, c.searchQuery, c.searchCursor, project.key);
+  rememberProjects(memory, c.searchQuery, c.searchCursor, project.key, c.selected);
   c.activeProjectKey = project.key;
   c.lastProjectKey = project.key;
   const saved = memory.sessionByProject.get(project.key);
@@ -115,9 +148,13 @@ function enterProjectSessions(c: IntakeTui): { consume: true } {
   c.searchCursor = saved?.cursor ?? 0;
   c.searching = c.searchQuery.length > 0;
   const sessions = c.visibleSessions();
-  const remembered = saved?.sessionId ? sessions.findIndex((session) => session.sessionId === saved.sessionId) : 0;
-  c.selected = remembered >= 0 ? remembered : 0;
-  c.message = c.sessionsMessage();
+  const restored = restoreById(
+    sessions.map((session) => ({ id: session.sessionId })),
+    saved?.sessionId ?? "",
+    saved?.selectedIndex ?? 0,
+  );
+  c.selected = restored.index;
+  c.message = restored.lost ? t(c.locale, "sessionSelectionLost") : c.sessionsMessage();
   c.render();
   return { consume: true };
 }
@@ -127,24 +164,13 @@ export function IntakeTui_sessionsMessage(this: IntakeTui): string {
     const discovery = this.activeProductId ? this.productDiscovery.get(this.activeProductId) : undefined;
     if (discovery?.status === "loading") return t(this.locale, "sessionsLoading");
     const projects = this.groupedProjects();
-    const loaded = t(this.locale, "catalogLoaded", { projects: projects.length, sessions: this.sessions.length });
-    const skipped = discovery?.skipped ?? 0;
-    const scanned = discovery?.scanned ?? this.sessions.length;
-    const status = t(this.locale, "sessionDiscoveryStatus", { shown: this.sessions.length, skipped, scanned });
-    const lines = [
-      this.sessions.length
-        ? this.intakeLevel === "projects" ? t(this.locale, "chooseProject") : t(this.locale, "chooseSession")
-        : t(this.locale, "noSessionsFound"),
-      loaded,
-      `${status}.`,
-      t(this.locale, "loadMoreSessions"),
-    ];
-    if (discovery?.diagnostics?.length) {
-      lines.push(t(this.locale, "sessionDiagnostics", {
-        diagnostics: discovery.diagnostics.map((diagnostic: DiscoveryDiagnostic) => `${this.discoveryDiagnosticLabel(this.locale, diagnostic.code)} (${diagnostic.count})`).join(", "),
-      }) + ".");
-    }
-    return lines.join("\n");
+    const guide = this.sessions.length
+      ? this.intakeLevel === "projects" ? t(this.locale, "chooseProject") : t(this.locale, "chooseSession")
+      : t(this.locale, "noSessionsFound");
+    const counts = t(this.locale, "catalogLoaded", { projects: projects.length, sessions: this.sessions.length });
+    if (discovery?.refreshFailed) return `${guide}\n${t(this.locale, "refreshFailedStale")}`;
+    if (discovery?.nextCursor) return `${guide}\n${counts}\n${t(this.locale, "loadMoreSessionsHint")}`;
+    return `${guide}\n${counts}`;
   }
 
 export function IntakeTui_discoveryDiagnosticLabel(this: IntakeTui, locale: Locale, code: DiscoveryDiagnostic['code']): string {
@@ -185,7 +211,7 @@ export function IntakeTui_backToProjects(this: IntakeTui): { consume: true } {
       this.discoveryAbort?.abort();
       if (this.activeProductId) {
         const memory = productMemory(this.intakeMemory, this.activeProductId);
-        rememberProjects(memory, this.searchQuery, this.searchCursor, this.activeProjectKey);
+        rememberProjects(memory, this.searchQuery, this.searchCursor, this.activeProjectKey, this.selected);
       }
       this.beginNavigation();
       this.intakeLevel = "products";
@@ -197,14 +223,19 @@ export function IntakeTui_backToProjects(this: IntakeTui): { consume: true } {
     } else {
       const memory = productMemory(this.intakeMemory, this.activeProductId);
       const selected = this.visibleSessions()[this.selected];
-      rememberSessions(memory, this.activeProjectKey, this.searchQuery, this.searchCursor, selected?.sessionId ?? "");
-      rememberProjects(memory, memory.projectQuery, memory.projectCursor, this.activeProjectKey);
+      rememberSessions(memory, this.activeProjectKey, this.searchQuery, this.searchCursor, selected?.sessionId ?? "", this.selected);
+      rememberProjects(memory, memory.projectQuery, memory.projectCursor, this.activeProjectKey, memory.projectSelectedIndex);
       this.intakeLevel = "projects";
       this.searchQuery = memory.projectQuery;
       this.searchCursor = memory.projectCursor;
       this.searching = this.searchQuery.length > 0;
       const projects = this.visibleProjects();
-      this.selected = Math.max(0, projects.findIndex((project) => project.key === this.activeProjectKey));
+      const restored = restoreById(
+        projects.map((project) => ({ id: project.key })),
+        this.activeProjectKey,
+        memory.projectSelectedIndex,
+      );
+      this.selected = restored.index;
     }
     this.message = this.sessionsMessage();
     this.render();
@@ -248,6 +279,10 @@ async function IntakeTui_openSessionInspection(this: IntakeTui, session: Session
     this.render(true);
     return;
   }
+  if (this.activeProductId) {
+    const memory = productMemory(this.intakeMemory, this.activeProductId);
+    rememberSessions(memory, this.activeProjectKey, this.searchQuery, this.searchCursor, session.sessionId, this.selected);
+  }
   const token = this.beginNavigation();
   this.message = t(this.locale, "inspectingSelectedSession");
   this.render(true);
@@ -266,6 +301,7 @@ async function IntakeTui_openSessionInspection(this: IntakeTui, session: Session
     }
     this.inspection = inspected;
     this.inspectionTaskInput = 0;
+    this.inspectionShowOutcome = false;
     this.page = "inspection";
     this.message = t(this.locale, "chooseSession");
   } catch (error) {

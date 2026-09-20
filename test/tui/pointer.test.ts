@@ -40,7 +40,7 @@ test('keepSelectedVisible only changes offset when the selection would leave the
   assert.equal(keepSelectedVisible(12, -12, 40, 10), 3 - 12);
 });
 
-test('home idle footer does not repeat Enter', () => {
+test('home idle footer lists action navigation', () => {
   const hints = homeHints('en', {
     taskCase: undefined,
     recentExperiment: { experimentId: 'e1', taskCaseId: 'c1', path: 'C:/e', sizeBytes: 1 },
@@ -48,7 +48,7 @@ test('home idle footer does not repeat Enter', () => {
     composer: '',
     showSuggestions: false,
   });
-  assert.deepEqual(hints.map(([key]) => key), ['/', 'Ctrl+C']);
+  assert.deepEqual(hints.map(([key]) => key), ['↑↓', 'Enter', '/', 'Ctrl+C']);
 });
 
 test('result pointer hits OSC 8 short labels and ignores blank rows', () => {

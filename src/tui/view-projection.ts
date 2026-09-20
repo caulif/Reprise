@@ -17,11 +17,11 @@ import type { PreparePhase } from './widgets.js';
 import { deriveResultPresentationFromResult } from './display-state.js';
 
 type Input = {
-  readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled'; readonly locale?: Locale;
-  readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
+  readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
+  readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly homeFocus?: import('./pages/home.js').HomeActionId; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
-  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[];
+  readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[]; readonly refreshFailed?: boolean; readonly discoveryNotice?: string;
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: ExperimentPreflight | undefined; readonly recoveryView?: RecoveryView | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly sourceProductLabel?: string;
@@ -60,6 +60,7 @@ function homeModel(input: Input, envSet: boolean) {
     ...(input.envName ? { envName: input.envName, envSet } : {}),
     ...(input.hasSavedModelConfig ? { providerLabel: input.modelConfig.providerId, modelId: input.modelConfig.modelId } : {}),
     composer: input.composer, composerCursor: input.composerCursor, showSuggestions: input.showSuggestions && !input.commandOverlay,
+    ...(input.homeFocus ? { focus: input.homeFocus } : {}),
     locale: input.locale ?? 'en',
     ...(input.recoveryView?.baseline.recovery?.status === 'failed' ? { recoveryFailed: true } : {}),
   };
@@ -73,9 +74,7 @@ function runningModel(input: Input) {
     sourceTimeline: input.timeline,
     timelineRevision: input.timelineRevision,
     selected: input.timelineSelected, filter: 'ALL' as const,
-    following: input.timelineFollowing,
-    cancelUi: input.cancelUi ?? 'idle',
-    currentState: input.machineState,
+    following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
     elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },
@@ -138,7 +137,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     locale: input.locale ?? 'en',
     message: input.message,
     ...(input.inlineHelp ? { inlineHelp: true } : {}),
-    cancelUi: input.cancelUi ?? 'idle',
+    cancelling: input.cancelling,
     ...(input.comparePending ? { comparePending: true } : {}),
     home,
   };
@@ -179,6 +178,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(input.discoveryStatus ? { discoveryStatus: input.discoveryStatus } : {}),
     ...(input.groupedProjectCount !== undefined ? { unfilteredCount: input.intakeLevel === 'sessions' ? input.unfilteredSessionCount : input.groupedProjectCount } : {}),
     ...(input.discoveryCodes?.length ? { discoveryCodes: input.discoveryCodes } : {}),
+    ...(input.refreshFailed ? { refreshFailed: true } : {}),
+    ...(input.discoveryNotice ? { discoveryNotice: input.discoveryNotice } : {}),
     locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}),
   };
   if (input.page === 'sessions') return { ...base, sessions };
@@ -247,8 +248,6 @@ function confirmWorkbenchSlice(
   const running = input.timeline.length
     ? { ...runningModel(input), ...(clearHighlight ? { selected: -1, following: true } : {}) }
     : undefined;
-  const locale = input.locale ?? 'en';
-  const taskTitle = taskTitleOf(input.taskCase, locale);
   return {
     ...base,
     ...(running ? { running } : {}),
@@ -263,12 +262,11 @@ function confirmWorkbenchSlice(
       ...(input.policy ? { policy: input.policy } : {}),
       ...(input.recoveryView?.experimentId ? { experimentId: input.recoveryView.experimentId } : {}),
       step: 3,
-      locale,
+      locale: input.locale ?? 'en',
       ...(input.candidateProductLabel
         ? { productLabel: input.candidateProductLabel }
         : input.productLabel ? { productLabel: input.productLabel } : {}),
       ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {}),
-      ...(taskTitle ? { taskTitle } : {}),
     },
   };
 }

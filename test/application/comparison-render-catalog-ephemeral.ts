@@ -69,5 +69,17 @@ export function createEphemeralRenderCatalog(input: {
       }, null, 2), "utf8");
       return registered;
     },
+    async registerDerivedMediaBatch(entries: readonly RegisterDerivedMediaInput[]) {
+      const staged: RegisterDerivedMediaResult[] = [];
+      for (const entry of entries) {
+        const result = await this.registerDerivedMedia(entry);
+        if (!result.ok) return { ok: false as const, code: result.code, message: result.message };
+        staged.push(result);
+      }
+      return {
+        ok: true as const,
+        items: staged.filter((item): item is Extract<RegisterDerivedMediaResult, { ok: true }> => item.ok),
+      };
+    },
   };
 }

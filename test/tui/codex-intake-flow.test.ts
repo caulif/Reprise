@@ -119,7 +119,7 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
   await enterIntake(app);
   await waitFor(() => /Cancel this run/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Session start:|会话起点：/.test(rendered));
+  await waitFor(() => /Task text:|任务原文：/.test(rendered));
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   await waitFor(() => /Preparing replay|Copy isolated workspace|正在准备对照|复制隔离工作区/.test(rendered));
@@ -252,7 +252,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   await enterIntake(app);
   await waitFor(() => /Patch the missing path/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Session start:|会话起点：/.test(rendered));
+  await waitFor(() => /Task text:|任务原文：/.test(rendered));
   app.handleInput("\r");
   await waitFor(() => /Source root|Historical cwd is missing|源目录|历史工作目录缺失/.test(rendered));
   assert.match(rendered, /Source root|源目录/);
@@ -512,7 +512,7 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   };
   await app.start();
   enterCommand(app, "/config");
-  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(rendered));
+  await waitFor(() => /Internal collab model|内部协作模型|Internal collab model|内部协作模型|Internal Agent model|内部 Agent 模型/.test(rendered));
   app.handleInput("\u001b[A");
   app.handleInput("\u001b[A");
   app.handleInput("\r");
@@ -641,18 +641,18 @@ test("TUI language defaults to Chinese and /lang en switches the cover without m
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
   });
   await app.start();
-  assert.match(rendered, /继续/);
-  assert.match(rendered, /浏览/);
+  assert.match(rendered, /新建回放/);
+  assert.match(rendered, /更多/);
   assert.doesNotMatch(rendered, /Continue|Browse|Last task/);
   enterCommand(app, "/lang en");
-  await waitFor(() => /Continue/.test(rendered));
-  assert.match(rendered, /Continue/);
-  assert.match(rendered, /Browse/);
+  await waitFor(() => /New replay/.test(rendered));
+  assert.match(rendered, /New replay/);
+  assert.match(rendered, /More/);
   assert.match(rendered, /Language: English/);
-  assert.doesNotMatch(rendered, /继续|浏览|当前任务/);
+  assert.doesNotMatch(rendered, /继续|更多|当前任务/);
   enterCommand(app, "/config");
   await waitFor(() => /Language/.test(rendered));
   assert.match(rendered, /Language/);
   assert.match(rendered, /English/);
-  assert.doesNotMatch(rendered, /内部 Agent 模型|语言/);
+  assert.doesNotMatch(rendered, /内部协作模型|内部 Agent 模型|语言/);
 });

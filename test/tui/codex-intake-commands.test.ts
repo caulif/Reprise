@@ -163,10 +163,10 @@ test("Codex intake TUI opens Home without configuration and only enters config o
   });
 
   await app.start();
-  assert.match(rendered, /Continue|Browse|\/ command|继续|浏览|\/命令/);
+  assert.match(rendered, /New replay|新建回放|\/ command|\/命令|More|更多/);
   assert.doesNotMatch(rendered, /Configuration file:|\.reprise\/harness-model\.json/);
   enterCommand(app, "/config");
-  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(rendered));
+  await waitFor(() => /Internal collab model|内部协作模型|Internal Agent model|内部 Agent 模型/.test(rendered));
   assert.match(rendered, /openai-compatible/);
   app.handleInput("\u001b[A");
   app.handleInput("\u001b[A");
@@ -186,9 +186,9 @@ test("Codex intake TUI opens Home without configuration and only enters config o
       effort: "medium",
     },
   );
-  assert.match(rendered, /Continue|Browse|\/ command|继续|浏览|\/命令/);
+  assert.match(rendered, /New replay|新建回放|\/ command|\/命令|More|更多/);
   enterCommand(app, "/config");
-  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(rendered));
+  await waitFor(() => /Internal collab model|内部协作模型|Internal Agent model|内部 Agent 模型/.test(rendered));
   assert.doesNotMatch(rendered, /Unsaved draft/);
   assert.match(rendered, /Saved locally|已保存在本地/);
 });
@@ -386,7 +386,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   await enterIntake(app);
   await waitFor(() => /Make a focused change\./.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Session start:|会话起点：/.test(rendered));
+  await waitFor(() => /Task text:|任务原文：/.test(rendered));
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Restore the task start/);
@@ -601,7 +601,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
   await enterIntake(app);
   await waitFor(() => /Restore the task start/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Session start:|会话起点：/.test(rendered));
+  await waitFor(() => /Task text:|任务原文：/.test(rendered));
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   assert.equal(recoveryCalls, 1);
