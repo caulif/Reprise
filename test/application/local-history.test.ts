@@ -26,12 +26,13 @@ test('local history reports experiment and total persisted data sizes', async (t
   const failed = (await readLocalHistory(root)).experiments[0]!;
   assert.equal(failed.comparisonStatus, 'failed');
   assert.equal(failed.comparisonFailure, 'protocol');
-  assert.equal(failed.reportKind, 'Previous report');
+  assert.equal(failed.reportAttemptUnconfirmed, true);
   assert.equal(failed.reportPath, join(experiment, 'report.html'));
   await writeFile(join(experiment, 'comparison-failure.html'), 'failure diagnosis');
   const diagnostic = (await readLocalHistory(root)).experiments[0]!;
-  assert.equal(diagnostic.reportKind, 'Diagnostic');
   assert.equal(diagnostic.reportPath, join(experiment, 'comparison-failure.html'));
+  assert.equal(diagnostic.previousReportPath, join(experiment, 'report.html'));
+  assert.equal(diagnostic.reportAttemptUnconfirmed, undefined);
   assert.equal(await readFile(join(experiment, 'report.html'), 'utf8'), 'report bytes');
 });
 
@@ -67,15 +68,13 @@ test('local history treats cancelled comparison like failed for report selection
   const cancelledOnlyReport = (await readLocalHistory(root)).experiments[0]!;
   assert.equal(cancelledOnlyReport.comparisonStatus, 'cancelled');
   assert.equal(cancelledOnlyReport.cleanupStatus, 'unknown');
-  assert.equal(cancelledOnlyReport.reportKind, 'Previous report');
   assert.equal(cancelledOnlyReport.reportAttemptUnconfirmed, true);
   assert.equal(cancelledOnlyReport.reportPath, join(experiment, 'report.html'));
   await writeFile(join(experiment, 'comparison-failure.html'), 'cancel diagnosis');
   const cancelledDiagnostic = (await readLocalHistory(root)).experiments[0]!;
-  assert.equal(cancelledDiagnostic.reportKind, 'Diagnostic');
   assert.equal(cancelledDiagnostic.reportPath, join(experiment, 'comparison-failure.html'));
   assert.equal(cancelledDiagnostic.previousReportPath, join(experiment, 'report.html'));
-  assert.notEqual(cancelledDiagnostic.reportKind, 'Report');
+  assert.equal(cancelledDiagnostic.reportAttemptUnconfirmed, undefined);
 });
 
 test('local history records nested insufficient_evidence without promoting failure', async (t) => {
@@ -93,8 +92,8 @@ test('local history records nested insufficient_evidence without promoting failu
   const item = (await readLocalHistory(root)).experiments[0]!;
   assert.equal(item.comparisonStatus, 'completed');
   assert.equal(item.comparisonDetail, 'insufficient_evidence');
-  assert.equal(item.reportKind, 'Report');
   assert.equal(item.reportPath, join(experiment, 'report.html'));
+  assert.equal(item.reportAttemptUnconfirmed, undefined);
 });
 
 test('local history marks unreadable comparison leftovers as unconfirmed', async (t) => {
@@ -108,7 +107,6 @@ test('local history marks unreadable comparison leftovers as unconfirmed', async
   const item = (await readLocalHistory(root)).experiments[0]!;
   assert.equal(item.comparisonStatus, undefined);
   assert.equal(item.reportAttemptUnconfirmed, true);
-  assert.equal(item.reportKind, 'Previous report');
   assert.equal(item.reportPath, join(experiment, 'report.html'));
 });
 
@@ -149,6 +147,21 @@ test('history detail uses shared result fact labels for cleanup and previous rep
   assert.match(zh, /对照已取消/);
   assert.match(zh, /诊断/);
   assert.match(zh, /此前报告/);
+});
+
+test('history detail shows stored comparison failure kind not agent_failure placeholder', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-fail-label-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const experiment = join(root, 'experiments', 'exp-fail-label');
+  await mkdir(experiment, { recursive: true });
+  await writeFile(join(experiment, 'experiment.json'), JSON.stringify({ spec: { schemaVersion: 1, experimentId: 'exp-fail-label', taskCaseId: 'case-fail', candidates: [{ candidateId: 'candidate', productId: 'codex', requestedModel: 'model' }], controller: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, comparison: { providerId: 'provider', requestedModel: 'model', budget: { callTimeoutMs: 1, maxStructuredRepairAttempts: 0 } }, runPolicy: { wallClockMs: 1, maxTargetTurns: 1, maxModelCalls: 1, turnTimeoutMs: 1, maxConsecutiveNoProgress: 1 }, outputRoot: experiment }, runIds: [] }));
+  await writeFile(join(experiment, 'comparison-failure.html'), 'diag');
+  await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'failed', failure: { code: 'agent_failure', message: 'context_length_exceeded', kind: 'protocol', attempts: 1 } }));
+  const item = (await readLocalHistory(root)).experiments[0]!;
+  assert.equal(item.comparisonFailure, 'protocol');
+  const en = renderHistoryDetail(createTheme(120, false), 120, item, 'en').join('\n');
+  assert.match(en, /Comparison failed \(protocol\)/);
+  assert.doesNotMatch(en, /Comparison failed \(agent_failure\)/);
 });
 
 test('local history keeps sealed baseline copies when reporting size', async (t) => {

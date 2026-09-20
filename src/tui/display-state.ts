@@ -275,6 +275,36 @@ const CLEANUP_STATUSES = new Set<RunOutcome['cleanup']['status']>([
   'unknown',
 ]);
 
+type FailureKind = NonNullable<
+  Extract<ExperimentResult['comparison']['result'], { status: 'failed' }>['failure']['kind']
+>;
+type FailureCode = Extract<ExperimentResult['comparison']['result'], { status: 'failed' }>['failure']['code'];
+
+const FAILURE_KINDS = new Set<string>([
+  'authentication',
+  'rate_limited',
+  'transient_network',
+  'transient_upstream',
+  'tool',
+  'timeout',
+  'protocol',
+  'cancelled',
+  'unknown',
+]);
+
+const FAILURE_CODES = new Set<string>([
+  'agent_timeout',
+  'agent_failure',
+  'invalid_output',
+  'privacy_blocked',
+  'host_zone_modified',
+  'invalid_envelope',
+  'evidence_unresolved',
+  'media_unavailable',
+  'report_incomplete',
+  'publication_failed',
+]);
+
 function historyTaskStatus(status: string | undefined): RunOutcome['task']['status'] {
   if (status && TASK_STATUSES.has(status as RunOutcome['task']['status'])) {
     return status as RunOutcome['task']['status'];
@@ -308,12 +338,18 @@ function historyComparisonResult(
   if (status === 'skipped') return { status: 'skipped' };
   if (status === 'cancelled') return { status: 'cancelled' };
   if (status === 'failed') {
+    const stored = item.comparisonFailure?.trim();
+    const kind = stored && FAILURE_KINDS.has(stored) ? (stored as FailureKind) : undefined;
+    const code = stored && FAILURE_CODES.has(stored)
+      ? (stored as FailureCode)
+      : ('agent_failure' as FailureCode);
     return {
       status: 'failed',
       failure: {
-        code: 'agent_failure',
-        message: item.comparisonFailure ?? 'history',
+        code,
+        message: stored ?? 'history',
         attempts: 0,
+        ...(kind ? { kind } : {}),
       },
     };
   }

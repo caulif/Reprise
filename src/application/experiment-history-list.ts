@@ -5,7 +5,7 @@ import { Value } from "@sinclair/typebox/value";
 import { ComparisonInvocationSchema, RunRecordSchema, TaskCaseSchema, type RunRecord, type TaskCase } from "../core/schema.js";
 import { readCommittedExperimentHistory } from "./experiment-history-read.js";
 import { isPersistedExperimentMetadata, listPersistedRunIds } from "./experiment-layout.js";
-import { comparisonDetailOf, selectComparisonArtifacts } from "./history-result-facts.js";
+import { comparisonDetailOf, selectComparisonArtifacts } from "./comparison-artifacts.js";
 import { listPublishedFrozenCases } from "../products/shared/freeze.js";
 
 export type HistoryCase = { readonly taskCase: TaskCase; readonly path: string };
@@ -20,10 +20,9 @@ export type HistoryExperiment = {
   readonly comparisonFailure?: string;
   /** Nested comparison value status when invocation completed (e.g. insufficient_evidence). */
   readonly comparisonDetail?: string;
-  readonly reportKind?: "Report" | "Diagnostic" | "Previous report";
   readonly startedAt?: string;
   readonly reportPath?: string;
-  /** Prior successful report retained beside this attempt's diagnostic / unconfirmed file. */
+  /** Prior successful report retained beside this attempt's diagnostic. */
   readonly previousReportPath?: string;
   /** True when an on-disk HTML exists but attempt ownership is not confirmed. */
   readonly reportAttemptUnconfirmed?: boolean;

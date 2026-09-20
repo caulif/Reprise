@@ -1,8 +1,8 @@
 import { compact, formatBytes, missing, hitFileLink } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import type { HistoryCase, HistoryExperiment } from '../local-history.js';
-import { resultFactsFromHistory } from '../../application/history-result-facts.js';
-import { deriveResultPresentationFromHistory } from '../display-state.js';
+import { deriveResultPresentationFromHistory, type ResultPresentation } from '../display-state.js';
+import { localPathFromFileUrl } from '../open-report.js';
 import { showsDetailPane, type Theme } from '../theme.js';
 import { joinColumns, kv, kvBlock, kvLinkBlock, panel } from '../widgets.js';
 
@@ -14,6 +14,10 @@ export type HistoryModel = {
   readonly locale?: Locale;
   readonly detail?: HistoryCase | HistoryExperiment;
 };
+
+export type HistoryDetailPointerHit =
+  | { readonly action: 'open-report'; readonly reportPath: string }
+  | { readonly action: 'open-local' };
 
 export function renderHistory(theme: Theme, width: number, model: HistoryModel, height?: number): string[] {
   const locale = model.locale ?? 'en';
@@ -51,14 +55,7 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
       ...kvLinkBlock(theme, 'Path', item.path, item.path, width).lines,
     ], width);
   }
-  const facts = resultFactsFromHistory(item);
   const presentation = deriveResultPresentationFromHistory(item, locale);
-  const reportLabel =
-    facts.reportKind === 'Previous report'
-      ? t(locale, 'historyPreviousReport')
-      : presentation.reportKind === 'diagnostic'
-        ? t(locale, 'resultDiagnostic')
-        : t(locale, 'resultReport');
   return panel(theme, t(locale, 'historyRunTitle'), [
     kv(theme, 'ID', item.experimentId, width - 2),
     kv(theme, 'TaskCase', item.taskCaseId, width - 2),
@@ -71,18 +68,18 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
     kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2),
     ...(item.incompleteModelInput ? kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width) : []),
     ...(item.formatError ? [kv(theme, 'Format', t(locale, 'unsupportedSchema'), width - 2)] : []),
-    ...(facts.reportAttemptUnconfirmed
+    ...(item.reportAttemptUnconfirmed
       ? kvBlock(theme, t(locale, 'resultReport'), t(locale, 'historyReportUnconfirmed'), width)
       : []),
     ...kvLinkBlock(
       theme,
-      reportLabel,
-      facts.reportPath ?? t(locale, 'resultReportNotGenerated'),
-      facts.reportPath,
+      historyPrimaryReportLabel(item, presentation, locale),
+      item.reportPath ?? t(locale, 'resultReportNotGenerated'),
+      item.reportPath,
       width,
     ).lines,
-    ...(facts.previousReportPath && facts.previousReportPath !== facts.reportPath
-      ? kvLinkBlock(theme, t(locale, 'historyPreviousReport'), facts.previousReportPath, facts.previousReportPath, width).lines
+    ...(item.previousReportPath && item.previousReportPath !== item.reportPath
+      ? kvLinkBlock(theme, t(locale, 'historyPreviousReport'), item.previousReportPath, item.previousReportPath, width).lines
       : []),
     kv(theme, 'Stored', formatBytes(item.sizeBytes), width - 2),
     ...kvLinkBlock(theme, 'Path', item.path, item.path, width).lines,
@@ -103,11 +100,69 @@ export function historyDetailHints(isCase: boolean, hasReport = false, locale: L
   ];
 }
 
-export function historyDetailPointerAction(lines: readonly string[], row: number, col: number): 'open-report' | 'open-local' | undefined {
+/** Resolve history detail OSC-8 hits; HTML artifacts open via openReport with the clicked path. */
+export function historyDetailPointerAction(
+  lines: readonly string[],
+  row: number,
+  col: number,
+  item?: HistoryExperiment,
+): HistoryDetailPointerHit | undefined {
   const href = hitFileLink(lines[row] ?? '', col);
   if (!href) return undefined;
-  if (/report\.html/i.test(href)) return 'open-report';
-  return 'open-local';
+  const clicked = hrefPath(href);
+  if (!isComparisonHtml(clicked)) return { action: 'open-local' };
+  const reportPath = item ? resolveHistoryHtmlPath(item, clicked) : clicked;
+  return { action: 'open-report', reportPath };
+}
+
+/** Map an OSC-8 / file URL target back onto the experiment's stored HTML paths. */
+export function resolveHistoryHtmlPath(item: HistoryExperiment, clicked: string): string {
+  const candidates = [item.reportPath, item.previousReportPath].filter((path): path is string => Boolean(path));
+  const clickedKey = pathMatchKey(clicked);
+  for (const candidate of candidates) {
+    if (pathMatchKey(candidate) === clickedKey) return candidate;
+  }
+  return clicked;
+}
+
+function historyPrimaryReportLabel(
+  item: HistoryExperiment,
+  presentation: ResultPresentation,
+  locale: Locale,
+): string {
+  if (item.reportAttemptUnconfirmed) return t(locale, 'historyPreviousReport');
+  if (presentation.reportKind === 'diagnostic') return t(locale, 'resultDiagnostic');
+  return t(locale, 'resultReport');
+}
+
+function hrefPath(href: string): string {
+  if (/^file:/i.test(href)) {
+    try {
+      return localPathFromFileUrl(href);
+    } catch {
+      return href;
+    }
+  }
+  return href;
+}
+
+function isComparisonHtml(path: string): boolean {
+  const base = pathBasename(path).toLowerCase();
+  return base === 'report.html' || base === 'comparison-failure.html';
+}
+
+function pathMatchKey(path: string): string {
+  return pathBasename(path).toLowerCase();
+}
+
+function pathBasename(path: string): string {
+  const normalized = path.replaceAll('\\', '/');
+  const cut = normalized.split('/').pop() ?? normalized;
+  try {
+    return decodeURIComponent(cut);
+  } catch {
+    return cut;
+  }
 }
 
 function visibleRange<T>(items: readonly T[], selected: number, limit = 8): { start: number; end: number } {
