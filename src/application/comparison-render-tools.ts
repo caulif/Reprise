@@ -43,11 +43,18 @@ export type RegisterDerivedMediaInput = {
   };
 };
 
-export type RegisterDerivedMediaResult = {
-  shortRef: string;
-  mediaRef: string;
-  revision: number;
-};
+export type RegisterDerivedMediaResult =
+  | {
+      ok: true;
+      shortRef: string;
+      mediaRef: string;
+      revision: number;
+    }
+  | {
+      ok: false;
+      code: string;
+      message: string;
+    };
 
 const ViewportSchema = Type.Object({
   width: Type.Integer({ minimum: RENDER_LIMITS.minWidth, maximum: RENDER_LIMITS.maxWidth }),
@@ -144,6 +151,15 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
             capturedAt,
           },
         });
+        if (!registered.ok) {
+          return textResult({
+            status: "capture_failed",
+            sourceRef: params.sourceRef,
+            revision: deps.catalog.revision(),
+            code: registered.code,
+            message: registered.message,
+          });
+        }
         assertEvidenceShortRef(registered.shortRef, "artifact_preview");
         mediaRefs.push({
           shortRef: registered.shortRef,
@@ -225,6 +241,16 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
           capturedAt: (deps.now ?? (() => new Date()))().toISOString(),
         },
       });
+      if (!registered.ok) {
+        return textResult({
+          status: "capture_failed",
+          revision: prepared.catalogRevision,
+          draftDigest: prepared.draftDigest,
+          preparedDigest: prepared.preparedDigest,
+          code: registered.code,
+          message: registered.message,
+        });
+      }
       assertEvidenceShortRef(registered.shortRef, "report_review");
       const mechanics = inspectPreparedReportMechanics(prepared.html);
       return textResult({

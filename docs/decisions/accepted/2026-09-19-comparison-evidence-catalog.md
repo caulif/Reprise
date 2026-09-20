@@ -11,7 +11,7 @@ Comparison 简报一次性写出 links/media 后，`compare()` 开头拍下的�
 - Attempt 作用域持有可修订的证据 catalog（`revision`、links、media）；权威落盘为 `facts/evidence-catalog/rev-N.json` + 原子 `CURRENT` 指针；`facts/` 与 `briefing/facts/` 的 media/evidence-index 由同一 revision 派生。
 - 短引用 `ev-*` / `media-*` 统一为 2–6 位数字；分配 append-only，已分配编号不因删除或失效而复用；两侧相同字节仍按 side 分属保留。
 - 新增工具 `register_evidence`：只接受 scratch 相对路径与已有 sourceRefs；Host 强制 `origin=derived_analysis` / `side=derived`，禁止 Agent 自填历史原件身份。可选 `toolCallId` 必须属于本 attempt 且已 `agent.tool_completed`。
-- `render_artifact` / `preview_report` 先以 `capability_unavailable` 占位，渲染与预览体由后续包实现；工具名进入 Comparison 工具面。
+- `render_artifact` / `preview_report` 由 Host 在 Comparison 工具面挂载真实工厂（`comparison-render-tools.ts` + `comparison-render-catalog.ts`）；不再返回 `capability_unavailable` stub。
 - `ComparisonAgent.compare` 通过同进程 `getEvidenceCatalog()` 读取当前白名单；该 getter 不进入 `comparison.requested` 持久化 JSON。`assertComparisonResult` 与 `enforcePublishedReport` 使用最终成功 revision。
 - 成功注册写入事件 `comparison.evidence_registered`（attemptId、revision、shortRef、hash、source/artifact refs、派生参数）；不含媒体 base64 或私人绝对路径。mutate/persist 后若 emit 失败，同内容重试必须补发事件，不得因 dedupe 跳过。
 - Catalog 落盘顺序为 `rev-N.json` → facts 镜像 → 原子 `CURRENT`。

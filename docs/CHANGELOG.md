@@ -12,7 +12,7 @@
 
 ### Added
 
-- Comparison attempt 动态证据 catalog：append-only 短引用、`register_evidence`、事件 `comparison.evidence_registered`；`render_artifact` / `preview_report` 占位至渲染包。
+- Comparison attempt 动态证据 catalog：append-only 短引用、`register_evidence`、事件 `comparison.evidence_registered`；Host 挂载真实 `render_artifact` / `preview_report`（冻结 finals/candidate snapshot 映射；`media/*` 文档 `bundleRoot` 限于 `attemptRoot/media`）。
 
 ### Changed
 
