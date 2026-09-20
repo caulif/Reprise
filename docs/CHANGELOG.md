@@ -24,4 +24,5 @@
 
 ### Fixed
 
+- Comparison Agent Session 不再 `timeoutMs: 0` 无限等待；改为 harness `budget.callTimeoutMs`（默认 24 小时）。超时映射为 `agent_timeout`；用户取消优先且不重试。Controller 仍保持无界。
 - HTTP 520 归入 `transient_upstream`，Recovery 可使用既有有界重试，不再误判为不可重试的 `unknown`。

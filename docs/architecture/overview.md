@@ -62,6 +62,6 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 | `turnTimeoutMs` | 7200000（2 小时） |
 | `maxConsecutiveNoProgress` | 2 |
 
-token 与成本上限默认不启用。Controller / Comparison 单次 `timeoutMs` 为 0。
+token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Comparison 使用 harness `budget.callTimeoutMs`（默认 24 小时）。
 <!-- END GENERATED default-run-policy -->
 
