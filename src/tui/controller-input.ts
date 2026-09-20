@@ -11,6 +11,7 @@ import type { TaskCase, CandidateRunState } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
 import { coveringFoldIds, selectedIndexAfterFold } from './fold-process.js';
+import { excerptId } from './agent-activity.js';
 import { projectTimelineView } from './timeline-view.js';
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
@@ -61,6 +62,9 @@ export type ControllerHandle = {
   workflowFinished: Promise<void> | undefined;
   page: Page;
   helpOverlay: { hide(): void } | undefined;
+  activityDetailOverlay: { hide(): void } | undefined;
+  activityDetailEntry: TimelineEntry | undefined;
+  activityDetailRestore: { anchor?: string; offset: number; following: boolean } | undefined;
   inlineHelp: boolean;
   composer: string;
   composerCursor: number;
@@ -147,6 +151,8 @@ export type ControllerHandle = {
   beginNavigation(): number;
   hideHelp(): void;
   showHelp(): Consume;
+  hideActivityDetail(): void;
+  showActivityDetail(entry: TimelineEntry): Consume;
   hideCommandOverlay(): void;
   syncCommandOverlay(): void;
   openConfig(): Promise<void>;
@@ -190,6 +196,7 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     page: c.page,
     editingText: c.isEditingText(),
     helpOpen: Boolean(c.helpOverlay || c.inlineHelp),
+    activityDetailOpen: Boolean(c.activityDetailOverlay || c.activityDetailEntry),
     startupActive: Boolean(c.startupAbort),
   }, input);
   if (global) return applyGlobal(c, global.action);
@@ -247,6 +254,11 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
 function applyGlobal(c: ControllerHandle, action: GlobalInputAction): Consume {
   if (action === 'cancel') return requestCancellation(c);
   if (action === 'close') return c.close();
+  if (action === 'hide-detail') {
+    c.hideActivityDetail();
+    c.render();
+    return { consume: true };
+  }
   if (action === 'hide-help') {
     c.hideHelp();
     c.render();
@@ -566,7 +578,7 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
 
 function canvasBlocked(c: ControllerHandle): boolean {
   return c.preparePhase === 'check' || c.preparePhase === 'copy'
-    || Boolean(c.helpOverlay || c.inlineHelp);
+    || Boolean(c.helpOverlay || c.inlineHelp || c.activityDetailOverlay);
 }
 
 function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
@@ -645,7 +657,25 @@ function toggleSelectedFold(c: ControllerHandle): Consume {
   const entry = folded[selected];
   if (entry?.kind === 'fold' && entry.itemId) {
     c.expandedFolds = toggleFoldId(c.expandedFolds, entry.itemId);
+    c.render();
+    return { consume: true };
   }
+  if (entry && (entry.kind === 'narrate' || entry.title.startsWith('Visible response') || entry.verb === 'send'
+    || entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·'))) {
+    const id = excerptId(entry);
+    const wrappedLong = (entry.detail ?? entry.title).length > 120 || (entry.detail ?? '').includes('\n');
+    if (wrappedLong && !c.expandedFolds.includes(id)) {
+      c.expandedFolds = [...c.expandedFolds, id];
+      c.render();
+      return { consume: true };
+    }
+    if (c.expandedFolds.includes(id) && !c.activityDetailEntry) {
+      // Second Enter after excerpt expand opens the shared detail model.
+      return c.showActivityDetail(entry);
+    }
+    if (!wrappedLong) return c.showActivityDetail(entry);
+  }
+  if (entry) return c.showActivityDetail(entry);
   c.render();
   return { consume: true };
 }

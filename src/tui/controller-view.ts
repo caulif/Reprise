@@ -200,6 +200,7 @@ export function view(c: IntakeTui): WorkbenchView {
     timelineFilterIndex: c.timelineFilterIndex,
     timelineFollowing: c.timelineFollowing,
     expandedFolds: c.expandedFolds,
+    ...(c.activityDetailEntry ? { activityDetail: c.activityDetailEntry } : {}),
     runStartedAt: c.runStartedAt,
     nowMs: c.nowMs(),
     ...(c.compareChoice ? { comparePending: true } : {}),

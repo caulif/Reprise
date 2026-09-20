@@ -46,7 +46,7 @@ type Input = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
-  readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
+  readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly activityDetail?: TimelineEntry; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
@@ -89,6 +89,7 @@ function runningModel(input: Input) {
     ...(input.reconnectTotal ? { reconnectTotal: input.reconnectTotal } : {}),
     ...(input.runStartedAt ? { runStartedAt: input.runStartedAt } : {}),
     ...(input.expandedFolds?.length ? { expandedFolds: input.expandedFolds } : {}),
+    ...(input.activityDetail ? { activityDetail: input.activityDetail } : {}),
     locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
     ...(input.candidate?.requestedModel ? { candidateModel: input.candidate.requestedModel } : {}),
     ...(input.taskCase ? {

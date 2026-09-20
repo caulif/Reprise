@@ -20,6 +20,7 @@ import {
 import {
   captionPublicLive,
   collapseAgentRows,
+  errorFingerprint,
   laneSource,
   projectAgentTool,
   projectAssistantVisible,
@@ -194,24 +195,30 @@ function presentedInputMeta(entry: TimelineEntry): { kind: 'input' | 'prompt'; t
 }
 
 function collapseRepeatedRecoveryFailure(timeline: TimelineEntry[], entry: TimelineEntry): boolean {
-  if (entry.hidden || entry.level !== 'error' || !/工具失败|写入失败|tool failed/.test(entry.title)) return false;
+  if (entry.hidden || entry.level !== 'error') return false;
+  if (!entry.verb && !/工具失败|写入失败|tool failed/.test(entry.title) && entry.activityStatus !== 'failed') return false;
+  const fingerprint = errorFingerprint(entry);
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const previous = timeline[index];
     if (!previous || previous.hidden || previous.placeholder || previous.kind === 'live') continue;
-    if (previous.title !== entry.title || previous.level !== 'error') return false;
-    const previousKey = recoveryFailureText(previous.detail);
-    const nextKey = recoveryFailureText(entry.detail);
-    if (previousKey !== nextKey) return false;
-    const count = recoveryFailureCount(previous.detail) + 1;
+    if (previous.level !== 'error') return false;
+    // Same fingerprint within role/attempt only — never merge across roles.
+    if (errorFingerprint(previous) !== fingerprint) return false;
+    const count = (previous.count ?? recoveryFailureCount(previous.detail)) + 1;
+    const firstAt = previous.eventRefs?.[0] ? previous.occurredAt : previous.occurredAt;
     timeline[index] = {
       ...previous,
       sequence: entry.sequence,
       occurredAt: entry.occurredAt,
       count,
-      detail: `${previousKey} ×${count}`,
+      detail: `${recoveryFailureText(previous.detail || previous.title)} ×${count}`,
       eventRefs: mergeEventRefs(previous.eventRefs, entry.eventRefs),
       ...(entry.original || previous.original
-        ? { original: clampOriginal(`${previous.original ?? previous.detail ?? ''}\n${entry.original ?? entry.detail ?? ''}`) }
+        ? {
+            original: clampOriginal(
+              `first=${firstAt}\nlast=${entry.occurredAt}\n${previous.original ?? previous.detail ?? ''}\n${entry.original ?? entry.detail ?? ''}`,
+            ),
+          }
         : {}),
     };
     return true;
@@ -292,10 +299,15 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
         entry('HARNESS', finalStatus, excerpt, {
           lane: 'recovery',
           kind: 'deliver',
+          role: 'recovery',
+          verb: 'publish',
+          activityStatus: failed ? 'failed' : 'completed',
           ...(excerpt ? { original: excerpt } : {}),
           ...(failed && !blocked ? { level: 'error' as const } : {}),
         }),
-        ...unresolved.map((item) => entry('HARNESS', item, undefined, { lane: 'recovery', kind: 'narrate' })),
+        ...unresolved.map((item) => entry('HARNESS', item, undefined, {
+          lane: 'recovery', kind: 'narrate', role: 'recovery', verb: 'publish', activityStatus: 'completed',
+        })),
         clearNow(entry, 'recovery'),
       ];
     }
@@ -521,8 +533,17 @@ function projectCandidateNow(type: string, payload: JsonRecord, entry: MakeEntry
   if (!live) return [];
   const caption = captionPublicLive(live.verb, live.leaf);
   const write = live.verb === 'write' || live.verb === 'edit';
+  const verb = live.verb === 'working' ? 'working' as const
+    : live.verb === 'write' || live.verb === 'edit' ? live.verb
+    : live.verb === 'run' ? 'run' as const
+    : live.verb === 'inspect' ? 'inspect' as const
+    : 'read' as const;
   const now = entry('TARGET', caption.title, caption.detail, {
     kind: 'live', placeholder: true, itemId: 'now:target', patch: 'replace', voice: 'candidate',
+    role: 'candidate',
+    verb,
+    activityStatus: 'started',
+    ...(live.leaf ? { object: live.leaf } : {}),
   });
   if (live.verb === 'working') return [now];
   return [
@@ -534,6 +555,8 @@ function projectCandidateNow(type: string, payload: JsonRecord, entry: MakeEntry
       kind: write ? 'deliver' : 'investigate',
       count: 1,
       voice: 'candidate',
+      role: 'candidate',
+      ...(live.leaf ? { object: live.leaf } : {}),
     }),
   ];
 }
@@ -749,7 +772,7 @@ function shouldFlushBefore(entry: TimelineEntry): boolean {
   if (entry.hidden) return false;
   if (entry.kind === 'narrate') return true;
   if (entry.lane === 'comparison' && entry.kind === 'deliver') return true;
-  if (entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')) return true;
+  if (entry.verb === 'send' || entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·')) return true;
   if (entry.title === 'Visible response') return true;
   if (entry.title === '已恢复' || entry.title === '部分恢复' || entry.title === '无法恢复') return true;
   return false;
@@ -796,7 +819,12 @@ export function flushFoldTitle(row: TimelineEntry): string {
   if (row.itemId?.startsWith('flush-write:')) {
     return `▸ 写入 ${row.detail?.split(' · ')[0] ?? ''}`.trim();
   }
-  return `▸ 阅读证据 · ${row.count ?? 1}`;
+  const callCount = row.count ?? 1;
+  const objects = uniqueLeafNames((row.detail ?? '').split(/[·,]/));
+  if (objects.length > 0 && objects.length !== callCount) {
+    return `▸ 阅读证据 · ${callCount}次 · ${objects.length}项`;
+  }
+  return `▸ 阅读证据 · ${callCount}`;
 }
 
 function emitFlush(timeline: TimelineEntry[], itemId: string, titleOf: (row: TimelineEntry) => string): void {

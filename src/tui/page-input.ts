@@ -102,14 +102,16 @@ export type GlobalInputContext = {
   readonly page: string;
   readonly editingText: boolean;
   readonly helpOpen: boolean;
+  readonly activityDetailOpen?: boolean;
   readonly startupActive?: boolean;
 };
 
-export type GlobalInputAction = 'cancel' | 'close' | 'hide-help' | 'show-help';
+export type GlobalInputAction = 'cancel' | 'close' | 'hide-help' | 'show-help' | 'hide-detail';
 
 export function dispatchGlobalInput(ctx: GlobalInputContext, data: string): { action: GlobalInputAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'ctrl+c')) return { action: ctx.page === 'running' || ctx.startupActive ? 'cancel' : 'close', consume: true };
+  if (ctx.activityDetailOpen && matchesKey(input, 'escape')) return { action: 'hide-detail', consume: true };
   if (ctx.helpOpen && matchesKey(input, 'escape')) return { action: 'hide-help', consume: true };
   if (!ctx.editingText && matchesKey(input, '?')) return { action: 'show-help', consume: true };
   return undefined;

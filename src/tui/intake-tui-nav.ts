@@ -3,7 +3,7 @@ import { importPacks } from "../application/intake-catalog.js";
 import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harness-model-config.js";
 import { classifyAgentFailure } from '../infrastructure/agent/failure.js';
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
-import { HelpOverlay, commandSelectList } from "./overlays.js";
+import { ActivityDetailOverlay, HelpOverlay, activityDetailModel, commandSelectList, showsActivityDetailSidebar } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
 import { productContext as activeProductContext, view as projectView } from "./controller-view.js";
 import { discardRecovery, stopRunClock } from "./controller-run.js";
@@ -148,6 +148,7 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.configPendingToggle = false;
     this.historyDetail = undefined;
     this.hideHelp();
+    this.hideActivityDetail();
     this.hideCommandOverlay();
     this.page = "home";
     this.composer = "";
@@ -181,6 +182,7 @@ export function IntakeTui_close(this: IntakeTui): { consume: true } {
     this.compareChoice = undefined;
     stopRunClock(this);
     this.hideHelp();
+    this.hideActivityDetail();
     this.hideCommandOverlay();
     // An experiment that started but never reached the running page would otherwise outlive the TUI.
     const experiment = this.activeExperiment;
@@ -226,6 +228,7 @@ export function IntakeTui_isEditingText(this: IntakeTui): boolean {
 export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
     if (typeof this.tui.showOverlay === "function") {
       this.hideHelp();
+      this.hideActivityDetail();
       this.helpOverlay = this.tui.showOverlay(
         new HelpOverlay(
           createTheme(this.tui.terminal?.columns ?? 120),
@@ -245,6 +248,46 @@ export function IntakeTui_hideHelp(this: IntakeTui): void {
     this.helpOverlay?.hide();
     this.helpOverlay = undefined;
     this.inlineHelp = false;
+  }
+
+export function IntakeTui_showActivityDetail(this: IntakeTui, entry: TimelineEntry): { consume: true } {
+    this.activityDetailRestore = {
+      ...(this.timelineAnchor ? { anchor: this.timelineAnchor } : {}),
+      offset: this.timelineReadOffset,
+      following: this.timelineFollowing,
+    };
+    this.activityDetailEntry = entry;
+    const theme = createTheme(this.tui.terminal?.columns ?? 120);
+    const product = this.selectedCandidate?.productId
+      ?? this.candidateProductId
+      ?? this.activeProductId
+      ?? '';
+    const model = activityDetailModel(entry, product, this.locale);
+    if (showsActivityDetailSidebar(theme)) {
+      // Wide density: detail is rendered beside the timeline via view projection.
+      this.activityDetailOverlay?.hide();
+      this.activityDetailOverlay = undefined;
+    } else if (typeof this.tui.showOverlay === 'function') {
+      this.activityDetailOverlay?.hide();
+      this.activityDetailOverlay = this.tui.showOverlay(
+        new ActivityDetailOverlay(theme, model, this.locale),
+      );
+    }
+    this.render();
+    return { consume: true };
+  }
+
+export function IntakeTui_hideActivityDetail(this: IntakeTui): void {
+    this.activityDetailOverlay?.hide();
+    this.activityDetailOverlay = undefined;
+    this.activityDetailEntry = undefined;
+    const restore = this.activityDetailRestore;
+    this.activityDetailRestore = undefined;
+    if (restore) {
+      this.timelineFollowing = restore.following;
+      this.timelineReadOffset = restore.offset;
+      if (restore.anchor) this.timelineAnchor = restore.anchor;
+    }
   }
 
 export function IntakeTui_syncCommandOverlay(this: IntakeTui): void {
