@@ -2,6 +2,7 @@ import type { IntakeTui } from "./intake-tui.js";
 import { importPacks } from "../application/intake-catalog.js";
 import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harness-model-config.js";
 import { classifyAgentFailure } from '../infrastructure/agent/failure.js';
+import { artifactsFromResult, listActions } from "./action-model.js";
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
 import { HelpOverlay, commandSelectList } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
@@ -224,6 +225,20 @@ export function IntakeTui_isEditingText(this: IntakeTui): boolean {
   }
 
 export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
+    const preparing = this.preparePhase === 'check' || this.preparePhase === 'copy' || this.runPhase === 'recovery';
+    const actions = listActions({
+      page: this.page,
+      locale: this.locale,
+      mode: {
+        finding: this.finding,
+        reading: this.readingMode,
+        preparing,
+        comparePending: Boolean(this.compareChoice),
+        findAllowed: !preparing,
+        helpOpen: false,
+      },
+      artifacts: artifactsFromResult(this.result),
+    });
     if (typeof this.tui.showOverlay === "function") {
       this.hideHelp();
       this.helpOverlay = this.tui.showOverlay(
@@ -231,6 +246,7 @@ export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
           createTheme(this.tui.terminal?.columns ?? 120),
           this.page,
           this.locale,
+          actions,
         ),
       );
       this.message = t(this.locale, "helpCommands");

@@ -1,11 +1,12 @@
 import type { Component } from '@earendil-works/pi-tui';
 import { SelectList, type SelectListTheme } from '@earendil-works/pi-tui';
+import { type ActionContext, helpLinesFromActions, listActions, type UiAction } from './action-model.js';
 import { slashCommands } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
 import { panel } from './widgets.js';
 
-/** Several keys mean different things per page (`f`, `t`, `d`), so help is scoped to where the user is. */
+/** Fallback static keys for pages not yet migrated onto the shared action model. */
 const PAGE_KEYS: Record<string, readonly string[]> = {
   home: [
     'Type       /command, then Enter',
@@ -49,31 +50,27 @@ const PAGE_KEYS: Record<string, readonly string[]> = {
     'b          Change product',
   ],
   preflight: ['Esc        Back to Home'],
-  confirm: ['Enter      Start the candidate run', 'b          Change model', 'Esc        Back to Home'],
-  running: ['Ctrl+C     Request cancellation'],
-  result: [
-    'c          Generate comparison card when offered',
-    'o          Open report.html',
-    'h          Open history final artifact',
-    'f          Open candidate final artifact',
-    't          Open trace folder (troubleshoot)',
-    'w          Open isolated replica (troubleshoot)',
-    'Esc        Back to Home',
-  ],
   error: ['Enter / b / Esc  Back to Home'],
 };
 
-export function helpLines(page?: string, locale: Locale = 'en'): readonly string[] {
+const ACTION_HELP_PAGES = new Set(['running', 'result', 'confirm']);
+
+export function helpLines(
+  page?: string,
+  locale: Locale = 'en',
+  actions?: readonly UiAction[],
+): readonly string[] {
+  if (actions) return helpLinesFromActions(actions, locale, page);
+  if (page && ACTION_HELP_PAGES.has(page)) {
+    return helpLinesFromActions(listActions({ page, locale }), locale, page);
+  }
   const scoped = page === undefined ? undefined : PAGE_KEYS[page];
   const homeKeys = page === 'home' ? [
     t(locale, 'helpTypeCommand'),
     t(locale, 'helpTabComplete'),
     'Up/Down    Choose a matching /command',
   ] : undefined;
-  const runningKeys = page === 'running' ? [
-    t(locale, 'helpCancelRun'),
-  ] : undefined;
-  const keys = page === 'home' ? homeKeys : page === 'running' ? runningKeys : scoped;
+  const keys = page === 'home' ? homeKeys : scoped;
   return [
     ...(page === 'home' || page === undefined ? [t(locale, 'helpCommands')] : []),
     '',
@@ -84,21 +81,35 @@ export function helpLines(page?: string, locale: Locale = 'en'): readonly string
   ];
 }
 
-export function renderHelp(theme: Theme, width: number, page?: string, locale: Locale = 'en'): string[] {
-  return panel(theme, t(locale, 'helpTitle'), helpLines(page, locale).map((line) => ` ${line}`), Math.min(64, width));
+export function renderHelp(
+  theme: Theme,
+  width: number,
+  page?: string,
+  locale: Locale = 'en',
+  actions?: readonly UiAction[],
+): string[] {
+  return panel(theme, t(locale, 'helpTitle'), helpLines(page, locale, actions).map((line) => ` ${line}`), Math.min(64, width));
 }
 
 export class HelpOverlay implements Component {
   readonly #theme: Theme;
   readonly #page: string | undefined;
   readonly #locale: Locale;
-  constructor(theme: Theme, page?: string, locale: Locale = 'en') {
+  readonly #actions: readonly UiAction[] | undefined;
+  constructor(theme: Theme, page?: string, locale: Locale = 'en', actions?: readonly UiAction[]) {
     this.#theme = theme;
     this.#page = page;
     this.#locale = locale;
+    this.#actions = actions;
   }
   invalidate(): void { /* overlay content is fixed for the page it was opened on */ }
-  render(width: number): string[] { return renderHelp(this.#theme, width, this.#page, this.#locale); }
+  render(width: number): string[] {
+    return renderHelp(this.#theme, width, this.#page, this.#locale, this.#actions);
+  }
+}
+
+export function helpActionsForContext(ctx: ActionContext): readonly UiAction[] {
+  return listActions(ctx);
 }
 
 export function commandSelectList(theme: Theme): SelectList {

@@ -10,6 +10,7 @@ import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
 import type { TaskCase, CandidateRunState } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
+import { artifactsFromResult, listActions } from './action-model.js';
 import { coveringFoldIds, selectedIndexAfterFold } from './fold-process.js';
 import { projectTimelineView } from './timeline-view.js';
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
@@ -203,9 +204,26 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'result') {
     const pointed = applyResultPointer(c, data);
     if (pointed) return pointed;
-    const result = dispatchResultKeys(input);
+    const artifacts = artifactsFromResult(c.result);
+    const result = dispatchResultKeys(input, {
+      comparePending: Boolean(c.compareChoice),
+      artifacts,
+    });
     if (!result) return undefined;
-    if (result.action === 'compare') {
+    if (result.enabled === false) {
+      const reason = listActions({
+        page: 'result',
+        locale: c.locale,
+        mode: { comparePending: Boolean(c.compareChoice) },
+        artifacts,
+      }).find((item) => item.id === result.action)?.disabledReasonKey;
+      if (reason) {
+        c.message = t(c.locale, reason);
+        c.render();
+      }
+      return { consume: true };
+    }
+    if (result.action === 'compare' || result.action === 'activate-primary') {
       if (!c.compareChoice) return { consume: true };
       c.compareChoice.resolve(true);
       c.compareChoice = undefined;

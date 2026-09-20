@@ -356,7 +356,8 @@ test('a 24-row running workbench stays within the viewport', () => {
   const text = lines.join('\n');
   assert.match(text, /Ctrl\+C/);
   assert.doesNotMatch(text, /You cannot type/);
-  assert.doesNotMatch(text, /\[f\]|\[o\]|Expand|Select|Find/);
+  assert.doesNotMatch(text, /\[f\]|\[o\]|Select/);
+  assert.match(text, /Find|Expand|Follow|Help|\?/);
 });
 
 test('recovery workbench footer has no find', () => {
@@ -379,9 +380,9 @@ test('recovery workbench footer has no find', () => {
 
 test('help names the keys of the page it was opened on', () => {
   const running = helpLines('running').join('\n');
-  assert.match(running, /Ctrl\+C\s+Request cancellation/);
+  assert.match(running, /Ctrl\+C\s+Stop/);
+  assert.match(running, /Find|Expand|Follow live/);
   assert.match(running, /\?/);
-  assert.doesNotMatch(running, /Find|Expand|Select/);
   assert.doesNotMatch(running, /Cycle (?:timeline )?filter/);
   assert.doesNotMatch(running, /Test connection/);
 
@@ -397,9 +398,9 @@ test('help names the keys of the page it was opened on', () => {
   assert.doesNotMatch(inspection, /Request cancellation/);
 
   const result = helpLines('result').join('\n');
-  assert.match(result, /o\s+Open report\.html/);
-  assert.match(result, /t\s+Open trace folder/);
-  assert.match(result, /w\s+Open isolated replica/);
+  assert.match(result, /o\s+Open report/);
+  assert.match(result, /t\s+Open trace/);
+  assert.match(result, /w\s+Open replica/);
   assert.doesNotMatch(result, /Find in canvas/);
   assert.doesNotMatch(result, /Test connection/);
 

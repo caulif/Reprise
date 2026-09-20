@@ -3,6 +3,8 @@ import { createTheme } from './theme.js';
 import { selectedIndexAfterFold } from './fold-process.js';
 import { projectTimelineView } from './timeline-view.js';
 import { hitFileLink } from './format.js';
+import { artifactsFromResult, isActionEnabled, listActions } from './action-model.js';
+import { t } from './i18n.js';
 import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
 import { homePointerAction } from './pages/home.js';
 import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
@@ -61,6 +63,22 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   const href = line ? hitFileLink(line, cell.col) : undefined;
   const paths = resolveResultPathLinks(c.result);
   const action = resultPointerAction(lines, bodyRow, cell.col, c.locale, paths, rowHits);
+  if (!action) return { consume: true };
+  const artifacts = artifactsFromResult(c.result);
+  const actions = listActions({
+    page: 'result',
+    locale: c.locale,
+    mode: { comparePending: Boolean(c.compareChoice) },
+    artifacts,
+  });
+  if (!isActionEnabled(actions, action)) {
+    const reason = actions.find((item) => item.id === action)?.disabledReasonKey;
+    if (reason) {
+      c.message = t(c.locale, reason);
+      c.render();
+    }
+    return { consume: true };
+  }
   if (action === 'compare') {
     if (c.compareChoice) {
       c.compareChoice.resolve(true);

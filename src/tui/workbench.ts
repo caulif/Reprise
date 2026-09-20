@@ -1,5 +1,6 @@
 import { type Component, ScrollView, VStack, isViewportTUI, type TUI, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { ExperimentResult } from '../application/experiment.js';
+import { artifactsFromResult, listActions, footerHintPairs, optionalMode } from './action-model.js';
 import { compact, truncateFit } from './format.js';
 import { renderHelp } from './overlays.js';
 import { configHints, renderConfig, type ConfigModel } from './pages/config.js';
@@ -7,11 +8,11 @@ import { configFieldsForKind, languageFieldIndex } from '../infrastructure/harne
 import { historyDetailHints, historyHints, renderHistory, renderHistoryDetail, type HistoryModel } from './pages/history.js';
 import { homeHints, renderHome, type HomeModel } from './pages/home.js';
 import { inspectionHints, renderInspection, renderSessions, sessionsHints, type InspectionModel, type SessionsModel } from './pages/intake.js';
-import { renderFailure, renderResult, resultHints, failureHints } from './pages/result.js';
+import { renderFailure, renderResult, failureHints } from './pages/result.js';
 import { candidateModelHints, candidateProductHints, renderCandidateModelPicker, renderCandidateProductPicker, type CandidateModelPage, type CandidateProductModel } from './pages/candidate.js';
 import {
-  confirmHints, confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderPreflight, renderSource, renderTimeline,
-  runningChrome, runningHints, sourceHints,
+  confirmCanStart, isRecoveryChrome, preflightHints, renderConfirmation, renderPreflight, renderSource, renderTimeline,
+  runningChrome, sourceHints,
   type ConfirmModel, type PreflightModel, type RunningModel, type SourceModel,
 } from './pages/run.js';
 import { t, type Locale } from './i18n.js';
@@ -213,7 +214,22 @@ function renderFooter(theme: Theme, view: WorkbenchView, width: number): string[
 function renderBody(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
   const page = renderPage(theme, view, width, height);
   if (!view.inlineHelp) return page;
-  return [...renderHelp(theme, width, view.page, view.locale ?? 'en'), '', ...page];
+  const locale = view.locale ?? 'en';
+  const preparing = Boolean(view.running && (isRecoveryChrome(view.running) || view.running.preparePhase === 'copy'));
+  const actions = listActions({
+    page: view.page,
+    locale,
+    mode: optionalMode({
+      preparing,
+      finding: Boolean(view.running?.finding),
+      reading: Boolean(view.running?.readingMode),
+      comparePending: Boolean(view.comparePending),
+      findAllowed: !preparing,
+      ...(view.confirm ? { canStartConfirm: confirmCanStart(view.confirm) } : {}),
+    }),
+    artifacts: artifactsFromResult(view.result),
+  });
+  return [...renderHelp(theme, width, view.page, locale, actions), '', ...page];
 }
 
 function renderPage(theme: Theme, view: WorkbenchView, width: number, height?: number): string[] {
@@ -320,20 +336,34 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     if (!view.preflight) return [['Esc', t(locale, 'hintHome')]];
     return preflightHints(locale);
   }
-  if (view.page === 'confirm') return confirmHints(view.confirm ? confirmCanStart(view.confirm) : false, locale);
+  if (view.page === 'confirm') {
+    return footerHintPairs(listActions({
+      page: 'confirm',
+      locale,
+      mode: { canStartConfirm: view.confirm ? confirmCanStart(view.confirm) : false },
+    }), locale);
+  }
   if (view.page === 'running' && view.running) {
     const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
-    return runningHints(
-      view.running.filter,
-      theme.density !== 'wide',
-      preparing,
+    return footerHintPairs(listActions({
+      page: 'running',
       locale,
-      Boolean(view.running.finding),
-      Boolean(view.running.readingMode),
-    );
+      mode: {
+        preparing,
+        finding: Boolean(view.running.finding),
+        reading: Boolean(view.running.readingMode),
+        findAllowed: !preparing,
+      },
+      narrow: theme.density !== 'wide',
+    }), locale);
   }
   if (view.page === 'result') {
-    return resultHints(locale, Boolean(view.comparePending));
+    return footerHintPairs(listActions({
+      page: 'result',
+      locale,
+      mode: { comparePending: Boolean(view.comparePending) },
+      artifacts: artifactsFromResult(view.result),
+    }), locale);
   }
   if (view.page === 'error') return failureHints(locale);
   return [['b', t(locale, 'hintBack')], ['Ctrl+C', t(locale, 'hintExit')]];

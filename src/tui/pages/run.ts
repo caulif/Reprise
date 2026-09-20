@@ -1,5 +1,6 @@
 import type { ExperimentPreflight } from '../../application/experiment-preflight.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
+import { runningFooterHints } from '../action-model.js';
 import { selectedIndexAfterFold } from '../fold-process.js';
 import { projectTimelineView } from '../timeline-view.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
@@ -341,12 +342,13 @@ export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (
 }
 
 export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
-  const stop = ['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const;
-  if (reading) return [['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')], stop];
-  if (finding) {
-    return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
-  }
-  return [stop];
+  return runningFooterHints(locale, {
+    preparing,
+    finding,
+    reading,
+    findAllowed: !preparing,
+    narrow: _narrow,
+  });
 }
 
 export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {

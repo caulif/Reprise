@@ -108,18 +108,22 @@ test('skipped comparison still renders history and candidate rows without bare a
 });
 
 test('result page footer lists path open keys and c during compare gate', () => {
-  assert.deepEqual(resultHints(), [
+  const artifacts = { report: true, historyFinal: true, candidateFinal: true };
+  assert.deepEqual(resultHints('en', false, artifacts), [
     ['o', 'Open report'],
     ['h', 'History final'],
     ['f', 'Candidate final'],
     ['Esc', 'Home'],
   ]);
-  assert.deepEqual(resultHints('en', true), [
+  assert.deepEqual(resultHints('en', true, artifacts), [
     ['c', 'Generate comparison card'],
     ['o', 'Open report'],
     ['h', 'History final'],
     ['f', 'Candidate final'],
+  ]);
+  assert.deepEqual(resultHints('en', false, {}), [
     ['Esc', 'Home'],
+    ['?', 'Help'],
   ]);
 });
 
