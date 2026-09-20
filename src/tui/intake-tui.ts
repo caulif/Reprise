@@ -112,6 +112,9 @@ export class IntakeTui {
   readingVisibleAt = 0;
   timelineAnchor: string | undefined;
   timelineReadOffset = 0;
+  /** Reading scope for process folds — does not drive workflow phase. */
+  surfaceScope: import("./workbench-layout.js").WorkbenchSurfaceScope = "overview";
+  processExpanded = false;
   terminalGuard: (() => void) | undefined;
   inspectionShowOutcome = false;
   modelConfig: HarnessModelConfig = defaultHarnessModelConfig();
@@ -178,6 +181,8 @@ export class IntakeTui {
         preparePhase: PreparePhase | undefined;
         runPhase: CandidateRunPhase | undefined;
         expandedFoldsKey: string;
+        surfaceScope: import("./workbench-layout.js").WorkbenchSurfaceScope;
+        processExpanded: boolean;
         result: readonly TimelineEntry[];
       }
     | undefined;
