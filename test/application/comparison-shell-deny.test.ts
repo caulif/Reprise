@@ -9,6 +9,9 @@ import {
   withComparisonShellDeny,
 } from "../../src/application/comparison-shell-deny.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
+import { instrumentTools } from "../../src/infrastructure/agent/tools.js";
+import { toolResultBody } from "../../src/infrastructure/agent/model-input.js";
+import type { AgentToolDefinition } from "../../src/infrastructure/agent/host.js";
 import { hostNodeCommand, hostShellSleep } from "../host-shell.js";
 
 function comparisonShell(root: string, options: { shellTimeoutMs?: number } = {}) {
@@ -24,13 +27,11 @@ function comparisonShell(root: string, options: { shellTimeoutMs?: number } = {}
   return shell;
 }
 
+const BROWSER_PROBE =
+  "& 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' --version";
+
 test("isComparisonBrowserShellCommand matches browser exe, probe flags, and user profiles", () => {
-  assert.equal(
-    isComparisonBrowserShellCommand(
-      "& 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' --version",
-    ),
-    true,
-  );
+  assert.equal(isComparisonBrowserShellCommand(BROWSER_PROBE), true);
   assert.equal(
     isComparisonBrowserShellCommand(
       "& 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' --dump-dom",
@@ -52,26 +53,53 @@ test("Comparison shell_exec fast-rejects msedge --version and Chrome --dump-dom"
   const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-deny-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const shell = comparisonShell(root);
-  await assert.rejects(
-    shell.execute(
-      { command: "& 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' --version" },
-      new AbortController().signal,
-    ),
-    (error: unknown) => {
-      assert.ok(error instanceof Error);
-      assert.equal(error.message, COMPARISON_BROWSER_SHELL_DENIED);
-      assert.match(error.message, /render_artifact|preview_report/);
-      return true;
-    },
+  const edge = await shell.execute({ command: BROWSER_PROBE }, new AbortController().signal);
+  assert.equal(edge.content, COMPARISON_BROWSER_SHELL_DENIED);
+  assert.match(edge.content, /render_artifact|preview_report/);
+  const chrome = await shell.execute(
+    { command: "& 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' --dump-dom file:///tmp/x.html" },
+    new AbortController().signal,
   );
+  assert.equal(chrome.content, COMPARISON_BROWSER_SHELL_DENIED);
+});
+
+test("Host instrumentTools keeps deny guidance in model-visible tool result", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-host-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const shell = comparisonShell(root);
+  const [instrumented] = instrumentTools([shell], "session-cmp-shell", "comparison", {
+    requestIndex: 0,
+    invocationId: "inv-1",
+  });
+  assert.ok(instrumented);
+  const visible = await instrumented.execute({ command: BROWSER_PROBE }, new AbortController().signal);
+  assert.equal(visible.content, COMPARISON_BROWSER_SHELL_DENIED);
+  const body = toolResultBody(visible);
+  assert.equal(body.encoding, "inline");
+  assert.equal(body.text, COMPARISON_BROWSER_SHELL_DENIED);
+  assert.doesNotMatch(visible.content, /agent tool execution failed/i);
+});
+
+test("reverse: throw-through deny is swallowed by AgentToolFailure before the model", async () => {
+  const { Type } = await import("@sinclair/typebox");
+  const fixture: AgentToolDefinition = {
+    name: "shell_exec",
+    description: "throw-style deny fixture",
+    parameters: Type.Object({ command: Type.String({ minLength: 1 }) }),
+    async execute() {
+      throw new Error(COMPARISON_BROWSER_SHELL_DENIED);
+    },
+  };
+  const [instrumented] = instrumentTools([fixture], "session-throw", "comparison", { requestIndex: 0 });
+  assert.ok(instrumented);
   await assert.rejects(
-    shell.execute(
-      { command: "& 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' --dump-dom file:///tmp/x.html" },
-      new AbortController().signal,
-    ),
+    instrumented.execute({ command: BROWSER_PROBE }, new AbortController().signal),
     (error: unknown) => {
       assert.ok(error instanceof Error);
-      assert.equal(error.message, COMPARISON_BROWSER_SHELL_DENIED);
+      assert.match(error.message, /comparison agent tool execution failed/i);
+      assert.doesNotMatch(error.message, /render_artifact|preview_report/);
+      assert.ok(error.cause instanceof Error);
+      assert.equal(error.cause.message, COMPARISON_BROWSER_SHELL_DENIED);
       return true;
     },
   );

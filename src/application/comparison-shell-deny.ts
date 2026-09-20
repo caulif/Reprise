@@ -27,9 +27,12 @@ export function isComparisonBrowserShellCommand(command: string): boolean {
 /**
  * Wrap Comparison `shell_exec` so browser GUI / probe commands are rejected at the
  * application assembly boundary (not Recovery/Controller global rules).
+ * Returns a normal tool result (does not throw) so Host→Pi keeps the actionable
+ * guidance in model-visible content; throwing would be rewritten to a generic
+ * `AgentToolFailure` message that hides render_artifact / preview_report.
  * Underlying 60s timeout, killTree, and AbortSignal are unchanged for allowed commands.
  */
-export function wrapComparisonShellExec(tool: AgentToolDefinition): AgentToolDefinition {
+function wrapComparisonShellExec(tool: AgentToolDefinition): AgentToolDefinition {
   if (tool.name !== "shell_exec") return tool;
   return {
     ...tool,
@@ -39,14 +42,17 @@ export function wrapComparisonShellExec(tool: AgentToolDefinition): AgentToolDef
           ? (params as { command: string }).command
           : "";
       if (isComparisonBrowserShellCommand(command)) {
-        throw new Error(COMPARISON_BROWSER_SHELL_DENIED);
+        return {
+          content: COMPARISON_BROWSER_SHELL_DENIED,
+          details: { denied: true, code: "browser_shell_denied" },
+        };
       }
       return tool.execute(params, signal);
     },
   };
 }
 
-/** Apply {@link wrapComparisonShellExec} across a Comparison tool catalog. */
+/** Apply Comparison browser-shell deny across a Comparison tool catalog. */
 export function withComparisonShellDeny(
   tools: readonly AgentToolDefinition[],
 ): AgentToolDefinition[] {
