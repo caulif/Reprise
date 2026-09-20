@@ -380,8 +380,10 @@ test('recovery workbench footer has no find', () => {
 test('help names the keys of the page it was opened on', () => {
   const running = helpLines('running').join('\n');
   assert.match(running, /Ctrl\+C\s+Request cancellation/);
+  assert.match(running, /Enter\s+Expand fold \/ excerpt, or open detail/);
+  assert.match(running, /Esc\s+Close detail/);
   assert.match(running, /\?/);
-  assert.doesNotMatch(running, /Find|Expand|Select/);
+  assert.doesNotMatch(running, /Find|Select/);
   assert.doesNotMatch(running, /Cycle (?:timeline )?filter/);
   assert.doesNotMatch(running, /Test connection/);
 

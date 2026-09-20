@@ -3,13 +3,13 @@ Reprise   候选运行中 · Codex   C:\reprise
 ------------------------------------------------------------
 | Fix the failing test.                                     
 | Run the focused test.                                     
+: Codex                                                     
 : public response line 1                                    
   public response line 2                                    
   public response line 3                                    
-  public response line 4                                    
-  public response line 5                                    
-  public response line 6                                    
-  ... +35 lines                                             
+  ▸ 展开剩余 4 行                                           
+                                                            
+                                                            
                                                             
                                                             
                                                             
