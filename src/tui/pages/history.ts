@@ -1,6 +1,7 @@
 import { compact, formatBytes, missing, hitFileLink } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import type { HistoryCase, HistoryExperiment } from '../local-history.js';
+import { resultFactsFromHistory } from '../../application/history-result-facts.js';
 import { showsDetailPane, type Theme } from '../theme.js';
 import { joinColumns, kv, kvBlock, kvLinkBlock, panel } from '../widgets.js';
 
@@ -49,17 +50,42 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
       ...kvLinkBlock(theme, 'Path', item.path, item.path, width).lines,
     ], width);
   }
+  const facts = resultFactsFromHistory(item);
+  const comparisonLabel = facts.comparisonStatus
+    ? [
+        facts.comparisonStatus,
+        facts.comparisonDetail ? ` · ${facts.comparisonDetail}` : '',
+        facts.comparisonFailure ? ` (${facts.comparisonFailure})` : '',
+      ].join('')
+    : undefined;
   return panel(theme, t(locale, 'historyRunTitle'), [
     kv(theme, 'ID', item.experimentId, width - 2),
     kv(theme, 'TaskCase', item.taskCaseId, width - 2),
     kv(theme, 'Run', missing(item.runId), width - 2),
     kv(theme, 'Outcome', historyOutcomeLabel(item, locale), width - 2),
     kv(theme, 'Started', item.startedAt ?? 'unavailable', width - 2),
-    ...(item.taskStatus ? [kv(theme, 'Task', item.taskStatus, width - 2)] : []),
-    ...(item.comparisonStatus ? [kv(theme, 'Comparison', `${item.comparisonStatus}${item.comparisonFailure ? ` (${item.comparisonFailure})` : ''}`, width - 2)] : []),
+    ...(facts.taskStatus ? [kv(theme, t(locale, 'resultTask'), facts.taskStatus, width - 2)] : []),
+    ...(facts.cleanupStatus ? [kv(theme, t(locale, 'resultCleanup'), facts.cleanupStatus, width - 2)] : []),
+    ...(comparisonLabel ? [kv(theme, t(locale, 'resultComparison'), comparisonLabel, width - 2)] : []),
     ...(item.incompleteModelInput ? kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width) : []),
     ...(item.formatError ? [kv(theme, 'Format', t(locale, 'unsupportedSchema'), width - 2)] : []),
-    ...kvLinkBlock(theme, item.reportKind ?? 'Report', item.reportPath ?? 'not generated', item.reportPath, width).lines,
+    ...(facts.reportAttemptUnconfirmed
+      ? kvBlock(theme, t(locale, 'resultReport'), t(locale, 'historyReportUnconfirmed'), width)
+      : []),
+    ...kvLinkBlock(
+      theme,
+      facts.reportKind === 'Diagnostic'
+        ? t(locale, 'resultDiagnostic')
+        : facts.reportKind === 'Previous report'
+          ? t(locale, 'historyPreviousReport')
+          : t(locale, 'resultReport'),
+      facts.reportPath ?? 'not generated',
+      facts.reportPath,
+      width,
+    ).lines,
+    ...(facts.previousReportPath && facts.previousReportPath !== facts.reportPath
+      ? kvLinkBlock(theme, t(locale, 'historyPreviousReport'), facts.previousReportPath, facts.previousReportPath, width).lines
+      : []),
     kv(theme, 'Stored', formatBytes(item.sizeBytes), width - 2),
     ...kvLinkBlock(theme, 'Path', item.path, item.path, width).lines,
   ], width);
