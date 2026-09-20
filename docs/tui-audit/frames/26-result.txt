@@ -18,7 +18,7 @@ Reprise   运行结果                                                          
 │ 运行终止     正常结束 · completed.controller_satisfied │
 │ 清理         已完成 │
 │ 对照         对照已完成 │
-│     72s · candidate 49s · 1 turn · 1 controller · 未采集 tokens · 未采集 cost │
+│     72s · 候选 49s · 1 回合 · 1 次控制 · 未采集 token · 未采集 费用 │
 │ │
 │ Synthetic comparison headline. │
 │ 对照报告     report.html │
