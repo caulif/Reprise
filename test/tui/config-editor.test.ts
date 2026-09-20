@@ -484,6 +484,69 @@ test('leave and reopen clears sticky busy so reconnect does not fake a connectio
   await started;
 });
 
+test('abandoned probe finally does not clear a newer in-flight connection test', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-config-busy-owner-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const gates: Array<() => void> = [];
+  const tui = {
+    addChild() {},
+    addInputListener() { return () => {}; },
+    start() {},
+    stop() {},
+    requestRender() {},
+    renderNow() {},
+  } as never;
+  const piModels = {
+    getProviders: () => [{ id: 'provider-a', name: 'Provider A' }],
+    getModels: () => [{ id: 'model-a', name: 'Model A', input: ['text'] }],
+    getModel: () => ({ id: 'model-a', name: 'Model A', input: ['text'] }),
+    getAuth: async () => ({ auth: {}, source: 'fixture' }),
+    completeSimple: async () => {
+      await new Promise<void>((resolve) => { gates.push(resolve); });
+      return { stopReason: 'stop', content: [{ type: 'text', text: 'OK' }] };
+    },
+  } as never;
+  const { IntakeTui } = await import('../../src/tui/intake-app.js');
+  const { saveHarnessModelConfig } = await import('../../src/infrastructure/harness-model-config.js');
+  const dataDir = join(root, 'data');
+  await saveHarnessModelConfig(dataDir, {
+    schemaVersion: 2,
+    provider: { kind: 'pi-catalog', id: 'provider-a' },
+    providerId: 'provider-a',
+    modelId: 'model-a',
+    effort: 'medium',
+  });
+  const app = new IntakeTui({
+    dataDir,
+    tui,
+    piModels,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  await app.start();
+  await app.openConfig();
+  const first = app.testConfigConnection();
+  await waitUntil(() => app.configBusy === 'test' && gates.length === 1);
+  app.leaveConfig();
+  await waitUntil(() => app.page === 'home');
+  await app.openConfig();
+  assert.equal(app.configBusy, 'idle');
+  const second = app.testConfigConnection();
+  await waitUntil(() => app.configBusy === 'test' && gates.length === 2);
+  // Finish the abandoned first probe — must not drop the second request's busy gate.
+  gates[0]!();
+  await first;
+  assert.equal(app.configBusy, 'test');
+  assert.equal(app.configTestStatus, 'testing');
+  // Second probe still owns the gate: another Ctrl+T must not start a third flight.
+  assert.deepEqual(app.configPageInput('\x14'), { consume: true });
+  assert.match(app.message, /already in progress|进行中/);
+  assert.equal(gates.length, 2);
+  gates[1]!();
+  await second;
+  assert.equal(app.configBusy, 'idle');
+  assert.equal(app.configTestStatus, 'passed');
+});
+
 test('missing credentials refuse Ctrl+T without marking connection-test failed', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-config-cred-gap-'));
   t.after(async () => rm(root, { recursive: true, force: true }));

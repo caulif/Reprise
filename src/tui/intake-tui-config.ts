@@ -250,7 +250,8 @@ export async function IntakeTui_saveConfig(this: ConfigPanel): Promise<void> {
       this.page = "config";
       this.message = safeConfigError(error);
     } finally {
-      this.configBusy = "idle";
+      // Only the owning generation may drop the gate — an abandoned save must not clear a newer request.
+      if (token === this.generation) this.configBusy = "idle";
     }
     this.render(true);
   }
@@ -343,7 +344,8 @@ export async function IntakeTui_testConfigConnection(this: ConfigPanel): Promise
     } finally {
       loader?.stop();
       overlay?.hide();
-      this.configBusy = "idle";
+      // Only the owning generation may drop the gate — an abandoned probe must not clear a newer request.
+      if (token === this.generation) this.configBusy = "idle";
     }
     // A provider round trip outlives the keypress; by now the operator may have navigated elsewhere.
     if (token !== this.generation) return;
