@@ -4,7 +4,7 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
 
  ❯ /config   内部协作模型  需要凭据
    新建回放  选择历史会话来源  /intake
-   最近一次运行 任务 case-his · 时间未知 · 候选 record unread
+   最近一次运行 任务 case-his · 时间未知 · 候选 record unread · 诊断
 
 ┌─ 任务 · 占用 0.0 MiB ─────────────────────────────────────────────┐ ┌─ 任务 ─────────────────────────────────────────┐
 │ ❯ case-history · Inspect a focused regression.                    │ │ TaskCase: case-history │

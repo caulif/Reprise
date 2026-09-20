@@ -56,7 +56,7 @@ test('T05 R05: same error ×5 keeps refs; cross-role errors stay separate', () =
   assert.equal(comparison?.eventRefs?.length, 5);
   assert.equal(comparison?.count, 5);
   assert.equal(recovery?.eventRefs?.length, 1);
-  assert.notEqual(errorFingerprint(comparison!), errorFingerprint(recovery!));
+  assert.notEqual(errorFingerprint(comparison), errorFingerprint(recovery));
 });
 
 test('T05 R06: read aggregation separates call count from unique objects', () => {
@@ -107,13 +107,13 @@ test('T05 R16: JSON assistant_visible stays readable as public narrate excerpt',
   assert.equal(row?.kind, 'narrate');
   assert.match(row?.detail ?? '', /用户需要的内容/);
   const theme = createTheme(40, false);
-  const layout = layoutScrollback(theme, 40, [row!], 0, 'zh', 'Codex', undefined, 0, 0, '00:00', true, -1, new Set());
+  const layout = layoutScrollback(theme, 40, [row], 0, 'zh', 'Codex', undefined, 0, 0, '00:00', true, -1, new Set());
   const painted = layout.lines.join('\n');
   assert.match(painted, /恢复 Agent/);
   assert.match(painted, /展开剩余/);
   assert.doesNotMatch(painted, /agent\.model_request/);
   const expanded = layoutScrollback(
-    theme, 40, [row!], 0, 'zh', 'Codex', undefined, 0, 0, '00:00', true, -1, new Set([excerptId(row!)]),
+    theme, 40, [row], 0, 'zh', 'Codex', undefined, 0, 0, '00:00', true, -1, new Set([excerptId(row)]),
   ).lines.join('\n');
   assert.match(expanded, /用户需要的内容/);
   assert.match(expanded, /收起/);
@@ -172,8 +172,8 @@ test('T05 fold ids use first stable event identity, not turn index', () => {
   const folded = foldProcessEntries(entries, new Set());
   const fold = folded.find((entry) => entry.kind === 'fold' && entry.itemId?.startsWith('fold:turn:'));
   assert.ok(fold?.itemId);
-  assert.match(fold!.itemId!, /fold:turn:/);
-  assert.doesNotMatch(fold!.itemId!, /^fold:turn:\d+$/);
+  assert.match(fold.itemId, /fold:turn:/);
+  assert.doesNotMatch(fold.itemId, /^fold:turn:\d+$/);
 });
 
 test('T05 detail model exposes public refs only and never model_request payload', () => {

@@ -4,7 +4,7 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
 
  ❯ /config   内部协作模型  需要凭据
    新建回放  选择历史会话来源  /intake
-   最近一次运行 任务 case-his · 时间未知 · 候选 record unread
+   最近一次运行 任务 case-his · 时间未知 · 候选 record unread · 诊断
 
 ┌─ 最近对照 · 占用 0.0 MiB ─────────────────────────────────────────┐ ┌─ 对照 ─────────────────────────────────────────┐
 │ ❯ exp-history · record unread                                     │ │ ID           exp-history │
@@ -12,7 +12,11 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
 │ 1/1                                                               │ │ Run          run-history │
 │                                                                   │ │ Outcome      record unread │
 │                                                                   │ │ Started      unavailable │
-│                                                                   │ │ Report       not generated │
+│                                                                   │ │ 任务判断     未评估 │
+│                                                                   │ │ 运行终止     候选不确定 │
+│                                                                   │ │ 清理         未知 │
+│                                                                   │ │ 对照         对照状态未知 │
+│                                                                   │ │ 诊断         尚未生成 │
 │                                                                   │ │ Stored       0.0 MiB │
 │                                                                   │ │ Path         C:\user\AppData\Local\ │
 │                                                                   │ │              Temp\reprise-tui-audit-TMP\ │
