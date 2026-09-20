@@ -75,3 +75,35 @@ test('running compare gate resolves true when c is pressed', () => {
   assert.equal(chosen, true);
   assert.equal(c.compareChoice, undefined);
 });
+
+test('R03: reopening a cancelled comparison result keeps cancel labels across header and body', () => {
+  const cancelledResult = {
+    reportPath: 'C:\\exp\\comparison-failure.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: {
+        task: { status: 'apparently_completed' },
+        termination: { kind: 'completed', code: 'completed.controller_satisfied' },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'cancelled', factRef: 'run:1:compare:cancelled' } },
+  } as ExperimentResult;
+  const text = renderWorkbench({
+    page: 'result',
+    cwd: '/workspace',
+    hasApiConfig: true,
+    hasTaskCase: true,
+    locale: 'en',
+    message: t('en', 'resultCompareCancelled'),
+    result: cancelledResult,
+  }, 120, 30).join('\n');
+  assert.match(text, /Comparison cancelled/);
+  assert.match(text, /Candidate finished · Comparison cancelled/);
+  assert.match(text, /Diagnostic/);
+  assert.match(text, /comparison-failure\.html/);
+  assert.doesNotMatch(text, /Comparison complete/);
+  assert.doesNotMatch(text, /● done|✓ done/i);
+});

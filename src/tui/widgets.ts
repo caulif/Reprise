@@ -105,11 +105,15 @@ export function justify(theme: Theme, left: string, right: string, width: number
   return `${truncateFit(left, leftWidth, theme.glyphs.ellipsis)}${truncateFit(right, rightWidth, theme.glyphs.ellipsis)}`;
 }
 
-export function pill(theme: Theme, label: string, state: 'ok' | 'warn' | 'off'): string {
-  const mark = state === 'ok' ? theme.glyphs.dot : state === 'warn' ? theme.glyphs.warn : theme.glyphs.empty;
+export function pill(theme: Theme, label: string, state: 'ok' | 'warn' | 'off' | 'danger'): string {
+  const mark = state === 'ok' ? theme.glyphs.dot
+    : state === 'danger' ? theme.glyphs.err
+      : state === 'warn' ? theme.glyphs.warn
+        : theme.glyphs.empty;
   const text = `${mark} ${label}`;
   if (state === 'ok') return theme.style.ok(text);
   if (state === 'warn') return theme.style.warn(text);
+  if (state === 'danger') return theme.style.danger(text);
   return theme.style.muted(text);
 }
 

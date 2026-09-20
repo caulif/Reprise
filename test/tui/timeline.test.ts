@@ -85,6 +85,50 @@ test('timeline projects operator-relevant persisted facts', () => {
   });
 });
 
+test('R03: comparison.completed with cancelled payload is not success even after report.created', () => {
+  const timeline: TimelineEntry[] = [];
+  appendTimelineEntries(timeline, projectTimelineEvent(event('comparison.started', { model: 'test-model' })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('comparison.completed', {
+    status: 'cancelled',
+    factRef: 'run:1:compare:cancelled',
+  })));
+  appendTimelineEntries(timeline, projectTimelineEvent(event('report.created', {
+    path: 'comparison-failure.html',
+  })));
+  const titles = timeline.filter((entry) => !entry.hidden).map((entry) => entry.title);
+  assert.equal(titles.includes('对照已取消'), true);
+  assert.equal(titles.includes('对照完成'), false);
+  assert.equal(titles.some((title) => title.includes('Report created') || title === 'Report created'), true);
+  const cancelled = timeline.find((entry) => entry.title === '对照已取消');
+  assert.equal(cancelled?.level, 'error');
+  assert.equal(cancelled?.lane, 'comparison');
+});
+
+test('projectOutcome marks incomplete and unknown cleanup without requiring cleanup failed', () => {
+  const incomplete = projectTimelineEvent(event('run.outcome_created', {
+    task: { status: 'apparently_completed', evidenceRefs: [] },
+    termination: { kind: 'completed', code: 'completed.controller_done', initiatedBy: 'controller' },
+    cleanup: { status: 'incomplete', remainingResourceIds: ['workspace'], evidenceRefs: [] },
+  }));
+  const incompleteCleanup = incomplete.find((entry) => entry.title.startsWith('Cleanup ·'));
+  assert.equal(incompleteCleanup?.title, 'Cleanup · incomplete');
+  assert.equal(incompleteCleanup?.level, 'error');
+
+  const unknown = projectTimelineEvent(event('run.outcome_created', {
+    task: { status: 'apparently_completed', evidenceRefs: [] },
+    termination: { kind: 'completed', code: 'completed.controller_done', initiatedBy: 'controller' },
+    cleanup: { status: 'unknown', remainingResourceIds: [], evidenceRefs: [] },
+  }));
+  assert.equal(unknown.find((entry) => entry.title === 'Cleanup · unknown')?.level, 'error');
+
+  const complete = projectTimelineEvent(event('run.outcome_created', {
+    task: { status: 'apparently_completed', evidenceRefs: [] },
+    termination: { kind: 'completed', code: 'completed.controller_done', initiatedBy: 'controller' },
+    cleanup: { status: 'complete', remainingResourceIds: [], evidenceRefs: [] },
+  }));
+  assert.equal(complete.find((entry) => entry.title === 'Cleanup · complete')?.level, undefined);
+});
+
 test('official timeline consumes UserVisibleTurn instead of product payloads', () => {
   assert.deepEqual(projectTimelineEvent(event('runtime.visible_output', { item: { type: 'agentMessage', text: 'Visible final answer.' } })), []);
   assert.deepEqual(projectTimelineEvent(event('runtime.public_activity', {

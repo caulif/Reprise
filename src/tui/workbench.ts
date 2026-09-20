@@ -20,6 +20,8 @@ import { createTheme, resolveDensity, showsDetailPane, type Theme } from './them
 import { bodyHeight, clipLines, FOOTER_ROWS, isShortViewport, MIN_VIEWPORT_ROWS } from './viewport.js';
 import { divider, joinColumns, justify, keyHints, panel, pill } from './widgets.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
+import type { ResultPresentation, ResultTone } from './display-state.js';
+import { deriveResultPresentationFromResult } from './display-state.js';
 
 export type WorkbenchPage =
   | 'loading' | 'home' | 'config' | 'history' | 'history-detail' | 'sessions' | 'inspection'
@@ -55,6 +57,7 @@ export type WorkbenchView = {
   readonly comparePending?: boolean;
   readonly bodyOffset?: number;
   readonly result?: ExperimentResult;
+  readonly resultPresentation?: ResultPresentation;
   readonly cancelling?: boolean;
 };
 
@@ -171,22 +174,28 @@ function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'stillReco
 function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[] {
   const locale = view.locale ?? 'en';
   const running = view.page === 'running' || (view.page === 'result' && view.running) ? view.running : undefined;
-  const brand = view.page === 'result' && running
-    ? `${theme.style.harness('Reprise')}   ${t(locale, 'resultTitle')}`
+  const presentation = view.page === 'result'
+    ? view.resultPresentation
+      ?? (view.result ? deriveResultPresentationFromResult(view.result, locale, Boolean(view.comparePending)) : undefined)
+    : undefined;
+  const brand = view.page === 'result' && (running || view.result)
+    ? `${theme.style.harness('Reprise')}   ${t(locale, presentation?.titleKey ?? 'resultTitle')}`
     : running
       ? `${theme.style.harness('Reprise')}   ${t(locale, runningHeaderKey(running), { product: running.productLabel ?? t(locale, 'unknownAgent') })}`
       : theme.style.harness('Reprise v0.1.0');
-  const status = view.page === 'result' && running
-    ? pill(theme, t(locale, 'done'), 'ok')
+  const status = view.page === 'result' && (running || view.result)
+    ? resultHeaderPill(theme, presentation, locale)
     : running
       ? pill(theme, running.cancelling ? t(locale, 'hintCancel') : t(locale, 'running'), running.cancelling ? 'warn' : 'ok')
       : identityStatus(theme, view);
   const metrics = running ? running.elapsed : modelSummary(theme, view);
   const right = `${metrics}   ${status}`;
-  const leftWide = running ? brand : `${brand}   ${compact(view.cwd, 48, theme.glyphs.ellipsis)}`;
+  const leftWide = running || view.page === 'result' ? brand : `${brand}   ${compact(view.cwd, 48, theme.glyphs.ellipsis)}`;
   if (theme.density === 'compact' || visibleWidth(`${leftWide}   ${right}`) > width) {
     const cwdBudget = Math.max(8, width - visibleWidth(`${brand}   `));
-    const left = `${brand}   ${compact(view.cwd, cwdBudget, theme.glyphs.ellipsis)}`;
+    const left = view.page === 'result'
+      ? brand
+      : `${brand}   ${compact(view.cwd, cwdBudget, theme.glyphs.ellipsis)}`;
     return [
       truncateFit(left, width, theme.glyphs.ellipsis),
       truncateFit(right, width, theme.glyphs.ellipsis),
@@ -194,6 +203,18 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
     ];
   }
   return [justify(theme, leftWide, right, width), divider(theme, width)];
+}
+
+function resultHeaderPill(theme: Theme, presentation: ResultPresentation | undefined, locale: Locale): string {
+  if (!presentation) return pill(theme, t(locale, 'resultStatusCandidateOther'), 'off');
+  return pill(theme, t(locale, presentation.statusLabelKey), pillStateOf(presentation.statusTone));
+}
+
+function pillStateOf(tone: ResultTone): 'ok' | 'warn' | 'off' | 'danger' {
+  if (tone === 'ok') return 'ok';
+  if (tone === 'warn') return 'warn';
+  if (tone === 'danger') return 'danger';
+  return 'off';
 }
 
 function renderMessage(_theme: Theme, view: WorkbenchView, width: number): string[] {

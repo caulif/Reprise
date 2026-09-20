@@ -18,6 +18,7 @@ import { recoveryViewFromAttempt } from '../application/recovery/view.js';
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import { record, text } from '../core/json.js';
 import { candidateRunPhaseFromEvent, candidateRunDisplayFromEvents, isCandidateRunState } from '../application/candidate-run-phase.js';
+import { deriveResultPresentationFromResult } from './display-state.js';
 
 function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
@@ -34,13 +35,7 @@ function workspaceDetail(workspace: { fileCount: number; totalBytes: number } | 
 }
 
 function resultMessage(result: ExperimentResult, locale: Locale): string {
-  if (result.comparison.result.status === 'skipped') return t(locale, 'resultSkipped');
-  const kind = result.record.outcome.termination.kind;
-  if (kind === 'blocked') return t(locale, 'resultBlocked');
-  if (kind === 'failed') return t(locale, 'resultFailed');
-  if (kind === 'cancelled') return t(locale, 'resultCancelled');
-  if (kind === 'completed') return t(locale, 'resultCompleted');
-  return t(locale, 'resultOther');
+  return t(locale, deriveResultPresentationFromResult(result, locale).messageKey);
 }
 
 export function startRunSetup(c: ControllerHandle, input: { afterFreeze?: boolean } = {}): Consume {
