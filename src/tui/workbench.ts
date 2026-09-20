@@ -60,6 +60,7 @@ export type WorkbenchView = {
   readonly result?: ExperimentResult;
   readonly resultPresentation?: ResultPresentation;
   readonly cancelling?: boolean;
+  readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled';
 };
 
 class LinesView implements Component {
