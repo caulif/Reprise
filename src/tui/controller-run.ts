@@ -1,8 +1,9 @@
-import { basename, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { isFsAbsolute } from '../core/paths.js';
 import type { EventEnvelope, TaskCase } from '../core/schema.js';
 import { candidateSpecFromOffer, catalogCursor } from '../application/candidate-spec.js';
 import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
+import { historyExperimentFromResult } from '../application/history-result-facts.js';
 import { hasFileApiKey, tryEnvironmentName, type HarnessConfigDraft, type HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { listSummaryIncomplete, packDefaultCandidate, runtimePacks } from '../application/intake-catalog.js';
 import { errorMessage } from './format.js';
@@ -443,16 +444,10 @@ function showRunResult(c: ControllerHandle, result: ExperimentResult): void {
   c.result = result;
   const experimentRoot = result.experimentRoot ?? dirname(result.reportPath);
   const completedCase = result.taskCase ?? c.taskCase;
-  c.recentExperiment = {
-    experimentId: basename(experimentRoot),
+  c.recentExperiment = historyExperimentFromResult(result, {
+    experimentRoot,
     taskCaseId: completedCase?.caseId ?? 'unknown',
-    runId: result.record.attempt.runId,
-    outcome: result.record.outcome.termination.kind,
-    startedAt: result.record.attempt.createdAt,
-    reportPath: result.reportPath,
-    path: experimentRoot,
-    sizeBytes: 0,
-  };
+  });
   c.activeExperiment = undefined;
   c.page = 'result';
   c.timelineFilterIndex = 0;

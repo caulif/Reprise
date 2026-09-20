@@ -337,6 +337,8 @@ const M = {
   timeUnavailable: { en: 'time unavailable', zh: '时间未知' },
   historyCaseTitle: { en: 'TaskCase', zh: '任务' },
   historyRunTitle: { en: 'Experiment', zh: '对照' },
+  historyPreviousReport: { en: 'Previous report', zh: '此前报告' },
+  historyReportUnconfirmed: { en: 'File present; attempt ownership unconfirmed', zh: '已有文件，版本未确认' },
   hintRunsCases: { en: 'Runs/TaskCases', zh: '对照/任务' },
   hintDetail: { en: 'Detail', zh: '详情' },
   hintUseCase: { en: 'Use this TaskCase', zh: '使用这个任务' },

@@ -5,6 +5,7 @@ import { Value } from "@sinclair/typebox/value";
 import { ComparisonInvocationSchema, RunRecordSchema, TaskCaseSchema, type RunRecord, type TaskCase } from "../core/schema.js";
 import { readCommittedExperimentHistory } from "./experiment-history-read.js";
 import { isPersistedExperimentMetadata, listPersistedRunIds } from "./experiment-layout.js";
+import { comparisonDetailOf, selectComparisonArtifacts } from "./history-result-facts.js";
 import { listPublishedFrozenCases } from "../products/shared/freeze.js";
 
 export type HistoryCase = { readonly taskCase: TaskCase; readonly path: string };
@@ -14,11 +15,18 @@ export type HistoryExperiment = {
   readonly runId?: string;
   readonly outcome?: string;
   readonly taskStatus?: string;
+  readonly cleanupStatus?: string;
   readonly comparisonStatus?: string;
   readonly comparisonFailure?: string;
+  /** Nested comparison value status when invocation completed (e.g. insufficient_evidence). */
+  readonly comparisonDetail?: string;
   readonly reportKind?: "Report" | "Diagnostic" | "Previous report";
   readonly startedAt?: string;
   readonly reportPath?: string;
+  /** Prior successful report retained beside this attempt's diagnostic / unconfirmed file. */
+  readonly previousReportPath?: string;
+  /** True when an on-disk HTML exists but attempt ownership is not confirmed. */
+  readonly reportAttemptUnconfirmed?: boolean;
   readonly path: string;
   readonly sizeBytes: number;
   readonly incompleteModelInput?: boolean;
@@ -65,17 +73,36 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
   const comparison = Value.Check(ComparisonInvocationSchema, comparisonValue) ? comparisonValue : undefined;
   const diagnostic = await exists(join(path, "comparison-failure.html")) ? join(path, "comparison-failure.html") : undefined;
   const success = await exists(join(path, "report.html")) ? join(path, "report.html") : undefined;
-  const reportPath = comparison?.status === "failed" ? diagnostic ?? success : success ?? diagnostic;
-  const reportKind = reportPath === diagnostic && diagnostic ? "Diagnostic" : comparison?.status === "failed" ? "Previous report" : "Report";
+  const artifacts = selectComparisonArtifacts({
+    ...(comparison ? { comparisonStatus: comparison.status } : {}),
+    ...(diagnostic ? { diagnosticPath: diagnostic } : {}),
+    ...(success ? { successPath: success } : {}),
+    ...(comparisonValue !== undefined ? { comparisonReadable: comparison !== undefined } : {}),
+  });
+  const comparisonDetail = comparisonDetailOf(comparison);
   const committed = await readCommittedExperimentHistory(path);
   const outcome = record ? record.outcome.termination.kind : unread ? "record unread" : committed.runStatus;
   return {
     experimentId, taskCaseId: metadata.spec.taskCaseId,
     ...(runId ? { runId } : {}),
     outcome,
-    ...(record ? { taskStatus: record.outcome.task.status, startedAt: record.attempt.createdAt } : {}),
-    ...(reportPath ? { reportPath, reportKind } : {}),
-    ...(comparison ? { comparisonStatus: comparison.status, ...(comparison.status === "failed" ? { comparisonFailure: comparison.failure.kind ?? comparison.failure.code } : {}) } : {}),
+    ...(record
+      ? {
+          taskStatus: record.outcome.task.status,
+          cleanupStatus: record.outcome.cleanup.status,
+          startedAt: record.attempt.createdAt,
+        }
+      : {}),
+    ...artifacts,
+    ...(comparison
+      ? {
+          comparisonStatus: comparison.status,
+          ...(comparison.status === "failed"
+            ? { comparisonFailure: comparison.failure.kind ?? comparison.failure.code }
+            : {}),
+        }
+      : {}),
+    ...(comparisonDetail ? { comparisonDetail } : {}),
     ...(committed.incompleteModelInput ? { incompleteModelInput: true } : {}),
     ...(committed.diagnosticCode === "unsupported_schema" ? { formatError: committed.diagnosticCode } : {}),
     path,
