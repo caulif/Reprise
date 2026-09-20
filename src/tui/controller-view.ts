@@ -110,6 +110,37 @@ function candidateRunFields(c: IntakeTui) {
   };
 }
 
+function runDiagnosticsFields(c: IntakeTui) {
+  return {
+    ...(c.preparePhase
+      ? {
+          preparePhase: c.preparePhase,
+          ...(c.prepareDetail ? { prepareDetail: c.prepareDetail } : {}),
+        }
+      : {}),
+    ...(c.runPhase ? { runPhase: c.runPhase } : {}),
+    ...(c.machineState ? { machineState: c.machineState } : {}),
+    ...(c.runFailed ? { runFailed: true } : {}),
+    ...(c.cleanupStatus ? { cleanupStatus: c.cleanupStatus } : {}),
+    ...(c.lastRuntimeEventAt ? { lastRuntimeEventAt: c.lastRuntimeEventAt } : {}),
+    ...(c.lastObservedEventAt ? { lastObservedEventAt: c.lastObservedEventAt } : {}),
+    ...(c.lastVisibleActivityAt ? { lastVisibleActivityAt: c.lastVisibleActivityAt } : {}),
+    ...(c.lastRuntimeEventKind ? { lastRuntimeEventKind: c.lastRuntimeEventKind } : {}),
+    ...(c.modelOutputSeen ? { modelOutputSeen: true } : {}),
+    ...(c.reconnectCount ? { reconnectCount: c.reconnectCount } : {}),
+    ...(c.reconnectTotal ? { reconnectTotal: c.reconnectTotal } : {}),
+    ...(c.comparisonAttemptId ? { comparisonAttemptId: c.comparisonAttemptId } : {}),
+    phaseClocks: {
+      ...(c.recoveryStartedAt ? { recoveryStartedAt: c.recoveryStartedAt } : {}),
+      ...(c.recoveryEndedAt ? { recoveryEndedAt: c.recoveryEndedAt } : {}),
+      ...(c.candidateStartedAt ? { candidateStartedAt: c.candidateStartedAt } : {}),
+      ...(c.candidateEndedAt ? { candidateEndedAt: c.candidateEndedAt } : {}),
+      ...(c.comparisonStartedAt ? { comparisonStartedAt: c.comparisonStartedAt } : {}),
+      ...(c.comparisonEndedAt ? { comparisonEndedAt: c.comparisonEndedAt } : {}),
+    },
+  };
+}
+
 export function view(c: IntakeTui): WorkbenchView {
   const envName = envNameFromConfig(c.modelConfig, c.configDraft);
   const product = c.productContext();
@@ -173,23 +204,7 @@ export function view(c: IntakeTui): WorkbenchView {
     recoveryView: c.recoveryView,
     effort: c.modelConfig.effort,
     policy: c.workflow?.policy,
-    ...(c.preparePhase
-      ? {
-          preparePhase: c.preparePhase,
-          ...(c.prepareDetail
-            ? { prepareDetail: c.prepareDetail }
-            : {}),
-        }
-      : {}),
-    ...(c.runPhase ? { runPhase: c.runPhase } : {}),
-    ...(c.machineState ? { machineState: c.machineState } : {}),
-    ...(c.runFailed ? { runFailed: true } : {}),
-    ...(c.cleanupStatus ? { cleanupStatus: c.cleanupStatus } : {}),
-    ...(c.lastRuntimeEventAt ? { lastRuntimeEventAt: c.lastRuntimeEventAt } : {}),
-    ...(c.lastRuntimeEventKind ? { lastRuntimeEventKind: c.lastRuntimeEventKind } : {}),
-    ...(c.modelOutputSeen ? { modelOutputSeen: true } : {}),
-    ...(c.reconnectCount ? { reconnectCount: c.reconnectCount } : {}),
-    ...(c.reconnectTotal ? { reconnectTotal: c.reconnectTotal } : {}),
+    ...runDiagnosticsFields(c),
     timeline: c.timeline,
     timelineRevision: c.timelineRevision,
     visibleTimeline: c.visibleTimeline(),

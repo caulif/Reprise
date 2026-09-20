@@ -182,12 +182,21 @@ export class IntakeTui {
       }
     | undefined;
   runStartedAt = 0;
+  recoveryStartedAt = 0;
+  recoveryEndedAt = 0;
+  candidateStartedAt = 0;
+  candidateEndedAt = 0;
+  comparisonStartedAt = 0;
+  comparisonEndedAt = 0;
+  comparisonAttemptId: string | undefined;
   runClock: ReturnType<typeof setInterval> | undefined;
   runPhase: CandidateRunPhase | undefined;
   machineState: CandidateRunState | undefined;
   runFailed = false;
   cleanupStatus: string | undefined;
   lastRuntimeEventAt: string | undefined;
+  lastObservedEventAt: string | undefined;
+  lastVisibleActivityAt: string | undefined;
   lastRuntimeEventKind: string | undefined;
   modelOutputSeen = false;
   reconnectCount = 0;

@@ -6,7 +6,13 @@ import type { CandidateSpec, RunPolicy, TaskCase, CandidateRunState } from '../c
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from '../core/runtime.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
-import { countCalls, countTurns, elapsedFrom, type CandidateRunPhase } from './pages/run.js';
+import { countCalls, countTurns, elapsedForRunning, type CandidateRunPhase } from './pages/run.js';
+import {
+  activityRoleFromDiagnostics,
+  countActiveParallel,
+  uiStageFrom,
+  type PhaseClockBounds,
+} from './display-state.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
@@ -38,11 +44,15 @@ type Input = {
   readonly runFailed?: boolean;
   readonly cleanupStatus?: string;
   readonly lastRuntimeEventAt?: string;
+  readonly lastObservedEventAt?: string;
+  readonly lastVisibleActivityAt?: string;
   readonly lastRuntimeEventKind?: string;
   readonly modelOutputSeen?: boolean;
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
+  readonly phaseClocks?: PhaseClockBounds;
+  readonly comparisonAttemptId?: string;
   readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
   readonly finding?: boolean;
   readonly findQuery?: string;
@@ -67,24 +77,52 @@ function homeModel(input: Input, envSet: boolean) {
 function runningModel(input: Input) {
   const productLabel = chromeProductLabel(input);
   const candidateSessionId = candidateSessionIdFrom(input.timeline);
+  const now = input.nowMs ?? Date.now();
+  const activityRole = activityRoleFromDiagnostics({
+    ...(input.preparePhase ? { preparePhase: input.preparePhase } : {}),
+    ...(input.runPhase ? { runPhase: input.runPhase } : {}),
+    ...(input.machineState ? { machineState: input.machineState } : {}),
+    ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
+  });
+  const uiStage = uiStageFrom({
+    ...(input.preparePhase ? { preparePhase: input.preparePhase } : {}),
+    ...(input.runPhase ? { runPhase: input.runPhase } : {}),
+    ...(input.machineState ? { machineState: input.machineState } : {}),
+    ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
+  });
+  const activeParallel = countActiveParallel(input.visibleTimeline);
   return {
     entries: input.visibleTimeline,
     sourceTimeline: input.timeline,
     timelineRevision: input.timelineRevision,
     selected: input.timelineSelected, filter: 'ALL' as const,
     following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
-    elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
+    elapsed: elapsedForRunning({
+      entries: input.timeline,
+      ...(input.phaseClocks ? { phaseClocks: input.phaseClocks } : {}),
+      ...(input.preparePhase ? { preparePhase: input.preparePhase } : {}),
+      ...(input.runPhase ? { runPhase: input.runPhase } : {}),
+      ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
+      runStartedAt: input.runStartedAt,
+    }, now, input.locale ?? 'en'),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },
     ...(input.policy ? { policy: input.policy } : {}),
     ...(input.preparePhase ? { preparePhase: input.preparePhase, ...(input.prepareDetail ? { prepareDetail: input.prepareDetail } : {}) } : {}),
     ...(input.runPhase ? { runPhase: input.runPhase } : {}),
     ...(input.lastRuntimeEventAt ? { lastRuntimeEventAt: input.lastRuntimeEventAt } : {}),
+    ...(input.lastObservedEventAt ? { lastObservedEventAt: input.lastObservedEventAt } : {}),
+    ...(input.lastVisibleActivityAt ? { lastVisibleActivityAt: input.lastVisibleActivityAt } : {}),
     ...(input.lastRuntimeEventKind ? { lastRuntimeEventKind: input.lastRuntimeEventKind } : {}),
     ...(input.modelOutputSeen ? { modelOutputSeen: true } : {}),
     ...(input.reconnectCount ? { reconnectCount: input.reconnectCount } : {}),
     ...(input.reconnectTotal ? { reconnectTotal: input.reconnectTotal } : {}),
     ...(input.runStartedAt ? { runStartedAt: input.runStartedAt } : {}),
+    ...(input.phaseClocks ? { phaseClocks: input.phaseClocks } : {}),
+    ...(activityRole ? { activityRole } : {}),
+    ...(uiStage ? { uiStage } : {}),
+    ...(activeParallel ? { activeParallel } : {}),
+    ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
     ...(input.expandedFolds?.length ? { expandedFolds: input.expandedFolds } : {}),
     locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
     ...(input.candidate?.requestedModel ? { candidateModel: input.candidate.requestedModel } : {}),
@@ -101,7 +139,7 @@ function runningModel(input: Input) {
     ...(input.finding ? { finding: true, findQuery: input.findQuery ?? '', findCursor: input.findCursor ?? 0 } : {}),
     ...(input.timelineReadOffset ? { readingOffset: input.timelineReadOffset } : {}),
     ...(input.readingMode ? { readingMode: true } : {}),
-    tick: input.nowMs ?? Date.now(),
+    tick: now,
     ...(candidateSessionId ? { candidateSessionId } : {}),
   };
 }

@@ -174,3 +174,41 @@ describe('realtime fluency caches', () => {
     assert.notDeepEqual(first.lines.slice(0, -1), afterExpand.lines.slice(0, -1));
   });
 });
+
+describe('R08 stale wait ladder (fake clock)', () => {
+  it('keeps role and only changes status text across 10/60/120s idle', async () => {
+    const { waitLine } = await import('../../src/tui/pages/run.js');
+    const { runningChrome } = await import('../../src/tui/pages/run.js');
+    const { createTheme } = await import('../../src/tui/theme.js');
+    const theme = createTheme(100, false);
+    const start = Date.parse('2026-08-28T00:00:00.000Z');
+    const model = {
+      entries: [],
+      selected: 0,
+      filter: 'ALL' as const,
+      following: true,
+      cancelling: false,
+      currentState: 'awaiting_target' as const,
+      elapsed: '00:00',
+      turns: { used: 1 },
+      calls: { used: 0 },
+      runPhase: 'candidate_generating' as const,
+      activityRole: 'candidate' as const,
+      uiStage: 'awaiting_candidate' as const,
+      lastVisibleActivityAt: '2026-08-28T00:00:00.000Z',
+      runStartedAt: start,
+      locale: 'zh' as const,
+      productLabel: 'Codex',
+    };
+    const at10 = waitLine({ ...model, tick: start + 10_000 }, 'zh');
+    const at60 = waitLine({ ...model, tick: start + 60_000 }, 'zh');
+    const at120 = waitLine({ ...model, tick: start + 120_000 }, 'zh');
+    assert.match(at10 ?? '', /候选/);
+    assert.match(at60 ?? '', /可取消/);
+    assert.match(at120 ?? '', /2 分钟没有新的可见活动/);
+    const chrome = runningChrome(theme, 100, { ...model, tick: start + 120_000, elapsed: '02:00' }).join('\n');
+    assert.match(chrome, /等待候选|候选/);
+    assert.doesNotMatch(chrome, /候选 Runtime 无响应/);
+    assert.match(chrome, /Ctrl\+C/);
+  });
+});
