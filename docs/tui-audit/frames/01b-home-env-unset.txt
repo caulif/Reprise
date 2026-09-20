@@ -9,7 +9,7 @@ Reprise v0.1.0   C:\reprise                    gpt-5.6-terra · medium   ⚠ 内
 
  更多
  内部协作模型  gpt-5.6-terra
- export OPENAI_API_KEY='<value>'
+ $env:OPENAI_API_KEY = '<value>'
 
  ❯ 输入 /命令，或 ↑↓ 后 Enter
  欢迎回来。可新建回放，或打开最近一次运行。
