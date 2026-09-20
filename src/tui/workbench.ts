@@ -17,9 +17,12 @@ import {
 import { t, type Locale } from './i18n.js';
 import { OVERLAY_PAGES, overlayChromeRows, renderOverlaySheet } from './overlay-sheet.js';
 import { createTheme, resolveDensity, showsDetailPane, type Theme } from './theme.js';
-import { bodyHeight, clipLines, FOOTER_ROWS, isShortViewport, MIN_VIEWPORT_ROWS } from './viewport.js';
+import { clipLines, isShortViewport, MIN_VIEWPORT_ROWS } from './viewport.js';
+import { composeWorkbenchGeometry, type WorkbenchGeometry } from './workbench-layout.js';
 import { divider, joinColumns, justify, keyHints, panel, pill } from './widgets.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
+import type { ResultPresentation, ResultTone } from './display-state.js';
+import { deriveResultPresentationFromResult } from './display-state.js';
 
 export type WorkbenchPage =
   | 'loading' | 'home' | 'config' | 'history' | 'history-detail' | 'sessions' | 'inspection'
@@ -55,7 +58,8 @@ export type WorkbenchView = {
   readonly comparePending?: boolean;
   readonly bodyOffset?: number;
   readonly result?: ExperimentResult;
-  readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled';
+  readonly resultPresentation?: ResultPresentation;
+  readonly cancelling?: boolean;
 };
 
 class LinesView implements Component {
@@ -86,9 +90,12 @@ export class Workbench implements Component {
     });
     const list = new LinesView((width) => {
       const viewport = this.#viewport();
-      const measuredViewport = viewport.height === undefined ? { width } : { width, height: viewport.height };
-      const height = bodyHeight(measuredViewport, 1, isShortViewport(viewport.height) ? 1 : 2);
-      return renderLayoutList(createTheme(width), this.#view(), width, height);
+      const view = this.#view();
+      // Parent VStack already reserved header/rail/message/footer; clip to the same body budget.
+      const height = viewport.height === undefined
+        ? undefined
+        : measureWorkbenchGeometry(view, width, viewport.height).body.height;
+      return renderLayoutList(createTheme(width), view, width, height);
     });
     const body = new ScrollView(list, { follow: 'none', primary: true, scrollbar: 'auto' });
     const message = new LinesView((width) => trimChrome(renderMessage(createTheme(width), this.#view(), width), short(), 'head'));
@@ -96,7 +103,7 @@ export class Workbench implements Component {
     return new VStack([
       { component: header, grow: 0, shrink: 0, basis: 'auto' },
       { component: rail, grow: 0, shrink: 0, basis: 'auto', visible: () => this.#view().page === 'running' },
-      { component: body, grow: 1, shrink: 1, minSize: 4 },
+      { component: body, grow: 1, shrink: 1, minSize: 1 },
       { component: message, grow: 0, shrink: 0, basis: 'auto' },
       { component: footer, grow: 0, shrink: 0, basis: 'auto' },
     ]);
@@ -125,10 +132,24 @@ export function renderWorkbench(view: WorkbenchView, width: number, height?: num
   const short = isShortViewport(height);
   const theme = createTheme(width);
   const header = trimChrome(renderHeader(theme, view, width), short, 'head');
+  const rail = view.page === 'running' && view.running
+    ? runningChrome(theme, width, view.running)
+    : [];
   const message = trimChrome(renderMessage(theme, view, width), short, 'head');
   const footer = trimChrome(renderFooter(theme, view, width), short, 'tail');
-  const available = bodyHeight({ width, ...(height === undefined ? {} : { height }) }, message.length + footer.length - FOOTER_ROWS, header.length);
-  return [...header, ...clipLines(renderBody(theme, view, width, available), available), ...message, ...footer];
+  const bodyRows = height === undefined
+    ? undefined
+    : composeWorkbenchGeometry({
+      width,
+      height,
+      headerRows: header.length,
+      railRows: rail.length,
+      messageRows: message.length,
+      footerRows: footer.length,
+    }).body.height;
+  const body = clipLines(renderBody(theme, view, width, bodyRows), bodyRows);
+  // Same region order as createLayoutRoot: header → rail → body → message → footer.
+  return [...header, ...rail, ...body, ...message, ...footer];
 }
 
 /** On a short viewport the dividers and wrapped status text cost more rows than the body can spare. */
@@ -171,30 +192,28 @@ function runningHeaderKey(running: RunningModel): 'recoveringTitle' | 'stillReco
 function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[] {
   const locale = view.locale ?? 'en';
   const running = view.page === 'running' || (view.page === 'result' && view.running) ? view.running : undefined;
-  const brand = view.page === 'result' && running
-    ? `${theme.style.harness('Reprise')}   ${t(locale, 'resultTitle')}`
+  const presentation = view.page === 'result'
+    ? view.resultPresentation
+      ?? (view.result ? deriveResultPresentationFromResult(view.result, locale, Boolean(view.comparePending)) : undefined)
+    : undefined;
+  const brand = view.page === 'result' && (running || view.result)
+    ? `${theme.style.harness('Reprise')}   ${t(locale, presentation?.titleKey ?? 'resultTitle')}`
     : running
       ? `${theme.style.harness('Reprise')}   ${t(locale, runningHeaderKey(running), { product: running.productLabel ?? t(locale, 'unknownAgent') })}`
       : theme.style.harness('Reprise v0.1.0');
-  const status = view.page === 'result' && running
-    ? pill(theme, t(locale, 'done'), 'ok')
+  const status = view.page === 'result' && (running || view.result)
+    ? resultHeaderPill(theme, presentation, locale)
     : running
-      ? pill(
-          theme,
-          running.cancelUi === 'failed'
-            ? t(locale, 'hintRetryCancel')
-            : running.cancelUi === 'requesting'
-              ? t(locale, 'hintCancel')
-              : t(locale, 'running'),
-          running.cancelUi === 'requesting' || running.cancelUi === 'failed' ? 'warn' : 'ok',
-        )
+      ? pill(theme, running.cancelling ? t(locale, 'hintCancel') : t(locale, 'running'), running.cancelling ? 'warn' : 'ok')
       : identityStatus(theme, view);
   const metrics = running ? running.elapsed : modelSummary(theme, view);
   const right = `${metrics}   ${status}`;
-  const leftWide = running ? brand : `${brand}   ${compact(view.cwd, 48, theme.glyphs.ellipsis)}`;
+  const leftWide = running || view.page === 'result' ? brand : `${brand}   ${compact(view.cwd, 48, theme.glyphs.ellipsis)}`;
   if (theme.density === 'compact' || visibleWidth(`${leftWide}   ${right}`) > width) {
     const cwdBudget = Math.max(8, width - visibleWidth(`${brand}   `));
-    const left = `${brand}   ${compact(view.cwd, cwdBudget, theme.glyphs.ellipsis)}`;
+    const left = view.page === 'result'
+      ? brand
+      : `${brand}   ${compact(view.cwd, cwdBudget, theme.glyphs.ellipsis)}`;
     return [
       truncateFit(left, width, theme.glyphs.ellipsis),
       truncateFit(right, width, theme.glyphs.ellipsis),
@@ -204,9 +223,21 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
   return [justify(theme, leftWide, right, width), divider(theme, width)];
 }
 
+function resultHeaderPill(theme: Theme, presentation: ResultPresentation | undefined, locale: Locale): string {
+  if (!presentation) return pill(theme, t(locale, 'resultStatusCandidateOther'), 'off');
+  return pill(theme, t(locale, presentation.statusLabelKey), pillStateOf(presentation.statusTone));
+}
+
+function pillStateOf(tone: ResultTone): 'ok' | 'warn' | 'off' | 'danger' {
+  if (tone === 'ok') return 'ok';
+  if (tone === 'warn') return 'warn';
+  if (tone === 'danger') return 'danger';
+  return 'off';
+}
+
 function renderMessage(_theme: Theme, view: WorkbenchView, width: number): string[] {
   if (view.page === 'error') return [];
-  if (view.page === 'running' && view.cancelUi !== 'requesting' && view.cancelUi !== 'failed' && !view.comparePending) return [];
+  if (view.page === 'running' && !view.cancelling && !view.comparePending) return [];
   if (view.page === 'preflight' && !view.preflight) return [];
   return view.message.split(/\r?\n/).flatMap((line) => wrapTextWithAnsi(` ${line}`, Math.max(1, width)));
 }
@@ -301,13 +332,29 @@ function renderLayoutList(theme: Theme, view: WorkbenchView, width: number, heig
 }
 
 export function workbenchBodyOrigin(view: WorkbenchView, width: number, height?: number): { header: number; rail: number } {
+  const geometry = measureWorkbenchGeometry(view, width, height);
+  return { header: geometry.header.height, rail: geometry.rail.height };
+}
+
+/** Measure fixed chrome and body rects once for paint and pointer consumers. */
+export function measureWorkbenchGeometry(view: WorkbenchView, width: number, height?: number): WorkbenchGeometry {
   const short = isShortViewport(height);
   const theme = createTheme(width);
-  const header = trimChrome(renderHeader(theme, view, width), short, 'head').length;
-  const rail = view.page === 'running' && view.running
+  const headerRows = trimChrome(renderHeader(theme, view, width), short, 'head').length;
+  const railRows = view.page === 'running' && view.running
     ? runningChrome(theme, width, view.running).length
     : 0;
-  return { header, rail };
+  const messageRows = trimChrome(renderMessage(theme, view, width), short, 'head').length;
+  const footerRows = trimChrome(renderFooter(theme, view, width), short, 'tail').length;
+  const resolvedHeight = height ?? headerRows + railRows + messageRows + footerRows + 16;
+  return composeWorkbenchGeometry({
+    width,
+    height: resolvedHeight,
+    headerRows,
+    railRows,
+    messageRows,
+    footerRows,
+  });
 }
 
 function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string, string])[] {
@@ -338,7 +385,6 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
       locale,
       Boolean(view.running.finding),
       Boolean(view.running.readingMode),
-      view.running.cancelUi ?? 'idle',
     );
   }
   if (view.page === 'result') {
