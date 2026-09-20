@@ -27,9 +27,11 @@ Reprise v0.1.0   C:\reprise
     > API 密钥           ••••••••  +
       语言               中文  [Enter] 切换
    
-    * 未保存草稿
+    * 保存状态：未保存草稿
+    * 凭据：本地引用可用（不是连接测试）
+    * 连接测试：当前草稿尚未测试
     配置文件：.reprise/harness-model.json
  Draft changed. Ctrl+S writes the local config file; Ctrl+T
 tests the connection.
 ------------------------------------------------------------
- [↑↓] 选择  [Enter] 编辑  [Ctrl+T] 测试连接
+ [↑↓] 选择  [Enter] 编辑  [Ctrl+T] 测试连接（会请求模型）
