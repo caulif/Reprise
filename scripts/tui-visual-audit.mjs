@@ -398,7 +398,7 @@ async function main() {
     comparison: { status: 'completed' },
     candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
   }));
-  await waitFor(() => /Experiment finished|对照结束/.test(run.render(120)));
+  await waitFor(() => /Experiment finished|对照结束|运行结束|Comparison complete|对照完成|Run result|运行结果/.test(run.render(120)));
   await push('26-result', 120, run.render(120));
   await push('26b-result-compact', 60, run.render(60));
 
