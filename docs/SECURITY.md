@@ -2,7 +2,9 @@
 
 ## 报告渠道
 
-漏洞请通过 [GitHub 私有安全报告](https://github.com/caulif/Reprise/security/advisories/new)提交给维护者，不要开公开漏洞 Issue。若私有入口不可用，只在普通 Issue 请求私下联系渠道，不贴漏洞细节或敏感证据。
+漏洞请通过 [GitHub 私有安全报告](https://github.com/caulif/Reprise/security/advisories/new) 提交给维护者，不要开公开漏洞 Issue。
+
+若私有入口不可用，可在公开 [GitHub Discussions](https://github.com/caulif/Reprise/discussions) 或 Issue 中**仅发帖请求维护者提供私下联系渠道**，不贴漏洞细节或敏感证据。这些页面均为公开、不支持私信；不要在此处描述漏洞。
 
 报告包含影响版本或提交、影响范围、最少复现步骤、预期与实际结果、是否已有公开利用以及可用的缓解措施。使用合成或脱敏输入，不提交有效密钥、认证文件、完整私有会话、prompt 或本机绝对路径；复现不需要真实计费时使用 fixture。
 
@@ -16,10 +18,10 @@
 
 ## 凭据与运行边界
 
-凭据存放与禁止输出范围以[产品定义](usage.md#边界)为准；不要向维护者发送登录文件或 API key。若凭据泄露，先在服务方撤销或轮换，再提交脱敏报告。
+凭据存放与禁止输出范围见 [使用指南：配置 Harness 内部模型](./usage.md#配置-harness-内部模型) 与 [数据去向](./usage.md#数据去向)。不要向维护者发送登录文件或 API key。若凭据泄露，先在服务方撤销或轮换，再提交脱敏报告。
 
-隔离工作区不保证隐私清洗，也不能回滚外部服务副作用。默认开发验证不调用计费 Runtime；真实 smoke 必须显式 opt-in 并遵守[准入程序](development.md)。
+隔离工作区不保证隐私清洗，也不能回滚外部服务副作用。默认开发验证不调用计费 Runtime；真实 smoke 必须显式 opt-in 并遵守 [开发与验证：真实调用与费用](./development.md#真实调用与费用)。
 
 ## 修复与披露
 
-修复附带能够捕获该缺陷的回归证据；门禁改动还须满足[反向用例要求](development.md#工程门禁)。公开披露通过 GitHub Security Advisory 协调，用户可见说明写入 [CHANGELOG](./CHANGELOG.md)，不得夹带秘密或私有会话。普通使用问题见[支持说明](../README.md)。
+修复附带能够捕获该缺陷的回归证据；门禁改动还须满足[反向用例要求](./development.md#门禁必须能失败)。公开披露通过 GitHub Security Advisory 协调，用户可见说明写入 [CHANGELOG](./CHANGELOG.md)，不得夹带秘密或私有会话。普通使用问题见[根 README](../README.md#了解支持与贡献)。

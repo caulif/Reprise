@@ -12,6 +12,17 @@ Reprise 从历史会话恢复任务起点，让候选 Agent 在隔离副本中�
 | 开发、测试或准备发布 | [开发与验证](./development.md) |
 | 判断哪些能力仍未完成或未验证 | [路线图](./roadmap.md) |
 
-当前行为以以上文档和对应源码为依据；设计理由按需检索 [ADR](./decisions/README.md)。历史决策和 plan/archive 不是现行能力清单。本机 `.local` 与生成帧是证据或构建材料，不是入门必读。
+当前行为以以上文档和对应源码为依据；设计理由按需检索 [ADR](./decisions/README.md)。
+
+## 不要读什么
+
+以下材料服务于 CI 门禁、历史追溯或本机证据，不是入门阅读路径：
+
+- `docs/tui-audit/frames/` — Windows TUI 逐字节基线
+- `docs/plan/archive/` — 历史计划归档
+- `docs/.local/` — 本机讨论与审查笔记（Git 忽略）
+- 架构文档中的生成区 — 字段表等由 `scripts/gen-docs.mjs` 产出，不手改
+
+目录边界见[文档结构](./documentation-structure.md)。
 
 贡献、维护职责和文档更新约定见[贡献指南](./CONTRIBUTING.md)。另有[安全政策](./SECURITY.md)、[行为准则](./CODE_OF_CONDUCT.md)和[变更记录](./CHANGELOG.md)。
