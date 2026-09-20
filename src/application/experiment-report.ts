@@ -44,6 +44,7 @@ import {
   publishComparisonArtifacts,
   verifyAndRenderComparisonReport,
 } from "./comparison-publication.js";
+import { withComparisonShellDeny } from "./comparison-shell-deny.js";
 
 export { comparisonCandidateMount };
 
@@ -534,7 +535,7 @@ function comparisonTools(
     candidateSnapshotRoot: input.candidateSnapshotRoot,
   });
   const candidateRoot = mounts.candidate;
-  return [
+  return withComparisonShellDeny([
     ...workspaceTools(attemptRoot, {
       role: "comparison",
       allowBinary: input.taskCase.privacy.allowBinary || allowBinary,
@@ -556,7 +557,7 @@ function comparisonTools(
     registerEvidenceTool(catalog),
     renderArtifactStubTool(),
     previewReportStubTool(),
-  ];
+  ]);
 }
 
 const RegisterEvidenceParamsSchema = Type.Object({
