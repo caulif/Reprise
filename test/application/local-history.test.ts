@@ -146,7 +146,8 @@ test('history detail uses shared result fact labels for cleanup and previous rep
   const item = (await readLocalHistory(root)).experiments[0]!;
   const zh = renderHistoryDetail(createTheme(120, false), 120, item, 'zh').join('\n');
   assert.match(zh, /清理/);
-  assert.match(zh, /unknown/);
+  assert.match(zh, /清理状态未知/);
+  assert.match(zh, /对照已取消/);
   assert.match(zh, /诊断/);
   assert.match(zh, /此前报告/);
 });

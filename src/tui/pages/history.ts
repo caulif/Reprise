@@ -2,6 +2,7 @@ import { compact, formatBytes, missing, hitFileLink } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import type { HistoryCase, HistoryExperiment } from '../local-history.js';
 import { resultFactsFromHistory } from '../../application/history-result-facts.js';
+import { deriveResultPresentationFromHistory } from '../display-state.js';
 import { showsDetailPane, type Theme } from '../theme.js';
 import { joinColumns, kv, kvBlock, kvLinkBlock, panel } from '../widgets.js';
 
@@ -51,22 +52,23 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
     ], width);
   }
   const facts = resultFactsFromHistory(item);
-  const comparisonLabel = facts.comparisonStatus
-    ? [
-        facts.comparisonStatus,
-        facts.comparisonDetail ? ` · ${facts.comparisonDetail}` : '',
-        facts.comparisonFailure ? ` (${facts.comparisonFailure})` : '',
-      ].join('')
-    : undefined;
+  const presentation = deriveResultPresentationFromHistory(item, locale);
+  const reportLabel =
+    facts.reportKind === 'Previous report'
+      ? t(locale, 'historyPreviousReport')
+      : presentation.reportKind === 'diagnostic'
+        ? t(locale, 'resultDiagnostic')
+        : t(locale, 'resultReport');
   return panel(theme, t(locale, 'historyRunTitle'), [
     kv(theme, 'ID', item.experimentId, width - 2),
     kv(theme, 'TaskCase', item.taskCaseId, width - 2),
     kv(theme, 'Run', missing(item.runId), width - 2),
     kv(theme, 'Outcome', historyOutcomeLabel(item, locale), width - 2),
     kv(theme, 'Started', item.startedAt ?? 'unavailable', width - 2),
-    ...(facts.taskStatus ? [kv(theme, t(locale, 'resultTask'), facts.taskStatus, width - 2)] : []),
-    ...(facts.cleanupStatus ? [kv(theme, t(locale, 'resultCleanup'), facts.cleanupStatus, width - 2)] : []),
-    ...(comparisonLabel ? [kv(theme, t(locale, 'resultComparison'), comparisonLabel, width - 2)] : []),
+    kv(theme, t(locale, 'resultTask'), presentation.taskLabel, width - 2),
+    kv(theme, t(locale, 'resultTermination'), presentation.terminationLabel, width - 2),
+    kv(theme, t(locale, 'resultCleanup'), presentation.cleanupLabel, width - 2),
+    kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2),
     ...(item.incompleteModelInput ? kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width) : []),
     ...(item.formatError ? [kv(theme, 'Format', t(locale, 'unsupportedSchema'), width - 2)] : []),
     ...(facts.reportAttemptUnconfirmed
@@ -74,12 +76,8 @@ export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCa
       : []),
     ...kvLinkBlock(
       theme,
-      facts.reportKind === 'Diagnostic'
-        ? t(locale, 'resultDiagnostic')
-        : facts.reportKind === 'Previous report'
-          ? t(locale, 'historyPreviousReport')
-          : t(locale, 'resultReport'),
-      facts.reportPath ?? 'not generated',
+      reportLabel,
+      facts.reportPath ?? t(locale, 'resultReportNotGenerated'),
       facts.reportPath,
       width,
     ).lines,
