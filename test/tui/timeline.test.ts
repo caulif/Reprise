@@ -89,7 +89,7 @@ test('timeline projects operator-relevant persisted facts', () => {
     sequence: 1,
     occurredAt: timestamp,
     source: 'CONTROLLER',
-    title: '对照失败',
+    title: 'comparison.failed',
     detail: 'missing narrative',
     level: 'error',
     lane: 'comparison',

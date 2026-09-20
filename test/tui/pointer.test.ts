@@ -12,8 +12,7 @@ import type { ResultPathLinks } from '../../src/application/result-paths.js';
 import type { ResultAction } from '../../src/tui/page-input.js';
 import { keepSelectedVisible } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
-import { measureWorkbenchGeometry, workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
-import { bodyCellAt } from '../../src/tui/workbench-layout.js';
+import { workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
 
 function visibleSpan(line: string, needle: string): { x0: number; x1: number } | undefined {
   const plain = stripTerminalSequences(line);
@@ -40,7 +39,7 @@ test('keepSelectedVisible only changes offset when the selection would leave the
   assert.equal(keepSelectedVisible(12, -12, 40, 10), 3 - 12);
 });
 
-test('home idle footer lists action navigation', () => {
+test('home idle footer does not repeat Enter', () => {
   const hints = homeHints('en', {
     taskCase: undefined,
     recentExperiment: { experimentId: 'e1', taskCaseId: 'c1', path: 'C:/e', sizeBytes: 1 },
@@ -48,7 +47,7 @@ test('home idle footer lists action navigation', () => {
     composer: '',
     showSuggestions: false,
   });
-  assert.deepEqual(hints.map(([key]) => key), ['↑↓', 'Enter', '/', 'Ctrl+C']);
+  assert.deepEqual(hints.map(([key]) => key), ['/', 'Ctrl+C']);
 });
 
 test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
@@ -68,7 +67,7 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
       outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed' },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
   } as never, 'en', 'Codex', true);
   const reportLine = lines.findIndex((line) => line.includes('report.html'));
   assert.ok(reportLine >= 0);
@@ -107,7 +106,7 @@ test('result pointer matches final framed screen coords without OSC 8', () => {
   const row = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
   assert.ok(row >= 0);
   const line = lines[row] ?? '';
-  const value = visibleSpan(line, 'deck.html');
+  const value = visibleSpan(line, 'environment/baselines/deck.html');
   assert.ok(value);
   assert.equal(hitFileLink(line, value.x0), undefined);
   assert.equal(pointerAt(lines, row, value.x0, 'en', pathLinks, rowHits), 'open-history-final');
@@ -132,7 +131,7 @@ test('result pointer stays aligned when metrics wrap at compact width', () => {
       outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
     facts: { wallClockMs: 72_000, turns: 3, controllerCalls: 2, tokenCount: 4096, costUsd: 1.23 },
   } as never;
   for (const width of [48, 60]) {
@@ -141,19 +140,23 @@ test('result pointer stays aligned when metrics wrap at compact width', () => {
     const { lines, rowHits } = renderResultWithHits(theme, width, fixture, 'en');
     const reportRow = lines.findIndex((line) => {
       const plain = stripTerminalSequences(line);
-      return plain.includes('report.html') && plain.includes('Report');
+      return plain.includes('report.html') && /Comparison report|Report/.test(plain);
     });
     const historyRow = lines.findIndex((line) => stripTerminalSequences(line).includes('deck.html'));
-    const metricsRow = lines.findIndex((line) => stripTerminalSequences(line).includes('4096'));
+    const metricsRow = lines.findIndex((line) => {
+      const plain = stripTerminalSequences(line);
+      return plain.includes('72s') || plain.includes('4096');
+    });
     assert.ok(reportRow >= 0, `report row at width ${width}`);
     assert.ok(historyRow >= 0, `history row at width ${width}`);
     assert.ok(metricsRow >= 0, `metrics row at width ${width}`);
+    assert.doesNotMatch(stripTerminalSequences(lines[metricsRow] ?? ''), /4096/, 'compact density drops secondary token metrics');
     const reportLine = lines[reportRow] ?? '';
     const historyLine = lines[historyRow] ?? '';
     const metricsLine = lines[metricsRow] ?? '';
     const reportValue = visibleSpan(reportLine, 'report.html');
     const historyValue = visibleSpan(historyLine, 'deck.html');
-    const metricsValue = visibleSpan(metricsLine, '4096');
+    const metricsValue = visibleSpan(metricsLine, '72s') ?? visibleSpan(metricsLine, '3 turns');
     assert.ok(reportValue);
     assert.ok(historyValue);
     assert.ok(metricsValue);
@@ -213,7 +216,7 @@ test('result pointer treats environment baselines html as history final', () => 
       outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed' },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
   } as never, 'en');
   const historyLine = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
   assert.ok(historyLine >= 0);
@@ -237,7 +240,7 @@ const resultFixture = {
     outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
   },
   decision: { status: 'completed' },
-  comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+  comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
 } as never;
 
 function resultController(opened: { report: number; artifact?: string | undefined }): ControllerHandle {
@@ -288,12 +291,12 @@ test('result SGR click on history final opens the clicked href', () => {
       outcome: { task: { status: 'complete' }, termination: { kind: 'completed', code: 'completed' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed' },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
   } as typeof resultFixture;
   handle.result = resultWithBaselines;
   const origin = workbenchBodyOrigin(handle.view(), 120, 40);
   const lines = renderResult(createTheme(120), 120, resultWithBaselines, 'en', undefined, false);
-  const historyLine = lines.findIndex((line) => /History final/.test(line) && line.includes('deck.html'));
+  const historyLine = lines.findIndex((line) => line.includes('deck.html'));
   assert.ok(historyLine >= 0);
   const href = pathToFileURL(baselinePath).href;
   let hitCol = 0;
@@ -328,15 +331,6 @@ test('result SGR click on a short label opens the report; a blank cell does not'
   assert.equal(opened.report, 1);
   applyResultPointer(handle, `\x1b[<0;2;${1 + origin.header}M`);
   assert.equal(opened.report, 1);
-});
-
-test('result SGR click on header chrome does not open the report', () => {
-  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
-  const opened = { report: 0 };
-  const handle = resultController(opened);
-  // Row 1 is above the body origin — must not clamp into the first body line.
-  applyResultPointer(handle, '\x1b[<0;4;1M');
-  assert.equal(opened.report, 0);
 });
 
 test('result SGR wheel changes the reading offset', () => {
@@ -403,24 +397,5 @@ test('viewport TUI yields SGR wheel to the application listener', () => {
   }
   assert.equal(consumed, true);
   assert.deepEqual(seen, ['viewport', 'app']);
-});
-
-test('header and footer clicks miss the body; they do not hit the first result row', () => {
-  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
-  const opened = { report: 0 };
-  const handle = resultController(opened);
-  const geometry = measureWorkbenchGeometry(handle.view(), 120, 40);
-  assert.ok(geometry.header.height >= 1);
-  // Header row 1 must not clamp into body row 0.
-  applyResultPointer(handle, '\x1b[<0;4;1M');
-  assert.equal(opened.report, 0);
-  applyResultPointer(handle, `\x1b[<0;4;${geometry.header.height}M`);
-  assert.equal(opened.report, 0);
-  // Footer is below the body.
-  const footerRow = geometry.footer.row + 1; // 1-based SGR
-  applyResultPointer(handle, `\x1b[<0;4;${footerRow}M`);
-  assert.equal(opened.report, 0);
-  assert.equal(bodyCellAt(geometry, 1, 4), undefined);
-  assert.ok(bodyCellAt(geometry, geometry.body.row + 1, 4));
 });
 

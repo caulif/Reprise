@@ -168,7 +168,7 @@ test('result metrics show collected token totals and priced cost', () => {
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
     facts: { wallClockMs: 49_000, turns: 1, controllerCalls: 1, tokenCount: 256, costUsd: 0.49 },
   } as never).join('\n');
   assert.match(text, /256 tokens/);
@@ -188,7 +188,7 @@ test('compact result keeps Trace on one line', () => {
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
     facts: { wallClockMs: 49_000, turns: 1, controllerCalls: 1 },
   } as never).join('\n');
   assert.match(text, /49s/);
@@ -206,7 +206,7 @@ test('result metrics name candidate time when comparison made the experiment lon
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
     facts: { wallClockMs: 72_000, elapsedMs: 148_000, turns: 1, controllerCalls: 1 },
   } as never).join('\n');
   assert.match(text, /148s/);
@@ -273,7 +273,7 @@ test('blocked result is a warning with controller reason and short paths', () =>
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked', rationale: 'Sandbox denied the WeChat data path.' } },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
   } as never);
   for (const line of lines) assert.equal(visibleWidth(line), 120, line);
   const text = lines.join('\n');
@@ -299,7 +299,7 @@ test('limit_reached result explains the turn cap', () => {
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'limit_reached', code: 'limit.target_turns' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'send', message: 'Continue.' } },
-    comparison: { result: { status: 'completed' } },
+    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } } },
   } as never).join('\n');
   assert.match(text, /limit\.target_turns/);
   assert.match(text, /target turn limit/);
