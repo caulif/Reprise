@@ -1,10 +1,11 @@
-import { compact, type TimelineFilter } from './format.js';
+import { compact, sanitizeLiveCaption, type TimelineFilter } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
 import { timelineIdentity } from './timeline-read.js';
 import { timelineEntriesKey } from './timeline-revision.js';
 import { isNowRow, type TimelineEntry } from './timeline.js';
 import { pad, wrapBodyLine } from './widgets.js';
+import { visibleWidth } from '@earendil-works/pi-tui';
 
 const MAX_ENTRY_PAINT_CACHE = 512;
 const entryPaintCache = new Map<string, string[]>();
@@ -373,9 +374,10 @@ function paintPlain(theme: Theme, row: string, width: number, selected: boolean)
 }
 
 function liveCaption(entry: TimelineEntry): string {
-  const title = entry.title.replace(/^Candidate · /, '');
+  const title = sanitizeLiveCaption(entry.title.replace(/^Candidate · /, ''));
   if (title === 'working') return 'working';
-  return entry.detail ? `${title} ${entry.detail}` : title;
+  const detail = entry.detail ? sanitizeLiveCaption(entry.detail) : '';
+  return detail ? `${title} ${detail}` : title;
 }
 
 function visibleNow(entries: readonly TimelineEntry[]): TimelineEntry | undefined {
@@ -398,12 +400,13 @@ function liveStatusLine(
   width: number,
 ): string {
   const pulse = Math.floor(tick / 400) % 2 === 0 ? '*' : theme.glyphs.empty;
-  const role = liveStatusRole(live, locale, product);
+  const role = sanitizeLiveCaption(liveStatusRole(live, locale, product));
   const action = live ? liveCaption(live) : 'working';
   const left = ` ${pulse} ${role} · ${action}`;
-  const clock = elapsed.trim() || '00:00';
-  const clockWidth = Math.max(5, clock.length);
+  const clock = sanitizeLiveCaption(elapsed.trim() || '00:00') || '00:00';
+  const clockWidth = Math.max(5, visibleWidth(clock));
   const leftWidth = Math.max(8, width - clockWidth - 1);
+  // pad flattens CR/LF/tab; the composed status is always one physical row.
   return `${pad(left, leftWidth, theme.glyphs.ellipsis)} ${clock}`;
 }
 

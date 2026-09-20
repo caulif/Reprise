@@ -12,7 +12,8 @@ import type { ResultPathLinks } from '../../src/application/result-paths.js';
 import type { ResultAction } from '../../src/tui/page-input.js';
 import { keepSelectedVisible } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
-import { workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
+import { measureWorkbenchGeometry, workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
+import { bodyCellAt } from '../../src/tui/workbench-layout.js';
 
 function visibleSpan(line: string, needle: string): { x0: number; x1: number } | undefined {
   const plain = stripTerminalSequences(line);
@@ -393,5 +394,24 @@ test('viewport TUI yields SGR wheel to the application listener', () => {
   }
   assert.equal(consumed, true);
   assert.deepEqual(seen, ['viewport', 'app']);
+});
+
+test('header and footer clicks miss the body; they do not hit the first result row', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const opened = { report: 0 };
+  const handle = resultController(opened);
+  const geometry = measureWorkbenchGeometry(handle.view(), 120, 40);
+  assert.ok(geometry.header.height >= 1);
+  // Header row 1 must not clamp into body row 0.
+  applyResultPointer(handle, '\x1b[<0;4;1M');
+  assert.equal(opened.report, 0);
+  applyResultPointer(handle, `\x1b[<0;4;${geometry.header.height}M`);
+  assert.equal(opened.report, 0);
+  // Footer is below the body.
+  const footerRow = geometry.footer.row + 1; // 1-based SGR
+  applyResultPointer(handle, `\x1b[<0;4;${footerRow}M`);
+  assert.equal(opened.report, 0);
+  assert.equal(bodyCellAt(geometry, 1, 4), undefined);
+  assert.ok(bodyCellAt(geometry, geometry.body.row + 1, 4));
 });
 

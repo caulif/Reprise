@@ -21,12 +21,19 @@ function panelBodyCol(theme: Theme): number {
   return theme.framed ? 1 : 3;
 }
 
+/** Pad one physical terminal row. CR/LF/tab become spaces so a "layout row" never spans multiple screen rows. */
 export function pad(text: string, width: number, ellipsis = '…'): string {
   if (width <= 0) return '';
-  const visible = visibleWidth(text);
-  if (visible === width) return text;
-  if (visible > width) return truncateFit(text, width, ellipsis);
-  return `${text}${' '.repeat(width - visible)}`;
+  const flat = flattenTerminalRow(text);
+  const visible = visibleWidth(flat);
+  if (visible === width) return flat;
+  if (visible > width) return truncateFit(flat, width, ellipsis);
+  return `${flat}${' '.repeat(width - visible)}`;
+}
+
+/** Collapse row-breaking controls without stripping intentional ANSI from themed chrome. */
+export function flattenTerminalRow(text: string): string {
+  return text.replace(/[\r\n\t]+/g, ' ');
 }
 
 export function panel(theme: Theme, title: string, body: readonly string[], width: number): string[] {

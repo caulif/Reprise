@@ -40,6 +40,11 @@ export function compact(value: string, limit: number, ellipsis = '...'): string 
   return truncateFit(normalized, limit, ellipsis);
 }
 
+/** Display copy of untrusted live text: strip terminal sequences, then collapse whitespace to one line. */
+export function sanitizeLiveCaption(value: string): string {
+  return stripTerminalSequences(value).replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim();
+}
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

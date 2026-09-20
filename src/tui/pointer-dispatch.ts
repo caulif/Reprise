@@ -10,8 +10,8 @@ import { resolveResultPathLinks } from '../application/result-paths.js';
 import { resultPointerAction, renderResultWithHits } from './pages/result.js';
 import { hitAtBodyRow, keepSelectedVisible, layoutScrollback } from './scrollback.js';
 import { timelineIdentity } from './timeline-read.js';
-import { bodyHeight } from './viewport.js';
-import { workbenchBodyOrigin } from './workbench.js';
+import { bodyCellAt } from './workbench-layout.js';
+import { measureWorkbenchGeometry } from './workbench.js';
 import type { ControllerHandle } from './controller-input.js';
 
 export function consumeWheel(data: string): Consume | undefined {
@@ -55,6 +55,7 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
   if (!c.result) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
+  if (!cell) return { consume: true };
   const { lines, rowHits } = renderResultWithHits(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
   const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
   const line = lines[bodyRow];
@@ -101,6 +102,7 @@ export function applyHomePointer(c: ControllerHandle, data: string): Consume | u
   }
   if (pointer.action !== 'click' || pointer.row === undefined) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col ?? 1);
+  if (!cell) return { consume: true };
   if (homePointerAction({
     taskCase: c.taskCase,
     recentExperiment: c.recentExperiment,
@@ -121,6 +123,7 @@ export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Co
   if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
   if (!c.historyDetail) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
+  if (!cell) return { consume: true };
   const lines = renderHistoryDetail(createTheme(cell.width), cell.width, c.historyDetail, c.locale);
   const action = historyDetailPointerAction(lines, cell.bodyRow, cell.col);
   if (action === 'open-report' && !('taskCase' in c.historyDetail)) {
@@ -131,12 +134,16 @@ export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Co
 }
 
 export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume {
+  const cell = pointerBodyCell(c, terminalRow, 1);
+  if (!cell) return { consume: true };
   const visible = c.visibleTimeline();
   const folded = projectTimelineView(c.timeline, visible, new Set(c.expandedFolds), c.timelineRevision);
   const selected = selectedIndexAfterFold(visible, folded, visible[c.timelineSelected] ?? c.timeline[c.timelineSelected]);
   const window = canvasWindow(c);
   const layout = layoutScrollback(createTheme(window.width), window.width, folded, selected, c.locale, 'product', window.height, 0, c.timelineReadOffset ?? 0, '00:00', c.timelineFollowing, c.timelineRevision);
-  const cell = pointerBodyCell(c, terminalRow, 1);
+  // Live status / follow chrome sits in the body allocation but is not a hit target.
+  const contentRows = Math.max(0, window.height - layout.chrome);
+  if (cell.bodyRow >= contentRows) return { consume: true };
   const hit = hitAtBodyRow(layout.hits, cell.bodyRow);
   if (hit?.fold && hit.itemId) {
     c.expandedFolds = c.expandedFolds.includes(hit.itemId)
@@ -177,20 +184,18 @@ export function moveTimelineVisible(c: ControllerHandle, amount: number): Consum
   return { consume: true };
 }
 
-function pointerBodyCell(c: ControllerHandle, terminalRow: number, terminalCol: number): { bodyRow: number; col: number; width: number } {
+function pointerBodyCell(c: ControllerHandle, terminalRow: number, terminalCol: number): { bodyRow: number; col: number; width: number } | undefined {
   const width = c.columns();
-  const height = c.viewport().height;
-  const origin = workbenchBodyOrigin(c.view(), width, height);
-  return {
-    bodyRow: Math.max(0, terminalRow - 1 - origin.header - origin.rail),
-    col: terminalCol,
-    width,
-  };
+  const height = c.viewport().height ?? 24;
+  const geometry = measureWorkbenchGeometry(c.view(), width, height);
+  const cell = bodyCellAt(geometry, terminalRow, terminalCol);
+  if (!cell) return undefined;
+  return { bodyRow: cell.bodyRow, col: cell.col, width };
 }
 
 function canvasWindow(c: ControllerHandle): { width: number; height: number } {
   const width = c.columns();
   const height = c.viewport().height ?? 24;
-  const origin = workbenchBodyOrigin(c.view(), width, height);
-  return { width, height: bodyHeight({ width, height }, 0, origin.header + origin.rail) ?? 16 };
+  const geometry = measureWorkbenchGeometry(c.view(), width, height);
+  return { width, height: Math.max(1, geometry.body.height) };
 }
