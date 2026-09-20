@@ -273,7 +273,7 @@ export class ExperimentStore {
     this.#assertWriter();
     const start = this.#events.length;
     const events: EventEnvelope[] = [];
-    let fresh: EventEnvelope[] = [];
+    let fresh!: EventEnvelope[];
     try {
       for (const input of inputs) events.push(await this.#appendOne(input, false, false));
       const batchOperationIds = new Set<string>();
