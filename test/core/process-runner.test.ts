@@ -97,6 +97,28 @@ test('runProcess classifies a caller cancellation independently from timeout', a
   });
 });
 
+
+test('runProcess timeout settles after close grace when child never emits close', async () => {
+  const child = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(),
+    killed: false,
+    kill: () => { child.killed = true; return true; },
+  });
+  const started = Date.now();
+  await assert.rejects(
+    runProcess({
+      operation: 'shell_probe', executableKind: 'node', command: 'node', args: ['-e', '0'],
+      timeoutMs: 1, killTree: true, spawnProcess: fakeSpawner(child),
+    }),
+    (cause: unknown) => {
+      assert.ok(cause instanceof ProcessBoundaryError);
+      assert.equal(cause.exitCategory, 'timed_out');
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 10_000, 'timeout settle must not hang for the full child lifetime');
+});
+
 test('windows kill tree uses System32 taskkill, not PATH', () => {
   assert.match(windowsTaskkillExecutable(), /System32[/\\]taskkill\.exe$/i);
   assert.notEqual(windowsTaskkillExecutable(), 'taskkill');
