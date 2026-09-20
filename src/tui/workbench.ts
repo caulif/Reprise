@@ -43,7 +43,10 @@ export type ContextBarModel = {
   readonly sourceLabel?: string;
 };
 
-export type StageRailModel = { readonly text: string };
+export type StageRailMark = 'done' | 'active' | 'pending';
+export type StageRailModel = {
+  readonly stages: readonly { readonly mark: StageRailMark; readonly label: string }[];
+};
 export type ActivityCardModel = { readonly lines: readonly string[] };
 export type NoticeModel = { readonly text: string; readonly tone?: 'info' | 'warn' | 'danger' };
 export type RecoverySummaryModel = { readonly lines: readonly string[]; readonly expandable: boolean };
@@ -207,8 +210,12 @@ function renderContextBar(theme: Theme, view: WorkbenchView, width: number): str
 }
 
 function renderStageRail(theme: Theme, view: WorkbenchView, width: number): string[] {
-  if (!view.stageRail?.text) return [];
-  return [truncateFit(` ${view.stageRail.text}`, width, theme.glyphs.ellipsis)];
+  const stages = view.stageRail?.stages;
+  if (!stages?.length) return [];
+  const glyph = (mark: StageRailMark): string =>
+    mark === 'done' ? theme.glyphs.ok : mark === 'active' ? theme.glyphs.dot : theme.glyphs.empty;
+  const text = stages.map((s) => `${glyph(s.mark)} ${s.label}`).join('  ');
+  return [truncateFit(` ${text}`, width, theme.glyphs.ellipsis)];
 }
 
 function renderActivityCard(theme: Theme, view: WorkbenchView, width: number): string[] {

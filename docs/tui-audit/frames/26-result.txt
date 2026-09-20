@@ -1,32 +1,22 @@
-Reprise   对照结果                                                                                        00:00   ● 完成
+Reprise   运行结果                                                                                        00:00   ● 完成
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-▎ Fix the failing test.                                                                                                 
-▎ Run the focused test.                                                                                                 
-▎ public response line 1                                                                                                
-  public response line 2                                                                                                
-  public response line 3                                                                                                
-  public response line 4                                                                                                
-  public response line 5                                                                                                
-  public response line 6                                                                                                
-  ... +35 lines                                                                                                         
-                                                                                                                        
-                                                                                                                        
-
-┌─ 对照结果 ─ completed ───────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ✓ completed │
-│ 任务判断     apparently_completed │
-│ 运行终止     completed · completed.controller_satisfied │
-│ 清理         complete │
+ 题目 Fix the bug. · Codex · gpt-5.6-luna · Codex
+ ✓ 恢复  ✓ 候选  ✓ 对当前任务开跑  ✓ 对照
+┌─ 运行结果 ─ completed ───────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 任务判断     控制 Agent 判断已完成 │
+│ 运行终止     正常结束 · completed.controller_satisfied │
+│ 清理         已完成 │
 │ 对照         对照完成 │
-│     72s · candidate 49s · 1 turn · 1 controller · 未采集 tokens · 未采集 cost │
-│ │
-│ Synthetic comparison headline. │
+│ 下一步       打开可用产物 │
+│ 耗时         未记录 │
 │ 报告         report.html │
-│ 历史终稿     environment/baselines/history-final.txt │
-│ 候选终稿     environment/runs/run-1/candidate-final.txt │
+│ 候选终稿     未定位到 │
+│ 历史终稿     未定位到 │
 │ 记录（排查） runs/run-1/ │
 │ 隔离副本（排查） environment/runs/run-1/ │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ ▸ 查看候选执行过程
  对照结束。用短标签打开报告。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [o] 打开报告  [h] 历史终稿  [f] 候选终稿  [Esc] 封面

@@ -366,13 +366,21 @@ function stageRailOf(input: Input, locale: Locale): StageRailModel | undefined {
     || input.page === 'candidate-product' || input.page === 'candidate-model') {
     const compared = input.preparePhase === 'compare'
       || (input.page === 'result' && input.result?.comparison.result.status !== 'skipped');
-    const marks = [
-      `✓ ${t(locale, 'recoveryField')}`,
-      `${input.page === 'candidate-product' ? '●' : '✓'} ${t(locale, 'candidateLabel')}`,
-      `${input.page === 'running' ? '●' : input.page === 'result' ? '✓' : '○'} ${t(locale, 'runDesc')}`,
-      `${compared ? (input.preparePhase === 'compare' ? '●' : '✓') : '○'} ${t(locale, 'resultComparison')}`,
-    ];
-    return { text: marks.join('  ') };
+    const candidateMark = input.page === 'candidate-product' ? 'active' as const : 'done' as const;
+    const runMark = input.page === 'running' ? 'active' as const
+      : input.page === 'result' ? 'done' as const
+        : 'pending' as const;
+    const compareMark = !compared ? 'pending' as const
+      : input.preparePhase === 'compare' ? 'active' as const
+        : 'done' as const;
+    return {
+      stages: [
+        { mark: 'done', label: t(locale, 'recoveryField') },
+        { mark: candidateMark, label: t(locale, 'candidateLabel') },
+        { mark: runMark, label: t(locale, 'runDesc') },
+        { mark: compareMark, label: t(locale, 'resultComparison') },
+      ],
+    };
   }
   return undefined;
 }
