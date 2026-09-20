@@ -433,10 +433,11 @@ function projectOutcome(entry: MakeEntry, payload: JsonRecord): readonly Timelin
   const cleanup = text(record(payload.cleanup).status) ?? 'unknown';
   const kind = text(termination.kind) ?? 'unknown';
   const code = text(termination.code);
+  const cleanupWarn = cleanup === 'incomplete' || cleanup === 'unknown';
   return [
     entry('HARNESS', `Task · ${task}`),
     entry('HARNESS', `Termination · ${kind}`, code),
-    entry('HARNESS', `Cleanup · ${cleanup}`, undefined, cleanup === 'failed' ? { level: 'error' } : undefined),
+    entry('HARNESS', `Cleanup · ${cleanup}`, undefined, cleanupWarn ? { level: 'error' } : undefined),
   ];
 }
 
@@ -446,13 +447,41 @@ function projectComparisonCompleted(entry: MakeEntry, payload: JsonRecord): read
   const value = record(payload.value);
   const valueStatus = text(value.status);
   const headline = text(value.headline);
-  const failed = invocation === 'failed';
-  const title = failed ? '对照失败' : valueStatus === 'insufficient_evidence' ? '证据不足' : '对照完成';
-  return [entry('CONTROLLER', title, headline ?? (failed ? text(failure.message) : undefined), {
+  if (invocation === 'failed') {
+    return [entry('CONTROLLER', '对照失败', headline ?? text(failure.message), {
+      lane: 'comparison',
+      kind: 'deliver',
+      ...(headline ? { original: headline } : {}),
+      level: 'error',
+    })];
+  }
+  if (invocation === 'cancelled') {
+    return [entry('CONTROLLER', '对照已取消', headline ?? text(payload.factRef), {
+      lane: 'comparison',
+      kind: 'deliver',
+      level: 'error',
+    })];
+  }
+  if (invocation === 'completed' && valueStatus === 'insufficient_evidence') {
+    return [entry('CONTROLLER', '证据不足', headline, {
+      lane: 'comparison',
+      kind: 'deliver',
+      ...(headline ? { original: headline } : {}),
+      level: 'error',
+    })];
+  }
+  if (invocation === 'completed' && valueStatus === 'completed') {
+    return [entry('CONTROLLER', '对照完成', headline, {
+      lane: 'comparison',
+      kind: 'deliver',
+      ...(headline ? { original: headline } : {}),
+    })];
+  }
+  return [entry('CONTROLLER', '对照状态未知', headline ?? (invocation === 'completed' ? valueStatus : invocation), {
     lane: 'comparison',
     kind: 'deliver',
     ...(headline ? { original: headline } : {}),
-    ...(failed ? { level: 'error' as const } : {}),
+    level: 'error',
   })];
 }
 

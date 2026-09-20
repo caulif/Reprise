@@ -14,6 +14,7 @@ import type { WorkbenchView } from './workbench.js';
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
+import { deriveResultPresentationFromResult } from './display-state.js';
 
 type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
@@ -188,10 +189,12 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'confirm' && input.preflight) return confirmWorkbenchSlice(input, base, recovery);
   if (input.page === 'running') return { ...base, running: runningModel(input) };
   if (input.page === 'result' && input.result) {
+    const locale = input.locale ?? 'en';
     return {
       ...base,
       running: runningModel(input),
       result: input.result,
+      resultPresentation: deriveResultPresentationFromResult(input.result, locale, Boolean(input.comparePending)),
       ...(input.timelineReadOffset ? { bodyOffset: input.timelineReadOffset } : {}),
     };
   }
