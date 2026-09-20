@@ -320,7 +320,11 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     if (!view.preflight) return [['Esc', t(locale, 'hintHome')]];
     return preflightHints(locale);
   }
-  if (view.page === 'confirm') return confirmHints(view.confirm ? confirmCanStart(view.confirm) : false, locale);
+  if (view.page === 'confirm') {
+    const recoveryDiagnosis = view.confirm?.recovery?.status === 'failed' || view.confirm?.recovery?.status === 'blocked'
+      || view.confirm?.preflight.comparisonClass === 'observational';
+    return confirmHints(view.confirm ? confirmCanStart(view.confirm) : false, locale, recoveryDiagnosis);
+  }
   if (view.page === 'running' && view.running) {
     const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
     return runningHints(

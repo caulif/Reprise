@@ -7,11 +7,19 @@ gpt-5.6-terra - medium   ! 内部模型缺少密钥  * Codex  * ...
  /history 本机实验记录  还没有本地对照
  /config  打开 /config  需要凭据
 
-[ 开跑 · 选候选模型 ]
+ 第 3 / 3 步 - 确认运行      +--+--*
+
+[ 启动隔离的 Codex 候选？ ]
+    题目         Fix the bug.
     来源会话     Codex
     候选         Codex
+    请求模型     gpt-5.6-luna
+    解析模型     gpt-5.6-luna
+    恢复         已恢复
+    限制         fingerprint differs
    
-   > gpt-5.6-luna                                           
- 已恢复。选候选产品和模型后即可开跑。
+    !  按 Enter 不会启动 Codex。请先在 /config 添加 API 
+   密钥。
+ 
 ------------------------------------------------------------
- [↑↓] 选择  [Enter] 核对运行条件  [b] 改产品  [Esc] 封面
+ [Enter] 尝试开始（受阻）  [b] 改模型  [Esc] 改模型
