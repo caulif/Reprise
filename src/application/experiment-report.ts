@@ -37,6 +37,9 @@ import type { AgentLocale } from "../agents/language.js";
 import { Type } from "@sinclair/typebox";
 import { ComparisonEvidenceCatalog, lookupCompletedToolCall } from "./comparison-evidence.js";
 import type { ComparisonCatalogSnapshot } from "./comparison-evidence.js";
+import { createComparisonRenderCatalogPort } from "./comparison-render-catalog.js";
+import { createPreviewReportTool, createRenderArtifactTool } from "./comparison-render-tools.js";
+import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
 import {
   comparisonFailureDiagnostic,
   draftAgentSlots,
@@ -535,6 +538,16 @@ function comparisonTools(
     candidateSnapshotRoot: input.candidateSnapshotRoot,
   });
   const candidateRoot = mounts.candidate;
+  const renderCatalog = createComparisonRenderCatalogPort({
+    catalog,
+    attemptRoot,
+    mounts: {
+      finals: mounts.finals,
+      candidate: mounts.candidate,
+      history: mounts.history,
+      evidence: mounts.evidence,
+    },
+  });
   return withComparisonShellDeny([
     ...workspaceTools(attemptRoot, {
       role: "comparison",
@@ -555,8 +568,23 @@ function comparisonTools(
       homeRoot: join(attemptRoot, ".home"),
     }),
     registerEvidenceTool(catalog),
-    renderArtifactStubTool(),
-    previewReportStubTool(),
+    createRenderArtifactTool({
+      catalog: renderCatalog,
+      attemptRoot,
+    }),
+    createPreviewReportTool({
+      catalog: renderCatalog,
+      attemptRoot,
+      prepareReportHtml: async () => {
+        const snap = catalog.snapshot();
+        return materializeComparisonReportPreview({
+          attemptRoot,
+          media: snap.media,
+          evidence: snap.links,
+          catalogRevision: snap.revision,
+        });
+      },
+    }),
   ]);
 }
 
@@ -603,46 +631,6 @@ function registerEvidenceTool(catalog: ComparisonEvidenceCatalog): AgentToolDefi
           "Re-read facts/evidence-index.json after successful registration.",
         ].join("\n"),
         details: result,
-      };
-    },
-  };
-}
-
-function renderArtifactStubTool(): AgentToolDefinition {
-  return {
-    name: "render_artifact",
-    description: "Derive previews from a registered sourceRef (implemented in a later package). Currently returns capability_unavailable.",
-    parameters: Type.Object({
-      sourceRef: Type.String({ minLength: 1, maxLength: 256 }),
-      viewport: Type.Optional(Type.Object({
-        width: Type.Integer({ minimum: 1, maximum: 8192 }),
-        height: Type.Integer({ minimum: 1, maximum: 8192 }),
-        scale: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 4 })),
-      })),
-      sampleTimesMs: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: 60_000 }), { maxItems: 16 })),
-    }),
-    async execute() {
-      return {
-        content: [
-          "status=capability_unavailable",
-          "reason=render_artifact body deferred to B4",
-        ].join("\n"),
-      };
-    },
-  };
-}
-
-function previewReportStubTool(): AgentToolDefinition {
-  return {
-    name: "preview_report",
-    description: "Preview the attempt report.html against the current catalog (implemented in a later package). Currently returns capability_unavailable.",
-    parameters: Type.Object({}),
-    async execute() {
-      return {
-        content: [
-          "status=capability_unavailable",
-          "reason=preview_report body deferred to B4",
-        ].join("\n"),
       };
     },
   };
