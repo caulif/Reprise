@@ -11,6 +11,7 @@ import {
 import { envNameFromConfig } from "./controller-run.js";
 import type { WorkbenchView } from "./workbench.js";
 import { projectWorkbenchView } from "./view-projection.js";
+import { activeNodes } from './activity-index.js';
 
 export function groupedProjects(c: IntakeTui): SessionProject[] {
   const cached = c.groupedCache;
@@ -218,6 +219,7 @@ export function view(c: IntakeTui): WorkbenchView {
     ...(c.activityDetailEntry ? { activityDetail: c.activityDetailEntry } : {}),
     runStartedAt: c.runStartedAt,
     nowMs: c.nowMs(),
+    activeParallel: activeNodes(c.activityIndex).length,
     ...(c.compareChoice ? { comparePending: true } : {}),
     result: c.result,
     ...(c.finding ? { finding: true, findQuery: c.findQuery, findCursor: c.findCursor } : {}),

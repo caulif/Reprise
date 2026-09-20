@@ -80,6 +80,14 @@ describe('T06 display-state stages and clocks', () => {
     assert.equal(scopedElapsedMs(bounds, 'candidate', 0), 180_000);
     assert.equal(scopedElapsedMs(bounds, 'comparison', 0), 120_000);
   });
+
+  it('keeps an end boundary unknown when no start event was recorded', () => {
+    const endedAt = Date.parse('2026-08-28T00:08:00.000Z');
+    const bounds = applyPhaseClockEvent({}, event('comparison.completed', {}, '2026-08-28T00:08:00.000Z'));
+    assert.equal(bounds.comparisonEndedAt, endedAt);
+    assert.equal(bounds.comparisonStartedAt, undefined);
+    assert.equal(scopedElapsedMs(bounds, 'comparison', endedAt + 60_000), undefined);
+  });
 });
 
 describe('T06 R08 stale wait ladder', () => {

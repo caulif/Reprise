@@ -264,7 +264,8 @@ export function deriveStaleHint(input: {
   }
 }
 
-export function countActiveParallel(entries: readonly TimelineEntry[]): number {
+export function countActiveParallel(entries: readonly TimelineEntry[], activeCount?: number): number {
+  if (activeCount !== undefined) return activeCount;
   let count = 0;
   for (const entry of entries) {
     if (entry.placeholder && entry.itemId?.startsWith('now:')) count += 1;
@@ -291,7 +292,6 @@ export function applyPhaseClockEvent(
       return {
         ...bounds,
         recoveryEndedAt: at,
-        recoveryStartedAt: bounds.recoveryStartedAt ?? at,
       };
     case 'run.attempt_created':
     case 'runtime.session_started':
@@ -304,7 +304,6 @@ export function applyPhaseClockEvent(
       return {
         ...bounds,
         candidateEndedAt: at,
-        candidateStartedAt: bounds.candidateStartedAt ?? at,
       };
     case 'comparison.started':
       return { ...omitEnded(bounds, 'comparison'), comparisonStartedAt: at };
@@ -312,7 +311,6 @@ export function applyPhaseClockEvent(
       return {
         ...bounds,
         comparisonEndedAt: at,
-        comparisonStartedAt: bounds.comparisonStartedAt ?? at,
       };
     default:
       return bounds;

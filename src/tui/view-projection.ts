@@ -54,6 +54,7 @@ type Input = {
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
+  readonly activeParallel?: number;
   readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly activityDetail?: TimelineEntry; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
   readonly phaseClocks?: PhaseClockBounds;
   readonly comparisonAttemptId?: string;
@@ -93,7 +94,7 @@ function runningModel(input: Input) {
     ...(input.machineState ? { machineState: input.machineState } : {}),
     ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
   });
-  const activeParallel = countActiveParallel(input.visibleTimeline);
+  const activeParallel = countActiveParallel(input.visibleTimeline, input.activeParallel);
   return {
     entries: input.visibleTimeline,
     sourceTimeline: input.timeline,
