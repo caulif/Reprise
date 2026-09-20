@@ -47,6 +47,7 @@ export type RunningModel = {
   readonly filter: TimelineFilter;
   readonly following: boolean;
   readonly cancelling: boolean;
+  readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled';
   readonly currentState: CandidateRunState | undefined;
   readonly elapsed: string;
   readonly turns: { readonly used: number; readonly max?: number };
@@ -340,8 +341,12 @@ export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (
   return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
 }
 
-export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
-  const stop = ['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const;
+export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false, cancelUi: 'idle' | 'requesting' | 'failed' | 'settled' = 'idle'): readonly (readonly [string, string])[] {
+  const stop = cancelUi === 'requesting'
+    ? (['Ctrl+C', t(locale, 'hintExitUiCleanupPending')] as const)
+    : cancelUi === 'failed'
+      ? (['Ctrl+C', t(locale, 'hintRetryCancel')] as const)
+      : (['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const);
   if (reading) return [['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')], stop];
   if (finding) {
     return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];

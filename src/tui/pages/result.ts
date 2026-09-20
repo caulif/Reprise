@@ -179,9 +179,12 @@ function comparisonWord(comparison: ExperimentResult['comparison']['result'], lo
   if (comparison.status === 'failed') {
     return `${t(locale, 'comparisonFailedWord')} (${comparison.failure.kind ?? comparison.failure.code})`;
   }
+  if (comparison.status === 'cancelled') return t(locale, 'comparisonCancelledWord');
+  if (comparison.status === 'skipped') return t(locale, 'comparisonSkippedWord');
   if (comparison.status === 'completed' && 'value' in comparison && comparison.value?.status === 'insufficient_evidence') {
     return t(locale, 'comparisonInsufficient');
   }
+  if (comparison.status === 'completed') return t(locale, 'comparisonDone');
   return t(locale, 'comparisonDone');
 }
 

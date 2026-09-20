@@ -324,3 +324,23 @@ test('result banners use the fail slot and mute kv keys', () => {
     else process.env.FORCE_COLOR = previous;
   }
 });
+
+test('cancelled comparison is not labeled as comparison complete', () => {
+  const theme = createTheme(120, false);
+  const text = renderResult(theme, 120, {
+    reportPath: 'C:\\exp\\comparison-failure.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-1' },
+      outcome: {
+        task: { status: 'apparently_completed' },
+        termination: { kind: 'completed', code: 'completed.controller_satisfied' },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'cancelled' } },
+  } as never).join('\n');
+  assert.match(text, /Comparison cancelled|对照已取消/);
+  assert.doesNotMatch(text, /Comparison complete|对照完成/);
+});

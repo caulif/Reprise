@@ -477,4 +477,182 @@ test('synthetic scripted workflow emits recovery→candidate→compare fixtures 
   assert.ok(seen.includes('input.submitted'));
   assert.equal(settled.comparison.result.status, 'failed');
   assert.equal(typeof mockTui, 'function');
+
+test('cancel rejection restores an operable retry without restarting the experiment', async () => {
+  let rejectCancel!: (error: Error) => void;
+  let cancelCalls = 0;
+  const firstCancel = new Promise<void>((_resolve, reject) => { rejectCancel = reject; });
+  const app = new IntakeTui({
+    dataDir: 'unused',
+    tui: mockTui().tui as never,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+  });
+  app.page = 'running';
+  app.activeExperiment = {
+    cancel: async () => {
+      cancelCalls += 1;
+      if (cancelCalls === 1) return firstCancel;
+    },
+    result: new Promise(() => {}),
+    candidateFinished: new Promise(() => {}),
+    activity: {} as never,
+    runComparison: async () => {},
+    skipComparison: async () => {},
+  };
+  app.handleInput('\u0003');
+  assert.equal(app.cancelUi, 'requesting');
+  assert.equal(app.cancelling, true);
+  assert.match(app.message, /Cancellation requested|已请求取消/);
+  app.handleInput('\u001b');
+  assert.match(app.message, /Cancellation requested|已请求取消/);
+  assert.doesNotMatch(app.message, /experiment is active|对照进行中/);
+  rejectCancel(new Error('cancel endpoint unavailable'));
+  await waitFor(() => app.cancelUi === 'failed');
+  assert.equal(app.cancelling, false);
+  assert.match(app.message, /cancel endpoint unavailable/);
+  assert.match(app.message, /Retry|重试|Ctrl\+C/);
+  assert.equal(app.page, 'running');
+  app.handleInput('\u0003');
+  await waitFor(() => cancelCalls === 2);
+  assert.equal(app.cancelUi, 'requesting');
 });
+
+test('Esc from deferred compare gate calls skipComparison once and settles the result', async () => {
+  let skipCalls = 0;
+  let runCalls = 0;
+  let resolveCandidate!: (value: {
+    reportPath: string;
+    experimentRoot: string;
+    record: { attempt: { runId: string; createdAt: string }; outcome: { termination: { kind: string }; cleanup: { status: string }; task: { status: string } } };
+    decision: { status: string; value: { type: string; reason: string } };
+    comparison: { result: { status: string } };
+  }) => void;
+  let decideComparison: ((run: boolean) => void) | undefined;
+  const candidateFinished = new Promise<Parameters<typeof resolveCandidate>[0]>((resolve) => {
+    resolveCandidate = resolve;
+  });
+  const comparisonDecision = new Promise<boolean>((resolve) => {
+    decideComparison = resolve;
+  });
+  const partial = {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-gate', createdAt: '2026-09-20T00:00:00.000Z' },
+      outcome: {
+        task: { status: 'apparently_completed' },
+        termination: { kind: 'completed' },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'skipped' } },
+  };
+  const handleResult = (async () => {
+    await candidateFinished;
+    const run = await comparisonDecision;
+    return { ...partial, comparison: { result: { status: run ? 'completed' : 'skipped' } } };
+  })();
+  const app = new IntakeTui({
+    dataDir: 'unused',
+    tui: mockTui().tui as never,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+    autoCompare: false,
+    workflow: {
+      policy: TUI_RUN_POLICY,
+      verifyCandidate: async () => ({}),
+      start: async () => ({
+        cancel: async () => { decideComparison?.(false); },
+        candidateFinished,
+        result: handleResult,
+        runComparison: async () => {
+          runCalls += 1;
+          decideComparison?.(true);
+        },
+        skipComparison: async () => {
+          skipCalls += 1;
+          decideComparison?.(false);
+        },
+        activity: {} as never,
+      }),
+    } as never,
+  });
+  app.page = 'confirm';
+  app.taskCase = { caseId: 'case-gate' } as never;
+  app.selectedCandidate = { candidateId: 'candidate', productId: 'codex', requestedModel: 'fixture' };
+  app.preflight = { sourceBaseline: 'available', limitations: [] } as never;
+  app.handleInput('\r');
+  await waitFor(() => app.activeExperiment !== undefined);
+  resolveCandidate(partial);
+  await waitFor(() => app.compareChoice !== undefined && app.page === 'result');
+  app.handleInput('\u001b');
+  await waitFor(() => skipCalls === 1);
+  await app.workflowFinished;
+  assert.equal(runCalls, 0);
+  assert.equal(skipCalls, 1);
+  assert.equal(app.compareChoice, undefined);
+  assert.equal(app.page, 'home');
+});
+
+test('cancellation that arrives with candidateFinished skips the compare gate', async () => {
+  let resolveCandidate!: (value: {
+    reportPath: string;
+    experimentRoot: string;
+    record: { attempt: { runId: string; createdAt: string }; outcome: { termination: { kind: string }; cleanup: { status: string }; task: { status: string } } };
+    decision: { status: string };
+    comparison: { result: { status: string } };
+  }) => void;
+  let resolveResult!: (value: Parameters<typeof resolveCandidate>[0]) => void;
+  let skipCalls = 0;
+  const candidateFinished = new Promise<Parameters<typeof resolveCandidate>[0]>((resolve) => {
+    resolveCandidate = resolve;
+  });
+  const result = new Promise<Parameters<typeof resolveCandidate>[0]>((resolve) => {
+    resolveResult = resolve;
+  });
+  const partial = {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-race', createdAt: '2026-09-20T00:00:00.000Z' },
+      outcome: {
+        task: { status: 'not_assessed' },
+        termination: { kind: 'cancelled' },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'cancelled' },
+    comparison: { result: { status: 'skipped' } },
+  };
+  const app = new IntakeTui({
+    dataDir: 'unused',
+    tui: mockTui().tui as never,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+    autoCompare: false,
+    workflow: {
+      policy: TUI_RUN_POLICY,
+      verifyCandidate: async () => ({}),
+      start: async () => ({
+        cancel: async () => {},
+        candidateFinished,
+        result,
+        runComparison: async () => {},
+        skipComparison: async () => { skipCalls += 1; },
+        activity: {} as never,
+      }),
+    } as never,
+  });
+  app.page = 'confirm';
+  app.taskCase = { caseId: 'case-race' } as never;
+  app.selectedCandidate = { candidateId: 'candidate', productId: 'codex', requestedModel: 'fixture' };
+  app.preflight = { sourceBaseline: 'available', limitations: [] } as never;
+  app.handleInput('\r');
+  await waitFor(() => app.activeExperiment !== undefined);
+  app.handleInput('\u0003');
+  assert.equal(app.cancelUi, 'requesting');
+  resolveCandidate(partial);
+  resolveResult(partial);
+  await app.workflowFinished;
+  assert.equal(app.compareChoice, undefined);
+  assert.equal(skipCalls, 0);
+  assert.match(app.message, /cancellation|取消/i);

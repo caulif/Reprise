@@ -25,7 +25,7 @@ import {
   moveTimelineVisible,
 } from './pointer-dispatch.js';
 import { canvasHitIndices, nextHitIndex, syncTimelineSelection, timelineIdentity } from './timeline-read.js';
-import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation } from './controller-run.js';
+import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, resolveCompareChoice } from './controller-run.js';
 import {
   dispatchCanvasInput,
   dispatchCandidatePickerInput,
@@ -121,6 +121,7 @@ export type ControllerHandle = {
   runStartedAt: number;
   runClock: ReturnType<typeof setInterval> | undefined;
   cancelling: boolean;
+  cancelUi: import('./controller-run.js').CancelUi;
   runPhase: CandidateRunPhase | undefined;
   machineState: CandidateRunState | undefined;
   runFailed: boolean;
@@ -207,8 +208,7 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     if (!result) return undefined;
     if (result.action === 'compare') {
       if (!c.compareChoice) return { consume: true };
-      c.compareChoice.resolve(true);
-      c.compareChoice = undefined;
+      resolveCompareChoice(c, true);
       return { consume: true };
     }
     if (result.action === 'open-report') {
@@ -222,10 +222,7 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     if (result.action === 'open-candidate-final') return c.openResultArtifact('candidate');
     if (result.action === 'open-trace') return c.openTrace();
     if (result.action === 'open-replica') return c.openReplica();
-    if (c.compareChoice) {
-      c.compareChoice.resolve(false);
-      c.compareChoice = undefined;
-    }
+    if (c.compareChoice) resolveCompareChoice(c, false);
     return c.backToHome();
   }
   if (c.page === 'error') {
@@ -454,13 +451,11 @@ function applyCandidateModel(c: ControllerHandle, data: string): Consume | undef
 function applyCompareGate(c: ControllerHandle, data: string): Consume | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'enter') || input === 'c' || input === 'C') {
-    c.compareChoice?.resolve(true);
-    c.compareChoice = undefined;
+    resolveCompareChoice(c, true);
     return { consume: true };
   }
   if (input === 's' || input === 'S') {
-    c.compareChoice?.resolve(false);
-    c.compareChoice = undefined;
+    resolveCompareChoice(c, false);
     return { consume: true };
   }
   return undefined;
@@ -505,7 +500,13 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'cycle-fold' || result.action === 'cycle-fold-prev') {
     return cycleFoldSelection(c, result.action === 'cycle-fold-prev' ? -1 : 1);
   }
-  c.message = t(c.locale, 'experimentActive');
+  if (c.cancelUi === 'requesting' || c.cancelling) {
+    c.message = t(c.locale, 'cancellationRequested');
+  } else if (c.cancelUi === 'failed') {
+    // Keep the failure notice; Esc must not look like a healthy run.
+  } else {
+    c.message = t(c.locale, 'experimentActive');
+  }
   c.render();
   return { consume: true };
 }

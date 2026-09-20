@@ -16,7 +16,7 @@ import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './page
 import type { PreparePhase } from './widgets.js';
 
 type Input = {
-  readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
+  readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled'; readonly locale?: Locale;
   readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
@@ -73,6 +73,7 @@ function runningModel(input: Input) {
     timelineRevision: input.timelineRevision,
     selected: input.timelineSelected, filter: 'ALL' as const,
     following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
+    ...(input.cancelUi ? { cancelUi: input.cancelUi } : input.cancelling ? { cancelUi: 'requesting' as const } : {}),
     elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },
@@ -131,6 +132,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     message: input.message,
     ...(input.inlineHelp ? { inlineHelp: true } : {}),
     cancelling: input.cancelling,
+    ...(input.cancelUi ? { cancelUi: input.cancelUi } : {}),
     ...(input.comparePending ? { comparePending: true } : {}),
     home,
   };

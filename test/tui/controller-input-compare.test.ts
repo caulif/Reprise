@@ -75,3 +75,35 @@ test('running compare gate resolves true when c is pressed', () => {
   assert.equal(chosen, true);
   assert.equal(c.compareChoice, undefined);
 });
+
+test('result compare gate Esc resolves false once without a second settle', () => {
+  let chosen: boolean | undefined;
+  let homes = 0;
+  const c = compareController((run) => { chosen = run; });
+  c.backToHome = () => {
+    homes += 1;
+    return { consume: true };
+  };
+  const handled = handleControllerInput(c, '\u001b');
+  assert.deepEqual(handled, { consume: true });
+  assert.equal(chosen, false);
+  assert.equal(c.compareChoice, undefined);
+  assert.equal(homes, 1);
+  assert.deepEqual(handleControllerInput(c, '\u001b'), { consume: true });
+  assert.equal(homes, 2);
+});
+
+test('result compare gate ignores a second c after the choice settled', () => {
+  let chosen: boolean | undefined;
+  let resolves = 0;
+  const c = compareController((run) => {
+    chosen = run;
+    resolves += 1;
+  });
+  assert.deepEqual(handleControllerInput(c, 'c'), { consume: true });
+  assert.equal(chosen, true);
+  assert.equal(resolves, 1);
+  assert.equal(c.compareChoice, undefined);
+  assert.deepEqual(handleControllerInput(c, 'c'), { consume: true });
+  assert.equal(resolves, 1);
+});

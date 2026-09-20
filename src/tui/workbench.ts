@@ -56,6 +56,7 @@ export type WorkbenchView = {
   readonly bodyOffset?: number;
   readonly result?: ExperimentResult;
   readonly cancelling?: boolean;
+  readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled';
 };
 
 class LinesView implements Component {
@@ -179,7 +180,15 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
   const status = view.page === 'result' && running
     ? pill(theme, t(locale, 'done'), 'ok')
     : running
-      ? pill(theme, running.cancelling ? t(locale, 'hintCancel') : t(locale, 'running'), running.cancelling ? 'warn' : 'ok')
+      ? pill(
+          theme,
+          running.cancelUi === 'failed'
+            ? t(locale, 'hintRetryCancel')
+            : running.cancelling || running.cancelUi === 'requesting'
+              ? t(locale, 'hintCancel')
+              : t(locale, 'running'),
+          running.cancelling || running.cancelUi === 'requesting' || running.cancelUi === 'failed' ? 'warn' : 'ok',
+        )
       : identityStatus(theme, view);
   const metrics = running ? running.elapsed : modelSummary(theme, view);
   const right = `${metrics}   ${status}`;
@@ -198,7 +207,7 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
 
 function renderMessage(_theme: Theme, view: WorkbenchView, width: number): string[] {
   if (view.page === 'error') return [];
-  if (view.page === 'running' && !view.cancelling && !view.comparePending) return [];
+  if (view.page === 'running' && !view.cancelling && view.cancelUi !== 'requesting' && view.cancelUi !== 'failed' && !view.comparePending) return [];
   if (view.page === 'preflight' && !view.preflight) return [];
   return view.message.split(/\r?\n/).flatMap((line) => wrapTextWithAnsi(` ${line}`, Math.max(1, width)));
 }
@@ -330,6 +339,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
       locale,
       Boolean(view.running.finding),
       Boolean(view.running.readingMode),
+      view.running.cancelUi ?? (view.running.cancelling ? 'requesting' : 'idle'),
     );
   }
   if (view.page === 'result') {

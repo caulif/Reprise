@@ -126,7 +126,7 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
   app.handleInput("\u0003");
   releaseStart?.();
   await waitFor(() => cancelCalls === 1);
-  assert.match(rendered, /Press Ctrl\+C again to force exit|再按一次 Ctrl\+C 会强制退出/);
+  assert.match(rendered, /Press Ctrl\+C again to leave the UI|再按一次 Ctrl\+C 退出界面/);
   app.handleInput("\u0003");
   assert.equal(stops, 1);
 });
