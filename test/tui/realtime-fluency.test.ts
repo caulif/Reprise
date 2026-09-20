@@ -7,47 +7,19 @@ import { layoutScrollback, resetScrollbackLayoutCache } from '../../src/tui/scro
 import { createTheme } from '../../src/tui/theme.js';
 import type { TimelineRevisionState } from '../../src/tui/timeline-revision.js';
 import { appendTimelineEntries, projectTimelineEvent, type TimelineEntry } from '../../src/tui/timeline.js';
+import {
+  createFakeClock,
+  envelope,
+  sampleTimelineEntries,
+  syntheticFlowEvents,
+} from './fixtures/synthetic-flow.js';
 
 function event(type: string, payload: unknown, sequence = 1) {
-  return {
-    schemaVersion: 1,
-    sequence,
-    eventId: `event-${sequence}`,
-    occurredAt: '2026-08-11T00:00:00.000Z',
-    type,
-    payload,
-    checksum: '0'.repeat(64),
-  };
+  return envelope(type, payload, { sequence, at: '2026-08-11T00:00:00.000Z' });
 }
 
 function sampleEntries(): TimelineEntry[] {
-  return [
-    {
-      sequence: 1,
-      occurredAt: '2026-08-11T00:00:00.000Z',
-      source: 'CONTROLLER',
-      title: 'Prompt · Fix the failing test',
-      kind: 'narrate',
-      detail: 'Fix the failing test',
-    },
-    {
-      sequence: 2,
-      occurredAt: '2026-08-11T00:00:01.000Z',
-      source: 'TARGET',
-      title: 'Visible response',
-      kind: 'narrate',
-      detail: 'public response line 1',
-    },
-    {
-      sequence: 3,
-      occurredAt: '2026-08-11T00:00:02.000Z',
-      source: 'TARGET',
-      title: 'Candidate · working',
-      kind: 'live',
-      itemId: 'now:candidate',
-      placeholder: true,
-    },
-  ];
+  return sampleTimelineEntries(createFakeClock('2026-08-11T00:00:00.000Z'));
 }
 
 function mockVisibleHost(timeline: TimelineEntry[], revision: TimelineRevisionState): IntakeTui {
@@ -172,5 +144,27 @@ describe('realtime fluency caches', () => {
     ];
     const afterExpand = layoutScrollback(theme, 80, expandedView, 1, 'en', 'Codex', 8, 0, 0, '00:01', true, 1);
     assert.notDeepEqual(first.lines.slice(0, -1), afterExpand.lines.slice(0, -1));
+  });
+
+  it('projects the shared synthetic recovery→candidate→compare flow after a fake clock wait', () => {
+    const clock = createFakeClock();
+    const beforeWait = clock.nowMs();
+    clock.advance(121_000);
+    assert.equal(clock.nowMs() - beforeWait, 121_000);
+    const timeline: TimelineEntry[] = [];
+    const revision: TimelineRevisionState = { timelineRevision: 0 };
+    for (const next of syntheticFlowEvents({
+      clock: createFakeClock(),
+      repeatedToolFailures: 2,
+      multiLineLive: true,
+      comparison: { status: 'cancelled' },
+      candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+    })) {
+      appendTimelineEntries(timeline, projectTimelineEvent(next), revision);
+    }
+    assert.ok(revision.timelineRevision > 0);
+    assert.ok(timeline.some((entry) => /recovery|Recovery|已恢复/i.test(entry.title) || entry.itemId === 'now:recovery'));
+    assert.ok(timeline.some((entry) => entry.title.includes('Visible response') || entry.detail?.includes('public response')));
+    assert.ok(timeline.some((entry) => /comparison|对照|cancelled|失败/i.test(entry.title) || entry.source === 'HARNESS'));
   });
 });

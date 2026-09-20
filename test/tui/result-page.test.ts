@@ -4,30 +4,34 @@ import { setCapabilities, visibleWidth } from '@earendil-works/pi-tui';
 import { renderResult, resultHints } from '../../src/tui/pages/result.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { kv } from '../../src/tui/widgets.js';
+import { syntheticExperimentResult } from './fixtures/synthetic-flow.js';
 
 test('result page uses comparison headline and hides satisfied rationale', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const theme = createTheme(120, false);
   const compared = renderResult(theme, 120, {
-    reportPath: 'C:\\exp\\report.html',
-    experimentRoot: 'C:\\exp',
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
-    },
+    ...syntheticExperimentResult({
+      runId: 'run-1',
+      experimentRoot: String.raw`C:\exp`,
+      comparison: {
+        status: 'completed',
+        headline: 'Both delivered slides. The candidate used one turn.',
+      },
+      candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+    }),
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied', rationale: '已在当前工作目录生成可打开的三页 PPT 样式 HTML。' } },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [], headline: 'Both delivered slides. The candidate used one turn.' } } },
   } as never).join('\n');
   assert.match(compared, /Both delivered slides/);
   assert.match(compared, /environment\/runs\/run-1/);
   assert.doesNotMatch(compared, /三页 PPT/);
   const skipped = renderResult(theme, 120, {
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
-    },
+    ...syntheticExperimentResult({
+      runId: 'run-1',
+      experimentRoot: String.raw`C:\exp`,
+      comparison: { status: 'skipped' },
+      candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+    }),
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied', rationale: '已在当前工作目录生成可打开的三页 PPT 样式 HTML。' } },
-    comparison: { result: { status: 'skipped' } },
   } as never).join('\n');
   assert.match(skipped, /not run/);
   assert.doesNotMatch(skipped, /三页 PPT/);
@@ -35,6 +39,40 @@ test('result page uses comparison headline and hides satisfied rationale', () =>
   assert.match(skipped, /Report/);
   assert.match(skipped, /History final/);
   assert.match(skipped, /Candidate final/);
+});
+
+test('synthetic fixture covers cancelled and insufficient_evidence comparison independently of candidate success', () => {
+  const theme = createTheme(120, false);
+  const cancelledFixture = syntheticExperimentResult({
+    comparison: { status: 'cancelled' },
+    candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
+  });
+  assert.equal((cancelledFixture.comparison as { result: { status: string } }).result.status, 'cancelled');
+  assert.equal(
+    (cancelledFixture.record as { outcome: { task: { status: string }; termination: { kind: string } } }).outcome.task.status,
+    'apparently_completed',
+  );
+  assert.match(String(cancelledFixture.reportPath), /comparison-failure\.html/);
+  // Baseline (T01): cancelled currently paints as "Comparison complete" — fixture must still carry cancelled.
+  const cancelledPaint = renderResult(theme, 120, cancelledFixture as never).join('\n');
+  assert.match(cancelledPaint, /apparently_completed|completed\.controller_satisfied/);
+  assert.match(cancelledPaint, /Comparison complete/);
+
+  const insufficientFixture = syntheticExperimentResult({
+    comparison: { status: 'completed', valueStatus: 'insufficient_evidence', headline: 'Evidence was incomplete.' },
+    candidate: { task: 'incomplete', termination: 'stalled', cleanup: 'unknown' },
+  });
+  assert.equal(
+    (insufficientFixture.comparison as { result: { value: { status: string; headline?: string } } }).result.value.status,
+    'insufficient_evidence',
+  );
+  assert.equal(
+    (insufficientFixture.record as { outcome: { cleanup: { status: string } } }).outcome.cleanup.status,
+    'unknown',
+  );
+  const insufficient = renderResult(theme, 120, insufficientFixture as never).join('\n');
+  assert.match(insufficient, /stalled|incomplete/);
+  assert.match(insufficient, /Evidence was incomplete/);
 });
 
 test('skipped comparison still renders history and candidate rows without bare absolute paths', () => {
