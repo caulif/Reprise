@@ -143,6 +143,30 @@ test('store rejects a second writer and repeats a submitted operation without an
   }
 });
 
+test('appendBatch is idempotent when a retry contains an already committed operation', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const first = await store.append({ type: 'test.event', operationId: 'batch-operation-1', payload: { value: 1 } });
+    const before = await readFile(join(root, 'events.jsonl'), 'utf8');
+    const result = await store.appendBatch([
+      { type: 'test.event', operationId: 'batch-operation-1', payload: { value: 1 } },
+      { type: 'test.event', operationId: 'batch-operation-2', payload: { value: 2 } },
+    ]);
+    const after = await readFile(join(root, 'events.jsonl'), 'utf8');
+    assert.equal(result[0]?.eventId, first.eventId);
+    assert.equal(result[1]?.operationId, 'batch-operation-2');
+    assert.equal(after.split('\n').filter(Boolean).length, before.split('\n').filter(Boolean).length + 1);
+    const retryBefore = after;
+    await store.appendBatch([{ type: 'test.event', operationId: 'batch-operation-1', payload: { value: 1 } }]);
+    assert.equal(await readFile(join(root, 'events.jsonl'), 'utf8'), retryBefore);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('store rejects malformed Controller request and observation payloads', async () => {
   const root = await temporaryExperiment();
   try {

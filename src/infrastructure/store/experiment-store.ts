@@ -275,12 +275,17 @@ export class ExperimentStore {
     const events: EventEnvelope[] = [];
     try {
       for (const input of inputs) events.push(await this.#appendOne(input, false, false));
-      await writeFile(this.#eventsPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, { encoding: "utf8", flag: "a" });
+      const fresh = events.filter((event) => event.sequence > start);
+      if (fresh.length > 0) {
+        await writeFile(this.#eventsPath, `${fresh.map((event) => JSON.stringify(event)).join("\n")}\n`, { encoding: "utf8", flag: "a" });
+      }
     } catch (error) {
       this.#events.splice(start);
       throw error;
     }
-    for (const event of events) this.#notify(event);
+    for (const event of events) {
+      if (event.sequence > start) this.#notify(event);
+    }
     return events;
   }
 
