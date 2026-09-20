@@ -17,7 +17,7 @@ export type WorkbenchGeometry = {
   readonly footer: WorkbenchRect;
 };
 
-/** Stack fixed chrome top-to-bottom; body takes the remaining rows (at least 1 when height allows). */
+/** Stack fixed chrome top-to-bottom; body takes whatever rows remain (may be 0). */
 export function composeWorkbenchGeometry(input: {
   readonly width: number;
   readonly height: number;

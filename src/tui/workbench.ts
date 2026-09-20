@@ -100,7 +100,7 @@ export class Workbench implements Component {
     return new VStack([
       { component: header, grow: 0, shrink: 0, basis: 'auto' },
       { component: rail, grow: 0, shrink: 0, basis: 'auto', visible: () => this.#view().page === 'running' },
-      { component: body, grow: 1, shrink: 1, minSize: 4 },
+      { component: body, grow: 1, shrink: 1, minSize: 1 },
       { component: message, grow: 0, shrink: 0, basis: 'auto' },
       { component: footer, grow: 0, shrink: 0, basis: 'auto' },
     ]);

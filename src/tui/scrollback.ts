@@ -198,7 +198,10 @@ export function layoutScrollback(
     const empty = withChrome([]);
     // Keep a blank canvas row when there is no body and no chrome so callers still get a frame.
     const linesOut = empty.length ? empty : [fillCanvas(theme, '', width)];
-    return { lines: linesOut, hits, selectedAt: 0, start: 0, total: linesOut.length, chrome };
+    return {
+      lines: height === undefined ? linesOut : linesOut.slice(0, Math.max(0, height)),
+      hits, selectedAt: 0, start: 0, total: linesOut.length, chrome,
+    };
   }
   if (height === undefined || lines.length + chrome <= height) {
     const padded = padBodyToHeight(theme, lines, width, height, chrome);
@@ -207,7 +210,18 @@ export function layoutScrollback(
       hits, selectedAt, start: 0, total: lines.length, chrome,
     };
   }
-  const window = Math.max(1, height - chrome);
+  // Prefer status/follow chrome over body rows when the budget is chrome-sized or smaller.
+  const window = Math.max(0, height - chrome);
+  if (window === 0) {
+    return {
+      lines: withChrome([]).slice(0, height),
+      hits: [],
+      selectedAt,
+      start: 0,
+      total: lines.length,
+      chrome,
+    };
+  }
   const start = Math.max(0, Math.min(selectedAt + readingOffset, lines.length - window));
   const sliced = lines.slice(start, start + window);
   return {
