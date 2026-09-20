@@ -129,7 +129,15 @@ export type ControllerHandle = {
   readonly packs: readonly ProductPack[];
   sessions: readonly SessionSummary[];
   readonly now: () => string;
+  readonly nowMs: () => number;
   runStartedAt: number;
+  recoveryStartedAt: number;
+  recoveryEndedAt: number;
+  candidateStartedAt: number;
+  candidateEndedAt: number;
+  comparisonStartedAt: number;
+  comparisonEndedAt: number;
+  comparisonAttemptId: string | undefined;
   runClock: ReturnType<typeof setInterval> | undefined;
   cancelUi: import('./controller-run.js').CancelUi;
   runPhase: CandidateRunPhase | undefined;
@@ -137,6 +145,8 @@ export type ControllerHandle = {
   runFailed: boolean;
   cleanupStatus: string | undefined;
   lastRuntimeEventAt: string | undefined;
+  lastObservedEventAt: string | undefined;
+  lastVisibleActivityAt: string | undefined;
   lastRuntimeEventKind: string | undefined;
   modelOutputSeen: boolean;
   reconnectCount: number;

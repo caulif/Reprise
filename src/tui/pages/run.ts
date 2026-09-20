@@ -10,10 +10,22 @@ import { canvasHitIndices } from '../timeline-read.js';
 import { caretAt } from '../text-edit.js';
 import type { Theme } from '../theme.js';
 import type { TimelineEntry } from '../timeline.js';
-import { joinColumns, kv, pad, panel, type PreparePhase } from '../widgets.js';
+import { kv, pad, panel, stateRail, type PreparePhase } from '../widgets.js';
+import { joinColumns } from '../widgets.js';
 import type { CandidateRunPhase } from '../../application/candidate-run-phase.js';
+import {
+  activityRoleFromDiagnostics,
+  countActiveParallel,
+  deriveStaleHint,
+  roleMessageKey,
+  uiStageFrom,
+  uiStageLabelKey,
+  type ActivityRole,
+  type PhaseClockBounds,
+  type UiStage,
+} from '../phase-state.js';
 
-export type { CandidateRunPhase };
+export type { CandidateRunPhase, ActivityRole, UiStage, PhaseClockBounds };
 
 export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
 export type RecoveryPreviewModel = {
@@ -70,11 +82,18 @@ export type RunningModel = {
   readonly tick?: number;
   readonly runPhase?: CandidateRunPhase;
   readonly lastRuntimeEventAt?: string;
+  readonly lastObservedEventAt?: string;
+  readonly lastVisibleActivityAt?: string;
   readonly lastRuntimeEventKind?: string;
   readonly modelOutputSeen?: boolean;
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly runStartedAt?: number;
+  readonly phaseClocks?: PhaseClockBounds;
+  readonly activityRole?: ActivityRole;
+  readonly uiStage?: UiStage;
+  readonly activeParallel?: number;
+  readonly comparisonAttemptId?: string;
   readonly expandedFolds?: readonly string[];
   readonly activityDetail?: TimelineEntry;
   readonly candidateSessionId?: string;
@@ -198,46 +217,88 @@ export function runningChrome(theme: Theme, width: number, model: RunningModel):
   const product = model.productLabel ?? t(locale, 'unknownAgent');
   const agent = model.candidateModel ? `${product} · ${model.candidateModel}` : product;
   const wait = waitLine(model, locale);
-  if (model.runPhase === 'recovery') {
-    return wait
-      ? [theme.style.fillCanvas(pad(theme.style.muted(` ${wait}`), width, theme.glyphs.ellipsis))]
-      : [];
+  const stage = model.uiStage ?? uiStageFrom(model);
+  const role = model.activityRole ?? activityRoleFromDiagnostics(model);
+  const parallel = model.activeParallel ?? countActiveParallel(model.entries);
+  const stageLine = stage
+    ? theme.style.muted(` ${t(locale, uiStageLabelKey(stage))}${parallel > 1 ? ` · ×${parallel}` : ''}`)
+    : undefined;
+  if (model.runPhase === 'recovery' || stage === 'recovery_processing') {
+    const rows = [
+      ...(stageLine ? [stageLine] : []),
+      ...(wait ? [theme.style.muted(` ${wait}`)] : []),
+    ];
+    return rows.map((row) => theme.style.fillCanvas(pad(row, width, theme.glyphs.ellipsis)));
   }
+  const comparing = model.preparePhase === 'compare' || stage === 'comparison_processing';
   const special = model.runPhase === 'candidate_reconnecting'
     || model.runPhase === 'candidate_starting'
-    || model.preparePhase === 'compare';
+    || comparing
+    || stage === 'controller_opening'
+    || stage === 'awaiting_controller'
+    || stage === 'finalizing';
   const task = model.taskTitle
     ? truncateFit(model.taskTitle, Math.max(8, width - agent.length - 10), theme.glyphs.ellipsis)
     : '';
   const line = special
-    ? phaseLine(model, locale, agent)
+    ? phaseLine(model, locale, agent, stage, role)
     : (task ? `${task} · ${agent} · ${model.elapsed}` : `${agent} · ${model.elapsed}`);
-  return [line, ...(wait ? [theme.style.muted(` ${wait}`)] : [])].map((row) =>
+  const rail = model.currentState && width >= 78 && !comparing
+    ? stateRail(theme, model.currentState, width).slice(0, 1)
+    : [];
+  return [
+    ...rail,
+    ...(stageLine ? [stageLine] : []),
+    line,
+    ...(wait ? [theme.style.muted(` ${wait}`)] : []),
+  ].map((row) =>
     theme.style.fillCanvas(pad(row.startsWith(' ') ? row : ` ${row}`, width, theme.glyphs.ellipsis)),
   );
 }
 
-function phaseLine(model: RunningModel, locale: Locale, product: string): string {
-  if (model.runPhase === 'candidate_reconnecting') {
+function phaseLine(
+  model: RunningModel,
+  locale: Locale,
+  product: string,
+  stage: UiStage | undefined,
+  role: ActivityRole | undefined,
+): string {
+  if (model.runPhase === 'candidate_reconnecting' || stage === 'candidate_reconnecting') {
     return t(locale, 'candidateReconnecting', {
       product,
       current: model.reconnectCount ?? 0,
       total: model.reconnectTotal || 5,
     });
   }
-  if (model.runPhase === 'candidate_starting') return t(locale, 'candidateStarting', { product });
-  if (model.preparePhase === 'compare') {
-    return t(locale, 'comparingTitle');
+  if (model.runPhase === 'candidate_starting' || stage === 'candidate_starting') {
+    return t(locale, 'candidateStarting', { product });
+  }
+  if (model.preparePhase === 'compare' || stage === 'comparison_processing') {
+    return `${t(locale, 'comparingTitle')} · ${model.elapsed}`;
+  }
+  if (stage === 'controller_opening' || stage === 'awaiting_controller' || stage === 'finalizing') {
+    const label = stage ? t(locale, uiStageLabelKey(stage)) : t(locale, roleMessageKey(role));
+    return `${label} · ${model.elapsed}`;
   }
   return t(locale, 'candidateRunningTitle', { product });
 }
 
-function waitLine(model: RunningModel, locale: Locale): string | undefined {
+export function waitLine(model: RunningModel, locale: Locale): string | undefined {
   const now = model.tick ?? Date.now();
-  const last = model.lastRuntimeEventAt ? Date.parse(model.lastRuntimeEventAt) : (model.runStartedAt ?? 0);
-  const idle = Number.isFinite(last) && last > 0 ? now - last : now - (model.runStartedAt ?? 0);
-  if (idle >= 120_000) return t(locale, 'runStaleHint');
-  return undefined;
+  const visibleAt = model.lastVisibleActivityAt ?? model.lastObservedEventAt ?? model.lastRuntimeEventAt;
+  const parsedVisible = visibleAt ? Date.parse(visibleAt) : Number.NaN;
+  const anchor = Number.isFinite(parsedVisible) && parsedVisible > 0
+    ? parsedVisible
+    : (model.runStartedAt && model.runStartedAt > 0 ? model.runStartedAt : undefined);
+  if (anchor === undefined) return undefined;
+  const idle = now - anchor;
+  const role = model.activityRole ?? activityRoleFromDiagnostics(model);
+  const hint = deriveStaleHint({
+    idleMs: idle,
+    roleLabel: t(locale, roleMessageKey(role)),
+  });
+  if (!hint) return undefined;
+  return t(locale, hint.key, hint.vars);
 }
 
 export function isRecoveryChrome(model: RunningModel): boolean {
@@ -395,13 +456,52 @@ export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparin
   return [stop];
 }
 
-export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {
-  if (startedAt && startedAt > 0) return formatElapsed(now - startedAt);
+export function elapsedFrom(
+  entries: readonly TimelineEntry[],
+  now = Date.now(),
+  startedAt?: number,
+  endedAt?: number,
+): string {
+  if (startedAt && startedAt > 0) {
+    const end = endedAt && endedAt > 0 ? endedAt : now;
+    return formatElapsed(end - startedAt);
+  }
   const first = entries[0]?.occurredAt;
   const last = entries.at(-1)?.occurredAt;
   if (!first || !last) return '00:00';
   const ms = Date.parse(last) - Date.parse(first);
   return formatElapsed(ms);
+}
+
+/** Prefer scoped phase clocks; unknown start boundary stays unrecorded instead of wall-clock open time. */
+export function elapsedForRunning(
+  model: Pick<RunningModel, 'entries' | 'phaseClocks' | 'preparePhase' | 'runPhase' | 'comparisonAttemptId' | 'runStartedAt'>,
+  now: number,
+  locale: Locale,
+): string {
+  const clocks = model.phaseClocks ?? {};
+  const scope =
+    model.preparePhase === 'compare' || model.comparisonAttemptId
+      ? 'comparison' as const
+      : model.runPhase === 'recovery' || model.preparePhase === 'check'
+        ? 'recovery' as const
+        : 'candidate' as const;
+  const started =
+    scope === 'recovery' ? clocks.recoveryStartedAt
+      : scope === 'comparison' ? clocks.comparisonStartedAt
+        : clocks.candidateStartedAt;
+  const ended =
+    scope === 'recovery' ? clocks.recoveryEndedAt
+      : scope === 'comparison' ? clocks.comparisonEndedAt
+        : clocks.candidateEndedAt;
+  if (started && started > 0) {
+    return formatElapsed((ended && ended > 0 ? ended : now) - started);
+  }
+  if (model.runStartedAt && model.runStartedAt > 0 && !ended) {
+    return elapsedFrom(model.entries, now, model.runStartedAt);
+  }
+  if (!model.entries.length) return t(locale, 'unrecordedBoundary');
+  return elapsedFrom(model.entries, now);
 }
 
 function formatElapsed(ms: number): string {

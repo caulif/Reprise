@@ -18,6 +18,14 @@ import { recoveryViewFromAttempt } from '../application/recovery/view.js';
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import { record, text } from '../core/json.js';
 import { candidateRunPhaseFromEvent, candidateRunDisplayFromEvents, isCandidateRunState } from '../application/candidate-run-phase.js';
+import {
+  applyPhaseClockEvent,
+  eventActivityRole,
+  isVisibleActivityEvent,
+  shouldApplyLivePhase,
+  type ClockScope,
+  type PhaseClockBounds,
+} from './phase-state.js';
 
 function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
@@ -168,18 +176,64 @@ export function requestCancellation(c: ControllerHandle): Consume {
   return { consume: true };
 }
 
-function startRunClock(c: ControllerHandle): void {
+function startRunClock(c: ControllerHandle, scope?: ClockScope): void {
   stopRunClock(c);
-  c.runStartedAt = Date.now();
+  if (scope) markPhaseClockStart(c, scope);
   c.runClock = setInterval(() => {
     if (c.page === 'running') c.scheduleTimelineRender();
   }, 250);
   c.runClock.unref?.();
 }
 
+function markPhaseClockStart(c: ControllerHandle, scope: ClockScope): void {
+  const now = c.nowMs();
+  if (scope === 'recovery') {
+    c.recoveryStartedAt = now;
+    c.recoveryEndedAt = 0;
+    c.runStartedAt = now;
+    return;
+  }
+  if (scope === 'comparison') {
+    c.comparisonStartedAt = now;
+    c.comparisonEndedAt = 0;
+    c.runStartedAt = now;
+    return;
+  }
+  c.candidateStartedAt = now;
+  c.candidateEndedAt = 0;
+  c.runStartedAt = now;
+}
+
+function freezePhaseClock(c: ControllerHandle, scope: ClockScope): void {
+  const now = c.nowMs();
+  if (scope === 'recovery' && !c.recoveryEndedAt) c.recoveryEndedAt = now;
+  if (scope === 'candidate' && !c.candidateEndedAt) c.candidateEndedAt = now;
+  if (scope === 'comparison' && !c.comparisonEndedAt) c.comparisonEndedAt = now;
+}
+
 export function stopRunClock(c: ControllerHandle): void {
   if (c.runClock) clearInterval(c.runClock);
   c.runClock = undefined;
+}
+
+function phaseClocksOf(c: ControllerHandle): PhaseClockBounds {
+  return {
+    ...(c.recoveryStartedAt ? { recoveryStartedAt: c.recoveryStartedAt } : {}),
+    ...(c.recoveryEndedAt ? { recoveryEndedAt: c.recoveryEndedAt } : {}),
+    ...(c.candidateStartedAt ? { candidateStartedAt: c.candidateStartedAt } : {}),
+    ...(c.candidateEndedAt ? { candidateEndedAt: c.candidateEndedAt } : {}),
+    ...(c.comparisonStartedAt ? { comparisonStartedAt: c.comparisonStartedAt } : {}),
+    ...(c.comparisonEndedAt ? { comparisonEndedAt: c.comparisonEndedAt } : {}),
+  };
+}
+
+function syncPhaseClocks(c: ControllerHandle, bounds: PhaseClockBounds): void {
+  if (bounds.recoveryStartedAt) c.recoveryStartedAt = bounds.recoveryStartedAt;
+  if (bounds.recoveryEndedAt) c.recoveryEndedAt = bounds.recoveryEndedAt;
+  if (bounds.candidateStartedAt) c.candidateStartedAt = bounds.candidateStartedAt;
+  if (bounds.candidateEndedAt) c.candidateEndedAt = bounds.candidateEndedAt;
+  if (bounds.comparisonStartedAt) c.comparisonStartedAt = bounds.comparisonStartedAt;
+  if (bounds.comparisonEndedAt) c.comparisonEndedAt = bounds.comparisonEndedAt;
 }
 
 function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
@@ -222,7 +276,7 @@ export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?:
     c.preparePhase = 'check';
     c.prepareDetail = t(c.locale, 'recoveryStagePrepare');
     c.message = t(c.locale, input.afterFreeze ? 'frozenEnteringRecovery' : 'inspectingSource');
-    startRunClock(c);
+    startRunClock(c, 'recovery');
     c.render(true);
     const preflight = await c.workflow.preflight({
       taskCase,
@@ -268,7 +322,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.preparePhase = 'check';
     c.prepareDetail = t(c.locale, 'recoveryStageAgent');
     c.page = 'running';
-    startRunClock(c);
+    startRunClock(c, 'recovery');
     c.render(true);
     const attempt = await prepareExperiment(c.workflow, {
       signal: abort.signal,
@@ -310,6 +364,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     };
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
+    freezePhaseClock(c, 'recovery');
     stopRunClock(c);
     c.selectedCandidate = undefined;
     if (userStatus === 'failed') {
@@ -356,6 +411,7 @@ async function settleRun(
     return undefined;
   }
   if (cancelBlocksCompareGate(c)) return handle.result;
+  freezePhaseClock(c, 'candidate');
   c.result = partial;
   c.page = 'result';
   c.preparePhase = undefined;
@@ -373,7 +429,9 @@ async function settleRun(
       c.preparePhase = 'compare';
       c.render(true);
     }
+    startRunClock(c, 'comparison');
     await handle.runComparison();
+    freezePhaseClock(c, 'comparison');
   } else {
     await handle.skipComparison();
   }
@@ -435,7 +493,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.preparePhase = 'copy';
     c.prepareDetail = undefined;
     c.page = 'running';
-    startRunClock(c);
+    startRunClock(c, 'candidate');
     c.message = '';
     c.render(true);
     c.prepareDetail = workspaceDetail(c.preflight.workspace);
@@ -517,17 +575,47 @@ function resetRunDiagnostics(c: ControllerHandle): void {
   c.runFailed = false;
   c.cleanupStatus = undefined;
   c.lastRuntimeEventAt = undefined;
+  c.lastObservedEventAt = undefined;
+  c.lastVisibleActivityAt = undefined;
   c.lastRuntimeEventKind = undefined;
   c.modelOutputSeen = false;
   c.reconnectCount = 0;
   c.reconnectTotal = 0;
+  c.comparisonAttemptId = undefined;
 }
 
 function noteRunDiagnostics(c: ControllerHandle, event: EventEnvelope): void {
+  c.lastObservedEventAt = event.occurredAt;
   c.lastRuntimeEventAt = event.occurredAt;
   c.lastRuntimeEventKind = event.type;
-  const phase = candidateRunPhaseFromEvent(event);
-  if (phase) c.runPhase = phase;
+
+  if (event.type === 'comparison.started') {
+    const attemptId = text(record(event.payload).attemptId);
+    if (attemptId) c.comparisonAttemptId = attemptId;
+  }
+  if (event.type === 'comparison.completed') {
+    // Keep attempt id until reset so late candidate events stay scoped out.
+  }
+
+  syncPhaseClocks(c, applyPhaseClockEvent(phaseClocksOf(c), event));
+
+  const role = eventActivityRole(event);
+  const currentRole = (() => {
+    if (c.preparePhase === 'compare' || c.comparisonAttemptId) return 'comparison' as const;
+    if (c.runPhase === 'recovery' || c.preparePhase === 'check') return 'recovery' as const;
+    if (c.machineState === 'awaiting_controller' || c.machineState === 'created' || c.machineState === 'finalizing') {
+      return 'controller' as const;
+    }
+    return 'candidate' as const;
+  })();
+  if (isVisibleActivityEvent(event) && (!role || role === currentRole)) {
+    c.lastVisibleActivityAt = event.occurredAt;
+  }
+
+  if (shouldApplyLivePhase(event, c.preparePhase, c.comparisonAttemptId)) {
+    const phase = candidateRunPhaseFromEvent(event);
+    if (phase) c.runPhase = phase;
+  }
   if (event.type === 'run.state_changed') {
     const to = text(record(event.payload).to);
     if (isCandidateRunState(to)) c.machineState = to;
