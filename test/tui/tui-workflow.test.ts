@@ -115,7 +115,7 @@ test('Ctrl+C during Recovery aborts preparation and never enters candidate selec
   assert.equal(signal?.aborted, true);
   assert.equal(app.page, 'home');
   assert.match(app.message, /Recovery cancelled|恢复已取消/);
-  assert.equal(app.cancelling, false);
+  assert.equal(app.cancelUi, 'settled');
   assert.equal(app.recoveryAbort, undefined);
 });
 
@@ -154,7 +154,7 @@ test('Ctrl+C while preflight is pending prevents a later Recovery call', async (
   release();
   await waitFor(() => app.page === 'home');
   assert.equal(calls, 0);
-  assert.equal(app.cancelling, false);
+  assert.equal(app.cancelUi, 'settled');
 });
 
 test('production workflow accepts a smoke policy without forcing a candidate model', () => {
@@ -263,7 +263,7 @@ test('Ctrl+C while accepting Recovery prevents experiment startup', async () => 
     assert.equal(starts, 0);
     assert.equal(discarded, 1);
     assert.equal(app.page, 'home');
-    assert.equal(app.cancelling, false);
+    assert.equal(app.cancelUi, 'settled');
   } finally { release(); app.close(); await app.closing; }
 });
 
@@ -501,14 +501,13 @@ test('cancel rejection restores an operable retry without restarting the experim
   };
   app.handleInput('\u0003');
   assert.equal(app.cancelUi, 'requesting');
-  assert.equal(app.cancelling, true);
   assert.match(app.message, /Cancellation requested|已请求取消/);
   app.handleInput('\u001b');
   assert.match(app.message, /Cancellation requested|已请求取消/);
   assert.doesNotMatch(app.message, /experiment is active|对照进行中/);
   rejectCancel(new Error('cancel endpoint unavailable'));
   await waitFor(() => app.cancelUi === 'failed');
-  assert.equal(app.cancelling, false);
+  assert.equal(app.cancelUi, 'failed');
   assert.match(app.message, /cancel endpoint unavailable/);
   assert.match(app.message, /Retry|重试|Ctrl\+C/);
   assert.equal(app.page, 'running');
@@ -656,3 +655,73 @@ test('cancellation that arrives with candidateFinished skips the compare gate', 
   assert.equal(app.compareChoice, undefined);
   assert.equal(skipCalls, 0);
   assert.match(app.message, /cancellation|取消/i);
+test('failed cancel still skips the deferred compare gate after candidateFinished', async () => {
+  let rejectCancel!: (error: Error) => void;
+  let resolveCandidate!: (value: {
+    reportPath: string;
+    experimentRoot: string;
+    record: { attempt: { runId: string; createdAt: string }; outcome: { termination: { kind: string }; cleanup: { status: string }; task: { status: string } } };
+    decision: { status: string };
+    comparison: { result: { status: string } };
+  }) => void;
+  let resolveResult!: (value: Parameters<typeof resolveCandidate>[0]) => void;
+  let runCalls = 0;
+  let skipCalls = 0;
+  const candidateFinished = new Promise<Parameters<typeof resolveCandidate>[0]>((resolve) => {
+    resolveCandidate = resolve;
+  });
+  const result = new Promise<Parameters<typeof resolveCandidate>[0]>((resolve) => {
+    resolveResult = resolve;
+  });
+  const firstCancel = new Promise<void>((_resolve, reject) => { rejectCancel = reject; });
+  const partial = {
+    reportPath: 'C:\\exp\\report.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-failed-gate', createdAt: '2026-09-20T00:00:00.000Z' },
+      outcome: {
+        task: { status: 'not_assessed' },
+        termination: { kind: 'cancelled' },
+        cleanup: { status: 'complete' },
+      },
+    },
+    decision: { status: 'cancelled' },
+    comparison: { result: { status: 'skipped' } },
+  };
+  const app = new IntakeTui({
+    dataDir: 'unused',
+    tui: mockTui().tui as never,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+    autoCompare: false,
+    workflow: {
+      policy: TUI_RUN_POLICY,
+      verifyCandidate: async () => ({}),
+      start: async () => ({
+        cancel: async () => firstCancel,
+        candidateFinished,
+        result,
+        runComparison: async () => { runCalls += 1; },
+        skipComparison: async () => { skipCalls += 1; },
+        activity: {} as never,
+      }),
+    } as never,
+  });
+  app.page = 'confirm';
+  app.taskCase = { caseId: 'case-failed-gate' } as never;
+  app.selectedCandidate = { candidateId: 'candidate', productId: 'codex', requestedModel: 'fixture' };
+  app.preflight = { sourceBaseline: 'available', limitations: [] } as never;
+  app.handleInput('\r');
+  await waitFor(() => app.activeExperiment !== undefined);
+  app.handleInput('\u0003');
+  assert.equal(app.cancelUi, 'requesting');
+  rejectCancel(new Error('cancel endpoint unavailable'));
+  await waitFor(() => app.cancelUi === 'failed');
+  resolveCandidate(partial);
+  resolveResult(partial);
+  await app.workflowFinished;
+  assert.equal(app.compareChoice, undefined);
+  assert.doesNotMatch(app.message, /Press c to generate|按 c 生成/);
+  assert.equal(runCalls, 0);
+  assert.equal(skipCalls, 0);
+  assert.equal(app.cancelUi, 'settled');
+});

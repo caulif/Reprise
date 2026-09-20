@@ -9,7 +9,7 @@ test('candidate running chrome shows reconnect count and a stale wait hint', () 
   const theme = createTheme(120, false);
   const now = Date.parse('2026-08-28T00:02:10.000Z');
   const reconnect = runningChrome(theme, 120, {
-    entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
+    entries: [], selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '00:46', turns: { used: 1 }, calls: { used: 0 },
     runPhase: 'candidate_reconnecting', reconnectCount: 3, reconnectTotal: 5,
     lastRuntimeEventAt: '2026-08-28T00:02:00.000Z', runStartedAt: now - 46_000, tick: now,
@@ -18,7 +18,7 @@ test('candidate running chrome shows reconnect count and a stale wait hint', () 
   assert.match(reconnect, /正在重连（3\/5）/);
   assert.doesNotMatch(reconnect, /正在恢复/);
   const stale = runningChrome(theme, 120, {
-    entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
+    entries: [], selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '02:10', turns: { used: 1 }, calls: { used: 0 },
     runPhase: 'candidate_generating', lastRuntimeEventAt: '2026-08-28T00:00:00.000Z',
     runStartedAt: now - 130_000, tick: now, locale: 'zh', productLabel: 'Codex',
@@ -31,7 +31,7 @@ test('candidate running header is not the recovery title', () => {
     page: 'running', cwd: 'C:\\repo', hasApiConfig: true, hasTaskCase: true, locale: 'zh', message: '',
     inlineHelp: false,
     running: {
-      entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
+      entries: [], selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
       currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 0 },
       productLabel: 'Codex',
     },
@@ -45,7 +45,7 @@ test('recovery runPhase keeps the recovering header after preparePhase is cleare
     page: 'running', cwd: 'C:\\repo', hasApiConfig: true, hasTaskCase: true, locale: 'zh', message: '',
     inlineHelp: false,
     running: {
-      entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
+      entries: [], selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
       currentState: undefined, elapsed: '00:12', turns: { used: 0 }, calls: { used: 0 },
       productLabel: 'Codex',
       runPhase: 'recovery',
@@ -64,7 +64,7 @@ test('recovery header switches to still recovering without a second canvas title
     page: 'running', cwd: 'C:\\repo', hasApiConfig: true, hasTaskCase: true, locale: 'zh', message: '',
     inlineHelp: false,
     running: {
-      entries: [], selected: 0, filter: 'ALL', following: true, cancelling: false,
+      entries: [], selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
       currentState: undefined, elapsed: '00:35', turns: { used: 0 }, calls: { used: 0 },
       productLabel: 'Codex',
       runPhase: 'recovery',

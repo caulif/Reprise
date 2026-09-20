@@ -53,7 +53,6 @@ export function resolveCompareChoice(c: ControllerHandle, run: boolean): void {
 
 function setCancelUi(c: ControllerHandle, next: CancelUi, detail?: string): void {
   c.cancelUi = next;
-  c.cancelling = next === 'requesting';
   if (next === 'requesting') {
     c.message = t(c.locale, 'cancellationRequested');
     return;
@@ -64,8 +63,12 @@ function setCancelUi(c: ControllerHandle, next: CancelUi, detail?: string): void
 }
 
 function clearCancelRequest(c: ControllerHandle): void {
-  c.cancelUi = 'idle';
-  c.cancelling = false;
+  setCancelUi(c, 'idle');
+}
+
+/** Cancel already decided or in flight — do not arm the deferred compare gate. */
+function cancelBlocksCompareGate(c: ControllerHandle): boolean {
+  return c.cancelUi !== 'idle';
 }
 
 export function startRunSetup(c: ControllerHandle, input: { afterFreeze?: boolean } = {}): Consume {
@@ -151,7 +154,7 @@ export async function discardRecovery(c: ControllerHandle): Promise<void> {
 }
 
 export function requestCancellation(c: ControllerHandle): Consume {
-  if (c.cancelUi === 'requesting' || c.cancelling) return c.close();
+  if (c.cancelUi === 'requesting') return c.close();
   resolveCompareChoice(c, false);
   setCancelUi(c, 'requesting');
   c.startupAbort?.abort();
@@ -227,9 +230,8 @@ export async function beginPreflight(c: ControllerHandle, input: { afterFreeze?:
       verifyCandidate: false,
     });
     if (token !== c.generation) return;
-    if (c.cancelling || c.cancelUi === 'requesting') {
-      clearCancelRequest(c);
-      c.cancelUi = 'settled';
+    if (c.cancelUi === 'requesting' || c.cancelUi === 'failed') {
+      setCancelUi(c, 'settled');
       c.page = 'home';
       c.preparePhase = undefined;
       c.prepareDetail = undefined;
@@ -329,21 +331,16 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
       c.preparePhase = undefined;
       c.prepareDetail = undefined;
       c.message = t(c.locale, 'recoveryCancelled');
-      c.cancelUi = 'settled';
+      setCancelUi(c, 'settled');
     } else c.showError(error, errorReturn);
     stopRunClock(c);
   } finally {
     if (c.recoveryAbort === abort) {
       c.recoveryAbort = undefined;
-      if (c.cancelUi === 'requesting' || c.cancelling) c.cancelUi = 'settled';
-      c.cancelling = false;
+      if (c.cancelUi === 'requesting') setCancelUi(c, 'settled');
     }
   }
   c.render(true);
-}
-
-function cancelRequestOpen(c: ControllerHandle): boolean {
-  return c.cancelling || c.cancelUi === 'requesting';
 }
 
 async function settleRun(
@@ -351,14 +348,14 @@ async function settleRun(
   handle: ExperimentHandle,
   token: number,
 ): Promise<ExperimentResult | undefined> {
-  if (c.autoCompare || cancelRequestOpen(c)) return handle.result;
+  if (c.autoCompare || cancelBlocksCompareGate(c)) return handle.result;
   const partial = await handle.candidateFinished;
   if (token !== c.generation) {
     // Navigation/close may have already decided via cancel(); settle is idempotent.
     await handle.skipComparison();
     return undefined;
   }
-  if (cancelRequestOpen(c)) return handle.result;
+  if (cancelBlocksCompareGate(c)) return handle.result;
   c.result = partial;
   c.page = 'result';
   c.preparePhase = undefined;
@@ -370,7 +367,7 @@ async function settleRun(
   });
   // Always close the deferred comparison gate exactly once. Generation may bump
   // from Esc/backToHome/close after the operator choice is resolved.
-  if (runCompare && !cancelRequestOpen(c)) {
+  if (runCompare && !cancelBlocksCompareGate(c)) {
     if (token === c.generation) {
       c.page = 'running';
       c.preparePhase = 'compare';
@@ -404,9 +401,8 @@ function showRunResult(c: ControllerHandle, result: ExperimentResult): void {
   c.finding = false;
   c.findQuery = '';
   c.findCursor = 0;
-  if (c.cancelUi === 'requesting' || c.cancelling) c.cancelUi = 'settled';
-  else if (c.cancelUi !== 'failed') c.cancelUi = 'idle';
-  c.cancelling = false;
+  if (c.cancelUi === 'requesting' || c.cancelUi === 'failed') setCancelUi(c, 'settled');
+  else if (c.cancelUi !== 'settled') clearCancelRequest(c);
   c.message = resultMessage(result, c.locale);
 }
 
@@ -473,8 +469,8 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
     c.activeExperiment = handle;
-    if (c.cancelling || c.cancelUi === 'requesting') await handle.cancel();
-    c.message = (c.cancelling || c.cancelUi === 'requesting') ? t(c.locale, 'cancellationRequested') : '';
+    if (c.cancelUi === 'requesting' || c.cancelUi === 'failed') await handle.cancel();
+    c.message = c.cancelUi === 'requesting' ? t(c.locale, 'cancellationRequested') : c.cancelUi === 'failed' ? c.message : '';
     c.render(true);
     const result = await settleRun(c, handle, token);
     if (!result || token !== c.generation) return;
@@ -492,8 +488,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
         c.preparePhase = undefined;
         c.prepareDetail = undefined;
         c.message = t(c.locale, 'startupCancelled');
-        c.cancelUi = 'settled';
-        c.cancelling = false;
+        setCancelUi(c, 'settled');
       } catch (cleanupError) { c.showError(cleanupError, errorReturn); }
     } else c.showError(error, errorReturn);
   } finally {

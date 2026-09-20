@@ -46,8 +46,7 @@ export type RunningModel = {
   readonly selected: number;
   readonly filter: TimelineFilter;
   readonly following: boolean;
-  readonly cancelling: boolean;
-  readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled';
+  readonly cancelUi: 'idle' | 'requesting' | 'failed' | 'settled';
   readonly currentState: CandidateRunState | undefined;
   readonly elapsed: string;
   readonly turns: { readonly used: number; readonly max?: number };

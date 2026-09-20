@@ -165,7 +165,6 @@ export class IntakeTui {
   timelineSelected = 0;
   timelineFilterIndex = 0;
   timelineFollowing = true;
-  cancelling = false;
   cancelUi: import("./controller-run.js").CancelUi = "idle";
   configBusy = false;
   generation = 0;

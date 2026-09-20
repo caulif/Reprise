@@ -55,7 +55,6 @@ export type WorkbenchView = {
   readonly comparePending?: boolean;
   readonly bodyOffset?: number;
   readonly result?: ExperimentResult;
-  readonly cancelling?: boolean;
   readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled';
 };
 
@@ -184,10 +183,10 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
           theme,
           running.cancelUi === 'failed'
             ? t(locale, 'hintRetryCancel')
-            : running.cancelling || running.cancelUi === 'requesting'
+            : running.cancelUi === 'requesting'
               ? t(locale, 'hintCancel')
               : t(locale, 'running'),
-          running.cancelling || running.cancelUi === 'requesting' || running.cancelUi === 'failed' ? 'warn' : 'ok',
+          running.cancelUi === 'requesting' || running.cancelUi === 'failed' ? 'warn' : 'ok',
         )
       : identityStatus(theme, view);
   const metrics = running ? running.elapsed : modelSummary(theme, view);
@@ -207,7 +206,7 @@ function renderHeader(theme: Theme, view: WorkbenchView, width: number): string[
 
 function renderMessage(_theme: Theme, view: WorkbenchView, width: number): string[] {
   if (view.page === 'error') return [];
-  if (view.page === 'running' && !view.cancelling && view.cancelUi !== 'requesting' && view.cancelUi !== 'failed' && !view.comparePending) return [];
+  if (view.page === 'running' && view.cancelUi !== 'requesting' && view.cancelUi !== 'failed' && !view.comparePending) return [];
   if (view.page === 'preflight' && !view.preflight) return [];
   return view.message.split(/\r?\n/).flatMap((line) => wrapTextWithAnsi(` ${line}`, Math.max(1, width)));
 }
@@ -339,7 +338,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
       locale,
       Boolean(view.running.finding),
       Boolean(view.running.readingMode),
-      view.running.cancelUi ?? (view.running.cancelling ? 'requesting' : 'idle'),
+      view.running.cancelUi ?? 'idle',
     );
   }
   if (view.page === 'result') {

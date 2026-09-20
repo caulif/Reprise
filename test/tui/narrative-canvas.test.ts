@@ -80,7 +80,7 @@ test('candidate canvas keeps Controller tools and delivered input on one column'
   })));
   const text = renderTimeline(theme, 120, {
     entries,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Codex',
     locale: 'zh',
@@ -217,7 +217,7 @@ test('comparison narrate stays on the compare surface without Input cards', () =
   assert.equal(compare.some((entry) => entry.title.includes('Decision: SEND')), false);
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: [...compare],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'finished', elapsed: '01:00', turns: { used: 4 }, calls: { used: 2 },
     preparePhase: 'compare',
     productLabel: 'Codex',
@@ -248,7 +248,7 @@ test('candidate surface hides recovery blocks, compact, and session UUID', () =>
   assert.equal(candidate.some((entry) => /compact/.test(entry.title)), false);
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: [...candidate],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Codex',
     locale: 'zh',
@@ -292,7 +292,7 @@ test('candidate live keeps the leaf after tool_finished and flushes on user view
   assert.ok(visible.some((entry) => entry.kind === 'fold' && /阅读证据|写入/.test(entry.title)));
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: visible,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_controller', elapsed: '03:21', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Claude Code',
     locale: 'zh',
@@ -308,7 +308,7 @@ test('candidate working row without live includes elapsed', () => {
   appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: '在吗' })));
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: timeline.filter((entry) => !entry.hidden),
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '03:21', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Claude Code',
     locale: 'zh',
@@ -344,7 +344,7 @@ test('expanded fold lists leaf names in the tree', () => {
   const fold = timeline.find((entry) => !entry.hidden && entry.kind === 'fold');
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: timeline.filter((entry) => !entry.hidden),
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     expandedFolds: fold?.itemId ? [fold.itemId] : [],
     runPhase: 'recovery',
@@ -369,7 +369,7 @@ test('unexpanded fold does not list leaf names and visible_output stays off the 
   })));
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: timeline.filter((entry) => !entry.hidden),
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     locale: 'zh',
@@ -402,7 +402,7 @@ test('clicking a fold hit writes that itemId into expandedFolds', () => {
   const expandedFolds = [clicked.itemId];
   const painted = renderTimeline(theme, 120, {
     entries: visible,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     expandedFolds,
     runPhase: 'recovery',
