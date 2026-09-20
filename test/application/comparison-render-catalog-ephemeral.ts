@@ -55,7 +55,7 @@ export function createEphemeralRenderCatalog(input: {
       const dest = join(root, `${shortRef}.png`);
       await copyFile(entry.pngPath, dest);
       revision += 1;
-      const registered = { shortRef, mediaRef, revision };
+      const registered = { ok: true as const, shortRef, mediaRef, revision };
       media.push({ shortRef, mediaRef, kind: entry.kind, pngPath: dest });
       derivationKey.set(key, registered);
       await writeFile(join(root, `${shortRef}.meta.json`), JSON.stringify({

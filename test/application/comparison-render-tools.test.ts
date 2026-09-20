@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256 } from "../../src/core/identity.js";
@@ -12,7 +12,7 @@ import {
   createRenderArtifactTool,
 } from "../../src/application/comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
-import { createFakeArtifactRenderer } from "../../src/infrastructure/artifact-renderer.js";
+import { ARTIFACT_RENDERER_VERSION, createFakeArtifactRenderer } from "../../src/infrastructure/artifact-renderer.js";
 import { DEFAULT_RENDER_VIEWPORT } from "../../src/infrastructure/artifact-render-types.js";
 
 const PNG_A = Buffer.from(
@@ -493,4 +493,224 @@ test("Host preview_report mints review-* without polluting comparison media allo
     mediaBefore,
   );
   assert.equal(catalog.snapshot().media.some((item) => /^review-/.test(item.shortRef ?? "")), false);
+});
+
+test("media-* SVG/HTML reportHref uses media subtree bundleRoot, not attemptRoot", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-media-bundle-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const finals = join(root, "finals");
+  const candidate = join(root, "candidate-snap");
+  const mediaRoot = join(root, "media");
+  await mkdir(finals, { recursive: true });
+  await mkdir(candidate, { recursive: true });
+  await mkdir(mediaRoot, { recursive: true });
+  await mkdir(join(root, "observations"), { recursive: true });
+  await writeFile(join(root, "observations", "secret.txt"), "should-not-be-served", "utf8");
+
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>hi</text></svg>';
+  const svgHash = sha256(Buffer.from(svg));
+  await writeFile(join(mediaRoot, "card.svg"), svg, "utf8");
+  await writeFile(join(finals, "card.svg"), svg, "utf8");
+  await writeFile(join(candidate, "only-in-media.svg"), svg, "utf8");
+  const mediaOnly = '<svg xmlns="http://www.w3.org/2000/svg"><text>media-only</text></svg>';
+  const mediaOnlyHash = sha256(Buffer.from(mediaOnly));
+  await writeFile(join(mediaRoot, "seeded.svg"), mediaOnly, "utf8");
+
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-media-bundle",
+    attemptRoot: root,
+    links: [{ side: "baseline", inspectPath: "finals/card.svg", shortRef: "ev-01" }],
+    media: [
+      {
+        ref: "media:card",
+        shortRef: "media-01",
+        side: "baseline",
+        inspectPath: "finals/card.svg",
+        reportHref: "media/card.svg",
+        mediaType: "image/svg+xml",
+        available: true,
+        contentHash: svgHash,
+      },
+      {
+        ref: "media:seeded",
+        shortRef: "media-02",
+        side: "candidate",
+        inspectPath: "candidate/missing-original.svg",
+        reportHref: "media/seeded.svg",
+        mediaType: "image/svg+xml",
+        available: true,
+        contentHash: mediaOnlyHash,
+      },
+    ],
+  });
+  const renderCatalog = createComparisonRenderCatalogPort({
+    catalog,
+    attemptRoot: root,
+    mounts: {
+      finals,
+      candidate,
+      history: join(root, "history"),
+      evidence: join(root, "evidence"),
+    },
+  });
+
+  const preferMount = await renderCatalog.resolveSource("media-01");
+  assert.ok(preferMount);
+  assert.equal(preferMount.bundleRoot, await realpath(finals));
+  assert.equal(preferMount.entryRelativePath, "card.svg");
+  assert.notEqual(preferMount.bundleRoot, await realpath(root));
+
+  const mediaScoped = await renderCatalog.resolveSource("media-02");
+  assert.ok(mediaScoped);
+  assert.equal(mediaScoped.bundleRoot, await realpath(mediaRoot));
+  assert.equal(mediaScoped.entryRelativePath, "seeded.svg");
+  assert.notEqual(mediaScoped.bundleRoot, await realpath(root));
+
+  let capturedBundleRoot = "";
+  const tool = createRenderArtifactTool({
+    catalog: renderCatalog,
+    attemptRoot: root,
+    render: createFakeArtifactRenderer(async (request) => {
+      capturedBundleRoot = request.bundleRoot;
+      assert.equal(request.entryRelativePath, "seeded.svg");
+      await mkdir(request.outputRoot, { recursive: true });
+      const pngPath = join(request.outputRoot, "f.png");
+      await writeFile(pngPath, PNG_A);
+      return {
+        ok: true,
+        frames: [{
+          sampleTimeMs: 0,
+          actualTimeMs: 0,
+          pngPath,
+          byteLength: PNG_A.byteLength,
+          contentHash: sha256(PNG_A),
+        }],
+        diagnostics: [],
+        measured: { loadMs: 1, viewport: request.viewport, origin: "fake://svg" },
+      };
+    }),
+  });
+  const rendered = JSON.parse((await tool.execute({ sourceRef: "media-02" }, new AbortController().signal)).content) as {
+    status: string;
+  };
+  assert.equal(rendered.status, "ok");
+  assert.equal(capturedBundleRoot, await realpath(mediaRoot));
+});
+
+test("media-* document rejects contentHash mismatch before render", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-media-hash-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const mediaRoot = join(root, "media");
+  await mkdir(mediaRoot, { recursive: true });
+  await writeFile(join(mediaRoot, "tampered.svg"), "<svg xmlns='http://www.w3.org/2000/svg'></svg>", "utf8");
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-hash",
+    attemptRoot: root,
+    links: [{ side: "baseline", inspectPath: "finals/x", shortRef: "ev-01" }],
+    media: [{
+      ref: "media:tampered",
+      shortRef: "media-01",
+      side: "baseline",
+      inspectPath: "finals/gone.svg",
+      reportHref: "media/tampered.svg",
+      mediaType: "image/svg+xml",
+      available: true,
+      contentHash: "b".repeat(64),
+    }],
+  });
+  const renderCatalog = createComparisonRenderCatalogPort({
+    catalog,
+    attemptRoot: root,
+    mounts: {
+      finals: join(root, "finals"),
+      candidate: join(root, "candidate-snap"),
+      history: join(root, "history"),
+      evidence: join(root, "evidence"),
+    },
+  });
+  assert.equal(await renderCatalog.resolveSource("media-01"), undefined);
+  const tool = createRenderArtifactTool({
+    catalog: renderCatalog,
+    attemptRoot: root,
+    render: async () => {
+      throw new Error("renderer must not run on hash mismatch");
+    },
+  });
+  assert.equal(
+    (JSON.parse((await tool.execute({ sourceRef: "media-01" }, new AbortController().signal)).content) as { status: string }).status,
+    "unknown_source",
+  );
+});
+
+test("registerDerivedMedia always calls catalog.registerMedia so emit-retry still fires", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-render-emit-retry-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  await mkdir(join(root, "scratch"), { recursive: true });
+  const pngPath = join(root, "scratch", "frame.png");
+  await writeFile(pngPath, PNG_A);
+  const events: unknown[] = [];
+  let failNextEmit = true;
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-emit-retry",
+    attemptRoot: root,
+    links: [{ side: "baseline", inspectPath: "finals/x.html", shortRef: "ev-01" }],
+    media: [],
+    emitRegistered: async (payload) => {
+      if (failNextEmit) {
+        failNextEmit = false;
+        throw new Error("simulated store.append failure");
+      }
+      events.push(payload);
+    },
+  });
+  const renderCatalog = createComparisonRenderCatalogPort({
+    catalog,
+    attemptRoot: root,
+    mounts: {
+      finals: join(root, "finals"),
+      candidate: join(root, "candidate-snap"),
+      history: join(root, "history"),
+      evidence: join(root, "evidence"),
+    },
+  });
+  const entry = {
+    side: "baseline" as const,
+    pngPath,
+    label: "frame",
+    sourceRef: "ev-01",
+    contentHash: sha256(PNG_A),
+    kind: "artifact_preview" as const,
+    derivation: {
+      rendererVersion: ARTIFACT_RENDERER_VERSION,
+      viewport: DEFAULT_RENDER_VIEWPORT,
+      sampleTimeMs: 0,
+      actualTimeMs: 0,
+      capturedAt: "2026-09-20T00:00:00.000Z",
+    },
+  };
+  const first = await renderCatalog.registerDerivedMedia(entry);
+  assert.equal(first.ok, false);
+  assert.equal(events.length, 0);
+  assert.ok(catalog.snapshot().media.some((item) => item.contentHash === entry.contentHash));
+
+  const second = await renderCatalog.registerDerivedMedia({
+    ...entry,
+    derivation: {
+      ...entry.derivation,
+      capturedAt: "2026-09-20T00:00:01.000Z",
+    },
+  });
+  assert.equal(second.ok, true);
+  if (!second.ok) return;
+  assert.equal(events.length, 1);
+  assert.equal((events[0] as { shortRef: string }).shortRef, second.shortRef);
 });

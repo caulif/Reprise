@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { isFsAbsolute, pathContainedBy } from "../core/paths.js";
@@ -28,7 +28,7 @@ export function createComparisonRenderCatalogPort(input: {
   mounts: ComparisonRenderMountRoots;
 }): ComparisonRenderCatalogPort {
   let nextReview = 1;
-  const reviewByKey = new Map<string, RegisterDerivedMediaResult>();
+  const reviewByKey = new Map<string, Extract<RegisterDerivedMediaResult, { ok: true }>>();
 
   return {
     revision: () => input.catalog.snapshot().revision,
@@ -91,6 +91,7 @@ async function materializeLinkSource(
   const contentHash = link.contentHash && /^[a-f0-9]{64}$/.test(link.contentHash)
     ? link.contentHash
     : sha256(await readFile(located.absoluteFile));
+  if (link.contentHash && link.contentHash !== contentHash) return undefined;
   return {
     sourceRef,
     side: link.side,
@@ -112,12 +113,29 @@ async function materializeMediaSource(
 ): Promise<ComparisonRenderSource | undefined> {
   if (!media.available) return undefined;
   if (!media.contentHash || !/^[a-f0-9]{64}$/.test(media.contentHash)) return undefined;
-  // Prefer attempt media bytes when present; fall back to original inspectPath under frozen roots.
-  const reportLocated = media.reportHref
-    ? await locateUnderRoot(input.attemptRoot, media.reportHref)
-    : undefined;
-  const located = reportLocated ?? await locateRegisteredPath(input, media.inspectPath);
+
+  // Prefer mount-scoped originals (finals / candidate snapshot / history / evidence).
+  if (isMountScopedInspectPath(media.inspectPath)) {
+    const mountLocated = await locateRegisteredPath(input, media.inspectPath);
+    if (mountLocated && await fileMatchesContentHash(mountLocated.absoluteFile, media.contentHash)) {
+      return {
+        sourceRef,
+        side: media.side,
+        bundleRoot: mountLocated.bundleRoot,
+        entryRelativePath: mountLocated.entryRelativePath,
+        contentHash: media.contentHash,
+        mediaType: media.mediaType,
+        origin: originFromMedia(media),
+      };
+    }
+  }
+
+  // Attempt media/review copies use subtree roots only — never the whole attempt tree.
+  const attemptRelative = pickAttemptScopedHref(media);
+  if (!attemptRelative) return undefined;
+  const located = await locateRegisteredPath(input, attemptRelative);
   if (!located) return undefined;
+  if (!(await fileMatchesContentHash(located.absoluteFile, media.contentHash))) return undefined;
   return {
     sourceRef,
     side: media.side,
@@ -127,6 +145,25 @@ async function materializeMediaSource(
     mediaType: media.mediaType,
     origin: originFromMedia(media),
   };
+}
+
+function pickAttemptScopedHref(media: ComparisonMediaRecord): string | undefined {
+  for (const candidate of [media.reportHref, media.inspectPath]) {
+    if (!candidate) continue;
+    const normalized = normalizeRelativeInspectPath(candidate);
+    if (!normalized) continue;
+    if (normalized.startsWith("media/") || normalized.startsWith("review/")) return normalized;
+  }
+  return undefined;
+}
+
+function isMountScopedInspectPath(inspectPath: string): boolean {
+  const normalized = normalizeRelativeInspectPath(inspectPath);
+  if (!normalized) return false;
+  return normalized.startsWith("finals/")
+    || normalized.startsWith("candidate/")
+    || normalized.startsWith("history/")
+    || normalized.startsWith("evidence/");
 }
 
 async function locateRegisteredPath(
@@ -152,8 +189,12 @@ async function locateRegisteredPath(
   if (normalized.startsWith("evidence/")) {
     return locateUnderRoot(input.mounts.evidence, normalized.slice("evidence/".length));
   }
-  if (normalized.startsWith("media/") || normalized.startsWith("review/")) {
-    return locateUnderRoot(input.attemptRoot, normalized);
+  if (normalized.startsWith("media/")) {
+    // bundleRoot is attemptRoot/media so document renders cannot fetch sibling attempt paths.
+    return locateUnderRoot(join(input.attemptRoot, "media"), normalized.slice("media/".length));
+  }
+  if (normalized.startsWith("review/")) {
+    return locateUnderRoot(join(input.attemptRoot, "review"), normalized.slice("review/".length));
   }
   // turns/run and other controller projections are not render bundle roots.
   return undefined;
@@ -169,6 +210,7 @@ async function locateUnderRoot(
   try {
     rootReal = await realpath(root);
   } catch {
+    // Missing mount root → unknown_source at the tool boundary.
     return undefined;
   }
   const absolute = join(rootReal, ...entryRelativePath.split("/"));
@@ -180,7 +222,17 @@ async function locateUnderRoot(
     if (!info.isFile()) return undefined;
     return { bundleRoot: rootReal, entryRelativePath, absoluteFile: fileReal };
   } catch {
+    // Missing file, broken symlink, or non-resolvable intermediate → unknown_source.
     return undefined;
+  }
+}
+
+async function fileMatchesContentHash(absoluteFile: string, expectedHash: string): Promise<boolean> {
+  try {
+    return sha256(await readFile(absoluteFile)) === expectedHash;
+  } catch {
+    // Unreadable source cannot be verified; treat as unavailable for render.
+    return false;
   }
 }
 
@@ -231,26 +283,9 @@ async function registerPreviewMedia(
   attemptRoot: string,
   entry: RegisterDerivedMediaInput,
 ): Promise<RegisterDerivedMediaResult> {
-  const snap = catalog.snapshot();
-  const existing = snap.media.find((item) =>
-    item.contentHash === entry.contentHash
-    && item.side === entry.side
-    && item.sourceRef === entry.sourceRef
-    && item.derivation?.kind === "render_preview"
-    && item.derivation.rendererVersion === entry.derivation.rendererVersion
-    && item.derivation.viewport?.width === entry.derivation.viewport.width
-    && item.derivation.viewport?.height === entry.derivation.viewport.height
-    && item.derivation.viewport?.scale === entry.derivation.viewport.scale
-    && (item.derivation.sampleTimesMs ?? []).join(",") === String(entry.derivation.sampleTimeMs)
-  );
-  if (existing?.shortRef) {
-    return {
-      shortRef: existing.shortRef,
-      mediaRef: existing.ref,
-      revision: snap.revision,
-    };
-  }
-
+  // Always call catalog.registerMedia so emit-failure retry can re-emit via #finishExistingRegistration.
+  // Omit capturedAt from derivation so mediaDerivationKey matches across retries (adapter must not
+  // short-circuit with a second, disagreeing dedupe key).
   const fileName = `render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}.png`;
   const inspectPath = `media/${fileName}`;
   const absoluteOut = join(attemptRoot, ...inspectPath.split("/"));
@@ -261,7 +296,6 @@ async function registerPreviewMedia(
     rendererVersion: entry.derivation.rendererVersion,
     viewport: entry.derivation.viewport,
     sampleTimesMs: [entry.derivation.sampleTimeMs],
-    capturedAt: entry.derivation.capturedAt,
   };
   const registered = await catalog.registerMedia({
     record: {
@@ -280,10 +314,17 @@ async function registerPreviewMedia(
     derivation,
   });
   if (registered.status !== "registered") {
-    throw new Error(`registerDerivedMedia failed: ${registered.code} ${registered.message}`);
+    // Best-effort cleanup of the copied PNG so a failed register does not leave an orphan.
+    await rm(absoluteOut, { force: true }).catch(() => undefined);
+    return {
+      ok: false,
+      code: registered.code,
+      message: registered.message,
+    };
   }
   const recorded = catalog.snapshot().media.find((item) => item.shortRef === registered.shortRef);
   return {
+    ok: true,
     shortRef: registered.shortRef,
     mediaRef: recorded?.ref ?? `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
     revision: registered.revision,
@@ -293,7 +334,7 @@ async function registerPreviewMedia(
 async function registerReviewMedia(
   attemptRoot: string,
   entry: RegisterDerivedMediaInput,
-  reviewByKey: Map<string, RegisterDerivedMediaResult>,
+  reviewByKey: Map<string, Extract<RegisterDerivedMediaResult, { ok: true }>>,
   allocateShortRef: () => string,
   revision: () => number,
 ): Promise<RegisterDerivedMediaResult> {
@@ -312,18 +353,27 @@ async function registerReviewMedia(
   const reviewRoot = join(attemptRoot, "review", "media");
   await mkdir(reviewRoot, { recursive: true });
   const dest = join(reviewRoot, `${shortRef}.png`);
-  await copyFile(entry.pngPath, dest);
-  // Review refs stay outside catalog.media so they cannot enter the comparison allowlist.
-  await writeAtomic(join(reviewRoot, `${shortRef}.meta.json`), `${JSON.stringify({
-    shortRef,
-    mediaRef,
-    kind: "report_review",
-    sourceRef: entry.sourceRef,
-    contentHash: entry.contentHash,
-    derivation: entry.derivation,
-  }, null, 2)}\n`);
+  try {
+    await copyFile(entry.pngPath, dest);
+    // Review refs stay outside catalog.media so they cannot enter the comparison allowlist.
+    await writeAtomic(join(reviewRoot, `${shortRef}.meta.json`), `${JSON.stringify({
+      shortRef,
+      mediaRef,
+      kind: "report_review",
+      sourceRef: entry.sourceRef,
+      contentHash: entry.contentHash,
+      derivation: entry.derivation,
+    }, null, 2)}\n`);
+  } catch (error) {
+    await rm(dest, { force: true }).catch(() => undefined);
+    return {
+      ok: false,
+      code: "io_failed",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
   // Revision is not bumped: review screenshots are not comparison evidence.
-  const registered = { shortRef, mediaRef, revision: revision() };
+  const registered = { ok: true as const, shortRef, mediaRef, revision: revision() };
   reviewByKey.set(key, registered);
   return registered;
 }
