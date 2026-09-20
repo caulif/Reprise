@@ -167,6 +167,25 @@ test('appendBatch is idempotent when a retry contains an already committed opera
   }
 });
 
+test('appendBatch writes only one event for duplicate operations within the same batch', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const result = await store.appendBatch([
+      { type: 'test.event', operationId: 'same-batch-operation', payload: { value: 1 } },
+      { type: 'test.event', operationId: 'same-batch-operation', payload: { value: 1 } },
+    ]);
+    assert.equal(result.length, 2);
+    assert.equal(result[0]?.eventId, result[1]?.eventId);
+    const lines = (await readFile(join(root, 'events.jsonl'), 'utf8')).split('\n').filter(Boolean);
+    assert.equal(lines.length, 1);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('store rejects malformed Controller request and observation payloads', async () => {
   const root = await temporaryExperiment();
   try {

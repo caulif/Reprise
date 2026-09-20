@@ -275,7 +275,14 @@ export class ExperimentStore {
     const events: EventEnvelope[] = [];
     try {
       for (const input of inputs) events.push(await this.#appendOne(input, false, false));
-      const fresh = events.filter((event) => event.sequence > start);
+      const batchOperationIds = new Set<string>();
+      const fresh = events.filter((event) => {
+        if (event.sequence <= start) return false;
+        if (!event.operationId) return true;
+        if (batchOperationIds.has(event.operationId)) return false;
+        batchOperationIds.add(event.operationId);
+        return true;
+      });
       if (fresh.length > 0) {
         await writeFile(this.#eventsPath, `${fresh.map((event) => JSON.stringify(event)).join("\n")}\n`, { encoding: "utf8", flag: "a" });
       }
