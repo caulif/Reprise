@@ -1,5 +1,5 @@
 Reprise   候选运行中 · Codex   C:\reprise
-00:00   * 进行中
+00:02   * 进行中
 ------------------------------------------------------------
 | Fix the failing test.                                     
 | Run the focused test.                                     
