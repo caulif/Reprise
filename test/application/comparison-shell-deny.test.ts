@@ -129,11 +129,13 @@ test("Comparison shell_exec timeout still fails and does not leave an orphan lon
   const started = Date.now();
   await assert.rejects(
     shell.execute(
+      // Long sleep: killTree must cut this short. Assertion bound is well under sleep length.
       { command: hostNodeCommand("setTimeout(() => undefined, 30_000)") },
       new AbortController().signal,
     ),
     /timed out/i,
   );
+  // Windows previously waited ~full sleep when taskkill was async; sync kill + close grace keep this << 30s.
   assert.ok(Date.now() - started < 15_000, "timeout must not wait for the full child sleep");
 });
 

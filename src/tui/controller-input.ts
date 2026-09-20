@@ -44,6 +44,7 @@ import {
   submittedHomeCommand,
   type GlobalInputAction,
 } from './page-input.js';
+import type { ActivityIndexState } from './activity-index.js';
 import { type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import type { PreparePhase } from './widgets.js';
@@ -89,6 +90,7 @@ export type ControllerHandle = {
   result: ExperimentResult | undefined;
   message: string;
   timeline: TimelineEntry[];
+  activityIndex: ActivityIndexState;
   timelineRevision: number;
   timelineSelected: number;
   timelineFollowing: boolean;

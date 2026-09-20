@@ -9,7 +9,8 @@ import { errorMessage } from './format.js';
 import { t, type Locale } from './i18n.js';
 import { projectLabel } from './pages/intake.js';
 import { bumpTimelineRevision } from './timeline-revision.js';
-import { appendTimelineEntries, projectTimelineEvent } from './timeline.js';
+import { resetActivityIndex } from './activity-index.js';
+import { appendProjectedEvent } from './timeline.js';
 import { syncTimelineSelection } from './timeline-read.js';
 import type { Consume, ControllerHandle } from './controller-input.js';
 import { candidateGateFromView, candidateStartBlocked, type CandidateStartGate } from '../application/candidate-start.js';
@@ -161,7 +162,7 @@ function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
     c.prepareDetail = undefined;
   }
   noteRunDiagnostics(c, event);
-  appendTimelineEntries(c.timeline, projectTimelineEvent(event), c);
+  appendProjectedEvent(c.timeline, event, c.activityIndex, c);
   syncTimelineSelection(c);
   if (c.page === 'running') c.scheduleTimelineRender();
 }
@@ -227,6 +228,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     if (!c.workflow || !c.taskCase || !c.preflight) throw new Error('Recovery is unavailable before preflight.');
     await discardRecovery(c);
     c.timeline = [];
+    resetActivityIndex(c.activityIndex);
     c.timelineSelected = 0;
     bumpTimelineRevision(c);
     c.timelineFollowing = true;

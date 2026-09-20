@@ -18,12 +18,16 @@ function event(type: string, payload: unknown): EventEnvelope {
 }
 
 test('timeline projects operator-relevant persisted facts', () => {
+  const refs = [{ eventId: 'event-1', sequence: 1 }];
   assert.deepEqual(projectTimelineEvent(event('run.state_changed', { from: 'created', to: 'preparing' }))[0], {
     sequence: 1,
     occurredAt: timestamp,
     source: 'HARNESS',
     title: 'State: created → preparing',
     hidden: true,
+    role: 'system',
+    eventType: 'run.state_changed',
+    eventRefs: refs,
   });
 
   assert.deepEqual(projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: 'Fix the failing test.' }))[0], {
@@ -32,6 +36,12 @@ test('timeline projects operator-relevant persisted facts', () => {
     source: 'TARGET',
     title: 'Prompt · Fix the failing test.',
     detail: 'Fix the failing test.',
+    role: 'candidate',
+    verb: 'send',
+    activityStatus: 'completed',
+    eventType: 'input.submitted',
+    deliveryId: 'turn:0',
+    eventRefs: refs,
   });
   assert.equal(projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: 'Edit slides.html in the current directory.' }))[0]?.detail, 'Edit slides.html in the current directory.');
   assert.deepEqual(projectTimelineEvent(event('input.submitted', { turnIndex: 0 })), []);
@@ -70,6 +80,9 @@ test('timeline projects operator-relevant persisted facts', () => {
     source: 'CONTROLLER',
     title: 'Done: satisfied',
     hidden: true,
+    role: 'controller',
+    eventType: 'controller.done',
+    eventRefs: refs,
   });
 
   assert.deepEqual(projectTimelineEvent(event('comparison.completed', { status: 'failed', failure: { message: 'missing narrative' } }))[0], {
@@ -82,6 +95,9 @@ test('timeline projects operator-relevant persisted facts', () => {
     lane: 'comparison',
     kind: 'deliver',
     voice: 'comparison',
+    role: 'comparison',
+    eventType: 'comparison.completed',
+    eventRefs: refs,
   });
 });
 

@@ -2,7 +2,12 @@ import type { TimelineEntry } from './timeline.js';
 
 /** Stable identity for reading position across append, fold, and filter. */
 export function timelineIdentity(entry: TimelineEntry): string {
-  return entry.itemId ? `id:${entry.itemId}` : `seq:${entry.sequence}`;
+  if (entry.itemId) return `id:${entry.itemId}`;
+  // Prefer composite activity identity from the index (not raw toolCallId).
+  if (entry.correlationId) return `corr:${entry.correlationId}`;
+  const ref = entry.eventRefs?.[0];
+  if (ref) return `ev:${ref.eventId}`;
+  return `seq:${entry.sequence}`;
 }
 
 export function restoreTimelineSelection(

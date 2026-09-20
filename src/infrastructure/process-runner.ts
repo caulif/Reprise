@@ -25,6 +25,9 @@ export class ProcessBoundaryError extends Error {
 export type ProcessResult = { stdout: string; stderr: string; exitCode: number; outputTruncated: boolean };
 export type ProcessSpawner = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 
+/** After timeout/cancel kill, do not wait forever for a stuck child `close` (Windows kill-tree lag). */
+const PROCESS_CLOSE_GRACE_MS = 2_000;
+
 /**
  * Runs a local command without letting child-process or pipe errors escape as unhandled events.
  * Diagnostics intentionally contain categories only; callers must not persist cwd, arguments, or raw stderr.
@@ -61,10 +64,12 @@ export async function runProcess(input: {
     let settled = false;
     let timedOut = false;
     let cancelled = false;
+    let closeGrace: ReturnType<typeof setTimeout> | undefined;
     const finish = (error?: ProcessBoundaryError, result?: ProcessResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (closeGrace) clearTimeout(closeGrace);
       input.signal?.removeEventListener('abort', abort);
       if (error) reject(error);
       else resolve(result!);
@@ -78,13 +83,23 @@ export async function runProcess(input: {
         ...(code ? { errnoCode: code } : {}),
       }));
     };
+    const scheduleCloseGrace = () => {
+      if (closeGrace) return;
+      closeGrace = setTimeout(() => {
+        if (settled) return;
+        if (timedOut) boundary('timed_out');
+        else if (cancelled) boundary('cancelled');
+      }, PROCESS_CLOSE_GRACE_MS);
+    };
     const abort = () => {
       cancelled = true;
       terminateProcessTree(child, input.killTree === true);
+      scheduleCloseGrace();
     };
     const timer = setTimeout(() => {
       timedOut = true;
       terminateProcessTree(child, input.killTree === true);
+      scheduleCloseGrace();
     }, input.timeoutMs);
     attachProcessIo(child, input, stdout, stderr, output, maxOutputBytes, boundary);
     child.on('close', (code) => settleProcessClose(input, { timedOut, cancelled, code, stdout, stderr, truncated: output.truncated }, finish, boundary));
