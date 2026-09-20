@@ -51,7 +51,7 @@ export function resolveCompareChoice(c: ControllerHandle, run: boolean): void {
   c.compareChoice = undefined;
 }
 
-export function setCancelUi(c: ControllerHandle, next: CancelUi, detail?: string): void {
+function setCancelUi(c: ControllerHandle, next: CancelUi, detail?: string): void {
   c.cancelUi = next;
   c.cancelling = next === 'requesting';
   if (next === 'requesting') {
