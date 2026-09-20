@@ -426,9 +426,8 @@ function isDeliverHeadline(title: string): boolean {
     || title === '对照完成' || title === '证据不足' || title === '对照失败';
 }
 
-function failedDeliver(entry: TimelineEntry): boolean {
-  if (entry.lane === 'comparison') return entry.level === 'error';
-  return entry.title === '无法恢复';
+function failedTitle(title: string): boolean {
+  return title === '无法恢复' || title === '对照失败' || title === '证据不足';
 }
 
 function gutterSlot(entry: TimelineEntry, failed: boolean, candidate: boolean): GutterSlot {
