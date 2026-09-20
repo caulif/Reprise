@@ -14,11 +14,10 @@ Reprise v0.1.0   C:\reprise                                    尚未配置模�
 │                                                                   │ │ Started      unavailable │
 │                                                                   │ │ Report       not generated │
 │                                                                   │ │ Stored       0.0 MiB │
-│                                                                   │ │ Path         C:\user\AppData\Local\ │
-│                                                                   │ │              Temp\reprise-tui-audit-TMP\ │
-│                                                                   │ │              history-data\experiments\ │
+│                                                                   │ │ Path         TMP/ │
+│                                                                   │ │              history-data/experiments/ │
 │                                                                   │ │              exp-history │
 └───────────────────────────────────────────────────────────────────┘ └────────────────────────────────────────────────┘
  浏览本地对照，或按 Tab 切换到任务。
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Tab] 对照/任务  [↑↓] 选择  [Enter] 详情  [Esc] 封面
+ [Tab] 对照/任务  [↑↓] 选择  [Enter] 详情  [Esc] 首页
