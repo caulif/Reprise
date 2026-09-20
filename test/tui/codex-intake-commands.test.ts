@@ -477,8 +477,9 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
       usedFallback: false,
     },
   });
-  await waitFor(() => /Experiment finished|对照结束/.test(rendered));
+  await waitFor(() => /Experiment finished|对照结束|运行结束|Comparison ended in an unknown state|对照以未知状态结束|Run result|运行结果/.test(rendered));
   assert.match(rendered, /report\.html/);
+  assert.doesNotMatch(rendered, /Comparison complete|对照完成/);
   app.handleInput('\x1b');
   assert.equal(app.page, 'home');
   app.handleInput("\u0003");
@@ -605,6 +606,6 @@ test("Codex intake TUI automatically prepares every session with Recovery before
   await advanceCandidatePicker(app, () => rendered);
   assert.equal(recoveryCalls, 1);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Recovery preview is ready/);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|Experiment finished|Run result|正在准备对照|复制隔离工作区|对照结束|对照结果/.test(rendered) || app.page === "running" || app.page === "result");
+  await waitFor(() => /Preparing replay|Copy isolated workspace|Experiment finished|Run result|正在准备对照|复制隔离工作区|对照结束|对照结果|运行结束|运行结果/.test(rendered) || app.page === "running" || app.page === "result");
   assert.equal(discarded, 0);
 });
