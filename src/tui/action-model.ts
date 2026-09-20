@@ -166,8 +166,7 @@ function confirmActions(mode: ActionMode): readonly UiAction[] {
       };
   return [
     run,
-    action('change-model', 'hintChangeModel', ['b'], 'navigate', 20),
-    action('home', 'hintHome', ['escape'], 'navigate', 10),
+    action('change-model', 'hintChangeModel', ['b', 'escape'], 'navigate', 20),
     action('show-help', 'hintHelp', ['?'], 'readonly', 1),
   ];
 }
