@@ -39,7 +39,8 @@ test('system-lane agent activity remains visible in the main pane', () => {
     text: 'Diagnostic activity',
   }));
   assert.equal(row?.role, 'system');
-  assert.equal(paneOf(row!), 'left');
+  assert.ok(row);
+  assert.equal(paneOf(row), 'left');
 });
 
 test('assistant_visible is a narrate row on the main column', () => {
