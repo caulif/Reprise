@@ -316,6 +316,9 @@ export class ComparisonEvidenceCatalog {
     if (signal?.aborted) return inputs.map(() => ({ status: "rejected", code: "cancelled", message: "Registration cancelled." }));
     const previous = this.#media;
     const drafts: ComparisonMediaRecord[] = [];
+    const draftIndexByInput: number[] = [];
+    const draftInputIndexes: number[] = [];
+    const draftIndexByKey = new Map<string, number>();
     const results: RegisterEvidenceResult[] = [];
     results.length = inputs.length;
     for (const [index, input] of inputs.entries()) {
@@ -330,14 +333,36 @@ export class ComparisonEvidenceCatalog {
         && item.side === input.record.side
         && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
       if (existing?.shortRef) {
-        results[index] = { status: "registered", revision: this.#revision, shortRef: existing.shortRef, contentHash, inspectPath: existing.inspectPath, origin: input.origin, deduplicated: true };
+        try {
+          results[index] = await this.#finishExistingRegistration({
+            kind: "media",
+            shortRef: existing.shortRef,
+            contentHash,
+            inspectPath: existing.inspectPath,
+            origin: input.origin,
+            sourceRefs,
+            artifactRefs: [existing.reportHref],
+            ...(derivation ? { derivation } : {}),
+          });
+        } catch (error) {
+          return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
+        }
         continue;
       }
       const draft: ComparisonMediaRecord = { ...input.record, contentHash, ...(derivation ? { derivation } : {}) };
       if (!Value.Check(ComparisonMediaRecordSchema, draft)) {
         return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Media record failed schema validation." }));
       }
-      drafts.push(draft);
+      const key = mediaRegistrationKey(contentHash, draft.side, derivation);
+      const existingDraftIndex = draftIndexByKey.get(key);
+      if (existingDraftIndex !== undefined) {
+        draftIndexByInput[index] = existingDraftIndex;
+      } else {
+        draftIndexByKey.set(key, drafts.length);
+        draftIndexByInput[index] = drafts.length;
+        draftInputIndexes.push(index);
+        drafts.push(draft);
+      }
     }
     const assigned = appendMediaShortRefs(this.#media, drafts);
     if (assigned.length !== drafts.length) return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Failed to allocate media shortRef." }));
@@ -348,14 +373,11 @@ export class ComparisonEvidenceCatalog {
       this.#media = previous;
       return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
     }
-    let assignedIndex = 0;
-    for (const [index, input] of inputs.entries()) {
+    for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
+      const input = inputs[inputIndex]!;
       const sourceRefs = [...(input.sourceRefs ?? [])];
-      const contentHash = input.record.contentHash;
       const derivation = input.derivation ?? input.record.derivation;
-      const existing = previous.find((item) => item.contentHash === contentHash && item.side === input.record.side && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
-      if (existing?.shortRef) continue;
-      const item = assigned[assignedIndex++];
+      const item = assigned[draftIndex];
       if (!item) continue;
       const payload: ComparisonEvidenceRegisteredPayload = {
         schemaVersion: 1, attemptId: this.#attemptId, revision: this.#revision, shortRef: item.shortRef!, kind: "media",
@@ -368,7 +390,19 @@ export class ComparisonEvidenceCatalog {
       }
       this.#pendingEmits.delete(item.shortRef!);
       this.#emittedShortRefs.add(item.shortRef!);
-      results[index] = { status: "registered", revision: this.#revision, shortRef: item.shortRef!, contentHash: item.contentHash!, inspectPath: item.inspectPath, origin: input.origin, deduplicated: false };
+      for (const [index, duplicateDraftIndex] of draftIndexByInput.entries()) {
+        if (duplicateDraftIndex !== draftIndex) continue;
+        const duplicateInput = inputs[index]!;
+        results[index] = {
+          status: "registered",
+          revision: this.#revision,
+          shortRef: item.shortRef!,
+          contentHash: item.contentHash!,
+          inspectPath: item.inspectPath,
+          origin: duplicateInput.origin,
+          deduplicated: index !== inputIndex,
+        };
+      }
     }
     return results;
   }
@@ -567,6 +601,10 @@ export function mediaDerivationKey(derivation: ComparisonMediaDerivation | undef
     samples,
     derivation.capturedAt ?? "",
   ].join("|");
+}
+
+function mediaRegistrationKey(contentHash: string, side: ComparisonMediaRecord["side"], derivation: ComparisonMediaDerivation | undefined): string {
+  return `${contentHash}|${side}|${mediaDerivationKey(derivation)}`;
 }
 
 function registrationDerivation(
