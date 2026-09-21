@@ -17,10 +17,10 @@ export function paneOf(entry: TimelineEntry): 'left' | 'right' | 'both' | undefi
   if (isPresentedInput(entry)) return 'both';
   const role = entryRole(entry);
   if (role === 'candidate') return 'right';
-  if (role === 'controller' || role === 'recovery' || role === 'comparison') return 'left';
+  if (role === 'controller' || role === 'recovery' || role === 'comparison' || role === 'system') return 'left';
   // Legacy rows without structured role: keep prior source/lane fallback.
   if (entry.source === 'TARGET' && !entry.lane) return 'right';
-  if (entry.lane === 'controller' || entry.lane === 'recovery' || entry.lane === 'comparison') return 'left';
+  if (entry.lane === 'controller' || entry.lane === 'recovery' || entry.lane === 'comparison' || entry.lane === 'system') return 'left';
   if (entry.source === 'CONTROLLER') return 'left';
   if (entry.level === 'error' && entry.source === 'TARGET') return 'right';
   return undefined;

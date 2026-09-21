@@ -33,6 +33,15 @@ test('visible assistant text drops JSON envelopes and thinking-only content', ()
   assert.equal(visibleAssistantText([{ type: 'text', text: '<think>hidden</think>{"type":"done","reason":"satisfied"}' }]), '');
 });
 
+test('system-lane agent activity remains visible in the main pane', () => {
+  const [row] = projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'unrecognized-agent',
+    text: 'Diagnostic activity',
+  }));
+  assert.equal(row?.role, 'system');
+  assert.equal(paneOf(row!), 'left');
+});
+
 test('assistant_visible is a narrate row on the main column', () => {
   const [row] = projectTimelineEvent(event('agent.assistant_visible', {
     role: 'recovery',
