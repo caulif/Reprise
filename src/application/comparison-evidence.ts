@@ -379,21 +379,7 @@ export class ComparisonEvidenceCatalog {
       this.#media = previous;
       return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
     }
-    const batchPayloads: ComparisonEvidenceRegisteredPayload[] = [];
-    for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
-      const input = inputs[inputIndex]!;
-      const sourceRefs = [...(input.sourceRefs ?? [])];
-      const derivation = input.derivation ?? input.record.derivation;
-      const item = assigned[draftIndex];
-      if (!item) continue;
-      const payload: ComparisonEvidenceRegisteredPayload = {
-        schemaVersion: 1, attemptId: this.#attemptId, revision: this.#revision, shortRef: item.shortRef!, kind: "media",
-        origin: input.origin, contentHash: item.contentHash!, sourceRefs, artifactRefs: [item.reportHref],
-        ...(derivation ? { derivation } : {}),
-      };
-      this.#pendingEmits.set(item.shortRef!, payload);
-      batchPayloads.push(payload);
-    }
+    const batchPayloads = this.#mediaBatchPayloads(inputs, assigned, draftInputIndexes);
     try {
       await this.#emitBatch(batchPayloads);
     } catch (error) {
@@ -412,28 +398,54 @@ export class ComparisonEvidenceCatalog {
       }
       return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
     }
-    for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
-      const item = assigned[draftIndex];
-      if (!item) continue;
-      for (const [index, duplicateDraftIndex] of draftIndexByInput.entries()) {
-        if (duplicateDraftIndex !== draftIndex) continue;
-        const input = inputs[index]!;
-        results[index] = {
-          status: "registered",
-          revision: this.#revision,
-          shortRef: item.shortRef!,
-          contentHash: item.contentHash!,
-          inspectPath: item.inspectPath,
-          origin: input.origin,
-          deduplicated: index !== inputIndex,
-        };
-      }
-    }
+    this.#fillMediaBatchResults(results, inputs, assigned, draftInputIndexes, draftIndexByInput);
     for (const payload of batchPayloads) {
       this.#pendingEmits.delete(payload.shortRef);
       this.#emittedShortRefs.add(payload.shortRef);
     }
     return results;
+  }
+
+  #mediaBatchPayloads(
+    inputs: readonly RegisterMediaInput[],
+    assigned: readonly ComparisonMediaRecord[],
+    draftInputIndexes: readonly number[],
+  ): ComparisonEvidenceRegisteredPayload[] {
+    const payloads: ComparisonEvidenceRegisteredPayload[] = [];
+    for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
+      const input = inputs[inputIndex]!;
+      const item = assigned[draftIndex];
+      if (!item) continue;
+      const derivation = input.derivation ?? input.record.derivation;
+      const payload: ComparisonEvidenceRegisteredPayload = {
+        schemaVersion: 1, attemptId: this.#attemptId, revision: this.#revision, shortRef: item.shortRef!, kind: "media",
+        origin: input.origin, contentHash: item.contentHash!, sourceRefs: [...(input.sourceRefs ?? [])], artifactRefs: [item.reportHref],
+        ...(derivation ? { derivation } : {}),
+      };
+      this.#pendingEmits.set(item.shortRef!, payload);
+      payloads.push(payload);
+    }
+    return payloads;
+  }
+
+  #fillMediaBatchResults(
+    results: RegisterEvidenceResult[],
+    inputs: readonly RegisterMediaInput[],
+    assigned: readonly ComparisonMediaRecord[],
+    draftInputIndexes: readonly number[],
+    draftIndexByInput: readonly number[],
+  ): void {
+    for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
+      const item = assigned[draftIndex];
+      if (!item) continue;
+      for (const [index, duplicateDraftIndex] of draftIndexByInput.entries()) {
+        if (duplicateDraftIndex !== draftIndex) continue;
+        results[index] = {
+          status: "registered", revision: this.#revision, shortRef: item.shortRef!, contentHash: item.contentHash!,
+          inspectPath: item.inspectPath, origin: inputs[index]!.origin, deduplicated: index !== inputIndex,
+        };
+      }
+    }
   }
 
   async #finishExistingRegistration(input: {
