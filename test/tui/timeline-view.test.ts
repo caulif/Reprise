@@ -25,6 +25,23 @@ function visibleOf(timeline: readonly TimelineEntry[]): TimelineEntry[] {
   return timeline.filter((entry) => !entry.hidden && matchesFilter(entry, 'ALL'));
 }
 
+test('unknown agent roles stay system activity across lifecycle events', () => {
+  for (const [sequence, type] of [
+    'agent.assistant_visible',
+    'agent.invocation_started',
+    'agent.invocation_failed',
+    'agent.invocation_cancelled',
+  ].entries()) {
+    const entries = projectTimelineEvent(event(type, {
+      role: 'unrecognized-agent',
+      text: 'status update',
+    }, sequence + 1));
+    assert.ok(entries.length > 0);
+    assert.ok(entries.every((entry) => entry.role === 'system'));
+    assert.ok(entries.every((entry) => entry.role !== 'recovery'));
+  }
+});
+
 test('candidate live probe is tip-only: latest tip plus one fold count', () => {
   const timeline: TimelineEntry[] = [];
   appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: '在吗' }, 1)));

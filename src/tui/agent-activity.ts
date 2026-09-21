@@ -5,7 +5,7 @@ import type { Locale } from './i18n.js';
 import { t } from './i18n.js';
 import type { TimelineEntry, TimelineSource } from './timeline.js';
 
-export type AgentLane = 'recovery' | 'controller' | 'comparison';
+export type AgentLane = 'recovery' | 'controller' | 'comparison' | 'system';
 export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live' | 'narrate' | 'fold' | 'thinking';
 export type TimelineVoice = AgentLane | 'candidate';
 
@@ -22,7 +22,7 @@ export function activityRoleLabel(role: ActivityRole | undefined, product: strin
 export function entryRole(entry: TimelineEntry): ActivityRole | undefined {
   if (entry.role) return entry.role;
   if (entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane)) return 'candidate';
-  if (entry.lane === 'recovery' || entry.lane === 'controller' || entry.lane === 'comparison') return entry.lane;
+  if (entry.lane === 'recovery' || entry.lane === 'controller' || entry.lane === 'comparison' || entry.lane === 'system') return entry.lane;
   if (entry.source === 'CONTROLLER') return 'controller';
   if (entry.source === 'HARNESS') return 'system';
   return undefined;
@@ -101,8 +101,8 @@ const WRITE_PS = /\b(Remove-Item|Set-Content|Copy-Item|New-Item|Move-Item|Out-Fi
 
 function agentLane(payload: JsonRecord): AgentLane {
   const role = text(payload.role);
-  if (role === 'controller' || role === 'comparison') return role;
-  return 'recovery';
+  if (role === 'controller' || role === 'comparison' || role === 'recovery') return role;
+  return 'system';
 }
 
 export function projectAssistantVisible(payload: JsonRecord): {
@@ -111,7 +111,7 @@ export function projectAssistantVisible(payload: JsonRecord): {
   extra: { lane: AgentLane; kind: 'narrate'; count: number; role: ActivityRole };
 } {
   const textBody = peelStructuredEnvelope(text(payload.text) ?? '');
-  const role = payload.role === 'controller' || payload.role === 'comparison' ? payload.role : 'recovery';
+  const role = agentLane(payload);
   const first = textBody.split(/\n/)[0]?.trim() ?? '';
   return {
     title: first || '…',

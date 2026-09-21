@@ -474,7 +474,10 @@ function timelineEntryFactory(event: EventEnvelope): MakeEntry {
 }
 
 function agentLaneOf(payload: JsonRecord): AgentLane {
-  return payload.role === 'controller' || payload.role === 'comparison' ? payload.role : 'recovery';
+  if (payload.role === 'controller' || payload.role === 'comparison' || payload.role === 'recovery') {
+    return payload.role;
+  }
+  return 'system';
 }
 
 function projectInternalNow(type: string, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
