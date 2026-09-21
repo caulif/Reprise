@@ -81,6 +81,11 @@ export interface TimelineEntry {
   /** Controller send ↔ input.submitted pair sealed so identical text cannot collapse across turns. */
   readonly deliveryPaired?: boolean;
   readonly truncated?: boolean;
+  /** Recovery lifecycle facts used by the read-only TUI projection. */
+  readonly recoveryPhase?: 'staging' | 'forensics' | 'model' | 'validated';
+  readonly recoveryAttemptNumber?: number;
+  readonly recoveryRetry?: number;
+  readonly recoveryFallback?: boolean;
 }
 
 type EntryExtra = {
@@ -94,6 +99,10 @@ type EntryExtra = {
   kind?: AgentKind;
   count?: number;
   voice?: TimelineVoice;
+  recoveryPhase?: TimelineEntry['recoveryPhase'];
+  recoveryAttemptNumber?: number;
+  recoveryRetry?: number;
+  recoveryFallback?: boolean;
 } & TimelineActivitySemantics;
 
 type MakeEntry = (source: TimelineSource, title: string, detail?: string, extra?: EntryExtra) => TimelineEntry;
@@ -325,8 +334,34 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'runtime.tool_finished':
       return projectCandidateNow(event.type, payload, entry);
     default:
+      if (event.type === 'recovery.attempt' || event.type === 'recovery.model_retry' || event.type === 'recovery.model_fallback') {
+        return projectRecoveryRunEvent(event.type, payload, entry);
+      }
       return projectRunEvent(event, payload, entry);
   }
+}
+
+function projectRecoveryRunEvent(type: string, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
+  if (type === 'recovery.attempt') {
+    const phase = text(payload.phase);
+    const recoveryPhase = phase === 'staging' || phase === 'forensics' || phase === 'model' || phase === 'validated' ? phase : undefined;
+    const attemptNumber = typeof payload.attemptNumber === 'number' ? payload.attemptNumber : undefined;
+    return [entry('HARNESS', recoveryPhase ? `Recovery phase · ${recoveryPhase}` : 'Recovery phase', text(payload.operation), {
+      hidden: true, lane: 'recovery', role: 'recovery',
+      ...(recoveryPhase ? { recoveryPhase } : {}),
+      ...(attemptNumber !== undefined ? { recoveryAttemptNumber: attemptNumber } : {}),
+    })];
+  }
+  if (type === 'recovery.model_retry') {
+    const attempt = typeof payload.attempt === 'number' ? payload.attempt : undefined;
+    return [entry('HARNESS', 'Recovery model retry', text(payload.previousFailure), {
+      hidden: true, lane: 'recovery', role: 'recovery',
+      ...(attempt !== undefined ? { recoveryRetry: attempt } : {}),
+    })];
+  }
+  return [entry('HARNESS', 'Recovery model fallback', undefined, {
+    hidden: true, lane: 'recovery', role: 'recovery', recoveryFallback: true,
+  })];
 }
 
 function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
@@ -456,6 +491,10 @@ function timelineEntryFactory(event: EventEnvelope): MakeEntry {
       ...(extra?.kind ? { kind: extra.kind } : {}),
       ...(extra?.count !== undefined ? { count: extra.count } : {}),
       ...(extra?.voice ? { voice: extra.voice } : extra?.lane ? { voice: extra.lane } : {}),
+      ...(extra?.recoveryPhase ? { recoveryPhase: extra.recoveryPhase } : {}),
+      ...(extra?.recoveryAttemptNumber !== undefined ? { recoveryAttemptNumber: extra.recoveryAttemptNumber } : {}),
+      ...(extra?.recoveryRetry !== undefined ? { recoveryRetry: extra.recoveryRetry } : {}),
+      ...(extra?.recoveryFallback ? { recoveryFallback: true } : {}),
       ...(semantics.role ? { role: semantics.role } : {}),
       ...(semantics.verb ? { verb: semantics.verb } : {}),
       ...(semantics.object ? { object: semantics.object } : {}),

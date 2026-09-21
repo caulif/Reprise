@@ -37,6 +37,11 @@ export type RecoveryPreviewModel = {
   readonly changedPathCount: number;
   readonly skippedPaths?: readonly { readonly path: string; readonly reasonCode: string }[];
   readonly failureSummary?: string;
+  readonly failureCategory?: string;
+  readonly retryable?: boolean;
+  readonly failureAction?: 'retry' | 'config' | 'refreeze' | 'diagnose' | 'return';
+  readonly sourceUnchanged?: boolean;
+  readonly candidateStarted?: boolean;
 };
 export type PreflightModel = {
   readonly preflight: ExperimentPreflight;
@@ -101,6 +106,12 @@ export type RunningModel = {
   readonly candidateSessionId?: string;
   readonly sourceTimeline?: readonly TimelineEntry[];
   readonly timelineRevision?: number;
+  readonly recoveryPhase?: TimelineEntry['recoveryPhase'];
+  readonly recoveryAttemptNumber?: number;
+  readonly recoveryRetry?: number;
+  readonly recoveryFallback?: boolean;
+  readonly recentVisibleActivity?: string;
+  readonly recentVisibleActivityAt?: string;
 };
 
 function renderStep(theme: Theme, step: 1 | 2 | 3, labels: readonly [string, string, string], locale: Locale): string {
@@ -161,7 +172,7 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
       ? t(locale, 'warningCannotStart', { product })
       : blockedRecovery
         ? (recovery?.summary ?? t(locale, 'warningCannotStartBlockedRecovery', { product }))
-        : (recovery?.failureSummary ?? t(locale, 'warningCannotStartFailedRecovery', { product })))
+        : failureWarning(recovery, locale, product))
     : t(locale, 'warningStartsProcess', { product });
   const warningLine = canStart || blockedRecovery
     ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`)
@@ -171,7 +182,20 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     : undefined;
   const requested = model.candidate?.requestedModel;
   const resolved = model.preflight.resolved.resolvedModel;
+  const effectiveCategory = recovery ? failureCategoryOf(recovery) : undefined;
   const fields = [
+    ...(blockedRecovery ? [
+      kv(theme, t(locale, 'recoveryWhatHappened'), recovery?.summary ?? t(locale, 'warningCannotStartBlockedRecovery', { product }), width - 2),
+      kv(theme, t(locale, 'recoveryImpact'), t(locale, 'recoveryBlockedImpact'), width - 2),
+      kv(theme, t(locale, 'recoveryNextStep'), t(locale, 'recoveryBlockedNextStep'), width - 2),
+    ] : []),
+    ...(failedRecovery && recovery?.failureSummary ? [
+      kv(theme, t(locale, 'recoveryWhatHappened'), truncateFit(failureHappenedLabel(effectiveCategory, locale), Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2),
+      kv(theme, t(locale, 'recoveryFailureType'), failureCategoryLabel(effectiveCategory, locale), width - 2),
+      kv(theme, t(locale, 'recoveryRetryability'), t(locale, recovery.retryable ?? (effectiveCategory === 'transient' || effectiveCategory === 'protocol') ? 'recoveryRetryable' : 'recoveryNotRetryable'), width - 2),
+      kv(theme, t(locale, 'recoveryImpact'), `${t(locale, 'recoveryCandidateNotStarted')} ${recovery.sourceUnchanged ? t(locale, 'recoverySourceSafe') : ''}`.trim(), width - 2),
+      kv(theme, t(locale, 'recoveryNextStep'), recoveryActionLabel(recovery.failureAction ?? (effectiveCategory === 'transient' ? 'retry' : effectiveCategory === 'authentication' ? 'config' : 'diagnose'), locale), width - 2),
+    ] : []),
     ...(model.taskTitle ? [kv(theme, t(locale, 'taskLabel'), truncateFit(model.taskTitle, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
     ...(model.sourceProductLabel ? [kv(theme, t(locale, 'sourceProductLabel'), model.sourceProductLabel, width - 2)] : []),
     kv(theme, t(locale, 'candidateLabel'), product, width - 2),
@@ -228,7 +252,11 @@ export function runningChrome(theme: Theme, width: number, model: RunningModel):
   if (model.runPhase === 'recovery' || stage === 'recovery_processing') {
     const rows = [
       ...(stageLine ? [stageLine] : []),
-      ...(wait ? [theme.style.muted(` ${wait}`)] : []),
+      ...(model.recoveryPhase ? [theme.style.muted(` ${t(locale, 'recoveryPhaseLabel', { phase: recoveryPhaseLabel(model.recoveryPhase, locale) })}${model.recoveryAttemptNumber ? ` · ${t(locale, 'recoveryAttemptLabel', { attempt: model.recoveryAttemptNumber })}` : ''}`)] : []),
+      ...(model.recoveryRetry ? [theme.style.warn(` ${t(locale, 'recoveryRetryLabel', { attempt: model.recoveryRetry })}`)] : []),
+      ...(model.recoveryFallback ? [theme.style.warn(` ${t(locale, 'recoveryFallbackLabel')}`)] : []),
+      ...(model.recentVisibleActivity ? [theme.style.muted(` ${t(locale, 'recoveryRecentActivity', { activity: model.recentVisibleActivity, seconds: visibleAgeSeconds(model.recentVisibleActivityAt, model.tick) })}`)] : []),
+      ...(wait ? [theme.style.muted(` ${wait}`), theme.style.muted(` ${t(locale, 'recoveryWaitingHost')}`)] : []),
     ];
     return rows.map((row) => theme.style.fillCanvas(pad(row, width, theme.glyphs.ellipsis)));
   }
@@ -256,6 +284,60 @@ export function runningChrome(theme: Theme, width: number, model: RunningModel):
   ].map((row) =>
     theme.style.fillCanvas(pad(row.startsWith(' ') ? row : ` ${row}`, width, theme.glyphs.ellipsis)),
   );
+}
+
+function failureCategoryLabel(category: string | undefined, locale: Locale): string {
+  const key = category === 'transient' ? 'recoveryFailureTransient'
+    : category === 'authentication' ? 'recoveryFailureAuthentication'
+      : category === 'source_changed' ? 'recoveryFailureSourceChanged'
+        : category === 'staging_invalid' ? 'recoveryFailureStaging'
+          : category === 'protocol' ? 'recoveryFailureProtocol' : 'recoveryFailureOther';
+  return t(locale, key);
+}
+
+function failureWarning(recovery: RecoveryPreviewModel | undefined, locale: Locale, product: string): string {
+  if (!recovery) return t(locale, 'warningCannotStartFailedRecovery', { product });
+  // Host validation copy is already a user-facing explanation; model/provider details use the safer category copy.
+  const category = failureCategoryOf(recovery);
+  if (category === 'staging_invalid' && recovery.failureSummary) return recovery.failureSummary;
+  return failureHappenedLabel(category, locale);
+}
+
+function failureCategoryOf(recovery: RecoveryPreviewModel): string | undefined {
+  if (recovery.failureCategory) return recovery.failureCategory;
+  const summary = recovery.failureSummary ?? '';
+  if (/暂时失败|temporary|upstream|timeout|rate.?limit/i.test(summary)) return 'transient';
+  if (/credentials|凭据|认证|authentication/i.test(summary)) return 'authentication';
+  if (/工作副本|工作区变更|validation|校验|no_task_path/i.test(summary)) return 'staging_invalid';
+  if (/protocol|协议|invalid output|无法验证/i.test(summary)) return 'protocol';
+  return undefined;
+}
+
+function failureHappenedLabel(category: string | undefined, locale: Locale): string {
+  const key = category === 'transient' ? 'recoveryHappenedTransient'
+    : category === 'authentication' ? 'recoveryHappenedAuthentication'
+      : category === 'source_changed' ? 'recoveryHappenedSourceChanged'
+        : category === 'staging_invalid' ? 'recoveryHappenedStaging'
+          : category === 'protocol' ? 'recoveryHappenedProtocol' : 'recoveryHappenedOther';
+  return t(locale, key);
+}
+
+function recoveryActionLabel(action: RecoveryPreviewModel['failureAction'], locale: Locale): string {
+  if (action === 'retry') return t(locale, 'recoveryActionRetry');
+  if (action === 'config') return t(locale, 'recoveryActionConfig');
+  if (action === 'refreeze') return t(locale, 'recoveryActionRefreeze');
+  return t(locale, 'recoveryActionDiagnose');
+}
+
+function recoveryPhaseLabel(phase: NonNullable<RunningModel['recoveryPhase']>, locale: Locale): string {
+  return t(locale, phase === 'staging' ? 'recoveryPhaseStaging' : phase === 'forensics' ? 'recoveryPhaseForensics' : phase === 'model' ? 'recoveryPhaseModel' : 'recoveryPhaseValidated');
+}
+
+function visibleAgeSeconds(occurredAt: string | undefined, now: number | undefined): number {
+  if (!occurredAt) return 0;
+  const at = Date.parse(occurredAt);
+  if (!Number.isFinite(at)) return 0;
+  return Math.max(0, Math.floor(((now ?? Date.now()) - at) / 1000));
 }
 
 function phaseLine(

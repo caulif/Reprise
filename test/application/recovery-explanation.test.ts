@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RecoveryAgentPort } from "../../src/agents/recovery-agent.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
-import { failureExplanationKey } from "../../src/application/recovery/fail.js";
+import { failureExplanationKey, recoveryFailureDecision } from "../../src/application/recovery/fail.js";
 import { recoveryViewFromAttempt } from "../../src/application/recovery/view.js";
 import { createTheme } from "../../src/tui/theme.js";
 import { renderConfirmation } from "../../src/tui/pages/run.js";
@@ -75,4 +75,11 @@ test("failureExplanationKey maps Host failures to TUI keys", () => {
   assert.equal(failureExplanationKey("agent_model_failed", { kind: "authentication" }).key, "harnessAuthentication");
   assert.equal(failureExplanationKey("agent_model_failed", { kind: "timeout" }).key, "harnessTransient");
   assert.equal(failureExplanationKey("agent_model_failed", { kind: "protocol" }).key, "harnessProtocol");
+});
+
+test("recovery failure decisions expose only user actions", () => {
+  assert.deepEqual(recoveryFailureDecision("agent_model_failed", { kind: "timeout" }), { category: "transient", retryable: true, action: "retry" });
+  assert.deepEqual(recoveryFailureDecision("agent_model_failed", { kind: "authentication" }), { category: "authentication", retryable: false, action: "config" });
+  assert.deepEqual(recoveryFailureDecision("source_tripwire_failed"), { category: "source_changed", retryable: false, action: "refreeze" });
+  assert.deepEqual(recoveryFailureDecision("agent_invalid_output", { kind: "protocol" }), { category: "protocol", retryable: true, action: "diagnose" });
 });

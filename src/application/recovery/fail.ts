@@ -57,6 +57,12 @@ export type RecoveryExplanationKey =
   | "harnessProtocol"
   | "harnessFailure";
 
+export type RecoveryFailureDecision = {
+  readonly category: 'transient' | 'authentication' | 'protocol' | 'source_changed' | 'staging_invalid' | 'preflight' | 'runner';
+  readonly retryable: boolean;
+  readonly action: 'retry' | 'config' | 'refreeze' | 'diagnose' | 'return';
+};
+
 export function failureExplanationKey(
   stage: string,
   failure?: { kind?: string; code?: string; message?: string },
@@ -78,6 +84,21 @@ export function failureExplanationKey(
   }
   if (kind === "protocol") return { key: "harnessProtocol" };
   return { key: "harnessFailure" };
+}
+
+/** User decision derived from the existing failure stage; does not become persisted state. */
+export function recoveryFailureDecision(
+  stage: string,
+  failure?: { kind?: string; code?: string; message?: string },
+): RecoveryFailureDecision {
+  const mapped = failureExplanationKey(stage, failure);
+  if (mapped.key === 'recoverySourceChanged') return { category: 'source_changed', retryable: false, action: 'refreeze' };
+  if (mapped.key === 'recoveryStagingInvalid' || mapped.key === 'recoveryReportMissing') return { category: 'staging_invalid', retryable: false, action: 'diagnose' };
+  if (mapped.key === 'recoveryPreflightFailed') return { category: 'preflight', retryable: false, action: 'return' };
+  if (mapped.key === 'harnessAuthentication') return { category: 'authentication', retryable: false, action: 'config' };
+  if (mapped.key === 'harnessProtocol') return { category: 'protocol', retryable: true, action: 'diagnose' };
+  if (mapped.key === 'harnessTransient') return { category: 'transient', retryable: true, action: 'retry' };
+  return { category: 'runner', retryable: false, action: 'diagnose' };
 }
 
 function recoveryExplanation(input: FailRecoverExperimentInput, stage: string): RecoveryExplanation {

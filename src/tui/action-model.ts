@@ -29,6 +29,10 @@ export type ActionId =
   | 'open-replica'
   | 'confirm-run'
   | 'change-model'
+  | 'retry-recovery'
+  | 'open-diagnostics'
+  | 'refreeze-session'
+  | 'open-recovery-config'
   | 'activate-primary';
 
 export type ActionKind = 'readonly' | 'navigate' | 'start' | 'cancel';
@@ -54,6 +58,7 @@ export type ActionMode = {
   readonly editingText?: boolean;
   /** False while recovery prep rejects find. */
   readonly findAllowed?: boolean;
+  readonly recoveryFailureAction?: 'retry' | 'config' | 'refreeze' | 'diagnose' | 'return';
 };
 
 export type ActionArtifacts = {
@@ -179,7 +184,17 @@ function confirmActions(mode: ActionMode): readonly UiAction[] {
         enabled: false,
         disabledReasonKey: 'recoveryFailed',
       };
+  const recoveryAction = mode.recoveryFailureAction === 'retry'
+    ? action('retry-recovery', 'recoveryActionRetry', ['r'], 'start', 35)
+    : mode.recoveryFailureAction === 'diagnose'
+      ? action('open-diagnostics', 'recoveryActionDiagnose', ['d'], 'readonly', 35)
+      : mode.recoveryFailureAction === 'refreeze'
+        ? action('refreeze-session', 'recoveryActionRefreeze', ['f'], 'navigate', 35)
+        : mode.recoveryFailureAction === 'config'
+          ? action('open-recovery-config', 'recoveryFailureConfig', ['c'], 'navigate', 35)
+        : undefined;
   return [
+    ...(recoveryAction ? [recoveryAction] : []),
     run,
     action('change-model', 'hintChangeModel', ['b', 'escape'], 'navigate', 20),
     action('show-help', 'hintHelp', ['?'], 'readonly', 1),
@@ -331,6 +346,7 @@ function optionalMode(parts: {
   helpOpen?: boolean;
   editingText?: boolean;
   findAllowed?: boolean;
+  recoveryFailureAction?: ActionMode['recoveryFailureAction'];
 }): ActionMode {
   const mode: ActionMode = {};
   if (parts.preparing !== undefined) Object.assign(mode, { preparing: parts.preparing });
@@ -341,6 +357,7 @@ function optionalMode(parts: {
   if (parts.helpOpen !== undefined) Object.assign(mode, { helpOpen: parts.helpOpen });
   if (parts.editingText !== undefined) Object.assign(mode, { editingText: parts.editingText });
   if (parts.findAllowed !== undefined) Object.assign(mode, { findAllowed: parts.findAllowed });
+  if (parts.recoveryFailureAction !== undefined) Object.assign(mode, { recoveryFailureAction: parts.recoveryFailureAction });
   return mode;
 }
 

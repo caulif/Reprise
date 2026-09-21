@@ -13,6 +13,44 @@ test('Recovery agent failure copy separates upstream and credentials from invali
   assert.doesNotMatch(authentication, /Temporary failure/);
 });
 
+test('failed confirmation exposes user decision facts and keeps the candidate disabled', () => {
+  const text = renderConfirmation(createTheme(120, false), 120, {
+    candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
+    step: 3,
+    sourceRoot: 'C:\\workspace',
+    effort: 'high',
+    harnessModel: 'gpt-5',
+    harnessAuthOk: true,
+    productLabel: 'Codex',
+    locale: 'zh',
+    experimentId: 'exp-decision',
+    recovery: {
+      status: 'failed',
+      unresolved: [],
+      changedPathCount: 0,
+      failureSummary: '内部 warning 不应成为用户解释',
+      failureCategory: 'transient',
+      retryable: true,
+      failureAction: 'retry',
+      sourceUnchanged: true,
+      candidateStarted: false,
+    },
+    policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
+    preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
+  } as never).join('\n');
+  assert.match(text, /发生了什么/);
+  assert.match(text, /内部模型暂时失败/);
+  assert.match(text, /影响/);
+  assert.match(text, /候选未启动/);
+  assert.match(text, /原始目录未被修改/);
+  assert.match(text, /是否可重试/);
+  assert.match(text, /可以重试/);
+  assert.match(text, /下一步/);
+  assert.match(text, /重试恢复/);
+  assert.doesNotMatch(text, /内部 warning 不应成为用户解释/);
+  assert.doesNotMatch(text, /启动隔离的 Codex 候选/);
+});
+
 test('recovery canvas does not impersonate a candidate reply', () => {
   const theme = createTheme(120, false);
   const text = renderTimeline(theme, 120, {
