@@ -1,18 +1,32 @@
 import type { ExperimentPreflight } from '../../application/experiment-preflight.js';
 import type { CandidateRunState, CandidateSpec, RunPolicy } from '../../core/schema.js';
+import { runningFooterHints } from '../action-model.js';
 import { selectedIndexAfterFold } from '../fold-process.js';
 import { projectTimelineView } from '../timeline-view.js';
 import { formatBytes, truncateFit, type TimelineFilter } from '../format.js';
 import { t, type Locale } from '../i18n.js';
+import { activityDetailModel, renderActivityDetail, showsActivityDetailSidebar } from '../overlays.js';
 import { matchesFilter, renderScrollback } from '../scrollback.js';
 import { canvasHitIndices } from '../timeline-read.js';
 import { caretAt } from '../text-edit.js';
 import type { Theme } from '../theme.js';
 import type { TimelineEntry } from '../timeline.js';
-import { kv, pad, panel, type PreparePhase } from '../widgets.js';
+import { kv, pad, panel, stateRail, type PreparePhase } from '../widgets.js';
+import { joinColumns } from '../widgets.js';
 import type { CandidateRunPhase } from '../../application/candidate-run-phase.js';
+import {
+  activityRoleFromDiagnostics,
+  countActiveParallel,
+  deriveStaleHint,
+  roleMessageKey,
+  uiStageFrom,
+  uiStageLabelKey,
+  type ActivityRole,
+  type PhaseClockBounds,
+  type UiStage,
+} from '../phase-state.js';
 
-export type { CandidateRunPhase };
+export type { CandidateRunPhase, ActivityRole, UiStage, PhaseClockBounds };
 
 export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
 export type RecoveryPreviewModel = {
@@ -40,13 +54,15 @@ export type ConfirmModel = PreflightModel & {
   readonly harnessAuthOk?: boolean;
   readonly sourceProductLabel?: string;
   readonly experimentId?: string;
+  readonly taskTitle?: string;
 };
 export type RunningModel = {
   readonly entries: readonly TimelineEntry[];
   readonly selected: number;
   readonly filter: TimelineFilter;
   readonly following: boolean;
-  readonly cancelling: boolean;
+  readonly cancelUi?: 'idle' | 'requesting' | 'failed' | 'settled';
+  readonly cancelling?: boolean;
   readonly currentState: CandidateRunState | undefined;
   readonly elapsed: string;
   readonly turns: { readonly used: number; readonly max?: number };
@@ -67,12 +83,21 @@ export type RunningModel = {
   readonly tick?: number;
   readonly runPhase?: CandidateRunPhase;
   readonly lastRuntimeEventAt?: string;
+  readonly lastObservedEventAt?: string;
+  readonly lastVisibleActivityAt?: string;
   readonly lastRuntimeEventKind?: string;
   readonly modelOutputSeen?: boolean;
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly runStartedAt?: number;
+  readonly phaseClocks?: PhaseClockBounds;
+  readonly activityRole?: ActivityRole;
+  readonly uiStage?: UiStage;
+  readonly activeParallel?: number;
+  readonly comparisonAttemptId?: string;
   readonly expandedFolds?: readonly string[];
+  readonly activityDetail?: TimelineEntry;
+  readonly activityDetailOffset?: number;
   readonly candidateSessionId?: string;
   readonly sourceTimeline?: readonly TimelineEntry[];
   readonly timelineRevision?: number;
@@ -144,19 +169,25 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
   const diagnosisHint = failedRecovery && model.experimentId
     ? theme.style.muted(` ${t(locale, 'diagnosisSavedHint', { experimentId: model.experimentId })}`)
     : undefined;
+  const requested = model.candidate?.requestedModel;
+  const resolved = model.preflight.resolved.resolvedModel;
   const fields = [
-    kv(theme, t(locale, 'candidateLabel'), candidateSummary(model.candidate, product, model.preflight.resolved.resolvedModel, locale), width - 2),
+    ...(model.taskTitle ? [kv(theme, t(locale, 'taskLabel'), truncateFit(model.taskTitle, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
+    ...(model.sourceProductLabel ? [kv(theme, t(locale, 'sourceProductLabel'), model.sourceProductLabel, width - 2)] : []),
+    kv(theme, t(locale, 'candidateLabel'), product, width - 2),
+    kv(theme, t(locale, 'requestedModelLabel'), requested ?? t(locale, 'unavailableValue'), width - 2),
+    kv(theme, t(locale, 'resolvedModelLabel'), resolved || t(locale, 'unavailableValue'), width - 2),
     kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
     ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
+    kv(theme, t(locale, 'limitationsLabel'), model.preflight.limitations.length ? model.preflight.limitations.join(' | ') : t(locale, 'noneRecorded'), width - 2),
     ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
-    ...(cross ? [kv(theme, t(locale, 'sourceProductLabel'), `${model.sourceProductLabel}  →  ${product}`, width - 2)] : []),
+    ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
   ];
-  const crossNote = cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : [];
   const startOk = canStart ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'confirmCopySafe')}`)] : [];
   // Failed confirm: human failure reason is L1 — before candidate/recovery fields so the fold above cannot outrank it.
   const body = failedRecovery && !canStart
-    ? [warningLine, ...(diagnosisHint ? [diagnosisHint] : []), '', ...fields, ...crossNote, ...startOk]
-    : [...fields, '', ...crossNote, warningLine, ...startOk];
+    ? [warningLine, ...(diagnosisHint ? [diagnosisHint] : []), '', ...fields, ...startOk]
+    : [...fields, '', warningLine, ...startOk];
   return [
     renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
@@ -188,46 +219,88 @@ export function runningChrome(theme: Theme, width: number, model: RunningModel):
   const product = model.productLabel ?? t(locale, 'unknownAgent');
   const agent = model.candidateModel ? `${product} · ${model.candidateModel}` : product;
   const wait = waitLine(model, locale);
-  if (model.runPhase === 'recovery') {
-    return wait
-      ? [theme.style.fillCanvas(pad(theme.style.muted(` ${wait}`), width, theme.glyphs.ellipsis))]
-      : [];
+  const stage = model.uiStage ?? uiStageFrom(model);
+  const role = model.activityRole ?? activityRoleFromDiagnostics(model);
+  const parallel = model.activeParallel ?? countActiveParallel(model.entries);
+  const stageLine = stage
+    ? theme.style.muted(` ${t(locale, uiStageLabelKey(stage))}${parallel > 1 ? ` · ×${parallel}` : ''}`)
+    : undefined;
+  if (model.runPhase === 'recovery' || stage === 'recovery_processing') {
+    const rows = [
+      ...(stageLine ? [stageLine] : []),
+      ...(wait ? [theme.style.muted(` ${wait}`)] : []),
+    ];
+    return rows.map((row) => theme.style.fillCanvas(pad(row, width, theme.glyphs.ellipsis)));
   }
+  const comparing = model.preparePhase === 'compare' || stage === 'comparison_processing';
   const special = model.runPhase === 'candidate_reconnecting'
     || model.runPhase === 'candidate_starting'
-    || model.preparePhase === 'compare';
+    || comparing
+    || stage === 'controller_opening'
+    || stage === 'awaiting_controller'
+    || stage === 'finalizing';
   const task = model.taskTitle
     ? truncateFit(model.taskTitle, Math.max(8, width - agent.length - 10), theme.glyphs.ellipsis)
     : '';
   const line = special
-    ? phaseLine(model, locale, agent)
+    ? phaseLine(model, locale, agent, stage, role)
     : (task ? `${task} · ${agent} · ${model.elapsed}` : `${agent} · ${model.elapsed}`);
-  return [line, ...(wait ? [theme.style.muted(` ${wait}`)] : [])].map((row) =>
+  const rail = model.currentState && width >= 78 && !comparing
+    ? stateRail(theme, model.currentState, width).slice(0, 1)
+    : [];
+  return [
+    ...rail,
+    ...(stageLine ? [stageLine] : []),
+    line,
+    ...(wait ? [theme.style.muted(` ${wait}`)] : []),
+  ].map((row) =>
     theme.style.fillCanvas(pad(row.startsWith(' ') ? row : ` ${row}`, width, theme.glyphs.ellipsis)),
   );
 }
 
-function phaseLine(model: RunningModel, locale: Locale, product: string): string {
-  if (model.runPhase === 'candidate_reconnecting') {
+function phaseLine(
+  model: RunningModel,
+  locale: Locale,
+  product: string,
+  stage: UiStage | undefined,
+  role: ActivityRole | undefined,
+): string {
+  if (model.runPhase === 'candidate_reconnecting' || stage === 'candidate_reconnecting') {
     return t(locale, 'candidateReconnecting', {
       product,
       current: model.reconnectCount ?? 0,
       total: model.reconnectTotal || 5,
     });
   }
-  if (model.runPhase === 'candidate_starting') return t(locale, 'candidateStarting', { product });
-  if (model.preparePhase === 'compare') {
-    return t(locale, 'comparingTitle');
+  if (model.runPhase === 'candidate_starting' || stage === 'candidate_starting') {
+    return t(locale, 'candidateStarting', { product });
+  }
+  if (model.preparePhase === 'compare' || stage === 'comparison_processing') {
+    return `${t(locale, 'comparingTitle')} · ${model.elapsed}`;
+  }
+  if (stage === 'controller_opening' || stage === 'awaiting_controller' || stage === 'finalizing') {
+    const label = stage ? t(locale, uiStageLabelKey(stage)) : t(locale, roleMessageKey(role));
+    return `${label} · ${model.elapsed}`;
   }
   return t(locale, 'candidateRunningTitle', { product });
 }
 
-function waitLine(model: RunningModel, locale: Locale): string | undefined {
+export function waitLine(model: RunningModel, locale: Locale): string | undefined {
   const now = model.tick ?? Date.now();
-  const last = model.lastRuntimeEventAt ? Date.parse(model.lastRuntimeEventAt) : (model.runStartedAt ?? 0);
-  const idle = Number.isFinite(last) && last > 0 ? now - last : now - (model.runStartedAt ?? 0);
-  if (idle >= 120_000) return t(locale, 'runStaleHint');
-  return undefined;
+  const visibleAt = model.lastVisibleActivityAt ?? model.lastObservedEventAt ?? model.lastRuntimeEventAt;
+  const parsedVisible = visibleAt ? Date.parse(visibleAt) : Number.NaN;
+  const anchor = Number.isFinite(parsedVisible) && parsedVisible > 0
+    ? parsedVisible
+    : (model.runStartedAt && model.runStartedAt > 0 ? model.runStartedAt : undefined);
+  if (anchor === undefined) return undefined;
+  const idle = now - anchor;
+  const role = model.activityRole ?? activityRoleFromDiagnostics(model);
+  const hint = deriveStaleHint({
+    idleMs: idle,
+    roleLabel: t(locale, roleMessageKey(role)),
+  });
+  if (!hint) return undefined;
+  return t(locale, hint.key, hint.vars);
 }
 
 export function isRecoveryChrome(model: RunningModel): boolean {
@@ -237,7 +310,8 @@ export function isRecoveryChrome(model: RunningModel): boolean {
 export function renderTimeline(theme: Theme, width: number, model: RunningModel, height?: number): string[] {
   const locale = model.locale ?? 'en';
   const product = model.productLabel ?? t(locale, 'unknownAgent');
-  if (isPreparing(model)) return renderPrepare(theme, width, model, locale, product);
+  // Prepare/check/copy belongs on the recovery summary surface — not mixed into the activity stream.
+  if (isPreparing(model)) return [];
   // visibleTimeline already applies ALL filtering; keep the branch for non-ALL replay surfaces.
   const visible = model.filter === 'ALL'
     ? model.entries
@@ -271,11 +345,29 @@ export function renderTimeline(theme: Theme, width: number, model: RunningModel,
           theme.style.muted(` ${t(locale, 'recoveryEmpty')}`),
           pad(` ${theme.glyphs.dot} working`, width, theme.glyphs.ellipsis),
         ]
-      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, following, timelineRevision);
-  return [
+      : renderScrollback(theme, width, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, following, timelineRevision, expanded);
+  const body = [
     ...header.map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis))),
     ...empty.map((line) => pad(line, width, theme.glyphs.ellipsis)),
   ];
+  if (model.activityDetail && showsActivityDetailSidebar(theme) && height !== undefined) {
+    const detailWidth = Math.max(28, Math.floor(width * 0.4));
+    const mainWidth = Math.max(32, width - detailWidth - 1);
+    const main = [
+      ...header.map((line) => theme.style.fillCanvas(pad(line, mainWidth, theme.glyphs.ellipsis))),
+      ...renderScrollback(theme, mainWidth, folded, selectedFolded, locale, product, bodyHeight, model.tick ?? 0, model.readingOffset ?? 0, model.elapsed, following, timelineRevision, expanded)
+        .map((line) => pad(line, mainWidth, theme.glyphs.ellipsis)),
+    ];
+    const detail = renderActivityDetail(
+      theme,
+      detailWidth,
+      activityDetailModel(model.activityDetail, product, locale),
+      locale,
+      Math.max(4, (height ?? 16) - 8),
+    );
+    return joinColumns(main, detail, mainWidth, detailWidth, 1, theme);
+  }
+  return body;
 }
 
 function renderFindBar(model: RunningModel, locale: Locale, total: number, selected: number): string[] {
@@ -289,46 +381,6 @@ function isPreparing(model: RunningModel): boolean {
   return model.preparePhase === 'check' || model.preparePhase === 'copy';
 }
 
-function renderPrepare(theme: Theme, width: number, model: RunningModel, locale: Locale, product: string): string[] {
-  if (model.preparePhase === 'check') {
-    const detail = model.prepareDetail ? model.prepareDetail : t(locale, 'recoveryStagePrepare');
-    const project = model.workspaceProject ?? t(locale, 'projectlessSessions');
-    const session = model.taskTitle ?? t(locale, 'noTaskSummary');
-    return [
-      ` ${t(locale, 'recoveringTitle')}`,
-      '',
-      kv(theme, t(locale, 'fieldSession'), session, width),
-      kv(theme, t(locale, 'fieldProject'), project, width),
-      kv(theme, t(locale, 'statusLabel'), detail, width),
-      '',
-      ` ${theme.style.muted(t(locale, 'recoveringPrepare'))}`,
-    ].map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis)));
-  }
-  const step = model.preparePhase === 'copy' ? 2 : 1;
-  const detail = model.prepareDetail ? ` · ${model.prepareDetail}` : '';
-  const barLabel = t(locale, step === 2 ? 'preparingBar' : 'checkingBar', { step, detail });
-  const marks = [
-    stepLine(theme, 1, step, t(locale, 'stepRestore'), locale),
-    stepLine(theme, 2, step, t(locale, 'stepCopy'), locale),
-    stepLine(theme, 3, step, t(locale, 'stepConfig'), locale),
-    stepLine(theme, 4, step, t(locale, 'stepStart', { product }), locale),
-  ];
-  return [
-    model.taskTitle ? ` ${t(locale, 'taskLabel')}  ${theme.style.strong(truncateFit(model.taskTitle, Math.max(8, width - 8), theme.glyphs.ellipsis))}` : '',
-    ` ${t(locale, 'preparingIn', { product })}`,
-    '',
-    ` ${theme.style.muted(barLabel)}`,
-    '',
-    ...marks,
-  ].filter((line, index) => line || index > 0).map((line) => theme.style.fillCanvas(pad(line, width, theme.glyphs.ellipsis)));
-}
-
-function stepLine(theme: Theme, index: number, current: number, label: string, locale: Locale): string {
-  if (index < current) return ` ${theme.style.ok(theme.glyphs.ok)}  ${label}  ${theme.style.ok(t(locale, 'done'))}`;
-  if (index === current) return ` ${theme.style.target(theme.glyphs.dot)}  ${label}  ${theme.style.target(t(locale, 'inProgress'))}`;
-  return theme.style.muted(` ${theme.glyphs.empty}  ${label}  ${t(locale, 'waiting')}`);
-}
-
 export function sourceHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
   return [['Enter', t(locale, 'hintStartRun')], ['Backspace', t(locale, 'hintEdit')], ['Esc', t(locale, 'hintHome')]];
 }
@@ -337,26 +389,85 @@ export function preflightHints(locale: Locale = 'en'): readonly (readonly [strin
   return [['Esc', t(locale, 'hintHome')]];
 }
 
-export function confirmHints(canStart = true, locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Enter', canStart ? t(locale, 'hintStartCandidate') : t(locale, 'hintTryBlocked')], ['b', t(locale, 'hintChangeModel')], ['Esc', t(locale, 'hintHome')]];
-}
-
-export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false): readonly (readonly [string, string])[] {
-  const stop = ['Ctrl+C', preparing ? t(locale, 'hintCancel') : t(locale, 'hintStop')] as const;
-  if (reading) return [['v', t(locale, 'hintLeaveReading')], ['Esc', t(locale, 'hintLeaveReading')], stop];
-  if (finding) {
-    return [['Enter', t(locale, 'hintNextHit')], ['S-Enter', t(locale, 'hintPrevHit')], ['Esc', t(locale, 'hintClearFind')], stop];
+export function confirmHints(canStart = true, locale: Locale = 'en', recoveryDiagnosis = false): readonly (readonly [string, string])[] {
+  if (recoveryDiagnosis) {
+    return [['Enter', t(locale, 'hintTryBlocked')], ['Esc', t(locale, 'hintHome')]];
   }
-  return [stop];
+  if (!canStart) {
+    return [
+      ['Enter', t(locale, 'hintTryBlocked')],
+      ['b', t(locale, 'hintChangeModel')],
+      ['Esc', t(locale, 'hintChangeModel')],
+    ];
+  }
+  return [
+    ['Enter', t(locale, 'hintStartCandidate')],
+    ['b', t(locale, 'hintChangeModel')],
+    ['Esc', t(locale, 'hintChangeModel')],
+  ];
 }
 
-export function elapsedFrom(entries: readonly TimelineEntry[], now = Date.now(), startedAt?: number): string {
-  if (startedAt && startedAt > 0) return formatElapsed(now - startedAt);
+export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparing = false, locale: Locale = 'en', finding = false, reading = false, cancelUi: 'idle' | 'requesting' | 'failed' | 'settled' = 'idle'): readonly (readonly [string, string])[] {
+  const hints = runningFooterHints(locale, {
+    preparing,
+    finding,
+    reading,
+    findAllowed: !preparing,
+    narrow: _narrow,
+  });
+  if (cancelUi === 'requesting' || cancelUi === 'failed') {
+    const label = cancelUi === 'requesting' ? t(locale, 'hintExitUiCleanupPending') : t(locale, 'hintRetryCancel');
+    return hints.map(([key, value]) => key === 'Ctrl+C' ? [key, label] as const : [key, value] as const);
+  }
+  return hints;
+}
+
+export function elapsedFrom(
+  entries: readonly TimelineEntry[],
+  now = Date.now(),
+  startedAt?: number,
+  endedAt?: number,
+): string {
+  if (startedAt && startedAt > 0) {
+    const end = endedAt && endedAt > 0 ? endedAt : now;
+    return formatElapsed(end - startedAt);
+  }
   const first = entries[0]?.occurredAt;
   const last = entries.at(-1)?.occurredAt;
   if (!first || !last) return '00:00';
   const ms = Date.parse(last) - Date.parse(first);
   return formatElapsed(ms);
+}
+
+/** Prefer scoped phase clocks; unknown start boundary stays unrecorded instead of wall-clock open time. */
+export function elapsedForRunning(
+  model: Pick<RunningModel, 'entries' | 'phaseClocks' | 'preparePhase' | 'runPhase' | 'comparisonAttemptId' | 'runStartedAt'>,
+  now: number,
+  locale: Locale,
+): string {
+  const clocks = model.phaseClocks ?? {};
+  const scope =
+    model.preparePhase === 'compare' || model.comparisonAttemptId
+      ? 'comparison' as const
+      : model.runPhase === 'recovery' || model.preparePhase === 'check'
+        ? 'recovery' as const
+        : 'candidate' as const;
+  const started =
+    scope === 'recovery' ? clocks.recoveryStartedAt
+      : scope === 'comparison' ? clocks.comparisonStartedAt
+        : clocks.candidateStartedAt;
+  const ended =
+    scope === 'recovery' ? clocks.recoveryEndedAt
+      : scope === 'comparison' ? clocks.comparisonEndedAt
+        : clocks.candidateEndedAt;
+  if (started && started > 0) {
+    return formatElapsed((ended && ended > 0 ? ended : now) - started);
+  }
+  if (model.runStartedAt && model.runStartedAt > 0 && !ended) {
+    return elapsedFrom(model.entries, now, model.runStartedAt);
+  }
+  if (!model.entries.length) return t(locale, 'unrecordedBoundary');
+  return elapsedFrom(model.entries, now);
 }
 
 function formatElapsed(ms: number): string {
@@ -377,12 +488,6 @@ export function countCalls(entries: readonly TimelineEntry[]): number {
 
 function dash(theme: Theme): string {
   return theme.framed ? '—' : '-';
-}
-
-function candidateSummary(candidate: CandidateSpec | undefined, product: string, resolvedModel: string | undefined, locale: Locale): string {
-  if (!candidate) return t(locale, 'unavailableValue');
-  const model = candidate.requestedModel;
-  return resolvedModel && resolvedModel !== model ? `${product}  ·  ${resolvedModel} (${model})` : `${product}  ·  ${model}`;
 }
 
 function userRecoveryHeadline(value: string, locale: Locale): string {

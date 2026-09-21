@@ -6,6 +6,10 @@ import type { HistoryExperiment } from '../local-history.js';
 import type { Theme } from '../theme.js';
 import { pad, panel } from '../widgets.js';
 import { shellEnvAssignment } from '../../infrastructure/harness-model-config.js';
+import { relativeTime } from './intake.js';
+import { deriveResultPresentationFromHistory } from '../display-state.js';
+
+export type HomeActionId = 'new-replay' | 'open-recent' | 'history' | 'config' | 'help';
 
 export type HomeModel = {
   readonly taskCase: TaskCase | undefined;
@@ -21,28 +25,34 @@ export type HomeModel = {
   readonly showSuggestions: boolean;
   readonly locale?: Locale;
   readonly recoveryFailed?: boolean;
+  readonly focus?: HomeActionId;
+  readonly modelDetailsExpanded?: boolean;
 };
+
+export function homeActions(model: HomeModel): readonly HomeActionId[] {
+  const needsConfig = !model.hasApiConfig || model.hasUsableAuth === false;
+  const actions: HomeActionId[] = needsConfig ? ['config', 'new-replay'] : ['new-replay'];
+  if (model.recentExperiment) actions.push('open-recent');
+  actions.push('history', 'help');
+  if (!needsConfig) actions.push('config');
+  return actions;
+}
+
+export function defaultHomeFocus(model: HomeModel): HomeActionId {
+  return homeActions(model)[0] ?? 'new-replay';
+}
 
 export function renderHome(theme: Theme, width: number, model: HomeModel): string[] {
   const locale = model.locale ?? 'en';
-  const continueRows = continueLines(theme, model, locale);
-  const browseRows = [
-    ` ${theme.style.accent('/intake')}    ${t(locale, 'intakeDesc')}`,
-    ` ${theme.style.accent('/history')}   ${t(locale, 'historyDesc')}`,
-    ` ${theme.style.accent('/config')}    ${t(locale, 'configDesc')}`,
-    ` ${theme.style.accent('/lang')}      ${t(locale, 'langDesc')}`,
-    ` ${theme.style.accent('/help')}      ${t(locale, 'helpDesc')}`,
-  ];
+  const focus = model.focus ?? defaultHomeFocus(model);
+  const actions = homeActions(model);
   const body = [
-    theme.style.muted(` ${t(locale, 'internalModelLine')}  ${internalModelLabel(theme, model, locale)}`),
+    ` ${theme.style.harness(t(locale, 'productTagline'))}`,
     '',
-    theme.style.muted(` ${t(locale, 'continue')}`),
-    ...continueRows,
+    ...actions.flatMap((action) => actionRows(theme, model, locale, action, focus === action)),
     '',
     theme.style.muted(` ${t(locale, 'browse')}`),
-    ...browseRows,
-    '',
-    ` ${nextLine(theme, locale, model)}`,
+    ...internalModelBlock(theme, model, locale),
     ...(model.envName && model.envSet === false ? [` ${shellEnvAssignment(model.envName)}`] : []),
   ];
   const placeholder = t(locale, 'composerHome');
@@ -66,49 +76,100 @@ export function homeHints(locale: Locale = 'en', model?: HomeModel): readonly (r
     ];
   }
   return [
+    ['↑↓', t(locale, 'hintHomeSelect')],
+    ['Enter', t(locale, 'hintActivate')],
     ['/', t(locale, 'hintCommand')],
     ['Ctrl+C', t(locale, 'hintExit')],
   ];
 }
 
-export function homePointerAction(model: HomeModel, bodyRow: number): 'open-recent' | undefined {
-  if (!model.recentExperiment) return undefined;
-  return bodyRow === 3 ? 'open-recent' : undefined;
+export function homePointerAction(model: HomeModel, bodyRow: number): HomeActionId | undefined {
+  const actions = homeActions(model);
+  // tagline + blank = rows 0-1
+  let row = 2;
+  for (const action of actions) {
+    const span = action === 'new-replay' || action === 'open-recent' || action === 'history' || action === 'config' || action === 'help' ? 1 : 1;
+    if (bodyRow >= row && bodyRow < row + span) return action;
+    row += span;
+  }
+  return undefined;
 }
 
-function continueLines(theme: Theme, model: HomeModel, locale: Locale): string[] {
-  const rows: string[] = [];
-  if (model.recentExperiment) {
-    const title = compact(model.recentExperiment.outcome ?? t(locale, 'recentRun'), 36, theme.glyphs.ellipsis);
-    rows.push(row(theme, '·', t(locale, 'recentRun'), title));
-  } else {
-    rows.push(row(theme, '/history', t(locale, 'historyDesc'), theme.style.muted(t(locale, 'noExperiments'))));
+function actionRows(theme: Theme, model: HomeModel, locale: Locale, action: HomeActionId, selected: boolean): string[] {
+  const marker = selected ? theme.glyphs.cursor : ' ';
+  if (action === 'new-replay') {
+    const line = ` ${marker} ${theme.style.accent(t(locale, 'newReplay'))}  ${t(locale, 'newReplayDesc')}  ${theme.style.muted('/intake')}`;
+    return [selected ? theme.style.selected(line) : line];
   }
-  if (!model.hasApiConfig || model.hasUsableAuth === false) {
-    const status = model.envName && model.envSet === false
-      ? t(locale, 'envUnset')
-      : t(locale, 'needsCred');
-    rows.push(row(theme, '/config', t(locale, 'openConfig'), theme.style.warn(status)));
+  if (action === 'open-recent') {
+    const overview = recentOverview(theme, model, locale);
+    const line = ` ${marker} ${theme.style.muted(pad(t(locale, 'recentRun'), 12))} ${overview}`;
+    return [selected ? theme.style.selected(line) : line];
   }
-  return rows;
+  if (action === 'history') {
+    const status = model.recentExperiment ? '' : theme.style.muted(t(locale, 'noRecentRuns'));
+    const line = ` ${marker} ${theme.style.accent('/history')}  ${t(locale, 'historyDesc')}${status ? `  ${status}` : ''}`;
+    return [selected ? theme.style.selected(line) : line];
+  }
+  if (action === 'config') {
+    const needs = !model.hasApiConfig || model.hasUsableAuth === false;
+    const status = needs
+      ? theme.style.warn(model.envName && model.envSet === false ? t(locale, 'envUnset') : t(locale, 'needsCred'))
+      : '';
+    const line = ` ${marker} ${theme.style.accent('/config')}   ${t(locale, 'configDesc')}${status ? `  ${status}` : ''}`;
+    return [selected ? theme.style.selected(line) : line];
+  }
+  const line = ` ${marker} ${theme.style.accent('/help')}     ${t(locale, 'helpDesc')}`;
+  return [selected ? theme.style.selected(line) : line];
 }
 
-function row(theme: Theme, key: string, description: string, status: string): string {
-  const left = ` ${theme.style.muted(pad(key, 8))} ${description}`;
-  return status ? `${left}  ${status}` : left;
+function recentOverview(theme: Theme, model: HomeModel, locale: Locale): string {
+  const recent = model.recentExperiment;
+  if (!recent) return theme.style.muted(t(locale, 'noRecentRuns'));
+  const task = compact(
+    t(locale, 'recentTaskUnknown', { id: recent.taskCaseId.slice(0, 8) }),
+    24,
+    theme.glyphs.ellipsis,
+  );
+  const when = relativeTime(recent.startedAt, Date.now(), locale);
+  const result = recentResultLabel(recent, locale);
+  return t(locale, 'recentRunOverview', { task, when, result });
+}
+
+export function recentResultLabel(recent: HistoryExperiment, locale: Locale = 'en'): string {
+  if (recent.formatError) return t(locale, 'resultOverviewUnknown');
+  const parts: string[] = [];
+  if (recent.taskStatus) parts.push(t(locale, 'resultOverviewCandidate', { status: recent.taskStatus }));
+  if (recent.comparisonStatus) {
+    parts.push(t(locale, 'resultOverviewComparison', { status: recent.comparisonStatus }));
+  } else if (recent.outcome === 'interrupted') {
+    parts.push(t(locale, 'resultOverviewInterrupted'));
+  } else if (recent.outcome === 'unknown') {
+    parts.push(t(locale, 'resultOverviewUnknown'));
+  } else if (!recent.taskStatus && recent.outcome) {
+    parts.push(t(locale, 'resultOverviewCandidate', { status: recent.outcome }));
+  }
+  const presentation = deriveResultPresentationFromHistory(recent, locale);
+  if (presentation.reportKind === 'diagnostic') parts.push(t(locale, 'resultOverviewDiagnostic'));
+  else if (presentation.reportKind === 'report') parts.push(t(locale, 'resultOverviewReport', { kind: 'Report' }));
+  if (!parts.length) return t(locale, 'resultOverviewIncomplete');
+  return parts.join(' · ');
+}
+
+function internalModelBlock(theme: Theme, model: HomeModel, locale: Locale): string[] {
+  const label = internalModelLabel(theme, model, locale);
+  const header = ` ${theme.style.muted(t(locale, 'internalCollabModel'))}  ${label}`;
+  if (!model.modelDetailsExpanded) return [header];
+  return [
+    header,
+    theme.style.muted(`   ${model.providerLabel ?? t(locale, 'noneSelected')} · ${model.modelId ?? t(locale, 'noneSelected')}`),
+  ];
 }
 
 function internalModelLabel(theme: Theme, model: HomeModel, locale: Locale): string {
   if (model.modelId) return compact(model.modelId, 40, theme.glyphs.ellipsis);
   if (!model.hasApiConfig || model.hasUsableAuth === false) return theme.style.warn(t(locale, 'needsConfig'));
   return t(locale, 'noneSelected');
-}
-
-function nextLine(theme: Theme, locale: Locale, model: HomeModel): string {
-  if (!model.hasApiConfig) return theme.style.warn(t(locale, 'nextConfig'));
-  if (model.envName && model.envSet === false) return theme.style.warn(t(locale, 'nextSetEnv', { name: model.envName }));
-  if (model.hasUsableAuth === false) return theme.style.warn(t(locale, 'nextSetCred'));
-  return t(locale, 'nextIntake');
 }
 
 function renderSuggestions(theme: Theme, width: number, model: HomeModel): string[] {

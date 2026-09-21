@@ -217,6 +217,26 @@ test('T04 H2: orphan tool_failed then invocation end does not complete in-flight
   assert.notEqual(started?.status, 'completed');
 });
 
+test('unknown agent role is indexed as system and can be failed or cancelled', () => {
+  for (const [sequence, terminalType, status] of [
+    [2, 'agent.invocation_failed', 'failed'],
+    [3, 'agent.invocation_cancelled', 'cancelled'],
+  ] as const) {
+    const index = createActivityIndex();
+    ingestActivityEvent(index, event('agent.tool_called', {
+      role: 'unrecognized-agent', tool: 'read', toolCallId: `call-${sequence}`,
+      sessionId: 'session', invocationId: `inv-${sequence}`,
+      params: { path: 'brief.md' },
+    }, { sequence: 1, eventId: `start-${sequence}` }));
+    assert.equal(activeNodes(index)[0]?.role, 'system');
+    ingestActivityEvent(index, event(terminalType, {
+      role: 'unrecognized-agent', sessionId: 'session', invocationId: `inv-${sequence}`,
+    }, { sequence, eventId: `end-${sequence}` }));
+    assert.equal(historyNodes(index).at(-1)?.status, status);
+    assert.equal(historyNodes(index).at(-1)?.role, 'system');
+  }
+});
+
 test('T04 index composite correlationId is stamped onto timeline entries', () => {
   const timeline: TimelineEntry[] = [];
   const index = createActivityIndex();

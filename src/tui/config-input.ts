@@ -2,6 +2,7 @@ import { nextOption, unwrapBracketedPaste } from './format.js';
 import { applyTextEdit } from './text-edit.js';
 import type { HarnessConfigDraft, HarnessConfigField, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { configFieldValue, configFieldsForKind, emptyHarnessConfigDraft, languageFieldIndex, setConfigField } from '../infrastructure/harness-model-config.js';
+import { t, type Locale } from './i18n.js';
 import type { Option } from './types.js';
 import { matchesKey } from '@earendil-works/pi-tui';
 import { parseSgrMouse } from './page-input.js';
@@ -17,6 +18,9 @@ export type ConfigInputState = {
   readonly pendingToggle?: boolean;
   readonly dirty?: boolean;
   readonly leaveConfirm?: boolean;
+  /** True while save or connection test is in flight; Ctrl+T/S must not start another. */
+  readonly busy?: boolean;
+  readonly locale?: Locale;
 };
 export type ConfigInputResult = {
   readonly state: ConfigInputState;
@@ -24,6 +28,10 @@ export type ConfigInputResult = {
   readonly action?: 'save' | 'test' | 'home' | 'toggle-locale';
   readonly consume: true;
 };
+
+function busyMessage(locale: Locale | undefined): string {
+  return t(locale ?? 'en', 'configTestBusy');
+}
 
 export function handleConfigInput(state: ConfigInputState, data: string, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }): ConfigInputResult | undefined {
   const input = unwrapBracketedPaste(data);
@@ -47,8 +55,14 @@ export function handleConfigInput(state: ConfigInputState, data: string, refresh
     return { state: { ...state, selected: Math.max(0, Math.min(languageIndex, state.selected + delta)) }, consume: true };
   }
   if (mouse) return { state, consume: true };
-  if (matchesKey(input, 'ctrl+t')) return { state, action: 'test', consume: true };
-  if (matchesKey(input, 'ctrl+s')) return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  if (matchesKey(input, 'ctrl+t')) {
+    if (state.busy) return { state, message: busyMessage(state.locale), consume: true };
+    return { state, action: 'test', consume: true };
+  }
+  if (matchesKey(input, 'ctrl+s')) {
+    if (state.busy) return { state, message: busyMessage(state.locale), consume: true };
+    return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  }
   if (!matchesKey(input, 'enter')) return undefined;
   if (state.selected === languageIndex) return { state, action: 'toggle-locale', consume: true };
   return beginConfigEdit(state, refreshModels, fields);
@@ -67,7 +81,10 @@ function leaveConfig(state: ConfigInputState): ConfigInputResult {
 
 function handleLeaveConfirm(state: ConfigInputState, input: string): ConfigInputResult {
   if (matchesKey(input, 'escape')) return { state: { ...state, leaveConfirm: false }, message: 'Still editing the in-memory draft.', consume: true };
-  if (matchesKey(input, 'ctrl+s')) return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  if (matchesKey(input, 'ctrl+s')) {
+    if (state.busy) return { state, message: busyMessage(state.locale), consume: true };
+    return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
+  }
   if (matchesKey(input, 'enter')) return { state: { ...state, leaveConfirm: false }, action: 'home', consume: true };
   return { state, consume: true };
 }

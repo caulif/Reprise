@@ -1,16 +1,26 @@
-import { projectAssistantVisible, uniqueLeafNames } from './agent-activity.js';
+import {
+  entryRole,
+  isPresentedInput,
+  isTurnBoundary,
+  projectAssistantVisible,
+  uniqueLeafNames,
+} from './agent-activity.js';
+import { mergeEventRefs } from './activity-index.js';
 import { timelineIdentity } from './timeline-read.js';
 import { expandedFoldsKey, timelineEntriesKey } from './timeline-revision.js';
-import type { TimelineEntry } from './timeline.js';
+import { isNowRow, type TimelineEntry } from './timeline.js';
 
 export { projectAssistantVisible };
 
 export function paneOf(entry: TimelineEntry): 'left' | 'right' | 'both' | undefined {
   if (entry.hidden) return undefined;
-  if (entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·')) return 'both';
+  if (isPresentedInput(entry)) return 'both';
+  const role = entryRole(entry);
+  if (role === 'candidate') return 'right';
+  if (role === 'controller' || role === 'recovery' || role === 'comparison' || role === 'system') return 'left';
+  // Legacy rows without structured role: keep prior source/lane fallback.
   if (entry.source === 'TARGET' && !entry.lane) return 'right';
-  if (entry.lane === 'controller' || entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·') || entry.title.startsWith('控制Agent')) return 'left';
-  if (entry.lane === 'recovery' || entry.lane === 'comparison') return 'left';
+  if (entry.lane === 'controller' || entry.lane === 'recovery' || entry.lane === 'comparison' || entry.lane === 'system') return 'left';
   if (entry.source === 'CONTROLLER') return 'left';
   if (entry.level === 'error' && entry.source === 'TARGET') return 'right';
   return undefined;
@@ -65,12 +75,12 @@ export function foldProcessEntries(
       out.push(...(last ? foldCurrentTurn(turn, expandedIds) : [...turn]));
       continue;
     }
-    const id = `fold:turn:${index + 1}`;
+    const id = turnFoldId(turn);
     if (expandedIds.has(id)) {
       out.push(...turn);
       continue;
     }
-    const sent = turn.find((entry) => entry.title.startsWith('Input to Target'));
+    const sent = turn.find((entry) => isPresentedInput(entry) && !entry.title.startsWith('Prompt ·'));
     const preview = (sent?.detail ?? sent?.title ?? '').replace(/\s+/g, ' ').slice(0, 48);
     const probe = sent?.title.includes('verify') || sent?.title.includes('探测');
     out.push({
@@ -82,6 +92,8 @@ export function foldProcessEntries(
       kind: 'fold',
       itemId: id,
       count: turn.length,
+      role: 'controller',
+      ...mergeRefs(turn),
     });
   }
   const result = expandFoldLeaves(out, expandedIds);
@@ -92,12 +104,12 @@ export function foldProcessEntries(
 export function coveringFoldIds(entries: readonly TimelineEntry[], target: TimelineEntry): string[] {
   const ids: string[] = [];
   const turns = groupTurns(entries);
-  for (const [index, turn] of turns.entries()) {
+  for (const turn of turns) {
     if (!turn.some((entry) => timelineIdentity(entry) === timelineIdentity(target) || entry.sequence === target.sequence)) {
       continue;
     }
-    const last = index === turns.length - 1;
-    if (!last) ids.push(`fold:turn:${index + 1}`);
+    const last = turns[turns.length - 1] === turn;
+    if (!last) ids.push(turnFoldId(turn));
     const thinkId = thinkFoldId(turn);
     if (thinkId && turn[0] && wouldHideInThinkFold(turn, target)) ids.push(thinkId);
   }
@@ -122,7 +134,7 @@ function groupTurns(entries: readonly TimelineEntry[]): TimelineEntry[][] {
   const turns: TimelineEntry[][] = [[]];
   for (const entry of entries) {
     const current = turns.at(-1) ?? [];
-    if (current.length && (entry.title.startsWith('Input to Target') || entry.title.startsWith('DONE ·'))) {
+    if (current.length && isTurnBoundary(entry)) {
       turns.push([entry]);
       continue;
     }
@@ -137,35 +149,51 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
   let tools: TimelineEntry[] = [];
   const flush = () => {
     if (!tools.length) return;
-    if (tools.length < 2 || expandedIds.has(thinkFoldId(tools))) {
+    // Active live/now rows stay outside historical folds.
+    const historical = tools.filter((item) => !isNowRow(item) && item.activityStatus !== 'started');
+    const active = tools.filter((item) => isNowRow(item) || item.activityStatus === 'started');
+    if (historical.length < 2 || expandedIds.has(thinkFoldId(historical))) {
       out.push(...tools);
       tools = [];
       return;
     }
-    const lane = tools[0]?.lane;
-    const write = tools.find((item) => item.kind === 'deliver' || /写入/.test(item.title));
-    const title = write && tools.every((item) => item.kind === 'deliver' || /写入/.test(item.title))
-      ? `▸ 写入 ${write.detail ?? write.title}`
-      : `▸ 阅读证据 · ${tools.length}`;
+    const lane = historical[0]?.lane;
+    const role = entryRole(historical[0]!);
+    const write = historical.find((item) => item.kind === 'deliver' || item.verb === 'write' || /写入/.test(item.title));
+    const callCount = historical.reduce((sum, item) => sum + (item.count ?? 1), 0);
+    const objects = uniqueLeafNames(historical.flatMap((item) => [
+      ...(item.object ? [item.object] : []),
+      ...(item.detail ? item.detail.split(/[·,]/) : []),
+    ]));
+    const title = write && historical.every((item) => item.kind === 'deliver' || item.verb === 'write' || /写入/.test(item.title))
+      ? `▸ 写入 ${write.detail ?? write.object ?? write.title}`
+      : objects.length > 0
+        ? `▸ 阅读证据 · ${callCount}次 · ${objects.length}项`
+        : `▸ 阅读证据 · ${callCount}`;
     out.push({
-      sequence: tools.at(-1)?.sequence ?? 0,
-      occurredAt: tools.at(-1)?.occurredAt ?? "",
-      source: tools[0]?.source ?? "HARNESS",
+      sequence: historical.at(-1)?.sequence ?? 0,
+      occurredAt: historical.at(-1)?.occurredAt ?? '',
+      source: historical[0]?.source ?? 'HARNESS',
       title,
       ...(lane ? { lane } : {}),
-      kind: "fold",
-      itemId: thinkFoldId(tools),
-      count: tools.length,
+      ...(role ? { role } : {}),
+      kind: 'fold',
+      itemId: thinkFoldId(historical),
+      count: callCount,
+      ...mergeRefs(historical),
+      ...(objects.length ? { detail: objects.join(' · '), object: objects.join(' · ') } : {}),
     });
+    out.push(...active);
     tools = [];
   };
   for (const entry of turn) {
-    if (entry.kind === "live" && entry.itemId?.startsWith("now:")) {
+    if (entry.kind === 'live' && entry.itemId?.startsWith('now:')) {
       flush();
       out.push(entry);
       continue;
     }
-    if (entry.kind === "investigate") {
+    const previous = tools.at(-1);
+    if (entry.kind === 'investigate' && entry.level !== 'error' && sameActivityScope(previous, entry)) {
       tools.push(entry);
       continue;
     }
@@ -176,18 +204,43 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
   return out;
 }
 
+function mergeRefs(entries: readonly TimelineEntry[]): { readonly eventRefs?: readonly import('./activity-index.js').ActivityEventRef[] } {
+  const refs = entries.reduce<readonly import('./activity-index.js').ActivityEventRef[]>(
+    (all, entry) => mergeEventRefs(all, entry.eventRefs),
+    [],
+  );
+  return refs.length ? { eventRefs: refs } : {};
+}
+
+function sameActivityScope(previous: TimelineEntry | undefined, next: TimelineEntry): boolean {
+  if (!previous) return true;
+  const previousRole = entryRole(previous);
+  const nextRole = entryRole(next);
+  if (previousRole !== nextRole) return false;
+  if (previous.sessionId && next.sessionId && previous.sessionId !== next.sessionId) return false;
+  if (previous.turnId && next.turnId && previous.turnId !== next.turnId) return false;
+  if (previous.lane && next.lane && previous.lane !== next.lane) return false;
+  return true;
+}
+
 export function collapseEndedThinkFolds(entries: readonly TimelineEntry[], expandedIds: readonly string[]): string[] {
   const turns = groupTurns(entries);
   if (turns.length <= 1) return [...expandedIds];
   const stale = new Set<string>();
   for (const turn of turns.slice(0, -1)) {
-    if (turn.some((entry) => entry.kind === "investigate")) stale.add(thinkFoldId(turn));
+    if (turn.some((entry) => entry.kind === 'investigate')) stale.add(thinkFoldId(turn));
   }
-  return expandedIds.filter((id) => !stale.has(id));
+  return expandedIds.filter((id) => !stale.has(id) && !id.startsWith('excerpt:'));
+}
+
+function turnFoldId(turn: readonly TimelineEntry[]): string {
+  const head = turn[0];
+  return head ? `fold:turn:${timelineIdentity(head)}` : 'fold:turn:empty';
 }
 
 function thinkFoldId(turn: readonly TimelineEntry[]): string {
-  return `fold:think:${turn[0]?.sequence ?? 0}`;
+  const head = turn[0];
+  return head ? `fold:think:${timelineIdentity(head)}` : 'fold:think:empty';
 }
 
 function foldLeafNames(detail: string | undefined): string[] {
@@ -199,7 +252,7 @@ export function expandFoldLeaves(entries: readonly TimelineEntry[], expandedIds:
   for (const entry of entries) {
     out.push(entry);
     if (entry.kind !== 'fold' || !entry.itemId || !expandedIds.has(entry.itemId)) continue;
-    for (const name of foldLeafNames(entry.detail)) {
+    for (const name of foldLeafNames(entry.detail ?? entry.object)) {
       out.push({
         sequence: entry.sequence,
         occurredAt: entry.occurredAt,
@@ -207,6 +260,7 @@ export function expandFoldLeaves(entries: readonly TimelineEntry[], expandedIds:
         title: `⎿ ${name}`,
         ...(entry.lane ? { lane: entry.lane } : {}),
         ...(entry.voice ? { voice: entry.voice } : {}),
+        ...(entry.role ? { role: entry.role } : {}),
       });
     }
   }
@@ -216,7 +270,7 @@ export function expandFoldLeaves(entries: readonly TimelineEntry[], expandedIds:
 function wouldHideInThinkFold(turn: readonly TimelineEntry[], target: TimelineEntry): boolean {
   let tools: TimelineEntry[] = [];
   for (const entry of turn) {
-    if (entry.kind === "investigate" || entry.kind === "live") {
+    if (entry.kind === 'investigate' || entry.kind === 'live') {
       tools.push(entry);
       continue;
     }

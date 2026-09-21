@@ -1,4 +1,5 @@
 import { matchesKey } from '@earendil-works/pi-tui';
+import { listActions, matchActionKey, optionalMode } from './action-model.js';
 import { applyTextEdit } from './text-edit.js';
 import { classifyHomeCommand, completeUniqueHomeCommand } from './home-command.js';
 import { isTextInput, slashCommands, unwrapBracketedPaste } from './format.js';
@@ -102,14 +103,16 @@ export type GlobalInputContext = {
   readonly page: string;
   readonly editingText: boolean;
   readonly helpOpen: boolean;
+  readonly activityDetailOpen?: boolean;
   readonly startupActive?: boolean;
 };
 
-export type GlobalInputAction = 'cancel' | 'close' | 'hide-help' | 'show-help';
+export type GlobalInputAction = 'cancel' | 'close' | 'hide-help' | 'show-help' | 'hide-detail';
 
 export function dispatchGlobalInput(ctx: GlobalInputContext, data: string): { action: GlobalInputAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'ctrl+c')) return { action: ctx.page === 'running' || ctx.startupActive ? 'cancel' : 'close', consume: true };
+  if (ctx.activityDetailOpen && matchesKey(input, 'escape')) return { action: 'hide-detail', consume: true };
   if (ctx.helpOpen && matchesKey(input, 'escape')) return { action: 'hide-help', consume: true };
   if (!ctx.editingText && matchesKey(input, '?')) return { action: 'show-help', consume: true };
   return undefined;
@@ -181,12 +184,11 @@ export function dispatchPreflightInput(data: string): { action: PreflightAction;
   return undefined;
 }
 
-export type ConfirmAction = 'home' | 'models' | 'run';
+export type ConfirmAction = 'models' | 'run';
 
 export function dispatchConfirmInput(data: string): { action: ConfirmAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
-  if (matchesKey(input, 'b')) return { action: 'models', consume: true };
+  if (matchesKey(input, 'escape') || matchesKey(input, 'b')) return { action: 'models', consume: true };
   if (matchesKey(input, 'enter')) return { action: 'run', consume: true };
   return undefined;
 }
@@ -310,18 +312,42 @@ export function dispatchRunningKeys(data: string): { action: RunningAction; cons
   return undefined;
 }
 
-export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'open-history-final' | 'open-candidate-final' | 'compare' | 'home';
+export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'open-history-final' | 'open-candidate-final' | 'compare' | 'home' | 'activate-primary';
 
-export function dispatchResultKeys(data: string): { action: ResultAction; consume: true } | undefined {
-  const input = unwrapBracketedPaste(data);
-  if (input === 'c' || input === 'C') return { action: 'compare', consume: true };
-  if (matchesKey(input, 'o')) return { action: 'open-report', consume: true };
-  if (matchesKey(input, 'h')) return { action: 'open-history-final', consume: true };
-  if (matchesKey(input, 'f')) return { action: 'open-candidate-final', consume: true };
-  if (matchesKey(input, 't')) return { action: 'open-trace', consume: true };
-  if (matchesKey(input, 'w')) return { action: 'open-replica', consume: true };
-  if (matchesKey(input, 'enter') || matchesKey(input, 'b') || matchesKey(input, 'escape')) return { action: 'home', consume: true };
-  return undefined;
+export type ResultKeyContext = {
+  readonly comparePending?: boolean;
+  readonly artifacts?: {
+    readonly report?: boolean;
+    readonly historyFinal?: boolean;
+    readonly candidateFinal?: boolean;
+    readonly trace?: boolean;
+    readonly replica?: boolean;
+  };
+};
+
+export function dispatchResultKeys(
+  data: string,
+  ctx: ResultKeyContext = {},
+): { action: ResultAction; consume: true; enabled?: boolean } | undefined {
+  const actions = listActions({
+    page: 'result',
+    locale: 'en',
+    mode: optionalMode({
+      ...(ctx.comparePending !== undefined ? { comparePending: ctx.comparePending } : {}),
+    }),
+    ...(ctx.artifacts !== undefined ? { artifacts: ctx.artifacts } : {}),
+  });
+  const matched = matchActionKey(actions, data, { includeDisabled: true });
+  if (!matched) return undefined;
+  if (matched.id === 'show-help') return undefined;
+  if (matched.id === 'activate-primary') {
+    return { action: 'activate-primary', consume: true, enabled: matched.enabled };
+  }
+  return {
+    action: matched.id as ResultAction,
+    consume: true,
+    enabled: matched.enabled,
+  };
 }
 
 export function dispatchErrorKeys(data: string): { action: 'return'; consume: true } | undefined {

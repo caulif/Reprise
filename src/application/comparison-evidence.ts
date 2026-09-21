@@ -323,7 +323,11 @@ export class ComparisonEvidenceCatalog {
     const previousSnapshot = this.snapshot();
     const drafts: ComparisonMediaRecord[] = [];
     const results: RegisterEvidenceResult[] = [];
-    for (const input of inputs) {
+    results.length = inputs.length;
+    const draftIndexByInput: number[] = [];
+    const draftInputIndexes: number[] = [];
+    const draftIndexByKey = new Map<string, number>();
+    for (const [index, input] of inputs.entries()) {
       const sourceRefs = [...(input.sourceRefs ?? [])];
       if (sourceRefs.some((ref) => !this.#hasSourceRef(ref))) {
         return inputs.map(() => ({ status: "rejected", code: "missing_source", message: "Unknown sourceRef for media batch." }));
@@ -335,14 +339,36 @@ export class ComparisonEvidenceCatalog {
         && item.side === input.record.side
         && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
       if (existing?.shortRef) {
-        results.push({ status: "registered", revision: this.#revision, shortRef: existing.shortRef, contentHash, inspectPath: existing.inspectPath, origin: input.origin, deduplicated: true });
+        try {
+          results[index] = await this.#finishExistingRegistration({
+            kind: "media",
+            shortRef: existing.shortRef,
+            contentHash,
+            inspectPath: existing.inspectPath,
+            origin: input.origin,
+            sourceRefs,
+            artifactRefs: [existing.reportHref],
+            ...(derivation ? { derivation } : {}),
+          });
+        } catch (error) {
+          return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
+        }
         continue;
       }
       const draft: ComparisonMediaRecord = { ...input.record, contentHash, ...(derivation ? { derivation } : {}) };
       if (!Value.Check(ComparisonMediaRecordSchema, draft)) {
         return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Media record failed schema validation." }));
       }
-      drafts.push(draft);
+      const key = mediaRegistrationKey(contentHash, draft.side, derivation);
+      const existingDraftIndex = draftIndexByKey.get(key);
+      if (existingDraftIndex !== undefined) {
+        draftIndexByInput[index] = existingDraftIndex;
+      } else {
+        draftIndexByKey.set(key, drafts.length);
+        draftIndexByInput[index] = drafts.length;
+        draftInputIndexes.push(index);
+        drafts.push(draft);
+      }
     }
     const assigned = appendMediaShortRefs(this.#media, drafts);
     if (assigned.length !== drafts.length) return inputs.map(() => ({ status: "rejected", code: "io_failed", message: "Failed to allocate media shortRef." }));
@@ -353,42 +379,73 @@ export class ComparisonEvidenceCatalog {
       this.#media = previous;
       return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
     }
-    let assignedIndex = 0;
-    const batchPayloads: ComparisonEvidenceRegisteredPayload[] = [];
-    for (const input of inputs) {
-      const sourceRefs = [...(input.sourceRefs ?? [])];
-      const contentHash = input.record.contentHash;
-      const derivation = input.derivation ?? input.record.derivation;
-      const existing = previous.find((item) => item.contentHash === contentHash && item.side === input.record.side && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
-      if (existing?.shortRef) continue;
-      const item = assigned[assignedIndex++];
-      if (!item) continue;
-      const payload: ComparisonEvidenceRegisteredPayload = {
-        schemaVersion: 1, attemptId: this.#attemptId, revision: this.#revision, shortRef: item.shortRef!, kind: "media",
-        origin: input.origin, contentHash: item.contentHash!, sourceRefs, artifactRefs: [item.reportHref],
-        ...(derivation ? { derivation } : {}),
-      };
-      this.#pendingEmits.set(item.shortRef!, payload);
-      batchPayloads.push(payload);
-      results.push({ status: "registered", revision: this.#revision, shortRef: item.shortRef!, contentHash: item.contentHash!, inspectPath: item.inspectPath, origin: input.origin, deduplicated: false });
-    }
+    const batchPayloads = this.#mediaBatchPayloads(inputs, assigned, draftInputIndexes);
     try {
       await this.#emitBatch(batchPayloads);
     } catch (error) {
-      this.#media = previous;
-      this.#revision = previousSnapshot.revision;
-      for (const pendingRef of assigned.map((entry) => entry.shortRef).filter((ref): ref is string => Boolean(ref))) {
-        this.#pendingEmits.delete(pendingRef);
-        this.#emittedShortRefs.delete(pendingRef);
+      // Batch sinks provide an atomic append contract and can be rolled back
+      // when their write fails. The legacy single-payload sink persists first;
+      // keep that media and its pending payloads so a later registration can
+      // retry the missing event without duplicating the record.
+      if (this.#emitRegisteredBatch) {
+        this.#media = previous;
+        this.#revision = previousSnapshot.revision;
+        for (const pendingRef of assigned.map((entry) => entry.shortRef).filter((ref): ref is string => Boolean(ref))) {
+          this.#pendingEmits.delete(pendingRef);
+          this.#emittedShortRefs.delete(pendingRef);
+        }
+        await this.#restorePersistedSnapshot(previousSnapshot).catch(() => undefined);
       }
-      await this.#restorePersistedSnapshot(previousSnapshot).catch(() => undefined);
       return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
     }
+    this.#fillMediaBatchResults(results, inputs, assigned, draftInputIndexes, draftIndexByInput);
     for (const payload of batchPayloads) {
       this.#pendingEmits.delete(payload.shortRef);
       this.#emittedShortRefs.add(payload.shortRef);
     }
     return results;
+  }
+
+  #mediaBatchPayloads(
+    inputs: readonly RegisterMediaInput[],
+    assigned: readonly ComparisonMediaRecord[],
+    draftInputIndexes: readonly number[],
+  ): ComparisonEvidenceRegisteredPayload[] {
+    const payloads: ComparisonEvidenceRegisteredPayload[] = [];
+    for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
+      const input = inputs[inputIndex]!;
+      const item = assigned[draftIndex];
+      if (!item) continue;
+      const derivation = input.derivation ?? input.record.derivation;
+      const payload: ComparisonEvidenceRegisteredPayload = {
+        schemaVersion: 1, attemptId: this.#attemptId, revision: this.#revision, shortRef: item.shortRef!, kind: "media",
+        origin: input.origin, contentHash: item.contentHash!, sourceRefs: [...(input.sourceRefs ?? [])], artifactRefs: [item.reportHref],
+        ...(derivation ? { derivation } : {}),
+      };
+      this.#pendingEmits.set(item.shortRef!, payload);
+      payloads.push(payload);
+    }
+    return payloads;
+  }
+
+  #fillMediaBatchResults(
+    results: RegisterEvidenceResult[],
+    inputs: readonly RegisterMediaInput[],
+    assigned: readonly ComparisonMediaRecord[],
+    draftInputIndexes: readonly number[],
+    draftIndexByInput: readonly number[],
+  ): void {
+    for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
+      const item = assigned[draftIndex];
+      if (!item) continue;
+      for (const [index, duplicateDraftIndex] of draftIndexByInput.entries()) {
+        if (duplicateDraftIndex !== draftIndex) continue;
+        results[index] = {
+          status: "registered", revision: this.#revision, shortRef: item.shortRef!, contentHash: item.contentHash!,
+          inspectPath: item.inspectPath, origin: inputs[index]!.origin, deduplicated: index !== inputIndex,
+        };
+      }
+    }
   }
 
   async #finishExistingRegistration(input: {
@@ -601,6 +658,14 @@ export function mediaDerivationKey(derivation: ComparisonMediaDerivation | undef
     samples,
     derivation.capturedAt ?? "",
   ].join("|");
+}
+
+function mediaRegistrationKey(
+  contentHash: string,
+  side: ComparisonMediaRecord["side"],
+  derivation: ComparisonMediaDerivation | undefined,
+): string {
+  return `${contentHash}|${side}|${mediaDerivationKey(derivation)}`;
 }
 
 function registrationDerivation(

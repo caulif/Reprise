@@ -1,4 +1,5 @@
 import type { ExperimentResult } from '../application/experiment.js';
+import type { HistoryExperiment } from '../application/experiment-history-list.js';
 import type { RunOutcome } from '../core/schema.js';
 import { t, type Locale, type MessageKey } from './i18n.js';
 
@@ -28,6 +29,7 @@ export type ResultPresentation = {
   readonly statusLabelKey: MessageKey;
   readonly statusTone: ResultTone;
   readonly taskLabel: string;
+  readonly terminationLabel: string;
   readonly cleanupLabel: string;
   readonly comparisonLabel: string;
   readonly comparisonKind: ComparisonPresentationKind;
@@ -58,6 +60,26 @@ export function deriveResultPresentationFromResult(
   return deriveResultPresentation(resultPresentationInputFrom(result, comparePending), locale);
 }
 
+/** Map HistoryExperiment / recentExperiment facts into the same presentation input as live results. */
+export function resultPresentationInputFromHistory(item: HistoryExperiment): ResultPresentationInput {
+  return {
+    task: { status: historyTaskStatus(item.taskStatus) },
+    termination: {
+      kind: historyTerminationKind(item.outcome),
+      code: item.outcome?.trim() || 'history.unknown',
+    },
+    cleanup: { status: historyCleanupStatus(item.cleanupStatus) },
+    comparison: historyComparisonResult(item),
+  };
+}
+
+export function deriveResultPresentationFromHistory(
+  item: HistoryExperiment,
+  locale: Locale,
+): ResultPresentation {
+  return deriveResultPresentation(resultPresentationInputFromHistory(item), locale);
+}
+
 export function deriveResultPresentation(input: ResultPresentationInput, locale: Locale): ResultPresentation {
   const comparisonKind = classifyComparison(input.comparison, input.comparePending === true);
   const terminationTone = terminationToneOf(input.termination.kind);
@@ -68,6 +90,7 @@ export function deriveResultPresentation(input: ResultPresentationInput, locale:
     statusLabelKey: status.labelKey,
     statusTone: status.tone,
     taskLabel: taskLabelOf(input.task.status, locale),
+    terminationLabel: t(locale, statusKeyForTermination(input.termination.kind)),
     cleanupLabel: cleanupLabelOf(input.cleanup?.status, locale),
     comparisonLabel: comparisonLabelOf(comparisonKind, input.comparison, locale),
     comparisonKind,
@@ -186,10 +209,12 @@ function messageKeyOf(
   if (comparison === 'failed') return 'resultCompareFailed';
   if (comparison === 'insufficient_evidence') return 'resultCompareInsufficient';
   if (comparison === 'unknown') return 'resultCompareUnknown';
+  // A cancelled candidate remains cancelled even when the deferred comparison
+  // gate is skipped as part of the same cancellation race.
+  if (termination === 'cancelled') return 'resultCancelled';
   if (comparison === 'skipped' || comparison === 'pending') return 'resultSkipped';
   if (termination === 'blocked') return 'resultBlocked';
   if (termination === 'failed') return 'resultFailed';
-  if (termination === 'cancelled') return 'resultCancelled';
   if (termination === 'completed') return 'resultCompleted';
   return 'resultOther';
 }
@@ -228,4 +253,117 @@ function comparisonLabelOf(
 function worseTone(left: ResultTone, right: ResultTone): ResultTone {
   const rank: Record<ResultTone, number> = { ok: 0, neutral: 1, warn: 2, danger: 3 };
   return rank[left] >= rank[right] ? left : right;
+}
+
+const TASK_STATUSES = new Set<RunOutcome['task']['status']>([
+  'apparently_completed',
+  'incomplete',
+  'indeterminate',
+  'not_assessed',
+]);
+
+const TERMINATION_KINDS = new Set<RunOutcome['termination']['kind']>([
+  'completed',
+  'limit_reached',
+  'stalled',
+  'cancelled',
+  'blocked',
+  'failed',
+  'uncertain',
+]);
+
+const CLEANUP_STATUSES = new Set<RunOutcome['cleanup']['status']>([
+  'not_needed',
+  'complete',
+  'incomplete',
+  'unknown',
+]);
+
+type FailureKind = NonNullable<
+  Extract<ExperimentResult['comparison']['result'], { status: 'failed' }>['failure']['kind']
+>;
+type FailureCode = Extract<ExperimentResult['comparison']['result'], { status: 'failed' }>['failure']['code'];
+
+const FAILURE_KINDS = new Set<string>([
+  'authentication',
+  'rate_limited',
+  'transient_network',
+  'transient_upstream',
+  'tool',
+  'timeout',
+  'protocol',
+  'cancelled',
+  'unknown',
+]);
+
+const FAILURE_CODES = new Set<string>([
+  'agent_timeout',
+  'agent_failure',
+  'invalid_output',
+  'privacy_blocked',
+  'host_zone_modified',
+  'invalid_envelope',
+  'evidence_unresolved',
+  'media_unavailable',
+  'report_incomplete',
+  'publication_failed',
+]);
+
+function historyTaskStatus(status: string | undefined): RunOutcome['task']['status'] {
+  if (status && TASK_STATUSES.has(status as RunOutcome['task']['status'])) {
+    return status as RunOutcome['task']['status'];
+  }
+  return 'not_assessed';
+}
+
+function historyTerminationKind(outcome: string | undefined): RunOutcome['termination']['kind'] {
+  if (outcome && TERMINATION_KINDS.has(outcome as RunOutcome['termination']['kind'])) {
+    return outcome as RunOutcome['termination']['kind'];
+  }
+  // interrupted / record unread / unknown committed outcomes are not success.
+  return 'uncertain';
+}
+
+function historyCleanupStatus(status: string | undefined): RunOutcome['cleanup']['status'] {
+  if (status && CLEANUP_STATUSES.has(status as RunOutcome['cleanup']['status'])) {
+    return status as RunOutcome['cleanup']['status'];
+  }
+  return 'unknown';
+}
+
+function historyComparisonResult(
+  item: HistoryExperiment,
+): ExperimentResult['comparison']['result'] {
+  const status = item.comparisonStatus;
+  if (!status) {
+    // Missing comparison.json is not "skipped success"; leave classify as unknown via non-union cast.
+    return { status: 'unknown' } as unknown as ExperimentResult['comparison']['result'];
+  }
+  if (status === 'skipped') return { status: 'skipped' };
+  if (status === 'cancelled') return { status: 'cancelled' };
+  if (status === 'failed') {
+    const stored = item.comparisonFailure?.trim();
+    const kind = stored && FAILURE_KINDS.has(stored) ? (stored as FailureKind) : undefined;
+    const code = stored && FAILURE_CODES.has(stored)
+      ? (stored as FailureCode)
+      : ('agent_failure' as FailureCode);
+    return {
+      status: 'failed',
+      failure: {
+        code,
+        message: stored ?? 'history',
+        attempts: 0,
+        ...(kind ? { kind } : {}),
+      },
+    };
+  }
+  if (status === 'completed') {
+    const valueStatus = item.comparisonDetail === 'insufficient_evidence' ? 'insufficient_evidence' : 'completed';
+    return {
+      status: 'completed',
+      sessionId: 'history',
+      value: { status: valueStatus, reportPath: 'report.html', evidenceRefs: [] },
+    };
+  }
+  return { status: 'unknown' } as unknown as ExperimentResult['comparison']['result'];
 }

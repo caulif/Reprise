@@ -3,8 +3,10 @@ import { createTheme } from './theme.js';
 import { selectedIndexAfterFold } from './fold-process.js';
 import { projectTimelineView } from './timeline-view.js';
 import { hitFileLink } from './format.js';
+import { artifactsFromResult, isActionEnabled, listActions } from './action-model.js';
+import { t } from './i18n.js';
 import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
-import { homePointerAction } from './pages/home.js';
+import { homeActions, homePointerAction } from './pages/home.js';
 import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
 import { resolveResultPathLinks } from '../application/result-paths.js';
 import { resultPointerAction, renderResultWithHits } from './pages/result.js';
@@ -13,6 +15,7 @@ import { timelineIdentity } from './timeline-read.js';
 import { bodyCellAt } from './workbench-layout.js';
 import { measureWorkbenchGeometry } from './workbench.js';
 import type { ControllerHandle } from './controller-input.js';
+import { resolveCompareChoice } from './controller-run.js';
 
 export function consumeWheel(data: string): Consume | undefined {
   return dispatchListPointer(data) ? { consume: true } : undefined;
@@ -56,17 +59,31 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (!c.result) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
   if (!cell) return { consume: true };
+  if (cell.bodyRow < 0) return { consume: true };
   const { lines, rowHits } = renderResultWithHits(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
   const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
   const line = lines[bodyRow];
   const href = line ? hitFileLink(line, cell.col) : undefined;
   const paths = resolveResultPathLinks(c.result);
   const action = resultPointerAction(lines, bodyRow, cell.col, c.locale, paths, rowHits);
-  if (action === 'compare') {
-    if (c.compareChoice) {
-      c.compareChoice.resolve(true);
-      c.compareChoice = undefined;
+  if (!action) return { consume: true };
+  const artifacts = artifactsFromResult(c.result);
+  const actions = listActions({
+    page: 'result',
+    locale: c.locale,
+    mode: { comparePending: Boolean(c.compareChoice) },
+    artifacts,
+  });
+  if (!isActionEnabled(actions, action)) {
+    const reason = actions.find((item) => item.id === action)?.disabledReasonKey;
+    if (reason) {
+      c.message = t(c.locale, reason);
+      c.render();
     }
+    return { consume: true };
+  }
+  if (action === 'compare') {
+    resolveCompareChoice(c, true);
     return { consume: true };
   }
   if (action === 'open-report') {
@@ -84,7 +101,7 @@ export function applyHomePointer(c: ControllerHandle, data: string): Consume | u
   const pointer = dispatchListPointer(data);
   if (!pointer) return undefined;
   if (pointer.action === 'up' || pointer.action === 'down') {
-    if (c.showSuggestions) {
+    if (c.showSuggestions || c.composer.startsWith('/')) {
       const cycled = dispatchHomeComposer({
         composer: c.composer,
         cursor: c.composerCursor,
@@ -97,22 +114,61 @@ export function applyHomePointer(c: ControllerHandle, data: string): Consume | u
         c.syncCommandOverlay();
         c.render();
       }
+      return { consume: true };
+    }
+    const model = {
+      taskCase: c.taskCase,
+      recentExperiment: c.recentExperiment,
+      hasApiConfig: c.hasSavedModelConfig,
+      hasUsableAuth: c.hasSavedModelConfig && c.harnessAuthOk,
+      composer: c.composer,
+      showSuggestions: c.showSuggestions,
+      locale: c.locale,
+      focus: c.homeFocus,
+    };
+    const actions = homeActions(model);
+    if (actions.length) {
+      const current = Math.max(0, actions.indexOf(c.homeFocus));
+      const next = (current + (pointer.action === 'up' ? -1 : 1) + actions.length) % actions.length;
+      c.homeFocus = actions[next] ?? 'new-replay';
+      c.render();
     }
     return { consume: true };
   }
   if (pointer.action !== 'click' || pointer.row === undefined) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col ?? 1);
   if (!cell) return { consume: true };
-  if (homePointerAction({
+  const action = homePointerAction({
     taskCase: c.taskCase,
     recentExperiment: c.recentExperiment,
-    hasApiConfig: true,
+    hasApiConfig: c.hasSavedModelConfig,
+    hasUsableAuth: c.hasSavedModelConfig && c.harnessAuthOk,
     composer: c.composer,
     showSuggestions: c.showSuggestions,
     locale: c.locale,
-  }, cell.bodyRow) === 'open-recent') {
-    return c.openRecentExperiment();
+    focus: c.homeFocus,
+  }, cell.bodyRow);
+  if (!action) return { consume: true };
+  c.homeFocus = action;
+  if (action === 'open-recent') return c.openRecentExperiment();
+  if (action === 'new-replay') {
+    c.message = t(c.locale, 'discoveringSessions');
+    c.render();
+    void c.loadSessions();
+    return { consume: true };
   }
+  if (action === 'history') {
+    c.message = t(c.locale, 'readingHistory');
+    c.render();
+    void c.loadHistory();
+    return { consume: true };
+  }
+  if (action === 'config') {
+    void c.openConfig();
+    return { consume: true };
+  }
+  c.message = `${t(c.locale, 'helpCommands')}.`;
+  c.render();
   return { consume: true };
 }
 
@@ -125,11 +181,12 @@ export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Co
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
   if (!cell) return { consume: true };
   const lines = renderHistoryDetail(createTheme(cell.width), cell.width, c.historyDetail, c.locale);
-  const action = historyDetailPointerAction(lines, cell.bodyRow, cell.col);
-  if (action === 'open-report' && !('taskCase' in c.historyDetail)) {
-    return c.openReport(c.historyDetail.path, c.historyDetail.reportPath);
+  const detail = c.historyDetail;
+  const action = historyDetailPointerAction(lines, cell.bodyRow, cell.col, 'taskCase' in detail ? undefined : detail);
+  if (action?.action === 'open-report' && !('taskCase' in detail)) {
+    return c.openReport(detail.path, action.reportPath);
   }
-  if (action === 'open-local') return c.openLocal(c.historyDetail.path);
+  if (action?.action === 'open-local') return c.openLocal(detail.path);
   return undefined;
 }
 
@@ -144,6 +201,7 @@ export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume
   // Live status / follow chrome sits in the body allocation but is not a hit target.
   const contentRows = Math.max(0, window.height - layout.chrome);
   if (cell.bodyRow >= contentRows) return { consume: true };
+  if (cell.bodyRow < 0) return { consume: true };
   const hit = hitAtBodyRow(layout.hits, cell.bodyRow);
   if (hit?.fold && hit.itemId) {
     c.expandedFolds = c.expandedFolds.includes(hit.itemId)
@@ -163,12 +221,6 @@ export function clickCanvasAt(c: ControllerHandle, terminalRow: number): Consume
 }
 
 export function moveTimelineVisible(c: ControllerHandle, amount: number): Consume {
-  if (c.readingMode && Math.abs(amount) >= 10) {
-    c.timelineReadOffset = Math.max(0, (c.timelineReadOffset ?? 0) + amount);
-    c.timelineFollowing = false;
-    c.render();
-    return { consume: true };
-  }
   const entries = c.visibleTimeline();
   const next = Math.max(0, Math.min(Math.max(0, entries.length - 1), c.timelineSelected + amount));
   const window = canvasWindow(c);

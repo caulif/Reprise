@@ -2,8 +2,9 @@ import type { IntakeTui } from "./intake-tui.js";
 import { importPacks } from "../application/intake-catalog.js";
 import { draftForConfig, emptyHarnessConfigDraft } from "../infrastructure/harness-model-config.js";
 import { classifyAgentFailure } from '../infrastructure/agent/failure.js';
+import { artifactsFromResult, listActions } from "./action-model.js";
 import { operatorErrorMessage, TIMELINE_FILTERS } from "./format.js";
-import { HelpOverlay, commandSelectList } from "./overlays.js";
+import { ActivityDetailOverlay, HelpOverlay, activityDetailModel, commandSelectList, showsActivityDetailSidebar } from "./overlays.js";
 import { handleControllerInput } from "./controller-input.js";
 import { productContext as activeProductContext, view as projectView } from "./controller-view.js";
 import { discardRecovery, stopRunClock } from "./controller-run.js";
@@ -43,12 +44,12 @@ export function IntakeTui_move(this: IntakeTui, amount: number): { consume: true
   }
 
 export function IntakeTui_scheduleTimelineRender(this: IntakeTui): void {
-    if (this.readingMode) return;
+    // Reading mode freezes the body viewport (follow/anchor), not chrome. Still schedule so
+    // stage/status/new-activity count refresh while the user scrolls history.
     if (this.timelineRenderQueued) return;
     this.timelineRenderQueued = true;
     this.queueTimelineRender(() => {
       this.timelineRenderQueued = false;
-      if (this.readingMode) return;
       if (this.page === "running") this.render();
     });
   }
@@ -68,6 +69,8 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
       && cache.preparePhase === this.preparePhase
       && cache.runPhase === this.runPhase
       && cache.expandedFoldsKey === foldsKey
+      && cache.surfaceScope === this.surfaceScope
+      && cache.processExpanded === this.processExpanded
     ) {
       return cache.result;
     }
@@ -84,7 +87,12 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
             : this.page === "running"
               ? "candidate"
               : "picker";
-    const result = filterTraceForSurface(visible, surface);
+    const scope = this.page === "result"
+      ? (this.processExpanded
+        ? (this.surfaceScope === "comparison" ? "comparison" : "candidate")
+        : "overview")
+      : (this.surfaceScope || (recovering ? "recovery" : "candidate"));
+    const result = filterTraceForSurface(visible, surface, scope);
     this.visibleTimelineCache = {
       timelineRevision: this.timelineRevision,
       filterIndex,
@@ -92,6 +100,8 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
       preparePhase: this.preparePhase,
       runPhase: this.runPhase,
       expandedFoldsKey: foldsKey,
+      surfaceScope: this.surfaceScope,
+      processExpanded: this.processExpanded,
       result,
     };
     return result;
@@ -116,10 +126,19 @@ export function IntakeTui_showError(this: IntakeTui, error: unknown, returnPage:
     this.runFailed = false;
     this.cleanupStatus = undefined;
     this.lastRuntimeEventAt = undefined;
+    this.lastObservedEventAt = undefined;
+    this.lastVisibleActivityAt = undefined;
     this.lastRuntimeEventKind = undefined;
     this.modelOutputSeen = false;
     this.reconnectCount = 0;
     this.reconnectTotal = 0;
+    this.comparisonAttemptId = undefined;
+    this.recoveryStartedAt = 0;
+    this.recoveryEndedAt = 0;
+    this.candidateStartedAt = 0;
+    this.candidateEndedAt = 0;
+    this.comparisonStartedAt = 0;
+    this.comparisonEndedAt = 0;
     stopRunClock(this);
     this.errorReturnPage = returnPage;
     this.page = "error";
@@ -148,6 +167,7 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.configPendingToggle = false;
     this.historyDetail = undefined;
     this.hideHelp();
+    this.hideActivityDetail();
     this.hideCommandOverlay();
     this.page = "home";
     this.composer = "";
@@ -161,6 +181,7 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.finding = false;
     this.findQuery = "";
     this.findCursor = 0;
+    this.findRestore = undefined;
     this.readingMode = false;
     this.intakeLevel = "projects";
     this.preparePhase = undefined;
@@ -181,6 +202,7 @@ export function IntakeTui_close(this: IntakeTui): { consume: true } {
     this.compareChoice = undefined;
     stopRunClock(this);
     this.hideHelp();
+    this.hideActivityDetail();
     this.hideCommandOverlay();
     // An experiment that started but never reached the running page would otherwise outlive the TUI.
     const experiment = this.activeExperiment;
@@ -224,13 +246,29 @@ export function IntakeTui_isEditingText(this: IntakeTui): boolean {
   }
 
 export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
+    const preparing = this.preparePhase === 'check' || this.preparePhase === 'copy' || this.runPhase === 'recovery';
+    const actions = listActions({
+      page: this.page,
+      locale: this.locale,
+      mode: {
+        finding: this.finding,
+        reading: this.readingMode,
+        preparing,
+        comparePending: Boolean(this.compareChoice),
+        findAllowed: !preparing,
+        helpOpen: false,
+      },
+      artifacts: artifactsFromResult(this.result),
+    });
     if (typeof this.tui.showOverlay === "function") {
       this.hideHelp();
+      this.hideActivityDetail();
       this.helpOverlay = this.tui.showOverlay(
         new HelpOverlay(
           createTheme(this.tui.terminal?.columns ?? 120),
           this.page,
           this.locale,
+          actions,
         ),
       );
       this.message = t(this.locale, "helpCommands");
@@ -245,6 +283,50 @@ export function IntakeTui_hideHelp(this: IntakeTui): void {
     this.helpOverlay?.hide();
     this.helpOverlay = undefined;
     this.inlineHelp = false;
+  }
+
+export function IntakeTui_showActivityDetail(this: IntakeTui, entry: TimelineEntry): { consume: true } {
+    if (this.activityDetailEntry !== entry) {
+      this.activityDetailRestore = {
+        ...(this.timelineAnchor ? { anchor: this.timelineAnchor } : {}),
+        offset: this.timelineReadOffset,
+        following: this.timelineFollowing,
+      };
+      this.activityDetailOffset = 0;
+    }
+    this.activityDetailEntry = entry;
+    const theme = createTheme(this.tui.terminal?.columns ?? 120);
+    const product = this.selectedCandidate?.productId
+      ?? this.candidateProductId
+      ?? this.activeProductId
+      ?? '';
+    const model = activityDetailModel(entry, product, this.locale, this.activityDetailOffset);
+    if (showsActivityDetailSidebar(theme)) {
+      // Wide density: detail is rendered beside the timeline via view projection.
+      this.activityDetailOverlay?.hide();
+      this.activityDetailOverlay = undefined;
+    } else if (typeof this.tui.showOverlay === 'function') {
+      this.activityDetailOverlay?.hide();
+      this.activityDetailOverlay = this.tui.showOverlay(
+        new ActivityDetailOverlay(theme, model, this.locale),
+      );
+    }
+    this.render();
+    return { consume: true };
+  }
+
+export function IntakeTui_hideActivityDetail(this: IntakeTui): void {
+    this.activityDetailOverlay?.hide();
+    this.activityDetailOverlay = undefined;
+    this.activityDetailEntry = undefined;
+    this.activityDetailOffset = 0;
+    const restore = this.activityDetailRestore;
+    this.activityDetailRestore = undefined;
+    if (restore) {
+      this.timelineFollowing = restore.following;
+      this.timelineReadOffset = restore.offset;
+      if (restore.anchor) this.timelineAnchor = restore.anchor;
+    }
   }
 
 export function IntakeTui_syncCommandOverlay(this: IntakeTui): void {
@@ -297,7 +379,7 @@ export function IntakeTui_setMouseReporting(this: IntakeTui, enabled: boolean): 
   }
 
 export function IntakeTui_render(this: IntakeTui, immediate = false): void {
-    if (this.readingMode && !immediate) return;
+    // Do not short-circuit on readingMode: fixed chrome must update while the body stays anchored.
     this.workbench.invalidate();
     if (immediate) this.tui.renderNow();
     else this.tui.requestRender();

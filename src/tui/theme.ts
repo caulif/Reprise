@@ -110,6 +110,10 @@ function resolveColorMode(env: NodeJS.ProcessEnv = process.env, isTty = Boolean(
   return 'ansi';
 }
 
+export function resolveColorModeForTest(env: NodeJS.ProcessEnv, isTty: boolean): ColorMode {
+  return resolveColorMode(env, isTty);
+}
+
 /** Call once before the TUI starts so Windows conhost / PowerShell actually paint ANSI. */
 export function enableTerminalColor(): void {
   if (process.env.NO_COLOR || process.env.TERM === 'dumb') return;

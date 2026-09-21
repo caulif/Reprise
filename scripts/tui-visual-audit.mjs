@@ -213,22 +213,22 @@ async function main() {
   }));
   await intakeApp.start();
   enterCommand(intakeApp, '/intake');
-  await waitFor(() => /Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list');
+  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list');
   await push('08c-products-wide', 120, intake.render(120));
   await push('08d-products-compact', 60, intake.render(60));
   intakeApp.handleInput('\u001b[B');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a project|先选项目/.test(intake.render(120)), 'Claude project list');
+  await waitFor(() => /Choose a project|先选项目|Projects ·|项目 ·/.test(intake.render(120)), 'Claude project list');
   await push('08e-claude-projects-wide', 120, intake.render(120));
   intakeApp.handleInput('\r');
   await waitFor(() => /Review the product intake flow/.test(intake.render(120)), 'Claude session list');
   await push('08f-claude-sessions-wide', 120, intake.render(120));
   intakeApp.handleInput('\b');
   intakeApp.handleInput('\b');
-  await waitFor(() => /Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list after Claude');
+  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list after Claude');
   intakeApp.handleInput('\u001b[A');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a project|先选项目/.test(intake.render(120)), 'Codex project list');
+  await waitFor(() => /Choose a project|先选项目|Projects ·|项目 ·/.test(intake.render(120)), 'Codex project list');
   intakeApp.handleInput('\u001b[B');
   intakeApp.handleInput('\r');
   await waitFor(() => /Choose a historical session|选择一条历史会话/.test(intake.render(120)), 'CJK session list');
@@ -236,22 +236,22 @@ async function main() {
   await push('10-sessions-compact', 60, intake.render(60));
   await push('11-sessions-cjk-selected', 120, intake.render(120));
   intakeApp.handleInput('\r');
-  await waitFor(() => /Session start:|会话起点：/.test(intake.render(120)), 'CJK inspection');
+  await waitFor(() => /Task text:|任务原文：|Session start:|会话起点：/.test(intake.render(120)), 'CJK inspection');
   await push('11b-inspection-review', 120, intake.render(120));
   intakeApp.handleInput('\r');
   await waitFor(() => /is current|当前任务/.test(intake.render(120)), { describe: 'home after CJK freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('12-home-after-cjk-freeze', 120, intake.render(120));
   enterCommand(intakeApp, '/intake');
-  await waitFor(() => /Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list after freeze');
+  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list after freeze');
   intakeApp.handleInput('\r');
   await waitFor(() => /Choose a historical session|Choose a project|选择一条历史会话|先选项目/.test(intake.render(120)), 'intake after freeze');
   if (/Choose a historical session|选择一条历史会话/.test(intake.render(120))) intakeApp.handleInput('\u001b');
-  await waitFor(() => /Choose a project|先选项目/.test(intake.render(120)), 'project list after freeze');
+  await waitFor(() => /Choose a project|先选项目|Projects ·|项目 ·/.test(intake.render(120)), 'project list after freeze');
   intakeApp.handleInput('\u001b[A');
   intakeApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(intake.render(120)), 'English session list');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Session start:|会话起点：/.test(intake.render(120)), 'English inspection');
+  await waitFor(() => /Task text:|任务原文：|Session start:|会话起点：/.test(intake.render(120)), 'English inspection');
   intakeApp.handleInput('\r');
   await waitFor(() => /is current|当前任务/.test(intake.render(120)), { describe: 'home after English freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('13-home-after-freeze', 120, intake.render(120));
@@ -341,13 +341,13 @@ async function main() {
   }));
   await runApp.start();
   enterCommand(runApp, '/intake');
-  await waitFor(() => /Select agent product|选择 Agent 产品/.test(run.render(120)), 'run product list');
+  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(run.render(120)), 'run product list');
   runApp.handleInput('\r');
-  await waitFor(() => /Choose a project|先选项目/.test(run.render(120)), 'run project list');
+  await waitFor(() => /Choose a project|先选项目|Projects ·|项目 ·/.test(run.render(120)), 'run project list');
   runApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(run.render(120)), 'run session list');
   runApp.handleInput('\r');
-  await waitFor(() => /Session start:|会话起点：/.test(run.render(120)), 'run inspection');
+  await waitFor(() => /Task text:|任务原文：|Session start:|会话起点：/.test(run.render(120)), 'run inspection');
   runApp.handleInput('\r');
   await waitFor(() => {
     const frame = run.render(120);
@@ -372,7 +372,14 @@ async function main() {
   await push('30-candidate-model', 120, run.render(120));
   await push('30b-candidate-model-narrow', 60, run.render(60));
   runApp.handleInput('\r');
-  await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay|正在复制隔离工作区|候选运行中|正在准备对照/.test(run.render(120)), 'candidate preparation after model selection');
+  await waitFor(() => /Start isolated|Confirm run|启动隔离|确认运行/.test(run.render(120)), {
+    describe: 'confirm page after model selection',
+    frame: () => run.render(120),
+  });
+  await push('31-confirm-run', 120, run.render(120));
+  await push('31b-confirm-run-narrow', 60, run.render(60));
+  runApp.handleInput('\r');
+  await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay|正在复制隔离工作区|候选运行中|正在准备对照/.test(run.render(120)), 'candidate preparation after confirm');
   await push('21-running-start', 120, run.render(120));
   await waitFor(() => copyLatched(), { describe: 'candidate copy handle', timeoutMs: 30_000 });
   releaseCopy();
@@ -410,7 +417,7 @@ async function main() {
   }));
   await errApp.start();
   enterCommand(errApp, '/intake');
-  await waitFor(() => /Select agent product|选择 Agent 产品/.test(err.render(120)));
+  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(err.render(120)));
   errApp.handleInput('\r');
   await waitFor(() => /ENOTDIR|not a directory|Error/i.test(err.render(120)));
   await push('27-product-discovery-error', 120, err.render(120));

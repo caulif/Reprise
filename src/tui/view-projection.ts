@@ -6,20 +6,28 @@ import type { CandidateSpec, RunPolicy, TaskCase, CandidateRunState } from '../c
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from '../core/runtime.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
-import { countCalls, countTurns, elapsedFrom, type CandidateRunPhase } from './pages/run.js';
+import { countCalls, countTurns, elapsedForRunning, type CandidateRunPhase } from './pages/run.js';
+import {
+  activityRoleFromDiagnostics,
+  countActiveParallel,
+  uiStageFrom,
+  type PhaseClockBounds,
+} from './phase-state.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
-import type { WorkbenchView } from './workbench.js';
+import type { WorkbenchView, WorkbenchSurfaceScope, ContextBarModel, StatusSummaryModel, StageRailModel, ActivityCardModel, RecoverySummaryModel } from './workbench.js';
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
-import { deriveResultPresentationFromResult } from './display-state.js';
 
 type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
   readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
+  readonly configBusy?: 'idle' | 'save' | 'test';
+  readonly configTestStatus?: 'idle' | 'testing' | 'passed' | 'failed' | 'stale';
+  readonly configTestDetail?: string;
   readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
   readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[];
   readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
@@ -39,18 +47,26 @@ type Input = {
   readonly runFailed?: boolean;
   readonly cleanupStatus?: string;
   readonly lastRuntimeEventAt?: string;
+  readonly lastObservedEventAt?: string;
+  readonly lastVisibleActivityAt?: string;
   readonly lastRuntimeEventKind?: string;
   readonly modelOutputSeen?: boolean;
   readonly reconnectCount?: number;
   readonly reconnectTotal?: number;
   readonly nowMs?: number;
-  readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
+  readonly activeParallel?: number;
+  readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly activityDetail?: TimelineEntry; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
+  readonly activityDetailOffset?: number;
+  readonly phaseClocks?: PhaseClockBounds;
+  readonly comparisonAttemptId?: string;
   readonly finding?: boolean;
   readonly findQuery?: string;
   readonly findCursor?: number;
   readonly timelineReadOffset?: number;
   readonly readingMode?: boolean;
   readonly cwd?: string;
+  readonly surfaceScope?: WorkbenchSurfaceScope;
+  readonly processExpanded?: boolean;
 };
 
 function homeModel(input: Input, envSet: boolean) {
@@ -68,25 +84,55 @@ function homeModel(input: Input, envSet: boolean) {
 function runningModel(input: Input) {
   const productLabel = chromeProductLabel(input);
   const candidateSessionId = candidateSessionIdFrom(input.timeline);
+  const now = input.nowMs ?? Date.now();
+  const activityRole = activityRoleFromDiagnostics({
+    ...(input.preparePhase ? { preparePhase: input.preparePhase } : {}),
+    ...(input.runPhase ? { runPhase: input.runPhase } : {}),
+    ...(input.machineState ? { machineState: input.machineState } : {}),
+    ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
+  });
+  const uiStage = uiStageFrom({
+    ...(input.preparePhase ? { preparePhase: input.preparePhase } : {}),
+    ...(input.runPhase ? { runPhase: input.runPhase } : {}),
+    ...(input.machineState ? { machineState: input.machineState } : {}),
+    ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
+  });
+  const activeParallel = countActiveParallel(input.visibleTimeline, input.activeParallel);
   return {
     entries: input.visibleTimeline,
     sourceTimeline: input.timeline,
     timelineRevision: input.timelineRevision,
     selected: input.timelineSelected, filter: 'ALL' as const,
     following: input.timelineFollowing, cancelling: input.cancelling, currentState: input.machineState,
-    elapsed: elapsedFrom(input.timeline, input.nowMs ?? Date.now(), input.runStartedAt || undefined),
+    elapsed: elapsedForRunning({
+      entries: input.timeline,
+      ...(input.phaseClocks ? { phaseClocks: input.phaseClocks } : {}),
+      ...(input.preparePhase ? { preparePhase: input.preparePhase } : {}),
+      ...(input.runPhase ? { runPhase: input.runPhase } : {}),
+      ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
+      runStartedAt: input.runStartedAt,
+    }, now, input.locale ?? 'en'),
     turns: { used: countTurns(input.timeline), ...(input.policy ? { max: input.policy.maxTargetTurns } : {}) },
     calls: { used: countCalls(input.timeline), ...(input.policy ? { max: input.policy.maxModelCalls } : {}) },
     ...(input.policy ? { policy: input.policy } : {}),
     ...(input.preparePhase ? { preparePhase: input.preparePhase, ...(input.prepareDetail ? { prepareDetail: input.prepareDetail } : {}) } : {}),
     ...(input.runPhase ? { runPhase: input.runPhase } : {}),
     ...(input.lastRuntimeEventAt ? { lastRuntimeEventAt: input.lastRuntimeEventAt } : {}),
+    ...(input.lastObservedEventAt ? { lastObservedEventAt: input.lastObservedEventAt } : {}),
+    ...(input.lastVisibleActivityAt ? { lastVisibleActivityAt: input.lastVisibleActivityAt } : {}),
     ...(input.lastRuntimeEventKind ? { lastRuntimeEventKind: input.lastRuntimeEventKind } : {}),
     ...(input.modelOutputSeen ? { modelOutputSeen: true } : {}),
     ...(input.reconnectCount ? { reconnectCount: input.reconnectCount } : {}),
     ...(input.reconnectTotal ? { reconnectTotal: input.reconnectTotal } : {}),
     ...(input.runStartedAt ? { runStartedAt: input.runStartedAt } : {}),
+    ...(input.phaseClocks ? { phaseClocks: input.phaseClocks } : {}),
+    ...(activityRole ? { activityRole } : {}),
+    ...(uiStage ? { uiStage } : {}),
+    ...(activeParallel ? { activeParallel } : {}),
+    ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
     ...(input.expandedFolds?.length ? { expandedFolds: input.expandedFolds } : {}),
+    ...(input.activityDetail ? { activityDetail: input.activityDetail } : {}),
+    ...(input.activityDetailOffset ? { activityDetailOffset: input.activityDetailOffset } : {}),
     locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
     ...(input.candidate?.requestedModel ? { candidateModel: input.candidate.requestedModel } : {}),
     ...(input.taskCase ? {
@@ -102,17 +148,12 @@ function runningModel(input: Input) {
     ...(input.finding ? { finding: true, findQuery: input.findQuery ?? '', findCursor: input.findCursor ?? 0 } : {}),
     ...(input.timelineReadOffset ? { readingOffset: input.timelineReadOffset } : {}),
     ...(input.readingMode ? { readingMode: true } : {}),
-    tick: input.nowMs ?? Date.now(),
+    tick: now,
     ...(candidateSessionId ? { candidateSessionId } : {}),
   };
 }
 
 function candidateSessionIdFrom(entries: readonly TimelineEntry[]): string | undefined {
-  // Only candidate.session_bound carries the Runtime session — ignore agent Host sessionIds.
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.eventType === 'candidate.session_bound' && entry.sessionId) return entry.sessionId;
-  }
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const match = /^Candidate session · (.+)$/.exec(entries[index]?.title ?? '');
     if (match?.[1] && match[1] !== '?') return match[1];
@@ -124,6 +165,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   const envSet = Boolean(input.envName && process.env[input.envName]);
   const home = homeModel(input, envSet);
   const productLabel = chromeProductLabel(input);
+  const locale = input.locale ?? 'en';
+  const chrome = projectChrome(input, productLabel, locale);
   const base: WorkbenchView = {
     page: input.page, cwd: input.cwd ?? process.cwd(),
     ...(input.hasSavedModelConfig ? { modelId: input.modelConfig.modelId, effort: input.modelConfig.effort } : {}),
@@ -133,11 +176,14 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(productLabel ? { productLabel } : {}),
     ...(input.productConfigured !== undefined ? { productConfigured: input.productConfigured } : {}),
     hasTaskCase: Boolean(input.taskCase),
-    locale: input.locale ?? 'en',
+    locale,
     message: input.message,
     ...(input.inlineHelp ? { inlineHelp: true } : {}),
     cancelling: input.cancelling,
     ...(input.comparePending ? { comparePending: true } : {}),
+    ...(input.surfaceScope ? { surfaceScope: input.surfaceScope } : {}),
+    ...(input.processExpanded ? { processExpanded: true } : {}),
+    ...chrome,
     home,
   };
   if (input.page === 'home') return base;
@@ -151,6 +197,12 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
         pendingToggle: input.configPendingToggle,
         ...(input.configLeaveConfirm ? { leaveConfirm: true } : {}),
         locale: input.locale ?? 'en',
+        busy: (input.configBusy ?? 'idle') !== 'idle',
+        ...(input.configBusy === 'save' ? { busyKind: 'save' as const } : {}),
+        connectionTest: {
+          status: input.configTestStatus ?? 'idle',
+          ...(input.configTestDetail ? { detail: input.configTestDetail } : {}),
+        },
       },
     };
   }
@@ -194,12 +246,10 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'confirm' && input.preflight) return confirmWorkbenchSlice(input, base, recovery);
   if (input.page === 'running') return { ...base, running: runningModel(input) };
   if (input.page === 'result' && input.result) {
-    const locale = input.locale ?? 'en';
     return {
       ...base,
       running: runningModel(input),
       result: input.result,
-      resultPresentation: deriveResultPresentationFromResult(input.result, locale, Boolean(input.comparePending)),
       ...(input.timelineReadOffset ? { bodyOffset: input.timelineReadOffset } : {}),
     };
   }
@@ -322,6 +372,81 @@ function chromeProductLabel(input: Input): string | undefined {
     return input.candidateProductLabel || input.productLabel;
   }
   return input.productLabel;
+}
+
+function projectChrome(
+  input: Input,
+  productLabel: string | undefined,
+  locale: Locale,
+): {
+  readonly statusSummary?: StatusSummaryModel;
+  readonly contextBar?: ContextBarModel;
+  readonly stageRail?: StageRailModel;
+  readonly activityCard?: ActivityCardModel;
+  readonly recoverySummary?: RecoverySummaryModel;
+} {
+  const recovery = recoveryModel(input);
+  const contextBar = contextBarOf(input, productLabel, locale);
+  const stageRail = stageRailOf(input, locale);
+  const statusSummary = statusSummaryOf(input, locale);
+  const recoverySummary = recoverySummaryOf(input, recovery);
+  return {
+    ...(statusSummary ? { statusSummary } : {}),
+    ...(contextBar ? { contextBar } : {}),
+    ...(stageRail ? { stageRail } : {}),
+    ...(recoverySummary ? { recoverySummary } : {}),
+  };
+}
+
+function contextBarOf(input: Input, productLabel: string | undefined, locale: Locale): ContextBarModel | undefined {
+  const workflowPages = new Set(['candidate-product', 'candidate-model', 'confirm', 'running', 'result', 'preflight']);
+  if (!workflowPages.has(input.page)) return undefined;
+  const taskTitle = taskTitleOf(input.taskCase, locale);
+  return {
+    ...(taskTitle ? { taskTitle } : {}),
+    ...(productLabel ? { productLabel } : {}),
+    ...(input.candidate?.requestedModel ? { modelLabel: input.candidate.requestedModel } : {}),
+    ...(input.sourceProductLabel ? { sourceLabel: input.sourceProductLabel } : {}),
+  };
+}
+
+function stageRailOf(input: Input, locale: Locale): StageRailModel | undefined {
+  if (input.page === 'running' || input.page === 'result' || input.page === 'confirm'
+    || input.page === 'candidate-product' || input.page === 'candidate-model') {
+    const compared = input.preparePhase === 'compare'
+      || (input.page === 'result' && input.result?.comparison.result.status !== 'skipped');
+    const marks = [
+      `✓ ${t(locale, 'recoveryField')}`,
+      `${input.page === 'candidate-product' ? '●' : '✓'} ${t(locale, 'candidateLabel')}`,
+      `${input.page === 'running' ? '●' : input.page === 'result' ? '✓' : '○'} ${t(locale, 'runDesc')}`,
+      `${compared ? (input.preparePhase === 'compare' ? '●' : '✓') : '○'} ${t(locale, 'resultComparison')}`,
+    ];
+    return { text: marks.join('  ') };
+  }
+  return undefined;
+}
+
+function statusSummaryOf(input: Input, locale: Locale): StatusSummaryModel | undefined {
+  if (input.page === 'result' && input.result) {
+    const cmp = input.result.comparison.result.status;
+    const label = cmp === 'cancelled' ? t(locale, 'comparisonCancelledWord')
+      : cmp === 'failed' ? t(locale, 'comparisonFailedWord')
+        : cmp === 'skipped' ? t(locale, 'candidateEndedShort')
+          : t(locale, 'done');
+    const tone = cmp === 'failed' || cmp === 'cancelled' ? 'warn' as const : 'ok' as const;
+    return { label, tone };
+  }
+  if (input.cancelling) return { label: t(locale, 'hintCancel'), tone: 'warn' };
+  return undefined;
+}
+
+function recoverySummaryOf(
+  input: Input,
+  recovery: import('./pages/run.js').RecoveryPreviewModel | undefined,
+): RecoverySummaryModel | undefined {
+  const picker = input.page === 'candidate-product' || input.page === 'candidate-model';
+  if (!picker || !recovery) return undefined;
+  return { recovery, expandable: input.timeline.length > 0 };
 }
 
 function previewStatus(status: 'recovered' | 'partial' | 'blocked' | 'failed'): 'recovered' | 'partial' | 'blocked' | 'failed' {

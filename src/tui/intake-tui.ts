@@ -22,12 +22,15 @@ import type {
 } from "../products/contract.js";
 import { initializeIntakeTui } from "./intake-tui-state.js";
 import * as intakeMethods from "./intake-tui-methods.js";
+import type { ConfigReturnTarget } from "./intake-tui-config.js";
+import type { ConfigBusy, ConfigConnectionTestStatus } from "./pages/config.js";
 import type { Locale } from "./i18n.js";
 import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
 import type { Option } from "./types.js";
-import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
 import type { TimelineEntry } from "./timeline.js";
+import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
+import type { FindRestoreSnapshot } from "./timeline-read.js";
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
@@ -51,6 +54,7 @@ export type ProductDiscoveryState = {
   readonly pageDiagnostics?: readonly DiscoveryDiagnostic[];
   readonly message?: string;
   readonly projects?: readonly SessionDiscoveryProject[];
+  readonly refreshFailed?: boolean;
 };
 
 export type SessionLoadMode = "initial" | "more" | "refresh";
@@ -74,6 +78,7 @@ export type IntakeTuiOptions = {
 
 /** Keyboard-only Home-first benchmark workbench for configuration, intake, and isolated runs. */
 export class IntakeTui {
+  homeFocus: import("./pages/home.js").HomeActionId = "new-replay";
   dataDir!: string;
   runtimeSessionIds: readonly string[] = [];
   sessionsRoot: string | undefined;
@@ -109,10 +114,14 @@ export class IntakeTui {
   finding = false;
   findQuery = "";
   findCursor = 0;
+  findRestore: FindRestoreSnapshot | undefined;
   readingMode = false;
   readingVisibleAt = 0;
   timelineAnchor: string | undefined;
   timelineReadOffset = 0;
+  /** Reading scope for process folds — does not drive workflow phase. */
+  surfaceScope: import("./workbench-layout.js").WorkbenchSurfaceScope = "overview";
+  processExpanded = false;
   terminalGuard: (() => void) | undefined;
   inspectionShowOutcome = false;
   modelConfig: HarnessModelConfig = defaultHarnessModelConfig();
@@ -156,6 +165,9 @@ export class IntakeTui {
   candidateSuggestedValue: string | undefined;
   candidateCatalogGeneration = 0;
   candidateAvailabilityGeneration = 0;
+  candidateVerifyPending: { generation: number; productId: string; offerValue: string } | undefined;
+  runStartPending = false;
+  confirmStartArmed = false;
   activeExperiment: ExperimentHandle | undefined;
   recoveryAbort: AbortController | undefined;
   startupAbort: AbortController | undefined;
@@ -167,8 +179,13 @@ export class IntakeTui {
   timelineSelected = 0;
   timelineFilterIndex = 0;
   timelineFollowing = true;
+  cancelUi: import("./controller-run.js").CancelUi = "idle";
   cancelling = false;
-  configBusy = false;
+  configBusy: ConfigBusy = "idle";
+  configDraftVersion = 0;
+  configTestStatus: ConfigConnectionTestStatus = "idle";
+  configTestDetail: string | undefined;
+  configReturnTarget: ConfigReturnTarget | undefined;
   generation = 0;
   timelineRenderQueued = false;
   timelineRevision = 0;
@@ -180,16 +197,27 @@ export class IntakeTui {
         preparePhase: PreparePhase | undefined;
         runPhase: CandidateRunPhase | undefined;
         expandedFoldsKey: string;
+        surfaceScope: import("./workbench-layout.js").WorkbenchSurfaceScope;
+        processExpanded: boolean;
         result: readonly TimelineEntry[];
       }
     | undefined;
   runStartedAt = 0;
+  recoveryStartedAt = 0;
+  recoveryEndedAt = 0;
+  candidateStartedAt = 0;
+  candidateEndedAt = 0;
+  comparisonStartedAt = 0;
+  comparisonEndedAt = 0;
+  comparisonAttemptId: string | undefined;
   runClock: ReturnType<typeof setInterval> | undefined;
   runPhase: CandidateRunPhase | undefined;
   machineState: CandidateRunState | undefined;
   runFailed = false;
   cleanupStatus: string | undefined;
   lastRuntimeEventAt: string | undefined;
+  lastObservedEventAt: string | undefined;
+  lastVisibleActivityAt: string | undefined;
   lastRuntimeEventKind: string | undefined;
   modelOutputSeen = false;
   reconnectCount = 0;
@@ -205,6 +233,10 @@ export class IntakeTui {
   resolveClosed: (() => void) | undefined;
   emitWarning: typeof process.emitWarning | undefined;
   helpOverlay: OverlayHandle | undefined;
+  activityDetailOverlay: OverlayHandle | undefined;
+  activityDetailEntry: TimelineEntry | undefined;
+  activityDetailOffset = 0;
+  activityDetailRestore: { anchor?: string; offset: number; following: boolean } | undefined;
   commandOverlay: OverlayHandle | undefined;
   commandSelectList: SelectList | undefined;
   inlineHelp = false;
@@ -238,6 +270,7 @@ export class IntakeTui {
   loadHistory(): Promise<void> { return intakeMethods.IntakeTui_loadHistory.call(this); }
   openRecentExperiment(): { consume: true } { return intakeMethods.IntakeTui_openRecentExperiment.call(this); }
   openConfig(): Promise<void> { return intakeMethods.IntakeTui_openConfig.call(this); }
+  leaveConfig(): { consume: true } { return intakeMethods.IntakeTui_leaveConfig.call(this); }
   saveConfig(): Promise<void> { return intakeMethods.IntakeTui_saveConfig.call(this); }
   testConfigConnection(): Promise<void> { return intakeMethods.IntakeTui_testConfigConnection.call(this); }
   refreshHarnessAuth(): Promise<void> { return intakeMethods.IntakeTui_refreshHarnessAuth.call(this); }
@@ -292,6 +325,10 @@ export class IntakeTui {
   isEditingText(): boolean { return intakeMethods.IntakeTui_isEditingText.call(this); }
   showHelp(): { consume: true } { return intakeMethods.IntakeTui_showHelp.call(this); }
   hideHelp(): void { intakeMethods.IntakeTui_hideHelp.call(this); }
+  showActivityDetail(entry: TimelineEntry): { consume: true } {
+    return intakeMethods.IntakeTui_showActivityDetail.call(this, entry);
+  }
+  hideActivityDetail(): void { intakeMethods.IntakeTui_hideActivityDetail.call(this); }
   syncCommandOverlay(): void { intakeMethods.IntakeTui_syncCommandOverlay.call(this); }
   hideCommandOverlay(): void { intakeMethods.IntakeTui_hideCommandOverlay.call(this); }
   configDirty(): boolean { return intakeMethods.IntakeTui_configDirty.call(this); }

@@ -122,7 +122,7 @@ test('product intake isolates per-pack limits, errors, and compact back navigati
   assert.equal(app.intakeLevel, 'projects');
   app.handleInput('\b');
   assert.equal(app.intakeLevel, 'products');
-  assert.match(document?.render(60).join('\n') ?? '', /Select agent product|选择 Agent 产品/);
+  assert.match(document?.render(60).join('\n') ?? '', /Historical session sources|历史会话来源/);
 });
 
 test('intake restores the last product cursor after leaving the catalog', async (t) => {
@@ -277,19 +277,18 @@ test('cursor pagination counts root diagnostics once and page diagnostics once p
   await app.start();
   await app.loadProductSessions('codex');
   assert.match(app.message, /Loaded \d+ projects and 1 sessions|已加载 \d+ 个项目、1 个会话/);
-  assert.match(app.message, /1 shown · 2 skipped · 2 scanned|已显示 1 条 · 已跳过 2 条 · 已扫描 2 条/);
-  assert.match(app.message, /\nThe catalog is complete; Ctrl\+N does not paginate\.|\n目录已完整；Ctrl\+N 不会分页。/);
-  assert.match(app.message, /\nDiagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable directory \(1\)|\n诊断：目录全局跳过了无效 JSONL（不是当前行损坏） \(1\), 目录不可读 \(1\)/);
+  assert.match(app.message, /More pages available|还有下一页/);
+  assert.doesNotMatch(app.message, /Diagnostics:|诊断：/);
   app.locale = 'zh';
-  assert.match(app.sessionsMessage(), /已显示 1 条 · 已跳过 2 条 · 已扫描 2 条/);
-  app.loadMoreProductSessions();
-  assert.equal(call, 1);
-  assert.equal(app.productItems()[0]?.skipped, 2);
-  assert.match(app.message, /1 shown · 2 skipped|已显示 1 条 · 已跳过 2 条/);
-  assert.doesNotMatch(app.message, /还有更多/);
-  assert.match(app.message, /Diagnostics: catalog skipped invalid JSONL \(not this row\) \(1\), unreadable directory \(1\)|诊断：目录全局跳过了无效 JSONL（不是当前行损坏） \(1\), 目录不可读 \(1\)/);
+  assert.match(app.sessionsMessage(), /已加载 \d+ 个项目、1 个会话/);
+  await app.loadProductSessions('codex', 'more');
+  assert.equal(call, 2);
+  assert.equal(app.sessions.length, 2);
+  assert.equal(app.productItems()[0]?.skipped, 4);
+  assert.match(app.message, /Loaded \d+ projects and 2 sessions|已加载 \d+ 个项目、2 个会话/);
+  assert.doesNotMatch(app.message, /还有更多|More pages available|还有下一页/);
   assert.deepEqual(app.productDiscovery.get('codex')?.diagnostics?.map((diagnostic) => [diagnostic.code, diagnostic.count]), [
-    ['invalid-jsonl', 1], ['unreadable-directory', 1],
+    ['invalid-jsonl', 2], ['unreadable-directory', 1],
   ]);
 });
 

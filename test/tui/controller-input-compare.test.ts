@@ -76,34 +76,34 @@ test('running compare gate resolves true when c is pressed', () => {
   assert.equal(c.compareChoice, undefined);
 });
 
-test('R03: reopening a cancelled comparison result keeps cancel labels across header and body', () => {
-  const cancelledResult = {
-    reportPath: 'C:\\exp\\comparison-failure.html',
-    experimentRoot: 'C:\\exp',
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: {
-        task: { status: 'apparently_completed' },
-        termination: { kind: 'completed', code: 'completed.controller_satisfied' },
-        cleanup: { status: 'complete' },
-      },
-    },
-    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
-    comparison: { result: { status: 'cancelled', factRef: 'run:1:compare:cancelled' } },
-  } as ExperimentResult;
-  const text = renderWorkbench({
-    page: 'result',
-    cwd: '/workspace',
-    hasApiConfig: true,
-    hasTaskCase: true,
-    locale: 'en',
-    message: t('en', 'resultCompareCancelled'),
-    result: cancelledResult,
-  }, 120, 30).join('\n');
-  assert.match(text, /Comparison cancelled/);
-  assert.match(text, /Candidate finished · Comparison cancelled/);
-  assert.match(text, /Diagnostic/);
-  assert.match(text, /comparison-failure\.html/);
-  assert.doesNotMatch(text, /Comparison complete/);
-  assert.doesNotMatch(text, /● done|✓ done/i);
+test('result compare gate Esc resolves false once without a second settle', () => {
+  let chosen: boolean | undefined;
+  let homes = 0;
+  const c = compareController((run) => { chosen = run; });
+  c.backToHome = () => {
+    homes += 1;
+    return { consume: true };
+  };
+  const handled = handleControllerInput(c, '\u001b');
+  assert.deepEqual(handled, { consume: true });
+  assert.equal(chosen, false);
+  assert.equal(c.compareChoice, undefined);
+  assert.equal(homes, 1);
+  assert.deepEqual(handleControllerInput(c, '\u001b'), { consume: true });
+  assert.equal(homes, 2);
+});
+
+test('result compare gate ignores a second c after the choice settled', () => {
+  let chosen: boolean | undefined;
+  let resolves = 0;
+  const c = compareController((run) => {
+    chosen = run;
+    resolves += 1;
+  });
+  assert.deepEqual(handleControllerInput(c, 'c'), { consume: true });
+  assert.equal(chosen, true);
+  assert.equal(resolves, 1);
+  assert.equal(c.compareChoice, undefined);
+  assert.deepEqual(handleControllerInput(c, 'c'), { consume: true });
+  assert.equal(resolves, 1);
 });

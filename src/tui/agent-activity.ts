@@ -1,11 +1,98 @@
 import { peelStructuredEnvelope } from '../infrastructure/agent/assistant-visible.js';
 import { record, text, type JsonRecord } from '../core/json.js';
-import { mergeEventRefs } from './activity-index.js';
+import { mergeEventRefs, type ActivityRole, type ActivityStatus, type ActivityVerb } from './activity-index.js';
+import type { Locale } from './i18n.js';
+import { t } from './i18n.js';
 import type { TimelineEntry, TimelineSource } from './timeline.js';
 
-export type AgentLane = 'recovery' | 'controller' | 'comparison';
+export type AgentLane = 'recovery' | 'controller' | 'comparison' | 'system';
 export type AgentKind = 'investigate' | 'mutate' | 'deliver' | 'compact' | 'live' | 'narrate' | 'fold' | 'thinking';
 export type TimelineVoice = AgentLane | 'candidate';
+
+/** Operator-facing role label; color/gutter stay secondary. */
+export function activityRoleLabel(role: ActivityRole | undefined, product: string, locale: Locale = 'zh'): string {
+  if (role === 'recovery') return t(locale, 'recoveryAgent');
+  if (role === 'controller') return t(locale, 'controllerLegend');
+  if (role === 'comparison') return t(locale, 'comparisonLegend');
+  if (role === 'candidate') return product.trim() || t(locale, 'candidateRole');
+  if (role === 'system') return t(locale, 'systemRole');
+  return product.trim() || t(locale, 'candidateRole');
+}
+
+export function entryRole(entry: TimelineEntry): ActivityRole | undefined {
+  if (entry.role) return entry.role;
+  if (entry.voice === 'candidate' || (entry.source === 'TARGET' && !entry.lane)) return 'candidate';
+  if (entry.lane === 'recovery' || entry.lane === 'controller' || entry.lane === 'comparison' || entry.lane === 'system') return entry.lane;
+  if (entry.source === 'CONTROLLER') return 'controller';
+  if (entry.source === 'HARNESS') return 'system';
+  return undefined;
+}
+
+export function isPresentedInput(entry: TimelineEntry): boolean {
+  if (entry.verb === 'send' || entry.deliveryId) {
+    return entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·') || entry.verb === 'send';
+  }
+  return entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·');
+}
+
+export function isTurnBoundary(entry: TimelineEntry): boolean {
+  if (isPresentedInput(entry) && (entry.verb === 'send' || entry.title.startsWith('Input to Target'))) return true;
+  if (entry.verb === 'decide' || entry.kind === 'deliver' && entry.title.startsWith('DONE ·')) return true;
+  if (entry.title.startsWith('DONE ·')) return true;
+  return false;
+}
+
+/** Stable fingerprint for error grouping: prefer structured code, keep path/digits. */
+export function errorFingerprint(entry: TimelineEntry): string {
+  const role = entryRole(entry) ?? 'system';
+  const attempt = entry.sessionId ?? entry.turnId ?? '-';
+  const tool = entry.correlationId ?? entry.verb ?? entry.title;
+  const object = entry.object ?? '';
+  const code = entry.eventType ?? '';
+  const textKey = (entry.detail ?? entry.title).replace(/ ×\d+$/, '').trim();
+  return [role, attempt, tool, object, code, textKey].join('\0');
+}
+
+export function activityStatusLabel(status: ActivityStatus | undefined, locale: Locale = 'zh'): string {
+  if (status === 'started') return t(locale, 'activityStatusStarted');
+  if (status === 'updated') return t(locale, 'activityStatusUpdated');
+  if (status === 'completed') return t(locale, 'activityStatusCompleted');
+  if (status === 'failed') return t(locale, 'activityStatusFailed');
+  if (status === 'cancelled') return t(locale, 'activityStatusCancelled');
+  return '';
+}
+
+export function toolCaption(entry: TimelineEntry, locale: Locale = 'zh'): string {
+  const verb = entry.verb;
+  if (verb === 'working' || entry.title === 'working') return t(locale, 'waitingVisibleActivity');
+  const action = verbLabel(verb, entry.title);
+  const object = entry.object ?? entry.detail ?? '';
+  const status = activityStatusLabel(entry.activityStatus, locale);
+  const parts = [action, object, status].filter(Boolean);
+  return parts.join(' · ') || entry.title;
+}
+
+function verbLabel(verb: ActivityVerb | undefined, fallback: string): string {
+  if (verb === 'read') return '阅读';
+  if (verb === 'inspect') return '检查';
+  if (verb === 'write' || verb === 'edit') return '写入';
+  if (verb === 'run') return '运行';
+  if (verb === 'send') return '投递';
+  if (verb === 'wait') return '等待';
+  if (verb === 'decide') return '判断';
+  if (verb === 'publish') return '发布';
+  if (verb === 'error') return '失败';
+  if (verb === 'working') return '等待';
+  return fallback.replace(/^Candidate · /, '');
+}
+
+export function excerptId(entry: TimelineEntry): string {
+  const ref = entry.eventRefs?.[0];
+  if (ref) return `excerpt:ev:${ref.eventId}`;
+  if (entry.itemId) return `excerpt:id:${entry.itemId}`;
+  if (entry.correlationId) return `excerpt:corr:${entry.correlationId}`;
+  return `excerpt:seq:${entry.sequence}`;
+}
 
 const INVESTIGATE = new Set(['ls', 'read', 'grep', 'find']);
 const MUTATE = new Set(['shell_exec', 'edit']);
@@ -14,22 +101,22 @@ const WRITE_PS = /\b(Remove-Item|Set-Content|Copy-Item|New-Item|Move-Item|Out-Fi
 
 function agentLane(payload: JsonRecord): AgentLane {
   const role = text(payload.role);
-  if (role === 'controller' || role === 'comparison') return role;
-  return 'recovery';
+  if (role === 'controller' || role === 'comparison' || role === 'recovery') return role;
+  return 'system';
 }
 
 export function projectAssistantVisible(payload: JsonRecord): {
   title: string;
   detail: string;
-  extra: { lane: AgentLane; kind: 'narrate'; count: number };
+  extra: { lane: AgentLane; kind: 'narrate'; count: number; role: ActivityRole };
 } {
   const textBody = peelStructuredEnvelope(text(payload.text) ?? '');
-  const role = payload.role === 'controller' || payload.role === 'comparison' ? payload.role : 'recovery';
+  const role = agentLane(payload);
   const first = textBody.split(/\n/)[0]?.trim() ?? '';
   return {
     title: first || '…',
     detail: textBody,
-    extra: { lane: role, kind: 'narrate', count: 1 },
+    extra: { lane: role, kind: 'narrate', count: 1, role },
   };
 }
 
@@ -112,14 +199,24 @@ export function collapseAgentRows(timeline: TimelineEntry[], entry: TimelineEntr
   if (entry.hidden || entry.placeholder || entry.kind === 'live' || entry.kind === 'deliver') return false;
   if (entry.level === 'error') return false;
   if (entry.kind !== 'investigate' && entry.kind !== 'mutate' && entry.kind !== 'compact') return false;
+  const role = entryRole(entry);
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const previous = timeline[index];
     if (!previous || previous.hidden || previous.placeholder || previous.kind === 'live') continue;
     if (previous.level === 'error') return false;
-    if (previous.lane !== entry.lane || previous.kind !== entry.kind) return false;
+    if (entryRole(previous) !== role || previous.kind !== entry.kind) return false;
     if (entry.kind === 'mutate' && mutateKey(previous) !== mutateKey(entry)) return false;
+    // Only aggregate consecutive completed reads within the same role/phase; never swallow failures.
+    if (entry.activityStatus && entry.activityStatus !== 'completed') return false;
+    if (previous.activityStatus && previous.activityStatus !== 'completed') return false;
     const count = (previous.count ?? 1) + (entry.count ?? 1);
-    const mergedDetail = mergeDetail(previous, entry, count);
+    const objects = uniqueLeafNames([
+      ...(previous.object ? [previous.object] : []),
+      ...(entry.object ? [entry.object] : []),
+      ...(previous.detail ?? '').split(/[·×,]/),
+      ...(entry.detail ?? '').split(/[·×,]/),
+    ]);
+    const mergedDetail = mergeDetail(previous, entry, count, objects);
     timeline[index] = {
       ...previous,
       sequence: entry.sequence,
@@ -131,6 +228,7 @@ export function collapseAgentRows(timeline: TimelineEntry[], entry: TimelineEntr
         ? { correlationId: previous.correlationId }
         : {}),
       ...(entry.linkUnknown || previous.linkUnknown ? { linkUnknown: true } : {}),
+      ...(objects.length ? { object: objects.join(' · ') } : {}),
       ...(entry.original || previous.original
         ? { original: joinOriginal(previous.original ?? previous.detail, entry.original ?? entry.detail) }
         : {}),
@@ -142,25 +240,42 @@ export function collapseAgentRows(timeline: TimelineEntry[], entry: TimelineEntr
 
 export function projectWorkingNow(lane: AgentLane): {
   title: string;
-  extra: { lane: AgentLane; kind: 'live'; placeholder: true; itemId: string; patch: 'replace' };
+  extra: {
+    lane: AgentLane;
+    kind: 'live';
+    placeholder: true;
+    itemId: string;
+    patch: 'replace';
+    role: ActivityRole;
+    verb: 'working';
+    activityStatus: 'started';
+  };
 } {
   return {
     title: 'working',
-    extra: { lane, kind: 'live', placeholder: true, itemId: `now:${lane}`, patch: 'replace' },
+    extra: {
+      lane,
+      kind: 'live',
+      placeholder: true,
+      itemId: `now:${lane}`,
+      patch: 'replace',
+      role: lane,
+      verb: 'working',
+      activityStatus: 'started',
+    },
   };
 }
 
 export function captionPublicLive(verb: string, leaf?: string): { title: string; detail?: string } {
-  const title = verb === 'working'
-    ? 'working'
-    : verb === 'read' || verb === 'inspect'
-      ? '阅读'
-      : verb === 'run'
-        ? '运行'
-        : verb === 'write' || verb === 'edit'
-          ? '写入'
-          : verb;
-  if (!leaf || verb === 'working') return { title };
+  if (verb === 'working') return { title: 'working' };
+  const title = verb === 'read' || verb === 'inspect'
+    ? '阅读'
+    : verb === 'run'
+      ? '运行'
+      : verb === 'write' || verb === 'edit'
+        ? '写入'
+        : verb;
+  if (!leaf) return { title };
   return { title, detail: leaf };
 }
 
@@ -258,10 +373,21 @@ function mutateKey(entry: TimelineEntry): string {
   return (entry.detail ?? '').split(/\s+/)[0] ?? entry.title;
 }
 
-function mergeDetail(previous: TimelineEntry, next: TimelineEntry, count: number): string {
+function mergeDetail(
+  previous: TimelineEntry,
+  next: TimelineEntry,
+  count: number,
+  objects: readonly string[] = [],
+): string {
   if (previous.kind === 'compact' || next.kind === 'compact') return `tail ×${count}`;
-  const names = uniqueLeafNames([...(previous.detail ?? '').split(/[·×]/), ...(next.detail ?? '').split(/[·×]/)]);
+  const names = objects.length
+    ? objects
+    : uniqueLeafNames([...(previous.detail ?? '').split(/[·×]/), ...(next.detail ?? '').split(/[·×]/)]);
   const shown = names.slice(0, 3).join(' · ');
+  // Call count and unique object count stay distinct in the title when both are known.
+  if (names.length > 0 && names.length !== count) {
+    return `${shown} · ${count}次 · ${names.length}项`;
+  }
   return `${shown}  ×${count}`;
 }
 

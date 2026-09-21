@@ -386,6 +386,92 @@ test("registerMedia dedupes same side+hash+derivation and keeps distinct sides",
   assert.equal(Value.Check(ComparisonMediaRecordSchema, catalog.snapshot().media[0]), true);
 });
 
+test("registerMediaBatch preserves result order when existing frames surround new frames", async (t) => {
+  const attemptRoot = await tempAttempt(t, "reprise-b3-media-order-");
+  const derivation = { kind: "headless_screenshot" as const, viewport: { width: 1280, height: 900, scale: 1 } };
+  const seeded = [
+    media({ ref: "media:frame-0", side: "candidate", inspectPath: "media/frame-0.png", shortRef: "media-01", contentHash: sha256(Buffer.from("0")), derivation }),
+    media({ ref: "media:frame-500", side: "candidate", inspectPath: "media/frame-500.png", shortRef: "media-02", contentHash: sha256(Buffer.from("500")), derivation }),
+  ];
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-b3-media-order",
+    attemptRoot,
+    links: [{ side: "baseline", inspectPath: "history/x", shortRef: "ev-01" }],
+    media: seeded,
+  });
+  const input = (time: string) => ({
+    record: media({
+      ref: `media:frame-${time}`,
+      side: "candidate" as const,
+      inspectPath: `media/frame-${time}.png`,
+      contentHash: sha256(Buffer.from(time)),
+      derivation,
+    }),
+    sourceRefs: ["ev-01"],
+    origin: "candidate_delivery" as const,
+    derivation,
+  });
+
+  const results = await catalog.registerMediaBatch([input("0"), input("250"), input("500")]);
+  assert.deepEqual(results.map((result) => result.status === "registered" ? result.shortRef : result.code), ["media-01", "media-03", "media-02"]);
+});
+
+test("registerMediaBatch retries an existing frame when its first event emit failed", async (t) => {
+  const attemptRoot = await tempAttempt(t, "reprise-b3-media-batch-retry-");
+  const events: unknown[] = [];
+  let failNextEmit = true;
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-b3-media-batch-retry",
+    attemptRoot,
+    links: [{ side: "baseline", inspectPath: "history/x", shortRef: "ev-01" }],
+    media: [],
+    emitRegistered: async (payload) => {
+      if (failNextEmit) {
+        failNextEmit = false;
+        throw new Error("simulated batch emit failure");
+      }
+      events.push(payload);
+    },
+  });
+  const input = {
+    record: media({ ref: "media:batch-retry", side: "candidate", inspectPath: "media/batch-retry.png", contentHash: sha256(Buffer.from("retry")) }),
+    sourceRefs: ["ev-01"],
+    origin: "candidate_delivery" as const,
+  };
+
+  const first = await catalog.registerMediaBatch([input]);
+  assert.equal(first[0]?.status, "rejected");
+  const second = await catalog.registerMediaBatch([input]);
+  assert.equal(second[0]?.status, "registered");
+  if (second[0]?.status !== "registered") return;
+  assert.equal(second[0]?.deduplicated, true);
+  assert.equal(events.length, 1);
+});
+
+test("registerMediaBatch deduplicates repeated frames within one batch", async (t) => {
+  const attemptRoot = await tempAttempt(t, "reprise-b3-media-batch-dedupe-");
+  const events: unknown[] = [];
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-b3-media-batch-dedupe",
+    attemptRoot,
+    links: [{ side: "baseline", inspectPath: "history/x", shortRef: "ev-01" }],
+    media: [],
+    emitRegistered: async (payload) => { events.push(payload); },
+  });
+  const input = {
+    record: media({ ref: "media:batch-duplicate", side: "candidate", inspectPath: "media/batch-duplicate.png", contentHash: sha256(Buffer.from("same")) }),
+    sourceRefs: ["ev-01"],
+    origin: "candidate_delivery" as const,
+  };
+
+  const results = await catalog.registerMediaBatch([input, { ...input, record: { ...input.record, ref: "media:batch-duplicate-again" } }]);
+  assert.deepEqual(results.map((result) => result.status === "registered" ? result.shortRef : result.code), ["media-01", "media-01"]);
+  if (results[1]?.status !== "registered") return;
+  assert.equal(results[1]?.deduplicated, true);
+  assert.equal(catalog.snapshot().media.length, 1);
+  assert.equal(events.length, 1);
+});
+
 function media(partial: Partial<ComparisonMediaRecord> & Pick<ComparisonMediaRecord, "ref" | "side" | "inspectPath">): ComparisonMediaRecord {
   return {
     reportHref: partial.reportHref ?? partial.inspectPath,

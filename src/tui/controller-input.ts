@@ -10,11 +10,14 @@ import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
 import type { TaskCase, CandidateRunState } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
+import { artifactsFromResult, listActions } from './action-model.js';
 import { coveringFoldIds, selectedIndexAfterFold } from './fold-process.js';
+import { excerptId } from './agent-activity.js';
 import { projectTimelineView } from './timeline-view.js';
 import { TIMELINE_FILTERS, unwrapBracketedPaste } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
+import { homeActions } from './pages/home.js';
 import { matchesCanvasQuery, matchesFilter } from './scrollback.js';
 import {
   applyHistoryDetailPointer,
@@ -24,8 +27,16 @@ import {
   consumeWheel,
   moveTimelineVisible,
 } from './pointer-dispatch.js';
-import { canvasHitIndices, nextHitIndex, syncTimelineSelection, timelineIdentity } from './timeline-read.js';
-import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation } from './controller-run.js';
+import {
+  applyFindRestore,
+  captureFindRestore,
+  canvasHitIndices,
+  nextHitIndex,
+  syncTimelineSelection,
+  timelineIdentity,
+  type FindRestoreSnapshot,
+} from './timeline-read.js';
+import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, resolveCompareChoice } from './controller-run.js';
 import {
   dispatchCanvasInput,
   dispatchCandidatePickerInput,
@@ -60,10 +71,15 @@ export type ControllerHandle = {
   workflowFinished: Promise<void> | undefined;
   page: Page;
   helpOverlay: { hide(): void } | undefined;
+  activityDetailOverlay: { hide(): void } | undefined;
+  activityDetailEntry: TimelineEntry | undefined;
+  activityDetailOffset: number;
+  activityDetailRestore: { anchor?: string; offset: number; following: boolean } | undefined;
   inlineHelp: boolean;
   composer: string;
   composerCursor: number;
   showSuggestions: boolean;
+  homeFocus: import('./pages/home.js').HomeActionId;
   sourceRoot: string;
   sourceCursor: number;
   searching: boolean;
@@ -80,6 +96,7 @@ export type ControllerHandle = {
   finding: boolean;
   findQuery: string;
   findCursor: number;
+  findRestore: FindRestoreSnapshot | undefined;
   readingMode: boolean;
   readingVisibleAt: number;
   timelineAnchor: string | undefined;
@@ -114,25 +131,40 @@ export type ControllerHandle = {
   candidateSuggestedValue: string | undefined;
   candidateCatalogGeneration: number;
   candidateAvailabilityGeneration: number;
+  candidateVerifyPending: { generation: number; productId: string; offerValue: string } | undefined;
+  runStartPending: boolean;
+  confirmStartArmed: boolean;
   activeExperiment: ExperimentHandle | undefined;
   recentExperiment: HistoryExperiment | undefined;
   readonly dataDir: string;
   readonly packs: readonly ProductPack[];
   sessions: readonly SessionSummary[];
   readonly now: () => string;
+  readonly nowMs: () => number;
   runStartedAt: number;
+  recoveryStartedAt: number;
+  recoveryEndedAt: number;
+  candidateStartedAt: number;
+  candidateEndedAt: number;
+  comparisonStartedAt: number;
+  comparisonEndedAt: number;
+  comparisonAttemptId: string | undefined;
   runClock: ReturnType<typeof setInterval> | undefined;
-  cancelling: boolean;
+  cancelUi: import('./controller-run.js').CancelUi;
   runPhase: CandidateRunPhase | undefined;
   machineState: CandidateRunState | undefined;
   runFailed: boolean;
   cleanupStatus: string | undefined;
   lastRuntimeEventAt: string | undefined;
+  lastObservedEventAt: string | undefined;
+  lastVisibleActivityAt: string | undefined;
   lastRuntimeEventKind: string | undefined;
   modelOutputSeen: boolean;
   reconnectCount: number;
   reconnectTotal: number;
   modelConfig: HarnessModelConfig;
+  hasSavedModelConfig: boolean;
+  harnessAuthOk: boolean;
   configDraft: HarnessConfigDraft;
   configEditing: boolean;
   render(immediate?: boolean): void;
@@ -140,6 +172,8 @@ export type ControllerHandle = {
   beginNavigation(): number;
   hideHelp(): void;
   showHelp(): Consume;
+  hideActivityDetail(): void;
+  showActivityDetail(entry: TimelineEntry): Consume;
   hideCommandOverlay(): void;
   syncCommandOverlay(): void;
   openConfig(): Promise<void>;
@@ -183,9 +217,21 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     page: c.page,
     editingText: c.isEditingText(),
     helpOpen: Boolean(c.helpOverlay || c.inlineHelp),
+    activityDetailOpen: Boolean(c.activityDetailOverlay || c.activityDetailEntry),
     startupActive: Boolean(c.startupAbort),
   }, input);
   if (global) return applyGlobal(c, global.action);
+  if (c.activityDetailEntry && (matchesKey(input, 'up') || matchesKey(input, 'down') || matchesKey(input, 'pageUp') || matchesKey(input, 'pageDown'))) {
+    const delta = matchesKey(input, 'up') ? -1 : matchesKey(input, 'down') ? 1 : matchesKey(input, 'pageUp') ? -8 : 8;
+    c.activityDetailOffset = Math.max(0, c.activityDetailOffset + delta);
+    c.showActivityDetail(c.activityDetailEntry);
+    c.render();
+    return { consume: true };
+  }
+  if (c.activityDetailEntry && (matchesKey(input, 'tab') || matchesKey(input, 'shift+tab'))) {
+    // Detail owns focus; do not cycle folds in the background timeline.
+    return { consume: true };
+  }
   if (c.page === 'running') return applyRunning(c, input);
   if (c.page === 'config') return c.configPageInput(input);
   if (c.page === 'history') return matchesKey(input, 'escape') ? c.backToHome() : c.historyInput(input);
@@ -203,14 +249,33 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'candidate-model') return applyCandidateModel(c, input);
   if (c.page === 'confirm') return applyConfirm(c, input) ?? consumeWheel(data);
   if (c.page === 'result') {
+    // A settled compare gate still owns the keypress; do not let a second c
+    // fall through into an unrelated page action or appear to start another attempt.
+    if (!c.compareChoice && (input === 'c' || input === 'C')) return { consume: true };
     const pointed = applyResultPointer(c, data);
     if (pointed) return pointed;
-    const result = dispatchResultKeys(input);
+    const artifacts = artifactsFromResult(c.result);
+    const result = dispatchResultKeys(input, {
+      comparePending: Boolean(c.compareChoice),
+      artifacts,
+    });
     if (!result) return undefined;
-    if (result.action === 'compare') {
+    if (result.enabled === false) {
+      const reason = listActions({
+        page: 'result',
+        locale: c.locale,
+        mode: { comparePending: Boolean(c.compareChoice) },
+        artifacts,
+      }).find((item) => item.id === result.action)?.disabledReasonKey;
+      if (reason) {
+        c.message = t(c.locale, reason);
+        c.render();
+      }
+      return { consume: true };
+    }
+    if (result.action === 'compare' || result.action === 'activate-primary') {
       if (!c.compareChoice) return { consume: true };
-      c.compareChoice.resolve(true);
-      c.compareChoice = undefined;
+      resolveCompareChoice(c, true);
       return { consume: true };
     }
     if (result.action === 'open-report') {
@@ -224,10 +289,7 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
     if (result.action === 'open-candidate-final') return c.openResultArtifact('candidate');
     if (result.action === 'open-trace') return c.openTrace();
     if (result.action === 'open-replica') return c.openReplica();
-    if (c.compareChoice) {
-      c.compareChoice.resolve(false);
-      c.compareChoice = undefined;
-    }
+    if (c.compareChoice) resolveCompareChoice(c, false);
     return c.backToHome();
   }
   if (c.page === 'error') {
@@ -244,6 +306,11 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
 function applyGlobal(c: ControllerHandle, action: GlobalInputAction): Consume {
   if (action === 'cancel') return requestCancellation(c);
   if (action === 'close') return c.close();
+  if (action === 'hide-detail') {
+    c.hideActivityDetail();
+    c.render();
+    return { consume: true };
+  }
   if (action === 'hide-help') {
     c.hideHelp();
     c.render();
@@ -255,6 +322,15 @@ function applyGlobal(c: ControllerHandle, action: GlobalInputAction): Consume {
 function applyHome(c: ControllerHandle, data: string): Consume | undefined {
   const pointer = applyHomePointer(c, data);
   if (pointer) return pointer;
+  const commandMode = c.composer.startsWith('/') || c.showSuggestions;
+  if (!commandMode) {
+    const input = unwrapBracketedPaste(data);
+    if (matchesKey(input, 'up') || matchesKey(input, 'down')) {
+      moveHomeFocus(c, matchesKey(input, 'up') ? -1 : 1);
+      c.render();
+      return { consume: true };
+    }
+  }
   const result = dispatchHomeComposer({
     composer: c.composer,
     cursor: c.composerCursor,
@@ -275,6 +351,24 @@ function applyHome(c: ControllerHandle, data: string): Consume | undefined {
   return { consume: true };
 }
 
+function moveHomeFocus(c: ControllerHandle, delta: number): void {
+  const model = {
+    taskCase: c.taskCase,
+    recentExperiment: c.recentExperiment,
+    hasApiConfig: c.hasSavedModelConfig,
+    hasUsableAuth: c.hasSavedModelConfig && c.harnessAuthOk,
+    composer: c.composer,
+    showSuggestions: c.showSuggestions,
+    locale: c.locale,
+    focus: c.homeFocus,
+  };
+  const actions = homeActions(model);
+  if (!actions.length) return;
+  const current = Math.max(0, actions.indexOf(c.homeFocus));
+  const next = (current + delta + actions.length) % actions.length;
+  c.homeFocus = actions[next] ?? 'new-replay';
+}
+
 function submitComposer(c: ControllerHandle): Consume {
   const typed = c.composer.trim().toLowerCase();
   c.composer = '';
@@ -282,10 +376,7 @@ function submitComposer(c: ControllerHandle): Consume {
   c.showSuggestions = false;
   c.hideCommandOverlay();
   const command = submittedHomeCommand(typed);
-  if (command === 'empty') {
-    if (c.recentExperiment) return c.openRecentExperiment();
-    return { consume: true };
-  }
+  if (command === 'empty') return activateHomeFocus(c);
   if (command === 'plain') return c.setHomeMessage(t(c.locale, 'plainRejected'));
   if (command === 'help') return c.setHomeMessage(`${t(c.locale, 'helpCommands')}.`);
   if (command === 'config') {
@@ -299,6 +390,21 @@ function submitComposer(c: ControllerHandle): Consume {
     return { consume: true };
   }
   return c.setHomeMessage(t(c.locale, 'unknownCommand', { cmd: typed }));
+}
+
+function activateHomeFocus(c: ControllerHandle): Consume {
+  const action = c.homeFocus;
+  if (action === 'new-replay') return startSessionDiscovery(c);
+  if (action === 'open-recent') {
+    if (c.recentExperiment) return c.openRecentExperiment();
+    return { consume: true };
+  }
+  if (action === 'history') return startHistoryLoad(c);
+  if (action === 'config') {
+    void c.openConfig();
+    return { consume: true };
+  }
+  return c.setHomeMessage(`${t(c.locale, 'helpCommands')}.`);
 }
 
 function startSessionDiscovery(c: ControllerHandle): Consume {
@@ -456,13 +562,11 @@ function applyCandidateModel(c: ControllerHandle, data: string): Consume | undef
 function applyCompareGate(c: ControllerHandle, data: string): Consume | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'enter') || input === 'c' || input === 'C') {
-    c.compareChoice?.resolve(true);
-    c.compareChoice = undefined;
+    resolveCompareChoice(c, true);
     return { consume: true };
   }
   if (input === 's' || input === 'S') {
-    c.compareChoice?.resolve(false);
-    c.compareChoice = undefined;
+    resolveCompareChoice(c, false);
     return { consume: true };
   }
   return undefined;
@@ -471,32 +575,39 @@ function applyCompareGate(c: ControllerHandle, data: string): Consume | undefine
 function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
   const result = dispatchConfirmInput(data);
   if (!result) return undefined;
-  if (result.action === 'home') return c.backToHome();
   if (result.action === 'models') {
     if (candidateStartBlocked(candidateGateFrom(c))) return c.backToHome();
-    c.page = c.selectedCandidate || c.candidateProductId ? 'candidate-model' : 'candidate-product';
-    if (c.page === 'candidate-model' && c.candidateCatalogStatus === 'idle') void loadCandidateCatalog(c);
+    if (!c.selectedCandidate && !c.candidateProductId) return c.backToHome();
+    c.page = 'candidate-model';
+    if (c.candidateCatalogStatus === 'idle') void loadCandidateCatalog(c);
     c.render();
     return { consume: true };
   }
+  // Recovery acceptance can arrive on the pre-existing confirmation surface
+  // before candidate-model verification has armed the new confirmation gate.
+  // It is safe only when the recorded recovery is ready and a candidate is
+  // already selected; blocked diagnostics still remain non-startable.
+  if (!c.confirmStartArmed && !c.selectedCandidate) return { consume: true };
   if (candidateStartBlocked(candidateGateFrom(c))) {
     c.message = t(c.locale, 'recoveryFailed');
     c.render();
     return { consume: true };
   }
+  if (c.runStartPending || c.startupAbort || c.activeExperiment) return { consume: true };
   bindWorkflow(c, beginRun(c));
   return { consume: true };
 }
 
 function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   const blocked = canvasBlocked(c);
-  if (!blocked && !c.finding) {
-    if (c.readingMode && (matchesKey(data, 'v') || matchesKey(data, 'escape'))) return exitReadingMode(c);
-    if (c.readingMode) return { consume: true };
-    if (matchesKey(data, 'v')) return enterReadingMode(c);
+  if (!blocked && !c.finding && matchesKey(data, 'v')) {
+    return c.readingMode ? exitReadingMode(c) : enterReadingMode(c);
   }
+  // Reading mode must still accept PgUp/PgDn/arrows/End via canvas; only freeze follow/anchor.
   const canvas = applyCanvas(c, data);
   if (canvas) return canvas;
+  if (c.readingMode && !c.finding && matchesKey(data, 'escape')) return exitReadingMode(c);
+  if (c.readingMode && !c.finding) return { consume: true };
   if (c.compareChoice) {
     const gate = applyCompareGate(c, data);
     if (gate) return gate;
@@ -507,14 +618,20 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'cycle-fold' || result.action === 'cycle-fold-prev') {
     return cycleFoldSelection(c, result.action === 'cycle-fold-prev' ? -1 : 1);
   }
-  c.message = t(c.locale, 'experimentActive');
+  if (c.cancelUi === 'requesting') {
+    c.message = t(c.locale, 'cancellationRequested');
+  } else if (c.cancelUi === 'failed') {
+    // Keep the failure notice; Esc must not look like a healthy run.
+  } else {
+    c.message = t(c.locale, 'experimentActive');
+  }
   c.render();
   return { consume: true };
 }
 
 function canvasBlocked(c: ControllerHandle): boolean {
   return c.preparePhase === 'check' || c.preparePhase === 'copy'
-    || Boolean(c.helpOverlay || c.inlineHelp);
+    || Boolean(c.helpOverlay || c.inlineHelp || c.activityDetailOverlay);
 }
 
 function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
@@ -533,8 +650,10 @@ function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
       c.finding = false;
       c.findQuery = '';
       c.findCursor = 0;
+      c.findRestore = undefined;
       return { consume: true };
     }
+    c.findRestore = captureFindRestore(c);
     c.timelineFollowing = false;
     expandFoldsForQuery(c);
     c.render();
@@ -544,9 +663,9 @@ function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'home') return homeTimeline(c);
   if (result.action === 'click') return clickCanvasAt(c, result.row ?? 1);
   if (result.action === 'edit-find') {
+    // Typing a query must not jump the body; expand folds for hits without stealing the anchor.
     c.timelineFollowing = false;
     expandFoldsForQuery(c);
-    syncTimelineSelection(c);
     c.render();
     return { consume: true };
   }
@@ -576,12 +695,17 @@ function applyHistoryDetail(c: ControllerHandle, data: string): Consume | undefi
 }
 
 function clearFind(c: ControllerHandle): Consume {
-  const current = c.visibleTimeline()[c.timelineSelected];
-  if (current) c.timelineAnchor = timelineIdentity(current);
+  const restore = c.findRestore;
   c.finding = false;
   c.findQuery = '';
   c.findCursor = 0;
-  syncTimelineSelection(c);
+  c.findRestore = undefined;
+  if (restore) applyFindRestore(c, restore);
+  else {
+    const current = c.visibleTimeline()[c.timelineSelected];
+    if (current) c.timelineAnchor = timelineIdentity(current);
+    syncTimelineSelection(c);
+  }
   c.render();
   return { consume: true };
 }
@@ -593,7 +717,25 @@ function toggleSelectedFold(c: ControllerHandle): Consume {
   const entry = folded[selected];
   if (entry?.kind === 'fold' && entry.itemId) {
     c.expandedFolds = toggleFoldId(c.expandedFolds, entry.itemId);
+    c.render();
+    return { consume: true };
   }
+  if (entry && (entry.kind === 'narrate' || entry.title.startsWith('Visible response') || entry.verb === 'send'
+    || entry.title.startsWith('Input to Target') || entry.title.startsWith('Prompt ·'))) {
+    const id = excerptId(entry);
+    const wrappedLong = (entry.detail ?? entry.title).length > 120 || (entry.detail ?? '').includes('\n');
+    if (wrappedLong && !c.expandedFolds.includes(id)) {
+      c.expandedFolds = [...c.expandedFolds, id];
+      c.render();
+      return { consume: true };
+    }
+    if (c.expandedFolds.includes(id) && !c.activityDetailEntry) {
+      // Second Enter after excerpt expand opens the shared detail model.
+      return c.showActivityDetail(entry);
+    }
+    if (!wrappedLong) return c.showActivityDetail(entry);
+  }
+  if (entry) return c.showActivityDetail(entry);
   c.render();
   return { consume: true };
 }
@@ -609,18 +751,20 @@ function moveTimeline(c: ControllerHandle, amount: number): Consume {
 }
 
 function jumpFindHit(c: ControllerHandle, direction: 1 | -1): Consume {
+  expandFoldsForQuery(c);
   const entries = c.visibleTimeline();
-  const hits = canvasHitIndices(entries, c.findQuery);
+  const hits = canvasHitIndices(entries, c.findQuery, c.timelineRevision);
   if (!hits.length) {
+    // Keep the pre-find / current anchor; do not snap to live bottom.
+    c.message = t(c.locale, 'findNone');
     c.render();
     return { consume: true };
   }
   c.timelineSelected = nextHitIndex(hits, c.timelineSelected, direction);
   c.timelineReadOffset = 0;
-  c.timelineFollowing = c.timelineSelected === Math.max(0, entries.length - 1);
+  c.timelineFollowing = false;
   const current = entries[c.timelineSelected];
   if (current) c.timelineAnchor = timelineIdentity(current);
-  expandFoldsForQuery(c);
   c.render();
   return { consume: true };
 }
@@ -639,8 +783,19 @@ function followTimeline(c: ControllerHandle): Consume {
   const visible = c.visibleTimeline();
   c.timelineSelected = Math.max(0, visible.length - 1);
   c.timelineFollowing = true;
+  c.timelineReadOffset = 0;
   const current = visible[c.timelineSelected];
   if (current) c.timelineAnchor = timelineIdentity(current);
+  if (c.readingMode) {
+    c.readingMode = false;
+    c.setMouseReporting(true);
+  }
+  if (c.finding) {
+    c.finding = false;
+    c.findQuery = '';
+    c.findCursor = 0;
+    c.findRestore = undefined;
+  }
   c.message = t(c.locale, 'followingLatest');
   c.render();
   return { consume: true };
@@ -690,8 +845,11 @@ function enterReadingMode(c: ControllerHandle): Consume {
   c.readingMode = true;
   c.timelineFollowing = false;
   c.readingVisibleAt = c.visibleTimeline().length;
+  const current = c.visibleTimeline()[c.timelineSelected];
+  if (current) c.timelineAnchor = timelineIdentity(current);
   c.setMouseReporting(false);
   c.message = t(c.locale, 'readingModeOn');
+  c.render();
   return { consume: true };
 }
 

@@ -128,14 +128,14 @@ export function roleFromLane(
   lane: string | undefined,
   source?: string,
 ): ActivityRole {
-  if (lane === 'recovery' || lane === 'controller' || lane === 'comparison') return lane;
+  if (lane === 'recovery' || lane === 'controller' || lane === 'comparison' || lane === 'system') return lane;
   if (source === 'TARGET') return 'candidate';
   if (source === 'CONTROLLER') return 'controller';
   if (source === 'HARNESS') return 'system';
   return 'system';
 }
 
-export function activityRoleFromPayload(payload: JsonRecord, fallback: ActivityRole = 'recovery'): ActivityRole {
+export function activityRoleFromPayload(payload: JsonRecord, fallback: ActivityRole = 'system'): ActivityRole {
   const role = text(payload.role);
   if (role === 'controller' || role === 'comparison' || role === 'recovery') return role;
   return fallback;

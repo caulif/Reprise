@@ -76,9 +76,9 @@ test("Codex intake TUI uses an ASCII narrow-terminal fallback and states the min
 
   await app.start();
   const narrow = document?.render(60).join("\n") ?? "";
-  assert.match(narrow, /Continue|Browse|\/ command|继续|浏览|\/命令/);
+  assert.match(narrow, /New replay|新建回放|\/ command|\/命令|More|更多/);
   assert.doesNotMatch(narrow, /[┌┐└┘│─❯●✓…]/);
-  assert.match(narrow, /Continue|Browse|Internal model|继续|浏览|内部模型/);
+  assert.match(narrow, /New replay|新建回放|Internal collab model|内部协作模型|Internal model|内部模型/);
   assert.match(narrow.replace(/\u001b\[[0-9;]*m/g, ''), /^Reprise v0\.1\.0/m);
   assert.doesNotMatch(narrow.split("\n")[0] ?? "", /No configured model|gpt-/);
   assert.match(
@@ -118,7 +118,7 @@ test("Codex intake TUI uses framed panels at normal terminal widths", async (t) 
 
   await app.start();
   const wide = document?.render(120).join("\n") ?? "";
-  assert.match(wide, /Continue|Browse|\/ command|继续|浏览|\/命令/);
+  assert.match(wide, /New replay|新建回放|\/ command|\/命令|More|更多/);
   assert.match(wide, /\/config|\/intake|\/lang/);
 });
 
@@ -231,15 +231,15 @@ test("Codex intake TUI only reads before explicit freeze and leaves no ambiguous
   });
 
   await app.start();
-  assert.match(rendered, /Continue|Browse|\/ command|继续|浏览|\/命令/);
+  assert.match(rendered, /New replay|新建回放|\/ command|\/命令|More|更多/);
   assert.match(rendered, /\/intake|i\s+Import a Codex session/);
   await enterIntake(app);
   await waitFor(() => /Fix the bug\./.test(rendered));
   assert.equal(await readFile(source, "utf8"), raw);
 
   app.handleInput("\r");
-  await waitFor(() => /Session start:|会话起点：/.test(rendered));
-  assert.match(rendered, /Session start:|会话起点：/);
+  await waitFor(() => /Task text:|任务原文：/.test(rendered));
+  assert.match(rendered, /Task text:|任务原文：/);
   assert.match(rendered, /Review session|核对会话/);
   assert.equal(await readFile(source, "utf8"), raw);
 

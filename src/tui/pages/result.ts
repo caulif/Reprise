@@ -2,43 +2,57 @@ import { resolve, normalize } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
+import { type ActionArtifacts, resultFooterHints } from '../action-model.js';
 import { localPathFromFileUrl } from '../open-report.js';
 import { compact, hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
+import type { WorkbenchSurfaceScope } from '../workbench-layout.js';
 import { kv, kvLinkBlock, panel, panelWithHits, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
-import {
-  deriveResultPresentationFromResult,
-  type ResultPresentation,
-  type ResultTone,
-} from '../display-state.js';
+import { comparisonPresentation, displayCleanupStatus, displayTaskStatus, displayTerminationKind } from '../display-copy.js';
+
+export type { ActionArtifacts };
 
 export type ResultPointerHit = { readonly action: ResultAction; readonly x0: number; readonly x1: number };
 export type ResultRender = { readonly lines: readonly string[]; readonly rowHits: ReadonlyMap<number, readonly ResultPointerHit[]> };
+export type ResultRenderOptions = {
+  readonly surfaceScope?: WorkbenchSurfaceScope;
+  readonly processExpanded?: boolean;
+};
 
-export function renderResult(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string, comparePending = false): string[] {
-  return [...renderResultWithHits(theme, width, result, locale, productLabel, comparePending).lines];
+export function renderResult(
+  theme: Theme,
+  width: number,
+  result: ExperimentResult,
+  locale: Locale = 'en',
+  productLabel?: string,
+  comparePending = false,
+  options?: ResultRenderOptions,
+): string[] {
+  return [...renderResultWithHits(theme, width, result, locale, productLabel, comparePending, options).lines];
 }
 
-export function renderResultWithHits(theme: Theme, width: number, result: ExperimentResult, locale: Locale = 'en', productLabel?: string, comparePending = false): ResultRender {
-  const presentation = deriveResultPresentationFromResult(result, locale, comparePending);
+export function renderResultWithHits(
+  theme: Theme,
+  width: number,
+  result: ExperimentResult,
+  locale: Locale = 'en',
+  productLabel?: string,
+  comparePending = false,
+  _options?: ResultRenderOptions,
+): ResultRender {
   const kind = result.record.outcome.termination.kind;
-  const vacant = theme.framed ? '—' : '-';
-  const skipped = presentation.comparisonKind === 'skipped' || presentation.comparisonKind === 'pending';
+  const vacant = t(locale, 'resultMissingArtifact');
+  const comparison = result.comparison.result;
+  const reportKind = reportLinkKind(comparison);
   const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
   const paths = resolveResultPathLinks(result);
   const runId = result.record.attempt?.runId;
   const inner = Math.max(20, width - 4);
-  const headline = skipped ? undefined : envelopeHeadline(result, presentation);
-  const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
-  const metrics = metricsLine(theme, result, locale);
-  const candidateLabel = candidateDisplayLabel(result, productLabel);
   const body: string[] = [];
   const bodyHits = new Map<number, readonly ResultPointerHit[]>();
-  const push = (line: string) => {
-    body.push(line);
-  };
+  const push = (line: string) => { body.push(line); };
   const pushLink = (action: ResultAction, block: KvLinkBlock) => {
     for (let index = 0; index < block.lines.length; index += 1) {
       const hit = block.hits[index];
@@ -46,76 +60,91 @@ export function renderResultWithHits(theme: Theme, width: number, result: Experi
       body.push(block.lines[index] ?? '');
     }
   };
-  push(terminationBanner(theme, kind, presentation.terminationTone));
-  push(kv(theme, t(locale, 'resultTask'), `${presentation.taskLabel} · ${result.record.outcome.task.status}`, width - 2));
-  push(kv(theme, t(locale, 'resultTermination'), `${kind} · ${result.record.outcome.termination.code}`, width - 2));
-  push(kv(theme, t(locale, 'resultCleanup'), presentation.cleanupLabel, width - 2));
+
+  // Four facts first (task / termination / cleanup / comparison), then primary actions.
+  if (kind !== 'completed') {
+    push(theme.style.danger(` ${theme.glyphs.warn} ${terminationWord(kind, locale)}`));
+  }
+  push(kv(theme, t(locale, 'resultTask'), taskAssessmentWord(result.record.outcome.task.status, locale), width - 2));
+  push(kv(
+    theme,
+    t(locale, 'resultTermination'),
+    `${terminationWord(kind, locale)} · ${result.record.outcome.termination.code}`,
+    width - 2,
+  ));
+  push(kv(theme, t(locale, 'resultCleanup'), cleanupWord(result.record.outcome.cleanup?.status, vacant, locale), width - 2));
+  push(kv(theme, t(locale, 'resultComparison'), comparisonWord(comparison, locale), width - 2));
+  push(kv(theme, t(locale, 'nextStepField'), nextStepWord(result, comparePending, locale), width - 2));
+
+
+  const candidateLabel = candidateDisplayLabel(result, productLabel);
   if (candidateLabel) push(kv(theme, t(locale, 'candidateLabel'), candidateLabel, width - 2));
-  if (!skipped) push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
-  if (metrics) push(`     ${metrics}`);
-  if (headline) {
-    push('');
-    for (const line of wrapBodyLine(headline, inner)) push(` ${line}`);
-  }
-  if (summary) {
-    push('');
-    for (const line of summary) push(` ${line}`);
-  }
-  if (skipped) {
-    push('');
-    push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
-  }
+
+  const metrics = metricsLine(theme, result, locale);
+  if (metrics) push(kv(theme, t(locale, 'metricsElapsedField'), metrics, width - 2));
+
   if (comparePending) {
     push('');
-    push(` ${theme.style.accent(t(locale, 'hintCompare'))}`);
+    const compareLine = ` ${theme.style.accent(t(locale, 'hintCompare'))}`;
+    bodyHits.set(body.length, [{ action: 'compare', x0: 1, x1: Math.max(1, visibleCompareEnd(compareLine)) }]);
+    push(compareLine);
   }
-  const reportLabel = presentation.reportKind === 'diagnostic'
-    ? t(locale, 'resultDiagnostic')
-    : t(locale, 'resultReport');
-  const reportValue = paths.report
-    ? shortPath(paths.report, experimentRoot, vacant)
-    : presentation.reportKind === 'none'
-      ? t(locale, 'resultReportNotGenerated')
-      : vacant;
-  pushLink('open-report', kvLinkBlock(theme, reportLabel, reportValue, paths.report, width));
-  pushLink('open-history-final', kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortPath(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width));
-  pushLink('open-candidate-final', kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortPath(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width));
+
+  const reportLabel = reportKind === 'diagnostic' ? t(locale, 'resultDiagnostic')
+    : reportKind === 'missing' ? t(locale, 'resultReport')
+      : t(locale, 'resultReport');
+  pushLink('open-report', kvLinkBlock(theme, reportLabel, shortLabel(paths.report, experimentRoot, vacant), paths.report, width));
+  pushLink('open-candidate-final', kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortLabel(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width));
+  pushLink('open-history-final', kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortLabel(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width));
+
+  const headline = comparison.status === 'skipped' ? undefined : envelopeHeadline(result);
+  const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
+  if (headline || summary) {
+    push('');
+    if (headline) for (const line of wrapBodyLine(headline, inner)) push(` ${line}`);
+    if (summary) for (const line of summary) push(` ${line}`);
+  }
+
+  // Trace/replica stay secondary — full paths live in details via hit targets.
   pushLink('open-trace', kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width));
   pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width));
-  return panelWithHits(theme, `${t(locale, presentation.titleKey)} ${theme.glyphs.h} ${kind}`, body, width, bodyHits);
+  return panelWithHits(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width, bodyHits);
 }
 
-export function resultHints(locale: Locale = 'en', comparePending = false): readonly (readonly [string, string])[] {
-  const opens: (readonly [string, string])[] = [
-    ['o', t(locale, 'hintReport')],
-    ['h', t(locale, 'hintHistoryFinal')],
-    ['f', t(locale, 'hintCandidateFinal')],
-  ];
-  if (comparePending) return [['c', t(locale, 'hintCompare')], ...opens, ['Esc', t(locale, 'hintHome')]];
-  return [...opens, ['Esc', t(locale, 'hintHome')]];
+function visibleCompareEnd(line: string): number {
+  return Math.max(1, line.replace(/\x1b\[[0-9;]*m/g, '').length - 1);
+}
+
+export function resultHints(
+  locale: Locale = 'en',
+  comparePending = false,
+  artifacts?: ActionArtifacts,
+): readonly (readonly [string, string])[] {
+  return resultFooterHints(locale, {
+    comparePending,
+    ...(artifacts !== undefined ? { artifacts } : {}),
+  });
 }
 
 export function resultPointerAction(
   lines: readonly string[],
   row: number,
   col: number,
-  locale: Locale = 'en',
+  _locale: Locale = 'en',
   paths?: ResultPathLinks,
   rowHits?: ReadonlyMap<number, readonly ResultPointerHit[]>,
 ): ResultAction | undefined {
   const line = lines[row];
   if (!line) return undefined;
-  const compare = t(locale, 'hintCompare');
-  if (stripForHit(line).includes(compare)) return 'compare';
-  const href = hitFileLink(line, col);
-  if (href && paths) {
-    const action = resolveResultLinkAction(href, paths);
-    if (action) return action;
-  }
   const hits = rowHits?.get(row);
   if (hits) {
     const match = hits.find((hit) => col >= hit.x0 && col <= hit.x1);
     if (match) return match.action;
+  }
+  const href = hitFileLink(line, col);
+  if (href && paths) {
+    const action = resolveResultLinkAction(href, paths);
+    if (action) return action;
   }
   return undefined;
 }
@@ -165,10 +194,6 @@ function candidateDisplayLabel(result: ExperimentResult, productLabel: string | 
   return `${product} · ${model}`;
 }
 
-function stripForHit(line: string): string {
-  return line.replace(/\u001b\[[0-9;]*m/g, '').replace(/\u001b\]8;;[^\u0007\u001b]*(?:\u0007|\u001b\\)/g, '');
-}
-
 export function renderFailure(theme: Theme, width: number, message: string, locale: Locale = 'en'): string[] {
   const inner = Math.max(20, width - 4);
   return panel(theme, t(locale, 'cannotContinue'), [
@@ -182,16 +207,36 @@ export function failureHints(locale: Locale = 'en'): readonly (readonly [string,
   return [['Enter', t(locale, 'hintBack')], ['b', t(locale, 'hintBack')], ['Esc', t(locale, 'hintHome')]];
 }
 
-function terminationBanner(theme: Theme, kind: string, tone: ResultTone): string {
-  if (tone === 'ok') return theme.style.ok(` ${theme.glyphs.ok} ${kind}`);
-  const glyph = kind === 'failed' || tone === 'danger' ? theme.glyphs.err : theme.glyphs.warn;
-  return theme.style.danger(` ${glyph} ${kind}`);
+function taskAssessmentWord(status: string, locale: Locale): string {
+  return displayTaskStatus(status, locale);
 }
 
-function envelopeHeadline(result: ExperimentResult, presentation: ResultPresentation): string | undefined {
-  if (presentation.comparisonKind !== 'completed' && presentation.comparisonKind !== 'insufficient_evidence') {
-    return undefined;
-  }
+function terminationWord(kind: string, locale: Locale): string {
+  return displayTerminationKind(kind, locale);
+}
+
+function cleanupWord(status: string | undefined, vacant: string, locale: Locale): string {
+  if (!status) return vacant;
+  return displayCleanupStatus(status, locale);
+}
+
+function nextStepWord(_result: ExperimentResult, comparePending: boolean, locale: Locale): string {
+  if (comparePending) return t(locale, 'nextCompareWhenReady');
+  return t(locale, 'nextOpenArtifacts');
+}
+
+function reportLinkKind(comparison: ExperimentResult['comparison']['result']): 'report' | 'diagnostic' | 'missing' {
+  if (comparison.status === 'failed' || comparison.status === 'cancelled') return 'diagnostic';
+  if (comparison.status === 'completed') return 'report';
+  if (comparison.status === 'skipped') return 'missing';
+  return 'missing';
+}
+
+function comparisonWord(comparison: ExperimentResult['comparison']['result'], locale: Locale): string {
+  return comparisonPresentation(comparison, locale).word;
+}
+
+function envelopeHeadline(result: ExperimentResult): string | undefined {
   const cmp = result.comparison.result;
   if (cmp.status !== 'completed' || !('value' in cmp)) return undefined;
   const text = cmp.value?.headline?.trim();
@@ -200,18 +245,16 @@ function envelopeHeadline(result: ExperimentResult, presentation: ResultPresenta
 
 function metricsLine(theme: Theme, result: ExperimentResult, locale: Locale): string | undefined {
   const facts = result.facts;
-  if (!facts) return undefined;
+  const missing = t(locale, 'notRecorded');
+  if (!facts) return missing;
   const total = facts.elapsedMs;
   const candidate = facts.wallClockMs;
   const showBoth = total !== undefined && candidate !== undefined && total - candidate >= 2000;
-  const missing = t(locale, 'notRecorded');
   const parts = [
-    total !== undefined ? `${Math.round(total / 1000)}s` : candidate === undefined ? undefined : `${Math.round(candidate / 1000)}s`,
+    total !== undefined ? `${Math.round(total / 1000)}s` : candidate === undefined ? missing : `${Math.round(candidate / 1000)}s`,
     showBoth && candidate !== undefined ? `candidate ${Math.round(candidate / 1000)}s` : undefined,
-    `${facts.turns} turn${facts.turns === 1 ? '' : 's'}`,
-    `${facts.controllerCalls} controller`,
     facts.tokenCount === undefined ? `${missing} tokens` : `${facts.tokenCount} tokens`,
-    facts.costUsd === undefined ? `${missing} cost` : `$${facts.costUsd.toFixed(2)}`,
+    facts.costUsd === undefined ? `${missing} ${t(locale, 'metricsUsageSummary').toLowerCase()}` : `$${facts.costUsd.toFixed(2)}`,
   ].filter((part): part is string => Boolean(part));
   return parts.join(` ${theme.glyphs.sep} `);
 }
@@ -262,6 +305,14 @@ function shortPath(path: string | undefined, experimentRoot: string | undefined,
   }
   const parts = asPosixPath(path).split('/').filter((item) => item);
   return parts[parts.length - 1] ?? path;
+}
+
+/** Prefer basename short labels on the result first screen; full path stays on the hit target. */
+function shortLabel(path: string | undefined, experimentRoot: string | undefined, vacant: string): string {
+  if (!path?.trim()) return vacant;
+  const relative = shortPath(path, experimentRoot, vacant);
+  const parts = asPosixPath(relative).split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? relative;
 }
 
 function runFolderLabel(prefix: string, runId: string | undefined, theme: Theme, width: number, vacant: string): string {

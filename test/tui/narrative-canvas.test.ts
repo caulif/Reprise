@@ -33,6 +33,16 @@ test('visible assistant text drops JSON envelopes and thinking-only content', ()
   assert.equal(visibleAssistantText([{ type: 'text', text: '<think>hidden</think>{"type":"done","reason":"satisfied"}' }]), '');
 });
 
+test('system-lane agent activity remains visible in the main pane', () => {
+  const [row] = projectTimelineEvent(event('agent.assistant_visible', {
+    role: 'unrecognized-agent',
+    text: 'Diagnostic activity',
+  }));
+  assert.equal(row?.role, 'system');
+  assert.ok(row);
+  assert.equal(paneOf(row), 'left');
+});
+
 test('assistant_visible is a narrate row on the main column', () => {
   const [row] = projectTimelineEvent(event('agent.assistant_visible', {
     role: 'recovery',
@@ -80,7 +90,7 @@ test('candidate canvas keeps Controller tools and delivered input on one column'
   })));
   const text = renderTimeline(theme, 120, {
     entries,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Codex',
     locale: 'zh',
@@ -217,7 +227,7 @@ test('comparison narrate stays on the compare surface without Input cards', () =
   assert.equal(compare.some((entry) => entry.title.includes('Decision: SEND')), false);
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: [...compare],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'finished', elapsed: '01:00', turns: { used: 4 }, calls: { used: 2 },
     preparePhase: 'compare',
     productLabel: 'Codex',
@@ -248,7 +258,7 @@ test('candidate surface hides recovery blocks, compact, and session UUID', () =>
   assert.equal(candidate.some((entry) => /compact/.test(entry.title)), false);
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: [...candidate],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_controller', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Codex',
     locale: 'zh',
@@ -292,7 +302,7 @@ test('candidate live keeps the leaf after tool_finished and flushes on user view
   assert.ok(visible.some((entry) => entry.kind === 'fold' && /阅读证据|写入/.test(entry.title)));
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: visible,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_controller', elapsed: '03:21', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Claude Code',
     locale: 'zh',
@@ -308,14 +318,14 @@ test('candidate working row without live includes elapsed', () => {
   appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: '在吗' })));
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: timeline.filter((entry) => !entry.hidden),
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '03:21', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Claude Code',
     locale: 'zh',
   }).join('\n');
-  assert.match(painted, /working/);
+  assert.match(painted, /等待新的可见活动/);
   assert.match(painted, /03:21/);
-  assert.doesNotMatch(painted, /working · 03:21/);
+  assert.doesNotMatch(painted, /等待新的可见活动 · 03:21/);
   assert.doesNotMatch(painted, /Candidate · working/);
 });
 
@@ -344,7 +354,7 @@ test('expanded fold lists leaf names in the tree', () => {
   const fold = timeline.find((entry) => !entry.hidden && entry.kind === 'fold');
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: timeline.filter((entry) => !entry.hidden),
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     expandedFolds: fold?.itemId ? [fold.itemId] : [],
     runPhase: 'recovery',
@@ -369,7 +379,7 @@ test('unexpanded fold does not list leaf names and visible_output stays off the 
   })));
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: timeline.filter((entry) => !entry.hidden),
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     locale: 'zh',
@@ -402,7 +412,7 @@ test('clicking a fold hit writes that itemId into expandedFolds', () => {
   const expandedFolds = [clicked.itemId];
   const painted = renderTimeline(theme, 120, {
     entries: visible,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     expandedFolds,
     runPhase: 'recovery',
@@ -444,8 +454,8 @@ test('scrollback gutter keeps body default, mutes folds, and pins the clock', ()
     const status = painted.at(-1) ?? '';
     const plain = painted.map((line) => line.replace(/\u001b\[[0-9;]*m/g, '')).join('\n');
     assert.match(status.replace(/\u001b\[[0-9;]*m/g, ''), /25:10\s*$/);
-    assert.doesNotMatch(status.replace(/\u001b\[[0-9;]*m/g, ''), /working · 25:10/);
-    assert.equal([...plain.matchAll(/working/g)].length, 1);
+    assert.doesNotMatch(status.replace(/\u001b\[[0-9;]*m/g, ''), /等待新的可见活动 · 25:10/);
+    assert.equal([...plain.matchAll(/等待新的可见活动/g)].length, 1);
     const behind = renderScrollback(colored, 80, [say, fold], 0, 'zh', 'Codex', undefined, 0, 0, '00:08', false).join('\n');
     assert.match(behind, /▼|↓/);
     assert.match(behind, /新 1|1 new/);

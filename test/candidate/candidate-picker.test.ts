@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTheme } from '../../src/tui/theme.js';
-import { confirmCanStart, renderConfirmation } from '../../src/tui/pages/run.js';
-import { renderCandidateModelPicker, renderCandidateProductPicker } from '../../src/tui/pages/candidate.js';
+import { confirmCanStart, confirmHints, renderConfirmation } from '../../src/tui/pages/run.js';
+import { candidateModelHints, renderCandidateModelPicker, renderCandidateProductPicker } from '../../src/tui/pages/candidate.js';
 import { candidateSpecFromOffer } from '../../src/application/candidate-spec.js';
 import { createExperimentWorkflow, TUI_RUN_POLICY } from '../../src/application/experiment-workflow.js';
 import { fakeProductPack } from '../fixtures/fake-pack/pack.js';
@@ -62,6 +62,29 @@ test('empty catalog cannot be confirmed', () => {
   assert.match(text, /No models were listed/);
 });
 
+test('model picker Enter reviews run conditions instead of starting', () => {
+  const hints = candidateModelHints(true, 'zh');
+  assert.deepEqual(hints.find((row) => row[0] === 'Enter'), ['Enter', '核对运行条件']);
+  assert.equal(hints.some((row) => row[1].includes('启动')), false);
+});
+
+test('confirm hints return to models unless recovery diagnosis blocks start', () => {
+  assert.deepEqual(confirmHints(true, 'zh'), [
+    ['Enter', '启动隔离候选'],
+    ['b', '改模型'],
+    ['Esc', '改模型'],
+  ]);
+  assert.deepEqual(confirmHints(false, 'zh', true), [
+    ['Enter', '尝试开始（受阻）'],
+    ['Esc', '封面'],
+  ]);
+  assert.deepEqual(confirmHints(false, 'zh', false), [
+    ['Enter', '尝试开始（受阻）'],
+    ['b', '改模型'],
+    ['Esc', '改模型'],
+  ]);
+});
+
 test('recovered confirmation without a selected candidate cannot start', () => {
   const model = {
     candidate: undefined,
@@ -106,7 +129,7 @@ test('running canvas uses the candidate product not the source session product',
     locale: 'zh',
     message: '',
     inlineHelp: false,
-    cancelling: false,
+    cancelUi: 'idle' as const,
     hasSavedModelConfig: true,
     harnessAuthOk: true,
     modelConfig: { providerId: 'pi', modelId: 'gpt-5.6-terra', effort: 'medium' },
@@ -158,7 +181,7 @@ test('running canvas uses the candidate product not the source session product',
   assert.equal(view.productLabel, 'Claude Code');
   const text = renderWorkbench(view, 120).join('\n');
   assert.match(text, /候选运行中 · Claude Code/);
-  assert.match(text, /Claude Code · working/);
+  assert.match(text, /Claude Code · 等待新的可见活动/);
   assert.doesNotMatch(text, /候选运行中 · Codex/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /发给 Claude Code/);

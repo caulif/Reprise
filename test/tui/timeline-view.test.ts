@@ -25,6 +25,23 @@ function visibleOf(timeline: readonly TimelineEntry[]): TimelineEntry[] {
   return timeline.filter((entry) => !entry.hidden && matchesFilter(entry, 'ALL'));
 }
 
+test('unknown agent roles stay system activity across lifecycle events', () => {
+  for (const [sequence, type] of [
+    'agent.assistant_visible',
+    'agent.invocation_started',
+    'agent.invocation_failed',
+    'agent.invocation_cancelled',
+  ].entries()) {
+    const entries = projectTimelineEvent(event(type, {
+      role: 'unrecognized-agent',
+      text: 'status update',
+    }, sequence + 1));
+    assert.ok(entries.length > 0);
+    assert.ok(entries.every((entry) => entry.role === 'system'));
+    assert.ok(entries.every((entry) => entry.role !== 'recovery'));
+  }
+});
+
 test('candidate live probe is tip-only: latest tip plus one fold count', () => {
   const timeline: TimelineEntry[] = [];
   appendTimelineEntries(timeline, projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: '在吗' }, 1)));
@@ -53,7 +70,7 @@ test('candidate live probe is tip-only: latest tip plus one fold count', () => {
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: visible,
     sourceTimeline: timeline,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: 'awaiting_target', elapsed: '00:12', turns: { used: 1 }, calls: { used: 1 },
     productLabel: 'Claude Code',
     locale: 'zh',
@@ -117,7 +134,7 @@ test('recovery probe chain is tip-only while live and folds after the next sente
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: visible,
     sourceTimeline: timeline,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     locale: 'zh',
@@ -162,7 +179,7 @@ test('recovery historical tool spam is not painted as peer L2 rows', () => {
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: visible,
     sourceTimeline: timeline,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     locale: 'zh',
@@ -202,7 +219,7 @@ test('live flush fold expands leaf names via expandedIds and keeps tip without d
   const painted = renderTimeline(createTheme(120, false), 120, {
     entries: visible,
     sourceTimeline: timeline,
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     locale: 'zh',

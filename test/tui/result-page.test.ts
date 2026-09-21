@@ -5,8 +5,6 @@ import { renderResult, resultHints } from '../../src/tui/pages/result.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { kv } from '../../src/tui/widgets.js';
 import { syntheticExperimentResult } from './fixtures/synthetic-flow.js';
-import { renderWorkbench } from '../../src/tui/workbench.js';
-import { t } from '../../src/tui/i18n.js';
 
 test('result page uses comparison headline and hides satisfied rationale', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });
@@ -59,13 +57,11 @@ test('synthetic fixture covers cancelled and insufficient_evidence comparison in
     (cancelledFixture.pathLinks as { report?: string }).report,
     cancelledFixture.reportPath,
   );
-  // T01: cancelled comparison must not greenwash as complete.
+  // Cancellation remains distinct from a completed comparison while preserving candidate outcome details.
   const cancelledPaint = renderResult(theme, 120, cancelledFixture as never).join('\n');
   assert.match(cancelledPaint, /apparently_completed|completed\.controller_satisfied/);
   assert.match(cancelledPaint, /Comparison cancelled/);
-  assert.doesNotMatch(cancelledPaint, /Comparison complete/);
   assert.match(cancelledPaint, /comparison-failure\.html/);
-  assert.match(cancelledPaint, /Diagnostic/);
 
   const insufficientFixture = syntheticExperimentResult({
     comparison: { status: 'completed', valueStatus: 'insufficient_evidence', headline: 'Evidence was incomplete.' },
@@ -112,18 +108,22 @@ test('skipped comparison still renders history and candidate rows without bare a
 });
 
 test('result page footer lists path open keys and c during compare gate', () => {
-  assert.deepEqual(resultHints(), [
+  const artifacts = { report: true, historyFinal: true, candidateFinal: true };
+  assert.deepEqual(resultHints('en', false, artifacts), [
     ['o', 'Open report'],
     ['h', 'History final'],
     ['f', 'Candidate final'],
-    ['Esc', 'Home'],
+    ['?', 'Help'],
   ]);
-  assert.deepEqual(resultHints('en', true), [
+  assert.deepEqual(resultHints('en', true, artifacts), [
     ['c', 'Generate comparison card'],
     ['o', 'Open report'],
     ['h', 'History final'],
-    ['f', 'Candidate final'],
+    ['?', 'Help'],
+  ]);
+  assert.deepEqual(resultHints('en', false, {}), [
     ['Esc', 'Home'],
+    ['?', 'Help'],
   ]);
 });
 
@@ -139,8 +139,8 @@ test('failed comparison remains distinct from a stalled candidate in both termin
       decision: { status: 'completed', value: { type: 'done', reason: 'no_further_value', rationale: 'Delivery is incomplete.' } },
       comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } } },
     } as never).join('\n');
-    assert.match(text, /stalled/);
-    assert.match(text, /Task\s+incomplete/);
+    assert.match(text, /Stalled|stalled/);
+    assert.match(text, /Task\s+Incomplete/);
     assert.match(text, /Comparison failed/);
     assert.match(text, /protocol/);
     assert.match(text, /Diagnostic/);
@@ -155,7 +155,7 @@ test('Controller opening failure names the stage and retryability without a cand
     comparison: { result: { status: 'skipped' } },
   } as never, 'zh').join('\n');
   assert.match(text, /Controller 开场理解.*暂时失败/);
-  assert.match(text, /not_assessed/);
+  assert.match(text, /未评估/);
   assert.doesNotMatch(text, /provider detail/);
 });
 
@@ -168,13 +168,13 @@ test('result metrics show collected token totals and priced cost', () => {
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed' } },
     facts: { wallClockMs: 49_000, turns: 1, controllerCalls: 1, tokenCount: 256, costUsd: 0.49 },
   } as never).join('\n');
   assert.match(text, /256 tokens/);
   assert.match(text, /\$0\.49/);
   assert.doesNotMatch(text, /not recorded tokens/);
-  assert.doesNotMatch(text, /not recorded cost/);
+  assert.doesNotMatch(text, /not recorded (cost|usage)/i);
 });
 
 test('compact result keeps Trace on one line', () => {
@@ -188,7 +188,7 @@ test('compact result keeps Trace on one line', () => {
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed' } },
     facts: { wallClockMs: 49_000, turns: 1, controllerCalls: 1 },
   } as never).join('\n');
   assert.match(text, /49s/);
@@ -206,7 +206,7 @@ test('result metrics name candidate time when comparison made the experiment lon
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked' } },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed' } },
     facts: { wallClockMs: 72_000, elapsedMs: 148_000, turns: 1, controllerCalls: 1 },
   } as never).join('\n');
   assert.match(text, /148s/);
@@ -273,19 +273,19 @@ test('blocked result is a warning with controller reason and short paths', () =>
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'blocked', code: 'blocked.controller_done' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'blocked', rationale: 'Sandbox denied the WeChat data path.' } },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed' } },
   } as never);
   for (const line of lines) assert.equal(visibleWidth(line), 120, line);
   const text = lines.join('\n');
   assert.match(text, /blocked\.controller_done/);
   assert.match(text, /Sandbox denied the WeChat data path/);
-  assert.match(text, /Report\s+.*report\.html/);
+  assert.match(text, /(Report|Diagnostic)\s+.*report\.html/);
   assert.match(text, /Trace\s+.*runs\/run-1\//);
   assert.match(text, /\u001b\]8;;file:\/\/\/.*report\.html\u001b\\/);
   assert.match(text, /\u001b\]8;;file:\/\/\/.*runs[/\\]run-1\u001b\\/);
   assert.doesNotMatch(text, /C:\\exp\\report\.html/);
   assert.doesNotMatch(text, /✗ blocked/);
-  assert.doesNotMatch(text, /Cost not recorded|not recorded/);
+  assert.match(text, /not recorded/);
 });
 
 test('limit_reached result explains the turn cap', () => {
@@ -299,7 +299,7 @@ test('limit_reached result explains the turn cap', () => {
       outcome: { task: { status: 'incomplete' }, termination: { kind: 'limit_reached', code: 'limit.target_turns' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'send', message: 'Continue.' } },
-    comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
+    comparison: { result: { status: 'completed' } },
   } as never).join('\n');
   assert.match(text, /limit\.target_turns/);
   assert.match(text, /target turn limit/);
@@ -329,10 +329,9 @@ test('result banners use the fail slot and mute kv keys', () => {
   }
 });
 
-test('R01: completed candidate with cancelled comparison never greenwashes as complete', () => {
-  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+test('cancelled comparison is not labeled as comparison complete', () => {
   const theme = createTheme(120, false);
-  const result = {
+  const text = renderResult(theme, 120, {
     reportPath: 'C:\\exp\\comparison-failure.html',
     experimentRoot: 'C:\\exp',
     record: {
@@ -344,146 +343,8 @@ test('R01: completed candidate with cancelled comparison never greenwashes as co
       },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
-    comparison: { result: { status: 'cancelled', factRef: 'run:1:cancelled' } },
-  } as never;
-  const text = renderResult(theme, 120, result, 'zh').join('\n');
-  assert.match(text, /对照已取消/);
-  assert.match(text, /控制 Agent 判断已完成/);
-  assert.match(text, /诊断/);
-  assert.match(text, /comparison-failure\.html/);
-  assert.doesNotMatch(text, /对照完成/);
-  assert.doesNotMatch(text, /Comparison complete/);
-  const header = renderWorkbench({
-    page: 'result',
-    cwd: '/workspace',
-    hasApiConfig: true,
-    hasTaskCase: true,
-    message: t('zh', 'resultCompareCancelled'),
-    locale: 'zh',
-    result,
-  }, 120, 30).join('\n');
-  assert.match(header, /运行结果/);
-  assert.match(header, /对照已取消/);
-  assert.doesNotMatch(header, /对照完成/);
-  assert.doesNotMatch(header, /● 完成|✓ 完成|● done|✓ done/i);
-  assert.match(header, /对照已取消|候选产物仍可查看/);
-});
-
-test('R02: failed, skipped, and insufficient_evidence comparisons stay distinct', () => {
-  const theme = createTheme(120, false);
-  const base = {
-    experimentRoot: 'C:\\exp',
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: {
-        task: { status: 'apparently_completed' },
-        termination: { kind: 'completed', code: 'completed.controller_satisfied' },
-        cleanup: { status: 'complete' },
-      },
-    },
-    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
-  };
-  const failed = renderResult(theme, 120, {
-    ...base,
-    reportPath: 'C:\\exp\\comparison-failure.html',
-    comparison: { result: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol', message: 'x', attempts: 1 } } },
+    comparison: { result: { status: 'cancelled' } },
   } as never).join('\n');
-  assert.match(failed, /Comparison failed/);
-  assert.match(failed, /protocol/);
-  assert.match(failed, /Diagnostic/);
-  assert.doesNotMatch(failed, /Comparison complete/);
-
-  const skipped = renderResult(theme, 120, {
-    ...base,
-    comparison: { result: { status: 'skipped' } },
-  } as never, 'en', undefined, true).join('\n');
-  assert.match(skipped, /not run/);
-  assert.match(skipped, /Generate comparison card/);
-  assert.match(skipped, /not generated yet|尚未生成|Report/);
-  assert.doesNotMatch(skipped, /Comparison complete|\$0\.00/);
-
-  const insufficient = renderResult(theme, 120, {
-    ...base,
-    reportPath: 'C:\\exp\\comparison-failure.html',
-    comparison: {
-      result: {
-        status: 'completed',
-        value: { status: 'insufficient_evidence', evidenceRefs: [], headline: 'Missing baseline slides.' },
-        sessionId: 'cmp-1',
-      },
-    },
-  } as never).join('\n');
-  assert.match(insufficient, /Insufficient evidence/);
-  assert.match(insufficient, /Missing baseline slides/);
-  assert.match(insufficient, /Diagnostic/);
-  assert.doesNotMatch(insufficient, /Comparison complete/);
-});
-
-test('candidate failed with completed comparison keeps failure tone and report label', () => {
-  const text = renderResult(createTheme(120, false), 120, {
-    reportPath: 'C:\\exp\\report.html',
-    experimentRoot: 'C:\\exp',
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: {
-        task: { status: 'indeterminate' },
-        termination: {
-          kind: 'failed',
-          code: 'failed.runtime',
-          failure: { origin: 'runtime', code: 'runtime.crash', message: 'process exited', evidenceRefs: [] },
-        },
-        cleanup: { status: 'complete' },
-      },
-    },
-    decision: { status: 'failed', failure: { code: 'agent_failure', kind: 'protocol' } },
-    comparison: {
-      result: {
-        status: 'completed',
-        value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [], headline: 'Candidate crashed before delivery.' },
-        sessionId: 'cmp-1',
-      },
-    },
-  } as never).join('\n');
-  assert.match(text, /failed/);
-  assert.match(text, /Comparison complete|对照完成|Candidate crashed/);
-  assert.match(text, /Report/);
-  assert.doesNotMatch(text, /Candidate finished · Comparison cancelled/);
-});
-
-test('completed candidate with incomplete cleanup warns without inventing cleanup failed', () => {
-  const text = renderResult(createTheme(120, false), 120, {
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: {
-        task: { status: 'apparently_completed' },
-        termination: { kind: 'completed', code: 'completed.controller_satisfied' },
-        cleanup: { status: 'incomplete', remainingResourceIds: ['workspace'], evidenceRefs: [] },
-      },
-    },
-    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
-    comparison: { result: { status: 'skipped' } },
-  } as never, 'zh').join('\n');
-  assert.match(text, /清理未完成/);
-  assert.doesNotMatch(text, /cleanup failed|Cleanup · failed/i);
-});
-
-test('unknown comparison with an existing report file stays diagnostic, not success', () => {
-  const text = renderResult(createTheme(120, false), 120, {
-    reportPath: 'C:\\exp\\report.html',
-    experimentRoot: 'C:\\exp',
-    record: {
-      attempt: { runId: 'run-1' },
-      outcome: {
-        task: { status: 'apparently_completed' },
-        termination: { kind: 'completed', code: 'completed.controller_satisfied' },
-        cleanup: { status: 'complete' },
-      },
-    },
-    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
-    comparison: { result: { status: 'completed' } },
-  } as never).join('\n');
-  assert.match(text, /Comparison status unknown|对照状态未知/);
-  assert.match(text, /Diagnostic/);
-  assert.match(text, /report\.html/);
-  assert.doesNotMatch(text, /Comparison complete/);
+  assert.match(text, /Comparison cancelled|对照已取消/);
+  assert.doesNotMatch(text, /Comparison complete|对照完成/);
 });

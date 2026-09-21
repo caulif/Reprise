@@ -95,7 +95,7 @@ test('recovery canvas shows inspect activity instead of a candidate reply', () =
   ]);
   const text = renderTimeline(theme, 120, {
     entries,
-    selected: entries.length - 1, filter: 'ALL', following: true, cancelling: false,
+    selected: entries.length - 1, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     productLabel: 'Codex',
@@ -114,7 +114,7 @@ test('comparison header does not keep the candidate turn chrome', () => {
   ]);
   const model = {
     entries,
-    selected: 0, filter: 'ALL' as const, following: true, cancelling: false,
+    selected: 0, filter: 'ALL' as const, following: true, cancelUi: 'idle' as const,
     currentState: 'finished' as const, elapsed: '07:08', turns: { used: 4 }, calls: { used: 2 },
     preparePhase: 'compare' as const,
     productLabel: 'Codex',

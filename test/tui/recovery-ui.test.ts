@@ -17,7 +17,7 @@ test('recovery canvas does not impersonate a candidate reply', () => {
   const theme = createTheme(120, false);
   const text = renderTimeline(theme, 120, {
     entries: [],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:08', turns: { used: 0 }, calls: { used: 0 },
     runPhase: 'recovery',
     productLabel: 'Codex',
@@ -29,18 +29,18 @@ test('recovery canvas does not impersonate a candidate reply', () => {
   assert.doesNotMatch(text, /正在写回复/);
 });
 
-test('recovery prepare screen shows session and project instead of a preflight gate', () => {
+test('recovery prepare screen shows session and project instead of a preflight gate', async () => {
+  const { renderPrepareSummary } = await import('../../src/tui/pages/recovery-summary.js');
   const theme = createTheme(120, false);
-  const text = renderTimeline(theme, 120, {
+  const text = renderPrepareSummary(theme, 120, {
     entries: [],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:00', turns: { used: 0 }, calls: { used: 0 },
     preparePhase: 'check',
     prepareDetail: 'Preparing recovery environment',
     taskTitle: 'Fix the failing test',
     workspaceProject: 'Reprise',
-  }).join('\n');
-  assert.match(text, /Recovering session/);
+  }, 'en').join('\n');
   assert.match(text, /Fix the failing test/);
   assert.match(text, /Reprise/);
   assert.match(text, /Preparing recovery environment/);
@@ -108,7 +108,8 @@ test('confirmation with accept stays partial and startable', () => {
   assert.doesNotMatch(text, /跳过路径/);
   assert.doesNotMatch(text, /ppt_build\/node_modules/);
   assert.doesNotMatch(text, /未决/);
-  assert.doesNotMatch(text, /extra\.txt/);
+  assert.match(text, /限制/);
+  assert.match(text, /extra\.txt/);
   assert.doesNotMatch(text, /无法启动隔离/);
   assert.match(text, /启动隔离的 Codex 候选/);
   assert.match(text, /原目录不变/);
@@ -165,12 +166,12 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
   };
   const selectedFold = renderTimeline(theme, 120, {
     entries: [foldEntry],
-    selected: 0, filter: 'ALL', following: true, cancelling: false,
+    selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
   const noHighlight = renderTimeline(theme, 120, {
     entries: [foldEntry],
-    selected: -1, filter: 'ALL', following: false, cancelling: false,
+    selected: -1, filter: 'ALL', following: false, cancelUi: 'idle' as const,
     currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
   }).join('\n');
   // Selected paint uses fillLive (30;38;42); selected:-1 uses canvas fill and must not invent ▼ 新 N.
@@ -210,7 +211,7 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
         { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'I will start by reading the task text.', lane: 'recovery', kind: 'narrate' },
         { sequence: 2, occurredAt: '2026-09-08T00:00:01.000Z', source: 'HARNESS', title: foldTitle, lane: 'recovery', kind: 'fold', itemId: 'fold:1' },
       ],
-      selected: -1, filter: 'ALL', following: false, cancelling: false,
+      selected: -1, filter: 'ALL', following: false, cancelUi: 'idle' as const,
       currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
     },
   }, 120).join('\n');
@@ -218,9 +219,50 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
   assert.match(rendered, /无法启动隔离候选/);
   assert.match(rendered, /恢复 Agent.*暂时失败|暂时失败/);
   assert.match(rendered, /诊断已保存 · experiments\/exp-r1b\/recovery-diagnosis\.json/);
-  assert.match(rendered, /阅读证据 · 54/);
+  // T08: confirm leads with the confirmation panel — recovery process is folded, not a full timeline dump.
+  assert.match(rendered, /查看恢复过程|View recovery process/);
+  assert.doesNotMatch(rendered, /阅读证据 · 54/);
   assert.doesNotMatch(rendered, /48;2;30;38;42/);
   assert.doesNotMatch(rendered, /新 \d+| \d+ new/);
+
+  const expanded = renderWorkbench({
+    page: 'confirm',
+    cwd: 'C:\\workspace',
+    hasApiConfig: true,
+    hasTaskCase: true,
+    message: '',
+    productLabel: 'Codex',
+    locale: 'zh',
+    processExpanded: true,
+    surfaceScope: 'recovery',
+    confirm: {
+      candidate: undefined,
+      step: 3,
+      sourceRoot: 'C:\\workspace',
+      effort: 'high',
+      harnessModel: 'gpt-5',
+      harnessAuthOk: true,
+      productLabel: 'Codex',
+      locale: 'zh',
+      experimentId: 'exp-r1b',
+      recovery: {
+        status: 'failed',
+        unresolved: [],
+        changedPathCount: 0,
+        failureSummary,
+      },
+      preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
+    } as never,
+    running: {
+      entries: [
+        { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'I will start by reading the task text.', lane: 'recovery', kind: 'narrate' },
+        { sequence: 2, occurredAt: '2026-09-08T00:00:01.000Z', source: 'HARNESS', title: foldTitle, lane: 'recovery', kind: 'fold', itemId: 'fold:1' },
+      ],
+      selected: -1, filter: 'ALL', following: false, cancelling: false,
+      currentState: undefined, elapsed: '00:48', turns: { used: 0 }, calls: { used: 0 },
+    },
+  }, 120).join('\n');
+  assert.match(expanded, /阅读证据 · 54/);
 });
 
 test('observational confirm without failed status does not claim diagnostics saved', () => {
@@ -301,10 +343,10 @@ test('generic failure page does not misclassify every phase as recovery', () => 
   assert.doesNotMatch(text, /Could not recover/);
 });
 
-test('workbench renders timeline above confirmation when recovery entries exist', async () => {
+test('workbench folds recovery process above confirmation until expanded', async () => {
   const { renderWorkbench } = await import('../../src/tui/workbench.js');
-  const rendered = renderWorkbench({
-    page: 'confirm',
+  const base = {
+    page: 'confirm' as const,
     cwd: 'C:\\workspace',
     hasApiConfig: true,
     hasTaskCase: true,
@@ -324,12 +366,17 @@ test('workbench renders timeline above confirmation when recovery entries exist'
       entries: [
         { sequence: 1, occurredAt: '2026-09-08T00:00:00.000Z', source: 'HARNESS', title: 'Read package.json', detail: 'Read package.json', lane: 'recovery', kind: 'narrate' },
       ],
-      selected: 0, filter: 'ALL', following: true, cancelling: false,
+      selected: 0, filter: 'ALL', following: true, cancelUi: 'idle' as const,
       currentState: undefined, elapsed: '00:05', turns: { used: 0 }, calls: { used: 0 },
     },
-  }, 120).join('\n');
+  };
+  const folded = renderWorkbench(base as never, 120).join('\n');
+  assert.doesNotMatch(folded, /Read package\.json/);
+  assert.match(folded, /Recovered/);
+  assert.match(folded, /Start isolated Codex Candidate/);
+  assert.match(folded, /View recovery process|查看恢复过程/);
 
-  assert.match(rendered, /Read package\.json/);
-  assert.match(rendered, /Recovered/);
-  assert.match(rendered, /Start isolated Codex Candidate/);
+  const expanded = renderWorkbench({ ...base, processExpanded: true, surfaceScope: 'recovery' } as never, 120).join('\n');
+  assert.match(expanded, /Read package\.json/);
+  assert.match(expanded, /Recovered/);
 });

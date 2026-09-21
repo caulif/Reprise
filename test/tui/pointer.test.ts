@@ -40,7 +40,7 @@ test('keepSelectedVisible only changes offset when the selection would leave the
   assert.equal(keepSelectedVisible(12, -12, 40, 10), 3 - 12);
 });
 
-test('home idle footer does not repeat Enter', () => {
+test('home idle footer lists action navigation', () => {
   const hints = homeHints('en', {
     taskCase: undefined,
     recentExperiment: { experimentId: 'e1', taskCaseId: 'c1', path: 'C:/e', sizeBytes: 1 },
@@ -48,7 +48,7 @@ test('home idle footer does not repeat Enter', () => {
     composer: '',
     showSuggestions: false,
   });
-  assert.deepEqual(hints.map(([key]) => key), ['/', 'Ctrl+C']);
+  assert.deepEqual(hints.map(([key]) => key), ['↑↓', 'Enter', '/', 'Ctrl+C']);
 });
 
 test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
@@ -107,7 +107,7 @@ test('result pointer matches final framed screen coords without OSC 8', () => {
   const row = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
   assert.ok(row >= 0);
   const line = lines[row] ?? '';
-  const value = visibleSpan(line, 'environment/baselines/deck.html');
+  const value = visibleSpan(line, 'deck.html');
   assert.ok(value);
   assert.equal(hitFileLink(line, value.x0), undefined);
   assert.equal(pointerAt(lines, row, value.x0, 'en', pathLinks, rowHits), 'open-history-final');
@@ -293,7 +293,7 @@ test('result SGR click on history final opens the clicked href', () => {
   handle.result = resultWithBaselines;
   const origin = workbenchBodyOrigin(handle.view(), 120, 40);
   const lines = renderResult(createTheme(120), 120, resultWithBaselines, 'en', undefined, false);
-  const historyLine = lines.findIndex((line) => line.includes('deck.html'));
+  const historyLine = lines.findIndex((line) => /History final/.test(line) && line.includes('deck.html'));
   assert.ok(historyLine >= 0);
   const href = pathToFileURL(baselinePath).href;
   let hitCol = 0;
@@ -328,6 +328,15 @@ test('result SGR click on a short label opens the report; a blank cell does not'
   assert.equal(opened.report, 1);
   applyResultPointer(handle, `\x1b[<0;2;${1 + origin.header}M`);
   assert.equal(opened.report, 1);
+});
+
+test('result SGR click on header chrome does not open the report', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const opened = { report: 0 };
+  const handle = resultController(opened);
+  // Row 1 is above the body origin — must not clamp into the first body line.
+  applyResultPointer(handle, '\x1b[<0;4;1M');
+  assert.equal(opened.report, 0);
 });
 
 test('result SGR wheel changes the reading offset', () => {
