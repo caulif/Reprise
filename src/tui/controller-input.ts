@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { runtimePacks } from '../application/intake-catalog.js';
 import { recoveryFailureDecision } from '../application/recovery/fail.js';
 import { isFsAbsolute } from '../core/paths.js';
@@ -187,6 +187,7 @@ export type ControllerHandle = {
   sessionsMessage(): string;
   syncIntakeLevel(): void;
   openReport(experimentRoot: string | undefined, reportPath: string | undefined): Consume;
+  openArtifact(experimentRoot: string | undefined, artifactPath: string | undefined): Consume;
   openResultArtifact(side: 'history' | 'candidate'): Consume;
   openResultArtifactHref(href: string | undefined, side: 'history' | 'candidate'): Consume;
   openTrace(): Consume;
@@ -585,7 +586,7 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
   }
   if (result.action === 'open-diagnostics') {
     const root = c.recoveryView?.experimentRoot;
-    if (root) return c.openReport(root, join(root, 'recovery-diagnosis.json'));
+    if (root) return c.openArtifact(root, 'recovery-diagnosis.json');
     c.message = t(c.locale, 'recoveryActionDiagnose');
     c.render();
     return { consume: true };

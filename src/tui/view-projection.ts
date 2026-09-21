@@ -296,7 +296,7 @@ function recoveryModel(input: Input): import('./pages/run.js').RecoveryPreviewMo
             changedPathCount: input.recoveryView.providerPreview?.changedPaths.length ?? 0,
             ...(input.recoveryView.recovery?.status === 'failed' && input.recoveryView.recovery.failure.kind ? { agentFailureKind: input.recoveryView.recovery.failure.kind } : {}),
             ...(explanationKey ? { explanationKey } : {}),
-          }), ...(decision ? { failureCategory: decision.category, retryable: decision.retryable, failureAction: decision.action } : {}), sourceUnchanged: (input.recoveryView.providerPreview?.changedPaths.length ?? 0) === 0, candidateStarted: false }
+          }), ...(decision ? { failureCategory: decision.category, retryable: decision.retryable, failureAction: decision.action } : {}), sourceUnchanged: failureStage !== 'source_tripwire_failed', candidateStarted: false }
       : explanationKey ? { failureSummary: t(locale, explanationKey) } : {}),
   };
 }

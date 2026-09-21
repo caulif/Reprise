@@ -4,6 +4,7 @@ import { renderConfirmation, renderTimeline } from '../../src/tui/pages/run.js';
 import { renderFailure } from '../../src/tui/pages/result.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { formatRecoveryFailureSummary } from '../../src/tui/i18n.js';
+import { projectWorkbenchView } from '../../src/tui/view-projection.js';
 
 test('Recovery agent failure copy separates upstream and credentials from invalid workspace recovery', () => {
   const transient = formatRecoveryFailureSummary('zh', 'agent_model_failed', { agentFailureKind: 'transient_upstream' });
@@ -49,6 +50,39 @@ test('failed confirmation exposes user decision facts and keeps the candidate di
   assert.match(text, /重试恢复/);
   assert.doesNotMatch(text, /内部 warning 不应成为用户解释/);
   assert.doesNotMatch(text, /启动隔离的 Codex 候选/);
+});
+
+test('source tripwire failure never claims that the original directory was unchanged', () => {
+  const view = projectWorkbenchView({
+    page: 'confirm',
+    locale: 'en',
+    modelConfig: { providerId: 'fixture', modelId: 'gpt-5', effort: 'high' },
+    sourceRoot: 'C:\\workspace',
+    recoveryView: {
+      experimentRoot: 'C:\\data\\experiments\\exp-tripwire',
+      experimentId: 'exp-tripwire',
+      baseline: {
+        mode: 'canonical',
+        recovery: { status: 'failed', failureStage: 'source_tripwire_failed', unresolved: [] },
+      },
+      providerPreview: { changedPaths: [] },
+      recovery: { status: 'failed', failure: { message: 'source changed' } },
+      hasAccept: false,
+    },
+    preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
+    timeline: [],
+    intakeLevel: 'projects',
+    products: [],
+    visibleProjects: [],
+    activeProjectKey: '',
+    visibleSessions: [],
+    selected: 0,
+    filterEligible: false,
+    searchQuery: '',
+    searchCursor: 0,
+    searching: false,
+  } as never);
+  assert.equal(view.confirm?.recovery?.sourceUnchanged, false);
 });
 
 test('recovery canvas does not impersonate a candidate reply', () => {
