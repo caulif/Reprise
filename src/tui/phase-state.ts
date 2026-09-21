@@ -93,7 +93,7 @@ export function eventActivityRole(event: EventEnvelope): ActivityRole | undefine
     if (role === 'recovery') return 'recovery';
     if (role === 'controller') return 'controller';
     if (role === 'comparison') return 'comparison';
-    return 'recovery';
+    return undefined;
   }
   if (type === 'run.state_changed') {
     const to = text(record(event.payload).to);

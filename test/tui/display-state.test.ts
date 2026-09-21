@@ -10,6 +10,7 @@ import {
   staleTier,
   uiStageFrom,
   countActiveParallel,
+  eventActivityRole,
 } from '../../src/tui/phase-state.js';
 import { elapsedForRunning, waitLine } from '../../src/tui/pages/run.js';
 import { t } from '../../src/tui/i18n.js';
@@ -80,6 +81,15 @@ describe('T06 display-state stages and clocks', () => {
     assert.equal(scopedElapsedMs(bounds, 'recovery', 0), 60_000);
     assert.equal(scopedElapsedMs(bounds, 'candidate', 0), 180_000);
     assert.equal(scopedElapsedMs(bounds, 'comparison', 0), 120_000);
+  });
+
+  it('does not infer a Recovery role for missing or unknown agent roles', () => {
+    assert.equal(eventActivityRole(event('agent.assistant_visible', {})), undefined);
+    assert.equal(eventActivityRole(event('agent.assistant_visible', { role: '' })), undefined);
+    assert.equal(eventActivityRole(event('agent.assistant_visible', { role: 'other' })), undefined);
+    assert.equal(eventActivityRole(event('agent.assistant_visible', { role: 'recovery' })), 'recovery');
+    assert.equal(eventActivityRole(event('agent.assistant_visible', { role: 'controller' })), 'controller');
+    assert.equal(eventActivityRole(event('agent.assistant_visible', { role: 'comparison' })), 'comparison');
   });
 
   it('keeps an end boundary unknown when no start event was recorded', () => {

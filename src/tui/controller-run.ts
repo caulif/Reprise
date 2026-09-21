@@ -19,6 +19,7 @@ import { recoveryViewFromAttempt } from '../application/recovery/view.js';
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import { record, text } from '../core/json.js';
 import { candidateRunPhaseFromEvent, candidateRunDisplayFromEvents, isCandidateRunState } from '../application/candidate-run-phase.js';
+import { deriveResultPresentationFromResult } from './display-state.js';
 import {
   applyPhaseClockEvent,
   eventActivityRole,
@@ -43,14 +44,7 @@ function workspaceDetail(workspace: { fileCount: number; totalBytes: number } | 
 }
 
 function resultMessage(result: ExperimentResult, locale: Locale): string {
-  const kind = result.record.outcome.termination.kind;
-  if (kind === 'cancelled') return t(locale, 'resultCancelled');
-  if (result.comparison.result.status === 'skipped') return t(locale, 'resultSkipped');
-  if (result.comparison.result.status === 'cancelled') return t(locale, 'resultComparisonCancelled');
-  if (kind === 'blocked') return t(locale, 'resultBlocked');
-  if (kind === 'failed') return t(locale, 'resultFailed');
-  if (kind === 'completed') return t(locale, 'resultCompleted');
-  return t(locale, 'resultOther');
+  return t(locale, deriveResultPresentationFromResult(result, locale).messageKey);
 }
 
 export type CancelUi = 'idle' | 'requesting' | 'failed' | 'settled';

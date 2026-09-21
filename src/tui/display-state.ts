@@ -209,10 +209,12 @@ function messageKeyOf(
   if (comparison === 'failed') return 'resultCompareFailed';
   if (comparison === 'insufficient_evidence') return 'resultCompareInsufficient';
   if (comparison === 'unknown') return 'resultCompareUnknown';
+  // A cancelled candidate remains cancelled even when the deferred comparison
+  // gate is skipped as part of the same cancellation race.
+  if (termination === 'cancelled') return 'resultCancelled';
   if (comparison === 'skipped' || comparison === 'pending') return 'resultSkipped';
   if (termination === 'blocked') return 'resultBlocked';
   if (termination === 'failed') return 'resultFailed';
-  if (termination === 'cancelled') return 'resultCancelled';
   if (termination === 'completed') return 'resultCompleted';
   return 'resultOther';
 }
