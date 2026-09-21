@@ -125,6 +125,8 @@ export class Workbench implements Component {
   createLayoutRoot(): Component {
     const viewOf = () => this.#view();
     const heightOf = () => this.#viewport().height;
+    const usableHeight = (viewport: { height: number }) => viewport.height >= MIN_VIEWPORT_ROWS;
+    const shortViewport = new LinesView((width) => renderWorkbench(viewOf(), width, heightOf()));
     const header = new LinesView((width) => paintFixed(createTheme(width), viewOf(), width, heightOf()).header);
     const context = new LinesView((width) => paintFixed(createTheme(width), viewOf(), width, heightOf()).context);
     const stage = new LinesView((width) => paintFixed(createTheme(width), viewOf(), width, heightOf()).stage);
@@ -137,13 +139,14 @@ export class Workbench implements Component {
     const notice = new LinesView((width) => paintFixed(createTheme(width), viewOf(), width, heightOf()).notice);
     const footer = new LinesView((width) => paintFixed(createTheme(width), viewOf(), width, heightOf()).footer);
     return new VStack([
-      { component: header, grow: 0, shrink: 0, basis: 'auto' },
-      { component: context, grow: 0, shrink: 0, basis: 'auto' },
-      { component: stage, grow: 0, shrink: 0, basis: 'auto' },
-      { component: activity, grow: 0, shrink: 0, basis: 'auto' },
-      { component: body, grow: 1, shrink: 1, minSize: 4 },
-      { component: notice, grow: 0, shrink: 0, basis: 'auto' },
-      { component: footer, grow: 0, shrink: 0, basis: 'auto' },
+      { component: shortViewport, grow: 0, shrink: 0, basis: 'auto', visible: (viewport) => !usableHeight(viewport) },
+      { component: header, grow: 0, shrink: 0, basis: 'auto', visible: usableHeight },
+      { component: context, grow: 0, shrink: 0, basis: 'auto', visible: usableHeight },
+      { component: stage, grow: 0, shrink: 0, basis: 'auto', visible: usableHeight },
+      { component: activity, grow: 0, shrink: 0, basis: 'auto', visible: usableHeight },
+      { component: body, grow: 1, shrink: 1, minSize: 4, visible: usableHeight },
+      { component: notice, grow: 0, shrink: 0, basis: 'auto', visible: usableHeight },
+      { component: footer, grow: 0, shrink: 0, basis: 'auto', visible: usableHeight },
     ]);
   }
 }

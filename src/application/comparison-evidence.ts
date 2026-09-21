@@ -317,7 +317,8 @@ export class ComparisonEvidenceCatalog {
     const previous = this.#media;
     const drafts: ComparisonMediaRecord[] = [];
     const results: RegisterEvidenceResult[] = [];
-    for (const input of inputs) {
+    results.length = inputs.length;
+    for (const [index, input] of inputs.entries()) {
       const sourceRefs = [...(input.sourceRefs ?? [])];
       if (sourceRefs.some((ref) => !this.#hasSourceRef(ref))) {
         return inputs.map(() => ({ status: "rejected", code: "missing_source", message: "Unknown sourceRef for media batch." }));
@@ -329,7 +330,7 @@ export class ComparisonEvidenceCatalog {
         && item.side === input.record.side
         && mediaDerivationKey(item.derivation) === mediaDerivationKey(derivation));
       if (existing?.shortRef) {
-        results.push({ status: "registered", revision: this.#revision, shortRef: existing.shortRef, contentHash, inspectPath: existing.inspectPath, origin: input.origin, deduplicated: true });
+        results[index] = { status: "registered", revision: this.#revision, shortRef: existing.shortRef, contentHash, inspectPath: existing.inspectPath, origin: input.origin, deduplicated: true };
         continue;
       }
       const draft: ComparisonMediaRecord = { ...input.record, contentHash, ...(derivation ? { derivation } : {}) };
@@ -348,7 +349,7 @@ export class ComparisonEvidenceCatalog {
       return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
     }
     let assignedIndex = 0;
-    for (const input of inputs) {
+    for (const [index, input] of inputs.entries()) {
       const sourceRefs = [...(input.sourceRefs ?? [])];
       const contentHash = input.record.contentHash;
       const derivation = input.derivation ?? input.record.derivation;
@@ -367,7 +368,7 @@ export class ComparisonEvidenceCatalog {
       }
       this.#pendingEmits.delete(item.shortRef!);
       this.#emittedShortRefs.add(item.shortRef!);
-      results.push({ status: "registered", revision: this.#revision, shortRef: item.shortRef!, contentHash: item.contentHash!, inspectPath: item.inspectPath, origin: input.origin, deduplicated: false });
+      results[index] = { status: "registered", revision: this.#revision, shortRef: item.shortRef!, contentHash: item.contentHash!, inspectPath: item.inspectPath, origin: input.origin, deduplicated: false };
     }
     return results;
   }

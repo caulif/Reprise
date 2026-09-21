@@ -314,6 +314,36 @@ test("registerMedia dedupes same side+hash+derivation and keeps distinct sides",
   assert.equal(Value.Check(ComparisonMediaRecordSchema, catalog.snapshot().media[0]), true);
 });
 
+test("registerMediaBatch preserves result order when existing frames surround new frames", async (t) => {
+  const attemptRoot = await tempAttempt(t, "reprise-b3-media-order-");
+  const derivation = { kind: "headless_screenshot" as const, viewport: { width: 1280, height: 900, scale: 1 } };
+  const seeded = [
+    media({ ref: "media:frame-0", side: "candidate", inspectPath: "media/frame-0.png", shortRef: "media-01", contentHash: sha256(Buffer.from("0")), derivation }),
+    media({ ref: "media:frame-500", side: "candidate", inspectPath: "media/frame-500.png", shortRef: "media-02", contentHash: sha256(Buffer.from("500")), derivation }),
+  ];
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-b3-media-order",
+    attemptRoot,
+    links: [{ side: "baseline", inspectPath: "history/x", shortRef: "ev-01" }],
+    media: seeded,
+  });
+  const input = (time: string) => ({
+    record: media({
+      ref: `media:frame-${time}`,
+      side: "candidate" as const,
+      inspectPath: `media/frame-${time}.png`,
+      contentHash: sha256(Buffer.from(time)),
+      derivation,
+    }),
+    sourceRefs: ["ev-01"],
+    origin: "candidate_delivery" as const,
+    derivation,
+  });
+
+  const results = await catalog.registerMediaBatch([input("0"), input("250"), input("500")]);
+  assert.deepEqual(results.map((result) => result.status === "registered" ? result.shortRef : result.code), ["media-01", "media-03", "media-02"]);
+});
+
 function media(partial: Partial<ComparisonMediaRecord> & Pick<ComparisonMediaRecord, "ref" | "side" | "inspectPath">): ComparisonMediaRecord {
   return {
     reportHref: partial.reportHref ?? partial.inspectPath,
