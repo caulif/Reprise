@@ -93,6 +93,98 @@ test("render_artifact registers frames through catalog and dedupes identical der
   assert.equal(catalog.media.length, 2);
 });
 
+test("render_artifact batch registration leaves no first-frame fact when a later frame is invalid", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-render-batch-rollback-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const finals = join(root, "finals");
+  await mkdir(finals, { recursive: true });
+  await writeFile(join(finals, "card.html"), "<!doctype html><title>card</title>", "utf8");
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-batch-rollback",
+    attemptRoot: root,
+    links: [{ side: "candidate", inspectPath: "finals/card.html", shortRef: "ev-01", origin: "candidate_delivery" }],
+    media: [],
+  });
+  const renderCatalog = createComparisonRenderCatalogPort({
+    catalog,
+    attemptRoot: root,
+    mounts: { finals, candidate: join(root, "candidate"), history: join(root, "history"), evidence: join(root, "evidence") },
+  });
+  const render = createFakeArtifactRenderer(async (request) => {
+    await mkdir(request.outputRoot, { recursive: true });
+    const first = join(request.outputRoot, "first.png");
+    const second = join(request.outputRoot, "second.png");
+    await writeFile(first, PNG_A);
+    await writeFile(second, PNG_B);
+    return {
+      ok: true,
+      frames: [
+        { sampleTimeMs: 0, actualTimeMs: 0, pngPath: first, byteLength: PNG_A.byteLength, contentHash: sha256(PNG_A) },
+        { sampleTimeMs: 500, actualTimeMs: 500, pngPath: second, byteLength: PNG_B.byteLength, contentHash: "invalid-hash" },
+      ],
+      diagnostics: [],
+      measured: { loadMs: 0, viewport: request.viewport, origin: "fake://batch" },
+    };
+  });
+  const result = JSON.parse((await createRenderArtifactTool({ catalog: renderCatalog, attemptRoot: root, render }).execute(
+    { sourceRef: "ev-01", sampleTimesMs: [0, 500] }, new AbortController().signal,
+  )).content) as { status: string };
+  assert.equal(result.status, "capture_failed");
+  assert.equal(catalog.snapshot().media.length, 0);
+  assert.equal(catalog.snapshot().revision, 1);
+});
+
+test("render_artifact refuses static repeated frames as motion evidence", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-render-motion-gate-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const catalog = createEphemeralRenderCatalog({
+    sources: [{
+      sourceRef: "ev-motion",
+      side: "candidate",
+      bundleRoot: root,
+      entryRelativePath: "card.html",
+      contentHash: "source-hash",
+      origin: "candidate",
+    }],
+    mediaRoot: join(root, "media"),
+    reviewRoot: join(root, "review"),
+  });
+  const render = createFakeArtifactRenderer(async (request) => {
+    await mkdir(request.outputRoot, { recursive: true });
+    const pngPath = join(request.outputRoot, "same.png");
+    await writeFile(pngPath, PNG_A);
+    return {
+      ok: true,
+      frames: request.sampleTimesMs.map((sampleTimeMs) => ({
+        sampleTimeMs,
+        actualTimeMs: sampleTimeMs,
+        pngPath,
+        byteLength: PNG_A.byteLength,
+        contentHash: sha256(PNG_A),
+      })),
+      diagnostics: [],
+      measured: { loadMs: 0, viewport: request.viewport, origin: "fake://static" },
+    };
+  });
+  const result = JSON.parse((await createRenderArtifactTool({
+    catalog,
+    attemptRoot: root,
+    render,
+  }).execute({ sourceRef: "ev-motion", sampleTimesMs: [0, 500] }, new AbortController().signal)).content) as {
+    status: string;
+    message: string;
+  };
+  assert.equal(result.status, "motion_not_proven");
+  assert.match(result.message, /identical PNG/i);
+  assert.equal(catalog.media.length, 0);
+});
+
 test("render_artifact rejects unknown source and cancelled render", async () => {
   const catalog = createEphemeralRenderCatalog({
     sources: [],

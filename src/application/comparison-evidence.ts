@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { sha256, writeAtomic } from "../core/identity.js";
@@ -65,6 +65,7 @@ type CatalogPersister = {
   attemptRoot: string;
   attemptId: string;
   emitRegistered?: (payload: ComparisonEvidenceRegisteredPayload) => Promise<void>;
+  emitRegisteredBatch?: (payloads: readonly ComparisonEvidenceRegisteredPayload[]) => Promise<void>;
   lookupToolCall?: (toolCallId: string) => Promise<{ ok: boolean; message?: string }>;
 };
 
@@ -91,6 +92,7 @@ export class ComparisonEvidenceCatalog {
   readonly #attemptRoot: string;
   readonly #attemptId: string;
   readonly #emitRegistered?: CatalogPersister["emitRegistered"];
+  readonly #emitRegisteredBatch?: CatalogPersister["emitRegisteredBatch"];
   readonly #lookupToolCall?: CatalogPersister["lookupToolCall"];
 
   private constructor(input: CatalogPersister & {
@@ -104,6 +106,7 @@ export class ComparisonEvidenceCatalog {
     this.#media = [...input.media];
     this.#revision = input.revision;
     this.#emitRegistered = input.emitRegistered;
+    this.#emitRegisteredBatch = input.emitRegisteredBatch;
     this.#lookupToolCall = input.lookupToolCall;
   }
 
@@ -113,6 +116,7 @@ export class ComparisonEvidenceCatalog {
     links: readonly ComparisonLinkRecord[];
     media: readonly ComparisonMediaRecord[];
     emitRegistered?: CatalogPersister["emitRegistered"];
+    emitRegisteredBatch?: CatalogPersister["emitRegisteredBatch"];
     lookupToolCall?: CatalogPersister["lookupToolCall"];
   }): Promise<ComparisonEvidenceCatalog> {
     const links = appendEvidenceShortRefs([], input.links);
@@ -124,6 +128,7 @@ export class ComparisonEvidenceCatalog {
       media,
       revision: 0,
       ...(input.emitRegistered ? { emitRegistered: input.emitRegistered } : {}),
+      ...(input.emitRegisteredBatch ? { emitRegisteredBatch: input.emitRegisteredBatch } : {}),
       ...(input.lookupToolCall ? { lookupToolCall: input.lookupToolCall } : {}),
     });
     await catalog.#persistRevision();
@@ -315,12 +320,13 @@ export class ComparisonEvidenceCatalog {
     if (inputs.length === 0) return [];
     if (signal?.aborted) return inputs.map(() => ({ status: "rejected", code: "cancelled", message: "Registration cancelled." }));
     const previous = this.#media;
+    const previousSnapshot = this.snapshot();
     const drafts: ComparisonMediaRecord[] = [];
+    const results: RegisterEvidenceResult[] = [];
+    results.length = inputs.length;
     const draftIndexByInput: number[] = [];
     const draftInputIndexes: number[] = [];
     const draftIndexByKey = new Map<string, number>();
-    const results: RegisterEvidenceResult[] = [];
-    results.length = inputs.length;
     for (const [index, input] of inputs.entries()) {
       const sourceRefs = [...(input.sourceRefs ?? [])];
       if (sourceRefs.some((ref) => !this.#hasSourceRef(ref))) {
@@ -373,6 +379,7 @@ export class ComparisonEvidenceCatalog {
       this.#media = previous;
       return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
     }
+    const batchPayloads: ComparisonEvidenceRegisteredPayload[] = [];
     for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
       const input = inputs[inputIndex]!;
       const sourceRefs = [...(input.sourceRefs ?? [])];
@@ -385,24 +392,46 @@ export class ComparisonEvidenceCatalog {
         ...(derivation ? { derivation } : {}),
       };
       this.#pendingEmits.set(item.shortRef!, payload);
-      try { await this.#emit(payload); } catch (error) {
-        return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
+      batchPayloads.push(payload);
+    }
+    try {
+      await this.#emitBatch(batchPayloads);
+    } catch (error) {
+      // Batch sinks provide an atomic append contract and can be rolled back
+      // when their write fails. The legacy single-payload sink persists first;
+      // keep that media and its pending payloads so a later registration can
+      // retry the missing event without duplicating the record.
+      if (this.#emitRegisteredBatch) {
+        this.#media = previous;
+        this.#revision = previousSnapshot.revision;
+        for (const pendingRef of assigned.map((entry) => entry.shortRef).filter((ref): ref is string => Boolean(ref))) {
+          this.#pendingEmits.delete(pendingRef);
+          this.#emittedShortRefs.delete(pendingRef);
+        }
+        await this.#restorePersistedSnapshot(previousSnapshot).catch(() => undefined);
       }
-      this.#pendingEmits.delete(item.shortRef!);
-      this.#emittedShortRefs.add(item.shortRef!);
+      return inputs.map(() => ({ status: "rejected", code: "io_failed", message: error instanceof Error ? error.message : String(error) }));
+    }
+    for (const [draftIndex, inputIndex] of draftInputIndexes.entries()) {
+      const item = assigned[draftIndex];
+      if (!item) continue;
       for (const [index, duplicateDraftIndex] of draftIndexByInput.entries()) {
         if (duplicateDraftIndex !== draftIndex) continue;
-        const duplicateInput = inputs[index]!;
+        const input = inputs[index]!;
         results[index] = {
           status: "registered",
           revision: this.#revision,
           shortRef: item.shortRef!,
           contentHash: item.contentHash!,
           inspectPath: item.inspectPath,
-          origin: duplicateInput.origin,
+          origin: input.origin,
           deduplicated: index !== inputIndex,
         };
       }
+    }
+    for (const payload of batchPayloads) {
+      this.#pendingEmits.delete(payload.shortRef);
+      this.#emittedShortRefs.add(payload.shortRef);
     }
     return results;
   }
@@ -537,6 +566,14 @@ export class ComparisonEvidenceCatalog {
     await writeAtomic(join(catalogRoot, "CURRENT"), `${revName}\n`);
   }
 
+  async #restorePersistedSnapshot(snapshot: ComparisonCatalogSnapshot): Promise<void> {
+    const catalogRoot = join(this.#attemptRoot, "facts", "evidence-catalog");
+    await mkdir(catalogRoot, { recursive: true });
+    await writeAtomic(join(catalogRoot, "CURRENT"), `rev-${snapshot.revision}.json\n`);
+    await this.#writeDerivedFacts(snapshot);
+    await rm(join(catalogRoot, `rev-${snapshot.revision + 1}.json`), { force: true });
+  }
+
   async #writeDerivedFacts(snap: ComparisonCatalogSnapshot): Promise<void> {
     const factsMedia = `${JSON.stringify(snap.media, null, 2)}\n`;
     const factsLinks = `${JSON.stringify(snap.links, null, 2)}\n`;
@@ -569,6 +606,14 @@ export class ComparisonEvidenceCatalog {
       throw new Error("comparison.evidence_registered payload does not satisfy its schema.");
     }
     await this.#emitRegistered?.(payload);
+  }
+
+  async #emitBatch(payloads: readonly ComparisonEvidenceRegisteredPayload[]): Promise<void> {
+    for (const payload of payloads) {
+      if (!Value.Check(ComparisonEvidenceRegisteredPayloadSchema, payload)) throw new Error("comparison.evidence_registered payload does not satisfy its schema.");
+    }
+    if (this.#emitRegisteredBatch) return this.#emitRegisteredBatch(payloads);
+    for (const payload of payloads) await this.#emit(payload);
   }
 }
 
@@ -603,7 +648,11 @@ export function mediaDerivationKey(derivation: ComparisonMediaDerivation | undef
   ].join("|");
 }
 
-function mediaRegistrationKey(contentHash: string, side: ComparisonMediaRecord["side"], derivation: ComparisonMediaDerivation | undefined): string {
+function mediaRegistrationKey(
+  contentHash: string,
+  side: ComparisonMediaRecord["side"],
+  derivation: ComparisonMediaDerivation | undefined,
+): string {
   return `${contentHash}|${side}|${mediaDerivationKey(derivation)}`;
 }
 

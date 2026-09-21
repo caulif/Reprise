@@ -313,6 +313,14 @@ async function runComparisonAttempt(input: {
         payload,
       });
     },
+    emitRegisteredBatch: async (payloads) => {
+      await input.host.store.appendBatch(payloads.map((payload) => ({
+        type: "comparison.evidence_registered",
+        runId: input.host.input.runId,
+        operationId: `comparison-evidence-${input.attemptId}-${payload.revision}-${payload.shortRef}`,
+        payload,
+      })));
+    },
     lookupToolCall: async (toolCallId) => lookupCompletedToolCall(
       input.host.store.events(input.host.input.runId),
       input.attemptId,
