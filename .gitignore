@@ -60,6 +60,7 @@ pnpm-debug.log*
 
 # Local scratch output
 /.tmp-*.txt
+/.tmp-review-*/
 /.typecheck*
 /.errors*
 
