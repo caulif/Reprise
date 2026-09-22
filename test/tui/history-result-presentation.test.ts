@@ -7,7 +7,7 @@ import {
   deriveResultPresentationFromHistory,
   deriveResultPresentationFromResult,
 } from '../../src/tui/display-state.js';
-import { historyDetailPointerAction, renderHistoryDetail } from '../../src/tui/pages/history.js';
+import { historyDetailPointerAction, renderHistoryDetail, renderHistoryDetailWithHits } from '../../src/tui/pages/history.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { setCapabilities } from '@earendil-works/pi-tui';
 
@@ -103,5 +103,27 @@ test('history detail pointer opens the clicked HTML path for previous report and
   }
   assert.deepEqual(diagHit, { action: 'open-report', reportPath: diagnostic });
   assert.deepEqual(prevHit, { action: 'open-report', reportPath: previous });
+  assert.deepEqual(pathHit, { action: 'open-local' });
+});
+
+test('history detail pointer keeps all local links clickable without OSC 8 support', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const theme = createTheme(120, false);
+  const report = 'C:\\exp\\report.html';
+  const item = {
+    experimentId: 'exp-1', taskCaseId: 'case-1', path: 'C:\\exp', sizeBytes: 1,
+    comparisonStatus: 'completed', reportPath: report,
+  };
+  const rendered = renderHistoryDetailWithHits(theme, 120, item, 'zh');
+  let reportHit: ReturnType<typeof historyDetailPointerAction>;
+  let pathHit: ReturnType<typeof historyDetailPointerAction>;
+  for (const [row, hits] of rendered.rowHits) {
+    for (const hit of hits) {
+      const resolved = historyDetailPointerAction(rendered.lines, row, hit.x0, item, rendered.rowHits);
+      if (hit.path === report) reportHit = resolved;
+      if (hit.path === item.path) pathHit = resolved;
+    }
+  }
+  assert.deepEqual(reportHit, { action: 'open-report', reportPath: report });
   assert.deepEqual(pathHit, { action: 'open-local' });
 });
