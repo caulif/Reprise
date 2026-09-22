@@ -4,7 +4,7 @@ Reprise 是本地优先的任务对照工具：它从已安装 Agent 产品的�
 
 ## 开始
 
-安装与构建步骤见 [根 README](../README.md#从源码开始)。摘要如下：
+安装与构建步骤见[中文 README](../README.zh-CN.md#快速开始)。摘要如下：
 
 ```powershell
 git clone https://github.com/caulif/Reprise.git

@@ -5,7 +5,7 @@
 ## 外部贡献者快速路径
 
 1. **Fork 或创建分支** — 在 GitHub 上 fork 仓库，或从最新 `main` 创建功能分支。
-2. **安装与构建** — `npm ci`、`npm run build`（见 [根 README](../README.md#从源码开始)）。
+2. **安装与构建** — `npm ci`、`npm run build`（见[中文 README](../README.zh-CN.md#快速开始)）。
 3. **选择验证** — 文档改动跑 `npm run verify:docs`；代码改动按 [开发指南](./development.md#验证命令) 选择 `check:fast` 或 `check`。默认验证不调用计费模型。
 4. **更新唯一文档归宿** — 用户行为改 [使用指南](./usage.md)；架构不变量改 [架构](./architecture/overview.md)；未完成目标改 [路线图](./roadmap.md)。
 5. **发 PR** — 使用 [PR 模板](../.github/PULL_REQUEST_TEMPLATE.md)，说明影响、验证命令与未验证事项。
@@ -48,4 +48,4 @@
 
 ## 安全与交接
 
-不提交凭据、真实会话或未经脱敏的实验材料。漏洞走[安全政策](./SECURITY.md)，普通支持见[根 README](../README.md#了解支持与贡献)，社区行为见[行为准则](./CODE_OF_CONDUCT.md)。发布与数据回退见[开发指南](./development.md#发布与回滚)。交接说明实际权限、剩余风险与未完成验证，不能把无人回应视作接管授权。
+不提交凭据、真实会话或未经脱敏的实验材料。漏洞走[安全政策](./SECURITY.md)，普通支持见[中文 README](../README.zh-CN.md#支持与贡献)，社区行为见[行为准则](./CODE_OF_CONDUCT.md)。发布与数据回退见[开发指南](./development.md#发布与回滚)。交接说明实际权限、剩余风险与未完成验证，不能把无人回应视作接管授权。
