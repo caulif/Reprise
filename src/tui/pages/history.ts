@@ -4,7 +4,7 @@ import type { HistoryCase, HistoryExperiment } from '../local-history.js';
 import { deriveResultPresentationFromHistory, type ResultPresentation } from '../display-state.js';
 import { localPathFromFileUrl } from '../open-report.js';
 import { showsDetailPane, type Theme } from '../theme.js';
-import { joinColumns, kv, kvBlock, kvLinkBlock, panel } from '../widgets.js';
+import { joinColumns, kv, kvBlock, kvLinkBlock, panel, panelWithHits, type LinkValueHit } from '../widgets.js';
 
 export type HistoryModel = {
   readonly totalBytes: number;
@@ -18,6 +18,12 @@ export type HistoryModel = {
 export type HistoryDetailPointerHit =
   | { readonly action: 'open-report'; readonly reportPath: string }
   | { readonly action: 'open-local' };
+
+type HistoryDetailLinkHit = LinkValueHit & { readonly path: string };
+export type HistoryDetailRender = {
+  readonly lines: readonly string[];
+  readonly rowHits: ReadonlyMap<number, readonly HistoryDetailLinkHit[]>;
+};
 
 export function renderHistory(theme: Theme, width: number, model: HistoryModel, height?: number): string[] {
   const locale = model.locale ?? 'en';
@@ -46,44 +52,63 @@ export function renderHistory(theme: Theme, width: number, model: HistoryModel, 
 }
 
 export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCase | HistoryExperiment, locale: Locale = 'en'): string[] {
+  return [...renderHistoryDetailWithHits(theme, width, item, locale).lines];
+}
+
+export function renderHistoryDetailWithHits(
+  theme: Theme,
+  width: number,
+  item: HistoryCase | HistoryExperiment,
+  locale: Locale = 'en',
+): HistoryDetailRender {
+  const body: string[] = [];
+  const bodyHits = new Map<number, readonly HistoryDetailLinkHit[]>();
+  const push = (line: string): void => { body.push(line); };
+  const pushLink = (block: ReturnType<typeof kvLinkBlock>, path: string): void => {
+    for (const [index, line] of block.lines.entries()) {
+      const hit = block.hits[index];
+      if (hit) bodyHits.set(body.length, [{ ...hit, path }]);
+      body.push(line);
+    }
+  };
   if ('taskCase' in item) {
-    return panel(theme, t(locale, 'historyCaseTitle'), [
-      ` TaskCase: ${item.taskCase.caseId}`,
-      ...kvBlock(theme, 'Task', item.taskCase.initialInput.text, width),
-      kv(theme, 'Source', `${item.taskCase.source.productId} ${theme.glyphs.sep} ${item.taskCase.source.sessionId}`, width - 2),
-      kv(theme, 'Frozen', item.taskCase.provenance.importedAt, width - 2),
-      ...kvLinkBlock(theme, 'Path', item.path, item.path, width).lines,
-    ], width);
+    push(` TaskCase: ${item.taskCase.caseId}`);
+    for (const line of kvBlock(theme, 'Task', item.taskCase.initialInput.text, width)) push(line);
+    push(kv(theme, 'Source', `${item.taskCase.source.productId} ${theme.glyphs.sep} ${item.taskCase.source.sessionId}`, width - 2));
+    push(kv(theme, 'Frozen', item.taskCase.provenance.importedAt, width - 2));
+    pushLink(kvLinkBlock(theme, 'Path', item.path, item.path, width), item.path);
+    return panelWithHits(theme, t(locale, 'historyCaseTitle'), body, width, bodyHits);
   }
   const presentation = deriveResultPresentationFromHistory(item, locale);
-  return panel(theme, t(locale, 'historyRunTitle'), [
-    kv(theme, 'ID', item.experimentId, width - 2),
-    kv(theme, 'TaskCase', item.taskCaseId, width - 2),
-    kv(theme, 'Run', missing(item.runId), width - 2),
-    kv(theme, 'Outcome', historyOutcomeLabel(item, locale), width - 2),
-    kv(theme, 'Started', item.startedAt ?? 'unavailable', width - 2),
-    kv(theme, t(locale, 'resultTask'), presentation.taskLabel, width - 2),
-    kv(theme, t(locale, 'resultTermination'), presentation.terminationLabel, width - 2),
-    kv(theme, t(locale, 'resultCleanup'), presentation.cleanupLabel, width - 2),
-    kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2),
-    ...(item.incompleteModelInput ? kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width) : []),
-    ...(item.formatError ? [kv(theme, 'Format', t(locale, 'unsupportedSchema'), width - 2)] : []),
-    ...(item.reportAttemptUnconfirmed
-      ? kvBlock(theme, t(locale, 'resultReport'), t(locale, 'historyReportUnconfirmed'), width)
-      : []),
-    ...kvLinkBlock(
-      theme,
-      historyPrimaryReportLabel(item, presentation, locale),
-      item.reportPath ?? t(locale, 'resultReportNotGenerated'),
-      item.reportPath,
-      width,
-    ).lines,
-    ...(item.previousReportPath && item.previousReportPath !== item.reportPath
-      ? kvLinkBlock(theme, t(locale, 'historyPreviousReport'), item.previousReportPath, item.previousReportPath, width).lines
-      : []),
-    kv(theme, 'Stored', formatBytes(item.sizeBytes), width - 2),
-    ...kvLinkBlock(theme, 'Path', item.path, item.path, width).lines,
-  ], width);
+  push(kv(theme, 'ID', item.experimentId, width - 2));
+  push(kv(theme, 'TaskCase', item.taskCaseId, width - 2));
+  push(kv(theme, 'Run', missing(item.runId), width - 2));
+  push(kv(theme, 'Outcome', historyOutcomeLabel(item, locale), width - 2));
+  push(kv(theme, 'Started', item.startedAt ?? 'unavailable', width - 2));
+  push(kv(theme, t(locale, 'resultTask'), presentation.taskLabel, width - 2));
+  push(kv(theme, t(locale, 'resultTermination'), presentation.terminationLabel, width - 2));
+  push(kv(theme, t(locale, 'resultCleanup'), presentation.cleanupLabel, width - 2));
+  push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
+  if (item.incompleteModelInput) {
+    for (const line of kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width)) push(line);
+  }
+  if (item.formatError) push(kv(theme, 'Format', t(locale, 'unsupportedSchema'), width - 2));
+  if (item.reportAttemptUnconfirmed) {
+    for (const line of kvBlock(theme, t(locale, 'resultReport'), t(locale, 'historyReportUnconfirmed'), width)) push(line);
+  }
+  pushLink(kvLinkBlock(
+    theme,
+    historyPrimaryReportLabel(item, presentation, locale),
+    item.reportPath ?? t(locale, 'resultReportNotGenerated'),
+    item.reportPath,
+    width,
+  ), item.reportPath ?? '');
+  if (item.previousReportPath && item.previousReportPath !== item.reportPath) {
+    pushLink(kvLinkBlock(theme, t(locale, 'historyPreviousReport'), item.previousReportPath, item.previousReportPath, width), item.previousReportPath);
+  }
+  push(kv(theme, 'Stored', formatBytes(item.sizeBytes), width - 2));
+  pushLink(kvLinkBlock(theme, 'Path', item.path, item.path, width), item.path);
+  return panelWithHits(theme, t(locale, 'historyRunTitle'), body, width, bodyHits);
 }
 
 export function historyHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
@@ -106,10 +131,12 @@ export function historyDetailPointerAction(
   row: number,
   col: number,
   item?: HistoryExperiment,
+  rowHits?: ReadonlyMap<number, readonly HistoryDetailLinkHit[]>,
 ): HistoryDetailPointerHit | undefined {
-  const href = hitFileLink(lines[row] ?? '', col);
+  const directHit = rowHits?.get(row)?.find((hit) => col >= hit.x0 && col <= hit.x1);
+  const href = directHit?.path ?? hitFileLink(lines[row] ?? '', col);
   if (!href) return undefined;
-  const clicked = hrefPath(href);
+  const clicked = directHit?.path ?? hrefPath(href);
   if (!isComparisonHtml(clicked)) return { action: 'open-local' };
   const reportPath = item ? resolveHistoryHtmlPath(item, clicked) : clicked;
   return { action: 'open-report', reportPath };

@@ -1,5 +1,5 @@
 import { dirname } from 'node:path';
-import { createTheme } from './theme.js';
+import { createTheme, showsDetailPane } from './theme.js';
 import { selectedIndexAfterFold } from './fold-process.js';
 import { projectTimelineView } from './timeline-view.js';
 import { hitFileLink } from './format.js';
@@ -7,7 +7,7 @@ import { artifactsFromResult, isActionEnabled, listActions } from './action-mode
 import { t } from './i18n.js';
 import { dispatchHomeComposer, dispatchListPointer, parseSgrMouse, type Consume } from './page-input.js';
 import { homeActions, homePointerAction } from './pages/home.js';
-import { historyDetailPointerAction, renderHistoryDetail } from './pages/history.js';
+import { historyDetailPointerAction, renderHistoryDetailWithHits } from './pages/history.js';
 import { resolveResultPathLinks } from '../application/result-paths.js';
 import { resultPointerAction, renderResultWithHits } from './pages/result.js';
 import { hitAtBodyRow, keepSelectedVisible, layoutScrollback } from './scrollback.js';
@@ -180,9 +180,22 @@ export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Co
   if (!c.historyDetail) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
   if (!cell) return { consume: true };
-  const lines = renderHistoryDetail(createTheme(cell.width), cell.width, c.historyDetail, c.locale);
+  const view = c.view();
+  const theme = createTheme(cell.width);
+  const split = Boolean(view.history && !view.running?.entries.length && showsDetailPane(theme));
+  const detailWidth = split ? Math.max(28, Math.floor(cell.width * 0.42)) : cell.width;
+  const listWidth = split ? cell.width - detailWidth - 1 : 0;
+  if (split && cell.col <= listWidth + 1) return { consume: true };
+  const detailCol = split ? cell.col - listWidth - 1 : cell.col;
+  const detailRender = renderHistoryDetailWithHits(createTheme(detailWidth), detailWidth, c.historyDetail, c.locale);
   const detail = c.historyDetail;
-  const action = historyDetailPointerAction(lines, cell.bodyRow, cell.col, 'taskCase' in detail ? undefined : detail);
+  const action = historyDetailPointerAction(
+    detailRender.lines,
+    cell.bodyRow,
+    detailCol,
+    'taskCase' in detail ? undefined : detail,
+    detailRender.rowHits,
+  );
   if (action?.action === 'open-report' && !('taskCase' in detail)) {
     return c.openReport(detail.path, action.reportPath);
   }
