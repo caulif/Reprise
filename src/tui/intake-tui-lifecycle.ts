@@ -38,6 +38,9 @@ export async function IntakeTui_start(this: IntakeTui): Promise<void> {
       });
     }
     this.tui.start();
+    // Result-page links depend on SGR mouse events; reading mode may turn this
+    // off temporarily, but the normal workbench must start with it enabled.
+    this.setMouseReporting(true);
     let configurationIssue: string | undefined;
     try {
       const configured = await readHarnessModelConfig(this.dataDir);
