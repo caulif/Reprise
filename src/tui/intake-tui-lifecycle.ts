@@ -212,6 +212,24 @@ export function IntakeTui_openResultArtifactHref(
   return { consume: true };
 }
 
+export function IntakeTui_openArtifact(this: IntakeTui, experimentRoot: string | undefined, artifactPath: string | undefined): { consume: true } {
+  if (!experimentRoot || !artifactPath) {
+    this.message = t(this.locale, "noLocalPath");
+    this.render();
+    return { consume: true };
+  }
+  void openExperimentArtifact(experimentRoot, artifactPath, undefined, { dataDir: this.dataDir })
+    .then(() => {
+      this.message = t(this.locale, "requestedOpenArtifact");
+      this.render();
+    })
+    .catch((error: unknown) => {
+      this.message = t(this.locale, "couldNotOpenArtifact", { error: errorMessage(error) });
+      this.render(true);
+    });
+  return { consume: true };
+}
+
 export function IntakeTui_openLocal(this: IntakeTui, target: string | undefined): { consume: true } {
     if (!target) {
       this.message = t(this.locale, "noLocalPath");

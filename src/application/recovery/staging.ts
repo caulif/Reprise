@@ -6,8 +6,10 @@ import { retryRecoveryPreflight } from "./staging-diagnostic.js";
 import { persistAgentAuditEvent } from "../experiment-helpers.js";
 import {
   moveRecoveryState,
+  recordRecoveryAttempt,
   type RecoveryRunSession,
 } from "./session.js";
+import { recoveryAttemptRecord } from "./orchestrator.js";
 
 export function recoveryToolFailureCategory(payload: { category?: unknown; message?: unknown }): string {
   const message = typeof payload.message === "string" ? payload.message : "";
@@ -32,8 +34,18 @@ export function createRecoveryAuditSink(session: RecoveryRunSession): AgentAudit
 
 export async function beginRecoveryStaging(session: RecoveryRunSession): Promise<void> {
   const { input, store, provider } = session;
+  const startedAt = Date.now();
   await store.acquireWriter();
   session.writerAcquired = true;
+  await recordRecoveryAttempt(session, recoveryAttemptRecord({
+    attemptId: "recovery-attempt-staging-started",
+    phase: "staging",
+    operation: "begin_staging",
+    attemptNumber: 1,
+    result: "started",
+    durationMs: 0,
+    recordedAt: input.now,
+  }));
   const pack = input.pack ?? findProductPack(input.taskCase.source.productId);
   const descriptor = packRecoveryPlaybook(pack);
   const playbook = {
@@ -42,24 +54,47 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
   };
   session.pack = pack;
   session.playbook = playbook;
-  session.staging = await retryRecoveryPreflight(
-    "begin_recovery_staging",
-    () =>
-      provider.beginRecovery({
-        caseId: input.caseId,
-        sourceRoot: resolve(input.sourceRoot),
-        ...(input.checkpointRoot ? { checkpointRoot: resolve(input.checkpointRoot) } : {}),
-        playbook,
-      }),
-    async (diagnostic) => {
-      await store.append({
-        type: "recovery.preflight_retry",
-        runId: input.runId,
-        operationId: "recovery-preflight-retry-2",
-        payload: { attempt: 2, ...diagnostic },
-      });
-    },
-  );
+  try {
+    session.staging = await retryRecoveryPreflight(
+      "begin_recovery_staging",
+      () =>
+        provider.beginRecovery({
+          caseId: input.caseId,
+          sourceRoot: resolve(input.sourceRoot),
+          ...(input.checkpointRoot ? { checkpointRoot: resolve(input.checkpointRoot) } : {}),
+          playbook,
+        }),
+      async (diagnostic) => {
+        await store.append({
+          type: "recovery.preflight_retry",
+          runId: input.runId,
+          operationId: "recovery-preflight-retry-2",
+          payload: { attempt: 2, ...diagnostic },
+        });
+      },
+    );
+  } catch (error) {
+    await recordRecoveryAttempt(session, recoveryAttemptRecord({
+      attemptId: "recovery-attempt-staging-failed",
+      phase: "staging",
+      operation: "begin_staging",
+      attemptNumber: 1,
+      result: "failed",
+      failureCode: error instanceof Error && error.name ? error.name : "staging_failed",
+      durationMs: Math.max(0, Date.now() - startedAt),
+      recordedAt: new Date().toISOString(),
+    }));
+    throw error;
+  }
+  await recordRecoveryAttempt(session, recoveryAttemptRecord({
+    attemptId: "recovery-attempt-staging-completed",
+    phase: "staging",
+    operation: "begin_staging",
+    attemptNumber: 1,
+    result: "succeeded",
+    durationMs: Math.max(0, Date.now() - startedAt),
+    recordedAt: new Date().toISOString(),
+  }));
   session.activeStaging = session.staging;
   moveRecoveryState(session, "staged");
   session.preflightOperation = "recovery_resolve_facts";

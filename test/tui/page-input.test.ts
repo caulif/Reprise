@@ -90,6 +90,10 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchConfirmInput('\r')?.action, 'run');
   assert.equal(dispatchConfirmInput('b')?.action, 'models');
   assert.equal(dispatchConfirmInput('\x1b')?.action, 'models');
+  assert.equal(dispatchConfirmInput('r', { recoveryFailureAction: 'retry' })?.action, 'retry-recovery');
+  assert.equal(dispatchConfirmInput('d', { recoveryFailureAction: 'diagnose' })?.action, 'open-diagnostics');
+  assert.equal(dispatchConfirmInput('f', { recoveryFailureAction: 'refreeze' })?.action, 'refreeze-session');
+  assert.equal(dispatchConfirmInput('c', { recoveryFailureAction: 'config' })?.action, 'open-recovery-config');
   assert.equal(dispatchCandidatePickerInput('b')?.action, 'back');
   assert.equal(dispatchCandidatePickerInput('\r')?.action, 'enter');
   assert.equal(dispatchRunningKeys('\t')?.action, 'cycle-fold');

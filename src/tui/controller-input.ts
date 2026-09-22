@@ -1,5 +1,6 @@
 import { dirname } from 'node:path';
 import { runtimePacks } from '../application/intake-catalog.js';
+import { recoveryFailureDecision } from '../application/recovery/fail.js';
 import { isFsAbsolute } from '../core/paths.js';
 import { matchesKey } from '@earendil-works/pi-tui';
 import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
@@ -186,6 +187,7 @@ export type ControllerHandle = {
   sessionsMessage(): string;
   syncIntakeLevel(): void;
   openReport(experimentRoot: string | undefined, reportPath: string | undefined): Consume;
+  openArtifact(experimentRoot: string | undefined, artifactPath: string | undefined): Consume;
   openResultArtifact(side: 'history' | 'candidate'): Consume;
   openResultArtifactHref(href: string | undefined, side: 'history' | 'candidate'): Consume;
   openTrace(): Consume;
@@ -573,8 +575,31 @@ function applyCompareGate(c: ControllerHandle, data: string): Consume | undefine
 }
 
 function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
-  const result = dispatchConfirmInput(data);
+  const failureStage = c.recoveryView?.baseline.recovery?.failureStage;
+  const failedKind = c.recoveryView?.recovery.status === 'failed' ? c.recoveryView.recovery.failure.kind : undefined;
+  const failureAction = failureStage ? recoveryFailureDecision(failureStage, failedKind ? { kind: failedKind } : undefined).action : undefined;
+  const result = dispatchConfirmInput(data, failureAction === 'retry' || failureAction === 'diagnose' || failureAction === 'refreeze' || failureAction === 'config' ? { recoveryFailureAction: failureAction } : {});
   if (!result) return undefined;
+  if (result.action === 'retry-recovery') {
+    void beginPreflight(c, { afterFreeze: true });
+    return { consume: true };
+  }
+  if (result.action === 'open-diagnostics') {
+    const root = c.recoveryView?.experimentRoot;
+    if (root) return c.openArtifact(root, 'recovery-diagnosis.json');
+    c.message = t(c.locale, 'recoveryActionDiagnose');
+    c.render();
+    return { consume: true };
+  }
+  if (result.action === 'refreeze-session') {
+    c.page = 'source';
+    c.render(true);
+    return { consume: true };
+  }
+  if (result.action === 'open-recovery-config') {
+    void c.openConfig();
+    return { consume: true };
+  }
   if (result.action === 'models') {
     if (candidateStartBlocked(candidateGateFrom(c))) return c.backToHome();
     if (!c.selectedCandidate && !c.candidateProductId) return c.backToHome();

@@ -338,6 +338,7 @@ function renderBody(theme: Theme, view: WorkbenchView, width: number, height?: n
       comparePending: Boolean(view.comparePending),
       findAllowed: !preparing,
       ...(view.confirm ? { canStartConfirm: confirmCanStart(view.confirm) } : {}),
+      ...(view.confirm?.recovery?.failureAction ? { recoveryFailureAction: view.confirm.recovery.failureAction } : {}),
     }),
     artifacts: artifactsFromResult(view.result),
   });

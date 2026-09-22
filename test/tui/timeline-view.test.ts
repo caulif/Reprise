@@ -25,6 +25,17 @@ function visibleOf(timeline: readonly TimelineEntry[]): TimelineEntry[] {
   return timeline.filter((entry) => !entry.hidden && matchesFilter(entry, 'ALL'));
 }
 
+test('recovery lifecycle events project phase and retry facts without visible log rows', () => {
+  const phase = projectTimelineEvent(event('recovery.attempt', { phase: 'forensics', operation: 'resolve_facts', attemptNumber: 1 }))[0];
+  const retry = projectTimelineEvent(event('recovery.model_retry', { attempt: 2, previousFailure: 'timeout' }, 2))[0];
+  const fallback = projectTimelineEvent(event('recovery.model_fallback', {}, 3))[0];
+  assert.equal(phase?.recoveryPhase, 'forensics');
+  assert.equal(phase?.hidden, true);
+  assert.equal(retry?.recoveryRetry, 2);
+  assert.equal(fallback?.recoveryFallback, true);
+  assert.equal(visibleOf([phase, retry, fallback]).length, 0);
+});
+
 test('unknown agent roles stay system activity across lifecycle events', () => {
   for (const [sequence, type] of [
     'agent.assistant_visible',

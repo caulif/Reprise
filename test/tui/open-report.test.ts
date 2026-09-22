@@ -75,6 +75,16 @@ test('experiment artifact opener accepts paths under dataDir when provided', asy
   assert.equal(calls[0]?.args[0], artifactPath);
 });
 
+test('experiment artifact opener accepts recovery diagnosis inside the experiment', async () => {
+  const child = reportProcess();
+  const { start, calls } = recordingSpawner(child);
+  const diagnosisPath = join(EXPERIMENT_ROOT, 'recovery-diagnosis.json');
+  const opening = openExperimentArtifact(EXPERIMENT_ROOT, 'recovery-diagnosis.json', start);
+  child.emit('spawn');
+  await assert.doesNotReject(opening);
+  assert.equal(calls[0]?.args[0], diagnosisPath);
+});
+
 test('report opener resolves after the operating system accepts the spawn request', async () => {
   const child = reportProcess();
   const { start, calls } = recordingSpawner(child);

@@ -295,6 +295,9 @@ export class IntakeTui {
   openReport(experimentRoot: string | undefined, reportPath: string | undefined): { consume: true } {
     return intakeMethods.IntakeTui_openReport.call(this, experimentRoot, reportPath);
   }
+  openArtifact(experimentRoot: string | undefined, artifactPath: string | undefined): { consume: true } {
+    return intakeMethods.IntakeTui_openArtifact.call(this, experimentRoot, artifactPath);
+  }
   openResultArtifact(side: "history" | "candidate"): { consume: true } {
     return intakeMethods.IntakeTui_openResultArtifact.call(this, side);
   }

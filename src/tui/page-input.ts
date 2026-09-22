@@ -184,10 +184,14 @@ export function dispatchPreflightInput(data: string): { action: PreflightAction;
   return undefined;
 }
 
-export type ConfirmAction = 'models' | 'run';
+export type ConfirmAction = 'models' | 'run' | 'retry-recovery' | 'open-diagnostics' | 'refreeze-session' | 'open-recovery-config';
 
-export function dispatchConfirmInput(data: string): { action: ConfirmAction; consume: true } | undefined {
+export function dispatchConfirmInput(data: string, context: { readonly recoveryFailureAction?: 'retry' | 'diagnose' | 'refreeze' | 'config' } = {}): { action: ConfirmAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
+  if (context.recoveryFailureAction === 'retry' && matchesKey(input, 'r')) return { action: 'retry-recovery', consume: true };
+  if (context.recoveryFailureAction === 'diagnose' && matchesKey(input, 'd')) return { action: 'open-diagnostics', consume: true };
+  if (context.recoveryFailureAction === 'refreeze' && matchesKey(input, 'f')) return { action: 'refreeze-session', consume: true };
+  if (context.recoveryFailureAction === 'config' && matchesKey(input, 'c')) return { action: 'open-recovery-config', consume: true };
   if (matchesKey(input, 'escape') || matchesKey(input, 'b')) return { action: 'models', consume: true };
   if (matchesKey(input, 'enter')) return { action: 'run', consume: true };
   return undefined;

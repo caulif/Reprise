@@ -27,6 +27,12 @@ export function renderRecoverySummary(
   if (recovery.failureSummary) {
     lines.push(theme.style.warn(` ${theme.glyphs.warn}  ${truncateFit(recovery.failureSummary, Math.max(12, width - 4), theme.glyphs.ellipsis)}`));
   }
+  if (recovery.failureCategory) {
+    lines.push(kv(theme, t(locale, 'recoveryFailureType'), t(locale, recovery.failureCategory === 'transient' ? 'recoveryFailureTransient' : recovery.failureCategory === 'authentication' ? 'recoveryFailureAuthentication' : recovery.failureCategory === 'source_changed' ? 'recoveryFailureSourceChanged' : recovery.failureCategory === 'staging_invalid' ? 'recoveryFailureStaging' : recovery.failureCategory === 'protocol' ? 'recoveryFailureProtocol' : 'recoveryFailureOther'), width));
+    lines.push(kv(theme, t(locale, 'recoveryNextStep'), t(locale, recovery.failureAction === 'retry' ? 'recoveryActionRetry' : recovery.failureAction === 'config' ? 'recoveryActionConfig' : recovery.failureAction === 'refreeze' ? 'recoveryActionRefreeze' : 'recoveryActionDiagnose'), width));
+  }
+  if (recovery.candidateStarted === false) lines.push(theme.style.muted(` ${t(locale, 'recoveryCandidateNotStarted')}`));
+  if (recovery.sourceUnchanged) lines.push(theme.style.muted(` ${t(locale, 'recoverySourceSafe')}`));
   const unresolved = recovery.unresolved.length;
   if (unresolved > 0) {
     lines.push(kv(theme, t(locale, 'recoveryUnresolvedField'), String(unresolved), width));

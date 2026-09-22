@@ -4,6 +4,7 @@ import { renderConfirmation, renderTimeline } from '../../src/tui/pages/run.js';
 import { renderFailure } from '../../src/tui/pages/result.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { formatRecoveryFailureSummary } from '../../src/tui/i18n.js';
+import { projectWorkbenchView } from '../../src/tui/view-projection.js';
 
 test('Recovery agent failure copy separates upstream and credentials from invalid workspace recovery', () => {
   const transient = formatRecoveryFailureSummary('zh', 'agent_model_failed', { agentFailureKind: 'transient_upstream' });
@@ -11,6 +12,77 @@ test('Recovery agent failure copy separates upstream and credentials from invali
   const authentication = formatRecoveryFailureSummary('en', 'agent_model_failed', { agentFailureKind: 'authentication' });
   assert.match(authentication, /Recovery agent.*provider credentials/);
   assert.doesNotMatch(authentication, /Temporary failure/);
+});
+
+test('failed confirmation exposes user decision facts and keeps the candidate disabled', () => {
+  const text = renderConfirmation(createTheme(120, false), 120, {
+    candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
+    step: 3,
+    sourceRoot: 'C:\\workspace',
+    effort: 'high',
+    harnessModel: 'gpt-5',
+    harnessAuthOk: true,
+    productLabel: 'Codex',
+    locale: 'zh',
+    experimentId: 'exp-decision',
+    recovery: {
+      status: 'failed',
+      unresolved: [],
+      changedPathCount: 0,
+      failureSummary: '内部 warning 不应成为用户解释',
+      failureCategory: 'transient',
+      retryable: true,
+      failureAction: 'retry',
+      sourceUnchanged: true,
+      candidateStarted: false,
+    },
+    policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
+    preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
+  } as never).join('\n');
+  assert.match(text, /发生了什么/);
+  assert.match(text, /内部模型暂时失败/);
+  assert.match(text, /影响/);
+  assert.match(text, /候选未启动/);
+  assert.match(text, /原始目录未被修改/);
+  assert.match(text, /是否可重试/);
+  assert.match(text, /可以重试/);
+  assert.match(text, /下一步/);
+  assert.match(text, /重试恢复/);
+  assert.doesNotMatch(text, /内部 warning 不应成为用户解释/);
+  assert.doesNotMatch(text, /启动隔离的 Codex 候选/);
+});
+
+test('source tripwire failure never claims that the original directory was unchanged', () => {
+  const view = projectWorkbenchView({
+    page: 'confirm',
+    locale: 'en',
+    modelConfig: { providerId: 'fixture', modelId: 'gpt-5', effort: 'high' },
+    sourceRoot: 'C:\\workspace',
+    recoveryView: {
+      experimentRoot: 'C:\\data\\experiments\\exp-tripwire',
+      experimentId: 'exp-tripwire',
+      baseline: {
+        mode: 'canonical',
+        recovery: { status: 'failed', failureStage: 'source_tripwire_failed', unresolved: [] },
+      },
+      providerPreview: { changedPaths: [] },
+      recovery: { status: 'failed', failure: { message: 'source changed' } },
+      hasAccept: false,
+    },
+    preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
+    timeline: [],
+    intakeLevel: 'projects',
+    products: [],
+    visibleProjects: [],
+    activeProjectKey: '',
+    visibleSessions: [],
+    selected: 0,
+    filterEligible: false,
+    searchQuery: '',
+    searchCursor: 0,
+    searching: false,
+  } as never);
+  assert.equal(view.confirm?.recovery?.sourceUnchanged, false);
 });
 
 test('recovery canvas does not impersonate a candidate reply', () => {

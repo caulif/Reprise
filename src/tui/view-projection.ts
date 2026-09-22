@@ -18,6 +18,7 @@ import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
 import type { WorkbenchView, WorkbenchSurfaceScope, ContextBarModel, StatusSummaryModel, StageRailModel, ActivityCardModel, RecoverySummaryModel } from './workbench.js';
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
+import { recoveryFailureDecision } from '../application/recovery/fail.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
 
@@ -98,6 +99,14 @@ function runningModel(input: Input) {
     ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
   });
   const activeParallel = countActiveParallel(input.visibleTimeline, input.activeParallel);
+  const recoveryFacts = input.timeline.reduce((facts, entry) => ({
+    phase: entry.recoveryPhase ?? facts.phase,
+    attempt: entry.recoveryAttemptNumber ?? facts.attempt,
+    retry: entry.recoveryRetry ?? facts.retry,
+    fallback: facts.fallback || Boolean(entry.recoveryFallback),
+  }), { phase: undefined as TimelineEntry['recoveryPhase'], attempt: undefined as number | undefined, retry: undefined as number | undefined, fallback: false });
+  const recentVisibleEntry = [...input.visibleTimeline].reverse().find((entry) => !entry.placeholder && !entry.hidden);
+  const recentVisibleActivity = recentVisibleEntry?.title;
   return {
     entries: input.visibleTimeline,
     sourceTimeline: input.timeline,
@@ -130,6 +139,12 @@ function runningModel(input: Input) {
     ...(uiStage ? { uiStage } : {}),
     ...(activeParallel ? { activeParallel } : {}),
     ...(input.comparisonAttemptId ? { comparisonAttemptId: input.comparisonAttemptId } : {}),
+    ...(recoveryFacts.phase ? { recoveryPhase: recoveryFacts.phase } : {}),
+    ...(recoveryFacts.attempt !== undefined ? { recoveryAttemptNumber: recoveryFacts.attempt } : {}),
+    ...(recoveryFacts.retry !== undefined ? { recoveryRetry: recoveryFacts.retry } : {}),
+    ...(recoveryFacts.fallback ? { recoveryFallback: true } : {}),
+    ...(recentVisibleActivity ? { recentVisibleActivity } : {}),
+    ...(recentVisibleEntry?.occurredAt ? { recentVisibleActivityAt: recentVisibleEntry.occurredAt } : {}),
     ...(input.expandedFolds?.length ? { expandedFolds: input.expandedFolds } : {}),
     ...(input.activityDetail ? { activityDetail: input.activityDetail } : {}),
     ...(input.activityDetailOffset ? { activityDetailOffset: input.activityDetailOffset } : {}),
@@ -262,6 +277,9 @@ function recoveryModel(input: Input): import('./pages/run.js').RecoveryPreviewMo
   const stored = input.recoveryView.baseline.recovery.summary
     ?? (input.recoveryView.recovery?.status === 'completed' ? input.recoveryView.recovery.value.summary : undefined);
   const explanationKey = stored && isHostExplanationKey(stored) ? stored : undefined;
+  const failureStage = input.recoveryView.baseline.recovery.failureStage;
+  const failedResult = input.recoveryView.recovery?.status === 'failed' ? input.recoveryView.recovery.failure : undefined;
+  const decision = failureStage ? recoveryFailureDecision(failureStage, failedResult ? { ...(failedResult.kind ? { kind: failedResult.kind } : {}), message: failedResult.message } : undefined) : undefined;
   return {
     status: previewStatus(userRecoveryStatus({
       baseline: input.recoveryView.baseline,
@@ -273,12 +291,12 @@ function recoveryModel(input: Input): import('./pages/run.js').RecoveryPreviewMo
     ...(stored && !explanationKey ? { summary: stored } : {}),
     changedPathCount: input.recoveryView.providerPreview?.changedPaths.length ?? 0,
     skippedPaths: [...(input.recoveryView.baseline.budget?.excludedEntries ?? [])],
-    ...(input.recoveryView.baseline.recovery.failureStage
-        ? { failureSummary: formatRecoveryFailureSummary(locale, input.recoveryView.baseline.recovery.failureStage, {
+    ...(failureStage
+        ? { failureSummary: formatRecoveryFailureSummary(locale, failureStage, {
             changedPathCount: input.recoveryView.providerPreview?.changedPaths.length ?? 0,
             ...(input.recoveryView.recovery?.status === 'failed' && input.recoveryView.recovery.failure.kind ? { agentFailureKind: input.recoveryView.recovery.failure.kind } : {}),
             ...(explanationKey ? { explanationKey } : {}),
-          }) }
+          }), ...(decision ? { failureCategory: decision.category, retryable: decision.retryable, failureAction: decision.action } : {}), sourceUnchanged: failureStage !== 'source_tripwire_failed', candidateStarted: false }
       : explanationKey ? { failureSummary: t(locale, explanationKey) } : {}),
   };
 }
@@ -293,7 +311,7 @@ function confirmWorkbenchSlice(
     || recovery?.status === 'blocked'
     || preflight.comparisonClass === 'observational';
   const running = input.timeline.length
-    ? { ...runningModel(input), ...(clearHighlight ? { selected: -1, following: true } : {}) }
+    ? { ...runningModel(input), ...(clearHighlight ? { selected: input.processExpanded ? lastRecoveryFailureIndex(input.timeline) : -1, following: true } : {}) }
     : undefined;
   return {
     ...base,
@@ -316,6 +334,14 @@ function confirmWorkbenchSlice(
       ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {}),
     },
   };
+}
+
+function lastRecoveryFailureIndex(entries: readonly TimelineEntry[]): number {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry?.level === 'error' || entry?.activityStatus === 'failed' || entry?.recoveryFallback) return index;
+  }
+  return Math.max(0, entries.length - 1);
 }
 
 function candidatePickerView(input: Input, base: WorkbenchView): WorkbenchView | undefined {
