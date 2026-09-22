@@ -374,9 +374,11 @@ export function IntakeTui_viewport(this: IntakeTui): { height?: number } {
   }
 
 export function IntakeTui_setMouseReporting(this: IntakeTui, enabled: boolean): void {
-    const terminal = this.tui as { terminal?: { write?: (data: string) => void } };
-    terminal.terminal?.write?.(mouseReportingSequence(enabled));
-  }
+  const mouseEnabled = (this.tui as IntakeTui["tui"] & { mouseEnabled?: boolean }).mouseEnabled;
+  if (mouseEnabled !== true) return;
+  const terminal = this.tui as { terminal?: { write?: (data: string) => void } };
+  terminal.terminal?.write?.(mouseReportingSequence(enabled));
+}
 
 export function IntakeTui_render(this: IntakeTui, immediate = false): void {
     // Do not short-circuit on readingMode: fixed chrome must update while the body stays anchored.

@@ -38,6 +38,9 @@ export async function IntakeTui_start(this: IntakeTui): Promise<void> {
       });
     }
     this.tui.start();
+    // Refresh through the TUI-owned capability guard so injected `mouse: false`
+    // implementations are never enabled by application code.
+    this.setMouseReporting(true);
     let configurationIssue: string | undefined;
     try {
       const configured = await readHarnessModelConfig(this.dataDir);

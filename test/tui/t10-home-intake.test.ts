@@ -59,7 +59,11 @@ function sessionPack(input: {
   };
 }
 
-function fakeTui(onDocument: (document: Component) => void = () => {}): TUI {
+function fakeTui(
+  onDocument: (document: Component) => void = () => {},
+  writes?: string[],
+  mouseEnabled?: boolean,
+): TUI {
   return {
     addChild: onDocument,
     addInputListener: () => () => {},
@@ -67,6 +71,8 @@ function fakeTui(onDocument: (document: Component) => void = () => {}): TUI {
     stop() {},
     requestRender() {},
     renderNow() {},
+    terminal: writes ? { write: (data: string) => writes.push(data) } : undefined,
+    mouseEnabled,
   } as unknown as TUI;
 }
 
@@ -77,6 +83,35 @@ async function waitFor(condition: () => boolean): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
+
+test('TUI enables SGR mouse reporting for result-page clicks at startup', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-t10-mouse-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const writes: string[] = [];
+  const app = new IntakeTui({
+    dataDir: join(root, 'data'),
+    tui: fakeTui(() => {}, writes, true),
+    packs: [fakeProductPack],
+    privacy,
+  });
+  await app.start();
+  assert.ok(writes.some((data) => /\x1b\[\?1000h/.test(data)));
+});
+
+test('TUI does not override a disabled mouse configuration', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-t10-no-mouse-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const writes: string[] = [];
+  const app = new IntakeTui({
+    dataDir: join(root, 'data'),
+    tui: fakeTui(() => {}, writes, false),
+    packs: [fakeProductPack],
+    privacy,
+  });
+  await app.start();
+  app.setMouseReporting(true);
+  assert.equal(writes.some((data) => /\x1b\[\?1000h/.test(data)), false);
+});
 
 test('home defaults to new replay and Enter opens source intake', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-t10-home-'));
