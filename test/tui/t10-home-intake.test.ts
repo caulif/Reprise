@@ -109,6 +109,7 @@ test('TUI does not override a disabled mouse configuration', async (t) => {
     privacy,
   });
   await app.start();
+  app.setMouseReporting(true);
   assert.equal(writes.some((data) => /\x1b\[\?1000h/.test(data)), false);
 });
 

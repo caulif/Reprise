@@ -38,11 +38,9 @@ export async function IntakeTui_start(this: IntakeTui): Promise<void> {
       });
     }
     this.tui.start();
-    // TuiAltScreen owns mouse setup/teardown. Only refresh the report mode for
-    // TUI implementations that explicitly expose mouse support; never turn it
-    // on behind a caller that configured `mouse: false`.
-    const mouseEnabled = (this.tui as TUIWithMouseState).mouseEnabled;
-    if (mouseEnabled === true) this.setMouseReporting(true);
+    // Refresh through the TUI-owned capability guard so injected `mouse: false`
+    // implementations are never enabled by application code.
+    this.setMouseReporting(true);
     let configurationIssue: string | undefined;
     try {
       const configured = await readHarnessModelConfig(this.dataDir);
@@ -216,8 +214,6 @@ export function IntakeTui_openResultArtifactHref(
     });
   return { consume: true };
 }
-
-type TUIWithMouseState = IntakeTui["tui"] & { mouseEnabled?: boolean };
 
 export function IntakeTui_openArtifact(this: IntakeTui, experimentRoot: string | undefined, artifactPath: string | undefined): { consume: true } {
   if (!experimentRoot || !artifactPath) {
