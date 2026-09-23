@@ -2,29 +2,29 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Hash, Id } from "./ids.js";
 
 /** Stable extractor revision string; bump when decode rules change. */
-export const HistoricalArtifactExtractorVersionSchema = Type.String({
+const HistoricalArtifactExtractorVersionSchema = Type.String({
   minLength: 1,
   maxLength: 64,
   pattern: "^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$",
 });
 
 /** B1 produces reconstructed bytes only; sealed original artifacts are a later path. */
-export const HistoricalArtifactOriginSchema = Type.Literal("reconstructed_from_history");
+const HistoricalArtifactOriginSchema = Type.Literal("reconstructed_from_history");
 
 /** Unknown paths are issues, never artifact rows with unknown finality. */
-export const HistoricalArtifactFinalitySchema = Type.Literal("final");
+const HistoricalArtifactFinalitySchema = Type.Literal("final");
 
 /**
  * Logical path relative to the task root.
  * Host rejection of `..`, absolutes, UNC, drives, and ADS is enforced at extract time.
  */
-export const HistoricalLogicalPathSchema = Type.String({
+const HistoricalLogicalPathSchema = Type.String({
   minLength: 1,
   maxLength: 512,
   pattern: "^[^\\r\\n:*?\"<>|\\\\]+$",
 });
 
-export const HistoricalArtifactIssueCodeSchema = Type.Union([
+const HistoricalArtifactIssueCodeSchema = Type.Union([
   Type.Literal("unsupported_write"),
   Type.Literal("missing_preimage"),
   Type.Literal("truncated_content"),
@@ -34,14 +34,14 @@ export const HistoricalArtifactIssueCodeSchema = Type.Union([
   Type.Literal("failed_tool"),
 ]);
 
-export const HistoricalArtifactIssueSchema = Type.Object({
+const HistoricalArtifactIssueSchema = Type.Object({
   code: HistoricalArtifactIssueCodeSchema,
   logicalPath: Type.Optional(HistoricalLogicalPathSchema),
   sourceRefs: Type.Array(Type.String({ minLength: 1, maxLength: 192 }), { maxItems: 64 }),
   message: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
 });
 
-export const HistoricalArtifactSchema = Type.Object({
+const HistoricalArtifactSchema = Type.Object({
   artifactId: Id,
   logicalPath: HistoricalLogicalPathSchema,
   bundleId: Id,

@@ -22,7 +22,7 @@ import {
 
 export { extractStaticApplyPatchFromExec } from "./historical-artifact-policy.js";
 
-export const CODEX_HISTORICAL_ARTIFACTS_VERSION = "codex-historical-artifacts/v1";
+const CODEX_HISTORICAL_ARTIFACTS_VERSION = "codex-historical-artifacts/v1";
 
 type PendingCall = {
   readonly callId: string;

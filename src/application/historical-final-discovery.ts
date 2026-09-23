@@ -276,7 +276,7 @@ export async function enrichHistoricalImageNamesFromRoots(input: {
   await indexHistoricalRoots(historicalFinalSearchRoots(input), { enrichImageNames: input.names });
 }
 
-export async function collectHistoricalImageNames(input: {
+async function collectHistoricalImageNames(input: {
   taskCase: TaskCase;
   experimentRoot: string;
   runId: string;
@@ -382,7 +382,7 @@ async function resolveFromHistoricalManifest(input: {
   return undefined;
 }
 
-export async function resolveHistoricalImagePath(input: {
+async function resolveHistoricalImagePath(input: {
   experimentRoot: string;
   runId: string;
   caseId: string;
@@ -593,7 +593,7 @@ function sameLeafAsRoot(root: string, target: string): boolean {
   return relativeInside(root, target) === "";
 }
 
-export async function isHistoricalImageFile(path: string): Promise<boolean> {
+async function isHistoricalImageFile(path: string): Promise<boolean> {
   if (isHistoricalImagePath(path)) return true;
   return Boolean(await sniffComparisonImageMediaType(path));
 }

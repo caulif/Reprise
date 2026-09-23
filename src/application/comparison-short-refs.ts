@@ -35,10 +35,6 @@ export function formatShortRef(prefix: "ev" | "media", index: number): string {
   return `${prefix}-${String(index).padStart(2, "0")}`;
 }
 
-export function shortRefsFromLinks(links: readonly { shortRef?: string }[]): string[] {
-  return links.flatMap((link) => (link.shortRef ? [link.shortRef] : []));
-}
-
 function appendShortRefs<T extends { shortRef?: string; label?: string }>(
   prefix: "ev" | "media",
   pattern: RegExp,

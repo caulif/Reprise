@@ -6,12 +6,12 @@ const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".a
 const IMAGE_EXT_PATTERN = "png|jpe?g|gif|webp|svg|avif";
 const DELIVERABLE_EXT_PATTERN = "html|htm|xhtml|png|jpe?g|gif|webp|svg|avif";
 
-export const historicalDeliverableBasenameRe = new RegExp(
+const historicalDeliverableBasenameRe = new RegExp(
   `([^\\\\/:"<>|\\s*]+\\.(?:${DELIVERABLE_EXT_PATTERN}))`,
   "gi",
 );
 
-export const historicalImageBasenameRe = new RegExp(
+const historicalImageBasenameRe = new RegExp(
   `([^\\\\/:"<>|\\s*]+\\.(?:${IMAGE_EXT_PATTERN}))`,
   "gi",
 );

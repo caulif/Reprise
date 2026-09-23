@@ -645,7 +645,7 @@ export function lookupCompletedToolCall(
   return { ok: true };
 }
 
-export function mediaDerivationKey(derivation: ComparisonMediaDerivation | undefined): string {
+function mediaDerivationKey(derivation: ComparisonMediaDerivation | undefined): string {
   if (!derivation) return "";
   const viewport = derivation.viewport
     ? `${derivation.viewport.width}x${derivation.viewport.height}@${derivation.viewport.scale}`

@@ -359,13 +359,6 @@ export async function terminationOf(
 }
 
 export type TaskPolicy = ReturnType<typeof input>["policy"];
-export const repeatingSend: ControllerPort = {
-  decide: async () => ({
-    status: "completed",
-    sessionId: "controller-1",
-    value: { type: "send", message: "Keep going.", intent: "continue" },
-  }),
-};
 export function sendingController(delayMs = 0): ControllerPort {
   let calls = 0;
   return {

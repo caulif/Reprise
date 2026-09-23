@@ -143,7 +143,7 @@ export function historyDetailPointerAction(
 }
 
 /** Map an OSC-8 / file URL target back onto the experiment's stored HTML paths. */
-export function resolveHistoryHtmlPath(item: HistoryExperiment, clicked: string): string {
+function resolveHistoryHtmlPath(item: HistoryExperiment, clicked: string): string {
   const candidates = [item.reportPath, item.previousReportPath].filter((path): path is string => Boolean(path));
   const clickedKey = pathMatchKey(clicked);
   for (const candidate of candidates) {

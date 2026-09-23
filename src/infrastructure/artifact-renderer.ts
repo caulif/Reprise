@@ -26,8 +26,6 @@ import {
 
 export {
   ARTIFACT_RENDERER_VERSION,
-  DEFAULT_RENDER_VIEWPORT,
-  RENDER_LIMITS,
   type ArtifactRenderer,
   type RenderDiagnostic,
   type RenderFrame,

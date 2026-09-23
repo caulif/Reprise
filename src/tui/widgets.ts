@@ -32,7 +32,7 @@ export function pad(text: string, width: number, ellipsis = '…'): string {
 }
 
 /** Collapse row-breaking controls without stripping intentional ANSI from themed chrome. */
-export function flattenTerminalRow(text: string): string {
+function flattenTerminalRow(text: string): string {
   return text.replace(/[\r\n\t]+/g, ' ');
 }
 

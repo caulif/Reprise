@@ -4,9 +4,7 @@ import { extname, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { sha256 } from "../core/identity.js";
 import { ComparisonMediaRecordSchema, type ComparisonLinkRecord, type ComparisonMediaRecord } from "../core/schema.js";
-import { historicalImageBasenameRe, isHistoricalImagePath } from "./openable-final-path.js";
-
-export const COMPARISON_IMAGE_BASENAME_RE = historicalImageBasenameRe;
+import { isHistoricalImagePath } from "./openable-final-path.js";
 
 const SNIFF_BYTES = 256;
 

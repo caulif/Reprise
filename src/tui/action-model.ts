@@ -294,7 +294,7 @@ export function helpLinesFromActions(
   return lines;
 }
 
-export function actionById(actions: readonly UiAction[], id: ActionId): UiAction | undefined {
+function actionById(actions: readonly UiAction[], id: ActionId): UiAction | undefined {
   return actions.find((item) => item.id === id);
 }
 

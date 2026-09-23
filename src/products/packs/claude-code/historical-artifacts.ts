@@ -9,7 +9,7 @@ import {
   sourceHashForExtract,
 } from "../../shared/historical-artifact-apply.js";
 
-export const CLAUDE_HISTORICAL_ARTIFACTS_VERSION = "claude-historical-artifacts/v1";
+const CLAUDE_HISTORICAL_ARTIFACTS_VERSION = "claude-historical-artifacts/v1";
 
 const FILE_TOOLS = new Set(["Write", "Edit", "Delete"]);
 const MUTATING_SHELL_TOOLS = new Set(["Bash", "Shell", "bash", "shell"]);

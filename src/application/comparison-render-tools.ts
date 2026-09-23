@@ -67,7 +67,7 @@ const ViewportSchema = Type.Object({
   scale: Type.Optional(Type.Number({ minimum: 1, maximum: RENDER_LIMITS.maxScale })),
 });
 
-export const RenderArtifactParamsSchema = Type.Object({
+const RenderArtifactParamsSchema = Type.Object({
   sourceRef: Type.String({ minLength: 1, maxLength: 128 }),
   viewport: Type.Optional(ViewportSchema),
   sampleTimesMs: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: RENDER_LIMITS.maxSampleMs }), {
@@ -77,7 +77,7 @@ export const RenderArtifactParamsSchema = Type.Object({
 });
 export type RenderArtifactParams = Static<typeof RenderArtifactParamsSchema>;
 
-export const PreviewReportParamsSchema = Type.Object({
+const PreviewReportParamsSchema = Type.Object({
   viewport: Type.Optional(ViewportSchema),
 });
 export type PreviewReportParams = Static<typeof PreviewReportParamsSchema>;
@@ -283,7 +283,7 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
   };
 }
 
-export function summarizeLimitations(diagnostics: readonly { code: string; message: string }[]): string[] {
+function summarizeLimitations(diagnostics: readonly { code: string; message: string }[]): string[] {
   const codes = new Set(diagnostics.map((item) => item.code));
   const out: string[] = [];
   if (codes.has("missing_local_dependency") || codes.has("resource_failed")) {
