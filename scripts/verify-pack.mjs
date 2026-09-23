@@ -10,7 +10,7 @@ import { nodeVersionAtLeast, semverFromVersionOutput } from "./node-version.mjs"
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ALLOWED = [
   /^package\.json$/,
-  /^README\.md$/,
+  /^README(?:\.zh-CN)?\.md$/,
   /^LICENSE(?:\.md)?$/,
   /^dist\/src\//,
 ];
@@ -84,6 +84,13 @@ function selfTest() {
   if (checkPackedPaths(["package.json", "README.md", "LICENSE", "dist/src/cli/main.js"]).length) {
     throw new Error("pack allowlist 应当接受发布清单");
   }
+  if (checkPackedPaths(["package.json", "README.md", "README.zh-CN.md", "LICENSE", "dist/src/cli/main.js"]).length) {
+    throw new Error("pack allowlist 应当接受仓库中的中英文 README");
+  }
+  const unexpectedReadmes = checkPackedPaths(["README.fr.md", "README.zh-CN.md.bak"]);
+  if (!unexpectedReadmes.includes("README.fr.md") || !unexpectedReadmes.includes("README.zh-CN.md.bak")) {
+    throw new Error("pack allowlist 只应接受明确列出的 README 文件名");
+  }
   const shell = checkRequiredPackedPaths(["package.json", "README.md", "LICENSE"]);
   if (!shell.some((error) => error.includes("bin 目标")) || !shell.some((error) => error.includes("dist/src/"))) {
     throw new Error("只有三个元数据文件的空壳包必须失败");
@@ -122,7 +129,7 @@ function selfTest() {
   if (semver !== "0.1.0") {
     throw new Error(`semverFromVersionOutput 应当提取 0.1.0，实际 ${semver ?? "undefined"}`);
   }
-  console.log("verify-pack self-test: 坏包路径、空壳包、缺 bin 与缺 types 被拒绝");
+  console.log("verify-pack self-test: 坏包路径、非允许 README、空壳包、缺 bin 与缺 types 被拒绝");
 }
 
 function smokeVersion(binTarget) {

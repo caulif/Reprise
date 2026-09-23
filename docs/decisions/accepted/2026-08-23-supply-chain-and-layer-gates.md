@@ -2,6 +2,8 @@
 
 状态：accepted
 
+后继补充：[双语 README 的发布包允许名单](./2026-09-23-bilingual-readme-pack-allowlist.md)。
+
 ## 问题
 
 `prepublishOnly` 只跑 `check`，CI 不检查 npm 包内容、production 漏洞、跟踪文件中的令牌形态，也不检查 `src/` 分层 import。外部贡献者和发布者无法在合并前发现把测试、文档或密钥打进包，或 core 依赖 TUI。

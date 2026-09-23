@@ -313,7 +313,9 @@ function renderNotice(theme: Theme, view: WorkbenchView, width: number): string[
 
 function renderMessage(_theme: Theme, view: WorkbenchView, width: number): string[] {
   if (view.page === 'error') return [];
-  if (view.page === 'running' && !view.cancelling && !view.comparePending) return [];
+  // Selection mode intentionally exposes its entry notice. The terminal owns the
+  // actual selection and copy, so this is guidance rather than a copy result.
+  if (view.page === 'running' && !view.running?.readingMode && !view.cancelling && !view.comparePending) return [];
   if (view.page === 'preflight' && !view.preflight) return [];
   if (!view.message.trim()) return [];
   return view.message.split(/\r?\n/).flatMap((line) => wrapTextWithAnsi(` ${line}`, Math.max(1, width)));

@@ -9,6 +9,7 @@ import {
   dispatchHistoryDetailInput,
   dispatchHomeComposer,
   dispatchInspectionInput,
+  isSgrMouseInput,
   dispatchListPointer,
   dispatchPreflightInput,
   dispatchResultKeys,
@@ -167,6 +168,12 @@ test('SGR wheel moves the canvas selection; click reports a row; running o does 
   assert.equal(click?.col, 4);
   assert.equal(dispatchRunningKeys('o'), undefined);
   assert.equal(dispatchRunningKeys('\r')?.action, 'toggle-fold');
+});
+
+test('recognizes SGR pointer input so selection mode can yield it to the terminal', () => {
+  assert.equal(isSgrMouseInput('\x1b[<64;1;2M'), true);
+  assert.equal(isSgrMouseInput('\x1b[<0;4;8M'), true);
+  assert.equal(isSgrMouseInput('\x1b[A'), false);
 });
 
 test('list pages consume SGR wheel as up and down', () => {

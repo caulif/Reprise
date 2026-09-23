@@ -47,6 +47,7 @@ import {
   dispatchHistoryDetailInput,
   dispatchHomeComposer,
   dispatchInspectionInput,
+  isSgrMouseInput,
   dispatchPreflightInput,
   dispatchResultKeys,
   dispatchRunningKeys,
@@ -628,10 +629,12 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   if (!blocked && !c.finding && matchesKey(data, 'v')) {
     return c.readingMode ? exitReadingMode(c) : enterReadingMode(c);
   }
-  // Reading mode must still accept PgUp/PgDn/arrows/End via canvas; only freeze follow/anchor.
+  if (c.readingMode && !c.finding && matchesKey(data, 'escape')) return exitReadingMode(c);
+  // The viewport wrapper routes selection gestures before this listener.
+  // Ignore directly injected SGR here without moving the application timeline.
+  if (c.readingMode && !c.finding && isSgrMouseInput(data)) return undefined;
   const canvas = applyCanvas(c, data);
   if (canvas) return canvas;
-  if (c.readingMode && !c.finding && matchesKey(data, 'escape')) return exitReadingMode(c);
   if (c.readingMode && !c.finding) return { consume: true };
   if (c.compareChoice) {
     const gate = applyCompareGate(c, data);
@@ -872,7 +875,6 @@ function enterReadingMode(c: ControllerHandle): Consume {
   c.readingVisibleAt = c.visibleTimeline().length;
   const current = c.visibleTimeline()[c.timelineSelected];
   if (current) c.timelineAnchor = timelineIdentity(current);
-  c.setMouseReporting(false);
   c.message = t(c.locale, 'readingModeOn');
   c.render();
   return { consume: true };
