@@ -35,12 +35,6 @@
 
 每项包含用户影响、修复完成条件和当前验证范围。
 
-### 同一 Experiment 重复运行失败
-
-- **用户影响：** 在同一 Experiment 上发起第二次完整候选运行时，可能因 operation 去重冲突而失败，无法在不新建实验的情况下重试。
-- **修复完成条件：** 统一 run 局部 operation ID，同时保留同一操作重放的幂等检查。涉及 [experiment-controller-loop.ts](../src/application/experiment-controller-loop.ts) 和 [experiment-store.ts](../src/infrastructure/store/experiment-store.ts)。
-- **当前验证范围：** 离线复现已确认固定 `controller-started` 与实验级去重冲突；尚未通过真实 Runtime 或付费模型验证修复。
-
 ### 早期准备失败缺少 attempt 记录
 
 - **用户影响：** Runtime 解析等早期准备失败发生在 CandidateRun/attempt 持久化之前，失败启动无法从 attempt 列表解释。

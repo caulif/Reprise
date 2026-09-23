@@ -20,7 +20,7 @@ Controller 的 decision 经过结构化 schema 校验。工具调用和 decision
 
 RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runner.stop 时的 completed/cancelled/failed/shutdown 是停止请求语义，不能替代 RunOutcome 的终止类别。终止时先停止等待和 Runner，再捕获允许的 artifacts，释放隔离环境，最后提交 `RunRecord`。cleanup 的 released、already_released、unknown 等事实不能被简化成任务成功。
 
-同一 Experiment 可以有多个 run，但 Store 的 `operationId` 去重是实验级的；当前 Controller 使用固定 `controller-started`，重复完整运行可能冲突。详情见[路线图](../roadmap.md#同一-experiment-重复运行失败)。
+同一 Experiment 可以有多个 run，Store 的 `operationId` 去重仍是实验级的。Controller、CandidateRun、runtime 和 artifact 等 run 所属操作在写入时由 runId 与局部 ID 派生独立身份；旧日志原样重放。离线 fake Runtime 已验证两次完整运行与副本隔离，真实 Runtime 仍需显式 opt-in 验收；身份取舍见[run 所属操作使用独立身份](../decisions/accepted/2026-09-23-run-operation-identity.md)。
 
 ## 配置与证据
 

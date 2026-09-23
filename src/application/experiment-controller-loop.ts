@@ -11,7 +11,7 @@ import {
   writeSettledTurnBriefing,
 } from "./controller-briefing.js";
 import { controllerDecisionTools, createControllerToolBindings, type ControllerToolBindings } from "./controller-tools.js";
-import { sha256 } from "../core/identity.js";
+import { runOperationId, sha256 } from "../core/identity.js";
 import type { RunPolicy, TaskCase } from "../core/schema.js";
 import type { PreparedEnvironmentRef } from "../environment/local-workspace-provider.js";
 import type { AgentToolDefinition, StructuredAgentResult } from "../infrastructure/agent/host.js";
@@ -62,7 +62,7 @@ export async function runControllerLoop(input: {
   await input.store.append({
     type: "controller.started",
     runId: input.runId,
-    operationId: "controller-started",
+    operationId: runOperationId(input.runId, "controller-started"),
     payload: { model: input.controllerModel },
   });
   try {
@@ -182,7 +182,7 @@ async function persistControllerDecision(
   await input.store.append({
     type: "controller.decision",
     runId: input.runId,
-    operationId: `controller-decision-${controllerCalls}`,
+    operationId: runOperationId(input.runId, `controller-decision-${controllerCalls}`),
     payload: invocationFact(decision),
   });
 }

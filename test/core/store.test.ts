@@ -16,7 +16,7 @@ import {
 import { assertTransition, canTransition } from '../../src/core/state-machine.js';
 import { controllerRequestSnapshot } from '../../src/application/controller-briefing.js';
 import { reconstructControllerRequest } from '../../src/application/controller-request.js';
-import { sha256, eventEnvelopeChecksum } from '../../src/core/identity.js';
+import { sha256, eventEnvelopeChecksum, runOperationId, SAFE_ID } from '../../src/core/identity.js';
 import { ExperimentStore, RecoveryArtifactBudgetError } from '../../src/infrastructure/store/experiment-store.js';
 
 function lockNonce(raw: string): string {
@@ -183,6 +183,84 @@ test('appendBatch writes only one event for duplicate operations within the same
     const lines = (await readFile(join(root, 'events.jsonl'), 'utf8')).split('\n').filter(Boolean);
     assert.equal(lines.length, 1);
     assert.deepEqual(observed, [result[0]!.eventId]);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('run operation identities are stable, bounded and distinguish ambiguous tuples', async () => {
+  const one = runOperationId('a-b', 'c');
+  const two = runOperationId('a', 'b-c');
+  assert.notEqual(one, two);
+  assert.equal(one, runOperationId('a-b', 'c'));
+  assert.equal(SAFE_ID.test(runOperationId('r'.repeat(128), 'x'.repeat(256))), true);
+  assert.ok(one.length <= 128);
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const first = await store.append({ type: 'test.event', runId: 'run-1', operationId: one, payload: { value: 1 } });
+    assert.equal((await store.append({ type: 'test.event', runId: 'run-1', operationId: one, payload: { value: 1 } })).eventId, first.eventId);
+    await assert.rejects(store.append({ type: 'test.event', runId: 'run-1', operationId: one, payload: { value: 2 } }), /different data/);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('committed events own JSON snapshots and cannot be changed through readers or observers', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const input = { type: 'test.event', payload: { nested: { value: 'original' }, items: [1], optional: undefined, date: new Date(timestamp) } };
+    const observed: string[] = [];
+    store.subscribe((event) => {
+      assert.throws(() => { (event.payload as typeof input.payload).nested.value = 'observer'; }, TypeError);
+      observed.push((event.payload as typeof input.payload).nested.value);
+    });
+    const pending = store.append(input);
+    input.payload.nested.value = 'caller';
+    input.payload.items.push(2);
+    const committed = await pending;
+    const payload = { nested: { value: 'original' }, items: [1], date: timestamp };
+    assert.deepEqual(committed.payload, payload);
+    assert.deepEqual(observed, ['original']);
+    assert.equal(store.events()[0], committed);
+    assert.equal(store.eventsSince(0).events[0], committed);
+    for (const event of [committed, store.events()[0]!, store.eventsSince(0).events[0]!]) {
+      assert.equal(Object.isFrozen(event), true);
+      assert.throws(() => { (event.payload as typeof input.payload).nested.value = 'reader'; }, TypeError);
+      assert.deepEqual(event.payload, payload);
+    }
+    await store.close();
+    const reopened = await ExperimentStore.open(root, 'experiment-1');
+    assert.deepEqual(reopened.events()[0]?.payload, payload);
+    assert.throws(() => { (reopened.events()[0]!.payload as typeof input.payload).nested.value = 'replay'; }, TypeError);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('appendBatch snapshots the submitted array and still rolls back a rejected batch', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const inputs = [{ type: 'test.event', payload: { value: 'first' } }];
+    const pending = store.appendBatch(inputs);
+    inputs[0]!.payload.value = 'changed';
+    inputs.push({ type: 'test.event', payload: { value: 'extra' } });
+    assert.deepEqual((await pending).map((event) => event.payload), [{ value: 'first' }]);
+    const before = await readFile(join(root, 'events.jsonl'));
+    await assert.rejects(store.appendBatch([
+      { type: 'test.event', payload: { value: 'uncommitted' } },
+      { type: '', payload: {} },
+    ]), /Event type must not be empty/);
+    assert.deepEqual(await readFile(join(root, 'events.jsonl')), before);
+    assert.deepEqual(store.events().map((event) => event.payload), [{ value: 'first' }]);
+    await assert.rejects(store.append({ type: 'test.event', payload: undefined }), /payload must be JSON-serializable/);
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -412,6 +490,207 @@ test('store ignores a tail half-line until it owns the writer lock, then refresh
     await reopened.close();
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('run-owned artifact and recovery audit operations stay distinct across runs', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1', { recoveryArtifactPolicy: { softBytes: 0, hardBytes: 100, successTtlMs: 1 } });
+    await store.acquireWriter();
+    for (const runId of ['run-1', 'run-2']) {
+      await store.commitArtifact({ artifactId: 'same', runId, kind: 'recovery_report', bytes: Buffer.from(runId), operationId: 'same-local' });
+      assert.deepEqual(await store.readArtifact({ artifactId: 'same', experimentId: 'experiment-1', runId }), Buffer.from(runId));
+    }
+    for (const runId of ['run-1', 'run-2']) await store.cleanupRecoveryArtifacts({ runId, terminalStatus: 'completed', now: Date.now() + 10_000 });
+    for (const type of ['artifact.created', 'recovery.artifact_budget_soft_exceeded', 'recovery.artifact_cleanup_completed']) {
+      const events = store.events().filter((event) => event.type === type);
+      assert.equal(events.length, 2);
+      assert.notEqual(events[0]!.operationId, events[1]!.operationId);
+    }
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('artifact retry checks metadata and bytes without replacing committed evidence', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const original = await store.commitArtifact({ artifactId: 'artifact-1', runId: 'run-1', kind: 'text', mediaType: 'text/plain', bytes: Buffer.from('original') });
+    const before = await readFile(join(root, 'runs', 'run-1', 'artifacts', 'artifact-1'));
+    assert.deepEqual(await store.commitArtifact({ artifactId: 'artifact-1', runId: 'run-1', kind: 'text', mediaType: 'text/plain', bytes: Buffer.from('original') }), original);
+    for (const change of [
+      { kind: 'other', mediaType: 'text/plain', bytes: Buffer.from('original') },
+      { kind: 'text', mediaType: 'application/json', bytes: Buffer.from('original') },
+      { kind: 'text', mediaType: 'text/plain', bytes: Buffer.from('changed') },
+    ]) {
+      await assert.rejects(store.commitArtifact({ artifactId: 'artifact-1', runId: 'run-1', ...change }), /different data/);
+    }
+    assert.deepEqual(await readFile(join(root, 'runs', 'run-1', 'artifacts', 'artifact-1')), before);
+    assert.equal(store.events().filter((event) => event.type === 'artifact.created').length, 1);
+    await store.close();
+    const reopened = await ExperimentStore.open(root, 'experiment-1');
+    await reopened.acquireWriter();
+    assert.deepEqual(await reopened.commitArtifact({ artifactId: 'artifact-1', runId: 'run-1', kind: 'text', mediaType: 'text/plain', bytes: before }), original);
+    await reopened.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('artifact listing distinguishes JSON payloads from manifests and rejects name collisions', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    await store.commitArtifact({ artifactId: 'host-trace.json', kind: 'trace', bytes: Buffer.from('not JSON') });
+    assert.deepEqual((await store.listArtifacts()).map((item) => item.artifactId), ['host-trace.json']);
+    await store.commitArtifact({ artifactId: 'a', kind: 'text', bytes: Buffer.from('one') });
+    const manifestBefore = await readFile(join(root, 'artifacts', 'a.json'));
+    await assert.rejects(store.commitArtifact({ artifactId: 'a.json', kind: 'text', bytes: Buffer.from('two') }), /incomplete file pair/);
+    assert.deepEqual(await readFile(join(root, 'artifacts', 'a.json')), manifestBefore);
+    assert.deepEqual(await store.readArtifact({ artifactId: 'a', experimentId: 'experiment-1' }), Buffer.from('one'));
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('artifact manifest validation rejects malformed, unknown-version and mismatched identity files', async () => {
+  for (const change of [
+    () => '{broken',
+    (manifest: Record<string, unknown>) => JSON.stringify({ ...manifest, schemaVersion: 999 }),
+    (manifest: Record<string, unknown>) => JSON.stringify({ ...manifest, kind: 123 }),
+    (manifest: Record<string, unknown>) => JSON.stringify({ ...manifest, artifactId: 'other' }),
+    (manifest: Record<string, unknown>) => JSON.stringify({ ...manifest, path: 'elsewhere' }),
+  ]) {
+    const root = await temporaryExperiment();
+    try {
+      const store = await ExperimentStore.open(root, 'experiment-1');
+      await store.acquireWriter();
+      await store.commitArtifact({ artifactId: 'artifact-1', kind: 'text', bytes: Buffer.from('one') });
+      const path = join(root, 'artifacts', 'artifact-1.json');
+      const original = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+      const changed = change(original);
+      await writeFile(path, changed);
+      await assert.rejects(store.readArtifact({ artifactId: 'artifact-1', experimentId: 'experiment-1' }), /manifest/);
+      await assert.rejects(store.listArtifacts(), /manifest/);
+      await assert.rejects(store.commitArtifact({ artifactId: 'artifact-1', kind: 'text', bytes: Buffer.from('one') }), /manifest/);
+      assert.equal(await readFile(path, 'utf8'), changed);
+      await store.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('uncommitted artifact residual stays intact and cannot be read or retried as committed', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const writer = await ExperimentStore.open(root, 'experiment-1');
+    await writer.acquireWriter();
+    await writer.commitArtifact({ artifactId: 'artifact-1', kind: 'text', bytes: Buffer.from('one') });
+    await writer.close();
+    const bodyPath = join(root, 'artifacts', 'artifact-1');
+    const manifestPath = `${bodyPath}.json`;
+    const body = await readFile(bodyPath);
+    const manifest = await readFile(manifestPath);
+    await writeFile(join(root, 'events.jsonl'), '');
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    await assert.rejects(store.readArtifact({ artifactId: 'artifact-1', experimentId: 'experiment-1' }), /no committed artifact.created event/);
+    await assert.rejects(store.listArtifacts(), /no committed artifact.created event/);
+    await assert.rejects(store.commitArtifact({ artifactId: 'artifact-1', kind: 'text', bytes: body }), /no committed artifact.created event/);
+    assert.deepEqual(await readFile(bodyPath), body);
+    assert.deepEqual(await readFile(manifestPath), manifest);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('concurrent artifact commits keep the first bytes and close waits for accepted work', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    const firstBytes = Buffer.from('first');
+    const first = store.commitArtifact({ artifactId: 'artifact-1', kind: 'text', bytes: firstBytes });
+    const second = store.commitArtifact({ artifactId: 'artifact-1', kind: 'text', bytes: Buffer.from('second') });
+    firstBytes.fill(0);
+    const closing = store.close();
+    const manifest = await first;
+    await assert.rejects(second, /different data/);
+    await closing;
+    assert.equal(manifest.contentHash, sha256('first'));
+    const reopened = await ExperimentStore.open(root, 'experiment-1');
+    assert.deepEqual(await reopened.readArtifact({ artifactId: 'artifact-1', experimentId: 'experiment-1' }), Buffer.from('first'));
+    assert.equal(reopened.events().filter((event) => event.type === 'artifact.created').length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('artifact commit rejects invalid manifest input and a missing file pair with old audit', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    await assert.rejects(store.commitArtifact({ artifactId: 'invalid', kind: 'text', mediaType: '', bytes: Buffer.from('one') }), /Generated artifact manifest/);
+    await assert.rejects(store.readArtifact({ artifactId: 'invalid', experimentId: 'experiment-1' }), /ENOENT/);
+    await store.commitArtifact({ artifactId: 'artifact-1', kind: 'text', bytes: Buffer.from('one') });
+    await rm(join(root, 'artifacts', 'artifact-1'));
+    await rm(join(root, 'artifacts', 'artifact-1.json'));
+    await assert.rejects(store.commitArtifact({ artifactId: 'artifact-1', kind: 'text', bytes: Buffer.from('two') }), /committed event but missing files/);
+    await assert.rejects(store.readArtifact({ artifactId: 'artifact-1', experimentId: 'experiment-1' }), /ENOENT/);
+    assert.equal(store.events().filter((event) => event.type === 'artifact.created').length, 1);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('artifact entry points reject an explicitly empty runId', async () => {
+  const root = await temporaryExperiment();
+  try {
+    const store = await ExperimentStore.open(root, 'experiment-1');
+    await store.acquireWriter();
+    await assert.rejects(store.commitArtifact({ artifactId: 'artifact-1', runId: '', kind: 'text', bytes: Buffer.from('one') }), /runId must be a safe identifier/);
+    await assert.rejects(store.listArtifacts(''), /runId must be a safe identifier/);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('writer tail repair preserves complete UTF-8 event bytes', async () => {
+  for (const payloads of [[], ['ascii'], ['中文恢复'], ['emoji 😀'], ['中文恢复', 'emoji 😀', 'ascii']]) {
+    const root = await temporaryExperiment();
+    try {
+      const writer = await ExperimentStore.open(root, 'experiment-1');
+      await writer.acquireWriter();
+      for (const text of payloads) await writer.append({ type: 'test.event', payload: { text } });
+      await writer.close();
+      const path = join(root, 'events.jsonl');
+      const prefix = payloads.length === 0 ? Buffer.alloc(0) : await readFile(path);
+      await appendFile(path, '{"incomplete":"尾部');
+      const damaged = await readFile(path);
+      const reader = await ExperimentStore.open(root, 'experiment-1');
+      assert.equal(reader.events().length, payloads.length);
+      assert.deepEqual(await readFile(path), damaged);
+      await reader.acquireWriter();
+      assert.deepEqual(await readFile(path), prefix);
+      await reader.append({ type: 'test.event', payload: { text: 'after repair' } });
+      await reader.close();
+      const reopened = await ExperimentStore.open(root, 'experiment-1');
+      assert.deepEqual(reopened.events().map((event) => event.sequence), Array.from({ length: payloads.length + 1 }, (_, index) => index + 1));
+      assert.deepEqual(reopened.events().map((event) => (event.payload as { text: string }).text), [...payloads, 'after repair']);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }
 });
 

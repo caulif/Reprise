@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
+import { runOperationId } from "../../src/core/identity.js";
 import { isRecord, text } from "../../src/core/json.js";
 import {
   appendCandidateRuntimeEvent,
@@ -108,6 +109,26 @@ test("createCandidateRuntimeSink fills session ownership for adapter TargetEvent
   const row = store.events("run-1")[0];
   assert.equal(text(isRecord(row?.payload) ? row.payload.sessionId : undefined), "sess-live");
   assert.equal(committed.length, 1);
+});
+
+test('runtime explicit and fingerprint operation IDs are scoped once per run', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-runtime-run-ids-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(root, 'exp-1');
+  await store.acquireWriter();
+  t.after(() => store.close());
+  const operationIds: (string | undefined)[] = [];
+  for (const runId of ['run-1', 'run-2']) {
+    await appendCandidateRuntimeEvent({ journal: store, runId, sessionId: 'sess-1', type: 'runtime.session_started', payload: { productId: 'fake' } });
+    const explicit = await appendCandidateRuntimeEvent({ journal: store, runId, sessionId: 'sess-1', type: 'runtime.visible_output', payload: { text: 'explicit' }, operationId: 'same-local' });
+    assert.equal(explicit.operationId, runOperationId(runId, 'same-local'));
+    const fingerprint = await appendCandidateRuntimeEvent({ journal: store, runId, sessionId: 'sess-1', type: 'runtime.visible_output', payload: { text: 'fingerprint' }, occurredAt: '2026-09-10T00:00:01.000Z' });
+    assert.equal((await appendCandidateRuntimeEvent({ journal: store, runId, sessionId: 'sess-1', type: 'runtime.visible_output', payload: { text: 'explicit' }, operationId: 'same-local' })).eventId, explicit.eventId);
+    assert.equal((await appendCandidateRuntimeEvent({ journal: store, runId, sessionId: 'sess-1', type: 'runtime.visible_output', payload: { text: 'fingerprint' }, occurredAt: '2026-09-10T00:00:01.000Z' })).eventId, fingerprint.eventId);
+    operationIds.push(explicit.operationId, fingerprint.operationId);
+  }
+  assert.equal(new Set(operationIds).size, 4);
+  assert.equal(store.events().length, 6);
 });
 
 test("appendCandidateRuntimeEvent rejects turn, message, call, and lifecycle affiliation errors", async (t) => {

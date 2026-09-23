@@ -70,7 +70,7 @@ Read [data handling and credentials](./docs/usage.md#数据去向) before using 
 
 Reprise is experimental and has not been published to npm yet. The future package name is `@caulif/reprise`; do not install the unrelated unscoped `reprise` package from npm.
 
-One known limitation is that a second full run in the same experiment can fail because of an experiment-level operation deduplication conflict. See [known issues](./docs/roadmap.md#已知实现问题) for details and acceptance criteria.
+Current implementation limits and remaining real Runtime validation are tracked in the [roadmap](./docs/roadmap.md).
 
 ## Documentation
 

@@ -24,6 +24,8 @@
 
 ### Fixed
 
+- 同一 Experiment 的不同 run 现在使用独立的 Controller、CandidateRun、runtime 与 artifact operation ID；离线 fake Runtime 已验证从同一封存起点连续完成两次运行。延后 Comparison 模式中的早期失败也会结束 `candidateFinished` 等待。
+- 事件日志尾部修复按 UTF-8 字节保留完整前缀；已提交事件为不可变 JSON 快照。Artifact 读取和幂等重试校验 manifest、正文与对应提交事件，冲突或未提交残留明确失败。
 - Comparison Agent Session 不再 `timeoutMs: 0` 无限等待；改为 harness `budget.callTimeoutMs`（默认 24 小时）。超时映射为 `agent_timeout`；用户取消优先且不重试。Controller 仍保持无界。
 - HTTP 520 归入 `transient_upstream`，Recovery 可使用既有有界重试，不再误判为不可重试的 `unknown`。
 - Comparison `shell_exec` 在应用层快速拒绝直接启动 Chrome/Edge/Firefox 及浏览器探测标志；错误提示改用 `render_artifact` / `preview_report`。底层 60s 超时、进程树终止与 AbortSignal 不变。

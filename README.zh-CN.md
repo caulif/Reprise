@@ -70,7 +70,7 @@ node dist/src/cli/main.js
 
 Reprise 仍处于实验阶段，尚未发布到 npm。未来包名会是 `@caulif/reprise`；请不要安装 npm 上无关的裸名 `reprise` 包。
 
-当前已知限制之一是：同一个 Experiment 的第二次完整运行可能因实验级 operation 去重冲突而失败。具体说明和修复验收条件见[已知实现问题](./docs/roadmap.md#已知实现问题)。
+当前实现限制和仍待验证的真实 Runtime 行为见[路线图](./docs/roadmap.md)。
 
 ## 文档
 

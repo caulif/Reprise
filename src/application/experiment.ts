@@ -194,9 +194,12 @@ export function startExperiment(
     },
     ready: () => published,
   }).finally(() => finishExperimentActivity(input.experimentId));
+  const candidateFinished = deferredCandidate ? Promise.race([deferredCandidate, result]) : result;
+  // Either handle promise may be ignored; observing this rejection leaves it available to awaiting callers.
+  if (deferredCandidate) void candidateFinished.catch(() => undefined);
   const handle: ExperimentHandle = {
     result,
-    candidateFinished: deferredCandidate ?? result,
+    candidateFinished,
     activity,
     async runComparison(): Promise<void> {
       decideComparison?.(true);
