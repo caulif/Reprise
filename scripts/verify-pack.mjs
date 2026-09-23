@@ -10,7 +10,7 @@ import { nodeVersionAtLeast, semverFromVersionOutput } from "./node-version.mjs"
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ALLOWED = [
   /^package\.json$/,
-  /^README\.md$/,
+  /^README(?:\.zh-CN)?\.md$/,
   /^LICENSE(?:\.md)?$/,
   /^dist\/src\//,
 ];
@@ -83,6 +83,9 @@ function selfTest() {
   }
   if (checkPackedPaths(["package.json", "README.md", "LICENSE", "dist/src/cli/main.js"]).length) {
     throw new Error("pack allowlist 应当接受发布清单");
+  }
+  if (checkPackedPaths(["package.json", "README.md", "README.zh-CN.md", "LICENSE", "dist/src/cli/main.js"]).length) {
+    throw new Error("pack allowlist 应当接受仓库中的中英文 README");
   }
   const shell = checkRequiredPackedPaths(["package.json", "README.md", "LICENSE"]);
   if (!shell.some((error) => error.includes("bin 目标")) || !shell.some((error) => error.includes("dist/src/"))) {
