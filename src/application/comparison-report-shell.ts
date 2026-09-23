@@ -55,18 +55,21 @@ function descendants(node: HtmlNode): HtmlNode[] {
 
 function unsafeAgentContent(node: HtmlNode): string | undefined {
   const activeTags = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "base", "link", "dialog", "svg", "math"]);
-  const urlAttrs = new Set(["href", "xlink:href", "src", "poster", "cite", "action", "formaction", "background", "data"]);
+  const unsupportedResourceAttrs = new Set(["xlink:href", "poster", "cite", "action", "formaction", "background", "data"]);
   const tag = node.tagName?.toLowerCase();
   if (tag && activeTags.has(tag)) return `Agent content cannot contain <${tag}>.`;
   for (const attr of node.attrs ?? []) {
     const name = attr.name.toLowerCase();
     if (name === "data-host-zone") return "Agent content cannot contain a Host zone marker.";
+    if (unsupportedResourceAttrs.has(name) || (name === "src" && tag !== "img") || (name === "href" && tag !== "a")) {
+      return `Agent content cannot contain ${name}.`;
+    }
     if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "ping" || name === "style"
       || name === "popover" || name === "popovertarget" || name === "popovertargetaction") {
       return `Agent content cannot contain ${name}.`;
     }
     const value = attr.value.replace(/[\u0000-\u0020\u007f]/g, "").toLowerCase();
-    if (urlAttrs.has(name) && (/^[a-z][\w+.-]*:/.test(value) || value.startsWith("//") || value.startsWith("\\\\"))) {
+    if ((name === "href" || name === "src") && (/^[a-z][\w+.-]*:/.test(value) || value.startsWith("//") || value.startsWith("\\\\"))) {
       return `Agent content contains an unsafe ${name} URL.`;
     }
   }

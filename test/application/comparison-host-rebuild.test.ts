@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { parse } from "parse5";
 import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js";
 import { verifyAndRenderComparisonReport } from "../../src/application/comparison-publication.js";
 import { renderComparisonReportShell } from "../../src/application/comparison-report-shell.js";
@@ -22,6 +23,16 @@ function draft(comparison = "<p>候选交付了文件。</p>"): string {
     metrics: facts.metrics ?? {},
     slots: { category: "实测结果", headline: "候选交付了文件。", comparison },
   });
+}
+
+function imageSources(html: string): string[] {
+  type Node = { tagName?: string; attrs?: { name: string; value: string }[]; childNodes?: Node[]; content?: Node };
+  const visit = (node: Node): string[] => [
+    ...(node.tagName === "img" ? node.attrs?.filter((attr) => attr.name === "src").map((attr) => attr.value) ?? [] : []),
+    ...(node.childNodes ?? []).flatMap(visit),
+    ...(node.content?.childNodes ?? []).flatMap(visit),
+  ];
+  return visit(parse(html) as unknown as Node);
 }
 
 async function verify(html: string, extra: Partial<Parameters<typeof verifyAndRenderComparisonReport>[0]> = {}) {
@@ -178,6 +189,49 @@ test("foreign markup cannot paint outside Agent zones in either publication path
         assert.equal(result.code, "report_incomplete", payload);
         assert.match(result.message, /svg|math/i, payload);
       }
+    }
+  }
+});
+
+test("relative resource attributes cannot bypass Agent media validation", async () => {
+  const payloads = [
+    '<table background="media/unregistered.svg"><tr><td>FAKE HOST FACTS</td></tr></table>',
+    '<video poster="media/unregistered.svg" controls></video>',
+    '<video src="media/unregistered.mp4" controls></video>',
+    '<source src="media/unregistered.mp4">',
+  ];
+  for (const payload of payloads) {
+    const html = draft(payload);
+    for (const input of [{ hostTask: "Host 原任务文案。" }, {}]) {
+      const result = await verifyAndRenderComparisonReport({
+        html, facts,
+        result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+        attemptRoot: ".", media: [], ...input,
+      });
+      assert.equal("html" in result, false, payload);
+      if (!("html" in result)) {
+        assert.equal(result.code, "report_incomplete", payload);
+        assert.match(result.message, /background|poster|src/i, payload);
+      }
+    }
+  }
+});
+
+test("unquoted and encoded image sources cannot survive without registered media", async () => {
+  const payloads = [
+    '<img src=media/unregistered.png alt=preview>',
+    '<img SRC=media/unregistered.png alt=preview>',
+    '<img src=media&#47;unregistered.png alt=preview>',
+    '<img src="media&#47;unregistered.png" alt=preview>',
+  ];
+  for (const payload of payloads) {
+    for (const input of [{ hostTask: "Host 原任务文案。" }, {}]) {
+      const result = await verifyAndRenderComparisonReport({
+        html: draft(`<p>差异。</p>${payload}`), facts,
+        result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+        attemptRoot: ".", media: [], ...input,
+      });
+      if ("html" in result) assert.equal(imageSources(result.html).includes("media/unregistered.png"), false, payload);
     }
   }
 });

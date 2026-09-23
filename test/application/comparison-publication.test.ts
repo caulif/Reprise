@@ -257,7 +257,7 @@ test("registered media that exists can be published", async (t) => {
     facts: reportFacts,
     metrics: reportFacts.metrics ?? {},
     slots: filledSlots({
-      comparison: '<img src="media/history.png" alt="historical preview"><img src="media/ok.png" alt="preview">',
+      comparison: '<img src=media/history.png alt="historical preview"><img src="media/ok.png" alt="preview">',
     }),
   });
   const verified = await verifyAndRenderComparisonReport({
@@ -287,6 +287,7 @@ test("registered media that exists can be published", async (t) => {
     ],
   });
   assert.equal("html" in verified, true);
+  if ("html" in verified) assert.match(verified.html, /<img\b[^>]*src="media\/history\.png"/);
 });
 
 test("one-sided share-card images publish with nearby missing-side note", async (t) => {

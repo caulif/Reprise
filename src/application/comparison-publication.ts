@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
+import { parse, serializeOuter } from "parse5";
 import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
 import {
   ComparisonReportModelSchema,
@@ -879,20 +880,38 @@ async function stripBrokenMedia(
   unresolved: string[],
 ): Promise<string> {
   const allowed = new Map(media.map((item) => [item.reportHref.replaceAll("\\", "/"), item]));
-  let next = html;
-  for (const href of mediaHrefs(html)) {
-    if (href.startsWith("#")) continue;
-    if (href.startsWith("data:")) {
-      unresolved.push(href.slice(0, 32));
-      next = next.replace(new RegExp(`<img\\b[^>]*\\bsrc=["']${escapeRegExp(href)}["'][^>]*>`, "gi"), "");
-      continue;
-    }
-    const normalized = href.replaceAll("\\", "/").replace(/^\.\//, "");
+  type HtmlNode = {
+    tagName?: string;
+    attrs?: { name: string; value: string }[];
+    childNodes?: HtmlNode[];
+    content?: HtmlNode;
+    sourceCodeLocation?: { startOffset: number; endOffset: number };
+  };
+  const images: HtmlNode[] = [];
+  const visit = (node: HtmlNode): void => {
+    if (node.tagName === "img" && node.attrs?.some((attr) => attr.name === "src")) images.push(node);
+    for (const child of [...(node.childNodes ?? []), ...(node.content?.childNodes ?? [])]) visit(child);
+  };
+  visit(parse(html, { sourceCodeLocationInfo: true }) as unknown as HtmlNode);
+  const edits: { start: number; end: number; replacement: string }[] = [];
+  for (const image of images) {
+    const source = image.attrs!.find((attr) => attr.name === "src")!;
+    const normalized = source.value.replaceAll("\\", "/").replace(/^\.\//, "");
     const item = allowed.get(normalized);
     const readable = item?.available ? await fileReadable(attemptRoot, normalized) : false;
-    if (readable) continue;
-    unresolved.push(item?.shortRef ?? href);
-    next = next.replace(new RegExp(`<img\\b[^>]*\\bsrc=["']${escapeRegExp(href)}["'][^>]*>`, "gi"), "");
+    const location = image.sourceCodeLocation;
+    if (!location) throw new Error("Comparison image has no source location.");
+    if (!item || !readable) {
+      unresolved.push(item?.shortRef ?? (source.value.startsWith("data:") ? source.value.slice(0, 32) : source.value));
+      edits.push({ start: location.startOffset, end: location.endOffset, replacement: "" });
+      continue;
+    }
+    source.value = item.reportHref;
+    edits.push({ start: location.startOffset, end: location.endOffset, replacement: serializeOuter(image as never) });
+  }
+  let next = html;
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    next = `${next.slice(0, edit.start)}${edit.replacement}${next.slice(edit.end)}`;
   }
   return next;
 }
