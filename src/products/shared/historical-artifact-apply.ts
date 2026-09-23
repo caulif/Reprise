@@ -185,7 +185,7 @@ export class HistoricalArtifactBuilder {
  * Map a transcript path to a task-relative logical path.
  * Absolute paths require historicalCwd and must stay inside that root.
  */
-export function resolveTaskRelativePath(
+function resolveTaskRelativePath(
   raw: string,
   historicalCwd?: string,
 ): { ok: true; path: string } | { ok: false; reason: PathRejectReason } {
@@ -224,7 +224,7 @@ export function validateLogicalPath(raw: string): { ok: true; path: string } | {
   return { ok: true, path: normalized };
 }
 
-export function artifactIdForPath(logicalPath: string): string {
+function artifactIdForPath(logicalPath: string): string {
   return `ha-${sha256(logicalPath).slice(0, 24)}`;
 }
 

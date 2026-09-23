@@ -173,7 +173,7 @@ const comparison: ComparisonAgentPort = {
     );
     const shell = await reader.execute({ path: "report.html" }, new AbortController().signal);
     await writer?.execute(
-      { path: "report.html", content: comparisonHtmlWithHostShell(shell.content, '<style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>') },
+      { path: "report.html", content: comparisonHtmlWithHostShell(shell.content, '<p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>') },
       new AbortController().signal,
     );
     return {
@@ -359,13 +359,6 @@ export async function terminationOf(
 }
 
 export type TaskPolicy = ReturnType<typeof input>["policy"];
-export const repeatingSend: ControllerPort = {
-  decide: async () => ({
-    status: "completed",
-    sessionId: "controller-1",
-    value: { type: "send", message: "Keep going.", intent: "continue" },
-  }),
-};
 export function sendingController(delayMs = 0): ControllerPort {
   let calls = 0;
   return {

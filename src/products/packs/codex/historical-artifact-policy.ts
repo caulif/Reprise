@@ -43,6 +43,68 @@ export function classifyShellCommand(command: string): ShellCommandClass {
   return { kind: "unsupported_mutation" };
 }
 
+/** The observed custom exec wrapper is accepted only as one literal patch call. */
+export function classifyCustomExec(input: string): ShellCommandClass | { readonly kind: "no_write_evidence" } {
+  const literal = String.raw`("(?:\\.|[^"\\])*")`;
+  const call = new RegExp(String.raw`^\s*const\s+patch\s*=\s*${literal}\s*;\s*const\s+r\s*=\s*await\s+tools\.apply_patch\(patch\)\s*;\s*text\(r\)\s*;?\s*$`);
+  const match = input.match(call);
+  if (match?.[1]) {
+    try {
+      const patch: unknown = JSON.parse(match[1]);
+      if (typeof patch === "string" && /^\*\*\* Begin Patch\r?\n/.test(patch)
+        && /\r?\n\*\*\* End Patch\r?\n?$/.test(patch)
+        && patch.indexOf("*** Begin Patch", 1) === -1
+        && patch.indexOf("*** End Patch") === patch.lastIndexOf("*** End Patch")) {
+        return { kind: "static_apply_patch", patch };
+      }
+    } catch {
+      // Invalid string literal cannot establish patch bytes.
+    }
+  }
+  return isProvenReadOnlyCustomExec(input)
+    ? { kind: "no_write_evidence" }
+    : { kind: "unsupported_mutation" };
+}
+
+function isProvenReadOnlyCustomExec(input: string): boolean {
+  const literal = String.raw`("(?:\\.|[^"\\])*")`;
+  const wrapper = new RegExp(String.raw`^\s*const\s+r\s*=\s*await\s+tools\.exec_command\(\{\s*cmd:\s*${literal}(?:\s*,\s*workdir:\s*${literal})?\s*\}\)\s*;\s*text\(r\.output\)\s*;?\s*$`);
+  const match = input.match(wrapper);
+  if (!match?.[1]) return false;
+  try {
+    const command: unknown = JSON.parse(match[1]);
+    if (match[2] && typeof JSON.parse(match[2]) !== "string") return false;
+    return typeof command === "string" && isProvenReadOnlyPowerShell(command);
+  } catch {
+    // The wrapper has no statically decodable command or workdir string.
+    return false;
+  }
+}
+
+function isProvenReadOnlyPowerShell(command: string): boolean {
+  if (command === "Get-ChildItem -Force | Select-Object Mode,Length,Name") return true;
+  if (/^Get-ChildItem(?: -Force)?$/.test(command)) return true;
+  if (/^Get-Content [A-Za-z0-9][A-Za-z0-9._-]*$/.test(command)) return true;
+  const file = command.match(/^\$p = Join-Path \(Get-Location\) '([A-Za-z0-9][A-Za-z0-9._-]*)'/)?.[1];
+  if (!file) return false;
+  return command === `$p = Join-Path (Get-Location) '${file}'; $s = Get-Content -Raw -LiteralPath $p; [pscustomobject]@{Exists=(Test-Path -LiteralPath $p); Bytes=(Get-Item -LiteralPath $p).Length; HtmlOpen=([regex]::Matches($s,'<html').Count); SvgOpen=([regex]::Matches($s,'<svg').Count); SvgClose=([regex]::Matches($s,'</svg>').Count); AnimationRules=([regex]::Matches($s,'@keyframes').Count); ToggleScript=($s -match 'toggleAnimation') } | Format-List`;
+}
+
+export function isSuccessfulCustomExecOutput(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length !== 2) return false;
+  const first: unknown = value[0];
+  const second: unknown = value[1];
+  return isRecord(first) && isRecord(second)
+    && first.type === "input_text" && second.type === "input_text"
+    && /^Script completed\r?\nWall time [^\r\n]+\r?\nOutput:\r?\n$/.test(text(first.text) ?? "")
+    && (text(second.text) ?? "").trim() === "{}";
+}
+
+export function isFailedCustomExecOutput(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((item) => isRecord(item) && typeof item.text === "string" && /^Script failed\b|^\[error\]/i.test(item.text));
+}
+
 export function isFailedToolOutput(output: string): boolean {
   const trimmed = output.trim();
   if (!trimmed) return false;

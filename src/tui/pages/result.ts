@@ -10,7 +10,8 @@ import type { Theme } from '../theme.js';
 import type { WorkbenchSurfaceScope } from '../workbench-layout.js';
 import { kv, kvLinkBlock, panel, panelWithHits, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
-import { comparisonPresentation, displayCleanupStatus, displayTaskStatus, displayTerminationKind } from '../display-copy.js';
+import { candidateModelLabel, comparisonPresentation, displayCleanupStatus, displayTaskStatus, displayTerminationKind } from '../display-copy.js';
+import type { PhaseClockBounds } from '../phase-state.js';
 
 export type { ActionArtifacts };
 
@@ -19,6 +20,7 @@ export type ResultRender = { readonly lines: readonly string[]; readonly rowHits
 export type ResultRenderOptions = {
   readonly surfaceScope?: WorkbenchSurfaceScope;
   readonly processExpanded?: boolean;
+  readonly phaseClocks?: PhaseClockBounds;
 };
 
 export function renderResult(
@@ -40,7 +42,7 @@ export function renderResultWithHits(
   locale: Locale = 'en',
   productLabel?: string,
   comparePending = false,
-  _options?: ResultRenderOptions,
+  options?: ResultRenderOptions,
 ): ResultRender {
   const kind = result.record.outcome.termination.kind;
   const vacant = t(locale, 'resultMissingArtifact');
@@ -80,8 +82,7 @@ export function renderResultWithHits(
   const candidateLabel = candidateDisplayLabel(result, productLabel);
   if (candidateLabel) push(kv(theme, t(locale, 'candidateLabel'), candidateLabel, width - 2));
 
-  const metrics = metricsLine(theme, result, locale);
-  if (metrics) push(kv(theme, t(locale, 'metricsElapsedField'), metrics, width - 2));
+  for (const row of metricsRows(theme, result, locale, options?.phaseClocks, width)) push(row);
 
   if (comparePending) {
     push('');
@@ -99,10 +100,14 @@ export function renderResultWithHits(
 
   const headline = comparison.status === 'skipped' ? undefined : envelopeHeadline(result);
   const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
-  if (headline || summary) {
+  const comparisonFailure = comparison.status === 'failed'
+    ? t(locale, comparison.failure?.code === 'host_zone_modified' ? 'comparisonHostZoneFailure' : 'comparisonUnpublished')
+    : undefined;
+  if (headline || summary || comparisonFailure) {
     push('');
     if (headline) for (const line of wrapBodyLine(headline, inner)) push(` ${line}`);
     if (summary) for (const line of summary) push(` ${line}`);
+    if (comparisonFailure) for (const line of wrapBodyLine(comparisonFailure, inner)) push(` ${line}`);
   }
 
   // Trace/replica stay secondary — full paths live in details via hit targets.
@@ -189,7 +194,7 @@ function candidateDisplayLabel(result: ExperimentResult, productLabel: string | 
   const candidate = result.record.attempt?.candidate;
   if (!candidate) return undefined;
   const product = productLabel ?? candidate.productId;
-  const model = candidate.requestedModel?.trim();
+  const model = candidateModelLabel(candidate.requestedModel, result.record.manifest?.resolvedModel.resolved);
   if (!model) return product;
   return `${product} · ${model}`;
 }
@@ -243,20 +248,22 @@ function envelopeHeadline(result: ExperimentResult): string | undefined {
   return text || undefined;
 }
 
-function metricsLine(theme: Theme, result: ExperimentResult, locale: Locale): string | undefined {
+function metricsRows(theme: Theme, result: ExperimentResult, locale: Locale, clocks: PhaseClockBounds | undefined, width: number): string[] {
   const facts = result.facts;
   const missing = t(locale, 'notRecorded');
-  if (!facts) return missing;
-  const total = facts.elapsedMs;
-  const candidate = facts.wallClockMs;
-  const showBoth = total !== undefined && candidate !== undefined && total - candidate >= 2000;
-  const parts = [
-    total !== undefined ? `${Math.round(total / 1000)}s` : candidate === undefined ? missing : `${Math.round(candidate / 1000)}s`,
-    showBoth && candidate !== undefined ? `candidate ${Math.round(candidate / 1000)}s` : undefined,
+  if (!facts) return [kv(theme, t(locale, 'metricsElapsedField'), missing, width - 2)];
+  const rows: string[] = [];
+  if (facts.wallClockMs !== undefined) rows.push(kv(theme, t(locale, 'metricsCandidateElapsed'), `${Math.round(facts.wallClockMs / 1000)}s`, width - 2));
+  const comparisonMs = clocks?.comparisonStartedAt && clocks.comparisonEndedAt
+    ? clocks.comparisonEndedAt - clocks.comparisonStartedAt : undefined;
+  if (comparisonMs !== undefined && comparisonMs >= 0) rows.push(kv(theme, t(locale, 'metricsComparisonElapsed'), `${Math.round(comparisonMs / 1000)}s`, width - 2));
+  rows.push(kv(theme, t(locale, 'metricsTotalElapsed'), facts.elapsedMs === undefined ? missing : `${Math.round(facts.elapsedMs / 1000)}s`, width - 2));
+  const usage = [
     facts.tokenCount === undefined ? `${missing} tokens` : `${facts.tokenCount} tokens`,
     facts.costUsd === undefined ? `${missing} ${t(locale, 'metricsUsageSummary').toLowerCase()}` : `$${facts.costUsd.toFixed(2)}`,
   ].filter((part): part is string => Boolean(part));
-  return parts.join(` ${theme.glyphs.sep} `);
+  rows.push(kv(theme, t(locale, 'metricsUsageField'), usage.join(` ${theme.glyphs.sep} `), width - 2));
+  return rows;
 }
 
 function explainOutcome(result: ExperimentResult, width: number, product: string, locale: Locale): readonly string[] | undefined {

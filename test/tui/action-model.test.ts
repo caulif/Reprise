@@ -37,6 +37,11 @@ test('result footer hides missing artifacts and keeps compare when pending', () 
   assert.ok(!withCompare.some(([key]) => key === 'h' || key === 'f'));
 });
 
+test('failed comparison labels the report action as a diagnostic', () => {
+  const actions = listActions({ page: 'result', locale: 'zh', artifacts: { report: true, diagnostic: true } });
+  assert.equal(actions.find((item) => item.id === 'open-report')?.labelKey, 'hintOpenDiagnostic');
+});
+
 test('reading footer describes terminal selection without claiming a copy completed', () => {
   for (const [locale, expected] of [['en', 'Select and copy in terminal'], ['zh', '终端拖选复制']] as const) {
     const hints = runningFooterHints(locale, { preparing: false, reading: true });

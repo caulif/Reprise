@@ -81,10 +81,7 @@ export {
   type CandidateSpec,
 } from "./schemas/task-case.js";
 export {
-  HistoricalArtifactSchema,
   HistoricalArtifactManifestSchema,
-  HistoricalArtifactIssueSchema,
-  HistoricalLogicalPathSchema,
   type HistoricalArtifact,
   type HistoricalArtifactManifest,
   type HistoricalArtifactIssue,
@@ -237,7 +234,7 @@ export const ComparisonEvidenceCatalogSchema = Type.Object({
   media: Type.Array(ComparisonMediaRecordSchema),
 });
 export type ComparisonEvidenceCatalogSnapshot = Static<typeof ComparisonEvidenceCatalogSchema>;
-export const ComparisonEvidenceRegistrationDerivationSchema = Type.Object({
+const ComparisonEvidenceRegistrationDerivationSchema = Type.Object({
   kind: Type.Literal("register_evidence"),
   relativePath: Type.String({ minLength: 1, maxLength: 512 }),
   dedupeKey: Type.String({ minLength: 1, maxLength: 512 }),
@@ -271,8 +268,6 @@ export {
 };
 export type { ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
 export {
-  ModelInputCapabilitiesSchema,
-  modelAcceptsImage,
   type ModelInputCapabilities,
 } from "./schemas/model-input-capabilities.js";
 

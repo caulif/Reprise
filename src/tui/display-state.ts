@@ -38,7 +38,7 @@ export type ResultPresentation = {
   readonly terminationTone: ResultTone;
 };
 
-export function resultPresentationInputFrom(
+function resultPresentationInputFrom(
   result: ExperimentResult,
   comparePending = false,
 ): ResultPresentationInput {
@@ -61,7 +61,7 @@ export function deriveResultPresentationFromResult(
 }
 
 /** Map HistoryExperiment / recentExperiment facts into the same presentation input as live results. */
-export function resultPresentationInputFromHistory(item: HistoryExperiment): ResultPresentationInput {
+function resultPresentationInputFromHistory(item: HistoryExperiment): ResultPresentationInput {
   return {
     task: { status: historyTaskStatus(item.taskStatus) },
     termination: {
@@ -80,7 +80,7 @@ export function deriveResultPresentationFromHistory(
   return deriveResultPresentation(resultPresentationInputFromHistory(item), locale);
 }
 
-export function deriveResultPresentation(input: ResultPresentationInput, locale: Locale): ResultPresentation {
+function deriveResultPresentation(input: ResultPresentationInput, locale: Locale): ResultPresentation {
   const comparisonKind = classifyComparison(input.comparison, input.comparePending === true);
   const terminationTone = terminationToneOf(input.termination.kind);
   const reportKind = reportKindOf(comparisonKind);
@@ -116,7 +116,7 @@ export function classifyComparisonStatus(
   return 'unknown';
 }
 
-export function classifyComparison(
+function classifyComparison(
   comparison: ExperimentResult['comparison']['result'],
   comparePending = false,
 ): ComparisonPresentationKind {
@@ -128,7 +128,7 @@ export function classifyComparison(
   return classifyComparisonStatus(comparison.status);
 }
 
-export function comparisonKindTitleKey(kind: ComparisonPresentationKind): MessageKey {
+function comparisonKindTitleKey(kind: ComparisonPresentationKind): MessageKey {
   if (kind === 'failed') return 'comparisonFailedWord';
   if (kind === 'cancelled') return 'comparisonCancelled';
   if (kind === 'insufficient_evidence') return 'comparisonInsufficient';

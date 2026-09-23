@@ -120,7 +120,7 @@ export class ClaudeCodeProductRuntime implements ProductRuntime {
       hasCleanupError = true;
     }
     try {
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     } catch (removeError) {
       if (!hasCleanupError) {
         cleanupError = removeError;

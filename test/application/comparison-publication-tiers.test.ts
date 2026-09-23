@@ -144,7 +144,7 @@ test("contract failures still reject publication", async () => {
   );
   const external = await publish(networked);
   assert.equal("html" in external, false);
-  if (!("html" in external)) assert.equal(external.code, "publication_failed");
+  if (!("html" in external)) assert.equal(external.code, "report_incomplete");
 });
 
 test("unpaired share-card images publish with nearby missing-side limitation", async (t) => {

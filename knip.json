@@ -2,7 +2,8 @@
   "entry": [
     "src/cli/main.ts!",
     "scripts/**/*.{ts,mjs}!",
-    "test/**/*.test.ts"
+    "test/**/*.test.ts",
+    "test/support/control-owner-child.ts!"
   ],
   "project": [
     "src/**/*.ts",

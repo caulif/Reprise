@@ -82,7 +82,7 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
   assert.ok(hitCol > 0);
   assert.equal(resultPointerAction(lines, reportLine, hitCol, 'en', pathLinks, rowHits), 'open-report');
   assert.equal(resultPointerAction(lines, 0, 2, 'en', pathLinks, rowHits), undefined);
-  const compareLine = lines.findIndex((line) => line.includes('Generate comparison card'));
+  const compareLine = lines.findIndex((line) => line.includes('Generate comparison report'));
   assert.ok(compareLine >= 0);
   assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks, rowHits), 'compare');
 });
@@ -327,6 +327,25 @@ test('result SGR click on a short label opens the report; a blank cell does not'
   applyResultPointer(handle, `\x1b[<0;${hitCol};${reportLine + 1 + origin.header}M`);
   assert.equal(opened.report, 1);
   applyResultPointer(handle, `\x1b[<0;2;${1 + origin.header}M`);
+  assert.equal(opened.report, 1);
+});
+
+test('result pointer uses the same comparison timing rows as the visible result', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: true });
+  const opened = { report: 0 };
+  const handle = resultController(opened);
+  const result = Object.assign({}, resultFixture, { facts: { elapsedMs: 70_000, wallClockMs: 10_000 } });
+  const phaseClocks = { comparisonStartedAt: 1_000, comparisonEndedAt: 61_000 };
+  handle.result = result;
+  handle.view = () => ({ page: 'result', cwd: 'C:/', hasApiConfig: true, hasTaskCase: false, message: '', running: { phaseClocks } }) as WorkbenchView;
+  const origin = workbenchBodyOrigin(handle.view(), 120, 40);
+  const lines = renderResult(createTheme(120), 120, result, 'en', undefined, false, { phaseClocks });
+  const reportLine = lines.findIndex((line) => line.includes('report.html'));
+  assert.ok(reportLine >= 0);
+  const hitCol = Array.from({ length: 120 }, (_, index) => index + 1)
+    .find((col) => hitFileLink(lines[reportLine] ?? '', col)?.includes('report.html'));
+  assert.ok(hitCol);
+  applyResultPointer(handle, `\x1b[<0;${hitCol};${reportLine + 1 + origin.header}M`);
   assert.equal(opened.report, 1);
 });
 

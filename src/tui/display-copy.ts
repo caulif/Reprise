@@ -86,12 +86,20 @@ export function comparisonPresentation(
   if (comparison.status === 'skipped') return { word: t(locale, 'comparisonSkipped'), diagnostic: t(locale, 'resultDiagnostic'), tone: 'neutral', failedArtifact: false };
   if (comparison.status === 'cancelled') return { word: t(locale, 'comparisonCancelled'), diagnostic: t(locale, 'comparisonDiagnosticCancelled'), tone: 'warn', failedArtifact: true };
   if (comparison.status === 'failed') {
-    const code = comparison.failure?.kind ?? comparison.failure?.code;
-    return { word: code ? `${t(locale, 'comparisonFailedWord')} (${code})` : t(locale, 'comparisonFailedWord'), diagnostic: t(locale, 'comparisonDiagnosticFailed'), tone: 'danger', failedArtifact: true };
+    return { word: t(locale, 'comparisonFailedWord'), diagnostic: t(locale, 'comparisonDiagnosticFailed'), tone: 'danger', failedArtifact: true };
   }
   if (comparison.status === 'completed' && comparison.value?.status === 'insufficient_evidence') return { word: t(locale, 'comparisonInsufficient'), diagnostic: t(locale, 'comparisonDiagnosticInsufficient'), tone: 'warn', failedArtifact: false };
   if (comparison.status === 'completed') return { word: t(locale, 'comparisonDone'), diagnostic: t(locale, 'resultReport'), tone: 'ok', failedArtifact: false };
   return { word: t(locale, 'comparisonDiagnosticUnknown'), diagnostic: t(locale, 'comparisonDiagnosticUnknown'), tone: 'warn', failedArtifact: true };
+}
+
+export function candidateModelLabel(requested: string | undefined, resolved: string | undefined): string | undefined {
+  const name = requested?.trim();
+  if (!name) return undefined;
+  const actual = resolved?.trim();
+  return actual && actual !== 'unknown' && actual !== 'pending' && actual !== name
+    ? `${name} → ${actual}`
+    : name;
 }
 
 export function severityLabel(level: 'warning' | 'error' | undefined, locale: Locale, theme: Theme): string | undefined {

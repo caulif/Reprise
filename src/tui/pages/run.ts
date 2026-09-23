@@ -505,7 +505,7 @@ export function runningHints(_filter: TimelineFilter, _narrow: boolean, preparin
   return hints;
 }
 
-export function elapsedFrom(
+function elapsedFrom(
   entries: readonly TimelineEntry[],
   now = Date.now(),
   startedAt?: number,

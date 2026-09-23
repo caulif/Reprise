@@ -62,7 +62,7 @@ export function attemptFinalsRoot(attemptRoot: string): string {
 }
 
 /** Openable discovery keys from a prepared/sealed manifest. */
-export function openableNamesFromManifest(manifest: HistoricalArtifactManifest): string[] {
+function openableNamesFromManifest(manifest: HistoricalArtifactManifest): string[] {
   const names = new Set<string>();
   for (const artifact of manifest.artifacts) {
     if (artifact.finality !== "final") continue;

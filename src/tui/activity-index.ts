@@ -98,7 +98,7 @@ export function resetActivityIndex(index: ActivityIndexState, scope: ActivitySco
   index.revision = 0;
 }
 
-export function eventRefOf(event: EventEnvelope): ActivityEventRef {
+function eventRefOf(event: EventEnvelope): ActivityEventRef {
   return { eventId: event.eventId, sequence: event.sequence };
 }
 
@@ -118,7 +118,7 @@ export function mergeEventRefs(
 }
 
 /** Returns false when the same eventId was already ingested (idempotent replay). */
-export function noteEventSeen(index: ActivityIndexState, eventId: string): boolean {
+function noteEventSeen(index: ActivityIndexState, eventId: string): boolean {
   if (index.seenEventIds.has(eventId)) return false;
   index.seenEventIds.add(eventId);
   return true;
@@ -135,13 +135,13 @@ export function roleFromLane(
   return 'system';
 }
 
-export function activityRoleFromPayload(payload: JsonRecord, fallback: ActivityRole = 'system'): ActivityRole {
+function activityRoleFromPayload(payload: JsonRecord, fallback: ActivityRole = 'system'): ActivityRole {
   const role = text(payload.role);
   if (role === 'controller' || role === 'comparison' || role === 'recovery') return role;
   return fallback;
 }
 
-export function toolCorrelationKey(input: {
+function toolCorrelationKey(input: {
   role: ActivityRole;
   sessionId?: string;
   invocationId?: string;
@@ -157,7 +157,7 @@ export function toolCorrelationKey(input: {
   ].join(':');
 }
 
-export function candidateCallCorrelationKey(input: {
+function candidateCallCorrelationKey(input: {
   sessionId?: string;
   turnId?: string;
   callId?: string;
@@ -183,7 +183,7 @@ export function presentedTextKey(raw: string | undefined): string | undefined {
   return key || undefined;
 }
 
-export function upsertActiveNode(
+function upsertActiveNode(
   index: ActivityIndexState,
   input: {
     identity: string;
@@ -239,7 +239,7 @@ export function upsertActiveNode(
   return node;
 }
 
-export function clearActiveForRole(
+function clearActiveForRole(
   index: ActivityIndexState,
   role: ActivityRole,
   eventRef: ActivityEventRef,
@@ -288,7 +288,7 @@ export function historyNodes(index: ActivityIndexState): ActivityNode[] {
   return out;
 }
 
-export function nodeByCorrelation(index: ActivityIndexState, correlationKey: string): ActivityNode | undefined {
+function nodeByCorrelation(index: ActivityIndexState, correlationKey: string): ActivityNode | undefined {
   const identity = index.activeByCorrelation.get(correlationKey) ?? [...index.nodes.values()]
     .find((node) => node.correlationKey === correlationKey)?.identity;
   return identity ? index.nodes.get(identity) : undefined;

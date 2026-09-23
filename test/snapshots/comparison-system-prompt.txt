@@ -60,8 +60,7 @@ Do not modify either attempt's frozen source, perform the user's original task
 again, publish externally, or access credentials.
 
 In this session you will receive, in order, requests to understand, investigate,
-compose, and review; when a Host zone has been altered you receive one extra
-repair request. Return after each request; the next one continues in the same session.
+compose, and review. Return after each request; the next one continues in the same session.
 
 # Workspace
 Entry point: INDEX.md. The catalog's current revision and registered references

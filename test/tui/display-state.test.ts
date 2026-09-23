@@ -13,6 +13,8 @@ import {
   eventActivityRole,
 } from '../../src/tui/phase-state.js';
 import { elapsedForRunning, waitLine } from '../../src/tui/pages/run.js';
+import { runningModel, stageRailOf } from '../../src/tui/view-projection.js';
+import { renderWorkbench } from '../../src/tui/workbench.js';
 import { t } from '../../src/tui/i18n.js';
 
 function event(type: string, payload: Record<string, unknown> = {}, occurredAt = '2026-08-28T00:00:00.000Z') {
@@ -28,6 +30,28 @@ function event(type: string, payload: Record<string, unknown> = {}, occurredAt =
 }
 
 describe('T06 display-state stages and clocks', () => {
+  it('advances the comparison clock through the view projection and rendered chrome', () => {
+    const start = Date.parse('2026-09-22T15:40:56.000Z');
+    const running = runningModel({
+      timeline: [], visibleTimeline: [], timelineRevision: 0, timelineSelected: 0, timelineFollowing: true,
+      nowMs: start + 60_000, runStartedAt: start, phaseClocks: { comparisonStartedAt: start },
+      preparePhase: 'compare', comparisonAttemptId: 'attempt-1', locale: 'zh',
+      candidate: { requestedModel: 'sonnet' },
+      preflight: { resolved: { resolvedModel: 'deepseek/deepseek-v4.1-flash' } },
+    } as never);
+    assert.equal(running.elapsed, '01:00');
+    assert.equal(running.candidateModel, 'sonnet → deepseek/deepseek-v4.1-flash');
+    const screen = renderWorkbench({
+      page: 'running', cwd: '', hasApiConfig: true, hasUsableAuth: true, hasTaskCase: true,
+      message: '', locale: 'zh', running,
+    }, 110).join('\n');
+    assert.match(screen, /正在写对照报告 · 01:00/);
+  });
+
+  it('marks recovery as active and a failed comparison as failed', () => {
+    assert.match(stageRailOf({ page: 'running', runPhase: 'recovery' } as never, 'zh')?.text ?? '', /^● 恢复\s+○ 候选/);
+    assert.match(stageRailOf({ page: 'result', result: { comparison: { result: { status: 'failed' } } } } as never, 'zh')?.text ?? '', /✗ 对照/);
+  });
   it('projects machineState, activity role, and UI stage separately', () => {
     assert.equal(uiStageFrom({ machineState: 'created' }), 'controller_opening');
     assert.equal(activityRoleFromDiagnostics({ machineState: 'created' }), 'controller');

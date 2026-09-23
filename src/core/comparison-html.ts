@@ -90,11 +90,6 @@ export function extractHostZoneSnapshot(html: string): HostZoneSnapshot | undefi
   return snapshot;
 }
 
-export function hostZonesChanged(html: string, snapshot: HostZoneSnapshot | undefined): boolean {
-  if (!snapshot) return false;
-  return hostZoneIntegrityError(html, snapshot) !== undefined;
-}
-
 export function hostZoneIntegrityError(html: string, snapshot: HostZoneSnapshot): string | undefined {
   const missing = missingComparisonSlots(html);
   if (missing) return missing;

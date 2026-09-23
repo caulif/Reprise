@@ -7,11 +7,11 @@ export const HISTORICAL_ANIMATION_NAME = "animation.html";
 /** Candidate openable HTML (different motion / color from historical). */
 export const CANDIDATE_ANIMATION_NAME = "candidate-animation.html";
 
-export const historicalAnimationPath = fileURLToPath(
+const historicalAnimationPath = fileURLToPath(
   new URL("./animation.html", import.meta.url),
 );
 
-export const candidateAnimationPath = fileURLToPath(
+const candidateAnimationPath = fileURLToPath(
   new URL("./candidate-animation.html", import.meta.url),
 );
 
@@ -35,7 +35,7 @@ export function addFilePatch(logicalPath: string, content: string): string {
  * Locate a static `const patch = "..."` string literal and decode it with JSON.parse.
  * Fixture contract for B1: product extractors must recover the same bytes without eval.
  */
-export function extractStaticPatchLiteral(source: string): string | undefined {
+function extractStaticPatchLiteral(source: string): string | undefined {
   const marker = "const patch = ";
   const start = source.indexOf(marker);
   if (start < 0) return undefined;

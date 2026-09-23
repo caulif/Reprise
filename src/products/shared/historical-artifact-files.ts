@@ -9,8 +9,8 @@ import type { HistoricalArtifactExtractResult } from "../contract.js";
 import { validateLogicalPath } from "./historical-artifact-apply.js";
 import type { FrozenFile } from "./freeze.js";
 
-export const BASELINE_ARTIFACTS_MANIFEST = "baseline-artifacts/manifest.json";
-export const BASELINE_ARTIFACTS_FILES_PREFIX = "baseline-artifacts/files";
+const BASELINE_ARTIFACTS_MANIFEST = "baseline-artifacts/manifest.json";
+const BASELINE_ARTIFACTS_FILES_PREFIX = "baseline-artifacts/files";
 
 /** Reject path escape / absolute / ADS / UNC before sealing or joining bytes (B1 validator). */
 export function assertSafeLogicalPath(logicalPath: string): void {

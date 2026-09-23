@@ -257,7 +257,7 @@ test("registered media that exists can be published", async (t) => {
     facts: reportFacts,
     metrics: reportFacts.metrics ?? {},
     slots: filledSlots({
-      comparison: '<img src="media/history.png" alt="historical preview"><img src="media/ok.png" alt="preview">',
+      comparison: '<img src=media/history.png alt="historical preview"><img src="media/ok.png" alt="preview">',
     }),
   });
   const verified = await verifyAndRenderComparisonReport({
@@ -287,6 +287,7 @@ test("registered media that exists can be published", async (t) => {
     ],
   });
   assert.equal("html" in verified, true);
+  if ("html" in verified) assert.match(verified.html, /<img\b[^>]*src="media\/history\.png"/);
 });
 
 test("one-sided share-card images publish with nearby missing-side note", async (t) => {
@@ -414,17 +415,14 @@ test("AGENT_ZONES lists format-2 comparison and details", async () => {
   assert.deepEqual(AGENT_ZONES, ["comparison", "details"]);
 });
 
-test("failure diagnostics retain useful analysis from non-standard Agent zones", async () => {
+test("failure diagnostics do not promote unverified Agent analysis", async () => {
   const { comparisonFailureDiagnostic } = await import("../../src/application/comparison-publication.js");
   const diagnostic = comparisonFailureDiagnostic({
     result: { status: "failed", failure: { code: "report_incomplete", message: "missing key differences", attempts: 1 } },
     facts: facts(),
     reportPresent: true,
     attemptId: "attempt-1",
-    draftHtml: '<section data-agent-zone="verdict"><h2>候选有实际交付</h2><p>历史仅给出建议。</p></section>',
   });
-  assert.match(diagnostic.draftAnalysis ?? "", /候选有实际交付/);
-  assert.match(diagnostic.draftAnalysis ?? "", /历史仅给出建议/);
   const page = renderComparisonReportShell({
     title: "Comparison unavailable",
     task: "对照未能完成这次比较",
@@ -432,25 +430,18 @@ test("failure diagnostics retain useful analysis from non-standard Agent zones",
     metrics: metricsFromReportFacts(facts()),
     diagnostic,
   });
-  assert.match(page, /已有分析/);
-  assert.match(page, /候选有实际交付/);
+  assert.match(page, /报告未发布/);
+  assert.doesNotMatch(page, /候选有实际交付/);
   assert.doesNotMatch(page, /data-host-zone="status"/);
 });
 
-test("failure pages keep standard Agent zone analysis", async () => {
-  const { comparisonFailureDiagnostic, draftAgentSlots } = await import("../../src/application/comparison-publication.js");
-  const draftHtml = renderComparisonReportShell({
-    task: "修复报告。",
-    facts: facts(),
-    metrics: metricsFromReportFacts(facts()),
-    slots: filledSlots({ "comparison": "<p>候选写出了可继续使用的文件。</p>" }),
-  });
+test("failure pages keep unverified draft content out of the diagnostic", async () => {
+  const { comparisonFailureDiagnostic } = await import("../../src/application/comparison-publication.js");
   const diagnostic = comparisonFailureDiagnostic({
     result: { status: "failed", failure: { code: "host_zone_modified", message: "Host zone was modified.", attempts: 1 } },
     facts: facts(),
     reportPresent: true,
     attemptId: "attempt-1",
-    draftHtml,
   });
   const page = renderComparisonReportShell({
     title: "Comparison unavailable",
@@ -458,9 +449,9 @@ test("failure pages keep standard Agent zone analysis", async () => {
     facts: facts(),
     metrics: metricsFromReportFacts(facts()),
     diagnostic,
-    slots: draftAgentSlots(draftHtml),
   });
-  assert.match(page, /候选写出了可继续使用的文件/);
+  assert.doesNotMatch(page, /候选写出了可继续使用的文件/);
+  assert.match(page, /unpublished draft: comparison-attempts\/attempt-1\/report.html/);
   assert.match(page, /对照未能完成/);
 });
 
@@ -750,11 +741,11 @@ test("current harness comparison model is not the candidate vs title", () => {
   });
   assert.doesNotMatch(html, /本卡由/);
   assert.doesNotMatch(html, /data-host="comparison-operator"/);
-  assert.match(html, /vs gpt-5\.6/);
+  assert.match(html, /vs 请求 gpt-5\.6 · 解析未确认/);
   assert.doesNotMatch(html, /vs deepseek-flash/);
 });
 
-test("share-card presentation reverse cases still publish after Host repair", async () => {
+test("share-card presentation repairs content and rejects inline styles", async () => {
   const reportFacts = facts();
   const base = renderComparisonReportShell({
     task: "修复报告。",
@@ -790,10 +781,8 @@ test("share-card presentation reverse cases still publish after Host repair", as
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in underline, true);
-  if ("html" in underline) {
-    assert.doesNotMatch(underline.html, /text-decoration:underline/);
-  }
+  assert.equal("html" in underline, false);
+  if (!("html" in underline)) assert.equal(underline.code, "report_incomplete");
 
   const writtenBy = base.replace(
     '<p class="note" data-agent-slot="headline">候选把讨论推进成了可继续使用的文件。</p>',

@@ -5,7 +5,7 @@ import {
   activityStatusLabel,
   entryRole,
 } from './agent-activity.js';
-import { type ActionContext, helpLinesFromActions, listActions, type UiAction } from './action-model.js';
+import { helpLinesFromActions, listActions, type UiAction } from './action-model.js';
 import { slashCommands } from './format.js';
 import { t, type Locale } from './i18n.js';
 import type { Theme } from './theme.js';
@@ -211,10 +211,6 @@ export class HelpOverlay implements Component {
   render(width: number): string[] {
     return renderHelp(this.#theme, width, this.#page, this.#locale, this.#actions);
   }
-}
-
-export function helpActionsForContext(ctx: ActionContext): readonly UiAction[] {
-  return listActions(ctx);
 }
 
 export class ActivityDetailOverlay implements Component {

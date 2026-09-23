@@ -419,7 +419,7 @@ test("Comparison stops later turns when the first freeform request is cancelled"
   assert.equal(appends, 1);
 });
 
-test("Host zone edits trigger one extra repair turn in the same Session", async (t) => {
+test("Host zone edits do not spend an Agent repair turn", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-host-zone-repair-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
@@ -447,13 +447,7 @@ test("Host zone edits trigger one extra repair turn in the same Session", async 
               content: (page?.content ?? shell).replace('data-id="host-header"', 'data-id="host-header" data-edited="1"'),
             }, new AbortController().signal);
           }
-          if (content.includes("A Host zone was altered")) {
-            await input.tools.find((tool) => tool.name === "write")?.execute({
-              path: "report.html",
-              content: shell,
-            }, new AbortController().signal);
-          }
-          if (prompts.length < 5) return "working";
+          if (prompts.length < 4) return "working";
           return JSON.stringify({ status: "completed", evidenceRefs: [] });
         },
         cancel() {},
@@ -465,8 +459,8 @@ test("Host zone edits trigger one extra repair turn in the same Session", async 
   await writeFile(join(root, "report.html"), shell);
   const result = await comparison.compare({ ...context(), ...(snapshot ? { hostZoneSnapshot: snapshot } : {}) }, tools);
   assert.equal(result.status, "completed");
-  assert.equal(prompts.length, 5);
-  assert.match(prompts[3] ?? "", /A Host zone was altered/);
+  assert.equal(prompts.length, 4);
+  assert.match(await readFile(join(root, "report.html"), "utf8"), /data-edited="1"/);
 });
 
 test("review turn can read and rewrite Agent regions of report.html", async (t) => {

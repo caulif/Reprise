@@ -9,8 +9,9 @@ Reprise   运行结果
     清理         已完成
     对照         对照完成
     下一步       打开可用产物
-    耗时         72s - candidate 49s - 未采集 tokens - 
-   未采集 用量
+    候选耗时     49s
+    总耗时       72s
+    用量         未采集 tokens - 未采集 用量
     报告         report.html
     候选终稿     candidate-final.txt
     历史终稿     history-final.txt
