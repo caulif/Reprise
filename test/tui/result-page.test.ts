@@ -220,7 +220,10 @@ test('result separates requested and resolved models, phase durations, and unpub
     experimentRoot: 'C:\\exp',
     record: {
       attempt: { runId: 'run-1', candidate: { productId: 'claude-code', requestedModel: 'sonnet' } },
-      manifest: { resolvedModel: { requested: 'sonnet', resolved: 'deepseek/deepseek-v4.1-flash' } },
+      manifest: {
+        resolvedModel: { requested: 'sonnet', resolved: 'deepseek/deepseek-v4.1-flash' },
+        environment: { workspacePath: 'C:\\exp\\environment\\runs\\run-1' },
+      },
       outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
     },
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
