@@ -4,6 +4,7 @@ import { SAFE_ID } from "../core/identity.js";
 import { RunRecordSchema, TaskCaseSchema, type EventEnvelope, type ExperimentSpec, type RunRecord, type TaskCase } from "../core/schema.js";
 import { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { LocalWorkspaceProvider } from "../environment/local-workspace-provider.js";
+import { replicaWorkspaceLocation } from "./result-paths.js";
 import { CliError } from "./cli-error.js";
 import { readJsonFile } from "./experiment-history-list.js";
 import { attachExperimentComparison } from "./experiment-report.js";
@@ -59,7 +60,10 @@ export async function comparePersistedExperiment(input: {
     comparison = agents.comparison;
     signal.throwIfAborted();
     await store.acquireWriter();
-    const provider = new LocalWorkspaceProvider(join(experimentRoot, "environment"));
+    const workspaceLocation = replicaWorkspaceLocation(experimentRoot, loaded.record.attempt.runId,
+      loaded.record.manifest?.environment.workspacePath ?? join(experimentRoot, 'environment', 'runs', loaded.record.attempt.runId));
+    if (!workspaceLocation) throw new CliError("failed", "Recorded candidate workspace is outside the selected experiment.", input.experimentId);
+    const provider = new LocalWorkspaceProvider(workspaceLocation.providerRoot);
     const snapshot = await provider.candidateSnapshot(loaded.record.attempt.runId);
     const extractHistoricalArtifacts = input.extractHistoricalArtifacts
       ?? input.resolveExtractHistoricalArtifacts?.(loaded.taskCase.source.productId);
@@ -80,7 +84,7 @@ export async function comparePersistedExperiment(input: {
       targetEvents: [] as const,
       startedAt: Date.parse(loaded.record.attempt.createdAt) || Date.now(),
       sourceRootKind: "operator_selected" as const,
-      workspaceRoot: join(experimentRoot, "environment", "runs", loaded.record.attempt.runId),
+      workspaceRoot: workspaceLocation.workspaceRoot,
       candidateSnapshotRoot: snapshot.root,
       candidateSnapshotStatus: snapshot.status,
       compare: true as const,

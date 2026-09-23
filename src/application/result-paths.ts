@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
+import { SAFE_ID } from "../core/identity.js";
 import { sameFsPath } from "../core/paths.js";
 import type { RunInspection } from "./comparison.js";
 import type { ExperimentResult } from "./experiment.js";
@@ -15,6 +16,19 @@ export type ResultPathLinks = {
   readonly trace?: string;
   readonly replica?: string;
 };
+
+/** Accepts only the two Host-owned Provider layouts recorded for this candidate run. */
+export function replicaWorkspaceLocation(experimentRoot: string, runId: string, workspaceRoot: string): { providerRoot: string; workspaceRoot: string } | undefined {
+  if (!SAFE_ID.test(runId)) return undefined;
+  const environmentRoot = resolve(experimentRoot, 'environment');
+  const workspacePath = resolve(workspaceRoot);
+  if (sameFsPath(workspacePath, join(environmentRoot, 'runs', runId))) {
+    return { providerRoot: environmentRoot, workspaceRoot: workspacePath };
+  }
+  const parts = relative(join(environmentRoot, 'recovery'), workspacePath).split(sep);
+  if (parts.length !== 3 || !SAFE_ID.test(parts[0] ?? '') || parts[1] !== 'runs' || parts[2] !== runId) return undefined;
+  return { providerRoot: join(environmentRoot, 'recovery', parts[0]!), workspaceRoot: workspacePath };
+}
 
 export async function buildResultPathLinks(input: {
   experimentRoot: string;
@@ -40,7 +54,8 @@ export async function buildResultPathLinks(input: {
     ...(historyFinal ? { historyFinal } : {}),
     ...(candidateFinal ? { candidateFinal } : {}),
     trace: join(input.experimentRoot, "runs", input.runId),
-    replica: join(input.experimentRoot, "environment", "runs", input.runId),
+    ...(replicaWorkspaceLocation(input.experimentRoot, input.runId, input.workspaceRoot)
+      ? { replica: resolve(input.workspaceRoot) } : {}),
   };
 }
 
@@ -68,7 +83,9 @@ export function resolveResultPathLinks(result: ExperimentResult): ResultPathLink
   return {
     ...(report ? { report } : {}),
     trace: join(result.experimentRoot, "runs", runId),
-    replica: join(result.experimentRoot, "environment", "runs", runId),
+    ...(replicaWorkspaceLocation(result.experimentRoot, runId,
+      result.record.manifest?.environment.workspacePath ?? join(result.experimentRoot, "environment", "runs", runId))
+      ? { replica: resolve(result.record.manifest?.environment.workspacePath ?? join(result.experimentRoot, "environment", "runs", runId)) } : {}),
   };
 }
 

@@ -194,9 +194,12 @@ export function startExperiment(
     },
     ready: () => published,
   }).finally(() => finishExperimentActivity(input.experimentId));
+  const candidateFinished = deferredCandidate ? Promise.race([deferredCandidate, result]) : result;
+  // Either handle promise may be ignored; observing this rejection leaves it available to awaiting callers.
+  if (deferredCandidate) void candidateFinished.catch(() => undefined);
   const handle: ExperimentHandle = {
     result,
-    candidateFinished: deferredCandidate ?? result,
+    candidateFinished,
     activity,
     async runComparison(): Promise<void> {
       decideComparison?.(true);
@@ -420,7 +423,7 @@ async function startCandidateRun(args: {
     });
   }
   const recoveryArtifact = input.preResolvedBaseline?.recovery?.reportRef
-    ? (await store.listArtifacts()).find(
+    ? (await store.listArtifacts(input.preResolvedBaseline.recovery.reportRunId)).find(
         (artifact) =>
           artifact.artifactId ===
           input.preResolvedBaseline?.recovery?.reportRef,
@@ -430,6 +433,7 @@ async function startCandidateRun(args: {
     ? {
         artifactId: recoveryArtifact.artifactId,
         experimentId: input.experimentId,
+        ...(recoveryArtifact.owner.runId ? { runId: recoveryArtifact.owner.runId } : {}),
       }
     : undefined;
   const runnerRef: { session(): { sessionId: string } } = { session: () => ({ sessionId: "unstarted" }) };

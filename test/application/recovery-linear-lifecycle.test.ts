@@ -5,6 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import type { RecoveryAgentPort } from "../../src/agents/recovery-agent.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
+import { loadSealedScene, persistPreparedScene } from "../../src/application/experiment-scene.js";
+import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import {
   RecoveryOrchestrator,
   recoveryAttemptRecord,
@@ -166,13 +168,79 @@ test("recoverExperiment writes blocked taskOutcome and diagnosis for a blocked e
   assert.notEqual(attempt.baseline.recovery?.taskOutcome, "unrecoverable");
   assert.notEqual(attempt.baseline.recovery?.taskOutcome, "blocked_by_safety");
   const diagnosis = JSON.parse(
-    await readFile(join(attempt.experimentRoot, "recovery-diagnosis.json"), "utf8"),
+    await readFile(join(attempt.experimentRoot, "runs", "recovery-blocked-outcome-run", "recovery-diagnosis.json"), "utf8"),
   ) as { finalStatus: string };
   assert.equal(diagnosis.finalStatus, "blocked");
   const lifecycle = JSON.parse(
-    await readFile(join(attempt.experimentRoot, "artifacts", "recovery-attempts"), "utf8"),
+    await readFile(join(attempt.experimentRoot, "runs", "recovery-blocked-outcome-run", "artifacts", "recovery-attempts"), "utf8"),
   ) as { state: string; attempts: { schemaVersion: number; phase: string }[] };
   assert.equal(lifecycle.state, "validated");
   assert.ok(lifecycle.attempts.every((item) => item.schemaVersion === 2));
   assert.equal(typeof attempt.accept, "undefined");
+});
+
+test('two Recovery runs in one experiment keep independent attempts, baselines and reports', { timeout: 60_000 }, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-recovery-repeat-'));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  await writeFile(join(base.sourceRoot, 'README.md'), '# sealed source\n');
+  const recover = async (runId: string) => recoverExperiment({
+    dataDir: base.dataDir,
+    caseId: base.caseId,
+    experimentId: 'recovery-repeat',
+    runId,
+    sourceRoot: base.sourceRoot,
+    taskCase: base.taskCase,
+    recovery: {
+      recover: async (_context, tools) => {
+        await tools.find((tool) => tool.name === 'write')?.execute({ path: 'recovery.md', content: `# Recovery ${runId}\n` }, new AbortController().signal);
+        return { status: 'completed', sessionId: `session-${runId}`, value: { status: 'ready', summary: `Ready ${runId}.`, reportPath: 'recovery.md', unresolved: [] } };
+      },
+    },
+    now,
+  });
+  const first = await recover('run-1');
+  const firstReport = await readFile(join(first.experimentRoot, 'runs', 'run-1', 'artifacts', 'recovery-md'));
+  const firstAttempts = await readFile(join(first.experimentRoot, 'runs', 'run-1', 'artifacts', 'recovery-attempts'));
+  const firstDiagnosis = await readFile(join(first.experimentRoot, 'runs', 'run-1', 'recovery-diagnosis.json'));
+  const second = await recover('run-2');
+  for (const [runId, attempt] of [['run-1', first], ['run-2', second]] as const) {
+    assert.equal(attempt.finalizationFailure, undefined);
+    assert.equal(attempt.baseline.recovery?.status, 'ready');
+    assert.ok(attempt.baseline.root);
+    const store = await ExperimentStore.open(attempt.experimentRoot, 'recovery-repeat');
+    try {
+      const events = store.events(runId);
+      assert.ok(events.some((event) => event.type === 'recovery.attempt'));
+      assert.ok(events.some((event) => event.type === 'recovery.started'));
+      assert.ok(events.some((event) => event.type === 'recovery.completed'));
+      assert.deepEqual(await store.readArtifact({ artifactId: 'recovery-md', experimentId: 'recovery-repeat', runId }), Buffer.from(`# Recovery ${runId}\n`));
+      assert.ok((await store.listArtifacts(runId)).some((artifact) => artifact.artifactId === 'recovery-attempts'));
+    } finally {
+      await store.close();
+    }
+  }
+  assert.deepEqual(await readFile(join(first.experimentRoot, 'runs', 'run-1', 'artifacts', 'recovery-md')), firstReport);
+  assert.deepEqual(await readFile(join(first.experimentRoot, 'runs', 'run-1', 'artifacts', 'recovery-attempts')), firstAttempts);
+  assert.notEqual(first.baseline.root, second.baseline.root);
+  const descriptor = await persistPreparedScene(second, base.sourceRoot, base.taskCase);
+  assert.equal(descriptor.runId, 'run-2');
+  assert.equal(descriptor.recoveryProviderRunId, 'run-2');
+  const reopened = await loadSealedScene(base.dataDir, 'recovery-repeat');
+  assert.equal(reopened.attempt.baseline.root, second.baseline.root);
+  const failed = await recoverExperiment({
+    dataDir: base.dataDir,
+    caseId: base.caseId,
+    experimentId: 'recovery-repeat',
+    runId: 'run-3',
+    sourceRoot: base.sourceRoot,
+    taskCase: base.taskCase,
+    recovery: { recover: async () => ({ status: 'failed', sessionId: 'session-run-3', failure: { code: 'agent_failure', message: 'model unavailable', attempts: 1 } }) },
+    now,
+  });
+  assert.equal(failed.baseline.recovery?.status, 'failed');
+  assert.equal(failed.diagnosisPath, join('runs', 'run-3', 'recovery-diagnosis.json'));
+  assert.deepEqual(await readFile(join(first.experimentRoot, 'runs', 'run-1', 'recovery-diagnosis.json')), firstDiagnosis);
+  assert.notDeepEqual(await readFile(join(failed.experimentRoot, failed.diagnosisPath ?? '')), firstDiagnosis);
 });

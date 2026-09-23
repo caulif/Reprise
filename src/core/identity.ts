@@ -10,6 +10,10 @@ export function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+export function runOperationId(runId: string, localId: string): string {
+  return `r-${sha256(JSON.stringify([runId, localId]))}`;
+}
+
 /** Canonical checksum for one committed event envelope body (the object without `checksum`). */
 export function eventEnvelopeChecksum(body: object): string {
   return sha256(JSON.stringify(body));

@@ -449,7 +449,7 @@ const M = {
   preflightTitle: { en: 'Candidate preflight', zh: '候选预检' },
   confirmTitle: { en: 'Start isolated {product} Candidate?', zh: '启动隔离的 {product} 候选？' },
   confirmTitleBlocked: { en: 'Cannot start isolated candidate', zh: '无法启动隔离候选' },
-  diagnosisSavedHint: { en: 'Diagnostics saved · experiments/{experimentId}/recovery-diagnosis.json', zh: '诊断已保存 · experiments/{experimentId}/recovery-diagnosis.json' },
+  diagnosisSavedHint: { en: 'Diagnostics saved · experiments/{experimentId}/{diagnosisPath}', zh: '诊断已保存 · experiments/{experimentId}/{diagnosisPath}' },
   preflightStep: { en: 'Preflight', zh: '预检' },
   confirmStep: { en: 'Confirm run', zh: '确认运行' },
   candidateLabel: { en: 'Candidate', zh: '候选' },

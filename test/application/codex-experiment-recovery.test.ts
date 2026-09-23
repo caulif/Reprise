@@ -110,7 +110,7 @@ test('Recovery cancellation aborts a pending model call, persists cancellation a
   assert.equal(attempt.baseline.recovery?.failureStage, 'cancelled');
   assert.equal(typeof attempt.accept, 'undefined');
   assert.equal(discarded, 1);
-  const persisted = JSON.parse(await readFile(join(attempt.experimentRoot, 'recovery.json'), 'utf8')) as { status: string };
+  const persisted = JSON.parse(await readFile(join(attempt.experimentRoot, 'runs', 'recovery-cancel-run', 'recovery.json'), 'utf8')) as { status: string };
   assert.equal(persisted.status, 'cancelled');
   assert.equal(await readFile(join(root, 'source', 'README.md'), 'utf8'), '# source\n');
 });
@@ -196,7 +196,7 @@ test("Recovery classifies a structured model request failure separately from too
   );
   const validation = JSON.parse(
     await readFile(
-      join(attempt.experimentRoot, "recovery-validation.json"),
+      join(attempt.experimentRoot, "runs", "recovery-model-failure", "recovery-validation.json"),
       "utf8",
     ),
   ) as { message: string };
@@ -510,7 +510,7 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
       .map((event) => event.payload.candidateId),
     [],
   );
-  const lifecycle = JSON.parse(await readFile(join(attempt.experimentRoot, "artifacts", "recovery-attempts"), "utf8")) as { state: string; attempts: { phase: string; result: string }[] };
+  const lifecycle = JSON.parse(await readFile(join(attempt.experimentRoot, "runs", "recovery-candidate-run", "artifacts", "recovery-attempts"), "utf8")) as { state: string; attempts: { phase: string; result: string }[] };
   assert.equal(lifecycle.state, "accepted");
   assert.equal(attempt.acceptedAutomatically, true);
   assert.ok(lifecycle.attempts.some((item) => item.phase === "forensics" && item.result === "succeeded"));

@@ -106,9 +106,9 @@ Recovery、Controller、Comparison 会将完成任务所需的历史内容、工
 
 ## 当前试用限制
 
-- **同一 Experiment 的重复完整运行**可能失败（`controller-started` 与实验级 operation 去重冲突）。详情见 [路线图：已知实现问题](./roadmap.md#已知实现问题)。
+- **早期准备失败**仍可能发生在 attempt 持久化之前，无法从 attempt 列表解释；见[已知实现问题](./roadmap.md#已知实现问题)。同一 Experiment 的不同 run 已用离线 fake Runtime 验证可从同一封存起点运行；真实 Runtime 的重复运行仍需显式 opt-in 验收。
 
-不要把未验证的 workaround 当作已修复；是否等待修复后再使用由你决定。
+不要把离线验证当作真实 Runtime 的完成证据。
 
 ## 故障排查
 

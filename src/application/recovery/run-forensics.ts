@@ -6,7 +6,7 @@ import {
   type RecoveryRunSession,
 } from "./session.js";
 import { recoveryAttemptRecord } from "./orchestrator.js";
-import { sha256 } from "../../core/identity.js";
+import { runOperationId, sha256 } from "../../core/identity.js";
 
 export async function startRecoveryForensics(session: RecoveryRunSession): Promise<void> {
   const { input, store, staging, attemptMode } = session;
@@ -27,7 +27,7 @@ export async function startRecoveryForensics(session: RecoveryRunSession): Promi
   await store.append({
     type: "recovery.forensics_started",
     runId: input.runId,
-    operationId: "recovery-forensics-started",
+    operationId: runOperationId(input.runId, "recovery-forensics-started"),
     payload: {
       mode: attemptMode,
       sources: ["workspace", "git", "transcript", "historical_events"],
@@ -74,6 +74,7 @@ export async function persistRecoveryInvestigation(session: RecoveryRunSession):
   };
   await store.commitArtifact({
     artifactId: "recovery-forensics-summary",
+    runId: input.runId,
     kind: "recovery_investigation",
     mediaType: "application/json",
     bytes: Buffer.from(JSON.stringify(summary), "utf8"),
@@ -82,7 +83,7 @@ export async function persistRecoveryInvestigation(session: RecoveryRunSession):
   await store.append({
     type: "recovery.investigation_created",
     runId: input.runId,
-    operationId: "recovery-investigation-event",
+    operationId: runOperationId(input.runId, "recovery-investigation-event"),
     payload: {
       factCount: facts.catalog.length,
       digest: sha256(JSON.stringify(summary)),
@@ -93,7 +94,7 @@ export async function persistRecoveryInvestigation(session: RecoveryRunSession):
   await store.append({
     type: "recovery.forensics_completed",
     runId: input.runId,
-    operationId: "recovery-forensics-completed",
+    operationId: runOperationId(input.runId, "recovery-forensics-completed"),
     payload: forensicsFact(facts),
   });
   session.forensicsCompleted = true;

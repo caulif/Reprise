@@ -795,6 +795,83 @@ test("deferred comparison runs from finished candidate facts without a live Reco
   assert.match(await readFile(join(result.experimentRoot, "report.html"), "utf8"), /Evidence-based narrative/);
 });
 
+test('deferred candidate waiters settle on early failures even when the other promise is ignored', { timeout: 10_000 }, async (t) => {
+  for (const stage of ['validation', 'runner', 'cancel'] as const) {
+    for (const only of ['candidateFinished', 'result'] as const) {
+      const root = await mkdtemp(join(tmpdir(), `reprise-defer-${stage}-`));
+      t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+      await mkdir(join(root, 'source'));
+      await writeFile(join(root, 'source', 'README.md'), '# source\n');
+      class FailingRuntime extends VerifiedRuntime {
+        override async validateCandidate(request: { productId: string; requestedModel: string }) {
+          if (stage === 'validation') throw new Error('synthetic validation failure');
+          return super.validateCandidate(request);
+        }
+        override async createRunner(runtime: ResolvedRuntime, environment: { environmentId: string; runId: string; root: string }, sink: TargetEventSink, launch: import('../../src/core/schema.js').CandidateLaunchContext): Promise<TargetRunner> {
+          if (stage === 'runner') throw new Error('synthetic runner failure');
+          return super.createRunner(runtime, environment, sink, launch);
+        }
+      }
+      const controller = new AbortController();
+      if (stage === 'cancel') controller.abort();
+      const handle = startExperiment({ ...input(root, new FailingRuntime()), deferComparison: true, signal: controller.signal });
+      await assert.rejects(handle[only], /synthetic|cancelled/);
+    }
+  }
+});
+
+test('comparison rejection after candidate completion does not reject candidateFinished', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-defer-compare-failure-'));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  await mkdir(join(root, 'source'));
+  await writeFile(join(root, 'source', 'README.md'), '# source\n');
+  const base = input(root, new VerifiedRuntime());
+  const comparison: ComparisonAgentPort = {
+    ...base.comparison,
+    release: async () => { throw new Error('synthetic comparison release failure'); },
+  };
+  const handle = startExperiment({ ...base, comparison, deferComparison: true });
+  const candidate = await handle.candidateFinished;
+  assert.equal(candidate.record.state, 'finished');
+  await handle.runComparison();
+  await assert.rejects(handle.result, /synthetic comparison release failure/);
+  assert.equal(await handle.candidateFinished, candidate);
+});
+
+test('two full runs in one experiment retain independent facts and sealed starting content', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-repeat-run-'));
+  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  await mkdir(join(root, 'source'));
+  await writeFile(join(root, 'source', 'README.md'), '# sealed source\n');
+  const runtime = new VerifiedRuntime();
+  const base = { ...input(root, runtime), compare: false };
+  const first = await startExperiment(base).result;
+  assert.equal(first.record.state, 'finished');
+  const firstManifest = JSON.parse(await readFile(join(first.experimentRoot, 'runs', 'run-1', 'manifest.json'), 'utf8')) as { environment: { workspacePath: string } };
+  await writeFile(join(firstManifest.environment.workspacePath, 'README.md'), '# changed in run one\n');
+  const second = await startExperiment({ ...base, runId: 'run-2' }).result;
+  assert.equal(second.record.state, 'finished');
+  const secondManifest = JSON.parse(await readFile(join(second.experimentRoot, 'runs', 'run-2', 'manifest.json'), 'utf8')) as { environment: { workspacePath: string } };
+  assert.equal(await readFile(join(secondManifest.environment.workspacePath, 'README.md'), 'utf8'), '# sealed source\n');
+  assert.notEqual(firstManifest.environment.workspacePath, secondManifest.environment.workspacePath);
+  const store = await ExperimentStore.open(first.experimentRoot, base.experimentId);
+  try {
+    for (const runId of ['run-1', 'run-2']) {
+      assert.equal(store.replay(runId).attempt?.runId, runId);
+      assert.equal(store.replay(runId).manifest?.attempt.runId, runId);
+      assert.equal((store.replay(runId).finishedPayload as { state?: string })?.state, 'finished');
+      assert.ok(store.events(runId).some((event) => event.type === 'controller.started'));
+      assert.ok(store.events(runId).some((event) => event.type === 'run.state_changed'));
+      assert.equal((JSON.parse(await readFile(join(first.experimentRoot, 'runs', runId, 'record.json'), 'utf8')) as { trace: { runId: string } }).trace.runId, runId);
+      assert.ok((await store.listArtifacts(runId)).some((manifest) => manifest.artifactId === 'host-trace.json'));
+      assert.ok((await store.readArtifact({ artifactId: 'host-trace.json', experimentId: base.experimentId, runId })).byteLength > 0);
+    }
+    assert.notEqual(store.events('run-1').find((event) => event.type === 'controller.started')?.operationId, store.events('run-2').find((event) => event.type === 'controller.started')?.operationId);
+  } finally {
+    await store.close();
+  }
+});
+
 test("comparison does not start unless compare is set", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-skip-compare-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));

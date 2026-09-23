@@ -1,4 +1,4 @@
-import { SAFE_ID } from '../core/identity.js';
+import { SAFE_ID, runOperationId } from '../core/identity.js';
 import { assertTransition } from '../core/state-machine.js';
 import type { ArtifactRef, CandidateRunState, CandidateSessionHandle, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
 import { isCandidateRuntimeJournalType, type DeliveryReceipt, type MessageIdentity, type RuntimeStopReason, type TargetRunner, type TurnSettlement, type UserMessage } from '../core/runtime.js';
@@ -302,7 +302,7 @@ export class CandidateRun {
       this.#track(event);
       return event;
     }
-    const event = await this.#persistence.journal.append({ type, runId: this.#persistence.attempt.runId, operationId, payload });
+    const event = await this.#persistence.journal.append({ type, runId: this.#persistence.attempt.runId, operationId: runOperationId(this.#persistence.attempt.runId, operationId), payload });
     this.#track(event);
     return event;
   }

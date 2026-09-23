@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Value } from "@sinclair/typebox/value";
 import { join, resolve } from "node:path";
 import { RecoveryControlledWriteSchema, type RecoveryControlledWrite } from "../../core/schema.js";
-import { sha256 } from "../../core/identity.js";
+import { runOperationId, sha256 } from "../../core/identity.js";
 import { relativeInside } from "../../core/paths.js";
 import type { RecoveryStaging } from "../../environment/local-workspace-provider.js";
 import { ExperimentStore } from "../../infrastructure/store/experiment-store.js";
@@ -65,13 +65,14 @@ function recoveryCandidatePath(candidateRoot: string, relativePath: string): str
 }
 
 /** Preserves known verifier failures while keeping unknown provider errors as crashes. */
-export async function persistRecoveryValidationArtifacts(store: ExperimentStore, staging: RecoveryStaging): Promise<void> {
+export async function persistRecoveryValidationArtifacts(store: ExperimentStore, staging: RecoveryStaging, runId: string): Promise<void> {
   const files = ["recovery.md", "recovery-manifest.json"] as const;
   for (const file of files) {
     try {
       const bytes = await readFile(join(staging.root, file));
       await store.commitArtifact({
         artifactId: `recovery-validation-${file.replaceAll(".", "-")}`,
+        runId,
         kind: file === "recovery.md" ? "recovery_report" : "recovery_manifest",
         mediaType: file.endsWith(".md") ? "text/markdown" : "application/json",
         bytes,
@@ -84,9 +85,8 @@ export async function persistRecoveryValidationArtifacts(store: ExperimentStore,
   }
   await store.append({
     type: "recovery.validation_artifacts_preserved",
-    runId: staging.caseId,
-    operationId: "recovery-validation-artifacts-preserved",
+    runId,
+    operationId: runOperationId(runId, "recovery-validation-artifacts-preserved"),
     payload: { files: files.map((file) => file) },
   });
 }
-

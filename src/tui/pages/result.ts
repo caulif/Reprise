@@ -107,7 +107,7 @@ export function renderResultWithHits(
 
   // Trace/replica stay secondary — full paths live in details via hit targets.
   pushLink('open-trace', kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width));
-  pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, theme, width, vacant), paths.replica, width));
+  pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, paths.replica, experimentRoot, theme, width, vacant), paths.replica, width));
   return panelWithHits(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width, bodyHits);
 }
 
@@ -324,7 +324,10 @@ function runFolderLabel(prefix: string, runId: string | undefined, theme: Theme,
   return `${prefix}${compact(runId, Math.max(10, valueWidth - prefix.length - 1), theme.glyphs.ellipsis)}/`;
 }
 
-function replicaLabel(runId: string | undefined, theme: Theme, width: number, vacant: string): string {
+function replicaLabel(runId: string | undefined, replica: string | undefined, experimentRoot: string | undefined, theme: Theme, width: number, vacant: string): string {
+  if (replica && experimentRoot && relativeInside(experimentRoot, replica)?.startsWith('environment/recovery/')) {
+    return shortLabel(replica, experimentRoot, vacant);
+  }
   return runFolderLabel('environment/runs/', runId, theme, width, vacant);
 }
 

@@ -1,5 +1,5 @@
 import { Value } from "@sinclair/typebox/value";
-import { sha256 } from "../core/identity.js";
+import { runOperationId, sha256 } from "../core/identity.js";
 import { isRecord, record, text } from "../core/json.js";
 import { isCandidateRuntimeJournalType, type TargetEvent, type TargetEventSink } from "../core/runtime.js";
 import { CandidateRuntimeEventSchema, type EventEnvelope } from "../core/schema.js";
@@ -166,7 +166,7 @@ export async function appendCandidateRuntimeEvent(input: {
   assertRuntimeJournalAffiliation(events, input.type, body);
   const payload = candidateRuntimeJournalPayload(sessionId, input.payload);
   const fingerprint = `rt-${sha256(`${input.type}\n${input.occurredAt ?? ""}\n${JSON.stringify(payload)}`).slice(0, 32)}`;
-  const operationId = input.operationId ?? fingerprint;
+  const operationId = runOperationId(input.runId, input.operationId ?? fingerprint);
   const envelope = await input.journal.append({
     type: input.type,
     runId: input.runId,

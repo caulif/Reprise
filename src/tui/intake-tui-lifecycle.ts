@@ -131,7 +131,7 @@ export function IntakeTui_openReplica(this: IntakeTui): { consume: true } {
       this.render();
       return { consume: true };
     }
-    void openExperimentReplica(experimentRoot, runId)
+    void openExperimentReplica(experimentRoot, runId, undefined, resolveResultPathLinks(this.result!).replica)
       .then(() => {
         this.message = t(this.locale, "requestedOpenReplica");
         this.render();

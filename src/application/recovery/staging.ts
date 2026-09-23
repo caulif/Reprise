@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { runOperationId } from "../../core/identity.js";
 import type { AgentAuditEvent, AgentAuditSink } from "../../infrastructure/agent/host.js";
 import { findProductPack } from "../../products/index.js";
 import { packRecoveryPlaybook } from "../../products/pack-access.js";
@@ -68,7 +69,7 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
         await store.append({
           type: "recovery.preflight_retry",
           runId: input.runId,
-          operationId: "recovery-preflight-retry-2",
+          operationId: runOperationId(input.runId, "recovery-preflight-retry-2"),
           payload: { attempt: 2, ...diagnostic },
         });
       },
@@ -102,7 +103,7 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
   await store.append({
     type: "recovery.started",
     runId: input.runId,
-    operationId: "recovery-started",
+    operationId: runOperationId(input.runId, "recovery-started"),
     payload: {
       sourceDigest: session.staging.sourceFingerprint.digest,
       evidenceLevel: input.taskCase.evidenceLevel ?? "transcript",

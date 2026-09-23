@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { SAFE_ID, writeAtomic } from '../core/identity.js';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
-import { RecoveryCheckpointRecordSchema, type RecoveryCheckpointRecord, type RecoveryControlledWrite } from '../core/schema.js';
+import { RecoveryCheckpointRecordSchema, RecoveryMarkerSchema, type RecoveryCheckpointRecord, type RecoveryControlledWrite } from '../core/schema.js';
 import { getRecoveryControlledWriteBinding, replayControlledRecoveryDeltaBytes } from '../infrastructure/recovery-write-journal.js';
 import {
   copyTree as copyTree,
@@ -117,6 +117,7 @@ export type EnvironmentBaseline = {
     /** Host-recorded inspectable facts; Agent envelope decides publication except mechanical safety. */
     taskOutcome?: 'ready_for_task' | 'blocked' | 'unrecoverable' | 'blocked_by_safety' | 'runner_failed';
     reportRef?: string;
+    reportRunId?: string;
     unresolved: string[];
     sourceDigest: string;
     recoveredDigest: string;
@@ -549,6 +550,7 @@ export class LocalWorkspaceProvider {
     if (preview.baseline.recovery?.status === 'blocked' || preview.baseline.readiness.runnable === 'blocked') {
       throw new Error('Blocked Recovery cannot be published as a baseline.');
     }
+    if (!Value.Check(RecoveryMarkerSchema, preview.baseline.recovery)) throw new Error('Recovery baseline marker is invalid.');
     const baselineRoot = join(this.#root, 'baselines', staging.caseId);
     const markerPath = join(dirname(baselineRoot), `${staging.caseId}.marker.json`);
     if (await exists(baselineRoot) || await exists(markerPath)) throw new Error(`A baseline already exists for ${staging.caseId}.`);

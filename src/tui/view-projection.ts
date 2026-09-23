@@ -286,6 +286,7 @@ function recoveryModel(input: Input): import('./pages/run.js').RecoveryPreviewMo
       transcriptOk: Boolean(input.taskCase?.initialInput?.text),
       hasAccept: input.recoveryView.hasAccept,
     })),
+    ...(input.recoveryView.diagnosisPath ? { diagnosisPath: input.recoveryView.diagnosisPath } : {}),
     ...(input.recoveryView.providerPreview?.reportText ? { reportText: input.recoveryView.providerPreview.reportText } : {}),
     unresolved: input.recoveryView.baseline.recovery.unresolved,
     ...(stored && !explanationKey ? { summary: stored } : {}),

@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rm, stat, truncate, unlink, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { hostname } from 'node:os';
-import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { SAFE_ID, sha256, eventEnvelopeChecksum, writeAtomic } from '../../core/identity.js';
+import { SAFE_ID, sha256, eventEnvelopeChecksum, runOperationId, writeAtomic } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
+  ArtifactManifestSchema,
   EventEnvelopeSchema,
   ComparisonPhaseRequestedPayloadSchema,
   ComparisonRequestedPayloadSchema,
@@ -19,6 +19,7 @@ import {
   RunManifestSchema,
   UserVisibleTurnSchema,
   type ArtifactRef,
+  type ArtifactManifest,
   type EventEnvelope,
   type RunAttempt,
   type RunManifest,
@@ -47,31 +48,7 @@ export class RecoveryArtifactBudgetError extends Error {
   }
 }
 
-export interface ArtifactManifest {
-  readonly artifactId: string;
-  readonly schemaVersion: number;
-  readonly kind: string;
-  readonly mediaType?: string;
-  readonly byteLength: number;
-  readonly contentHash: string;
-  readonly createdAt: string;
-  readonly owner: { readonly experimentId: string; readonly runId?: string };
-  readonly sourceEventId: string;
-  readonly path: string;
-}
-
-const ArtifactManifestSchema = Type.Object({
-  artifactId: Type.String({ pattern: SAFE_ID.source }),
-  schemaVersion: Type.Integer({ minimum: 1 }),
-  kind: Type.String({ minLength: 1 }),
-  mediaType: Type.Optional(Type.String({ minLength: 1 })),
-  byteLength: Type.Integer({ minimum: 0 }),
-  contentHash: Type.String({ pattern: '^[a-f0-9]{64}$' }),
-  createdAt: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}T' }),
-  owner: Type.Object({ experimentId: Type.String({ pattern: SAFE_ID.source }), runId: Type.Optional(Type.String({ pattern: SAFE_ID.source })) }),
-  sourceEventId: Type.String({ minLength: 1 }),
-  path: Type.String({ minLength: 1 }),
-});
+export type { ArtifactManifest } from '../../core/schema.js';
 
 export type ExperimentEventListener = (event: EventEnvelope) => void;
 
@@ -102,6 +79,20 @@ interface LockInfo {
 
 function eventChecksum(event: Omit<EventEnvelope, 'checksum'>): string {
   return eventEnvelopeChecksum(event);
+}
+
+function snapshotInput<T extends AppendEvent | readonly AppendEvent[]>(input: T): T {
+  return JSON.parse(JSON.stringify(input)) as T;
+}
+
+function freezeEvent(event: EventEnvelope): EventEnvelope {
+  const freeze = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return;
+    for (const child of Object.values(value)) freeze(child);
+    Object.freeze(value);
+  };
+  freeze(event);
+  return event;
 }
 
 function isLockInfo(value: unknown): value is LockInfo {
@@ -144,6 +135,7 @@ export class ExperimentStore {
   #lockNonce: string | undefined;
   #events: EventEnvelope[] = [];
   #appendTail: Promise<void> = Promise.resolve();
+  #artifactTail: Promise<void> = Promise.resolve();
   readonly #listeners = new Set<ExperimentEventListener>();
   readonly #recoveryArtifactPolicy: RecoveryArtifactPolicy;
 
@@ -193,6 +185,7 @@ export class ExperimentStore {
 
   async close(): Promise<void> {
     if (!this.#lockHeld) return;
+    await this.#artifactTail;
     await this.#appendTail;
     let raw: string | undefined;
     try {
@@ -222,9 +215,9 @@ export class ExperimentStore {
 
   get experimentId(): string { return this.#experimentId; }
 
-  /** Immutable snapshots are returned for evidence readers; callers cannot append through this view. */
+  /** Committed events are deeply immutable; each reader gets its own array view. */
   events(runId?: string): readonly EventEnvelope[] {
-    return this.#events.filter((event) => runId === undefined || event.runId === runId).map((event) => ({ ...event }));
+    return this.#events.filter((event) => runId === undefined || event.runId === runId);
   }
 
   /**
@@ -233,21 +226,34 @@ export class ExperimentStore {
    */
   eventsSince(cursor: number, runId?: string): { events: readonly EventEnvelope[]; cursor: number } {
     const from = Math.max(0, Math.min(cursor, this.#events.length));
-    const events = this.#events.slice(from).filter((event) => runId === undefined || event.runId === runId).map((event) => ({ ...event }));
+    const events = this.#events.slice(from).filter((event) => runId === undefined || event.runId === runId);
     return { events, cursor: this.#events.length };
   }
 
   async listArtifacts(runId?: string): Promise<readonly ArtifactManifest[]> {
+    if (runId !== undefined) assertId(runId, 'runId');
     const folder = runId ? join(this.#root, 'runs', runId, 'artifacts') : join(this.#root, 'artifacts');
+    let names: string[];
     try {
-      const names = await readdir(folder);
-      // Artifact payloads may themselves be JSON; only adjacent manifest files have a valid owner.
-      const manifests = await Promise.all(names.filter((name) => name.endsWith('.json')).map(async (name) => JSON.parse(await readFile(join(folder, name), 'utf8')) as unknown));
-      return manifests.filter(isArtifactManifest).filter((manifest) => manifest.owner.experimentId === this.#experimentId && manifest.owner.runId === runId);
+      names = await readdir(folder);
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
       throw error;
     }
+    const files = new Set(names);
+    const manifests: ArtifactManifest[] = [];
+    for (const name of names) {
+      if (name.endsWith('.json') && files.has(name.slice(0, -5))) {
+        const artifactId = name.slice(0, -5);
+        const filePath = inside(this.#root, join(folder, artifactId));
+        const manifest = await this.#readArtifactManifest(filePath, artifactId, runId);
+        this.#assertArtifactCommitted(manifest);
+        manifests.push(manifest);
+      } else if (!files.has(`${name}.json`)) {
+        throw new Error(`Artifact file has no matching payload or manifest: ${name}.`);
+      }
+    }
+    return manifests;
   }
 
 
@@ -257,13 +263,15 @@ export class ExperimentStore {
   }
 
   async append(input: AppendEvent): Promise<EventEnvelope> {
-    const pending = this.#appendTail.then(() => this.#appendOne(input));
+    const submitted = snapshotInput(input);
+    const pending = this.#appendTail.then(() => this.#appendOne(submitted));
     this.#appendTail = pending.then(() => undefined, () => undefined);
     return pending;
   }
 
   async appendBatch(inputs: readonly AppendEvent[]): Promise<readonly EventEnvelope[]> {
-    const pending = this.#appendTail.then(() => this.#appendBatchOne(inputs));
+    const submitted = snapshotInput(inputs);
+    const pending = this.#appendTail.then(() => this.#appendBatchOne(submitted));
     this.#appendTail = pending.then(() => undefined, () => undefined);
     return pending;
   }
@@ -297,9 +305,10 @@ export class ExperimentStore {
 
   async #appendOne(input: AppendEvent, persist = true, notify = true): Promise<EventEnvelope> {
     this.#assertWriter();
+    if (!Object.hasOwn(input, 'payload')) throw new Error('Event payload must be JSON-serializable.');
     if (!input.type.trim()) throw new Error('Event type must not be empty.');
     if (input.eventId) assertId(input.eventId, 'eventId');
-    if (input.runId) assertId(input.runId, 'runId');
+    if (input.runId !== undefined) assertId(input.runId, 'runId');
     if (input.operationId) assertId(input.operationId, 'operationId');
 
     const duplicate = input.operationId
@@ -335,6 +344,7 @@ export class ExperimentStore {
     if (event.type === 'comparison.evidence_registered' && !Value.Check(ComparisonEvidenceRegisteredPayloadSchema, event.payload)) throw new Error('comparison.evidence_registered payload does not satisfy its schema.');
     if ((event.type === 'comparison.plan_requested' || event.type === 'comparison.report_requested') && !Value.Check(ComparisonPhaseRequestedPayloadSchema, event.payload)) throw new Error(`${event.type} payload does not satisfy its schema.`);
     if (event.type === 'candidate.user_view_persisted' && !Value.Check(UserVisibleTurnSchema, event.payload)) throw new Error('candidate.user_view_persisted payload does not satisfy its schema.');
+    freezeEvent(event);
     if (persist) await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);
     if (notify) this.#notify(event);
@@ -383,31 +393,58 @@ export class ExperimentStore {
     operationId?: string;
   }): Promise<ArtifactManifest> {
     this.#assertWriter();
+    const submitted = { ...input, bytes: Uint8Array.from(input.bytes) };
+    const pending = this.#artifactTail.then(() => this.#commitArtifactOne(submitted));
+    this.#artifactTail = pending.then(() => undefined, () => undefined);
+    return pending;
+  }
+
+  async #commitArtifactOne(input: {
+    artifactId: string;
+    runId?: string;
+    kind: string;
+    mediaType?: string;
+    bytes: Uint8Array;
+    operationId?: string;
+  }): Promise<ArtifactManifest> {
+    this.#assertWriter();
     assertId(input.artifactId, 'artifactId');
-    if (input.runId) assertId(input.runId, 'runId');
+    if (input.runId !== undefined) assertId(input.runId, 'runId');
     if (!input.kind.trim()) throw new Error('Artifact kind must not be empty.');
     const folder = input.runId ? join('runs', input.runId, 'artifacts') : 'artifacts';
     const filePath = inside(this.#root, join(folder, input.artifactId));
     const manifestPath = `${filePath}.json`;
-    try {
-      await stat(filePath);
-      return JSON.parse(await readFile(manifestPath, 'utf8')) as ArtifactManifest;
-    } catch (error: unknown) {
-      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+    const [hasBody, hasManifest] = await Promise.all([fileExists(filePath), fileExists(manifestPath)]);
+    if (hasBody || hasManifest) {
+      if (!hasBody || !hasManifest) throw new Error(`Artifact ${input.artifactId} has an incomplete file pair; original evidence was left untouched.`);
+      const manifest = await this.#readArtifactManifest(filePath, input.artifactId, input.runId);
+      await this.#readArtifactBytes(filePath, manifest);
+      this.#assertArtifactCommitted(manifest);
+      if (manifest.kind !== input.kind || manifest.mediaType !== input.mediaType || manifest.byteLength !== input.bytes.byteLength || manifest.contentHash !== sha256(input.bytes)) {
+        throw new Error(`Artifact ${input.artifactId} was already committed with different data.`);
+      }
+      return manifest;
+    }
+    if (this.#events.some((event) => event.type === 'artifact.created' && event.runId === input.runId && event.payload && typeof event.payload === 'object' && 'artifactId' in event.payload && event.payload.artifactId === input.artifactId)) {
+      throw new Error(`Artifact ${input.artifactId} has a committed event but missing files; original audit was left untouched.`);
     }
     if (input.kind.startsWith('recovery_')) await this.#assertRecoveryArtifactBudget(input);
-    await writeAtomic(filePath, input.bytes);
     const manifest: ArtifactManifest = {
-      artifactId: input.artifactId, schemaVersion: SCHEMA_VERSION, kind: input.kind, ...(input.mediaType ? { mediaType: input.mediaType } : {}),
+      artifactId: input.artifactId, schemaVersion: SCHEMA_VERSION, kind: input.kind, ...(input.mediaType !== undefined ? { mediaType: input.mediaType } : {}),
       byteLength: input.bytes.byteLength, contentHash: sha256(input.bytes), createdAt: new Date().toISOString(),
       owner: { experimentId: this.#experimentId, ...(input.runId ? { runId: input.runId } : {}) },
       sourceEventId: randomUUID(), path: relative(this.#root, filePath),
     };
+    if (!Value.Check(ArtifactManifestSchema, manifest)) throw new Error('Generated artifact manifest does not satisfy its schema.');
+    await writeAtomic(filePath, input.bytes);
     await writeImmutableJson(manifestPath, manifest);
     // If the append fails, the immutable file is intentionally left as an uncommitted residual.
     await this.append({
       type: 'artifact.created', eventId: manifest.sourceEventId, ...(input.runId ? { runId: input.runId } : {}),
-      operationId: input.operationId ?? `artifact-${input.artifactId}`, payload: { artifactId: input.artifactId },
+      operationId: input.runId !== undefined
+        ? runOperationId(input.runId, input.operationId ?? `artifact-${input.artifactId}`)
+        : input.operationId ?? `artifact-${input.artifactId}`,
+      payload: { artifactId: input.artifactId },
     });
     return manifest;
   }
@@ -434,7 +471,9 @@ export class ExperimentStore {
         await this.append({
           type: 'recovery.artifact_cleanup_failed',
           ...(input.runId ? { runId: input.runId } : {}),
-          operationId: `recovery-artifact-cleanup-failed-${artifact.artifactId}`,
+          operationId: input.runId !== undefined
+            ? runOperationId(input.runId, `recovery-artifact-cleanup-failed-${artifact.artifactId}`)
+            : `recovery-artifact-cleanup-failed-${artifact.artifactId}`,
           payload: { reasonCode: errorCode(error), terminalStatus: input.terminalStatus },
         });
       }
@@ -442,7 +481,9 @@ export class ExperimentStore {
     if (removed > 0) await this.append({
       type: 'recovery.artifact_cleanup_completed',
       ...(input.runId ? { runId: input.runId } : {}),
-      operationId: `recovery-artifact-cleanup-${input.runId ?? 'experiment'}`,
+      operationId: input.runId !== undefined
+        ? runOperationId(input.runId, 'recovery-artifact-cleanup')
+        : 'recovery-artifact-cleanup-experiment',
       payload: { removed, failed, terminalStatus: input.terminalStatus },
     });
     return { removed, failed };
@@ -466,7 +507,9 @@ export class ExperimentStore {
       await this.append({
         type: 'recovery.artifact_budget_hard_rejected',
         ...(input.runId ? { runId: input.runId } : {}),
-        operationId: `recovery-artifact-budget-hard-${input.artifactId}`,
+        operationId: input.runId !== undefined
+          ? runOperationId(input.runId, `recovery-artifact-budget-hard-${input.artifactId}`)
+          : `recovery-artifact-budget-hard-${input.artifactId}`,
         payload,
       });
       throw new RecoveryArtifactBudgetError('Recovery artifact hard budget exceeded; full environment exports require explicit debug opt-in.');
@@ -475,7 +518,9 @@ export class ExperimentStore {
       await this.append({
         type: 'recovery.artifact_budget_soft_exceeded',
         ...(input.runId ? { runId: input.runId } : {}),
-        operationId: `recovery-artifact-budget-soft-${input.artifactId}`,
+        operationId: input.runId !== undefined
+          ? runOperationId(input.runId, `recovery-artifact-budget-soft-${input.artifactId}`)
+          : `recovery-artifact-budget-soft-${input.artifactId}`,
         payload,
       });
     }
@@ -487,12 +532,38 @@ export class ExperimentStore {
     }
     const folder = ref.runId ? join('runs', ref.runId, 'artifacts') : 'artifacts';
     const filePath = inside(this.#root, join(folder, ref.artifactId));
-    const manifest = JSON.parse(await readFile(`${filePath}.json`, 'utf8')) as ArtifactManifest;
-    if (manifest.owner.experimentId !== this.#experimentId || manifest.owner.runId !== ref.runId || manifest.artifactId !== ref.artifactId) {
-      throw new Error('Artifact manifest ownership does not match its reference.');
+    const manifest = await this.#readArtifactManifest(filePath, ref.artifactId, ref.runId);
+    this.#assertArtifactCommitted(manifest);
+    return this.#readArtifactBytes(filePath, manifest);
+  }
+
+  async #readArtifactManifest(filePath: string, artifactId: string, runId?: string): Promise<ArtifactManifest> {
+    let value: unknown;
+    try {
+      value = JSON.parse(await readFile(`${filePath}.json`, 'utf8')) as unknown;
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new Error(`Invalid artifact manifest JSON: ${artifactId}.`, { cause: error });
+      throw error;
     }
+    if (!Value.Check(ArtifactManifestSchema, value)) throw new Error(`Invalid artifact manifest: ${artifactId}.`);
+    if (value.schemaVersion !== SCHEMA_VERSION) throw new Error(`Unsupported artifact manifest schemaVersion ${value.schemaVersion}: ${artifactId}.`);
+    if (value.artifactId !== artifactId || value.owner.experimentId !== this.#experimentId || value.owner.runId !== runId || value.path.replaceAll('\\', '/') !== relative(this.#root, filePath).replaceAll('\\', '/')) {
+      throw new Error(`Artifact manifest identity does not match its path: ${artifactId}.`);
+    }
+    return value;
+  }
+
+  #assertArtifactCommitted(manifest: ArtifactManifest): void {
+    const event = this.#events.find((item) => item.eventId === manifest.sourceEventId);
+    if (!event) throw new Error(`Artifact ${manifest.artifactId} has no committed artifact.created event; original evidence was left untouched.`);
+    if (event.type !== 'artifact.created' || event.runId !== manifest.owner.runId || !event.payload || typeof event.payload !== 'object' || !('artifactId' in event.payload) || event.payload.artifactId !== manifest.artifactId) {
+      throw new Error(`Artifact ${manifest.artifactId} does not match its committed event.`);
+    }
+  }
+
+  async #readArtifactBytes(filePath: string, manifest: ArtifactManifest): Promise<Uint8Array> {
     const bytes = await readFile(filePath);
-    if (bytes.byteLength !== manifest.byteLength || sha256(bytes) !== manifest.contentHash) throw new Error(`Artifact integrity check failed: ${ref.artifactId}.`);
+    if (bytes.byteLength !== manifest.byteLength || sha256(bytes) !== manifest.contentHash) throw new Error(`Artifact integrity check failed: ${manifest.artifactId}.`);
     return bytes;
   }
 
@@ -530,8 +601,14 @@ function errorCode(error: unknown): string {
   return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'unknown';
 }
 
-function isArtifactManifest(value: unknown): value is ArtifactManifest {
-  return Value.Check(ArtifactManifestSchema, value);
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+    throw error;
+  }
 }
 
 async function readEvents(eventsPath: string): Promise<EventEnvelope[]> {
@@ -554,17 +631,17 @@ async function readEvents(eventsPath: string): Promise<EventEnvelope[]> {
     if (event.schemaVersion !== SCHEMA_VERSION) {
       throw new Error(`unsupported_schema: event schemaVersion ${event.schemaVersion} at sequence ${index + 1}.`);
     }
-    return event;
+    return freezeEvent(event);
   });
 }
 
 async function repairIncompleteTail(eventsPath: string): Promise<void> {
-  let content: string;
+  let content: Buffer;
   try {
-    content = await readFile(eventsPath, 'utf8');
+    content = await readFile(eventsPath);
   } catch (error: unknown) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
     throw error;
   }
-  if (!content.endsWith('\n')) await truncate(eventsPath, content.lastIndexOf('\n') + 1);
+  if (content.length > 0 && content.at(-1) !== 10) await truncate(eventsPath, content.lastIndexOf(10) + 1);
 }

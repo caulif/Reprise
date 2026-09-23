@@ -1,4 +1,5 @@
 import { Value } from "@sinclair/typebox/value";
+import { runOperationId } from "../../core/identity.js";
 import {
   RecoveryPreTaskDiagnosisSchema,
 } from "../../core/schema.js";
@@ -41,14 +42,16 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   await store.append({
     type: "recovery.readiness_checked",
     runId: input.runId,
-    operationId: "recovery-readiness-checked",
+    operationId: runOperationId(input.runId, "recovery-readiness-checked"),
     payload: {
       status: session.readinessResult.status,
       missingPathCount: session.readinessResult.missingPaths.length,
       commandCheckCount: session.readinessResult.commandChecks.length,
     },
   });
-  session.activeProviderPreview = validated;
+  session.activeProviderPreview = validated.reportText && validated.baseline.recovery
+    ? { ...validated, baseline: { ...validated.baseline, recovery: { ...validated.baseline.recovery, reportRunId: input.runId } } }
+    : validated;
   await recordRecoveryAttempt(
     session,
     recoveryAttemptRecord({
@@ -87,7 +90,7 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
     await store.append({
       type: "recovery.lifecycle_completed",
       runId: input.runId,
-      operationId: "recovery-lifecycle-accepted-automatically",
+      operationId: runOperationId(input.runId, "recovery-lifecycle-accepted-automatically"),
       payload: { state: lifecycleState(session), automatic: true, taskOutcome: session.taskOutcome },
     });
     session.activeProviderPreview = { ...session.activeProviderPreview, baseline: session.automaticallyAcceptedBaseline, accepted: true };
@@ -107,11 +110,11 @@ async function applyPreTaskReadyGate(
   if (!Value.Check(RecoveryPreTaskDiagnosisSchema, preTask)) {
     throw new Error("Recovery pre-task diagnosis does not match RecoveryPreTaskDiagnosisSchema.");
   }
-  await writeImmutableJson(join(session.experimentRoot, "recovery-pre-task.json"), preTask);
+  await writeImmutableJson(join(session.experimentRoot, "runs", input.runId, "recovery-pre-task.json"), preTask);
   await store.append({
     type: "recovery.warning",
     runId: input.runId,
-    operationId: "recovery-pre-task-head",
+    operationId: runOperationId(input.runId, "recovery-pre-task-head"),
     payload: {
       summary: preTask.reasons[0] ?? "Work-copy HEAD is not the pre-task commit.",
       head: preTask.head,
@@ -175,6 +178,7 @@ async function persistRecoveryCompletionArtifacts(
   );
   await store.commitArtifact({
     artifactId: "recovery-attempts",
+    runId: input.runId,
     kind: "recovery_attempts",
     mediaType: "application/json",
     bytes: attemptsArtifact,
@@ -183,6 +187,7 @@ async function persistRecoveryCompletionArtifacts(
   if (activeProviderPreview.reportText) {
     await store.commitArtifact({
       artifactId: "recovery-md",
+      runId: input.runId,
       kind: "recovery_report",
       mediaType: "text/markdown",
       bytes: Buffer.from(activeProviderPreview.reportText, "utf8"),
@@ -196,6 +201,7 @@ async function persistRecoveryCompletionArtifacts(
   });
   await persistRecoveryAttemptDiagnosis(
     session.experimentRoot,
+    input.runId,
     recoveryAttemptDiagnosis({
       taskCase: input.taskCase,
       baseline: activeProviderPreview.baseline,
@@ -241,6 +247,8 @@ function completeRecoveryAttempt(session: RecoveryRunSession): RecoveryAttempt {
     recovery,
     experimentRoot: session.experimentRoot,
     experimentId: input.experimentId,
+    runId: input.runId,
+    diagnosisPath: join("runs", input.runId, "recovery-diagnosis.json"),
     provider: session.provider,
     ...(exposeAccept
       ? {

@@ -11,7 +11,9 @@ import {
 } from "./comparison-schema.js";
 export { EvidenceRefSchema, type EvidenceRef } from "./schemas/ids.js";
 export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js";
+export { RecoveryMarkerSchema } from "./schemas/recovery-marker.js";
 export { EventEnvelopeSchema, type EventEnvelope } from "./schemas/event.js";
+export { ArtifactManifestSchema, type ArtifactManifest } from "./schemas/artifact.js";
 export {
   SessionRecoveryAttemptSchema,
   type SessionRecoveryAttemptRecord,

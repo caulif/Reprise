@@ -3,6 +3,7 @@ import { spawn, type SpawnOptions } from 'node:child_process';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openPathInvocation } from '../infrastructure/platform.js';
+import { replicaWorkspaceLocation } from '../application/result-paths.js';
 
 type ReportProcess = {
   once(event: 'error', listener: (error: Error) => void): void;
@@ -52,8 +53,9 @@ export async function openExperimentReplica(
   experimentRoot: string,
   runId: string,
   start: ReportSpawner = spawn,
+  recordedWorkspaceRoot?: string,
 ): Promise<void> {
-  await openLocalPath(assertExperimentReplicaPath(experimentRoot, runId), start);
+  await openLocalPath(assertExperimentReplicaPath(experimentRoot, runId, recordedWorkspaceRoot), start);
 }
 
 export async function openAllowedLocalPath(
@@ -110,8 +112,12 @@ export function assertExperimentTracePath(experimentRoot: string, runId: string)
   return assertExperimentRunFolder(experimentRoot, runId, 'runs', 'Trace');
 }
 
-export function assertExperimentReplicaPath(experimentRoot: string, runId: string): string {
-  return assertExperimentRunFolder(experimentRoot, runId, join('environment', 'runs'), 'Replica');
+export function assertExperimentReplicaPath(experimentRoot: string, runId: string, recordedWorkspaceRoot?: string): string {
+  const legacyPath = assertExperimentRunFolder(experimentRoot, runId, join('environment', 'runs'), 'Replica');
+  if (!recordedWorkspaceRoot) return legacyPath;
+  const location = replicaWorkspaceLocation(experimentRoot, runId, recordedWorkspaceRoot);
+  if (!location) throw new Error('Replica path is outside the selected experiment.');
+  return location.workspaceRoot;
 }
 
 function assertExperimentRunFolder(experimentRoot: string, runId: string, relativeRuns: string, label: string): string {

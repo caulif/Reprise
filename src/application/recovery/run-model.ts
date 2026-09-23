@@ -1,4 +1,4 @@
-import { sha256 } from "../../core/identity.js";
+import { runOperationId, sha256 } from "../../core/identity.js";
 import type { RecoveryContext, RecoveryResult } from "../../agents/recovery-agent.js";
 import type { RecoveryDecision } from "../../core/schema.js";
 import { completedRecoveryFreeformTurns } from "../../agents/recovery-agent.js";
@@ -101,7 +101,7 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
       await store.append({
         type: "recovery.controlled_write",
         runId: input.runId,
-        operationId: `recovery-controlled-write-${persistedEntry.tool}-${persistedEntry.phase}-${sha256(JSON.stringify(persistedEntry)).slice(0, 16)}`,
+        operationId: runOperationId(input.runId, `recovery-controlled-write-${persistedEntry.tool}-${persistedEntry.phase}-${sha256(JSON.stringify(persistedEntry)).slice(0, 16)}`),
         payload: persistedEntry,
       });
     },
@@ -109,7 +109,7 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
       await store.append({
         type: "recovery.workspace_read",
         runId: input.runId,
-        operationId: `recovery-workspace-read-${operation.operation}-${operation.attempts}-${sha256(JSON.stringify(operation)).slice(0, 16)}`,
+        operationId: runOperationId(input.runId, `recovery-workspace-read-${operation.operation}-${operation.attempts}-${sha256(JSON.stringify(operation)).slice(0, 16)}`),
         payload: operation,
       });
     },
@@ -172,7 +172,7 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
     await store.append({
       type: "recovery.model_retry",
       runId: input.runId,
-      operationId: `recovery-model-retry-${session.modelAttempts + 1}`,
+      operationId: runOperationId(input.runId, `recovery-model-retry-${session.modelAttempts + 1}`),
       payload: {
         caseId: input.caseId,
         attempt: session.modelAttempts + 1,
@@ -181,20 +181,20 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
     });
   }
   if (!session.recovery) throw new Error("Recovery model did not return an invocation result.");
-  await writeImmutableJson(join(experimentRoot, "recovery.json"), session.recovery);
+  await writeImmutableJson(join(experimentRoot, "runs", input.runId, "recovery.json"), session.recovery);
   if (session.recovery.status === "completed") {
     const decision = session.recovery.value;
     await store.append({
       type: "recovery.decision_submitted",
       runId: input.runId,
-      operationId: "recovery-decision-submitted",
+      operationId: runOperationId(input.runId, "recovery-decision-submitted"),
       payload: { status: decision.status, summary: decision.summary, unresolvedCount: decision.unresolved.length },
     });
   }
   await store.append({
     type: "recovery.completed",
     runId: input.runId,
-    operationId: "recovery-completed",
+    operationId: runOperationId(input.runId, "recovery-completed"),
     payload: invocationFact(session.recovery),
   });
   if (session.recovery.status !== "completed") {
@@ -227,7 +227,7 @@ async function persistRecoveryModelInput(
   await store.append({
     type: "recovery.model_input",
     runId: input.runId,
-    operationId: `recovery-model-input-${attempt}`,
+    operationId: runOperationId(input.runId, `recovery-model-input-${attempt}`),
     payload: { caseId: input.caseId, attempt, artifactId: artifact.artifactId, contentHash: artifact.contentHash, byteLength: artifact.byteLength },
   });
 }
@@ -322,7 +322,7 @@ async function persistMechanicalFeedbackInput(session: RecoveryRunSession, nextA
   await store.append({
     type: "recovery.model_input",
     runId: input.runId,
-    operationId: `recovery-model-input-feedback-${nextAttempt}`,
+    operationId: runOperationId(input.runId, `recovery-model-input-feedback-${nextAttempt}`),
     payload: {
       caseId: input.caseId,
       attempt: nextAttempt,
@@ -335,7 +335,7 @@ async function persistMechanicalFeedbackInput(session: RecoveryRunSession, nextA
   await store.append({
     type: "recovery.readiness_feedback",
     runId: input.runId,
-    operationId: `recovery-mechanical-feedback-${nextAttempt}`,
+    operationId: runOperationId(input.runId, `recovery-mechanical-feedback-${nextAttempt}`),
     payload: {
       artifactId: feedbackArtifact.artifactId,
       facts,
@@ -350,7 +350,7 @@ async function restartRecoveryWorkspace(session: RecoveryRunSession): Promise<vo
   await session.store.append({
     type: "recovery.workspace_reset",
     runId: input.runId,
-    operationId: `recovery-workspace-reset-${session.modelAttempts}`,
+    operationId: runOperationId(input.runId, `recovery-workspace-reset-${session.modelAttempts}`),
     payload: { caseId: input.caseId },
   });
   await Promise.resolve(input.recovery.releasePreparation?.(input.experimentId));
