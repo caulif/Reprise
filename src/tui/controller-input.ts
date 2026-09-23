@@ -630,8 +630,8 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
     return c.readingMode ? exitReadingMode(c) : enterReadingMode(c);
   }
   if (c.readingMode && !c.finding && matchesKey(data, 'escape')) return exitReadingMode(c);
-  // pi-tui owns native text selection while reading. Do not let a late/injected
-  // SGR event move the application timeline, but retain keyboard canvas controls.
+  // The viewport wrapper routes selection gestures before this listener.
+  // Ignore directly injected SGR here without moving the application timeline.
   if (c.readingMode && !c.finding && isSgrMouseInput(data)) return undefined;
   const canvas = applyCanvas(c, data);
   if (canvas) return canvas;

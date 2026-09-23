@@ -34,7 +34,8 @@ function wireIntakeTui(target: IntakeTui, options: IntakeTuiOptions): void {
         target.openFileUrl(url);
       },
     });
-  yieldPointerToApp(target.tui);
+  yieldPointerToApp(target.tui, () => target.page === 'running' && target.readingMode
+    && !target.finding && !target.helpOverlay && !target.inlineHelp && !target.activityDetailOverlay);
   target.workbench = new Workbench(
     () => target.view(),
     () => target.viewport(),

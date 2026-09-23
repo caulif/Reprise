@@ -25,13 +25,13 @@ type ViewportPointerHost = {
   handleViewportInput?: (data: string) => { consume?: true } | undefined;
 };
 
-/** pi-tui registers `handleViewportInput` first and consumes SGR; yield wheel/click to the app. */
-export function yieldPointerToApp(host: object): void {
+/** The first listener must receive selection presses; later listeners cannot replay a skipped press. */
+export function yieldPointerToApp(host: object, selectionOwnsPointer: () => boolean = () => false): void {
   const target = host as ViewportPointerHost;
   const inner = target.handleViewportInput;
   if (typeof inner !== 'function') return;
   target.handleViewportInput = (data: string) => {
-    if (isAppOwnedPointer(data)) return undefined;
+    if (!selectionOwnsPointer() && isAppOwnedPointer(data)) return undefined;
     return inner.call(target, data);
   };
 }
