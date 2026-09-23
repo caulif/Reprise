@@ -16,6 +16,7 @@ export type ActionId =
   | 'next-hit'
   | 'prev-hit'
   | 'follow'
+  | 'select-copy'
   | 'leave-reading'
   | 'enter-reading'
   | 'toggle-fold'
@@ -131,6 +132,7 @@ function runningActions(mode: ActionMode): readonly UiAction[] {
   const help = action('show-help', 'hintHelp', ['?'], 'readonly', 5);
   if (mode.reading) {
     return [
+      action('select-copy', 'hintSelectCopy', ['drag'], 'readonly', 35),
       action('leave-reading', 'hintLeaveReading', ['v', 'escape'], 'navigate', 30),
       cancel,
       help,

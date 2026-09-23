@@ -265,6 +265,11 @@ export function parseSgrMouse(data: string): SgrMouse | undefined {
   };
 }
 
+/** A selection-mode pointer event belongs to the terminal, not the canvas. */
+export function isSgrMouseInput(data: string): boolean {
+  return parseSgrMouse(unwrapBracketedPaste(data)) !== undefined;
+}
+
 export function dispatchCanvasInput(
   state: CanvasFindState,
   data: string,

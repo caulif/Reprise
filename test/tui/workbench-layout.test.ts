@@ -79,3 +79,19 @@ test('short cancelling workbench keeps live status when body budget is under fou
   assert.match(text, /Codex · (working|等待新的可见活动)|working/);
   assert.match(text, /03:00/);
 });
+
+test('reading mode paints selection guidance in the notice rail', () => {
+  const view: WorkbenchView = {
+    page: 'running', cwd: 'C:\\src', hasApiConfig: true, hasTaskCase: true,
+    message: 'Selection mode on: drag to select; the terminal copies on release. The body is frozen while status still updates.',
+    locale: 'en',
+    running: {
+      entries: [], selected: 0, filter: 'ALL', following: false, currentState: undefined,
+      elapsed: '00:01', turns: { used: 0 }, calls: { used: 0 }, readingMode: true,
+    },
+  };
+  const text = renderWorkbench(view, 120, 24).join('\n');
+  assert.match(text, /Selection mode on: drag to select; the terminal copies on release/);
+  assert.match(text, /\[Drag\].*Select and copy in terminal/);
+  assert.doesNotMatch(text, /Copied|已复制/);
+});

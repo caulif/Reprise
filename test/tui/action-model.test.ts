@@ -37,6 +37,14 @@ test('result footer hides missing artifacts and keeps compare when pending', () 
   assert.ok(!withCompare.some(([key]) => key === 'h' || key === 'f'));
 });
 
+test('reading footer describes terminal selection without claiming a copy completed', () => {
+  for (const [locale, expected] of [['en', 'Select and copy in terminal'], ['zh', '终端拖选复制']] as const) {
+    const hints = runningFooterHints(locale, { preparing: false, reading: true });
+    assert.ok(hints.some(([key, label]) => key === 'Drag' && label === expected));
+    assert.ok(hints.some(([key]) => key === 'v'));
+  }
+});
+
 test('disabled open-report key matches but stays disabled', () => {
   const actions = listActions({
     page: 'result',
