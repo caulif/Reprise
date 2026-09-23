@@ -94,7 +94,7 @@ test("preflight is read-only and successful comparison writes a persisted narrat
   );
   const report = await readFile(result.reportPath, "utf8");
   assert.match(report, /data-host-zone="style"/);
-  assert.match(report, /<svg>/);
+  assert.doesNotMatch(report, /<svg>/);
   assert.doesNotMatch(report, /<script>/);
   assert.match(report, /Evidence-based narrative/);
   assert.ok(

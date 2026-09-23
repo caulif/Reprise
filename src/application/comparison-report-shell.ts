@@ -54,12 +54,13 @@ function descendants(node: HtmlNode): HtmlNode[] {
 }
 
 function unsafeAgentContent(node: HtmlNode): string | undefined {
-  const activeTags = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "base", "link", "dialog"]);
+  const activeTags = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "base", "link", "dialog", "svg", "math"]);
   const urlAttrs = new Set(["href", "xlink:href", "src", "poster", "cite", "action", "formaction", "background", "data"]);
   const tag = node.tagName?.toLowerCase();
   if (tag && activeTags.has(tag)) return `Agent content cannot contain <${tag}>.`;
   for (const attr of node.attrs ?? []) {
     const name = attr.name.toLowerCase();
+    if (name === "data-host-zone") return "Agent content cannot contain a Host zone marker.";
     if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "ping" || name === "style"
       || name === "popover" || name === "popovertarget" || name === "popovertargetaction") {
       return `Agent content cannot contain ${name}.`;

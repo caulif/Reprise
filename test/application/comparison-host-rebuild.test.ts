@@ -155,6 +155,52 @@ test("native overlays cannot cover Host facts in either publication path", async
   }
 });
 
+test("foreign markup cannot paint outside Agent zones in either publication path", async () => {
+  const payloads = [
+    '<svg width="5000" height="5000"><rect width="5000" height="5000" fill="white"/><text x="20" y="40">FAKE HOST FACTS</text></svg>',
+    '<svg width="1" height="1" overflow="visible"><rect x="0" y="-180" width="1000" height="180" fill="white"/><text x="20" y="-100" font-size="26">FAKE HOST FACTS</text></svg>',
+    '<SVG viewBox="0 0 1 1" overflow="visible"><foreignObject x="-1000" y="-1000" width="5000" height="5000">FAKE HOST FACTS</foreignObject></SVG>',
+    '<math><annotation-xml encoding="text/html"><svg width="5000" height="5000"></svg></annotation-xml></math>',
+  ];
+  for (const payload of payloads) {
+    const html = draft(payload);
+    for (const input of [
+      { hostTask: "Host 原任务文案。" },
+      {},
+    ]) {
+      const result = await verifyAndRenderComparisonReport({
+        html, facts,
+        result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+        attemptRoot: ".", media: [], ...input,
+      });
+      assert.equal("html" in result, false, payload);
+      if (!("html" in result)) {
+        assert.equal(result.code, "report_incomplete", payload);
+        assert.match(result.message, /svg|math/i, payload);
+      }
+    }
+  }
+});
+
+test("an Agent marker cannot also claim a Host zone in either publication path", async () => {
+  const html = draft().replace(
+    '<section class="slot" data-agent-zone="comparison"',
+    '<section class="slot" data-agent-zone="comparison" data-host-zone="header"',
+  );
+  for (const input of [{ hostTask: "Host 原任务文案。" }, {}]) {
+    const result = await verifyAndRenderComparisonReport({
+      html, facts,
+      result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+      attemptRoot: ".", media: [], ...input,
+    });
+    assert.equal("html" in result, false);
+    if (!("html" in result)) {
+      assert.equal(result.code, "report_incomplete");
+      assert.match(result.message, /Host zone marker/);
+    }
+  }
+});
+
 test("markers hidden in template content are still counted", async () => {
   const duplicate = draft().replace(
     "</body>",
