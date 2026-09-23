@@ -744,7 +744,7 @@ test("current harness comparison model is not the candidate vs title", () => {
   assert.doesNotMatch(html, /vs deepseek-flash/);
 });
 
-test("share-card presentation reverse cases still publish after Host repair", async () => {
+test("share-card presentation repairs content and rejects inline styles", async () => {
   const reportFacts = facts();
   const base = renderComparisonReportShell({
     task: "修复报告。",
@@ -780,10 +780,8 @@ test("share-card presentation reverse cases still publish after Host repair", as
     attemptRoot: ".",
     media: [],
   });
-  assert.equal("html" in underline, true);
-  if ("html" in underline) {
-    assert.doesNotMatch(underline.html, /text-decoration:underline/);
-  }
+  assert.equal("html" in underline, false);
+  if (!("html" in underline)) assert.equal(underline.code, "report_incomplete");
 
   const writtenBy = base.replace(
     '<p class="note" data-agent-slot="headline">候选把讨论推进成了可继续使用的文件。</p>',

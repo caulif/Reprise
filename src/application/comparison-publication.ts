@@ -16,6 +16,7 @@ import { candidateStatusLabel, reportString, type ComparisonReportStringKey } fr
 import {
   AGENT_ZONES,
   agentContentFromDraft,
+  agentInlineStyleError,
   agentZoneBlank,
   extractHostZoneSnapshot,
   extractInner,
@@ -109,6 +110,10 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
   { html: string; model: ComparisonReportModel } | VerificationFailure
 > {
   const locale = input.locale ?? "zh";
+  if (input.hostTask === undefined) {
+    const styleError = agentInlineStyleError(input.html);
+    if (styleError) return { failureClass: "publication", code: "report_incomplete", message: styleError };
+  }
   const metrics = metricsFromReportFacts(input.facts);
   const rebuilt = rebuildHostReport(input, metrics, locale);
   if ("failureClass" in rebuilt) return rebuilt;
@@ -572,7 +577,6 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
   const share = shareArticleHtml(next);
   if (share) {
     const shareFixed = share
-      .replace(/\sstyle=(["'])[^"']*text-decoration\s*:\s*underline[^"']*\1/gi, "")
       .replace(/<u\b[^>]*>/gi, "")
       .replace(/<\/u>/gi, "");
     if (shareFixed !== share) next = next.replace(share, shareFixed);

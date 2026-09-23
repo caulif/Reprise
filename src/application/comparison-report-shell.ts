@@ -60,15 +60,12 @@ function unsafeAgentContent(node: HtmlNode): string | undefined {
   if (tag && activeTags.has(tag)) return `Agent content cannot contain <${tag}>.`;
   for (const attr of node.attrs ?? []) {
     const name = attr.name.toLowerCase();
-    if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "ping") {
+    if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "ping" || name === "style") {
       return `Agent content cannot contain ${name}.`;
     }
     const value = attr.value.replace(/[\u0000-\u0020\u007f]/g, "").toLowerCase();
     if (urlAttrs.has(name) && (/^[a-z][\w+.-]*:/.test(value) || value.startsWith("//") || value.startsWith("\\\\"))) {
       return `Agent content contains an unsafe ${name} URL.`;
-    }
-    if (name === "style" && /url\(['"]?(?:[a-z][\w+.-]*:|\/\/|\\\\)|@import/i.test(value)) {
-      return "Agent content contains an unsafe style URL.";
     }
   }
   for (const child of descendants(node)) {
@@ -76,6 +73,16 @@ function unsafeAgentContent(node: HtmlNode): string | undefined {
     if (error) return error;
   }
   return undefined;
+}
+
+export function agentInlineStyleError(html: string): string | undefined {
+  const root = parse(html) as unknown as HtmlNode;
+  const visit = (node: HtmlNode, inAgent: boolean): boolean => {
+    const inside = inAgent || Boolean(node.attrs?.some((attr) => attr.name === "data-agent-zone" || attr.name === "data-agent-slot"));
+    if (inside && node.attrs?.some((attr) => attr.name.toLowerCase() === "style")) return true;
+    return descendants(node).some((child) => visit(child, inside));
+  };
+  return visit(root, false) ? "Agent content cannot contain style." : undefined;
 }
 
 export function agentContentFromDraft(html: string):

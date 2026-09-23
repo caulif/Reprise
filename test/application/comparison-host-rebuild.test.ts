@@ -106,6 +106,29 @@ test("active Agent HTML cannot reach the published report through parser normali
   assert.equal("html" in localAnchor, true);
 });
 
+test("Agent inline styles cannot cover Host facts in a published report", async () => {
+  const payloads = [
+    '<div style="position:fixed;inset:0;z-index:2147483647;background:white">FAKE HOST FACTS</div>',
+    '<div StYlE=position:fixed>FAKE HOST FACTS</div>',
+    '<p style="color:red">Styled conclusion</p>',
+  ];
+  for (const payload of payloads) {
+    const result = await verify(draft(payload));
+    assert.equal("html" in result, false, payload);
+    if (!("html" in result)) {
+      assert.equal(result.code, "report_incomplete", payload);
+      assert.match(result.message, /style/, payload);
+    }
+    const legacy = await verifyAndRenderComparisonReport({
+      html: draft(payload), facts,
+      result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+      attemptRoot: ".", media: [],
+    });
+    assert.equal("html" in legacy, false, payload);
+    if (!("html" in legacy)) assert.equal(legacy.code, "report_incomplete", payload);
+  }
+});
+
 test("markers hidden in template content are still counted", async () => {
   const duplicate = draft().replace(
     "</body>",
