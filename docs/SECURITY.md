@@ -24,4 +24,4 @@
 
 ## 修复与披露
 
-修复附带能够捕获该缺陷的回归证据；门禁改动还须满足[反向用例要求](./development.md#门禁必须能失败)。公开披露通过 GitHub Security Advisory 协调，用户可见说明写入 [CHANGELOG](./CHANGELOG.md)，不得夹带秘密或私有会话。普通使用问题见[根 README](../README.md#了解支持与贡献)。
+修复附带能够捕获该缺陷的回归证据；门禁改动还须满足[反向用例要求](./development.md#门禁必须能失败)。公开披露通过 GitHub Security Advisory 协调，用户可见说明写入 [CHANGELOG](./CHANGELOG.md)，不得夹带秘密或私有会话。普通使用问题见[中文 README](../README.zh-CN.md#支持与贡献)。
