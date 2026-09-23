@@ -5,12 +5,43 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { persistTaskCase } from '../../src/application/experiment-helpers.js';
-import { persistPreparedScene } from '../../src/application/experiment-scene.js';
+import { loadSealedScene, persistPreparedScene } from '../../src/application/experiment-scene.js';
 import { comparisonCandidateMount } from '../../src/application/experiment-report.js';
 import { LocalWorkspaceProvider } from '../../src/environment/local-workspace-provider.js';
+import { readBaselineMarker } from '../../src/environment/local-workspace-fs.js';
 import { listPublishedFrozenCases } from '../../src/products/shared/freeze.js';
 import { readLocalHistory } from '../../src/tui/local-history.js';
 import type { TaskCase } from '../../src/core/schema.js';
+
+test('baseline marker rejects an unsafe Recovery report run ID', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-unsafe-marker-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const markerPath = join(root, 'case.marker.json');
+  await writeFile(markerPath, JSON.stringify({ sourceFingerprint: 'digest', recovery: {
+    status: 'ready', unresolved: [], sourceDigest: 'digest', recoveredDigest: 'digest',
+    reportRef: 'recovery-md', reportRunId: '../outside',
+  } }));
+  await assert.rejects(readBaselineMarker(markerPath), /invalid Recovery data/);
+});
+
+test('legacy sealed scene without a Recovery provider run ID reopens from environment', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'reprise-legacy-scene-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const source = join(dataDir, 'source');
+  const experimentRoot = join(dataDir, 'experiments', 'legacy-scene');
+  const frozen = taskCase('legacy-case');
+  await mkdir(source, { recursive: true });
+  await writeFile(join(source, 'README.md'), '# legacy\n');
+  const provider = new LocalWorkspaceProvider(join(experimentRoot, 'environment'));
+  await provider.resolveBaseline({ caseId: frozen.caseId, sourceRoot: source }, [], {});
+  await persistTaskCase(join(dataDir, 'cases', frozen.caseId, 'case.json'), frozen);
+  await writeFile(join(experimentRoot, 'scene.json'), JSON.stringify({
+    schemaVersion: 1, experimentId: 'legacy-scene', caseId: frozen.caseId,
+    runId: 'legacy-run', sourceRoot: source, sealed: true,
+  }));
+  const reopened = await loadSealedScene(dataDir, 'legacy-scene');
+  assert.equal(reopened.attempt.baseline.root, join(experimentRoot, 'environment', 'baselines', frozen.caseId));
+});
 
 function taskCase(caseId: string): TaskCase {
   return {

@@ -1,6 +1,8 @@
 import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { Value } from '@sinclair/typebox/value';
 import { formatBytes } from '../core/format.js';
 import { SAFE_ID, sha256, sha256File, writeAtomic } from '../core/identity.js';
+import { RecoveryMarkerSchema } from '../core/schema.js';
 import { dirname, join, resolve } from 'node:path';
 import { relativeInside } from '../core/paths.js';
 import { isRecoveryPath } from '../infrastructure/recovery-tools.js';
@@ -150,7 +152,10 @@ export async function readBaselineMarker(path: string): Promise<BaselineMarker |
   }
   const marker = parsed !== null && typeof parsed === 'object' ? parsed as { sourceFingerprint?: unknown; recovery?: unknown } : undefined;
   if (typeof marker?.sourceFingerprint !== 'string' || !marker.sourceFingerprint) throw new Error(`Baseline marker ${path} is unreadable. Delete its directory to recapture the baseline.`);
-  return marker.recovery && isRecoveryMarker(marker.recovery) ? { sourceFingerprint: marker.sourceFingerprint, recovery: marker.recovery } : { sourceFingerprint: marker.sourceFingerprint };
+  if (marker.recovery !== undefined && !Value.Check(RecoveryMarkerSchema, marker.recovery)) {
+    throw new Error(`Baseline marker ${path} has invalid Recovery data.`);
+  }
+  return marker.recovery !== undefined ? { sourceFingerprint: marker.sourceFingerprint, recovery: marker.recovery } : { sourceFingerprint: marker.sourceFingerprint };
 }
 
 export async function cleanupRecoveryTransients(root: string): Promise<void> {
@@ -320,13 +325,6 @@ async function resolveSafeLink(
   return { action: 'skip', reasonCode: 'workspace.unsupported_entry' };
 }
 
-
-function isRecoveryMarker(value: unknown): value is NonNullable<EnvironmentBaseline['recovery']> {
-  if (!value || typeof value !== 'object') return false;
-  const item = value as Partial<NonNullable<EnvironmentBaseline['recovery']>>;
-  return (item.status === 'ready' || item.status === 'blocked' || item.status === 'recovered' || item.status === 'partial' || item.status === 'insufficient_evidence' || item.status === 'failed')
-    && Array.isArray(item.unresolved) && typeof item.sourceDigest === 'string' && typeof item.recoveredDigest === 'string';
-}
 
 export async function copyTree(source: string, destination: string): Promise<void> {
   await copyTreeFrom(source, destination, source, new Set());

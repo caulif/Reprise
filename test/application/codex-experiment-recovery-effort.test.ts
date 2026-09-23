@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { RecoveryAgent, type RecoveryAgentPort } from "../../src/agents/recovery-agent.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
 import { startExperiment } from "../../src/application/experiment.js";
+import { comparePersistedExperiment } from "../../src/application/experiment-compare-persisted.js";
+import { assertExperimentReplicaPath } from "../../src/tui/open-report.js";
+import { replicaWorkspaceLocation } from "../../src/application/result-paths.js";
 import { AgentHost } from "../../src/infrastructure/agent/host.js";
 import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
@@ -60,7 +63,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
   assert.ok(attempt.providerPreview);
   assert.equal(
     await readFile(
-      join(attempt.experimentRoot, "artifacts", "recovery-md"),
+      join(attempt.experimentRoot, "runs", "recovery-run", "artifacts", "recovery-md"),
       "utf8",
     ).then((value) => value.includes("Recovery")),
     true,
@@ -75,10 +78,55 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
     policy: { ...base.policy, ...patientPolicy },
   }).result;
   assert.equal(result.record.outcome.termination.kind, "completed");
+  assert.ok(replicaWorkspaceLocation(attempt.experimentRoot, 'candidate-run', result.record.manifest?.environment.workspacePath ?? ''), result.record.manifest?.environment.workspacePath);
   assert.match(
     await readFile(result.reportPath, "utf8"),
     /artifacts\/recovery-md.*recovery_report/,
   );
+  const newReportRef = result.record.artifactRefs.find((ref) => ref.artifactId === 'recovery-md');
+  if (!newReportRef || !('experimentId' in newReportRef)) throw new Error('Run-owned Recovery report reference is missing.');
+  assert.equal(newReportRef.runId, 'recovery-run');
+  const store = await ExperimentStore.open(attempt.experimentRoot, "recovery-experiment");
+  await store.acquireWriter();
+  await store.commitArtifact({ artifactId: "recovery-md", kind: "recovery_report", mediaType: "text/markdown", bytes: Buffer.from("# Legacy recovery\n") });
+  await store.close();
+  if (!accepted.recovery) throw new Error('Recovery baseline is missing.');
+  const legacyRecovery = { ...accepted.recovery };
+  delete legacyRecovery.reportRunId;
+  const legacyBaseline = { ...accepted, recovery: legacyRecovery };
+  const legacyResult = await startExperiment({
+    ...base,
+    experimentId: "recovery-experiment",
+    runId: "candidate-legacy-run",
+    environmentProvider: attempt.provider,
+    preResolvedBaseline: legacyBaseline,
+    compare: false,
+    policy: { ...base.policy, ...patientPolicy },
+  }).result;
+  const replicaPath = legacyResult.record.manifest?.environment.workspacePath;
+  assert.ok(replicaPath);
+  assert.equal(legacyResult.pathLinks?.replica, replicaPath);
+  assert.equal(assertExperimentReplicaPath(attempt.experimentRoot, 'candidate-legacy-run', replicaPath), replicaPath);
+  const persistedComparison = await comparePersistedExperiment({
+    dataDir: base.dataDir,
+    experimentId: 'recovery-experiment',
+    runId: 'candidate-legacy-run',
+    comparison: base.comparison,
+    agentConfig: base.agentConfig,
+    policy: { ...base.policy, ...patientPolicy },
+    now,
+  });
+  assert.equal(persistedComparison.pathLinks?.replica, replicaPath);
+  const legacyReportRef = legacyResult.record.artifactRefs.find((ref) => ref.artifactId === 'recovery-md');
+  if (!legacyReportRef || !('experimentId' in legacyReportRef)) throw new Error('Legacy Recovery report reference is missing.');
+  assert.equal(legacyReportRef.runId, undefined);
+  const verifyStore = await ExperimentStore.open(attempt.experimentRoot, 'recovery-experiment');
+  try {
+    assert.equal((await verifyStore.readArtifact(newReportRef)).toString(), '# Recovery\n\nRestored from current evidence.');
+    assert.equal((await verifyStore.readArtifact(legacyReportRef)).toString(), '# Legacy recovery\n');
+  } finally {
+    await verifyStore.close();
+  }
 });
 
 test("Recovery persists shell audit details alongside the report narrative for cross-checking", async (t) => {
@@ -151,7 +199,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
   assert.equal(isRecord(details) ? details.command : undefined, command);
   assert.match(
     await readFile(
-      join(attempt.experimentRoot, "artifacts", "recovery-md"),
+      join(attempt.experimentRoot, "runs", "recovery-audit-run", "artifacts", "recovery-md"),
       "utf8",
     ),
     /recovery-audit-marker/,
@@ -603,7 +651,7 @@ test("Recovery promotes a task-ready staging baseline automatically", async (t) 
   assert.equal(attempt.baseline.recovery?.taskOutcome, "ready_for_task");
   assert.equal(attempt.baseline.root?.includes("baselines"), true);
   assert.equal(await readFile(join(attempt.baseline.root ?? "", "README.md"), "utf8"), "# continue recovered\n");
-  const lifecycle = JSON.parse(await readFile(join(attempt.experimentRoot, "artifacts", "recovery-attempts"), "utf8")) as { state: string };
+  const lifecycle = JSON.parse(await readFile(join(attempt.experimentRoot, "runs", "recovery-auto-ready-run", "artifacts", "recovery-attempts"), "utf8")) as { state: string };
   assert.equal(lifecycle.state, "accepted");
   assert.ok(events.some((event) => event.type === "recovery.lifecycle_completed"));
   assert.equal(events.filter((event) => event.type === "recovery.lifecycle_completed").length, 1);
@@ -796,7 +844,7 @@ test("insufficient evidence does not loop for missing paths and cannot be accept
   assert.equal(attempt.accept === undefined, true);
   assert.equal(attempt.acceptedAutomatically, undefined);
   assert.equal(attempt.baseline.recovery?.status, "blocked");
-  const diagnosis = JSON.parse(await readFile(join(attempt.experimentRoot, "recovery-diagnosis.json"), "utf8")) as { finalStatus: string };
+  const diagnosis = JSON.parse(await readFile(join(attempt.experimentRoot, "runs", "recovery-insufficient-stop-run", "recovery-diagnosis.json"), "utf8")) as { finalStatus: string };
   assert.equal(diagnosis.finalStatus, "blocked");
 });
 

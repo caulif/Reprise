@@ -32,7 +32,10 @@ export async function persistPreparedScene(attempt: RecoveryAttempt, sourceRoot:
     schemaVersion: 1,
     experimentId: attempt.experimentId || "pending",
     caseId: taskCase.caseId || "pending",
-    runId: attempt.experimentId || "pending",
+    runId: attempt.runId ?? attempt.experimentId ?? "pending",
+    ...(attempt.runId && attempt.baseline.root &&
+      resolve(attempt.baseline.root) === resolve(attempt.experimentRoot, "environment", "recovery", attempt.runId, "baselines", taskCase.caseId)
+      ? { recoveryProviderRunId: attempt.runId } : {}),
     sourceRoot: recordedFsPath(sourceRoot),
     sealed,
   };
@@ -62,9 +65,12 @@ export async function loadSealedScene(dataDir: string, experimentId: string): Pr
   if (!Value.Check(TaskCaseSchema, taskCaseValue)) {
     throw new CliError("not_found", `TaskCase ${descriptorValue.caseId} was not found.`, descriptorValue.caseId);
   }
-  const provider = new LocalWorkspaceProvider(join(experimentRoot, "environment"));
-  const baselineRoot = join(experimentRoot, "environment", "baselines", descriptorValue.caseId);
-  const recorded = await readBaselineMarker(join(experimentRoot, "environment", "baselines", `${descriptorValue.caseId}.marker.json`));
+  const providerRoot = descriptorValue.recoveryProviderRunId
+    ? join(experimentRoot, "environment", "recovery", descriptorValue.recoveryProviderRunId)
+    : join(experimentRoot, "environment");
+  const provider = new LocalWorkspaceProvider(providerRoot);
+  const baselineRoot = join(providerRoot, "baselines", descriptorValue.caseId);
+  const recorded = await readBaselineMarker(join(providerRoot, "baselines", `${descriptorValue.caseId}.marker.json`));
   if (!recorded) throw new CliError("failed", `Sealed baseline for ${descriptorValue.caseId} is missing.`, experimentId);
   const baseline = await loadSealedBaseline(descriptorValue.caseId, baselineRoot, recorded);
   const attempt: RecoveryAttempt = {
@@ -72,6 +78,7 @@ export async function loadSealedScene(dataDir: string, experimentId: string): Pr
     recovery: { status: "completed", sessionId: `scene-${experimentId}`, value: { status: "ready", summary: baseline.recovery?.summary ?? "Sealed baseline is ready for the original task.", reportPath: "recovery.md", unresolved: [] } },
     experimentRoot,
     experimentId,
+    runId: descriptorValue.runId,
     provider,
     accept: async () => baseline,
     staging: { recoveryId: "sealed-scene", caseId: descriptorValue.caseId, sourceRoot: descriptorValue.sourceRoot, root: baselineRoot } as RecoveryStaging,

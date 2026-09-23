@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { runOperationId } from "../../core/identity.js";
 import type { RecoveryContext, RecoveryPlaybook, RecoveryResult } from "../../agents/recovery-agent.js";
 import type {
   RecoveryControlledWrite,
@@ -103,7 +104,7 @@ export async function createRecoveryRunSession(
     new LocalWorkspaceProvider(
       input.checkpointRoot
         ? dirname(dirname(resolve(input.checkpointRoot)))
-        : join(experimentRoot, "environment"),
+        : join(experimentRoot, "environment", "recovery", input.runId),
     );
   await mkdir(experimentRoot, { recursive: true });
   const store = await ExperimentStore.open(experimentRoot, input.experimentId);
@@ -126,7 +127,7 @@ export async function createRecoveryRunSession(
         await store.append({
           type: "recovery.attempt",
           runId: input.runId,
-          operationId: record.attemptId,
+          operationId: runOperationId(input.runId, record.attemptId),
           payload: { caseId: input.caseId, ...record },
         });
       },
@@ -184,7 +185,7 @@ export async function closeRecoveryRunSession(session: RecoveryRunSession): Prom
         await session.store.append({
           type: "recovery.artifact_cleanup_failed",
           runId: session.input.runId,
-          operationId: "recovery-artifact-cleanup-terminal-failed",
+          operationId: runOperationId(session.input.runId, "recovery-artifact-cleanup-terminal-failed"),
           payload: { terminalStatus, reasonCode: error instanceof Error ? error.name : "unknown" },
         });
       } catch {

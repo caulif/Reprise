@@ -423,7 +423,7 @@ async function startCandidateRun(args: {
     });
   }
   const recoveryArtifact = input.preResolvedBaseline?.recovery?.reportRef
-    ? (await store.listArtifacts()).find(
+    ? (await store.listArtifacts(input.preResolvedBaseline.recovery.reportRunId)).find(
         (artifact) =>
           artifact.artifactId ===
           input.preResolvedBaseline?.recovery?.reportRef,
@@ -433,6 +433,7 @@ async function startCandidateRun(args: {
     ? {
         artifactId: recoveryArtifact.artifactId,
         experimentId: input.experimentId,
+        ...(recoveryArtifact.owner.runId ? { runId: recoveryArtifact.owner.runId } : {}),
       }
     : undefined;
   const runnerRef: { session(): { sessionId: string } } = { session: () => ({ sessionId: "unstarted" }) };

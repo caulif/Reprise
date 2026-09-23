@@ -15,6 +15,7 @@ import {
   mediaTypeForComparisonPath,
 } from "./comparison-media.js";
 import { withEvidenceShortRefs } from "./comparison-short-refs.js";
+import { replicaWorkspaceLocation } from "./result-paths.js";
 import { isComparisonChangedPath } from "./controller-queries.js";
 import {
   augmentComparisonOpenableMedia,
@@ -156,7 +157,8 @@ export async function writeComparisonBriefing(input: {
     ...(link.evidenceRef ? { canonicalRef: link.evidenceRef } : {}),
   })), null, 2)}\n`;
   const candidateProcess = processIndex(input.events);
-  const gitSink = await loadGitSinkBriefing(input.experimentRoot, input.record.attempt.runId);
+  const gitSink = await loadGitSinkBriefing(input.experimentRoot, input.record.attempt.runId,
+    input.record.manifest?.environment.workspacePath ?? join(input.experimentRoot, 'environment', 'runs', input.record.attempt.runId));
   const files: Record<string, string> = {
     "INDEX.md": indexMarkdown,
     "task/initial-input.txt": input.taskCase.initialInput.text,
@@ -432,8 +434,10 @@ function manifestImageType(manifest: ArtifactManifest): string | undefined {
 
 function slash(path: string): string { return path.replaceAll("\\", "/"); }
 
-async function loadGitSinkBriefing(experimentRoot: string, runId: string): Promise<{ refsListing: string; catalogJson: string }> {
-  const sinkRoot = gitSinkRoot(join(experimentRoot, "environment"), runId);
+async function loadGitSinkBriefing(experimentRoot: string, runId: string, workspaceRoot: string): Promise<{ refsListing: string; catalogJson: string }> {
+  const location = replicaWorkspaceLocation(experimentRoot, runId, workspaceRoot);
+  if (!location) throw new Error('Candidate workspace is outside the selected experiment.');
+  const sinkRoot = gitSinkRoot(location.providerRoot, runId);
   await finalizeGitSinkCatalog(sinkRoot);
   const catalog = await readGitSinkManifest(sinkRoot) ?? {
     schemaVersion: 2 as const,

@@ -52,6 +52,10 @@ test('trace opener only accepts a run directory inside the selected experiment',
 
 test('replica opener only accepts the isolated run workspace inside the selected experiment', () => {
   assert.equal(assertExperimentReplicaPath(EXPERIMENT_ROOT, 'run-1').replaceAll('\\', '/'), REPLICA_PATH.replaceAll('\\', '/'));
+  const recoveryReplica = join(EXPERIMENT_ROOT, 'environment', 'recovery', 'recovery-run', 'runs', 'run-1');
+  assert.equal(assertExperimentReplicaPath(EXPERIMENT_ROOT, 'run-1', recoveryReplica), recoveryReplica);
+  assert.throws(() => assertExperimentReplicaPath(EXPERIMENT_ROOT, 'run-1', join(EXPERIMENT_ROOT, 'environment', 'recovery', 'recovery-run', 'runs', 'run-2')), /outside/);
+  assert.throws(() => assertExperimentReplicaPath(EXPERIMENT_ROOT, 'run-1', join(EXPERIMENT_ROOT, 'environment', 'recovery', '..', '..', 'outside', 'runs', 'run-1')), /outside/);
   assert.throws(() => assertExperimentReplicaPath(EXPERIMENT_ROOT, '../secret'), /Replica path/);
   assert.throws(() => assertExperimentReplicaPath(EXPERIMENT_ROOT, 'run/nested'), /Replica path/);
 });

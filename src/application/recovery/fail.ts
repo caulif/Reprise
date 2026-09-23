@@ -14,6 +14,7 @@ import { RecoveryValidationError } from "../../environment/local-workspace-provi
 import { RecoveryEvidenceValidationError } from "../../infrastructure/recovery-tools.js";
 import type { StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import { ExperimentStore, writeImmutableJson } from "../../infrastructure/store/experiment-store.js";
+import { runOperationId } from "../../core/identity.js";
 import type { RecoveryOrchestrator, RecoveryLifecycleState } from "./orchestrator.js";
 import type { RecoveryReadinessResult } from "./readiness.js";
 import type { RecoveryAttempt } from "./types.js";
@@ -137,7 +138,7 @@ export async function failRecoverExperiment(input: FailRecoverExperimentInput): 
   if (!Value.Check(RecoveryExplanationSchema, explanation)) {
     throw new Error("Recovery explanation does not match RecoveryExplanationSchema.");
   }
-  await writeImmutableJson(join(input.experimentRoot, "recovery-explanation.json"), explanation);
+  await writeImmutableJson(join(input.experimentRoot, "runs", input.attemptInput.runId, "recovery-explanation.json"), explanation);
   const failed = input.recovery ?? {
     status: "failed" as const,
     failure: {
@@ -164,6 +165,7 @@ export async function failRecoverExperiment(input: FailRecoverExperimentInput): 
   });
   await persistRecoveryAttemptDiagnosis(
     input.experimentRoot,
+    input.attemptInput.runId,
     recoveryAttemptDiagnosis({
       taskCase: input.attemptInput.taskCase,
       baseline: settled.baseline,
@@ -184,6 +186,8 @@ export async function failRecoverExperiment(input: FailRecoverExperimentInput): 
     recovery: failed,
     experimentRoot: input.experimentRoot,
     experimentId: input.attemptInput.experimentId,
+    runId: input.attemptInput.runId,
+    diagnosisPath: join("runs", input.attemptInput.runId, "recovery-diagnosis.json"),
     provider: input.provider,
   };
 }
@@ -202,16 +206,16 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
     await input.store.append({
       type: "recovery.preflight_failed",
       runId: input.attemptInput.runId,
-      operationId: "recovery-preflight-failed",
+      operationId: runOperationId(input.attemptInput.runId, "recovery-preflight-failed"),
       payload: diagnostic,
     });
   }
   let cleanupFailure: string | undefined;
   if (input.staging && failureStage === "provider_validation_failed") {
     try {
-      await persistRecoveryValidationArtifacts(input.store, input.staging);
+      await persistRecoveryValidationArtifacts(input.store, input.staging, input.attemptInput.runId);
     } catch (artifactError) {
-      await input.store.append({ type: "recovery.validation_artifact_failed", runId: input.attemptInput.runId, operationId: "recovery-validation-artifact-failed", payload: { reasonCode: artifactError instanceof Error ? artifactError.name : "unknown" } });
+      await input.store.append({ type: "recovery.validation_artifact_failed", runId: input.attemptInput.runId, operationId: runOperationId(input.attemptInput.runId, "recovery-validation-artifact-failed"), payload: { reasonCode: artifactError instanceof Error ? artifactError.name : "unknown" } });
     }
   }
   if (input.staging) {
@@ -219,7 +223,7 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
       await input.provider.discardRecovery(input.staging);
     } catch (cleanupError) {
       cleanupFailure = safeRecoveryFailureSummary(cleanupError, "runner_crashed");
-      await input.store.append({ type: "recovery.cleanup_failed", runId: input.attemptInput.runId, operationId: "recovery-cleanup-failed", payload: { summary: cleanupFailure } });
+      await input.store.append({ type: "recovery.cleanup_failed", runId: input.attemptInput.runId, operationId: runOperationId(input.attemptInput.runId, "recovery-cleanup-failed"), payload: { summary: cleanupFailure } });
     }
   }
   const fallback = await input.provider.resolveBaseline(
@@ -231,12 +235,12 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
   if (stateAtFailure !== "accepted" && stateAtFailure !== "failed")
     input.moveRecoveryState("failed");
   const failedAttemptsArtifact = Buffer.from(JSON.stringify({ schemaVersion: 1, state: input.lifecycleState(), terminalReason: failureStage, attempts: input.recoveryOrchestrator.attempts }), "utf8");
-  await input.store.commitArtifact({ artifactId: "recovery-attempts", kind: "recovery_attempts", mediaType: "application/json", bytes: failedAttemptsArtifact, operationId: "recovery-attempts-failed-created" });
+  await input.store.commitArtifact({ artifactId: "recovery-attempts", runId: input.attemptInput.runId, kind: "recovery_attempts", mediaType: "application/json", bytes: failedAttemptsArtifact, operationId: "recovery-attempts-failed-created" });
   if (failureStage === "agent_model_failed" && input.forensicsCompleted) {
     await input.store.append({
       type: "recovery.model_fallback",
       runId: input.attemptInput.runId,
-      operationId: "recovery-model-fallback",
+      operationId: runOperationId(input.attemptInput.runId, "recovery-model-fallback"),
       payload: {
         forensicsCompleted: true,
         modelAttempts: input.modelAttempts,
@@ -299,7 +303,7 @@ async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifa
     error,
     preflightOperation,
   } = input;
-  await writeImmutableJson(join(experimentRoot, "recovery-validation.json"), {
+  await writeImmutableJson(join(experimentRoot, "runs", attemptInput.runId, "recovery-validation.json"), {
     status: "failed",
     message: failureMessage,
     agentInvocation: failed,
@@ -320,7 +324,7 @@ async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifa
   await store.append({
     type: "recovery.warning",
     runId: attemptInput.runId,
-    operationId: "recovery-warning",
+    operationId: runOperationId(attemptInput.runId, "recovery-warning"),
     payload: {
       failureStage,
       summary: failureMessage,

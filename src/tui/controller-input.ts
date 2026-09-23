@@ -586,7 +586,7 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
   }
   if (result.action === 'open-diagnostics') {
     const root = c.recoveryView?.experimentRoot;
-    if (root) return c.openArtifact(root, 'recovery-diagnosis.json');
+    if (root) return c.openArtifact(root, c.recoveryView?.diagnosisPath ?? 'recovery-diagnosis.json');
     c.message = t(c.locale, 'recoveryActionDiagnose');
     c.render();
     return { consume: true };

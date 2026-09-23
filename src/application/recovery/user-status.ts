@@ -115,7 +115,8 @@ export function recoveryAttemptDiagnosis(input: {
 
 export async function persistRecoveryAttemptDiagnosis(
   experimentRoot: string,
+  runId: string,
   diagnosis: RecoveryAttemptDiagnosis,
 ): Promise<void> {
-  await writeImmutableJson(join(experimentRoot, "recovery-diagnosis.json"), diagnosis);
+  await writeImmutableJson(join(experimentRoot, "runs", runId, "recovery-diagnosis.json"), diagnosis);
 }

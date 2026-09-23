@@ -30,6 +30,7 @@ export type { CandidateRunPhase, ActivityRole, UiStage, PhaseClockBounds };
 
 export type SourceModel = { readonly sourceRoot: string; readonly sourceCursor?: number; readonly step: 1 | 2 | 3; readonly locale?: Locale };
 export type RecoveryPreviewModel = {
+  readonly diagnosisPath?: string;
   readonly status: 'ready' | 'blocked' | 'recovered' | 'partial' | 'insufficient_evidence' | 'failed';
   readonly summary?: string;
   readonly reportText?: string;
@@ -178,7 +179,7 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`)
     : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`);
   const diagnosisHint = failedRecovery && model.experimentId
-    ? theme.style.muted(` ${t(locale, 'diagnosisSavedHint', { experimentId: model.experimentId })}`)
+    ? theme.style.muted(` ${t(locale, 'diagnosisSavedHint', { experimentId: model.experimentId, diagnosisPath: recovery?.diagnosisPath ?? 'recovery-diagnosis.json' })}`)
     : undefined;
   const requested = model.candidate?.requestedModel;
   const resolved = model.preflight.resolved.resolvedModel;

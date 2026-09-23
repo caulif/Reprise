@@ -27,6 +27,8 @@ export type RecoveryAttempt = {
   readonly recovery: StructuredAgentResult<RecoveryResult>;
   readonly experimentRoot: string;
   readonly experimentId: string;
+  readonly runId?: string;
+  readonly diagnosisPath?: string;
   readonly provider: LocalWorkspaceProvider;
   accept?(): Promise<EnvironmentBaseline>;
 };

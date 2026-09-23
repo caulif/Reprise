@@ -15,6 +15,7 @@ export type RecoveryView = {
   readonly recovery: StructuredAgentResult<RecoveryResult>;
   readonly experimentRoot: string;
   readonly experimentId: string;
+  readonly diagnosisPath?: string;
   readonly hasAccept: boolean;
 };
 
@@ -38,6 +39,7 @@ export function recoveryViewFromAttempt(attempt: RecoveryAttempt): RecoveryView 
     recovery: attempt.recovery,
     experimentRoot: attempt.experimentRoot,
     experimentId: attempt.experimentId,
+    ...(attempt.diagnosisPath ? { diagnosisPath: attempt.diagnosisPath } : {}),
     hasAccept: attempt.accept !== undefined,
   };
 }

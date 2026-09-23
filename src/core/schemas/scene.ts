@@ -6,6 +6,7 @@ export const SceneDescriptorSchema = Type.Object({
   experimentId: Id,
   caseId: Id,
   runId: Id,
+  recoveryProviderRunId: Type.Optional(Id),
   sourceRoot: Type.String({ minLength: 1 }),
   sealed: Type.Boolean(),
 });

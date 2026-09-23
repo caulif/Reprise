@@ -93,10 +93,12 @@ async function assertRecovery(attempt: Awaited<ReturnType<typeof recoverExperime
     throw new Error(`Real Recovery did not produce a recovered baseline: ${JSON.stringify(attempt.recovery)}.`);
   }
   if (!attempt.providerPreview?.reportText?.trim()) throw new Error('Recovery preview is missing recovery.md.');
+  const runId = attempt.runId;
+  if (!runId) throw new Error('Recovery attempt is missing its run ID.');
   if (!attempt.staging || !/^# task-start\r?\n$/.test(await readFile(join(attempt.staging.root, 'README.md'), 'utf8'))) throw new Error('Recovery staging did not restore README.md.');
   if ((await readFile(join(sourceRoot, 'README.md'), 'utf8')) !== '# completed\n') throw new Error('Recovery modified the source workspace.');
-  await access(join(dataDir, 'experiments', experimentId, 'recovery.json'));
-  await access(join(dataDir, 'experiments', experimentId, 'artifacts', 'recovery-md'));
+  await access(join(dataDir, 'experiments', experimentId, 'runs', runId, 'recovery.json'));
+  await access(join(dataDir, 'experiments', experimentId, 'runs', runId, 'artifacts', 'recovery-md'));
 }
 
 async function auditToolCalls(experimentRoot: string): Promise<number> {
