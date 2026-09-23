@@ -54,13 +54,14 @@ function descendants(node: HtmlNode): HtmlNode[] {
 }
 
 function unsafeAgentContent(node: HtmlNode): string | undefined {
-  const activeTags = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "base", "link"]);
+  const activeTags = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "base", "link", "dialog"]);
   const urlAttrs = new Set(["href", "xlink:href", "src", "poster", "cite", "action", "formaction", "background", "data"]);
   const tag = node.tagName?.toLowerCase();
   if (tag && activeTags.has(tag)) return `Agent content cannot contain <${tag}>.`;
   for (const attr of node.attrs ?? []) {
     const name = attr.name.toLowerCase();
-    if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "ping" || name === "style") {
+    if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "ping" || name === "style"
+      || name === "popover" || name === "popovertarget" || name === "popovertargetaction") {
       return `Agent content cannot contain ${name}.`;
     }
     const value = attr.value.replace(/[\u0000-\u0020\u007f]/g, "").toLowerCase();
@@ -75,14 +76,19 @@ function unsafeAgentContent(node: HtmlNode): string | undefined {
   return undefined;
 }
 
-export function agentInlineStyleError(html: string): string | undefined {
+export function agentUnsafeContentError(html: string): string | undefined {
   const root = parse(html) as unknown as HtmlNode;
-  const visit = (node: HtmlNode, inAgent: boolean): boolean => {
-    const inside = inAgent || Boolean(node.attrs?.some((attr) => attr.name === "data-agent-zone" || attr.name === "data-agent-slot"));
-    if (inside && node.attrs?.some((attr) => attr.name.toLowerCase() === "style")) return true;
-    return descendants(node).some((child) => visit(child, inside));
+  const visit = (node: HtmlNode): string | undefined => {
+    if (node.attrs?.some((attr) => attr.name === "data-agent-zone" || attr.name === "data-agent-slot")) {
+      return unsafeAgentContent(node);
+    }
+    for (const child of descendants(node)) {
+      const error = visit(child);
+      if (error) return error;
+    }
+    return undefined;
   };
-  return visit(root, false) ? "Agent content cannot contain style." : undefined;
+  return visit(root);
 }
 
 export function agentContentFromDraft(html: string):

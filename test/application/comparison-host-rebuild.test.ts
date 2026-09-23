@@ -129,6 +129,32 @@ test("Agent inline styles cannot cover Host facts in a published report", async 
   }
 });
 
+test("native overlays cannot cover Host facts in either publication path", async () => {
+  const payloads = [
+    '<dialog open>FAKE HOST FACTS</dialog>',
+    '<DIALOG OPEN>FAKE HOST FACTS</DIALOG>',
+    '<div popover id="fake">FAKE HOST FACTS</div><button popovertarget="fake">Open</button>',
+  ];
+  for (const payload of payloads) {
+    const html = draft(payload);
+    for (const input of [
+      { hostTask: "Host 原任务文案。" },
+      {},
+    ]) {
+      const result = await verifyAndRenderComparisonReport({
+        html, facts,
+        result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+        attemptRoot: ".", media: [], ...input,
+      });
+      assert.equal("html" in result, false, payload);
+      if (!("html" in result)) {
+        assert.equal(result.code, "report_incomplete", payload);
+        assert.match(result.message, /dialog|popover/i, payload);
+      }
+    }
+  }
+});
+
 test("markers hidden in template content are still counted", async () => {
   const duplicate = draft().replace(
     "</body>",

@@ -16,7 +16,7 @@ import { candidateStatusLabel, reportString, type ComparisonReportStringKey } fr
 import {
   AGENT_ZONES,
   agentContentFromDraft,
-  agentInlineStyleError,
+  agentUnsafeContentError,
   agentZoneBlank,
   extractHostZoneSnapshot,
   extractInner,
@@ -111,8 +111,8 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
 > {
   const locale = input.locale ?? "zh";
   if (input.hostTask === undefined) {
-    const styleError = agentInlineStyleError(input.html);
-    if (styleError) return { failureClass: "publication", code: "report_incomplete", message: styleError };
+    const unsafeContent = agentUnsafeContentError(input.html);
+    if (unsafeContent) return { failureClass: "publication", code: "report_incomplete", message: unsafeContent };
   }
   const metrics = metricsFromReportFacts(input.facts);
   const rebuilt = rebuildHostReport(input, metrics, locale);
