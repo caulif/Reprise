@@ -1,6 +1,8 @@
 import type { AgentLocale } from "../agents/language.js";
+import { parse, serializeOuter } from "parse5";
 import type { ComparisonMetricSide, ComparisonReportFacts } from "../agents/comparison-agent.js";
 import {
+  AGENT_ZONES,
   hostZoneIntegrityError,
   extractOuter,
   type AgentZoneName,
@@ -36,8 +38,96 @@ export type ComparisonReportDiagnostic = {
   reason: string;
   details: readonly string[];
   traces: readonly string[];
-  draftAnalysis?: string;
 };
+
+type HtmlNode = {
+  tagName?: string;
+  attrs?: { name: string; value: string }[];
+  childNodes?: HtmlNode[];
+  content?: HtmlNode;
+  parentNode?: HtmlNode;
+  value?: string;
+};
+
+function descendants(node: HtmlNode): HtmlNode[] {
+  return [...(node.childNodes ?? []), ...(node.content?.childNodes ?? [])];
+}
+
+function unsafeAgentContent(node: HtmlNode): string | undefined {
+  const activeTags = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "base", "link"]);
+  const urlAttrs = new Set(["href", "xlink:href", "src", "poster", "cite", "action", "formaction", "background", "data"]);
+  const tag = node.tagName?.toLowerCase();
+  if (tag && activeTags.has(tag)) return `Agent content cannot contain <${tag}>.`;
+  for (const attr of node.attrs ?? []) {
+    const name = attr.name.toLowerCase();
+    if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "ping") {
+      return `Agent content cannot contain ${name}.`;
+    }
+    const value = attr.value.replace(/[\u0000-\u0020\u007f]/g, "").toLowerCase();
+    if (urlAttrs.has(name) && (/^[a-z][\w+.-]*:/.test(value) || value.startsWith("//") || value.startsWith("\\\\"))) {
+      return `Agent content contains an unsafe ${name} URL.`;
+    }
+    if (name === "style" && /url\(['"]?(?:[a-z][\w+.-]*:|\/\/|\\\\)|@import/i.test(value)) {
+      return "Agent content contains an unsafe style URL.";
+    }
+  }
+  for (const child of descendants(node)) {
+    const error = unsafeAgentContent(child);
+    if (error) return error;
+  }
+  return undefined;
+}
+
+export function agentContentFromDraft(html: string):
+  | { slots: Partial<Record<AgentZoneName | "headline" | "category", string>> }
+  | { error: string } {
+  const errors: string[] = [];
+  const root = parse(html, { onParseError: (error) => errors.push(error.code) }) as unknown as HtmlNode;
+  if (errors.length) return { error: `Comparison report HTML is malformed: ${errors[0]}.` };
+  const markers = new Map<string, HtmlNode[]>();
+  const visit = (node: HtmlNode): void => {
+    for (const attr of node.attrs ?? []) {
+      if (attr.name !== "data-agent-zone" && attr.name !== "data-agent-slot") continue;
+      const key = `${attr.name}:${attr.value}`;
+      markers.set(key, [...(markers.get(key) ?? []), node]);
+    }
+    for (const child of descendants(node)) visit(child);
+  };
+  visit(root);
+  const expected = [
+    ...AGENT_ZONES.map((name) => `data-agent-zone:${name}`),
+    "data-agent-slot:headline", "data-agent-slot:category", "data-agent-slot:task",
+  ];
+  for (const key of markers.keys()) {
+    if (!expected.includes(key)) return { error: `Comparison report contains unsupported ${key}.` };
+  }
+  for (const key of expected) {
+    if (markers.get(key)?.length !== 1) return { error: `Comparison report requires exactly one ${key}.` };
+    const node = markers.get(key)![0]!;
+    for (let parent = node.parentNode; parent; parent = parent.parentNode) {
+      if (parent.attrs?.some((attr) => attr.name === "data-agent-zone" || attr.name === "data-agent-slot")) {
+        return { error: `Comparison report has nested Agent markers at ${key}.` };
+      }
+    }
+    const nested = descendants(node).some(function hasMarker(child): boolean {
+      return Boolean(child.attrs?.some((attr) => attr.name === "data-agent-zone" || attr.name === "data-agent-slot" || attr.name === "data-host-zone"))
+        || descendants(child).some(hasMarker);
+    });
+    if (nested) return { error: `Comparison report has nested zone markers at ${key}.` };
+    if (key.startsWith("data-agent-zone:")) {
+      const unsafe = unsafeAgentContent(node);
+      if (unsafe) return { error: unsafe };
+    }
+  }
+  const textOf = (node: HtmlNode): string => node.value ?? (node.childNodes ?? []).map(textOf).join("");
+  const innerOf = (node: HtmlNode): string => (node.childNodes ?? []).map((child) => serializeOuter(child as never)).join("");
+  return { slots: {
+    comparison: innerOf(markers.get("data-agent-zone:comparison")![0]!),
+    details: innerOf(markers.get("data-agent-zone:details")![0]!),
+    headline: escapeHtml(textOf(markers.get("data-agent-slot:headline")![0]!)),
+    category: textOf(markers.get("data-agent-slot:category")![0]!),
+  } };
+}
 
 export function renderComparisonReportShell(input: {
   title?: string;
@@ -234,9 +324,16 @@ function renderMetricsBoard(metrics: {
 }
 
 function comparisonSideLabels(facts: ComparisonReportFacts, locale: AgentLocale): { baseline: string; candidate: string } {
+  const requested = usableModelId(facts.models.candidateRequested);
+  const resolved = usableModelId(facts.models.candidateResolved);
+  const candidate = requested && resolved && requested !== resolved
+    ? (locale === "zh" ? `请求 ${requested} → 解析 ${resolved}` : `requested ${requested} → resolved ${resolved}`)
+    : requested && !resolved
+      ? (locale === "zh" ? `请求 ${requested} · 解析未确认` : `requested ${requested} · resolution unconfirmed`)
+      : resolved ?? requested ?? usableModelId(facts.models.candidate);
   return {
     baseline: usableModelId(facts.models.baseline) ?? reportString(locale, "sideHistorical"),
-    candidate: usableModelId(facts.models.candidate) ?? reportString(locale, "sideCandidate"),
+    candidate: candidate ?? reportString(locale, "sideCandidate"),
   };
 }
 
@@ -308,13 +405,10 @@ function defaultHeader(
 }
 
 function diagnosticDifferences(diagnostic: ComparisonReportDiagnostic, locale: AgentLocale): string {
-  const draft = diagnostic.draftAnalysis
-    ? `<p><strong>${escapeHtml(reportString(locale, "diagDraft"))}</strong></p><pre>${escapeHtml(diagnostic.draftAnalysis)}</pre>`
-    : "";
   return `<article class="result-card" data-host="diagnostic-card" data-failure-class="${escapeHtml(diagnostic.failureClass)}" data-failure-phase="${escapeHtml(diagnostic.phase)}">
     <h3>${escapeHtml(reportString(locale, "diagFailed"))}</h3>
     <p>${escapeHtml(reportString(locale, "diagClassPhase", { class: diagnostic.failureClass, phase: diagnostic.phase }))}</p>
-    <p>${escapeHtml(diagnostic.reason)}</p>${draft}
+    <p>${escapeHtml(diagnostic.reason)}</p>
   </article>`;
 }
 

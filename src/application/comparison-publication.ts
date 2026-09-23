@@ -15,13 +15,16 @@ import type { AgentLocale } from "../agents/language.js";
 import { candidateStatusLabel, reportString, type ComparisonReportStringKey } from "./comparison-report-strings.js";
 import {
   AGENT_ZONES,
+  agentContentFromDraft,
   agentZoneBlank,
+  extractHostZoneSnapshot,
   extractInner,
   extractOuter,
   hostMetricsMismatch,
   hostZonesMismatch,
   missingComparisonSlots,
   metricsFromReportFacts,
+  renderComparisonReportShell,
   type ComparisonReportDiagnostic,
   type HostZoneSnapshot,
 } from "./comparison-report-shell.js";
@@ -52,6 +55,22 @@ export type ComparisonPublishCode =
   | "media_unavailable"
   | "report_incomplete"
   | "publication_failed";
+
+type VerificationInput = {
+  html: string;
+  facts: ComparisonReportFacts;
+  result: ComparisonResult;
+  attemptRoot: string;
+  media: readonly ComparisonMediaRecord[];
+  evidence?: readonly ComparisonLinkRecord[];
+  hostZoneSnapshot?: HostZoneSnapshot;
+  hostTask?: string;
+  locale?: AgentLocale;
+  /** `data-claim="visual"` requires media content hashes delivered to the Session. */
+  deliveredImageContentHashes?: ReadonlySet<string>;
+};
+
+type VerificationFailure = { failureClass: ComparisonFailureClass; code: ComparisonPublishCode; message: string };
 
 export function classifyComparisonFailure(input: {
   result: StructuredAgentResult<unknown>;
@@ -86,46 +105,39 @@ export function classifyComparisonFailure(input: {
   return { failureClass: "unknown", phase: input.reportPresent ? "review" : "compose" };
 }
 
-export async function verifyAndRenderComparisonReport(input: {
-  html: string;
-  facts: ComparisonReportFacts;
-  result: ComparisonResult;
-  attemptRoot: string;
-  media: readonly ComparisonMediaRecord[];
-  evidence?: readonly ComparisonLinkRecord[];
-  hostZoneSnapshot?: HostZoneSnapshot;
-  locale?: AgentLocale;
-  /**
-   * When set (including empty), `data-claim="visual"` also requires the cited media
-   * `contentHash` to appear in this Session's delivered native-image set.
-   * Bare `<img data-media-ref>` for human readers does not need delivery.
-   */
-  deliveredImageContentHashes?: ReadonlySet<string>;
-}): Promise<
-  { html: string; model: ComparisonReportModel }
-  | { failureClass: ComparisonFailureClass; code: ComparisonPublishCode; message: string }
+export async function verifyAndRenderComparisonReport(input: VerificationInput): Promise<
+  { html: string; model: ComparisonReportModel } | VerificationFailure
 > {
   const locale = input.locale ?? "zh";
   const metrics = metricsFromReportFacts(input.facts);
-  const zoneError = input.hostZoneSnapshot
-    ? hostZonesMismatch(input.html, input.hostZoneSnapshot, metrics, locale)
-    : missingComparisonSlots(input.html) ?? hostMetricsMismatch(input.html, metrics, locale);
+  const rebuilt = rebuildHostReport(input, metrics, locale);
+  if ("failureClass" in rebuilt) return rebuilt;
+  let { html } = rebuilt;
+  const hostSnapshot = input.hostTask !== undefined ? extractHostZoneSnapshot(html) : input.hostZoneSnapshot;
+  const zoneError = hostSnapshot
+    ? hostZonesMismatch(html, hostSnapshot, metrics, locale)
+    : missingComparisonSlots(html) ?? hostMetricsMismatch(html, metrics, locale);
   if (zoneError) {
     const incompleteSlot = /missing data-(?:agent|host)-zone|missing data-agent-slot|missing component template|Share card order|outside the share card|data-report-format/.test(zoneError);
     const code: ComparisonPublishCode = incompleteSlot ? "report_incomplete" : "host_zone_modified";
     return { failureClass: code === "report_incomplete" ? "publication" : "metrics", code, message: zoneError };
   }
-  const unexpected = unexpectedAgentZones(input.html);
+  const unexpected = unexpectedAgentZones(html);
   if (unexpected) return { failureClass: "publication", code: "report_incomplete", message: unexpected };
-  const structuredEvidence = claimsVerifiedWithoutResolvableEvidence(input.html, input.evidence ?? []);
+  if (hasExternalNetwork(html)) {
+    return { failureClass: "publication", code: "publication_failed", message: "Comparison report contains external network resources." };
+  }
+  const invalidRef = rebuilt.agentHtml === undefined ? undefined : invalidAgentReferences(rebuilt.agentHtml, input.evidence ?? [], input.media);
+  if (invalidRef) return invalidRef;
+  const structuredEvidence = claimsVerifiedWithoutResolvableEvidence(html, input.evidence ?? []);
   if (structuredEvidence) return { failureClass: "evidence", code: "evidence_unresolved", message: structuredEvidence };
-  const structuredVisual = claimsVisualWithoutUsableMedia(input.html, input.media, input.deliveredImageContentHashes);
+  const structuredVisual = claimsVisualWithoutUsableMedia(html, input.media, input.deliveredImageContentHashes);
   if (structuredVisual) return { failureClass: "media", code: "media_unavailable", message: structuredVisual };
-  const rewritten = await rewritePublishableHtml(input);
+  const rewritten = await rewritePublishableHtml({ ...input, html });
   if (hasExternalNetwork(rewritten.html)) {
     return { failureClass: "publication", code: "publication_failed", message: "Comparison report contains external network resources." };
   }
-  let html = rewritten.html;
+  html = rewritten.html;
   const limitations: ComparisonReportStringKey[] = [];
   const visual = repairEmptyComparisonZone(html, input.media, locale);
   html = visual.html;
@@ -167,6 +179,44 @@ export async function verifyAndRenderComparisonReport(input: {
   }
   const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
   return { html, model };
+}
+
+function rebuildHostReport(
+  input: VerificationInput,
+  metrics: ReturnType<typeof metricsFromReportFacts>,
+  locale: AgentLocale,
+): { html: string; agentHtml?: string } | VerificationFailure {
+  if (input.hostTask === undefined) return { html: input.html };
+  const extracted = agentContentFromDraft(input.html);
+  if ("error" in extracted) return { failureClass: "publication", code: "report_incomplete", message: extracted.error };
+  return {
+    html: renderComparisonReportShell({
+      task: input.hostTask,
+      facts: input.facts,
+      metrics,
+      media: input.media,
+      ...(input.evidence ? { evidence: input.evidence } : {}),
+      slots: extracted.slots,
+      locale,
+    }),
+    agentHtml: `${extracted.slots.comparison ?? ""}${extracted.slots.details ?? ""}`,
+  };
+}
+
+function invalidAgentReferences(
+  html: string,
+  evidence: readonly ComparisonLinkRecord[],
+  media: readonly ComparisonMediaRecord[],
+): VerificationFailure | undefined {
+  const unknownEvidence = [...html.matchAll(/\bdata-evidence-ref\s*=\s*(["'])([^"']+)\1/gi)]
+    .map((match) => match[2] ?? "")
+    .find((ref) => !evidence.some((item) => item.shortRef === ref));
+  if (unknownEvidence) return { failureClass: "evidence", code: "evidence_unresolved", message: `Unknown evidence reference: ${unknownEvidence}.` };
+  const unknownMedia = [...html.matchAll(/\bdata-media-ref\s*=\s*(["'])([^"']+)\1/gi)]
+    .map((match) => match[2] ?? "")
+    .find((ref) => !media.some((item) => item.shortRef === ref && item.available));
+  if (unknownMedia) return { failureClass: "media", code: "media_unavailable", message: `Unavailable media reference: ${unknownMedia}.` };
+  return undefined;
 }
 
 export async function persistComparisonReportModel(root: string, model: ComparisonReportModel): Promise<void> {
@@ -325,56 +375,50 @@ export function comparisonFailureDiagnostic(input: {
   facts: ComparisonReportFacts;
   reportPresent: boolean;
   attemptId: string;
-  draftHtml?: string;
   locale?: AgentLocale;
 }): ComparisonReportDiagnostic {
   const classified = classifyComparisonFailure(input);
   const failed = input.result.status === "failed" ? input.result.failure : undefined;
-  const draftAnalysis = input.draftHtml ? extraAgentAnalysis(input.draftHtml) : undefined;
   const locale = input.locale ?? "zh";
   return {
     failureClass: classified.failureClass,
     phase: classified.phase,
     candidateCompleted: candidateStatusLabel(input.facts.run.outcome, input.facts.run.terminationCode, locale),
-    reason: failed?.message
-      ?? (input.result.status === "cancelled" ? "Comparison was cancelled." : "Comparison did not return a completed report."),
+    reason: failureReason(failed?.code, classified.failureClass, input.result.status, locale),
     details: [
       `failureClass=${classified.failureClass}`,
       `phase=${classified.phase}`,
       failed ? `code=${failed.code}` : "code=none",
       failed?.kind ? `kind=${failed.kind}` : "kind=none",
+      ...(failed?.message ? [failed.message] : []),
     ],
     traces: [
       `attempt=${input.attemptId}`,
       "trace: experiment events and comparison.json",
       "artifacts: comparison-attempts/ and evidence/",
-      input.reportPresent ? "draft: comparison-attempts/*/report.html" : "draft: none",
+      input.reportPresent ? `unpublished draft: comparison-attempts/${input.attemptId}/report.html` : "draft: none",
     ],
-    ...(draftAnalysis ? { draftAnalysis } : {}),
   };
 }
 
-export function draftAgentSlots(html: string | undefined): Partial<Record<(typeof AGENT_ZONES)[number] | "headline", string>> {
-  if (!html) return {};
-  const slots: Partial<Record<(typeof AGENT_ZONES)[number] | "headline", string>> = {};
-  const headline = extractInner(html, "data-agent-slot", "headline");
-  if (oneLineFromHtml(headline)) slots.headline = headline;
-  for (const zone of AGENT_ZONES) {
-    const inner = extractInner(html, "data-agent-zone", zone);
-    if (oneLineFromHtml(inner)) slots[zone] = inner;
-  }
-  return slots;
-}
-
-function extraAgentAnalysis(html: string): string | undefined {
-  const chunks: string[] = [];
-  for (const match of html.matchAll(/<(?:section|article|div)\b[^>]*data-agent-zone=["']([^"']+)["'][^>]*>([\s\S]*?)<\/(?:section|article|div)>/gi)) {
-    const zone = match[1] ?? "";
-    if ((AGENT_ZONES as readonly string[]).includes(zone)) continue;
-    const text = oneLineFromHtml(match[2] ?? "");
-    if (text) chunks.push(`${zone}: ${text.slice(0, 1000)}`);
-  }
-  return chunks.length ? chunks.join("\n") : undefined;
+function failureReason(
+  code: string | undefined,
+  failureClass: ComparisonFailureClass,
+  status: StructuredAgentResult<unknown>["status"],
+  locale: AgentLocale,
+): string {
+  if (status === "cancelled") return locale === "zh" ? "对照已取消，报告未发布。" : "Comparison was cancelled; no report was published.";
+  const reasons: Record<string, { zh: string; en: string }> = {
+    host_zone_modified: { zh: "报告版式未通过，报告未发布。", en: "The report layout did not pass validation; no report was published." },
+    report_incomplete: { zh: "报告内容或结构不完整，报告未发布。", en: "The report content or structure is incomplete; no report was published." },
+    evidence_unresolved: { zh: "报告中的证据引用未通过核验，报告未发布。", en: "Report evidence could not be verified; no report was published." },
+    media_unavailable: { zh: "报告引用的媒体不可用，报告未发布。", en: "Report media is unavailable; no report was published." },
+    invalid_envelope: { zh: "对照结果格式未通过核验，报告未发布。", en: "The comparison result format did not pass validation; no report was published." },
+    publication_failed: { zh: "报告发布检查未通过，报告未发布。", en: "The report did not pass publication checks; no report was published." },
+  };
+  if (reasons[code ?? ""]) return reasons[code ?? ""]![locale];
+  if (failureClass === "provider") return locale === "zh" ? "模型服务未能完成对照，报告未发布。" : "The model service could not complete the comparison; no report was published.";
+  return locale === "zh" ? "对照未能完成，报告未发布。" : "Comparison could not be completed; no report was published.";
 }
 
 /** Shared publish/preview preprocessing: resolve short refs, strip broken media, drop external attrs. */

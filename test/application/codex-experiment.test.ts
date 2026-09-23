@@ -93,9 +93,9 @@ test("preflight is read-only and successful comparison writes a persisted narrat
     /Evidence-based narrative/,
   );
   const report = await readFile(result.reportPath, "utf8");
-  assert.match(report, /<style>/);
+  assert.match(report, /data-host-zone="style"/);
   assert.match(report, /<svg>/);
-  assert.match(report, /<script>/);
+  assert.doesNotMatch(report, /<script>/);
   assert.match(report, /Evidence-based narrative/);
   assert.ok(
     result.record.artifactRefs.some(
@@ -613,9 +613,13 @@ test("a failed later comparison attempt does not overwrite the last successful r
     compare: async () => ({ status: "failed", sessionId: "comparison-failed", failure: { code: "agent_failure", message: "failed", attempts: 1 } }),
     cancel: async () => {},
   };
-  const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison: failed }).result;
+  const experiment = input(root, new VerifiedRuntime());
+  const result = await startExperiment({ ...experiment, comparison: failed }).result;
   assert.equal(result.comparison.result.status, "failed");
   assert.equal(await readFile(join(experimentRoot, "report.html"), "utf8"), published);
+  const diagnostic = await readFile(join(experimentRoot, "comparison-failure.html"), "utf8");
+  assert.match(diagnostic, new RegExp(experiment.taskCase.initialInput.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(diagnostic, /报告未发布/);
   const latest = JSON.parse(await readFile(join(experimentRoot, "comparison.json"), "utf8")) as { status?: string; sessionId?: string };
   assert.equal(latest.status, "failed");
   assert.equal(latest.sessionId, "comparison-failed");

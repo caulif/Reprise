@@ -46,6 +46,28 @@ function codexOutput(callId: string, output: string) {
   };
 }
 
+function customExecCall(callId: string, input: string) {
+  return { type: "response_item", payload: { type: "custom_tool_call", call_id: callId, name: "exec", input } };
+}
+
+function customExecOutput(callId: string, completed = true) {
+  return {
+    type: "response_item",
+    payload: {
+      type: "custom_tool_call_output",
+      call_id: callId,
+      output: [
+        { type: "input_text", text: completed ? "Script completed\nWall time 0.0 seconds\nOutput:\n" : "Script failed\nError:\npatch rejected" },
+        { type: "input_text", text: completed ? "{}" : "Error: patch rejected" },
+      ],
+    },
+  };
+}
+
+function execPatchScript(patch: string): string {
+  return `const patch = ${JSON.stringify(patch)};\nconst r = await tools.apply_patch(patch); text(r);`;
+}
+
 function addPatch(path: string, body: string): string {
   const lines = body.split("\n").map((line) => `+${line}`).join("\n");
   return `*** Begin Patch\n*** Add File: ${path}\n${lines}\n*** End Patch\n`;
@@ -173,6 +195,101 @@ test("static exec-wrapped apply_patch decodes double-quoted literal", () => {
   };
   const result = codexSessionAdapter.extractHistoricalArtifacts!(input);
   assert.equal(bytesOf(result, "pelican_bike.html", result.manifest).toString("utf8"), "<html>ok</html>");
+});
+
+test("custom exec reconstructs a verified static HTML patch from the frozen call shape", () => {
+  const html = "<!doctype html>\n<html lang=\"zh-CN\"><body>bike</body></html>";
+  const inspection = "$p = Join-Path (Get-Location) 'pelican_bike.html'; $s = Get-Content -Raw -LiteralPath $p; [pscustomobject]@{Exists=(Test-Path -LiteralPath $p); Bytes=(Get-Item -LiteralPath $p).Length; HtmlOpen=([regex]::Matches($s,'<html').Count); SvgOpen=([regex]::Matches($s,'<svg').Count); SvgClose=([regex]::Matches($s,'</svg>').Count); AnimationRules=([regex]::Matches($s,'@keyframes').Count); ToggleScript=($s -match 'toggleAnimation') } | Format-List";
+  const events = [
+    customExecCall("read", 'const r = await tools.exec_command({cmd:"Get-ChildItem"}); text(r.output);'),
+    customExecOutput("read"),
+    customExecCall("write", execPatchScript(addPatch("pelican_bike.html", html))),
+    customExecOutput("write"),
+    customExecCall("inspect", `const r = await tools.exec_command({cmd:${JSON.stringify(inspection)},workdir:${JSON.stringify("C:\\fixture\\project")}}); text(r.output);`),
+    customExecOutput("inspect"),
+  ];
+  const result = codexSessionAdapter.extractHistoricalArtifacts!({ transcript: [], historicalEvents: events });
+  const bytes = bytesOf(result, "pelican_bike.html", result.manifest);
+  assert.equal(bytes.toString("utf8"), html);
+  assert.equal(result.manifest.artifacts[0]?.byteLength, Buffer.byteLength(html));
+  assert.equal(result.manifest.artifacts[0]?.contentHash, sha256(Buffer.from(html)));
+  assert.deepEqual(result.manifest.artifacts[0]?.sourceRefs, ["event:history-2", "event:history-3"]);
+  assert.deepEqual(result.manifest.issues, []);
+});
+
+test("custom exec rejects dynamic, repeated, incomplete, and unverified patch writes", () => {
+  const patch = addPatch("pelican_bike.html", "static");
+  const scripts = [
+    'const patch = makePatch(); const r = await tools.apply_patch(patch); text(r);',
+    `${execPatchScript(patch)}\nawait tools.apply_patch(patch);`,
+    execPatchScript(patch.replace("*** End Patch\n", "")),
+    `const patch = ${JSON.stringify(patch)}; const r = await tools.apply_patch(patch); await tools.exec_command({cmd:"Set-Content pelican_bike.html changed"}); text(r);`,
+    'const r = await tools.exec_command({cmd:"Set-Content pelican_bike.html changed"}); text(r.output);',
+    'const r = await tools.someUnknownTool({path:"pelican_bike.html"}); text(r);',
+  ];
+  for (const [index, script] of scripts.entries()) {
+    const result = codexSessionAdapter.extractHistoricalArtifacts!({
+      transcript: [], historicalEvents: [customExecCall("write", script), customExecOutput("write")],
+    });
+    assert.equal(result.manifest.artifacts.length, 0, `case ${index}`);
+    assert.ok(result.manifest.issues.some((issue) => issue.code === "unsupported_write" && issue.sourceRefs.includes("event:history-0")), `case ${index}`);
+  }
+  const failed = codexSessionAdapter.extractHistoricalArtifacts!({
+    transcript: [], historicalEvents: [customExecCall("write", execPatchScript(patch)), customExecOutput("write", false)],
+  });
+  assert.equal(failed.manifest.artifacts.length, 0);
+  assert.ok(failed.manifest.issues.some((issue) => issue.code === "failed_tool"));
+  const unverified = codexSessionAdapter.extractHistoricalArtifacts!({
+    transcript: [], historicalEvents: [
+      customExecCall("write", execPatchScript(patch)),
+      { type: "response_item", payload: { type: "custom_tool_call_output", call_id: "write", output: "ok" } },
+    ],
+  });
+  assert.equal(unverified.manifest.artifacts.length, 0);
+  assert.ok(unverified.manifest.issues.some((issue) => issue.code === "ambiguous_version"));
+  const missingOutput = codexSessionAdapter.extractHistoricalArtifacts!({
+    transcript: [], historicalEvents: [customExecCall("write", execPatchScript(patch))],
+  });
+  assert.ok(missingOutput.manifest.issues.some((issue) => issue.code === "ambiguous_version"));
+  const opaqueInput = codexSessionAdapter.extractHistoricalArtifacts!({
+    transcript: [], historicalEvents: [
+      { type: "response_item", payload: { type: "custom_tool_call", call_id: "write", name: "exec", input: { code: "opaque" } } },
+      customExecOutput("write"),
+    ],
+  });
+  assert.ok(opaqueInput.manifest.issues.some((issue) => issue.code === "unsupported_write"));
+});
+
+test("custom exec applies the same path containment checks as direct patches", () => {
+  const result = codexSessionAdapter.extractHistoricalArtifacts!({
+    transcript: [],
+    historicalEvents: [customExecCall("write", execPatchScript(addPatch("../pelican_bike.html", "x"))), customExecOutput("write")],
+  });
+  assert.equal(result.manifest.artifacts.length, 0);
+  assert.ok(result.manifest.issues.some((issue) => issue.code === "path_rejected"));
+});
+
+test("later opaque custom exec write invalidates an earlier reconstructed final", () => {
+  for (const command of [
+    "Set-Content pelican_bike.html revised",
+    "git apply update.patch",
+    "Get-Content pelican_bike.html; git apply update.patch",
+    "npm run generate",
+    "pwsh -Command Invoke-Expression $script",
+    "gci | % { arbitrary($_) }",
+  ]) {
+    const result = codexSessionAdapter.extractHistoricalArtifacts!({
+      transcript: [],
+      historicalEvents: [
+        customExecCall("first", execPatchScript(addPatch("pelican_bike.html", "original"))),
+        customExecOutput("first"),
+        customExecCall("second", `const r = await tools.exec_command({cmd:${JSON.stringify(command)}}); text(r.output);`),
+        customExecOutput("second"),
+      ],
+    });
+    assert.equal(result.manifest.artifacts.length, 0, command);
+    assert.ok(result.manifest.issues.some((issue) => issue.code === "unsupported_write" && issue.sourceRefs.includes("event:history-2")), command);
+  }
 });
 
 test("path traversal absolute UNC drive and ADS are rejected", () => {

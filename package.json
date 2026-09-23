@@ -84,7 +84,8 @@
     "@earendil-works/pi-agent-core": "0.84.1",
     "@earendil-works/pi-ai": "0.84.1",
     "@earendil-works/pi-tui": "0.84.1",
-    "@sinclair/typebox": "0.34.52"
+    "@sinclair/typebox": "0.34.52",
+    "parse5": "^8.0.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

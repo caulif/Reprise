@@ -163,6 +163,8 @@ function comparisonModels(taskCase: TaskCase, run: RunRecord | undefined, compar
   }
   return {
     candidate: run.manifest?.resolvedModel.resolved ?? run.attempt.candidate.requestedModel,
+    candidateRequested: run.attempt.candidate.requestedModel,
+    ...(run.manifest?.resolvedModel.resolved ? { candidateResolved: run.manifest.resolvedModel.resolved } : {}),
     ...(baseline ? { baseline } : {}),
     ...(run.manifest ? { controller: run.manifest.controller.requestedModel } : {}),
     ...(comparison ? { comparison } : {}),

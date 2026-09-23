@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Comparison · gpt-5 vs gpt-5.6</title>
+<title>Comparison · gpt-5 vs requested gpt-5.6 · resolution unconfirmed</title>
 <style data-host-zone="style" data-id="host-style">
 
 :root { --paper:#efe8dc; --card:#fffcf7; --ink:#1a1714; --soft:#5a544b; --faint:#8a8378; --line:rgba(26,23,20,.08); --hair:rgba(26,23,20,.12); --shadow:0 22px 50px rgba(40,32,18,.1); --accent:#5b4630; --risk:#8b2e2e; --ok:#2f5d3a; }
@@ -110,7 +110,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
 
 <main class="page" data-report-format="2">
   <article class="share">
-    <header data-host-zone="header" data-id="host-header"><h1><span data-agent-slot="category">Comparison</span> · gpt-5 vs gpt-5.6</h1>
+    <header data-host-zone="header" data-id="host-header"><h1><span data-agent-slot="category">Comparison</span> · gpt-5 vs requested gpt-5.6 · resolution unconfirmed</h1>
   <p class="sessions" data-host="session-labels"><span>Historical session</span><span>Current session</span></p>
   <p class="field-label">Task</p>
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
@@ -126,7 +126,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
           <div class="num miss">not collected</div>
         </div>
         <div class="col">
-          <div class="who">gpt-5.6</div>
+          <div class="who">requested gpt-5.6 · resolution unconfirmed</div>
           <div class="num">4<span class="unit">s</span></div>
         </div>
       </div>
@@ -139,7 +139,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
           <div class="num miss">not collected</div>
         </div>
         <div class="col">
-          <div class="who">gpt-5.6</div>
+          <div class="who">requested gpt-5.6 · resolution unconfirmed</div>
           <div class="num miss">not collected</div>
         </div>
       </div>
@@ -152,7 +152,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
           <div class="num miss">not collected</div>
         </div>
         <div class="col">
-          <div class="who">gpt-5.6</div>
+          <div class="who">requested gpt-5.6 · resolution unconfirmed</div>
           <div class="num miss">not collected</div>
         </div>
       </div>
@@ -165,9 +165,9 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">Cost uses the pinned price snapshot and excludes tool calls. No tokens shows &quot;not collected&quot;; tokens without a price shows &quot;no price configured&quot;. Price table 2026-09-19-cc-switch-seed.</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>Run diagnostics</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
-    <li><span class="who">gpt-5.6</span> incomplete · limit.turns · harness</li>
+    <li><span class="who">requested gpt-5.6 · resolution unconfirmed</span> incomplete · limit.turns · harness</li>
     <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
-    <li><span class="who">gpt-5.6 price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
+    <li><span class="who">requested gpt-5.6 · resolution unconfirmed price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
   </ul></details></section>
     <section class="slot" data-host-zone="process" data-id="host-process"></section>
   </details>

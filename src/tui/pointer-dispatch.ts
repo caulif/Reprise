@@ -60,7 +60,11 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
   if (!cell) return { consume: true };
   if (cell.bodyRow < 0) return { consume: true };
-  const { lines, rowHits } = renderResultWithHits(createTheme(cell.width), cell.width, c.result, c.locale, undefined, Boolean(c.compareChoice));
+  const view = c.view();
+  const { lines, rowHits } = renderResultWithHits(
+    createTheme(cell.width), cell.width, c.result, c.locale, view.productLabel, Boolean(c.compareChoice),
+    { ...(view.running?.phaseClocks ? { phaseClocks: view.running.phaseClocks } : {}) },
+  );
   const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
   const line = lines[bodyRow];
   const href = line ? hitFileLink(line, cell.col) : undefined;

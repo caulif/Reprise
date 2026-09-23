@@ -1,6 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { hostZonesChanged, type HostZoneSnapshot } from '../core/comparison-html.js';
+import type { HostZoneSnapshot } from '../core/comparison-html.js';
 import { ComparisonShortRefSchema, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
 import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
@@ -46,7 +46,7 @@ export type ComparisonFactsContext = Omit<ComparisonContext, "attemptId">;
 
 export type ComparisonReportFacts = {
   run: { runId: string; outcome: string; terminationCode: string; initiatedBy: string; elapsedMs?: number; candidateElapsedMs?: number };
-  models: { candidate: string; baseline?: string; controller?: string; comparison?: string };
+  models: { candidate: string; candidateRequested?: string; candidateResolved?: string; baseline?: string; controller?: string; comparison?: string };
   activity: { candidateTurns?: number; controllerCalls?: number; toolCalls?: { total: number; succeeded: number; failed: number; rejectedApprovals: number } };
   limits: { wallClockMs?: number; maxTargetTurns?: number; maxModelCalls?: number; triggered: readonly string[] };
   runtime: { productId: string; sandbox?: string; approvalPolicy?: string; network?: string };
@@ -164,8 +164,7 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'again, publish externally, or access credentials.',
   '',
   'In this session you will receive, in order, requests to understand, investigate,',
-  'compose, and review; when a Host zone has been altered you receive one extra',
-  'repair request. Return after each request; the next one continues in the same session.',
+  'compose, and review. Return after each request; the next one continues in the same session.',
   '',
   '# Workspace',
   'Entry point: INDEX.md. The catalog\'s current revision and registered references',
@@ -266,14 +265,6 @@ const JSON_ONLY_REPAIR_PROMPT = [
   '{"status":"completed"|"insufficient_evidence","headline":"...","evidenceRefs":["ev-02"]}',
 ].join('\n');
 
-const HOST_ZONE_REPAIR_PROMPT = [
-  'A Host zone was altered. Reopen report.html and restore the data-host-zone regions',
-  '(style, header structure, metrics, cost-note, evidence, process) exactly as the',
-  'template had them; keep only what you wrote inside data-agent-zone="comparison"',
-  'and data-agent-zone="details" and the category, task, and headline slots.',
-  'Do not rewrite CSS or delete component prototypes. Write the complete file back.',
-].join(' ');
-
 const COMPARISON_REPAIR_INSTRUCTION = 'Return only the JSON object; do not rewrite report.html. Use short refs from the current catalog for evidenceRefs, or [].';
 
 export class ComparisonAgent implements ComparisonAgentPort {
@@ -332,32 +323,6 @@ export class ComparisonAgent implements ComparisonAgentPort {
     if (prefix.status !== 'completed') {
       if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
       return prefix;
-    }
-    const afterCompose = await readAttemptReport(tools, signal);
-    if (afterCompose && hostZonesChanged(afterCompose, context.hostZoneSnapshot)) {
-      const repair = await session.work({
-        promptContent: HOST_ZONE_REPAIR_PROMPT,
-        timeoutMs: this.#timeoutMs,
-        ...(signal ? { signal } : {}),
-      });
-      if (repair.status !== 'completed') {
-        if (repair.status === 'failed') await this.#sessions.discard(attemptId);
-        return repair;
-      }
-      const afterRepair = await readAttemptReport(tools, signal);
-      if (!afterRepair || hostZonesChanged(afterRepair, context.hostZoneSnapshot)) {
-        await this.#sessions.discard(attemptId);
-        return {
-          status: 'failed',
-          sessionId: session.sessionId,
-          failure: {
-            code: 'host_zone_modified',
-            message: 'Host zone was modified.',
-            attempts: 1,
-            kind: 'protocol',
-          },
-        };
-      }
     }
     const envelopeRequest = {
       ...(signal ? { signal } : {}),

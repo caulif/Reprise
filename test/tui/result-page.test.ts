@@ -116,7 +116,7 @@ test('result page footer lists path open keys and c during compare gate', () => 
     ['?', 'Help'],
   ]);
   assert.deepEqual(resultHints('en', true, artifacts), [
-    ['c', 'Generate comparison card'],
+    ['c', 'Generate comparison report'],
     ['o', 'Open report'],
     ['h', 'History final'],
     ['?', 'Help'],
@@ -142,7 +142,7 @@ test('failed comparison remains distinct from a stalled candidate in both termin
     assert.match(text, /Stalled|stalled/);
     assert.match(text, /Task\s+Incomplete/);
     assert.match(text, /Comparison failed/);
-    assert.match(text, /protocol/);
+    assert.doesNotMatch(text, /\(protocol\)/);
     assert.match(text, /Diagnostic/);
     assert.match(text, /comparison-failure\.html/);
   }
@@ -210,7 +210,35 @@ test('result metrics name candidate time when comparison made the experiment lon
     facts: { wallClockMs: 72_000, elapsedMs: 148_000, turns: 1, controllerCalls: 1 },
   } as never).join('\n');
   assert.match(text, /148s/);
-  assert.match(text, /candidate 72s/);
+  assert.match(text, /Candidate time\s+72s/);
+  assert.match(text, /Total elapsed\s+148s/);
+});
+
+test('result separates requested and resolved models, phase durations, and unpublished report', () => {
+  const result = {
+    reportPath: 'C:\\exp\\comparison-failure.html',
+    experimentRoot: 'C:\\exp',
+    record: {
+      attempt: { runId: 'run-1', candidate: { productId: 'claude-code', requestedModel: 'sonnet' } },
+      manifest: { resolvedModel: { requested: 'sonnet', resolved: 'deepseek/deepseek-v4.1-flash' } },
+      outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } },
+    },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'failed', failure: { code: 'host_zone_modified', kind: 'protocol' } } },
+    facts: { elapsedMs: 1_294_000, wallClockMs: 102_000, tokenCount: 96_258, costUsd: 0.03 },
+  } as never;
+  const text = renderResult(createTheme(120, false), 120, result, 'zh', 'Claude Code', false, {
+    phaseClocks: { comparisonStartedAt: 1_000, comparisonEndedAt: 1_006_000 },
+  }).join('\n');
+  assert.match(text, /sonnet → deepseek\/deepseek-v4\.1-flash/);
+  assert.match(text, /候选耗时\s+102s/);
+  assert.match(text, /对照耗时\s+1005s/);
+  assert.match(text, /总耗时\s+1294s/);
+  assert.match(text, /报告版式未通过校验/);
+  assert.doesNotMatch(text, /对照完成|\(protocol\)/);
+  assert.deepEqual(resultHints('zh', false, { report: true, diagnostic: true }), [
+    ['o', '打开失败诊断'], ['Esc', '封面'], ['?', '帮助'],
+  ]);
 });
 
 test('failed result shows the recorded failure instead of limitations copy', () => {

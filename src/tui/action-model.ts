@@ -64,6 +64,7 @@ export type ActionMode = {
 
 export type ActionArtifacts = {
   readonly report?: boolean;
+  readonly diagnostic?: boolean;
   readonly historyFinal?: boolean;
   readonly candidateFinal?: boolean;
   readonly trace?: boolean;
@@ -85,6 +86,7 @@ export function artifactsFromResult(result: ExperimentResult | undefined): Actio
   const paths = resolveResultPathLinks(result);
   return {
     report: Boolean(paths.report),
+    diagnostic: Boolean(paths.report) && (result.comparison.result.status === 'failed' || result.comparison.result.status === 'cancelled'),
     historyFinal: Boolean(paths.historyFinal),
     candidateFinal: Boolean(paths.candidateFinal),
     trace: Boolean(paths.trace),
@@ -167,7 +169,7 @@ function resultActions(mode: ActionMode, artifacts: ActionArtifacts): readonly U
     actions.push(action('compare', 'hintCompare', ['c'], 'start', 50));
     actions.push(action('activate-primary', 'hintCompare', ['enter'], 'start', 0));
   }
-  actions.push(artifactAction('open-report', 'hintReport', ['o'], artifacts.report, 'noReport'));
+  actions.push(artifactAction('open-report', artifacts.diagnostic ? 'hintOpenDiagnostic' : 'hintReport', ['o'], artifacts.report, 'noReport'));
   actions.push(artifactAction('open-history-final', 'hintHistoryFinal', ['h'], artifacts.historyFinal, 'noHistoryFinal'));
   actions.push(artifactAction('open-candidate-final', 'hintCandidateFinal', ['f'], artifacts.candidateFinal, 'noCandidateFinal'));
   actions.push(artifactAction('open-trace', 'hintTrace', ['t'], artifacts.trace, 'noTrace'));

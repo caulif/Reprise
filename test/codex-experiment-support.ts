@@ -173,7 +173,7 @@ const comparison: ComparisonAgentPort = {
     );
     const shell = await reader.execute({ path: "report.html" }, new AbortController().signal);
     await writer?.execute(
-      { path: "report.html", content: comparisonHtmlWithHostShell(shell.content, '<style>body{color:rebeccapurple}</style><svg></svg><script>window.ready=true</script><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>') },
+      { path: "report.html", content: comparisonHtmlWithHostShell(shell.content, '<svg></svg><p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>') },
       new AbortController().signal,
     );
     return {

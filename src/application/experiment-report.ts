@@ -32,7 +32,6 @@ import { assertComparisonResult, type ComparisonContext, type ComparisonResult }
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 import { readOperatorLocale } from "./operator-locale.js";
-import { reportString } from "./comparison-report-strings.js";
 import type { AgentLocale } from "../agents/language.js";
 import { Type } from "@sinclair/typebox";
 import { ComparisonEvidenceCatalog, lookupCompletedToolCall } from "./comparison-evidence.js";
@@ -42,7 +41,6 @@ import { createPreviewReportTool, createRenderArtifactTool } from "./comparison-
 import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
 import {
   comparisonFailureDiagnostic,
-  draftAgentSlots,
   persistComparisonReportModel,
   publishComparisonArtifacts,
   verifyAndRenderComparisonReport,
@@ -286,6 +284,7 @@ async function compareExperimentOutcome(
     attemptRoot,
     comparisonResult,
     facts: context.reportFacts,
+    task: context.task.summary,
     locale,
   });
 }
@@ -395,6 +394,7 @@ async function persistComparisonInvocation(input: {
   attemptRoot: string;
   comparisonResult: AgentInvocation<ComparisonResult>;
   facts: ComparisonContext["reportFacts"];
+  task: string;
   locale: AgentLocale;
 }) {
   await input.store.append({
@@ -415,6 +415,7 @@ async function persistComparisonInvocation(input: {
       reportPath,
       result: input.comparisonResult,
       facts: input.facts,
+      task: input.task,
       attemptId: input.attemptId,
       attemptRoot: input.attemptRoot,
       locale: input.locale,
@@ -470,6 +471,7 @@ async function enforcePublishedReport(
   }
   const verified = await verifyAndRenderComparisonReport({
     html: await readFile(join(attemptRoot, "report.html"), "utf8"),
+    hostTask: context.task.summary,
     facts: context.reportFacts,
     result: result.value,
     attemptRoot,
@@ -775,20 +777,15 @@ async function writeComparisonFailurePage(input: {
   reportPath: string;
   result: StructuredAgentResult<unknown>;
   facts: ComparisonContext["reportFacts"];
+  task: string;
   attemptId: string;
   attemptRoot: string;
   locale: AgentLocale;
 }): Promise<void> {
   const reportPresent = await reportExists(input.attemptRoot, "report.html");
-  const draftHtml = reportPresent
-    ? await readFile(join(input.attemptRoot, "report.html"), "utf8").catch((error) => {
-      if (isMissing(error)) return undefined;
-      throw error;
-    })
-    : undefined;
   const html = renderComparisonReportShell({
     title: "Comparison unavailable",
-    task: reportString(input.locale, "diagFailed"),
+    task: input.task,
     facts: input.facts,
     metrics: metricsFromReportFacts(input.facts),
     locale: input.locale,
@@ -798,9 +795,7 @@ async function writeComparisonFailurePage(input: {
       reportPresent,
       attemptId: input.attemptId,
       locale: input.locale,
-      ...(draftHtml ? { draftHtml } : {}),
     }),
-    slots: draftAgentSlots(draftHtml),
   });
   await writeFile(input.reportPath, html, "utf8");
 }

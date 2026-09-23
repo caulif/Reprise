@@ -18,6 +18,7 @@ import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
 import type { WorkbenchView, WorkbenchSurfaceScope, ContextBarModel, StatusSummaryModel, StageRailModel, ActivityCardModel, RecoverySummaryModel } from './workbench.js';
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
+import { candidateModelLabel } from './display-copy.js';
 import { recoveryFailureDecision } from '../application/recovery/fail.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
@@ -82,10 +83,14 @@ function homeModel(input: Input, envSet: boolean) {
   };
 }
 
-function runningModel(input: Input) {
+export function runningModel(input: Input) {
   const productLabel = chromeProductLabel(input);
   const candidateSessionId = candidateSessionIdFrom(input.timeline);
   const now = input.nowMs ?? Date.now();
+  const modelLabel = candidateModelLabel(
+    input.candidate?.requestedModel ?? input.result?.record.attempt.candidate.requestedModel,
+    input.result?.record.manifest?.resolvedModel.resolved ?? input.preflight?.resolved.resolvedModel,
+  );
   const activityRole = activityRoleFromDiagnostics({
     ...(input.preparePhase ? { preparePhase: input.preparePhase } : {}),
     ...(input.runPhase ? { runPhase: input.runPhase } : {}),
@@ -149,7 +154,7 @@ function runningModel(input: Input) {
     ...(input.activityDetail ? { activityDetail: input.activityDetail } : {}),
     ...(input.activityDetailOffset ? { activityDetailOffset: input.activityDetailOffset } : {}),
     locale: input.locale ?? 'en', ...(productLabel ? { productLabel } : {}),
-    ...(input.candidate?.requestedModel ? { candidateModel: input.candidate.requestedModel } : {}),
+    ...(modelLabel ? { candidateModel: modelLabel } : {}),
     ...(input.taskCase ? {
       taskTitle: taskDisplaySummary(
         input.taskCase.initialInput.text,
@@ -428,24 +433,32 @@ function contextBarOf(input: Input, productLabel: string | undefined, locale: Lo
   const workflowPages = new Set(['candidate-product', 'candidate-model', 'confirm', 'running', 'result', 'preflight']);
   if (!workflowPages.has(input.page)) return undefined;
   const taskTitle = taskTitleOf(input.taskCase, locale);
+  const modelLabel = candidateModelLabel(
+    input.candidate?.requestedModel ?? input.result?.record.attempt.candidate.requestedModel,
+    input.result?.record.manifest?.resolvedModel.resolved ?? input.preflight?.resolved.resolvedModel,
+  );
   return {
     ...(taskTitle ? { taskTitle } : {}),
     ...(productLabel ? { productLabel } : {}),
-    ...(input.candidate?.requestedModel ? { modelLabel: input.candidate.requestedModel } : {}),
+    ...(modelLabel ? { modelLabel } : {}),
     ...(input.sourceProductLabel ? { sourceLabel: input.sourceProductLabel } : {}),
   };
 }
 
-function stageRailOf(input: Input, locale: Locale): StageRailModel | undefined {
+export function stageRailOf(input: Input, locale: Locale): StageRailModel | undefined {
   if (input.page === 'running' || input.page === 'result' || input.page === 'confirm'
     || input.page === 'candidate-product' || input.page === 'candidate-model') {
-    const compared = input.preparePhase === 'compare'
-      || (input.page === 'result' && input.result?.comparison.result.status !== 'skipped');
+    const recovering = input.runPhase === 'recovery' || input.preparePhase === 'check';
+    const comparing = input.preparePhase === 'compare';
+    const comparisonStatus = input.page === 'result' ? input.result?.comparison.result.status : undefined;
+    const comparisonMark = comparing ? '●'
+      : comparisonStatus === 'completed' ? '✓'
+        : comparisonStatus === 'failed' || comparisonStatus === 'cancelled' ? '✗' : '○';
     const marks = [
-      `✓ ${t(locale, 'recoveryField')}`,
-      `${input.page === 'candidate-product' ? '●' : '✓'} ${t(locale, 'candidateLabel')}`,
-      `${input.page === 'running' ? '●' : input.page === 'result' ? '✓' : '○'} ${t(locale, 'runDesc')}`,
-      `${compared ? (input.preparePhase === 'compare' ? '●' : '✓') : '○'} ${t(locale, 'resultComparison')}`,
+      `${recovering ? '●' : '✓'} ${t(locale, 'recoveryField')}`,
+      `${recovering ? '○' : input.page === 'candidate-product' ? '●' : '✓'} ${t(locale, 'candidateLabel')}`,
+      `${recovering ? '○' : input.page === 'running' && !comparing ? '●' : input.page === 'result' || comparing ? '✓' : '○'} ${t(locale, 'runDesc')}`,
+      `${comparisonMark} ${t(locale, 'resultComparison')}`,
     ];
     return { text: marks.join('  ') };
   }

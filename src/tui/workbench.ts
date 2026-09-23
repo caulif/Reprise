@@ -384,6 +384,7 @@ function withProcess(
 function compactThemeGlyphs(theme: Theme, text: string): string {
   return text
     .replaceAll('✓', theme.glyphs.ok)
+    .replaceAll('✗', theme.glyphs.err)
     .replaceAll('●', theme.glyphs.dot)
     .replaceAll('○', theme.glyphs.empty)
     .replaceAll('▸', theme.glyphs.arrow)
@@ -468,6 +469,7 @@ function renderResultSurface(theme: Theme, view: WorkbenchView, width: number, h
   const options = {
     ...(view.surfaceScope ? { surfaceScope: view.surfaceScope } : {}),
     ...(view.processExpanded ? { processExpanded: true } : {}),
+    ...(view.running?.phaseClocks ? { phaseClocks: view.running.phaseClocks } : {}),
   };
   const summary = renderResult(theme, width, view.result, locale, view.productLabel, Boolean(view.comparePending), options);
   const expand = view.surfaceScope === 'comparison'

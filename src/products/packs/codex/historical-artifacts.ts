@@ -10,10 +10,13 @@ import {
 import { applyUpdateHunks, parseApplyPatchText } from "./apply-patch.js";
 import {
   classifyShellCommand,
+  classifyCustomExec,
   commandFromArguments,
   isCodexApplyPatchTool,
   isCodexShellTool,
   isFailedToolOutput,
+  isFailedCustomExecOutput,
+  isSuccessfulCustomExecOutput,
   patchTextFromApplyPatchArguments,
 } from "./historical-artifact-policy.js";
 
@@ -25,6 +28,7 @@ type PendingCall = {
   readonly callId: string;
   readonly name: string;
   readonly argumentsText: string;
+  readonly inputAvailable: boolean;
   readonly sourceRef: string;
 };
 
@@ -48,12 +52,15 @@ export function extractCodexHistoricalArtifacts(input: HistoricalArtifactExtract
       const callId = text(payload.call_id) ?? text(payload.callId) ?? `anon-${index}`;
       const name = text(payload.name) ?? "tool";
       const argumentsText = text(payload.arguments) ?? text(payload.input) ?? "";
-      pending.set(callId, { callId, name, argumentsText, sourceRef });
+      pending.set(callId, {
+        callId, name, argumentsText, sourceRef,
+        inputAvailable: name !== "exec" || payloadType !== "custom_tool_call" || typeof payload.input === "string",
+      });
       continue;
     }
     if (row.type === "response_item" && (payloadType === "function_call_output" || payloadType === "custom_tool_call_output")) {
       const callId = text(payload.call_id) ?? text(payload.callId);
-      const output = text(payload.output) ?? "";
+      const output = payload.output;
       if (!callId) {
         builder.issue("ambiguous_version", [sourceRef], undefined, "Tool output missing call_id.");
         continue;
@@ -65,7 +72,22 @@ export function extractCodexHistoricalArtifacts(input: HistoricalArtifactExtract
         continue;
       }
       const refs = [call.sourceRef, sourceRef];
-      if (isFailedToolOutput(output)) {
+      if (call.name === "exec") {
+        if (!call.inputAvailable) {
+          builder.markAllUnknown(refs, "unsupported_write");
+          continue;
+        }
+        const classified = classifyCustomExec(call.argumentsText);
+        if (classified.kind === "no_write_evidence") continue;
+        if (!isSuccessfulCustomExecOutput(output)) {
+          builder.markAllUnknown(refs, isFailedCustomExecOutput(output) ? "failed_tool" : "ambiguous_version");
+          continue;
+        }
+        if (classified.kind === "static_apply_patch") applyParsedPatch(builder, classified.patch, refs);
+        else builder.markAllUnknown(refs, "unsupported_write");
+        continue;
+      }
+      if (isFailedToolOutput(text(output) ?? "")) {
         builder.issue("failed_tool", refs);
         continue;
       }

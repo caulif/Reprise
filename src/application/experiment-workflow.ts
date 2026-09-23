@@ -27,6 +27,7 @@ import { packDefaultCandidate, packHistory, packRuntime } from '../products/pack
 import { discoverProductSessions, resolveHistoryRoot } from '../products/history/discover.js';
 import { inspectProductSession, readImportedSession } from '../products/history/read.js';
 import { freezeCase } from '../products/shared/freeze.js';
+import type { HistoricalArtifactExtractFn } from '../products/shared/freeze.js';
 import { DEFAULT_RUN_POLICY } from './default-run-policy.js';
 import type { SourceRootKind } from './replay-conditions.js';
 import { assertCandidateStartAllowed, candidateGateFromAttempt } from './candidate-start.js';
@@ -92,6 +93,12 @@ export function createExperimentWorkflow(input: {
   const candidate = input.defaults?.candidate;
   const policy = input.defaults?.policy ?? DEFAULT_RUN_POLICY;
   const packFor = (productId: string) => resolvePack(productId, input.pack, input.lookup);
+  const sourceExtractor = (productId: string): HistoricalArtifactExtractFn | undefined => {
+    const history = packHistory(packFor(productId));
+    return history.extractHistoricalArtifacts
+      ? (extractInput) => history.extractHistoricalArtifacts!(extractInput)
+      : undefined;
+  };
   const resolve = (taskCase: TaskCase, chosen?: CandidateSpec) => resolveSelection(taskCase, chosen, candidate, packFor, input.runtime);
   const ownedRecoveries = createOwnedRecoveries();
   return {
@@ -136,6 +143,7 @@ export function createExperimentWorkflow(input: {
       const agents = await input.agents(owned.signal);
       owned.signal.throwIfAborted();
       const selected = resolve(request.taskCase, request.candidate);
+      const extractHistoricalArtifacts = sourceExtractor(request.taskCase.source.productId);
       const handle = startExperiment({
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
         taskCase: request.taskCase, candidate: selected.candidate, runtime: selected.runtime, pack: selected.pack,
@@ -147,11 +155,8 @@ export function createExperimentWorkflow(input: {
         ...(request.sourceRootKind ? { sourceRootKind: request.sourceRootKind } : {}),
         ...(request.compare ? { compare: true } : {}),
         ...(request.deferComparison ? { deferComparison: true } : {}),
-        ...(packHistory(selected.pack).extractHistoricalArtifacts
-          ? {
-            extractHistoricalArtifacts: (extractInput) =>
-              packHistory(selected.pack).extractHistoricalArtifacts!(extractInput),
-          }
+        ...(extractHistoricalArtifacts
+          ? { extractHistoricalArtifacts }
           : {}),
         signal: owned.signal,
       });
@@ -166,11 +171,7 @@ export function createExperimentWorkflow(input: {
           const agents = await input.agents(combined);
           return { comparison: agents.comparison, agentConfig: agents.config };
         },
-        resolveExtractHistoricalArtifacts: (productId) => {
-          const history = packHistory(packFor(productId));
-          if (!history.extractHistoricalArtifacts) return undefined;
-          return (extractInput) => history.extractHistoricalArtifacts!(extractInput);
-        },
+        resolveExtractHistoricalArtifacts: sourceExtractor,
         ...(runId ? { runId } : {}), ...(signal ? { signal } : {}), ...(onEvent ? { onEvent } : {}), ...(onActivity ? { onActivity } : {}),
       });
     },
