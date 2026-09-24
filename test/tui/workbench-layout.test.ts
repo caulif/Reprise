@@ -17,7 +17,7 @@ test('layout root hides the normal workbench below the minimum viewport height',
   assert.equal(shortEntries.length, 1);
   assert.match(shortEntries[0]!.component.render(120).join('\n'), /Terminal is too short|终端太矮/);
   height = 30;
-  assert.equal(node.entries.filter((entry) => entry.visible?.({ width: 120, height }) ?? true).length, 7);
+  assert.equal(node.entries.filter((entry) => entry.visible?.({ width: 120, height }) ?? true).length, 6);
 });
 
 test('short cancelling workbench keeps live status when body budget is under four', () => {
@@ -72,7 +72,7 @@ test('short cancelling workbench keeps live status when body budget is under fou
     },
   };
   const geometry = measureWorkbenchGeometry(view, 120, 8);
-  assert.ok(geometry.body.height < 4, `expected tight body, got ${geometry.body.height}`);
+  assert.ok(geometry.body.height <= 4, `expected tight body, got ${geometry.body.height}`);
   const lines = renderWorkbench(view, 120, 8);
   assert.ok(lines.length <= 8, `expected <= 8 lines, got ${lines.length}`);
   const text = lines.join('\n');

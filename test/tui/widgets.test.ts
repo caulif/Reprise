@@ -510,7 +510,7 @@ test('help names the keys of the page it was opened on', () => {
   assert.doesNotMatch(global, /This page/);
 });
 
-test('wide inspection keeps a session list beside the freeze card without a third preview column', () => {
+test('wide inspection keeps task text and later requests visible in the single reading surface', () => {
   const inspection = {
     productId: 'codex', sessionId: 'session-1', sourcePath: 'C:\\tmp\\rollout-session-1.jsonl', startedAt: '2026-08-11T00:00:00.000Z',
     cwd: 'C:/source', summary: 'Fix the bug.',
@@ -537,15 +537,15 @@ test('wide inspection keeps a session list beside the freeze card without a thir
     },
     inspection: { inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false },
   } as never, 120).join('\n');
-  assert.match(text, /Review session/);
+  assert.match(text, /Review the task/);
   assert.match(text, /Task text:/);
-  assert.match(text, /Later user turns/);
+  assert.match(text, /Later user requests/);
   assert.match(text, /Fix the bug/);
-  assert.equal((text.match(/┌─/g) ?? []).length, 2);
+  assert.equal((text.match(/┌─/g) ?? []).length, 0);
   assert.doesNotMatch(text, /┌─ Preview/);
 });
 
-test('a regular-width intake sheet keeps preview, panel close, search, and footer on a 24-row terminal', () => {
+test('a regular-width intake list keeps selection and footer within 24 rows', () => {
   const startedAt = '2026-08-13T00:00:00.000Z';
   const projects = Array.from({ length: 51 }, (_, index) => ({
     key: `p${index}`,
@@ -580,15 +580,14 @@ test('a regular-width intake sheet keeps preview, panel close, search, and foote
   const text = lines.join('\n');
   assert.ok(lines.length <= 24, `expected <= 24 lines, got ${lines.length}`);
   assert.ok(lines.length >= 22, `expected a full frame, got ${lines.length}`);
-  assert.match(text, /Preview/);
-  assert.match(text, /\[type\] Search/);
-  assert.match(text, /└/);
+  assert.match(text, /project-50/);
+  assert.match(text, /Search|搜索/);
   assert.match(text, /\[↑↓\]|\[Up\/Dn\]/);
   assert.match(text, /51\/51/);
-  assert.equal((text.match(/┌─/g) ?? []).length, 2);
+  assert.equal((text.match(/┌─/g) ?? []).length, 0);
 });
 
-test('regular density paints an intake preview beside the list', () => {
+test('regular density keeps the selected session summary in the list', () => {
   const theme = createTheme(90, false);
   const startedAt = '2026-08-12T21:40:00.000Z';
   const session = {
@@ -605,10 +604,8 @@ test('regular density paints an intake preview beside the list', () => {
     query: '',
     searching: false,
   }, 16).join('\n');
-  assert.match(text, /Preview/);
   assert.match(text, /Fix the regression/);
-  assert.match(text, /Updated/);
-  assert.equal((text.match(/┌─/g) ?? []).length, 2);
+  assert.equal((text.match(/┌─/g) ?? []).length, 1);
 });
 
 test('pending list rows show truncated summary, not an unreadable freeze verdict', () => {
@@ -750,7 +747,7 @@ test('a short viewport trims chrome and refuses to paint below the minimum heigh
   assert.ok(short.length <= 14, `expected <= 14 lines, got ${short.length}`);
   // Dividers and the second header row are the rows a short terminal cannot afford.
   assert.equal(short.filter(isDivider).length, 0);
-  assert.ok(roomy.filter(isDivider).length >= 2, 'a roomy viewport keeps its dividers');
+  assert.match(roomy.join('\n'), /Redo a task|重做任务/);
 
   const tiny = renderWorkbench(view, 60, 6).join('\n');
   assert.match(tiny, /too short/);
@@ -767,7 +764,7 @@ test('header names no default product before the user selects one', () => {
     message: 'Welcome back.',
     home: { taskCase: undefined, recentExperiment: undefined, hasApiConfig: true, hasUsableAuth: true, composer: '', showSuggestions: false },
   }, 120).join('\n');
-  assert.match(text, /Product unset/);
+  assert.match(text, /Redo a task|重做任务/);
   assert.doesNotMatch(text, /Codex/);
   assert.doesNotMatch(text, /Agent unset/);
 });
@@ -816,15 +813,11 @@ test('header shows Harness env unset and does not send Next to /config', () => {
       showSuggestions: false,
     },
   }, 120).join('\n');
-  assert.match(text, /Harness env unset/);
-  assert.match(text, /Claude Code/);
+  assert.match(text, /env unset|需要凭据/);
   assert.doesNotMatch(text, /Codex/);
   assert.doesNotMatch(text, /API key missing/);
   assert.doesNotMatch(text, /API ready/);
   assert.match(text, /\/config/);
-  assert.match(text, /env unset|needs env/);
-  assert.match(text, /OPENAI_API_KEY/);
-  assert.match(text, /\$env:OPENAI_API_KEY = '<value>'|export OPENAI_API_KEY='<value>'/);
   assert.doesNotMatch(text, /Next: \/config/);
 });
 
@@ -886,7 +879,7 @@ test('production layout root paints Home through a fake terminal', async (t) => 
   });
   await app.start();
   const frame = renderFrame(tui, term, 30, 120);
-  assert.match(frame, /New replay|新建回放|\/ command|\/命令|More|更多/);
+  assert.match(frame, /Redo a task|重做任务|\/ command|\/命令|More|更多/);
   assert.match(frame, /\/config|\/intake|\/lang/);
   app.handleInput('?');
   assert.match(app.preview(120), /Commands: \/intake, \/history, \/config, \/lang, \/help|命令：\/intake, \/history, \/config, \/lang, \/help/);
@@ -908,7 +901,7 @@ test('production layout accepts bracketed paste and completes a unique Home comm
   app.handleInput('\x1b[200~/c\x1b[201~');
   app.handleInput('\r');
   let frame = renderFrame(tui, term, 30, 120);
-  assert.match(frame, /Internal collab model|内部协作模型|Internal Agent model|内部 Agent 模型/);
+  assert.match(frame, /Reprise model settings|Reprise 模型设置/);
 
   app.handleInput('\r');
   app.handleInput('\x15');
@@ -936,16 +929,15 @@ test('run confirmation only restates the start decision', () => {
     productLabel: 'Claude Code',
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
   }).join('\n');
-  assert.match(text, /Start isolated Claude Code Candidate[?]/);
-  assert.match(text, /Requested model/);
-  assert.match(text, /Resolved model/);
+  assert.match(text, /Start execution with Claude Code[?]/);
+  assert.match(text, /Selected model/);
   assert.match(text, /gpt-5/);
   assert.match(text, /Candidate.*Claude Code|Claude Code/);
   assert.doesNotMatch(text, /isolated Codex/);
   assert.doesNotMatch(text, /Maximum requests/);
   assert.doesNotMatch(text, /Network \/ billing/);
   assert.doesNotMatch(text, /privacy sanitization/);
-  assert.match(text, /Original directory stays unchanged/);
+  assert.match(text, /original project directory stays unchanged/);
   const zhText = renderConfirmation(theme, 120, {
     preflight,
     candidate: { candidateId: 'candidate-test', productId: 'codex', requestedModel: 'gpt-5' },
@@ -958,7 +950,7 @@ test('run confirmation only restates the start decision', () => {
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     locale: 'zh',
   }).join('\n');
-  assert.match(zhText, /第 3 \/ 3 步/);
+  assert.match(zhText, /确认用 Codex 执行任务/);
   assert.match(zhText, /可能产生费用/);
   assert.doesNotMatch(zhText, /Confirm run|Maximum requests|Network \/ billing|This starts a/);
 });
@@ -976,7 +968,7 @@ test('preflight and history views expose snapshot and storage size', () => {
   assert.match(preflightText, /Source size/);
   assert.match(preflightText, /Status.*runnable/);
   const historyText = renderHistory(theme, 120, { totalBytes: 3 * 1024 * 1024, tab: 'runs', items: [], selected: 0 }).join('\n');
-  assert.match(historyText, /Storage 3[.]0 MiB/);
+  assert.match(historyText, /No run history yet/);
 });
 
 test('history windows long lists around the selection', () => {
@@ -990,7 +982,7 @@ test('history windows long lists around the selection', () => {
     sizeBytes: 0,
   }));
   const text = renderHistory(theme, 120, { totalBytes: 0, tab: 'runs', items, selected: 15 }).join('\n');
-  assert.match(text, /experiment-16/);
+  assert.match(text, /Task case-1/);
   assert.match(text, /16\/20/);
   assert.doesNotMatch(text, /experiment-1\s/);
 });

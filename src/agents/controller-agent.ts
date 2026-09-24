@@ -1,7 +1,6 @@
-import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { unknownEvidenceRefMessage } from '../core/evidence-refs.js';
-import { EvidenceRefSchema, type CandidateRunState, type TaskCase } from '../core/schema.js';
+import { ControllerDecisionSchema, EvidenceRefSchema, type ControllerDecision, type CandidateRunState, type TaskCase } from '../core/schema.js';
 import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition, type AgentToolResult } from '../infrastructure/agent/host.js';
 import { promptDigest } from '../infrastructure/agent/prompt-digest.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
@@ -11,19 +10,7 @@ import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 
 export type SourceRootKind = 'historical_cwd' | 'historical_start' | 'operator_selected' | 'stand_in';
 
-const ControllerDecisionSchema = Type.Union([
-  Type.Object({
-    type: Type.Literal('send'), message: Type.String({ minLength: 1 }),
-    intent: Type.Union([Type.Literal('continue'), Type.Literal('inform'), Type.Literal('correct'), Type.Literal('verify')]),
-    rationale: Type.Optional(Type.String()), evidenceRefs: Type.Optional(Type.Array(EvidenceRefSchema)),
-  }),
-  Type.Object({
-    type: Type.Literal('done'),
-    reason: Type.Union([Type.Literal('satisfied'), Type.Literal('blocked'), Type.Literal('requires_real_user_decision'), Type.Literal('no_further_value')]),
-    rationale: Type.Optional(Type.String()), evidenceRefs: Type.Optional(Type.Array(EvidenceRefSchema)),
-  }),
-]);
-export type ControllerDecision = Static<typeof ControllerDecisionSchema>;
+export type { ControllerDecision } from '../core/schema.js';
 
 export type ControllerRequest = {
   /** Host-generated identifier for this one decision request. */

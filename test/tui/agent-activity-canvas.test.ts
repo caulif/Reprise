@@ -122,7 +122,7 @@ test('comparison header does not keep the candidate turn chrome', () => {
   };
   const chrome = runningChrome(theme, 120, model).join('\n');
   const text = renderTimeline(theme, 120, model).join('\n');
-  assert.match(chrome, /正在写对照报告/);
+  assert.match(chrome, /正在比较结果/);
   assert.match(text, /report.html/);
   assert.doesNotMatch(chrome, /第 4 轮/);
 });

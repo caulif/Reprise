@@ -26,7 +26,7 @@ test('candidate running chrome shows reconnect count and a stale wait hint', () 
   assert.match(stale, /Ctrl\+C/);
 });
 
-test('candidate running header is not the recovery title', () => {
+test('execution chrome exposes its phase through the stop action', () => {
   const text = renderWorkbench({
     page: 'running', cwd: 'C:\\repo', hasApiConfig: true, hasTaskCase: true, locale: 'zh', message: '',
     inlineHelp: false,
@@ -36,11 +36,12 @@ test('candidate running header is not the recovery title', () => {
       productLabel: 'Codex',
     },
   }, 120).join('\n');
-  assert.match(text, /候选运行中/);
-  assert.doesNotMatch(text, /正在恢复会话/);
+  assert.match(text, /00:12/);
+  assert.match(text, /停止执行/);
+  assert.doesNotMatch(text, /停止准备/);
 });
 
-test('recovery runPhase keeps the recovering header after preparePhase is cleared', () => {
+test('recovery runPhase keeps preparation controls after preparePhase is cleared', () => {
   const text = renderWorkbench({
     page: 'running', cwd: 'C:\\repo', hasApiConfig: true, hasTaskCase: true, locale: 'zh', message: '',
     inlineHelp: false,
@@ -51,14 +52,14 @@ test('recovery runPhase keeps the recovering header after preparePhase is cleare
       runPhase: 'recovery',
     },
   }, 120).join('\n');
-  assert.match(text, /正在恢复会话/);
-  assert.equal([...text.matchAll(/正在恢复会话|仍在恢复会话/g)].length, 1);
-  assert.doesNotMatch(text, /候选运行中/);
+  assert.match(text, /停止准备/);
+  assert.equal([...text.matchAll(/停止准备/g)].length, 1);
+  assert.doesNotMatch(text, /停止执行/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /正在写回复/);
 });
 
-test('recovery header switches to still recovering without a second canvas title', () => {
+test('preparation chrome shows elapsed time without adding a second title', () => {
   const now = Date.parse('2026-08-28T00:02:10.000Z');
   const text = renderWorkbench({
     page: 'running', cwd: 'C:\\repo', hasApiConfig: true, hasTaskCase: true, locale: 'zh', message: '',
@@ -72,9 +73,10 @@ test('recovery header switches to still recovering without a second canvas title
       tick: now,
     },
   }, 120).join('\n');
-  assert.match(text, /仍在恢复会话/);
-  assert.doesNotMatch(text, /正在恢复会话/);
-  assert.equal([...text.matchAll(/仍在恢复会话/g)].length, 1);
+  assert.match(text, /00:35/);
+  assert.match(text, /停止准备/);
+  assert.equal([...text.matchAll(/Reprise/g)].length, 1);
+  assert.doesNotMatch(text, /停止执行/);
 });
 
 test('upstream runtime failure names the temporary outage on the result page', () => {

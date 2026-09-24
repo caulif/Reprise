@@ -21,6 +21,7 @@ export type HistoryPanel = {
   historyCases: readonly HistoryCase[];
   historyExperiments: readonly HistoryExperiment[];
   historyTotalBytes: number;
+  invalidHistoryCaseCount: number;
   historyDetail: HistoryCase | HistoryExperiment | undefined;
   recentExperiment: HistoryExperiment | undefined;
   timeline: TimelineEntry[];
@@ -28,6 +29,8 @@ export type HistoryPanel = {
   timelineRevision: number;
   timelineSelected: number;
   timelineFollowing: boolean;
+  timelineReadOffset: number;
+  processExpanded: boolean;
   historyItems(): readonly (HistoryCase | HistoryExperiment)[];
   beginNavigation(): number;
   render(force?: boolean): void;
@@ -57,6 +60,8 @@ export function IntakeTui_historyInput(this: HistoryPanel, data: string): { cons
   if (result.detail) {
     if ("taskCase" in result.detail) {
       this.historyDetail = result.detail;
+      this.timelineReadOffset = 0;
+      this.processExpanded = false;
       this.page = "history-detail";
       this.message = t(this.locale, "historyDetailMsg");
     } else {
@@ -74,6 +79,8 @@ async function openHistoryExperiment(c: HistoryPanel, item: HistoryExperiment): 
     const page = await readExperimentEvents({ dataDir: c.dataDir, experimentId: item.experimentId });
     if (token !== c.generation) return;
     c.historyDetail = item;
+    c.timelineReadOffset = 0;
+    c.processExpanded = false;
     resetActivityIndex(c.activityIndex, { experimentId: item.experimentId });
     c.timeline = projectPersistedTimeline(page.events, c.activityIndex);
     bumpTimelineRevision(c);
@@ -103,12 +110,13 @@ export async function IntakeTui_loadHistory(this: HistoryPanel): Promise<void> {
     this.historyCases = history.cases;
     this.historyExperiments = history.experiments;
     this.historyTotalBytes = history.totalBytes;
+    this.invalidHistoryCaseCount = history.invalidCaseCount;
     this.recentExperiment = history.experiments[0];
     this.historyTab = "runs";
     this.historySelected = 0;
     this.page = "history";
     this.message =
-      history.experiments.length || history.cases.length
+      history.experiments.length || history.cases.length || history.invalidCaseCount
         ? t(this.locale, "historyBrowse")
         : t(this.locale, "historyEmpty");
   } catch (error) {

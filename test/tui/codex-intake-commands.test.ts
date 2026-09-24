@@ -107,7 +107,7 @@ test("Codex intake TUI keeps non-command input local and makes help and unknown 
   await app.start();
   app.handleInput("explain this task");
   app.handleInput("\r");
-  assert.match(rendered, /benchmark workbench|对照工作台/i);
+  assert.match(rendered, /Reprise/);
   assert.doesNotMatch(rendered, /explain this task/);
   assert.deepEqual(await readdir(root), []);
 
@@ -163,10 +163,10 @@ test("Codex intake TUI opens Home without configuration and only enters config o
   });
 
   await app.start();
-  assert.match(rendered, /New replay|新建回放|\/ command|\/命令|More|更多/);
+  assert.match(rendered, /New run|重做任务|\/ command|\/命令|More|更多/);
   assert.doesNotMatch(rendered, /Configuration file:|\.reprise\/harness-model\.json/);
   enterCommand(app, "/config");
-  await waitFor(() => /Internal collab model|内部协作模型|Internal Agent model|内部 Agent 模型/.test(rendered));
+  await waitFor(() => app.page === 'config');
   assert.match(rendered, /openai-compatible/);
   app.handleInput("\u001b[A");
   app.handleInput("\u001b[A");
@@ -186,9 +186,9 @@ test("Codex intake TUI opens Home without configuration and only enters config o
       effort: "medium",
     },
   );
-  assert.match(rendered, /New replay|新建回放|\/ command|\/命令|More|更多/);
+  assert.match(rendered, /New run|重做任务|\/ command|\/命令|More|更多/);
   enterCommand(app, "/config");
-  await waitFor(() => /Internal collab model|内部协作模型|Internal Agent model|内部 Agent 模型/.test(rendered));
+  await waitFor(() => app.page === 'config');
   assert.doesNotMatch(rendered, /Unsaved draft/);
   assert.match(rendered, /Saved locally|已保存在本地|已本地保存/);
 });
@@ -275,7 +275,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
     recover: async () => ({
       experimentId: "codex-luna-high",
       experimentRoot: "unused",
-      baseline: { match: "recovered", warnings: [], mode: "canonical" },
+      baseline: { match: "recovered", warnings: [], mode: "canonical", readiness: { runnable: "isolated" }, fingerprint: { digest: "fixture-digest" }, recovery: { status: "ready", unresolved: [], sourceDigest: "fixture-source", recoveredDigest: "fixture-digest" } },
       staging: { recoveryId: "r", caseId: "c", sourceRoot: "C:/source", root: "C:/source" },
       recovery: { status: "completed", sessionId: "s", value: { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
@@ -386,11 +386,11 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   await enterIntake(app);
   await waitFor(() => /Make a focused change\./.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Task text:|任务原文：/.test(rendered));
+  await waitFor(() => app.page === 'inspection');
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   assert.doesNotMatch(rendered, /Current state|Recovery \(uses model\)|Restore the task start/);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|正在准备对照|复制隔离工作区|Codex/.test(rendered));
+  await waitFor(() => app.page === 'running' || app.page === 'result');
   await waitFor(() => sourceRoot === "C:/not-automatic");
   emitEvent?.({ schemaVersion: 1, sequence: 6, eventId: 'shared-delivery', occurredAt: '2026-08-11T00:10:03.000Z', type: 'runtime.delivery_observed', payload: { status: 'accepted' }, checksum: 'd'.repeat(64) });
   assert.equal(app.runPhase, 'candidate_generating');
@@ -559,7 +559,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
     recover: async () => ({
       experimentId: `recovery-${recoveryCalls + 1}`,
       experimentRoot: root,
-      baseline: { match: "recovered", warnings: [] },
+      baseline: { match: "recovered", warnings: [], mode: "canonical", readiness: { runnable: "isolated" }, fingerprint: { digest: "fixture-digest" }, recovery: { status: "ready", unresolved: [], sourceDigest: "fixture-source", recoveredDigest: "fixture-digest" } },
       staging: { recoveryId: `recovery-${++recoveryCalls}` },
       recovery: { status: "completed", sessionId: "s", value: { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
@@ -601,7 +601,7 @@ test("Codex intake TUI automatically prepares every session with Recovery before
   await enterIntake(app);
   await waitFor(() => /Restore the task start/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Task text:|任务原文：/.test(rendered));
+  await waitFor(() => app.page === 'inspection');
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
   assert.equal(recoveryCalls, 1);

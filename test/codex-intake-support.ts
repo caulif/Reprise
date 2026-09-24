@@ -21,12 +21,12 @@ export async function waitFor(condition: () => boolean): Promise<void> {
   throw new Error("TUI did not render its expected state.");
 }
 
-export async function advanceCandidatePicker(app: IntakeTui, rendered: () => string): Promise<void> {
-  await waitFor(() => /choose candidate product|选候选产品/i.test(rendered()));
+export async function advanceCandidatePicker(app: IntakeTui, _rendered: () => string): Promise<void> {
+  await waitFor(() => app.page === 'candidate-product');
   app.handleInput("\r");
-  await waitFor(() => /choose candidate model|选候选模型/i.test(rendered()));
+  await waitFor(() => app.page === 'candidate-model');
   app.handleInput("\r");
-  await waitFor(() => app.page === "confirm" || /Start isolated|Confirm run|启动隔离|确认运行/i.test(rendered()));
+  await waitFor(() => app.page === "confirm");
   app.handleInput("\r");
   await waitFor(() => app.page === "running" || app.page === "result");
 }

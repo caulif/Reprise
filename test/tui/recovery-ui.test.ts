@@ -10,7 +10,7 @@ test('Recovery agent failure copy separates upstream and credentials from invali
   const transient = formatRecoveryFailureSummary('zh', 'agent_model_failed', { agentFailureKind: 'transient_upstream' });
   assert.match(transient, /恢复 Agent.*暂时失败.*重试/);
   const authentication = formatRecoveryFailureSummary('en', 'agent_model_failed', { agentFailureKind: 'authentication' });
-  assert.match(authentication, /Recovery agent.*provider credentials/);
+  assert.match(authentication, /Recovery agent.*Reprise model service credentials/);
   assert.doesNotMatch(authentication, /Temporary failure/);
 });
 
@@ -42,7 +42,7 @@ test('failed confirmation exposes user decision facts and keeps the candidate di
   assert.match(text, /发生了什么/);
   assert.match(text, /内部模型暂时失败/);
   assert.match(text, /影响/);
-  assert.match(text, /候选未启动/);
+  assert.match(text, /尚未开始执行任务/);
   assert.match(text, /原始目录未被修改/);
   assert.match(text, /是否可重试/);
   assert.match(text, /可以重试/);
@@ -144,18 +144,18 @@ test('confirmation headline uses Recovered, Partial recovery, or Could not recov
     ...base,
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
-  assert.match(recovered, /Recovered/);
-  assert.match(partial, /Partial recovery/);
+  assert.match(recovered, /Files are ready/);
+  assert.match(partial, /Files ready with limits/);
   assert.match(failed, /Could not recover/);
   assert.doesNotMatch(recovered, /recovered_partial/);
   assert.match(failed, /Enter will not start Codex/);
   assert.doesNotMatch(recovered, /Enter will not start/);
-  assert.match(failed, /Cannot start isolated candidate/);
+  assert.match(failed, /Cannot start execution/);
   assert.doesNotMatch(failed, /Start isolated Codex Candidate/);
   assert.doesNotMatch(failed, /prepared isolated state/);
   assert.doesNotMatch(failed, /对照会从/);
-  assert.match(recovered, /Start isolated Codex Candidate/);
-  assert.match(recovered, /Original directory stays unchanged/);
+  assert.match(recovered, /Start execution with Codex/);
+  assert.match(recovered, /original project directory stays unchanged/);
   assert.doesNotMatch(recovered, /Maximum requests|Network \/ billing|Changed paths/);
 });
 
@@ -174,7 +174,7 @@ test('confirmation with accept stays partial and startable', () => {
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'partial', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: ['Workspace also changed extra.txt without a matching manifest action.'], comparisonClass: 'recovered_partial' },
   } as never).join('\n');
-  assert.match(text, /部分恢复/);
+  assert.match(text, /部分完成|部分恢复/);
   assert.match(text, /不是任务开始/);
   assert.doesNotMatch(text, /变更路径/);
   assert.doesNotMatch(text, /跳过路径/);
@@ -183,8 +183,8 @@ test('confirmation with accept stays partial and startable', () => {
   assert.match(text, /限制/);
   assert.match(text, /extra\.txt/);
   assert.doesNotMatch(text, /无法启动隔离/);
-  assert.match(text, /启动隔离的 Codex 候选/);
-  assert.match(text, /原目录不变/);
+  assert.match(text, /确认用 Codex 执行任务/);
+  assert.match(text, /原项目目录保持不变/);
 });
 
 test('confirmation without accept explains validation failure in Chinese', () => {
@@ -208,14 +208,14 @@ test('confirmation without accept explains validation failure in Chinese', () =>
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
-  assert.match(text, /无法启动隔离候选/);
+  assert.match(text, /暂时无法开始执行/);
   assert.match(text, /没有观察到隔离工作区变更/);
   assert.match(text, /no_task_path_outcome/);
   assert.match(text, /诊断已保存 · experiments\/exp-gate-fail\/recovery-diagnosis\.json/);
   assert.doesNotMatch(text, /工作区校验未通过/);
   assert.doesNotMatch(text, /对照会从/);
   // L1: failure reason appears before the Recovery field inside the panel.
-  const titleAt = text.indexOf('无法启动隔离候选');
+  const titleAt = text.indexOf('暂时无法开始执行');
   const body = text.slice(titleAt);
   const failureAt = body.search(/没有观察到隔离工作区变更/);
   const recoveryFieldAt = body.search(/恢复/);
@@ -288,11 +288,11 @@ test('failed confirm keeps failureSummary visible and does not select the eviden
     },
   }, 120).join('\n');
 
-  assert.match(rendered, /无法启动隔离候选/);
+  assert.match(rendered, /暂时无法开始执行/);
   assert.match(rendered, /恢复 Agent.*暂时失败|暂时失败/);
   assert.match(rendered, /诊断已保存 · experiments\/exp-r1b\/recovery-diagnosis\.json/);
   // T08: confirm leads with the confirmation panel — recovery process is folded, not a full timeline dump.
-  assert.match(rendered, /查看恢复过程|View recovery process/);
+  assert.match(rendered, /查看准备过程|View preparation process/);
   assert.doesNotMatch(rendered, /阅读证据 · 54/);
   assert.doesNotMatch(rendered, /48;2;30;38;42/);
   assert.doesNotMatch(rendered, /新 \d+| \d+ new/);
@@ -352,7 +352,7 @@ test('observational confirm without failed status does not claim diagnostics sav
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
-  assert.match(text, /无法启动隔离候选/);
+  assert.match(text, /暂时无法开始执行/);
   assert.match(text, /Could not recover|无法恢复/);
   assert.doesNotMatch(text, /诊断已保存/);
 });
@@ -377,7 +377,7 @@ test('confirmation with workspace changes still reports validation failure', () 
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
-  assert.match(text, /无法启动隔离候选/);
+  assert.match(text, /暂时无法开始执行/);
   assert.match(text, /恢复后的工作副本未通过 Host 校验/);
   assert.doesNotMatch(text, /没有观察到隔离工作区变更/);
 });
@@ -444,11 +444,11 @@ test('workbench folds recovery process above confirmation until expanded', async
   };
   const folded = renderWorkbench(base as never, 120).join('\n');
   assert.doesNotMatch(folded, /Read package\.json/);
-  assert.match(folded, /Recovered/);
-  assert.match(folded, /Start isolated Codex Candidate/);
-  assert.match(folded, /View recovery process|查看恢复过程/);
+  assert.match(folded, /Files are ready/);
+  assert.match(folded, /Start execution with Codex/);
+  assert.match(folded, /View preparation process|查看准备过程/);
 
   const expanded = renderWorkbench({ ...base, processExpanded: true, surfaceScope: 'recovery' } as never, 120).join('\n');
   assert.match(expanded, /Read package\.json/);
-  assert.match(expanded, /Recovered/);
+  assert.match(expanded, /Files are ready/);
 });

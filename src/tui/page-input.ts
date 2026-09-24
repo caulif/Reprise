@@ -165,11 +165,15 @@ export function dispatchSessionsInput(state: SessionsInputState, data: string): 
   return undefined;
 }
 
-export type InspectionAction = 'toggle-outcome' | 'back-sessions' | 'freeze';
+export type InspectionAction = 'toggle-outcome' | 'scroll-up' | 'scroll-down' | 'page-up' | 'page-down' | 'back-sessions' | 'freeze';
 
 export function dispatchInspectionInput(data: string, hasInspection: boolean): { action: InspectionAction; consume: true } | undefined {
   const input = unwrapBracketedPaste(data);
   if (matchesKey(input, 'd')) return { action: 'toggle-outcome', consume: true };
+  if (matchesKey(input, 'up')) return { action: 'scroll-up', consume: true };
+  if (matchesKey(input, 'down')) return { action: 'scroll-down', consume: true };
+  if (matchesKey(input, 'pageUp')) return { action: 'page-up', consume: true };
+  if (matchesKey(input, 'pageDown')) return { action: 'page-down', consume: true };
   if (matchesKey(input, 'escape')) return { action: 'back-sessions', consume: true };
   if (matchesKey(input, 'enter') && hasInspection) return { action: 'freeze', consume: true };
   return undefined;
@@ -197,7 +201,7 @@ export function dispatchConfirmInput(data: string, context: { readonly recoveryF
   return undefined;
 }
 
-export type CandidatePickerAction = 'home' | 'up' | 'down' | 'enter' | 'back' | 'consume';
+export type CandidatePickerAction = 'up' | 'down' | 'enter' | 'back' | 'consume';
 
 export function dispatchListPointer(data: string): { action: 'up' | 'down' | 'click' | 'ignore'; row?: number; col?: number; consume: true } | undefined {
   const mouse = parseSgrMouse(unwrapBracketedPaste(data));
@@ -213,7 +217,7 @@ export function dispatchCandidatePickerInput(data: string): { action: CandidateP
   if (pointer?.action === 'up' || pointer?.action === 'down') return { action: pointer.action, consume: true };
   if (pointer) return { action: 'consume', consume: true };
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'escape')) return { action: 'home', consume: true };
+  if (matchesKey(input, 'escape')) return { action: 'back', consume: true };
   if (matchesKey(input, 'b')) return { action: 'back', consume: true };
   if (matchesKey(input, 'up')) return { action: 'up', consume: true };
   if (matchesKey(input, 'down')) return { action: 'down', consume: true };
@@ -321,10 +325,11 @@ export function dispatchRunningKeys(data: string): { action: RunningAction; cons
   return undefined;
 }
 
-export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'open-history-final' | 'open-candidate-final' | 'compare' | 'home' | 'activate-primary';
+export type ResultAction = 'open-report' | 'open-trace' | 'open-replica' | 'open-history-final' | 'open-candidate-final' | 'view-process' | 'toggle-details' | 'compare' | 'home' | 'activate-primary';
 
 export type ResultKeyContext = {
   readonly comparePending?: boolean;
+  readonly processAvailable?: boolean;
   readonly artifacts?: {
     readonly report?: boolean;
     readonly historyFinal?: boolean;
@@ -343,6 +348,7 @@ export function dispatchResultKeys(
     locale: 'en',
     mode: optionalMode({
       ...(ctx.comparePending !== undefined ? { comparePending: ctx.comparePending } : {}),
+      ...(ctx.processAvailable !== undefined ? { processAvailable: ctx.processAvailable } : {}),
     }),
     ...(ctx.artifacts !== undefined ? { artifacts: ctx.artifacts } : {}),
   });

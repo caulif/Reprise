@@ -3,11 +3,13 @@ import { t, type Locale } from '../i18n.js';
 import type { HistoryCase, HistoryExperiment } from '../local-history.js';
 import { deriveResultPresentationFromHistory, type ResultPresentation } from '../display-state.js';
 import { localPathFromFileUrl } from '../open-report.js';
-import { showsDetailPane, type Theme } from '../theme.js';
-import { joinColumns, kv, kvBlock, kvLinkBlock, panel, panelWithHits, type LinkValueHit } from '../widgets.js';
+import type { Theme } from '../theme.js';
+import { kv, kvBlock, kvLinkBlock, panel, panelWithHits, type LinkValueHit } from '../widgets.js';
+import { relativeTime } from './intake.js';
 
 export type HistoryModel = {
   readonly totalBytes: number;
+  readonly invalidCaseCount?: number;
   readonly tab: 'runs' | 'cases';
   readonly items: readonly (HistoryCase | HistoryExperiment)[];
   readonly selected: number;
@@ -27,28 +29,23 @@ export type HistoryDetailRender = {
 
 export function renderHistory(theme: Theme, width: number, model: HistoryModel, height?: number): string[] {
   const locale = model.locale ?? 'en';
-  const label = `${model.tab === 'runs' ? t(locale, 'historyRuns') : t(locale, 'historyCases')} · ${t(locale, 'historyStorage')} ${formatBytes(model.totalBytes)}`;
-  if (!model.items.length) return panel(theme, label, [` ${model.tab === 'runs' ? t(locale, 'noLocalRuns') : t(locale, 'noLocalCases')}`], width);
+  const label = model.tab === 'runs' ? t(locale, 'historyRuns') : t(locale, 'historyCases');
+  const diagnosis = model.tab === 'cases' && model.invalidCaseCount
+    ? [` ${theme.glyphs.warn} ${t(locale, 'historyInvalidCaseCount', { count: model.invalidCaseCount })}`]
+    : [];
+  if (!model.items.length) return panel(theme, label, [...diagnosis, ` ${model.tab === 'runs' ? t(locale, 'noLocalRuns') : t(locale, 'noLocalCases')}`], width);
   const range = visibleRange(model.items, model.selected, height === undefined ? 8 : Math.max(1, Math.floor((height - 4) / 2)));
   const rows = model.items.slice(range.start, range.end).flatMap((item, index) => {
     const selected = range.start + index === model.selected;
     const marker = selected ? theme.glyphs.cursor : ' ';
-    const line = 'taskCase' in item
-      ? ` ${marker} ${item.taskCase.caseId} ${theme.glyphs.sep} ${compact(item.taskCase.initialInput.text, 62, theme.glyphs.ellipsis)}`
-      : ` ${marker} ${item.experimentId} ${theme.glyphs.sep} ${item.outcome ?? t(locale, 'incomplete')}`;
-    const meta = 'taskCase' in item
-      ? `     ${t(locale, 'imported')} ${item.taskCase.provenance.importedAt}`
-      : `     ${t(locale, 'historyCaseTitle')} ${item.taskCaseId} ${theme.glyphs.sep} ${item.startedAt ?? t(locale, 'timeUnavailable')} ${theme.glyphs.sep} ${formatBytes(item.sizeBytes)}`;
-    return selected
-      ? [theme.style.selected(line), theme.style.selected(meta)]
-      : [line, theme.style.muted(meta)];
+    const title = 'taskCase' in item ? item.taskCase.initialInput.text : item.taskTitle ?? t(locale, 'recentTaskUnknown', { id: item.taskCaseId.slice(0, 8) });
+    const status = 'taskCase' in item ? '' : t(locale, deriveResultPresentationFromHistory(item, locale).statusLabelKey);
+    const when = 'taskCase' in item ? item.taskCase.provenance.importedAt : item.startedAt;
+    const line = ` ${marker} ${compact(title.replace(/\s+/g, ' ').trim(), Math.max(20, width - 25), theme.glyphs.ellipsis)}`;
+    const meta = `     ${relativeTime(when, Date.now(), locale)}${status ? ` ${theme.glyphs.sep} ${status}` : ''}${'taskCase' in item || !item.candidateProductId ? '' : ` ${theme.glyphs.sep} ${item.candidateProductId}${item.candidateModel ? ` · ${item.candidateModel}` : ''}`}`;
+    return selected ? [theme.style.selected(line), theme.style.selected(meta)] : [line, theme.style.muted(meta)];
   });
-  const previewWidth = model.detail && showsDetailPane(theme) ? Math.max(28, Math.floor(width * 0.42)) : 0;
-  const listWidth = previewWidth ? width - previewWidth - 1 : width;
-  const list = panel(theme, theme.style.harness(label), [...rows, theme.style.muted(` ${model.selected + 1}/${model.items.length}`)], listWidth);
-  if (!model.detail || !previewWidth) return list;
-  const right = renderHistoryDetail(theme, previewWidth, model.detail, locale);
-  return joinColumns(list, right, listWidth, previewWidth, 1, theme);
+  return panel(theme, theme.style.harness(label), [...diagnosis, ...rows, theme.style.muted(` ${model.selected + 1}/${model.items.length}`)], width);
 }
 
 export function renderHistoryDetail(theme: Theme, width: number, item: HistoryCase | HistoryExperiment, locale: Locale = 'en'): string[] {
@@ -72,27 +69,34 @@ export function renderHistoryDetailWithHits(
     }
   };
   if ('taskCase' in item) {
-    push(` TaskCase: ${item.taskCase.caseId}`);
-    for (const line of kvBlock(theme, 'Task', item.taskCase.initialInput.text, width)) push(line);
-    push(kv(theme, 'Source', `${item.taskCase.source.productId} ${theme.glyphs.sep} ${item.taskCase.source.sessionId}`, width - 2));
-    push(kv(theme, 'Frozen', item.taskCase.provenance.importedAt, width - 2));
-    pushLink(kvLinkBlock(theme, 'Path', item.path, item.path, width), item.path);
+    for (const line of kvBlock(theme, t(locale, 'taskLabel'), item.taskCase.initialInput.text, width)) push(line);
+    push(kv(theme, t(locale, 'historySource'), item.taskCase.source.productId, width - 2));
+    push(kv(theme, t(locale, 'historySavedAt'), item.taskCase.provenance.importedAt, width - 2));
+    push('');
+    push(theme.style.muted(` ${t(locale, 'historyTechnical')}`));
+    push(kv(theme, t(locale, 'historyTaskId'), item.taskCase.caseId, width - 2));
+    push(kv(theme, t(locale, 'historySource'), item.taskCase.source.sessionId, width - 2));
+    pushLink(kvLinkBlock(theme, t(locale, 'historyLocation'), item.path, item.path, width), item.path);
     return panelWithHits(theme, t(locale, 'historyCaseTitle'), body, width, bodyHits);
   }
   const presentation = deriveResultPresentationFromHistory(item, locale);
-  push(kv(theme, 'ID', item.experimentId, width - 2));
-  push(kv(theme, 'TaskCase', item.taskCaseId, width - 2));
-  push(kv(theme, 'Run', missing(item.runId), width - 2));
-  push(kv(theme, 'Outcome', historyOutcomeLabel(item, locale), width - 2));
-  push(kv(theme, 'Started', item.startedAt ?? 'unavailable', width - 2));
+  for (const line of kvBlock(theme, t(locale, 'taskLabel'), item.taskTitle ?? t(locale, 'recentTaskUnknown', { id: item.taskCaseId.slice(0, 8) }), width)) push(line);
+  push(kv(theme, t(locale, 'statusLabel'), t(locale, presentation.statusLabelKey), width - 2));
+  if (item.candidateProductId) push(kv(theme, t(locale, 'candidateLabel'), `${item.candidateProductId}${item.candidateModel ? ` · ${item.candidateModel}` : ''}`, width - 2));
+  if (item.startedAt) push(kv(theme, t(locale, 'historyStartedAt'), item.startedAt, width - 2));
   push(kv(theme, t(locale, 'resultTask'), presentation.taskLabel, width - 2));
-  push(kv(theme, t(locale, 'resultTermination'), presentation.terminationLabel, width - 2));
+  push(kv(theme, t(locale, 'resultTermination'), item.outcome === 'interrupted' ? t(locale, 'historyInterrupted') : presentation.terminationLabel, width - 2));
   push(kv(theme, t(locale, 'resultCleanup'), presentation.cleanupLabel, width - 2));
   push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
   if (item.incompleteModelInput) {
     for (const line of kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width)) push(line);
   }
-  if (item.formatError) push(kv(theme, 'Format', t(locale, 'unsupportedSchema'), width - 2));
+  if (item.formatError) {
+    const key = item.formatError === 'missing_metadata' ? 'historyMissingMetadata'
+      : item.formatError === 'invalid_metadata' ? 'historyInvalidMetadata'
+        : item.formatError === 'unreadable_record' ? 'historyUnreadableRecord' : 'unsupportedSchema';
+    push(kv(theme, t(locale, 'historyFormat'), t(locale, key), width - 2));
+  }
   if (item.reportAttemptUnconfirmed) {
     for (const line of kvBlock(theme, t(locale, 'resultReport'), t(locale, 'historyReportUnconfirmed'), width)) push(line);
   }
@@ -106,8 +110,13 @@ export function renderHistoryDetailWithHits(
   if (item.previousReportPath && item.previousReportPath !== item.reportPath) {
     pushLink(kvLinkBlock(theme, t(locale, 'historyPreviousReport'), item.previousReportPath, item.previousReportPath, width), item.previousReportPath);
   }
-  push(kv(theme, 'Stored', formatBytes(item.sizeBytes), width - 2));
-  pushLink(kvLinkBlock(theme, 'Path', item.path, item.path, width), item.path);
+  push('');
+  push(theme.style.muted(` ${t(locale, 'historyTechnical')}`));
+  push(kv(theme, t(locale, 'historyRecordId'), item.experimentId, width - 2));
+  push(kv(theme, t(locale, 'historyTaskId'), item.taskCaseId, width - 2));
+  push(kv(theme, t(locale, 'historyRunId'), missing(item.runId), width - 2));
+  push(kv(theme, t(locale, 'historyStoredSize'), formatBytes(item.sizeBytes), width - 2));
+  pushLink(kvLinkBlock(theme, t(locale, 'historyLocation'), item.path, item.path, width), item.path);
   return panelWithHits(theme, t(locale, 'historyRunTitle'), body, width, bodyHits);
 }
 
@@ -196,11 +205,4 @@ function visibleRange<T>(items: readonly T[], selected: number, limit = 8): { st
   if (items.length <= limit) return { start: 0, end: items.length };
   const start = Math.max(0, Math.min(items.length - limit, selected - Math.floor(limit / 2)));
   return { start, end: start + limit };
-}
-
-function historyOutcomeLabel(item: HistoryExperiment, locale: Locale): string {
-  if (item.formatError) return t(locale, 'unsupportedSchema');
-  if (item.outcome === 'interrupted') return t(locale, 'interrupted');
-  if (item.outcome === 'unknown') return t(locale, 'unknownOutcome');
-  return item.outcome ?? t(locale, 'incomplete');
 }

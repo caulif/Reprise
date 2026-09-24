@@ -1,3 +1,6 @@
+import { Value } from '@sinclair/typebox/value';
+import { ComparisonResultSchema, ControllerDecisionSchema, RecoveryAgentEnvelopeSchema, RecoveryDecisionSchema } from '../../core/schema.js';
+
 const MAX_VISIBLE_CHARS = 4_096;
 
 export function visibleAssistantText(content: readonly { type?: string; text?: string }[] | undefined): string {
@@ -42,10 +45,26 @@ function stripThinkBlocks(text: string): string {
 export function isStructuredEnvelope(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{")) return false;
+  let value: unknown;
   try {
-    const value = JSON.parse(trimmed) as { type?: unknown; status?: unknown };
-    return Boolean(value && typeof value === "object" && (value.type || value.status));
-  } catch {
-    return false;
+    value = JSON.parse(trimmed);
+  } catch (error) {
+    if (error instanceof SyntaxError) return false;
+    throw error;
   }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  if (Value.Check(ControllerDecisionSchema, value)) {
+    const allowed = value.type === 'send'
+      ? ['type', 'message', 'intent', 'rationale', 'evidenceRefs']
+      : ['type', 'reason', 'rationale', 'evidenceRefs'];
+    return keys.every((key) => allowed.includes(key));
+  }
+  if (Value.Check(RecoveryDecisionSchema, value) || Value.Check(RecoveryAgentEnvelopeSchema, value)) {
+    return keys.every((key) => ['status', 'summary', 'unresolved', 'reportPath'].includes(key));
+  }
+  if (Value.Check(ComparisonResultSchema, value)) {
+    return keys.every((key) => ['status', 'evidenceRefs', 'headline', 'reportPath'].includes(key));
+  }
+  return false;
 }

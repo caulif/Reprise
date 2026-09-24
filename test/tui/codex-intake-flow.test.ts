@@ -87,7 +87,7 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
     recover: async () => ({
       experimentId: "cancel-fixture",
       experimentRoot: "unused",
-      baseline: { match: "recovered", warnings: [], mode: "canonical" },
+      baseline: { match: "recovered", warnings: [], mode: "canonical", readiness: { runnable: "isolated" }, fingerprint: { digest: "fixture-digest" }, recovery: { status: "ready", unresolved: [], sourceDigest: "fixture-source", recoveredDigest: "fixture-digest" } },
       staging: { recoveryId: "r", caseId: "c", sourceRoot: "C:/source", root: "C:/source" },
       recovery: { status: "completed", sessionId: "s", value: { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
@@ -119,10 +119,10 @@ test("Codex intake TUI force-closes on a second Ctrl+C during cancellation", asy
   await enterIntake(app);
   await waitFor(() => /Cancel this run/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Task text:|任务原文：/.test(rendered));
+  await waitFor(() => app.page === 'inspection');
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|正在准备对照|复制隔离工作区/.test(rendered));
+  await waitFor(() => app.page === 'running' || app.page === 'result');
   app.handleInput("\u0003");
   releaseStart?.();
   await waitFor(() => cancelCalls === 1);
@@ -197,7 +197,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
     recover: async () => ({
       experimentId: "cancel-fixture",
       experimentRoot: "unused",
-      baseline: { match: "recovered", warnings: [], mode: "canonical" },
+      baseline: { match: "recovered", warnings: [], mode: "canonical", readiness: { runnable: "isolated" }, fingerprint: { digest: "fixture-digest" }, recovery: { status: "ready", unresolved: [], sourceDigest: "fixture-source", recoveredDigest: "fixture-digest" } },
       staging: { recoveryId: "r", caseId: "c", sourceRoot: "C:/source", root: "C:/source" },
       recovery: { status: "completed", sessionId: "s", value: { status: "ready", summary: "Ready for the original task.", reportPath: "recovery.md", unresolved: [] } },
       accept: async () => ({ match: "recovered", warnings: [] }),
@@ -252,7 +252,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   await enterIntake(app);
   await waitFor(() => /Patch the missing path/.test(rendered));
   app.handleInput("\r");
-  await waitFor(() => /Task text:|任务原文：/.test(rendered));
+  await waitFor(() => app.page === 'inspection');
   app.handleInput("\r");
   await waitFor(() => /Source root|Historical cwd is missing|源目录|历史工作目录缺失/.test(rendered));
   assert.match(rendered, /Source root|源目录/);
@@ -269,7 +269,7 @@ test("Codex intake TUI asks for a source path only when historical cwd is missin
   app.handleInput("C:\\explicit-source");
   app.handleInput("\r");
   await advanceCandidatePicker(app, () => rendered);
-  await waitFor(() => /Preparing replay|Copy isolated workspace|正在准备对照|复制隔离工作区|Codex/.test(rendered));
+  await waitFor(() => app.page === 'running' || app.page === 'result');
   releaseStart?.();
   await waitFor(() => sourceRoot === "C:\\explicit-source");
   assert.equal(sourceRoot, "C:\\explicit-source");
@@ -464,8 +464,8 @@ test("Codex intake TUI browses validated local history and selects a TaskCase wi
   });
   await app.start();
   enterCommand(app, "/history");
-  await waitFor(() => /Recent experiments|最近对照/.test(rendered));
-  assert.match(rendered, /exp-history/);
+  await waitFor(() => app.page === 'history' && /Inspect a focused regression\./.test(rendered));
+  assert.match(rendered, /Inspect a focused regression\./);
   app.handleInput('\x1b');
   assert.equal(app.page, 'home');
   enterCommand(app, '/history');
@@ -473,7 +473,7 @@ test("Codex intake TUI browses validated local history and selects a TaskCase wi
   app.handleInput("\t");
   assert.match(rendered, /TaskCases|任务/);
   app.handleInput("\r");
-  assert.match(rendered, /TaskCase: case-history/);
+  assert.match(rendered, /case-history/);
   app.handleInput("\r");
   assert.match(rendered, /TaskCase case-history|当前任务是 case-history/);
 });
@@ -512,7 +512,7 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   };
   await app.start();
   enterCommand(app, "/config");
-  await waitFor(() => /Internal collab model|内部协作模型|Internal collab model|内部协作模型|Internal Agent model|内部 Agent 模型/.test(rendered));
+  await waitFor(() => app.page === 'config');
   app.handleInput("\u001b[A");
   app.handleInput("\u001b[A");
   app.handleInput("\r");
@@ -523,9 +523,6 @@ test("Codex intake TUI saves an OpenAI-compatible draft without a secret or conn
   app.handleInput("\u001b[B");
   app.handleInput("\r");
   replaceField("model-private");
-  app.handleInput("\u001b[B");
-  app.handleInput("\u001b[B");
-  app.handleInput("\u001b[B");
   app.handleInput("\u001b[B");
   app.handleInput("\u001b[B");
   app.handleInput("\r");
@@ -602,9 +599,7 @@ test("intake search accepts a slash after search has started", async (t) => {
   });
   await app.start();
   await enterIntake(app);
-  await waitFor(() =>
-    /Choose a historical session|Choose a project|选择一条历史会话|先选项目/.test(rendered),
-  );
+  await waitFor(() => app.page === 'sessions');
   app.handleInput("/");
   app.handleInput("/");
   app.handleInput("src");
@@ -641,14 +636,13 @@ test("TUI language defaults to Chinese and /lang en switches the cover without m
     privacy: { allowModelText: false, allowBinary: false, redactions: [] },
   });
   await app.start();
-  assert.match(rendered, /新建回放/);
-  assert.match(rendered, /更多/);
+  assert.match(rendered, /重做任务/);
+  assert.match(rendered, /运行记录/);
   assert.doesNotMatch(rendered, /Continue|Browse|Last task/);
   enterCommand(app, "/lang en");
-  await waitFor(() => /New replay/.test(rendered));
-  assert.match(rendered, /New replay/);
-  assert.match(rendered, /More/);
-  assert.match(rendered, /Language: English/);
+  await waitFor(() => app.page === 'home');
+  assert.match(rendered, /Redo a task/);
+  assert.match(rendered, /Run history/);
   assert.doesNotMatch(rendered, /继续|更多|当前任务/);
   enterCommand(app, "/config");
   await waitFor(() => /Language/.test(rendered));

@@ -5,7 +5,7 @@ import { caretAt } from '../text-edit.js';
 import type { HistoryExperiment } from '../local-history.js';
 import type { Theme } from '../theme.js';
 import { pad, panel } from '../widgets.js';
-import { shellEnvAssignment } from '../../infrastructure/harness-model-config.js';
+import { createTheme } from '../theme.js';
 import { relativeTime } from './intake.js';
 import { deriveResultPresentationFromHistory } from '../display-state.js';
 
@@ -29,13 +29,8 @@ export type HomeModel = {
   readonly modelDetailsExpanded?: boolean;
 };
 
-export function homeActions(model: HomeModel): readonly HomeActionId[] {
-  const needsConfig = !model.hasApiConfig || model.hasUsableAuth === false;
-  const actions: HomeActionId[] = needsConfig ? ['config', 'new-replay'] : ['new-replay'];
-  if (model.recentExperiment) actions.push('open-recent');
-  actions.push('history', 'help');
-  if (!needsConfig) actions.push('config');
-  return actions;
+export function homeActions(_model: HomeModel): readonly HomeActionId[] {
+  return ['new-replay', 'history', 'config'];
 }
 
 export function defaultHomeFocus(model: HomeModel): HomeActionId {
@@ -43,27 +38,28 @@ export function defaultHomeFocus(model: HomeModel): HomeActionId {
 }
 
 export function renderHome(theme: Theme, width: number, model: HomeModel): string[] {
+  return renderHomeWithHits(theme, width, model).lines;
+}
+
+function renderHomeWithHits(theme: Theme, width: number, model: HomeModel): { lines: string[]; rowHits: ReadonlyMap<number, HomeActionId> } {
   const locale = model.locale ?? 'en';
   const focus = model.focus ?? defaultHomeFocus(model);
   const actions = homeActions(model);
-  const body = [
+  const lines = [
     ` ${theme.style.harness(t(locale, 'productTagline'))}`,
     '',
-    ...actions.flatMap((action) => actionRows(theme, model, locale, action, focus === action)),
-    '',
-    theme.style.muted(` ${t(locale, 'browse')}`),
-    ...internalModelBlock(theme, model, locale),
-    ...(model.envName && model.envSet === false ? [` ${shellEnvAssignment(model.envName)}`] : []),
   ];
-  const placeholder = t(locale, 'composerHome');
-  const prompt = ` ${theme.glyphs.cursor} ${model.composer ? caretAt(model.composer, model.composerCursor ?? model.composer.length) : theme.style.muted(placeholder)}`;
+  const rowHits = new Map<number, HomeActionId>();
+  for (const action of actions) {
+    const rows = actionRows(theme, model, locale, action, focus === action);
+    for (let index = 0; index < rows.length; index += 1) rowHits.set(lines.length + index, action);
+    lines.push(...rows);
+  }
+  if (model.recentExperiment) lines.push('', theme.style.muted(` ${t(locale, 'recentRun')}: ${recentOverview(theme, model, locale)}`));
   const suggestions = model.showSuggestions ? renderSuggestions(theme, width, model) : [];
-  return [
-    ...body,
-    ...(suggestions.length ? ['', ...suggestions] : []),
-    '',
-    prompt,
-  ];
+  if (suggestions.length) lines.push('', ...suggestions);
+  if (model.composer || model.showSuggestions) lines.push('', ` ${theme.glyphs.cursor} ${caretAt(model.composer, model.composerCursor ?? model.composer.length)}`);
+  return { lines, rowHits };
 }
 
 export function homeHints(locale: Locale = 'en', model?: HomeModel): readonly (readonly [string, string])[] {
@@ -83,22 +79,15 @@ export function homeHints(locale: Locale = 'en', model?: HomeModel): readonly (r
   ];
 }
 
-export function homePointerAction(model: HomeModel, bodyRow: number): HomeActionId | undefined {
-  const actions = homeActions(model);
-  // tagline + blank = rows 0-1
-  let row = 2;
-  for (const action of actions) {
-    const span = action === 'new-replay' || action === 'open-recent' || action === 'history' || action === 'config' || action === 'help' ? 1 : 1;
-    if (bodyRow >= row && bodyRow < row + span) return action;
-    row += span;
-  }
-  return undefined;
+export function homePointerAction(model: HomeModel, bodyRow: number, width = 120): HomeActionId | undefined {
+  const rows = renderHomeWithHits(createTheme(width), width, model).rowHits;
+  return rows.get(bodyRow);
 }
 
 function actionRows(theme: Theme, model: HomeModel, locale: Locale, action: HomeActionId, selected: boolean): string[] {
   const marker = selected ? theme.glyphs.cursor : ' ';
   if (action === 'new-replay') {
-    const line = ` ${marker} ${theme.style.accent(t(locale, 'newReplay'))}  ${t(locale, 'newReplayDesc')}  ${theme.style.muted('/intake')}`;
+    const line = ` ${marker} ${theme.style.accent(pad(t(locale, 'newReplay'), 20))} ${theme.style.muted('/intake')}`;
     return [selected ? theme.style.selected(line) : line];
   }
   if (action === 'open-recent') {
@@ -108,7 +97,7 @@ function actionRows(theme: Theme, model: HomeModel, locale: Locale, action: Home
   }
   if (action === 'history') {
     const status = model.recentExperiment ? '' : theme.style.muted(t(locale, 'noRecentRuns'));
-    const line = ` ${marker} ${theme.style.accent('/history')}  ${t(locale, 'historyDesc')}${status ? `  ${status}` : ''}`;
+    const line = ` ${marker} ${theme.style.accent(pad(t(locale, 'historyDesc'), 20))} ${theme.style.muted('/history')}${status ? `  ${status}` : ''}`;
     return [selected ? theme.style.selected(line) : line];
   }
   if (action === 'config') {
@@ -116,7 +105,7 @@ function actionRows(theme: Theme, model: HomeModel, locale: Locale, action: Home
     const status = needs
       ? theme.style.warn(model.envName && model.envSet === false ? t(locale, 'envUnset') : t(locale, 'needsCred'))
       : '';
-    const line = ` ${marker} ${theme.style.accent('/config')}   ${t(locale, 'configDesc')}${status ? `  ${status}` : ''}`;
+    const line = ` ${marker} ${theme.style.accent(pad(t(locale, 'configDesc'), 20))} ${theme.style.muted('/config')}${status ? `  ${status}` : ''}`;
     return [selected ? theme.style.selected(line) : line];
   }
   const line = ` ${marker} ${theme.style.accent('/help')}     ${t(locale, 'helpDesc')}`;
@@ -127,7 +116,7 @@ function recentOverview(theme: Theme, model: HomeModel, locale: Locale): string 
   const recent = model.recentExperiment;
   if (!recent) return theme.style.muted(t(locale, 'noRecentRuns'));
   const task = compact(
-    t(locale, 'recentTaskUnknown', { id: recent.taskCaseId.slice(0, 8) }),
+    recent.taskTitle ?? t(locale, 'recentTaskUnknown', { id: recent.taskCaseId.slice(0, 8) }),
     24,
     theme.glyphs.ellipsis,
   );
@@ -138,38 +127,8 @@ function recentOverview(theme: Theme, model: HomeModel, locale: Locale): string 
 
 export function recentResultLabel(recent: HistoryExperiment, locale: Locale = 'en'): string {
   if (recent.formatError) return t(locale, 'resultOverviewUnknown');
-  const parts: string[] = [];
-  if (recent.taskStatus) parts.push(t(locale, 'resultOverviewCandidate', { status: recent.taskStatus }));
-  if (recent.comparisonStatus) {
-    parts.push(t(locale, 'resultOverviewComparison', { status: recent.comparisonStatus }));
-  } else if (recent.outcome === 'interrupted') {
-    parts.push(t(locale, 'resultOverviewInterrupted'));
-  } else if (recent.outcome === 'unknown') {
-    parts.push(t(locale, 'resultOverviewUnknown'));
-  } else if (!recent.taskStatus && recent.outcome) {
-    parts.push(t(locale, 'resultOverviewCandidate', { status: recent.outcome }));
-  }
   const presentation = deriveResultPresentationFromHistory(recent, locale);
-  if (presentation.reportKind === 'diagnostic') parts.push(t(locale, 'resultOverviewDiagnostic'));
-  else if (presentation.reportKind === 'report') parts.push(t(locale, 'resultOverviewReport', { kind: 'Report' }));
-  if (!parts.length) return t(locale, 'resultOverviewIncomplete');
-  return parts.join(' · ');
-}
-
-function internalModelBlock(theme: Theme, model: HomeModel, locale: Locale): string[] {
-  const label = internalModelLabel(theme, model, locale);
-  const header = ` ${theme.style.muted(t(locale, 'internalCollabModel'))}  ${label}`;
-  if (!model.modelDetailsExpanded) return [header];
-  return [
-    header,
-    theme.style.muted(`   ${model.providerLabel ?? t(locale, 'noneSelected')} · ${model.modelId ?? t(locale, 'noneSelected')}`),
-  ];
-}
-
-function internalModelLabel(theme: Theme, model: HomeModel, locale: Locale): string {
-  if (model.modelId) return compact(model.modelId, 40, theme.glyphs.ellipsis);
-  if (!model.hasApiConfig || model.hasUsableAuth === false) return theme.style.warn(t(locale, 'needsConfig'));
-  return t(locale, 'noneSelected');
+  return t(locale, presentation.statusLabelKey);
 }
 
 function renderSuggestions(theme: Theme, width: number, model: HomeModel): string[] {

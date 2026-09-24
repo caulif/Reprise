@@ -1,13 +1,14 @@
 import { basename } from "node:path";
 import { sameFsPath } from "../core/paths.js";
 import type { ExperimentResult } from "./experiment.js";
+import type { TaskCase } from "../core/schema.js";
 import type { HistoryExperiment } from "./experiment-history-list.js";
 import { comparisonDetailOf, selectComparisonArtifacts } from "./comparison-artifacts.js";
 
 /** Build the HistoryExperiment / recentExperiment projection from a live ExperimentResult. */
 export function historyExperimentFromResult(
   result: ExperimentResult,
-  input: { readonly experimentRoot: string; readonly taskCaseId: string; readonly sizeBytes?: number },
+  input: { readonly experimentRoot: string; readonly taskCaseId: string; readonly taskCase?: TaskCase; readonly sizeBytes?: number },
 ): HistoryExperiment {
   const comparison = result.comparison.result;
   const skipped = comparison.status === "skipped";
@@ -35,6 +36,9 @@ export function historyExperimentFromResult(
   return {
     experimentId: basename(input.experimentRoot),
     taskCaseId: input.taskCaseId,
+    ...((result.taskCase ?? input.taskCase)?.initialInput.text.trim() ? { taskTitle: (result.taskCase ?? input.taskCase).initialInput.text.replace(/\s+/g, ' ').trim() } : {}),
+    ...(result.record.attempt?.candidate?.productId ? { candidateProductId: result.record.attempt.candidate.productId } : {}),
+    ...(result.record.attempt?.candidate?.requestedModel ? { candidateModel: result.record.attempt.candidate.requestedModel } : {}),
     runId: result.record.attempt.runId,
     outcome: result.record.outcome.termination.kind,
     taskStatus: result.record.outcome.task.status,

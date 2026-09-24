@@ -7,7 +7,7 @@ test('presentation labels stay localized and preserve semantic tones', () => {
   assert.equal(displayLiveCaption('working', 'ignored', 'zh'), '正在处理');
   assert.equal(displayOperatorTitle('阅读', 'en'), 'Reading evidence');
   assert.equal(displayOperatorDetail('不是 Git 仓库', 'en'), 'Not a Git repository');
-  assert.equal(displayTaskStatus('apparently_completed', 'en'), 'Controller judged complete');
+  assert.equal(displayTaskStatus('apparently_completed', 'en'), 'Reprise model judged the task complete');
   assert.equal(terminationTone('failed'), 'danger');
   assert.equal(comparisonPresentation({ status: 'cancelled' }, 'zh').tone, 'warn');
   assert.equal(resultHeaderStatus({ record: { outcome: { termination: { kind: 'completed' } } }, comparison: { result: { status: 'cancelled' } } }, 'zh').tone, 'warn');

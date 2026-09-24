@@ -60,6 +60,11 @@ import {
 import type { ActivityIndexState } from './activity-index.js';
 import { type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
+import { measureWorkbenchGeometry } from './workbench.js';
+import { inspectionMaxScroll } from './pages/intake.js';
+import { renderRecoverySummary } from './pages/recovery-summary.js';
+import { ensureResultSelectionVisible, resultChoices, scrollPageBody } from './controller-scroll.js';
+import { createTheme } from './theme.js';
 import type { PreparePhase } from './widgets.js';
 import type { CandidateRunPhase } from './pages/run.js';
 
@@ -92,6 +97,8 @@ export type ControllerHandle = {
   inspection: SessionInspection | undefined;
   privacy: SessionPrivacy;
   inspectionShowOutcome: boolean;
+  inspectionScrollOffset: number;
+  preparedInspectionSnapshot: string | undefined;
   preflight: ExperimentPreflight | undefined;
   historyDetail: HistoryCase | HistoryExperiment | undefined;
   taskCase: TaskCase | undefined;
@@ -107,6 +114,9 @@ export type ControllerHandle = {
   prepareDetail: string | undefined;
   locale: Locale;
   result: ExperimentResult | undefined;
+  resultAction: import('./page-input.js').ResultAction;
+  resultDetails: boolean;
+  processExpanded: boolean;
   message: string;
   timeline: TimelineEntry[];
   activityIndex: ActivityIndexState;
@@ -239,9 +249,26 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'config') return c.configPageInput(input);
   if (c.page === 'history') return matchesKey(input, 'escape') ? c.backToHome() : c.historyInput(input);
   if (c.page === 'history-detail') {
-    const pointer = applyHistoryDetailPointer(c, data);
-    if (pointer) return pointer;
-    const canvas = c.timeline.length ? applyCanvas(c, input) : undefined;
+    if (c.processExpanded && matchesKey(input, 'escape') && !c.finding) {
+      c.processExpanded = false;
+      c.timelineReadOffset = 0;
+      c.render(true);
+      return { consume: true };
+    }
+    if (!c.processExpanded && matchesKey(input, 'p') && c.timeline.length) {
+      c.processExpanded = true;
+      c.timelineReadOffset = 0;
+      c.render(true);
+      return { consume: true };
+    }
+    if (!c.processExpanded) {
+      const pointer = applyHistoryDetailPointer(c, data);
+      if (pointer) return pointer;
+    }
+    if (!c.processExpanded && (matchesKey(input, 'up') || matchesKey(input, 'down') || matchesKey(input, 'pageUp') || matchesKey(input, 'pageDown'))) {
+      return scrollPageBody(c, input, 'history-detail');
+    }
+    const canvas = c.processExpanded && c.timeline.length ? applyCanvas(c, input) : undefined;
     if (canvas) return canvas;
     return applyHistoryDetail(c, input);
   }
@@ -249,17 +276,70 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'source') return applySource(c, input) ?? consumeWheel(data);
   if (c.page === 'preflight') return applyPreflight(c, input) ?? consumeWheel(data);
   if (c.page === 'candidate-product') return applyCandidateProduct(c, input);
+  if (c.page === 'recovery-review') {
+    if (matchesKey(input, 'up') || matchesKey(input, 'down') || matchesKey(input, 'pageUp') || matchesKey(input, 'pageDown')) {
+      const width = c.columns();
+      const height = c.viewport().height ?? 24;
+      const bodyHeight = measureWorkbenchGeometry(c.view(), width, height).body.height;
+      const recovery = c.view().recoverySummary?.recovery;
+      const length = recovery ? renderRecoverySummary(createTheme(width), width, recovery, c.locale, true).length + 2 : 0;
+      const max = Math.max(0, length - bodyHeight);
+      const amount = matchesKey(input, 'pageUp') || matchesKey(input, 'pageDown') ? Math.max(1, bodyHeight - 2) : 1;
+      c.timelineReadOffset = Math.min(max, Math.max(0, c.timelineReadOffset + (matchesKey(input, 'up') || matchesKey(input, 'pageUp') ? -amount : amount)));
+      c.render();
+      return { consume: true };
+    }
+    if (matchesKey(input, 'enter')) { c.page = 'candidate-product'; c.render(); return { consume: true }; }
+    if (matchesKey(input, 'escape')) { c.page = 'inspection'; c.render(); return { consume: true }; }
+    return consumeWheel(data);
+  }
   if (c.page === 'candidate-model') return applyCandidateModel(c, input);
   if (c.page === 'confirm') return applyConfirm(c, input) ?? consumeWheel(data);
-  if (c.page === 'result') {
+  if (c.page === 'compare-confirm') {
+    if (matchesKey(input, 'escape') || matchesKey(input, 'b')) { c.page = 'result'; c.timelineReadOffset = 0; c.render(); return { consume: true }; }
+    if (matchesKey(input, 'enter') && c.compareChoice) { resolveCompareChoice(c, true); return { consume: true }; }
+    return consumeWheel(data);
+  }
+  if (c.page === 'result') return applyResultPage(c, input, data);
+  if (c.page === 'error') {
+    const error = dispatchErrorKeys(input);
+    if (error) return c.returnFromError();
+    return consumeWheel(data);
+  }
+  if (c.page === 'sessions') return applySessions(c, input);
+  if (c.page === 'inspection') return applyInspection(c, input) ?? consumeWheel(data);
+  if (matchesKey(input, 'escape')) return c.backToHome();
+  return undefined;
+}
+
+function applyResultPage(c: ControllerHandle, input: string, data: string): Consume | undefined {
+    if (c.processExpanded) {
+      if (matchesKey(input, 'escape') && !c.finding) { c.processExpanded = false; c.timelineReadOffset = 0; c.render(true); return { consume: true }; }
+      const canvas = applyCanvas(c, input);
+      if (canvas) return canvas;
+      const key = dispatchRunningKeys(input);
+      if (key?.action === 'toggle-fold') return toggleSelectedFold(c);
+      if (key?.action === 'cycle-fold' || key?.action === 'cycle-fold-prev') return cycleFoldSelection(c, key.action === 'cycle-fold-prev' ? -1 : 1);
+      return consumeWheel(data);
+    }
     // A settled compare gate still owns the keypress; do not let a second c
     // fall through into an unrelated page action or appear to start another attempt.
     if (!c.compareChoice && (input === 'c' || input === 'C')) return { consume: true };
+    if (matchesKey(input, 'pageUp') || matchesKey(input, 'pageDown')) return scrollPageBody(c, input, 'result');
+    if (matchesKey(input, 'up') || matchesKey(input, 'down')) {
+      const choices = resultChoices(c);
+      const current = Math.max(0, choices.indexOf(c.resultAction));
+      c.resultAction = choices[(current + (matchesKey(input, 'up') ? -1 : 1) + choices.length) % choices.length] ?? 'home';
+      ensureResultSelectionVisible(c);
+      c.render();
+      return { consume: true };
+    }
     const pointed = applyResultPointer(c, data);
     if (pointed) return pointed;
     const artifacts = artifactsFromResult(c.result);
     const result = dispatchResultKeys(input, {
       comparePending: Boolean(c.compareChoice),
+      processAvailable: c.timeline.length > 0,
       artifacts,
     });
     if (!result) return undefined;
@@ -276,34 +356,32 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
       }
       return { consume: true };
     }
-    if (result.action === 'compare' || result.action === 'activate-primary') {
+    const action = result.action === 'activate-primary'
+      ? (resultChoices(c).includes(c.resultAction)
+        ? c.resultAction : resultChoices(c).find((choice) => choice !== 'compare') ?? 'home')
+      : result.action;
+    if (action === 'compare') {
       if (!c.compareChoice) return { consume: true };
-      resolveCompareChoice(c, true);
+      c.page = 'compare-confirm';
+      c.timelineReadOffset = 0;
+      c.render(true);
       return { consume: true };
     }
-    if (result.action === 'open-report') {
+    if (action === 'open-report') {
       const paths = c.result ? resolveResultPathLinks(c.result) : {};
       return c.openReport(
         c.result?.experimentRoot ?? (paths.report ? dirname(paths.report) : undefined),
         paths.report,
       );
     }
-    if (result.action === 'open-history-final') return c.openResultArtifact('history');
-    if (result.action === 'open-candidate-final') return c.openResultArtifact('candidate');
-    if (result.action === 'open-trace') return c.openTrace();
-    if (result.action === 'open-replica') return c.openReplica();
+    if (action === 'open-history-final') return c.openResultArtifact('history');
+    if (action === 'open-candidate-final') return c.openResultArtifact('candidate');
+    if (action === 'open-trace') return c.openTrace();
+    if (action === 'open-replica') return c.openReplica();
+    if (action === 'view-process') { c.processExpanded = true; c.timelineReadOffset = 0; c.render(true); return { consume: true }; }
+    if (action === 'toggle-details') { c.resultDetails = !c.resultDetails; c.render(true); return { consume: true }; }
     if (c.compareChoice) resolveCompareChoice(c, false);
     return c.backToHome();
-  }
-  if (c.page === 'error') {
-    const error = dispatchErrorKeys(input);
-    if (error) return c.returnFromError();
-    return consumeWheel(data);
-  }
-  if (c.page === 'sessions') return applySessions(c, input);
-  if (c.page === 'inspection') return applyInspection(c, input) ?? consumeWheel(data);
-  if (matchesKey(input, 'escape')) return c.backToHome();
-  return undefined;
 }
 
 function applyGlobal(c: ControllerHandle, action: GlobalInputAction): Consume {
@@ -499,7 +577,21 @@ function applyInspection(c: ControllerHandle, data: string): Consume | undefined
   if (!result) return undefined;
   if (result.action === 'toggle-outcome') {
     c.inspectionShowOutcome = !c.inspectionShowOutcome;
+    c.inspectionScrollOffset = 0;
     c.render();
+    return { consume: true };
+  }
+  if (result.action === 'scroll-up' || result.action === 'scroll-down' || result.action === 'page-up' || result.action === 'page-down') {
+    if (c.inspectionShowOutcome) {
+      const width = c.columns();
+      const height = c.viewport().height ?? 24;
+      const model = c.view().inspection;
+      const bodyHeight = measureWorkbenchGeometry(c.view(), width, height).body.height;
+      const max = model ? inspectionMaxScroll(createTheme(width), width, model, bodyHeight) : 0;
+      const amount = result.action === 'page-up' || result.action === 'page-down' ? Math.max(1, bodyHeight - 2) : 1;
+      c.inspectionScrollOffset = Math.min(max, Math.max(0, c.inspectionScrollOffset + (result.action === 'scroll-up' || result.action === 'page-up' ? -amount : amount)));
+      c.render();
+    }
     return { consume: true };
   }
   if (result.action === 'back-sessions') {
@@ -509,6 +601,15 @@ function applyInspection(c: ControllerHandle, data: string): Consume | undefined
     return { consume: true };
   }
   if (c.inspection?.transcript.some((message) => message.role === 'user')) {
+    if (c.recoveryView && c.preflight && c.taskCase?.source.productId === c.inspection.productId
+      && c.taskCase.source.sessionId === c.inspection.sessionId
+      && c.taskCase.source.sourcePath === c.inspection.sourcePath
+      && c.preparedInspectionSnapshot === JSON.stringify({ inspection: c.inspection, privacy: c.privacy })) {
+      c.page = 'recovery-review';
+      c.timelineReadOffset = 0;
+      c.render();
+      return { consume: true };
+    }
     void freeze(c, c.inspection.sourcePath, { thenRun: true });
     return { consume: true };
   }
@@ -526,10 +627,11 @@ function applyPreflight(c: ControllerHandle, data: string): Consume | undefined 
 function applyCandidateProduct(c: ControllerHandle, data: string): Consume | undefined {
   const result = dispatchCandidatePickerInput(data);
   if (!result) return undefined;
-  if (result.action === 'home') return c.backToHome();
   if (result.action === 'consume') return { consume: true };
   if (result.action === 'back') {
-    return c.backToHome();
+    c.page = 'recovery-review';
+    c.render();
+    return { consume: true };
   }
   if (result.action === 'up' || result.action === 'down') {
     const next = c.candidateProductCursor + (result.action === 'up' ? -1 : 1);
@@ -544,7 +646,6 @@ function applyCandidateProduct(c: ControllerHandle, data: string): Consume | und
 function applyCandidateModel(c: ControllerHandle, data: string): Consume | undefined {
   const result = dispatchCandidatePickerInput(data);
   if (!result) return undefined;
-  if (result.action === 'home') return c.backToHome();
   if (result.action === 'consume') return { consume: true };
   if (result.action === 'back') {
     c.page = 'candidate-product';
@@ -564,8 +665,9 @@ function applyCandidateModel(c: ControllerHandle, data: string): Consume | undef
 
 function applyCompareGate(c: ControllerHandle, data: string): Consume | undefined {
   const input = unwrapBracketedPaste(data);
-  if (matchesKey(input, 'enter') || input === 'c' || input === 'C') {
-    resolveCompareChoice(c, true);
+  if (input === 'c' || input === 'C') {
+    c.page = 'compare-confirm';
+    c.render(true);
     return { consume: true };
   }
   if (input === 's' || input === 'S') {
@@ -576,6 +678,9 @@ function applyCompareGate(c: ControllerHandle, data: string): Consume | undefine
 }
 
 function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
+  if (matchesKey(data, 'up') || matchesKey(data, 'down') || matchesKey(data, 'pageUp') || matchesKey(data, 'pageDown')) {
+    return scrollPageBody(c, data, 'confirm');
+  }
   const failureStage = c.recoveryView?.baseline.recovery?.failureStage;
   const failedKind = c.recoveryView?.recovery.status === 'failed' ? c.recoveryView.recovery.failure.kind : undefined;
   const failureAction = failureStage ? recoveryFailureDecision(failureStage, failedKind ? { kind: failedKind } : undefined).action : undefined;
@@ -646,11 +751,7 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'cycle-fold' || result.action === 'cycle-fold-prev') {
     return cycleFoldSelection(c, result.action === 'cycle-fold-prev' ? -1 : 1);
   }
-  if (c.cancelUi === 'requesting') {
-    c.message = t(c.locale, 'cancellationRequested');
-  } else if (c.cancelUi === 'failed') {
-    // Keep the failure notice; Esc must not look like a healthy run.
-  } else {
+  if (c.cancelUi !== 'requesting' && c.cancelUi !== 'failed') {
     c.message = t(c.locale, 'experimentActive');
   }
   c.render();
@@ -705,6 +806,8 @@ function applyHistoryDetail(c: ControllerHandle, data: string): Consume | undefi
   if (!result) return undefined;
   if (result.action === 'back') {
     c.page = 'history';
+    c.timelineReadOffset = 0;
+    c.processExpanded = false;
     c.render();
     return { consume: true };
   }

@@ -26,9 +26,9 @@ test('product picker lists registered packs without historical models', () => {
       { productId: 'claude-code', displayName: 'Claude Code', sourceSession: false, availability: 'available' },
     ],
   }).join('\n');
-  assert.match(text, /choose candidate product|Run · choose candidate product/);
+  assert.match(text, /Which tool should redo this task/);
   assert.match(text, /Claude Code/);
-  assert.match(text, /source session/);
+  assert.match(text, /original conver/);
   assert.doesNotMatch(text, /historical model|history used/i);
 });
 
@@ -70,13 +70,13 @@ test('model picker Enter reviews run conditions instead of starting', () => {
 
 test('confirm hints return to models unless recovery diagnosis blocks start', () => {
   assert.deepEqual(confirmHints(true, 'zh'), [
-    ['Enter', '启动隔离候选'],
+    ['Enter', '开始执行'],
     ['b', '改模型'],
     ['Esc', '改模型'],
   ]);
   assert.deepEqual(confirmHints(false, 'zh', true), [
     ['Enter', '尝试开始（受阻）'],
-    ['Esc', '封面'],
+    ['Esc', '首页'],
   ]);
   assert.deepEqual(confirmHints(false, 'zh', false), [
     ['Enter', '尝试开始（受阻）'],
@@ -114,7 +114,7 @@ test('cross-product confirmation names source and candidate', () => {
   assert.match(text, /Codex/);
   assert.match(text, /sonnet/);
   assert.match(text, /claude-sonnet-4-6/);
-  assert.match(text, /different runtime|另一套 Runtime/);
+  assert.match(text, /a different tool will execute it/);
   assert.doesNotMatch(text, /Maximum requests|Changed paths|未决/);
 });
 
@@ -180,9 +180,9 @@ test('running canvas uses the candidate product not the source session product',
   assert.equal(view.running?.productLabel, 'Claude Code');
   assert.equal(view.productLabel, 'Claude Code');
   const text = renderWorkbench(view, 120).join('\n');
-  assert.match(text, /候选运行中 · Claude Code/);
+  assert.match(text, /Claude Code · sonnet/);
   assert.match(text, /Claude Code · 等待新的可见活动/);
-  assert.doesNotMatch(text, /候选运行中 · Codex/);
+  assert.doesNotMatch(text, /Codex · sonnet/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /发给 Claude Code/);
 });

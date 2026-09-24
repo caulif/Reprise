@@ -16,7 +16,8 @@ import {
 import type { HistoryCase, HistoryExperiment } from './local-history.js';
 import type { IntakeLevel, SessionProject } from './pages/intake.js';
 import type { TimelineEntry } from './timeline.js';
-import type { WorkbenchView, WorkbenchSurfaceScope, ContextBarModel, StatusSummaryModel, StageRailModel, ActivityCardModel, RecoverySummaryModel } from './workbench.js';
+import type { WorkbenchView, WorkbenchSurfaceScope, ContextBarModel, StatusSummaryModel, ActivityCardModel, RecoverySummaryModel } from './workbench.js';
+import { deriveResultPresentationFromResult } from './display-state.js';
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
 import { candidateModelLabel } from './display-copy.js';
 import { recoveryFailureDecision } from '../application/recovery/fail.js';
@@ -26,13 +27,13 @@ import type { PreparePhase } from './widgets.js';
 type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
   readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
-  readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
+  readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configAdvanced?: boolean; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
   readonly configBusy?: 'idle' | 'save' | 'test';
   readonly configTestStatus?: 'idle' | 'testing' | 'passed' | 'failed' | 'stale';
   readonly configTestDetail?: string;
-  readonly historyTotalBytes: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
+  readonly historyTotalBytes: number; readonly invalidHistoryCaseCount: number; readonly historyTab: 'runs' | 'cases'; readonly historyItems: readonly (HistoryCase | HistoryExperiment)[]; readonly historySelected: number; readonly historyDetail?: HistoryCase | HistoryExperiment | undefined;
   readonly intakeLevel: IntakeLevel; readonly products: readonly ProductIntakeItem[]; readonly visibleProjects: readonly SessionProject[]; readonly activeProjectKey: string; readonly visibleSessions: readonly SessionSummary[]; readonly selected: number; readonly filterEligible: boolean; readonly searchQuery: string; readonly searchCursor: number; readonly searching: boolean; readonly discoveryStatus?: 'idle' | 'loading' | 'ready' | 'error'; readonly groupedProjectCount?: number; readonly unfilteredSessionCount?: number; readonly discoveryCodes?: readonly string[];
-  readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean;
+  readonly inspection?: SessionInspection | undefined; readonly privacy: SessionPrivacy; readonly inspectionTaskInput: number; readonly inspectionShowOutcome: boolean; readonly inspectionScrollOffset: number;
   readonly sourceRoot: string; readonly sourceCursor: number; readonly preflight?: ExperimentPreflight | undefined; readonly recoveryView?: RecoveryView | undefined; readonly candidate?: CandidateSpec | undefined; readonly effort: string; readonly policy: RunPolicy | undefined;
   readonly sourceProductLabel?: string;
   readonly candidateProductLabel?: string;
@@ -58,6 +59,8 @@ type Input = {
   readonly nowMs?: number;
   readonly activeParallel?: number;
   readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly activityDetail?: TimelineEntry; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
+  readonly resultAction?: import('./page-input.js').ResultAction;
+  readonly resultDetails?: boolean;
   readonly activityDetailOffset?: number;
   readonly phaseClocks?: PhaseClockBounds;
   readonly comparisonAttemptId?: string;
@@ -201,6 +204,8 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     ...(input.inlineHelp ? { inlineHelp: true } : {}),
     cancelling: input.cancelling,
     ...(input.comparePending ? { comparePending: true } : {}),
+    ...(input.resultAction ? { resultAction: input.resultAction } : {}),
+    ...(input.resultDetails ? { resultDetails: true } : {}),
     ...(input.surfaceScope ? { surfaceScope: input.surfaceScope } : {}),
     ...(input.processExpanded ? { processExpanded: true } : {}),
     ...chrome,
@@ -211,7 +216,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     return {
       ...base,
       config: {
-        draft: input.configDraft, selected: input.configSelected, editing: input.configEditing, buffer: input.configBuffer, cursor: input.configCursor,
+        draft: input.configDraft, selected: input.configSelected, advanced: Boolean(input.configAdvanced), editing: input.configEditing, buffer: input.configBuffer, cursor: input.configCursor,
         dirty: input.configDirty, saved: input.hasSavedModelConfig,
         ...(input.envName ? { envName: input.envName, envSet } : {}),
         pendingToggle: input.configPendingToggle,
@@ -229,8 +234,9 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'history' || input.page === 'history-detail') {
     return {
       ...base,
+      ...(input.page === 'history-detail' && input.timelineReadOffset ? { bodyOffset: input.timelineReadOffset } : {}),
       history: {
-        totalBytes: input.historyTotalBytes, tab: input.historyTab, items: input.historyItems, selected: input.historySelected,
+        totalBytes: input.historyTotalBytes, invalidCaseCount: input.invalidHistoryCaseCount, tab: input.historyTab, items: input.historyItems, selected: input.historySelected,
         locale: input.locale ?? 'en',
         ...(input.historyDetail ?? input.historyItems[input.historySelected]
           ? { detail: input.historyDetail ?? input.historyItems[input.historySelected] }
@@ -255,7 +261,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'inspection' && input.inspection) {
     return {
       ...base, sessions,
-      inspection: { inspection: input.inspection, privacy: input.privacy, selectedTaskInput: input.inspectionTaskInput, showOutcome: input.inspectionShowOutcome, locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}) },
+      inspection: { inspection: input.inspection, privacy: input.privacy, selectedTaskInput: input.inspectionTaskInput, showOutcome: input.inspectionShowOutcome, scrollOffset: input.inspectionScrollOffset, locale: input.locale ?? 'en', ...(input.nowMs !== undefined ? { nowMs: input.nowMs } : {}) },
     };
   }
   if (input.page === 'source') return { ...base, source: { sourceRoot: input.sourceRoot, sourceCursor: input.sourceCursor, step: 1, locale: input.locale ?? 'en' } };
@@ -265,7 +271,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
   if (input.page === 'confirm' && input.preflight) return confirmWorkbenchSlice(input, base, recovery);
   if (input.page === 'running') return { ...base, running: runningModel(input) };
-  if (input.page === 'result' && input.result) {
+  if ((input.page === 'result' || input.page === 'compare-confirm') && input.result) {
     return {
       ...base,
       running: runningModel(input),
@@ -319,6 +325,7 @@ function confirmWorkbenchSlice(
   const running = input.timeline.length
     ? { ...runningModel(input), ...(clearHighlight ? { selected: input.processExpanded ? lastRecoveryFailureIndex(input.timeline) : -1, following: true } : {}) }
     : undefined;
+  const taskTitle = taskTitleOf(input.taskCase, input.locale ?? 'en');
   return {
     ...base,
     ...(running ? { running } : {}),
@@ -333,12 +340,15 @@ function confirmWorkbenchSlice(
       ...(input.policy ? { policy: input.policy } : {}),
       ...(input.recoveryView?.experimentId ? { experimentId: input.recoveryView.experimentId } : {}),
       step: 3,
+      ...(input.recoveryView?.baseline.root ? { preparedPath: input.recoveryView.baseline.root } : {}),
+      ...(taskTitle ? { taskTitle } : {}),
       locale: input.locale ?? 'en',
       ...(input.candidateProductLabel
         ? { productLabel: input.candidateProductLabel }
         : input.productLabel ? { productLabel: input.productLabel } : {}),
       ...(input.sourceProductLabel ? { sourceProductLabel: input.sourceProductLabel } : {}),
     },
+    ...(input.timelineReadOffset ? { bodyOffset: input.timelineReadOffset } : {}),
   };
 }
 
@@ -354,9 +364,10 @@ function candidatePickerView(input: Input, base: WorkbenchView): WorkbenchView |
   const locale = input.locale ?? 'en';
   const taskTitle = taskTitleOf(input.taskCase, locale);
   const sourceProductLabel = input.sourceProductLabel ?? input.productLabel ?? '';
-  if (input.page === 'candidate-product') {
+  if (input.page === 'candidate-product' || input.page === 'recovery-review') {
     return {
       ...base,
+      ...(input.page === 'recovery-review' && input.timelineReadOffset ? { bodyOffset: input.timelineReadOffset } : {}),
       ...(input.timeline.length ? { running: runningModel(input) } : {}),
       candidateProduct: {
         ...(taskTitle ? { taskTitle } : {}),
@@ -400,8 +411,8 @@ function taskTitleOf(taskCase: TaskCase | undefined, locale: Locale): string | u
 function chromeProductLabel(input: Input): string | undefined {
   const recovering = input.runPhase === 'recovery' || input.preparePhase === 'check';
   if (recovering) return input.productLabel;
-  if (input.page === 'confirm' || input.page === 'running' || input.page === 'result') {
-    return input.candidateProductLabel || input.productLabel;
+  if (input.page === 'candidate-model' || input.page === 'confirm' || input.page === 'running' || input.page === 'result') {
+    return input.candidateProductLabel || input.candidate?.productId || input.result?.record.attempt.candidate.productId;
   }
   return input.productLabel;
 }
@@ -413,19 +424,16 @@ function projectChrome(
 ): {
   readonly statusSummary?: StatusSummaryModel;
   readonly contextBar?: ContextBarModel;
-  readonly stageRail?: StageRailModel;
   readonly activityCard?: ActivityCardModel;
   readonly recoverySummary?: RecoverySummaryModel;
 } {
   const recovery = recoveryModel(input);
   const contextBar = contextBarOf(input, productLabel, locale);
-  const stageRail = stageRailOf(input, locale);
   const statusSummary = statusSummaryOf(input, locale);
   const recoverySummary = recoverySummaryOf(input, recovery);
   return {
     ...(statusSummary ? { statusSummary } : {}),
     ...(contextBar ? { contextBar } : {}),
-    ...(stageRail ? { stageRail } : {}),
     ...(recoverySummary ? { recoverySummary } : {}),
   };
 }
@@ -434,6 +442,10 @@ function contextBarOf(input: Input, productLabel: string | undefined, locale: Lo
   const workflowPages = new Set(['candidate-product', 'candidate-model', 'confirm', 'running', 'result', 'preflight']);
   if (!workflowPages.has(input.page)) return undefined;
   const taskTitle = taskTitleOf(input.taskCase, locale);
+  if (input.page === 'candidate-product') {
+    return taskTitle ? { taskTitle } : undefined;
+  }
+  if (input.page === 'candidate-model' || input.page === 'confirm') return undefined;
   const modelLabel = candidateModelLabel(
     input.candidate?.requestedModel ?? input.result?.record.attempt.candidate.requestedModel,
     input.result?.record.manifest?.resolvedModel.resolved ?? input.preflight?.resolved.resolvedModel,
@@ -446,35 +458,10 @@ function contextBarOf(input: Input, productLabel: string | undefined, locale: Lo
   };
 }
 
-export function stageRailOf(input: Input, locale: Locale): StageRailModel | undefined {
-  if (input.page === 'running' || input.page === 'result' || input.page === 'confirm'
-    || input.page === 'candidate-product' || input.page === 'candidate-model') {
-    const recovering = input.runPhase === 'recovery' || input.preparePhase === 'check';
-    const comparing = input.preparePhase === 'compare';
-    const comparisonStatus = input.page === 'result' ? input.result?.comparison.result.status : undefined;
-    const comparisonMark = comparing ? '●'
-      : comparisonStatus === 'completed' ? '✓'
-        : comparisonStatus === 'failed' || comparisonStatus === 'cancelled' ? '✗' : '○';
-    const marks = [
-      `${recovering ? '●' : '✓'} ${t(locale, 'recoveryField')}`,
-      `${recovering ? '○' : input.page === 'candidate-product' ? '●' : '✓'} ${t(locale, 'candidateLabel')}`,
-      `${recovering ? '○' : input.page === 'running' && !comparing ? '●' : input.page === 'result' || comparing ? '✓' : '○'} ${t(locale, 'runDesc')}`,
-      `${comparisonMark} ${t(locale, 'resultComparison')}`,
-    ];
-    return { text: marks.join('  ') };
-  }
-  return undefined;
-}
-
 function statusSummaryOf(input: Input, locale: Locale): StatusSummaryModel | undefined {
   if (input.page === 'result' && input.result) {
-    const cmp = input.result.comparison.result.status;
-    const label = cmp === 'cancelled' ? t(locale, 'comparisonCancelledWord')
-      : cmp === 'failed' ? t(locale, 'comparisonFailedWord')
-        : cmp === 'skipped' ? t(locale, 'candidateEndedShort')
-          : t(locale, 'done');
-    const tone = cmp === 'failed' || cmp === 'cancelled' ? 'warn' as const : 'ok' as const;
-    return { label, tone };
+    const presentation = deriveResultPresentationFromResult(input.result, locale);
+    return { label: t(locale, presentation.statusLabelKey), tone: presentation.statusTone === 'ok' ? 'ok' : 'warn' };
   }
   if (input.cancelling) return { label: t(locale, 'hintCancel'), tone: 'warn' };
   return undefined;
@@ -484,7 +471,7 @@ function recoverySummaryOf(
   input: Input,
   recovery: import('./pages/run.js').RecoveryPreviewModel | undefined,
 ): RecoverySummaryModel | undefined {
-  const picker = input.page === 'candidate-product' || input.page === 'candidate-model';
+  const picker = input.page === 'candidate-product' || input.page === 'candidate-model' || input.page === 'recovery-review';
   if (!picker || !recovery) return undefined;
   return { recovery, expandable: input.timeline.length > 0 };
 }
