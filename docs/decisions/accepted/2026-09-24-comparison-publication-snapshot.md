@@ -12,6 +12,8 @@
 
 原始证据登记时读取有大小上限的源文件，计算 SHA-256，并写入 attempt 的内容寻址封存路径。目录记录的 `reportHref` 与 `contentHash` 指向该副本；预览及正式发布均校验封存字节并从中复制。源文件后续修改或删除不得改变已预览报告的证据目标；封存副本被改写则拒绝发布。
 
+初始证据目录的 `reportHref` 相对 experiment 根解析；截图工具在 attempt 的 `media/` 生成并追加的链接相对 attempt 根解析。封存时必须保留这个来源区别，不能仅凭相同的相对路径文本推断源目录。
+
 ## 备选方案
 
 **发布时重新读取源文件并比对 hash。** 源文件被删除时报告仍会产生失效链接，也无法保证预览和正式报告读取同一份字节。
@@ -22,4 +24,4 @@
 
 ## 验证
 
-`test/application/comparison-evidence-publication-review.test.ts` 覆盖预览后源文件变化而正式链接仍打开封存字节；对照发布与 attempt 测试覆盖校验、发布和受管资源生命周期。
+`test/application/comparison-evidence-publication-review.test.ts` 覆盖预览后源文件变化而正式链接仍打开封存字节；`test/application/comparison-tracks.test.ts` 覆盖 `writeComparisonBriefing` 截图成功后从 attempt 目录封存；对照发布与 attempt 测试覆盖校验、发布和受管资源生命周期。

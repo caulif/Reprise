@@ -16,6 +16,8 @@ import {
 import { recoveryEvidenceCatalog } from "../../src/products/history/source-refs.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import type { EventEnvelope, RunRecord, TaskCase } from "../../src/core/schema.js";
+import { sha256 } from "../../src/core/identity.js";
+import { readRegisteredOriginalLinkBytes } from "../../src/application/comparison-publication-assets.js";
 
 const timestamp = "2026-09-10T12:00:00.000Z";
 
@@ -498,6 +500,38 @@ test("baseline sealing does not copy candidate snapshot bytes for the same basen
   const sealed = await readFile(join(attemptRoot, "history", "media", "animation.svg"), "utf8");
   assert.equal(sealed, baselineSvg);
   assert.notEqual(sealed, candidateSvg);
+});
+
+test("writeComparisonBriefing seals a successful HTML screenshot from the attempt media root", async (t) => {
+  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-comparison-html-screenshot-"));
+  t.after(() => rm(experimentRoot, { recursive: true, force: true }));
+  const snapshotRoot = join(experimentRoot, "environment", "snapshots", "run-tracks");
+  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-html-screenshot");
+  await mkdir(snapshotRoot, { recursive: true });
+  await writeFile(join(snapshotRoot, "deck.html"), "<!doctype html><title>Candidate deck</title>");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  const caseValue = taskCase();
+  const record = runRecord();
+  const context = buildComparisonContext(caseValue, [record], [{
+    runId: record.attempt.runId, changedPaths: ["deck.html"], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 0,
+  }]);
+  let captures = 0;
+  const briefing = await writeComparisonBriefing({
+    attemptRoot, experimentRoot, workspaceRoot: snapshotRoot, taskCase: caseValue, record, context,
+    events: [], artifacts: [], snapshotStatus: "complete",
+    captureScreenshot: async (_source, destination) => {
+      captures += 1;
+      await writeFile(destination, png);
+      return { ok: true };
+    },
+  });
+  assert.equal(captures, 1);
+  const screenshot = briefing.links.find((link) => link.inspectPath.startsWith("media/"));
+  assert.ok(screenshot);
+  assert.match(screenshot.reportHref ?? "", /^evidence\/original\/[a-f0-9]{64}\.png$/);
+  assert.equal(screenshot.contentHash, sha256(png));
+  assert.deepEqual(await readRegisteredOriginalLinkBytes(attemptRoot, screenshot), png);
+  assert.ok(briefing.media.some((item) => item.side === "candidate" && item.available));
 });
 
 test("preview artifacts without extension sniff to SVG instead of inventing png from kind", async (t) => {

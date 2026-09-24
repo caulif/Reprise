@@ -108,6 +108,7 @@ export async function writeComparisonBriefing(input: {
   artifacts: readonly ArtifactManifest[];
   snapshotStatus: "complete" | "incomplete" | "missing";
   signal?: AbortSignal;
+  captureScreenshot?: Parameters<typeof augmentComparisonOpenableMedia>[0]["captureScreenshot"];
 }): Promise<{ indexMarkdown: string; links: ComparisonLink[]; media: ComparisonMediaRecord[]; fileDigests: Record<string, string>; capabilities: ToolCapabilityManifest; browserPath?: string; toolConfig: ToolConfig }> {
   const briefingRoot = join(input.attemptRoot, "briefing");
   await Promise.all([
@@ -214,13 +215,15 @@ async function comparisonMediaBundle(
     links,
     baselineSources: openable.baselineSources,
     candidateSources: openable.candidateSources,
+    ...(input.captureScreenshot ? { captureScreenshot: input.captureScreenshot } : {}),
     ...(browserPath ? { browserPath } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
   });
   const sealedLinks: ComparisonLink[] = [];
-  for (const link of augmented.links) {
+  for (const [index, link] of augmented.links.entries()) {
+    const sourceRoot = index < links.length ? input.experimentRoot : input.attemptRoot;
     sealedLinks.push(link.reportHref
-      ? await sealOriginalLink(input.attemptRoot, resolve(input.experimentRoot, ...link.reportHref.split("/")), link)
+      ? await sealOriginalLink(input.attemptRoot, resolve(sourceRoot, ...link.reportHref.split("/")), link)
       : link);
   }
   return { links: sealedLinks, media: augmented.media, visualLimitations: augmented.visualLimitations, invalidLinkCount };
