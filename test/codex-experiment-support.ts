@@ -1,7 +1,8 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ComparisonAgentPort } from "../src/agents/comparison-agent.js";
+import { ComparisonAgent, type ComparisonAgentPort } from "../src/agents/comparison-agent.js";
+import { AgentHost } from "../src/infrastructure/agent/host.js";
 import { type ControllerPort } from "../src/agents/controller-agent.js";
 import { startExperiment, type ExperimentAgentConfig } from "../src/application/experiment.js";
 import type {
@@ -13,42 +14,6 @@ import type {
 } from "../src/core/runtime.js";
 import type { TaskCase } from "../src/core/schema.js";
 import { ScriptedRunner } from "./support/scripted-runtime.js";
-export function comparisonHtmlWithHostShell(context: { reportShellHtml?: string } | string | undefined, body: string): string {
-  const shell = typeof context === "string" ? context : context?.reportShellHtml;
-  if (!shell) return body;
-  let next = shell;
-  if (next.includes('data-agent-slot="headline"')) {
-    next = next.replace(
-      /<p[^>]*data-agent-slot="headline"[^>]*><\/p>/,
-      '<p class="note" data-agent-slot="headline">对照结论。</p>',
-    );
-  }
-  if (next.includes('data-agent-zone="comparison"')) {
-    return next.replace(
-      /<section class="slot" data-agent-zone="comparison" data-id="agent-comparison">(?:<!--[\s\S]*?-->)?[\s\S]*?<\/section>/,
-      `<section class="slot" data-agent-zone="comparison" data-id="agent-comparison">${body}</section>`,
-    );
-  }
-  if (next.includes('data-agent-zone="key-differences"')) {
-    return next.replace(
-      /<section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences">(?:<!--[\s\S]*?-->)?<\/section>/,
-      `<section class="slot" data-agent-zone="key-differences" data-id="agent-key-differences">${body}</section>`,
-    );
-  }
-  if (shell.includes('data-slot="key-differences"')) {
-    return shell.replace(
-      /<section class="slot" data-slot="key-differences"><\/section>/,
-      `<section class="slot" data-slot="key-differences">${body}</section>`,
-    );
-  }
-  if (shell.includes('data-slot="body"')) {
-    return shell.replace(
-      '<div class="agent-slot" data-slot="body"></div>',
-      `<div class="agent-slot" data-slot="body">${body}</div>`,
-    );
-  }
-  return `${shell}${body}`;
-}
 export const now = "2026-08-11T12:00:00.000Z";
 export class VerifiedRuntime implements ProductRuntime {
   readonly id = "verified-test";
@@ -154,39 +119,47 @@ const controller: ControllerPort = {
           value: { type: "done", reason: "satisfied" },
         },
 };
+const comparisonAgent = new ComparisonAgent({ timeoutMs: 0, maxRepairAttempts: 0,
+  host: new AgentHost({ createSession({ tools }) {
+    let turn = 0;
+    return { async append({ signal }) {
+      const current = turn++;
+      const reader = tools.find((tool) => tool.name === "read")!;
+      const writer = tools.find((tool) => tool.name === "write")!;
+      const toolSignal = signal ?? new AbortController().signal;
+      if (current === 0) {
+        for (const path of ["briefing/facts/context.json", "briefing/facts/comparison-links.json", "briefing/candidate/process-index.tsv"]) {
+          const read = await reader.execute({ path }, toolSignal);
+          if (!(read.details as { available?: boolean }).available) throw new Error(`Comparison briefing unavailable: ${path}`);
+        }
+        const index = await reader.execute({ path: "briefing/INDEX.md" }, toolSignal);
+        for (const match of index.content.matchAll(/^- (briefing\/[^\s:]+)/gm)) {
+          const read = await reader.execute({ path: match[1] }, toolSignal);
+          if (!(read.details as { available?: boolean }).available) throw new Error(`Comparison indexed path unavailable: ${match[1]}`);
+        }
+        return "The task and available deliveries are understood.";
+      }
+      if (current === 1) {
+        await writer.execute({ path: "work/comparison-plan.md", content: "# Plan\n\nCompare the delivered files and the final settled turn.\n" }, toolSignal);
+        return "The relevant evidence has been inspected.";
+      }
+      if (current === 2) {
+        await writer.execute({ path: "work/report/content.json", content: JSON.stringify({
+          schemaVersion: 1, headline: "对照结论。", criticalLimitations: [], evidenceRefs: [],
+        }) }, toolSignal);
+        await writer.execute({ path: "work/report/body.html", content: "<p>Evidence-based narrative.</p>" }, toolSignal);
+        return "The comparison content is written.";
+      }
+      const preview = await tools.find((tool) => tool.name === "preview_report")!.execute({}, toolSignal);
+      if (!(preview.details as { publishable?: boolean }).publishable) throw new Error(`Fixture preview failed: ${preview.content}`);
+      return JSON.stringify({ status: "completed", headline: "对照结论。", evidenceRefs: [] });
+    }, cancel() {} };
+  } }),
+});
 const comparison: ComparisonAgentPort = {
-  compare: async (_context, tools = []) => {
-    const reader = tools.find((tool) => tool.name === "read")!;
-    for (const path of ["briefing/facts/context.json", "briefing/facts/comparison-links.json", "briefing/candidate/process-index.tsv"]) {
-      const read = await reader.execute({ path }, new AbortController().signal);
-      if (!(read.details as { available?: boolean }).available) throw new Error(`Comparison briefing unavailable: ${path}`);
-    }
-    const index = await reader.execute({ path: "briefing/INDEX.md" }, new AbortController().signal);
-    for (const match of index.content.matchAll(/^- (briefing\/[^\s:]+)/gm)) {
-      const read = await reader.execute({ path: match[1] }, new AbortController().signal);
-      if (!(read.details as { available?: boolean }).available) throw new Error(`Comparison indexed path unavailable: ${match[1]}`);
-    }
-    const writer = tools.find((tool) => tool.name === "write");
-    await writer?.execute(
-      { path: "work/comparison-plan.md", content: "# Plan\n\nCompare the delivered files and the final settled turn.\n" },
-      new AbortController().signal,
-    );
-    const shell = await reader.execute({ path: "report.html" }, new AbortController().signal);
-    await writer?.execute(
-      { path: "report.html", content: comparisonHtmlWithHostShell(shell.content, '<p>Evidence-based narrative.</p><a href="./artifacts/recovery-md">recovery_report</a>') },
-      new AbortController().signal,
-    );
-    return {
-      status: "completed",
-      sessionId: "comparison-1",
-      value: {
-        status: "completed",
-        reportPath: "report.html",
-        evidenceRefs: [],
-      },
-    };
-  },
-  cancel: async () => {},
+  compare: (...args) => comparisonAgent.compare(...args),
+  cancel: (...args) => comparisonAgent.cancel(...args),
+  release: (...args) => comparisonAgent.release(...args),
 };
 function taskCase(): TaskCase {
   return {

@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Comparison 改由 Agent 写标题、限制与正文片段，Host 组装并校验整页；预览后修改内容必须重新检查，失败不会覆盖上一次成功报告。
+- Comparison 移除旧整页 HTML 创作入口及旧 `report-model.json` 格式 1/无版本/四区槽位读取；仅接受当前 formatVersion 2，不自动迁移或删除历史文件。回滚版本不理解新内容文件。
+- 对照调查提供能力清单、受管页面观察、受限 HTTPS 获取、CSV/JSON/PDF/Office 文本提取及可选的 ffprobe 媒体检查、ffmpeg 单帧提取和 Tesseract OCR 命令。LibreOffice 转换仍不支持；缺浏览器时保留文件与文本证据，并明确标出无法完成的视觉检查。
+
+### Fixed
+
+- 派生证据链接在预览和正式报告中可打开，发布前核对原始字节；DOCX 超链接前后的文字维持文档顺序。
+- 浏览器截图记录实际耗时、来源和动作，不再把长时间交互误作超出渲染采样上限。
+
 ### Added
 
 - 包名改为 scoped `@caulif/reprise`（避开 npmjs 无关同名包 `reprise`），并提供 TUI、headless `prepare`/`run`/`compare`、查询和取消命令。

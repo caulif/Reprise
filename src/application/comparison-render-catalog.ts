@@ -95,9 +95,7 @@ async function materializeLinkSource(
 ): Promise<ComparisonRenderSource | undefined> {
   const located = await locateRegisteredPath(input, link.inspectPath);
   if (!located) return undefined;
-  const contentHash = link.contentHash && /^[a-f0-9]{64}$/.test(link.contentHash)
-    ? link.contentHash
-    : sha256(await readFile(located.absoluteFile));
+  const contentHash = sha256(await readFile(located.absoluteFile));
   if (link.contentHash && link.contentHash !== contentHash) return undefined;
   return {
     sourceRef,
@@ -291,9 +289,12 @@ async function registerPreviewMedia(
   entry: RegisterDerivedMediaInput,
 ): Promise<RegisterDerivedMediaResult> {
   // Always call catalog.registerMedia so emit-failure retry can re-emit via #finishExistingRegistration.
-  // Omit capturedAt from derivation so mediaDerivationKey matches across retries (adapter must not
-  // short-circuit with a second, disagreeing dedupe key).
-  const fileName = `render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}.png`;
+  const provenanceSuffix = entry.derivation.sourceHash
+    ? `-${sha256(JSON.stringify({ sourceRef: entry.sourceRef, sourceHash: entry.derivation.sourceHash,
+      finalUrl: entry.derivation.finalUrl, actions: entry.derivation.actions?.map(({ action, selector }) => ({ action, selector })) })).slice(0, 12)}`
+    : "";
+  const stem = `render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}${provenanceSuffix}`;
+  const fileName = `${stem}.png`;
   const inspectPath = `media/${fileName}`;
   const absoluteOut = join(attemptRoot, ...inspectPath.split("/"));
   await mkdir(dirname(absoluteOut), { recursive: true });
@@ -303,10 +304,17 @@ async function registerPreviewMedia(
     rendererVersion: entry.derivation.rendererVersion,
     viewport: entry.derivation.viewport,
     sampleTimesMs: [entry.derivation.sampleTimeMs],
+    ...(entry.derivation.sourceHash ? { capturedAt: entry.derivation.capturedAt,
+      elapsedMs: entry.derivation.actualTimeMs } : {}),
+    ...(entry.derivation.sourceHash ? { sourceHash: entry.derivation.sourceHash } : {}),
+    ...(entry.derivation.finalUrl ? { finalUrl: entry.derivation.finalUrl } : {}),
+    ...(entry.derivation.urlStateOmitted ? { urlStateOmitted: true } : {}),
+    ...(entry.derivation.errorsOmitted !== undefined ? { errorsOmitted: entry.derivation.errorsOmitted } : {}),
+    ...(entry.derivation.actions ? { actions: [...entry.derivation.actions] } : {}),
   };
   const registered = await catalog.registerMedia({
     record: {
-      ref: `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+      ref: `media:${stem}`,
       side: entry.side,
       inspectPath,
       reportHref: inspectPath,
@@ -333,7 +341,7 @@ async function registerPreviewMedia(
   return {
     ok: true,
     shortRef: registered.shortRef,
-    mediaRef: recorded?.ref ?? `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+    mediaRef: recorded?.ref ?? `media:${stem}`,
     revision: registered.revision,
   };
 }

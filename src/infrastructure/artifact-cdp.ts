@@ -21,9 +21,9 @@ export type CdpSession = {
   diagnostics: RenderDiagnostic[];
 };
 
-export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSession | { failure: "no_browser" | "capability_unavailable"; message: string; diagnostics: RenderDiagnostic[] }> {
+export async function openCdpBrowserSession(signal: AbortSignal, verifiedBrowserPath?: string): Promise<CdpSession | { failure: "no_browser" | "capability_unavailable"; message: string; diagnostics: RenderDiagnostic[] }> {
   const diagnostics: RenderDiagnostic[] = [];
-  const browserPath = await resolveHeadlessBrowser();
+  const browserPath = verifiedBrowserPath ?? await resolveHeadlessBrowser();
   if (!browserPath) return { failure: "no_browser", message: "no headless browser", diagnostics };
   if (signal.aborted) {
     return { failure: "capability_unavailable", message: "cancelled before browser start", diagnostics };
@@ -54,27 +54,33 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
     stdio: ["ignore", "pipe", "pipe"],
     detached: false,
   });
+  let cleanupPromise: Promise<void> | undefined;
+  const cleanup = () => cleanupPromise ??= killBrowser(child, profileDir, diagnostics);
 
   const abort = () => {
-    void killBrowser(child, profileDir, diagnostics);
+    void cleanup().catch(() => {
+      // The failure is recorded in diagnostics; awaited callers receive the shared rejection.
+    });
   };
   if (signal.aborted) {
-    await killBrowser(child, profileDir, diagnostics);
+    await cleanup();
     return { failure: "capability_unavailable", message: "cancelled before browser start", diagnostics };
   }
   signal.addEventListener("abort", abort, { once: true });
 
   try {
     const endpoint = await waitForDevtoolsEndpoint(profileDir, child, signal, 15_000);
-    const session = await connectCdp(endpoint, child, profileDir, diagnostics, signal);
+    const session = await connectCdp(endpoint, diagnostics, signal, cleanup);
     signal.removeEventListener("abort", abort);
     signal.addEventListener("abort", () => {
-      void session.close();
+      void session.close().catch(() => {
+        // The failure is recorded in diagnostics; awaited close calls receive the shared rejection.
+      });
     }, { once: true });
     return session;
   } catch (error) {
     signal.removeEventListener("abort", abort);
-    await killBrowser(child, profileDir, diagnostics);
+    await cleanup();
     const message = error instanceof Error ? error.message : String(error);
     return { failure: "capability_unavailable", message, diagnostics };
   }
@@ -109,10 +115,9 @@ async function waitForDevtoolsEndpoint(
 
 async function connectCdp(
   endpoint: string,
-  child: ChildProcessWithoutNullStreams,
-  profileDir: string,
   diagnostics: RenderDiagnostic[],
   signal: AbortSignal,
+  cleanup: () => Promise<void>,
 ): Promise<CdpSession> {
   const ws = new WebSocket(endpoint);
   await new Promise<void>((resolve, reject) => {
@@ -187,7 +192,7 @@ async function connectCdp(
       } catch {
         // Closing an already-closed socket is expected during abort races.
       }
-      await killBrowser(child, profileDir, diagnostics);
+      await cleanup();
     },
   };
   return session;
@@ -605,20 +610,14 @@ async function killBrowser(
       await waitExit(child, 1_000);
     }
   }
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await rm(profileDir, { recursive: true, force: true });
-      return;
-    } catch (error: unknown) {
-      if (attempt === 2) {
-        diagnostics.push({
-          code: "profile_cleanup_failed",
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return;
-      }
-      await sleep(50);
-    }
+  try {
+    await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (error: unknown) {
+    diagnostics.push({
+      code: "profile_cleanup_failed",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
 }
 

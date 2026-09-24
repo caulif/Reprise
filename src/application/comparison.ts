@@ -23,8 +23,6 @@ import {
 } from './session-usage.js';
 import { loadOperatorPricingOverride, MODEL_PRICING_TABLE_VERSION } from './model-pricing.js';
 import type { ComparisonMetricSide } from '../agents/comparison-agent.js';
-import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from './comparison-report-shell.js';
-import { readOperatorLocale } from './operator-locale.js';
 
 export type RunInspection = {
   runId: string;
@@ -105,18 +103,9 @@ export async function comparePersistedFacts(input: {
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     ...(input.comparisonModel ? { comparisonModel: input.comparisonModel } : {}),
   });
-  const locale = input.dataDir ? await readOperatorLocale(input.dataDir) : "zh";
-  const reportShellHtml = renderComparisonReportShell({
-    task: facts.task.summary,
-    facts: facts.reportFacts,
-    metrics: metricsFromReportFacts(facts.reportFacts),
-    locale,
-  });
-  const hostZoneSnapshot = extractHostZoneSnapshot(reportShellHtml);
   const context: ComparisonContext = {
     ...facts,
     attemptId: input.attemptId,
-    ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
   };
   const result = await input.agent.compare(context, input.tools, input.audit);
   if (result.status === 'completed') assertComparisonResult(result.value, context);
@@ -324,7 +313,7 @@ export function comparisonOwnedObservationRefs(
 }
 
 export function briefingComparisonContext(context: ComparisonContext | ComparisonFactsContext): ComparisonFactsContext {
-  const { attemptId: _attemptId, ownedEvidenceRefs: _owned, hostZoneSnapshot: _zones, ...briefing } = {
+  const { attemptId: _attemptId, ownedEvidenceRefs: _owned, ...briefing } = {
     attemptId: "",
     ...context,
   };

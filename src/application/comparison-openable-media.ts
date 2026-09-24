@@ -29,8 +29,9 @@ export async function augmentComparisonOpenableMedia(input: {
   baselineSources: readonly { inspectPath: string; absolutePath: string }[];
   candidateSources: readonly { inspectPath: string; absolutePath: string }[];
   captureScreenshot?: typeof captureHeadlessScreenshot;
+  browserPath?: string;
   signal?: AbortSignal;
-}): Promise<{ links: ComparisonLinkRecord[]; media: ComparisonMediaRecord[] }> {
+}): Promise<{ links: ComparisonLinkRecord[]; media: ComparisonMediaRecord[]; visualLimitations: string[] }> {
   const captureScreenshot = input.captureScreenshot ?? captureHeadlessScreenshot;
   const sealedRoot = join(input.attemptRoot, "finals");
   await mkdir(sealedRoot, { recursive: true });
@@ -64,6 +65,7 @@ export async function augmentComparisonOpenableMedia(input: {
       input.signal?.throwIfAborted();
       const captured = await captureScreenshot(source.absolutePath, pngPath, {
         ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.browserPath ? { browserPath: input.browserPath } : {}),
       });
       if (!captured.ok) {
         screenshotFailures.push(formatScreenshotFailure(side, source.inspectPath, captured.failure));
@@ -85,35 +87,33 @@ export async function augmentComparisonOpenableMedia(input: {
     workspaceRoot: input.workspaceRoot,
     links: augmentedLinks,
   }));
-  assertPairedVisualMediaOrThrow({
+  const visualLimitations = pairedVisualMediaLimitations({
     baselineSources: input.baselineSources,
     candidateSources: input.candidateSources,
     links: augmentedLinks,
     media,
     screenshotFailures,
   });
-  return { links: augmentedLinks, media };
+  return { links: augmentedLinks, media, visualLimitations };
 }
 
-export function assertPairedVisualMediaOrThrow(input: {
+export function pairedVisualMediaLimitations(input: {
   baselineSources: readonly { inspectPath: string; absolutePath: string }[];
   candidateSources: readonly { inspectPath: string; absolutePath: string }[];
   links: readonly ComparisonLinkRecord[];
   media: readonly ComparisonMediaRecord[];
   screenshotFailures?: readonly string[];
-}): void {
+}): string[] {
   const baselineVisual = input.baselineSources.some((item) => isVisualDeliverablePath(item.absolutePath))
     || input.links.some((link) => link.side === "baseline" && isVisualLink(link));
   const candidateVisual = input.candidateSources.some((item) => isVisualDeliverablePath(item.absolutePath))
     || input.links.some((link) => link.side === "candidate" && isVisualLink(link));
-  if (!baselineVisual || !candidateVisual) return;
+  if (!baselineVisual || !candidateVisual) return input.screenshotFailures ? [...input.screenshotFailures] : [];
   const baselineAvailable = input.media.some((item) => item.side === "baseline" && item.available);
   const candidateAvailable = input.media.some((item) => item.side === "candidate" && item.available);
-  if (baselineAvailable && candidateAvailable) return;
+  if (baselineAvailable && candidateAvailable) return input.screenshotFailures ? [...input.screenshotFailures] : [];
   const details = input.screenshotFailures?.length ? ` ${input.screenshotFailures.join("; ")}` : "";
-  throw new ComparisonVisualMediaError(
-    `Visual deliverables exist on both sides but paired previews were not registered in media.json.${details}`,
-  );
+  return [`Visual deliverables exist on both sides but paired previews were not registered in media.json.${details}`];
 }
 
 function formatScreenshotFailure(

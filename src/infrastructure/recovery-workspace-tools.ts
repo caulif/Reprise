@@ -587,7 +587,7 @@ function envLookup(env: NodeJS.ProcessEnv, name: string): string | undefined {
   return found === undefined ? undefined : env[found];
 }
 
-function sanitizedEnvironment(home: string): NodeJS.ProcessEnv {
+export function sanitizedEnvironment(home: string): NodeJS.ProcessEnv {
   const allowed = new Set([
     "path",
     "pathext",

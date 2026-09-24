@@ -1,5 +1,5 @@
 const HOST_ZONES = ["style", "header", "metrics", "cost-note", "evidence", "process"] as const;
-/** Format-2 agent zones. Legacy visual-evidence / key-differences / delivery / limitations are not accepted on new drafts. */
+/** Report Agent zones. */
 export const AGENT_ZONES = ["comparison", "details"] as const;
 const AGENT_SLOTS = ["headline", "category", "task"] as const;
 const COMPONENT_TEMPLATES = [
@@ -13,7 +13,6 @@ const COMPONENT_TEMPLATES = [
 ] as const;
 export type HostZoneName = (typeof HOST_ZONES)[number];
 export type AgentZoneName = (typeof AGENT_ZONES)[number];
-export type HostZoneSnapshot = Record<HostZoneName, string>;
 
 const ZONE_TAG = "header|section|style|p|span";
 
@@ -78,67 +77,6 @@ function hasMarker(html: string, attr: string, value: string): boolean {
   const escapedAttr = attr.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
   const escapedValue = value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
   return new RegExp(`\\b${escapedAttr}\\s*=\\s*(["'])${escapedValue}\\1`, "i").test(html);
-}
-
-export function extractHostZoneSnapshot(html: string): HostZoneSnapshot | undefined {
-  const snapshot = {} as HostZoneSnapshot;
-  for (const zone of HOST_ZONES) {
-    const outer = extractOuter(html, "data-host-zone", zone);
-    if (!outer) return undefined;
-    snapshot[zone] = canonicalizeHostZone(outer);
-  }
-  return snapshot;
-}
-
-export function hostZoneIntegrityError(html: string, snapshot: HostZoneSnapshot): string | undefined {
-  const missing = missingComparisonSlots(html);
-  if (missing) return missing;
-  const current = extractHostZoneSnapshot(html);
-  if (!current) return "Host zone snapshot is incomplete.";
-  const order = [...html.matchAll(/\bdata-host-zone\s*=\s*(["'])(.*?)\1/gi)].map((match) => match[2]);
-  if (order.join("\0") !== HOST_ZONES.join("\0")) return "Host zone order or count was modified.";
-  for (const zone of HOST_ZONES) {
-    if (current[zone] !== snapshot[zone]) return `Host zone "${zone}" was modified.`;
-  }
-  return undefined;
-}
-
-function canonicalizeHostZone(html: string): string {
-  const withoutAgentContent = html.replace(
-    /<(p|div|h[1-6]|span)(\b[^>]*\bdata-agent-slot="[^"]+"[^>]*)>[\s\S]*?<\/\1>/gi,
-    "<$1$2></$1>",
-  );
-  return withoutAgentContent
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<([A-Za-z][\w:-]*)([^>]*)>/g, (_all, tag: string, attrs: string) => `<${tag.toLowerCase()}${canonicalAttributes(attrs)}>`)
-    .replace(/<\/([A-Za-z][\w:-]*)>/g, (_all, tag: string) => `</${tag.toLowerCase()}>`)
-    .replace(/\s+/g, " ")
-    .replace(/>\s+</g, "><")
-    .trim();
-}
-
-function canonicalAttributes(source: string): string {
-  const attrs: string[] = [];
-  const pattern = /([:\w-]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>]+))?/g;
-  for (const match of source.matchAll(pattern)) {
-    const name = (match[1] ?? "").toLowerCase();
-    if (!name) continue;
-    const raw = match[2];
-    if (raw === undefined) attrs.push(name);
-    else attrs.push(`${name}="${decodeHtml(raw.replace(/^['"]|['"]$/g, ""))}"`);
-  }
-  return attrs.length ? ` ${attrs.sort().join(" ")}` : "";
-}
-
-function decodeHtml(value: string): string {
-  return value
-    .replace(/&quot;/gi, '"')
-    .replace(/&#34;/g, '"')
-    .replace(/&apos;/gi, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&amp;/gi, "&");
 }
 
 export function extractInner(html: string, attr: string, name: string): string {

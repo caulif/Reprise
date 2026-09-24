@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+export { type ToolCapability, type ToolCapabilityManifest, type ToolConfig } from "./tool-schema.js";
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
 import {
   ComparisonBriefingContextSchema,
@@ -7,7 +8,8 @@ import {
   ComparisonMediaRecordSchema,
   ComparisonMediaShortRefSchema,
   ComparisonReportModelSchema,
-  ComparisonShortRefSchema,
+  ComparisonReportContentSchema,
+  ComparisonPreviewReceiptSchema,
 } from "./comparison-schema.js";
 export { EvidenceRefSchema, type EvidenceRef } from "./schemas/ids.js";
 export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js";
@@ -265,9 +267,10 @@ export {
   ComparisonMediaRecordSchema,
   ComparisonMediaShortRefSchema,
   ComparisonReportModelSchema,
-  ComparisonShortRefSchema,
+  ComparisonReportContentSchema,
+  ComparisonPreviewReceiptSchema,
 };
-export type { ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+export type { ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel, ComparisonReportContent, ComparisonPreviewReceipt } from "./comparison-schema.js";
 export {
   type ModelInputCapabilities,
 } from "./schemas/model-input-capabilities.js";

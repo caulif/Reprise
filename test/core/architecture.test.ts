@@ -273,14 +273,15 @@ test('role write policy stays on application owners without a shared Verifier', 
   const { comparisonAttemptWriteAllowed } = await import('../../src/application/experiment-report.js');
   assert.equal(comparisonAttemptWriteAllowed('scratch/a.txt'), true);
   assert.equal(comparisonAttemptWriteAllowed('scratch-evil/a.txt'), false);
-  assert.equal(comparisonAttemptWriteAllowed('report.html'), true);
+  assert.equal(comparisonAttemptWriteAllowed('report.html'), false);
+  assert.equal(comparisonAttemptWriteAllowed('work/report/content.json'), true);
   const report = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
   assert.doesNotMatch(report, /\.plan\(|\.report\(|invokePlan|invokeReport/);
   const comparisonAgent = await readFile(join(SRC, 'agents/comparison-agent.ts'), 'utf8');
   assert.doesNotMatch(comparisonAgent, /#host\.request/);
   assert.match(comparisonAgent, /createSession/);
   assert.doesNotMatch(comparisonAgent, /node:fs|writeAtomic/);
-  assert.match(report, /writeAtomic\(join\(input\.attemptRoot, "report\.html"/);
+  assert.match(report, /writeAtomic\(join\(attemptRoot, "report\.html"/);
   const loop = await readFile(join(SRC, 'application/experiment-controller-loop.ts'), 'utf8');
   assert.match(loop, /controllerProjectWriteAllowed|controllerDecisionTools/);
   assert.doesNotMatch(loop, /allowWrite:\s*\(\)\s*=>\s*false/);

@@ -2,79 +2,106 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Comparison · gpt-5 vs requested gpt-5.6 · resolution unconfirmed</title>
 <style data-host-zone="style" data-id="host-style">
 
-:root { --paper:#efe8dc; --card:#fffcf7; --ink:#1a1714; --soft:#5a544b; --faint:#8a8378; --line:rgba(26,23,20,.08); --hair:rgba(26,23,20,.12); --shadow:0 22px 50px rgba(40,32,18,.1); --accent:#5b4630; --risk:#8b2e2e; --ok:#2f5d3a; }
+:root { --paper:#fff; --card:#fff; --ink:#20282b; --soft:#47545a; --faint:#66757b; --line:#e3e9e7; --hair:#d4deda; --accent:#12685f; --risk:#a2443d; --ok:#277049; }
 * { box-sizing:border-box; }
-html,body { margin:0; background:var(--paper); color:var(--ink); font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Songti SC","Source Han Serif SC",serif; }
-.page { max-width:980px; margin:0 auto; padding:36px 20px 72px; }
-.share { background:var(--card); border:1px solid var(--line); border-radius:28px; box-shadow:var(--shadow); padding:28px 28px 24px; }
-.share a { color:inherit; text-decoration:none; }
-.kicker { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin:0 0 12px; }
-h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; margin:0 0 8px; }
-.sessions { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:8px 0 12px; font-size:14px; color:var(--soft); }
-.field-label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:13px; color:var(--faint); margin:12px 0 4px; }
-.task { margin:0 0 8px; font-size:16px; color:var(--soft); line-height:1.45; }
-.note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:16px; line-height:1.5; }
+.page { max-width:1080px; margin:0 auto; padding:32px 24px 72px; }
+html,body { margin:0; background:var(--paper); color:var(--ink); font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+.share { padding:0; min-width:0; }
+.share a { color:var(--accent); text-underline-offset:2px; }
+.kicker { font-size:11px; color:var(--faint); margin:0 0 12px; }
+h1 { font-size:25px; font-weight:700; line-height:1.28; margin:0 0 10px; overflow-wrap:anywhere; }
+.sessions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:0 0 20px; padding:0 0 16px; border-bottom:1px solid var(--line); }
+.sessions span { min-width:0; }
+.sessions small { display:block; font-size:12px; color:var(--faint); margin-bottom:4px; }
+.sessions strong { display:block; font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+.field-label { font-size:12px; color:var(--faint); margin:12px 0 4px; }
+.task { margin:0 0 10px; font-size:14px; color:var(--soft); line-height:1.5; overflow-wrap:anywhere; }
+.run-status { margin:0 0 12px; font-size:12px; font-weight:600; color:var(--accent); }
+.request-expand { margin:0 0 14px; font-size:12px; color:var(--soft); }
+.request-expand summary { cursor:pointer; color:var(--accent); }
+.request-expand pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:16rem; overflow:auto; font:inherit; line-height:1.5; }
+.note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:17px; line-height:1.48; font-weight:600; overflow-wrap:anywhere; }
+h2 { font-size:18px; line-height:1.35; margin:18px 0 9px; }
+h3 { font-size:16px; line-height:1.4; }
+pre { max-width:100%; overflow-x:auto; padding:12px; background:#f4f7f6; border:1px solid var(--line); border-radius:4px; }
 [data-agent-slot="headline"] strong,[data-component="diff-table"] strong,[data-claim] { font-weight:inherit; }
-.board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
-.card,.result-card,[data-host="diagnostic-card"],[data-component="difference-card"] { background:#f7f3ea; border-radius:18px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; }
-.card { min-height:0; }
-.card .label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:12px; }
-.pair { display:grid; grid-template-columns:1fr 1fr; }
+.board { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; margin:24px 0 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.card { padding:14px 18px 16px 0; min-width:0; }
+.card + .card { padding-left:18px; border-left:1px solid var(--line); }
+.result-card,[data-host="diagnostic-card"],[data-component="difference-card"] { border-left:3px solid var(--accent); padding:10px 14px; margin:10px 0; background:#f4f8f7; }
+.card .label { font-size:12px; color:var(--faint); margin-bottom:10px; }
+.pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
 .col { padding-right:8px; }
 .col + .col { padding-right:0; padding-left:12px; border-left:1px solid var(--hair); }
-.who { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.08em; color:var(--faint); margin-bottom:4px; }
-.num { font-variant-numeric:tabular-nums; font-size:28px; line-height:1; letter-spacing:-.03em; font-weight:600; }
-.num.miss { font-size:16px; color:#b3ada2; letter-spacing:0; font-weight:500; white-space:nowrap; }
+.who { font-size:11px; color:var(--faint); margin-bottom:5px; overflow-wrap:anywhere; }
+.num { font-variant-numeric:tabular-nums; font-size:22px; line-height:1.2; font-weight:650; overflow-wrap:anywhere; }
+.num.miss { font-size:13px; color:var(--faint); font-weight:500; white-space:normal; }
 .unit { font-size:13px; font-weight:500; color:var(--soft); margin-left:2px; }
 .muted,[data-component="muted"] { color:var(--faint); font-size:14px; }
-.slot { margin-top:14px; }
+.slot { margin-top:14px; min-width:0; }
 .pages { display:flex; flex-direction:column; gap:14px; }
 [data-component="page-row"] { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:stretch; }
-.cell { border:1px solid var(--hair); border-radius:16px; overflow:hidden; background:#fff; }
+.cell { border:1px solid var(--hair); border-radius:4px; overflow:hidden; background:#fff; }
 .cell .who { padding:8px 12px 0; }
 .cell img,[data-component="page-row"] img { width:100%; height:320px; object-fit:contain; object-position:top; display:block; background:#fff; }
 [data-agent-zone="comparison"] { margin-top:0; margin-bottom:12px; }
-[data-agent-zone="comparison"] p,[data-agent-zone="comparison"] li { font-size:14px; line-height:1.4; color:var(--soft); max-width:48em; }
+[data-agent-zone="comparison"] p,[data-agent-zone="comparison"] li { font-size:14px; line-height:1.5; color:var(--soft); max-width:72em; overflow-wrap:anywhere; }
 [data-agent-zone="comparison"] [data-host="visual-unavailable"],[data-agent-zone="comparison"] [data-host="pairing-hint"] { margin:0 0 8px; font-size:14px; }
-[data-agent-zone="comparison"] table,[data-component="diff-table"] { width:100%; border-collapse:collapse; margin:8px 0; }
-[data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
-.details { margin-top:20px; color:var(--soft); background:var(--card); border:1px solid var(--line); border-radius:18px; padding:12px 18px 16px; }
-.details > summary { cursor:pointer; font-family:"Segoe UI","PingFang SC",sans-serif; font-size:14px; color:var(--accent); list-style:none; }
+[data-agent-zone="comparison"] table,[data-component="diff-table"] { display:block; width:100%; max-width:100%; overflow-x:auto; border-collapse:collapse; margin:12px 0; white-space:nowrap; }
+[data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border-bottom:1px solid var(--line); padding:9px 12px 9px 0; vertical-align:top; font-size:13px; font-weight:400; }
+.table-scroll { max-width:100%; overflow-x:auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.table-scroll:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.table-scroll table,[data-agent-zone="comparison"] .table-scroll table { display:table; width:max-content; min-width:100%; max-width:none; overflow:visible; margin:0; }
+.table-hint { margin:8px 0 3px; font-size:11px; color:var(--faint); }
+.details { margin-top:22px; color:var(--soft); border-top:1px solid var(--line); padding:16px 0; }
+.details > summary { cursor:pointer; font-size:14px; color:var(--accent); }
 .details > summary::-webkit-details-marker { display:none; }
 .cost-note { margin: 12px 0 8px; }
 [data-component="judgment"] { font-weight:700; }
 [data-component="judgment"] { margin:0 0 16px; }
 [data-host="diagnostic-card"] h3,[data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
 [data-host="diagnostic-card"] p,[data-component="difference-card"] p { margin:0; color:var(--soft); }
-[data-component="highlight"] { background:rgba(91,70,48,.12); padding:0 .2em; }
+[data-component="highlight"] { background:#e9f2ef; padding:0 .2em; }
 [data-component="strike"] { text-decoration:line-through; color:var(--soft); }
 [data-component="quote"] { border-left:3px solid var(--hair); padding-left:12px; color:var(--soft); }
 code,[data-component="code"] { font-family:"Cascadia Code","Sarasa Mono SC",monospace; font-size:.92em; }
-[data-component="tag-improve"],[data-component="tag-tradeoff"],[data-component="tag-risk"] { display:inline-block; font-size:12px; letter-spacing:.04em; padding:2px 8px; border-radius:999px; }
+[data-component="tag-improve"],[data-component="tag-tradeoff"],[data-component="tag-risk"] { display:inline-block; font-size:12px; padding:2px 6px; border-radius:3px; }
 [data-component="tag-improve"] { background:rgba(47,93,58,.12); color:var(--ok); }
-[data-component="tag-tradeoff"] { background:rgba(91,70,48,.12); }
+[data-component="tag-tradeoff"] { background:#edf1f1; }
 [data-component="tag-risk"] { background:rgba(139,46,46,.12); color:var(--risk); }
-[data-component="diff-table"] .who { letter-spacing:0; text-transform:none; font-size:16px; }
+[data-component="diff-table"] .who { font-size:13px; }
 [data-component="split-compare"] { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 [data-component="timeline"] { border-left:2px solid var(--hair); padding-left:16px; }
 [data-component="media-compare"],[data-component="media-grid"] { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
-[data-component="media-single"] img,[data-component="media-compare"] img,[data-component="media-grid"] img { max-width:100%; border-radius:12px; background:var(--card); }
+[data-component="media-single"] img,[data-component="media-compare"] img,[data-component="media-grid"] img { max-width:100%; border-radius:4px; background:var(--card); }
 .evidence-expand { margin-top:16px; }
 .path-link { color:var(--accent); }
+.image-dialog { max-width:min(96vw,1400px); max-height:94vh; padding:38px 12px 12px; border:1px solid var(--line); border-radius:4px; background:#fff; }
+.image-dialog::backdrop { background:rgba(17,29,32,.78); }
+.image-dialog img { display:block; max-width:calc(96vw - 24px); max-height:calc(94vh - 50px); object-fit:contain; }
+.image-dialog-close { position:absolute; top:4px; right:8px; border:0; background:transparent; color:var(--ink); font-size:28px; line-height:1; cursor:pointer; }
+[data-agent-zone="comparison"] img[role="button"] { cursor:zoom-in; }
+[data-agent-zone="comparison"] img[role="button"]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .kv-list { padding-left:18px; }
 body[data-report="diagnostic"] .num.miss { font-size:16px; }
 @media (max-width:760px) {
-  .board,[data-component="split-compare"],[data-component="page-row"] { grid-template-columns:1fr; }
-  .num { font-size:24px; }
+  .page { padding:20px 14px 48px; }
+  .board { grid-template-columns:1fr; }
+  .card,.card + .card { padding:11px 0; border-left:0; }
+  .card + .card { border-top:1px solid var(--line); }
+  [data-component="split-compare"],[data-component="page-row"] { grid-template-columns:1fr; }
+  .num { font-size:20px; }
   .task { white-space:normal; }
   .cell img,[data-component="page-row"] img { height:160px; }
 }
 @media print {
   .details { break-inside:avoid; }
   .share { box-shadow:none; }
+  .table-hint,.image-dialog { display:none; }
 }
 
 </style>
@@ -103,15 +130,16 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
 </template>
 <template data-component-template="pair-pages">
   <div data-component="page-row">
-    <div class="cell"><div class="who">Historical session</div><img data-media-ref="" alt=""></div>
-    <div class="cell"><div class="who">Current session</div><img data-media-ref="" alt=""></div>
+    <div class="cell"><div class="who">Historical result</div><img data-media-ref="" alt=""></div>
+    <div class="cell"><div class="who">This run</div><img data-media-ref="" alt=""></div>
   </div>
 </template>
 
 <main class="page" data-report-format="2">
   <article class="share">
-    <header data-host-zone="header" data-id="host-header"><h1><span data-agent-slot="category">Comparison</span> · gpt-5 vs requested gpt-5.6 · resolution unconfirmed</h1>
-  <p class="sessions" data-host="session-labels"><span>Historical session</span><span>Current session</span></p>
+    <header data-host-zone="header" data-id="host-header"><h1><span data-agent-slot="category">Comparison</span></h1>
+  <p class="sessions" data-host="session-labels"><span><small>Historical result</small><strong>gpt-5</strong></span><span><small>This run</small><strong>requested gpt-5.6 · resolution unconfirmed</strong></span></p>
+  <p class="run-status" data-host="run-status">This run task status: incomplete (limit.turns)</p>
   <p class="field-label">Task</p>
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
     <p class="field-label">Main conclusion</p>
@@ -122,11 +150,11 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
       <div class="label">Time</div>
       <div class="pair">
         <div class="col">
-          <div class="who">gpt-5</div>
+          <div class="who">Historical result</div>
           <div class="num miss">not collected</div>
         </div>
         <div class="col">
-          <div class="who">requested gpt-5.6 · resolution unconfirmed</div>
+          <div class="who">This run</div>
           <div class="num">4<span class="unit">s</span></div>
         </div>
       </div>
@@ -135,11 +163,11 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
       <div class="label">Tokens</div>
       <div class="pair">
         <div class="col">
-          <div class="who">gpt-5</div>
+          <div class="who">Historical result</div>
           <div class="num miss">not collected</div>
         </div>
         <div class="col">
-          <div class="who">requested gpt-5.6 · resolution unconfirmed</div>
+          <div class="who">This run</div>
           <div class="num miss">not collected</div>
         </div>
       </div>
@@ -148,11 +176,11 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
       <div class="label">Cost</div>
       <div class="pair">
         <div class="col">
-          <div class="who">gpt-5</div>
+          <div class="who">Historical result</div>
           <div class="num miss">not collected</div>
         </div>
         <div class="col">
-          <div class="who">requested gpt-5.6 · resolution unconfirmed</div>
+          <div class="who">This run</div>
           <div class="num miss">not collected</div>
         </div>
       </div>
@@ -172,5 +200,41 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     <section class="slot" data-host-zone="process" data-id="host-process"></section>
   </details>
 </main>
+<dialog class="image-dialog" data-host-dialog="image" aria-label="Evidence and extras"><button type="button" class="image-dialog-close" data-host-dialog-close aria-label="Close image" title="Close image">&times;</button><img alt=""></dialog>
+<script>(() => {
+    const zones = document.querySelectorAll('main.page > article.share > section[data-id="agent-comparison"], main.page > details.details > section[data-id="agent-details"]');
+    for (const zone of zones) {
+      for (const table of zone.querySelectorAll('table')) {
+        const frame = document.createElement('div');
+        frame.className = 'table-scroll';
+        frame.tabIndex = 0;
+        frame.setAttribute('role', 'region');
+        frame.setAttribute('aria-label', "Scroll table horizontally");
+        table.replaceWith(frame);
+        frame.append(table);
+        const hint = document.createElement('p');
+        hint.className = 'table-hint';
+        hint.textContent = "Scroll table horizontally";
+        frame.before(hint);
+      }
+    }
+    const dialog = document.querySelector('body > dialog[data-host-dialog="image"]');
+    const large = dialog?.querySelector('img');
+    const close = dialog?.querySelector('[data-host-dialog-close]');
+    if (!dialog || !large || !close) return;
+    close.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+    for (const image of document.querySelectorAll('main.page > article.share > section[data-id="agent-comparison"] img')) {
+      image.tabIndex = 0;
+      image.setAttribute('role', 'button');
+      image.setAttribute('aria-label', (image.alt ? image.alt + ' - ' : '') + "Enlarge image");
+      image.title = "Enlarge image";
+      const open = () => { large.src = image.currentSrc || image.src; large.alt = image.alt; dialog.showModal(); };
+      image.addEventListener('click', open);
+      image.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
+      });
+    }
+  })();</script>
 </body>
 </html>

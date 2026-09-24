@@ -1,6 +1,5 @@
 import { Value } from '@sinclair/typebox/value';
-import type { HostZoneSnapshot } from '../core/comparison-html.js';
-import { ComparisonResultSchema, ComparisonShortRefSchema, type ComparisonAgentEnvelope, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
+import { ComparisonResultSchema, type ComparisonAgentEnvelope, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
 import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
 import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
@@ -30,7 +29,6 @@ export type ComparisonContext = {
   /** Host-registered media the Agent may cite; included in briefing facts/media.json. */
   media?: readonly { ref: string; shortRef?: string }[];
   shortEvidenceRefs?: readonly string[];
-  hostZoneSnapshot?: HostZoneSnapshot;
   /** One Comparison Session per attempt. Host must mint this before compare(). */
   attemptId: string;
 };
@@ -81,13 +79,17 @@ export interface ComparisonAgentPort {
 export type ComparisonCompareOptions = {
   /** Same-process getter; must not be persisted into comparison.requested JSON. */
   getEvidenceCatalog?: () => Pick<ComparisonEvidenceCatalogSnapshot, "links" | "media">;
+  validateContent?: () => Promise<string | undefined>;
+  validateReview?: () => Promise<string | undefined>;
+  onPhase?: (phase: "understand" | "investigate" | "compose" | "review") => void | Promise<void>;
 };
 
 const COMPARISON_COMPACTION = [
   'Preserve the task success criteria, decisive findings with source references,',
   'the current catalog revision and newly registered media or evidence short refs,',
   'unresolved gaps that still change the conclusion, the paths of',
-  'work/comparison-plan.md and report.html, the last preview_report digest when one',
+  'work/comparison-plan.md, work/report/content.json, body.html and details.html,',
+  'the last preview_report digest when one',
   'exists, and the next investigation or report action.',
   'Drop long bodies that can be reread by path.',
   'Do not carry an earlier phase label (for example still-in-understand) into review.',
@@ -96,7 +98,7 @@ const COMPARISON_COMPACTION = [
 
 export const COMPARISON_SYSTEM_PROMPT = [
   'You compare two attempts at the same real task for a person deciding whether',
-  'the candidate is a useful replacement. Produce a concise, shareable report',
+  'the current run meets the same goal and how the two results differ. Produce a concise, shareable report',
   'grounded in the actual deliveries and the user\'s goal.',
   '',
   'Start from what successful use means for this task. Investigate the differences',
@@ -158,23 +160,51 @@ export const COMPARISON_SYSTEM_PROMPT = [
   '',
   'In this session you will receive, in order, requests to understand, investigate,',
   'compose, and review. Return after each request; the next one continues in the same session.',
+  'The Host may issue one focused content-repair request with actionable validation errors.',
+  'Do not repeat completed investigation or rewrite sound content without a concrete reason.',
   '',
   '# Workspace',
   'Entry point: INDEX.md. The catalog\'s current revision and registered references',
   'are in facts/. Historical process is under history/ and observations/; frozen',
   'historical deliverables are under finals/; candidate/ is the sealed read-only snapshot.',
   'These sources are read-only. scratch/ is for temporary analysis,',
-  'work/comparison-plan.md for working notes, and report.html for the report.',
+  'work/comparison-plan.md for working notes. Author work/report/content.json,',
+  'work/report/body.html and optional work/report/details.html. report.html is',
+  'assembled by the Host and is read-only to you. Use the supplied semantic layout',
+  'primitives and design tokens; do not write global CSS or scripts.',
+  'content.json has schemaVersion=1, headline, criticalLimitations[], evidenceRefs[].',
+  'The Host supplies the original task, model identities, metrics and status.',
   '',
   'File-tool paths are virtual paths relative to this briefing. shell_exec starts',
   'in scratch/; use the documented REPRISE_*_ROOT variables for physical source',
   'paths instead of treating virtual mounts as shell cwd.',
   '',
-  'Need screenshots or page views only through render_artifact and preview_report.',
-  'Do not run Chrome, Edge, or Firefox binaries; do not use --version, --dump-dom,',
-  'or open a user browser profile. If a render tool fails, record the limitation and',
-  'continue with text evidence; do not retry via equivalent browser shell commands.',
-  'Use render_artifact to derive previews from registered sources. Use',
+  'Read facts/capabilities.json for verified tools and supported operations. The',
+  'default environment has Node, file and shell tools, managed processes, basic',
+  'content extraction, and a managed browser when available. Do not assume Python,',
+  'Office rendering or recalculation, media processing, OCR, or search credentials.',
+  'Use only available capabilities and do not install packages during comparison.',
+  'Use browser_open, browser_snapshot, browser_action, and browser_screenshot for',
+  'Host-registered page sources; preserve recorded side, version, and conditions.',
+  'Use fetch_url for current supplemental web snapshots; search_web requires a',
+  'configured provider. Search snippets are leads, not verified source evidence.',
+  'For supported CSV, JSON, PDF, and Office text, call the installed extraction CLI',
+  'through shell: & $env:REPRISE_NODE_PATH $env:REPRISE_CLI_PATH extract <file>',
+  '--output <scratch-json>. The REPRISE_* paths are Host-provided for this attempt;',
+  'extracted text does not prove visual layout or recalculated spreadsheet values.',
+  'When facts/capabilities.json lists ffprobe, ffmpeg, or tesseract operations,',
+  'call & $env:REPRISE_NODE_PATH $env:REPRISE_CLI_PATH enhance inspect-media',
+  '<local-media> --output <scratch-json>, enhance extract-frame <local-media>',
+  '--time-ms <integer> --output <scratch-png>, or enhance ocr-text <local-image>',
+  '--output <scratch-txt>. REPRISE_DATA_DIR selects the configured executable paths.',
+  'Supported media containers are MP4/MOV, WebM/MKV, and WAV; OCR inputs are',
+  'PNG/JPEG/TIFF. LibreOffice conversion remains unsupported.',
+  'Do not run Chrome, Edge, or Firefox binaries, probe browser paths, or open a',
+  'user browser profile. Browser selection and setup belong to the Host. If a',
+  'managed tool fails, correct a concrete input error or record the limitation;',
+  'do not retry via equivalent browser shell commands.',
+  'During this migration, render_artifact remains available for registered frozen',
+  'sources when managed observation does not support the source. Use',
   'register_evidence to preserve relevant derived analysis with source references;',
   'registration is not independent verification of your interpretation. Use',
   'preview_report to check the draft with the current catalog. New references are',
@@ -193,7 +223,8 @@ export const COMPARISON_TURN_PROMPTS = {
     'deliverables and distinguish final versions from drafts. Write brief working',
     'notes in work/comparison-plan.md, including the most important questions and',
     'evidence gaps. Do not design a fixed report outline or judge from the models\'',
-    'self-descriptions alone.',
+    'self-descriptions alone. Read facts/capabilities.json for available checks and',
+    'decisive capability gaps. Do not write report content in this phase.',
   ].join('\n'),
   investigate: [
     'Investigate the questions that can change the task-specific conclusion. Read',
@@ -202,13 +233,19 @@ export const COMPARISON_TURN_PROMPTS = {
     'evidence through the registered tools. Record what was observed, inferred, or',
     'still unknown, with stable references. Stop investigating when additional work',
     'is unlikely to change the conclusion; do not exhaust every log by default.',
-    'Update the notes with the proposed conclusion, its strongest evidence, its',
-    'important limitation, and the best way to show it to a new reader.',
+    'Use available core tools and verified optional capabilities. Distinguish content',
+    'extraction from rendering, recalculation, and media inspection. Record source',
+    'version, conditions, and scope for each decisive check. Update the notes with',
+    'the proposed conclusion, its strongest evidence, its important limitation,',
+    'and the best way to show it to a new reader.',
+    'End with a compact evidence brief in work/comparison-plan.md: finding, refs,',
+    'uncertainty, and proposed presentation. Do not write report content yet.',
   ].join('\n'),
   compose: [
-    'Create the report by editing report.html. Fill the existing category, task, and',
-    'headline slots, then author data-agent-zone="comparison" and, when useful,',
-    'data-agent-zone="details". The Host header and metrics must remain intact.',
+    'Create work/report/content.json with schemaVersion=1, a short headline,',
+    'criticalLimitations[] and registered evidenceRefs[]. Author the main comparison',
+    'in work/report/body.html and optional methods in work/report/details.html.',
+    'Write only fragments. The Host supplies task identity, side labels, metrics, and page shell.',
     '',
     'Choose the form that explains this task best: visual comparison, compact table,',
     'representative excerpts, observed results, or a combination. Components are',
@@ -226,7 +263,8 @@ export const COMPARISON_TURN_PROMPTS = {
     'Move long methods, file listings, and investigation detail to the details area.',
     'Do not alter Host-owned regions or the page\'s Host CSS. Do not include external',
     'resources, credentials, private paths, or report HTML in the assistant message.',
-    'Write the report file, not only a proposed outline.',
+    'Write the content files, not only a proposed outline. Run preview_report after',
+    'writing and respond to concrete contract errors before the review phase.',
   ].join('\n'),
   review: [
     'Review the actual draft as a person seeing the task for the first time. Use',
@@ -240,25 +278,29 @@ export const COMPARISON_TURN_PROMPTS = {
     'consequence. Remove repetition and low-value process commentary. Do not mistake',
     'the number of bullets for concision.',
     '',
-    'Edit only the Agent-owned slots and regions. Recheck if the draft changes after',
+    'Edit only the report content files. Recheck if the content changes after',
     'previewing. If rendering or image inspection is unavailable, record the specific',
     'review limitation without inventing an observation. Finish with the required',
     'JSON envelope only, using the final catalog\'s registered evidence references.',
+    'Check rendered, contractValid, and publishable separately. A screenshot alone',
+    'is not approval. Edit then recheck the final content and current catalog.',
   ].join('\n'),
 } as const;
 
 const OUTPUT_CONTRACT = [
   STRUCTURED_FINAL_RULE,
-  '{"status":"completed"|"insufficient_evidence","headline":"one plain-language difference sentence","evidenceRefs":["ev-02"]}',
+  '{"status":"completed"|"insufficient_evidence","evidenceRefs":["ev-02"]}',
+  'headline is optional; if included, copy content.json headline exactly. A rephrased headline fails publication.',
   'Do not submit reportPath, metrics, tokens, cost, failure codes, or paths; the Host fills reportPath. evidenceRefs must be short refs from the current catalog (facts/evidence-index.json or tool registration results); unknown refs fail and must be corrected.',
 ].join('\n');
 
 const JSON_ONLY_REPAIR_PROMPT = [
-  'The page is already written. Do not read or modify report.html again, and do not call tools. Return only:',
-  '{"status":"completed"|"insufficient_evidence","headline":"...","evidenceRefs":["ev-02"]}',
+  'The content files are already written. Do not read or modify them again, and do not call tools. Return only:',
+  '{"status":"completed"|"insufficient_evidence","evidenceRefs":["ev-02"]}',
+  'Omit headline, or repeat content.json headline exactly; do not write a new sentence.',
 ].join('\n');
 
-const COMPARISON_REPAIR_INSTRUCTION = 'Return only the JSON object; do not rewrite report.html. Use short refs from the current catalog for evidenceRefs, or [].';
+const COMPARISON_REPAIR_INSTRUCTION = 'Return only the JSON object; do not rewrite content files. Use short refs from the current catalog for evidenceRefs, or [].';
 
 export class ComparisonAgent implements ComparisonAgentPort {
   readonly #host: AgentHost;
@@ -287,57 +329,89 @@ export class ComparisonAgent implements ComparisonAgentPort {
   ): Promise<AgentInvocation<ComparisonResult>> {
     const attemptId = context.attemptId;
     if (!attemptId) throw new Error("Comparison attemptId is required.");
-    const currentAllowlist = (): Set<string> => {
-      if (options?.getEvidenceCatalog) {
-        return new Set(shortRefsOf(options.getEvidenceCatalog().links));
-      }
-      return comparisonEvidenceAllowlist(context);
-    };
+    const currentAllowlist = (): Set<string> => options?.getEvidenceCatalog
+      ? new Set(shortRefsOf(options.getEvidenceCatalog().links))
+      : comparisonEvidenceAllowlist(context);
     const session = await this.#sessionFor(attemptId, context, tools, audit);
-    const prefix = await session.runTurns([
-      {
-        promptContent: context.promptContent
-          ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}`
-          : COMPARISON_TURN_PROMPTS.understand,
-        timeoutMs: this.#timeoutMs,
-        ...(signal ? { signal } : {}),
-      },
-      {
-        promptContent: COMPARISON_TURN_PROMPTS.investigate,
-        timeoutMs: this.#timeoutMs,
-        ...(signal ? { signal } : {}),
-      },
-      {
-        promptContent: COMPARISON_TURN_PROMPTS.compose,
-        timeoutMs: this.#timeoutMs,
-        ...(signal ? { signal } : {}),
-      },
-    ]);
-    if (prefix.status !== 'completed') {
+    const prefix = await runPreparationTurns(session, context, this.#timeoutMs, signal, options?.onPhase);
+    if (prefix && prefix.status !== 'completed') {
       if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
       return prefix;
     }
+    let contentRepairUsed = false;
+    let contentError = await options?.validateContent?.();
+    if (contentError) {
+      contentRepairUsed = true;
+      const repair = await session.runTurns([{
+        promptContent: [
+          'The Host found a concrete error in the report content files. Correct only the affected',
+          'content or reference; do not repeat the investigation. Then run preview_report on the',
+          'final content. Return after fixing; the review phase follows in this same session.',
+          `Validation error: ${contentError.slice(0, 2000)}`,
+        ].join('\n'),
+        timeoutMs: this.#timeoutMs,
+        ...(signal ? { signal } : {}),
+      }]);
+      if (repair.status !== 'completed') {
+        if (repair.status === 'failed') await this.#sessions.discard(attemptId);
+        return repair;
+      }
+      contentError = await options?.validateContent?.();
+      if (contentError) {
+        await this.#sessions.discard(attemptId);
+        return { status: 'failed', sessionId: repair.sessionId, failure: {
+          code: 'report_incomplete', message: contentError, attempts: 1,
+        } };
+      }
+    }
     const envelopeRequest = {
-      ...(signal ? { signal } : {}),
-      schema: ComparisonResultSchema,
-      timeoutMs: this.#timeoutMs,
-      outputContract: OUTPUT_CONTRACT,
+      ...(signal ? { signal } : {}), schema: ComparisonResultSchema,
+      timeoutMs: this.#timeoutMs, outputContract: OUTPUT_CONTRACT,
       normalize: (value: unknown) => normalizeComparisonEvidence(value),
       validate: (value: ComparisonAgentEnvelope) => validateComparisonEvidence(value, currentAllowlist()),
     };
+    await options?.onPhase?.("review");
     let result = await session.request<ComparisonAgentEnvelope>({
-      ...envelopeRequest,
-      allowTools: true,
-      maxRepairAttempts: 0,
+      ...envelopeRequest, allowTools: true, maxRepairAttempts: 0,
       promptContent: COMPARISON_TURN_PROMPTS.review,
     });
+    if (result.status === 'completed') {
+      contentError = await (options?.validateReview ?? options?.validateContent)?.();
+      if (contentError && !contentRepairUsed) {
+        contentRepairUsed = true;
+        const repair = await session.runTurns([{
+          promptContent: [
+            'The final review changed report content and the Host rejected it. Fix only the',
+            'reported content error, run preview_report on the final version, then return.',
+            `Validation error: ${contentError.slice(0, 2000)}`,
+          ].join('\n'),
+          timeoutMs: this.#timeoutMs,
+          ...(signal ? { signal } : {}),
+        }]);
+        if (repair.status !== 'completed') {
+          if (repair.status === 'failed') await this.#sessions.discard(attemptId);
+          return repair;
+        }
+        contentError = await (options?.validateReview ?? options?.validateContent)?.();
+        if (!contentError) {
+          result = await session.request<ComparisonAgentEnvelope>({
+            ...envelopeRequest, allowTools: true, maxRepairAttempts: 0,
+            promptContent: COMPARISON_TURN_PROMPTS.review,
+          });
+          if (result.status === 'completed') contentError = await (options?.validateReview ?? options?.validateContent)?.();
+        }
+      }
+      if (contentError) {
+        await this.#sessions.discard(attemptId);
+        return { status: 'failed', ...(result.sessionId ? { sessionId: result.sessionId } : {}), failure: {
+          code: 'report_incomplete', message: contentError, attempts: contentRepairUsed ? 1 : 0,
+        } };
+      }
+    }
     if (result.status === 'failed' && isInvalidEnvelopeFailure(result.failure.message) && await readAttemptReport(tools, signal)) {
       result = await session.request<ComparisonAgentEnvelope>({
-        ...envelopeRequest,
-        allowTools: false,
-        maxRepairAttempts: this.#maxRepairAttempts,
-        promptContent: JSON_ONLY_REPAIR_PROMPT,
-        repairInstruction: COMPARISON_REPAIR_INSTRUCTION,
+        ...envelopeRequest, allowTools: false, maxRepairAttempts: this.#maxRepairAttempts,
+        promptContent: JSON_ONLY_REPAIR_PROMPT, repairInstruction: COMPARISON_REPAIR_INSTRUCTION,
       });
     }
     if (result.status === 'failed') await this.#sessions.discard(attemptId);
@@ -367,13 +441,33 @@ export class ComparisonAgent implements ComparisonAgentPort {
   }
 }
 
+async function runPreparationTurns(
+  session: AgentSessionHost,
+  context: ComparisonContext,
+  timeoutMs: number,
+  signal?: AbortSignal,
+  onPhase?: ComparisonCompareOptions["onPhase"],
+): Promise<Awaited<ReturnType<AgentSessionHost["runTurns"]>> | undefined> {
+  const turns = [
+    context.promptContent ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}` : COMPARISON_TURN_PROMPTS.understand,
+    COMPARISON_TURN_PROMPTS.investigate,
+    COMPARISON_TURN_PROMPTS.compose,
+  ];
+  for (const [index, phase] of (["understand", "investigate", "compose"] as const).entries()) {
+    await onPhase?.(phase);
+    const result = await session.runTurns([{ promptContent: turns[index]!, timeoutMs, ...(signal ? { signal } : {}) }]);
+    if (result.status !== "completed") return result;
+  }
+  return undefined;
+}
+
 async function readAttemptReport(
   tools: readonly AgentToolDefinition[],
   signal?: AbortSignal,
 ): Promise<string | undefined> {
   const read = tools.find((tool) => tool.name === 'read');
   if (!read) return undefined;
-  const result = await read.execute({ path: 'report.html', maxBytes: 262_144 }, signal ?? new AbortController().signal);
+  const result = await read.execute({ path: 'work/report/body.html', maxBytes: 262_144 }, signal ?? new AbortController().signal);
   return result.content.trim() ? result.content : undefined;
 }
 
@@ -384,10 +478,7 @@ function comparisonEvidenceAllowlist(context: ComparisonFactsContext): Set<strin
 function normalizeComparisonEvidence(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const record = value as { evidenceRefs?: unknown };
-  const typed = Array.isArray(record.evidenceRefs)
-    ? record.evidenceRefs.filter((ref): ref is string =>
-      typeof ref === "string" && Value.Check(ComparisonShortRefSchema, ref))
-    : [];
+  const typed = record.evidenceRefs;
   const { mediaRefs: _drop, reportPath: _path, ...rest } = record as { mediaRefs?: unknown; reportPath?: unknown };
   return { ...rest, evidenceRefs: typed };
 }
@@ -396,7 +487,6 @@ function validateComparisonEvidence(
   value: ComparisonAgentEnvelope,
   available: ReadonlySet<string>,
 ): string | undefined {
-  if (available.size === 0) return undefined;
   const unknown = value.evidenceRefs.filter((ref) => !available.has(ref));
   if (unknown.length === 0) return undefined;
   const listed = [...available].sort().join(", ") || "(empty)";

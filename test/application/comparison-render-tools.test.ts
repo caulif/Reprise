@@ -14,6 +14,16 @@ import {
 import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
 import { ARTIFACT_RENDERER_VERSION, createFakeArtifactRenderer } from "../../src/infrastructure/artifact-renderer.js";
 import { DEFAULT_RENDER_VIEWPORT } from "../../src/infrastructure/artifact-render-types.js";
+import { instrumentTools } from "../../src/infrastructure/agent/tools.js";
+import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js";
+import { writeComparisonContent } from "../comparison-content-support.js";
+
+const facts: ComparisonReportFacts = {
+  run: { runId: "fixture", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
+  models: { baseline: "A", candidate: "B" }, activity: {}, limits: { triggered: [] }, runtime: { productId: "codex" },
+  delivery: { changedPaths: [], targetArtifactStatus: "available", verificationStatus: "unavailable" },
+  replay: { conditions: [], baselineEvidence: "available", candidateEvidence: "available" },
+};
 
 const PNG_A = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -23,6 +33,35 @@ const PNG_B = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   "base64",
 );
+
+test("preview feedback and receipt reflect actual text-only or image delivery", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-preview-delivery-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const catalog = createEphemeralRenderCatalog({ sources: [], mediaRoot: join(root, "media"), reviewRoot: join(root, "review", "media") });
+  const render = createFakeArtifactRenderer(async (request) => {
+    await mkdir(request.outputRoot, { recursive: true });
+    const pngPath = join(request.outputRoot, "preview.png");
+    await writeFile(pngPath, PNG_A);
+    return { ok: true, frames: [{ sampleTimeMs: 0, actualTimeMs: 0, pngPath, byteLength: PNG_A.byteLength, contentHash: sha256(PNG_A) }],
+      diagnostics: [], measured: { loadMs: 0, viewport: request.viewport, origin: "fake://preview" } };
+  });
+  const tool = createPreviewReportTool({ catalog, attemptRoot: root, render,
+    prepareReportHtml: async () => ({ htmlPath: join(root, "preview.html"), html: "<main>report</main>", draftDigest: "a".repeat(64),
+      preparedDigest: "b".repeat(64), catalogRevision: 0, outputRoot: root, validationDigest: "c".repeat(64) }),
+  });
+  const textOnly = instrumentTools([tool], "session-text", "comparison", { requestIndex: 0 }, undefined, false)[0]!;
+  const textResult = await textOnly.execute({}, new AbortController().signal);
+  assert.match(textResult.content, /"reviewMode": "mechanical"/);
+  assert.equal((JSON.parse(await readFile(join(root, "review", "receipt.json"), "utf8")) as { reviewMode: string }).reviewMode, "mechanical");
+  const visual = instrumentTools([tool], "session-image", "comparison", { requestIndex: 0 }, undefined, true)[0]!;
+  const visualResult = await visual.execute({}, new AbortController().signal);
+  assert.match(visualResult.content, /"reviewMode": "visual"/);
+  assert.ok(visualResult.contentBlocks?.some((block) => block.type === "image"));
+  assert.equal((JSON.parse(await readFile(join(root, "review", "receipt.json"), "utf8")) as { reviewMode: string }).reviewMode, "visual");
+});
 
 test("render_artifact registers frames through catalog and dedupes identical derivation", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-render-tool-"));
@@ -210,14 +249,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   });
   await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "a.png"), PNG_A);
-  const draft = `<!doctype html><html><body>
-<article class="share">
-<section data-host-zone="metrics">metrics</section>
-<span>历史会话</span><span>当前会话</span>
-<section data-agent-zone="comparison"><img data-media-ref="media-01" alt=""></section>
-</article>
-</body></html>`;
-  await writeFile(join(root, "report.html"), draft, "utf8");
+  const content = await writeComparisonContent(root, '<p>可查看预览。</p><img data-media-ref="media-01" alt="">');
   const media = [{
     ref: "media:a",
     shortRef: "media-01",
@@ -256,6 +288,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
     render,
     prepareReportHtml: async () => materializeComparisonReportPreview({
       attemptRoot: root,
+      hostTask: "Compare outputs", facts,
       media,
       catalogRevision: catalog.revision(),
     }),
@@ -270,7 +303,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
     note: string;
   };
   assert.equal(first.status, "ok");
-  assert.equal(first.draftDigest, sha256(draft));
+  assert.equal(first.draftDigest, content.digest);
   assert.notEqual(first.preparedDigest, first.draftDigest);
   assert.equal(first.previewMedia.kind, "report_review");
   assert.match(first.previewMedia.shortRef, /^review-\d{2}$/);
@@ -278,7 +311,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   assert.equal(first.mechanics.hostMetricsVisible, true);
   assert.equal(first.mechanics.imagesMissingSrc, 0);
 
-  await writeFile(join(root, "report.html"), `${draft}\n<!-- edited -->`, "utf8");
+  await writeFile(join(root, "work", "report", "body.html"), '<p>已修订预览。</p><img data-media-ref="media-01" alt="">');
   const second = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as {
     draftDigest: string;
   };
@@ -293,11 +326,11 @@ test("materializeComparisonReportPreview writes preview.html without touching dr
   });
   await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "a.png"), PNG_A);
-  // Format-2 agent zones only: preparePublishableComparisonHtml rewrites refs inside comparison/details.
-  const draft = `<section data-agent-zone="comparison"><img data-media-ref="media-01"></section>`;
-  await writeFile(join(root, "report.html"), draft, "utf8");
+  const draft = '<p>候选图片。</p><img data-media-ref="media-01" alt="preview">';
+  await writeComparisonContent(root, draft);
   const prepared = await materializeComparisonReportPreview({
     attemptRoot: root,
+    hostTask: "Compare images", facts,
     media: [{
       ref: "media:a",
       shortRef: "media-01",
@@ -311,8 +344,9 @@ test("materializeComparisonReportPreview writes preview.html without touching dr
   });
   assert.equal(prepared.catalogRevision, 3);
   assert.match(prepared.html, /src="media\/a\.png"/);
-  assert.doesNotMatch(prepared.html, /data-media-ref=/);
-  assert.equal(await readFile(join(root, "report.html"), "utf8"), draft);
+  const comparison = prepared.html.match(/data-agent-zone="comparison"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? "";
+  assert.doesNotMatch(comparison, /data-media-ref=/);
+  assert.equal(await readFile(join(root, "work", "report", "body.html"), "utf8"), draft);
   assert.match(await readFile(prepared.htmlPath, "utf8"), /src="media\/a\.png"/);
 });
 
@@ -510,13 +544,7 @@ test("Host preview_report mints review-* without polluting comparison media allo
   });
   await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "a.png"), PNG_A);
-  const draft = `<!doctype html><html><body>
-<article class="share">
-<section data-host-zone="metrics">metrics</section>
-<section data-agent-zone="comparison"><img data-media-ref="media-01" alt=""></section>
-</article>
-</body></html>`;
-  await writeFile(join(root, "report.html"), draft, "utf8");
+  await writeComparisonContent(root, '<p>历史图片。</p><img data-media-ref="media-01" alt="preview">');
   const catalog = await ComparisonEvidenceCatalog.create({
     attemptId: "attempt-host-preview",
     attemptRoot: root,
@@ -567,6 +595,7 @@ test("Host preview_report mints review-* without polluting comparison media allo
       const snap = catalog.snapshot();
       return materializeComparisonReportPreview({
         attemptRoot: root,
+        hostTask: "Compare images", facts,
         media: snap.media,
         evidence: snap.links,
         catalogRevision: snap.revision,

@@ -68,6 +68,7 @@ export async function captureHeadlessScreenshotViaRenderer(
   destPng: string,
   render: ArtifactRenderer = renderFrozenArtifact,
   signal: AbortSignal = new AbortController().signal,
+  browserPath?: string,
 ): Promise<{ ok: true } | { ok: false; failure: { kind: "no_browser" } | { kind: "capture_failed"; message: string } }> {
   const outputRoot = dirname(destPng);
   await mkdir(outputRoot, { recursive: true });
@@ -78,6 +79,7 @@ export async function captureHeadlessScreenshotViaRenderer(
     sampleTimesMs: [0],
     outputRoot,
     signal,
+    ...(browserPath ? { browserPath } : {}),
   });
   if (!result.ok) {
     if (result.failure.kind === "no_browser") return { ok: false, failure: { kind: "no_browser" } };
@@ -263,7 +265,7 @@ async function openDocumentSession(
     };
   }
   const server = await startBundleStaticServer(rootReal);
-  const cdp = await openCdpBrowserSession(watchdog);
+  const cdp = await openCdpBrowserSession(watchdog, request.browserPath);
   if ("failure" in cdp) {
     // Browser never opened; drop the temporary loopback server without treating close races as render failures.
     await server.close().catch(() => undefined);

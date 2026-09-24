@@ -13,6 +13,7 @@ export type RenderRequest = {
   sampleTimesMs: readonly number[];
   outputRoot: string;
   signal: AbortSignal;
+  browserPath?: string;
 };
 
 export type RenderFrame = {

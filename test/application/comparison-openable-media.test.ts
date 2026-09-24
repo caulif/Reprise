@@ -4,9 +4,8 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  assertPairedVisualMediaOrThrow,
+  pairedVisualMediaLimitations,
   augmentComparisonOpenableMedia,
-  ComparisonVisualMediaError,
 } from "../../src/application/comparison-openable-media.js";
 import { isOpenableFinalPath } from "../../src/application/openable-final-path.js";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../../src/core/schema.js";
@@ -22,24 +21,21 @@ test("isOpenableFinalPath recognizes html and svg deliverables", () => {
   assert.equal(isOpenableFinalPath("notes.txt"), false);
 });
 
-test("assertPairedVisualMediaOrThrow fails when both sides have visuals but media is empty", () => {
-  assert.throws(
-    () => assertPairedVisualMediaOrThrow({
+test("missing paired previews become explicit limitations", () => {
+  assert.match(pairedVisualMediaLimitations({
       baselineSources: [{ inspectPath: "finals/a.html", absolutePath: "/tmp/a.html" }],
       candidateSources: [{ inspectPath: "candidate/out.html", absolutePath: "/tmp/out.html" }],
       links: [],
       media: [],
-    }),
-    ComparisonVisualMediaError,
-  );
+    }).join("; "), /paired previews were not registered/);
 });
 
-test("assertPairedVisualMediaOrThrow accepts paired available media", () => {
+test("paired available media has no visual limitation", () => {
   const media: ComparisonMediaRecord[] = [
     { ref: "media:a", side: "baseline", inspectPath: "history/media/a.png", reportHref: "media/a.png", mediaType: "image/png", available: true },
     { ref: "media:b", side: "candidate", inspectPath: "candidate/out.png", reportHref: "media/b.png", mediaType: "image/png", available: true },
   ];
-  assert.doesNotThrow(() => assertPairedVisualMediaOrThrow({
+  assert.deepEqual(pairedVisualMediaLimitations({
     baselineSources: [],
     candidateSources: [],
     links: [
@@ -47,7 +43,7 @@ test("assertPairedVisualMediaOrThrow accepts paired available media", () => {
       { side: "candidate", inspectPath: "candidate/out.png", mediaType: "image/png" },
     ] satisfies ComparisonLinkRecord[],
     media,
-  }));
+  }), []);
 });
 
 test("sealed baseline html is copied into attempt finals", async (t) => {
@@ -74,8 +70,6 @@ test("sealed baseline html is copied into attempt finals", async (t) => {
       ));
       return { ok: true };
     },
-  }).catch((error: unknown) => {
-    if (!(error instanceof ComparisonVisualMediaError)) throw error;
   });
   const sealed = join(attemptRoot, "finals", "baseline.html");
   const body = await readFile(sealed, "utf8");
@@ -125,8 +119,8 @@ test("augmentComparisonOpenableMedia screenshots dual html when links only refer
   assert.ok(result.media.some((item: ComparisonMediaRecord) => item.side === "candidate" && item.available));
 });
 
-test("assertPairedVisualMediaOrThrow ignores unresolved HTML baseline image link stubs", () => {
-  assert.doesNotThrow(() => assertPairedVisualMediaOrThrow({
+test("unresolved HTML baseline image link stubs do not imply paired visual material", () => {
+  assert.deepEqual(pairedVisualMediaLimitations({
     baselineSources: [],
     candidateSources: [{ inspectPath: "candidate/out.png", absolutePath: "/tmp/out.png" }],
     links: [
@@ -143,15 +137,15 @@ test("assertPairedVisualMediaOrThrow ignores unresolved HTML baseline image link
         available: true,
       },
     ],
-  }));
+  }), []);
 });
 
-test("assertPairedVisualMediaOrThrow still pairs when baseline image links resolve", () => {
+test("resolved baseline image links pair with candidate media", () => {
   const media: ComparisonMediaRecord[] = [
     { ref: "media:a", side: "baseline", inspectPath: "history/media/slide.png", reportHref: "media/a.png", mediaType: "image/png", available: true },
     { ref: "media:b", side: "candidate", inspectPath: "candidate/out.png", reportHref: "media/b.png", mediaType: "image/png", available: true },
   ];
-  assert.doesNotThrow(() => assertPairedVisualMediaOrThrow({
+  assert.deepEqual(pairedVisualMediaLimitations({
     baselineSources: [],
     candidateSources: [{ inspectPath: "candidate/out.png", absolutePath: "/tmp/out.png" }],
     links: [
@@ -159,12 +153,11 @@ test("assertPairedVisualMediaOrThrow still pairs when baseline image links resol
       { side: "candidate", inspectPath: "candidate/out.png", mediaType: "image/png" },
     ],
     media,
-  }));
+  }), []);
 });
 
-test("assertPairedVisualMediaOrThrow fails when baseline image link exists without available media", () => {
-  assert.throws(
-    () => assertPairedVisualMediaOrThrow({
+test("missing baseline media is a limitation when image links are paired", () => {
+  assert.match(pairedVisualMediaLimitations({
       baselineSources: [],
       candidateSources: [{ inspectPath: "candidate/out.png", absolutePath: "/tmp/out.png" }],
       links: [
@@ -181,9 +174,7 @@ test("assertPairedVisualMediaOrThrow fails when baseline image link exists witho
           available: true,
         },
       ],
-    }),
-    ComparisonVisualMediaError,
-  );
+    }).join("; "), /paired previews were not registered/);
 });
 
 test("augmentComparisonOpenableMedia reports no_browser separately from capture_failed", async (t) => {
@@ -200,21 +191,15 @@ test("augmentComparisonOpenableMedia reports no_browser separately from capture_
     baselineSources: [{ inspectPath: "finals/baseline.html", absolutePath: baselineHtml }],
     candidateSources: [{ inspectPath: "candidate/candidate.html", absolutePath: candidateHtml }],
   };
-  await assert.rejects(
-    () => augmentComparisonOpenableMedia({
+  const noBrowser = await augmentComparisonOpenableMedia({
       attemptRoot: join(root, "attempt-no-browser"),
       workspaceRoot: root,
       links: [],
       ...sources,
       captureScreenshot: async () => ({ ok: false, failure: { kind: "no_browser" } }),
-    }),
-    (error: unknown) => {
-      if (!(error instanceof ComparisonVisualMediaError)) return false;
-      return /no headless browser/.test(error.message);
-    },
-  );
-  await assert.rejects(
-    () => augmentComparisonOpenableMedia({
+    });
+  assert.match(noBrowser.visualLimitations.join("; "), /no headless browser/);
+  const captureFailed = await augmentComparisonOpenableMedia({
       attemptRoot: join(root, "attempt-capture-failed"),
       workspaceRoot: root,
       links: [],
@@ -223,12 +208,9 @@ test("augmentComparisonOpenableMedia reports no_browser separately from capture_
         ok: false,
         failure: { kind: "capture_failed", message: "timeout" },
       }),
-    }),
-    (error: unknown) => {
-      if (!(error instanceof ComparisonVisualMediaError)) return false;
-      return /timeout/.test(error.message) && !/no headless browser/.test(error.message);
-    },
-  );
+    });
+  assert.match(captureFailed.visualLimitations.join("; "), /timeout/);
+  assert.doesNotMatch(captureFailed.visualLimitations.join("; "), /no headless browser/);
 });
 
 test("augmentComparisonOpenableMedia stops before capture when comparison is cancelled", async (t) => {

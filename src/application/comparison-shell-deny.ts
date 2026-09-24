@@ -2,7 +2,7 @@ import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/age
 
 /** Actionable deny copy for Comparison shell_exec browser probes. */
 export const COMPARISON_BROWSER_SHELL_DENIED =
-  "Use render_artifact or preview_report; direct browser execution is disabled for Comparison.";
+  "Use managed browser tools, render_artifact, or preview_report; direct browser execution is disabled for Comparison.";
 
 /**
  * Chrome / Edge / Firefox binaries the Comparison agent must not launch via shell_exec.
@@ -33,7 +33,7 @@ export function isComparisonBrowserShellCommand(command: string): boolean {
  * Underlying 60s timeout, killTree, and AbortSignal are unchanged for allowed commands.
  */
 function wrapComparisonShellExec(tool: AgentToolDefinition): AgentToolDefinition {
-  if (tool.name !== "shell_exec") return tool;
+  if (tool.name !== "shell_exec" && tool.name !== "process_start") return tool;
   return {
     ...tool,
     async execute(params, signal): Promise<AgentToolResult> {

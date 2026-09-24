@@ -1,5 +1,5 @@
 import { mkdir, stat, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import type { ComparisonContext, ComparisonFactsContext } from "../agents/comparison-agent.js";
@@ -26,6 +26,9 @@ import {
   collectHistoricalDeliverableNames,
 } from "./historical-final-discovery.js";
 import { attemptFinalsRoot } from "./prepare-historical-artifacts.js";
+import { detectToolCapabilities, loadToolConfig } from "../infrastructure/tool-capabilities.js";
+import type { ToolCapabilityManifest, ToolConfig } from "../core/tool-schema.js";
+import { sealOriginalLink } from "./comparison-publication-assets.js";
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -105,7 +108,8 @@ export async function writeComparisonBriefing(input: {
   artifacts: readonly ArtifactManifest[];
   snapshotStatus: "complete" | "incomplete" | "missing";
   signal?: AbortSignal;
-}): Promise<{ indexMarkdown: string; links: ComparisonLink[]; media: ComparisonMediaRecord[]; fileDigests: Record<string, string> }> {
+  captureScreenshot?: Parameters<typeof augmentComparisonOpenableMedia>[0]["captureScreenshot"];
+}): Promise<{ indexMarkdown: string; links: ComparisonLink[]; media: ComparisonMediaRecord[]; fileDigests: Record<string, string>; capabilities: ToolCapabilityManifest; browserPath?: string; toolConfig: ToolConfig }> {
   const briefingRoot = join(input.attemptRoot, "briefing");
   await Promise.all([
     mkdir(join(briefingRoot, "task"), { recursive: true }),
@@ -121,7 +125,9 @@ export async function writeComparisonBriefing(input: {
     runEvents: input.events,
   });
   const selected = await comparisonLinks(input);
-  const mediaBundle = await comparisonMediaBundle(input, selected);
+  const toolConfig = await loadToolConfig(input.dataDir ?? join(input.experimentRoot, ".reprise"));
+  const detected = await detectToolCapabilities(toolConfig);
+  const mediaBundle = await comparisonMediaBundle(input, selected, detected.browserPath);
   const links = mediaBundle.links;
   const media = mediaBundle.media;
   const invalidLinkCount = mediaBundle.invalidLinkCount;
@@ -166,6 +172,8 @@ export async function writeComparisonBriefing(input: {
     "facts/context.json": factsContext,
     "facts/comparison-links.json": factsLinks,
     "facts/media.json": factsMedia,
+    "facts/visual-limitations.json": `${JSON.stringify({ schemaVersion: 1, limitations: mediaBundle.visualLimitations }, null, 2)}\n`,
+    "facts/capabilities.json": `${JSON.stringify(detected.manifest, null, 2)}\n`,
     "facts/evidence-index.json": factsEvidence,
     "facts/links-diagnostics.json": `${JSON.stringify({ schemaVersion: 1, indexed: links.length, omitted: selected.omitted, invalidDropped: invalidLinkCount, limit: MAX_COMPARISON_LINKS }, null, 2)}\n`,
     "candidate/SNAPSHOT.txt": `snapshotStatus=${snapshotStatus}\ncleanupStatus=${cleanupStatus}\n`,
@@ -176,13 +184,15 @@ export async function writeComparisonBriefing(input: {
   await writeAttemptSidecars(input, {
     factsContext, factsLinks, factsMedia, factsEvidence, candidateProcess, snapshotStatus, cleanupStatus, gitSink,
   });
-  return { indexMarkdown, links, media, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])) };
+  return { indexMarkdown, links, media, fileDigests: Object.fromEntries(Object.entries(files).map(([path, body]) => [path, sha256(body)])),
+    capabilities: detected.manifest, toolConfig, ...(detected.browserPath ? { browserPath: detected.browserPath } : {}) };
 }
 
 async function comparisonMediaBundle(
   input: Parameters<typeof writeComparisonBriefing>[0],
   selected: Awaited<ReturnType<typeof comparisonLinks>>,
-): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number }> {
+  browserPath?: string,
+): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number; visualLimitations: string[] }> {
   const rawLinks = withEvidenceShortRefs(selected.links);
   const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
   const invalidLinkCount = rawLinks.length - links.length;
@@ -205,9 +215,18 @@ async function comparisonMediaBundle(
     links,
     baselineSources: openable.baselineSources,
     candidateSources: openable.candidateSources,
+    ...(input.captureScreenshot ? { captureScreenshot: input.captureScreenshot } : {}),
+    ...(browserPath ? { browserPath } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
   });
-  return { links: augmented.links, media: augmented.media, invalidLinkCount };
+  const sealedLinks: ComparisonLink[] = [];
+  for (const [index, link] of augmented.links.entries()) {
+    const sourceRoot = index < links.length ? input.experimentRoot : input.attemptRoot;
+    sealedLinks.push(link.reportHref
+      ? await sealOriginalLink(input.attemptRoot, resolve(sourceRoot, ...link.reportHref.split("/")), link)
+      : link);
+  }
+  return { links: sealedLinks, media: augmented.media, visualLimitations: augmented.visualLimitations, invalidLinkCount };
 }
 
 async function writeAttemptSidecars(
@@ -314,6 +333,9 @@ function comparisonIndex(
     "- candidate/: retained candidate workspace snapshot (read-only mount)",
     "- evidence/: materialized Host artifacts (read-only mount)",
     "- work/comparison-plan.md: revisable working notes for this session",
+    "- work/report/content.json: schemaVersion=1, headline, criticalLimitations[], evidenceRefs[]",
+    "- work/report/body.html: required semantic comparison fragment; details.html is optional",
+    "- report.html: Host-assembled preview and final output, read-only to the Agent",
     "- scratch/: unrestricted temporary analysis files; the shell starts here",
     "",
   ].join("\n");

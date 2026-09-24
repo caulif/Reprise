@@ -8,7 +8,7 @@ import { withMediaShortRefs } from "../../src/application/comparison-short-refs.
 import {
   verifyAndRenderComparisonReport,
 } from "../../src/application/comparison-publication.js";
-import { renderComparisonReportShell } from "../../src/application/comparison-report-shell.js";
+import { writeComparisonContent } from "../comparison-content-support.js";
 import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js";
 import { imageContentHash } from "../../src/infrastructure/agent/model-input.js";
 import { sha256 } from "../../src/core/identity.js";
@@ -43,21 +43,6 @@ function facts(): ComparisonReportFacts {
       candidate: { elapsedMs: 900, tokens: { total: 12 }, costUsd: 0.02, usageStatus: "collected", pricingStatus: "collected", pricingVersion: "v1", collectedAt: stamp },
     },
   };
-}
-
-function shell(comparison: string): string {
-  return renderComparisonReportShell({
-    task: "核对媒体 hash。",
-    facts: facts(),
-    metrics: facts().metrics ?? {},
-    slots: {
-      headline: "两侧预览可供核对。",
-      category: "交付",
-      task: "核对媒体 hash。",
-      comparison,
-      details: "",
-    },
-  });
 }
 
 test("materializeComparisonMedia sets contentHash from available seed file bytes", async (t) => {
@@ -111,11 +96,11 @@ test("reverse: unavailable seed media omits contentHash so delivery gate cannot 
   const shortRef = withRefs[0]?.shortRef;
   assert.ok(shortRef);
   const rejected = await verifyAndRenderComparisonReport({
-    html: shell(
+    content: await writeComparisonContent(attemptRoot,
       `<p><span data-claim="visual" data-media-ref="${shortRef}">画面为红色。</span></p>`
       + `<img data-media-ref="${shortRef}" alt="missing">`,
     ),
-    facts: facts(),
+    hostTask: "核对媒体 hash。", facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot,
     media: withRefs,
@@ -151,11 +136,11 @@ test("materialized seed contentHash binds visual claim when Session delivered th
   assert.equal(contentHash, imageContentHash(PNG_BYTES.toString("base64")));
 
   const verified = await verifyAndRenderComparisonReport({
-    html: shell(
+    content: await writeComparisonContent(attemptRoot,
       `<p><span data-claim="visual" data-media-ref="${shortRef}">画面为红色。</span></p>`
       + `<img data-media-ref="${shortRef}" alt="seed">`,
     ),
-    facts: facts(),
+    hostTask: "核对媒体 hash。", facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot,
     media,
@@ -164,11 +149,11 @@ test("materialized seed contentHash binds visual claim when Session delivered th
   assert.equal("html" in verified, true);
 
   const bareOk = await verifyAndRenderComparisonReport({
-    html: shell(
+    content: await writeComparisonContent(attemptRoot,
       '<p>供人阅读，本会话未做视觉核验。</p>'
       + `<img data-media-ref="${shortRef}" alt="seed">`,
     ),
-    facts: facts(),
+    hostTask: "核对媒体 hash。", facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot,
     media,
@@ -177,11 +162,11 @@ test("materialized seed contentHash binds visual claim when Session delivered th
   assert.equal("html" in bareOk, true);
 
   const claimRejected = await verifyAndRenderComparisonReport({
-    html: shell(
+    content: await writeComparisonContent(attemptRoot,
       `<p><span data-claim="visual" data-media-ref="${shortRef}">画面为红色。</span></p>`
       + `<img data-media-ref="${shortRef}" alt="seed">`,
     ),
-    facts: facts(),
+    hostTask: "核对媒体 hash。", facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot,
     media,

@@ -9,7 +9,7 @@ import { fingerprintTree } from '../../src/environment/local-workspace-fs.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { startExperiment } from '../../src/application/experiment.js';
-import { comparisonHtmlWithHostShell, input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import type { ComparisonAgentPort } from '../../src/agents/comparison-agent.js';
 import type { RunRecord, TaskCase } from '../../src/core/schema.js';
 
@@ -17,25 +17,26 @@ const timestamp = '2026-08-15T00:00:00.000Z';
 function taskCase(): TaskCase { return { schemaVersion: 1, caseId: 'case-1', source: { productId: 'codex', sessionId: 'session-1' }, initialInput: { id: 'message-1', role: 'user', text: '修复报告。' }, transcript: [{ id: 'message-1', role: 'user', text: '修复报告。' }], historicalEvents: [], baseline: { status: 'available', finalMessage: 'Done.', artifactRefs: [], evidenceRefs: ['event:baseline-1'] }, sourceRuntimeEvidence: { productId: 'codex', artifactRefs: [] }, provenance: { packVersion: 'fixture', importedAt: timestamp, sourceHash: 'a'.repeat(64) }, privacy: { allowModelText: true, allowBinary: false, redactions: [] }, contentHash: 'b'.repeat(64) }; }
 function runRecord(): RunRecord { return { attempt: { schemaVersion: 1, runId: 'run-1', experimentId: 'experiment-1', caseId: 'case-1', candidate: { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-5.6' }, policy: { wallClockMs: 1000, maxTargetTurns: 2, maxModelCalls: 3, turnTimeoutMs: 1000, maxConsecutiveNoProgress: 1 }, createdAt: timestamp }, state: 'finished', stageReached: 'awaiting_controller', outcome: { task: { status: 'incomplete', evidenceRefs: [] }, termination: { kind: 'limit_reached', code: 'limit.turns', initiatedBy: 'harness' }, cleanup: { status: 'complete', remainingResourceIds: [], evidenceRefs: [] } }, trace: { experimentId: 'experiment-1', runId: 'run-1', firstSequence: 1, lastSequence: 2 }, artifactRefs: [], warnings: [] }; }
 
-test('comparison write tool writes report.html and refuses candidate paths', async (t) => {
+test('comparison write tool writes content fragments and refuses candidate paths', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-report-'));
   const candidate = join(root, 'isolation');
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(candidate, { recursive: true });
   await writeFile(join(candidate, 'kept.txt'), 'keep');
-  const html = '<!doctype html><style>body{color:red}</style><svg><path /></svg><script>window.ok=true</script>';
+  const { comparisonAttemptWriteAllowed } = await import('../../src/application/experiment-report.js');
+  const html = '<p>Comparison content</p>';
   const tools = workspaceTools(root, {
     mounts: { candidate },
-    allowWrite: (path) => path === 'report.html',
-    completionPaths: new Set(['report.html']),
+    allowWrite: comparisonAttemptWriteAllowed,
+    completionPaths: new Set(['work/report/body.html']),
     denyDestructiveOnPrefix: ['candidate'],
     allowShell: true,
   });
   const write = tools.find((tool) => tool.name === 'write');
   assert.ok(write);
   const before = await fingerprintTree(candidate);
-  await write.execute({ path: 'report.html', content: html }, new AbortController().signal);
-  assert.equal(await readFile(join(root, 'report.html'), 'utf8'), html);
+  await write.execute({ path: 'work/report/body.html', content: html }, new AbortController().signal);
+  assert.equal(await readFile(join(root, 'work/report/body.html'), 'utf8'), html);
   await assert.rejects(write.execute({ path: 'candidate/kept.txt', content: 'nope' }, new AbortController().signal), /write_denied/);
   const shellTool = tools.find((tool) => tool.name === 'shell_exec');
   assert.ok(shellTool);
@@ -53,8 +54,11 @@ test('comparison write policy uses the first path segment, not a string prefix',
   const { comparisonAttemptWriteAllowed } = await import('../../src/application/experiment-report.js');
   assert.equal(comparisonAttemptWriteAllowed('scratch/notes.md'), true);
   assert.equal(comparisonAttemptWriteAllowed('scratch-evil/notes.md'), false);
-  assert.equal(comparisonAttemptWriteAllowed('work/comparison-plan.md'), true);
-  assert.equal(comparisonAttemptWriteAllowed('report.html'), true);
+  assert.equal(comparisonAttemptWriteAllowed('work/comparison-plan.md', 'understand'), true);
+  assert.equal(comparisonAttemptWriteAllowed('work/comparison-plan.md', 'compose'), false);
+  assert.equal(comparisonAttemptWriteAllowed('report.html'), false);
+  for (const phase of ['compose', 'review'] as const) assert.equal(comparisonAttemptWriteAllowed('work/report/body.html', phase), true);
+  for (const phase of ['understand', 'investigate'] as const) assert.equal(comparisonAttemptWriteAllowed('work/report/body.html', phase), false);
   const root = await mkdtemp(join(tmpdir(), 'reprise-scratch-prefix-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const write = workspaceTools(root, {
@@ -129,9 +133,9 @@ test('reportFacts project collected token parts without inventing speed or cost'
   assert.equal(withClock.metrics?.candidate?.elapsedMs, 4_000);
 });
 
-test('comparison envelope keeps valid short refs when no allowlist is provided', () => {
+test('comparison envelope rejects unknown short refs when no allowlist is provided', () => {
   const context = buildComparisonContext(taskCase(), [runRecord()]);
-  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-01'] }, context));
+  assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-01'] }, context), /unknown evidence refs/);
 });
 
 test('comparison envelope accepts short evidence refs and rejects long event ids', () => {
@@ -187,12 +191,12 @@ test('comparison prompt points workspace tools at the sealed snapshot mount', ()
   assert.match(COMPARISON_SYSTEM_PROMPT, /render_artifact/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /register_evidence/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /preview_report/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /Need screenshots or page views only through render_artifact and preview_report/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /Use browser_open, browser_snapshot, browser_action, and browser_screenshot/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /Read facts\/capabilities\.json/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /Do not run Chrome, Edge, or Firefox binaries/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /--version/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /--dump-dom/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /Browser selection and setup belong to the Host/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /user browser profile/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /If a render tool fails, record the limitation/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /If a.*managed tool fails, correct a concrete input error or record the limitation/s);
   assert.match(COMPARISON_SYSTEM_PROMPT, /do not retry via equivalent browser shell commands/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /In this session you will receive, in order/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /最后一轮不能使用工具/);
@@ -270,13 +274,15 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   assert.match(html, /13<span class="unit">min<\/span>/);
   assert.match(html, /0\.49<span class="unit">\$/);
   assert.match(html, /钉住的价格快照/);
-  assert.match(html, /\.num\.miss \{[^}]*white-space:nowrap/);
+  assert.match(html, /\.num\.miss \{[^}]*white-space:normal/);
   assert.match(html, /2026-09-19-cc-switch-seed/);
   assert.match(html, /cacheRead /);
   assert.match(html, /cacheCreation /);
   assert.equal(facts.models.baseline, 'gpt-5');
-  assert.match(html, /<div class="who">gpt-5<\/div>/);
-  assert.match(html, /<div class="who">请求 gpt-5\.6 · 解析未确认<\/div>/);
+  assert.match(html, /<div class="who">历史结果<\/div>/);
+  assert.match(html, /<strong>gpt-5<\/strong>/);
+  assert.match(html, /<div class="who">本次结果<\/div>/);
+  assert.match(html, /请求 gpt-5\.6 · 解析未确认/);
   assert.doesNotMatch(html, />Baseline</);
   const tampered = html.replace('0.49', '9.99');
   assert.equal(hostMetricsMismatch(tampered, facts.metrics ?? {}), 'Host metrics numbers were modified.');
@@ -298,10 +304,11 @@ test('cost card distinguishes missing usage from missing prices', async () => {
   assert.match(html, /价格未配置/);
 });
 
-test('compose and review prompts require autonomous zones and real preview', () => {
+test('compose and review prompts require content fragments and real preview', () => {
   assert.match(COMPARISON_TURN_PROMPTS.compose, /headline/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="comparison"/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="details"/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /content\.json/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /body\.html/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /details\.html/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="verified"/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="visual"/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not claim visual inspection/);
@@ -319,7 +326,7 @@ test('compose and review prompts require autonomous zones and real preview', () 
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /The left side is the historical session/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /preview_report/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /Recheck if the draft changes/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /Recheck if the content changes/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /specific\s+review limitation/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /reopen report\.html and review/);
@@ -331,7 +338,7 @@ test('compose and review prompts require autonomous zones and real preview', () 
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.investigate, /最多四个候选差异/);
 });
 
-test('invalid comparison JSON keeps the already written report.html', async (t) => {
+test('invalid comparison JSON keeps authored content without publishing', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-invalid-envelope-'));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, 'source'), { recursive: true });
@@ -345,16 +352,10 @@ test('invalid comparison JSON keeps the already written report.html', async (t) 
         append: async () => {
           round += 1;
           if (round === 3) {
-            const read = session.tools?.find((tool) => tool.name === 'read');
             const write = session.tools?.find((tool) => tool.name === 'write');
-            const page = await read?.execute({ path: 'report.html' }, new AbortController().signal);
-            await write?.execute({
-              path: 'report.html',
-              content: comparisonHtmlWithHostShell(
-                page?.content ? { reportShellHtml: page.content } : {},
-                '<p>kept-page</p>',
-              ),
-            }, new AbortController().signal);
+            assert.ok(write);
+            await write.execute({ path: 'work/report/content.json', content: JSON.stringify({ schemaVersion: 1, headline: 'Kept content', criticalLimitations: [], evidenceRefs: [] }) }, new AbortController().signal);
+            await write.execute({ path: 'work/report/body.html', content: '<p>kept-page</p>' }, new AbortController().signal);
           }
           if (round < 4) return 'working';
           return 'not-json';
@@ -368,7 +369,7 @@ test('invalid comparison JSON keeps the already written report.html', async (t) 
   assert.equal(result.comparison.result.status === 'failed' ? result.comparison.result.failure.code : undefined, 'invalid_envelope');
   const attempts = join(result.experimentRoot, 'comparison-attempts');
   const dirs = await readdir(attempts);
-  const draft = await readFile(join(attempts, dirs[0] ?? '', 'report.html'), 'utf8');
+  const draft = await readFile(join(attempts, dirs[0] ?? '', 'work/report/body.html'), 'utf8');
   assert.match(draft, /kept-page/);
 });
 

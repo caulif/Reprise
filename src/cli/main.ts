@@ -74,6 +74,10 @@ export function helpText(): string {
     "  reprise run (--source-root <dir> --task-case <file.json> | --scenario <experimentId>) [--product <id> --model <id>] [--json|--jsonl]",
     "  reprise compare (--experiment <id> | --source-root <dir> --task-case <file.json>) [--json|--jsonl]",
     "  reprise cancel <operationId|experimentId|runId> [--data-dir <dir>] [--json]",
+    "  reprise doctor tools [--data-dir <dir>] [--json]",
+    "  reprise setup tools [--browser|--browser-path <path>] [--search-endpoint <https-url> --search-key-env <name>] [--json]",
+    "  reprise extract <file.csv|json|pdf|docx|xlsx|pptx> --output <file.json>",
+    "  reprise enhance <inspect-media|extract-frame|ocr-text> <file> --output <file> [--time-ms <n>]",
     "  reprise [--help] [--version]",
     "",
     "No subcommand opens the TUI. `--compare` on that entry skips the TUI comparison gate; it is not the `compare` subcommand.",
@@ -88,6 +92,18 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
     assertSupportedNodeVersion();
     const command = argv[0];
     if (command === "cancel") return await runCancel(argv.slice(1), io);
+    if (command === "extract") {
+      const { runExtractCli } = await import("./extract.js");
+      return await runExtractCli(argv.slice(1), io);
+    }
+    if (command === "enhance") {
+      const { runEnhanceCli } = await import("./enhance.js");
+      return await runEnhanceCli(argv.slice(1), io);
+    }
+    if (command === "doctor" || command === "setup") {
+      const { runToolsCli } = await import("./tools.js");
+      return await runToolsCli(command, argv.slice(1), io);
+    }
     if (command && QUERY_COMMANDS.has(command)) return await runQueryCommand(command, argv.slice(1), io);
     if (command === "prepare" || command === "run" || command === "compare") {
       return await runHeadlessCommand(command, argv.slice(1), io, context);
