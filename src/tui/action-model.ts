@@ -23,6 +23,8 @@ export type ActionId =
   | 'cycle-fold'
   | 'cycle-fold-prev'
   | 'compare'
+  | 'view-process'
+  | 'toggle-details'
   | 'open-report'
   | 'open-history-final'
   | 'open-candidate-final'
@@ -53,7 +55,9 @@ export type ActionMode = {
   readonly finding?: boolean;
   readonly reading?: boolean;
   readonly preparing?: boolean;
+  readonly comparing?: boolean;
   readonly comparePending?: boolean;
+  readonly processAvailable?: boolean;
   readonly canStartConfirm?: boolean;
   readonly helpOpen?: boolean;
   readonly editingText?: boolean;
@@ -104,6 +108,11 @@ export function listActions(ctx: ActionContext): readonly UiAction[] {
       return runningActions(mode);
     case 'result':
       return resultActions(mode, ctx.artifacts ?? {});
+    case 'compare-confirm':
+      return [
+        action('compare', 'compareConfirmStart', ['enter'], 'start', 40),
+        action('back', 'hintBack', ['escape', 'b'], 'navigate', 30),
+      ];
     case 'confirm':
       return confirmActions(mode);
     case 'home':
@@ -111,6 +120,7 @@ export function listActions(ctx: ActionContext): readonly UiAction[] {
     case 'source':
     case 'preflight':
     case 'candidate-product':
+    case 'recovery-review':
     case 'candidate-model':
     case 'config':
     case 'sessions':
@@ -129,7 +139,7 @@ export function listActions(ctx: ActionContext): readonly UiAction[] {
 }
 
 function runningActions(mode: ActionMode): readonly UiAction[] {
-  const cancelLabel: MessageKey = mode.preparing ? 'hintCancel' : 'hintStop';
+  const cancelLabel: MessageKey = mode.comparing ? 'hintStopComparison' : mode.preparing ? 'hintStopPreparation' : 'hintStopExecution';
   const cancel = action('cancel', cancelLabel, ['ctrl+c'], 'cancel', 40);
   const help = action('show-help', 'hintHelp', ['?'], 'readonly', 5);
   if (mode.reading) {
@@ -165,16 +175,16 @@ function runningActions(mode: ActionMode): readonly UiAction[] {
 
 function resultActions(mode: ActionMode, artifacts: ActionArtifacts): readonly UiAction[] {
   const actions: UiAction[] = [];
-  if (mode.comparePending) {
-    actions.push(action('compare', 'hintCompare', ['c'], 'start', 50));
-    actions.push(action('activate-primary', 'hintCompare', ['enter'], 'start', 0));
-  }
+  actions.push(action('activate-primary', 'hintActivate', ['enter'], 'readonly', 40));
+  actions.push(artifactAction('open-candidate-final', 'hintCandidateFinal', ['f'], artifacts.candidateFinal, 'noCandidateFinal'));
   actions.push(artifactAction('open-report', artifacts.diagnostic ? 'hintOpenDiagnostic' : 'hintReport', ['o'], artifacts.report, 'noReport'));
   actions.push(artifactAction('open-history-final', 'hintHistoryFinal', ['h'], artifacts.historyFinal, 'noHistoryFinal'));
-  actions.push(artifactAction('open-candidate-final', 'hintCandidateFinal', ['f'], artifacts.candidateFinal, 'noCandidateFinal'));
   actions.push(artifactAction('open-trace', 'hintTrace', ['t'], artifacts.trace, 'noTrace'));
   actions.push(artifactAction('open-replica', 'hintReplica', ['w'], artifacts.replica, 'noReplica'));
-  actions.push(action('home', 'hintHome', mode.comparePending ? ['escape', 'b'] : ['escape', 'b', 'enter'], 'navigate', 10));
+  if (mode.processAvailable) actions.push(action('view-process', 'viewCandidateProcess', ['p'], 'readonly', 15));
+  actions.push(action('toggle-details', 'resultDetails', ['d'], 'readonly', 10));
+  if (mode.comparePending) actions.push(action('compare', 'hintCompare', ['c'], 'navigate', 30));
+  actions.push(action('home', 'finishReview', ['escape', 'b'], 'navigate', 35));
   actions.push(action('show-help', 'hintHelp', ['?'], 'readonly', 1));
   return actions;
 }
@@ -343,9 +353,11 @@ function padKey(keys: string): string {
 
 function optionalMode(parts: {
   preparing?: boolean;
+  comparing?: boolean;
   finding?: boolean;
   reading?: boolean;
   comparePending?: boolean;
+  processAvailable?: boolean;
   canStartConfirm?: boolean;
   helpOpen?: boolean;
   editingText?: boolean;
@@ -354,9 +366,11 @@ function optionalMode(parts: {
 }): ActionMode {
   const mode: ActionMode = {};
   if (parts.preparing !== undefined) Object.assign(mode, { preparing: parts.preparing });
+  if (parts.comparing !== undefined) Object.assign(mode, { comparing: parts.comparing });
   if (parts.finding !== undefined) Object.assign(mode, { finding: parts.finding });
   if (parts.reading !== undefined) Object.assign(mode, { reading: parts.reading });
   if (parts.comparePending !== undefined) Object.assign(mode, { comparePending: parts.comparePending });
+  if (parts.processAvailable !== undefined) Object.assign(mode, { processAvailable: parts.processAvailable });
   if (parts.canStartConfirm !== undefined) Object.assign(mode, { canStartConfirm: parts.canStartConfirm });
   if (parts.helpOpen !== undefined) Object.assign(mode, { helpOpen: parts.helpOpen });
   if (parts.editingText !== undefined) Object.assign(mode, { editingText: parts.editingText });
@@ -369,6 +383,7 @@ export function runningFooterHints(
   locale: Locale,
   opts: {
     readonly preparing?: boolean;
+    readonly comparing?: boolean;
     readonly finding?: boolean;
     readonly reading?: boolean;
     readonly findAllowed?: boolean;
@@ -380,6 +395,7 @@ export function runningFooterHints(
     locale,
     mode: optionalMode({
       ...(opts.preparing !== undefined ? { preparing: opts.preparing } : {}),
+      ...(opts.comparing !== undefined ? { comparing: opts.comparing } : {}),
       ...(opts.finding !== undefined ? { finding: opts.finding } : {}),
       ...(opts.reading !== undefined ? { reading: opts.reading } : {}),
       ...(opts.findAllowed !== undefined ? { findAllowed: opts.findAllowed } : {}),

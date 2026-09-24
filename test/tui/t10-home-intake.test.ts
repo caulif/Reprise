@@ -136,17 +136,16 @@ test('home defaults to new replay and Enter opens source intake', async (t) => {
     focus: 'new-replay',
     locale: 'en',
   }).join('\n');
-  assert.match(home, /New replay/);
+  assert.match(home, /Redo a task/);
   assert.match(home, /Latest run/);
-  assert.match(home, /candidate apparently_completed/);
-  assert.match(home, /comparison cancelled/);
+  assert.match(home, /Latest run:.*Cleanup unconfirmed/);
   assert.doesNotMatch(home, /\bcompleted\b(?!.*candidate)/);
   assert.equal(defaultHomeFocus({
     taskCase: undefined, recentExperiment: undefined, hasApiConfig: true, composer: '', showSuggestions: false,
   }), 'new-replay');
   assert.equal(homeActions({
     taskCase: undefined, recentExperiment: undefined, hasApiConfig: false, composer: '', showSuggestions: false,
-  })[0], 'config');
+  })[0], 'new-replay');
 
   const app = new IntakeTui({
     dataDir: join(root, 'data'),
@@ -173,7 +172,7 @@ test('recent result labels avoid bare completed', () => {
   assert.match(recentResultLabel({
     experimentId: 'e', taskCaseId: 'c', path: 'p', sizeBytes: 1,
     taskStatus: 'apparently_completed', outcome: 'completed',
-  }, 'en'), /candidate apparently_completed/);
+  }, 'en'), /Cleanup unconfirmed/);
   assert.doesNotMatch(recentResultLabel({
     experimentId: 'e', taskCaseId: 'c', path: 'p', sizeBytes: 1, outcome: 'completed',
   }, 'en'), /^completed$/);
@@ -325,8 +324,8 @@ test('inspection puts task text first and folds historical final', () => {
   }).join('\n');
   const taskAt = folded.indexOf('Task text:');
   const sourceAt = folded.indexOf('Source codex');
-  const laterAt = folded.indexOf('Later user turns');
-  const foldedAt = folded.indexOf('Historical final (folded');
+  const laterAt = folded.indexOf('Later user requests');
+  const foldedAt = folded.indexOf('Details include');
   assert.ok(taskAt >= 0 && sourceAt > taskAt && laterAt > sourceAt && foldedAt > laterAt);
   assert.doesNotMatch(folded, /Historical final draft should stay folded/);
   const expanded = renderInspection(theme, 120, {

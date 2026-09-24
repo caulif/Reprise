@@ -26,6 +26,7 @@ export type StyleFn = (text: string) => string;
 export interface Theme {
   readonly density: Density;
   readonly framed: boolean;
+  readonly plainPage?: boolean;
   readonly colorMode: ColorMode;
   readonly glyphs: Glyphs;
   readonly style: {

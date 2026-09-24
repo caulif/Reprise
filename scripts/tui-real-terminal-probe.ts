@@ -85,7 +85,7 @@ const report = {
   hyperlinks: Boolean(getCapabilities().hyperlinks),
   osc8: linked.includes("\x1b]8;;"),
   mouseOffWritten: blob.includes(DISABLE_MOUSE_REPORTING),
-  zhHome: frame.includes("导入历史"),
+  zhHome: frame.includes("重做任务"),
   zhMessage: frame.includes("输入法") || frame.includes("中文路径测试"),
   viewportWheel,
   viewportMouse,

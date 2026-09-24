@@ -1,27 +1,18 @@
-Reprise v0.1.0   C:\reprise
-gpt-5.6-terra - medium   ! 内部模型缺少密钥  * Codex  * ...
-------------------------------------------------------------
- 题目 Fix the bug. - Codex - gpt-5.6-luna - Codex
- * 恢复  o 候选  o 对当前任务开跑  o 对照
- 在隔离副本中回放一段历史 Agent 会话。
+Reprise
+ 确认用 Codex 执行任务？
+  任务         Fix the bug.
+  原对话       Codex
+  执行工具     Codex
+  选择的模型   gpt-5.6-luna
+  已准备副本   C:\user\AppData\Local\Temp\
+               reprise-tui-audit-TMP\data-run\
+               experiments\audit-recovery
+  准备结果     文件已准备好
+  摘要         Ready for the original task.
+  限制         无记录
+ 
+  !  Enter 会启动 Codex，可能产生费用。
+  +  原项目目录保持不变；执行工具会在单独的工作副本中读写。
 
- > /config   内部协作模型  需要凭据
-   新建回放  选择历史会话来源  /intake
-   /history  本机实验记录  尚无运行记录
-
- 第 3 / 3 步 - 确认运行      +--+--*
-
-[ 启动隔离的 Codex 候选？ ]
-    来源会话     Codex
-    候选         Codex
-    请求模型     gpt-5.6-luna
-    解析模型     gpt-5.6-luna
-    恢复         已恢复
-    限制         fingerprint differs
-   
-    !  按 Enter 不会启动 Codex。请先在 /config 添加 API 
-   密钥。
-
- -> 查看恢复过程
-------------------------------------------------------------
- [b] 改模型  [?] 帮助
+ -> 查看准备过程
+ [Enter] 开始执行  [b] 改模型  [?] 帮助  [Pg↑↓] 翻页

@@ -1,17 +1,19 @@
-Reprise v0.1.0   C:\reprise                    gpt-5.6-terra · medium   ⚠ 内部模型环境变量未设  ○ 未选会话产品  ○ 无任务
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 在隔离副本中回放一段历史 Agent 会话。
-
- ❯ /config   内部协作模型  环境变量未设
-   新建回放  选择历史会话来源  /intake
-   /history  本机实验记录  尚无运行记录
-
-┌─ 正在编辑 API 密钥 ──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 当前值  env:OPENAI_API_KEY  ✓ │
-│ │
-│ ❯ env:OPENAI_API_KEY▌ │
-│ 保存在 .reprise/harness-model.json（已被 git 忽略）。env:NAME 仍可用。 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+Reprise
+ Reprise 模型设置
+  用于准备文件、指导执行和比较结果；执行任务的模型在开始前另选。
+    服务商类型         openai-compatible  [Enter] 切换
+    服务商标签         dzzzz-openai
+    接口地址           https://api.dzzzz.cf  ✓
+    模型               gpt-5.6-terra
+    接口类型           openai-completions  [Enter] 切换
+  ❯ API 密钥           env:OPENAI_API_KEY  ✓
+      ******************▌
+      保存在 .reprise/harness-model.json（已被 git 忽略）。env:NAME 仍可用。
+    更多设置
+    语言               中文  [Enter] 切换
+ 
+  ● 保存状态：未保存草稿
+  ⚠ 凭据：缺失或未设置
+  ● 连接测试：当前草稿尚未测试
  Editing API key. Type to change the visible value. Enter applies it. Esc keeps the previous value.
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  [Enter] 应用  [Ctrl+U] 清空  [Esc] 保留原值

@@ -116,7 +116,7 @@ export function preflightFromBaseline(
         ? "recovered_partial"
         : "observational";
   const limitations = baseline.recovery
-    ? [...baseline.warnings]
+    ? [...new Set([...baseline.warnings, ...baseline.recovery.unresolved])]
     : [limitation, ...baseline.warnings];
   return {
     sourceBaseline:

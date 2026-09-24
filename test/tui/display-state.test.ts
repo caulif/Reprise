@@ -13,7 +13,8 @@ import {
   eventActivityRole,
 } from '../../src/tui/phase-state.js';
 import { elapsedForRunning, waitLine } from '../../src/tui/pages/run.js';
-import { runningModel, stageRailOf } from '../../src/tui/view-projection.js';
+import { runningModel } from '../../src/tui/view-projection.js';
+import { deriveResultPresentationFromResult } from '../../src/tui/display-state.js';
 import { renderWorkbench } from '../../src/tui/workbench.js';
 import { t } from '../../src/tui/i18n.js';
 
@@ -45,12 +46,21 @@ describe('T06 display-state stages and clocks', () => {
       page: 'running', cwd: '', hasApiConfig: true, hasUsableAuth: true, hasTaskCase: true,
       message: '', locale: 'zh', running,
     }, 110).join('\n');
-    assert.match(screen, /正在写对照报告 · 01:00/);
+    assert.match(screen, /正在与原结果比较 · 01:00/);
   });
 
-  it('marks recovery as active and a failed comparison as failed', () => {
-    assert.match(stageRailOf({ page: 'running', runPhase: 'recovery' } as never, 'zh')?.text ?? '', /^● 恢复\s+○ 候选/);
-    assert.match(stageRailOf({ page: 'result', result: { comparison: { result: { status: 'failed' } } } } as never, 'zh')?.text ?? '', /✗ 对照/);
+  it('does not claim full success when comparison completes but cleanup is unfinished', () => {
+    const result = {
+      record: { outcome: {
+        task: { status: 'apparently_completed' },
+        termination: { kind: 'completed', code: 'completed.controller_satisfied' },
+        cleanup: { status: 'incomplete' },
+      } },
+      comparison: { result: { status: 'completed', value: { status: 'completed' } } },
+    } as never;
+    const presentation = deriveResultPresentationFromResult(result, 'zh');
+    assert.equal(presentation.statusTone, 'warn');
+    assert.equal(t('zh', presentation.statusLabelKey), '清理未完成');
   });
   it('projects machineState, activity role, and UI stage separately', () => {
     assert.equal(uiStageFrom({ machineState: 'created' }), 'controller_opening');
@@ -160,7 +170,7 @@ describe('T06 R08 stale wait ladder', () => {
     assert.equal(staleTier(120_000), 'stale');
 
     const at10 = waitLine({ ...base, tick: Date.parse('2026-08-28T00:00:10.000Z') }, 'zh');
-    assert.match(at10 ?? '', /等待候选新活动/);
+    assert.match(at10 ?? '', /等待执行工具新活动/);
     assert.match(at10 ?? '', /10 秒前/);
 
     const at60 = waitLine({ ...base, tick: Date.parse('2026-08-28T00:01:00.000Z') }, 'zh');

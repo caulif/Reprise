@@ -1,0 +1,7 @@
+Reprise
+ 准备结果     文件已准备好
+ 摘要         Ready for the original task.
+
+ 返回执行工具选择
+ 任务文件已准备好，请选择执行工具和模型。
+ [Enter] 返回执行工具选择  [Esc] 返回  [Pg↑↓] 翻页

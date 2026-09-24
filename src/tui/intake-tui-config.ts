@@ -11,8 +11,9 @@ import {
   type HarnessModelConfig,
 } from "../infrastructure/harness-model-config.js";
 import { PiModelCaller } from "../infrastructure/agent/model-caller.js";
-import { CONFIG_FIELDS, type ConfigBusy, type ConfigConnectionTestStatus } from "./pages/config.js";
+import { type ConfigBusy, type ConfigConnectionTestStatus } from "./pages/config.js";
 import { handleConfigInput } from "./config-input.js";
+import { visibleConfigItems } from "./config-input.js";
 import { credentialGapMessage, harnessCaller } from "./controller-auth.js";
 import { t, type Locale } from "./i18n.js";
 import type { Option } from "./types.js";
@@ -30,6 +31,7 @@ export type ConfigReturnTarget = {
 export type ConfigPanel = {
   configDraft: HarnessConfigDraft;
   configSelected: number;
+  configAdvanced: boolean;
   configEditing: boolean;
   configBuffer: string;
   configCursor: number;
@@ -75,6 +77,7 @@ export function IntakeTui_configPageInput(this: ConfigPanel, data: string): { co
       {
         draft: this.configDraft,
         selected: this.configSelected,
+        advanced: this.configAdvanced,
         editing: this.configEditing,
         buffer: this.configBuffer,
         cursor: this.configCursor,
@@ -92,6 +95,7 @@ export function IntakeTui_configPageInput(this: ConfigPanel, data: string): { co
     if (!result) return undefined;
     this.configDraft = result.state.draft;
     this.configSelected = result.state.selected;
+    this.configAdvanced = Boolean(result.state.advanced);
     this.configEditing = result.state.editing;
     this.configBuffer = result.state.buffer;
     this.configCursor = result.state.cursor ?? result.state.buffer.length;
@@ -138,6 +142,7 @@ function resetConfigSession(panel: ConfigPanel, draft: HarnessConfigDraft): void
   panel.configDraft = draft;
   panel.configDraftVersion += 1;
   panel.configEditing = false;
+  panel.configAdvanced = false;
   panel.configBuffer = "";
   panel.configCursor = 0;
   panel.configPendingToggle = false;
@@ -158,10 +163,7 @@ export async function IntakeTui_openConfig(this: ConfigPanel): Promise<void> {
         ? draftForConfig(this.modelConfig)
         : emptyHarnessConfigDraft(),
     );
-    this.configSelected =
-      this.configDraft.kind === "openai-compatible"
-        ? Math.max(0, CONFIG_FIELDS.indexOf("model"))
-        : 0;
+    this.configSelected = Math.max(0, visibleConfigItems(this.configDraft.kind).indexOf("model"));
     this.providers = new PiModelCaller(
       this.modelConfig,
       this.piModels,

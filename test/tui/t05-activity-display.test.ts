@@ -155,7 +155,7 @@ test('T05 voice/pane use structured role instead of title startsWith', () => {
   assert.equal(matchesFilter(tool, 'PRODUCT'), false);
   assert.equal(activityRoleLabel('recovery', 'X', 'zh'), '恢复 Agent');
   assert.equal(activityRoleLabel('candidate', 'Claude Code', 'zh'), 'Claude Code');
-  assert.equal(activityRoleLabel('comparison', 'X', 'zh'), '对照Agent');
+  assert.equal(activityRoleLabel('comparison', 'X', 'zh'), '正在比较结果');
 });
 
 test('T05 fold ids use first stable event identity, not turn index', () => {
@@ -205,7 +205,7 @@ test('T05 detail model exposes public refs only and never model_request payload'
     level: 'error',
   };
   const model = activityDetailModel(entry, 'Claude Code', 'zh');
-  assert.equal(model.roleLabel, '对照Agent');
+  assert.equal(model.roleLabel, '正在比较结果');
   assert.equal(model.eventRefs.length, 2);
   assert.match(model.body, /路径不在可写范围/);
   const painted = renderActivityDetail(createTheme(80, false), 80, model, 'zh').join('\n');

@@ -13,6 +13,7 @@ export { EvidenceRefSchema, type EvidenceRef } from "./schemas/ids.js";
 export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js";
 export { RecoveryMarkerSchema } from "./schemas/recovery-marker.js";
 export { EventEnvelopeSchema, type EventEnvelope } from "./schemas/event.js";
+export { ControllerDecisionSchema, type ControllerDecision, ComparisonResultSchema, type ComparisonAgentEnvelope } from "./schemas/agent-output.js";
 export { ArtifactManifestSchema, type ArtifactManifest } from "./schemas/artifact.js";
 export {
   SessionRecoveryAttemptSchema,

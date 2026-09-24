@@ -89,7 +89,7 @@ test('timeline projects operator-relevant persisted facts', () => {
     sequence: 1,
     occurredAt: timestamp,
     source: 'CONTROLLER',
-    title: '对照失败',
+    title: '比较失败',
     detail: 'missing narrative',
     level: 'error',
     lane: 'comparison',
@@ -112,10 +112,10 @@ test('R03: comparison.completed with cancelled payload is not success even after
     path: 'comparison-failure.html',
   })));
   const titles = timeline.filter((entry) => !entry.hidden).map((entry) => entry.title);
-  assert.equal(titles.includes('对照已取消'), true);
-  assert.equal(titles.includes('对照完成'), false);
+  assert.equal(titles.includes('比较已取消'), true);
+  assert.equal(titles.includes('比较已完成'), false);
   assert.equal(titles.some((title) => title.includes('Report created') || title === 'Report created'), true);
-  const cancelled = timeline.find((entry) => entry.title === '对照已取消');
+  const cancelled = timeline.find((entry) => entry.title === '比较已取消');
   assert.equal(cancelled?.level, 'error');
   assert.equal(cancelled?.lane, 'comparison');
 });

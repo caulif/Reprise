@@ -14,11 +14,11 @@ function kvLinkValueStart(labelWidth: number): number {
 }
 
 function panelInnerWidth(theme: Theme, width: number): number {
-  return Math.max(1, width - (theme.framed ? 2 : 3));
+  return Math.max(1, width - (theme.framed ? 2 : theme.plainPage ? 1 : 3));
 }
 
 function panelBodyCol(theme: Theme): number {
-  return theme.framed ? 1 : 3;
+  return theme.framed || theme.plainPage ? 1 : 3;
 }
 
 /** Pad one physical terminal row. CR/LF/tab become spaces so a "layout row" never spans multiple screen rows. */
@@ -82,6 +82,12 @@ export function panelWithHits<T extends LinkValueHit>(
     }
   }
   const heading = ` ${title.trim()} `;
+  if (theme.plainPage) {
+    return {
+      lines: [theme.style.strong(` ${title.trim()}`), ...painted.map((line) => ` ${line}`)],
+      rowHits,
+    };
+  }
   if (!theme.framed) {
     return {
       lines: [`[ ${title.trim()} ]`, ...painted.map((line) => `   ${line}`)],
@@ -99,10 +105,6 @@ export function panelWithHits<T extends LinkValueHit>(
   };
 }
 
-
-export function divider(theme: Theme, width: number): string {
-  return theme.glyphs.h.repeat(Math.max(1, width));
-}
 
 export function justify(theme: Theme, left: string, right: string, width: number): string {
   const gap = width - visibleWidth(left) - visibleWidth(right);

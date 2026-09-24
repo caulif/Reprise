@@ -1,3 +1,4 @@
+import { CliError } from "../application/cli-error.js";
 import { readExperimentEvents } from "../application/experiment-event-read.js";
 import { readLocalHistory, type HistoryCase, type HistoryExperiment } from "./local-history.js";
 import { handleHistoryInput } from "./history-input.js";
@@ -21,6 +22,7 @@ export type HistoryPanel = {
   historyCases: readonly HistoryCase[];
   historyExperiments: readonly HistoryExperiment[];
   historyTotalBytes: number;
+  invalidHistoryCaseCount: number;
   historyDetail: HistoryCase | HistoryExperiment | undefined;
   recentExperiment: HistoryExperiment | undefined;
   timeline: TimelineEntry[];
@@ -28,6 +30,8 @@ export type HistoryPanel = {
   timelineRevision: number;
   timelineSelected: number;
   timelineFollowing: boolean;
+  timelineReadOffset: number;
+  processExpanded: boolean;
   historyItems(): readonly (HistoryCase | HistoryExperiment)[];
   beginNavigation(): number;
   render(force?: boolean): void;
@@ -57,6 +61,8 @@ export function IntakeTui_historyInput(this: HistoryPanel, data: string): { cons
   if (result.detail) {
     if ("taskCase" in result.detail) {
       this.historyDetail = result.detail;
+      this.timelineReadOffset = 0;
+      this.processExpanded = false;
       this.page = "history-detail";
       this.message = t(this.locale, "historyDetailMsg");
     } else {
@@ -71,11 +77,13 @@ export function IntakeTui_historyInput(this: HistoryPanel, data: string): { cons
 async function openHistoryExperiment(c: HistoryPanel, item: HistoryExperiment): Promise<void> {
   const token = c.beginNavigation();
   try {
-    const page = await readExperimentEvents({ dataDir: c.dataDir, experimentId: item.experimentId });
+    const events = await historyEvents(c.dataDir, item);
     if (token !== c.generation) return;
     c.historyDetail = item;
+    c.timelineReadOffset = 0;
+    c.processExpanded = false;
     resetActivityIndex(c.activityIndex, { experimentId: item.experimentId });
-    c.timeline = projectPersistedTimeline(page.events, c.activityIndex);
+    c.timeline = projectPersistedTimeline(events, c.activityIndex);
     bumpTimelineRevision(c);
     const visible = c.visibleTimeline();
     c.timelineSelected = Math.max(0, visible.length - 1);
@@ -87,6 +95,17 @@ async function openHistoryExperiment(c: HistoryPanel, item: HistoryExperiment): 
     c.showError(error, "history");
   }
   c.render(true);
+}
+
+async function historyEvents(dataDir: string, item: HistoryExperiment): Promise<Awaited<ReturnType<typeof readExperimentEvents>>["events"]> {
+  try {
+    return (await readExperimentEvents({ dataDir, experimentId: item.experimentId })).events;
+  } catch (error) {
+    const damagedMetadata = item.formatError === "missing_metadata" || item.formatError === "invalid_metadata";
+    if (!damagedMetadata || !(error instanceof CliError) || (error.kind !== "not_found" && error.kind !== "failed")) throw error;
+    // Only an absent or malformed event log is optional for a damaged metadata entry.
+    return [];
+  }
 }
 
 export function IntakeTui_historyItems(this: HistoryPanel): readonly (HistoryCase | HistoryExperiment)[] {
@@ -103,12 +122,13 @@ export async function IntakeTui_loadHistory(this: HistoryPanel): Promise<void> {
     this.historyCases = history.cases;
     this.historyExperiments = history.experiments;
     this.historyTotalBytes = history.totalBytes;
+    this.invalidHistoryCaseCount = history.invalidCaseCount;
     this.recentExperiment = history.experiments[0];
     this.historyTab = "runs";
     this.historySelected = 0;
     this.page = "history";
     this.message =
-      history.experiments.length || history.cases.length
+      history.experiments.length || history.cases.length || history.invalidCaseCount
         ? t(this.locale, "historyBrowse")
         : t(this.locale, "historyEmpty");
   } catch (error) {

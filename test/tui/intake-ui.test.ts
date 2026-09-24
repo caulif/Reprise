@@ -44,7 +44,8 @@ test('session list titles use later short user tasks while a lone first message 
     searching: false,
     locale: 'en',
   }, 16).join('\n');
-  assert.match(latest, /briefing deck/i);
+  assert.match(latest, /slides/);
+  assert.doesNotMatch(latest, /AGENTS\.md/);
 });
 
 test('task display summary uses the later short user task when the first message is an instruction block', () => {
@@ -164,19 +165,19 @@ test('inspection freezes the whole session from the first user task', () => {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }).join('\n');
   assert.match(first, /Task text:[\s\S]*Fix the bug\./);
-  assert.match(first, /Later user turns \(1\)/);
+  assert.match(first, /Later user requests \(1\)/);
   assert.match(first, /1\.\s+Verify the regression\./);
-  assert.match(first, /Source:/);
-  assert.match(first, /Review session/);
-  assert.match(first, /Nothing is written until you press Enter/);
-  assert.match(first, /Historical final \(folded/);
+  assert.match(first, /Source codex/);
+  assert.match(first, /Review the task/);
+  assert.match(first, /Preparing task files saves this selection/);
+  assert.match(first, /Details include the full task/);
   assert.doesNotMatch(first, /Choose task start|Select task start|Freeze this message:|Session start:/);
   const ignoredSelection = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 1, showOutcome: false,
   }).join('\n');
   assert.match(ignoredSelection, /Task text:/);
   assert.match(ignoredSelection, /Fix the bug\./);
-  assert.match(ignoredSelection, /Later user turns \(1\)[\s\S]*1\.\s+Verify the regression\./);
+  assert.match(ignoredSelection, /Later user requests \(1\)[\s\S]*1\.\s+Verify the regression\./);
 });
 
 test('inspection start skips an injected instruction block', () => {
@@ -200,9 +201,13 @@ test('inspection start skips an injected instruction block', () => {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }).join('\n');
   assert.match(text, /Task text:[\s\S]*Fix the login regression\./);
-  assert.doesNotMatch(text.split(/Later user turns/)[0] ?? '', /don't re-write it/i);
-  const laterSection = text.split(/Later user turns \(\d+\)/)[1] ?? '';
-  assert.match(text, /\[injected instruction\]/);
+  assert.doesNotMatch(text.split(/Later user requests/)[0] ?? '', /don't re-write it/i);
+  const laterSection = text.split(/Later user requests \(\d+\)/)[1] ?? '';
+  assert.doesNotMatch(text, /AGENTS\.md/);
+  const details = renderInspection(theme, 120, {
+    inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: true,
+  }).join('\n');
+  assert.match(details, /\[injected instruction\]/);
   assert.doesNotMatch(laterSection.split(/\[injected instruction\]/)[0] ?? '', /AGENTS\.md/);
 });
 
@@ -227,10 +232,30 @@ test('a 24-row inspection still shows the freeze decision', () => {
   const frame = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }, 19).join('\n');
-  assert.match(frame, /Nothing is written until you press Enter/);
+  assert.match(frame, /Preparing task files saves this selection/);
   assert.match(frame, /Task text:/);
-  assert.match(frame, /Review session/);
+  assert.match(frame, /Review the task/);
   assert.doesNotMatch(frame, /yanjiusheng/);
+});
+
+test('inspection details scroll through the full task and every later request', () => {
+  const theme = createTheme(72, false);
+  const task = Array.from({ length: 24 }, (_, index) => `TASK_SEGMENT_${index}`).join('\n');
+  const later = Array.from({ length: 5 }, (_, index) => `LATER_REQUEST_${index}: ${'check details '.repeat(8)}`);
+  const inspection = {
+    productId: 'codex', sessionId: 'long-session', sourcePath: 'C:/sessions/long.jsonl',
+    cwd: 'C:/work', startedAt: '2026-09-24T00:00:00.000Z',
+    transcript: [
+      { id: 'start', role: 'user', text: task },
+      ...later.map((text, index) => ({ id: `later-${index}`, role: 'user' as const, text })),
+    ],
+    signals: { userMessages: 6, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
+  } as SessionInspection;
+  const model = { inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: true };
+  const frames = Array.from({ length: 160 }, (_, scrollOffset) => renderInspection(theme, 72, { ...model, scrollOffset }, 19).join('\n'));
+  for (let index = 0; index < 24; index += 1) assert.ok(frames.some((frame) => frame.includes(`TASK_SEGMENT_${index}`)));
+  for (let index = 0; index < later.length; index += 1) assert.ok(frames.some((frame) => frame.includes(`LATER_REQUEST_${index}:`)));
+  assert.match(frames[0]!, /Preparing task files saves this selection/);
 });
 
 test('inspection without user input does not show a freeze card', () => {
@@ -247,7 +272,7 @@ test('inspection without user input does not show a freeze card', () => {
   const frame = renderInspection(theme, 120, {
     inspection, privacy: { allowModelText: false, allowBinary: false, redactions: [] }, selectedTaskInput: 0, showOutcome: false,
   }).join('\n');
-  assert.match(frame, /Cannot replay: no eligible user input/);
+  assert.match(frame, /Cannot redo this task: no recognizable user request/);
   assert.doesNotMatch(frame, /Task text:/);
 });
 
@@ -324,7 +349,7 @@ test('partial discovery summaries omit uncounted assistant and tool signals', ()
   assert.doesNotMatch(listed, /\[partial summary\]/);
 });
 
-test('a selected session product uses a filled header lamp', () => {
+test('home keeps its primary actions when no product is selected', () => {
   const unset = renderWorkbench({
     page: 'home', cwd: 'C:\\src', hasApiConfig: true, hasUsableAuth: true, hasTaskCase: false,
     message: 'Welcome back.',
@@ -340,8 +365,8 @@ test('a selected session product uses a filled header lamp', () => {
       products: [{ productId: 'codex', displayName: 'Codex', packVersion: '0.1.0', discoveryStatus: 'idle' }],
     },
   } as never, 120).join('\n');
-  assert.match(unset, /○ Product unset|o Product unset/);
-  assert.match(selected, /● Codex|\* Codex/);
+  assert.match(unset, /Redo a task/);
+  assert.match(selected, /Codex/);
   assert.doesNotMatch(selected, /Product unset/);
 });
 

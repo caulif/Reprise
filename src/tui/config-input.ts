@@ -1,7 +1,7 @@
 import { nextOption, unwrapBracketedPaste } from './format.js';
 import { applyTextEdit } from './text-edit.js';
 import type { HarnessConfigDraft, HarnessConfigField, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
-import { configFieldValue, configFieldsForKind, emptyHarnessConfigDraft, languageFieldIndex, setConfigField } from '../infrastructure/harness-model-config.js';
+import { configFieldValue, configFieldsForKind, emptyHarnessConfigDraft, setConfigField } from '../infrastructure/harness-model-config.js';
 import { t, type Locale } from './i18n.js';
 import type { Option } from './types.js';
 import { matchesKey } from '@earendil-works/pi-tui';
@@ -10,6 +10,7 @@ import { parseSgrMouse } from './page-input.js';
 export type ConfigInputState = {
   readonly draft: HarnessConfigDraft;
   readonly selected: number;
+  readonly advanced?: boolean;
   readonly editing: boolean;
   readonly buffer: string;
   readonly cursor?: number;
@@ -22,6 +23,13 @@ export type ConfigInputState = {
   readonly busy?: boolean;
   readonly locale?: Locale;
 };
+
+export type VisibleConfigItem = HarnessConfigField | 'more' | 'language';
+export function visibleConfigItems(kind: HarnessConfigDraft['kind'], advanced = false): readonly VisibleConfigItem[] {
+  const fields = configFieldsForKind(kind);
+  const lowFrequency = new Set<HarnessConfigField>(['effort', 'reasoning', 'image input']);
+  return [...(advanced ? fields : fields.filter((field) => !lowFrequency.has(field))), 'more', 'language'];
+}
 export type ConfigInputResult = {
   readonly state: ConfigInputState;
   readonly message?: string;
@@ -35,8 +43,8 @@ function busyMessage(locale: Locale | undefined): string {
 
 export function handleConfigInput(state: ConfigInputState, data: string, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }): ConfigInputResult | undefined {
   const input = unwrapBracketedPaste(data);
-  const fields = configFieldsForKind(state.draft.kind);
-  const languageIndex = languageFieldIndex(state.draft.kind);
+  const fields = visibleConfigItems(state.draft.kind, state.advanced);
+  const languageIndex = fields.length - 1;
   const mouse = parseSgrMouse(input);
   if (state.editing) {
     if (mouse) return { state, consume: true };
@@ -64,7 +72,12 @@ export function handleConfigInput(state: ConfigInputState, data: string, refresh
     return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
   }
   if (!matchesKey(input, 'enter')) return undefined;
-  if (state.selected === languageIndex) return { state, action: 'toggle-locale', consume: true };
+  if (fields[state.selected] === 'language') return { state, action: 'toggle-locale', consume: true };
+  if (fields[state.selected] === 'more') {
+    const advanced = !state.advanced;
+    const next = visibleConfigItems(state.draft.kind, advanced);
+    return { state: { ...state, advanced, selected: next.indexOf('more') }, consume: true };
+  }
   return beginConfigEdit(state, refreshModels, fields);
 }
 
@@ -72,7 +85,7 @@ function leaveConfig(state: ConfigInputState): ConfigInputResult {
   if (state.dirty) {
     return {
       state: { ...state, leaveConfirm: true },
-      message: 'Unsaved draft. Ctrl+S saves, Enter discards, Esc stays.',
+      message: t(state.locale ?? 'en', 'unsavedLeave'),
       consume: true,
     };
   }
@@ -80,17 +93,18 @@ function leaveConfig(state: ConfigInputState): ConfigInputResult {
 }
 
 function handleLeaveConfirm(state: ConfigInputState, input: string): ConfigInputResult {
-  if (matchesKey(input, 'escape')) return { state: { ...state, leaveConfirm: false }, message: 'Still editing the in-memory draft.', consume: true };
+  if (matchesKey(input, 'escape') || matchesKey(input, 'enter')) return { state: { ...state, leaveConfirm: false }, consume: true };
   if (matchesKey(input, 'ctrl+s')) {
     if (state.busy) return { state, message: busyMessage(state.locale), consume: true };
     return { state: { ...state, leaveConfirm: false }, action: 'save', consume: true };
   }
-  if (matchesKey(input, 'enter')) return { state: { ...state, leaveConfirm: false }, action: 'home', consume: true };
+  if (matchesKey(input, 'd')) return { state: { ...state, leaveConfirm: false }, action: 'home', consume: true };
   return { state, consume: true };
 }
 
-function beginConfigEdit(state: ConfigInputState, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }, fields: readonly HarnessConfigField[]): ConfigInputResult {
-  const field = fields[state.selected] ?? 'provider type';
+function beginConfigEdit(state: ConfigInputState, refreshModels: (draft: HarnessConfigDraft) => { draft: HarnessConfigDraft; models: readonly Option[] }, fields: readonly VisibleConfigItem[]): ConfigInputResult {
+  const selected = fields[state.selected];
+  const field: HarnessConfigField = selected === 'more' || selected === 'language' || !selected ? 'provider type' : selected;
   if (field === 'provider type') {
     if (state.draft.baseUrl || state.draft.keyRef) {
       return { state: { ...state, pendingToggle: true }, message: 'Enter again to switch provider and clear URL and API key. Esc cancels.', consume: true };
@@ -131,7 +145,7 @@ function applyProviderToggle(state: ConfigInputState, refreshModels: (draft: Har
     ? { ...emptyHarnessConfigDraft(), effort: state.draft.effort }
     : { ...emptyHarnessConfigDraft(), kind: 'pi-catalog' as const, providerId: state.providers[0]?.id ?? 'openai-codex', effort: state.draft.effort };
   const refreshed = draft.kind === 'pi-catalog' ? refreshModels(draft) : { draft, models: state.models };
-  const selected = Math.min(state.selected, languageFieldIndex(refreshed.draft.kind));
+  const selected = Math.max(0, visibleConfigItems(refreshed.draft.kind, state.advanced).indexOf('provider type'));
   return {
     state: { ...state, draft: refreshed.draft, models: refreshed.models, pendingToggle: false, selected },
     message: draft.kind === 'pi-catalog' ? 'Pi catalog selected. Sign in with pi /login, then test the connection.' : 'OpenAI-compatible selected. Enter its endpoint, model, and API key.',
@@ -139,13 +153,14 @@ function applyProviderToggle(state: ConfigInputState, refreshModels: (draft: Har
   };
 }
 
-function editConfigValue(state: ConfigInputState, data: string, fields: readonly HarnessConfigField[]): ConfigInputResult {
+function editConfigValue(state: ConfigInputState, data: string, fields: readonly VisibleConfigItem[]): ConfigInputResult {
   if (matchesKey(data, 'escape')) return { state: { ...state, editing: false, buffer: '', cursor: 0 }, message: 'Field edit discarded. Configuration remains an in-memory draft.', consume: true };
   if (matchesKey(data, 'ctrl+a') || matchesKey(data, 'ctrl+u')) return { state: { ...state, buffer: '', cursor: 0 }, consume: true };
   if (matchesKey(data, 'enter')) {
-    const field = fields[state.selected] ?? 'provider type';
+    const selected = fields[state.selected];
+    const field: HarnessConfigField = selected === 'more' || selected === 'language' || !selected ? 'provider type' : selected;
     const next = state.buffer.trim();
-    return { state: { ...state, draft: setConfigField(state.draft, field, next), editing: false, buffer: '', cursor: 0 }, message: 'Draft changed. Ctrl+S writes the local config file; Ctrl+T tests the connection.', consume: true };
+    return { state: { ...state, draft: setConfigField(state.draft, field, next), editing: false, buffer: '', cursor: 0 }, message: t(state.locale ?? 'en', 'configDraftChanged'), consume: true };
   }
   const edited = applyTextEdit(state.buffer, state.cursor ?? state.buffer.length, data);
   return edited.handled ? { state: { ...state, buffer: edited.value, cursor: edited.cursor }, consume: true } : { state, consume: true };

@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
+import { artifactsFromResult, listActions } from './action-model.js';
 import { isFsAbsolute } from '../core/paths.js';
-import type { EventEnvelope, TaskCase } from '../core/schema.js';
+import type { CandidateSpec, EventEnvelope, TaskCase } from '../core/schema.js';
 import { candidateSpecFromOffer, catalogCursor } from '../application/candidate-spec.js';
 import type { ExperimentResult, ExperimentHandle } from '../application/experiment.js';
 import { historyExperimentFromResult } from '../application/history-result-facts.js';
@@ -19,6 +20,7 @@ import { recoveryViewFromAttempt } from '../application/recovery/view.js';
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
 import { record, text } from '../core/json.js';
 import { candidateRunPhaseFromEvent, candidateRunDisplayFromEvents, isCandidateRunState } from '../application/candidate-run-phase.js';
+import { preflightFromBaseline } from '../application/experiment-preflight.js';
 import { deriveResultPresentationFromResult } from './display-state.js';
 import {
   applyPhaseClockEvent,
@@ -50,14 +52,31 @@ function resultMessage(result: ExperimentResult, locale: Locale): string {
 export type CancelUi = 'idle' | 'requesting' | 'failed' | 'settled';
 
 export function resolveCompareChoice(c: ControllerHandle, run: boolean): void {
-  c.compareChoice?.resolve(run);
+  const choice = c.compareChoice;
   c.compareChoice = undefined;
+  choice?.resolve(run);
+}
+
+function defaultResultAction(c: ControllerHandle, result: ExperimentResult): ControllerHandle['resultAction'] {
+  const artifacts = artifactsFromResult(result);
+  const available = new Set(listActions({
+    page: 'result', locale: c.locale,
+    mode: { comparePending: Boolean(c.compareChoice), processAvailable: c.timeline.length > 0 },
+    artifacts,
+  }).filter((item) => item.enabled).map((item) => item.id));
+  for (const action of ['open-candidate-final', 'view-process', 'toggle-details', 'open-report', 'open-history-final', 'open-trace', 'open-replica'] as const) {
+    if (available.has(action)) return action;
+  }
+  return 'home';
 }
 
 function setCancelUi(c: ControllerHandle, next: CancelUi, detail?: string): void {
   c.cancelUi = next;
   if (next === 'requesting') {
-    c.message = t(c.locale, 'cancellationRequested');
+    const stage = c.preparePhase === 'compare' || c.comparisonAttemptId ? 'cancellationStageComparison'
+      : c.preparePhase === 'check' || c.preparePhase === 'copy' || c.runPhase === 'recovery' ? 'cancellationStagePreparation'
+        : 'cancellationStageExecution';
+    c.message = t(c.locale, 'cancellationRequestedStage', { stage: t(c.locale, stage) });
     return;
   }
   if (next === 'failed') {
@@ -129,6 +148,7 @@ export async function freeze(
     });
     if (token !== c.generation) return;
     c.taskCase = result.taskCase;
+    c.preparedInspectionSnapshot = c.inspection ? JSON.stringify({ inspection: c.inspection, privacy: c.privacy }) : undefined;
     if (input.thenRun && c.canStartExperiment) {
       startRunSetup(c, { afterFreeze: true });
       return;
@@ -223,12 +243,12 @@ function phaseClocksOf(c: ControllerHandle): PhaseClockBounds {
 }
 
 function syncPhaseClocks(c: ControllerHandle, bounds: PhaseClockBounds): void {
-  if (bounds.recoveryStartedAt) c.recoveryStartedAt = bounds.recoveryStartedAt;
-  if (bounds.recoveryEndedAt) c.recoveryEndedAt = bounds.recoveryEndedAt;
-  if (bounds.candidateStartedAt) c.candidateStartedAt = bounds.candidateStartedAt;
-  if (bounds.candidateEndedAt) c.candidateEndedAt = bounds.candidateEndedAt;
-  if (bounds.comparisonStartedAt) c.comparisonStartedAt = bounds.comparisonStartedAt;
-  if (bounds.comparisonEndedAt) c.comparisonEndedAt = bounds.comparisonEndedAt;
+  c.recoveryStartedAt = bounds.recoveryStartedAt ?? 0;
+  c.recoveryEndedAt = bounds.recoveryEndedAt ?? 0;
+  c.candidateStartedAt = bounds.candidateStartedAt ?? 0;
+  c.candidateEndedAt = bounds.candidateEndedAt ?? 0;
+  c.comparisonStartedAt = bounds.comparisonStartedAt ?? 0;
+  c.comparisonEndedAt = bounds.comparisonEndedAt ?? 0;
 }
 
 function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
@@ -342,20 +362,16 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
       transcriptOk: Boolean(c.taskCase.initialInput?.text),
       hasAccept: view.hasAccept,
     });
+    const currentPreflight = preflightFromBaseline(view.baseline, c.preflight.resolved);
     c.preflight = {
-      ...c.preflight,
+      ...currentPreflight,
+      ...(c.preflight.contamination ? { contamination: c.preflight.contamination } : {}),
       comparisonClass: userStatus === 'recovered'
         ? 'recovered'
         : userStatus === 'partial'
           ? 'recovered_partial'
           : 'observational',
-      limitations: [
-        ...c.preflight.limitations,
-        ...(view.baseline.warnings ?? []),
-        ...(view.providerPreview?.reportText
-          ? [`Recovery preview: ${view.providerPreview.changedPaths.length} workspace paths changed; report captured as recovery.md.`]
-          : []),
-      ],
+      limitations: currentPreflight.limitations,
     };
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
@@ -408,6 +424,10 @@ async function settleRun(
   if (cancelBlocksCompareGate(c)) return handle.result;
   freezePhaseClock(c, 'candidate');
   c.result = partial;
+  c.resultDetails = false;
+  c.processExpanded = false;
+  c.timelineReadOffset = 0;
+  c.resultAction = defaultResultAction(c, partial);
   c.page = 'result';
   c.preparePhase = undefined;
   c.prepareDetail = undefined;
@@ -436,11 +456,16 @@ async function settleRun(
 
 function showRunResult(c: ControllerHandle, result: ExperimentResult): void {
   c.result = result;
+  c.resultDetails = false;
+  c.processExpanded = false;
+  c.timelineReadOffset = 0;
+  c.resultAction = defaultResultAction(c, result);
   const experimentRoot = result.experimentRoot ?? dirname(result.reportPath);
   const completedCase = result.taskCase ?? c.taskCase;
   c.recentExperiment = historyExperimentFromResult(result, {
     experimentRoot,
     taskCaseId: completedCase?.caseId ?? 'unknown',
+    ...(completedCase ? { taskCase: completedCase } : {}),
   });
   c.activeExperiment = undefined;
   c.page = 'result';
@@ -476,9 +501,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     if (!candidate) throw new Error('A candidate product and model must be selected before the isolated run starts.');
     const blocked = candidateStartBlocked(candidateGateFrom(c));
     if (blocked) throw new Error(blocked);
-    c.preflight = { ...c.preflight, resolved: await c.workflow.verifyCandidate(candidate) };
-    if (token !== c.generation) return;
-    abort.signal.throwIfAborted();
+    if (!await verifyConfirmedModel(c, candidate, token, abort.signal)) return;
     resetRunDiagnostics(c);
     c.runPhase = 'candidate_starting';
     c.preparePhase = 'copy';
@@ -519,7 +542,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     c.prepareDetail = undefined;
     c.activeExperiment = handle;
     if (c.cancelUi === 'requesting' || c.cancelUi === 'failed') await handle.cancel();
-    c.message = c.cancelUi === 'requesting' ? t(c.locale, 'cancellationRequested') : c.cancelUi === 'failed' ? c.message : '';
+    c.message = c.cancelUi === 'requesting' || c.cancelUi === 'failed' ? c.message : '';
     c.render(true);
     const result = await settleRun(c, handle, token);
     if (!result || token !== c.generation) return;
@@ -545,6 +568,21 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
   }
   stopRunClock(c);
   c.render(true);
+}
+
+async function verifyConfirmedModel(c: ControllerHandle, candidate: CandidateSpec, token: number, signal: AbortSignal): Promise<boolean> {
+  if (!c.workflow || !c.preflight) return false;
+  const previous = c.preflight.resolved.resolvedModel;
+  const verified = await c.workflow.verifyCandidate(candidate);
+  if (token !== c.generation) return false;
+  signal.throwIfAborted();
+  c.preflight = { ...c.preflight, resolved: verified };
+  if (verified.resolvedModel === previous) return true;
+  c.page = 'confirm';
+  c.confirmStartArmed = true;
+  c.message = t(c.locale, 'modelChangedReconfirm', { previous, next: verified.resolvedModel });
+  c.render(true);
+  return false;
 }
 
 export { candidateStartBlocked, type CandidateStartGate } from "../application/candidate-start.js";

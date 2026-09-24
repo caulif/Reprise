@@ -40,7 +40,7 @@ test('live and history projections share semantic fields for the same fixture', 
   const live = {
     experimentRoot,
     reportPath: diagnostic,
-    taskCase: { caseId: 'case-1' },
+    taskCase: { caseId: 'case-1', initialInput: { id: 'message-1', role: 'user', text: 'Create the slides' } },
     record: {
       attempt: { runId: 'run-1', createdAt: '2026-09-20T00:00:00.000Z' },
       outcome: {
@@ -64,6 +64,7 @@ test('live and history projections share semantic fields for the same fixture', 
   };
 
   assert.equal(fromLive.outcome, 'completed');
+  assert.equal(fromLive.taskTitle, 'Create the slides');
   assert.equal(fromLive.taskStatus, 'apparently_completed');
   assert.equal(fromLive.cleanupStatus, 'unknown');
   assert.equal(fromLive.comparisonStatus, 'cancelled');

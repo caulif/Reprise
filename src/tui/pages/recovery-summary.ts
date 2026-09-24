@@ -1,7 +1,7 @@
 import { truncateFit } from '../format.js';
 import { t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
-import { kv } from '../widgets.js';
+import { kv, wrapBodyLine } from '../widgets.js';
 import type { RecoveryPreviewModel, RunningModel } from './run.js';
 
 const MAX_SUMMARY_LINES = 5;
@@ -12,35 +12,39 @@ export function renderRecoverySummary(
   width: number,
   recovery: RecoveryPreviewModel | undefined,
   locale: Locale,
+  expanded = false,
 ): string[] {
   if (!recovery) return [];
   const lines: string[] = [];
   lines.push(kv(theme, t(locale, 'recoveryField'), recoveryStatusWord(recovery.status, locale), width));
-  if (recovery.summary) {
+  if (recovery.summary && expanded) {
     lines.push(kv(
       theme,
       t(locale, 'recoverySummaryField'),
-      truncateFit(recovery.summary, Math.max(16, width - 16), theme.glyphs.ellipsis),
+      recovery.summary,
       width,
     ));
   }
   if (recovery.failureSummary) {
-    lines.push(theme.style.warn(` ${theme.glyphs.warn}  ${truncateFit(recovery.failureSummary, Math.max(12, width - 4), theme.glyphs.ellipsis)}`));
+    lines.push(...wrapBodyLine(recovery.failureSummary, Math.max(12, width - 4)).map((line) => theme.style.warn(` ${theme.glyphs.warn}  ${line}`)));
   }
-  if (recovery.failureCategory) {
+  if (recovery.failureCategory && expanded) {
     lines.push(kv(theme, t(locale, 'recoveryFailureType'), t(locale, recovery.failureCategory === 'transient' ? 'recoveryFailureTransient' : recovery.failureCategory === 'authentication' ? 'recoveryFailureAuthentication' : recovery.failureCategory === 'source_changed' ? 'recoveryFailureSourceChanged' : recovery.failureCategory === 'staging_invalid' ? 'recoveryFailureStaging' : recovery.failureCategory === 'protocol' ? 'recoveryFailureProtocol' : 'recoveryFailureOther'), width));
     lines.push(kv(theme, t(locale, 'recoveryNextStep'), t(locale, recovery.failureAction === 'retry' ? 'recoveryActionRetry' : recovery.failureAction === 'config' ? 'recoveryActionConfig' : recovery.failureAction === 'refreeze' ? 'recoveryActionRefreeze' : 'recoveryActionDiagnose'), width));
   }
-  if (recovery.candidateStarted === false) lines.push(theme.style.muted(` ${t(locale, 'recoveryCandidateNotStarted')}`));
-  if (recovery.sourceUnchanged) lines.push(theme.style.muted(` ${t(locale, 'recoverySourceSafe')}`));
+  if (expanded && recovery.candidateStarted === false) lines.push(theme.style.muted(` ${t(locale, 'recoveryCandidateNotStarted')}`));
+  if (expanded && recovery.sourceUnchanged) lines.push(theme.style.muted(` ${t(locale, 'recoverySourceSafe')}`));
   const unresolved = recovery.unresolved.length;
   if (unresolved > 0) {
     lines.push(kv(theme, t(locale, 'recoveryUnresolvedField'), String(unresolved), width));
+    for (const item of expanded ? recovery.unresolved : recovery.unresolved.slice(0, 1)) {
+      lines.push(...wrapBodyLine(item, Math.max(12, width - 4)).map((line) => theme.style.warn(` ${theme.glyphs.warn}  ${line}`)));
+    }
   }
-  if (recovery.changedPathCount > 0) {
+  if (expanded && recovery.changedPathCount > 0) {
     lines.push(kv(theme, t(locale, 'recoveryChangedField'), String(recovery.changedPathCount), width));
   }
-  return lines.slice(0, MAX_SUMMARY_LINES);
+  return lines;
 }
 
 /** Prepare/check/copy surface — separated from the activity timeline. */

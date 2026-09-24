@@ -26,8 +26,13 @@ function event(type: string, payload: unknown): EventEnvelope {
 }
 
 test('visible assistant text drops JSON envelopes and thinking-only content', () => {
-  assert.equal(visibleAssistantText([{ type: 'text', text: '{"status":"recovered"}' }]), '');
-  assert.equal(isStructuredEnvelope('{"type":"send","message":"hi"}'), true);
+  assert.equal(visibleAssistantText([{ type: 'text', text: '{"status":"ready","summary":"Files are ready","unresolved":[]}' }]), '');
+  assert.equal(isStructuredEnvelope('{"type":"send","message":"hi","intent":"continue"}'), true);
+  assert.equal(isStructuredEnvelope('{"type":"unknown-event","message":"keep me"}'), false);
+  assert.equal(visibleAssistantText([{ type: 'text', text: '{"status":"ok","note":"keep me"}' }]), '{"status":"ok","note":"keep me"}');
+  assert.equal(visibleAssistantText([{ type: 'text', text: '{"status":"ready","message":"Actual user-visible content"}' }]), '{"status":"ready","message":"Actual user-visible content"}');
+  assert.equal(visibleAssistantText([{ type: 'text', text: '{"type":"send","message":"Actual text","custom":true}' }]), '{"type":"send","message":"Actual text","custom":true}');
+  assert.equal(visibleAssistantText([{ type: 'text', text: '{"status":"recovered"}' }]), '{"status":"recovered"}');
   assert.equal(visibleAssistantText([{ type: 'thinking', text: 'secret' }]), '');
   assert.match(visibleAssistantText([{ type: 'text', text: '先看隔离副本是不是仓库。' }]) ?? '', /隔离副本/);
   assert.equal(visibleAssistantText([{ type: 'text', text: '<think>hidden</think>{"type":"done","reason":"satisfied"}' }]), '');
@@ -173,7 +178,7 @@ test('comparison completion shows headline not limitation codes', () => {
     status: 'completed',
     value: { status: 'completed', headline: '候选只寒暄，没有做出两页 PPT。', limitationCodes: ['isolation'], reportPath: 'report.html' },
   }));
-  assert.equal(row?.title, '对照完成');
+  assert.equal(row?.title, '比较已完成');
   assert.match(row?.detail ?? '', /寒暄/);
   assert.doesNotMatch(row?.title ?? '', /report.html/);
 });
@@ -235,7 +240,7 @@ test('comparison narrate stays on the compare surface without Input cards', () =
   }).join('\n');
   assert.doesNotMatch(painted, /第 4 轮/);
   assert.doesNotMatch(painted, /inspect artifact/);
-  assert.match(painted, /对照Agent/);
+  assert.match(painted, /正在比较结果/);
 });
 
 test('candidate surface hides recovery blocks, compact, and session UUID', () => {
@@ -271,11 +276,11 @@ test('candidate surface hides recovery blocks, compact, and session UUID', () =>
 test('mixed assistant prose peels a trailing send envelope', () => {
   assert.match(visibleAssistantText([{
     type: 'text',
-    text: '先投递探测。\n{"type":"send","message":"在吗"}',
+    text: '先投递探测。\n{"type":"send","message":"在吗","intent":"verify"}',
   }]) ?? '', /先投递探测/);
   assert.doesNotMatch(visibleAssistantText([{
     type: 'text',
-    text: '先投递探测。\n{"type":"send","message":"在吗"}',
+    text: '先投递探测。\n{"type":"send","message":"在吗","intent":"verify"}',
   }]) ?? '', /"type":"send"/);
 });
 
@@ -419,6 +424,23 @@ test('clicking a fold hit writes that itemId into expandedFolds', () => {
     locale: 'zh',
   }).join('\n');
   assert.match(painted, /secret-leaf\.md/);
+});
+
+test('errors and uncertain deliveries remain visible after three later turns', () => {
+  const entries: TimelineEntry[] = [];
+  for (let turn = 0; turn < 5; turn += 1) {
+    entries.push({ sequence: turn * 10, occurredAt: '', source: 'CONTROLLER', title: `Decision ${turn}`, verb: 'decide', role: 'controller', turnId: `turn-${turn}` });
+    entries.push({ sequence: turn * 10 + 1, occurredAt: '', source: 'CONTROLLER', title: `Read ${turn}`, kind: 'investigate', role: 'controller', turnId: `turn-${turn}` });
+    if (turn === 0) {
+      entries.push({ sequence: 2, occurredAt: '', source: 'CONTROLLER', title: 'Protocol failed', level: 'error', role: 'controller', turnId: 'turn-0' });
+      entries.push({ sequence: 3, occurredAt: '', source: 'TARGET', title: 'Delivery unconfirmed', level: 'warning', linkUnknown: true, role: 'candidate', turnId: 'turn-0' });
+    }
+  }
+  const folded = foldProcessEntries(entries, new Set());
+  assert.ok(folded.some((entry) => entry.title === 'Protocol failed'));
+  assert.ok(folded.some((entry) => entry.title === 'Delivery unconfirmed'));
+  assert.ok(folded.some((entry) => entry.kind === 'fold'));
+  assert.ok(!folded.some((entry) => entry.title === 'Read 0'));
 });
 
 test('timeline projection never reads message.content', () => {

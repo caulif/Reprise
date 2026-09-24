@@ -12,7 +12,7 @@ import type { ResultPathLinks } from '../../src/application/result-paths.js';
 import type { ResultAction } from '../../src/tui/page-input.js';
 import { keepSelectedVisible } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
-import { measureWorkbenchGeometry, workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
+import { measureWorkbenchGeometry, renderWorkbench, workbenchBodyOrigin, type WorkbenchView } from '../../src/tui/workbench.js';
 import { bodyCellAt } from '../../src/tui/workbench-layout.js';
 
 function visibleSpan(line: string, needle: string): { x0: number; x1: number } | undefined {
@@ -82,7 +82,7 @@ test('result pointer hits OSC 8 short labels and ignores blank rows', () => {
   assert.ok(hitCol > 0);
   assert.equal(resultPointerAction(lines, reportLine, hitCol, 'en', pathLinks, rowHits), 'open-report');
   assert.equal(resultPointerAction(lines, 0, 2, 'en', pathLinks, rowHits), undefined);
-  const compareLine = lines.findIndex((line) => line.includes('Generate comparison report'));
+  const compareLine = lines.findIndex((line) => line.includes('Compare with original result'));
   assert.ok(compareLine >= 0);
   assert.equal(resultPointerAction(lines, compareLine, 4, 'en', pathLinks, rowHits), 'compare');
 });
@@ -104,7 +104,7 @@ test('result pointer matches final framed screen coords without OSC 8', () => {
     decision: { status: 'completed' },
     comparison: { result: { status: 'skipped' } },
   } as never, 'en');
-  const row = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
+  const row = lines.findIndex((line) => line.includes('deck.html') && line.includes('Original output'));
   assert.ok(row >= 0);
   const line = lines[row] ?? '';
   const value = visibleSpan(line, 'deck.html');
@@ -112,8 +112,8 @@ test('result pointer matches final framed screen coords without OSC 8', () => {
   assert.equal(hitFileLink(line, value.x0), undefined);
   assert.equal(pointerAt(lines, row, value.x0, 'en', pathLinks, rowHits), 'open-history-final');
   assert.equal(pointerAt(lines, row, value.x1, 'en', pathLinks, rowHits), 'open-history-final');
-  assert.equal(pointerAt(lines, row, value.x0 - 1, 'en', pathLinks, rowHits), undefined);
-  assert.equal(pointerAt(lines, row, value.x0 - 2, 'en', pathLinks, rowHits), undefined);
+  assert.equal(pointerAt(lines, row, value.x0 - 1, 'en', pathLinks, rowHits), 'open-history-final');
+  assert.equal(pointerAt(lines, row, 0, 'en', pathLinks, rowHits), undefined);
 });
 
 test('result pointer stays aligned when metrics wrap at compact width', () => {
@@ -138,10 +138,10 @@ test('result pointer stays aligned when metrics wrap at compact width', () => {
   for (const width of [48, 60]) {
     const theme = createTheme(width, false);
     assert.equal(theme.framed, false);
-    const { lines, rowHits } = renderResultWithHits(theme, width, fixture, 'en');
+    const { lines, rowHits } = renderResultWithHits(theme, width, fixture, 'en', undefined, false, { detailsExpanded: true });
     const reportRow = lines.findIndex((line) => {
       const plain = stripTerminalSequences(line);
-      return plain.includes('report.html') && plain.includes('Report');
+      return plain.includes('report.html') && plain.includes('Open report');
     });
     const historyRow = lines.findIndex((line) => stripTerminalSequences(line).includes('deck.html'));
     const metricsRow = lines.findIndex((line) => stripTerminalSequences(line).includes('4096'));
@@ -180,16 +180,16 @@ test('result pointer matches final unframed screen coords without OSC 8', () => 
     decision: { status: 'completed' },
     comparison: { result: { status: 'skipped' } },
   } as never, 'zh');
-  const row = lines.findIndex((line) => line.includes('environment/runs/run-1/') && line.includes('隔离副本'));
+  const row = lines.findIndex((line) => line.includes('run-1') && line.includes('打开副本'));
   assert.ok(row >= 0);
   const line = lines[row] ?? '';
-  const value = visibleSpan(line, 'environment/runs/run-1/');
+  const value = visibleSpan(line, 'run-1');
   assert.ok(value);
   assert.equal(hitFileLink(line, value.x0), undefined);
   assert.equal(pointerAt(lines, row, value.x0, 'zh', pathLinks, rowHits), 'open-replica');
   assert.equal(pointerAt(lines, row, value.x1, 'zh', pathLinks, rowHits), 'open-replica');
-  assert.equal(pointerAt(lines, row, value.x0 - 1, 'zh', pathLinks, rowHits), undefined);
-  assert.equal(pointerAt(lines, row, value.x0 - 2, 'zh', pathLinks, rowHits), undefined);
+  assert.equal(pointerAt(lines, row, value.x0 - 1, 'zh', pathLinks, rowHits), 'open-replica');
+  assert.equal(pointerAt(lines, row, 0, 'zh', pathLinks, rowHits), undefined);
 });
 
 test('result pointer treats environment baselines html as history final', () => {
@@ -215,7 +215,7 @@ test('result pointer treats environment baselines html as history final', () => 
     decision: { status: 'completed' },
     comparison: { result: { status: 'completed', value: { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, sessionId: 'cmp-1' } },
   } as never, 'en');
-  const historyLine = lines.findIndex((line) => line.includes('deck.html') && line.includes('History'));
+  const historyLine = lines.findIndex((line) => line.includes('deck.html') && line.includes('Original output'));
   assert.ok(historyLine >= 0);
   let hitCol = 0;
   for (let col = 1; col <= 120; col += 1) {
@@ -241,10 +241,11 @@ const resultFixture = {
 } as never;
 
 function resultController(opened: { report: number; artifact?: string | undefined }): ControllerHandle {
-  const view: WorkbenchView = { page: 'result', cwd: 'C:/', hasApiConfig: true, hasTaskCase: false, message: '' };
+  const view: WorkbenchView = { page: 'result', cwd: 'C:/', hasApiConfig: true, hasTaskCase: false, message: '', result: resultFixture };
   return {
     locale: 'en',
     result: resultFixture,
+    timeline: [],
     compareChoice: undefined,
     timelineReadOffset: 0,
     columns: () => 120,
@@ -293,7 +294,7 @@ test('result SGR click on history final opens the clicked href', () => {
   handle.result = resultWithBaselines;
   const origin = workbenchBodyOrigin(handle.view(), 120, 40);
   const lines = renderResult(createTheme(120), 120, resultWithBaselines, 'en', undefined, false);
-  const historyLine = lines.findIndex((line) => /History final/.test(line) && line.includes('deck.html'));
+  const historyLine = lines.findIndex((line) => /Original output/.test(line) && line.includes('deck.html'));
   assert.ok(historyLine >= 0);
   const href = pathToFileURL(baselinePath).href;
   let hitCol = 0;
@@ -337,7 +338,7 @@ test('result pointer uses the same comparison timing rows as the visible result'
   const result = Object.assign({}, resultFixture, { facts: { elapsedMs: 70_000, wallClockMs: 10_000 } });
   const phaseClocks = { comparisonStartedAt: 1_000, comparisonEndedAt: 61_000 };
   handle.result = result;
-  handle.view = () => ({ page: 'result', cwd: 'C:/', hasApiConfig: true, hasTaskCase: false, message: '', running: { phaseClocks } }) as WorkbenchView;
+  handle.view = () => ({ page: 'result', cwd: 'C:/', hasApiConfig: true, hasTaskCase: false, message: '', running: { entries: [], phaseClocks } }) as unknown as WorkbenchView;
   const origin = workbenchBodyOrigin(handle.view(), 120, 40);
   const lines = renderResult(createTheme(120), 120, result, 'en', undefined, false, { phaseClocks });
   const reportLine = lines.findIndex((line) => line.includes('report.html'));
@@ -358,13 +359,45 @@ test('result SGR click on header chrome does not open the report', () => {
   assert.equal(opened.report, 0);
 });
 
+test('result pointer keeps technical-details hit aligned when process action is visible', () => {
+  setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+  const handle = resultController({ report: 0 });
+  handle.timeline = [{ sequence: 1, occurredAt: '', source: 'TARGET', title: 'A recorded step' }];
+  handle.resultDetails = false;
+  handle.resultAction = 'open-report';
+  handle.view = () => ({
+    page: 'result', cwd: 'C:/', hasApiConfig: true, hasTaskCase: true, message: '',
+    result: handle.result,
+    resultAction: handle.resultAction,
+    running: { entries: handle.timeline, phaseClocks: {} },
+  }) as unknown as WorkbenchView;
+  const lines = renderWorkbench(handle.view(), 120, 40);
+  const detailRow = lines.findIndex((line) => line.includes('Technical details'));
+  assert.ok(detailRow > 0);
+  assert.ok(lines.some((line) => /View .*process/.test(line)));
+  applyResultPointer(handle, `\x1b[<0;6;${detailRow + 1}M`);
+  assert.equal(handle.resultDetails, true);
+  assert.equal(handle.processExpanded, undefined);
+});
+
 test('result SGR wheel changes the reading offset', () => {
   const opened = { report: 0 };
   const handle = resultController(opened);
+  handle.viewport = () => ({ height: 8 });
+  handle.resultDetails = true;
+  handle.view = () => ({
+    page: 'result', cwd: 'C:/', hasApiConfig: true, hasTaskCase: false, message: '',
+    result: handle.result, resultDetails: true,
+  }) as WorkbenchView;
   applyResultPointer(handle, '\x1b[<65;1;2M');
   assert.equal(handle.timelineReadOffset, 1);
+  for (let index = 0; index < 50; index += 1) applyResultPointer(handle, '\x1b[<65;1;2M');
+  const bottom = handle.timelineReadOffset;
+  assert.ok(bottom > 1);
+  applyResultPointer(handle, '\x1b[<65;1;2M');
+  assert.equal(handle.timelineReadOffset, bottom);
   applyResultPointer(handle, '\x1b[<64;1;2M');
-  assert.equal(handle.timelineReadOffset, 0);
+  assert.equal(handle.timelineReadOffset, bottom - 1);
 });
 
 test('viewport TUI swallows SGR wheel unless yielded to the application', () => {

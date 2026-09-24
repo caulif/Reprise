@@ -98,7 +98,7 @@ test('history detail pointer opens the clicked HTML path for previous report and
       const hit = historyDetailPointerAction(lines, row, col, item);
       if (hit?.action === 'open-report' && hit.reportPath === diagnostic) diagHit = hit;
       if (hit?.action === 'open-report' && hit.reportPath === previous) prevHit = hit;
-      if (hit?.action === 'open-local' && /Path/.test(line)) pathHit = hit;
+      if (hit?.action === 'open-local' && /Path|位置/.test(line)) pathHit = hit;
     }
   }
   assert.deepEqual(diagHit, { action: 'open-report', reportPath: diagnostic });

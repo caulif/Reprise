@@ -76,15 +76,12 @@ test("Codex intake TUI uses an ASCII narrow-terminal fallback and states the min
 
   await app.start();
   const narrow = document?.render(60).join("\n") ?? "";
-  assert.match(narrow, /New replay|新建回放|\/ command|\/命令|More|更多/);
+  assert.match(narrow, /Redo a task|重做任务|\/ command|\/命令|More|更多/);
   assert.doesNotMatch(narrow, /[┌┐└┘│─❯●✓…]/);
-  assert.match(narrow, /New replay|新建回放|Internal collab model|内部协作模型|Internal model|内部模型/);
-  assert.match(narrow.replace(/\u001b\[[0-9;]*m/g, ''), /^Reprise v0\.1\.0/m);
+  assert.match(narrow, /Redo a task|重做任务|Reprise model|Reprise 使用的模型/);
+  assert.match(narrow.replace(/\u001b\[[0-9;]*m/g, ''), /^Reprise/m);
   assert.doesNotMatch(narrow.split("\n")[0] ?? "", /No configured model|gpt-/);
-  assert.match(
-    narrow.split("\n")[1] ?? "",
-    /No configured model|API not configured|尚未配置模型/,
-  );
+  assert.match(narrow, /No credentials|Needs credentials|需要凭据/);
   assert.match(
     document?.render(31).join("\n") ?? "",
     /Resize to at least 32 columns|请把宽度调到至少 32 列/,
@@ -118,7 +115,7 @@ test("Codex intake TUI uses framed panels at normal terminal widths", async (t) 
 
   await app.start();
   const wide = document?.render(120).join("\n") ?? "";
-  assert.match(wide, /New replay|新建回放|\/ command|\/命令|More|更多/);
+  assert.match(wide, /Redo a task|重做任务|\/ command|\/命令|More|更多/);
   assert.match(wide, /\/config|\/intake|\/lang/);
 });
 
@@ -231,16 +228,16 @@ test("Codex intake TUI only reads before explicit freeze and leaves no ambiguous
   });
 
   await app.start();
-  assert.match(rendered, /New replay|新建回放|\/ command|\/命令|More|更多/);
+  assert.match(rendered, /Redo a task|重做任务|\/ command|\/命令|More|更多/);
   assert.match(rendered, /\/intake|i\s+Import a Codex session/);
   await enterIntake(app);
   await waitFor(() => /Fix the bug\./.test(rendered));
   assert.equal(await readFile(source, "utf8"), raw);
 
   app.handleInput("\r");
-  await waitFor(() => /Task text:|任务原文：/.test(rendered));
+  await waitFor(() => app.page === 'inspection');
   assert.match(rendered, /Task text:|任务原文：/);
-  assert.match(rendered, /Review session|核对会话/);
+  assert.match(rendered, /Review task|核对任务/);
   assert.equal(await readFile(source, "utf8"), raw);
 
   app.handleInput("\r");

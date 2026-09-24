@@ -1,0 +1,8 @@
+Reprise
+ 选择一段历史对话，让 AI 工具重新完成其中的任务。
+
+ ❯ 重做任务             /intake
+   运行记录             /history  尚无运行记录
+   Reprise 模型设置     /config  需要凭据
+ 语言：中文。/lang en 可改回英文。
+ [↑↓] 选择动作  [Enter] 执行  [/] 命令  [Ctrl+C] 退出

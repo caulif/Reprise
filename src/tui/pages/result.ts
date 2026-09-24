@@ -4,14 +4,16 @@ import type { ExperimentResult } from '../../application/experiment.js';
 import { resolveResultPathLinks, type ResultPathLinks } from '../../application/result-paths.js';
 import { type ActionArtifacts, resultFooterHints } from '../action-model.js';
 import { localPathFromFileUrl } from '../open-report.js';
-import { compact, hitFileLink } from '../format.js';
+import { hitFileLink } from '../format.js';
 import { formatHarnessFailure, t, type Locale } from '../i18n.js';
 import type { Theme } from '../theme.js';
 import type { WorkbenchSurfaceScope } from '../workbench-layout.js';
-import { kv, kvLinkBlock, panel, panelWithHits, wrapBodyLine, type KvLinkBlock } from '../widgets.js';
+import { kv, kvLinkBlock, panel, panelWithHits, wrapBodyLine } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
 import { candidateModelLabel, comparisonPresentation, displayCleanupStatus, displayTaskStatus, displayTerminationKind } from '../display-copy.js';
 import type { PhaseClockBounds } from '../phase-state.js';
+import { artifactsFromResult, listActions } from '../action-model.js';
+import { visibleWidth } from '@earendil-works/pi-tui';
 
 export type { ActionArtifacts };
 
@@ -21,6 +23,9 @@ export type ResultRenderOptions = {
   readonly surfaceScope?: WorkbenchSurfaceScope;
   readonly processExpanded?: boolean;
   readonly phaseClocks?: PhaseClockBounds;
+  readonly selectedAction?: ResultAction;
+  readonly detailsExpanded?: boolean;
+  readonly processAvailable?: boolean;
 };
 
 export function renderResult(
@@ -47,7 +52,6 @@ export function renderResultWithHits(
   const kind = result.record.outcome.termination.kind;
   const vacant = t(locale, 'resultMissingArtifact');
   const comparison = result.comparison.result;
-  const reportKind = reportLinkKind(comparison);
   const experimentRoot = result.experimentRoot ?? (result.reportPath ? parentPath(result.reportPath) : undefined);
   const paths = resolveResultPathLinks(result);
   const runId = result.record.attempt?.runId;
@@ -55,48 +59,56 @@ export function renderResultWithHits(
   const body: string[] = [];
   const bodyHits = new Map<number, readonly ResultPointerHit[]>();
   const push = (line: string) => { body.push(line); };
-  const pushLink = (action: ResultAction, block: KvLinkBlock) => {
-    for (let index = 0; index < block.lines.length; index += 1) {
-      const hit = block.hits[index];
-      if (hit) bodyHits.set(body.length, [{ action, ...hit }]);
-      body.push(block.lines[index] ?? '');
+  const pushAction = (action: ResultAction, label: string, path?: string) => {
+    const marker = options?.selectedAction === action ? theme.glyphs.cursor : ' ';
+    const value = path ? shortLabel(path, experimentRoot, vacant) : '';
+    const block = path ? kvLinkBlock(theme, `${marker} ${label}`, value, path, width) : undefined;
+    for (const line of block?.lines ?? [` ${marker} ${label}`]) {
+      bodyHits.set(body.length, [{ action, x0: 1, x1: Math.max(1, visibleWidth(line)) }]);
+      body.push(line);
     }
   };
 
-  // Four facts first (task / termination / cleanup / comparison), then primary actions.
+  // Normal technical completion stays in details; failures remain on the first screen.
   if (kind !== 'completed') {
     push(theme.style.danger(` ${theme.glyphs.warn} ${terminationWord(kind, locale)}`));
   }
   push(kv(theme, t(locale, 'resultTask'), taskAssessmentWord(result.record.outcome.task.status, locale), width - 2));
-  push(kv(
-    theme,
-    t(locale, 'resultTermination'),
-    `${terminationWord(kind, locale)} · ${result.record.outcome.termination.code}`,
-    width - 2,
-  ));
-  push(kv(theme, t(locale, 'resultCleanup'), cleanupWord(result.record.outcome.cleanup?.status, vacant, locale), width - 2));
+  if (kind !== 'completed') push(kv(theme, t(locale, 'resultTermination'), terminationWord(kind, locale), width - 2));
+  if (result.record.outcome.cleanup?.status !== 'complete') {
+    push(kv(theme, t(locale, 'resultCleanup'), cleanupWord(result.record.outcome.cleanup?.status, vacant, locale), width - 2));
+  }
   push(kv(theme, t(locale, 'resultComparison'), comparisonWord(comparison, locale), width - 2));
-  push(kv(theme, t(locale, 'nextStepField'), nextStepWord(result, comparePending, locale), width - 2));
 
 
   const candidateLabel = candidateDisplayLabel(result, productLabel);
   if (candidateLabel) push(kv(theme, t(locale, 'candidateLabel'), candidateLabel, width - 2));
 
-  for (const row of metricsRows(theme, result, locale, options?.phaseClocks, width)) push(row);
-
-  if (comparePending) {
-    push('');
-    const compareLine = ` ${theme.style.accent(t(locale, 'hintCompare'))}`;
-    bodyHits.set(body.length, [{ action: 'compare', x0: 1, x1: Math.max(1, visibleCompareEnd(compareLine)) }]);
-    push(compareLine);
+  const metrics = metricsRows(theme, result, locale, options?.phaseClocks, width);
+  if (metrics[0]) push(metrics[0]);
+  push('');
+  const actions = listActions({
+    page: 'result', locale,
+    mode: { comparePending, processAvailable: Boolean(options?.processAvailable) },
+    artifacts: artifactsFromResult(result),
+  });
+  for (const action of actions) {
+    if (!action.enabled || action.id === 'activate-primary' || action.id === 'show-help') continue;
+    const id = action.id as ResultAction;
+    const path = id === 'open-candidate-final' ? paths.candidateFinal
+      : id === 'open-report' ? paths.report
+        : id === 'open-history-final' ? paths.historyFinal
+          : id === 'open-trace' ? paths.trace
+            : id === 'open-replica' ? paths.replica : undefined;
+    pushAction(id, t(locale, action.labelKey), path);
   }
-
-  const reportLabel = reportKind === 'diagnostic' ? t(locale, 'resultDiagnostic')
-    : reportKind === 'missing' ? t(locale, 'resultReport')
-      : t(locale, 'resultReport');
-  pushLink('open-report', kvLinkBlock(theme, reportLabel, shortLabel(paths.report, experimentRoot, vacant), paths.report, width));
-  pushLink('open-candidate-final', kvLinkBlock(theme, t(locale, 'resultCandidateFinal'), shortLabel(paths.candidateFinal, experimentRoot, vacant), paths.candidateFinal, width));
-  pushLink('open-history-final', kvLinkBlock(theme, t(locale, 'resultHistoryFinal'), shortLabel(paths.historyFinal, experimentRoot, vacant), paths.historyFinal, width));
+  if (options?.detailsExpanded) {
+    push('');
+    push(kv(theme, t(locale, 'resultTermination'), `${terminationWord(kind, locale)} · ${result.record.outcome.termination.code}`, width - 2));
+    push(kv(theme, t(locale, 'resultCleanup'), cleanupWord(result.record.outcome.cleanup?.status, vacant, locale), width - 2));
+    for (const row of metrics.slice(1)) push(row);
+    if (runId) push(kv(theme, 'Run ID', runId, width - 2));
+  }
 
   const headline = comparison.status === 'skipped' ? undefined : envelopeHeadline(result);
   const summary = explainOutcome(result, inner, productLabel ?? t(locale, 'unknownAgent'), locale);
@@ -110,14 +122,7 @@ export function renderResultWithHits(
     if (comparisonFailure) for (const line of wrapBodyLine(comparisonFailure, inner)) push(` ${line}`);
   }
 
-  // Trace/replica stay secondary — full paths live in details via hit targets.
-  pushLink('open-trace', kvLinkBlock(theme, t(locale, 'resultTraceSecondary'), tracePath(runId, theme, width, vacant), paths.trace, width));
-  pushLink('open-replica', kvLinkBlock(theme, t(locale, 'resultReplicaSecondary'), replicaLabel(runId, paths.replica, experimentRoot, theme, width, vacant), paths.replica, width));
-  return panelWithHits(theme, `${t(locale, 'resultTitle')} ${theme.glyphs.h} ${kind}`, body, width, bodyHits);
-}
-
-function visibleCompareEnd(line: string): number {
-  return Math.max(1, line.replace(/\x1b\[[0-9;]*m/g, '').length - 1);
+  return panelWithHits(theme, t(locale, 'resultTitle'), body, width, bodyHits);
 }
 
 export function resultHints(
@@ -225,18 +230,6 @@ function cleanupWord(status: string | undefined, vacant: string, locale: Locale)
   return displayCleanupStatus(status, locale);
 }
 
-function nextStepWord(_result: ExperimentResult, comparePending: boolean, locale: Locale): string {
-  if (comparePending) return t(locale, 'nextCompareWhenReady');
-  return t(locale, 'nextOpenArtifacts');
-}
-
-function reportLinkKind(comparison: ExperimentResult['comparison']['result']): 'report' | 'diagnostic' | 'missing' {
-  if (comparison.status === 'failed' || comparison.status === 'cancelled') return 'diagnostic';
-  if (comparison.status === 'completed') return 'report';
-  if (comparison.status === 'skipped') return 'missing';
-  return 'missing';
-}
-
 function comparisonWord(comparison: ExperimentResult['comparison']['result'], locale: Locale): string {
   return comparisonPresentation(comparison, locale).word;
 }
@@ -272,11 +265,11 @@ function explainOutcome(result: ExperimentResult, width: number, product: string
     if (failure.origin === 'controller' && result.decision.status === 'failed' && result.decision.failure?.kind) {
       return wrapBodyLine(formatHarnessFailure(locale, result.record.outcome.task.status === 'not_assessed' ? 'opening' : 'controller', result.decision.failure.kind), width);
     }
-    const origin = failure.origin === 'controller' ? 'Controller' : failure.origin === 'runtime' ? product : failure.origin;
+    const origin = failure.origin === 'controller' ? 'Reprise' : failure.origin === 'runtime' ? product : failure.origin;
     const lines = failure.code === 'failed.runtime.upstream_unavailable'
       ? [t(locale, 'upstreamUnavailable'), `${origin}: ${failure.message}`]
       : /invalid JSON|schema validation failed/i.test(failure.message)
-      ? [`${origin}: ${failure.message}`, `The Candidate turn still ran. This is a Harness-agent output error, not a ${product} runtime crash.`]
+      ? [`${origin}: ${failure.message}`, t(locale, 'resultModelOutputError', { product })]
       : [`${origin}: ${failure.message}`];
     return lines.flatMap((line) => wrapBodyLine(line, width));
   }
@@ -286,14 +279,13 @@ function explainOutcome(result: ExperimentResult, width: number, product: string
   }
   const compared = result.comparison.result.status !== 'skipped';
   if (result.record.outcome.termination.kind === 'blocked') {
-    return wrapBodyLine(compared
-      ? 'Candidate did not finish the original task. Comparison still ran. Open the report from the short label.'
-      : 'Candidate did not finish the original task.', width);
+    const summary = t(locale, 'resultTaskBlocked');
+    return wrapBodyLine(compared ? `${summary} ${t(locale, 'resultComparedAfterLimit')}` : summary, width);
   }
   if (result.record.outcome.termination.kind === 'limit_reached') {
     const code = result.record.outcome.termination.code;
-    const cap = code === 'limit.target_turns' ? 'Candidate reached the target turn limit.' : `Candidate reached a run limit (${code}).`;
-    return wrapBodyLine(compared ? `${cap} Comparison still ran.` : cap, width);
+    const cap = code === 'limit.target_turns' ? t(locale, 'resultLimitTurns') : t(locale, 'resultLimitOther', { code });
+    return wrapBodyLine(compared ? `${cap} ${t(locale, 'resultComparedAfterLimit')}` : cap, width);
   }
   return undefined;
 }
@@ -320,24 +312,4 @@ function shortLabel(path: string | undefined, experimentRoot: string | undefined
   const relative = shortPath(path, experimentRoot, vacant);
   const parts = asPosixPath(relative).split('/').filter(Boolean);
   return parts[parts.length - 1] ?? relative;
-}
-
-function runFolderLabel(prefix: string, runId: string | undefined, theme: Theme, width: number, vacant: string): string {
-  if (!runId) return vacant;
-  const full = `${prefix}${runId}/`;
-  const inner = Math.max(1, width - (theme.framed ? 2 : 3));
-  const valueWidth = Math.max(8, inner - 14);
-  if (full.length <= valueWidth) return full;
-  return `${prefix}${compact(runId, Math.max(10, valueWidth - prefix.length - 1), theme.glyphs.ellipsis)}/`;
-}
-
-function replicaLabel(runId: string | undefined, replica: string | undefined, experimentRoot: string | undefined, theme: Theme, width: number, vacant: string): string {
-  if (replica && experimentRoot && relativeInside(experimentRoot, replica)?.startsWith('environment/recovery/')) {
-    return shortLabel(replica, experimentRoot, vacant);
-  }
-  return runFolderLabel('environment/runs/', runId, theme, width, vacant);
-}
-
-function tracePath(runId: string | undefined, theme: Theme, width: number, vacant: string): string {
-  return runFolderLabel('runs/', runId, theme, width, vacant);
 }

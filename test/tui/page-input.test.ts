@@ -106,6 +106,8 @@ test('inspection, preflight, confirm, running, result, and error dispatch the op
   assert.equal(dispatchResultKeys('f', { artifacts: { candidateFinal: true } })?.action, 'open-candidate-final');
   assert.equal(dispatchResultKeys('t', { artifacts: { trace: true } })?.action, 'open-trace');
   assert.equal(dispatchResultKeys('w', { artifacts: { replica: true } })?.action, 'open-replica');
+  assert.equal(dispatchResultKeys('p', { processAvailable: true })?.action, 'view-process');
+  assert.equal(dispatchResultKeys('p', { processAvailable: false }), undefined);
   assert.equal(dispatchResultKeys('o', { artifacts: { report: false } })?.enabled, false);
   assert.equal(dispatchErrorKeys('b')?.action, 'return');
   assert.equal(dispatchErrorKeys('\x1b')?.action, 'return');

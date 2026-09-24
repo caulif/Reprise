@@ -1,13 +1,13 @@
 import {
-  HARNESS_CONFIG_FIELDS, apiKeyValidity, baseUrlValidity, configFieldValue, configFieldsForKind, hasFileApiKey, languageFieldIndex, maskSecret, shellEnvAssignment,
+  apiKeyValidity, baseUrlValidity, configFieldValue, hasFileApiKey,
   type HarnessConfigDraft, type HarnessConfigField,
 } from '../../infrastructure/harness-model-config.js';
 import { t, type Locale } from '../i18n.js';
+import { visibleConfigItems } from '../config-input.js';
 import type { Theme } from '../theme.js';
 import { pad, panel } from '../widgets.js';
 import { caretAt } from '../text-edit.js';
 
-export const CONFIG_FIELDS = HARNESS_CONFIG_FIELDS;
 export type ConfigField = HarnessConfigField;
 
 export type ConfigConnectionTestStatus = 'idle' | 'testing' | 'passed' | 'failed' | 'stale';
@@ -16,6 +16,7 @@ export type ConfigBusy = 'idle' | 'save' | 'test';
 export type ConfigModel = {
   readonly draft: HarnessConfigDraft;
   readonly selected: number;
+  readonly advanced?: boolean;
   readonly editing: boolean;
   readonly buffer: string;
   readonly cursor?: number;
@@ -38,27 +39,27 @@ export type ConfigModel = {
 
 export function renderConfig(theme: Theme, width: number, model: ConfigModel): string[] {
   const locale = model.locale ?? 'en';
-  const fields = configFieldsForKind(model.draft.kind);
-  const languageIndex = languageFieldIndex(model.draft.kind);
-  const field = fields[model.selected] ?? 'provider type';
-  if (model.editing) {
-    const reason = fieldReason(field, model.buffer, model.draft.kind, locale);
-    return panel(theme, t(locale, 'editingField', { field: fieldLabel(locale, field) }), [
-      ` ${t(locale, 'currentValue')}  ${fieldValue(theme, field, configFieldValue(model.draft, field), model.draft.kind, locale)}`,
-      '',
-      ` ${theme.glyphs.cursor} ${caretAt(model.buffer, model.cursor ?? model.buffer.length)}`,
-      ...(reason ? [` ${theme.style.warn(`${theme.glyphs.warn} ${reason}`)}`] : []),
-      ` ${t(locale, 'neverPasteSecret')}`,
-    ], width);
-  }
+  const fields = visibleConfigItems(model.draft.kind, model.advanced);
+  const languageIndex = fields.indexOf('language');
   const values = fields.flatMap((item, index) => {
+    if (item === 'language') return [];
     const marker = index === model.selected ? theme.glyphs.cursor : ' ';
+    if (item === 'more') {
+      const line = ` ${marker} ${t(locale, model.advanced ? 'configLessSettings' : 'configMoreSettings')}`;
+      return [index === model.selected ? theme.style.selected(line) : line];
+    }
     const hint = fieldHint(item, locale);
     const value = fieldValue(theme, item, configFieldValue(model.draft, item), model.draft.kind, locale);
     const reason = fieldReason(item, configFieldValue(model.draft, item), model.draft.kind, locale);
     const line = ` ${marker} ${pad(fieldLabel(locale, item), 18, theme.glyphs.ellipsis)} ${value}${hint ? `  ${theme.style.muted(hint)}` : ''}`;
     const painted = index === model.selected ? theme.style.selected(line) : line;
-    return reason ? [painted, `     ${theme.style.warn(`${theme.glyphs.warn} ${reason}`)}`] : [painted];
+    const editing = model.editing && index === model.selected;
+    const editor = editing
+      ? [`     ${item === 'API key' ? `${'*'.repeat(model.buffer.length)}▌` : caretAt(model.buffer, model.cursor ?? model.buffer.length)}`,
+        ...(item === 'API key' ? [`     ${t(locale, 'neverPasteSecret')}`] : []),
+        ...(fieldReason(item, model.buffer, model.draft.kind, locale) ? [`     ${theme.style.warn(`${theme.glyphs.warn} ${fieldReason(item, model.buffer, model.draft.kind, locale)}`)}`] : [])]
+      : [];
+    return [...(reason ? [painted, `     ${theme.style.warn(`${theme.glyphs.warn} ${reason}`)}`] : [painted]), ...editor];
   });
   const languageMarker = model.selected === languageIndex ? theme.glyphs.cursor : ' ';
   const languageValue = t(locale, locale === 'zh' ? 'chinese' : 'english');
@@ -66,13 +67,10 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
   const paintedLanguage = model.selected === languageIndex ? theme.style.selected(languageLine) : languageLine;
   return panel(theme, theme.style.harness(t(locale, 'configTitle')), [
     theme.style.muted(` ${t(locale, 'configSharedHint')}`),
-    ...connectionStatus(theme, model, locale),
-    '',
     ...values,
     paintedLanguage,
     '',
     ...configStateLines(theme, model, locale),
-    ` ${t(locale, 'configFile')}`,
     ...(model.pendingToggle ? [theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'confirmProviderSwitch')}`)] : []),
     ...(model.leaveConfirm ? [theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'unsavedLeave')}`)] : []),
   ], width);
@@ -80,7 +78,7 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
 
 export function configHints(
   editing: boolean,
-  field?: ConfigField,
+  field?: ConfigField | 'more' | 'less',
   pendingToggle = false,
   languageSelected = false,
   locale: Locale = 'en',
@@ -88,10 +86,12 @@ export function configHints(
   busy = false,
 ): readonly (readonly [string, string])[] {
   if (editing) return [['Enter', t(locale, 'hintApply')], ['Ctrl+U', t(locale, 'hintClear')], ['Esc', t(locale, 'hintKeepPrev')]];
-  if (leaveConfirm) return [['Ctrl+S', t(locale, 'hintSave')], ['Enter', t(locale, 'hintDiscardDraft')], ['Esc', t(locale, 'hintStay')]];
+  if (leaveConfirm) return [['Enter', t(locale, 'hintStay')], ['d', t(locale, 'hintDiscardDraft')], ['Ctrl+S', t(locale, 'hintSave')]];
   if (pendingToggle) return [['Enter', t(locale, 'hintConfirmSwitch')], ['Esc', t(locale, 'hintCancelSwitch')]];
   const enter = languageSelected
     ? t(locale, 'hintToggleLang')
+    : field === 'more' ? t(locale, 'configMoreSettings')
+      : field === 'less' ? t(locale, 'configLessSettings')
     : field === 'provider type' ? t(locale, 'hintToggleProvider')
       : field === 'effort' || field === 'API' || field === 'reasoning' || field === 'image input' ? t(locale, 'hintCycleEffort')
         : t(locale, 'hintEdit');
@@ -148,31 +148,6 @@ function connectionTestLine(theme: Theme, model: ConfigModel, locale: Locale): s
   return ` ${theme.glyphs.dot} ${t(locale, 'configTestStatusIdle')}`;
 }
 
-function connectionStatus(theme: Theme, model: ConfigModel, locale: Locale): readonly string[] {
-  const endpoint = model.draft.kind === 'openai-compatible' ? (model.draft.baseUrl || t(locale, 'notSet')) : `Pi catalog ${model.draft.providerId}`;
-  const fileKey = hasFileApiKey(model.draft);
-  const secret = model.envName
-    ? (model.envSet
-      ? `env ${model.envName}   ${theme.style.ok(t(locale, 'setInShell'))}`
-      : `env ${model.envName}   ${theme.style.warn(`${theme.glyphs.warn} ${t(locale, 'notSetInShell')}`)}`)
-    : fileKey
-      ? `${maskSecret(model.draft.keyRef)}   ${theme.style.ok(t(locale, 'savedInConfig'))}`
-      : model.draft.kind === 'openai-compatible'
-        ? theme.style.warn(`${theme.glyphs.warn} ${t(locale, 'envNameMissing')}`)
-        : t(locale, 'piManagesCreds');
-  const hint = model.draft.kind === 'pi-catalog'
-    ? ` ${t(locale, 'piLoginHint')}`
-    : model.envName && model.envSet === false
-    ? ` ${shellEnvAssignment(model.envName)}   ${t(locale, 'neverPasteValue')}`
-    : ` ${t(locale, 'keysStayInEnv')}`;
-  return [
-    ` ${t(locale, 'endpointLabel')}   ${endpoint}`,
-    ` ${t(locale, 'harnessModelLabel')}      ${model.draft.modelId} ${theme.glyphs.sep} ${model.draft.effort}`,
-    ` ${t(locale, 'secretLabel')}     ${secret}`,
-    hint,
-  ];
-}
-
 function fieldLabel(locale: Locale, field: ConfigField): string {
   if (field === 'provider type') return t(locale, 'fieldProviderType');
   if (field === 'provider label') return t(locale, 'fieldProviderLabel');
@@ -186,17 +161,18 @@ function fieldLabel(locale: Locale, field: ConfigField): string {
 }
 
 function fieldValue(theme: Theme, field: ConfigField, value: string, kind: HarnessConfigDraft['kind'], locale: Locale): string {
+  if (field === 'reasoning' || field === 'image input') return t(locale, value === 'true' ? 'configOn' : 'configOff');
   if (field === 'API key') {
     if (kind !== 'openai-compatible' && !value) return '';
     const validity = apiKeyValidity(value);
     if (validity.ok) return `${validity.display}  ${theme.style.ok(theme.glyphs.ok)}`;
-    return validity.display;
+    return !value && locale === 'zh' ? t(locale, 'required') : validity.display;
   }
   if (field === 'base URL') {
     if (kind !== 'openai-compatible' && !value) return '';
     const validity = baseUrlValidity(value);
     if (validity.ok) return `${validity.display}  ${theme.style.ok(theme.glyphs.ok)}`;
-    return validity.display;
+    return !value && locale === 'zh' ? t(locale, 'required') : validity.display;
   }
   return value || t(locale, 'required');
 }
