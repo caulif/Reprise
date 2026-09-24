@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, readdir, writeFile, rm, cp } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import assert from 'node:assert/strict';
 import { IntakeTui } from '../dist/src/tui/intake-app.js';
+import { visibleConfigItems } from '../dist/src/tui/config-input.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../dist/src/infrastructure/harness-model-config.js';
 import { canonicalizeAuditFrame, compareFrames, mockTui, pageHtml, selfTestCompareFrames, shouldCompareAuditFrames, toLf, waitFor } from '../dist/scripts/tui-audit-lib.js';
 import {
@@ -36,6 +38,24 @@ function replaceField(app, value) {
   app.handleInput('\u0015');
   app.handleInput(value);
   app.handleInput('\r');
+}
+
+function editField(app, field) {
+  const fields = visibleConfigItems(app.configDraft.kind, app.configAdvanced);
+  const index = fields.indexOf(field);
+  assert.ok(index >= 0, `Configuration field is visible: ${field}`);
+  for (let step = 0; app.configSelected !== index && step < fields.length; step += 1) {
+    app.handleInput(app.configSelected < index ? '\u001b[B' : '\u001b[A');
+  }
+  assert.equal(app.configSelected, index);
+  app.handleInput('\r');
+}
+
+async function waitPage(app, page, frame, layer) {
+  await waitFor(() => {
+    assert.notEqual(app.page, 'error', app.message);
+    return app.page === page && (layer === undefined || app.intakeLevel === layer);
+  }, { describe: `${page}${layer ? `/${layer}` : ''}`, frame });
 }
 
 async function capture(name, width, frame) {
@@ -141,29 +161,19 @@ async function main() {
   const configApp = new IntakeTui(tuiOptions(join(root, 'data-config'), { tui: config.tui }));
   await configApp.start();
   enterCommand(configApp, '/config');
-  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(config.render(120)));
-  configApp.handleInput('\u001b[A');
-  configApp.handleInput('\u001b[A');
-  configApp.handleInput('\u001b[A');
-  configApp.handleInput('\r');
+  await waitPage(configApp, 'config', () => config.render(120));
+  assert.match(config.render(120), /Reprise model settings|Reprise 模型设置/);
+  editField(configApp, 'provider type');
   await push('06-config-catalog', 120, config.render(120));
   configApp.handleInput('\r');
   await push('07-config-openai-empty', 120, config.render(120));
-  configApp.handleInput('\u001b[B');
-  configApp.handleInput('\r');
+  editField(configApp, 'provider label');
   replaceField(configApp, 'private-gateway');
-  configApp.handleInput('\u001b[B');
-  configApp.handleInput('\r');
+  editField(configApp, 'base URL');
   replaceField(configApp, 'not-a-url');
-  configApp.handleInput('\u001b[B');
-  configApp.handleInput('\r');
+  editField(configApp, 'model');
   replaceField(configApp, 'model-private');
-  configApp.handleInput('\u001b[B');
-  configApp.handleInput('\u001b[B');
-  configApp.handleInput('\u001b[B');
-  configApp.handleInput('\u001b[B');
-  configApp.handleInput('\u001b[B');
-  configApp.handleInput('\r');
+  editField(configApp, 'API key');
   replaceField(configApp, 'not-a-key');
   await push('08-config-invalid', 120, config.render(120));
   await push('08b-config-invalid-compact', 60, config.render(60));
@@ -184,14 +194,9 @@ async function main() {
   await envApp.start();
   await push('01b-home-env-unset', 120, envHome.render(120));
   enterCommand(envApp, '/config');
-  await waitFor(() => /Internal Agent model|内部 Agent 模型/.test(envHome.render(120)));
+  await waitPage(envApp, 'config', () => envHome.render(120));
   await push('06b-config-status-env-unset', 120, envHome.render(120));
-  envApp.handleInput('\u001b[B');
-  envApp.handleInput('\u001b[B');
-  envApp.handleInput('\u001b[B');
-  envApp.handleInput('\u001b[B');
-  envApp.handleInput('\u001b[B');
-  envApp.handleInput('\r');
+  editField(envApp, 'API key');
   await push('07b-config-editing-prefill', 120, envHome.render(120));
   envApp.handleInput('\u0015');
   await push('07c-config-editing-empty', 120, envHome.render(120));
@@ -213,47 +218,47 @@ async function main() {
   }));
   await intakeApp.start();
   enterCommand(intakeApp, '/intake');
-  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list');
+  await waitFor(() => intakeApp.page === 'sessions' && intakeApp.intakeLevel === 'products', 'product list');
   await push('08c-products-wide', 120, intake.render(120));
   await push('08d-products-compact', 60, intake.render(60));
   intakeApp.handleInput('\u001b[B');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a project|先选项目|Projects ·|项目 ·/.test(intake.render(120)), 'Claude project list');
+  await waitFor(() => intakeApp.page === 'sessions' && intakeApp.intakeLevel === 'projects', 'Claude project list');
   await push('08e-claude-projects-wide', 120, intake.render(120));
   intakeApp.handleInput('\r');
   await waitFor(() => /Review the product intake flow/.test(intake.render(120)), 'Claude session list');
   await push('08f-claude-sessions-wide', 120, intake.render(120));
   intakeApp.handleInput('\b');
   intakeApp.handleInput('\b');
-  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list after Claude');
+  await waitFor(() => intakeApp.page === 'sessions' && intakeApp.intakeLevel === 'products', 'product list after Claude');
   intakeApp.handleInput('\u001b[A');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a project|先选项目|Projects ·|项目 ·/.test(intake.render(120)), 'Codex project list');
+  await waitFor(() => intakeApp.page === 'sessions' && intakeApp.intakeLevel === 'projects', 'Codex project list');
   intakeApp.handleInput('\u001b[B');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a historical session|选择一条历史会话/.test(intake.render(120)), 'CJK session list');
+  await waitFor(() => intakeApp.page === 'sessions' && intakeApp.intakeLevel === 'sessions', 'CJK session list');
   await push('09-sessions-wide', 120, intake.render(120));
   await push('10-sessions-compact', 60, intake.render(60));
   await push('11-sessions-cjk-selected', 120, intake.render(120));
   intakeApp.handleInput('\r');
-  await waitFor(() => /Task text:|任务原文：|Session start:|会话起点：/.test(intake.render(120)), 'CJK inspection');
+  await waitFor(() => intakeApp.page === 'inspection', 'CJK inspection');
   await push('11b-inspection-review', 120, intake.render(120));
   intakeApp.handleInput('\r');
-  await waitFor(() => /is current|当前任务/.test(intake.render(120)), { describe: 'home after CJK freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
+  await waitFor(() => intakeApp.page === 'home' && Boolean(intakeApp.taskCase), { describe: 'home after CJK freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('12-home-after-cjk-freeze', 120, intake.render(120));
   enterCommand(intakeApp, '/intake');
-  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(intake.render(120)), 'product list after freeze');
+  await waitFor(() => intakeApp.page === 'sessions' && intakeApp.intakeLevel === 'products', 'product list after freeze');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Choose a historical session|Choose a project|选择一条历史会话|先选项目/.test(intake.render(120)), 'intake after freeze');
-  if (/Choose a historical session|选择一条历史会话/.test(intake.render(120))) intakeApp.handleInput('\u001b');
-  await waitFor(() => /Choose a project|先选项目|Projects ·|项目 ·/.test(intake.render(120)), 'project list after freeze');
+  await waitFor(() => intakeApp.page === 'sessions' && intakeApp.intakeLevel !== 'products', 'intake after freeze');
+  if (intakeApp.page === 'sessions' && intakeApp.intakeLevel === 'sessions') intakeApp.handleInput('\u001b');
+  await waitFor(() => intakeApp.page === 'sessions' && intakeApp.intakeLevel === 'projects', 'project list after freeze');
   intakeApp.handleInput('\u001b[A');
   intakeApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(intake.render(120)), 'English session list');
   intakeApp.handleInput('\r');
-  await waitFor(() => /Task text:|任务原文：|Session start:|会话起点：/.test(intake.render(120)), 'English inspection');
+  await waitFor(() => intakeApp.page === 'inspection', 'English inspection');
   intakeApp.handleInput('\r');
-  await waitFor(() => /is current|当前任务/.test(intake.render(120)), { describe: 'home after English freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
+  await waitFor(() => intakeApp.page === 'home' && Boolean(intakeApp.taskCase), { describe: 'home after English freeze', timeoutMs: 30_000, frame: () => intake.render(120) });
   await push('13-home-after-freeze', 120, intake.render(120));
   await push('18-home-with-taskcase', 120, intake.render(120));
 
@@ -292,7 +297,7 @@ async function main() {
   const historyApp = new IntakeTui(tuiOptions(historyRoot, { tui: history.tui }));
   await historyApp.start();
   enterCommand(historyApp, '/history');
-  await waitFor(() => /Recent experiments|最近对照/.test(history.render(120)));
+  await waitFor(() => historyApp.page === 'history' && historyApp.historyExperiments.length === 1);
   await push('15-history-runs', 120, history.render(120));
   historyApp.handleInput('\t');
   await push('16-history-cases', 120, history.render(120));
@@ -340,52 +345,59 @@ async function main() {
     tui: run.tui, workflow, now: () => '2026-08-11T00:10:00.000Z',
   }));
   await runApp.start();
+  runApp.harnessAuthOk = true;
   enterCommand(runApp, '/intake');
-  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(run.render(120)), 'run product list');
+  await waitFor(() => runApp.page === 'sessions' && runApp.intakeLevel === 'products', 'run product list');
   runApp.handleInput('\r');
-  await waitFor(() => /Choose a project|先选项目|Projects ·|项目 ·/.test(run.render(120)), 'run project list');
+  await waitFor(() => runApp.page === 'sessions' && runApp.intakeLevel === 'projects', 'run project list');
   runApp.handleInput('\r');
   await waitFor(() => /Fix the bug/.test(run.render(120)), 'run session list');
   runApp.handleInput('\r');
-  await waitFor(() => /Task text:|任务原文：|Session start:|会话起点：/.test(run.render(120)), 'run inspection');
+  await waitFor(() => runApp.page === 'inspection', 'run inspection');
   runApp.handleInput('\r');
   await waitFor(() => {
-    const frame = run.render(120);
-    return /Recovering session|Preparing recovery environment|TaskCase frozen|Starting environment recovery|正在恢复会话|准备恢复环境|已冻结，进入环境恢复/.test(frame);
+    return runApp.page === 'running' && runApp.preparePhase === 'check';
   }, { describe: 'auto recovery after freeze with selected product', timeoutMs: 30_000, frame: () => run.render(120) });
   await push('19-running-check', 120, run.render(120));
   await push('19b-running-check-compact', 60, run.render(60));
   releasePreflight();
-  await waitFor(() => /Running recovery agent|正在运行恢复/.test(run.render(120)), 'automatic environment preparation after preflight');
+  await waitFor(() => runApp.runPhase === 'recovery' && Boolean(runApp.recoveryAbort), 'automatic environment preparation after preflight');
   await push('20-running-copy', 120, run.render(120));
   releaseRecovery();
-  await waitFor(() => /choose candidate product|选候选产品/.test(run.render(120)), { describe: 'candidate product after recovery', frame: () => run.render(120) });
-  await waitFor(() => /source session\s+available|来源会话[\s\S]{0,80}可用/.test(run.render(120)), {
+  await waitFor(() => runApp.page === 'candidate-product', { describe: 'candidate product after recovery', frame: () => run.render(120) });
+  await waitFor(() => runApp.candidateAvailability.codex === 'available', {
     describe: 'candidate availability settled',
     timeoutMs: 15_000,
     frame: () => run.render(120),
   });
   await push('29-candidate-product', 120, run.render(120));
   await push('29b-candidate-product-narrow', 60, run.render(60));
+  assert.match(run.render(120), /Which tool should redo|用哪个工具重做/);
+  runApp.handleInput('\u001b');
+  assert.equal(runApp.page, 'recovery-review');
+  await push('29c-prepared-files-review', 120, run.render(120));
   runApp.handleInput('\r');
-  await waitFor(() => /choose candidate model|选候选模型/.test(run.render(120)), { describe: 'candidate model after product', frame: () => run.render(120) });
+  assert.equal(runApp.page, 'candidate-product');
+  runApp.handleInput('\r');
+  await waitFor(() => runApp.page === 'candidate-model' && runApp.candidateCatalogStatus === 'ready', { describe: 'candidate model after product', frame: () => run.render(120) });
   await push('30-candidate-model', 120, run.render(120));
   await push('30b-candidate-model-narrow', 60, run.render(60));
   runApp.handleInput('\r');
-  await waitFor(() => /Start isolated|Confirm run|启动隔离|确认运行/.test(run.render(120)), {
+  await waitFor(() => runApp.page === 'confirm' && runApp.confirmStartArmed, {
     describe: 'confirm page after model selection',
     frame: () => run.render(120),
   });
   await push('31-confirm-run', 120, run.render(120));
   await push('31b-confirm-run-narrow', 60, run.render(60));
+  assert.match(run.render(120), /开始执行|Start execution/);
   runApp.handleInput('\r');
-  await waitFor(() => /Copying isolated workspace|Candidate running|Preparing replay|正在复制隔离工作区|候选运行中|正在准备对照/.test(run.render(120)), 'candidate preparation after confirm');
+  await waitFor(() => runApp.page === 'running' && runApp.preparePhase === 'copy', 'candidate preparation after confirm');
   await push('21-running-start', 120, run.render(120));
   await waitFor(() => copyLatched(), { describe: 'candidate copy handle', timeoutMs: 30_000 });
   releaseCopy();
   await waitFor(() => startLatched(), { describe: 'candidate start handle', timeoutMs: 30_000 });
   releaseStart();
-  await waitFor(() => /Candidate running|候选运行中/.test(run.render(120)), 'candidate replay after preparation');
+  await waitFor(() => runApp.page === 'running' && Boolean(runApp.activeExperiment), 'candidate replay after preparation');
   await new Promise((resolve) => setTimeout(resolve, 40));
   await push('22-running-wide', 120, run.render(120));
   runApp.handleInput('\u001b[A');
@@ -405,9 +417,39 @@ async function main() {
     comparison: { status: 'completed' },
     candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'complete' },
   }));
-  await waitFor(() => /Experiment finished|对照结束|运行结束|Comparison complete|对照完成|Run result|运行结果/.test(run.render(120)));
+  await waitFor(() => runApp.page === 'result');
   await push('26-result', 120, run.render(120));
   await push('26b-result-compact', 60, run.render(60));
+
+  const review = mockTui({ rows: 24, columns: 80 });
+  const reviewApp = new IntakeTui(tuiOptions(join(root, 'data-review'), { tui: review.tui }));
+  reviewApp.locale = 'zh';
+  reviewApp.page = 'result';
+  reviewApp.message = '';
+  reviewApp.taskCase = taskCase;
+  reviewApp.result = syntheticExperimentResult({
+    experimentRoot: join(root, 'data', 'experiments', 'fixture'), runId: 'run-1',
+    comparison: { status: 'skipped' },
+    candidate: { task: 'apparently_completed', termination: 'completed', cleanup: 'incomplete' },
+  });
+  reviewApp.result.record.attempt.candidate = { candidateId: 'audit-codex', productId: 'codex', requestedModel: 'gpt-test' };
+  reviewApp.selectedCandidate = reviewApp.result.record.attempt.candidate;
+  reviewApp.candidateProductId = 'codex';
+  let comparisonChoice;
+  reviewApp.compareChoice = { resolve: (value) => { comparisonChoice = value; } };
+  await push('32-result-review-80x24', 80, reviewApp.preview(80));
+  reviewApp.handleInput('c');
+  assert.equal(reviewApp.page, 'compare-confirm');
+  assert.equal(comparisonChoice, undefined);
+  assert.match(reviewApp.preview(80), /可能产生费用/);
+  await push('33-compare-confirm-80x24', 80, reviewApp.preview(80));
+  reviewApp.handleInput('\u001b');
+  assert.equal(reviewApp.page, 'result');
+  assert.equal(comparisonChoice, undefined);
+  await reviewApp.setLocale('en');
+  reviewApp.handleInput('c');
+  await push('33b-compare-confirm-en-80x24', 80, reviewApp.preview(80));
+  reviewApp.handleInput('\u001b');
 
   const err = mockTui();
   const sessionsFile = join(root, 'sessions-file');
@@ -417,7 +459,7 @@ async function main() {
   }));
   await errApp.start();
   enterCommand(errApp, '/intake');
-  await waitFor(() => /Historical session sources|历史会话来源|Select agent product|选择 Agent 产品/.test(err.render(120)));
+  await waitFor(() => errApp.page === 'sessions' && errApp.intakeLevel === 'products');
   errApp.handleInput('\r');
   await waitFor(() => /ENOTDIR|not a directory|Error/i.test(err.render(120)));
   await push('27-product-discovery-error', 120, err.render(120));
@@ -428,6 +470,8 @@ async function main() {
   }));
   await clippedApp.start();
   await push('28-home-height-24', 120, clipped.render(120));
+  await clippedApp.setLocale('zh');
+  await push('28b-home-zh-80x24', 80, clipped.render(80));
 
   const index = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>Reprise TUI audit</title>

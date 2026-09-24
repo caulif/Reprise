@@ -550,6 +550,13 @@ export function createScriptedSyntheticWorkflow(options: ScriptedWorkflowOptions
       }
     },
   };
+  const recoveredBaseline = {
+    root: experimentRoot,
+    mode: 'canonical' as const, match: 'recovered' as const, warnings: [],
+    readiness: { runnable: 'isolated' as const, strictness: 'strict' as const, blockingResourceIds: [] },
+    fingerprint: { digest: 'synthetic-recovered-digest' },
+    recovery: { status: 'ready' as const, unresolved: [], sourceDigest: 'synthetic-source-digest', recoveredDigest: 'synthetic-recovered-digest' },
+  };
   const workflow = {
     ...(options.workflowCandidate ? { candidate: options.workflowCandidate } : {}),
     policy: options.policy ?? DEFAULT_POLICY,
@@ -572,8 +579,8 @@ export function createScriptedSyntheticWorkflow(options: ScriptedWorkflowOptions
       return {
         experimentId: 'synthetic-recovery',
         experimentRoot,
-        baseline: { match: 'recovered', warnings: [] },
-        staging: { recoveryId: 'synthetic-recovery' },
+        baseline: recoveredBaseline,
+        staging: { recoveryId: 'synthetic-recovery', caseId: 'synthetic-case', sourceRoot: experimentRoot, root: experimentRoot },
         recovery: {
           status: 'completed',
           sessionId: 's',
@@ -584,10 +591,10 @@ export function createScriptedSyntheticWorkflow(options: ScriptedWorkflowOptions
             unresolved: [],
           },
         },
-        accept: async () => ({ match: 'recovered', warnings: [] }),
+        accept: async () => recoveredBaseline,
       };
     },
-    acceptRecovery: async () => ({ match: 'recovered', warnings: [] }),
+    acceptRecovery: async () => recoveredBaseline,
     discardRecovery: async () => {},
     start: async (input: { onEvent: (event: EventEnvelope) => void }) => {
       await new Promise<void>((resolve) => { releaseCopy = resolve; });

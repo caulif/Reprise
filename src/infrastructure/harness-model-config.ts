@@ -241,7 +241,7 @@ export type HarnessConfigDraft = {
   supportsImage: boolean;
 };
 
-export const HARNESS_CONFIG_FIELDS = [
+const HARNESS_CONFIG_FIELDS = [
   'provider type', 'provider label', 'base URL', 'model', 'API', 'reasoning', 'image input', 'effort', 'API key',
 ] as const;
 export type HarnessConfigField = typeof HARNESS_CONFIG_FIELDS[number];
@@ -252,9 +252,6 @@ export function configFieldsForKind(kind: HarnessConfigDraft['kind']): readonly 
     : HARNESS_CONFIG_FIELDS.filter((field) => field === 'provider type' || field === 'provider label' || field === 'model' || field === 'effort');
 }
 
-export function languageFieldIndex(kind: HarnessConfigDraft['kind']): number {
-  return configFieldsForKind(kind).length;
-}
 
 export type FieldValidity = { readonly ok: boolean; readonly display: string; readonly reason?: string };
 
@@ -339,7 +336,7 @@ export function apiKeyValidity(value: string): FieldValidity {
   return { ok: true, display: maskSecret(value) };
 }
 
-export function maskSecret(value: string): string {
+function maskSecret(value: string): string {
   if (!value || KEY_REF.test(value)) return value;
   return '•'.repeat(8);
 }

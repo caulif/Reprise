@@ -24,7 +24,9 @@ test('result footer hides missing artifacts and keeps compare when pending', () 
     artifacts: { report: false, historyFinal: false, candidateFinal: false },
   });
   assert.deepEqual(without, [
-    ['Esc', 'Home'],
+    ['Enter', 'Activate'],
+    ['Esc', 'Finish reviewing'],
+    ['d', 'Technical details'],
     ['?', 'Help'],
   ]);
 
@@ -32,7 +34,10 @@ test('result footer hides missing artifacts and keeps compare when pending', () 
     comparePending: true,
     artifacts: { report: true },
   });
-  assert.equal(withCompare[0]?.[0], 'c');
+  assert.equal(withCompare[0]?.[0], 'Enter');
+  assert.ok(withCompare.some(([key]) => key === 'Esc'));
+  assert.ok(withCompare.some(([key]) => key === 'c'));
+  assert.ok(withCompare.length <= 4);
   assert.ok(withCompare.some(([key]) => key === 'o'));
   assert.ok(!withCompare.some(([key]) => key === 'h' || key === 'f'));
 });

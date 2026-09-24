@@ -52,11 +52,11 @@ test('T08: 100x30 result first screen shows facts and primary actions without sc
   assert.ok(lines.length <= 30, `expected <= 30 lines, got ${lines.length}`);
   const text = lines.join('\n');
   assert.match(text, /Run result/);
-  assert.match(text, /Controller judged complete|apparently_completed/);
+  assert.match(text, /Reprise model judged the task complete/);
   assert.match(text, /Comparison cancelled/);
-  assert.match(text, /Diagnostic|comparison-failure/);
-  assert.match(text, /Candidate final|out\.html/);
-  assert.match(text, /View candidate process|Hide process/);
+  assert.match(text, /diagnostic|comparison-failure/);
+  assert.match(text, /This run output|out\.html/);
+  assert.match(text, /View execution process|Hide process/);
   assert.doesNotMatch(text, /Noise 39/);
   for (const line of lines) assert.ok(visibleWidth(line) <= 100, line);
 });
@@ -98,9 +98,9 @@ test('T08: 80x24 picker keeps recovery summary and selection without dumping the
   }, 80, 24);
   assert.ok(lines.length <= 24, `expected <= 24 lines, got ${lines.length}`);
   const text = lines.join('\n');
-  assert.match(text, /可以继续|已恢复/);
+  assert.match(text, /build bike/);
   assert.match(text, /default|Claude/);
-  assert.match(text, /查看恢复过程|View recovery process/);
+  assert.match(text, /核对运行条件|Review run conditions/);
   assert.doesNotMatch(text, /阅读证据 · 29/);
 });
 
@@ -137,7 +137,7 @@ test('T08: cancelled comparison is not labeled complete on the result facts', ()
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
     comparison: { result: { status: 'cancelled' } },
   } as never).join('\n');
-  assert.match(text, /Comparison cancelled|对照已取消/);
+  assert.match(text, /Comparison cancelled|比较已取消/);
   assert.doesNotMatch(text, /Comparison complete|对照完成/);
-  assert.match(text, /Diagnostic|诊断/);
+  assert.match(text, /diagnostic|诊断/);
 });

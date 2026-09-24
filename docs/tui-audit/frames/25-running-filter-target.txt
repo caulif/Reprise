@@ -1,10 +1,5 @@
-Reprise   候选运行中 · Codex                                                                            00:03   ● 进行中
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 题目 Fix the bug. · Codex · gpt-5.6-luna · Codex
- ✓ 恢复  ✓ 候选  ● 对当前任务开跑  ○ 对照
- ✓ created  →  ✓ preparing  →  ● launching  →  · awaiting_target ⇄ awaiting_controller  →  · finalizing  →  · finished  
- 正在启动候选                                                                                                           
- Fix the bug. · Codex · gpt-5.6-luna · 00:03                                                                            
+Reprise                                                                                                  00:03  ● 进行中
+ 任务 Fix the bug. · Codex · gpt-5.6-luna · Codex
 ▎ Fix the failing test.                                                                                                 
 ▎ Run the focused test.                                                                                                 
 ▎ Codex                                                                                                                 
@@ -28,5 +23,10 @@ Reprise   候选运行中 · Codex                                              
                                                                                                                         
                                                                                                                         
                                                                                                                         
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Ctrl+C] 停止  [/] 查找  [End] 跟随最新  [Enter] 展开
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+ [Ctrl+C] 停止执行  [/] 查找  [End] 跟随最新  [Enter] 展开

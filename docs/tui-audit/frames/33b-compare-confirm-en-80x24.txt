@@ -1,0 +1,8 @@
+Reprise
+ Compare with the original result?
+
+ Reprise will compare this run with the original task result.
+
+ This calls the configured Reprise model and may incur cost.
+ Language: English. /lang zh switches to Chinese.
+ [Enter] Start comparison  [Esc] Back

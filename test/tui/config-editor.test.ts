@@ -10,7 +10,7 @@ import {
   saveHarnessModelConfig,
   type HarnessConfigDraft,
 } from '../../src/infrastructure/harness-model-config.js';
-import { handleConfigInput, type ConfigInputState } from '../../src/tui/config-input.js';
+import { handleConfigInput, visibleConfigItems, type ConfigInputState } from '../../src/tui/config-input.js';
 import { configHints, renderConfig } from '../../src/tui/pages/config.js';
 import { createTheme } from '../../src/tui/theme.js';
 
@@ -33,7 +33,7 @@ function refresh(next: HarnessConfigDraft) {
 function editingState(overrides: Partial<ConfigInputState> = {}): ConfigInputState {
   return {
     draft,
-    selected: 8,
+    selected: visibleConfigItems(draft.kind).indexOf('API key'),
     editing: true,
     buffer: '',
     cursor: 0,
@@ -47,32 +47,38 @@ function caretLine(text: string): string {
   return text.split('\n').find((line) => line.includes('▌')) ?? '';
 }
 
-test('config editor paints the raw buffer instead of keyRef validity copy', () => {
+test('config editor masks the secret buffer within the settings form', () => {
   const theme = createTheme(120);
   const text = renderConfig(theme, 120, {
-    draft, selected: 8, editing: true, buffer: 'e', cursor: 1, dirty: true, saved: false,
+    draft, selected: visibleConfigItems(draft.kind).indexOf('API key'), editing: true, buffer: 'secret-value', cursor: 12, dirty: true, saved: false,
   }).join('\n');
   const caret = caretLine(text);
-  assert.match(caret, /e/);
+  assert.match(caret, /\*+▌/);
+  assert.doesNotMatch(text, /secret-value/);
+  assert.match(text, /provider type/);
   assert.doesNotMatch(caret, /required for OpenAI-compatible/);
   assert.doesNotMatch(text, /expected env:NAME/);
 });
 
-test('typing e keeps the letter visible in the editor buffer', () => {
-  const result = handleConfigInput(editingState({ selected: 8 }), 'e', refresh);
+test('typing a secret keeps it in the editor buffer without showing the character', () => {
+  const selected = visibleConfigItems(draft.kind).indexOf('API key');
+  const result = handleConfigInput(editingState({ selected }), 'e', refresh);
   assert.equal(result?.state.buffer, 'e');
   const theme = createTheme(120);
   const caret = caretLine(renderConfig(theme, 120, {
-    draft, selected: 8, editing: true, buffer: result?.state.buffer ?? '', cursor: result?.state.cursor ?? 0, dirty: true, saved: false,
+    draft, selected, editing: true, buffer: result?.state.buffer ?? '', cursor: result?.state.cursor ?? 0, dirty: true, saved: false,
   }).join('\n'));
-  assert.match(caret, /e/);
+  assert.match(caret, /\*▌/);
+  assert.doesNotMatch(caret, /e/);
 });
 
 test('applying a pasted secret writes it into the local draft', () => {
-  const result = handleConfigInput(editingState({ selected: 8, buffer: 'sk-abc' }), '\r', refresh);
+  const result = handleConfigInput(editingState({ selected: visibleConfigItems(draft.kind).indexOf('API key'), buffer: 'sk-abc' }), '\r', refresh);
   assert.equal(result?.state.editing, false);
   assert.equal(result?.state.draft.keyRef, 'sk-abc');
-  assert.match(result?.message ?? '', /local config file/);
+  assert.equal(result?.message, 'Draft changed, not saved yet.');
+  const chinese = handleConfigInput(editingState({ selected: visibleConfigItems(draft.kind).indexOf('model'), buffer: 'model-zh', locale: 'zh' }), '\r', refresh);
+  assert.equal(chinese?.message, '草稿已修改，尚未保存。');
 });
 
 test('switching provider with an existing URL requires a second Enter', () => {
@@ -98,7 +104,7 @@ test('switching provider with an existing URL requires a second Enter', () => {
 test('opening a text field prefills the current value', () => {
   const result = handleConfigInput({
     draft: { ...draft, keyRef: 'env:OPENAI_API_KEY' },
-    selected: 8, editing: false, buffer: '', cursor: 0, providers: [], models: [],
+    selected: visibleConfigItems(draft.kind).indexOf('API key'), editing: false, buffer: '', cursor: 0, providers: [], models: [],
   }, '\r', refresh);
   assert.equal(result?.state.editing, true);
   assert.equal(result?.state.buffer, 'env:OPENAI_API_KEY');
@@ -130,14 +136,14 @@ test('Enter cycles API type and reasoning on an OpenAI-compatible draft', () => 
   }, '\r', refresh);
   assert.equal(api?.state.draft.api, 'openai-responses');
   const reasoning = handleConfigInput({
-    draft, selected: 5, editing: false, buffer: '', cursor: 0, providers: [], models: [],
+    draft, selected: visibleConfigItems(draft.kind, true).indexOf('reasoning'), advanced: true, editing: false, buffer: '', cursor: 0, providers: [], models: [],
   }, '\r', refresh);
   assert.equal(reasoning?.state.draft.reasoning, true);
 });
 
 test('Enter toggles image input and draft/config round-trip keeps it', async () => {
   const toggled = handleConfigInput({
-    draft, selected: 6, editing: false, buffer: '', cursor: 0, providers: [], models: [],
+    draft, selected: visibleConfigItems(draft.kind, true).indexOf('image input'), advanced: true, editing: false, buffer: '', cursor: 0, providers: [], models: [],
   }, '\r', refresh);
   assert.ok(toggled);
   assert.equal(toggled.state.draft.supportsImage, true);
@@ -172,7 +178,8 @@ test('leaving config with a dirty draft asks to save or discard', () => {
   const prompt = handleConfigInput(dirty, '\x1b', refresh);
   assert.equal(prompt?.state.leaveConfirm, true);
   assert.equal(prompt?.action, undefined);
-  assert.equal(handleConfigInput(prompt?.state ?? dirty, '\r', refresh)?.action, 'home');
+  assert.equal(handleConfigInput(prompt?.state ?? dirty, '\r', refresh)?.action, undefined);
+  assert.equal(handleConfigInput(prompt?.state ?? dirty, 'd', refresh)?.action, 'home');
   assert.equal(handleConfigInput({ ...dirty, leaveConfirm: true }, '\x13', refresh)?.action, 'save');
 });
 
@@ -409,7 +416,8 @@ test('draft changes while a connection test is pending keep the new draft unveri
   assert.equal(app.configBusy, 'test');
   const testedVersion = app.configDraftVersion;
   // Mutate the draft the way the editor does: bump identity so a late success cannot verify it.
-  app.configSelected = 3; // effort field for pi-catalog
+  app.configAdvanced = true;
+  app.configSelected = visibleConfigItems('pi-catalog', true).indexOf('effort');
   app.configPageInput('\r');
   assert.notEqual(app.configDraftVersion, testedVersion);
   release();

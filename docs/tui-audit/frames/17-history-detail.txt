@@ -1,21 +1,12 @@
-Reprise v0.1.0   C:\reprise                                    尚未配置模型   ○ 内部模型未配置  ○ 未选会话产品  ○ 无任务
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 在隔离副本中回放一段历史 Agent 会话。
-
- ❯ /config   内部协作模型  需要凭据
-   新建回放  选择历史会话来源  /intake
-   最近一次运行 任务 case-his · 时间未知 · 候选 record unread · 诊断
-
-┌─ 任务 · 占用 0.0 MiB ─────────────────────────────────────────────┐ ┌─ 任务 ─────────────────────────────────────────┐
-│ ❯ case-history · Inspect a focused regression.                    │ │ TaskCase: case-history │
-│     导入于 2026-08-11T00:00:00.000Z                               │ │ Task         Inspect a focused regression. │
-│ 1/1                                                               │ │ Source       codex · session-history │
-│                                                                   │ │ Frozen       2026-08-11T00:00:00.000Z │
-│                                                                   │ │ Path         C:\user\AppData\Local\ │
-│                                                                   │ │              Temp\reprise-tui-audit-TMP\ │
-│                                                                   │ │              history-data\cases\case-history\ │
-│                                                                   │ │              case.json │
-└───────────────────────────────────────────────────────────────────┘ └────────────────────────────────────────────────┘
+Reprise
+ 已保存任务
+  任务         Inspect a focused regression.
+  来源对话     codex
+  保存时间     2026-08-11T00:00:00.000Z
+ 
+  技术记录
+  任务 ID      case-history
+  来源对话     session-history
+  位置         TMP\history-data\cases\case-history\case.json
  实验记录。打开历史不会续跑进程。
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- [Enter] 使用这个任务  [Esc] 返回
+ [Enter] 使用这个任务  [Esc] 返回  [Pg↑↓] 翻页

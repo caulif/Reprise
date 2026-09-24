@@ -89,6 +89,10 @@ test("over-budget source starts sparse staging instead of failing Recovery", asy
     reportPath: "recovery.md",
     unresolved: ["node_modules was not copied"],
   });
+  assert.deepEqual(preview.baseline.warnings, []);
+  assert.deepEqual(preflightFromBaseline(preview.baseline, {
+    productId: "codex", executable: "codex", requestedModel: "gpt-5", resolvedModel: "gpt-5",
+  }).limitations, ["node_modules was not copied"]);
   assert.equal(preview.baseline.readiness.runnable, "isolated");
   assert.equal(preview.baseline.fingerprint.resources.some((item) => item.path.includes("node_modules")), false);
   assert.ok(preview.baseline.fingerprint.resources.some((item) => item.path === "apps/desktop/src/ui.ts"));

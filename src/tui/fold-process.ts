@@ -80,6 +80,9 @@ export function foldProcessEntries(
       out.push(...turn);
       continue;
     }
+    const notable = turn.filter(isNotableActivity);
+    const hidden = turn.filter((entry) => !notable.includes(entry));
+    if (!hidden.length) { out.push(...notable); continue; }
     const sent = turn.find((entry) => isPresentedInput(entry) && !entry.title.startsWith('Prompt ·'));
     const preview = (sent?.detail ?? sent?.title ?? '').replace(/\s+/g, ' ').slice(0, 48);
     const probe = sent?.title.includes('verify') || sent?.title.includes('探测');
@@ -91,10 +94,11 @@ export function foldProcessEntries(
       lane: 'controller',
       kind: 'fold',
       itemId: id,
-      count: turn.length,
+      count: hidden.length,
       role: 'controller',
-      ...mergeRefs(turn),
+      ...mergeRefs(hidden),
     });
+    out.push(...notable);
   }
   const result = expandFoldLeaves(out, expandedIds);
   if (timelineRevision >= 0) foldProcessCache = { timelineRevision, expanded, entriesKey, result };
@@ -193,7 +197,7 @@ function foldCurrentTurn(turn: readonly TimelineEntry[], expandedIds: ReadonlySe
       continue;
     }
     const previous = tools.at(-1);
-    if (entry.kind === 'investigate' && entry.level !== 'error' && sameActivityScope(previous, entry)) {
+    if (entry.kind === 'investigate' && !isNotableActivity(entry) && sameActivityScope(previous, entry)) {
       tools.push(entry);
       continue;
     }
@@ -217,10 +221,16 @@ function sameActivityScope(previous: TimelineEntry | undefined, next: TimelineEn
   const previousRole = entryRole(previous);
   const nextRole = entryRole(next);
   if (previousRole !== nextRole) return false;
-  if (previous.sessionId && next.sessionId && previous.sessionId !== next.sessionId) return false;
-  if (previous.turnId && next.turnId && previous.turnId !== next.turnId) return false;
+  if (previous.sessionId !== next.sessionId) return false;
+  if (previous.turnId !== next.turnId) return false;
+  if (previous.recoveryAttemptNumber !== next.recoveryAttemptNumber) return false;
+  if (previous.recoveryRetry !== next.recoveryRetry) return false;
   if (previous.lane && next.lane && previous.lane !== next.lane) return false;
   return true;
+}
+
+function isNotableActivity(entry: TimelineEntry): boolean {
+  return entry.level === 'error' || entry.level === 'warning' || entry.activityStatus === 'failed' || Boolean(entry.linkUnknown);
 }
 
 export function collapseEndedThinkFolds(entries: readonly TimelineEntry[], expandedIds: readonly string[]): string[] {
@@ -270,7 +280,7 @@ export function expandFoldLeaves(entries: readonly TimelineEntry[], expandedIds:
 function wouldHideInThinkFold(turn: readonly TimelineEntry[], target: TimelineEntry): boolean {
   let tools: TimelineEntry[] = [];
   for (const entry of turn) {
-    if (entry.kind === 'investigate' || entry.kind === 'live') {
+    if ((entry.kind === 'investigate' && !isNotableActivity(entry)) || entry.kind === 'live') {
       tools.push(entry);
       continue;
     }

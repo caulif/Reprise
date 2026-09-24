@@ -85,10 +85,16 @@ function deriveResultPresentation(input: ResultPresentationInput, locale: Locale
   const terminationTone = terminationToneOf(input.termination.kind);
   const reportKind = reportKindOf(comparisonKind);
   const status = composeStatus(input.termination.kind, comparisonKind, terminationTone);
+  const cleanupStatus = input.cleanup?.status;
+  const overallStatus = cleanupStatus === 'incomplete'
+    ? { labelKey: 'resultStatusCleanupIncomplete' as const, tone: worseTone(status.tone, 'warn') }
+    : cleanupStatus === 'unknown' || cleanupStatus === undefined
+      ? { labelKey: 'resultStatusCleanupUnknown' as const, tone: worseTone(status.tone, 'warn') }
+      : status;
   return {
     titleKey: 'resultTitle',
-    statusLabelKey: status.labelKey,
-    statusTone: status.tone,
+    statusLabelKey: overallStatus.labelKey,
+    statusTone: overallStatus.tone,
     taskLabel: taskLabelOf(input.task.status, locale),
     terminationLabel: t(locale, statusKeyForTermination(input.termination.kind)),
     cleanupLabel: cleanupLabelOf(input.cleanup?.status, locale),

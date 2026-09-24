@@ -1,5 +1,5 @@
 import { dirname } from 'node:path';
-import { createTheme, showsDetailPane } from './theme.js';
+import { createTheme } from './theme.js';
 import { selectedIndexAfterFold } from './fold-process.js';
 import { projectTimelineView } from './timeline-view.js';
 import { hitFileLink } from './format.js';
@@ -13,9 +13,10 @@ import { resultPointerAction, renderResultWithHits } from './pages/result.js';
 import { hitAtBodyRow, keepSelectedVisible, layoutScrollback } from './scrollback.js';
 import { timelineIdentity } from './timeline-read.js';
 import { bodyCellAt } from './workbench-layout.js';
-import { measureWorkbenchGeometry } from './workbench.js';
-import type { ControllerHandle } from './controller-input.js';
+import { measureWorkbenchGeometry, pageTheme, resultRenderOptions } from './workbench.js';
 import { resolveCompareChoice } from './controller-run.js';
+import { scrollPageBody } from './controller-scroll.js';
+import type { ControllerHandle } from './controller-input.js';
 
 export function consumeWheel(data: string): Consume | undefined {
   return dispatchListPointer(data) ? { consume: true } : undefined;
@@ -51,9 +52,7 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   const pointer = dispatchListPointer(data);
   if (!pointer) return undefined;
   if (pointer.action === 'up' || pointer.action === 'down') {
-    c.timelineReadOffset = Math.max(0, (c.timelineReadOffset ?? 0) + (pointer.action === 'up' ? -1 : 1));
-    c.render();
-    return { consume: true };
+    return scrollPageBody(c, pointer.action === 'up' ? '\x1b[A' : '\x1b[B', 'result');
   }
   if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
   if (!c.result) return { consume: true };
@@ -62,8 +61,8 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (cell.bodyRow < 0) return { consume: true };
   const view = c.view();
   const { lines, rowHits } = renderResultWithHits(
-    createTheme(cell.width), cell.width, c.result, c.locale, view.productLabel, Boolean(c.compareChoice),
-    { ...(view.running?.phaseClocks ? { phaseClocks: view.running.phaseClocks } : {}) },
+    pageTheme(createTheme(cell.width), 'result'), cell.width, c.result, c.locale, view.productLabel, Boolean(c.compareChoice),
+    resultRenderOptions(view),
   );
   const bodyRow = cell.bodyRow + (c.timelineReadOffset ?? 0);
   const line = lines[bodyRow];
@@ -75,7 +74,7 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   const actions = listActions({
     page: 'result',
     locale: c.locale,
-    mode: { comparePending: Boolean(c.compareChoice) },
+    mode: { comparePending: Boolean(c.compareChoice), processAvailable: c.timeline.length > 0 },
     artifacts,
   });
   if (!isActionEnabled(actions, action)) {
@@ -87,7 +86,10 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
     return { consume: true };
   }
   if (action === 'compare') {
-    resolveCompareChoice(c, true);
+    c.resultAction = 'compare';
+    c.page = 'compare-confirm';
+    c.timelineReadOffset = 0;
+    c.render(true);
     return { consume: true };
   }
   if (action === 'open-report') {
@@ -98,6 +100,12 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (action === 'open-candidate-final') return c.openResultArtifactHref(href, 'candidate');
   if (action === 'open-trace') return c.openTrace();
   if (action === 'open-replica') return c.openReplica();
+  if (action === 'view-process') { c.processExpanded = true; c.timelineReadOffset = 0; c.render(true); return { consume: true }; }
+  if (action === 'toggle-details') { c.resultDetails = !c.resultDetails; c.render(true); return { consume: true }; }
+  if (action === 'home') {
+    if (c.compareChoice) resolveCompareChoice(c, false);
+    return c.backToHome();
+  }
   return { consume: true };
 }
 
@@ -151,7 +159,7 @@ export function applyHomePointer(c: ControllerHandle, data: string): Consume | u
     showSuggestions: c.showSuggestions,
     locale: c.locale,
     focus: c.homeFocus,
-  }, cell.bodyRow);
+  }, cell.bodyRow, cell.width);
   if (!action) return { consume: true };
   c.homeFocus = action;
   if (action === 'open-recent') return c.openRecentExperiment();
@@ -179,23 +187,18 @@ export function applyHomePointer(c: ControllerHandle, data: string): Consume | u
 export function applyHistoryDetailPointer(c: ControllerHandle, data: string): Consume | undefined {
   const pointer = dispatchListPointer(data);
   if (!pointer) return undefined;
-  if (pointer.action === 'up' || pointer.action === 'down') return undefined;
+  if (pointer.action === 'up' || pointer.action === 'down') return c.processExpanded ? undefined : scrollPageBody(c, pointer.action === 'up' ? '\x1b[A' : '\x1b[B', 'history-detail');
   if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
   if (!c.historyDetail) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
   if (!cell) return { consume: true };
-  const view = c.view();
-  const theme = createTheme(cell.width);
-  const split = Boolean(view.history && !view.running?.entries.length && showsDetailPane(theme));
-  const detailWidth = split ? Math.max(28, Math.floor(cell.width * 0.42)) : cell.width;
-  const listWidth = split ? cell.width - detailWidth - 1 : 0;
-  if (split && cell.col <= listWidth + 1) return { consume: true };
-  const detailCol = split ? cell.col - listWidth - 1 : cell.col;
-  const detailRender = renderHistoryDetailWithHits(createTheme(detailWidth), detailWidth, c.historyDetail, c.locale);
+  const detailWidth = cell.width;
+  const detailCol = cell.col;
+  const detailRender = renderHistoryDetailWithHits(pageTheme(createTheme(detailWidth), 'history-detail'), detailWidth, c.historyDetail, c.locale);
   const detail = c.historyDetail;
   const action = historyDetailPointerAction(
     detailRender.lines,
-    cell.bodyRow,
+    cell.bodyRow + (c.timelineReadOffset ?? 0),
     detailCol,
     'taskCase' in detail ? undefined : detail,
     detailRender.rowHits,

@@ -12,6 +12,9 @@ export type HistoryCase = { readonly taskCase: TaskCase; readonly path: string }
 export type HistoryExperiment = {
   readonly experimentId: string;
   readonly taskCaseId: string;
+  readonly taskTitle?: string;
+  readonly candidateProductId?: string;
+  readonly candidateModel?: string;
   readonly runId?: string;
   readonly outcome?: string;
   readonly taskStatus?: string;
@@ -37,13 +40,19 @@ export async function readLocalHistory(dataDir: string): Promise<{
   readonly cases: readonly HistoryCase[];
   readonly experiments: readonly HistoryExperiment[];
   readonly totalBytes: number;
+  readonly invalidCaseCount: number;
 }> {
   const root = resolve(dataDir);
-  const [cases, sized, totalBytes] = await Promise.all([readCases(root), readExperiments(root), directorySize(root)]);
-  return { cases, experiments: sized, totalBytes };
+  const [{ cases, invalidCount }, sized, totalBytes] = await Promise.all([readCases(root), readExperiments(root), directorySize(root)]);
+  const titles = new Map(cases.map(({ taskCase }) => [taskCase.caseId, taskCase.initialInput.text.replace(/\s+/g, ' ').trim()]));
+  const experiments = sized.map((item) => {
+    const title = titles.get(item.taskCaseId);
+    return title ? { ...item, taskTitle: title } : item;
+  });
+  return { cases, experiments, totalBytes, invalidCaseCount: invalidCount };
 }
 
-async function readCases(root: string): Promise<readonly HistoryCase[]> {
+async function readCases(root: string): Promise<{ cases: readonly HistoryCase[]; invalidCount: number }> {
   const directory = join(root, "cases");
   const entries = await listPublishedFrozenCases(directory);
   const cases = await Promise.all(entries.map(async (entry) => {
@@ -51,23 +60,32 @@ async function readCases(root: string): Promise<readonly HistoryCase[]> {
     const value = await readJson(path);
     return Value.Check(TaskCaseSchema, value) ? { taskCase: value, path } : undefined;
   }));
-  return cases.filter(isDefined).sort((left, right) => right.taskCase.provenance.importedAt.localeCompare(left.taskCase.provenance.importedAt));
+  const valid = cases.filter((item): item is HistoryCase => item !== undefined);
+  return {
+    cases: valid.sort((left, right) => right.taskCase.provenance.importedAt.localeCompare(left.taskCase.provenance.importedAt)),
+    invalidCount: cases.length - valid.length,
+  };
 }
 
 async function readExperiments(root: string): Promise<readonly HistoryExperiment[]> {
   const directory = join(root, "experiments");
   const entries = await safeDirectories(directory);
   const experiments = await Promise.all(entries.map((entry) => readExperiment(join(directory, entry), entry)));
-  return experiments.filter(isDefined).sort((left, right) => (right.startedAt ?? "").localeCompare(left.startedAt ?? ""));
+  return experiments.sort((left, right) => (right.startedAt ?? "").localeCompare(left.startedAt ?? ""));
 }
 
-async function readExperiment(path: string, experimentId: string): Promise<HistoryExperiment | undefined> {
-  const metadata = await readJson(join(path, "experiment.json"));
-  if (!isPersistedExperimentMetadata(metadata)) return undefined;
+async function readExperiment(path: string, experimentId: string): Promise<HistoryExperiment> {
+  const metadataPath = join(path, "experiment.json");
+  const metadata = await readJson(metadataPath);
+  if (!isPersistedExperimentMetadata(metadata)) return {
+    experimentId, taskCaseId: experimentId, path, sizeBytes: await directorySize(path),
+    formatError: await exists(metadataPath) ? 'invalid_metadata' : 'missing_metadata',
+  };
   const runIds = await listPersistedRunIds(path, metadata);
   const runId = runIds.at(-1);
-  const record = runId ? await readRunRecord(join(path, "runs", runId, "record.json")) : undefined;
-  const unread = Boolean(runId && !record && await readJson(join(path, "runs", runId, "record.json")));
+  const recordPath = runId ? join(path, "runs", runId, "record.json") : undefined;
+  const record = recordPath ? await readRunRecord(recordPath) : undefined;
+  const unread = Boolean(recordPath && !record && await exists(recordPath));
   const comparisonValue = await readJson(join(path, "comparison.json"));
   const comparison = Value.Check(ComparisonInvocationSchema, comparisonValue) ? comparisonValue : undefined;
   const diagnostic = await exists(join(path, "comparison-failure.html")) ? join(path, "comparison-failure.html") : undefined;
@@ -90,6 +108,8 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
           taskStatus: record.outcome.task.status,
           cleanupStatus: record.outcome.cleanup.status,
           startedAt: record.attempt.createdAt,
+          candidateProductId: record.attempt.candidate.productId,
+          candidateModel: record.attempt.candidate.requestedModel,
         }
       : {}),
     ...artifacts,
@@ -103,7 +123,7 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
       : {}),
     ...(comparisonDetail ? { comparisonDetail } : {}),
     ...(committed.incompleteModelInput ? { incompleteModelInput: true } : {}),
-    ...(committed.diagnosticCode === "unsupported_schema" ? { formatError: committed.diagnosticCode } : {}),
+    ...(unread ? { formatError: 'unreadable_record' } : committed.diagnosticCode === "unsupported_schema" ? { formatError: committed.diagnosticCode } : {}),
     path,
     sizeBytes: await directorySize(path),
   };
@@ -145,4 +165,3 @@ async function exists(path: string): Promise<boolean> {
   try { await access(path, constants.F_OK); return true; } catch (error) { if (isMissing(error)) return false; throw error; }
 }
 function isMissing(error: unknown): boolean { return error instanceof Error && "code" in error && error.code === "ENOENT"; }
-function isDefined<T>(value: T | undefined): value is T { return value !== undefined; }

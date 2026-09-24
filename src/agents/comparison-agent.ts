@@ -1,19 +1,12 @@
-import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { ComparisonShortRefSchema, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
+import { ComparisonResultSchema, type ComparisonAgentEnvelope, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
 import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
 import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 
-const ComparisonResultSchema = Type.Object({
-  status: Type.Union([Type.Literal('completed'), Type.Literal('insufficient_evidence')]),
-  evidenceRefs: Type.Array(ComparisonShortRefSchema),
-  headline: Type.Optional(Type.String({ minLength: 1, maxLength: 280 })),
-  reportPath: Type.Optional(Type.Literal('report.html')),
-});
-export type ComparisonAgentEnvelope = Static<typeof ComparisonResultSchema>;
+export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
 
 export type ComparisonContext = {

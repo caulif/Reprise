@@ -122,7 +122,7 @@ test('product intake isolates per-pack limits, errors, and compact back navigati
   assert.equal(app.intakeLevel, 'projects');
   app.handleInput('\b');
   assert.equal(app.intakeLevel, 'products');
-  assert.match(document?.render(60).join('\n') ?? '', /Historical session sources|历史会话来源/);
+  assert.match(document?.render(60).join('\n') ?? '', /Which tool has the historical conversation|历史对话来自哪个工具/);
 });
 
 test('intake restores the last product cursor after leaving the catalog', async (t) => {

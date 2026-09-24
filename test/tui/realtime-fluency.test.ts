@@ -163,7 +163,8 @@ describe('realtime fluency caches', () => {
     assert.ok(revision.timelineRevision > 0);
     assert.ok(timeline.some((entry) => /recovery|Recovery|已恢复/i.test(entry.title) || entry.itemId === 'now:recovery'));
     assert.ok(timeline.some((entry) => entry.title.includes('Visible response') || entry.detail?.includes('public response')));
-    assert.ok(timeline.some((entry) => entry.title === '对照完成' || /comparison|对照/i.test(entry.title)));
+    assert.ok(timeline.some((entry) => entry.title === '比较已取消'));
+    assert.ok(!timeline.some((entry) => entry.title === '比较已完成'));
   });
 });
 
@@ -195,12 +196,12 @@ describe('R08 stale wait ladder (fake clock)', () => {
     const at10 = waitLine({ ...model, tick: start + 10_000 }, 'zh');
     const at60 = waitLine({ ...model, tick: start + 60_000 }, 'zh');
     const at120 = waitLine({ ...model, tick: start + 120_000 }, 'zh');
-    assert.match(at10 ?? '', /候选/);
+    assert.match(at10 ?? '', /执行工具/);
     assert.match(at60 ?? '', /可取消/);
     assert.match(at120 ?? '', /2 分钟没有新的可见活动/);
     const chrome = runningChrome(theme, 100, { ...model, tick: start + 120_000, elapsed: '02:00' }).join('\n');
-    assert.match(chrome, /等待候选|候选/);
-    assert.doesNotMatch(chrome, /候选 Runtime 无响应/);
+    assert.match(chrome, /执行工具/);
+    assert.doesNotMatch(chrome, /执行工具无响应/);
     assert.match(chrome, /Ctrl\+C/);
   });
 

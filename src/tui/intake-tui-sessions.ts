@@ -302,6 +302,7 @@ async function IntakeTui_openSessionInspection(this: IntakeTui, session: Session
     this.inspection = inspected;
     this.inspectionTaskInput = 0;
     this.inspectionShowOutcome = false;
+    this.inspectionScrollOffset = 0;
     this.page = "inspection";
     this.message = t(this.locale, "chooseSession");
   } catch (error) {

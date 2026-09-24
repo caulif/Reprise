@@ -124,10 +124,13 @@ export class IntakeTui {
   processExpanded = false;
   terminalGuard: (() => void) | undefined;
   inspectionShowOutcome = false;
+  inspectionScrollOffset = 0;
+  preparedInspectionSnapshot: string | undefined;
   modelConfig: HarnessModelConfig = defaultHarnessModelConfig();
   hasSavedModelConfig = false;
   configDraft: ConfigDraft = emptyHarnessConfigDraft();
   configSelected = 0;
+  configAdvanced = false;
   configEditing = false;
   configBuffer = "";
   configCursor = 0;
@@ -146,6 +149,7 @@ export class IntakeTui {
   historyCases: readonly HistoryCase[] = [];
   historyExperiments: readonly HistoryExperiment[] = [];
   historyTotalBytes = 0;
+  invalidHistoryCaseCount = 0;
   historyTab: "runs" | "cases" = "runs";
   historySelected = 0;
   historyDetail: HistoryCase | HistoryExperiment | undefined;
@@ -174,6 +178,8 @@ export class IntakeTui {
   recoveryFinished: Promise<void> | undefined;
   workflowFinished: Promise<void> | undefined;
   result: ExperimentResult | undefined;
+  resultAction: import('./page-input.js').ResultAction = 'open-candidate-final';
+  resultDetails = false;
   timeline: TimelineEntry[] = [];
   activityIndex: ActivityIndexState = createActivityIndex();
   timelineSelected = 0;

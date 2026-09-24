@@ -11,7 +11,7 @@ import { canvasHitIndices } from '../timeline-read.js';
 import { caretAt } from '../text-edit.js';
 import type { Theme } from '../theme.js';
 import type { TimelineEntry } from '../timeline.js';
-import { kv, pad, panel, stateRail, type PreparePhase } from '../widgets.js';
+import { kv, kvBlock, pad, panel, stateRail, wrapBodyLine, type PreparePhase } from '../widgets.js';
 import { joinColumns } from '../widgets.js';
 import type { CandidateRunPhase } from '../../application/candidate-run-phase.js';
 import {
@@ -61,6 +61,7 @@ export type ConfirmModel = PreflightModel & {
   readonly sourceProductLabel?: string;
   readonly experimentId?: string;
   readonly taskTitle?: string;
+  readonly preparedPath?: string;
 };
 export type RunningModel = {
   readonly entries: readonly TimelineEntry[];
@@ -201,10 +202,14 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     ...(model.sourceProductLabel ? [kv(theme, t(locale, 'sourceProductLabel'), model.sourceProductLabel, width - 2)] : []),
     kv(theme, t(locale, 'candidateLabel'), product, width - 2),
     kv(theme, t(locale, 'requestedModelLabel'), requested ?? t(locale, 'unavailableValue'), width - 2),
-    kv(theme, t(locale, 'resolvedModelLabel'), resolved || t(locale, 'unavailableValue'), width - 2),
+    ...(resolved && resolved !== requested ? [kv(theme, t(locale, 'resolvedModelLabel'), resolved, width - 2)] : []),
+    ...(model.preparedPath ? kvBlock(theme, t(locale, 'preparedCopyPath'), model.preparedPath, width - 2) : []),
     kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
     ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
-    kv(theme, t(locale, 'limitationsLabel'), model.preflight.limitations.length ? model.preflight.limitations.join(' | ') : t(locale, 'noneRecorded'), width - 2),
+    ...(model.preflight.limitations.length
+      ? [kv(theme, t(locale, 'limitationsLabel'), String(model.preflight.limitations.length), width - 2),
+        ...model.preflight.limitations.flatMap((item) => wrapBodyLine(item, Math.max(16, width - 6)).map((line) => theme.style.warn(` ${theme.glyphs.warn} ${line}`)))]
+      : [kv(theme, t(locale, 'limitationsLabel'), t(locale, 'noneRecorded'), width - 2)]),
     ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
     ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
   ];
@@ -214,8 +219,6 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     ? [warningLine, ...(diagnosisHint ? [diagnosisHint] : []), '', ...fields, ...startOk]
     : [...fields, '', warningLine, ...startOk];
   return [
-    renderStep(theme, 3, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
-    '',
     ...panel(theme, t(locale, recoveryRunnable ? 'confirmTitle' : 'confirmTitleBlocked', { product }), body, width),
   ];
 }

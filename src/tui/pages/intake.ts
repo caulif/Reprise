@@ -64,6 +64,7 @@ export type InspectionModel = {
   readonly privacy: SessionPrivacy;
   readonly selectedTaskInput: number;
   readonly showOutcome: boolean;
+  readonly scrollOffset?: number;
   readonly locale?: import('../i18n.js').Locale;
   /** Clock supplied by the workbench; inject it for deterministic visual audits. */
   readonly nowMs?: number;
@@ -265,21 +266,29 @@ export function matchesProjectQuery(project: SessionProject, query: string): boo
   return project.sessions.some((session) => matchesIntakeQuery(session, query));
 }
 
-export function renderSessions(theme: Theme, width: number, model: SessionsModel, height?: number, showPreview = true, showSearch = true): string[] {
+export function renderSessions(theme: Theme, width: number, model: SessionsModel, height?: number, _showPreview = true, showSearch = true): string[] {
   const limit = height === undefined ? 12 : Math.max(1, height - 5);
   if (model.level === 'products') return renderProducts(theme, width, model, limit);
-  if (model.level === 'projects') return renderProjects(theme, width, model, limit, showPreview, showSearch);
-  return renderSessionList(theme, width, model, limit, showPreview, showSearch);
+  if (model.level === 'projects') return renderProjects(theme, width, model, limit, false, showSearch);
+  return renderSessionList(theme, width, model, limit, false, showSearch);
 }
 
 export function renderInspection(theme: Theme, width: number, model: InspectionModel, height?: number): string[] {
+  return inspectionFrame(theme, width, model, height).lines;
+}
+
+export function inspectionMaxScroll(theme: Theme, width: number, model: InspectionModel, height?: number): number {
+  return inspectionFrame(theme, width, model, height).maxScroll;
+}
+
+function inspectionFrame(theme: Theme, width: number, model: InspectionModel, height?: number): { lines: string[]; maxScroll: number } {
   const locale = model.locale ?? 'en';
   const { inspection, privacy, showOutcome } = model;
   const inputs = inspection.transcript.filter((message) => message.role === 'user');
   if (!inputs.length) {
-    return panel(theme, `${t(locale, 'chooseTaskStart')} ${theme.glyphs.sep} ${projectLabel(inspection.cwd, locale)}`, [
+    return { lines: panel(theme, `${t(locale, 'chooseTaskStart')} ${theme.glyphs.sep} ${projectLabel(inspection.cwd, locale)}`, [
       ` ${t(locale, 'notReplayableNoUserInput')}`,
-    ], width);
+    ], width), maxScroll: 0 };
   }
   const start = firstReplayUserMessage(inputs) ?? inputs[0];
   const later = start ? inputs.filter((message) => message.id !== start.id) : inputs.slice(1);
@@ -287,12 +296,12 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
   const injectedLater = later.filter((message) => looksLikeInjectedInstruction(message.text));
   const project = projectLabel(inspection.cwd, locale);
   const tight = height !== undefined && height < 26;
-  const freezePreview = wrapPreview(start?.text ?? t(locale, 'unavailableValue'), Math.max(20, width - 4), tight ? 3 : 6, locale);
-  const laterLines = laterTasks.length
-    ? laterTasks.map((input, index) => ` ${index + 1}. ${compact(sessionTitle(input.text, locale), 72, theme.glyphs.ellipsis)}`)
-    : [` ${t(locale, 'noneWord')}`];
+  const freezePreview = showOutcome
+    ? wrapBodyLine(start?.text ?? t(locale, 'unavailableValue'), Math.max(20, width - 4))
+    : wrapPreview(start?.text ?? t(locale, 'unavailableValue'), Math.max(20, width - 4), tight ? 3 : 6, locale);
+  const laterLines = laterTasks.map((input, index) => ` ${index + 1}. ${compact(sessionTitle(input.text, locale), 72, theme.glyphs.ellipsis)}`);
   const injectedLines = injectedLater.map((input) => ` ${t(locale, 'injectedInstructionMark')} ${compact(sessionTitle(input.text, locale), 64, theme.glyphs.ellipsis)}`);
-  const outcome = compact(inspection.finalMessage ?? t(locale, 'unavailableValue'), showOutcome ? 400 : 120, theme.glyphs.ellipsis);
+  const outcome = inspection.finalMessage ?? t(locale, 'unavailableValue');
   const sourceLine = t(locale, 'sourceSummary', {
     product: inspection.productId,
     project,
@@ -301,30 +310,32 @@ export function renderInspection(theme: Theme, width: number, model: InspectionM
   const ruleWidth = Math.max(1, width - (theme.framed ? 2 : 3));
   const rule = theme.glyphs.h.repeat(ruleWidth);
   const body = [
+    ` ${t(locale, 'freezeIntro')}`,
     ` ${t(locale, 'freezeThis')}`,
     ...freezePreview.map((line) => ` ${line}`),
-    rule,
     ` ${sourceLine}`,
-    ` ${t(locale, 'taskStartBasis')}`,
-    rule,
-    ` ${t(locale, 'laterUserTurns', { n: laterTasks.length })}`,
-    ...laterLines,
-    ...injectedLines,
-    rule,
-    ` ${t(locale, 'freezeIntro')}`,
+    ...(laterLines.length ? [rule, ` ${t(locale, 'laterUserTurns', { n: laterTasks.length })}`,
+      ...(showOutcome ? laterTasks.flatMap((input, index) => [
+        ` ${index + 1}.`,
+        ...wrapBodyLine(input.text, Math.max(20, width - 6)).map((line) => `   ${line}`),
+      ]) : laterLines)] : []),
     ` ${t(locale, 'privacyLabel')}    ${t(locale, 'fieldModelText')} ${privacy.allowModelText ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldBinary')} ${privacy.allowBinary ? t(locale, 'allowed') : t(locale, 'blocked')} ${theme.glyphs.sep} ${t(locale, 'fieldRedactions')} ${privacy.redactions.length || t(locale, 'noneWord')}`,
-    ` ${t(locale, 'nothingWritten')}`,
     ...(showOutcome
-      ? [` ${t(locale, 'outcomeLabel')}    ${outcome}`]
+      ? [` ${t(locale, 'outcomeLabel')}`,
+        ...wrapBodyLine(outcome, Math.max(20, width - 4)).map((line) => ` ${line}`),
+        ...injectedLines, kv(theme, t(locale, 'fieldSource'), inspection.sourcePath, width - 2)]
       : [` ${theme.style.muted(t(locale, 'outcomeFolded'))}`]),
-    ...(inspection.recoveryDiagnostics?.length
+    ...(showOutcome && inspection.recoveryDiagnostics?.length
       ? [` ${t(locale, 'recoveryDiagnostics')} ${inspection.recoveryDiagnostics.map((item) => item.code).join(' / ')}`]
       : []),
-    ...(tight ? [] : [kv(theme, t(locale, 'fieldSource'), inspection.sourcePath, width - 2)]),
   ];
   const inner = height === undefined ? body.length : Math.max(1, height - (theme.framed ? 2 : 1));
-  const clipped = body.length <= inner ? body : [...body.slice(0, inner - 1), ` ${theme.glyphs.ellipsis}`];
-  return panel(theme, `${t(locale, 'chooseTaskStart')} ${theme.glyphs.sep} ${project}`, clipped, width);
+  const maxScroll = showOutcome ? Math.max(0, body.length - inner) : 0;
+  const offset = Math.min(Math.max(0, model.scrollOffset ?? 0), maxScroll);
+  const clipped = showOutcome
+    ? body.slice(offset, offset + inner)
+    : body.length <= inner ? body : [...body.slice(0, inner - 1), ` ${theme.glyphs.ellipsis}`];
+  return { lines: panel(theme, `${t(locale, 'chooseTaskStart')} ${theme.glyphs.sep} ${project}`, clipped, width), maxScroll };
 }
 
 export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): readonly (readonly [string, string])[] {
@@ -339,7 +350,7 @@ export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): rea
 }
 
 export function inspectionHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Enter', t(locale, 'hintFreeze')], ['d', t(locale, 'hintExpandOutcome')], ['Esc', t(locale, 'hintBack')]];
+  return [['Enter', t(locale, 'hintFreeze')], ['d', t(locale, 'hintExpandOutcome')], ['↑↓', t(locale, 'hintSelect')], ['Esc', t(locale, 'hintBack')]];
 }
 
 

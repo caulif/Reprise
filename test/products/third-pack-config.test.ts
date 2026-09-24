@@ -87,6 +87,7 @@ test("third pack loads from package plus plugins.json without host injection", a
   await app.start();
   assert.ok(app.productItems().some((item) => item.productId === "fake"));
   await app.loadProductSessions("fake");
+  assert.equal(app.activeProductId, "fake");
   assert.ok(app.sessions.some((item) => item.sessionId === "fake-session-1"));
-  assert.match(document?.render(120).join("\n") ?? "", /Fake/);
+  assert.match(document?.render(120).join("\n") ?? "", /fake/);
 });

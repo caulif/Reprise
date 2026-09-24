@@ -5,11 +5,59 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtemp } from 'node:fs/promises';
 import { readLocalHistory } from '../../src/tui/local-history.js';
-import { renderHistoryDetail } from '../../src/tui/pages/history.js';
+import { renderHistory, renderHistoryDetail } from '../../src/tui/pages/history.js';
 import { t as uiText } from '../../src/tui/i18n.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { sha256 } from '../../src/core/identity.js';
 import { isRecord } from '../../src/core/json.js';
+
+test('local history keeps damaged experiment directories visible with a format diagnosis', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-damaged-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const missing = join(root, 'experiments', 'exp-missing');
+  const invalid = join(root, 'experiments', 'exp-invalid');
+  await mkdir(missing, { recursive: true });
+  await mkdir(invalid, { recursive: true });
+  await writeFile(join(invalid, 'experiment.json'), '{broken json');
+  const history = await readLocalHistory(root);
+  assert.equal(history.experiments.length, 2);
+  assert.equal(history.experiments.find((item) => item.experimentId === 'exp-missing')?.formatError, 'missing_metadata');
+  assert.equal(history.experiments.find((item) => item.experimentId === 'exp-invalid')?.formatError, 'invalid_metadata');
+  const detail = renderHistoryDetail(createTheme(80, false), 80, history.experiments.find((item) => item.experimentId === 'exp-invalid')!, 'zh').join('\n');
+  assert.match(detail, /实验元数据无法读取或格式无效/);
+});
+
+test('a damaged saved task is diagnosed while healthy tasks and runs remain available', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-mixed-cases-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const good = join(root, 'cases', 'good');
+  const bad = join(root, 'cases', 'bad');
+  const run = join(root, 'experiments', 'run-good');
+  await Promise.all([mkdir(good, { recursive: true }), mkdir(bad, { recursive: true }), mkdir(run, { recursive: true })]);
+  await writeFile(join(good, 'case.json'), JSON.stringify({
+    schemaVersion: 1, caseId: 'good',
+    source: { productId: 'codex', sessionId: 'session-good' },
+    initialInput: { id: 'input-good', role: 'user', text: 'Repair the build' },
+    transcript: [{ id: 'input-good', role: 'user', text: 'Repair the build' }],
+    historicalEvents: [], baseline: { status: 'unavailable', artifactRefs: [], evidenceRefs: [] },
+    sourceRuntimeEvidence: { productId: 'codex', artifactRefs: [] },
+    provenance: { packVersion: '1', importedAt: '2026-09-24T00:00:00.000Z', sourceHash: 'a'.repeat(64) },
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+    contentHash: 'b'.repeat(64),
+  }));
+  await writeFile(join(bad, 'case.json'), '{invalid');
+  await Promise.all([writeFile(join(good, 'case.complete'), ''), writeFile(join(bad, 'case.complete'), '')]);
+  const history = await readLocalHistory(root);
+  assert.equal(history.invalidCaseCount, 1);
+  assert.deepEqual(history.cases.map((item) => item.taskCase.caseId), ['good']);
+  assert.equal(history.experiments.length, 1);
+  const rendered = renderHistory(createTheme(80, false), 80, {
+    totalBytes: history.totalBytes, invalidCaseCount: history.invalidCaseCount,
+    tab: 'cases', items: history.cases, selected: 0, locale: 'zh',
+  }).join('\n');
+  assert.match(rendered, /1 个已保存任务文件无法读取/);
+  assert.match(rendered, /Repair the build/);
+});
 
 test('local history reports experiment and total persisted data sizes', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-history-'));
@@ -144,7 +192,7 @@ test('history detail uses shared result fact labels for cleanup and previous rep
   const zh = renderHistoryDetail(createTheme(120, false), 120, item, 'zh').join('\n');
   assert.match(zh, /清理/);
   assert.match(zh, /清理\s+未知/);
-  assert.match(zh, /对照已取消/);
+  assert.match(zh, /比较已取消/);
   assert.match(zh, /诊断/);
   assert.match(zh, /此前报告/);
 });
