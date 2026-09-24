@@ -124,7 +124,7 @@ test("Comparison shell_exec still runs ordinary Node/Python static checks", asyn
 
 test("Comparison shell_exec timeout still fails and does not leave an orphan long-runner", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-timeout-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const shell = comparisonShell(root, { shellTimeoutMs: 100 });
   const started = Date.now();
   await assert.rejects(
@@ -141,7 +141,7 @@ test("Comparison shell_exec timeout still fails and does not leave an orphan lon
 
 test("Comparison shell_exec AbortSignal cancels a long command", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-abort-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const shell = comparisonShell(root, { shellTimeoutMs: 60_000 });
   const controller = new AbortController();
   const pending = shell.execute({ command: hostShellSleep(30) }, controller.signal);

@@ -423,12 +423,16 @@ export async function fingerprintTree(
   if (scan.budget.blockedReasons.length > 0) {
     return { fingerprint: { capturedAt: new Date().toISOString(), resources: metadata, digest: sha256(JSON.stringify(metadata)) }, budget: scan.budget };
   }
-  const resources = await Promise.all(scan.resources.map(async (resource) => {
-    if (resource.kind !== 'file') return resource;
-    const path = join(root, ...resource.path.split('/'));
-    const contentHash = resource.size > MAX_INLINE_HASH_BYTES ? await sha256File(path) : sha256(await readFile(path));
-    return { ...resource, contentHash };
-  }));
+  const resources: FingerprintEntry[] = [];
+  for (let index = 0; index < scan.resources.length; index += 32) {
+    const batch = scan.resources.slice(index, index + 32);
+    resources.push(...await Promise.all(batch.map(async (resource) => {
+      if (resource.kind !== 'file') return resource;
+      const path = join(root, ...resource.path.split('/'));
+      const contentHash = resource.size > MAX_INLINE_HASH_BYTES ? await sha256File(path) : sha256(await readFile(path));
+      return { ...resource, contentHash };
+    })));
+  }
   resources.sort(compareFingerprintEntries);
   return { fingerprint: { capturedAt: new Date().toISOString(), resources, digest: sha256(JSON.stringify(resources)) }, budget: scan.budget };
 }
