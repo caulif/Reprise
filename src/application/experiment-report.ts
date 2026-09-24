@@ -6,7 +6,7 @@ import type { ControllerDecision } from "../agents/controller-agent.js";
 import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObservationRefs } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type ComparisonPreviewReceipt, type ComparisonReportModel, type TaskCase } from "../core/schema.js";
+import { ComparisonInvocationSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type ComparisonPreviewReceipt, type ComparisonReportModel, type TaskCase } from "../core/schema.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { workspaceTools } from "../infrastructure/recovery-tools.js";
 import { sanitizedEnvironment } from "../infrastructure/recovery-workspace-tools.js";
@@ -356,9 +356,11 @@ async function runComparisonAttempt(input: {
         comparisonResult = comparisonFailed("invalid_envelope", error, comparisonResult.sessionId);
       }
     }
+    await closeResources();
+    let publishedReport: { html: string; model: ComparisonReportModel } | undefined;
     if (comparisonResult.status === "completed") {
       const finalCatalog = catalog.snapshot();
-      comparisonResult = await enforcePublishedReport(
+      const checked = await enforcePublishedReport(
         comparisonResult,
         input.attemptRoot,
         input.compareFacts,
@@ -367,9 +369,10 @@ async function runComparisonAttempt(input: {
         deliveredImageContentHashes,
         previewReceipt,
       );
+      comparisonResult = checked.result;
+      publishedReport = checked.report;
     }
-    await closeResources();
-    if (comparisonResult.status === "completed") await publishCompletedComparison(input, catalog);
+    if (comparisonResult.status === "completed" && publishedReport) await publishCompletedComparison(input, catalog, publishedReport);
     return comparisonResult;
   } catch (error) {
     try { await closeResources(); }
@@ -412,17 +415,15 @@ async function createComparisonAttemptCatalog(input: Parameters<typeof runCompar
   });
 }
 
-async function publishCompletedComparison(input: Parameters<typeof runComparisonAttempt>[0], catalog: ComparisonEvidenceCatalog): Promise<void> {
-  const publishedHtml = await readFile(join(input.attemptRoot, "report.html"), "utf8");
-  const publishedModel = readReportModel(await readFile(join(input.attemptRoot, "report-model.json"), "utf8"));
-  if (!publishedModel) throw new Error("Validated comparison report model is missing or invalid.");
+async function publishCompletedComparison(input: Parameters<typeof runComparisonAttempt>[0], catalog: ComparisonEvidenceCatalog,
+  report: { html: string; model: ComparisonReportModel }): Promise<void> {
   await publishComparisonArtifacts({
     attemptRoot: input.attemptRoot,
     experimentRoot: input.host.experimentRoot,
-    html: publishedHtml,
+    html: report.html,
     media: catalog.snapshot().media,
     evidence: catalog.snapshot().links,
-    model: publishedModel,
+    model: report.model,
   });
 }
 
@@ -497,10 +498,10 @@ async function enforcePublishedReport(
   locale: AgentLocale,
   deliveredImageContentHashes: ReadonlySet<string>,
   previewReceipt?: ComparisonPreviewReceipt,
-): Promise<AgentInvocation<ComparisonResult>> {
-  if (result.status !== "completed") return result;
+): Promise<{ result: AgentInvocation<ComparisonResult>; report?: { html: string; model: ComparisonReportModel } }> {
+  if (result.status !== "completed") return { result };
   if (!(await reportExists(attemptRoot, "work/report/body.html"))) {
-    return {
+    return { result: {
       status: "failed",
       sessionId: result.sessionId,
       failure: {
@@ -508,15 +509,15 @@ async function enforcePublishedReport(
         message: "Comparison agent completed without writing work/report/body.html.",
         attempts: 1,
       },
-    };
+    } };
   }
   let content: Awaited<ReturnType<typeof loadComparisonContentSnapshot>>;
   try {
     content = await loadComparisonContentSnapshot(attemptRoot);
   } catch (error) {
-    return { status: "failed", sessionId: result.sessionId, failure: {
+    return { result: { status: "failed", sessionId: result.sessionId, failure: {
       code: "report_incomplete", message: error instanceof Error ? error.message : String(error), attempts: 1,
-    } };
+    } } };
   }
   const verified = await verifyAndRenderComparisonReport({
     content,
@@ -530,7 +531,7 @@ async function enforcePublishedReport(
     deliveredImageContentHashes,
   });
   if ("failureClass" in verified) {
-    return {
+    return { result: {
       status: "failed",
       sessionId: result.sessionId,
       failure: {
@@ -538,7 +539,7 @@ async function enforcePublishedReport(
         message: verified.message,
         attempts: 1,
       },
-    };
+    } };
   }
   const prepared = await preparePublishableComparisonHtml({
     html: verified.html, attemptRoot, media: briefing.media, evidence: briefing.links,
@@ -552,13 +553,13 @@ async function enforcePublishedReport(
     || previewReceipt.contentDigest !== content.digest
     || previewReceipt.validationDigest !== fingerprint
     || previewReceipt.evidenceRevision !== briefing.revision) {
-    return { status: "failed", sessionId: result.sessionId, failure: {
+    return { result: { status: "failed", sessionId: result.sessionId, failure: {
       code: "report_incomplete", message: "The final content or evidence changed after preview_report; preview the current version again.", attempts: 1,
-    } };
+    } } };
   }
   await writeAtomic(join(attemptRoot, "report.html"), verified.html);
   await persistComparisonReportModel(attemptRoot, verified.model);
-  return result;
+  return { result, report: { html: verified.html, model: verified.model } };
 }
 
 function remapInvalidEnvelope(result: AgentInvocation<ComparisonResult>, reportPresent: boolean): AgentInvocation<ComparisonResult> {
@@ -901,12 +902,6 @@ export function mapBriefingErrorToComparisonResult(
   if (error instanceof Error && error.name === "AbortError") return { status: "cancelled" };
   if (error instanceof ComparisonVisualMediaError) return comparisonFailed("media_unavailable", error);
   return comparisonFailed("publication_failed", error);
-}
-
-function readReportModel(raw: string): ComparisonReportModel {
-  const value = JSON.parse(raw) as unknown;
-  if (!Value.Check(ComparisonReportModelSchema, value)) throw new Error("Comparison report model does not satisfy ComparisonReportModelSchema.");
-  return value;
 }
 
 async function writeComparisonFailurePage(input: {

@@ -28,7 +28,7 @@ Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝
 
 ## 报告发布
 
-正式报告是 experiment 根部的 `report.html` 及其媒体、被引用的派生证据。预览使用同一校验器生成 digest 收据；最终内容、事实、catalog revision 或媒体交付变化后必须重新预览。发布前关闭受管进程与浏览器；`publishComparisonArtifacts` 校验并复制图片和派生证据，写当前 formatVersion 2 的审计 `report-model.json`，最后原子替换根 `report.html`。缺版本、格式 1 或旧四区槽位的模型不再读取，也不自动迁移；原有历史文件不删除。失败或取消不得覆盖旧成功报告仍引用的资产。
+正式报告是 experiment 根部的 `report.html` 及其媒体、被引用的证据。原始证据链接在登记时封存到 attempt 的内容寻址路径并记录 `contentHash`；预览和发布都读取、校验这份封存副本。预览使用同一校验器生成 digest 收据；最终内容、事实、catalog revision 或媒体交付变化后必须重新预览。最终校验前关闭受管进程与浏览器；发布直接使用已校验的内存 HTML 和 model，不重读 attempt 的报告文件。`publishComparisonArtifacts` 校验并复制图片和证据，写当前 formatVersion 2 的审计 `report-model.json`，最后原子替换根 `report.html`。缺版本、格式 1 或旧四区槽位的模型不再读取，也不自动迁移；原有历史文件不删除。失败或取消不得覆盖旧成功报告仍引用的资产。
 
 Comparison 是运行后的可选证据视图，不是新的实验状态机，也不为历史 Runtime 版本提供精确复现保证。报告失败不应改写 CandidateRun 的 outcome；失败诊断保留原任务和草稿排查路径，未经发布校验的草稿正文不能作为正式结论。报告中应明确 baseline、candidate、证据缺口和 cleanup 状态。
 

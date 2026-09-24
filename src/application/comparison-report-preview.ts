@@ -62,7 +62,7 @@ export async function materializeComparisonReportPreview(input: {
     if (!link.reportHref) continue;
     const bytes = link.origin === "derived_analysis"
       ? await readRegisteredEvidenceBytes(input.attemptRoot, link)
-      : await readRegisteredOriginalLinkBytes(input.experimentRoot ?? input.attemptRoot, link);
+      : await readRegisteredOriginalLinkBytes(input.attemptRoot, link);
     const to = join(outputRoot, ...link.reportHref.split("/"));
     if (!pathContainedBy(outputRoot, to)) throw new Error("Preview evidence path escapes review root.");
     await mkdir(dirname(to), { recursive: true });

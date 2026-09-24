@@ -1,5 +1,5 @@
 import { mkdir, stat, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import type { ComparisonContext, ComparisonFactsContext } from "../agents/comparison-agent.js";
@@ -28,6 +28,7 @@ import {
 import { attemptFinalsRoot } from "./prepare-historical-artifacts.js";
 import { detectToolCapabilities, loadToolConfig } from "../infrastructure/tool-capabilities.js";
 import type { ToolCapabilityManifest, ToolConfig } from "../core/tool-schema.js";
+import { sealOriginalLink } from "./comparison-publication-assets.js";
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -216,7 +217,13 @@ async function comparisonMediaBundle(
     ...(browserPath ? { browserPath } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
   });
-  return { links: augmented.links, media: augmented.media, visualLimitations: augmented.visualLimitations, invalidLinkCount };
+  const sealedLinks: ComparisonLink[] = [];
+  for (const link of augmented.links) {
+    sealedLinks.push(link.reportHref
+      ? await sealOriginalLink(input.attemptRoot, resolve(input.experimentRoot, ...link.reportHref.split("/")), link)
+      : link);
+  }
+  return { links: sealedLinks, media: augmented.media, visualLimitations: augmented.visualLimitations, invalidLinkCount };
 }
 
 async function writeAttemptSidecars(

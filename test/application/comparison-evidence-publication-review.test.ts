@@ -10,6 +10,7 @@ import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js
 import { loadComparisonContentSnapshot } from "../../src/application/comparison-report-content.js";
 import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
 import { publishComparisonArtifacts, verifyAndRenderComparisonReport } from "../../src/application/comparison-publication.js";
+import { sealOriginalLink } from "../../src/application/comparison-publication-assets.js";
 
 type Node = { tagName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: Node[] };
 function nodes(root: Node): Node[] { return [root, ...(root.childNodes ?? []).flatMap(nodes)]; }
@@ -44,9 +45,10 @@ for (const derived of [true, false]) test(`${derived ? "derived" : "original"} e
     schemaVersion: 1, headline: "The recorded row count differs", criticalLimitations: [], evidenceRefs: ["ev-01"],
   }));
   await writeFile(join(attempt, "work", "report", "body.html"), '<p>The row count is recorded in the check. <a data-evidence-ref="ev-01">Open original check</a></p>');
-  const evidence: ComparisonLinkRecord[] = [{ side: derived ? "derived" : "candidate", shortRef: "ev-01", inspectPath: `evidence/${file}`,
-    reportHref: derived ? `evidence/${file}` : `comparison-attempts/attempt/evidence/${file}`,
-    contentHash: sha256(expected), mediaType: "text/plain", ...(derived ? { origin: "derived_analysis" as const } : {}) }];
+  const original: ComparisonLinkRecord = { side: derived ? "derived" : "candidate", shortRef: "ev-01", inspectPath: `evidence/${file}`,
+    reportHref: `evidence/${file}`, contentHash: sha256(expected), mediaType: "text/plain",
+    ...(derived ? { origin: "derived_analysis" as const } : {}) };
+  const evidence = [derived ? original : await sealOriginalLink(attempt, join(attempt, "evidence", file), original)];
   const facts: ComparisonReportFacts = {
     run: { runId: "fixture", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
     models: { baseline: "A", candidate: "B" }, activity: {}, limits: { triggered: [] }, runtime: { productId: "codex" },
@@ -56,6 +58,7 @@ for (const derived of [true, false]) test(`${derived ? "derived" : "original"} e
   const preview = await materializeComparisonReportPreview({ attemptRoot: attempt, experimentRoot: published, hostTask: "Compare row counts", facts,
     media: [], evidence, catalogRevision: 1 });
   await assertOpenable(preview.html, preview.outputRoot, expected);
+  if (!derived) await writeFile(join(attempt, "evidence", file), "Changed after preview.\n");
   const checked = await verifyAndRenderComparisonReport({ content: await loadComparisonContentSnapshot(attempt),
     hostTask: "Compare row counts", facts, attemptRoot: attempt, media: [], evidence });
   assert.ok(!("failureClass" in checked));

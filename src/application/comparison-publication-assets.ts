@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, realpath } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, resolve, win32 } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { ComparisonReportModelSchema, type ComparisonLinkRecord, type ComparisonMediaRecord, type ComparisonReportModel } from "../core/schema.js";
 import { writeAtomic } from "../core/identity.js";
@@ -24,13 +24,15 @@ export async function publishComparisonArtifacts(input: {
     html: input.html, media: input.media ?? [],
   });
   for (const link of input.evidence ?? []) {
-    if (link.origin !== "derived_analysis" || !link.reportHref) continue;
-    const bytes = await readRegisteredEvidenceBytes(input.attemptRoot, link);
+    if (!link.reportHref) continue;
+    const bytes = link.origin === "derived_analysis"
+      ? await readRegisteredEvidenceBytes(input.attemptRoot, link)
+      : await readRegisteredOriginalLinkBytes(input.attemptRoot, link);
     const destination = resolve(input.experimentRoot, ...link.reportHref.split("/"));
-    if (!pathContainedBy(resolve(input.experimentRoot), destination)) throw new Error("Derived evidence publication path escapes experiment root.");
+    if (!pathContainedBy(resolve(input.experimentRoot), destination)) throw new Error("Evidence publication path escapes experiment root.");
     await mkdir(dirname(destination), { recursive: true });
     if (!pathContainedBy(await realpath(input.experimentRoot), await realpath(dirname(destination)))) {
-      throw new Error("Derived evidence publication path escapes experiment root.");
+      throw new Error("Evidence publication path escapes experiment root.");
     }
     await writeAtomic(destination, bytes);
   }
@@ -99,17 +101,34 @@ export async function readRegisteredEvidenceBytes(attemptRoot: string, link: Com
   return bytes;
 }
 
-export async function readRegisteredOriginalLinkBytes(experimentRoot: string, link: ComparisonLinkRecord): Promise<Buffer> {
+export async function sealOriginalLink(attemptRoot: string, sourcePath: string, link: ComparisonLinkRecord): Promise<ComparisonLinkRecord> {
+  const bytes = await readLimitedOriginal(sourcePath);
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const extension = extname(sourcePath).match(/^\.[A-Za-z0-9]{1,12}$/)?.[0] ?? "";
+  const reportHref = `evidence/original/${contentHash}${extension}`;
+  await writeAtomic(join(attemptRoot, ...reportHref.split("/")), bytes);
+  return { ...link, reportHref, contentHash, byteLength: bytes.length };
+}
+
+export async function readRegisteredOriginalLinkBytes(attemptRoot: string, link: ComparisonLinkRecord): Promise<Buffer> {
   const href = link.reportHref;
-  if (!href || isAbsolute(href) || win32.isAbsolute(href) || /[\\:\u0000-\u001f\u007f]/.test(href)
-    || href.split("/").some((part) => !part || part === "." || part === "..")) {
+  if (!href || !link.contentHash || !/^evidence\/original\/[a-f0-9]{64}(?:\.[A-Za-z0-9]{1,12})?$/.test(href)
+    || !href.startsWith(`evidence/original/${link.contentHash}`)) {
     throw new Error("Original evidence link has an unsafe publication path.");
   }
-  const source = resolve(experimentRoot, ...href.split("/"));
-  const [rootReal, sourceReal] = await Promise.all([realpath(experimentRoot), realpath(source)]);
-  if (!pathContainedBy(rootReal, sourceReal)) throw new Error("Original evidence path escapes experiment root.");
+  const source = resolve(attemptRoot, ...href.split("/"));
+  const [rootReal, sourceReal] = await Promise.all([realpath(attemptRoot), realpath(source)]);
+  if (!pathContainedBy(rootReal, sourceReal)) throw new Error("Original evidence path escapes attempt root.");
+  const bytes = await readLimitedOriginal(sourceReal);
+  if (createHash("sha256").update(bytes).digest("hex") !== link.contentHash) {
+    throw new Error("Original evidence content changed after registration.");
+  }
+  return bytes;
+}
+
+async function readLimitedOriginal(source: string): Promise<Buffer> {
   const maxBytes = 32 * 1024 * 1024;
-  const handle = await open(sourceReal, "r");
+  const handle = await open(source, "r");
   let bytes: Buffer;
   try {
     const metadata = await handle.stat();
@@ -127,9 +146,6 @@ export async function readRegisteredOriginalLinkBytes(experimentRoot: string, li
     bytes = Buffer.concat(chunks, total);
   } finally {
     await handle.close();
-  }
-  if (link.contentHash && createHash("sha256").update(bytes).digest("hex") !== link.contentHash) {
-    throw new Error("Original evidence content changed after registration.");
   }
   return bytes;
 }
