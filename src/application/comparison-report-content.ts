@@ -1,5 +1,5 @@
 import { open, realpath } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { sha256 } from "../core/identity.js";
 import { ComparisonReportContentSchema, type ComparisonReportContent } from "../core/schema.js";
@@ -17,7 +17,7 @@ export type ComparisonContentSnapshot = {
   digest: string;
 };
 
-async function readBounded(attemptRoot: string, path: string, maxBytes: number, optional = false): Promise<string> {
+async function readBounded(rootReal: string, path: string, maxBytes: number, optional = false): Promise<string> {
   let resolved: string;
   try {
     resolved = await realpath(path);
@@ -25,8 +25,8 @@ async function readBounded(attemptRoot: string, path: string, maxBytes: number, 
     if (optional && isMissing(error)) return "";
     throw new Error(`Cannot read comparison content ${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
-  const rel = relative(resolve(attemptRoot), resolved);
-  if (rel.startsWith("..") || rel.includes(":") || !rel) throw new Error(`Comparison content path escapes attempt root: ${path}`);
+  const rel = relative(rootReal, resolved);
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error(`Comparison content path escapes attempt root: ${path}`);
   const handle = await open(resolved, "r");
   try {
     const bytes = Buffer.alloc(maxBytes + 1);
@@ -45,10 +45,11 @@ async function readBounded(attemptRoot: string, path: string, maxBytes: number, 
 
 export async function loadComparisonContentSnapshot(attemptRoot: string): Promise<ComparisonContentSnapshot> {
   const root = join(attemptRoot, "work", "report");
+  const rootReal = await realpath(attemptRoot);
   const [raw, body, details] = await Promise.all([
-    readBounded(attemptRoot, join(root, "content.json"), MAX_CONTENT_BYTES),
-    readBounded(attemptRoot, join(root, "body.html"), MAX_BODY_BYTES),
-    readBounded(attemptRoot, join(root, "details.html"), MAX_DETAILS_BYTES, true),
+    readBounded(rootReal, join(root, "content.json"), MAX_CONTENT_BYTES),
+    readBounded(rootReal, join(root, "body.html"), MAX_BODY_BYTES),
+    readBounded(rootReal, join(root, "details.html"), MAX_DETAILS_BYTES, true),
   ]);
   let parsed: unknown;
   try {

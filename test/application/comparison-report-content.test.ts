@@ -1,6 +1,6 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadComparisonContentSnapshot } from "../../src/application/comparison-report-content.js";
@@ -76,4 +76,22 @@ test("content loader rejects a hidden-only main comparison", async (t) => {
     await writeFile(file("body.html"), body);
     await assert.rejects(loadComparisonContentSnapshot(root), /cannot contain|hidden|fragment/i);
   }
+});
+
+test("content loader accepts an attempt path alias but rejects content linked outside it", async (t) => {
+  const { root, file } = await setup(t);
+  const alias = join(root, "alias");
+  await symlink(root, alias, process.platform === "win32" ? "junction" : "dir");
+  try {
+    const original = await loadComparisonContentSnapshot(root);
+    assert.deepEqual(await loadComparisonContentSnapshot(alias), original);
+  } finally {
+    await rm(alias);
+  }
+
+  const external = await mkdtemp(join(tmpdir(), "reprise-external-content-"));
+  t.after(() => rm(external, { recursive: true, force: true }));
+  await rm(file("body.html"));
+  await symlink(external, file("body.html"), process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(loadComparisonContentSnapshot(root), /escapes attempt root/);
 });
