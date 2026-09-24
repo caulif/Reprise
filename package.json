@@ -85,7 +85,12 @@
     "@earendil-works/pi-ai": "0.84.1",
     "@earendil-works/pi-tui": "0.84.1",
     "@sinclair/typebox": "0.34.52",
-    "parse5": "^8.0.1"
+    "csv-parse": "7.0.2",
+    "fast-xml-parser": "5.11.1",
+    "jszip": "3.10.1",
+    "parse5": "^8.0.1",
+    "pdf2json": "4.0.2",
+    "playwright-core": "1.55.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

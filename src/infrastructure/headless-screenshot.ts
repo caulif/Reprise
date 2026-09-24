@@ -15,6 +15,7 @@ export type HeadlessScreenshotResult =
 
 export type HeadlessScreenshotOptions = {
   readonly signal?: AbortSignal;
+  readonly browserPath?: string;
   /** Test inject for a single capture attempt. Production uses the controlled artifact renderer. */
   readonly captureOnce?: (sourcePath: string, destPng: string, signal?: AbortSignal) => Promise<HeadlessScreenshotResult>;
 };
@@ -85,6 +86,7 @@ async function captureViaRenderer(
   sourcePath: string,
   destPng: string,
   signal?: AbortSignal,
+  browserPath?: string,
 ): Promise<HeadlessScreenshotResult> {
   const { captureHeadlessScreenshotViaRenderer } = await import("./artifact-renderer.js");
   const result = await captureHeadlessScreenshotViaRenderer(
@@ -92,6 +94,7 @@ async function captureViaRenderer(
     destPng,
     undefined,
     signal ?? new AbortController().signal,
+    browserPath,
   );
   if (result.ok) {
     const info = await stat(destPng).catch(() => undefined);
@@ -113,7 +116,8 @@ export async function captureHeadlessScreenshot(
   destPng: string,
   options: HeadlessScreenshotOptions = {},
 ): Promise<HeadlessScreenshotResult> {
-  const captureOnce = options.captureOnce ?? captureViaRenderer;
+  const captureOnce = options.captureOnce ?? ((sourcePath: string, destPng: string, signal?: AbortSignal) =>
+    captureViaRenderer(sourcePath, destPng, signal, options.browserPath));
   let lastFailure: HeadlessScreenshotFailure = { kind: "capture_failed", message: "capture failed" };
   for (let attempt = 0; attempt < 2; attempt += 1) {
     options.signal?.throwIfAborted();

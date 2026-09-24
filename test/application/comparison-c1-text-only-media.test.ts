@@ -10,7 +10,7 @@ import {
   publishComparisonArtifacts,
   verifyAndRenderComparisonReport,
 } from "../../src/application/comparison-publication.js";
-import { renderComparisonReportShell } from "../../src/application/comparison-report-shell.js";
+import { writeComparisonContent } from "../comparison-content-support.js";
 import { AgentHost, type AgentAuditEvent } from "../../src/infrastructure/agent/host.js";
 import { imageContentHash } from "../../src/infrastructure/agent/model-input.js";
 import { sha256 } from "../../src/core/identity.js";
@@ -45,21 +45,6 @@ function facts(): ComparisonReportFacts {
       candidate: { elapsedMs: 900, tokens: { total: 12 }, costUsd: 0.02, usageStatus: "collected", pricingStatus: "collected", pricingVersion: "v1", collectedAt: stamp },
     },
   };
-}
-
-function shell(comparison: string): string {
-  return renderComparisonReportShell({
-    task: "生成可分享预览。",
-    facts: facts(),
-    metrics: facts().metrics ?? {},
-    slots: {
-      headline: "两侧都有预览图可供人阅读。",
-      category: "交付",
-      task: "生成可分享预览。",
-      comparison,
-      details: "",
-    },
-  });
 }
 
 test("C1: text-only Host strips image blocks while report can publish real imgs without visual claim", async (t) => {
@@ -123,7 +108,7 @@ test("C1: text-only Host strips image blocks while report can publish real imgs 
   assert.deepEqual(appended?.payload.images, []);
   await session.close();
 
-  const html = shell(
+  const content = await writeComparisonContent(root,
     '<p>两侧预览如下，供人阅读；本会话未做视觉核验。</p>'
     + '<img data-media-ref="media-01" alt="historical preview">'
     + '<img data-media-ref="media-02" alt="candidate preview">',
@@ -153,7 +138,7 @@ test("C1: text-only Host strips image blocks while report can publish real imgs 
     },
   ];
   const verified = await verifyAndRenderComparisonReport({
-    html,
+    content, hostTask: "生成可分享预览。",
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot: root,
@@ -189,12 +174,12 @@ test("C1 reverse: available media without session delivery rejects data-claim=vi
   await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "history.png"), PNG_BYTES);
   const contentHash = sha256(PNG_BYTES);
-  const html = shell(
+  const content = await writeComparisonContent(root,
     '<p><span data-claim="visual" data-media-ref="media-01">画面为红色。</span></p>'
     + '<img data-media-ref="media-01" alt="historical preview">',
   );
   const rejected = await verifyAndRenderComparisonReport({
-    html,
+    content, hostTask: "生成可分享预览。",
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot: root,
@@ -222,12 +207,12 @@ test("C1: visual claim accepted when cited media contentHash was delivered to th
   await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "history.png"), PNG_BYTES);
   const contentHash = sha256(PNG_BYTES);
-  const html = shell(
+  const content = await writeComparisonContent(root,
     '<p><span data-claim="visual" data-media-ref="media-01">画面为红色。</span></p>'
     + '<img data-media-ref="media-01" alt="historical preview">',
   );
   const verified = await verifyAndRenderComparisonReport({
-    html,
+    content, hostTask: "生成可分享预览。",
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot: root,
@@ -270,13 +255,13 @@ test("C1: materializeComparisonMedia seeds contentHash so visual claims can bind
   assert.equal(media[0]?.contentHash, sha256(PNG_BYTES));
   assert.equal(media[0]?.byteLength, PNG_BYTES.byteLength);
 
-  const html = shell(
+  const content = await writeComparisonContent(attemptRoot,
     '<p><span data-claim="visual" data-media-ref="media-01">画面为红色。</span></p>'
     + '<img data-media-ref="media-01" alt="candidate preview">',
   );
   const withShort = media.map((item, index) => ({ ...item, shortRef: `media-0${index + 1}` }));
   const rejected = await verifyAndRenderComparisonReport({
-    html,
+    content, hostTask: "生成可分享预览。",
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot,
@@ -288,7 +273,7 @@ test("C1: materializeComparisonMedia seeds contentHash so visual claims can bind
   assert.equal(rejected.code, "media_unavailable");
 
   const accepted = await verifyAndRenderComparisonReport({
-    html,
+    content, hostTask: "生成可分享预览。",
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot,

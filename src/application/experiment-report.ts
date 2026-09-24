@@ -1,13 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Value } from "@sinclair/typebox/value";
 import type { ControllerDecision } from "../agents/controller-agent.js";
 import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObservationRefs } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type ComparisonReportModel, type TaskCase } from "../core/schema.js";
+import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type ComparisonPreviewReceipt, type ComparisonReportModel, type TaskCase } from "../core/schema.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { workspaceTools } from "../infrastructure/recovery-tools.js";
+import { sanitizedEnvironment } from "../infrastructure/recovery-workspace-tools.js";
 import {
   writeImmutableJson,
   type ExperimentStore,
@@ -30,7 +32,7 @@ import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
 import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
-import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
+import { metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 import { readOperatorLocale } from "./operator-locale.js";
 import type { AgentLocale } from "../agents/language.js";
 import { Type } from "@sinclair/typebox";
@@ -38,14 +40,22 @@ import { ComparisonEvidenceCatalog, lookupCompletedToolCall } from "./comparison
 import type { ComparisonCatalogSnapshot } from "./comparison-evidence.js";
 import { createComparisonRenderCatalogPort } from "./comparison-render-catalog.js";
 import { createPreviewReportTool, createRenderArtifactTool } from "./comparison-render-tools.js";
-import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
+import { comparisonPreviewFingerprint, materializeComparisonReportPreview } from "./comparison-report-preview.js";
+import { loadComparisonContentSnapshot } from "./comparison-report-content.js";
 import {
   comparisonFailureDiagnostic,
   persistComparisonReportModel,
   publishComparisonArtifacts,
+  preparePublishableComparisonHtml,
   verifyAndRenderComparisonReport,
 } from "./comparison-publication.js";
 import { withComparisonShellDeny } from "./comparison-shell-deny.js";
+import { ManagedProcesses } from "../infrastructure/managed-processes.js";
+import { createComparisonProcessTools } from "./comparison-process-tools.js";
+import { ManagedBrowser } from "../infrastructure/managed-browser.js";
+import { createComparisonBrowserTools } from "./comparison-browser-tools.js";
+import { createComparisonNetworkTools } from "./comparison-network-tools.js";
+import { renderFrozenArtifact } from "../infrastructure/artifact-renderer.js";
 
 export { comparisonCandidateMount };
 
@@ -252,24 +262,14 @@ async function compareExperimentOutcome(
       snapshotStatus: input.candidateSnapshotStatus,
       ...(input.signal ? { signal: input.signal } : {}),
     });
-    const reportShellHtml = renderComparisonReportShell({
-      task: context.task.summary,
-      facts: context.reportFacts,
-      metrics: metricsFromReportFacts(context.reportFacts),
-      evidence: briefing.links,
-      media: briefing.media,
-      locale,
-    });
-    const hostZoneSnapshot = extractHostZoneSnapshot(reportShellHtml);
     const compareFacts = {
       ...context,
       media: briefing.media,
       shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
-      ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
     };
-    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
+    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media, capabilities: briefing.capabilities });
     comparisonResult = await runComparisonAttempt({
-      host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
+      host: input, attemptId, attemptRoot, briefing, compareFacts, locale,
     });
   } catch (error) {
     comparisonResult = mapBriefingErrorToComparisonResult(error);
@@ -293,13 +293,97 @@ async function runComparisonAttempt(input: {
   host: Parameters<typeof finishExperiment>[0];
   attemptId: string;
   attemptRoot: string;
-  briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[]; indexMarkdown: string };
+  briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[]; indexMarkdown: string;
+    capabilities: import("../core/tool-schema.js").ToolCapabilityManifest; browserPath?: string;
+    toolConfig: import("../core/tool-schema.js").ToolConfig };
   compareFacts: ComparisonContext;
-  reportShellHtml: string;
   locale: AgentLocale;
 }): Promise<AgentInvocation<ComparisonResult>> {
   const compareContext = withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown);
-  const catalog = await ComparisonEvidenceCatalog.create({
+  const catalog = await createComparisonAttemptCatalog(input);
+  const getEvidenceCatalog = (): ComparisonCatalogSnapshot => catalog.snapshot();
+  const processMounts = comparisonAttemptMounts({
+    experimentRoot: input.host.experimentRoot,
+    runId: input.host.input.runId,
+    attemptRoot: input.attemptRoot,
+    candidateSnapshotStatus: input.host.candidateSnapshotStatus,
+    candidateSnapshotRoot: input.host.candidateSnapshotRoot,
+  });
+  const processes = new ManagedProcesses(join(input.attemptRoot, "scratch", "process"),
+    join(input.attemptRoot, "scratch"), {
+      ...sanitizedEnvironment(join(input.attemptRoot, ".home")),
+      ...comparisonShellVariables(input.host, input.attemptRoot, processMounts),
+    });
+  const browser = input.briefing.browserPath ? new ManagedBrowser(input.briefing.browserPath) : undefined;
+  let resourcesClosed = false;
+  const closeResources = async () => {
+    if (resourcesClosed) return;
+    resourcesClosed = true;
+    const outcomes = await Promise.allSettled([processes.close(), browser?.close()]);
+    const errors: unknown[] = outcomes.flatMap((outcome) => outcome.status === "rejected" ? [outcome.reason as unknown] : []);
+    if (errors.length) throw new AggregateError(errors,
+      `Comparison attempt resource cleanup failed: ${errors.map((error) => error instanceof Error ? error.message : String(error)).join("; ")}`);
+  };
+  try {
+    let deliveredImageContentHashes = new Set<string>();
+    let previewReceipt: ComparisonPreviewReceipt | undefined;
+    let comparisonResult: AgentInvocation<ComparisonResult> = input.host.signal?.aborted
+      ? { status: "cancelled" }
+      : await (async () => {
+        const invoked = await invokeCompare(
+          input.host,
+          compareContext,
+          input.attemptRoot,
+          input.attemptId,
+          input.host.taskCase.privacy.allowBinary,
+          catalog,
+          processes,
+          browser,
+          input.briefing.browserPath,
+          input.briefing.toolConfig,
+          input.locale,
+        );
+        deliveredImageContentHashes = invoked.deliveredImageContentHashes;
+        previewReceipt = invoked.previewReceipt;
+        return invoked.result;
+      })();
+    if (input.host.signal?.aborted) comparisonResult = { status: "cancelled" };
+    comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(input.attemptRoot, "work/report/body.html"));
+    if (comparisonResult.status === "completed") {
+      try {
+        assertComparisonResult(comparisonResult.value, input.compareFacts, getEvidenceCatalog);
+      } catch (error) {
+        comparisonResult = comparisonFailed("invalid_envelope", error, comparisonResult.sessionId);
+      }
+    }
+    if (comparisonResult.status === "completed") {
+      const finalCatalog = catalog.snapshot();
+      comparisonResult = await enforcePublishedReport(
+        comparisonResult,
+        input.attemptRoot,
+        input.compareFacts,
+        { links: finalCatalog.links, media: finalCatalog.media, revision: finalCatalog.revision },
+        input.locale,
+        deliveredImageContentHashes,
+        previewReceipt,
+      );
+    }
+    await closeResources();
+    if (comparisonResult.status === "completed") await publishCompletedComparison(input, catalog);
+    return comparisonResult;
+  } catch (error) {
+    try { await closeResources(); }
+    catch (cleanupError) {
+      const original = error instanceof Error ? error.message : String(error);
+      const cleanup = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+      return comparisonFailed("agent_failure", new AggregateError([error, cleanupError], `${original}; ${cleanup}`));
+    }
+    return comparisonFailed("agent_failure", error);
+  }
+}
+
+async function createComparisonAttemptCatalog(input: Parameters<typeof runComparisonAttempt>[0]): Promise<ComparisonEvidenceCatalog> {
+  return ComparisonEvidenceCatalog.create({
     attemptRoot: input.attemptRoot,
     attemptId: input.attemptId,
     links: input.briefing.links,
@@ -326,64 +410,20 @@ async function runComparisonAttempt(input: {
       toolCallId,
     ),
   });
-  const getEvidenceCatalog = (): ComparisonCatalogSnapshot => catalog.snapshot();
-  try {
-    await writeAtomic(join(input.attemptRoot, "report.html"), input.reportShellHtml);
-    let deliveredImageContentHashes = new Set<string>();
-    let comparisonResult: AgentInvocation<ComparisonResult> = input.host.signal?.aborted
-      ? { status: "cancelled" }
-      : await (async () => {
-        const invoked = await invokeCompare(
-          input.host,
-          compareContext,
-          input.attemptRoot,
-          input.attemptId,
-          catalog.snapshot().media.some((item) => item.available),
-          catalog,
-        );
-        deliveredImageContentHashes = invoked.deliveredImageContentHashes;
-        return invoked.result;
-      })();
-    if (input.host.signal?.aborted) comparisonResult = { status: "cancelled" };
-    comparisonResult = remapInvalidEnvelope(comparisonResult, await reportExists(input.attemptRoot, "report.html"));
-    if (comparisonResult.status === "completed") {
-      try {
-        assertComparisonResult(comparisonResult.value, input.compareFacts, getEvidenceCatalog);
-      } catch (error) {
-        comparisonResult = comparisonFailed("invalid_envelope", error, comparisonResult.sessionId);
-      }
-    }
-    if (comparisonResult.status === "completed") {
-      const finalCatalog = catalog.snapshot();
-      comparisonResult = await enforcePublishedReport(
-        comparisonResult,
-        input.attemptRoot,
-        input.compareFacts,
-        { links: finalCatalog.links, media: finalCatalog.media },
-        input.locale,
-        deliveredImageContentHashes,
-      );
-    }
-    if (comparisonResult.status === "completed") {
-      const publishedHtml = await readFile(join(input.attemptRoot, "report.html"), "utf8");
-      let publishedModel: ComparisonReportModel | undefined;
-      try {
-        publishedModel = readReportModel(await readFile(join(input.attemptRoot, "report-model.json"), "utf8"));
-      } catch {
-        // Attempt model should exist after enforcePublishedReport; publish still stages media then HTML.
-      }
-      await publishComparisonArtifacts({
-        attemptRoot: input.attemptRoot,
-        experimentRoot: input.host.experimentRoot,
-        html: publishedHtml,
-        media: input.briefing.media,
-        ...(publishedModel ? { model: publishedModel } : {}),
-      });
-    }
-    return comparisonResult;
-  } catch (error) {
-    return comparisonFailed("agent_failure", error);
-  }
+}
+
+async function publishCompletedComparison(input: Parameters<typeof runComparisonAttempt>[0], catalog: ComparisonEvidenceCatalog): Promise<void> {
+  const publishedHtml = await readFile(join(input.attemptRoot, "report.html"), "utf8");
+  const publishedModel = readReportModel(await readFile(join(input.attemptRoot, "report-model.json"), "utf8"));
+  if (!publishedModel) throw new Error("Validated comparison report model is missing or invalid.");
+  await publishComparisonArtifacts({
+    attemptRoot: input.attemptRoot,
+    experimentRoot: input.host.experimentRoot,
+    html: publishedHtml,
+    media: catalog.snapshot().media,
+    evidence: catalog.snapshot().links,
+    model: publishedModel,
+  });
 }
 
 async function persistComparisonInvocation(input: {
@@ -453,24 +493,33 @@ async function enforcePublishedReport(
   result: AgentInvocation<ComparisonResult>,
   attemptRoot: string,
   context: ComparisonContext,
-  briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[] },
+  briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[]; revision: number },
   locale: AgentLocale,
   deliveredImageContentHashes: ReadonlySet<string>,
+  previewReceipt?: ComparisonPreviewReceipt,
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (result.status !== "completed") return result;
-  if (!(await reportExists(attemptRoot, result.value.reportPath))) {
+  if (!(await reportExists(attemptRoot, "work/report/body.html"))) {
     return {
       status: "failed",
       sessionId: result.sessionId,
       failure: {
         code: "agent_failure",
-        message: "Comparison agent completed without writing report.html.",
+        message: "Comparison agent completed without writing work/report/body.html.",
         attempts: 1,
       },
     };
   }
+  let content: Awaited<ReturnType<typeof loadComparisonContentSnapshot>>;
+  try {
+    content = await loadComparisonContentSnapshot(attemptRoot);
+  } catch (error) {
+    return { status: "failed", sessionId: result.sessionId, failure: {
+      code: "report_incomplete", message: error instanceof Error ? error.message : String(error), attempts: 1,
+    } };
+  }
   const verified = await verifyAndRenderComparisonReport({
-    html: await readFile(join(attemptRoot, "report.html"), "utf8"),
+    content,
     hostTask: context.task.summary,
     facts: context.reportFacts,
     result: result.value,
@@ -479,7 +528,6 @@ async function enforcePublishedReport(
     evidence: briefing.links,
     locale,
     deliveredImageContentHashes,
-    ...(context.hostZoneSnapshot ? { hostZoneSnapshot: context.hostZoneSnapshot } : {}),
   });
   if ("failureClass" in verified) {
     return {
@@ -491,6 +539,22 @@ async function enforcePublishedReport(
         attempts: 1,
       },
     };
+  }
+  const prepared = await preparePublishableComparisonHtml({
+    html: verified.html, attemptRoot, media: briefing.media, evidence: briefing.links,
+  });
+  const fingerprint = comparisonPreviewFingerprint({
+    contentDigest: content.digest, facts: context.reportFacts, hostTask: context.task.summary,
+    locale, preparedDigest: sha256(prepared.html),
+    media: briefing.media, evidence: briefing.links, catalogRevision: briefing.revision,
+  });
+  if (!previewReceipt?.publishable || !previewReceipt.contractValid
+    || previewReceipt.contentDigest !== content.digest
+    || previewReceipt.validationDigest !== fingerprint
+    || previewReceipt.evidenceRevision !== briefing.revision) {
+    return { status: "failed", sessionId: result.sessionId, failure: {
+      code: "report_incomplete", message: "The final content or evidence changed after preview_report; preview the current version again.", attempts: 1,
+    } };
   }
   await writeAtomic(join(attemptRoot, "report.html"), verified.html);
   await persistComparisonReportModel(attemptRoot, verified.model);
@@ -511,19 +575,57 @@ async function invokeCompare(
   attemptId: string,
   allowBinary: boolean,
   catalog: ComparisonEvidenceCatalog,
-): Promise<{ result: AgentInvocation<ComparisonResult>; deliveredImageContentHashes: Set<string> }> {
+  processes: ManagedProcesses,
+  browser?: ManagedBrowser,
+  browserPath?: string,
+  toolConfig?: import("../core/tool-schema.js").ToolConfig,
+  locale: AgentLocale = "zh",
+): Promise<{ result: AgentInvocation<ComparisonResult>; deliveredImageContentHashes: Set<string>; previewReceipt?: ComparisonPreviewReceipt }> {
   const deliveredImageContentHashes = new Set<string>();
+  let previewReceipt: ComparisonPreviewReceipt | undefined;
+  let phase: "understand" | "investigate" | "compose" | "review" = "compose";
   if (input.signal?.aborted) {
     return { result: { status: "cancelled" }, deliveredImageContentHashes };
   }
+  const validateCurrentContent = async () => {
+    const snap = catalog.snapshot();
+    try {
+      return { prepared: await materializeComparisonReportPreview({ attemptRoot, experimentRoot: input.experimentRoot, media: snap.media,
+        evidence: snap.links, catalogRevision: snap.revision, hostTask: context.task.summary,
+        facts: context.reportFacts, locale, deliveredImageContentHashes }) };
+    } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+  };
   const result = await input.input.comparison.compare(
     context,
-    comparisonTools(input, attemptRoot, allowBinary, catalog),
+    comparisonTools(input, attemptRoot, allowBinary, catalog, context, deliveredImageContentHashes, processes, browser,
+      browserPath, toolConfig ?? { schemaVersion: 1 }, locale, (receipt) => { previewReceipt = receipt; }, () => phase),
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
-    { getEvidenceCatalog: () => catalog.snapshot() },
+    { getEvidenceCatalog: () => catalog.snapshot(),
+      onPhase: async (next) => {
+        if (next === "investigate" || next === "compose") {
+          for (const path of ["work/report/content.json", "work/report/body.html", "work/report/details.html"]) {
+            if (await reportExists(attemptRoot, path)) throw new Error(`Report content was written before compose: ${path}`);
+          }
+        }
+        phase = next;
+      },
+      validateContent: async () => (await validateCurrentContent()).error,
+      validateReview: async () => {
+        const checked = await validateCurrentContent();
+        if (checked.error) return checked.error;
+        const prepared = checked.prepared;
+        if (!prepared || !previewReceipt?.publishable || !previewReceipt.contractValid
+          || previewReceipt.contentDigest !== prepared.draftDigest
+          || previewReceipt.validationDigest !== prepared.validationDigest
+          || previewReceipt.preparedDigest !== prepared.preparedDigest
+          || previewReceipt.evidenceRevision !== prepared.catalogRevision) {
+          return "The final content or evidence changed after preview_report; preview the current version again.";
+        }
+        return undefined;
+      } },
   );
-  return { result, deliveredImageContentHashes };
+  return { result, deliveredImageContentHashes, ...(previewReceipt ? { previewReceipt } : {}) };
 }
 
 function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]): string {
@@ -537,8 +639,16 @@ function comparisonTools(
   attemptRoot: string,
   allowBinary: boolean,
   catalog: ComparisonEvidenceCatalog,
+  context: ComparisonContext,
+  deliveredImageContentHashes: ReadonlySet<string>,
+  processes: ManagedProcesses,
+  browser: ManagedBrowser | undefined,
+  browserPath: string | undefined,
+  toolConfig: import("../core/tool-schema.js").ToolConfig,
+  locale: AgentLocale,
+  onPreviewReceipt: (receipt: ComparisonPreviewReceipt) => void,
+  currentPhase: () => "understand" | "investigate" | "compose" | "review",
 ): AgentToolDefinition[] {
-  const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
   const mounts = comparisonAttemptMounts({
     experimentRoot: input.experimentRoot,
@@ -547,7 +657,6 @@ function comparisonTools(
     candidateSnapshotStatus: input.candidateSnapshotStatus,
     candidateSnapshotRoot: input.candidateSnapshotRoot,
   });
-  const candidateRoot = mounts.candidate;
   const renderCatalog = createComparisonRenderCatalogPort({
     catalog,
     attemptRoot,
@@ -558,44 +667,71 @@ function comparisonTools(
       evidence: mounts.evidence,
     },
   });
+  const render = (request: Parameters<typeof renderFrozenArtifact>[0]) => renderFrozenArtifact({
+    ...request, ...(browserPath ? { browserPath } : {}),
+  });
   return withComparisonShellDeny([
     ...workspaceTools(attemptRoot, {
       role: "comparison",
-      allowBinary: input.taskCase.privacy.allowBinary || allowBinary,
+      allowBinary,
       mounts,
-      allowWrite: comparisonAttemptWriteAllowed,
-      completionPaths: new Set(["work/comparison-plan.md", "report.html"]),
+      allowWrite: (path) => comparisonAttemptWriteAllowed(path, currentPhase()),
+      completionPaths: new Set(["work/comparison-plan.md", "work/report/content.json", "work/report/body.html"]),
       denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
       allowShell: true,
       shellCwd: scratchRoot,
-      shellEnv: {
-        REPRISE_BASELINE_ROOT: join(controllerRoot, "history"),
-        REPRISE_FINALS_ROOT: mounts.finals,
-        REPRISE_CANDIDATE_ROOT: candidateRoot,
-        REPRISE_EVIDENCE_ROOT: join(attemptRoot, "evidence"),
-        REPRISE_SCRATCH_ROOT: scratchRoot,
-      },
+      shellEnv: comparisonShellVariables(input, attemptRoot, mounts),
       homeRoot: join(attemptRoot, ".home"),
     }),
     registerEvidenceTool(catalog),
+    ...createComparisonProcessTools(processes),
+    ...createComparisonNetworkTools({ attemptRoot, config: toolConfig }),
+    ...createComparisonBrowserTools({ ...(browser ? { browser } : {}), catalog: renderCatalog, attemptRoot, allowBinary }),
     createRenderArtifactTool({
       catalog: renderCatalog,
       attemptRoot,
+      allowBinary,
+      render,
     }),
     createPreviewReportTool({
       catalog: renderCatalog,
       attemptRoot,
+      allowBinary,
+      render,
+      onReceipt: onPreviewReceipt,
       prepareReportHtml: async () => {
         const snap = catalog.snapshot();
         return materializeComparisonReportPreview({
           attemptRoot,
+          experimentRoot: input.experimentRoot,
           media: snap.media,
           evidence: snap.links,
           catalogRevision: snap.revision,
+          hostTask: context.task.summary,
+          facts: context.reportFacts,
+          locale,
+          deliveredImageContentHashes,
         });
       },
     }),
   ]);
+}
+
+function comparisonShellVariables(
+  input: Parameters<typeof finishExperiment>[0],
+  attemptRoot: string,
+  mounts: ReturnType<typeof comparisonAttemptMounts>,
+): Record<string, string> {
+  return {
+    REPRISE_BASELINE_ROOT: join(controllerBriefingRoot(input.experimentRoot, input.input.runId), "history"),
+    REPRISE_FINALS_ROOT: mounts.finals,
+    REPRISE_CANDIDATE_ROOT: mounts.candidate,
+    REPRISE_EVIDENCE_ROOT: join(attemptRoot, "evidence"),
+    REPRISE_SCRATCH_ROOT: join(attemptRoot, "scratch"),
+    REPRISE_CLI_PATH: fileURLToPath(new URL("../cli/main.js", import.meta.url)),
+    REPRISE_NODE_PATH: process.execPath,
+    REPRISE_DATA_DIR: input.input.dataDir,
+  };
 }
 
 const RegisterEvidenceParamsSchema = Type.Object({
@@ -800,10 +936,11 @@ async function writeComparisonFailurePage(input: {
   await writeFile(input.reportPath, html, "utf8");
 }
 
-/** Comparison may write only this attempt's scratch tree, working notes, and report.html. */
-export function comparisonAttemptWriteAllowed(relativePath: string): boolean {
+/** Comparison may write only this attempt's scratch tree, working notes, and content fragments. */
+export function comparisonAttemptWriteAllowed(relativePath: string, phase: "understand" | "investigate" | "compose" | "review" = "compose"): boolean {
   const posix = relativePath.replaceAll("\\", "/");
-  if (posix === "work/comparison-plan.md" || posix === "report.html") return true;
+  if (posix === "work/comparison-plan.md") return phase === "understand" || phase === "investigate";
+  if (["work/report/content.json", "work/report/body.html", "work/report/details.html"].includes(posix)) return phase === "compose" || phase === "review";
   return posix.split("/").filter(Boolean)[0] === "scratch";
 }
 

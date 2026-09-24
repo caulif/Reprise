@@ -78,10 +78,11 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
     policy: { ...base.policy, ...patientPolicy },
   }).result;
   assert.equal(result.record.outcome.termination.kind, "completed");
+  assert.equal(result.comparison.result.status, "completed", JSON.stringify(result.comparison.result));
   assert.ok(replicaWorkspaceLocation(attempt.experimentRoot, 'candidate-run', result.record.manifest?.environment.workspacePath ?? ''), result.record.manifest?.environment.workspacePath);
   assert.match(
     await readFile(result.reportPath, "utf8"),
-    /artifacts\/recovery-md.*recovery_report/,
+    /Evidence-based narrative/,
   );
   const newReportRef = result.record.artifactRefs.find((ref) => ref.artifactId === 'recovery-md');
   if (!newReportRef || !('experimentId' in newReportRef)) throw new Error('Run-owned Recovery report reference is missing.');

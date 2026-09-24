@@ -9,6 +9,7 @@ import {
   verifyAndRenderComparisonReport,
 } from "../../src/application/comparison-publication.js";
 import { agentZoneBlank, renderComparisonReportShell } from "../../src/application/comparison-report-shell.js";
+import { writeComparisonContent } from "../comparison-content-support.js";
 
 const stamp = "2026-09-01T00:00:00.000Z";
 
@@ -56,10 +57,11 @@ test("image-only comparison zone survives verify without Host pairing reseed", a
   await mkdir(join(root, "media"), { recursive: true });
   await writeFile(join(root, "media", "history.png"), Buffer.from([137, 80, 78, 71]));
   await writeFile(join(root, "media", "ok.png"), Buffer.from([137, 80, 78, 71]));
-  const html = shell('<img src="media/history.png" alt="historical preview"><img src="media/ok.png" alt="preview">');
+  const body = '<img src="media/history.png" alt="historical preview"><img src="media/ok.png" alt="preview">';
+  const html = shell(body);
   assert.equal(agentZoneBlank(html, "comparison"), false);
   const verified = await verifyAndRenderComparisonReport({
-    html,
+    content: await writeComparisonContent(root, body), hostTask: "修复报告。",
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot: root,
@@ -84,7 +86,7 @@ test("table-only comparison zone is not blank and survives verify without Host r
   const html = shell(table);
   assert.equal(agentZoneBlank(html, "comparison"), false);
   const verified = await verifyAndRenderComparisonReport({
-    html,
+    content: await writeComparisonContent(root, table), hostTask: "修复报告。",
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot: root,
@@ -105,7 +107,7 @@ test("empty comparison zone still gets Host seed or cannot-determine fill", asyn
   const html = shell("<!-- only comment -->");
   assert.equal(agentZoneBlank(html, "comparison"), true);
   const verified = await verifyAndRenderComparisonReport({
-    html,
+    content: await writeComparisonContent(root, "<!-- only comment -->"), hostTask: "修复报告。",
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot: root,
@@ -142,10 +144,12 @@ test("share card keeps diff-table visible and publishes content-addressed media 
     mediaType: "image/png",
     available: true,
   }];
-  const html = shell('<table data-component="diff-table"><tr><td>值</td></tr></table><img src="media/ok.png" alt="preview">');
+  const body = '<table data-component="diff-table"><tr><td>值</td></tr></table><img src="media/ok.png" alt="preview">';
+  const html = shell(body);
   assert.doesNotMatch(html, /\.share \[data-component="diff-table"\] \{ display:none/);
   const verified = await verifyAndRenderComparisonReport({
-    html, facts: reportFacts, result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    content: await writeComparisonContent(attempt, body), hostTask: "修复报告。",
+    facts: reportFacts, result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot: attempt, media,
   });
   assert.equal("html" in verified, true);

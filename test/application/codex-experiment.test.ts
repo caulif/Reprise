@@ -15,7 +15,8 @@ import { ExperimentStore } from "../../src/infrastructure/store/experiment-store
 import type { ResolvedRuntime, TargetEventSink, TargetRunner } from "../../src/core/runtime.js";
 import { runtimeTargetEvent } from "../../src/core/runtime.js";
 import { sha256 } from "../../src/core/identity.js";
-import { now, VerifiedRuntime, input, terminationOf, sendingController, patientPolicy, readJson, comparisonHtmlWithHostShell } from "../codex-experiment-support.js";
+import { extractInner } from "../../src/core/comparison-html.js";
+import { now, VerifiedRuntime, input, terminationOf, sendingController, patientPolicy, readJson } from "../codex-experiment-support.js";
 
 test("checkpoint seed still invokes Recovery Agent with the same tools", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-checkpoint-recovery-"));
@@ -88,6 +89,7 @@ test("preflight is read-only and successful comparison writes a persisted narrat
     runId: "run-2",
   }).result;
   assert.equal(runtime.created, 1);
+  assert.equal(result.comparison.result.status, "completed", JSON.stringify(result.comparison.result));
   assert.match(
     await readFile(join(result.experimentRoot, "report.html"), "utf8"),
     /Evidence-based narrative/,
@@ -95,7 +97,8 @@ test("preflight is read-only and successful comparison writes a persisted narrat
   const report = await readFile(result.reportPath, "utf8");
   assert.match(report, /data-host-zone="style"/);
   assert.doesNotMatch(report, /<svg>/);
-  assert.doesNotMatch(report, /<script>/);
+  assert.equal([...report.matchAll(/<script\b/gi)].length, 1, "only the Host interaction script is allowed");
+  assert.doesNotMatch(extractInner(report, "data-agent-zone", "comparison"), /<script\b/);
   assert.match(report, /Evidence-based narrative/);
   assert.ok(
     result.record.artifactRefs.some(
@@ -534,7 +537,7 @@ test("cancelling an in-flight Controller request discards a late send before Can
   }
 });
 
-test("a completed comparison that never fills Agent slots still publishes the Host shell, not a fallback narrative", async (t) => {
+test("an envelope without report content fails publication without changing the candidate outcome", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-codex-experiment-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
@@ -555,44 +558,35 @@ test("a completed comparison that never fills Agent slots still publishes the Ho
     ...input(root, runtime),
     comparison: silent,
   }).result;
-  assert.equal(result.comparison.result.status, "completed");
+  assert.equal(result.comparison.result.status, "failed");
+  assert.equal(result.record.outcome.termination.kind, "completed");
   const html = await readFile(result.reportPath, "utf8");
-  assert.doesNotMatch(html, /Comparison unavailable/);
+  assert.match(html, /Comparison unavailable/);
+  await assert.rejects(readFile(join(result.experimentRoot, "report.html")), { code: "ENOENT" });
   assert.match(html, /data-host-zone|data-host=/);
 });
 
-test("working notes written after a failed first pass stay in the same comparison attempt", async (t) => {
+test("working notes stay in the same attempt as the previewed comparison", async (t) => {
   const root = await mkdtemp(join(tmpdir(), `reprise-plan-notes-`));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, "source"));
   await writeFile(join(root, "source", "README.md"), "# source\n");
+  const base = input(root, new VerifiedRuntime());
   const comparison: ComparisonAgentPort = {
-    compare: async (context, tools = []) => {
+    ...base.comparison,
+    compare: async (context, tools = [], audit, signal, options) => {
       assert.match(context.promptContent ?? "", /# INDEX\.md/);
-      await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "work/comparison-plan.md", content: "# Working notes\n" },
-        new AbortController().signal,
-      );
-      const shell = await tools.find((tool) => tool.name === "read")?.execute(
-        { path: "report.html" },
-        new AbortController().signal,
-      );
-      await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "report.html", content: comparisonHtmlWithHostShell(shell?.content, `<p>single-session</p>`) },
-        new AbortController().signal,
-      );
-      return { status: "completed", sessionId: "comparison-notes", value: { status: "completed", reportPath: "report.html", evidenceRefs: [] } };
+      return base.comparison.compare(context, tools, audit, signal, options);
     },
-    cancel: async () => {},
   };
-  const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
-  assert.equal(result.comparison.result.status, "completed");
+  const result = await startExperiment({ ...base, comparison }).result;
+  assert.equal(result.comparison.result.status, "completed", JSON.stringify(result.comparison.result));
   const store = await ExperimentStore.open(result.experimentRoot, "experiment-1");
   try {
     const started = store.events("run-1").find((event) => event.type === "comparison.started");
     const attemptId = (started?.payload as { attemptId?: string })?.attemptId;
     assert.ok(attemptId);
-    assert.equal(await readFile(join(result.experimentRoot, "comparison-attempts", attemptId, "work", "comparison-plan.md"), "utf8"), "# Working notes\n");
+    assert.equal(await readFile(join(result.experimentRoot, "comparison-attempts", attemptId, "work", "comparison-plan.md"), "utf8"), "# Plan\n\nCompare the delivered files and the final settled turn.\n");
     assert.equal(store.events("run-1").some((event) => event.type === "comparison.plan_completed"), false);
   } finally {
     await store.close();
@@ -795,7 +789,7 @@ test("deferred comparison runs from finished candidate facts without a live Reco
   assert.equal(candidate.record.state, "finished");
   await handle.runComparison();
   const result = await handle.result;
-  assert.equal(result.comparison.result.status, "completed");
+  assert.equal(result.comparison.result.status, "completed", JSON.stringify(result.comparison.result));
   assert.match(await readFile(join(result.experimentRoot, "report.html"), "utf8"), /Evidence-based narrative/);
 });
 

@@ -7,7 +7,6 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startExperiment } from '../../src/application/experiment.js';
-import { extractHostZoneSnapshot, renderComparisonReportShell } from '../../src/application/comparison-report-shell.js';
 import { input, patientPolicy, VerifiedRuntime } from '../codex-experiment-support.js';
 
 function context(): ComparisonContext {
@@ -73,7 +72,7 @@ test("Comparison reuses one Session for an attempt and isolates different attemp
   assert.match(sessions[0]?.appended[0] ?? "", /short-orientation/);
   assert.match(sessions[0]?.appended[0] ?? "", /user-input/);
   assert.match(sessions[0]?.appended[1] ?? "", /Investigate the questions/);
-  assert.match(sessions[0]?.appended[2] ?? "", /data-agent-zone="comparison"/);
+  assert.match(sessions[0]?.appended[2] ?? "", /work\/report\/body\.html/);
   assert.match(sessions[0]?.appended[3] ?? "", /preview_report/);
   assert.doesNotMatch(sessions[0]?.appended[0] ?? "", /Return only JSON matching the contract/);
   assert.match(sessions[0]?.input.systemPrompt ?? "", /In this session you will receive, in order/);
@@ -178,11 +177,11 @@ test("Comparison keeps owned short refs and rejects unknown extras without silen
   assert.equal(repaired.status, "completed");
   if (repaired.status === "completed") assert.deepEqual(repaired.value.evidenceRefs, [owned]);
   assert.equal(prompts.length, 5);
-  assert.match(prompts[4] ?? "", /Do not read or modify report\.html/);
+  assert.match(prompts[4] ?? "", /Do not read or modify them again/);
   assert.doesNotMatch(prompts[4] ?? "", /register_evidence|preview_report|render_artifact/);
 });
 
-test("Comparison keeps valid short refs when the Host did not provide an allowlist", async () => {
+test("Comparison rejects unowned short refs when the Host did not provide an allowlist", async () => {
   const agent = new ComparisonAgent({
     host: new AgentHost({
       createSession: () => ({
@@ -194,11 +193,10 @@ test("Comparison keeps valid short refs when the Host did not provide an allowli
     maxRepairAttempts: 0,
   });
   const result = await agent.compare(context());
-  assert.equal(result.status, "completed");
-  if (result.status === "completed") assert.deepEqual(result.value.evidenceRefs, ["ev-01"]);
+  assert.equal(result.status, "failed");
 });
 
-test("Comparison drops path-shaped evidence refs when none remain owned", async () => {
+test("Comparison rejects path-shaped evidence refs when none remain owned", async () => {
   const agent = new ComparisonAgent({
     host: new AgentHost({
       createSession: () => ({
@@ -214,8 +212,7 @@ test("Comparison drops path-shaped evidence refs when none remain owned", async 
     maxRepairAttempts: 0,
   });
   const result = await agent.compare(context());
-  assert.equal(result.status, "completed");
-  if (result.status === "completed") assert.deepEqual(result.value.evidenceRefs, []);
+  assert.equal(result.status, "failed");
 });
 
 test("Comparison envelope uses live getEvidenceCatalog refs registered mid-session", async () => {
@@ -319,13 +316,13 @@ test("Host preserves native image blocks in prompts and tool results without aud
   assert.deepEqual((completed?.payload.details as { evidenceRefs?: string[] } | undefined)?.evidenceRefs, ["artifact:image-1"]);
 });
 
-test("Comparison draft written in round two is readable later in the same Session", async (t) => {
+test("Comparison content written in compose is readable later in the same Session", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-comparison-draft-"));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
   const tools = workspaceTools(root, {
-    allowWrite: (path) => path === "report.html",
-    completionPaths: new Set(["report.html"]),
+    allowWrite: (path) => path === "work/report/body.html",
+    completionPaths: new Set(["work/report/body.html"]),
   });
   let round = 0;
   const comparison = new ComparisonAgent({
@@ -336,10 +333,10 @@ test("Comparison draft written in round two is readable later in the same Sessio
           const write = input.tools.find((tool) => tool.name === "write");
           const read = input.tools.find((tool) => tool.name === "read");
           if (round === 2) {
-            await write?.execute({ path: "report.html", content: "<p>draft</p>" }, new AbortController().signal);
+            await write?.execute({ path: "work/report/body.html", content: "<p>draft</p>" }, new AbortController().signal);
           }
           if (round >= 3) {
-            const page = await read?.execute({ path: "report.html" }, new AbortController().signal);
+            const page = await read?.execute({ path: "work/report/body.html" }, new AbortController().signal);
             assert.match(page?.content ?? "", /draft/);
           }
           if (round < 4) return "working";
@@ -351,46 +348,11 @@ test("Comparison draft written in round two is readable later in the same Sessio
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
+  await mkdir(join(root, "work", "report"), { recursive: true });
   const result = await comparison.compare(context(), tools);
   assert.equal(result.status, "completed");
   assert.equal(round, 4);
-  assert.equal(await readFile(join(root, "report.html"), "utf8"), "<p>draft</p>");
-});
-
-test("compose turn sees the Host metrics shell already on disk", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "reprise-comparison-shell-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
-  const tools = workspaceTools(root, {
-    allowWrite: (path) => path === "report.html",
-    completionPaths: new Set(["report.html"]),
-  });
-  const shell = "<html data-host-shell=\"1\"><section data-host=\"metrics\"></section></html>";
-  let round = 0;
-  let composeSawShell = false;
-  const comparison = new ComparisonAgent({
-    host: new AgentHost({
-      createSession: (input) => ({
-        append: async () => {
-          round += 1;
-          if (round === 3) {
-            const page = await input.tools.find((tool) => tool.name === "read")?.execute({ path: "report.html" }, new AbortController().signal);
-            composeSawShell = (page?.content ?? "").includes("data-host=\"metrics\"");
-          }
-          if (round < 4) return "working";
-          return JSON.stringify({ status: "completed", reportPath: "report.html", evidenceRefs: [] });
-        },
-        cancel() {},
-      }),
-    }),
-    timeoutMs: 0,
-    maxRepairAttempts: 0,
-  });
-  await writeFile(join(root, "report.html"), shell);
-  const result = await comparison.compare(context(), tools);
-  assert.equal(result.status, "completed");
-  assert.equal(composeSawShell, true);
-  assert.match(await readFile(join(root, "report.html"), "utf8"), /data-host="metrics"/);
+  assert.equal(await readFile(join(root, "work", "report", "body.html"), "utf8"), "<p>draft</p>");
 });
 
 test("Comparison stops later turns when the first freeform request is cancelled", async () => {
@@ -419,64 +381,15 @@ test("Comparison stops later turns when the first freeform request is cancelled"
   assert.equal(appends, 1);
 });
 
-test("Host zone edits do not spend an Agent repair turn", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "reprise-host-zone-repair-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
-  const tools = workspaceTools(root, {
-    allowWrite: (path) => path === "report.html",
-    completionPaths: new Set(["report.html"]),
-  });
-  const shell = renderComparisonReportShell({
-    task: context().task.summary,
-    facts: context().reportFacts,
-    metrics: {},
-  });
-  const snapshot = extractHostZoneSnapshot(shell);
-  assert.ok(snapshot);
-  const prompts: string[] = [];
-  const comparison = new ComparisonAgent({
-    host: new AgentHost({
-      createSession: (input) => ({
-        append: async ({ content }) => {
-          prompts.push(content);
-          if (prompts.length === 3) {
-            const page = await input.tools.find((tool) => tool.name === "read")?.execute({ path: "report.html" }, new AbortController().signal);
-            await input.tools.find((tool) => tool.name === "write")?.execute({
-              path: "report.html",
-              content: (page?.content ?? shell).replace('data-id="host-header"', 'data-id="host-header" data-edited="1"'),
-            }, new AbortController().signal);
-          }
-          if (prompts.length < 4) return "working";
-          return JSON.stringify({ status: "completed", evidenceRefs: [] });
-        },
-        cancel() {},
-      }),
-    }),
-    timeoutMs: 0,
-    maxRepairAttempts: 0,
-  });
-  await writeFile(join(root, "report.html"), shell);
-  const result = await comparison.compare({ ...context(), ...(snapshot ? { hostZoneSnapshot: snapshot } : {}) }, tools);
-  assert.equal(result.status, "completed");
-  assert.equal(prompts.length, 4);
-  assert.match(await readFile(join(root, "report.html"), "utf8"), /data-edited="1"/);
-});
-
-test("review turn can read and rewrite Agent regions of report.html", async (t) => {
+test("review turn can read and rewrite the comparison body", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-comparison-review-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
   const tools = workspaceTools(root, {
-    allowWrite: (path) => path === "report.html",
-    completionPaths: new Set(["report.html"]),
+    allowWrite: (path) => path === "work/report/body.html",
+    completionPaths: new Set(["work/report/body.html"]),
   });
-  const shell = renderComparisonReportShell({
-    task: context().task.summary,
-    facts: context().reportFacts,
-    metrics: {},
-    slots: { headline: "初稿结论。", "comparison": "<p>初稿差异</p>" },
-  });
+  const draft = "<p>初稿差异</p>";
   let reviewWrote = false;
   let reviewHadTools = false;
   const comparison = new ComparisonAgent({
@@ -485,10 +398,10 @@ test("review turn can read and rewrite Agent regions of report.html", async (t) 
         append: async ({ content }) => {
           if (content.includes("preview_report")) {
             reviewHadTools = Boolean(input.tools.find((tool) => tool.name === "read") && input.tools.find((tool) => tool.name === "write"));
-            const page = await input.tools.find((tool) => tool.name === "read")?.execute({ path: "report.html" }, new AbortController().signal);
+            const page = await input.tools.find((tool) => tool.name === "read")?.execute({ path: "work/report/body.html" }, new AbortController().signal);
             await input.tools.find((tool) => tool.name === "write")?.execute({
-              path: "report.html",
-              content: (page?.content ?? shell).replace("初稿差异", "审阅后的差异"),
+              path: "work/report/body.html",
+              content: (page?.content ?? draft).replace("初稿差异", "审阅后的差异"),
             }, new AbortController().signal);
             reviewWrote = true;
           }
@@ -501,27 +414,22 @@ test("review turn can read and rewrite Agent regions of report.html", async (t) 
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  await writeFile(join(root, "report.html"), shell);
+  await mkdir(join(root, "work", "report"), { recursive: true });
+  await writeFile(join(root, "work", "report", "body.html"), draft);
   const result = await comparison.compare(context(), tools);
   assert.equal(result.status, "completed");
   assert.equal(reviewHadTools, true);
   assert.equal(reviewWrote, true);
-  assert.match(await readFile(join(root, "report.html"), "utf8"), /审阅后的差异/);
+  assert.match(await readFile(join(root, "work", "report", "body.html"), "utf8"), /审阅后的差异/);
 });
 
-test("invalid review JSON is salvaged once without discarding report.html", async (t) => {
+test("invalid review JSON is salvaged once without discarding the comparison body", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-comparison-json-salvage-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const { workspaceTools } = await import("../../src/infrastructure/recovery-tools.js");
   const tools = workspaceTools(root, {
-    allowWrite: (path) => path === "report.html",
-    completionPaths: new Set(["report.html"]),
-  });
-  const shell = renderComparisonReportShell({
-    task: context().task.summary,
-    facts: context().reportFacts,
-    metrics: {},
-    slots: { headline: "保留结论。", "comparison": "<p>保留差异</p>" },
+    allowWrite: (path) => path === "work/report/body.html",
+    completionPaths: new Set(["work/report/body.html"]),
   });
   const pages: string[] = [];
   const comparison = new ComparisonAgent({
@@ -530,7 +438,7 @@ test("invalid review JSON is salvaged once without discarding report.html", asyn
         append: async ({ content }) => {
           pages.push(content);
           if (pages.length === 3) {
-            await input.tools.find((tool) => tool.name === "write")?.execute({ path: "report.html", content: shell }, new AbortController().signal);
+            await input.tools.find((tool) => tool.name === "write")?.execute({ path: "work/report/body.html", content: "<p>保留差异</p>" }, new AbortController().signal);
           }
           if (pages.length < 4) return "working";
           if (pages.length === 4) return "not-json";
@@ -542,24 +450,20 @@ test("invalid review JSON is salvaged once without discarding report.html", asyn
     timeoutMs: 0,
     maxRepairAttempts: 0,
   });
-  await writeFile(join(root, "report.html"), shell);
+  await mkdir(join(root, "work", "report"), { recursive: true });
+  await writeFile(join(root, "work", "report", "body.html"), "<p>保留差异</p>");
   const result = await comparison.compare(context(), tools);
   assert.equal(result.status, "completed");
   assert.equal(pages.length, 5);
-  assert.match(pages[4] ?? "", /Do not read or modify report\.html/);
-  assert.match(await readFile(join(root, "report.html"), "utf8"), /保留差异/);
+  assert.match(pages[4] ?? "", /Do not read or modify them again/);
+  assert.match(await readFile(join(root, "work", "report", "body.html"), "utf8"), /保留差异/);
 });
 
-test("B7 loop: investigate registers evidence, compose fills comparison zone, review previews and cites new refs", async () => {
+test("B7 loop: investigate registers evidence, compose writes content, review previews and cites new refs", async () => {
   const catalog = { shortEvidenceRefs: ["ev-01"] as string[], revision: 1 };
   let previewCalls = 0;
   let previewDigest = "digest-v1";
-  let reportBody = [
-    "<html><body>",
-    '<section data-host-zone="metrics">host-metrics</section>',
-    '<section data-agent-zone="comparison"></section>',
-    "</body></html>",
-  ].join("");
+  let reportBody = "";
   const toolCalls: string[] = [];
   const prompts: string[] = [];
   const tools = [
@@ -602,7 +506,7 @@ test("B7 loop: investigate registers evidence, compose fills comparison zone, re
             reportDigest: previewDigest,
             catalogRevision: catalog.revision,
             assetsLoad: true,
-            hostMetricsVisible: reportBody.includes("host-metrics"),
+            hostMetricsVisible: true,
           }),
         };
       },
@@ -612,7 +516,7 @@ test("B7 loop: investigate registers evidence, compose fills comparison zone, re
       description: "read",
       parameters: Type.Object({ path: Type.String(), maxBytes: Type.Optional(Type.Number()) }),
       execute: async ({ path }: { path: string }) => ({
-        content: path === "report.html" ? reportBody : "",
+        content: path === "work/report/body.html" ? reportBody : "",
       }),
     },
     {
@@ -620,7 +524,7 @@ test("B7 loop: investigate registers evidence, compose fills comparison zone, re
       description: "write",
       parameters: Type.Object({ path: Type.String(), content: Type.String() }),
       execute: async ({ path, content }: { path: string; content: string }) => {
-        if (path === "report.html") reportBody = content;
+        if (path === "work/report/body.html") reportBody = content;
         return { content: "ok" };
       },
     },
@@ -644,16 +548,10 @@ test("B7 loop: investigate registers evidence, compose fills comparison zone, re
           }
           if (round === 3) {
             await input.tools.find((t) => t.name === "write")?.execute({
-              path: "report.html",
+              path: "work/report/body.html",
               content: [
-                "<html><body>",
-                '<section data-host-zone="metrics">host-metrics</section>',
-                '<section data-agent-zone="comparison">',
                 '<p>Decisive difference with <a data-evidence-ref="ev-02">check</a>.</p>',
                 '<img data-media-ref="media-01" alt="preview">',
-                "</section>",
-                '<section data-agent-zone="details"><p>methods</p></section>',
-                "</body></html>",
               ].join(""),
             }, new AbortController().signal);
             return "composed";
@@ -663,7 +561,7 @@ test("B7 loop: investigate registers evidence, compose fills comparison zone, re
             assert.match(first?.content ?? "", /digest-v1/);
             // Edit after preview — must re-check.
             await input.tools.find((t) => t.name === "write")?.execute({
-              path: "report.html",
+              path: "work/report/body.html",
               content: reportBody.replace("Decisive difference", "Updated decisive difference"),
             }, new AbortController().signal);
             previewDigest = "digest-v2";
@@ -704,11 +602,11 @@ test("B7 loop: investigate registers evidence, compose fills comparison zone, re
   assert.deepEqual(toolCalls.filter((name) => name === "register_evidence"), ["register_evidence"]);
   assert.deepEqual(toolCalls.filter((name) => name === "render_artifact"), ["render_artifact"]);
   assert.equal(previewCalls, 2);
-  assert.match(reportBody, /data-agent-zone="comparison"/);
+  assert.match(reportBody, /Updated decisive difference/);
   assert.match(reportBody, /Updated decisive difference/);
   assert.match(reportBody, /data-evidence-ref="ev-02"/);
   assert.match(prompts[1] ?? "", /Investigate the questions/);
-  assert.match(prompts[2] ?? "", /data-agent-zone="comparison"/);
+  assert.match(prompts[2] ?? "", /work\/report\/body\.html/);
   assert.match(prompts[3] ?? "", /preview_report/);
 });
 
@@ -810,11 +708,36 @@ test("B7 review: tool failure surfaces a concrete limitation without inventing o
   assert.match(COMPARISON_TURN_PROMPTS.review, /record the specific\s+review limitation/);
 });
 
-test("Host-zone repair prompt names comparison and details agent zones", () => {
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="comparison"/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="details"/);
+test("compose prompt names content files and Host-owned page shell", () => {
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /work\/report\/body\.html/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /work\/report\/details\.html/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /pair-pages/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /visual-evidence/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /reopen report\.html and review/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /preview_report/);
 });
+
+for (const republished of [false, true]) {
+  test(`review ${republished ? "recovers" : "rejects"} a stale preview receipt within one repair turn`, async () => {
+    let turns = 0;
+    let receiptFresh = false;
+    let reviewChecks = 0;
+    const agent = new ComparisonAgent({
+      host: new AgentHost({ createSession: () => ({
+        append: async () => {
+          turns += 1;
+          if (turns === 5 && republished) receiptFresh = true;
+          return turns < 4 || turns === 5 ? "working" : JSON.stringify({ status: "completed", evidenceRefs: [] });
+        }, cancel() {},
+      }) }),
+      timeoutMs: 0, maxRepairAttempts: 0,
+    });
+    const result = await agent.compare(context(), [], undefined, undefined, {
+      validateContent: async () => undefined,
+      validateReview: async () => { reviewChecks += 1; return receiptFresh ? undefined : "preview receipt is stale"; },
+    });
+    assert.equal(result.status, republished ? "completed" : "failed");
+    assert.equal(turns, republished ? 6 : 5);
+    assert.equal(reviewChecks, republished ? 3 : 2);
+  });
+}

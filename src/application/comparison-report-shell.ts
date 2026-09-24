@@ -1,28 +1,24 @@
 import type { AgentLocale } from "../agents/language.js";
-import { parse, serializeOuter } from "parse5";
+import { parseFragment, serializeOuter } from "parse5";
 import type { ComparisonMetricSide, ComparisonReportFacts } from "../agents/comparison-agent.js";
 import {
-  AGENT_ZONES,
-  hostZoneIntegrityError,
   extractOuter,
   type AgentZoneName,
   type HostZoneName,
-  type HostZoneSnapshot,
 } from "../core/comparison-html.js";
-import type { ComparisonMediaRecord, ComparisonReportModel } from "../core/schema.js";
+import type { ComparisonMediaRecord } from "../core/schema.js";
 import { MODEL_PRICING_TABLE_VERSION } from "./model-pricing.js";
-import { reportString } from "./comparison-report-strings.js";
+import { candidateStatusLabel, reportString } from "./comparison-report-strings.js";
 import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
 
 export {
   AGENT_ZONES,
   agentZoneBlank,
-  extractHostZoneSnapshot,
   extractInner,
   extractOuter,
   missingComparisonSlots,
 } from "../core/comparison-html.js";
-export type { AgentZoneName, HostZoneName, HostZoneSnapshot };
+export type { AgentZoneName, HostZoneName };
 
 export type MetricSideProjection = {
   elapsedMs?: number;
@@ -54,17 +50,23 @@ function descendants(node: HtmlNode): HtmlNode[] {
 }
 
 function unsafeAgentContent(node: HtmlNode): string | undefined {
-  const activeTags = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "base", "link", "dialog", "svg", "math"]);
+  const activeTags = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "form", "meta", "base", "link", "dialog", "svg", "math", "template", "noscript", "input", "textarea", "select", "button"]);
   const unsupportedResourceAttrs = new Set(["xlink:href", "poster", "cite", "action", "formaction", "background", "data"]);
   const tag = node.tagName?.toLowerCase();
   if (tag && activeTags.has(tag)) return `Agent content cannot contain <${tag}>.`;
   for (const attr of node.attrs ?? []) {
     const name = attr.name.toLowerCase();
-    if (name === "data-host-zone") return "Agent content cannot contain a Host zone marker.";
+    if (name === "hidden" || name === "inert" || (name === "aria-hidden" && attr.value.toLowerCase() === "true")) {
+      return `Agent content cannot be hidden with ${name}.`;
+    }
+    if (name === "id" || name.startsWith("data-host") || name === "data-id") {
+      return `Agent content cannot contain Host-reserved ${name}.`;
+    }
     if (unsupportedResourceAttrs.has(name) || (name === "src" && tag !== "img") || (name === "href" && tag !== "a")) {
       return `Agent content cannot contain ${name}.`;
     }
     if (name.startsWith("on") || name === "srcdoc" || name === "srcset" || name === "ping" || name === "style"
+      || name === "tabindex" || name === "autofocus"
       || name === "popover" || name === "popovertarget" || name === "popovertargetaction") {
       return `Agent content cannot contain ${name}.`;
     }
@@ -80,70 +82,23 @@ function unsafeAgentContent(node: HtmlNode): string | undefined {
   return undefined;
 }
 
-export function agentUnsafeContentError(html: string): string | undefined {
-  const root = parse(html) as unknown as HtmlNode;
+export function agentFragmentError(html: string): string | undefined {
+  if (/<\/?(?:html|head|body)\b/i.test(html)) return "Report content must be an HTML fragment, not a document.";
+  const parseErrors: string[] = [];
+  const root = parseFragment(html, { onParseError: (error) => parseErrors.push(error.code) }) as unknown as HtmlNode;
+  if (parseErrors.length) return `Report fragment is malformed: ${parseErrors[0]}.`;
   const visit = (node: HtmlNode): string | undefined => {
-    if (node.attrs?.some((attr) => attr.name === "data-agent-zone" || attr.name === "data-agent-slot")) {
-      return unsafeAgentContent(node);
+    if (node.attrs?.some((attr) => ["data-agent-zone", "data-agent-slot", "data-host-zone"].includes(attr.name))) {
+      return "Report fragment cannot contain zone markers.";
     }
-    for (const child of descendants(node)) {
-      const error = visit(child);
-      if (error) return error;
-    }
-    return undefined;
+    return descendants(node).map(visit).find(Boolean);
   };
-  return visit(root);
+  return visit(root) ?? unsafeAgentContent(root);
 }
 
-export function agentContentFromDraft(html: string):
-  | { slots: Partial<Record<AgentZoneName | "headline" | "category", string>> }
-  | { error: string } {
-  const errors: string[] = [];
-  const root = parse(html, { onParseError: (error) => errors.push(error.code) }) as unknown as HtmlNode;
-  if (errors.length) return { error: `Comparison report HTML is malformed: ${errors[0]}.` };
-  const markers = new Map<string, HtmlNode[]>();
-  const visit = (node: HtmlNode): void => {
-    for (const attr of node.attrs ?? []) {
-      if (attr.name !== "data-agent-zone" && attr.name !== "data-agent-slot") continue;
-      const key = `${attr.name}:${attr.value}`;
-      markers.set(key, [...(markers.get(key) ?? []), node]);
-    }
-    for (const child of descendants(node)) visit(child);
-  };
-  visit(root);
-  const expected = [
-    ...AGENT_ZONES.map((name) => `data-agent-zone:${name}`),
-    "data-agent-slot:headline", "data-agent-slot:category", "data-agent-slot:task",
-  ];
-  for (const key of markers.keys()) {
-    if (!expected.includes(key)) return { error: `Comparison report contains unsupported ${key}.` };
-  }
-  for (const key of expected) {
-    if (markers.get(key)?.length !== 1) return { error: `Comparison report requires exactly one ${key}.` };
-    const node = markers.get(key)![0]!;
-    for (let parent = node.parentNode; parent; parent = parent.parentNode) {
-      if (parent.attrs?.some((attr) => attr.name === "data-agent-zone" || attr.name === "data-agent-slot")) {
-        return { error: `Comparison report has nested Agent markers at ${key}.` };
-      }
-    }
-    const nested = descendants(node).some(function hasMarker(child): boolean {
-      return Boolean(child.attrs?.some((attr) => attr.name === "data-agent-zone" || attr.name === "data-agent-slot" || attr.name === "data-host-zone"))
-        || descendants(child).some(hasMarker);
-    });
-    if (nested) return { error: `Comparison report has nested zone markers at ${key}.` };
-    if (key.startsWith("data-agent-zone:")) {
-      const unsafe = unsafeAgentContent(node);
-      if (unsafe) return { error: unsafe };
-    }
-  }
-  const textOf = (node: HtmlNode): string => node.value ?? (node.childNodes ?? []).map(textOf).join("");
-  const innerOf = (node: HtmlNode): string => (node.childNodes ?? []).map((child) => serializeOuter(child as never)).join("");
-  return { slots: {
-    comparison: innerOf(markers.get("data-agent-zone:comparison")![0]!),
-    details: innerOf(markers.get("data-agent-zone:details")![0]!),
-    headline: escapeHtml(textOf(markers.get("data-agent-slot:headline")![0]!)),
-    category: textOf(markers.get("data-agent-slot:category")![0]!),
-  } };
+export function normalizeAgentFragment(html: string): string {
+  const root = parseFragment(html) as unknown as HtmlNode;
+  return (root.childNodes ?? []).map((node) => serializeOuter(node as never)).join("");
 }
 
 export function renderComparisonReportShell(input: {
@@ -168,7 +123,7 @@ export function renderComparisonReportShell(input: {
     ? "Comparison unavailable"
     : reportString(locale, "titleVs", { category, baseline: labels.baseline, candidate: labels.candidate })));
   const slots = input.slots ?? {};
-  const header = slots.header ?? defaultHeader(labels, category, task, locale, input.diagnostic);
+  const header = slots.header ?? defaultHeader(labels, category, task, input.task, input.facts, locale, input.diagnostic);
   const headline = slots.headline ?? (input.diagnostic ? escapeHtml(input.diagnostic.reason) : "");
   const comparisonBody = [
     input.diagnostic ? diagnosticDifferences(input.diagnostic, locale) : "",
@@ -184,6 +139,7 @@ export function renderComparisonReportShell(input: {
 <html lang="${escapeHtml(reportString(locale, "htmlLang"))}">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <style data-host-zone="style" data-id="host-style">
 ${REPORT_CSS}
@@ -197,7 +153,7 @@ ${componentTemplateHtml(locale)}
     <p class="field-label">${escapeHtml(reportString(locale, "headlineLabel"))}</p>
     <p class="note" data-agent-slot="headline">${headline}</p>
     <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><!-- ${escapeHtml(reportString(locale, "comparisonZoneComment"))} -->${comparisonBody}</section>
-    ${renderMetricsBoard(input.metrics, labels, locale)}
+    ${renderMetricsBoard(input.metrics, locale)}
   </article>
   <details class="details">
     <summary>${escapeHtml(reportString(locale, "detailsSummary"))}</summary>
@@ -207,50 +163,11 @@ ${componentTemplateHtml(locale)}
     <section class="slot" data-host-zone="process" data-id="host-process">${slots.process ?? (input.diagnostic ? diagnosticProcess(input.diagnostic, locale) : "")}</section>
   </details>
 </main>
+<dialog class="image-dialog" data-host-dialog="image" aria-label="${escapeHtml(reportString(locale, "detailsSummary"))}"><button type="button" class="image-dialog-close" data-host-dialog-close aria-label="Close image" title="Close image">&times;</button><img alt=""></dialog>
+<script>${reportInteractionScript(locale)}</script>
 </body>
 </html>
 `;
-}
-
-export function renderComparisonReportFromModel(input: {
-  model: ComparisonReportModel;
-  facts: ComparisonReportFacts;
-  evidence?: readonly { side: string; inspectPath: string; reportHref?: string }[];
-  media?: readonly ComparisonMediaRecord[];
-  diagnostic?: ComparisonReportDiagnostic;
-  locale?: AgentLocale;
-}): string {
-  const mapped = mapLegacyModelSlots(input.model);
-  return renderComparisonReportShell({
-    ...(input.diagnostic ? { title: "Comparison unavailable" } : {}),
-    task: input.model.task,
-    facts: input.facts,
-    metrics: metricsFromReportFacts(input.facts),
-    ...(input.evidence ? { evidence: input.evidence } : {}),
-    ...(input.media ? { media: input.media } : {}),
-    slots: {
-      ...mapped,
-      ...(input.model.headline ? { headline: escapeHtml(input.model.headline) } : {}),
-    },
-    ...(input.diagnostic ? { diagnostic: input.diagnostic } : {}),
-    ...(input.locale ? { locale: input.locale } : {}),
-  });
-}
-
-/** Map legacy audit slots into format-2 comparison/details without rewriting on-disk models. */
-function mapLegacyModelSlots(model: ComparisonReportModel): Partial<Record<AgentZoneName | HostZoneName | "headline" | "category" | "task", string>> {
-  const slots = model.slots;
-  const comparison = slots.comparison
-    ?? [slots["visual-evidence"], slots["key-differences"]].filter(Boolean).join("");
-  const details = slots.details
-    ?? [slots.delivery, slots.limitations].filter(Boolean).join("");
-  return {
-    ...(slots.header ? { header: slots.header } : {}),
-    ...(comparison ? { comparison } : {}),
-    ...(details ? { details } : {}),
-    ...(slots.process ? { process: slots.process } : {}),
-    ...(slots.evidence ? { evidence: slots.evidence } : {}),
-  };
 }
 
 function hostMetricsFingerprint(metrics: {
@@ -296,13 +213,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
 }
 
-export function hostZonesMismatch(html: string, snapshot: HostZoneSnapshot, metrics: {
-  baseline?: MetricSideProjection;
-  candidate?: MetricSideProjection;
-}, locale: AgentLocale = "zh"): string | undefined {
-  return hostZoneIntegrityError(html, snapshot) ?? hostMetricsMismatch(html, metrics, locale);
-}
-
 function visibleMetricTexts(metrics: {
   baseline?: MetricSideProjection;
   candidate?: MetricSideProjection;
@@ -330,7 +240,8 @@ export function metricsFromReportFacts(facts: ComparisonReportFacts): {
 function renderMetricsBoard(metrics: {
   baseline?: MetricSideProjection;
   candidate?: MetricSideProjection;
-}, labels: { baseline: string; candidate: string }, locale: AgentLocale): string {
+}, locale: AgentLocale): string {
+  const labels = { baseline: reportString(locale, "sessionHistorical"), candidate: reportString(locale, "sessionCurrent") };
   const fingerprint = escapeHtml(hostMetricsFingerprint(metrics));
   const aria = escapeHtml(`${reportString(locale, "metricTime")}, ${reportString(locale, "metricTokens")}, ${reportString(locale, "metricCost")}`);
   return `<section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="${fingerprint}" aria-label="${aria}">
@@ -409,16 +320,21 @@ function defaultHeader(
   labels: { baseline: string; candidate: string },
   category: string,
   task: string,
+  originalTask: string,
+  facts: ComparisonReportFacts,
   locale: AgentLocale,
   diagnostic?: ComparisonReportDiagnostic,
 ): string {
   const kicker = diagnostic ? `<p class="kicker">Comparison · ${escapeHtml(diagnostic.failureClass)}</p>` : "";
-  const vs = reportString(locale, "titleVs", { category: "", baseline: labels.baseline, candidate: labels.candidate })
-    .replace(/^\s*·\s*/, "");
-  return `${kicker}<h1><span data-agent-slot="category">${escapeHtml(category)}</span> · ${escapeHtml(vs)}</h1>
-  <p class="sessions" data-host="session-labels"><span>${escapeHtml(reportString(locale, "sessionHistorical"))}</span><span>${escapeHtml(reportString(locale, "sessionCurrent"))}</span></p>
+  const summary = task.length > 180 ? `${task.slice(0, 177).trimEnd()}...` : task;
+  const request = task.length > 180
+    ? `<details class="request-expand" data-host="original-request"><summary>${escapeHtml(reportString(locale, "originalRequest"))}</summary><pre>${escapeHtml(originalTask)}</pre></details>`
+    : "";
+  return `${kicker}<h1><span data-agent-slot="category">${escapeHtml(category)}</span></h1>
+  <p class="sessions" data-host="session-labels"><span><small>${escapeHtml(reportString(locale, "sessionHistorical"))}</small><strong>${escapeHtml(labels.baseline)}</strong></span><span><small>${escapeHtml(reportString(locale, "sessionCurrent"))}</small><strong>${escapeHtml(labels.candidate)}</strong></span></p>
+  <p class="run-status" data-host="run-status">${escapeHtml(candidateStatusLabel(facts.run.outcome, facts.run.terminationCode, locale))}</p>
   <p class="field-label">${escapeHtml(reportString(locale, "taskLabel"))}</p>
-  <p class="task" data-slot="task" data-agent-slot="task">${escapeHtml(task)}</p>`;
+  <p class="task" data-slot="task" data-agent-slot="task">${escapeHtml(summary)}</p>${request}`;
 }
 
 function diagnosticDifferences(diagnostic: ComparisonReportDiagnostic, locale: AgentLocale): string {
@@ -564,76 +480,142 @@ function componentTemplateHtml(locale: AgentLocale): string {
 `;
 }
 
+function reportInteractionScript(locale: AgentLocale): string {
+  const tableHint = JSON.stringify(locale === "zh" ? "表格可横向滚动" : "Scroll table horizontally");
+  const imageHint = JSON.stringify(locale === "zh" ? "放大图片" : "Enlarge image");
+  return `(() => {
+    const zones = document.querySelectorAll('main.page > article.share > section[data-id="agent-comparison"], main.page > details.details > section[data-id="agent-details"]');
+    for (const zone of zones) {
+      for (const table of zone.querySelectorAll('table')) {
+        const frame = document.createElement('div');
+        frame.className = 'table-scroll';
+        frame.tabIndex = 0;
+        frame.setAttribute('role', 'region');
+        frame.setAttribute('aria-label', ${tableHint});
+        table.replaceWith(frame);
+        frame.append(table);
+        const hint = document.createElement('p');
+        hint.className = 'table-hint';
+        hint.textContent = ${tableHint};
+        frame.before(hint);
+      }
+    }
+    const dialog = document.querySelector('body > dialog[data-host-dialog="image"]');
+    const large = dialog?.querySelector('img');
+    const close = dialog?.querySelector('[data-host-dialog-close]');
+    if (!dialog || !large || !close) return;
+    close.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+    for (const image of document.querySelectorAll('main.page > article.share > section[data-id="agent-comparison"] img')) {
+      image.tabIndex = 0;
+      image.setAttribute('role', 'button');
+      image.setAttribute('aria-label', (image.alt ? image.alt + ' - ' : '') + ${imageHint});
+      image.title = ${imageHint};
+      const open = () => { large.src = image.currentSrc || image.src; large.alt = image.alt; dialog.showModal(); };
+      image.addEventListener('click', open);
+      image.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
+      });
+    }
+  })();`;
+}
+
 const REPORT_CSS = `
-:root { --paper:#efe8dc; --card:#fffcf7; --ink:#1a1714; --soft:#5a544b; --faint:#8a8378; --line:rgba(26,23,20,.08); --hair:rgba(26,23,20,.12); --shadow:0 22px 50px rgba(40,32,18,.1); --accent:#5b4630; --risk:#8b2e2e; --ok:#2f5d3a; }
+:root { --paper:#fff; --card:#fff; --ink:#20282b; --soft:#47545a; --faint:#66757b; --line:#e3e9e7; --hair:#d4deda; --accent:#12685f; --risk:#a2443d; --ok:#277049; }
 * { box-sizing:border-box; }
-html,body { margin:0; background:var(--paper); color:var(--ink); font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Songti SC","Source Han Serif SC",serif; }
-.page { max-width:980px; margin:0 auto; padding:36px 20px 72px; }
-.share { background:var(--card); border:1px solid var(--line); border-radius:28px; box-shadow:var(--shadow); padding:28px 28px 24px; }
-.share a { color:inherit; text-decoration:none; }
-.kicker { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin:0 0 12px; }
-h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; margin:0 0 8px; }
-.sessions { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:8px 0 12px; font-size:14px; color:var(--soft); }
-.field-label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:13px; color:var(--faint); margin:12px 0 4px; }
-.task { margin:0 0 8px; font-size:16px; color:var(--soft); line-height:1.45; }
-.note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:16px; line-height:1.5; }
+.page { max-width:1080px; margin:0 auto; padding:32px 24px 72px; }
+html,body { margin:0; background:var(--paper); color:var(--ink); font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+.share { padding:0; min-width:0; }
+.share a { color:var(--accent); text-underline-offset:2px; }
+.kicker { font-size:11px; color:var(--faint); margin:0 0 12px; }
+h1 { font-size:25px; font-weight:700; line-height:1.28; margin:0 0 10px; overflow-wrap:anywhere; }
+.sessions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:0 0 20px; padding:0 0 16px; border-bottom:1px solid var(--line); }
+.sessions span { min-width:0; }
+.sessions small { display:block; font-size:12px; color:var(--faint); margin-bottom:4px; }
+.sessions strong { display:block; font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+.field-label { font-size:12px; color:var(--faint); margin:12px 0 4px; }
+.task { margin:0 0 10px; font-size:14px; color:var(--soft); line-height:1.5; overflow-wrap:anywhere; }
+.run-status { margin:0 0 12px; font-size:12px; font-weight:600; color:var(--accent); }
+.request-expand { margin:0 0 14px; font-size:12px; color:var(--soft); }
+.request-expand summary { cursor:pointer; color:var(--accent); }
+.request-expand pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:16rem; overflow:auto; font:inherit; line-height:1.5; }
+.note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:17px; line-height:1.48; font-weight:600; overflow-wrap:anywhere; }
+h2 { font-size:18px; line-height:1.35; margin:18px 0 9px; }
+h3 { font-size:16px; line-height:1.4; }
+pre { max-width:100%; overflow-x:auto; padding:12px; background:#f4f7f6; border:1px solid var(--line); border-radius:4px; }
 [data-agent-slot="headline"] strong,[data-component="diff-table"] strong,[data-claim] { font-weight:inherit; }
-.board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
-.card,.result-card,[data-host="diagnostic-card"],[data-component="difference-card"] { background:#f7f3ea; border-radius:18px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; }
-.card { min-height:0; }
-.card .label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:12px; }
-.pair { display:grid; grid-template-columns:1fr 1fr; }
+.board { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; margin:24px 0 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.card { padding:14px 18px 16px 0; min-width:0; }
+.card + .card { padding-left:18px; border-left:1px solid var(--line); }
+.result-card,[data-host="diagnostic-card"],[data-component="difference-card"] { border-left:3px solid var(--accent); padding:10px 14px; margin:10px 0; background:#f4f8f7; }
+.card .label { font-size:12px; color:var(--faint); margin-bottom:10px; }
+.pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
 .col { padding-right:8px; }
 .col + .col { padding-right:0; padding-left:12px; border-left:1px solid var(--hair); }
-.who { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.08em; color:var(--faint); margin-bottom:4px; }
-.num { font-variant-numeric:tabular-nums; font-size:28px; line-height:1; letter-spacing:-.03em; font-weight:600; }
-.num.miss { font-size:16px; color:#b3ada2; letter-spacing:0; font-weight:500; white-space:nowrap; }
+.who { font-size:11px; color:var(--faint); margin-bottom:5px; overflow-wrap:anywhere; }
+.num { font-variant-numeric:tabular-nums; font-size:22px; line-height:1.2; font-weight:650; overflow-wrap:anywhere; }
+.num.miss { font-size:13px; color:var(--faint); font-weight:500; white-space:normal; }
 .unit { font-size:13px; font-weight:500; color:var(--soft); margin-left:2px; }
 .muted,[data-component="muted"] { color:var(--faint); font-size:14px; }
-.slot { margin-top:14px; }
+.slot { margin-top:14px; min-width:0; }
 .pages { display:flex; flex-direction:column; gap:14px; }
 [data-component="page-row"] { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:stretch; }
-.cell { border:1px solid var(--hair); border-radius:16px; overflow:hidden; background:#fff; }
+.cell { border:1px solid var(--hair); border-radius:4px; overflow:hidden; background:#fff; }
 .cell .who { padding:8px 12px 0; }
 .cell img,[data-component="page-row"] img { width:100%; height:320px; object-fit:contain; object-position:top; display:block; background:#fff; }
 [data-agent-zone="comparison"] { margin-top:0; margin-bottom:12px; }
-[data-agent-zone="comparison"] p,[data-agent-zone="comparison"] li { font-size:14px; line-height:1.4; color:var(--soft); max-width:48em; }
+[data-agent-zone="comparison"] p,[data-agent-zone="comparison"] li { font-size:14px; line-height:1.5; color:var(--soft); max-width:72em; overflow-wrap:anywhere; }
 [data-agent-zone="comparison"] [data-host="visual-unavailable"],[data-agent-zone="comparison"] [data-host="pairing-hint"] { margin:0 0 8px; font-size:14px; }
-[data-agent-zone="comparison"] table,[data-component="diff-table"] { width:100%; border-collapse:collapse; margin:8px 0; }
-[data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
-.details { margin-top:20px; color:var(--soft); background:var(--card); border:1px solid var(--line); border-radius:18px; padding:12px 18px 16px; }
-.details > summary { cursor:pointer; font-family:"Segoe UI","PingFang SC",sans-serif; font-size:14px; color:var(--accent); list-style:none; }
+[data-agent-zone="comparison"] table,[data-component="diff-table"] { display:block; width:100%; max-width:100%; overflow-x:auto; border-collapse:collapse; margin:12px 0; white-space:nowrap; }
+[data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border-bottom:1px solid var(--line); padding:9px 12px 9px 0; vertical-align:top; font-size:13px; font-weight:400; }
+.table-scroll { max-width:100%; overflow-x:auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.table-scroll:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.table-scroll table,[data-agent-zone="comparison"] .table-scroll table { display:table; width:max-content; min-width:100%; max-width:none; overflow:visible; margin:0; }
+.table-hint { margin:8px 0 3px; font-size:11px; color:var(--faint); }
+.details { margin-top:22px; color:var(--soft); border-top:1px solid var(--line); padding:16px 0; }
+.details > summary { cursor:pointer; font-size:14px; color:var(--accent); }
 .details > summary::-webkit-details-marker { display:none; }
 .cost-note { margin: 12px 0 8px; }
 [data-component="judgment"] { font-weight:700; }
 [data-component="judgment"] { margin:0 0 16px; }
 [data-host="diagnostic-card"] h3,[data-component="difference-card"] h3 { margin:0 0 8px; font-size:18px; }
 [data-host="diagnostic-card"] p,[data-component="difference-card"] p { margin:0; color:var(--soft); }
-[data-component="highlight"] { background:rgba(91,70,48,.12); padding:0 .2em; }
+[data-component="highlight"] { background:#e9f2ef; padding:0 .2em; }
 [data-component="strike"] { text-decoration:line-through; color:var(--soft); }
 [data-component="quote"] { border-left:3px solid var(--hair); padding-left:12px; color:var(--soft); }
 code,[data-component="code"] { font-family:"Cascadia Code","Sarasa Mono SC",monospace; font-size:.92em; }
-[data-component="tag-improve"],[data-component="tag-tradeoff"],[data-component="tag-risk"] { display:inline-block; font-size:12px; letter-spacing:.04em; padding:2px 8px; border-radius:999px; }
+[data-component="tag-improve"],[data-component="tag-tradeoff"],[data-component="tag-risk"] { display:inline-block; font-size:12px; padding:2px 6px; border-radius:3px; }
 [data-component="tag-improve"] { background:rgba(47,93,58,.12); color:var(--ok); }
-[data-component="tag-tradeoff"] { background:rgba(91,70,48,.12); }
+[data-component="tag-tradeoff"] { background:#edf1f1; }
 [data-component="tag-risk"] { background:rgba(139,46,46,.12); color:var(--risk); }
-[data-component="diff-table"] .who { letter-spacing:0; text-transform:none; font-size:16px; }
+[data-component="diff-table"] .who { font-size:13px; }
 [data-component="split-compare"] { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 [data-component="timeline"] { border-left:2px solid var(--hair); padding-left:16px; }
 [data-component="media-compare"],[data-component="media-grid"] { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
-[data-component="media-single"] img,[data-component="media-compare"] img,[data-component="media-grid"] img { max-width:100%; border-radius:12px; background:var(--card); }
+[data-component="media-single"] img,[data-component="media-compare"] img,[data-component="media-grid"] img { max-width:100%; border-radius:4px; background:var(--card); }
 .evidence-expand { margin-top:16px; }
 .path-link { color:var(--accent); }
+.image-dialog { max-width:min(96vw,1400px); max-height:94vh; padding:38px 12px 12px; border:1px solid var(--line); border-radius:4px; background:#fff; }
+.image-dialog::backdrop { background:rgba(17,29,32,.78); }
+.image-dialog img { display:block; max-width:calc(96vw - 24px); max-height:calc(94vh - 50px); object-fit:contain; }
+.image-dialog-close { position:absolute; top:4px; right:8px; border:0; background:transparent; color:var(--ink); font-size:28px; line-height:1; cursor:pointer; }
+[data-agent-zone="comparison"] img[role="button"] { cursor:zoom-in; }
+[data-agent-zone="comparison"] img[role="button"]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .kv-list { padding-left:18px; }
 body[data-report="diagnostic"] .num.miss { font-size:16px; }
 @media (max-width:760px) {
-  .board,[data-component="split-compare"],[data-component="page-row"] { grid-template-columns:1fr; }
-  .num { font-size:24px; }
+  .page { padding:20px 14px 48px; }
+  .board { grid-template-columns:1fr; }
+  .card,.card + .card { padding:11px 0; border-left:0; }
+  .card + .card { border-top:1px solid var(--line); }
+  [data-component="split-compare"],[data-component="page-row"] { grid-template-columns:1fr; }
+  .num { font-size:20px; }
   .task { white-space:normal; }
   .cell img,[data-component="page-row"] img { height:160px; }
 }
 @media print {
   .details { break-inside:avoid; }
   .share { box-shadow:none; }
+  .table-hint,.image-dialog { display:none; }
 }
 `;

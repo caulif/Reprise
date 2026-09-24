@@ -69,6 +69,10 @@ node dist/src/cli/main.js compare --experiment <experimentId> --json
 
 `experimentId` 来自该次 `run` 或 TUI 流程写入 `dataDir` 的实验目录。成功时 JSON 包含报告路径；失败时保留事件日志供排障。连接测试（TUI `/config` 的 `Ctrl+T`）同样会发出最小模型请求，可能计费。
 
+Comparison 的工具能力可先用 `reprise doctor tools --json` 查看。浏览器未就绪时，可用 `reprise setup tools --browser` 下载 Playwright Chromium，或用 `--browser-path <path>` 配置现有 Chromium/Edge；`setup` 会在本机 `.reprise/tools.json` 保存路径，再执行一次能力探测。缺浏览器不阻止文本与文件证据对照，但报告必须说明未完成的视觉检查。`render_artifact` 保留为冻结文件的预览入口。搜索只在配置 Brave Search API endpoint 与环境变量密钥名后可用；密钥值不写进工具配置。
+
+Comparison 的 `fetch_url` 只获取受限 HTTPS 响应；CSV、JSON、PDF、DOCX、XLSX、PPTX 的内容提取可通过 `reprise extract <file> --output <scratch-json>` 得到有位置的文本。PDF 扫描图、Office 实际排版、公式重算和媒体内容不由文本提取证明。配置可选程序后，`reprise enhance inspect-media <file> --output <json>`、`extract-frame <file> --time-ms <n> --output <png>` 和 `ocr-text <image> --output <txt>` 分别调用 ffprobe、ffmpeg 与 Tesseract，执行有超时和输出上限。媒体输入限 MP4/MOV、WebM/MKV 和 WAV 容器，图片限 PNG/JPEG/TIFF，播放列表被拒绝。`doctor tools` 的 LibreOffice 版本检测不代表可安全转换；宏、外链、profile 与输出隔离未满足时，转换操作标记为不支持。
+
 ## 配置 Harness 内部模型
 
 配置页（TUI 输入 `/config`）保存一份供 Recovery、Controller、Comparison 共用的默认 Harness 模型。配置写入 Git 忽略的 `{dataDir}/harness-model.json`（默认即 `.reprise/harness-model.json`），也可将密钥写成 `env:NAME` 引用。密钥值不会写入事件、artifact 或报告。

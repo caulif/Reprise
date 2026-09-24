@@ -656,7 +656,10 @@ function mediaDerivationKey(derivation: ComparisonMediaDerivation | undefined): 
     derivation.rendererVersion ?? "",
     viewport,
     samples,
-    derivation.capturedAt ?? "",
+    derivation.sourceHash ?? "",
+    derivation.finalUrl ?? "",
+    derivation.urlStateOmitted ? "url-state-omitted" : "",
+    JSON.stringify(derivation.actions?.map(({ action, selector }) => ({ action, selector })) ?? []),
   ].join("|");
 }
 

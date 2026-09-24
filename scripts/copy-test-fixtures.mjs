@@ -10,6 +10,10 @@ await copyFile(
   "test/fixtures/recovery-truth-dataset.json",
   "dist/test/fixtures/recovery-truth-dataset.json",
 );
+await copyFile(
+  "test/fixtures/comparison-simple.pdf",
+  "dist/test/fixtures/comparison-simple.pdf",
+);
 
 await mkdir("dist/src/products/packs/codex/recovery", { recursive: true });
 await copyFile(

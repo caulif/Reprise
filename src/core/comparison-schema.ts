@@ -67,6 +67,16 @@ export const ComparisonMediaDerivationSchema = Type.Object({
   })),
   sampleTimesMs: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: 60_000 }), { maxItems: 16 })),
   capturedAt: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  elapsedMs: Type.Optional(Type.Integer({ minimum: 0 })),
+  sourceHash: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
+  finalUrl: Type.Optional(Type.String({ minLength: 1, maxLength: 240 })),
+  urlStateOmitted: Type.Optional(Type.Boolean()),
+  errorsOmitted: Type.Optional(Type.Integer({ minimum: 0 })),
+  actions: Type.Optional(Type.Array(Type.Object({
+    action: Type.Union([Type.Literal("click"), Type.Literal("fill")]),
+    selector: Type.String({ minLength: 1, maxLength: 512 }),
+    elapsedMs: Type.Integer({ minimum: 0 }),
+  }), { maxItems: 256 })),
 });
 export type ComparisonMediaDerivation = Static<typeof ComparisonMediaDerivationSchema>;
 export const ComparisonMediaRecordSchema = Type.Object({
@@ -91,8 +101,7 @@ export const ComparisonMediaRecordSchema = Type.Object({
 export type ComparisonMediaRecord = Static<typeof ComparisonMediaRecordSchema>;
 export const ComparisonReportModelSchema = Type.Object({
   schemaVersion: Type.Literal(1),
-  /** 2 = autonomous comparison/details zones. Absent or 1 = legacy four-zone audit files (readable, not rewritten). */
-  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])),
+  formatVersion: Type.Literal(2),
   headline: Type.Optional(Type.String({ minLength: 1, maxLength: 280 })),
   task: Type.String(),
   status: Type.Object({
@@ -109,19 +118,33 @@ export const ComparisonReportModelSchema = Type.Object({
     header: Type.Optional(Type.String()),
     comparison: Type.Optional(Type.String()),
     details: Type.Optional(Type.String()),
-    /** Legacy slots retained so old report-model.json remains Value.Check-valid. */
-    "key-differences": Type.Optional(Type.String()),
-    "visual-evidence": Type.Optional(Type.String()),
-    delivery: Type.Optional(Type.String()),
-    limitations: Type.Optional(Type.String()),
     evidence: Type.Optional(Type.String()),
     process: Type.Optional(Type.String()),
-  }),
+  }, { additionalProperties: false }),
   evidenceRefs: Type.Array(EvidenceRefSchema),
   mediaRefs: Type.Array(ComparisonMediaRefSchema),
   limitationCodes: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
-});
+}, { additionalProperties: false });
 export type ComparisonReportModel = Static<typeof ComparisonReportModelSchema>;
+export const ComparisonReportContentSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  headline: Type.String({ minLength: 1, maxLength: 280 }),
+  criticalLimitations: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 12 }),
+  evidenceRefs: Type.Array(Type.String({ pattern: "^ev-[0-9]{2,6}$" }), { maxItems: 128 }),
+}, { additionalProperties: false });
+export type ComparisonReportContent = Static<typeof ComparisonReportContentSchema>;
+export const ComparisonPreviewReceiptSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  contentDigest: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  validationDigest: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  preparedDigest: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  evidenceRevision: Type.Integer({ minimum: 0 }),
+  contractValid: Type.Boolean(),
+  publishable: Type.Boolean(),
+  reviewMode: Type.Union([Type.Literal("visual"), Type.Literal("mechanical")]),
+  reviewRefs: Type.Array(Type.String()),
+}, { additionalProperties: false });
+export type ComparisonPreviewReceipt = Static<typeof ComparisonPreviewReceiptSchema>;
 export const ComparisonBriefingContextSchema = Type.Object({
   task: Type.Object({ caseId: Type.String(), summary: Type.String() }), baseline: Type.Object({ summary: Type.String(), evidenceRefs: Type.Array(Type.String()) }),
   candidates: Type.Array(Type.Object({ runId: Type.String(), evidenceRefs: Type.Array(Type.String()) })), telemetry: Type.Array(Type.Object({ runId: Type.String() })), reportFacts: ComparisonReportFactsSchema,

@@ -4,3 +4,4 @@
 # 尾部空格是定宽证据的一部分，因此关闭空白检查。
 docs/tui-audit/frames/** text eol=lf -whitespace
 test/snapshots/** text eol=lf -whitespace
+test/fixtures/comparison-simple.pdf binary
