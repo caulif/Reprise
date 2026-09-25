@@ -35,9 +35,12 @@ export async function materializeComparisonReportPreview(input: {
     const item = mediaByHref.get(normalized);
     if (!item?.available) continue;
     const source = resolve(input.attemptRoot, ...normalized.split("/"));
+    if (!pathContainedBy(input.attemptRoot, source)) {
+      throw new Error(`Comparison preview media escapes attempt root: ${normalized}`);
+    }
     const rootReal = await realpath(input.attemptRoot);
     const sourceReal = await realpath(source);
-    if (!pathContainedBy(rootReal, sourceReal) || !pathContainedBy(rootReal, source)) {
+    if (!pathContainedBy(rootReal, sourceReal)) {
       throw new Error(`Comparison preview media escapes attempt root: ${normalized}`);
     }
     const bytes = await readFile(sourceReal);

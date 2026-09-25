@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256 } from "../../src/core/identity.js";
@@ -362,6 +362,28 @@ test("preview copies only referenced media and rejects changed registered bytes"
   await assert.rejects(readFile(join(prepared.outputRoot, "media", "unused.png")));
   await writeFile(join(root, "media", "used.png"), PNG_B);
   await assert.rejects(materializeComparisonReportPreview({ attemptRoot: root, media, catalogRevision: 1 }), /changed after registration/);
+});
+
+test("preview accepts media within an attempt reached through a directory link", async (t) => {
+  const parent = await mkdtemp(join(tmpdir(), "reprise-preview-linked-root-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(parent, { recursive: true, force: true });
+  });
+  const root = join(parent, "attempt");
+  const linkedRoot = join(parent, "linked-attempt");
+  await mkdir(join(root, "media"), { recursive: true });
+  await writeFile(join(root, "media", "used.png"), PNG_A);
+  await writeFile(join(root, "report.html"), '<section data-agent-zone="comparison"><img data-media-ref="media-01"></section>');
+  await symlink(root, linkedRoot, process.platform === "win32" ? "junction" : "dir");
+
+  const prepared = await materializeComparisonReportPreview({
+    attemptRoot: linkedRoot,
+    media: [{ ref: "media:used", shortRef: "media-01", side: "candidate", inspectPath: "media/used.png", reportHref: "media/used.png", mediaType: "image/png", available: true, contentHash: sha256(PNG_A) }],
+    catalogRevision: 1,
+  });
+  assert.equal((await readFile(join(prepared.outputRoot, "media", "used.png"))).equals(PNG_A), true);
+  assert.match(await readFile(prepared.htmlPath, "utf8"), /src="media\/used\.png"/);
 });
 
 test("preview does not load registered media outside the attempt root", async (t) => {
