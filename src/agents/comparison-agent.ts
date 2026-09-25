@@ -243,7 +243,8 @@ export function composeComparisonSystemPrompt(locale: AgentLocale): string {
 export const COMPARISON_TURN_PROMPTS = {
   understand: [
     'Understand the user\'s task and the final outcome they wanted. Read the user-input',
-    'index and relevant context; identify constraints, success criteria, and what',
+    'index and briefing/decision-map.md first. Treat its delivery leads and gaps',
+    'as navigation, not conclusions; check relevant source files. Identify constraints, success criteria, and what',
     'would change the user\'s choice between the two results. Locate each attempt\'s',
     'deliverables and distinguish final versions from drafts. Write brief working',
     'notes in work/comparison-plan.md, including the most important questions and',

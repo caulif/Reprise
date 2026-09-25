@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, realpath } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { parse, serializeOuter } from "parse5";
@@ -11,6 +11,7 @@ import {
   type ComparisonReportModel,
 } from "../core/schema.js";
 import { writeAtomic } from "../core/identity.js";
+import { pathContainedBy } from "../core/paths.js";
 import { isMissing } from "./experiment-helpers.js";
 import type { AgentLocale } from "../agents/language.js";
 import { candidateStatusLabel, reportString, type ComparisonReportStringKey } from "./comparison-report-strings.js";
@@ -264,7 +265,7 @@ async function stagePublishedMedia(input: {
   const byHref = new Map(input.media.map((item) => [item.reportHref.replaceAll("\\", "/").replace(/^\.\//, ""), item]));
   let html = input.html;
   const published = new Map<string, string>();
-  for (const href of mediaHrefs(html)) {
+  for (const href of comparisonMediaHrefs(html)) {
     if (href.startsWith("#")) continue;
     if (href.startsWith("data:")) {
       throw new Error("Comparison report contains unregistered data URL media.");
@@ -918,7 +919,12 @@ async function stripBrokenMedia(
 
 async function fileReadable(root: string, relative: string): Promise<boolean> {
   try {
-    await readFile(resolve(root, ...relative.split("/")));
+    const rootReal = await realpath(root);
+    const source = resolve(root, ...relative.split("/"));
+    if (!pathContainedBy(root, source)) return false;
+    const sourceReal = await realpath(source);
+    if (!pathContainedBy(rootReal, sourceReal)) return false;
+    await readFile(sourceReal);
     return true;
   } catch {
     return false;
@@ -957,11 +963,18 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function mediaHrefs(html: string): string[] {
+export function comparisonMediaHrefs(html: string): string[] {
   const found = new Set<string>();
-  for (const match of html.matchAll(/<(?:img|source|video|image)\b[^>]*\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)) {
-    found.add(match[1] ?? "");
-  }
+  type MediaNode = { tagName?: string; attrs?: { name: string; value: string }[]; childNodes?: MediaNode[]; content?: MediaNode };
+  const visit = (node: MediaNode): void => {
+    if (node.tagName && ["img", "source", "video", "image"].includes(node.tagName)) {
+      for (const attr of node.attrs ?? []) {
+        if ((attr.name === "src" || attr.name === "href") && attr.value) found.add(attr.value);
+      }
+    }
+    for (const child of [...(node.childNodes ?? []), ...(node.content?.childNodes ?? [])]) visit(child);
+  };
+  visit(parse(html) as unknown as MediaNode);
   for (const match of html.matchAll(/url\((['"]?)([^'")]+)\1\)/gi)) {
     const value = match[2] ?? "";
     if (/\.(png|jpe?g|gif|webp|svg|avif)(?:$|[?#])/i.test(value)) found.add(value);
