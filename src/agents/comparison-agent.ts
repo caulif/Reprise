@@ -1,7 +1,7 @@
 import { Value } from '@sinclair/typebox/value';
 import type { HostZoneSnapshot } from '../core/comparison-html.js';
 import { ComparisonResultSchema, ComparisonShortRefSchema, type ComparisonAgentEnvelope, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
-import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
+import { AgentSessionHost, AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition, type FreeformInvocation } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
 import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
@@ -81,7 +81,62 @@ export interface ComparisonAgentPort {
 export type ComparisonCompareOptions = {
   /** Same-process getter; must not be persisted into comparison.requested JSON. */
   getEvidenceCatalog?: () => Pick<ComparisonEvidenceCatalogSnapshot, "links" | "media">;
+  preflightDraft?: () => Promise<{ digest: string; error?: string }>;
+  enforcePhaseBoundaries?: boolean;
 };
+
+type ComparisonPhase = keyof typeof COMPARISON_TURN_PROMPTS;
+
+function phaseTools(tools: readonly AgentToolDefinition[], current: { phase: ComparisonPhase }): AgentToolDefinition[] {
+  return tools.map((tool) => ({
+    ...tool,
+    execute: (params: unknown, signal: AbortSignal) => {
+      const path = typeof params === 'object' && params !== null && 'path' in params
+        ? String(params.path).replaceAll('\\', '/').replace(/^(\.\/)+/, '')
+        : '';
+      if (current.phase === 'understand' && ['shell_exec', 'render_artifact', 'register_evidence'].includes(tool.name)) {
+        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: `Use ${tool.name} in the investigate turn.` }) });
+      }
+      if ((tool.name === 'write' || tool.name === 'edit') && path === 'report.html'
+        && current.phase !== 'compose' && current.phase !== 'review') {
+        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: 'Write report.html in the compose turn.' }) });
+      }
+      if (tool.name === 'preview_report' && current.phase !== 'review') {
+        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: 'Preview report.html in the review turn.' }) });
+      }
+      return tool.execute(params, signal);
+    },
+  }));
+}
+
+async function ensureDraftStructure(input: {
+  session: AgentSessionHost;
+  preflight: () => Promise<{ digest: string; error?: string }>;
+  timeoutMs: number;
+  seen: Set<string>;
+  signal?: AbortSignal;
+  review: boolean;
+}): Promise<FreeformInvocation> {
+  let draft = await input.preflight();
+  while (draft.error) {
+    const key = `${draft.digest}\n${draft.error}`;
+    if (input.seen.has(key)) {
+      return {
+        status: 'failed', sessionId: input.session.sessionId,
+        failure: { code: 'report_incomplete', message: draft.error, attempts: 1 },
+      };
+    }
+    input.seen.add(key);
+    const correction = await input.session.work({
+      promptContent: `The report draft cannot be published: ${draft.error}\nRestore the required Agent slots and zones in report.html, then ${input.review ? 'preview the corrected draft and' : ''} return. The Host rebuilds its own regions.`,
+      timeoutMs: input.timeoutMs,
+      ...(input.signal ? { signal: input.signal } : {}),
+    });
+    if (correction.status !== 'completed') return correction;
+    draft = await input.preflight();
+  }
+  return { status: 'completed', sessionId: input.session.sessionId, value: {} };
+}
 
 const COMPARISON_COMPACTION = [
   'Preserve the task success criteria, decisive findings with source references,',
@@ -193,7 +248,9 @@ export const COMPARISON_TURN_PROMPTS = {
     'deliverables and distinguish final versions from drafts. Write brief working',
     'notes in work/comparison-plan.md, including the most important questions and',
     'evidence gaps. Do not design a fixed report outline or judge from the models\'',
-    'self-descriptions alone.',
+    'self-descriptions alone. Stop this turn after locating the final artifacts and',
+    'listing only questions whose answers could change the user\'s choice. Do not',
+    'write or preview report.html in this turn.',
   ].join('\n'),
   investigate: [
     'Investigate the questions that can change the task-specific conclusion. Read',
@@ -202,6 +259,9 @@ export const COMPARISON_TURN_PROMPTS = {
     'evidence through the registered tools. Record what was observed, inferred, or',
     'still unknown, with stable references. Stop investigating when additional work',
     'is unlikely to change the conclusion; do not exhaust every log by default.',
+    'Before another check, ask whether its possible result could change the',
+    'recommendation, confidence, or a material limitation. If not, stop this turn.',
+    'Do not write or preview report.html in this turn.',
     'Update the notes with the proposed conclusion, its strongest evidence, its',
     'important limitation, and the best way to show it to a new reader.',
   ].join('\n'),
@@ -209,6 +269,9 @@ export const COMPARISON_TURN_PROMPTS = {
     'Create the report by editing report.html. Fill the existing category, task, and',
     'headline slots, then author data-agent-zone="comparison" and, when useful,',
     'data-agent-zone="details". The Host header and metrics must remain intact.',
+    'Keep exactly one each of data-agent-slot="headline", "category", and "task";',
+    'the Host will rebuild its own regions from trusted facts. Do not replace these',
+    'markers with data-slot. Report preview belongs to the review turn.',
     '',
     'Choose the form that explains this task best: visual comparison, compact table,',
     'representative excerpts, observed results, or a combination. Components are',
@@ -293,30 +356,30 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
       return comparisonEvidenceAllowlist(context);
     };
-    const session = await this.#sessionFor(attemptId, context, tools, audit);
-    const prefix = await session.runTurns([
-      {
-        promptContent: context.promptContent
+    const current = { phase: 'understand' as ComparisonPhase };
+    const phasedTools = options?.enforcePhaseBoundaries ? phaseTools(tools, current) : tools;
+    const session = await this.#sessionFor(attemptId, context, phasedTools, audit);
+    for (const step of ['understand', 'investigate', 'compose'] as const) {
+      current.phase = step;
+      const prefix = await session.work({
+        promptContent: step === 'understand' && context.promptContent
           ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}`
-          : COMPARISON_TURN_PROMPTS.understand,
+          : COMPARISON_TURN_PROMPTS[step],
         timeoutMs: this.#timeoutMs,
         ...(signal ? { signal } : {}),
-      },
-      {
-        promptContent: COMPARISON_TURN_PROMPTS.investigate,
-        timeoutMs: this.#timeoutMs,
-        ...(signal ? { signal } : {}),
-      },
-      {
-        promptContent: COMPARISON_TURN_PROMPTS.compose,
-        timeoutMs: this.#timeoutMs,
-        ...(signal ? { signal } : {}),
-      },
-    ]);
-    if (prefix.status !== 'completed') {
-      if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
-      return prefix;
+      });
+      if (prefix.status !== 'completed') {
+        if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
+        return prefix;
+      }
     }
+    const seenDraftErrors = new Set<string>();
+    const ensureDraft = (review: boolean) => options?.preflightDraft
+      ? ensureDraftStructure({ session, preflight: options.preflightDraft, timeoutMs: this.#timeoutMs, seen: seenDraftErrors, ...(signal ? { signal } : {}), review })
+      : undefined;
+    const ready = await ensureDraft(false);
+    if (ready && ready.status !== 'completed') return ready;
+    current.phase = 'review';
     const envelopeRequest = {
       ...(signal ? { signal } : {}),
       schema: ComparisonResultSchema,
@@ -325,20 +388,31 @@ export class ComparisonAgent implements ComparisonAgentPort {
       normalize: (value: unknown) => normalizeComparisonEvidence(value),
       validate: (value: ComparisonAgentEnvelope) => validateComparisonEvidence(value, currentAllowlist()),
     };
-    let result = await session.request<ComparisonAgentEnvelope>({
-      ...envelopeRequest,
-      allowTools: true,
-      maxRepairAttempts: 0,
-      promptContent: COMPARISON_TURN_PROMPTS.review,
-    });
-    if (result.status === 'failed' && isInvalidEnvelopeFailure(result.failure.message) && await readAttemptReport(tools, signal)) {
-      result = await session.request<ComparisonAgentEnvelope>({
+    const reviewEnvelope = async () => {
+      let reviewed = await session.request<ComparisonAgentEnvelope>({
         ...envelopeRequest,
-        allowTools: false,
-        maxRepairAttempts: this.#maxRepairAttempts,
-        promptContent: JSON_ONLY_REPAIR_PROMPT,
-        repairInstruction: COMPARISON_REPAIR_INSTRUCTION,
+        allowTools: true,
+        maxRepairAttempts: 0,
+        promptContent: COMPARISON_TURN_PROMPTS.review,
       });
+      if (reviewed.status === 'failed' && isInvalidEnvelopeFailure(reviewed.failure.message) && await readAttemptReport(tools, signal)) {
+        reviewed = await session.request<ComparisonAgentEnvelope>({
+          ...envelopeRequest,
+          allowTools: false,
+          maxRepairAttempts: this.#maxRepairAttempts,
+          promptContent: JSON_ONLY_REPAIR_PROMPT,
+          repairInstruction: COMPARISON_REPAIR_INSTRUCTION,
+        });
+      }
+      return reviewed;
+    };
+    let result = await reviewEnvelope();
+    while (result.status === 'completed' && options?.preflightDraft) {
+      const finalDraft = await options.preflightDraft();
+      if (!finalDraft.error) break;
+      const repaired = await ensureDraft(true);
+      if (repaired && repaired.status !== 'completed') return repaired;
+      result = await reviewEnvelope();
     }
     if (result.status === 'failed') await this.#sessions.discard(attemptId);
     if (result.status !== 'completed') return result;

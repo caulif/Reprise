@@ -124,7 +124,7 @@ test("Comparison shell_exec still runs ordinary Node/Python static checks", asyn
 
 test("Comparison shell_exec timeout still fails and does not leave an orphan long-runner", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-timeout-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }));
   const shell = comparisonShell(root, { shellTimeoutMs: 100 });
   const started = Date.now();
   await assert.rejects(

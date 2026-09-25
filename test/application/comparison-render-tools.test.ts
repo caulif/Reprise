@@ -285,6 +285,31 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   assert.notEqual(second.draftDigest, first.draftDigest);
 });
 
+test("preview_report rejects an unpublishable draft before rendering", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-preview-preflight-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const draft = '<!doctype html><html><body><h1 data-slot="headline">Result</h1><section data-agent-zone="comparison">Difference</section><section data-agent-zone="details"></section></body></html>';
+  await writeFile(join(root, "report.html"), draft);
+  let renderCalls = 0;
+  const { preflightComparisonDraft } = await import("../../src/application/comparison-draft-preflight.js");
+  const tool = createPreviewReportTool({
+    catalog: createEphemeralRenderCatalog({ sources: [], mediaRoot: root, reviewRoot: join(root, "review") }),
+    attemptRoot: root,
+    preflightDraft: () => preflightComparisonDraft(root),
+    prepareReportHtml: async () => { throw new Error("invalid draft must not be prepared"); },
+    render: async () => { renderCalls++; throw new Error("invalid draft must not be rendered"); },
+  });
+  const result = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as { status: string; publicationStructure: string; message: string; draftDigest: string };
+  assert.equal(result.status, "invalid_report");
+  assert.equal(result.publicationStructure, "invalid");
+  assert.match(result.message, /data-agent-slot:headline/);
+  assert.equal(result.draftDigest, sha256(draft));
+  assert.equal(renderCalls, 0);
+});
+
 test("materializeComparisonReportPreview writes preview.html without touching draft path bytes contract", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-preview-materialize-"));
   t.after(async () => {

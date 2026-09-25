@@ -46,6 +46,7 @@ import {
   verifyAndRenderComparisonReport,
 } from "./comparison-publication.js";
 import { withComparisonShellDeny } from "./comparison-shell-deny.js";
+import { preflightComparisonDraft } from "./comparison-draft-preflight.js";
 
 export { comparisonCandidateMount };
 
@@ -521,7 +522,11 @@ async function invokeCompare(
     comparisonTools(input, attemptRoot, allowBinary, catalog),
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
-    { getEvidenceCatalog: () => catalog.snapshot() },
+    {
+      getEvidenceCatalog: () => catalog.snapshot(),
+      preflightDraft: () => preflightComparisonDraft(attemptRoot),
+      enforcePhaseBoundaries: true,
+    },
   );
   return { result, deliveredImageContentHashes };
 }
@@ -585,6 +590,7 @@ function comparisonTools(
     createPreviewReportTool({
       catalog: renderCatalog,
       attemptRoot,
+      preflightDraft: () => preflightComparisonDraft(attemptRoot),
       prepareReportHtml: async () => {
         const snap = catalog.snapshot();
         return materializeComparisonReportPreview({
