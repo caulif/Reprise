@@ -92,6 +92,7 @@ export type ComparisonRenderToolBaseDeps = {
 export type ComparisonPreviewReportToolDeps = ComparisonRenderToolBaseDeps & {
   /** Prepare draft HTML with current catalog revision (B3/B6 share this). */
   prepareReportHtml: () => Promise<PreparedReportPreview>;
+  preflightDraft?: () => Promise<{ digest: string; error?: string }>;
 };
 
 export type PreparedReportPreview = {
@@ -211,6 +212,10 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
       if (!Value.Check(PreviewReportParamsSchema, params)) {
         return textResult({ status: "invalid_request", message: "parameters failed schema check" });
       }
+      const preflight = await deps.preflightDraft?.();
+      if (preflight?.error) {
+        return textResult({ status: "invalid_report", publicationStructure: "invalid", draftDigest: preflight.digest, message: preflight.error });
+      }
       const prepared = await deps.prepareReportHtml();
       const viewport = resolveViewport(params.viewport);
       const rendered = await render({
@@ -270,6 +275,7 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
       const mechanics = inspectPreparedReportMechanics(prepared.html);
       return textResult({
         status: "ok",
+        publicationStructure: preflight ? "valid" : "unchecked",
         revision: prepared.catalogRevision,
         draftDigest: prepared.draftDigest,
         preparedDigest: prepared.preparedDigest,
