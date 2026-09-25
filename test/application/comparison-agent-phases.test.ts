@@ -175,6 +175,59 @@ test("Comparison rechecks the final draft after review edits", async () => {
   assert.equal(prompts.filter((prompt) => prompt.includes("cannot be published")).length, 1);
 });
 
+test("Comparison repairs an invalid envelope after rechecking a repaired draft", async () => {
+  for (const invalidEnvelope of ["not-json", JSON.stringify({ status: "completed", evidenceRefs: ["ev-99"] })]) {
+    let draft = { digest: "composed" } as { digest: string; error?: string };
+    let reviewCount = 0;
+    let reportReads = 0;
+    let toolsEnabled = true;
+    const prompts: string[] = [];
+    const toolModes: boolean[] = [];
+    const agent = new ComparisonAgent({
+      host: new AgentHost({ createSession: () => ({
+        setToolsEnabled(enabled) { toolsEnabled = enabled; },
+        append: async ({ content }) => {
+          prompts.push(content);
+          toolModes.push(toolsEnabled);
+          if (content.includes("Review the actual draft")) {
+            reviewCount += 1;
+            if (reviewCount === 1) {
+              draft = { digest: "broken-review", error: "Comparison report requires exactly one data-agent-slot:headline." };
+              return JSON.stringify({ status: "completed", evidenceRefs: ["ev-01"] });
+            }
+            return invalidEnvelope;
+          }
+          if (content.includes("cannot be published")) draft = { digest: "repaired-review" };
+          return content.includes("The page is already written")
+            ? JSON.stringify({ status: "completed", evidenceRefs: ["ev-01"] })
+            : "done";
+        },
+        cancel() {},
+      }) }),
+      timeoutMs: 0,
+      maxRepairAttempts: 0,
+    });
+    const tools = [{
+      name: "read",
+      description: "read report",
+      parameters: Type.Object({ path: Type.String() }),
+      execute: async () => { reportReads += 1; return { content: "repaired report" }; },
+    }];
+    const result = await agent.compare(
+      { ...context(), shortEvidenceRefs: ["ev-01"] }, tools, undefined, undefined,
+      { preflightDraft: async () => draft },
+    );
+    assert.equal(result.status, "completed", invalidEnvelope);
+    if (result.status === "completed") assert.deepEqual(result.value.evidenceRefs, ["ev-01"]);
+    assert.equal(draft.digest, "repaired-review");
+    assert.equal(reviewCount, 2);
+    assert.equal(reportReads, 1);
+    assert.equal(prompts.length, 7);
+    assert.match(prompts[6] ?? "", /Do not read or modify report\.html/);
+    assert.equal(toolModes[6], false);
+  }
+});
+
 test("Comparison refuses to start a Session without attemptId", async () => {
   const comparison = new ComparisonAgent({
     host: new AgentHost({ createSession: () => ({ append: async () => "", cancel() {} }) }),

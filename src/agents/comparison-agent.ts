@@ -388,32 +388,31 @@ export class ComparisonAgent implements ComparisonAgentPort {
       normalize: (value: unknown) => normalizeComparisonEvidence(value),
       validate: (value: ComparisonAgentEnvelope) => validateComparisonEvidence(value, currentAllowlist()),
     };
-    let result = await session.request<ComparisonAgentEnvelope>({
-      ...envelopeRequest,
-      allowTools: true,
-      maxRepairAttempts: 0,
-      promptContent: COMPARISON_TURN_PROMPTS.review,
-    });
-    if (result.status === 'failed' && isInvalidEnvelopeFailure(result.failure.message) && await readAttemptReport(tools, signal)) {
-      result = await session.request<ComparisonAgentEnvelope>({
-        ...envelopeRequest,
-        allowTools: false,
-        maxRepairAttempts: this.#maxRepairAttempts,
-        promptContent: JSON_ONLY_REPAIR_PROMPT,
-        repairInstruction: COMPARISON_REPAIR_INSTRUCTION,
-      });
-    }
-    while (result.status === 'completed' && options?.preflightDraft) {
-      const finalDraft = await options.preflightDraft();
-      if (!finalDraft.error) break;
-      const repaired = await ensureDraft(true);
-      if (repaired && repaired.status !== 'completed') return repaired;
-      result = await session.request<ComparisonAgentEnvelope>({
+    const reviewEnvelope = async () => {
+      let reviewed = await session.request<ComparisonAgentEnvelope>({
         ...envelopeRequest,
         allowTools: true,
         maxRepairAttempts: 0,
         promptContent: COMPARISON_TURN_PROMPTS.review,
       });
+      if (reviewed.status === 'failed' && isInvalidEnvelopeFailure(reviewed.failure.message) && await readAttemptReport(tools, signal)) {
+        reviewed = await session.request<ComparisonAgentEnvelope>({
+          ...envelopeRequest,
+          allowTools: false,
+          maxRepairAttempts: this.#maxRepairAttempts,
+          promptContent: JSON_ONLY_REPAIR_PROMPT,
+          repairInstruction: COMPARISON_REPAIR_INSTRUCTION,
+        });
+      }
+      return reviewed;
+    };
+    let result = await reviewEnvelope();
+    while (result.status === 'completed' && options?.preflightDraft) {
+      const finalDraft = await options.preflightDraft();
+      if (!finalDraft.error) break;
+      const repaired = await ensureDraft(true);
+      if (repaired && repaired.status !== 'completed') return repaired;
+      result = await reviewEnvelope();
     }
     if (result.status === 'failed') await this.#sessions.discard(attemptId);
     if (result.status !== 'completed') return result;
