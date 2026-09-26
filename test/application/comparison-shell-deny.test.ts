@@ -122,20 +122,18 @@ test("Comparison shell_exec still runs ordinary Node/Python static checks", asyn
   assert.match(py.content, /py-ok/);
 });
 
-test("Comparison shell_exec timeout still fails and does not leave an orphan long-runner", async (t) => {
+test("Comparison shell_exec timeout terminates the shell and releases its workspace", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-timeout-"));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }));
   const shell = comparisonShell(root, { shellTimeoutMs: 100 });
   const started = Date.now();
   await assert.rejects(
     shell.execute(
-      // Long sleep: killTree must cut this short. Assertion bound is well under sleep length.
-      { command: hostNodeCommand("setTimeout(() => undefined, 30_000)") },
+      { command: hostShellSleep(30) },
       new AbortController().signal,
     ),
     /timed out/i,
   );
-  // Windows previously waited ~full sleep when taskkill was async; sync kill + close grace keep this << 30s.
   assert.ok(Date.now() - started < 15_000, "timeout must not wait for the full child sleep");
 });
 
