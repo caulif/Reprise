@@ -146,7 +146,9 @@ test("Comparison shell_exec cancels a started nested process", async (t) => {
   let childExited = false;
   t.after(async () => {
     if (childPid && !childExited) {
-      try { process.kill(childPid, "SIGKILL"); } catch { /* child already exited */ }
+      try { process.kill(childPid, "SIGKILL"); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
     }
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
   });
