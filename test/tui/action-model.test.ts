@@ -10,11 +10,16 @@ import {
   runningFooterHints,
 } from '../../src/tui/action-model.js';
 import { dispatchResultKeys } from '../../src/tui/page-input.js';
+import { resultChoices } from '../../src/tui/controller-scroll.js';
 
-test('running footer always includes cancel and discoverable find when idle', () => {
+test('running footer keeps primary actions and leaves reading tools in help', () => {
   const hints = runningFooterHints('en', { preparing: false });
   assert.equal(hints[0]?.[0], 'Ctrl+C');
-  assert.ok(hints.some(([key]) => key === '/'));
+  assert.deepEqual(hints.map(([key]) => key), ['Ctrl+C', '?']);
+  const actions = listActions({ page: 'running', locale: 'en', mode: { preparing: false } });
+  assert.ok(actions.some((action) => action.id === 'start-find'));
+  assert.ok(actions.some((action) => action.id === 'follow'));
+  assert.ok(actions.some((action) => action.id === 'toggle-fold'));
   assert.ok(hints.length <= 4);
 });
 
@@ -40,6 +45,24 @@ test('result footer hides missing artifacts and keeps compare when pending', () 
   assert.ok(withCompare.length <= 4);
   assert.ok(withCompare.some(([key]) => key === 'o'));
   assert.ok(!withCompare.some(([key]) => key === 'h' || key === 'f'));
+});
+
+test('expanded result process uses timeline actions instead of result actions', () => {
+  const actions = listActions({ page: 'result', locale: 'en', mode: { processExpanded: true }, artifacts: { report: true } });
+  assert.equal(actions.find((action) => action.keys.includes('enter'))?.id, 'toggle-fold');
+  assert.ok(actions.some((action) => action.id === 'start-find'));
+  assert.ok(actions.some((action) => action.id === 'read-page'));
+  assert.ok(!actions.some((action) => action.id === 'activate-primary' || action.id === 'open-report'));
+});
+
+test('scrollable detail pages expose PageUp and PageDown in help actions only', () => {
+  for (const page of ['history-detail', 'recovery-review', 'confirm', 'result']) {
+    const actions = listActions({ page, locale: 'en' });
+    const scroll = actions.find((action) => action.id === 'read-page');
+    assert.deepEqual(scroll?.keys, ['pageup', 'pagedown'], page);
+    assert.ok(!footerHintPairs(actions, 'en').some(([key]) => key === 'PgUp'), page);
+  }
+  assert.ok(!resultChoices({ locale: 'en', compareChoice: undefined, timeline: [], result: undefined } as never).includes('read-page' as never));
 });
 
 test('failed comparison labels the report action as a diagnostic', () => {
@@ -94,14 +117,13 @@ test('artifactsFromResult mirrors pathLinks presence', () => {
   assert.equal(artifacts.trace, true);
 });
 
-test('footerHintPairs ranks by priority and caps at four', () => {
+test('footerHintPairs ranks primary running actions without filling unused slots', () => {
   const pairs = footerHintPairs(listActions({
     page: 'running',
     locale: 'en',
     mode: { preparing: false, findAllowed: true },
   }), 'en', 4);
-  assert.equal(pairs.length, 4);
-  assert.equal(pairs[0]?.[0], 'Ctrl+C');
+  assert.deepEqual(pairs.map(([key]) => key), ['Ctrl+C', '?']);
 });
 
 test('navigation pages share back and help actions', () => {

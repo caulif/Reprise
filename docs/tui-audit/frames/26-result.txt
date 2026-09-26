@@ -15,4 +15,4 @@ Reprise                                                                         
  
   Synthetic comparison headline.
  运行结束。用短标签打开报告。
- [Enter] 执行  [Esc] 结束查看  [f] 本次输出  [Pg↑↓] 翻页
+ [Enter] 执行  [Esc] 结束查看  [f] 本次输出

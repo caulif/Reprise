@@ -20,16 +20,17 @@ test('preparing running hints keep cancel and hide reading shortcuts', () => {
   }
 });
 
-test('candidate idle running hints expose cancel and discoverable reading actions', () => {
+test('candidate idle running hints show only the primary actions', () => {
   const en = footer(false, 'en');
   assertCancelVisible(en);
-  assert.match(en, /Find/);
-  assert.match(en, /Follow live|Expand|Help/);
+  assert.match(en, /Help/);
+  assert.doesNotMatch(en, /Find|Follow live|Expand/);
   assert.doesNotMatch(en, /Generate comparison/);
 
   const zh = footer(false, 'zh');
   assertCancelVisible(zh);
-  assert.match(zh, /查找|跟随|展开|帮助/);
+  assert.match(zh, /帮助/);
+  assert.doesNotMatch(zh, /查找|跟随|展开/);
 });
 
 test('finding running hints keep find-mode keys only', () => {

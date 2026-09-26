@@ -11,8 +11,8 @@ Reprise
   摘要         Ready for the original task.
   限制         无记录
  
-  !  Enter 会启动 Codex，可能产生费用。
+  Enter 会启动 Codex，可能产生费用。
   +  原项目目录保持不变；执行工具会在单独的工作副本中读写。
 
  -> 查看准备过程
- [Enter] 开始执行  [b] 改模型  [?] 帮助  [Pg↑↓] 翻页
+ [Enter] 开始执行  [b] 改模型  [?] 帮助

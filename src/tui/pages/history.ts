@@ -120,8 +120,8 @@ export function renderHistoryDetailWithHits(
   return panelWithHits(theme, t(locale, 'historyRunTitle'), body, width, bodyHits);
 }
 
-export function historyHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Tab', t(locale, 'hintRunsCases')], ['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintDetail')], ['Esc', t(locale, 'hintHome')]];
+export function historyHints(locale: Locale = 'en', count = 2): readonly (readonly [string, string])[] {
+  return [['Tab', t(locale, 'hintRunsCases')], ...(count > 1 ? [['↑↓', t(locale, 'hintSelect')] as const] : []), ['Enter', t(locale, 'hintDetail')], ['Esc', t(locale, 'hintHome')]];
 }
 
 export function historyDetailHints(isCase: boolean, hasReport = false, locale: Locale = 'en'): readonly (readonly [string, string])[] {

@@ -67,7 +67,7 @@ const M = {
   resultComparedAfterLimit: { en: 'Comparison still ran.', zh: '比较仍已执行。' },
   preparedCopyPath: { en: 'Prepared copy', zh: '已准备副本' },
   selectedModelValue: { en: 'Selected model ID', zh: '当前模型标识' },
-  hintScrollPage: { en: 'Read more', zh: '翻页' },
+  hintScrollPage: { en: 'Scroll page', zh: '翻页' },
   finishReview: { en: 'Finish reviewing', zh: '结束查看' },
   browse: { en: 'More', zh: '更多' },
   commands: { en: 'Commands', zh: '命令' },
