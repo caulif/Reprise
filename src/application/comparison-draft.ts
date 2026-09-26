@@ -100,8 +100,8 @@ export class ComparisonDraft {
       this.#lastRejection = `${verified.code}: ${verified.message}`;
       return `status=rejected\ncode=${verified.code}\nmessage=${verified.message}`;
     }
-    await writeAtomic(join(this.#attemptRoot, "report.html"), html);
-    this.#accepted = { digest: sha256(html), revision: catalog.revision, result };
+    await writeAtomic(join(this.#attemptRoot, "report.html"), verified.html);
+    this.#accepted = { digest: sha256(verified.html), revision: catalog.revision, result };
     this.#previewed = undefined;
     this.#lastRejection = undefined;
     return `status=accepted\ndraftDigest=${this.#accepted.digest}\nrevision=${catalog.revision}\nPreview this exact draft before finishing.`;

@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ComparisonDraft } from "../../src/application/comparison-draft.js";
 import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evidence.js";
+import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
+import { verifyAndRenderComparisonReport } from "../../src/application/comparison-publication.js";
 import { sha256 } from "../../src/core/identity.js";
 
 const facts = {
@@ -42,4 +44,35 @@ test("Host draft submission validates content and publishes only the previewed d
   assert.equal(await draft.completedResult(), undefined);
   await tool.execute({ ...base, headline: "A revised difference." }, signal);
   assert.equal(await draft.completedResult(), undefined);
+});
+
+test("draft preview uses the Host-normalized report and digest", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-draft-normalized-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: "attempt-1", links: [], media: [] });
+  const draft = new ComparisonDraft({ attemptRoot: root, task: "Compare outputs.", facts, locale: "en", catalog, deliveredImages: new Set() });
+  const submitted = await draft.submit({
+    status: "completed", category: "Results", headline: "A concrete difference.",
+    comparisonHtml: "<p>The candidate attempt-abcdefgh differs.</p>",
+  });
+  const saved = await readFile(join(root, "report.html"), "utf8");
+  const digest = sha256(saved);
+  assert.doesNotMatch(saved, /attempt-abcdefgh/);
+  assert.match(submitted, new RegExp(`draftDigest=${digest}`));
+  const preview = await materializeComparisonReportPreview({
+    attemptRoot: root, media: catalog.snapshot().media, evidence: catalog.snapshot().links,
+    catalogRevision: catalog.snapshot().revision,
+  });
+  assert.equal(preview.draftDigest, digest);
+  assert.doesNotMatch(preview.html, /attempt-abcdefgh/);
+  const published = await verifyAndRenderComparisonReport({
+    html: saved, hostTask: "Compare outputs.", facts,
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [], headline: "A concrete difference." },
+    attemptRoot: root, evidence: catalog.snapshot().links, media: catalog.snapshot().media,
+    locale: "en", deliveredImageContentHashes: new Set(),
+  });
+  assert.ok("html" in published);
+  assert.equal(published.html, saved);
+  draft.recordPreview(preview);
+  assert.equal((await draft.completedResult())?.status, "completed");
 });
