@@ -7,11 +7,6 @@ Reprise                                                     未记录  ⚠ 清�
   执行工具     Codex · gpt-test
   执行耗时     49s
  
-  ❯ 本次输出   candidate-final.txt
-    原结果     history-final.txt
-    打开记录   run-1
-    打开副本   run-1
-    技术详情
     与原结果比较
-    结束查看
- [Enter] 执行  [Esc] 结束查看  [c] 与原结果比较  [Pg↑↓] 翻页
+  ❯ 打开本次执行路径 run-1
+ [Enter] 执行  [Esc] 结束查看  [?] 帮助

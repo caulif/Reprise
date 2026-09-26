@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,7 +46,9 @@ export async function openExperimentTrace(
   runId: string,
   start: ReportSpawner = spawn,
 ): Promise<void> {
-  await openLocalPath(assertExperimentTracePath(experimentRoot, runId), start);
+  const path = assertExperimentTracePath(experimentRoot, runId);
+  await assertExistingExperimentDirectory(experimentRoot, path);
+  await openLocalPath(path, start);
 }
 
 export async function openExperimentReplica(
@@ -55,7 +57,15 @@ export async function openExperimentReplica(
   start: ReportSpawner = spawn,
   recordedWorkspaceRoot?: string,
 ): Promise<void> {
-  await openLocalPath(assertExperimentReplicaPath(experimentRoot, runId, recordedWorkspaceRoot), start);
+  const path = assertExperimentReplicaPath(experimentRoot, runId, recordedWorkspaceRoot);
+  await assertExistingExperimentDirectory(experimentRoot, path);
+  await openLocalPath(path, start);
+}
+
+async function assertExistingExperimentDirectory(experimentRoot: string, path: string): Promise<void> {
+  const [root, target, info] = await Promise.all([realpath(experimentRoot), realpath(path), stat(path)]);
+  if (!info.isDirectory()) throw new Error('Run path is not a directory.');
+  assertPathInsideRoot(root, target);
 }
 
 export async function openAllowedLocalPath(

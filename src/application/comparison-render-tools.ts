@@ -92,6 +92,7 @@ export type ComparisonRenderToolBaseDeps = {
 export type ComparisonPreviewReportToolDeps = ComparisonRenderToolBaseDeps & {
   /** Prepare draft HTML with current catalog revision (B3/B6 share this). */
   prepareReportHtml: () => Promise<PreparedReportPreview>;
+  onPreviewSuccess?: (prepared: PreparedReportPreview) => void;
 };
 
 export type PreparedReportPreview = {
@@ -268,6 +269,7 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
       }
       assertEvidenceShortRef(registered.shortRef, "report_review");
       const mechanics = inspectPreparedReportMechanics(prepared.html);
+      deps.onPreviewSuccess?.(prepared);
       return textResult({
         status: "ok",
         revision: prepared.catalogRevision,

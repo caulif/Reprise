@@ -22,7 +22,7 @@ function compareController(resolve: (run: boolean) => void, page: 'result' | 'ru
     page,
     compareChoice: { resolve },
     result: gateResult,
-    resultAction: 'open-trace',
+    resultAction: 'compare',
     timeline: [],
     processExpanded: false,
     locale: 'en',
@@ -44,35 +44,30 @@ function renderCompareGateFooter(comparePending: boolean): string {
   }, 120, 30).join('\n');
 }
 
-test('compare gate footer shows c only after compareChoice is armed', () => {
+test('compare gate offers direct selection without a c shortcut', () => {
   assert.doesNotMatch(renderCompareGateFooter(false), /\[c\]/);
-  assert.match(renderCompareGateFooter(true), /\[c\]/);
+  assert.doesNotMatch(renderCompareGateFooter(true), /\[c\]/);
+  assert.match(renderCompareGateFooter(true), /Compare with original result/);
 });
 
-test('compare gate paints footer c before awaiting operator choice', async () => {
+test('compare gate paints direct action before awaiting operator choice', async () => {
   const rendered: string[] = [];
   let compareChoice: { resolve(run: boolean): void } | undefined;
   const gate = new Promise<boolean>((resolve) => {
     compareChoice = { resolve };
     rendered.push(renderCompareGateFooter(Boolean(compareChoice)));
   });
-  assert.match(rendered.at(-1)!, /\[c\]/);
+  assert.match(rendered.at(-1)!, /Compare with original result/);
   compareChoice!.resolve(false);
   await gate;
 });
 
-test('result compare gate requires confirmation after c', () => {
+test('result compare gate starts on Enter without confirmation', () => {
   let chosen: boolean | undefined;
   const c = compareController((run) => { chosen = run; });
-  const handled = handleControllerInput(c, 'c');
+  const handled = handleControllerInput(c, '\r');
   assert.deepEqual(handled, { consume: true });
-  assert.equal(c.page, 'compare-confirm');
-  assert.equal(chosen, undefined);
-  assert.deepEqual(handleControllerInput(c, '\u001b'), { consume: true });
   assert.equal(c.page, 'result');
-  assert.equal(chosen, undefined);
-  assert.deepEqual(handleControllerInput(c, 'c'), { consume: true });
-  assert.deepEqual(handleControllerInput(c, '\r'), { consume: true });
   assert.equal(chosen, true);
   assert.equal(c.compareChoice, undefined);
 });
@@ -117,20 +112,18 @@ test('result compare gate Esc finishes review and resolves false once', () => {
   assert.equal(homes, 2);
 });
 
-test('result compare gate ignores a second c after confirmed choice', () => {
+test('result compare gate cannot start a second comparison after selection', () => {
   let chosen: boolean | undefined;
   let resolves = 0;
   const c = compareController((run) => {
     chosen = run;
     resolves += 1;
   });
-  assert.deepEqual(handleControllerInput(c, 'c'), { consume: true });
-  assert.equal(chosen, undefined);
   assert.deepEqual(handleControllerInput(c, '\r'), { consume: true });
   assert.equal(chosen, true);
   assert.equal(resolves, 1);
   assert.equal(c.compareChoice, undefined);
   c.page = 'result';
-  assert.deepEqual(handleControllerInput(c, 'c'), { consume: true });
+  handleControllerInput(c, 'c');
   assert.equal(resolves, 1);
 });

@@ -28,7 +28,7 @@ import { ComparisonVisualMediaError } from "./comparison-openable-media.js";
 import { prepareHistoricalArtifacts } from "./prepare-historical-artifacts.js";
 import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
-import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
+import { ComparisonAgent, assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 import { readOperatorLocale } from "./operator-locale.js";
@@ -39,6 +39,7 @@ import type { ComparisonCatalogSnapshot } from "./comparison-evidence.js";
 import { createComparisonRenderCatalogPort } from "./comparison-render-catalog.js";
 import { createPreviewReportTool, createRenderArtifactTool } from "./comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
+import { ComparisonDraft } from "./comparison-draft.js";
 import {
   comparisonFailureDiagnostic,
   persistComparisonReportModel,
@@ -366,19 +367,18 @@ async function runComparisonAttempt(input: {
     }
     if (comparisonResult.status === "completed") {
       const publishedHtml = await readFile(join(input.attemptRoot, "report.html"), "utf8");
-      let publishedModel: ComparisonReportModel | undefined;
+      const publishedModel = readReportModel(await readFile(join(input.attemptRoot, "report-model.json"), "utf8"));
       try {
-        publishedModel = readReportModel(await readFile(join(input.attemptRoot, "report-model.json"), "utf8"));
-      } catch {
-        // Attempt model should exist after enforcePublishedReport; publish still stages media then HTML.
+        await publishComparisonArtifacts({
+          attemptRoot: input.attemptRoot,
+          experimentRoot: input.host.experimentRoot,
+          html: publishedHtml,
+          media: catalog.snapshot().media,
+          model: publishedModel,
+        });
+      } catch (error) {
+        comparisonResult = comparisonFailed("publication_failed", error, comparisonResult.sessionId);
       }
-      await publishComparisonArtifacts({
-        attemptRoot: input.attemptRoot,
-        experimentRoot: input.host.experimentRoot,
-        html: publishedHtml,
-        media: input.briefing.media,
-        ...(publishedModel ? { model: publishedModel } : {}),
-      });
     }
     return comparisonResult;
   } catch (error) {
@@ -516,12 +516,17 @@ async function invokeCompare(
   if (input.signal?.aborted) {
     return { result: { status: "cancelled" }, deliveredImageContentHashes };
   }
+  const draft = new ComparisonDraft({
+    attemptRoot, task: context.task.summary, facts: context.reportFacts,
+    locale: await readOperatorLocale(input.input.dataDir), catalog,
+    deliveredImages: deliveredImageContentHashes,
+  });
   const result = await input.input.comparison.compare(
     context,
-    comparisonTools(input, attemptRoot, allowBinary, catalog),
+    comparisonTools(input, attemptRoot, allowBinary, catalog, draft),
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
-    { getEvidenceCatalog: () => catalog.snapshot() },
+    { getEvidenceCatalog: () => catalog.snapshot(), getSubmittedResult: () => draft.completedResult(), getSubmissionFailure: () => draft.failureReason() },
   );
   return { result, deliveredImageContentHashes };
 }
@@ -537,6 +542,7 @@ function comparisonTools(
   attemptRoot: string,
   allowBinary: boolean,
   catalog: ComparisonEvidenceCatalog,
+  draft: ComparisonDraft,
 ): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
@@ -563,8 +569,11 @@ function comparisonTools(
       role: "comparison",
       allowBinary: input.taskCase.privacy.allowBinary || allowBinary,
       mounts,
-      allowWrite: comparisonAttemptWriteAllowed,
-      completionPaths: new Set(["work/comparison-plan.md", "report.html"]),
+      allowWrite: input.input.comparison instanceof ComparisonAgent
+        ? comparisonAttemptWriteAllowed
+        : (path) => path === "report.html" || comparisonAttemptWriteAllowed(path),
+      completionPaths: new Set(input.input.comparison instanceof ComparisonAgent
+        ? ["work/comparison-plan.md"] : ["work/comparison-plan.md", "report.html"]),
       denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
       allowShell: true,
       shellCwd: scratchRoot,
@@ -578,6 +587,7 @@ function comparisonTools(
       homeRoot: join(attemptRoot, ".home"),
     }),
     registerEvidenceTool(catalog),
+    draft.tool(),
     createRenderArtifactTool({
       catalog: renderCatalog,
       attemptRoot,
@@ -585,6 +595,7 @@ function comparisonTools(
     createPreviewReportTool({
       catalog: renderCatalog,
       attemptRoot,
+      onPreviewSuccess: (prepared) => draft.recordPreview(prepared),
       prepareReportHtml: async () => {
         const snap = catalog.snapshot();
         return materializeComparisonReportPreview({
@@ -800,10 +811,10 @@ async function writeComparisonFailurePage(input: {
   await writeFile(input.reportPath, html, "utf8");
 }
 
-/** Comparison may write only this attempt's scratch tree, working notes, and report.html. */
+/** Agent file tools may write only scratch and working notes; Host writes report.html. */
 export function comparisonAttemptWriteAllowed(relativePath: string): boolean {
   const posix = relativePath.replaceAll("\\", "/");
-  if (posix === "work/comparison-plan.md" || posix === "report.html") return true;
+  if (posix === "work/comparison-plan.md") return true;
   return posix.split("/").filter(Boolean)[0] === "scratch";
 }
 

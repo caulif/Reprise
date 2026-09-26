@@ -25,6 +25,9 @@ export type AgentFailureCode =
   | "evidence_unresolved"
   | "media_unavailable"
   | "report_incomplete"
+  | "draft_invalid"
+  | "preview_failed"
+  | "provider_failure"
   | "publication_failed";
 
 export type AgentFailure = {
@@ -53,6 +56,7 @@ export type AgentToolDefinition = {
 };
 
 export type AgentAuditEventType =
+  | "comparison.phase_completed"
   | "agent.session_started"
   | "agent.session_completed"
   | "agent.session_failed"

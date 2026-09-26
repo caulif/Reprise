@@ -1,0 +1,12 @@
+Reprise                                       not recorded  ⚠ Cleanup incomplete
+ Task Inspect a focused regression. · Codex · gpt-test · Codex
+ Run result
+  Task         Reprise model judged the task complete
+  Cleanup      Incomplete
+  Comparison   comparison not run
+  Execution tool Codex · gpt-test
+  Execution time 49s
+ 
+    Open this run folder run-1
+ Language: English. /lang zh switches to Chinese.
+ [Enter] Activate  [Esc] Finish reviewing  [?] Help

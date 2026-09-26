@@ -203,12 +203,13 @@ export function dispatchConfirmInput(data: string, context: { readonly recoveryF
 
 export type CandidatePickerAction = 'up' | 'down' | 'enter' | 'back' | 'consume';
 
-export function dispatchListPointer(data: string): { action: 'up' | 'down' | 'click' | 'ignore'; row?: number; col?: number; consume: true } | undefined {
+export function dispatchListPointer(data: string): { action: 'up' | 'down' | 'click' | 'hover' | 'ignore'; row?: number; col?: number; consume: true } | undefined {
   const mouse = parseSgrMouse(unwrapBracketedPaste(data));
   if (!mouse) return undefined;
   if (mouse.button === 64) return { action: 'up', consume: true };
   if (mouse.button === 65) return { action: 'down', consume: true };
   if (mouse.button === 0 && !mouse.release) return { action: 'click', row: mouse.row, col: mouse.col, consume: true };
+  if ((mouse.button & 32) !== 0) return { action: 'hover', row: mouse.row, col: mouse.col, consume: true };
   return { action: 'ignore', consume: true };
 }
 

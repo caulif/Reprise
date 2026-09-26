@@ -178,7 +178,8 @@ export class IntakeTui {
   recoveryFinished: Promise<void> | undefined;
   workflowFinished: Promise<void> | undefined;
   result: ExperimentResult | undefined;
-  resultAction: import('./page-input.js').ResultAction = 'open-candidate-final';
+  resultAction: import('./page-input.js').ResultAction = 'open-replica';
+  resultHover: import('./page-input.js').ResultAction | undefined;
   resultDetails = false;
   timeline: TimelineEntry[] = [];
   activityIndex: ActivityIndexState = createActivityIndex();

@@ -108,11 +108,6 @@ export function listActions(ctx: ActionContext): readonly UiAction[] {
       return runningActions(mode);
     case 'result':
       return resultActions(mode, ctx.artifacts ?? {});
-    case 'compare-confirm':
-      return [
-        action('compare', 'compareConfirmStart', ['enter'], 'start', 40),
-        action('back', 'hintBack', ['escape', 'b'], 'navigate', 30),
-      ];
     case 'confirm':
       return confirmActions(mode);
     case 'home':
@@ -176,14 +171,11 @@ function runningActions(mode: ActionMode): readonly UiAction[] {
 function resultActions(mode: ActionMode, artifacts: ActionArtifacts): readonly UiAction[] {
   const actions: UiAction[] = [];
   actions.push(action('activate-primary', 'hintActivate', ['enter'], 'readonly', 40));
-  actions.push(artifactAction('open-candidate-final', 'hintCandidateFinal', ['f'], artifacts.candidateFinal, 'noCandidateFinal'));
-  actions.push(artifactAction('open-report', artifacts.diagnostic ? 'hintOpenDiagnostic' : 'hintReport', ['o'], artifacts.report, 'noReport'));
-  actions.push(artifactAction('open-history-final', 'hintHistoryFinal', ['h'], artifacts.historyFinal, 'noHistoryFinal'));
-  actions.push(artifactAction('open-trace', 'hintTrace', ['t'], artifacts.trace, 'noTrace'));
-  actions.push(artifactAction('open-replica', 'hintReplica', ['w'], artifacts.replica, 'noReplica'));
-  if (mode.processAvailable) actions.push(action('view-process', 'viewCandidateProcess', ['p'], 'readonly', 15));
-  actions.push(action('toggle-details', 'resultDetails', ['d'], 'readonly', 10));
-  if (mode.comparePending) actions.push(action('compare', 'hintCompare', ['c'], 'navigate', 30));
+  if (mode.comparePending) actions.push(action('compare', 'hintCompare', [], 'start', 0));
+  else if (artifacts.report) actions.push(artifactAction('open-report', artifacts.diagnostic ? 'hintOpenDiagnostic' : 'hintReport', [], true, 'noReport'));
+  actions.push(artifactAction('open-replica', 'hintRunPath', [], artifacts.replica, 'noReplica'));
+  if (mode.processAvailable) actions.push(action('view-process', 'viewCandidateProcess', ['p'], 'readonly', 0));
+  actions.push(action('toggle-details', 'resultDetails', ['d'], 'readonly', 0));
   actions.push(action('home', 'finishReview', ['escape', 'b'], 'navigate', 35));
   actions.push(action('show-help', 'hintHelp', ['?'], 'readonly', 1));
   return actions;
@@ -224,7 +216,7 @@ function artifactAction(
 ): UiAction {
   const enabled = Boolean(available);
   if (enabled) {
-    return { id, labelKey, keys, enabled: true, kind: 'readonly', footerPriority: 20 };
+    return { id, labelKey, keys, enabled: true, kind: 'readonly', footerPriority: keys.length ? 20 : 0 };
   }
   return {
     id,

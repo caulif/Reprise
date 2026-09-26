@@ -60,6 +60,7 @@ type Input = {
   readonly activeParallel?: number;
   readonly timeline: readonly TimelineEntry[]; readonly timelineRevision: number; readonly visibleTimeline: readonly TimelineEntry[]; readonly timelineSelected: number; readonly timelineFilterIndex: number; readonly timelineFollowing: boolean; readonly expandedFolds?: readonly string[]; readonly activityDetail?: TimelineEntry; readonly runStartedAt: number; readonly comparePending?: boolean; readonly result?: ExperimentResult | undefined;
   readonly resultAction?: import('./page-input.js').ResultAction;
+  readonly resultHover?: import('./page-input.js').ResultAction;
   readonly resultDetails?: boolean;
   readonly activityDetailOffset?: number;
   readonly phaseClocks?: PhaseClockBounds;
@@ -205,6 +206,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
     cancelling: input.cancelling,
     ...(input.comparePending ? { comparePending: true } : {}),
     ...(input.resultAction ? { resultAction: input.resultAction } : {}),
+    ...(input.resultHover ? { resultHover: input.resultHover } : {}),
     ...(input.resultDetails ? { resultDetails: true } : {}),
     ...(input.surfaceScope ? { surfaceScope: input.surfaceScope } : {}),
     ...(input.processExpanded ? { processExpanded: true } : {}),
@@ -271,7 +273,7 @@ export function projectWorkbenchView(input: Input): WorkbenchView {
   if (input.page === 'preflight' && input.preflight) return { ...base, preflight: { preflight: input.preflight, candidate: input.candidate, ...(recovery ? { recovery } : {}), step: 2, locale: input.locale ?? 'en', ...(input.productLabel ? { productLabel: input.productLabel } : {}) } };
   if (input.page === 'confirm' && input.preflight) return confirmWorkbenchSlice(input, base, recovery);
   if (input.page === 'running') return { ...base, running: runningModel(input) };
-  if ((input.page === 'result' || input.page === 'compare-confirm') && input.result) {
+  if (input.page === 'result' && input.result) {
     return {
       ...base,
       running: runningModel(input),

@@ -22,7 +22,7 @@ test('result page uses comparison headline and hides satisfied rationale', () =>
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied', rationale: '已在当前工作目录生成可打开的三页 PPT 样式 HTML。' } },
   } as never).join('\n');
   assert.match(compared, /Both delivered slides/);
-  assert.match(compared, /Open replica/);
+  assert.match(compared, /Open this run folder/);
   assert.doesNotMatch(compared, /三页 PPT/);
   const skipped = renderResult(theme, 120, {
     ...syntheticExperimentResult({
@@ -36,8 +36,8 @@ test('result page uses comparison headline and hides satisfied rationale', () =>
   assert.match(skipped, /not run/);
   assert.doesNotMatch(skipped, /三页 PPT/);
   assert.doesNotMatch(skipped, /Both delivered|两边都/);
-  assert.match(skipped, /Original output/);
-  assert.match(skipped, /This run output/);
+  assert.match(skipped, /Open this run folder/);
+  assert.doesNotMatch(skipped, /Original output|This run output/);
 });
 
 test('synthetic fixture covers cancelled and insufficient_evidence comparison independently of candidate success', () => {
@@ -79,7 +79,7 @@ test('synthetic fixture covers cancelled and insufficient_evidence comparison in
   assert.match(insufficient, /Evidence was incomplete/);
 });
 
-test('skipped comparison still renders history and candidate rows without bare absolute paths', () => {
+test('skipped comparison shows only the run folder action without bare absolute paths', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: false });
   const theme = createTheme(120, false);
   const historyFinal = 'C:\\exp\\environment\\baselines\\deck.html';
@@ -99,22 +99,22 @@ test('skipped comparison still renders history and candidate rows without bare a
     decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
     comparison: { result: { status: 'skipped' } },
   } as never).join('\n');
-  assert.match(text, /Original output.*deck\.html/);
-  assert.match(text, /This run output.*out\.html/);
+  assert.match(text, /Open this run folder.*run-1/);
+  assert.doesNotMatch(text, /Original output|This run output/);
   assert.doesNotMatch(text, /C:\\exp\\environment\\baselines\\deck\.html/);
   assert.doesNotMatch(text, /C:\\exp\\environment\\runs\\run-1\\out\.html/);
 });
 
-test('result page footer lists path open keys and c during compare gate', () => {
+test('result page footer keeps activation and exit without a compare shortcut', () => {
   const artifacts = { report: true, historyFinal: true, candidateFinal: true };
   assert.deepEqual(resultHints('en', false, artifacts), [
-    ['Enter', 'Activate'], ['Esc', 'Finish reviewing'], ['f', 'This run output'], ['?', 'Help'],
+    ['Enter', 'Activate'], ['Esc', 'Finish reviewing'], ['?', 'Help'],
   ]);
   assert.deepEqual(resultHints('en', true, artifacts), [
-    ['Enter', 'Activate'], ['Esc', 'Finish reviewing'], ['c', 'Compare with original result'], ['?', 'Help'],
+    ['Enter', 'Activate'], ['Esc', 'Finish reviewing'], ['?', 'Help'],
   ]);
   assert.deepEqual(resultHints('en', false, {}), [
-    ['Enter', 'Activate'], ['Esc', 'Finish reviewing'], ['d', 'Technical details'], ['?', 'Help'],
+    ['Enter', 'Activate'], ['Esc', 'Finish reviewing'], ['?', 'Help'],
   ]);
 });
 
@@ -168,7 +168,7 @@ test('result metrics show collected token totals and priced cost', () => {
   assert.doesNotMatch(text, /not recorded (cost|usage)/i);
 });
 
-test('compact result keeps Trace on one line', () => {
+test('compact result wraps a long run folder path without overflow', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const theme = createTheme(60, false);
   const text = renderResult(theme, 60, {
@@ -184,7 +184,7 @@ test('compact result keeps Trace on one line', () => {
   } as never, 'en', undefined, false, { detailsExpanded: true }).join('\n');
   assert.match(text, /49s/);
   assert.match(text, /not recorded tokens/);
-  assert.match(text, /Open trace.*run-6d6a47ae/);
+  assert.match(text, /Open this run folder.*run-6d6a47ae/);
   assert.doesNotMatch(text, /\n\s+runs\//);
 });
 
@@ -231,7 +231,7 @@ test('result separates requested and resolved models, phase durations, and unpub
   assert.match(text, /报告版式未通过校验/);
   assert.doesNotMatch(text, /对照完成|\(protocol\)/);
   assert.deepEqual(resultHints('zh', false, { report: true, diagnostic: true }), [
-    ['Enter', '执行'], ['Esc', '结束查看'], ['o', '打开失败诊断'], ['d', '技术详情'],
+    ['Enter', '执行'], ['Esc', '结束查看'], ['?', '帮助'],
   ]);
 });
 
@@ -301,7 +301,7 @@ test('blocked result is a warning with controller reason and short paths', () =>
   assert.match(text, /Blocked/);
   assert.match(text, /Sandbox denied the WeChat data path/);
   assert.match(text, /Open report.*report\.html/);
-  assert.match(text, /Open trace.*run-1/);
+  assert.match(text, /Open this run folder.*run-1/);
   assert.match(text, /\u001b\]8;;file:\/\/\/.*report\.html\u001b\\/);
   assert.match(text, /\u001b\]8;;file:\/\/\/.*runs[/\\]run-1\u001b\\/);
   assert.doesNotMatch(text, /C:\\exp\\report\.html/);

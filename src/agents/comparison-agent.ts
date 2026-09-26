@@ -81,13 +81,15 @@ export interface ComparisonAgentPort {
 export type ComparisonCompareOptions = {
   /** Same-process getter; must not be persisted into comparison.requested JSON. */
   getEvidenceCatalog?: () => Pick<ComparisonEvidenceCatalogSnapshot, "links" | "media">;
+  getSubmittedResult?: () => Promise<ComparisonResult | undefined>;
+  getSubmissionFailure?: () => { code: 'draft_invalid' | 'preview_failed'; message: string };
 };
 
 const COMPARISON_COMPACTION = [
   'Preserve the task success criteria, decisive findings with source references,',
   'the current catalog revision and newly registered media or evidence short refs,',
   'unresolved gaps that still change the conclusion, the paths of',
-  'work/comparison-plan.md and report.html, the last preview_report digest when one',
+  'work/comparison-plan.md, the last accepted draft digest and preview_report digest when one',
   'exists, and the next investigation or report action.',
   'Drop long bodies that can be reread by path.',
   'Do not carry an earlier phase label (for example still-in-understand) into review.',
@@ -156,15 +158,15 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'Do not modify either attempt\'s frozen source, perform the user\'s original task',
   'again, publish externally, or access credentials.',
   '',
-  'In this session you will receive, in order, requests to understand, investigate,',
-  'compose, and review. Return after each request; the next one continues in the same session.',
+  'In this session you will investigate, compose, and review in one continuing session.',
   '',
   '# Workspace',
   'Entry point: INDEX.md. The catalog\'s current revision and registered references',
   'are in facts/. Historical process is under history/ and observations/; frozen',
   'historical deliverables are under finals/; candidate/ is the sealed read-only snapshot.',
   'These sources are read-only. scratch/ is for temporary analysis,',
-  'work/comparison-plan.md for working notes, and report.html for the report.',
+  'work/comparison-plan.md for working notes. Submit report content with',
+  'submit_comparison_draft; the Host owns report.html and its structural markers.',
   '',
   'File-tool paths are virtual paths relative to this briefing. shell_exec starts',
   'in scratch/; use the documented REPRISE_*_ROOT variables for physical source',
@@ -186,6 +188,15 @@ export function composeComparisonSystemPrompt(locale: AgentLocale): string {
 }
 
 export const COMPARISON_TURN_PROMPTS = {
+  orientAndInvestigate: [
+    'Read INDEX.md and the task context. Identify the success criteria and the few',
+    'questions that could change the choice between the two outcomes. Use the',
+    'indexed deliverables, frozen facts, and registered evidence first; inspect',
+    'additional files or previews only to resolve those questions. Distinguish',
+    'final outputs from drafts and observation from inference. Stop when further',
+    'reading is unlikely to change the conclusion. Record a brief conclusion,',
+    'decisive references, and remaining uncertainty in work/comparison-plan.md.',
+  ].join('\n'),
   understand: [
     'Understand the user\'s task and the final outcome they wanted. Read the user-input',
     'index and relevant context; identify constraints, success criteria, and what',
@@ -206,9 +217,9 @@ export const COMPARISON_TURN_PROMPTS = {
     'important limitation, and the best way to show it to a new reader.',
   ].join('\n'),
   compose: [
-    'Create the report by editing report.html. Fill the existing category, task, and',
-    'headline slots, then author data-agent-zone="comparison" and, when useful,',
-    'data-agent-zone="details". The Host header and metrics must remain intact.',
+    'Submit the report with submit_comparison_draft. Supply category, headline,',
+    'comparisonHtml and, when useful, detailsHtml. The Host builds report.html',
+    'and validates it immediately; correct any rejected submission.',
     '',
     'Choose the form that explains this task best: visual comparison, compact table,',
     'representative excerpts, observed results, or a combination. Components are',
@@ -224,9 +235,9 @@ export const COMPARISON_TURN_PROMPTS = {
     '',
     'Keep limitations that change the judgment visible next to the conclusion.',
     'Move long methods, file listings, and investigation detail to the details area.',
-    'Do not alter Host-owned regions or the page\'s Host CSS. Do not include external',
-    'resources, credentials, private paths, or report HTML in the assistant message.',
-    'Write the report file, not only a proposed outline.',
+    'Do not include external resources, credentials or private paths. The Host owns',
+    'the task, model identity, metrics, page structure and CSS. Submit actual content,',
+    'not only a proposed outline.',
   ].join('\n'),
   review: [
     'Review the actual draft as a person seeing the task for the first time. Use',
@@ -240,10 +251,10 @@ export const COMPARISON_TURN_PROMPTS = {
     'consequence. Remove repetition and low-value process commentary. Do not mistake',
     'the number of bullets for concision.',
     '',
-    'Edit only the Agent-owned slots and regions. Recheck if the draft changes after',
-    'previewing. If rendering or image inspection is unavailable, record the specific',
-    'review limitation without inventing an observation. Finish with the required',
-    'JSON envelope only, using the final catalog\'s registered evidence references.',
+    'Revise by calling submit_comparison_draft again, then preview the revised digest.',
+    'If rendering or image inspection is unavailable, record the specific review limitation',
+    'without inventing an observation. Your final message is not the',
+    'publication decision; the Host publishes only the validated previewed version.',
   ].join('\n'),
 } as const;
 
@@ -259,6 +270,13 @@ const JSON_ONLY_REPAIR_PROMPT = [
 ].join('\n');
 
 const COMPARISON_REPAIR_INSTRUCTION = 'Return only the JSON object; do not rewrite report.html. Use short refs from the current catalog for evidenceRefs, or [].';
+
+function comparisonProviderFailure(result: AgentInvocation<ComparisonResult>): AgentInvocation<ComparisonResult> {
+  if (result.status !== 'failed') return result;
+  const kind = result.failure.kind;
+  if (kind !== 'authentication' && kind !== 'rate_limited' && kind !== 'transient_network' && kind !== 'transient_upstream') return result;
+  return { ...result, failure: { ...result.failure, code: 'provider_failure' } };
+}
 
 export class ComparisonAgent implements ComparisonAgentPort {
   readonly #host: AgentHost;
@@ -293,8 +311,47 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
       return comparisonEvidenceAllowlist(context);
     };
-    const session = await this.#sessionFor(attemptId, context, tools, audit);
-    const prefix = await session.runTurns([
+    let activePhase: 'investigate' | 'compose' | 'review' | undefined;
+    let counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
+    const measuredAudit: AgentAuditSink | undefined = audit && options?.getSubmittedResult ? {
+      append: async (event) => {
+        if (activePhase) {
+          if (event.type === 'agent.model_request') counts.modelRequests++;
+          if (event.type === 'agent.tool_called' && typeof event.payload.toolCallId === 'string') {
+            counts.toolCalls++;
+            if (event.payload.tool === 'preview_report') counts.previews++;
+          }
+          if (event.type === 'agent.context_compacted') counts.compactions++;
+        }
+        await audit.append(event);
+      },
+      ...(audit.commitModelInput ? { commitModelInput: (bytes: Uint8Array) => audit.commitModelInput!(bytes) } : {}),
+    } : audit;
+    const session = await this.#sessionFor(attemptId, context, tools, measuredAudit);
+    const measuredWork = async (phase: 'investigate' | 'compose' | 'review', promptContent: string) => {
+      activePhase = phase;
+      counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
+      const startedAt = Date.now();
+      try {
+        return await session.work({ promptContent, timeoutMs: this.#timeoutMs, ...(signal ? { signal } : {}) });
+      } finally {
+        activePhase = undefined;
+        await audit?.append({
+          type: 'comparison.phase_completed', sessionId: session.sessionId, role: 'comparison',
+          payload: { phase, elapsedMs: Date.now() - startedAt, ...counts },
+        });
+      }
+    };
+    const prefix = options?.getSubmittedResult
+      ? await (async () => {
+        const investigated = await measuredWork('investigate', context.promptContent
+          ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
+          : COMPARISON_TURN_PROMPTS.orientAndInvestigate);
+        return investigated.status === 'completed'
+          ? measuredWork('compose', COMPARISON_TURN_PROMPTS.compose)
+          : investigated;
+      })()
+      : await session.runTurns([
       {
         promptContent: context.promptContent
           ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}`
@@ -315,8 +372,32 @@ export class ComparisonAgent implements ComparisonAgentPort {
     ]);
     if (prefix.status !== 'completed') {
       if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
-      return prefix;
+      return comparisonProviderFailure(prefix);
     }
+    if (options?.getSubmittedResult) {
+      const reviewed = await measuredWork('review', COMPARISON_TURN_PROMPTS.review);
+      if (reviewed.status !== 'completed') {
+        if (reviewed.status === 'failed') await this.#sessions.discard(attemptId);
+        return comparisonProviderFailure(reviewed);
+      }
+      const value = await options.getSubmittedResult();
+      if (value) return { status: 'completed', sessionId: reviewed.sessionId, value };
+      const failure = options.getSubmissionFailure?.() ?? { code: 'report_incomplete' as const, message: 'No validated draft was previewed at the current catalog revision.' };
+      return {
+        status: 'failed', sessionId: reviewed.sessionId,
+        failure: { ...failure, attempts: 1, kind: 'protocol' },
+      };
+    }
+    return this.#legacyEnvelope(session, tools, signal, currentAllowlist, attemptId);
+  }
+
+  async #legacyEnvelope(
+    session: AgentSessionHost,
+    tools: readonly AgentToolDefinition[],
+    signal: AbortSignal | undefined,
+    currentAllowlist: () => Set<string>,
+    attemptId: string,
+  ): Promise<AgentInvocation<ComparisonResult>> {
     const envelopeRequest = {
       ...(signal ? { signal } : {}),
       schema: ComparisonResultSchema,

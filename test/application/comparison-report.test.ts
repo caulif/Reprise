@@ -9,7 +9,7 @@ import { fingerprintTree } from '../../src/environment/local-workspace-fs.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { startExperiment } from '../../src/application/experiment.js';
-import { comparisonHtmlWithHostShell, input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import type { ComparisonAgentPort } from '../../src/agents/comparison-agent.js';
 import type { RunRecord, TaskCase } from '../../src/core/schema.js';
 
@@ -54,7 +54,7 @@ test('comparison write policy uses the first path segment, not a string prefix',
   assert.equal(comparisonAttemptWriteAllowed('scratch/notes.md'), true);
   assert.equal(comparisonAttemptWriteAllowed('scratch-evil/notes.md'), false);
   assert.equal(comparisonAttemptWriteAllowed('work/comparison-plan.md'), true);
-  assert.equal(comparisonAttemptWriteAllowed('report.html'), true);
+  assert.equal(comparisonAttemptWriteAllowed('report.html'), false);
   const root = await mkdtemp(join(tmpdir(), 'reprise-scratch-prefix-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const write = workspaceTools(root, {
@@ -63,6 +63,7 @@ test('comparison write policy uses the first path segment, not a string prefix',
   assert.ok(write);
   await write.execute({ path: 'scratch/ok.txt', content: 'ok' }, new AbortController().signal);
   assert.equal(await readFile(join(root, 'scratch', 'ok.txt'), 'utf8'), 'ok');
+  await assert.rejects(write.execute({ path: 'report.html', content: 'nope' }, new AbortController().signal), /write_denied/);
   await assert.rejects(
     write.execute({ path: 'scratch-evil/pwn.txt', content: 'nope' }, new AbortController().signal),
     /write_denied/,
@@ -194,7 +195,7 @@ test('comparison prompt points workspace tools at the sealed snapshot mount', ()
   assert.match(COMPARISON_SYSTEM_PROMPT, /user browser profile/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /If a render tool fails, record the limitation/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /do not retry via equivalent browser shell commands/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /In this session you will receive, in order/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /one continuing session/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /最后一轮不能使用工具/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /read_observation/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
@@ -298,10 +299,11 @@ test('cost card distinguishes missing usage from missing prices', async () => {
   assert.match(html, /价格未配置/);
 });
 
-test('compose and review prompts require autonomous zones and real preview', () => {
+test('compose and review prompts require Host submission and real preview', () => {
   assert.match(COMPARISON_TURN_PROMPTS.compose, /headline/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="comparison"/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="details"/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /submit_comparison_draft/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /comparisonHtml/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /detailsHtml/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="verified"/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="visual"/);
   assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not claim visual inspection/);
@@ -319,7 +321,7 @@ test('compose and review prompts require autonomous zones and real preview', () 
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /The left side is the historical session/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /preview_report/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /Recheck if the draft changes/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /preview the revised digest/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /specific\s+review limitation/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /reopen report\.html and review/);
@@ -331,7 +333,7 @@ test('compose and review prompts require autonomous zones and real preview', () 
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.investigate, /最多四个候选差异/);
 });
 
-test('invalid comparison JSON keeps the already written report.html', async (t) => {
+test('direct full-page edits cannot publish through the new Agent path', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-invalid-envelope-'));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   await mkdir(join(root, 'source'), { recursive: true });
@@ -344,20 +346,14 @@ test('invalid comparison JSON keeps the already written report.html', async (t) 
       createSession: (session) => ({
         append: async () => {
           round += 1;
-          if (round === 3) {
-            const read = session.tools?.find((tool) => tool.name === 'read');
+          if (round === 2) {
             const write = session.tools?.find((tool) => tool.name === 'write');
-            const page = await read?.execute({ path: 'report.html' }, new AbortController().signal);
-            await write?.execute({
+            await assert.rejects(write!.execute({
               path: 'report.html',
-              content: comparisonHtmlWithHostShell(
-                page?.content ? { reportShellHtml: page.content } : {},
-                '<p>kept-page</p>',
-              ),
-            }, new AbortController().signal);
+              content: '<p>kept-page</p>',
+            }, new AbortController().signal), /comparison agent tool execution failed/);
           }
-          if (round < 4) return 'working';
-          return 'not-json';
+          return '';
         },
         cancel() {},
       }),
@@ -365,11 +361,11 @@ test('invalid comparison JSON keeps the already written report.html', async (t) 
   });
   const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
   assert.equal(result.comparison.result.status, 'failed');
-  assert.equal(result.comparison.result.status === 'failed' ? result.comparison.result.failure.code : undefined, 'invalid_envelope');
+  assert.equal(result.comparison.result.status === 'failed' ? result.comparison.result.failure.code : undefined, 'draft_invalid');
   const attempts = join(result.experimentRoot, 'comparison-attempts');
   const dirs = await readdir(attempts);
   const draft = await readFile(join(attempts, dirs[0] ?? '', 'report.html'), 'utf8');
-  assert.match(draft, /kept-page/);
+  assert.doesNotMatch(draft, /kept-page/);
 });
 
 

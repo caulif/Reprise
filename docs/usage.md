@@ -24,7 +24,7 @@ node dist/src/cli/main.js
 2. 准备完成后选择执行工具。按 `Esc` 可回看准备结论和全部已知限制，再返回工具列表，不会重新准备。准备受阻时无法绕过检查启动执行。
 3. 选择工具使用的模型。长模型标识显示在当前选中项详情；`Enter` 验证选择并进入启动确认，不会执行任务。确认页显示任务、工具、所选模型、已准备副本和限制；`Enter` 才开始执行。启动前若验证得到不同模型，页面会显示变化并要求再次确认。
 4. 执行页是事件日志的只读投影，可查看公开过程；运行中按 `Ctrl+C` 请求停止当前阶段。浏览、展开和返回页面不会向执行工具发送新消息。
-5. 结果页默认选中可读的输出、过程或技术详情。按方向键选择动作，`Enter` 激活；`p` 查看执行过程，`d` 展开技术详情，`Esc` 结束查看。可用时按 `c` 只进入比较确认页，确认页 `Enter` 才调用 Reprise 模型开始比较；返回结果页不会消耗该选择。只有正式发布的比较报告才提供报告入口，失败诊断与本次输出分别显示。
+5. 结果页的主动作是“与原结果比较”和“打开本次执行路径”，比较结束后第一项改为报告或失败诊断入口。方向键选择、`Enter` 或鼠标点击激活；比较选择会直接开始模型调用。`p` 查看执行过程，`d` 展开技术详情，`Esc` 结束查看。执行路径不存在时页面会显示不可用原因，打开器接受请求并不保证资源管理器窗口已经展示。
 
 历史对话列表支持方向键、可打印文本筛选、`Ctrl+F` 切换可运行过滤、`Ctrl+N` 加载下一页、`Ctrl+R` 从第一页刷新。长核对、准备回看、启动确认和结果详情可用方向键或 PageUp/PageDown 阅读。首页“运行记录”可凭任务标题和状态寻找旧运行。设置页用方向键选择字段，`Enter` 行内编辑或切换，低频字段在“更多设置”；`Ctrl+T` 测试连接，`Ctrl+S` 显式保存，离开未保存草稿时默认继续编辑。
 
@@ -36,6 +36,7 @@ node dist/src/cli/main.js
 reprise prepare (--source-root <dir> --task-case <file.json> | --source-product <id> --source-path <path>)
 reprise run (--source-root <dir> --task-case <file.json> | --scenario <experimentId>) [--product <id> --model <id>]
 reprise compare (--experiment <id> | --source-root <dir> --task-case <file.json>)
+reprise recover-comparison --experiment <id> --attempt <id> [--publish --status <completed|insufficient_evidence>]
 reprise products|models|projects|sessions|inspect|import|history|events|auth
 reprise config get|set
 reprise cancel <operationId|experimentId|runId>
@@ -67,6 +68,8 @@ node dist/src/cli/main.js compare --experiment <experimentId> --json
 ```
 
 `experimentId` 来自该次 `run` 或 TUI 流程写入 `dataDir` 的实验目录。成功时 JSON 包含报告路径；失败时保留事件日志供排障。连接测试（TUI `/config` 的 `Ctrl+T`）同样会发出最小模型请求，可能计费。
+
+`recover-comparison` 对旧失败 attempt 默认只读：核对冻结事实、catalog 修订、草稿 digest、成功预览事件和当前发布校验，返回可恢复状态，不调用模型。只有显式加 `--publish --status ...` 才尝试发布，状态必须由操作者依据旧草稿判断；已有根报告时拒绝覆盖。恢复会追加 `comparison.recovered` 事件并更新根 `comparison.json`，原 attempt 日志和草稿不改写。新流程不需要这个命令来处理末尾空文本。
 
 ## Reprise 模型设置
 

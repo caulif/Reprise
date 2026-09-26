@@ -40,7 +40,7 @@ export function yieldPointerToApp(host: object, selectionOwnsPointer: () => bool
 function isAppOwnedPointer(data: string): boolean {
   const mouse = parseSgrMouse(data);
   if (!mouse) return isX10Wheel(data);
-  return mouse.button === 64 || mouse.button === 65 || (mouse.button === 0 && !mouse.release);
+  return mouse.button === 64 || mouse.button === 65 || (mouse.button === 0 && !mouse.release) || (mouse.button & 32) !== 0;
 }
 
 function isX10Wheel(data: string): boolean {
@@ -54,11 +54,12 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   if (pointer.action === 'up' || pointer.action === 'down') {
     return scrollPageBody(c, pointer.action === 'up' ? '\x1b[A' : '\x1b[B', 'result');
   }
-  if (pointer.action !== 'click' || pointer.row === undefined || pointer.col === undefined) return { consume: true };
+  if (pointer.action !== 'click' && pointer.action !== 'hover') return { consume: true };
+  if (pointer.row === undefined || pointer.col === undefined) return { consume: true };
   if (!c.result) return { consume: true };
   const cell = pointerBodyCell(c, pointer.row, pointer.col);
-  if (!cell) return { consume: true };
-  if (cell.bodyRow < 0) return { consume: true };
+  if (!cell) { if (c.resultHover) { c.resultHover = undefined; c.render(); } return { consume: true }; }
+  if (cell.bodyRow < 0) { if (c.resultHover) { c.resultHover = undefined; c.render(); } return { consume: true }; }
   const view = c.view();
   const { lines, rowHits } = renderResultWithHits(
     pageTheme(createTheme(cell.width), 'result'), cell.width, c.result, c.locale, view.productLabel, Boolean(c.compareChoice),
@@ -69,7 +70,6 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   const href = line ? hitFileLink(line, cell.col) : undefined;
   const paths = resolveResultPathLinks(c.result);
   const action = resultPointerAction(lines, bodyRow, cell.col, c.locale, paths, rowHits);
-  if (!action) return { consume: true };
   const artifacts = artifactsFromResult(c.result);
   const actions = listActions({
     page: 'result',
@@ -77,6 +77,12 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
     mode: { comparePending: Boolean(c.compareChoice), processAvailable: c.timeline.length > 0 },
     artifacts,
   });
+  if (pointer.action === 'hover') {
+    const next = action && isActionEnabled(actions, action) && ['compare', 'open-replica', 'open-report'].includes(action) ? action : undefined;
+    if (c.resultHover !== next) { c.resultHover = next; c.render(); }
+    return { consume: true };
+  }
+  if (!action) return { consume: true };
   if (!isActionEnabled(actions, action)) {
     const reason = actions.find((item) => item.id === action)?.disabledReasonKey;
     if (reason) {
@@ -87,9 +93,7 @@ export function applyResultPointer(c: ControllerHandle, data: string): Consume |
   }
   if (action === 'compare') {
     c.resultAction = 'compare';
-    c.page = 'compare-confirm';
-    c.timelineReadOffset = 0;
-    c.render(true);
+    resolveCompareChoice(c, true);
     return { consume: true };
   }
   if (action === 'open-report') {

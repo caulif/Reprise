@@ -73,10 +73,10 @@ test("Comparison reuses one Session for an attempt and isolates different attemp
   assert.match(sessions[0]?.appended[0] ?? "", /short-orientation/);
   assert.match(sessions[0]?.appended[0] ?? "", /user-input/);
   assert.match(sessions[0]?.appended[1] ?? "", /Investigate the questions/);
-  assert.match(sessions[0]?.appended[2] ?? "", /data-agent-zone="comparison"/);
+  assert.match(sessions[0]?.appended[2] ?? "", /submit_comparison_draft/);
   assert.match(sessions[0]?.appended[3] ?? "", /preview_report/);
   assert.doesNotMatch(sessions[0]?.appended[0] ?? "", /Return only JSON matching the contract/);
-  assert.match(sessions[0]?.input.systemPrompt ?? "", /In this session you will receive, in order/);
+  assert.match(sessions[0]?.input.systemPrompt ?? "", /one continuing session/);
   assert.match(sessions[0]?.input.systemPrompt ?? "", /render_artifact/);
   assert.match(sessions[0]?.input.systemPrompt ?? "", /register_evidence/);
   assert.doesNotMatch(sessions[0]?.input.systemPrompt ?? "", /最后一轮不能使用工具/);
@@ -97,6 +97,25 @@ test("Comparison refuses to start a Session without attemptId", async () => {
     comparison.compare(rest as ComparisonContext),
     /attemptId is required/,
   );
+});
+
+test("validated submitted draft survives an empty final model message", async () => {
+  const calls: string[] = [];
+  const comparison = new ComparisonAgent({
+    host: new AgentHost({ createSession: () => ({
+      append: async ({ content }) => { calls.push(content); return ""; },
+      cancel() {},
+    }) }),
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+  });
+  const result = await comparison.compare(context(), [], undefined, undefined, {
+    getSubmittedResult: async () => ({ status: "completed", reportPath: "report.html", headline: "Verified draft.", evidenceRefs: [] }),
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(calls.length, 3);
+  assert.match(calls[0] ?? "", /questions that could change the choice/);
+  assert.doesNotMatch(calls[2] ?? "", /Return only JSON/);
 });
 
 test("Comparison freeform turns ignore invalid JSON and only the envelope round validates", async () => {
@@ -708,7 +727,7 @@ test("B7 loop: investigate registers evidence, compose fills comparison zone, re
   assert.match(reportBody, /Updated decisive difference/);
   assert.match(reportBody, /data-evidence-ref="ev-02"/);
   assert.match(prompts[1] ?? "", /Investigate the questions/);
-  assert.match(prompts[2] ?? "", /data-agent-zone="comparison"/);
+  assert.match(prompts[2] ?? "", /submit_comparison_draft/);
   assert.match(prompts[3] ?? "", /preview_report/);
 });
 
@@ -810,9 +829,10 @@ test("B7 review: tool failure surfaces a concrete limitation without inventing o
   assert.match(COMPARISON_TURN_PROMPTS.review, /record the specific\s+review limitation/);
 });
 
-test("Host-zone repair prompt names comparison and details agent zones", () => {
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="comparison"/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-agent-zone="details"/);
+test("compose prompt uses the Host-owned draft tool", () => {
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /submit_comparison_draft/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /comparisonHtml/);
+  assert.match(COMPARISON_TURN_PROMPTS.compose, /detailsHtml/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /pair-pages/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /visual-evidence/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /reopen report\.html and review/);

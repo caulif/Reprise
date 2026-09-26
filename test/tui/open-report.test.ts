@@ -1,4 +1,4 @@
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import test from 'node:test';
@@ -107,11 +107,18 @@ test('report opener resolves after the operating system accepts the spawn reques
 test('trace opener and file-url opener use the same local handler', async () => {
   const child = reportProcess();
   const { start, calls } = recordingSpawner(child);
-  const opening = openExperimentTrace(EXPERIMENT_ROOT, 'run-1', start);
-  child.emit('spawn');
+  const root = await mkdtemp(join(tmpdir(), 'reprise-open-trace-'));
+  const trace = join(root, 'runs', 'run-1');
+  await mkdir(trace, { recursive: true });
+  const opening = openExperimentTrace(root, 'run-1', (...args) => {
+    const process = start(...args);
+    queueMicrotask(() => child.emit('spawn'));
+    return process;
+  });
   await assert.doesNotReject(opening);
   assert.equal(calls[0]?.command, expectedCommand());
-  assert.equal(String(calls[0]?.args[0]).replaceAll('\\', '/'), TRACE_PATH.replaceAll('\\', '/'));
+  assert.equal(String(calls[0]?.args[0]).replaceAll('\\', '/'), trace.replaceAll('\\', '/'));
+  await rm(root, { recursive: true, force: true });
 
   const linked = reportProcess();
   const second = recordingSpawner(linked);
@@ -121,6 +128,15 @@ test('trace opener and file-url opener use the same local handler', async () => 
   await assert.doesNotReject(openingLink);
   await assert.rejects(openAllowedFileUrl(DATA_ROOT, 'https://example.com', second.start), /local files/);
   await assert.rejects(openAllowedFileUrl(DATA_ROOT, pathToFileURL(join(OTHER_ROOT, 'secret.txt')).href, second.start), /outside/);
+});
+
+test('trace opener rejects a missing directory before launching the handler', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-missing-trace-'));
+  const child = reportProcess();
+  const { start, calls } = recordingSpawner(child);
+  await assert.rejects(openExperimentTrace(root, 'run-1', start), /ENOENT/);
+  assert.equal(calls.length, 0);
+  await rm(root, { recursive: true, force: true });
 });
 
 test('report opener rejects when the operating system cannot start the opener', async () => {

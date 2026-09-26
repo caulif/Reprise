@@ -226,6 +226,7 @@ export function view(c: IntakeTui): WorkbenchView {
     activeParallel: activeNodes(c.activityIndex).length,
     ...(c.compareChoice ? { comparePending: true } : {}),
     resultAction: c.resultAction,
+    ...(c.resultHover ? { resultHover: c.resultHover } : {}),
     resultDetails: c.resultDetails,
     result: c.result,
     ...(c.finding ? { finding: true, findQuery: c.findQuery, findCursor: c.findCursor } : {}),

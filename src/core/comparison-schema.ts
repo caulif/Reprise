@@ -129,6 +129,14 @@ export const ComparisonBriefingContextSchema = Type.Object({
   media: Type.Optional(Type.Array(ComparisonMediaRecordSchema)),
 });
 export const ComparisonShortRefSchema = Type.String({ pattern: "^ev-[0-9]{2,6}$" });
+export const ComparisonDraftSubmissionSchema = Type.Object({
+  status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
+  category: Type.String({ minLength: 1, maxLength: 200 }),
+  headline: Type.String({ minLength: 1, maxLength: 280 }),
+  comparisonHtml: Type.String({ minLength: 1, maxLength: 262_144 }),
+  detailsHtml: Type.Optional(Type.String({ maxLength: 262_144 })),
+});
+export type ComparisonDraftSubmission = Static<typeof ComparisonDraftSubmissionSchema>;
 const ComparisonOutputSchema = Type.Object({
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
   reportPath: Type.Literal("report.html"),
@@ -146,6 +154,7 @@ const AgentFailureSchema = Type.Object({
     Type.Literal("agent_timeout"), Type.Literal("agent_failure"), Type.Literal("invalid_output"),
     Type.Literal("privacy_blocked"), Type.Literal("host_zone_modified"), Type.Literal("invalid_envelope"),
     Type.Literal("evidence_unresolved"), Type.Literal("media_unavailable"), Type.Literal("report_incomplete"),
+    Type.Literal("draft_invalid"), Type.Literal("preview_failed"), Type.Literal("provider_failure"),
     Type.Literal("publication_failed"),
   ]),
   message: Type.String(),

@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
 import {
   ComparisonBriefingContextSchema,
+  ComparisonDraftSubmissionSchema,
   ComparisonInvocationSchema,
   ComparisonMediaDerivationSchema,
   ComparisonMediaRecordSchema,
@@ -260,6 +261,7 @@ export const ComparisonEvidenceRegisteredPayloadSchema = Type.Object({
 export type ComparisonEvidenceRegisteredPayload = Static<typeof ComparisonEvidenceRegisteredPayloadSchema>;
 export {
   ComparisonBriefingContextSchema,
+  ComparisonDraftSubmissionSchema,
   ComparisonInvocationSchema,
   ComparisonMediaDerivationSchema,
   ComparisonMediaRecordSchema,
@@ -267,7 +269,7 @@ export {
   ComparisonReportModelSchema,
   ComparisonShortRefSchema,
 };
-export type { ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+export type { ComparisonDraftSubmission, ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
 export {
   type ModelInputCapabilities,
 } from "./schemas/model-input-capabilities.js";

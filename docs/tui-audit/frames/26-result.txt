@@ -5,14 +5,9 @@ Reprise                                                                         
   比较         比较已完成
   执行耗时     49s
  
-  ❯ 本次输出   candidate-final.txt
     打开报告   report.html
-    原结果     history-final.txt
-    打开记录   run-1
-    打开副本   run-1
-    技术详情
-    结束查看
+  ❯ 打开本次执行路径 run-1
  
   Synthetic comparison headline.
  运行结束。用短标签打开报告。
- [Enter] 执行  [Esc] 结束查看  [f] 本次输出  [Pg↑↓] 翻页
+ [Enter] 执行  [Esc] 结束查看  [?] 帮助
