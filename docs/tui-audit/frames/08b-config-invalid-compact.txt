@@ -5,7 +5,7 @@ Reprise
     服务商类型         openai-compatible  [Enter] 切换
     服务商标签         private-gateway
     接口地址           
-      ! 无效的 URL
+      无效的 URL
     模型               model-private
     接口类型           openai-completions  [Enter] 切换
   > API 密钥           ••••••••  +

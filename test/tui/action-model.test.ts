@@ -11,10 +11,14 @@ import {
 } from '../../src/tui/action-model.js';
 import { dispatchResultKeys } from '../../src/tui/page-input.js';
 
-test('running footer always includes cancel and discoverable find when idle', () => {
+test('running footer keeps primary actions and leaves reading tools in help', () => {
   const hints = runningFooterHints('en', { preparing: false });
   assert.equal(hints[0]?.[0], 'Ctrl+C');
-  assert.ok(hints.some(([key]) => key === '/'));
+  assert.deepEqual(hints.map(([key]) => key), ['Ctrl+C', '?']);
+  const actions = listActions({ page: 'running', locale: 'en', mode: { preparing: false } });
+  assert.ok(actions.some((action) => action.id === 'start-find'));
+  assert.ok(actions.some((action) => action.id === 'follow'));
+  assert.ok(actions.some((action) => action.id === 'toggle-fold'));
   assert.ok(hints.length <= 4);
 });
 
@@ -94,14 +98,13 @@ test('artifactsFromResult mirrors pathLinks presence', () => {
   assert.equal(artifacts.trace, true);
 });
 
-test('footerHintPairs ranks by priority and caps at four', () => {
+test('footerHintPairs ranks primary running actions without filling unused slots', () => {
   const pairs = footerHintPairs(listActions({
     page: 'running',
     locale: 'en',
     mode: { preparing: false, findAllowed: true },
   }), 'en', 4);
-  assert.equal(pairs.length, 4);
-  assert.equal(pairs[0]?.[0], 'Ctrl+C');
+  assert.deepEqual(pairs.map(([key]) => key), ['Ctrl+C', '?']);
 });
 
 test('navigation pages share back and help actions', () => {

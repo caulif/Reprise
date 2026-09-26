@@ -98,13 +98,14 @@ export function renderCandidateModelPicker(theme: Theme, width: number, model: C
   ], width);
 }
 
-export function candidateProductHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintChooseModels')], ['Esc', t(locale, 'hintBack')]];
+export function candidateProductHints(locale: Locale = 'en', count = 2): readonly (readonly [string, string])[] {
+  return [...(count > 1 ? [['↑↓', t(locale, 'hintSelect')] as const] : []), ['Enter', t(locale, 'hintChooseModels')], ['Esc', t(locale, 'hintBack')]];
 }
 
-export function candidateModelHints(canEnter: boolean, locale: Locale = 'en'): readonly (readonly [string, string])[] {
+export function candidateModelHints(canEnter: boolean, locale: Locale = 'en', count = 2): readonly (readonly [string, string])[] {
   return [
-    ...(canEnter ? [['↑↓', t(locale, 'hintSelect')] as const, ['Enter', t(locale, 'hintReviewRunConditions')] as const] : []),
+    ...(canEnter && count > 1 ? [['↑↓', t(locale, 'hintSelect')] as const] : []),
+    ...(canEnter ? [['Enter', t(locale, 'hintReviewRunConditions')] as const] : []),
     ['Esc', t(locale, 'hintChangeProduct')],
   ];
 }

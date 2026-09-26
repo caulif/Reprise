@@ -176,8 +176,8 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
         ? (recovery?.summary ?? t(locale, 'warningCannotStartBlockedRecovery', { product }))
         : failureWarning(recovery, locale, product))
     : t(locale, 'warningStartsProcess', { product });
-  const warningLine = canStart || blockedRecovery
-    ? theme.style.warn(` ${theme.glyphs.warn}  ${startWarning}`)
+  const warningLine = canStart
+    ? theme.style.muted(` ${startWarning}`)
     : theme.style.danger(` ${theme.glyphs.warn}  ${startWarning}`);
   const diagnosisHint = failedRecovery && model.experimentId
     ? theme.style.muted(` ${t(locale, 'diagnosisSavedHint', { experimentId: model.experimentId, diagnosisPath: recovery?.diagnosisPath ?? 'recovery-diagnosis.json' })}`)
@@ -208,9 +208,9 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
     ...(model.preflight.limitations.length
       ? [kv(theme, t(locale, 'limitationsLabel'), String(model.preflight.limitations.length), width - 2),
-        ...model.preflight.limitations.flatMap((item) => wrapBodyLine(item, Math.max(16, width - 6)).map((line) => theme.style.warn(` ${theme.glyphs.warn} ${line}`)))]
+        ...model.preflight.limitations.flatMap((item) => wrapBodyLine(item, Math.max(16, width - 6)).map((line) => theme.style.muted(`   ${line}`)))]
       : [kv(theme, t(locale, 'limitationsLabel'), t(locale, 'noneRecorded'), width - 2)]),
-    ...(model.recovery?.status === 'partial' ? [theme.style.warn(` ${theme.glyphs.warn}  ${t(locale, 'confirmPartialNotZero')}`)] : []),
+    ...(model.recovery?.status === 'partial' ? [theme.style.muted(` ${t(locale, 'confirmPartialNotZero')}`)] : []),
     ...(cross ? [theme.style.muted(` ${t(locale, 'crossProductNote')}`)] : []),
   ];
   const startOk = canStart ? [theme.style.ok(` ${theme.glyphs.ok}  ${t(locale, 'confirmCopySafe')}`)] : [];

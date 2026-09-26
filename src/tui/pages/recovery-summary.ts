@@ -26,7 +26,9 @@ export function renderRecoverySummary(
     ));
   }
   if (recovery.failureSummary) {
-    lines.push(...wrapBodyLine(recovery.failureSummary, Math.max(12, width - 4)).map((line) => theme.style.warn(` ${theme.glyphs.warn}  ${line}`)));
+    lines.push(...wrapBodyLine(recovery.failureSummary, Math.max(12, width - 4)).map((line) => recovery.status === 'failed' || recovery.status === 'blocked'
+      ? theme.style.danger(` ${theme.glyphs.warn}  ${line}`)
+      : theme.style.muted(` ${line}`)));
   }
   if (recovery.failureCategory && expanded) {
     lines.push(kv(theme, t(locale, 'recoveryFailureType'), t(locale, recovery.failureCategory === 'transient' ? 'recoveryFailureTransient' : recovery.failureCategory === 'authentication' ? 'recoveryFailureAuthentication' : recovery.failureCategory === 'source_changed' ? 'recoveryFailureSourceChanged' : recovery.failureCategory === 'staging_invalid' ? 'recoveryFailureStaging' : recovery.failureCategory === 'protocol' ? 'recoveryFailureProtocol' : 'recoveryFailureOther'), width));
@@ -38,7 +40,9 @@ export function renderRecoverySummary(
   if (unresolved > 0) {
     lines.push(kv(theme, t(locale, 'recoveryUnresolvedField'), String(unresolved), width));
     for (const item of expanded ? recovery.unresolved : recovery.unresolved.slice(0, 1)) {
-      lines.push(...wrapBodyLine(item, Math.max(12, width - 4)).map((line) => theme.style.warn(` ${theme.glyphs.warn}  ${line}`)));
+      lines.push(...wrapBodyLine(item, Math.max(12, width - 4)).map((line) => recovery.status === 'failed' || recovery.status === 'blocked'
+        ? theme.style.danger(` ${theme.glyphs.warn}  ${line}`)
+        : theme.style.muted(` ${line}`)));
     }
   }
   if (expanded && recovery.changedPathCount > 0) {

@@ -163,9 +163,9 @@ function runningActions(mode: ActionMode): readonly UiAction[] {
   }
   return [
     cancel,
-    action('start-find', 'hintFind', ['/'], 'readonly', 25),
-    action('follow', 'hintFollow', ['end'], 'navigate', 20),
-    action('toggle-fold', 'hintExpand', ['enter'], 'readonly', 15),
+    action('start-find', 'hintFind', ['/'], 'readonly', 0),
+    action('follow', 'hintFollow', ['end'], 'navigate', 0),
+    action('toggle-fold', 'hintExpand', ['enter'], 'readonly', 0),
     action('cycle-fold', 'hintCycleFold', ['tab'], 'readonly', 0),
     action('cycle-fold-prev', 'hintCycleFold', ['shift+tab'], 'readonly', 0),
     action('enter-reading', 'hintEnterReading', ['v'], 'navigate', 0),

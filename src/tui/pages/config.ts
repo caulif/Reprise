@@ -57,9 +57,9 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
     const editor = editing
       ? [`     ${item === 'API key' ? `${'*'.repeat(model.buffer.length)}▌` : caretAt(model.buffer, model.cursor ?? model.buffer.length)}`,
         ...(item === 'API key' ? [`     ${t(locale, 'neverPasteSecret')}`] : []),
-        ...(fieldReason(item, model.buffer, model.draft.kind, locale) ? [`     ${theme.style.warn(`${theme.glyphs.warn} ${fieldReason(item, model.buffer, model.draft.kind, locale)}`)}`] : [])]
+        ...(fieldReason(item, model.buffer, model.draft.kind, locale) ? [`     ${theme.style.muted(fieldReason(item, model.buffer, model.draft.kind, locale) ?? '')}`] : [])]
       : [];
-    return [...(reason ? [painted, `     ${theme.style.warn(`${theme.glyphs.warn} ${reason}`)}`] : [painted]), ...editor];
+    return [...(reason ? [painted, `     ${theme.style.muted(reason)}`] : [painted]), ...editor];
   });
   const languageMarker = model.selected === languageIndex ? theme.glyphs.cursor : ' ';
   const languageValue = t(locale, locale === 'zh' ? 'chinese' : 'english');
@@ -71,8 +71,8 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
     paintedLanguage,
     '',
     ...configStateLines(theme, model, locale),
-    ...(model.pendingToggle ? [theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'confirmProviderSwitch')}`)] : []),
-    ...(model.leaveConfirm ? [theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'unsavedLeave')}`)] : []),
+    ...(model.pendingToggle ? [theme.style.muted(` ${t(locale, 'confirmProviderSwitch')}`)] : []),
+    ...(model.leaveConfirm ? [theme.style.muted(` ${t(locale, 'unsavedLeave')}`)] : []),
   ], width);
 }
 
@@ -126,7 +126,7 @@ function credentialStateLine(theme: Theme, model: ConfigModel, locale: Locale): 
   const available = Boolean(model.envName && model.envSet) || hasFileApiKey(model.draft);
   return available
     ? ` ${theme.glyphs.dot} ${t(locale, 'configCredAvailable')}`
-    : theme.style.warn(` ${theme.glyphs.warn} ${t(locale, 'configCredMissing')}`);
+    : theme.style.muted(` ${theme.glyphs.dot} ${t(locale, 'configCredMissing')}`);
 }
 
 function connectionTestLine(theme: Theme, model: ConfigModel, locale: Locale): string {

@@ -29,4 +29,4 @@ Reprise                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
- [Ctrl+C] 停止执行  [/] 查找  [End] 跟随最新  [Enter] 展开
+ [Ctrl+C] 停止执行  [?] 帮助

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderConfirmation, renderTimeline } from '../../src/tui/pages/run.js';
 import { renderFailure } from '../../src/tui/pages/result.js';
+import { renderRecoverySummary } from '../../src/tui/pages/recovery-summary.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { formatRecoveryFailureSummary } from '../../src/tui/i18n.js';
 import { projectWorkbenchView } from '../../src/tui/view-projection.js';
@@ -185,6 +186,17 @@ test('confirmation with accept stays partial and startable', () => {
   assert.doesNotMatch(text, /无法启动隔离/);
   assert.match(text, /确认用 Codex 执行任务/);
   assert.match(text, /原项目目录保持不变/);
+  assert.doesNotMatch(text, /⚠/);
+});
+
+test('recovery summary reserves the warning triangle for blocked or failed recovery', () => {
+  const theme = createTheme(120, false);
+  const summary = { status: 'ready' as const, unresolved: ['Global AGENTS.md location was not recorded'], changedPathCount: 0 };
+  const ready = renderRecoverySummary(theme, 120, summary, 'en').join('\n');
+  assert.match(ready, /AGENTS\.md/);
+  assert.doesNotMatch(ready, /⚠/);
+  const failed = renderRecoverySummary(theme, 120, { ...summary, status: 'failed', failureSummary: 'Recovery failed' }, 'en').join('\n');
+  assert.match(failed, /⚠.*Recovery failed/);
 });
 
 test('confirmation without accept explains validation failure in Chinese', () => {

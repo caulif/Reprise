@@ -444,21 +444,21 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     const selected = fields[view.config.selected];
     return configHints(view.config.editing, selected === 'more' ? (view.config.advanced ? 'less' : 'more') : selected === 'language' ? undefined : selected, view.config.pendingToggle, selected === 'language', locale, Boolean(view.config.leaveConfirm));
   }
-  if (view.page === 'history') return historyHints(locale);
+  if (view.page === 'history') return historyHints(locale, view.history?.items.length ?? 0);
   if (view.page === 'history-detail') {
     return [...historyDetailHints(
       Boolean(view.historyDetail && 'taskCase' in view.historyDetail),
       Boolean(view.historyDetail && !('taskCase' in view.historyDetail) && view.historyDetail.reportPath),
       locale,
-    ), ['Pg↑↓', t(locale, 'hintScrollPage')]];
+    )];
   }
   if (view.page === 'sessions') return sessionsHints(view.sessions, locale);
   if (view.page === 'inspection') return inspectionHints(locale);
   if (view.page === 'source') return sourceHints(locale);
-  if (view.page === 'candidate-product') return candidateProductHints(locale);
-  if (view.page === 'recovery-review') return [['Enter', t(locale, 'recoveryReviewContinue')], ['Esc', t(locale, 'hintBack')], ['Pg↑↓', t(locale, 'hintScrollPage')]];
+  if (view.page === 'candidate-product') return candidateProductHints(locale, view.candidateProduct?.products.length ?? 0);
+  if (view.page === 'recovery-review') return [['Enter', t(locale, 'recoveryReviewContinue')], ['Esc', t(locale, 'hintBack')]];
   if (view.page === 'candidate-model') {
-    return candidateModelHints(view.candidateModel?.status === 'ready' && Boolean(view.candidateModel.offers.length), locale);
+    return candidateModelHints(view.candidateModel?.status === 'ready' && Boolean(view.candidateModel.offers.length), locale, view.candidateModel?.offers.length ?? 0);
   }
   if (view.page === 'preflight') return view.preflight ? preflightHints(locale) : [['Esc', t(locale, 'hintHome')]];
   if (view.page === 'confirm') {
@@ -467,7 +467,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
       locale,
       mode: { canStartConfirm: view.confirm ? confirmCanStart(view.confirm) : false },
     }), locale);
-    return [...hints.slice(0, 3), ['Pg↑↓', t(locale, 'hintScrollPage')]];
+    return hints.slice(0, 3);
   }
   if (view.page === 'running' && view.running) {
     const preparing = isRecoveryChrome(view.running) || view.running.preparePhase === 'copy';
@@ -485,14 +485,14 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     }), locale);
   }
   if (view.page === 'result') {
-    if (view.processExpanded) return [['Esc', t(locale, 'hintBack')], ['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintExpand')], ['/', t(locale, 'hintFind')]];
+    if (view.processExpanded) return [['Esc', t(locale, 'hintBack')], ['?', t(locale, 'hintHelp')]];
     const hints = footerHintPairs(listActions({
       page: 'result',
       locale,
       mode: { comparePending: Boolean(view.comparePending), processAvailable: Boolean(view.running?.entries.length) },
       artifacts: artifactsFromResult(view.result),
     }), locale);
-    return [...hints.slice(0, 3), ['Pg↑↓', t(locale, 'hintScrollPage')]];
+    return hints.slice(0, 3);
   }
   if (view.page === 'compare-confirm') return [['Enter', t(locale, 'compareConfirmStart')], ['Esc', t(locale, 'hintBack')]];
   if (view.page === 'error') return failureHints(locale);
