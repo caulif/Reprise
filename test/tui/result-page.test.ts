@@ -23,6 +23,7 @@ test('result page uses comparison headline and hides satisfied rationale', () =>
   } as never).join('\n');
   assert.match(compared, /Both delivered slides/);
   assert.match(compared, /Open replica/);
+  assert.doesNotMatch(compared, /Scroll page/);
   assert.doesNotMatch(compared, /三页 PPT/);
   const skipped = renderResult(theme, 120, {
     ...syntheticExperimentResult({

@@ -93,7 +93,7 @@ export function renderResultWithHits(
     artifacts: artifactsFromResult(result),
   });
   for (const action of actions) {
-    if (!action.enabled || action.id === 'activate-primary' || action.id === 'show-help') continue;
+    if (!action.enabled || action.id === 'activate-primary' || action.id === 'show-help' || action.id === 'read-page') continue;
     const id = action.id as ResultAction;
     const path = id === 'open-candidate-final' ? paths.candidateFinal
       : id === 'open-report' ? paths.report

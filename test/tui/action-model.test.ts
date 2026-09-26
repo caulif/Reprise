@@ -10,6 +10,7 @@ import {
   runningFooterHints,
 } from '../../src/tui/action-model.js';
 import { dispatchResultKeys } from '../../src/tui/page-input.js';
+import { resultChoices } from '../../src/tui/controller-scroll.js';
 
 test('running footer keeps primary actions and leaves reading tools in help', () => {
   const hints = runningFooterHints('en', { preparing: false });
@@ -44,6 +45,24 @@ test('result footer hides missing artifacts and keeps compare when pending', () 
   assert.ok(withCompare.length <= 4);
   assert.ok(withCompare.some(([key]) => key === 'o'));
   assert.ok(!withCompare.some(([key]) => key === 'h' || key === 'f'));
+});
+
+test('expanded result process uses timeline actions instead of result actions', () => {
+  const actions = listActions({ page: 'result', locale: 'en', mode: { processExpanded: true }, artifacts: { report: true } });
+  assert.equal(actions.find((action) => action.keys.includes('enter'))?.id, 'toggle-fold');
+  assert.ok(actions.some((action) => action.id === 'start-find'));
+  assert.ok(actions.some((action) => action.id === 'read-page'));
+  assert.ok(!actions.some((action) => action.id === 'activate-primary' || action.id === 'open-report'));
+});
+
+test('scrollable detail pages expose PageUp and PageDown in help actions only', () => {
+  for (const page of ['history-detail', 'recovery-review', 'confirm', 'result']) {
+    const actions = listActions({ page, locale: 'en' });
+    const scroll = actions.find((action) => action.id === 'read-page');
+    assert.deepEqual(scroll?.keys, ['pageup', 'pagedown'], page);
+    assert.ok(!footerHintPairs(actions, 'en').some(([key]) => key === 'PgUp'), page);
+  }
+  assert.ok(!resultChoices({ locale: 'en', compareChoice: undefined, timeline: [], result: undefined } as never).includes('read-page' as never));
 });
 
 test('failed comparison labels the report action as a diagnostic', () => {

@@ -57,9 +57,9 @@ export function renderConfig(theme: Theme, width: number, model: ConfigModel): s
     const editor = editing
       ? [`     ${item === 'API key' ? `${'*'.repeat(model.buffer.length)}▌` : caretAt(model.buffer, model.cursor ?? model.buffer.length)}`,
         ...(item === 'API key' ? [`     ${t(locale, 'neverPasteSecret')}`] : []),
-        ...(fieldReason(item, model.buffer, model.draft.kind, locale) ? [`     ${theme.style.muted(fieldReason(item, model.buffer, model.draft.kind, locale) ?? '')}`] : [])]
+        ...(fieldReason(item, model.buffer, model.draft.kind, locale) ? [`     ${theme.style.danger(`${theme.glyphs.err} ${fieldReason(item, model.buffer, model.draft.kind, locale)}`)}`] : [])]
       : [];
-    return [...(reason ? [painted, `     ${theme.style.muted(reason)}`] : [painted]), ...editor];
+    return [...(reason ? [painted, `     ${theme.style.danger(`${theme.glyphs.err} ${reason}`)}`] : [painted]), ...editor];
   });
   const languageMarker = model.selected === languageIndex ? theme.glyphs.cursor : ' ';
   const languageValue = t(locale, locale === 'zh' ? 'chinese' : 'english');

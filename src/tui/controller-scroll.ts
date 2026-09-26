@@ -46,6 +46,6 @@ export function resultChoices(c: ControllerHandle): import('./page-input.js').Re
     page: 'result', locale: c.locale,
     mode: { comparePending: Boolean(c.compareChoice), processAvailable: c.timeline.length > 0 },
     artifacts: artifactsFromResult(c.result),
-  }).filter((action) => action.enabled && action.id !== 'activate-primary' && action.id !== 'show-help')
+  }).filter((action) => action.enabled && action.id !== 'activate-primary' && action.id !== 'show-help' && action.id !== 'read-page')
     .map((action) => action.id as import('./page-input.js').ResultAction);
 }

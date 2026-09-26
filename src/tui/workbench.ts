@@ -275,6 +275,7 @@ function renderBody(theme: Theme, view: WorkbenchView, width: number, height?: n
     page: view.page,
     locale,
     mode: optionalMode({
+      processExpanded: Boolean(view.processExpanded),
       preparing,
       comparing: view.running?.preparePhase === 'compare',
       finding: Boolean(view.running?.finding),
@@ -284,7 +285,7 @@ function renderBody(theme: Theme, view: WorkbenchView, width: number, height?: n
       ...(view.confirm ? { canStartConfirm: confirmCanStart(view.confirm) } : {}),
       ...(view.confirm?.recovery?.failureAction ? { recoveryFailureAction: view.confirm.recovery.failureAction } : {}),
     }),
-    artifacts: artifactsFromResult(view.result),
+    artifacts: view.processExpanded ? {} : artifactsFromResult(view.result),
   });
   return [...renderHelp(theme, width, view.page, locale, actions), '', ...page];
 }
