@@ -42,6 +42,7 @@ export function comparisonOrientation(input: {
     `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
     `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
     "Navigation for the attempt root is in INDEX.md below.",
+    "Start with briefing/decision-map.md for bounded delivery leads and gaps; verify conclusions against the linked sources.",
     "",
     "# INDEX.md",
     input.indexMarkdown,
@@ -148,6 +149,12 @@ export async function writeComparisonBriefing(input: {
     omitted: selected.omitted + invalidLinkCount,
     limit: MAX_COMPARISON_LINKS,
   });
+  const decisionMap = comparisonDecisionMap({
+    links, media, snapshotStatus,
+    openableSources: mediaBundle.openableSources,
+    omitted: selected.omitted + invalidLinkCount,
+    changedPathsIndexed: selected.changedPathsIndexed,
+  });
   const factsContext = `${JSON.stringify(briefingContext, null, 2)}\n`;
   const factsLinks = `${JSON.stringify(links, null, 2)}\n`;
   const factsMedia = `${JSON.stringify(media, null, 2)}\n`;
@@ -161,6 +168,7 @@ export async function writeComparisonBriefing(input: {
     input.record.manifest?.environment.workspacePath ?? join(input.experimentRoot, 'environment', 'runs', input.record.attempt.runId));
   const files: Record<string, string> = {
     "INDEX.md": indexMarkdown,
+    "decision-map.md": decisionMap,
     "task/initial-input.txt": input.taskCase.initialInput.text,
     "candidate/process-index.tsv": candidateProcess,
     "facts/context.json": factsContext,
@@ -182,7 +190,7 @@ export async function writeComparisonBriefing(input: {
 async function comparisonMediaBundle(
   input: Parameters<typeof writeComparisonBriefing>[0],
   selected: Awaited<ReturnType<typeof comparisonLinks>>,
-): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number }> {
+): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number; openableSources: { baseline: string[]; candidate: string[] } }> {
   const rawLinks = withEvidenceShortRefs(selected.links);
   const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
   const invalidLinkCount = rawLinks.length - links.length;
@@ -207,7 +215,13 @@ async function comparisonMediaBundle(
     candidateSources: openable.candidateSources,
     ...(input.signal ? { signal: input.signal } : {}),
   });
-  return { links: augmented.links, media: augmented.media, invalidLinkCount };
+  return {
+    links: augmented.links, media: augmented.media, invalidLinkCount,
+    openableSources: {
+      baseline: openable.baselineSources.map((item) => item.inspectPath),
+      candidate: openable.candidateSources.map((item) => item.inspectPath),
+    },
+  };
 }
 
 async function writeAttemptSidecars(
@@ -295,6 +309,7 @@ function comparisonIndex(
     "Read only what can change the comparison. Historical and candidate process bodies are mounted separately; this directory holds navigation and Host facts.",
     "All paths below are relative to the attempt root, not to briefingRoot.",
     "",
+    "- briefing/decision-map.md: bounded delivery leads and gaps; inspect the sources before judging",
     `- candidate/SNAPSHOT.txt: snapshotStatus=${snapshotStatus} cleanupStatus=${cleanupStatus}`,
     "- briefing/task/initial-input.txt: frozen initial task",
     `- briefing/facts/context.json: bounded Host projection; delivery.changedPathsIndexed=${evidence.changedPathsIndexed} delivery.changedPathsOmitted=${evidence.omitted}`,
@@ -317,6 +332,55 @@ function comparisonIndex(
     "- scratch/: unrestricted temporary analysis files; the shell starts here",
     "",
   ].join("\n");
+}
+
+function comparisonDecisionMap(input: {
+  links: readonly ComparisonLinkRecord[];
+  media: readonly ComparisonMediaRecord[];
+  openableSources: { baseline: readonly string[]; candidate: readonly string[] };
+  snapshotStatus: "complete" | "incomplete" | "unknown";
+  omitted: number;
+  changedPathsIndexed: number;
+}): string {
+  const lines = [
+    "# Delivery leads and gaps",
+    "",
+    "This is a Host navigation projection, not a finding. Confirm final versions and task success against the source files.",
+    "User requirements: observations/user-inputs/INDEX.tsv (in order); initial task: briefing/task/initial-input.txt.",
+    "",
+  ];
+  for (const side of ["baseline", "candidate"] as const) {
+    lines.push(`## ${side}`);
+    if (side === "candidate" && input.snapshotStatus !== "complete") {
+      lines.push(`Candidate snapshot ${input.snapshotStatus}; sealed delivery unavailable. Do not substitute a mutable workspace.`, "");
+      continue;
+    }
+    const candidates = input.links.filter((link) => link.side === side);
+    const openable = [...new Set(input.openableSources[side])];
+    const images = input.media.filter((item) => item.side === side);
+    if (candidates.length === 0 && images.length === 0 && openable.length === 0) lines.push("No indexed delivery lead; inspect the full sources before treating it as absent.");
+    for (const path of openable.slice(0, 6)) lines.push(`- ${path} (openable delivery lead; confirm final version)`);
+    if (openable.length > 6) lines.push(`- ${openable.length - 6} more openable leads: finals/ or candidate/`);
+    for (const link of candidates.slice(0, 6)) {
+      lines.push(`- ${link.shortRef ?? "unreferenced"} ${link.inspectPath}${link.origin ? ` (${link.origin})` : ""}`);
+    }
+    if (candidates.length > 6) lines.push(`- ${candidates.length - 6} more indexed leads: briefing/facts/comparison-links.json`);
+    for (const item of images.slice(0, 6)) {
+      lines.push(`- ${item.shortRef ?? "unreferenced"} ${item.inspectPath}: ${item.available ? "available" : "unavailable"} media (${item.mediaType})`);
+    }
+    if (images.length > 6) lines.push(`- ${images.length - 6} more media: briefing/facts/media.json`);
+    lines.push("");
+  }
+  lines.push("## Checks to resolve", "");
+  if (input.snapshotStatus !== "complete") lines.push("- Determine what can be concluded without a complete sealed candidate snapshot.");
+  if (!input.links.some((link) => link.side === "baseline") && input.openableSources.baseline.length === 0) lines.push("- Locate the historical final delivery, or report the evidence gap.");
+  if (input.snapshotStatus === "complete" && !input.links.some((link) => link.side === "candidate") && input.openableSources.candidate.length === 0) lines.push("- Locate the candidate final delivery, or report the evidence gap.");
+  if (input.media.some((item) => !item.available)) lines.push("- Check unavailable media before making visual claims.");
+  if (input.omitted > 0) lines.push(`- ${input.omitted} leads were omitted by the bounded index; inspect the full sources if they could change the result.`);
+  if (input.changedPathsIndexed > 0) lines.push("- Check which changed paths are final deliverables rather than intermediate files.");
+  if (lines.at(-1) === "") lines.push("- Verify both final deliveries against the user's success criteria.");
+  lines.push("", "Full sources: briefing/facts/evidence-index.json, briefing/facts/media.json, briefing/candidate/process-index.tsv, observations/INDEX.md, finals/, and candidate/.", "");
+  return lines.join("\n");
 }
 
 function processIndex(events: readonly EventEnvelope[]): string {

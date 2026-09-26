@@ -11,7 +11,7 @@ Reprise
     语言               中文  [Enter] 切换
  
   ● 保存状态：未保存草稿
-  ⚠ 凭据：缺失或未设置
+  ● 凭据：缺失或未设置
   ● 连接测试：当前草稿尚未测试
  当前终端未设置 OPENAI_API_KEY。$env:OPENAI_API_KEY = '<value>'  也可以把 API 密钥贴到本页并保存。
  [↑↓] 选择  [Enter] 编辑  [Ctrl+T] 测试连接（会调用模型）  [Ctrl+S] 保存到本地  [Esc] 首页

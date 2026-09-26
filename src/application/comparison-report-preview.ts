@@ -1,9 +1,10 @@
-import { copyFile, mkdir, readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, realpath } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { sha256 } from "../core/identity.js";
 import { writeAtomic } from "../core/identity.js";
+import { pathContainedBy } from "../core/paths.js";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
-import { preparePublishableComparisonHtml } from "./comparison-publication.js";
+import { comparisonMediaHrefs, preparePublishableComparisonHtml } from "./comparison-publication.js";
 import type { PreparedReportPreview } from "./comparison-render-tools.js";
 
 /**
@@ -27,15 +28,47 @@ export async function materializeComparisonReportPreview(input: {
     ...(input.evidence ? { evidence: input.evidence } : {}),
   });
   const preparedDigest = sha256(prepared.html);
-  const outputRoot = join(input.attemptRoot, "review", "preview");
+  const mediaByHref = new Map(input.media.map((item) => [item.reportHref.replaceAll("\\", "/").replace(/^\.\//, ""), item]));
+  const dependencies: { href: string; hash: string; bytes: Buffer }[] = [];
+  for (const href of comparisonMediaHrefs(prepared.html)) {
+    const normalized = href.replaceAll("\\", "/").replace(/^\.\//, "");
+    const item = mediaByHref.get(normalized);
+    if (!item?.available) continue;
+    const source = resolve(input.attemptRoot, ...normalized.split("/"));
+    if (!pathContainedBy(input.attemptRoot, source)) {
+      throw new Error(`Comparison preview media escapes attempt root: ${normalized}`);
+    }
+    const rootReal = await realpath(input.attemptRoot);
+    const sourceReal = await realpath(source);
+    if (!pathContainedBy(rootReal, sourceReal)) {
+      throw new Error(`Comparison preview media escapes attempt root: ${normalized}`);
+    }
+    const bytes = await readFile(sourceReal);
+    const hash = sha256(bytes);
+    if (item.contentHash && item.contentHash !== hash) {
+      throw new Error(`Comparison preview media changed after registration: ${normalized}`);
+    }
+    dependencies.push({ href: normalized, hash, bytes });
+  }
+  const dependencyDigest = sha256(JSON.stringify({
+    draftDigest, preparedDigest, catalogRevision: input.catalogRevision,
+    media: dependencies.map(({ href, hash }) => ({ href, hash })),
+  }));
+  const outputRoot = join(input.attemptRoot, "review", "preview", dependencyDigest);
   await mkdir(outputRoot, { recursive: true });
-  for (const item of input.media) {
-    if (!item.available || !item.reportHref) continue;
-    const from = join(input.attemptRoot, item.reportHref);
-    const to = join(outputRoot, item.reportHref);
+  const rootReal = await realpath(input.attemptRoot);
+  const outputReal = await realpath(outputRoot);
+  if (!pathContainedBy(rootReal, outputReal)) throw new Error("Comparison preview output escapes attempt root.");
+  for (const { href, hash, bytes } of dependencies) {
+    const to = resolve(outputRoot, ...href.split("/"));
+    if (!pathContainedBy(outputRoot, to)) throw new Error(`Comparison preview media path escapes output root: ${href}`);
+    const existing = await readFile(to).catch(() => undefined);
+    if (existing && sha256(existing) === hash) continue;
     await mkdir(dirname(to), { recursive: true });
-    // Missing media is non-fatal for mechanical HTML preview; broken imgs stay visible in load diagnostics.
-    await copyFile(from, to).catch(() => undefined);
+    if (!pathContainedBy(outputReal, await realpath(dirname(to)))) {
+      throw new Error(`Comparison preview media output escapes preview root: ${href}`);
+    }
+    await writeAtomic(to, bytes);
   }
   await writeAtomic(join(outputRoot, "preview.html"), prepared.html);
   return {
@@ -44,6 +77,7 @@ export async function materializeComparisonReportPreview(input: {
     draftDigest,
     preparedDigest,
     catalogRevision: input.catalogRevision,
+    dependencyDigest,
     outputRoot,
   };
 }

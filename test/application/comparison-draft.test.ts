@@ -35,7 +35,7 @@ test("Host draft submission validates content and publishes only the previewed d
   assert.equal(await draft.completedResult(), undefined);
   const html = await readFile(join(root, "report.html"), "utf8");
   const digest = sha256(html);
-  draft.recordPreview({ htmlPath: "preview.html", html, draftDigest: digest, preparedDigest: digest, catalogRevision: catalog.snapshot().revision, outputRoot: root });
+  draft.recordPreview({ htmlPath: "preview.html", html, draftDigest: digest, preparedDigest: digest, dependencyDigest: digest, catalogRevision: catalog.snapshot().revision, outputRoot: root });
   assert.equal((await draft.completedResult())?.headline, base.headline);
 
   await writeFile(join(root, "report.html"), `${html}\n<!-- changed -->`);

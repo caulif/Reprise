@@ -458,7 +458,8 @@ test('a 24-row running workbench stays within the viewport', () => {
   assert.match(text, /Ctrl\+C/);
   assert.doesNotMatch(text, /You cannot type/);
   assert.doesNotMatch(text, /\[f\]|\[o\]|Select/);
-  assert.match(text, /Find|Expand|Follow|Help|\?/);
+  assert.match(text, /Help|\?/);
+  assert.doesNotMatch(text, /Find|Expand|Follow live/);
 });
 
 test('recovery workbench footer has no find', () => {
@@ -953,6 +954,7 @@ test('run confirmation only restates the start decision', () => {
   }).join('\n');
   assert.match(zhText, /确认用 Codex 执行任务/);
   assert.match(zhText, /可能产生费用/);
+  assert.doesNotMatch(zhText, /⚠/);
   assert.doesNotMatch(zhText, /Confirm run|Maximum requests|Network \/ billing|This starts a/);
 });
 

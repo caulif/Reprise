@@ -9,4 +9,4 @@ Reprise
   来源对话     session-history
   位置         TMP\history-data\cases\case-history\case.json
  实验记录。打开历史不会续跑进程。
- [Enter] 使用这个任务  [Esc] 返回  [Pg↑↓] 翻页
+ [Enter] 使用这个任务  [Esc] 返回

@@ -411,7 +411,11 @@ async function registerReviewMedia(
     entry.derivation.sampleTimeMs,
   ].join("|");
   const existing = reviewByKey.get(key);
-  if (existing) return existing;
+  if (existing) {
+    const stored = await readFile(join(attemptRoot, "review", "media", `${existing.shortRef}.png`)).catch(() => undefined);
+    if (stored && sha256(stored) === entry.contentHash) return existing;
+    reviewByKey.delete(key);
+  }
 
   const shortRef = allocateShortRef();
   const mediaRef = `review:derived-${shortRef}`;

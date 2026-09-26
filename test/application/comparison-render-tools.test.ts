@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256 } from "../../src/core/identity.js";
@@ -12,6 +12,7 @@ import {
   createRenderArtifactTool,
 } from "../../src/application/comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
+import { comparisonMediaHrefs } from "../../src/application/comparison-publication.js";
 import { ARTIFACT_RENDERER_VERSION, createFakeArtifactRenderer } from "../../src/infrastructure/artifact-renderer.js";
 import { DEFAULT_RENDER_VIEWPORT } from "../../src/infrastructure/artifact-render-types.js";
 
@@ -285,6 +286,31 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   assert.notEqual(second.draftDigest, first.draftDigest);
 });
 
+test("preview_report rejects an unpublishable draft before rendering", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-preview-preflight-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  const draft = '<!doctype html><html><body><h1 data-slot="headline">Result</h1><section data-agent-zone="comparison">Difference</section><section data-agent-zone="details"></section></body></html>';
+  await writeFile(join(root, "report.html"), draft);
+  let renderCalls = 0;
+  const { preflightComparisonDraft } = await import("../../src/application/comparison-draft-preflight.js");
+  const tool = createPreviewReportTool({
+    catalog: createEphemeralRenderCatalog({ sources: [], mediaRoot: root, reviewRoot: join(root, "review") }),
+    attemptRoot: root,
+    preflightDraft: () => preflightComparisonDraft(root),
+    prepareReportHtml: async () => { throw new Error("invalid draft must not be prepared"); },
+    render: async () => { renderCalls++; throw new Error("invalid draft must not be rendered"); },
+  });
+  const result = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as { status: string; publicationStructure: string; message: string; draftDigest: string };
+  assert.equal(result.status, "invalid_report");
+  assert.equal(result.publicationStructure, "invalid");
+  assert.match(result.message, /data-agent-slot:headline/);
+  assert.equal(result.draftDigest, sha256(draft));
+  assert.equal(renderCalls, 0);
+});
+
 test("materializeComparisonReportPreview writes preview.html without touching draft path bytes contract", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-preview-materialize-"));
   t.after(async () => {
@@ -314,6 +340,122 @@ test("materializeComparisonReportPreview writes preview.html without touching dr
   assert.doesNotMatch(prepared.html, /data-media-ref=/);
   assert.equal(await readFile(join(root, "report.html"), "utf8"), draft);
   assert.match(await readFile(prepared.htmlPath, "utf8"), /src="media\/a\.png"/);
+});
+
+test("preview copies only referenced media and rejects changed registered bytes", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-preview-selective-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  await mkdir(join(root, "media"), { recursive: true });
+  await writeFile(join(root, "media", "used.png"), PNG_A);
+  await writeFile(join(root, "media", "unused.png"), PNG_B);
+  await writeFile(join(root, "report.html"), '<section data-agent-zone="comparison"><img data-media-ref="media-01"></section>');
+  const media = [
+    { ref: "media:used", shortRef: "media-01", side: "candidate" as const, inspectPath: "media/used.png", reportHref: "media/used.png", mediaType: "image/png", available: true, contentHash: sha256(PNG_A) },
+    { ref: "media:unused", shortRef: "media-02", side: "candidate" as const, inspectPath: "media/unused.png", reportHref: "media/unused.png", mediaType: "image/png", available: true, contentHash: sha256(PNG_B) },
+  ];
+  const prepared = await materializeComparisonReportPreview({ attemptRoot: root, media, catalogRevision: 1 });
+  assert.deepEqual(comparisonMediaHrefs(prepared.html), ["media/used.png"]);
+  assert.equal((await readFile(join(prepared.outputRoot, "media", "used.png"))).equals(PNG_A), true);
+  await assert.rejects(readFile(join(prepared.outputRoot, "media", "unused.png")));
+  await writeFile(join(root, "media", "used.png"), PNG_B);
+  await assert.rejects(materializeComparisonReportPreview({ attemptRoot: root, media, catalogRevision: 1 }), /changed after registration/);
+});
+
+test("preview accepts media within an attempt reached through a directory link", async (t) => {
+  const parent = await mkdtemp(join(tmpdir(), "reprise-preview-linked-root-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(parent, { recursive: true, force: true });
+  });
+  const root = join(parent, "attempt");
+  const linkedRoot = join(parent, "linked-attempt");
+  await mkdir(join(root, "media"), { recursive: true });
+  await writeFile(join(root, "media", "used.png"), PNG_A);
+  await writeFile(join(root, "report.html"), '<section data-agent-zone="comparison"><img data-media-ref="media-01"></section>');
+  await symlink(root, linkedRoot, process.platform === "win32" ? "junction" : "dir");
+
+  const prepared = await materializeComparisonReportPreview({
+    attemptRoot: linkedRoot,
+    media: [{ ref: "media:used", shortRef: "media-01", side: "candidate", inspectPath: "media/used.png", reportHref: "media/used.png", mediaType: "image/png", available: true, contentHash: sha256(PNG_A) }],
+    catalogRevision: 1,
+  });
+  assert.equal((await readFile(join(prepared.outputRoot, "media", "used.png"))).equals(PNG_A), true);
+  assert.match(await readFile(prepared.htmlPath, "utf8"), /src="media\/used\.png"/);
+});
+
+test("preview does not load registered media outside the attempt root", async (t) => {
+  const parent = await mkdtemp(join(tmpdir(), "reprise-preview-boundary-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(parent, { recursive: true, force: true });
+  });
+  const root = join(parent, "attempt");
+  await mkdir(root);
+  await writeFile(join(parent, "outside.png"), PNG_A);
+  await writeFile(join(root, "report.html"), '<section data-agent-zone="comparison"><img data-media-ref="media-01"></section>');
+  const prepared = await materializeComparisonReportPreview({
+    attemptRoot: root,
+    media: [{ ref: "media:outside", shortRef: "media-01", side: "candidate", inspectPath: "media/outside.png", reportHref: "../outside.png", mediaType: "image/png", available: true, contentHash: sha256(PNG_A) }],
+    catalogRevision: 1,
+  });
+  assert.deepEqual(comparisonMediaHrefs(prepared.html), []);
+  await assert.rejects(readFile(join(prepared.outputRoot, "outside.png")));
+});
+
+test("preview render cache invalidates on draft, catalog, viewport, media, and missing PNG", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-preview-cache-"));
+  t.after(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+  await mkdir(join(root, "media"), { recursive: true });
+  await writeFile(join(root, "media", "used.png"), PNG_A);
+  const draft = '<section data-agent-zone="comparison"><img data-media-ref="media-01"></section>';
+  await writeFile(join(root, "report.html"), draft);
+  let revision = 1;
+  let renderCalls = 0;
+  let lastPng = "";
+  const media = [{ ref: "media:used", shortRef: "media-01", side: "candidate" as const, inspectPath: "media/used.png", reportHref: "media/used.png", mediaType: "image/png", available: true, contentHash: sha256(PNG_A) }];
+  const catalog = createEphemeralRenderCatalog({ sources: [], mediaRoot: join(root, "media"), reviewRoot: join(root, "review", "media") });
+  const tool = createPreviewReportTool({
+    catalog, attemptRoot: root,
+    preflightDraft: async () => ({ digest: sha256(await readFile(join(root, "report.html"))) }),
+    prepareReportHtml: () => materializeComparisonReportPreview({ attemptRoot: root, media, catalogRevision: revision }),
+    render: createFakeArtifactRenderer(async (request) => {
+      renderCalls += 1;
+      await mkdir(request.outputRoot, { recursive: true });
+      lastPng = join(request.outputRoot, "frame.png");
+      await writeFile(lastPng, PNG_B);
+      return { ok: true, frames: [{ sampleTimeMs: 0, actualTimeMs: 0, pngPath: lastPng, byteLength: PNG_B.byteLength, contentHash: sha256(PNG_B) }], diagnostics: [], measured: { loadMs: 1, viewport: request.viewport, origin: "fake://preview" } };
+    }),
+  });
+  const call = async (params: unknown = {}) => JSON.parse((await tool.execute(params, new AbortController().signal)).content) as { status: string; previewDigest: string };
+  const first = await call();
+  assert.deepEqual(await call(), first);
+  assert.equal(renderCalls, 1);
+  await call({ viewport: { width: 900, height: 700 } });
+  assert.equal(renderCalls, 2);
+  await writeFile(join(root, "report.html"), `${draft}\n<p>edited</p>`);
+  await call();
+  assert.equal(renderCalls, 3);
+  revision += 1;
+  await call();
+  assert.equal(renderCalls, 4);
+  await writeFile(join(root, "media", "used.png"), PNG_B);
+  media[0]!.contentHash = sha256(PNG_B);
+  await call();
+  assert.equal(renderCalls, 5);
+  const { rm } = await import("node:fs/promises");
+  await rm(lastPng);
+  await call();
+  assert.equal(renderCalls, 6);
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await assert.rejects(tool.execute({}, cancelled.signal));
+  assert.equal(renderCalls, 6);
 });
 
 test("Host catalog render_artifact no longer returns capability_unavailable stub", async (t) => {
@@ -543,10 +685,12 @@ test("Host preview_report mints review-* without polluting comparison media allo
       evidence: join(root, "evidence"),
     },
   });
+  let renderCalls = 0;
   const tool = createPreviewReportTool({
     catalog: renderCatalog,
     attemptRoot: root,
     render: createFakeArtifactRenderer(async (request) => {
+      renderCalls += 1;
       await mkdir(request.outputRoot, { recursive: true });
       const pngPath = join(request.outputRoot, "preview.png");
       await writeFile(pngPath, PNG_B);
@@ -585,6 +729,14 @@ test("Host preview_report mints review-* without polluting comparison media allo
     mediaBefore,
   );
   assert.equal(catalog.snapshot().media.some((item) => /^review-/.test(item.shortRef ?? "")), false);
+  const repeated = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as { previewMedia: { shortRef: string } };
+  assert.equal(repeated.previewMedia.shortRef, payload.previewMedia.shortRef);
+  assert.equal(renderCalls, 1);
+  const { rm } = await import("node:fs/promises");
+  await rm(join(root, "review", "media", `${payload.previewMedia.shortRef}.png`));
+  const restored = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as { previewMedia: { shortRef: string } };
+  assert.notEqual(restored.previewMedia.shortRef, payload.previewMedia.shortRef);
+  assert.equal(renderCalls, 1);
 });
 
 test("media-* SVG/HTML reportHref uses media subtree bundleRoot, not attemptRoot", async (t) => {

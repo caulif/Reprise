@@ -7,4 +7,4 @@ Reprise
  ❯ 搜索当前已加载记录
  选择历史对话。Enter 核对任务；在核对页按 Enter 准备任务文件。
  已加载 2 个项目、1 个会话。
- [↑↓] 选择  [Enter] 查看  [type] 搜索  [Ctrl+N] 还有更多  [Ctrl+R] 刷新  [Backspace] 项目  [Esc] 返回
+ [Enter] 查看  [type] 搜索  [Ctrl+N] 还有更多  [Ctrl+R] 刷新  [Backspace] 项目  [Esc] 返回

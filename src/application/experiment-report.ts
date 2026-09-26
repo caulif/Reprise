@@ -47,6 +47,7 @@ import {
   verifyAndRenderComparisonReport,
 } from "./comparison-publication.js";
 import { withComparisonShellDeny } from "./comparison-shell-deny.js";
+import { preflightComparisonDraft } from "./comparison-draft-preflight.js";
 
 export { comparisonCandidateMount };
 
@@ -526,7 +527,13 @@ async function invokeCompare(
     comparisonTools(input, attemptRoot, allowBinary, catalog, draft),
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
-    { getEvidenceCatalog: () => catalog.snapshot(), getSubmittedResult: () => draft.completedResult(), getSubmissionFailure: () => draft.failureReason() },
+    {
+      getEvidenceCatalog: () => catalog.snapshot(),
+      getSubmittedResult: () => draft.completedResult(),
+      getSubmissionFailure: () => draft.failureReason(),
+      preflightDraft: () => preflightComparisonDraft(attemptRoot),
+      enforcePhaseBoundaries: true,
+    },
   );
   return { result, deliveredImageContentHashes };
 }
@@ -596,6 +603,7 @@ function comparisonTools(
       catalog: renderCatalog,
       attemptRoot,
       onPreviewSuccess: (prepared) => draft.recordPreview(prepared),
+      preflightDraft: () => preflightComparisonDraft(attemptRoot),
       prepareReportHtml: async () => {
         const snap = catalog.snapshot();
         return materializeComparisonReportPreview({

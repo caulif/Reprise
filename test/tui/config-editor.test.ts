@@ -205,6 +205,15 @@ test('config page keeps draft, credentials, and connection test as separate line
   assert.deepEqual(hints.find((item) => item[0] === 'Ctrl+T'), ['Ctrl+T', 'Test connection (calls model)']);
 });
 
+test('invalid config fields retain an explicit error marker in draft and editor', () => {
+  const theme = createTheme(120, false);
+  const invalid = { ...draft, baseUrl: 'not-a-url' };
+  const selected = visibleConfigItems(draft.kind).indexOf('base URL');
+  const model = { draft: invalid, selected, editing: false, buffer: '', dirty: true, saved: false };
+  assert.match(renderConfig(theme, 120, model).join('\n'), /✗ Invalid URL|✗ invalid URL|✗ 无效的 URL/i);
+  assert.match(renderConfig(theme, 120, { ...model, editing: true, buffer: 'not-a-url' }).join('\n'), /✗ Invalid URL|✗ invalid URL|✗ 无效的 URL/i);
+});
+
 test('busy config disables repeated connection tests without starting another action', () => {
   const busy = { draft, selected: 0, editing: false, buffer: '', cursor: 0, providers: [], models: [], busy: true, locale: 'en' as const };
   const blocked = handleConfigInput(busy, '\x14', refresh);

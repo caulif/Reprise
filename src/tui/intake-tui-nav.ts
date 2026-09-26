@@ -251,6 +251,7 @@ export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
       page: this.page,
       locale: this.locale,
       mode: {
+        processExpanded: this.processExpanded,
         finding: this.finding,
         reading: this.readingMode,
         preparing,
@@ -258,7 +259,7 @@ export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
         findAllowed: !preparing,
         helpOpen: false,
       },
-      artifacts: artifactsFromResult(this.result),
+      artifacts: this.processExpanded ? {} : artifactsFromResult(this.result),
     });
     if (typeof this.tui.showOverlay === "function") {
       this.hideHelp();

@@ -1,9 +1,12 @@
+import { mkdir, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { ArtifactRenderer, RenderViewport } from "../infrastructure/artifact-render-types.js";
 import { ARTIFACT_RENDERER_VERSION, DEFAULT_RENDER_VIEWPORT, RENDER_LIMITS } from "../infrastructure/artifact-render-types.js";
 import { renderFrozenArtifact } from "../infrastructure/artifact-renderer.js";
+import { sha256 } from "../core/identity.js";
+import { pathContainedBy } from "../core/paths.js";
 import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/agent/host.js";
 
 /** Narrow port owned by B3 catalog; B4 tools only call these methods. */
@@ -93,6 +96,7 @@ export type ComparisonPreviewReportToolDeps = ComparisonRenderToolBaseDeps & {
   /** Prepare draft HTML with current catalog revision (B3/B6 share this). */
   prepareReportHtml: () => Promise<PreparedReportPreview>;
   onPreviewSuccess?: (prepared: PreparedReportPreview) => void;
+  preflightDraft?: () => Promise<{ digest: string; error?: string }>;
 };
 
 export type PreparedReportPreview = {
@@ -101,7 +105,15 @@ export type PreparedReportPreview = {
   draftDigest: string;
   preparedDigest: string;
   catalogRevision: number;
+  dependencyDigest: string;
   outputRoot: string;
+};
+
+type PreviewCacheEntry = {
+  payload: Record<string, unknown>;
+  pngPath: string;
+  contentHash: string;
+  registration: RegisterDerivedMediaInput;
 };
 
 export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): AgentToolDefinition {
@@ -203,6 +215,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
 
 export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): AgentToolDefinition {
   const render = deps.render ?? renderFrozenArtifact;
+  const cache = new Map<string, PreviewCacheEntry>();
   return {
     name: "preview_report",
     description:
@@ -212,77 +225,113 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
       if (!Value.Check(PreviewReportParamsSchema, params)) {
         return textResult({ status: "invalid_request", message: "parameters failed schema check" });
       }
+      const preflight = await deps.preflightDraft?.();
+      if (preflight?.error) {
+        return textResult({ status: "invalid_report", publicationStructure: "invalid", draftDigest: preflight.digest, message: preflight.error });
+      }
       const prepared = await deps.prepareReportHtml();
       const viewport = resolveViewport(params.viewport);
-      const rendered = await render({
-        bundleRoot: prepared.outputRoot,
-        entryRelativePath: "preview.html",
+      signal.throwIfAborted();
+      const cacheKey = sha256(JSON.stringify({
+        dependencyDigest: prepared.dependencyDigest,
         viewport,
-        sampleTimesMs: [0],
-        outputRoot: join(deps.attemptRoot, "review", "render"),
-        signal,
-      });
-      if (!rendered.ok) {
-        return textResult({
-          status: rendered.failure.kind,
-          revision: prepared.catalogRevision,
-          draftDigest: prepared.draftDigest,
-          preparedDigest: prepared.preparedDigest,
-          failure: rendered.failure,
-          diagnostics: rendered.diagnostics,
-        });
+        rendererVersion: ARTIFACT_RENDERER_VERSION,
+        sampleTimeMs: 0,
+      }));
+      const cached = await cachedReportPreview(cache, cacheKey, deps.catalog);
+      if (cached) {
+        deps.onPreviewSuccess?.(prepared);
+        return textResult(cached);
       }
-      const frame = rendered.frames[0];
-      if (!frame) {
-        return textResult({
-          status: "capture_failed",
-          message: "no preview frame",
-          revision: prepared.catalogRevision,
-          draftDigest: prepared.draftDigest,
-          preparedDigest: prepared.preparedDigest,
-        });
-      }
-      const registered = await deps.catalog.registerDerivedMedia({
-        side: "host",
-        pngPath: frame.pngPath,
-        label: "report-preview",
-        sourceRef: "report.html",
-        contentHash: frame.contentHash,
-        kind: "report_review",
-        derivation: {
-          rendererVersion: ARTIFACT_RENDERER_VERSION,
-          viewport: rendered.measured.viewport,
-          sampleTimeMs: 0,
-          actualTimeMs: frame.actualTimeMs,
-          capturedAt: (deps.now ?? (() => new Date()))().toISOString(),
-        },
-      });
-      if (!registered.ok) {
-        return textResult({
-          status: "capture_failed",
-          revision: prepared.catalogRevision,
-          draftDigest: prepared.draftDigest,
-          preparedDigest: prepared.preparedDigest,
-          code: registered.code,
-          message: registered.message,
-        });
-      }
-      assertEvidenceShortRef(registered.shortRef, "report_review");
-      const mechanics = inspectPreparedReportMechanics(prepared.html);
-      deps.onPreviewSuccess?.(prepared);
-      return textResult({
-        status: "ok",
-        revision: prepared.catalogRevision,
-        draftDigest: prepared.draftDigest,
-        preparedDigest: prepared.preparedDigest,
-        previewDigest: frame.contentHash,
-        previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review" },
-        mechanics,
-        diagnostics: rendered.diagnostics,
-        note: "preview media uses review-* refs only; it is not baseline/candidate comparison evidence",
-      });
+      const result = await renderReportPreview({ deps, render, cache, cacheKey, prepared, viewport, signal, preflight: Boolean(preflight) });
+      if ((JSON.parse(result.content) as { status?: string }).status === 'ok') deps.onPreviewSuccess?.(prepared);
+      return result;
     },
   };
+}
+
+async function cachedReportPreview(
+  cache: Map<string, PreviewCacheEntry>,
+  key: string,
+  catalog: ComparisonRenderCatalogPort,
+): Promise<Record<string, unknown> | undefined> {
+  const cached = cache.get(key);
+  if (!cached) return undefined;
+  const bytes = await readFile(cached.pngPath).catch(() => undefined);
+  if (bytes && sha256(bytes) === cached.contentHash) {
+    const registered = await catalog.registerDerivedMedia(cached.registration);
+    if (registered.ok) {
+      return {
+        ...cached.payload,
+        previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review" },
+      };
+    }
+  }
+  cache.delete(key);
+  return undefined;
+}
+
+async function renderReportPreview(input: {
+  deps: ComparisonPreviewReportToolDeps;
+  render: ArtifactRenderer;
+  cache: Map<string, PreviewCacheEntry>;
+  cacheKey: string;
+  prepared: PreparedReportPreview;
+  viewport: RenderViewport;
+  signal: AbortSignal;
+  preflight: boolean;
+}): Promise<AgentToolResult> {
+  const { deps, render, cache, cacheKey, prepared, viewport, signal, preflight } = input;
+  const outputRoot = join(deps.attemptRoot, "review", "render", cacheKey);
+  await mkdir(outputRoot, { recursive: true });
+  if (!pathContainedBy(await realpath(deps.attemptRoot), await realpath(outputRoot))) {
+    throw new Error("Comparison preview render output escapes attempt root.");
+  }
+  const rendered = await render({
+    bundleRoot: prepared.outputRoot,
+    entryRelativePath: "preview.html",
+    viewport,
+    sampleTimesMs: [0],
+    outputRoot,
+    signal,
+  });
+  if (!rendered.ok) return textResult({
+    status: rendered.failure.kind, revision: prepared.catalogRevision,
+    draftDigest: prepared.draftDigest, preparedDigest: prepared.preparedDigest,
+    failure: rendered.failure, diagnostics: rendered.diagnostics,
+  });
+  const frame = rendered.frames[0];
+  if (!frame) return textResult({
+    status: "capture_failed", message: "no preview frame", revision: prepared.catalogRevision,
+    draftDigest: prepared.draftDigest, preparedDigest: prepared.preparedDigest,
+  });
+  const registration: RegisterDerivedMediaInput = {
+    side: "host", pngPath: frame.pngPath, label: "report-preview", sourceRef: "report.html",
+    contentHash: frame.contentHash, kind: "report_review",
+    derivation: {
+      rendererVersion: ARTIFACT_RENDERER_VERSION, viewport: rendered.measured.viewport,
+      sampleTimeMs: 0, actualTimeMs: frame.actualTimeMs,
+      capturedAt: (deps.now ?? (() => new Date()))().toISOString(),
+    },
+  };
+  const registered = await deps.catalog.registerDerivedMedia(registration);
+  if (!registered.ok) return textResult({
+    status: "capture_failed", revision: prepared.catalogRevision,
+    draftDigest: prepared.draftDigest, preparedDigest: prepared.preparedDigest,
+    code: registered.code, message: registered.message,
+  });
+  assertEvidenceShortRef(registered.shortRef, "report_review");
+  const payload = {
+    status: "ok", publicationStructure: preflight ? "valid" : "unchecked",
+    revision: prepared.catalogRevision, draftDigest: prepared.draftDigest,
+    preparedDigest: prepared.preparedDigest, previewDigest: frame.contentHash,
+    previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review" },
+    mechanics: inspectPreparedReportMechanics(prepared.html), diagnostics: rendered.diagnostics,
+    note: "preview media uses review-* refs only; it is not baseline/candidate comparison evidence",
+  };
+  cache.set(cacheKey, { payload, pngPath: frame.pngPath, contentHash: frame.contentHash, registration });
+  if (cache.size > 8) cache.delete(cache.keys().next().value!);
+  return textResult(payload);
 }
 
 function summarizeLimitations(diagnostics: readonly { code: string; message: string }[]): string[] {

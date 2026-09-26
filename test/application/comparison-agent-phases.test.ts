@@ -86,6 +86,148 @@ test("Comparison reuses one Session for an attempt and isolates different attemp
   assert.equal(comparison.timeoutMs, 0);
 });
 
+test("Comparison enforces report-writing and preview stages", async () => {
+  const observed: string[] = [];
+  const agent = new ComparisonAgent({
+    host: new AgentHost({ createSession: (input) => ({
+      append: async ({ content }) => {
+        const write = input.tools.find((tool) => tool.name === "write");
+        const preview = input.tools.find((tool) => tool.name === "preview_report");
+        const shell = input.tools.find((tool) => tool.name === "shell_exec");
+        const signal = new AbortController().signal;
+        const writeResult = await write?.execute({ path: "report.html", content: "draft" }, signal);
+        const previewResult = await preview?.execute({}, signal);
+        const shellResult = await shell?.execute({}, signal);
+        observed.push(`${writeResult?.content}|${previewResult?.content}|${shellResult?.content}`);
+        return content.includes("Review the actual draft")
+          ? JSON.stringify({ status: "completed", evidenceRefs: [] })
+          : "done";
+      },
+      cancel() {},
+    }) }),
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+  });
+  const tools = [
+    { name: "write", description: "write", parameters: Type.Object({}), execute: async () => ({ content: "wrote" }) },
+    { name: "preview_report", description: "preview", parameters: Type.Object({}), execute: async () => ({ content: "previewed" }) },
+    { name: "shell_exec", description: "shell", parameters: Type.Object({}), execute: async () => ({ content: "ran shell" }) },
+  ];
+  const result = await agent.compare(context(), tools, undefined, undefined, { enforcePhaseBoundaries: true });
+  assert.equal(result.status, "completed");
+  assert.equal(observed.length, 4);
+  assert.match(observed[0] ?? "", /phase_not_ready.*phase_not_ready.*phase_not_ready/);
+  assert.match(observed[1] ?? "", /phase_not_ready.*phase_not_ready.*ran shell/);
+  assert.match(observed[2] ?? "", /wrote.*phase_not_ready.*ran shell/);
+  assert.equal(observed[3], "wrote|previewed|ran shell");
+});
+
+test("Comparison repairs a structurally invalid draft before review and stops on no progress", async () => {
+  for (const repairSucceeds of [true, false]) {
+    let draft = { digest: "bad", error: "Comparison report requires exactly one data-agent-slot:headline." } as { digest: string; error?: string };
+    const prompts: string[] = [];
+    const agent = new ComparisonAgent({
+      host: new AgentHost({ createSession: () => ({
+        append: async ({ content }) => {
+          prompts.push(content);
+          if (content.includes("cannot be published") && repairSucceeds) draft = { digest: "good" };
+          return content.includes("Review the actual draft")
+            ? JSON.stringify({ status: "completed", evidenceRefs: [] })
+            : "done";
+        },
+        cancel() {},
+      }) }),
+      timeoutMs: 0,
+      maxRepairAttempts: 0,
+    });
+    const result = await agent.compare(context(), [], undefined, undefined, { preflightDraft: async () => draft });
+    assert.equal(result.status, repairSucceeds ? "completed" : "failed");
+    assert.equal(prompts.filter((prompt) => prompt.includes("cannot be published")).length, 1);
+    assert.equal(prompts.length, repairSucceeds ? 5 : 4);
+    if (result.status === "failed") assert.equal(result.failure.code, "report_incomplete");
+  }
+});
+
+test("Comparison rechecks the final draft after review edits", async () => {
+  let draft = { digest: "composed" } as { digest: string; error?: string };
+  const prompts: string[] = [];
+  const agent = new ComparisonAgent({
+    host: new AgentHost({ createSession: () => ({
+      append: async ({ content }) => {
+        prompts.push(content);
+        if (content.includes("Review the actual draft") && draft.digest === "composed") {
+          draft = { digest: "broken-review", error: "Comparison report requires exactly one data-agent-slot:headline." };
+        } else if (content.includes("cannot be published")) {
+          draft = { digest: "repaired-review" };
+        }
+        return content.includes("Review the actual draft")
+          ? JSON.stringify({ status: "completed", evidenceRefs: [] })
+          : "done";
+      },
+      cancel() {},
+    }) }),
+    timeoutMs: 0,
+    maxRepairAttempts: 0,
+  });
+  const result = await agent.compare(context(), [], undefined, undefined, { preflightDraft: async () => draft });
+  assert.equal(result.status, "completed");
+  assert.equal(prompts.filter((prompt) => prompt.includes("Review the actual draft")).length, 2);
+  assert.equal(prompts.filter((prompt) => prompt.includes("cannot be published")).length, 1);
+});
+
+test("Comparison repairs an invalid envelope after rechecking a repaired draft", async () => {
+  for (const invalidEnvelope of ["not-json", JSON.stringify({ status: "completed", evidenceRefs: ["ev-99"] })]) {
+    let draft = { digest: "composed" } as { digest: string; error?: string };
+    let reviewCount = 0;
+    let reportReads = 0;
+    let toolsEnabled = true;
+    const prompts: string[] = [];
+    const toolModes: boolean[] = [];
+    const agent = new ComparisonAgent({
+      host: new AgentHost({ createSession: () => ({
+        setToolsEnabled(enabled) { toolsEnabled = enabled; },
+        append: async ({ content }) => {
+          prompts.push(content);
+          toolModes.push(toolsEnabled);
+          if (content.includes("Review the actual draft")) {
+            reviewCount += 1;
+            if (reviewCount === 1) {
+              draft = { digest: "broken-review", error: "Comparison report requires exactly one data-agent-slot:headline." };
+              return JSON.stringify({ status: "completed", evidenceRefs: ["ev-01"] });
+            }
+            return invalidEnvelope;
+          }
+          if (content.includes("cannot be published")) draft = { digest: "repaired-review" };
+          return content.includes("The page is already written")
+            ? JSON.stringify({ status: "completed", evidenceRefs: ["ev-01"] })
+            : "done";
+        },
+        cancel() {},
+      }) }),
+      timeoutMs: 0,
+      maxRepairAttempts: 0,
+    });
+    const tools = [{
+      name: "read",
+      description: "read report",
+      parameters: Type.Object({ path: Type.String() }),
+      execute: async () => { reportReads += 1; return { content: "repaired report" }; },
+    }];
+    const result = await agent.compare(
+      { ...context(), shortEvidenceRefs: ["ev-01"] }, tools, undefined, undefined,
+      { preflightDraft: async () => draft },
+    );
+    assert.equal(result.status, "completed", invalidEnvelope);
+    if (result.status === "completed") assert.deepEqual(result.value.evidenceRefs, ["ev-01"]);
+    assert.equal(draft.digest, "repaired-review");
+    assert.equal(reviewCount, 2);
+    assert.equal(reportReads, 1);
+    assert.equal(prompts.length, 7);
+    assert.match(prompts[6] ?? "", /Do not read or modify report\.html/);
+    assert.equal(toolModes[6], false);
+  }
+});
+
 test("Comparison refuses to start a Session without attemptId", async () => {
   const comparison = new ComparisonAgent({
     host: new AgentHost({ createSession: () => ({ append: async () => "", cancel() {} }) }),

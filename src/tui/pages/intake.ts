@@ -339,18 +339,20 @@ function inspectionFrame(theme: Theme, width: number, model: InspectionModel, he
 }
 
 export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  if (model?.searching) return [['Esc', t(locale, 'hintClearSearch')], ['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintOpenProject')]];
+  const count = model?.level === 'products' ? model.products?.length ?? 0 : model?.level === 'projects' ? model.projects.length : model?.sessions.length ?? 0;
+  const selectHint = count > 1 ? [['↑↓', t(locale, 'hintSelect')] as const] : [];
+  if (model?.searching) return [['Esc', t(locale, 'hintClearSearch')], ...selectHint, ['Enter', t(locale, 'hintOpenProject')]];
   if (model?.level === 'products') {
-    return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'openProduct')], ['Esc', t(locale, 'hintHome')]];
+    return [...selectHint, ['Enter', t(locale, 'openProduct')], ['Esc', t(locale, 'hintHome')]];
   }
   if (model?.level === 'projects') {
-    return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintOpenProject')], ['type', t(locale, 'hintSearch')], ['Ctrl+F', t(locale, 'hintFilterEligible')], ['Ctrl+N', t(locale, 'moreAvailable')], ['Ctrl+R', t(locale, 'refreshSessions')], ['Esc', t(locale, 'hintHome')]];
+    return [...selectHint, ['Enter', t(locale, 'hintOpenProject')], ['type', t(locale, 'hintSearch')], ['Ctrl+F', t(locale, 'hintFilterEligible')], ['Ctrl+N', t(locale, 'moreAvailable')], ['Ctrl+R', t(locale, 'refreshSessions')], ['Esc', t(locale, 'hintHome')]];
   }
-  return [['↑↓', t(locale, 'hintSelect')], ['Enter', t(locale, 'hintInspect')], ['type', t(locale, 'hintSearch')], ['Ctrl+N', t(locale, 'moreAvailable')], ['Ctrl+R', t(locale, 'refreshSessions')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
+  return [...selectHint, ['Enter', t(locale, 'hintInspect')], ['type', t(locale, 'hintSearch')], ['Ctrl+N', t(locale, 'moreAvailable')], ['Ctrl+R', t(locale, 'refreshSessions')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
 }
 
 export function inspectionHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
-  return [['Enter', t(locale, 'hintFreeze')], ['d', t(locale, 'hintExpandOutcome')], ['↑↓', t(locale, 'hintSelect')], ['Esc', t(locale, 'hintBack')]];
+  return [['Enter', t(locale, 'hintFreeze')], ['d', t(locale, 'hintExpandOutcome')], ['Esc', t(locale, 'hintBack')]];
 }
 
 

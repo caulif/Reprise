@@ -13,7 +13,7 @@ Reprise
     语言               中文  [Enter] 切换
  
   ● 保存状态：未保存草稿
-  ⚠ 凭据：缺失或未设置
+  ● 凭据：缺失或未设置
   ● 连接测试：当前草稿尚未测试
  Editing API key. Type to change the visible value. Enter applies it. Esc keeps the previous value.
  [Enter] 应用  [Ctrl+U] 清空  [Esc] 保留原值

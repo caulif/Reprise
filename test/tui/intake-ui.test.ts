@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTheme } from '../../src/tui/theme.js';
 import {
-  groupSessionsByProject, matchesIntakeQuery, projectLabel, renderInspection, renderSessions, sessionListTitle, sessionTitle, taskDisplaySummary, formatDiscoverySignals,
+  groupSessionsByProject, inspectionHints, matchesIntakeQuery, projectLabel, renderInspection, renderSessions, sessionListTitle, sessionTitle, taskDisplaySummary, formatDiscoverySignals,
+  sessionsHints,
   selectDefaultProjectIndex,
 } from '../../src/tui/pages/intake.js';
 import { renderWorkbench } from '../../src/tui/workbench.js';
@@ -178,6 +179,13 @@ test('inspection freezes the whole session from the first user task', () => {
   assert.match(ignoredSelection, /Task text:/);
   assert.match(ignoredSelection, /Fix the bug\./);
   assert.match(ignoredSelection, /Later user requests \(1\)[\s\S]*1\.\s+Verify the regression\./);
+});
+
+test('single-decision inspection does not advertise selection keys', () => {
+  assert.deepEqual(inspectionHints('zh').map(([key]) => key), ['Enter', 'd', 'Esc']);
+  const oneProject = { level: 'projects', projects: [{ key: 'one', label: 'one', sessions: [], latestAt: '' }], sessions: [], selected: 0, filterEligible: false, query: '', searching: false } as const;
+  assert.ok(!sessionsHints(oneProject, 'zh').some(([key]) => key === '↑↓'));
+  assert.ok(sessionsHints({ ...oneProject, projects: [...oneProject.projects, { key: 'two', label: 'two', sessions: [], latestAt: '' }] }, 'zh').some(([key]) => key === '↑↓'));
 });
 
 test('inspection start skips an injected instruction block', () => {

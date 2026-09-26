@@ -20,6 +20,7 @@ export type ActionId =
   | 'leave-reading'
   | 'enter-reading'
   | 'toggle-fold'
+  | 'read-page'
   | 'cycle-fold'
   | 'cycle-fold-prev'
   | 'compare'
@@ -52,6 +53,7 @@ export type UiAction = {
 };
 
 export type ActionMode = {
+  readonly processExpanded?: boolean;
   readonly finding?: boolean;
   readonly reading?: boolean;
   readonly preparing?: boolean;
@@ -107,9 +109,9 @@ export function listActions(ctx: ActionContext): readonly UiAction[] {
     case 'running':
       return runningActions(mode);
     case 'result':
-      return resultActions(mode, ctx.artifacts ?? {});
+      return mode.processExpanded ? processActions(mode) : resultActions(mode, ctx.artifacts ?? {});
     case 'confirm':
-      return confirmActions(mode);
+      return [...confirmActions(mode), action('read-page', 'hintScrollPage', ['pageup', 'pagedown'], 'readonly', 0)];
     case 'home':
       return [action('show-help', 'hintHelp', ['?'], 'readonly', 5)];
     case 'source':
@@ -125,6 +127,8 @@ export function listActions(ctx: ActionContext): readonly UiAction[] {
       return [
         action('back', 'hintBack', ['escape', 'b'], 'navigate', 30),
         action('show-help', 'hintHelp', ['?'], 'readonly', 5),
+        ...(ctx.page === 'history-detail' || ctx.page === 'recovery-review'
+          ? [action('read-page', 'hintScrollPage', ['pageup', 'pagedown'], 'readonly', 0)] : []),
       ];
     case 'error':
       return [action('home', 'hintHome', ['escape', 'enter', 'b'], 'navigate', 10)];
@@ -158,13 +162,31 @@ function runningActions(mode: ActionMode): readonly UiAction[] {
   }
   return [
     cancel,
-    action('start-find', 'hintFind', ['/'], 'readonly', 25),
-    action('follow', 'hintFollow', ['end'], 'navigate', 20),
-    action('toggle-fold', 'hintExpand', ['enter'], 'readonly', 15),
+    action('start-find', 'hintFind', ['/'], 'readonly', 0),
+    action('follow', 'hintFollow', ['end'], 'navigate', 0),
+    action('toggle-fold', 'hintExpand', ['enter'], 'readonly', 0),
     action('cycle-fold', 'hintCycleFold', ['tab'], 'readonly', 0),
     action('cycle-fold-prev', 'hintCycleFold', ['shift+tab'], 'readonly', 0),
     action('enter-reading', 'hintEnterReading', ['v'], 'navigate', 0),
     help,
+  ];
+}
+
+function processActions(mode: ActionMode): readonly UiAction[] {
+  if (mode.finding) return [
+    action('next-hit', 'hintNextHit', ['enter'], 'readonly', 0),
+    action('prev-hit', 'hintPrevHit', ['shift+enter'], 'readonly', 0),
+    action('clear-find', 'hintClearFind', ['escape'], 'navigate', 0),
+    action('show-help', 'hintHelp', ['?'], 'readonly', 5),
+  ];
+  return [
+    action('back', 'hintBack', ['escape'], 'navigate', 30),
+    action('start-find', 'hintFind', ['/'], 'readonly', 0),
+    action('toggle-fold', 'hintExpand', ['enter'], 'readonly', 0),
+    action('cycle-fold', 'hintCycleFold', ['tab'], 'readonly', 0),
+    action('follow', 'hintFollow', ['end'], 'navigate', 0),
+    action('read-page', 'hintScrollPage', ['pageup', 'pagedown'], 'readonly', 0),
+    action('show-help', 'hintHelp', ['?'], 'readonly', 5),
   ];
 }
 
@@ -178,6 +200,7 @@ function resultActions(mode: ActionMode, artifacts: ActionArtifacts): readonly U
   actions.push(action('toggle-details', 'resultDetails', ['d'], 'readonly', 0));
   actions.push(action('home', 'finishReview', ['escape', 'b'], 'navigate', 35));
   actions.push(action('show-help', 'hintHelp', ['?'], 'readonly', 1));
+  actions.push(action('read-page', 'hintScrollPage', ['pageup', 'pagedown'], 'readonly', 0));
   return actions;
 }
 
@@ -344,6 +367,7 @@ function padKey(keys: string): string {
 }
 
 function optionalMode(parts: {
+  processExpanded?: boolean;
   preparing?: boolean;
   comparing?: boolean;
   finding?: boolean;
@@ -357,6 +381,7 @@ function optionalMode(parts: {
   recoveryFailureAction?: ActionMode['recoveryFailureAction'];
 }): ActionMode {
   const mode: ActionMode = {};
+  if (parts.processExpanded !== undefined) Object.assign(mode, { processExpanded: parts.processExpanded });
   if (parts.preparing !== undefined) Object.assign(mode, { preparing: parts.preparing });
   if (parts.comparing !== undefined) Object.assign(mode, { comparing: parts.comparing });
   if (parts.finding !== undefined) Object.assign(mode, { finding: parts.finding });
