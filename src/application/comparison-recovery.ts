@@ -7,7 +7,7 @@ import type { ComparisonResult } from '../agents/comparison-agent.js';
 import { sha256, writeAtomic } from '../core/identity.js';
 import { SAFE_ID } from '../core/identity.js';
 import {
-  ComparisonBriefingContextSchema, ComparisonEvidenceCatalogSchema,
+  ComparisonBriefingContextSchema, ComparisonEvidenceCatalogSchema, ComparisonInvocationSchema,
   type ComparisonReportModel,
 } from '../core/schema.js';
 import { ExperimentStore } from '../infrastructure/store/experiment-store.js';
@@ -56,7 +56,7 @@ export async function inspectComparisonRecovery(input: {
 }): Promise<{
   ready: boolean; reason?: string; draftDigest: string; revision: number;
   experimentRoot: string; attemptRoot: string; html: string;
-  result: ComparisonResult; model?: ComparisonReportModel;
+  result: ComparisonResult; sessionId?: string; model?: ComparisonReportModel;
   media: import('../core/schema.js').ComparisonMediaRecord[];
 }> {
   if (!SAFE_ID.test(input.experimentId) || !SAFE_ID.test(input.attemptId)) throw new Error('Invalid experiment or attempt ID.');
@@ -78,20 +78,23 @@ export async function inspectComparisonRecovery(input: {
   const { headline, evidenceRefs } = reportContent(html);
   const result: ComparisonResult = { status: 'completed', reportPath: 'report.html', headline, evidenceRefs };
   const events = (await ExperimentStore.open(experimentRoot, input.experimentId)).events();
-  const previewed = events.some((event) => event.type === 'agent.tool_completed'
+  const previewed = events.find((event) => event.type === 'agent.tool_completed'
     && typeof event.payload === 'object' && event.payload !== null
     && (event.payload as Record<string, unknown>).attemptId === input.attemptId
     && (event.payload as Record<string, unknown>).tool === 'preview_report'
+    && typeof (event.payload as Record<string, unknown>).sessionId === 'string'
+    && ((event.payload as Record<string, unknown>).sessionId as string).length > 0
     && Value.Check(PreviewDetailsSchema, (event.payload as Record<string, unknown>).details)
     && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).draftDigest === draftDigest
     && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).revision === catalog.revision);
-  if (!previewed) return { ready: false, reason: 'No successful preview of this draft and catalog revision.', draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media };
+  if (!previewed) return { ready: false, reason: 'No successful preview with a session ID for this draft and catalog revision.', draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media };
+  const sessionId = (previewed.payload as { sessionId: string }).sessionId;
   const verified = await verifyAndRenderComparisonReport({
     html, hostTask: context.task.summary, facts: context.reportFacts, result,
     attemptRoot, evidence: links, media, deliveredImageContentHashes: new Set<string>(),
   });
   if ('failureClass' in verified) return { ready: false, reason: `${verified.code}: ${verified.message}`, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media };
-  return { ready: true, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html: verified.html, result, model: verified.model, media };
+  return { ready: true, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html: verified.html, result, sessionId, model: verified.model, media };
 }
 
 export async function publishRecoveredComparison(input: {
@@ -139,7 +142,8 @@ export async function publishRecoveredComparison(input: {
       if (prepared.model) await persistComparisonReportModel(checked.experimentRoot, prepared.model);
       await writeAtomic(reportPath, prepared.html);
     }
-    const invocation = { status: 'completed', value: { ...checked.result, status: input.status } };
+    const invocation = { status: 'completed', value: { ...checked.result, status: input.status }, sessionId: checked.sessionId };
+    if (!Value.Check(ComparisonInvocationSchema, invocation)) throw new Error('Recovered comparison result does not satisfy ComparisonInvocationSchema.');
     await writeAtomic(join(checked.experimentRoot, 'comparison.json'), `${JSON.stringify(invocation)}\n`);
     await store.append({
       type: 'comparison.recovered', operationId: `comparison-recovered-${input.attemptId}`,
