@@ -587,18 +587,33 @@ async function killBrowser(
   profileDir: string,
   diagnostics: RenderDiagnostic[],
 ): Promise<void> {
-  try {
-    if (process.platform === "win32") {
-      if (child.pid && child.exitCode === null && child.signalCode === null) {
-        await terminateWindowsProcessTree(child.pid);
+  if (process.platform === "win32") {
+    if (child.exitCode === null && !child.killed) {
+      try {
+        if (child.pid) {
+          await terminateWindowsProcessTree(child.pid);
+        }
+      } catch {
+        diagnostics.push({ code: "browser_kill_failed", message: "SIGTERM failed" });
       }
-    } else {
-      terminateProcessTree(child, true);
+      const exited = await waitExit(child, 3_000);
+      if (!exited) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          diagnostics.push({ code: "browser_kill_failed", message: "SIGKILL failed; process may linger" });
+        }
+        await waitExit(child, 1_000);
+      }
     }
-  } catch {
-    diagnostics.push({ code: "browser_kill_failed", message: "process tree termination failed" });
+  } else {
+    try {
+      terminateProcessTree(child, true);
+    } catch {
+      diagnostics.push({ code: "browser_kill_failed", message: "process tree termination failed" });
+    }
+    await waitExit(child, 3_000);
   }
-  await waitExit(child, 3_000);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await rm(profileDir, { recursive: true, force: true });
