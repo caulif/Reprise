@@ -95,6 +95,7 @@ export type ComparisonRenderToolBaseDeps = {
 export type ComparisonPreviewReportToolDeps = ComparisonRenderToolBaseDeps & {
   /** Prepare draft HTML with current catalog revision (B3/B6 share this). */
   prepareReportHtml: () => Promise<PreparedReportPreview>;
+  onPreviewSuccess?: (prepared: PreparedReportPreview) => void;
   preflightDraft?: () => Promise<{ digest: string; error?: string }>;
 };
 
@@ -238,8 +239,13 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
         sampleTimeMs: 0,
       }));
       const cached = await cachedReportPreview(cache, cacheKey, deps.catalog);
-      if (cached) return textResult(cached);
-      return renderReportPreview({ deps, render, cache, cacheKey, prepared, viewport, signal, preflight: Boolean(preflight) });
+      if (cached) {
+        deps.onPreviewSuccess?.(prepared);
+        return textResult(cached);
+      }
+      const result = await renderReportPreview({ deps, render, cache, cacheKey, prepared, viewport, signal, preflight: Boolean(preflight) });
+      if ((JSON.parse(result.content) as { status?: string }).status === 'ok') deps.onPreviewSuccess?.(prepared);
+      return result;
     },
   };
 }

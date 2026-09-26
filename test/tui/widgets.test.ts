@@ -500,9 +500,10 @@ test('help names the keys of the page it was opened on', () => {
   assert.doesNotMatch(inspection, /Request cancellation/);
 
   const result = helpLines('result').join('\n');
-  assert.match(result, /o\s+Open report/);
-  assert.match(result, /t\s+Open trace/);
-  assert.match(result, /w\s+Open replica/);
+  assert.match(result, /Enter\s+Activate/);
+  assert.match(result, /Open this run folder/);
+  assert.doesNotMatch(result, /o\s+Open report/);
+  assert.doesNotMatch(result, /t\s+Open trace|w\s+Open replica/);
   assert.doesNotMatch(result, /Find in canvas/);
   assert.doesNotMatch(result, /Test connection/);
 

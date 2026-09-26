@@ -5,6 +5,7 @@ import type { AgentLocale } from "../agents/language.js";
 import { createHarnessWorkflow } from "../application/experiment-workflow.js";
 import { formatCancelResult, requestCancel } from "../application/experiment-cancel.js";
 import { classifyCliError } from "../application/cli-error.js";
+import { inspectComparisonRecovery, publishRecoveredComparison } from "../application/comparison-recovery.js";
 import { CLI_EXIT, exitCodeForKind } from "../core/cli-protocol.js";
 import { runHeadlessCommand, type HeadlessContext } from "./headless.js";
 import { operatorLocaleFromFlag } from "./locale-flag.js";
@@ -73,6 +74,7 @@ export function helpText(): string {
     "  reprise prepare (--source-root <dir> --task-case <file.json> | --source-product <id> --source-path <path>) [--json|--jsonl]",
     "  reprise run (--source-root <dir> --task-case <file.json> | --scenario <experimentId>) [--product <id> --model <id>] [--json|--jsonl]",
     "  reprise compare (--experiment <id> | --source-root <dir> --task-case <file.json>) [--json|--jsonl]",
+    "  reprise recover-comparison --experiment <id> --attempt <id> [--data-dir <dir>] [--publish --status <completed|insufficient_evidence>]",
     "  reprise cancel <operationId|experimentId|runId> [--data-dir <dir>] [--json]",
     "  reprise [--help] [--version]",
     "",
@@ -88,6 +90,7 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
     assertSupportedNodeVersion();
     const command = argv[0];
     if (command === "cancel") return await runCancel(argv.slice(1), io);
+    if (command === "recover-comparison") return await runComparisonRecovery(argv.slice(1), io);
     if (command && QUERY_COMMANDS.has(command)) return await runQueryCommand(command, argv.slice(1), io);
     if (command === "prepare" || command === "run" || command === "compare") {
       return await runHeadlessCommand(command, argv.slice(1), io, context);
@@ -125,6 +128,38 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
     io.stderr(`Error: ${classified.message}`);
     return exitCodeForKind(classified.kind);
   }
+}
+
+async function runComparisonRecovery(args: readonly string[], io: CliIo): Promise<number> {
+  const parsed = parseArgs({
+    args: [...args],
+    options: { experiment: { type: 'string' }, attempt: { type: 'string' }, 'data-dir': { type: 'string' }, publish: { type: 'boolean' }, status: { type: 'string' } },
+    allowPositionals: false, strict: true,
+  });
+  const experimentId = parsed.values.experiment;
+  const attemptId = parsed.values.attempt;
+  if (!experimentId || !attemptId) {
+    io.stderr('Usage: reprise recover-comparison --experiment <id> --attempt <id> [--data-dir <dir>] [--publish]');
+    return CLI_EXIT.usage;
+  }
+  const input = { dataDir: parsed.values['data-dir'] ?? process.env.REPRISE_DATA_DIR ?? '.reprise', experimentId, attemptId };
+  const checked = await inspectComparisonRecovery(input);
+  if (!checked.ready) {
+    io.stdout(JSON.stringify({ ready: false, reason: checked.reason, draftDigest: checked.draftDigest, revision: checked.revision }));
+    return CLI_EXIT.failed;
+  }
+  if (parsed.values.publish) {
+    const status = parsed.values.status;
+    if (status !== 'completed' && status !== 'insufficient_evidence') {
+      io.stderr('--publish requires --status completed or --status insufficient_evidence.');
+      return CLI_EXIT.usage;
+    }
+    const published = await publishRecoveredComparison({ ...input, status });
+    io.stdout(JSON.stringify({ ready: true, published: true, reportPath: published.reportPath, draftDigest: published.draftDigest }));
+  } else {
+    io.stdout(JSON.stringify({ ready: true, published: false, draftDigest: checked.draftDigest, revision: checked.revision }));
+  }
+  return CLI_EXIT.ok;
 }
 
 async function runBenchmarkWorkbenchTui(input: { dataDir: string; sessionsRoot: string; sessionsRoots: Readonly<Record<string, string>>; now?: string; autoCompare?: boolean; locale?: AgentLocale }): Promise<void> {

@@ -2,6 +2,8 @@
 
 状态：accepted
 
+新写入路径由[草稿提交与版本发布](./2026-09-26-comparison-draft-publication.md)取代；本记录保留旧信封兼容背景。
+
 它替代[视觉优先版式](../archive/accepted-2026-09/2026-09-19-comparison-visual-first-card.md)中「卡面只允许 pair-pages + 至多三条 bullet、单侧必须留空、固定 visual→diffs 区域顺序」的 **Prompt 契约**；[可分享任务比较卡](./2026-09-09-comparison-shareable-task-card.md)的产品目标仍有效。Host 模板 DOM/`AGENT_ZONES` 与发布预处理由证据目录与报告区域包另行落地；本决定约束可执行 Prompt 与同 Session 证据闭环。
 
 ## 问题

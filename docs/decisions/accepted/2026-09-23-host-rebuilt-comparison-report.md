@@ -2,6 +2,8 @@
 
 状态：accepted
 
+旧整页草稿仍适用；新写入路径由[草稿提交与版本发布](./2026-09-26-comparison-draft-publication.md)取代。
+
 ## 问题
 
 Comparison Agent 可以编辑预置的 `report.html`。此前 Host 区一旦被改动，Agent 还需自行恢复并未挂载在工作区的模板快照；恢复失败会阻止已有合法 Agent 内容发布。失败诊断也可能把未经发布校验的草稿正文展示为可信结论。

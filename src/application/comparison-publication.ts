@@ -86,7 +86,7 @@ export function classifyComparisonFailure(input: {
   const message = failed?.message ?? "";
   const kind = failed?.kind ?? "";
   const code = failed?.code ?? "";
-  if (kind === "authentication" || kind === "rate_limited" || kind === "transient_network" || kind === "transient_upstream" || /\b529\b/.test(message)) {
+  if (code === "provider_failure" || kind === "authentication" || kind === "rate_limited" || kind === "transient_network" || kind === "transient_upstream" || /\b529\b/.test(message)) {
     return { failureClass: "provider", phase: input.reportPresent ? "review" : "compose" };
   }
   if (code === "invalid_envelope" || message === "invalid JSON" || message.startsWith("schema validation failed") || message.includes("invalid JSON")) {
@@ -102,8 +102,8 @@ export function classifyComparisonFailure(input: {
   if (code === "media_unavailable") {
     return { failureClass: "media", phase: "publication" };
   }
-  if (code === "report_incomplete" || code === "publication_failed" || message.includes("without writing report.html")) {
-    return { failureClass: "publication", phase: code === "report_incomplete" ? "compose" : "publication" };
+  if (code === "draft_invalid" || code === "report_incomplete" || code === "preview_failed" || code === "publication_failed" || message.includes("without writing report.html")) {
+    return { failureClass: "publication", phase: code === "preview_failed" ? "review" : code === "publication_failed" ? "publication" : "compose" };
   }
   return { failureClass: "unknown", phase: input.reportPresent ? "review" : "compose" };
 }
@@ -238,20 +238,26 @@ export async function publishComparisonArtifacts(input: {
   media?: readonly ComparisonMediaRecord[];
   model?: ComparisonReportModel;
 }): Promise<{ html: string }> {
+  const staged = await prepareComparisonArtifacts(input);
+  if (staged.model) await persistComparisonReportModel(input.experimentRoot, staged.model);
+  await writeAtomic(join(input.experimentRoot, "report.html"), staged.html);
+  return { html: staged.html };
+}
+
+export async function prepareComparisonArtifacts(input: {
+  attemptRoot: string;
+  experimentRoot: string;
+  html: string;
+  media?: readonly ComparisonMediaRecord[];
+  model?: ComparisonReportModel;
+}): Promise<{ html: string; model?: ComparisonReportModel }> {
   const staged = await stagePublishedMedia({
     attemptRoot: input.attemptRoot,
     experimentRoot: input.experimentRoot,
     html: input.html,
     media: input.media ?? [],
   });
-  if (input.model) {
-    await persistComparisonReportModel(
-      input.experimentRoot,
-      rewriteReportModelMediaHrefs(input.model, staged.hrefMap),
-    );
-  }
-  await writeAtomic(join(input.experimentRoot, "report.html"), staged.html);
-  return { html: staged.html };
+  return { html: staged.html, ...(input.model ? { model: rewriteReportModelMediaHrefs(input.model, staged.hrefMap) } : {}) };
 }
 
 async function stagePublishedMedia(input: {

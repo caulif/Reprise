@@ -64,7 +64,7 @@ function defaultResultAction(c: ControllerHandle, result: ExperimentResult): Con
     mode: { comparePending: Boolean(c.compareChoice), processAvailable: c.timeline.length > 0 },
     artifacts,
   }).filter((item) => item.enabled).map((item) => item.id));
-  for (const action of ['open-candidate-final', 'view-process', 'toggle-details', 'open-report', 'open-history-final', 'open-trace', 'open-replica'] as const) {
+  for (const action of ['compare', 'open-replica', 'open-report'] as const) {
     if (available.has(action)) return action;
   }
   return 'home';

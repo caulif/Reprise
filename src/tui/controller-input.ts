@@ -115,6 +115,7 @@ export type ControllerHandle = {
   locale: Locale;
   result: ExperimentResult | undefined;
   resultAction: import('./page-input.js').ResultAction;
+  resultHover: import('./page-input.js').ResultAction | undefined;
   resultDetails: boolean;
   processExpanded: boolean;
   message: string;
@@ -295,11 +296,6 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   }
   if (c.page === 'candidate-model') return applyCandidateModel(c, input);
   if (c.page === 'confirm') return applyConfirm(c, input) ?? consumeWheel(data);
-  if (c.page === 'compare-confirm') {
-    if (matchesKey(input, 'escape') || matchesKey(input, 'b')) { c.page = 'result'; c.timelineReadOffset = 0; c.render(); return { consume: true }; }
-    if (matchesKey(input, 'enter') && c.compareChoice) { resolveCompareChoice(c, true); return { consume: true }; }
-    return consumeWheel(data);
-  }
   if (c.page === 'result') return applyResultPage(c, input, data);
   if (c.page === 'error') {
     const error = dispatchErrorKeys(input);
@@ -322,14 +318,11 @@ function applyResultPage(c: ControllerHandle, input: string, data: string): Cons
       if (key?.action === 'cycle-fold' || key?.action === 'cycle-fold-prev') return cycleFoldSelection(c, key.action === 'cycle-fold-prev' ? -1 : 1);
       return consumeWheel(data);
     }
-    // A settled compare gate still owns the keypress; do not let a second c
-    // fall through into an unrelated page action or appear to start another attempt.
-    if (!c.compareChoice && (input === 'c' || input === 'C')) return { consume: true };
     if (matchesKey(input, 'pageUp') || matchesKey(input, 'pageDown')) return scrollPageBody(c, input, 'result');
     if (matchesKey(input, 'up') || matchesKey(input, 'down')) {
       const choices = resultChoices(c);
       const current = Math.max(0, choices.indexOf(c.resultAction));
-      c.resultAction = choices[(current + (matchesKey(input, 'up') ? -1 : 1) + choices.length) % choices.length] ?? 'home';
+      c.resultAction = choices[(current + (matchesKey(input, 'up') ? -1 : 1) + choices.length) % choices.length] ?? 'open-replica';
       ensureResultSelectionVisible(c);
       c.render();
       return { consume: true };
@@ -358,13 +351,11 @@ function applyResultPage(c: ControllerHandle, input: string, data: string): Cons
     }
     const action = result.action === 'activate-primary'
       ? (resultChoices(c).includes(c.resultAction)
-        ? c.resultAction : resultChoices(c).find((choice) => choice !== 'compare') ?? 'home')
+        ? c.resultAction : resultChoices(c)[0] ?? 'home')
       : result.action;
     if (action === 'compare') {
       if (!c.compareChoice) return { consume: true };
-      c.page = 'compare-confirm';
-      c.timelineReadOffset = 0;
-      c.render(true);
+      resolveCompareChoice(c, true);
       return { consume: true };
     }
     if (action === 'open-report') {
@@ -663,17 +654,9 @@ function applyCandidateModel(c: ControllerHandle, data: string): Consume | undef
   return { consume: true };
 }
 
-function applyCompareGate(c: ControllerHandle, data: string): Consume | undefined {
+function applyCompareGate(data: string): Consume | undefined {
   const input = unwrapBracketedPaste(data);
-  if (input === 'c' || input === 'C') {
-    c.page = 'compare-confirm';
-    c.render(true);
-    return { consume: true };
-  }
-  if (input === 's' || input === 'S') {
-    resolveCompareChoice(c, false);
-    return { consume: true };
-  }
+  if (input === 'c' || input === 'C' || input === 's' || input === 'S') return { consume: true };
   return undefined;
 }
 
@@ -742,7 +725,7 @@ function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   if (canvas) return canvas;
   if (c.readingMode && !c.finding) return { consume: true };
   if (c.compareChoice) {
-    const gate = applyCompareGate(c, data);
+    const gate = applyCompareGate(data);
     if (gate) return gate;
   }
   const result = dispatchRunningKeys(data);

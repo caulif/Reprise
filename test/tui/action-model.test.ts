@@ -31,7 +31,6 @@ test('result footer hides missing artifacts and keeps compare when pending', () 
   assert.deepEqual(without, [
     ['Enter', 'Activate'],
     ['Esc', 'Finish reviewing'],
-    ['d', 'Technical details'],
     ['?', 'Help'],
   ]);
 
@@ -41,9 +40,9 @@ test('result footer hides missing artifacts and keeps compare when pending', () 
   });
   assert.equal(withCompare[0]?.[0], 'Enter');
   assert.ok(withCompare.some(([key]) => key === 'Esc'));
-  assert.ok(withCompare.some(([key]) => key === 'c'));
+  assert.ok(!withCompare.some(([key]) => key === 'c'));
   assert.ok(withCompare.length <= 4);
-  assert.ok(withCompare.some(([key]) => key === 'o'));
+  assert.ok(withCompare.some(([key]) => key === '?'));
   assert.ok(!withCompare.some(([key]) => key === 'h' || key === 'f'));
 });
 
@@ -78,24 +77,23 @@ test('reading footer describes terminal selection without claiming a copy comple
   }
 });
 
-test('disabled open-report key matches but stays disabled', () => {
+test('disabled open-report action remains unavailable', () => {
   const actions = listActions({
     page: 'result',
     locale: 'en',
     artifacts: { report: false },
   });
-  const matched = matchActionKey(actions, 'o', { includeDisabled: true });
-  assert.equal(matched?.id, 'open-report');
-  assert.equal(matched?.enabled, false);
+  assert.equal(actions.find((item) => item.id === 'open-report'), undefined);
+  assert.equal(matchActionKey(actions, 'o', { includeDisabled: true }), undefined);
   assert.equal(isActionEnabled(actions, 'open-report'), false);
 });
 
 test('dispatchResultKeys uses shared availability and activate-primary on Enter', () => {
   assert.equal(dispatchResultKeys('c')?.action, undefined);
-  assert.equal(dispatchResultKeys('c', { comparePending: true })?.action, 'compare');
+  assert.equal(dispatchResultKeys('c', { comparePending: true })?.action, undefined);
   assert.equal(dispatchResultKeys('\r', { comparePending: true })?.action, 'activate-primary');
-  assert.equal(dispatchResultKeys('o', { artifacts: { report: false } })?.enabled, false);
-  assert.equal(dispatchResultKeys('o', { artifacts: { report: true } })?.enabled, true);
+  assert.equal(dispatchResultKeys('o', { artifacts: { report: false } }), undefined);
+  assert.equal(dispatchResultKeys('o', { artifacts: { report: true } }), undefined);
   assert.equal(dispatchResultKeys('\x1b', { comparePending: true })?.action, 'home');
 });
 

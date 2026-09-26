@@ -196,12 +196,12 @@ ${componentTemplateHtml(locale)}
     <header data-host-zone="header" data-id="host-header">${header}</header>
     <p class="field-label">${escapeHtml(reportString(locale, "headlineLabel"))}</p>
     <p class="note" data-agent-slot="headline">${headline}</p>
-    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><!-- ${escapeHtml(reportString(locale, "comparisonZoneComment"))} -->${comparisonBody}</section>
+    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison">${slots.comparison === undefined ? `<!-- ${escapeHtml(reportString(locale, "comparisonZoneComment"))} -->` : ""}${comparisonBody}</section>
     ${renderMetricsBoard(input.metrics, labels, locale)}
   </article>
   <details class="details">
     <summary>${escapeHtml(reportString(locale, "detailsSummary"))}</summary>
-    <section class="slot" data-agent-zone="details" data-id="agent-details"><!-- ${escapeHtml(reportString(locale, "detailsZoneComment"))} -->${detailsBody}</section>
+    <section class="slot" data-agent-zone="details" data-id="agent-details">${slots.details === undefined ? `<!-- ${escapeHtml(reportString(locale, "detailsZoneComment"))} -->` : ""}${detailsBody}</section>
     <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">${escapeHtml(reportString(locale, "costNote", { version: MODEL_PRICING_TABLE_VERSION }))}</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence">${renderRunDiagnostics(input.facts, locale)}${renderEvidenceCatalog(input.evidence, locale)}${renderMediaCatalog(input.media, locale)}</section>
     <section class="slot" data-host-zone="process" data-id="host-process">${slots.process ?? (input.diagnostic ? diagnosticProcess(input.diagnostic, locale) : "")}</section>

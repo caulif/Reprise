@@ -273,7 +273,7 @@ test('role write policy stays on application owners without a shared Verifier', 
   const { comparisonAttemptWriteAllowed } = await import('../../src/application/experiment-report.js');
   assert.equal(comparisonAttemptWriteAllowed('scratch/a.txt'), true);
   assert.equal(comparisonAttemptWriteAllowed('scratch-evil/a.txt'), false);
-  assert.equal(comparisonAttemptWriteAllowed('report.html'), true);
+  assert.equal(comparisonAttemptWriteAllowed('report.html'), false);
   const report = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
   assert.doesNotMatch(report, /\.plan\(|\.report\(|invokePlan|invokeReport/);
   const comparisonAgent = await readFile(join(SRC, 'agents/comparison-agent.ts'), 'utf8');

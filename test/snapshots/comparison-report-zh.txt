@@ -116,7 +116,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
     <p class="field-label">主要结论</p>
     <p class="note" data-agent-slot="headline">The candidate produced a usable file.</p>
-    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><!-- 在此撰写主体对照：并排图、表格、片段或步骤。影响取舍的限制就近写明。组件只是可选便利，不是必填段落。 --><p>The candidate delivered a file; history did not.</p></section>
+    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><p>The candidate delivered a file; history did not.</p></section>
     <section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="{&quot;b&quot;:[null,null,null,&quot;not_collected&quot;],&quot;c&quot;:[4000,null,null,&quot;not_collected&quot;]}" aria-label="时间, Token, 费用">
     <article class="card">
       <div class="label">时间</div>

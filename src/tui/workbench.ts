@@ -40,7 +40,7 @@ export function measureWorkbenchGeometry(view: WorkbenchView, width: number, hei
 
 export type WorkbenchPage =
   | 'loading' | 'home' | 'config' | 'history' | 'history-detail' | 'sessions' | 'inspection'
-  | 'source' | 'preflight' | 'recovery-review' | 'candidate-product' | 'candidate-model' | 'confirm' | 'running' | 'result' | 'compare-confirm' | 'error';
+  | 'source' | 'preflight' | 'recovery-review' | 'candidate-product' | 'candidate-model' | 'confirm' | 'running' | 'result' | 'error';
 
 /** Long-lived status badge — not a transient message. */
 export type StatusSummaryModel = {
@@ -97,6 +97,7 @@ export type WorkbenchView = {
   readonly running?: RunningModel;
   readonly comparePending?: boolean;
   readonly resultAction?: import('./page-input.js').ResultAction;
+  readonly resultHover?: import('./page-input.js').ResultAction;
   readonly resultDetails?: boolean;
   readonly bodyOffset?: number;
   readonly result?: ExperimentResult;
@@ -297,7 +298,7 @@ function renderPage(theme: Theme, view: WorkbenchView, width: number, height?: n
 }
 
 export function pageTheme(theme: Theme, page: WorkbenchView['page']): Theme {
-  return ['config', 'history', 'history-detail', 'sessions', 'inspection', 'candidate-product', 'candidate-model', 'confirm', 'result', 'compare-confirm', 'recovery-review'].includes(page)
+  return ['config', 'history', 'history-detail', 'sessions', 'inspection', 'candidate-product', 'candidate-model', 'confirm', 'result', 'recovery-review'].includes(page)
     ? { ...theme, framed: false, plainPage: true }
     : theme;
 }
@@ -369,15 +370,6 @@ function renderSurface(theme: Theme, view: WorkbenchView, width: number, height?
   }
   if (view.page === 'running' && view.running) return renderRunningSurface(theme, view, width, height);
   if (view.page === 'result' && view.result) return renderResultSurface(theme, view, width, height);
-  if (view.page === 'compare-confirm' && view.result) {
-    return [
-      ` ${t(locale, 'compareConfirmTitle')}`,
-      '',
-      ` ${t(locale, 'compareConfirmBody')}`,
-      '',
-      ` ${t(locale, 'compareConfirmCost')}`,
-    ];
-  }
   return [];
 }
 
@@ -419,6 +411,7 @@ export function resultRenderOptions(view: WorkbenchView): ResultRenderOptions {
     ...(view.processExpanded ? { processExpanded: true } : {}),
     ...(view.running?.phaseClocks ? { phaseClocks: view.running.phaseClocks } : {}),
     ...(view.resultAction ? { selectedAction: view.resultAction } : {}),
+    ...(view.resultHover ? { hoverAction: view.resultHover } : {}),
     ...(view.resultDetails ? { detailsExpanded: true } : {}),
     processAvailable: Boolean(view.running?.entries.length),
   };
@@ -495,7 +488,6 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     }), locale);
     return hints.slice(0, 3);
   }
-  if (view.page === 'compare-confirm') return [['Enter', t(locale, 'compareConfirmStart')], ['Esc', t(locale, 'hintBack')]];
   if (view.page === 'error') return failureHints(locale);
   return [['b', t(locale, 'hintBack')], ['Ctrl+C', t(locale, 'hintExit')]];
 }

@@ -24,6 +24,7 @@ export type ResultRenderOptions = {
   readonly processExpanded?: boolean;
   readonly phaseClocks?: PhaseClockBounds;
   readonly selectedAction?: ResultAction;
+  readonly hoverAction?: ResultAction;
   readonly detailsExpanded?: boolean;
   readonly processAvailable?: boolean;
 };
@@ -62,9 +63,10 @@ export function renderResultWithHits(
   const pushAction = (action: ResultAction, label: string, path?: string) => {
     const marker = options?.selectedAction === action ? theme.glyphs.cursor : ' ';
     const value = path ? shortLabel(path, experimentRoot, vacant) : '';
-    const block = path ? kvLinkBlock(theme, `${marker} ${label}`, value, path, width) : undefined;
-    for (const line of block?.lines ?? [` ${marker} ${label}`]) {
-      bodyHits.set(body.length, [{ action, x0: 1, x1: Math.max(1, visibleWidth(line)) }]);
+    const decorated = options?.hoverAction === action ? `\x1b[4m${label}\x1b[24m` : label;
+    const block = path ? kvLinkBlock(theme, `${marker} ${decorated}`, value, path, width) : undefined;
+    for (const line of block?.lines ?? [` ${marker} ${decorated}`]) {
+      bodyHits.set(body.length, [{ action, x0: 4, x1: Math.max(4, visibleWidth(line)) }]);
       body.push(line);
     }
   };
@@ -93,14 +95,14 @@ export function renderResultWithHits(
     artifacts: artifactsFromResult(result),
   });
   for (const action of actions) {
-    if (!action.enabled || action.id === 'activate-primary' || action.id === 'show-help' || action.id === 'read-page') continue;
+    if (!['compare', 'open-replica', 'open-report'].includes(action.id)) continue;
     const id = action.id as ResultAction;
     const path = id === 'open-candidate-final' ? paths.candidateFinal
       : id === 'open-report' ? paths.report
         : id === 'open-history-final' ? paths.historyFinal
           : id === 'open-trace' ? paths.trace
             : id === 'open-replica' ? paths.replica : undefined;
-    pushAction(id, t(locale, action.labelKey), path);
+    pushAction(id, action.enabled ? t(locale, action.labelKey) : `${t(locale, action.labelKey)} (${t(locale, action.disabledReasonKey ?? 'actionUnavailable')})`, path);
   }
   if (options?.detailsExpanded) {
     push('');

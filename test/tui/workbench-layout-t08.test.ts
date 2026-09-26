@@ -55,8 +55,8 @@ test('T08: 100x30 result first screen shows facts and primary actions without sc
   assert.match(text, /Reprise model judged the task complete/);
   assert.match(text, /Comparison cancelled/);
   assert.match(text, /diagnostic|comparison-failure/);
-  assert.match(text, /This run output|out\.html/);
-  assert.match(text, /View execution process|Hide process/);
+  assert.match(text, /Open this run folder/);
+  assert.doesNotMatch(text, /This run output|out\.html|View execution process/);
   assert.doesNotMatch(text, /Noise 39/);
   for (const line of lines) assert.ok(visibleWidth(line) <= 100, line);
 });

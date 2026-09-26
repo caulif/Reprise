@@ -438,18 +438,12 @@ async function main() {
   let comparisonChoice;
   reviewApp.compareChoice = { resolve: (value) => { comparisonChoice = value; } };
   await push('32-result-review-80x24', 80, reviewApp.preview(80));
-  reviewApp.handleInput('c');
-  assert.equal(reviewApp.page, 'compare-confirm');
-  assert.equal(comparisonChoice, undefined);
-  assert.match(reviewApp.preview(80), /可能产生费用/);
-  await push('33-compare-confirm-80x24', 80, reviewApp.preview(80));
-  reviewApp.handleInput('\u001b');
+  reviewApp.resultAction = 'compare';
+  reviewApp.handleInput('\r');
   assert.equal(reviewApp.page, 'result');
-  assert.equal(comparisonChoice, undefined);
+  assert.equal(comparisonChoice, true);
   await reviewApp.setLocale('en');
-  reviewApp.handleInput('c');
-  await push('33b-compare-confirm-en-80x24', 80, reviewApp.preview(80));
-  reviewApp.handleInput('\u001b');
+  await push('33-result-review-en-80x24', 80, reviewApp.preview(80));
 
   const err = mockTui();
   const sessionsFile = join(root, 'sessions-file');
