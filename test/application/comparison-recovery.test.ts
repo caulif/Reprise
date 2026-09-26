@@ -72,6 +72,10 @@ async function fixture(preview: boolean, visual?: 'message' | 'tool' | 'tool-art
   });
   if (visual === 'tool' || visual === 'tool-artifact') await audit.append({
     type: 'agent.tool_completed', sessionId: 'comparison-session-1', role: 'comparison',
+    payload: { attemptId, tool: 'read_image', nativeHook: 'after', contentTypes: ['image'], byteLength: png.byteLength, contentDigest: imageHash, isError: false },
+  });
+  if (visual === 'tool' || visual === 'tool-artifact') await audit.append({
+    type: 'agent.tool_completed', sessionId: 'comparison-session-1', role: 'comparison',
     payload: {
       attemptId, tool: 'read_image', contentTypes: ['image'],
       body: { encoding: 'inline', schemaVersion: 1, text: JSON.stringify([
@@ -121,6 +125,19 @@ test('recovery accepts visual claims only when the preview Session received the 
     assert.equal(checked.ready, false);
     assert.match(checked.reason ?? '', /session-delivered media/);
   }
+});
+
+test('recovery rejects an image tool completion without an audit body', async (t) => {
+  const ready = await fixture(true, 'tool');
+  t.after(() => rm(ready.dataDir, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(ready.experimentRoot, experimentId);
+  await store.acquireWriter();
+  await store.append({
+    type: 'agent.tool_completed', runId: 'run-1',
+    payload: { attemptId, sessionId: 'comparison-session-1', tool: 'read_image', contentTypes: ['image'] },
+  });
+  await store.close();
+  await assert.rejects(inspectComparisonRecovery(ready.input), /invalid audit body/);
 });
 
 test('a preview event without a session ID cannot publish a recovered report', async (t) => {

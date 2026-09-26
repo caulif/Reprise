@@ -69,6 +69,7 @@ async function deliveredImageHashes(
       continue;
     }
     if (event.type !== 'agent.tool_completed' || !Array.isArray(payload.contentTypes) || !payload.contentTypes.includes('image')) continue;
+    if (payload.nativeHook === 'after') continue;
     if (!Value.Check(AgentTextBodySchema, payload.body)) throw new Error('Image tool result has an invalid audit body.');
     let text: string;
     if (payload.body.encoding === 'artifact') {
