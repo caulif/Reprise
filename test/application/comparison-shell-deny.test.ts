@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   COMPARISON_BROWSER_SHELL_DENIED,
   isComparisonBrowserShellCommand,
@@ -122,21 +123,71 @@ test("Comparison shell_exec still runs ordinary Node/Python static checks", asyn
   assert.match(py.content, /py-ok/);
 });
 
-test("Comparison shell_exec timeout still fails and does not leave an orphan long-runner", async (t) => {
+test("Comparison shell_exec timeout terminates the shell and releases its workspace", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-timeout-"));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }));
   const shell = comparisonShell(root, { shellTimeoutMs: 100 });
   const started = Date.now();
   await assert.rejects(
     shell.execute(
-      // Long sleep: killTree must cut this short. Assertion bound is well under sleep length.
-      { command: hostNodeCommand("setTimeout(() => undefined, 30_000)") },
+      { command: hostShellSleep(30) },
       new AbortController().signal,
     ),
     /timed out/i,
   );
-  // Windows previously waited ~full sleep when taskkill was async; sync kill + close grace keep this << 30s.
   assert.ok(Date.now() - started < 15_000, "timeout must not wait for the full child sleep");
+});
+
+test("Comparison shell_exec cancels a started nested process", async (t) => {
+  if (process.platform !== "win32") return t.skip("Windows process-tree behavior");
+  const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-tree-"));
+  const marker = join(root, "child.pid");
+  let childPid = 0;
+  let childExited = false;
+  t.after(async () => {
+    if (childPid && !childExited) {
+      try { process.kill(childPid, "SIGKILL"); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  });
+  const controller = new AbortController();
+  const shell = comparisonShell(root, { shellTimeoutMs: 60_000 });
+  const pending = shell.execute({
+    command: hostNodeCommand("require('node:fs').writeFileSync('child.pid', String(process.pid)); setTimeout(() => {}, 30_000)"),
+  }, controller.signal);
+  void pending.catch(() => undefined);
+  try {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const pid = await readFile(marker, "utf8").catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (pid) {
+        childPid = Number(pid);
+        break;
+      }
+      await delay(50);
+    }
+    assert.ok(childPid > 0, "nested process did not start");
+  } finally {
+    controller.abort();
+  }
+  await assert.rejects(pending, /cancel|abort/i);
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    try { process.kill(childPid, 0); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+        childExited = true;
+        return;
+      }
+      throw error;
+    }
+    await delay(50);
+  }
+  assert.fail("nested process remained alive after cancellation");
 });
 
 test("Comparison shell_exec AbortSignal cancels a long command", async (t) => {

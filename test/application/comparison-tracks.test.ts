@@ -186,6 +186,12 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
   assert.match(index, /finals\//);
   assert.match(index, /candidate\//);
   const briefingIndex = await read("briefing/INDEX.md");
+  assert.match(briefingIndex, /briefing\/decision-map\.md/);
+  const decisionMap = await read("briefing/decision-map.md");
+  assert.match(decisionMap, /history\/transcript\/message-2\.txt/);
+  assert.match(decisionMap, /candidate\/workspace-file\.txt/);
+  assert.match(decisionMap, /observations\/user-inputs\/INDEX\.tsv/);
+  assert.doesNotMatch(decisionMap, /\\environment\\|\\Users\\/);
   assert.match(briefingIndex, /turns\//);
   assert.match(briefingIndex, /run\/sent-user-messages\.jsonl/);
   assert.match(briefingIndex, /briefing\/candidate\/process-index\.tsv/);
@@ -282,6 +288,10 @@ test("comparison links stay bounded and drop workspace internals", async (t) => 
   const index = await readFile(join(attemptRoot, "briefing", "INDEX.md"), "utf8");
   assert.match(index, /links-diagnostics\.json/);
   assert.match(index, /changedPathsOmitted=/);
+  const decisionMap = await readFile(join(attemptRoot, "briefing", "decision-map.md"), "utf8");
+  assert.match(decisionMap, /leads were omitted by the bounded index/);
+  assert.match(decisionMap, /briefing\/facts\/comparison-links\.json/);
+  assert.ok(Buffer.byteLength(decisionMap) < 5_000);
 });
 
 test("sealed historical images enter baseline media without a double extension", async (t) => {
@@ -454,6 +464,8 @@ test("paired SVG animation deliverables enter baseline and candidate media", asy
   assert.equal(candidate[0]?.available, true);
   assert.equal(baseline[0]?.mediaType, "image/svg+xml");
   assert.equal(candidate[0]?.mediaType, "image/svg+xml");
+  const decisionMap = await readFile(join(attemptRoot, "briefing", "decision-map.md"), "utf8");
+  assert.match(decisionMap, /animation\.svg \(openable delivery lead/);
   assert.match(candidate[0]?.reportHref ?? "", /animation\.svg$/);
 });
 
@@ -570,5 +582,8 @@ test("missing candidate SVG deliverable is still registered as unavailable media
   assert.equal(candidate.length, 1);
   assert.equal(candidate[0]?.available, false);
   assert.equal(candidate[0]?.mediaType, "image/svg+xml");
+  const decisionMap = await readFile(join(attemptRoot, "briefing", "decision-map.md"), "utf8");
+  assert.match(decisionMap, /Candidate snapshot incomplete; sealed delivery unavailable/);
+  assert.doesNotMatch(decisionMap, /## candidate[\s\S]*candidate\/animation\.svg/);
 });
 

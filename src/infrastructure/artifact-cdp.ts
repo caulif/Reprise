@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawnRuntimeProcess } from "./process/spawn.js";
+import { terminateProcessTree } from "./platform.js";
 import { resolveHeadlessBrowser } from "./headless-screenshot.js";
 import type { RenderDiagnostic, RenderViewport } from "./artifact-render-types.js";
 
@@ -52,21 +53,23 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
     "about:blank",
   ], {
     stdio: ["ignore", "pipe", "pipe"],
-    detached: false,
+    detached: process.platform !== "win32",
   });
+  let cleanupPromise: Promise<void> | undefined;
+  const cleanup = () => cleanupPromise ??= killBrowser(child, profileDir, diagnostics);
 
   const abort = () => {
-    void killBrowser(child, profileDir, diagnostics);
+    void cleanup();
   };
   if (signal.aborted) {
-    await killBrowser(child, profileDir, diagnostics);
+    await cleanup();
     return { failure: "capability_unavailable", message: "cancelled before browser start", diagnostics };
   }
   signal.addEventListener("abort", abort, { once: true });
 
   try {
     const endpoint = await waitForDevtoolsEndpoint(profileDir, child, signal, 15_000);
-    const session = await connectCdp(endpoint, child, profileDir, diagnostics, signal);
+    const session = await connectCdp(endpoint, cleanup, diagnostics, signal);
     signal.removeEventListener("abort", abort);
     signal.addEventListener("abort", () => {
       void session.close();
@@ -74,7 +77,7 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
     return session;
   } catch (error) {
     signal.removeEventListener("abort", abort);
-    await killBrowser(child, profileDir, diagnostics);
+    await cleanup();
     const message = error instanceof Error ? error.message : String(error);
     return { failure: "capability_unavailable", message, diagnostics };
   }
@@ -109,8 +112,7 @@ async function waitForDevtoolsEndpoint(
 
 async function connectCdp(
   endpoint: string,
-  child: ChildProcessWithoutNullStreams,
-  profileDir: string,
+  cleanup: () => Promise<void>,
   diagnostics: RenderDiagnostic[],
   signal: AbortSignal,
 ): Promise<CdpSession> {
@@ -187,7 +189,7 @@ async function connectCdp(
       } catch {
         // Closing an already-closed socket is expected during abort races.
       }
-      await killBrowser(child, profileDir, diagnostics);
+      await cleanup();
     },
   };
   return session;
@@ -585,25 +587,32 @@ async function killBrowser(
   profileDir: string,
   diagnostics: RenderDiagnostic[],
 ): Promise<void> {
-  if (child.exitCode === null && !child.killed) {
-    try {
-      if (process.platform === "win32" && child.pid) {
-        await terminateWindowsProcessTree(child.pid);
-      } else {
-        child.kill("SIGTERM");
-      }
-    } catch {
-      diagnostics.push({ code: "browser_kill_failed", message: "SIGTERM failed" });
-    }
-    const exited = await waitExit(child, 3_000);
-    if (!exited) {
+  if (process.platform === "win32") {
+    if (child.exitCode === null && !child.killed) {
       try {
-        child.kill("SIGKILL");
+        if (child.pid) {
+          await terminateWindowsProcessTree(child.pid);
+        }
       } catch {
-        diagnostics.push({ code: "browser_kill_failed", message: "SIGKILL failed; process may linger" });
+        diagnostics.push({ code: "browser_kill_failed", message: "SIGTERM failed" });
       }
-      await waitExit(child, 1_000);
+      const exited = await waitExit(child, 3_000);
+      if (!exited) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          diagnostics.push({ code: "browser_kill_failed", message: "SIGKILL failed; process may linger" });
+        }
+        await waitExit(child, 1_000);
+      }
     }
+  } else {
+    try {
+      terminateProcessTree(child, true);
+    } catch {
+      diagnostics.push({ code: "browser_kill_failed", message: "process tree termination failed" });
+    }
+    await waitExit(child, 3_000);
   }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -634,7 +643,7 @@ async function terminateWindowsProcessTree(pid: number): Promise<void> {
 }
 
 function waitExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> {
-  if (child.exitCode !== null) return Promise.resolve(true);
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), timeoutMs);
     child.once("exit", () => {
