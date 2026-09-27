@@ -26,7 +26,7 @@ import type { PreparePhase } from './widgets.js';
 
 type Input = {
   readonly page: WorkbenchView['page']; readonly modelConfig: HarnessModelConfig; readonly hasSavedModelConfig: boolean; readonly harnessAuthOk: boolean; readonly envName?: string; readonly productLabel?: string; readonly productConfigured?: boolean; readonly taskCase?: TaskCase | undefined; readonly message: string; readonly inlineHelp: boolean; readonly cancelling: boolean; readonly locale?: Locale;
-  readonly recentExperiment?: HistoryExperiment | undefined; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
+  readonly recentExperiment?: HistoryExperiment | undefined; readonly homeFocus?: import('./pages/home.js').HomeActionId; readonly composer: string; readonly composerCursor: number; readonly showSuggestions: boolean; readonly commandOverlay: boolean;
   readonly configDraft: HarnessConfigDraft; readonly configSelected: number; readonly configAdvanced?: boolean; readonly configEditing: boolean; readonly configBuffer: string; readonly configCursor: number; readonly configDirty: boolean; readonly configPendingToggle: boolean; readonly configLeaveConfirm?: boolean;
   readonly configBusy?: 'idle' | 'save' | 'test';
   readonly configTestStatus?: 'idle' | 'testing' | 'passed' | 'failed' | 'stale';
@@ -82,6 +82,7 @@ function homeModel(input: Input, envSet: boolean) {
     ...(input.envName ? { envName: input.envName, envSet } : {}),
     ...(input.hasSavedModelConfig ? { providerLabel: input.modelConfig.providerId, modelId: input.modelConfig.modelId } : {}),
     composer: input.composer, composerCursor: input.composerCursor, showSuggestions: input.showSuggestions && !input.commandOverlay,
+    focus: input.homeFocus ?? 'new-replay',
     locale: input.locale ?? 'en',
     ...(input.recoveryView?.baseline.recovery?.status === 'failed' ? { recoveryFailed: true } : {}),
   };

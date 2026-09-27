@@ -168,6 +168,25 @@ test('home defaults to new replay and Enter opens source intake', async (t) => {
   assert.equal(app.intakeLevel, 'products');
 });
 
+test('home arrow keys update the visible selection', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-t10-home-focus-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const app = new IntakeTui({ dataDir: join(root, 'data'), tui: fakeTui(), packs: [fakeProductPack], privacy });
+  await app.start();
+  app.homeFocus = 'new-replay';
+
+  assert.deepEqual(app.handleInput('\x1b[B'), { consume: true });
+  assert.equal(app.view().home?.focus, 'history');
+  const theme = createTheme(100, false);
+  const lines = renderHome(theme, 100, app.view().home!);
+  assert.equal(lines[2]?.includes(theme.glyphs.cursor), false);
+  assert.equal(lines[3]?.includes(theme.glyphs.cursor), true);
+  assert.deepEqual(app.handleInput('\x1b[B'), { consume: true });
+  assert.equal(app.view().home?.focus, 'config');
+  assert.deepEqual(app.handleInput('\x1b[A'), { consume: true });
+  assert.equal(app.view().home?.focus, 'history');
+});
+
 test('recent result labels avoid bare completed', () => {
   assert.match(recentResultLabel({
     experimentId: 'e', taskCaseId: 'c', path: 'p', sizeBytes: 1,

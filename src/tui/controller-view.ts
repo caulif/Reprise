@@ -163,6 +163,7 @@ export function view(c: IntakeTui): WorkbenchView {
     inlineHelp: c.inlineHelp,
     cancelling: c.cancelling,
     recentExperiment: c.recentExperiment,
+    homeFocus: c.homeFocus,
     composer: c.composer,
     composerCursor: c.composerCursor,
     showSuggestions: c.showSuggestions,
