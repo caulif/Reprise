@@ -12,7 +12,7 @@ import {
   createRenderArtifactTool,
 } from "../../src/application/comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
-import { comparisonMediaHrefs, prepareComparisonArtifacts } from "../../src/application/comparison-publication.js";
+import { comparisonMediaHrefs } from "../../src/application/comparison-publication.js";
 import { ARTIFACT_RENDERER_VERSION, createFakeArtifactRenderer } from "../../src/infrastructure/artifact-renderer.js";
 import { DEFAULT_RENDER_VIEWPORT } from "../../src/infrastructure/artifact-render-types.js";
 
@@ -346,35 +346,6 @@ test("materializeComparisonReportPreview writes preview.html without touching dr
   assert.doesNotMatch(prepared.html, /data-media-ref=/);
   assert.equal(await readFile(join(root, "report.html"), "utf8"), draft);
   assert.match(await readFile(prepared.htmlPath, "utf8"), /src="media\/a\.png"/);
-});
-
-test("historical final links resolve in draft, bounded preview, and published report", async (t) => {
-  const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-preview-finals-"));
-  t.after(async () => {
-    const { rm } = await import("node:fs/promises");
-    await rm(experimentRoot, { recursive: true, force: true });
-  });
-  const attemptRoot = join(experimentRoot, "comparison-attempts", "attempt-1");
-  await mkdir(join(attemptRoot, "finals", "assets"), { recursive: true });
-  await writeFile(join(attemptRoot, "finals", "index.html"), '<link rel="stylesheet" href="assets/site.css"><h1>Historical final</h1>');
-  await writeFile(join(attemptRoot, "finals", "assets", "site.css"), "h1 { color: green; }");
-  const draft = '<section data-host-zone="evidence"><a href="finals/index.html">Final</a></section><section data-agent-zone="comparison"><a data-evidence-ref="ev-01">Inspect</a></section>';
-  await writeFile(join(attemptRoot, "report.html"), draft);
-  const evidence = [{ side: "baseline" as const, inspectPath: "finals/index.html", reportHref: "finals/index.html", origin: "historical_artifact" as const, shortRef: "ev-01" }];
-  assert.match(draft, /href="finals\/index\.html"/);
-
-  const preview = await materializeComparisonReportPreview({ attemptRoot, media: [], evidence, catalogRevision: 1 });
-  assert.match(preview.html, /href="finals\/index\.html"/);
-  assert.match(await readFile(join(preview.outputRoot, "finals", "index.html"), "utf8"), /Historical final/);
-  assert.equal(await readFile(join(preview.outputRoot, "finals", "assets", "site.css"), "utf8"), "h1 { color: green; }");
-  await writeFile(join(attemptRoot, "finals", "assets", "site.css"), "h1 { color: blue; }");
-  const refreshed = await materializeComparisonReportPreview({ attemptRoot, media: [], evidence, catalogRevision: 1 });
-  assert.notEqual(refreshed.dependencyDigest, preview.dependencyDigest);
-  assert.equal(await readFile(join(refreshed.outputRoot, "finals", "assets", "site.css"), "utf8"), "h1 { color: blue; }");
-
-  const published = await prepareComparisonArtifacts({ attemptRoot, experimentRoot, html: preview.html, media: [], evidence });
-  assert.match(published.html, /href="comparison-attempts\/attempt-1\/finals\/index\.html"/);
-  assert.match(await readFile(join(experimentRoot, "comparison-attempts", "attempt-1", "finals", "index.html"), "utf8"), /Historical final/);
 });
 
 test("preview copies only referenced media and rejects changed registered bytes", async (t) => {
@@ -756,13 +727,14 @@ test("Host preview_report mints review-* without polluting comparison media allo
   });
   const payload = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as {
     status: string;
-    previewMedia: { shortRef: string; kind: string; read?: { path: string; format: string } };
+    previewMedia: { shortRef: string; kind: string; read?: { path: string; format: string; mimeType: string } };
   };
   assert.equal(payload.status, "ok");
   assert.equal(payload.previewMedia.kind, "report_review");
   assert.match(payload.previewMedia.shortRef, /^review-\d{2}$/);
   assert.equal(payload.previewMedia.read?.path, `review/media/${payload.previewMedia.shortRef}.png`);
   assert.equal(payload.previewMedia.read?.format, "image");
+  assert.equal(payload.previewMedia.read?.mimeType, "image/png");
   assert.deepEqual(
     catalog.snapshot().media.map((item) => item.shortRef),
     mediaBefore,

@@ -186,7 +186,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         code: registrations.code,
         message: registrations.message,
       });
-      const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number; read?: { path: string; format: "image" } }[] = [];
+      const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number; read?: { path: string; format: "image"; mimeType: "image/png" } }[] = [];
       for (const [index, registered] of registrations.items.entries()) {
         const frame = rendered.frames[index];
         if (!frame) continue;
@@ -194,7 +194,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         mediaRefs.push({
           shortRef: registered.shortRef,
           mediaRef: registered.mediaRef,
-          ...(registered.readPath ? { read: { path: registered.readPath, format: "image" as const } } : {}),
+          ...(registered.readPath ? { read: { path: registered.readPath, format: "image" as const, mimeType: "image/png" as const } } : {}),
           sampleTimeMs: frame.sampleTimeMs,
           actualTimeMs: frame.actualTimeMs,
         });
@@ -267,7 +267,7 @@ async function cachedReportPreview(
       return {
         ...cached.payload,
         previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review",
-          ...(registered.readPath ? { read: { path: registered.readPath, format: "image" } } : {}) },
+          ...(registered.readPath ? { read: { path: registered.readPath, format: "image", mimeType: "image/png" } } : {}) },
       };
     }
   }
@@ -336,7 +336,7 @@ async function renderReportPreview(input: {
     revision: prepared.catalogRevision, draftDigest: prepared.draftDigest,
     preparedDigest: prepared.preparedDigest, previewDigest: frame.contentHash,
     previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review",
-      ...(registered.readPath ? { read: { path: registered.readPath, format: "image" } } : {}) },
+      ...(registered.readPath ? { read: { path: registered.readPath, format: "image", mimeType: "image/png" } } : {}) },
     mechanics: inspectPreparedReportMechanics(prepared.html),
     ...(rendered.measured.layout ? { layout: rendered.measured.layout } : {}),
     diagnostics: rendered.diagnostics,

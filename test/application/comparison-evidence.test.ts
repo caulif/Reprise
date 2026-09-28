@@ -107,6 +107,26 @@ test("comparison links accept host and derived sides with origin labels", () => 
   assert.equal(labeled[0]?.shortRef, "ev-01");
 });
 
+test("register_evidence accepts static markup and rejects executable markup", async (t) => {
+  const attemptRoot = await tempAttempt(t, "reprise-derived-markup-");
+  await mkdir(join(attemptRoot, "scratch"), { recursive: true });
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptId: "attempt-markup", attemptRoot,
+    links: [{ side: "candidate", inspectPath: "candidate/out", shortRef: "ev-01" }],
+    media: [], emitRegistered: async () => {},
+  });
+  for (const [name, content, accepted] of [
+    ["static.html", "<!doctype html><html><body><table><tr><td>42</td></tr></table></body></html>", true],
+    ["static.svg", '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="2" cy="2" r="1"/></svg>', true],
+    ["script.html", "<!doctype html><html><body><script>alert(1)</script></body></html>", false],
+    ["event.svg", '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>', false],
+  ] as const) {
+    await writeFile(join(attemptRoot, "scratch", name), content);
+    const result = await catalog.registerEvidence({ relativePath: name, sourceRefs: ["ev-01"], label: name });
+    assert.equal(result.status, accepted ? "registered" : "rejected", name);
+  }
+});
+
 test("register_evidence seals scratch bytes, emits revision, and accepts new short refs in assert", async (t) => {
   const attemptRoot = await tempAttempt(t, "reprise-b3-catalog-");
   await mkdir(join(attemptRoot, "scratch"), { recursive: true });

@@ -19,6 +19,7 @@ import {
 } from "../core/schema.js";
 import { isMissing } from "./experiment-helpers.js";
 import { appendEvidenceShortRefs, appendMediaShortRefs } from "./comparison-short-refs.js";
+import { unsafeDerivedMarkup } from "./comparison-derived-content.js";
 
 export const MAX_REGISTERED_EVIDENCE_BYTES = 1_048_576;
 
@@ -208,6 +209,8 @@ export class ComparisonEvidenceCatalog {
     if (!derivedContentMatchesType(mediaType, bytes)) {
       return { status: "rejected", code: "path_invalid", message: `Derived evidence content does not match ${mediaType}.` };
     }
+    const unsafeMarkup = unsafeDerivedMarkup(mediaType, bytes);
+    if (unsafeMarkup) return { status: "rejected", code: "path_invalid", message: unsafeMarkup };
     const extension = mediaType === "text/html" ? ".html"
       : mediaType === "image/svg+xml" ? ".svg"
       : mediaType === "image/png" ? ".png"

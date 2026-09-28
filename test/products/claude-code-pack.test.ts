@@ -22,7 +22,7 @@ import {
   ClaudeCodeProductRuntime,
   clearClaudeCatalogCache,
 } from '../../src/products/packs/claude-code/runtime.js';
-import { ClaudeStreamClient } from '../../src/products/packs/claude-code/runner.js';
+import { ClaudeStreamClient, ClaudeTargetRunner } from '../../src/products/packs/claude-code/runner.js';
 import { importClaudeSession, discoverClaudeSessions, claudeSessionAdapter, defaultClaudeSessionsRoot } from '../../src/products/packs/claude-code/sessions.js';
 import { validSessionTimestamp } from '../../src/products/shared/session-files.js';
 import {
@@ -369,6 +369,55 @@ test('controller-initiated stop after a successful turn does not report runtime 
   assert.ok(events.includes('runtime.session_stopped'));
   assert.equal(events.includes('runtime.runtime_failed'), false);
 });
+
+for (const rejectStopEvent of [false, true]) test(
+  rejectStopEvent ? 'failed stop event preserves a concurrent process failure' : 'process exit while stop event is pending does not report runtime failure',
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'reprise-claude-stop-race-'));
+    t.after(async () => rm(root, { recursive: true, force: true }));
+    const script = join(root, 'fake-claude.mjs');
+    const sentinel = join(root, 'exit-now');
+    await writeFile(script, `${FAKE_CLAUDE}\nimport { existsSync } from 'node:fs';\nsetInterval(() => { if (existsSync(process.env.CLAUDE_STOP_SENTINEL)) process.exit(1); }, 5);\n`);
+    let releaseStop!: (error?: Error) => void;
+    let enteredStop!: () => void;
+    const stopPending = new Promise<void>((resolve, reject) => {
+      releaseStop = (error) => error ? reject(error) : resolve();
+    });
+    const stopEntered = new Promise<void>((resolve) => { enteredStop = resolve; });
+    const events: string[] = [];
+    const runner = new ClaudeTargetRunner({
+      runtime: { productId: 'claude-code', executable: process.execPath, requestedModel: 'sonnet', resolvedModel: 'unknown' },
+      environment: { environmentId: 'environment-run-1', runId: 'run-1', root },
+      args: [script, 'success'],
+      env: { CLAUDE_STOP_SENTINEL: sentinel },
+      sink: { append: async (event) => {
+        if (event.type === 'runtime.session_stopped') { enteredStop(); await stopPending; }
+        events.push(event.type);
+      } },
+    });
+    t.after(async () => { releaseStop(); await runner.close().catch(() => undefined); });
+    await runner.start(
+      { id: 'message-1', text: 'Create ping.txt' },
+      { runId: 'run-1', turnIndex: 0, clientMessageId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
+    );
+    assert.equal((await runner.waitForTurn()).status, 'completed');
+    const stopping = runner.stop('completed');
+    await stopEntered;
+    await writeFile(sentinel, 'exit');
+    for (let attempts = 0; attempts < 100 && await runner.inspect() !== 'stopped'; attempts++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(await runner.inspect(), 'stopped');
+    releaseStop(rejectStopEvent ? new Error('stop event write failed') : undefined);
+    if (rejectStopEvent) await assert.rejects(stopping, /stop event write failed/);
+    else await stopping;
+    for (let attempts = 0; rejectStopEvent && attempts < 100 && !events.includes('runtime.runtime_failed'); attempts++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(events.includes('runtime.session_stopped'), !rejectStopEvent);
+    assert.equal(events.includes('runtime.runtime_failed'), rejectStopEvent);
+  },
+);
 
 test('a control request that never responds times out and closes the process', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-claude-timeout-'));

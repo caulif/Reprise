@@ -9,12 +9,12 @@
 ## 决定
 
 - 将已封存的可打开历史终稿登记为 `historical_artifact` catalog 链接，保留其 `finals/` bundle；渲染仍只接受 Host 映射的短引用与受控挂载。
-- 历史终稿在 attempt 草稿中使用 `finals/` 相对链接；预览将被引用终稿及 HTML bundle 资源复制到受控预览目录，并纳入依赖摘要；发布时改写为实验根目录的 `comparison-attempts/<attemptId>/finals/` 链接。三种页面各自只使用其可访问的根目录。
-- 新派生证据按内容 hash 保存，识别支持的扩展名并核对 HTML/SVG/PNG/JSON 的基本内容类型。旧无后缀文件不迁移、不覆写。
+- 历史终稿在 attempt 草稿中使用 `finals/` 相对链接；预览将被引用终稿及 HTML bundle 资源复制到受控预览目录，并纳入依赖摘要；发布时生成 `comparison-attempts/<attemptId>/published-finals/<digest>/finals/` 内容寻址副本并改写报告链接。预览与发布副本均改写根相对资源、HTML 的本地 `base` 地址和内联 module 的静态导入；XHTML/SVG 的本地资源也纳入副本，封存的 `finals/` 原件不变。
+- 新派生证据按内容 hash 保存，识别支持的扩展名并核对 HTML/SVG/PNG/JSON 的基本内容类型。HTML/SVG 仅允许静态元素和属性，登记与发布均校验，避免可打开的 Agent 证据执行脚本；旧无后缀文件不迁移、不覆写。
 - 根报告发布时只处理 catalog 中 `derived_analysis` 且实际被引用的证据。校验 attempt 内路径、真实路径和 SHA-256，再复制到根 `evidence/<hash>.<ext>` 并改写报告和 model 的链接。恢复发布走同一映射，失败不覆盖旧根报告。
 - `report-model.json` 保持原 `evidenceRefs` 的 event/artifact 语义，新增可选 `evidenceIdentities` 保存所引派生证据的短引用、内容 hash 与 source refs。旧 model 继续通过 schema 校验；不把短引用伪装成事件 ID。
 - 预览静态 mechanics 排除 template 原型，并将“指标存在”和“指标实际可见”区分。受控渲染器按 Host 固定选择器回传位置与图片加载事实，不开放任意浏览器脚本给模型。配置与时间线明确自定义模型的图片输入声明及实际 Session 能力，不能由声明推断真实网关支持。
-- 渲染与报告预览成功结果附现有 `read(format=image)` 参数。只有实际读取产生可审计的原生 image block 才能支持模型目视 claim；review 图片仍不进入双侧比较媒体 catalog。
+- 渲染与报告预览成功结果附现有 `read(format=image, mimeType=image/png)` 参数。只有实际读取产生可审计的原生 image block 才能支持模型目视 claim；review 图片仍不进入双侧比较媒体 catalog。
 - 结果页从本次 Comparison 的 `comparison.phase_completed` 事件汇总模型请求、工具调用与压缩次数；候选执行用量单列，比较分析的 Token 与工具费用未采集时明确写未采集，不用候选用量代替。
 
 ## 备选方案

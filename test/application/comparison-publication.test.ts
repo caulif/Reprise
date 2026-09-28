@@ -46,6 +46,26 @@ test("derived evidence publishes at a root-reachable hash path and retains its i
   await assert.rejects(prepareComparisonArtifacts({ attemptRoot, experimentRoot: root, html, evidence }), /hash mismatch/);
 });
 
+test("publication rejects executable HTML and SVG from an existing derived catalog", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-derived-active-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const attemptRoot = join(root, "comparison-attempts", "attempt-1");
+  await mkdir(join(attemptRoot, "evidence", "derived"), { recursive: true });
+  for (const [extension, content] of [
+    ["html", "<!doctype html><html><body><script>alert(1)</script></body></html>"],
+    ["svg", '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>'],
+  ] as const) {
+    const bytes = Buffer.from(content);
+    const contentHash = sha256(bytes);
+    const href = `evidence/derived/${contentHash.slice(0, 16)}.${extension}`;
+    await writeFile(join(attemptRoot, ...href.split("/")), bytes);
+    const evidence = [{ side: "derived" as const, inspectPath: href, reportHref: href,
+      origin: "derived_analysis" as const, contentHash }];
+    await assert.rejects(prepareComparisonArtifacts({ attemptRoot, experimentRoot: root,
+      html: `<a href="${href}">view</a>`, evidence }), /Unsafe derived evidence/);
+  }
+});
+
 const timestamp = "2026-08-15T00:00:00.000Z";
 function taskCase(): TaskCase {
   return {

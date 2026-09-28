@@ -55,7 +55,7 @@ export async function augmentComparisonOpenableMedia(input: {
       augmentedLinks.push({
         side: "baseline",
         inspectPath,
-        reportHref: inspectPath,
+        reportHref: inspectPath.split("/").map(encodeURIComponent).join("/"),
         ...(mediaType ? { mediaType } : {}),
         byteLength: (await stat(sealed)).size,
         origin: "historical_artifact",

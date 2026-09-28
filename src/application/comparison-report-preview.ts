@@ -1,10 +1,12 @@
-import { mkdir, readFile, readdir, realpath } from "node:fs/promises";
-import { dirname, extname, join, resolve } from "node:path";
+import { mkdir, readFile, realpath } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { sha256 } from "../core/identity.js";
 import { writeAtomic } from "../core/identity.js";
 import { pathContainedBy } from "../core/paths.js";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
 import { comparisonMediaHrefs, preparePublishableComparisonHtml } from "./comparison-publication.js";
+import { comparisonAnchorHrefs, loadDerivedEvidence } from "./comparison-publish-evidence.js";
+import { historicalFinalDependencies } from "./comparison-final-bundle-dependencies.js";
 import type { PreparedReportPreview } from "./comparison-render-tools.js";
 
 /**
@@ -50,30 +52,17 @@ export async function materializeComparisonReportPreview(input: {
     }
     dependencies.push({ href: normalized, hash, bytes });
   }
+  const anchorHrefs = comparisonAnchorHrefs(prepared.html);
+  for (const link of input.evidence ?? []) {
+    if (link.origin !== "derived_analysis" || !link.reportHref || !anchorHrefs.has(link.reportHref)) continue;
+    dependencies.push(await loadDerivedEvidence(input.attemptRoot, link));
+  }
   const historical = (input.evidence ?? []).filter((link) =>
     link.origin === "historical_artifact"
     && link.reportHref?.startsWith("finals/")
-    && prepared.html.includes(`href="${link.reportHref}"`));
+    && anchorHrefs.has(link.reportHref));
   if (historical.length > 0) {
-    const finalsRoot = join(input.attemptRoot, "finals");
-    const files = new Set<string>();
-    for (const link of historical) {
-      if (extname(link.reportHref!).toLowerCase() === ".html" || extname(link.reportHref!).toLowerCase() === ".htm") {
-        for (const path of await listPreviewFinals(finalsRoot)) files.add(path);
-      } else {
-        files.add(link.reportHref!.slice("finals/".length));
-      }
-    }
-    const rootReal = await realpath(finalsRoot);
-    for (const path of [...files].sort()) {
-      const href = `finals/${path}`;
-      const source = resolve(input.attemptRoot, ...href.split("/"));
-      if (!pathContainedBy(finalsRoot, source)) throw new Error(`Comparison preview final escapes finals root: ${href}`);
-      const sourceReal = await realpath(source);
-      if (!pathContainedBy(rootReal, sourceReal)) throw new Error(`Comparison preview final escapes finals root: ${href}`);
-      const bytes = await readFile(sourceReal);
-      dependencies.push({ href, hash: sha256(bytes), bytes });
-    }
+    dependencies.push(...await historicalFinalDependencies(input.attemptRoot, historical));
   }
   const dependencyDigest = sha256(JSON.stringify({
     draftDigest, preparedDigest, catalogRevision: input.catalogRevision,
@@ -105,15 +94,4 @@ export async function materializeComparisonReportPreview(input: {
     dependencyDigest,
     outputRoot,
   };
-}
-
-async function listPreviewFinals(root: string, prefix = ""): Promise<string[]> {
-  const files: string[] = [];
-  for (const entry of await readdir(join(root, ...prefix.split("/").filter(Boolean)), { withFileTypes: true })) {
-    const path = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) files.push(...await listPreviewFinals(root, path));
-    else if (entry.isFile()) files.push(path);
-    else throw new Error(`Comparison preview final has unsupported file type: ${path}`);
-  }
-  return files;
 }
