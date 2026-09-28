@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import {
   assertExperimentReportPath, assertExperimentTracePath, assertExperimentReplicaPath, assertPathInsideAnyRoot, assertPathInsideRoot,
-  localPathFromFileUrl, openAllowedFileUrl, openExperimentArtifact, openExperimentReport, openExperimentTrace, openScratchText,
+  localPathFromFileUrl, openAllowedFileUrl, openExperimentArtifact, openExperimentReplica, openExperimentReport, openExperimentTrace, openScratchText,
   type ReportSpawner,
 } from '../../src/tui/open-report.js';
 
@@ -101,7 +101,23 @@ test('report opener resolves after the operating system accepts the spawn reques
   assert.equal(settledBeforeSpawn, false);
   child.emit('spawn');
   await assert.doesNotReject(opening);
-  assert.deepEqual(calls, [{ command: expectedCommand(), args: [REPORT_PATH], options: { detached: true, stdio: 'ignore', windowsHide: true } }]);
+  assert.deepEqual(calls, [{ command: expectedCommand(), args: [REPORT_PATH], options: { detached: true, stdio: 'ignore', windowsHide: false } }]);
+});
+
+test('replica opener passes the retained recovery workspace to a visible system handler', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-open-replica-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const replica = join(root, 'environment', 'recovery', 'recovery-run-1', 'runs', 'run-1');
+  await mkdir(replica, { recursive: true });
+  const child = reportProcess();
+  const { start, calls } = recordingSpawner(child);
+  const opening = openExperimentReplica(root, 'run-1', (...args) => {
+    const process = start(...args);
+    queueMicrotask(() => child.emit('spawn'));
+    return process;
+  }, replica);
+  await assert.doesNotReject(opening);
+  assert.deepEqual(calls, [{ command: expectedCommand(), args: [replica], options: { detached: true, stdio: 'ignore', windowsHide: false } }]);
 });
 
 test('trace opener and file-url opener use the same local handler', async () => {
