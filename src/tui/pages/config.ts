@@ -161,7 +161,8 @@ function fieldLabel(locale: Locale, field: ConfigField): string {
 }
 
 function fieldValue(theme: Theme, field: ConfigField, value: string, kind: HarnessConfigDraft['kind'], locale: Locale): string {
-  if (field === 'reasoning' || field === 'image input') return t(locale, value === 'true' ? 'configOn' : 'configOff');
+  if (field === 'image input') return value === 'true' ? t(locale, 'configImageDeclared') : t(locale, 'configImageTextOnly');
+  if (field === 'reasoning') return t(locale, value === 'true' ? 'configOn' : 'configOff');
   if (field === 'API key') {
     if (kind !== 'openai-compatible' && !value) return '';
     const validity = apiKeyValidity(value);

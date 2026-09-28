@@ -216,6 +216,7 @@ export class ClaudeTargetRunner implements TargetRunner {
   #status: TargetStatus = 'starting';
   readonly #turns = new TurnWaiter();
   #processExitRecorded = false;
+  #stopRequested = false;
   #init: Record<string, unknown> | undefined;
   #turnIndex = 0;
 
@@ -299,6 +300,7 @@ export class ClaudeTargetRunner implements TargetRunner {
 
   async stop(reason: RuntimeStopReason): Promise<void> {
     await this.#sink.append(runtimeTargetEvent('session_stopped', { reason, sessionId: this.#sessionId }));
+    this.#stopRequested = true;
     if (this.#status !== 'stopped') {
       try { await this.#client.request('interrupt'); } catch { /* interrupt is best-effort; process kill is the final means. */ }
     }
@@ -362,6 +364,7 @@ export class ClaudeTargetRunner implements TargetRunner {
   #onClosed(error: Error): void {
     this.#status = 'stopped';
     this.#turns.fail(error);
+    if (this.#stopRequested) return;
     if (this.#processExitRecorded) return;
     this.#processExitRecorded = true;
     void this.#sink.append(runtimeTargetEvent('runtime_failed', { message: error.message })).catch((appendError: unknown) => {

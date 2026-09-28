@@ -75,6 +75,8 @@ node dist/src/cli/main.js compare --experiment <experimentId> --json
 
 配置页（首页“Reprise 模型设置”或输入 `/config`）保存一份供任务准备、执行引导和结果比较共用的 Reprise 模型。配置写入 Git 忽略的 `{dataDir}/harness-model.json`（默认即 `.reprise/harness-model.json`），也可将密钥写成 `env:NAME` 引用。密钥值不会写入事件、artifact 或报告。
 
+自定义模型的图片输入默认未声明，因此内部 Agent 仅接收文本；配置页会显示“未声明，仅文本”，启用后显示“已声明（未探测）”。这项声明影响 Recovery、Controller 与 Comparison，不代表供应商网关已通过图片请求验证，也不由候选 Runtime 的图片能力继承。Comparison 时间线显示实际 Session 的输入类型；仅文本 Session 的视觉质量不能据源码或像素脚本自称目视验证。
+
 ### 第三方 OpenAI-compatible 服务（推荐入口）
 
 1. 打开 TUI，输入 `/config`。

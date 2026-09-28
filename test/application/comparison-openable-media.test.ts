@@ -111,6 +111,8 @@ test("augmentComparisonOpenableMedia screenshots dual html when links only refer
     },
   });
   assert.equal(captureCalls.length, 2);
+  assert.ok(result.links.some((item) => item.side === "baseline" && item.inspectPath === "finals/deck.html"
+    && item.mediaType === "text/html" && item.origin === "historical_artifact"));
   for (const item of result.media.filter((entry: ComparisonMediaRecord) => entry.available)) {
     assert.match(item.reportHref, /\.png$/);
     assert.match(item.inspectPath, /^media\/.+\.png$/);

@@ -1,6 +1,7 @@
-import { mkdir, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { mkdir, readFile, stat } from "node:fs/promises";
+import { basename, extname, join, relative } from "node:path";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
+import { sha256 } from "../core/identity.js";
 import { captureHeadlessScreenshot } from "../infrastructure/headless-screenshot.js";
 import { comparisonMediaFileName, isComparisonImagePath, materializeComparisonMedia } from "./comparison-media.js";
 import { withMediaShortRefs } from "./comparison-short-refs.js";
@@ -34,14 +35,33 @@ export async function augmentComparisonOpenableMedia(input: {
   const captureScreenshot = input.captureScreenshot ?? captureHeadlessScreenshot;
   const sealedRoot = join(input.attemptRoot, "finals");
   await mkdir(sealedRoot, { recursive: true });
+  const augmentedLinks = [...input.links];
   for (const source of input.baselineSources) {
     if (!isOpenableFinalPath(source.absolutePath)) continue;
     const logical = source.inspectPath.replace(/\\/g, "/").startsWith("finals/")
       ? source.inspectPath.replace(/\\/g, "/").slice("finals/".length)
       : undefined;
-    await sealBaselineOpenablePath(sealedRoot, source.absolutePath, logical || undefined);
+    const sealed = await sealBaselineOpenablePath(sealedRoot, source.absolutePath, logical || undefined);
+    const entry = relative(sealedRoot, sealed).replaceAll("\\", "/");
+    const inspectPath = `finals/${entry}`;
+    if (!augmentedLinks.some((link) => link.side === "baseline" && link.inspectPath === inspectPath)
+      && !(await hasEquivalentBaselineImageLink(augmentedLinks, input.attemptRoot, sealed))) {
+      const extension = extname(entry).toLowerCase();
+      const mediaType = extension === ".html" || extension === ".htm" ? "text/html"
+        : extension === ".svg" ? "image/svg+xml"
+        : extension === ".png" ? "image/png"
+        : extension === ".jpg" || extension === ".jpeg" ? "image/jpeg"
+        : extension === ".webp" ? "image/webp" : undefined;
+      augmentedLinks.push({
+        side: "baseline",
+        inspectPath,
+        reportHref: inspectPath,
+        ...(mediaType ? { mediaType } : {}),
+        byteLength: (await stat(sealed)).size,
+        origin: "historical_artifact",
+      });
+    }
   }
-  const augmentedLinks = [...input.links];
   const screenshotLinks: ComparisonLinkRecord[] = [];
   const screenshotFailures: string[] = [];
   const linkedImageBasenames = new Set(
@@ -93,6 +113,17 @@ export async function augmentComparisonOpenableMedia(input: {
     screenshotFailures,
   });
   return { links: augmentedLinks, media };
+}
+
+async function hasEquivalentBaselineImageLink(links: readonly ComparisonLinkRecord[], attemptRoot: string, sealed: string): Promise<boolean> {
+  const sealedHash = sha256(await readFile(sealed));
+  for (const link of links) {
+    if (link.side !== "baseline" || !link.mediaType?.startsWith("image/") || !/^history\/media\/[A-Za-z0-9._-]+$/.test(link.inspectPath)) continue;
+    if (link.contentHash === sealedHash) return true;
+    const existing = await readFile(join(attemptRoot, ...link.inspectPath.split("/"))).catch(() => undefined);
+    if (existing && sha256(existing) === sealedHash) return true;
+  }
+  return false;
 }
 
 export function assertPairedVisualMediaOrThrow(input: {

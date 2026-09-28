@@ -107,7 +107,7 @@ function phaseTools(tools: readonly AgentToolDefinition[], current: { phase: Com
         return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: 'Submit a draft in the compose turn.' }) });
       }
       if (tool.name === 'preview_report' && current.phase !== 'review') {
-        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: 'Preview report.html in the review turn.' }) });
+        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', currentPhase: current.phase, nextLegalPhase: 'review', message: 'Preview report.html in the review turn.' }) });
       }
       return tool.execute(params, signal);
     },
@@ -239,6 +239,9 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'registration is not independent verification of your interpretation. Use',
   'preview_report to check the draft with the current catalog. New references are',
   'append-only; re-read current metadata after a successful registration.',
+  'Limit claims to the observation method: a saved frame is not a full animation;',
+  'a script you wrote is derived analysis, not independent confirmation. Missing',
+  'historical records mean no evidence was found, not that an action never happened.',
 ].join('\n');
 
 export function composeComparisonSystemPrompt(locale: AgentLocale): string {
@@ -272,7 +275,7 @@ export const COMPARISON_TURN_PROMPTS = {
     'the actual evidence, obtain useful previews or checks, and resolve recoverable',
     'gaps. Use matched conditions when comparing outputs. Preserve new relevant',
     'evidence through the registered tools. Record what was observed, inferred, or',
-    'still unknown, with stable references. Stop investigating when additional work',
+    'self-reported, or still unknown, with stable references. Stop investigating when additional work',
     'is unlikely to change the conclusion; do not exhaust every log by default.',
     'Before another check, ask whether its possible result could change the',
     'recommendation, confidence, or a material limitation. If not, stop this turn.',
@@ -298,6 +301,8 @@ export const COMPARISON_TURN_PROMPTS = {
     'and previews must not masquerade as original output or historical screenshots.',
     '',
     'Keep limitations that change the judgment visible next to the conclusion.',
+    'Avoid always, never, exact, or whole-run claims from partial history, still',
+    'frames, source inference, or discrete samples. State the observed scope.',
     'Move long methods, file listings, and investigation detail to the details area.',
     'Do not include external resources, credentials or private paths. The Host owns',
     'the task, model identity, metrics, page structure and CSS. Submit actual content,',

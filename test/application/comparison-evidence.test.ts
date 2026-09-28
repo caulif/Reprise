@@ -51,6 +51,31 @@ test("append-only evidence short refs preserve earlier numbers when appending", 
   assert.deepEqual(first.map((link) => link.shortRef), ["ev-01", "ev-02"]);
 });
 
+test("evidence labels distinguish browser residue and historical previews", () => {
+  const links = withEvidenceShortRefs([
+    { side: "candidate", inspectPath: "candidate/.edgeprofile/Last Version", path: ".edgeprofile/Last Version" },
+    { side: "baseline", inspectPath: "media/baseline.png", mediaType: "image/png" },
+    { side: "candidate", inspectPath: "candidate/result.html", path: "result.html" },
+  ]);
+  assert.deepEqual(links.map((link) => link.label), ["浏览器运行残留", "历史会话预览", "候选会话最终交付"]);
+});
+
+test("derived HTML keeps a renderable extension and forged image bytes are rejected", async (t) => {
+  const attemptRoot = await tempAttempt(t, "reprise-derived-types-");
+  await mkdir(join(attemptRoot, "scratch"), { recursive: true });
+  await writeFile(join(attemptRoot, "scratch", "page.html"), "<!doctype html><html><body>ok</body></html>");
+  await writeFile(join(attemptRoot, "scratch", "fake.png"), "not a PNG");
+  const catalog = await ComparisonEvidenceCatalog.create({
+    attemptRoot, attemptId: "attempt-types", links: [{ side: "baseline", inspectPath: "finals/a.html", shortRef: "ev-01" }], media: [],
+  });
+  const html = await catalog.registerEvidence({ relativePath: "page.html", sourceRefs: ["ev-01"], label: "page" });
+  assert.equal(html.status, "registered");
+  if (html.status === "registered") assert.match(html.inspectPath, /\.html$/);
+  const fake = await catalog.registerEvidence({ relativePath: "fake.png", sourceRefs: ["ev-01"], label: "fake" });
+  assert.deepEqual({ status: fake.status, code: fake.status === "rejected" ? fake.code : undefined },
+    { status: "rejected", code: "path_invalid" });
+});
+
 test("append-only media short refs support 2-6 digit capacity and do not renumber", () => {
   assert.equal(Value.Check(ComparisonMediaShortRefSchema, "media-01"), true);
   assert.equal(Value.Check(ComparisonMediaShortRefSchema, "media-999999"), true);

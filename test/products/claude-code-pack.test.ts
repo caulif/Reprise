@@ -358,6 +358,18 @@ test('an unexpectedly exited Claude process fails waitForTurn and records one pr
   assert.equal(events.filter((type) => type === 'runtime.runtime_failed').length, 1);
 });
 
+test('controller-initiated stop after a successful turn does not report runtime failure', async (t) => {
+  const { runner, events } = await fakeClaudeRunner(t, 'success');
+  await runner.start(
+    { id: 'message-1', text: 'Create ping.txt' },
+    { runId: 'run-1', turnIndex: 0, clientMessageId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
+  );
+  assert.equal((await runner.waitForTurn()).status, 'completed');
+  await runner.stop('completed');
+  assert.ok(events.includes('runtime.session_stopped'));
+  assert.equal(events.includes('runtime.runtime_failed'), false);
+});
+
 test('a control request that never responds times out and closes the process', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-claude-timeout-'));
   t.after(async () => rm(root, { recursive: true, force: true }));

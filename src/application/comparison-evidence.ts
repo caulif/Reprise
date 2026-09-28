@@ -204,7 +204,18 @@ export class ComparisonEvidenceCatalog {
       });
     }
 
-    const inspectPath = `evidence/derived/${contentHash.slice(0, 16)}`;
+    const mediaType = guessMediaType(input.relativePath, bytes);
+    if (!derivedContentMatchesType(mediaType, bytes)) {
+      return { status: "rejected", code: "path_invalid", message: `Derived evidence content does not match ${mediaType}.` };
+    }
+    const extension = mediaType === "text/html" ? ".html"
+      : mediaType === "image/svg+xml" ? ".svg"
+      : mediaType === "image/png" ? ".png"
+      : mediaType === "text/markdown" ? ".md"
+      : mediaType === "application/json" ? ".json"
+      : mediaType === "application/octet-stream" ? ".bin"
+      : ".txt";
+    const inspectPath = `evidence/derived/${contentHash.slice(0, 16)}${extension}`;
     const absoluteOut = join(this.#attemptRoot, ...inspectPath.split("/"));
     try {
       await mkdir(dirname(absoluteOut), { recursive: true });
@@ -217,7 +228,7 @@ export class ComparisonEvidenceCatalog {
       side: "derived",
       inspectPath,
       reportHref: inspectPath,
-      mediaType: guessMediaType(input.relativePath, bytes),
+      mediaType,
       byteLength: bytes.byteLength,
       label: input.label.trim() || "derived analysis",
       origin: "derived_analysis",
@@ -779,4 +790,14 @@ function guessMediaType(path: string, bytes: Buffer): string {
   if (lower.endsWith(".svg")) return "image/svg+xml";
   if (bytes.includes(0)) return "application/octet-stream";
   return "text/plain";
+}
+
+function derivedContentMatchesType(mediaType: string, bytes: Buffer): boolean {
+  if (mediaType === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (mediaType === "image/svg+xml") return /<svg(?:\s|>)/i.test(bytes.toString("utf8", 0, 4096));
+  if (mediaType === "text/html") return /<!doctype\s+html|<html(?:\s|>)/i.test(bytes.toString("utf8", 0, 4096));
+  if (mediaType === "application/json") {
+    try { JSON.parse(bytes.toString("utf8")); return true; } catch { return false; }
+  }
+  return true;
 }

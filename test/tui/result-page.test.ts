@@ -206,6 +206,18 @@ test('result metrics name candidate time when comparison made the experiment lon
   assert.match(text, /Total elapsed\s+148s/);
 });
 
+test('result keeps comparison activity separate from execution usage and unknown cost', () => {
+  const text = renderResult(createTheme(120, false), 120, {
+    record: { outcome: { task: { status: 'apparently_completed' }, termination: { kind: 'completed', code: 'completed.controller_satisfied' }, cleanup: { status: 'complete' } } },
+    decision: { status: 'completed', value: { type: 'done', reason: 'satisfied' } },
+    comparison: { result: { status: 'completed' } },
+    facts: { elapsedMs: 100_000, tokenCount: 500, costUsd: 0.5, comparisonActivity: { modelRequests: 12, toolCalls: 9, compactions: 1 } },
+  } as never, 'en', undefined, false, { detailsExpanded: true }).join('\n');
+  assert.match(text, /Execution usage.*500 tokens/);
+  assert.match(text, /Comparison activity.*12 model requests.*9 tool calls.*1 compactions/);
+  assert.match(text, /Comparison cost.*not collected/);
+});
+
 test('result separates requested and resolved models, phase durations, and unpublished report', () => {
   const result = {
     reportPath: 'C:\\exp\\comparison-failure.html',

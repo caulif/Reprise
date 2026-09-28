@@ -1,5 +1,5 @@
-import { mkdir, readFile, realpath } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { mkdir, readFile, readdir, realpath } from "node:fs/promises";
+import { dirname, extname, join, resolve } from "node:path";
 import { sha256 } from "../core/identity.js";
 import { writeAtomic } from "../core/identity.js";
 import { pathContainedBy } from "../core/paths.js";
@@ -50,6 +50,31 @@ export async function materializeComparisonReportPreview(input: {
     }
     dependencies.push({ href: normalized, hash, bytes });
   }
+  const historical = (input.evidence ?? []).filter((link) =>
+    link.origin === "historical_artifact"
+    && link.reportHref?.startsWith("finals/")
+    && prepared.html.includes(`href="${link.reportHref}"`));
+  if (historical.length > 0) {
+    const finalsRoot = join(input.attemptRoot, "finals");
+    const files = new Set<string>();
+    for (const link of historical) {
+      if (extname(link.reportHref!).toLowerCase() === ".html" || extname(link.reportHref!).toLowerCase() === ".htm") {
+        for (const path of await listPreviewFinals(finalsRoot)) files.add(path);
+      } else {
+        files.add(link.reportHref!.slice("finals/".length));
+      }
+    }
+    const rootReal = await realpath(finalsRoot);
+    for (const path of [...files].sort()) {
+      const href = `finals/${path}`;
+      const source = resolve(input.attemptRoot, ...href.split("/"));
+      if (!pathContainedBy(finalsRoot, source)) throw new Error(`Comparison preview final escapes finals root: ${href}`);
+      const sourceReal = await realpath(source);
+      if (!pathContainedBy(rootReal, sourceReal)) throw new Error(`Comparison preview final escapes finals root: ${href}`);
+      const bytes = await readFile(sourceReal);
+      dependencies.push({ href, hash: sha256(bytes), bytes });
+    }
+  }
   const dependencyDigest = sha256(JSON.stringify({
     draftDigest, preparedDigest, catalogRevision: input.catalogRevision,
     media: dependencies.map(({ href, hash }) => ({ href, hash })),
@@ -80,4 +105,15 @@ export async function materializeComparisonReportPreview(input: {
     dependencyDigest,
     outputRoot,
   };
+}
+
+async function listPreviewFinals(root: string, prefix = ""): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(join(root, ...prefix.split("/").filter(Boolean)), { withFileTypes: true })) {
+    const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...await listPreviewFinals(root, path));
+    else if (entry.isFile()) files.push(path);
+    else throw new Error(`Comparison preview final has unsupported file type: ${path}`);
+  }
+  return files;
 }

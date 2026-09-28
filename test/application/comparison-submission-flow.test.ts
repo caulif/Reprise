@@ -43,6 +43,7 @@ test('application publishes a submitted and previewed draft after an empty final
   const result = await startExperiment({ ...base, comparison }).result;
   assert.equal(turns, 3);
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
+  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 0, toolCalls: 2, compactions: 0 });
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /usable result/);
   const events = await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8');
   assert.match(events, /comparison.phase_completed/);

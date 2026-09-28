@@ -2,6 +2,7 @@ import { mkdir, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { parse } from "parse5";
 import type { ArtifactRenderer, RenderViewport } from "../infrastructure/artifact-render-types.js";
 import { ARTIFACT_RENDERER_VERSION, DEFAULT_RENDER_VIEWPORT, RENDER_LIMITS } from "../infrastructure/artifact-render-types.js";
 import { renderFrozenArtifact } from "../infrastructure/artifact-renderer.js";
@@ -57,6 +58,7 @@ export type RegisterDerivedMediaResult =
       shortRef: string;
       mediaRef: string;
       revision: number;
+      readPath?: string;
     }
   | {
       ok: false;
@@ -184,7 +186,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         code: registrations.code,
         message: registrations.message,
       });
-      const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number }[] = [];
+      const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number; read?: { path: string; format: "image" } }[] = [];
       for (const [index, registered] of registrations.items.entries()) {
         const frame = rendered.frames[index];
         if (!frame) continue;
@@ -192,6 +194,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         mediaRefs.push({
           shortRef: registered.shortRef,
           mediaRef: registered.mediaRef,
+          ...(registered.readPath ? { read: { path: registered.readPath, format: "image" as const } } : {}),
           sampleTimeMs: frame.sampleTimeMs,
           actualTimeMs: frame.actualTimeMs,
         });
@@ -263,7 +266,8 @@ async function cachedReportPreview(
     if (registered.ok) {
       return {
         ...cached.payload,
-        previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review" },
+        previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review",
+          ...(registered.readPath ? { read: { path: registered.readPath, format: "image" } } : {}) },
       };
     }
   }
@@ -294,6 +298,12 @@ async function renderReportPreview(input: {
     sampleTimesMs: [0],
     outputRoot,
     signal,
+    layoutSelectors: [
+      { name: "headline", selector: '[data-agent-slot="headline"]' },
+      { name: "comparison", selector: '[data-agent-zone="comparison"]' },
+      { name: "firstImage", selector: '[data-agent-zone="comparison"] img' },
+      { name: "metrics", selector: '[data-host-zone="metrics"]' },
+    ],
   });
   if (!rendered.ok) return textResult({
     status: rendered.failure.kind, revision: prepared.catalogRevision,
@@ -325,8 +335,11 @@ async function renderReportPreview(input: {
     status: "ok", publicationStructure: preflight ? "valid" : "unchecked",
     revision: prepared.catalogRevision, draftDigest: prepared.draftDigest,
     preparedDigest: prepared.preparedDigest, previewDigest: frame.contentHash,
-    previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review" },
-    mechanics: inspectPreparedReportMechanics(prepared.html), diagnostics: rendered.diagnostics,
+    previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review",
+      ...(registered.readPath ? { read: { path: registered.readPath, format: "image" } } : {}) },
+    mechanics: inspectPreparedReportMechanics(prepared.html),
+    ...(rendered.measured.layout ? { layout: rendered.measured.layout } : {}),
+    diagnostics: rendered.diagnostics,
     note: "preview media uses review-* refs only; it is not baseline/candidate comparison evidence",
   };
   cache.set(cacheKey, { payload, pngPath: frame.pngPath, contentHash: frame.contentHash, registration });
@@ -363,21 +376,25 @@ function assertEvidenceShortRef(shortRef: string, kind: "artifact_preview" | "re
 }
 
 function inspectPreparedReportMechanics(html: string): Record<string, unknown> {
-  const imgRefs = [...html.matchAll(/\bdata-media-ref=["']([^"']+)["']/gi)].map((m) => m[1]);
-  const imgsWithSrc = [...html.matchAll(/<img\b[^>]*>/gi)];
-  const missingSrc = imgsWithSrc.filter((tag) => !/\bsrc=["'][^"']+["']/i.test(tag[0] ?? "")).length;
-  const hostMetricsVisible = /data-host-zone=["']metrics["']/i.test(html);
+  type Node = { tagName?: string; attrs?: { name: string; value: string }[]; childNodes?: Node[] };
+  const active = { mediaRefCount: 0, imagesMissingSrc: 0, hostMetricsPresent: false, shareRegionPresent: false };
+  const visit = (node: Node): void => {
+    if (node.tagName === "template") return;
+    const attrs = new Map((node.attrs ?? []).map((attr) => [attr.name, attr.value]));
+    if (attrs.has("data-media-ref")) active.mediaRefCount += 1;
+    if (node.tagName === "img" && !attrs.get("src")) active.imagesMissingSrc += 1;
+    if (attrs.get("data-host-zone") === "metrics") active.hostMetricsPresent = true;
+    if (attrs.get("class")?.split(/\s+/).includes("share")) active.shareRegionPresent = true;
+    for (const child of node.childNodes ?? []) visit(child);
+  };
+  visit(parse(html) as Node);
   const modelLabels = {
     hasHistorical: /历史会话|Historical/i.test(html),
     hasCurrent: /当前会话|Current/i.test(html),
   };
-  const share = html.match(/class=["'][^"']*\bshare\b[^"']*["']/i);
   return {
-    mediaRefCount: imgRefs.length,
-    imagesMissingSrc: missingSrc,
-    hostMetricsVisible,
+    ...active,
     modelLabels,
-    shareRegionPresent: Boolean(share),
     htmlByteLength: Buffer.byteLength(html, "utf8"),
   };
 }

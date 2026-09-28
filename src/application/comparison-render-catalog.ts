@@ -335,6 +335,7 @@ async function registerPreviewMedia(
     shortRef: registered.shortRef,
     mediaRef: recorded?.ref ?? `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
     revision: registered.revision,
+    readPath: inspectPath,
   };
 }
 
@@ -387,7 +388,8 @@ async function registerPreviewMediaBatch(
       ok: true,
       items: successful.map((item) => {
         const media = catalog.snapshot().media.find((candidate) => candidate.shortRef === item.shortRef);
-        return { ok: true as const, shortRef: item.shortRef, mediaRef: media?.ref ?? `media:${item.shortRef}`, revision: item.revision };
+        return { ok: true as const, shortRef: item.shortRef, mediaRef: media?.ref ?? `media:${item.shortRef}`,
+          revision: item.revision, ...(media ? { readPath: media.inspectPath } : {}) };
       }),
     };
   } catch (error) {
@@ -442,7 +444,7 @@ async function registerReviewMedia(
     };
   }
   // Revision is not bumped: review screenshots are not comparison evidence.
-  const registered = { ok: true as const, shortRef, mediaRef, revision: revision() };
+  const registered = { ok: true as const, shortRef, mediaRef, revision: revision(), readPath: `review/media/${shortRef}.png` };
   reviewByKey.set(key, registered);
   return registered;
 }
