@@ -23,7 +23,7 @@ async function openLocalPath(
   start: ReportSpawner = spawn,
 ): Promise<void> {
   const invocation = openPathInvocation(target);
-  const child = start(invocation.executable, invocation.args, { detached: true, stdio: 'ignore', windowsHide: true });
+  const child = start(invocation.executable, invocation.args, { detached: true, stdio: 'ignore', windowsHide: false });
   child.unref();
   await new Promise<void>((resolveOpen, rejectOpen) => {
     child.once('error', rejectOpen);
