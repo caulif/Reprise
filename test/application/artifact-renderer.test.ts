@@ -291,6 +291,7 @@ test("opt-in real browser captures two changing animation frames", async (t) => 
     entryRelativePath: "anim.html",
     viewport: { width: 320, height: 240, scale: 1 },
     sampleTimesMs: [0, 500],
+    layoutSelectors: [{ name: "box", selector: "#box" }, { name: "missing", selector: "#missing" }],
     outputRoot: join(root, "out"),
     signal: AbortSignal.timeout(45_000),
   });
@@ -298,6 +299,9 @@ test("opt-in real browser captures two changing animation frames", async (t) => 
   if (!result.ok) return;
   assert.equal(result.frames.length, 2);
   assert.notEqual(result.frames[0]!.contentHash, result.frames[1]!.contentHash);
+  assert.equal(result.measured.layout?.viewportWidth, 320);
+  assert.equal(result.measured.layout?.elements.box?.inViewport, true);
+  assert.equal(result.measured.layout?.elements.missing, null);
 });
 
 test("opt-in real browser blocks external fetch, websocket, and file urls", async (t) => {

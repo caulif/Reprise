@@ -27,7 +27,7 @@ export type ConfigInputState = {
 export type VisibleConfigItem = HarnessConfigField | 'more' | 'language';
 export function visibleConfigItems(kind: HarnessConfigDraft['kind'], advanced = false): readonly VisibleConfigItem[] {
   const fields = configFieldsForKind(kind);
-  const lowFrequency = new Set<HarnessConfigField>(['effort', 'reasoning', 'image input']);
+  const lowFrequency = new Set<HarnessConfigField>(['effort', 'reasoning']);
   return [...(advanced ? fields : fields.filter((field) => !lowFrequency.has(field))), 'more', 'language'];
 }
 export type ConfigInputResult = {

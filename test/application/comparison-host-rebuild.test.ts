@@ -276,7 +276,7 @@ test("report title and side labels show only the actual candidate model", () => 
     },
   };
   const html = renderComparisonReportShell({ task: "Host 原任务文案。", facts: divergent, metrics: {}, locale: "zh" });
-  assert.match(html, /<div class="who">deepseek\/deepseek-v4\.1-flash<\/div>/);
+  assert.match(html, /<span>当前会话 · deepseek\/deepseek-v4\.1-flash<\/span>/);
   assert.doesNotMatch(html, /请求 sonnet|requested sonnet/);
   assert.equal(divergent.models.candidate, "deepseek/deepseek-v4.1-flash");
   const same = renderComparisonReportShell({
@@ -285,13 +285,13 @@ test("report title and side labels show only the actual candidate model", () => 
     metrics: {},
     locale: "en",
   });
-  assert.match(same, /<div class="who">sonnet<\/div>/);
+  assert.match(same, /<span>Current session · sonnet<\/span>/);
   const unknown = renderComparisonReportShell({
     task: "Task.",
     facts: { ...facts, models: { ...facts.models, candidateRequested: "sonnet" } },
     metrics: {},
     locale: "en",
   });
-  assert.match(unknown, /<div class="who">unrecorded<\/div>/);
+  assert.match(unknown, /<span>Current session · unrecorded<\/span>/);
   assert.doesNotMatch(unknown, /requested sonnet/);
 });

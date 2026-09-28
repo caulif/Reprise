@@ -252,7 +252,6 @@ const SILENT_TIMELINE_TYPES = new Set([
   'agent.session_failed',
   'agent.session_cancelled',
   'agent.message_appended',
-  'agent.session_started',
   'agent.model_output',
   'agent.model_request',
 ]);
@@ -288,6 +287,17 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
   const entry = timelineEntryFactory(event);
 
   switch (event.type) {
+    case 'agent.session_started': {
+      if (text(payload.role) !== 'comparison') return [];
+      const capabilities = Array.isArray(payload.inputCapabilities)
+        ? payload.inputCapabilities.filter((item): item is string => typeof item === 'string') : [];
+      const model = text(payload.model) ?? 'unknown model';
+      return [entry('HARNESS', 'Comparison evaluator', `${model} · input: ${capabilities.join(', ') || 'unknown'}`,
+        { lane: 'comparison', kind: 'narrate', role: 'comparison', verb: 'inspect', activityStatus: 'completed' }),
+        ...(!capabilities.includes('image') ? [entry('HARNESS', 'Visual review unavailable',
+          'Evaluator accepts text only; visual quality cannot be claimed from images in this session.',
+          { lane: 'comparison', kind: 'narrate', role: 'comparison', verb: 'inspect', activityStatus: 'completed' })] : [])];
+    }
     case 'recovery.started':
       return [
         entry('HARNESS', 'Recovery started', undefined, { hidden: true }),

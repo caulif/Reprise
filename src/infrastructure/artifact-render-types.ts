@@ -13,6 +13,17 @@ export type RenderRequest = {
   sampleTimesMs: readonly number[];
   outputRoot: string;
   signal: AbortSignal;
+  layoutSelectors?: readonly { name: string; selector: string }[];
+};
+
+export type RenderLayout = {
+  viewportWidth: number;
+  viewportHeight: number;
+  scrollWidth: number;
+  documentHeight: number;
+  imagesLoaded: number;
+  imagesFailed: number;
+  elements: Record<string, { top: number; height: number; laidOut: boolean; inViewport: boolean } | null>;
 };
 
 export type RenderFrame = {
@@ -43,7 +54,7 @@ export type RenderResult =
       ok: true;
       frames: RenderFrame[];
       diagnostics: RenderDiagnostic[];
-      measured: { loadMs: number; viewport: RenderViewport; origin: string };
+      measured: { loadMs: number; viewport: RenderViewport; origin: string; layout?: RenderLayout };
     }
   | {
       ok: false;

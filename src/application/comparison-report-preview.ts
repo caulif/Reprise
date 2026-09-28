@@ -5,6 +5,8 @@ import { writeAtomic } from "../core/identity.js";
 import { pathContainedBy } from "../core/paths.js";
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
 import { comparisonMediaHrefs, preparePublishableComparisonHtml } from "./comparison-publication.js";
+import { comparisonAnchorHrefs, loadDerivedEvidence } from "./comparison-publish-evidence.js";
+import { historicalFinalDependencies } from "./comparison-final-bundle-dependencies.js";
 import type { PreparedReportPreview } from "./comparison-render-tools.js";
 
 /**
@@ -49,6 +51,18 @@ export async function materializeComparisonReportPreview(input: {
       throw new Error(`Comparison preview media changed after registration: ${normalized}`);
     }
     dependencies.push({ href: normalized, hash, bytes });
+  }
+  const anchorHrefs = comparisonAnchorHrefs(prepared.html);
+  for (const link of input.evidence ?? []) {
+    if (link.origin !== "derived_analysis" || !link.reportHref || !anchorHrefs.has(link.reportHref)) continue;
+    dependencies.push(await loadDerivedEvidence(input.attemptRoot, link));
+  }
+  const historical = (input.evidence ?? []).filter((link) =>
+    link.origin === "historical_artifact"
+    && link.reportHref?.startsWith("finals/")
+    && anchorHrefs.has(link.reportHref));
+  if (historical.length > 0) {
+    dependencies.push(...await historicalFinalDependencies(input.attemptRoot, historical));
   }
   const dependencyDigest = sha256(JSON.stringify({
     draftDigest, preparedDigest, catalogRevision: input.catalogRevision,

@@ -259,6 +259,14 @@ function metricsRows(theme: Theme, result: ExperimentResult, locale: Locale, clo
     facts.costUsd === undefined ? `${missing} ${t(locale, 'metricsUsageSummary').toLowerCase()}` : `$${facts.costUsd.toFixed(2)}`,
   ].filter((part): part is string => Boolean(part));
   rows.push(kv(theme, t(locale, 'metricsUsageField'), usage.join(` ${theme.glyphs.sep} `), width - 2));
+  if (result.comparison.result.status !== 'skipped') {
+    const activity = facts.comparisonActivity;
+    if (activity) rows.push(kv(theme, t(locale, 'metricsAnalysisActivity'),
+      locale === 'zh'
+        ? `${activity.modelRequests} 次模型请求 · ${activity.toolCalls} 次工具调用 · ${activity.compactions} 次压缩`
+        : `${activity.modelRequests} model requests · ${activity.toolCalls} tool calls · ${activity.compactions} compactions`, width - 2));
+    rows.push(kv(theme, t(locale, 'metricsAnalysisCost'), t(locale, 'metricsAnalysisCostMissing'), width - 2));
+  }
   return rows;
 }
 

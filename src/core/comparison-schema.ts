@@ -118,6 +118,11 @@ export const ComparisonReportModelSchema = Type.Object({
     process: Type.Optional(Type.String()),
   }),
   evidenceRefs: Type.Array(EvidenceRefSchema),
+  evidenceIdentities: Type.Optional(Type.Array(Type.Object({
+    shortRef: Type.String({ pattern: "^ev-[0-9]{2,6}$" }),
+    contentHash: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    sourceRefs: Type.Array(Type.String()),
+  }))),
   mediaRefs: Type.Array(ComparisonMediaRefSchema),
   limitationCodes: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
 });

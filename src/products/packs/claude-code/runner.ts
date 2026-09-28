@@ -216,6 +216,8 @@ export class ClaudeTargetRunner implements TargetRunner {
   #status: TargetStatus = 'starting';
   readonly #turns = new TurnWaiter();
   #processExitRecorded = false;
+  #stopRequested = false;
+  #exitDuringStop: Error | undefined;
   #init: Record<string, unknown> | undefined;
   #turnIndex = 0;
 
@@ -298,7 +300,16 @@ export class ClaudeTargetRunner implements TargetRunner {
   }
 
   async stop(reason: RuntimeStopReason): Promise<void> {
-    await this.#sink.append(runtimeTargetEvent('session_stopped', { reason, sessionId: this.#sessionId }));
+    this.#stopRequested = true;
+    try {
+      await this.#sink.append(runtimeTargetEvent('session_stopped', { reason, sessionId: this.#sessionId }));
+    } catch (error) {
+      this.#stopRequested = false;
+      if (this.#exitDuringStop) this.#recordProcessExit(this.#exitDuringStop);
+      this.#exitDuringStop = undefined;
+      throw error;
+    }
+    this.#exitDuringStop = undefined;
     if (this.#status !== 'stopped') {
       try { await this.#client.request('interrupt'); } catch { /* interrupt is best-effort; process kill is the final means. */ }
     }
@@ -362,6 +373,14 @@ export class ClaudeTargetRunner implements TargetRunner {
   #onClosed(error: Error): void {
     this.#status = 'stopped';
     this.#turns.fail(error);
+    if (this.#stopRequested) {
+      this.#exitDuringStop = error;
+      return;
+    }
+    this.#recordProcessExit(error);
+  }
+
+  #recordProcessExit(error: Error): void {
     if (this.#processExitRecorded) return;
     this.#processExitRecorded = true;
     void this.#sink.append(runtimeTargetEvent('runtime_failed', { message: error.message })).catch((appendError: unknown) => {

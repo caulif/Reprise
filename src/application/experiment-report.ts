@@ -140,6 +140,29 @@ async function experimentResult(
   const controllerCalls = input.store
     .events(input.input.runId)
     .filter((event) => event.type === "controller.decision").length;
+  const events = input.store.events(input.input.runId);
+  let comparisonStart = -1;
+  for (let index = events.length - 1; index >= 0; index--) {
+    if (events[index]?.type === "comparison.started") {
+      comparisonStart = index;
+      break;
+    }
+  }
+  const phases = comparisonStart < 0 ? [] : events.slice(comparisonStart + 1)
+    .filter((event) => event.type === "comparison.phase_completed");
+  const comparisonActivity = phases.length === 0 ? undefined : phases.reduce((total, event) => {
+    const payload = event.payload as Record<string, unknown>;
+    const count = (key: 'modelRequests' | 'toolCalls' | 'compactions') => {
+      const value = payload[key];
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error(`Invalid comparison phase ${key}.`);
+      return value;
+    };
+    return {
+      modelRequests: total.modelRequests + count('modelRequests'),
+      toolCalls: total.toolCalls + count('toolCalls'),
+      compactions: total.compactions + count('compactions'),
+    };
+  }, { modelRequests: 0, toolCalls: 0, compactions: 0 });
   return {
     taskCase: input.taskCase,
     experimentRoot: input.experimentRoot,
@@ -161,6 +184,7 @@ async function experimentResult(
         ? {}
         : { tokenCount: inspection.tokenCount }),
       ...(inspection.costUsd === undefined ? {} : { costUsd: inspection.costUsd }),
+      ...(comparisonActivity ? { comparisonActivity } : {}),
     },
     pathLinks: await buildResultPathLinks({
       experimentRoot: input.experimentRoot,
@@ -375,6 +399,7 @@ async function runComparisonAttempt(input: {
           experimentRoot: input.host.experimentRoot,
           html: publishedHtml,
           media: catalog.snapshot().media,
+          evidence: catalog.snapshot().links,
           model: publishedModel,
         });
       } catch (error) {

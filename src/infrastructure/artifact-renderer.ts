@@ -198,12 +198,20 @@ async function renderDocumentBundle(request: RenderRequest): Promise<RenderResul
     if (!navigated.ok) return navigated.result;
     const frames = await captureSampledFrames(opened.cdp, opened.pageSessionId, request, navigated.originMs, watchdog, diagnostics);
     if (!frames.ok) return frames.result;
+    let layout: import("./artifact-render-types.js").RenderLayout | undefined;
+    if (request.layoutSelectors) {
+      try {
+        layout = await inspectDocumentLayout(opened.cdp, opened.pageSessionId, request.layoutSelectors);
+      } catch (error) {
+        diagnostics.push({ code: "layout_inspection_failed", message: error instanceof Error ? error.message : String(error) });
+      }
+    }
     appendGuardDiagnostics(diagnostics, opened.guards);
     return {
       ok: true,
       frames: frames.frames,
       diagnostics: [...diagnostics, ...opened.cdp.diagnostics],
-      measured: { loadMs: navigated.loadMs, viewport: request.viewport, origin: opened.server.origin },
+      measured: { loadMs: navigated.loadMs, viewport: request.viewport, origin: opened.server.origin, ...(layout ? { layout } : {}) },
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -214,6 +222,33 @@ async function renderDocumentBundle(request: RenderRequest): Promise<RenderResul
   } finally {
     await cleanupDocumentSession(cdp, server, diagnostics);
   }
+}
+
+async function inspectDocumentLayout(
+  cdp: CdpSession,
+  pageSessionId: string,
+  selectors: readonly { name: string; selector: string }[],
+): Promise<import("./artifact-render-types.js").RenderLayout> {
+  const expression = `(() => {
+    const selectors = ${JSON.stringify(selectors)};
+    const elements = {};
+    for (const { name, selector } of selectors) {
+      const node = document.querySelector(selector);
+      if (!node) { elements[name] = null; continue; }
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      const laidOut = style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      elements[name] = { top: Math.round(rect.top), height: Math.round(rect.height), laidOut,
+        inViewport: laidOut && rect.top < innerHeight && rect.bottom > 0 };
+    }
+    const images = [...document.images];
+    return { viewportWidth: innerWidth, viewportHeight: innerHeight,
+      scrollWidth: document.documentElement.scrollWidth, documentHeight: document.documentElement.scrollHeight,
+      imagesLoaded: images.filter(image => image.complete && image.naturalWidth > 0).length,
+      imagesFailed: images.filter(image => image.complete && image.naturalWidth === 0).length,
+      elements };
+  })()`;
+  return evaluateJson(cdp, pageSessionId, expression);
 }
 
 type OpenedDocumentSession = {

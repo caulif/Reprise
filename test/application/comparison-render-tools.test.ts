@@ -77,7 +77,7 @@ test("render_artifact registers frames through catalog and dedupes identical der
   const first = await tool.execute({ sourceRef: "ev-01", sampleTimesMs: [0, 500] }, new AbortController().signal);
   const payload = JSON.parse(first.content) as {
     status: string;
-    media: { shortRef: string }[];
+    media: { shortRef: string; read?: { path: string; format: string } }[];
     revision: number;
     limitations: string[];
   };
@@ -215,6 +215,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
 <article class="share">
 <section data-host-zone="metrics">metrics</section>
 <span>历史会话</span><span>当前会话</span>
+<template data-component-template="unused"><img></template>
 <section data-agent-zone="comparison"><img data-media-ref="media-01" alt=""></section>
 </article>
 </body></html>`;
@@ -235,6 +236,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   });
   const render = createFakeArtifactRenderer(async (request) => {
     assert.equal(request.entryRelativePath, "preview.html");
+    assert.deepEqual(request.layoutSelectors?.map((item) => item.name), ["headline", "comparison", "firstImage", "metrics"]);
     await mkdir(request.outputRoot, { recursive: true });
     const pngPath = join(request.outputRoot, "preview.png");
     await writeFile(pngPath, PNG_B);
@@ -248,7 +250,9 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
         contentHash: sha256(PNG_B),
       }],
       diagnostics: [],
-      measured: { loadMs: 2, viewport: DEFAULT_RENDER_VIEWPORT, origin: "fake://preview" },
+      measured: { loadMs: 2, viewport: DEFAULT_RENDER_VIEWPORT, origin: "fake://preview",
+        layout: { viewportWidth: 1280, viewportHeight: 900, scrollWidth: 1280, documentHeight: 1400,
+          imagesLoaded: 1, imagesFailed: 0, elements: { metrics: { top: 930, height: 120, laidOut: true, inViewport: false } } } },
     };
   });
   const tool = createPreviewReportTool({
@@ -267,7 +271,8 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
     preparedDigest: string;
     previewDigest: string;
     previewMedia: { kind: string; shortRef: string };
-    mechanics: { imagesMissingSrc: number; hostMetricsVisible: boolean };
+    mechanics: { imagesMissingSrc: number; hostMetricsPresent: boolean };
+    layout: { scrollWidth: number; elements: { metrics: { inViewport: boolean } } };
     note: string;
   };
   assert.equal(first.status, "ok");
@@ -276,8 +281,9 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   assert.equal(first.previewMedia.kind, "report_review");
   assert.match(first.previewMedia.shortRef, /^review-\d{2}$/);
   assert.match(first.note, /review-\*|not baseline\/candidate/i);
-  assert.equal(first.mechanics.hostMetricsVisible, true);
+  assert.equal(first.mechanics.hostMetricsPresent, true);
   assert.equal(first.mechanics.imagesMissingSrc, 0);
+  assert.equal(first.layout.elements.metrics.inViewport, false);
 
   await writeFile(join(root, "report.html"), `${draft}\n<!-- edited -->`, "utf8");
   const second = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as {
@@ -529,7 +535,7 @@ test("Host catalog render_artifact no longer returns capability_unavailable stub
     sampleTimesMs: [0, 250],
   }, new AbortController().signal)).content) as {
     status: string;
-    media: { shortRef: string }[];
+    media: { shortRef: string; read?: { path: string; format: string } }[];
     reason?: string;
   };
   assert.equal(result.status, "ok");
@@ -537,6 +543,8 @@ test("Host catalog render_artifact no longer returns capability_unavailable stub
   assert.equal(result.media.length, 2);
   assert.equal(result.media[0]?.shortRef, "media-01");
   assert.equal(result.media[1]?.shortRef, "media-02");
+  assert.match(result.media[0]?.read?.path ?? "", /^media\/render-/);
+  assert.equal(result.media[0]?.read?.format, "image");
   assert.ok(catalog.snapshot().media.every((item) => item.shortRef?.startsWith("media-")));
   assert.equal(catalog.snapshot().media.some((item) => item.shortRef?.startsWith("review-")), false);
 
@@ -719,11 +727,14 @@ test("Host preview_report mints review-* without polluting comparison media allo
   });
   const payload = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as {
     status: string;
-    previewMedia: { shortRef: string; kind: string };
+    previewMedia: { shortRef: string; kind: string; read?: { path: string; format: string; mimeType: string } };
   };
   assert.equal(payload.status, "ok");
   assert.equal(payload.previewMedia.kind, "report_review");
   assert.match(payload.previewMedia.shortRef, /^review-\d{2}$/);
+  assert.equal(payload.previewMedia.read?.path, `review/media/${payload.previewMedia.shortRef}.png`);
+  assert.equal(payload.previewMedia.read?.format, "image");
+  assert.equal(payload.previewMedia.read?.mimeType, "image/png");
   assert.deepEqual(
     catalog.snapshot().media.map((item) => item.shortRef),
     mediaBefore,

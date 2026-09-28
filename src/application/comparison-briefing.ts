@@ -347,6 +347,7 @@ function comparisonDecisionMap(input: {
     "",
     "This is a Host navigation projection, not a finding. Confirm final versions and task success against the source files.",
     "User requirements: observations/user-inputs/INDEX.tsv (in order); initial task: briefing/task/initial-input.txt.",
+    "File-tool paths below are virtual; shell_exec starts in scratch/. In shell use REPRISE_BASELINE_ROOT, REPRISE_FINALS_ROOT, REPRISE_CANDIDATE_ROOT, REPRISE_EVIDENCE_ROOT, and REPRISE_SCRATCH_ROOT for the physical mounts.",
     "",
   ];
   for (const side of ["baseline", "candidate"] as const) {
