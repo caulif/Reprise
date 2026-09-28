@@ -41,7 +41,7 @@ describe('T06 display-state stages and clocks', () => {
       preflight: { resolved: { resolvedModel: 'deepseek/deepseek-v4.1-flash' } },
     } as never);
     assert.equal(running.elapsed, '01:00');
-    assert.equal(running.candidateModel, 'sonnet → deepseek/deepseek-v4.1-flash');
+    assert.equal(running.candidateModel, 'deepseek/deepseek-v4.1-flash');
     const screen = renderWorkbench({
       page: 'running', cwd: '', hasApiConfig: true, hasUsableAuth: true, hasTaskCase: true,
       message: '', locale: 'zh', running,

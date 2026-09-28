@@ -4,6 +4,7 @@ import type { ExperimentResult } from "./experiment.js";
 import type { TaskCase } from "../core/schema.js";
 import type { HistoryExperiment } from "./experiment-history-list.js";
 import { comparisonDetailOf, selectComparisonArtifacts } from "./comparison-artifacts.js";
+import { actualModelName } from "./actual-model-name.js";
 
 /** Build the HistoryExperiment / recentExperiment projection from a live ExperimentResult. */
 export function historyExperimentFromResult(
@@ -33,12 +34,13 @@ export function historyExperimentFromResult(
       ? comparison.failure.kind ?? comparison.failure.code
       : undefined;
   const detail = !skipped ? comparisonDetailOf(comparison) : undefined;
+  const candidateModel = actualModelName(result.record.manifest?.resolvedModel.resolved);
   return {
     experimentId: basename(input.experimentRoot),
     taskCaseId: input.taskCaseId,
     ...((result.taskCase ?? input.taskCase)?.initialInput.text.trim() ? { taskTitle: (result.taskCase ?? input.taskCase).initialInput.text.replace(/\s+/g, ' ').trim() } : {}),
     ...(result.record.attempt?.candidate?.productId ? { candidateProductId: result.record.attempt.candidate.productId } : {}),
-    ...(result.record.attempt?.candidate?.requestedModel ? { candidateModel: result.record.attempt.candidate.requestedModel } : {}),
+    ...(candidateModel ? { candidateModel } : {}),
     runId: result.record.attempt.runId,
     outcome: result.record.outcome.termination.kind,
     taskStatus: result.record.outcome.task.status,

@@ -126,6 +126,7 @@ test('running canvas uses the candidate product not the source session product',
     candidateProductLabel: 'Claude Code',
     sourceProductLabel: 'Codex',
     candidate: { candidateId: 'claude-code-sonnet', productId: 'claude-code', requestedModel: 'sonnet' },
+    preflight: { resolved: { resolvedModel: 'claude-sonnet-4-6' } },
     locale: 'zh',
     message: '',
     inlineHelp: false,
@@ -180,9 +181,9 @@ test('running canvas uses the candidate product not the source session product',
   assert.equal(view.running?.productLabel, 'Claude Code');
   assert.equal(view.productLabel, 'Claude Code');
   const text = renderWorkbench(view, 120).join('\n');
-  assert.match(text, /Claude Code · sonnet/);
+  assert.match(text, /Claude Code · claude-sonnet-4-6/);
   assert.match(text, /Claude Code · 等待新的可见活动/);
-  assert.doesNotMatch(text, /Codex · sonnet/);
+  assert.doesNotMatch(text, /Claude Code · sonnet(?:\s|$)/);
   assert.doesNotMatch(text, /发给 Codex/);
   assert.doesNotMatch(text, /发给 Claude Code/);
 });

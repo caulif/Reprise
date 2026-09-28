@@ -42,7 +42,8 @@ test('live and history projections share semantic fields for the same fixture', 
     reportPath: diagnostic,
     taskCase: { caseId: 'case-1', initialInput: { id: 'message-1', role: 'user', text: 'Create the slides' } },
     record: {
-      attempt: { runId: 'run-1', createdAt: '2026-09-20T00:00:00.000Z' },
+      attempt: { runId: 'run-1', createdAt: '2026-09-20T00:00:00.000Z', candidate: { productId: 'claude-code', requestedModel: 'sonnet' } },
+      manifest: { resolvedModel: { requested: 'sonnet', resolved: 'deepseek/deepseek-v4.1-flash' } },
       outcome: {
         task: { status: 'apparently_completed' },
         termination: { kind: 'completed', code: 'completed.controller_satisfied' },
@@ -64,6 +65,7 @@ test('live and history projections share semantic fields for the same fixture', 
   };
 
   assert.equal(fromLive.outcome, 'completed');
+  assert.equal(fromLive.candidateModel, 'deepseek/deepseek-v4.1-flash');
   assert.equal(fromLive.taskTitle, 'Create the slides');
   assert.equal(fromLive.taskStatus, 'apparently_completed');
   assert.equal(fromLive.cleanupStatus, 'unknown');

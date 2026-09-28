@@ -12,6 +12,7 @@ import {
 import type { ComparisonMediaRecord, ComparisonReportModel } from "../core/schema.js";
 import { MODEL_PRICING_TABLE_VERSION } from "./model-pricing.js";
 import { reportString } from "./comparison-report-strings.js";
+import { actualModelName } from "./actual-model-name.js";
 import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
 
 export {
@@ -341,13 +342,8 @@ function renderMetricsBoard(metrics: {
 }
 
 function comparisonSideLabels(facts: ComparisonReportFacts, locale: AgentLocale): { baseline: string; candidate: string } {
-  const requested = usableModelId(facts.models.candidateRequested);
-  const resolved = usableModelId(facts.models.candidateResolved);
-  const candidate = requested && resolved && requested !== resolved
-    ? (locale === "zh" ? `请求 ${requested} → 解析 ${resolved}` : `requested ${requested} → resolved ${resolved}`)
-    : requested && !resolved
-      ? (locale === "zh" ? `请求 ${requested} · 解析未确认` : `requested ${requested} · resolution unconfirmed`)
-      : resolved ?? requested ?? usableModelId(facts.models.candidate);
+  const candidate = actualModelName(facts.models.candidateResolved)
+    ?? (!facts.models.candidateRequested ? actualModelName(facts.models.candidate) : undefined);
   return {
     baseline: usableModelId(facts.models.baseline) ?? reportString(locale, "sideHistorical"),
     candidate: candidate ?? reportString(locale, "sideCandidate"),

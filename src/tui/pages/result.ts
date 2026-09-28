@@ -10,7 +10,8 @@ import type { Theme } from '../theme.js';
 import type { WorkbenchSurfaceScope } from '../workbench-layout.js';
 import { kv, kvLinkBlock, panel, panelWithHits, wrapBodyLine } from '../widgets.js';
 import type { ResultAction } from '../page-input.js';
-import { candidateModelLabel, comparisonPresentation, displayCleanupStatus, displayTaskStatus, displayTerminationKind } from '../display-copy.js';
+import { comparisonPresentation, displayCleanupStatus, displayTaskStatus, displayTerminationKind } from '../display-copy.js';
+import { actualModelName } from '../../application/actual-model-name.js';
 import type { PhaseClockBounds } from '../phase-state.js';
 import { artifactsFromResult, listActions } from '../action-model.js';
 import { visibleWidth } from '@earendil-works/pi-tui';
@@ -201,7 +202,7 @@ function candidateDisplayLabel(result: ExperimentResult, productLabel: string | 
   const candidate = result.record.attempt?.candidate;
   if (!candidate) return undefined;
   const product = productLabel ?? candidate.productId;
-  const model = candidateModelLabel(candidate.requestedModel, result.record.manifest?.resolvedModel.resolved);
+  const model = actualModelName(result.record.manifest?.resolvedModel.resolved);
   if (!model) return product;
   return `${product} · ${model}`;
 }

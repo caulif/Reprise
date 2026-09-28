@@ -14,6 +14,7 @@ import type { TimelineEntry } from '../timeline.js';
 import { kv, kvBlock, pad, panel, stateRail, wrapBodyLine, type PreparePhase } from '../widgets.js';
 import { joinColumns } from '../widgets.js';
 import type { CandidateRunPhase } from '../../application/candidate-run-phase.js';
+import { actualModelName } from '../../application/actual-model-name.js';
 import {
   activityRoleFromDiagnostics,
   countActiveParallel,
@@ -137,13 +138,13 @@ export function renderSource(theme: Theme, width: number, model: SourceModel): s
 
 export function renderPreflight(theme: Theme, width: number, model: PreflightModel): string[] {
   const locale = model.locale ?? 'en';
-  const { preflight, candidate } = model;
+  const { preflight } = model;
   const comparison = localizedComparison(preflight.comparisonClass, locale);
   return [
     renderStep(theme, 2, [t(locale, 'sourceTitle'), t(locale, 'preflightStep'), t(locale, 'confirmStep')], locale),
     '',
     ...panel(theme, t(locale, 'preflightTitle'), [
-      kv(theme, t(locale, 'candidateLabel'), `${candidate?.requestedModel ?? t(locale, 'unavailableValue')} ${theme.glyphs.sep} ${t(locale, 'runtimeResolved')} ${preflight.resolved.resolvedModel}`, width - 2),
+      kv(theme, t(locale, 'candidateLabel'), actualModelName(preflight.resolved.resolvedModel) ?? t(locale, 'unavailableValue'), width - 2),
       kv(theme, t(locale, 'runtimeLabel'), `${preflight.resolved.executable}${preflight.resolved.version ? ` ${theme.glyphs.sep} ${preflight.resolved.version}` : ''}`, width - 2),
       kv(theme, t(locale, 'baselineLabel'), `${preflight.sourceBaseline === 'available' ? t(locale, 'availableValue') : preflight.sourceBaseline} ${theme.glyphs.sep} ${t(locale, 'comparisonLabel')} ${comparison}`, width - 2),
       ...(preflight.workspace ? [
@@ -182,8 +183,7 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
   const diagnosisHint = failedRecovery && model.experimentId
     ? theme.style.muted(` ${t(locale, 'diagnosisSavedHint', { experimentId: model.experimentId, diagnosisPath: recovery?.diagnosisPath ?? 'recovery-diagnosis.json' })}`)
     : undefined;
-  const requested = model.candidate?.requestedModel;
-  const resolved = model.preflight.resolved.resolvedModel;
+  const resolved = actualModelName(model.preflight.resolved.resolvedModel);
   const effectiveCategory = recovery ? failureCategoryOf(recovery) : undefined;
   const fields = [
     ...(blockedRecovery ? [
@@ -201,8 +201,7 @@ export function renderConfirmation(theme: Theme, width: number, model: ConfirmMo
     ...(model.taskTitle ? [kv(theme, t(locale, 'taskLabel'), truncateFit(model.taskTitle, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
     ...(model.sourceProductLabel ? [kv(theme, t(locale, 'sourceProductLabel'), model.sourceProductLabel, width - 2)] : []),
     kv(theme, t(locale, 'candidateLabel'), product, width - 2),
-    kv(theme, t(locale, 'requestedModelLabel'), requested ?? t(locale, 'unavailableValue'), width - 2),
-    ...(resolved && resolved !== requested ? [kv(theme, t(locale, 'resolvedModelLabel'), resolved, width - 2)] : []),
+    kv(theme, t(locale, 'resolvedModelLabel'), resolved ?? t(locale, 'unavailableValue'), width - 2),
     ...(model.preparedPath ? kvBlock(theme, t(locale, 'preparedCopyPath'), model.preparedPath, width - 2) : []),
     kv(theme, t(locale, 'recoveryField'), recoveryWord(model, locale), width - 2),
     ...(model.recovery?.summary ? [kv(theme, t(locale, 'recoverySummaryField'), truncateFit(model.recovery.summary, Math.max(24, width - 18), theme.glyphs.ellipsis), width - 2)] : []),
