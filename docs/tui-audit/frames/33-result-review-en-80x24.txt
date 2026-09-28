@@ -1,10 +1,10 @@
 Reprise                                       not recorded  ⚠ Cleanup incomplete
- Task Inspect a focused regression. · Codex · gpt-test · Codex
+ Task Inspect a focused regression. · Codex · Codex
  Run result
   Task         Reprise model judged the task complete
   Cleanup      Incomplete
   Comparison   comparison not run
-  Execution tool Codex · gpt-test
+  Execution tool Codex
   Execution time 49s
  
     Open this run folder run-1

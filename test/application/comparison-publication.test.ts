@@ -147,7 +147,7 @@ test("Host template has no visible status cards and keeps facts in the model", (
   assert.match(html, /当前会话/);
   assert.match(html, /data-agent-slot="category"/);
   assert.match(html, /data-component-template="pair-pages"/);
-  assert.match(html, /gpt-5\.6/);
+  assert.match(html, /未记录/);
   assert.doesNotMatch(html, />Baseline</);
   assert.doesNotMatch(html, />Candidate</);
   const envelope = { status: "completed" as const, reportPath: "report.html" as const, evidenceRefs: [] };
@@ -788,7 +788,7 @@ test("current harness comparison model is not the candidate vs title", () => {
   });
   assert.doesNotMatch(html, /本卡由/);
   assert.doesNotMatch(html, /data-host="comparison-operator"/);
-  assert.match(html, /vs 请求 gpt-5\.6 · 解析未确认/);
+  assert.match(html, /vs 未记录/);
   assert.doesNotMatch(html, /vs deepseek-flash/);
 });
 

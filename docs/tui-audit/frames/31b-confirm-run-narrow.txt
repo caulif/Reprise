@@ -3,7 +3,7 @@ Reprise
   任务         Fix the bug.
   原对话       Codex
   执行工具     Codex
-  选择的模型   gpt-5.6-luna
+  工具返回的模型 gpt-5.6-luna
   已准备副本   C:\user\AppData\Local\Temp\
                reprise-tui-audit-TMP\data-run\
                experiments\audit-recovery

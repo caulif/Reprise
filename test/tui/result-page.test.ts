@@ -237,7 +237,8 @@ test('result separates requested and resolved models, phase durations, and unpub
   const text = renderResult(createTheme(120, false), 120, result, 'zh', 'Claude Code', false, {
     phaseClocks: { comparisonStartedAt: 1_000, comparisonEndedAt: 1_006_000 }, detailsExpanded: true,
   }).join('\n');
-  assert.match(text, /sonnet → deepseek\/deepseek-v4\.1-flash/);
+  assert.match(text, /Claude Code · deepseek\/deepseek-v4\.1-flash/);
+  assert.doesNotMatch(text, /sonnet →/);
   assert.match(text, /执行耗时\s+102s/);
   assert.match(text, /比较耗时\s+1005s/);
   assert.match(text, /总耗时\s+1294s/);

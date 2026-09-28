@@ -7,6 +7,7 @@ import { readCommittedExperimentHistory } from "./experiment-history-read.js";
 import { isPersistedExperimentMetadata, listPersistedRunIds } from "./experiment-layout.js";
 import { comparisonDetailOf, selectComparisonArtifacts } from "./comparison-artifacts.js";
 import { listPublishedFrozenCases } from "../products/shared/freeze.js";
+import { actualModelName } from "./actual-model-name.js";
 
 export type HistoryCase = { readonly taskCase: TaskCase; readonly path: string };
 export type HistoryExperiment = {
@@ -85,6 +86,7 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
   const runId = runIds.at(-1);
   const recordPath = runId ? join(path, "runs", runId, "record.json") : undefined;
   const record = recordPath ? await readRunRecord(recordPath) : undefined;
+  const candidateModel = actualModelName(record?.manifest?.resolvedModel.resolved);
   const unread = Boolean(recordPath && !record && await exists(recordPath));
   const comparisonValue = await readJson(join(path, "comparison.json"));
   const comparison = Value.Check(ComparisonInvocationSchema, comparisonValue) ? comparisonValue : undefined;
@@ -109,7 +111,7 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
           cleanupStatus: record.outcome.cleanup.status,
           startedAt: record.attempt.createdAt,
           candidateProductId: record.attempt.candidate.productId,
-          candidateModel: record.attempt.candidate.requestedModel,
+          ...(candidateModel ? { candidateModel } : {}),
         }
       : {}),
     ...artifacts,

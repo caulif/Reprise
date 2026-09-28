@@ -932,7 +932,7 @@ test('run confirmation only restates the start decision', () => {
     policy: { wallClockMs: 60_000, maxTargetTurns: 4, maxModelCalls: 3, turnTimeoutMs: 10_000, maxConsecutiveNoProgress: 2 },
   }).join('\n');
   assert.match(text, /Start execution with Claude Code[?]/);
-  assert.match(text, /Selected model/);
+  assert.match(text, /Tool returned model/);
   assert.match(text, /gpt-5/);
   assert.match(text, /Candidate.*Claude Code|Claude Code/);
   assert.doesNotMatch(text, /isolated Codex/);

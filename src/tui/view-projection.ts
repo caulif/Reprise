@@ -19,7 +19,7 @@ import type { TimelineEntry } from './timeline.js';
 import type { WorkbenchView, WorkbenchSurfaceScope, ContextBarModel, StatusSummaryModel, ActivityCardModel, RecoverySummaryModel } from './workbench.js';
 import { deriveResultPresentationFromResult } from './display-state.js';
 import { formatRecoveryFailureSummary, isHostExplanationKey, t, type Locale } from './i18n.js';
-import { candidateModelLabel } from './display-copy.js';
+import { actualModelName } from '../application/actual-model-name.js';
 import { recoveryFailureDecision } from '../application/recovery/fail.js';
 import { projectLabel, taskDisplaySummary, type ProductIntakeItem } from './pages/intake.js';
 import type { PreparePhase } from './widgets.js';
@@ -92,10 +92,7 @@ export function runningModel(input: Input) {
   const productLabel = chromeProductLabel(input);
   const candidateSessionId = candidateSessionIdFrom(input.timeline);
   const now = input.nowMs ?? Date.now();
-  const modelLabel = candidateModelLabel(
-    input.candidate?.requestedModel ?? input.result?.record.attempt.candidate.requestedModel,
-    input.result?.record.manifest?.resolvedModel.resolved ?? input.preflight?.resolved.resolvedModel,
-  );
+  const modelLabel = actualModelName(input.result?.record.manifest?.resolvedModel.resolved ?? input.preflight?.resolved.resolvedModel);
   const activityRole = activityRoleFromDiagnostics({
     ...(input.preparePhase ? { preparePhase: input.preparePhase } : {}),
     ...(input.runPhase ? { runPhase: input.runPhase } : {}),
@@ -449,10 +446,7 @@ function contextBarOf(input: Input, productLabel: string | undefined, locale: Lo
     return taskTitle ? { taskTitle } : undefined;
   }
   if (input.page === 'candidate-model' || input.page === 'confirm') return undefined;
-  const modelLabel = candidateModelLabel(
-    input.candidate?.requestedModel ?? input.result?.record.attempt.candidate.requestedModel,
-    input.result?.record.manifest?.resolvedModel.resolved ?? input.preflight?.resolved.resolvedModel,
-  );
+  const modelLabel = actualModelName(input.result?.record.manifest?.resolvedModel.resolved ?? input.preflight?.resolved.resolvedModel);
   return {
     ...(taskTitle ? { taskTitle } : {}),
     ...(productLabel ? { productLabel } : {}),

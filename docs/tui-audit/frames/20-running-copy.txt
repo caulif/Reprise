@@ -1,5 +1,5 @@
 Reprise                                                                                                 未记录  ● 进行中
- 任务 Fix the bug. · Codex · Codex
+ 任务 Fix the bug. · Codex · gpt-5.6-luna · Codex
  会话         Fix the bug.
  项目         source
  状态         正在运行恢复

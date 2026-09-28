@@ -265,7 +265,7 @@ test("markers hidden in template content are still counted", async () => {
   if (!("html" in result)) assert.equal(result.code, "report_incomplete");
 });
 
-test("report title and side labels show requested and resolved models without changing raw ID", () => {
+test("report title and side labels show only the actual candidate model", () => {
   const divergent: ComparisonReportFacts = {
     ...facts,
     models: {
@@ -276,7 +276,8 @@ test("report title and side labels show requested and resolved models without ch
     },
   };
   const html = renderComparisonReportShell({ task: "Host 原任务文案。", facts: divergent, metrics: {}, locale: "zh" });
-  assert.match(html, /请求 sonnet → 解析 deepseek\/deepseek-v4\.1-flash/);
+  assert.match(html, /<span>当前会话 · deepseek\/deepseek-v4\.1-flash<\/span>/);
+  assert.doesNotMatch(html, /请求 sonnet|requested sonnet/);
   assert.equal(divergent.models.candidate, "deepseek/deepseek-v4.1-flash");
   const same = renderComparisonReportShell({
     task: "Task.",
@@ -284,12 +285,13 @@ test("report title and side labels show requested and resolved models without ch
     metrics: {},
     locale: "en",
   });
-  assert.doesNotMatch(same, /requested sonnet → resolved sonnet/);
+  assert.match(same, /<span>Current session · sonnet<\/span>/);
   const unknown = renderComparisonReportShell({
     task: "Task.",
     facts: { ...facts, models: { ...facts.models, candidateRequested: "sonnet" } },
     metrics: {},
     locale: "en",
   });
-  assert.match(unknown, /requested sonnet · resolution unconfirmed/);
+  assert.match(unknown, /<span>Current session · unrecorded<\/span>/);
+  assert.doesNotMatch(unknown, /requested sonnet/);
 });

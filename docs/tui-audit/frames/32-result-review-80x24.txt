@@ -1,10 +1,10 @@
 Reprise                                                     未记录  ⚠ 清理未完成
- 任务 Inspect a focused regression. · Codex · gpt-test · Codex
+ 任务 Inspect a focused regression. · Codex · Codex
  运行结果
   任务判断     Reprise 的模型判断任务已完成
   清理         未完成
   比较         未进行比较
-  执行工具     Codex · gpt-test
+  执行工具     Codex
   执行耗时     49s
  
     与原结果比较

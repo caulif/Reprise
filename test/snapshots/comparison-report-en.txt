@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Comparison · gpt-5 vs requested gpt-5.6 · resolution unconfirmed</title>
+<title>Comparison · gpt-5 vs unrecorded</title>
 <style data-host-zone="style" data-id="host-style">
 
 :root { --paper:#f3f5f4; --card:#fff; --ink:#202725; --soft:#45514d; --faint:#64736d; --line:rgba(32,39,37,.12); --hair:rgba(32,39,37,.16); --shadow:0 10px 30px rgba(32,39,37,.06); --accent:#145b52; --risk:#9a3434; --ok:#2f6944; }
@@ -117,7 +117,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
 <main class="page" data-report-format="2">
   <article class="share">
     <header data-host-zone="header" data-id="host-header"><h1><span data-agent-slot="category">Comparison</span></h1>
-  <p class="sessions" data-host="session-labels"><span>Historical session · gpt-5</span><span>Current session · requested gpt-5.6 · resolution unconfirmed</span></p>
+  <p class="sessions" data-host="session-labels"><span>Historical session · gpt-5</span><span>Current session · unrecorded</span></p>
   <p class="field-label">Task</p>
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
     <p class="field-label">Main conclusion</p>
@@ -171,9 +171,9 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">Cost uses the pinned price snapshot and excludes tool calls. No tokens shows &quot;not collected&quot;; tokens without a price shows &quot;no price configured&quot;. Price table 2026-09-19-cc-switch-seed.</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>Run diagnostics</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
-    <li><span class="who">requested gpt-5.6 · resolution unconfirmed</span> incomplete · limit.turns · harness</li>
+    <li><span class="who">unrecorded</span> incomplete · limit.turns · harness</li>
     <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
-    <li><span class="who">requested gpt-5.6 · resolution unconfirmed price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
+    <li><span class="who">unrecorded price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
   </ul></details></section>
     <section class="slot" data-host-zone="process" data-id="host-process"></section>
   </details>

@@ -93,15 +93,6 @@ export function comparisonPresentation(
   return { word: t(locale, 'comparisonDiagnosticUnknown'), diagnostic: t(locale, 'comparisonDiagnosticUnknown'), tone: 'warn', failedArtifact: true };
 }
 
-export function candidateModelLabel(requested: string | undefined, resolved: string | undefined): string | undefined {
-  const name = requested?.trim();
-  if (!name) return undefined;
-  const actual = resolved?.trim();
-  return actual && actual !== 'unknown' && actual !== 'pending' && actual !== name
-    ? `${name} → ${actual}`
-    : name;
-}
-
 export function severityLabel(level: 'warning' | 'error' | undefined, locale: Locale, theme: Theme): string | undefined {
   if (!level || theme.colorMode !== 'off') return undefined;
   return level === 'error' ? t(locale, 'severityError') : t(locale, 'severityWarning');

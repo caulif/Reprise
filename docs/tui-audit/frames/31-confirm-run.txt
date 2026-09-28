@@ -3,7 +3,7 @@ Reprise
   任务         Fix the bug.
   原对话       Codex
   执行工具     Codex
-  选择的模型   gpt-5.6-luna
+  工具返回的模型 gpt-5.6-luna
   已准备副本   TMP\data-run\experiments\audit-recovery
   准备结果     文件已准备好
   摘要         Ready for the original task.
