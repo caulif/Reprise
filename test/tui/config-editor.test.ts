@@ -142,6 +142,7 @@ test('Enter cycles API type and reasoning on an OpenAI-compatible draft', () => 
 });
 
 test('Enter toggles image input and draft/config round-trip keeps it', async () => {
+  assert.ok(visibleConfigItems(draft.kind).includes('image input'));
   const toggled = handleConfigInput({
     draft, selected: visibleConfigItems(draft.kind, true).indexOf('image input'), advanced: true, editing: false, buffer: '', cursor: 0, providers: [], models: [],
   }, '\r', refresh);

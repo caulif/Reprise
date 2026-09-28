@@ -32,6 +32,7 @@ import {
   type HostZoneSnapshot,
 } from "./comparison-report-shell.js";
 import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
+import { extensionForMediaType, rewriteMediaHref, stagePublishedEvidence, stagePublishedHistoricalFinals } from "./comparison-publish-evidence.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 
 export type ComparisonFailureClass =
@@ -236,6 +237,7 @@ export async function publishComparisonArtifacts(input: {
   experimentRoot: string;
   html: string;
   media?: readonly ComparisonMediaRecord[];
+  evidence?: readonly ComparisonLinkRecord[];
   model?: ComparisonReportModel;
 }): Promise<{ html: string }> {
   const staged = await prepareComparisonArtifacts(input);
@@ -249,6 +251,7 @@ export async function prepareComparisonArtifacts(input: {
   experimentRoot: string;
   html: string;
   media?: readonly ComparisonMediaRecord[];
+  evidence?: readonly ComparisonLinkRecord[];
   model?: ComparisonReportModel;
 }): Promise<{ html: string; model?: ComparisonReportModel }> {
   const staged = await stagePublishedMedia({
@@ -257,7 +260,19 @@ export async function prepareComparisonArtifacts(input: {
     html: input.html,
     media: input.media ?? [],
   });
-  return { html: staged.html, ...(input.model ? { model: rewriteReportModelMediaHrefs(input.model, staged.hrefMap) } : {}) };
+  const evidenceStaged = await stagePublishedEvidence({
+    attemptRoot: input.attemptRoot,
+    experimentRoot: input.experimentRoot,
+    html: staged.html,
+    evidence: input.evidence ?? [],
+  }, rewriteMediaHref);
+  const historicalStaged = await stagePublishedHistoricalFinals({
+    attemptRoot: input.attemptRoot,
+    html: evidenceStaged.html,
+    evidence: input.evidence ?? [],
+  }, rewriteMediaHref);
+  const hrefMap = new Map([...staged.hrefMap, ...evidenceStaged.hrefMap, ...historicalStaged.hrefMap]);
+  return { html: historicalStaged.html, ...(input.model ? { model: rewriteReportModelMediaHrefs(input.model, hrefMap) } : {}) };
 }
 
 async function stagePublishedMedia(input: {
@@ -328,21 +343,6 @@ function rewriteReportModelMediaHrefs(
   return { ...model, slots };
 }
 
-function rewriteMediaHref(html: string, from: string, to: string): string {
-  const escaped = escapeRegExp(from);
-  return html
-    .replace(new RegExp(`(\\b(?:src|href)\\s*=\\s*["'])${escaped}(["'])`, "gi"), `$1${to}$2`)
-    .replace(new RegExp(`url\\((['"]?)${escaped}\\1\\)`, "gi"), `url($1${to}$1)`);
-}
-
-function extensionForMediaType(mediaType: string): string {
-  if (/svg/i.test(mediaType)) return ".svg";
-  if (/webp/i.test(mediaType)) return ".webp";
-  if (/gif/i.test(mediaType)) return ".gif";
-  if (/jpe?g/i.test(mediaType)) return ".jpg";
-  return ".png";
-}
-
 export function comparisonReportModelFromHtml(
   html: string,
   facts: ComparisonReportFacts,
@@ -362,6 +362,10 @@ export function comparisonReportModelFromHtml(
     const hit = evidence.find((item) => item.shortRef === short)?.evidenceRef;
     return hit ? [hit] : [];
   });
+  const evidenceIdentities = result.evidenceRefs.flatMap((short) => {
+    const hit = evidence.find((item) => item.shortRef === short);
+    return hit?.contentHash ? [{ shortRef: short, contentHash: hit.contentHash, sourceRefs: hit.sourceRefs ?? [] }] : [];
+  });
   const mediaRefs = media.filter((item) => html.includes(item.reportHref) || (item.shortRef && html.includes(item.shortRef))).map((item) => item.ref);
   const slotHeadline = oneLineFromHtml(extractInner(html, "data-agent-slot", "headline"));
   const headline = result.headline ?? (slotHeadline.length > 0 && slotHeadline.length <= 280 ? slotHeadline : undefined);
@@ -378,6 +382,7 @@ export function comparisonReportModelFromHtml(
     ...(facts.metrics ? { metrics: facts.metrics } : {}),
     slots,
     evidenceRefs,
+    ...(evidenceIdentities.length ? { evidenceIdentities } : {}),
     mediaRefs,
     ...(headline ? { headline } : {}),
   };

@@ -59,6 +59,7 @@ export type ExperimentResult = {
     wallClockMs?: number;
     tokenCount?: number;
     costUsd?: number;
+    comparisonActivity?: { modelRequests: number; toolCalls: number; compactions: number };
   };
   pathLinks?: ResultPathLinks;
 };

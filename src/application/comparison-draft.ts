@@ -104,7 +104,7 @@ export class ComparisonDraft {
     this.#accepted = { digest: sha256(verified.html), revision: catalog.revision, result };
     this.#previewed = undefined;
     this.#lastRejection = undefined;
-    return `status=accepted\ndraftDigest=${this.#accepted.digest}\nrevision=${catalog.revision}\nPreview this exact draft before finishing.`;
+    return `status=accepted\ndraftDigest=${this.#accepted.digest}\nrevision=${catalog.revision}\ncurrentPhase=compose\nnextLegalPhase=review\nPreview this exact draft in the review turn before finishing.`;
   }
 
   recordPreview(prepared: PreparedReportPreview): void {

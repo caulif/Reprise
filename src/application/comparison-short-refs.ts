@@ -80,11 +80,13 @@ function mediaLabel(item: ComparisonMediaRecord): string {
 }
 
 function evidenceLabel(link: ComparisonLinkRecord): string {
+  if (/(?:^|\/)\.edgeprofile\//i.test(link.path ?? link.inspectPath)) return "浏览器运行残留";
   if (link.origin === "derived_analysis" || link.side === "derived") return "派生分析证据";
   if (link.origin === "host_review" || link.side === "host") return "Host 审阅材料";
   if (link.origin === "historical_artifact") return "历史终稿产物";
   if (link.origin === "reconstructed_from_history") return "自历史重建的产物";
   if (link.origin === "candidate_delivery" || (link.side === "candidate" && link.path)) return "候选会话最终交付";
+  if (link.side === "baseline" && link.mediaType?.startsWith("image/") && link.inspectPath.startsWith("media/")) return "历史会话预览";
   if (link.side === "baseline") return "历史会话最终回复";
   if (link.path) return "候选会话最终交付";
   if (link.mediaType?.startsWith("image/")) return "候选生成的图片预览";

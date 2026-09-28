@@ -82,6 +82,9 @@ register_evidence to preserve relevant derived analysis with source references;
 registration is not independent verification of your interpretation. Use
 preview_report to check the draft with the current catalog. New references are
 append-only; re-read current metadata after a successful registration.
+Limit claims to the observation method: a saved frame is not a full animation;
+a script you wrote is derived analysis, not independent confirmation. Missing
+historical records mean no evidence was found, not that an action never happened.
 
 # Language
 Instructions and file navigation are in English. Report prose, headline, category, the task sentence, and process sentences are in Simplified Chinese.

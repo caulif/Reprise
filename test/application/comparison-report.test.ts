@@ -276,8 +276,8 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   assert.match(html, /cacheRead /);
   assert.match(html, /cacheCreation /);
   assert.equal(facts.models.baseline, 'gpt-5');
-  assert.match(html, /<div class="who">gpt-5<\/div>/);
-  assert.match(html, /<div class="who">请求 gpt-5\.6 · 解析未确认<\/div>/);
+  assert.match(html, /<span>历史会话 · gpt-5<\/span>/);
+  assert.match(html, /<span>当前会话 · 请求 gpt-5\.6 · 解析未确认<\/span>/);
   assert.doesNotMatch(html, />Baseline</);
   const tampered = html.replace('0.49', '9.99');
   assert.equal(hostMetricsMismatch(tampered, facts.metrics ?? {}), 'Host metrics numbers were modified.');

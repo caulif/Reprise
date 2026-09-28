@@ -17,6 +17,20 @@ function event(type: string, payload: unknown): EventEnvelope {
   };
 }
 
+test('comparison timeline shows actual evaluator input capability', () => {
+  const textOnly = projectTimelineEvent(event('agent.session_started', {
+    role: 'comparison', model: 'custom-model', inputCapabilities: ['text'],
+  }));
+  assert.equal(textOnly.length, 2);
+  assert.match(textOnly[0]?.detail ?? '', /custom-model.*text/);
+  assert.match(textOnly[1]?.title ?? '', /Visual review unavailable/);
+  const visual = projectTimelineEvent(event('agent.session_started', {
+    role: 'comparison', model: 'visual-model', inputCapabilities: ['text', 'image'],
+  }));
+  assert.equal(visual.length, 1);
+  assert.equal(projectTimelineEvent(event('agent.session_started', { role: 'controller', inputCapabilities: ['text'] })).length, 0);
+});
+
 test('timeline projects operator-relevant persisted facts', () => {
   const refs = [{ eventId: 'event-1', sequence: 1 }];
   assert.deepEqual(projectTimelineEvent(event('run.state_changed', { from: 'created', to: 'preparing' }))[0], {

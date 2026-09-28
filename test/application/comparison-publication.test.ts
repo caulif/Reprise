@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildComparisonContext, type RunInspection } from "../../src/application/comparison.js";
 import {
   classifyComparisonFailure,
   comparisonReportModelFromHtml,
+  prepareComparisonArtifacts,
   verifyAndRenderComparisonReport,
 } from "../../src/application/comparison-publication.js";
 import { renderVisualEvidenceSeed } from "../../src/application/comparison-visual-evidence.js";
@@ -18,6 +19,52 @@ import {
   renderComparisonReportShell,
 } from "../../src/application/comparison-report-shell.js";
 import type { RunRecord, TaskCase } from "../../src/core/schema.js";
+import { sha256 } from "../../src/core/identity.js";
+
+test("derived evidence publishes at a root-reachable hash path and retains its identity", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-derived-publish-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const attemptRoot = join(root, "comparison-attempts", "attempt-1");
+  const bytes = Buffer.from("measured sample\n");
+  const contentHash = sha256(bytes);
+  const sourceHref = `evidence/derived/${contentHash.slice(0, 16)}.md`;
+  const source = join(attemptRoot, "evidence", "derived", `${contentHash.slice(0, 16)}.md`);
+  await mkdir(join(attemptRoot, "evidence", "derived"), { recursive: true });
+  await writeFile(source, bytes);
+  const evidence = [{ side: "derived" as const, inspectPath: sourceHref,
+    reportHref: sourceHref, origin: "derived_analysis" as const,
+    shortRef: "ev-10", contentHash, sourceRefs: ["ev-01"] }];
+  const html = `<a href="${sourceHref}">analysis</a>`;
+  const prepared = await prepareComparisonArtifacts({ attemptRoot, experimentRoot: root, html, evidence });
+  assert.match(prepared.html, new RegExp(`href="evidence/${contentHash}\\.md"`));
+  assert.deepEqual(await readFile(join(root, "evidence", `${contentHash}.md`)), bytes);
+  const model = comparisonReportModelFromHtml("", facts(),
+    { status: "completed", reportPath: "report.html", evidenceRefs: ["ev-10"] }, [], evidence);
+  assert.deepEqual(model.evidenceIdentities, [{ shortRef: "ev-10", contentHash, sourceRefs: ["ev-01"] }]);
+  assert.deepEqual(model.evidenceRefs, []);
+  await writeFile(source, "changed");
+  await assert.rejects(prepareComparisonArtifacts({ attemptRoot, experimentRoot: root, html, evidence }), /hash mismatch/);
+});
+
+test("publication rejects executable HTML and SVG from an existing derived catalog", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-derived-active-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const attemptRoot = join(root, "comparison-attempts", "attempt-1");
+  await mkdir(join(attemptRoot, "evidence", "derived"), { recursive: true });
+  for (const [extension, content] of [
+    ["html", "<!doctype html><html><body><script>alert(1)</script></body></html>"],
+    ["svg", '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>'],
+  ] as const) {
+    const bytes = Buffer.from(content);
+    const contentHash = sha256(bytes);
+    const href = `evidence/derived/${contentHash.slice(0, 16)}.${extension}`;
+    await writeFile(join(attemptRoot, ...href.split("/")), bytes);
+    const evidence = [{ side: "derived" as const, inspectPath: href, reportHref: href,
+      origin: "derived_analysis" as const, contentHash }];
+    await assert.rejects(prepareComparisonArtifacts({ attemptRoot, experimentRoot: root,
+      html: `<a href="${href}">view</a>`, evidence }), /Unsafe derived evidence/);
+  }
+});
 
 const timestamp = "2026-08-15T00:00:00.000Z";
 function taskCase(): TaskCase {
