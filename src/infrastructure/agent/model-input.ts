@@ -33,6 +33,8 @@ export type ArtifactBodyResolver = (ref: {
   byteLength: number;
 }) => Promise<string>;
 
+export type ModelInputResolver = ArtifactBodyResolver & { image?: (ref: { artifactId: string; contentHash: string; byteLength: number }) => Promise<Uint8Array> };
+
 export function redactModelVisibleText(text: string): { text: string; redacted: boolean } {
   const next = text
     .replace(/(authorization\s*[=:]\s*)(?:"?)(?:Bearer\s+)?[^\s"]+/gi, "$1[REDACTED]")
@@ -130,7 +132,7 @@ export function parseCommittedEventLog(text: string): { events: EventEnvelope[];
 
 export async function reconstructModelRequests(
   events: readonly EventEnvelope[],
-  resolveArtifact?: ArtifactBodyResolver,
+  resolveArtifact?: ModelInputResolver,
 ): Promise<{ requests: ReconstructedModelRequest[]; diagnostic?: ModelInputDiagnostic }> {
   const sessions = new Map<string, SessionReplay>();
   const requests: ReconstructedModelRequest[] = [];
@@ -164,6 +166,11 @@ export async function reconstructModelRequests(
       }
       if (event.type === "agent.message_appended") {
         requests.push(await replayUserRequest(session, payload, resolveArtifact));
+        session.modelRequestSeen = false;
+        continue;
+      }
+      if (event.type === 'agent.model_request' && Array.isArray(payload.images)) {
+        await replayRequestManifest(session, payload, requests, resolveArtifact);
         continue;
       }
       if (event.type === "agent.context_compacted") {
@@ -177,9 +184,10 @@ export async function reconstructModelRequests(
           tail = payload.retainedTail;
         }
         session.messages = [{ role: "compactionSummary", summary }, ...tail];
+        session.compacted = true;
         if (requests.length > 0) {
           const last = requests.at(-1);
-          if (last && last.sessionId === session.sessionId && last.invocationId === stringField(payload.invocationId, last.invocationId)) {
+          if (last && !session.modelRequestSeen && last.sessionId === session.sessionId && last.invocationId === stringField(payload.invocationId, last.invocationId)) {
             last.compacted = true;
             last.messages = session.messages;
           }
@@ -203,11 +211,12 @@ export async function reconstructModelRequests(
       }
       if (event.type === "agent.tool_completed") {
         const text = payload.body ? await resolveTextBody(payload.body, resolveArtifact) : "";
+        const content = Array.isArray(payload.contentTypes) && payload.contentTypes.includes('image') ? JSON.parse(text) as unknown[] : [{ type: 'text', text }];
         session.messages.push({
           role: "toolResult",
           toolCallId: stringField(payload.toolCallId),
           toolName: stringField(payload.tool),
-          content: [{ type: "text", text }],
+          content,
         });
       }
     }
@@ -215,12 +224,39 @@ export async function reconstructModelRequests(
     if (isDiagnostic(error)) return { requests, diagnostic: error.diagnostic };
     throw error;
   }
+  return inspectReplayedRequests(requests, resolveArtifact);
+}
+
+async function inspectReplayedRequests(requests: ReconstructedModelRequest[], resolveArtifact?: ModelInputResolver): Promise<{ requests: ReconstructedModelRequest[]; diagnostic?: ModelInputDiagnostic }> {
   for (const request of requests) {
+    const refs: unknown[] = request.messages.flatMap((message): unknown[] => isRecord(message) && Array.isArray(message.content)
+      ? (message.content as unknown[]).filter((block) => isRecord(block) && block.type === 'image') : []);
+    try {
+      const complete = await checkRecordedImages(refs, resolveArtifact);
+      request.contentComplete = request.contentComplete && complete;
+    } catch (error) {
+      if (isDiagnostic(error)) return { requests, diagnostic: error.diagnostic };
+      throw error;
+    }
     if (!Value.Check(ReconstructedModelRequestSchema, request)) {
       return { requests, diagnostic: { code: "schema", message: "Reconstructed model request failed schema check." } };
     }
   }
   return { requests };
+}
+
+async function replayRequestManifest(session: SessionReplay, payload: Record<string, unknown>, requests: ReconstructedModelRequest[], resolver?: ModelInputResolver): Promise<void> {
+  const previous = [...requests].reverse().find((item) => item.sessionId === session.sessionId);
+  const request = session.modelRequestSeen ? await snapshotRequest(session, { ...payload, repair: previous?.repair }, session.compacted ?? false, previous?.contentComplete ?? false) : previous;
+  if (request && request.sessionId === session.sessionId) {
+    request.messages = [...session.messages];
+    request.nativeImages = payload.images as AgentImageRef[];
+    request.modelRequestDigest = stringField(payload.digest);
+    const imagesComplete = await checkRecordedImages(payload.images, resolver);
+    request.contentComplete = request.contentComplete && imagesComplete;
+    if (session.modelRequestSeen) requests.push(request);
+  }
+  session.modelRequestSeen = true;
 }
 
 export async function spillInlineBody(
@@ -272,6 +308,8 @@ type SessionReplay = {
   tools: unknown[];
   messages: unknown[];
   invocationTerminal: boolean;
+  modelRequestSeen?: boolean;
+  compacted?: boolean;
 };
 
 function userContent(text: string, images: unknown): unknown[] {
@@ -301,7 +339,7 @@ export function inspectModelInputBody(body: unknown): { ok: true; body: AgentTex
 async function replayUserRequest(
   session: SessionReplay,
   payload: Record<string, unknown>,
-  resolveArtifact?: ArtifactBodyResolver,
+  resolveArtifact?: ModelInputResolver,
 ): Promise<ReconstructedModelRequest> {
   const inspected = inspectModelInputBody(payload.body);
   if (!inspected.ok) {
@@ -310,7 +348,22 @@ async function replayUserRequest(
   }
   const text = await resolveTextBody(inspected.body, resolveArtifact);
   session.messages.push({ role: "user", content: userContent(text, payload.images) });
-  return snapshotRequest(session, payload, false, true);
+  return snapshotRequest(session, payload, session.compacted ?? false, await checkRecordedImages(payload.images, resolveArtifact));
+}
+
+async function checkRecordedImages(images: unknown, resolver?: ModelInputResolver): Promise<boolean> {
+  if (images === undefined) return true;
+  if (!Array.isArray(images)) throw diagnosticError({ code: 'schema', message: 'Image manifest is not an array.' });
+  let complete = true;
+  for (const image of images) {
+    if (!Value.Check(AgentImageRefSchema, image)) throw diagnosticError({ code: 'schema', message: 'Invalid image input reference.' });
+    if (!image.artifactId || !resolver?.image) { complete = false; continue; }
+    let bytes: Uint8Array;
+    try { bytes = await resolver.image({ ...image, artifactId: image.artifactId }); }
+    catch { throw diagnosticError({ code: 'missing_attachment', message: 'Image input attachment could not be read.', artifactId: image.artifactId }); }
+    if (bytes.byteLength !== image.byteLength || sha256(bytes) !== image.contentHash) throw diagnosticError({ code: 'attachment_checksum', message: 'Image input attachment failed integrity check.', artifactId: image.artifactId });
+  }
+  return complete;
 }
 
 async function snapshotRequest(session: SessionReplay, payload: Record<string, unknown>, compacted: boolean, contentComplete: boolean): Promise<ReconstructedModelRequest> {

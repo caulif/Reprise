@@ -291,8 +291,10 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
       if (text(payload.role) !== 'comparison') return [];
       const capabilities = Array.isArray(payload.inputCapabilities)
         ? payload.inputCapabilities.filter((item): item is string => typeof item === 'string') : [];
-      const model = text(payload.model) ?? 'unknown model';
-      return [entry('HARNESS', 'Comparison evaluator', `${model} · input: ${capabilities.join(', ') || 'unknown'}`,
+      const descriptor = record(payload.model);
+      const model = text(descriptor.modelId) ?? text(payload.model) ?? 'unknown model';
+      const source = text(descriptor.capabilitySource);
+      return [entry('HARNESS', 'Comparison evaluator', `${model} · input: ${capabilities.join(', ') || 'unknown'}${source ? ` · declaration: ${source}` : ''}`,
         { lane: 'comparison', kind: 'narrate', role: 'comparison', verb: 'inspect', activityStatus: 'completed' }),
         ...(!capabilities.includes('image') ? [entry('HARNESS', 'Visual review unavailable',
           'Evaluator accepts text only; visual quality cannot be claimed from images in this session.',

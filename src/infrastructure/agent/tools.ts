@@ -1,6 +1,7 @@
 import { sha256 } from "../../core/identity.js";
-import { redactToolResultForModel, toolResultBody } from "./model-input.js";
+import { inlineBody, redactToolResultForModel, toolResultBody } from "./model-input.js";
 import type { AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
+import { recordedImageRefs } from './artifacts.js';
 
 class AgentToolFailure extends Error {
   constructor(role: string, cause: unknown) {
@@ -42,7 +43,11 @@ export function instrumentTools(
           const raw = await tool.execute(params, signal);
           const result = acceptsImage ? raw : stripImageBlocksForTextOnly(raw);
           const visible = redactToolResultForModel(result);
-          await tool.onCompleted?.(visible);
+          signal.throwIfAborted();
+          const images = visible.contentBlocks?.filter((block) => block.type === 'image');
+          const refs = await recordedImageRefs(images, audit);
+          let index = 0;
+          const body = images?.length ? inlineBody(JSON.stringify(visible.contentBlocks!.map((block) => block.type === 'image' ? refs[index++] : block))) : toolResultBody(visible);
           await audit?.append({
             type: "agent.tool_completed",
             sessionId,
@@ -53,11 +58,14 @@ export function instrumentTools(
               byteLength: contentByteLength(visible),
               contentTypes: contentTypes(visible),
               contentDigest: contentDigest(visible),
-              body: toolResultBody(visible),
+              body,
+              ...(images?.length ? { images: refs } : {}),
               ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
               ...(visible.details && typeof visible.details === "object" ? { details: safeDetails(visible.details) } : {}),
             },
           });
+          signal.throwIfAborted();
+          await tool.onCompleted?.(visible);
           return visible;
         } catch (error) {
           await audit?.append({
@@ -81,14 +89,21 @@ const IMAGE_OMITTED_NOTE = "Image content omitted: this model session does not a
 
 function stripImageBlocksForTextOnly(result: AgentToolResult): AgentToolResult {
   if (!result.contentBlocks?.some((block) => block.type === "image")) return result;
-  const textBlocks = result.contentBlocks.filter((block) => block.type === "text");
-  const content = result.content.includes(IMAGE_OMITTED_NOTE)
-    ? result.content
-    : `${result.content}\n${IMAGE_OMITTED_NOTE}`.trim();
+  const deliveryText = (text: string): string => {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'imageDelivery' in parsed) {
+        return JSON.stringify({ ...parsed, imageDelivery: 'unsupported_model' });
+      }
+    } catch { /* Non-JSON tool text has no structured delivery receipt to update. */ }
+    return text;
+  };
+  const textBlocks = result.contentBlocks.filter((block) => block.type === "text").map((block) => ({ ...block, text: deliveryText(block.text) }));
+  const content = `${deliveryText(result.content)}\n${IMAGE_OMITTED_NOTE}`.trim();
   return {
     content,
     contentBlocks: [...textBlocks, { type: "text" as const, text: IMAGE_OMITTED_NOTE }],
-    ...(result.details === undefined ? {} : { details: result.details }),
+    details: { ...(typeof result.details === 'object' && result.details !== null ? result.details : {}), imageDelivery: 'unsupported_model' },
   };
 }
 

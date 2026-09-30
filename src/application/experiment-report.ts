@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
+import { AgentImageRefSchema } from '../core/agent-model-input-schema.js';
 import type { ControllerDecision } from "../agents/controller-agent.js";
 import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObservationRefs } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
@@ -364,7 +365,6 @@ async function runComparisonAttempt(input: {
           compareContext,
           input.attemptRoot,
           input.attemptId,
-          catalog.snapshot().media.some((item) => item.available),
           catalog,
         );
         deliveredImageContentHashes = invoked.deliveredImageContentHashes;
@@ -535,7 +535,6 @@ async function invokeCompare(
   context: ComparisonContext,
   attemptRoot: string,
   attemptId: string,
-  allowBinary: boolean,
   catalog: ComparisonEvidenceCatalog,
 ): Promise<{ result: AgentInvocation<ComparisonResult>; deliveredImageContentHashes: Set<string> }> {
   const deliveredImageContentHashes = new Set<string>();
@@ -549,13 +548,14 @@ async function invokeCompare(
   });
   const result = await input.input.comparison.compare(
     context,
-    comparisonTools(input, attemptRoot, allowBinary, catalog, draft),
+    comparisonTools(input, attemptRoot, catalog, draft),
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
     {
       getEvidenceCatalog: () => catalog.snapshot(),
       getSubmittedResult: () => draft.completedResult(),
       getSubmissionFailure: () => draft.failureReason(),
+      getSubmissionState: () => draft.submissionState(),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       enforcePhaseBoundaries: true,
     },
@@ -572,7 +572,6 @@ function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]):
 function comparisonTools(
   input: Parameters<typeof finishExperiment>[0],
   attemptRoot: string,
-  allowBinary: boolean,
   catalog: ComparisonEvidenceCatalog,
   draft: ComparisonDraft,
 ): AgentToolDefinition[] {
@@ -599,7 +598,7 @@ function comparisonTools(
   return withComparisonShellDeny([
     ...workspaceTools(attemptRoot, {
       role: "comparison",
-      allowBinary: input.taskCase.privacy.allowBinary || allowBinary,
+      allowBinary: input.taskCase.privacy.allowBinary,
       mounts,
       allowWrite: input.input.comparison instanceof ComparisonAgent
         ? comparisonAttemptWriteAllowed
@@ -623,10 +622,12 @@ function comparisonTools(
     createRenderArtifactTool({
       catalog: renderCatalog,
       attemptRoot,
+      allowImages: input.taskCase.privacy.allowBinary,
     }),
     createPreviewReportTool({
       catalog: renderCatalog,
       attemptRoot,
+      allowImages: input.taskCase.privacy.allowBinary,
       onPreviewSuccess: (prepared) => draft.recordPreview(prepared),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       prepareReportHtml: async () => {
@@ -696,10 +697,18 @@ function comparisonAudit(
   deliveredImageContentHashes: Set<string>,
 ): AgentAuditSink {
   const sink = experimentAgentAuditSink(input.store, input.input.runId);
+  let hasRequestManifest = false;
   return {
     append: async (event) => {
-      recordDeliveredImageContentHashes(event, deliveredImageContentHashes);
       await sink.append({ ...event, payload: { attemptId, ...event.payload } });
+      if (event.type === 'agent.model_request' && Array.isArray(event.payload.images)) {
+        if (!hasRequestManifest) deliveredImageContentHashes.clear();
+        hasRequestManifest = true;
+        for (const image of event.payload.images) {
+          if (!Value.Check(AgentImageRefSchema, image)) throw new Error('Invalid actual image delivery manifest.');
+          deliveredImageContentHashes.add(image.contentHash);
+        }
+      } else if (!hasRequestManifest) recordDeliveredImageContentHashes(event, deliveredImageContentHashes);
     },
     ...(sink.commitModelInput ? { commitModelInput: (bytes) => sink.commitModelInput!(bytes) } : {}),
   };

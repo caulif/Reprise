@@ -52,7 +52,8 @@ export class PiProviderAdapter implements ProviderAdapter {
           const serialized = JSON.stringify({ model: streamModel, context });
           const modelId = "id" in streamModel ? String(streamModel.id) : String(streamModel);
           const messageCount = "messages" in context && Array.isArray(context.messages) ? context.messages.length : 0;
-          await notify({ model: modelId, digest: sha256(serialized), messageCount });
+          const images = context.messages.flatMap((message) => Array.isArray(message.content) ? message.content.filter((block) => block.type === 'image') : []);
+          await notify({ model: modelId, digest: sha256(serialized), messageCount, images });
         }
         return this.#models.streamSimple(streamModel, context, {
           ...options,

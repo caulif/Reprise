@@ -614,20 +614,11 @@ async function killBrowser(
     }
     await waitExit(child, 3_000);
   }
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await rm(profileDir, { recursive: true, force: true });
-      return;
-    } catch (error: unknown) {
-      if (attempt === 2) {
-        diagnostics.push({
-          code: "profile_cleanup_failed",
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return;
-      }
-      await sleep(50);
-    }
+  try {
+    // Windows browser descendants can release profile handles after the parent exits.
+    await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (error: unknown) {
+    diagnostics.push({ code: "profile_cleanup_failed", message: error instanceof Error ? error.message : String(error) });
   }
 }
 

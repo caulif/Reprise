@@ -8,6 +8,19 @@ import type { Api, Model, Models } from '@earendil-works/pi-ai';
 
 const tinyWindowModel = { contextWindow: 1_000 } as Model<Api>;
 
+test('pruning preserves native image bytes larger than the text stub budget and bounds older frames', () => {
+  const image = { type: 'image' as const, mimeType: 'image/png', data: Buffer.alloc(32_768).toString('base64') };
+  const messages: AgentMessage[] = Array.from({ length: 14 }, (_, index) => ({ role: 'toolResult' as const,
+    toolCallId: `t${index}`, toolName: 'render_artifact', content: [{ type: 'text' as const, text: `media-${index}` }, image], isError: false, timestamp: index }));
+  const pruned = prunePiMessagesForBudget(messages);
+  assert.equal(pruned.changed, true);
+  assert.equal(messages.flatMap((message) => 'content' in message && Array.isArray(message.content) ? message.content.filter((block) => block.type === 'image') : []).length, 12);
+  assert.match(JSON.stringify(messages[0]), /Earlier image omitted/);
+  assert.match(JSON.stringify(messages.at(-1)), /media-13/);
+  assert.ok(JSON.stringify(messages.at(-1)).includes(image.data));
+  assert.equal(prunePiMessagesForBudget(messages).changed, false);
+});
+
 test('needsPiCompaction is false for a short transcript', () => {
   const messages: AgentMessage[] = [
     { role: 'user', content: [{ type: 'text', text: 'go' }], timestamp: 1 },

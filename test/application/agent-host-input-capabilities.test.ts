@@ -3,6 +3,18 @@ import assert from "node:assert/strict";
 import { AgentHost, type AgentAuditEvent } from "../../src/infrastructure/agent/host.js";
 import { Type } from "@sinclair/typebox";
 
+test('Host rejects conflicting Provider/Session capability declarations before any invocation', async () => {
+  let cancelled = false, called = false;
+  const host = new AgentHost({ inputCapabilities: ['text'], createSession: () => ({
+    inputCapabilities: ['text', 'image'], append: async () => { called = true; return '{}'; }, cancel: () => { cancelled = true; },
+  }) });
+  const session = await host.createSession({ role: 'test', systemPrompt: 'Test' });
+  const result = await session.work({ promptContent: 'Go', timeoutMs: 0 });
+  assert.equal(result.status, 'failed');
+  assert.equal(cancelled, true);
+  assert.equal(called, false);
+});
+
 test("text-only sessions strip prompt and tool image blocks; image sessions deliver via outbound/audit", async () => {
   const image = { type: "image" as const, data: Buffer.from("pixel-bytes").toString("base64"), mimeType: "image/png" };
   let textPromptImages: unknown;
@@ -16,6 +28,8 @@ test("text-only sessions strip prompt and tool image blocks; image sessions deli
         textPromptImages = images;
         const result = await input.tools[0]?.execute({}, new AbortController().signal);
         textToolHasImage = Boolean(result?.contentBlocks?.some((block) => block.type === "image"));
+        assert.match(result!.content, /unsupported_model/);
+        assert.ok(!JSON.stringify(result).includes('"imageDelivery":"attached"'));
         return JSON.stringify({ ok: true });
       },
       cancel() {},
@@ -29,8 +43,8 @@ test("text-only sessions strip prompt and tool image blocks; image sessions deli
       description: "return an image",
       parameters: Type.Object({}),
       execute: async () => ({
-        content: "image preview",
-        contentBlocks: [{ type: "text" as const, text: "image preview" }, image],
+        content: '{"imageDelivery":"attached"}',
+        contentBlocks: [{ type: "text" as const, text: '{"imageDelivery":"attached"}' }, image],
       }),
     }],
     audit: { append: async (event) => { textAudit.push(event); } },

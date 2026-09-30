@@ -92,6 +92,15 @@ test("render_artifact registers frames through catalog and dedupes identical der
   assert.equal(payload2.media[1]?.shortRef, "media-02");
   assert.equal(renderCalls, 2);
   assert.equal(catalog.media.length, 2);
+  const registered = { ...catalog, registerDerivedMediaBatch: async (entries: Parameters<typeof catalog.registerDerivedMediaBatch>[0]) => {
+    const result = await catalog.registerDerivedMediaBatch(entries);
+    return result.ok ? { ...result, items: result.items.map((item) => ({ ...item, readPath: `media/${item.shortRef}.png` })) } : result;
+  } };
+  const attached = await createRenderArtifactTool({ catalog: registered, attemptRoot: root, render, allowImages: true }).execute({ sourceRef: 'ev-01', sampleTimesMs: [0, 500], includeImages: true }, new AbortController().signal);
+  assert.equal(attached.contentBlocks?.filter((block) => block.type === 'image').length, 2);
+  const denied = await createRenderArtifactTool({ catalog: registered, attemptRoot: root, render }).execute({ sourceRef: 'ev-01', includeImages: true }, new AbortController().signal);
+  assert.equal((JSON.parse(denied.content) as { imageDelivery: string }).imageDelivery, 'not_authorized');
+  assert.equal(denied.contentBlocks, undefined);
 });
 
 test("render_artifact batch registration leaves no first-frame fact when a later frame is invalid", async (t) => {
@@ -290,6 +299,19 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
     draftDigest: string;
   };
   assert.notEqual(second.draftDigest, first.draftDigest);
+  const attachedTool = createPreviewReportTool({
+    catalog: { ...catalog, registerDerivedMedia: async (entry) => {
+      const result = await catalog.registerDerivedMedia(entry);
+      return result.ok ? { ...result, readPath: `review/media/${result.shortRef}.png` } : result;
+    } },
+    attemptRoot: root, render, allowImages: true,
+    prepareReportHtml: async () => materializeComparisonReportPreview({ attemptRoot: root, media, catalogRevision: catalog.revision() }),
+  });
+  for (let index = 0; index < 2; index++) {
+    const native = await attachedTool.execute({ includeImages: true }, new AbortController().signal);
+    assert.equal(native.contentBlocks?.find((block) => block.type === 'image')?.data, PNG_B.toString('base64'));
+    assert.match(native.content, /review-/);
+  }
 });
 
 test("preview_report rejects an unpublishable draft before rendering", async (t) => {

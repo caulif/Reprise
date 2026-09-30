@@ -56,6 +56,18 @@ async function deliveredImageHashes(
   store: ExperimentStore, events: readonly EventEnvelope[], attemptId: string, sessionId: string,
 ): Promise<Set<string>> {
   const hashes = new Set<string>();
+  const manifests = events.filter((event) => event.type === 'agent.model_request'
+    && typeof event.payload === 'object' && event.payload !== null
+    && 'attemptId' in event.payload && event.payload.attemptId === attemptId
+    && 'sessionId' in event.payload && event.payload.sessionId === sessionId
+    && 'images' in event.payload && Array.isArray(event.payload.images));
+  if (manifests.length) {
+    for (const event of manifests) for (const image of (event.payload as { images: unknown[] }).images) {
+      if (!Value.Check(AgentImageRefSchema, image)) throw new Error('Invalid actual image delivery manifest.');
+      hashes.add(image.contentHash);
+    }
+    return hashes;
+  }
   for (const event of events) {
     if (typeof event.payload !== 'object' || event.payload === null) continue;
     const payload = event.payload as Record<string, unknown>;

@@ -108,8 +108,9 @@ export async function persistAgentAuditEvent(store: ExperimentStore, runId: stri
   });
 }
 
-export function experimentModelInputResolver(store: ExperimentStore, runId: string): ArtifactBodyResolver {
-  return async (ref) => {
+export function experimentModelInputResolver(store: ExperimentStore, runId: string): ArtifactBodyResolver & { image: (ref: { artifactId: string }) => Promise<Uint8Array> } {
+  const image = async (ref: { artifactId: string }) => store.readArtifact({ artifactId: ref.artifactId, experimentId: store.experimentId, runId });
+  const text: ArtifactBodyResolver = async (ref) => {
     try {
       return Buffer.from(await store.readArtifact({
         artifactId: ref.artifactId,
@@ -128,6 +129,7 @@ export function experimentModelInputResolver(store: ExperimentStore, runId: stri
       });
     }
   };
+  return Object.assign(text, { image });
 }
 
 export function experimentAgentAuditSink(store: ExperimentStore, runId: string): AgentAuditSink {
