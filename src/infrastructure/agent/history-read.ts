@@ -3,16 +3,17 @@ import type { EventEnvelope } from "../../core/schema.js";
 import {
   parseCommittedEventLog,
   reconstructModelRequests,
-  type ArtifactBodyResolver,
+  type ModelInputResolver,
 } from "./model-input.js";
 
 /** Read-only: committed events and reconstructed model input. Does not load providers, Runtime, or product packs. */
 export async function readCommittedModelLog(
   eventsPath: string,
-  resolveArtifact?: ArtifactBodyResolver,
+  resolveArtifact?: ModelInputResolver | { forEvents(events: readonly EventEnvelope[]): ModelInputResolver },
 ) {
   const parsed = parseCommittedEventLog(await readFile(eventsPath, "utf8"));
-  const rebuilt = await reconstructModelRequests(parsed.events, resolveArtifact);
+  const resolver = typeof resolveArtifact === 'function' ? resolveArtifact : resolveArtifact?.forEvents(parsed.events);
+  const rebuilt = await reconstructModelRequests(parsed.events, resolver);
   return {
     events: parsed.events,
     requests: rebuilt.requests,

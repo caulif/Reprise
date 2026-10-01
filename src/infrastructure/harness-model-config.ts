@@ -350,6 +350,8 @@ export function hasFileApiKey(config: HarnessModelConfig | HarnessConfigDraft): 
 /** Public view of local harness config. Secrets are never included. */
 export function publicHarnessConfig(config: HarnessModelConfig | undefined): {
   readonly present: boolean;
+  readonly declaredInput?: readonly string[];
+  readonly capabilitySource?: 'catalog' | 'config' | 'default_text';
   readonly providerKind?: 'pi-catalog' | 'openai-compatible';
   readonly providerId?: string;
   readonly modelId?: string;
@@ -367,6 +369,9 @@ export function publicHarnessConfig(config: HarnessModelConfig | undefined): {
     providerId: config.providerId,
     modelId: config.modelId,
     effort: config.effort,
+    ...(kind === 'openai-compatible' && config.schemaVersion === 2
+      ? { declaredInput: config.inputCapabilities ?? ['text'], capabilitySource: config.inputCapabilities ? 'config' as const : 'default_text' as const }
+      : { capabilitySource: 'catalog' as const }),
     ...(config.schemaVersion === 2 && config.baseUrl ? { baseUrl: config.baseUrl } : {}),
     hasCredential: hasFileApiKey(config) || Boolean(keyRef && process.env[environmentNameForKeyRef(keyRef)]),
     ...(keyRef ? { keyRef } : {}),

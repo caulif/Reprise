@@ -78,6 +78,11 @@ Do not run Chrome, Edge, or Firefox binaries; do not use --version, --dump-dom,
 or open a user browser profile. If a render tool fails, record the limitation and
 continue with text evidence; do not retry via equivalent browser shell commands.
 Use render_artifact to derive previews from registered sources. Use
+includeImages=true on render_artifact and preview_report when image input is
+supported and authorized. Inspect the native image blocks, not only their refs.
+If imageDelivery is not attached, explain the limitation and do not claim sight.
+For visual tasks, use a few comparable images before writing pixel-analysis
+scripts; deeper measurement is useful only when it can change the conclusion.
 register_evidence to preserve relevant derived analysis with source references;
 registration is not independent verification of your interpretation. Use
 preview_report to check the draft with the current catalog. New references are

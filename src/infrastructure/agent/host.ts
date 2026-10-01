@@ -56,7 +56,9 @@ export class AgentHost implements AgentHostPort {
     }
     const sessionId = randomUUID();
     const cursor: InvocationCursor = { requestIndex: 0 };
-    const acceptsImage = modelAcceptsImage(this.#caller.inputCapabilities);
+    const capabilities = Object.freeze([...(this.#caller.inputCapabilities ?? ['text'])]);
+    const model = this.#caller.modelSnapshot ?? input.model;
+    const acceptsImage = modelAcceptsImage(capabilities);
     const tools = instrumentTools(input.tools ?? [], sessionId, input.role, cursor, input.audit, acceptsImage);
     const compactionInstructions = input.compaction?.instructions ?? input.compactionInstructions;
     try {
@@ -67,6 +69,10 @@ export class AgentHost implements AgentHostPort {
         ...(compactionInstructions ? { compactionInstructions } : {}),
         ...callerLoopHooks(sessionId, input.role, cursor, input.audit),
       });
+      if (session.inputCapabilities && JSON.stringify(session.inputCapabilities) !== JSON.stringify(capabilities)) {
+        session.cancel();
+        throw new Error('Provider Session input capabilities differ from its frozen declaration.');
+      }
       await input.audit?.append({
         type: "agent.session_started",
         sessionId,
@@ -81,11 +87,11 @@ export class AgentHost implements AgentHostPort {
             const host = hostContext();
             return { platform: host.platform, arch: host.arch, pathCase: host.pathCase, shell: host.defaultShell.kind, capabilities: [...host.capabilities].sort() };
           })(),
-          ...(input.model ? { model: input.model } : {}),
-          ...(session.inputCapabilities ? { inputCapabilities: [...session.inputCapabilities] } : {}),
+          ...(model ? { model: { ...model, inputCapabilities: capabilities } } : {}),
+          inputCapabilities: capabilities,
         },
       });
-      return new AgentSessionHost(sessionId, input.role, session, input.audit, undefined, session.inputCapabilities, cursor);
+      return new AgentSessionHost(sessionId, input.role, session, input.audit, undefined, capabilities, cursor);
     } catch (error) {
       await input.audit?.append({
         type: "agent.session_failed",

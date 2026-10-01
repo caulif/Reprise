@@ -1,5 +1,8 @@
 import { inlineBody, redactModelVisibleText } from "./model-input.js";
 import type { AgentAuditSink, InvocationCursor, ProviderAdapter } from "./types.js";
+import { recordedContext, recordedImageRefs } from './artifacts.js';
+import { AgentModelRequestFactsSchema } from '../../core/agent-model-input-schema.js';
+import { Value } from '@sinclair/typebox/value';
 
 export function callerLoopHooks(
   sessionId: string,
@@ -24,7 +27,7 @@ export function callerLoopHooks(
           tokensBefore: payload.tokensBefore,
           retainedCount: payload.retainedCount,
           reason: payload.reason ?? "compact",
-          retainedTail: inlineBody(JSON.stringify(payload.retainedTail ?? [])),
+          retainedTail: inlineBody(JSON.stringify(await recordedContext(payload.retainedTail ?? [], audit))),
         },
       });
     },
@@ -41,11 +44,13 @@ export function callerLoopHooks(
       await audit?.append({ type: "agent.tool_completed", sessionId, role, payload: { ...payload, nativeHook: "after" } });
     },
     onModelRequest: async (payload) => {
+      const facts = { ...payload, images: await recordedImageRefs(payload.images, audit) };
+      if (!Value.Check(AgentModelRequestFactsSchema, facts)) throw new Error('Model request facts failed schema validation.');
       await audit?.append({
         type: "agent.model_request",
         sessionId,
         role,
-        payload: { schemaVersion: 1, invocationId: cursor.invocationId, requestIndex: cursor.requestIndex, ...payload },
+        payload: { schemaVersion: 1, invocationId: cursor.invocationId, requestIndex: cursor.requestIndex, ...facts },
       });
     },
   };

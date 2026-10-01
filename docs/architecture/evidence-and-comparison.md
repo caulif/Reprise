@@ -16,7 +16,15 @@ Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请�
 
 TUI 读取这些事实并投影状态。它不持有 CandidateRun 状态机，不展示未公开的内部推理，也不把模型输出未经 schema 校验地当成事实。
 
+History 从已校验的提交日志前缀构造只读附件读取器，每个 Session 按起始事件的 runId 绑定正文和图片读取范围；复用 Store 的 manifest、owner、提交事件及字节/hash 校验。完整图片记录不标成内容缺失，缺失或损坏附件保留诊断并标记输入不完整。此路径不创建目录、取得 writer lock 或改写未提交尾部。
+
 ## Comparison attempt
+
+Session 以有效 Provider 冻结身份、API、输入能力、声明来源与无凭据配置指纹，Session 声明冲突则取消。图片工具结果、压缩 retained tail 和最终 `agent.model_request.images` 保存不可变附件的 hash、长度与 artifactId，不存 base64。最终清单反映 Pi 转换后的实际图片；视觉声明和离线恢复优先依据这些实际清单，只有无清单的历史日志沿用旧交付事实。重建校验附件，无附件或二进制 resolver 时标记不完整，读取失败与 hash 错误有诊断。文本裁剪保留最近 12 个原生图片块，旧图片换成 hash 与重新读取提示。
+
+`render_artifact` / `preview_report` 的可选 `includeImages=true` 交付受控 PNG；默认仍返回文本引用。二进制权限来自 Case `privacy.allowBinary`，再由模型能力过滤，媒体存在不等于授权。附图检查登记路径的真实 attempt 边界、hash、PNG 头部尺寸与预算（4 张、单张 3 MiB、总 8 MiB、单张 9,216,000 像素），不交付部分失败的集合，缓存同样检查。头部验证不是完整解码。`imageDelivery` 区分 attached、not_authorized、unsupported_model、unavailable 和 budget_exceeded。
+
+review 改稿回执保持当前阶段，相同 digest/revision 的幂等提交保留预览，不同版本失效。未满足预览条件时最多追加两次同 Session 审阅，无进展则退出；当前版本成功预览、正常完成和未取消的发布边界保持有效，见[原生图片链路与版本续审](../decisions/accepted/2026-09-30-comparison-native-image-pipeline.md)。
 
 候选 RunRecord 完成后，Comparison 可由 TUI 或 CLI 显式启动，默认跳过。每次生成创建独立 `comparison-attempts/<attemptId>/`，写入 `INDEX.md`、冻结的 `observations/`、候选快照状态、facts JSON、证据短引用、媒体清单和工作区。历史会话与候选事件以只读快照挂载；`history/` 提供历史过程，`finals/`（shell：`REPRISE_FINALS_ROOT`）提供本 attempt 冻结或派生的历史终稿。Comparison Session 不运行 Runtime、不修改 CandidateRun outcome。
 

@@ -6,6 +6,9 @@
 
 ### Added
 
+- Comparison 受控渲染与预览可在 Case 授权下返回原生 PNG；图片审计保存不可变附件，压缩保留最近图片，text-only 回执明确未交付。新增 opt-in `config test-image` 与离线 `config image-status`。
+- 审阅改稿回执显示实际阶段，最多两次续审补齐当前版本预览；版本发布校验保持严格。
+
 - 包名改为 scoped `@caulif/reprise`（避开 npmjs 无关同名包 `reprise`），并提供 TUI、headless `prepare`/`run`/`compare`、查询和取消命令。
 - openai-compatible 内部模型可声明「支持图片输入」（`inputCapabilities`）；默认仍为仅 text。Pi catalog 视觉能力以目录为准。text-only 会话不向模型发送原生 image block。
 - Comparison：text-only 仍可将已注册图片写入报告供人阅读；`data-claim="visual"` 须关联本 Session 实际交付的媒体 contentHash；seed/briefing 物化时对可用文件写入同口径 `contentHash`。

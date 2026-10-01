@@ -94,6 +94,9 @@ export type ModelConfigSnapshot = {
   contextWindow?: number;
   maxTokens?: number;
   inputCapabilities?: readonly string[];
+  capabilitySource?: 'catalog' | 'config' | 'default_text';
+  configFingerprint?: string;
+  api?: string;
 };
 
 export type PrivacyPolicy = {
@@ -183,6 +186,7 @@ export type InvocationCursor = {
 export interface ProviderAdapter {
   /** Declared before createSession; Host gates tool image blocks from this. */
   readonly inputCapabilities?: readonly string[];
+  readonly modelSnapshot?: ModelConfigSnapshot;
   createSession(input: {
     sessionId: string;
     systemPrompt: string;
@@ -205,7 +209,7 @@ export interface ProviderAdapter {
       byteLength: number;
       contentDigest: string;
     }) => Promise<void>;
-    onModelRequest?: (payload: { model: string; digest: string; messageCount: number }) => Promise<void>;
+    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[] }) => Promise<void>;
   }): Promise<ProviderSession> | ProviderSession;
 }
 

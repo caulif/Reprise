@@ -99,7 +99,7 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
     ...(comparisonValue !== undefined ? { comparisonReadable: comparison !== undefined } : {}),
   });
   const comparisonDetail = comparisonDetailOf(comparison);
-  const committed = await readCommittedExperimentHistory(path);
+  const committed = await readCommittedExperimentHistory(path, experimentId);
   const outcome = record ? record.outcome.termination.kind : unread ? "record unread" : committed.runStatus;
   return {
     experimentId, taskCaseId: metadata.spec.taskCaseId,

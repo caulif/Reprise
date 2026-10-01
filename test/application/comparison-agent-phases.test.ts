@@ -432,7 +432,7 @@ test("Comparison envelope uses live getEvidenceCatalog refs registered mid-sessi
 test("Host records Pi model input capabilities without inventing a Reprise capability enum", async () => {
   const audit: AgentAuditEvent[] = [];
   let prompt = "";
-  const host = new AgentHost({ createSession: () => ({
+  const host = new AgentHost({ inputCapabilities: ['text', 'image'], createSession: () => ({
     inputCapabilities: ["text", "image"], append: async ({ content }) => { prompt = content; return JSON.stringify({ ok: true }); }, cancel() {},
   }) });
   const result = await host.request({

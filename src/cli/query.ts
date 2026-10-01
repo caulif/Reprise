@@ -21,6 +21,7 @@ import { loadAndActivateProductPacks } from "../products/index.js";
 import { parseSessionsDirs } from "./sessions-dirs.js";
 import { errorBody, parseOutputMode, writeJsonResult, type ProtocolIo } from "./protocol.js";
 import type { HarnessConfigDraft } from "../infrastructure/harness-model-config.js";
+import { probeHarnessImageInput, readImageProbe } from '../application/harness-image-probe.js';
 
 const common = {
   "data-dir": { type: "string" },
@@ -136,15 +137,18 @@ async function queryData(command: string, values: {
 async function runConfig(args: readonly string[], io: ProtocolIo): Promise<number> {
   const action = args[0];
   if (action === "set") return runConfigSet(args.slice(1), io);
-  const values = parseArgs({ args: [...args.slice(action === "get" ? 1 : 0)], options: common, allowPositionals: false, strict: true }).values;
+  const values = parseArgs({ args: [...args.slice(action && !action.startsWith('-') ? 1 : 0)], options: common, allowPositionals: false, strict: true }).values;
   if (values.help || action === undefined) {
-    io.stdout("Usage: reprise config get|set [--data-dir <dir>]");
+    io.stdout("Usage: reprise config get|set|test-image|image-status [--data-dir <dir>]");
     return action === undefined ? CLI_EXIT.usage : CLI_EXIT.ok;
   }
   parseOutputMode(values);
   const dataDir = resolve(values["data-dir"] ?? process.env.REPRISE_DATA_DIR ?? ".reprise");
-  writeJsonResult(io, { ok: true, command: "config", data: await readPublicConfig(dataDir) });
-  return CLI_EXIT.ok;
+  if (action !== 'get' && action !== 'test-image' && action !== 'image-status') throw new CliError('usage', `Unknown config action '${action}'.`);
+  const data = action === 'test-image' ? await probeHarnessImageInput(dataDir) : action === 'image-status' ? await readImageProbe(dataDir) : await readPublicConfig(dataDir);
+  const passed = action !== 'test-image' || ('status' in data && data.status === 'passed');
+  writeJsonResult(io, { ok: passed, command: "config", data, ...(!passed ? { error: { kind: 'failed' as const, message: 'Image probe did not pass; inspect data.status.' } } : {}) });
+  return passed ? CLI_EXIT.ok : CLI_EXIT.failed;
 }
 
 async function runConfigSet(args: readonly string[], io: ProtocolIo): Promise<number> {
@@ -164,6 +168,7 @@ async function runConfigSet(args: readonly string[], io: ProtocolIo): Promise<nu
         "api-key-file": { type: "string" },
         "key-ref": { type: "string" },
         api: { type: "string" },
+        "image-input": { type: "boolean" },
       },
       allowPositionals: false,
       strict: true,
@@ -190,6 +195,7 @@ async function draftFromFlags(values: {
   "api-key-file"?: string;
   "key-ref"?: string;
   api?: string;
+  "image-input"?: boolean;
 }): Promise<HarnessConfigDraft> {
   const kind: HarnessConfigDraft["kind"] = values.kind === "openai-compatible" ? "openai-compatible" : "pi-catalog";
   const draft: HarnessConfigDraft = {
@@ -203,6 +209,7 @@ async function draftFromFlags(values: {
   if (kind === "pi-catalog") return draft;
   if (!values["base-url"]) throw new CliError("config_missing", "openai-compatible config requires --base-url.");
   draft.baseUrl = values["base-url"];
+  draft.supportsImage = values['image-input'] === true;
   if (values.api === "openai-responses" || values.api === "openai-completions") draft.api = values.api;
   if (values["key-ref"]) {
     draft.keyRef = values["key-ref"];

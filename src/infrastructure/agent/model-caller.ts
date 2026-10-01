@@ -3,10 +3,14 @@ import { classifyAgentFailure } from './failure.js';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
-import { contentText, createProvider, type Models, type MutableModels } from '@earendil-works/pi-ai';
+import { contentText, createProvider, type ImageContent, type Models, type MutableModels } from '@earendil-works/pi-ai';
 import type { AgentToolDefinition, ProviderAdapter, ProviderSession } from './host.js';
 import { environmentNameForKeyRef, type HarnessModelConfig } from '../harness-model-config.js';
 import { PiProviderAdapter } from './providers/pi/adapter.js';
+import { sha256 } from '../../core/identity.js';
+import type { ModelConfigSnapshot } from './types.js';
+import { imageProbeChallenge } from './image-probe.js';
+import type { HarnessImageProbe } from '../../core/schemas/image-probe.js';
 
 export type PiModels = Pick<Models, 'getProviders' | 'getModels' | 'getModel' | 'getAuth' | 'completeSimple' | 'streamSimple'>;
 type MutablePiModels = PiModels & Pick<MutableModels, 'setProvider'>;
@@ -73,6 +77,40 @@ export class PiModelCaller implements ProviderAdapter {
 
   get inputCapabilities(): readonly string[] {
     return this.#model().input;
+  }
+
+  get modelSnapshot(): ModelConfigSnapshot {
+    const model = this.#model();
+    const capabilitySource: ModelConfigSnapshot['capabilitySource'] = isCatalog(this.#config) || this.#config.schemaVersion === 1 ? 'catalog'
+      : this.#config.inputCapabilities ? 'config' : 'default_text';
+    const snapshot = { providerId: model.provider, modelId: model.id, api: model.api,
+      contextWindow: model.contextWindow, maxTokens: model.maxTokens, inputCapabilities: [...model.input], capabilitySource };
+    const endpoint = model.baseUrl ? new URL(model.baseUrl) : undefined;
+    return { ...snapshot, configFingerprint: sha256(JSON.stringify({ ...snapshot, endpoint: endpoint ? `${endpoint.protocol}//${endpoint.host}${endpoint.pathname}` : '', reasoning: model.reasoning, effort: this.#config.effort, compat: this.#config.schemaVersion === 2 ? this.#config.compat : undefined })) };
+  }
+
+  async probeImageInput(signal?: AbortSignal): Promise<HarnessImageProbe> {
+    const snapshot = this.modelSnapshot;
+    const base = { schemaVersion: 1 as const, configFingerprint: snapshot.configFingerprint!, providerId: snapshot.providerId, modelId: snapshot.modelId, observedAt: new Date().toISOString() };
+    if (!snapshot.inputCapabilities?.includes('image')) return { ...base, status: 'unsupported' };
+    const model = this.#model();
+    const probeSignal = AbortSignal.any([AbortSignal.timeout(PI_PROBE_TIMEOUT_MS), ...(signal ? [signal] : [])]);
+    try {
+      probeSignal.throwIfAborted();
+      if (!await this.#models.getAuth(model)) return { ...base, status: 'provider_failure', failureKind: 'authentication' };
+      const challenge = imageProbeChallenge();
+      const response = await this.#models.completeSimple(model, {
+        systemPrompt: 'Identify the four vertical colored stripes in the supplied image. Reply only with the four English color names from left to right, separated by commas.',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Read the image and give the stripe colors in order.' }, challenge.image], timestamp: Date.now() }],
+      }, { signal: probeSignal, maxRetries: 0 });
+      probeSignal.throwIfAborted();
+      if (response.stopReason === 'error' || response.stopReason === 'aborted') throw new Error(response.errorMessage ?? 'Image probe failed.');
+      const answer = contentText(response.content).trim().toLowerCase().replace(/\s+/g, '');
+      return { ...base, status: answer === challenge.expected ? 'passed' : 'answer_mismatch' };
+    } catch (error) {
+      signal?.throwIfAborted();
+      return { ...base, status: 'provider_failure', failureKind: classifyAgentFailure(error) };
+    }
   }
 
   providers(): readonly PiProviderOption[] {
@@ -144,7 +182,7 @@ export class PiModelCaller implements ProviderAdapter {
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
     onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
     onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
-    onModelRequest?: (payload: { model: string; digest: string; messageCount: number }) => Promise<void>;
+    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[] }) => Promise<void>;
   }): ProviderSession {
     return new PiProviderAdapter({ models: this.#models, config: this.#config, model: this.#model() }).createSession(input);
   }

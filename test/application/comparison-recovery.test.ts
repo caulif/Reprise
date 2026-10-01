@@ -127,6 +127,26 @@ test('recovery accepts visual claims only when the preview Session received the 
   }
 });
 
+test('actual request image manifests override provisional tool delivery during recovery', async (t) => {
+  const ready = await fixture(true, 'tool');
+  t.after(() => rm(ready.dataDir, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(ready.experimentRoot, experimentId);
+  await store.acquireWriter();
+  const audit = experimentAgentAuditSink(store, 'run-1');
+  const append = (images: unknown[]) => audit.append({ type: 'agent.model_request', sessionId: 'comparison-session-1', role: 'comparison',
+    payload: { attemptId, model: 'vision', digest: sha256('request'), messageCount: 3, images } });
+  await append([]);
+  await store.close();
+  assert.equal((await inspectComparisonRecovery(ready.input)).ready, false);
+  const reopened = await ExperimentStore.open(ready.experimentRoot, experimentId);
+  await reopened.acquireWriter();
+  await experimentAgentAuditSink(reopened, 'run-1').append({ type: 'agent.model_request', sessionId: 'comparison-session-1', role: 'comparison',
+    payload: { attemptId, model: 'vision', digest: sha256('next'), messageCount: 4,
+      images: [{ type: 'image', mimeType: 'image/png', contentHash: sha256(png), byteLength: png.byteLength }] } });
+  await reopened.close();
+  assert.equal((await inspectComparisonRecovery(ready.input)).ready, true);
+});
+
 test('recovery rejects an image tool completion without an audit body', async (t) => {
   const ready = await fixture(true, 'tool');
   t.after(() => rm(ready.dataDir, { recursive: true, force: true }));

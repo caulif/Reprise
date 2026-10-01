@@ -9,6 +9,7 @@ import { renderFrozenArtifact } from "../infrastructure/artifact-renderer.js";
 import { sha256 } from "../core/identity.js";
 import { pathContainedBy } from "../core/paths.js";
 import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/agent/host.js";
+import { attachComparisonImages } from './comparison-image-delivery.js';
 
 /** Narrow port owned by B3 catalog; B4 tools only call these methods. */
 export type ComparisonRenderCatalogPort = {
@@ -79,11 +80,13 @@ const RenderArtifactParamsSchema = Type.Object({
     minItems: 1,
     maxItems: RENDER_LIMITS.maxFrames,
   })),
+  includeImages: Type.Optional(Type.Boolean()),
 });
 export type RenderArtifactParams = Static<typeof RenderArtifactParamsSchema>;
 
 const PreviewReportParamsSchema = Type.Object({
   viewport: Type.Optional(ViewportSchema),
+  includeImages: Type.Optional(Type.Boolean()),
 });
 export type PreviewReportParams = Static<typeof PreviewReportParamsSchema>;
 
@@ -92,6 +95,7 @@ export type ComparisonRenderToolBaseDeps = {
   attemptRoot: string;
   render?: ArtifactRenderer;
   now?: () => Date;
+  allowImages?: boolean;
 };
 
 export type ComparisonPreviewReportToolDeps = ComparisonRenderToolBaseDeps & {
@@ -199,7 +203,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
           actualTimeMs: frame.actualTimeMs,
         });
       }
-      return textResult({
+      const result = textResult({
         status: "ok",
         sourceRef: params.sourceRef,
         sourceOrigin: source.origin,
@@ -212,6 +216,9 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         diagnostics: rendered.diagnostics,
         limitations: summarizeLimitations(rendered.diagnostics),
       });
+      const images = registrations.items.flatMap((registered, index) => registered.readPath && rendered.frames[index]
+        ? [{ path: registered.readPath, contentHash: rendered.frames[index].contentHash, shortRef: registered.shortRef }] : []);
+      return attachComparisonImages({ result, requested: params.includeImages === true, authorized: deps.allowImages === true, attemptRoot: deps.attemptRoot, signal, images: images.length === rendered.frames.length ? images : [] });
     },
   };
 }
@@ -243,14 +250,27 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
       }));
       const cached = await cachedReportPreview(cache, cacheKey, deps.catalog);
       if (cached) {
+        const delivered = await previewImages(textResult(cached), deps, params.includeImages === true, signal);
+        signal.throwIfAborted();
         deps.onPreviewSuccess?.(prepared);
-        return textResult(cached);
+        return delivered;
       }
       const result = await renderReportPreview({ deps, render, cache, cacheKey, prepared, viewport, signal, preflight: Boolean(preflight) });
+      const delivered = await previewImages(result, deps, params.includeImages === true, signal);
+      signal.throwIfAborted();
       if ((JSON.parse(result.content) as { status?: string }).status === 'ok') deps.onPreviewSuccess?.(prepared);
-      return result;
+      return delivered;
     },
   };
+}
+
+async function previewImages(result: AgentToolResult, deps: ComparisonPreviewReportToolDeps, requested: boolean, signal: AbortSignal): Promise<AgentToolResult> {
+  const payload = JSON.parse(result.content) as { status?: string; previewDigest?: string; previewMedia?: { shortRef: string; read?: { path: string } } };
+  if (payload.status !== 'ok') return result;
+  return attachComparisonImages({ result, requested, authorized: deps.allowImages === true, attemptRoot: deps.attemptRoot, signal,
+    images: payload.previewMedia?.read && payload.previewDigest
+      ? [{ path: payload.previewMedia.read.path, contentHash: payload.previewDigest, shortRef: payload.previewMedia.shortRef }] : [],
+  });
 }
 
 async function cachedReportPreview(

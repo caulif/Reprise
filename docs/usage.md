@@ -4,6 +4,12 @@ Reprise 是本地优先的任务比较工具：它从已安装 AI 工具的历�
 
 ## 开始
 
+### 内部模型图片能力
+
+openai-compatible 模型可通过 `reprise config set --image-input` 声明图片输入（其他必需配置参数沿用 config set）；声明只控制发送原生块，不创造网关能力。Case `privacy.allowBinary` 仍须授权，已有 text-only Case 不因模型开关自动获得二进制发送权限。Comparison 的受控渲染/预览可请求 `includeImages=true`，拒绝交付时继续文本证据并说明限制。
+
+`reprise config image-status` 离线显示图片探测状态。明确授权付费探测后，在 PowerShell 运行 `$env:REPRISE_RUN_IMAGE_PROBE='1'`，再运行 `reprise config test-image`。命令只发送一张随机条纹 PNG，一次调用且无重试；答案仅由 Host 核对。结果保存于数据目录的 `harness-image-probe.json`，配置指纹改变则显示 stale。passed 只表示当次简单探测通过（随机猜中仍有可能），不保证真实任务、动画或其他媒体能力。普通连接检查仍是文本检查，默认不自动探测图片。
+
 安装与构建步骤见[中文 README](../README.zh-CN.md#快速开始)。摘要如下：
 
 ```powershell

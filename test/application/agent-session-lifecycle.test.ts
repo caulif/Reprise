@@ -168,7 +168,9 @@ test('Host freeform request completes without JSON repair', async () => {
     timeoutMs: 50,
   });
   assert.equal(result.status, 'completed');
-  assert.deepEqual(appended, ['Read observations/user-inputs/INDEX.tsv first.']);
+  assert.equal(appended.length, 1);
+  assert.match(appended[0]!, /^Native media types this model accepts: text\./);
+  assert.ok(appended[0]!.endsWith('Read observations/user-inputs/INDEX.tsv first.'));
   assert.ok(events.some((event) => event.type === 'agent.message_appended'));
   assert.ok(events.some((event) => event.type === 'agent.model_output'));
   assert.ok(events.some((event) => event.type === 'agent.invocation_completed'));
@@ -198,7 +200,7 @@ test('runTurns stops on the first incomplete freeform step', async () => {
     createSession: () => ({
       append: async ({ content }) => {
         appended.push(content);
-        if (content === 'second') throw new Error('boom');
+        if (content.endsWith('\n\nsecond')) throw new Error('boom');
         return 'ok';
       },
       cancel() {},
@@ -211,6 +213,6 @@ test('runTurns stops on the first incomplete freeform step', async () => {
     { promptContent: 'third', timeoutMs: 50 },
   ]);
   assert.equal(result.status, 'failed');
-  assert.deepEqual(appended, ['first', 'second']);
+  assert.deepEqual(appended.map((content) => content.split('\n\n').at(-1)), ['first', 'second']);
   await session.close();
 });

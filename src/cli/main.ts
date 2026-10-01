@@ -70,7 +70,7 @@ export function helpText(): string {
     "Usage:",
     "  reprise [--data-dir <dir>] [--sessions-dir <productId>=<path>] [--compare] [--locale <en|zh>]",
     "  reprise products|models|projects|sessions|inspect|import|history|events|auth [--json]",
-    "  reprise config get|set [--json]",
+    "  reprise config get|set|test-image|image-status [--json]",
     "  reprise prepare (--source-root <dir> --task-case <file.json> | --source-product <id> --source-path <path>) [--json|--jsonl]",
     "  reprise run (--source-root <dir> --task-case <file.json> | --scenario <experimentId>) [--product <id> --model <id>] [--json|--jsonl]",
     "  reprise compare (--experiment <id> | --source-root <dir> --task-case <file.json>) [--json|--jsonl]",

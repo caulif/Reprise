@@ -83,6 +83,7 @@ export type ComparisonCompareOptions = {
   getEvidenceCatalog?: () => Pick<ComparisonEvidenceCatalogSnapshot, "links" | "media">;
   getSubmittedResult?: () => Promise<ComparisonResult | undefined>;
   getSubmissionFailure?: () => { code: 'draft_invalid' | 'preview_failed'; message: string };
+  getSubmissionState?: () => string;
   preflightDraft?: () => Promise<{ digest: string; error?: string }>;
   enforcePhaseBoundaries?: boolean;
 };
@@ -92,7 +93,7 @@ type ComparisonPhase = keyof typeof COMPARISON_TURN_PROMPTS;
 function phaseTools(tools: readonly AgentToolDefinition[], current: { phase: ComparisonPhase }): AgentToolDefinition[] {
   return tools.map((tool) => ({
     ...tool,
-    execute: (params: unknown, signal: AbortSignal) => {
+    execute: async (params: unknown, signal: AbortSignal) => {
       const path = typeof params === 'object' && params !== null && 'path' in params
         ? String(params.path).replaceAll('\\', '/').replace(/^(\.\/)+/, '')
         : '';
@@ -109,7 +110,10 @@ function phaseTools(tools: readonly AgentToolDefinition[], current: { phase: Com
       if (tool.name === 'preview_report' && current.phase !== 'review') {
         return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', currentPhase: current.phase, nextLegalPhase: 'review', message: 'Preview report.html in the review turn.' }) });
       }
-      return tool.execute(params, signal);
+      const result = await tool.execute(params, signal);
+      return tool.name === 'submit_comparison_draft' && result.content.startsWith('status=accepted')
+        ? { ...result, content: `${result.content}\ncurrentPhase=${current.phase}\nnextLegalPhase=review` }
+        : result;
     },
   }));
 }
@@ -235,6 +239,11 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'or open a user browser profile. If a render tool fails, record the limitation and',
   'continue with text evidence; do not retry via equivalent browser shell commands.',
   'Use render_artifact to derive previews from registered sources. Use',
+  'includeImages=true on render_artifact and preview_report when image input is',
+  'supported and authorized. Inspect the native image blocks, not only their refs.',
+  'If imageDelivery is not attached, explain the limitation and do not claim sight.',
+  'For visual tasks, use a few comparable images before writing pixel-analysis',
+  'scripts; deeper measurement is useful only when it can change the conclusion.',
   'register_evidence to preserve relevant derived analysis with source references;',
   'registration is not independent verification of your interpretation. Use',
   'preview_report to check the draft with the current catalog. New references are',
@@ -425,15 +434,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
         return comparisonProviderFailure(prefix);
       }
-      const reviewed = await measuredWork('review', COMPARISON_TURN_PROMPTS.review);
-      if (reviewed.status !== 'completed') {
-        if (reviewed.status === 'failed') await this.#sessions.discard(attemptId);
-        return comparisonProviderFailure(reviewed);
-      }
-      const value = await options.getSubmittedResult();
-      if (value) return { status: 'completed', sessionId: reviewed.sessionId, value };
-      const failure = options.getSubmissionFailure?.() ?? { code: 'report_incomplete' as const, message: 'No validated draft was previewed at the current catalog revision.' };
-      return { status: 'failed', sessionId: reviewed.sessionId, failure: { ...failure, attempts: 1, kind: 'protocol' } };
+      return this.#reviewSubmitted(options, measuredWork, session.sessionId, attemptId);
     }
 
     for (const step of ['understand', 'investigate', 'compose'] as const) {
@@ -458,6 +459,30 @@ export class ComparisonAgent implements ComparisonAgentPort {
     if (ready && ready.status !== 'completed') return ready;
     current.phase = 'review';
     return this.#legacyEnvelope(session, tools, signal, currentAllowlist, attemptId, options?.preflightDraft, ensureDraft);
+  }
+
+  async #reviewSubmitted(
+    options: ComparisonCompareOptions,
+    work: (phase: 'review', prompt: string) => Promise<FreeformInvocation>,
+    sessionId: string,
+    attemptId: string,
+  ): Promise<AgentInvocation<ComparisonResult>> {
+    let prompt = COMPARISON_TURN_PROMPTS.review;
+    const seen = new Set<string>();
+    for (let repair = 0; ; repair++) {
+      const reviewed = await work('review', prompt);
+      if (reviewed.status !== 'completed') {
+        if (reviewed.status === 'failed') await this.#sessions.discard(attemptId);
+        return comparisonProviderFailure(reviewed);
+      }
+      const value = await options.getSubmittedResult!();
+      if (value) return { status: 'completed', sessionId, value };
+      const failure = options.getSubmissionFailure?.() ?? { code: 'report_incomplete' as const, message: 'No validated draft was previewed at the current catalog revision.' };
+      const state = options.getSubmissionState?.() ?? failure.message;
+      if (repair >= 2 || seen.has(state)) return { status: 'failed', sessionId, failure: { ...failure, attempts: repair + 1, kind: 'protocol' } };
+      seen.add(state);
+      prompt = `Continue the current review turn. Publication is not ready: ${failure.message}\nCurrent submission state: ${state}\nCorrect the missing condition using the registered tools. Preview the latest accepted draft; do not restart investigation. After any revision, preview again before returning.`;
+    }
   }
 
   async #legacyEnvelope(

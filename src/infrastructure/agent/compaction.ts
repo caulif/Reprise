@@ -11,6 +11,7 @@ import {
   type Entry,
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models, ThinkingLevel } from "@earendil-works/pi-ai";
+import { imageContentHash } from './model-input.js';
 
 export { convertToLlm };
 
@@ -52,6 +53,15 @@ export function stripThinkMarkup(text: string): string {
 /** Drop thinking markup and oversized tool bodies. */
 export function prunePiMessagesForBudget(messages: AgentMessage[]): { changed: boolean; summary: string } {
   const notes: string[] = [];
+  let retainedImages = 0;
+  for (const message of [...messages].reverse()) {
+    if (!('content' in message) || !Array.isArray(message.content)) continue;
+    message.content = [...message.content].reverse().map((block) => {
+      if (block.type !== 'image' || ++retainedImages <= 12) return block;
+      notes.push('older image removed; use its registered reference to inspect again');
+      return { type: 'text' as const, text: `Earlier image omitted from the active context; contentHash=${imageContentHash(block.data)}. Re-read the registered media if this observation is needed again.` };
+    }).reverse() as typeof message.content;
+  }
   for (const message of messages) {
     if (message.role === "assistant") {
       const content = message.content;
@@ -68,10 +78,14 @@ export function prunePiMessagesForBudget(messages: AgentMessage[]): { changed: b
       }
     }
     if (message.role === "toolResult") {
-      const raw = JSON.stringify(message.content);
+      const text = message.content.filter((block) => block.type === 'text');
+      const raw = JSON.stringify(text);
       if (Buffer.byteLength(raw) > TOOL_STUB_BYTES) {
         const toolName = "toolName" in message && typeof message.toolName === "string" ? message.toolName : "tool";
-        message.content = [{ type: "text", text: JSON.stringify({ stub: true, toolName, byteLength: Buffer.byteLength(raw) }) }];
+        message.content = [
+          { type: "text", text: JSON.stringify({ stub: true, toolName, byteLength: Buffer.byteLength(raw), retainedText: raw.slice(0, 2_048) }) },
+          ...message.content.filter((block) => block.type === 'image'),
+        ];
         notes.push(`stubbed ${toolName}`);
       }
     }

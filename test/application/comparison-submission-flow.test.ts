@@ -8,6 +8,41 @@ import { startExperiment } from '../../src/application/experiment.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 
+for (const repairable of [true, false]) test(`review revision ${repairable ? 'is previewed by a continuation' : 'cannot extend review indefinitely'}`, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-review-revision-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
+  let turns = 0;
+  const comparison = new ComparisonAgent({ host: new AgentHost({ createSession: ({ tools }) => ({
+    append: async ({ content, signal }) => {
+      turns++;
+      const submit = tools.find((tool) => tool.name === 'submit_comparison_draft')!;
+      const preview = tools.find((tool) => tool.name === 'preview_report')!;
+      const draft = (headline: string) => ({ status: 'completed', category: 'Results', headline, comparisonHtml: `<p>${headline}</p>` });
+      if (turns === 2) await submit.execute(draft('Draft A'), signal);
+      if (turns === 3) {
+        assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');
+        const revised = await submit.execute(draft('Draft B'), signal);
+        assert.match(revised.content, /currentPhase=review/);
+        assert.doesNotMatch(revised.content, /currentPhase=compose/);
+      }
+      if (turns > 3) {
+        assert.match(content, /Continue the current review turn/);
+        if (repairable) await preview.execute({}, signal);
+        else await submit.execute(draft(`Draft ${turns}`), signal);
+      }
+      return '';
+    }, cancel() {},
+  }) }), timeoutMs: 0, maxRepairAttempts: 0 });
+  const result = await startExperiment({ ...base, comparison }).result;
+  assert.equal(turns, repairable ? 4 : 5);
+  assert.equal(result.comparison.result.status, repairable ? 'completed' : 'failed');
+  if (repairable) assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Draft B/);
+  else await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
+});
+
 test('application publishes a submitted and previewed draft after an empty final message', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-submission-flow-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));

@@ -2,6 +2,8 @@
 
 ## 开发环境
 
+图片链路的日常回归使用 fake Provider 与不可变附件，不调用真实服务。`config test-image` 另需显式 `REPRISE_RUN_IMAGE_PROBE=1`，可能产生费用；没有真实模型探测及任务验收时，PR 必须明确边界，不能把能力声明或离线 passed 当成上游已验证。协议与授权决定见[原生图片链路 ADR](./decisions/accepted/2026-09-30-comparison-native-image-pipeline.md)。
+
 需要 Git、Node.js 和 npm；版本以 [package.json](../package.json) 的 engines 为准。在仓库根运行 `npm ci`，然后 `npm run build`。构建重建 dist；默认开发检查不需要登录产品或模型密钥。使用入口见[使用指南](./usage.md)。
 
 Windows 11 是唯一经过真实使用验证的平台。CI 的平台矩阵由 [check.yml](../.github/workflows/check.yml) 定义，模拟测试通过不等于真实 Runtime、文件权限或终端输入体验已验证；剩余验证见[路线图](./roadmap.md)。

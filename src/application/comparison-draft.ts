@@ -101,10 +101,15 @@ export class ComparisonDraft {
       return `status=rejected\ncode=${verified.code}\nmessage=${verified.message}`;
     }
     await writeAtomic(join(this.#attemptRoot, "report.html"), verified.html);
-    this.#accepted = { digest: sha256(verified.html), revision: catalog.revision, result };
-    this.#previewed = undefined;
+    const digest = sha256(verified.html);
+    if (this.#accepted?.digest !== digest || this.#accepted.revision !== catalog.revision) this.#previewed = undefined;
+    this.#accepted = { digest, revision: catalog.revision, result };
     this.#lastRejection = undefined;
-    return `status=accepted\ndraftDigest=${this.#accepted.digest}\nrevision=${catalog.revision}\ncurrentPhase=compose\nnextLegalPhase=review\nPreview this exact draft in the review turn before finishing.`;
+    return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\nPreview this exact draft in the review turn before finishing.`;
+  }
+
+  submissionState(): string {
+    return JSON.stringify({ accepted: this.#accepted && { digest: this.#accepted.digest, revision: this.#accepted.revision }, previewed: this.#previewed, revision: this.#catalog.snapshot().revision, rejection: this.#lastRejection });
   }
 
   recordPreview(prepared: PreparedReportPreview): void {
@@ -135,7 +140,7 @@ export class ComparisonDraft {
 
   failureReason(): { code: 'draft_invalid' | 'preview_failed'; message: string } {
     if (!this.#accepted) return { code: 'draft_invalid', message: this.#lastRejection ?? 'No valid comparison draft was submitted.' };
-    if (!this.#previewed) return { code: 'preview_failed', message: 'The latest accepted draft was not previewed.' };
+    if (!this.#previewed) return { code: 'preview_failed', message: `The latest accepted draft was not previewed: digest=${this.#accepted.digest}, revision=${this.#accepted.revision}. Call preview_report in the current review turn.` };
     return { code: 'draft_invalid', message: 'The draft, preview, or evidence catalog changed after validation.' };
   }
 }

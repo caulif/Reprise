@@ -160,6 +160,11 @@ export class ExperimentStore {
     return new ExperimentStore(root, experimentId, events, recoveryArtifactPolicy);
   }
 
+  static committedReader(experimentRoot: string, experimentId: string, events: readonly EventEnvelope[]): Pick<ExperimentStore, 'experimentId' | 'readArtifact'> {
+    assertId(experimentId, 'experimentId');
+    return new ExperimentStore(resolve(experimentRoot), experimentId, [...events], RECOVERY_ARTIFACT_LIMITS);
+  }
+
   async acquireWriter(): Promise<void> {
     if (this.#lockHeld) return;
     const lock: LockInfo = {

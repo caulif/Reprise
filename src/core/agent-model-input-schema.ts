@@ -28,6 +28,13 @@ export const AgentImageRefSchema = Type.Object({
 });
 export type AgentImageRef = Static<typeof AgentImageRefSchema>;
 
+export const AgentModelRequestFactsSchema = Type.Object({
+  model: Type.String({ minLength: 1 }),
+  digest: Hash,
+  messageCount: Type.Integer({ minimum: 0 }),
+  images: Type.Optional(Type.Array(AgentImageRefSchema)),
+});
+
 const AgentToolSpecSchema = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 64 }),
   description: Type.String({ minLength: 1 }),
@@ -47,6 +54,8 @@ export const ReconstructedModelRequestSchema = Type.Object({
   systemPrompt: Type.String(),
   tools: Type.Array(AgentToolSpecSchema),
   messages: Type.Array(Type.Unknown()),
+  nativeImages: Type.Optional(Type.Array(AgentImageRefSchema)),
+  modelRequestDigest: Type.Optional(Hash),
 });
 export type ReconstructedModelRequest = Static<typeof ReconstructedModelRequestSchema>;
 
