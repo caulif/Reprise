@@ -108,15 +108,14 @@ export async function persistAgentAuditEvent(store: ExperimentStore, runId: stri
   });
 }
 
-export function experimentModelInputResolver(store: ExperimentStore, runId: string): ArtifactBodyResolver & { image: (ref: { artifactId: string }) => Promise<Uint8Array> } {
-  const image = async (ref: { artifactId: string }) => store.readArtifact({ artifactId: ref.artifactId, experimentId: store.experimentId, runId });
-  const text: ArtifactBodyResolver = async (ref) => {
+export function experimentModelInputResolver(store: Pick<ExperimentStore, 'experimentId' | 'readArtifact'>, runId?: string): ArtifactBodyResolver & { image: (ref: { artifactId: string }) => Promise<Uint8Array> } {
+  const image = async (ref: { artifactId: string }) => {
     try {
-      return Buffer.from(await store.readArtifact({
+      return await store.readArtifact({
         artifactId: ref.artifactId,
         experimentId: store.experimentId,
-        runId,
-      })).toString("utf8");
+        ...(runId ? { runId } : {}),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Model input artifact is missing.";
       const missing = isMissing(error);
@@ -129,6 +128,7 @@ export function experimentModelInputResolver(store: ExperimentStore, runId: stri
       });
     }
   };
+  const text: ArtifactBodyResolver = async (ref) => Buffer.from(await image(ref)).toString('utf8');
   return Object.assign(text, { image });
 }
 

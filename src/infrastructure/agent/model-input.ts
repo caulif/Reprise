@@ -33,7 +33,10 @@ export type ArtifactBodyResolver = (ref: {
   byteLength: number;
 }) => Promise<string>;
 
-export type ModelInputResolver = ArtifactBodyResolver & { image?: (ref: { artifactId: string; contentHash: string; byteLength: number }) => Promise<Uint8Array> };
+export type ModelInputResolver = ArtifactBodyResolver & {
+  image?: (ref: { artifactId: string; contentHash: string; byteLength: number }) => Promise<Uint8Array>;
+  forRun?: (runId: string | undefined) => ModelInputResolver;
+};
 
 export function redactModelVisibleText(text: string): { text: string; redacted: boolean } {
   const next = text
@@ -148,6 +151,7 @@ export async function reconstructModelRequests(
           tools: Array.isArray(payload.tools) ? payload.tools : [],
           messages: [],
           invocationTerminal: false,
+          ...(resolveArtifact ? { resolver: resolveArtifact.forRun?.(event.runId) ?? resolveArtifact } : {}),
         });
         continue;
       }
@@ -165,12 +169,12 @@ export async function reconstructModelRequests(
         continue;
       }
       if (event.type === "agent.message_appended") {
-        requests.push(await replayUserRequest(session, payload, resolveArtifact));
+        requests.push(await replayUserRequest(session, payload, session.resolver));
         session.modelRequestSeen = false;
         continue;
       }
       if (event.type === 'agent.model_request' && Array.isArray(payload.images)) {
-        await replayRequestManifest(session, payload, requests, resolveArtifact);
+        await replayRequestManifest(session, payload, requests, session.resolver);
         continue;
       }
       if (event.type === "agent.context_compacted") {
@@ -179,7 +183,7 @@ export async function reconstructModelRequests(
         const inspected = inspectModelInputBody(payload.retainedTail);
         if (!inspected.ok && inspected.diagnostic.code === "unsupported_schema") throw diagnosticError(inspected.diagnostic);
         if (inspected.ok) {
-          tail = JSON.parse(await resolveTextBody(inspected.body, resolveArtifact)) as unknown[];
+          tail = JSON.parse(await resolveTextBody(inspected.body, session.resolver)) as unknown[];
         } else if (Array.isArray(payload.retainedTail)) {
           tail = payload.retainedTail;
         }
@@ -197,7 +201,7 @@ export async function reconstructModelRequests(
       if (event.type === "agent.model_output") {
         const inspected = inspectModelInputBody(payload.body);
         if (!inspected.ok) continue;
-        const text = await resolveTextBody(inspected.body, resolveArtifact);
+        const text = await resolveTextBody(inspected.body, session.resolver);
         session.messages.push({ role: "assistant", content: [{ type: "text", text }] });
         continue;
       }
@@ -210,7 +214,7 @@ export async function reconstructModelRequests(
         continue;
       }
       if (event.type === "agent.tool_completed") {
-        const text = payload.body ? await resolveTextBody(payload.body, resolveArtifact) : "";
+        const text = payload.body ? await resolveTextBody(payload.body, session.resolver) : "";
         const content = Array.isArray(payload.contentTypes) && payload.contentTypes.includes('image') ? JSON.parse(text) as unknown[] : [{ type: 'text', text }];
         session.messages.push({
           role: "toolResult",
@@ -224,15 +228,15 @@ export async function reconstructModelRequests(
     if (isDiagnostic(error)) return { requests, diagnostic: error.diagnostic };
     throw error;
   }
-  return inspectReplayedRequests(requests, resolveArtifact);
+  return inspectReplayedRequests(requests, (request) => sessions.get(request.sessionId)?.resolver);
 }
 
-async function inspectReplayedRequests(requests: ReconstructedModelRequest[], resolveArtifact?: ModelInputResolver): Promise<{ requests: ReconstructedModelRequest[]; diagnostic?: ModelInputDiagnostic }> {
+async function inspectReplayedRequests(requests: ReconstructedModelRequest[], resolverForRequest: (request: ReconstructedModelRequest) => ModelInputResolver | undefined): Promise<{ requests: ReconstructedModelRequest[]; diagnostic?: ModelInputDiagnostic }> {
   for (const request of requests) {
     const refs: unknown[] = request.messages.flatMap((message): unknown[] => isRecord(message) && Array.isArray(message.content)
       ? (message.content as unknown[]).filter((block) => isRecord(block) && block.type === 'image') : []);
     try {
-      const complete = await checkRecordedImages(refs, resolveArtifact);
+      const complete = await checkRecordedImages(refs, resolverForRequest(request));
       request.contentComplete = request.contentComplete && complete;
     } catch (error) {
       if (isDiagnostic(error)) return { requests, diagnostic: error.diagnostic };
@@ -310,6 +314,7 @@ type SessionReplay = {
   invocationTerminal: boolean;
   modelRequestSeen?: boolean;
   compacted?: boolean;
+  resolver?: ModelInputResolver;
 };
 
 function userContent(text: string, images: unknown): unknown[] {
@@ -360,7 +365,10 @@ async function checkRecordedImages(images: unknown, resolver?: ModelInputResolve
     if (!image.artifactId || !resolver?.image) { complete = false; continue; }
     let bytes: Uint8Array;
     try { bytes = await resolver.image({ ...image, artifactId: image.artifactId }); }
-    catch { throw diagnosticError({ code: 'missing_attachment', message: 'Image input attachment could not be read.', artifactId: image.artifactId }); }
+    catch (error) {
+      if (isDiagnostic(error)) throw error;
+      throw diagnosticError({ code: 'missing_attachment', message: 'Image input attachment could not be read.', artifactId: image.artifactId });
+    }
     if (bytes.byteLength !== image.byteLength || sha256(bytes) !== image.contentHash) throw diagnosticError({ code: 'attachment_checksum', message: 'Image input attachment failed integrity check.', artifactId: image.artifactId });
   }
   return complete;

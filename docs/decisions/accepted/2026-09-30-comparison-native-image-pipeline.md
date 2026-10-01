@@ -12,6 +12,7 @@
 - `render_artifact` / `preview_report` 新增可选 `includeImages`，默认文本引用。原生图片须 Case `privacy.allowBinary` 授权并通过模型能力过滤，媒体存在不扩大 workspace 二进制权限。
 - 仅附登记后的 PNG，检查真实 attempt 路径、文件字节 hash、长度和 PNG 头部尺寸。最多 4 张、单张 3 MiB、合计 8 MiB、单张 9,216,000 像素，不交付部分失败的图片集合。头部检查不是完整解码或视觉质量验收。
 - 工具结果、压缩 retained tail、最终 Pi 请求保存不可变图片附件的 hash、长度和 artifactId，日志不存 base64。重建校验附件；旧日志缺附件不能作为完整图片输入。
+- History 用已校验的提交日志前缀构造只读 Store 附件读取器，按 Session 起始事件的 runId 绑定正文与图片 resolver。不同 run 不共用附件查找范围；沿用 manifest、owner、提交事件和 hash 校验，缺失与损坏均标记输入不完整。读取不建目录、不取 writer lock、不修剪未提交尾部。
 - 视觉声明在存在最终请求清单时仅认可这些清单，不能以尚未发给 Provider 的工具结果代替；恢复读取同样规则。无清单的历史日志保留原有交付事实兼容，不补造新请求。
 - 文本裁剪保留图片，活跃上下文最多保留最近 12 个原生图片块，旧图换成带 hash 和重新读取提示的文本。最终请求清单记录过滤后的图片。`review-*` 不进入双侧证据 catalog。
 - 提交回执反映实际阶段，相同 digest/revision 的幂等提交保留预览，不同版本失效旧预览。review 最多再续审两次，无进展立即退出；发布仍绑定当前版本成功预览、正常完成和未取消。
