@@ -1,6 +1,6 @@
 import { access, constants, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { win32 as pathWin32 } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -39,10 +39,10 @@ function platformBrowserCandidates(): string[] {
     return [
       "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
       "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-      join(process.env.LOCALAPPDATA ?? "", "Google\\Chrome\\Application\\chrome.exe"),
+      pathWin32.join(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe"),
       "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
       "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-      join(process.env.LOCALAPPDATA ?? "", "Microsoft\\Edge\\Application\\msedge.exe"),
+      pathWin32.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "Edge", "Application", "msedge.exe"),
     ];
   }
   if (process.platform === "darwin") {
