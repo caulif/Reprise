@@ -8,34 +8,38 @@ import { captureHeadlessScreenshot, headlessBrowserCandidatePaths, resolveHeadle
 
 test("headless browser candidates include macOS application bundles", () => {
   const saved = process.platform;
-  Object.defineProperty(process, "platform", { value: "darwin" });
+  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
   try {
     const candidates = headlessBrowserCandidatePaths();
     assert.ok(candidates.some((path) => path.includes("Google Chrome.app")));
     assert.ok(candidates.some((path) => path.includes("Microsoft Edge.app")));
   } finally {
-    Object.defineProperty(process, "platform", { value: saved });
+    Object.defineProperty(process, "platform", { value: saved, configurable: true });
   }
 });
 
 test("headless browser candidates include Windows x86 Edge alongside Chrome", () => {
   const saved = process.platform;
   const savedLocal = process.env.LOCALAPPDATA;
-  Object.defineProperty(process, "platform", { value: "win32" });
+  Object.defineProperty(process, "platform", { value: "win32", configurable: true });
   process.env.LOCALAPPDATA = "C:\\Users\\demo\\AppData\\Local";
   try {
-    const candidates = headlessBrowserCandidatePaths();
-    assert.ok(candidates.includes("C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe"));
-    assert.ok(candidates.includes("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"));
-    assert.ok(candidates.includes("C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"));
-    assert.ok(candidates.includes(pathWin32.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "Edge", "Application", "msedge.exe")));
+    const local = process.env.LOCALAPPDATA ?? "";
+    const expected = [
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+      pathWin32.join(local, "Google", "Chrome", "Application", "chrome.exe"),
+      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      pathWin32.join(local, "Microsoft", "Edge", "Application", "msedge.exe"),
+    ];
+    assert.deepEqual([...headlessBrowserCandidatePaths()], expected);
   } finally {
-    Object.defineProperty(process, "platform", { value: saved });
+    Object.defineProperty(process, "platform", { value: saved, configurable: true });
     if (savedLocal === undefined) delete process.env.LOCALAPPDATA;
     else process.env.LOCALAPPDATA = savedLocal;
   }
 });
-
 
 test("resolveHeadlessBrowser resolves an installed browser on this runner", async () => {
   if (platform === "darwin") {

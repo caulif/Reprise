@@ -36,14 +36,22 @@ async function whichOnPath(name: string): Promise<string | undefined> {
 
 function platformBrowserCandidates(): string[] {
   if (process.platform === "win32") {
-    return [
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-      pathWin32.join(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe"),
-      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-      pathWin32.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "Edge", "Application", "msedge.exe"),
-    ];
+    const localAppData = process.env.LOCALAPPDATA ?? "";
+    const winBrowsers = [
+      {
+        programFilesRelative: "Google\\Chrome\\Application\\chrome.exe",
+        localAppDataSegments: ["Google", "Chrome", "Application", "chrome.exe"] as const,
+      },
+      {
+        programFilesRelative: "Microsoft\\Edge\\Application\\msedge.exe",
+        localAppDataSegments: ["Microsoft", "Edge", "Application", "msedge.exe"] as const,
+      },
+    ] as const;
+    return winBrowsers.flatMap(({ programFilesRelative, localAppDataSegments }) => [
+      `C:\\Program Files\\${programFilesRelative}`,
+      `C:\\Program Files (x86)\\${programFilesRelative}`,
+      pathWin32.join(localAppData, ...localAppDataSegments),
+    ]);
   }
   if (process.platform === "darwin") {
     return [
