@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { platform } from "node:process";
 import { access, constants, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, win32 as pathWin32 } from "node:path";
 import { captureHeadlessScreenshot, headlessBrowserCandidatePaths, resolveHeadlessBrowser } from "../../src/infrastructure/headless-screenshot.js";
 
 test("headless browser candidates include macOS application bundles", () => {
@@ -28,7 +28,7 @@ test("headless browser candidates include Windows x86 Edge alongside Chrome", ()
     assert.ok(candidates.includes("C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe"));
     assert.ok(candidates.includes("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"));
     assert.ok(candidates.includes("C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"));
-    assert.ok(candidates.includes("C:\\Users\\demo\\AppData\\Local\\Microsoft\\Edge\\Application\\msedge.exe"));
+    assert.ok(candidates.includes(pathWin32.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "Edge", "Application", "msedge.exe")));
   } finally {
     Object.defineProperty(process, "platform", { value: saved });
     if (savedLocal === undefined) delete process.env.LOCALAPPDATA;
