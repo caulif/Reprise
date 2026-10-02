@@ -22,13 +22,13 @@ test("headless browser candidates include Windows x86 Edge alongside Chrome", ()
   const saved = process.platform;
   const savedLocal = process.env.LOCALAPPDATA;
   Object.defineProperty(process, "platform", { value: "win32" });
-  process.env.LOCALAPPDATA = "C:\Users\Eval\AppData\Local";
+  process.env.LOCALAPPDATA = "C:\Users\demo\AppData\Local";
   try {
     const candidates = headlessBrowserCandidatePaths();
     assert.ok(candidates.includes("C:\Program Files\Microsoft\Edge\Application\msedge.exe"));
     assert.ok(candidates.includes("C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"));
     assert.ok(candidates.includes("C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"));
-    assert.ok(candidates.includes("C:\Users\Eval\AppData\Local\Microsoft\Edge\Application\msedge.exe"));
+    assert.ok(candidates.includes("C:\Users\demo\AppData\Local\Microsoft\Edge\Application\msedge.exe"));
   } finally {
     Object.defineProperty(process, "platform", { value: saved });
     if (savedLocal === undefined) delete process.env.LOCALAPPDATA;
