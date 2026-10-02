@@ -41,6 +41,8 @@ function platformBrowserCandidates(): string[] {
       "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
       join(process.env.LOCALAPPDATA ?? "", "Google\\Chrome\\Application\\chrome.exe"),
       "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      join(process.env.LOCALAPPDATA ?? "", "Microsoft\\Edge\\Application\\msedge.exe"),
     ];
   }
   if (process.platform === "darwin") {
