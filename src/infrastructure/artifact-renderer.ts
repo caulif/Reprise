@@ -291,10 +291,11 @@ type OpenedDocumentSession = {
   guards: Awaited<ReturnType<typeof configurePageSession>>;
 };
 
-async function openDocumentSession(
+export async function openDocumentSession(
   request: RenderRequest,
   watchdog: AbortSignal,
   diagnostics: RenderDiagnostic[],
+  deps: { openBrowser?: typeof openCdpBrowserSession; startServer?: typeof startBundleStaticServer } = {},
 ): Promise<OpenedDocumentSession | { ok: false; result: RenderResult }> {
   const rootReal = await realpath(request.bundleRoot);
   const entryAbsolute = join(rootReal, ...request.entryRelativePath.split("/"));
@@ -329,32 +330,39 @@ async function openDocumentSession(
       },
     };
   }
-  const server = await startBundleStaticServer(rootReal);
-  const cdp = await openCdpBrowserSession(watchdog);
-  if ("failure" in cdp) {
-    // Browser never opened; drop the temporary loopback server without treating close races as render failures.
-    await server.close().catch(() => undefined);
-    return {
-      ok: false,
-      result: {
+  const server = await (deps.startServer ?? startBundleStaticServer)(rootReal);
+  let cdp: Awaited<ReturnType<typeof openCdpBrowserSession>> | undefined;
+  try {
+    cdp = await (deps.openBrowser ?? openCdpBrowserSession)(watchdog);
+    if ("failure" in cdp) {
+      // Browser never opened; drop the temporary loopback server without treating close races as render failures.
+      await server.close().catch(() => undefined);
+      return {
         ok: false,
-        failure: cdp.failure === "no_browser"
-          ? { kind: "no_browser" }
-          : cdp.failure === "timeout"
-            ? { kind: "timeout", message: cdp.message }
-            : { kind: "capability_unavailable", message: cdp.message },
-        diagnostics: [...diagnostics, ...cdp.diagnostics],
-      },
-    };
+        result: {
+          ok: false,
+          failure: cdp.failure === "no_browser"
+            ? { kind: "no_browser" }
+            : cdp.failure === "timeout"
+              ? { kind: "timeout", message: cdp.message }
+              : { kind: "capability_unavailable", message: cdp.message },
+          diagnostics: [...diagnostics, ...cdp.diagnostics],
+        },
+      };
+    }
+    const page = await createPageTarget(cdp);
+    const guards = await configurePageSession(cdp, page.sessionId, request.viewport, server.origin, page.targetId);
+    diagnostics.push({
+      code: "timing_mode",
+      message: "wall_clock_after_load",
+      detail: "pre-navigation virtual-time pause prevents Page.load on current Chrome; samples wait on performance.now() after load",
+    });
+    return { ok: true, server, cdp, pageSessionId: page.sessionId, guards };
+  } catch (error) {
+    // Ownership transfers to renderDocumentBundle only after setup succeeds.
+    await cleanupDocumentSession(cdp, server, diagnostics);
+    throw error;
   }
-  const page = await createPageTarget(cdp);
-  const guards = await configurePageSession(cdp, page.sessionId, request.viewport, server.origin, page.targetId);
-  diagnostics.push({
-    code: "timing_mode",
-    message: "wall_clock_after_load",
-    detail: "pre-navigation virtual-time pause prevents Page.load on current Chrome; samples wait on performance.now() after load",
-  });
-  return { ok: true, server, cdp, pageSessionId: page.sessionId, guards };
 }
 
 async function navigateDocument(
