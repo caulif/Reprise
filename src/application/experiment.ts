@@ -630,6 +630,11 @@ async function executeExperiment(
   } finally {
     unsubscribe?.();
     if (!lifetime.released) await release();
-    await store.close();
+    try {
+      await store.close();
+    } catch {
+      // result already produced
+    }
+    await finishExperimentActivity(input.experimentId);
   }
 }

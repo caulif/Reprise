@@ -93,8 +93,12 @@ export async function comparePersistedExperiment(input: {
     return await attachExperimentComparison(finishInput as unknown as Parameters<typeof attachExperimentComparison>[0], loaded.record);
   } finally {
     unsubscribe?.();
-    await store.close();
-    finishExperimentActivity(input.experimentId);
+    try {
+      await store.close();
+    } catch {
+      // result already produced
+    }
+    await finishExperimentActivity(input.experimentId);
   }
 }
 

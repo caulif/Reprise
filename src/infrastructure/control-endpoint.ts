@@ -101,6 +101,8 @@ function closeListeningServer(server: Server, connections: Set<Socket>): Promise
     const finish = () => {
       if (settled) return;
       settled = true;
+      for (const socket of connections) socket.unref();
+      server.unref();
       resolve();
     };
     for (const socket of connections) socket.destroy();
@@ -109,8 +111,22 @@ function closeListeningServer(server: Server, connections: Set<Socket>): Promise
       void error;
       finish();
     });
-    setTimeout(finish, 250).unref();
+    // Windows named-pipe close callbacks can stay pending. Drop the handle so the process can exit.
+    setTimeout(() => {
+      forceCloseServer(server);
+      finish();
+    }, 250).unref();
   });
+}
+
+function forceCloseServer(server: Server): void {
+  const withHandle = server as Server & { _handle?: { close?: () => void } | null };
+  try {
+    withHandle._handle?.close?.();
+  } catch {
+    // The listener is already going away.
+  }
+  server.unref();
 }
 
 function bindEndpoint(server: Server, endpoint: ControlEndpoint): Promise<void> {

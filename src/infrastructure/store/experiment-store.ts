@@ -190,27 +190,41 @@ export class ExperimentStore {
 
   async close(): Promise<void> {
     if (!this.#lockHeld) return;
-    await this.#artifactTail;
-    await this.#appendTail;
-    let raw: string | undefined;
+    let tailError: unknown;
     try {
-      raw = await readFile(this.#lockPath, 'utf8');
-    } catch (error: unknown) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+      await this.#artifactTail;
+      await this.#appendTail;
+    } catch (error) {
+      tailError = error;
+    } finally {
+      await this.#releaseWriterLock();
     }
-    if (raw !== undefined) {
+    if (tailError !== undefined) throw tailError instanceof Error ? tailError : new Error('Experiment store close failed.');
+  }
+
+  async #releaseWriterLock(): Promise<void> {
+    if (!this.#lockHeld) return;
+    await this.#unlinkOwnedLock(this.#lockNonce);
+    this.#lockHeld = false;
+    this.#lockNonce = undefined;
+  }
+
+  async #unlinkOwnedLock(nonce: string | undefined): Promise<void> {
+    let owned = true;
+    try {
+      const raw = await readFile(this.#lockPath, 'utf8');
       let value: unknown;
       try {
         value = JSON.parse(raw) as unknown;
       } catch {
         value = undefined;
       }
-      if (isLockInfo(value) && value.experimentId === this.#experimentId && value.nonce === this.#lockNonce) {
-        await rm(this.#lockPath, { force: true });
-      }
+      if (isLockInfo(value) && (value.experimentId !== this.#experimentId || value.nonce !== nonce)) owned = false;
+    } catch (error: unknown) {
+      if (errorCode(error) === 'ENOENT') return;
     }
-    this.#lockHeld = false;
-    this.#lockNonce = undefined;
+    if (!owned) return;
+    await rm(this.#lockPath, { force: true });
   }
 
   subscribe(listener: ExperimentEventListener): () => void {

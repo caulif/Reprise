@@ -25,7 +25,7 @@ test('in-process cancel binds the current operation and does not follow the next
     runId: 'run-bind',
     cancel: async () => { cancelled.push('prepare'); },
   });
-  finishExperimentActivity('experiment-bind');
+  await finishExperimentActivity('experiment-bind');
   const run = registerActivity({
     kind: 'run',
     experimentId: 'experiment-bind',
@@ -42,7 +42,7 @@ test('in-process cancel binds the current operation and does not follow the next
     assert.equal(live.activity.kind, 'run');
   }
   assert.deepEqual(cancelled, ['run']);
-  finishExperimentActivity('experiment-bind');
+  await finishExperimentActivity('experiment-bind');
 });
 
 test('CLI cancel prints id kinds and does not touch an unknown owner', async () => {

@@ -66,7 +66,7 @@ export async function recoverExperiment(
     return await failRecoveryRunSession(session, error);
   } finally {
     if (session) await closeRecoveryRunSession(session);
-    finishExperimentActivity(input.experimentId);
+    await finishExperimentActivity(input.experimentId);
   }
 }
 

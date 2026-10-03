@@ -12,6 +12,7 @@ import { operatorLocaleFromFlag } from "./locale-flag.js";
 import { runQueryCommand } from "./query.js";
 import { createProductLookup, loadAndActivateProductPacks, packLoadDiagnostics, productPacks } from "../products/index.js";
 import { parseSessionsDirs } from "./sessions-dirs.js";
+import { exitWhenFlushed } from "./exit-when-flushed.js";
 import { parseOutputMode, writeJsonResult } from "./protocol.js";
 
 export { parseSessionsDirs };
@@ -236,4 +237,13 @@ function versionText(): string {
   return `reprise ${process.env.npm_package_version ?? "0.1.0"} (Node.js ${process.versions.node})`;
 }
 
-if (import.meta.main) process.exitCode = await runCli();
+if (import.meta.main) {
+  let code: number;
+  try {
+    code = await runCli();
+  } catch (error: unknown) {
+    console.error(error instanceof Error ? error.message : String(error));
+    code = 1;
+  }
+  await exitWhenFlushed(code);
+}
