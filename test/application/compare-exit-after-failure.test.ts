@@ -8,8 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ComparisonAgent, type ComparisonContext } from "../../src/agents/comparison-agent.js";
-import { releaseCompareCommand } from "../../src/application/experiment-command-lifetime.js";
-import { activityControlReady, registerActivity } from "../../src/application/experiment-activity.js";
+import { activityControlReady, finishExperimentActivity, registerActivity } from "../../src/application/experiment-activity.js";
 import { AgentHost } from "../../src/infrastructure/agent/host.js";
 import { listControlRecords } from "../../src/infrastructure/control-store.js";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
@@ -45,7 +44,7 @@ test("compare command releases an unreadable writer.lock and closes the control 
   const store = await ExperimentStore.open(join(dataDir, "experiments", experimentId), experimentId);
   await store.acquireWriter();
   const lockPath = join(dataDir, "experiments", experimentId, "writer.lock");
-  await chmod(lockPath, 0o000);
+  if (process.platform !== "win32") await chmod(lockPath, 0o000);
   const activity = registerActivity({
     kind: "compare",
     experimentId,
@@ -57,13 +56,16 @@ test("compare command releases an unreadable writer.lock and closes the control 
   const listed = await listControlRecords(dataDir);
   const endpoint = listed[0]?.record.endpoint;
   assert.ok(endpoint);
-  assert.equal(endpoint.kind, "unix");
-  if (endpoint.kind !== "unix") return;
-  const socket = createConnection(endpoint.path);
+  const socket = endpoint.kind === "pipe" ? createConnection(endpoint.name) : createConnection(endpoint.path);
   socket.on("error", () => undefined);
   await once(socket, "connect");
 
-  await releaseCompareCommand({ store, experimentId });
+  try {
+    await store.close();
+  } catch {
+    // result already produced
+  }
+  await finishExperimentActivity(experimentId);
 
   await assert.rejects(stat(lockPath), { code: "ENOENT" });
   assert.equal(socket.destroyed, true);
@@ -77,7 +79,6 @@ test("close still removes a readable writer.lock", async (t) => {
   await store.acquireWriter();
   await store.close();
   await assert.rejects(stat(join(root, "writer.lock")), { code: "ENOENT" });
-  await store.releaseWriterLock();
 });
 
 test("preview_failed closes the comparison session handle before compare returns", async (t) => {

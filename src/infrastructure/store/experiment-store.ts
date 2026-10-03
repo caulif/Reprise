@@ -197,13 +197,12 @@ export class ExperimentStore {
     } catch (error) {
       tailError = error;
     } finally {
-      await this.releaseWriterLock();
+      await this.#releaseWriterLock();
     }
     if (tailError !== undefined) throw tailError instanceof Error ? tailError : new Error('Experiment store close failed.');
   }
 
-  /** Drops writer.lock when this process still owns it. A failed close() can call this again. */
-  async releaseWriterLock(): Promise<void> {
+  async #releaseWriterLock(): Promise<void> {
     if (!this.#lockHeld) return;
     await this.#unlinkOwnedLock(this.#lockNonce);
     this.#lockHeld = false;
