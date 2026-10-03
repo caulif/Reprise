@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawnRuntimeProcess } from "./process/spawn.js";
 import { terminateProcessTree } from "./platform.js";
 import { resolveHeadlessBrowser } from "./headless-screenshot.js";
@@ -56,7 +56,7 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
     detached: process.platform !== "win32",
   });
   let cleanupPromise: Promise<void> | undefined;
-  const cleanup = () => cleanupPromise ??= killBrowser(child, profileDir, diagnostics);
+  const cleanup = () => cleanupPromise ??= disposeBrowserProcess(child, profileDir, diagnostics);
 
   const abort = () => {
     void cleanup();
@@ -161,14 +161,30 @@ async function connectCdp(
   const session: CdpSession = {
     diagnostics,
     async send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
+      if (signal.aborted) throw errorForSignal(signal, "CDP session timed out");
       if (ws.readyState !== WebSocket.OPEN) throw new Error("CDP socket closed");
       const id = nextId++;
       const payload: Record<string, unknown> = { id, method, params };
       if (sessionId) payload.sessionId = sessionId;
       const result = new Promise<T>((resolve, reject) => {
+        const onAbort = () => {
+          pending.delete(id);
+          reject(errorForSignal(signal, "CDP session timed out"));
+        };
+        if (signal.aborted) {
+          reject(errorForSignal(signal, "CDP session timed out"));
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
         pending.set(id, {
-          resolve: (value) => resolve(value as T),
-          reject,
+          resolve: (value) => {
+            signal.removeEventListener("abort", onAbort);
+            resolve(value as T);
+          },
+          reject: (error) => {
+            signal.removeEventListener("abort", onAbort);
+            reject(error);
+          },
         });
       });
       ws.send(JSON.stringify(payload));
@@ -520,23 +536,81 @@ export async function navigateAndWait(
   signal: AbortSignal,
 ): Promise<number> {
   const started = Date.now();
-  const loaded = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("page load timed out")), timeoutMs);
-    const off = session.on("Page.loadEventFired", () => {
-      clearTimeout(timer);
-      off();
-      resolve();
-    });
-    signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      off();
-      reject(new Error("cancelled during navigation"));
-    }, { once: true });
-  });
-  await session.send("Page.navigate", { url }, pageSessionId);
-  await loaded;
-  return Date.now() - started;
+  // Subscribe before navigation so a fast load is not missed, but do not arm the
+  // timer until Page.navigate resolves. Arming it first rejects while navigate is
+  // still in flight, and that rejection is unhandled until the send settles.
+  const wait = createLoadWait(session, signal);
+  try {
+    await session.send("Page.navigate", { url }, pageSessionId);
+    wait.armTimeout(timeoutMs);
+    await wait.quiet;
+    const error = wait.takeError();
+    if (error) throw error;
+    return Date.now() - started;
+  } finally {
+    wait.abandon();
+  }
 }
+
+type LoadWait = {
+  readonly quiet: Promise<void>;
+  takeError(): Error | undefined;
+  armTimeout(timeoutMs: number): void;
+  abandon(): void;
+};
+
+function createLoadWait(session: CdpSession, signal: AbortSignal): LoadWait {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let off = (): void => {};
+  let finished = false;
+  let captured: Error | undefined;
+  let resolveWait: () => void = () => {};
+  let rejectWait: (error: Error) => void = () => {};
+  const done = new Promise<void>((resolve, reject) => {
+    resolveWait = resolve;
+    rejectWait = reject;
+  });
+  const quiet = done.then(
+    () => undefined,
+    (error: unknown) => {
+      captured = error instanceof Error ? error : new Error(String(error));
+    },
+  );
+  const finish = (error?: Error): void => {
+    if (finished) return;
+    finished = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    off();
+    signal.removeEventListener("abort", onAbort);
+    if (error) rejectWait(error);
+    else resolveWait();
+  };
+  const onAbort = (): void => {
+    finish(errorForSignal(signal, "page load timed out"));
+  };
+  off = session.on("Page.loadEventFired", () => finish());
+  if (signal.aborted) finish(errorForSignal(signal, "page load timed out"));
+  else signal.addEventListener("abort", onAbort, { once: true });
+  return {
+    quiet,
+    takeError: () => captured,
+    armTimeout(timeoutMs: number): void {
+      if (finished) return;
+      timer = setTimeout(() => finish(new Error("page load timed out")), timeoutMs);
+    },
+    abandon(): void {
+      finish();
+    },
+  };
+}
+
+function errorForSignal(signal: AbortSignal, timeoutMessage: string): Error {
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error && reason.name === "TimeoutError") return new Error(timeoutMessage);
+  return new Error("cancelled during navigation");
+}
+
 
 export async function capturePngBase64(session: CdpSession, pageSessionId: string): Promise<string> {
   const result = await session.send<{ data: string }>("Page.captureScreenshot", {
@@ -582,37 +656,27 @@ function cdpUnknownText(value: unknown): string {
   }
 }
 
-async function killBrowser(
-  child: ChildProcessWithoutNullStreams,
+/** Kills the browser child with a bounded wait so sessionTimeout can release writer.lock. */
+export async function disposeBrowserProcess(
+  child: ChildProcess,
   profileDir: string,
   diagnostics: RenderDiagnostic[],
 ): Promise<void> {
-  if (process.platform === "win32") {
-    if (child.exitCode === null && !child.killed) {
-      try {
-        if (child.pid) {
-          await terminateWindowsProcessTree(child.pid);
-        }
-      } catch {
-        diagnostics.push({ code: "browser_kill_failed", message: "SIGTERM failed" });
-      }
-      const exited = await waitExit(child, 3_000);
-      if (!exited) {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          diagnostics.push({ code: "browser_kill_failed", message: "SIGKILL failed; process may linger" });
-        }
-        await waitExit(child, 1_000);
-      }
-    }
-  } else {
+  // Windows taskkill must be timed. An unbounded wait keeps compare's writer.lock held
+  // long after AbortSignal.timeout has already fired.
+  try {
+    terminateProcessTree(child, true);
+  } catch {
+    diagnostics.push({ code: "browser_kill_failed", message: "process tree termination failed" });
+  }
+  const exited = await waitExit(child, 3_000);
+  if (!exited) {
     try {
-      terminateProcessTree(child, true);
+      child.kill("SIGKILL");
     } catch {
-      diagnostics.push({ code: "browser_kill_failed", message: "process tree termination failed" });
+      diagnostics.push({ code: "browser_kill_failed", message: "SIGKILL failed; process may linger" });
     }
-    await waitExit(child, 3_000);
+    await waitExit(child, 1_000);
   }
   try {
     // Windows browser descendants can release profile handles after the parent exits.
@@ -622,18 +686,7 @@ async function killBrowser(
   }
 }
 
-async function terminateWindowsProcessTree(pid: number): Promise<void> {
-  const taskkill = spawnRuntimeProcess("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
-    stdio: "ignore",
-    detached: false,
-  });
-  await new Promise<void>((resolve) => {
-    taskkill.once("exit", () => resolve());
-    taskkill.once("error", () => resolve());
-  });
-}
-
-function waitExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> {
+function waitExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), timeoutMs);
