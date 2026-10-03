@@ -244,6 +244,15 @@ export async function configurePageSession(
   const blockedRequests: string[] = [];
   const resourceFailures: string[] = [];
 
+  // Discovery and auto-attach can emit events before their command replies.
+  bindPageDiagnostics(session, pageSessionId, {
+    consoleErrors,
+    blockedRequests,
+    resourceFailures,
+    allowedOrigin,
+    primaryTargetId,
+  });
+
   await session.send("Page.enable", {}, pageSessionId);
   await session.send("Runtime.enable", {}, pageSessionId);
   await session.send("Network.enable", {}, pageSessionId);
@@ -265,6 +274,7 @@ export async function configurePageSession(
     deviceScaleFactor: viewport.scale,
     mobile: false,
   }, pageSessionId);
+  await installPageNetworkGate(session, pageSessionId, allowedOrigin);
   try {
     await session.send("Target.setDiscoverTargets", { discover: true });
   } catch {
@@ -287,7 +297,6 @@ export async function configurePageSession(
       message: "Target.setAutoAttach unavailable; page-world window.open / target=_blank gate still applies",
     });
   }
-  await installPageNetworkGate(session, pageSessionId, allowedOrigin);
   try {
     await session.send("Browser.setDownloadBehavior", { behavior: "deny", eventsEnabled: false });
   } catch {
@@ -297,14 +306,6 @@ export async function configurePageSession(
       message: "Browser.setDownloadBehavior unavailable; downloads still blocked at Fetch layer when possible",
     });
   }
-
-  bindPageDiagnostics(session, pageSessionId, {
-    consoleErrors,
-    blockedRequests,
-    resourceFailures,
-    allowedOrigin,
-    primaryTargetId,
-  });
 
   return { consoleErrors, blockedRequests, resourceFailures };
 }
@@ -489,7 +490,7 @@ function bindPageDiagnostics(
     })();
   });
   session.on("Target.attachedToTarget", (params) => {
-    closeSecondaryAttachedTarget(session, state, params);
+    handleAttachedTarget(session, state, params);
   });
   session.on("Target.targetCreated", (params) => {
     const targetInfo = params.targetInfo as { targetId?: string; type?: string; url?: string } | undefined;
@@ -508,13 +509,22 @@ function bindPageDiagnostics(
   });
 }
 
-function closeSecondaryAttachedTarget(
+function handleAttachedTarget(
   session: CdpSession,
   state: { primaryTargetId: string },
   params: Record<string, unknown>,
 ): void {
   const targetInfo = params.targetInfo as { targetId?: string; type?: string; url?: string } | undefined;
-  if (!targetInfo?.targetId || targetInfo.targetId === state.primaryTargetId) return;
+  if (!targetInfo?.targetId) return;
+  if (targetInfo.targetId === state.primaryTargetId) {
+    if (params.waitingForDebugger === true && typeof params.sessionId === "string") {
+      // Auto-attach has its own session; resume the primary without releasing secondary targets.
+      void session.send("Runtime.runIfWaitingForDebugger", {}, params.sessionId).catch(() => {
+        session.diagnostics.push({ code: "primary_resume_failed", message: "could not resume primary page target" });
+      });
+    }
+    return;
+  }
   const type = targetInfo.type ?? "";
   const secondary = type === "page" || type === "other";
   const workerish = type === "worker" || type === "service_worker" || type === "shared_worker";
