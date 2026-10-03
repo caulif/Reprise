@@ -340,7 +340,9 @@ async function openDocumentSession(
         ok: false,
         failure: cdp.failure === "no_browser"
           ? { kind: "no_browser" }
-          : { kind: "capability_unavailable", message: cdp.message },
+          : cdp.failure === "timeout"
+            ? { kind: "timeout", message: cdp.message }
+            : { kind: "capability_unavailable", message: cdp.message },
         diagnostics: [...diagnostics, ...cdp.diagnostics],
       },
     };

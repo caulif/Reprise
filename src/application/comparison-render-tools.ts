@@ -98,10 +98,14 @@ export type ComparisonRenderToolBaseDeps = {
   allowImages?: boolean;
 };
 
+export type PreviewReportOutcome = { status: string; message?: string };
+
 export type ComparisonPreviewReportToolDeps = ComparisonRenderToolBaseDeps & {
   /** Prepare draft HTML with current catalog revision (B3/B6 share this). */
   prepareReportHtml: () => Promise<PreparedReportPreview>;
   onPreviewSuccess?: (prepared: PreparedReportPreview) => void;
+  /** Fires for every preview_report result after the draft is prepared, including timeout. */
+  onPreviewFinished?: (prepared: PreparedReportPreview, outcome: PreviewReportOutcome) => void;
   preflightDraft?: () => Promise<{ digest: string; error?: string }>;
 };
 
@@ -252,16 +256,32 @@ export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): 
       if (cached) {
         const delivered = await previewImages(textResult(cached), deps, params.includeImages === true, signal);
         signal.throwIfAborted();
-        deps.onPreviewSuccess?.(prepared);
+        notePreview(deps, prepared, delivered);
         return delivered;
       }
       const result = await renderReportPreview({ deps, render, cache, cacheKey, prepared, viewport, signal, preflight: Boolean(preflight) });
       const delivered = await previewImages(result, deps, params.includeImages === true, signal);
       signal.throwIfAborted();
-      if ((JSON.parse(result.content) as { status?: string }).status === 'ok') deps.onPreviewSuccess?.(prepared);
+      notePreview(deps, prepared, delivered);
       return delivered;
     },
   };
+}
+
+function notePreview(deps: ComparisonPreviewReportToolDeps, prepared: PreparedReportPreview, result: AgentToolResult): void {
+  const outcome = previewOutcome(result);
+  deps.onPreviewFinished?.(prepared, outcome);
+  if (outcome.status === "ok") deps.onPreviewSuccess?.(prepared);
+}
+
+function previewOutcome(result: AgentToolResult): PreviewReportOutcome {
+  try {
+    const payload = JSON.parse(result.content) as { status?: string; message?: string; failure?: { message?: string } };
+    const message = payload.failure?.message ?? payload.message;
+    return { status: payload.status ?? "unknown", ...(message ? { message } : {}) };
+  } catch {
+    return { status: "unknown" };
+  }
 }
 
 async function previewImages(result: AgentToolResult, deps: ComparisonPreviewReportToolDeps, requested: boolean, signal: AbortSignal): Promise<AgentToolResult> {

@@ -82,7 +82,7 @@ export type ComparisonCompareOptions = {
   /** Same-process getter; must not be persisted into comparison.requested JSON. */
   getEvidenceCatalog?: () => Pick<ComparisonEvidenceCatalogSnapshot, "links" | "media">;
   getSubmittedResult?: () => Promise<ComparisonResult | undefined>;
-  getSubmissionFailure?: () => { code: 'draft_invalid' | 'preview_failed'; message: string };
+  getSubmissionFailure?: () => { code: 'draft_invalid' | 'preview_failed'; message: string; kind?: 'protocol' | 'timeout' | 'tool' };
   getSubmissionState?: () => string;
   preflightDraft?: () => Promise<{ digest: string; error?: string }>;
   enforcePhaseBoundaries?: boolean;
@@ -481,7 +481,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
       const state = options.getSubmissionState?.() ?? failure.message;
       if (repair >= 2 || seen.has(state)) {
         await this.#sessions.discard(attemptId);
-        return { status: 'failed', sessionId, failure: { ...failure, attempts: repair + 1, kind: 'protocol' } };
+        const kind = 'kind' in failure ? failure.kind ?? 'protocol' : 'protocol';
+        return { status: 'failed', sessionId, failure: { ...failure, attempts: repair + 1, kind } };
       }
       seen.add(state);
       prompt = `Continue the current review turn. Publication is not ready: ${failure.message}\nCurrent submission state: ${state}\nCorrect the missing condition using the registered tools. Preview the latest accepted draft; do not restart investigation. After any revision, preview again before returning.`;
