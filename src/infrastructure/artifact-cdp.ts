@@ -22,12 +22,12 @@ export type CdpSession = {
   diagnostics: RenderDiagnostic[];
 };
 
-export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSession | { failure: "no_browser" | "capability_unavailable"; message: string; diagnostics: RenderDiagnostic[] }> {
+export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSession | { failure: "no_browser" | "capability_unavailable" | "timeout"; message: string; diagnostics: RenderDiagnostic[] }> {
   const diagnostics: RenderDiagnostic[] = [];
   const browserPath = await resolveHeadlessBrowser();
   if (!browserPath) return { failure: "no_browser", message: "no headless browser", diagnostics };
   if (signal.aborted) {
-    return { failure: "capability_unavailable", message: "cancelled before browser start", diagnostics };
+    return { ...classifyBrowserStartFailure(signal), diagnostics };
   }
 
   const profileDir = await mkdtemp(join(tmpdir(), "reprise-render-profile-"));
@@ -63,7 +63,7 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
   };
   if (signal.aborted) {
     await cleanup();
-    return { failure: "capability_unavailable", message: "cancelled before browser start", diagnostics };
+    return { ...classifyBrowserStartFailure(signal), diagnostics };
   }
   signal.addEventListener("abort", abort, { once: true });
 
@@ -78,9 +78,18 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
   } catch (error) {
     signal.removeEventListener("abort", abort);
     await cleanup();
-    const message = error instanceof Error ? error.message : String(error);
-    return { failure: "capability_unavailable", message, diagnostics };
+    return { ...classifyBrowserStartFailure(signal, error), diagnostics };
   }
+}
+
+/** A session or DevTools timeout is not a missing browser capability. */
+export function classifyBrowserStartFailure(signal: AbortSignal, error?: unknown): { failure: "timeout" | "capability_unavailable"; message: string } {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const reason: unknown = signal.aborted ? signal.reason : undefined;
+  const reasonText = reason instanceof Error ? reason.message : "";
+  const timedOut = (reason instanceof Error && reason.name === "TimeoutError") || /timed out/i.test(message) || /timed out/i.test(reasonText);
+  if (timedOut) return { failure: "timeout", message: message || reasonText || "page load timed out" };
+  return { failure: "capability_unavailable", message: message || "cancelled before browser start" };
 }
 
 async function waitForDevtoolsEndpoint(

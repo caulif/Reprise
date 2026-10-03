@@ -629,6 +629,7 @@ function comparisonTools(
       attemptRoot,
       allowImages: input.taskCase.privacy.allowBinary,
       onPreviewSuccess: (prepared) => draft.recordPreview(prepared),
+      onPreviewFinished: (prepared, outcome) => draft.recordPreviewOutcome(prepared, outcome),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       prepareReportHtml: async () => {
         const snap = catalog.snapshot();

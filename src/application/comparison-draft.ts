@@ -34,6 +34,7 @@ export class ComparisonDraft {
   readonly #deliveredImages: ReadonlySet<string>;
   #accepted: { digest: string; revision: number; result: ComparisonResult } | undefined;
   #previewed: { digest: string; revision: number } | undefined;
+  #previewFailure: { digest: string; revision: number; status: string; message?: string } | undefined;
   #lastRejection: string | undefined;
 
   constructor(input: {
@@ -102,7 +103,10 @@ export class ComparisonDraft {
     }
     await writeAtomic(join(this.#attemptRoot, "report.html"), verified.html);
     const digest = sha256(verified.html);
-    if (this.#accepted?.digest !== digest || this.#accepted.revision !== catalog.revision) this.#previewed = undefined;
+    if (this.#accepted?.digest !== digest || this.#accepted.revision !== catalog.revision) {
+      this.#previewed = undefined;
+      this.#previewFailure = undefined;
+    }
     this.#accepted = { digest, revision: catalog.revision, result };
     this.#lastRejection = undefined;
     return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\nPreview this exact draft in the review turn before finishing.`;
@@ -113,9 +117,23 @@ export class ComparisonDraft {
   }
 
   recordPreview(prepared: PreparedReportPreview): void {
-    if (this.#accepted?.digest === prepared.draftDigest && this.#accepted.revision === prepared.catalogRevision) {
+    this.recordPreviewOutcome(prepared, { status: "ok" });
+  }
+
+  /** Remember a preview_report result for the current accepted draft, including timeout. */
+  recordPreviewOutcome(prepared: PreparedReportPreview, outcome: { status: string; message?: string }): void {
+    if (this.#accepted?.digest !== prepared.draftDigest || this.#accepted.revision !== prepared.catalogRevision) return;
+    if (outcome.status === "ok") {
       this.#previewed = { digest: prepared.draftDigest, revision: prepared.catalogRevision };
+      this.#previewFailure = undefined;
+      return;
     }
+    this.#previewFailure = {
+      digest: prepared.draftDigest,
+      revision: prepared.catalogRevision,
+      status: outcome.status,
+      ...(outcome.message ? { message: outcome.message } : {}),
+    };
   }
 
   async completedResult(): Promise<ComparisonResult | undefined> {
@@ -138,8 +156,17 @@ export class ComparisonDraft {
     return "failureClass" in verified ? undefined : accepted.result;
   }
 
-  failureReason(): { code: 'draft_invalid' | 'preview_failed'; message: string } {
+  failureReason(): { code: 'draft_invalid' | 'preview_failed'; message: string; kind?: 'protocol' | 'timeout' | 'tool' } {
     if (!this.#accepted) return { code: 'draft_invalid', message: this.#lastRejection ?? 'No valid comparison draft was submitted.' };
+    const failed = this.#previewFailure;
+    if (failed && failed.digest === this.#accepted.digest && failed.revision === this.#accepted.revision) {
+      const detail = failed.message ? ` ${failed.message}` : "";
+      return {
+        code: 'preview_failed',
+        kind: failed.status === 'timeout' ? 'timeout' : 'tool',
+        message: `Preview of the latest accepted draft returned ${failed.status}: digest=${this.#accepted.digest}, revision=${this.#accepted.revision}.${detail}`,
+      };
+    }
     if (!this.#previewed) return { code: 'preview_failed', message: `The latest accepted draft was not previewed: digest=${this.#accepted.digest}, revision=${this.#accepted.revision}. Call preview_report in the current review turn.` };
     return { code: 'draft_invalid', message: 'The draft, preview, or evidence catalog changed after validation.' };
   }
