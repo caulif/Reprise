@@ -1,6 +1,6 @@
 import { access, constants, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { win32 as pathWin32 } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -36,12 +36,22 @@ async function whichOnPath(name: string): Promise<string | undefined> {
 
 function platformBrowserCandidates(): string[] {
   if (process.platform === "win32") {
-    return [
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-      join(process.env.LOCALAPPDATA ?? "", "Google\\Chrome\\Application\\chrome.exe"),
-      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    ];
+    const localAppData = process.env.LOCALAPPDATA ?? "";
+    const winBrowsers = [
+      {
+        programFilesRelative: "Google\\Chrome\\Application\\chrome.exe",
+        localAppDataSegments: ["Google", "Chrome", "Application", "chrome.exe"] as const,
+      },
+      {
+        programFilesRelative: "Microsoft\\Edge\\Application\\msedge.exe",
+        localAppDataSegments: ["Microsoft", "Edge", "Application", "msedge.exe"] as const,
+      },
+    ] as const;
+    return winBrowsers.flatMap(({ programFilesRelative, localAppDataSegments }) => [
+      `C:\\Program Files\\${programFilesRelative}`,
+      `C:\\Program Files (x86)\\${programFilesRelative}`,
+      pathWin32.join(localAppData, ...localAppDataSegments),
+    ]);
   }
   if (process.platform === "darwin") {
     return [
