@@ -179,6 +179,35 @@ async function renderRasterFrame(request: RenderRequest): Promise<RenderResult> 
   }
 }
 
+export function renderFailureResult(
+  error: unknown,
+  signals: { readonly request: AbortSignal; readonly watchdog: AbortSignal },
+  diagnostics: RenderDiagnostic[],
+  fallback: "capture_failed" | "timeout" = "capture_failed",
+): RenderResult {
+  const message = error instanceof Error ? error.message : String(error);
+  if (signals.request.aborted) {
+    return { ok: false, failure: { kind: "cancelled" }, diagnostics };
+  }
+  if (isSessionTimeout(signals.watchdog, message)) {
+    return { ok: false, failure: { kind: "timeout", message: message || "page load timed out" }, diagnostics };
+  }
+  if (signals.watchdog.aborted || /cancelled/i.test(message)) {
+    return { ok: false, failure: { kind: "cancelled" }, diagnostics };
+  }
+  if (fallback === "timeout") {
+    return { ok: false, failure: { kind: "timeout", message }, diagnostics };
+  }
+  return { ok: false, failure: { kind: "capture_failed", message }, diagnostics };
+}
+
+function isSessionTimeout(watchdog: AbortSignal, message: string): boolean {
+  if (/timed out/i.test(message)) return true;
+  if (!watchdog.aborted) return false;
+  const reason: unknown = watchdog.reason;
+  return reason instanceof Error && reason.name === "TimeoutError";
+}
+
 async function renderDocumentBundle(request: RenderRequest): Promise<RenderResult> {
   const diagnostics: RenderDiagnostic[] = [];
   let server: BundleStaticServer | undefined;
@@ -189,7 +218,14 @@ async function renderDocumentBundle(request: RenderRequest): Promise<RenderResul
   ]);
 
   try {
-    if (watchdog.aborted) return { ok: false, failure: { kind: "cancelled" }, diagnostics };
+    if (watchdog.aborted) {
+      const reason: unknown = watchdog.reason;
+      return renderFailureResult(
+        reason instanceof Error ? reason : new Error("page load timed out"),
+        { request: request.signal, watchdog },
+        diagnostics,
+      );
+    }
     const opened = await openDocumentSession(request, watchdog, diagnostics);
     if (!opened.ok) return opened.result;
     server = opened.server;
@@ -214,11 +250,7 @@ async function renderDocumentBundle(request: RenderRequest): Promise<RenderResul
       measured: { loadMs: navigated.loadMs, viewport: request.viewport, origin: opened.server.origin, ...(layout ? { layout } : {}) },
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (request.signal.aborted || /cancelled/i.test(message)) {
-      return { ok: false, failure: { kind: "cancelled" }, diagnostics };
-    }
-    return { ok: false, failure: { kind: "capture_failed", message }, diagnostics };
+    return renderFailureResult(error, { request: request.signal, watchdog }, diagnostics);
   } finally {
     await cleanupDocumentSession(cdp, server, diagnostics);
   }
@@ -335,20 +367,13 @@ async function navigateDocument(
     const originMs = await evaluateJson<number>(opened.cdp, opened.pageSessionId, "performance.now()");
     return { ok: true, loadMs, originMs };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
     const merged = [
       ...diagnostics,
       ...opened.cdp.diagnostics,
       ...opened.guards.consoleErrors.map((text) => ({ code: "console_error", message: text })),
       ...opened.guards.resourceFailures.map((text) => ({ code: "resource_failed", message: text })),
     ];
-    if (watchdog.aborted || request.signal.aborted) {
-      return { ok: false, result: { ok: false, failure: { kind: "cancelled" }, diagnostics: merged } };
-    }
-    if (/timed out/i.test(message)) {
-      return { ok: false, result: { ok: false, failure: { kind: "timeout", message }, diagnostics: merged } };
-    }
-    return { ok: false, result: { ok: false, failure: { kind: "capture_failed", message }, diagnostics: merged } };
+    return { ok: false, result: renderFailureResult(error, { request: request.signal, watchdog }, merged) };
   }
 }
 
@@ -363,25 +388,29 @@ async function captureSampledFrames(
   await mkdir(request.outputRoot, { recursive: true });
   const frames: RenderFrame[] = [];
   for (const [index, sampleTimeMs] of request.sampleTimesMs.entries()) {
-    if (watchdog.aborted) {
+    if (watchdog.aborted || request.signal.aborted) {
       return {
         ok: false,
-        result: { ok: false, failure: { kind: "cancelled" }, diagnostics: [...diagnostics, ...session.diagnostics] },
+        result: renderFailureResult(
+          new Error("cancelled during sample wait"),
+          { request: request.signal, watchdog },
+          [...diagnostics, ...session.diagnostics],
+          "timeout",
+        ),
       };
     }
     let actualTimeMs: number;
     try {
       actualTimeMs = await waitForSampleTime(session, pageSessionId, originMs, sampleTimeMs, watchdog);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const kind = watchdog.aborted || request.signal.aborted ? "cancelled" as const : "timeout" as const;
       return {
         ok: false,
-        result: {
-          ok: false,
-          failure: kind === "cancelled" ? { kind } : { kind, message },
-          diagnostics: [...diagnostics, ...session.diagnostics],
-        },
+        result: renderFailureResult(
+          error,
+          { request: request.signal, watchdog },
+          [...diagnostics, ...session.diagnostics],
+          "timeout",
+        ),
       };
     }
     const pngPath = join(request.outputRoot, `frame-${String(index).padStart(3, "0")}.png`);
