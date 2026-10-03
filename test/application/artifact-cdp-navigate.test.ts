@@ -84,9 +84,15 @@ test("session timeout aborts an in-flight navigate into a timeout RenderResult",
   const unhandled: unknown[] = [];
   const onUnhandled = (error: unknown) => unhandled.push(error);
   process.on("unhandledRejection", onUnhandled);
-  const session = fakeSession(() => new Promise(() => {}));
   const request = new AbortController().signal;
   const watchdog = timeoutSignal(40);
+  const session = fakeSession(() => new Promise((_resolve, reject) => {
+    if (watchdog.aborted) {
+      reject(new Error("CDP session timed out"));
+      return;
+    }
+    watchdog.addEventListener("abort", () => reject(new Error("CDP session timed out")), { once: true });
+  }));
   let caught: unknown;
   try {
     await navigateAndWait(session, "page", "http://127.0.0.1/index.html", 30_000, watchdog);
@@ -106,6 +112,27 @@ test("session timeout aborts an in-flight navigate into a timeout RenderResult",
     if (result.failure.kind === "timeout") assert.match(result.failure.message, /timed out/);
   }
   assert.deepEqual(unhandled, []);
+});
+
+test("already-aborted signal awaits the Page.navigate rejection", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (error: unknown) => unhandled.push(error);
+  process.on("unhandledRejection", onUnhandled);
+  const signal = AbortSignal.abort(timeoutReason());
+  const session = fakeSession((method) => {
+    assert.equal(method, "Page.navigate");
+    return Promise.reject(new Error("CDP session timed out"));
+  });
+  try {
+    await assert.rejects(
+      navigateAndWait(session, "page", "http://127.0.0.1/index.html", 30_000, signal),
+      /CDP session timed out/,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
 });
 
 test("session timeout is not reported as a caller cancel", () => {

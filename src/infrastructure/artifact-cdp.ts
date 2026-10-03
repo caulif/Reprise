@@ -541,7 +541,7 @@ export async function navigateAndWait(
   // still in flight, and that rejection is unhandled until the send settles.
   const wait = createLoadWait(session, signal);
   try {
-    await rejectOnAbort(session.send("Page.navigate", { url }, pageSessionId), signal);
+    await session.send("Page.navigate", { url }, pageSessionId);
     wait.armTimeout(timeoutMs);
     await wait.quiet;
     const error = wait.takeError();
@@ -611,25 +611,6 @@ function errorForSignal(signal: AbortSignal, timeoutMessage: string): Error {
   return new Error("cancelled during navigation");
 }
 
-function rejectOnAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(errorForSignal(signal, "page load timed out"));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => {
-      reject(errorForSignal(signal, "page load timed out"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    void work.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      },
-    );
-  });
-}
 
 export async function capturePngBase64(session: CdpSession, pageSessionId: string): Promise<string> {
   const result = await session.send<{ data: string }>("Page.captureScreenshot", {
