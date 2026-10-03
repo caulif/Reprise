@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { navigateAndWait, disposeBrowserProcess } from "../../src/infrastructure/artifact-cdp.js";
+import { navigateAndWait, disposeBrowserProcess, configurePageSession } from "../../src/infrastructure/artifact-cdp.js";
 import { renderFailureResult } from "../../src/infrastructure/artifact-renderer.js";
 import type { CdpSession } from "../../src/infrastructure/artifact-cdp.js";
 import type { RenderDiagnostic } from "../../src/infrastructure/artifact-render-types.js";
@@ -184,4 +184,64 @@ test("session abort kills the browser child and releases writer.lock", { timeout
     await rm(root, { recursive: true, force: true });
     await rm(profile, { recursive: true, force: true });
   }
+});
+
+test("configuration handles synchronous target events and resumes only the paused primary", async () => {
+  const listeners = new Map<string, (params: Record<string, unknown>, sessionId?: string) => void>();
+  const closed: string[] = [];
+  const resumed: string[] = [];
+  const continued: string[] = [];
+  let primaryPaused = false;
+  let networkGateInstalled = false;
+  const emitAttached = (targetId: string, type: string, waitingForDebugger: boolean) => {
+    listeners.get("Target.attachedToTarget")?.({
+      targetInfo: { targetId, type }, sessionId: `${targetId}-auto`, waitingForDebugger,
+    });
+  };
+  const session: CdpSession = {
+    diagnostics: [],
+    on(method, handler) {
+      listeners.set(method, handler);
+      return () => { listeners.delete(method); };
+    },
+    async close() {},
+    async send<T>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
+      if (method === "Fetch.enable") {
+        listeners.get("Fetch.requestPaused")?.({
+          requestId: "initial-request", request: { url: "http://127.0.0.1:1234/preview.html" },
+        }, "primary-page");
+      }
+      if (method === "Fetch.continueRequest") continued.push(String(params.requestId));
+      if (method === "Page.addScriptToEvaluateOnNewDocument") networkGateInstalled = true;
+      if (method === "Target.setDiscoverTargets") {
+        listeners.get("Target.targetCreated")?.({ targetInfo: { targetId: "existing", type: "page" } });
+      }
+      if (method === "Target.setAutoAttach") {
+        primaryPaused = true;
+        emitAttached("primary", "page", true);
+        emitAttached("popup", "page", true);
+        emitAttached("worker", "worker", true);
+      }
+      if (method === "Target.closeTarget") closed.push(String(params.targetId));
+      if (method === "Runtime.runIfWaitingForDebugger") {
+        assert.equal(networkGateInstalled, true, "network gate must be installed before resuming the primary");
+        resumed.push(sessionId ?? "");
+        if (sessionId === "primary-auto") primaryPaused = false;
+      }
+      if (method === "Page.navigate") {
+        if (primaryPaused) throw new Error("primary remains paused: navigation cannot load");
+        listeners.get("Page.loadEventFired")?.({}, "primary-page");
+      }
+      return {} as T;
+    },
+  };
+  await configurePageSession(session, "primary-page", { width: 320, height: 240, scale: 1 }, "http://127.0.0.1:1234", "primary");
+  await navigateAndWait(session, "primary-page", "http://127.0.0.1:1234/preview.html", 100, new AbortController().signal);
+  assert.deepEqual(continued, ["initial-request"]);
+  assert.deepEqual(closed, ["existing", "popup", "worker"]);
+  assert.deepEqual(resumed, ["primary-auto"]);
+  emitAttached("primary", "page", false);
+  emitAttached("late-popup", "page", true);
+  assert.deepEqual(resumed, ["primary-auto"]);
+  assert.deepEqual(closed, ["existing", "popup", "worker", "late-popup"]);
 });
