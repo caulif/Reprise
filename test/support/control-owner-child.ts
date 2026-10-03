@@ -32,6 +32,6 @@ await new Promise<void>((resolve, reject) => {
 });
 await done;
 clearInterval(keepAlive);
-finishExperimentActivity(experimentId);
+await finishExperimentActivity(experimentId);
 await activityControlReady(activity);
 process.stdout.write("cancelled\n");

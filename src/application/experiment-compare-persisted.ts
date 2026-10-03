@@ -8,7 +8,8 @@ import { replicaWorkspaceLocation } from "./result-paths.js";
 import { CliError } from "./cli-error.js";
 import { readJsonFile } from "./experiment-history-list.js";
 import { attachExperimentComparison } from "./experiment-report.js";
-import { finishExperimentActivity, registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
+import { registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
+import { releaseCompareCommand } from "./experiment-command-lifetime.js";
 import { isPersistedExperimentMetadata, listPersistedRunIds, readRunPreflight, resolvedExperimentRoot } from "./experiment-layout.js";
 import type { ExperimentInput, ExperimentResult, ExperimentAgentConfig } from "./experiment.js";
 import type { ExperimentPreflight } from "./experiment-preflight.js";
@@ -93,8 +94,7 @@ export async function comparePersistedExperiment(input: {
     return await attachExperimentComparison(finishInput as unknown as Parameters<typeof attachExperimentComparison>[0], loaded.record);
   } finally {
     unsubscribe?.();
-    await store.close();
-    finishExperimentActivity(input.experimentId);
+    await releaseCompareCommand({ store, experimentId: input.experimentId });
   }
 }
 

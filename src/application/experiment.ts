@@ -35,6 +35,7 @@ import {
 import type { ExperimentPreflight } from "./experiment-preflight.js";
 import type { ResultPathLinks } from "./result-paths.js";
 import { finishExperimentActivity, registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
+import { releaseCompareCommand } from "./experiment-command-lifetime.js";
 import { finishExperiment, attachExperimentComparison } from "./experiment-report.js";
 export type ExperimentAgentConfig = {
   providerId: string;
@@ -630,6 +631,6 @@ async function executeExperiment(
   } finally {
     unsubscribe?.();
     if (!lifetime.released) await release();
-    await store.close();
+    await releaseCompareCommand({ store, experimentId: input.experimentId });
   }
 }

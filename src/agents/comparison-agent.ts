@@ -479,7 +479,10 @@ export class ComparisonAgent implements ComparisonAgentPort {
       if (value) return { status: 'completed', sessionId, value };
       const failure = options.getSubmissionFailure?.() ?? { code: 'report_incomplete' as const, message: 'No validated draft was previewed at the current catalog revision.' };
       const state = options.getSubmissionState?.() ?? failure.message;
-      if (repair >= 2 || seen.has(state)) return { status: 'failed', sessionId, failure: { ...failure, attempts: repair + 1, kind: 'protocol' } };
+      if (repair >= 2 || seen.has(state)) {
+        await this.#sessions.discard(attemptId);
+        return { status: 'failed', sessionId, failure: { ...failure, attempts: repair + 1, kind: 'protocol' } };
+      }
       seen.add(state);
       prompt = `Continue the current review turn. Publication is not ready: ${failure.message}\nCurrent submission state: ${state}\nCorrect the missing condition using the registered tools. Preview the latest accepted draft; do not restart investigation. After any revision, preview again before returning.`;
     }

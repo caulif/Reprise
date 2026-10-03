@@ -59,7 +59,7 @@ export function registerActivity(input: {
   cancel: () => Promise<void>;
   dataDir?: string;
 }): ExperimentActivity {
-  finishExperimentActivity(input.experimentId);
+  void finishExperimentActivity(input.experimentId);
   const activity: ExperimentActivity = {
     operationId: `op-${input.kind}-${randomUUID()}`,
     kind: input.kind,
@@ -81,21 +81,25 @@ export function activityControlReady(activity: ExperimentActivity): Promise<void
   return publishes.get(activity) ?? Promise.resolve();
 }
 
-export function finishExperimentActivity(experimentId: string): void {
+export function finishExperimentActivity(experimentId: string): Promise<void> {
+  const pending: Promise<void>[] = [];
   for (const activity of activities.values()) {
     if (activity.experimentId !== experimentId || activity.status === "finished") continue;
     activity.status = "finished";
     const dataDir = activity.dataDir;
     if (!dataDir) continue;
-    publishes.set(activity, enqueueControlWork(async () => {
+    const job = enqueueControlWork(async () => {
       await retireActivityControl(activity, dataDir, listRunningActivities().some((item) => item.experimentId === experimentId));
       const live = liveDataDirKey(dataDir);
       await stopControlHostIfIdle(
         listRunningActivities().filter((item) => item.dataDir && liveDataDirKey(item.dataDir) === live).length,
         dataDir,
       );
-    }));
+    });
+    publishes.set(activity, job);
+    pending.push(job);
   }
+  return Promise.all(pending).then(() => undefined);
 }
 
 function listRunningActivities(): readonly ExperimentActivity[] {

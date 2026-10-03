@@ -100,7 +100,7 @@ test("stale operationId does not cancel the next run", async (t) => {
     cancel: async () => { cancelled.push("prepare"); },
   });
   await activityControlReady(prepare);
-  finishExperimentActivity("experiment-stale");
+  await finishExperimentActivity("experiment-stale");
   await activityControlReady(prepare);
   const run = registerActivity({
     kind: "run",
@@ -113,7 +113,7 @@ test("stale operationId does not cancel the next run", async (t) => {
   const stale = await requestCancel(prepare.operationId, dataDir);
   assert.equal(stale.status, "already_finished");
   assert.deepEqual(cancelled, []);
-  finishExperimentActivity("experiment-stale");
+  await finishExperimentActivity("experiment-stale");
   await activityControlReady(run);
 });
 
@@ -146,7 +146,7 @@ test("wrong token does not cancel; finished ops stay finished for a second proce
   });
   assert.equal("protocolVersion" in denied && denied.status, "auth_failed");
   assert.deepEqual(cancelled, []);
-  finishExperimentActivity("experiment-auth");
+  await finishExperimentActivity("experiment-auth");
   await activityControlReady(activity);
 });
 
@@ -221,8 +221,8 @@ test("concurrent dataDirs keep separate unix sockets", async (t) => {
   assert.equal((await listControlRecords(left)).length, 1);
   assert.equal((await listControlRecords(right)).length, 1);
   assert.deepEqual(cancelled, []);
-  finishExperimentActivity("experiment-left");
-  finishExperimentActivity("experiment-right");
+  await finishExperimentActivity("experiment-left");
+  await finishExperimentActivity("experiment-right");
   await Promise.all([activityControlReady(a), activityControlReady(b)]);
 });
 
