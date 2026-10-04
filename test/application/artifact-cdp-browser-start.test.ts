@@ -8,6 +8,7 @@ import {
   classifyBrowserStartFailure,
   describeDevtoolsStartTimeout,
   parseDevtoolsEndpoint,
+  parseLoopbackDevtoolsListeningUrl,
   waitForDevtoolsEndpoint,
 } from "../../src/infrastructure/artifact-cdp.js";
 
@@ -119,4 +120,96 @@ test("a spawn error is surfaced and does not crash as an unhandled error", async
     /browser spawn failed: ENOENT/,
   );
   assert.equal(crashes.length, 0);
+});
+
+const listeningUrl = "ws://127.0.0.1:63008/devtools/browser/8ce6099e-1db6-4705-8e85-f44070382978";
+
+test("a loopback DevTools listening line is an endpoint only for 127.0.0.1, localhost, and [::1]", () => {
+  const id = "8ce6099e-1db6-4705-8e85-f44070382978";
+  assert.equal(
+    parseLoopbackDevtoolsListeningUrl(`DevTools listening on ws://127.0.0.1:63008/devtools/browser/${id}\n`),
+    `ws://127.0.0.1:63008/devtools/browser/${id}`,
+  );
+  assert.equal(
+    parseLoopbackDevtoolsListeningUrl(`DevTools listening on ws://localhost:63041/devtools/browser/${id}\r\n`),
+    `ws://localhost:63041/devtools/browser/${id}`,
+  );
+  assert.equal(
+    parseLoopbackDevtoolsListeningUrl(`DevTools listening on ws://[::1]:55420/devtools/browser/${id}`),
+    `ws://[::1]:55420/devtools/browser/${id}`,
+  );
+  assert.equal(
+    parseLoopbackDevtoolsListeningUrl(`noise\nDevTools listening on ws://192.0.2.10:63008/devtools/browser/${id}\n`),
+    undefined,
+  );
+  assert.equal(parseLoopbackDevtoolsListeningUrl("DevTools listening was not printed\n"), undefined);
+  assert.equal(parseLoopbackDevtoolsListeningUrl(""), undefined);
+  assert.equal(
+    parseLoopbackDevtoolsListeningUrl("DevTools listening on ws://127.0.0.1:65536/devtools/browser/abc\n"),
+    undefined,
+  );
+  assert.equal(
+    parseLoopbackDevtoolsListeningUrl("DevTools listening on ws://127.0.0.1:1/devtools/browser/abc/extra\n"),
+    undefined,
+  );
+  assert.equal(
+    parseLoopbackDevtoolsListeningUrl(
+      "DevTools listening on ws://127.0.0.1:1/devtools/browser/first\nDevTools listening on ws://127.0.0.1:2/devtools/browser/second\n",
+    ),
+    "ws://127.0.0.1:2/devtools/browser/second",
+  );
+  assert.equal(parseLoopbackDevtoolsListeningUrl(`DevTools listening on ${listeningUrl}\n`), listeningUrl);
+});
+
+test("a missing port file still resolves from a loopback DevTools listening line before the wait expires", async (t) => {
+  const profile = await mkdtemp(join(tmpdir(), "reprise-devtools-stderr-url-"));
+  t.after(() => rm(profile, { recursive: true, force: true }));
+  const stderrPath = join(profile, "reprise-browser-stderr.log");
+  await writeFile(stderrPath, `DevTools listening on ${listeningUrl}\n`);
+  const child = aliveChild();
+  t.after(() => child.kill("SIGKILL"));
+  const started = Date.now();
+  const endpoint = await waitForDevtoolsEndpoint(profile, child, new AbortController().signal, 15_000, undefined, stderrPath);
+  assert.equal(endpoint, listeningUrl);
+  assert.ok(Date.now() - started < 2_000);
+});
+
+test("a valid port file wins over a DevTools listening line in stderr", async (t) => {
+  const profile = await mkdtemp(join(tmpdir(), "reprise-devtools-file-wins-"));
+  t.after(() => rm(profile, { recursive: true, force: true }));
+  await writeFile(join(profile, "DevToolsActivePort"), "9333\n/devtools/browser/from-file\n");
+  const stderrPath = join(profile, "reprise-browser-stderr.log");
+  await writeFile(stderrPath, `DevTools listening on ${listeningUrl}\n`);
+  const child = aliveChild();
+  t.after(() => child.kill("SIGKILL"));
+  const started = Date.now();
+  const endpoint = await waitForDevtoolsEndpoint(profile, child, new AbortController().signal, 15_000, undefined, stderrPath);
+  assert.equal(endpoint, "ws://127.0.0.1:9333/devtools/browser/from-file");
+  assert.ok(Date.now() - started < 2_000);
+});
+
+test("a non-loopback DevTools listening line is not an endpoint", async (t) => {
+  const profile = await mkdtemp(join(tmpdir(), "reprise-devtools-nonlocal-"));
+  t.after(() => rm(profile, { recursive: true, force: true }));
+  const stderrPath = join(profile, "reprise-browser-stderr.log");
+  await writeFile(stderrPath, "DevTools listening on ws://192.0.2.10:63008/devtools/browser/8ce6099e-1db6-4705-8e85-f44070382978\n");
+  const child = aliveChild();
+  t.after(() => child.kill("SIGKILL"));
+  await assert.rejects(
+    () => waitForDevtoolsEndpoint(profile, child, new AbortController().signal, 180, undefined, stderrPath),
+    /timed out waiting for DevToolsActivePort: process still alive; profile present; port file absent; stderr: DevTools listening on ws:\/\/192\.0\.2\.10:63008\/devtools\/browser\/8ce6099e-1db6-4705-8e85-f44070382978/,
+  );
+});
+
+test("an empty stderr file with no port file still times out as a missing DevToolsActivePort", async (t) => {
+  const profile = await mkdtemp(join(tmpdir(), "reprise-devtools-empty-stderr-"));
+  t.after(() => rm(profile, { recursive: true, force: true }));
+  const stderrPath = join(profile, "reprise-browser-stderr.log");
+  await writeFile(stderrPath, "");
+  const child = aliveChild();
+  t.after(() => child.kill("SIGKILL"));
+  await assert.rejects(
+    () => waitForDevtoolsEndpoint(profile, child, new AbortController().signal, 180, undefined, stderrPath),
+    /timed out waiting for DevToolsActivePort: process still alive; profile present; port file absent; stderr: empty/,
+  );
 });

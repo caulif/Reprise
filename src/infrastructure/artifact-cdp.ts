@@ -180,6 +180,36 @@ export function parseDevtoolsEndpoint(raw: string): string | undefined {
   return undefined;
 }
 
+const STDERR_LISTENING_SCAN_BYTES = 64 * 1024;
+
+/** Chrome prints this on stderr. Only loopback hosts are an endpoint; any other host is ignored. */
+export function parseLoopbackDevtoolsListeningUrl(text: string): string | undefined {
+  const pattern = /(?:^|\n)[^\n]*?DevTools listening on (ws:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)\/devtools\/browser\/([A-Za-z0-9-]+))(?=$|[\s"'<])/g;
+  let found: string | undefined;
+  for (const match of text.matchAll(pattern)) {
+    const url = match[1];
+    const port = Number(match[2]);
+    if (!url || !Number.isInteger(port) || port < 1 || port > 65535) continue;
+    found = url;
+  }
+  return found;
+}
+
+async function loopbackDevtoolsUrlFromStderr(path: string | undefined): Promise<string | undefined> {
+  if (!path) return undefined;
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(path, "r");
+    const buf = Buffer.alloc(STDERR_LISTENING_SCAN_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    return parseLoopbackDevtoolsListeningUrl(buf.subarray(0, bytesRead).toString("utf8"));
+  } catch {
+    return undefined;
+  } finally {
+    await handle?.close();
+  }
+}
+
 function portFileRejectReason(raw: string): string {
   const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
   const port = Number(lines[0]);
@@ -244,6 +274,11 @@ export async function waitForDevtoolsEndpoint(
     const read = await readDevtoolsEndpoint(portFile);
     portFileState = read.state;
     if (read.endpoint) return read.endpoint;
+    // Win11 can print the listening URL and never create DevToolsActivePort. Do not sit out the rest of the wait.
+    if (read.state === "absent") {
+      const fromStderr = await loopbackDevtoolsUrlFromStderr(stderrPath);
+      if (fromStderr) return fromStderr;
+    }
     await sleep(50);
   }
   throw new Error(describeDevtoolsStartTimeout({
