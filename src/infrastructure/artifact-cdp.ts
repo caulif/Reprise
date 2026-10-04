@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { closeSync, openSync } from "node:fs";
+import { mkdtemp, open, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { spawnRuntimeProcess } from "./process/spawn.js";
 import { terminateProcessTree } from "./platform.js";
 import { resolveHeadlessBrowser } from "./headless-screenshot.js";
@@ -31,30 +32,16 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
   }
 
   const profileDir = await mkdtemp(join(tmpdir(), "reprise-render-profile-"));
-  const child = spawnRuntimeProcess(browserPath, [
-    "--headless=new",
-    "--disable-gpu",
-    "--hide-scrollbars",
-    "--force-device-scale-factor=1",
-    "--remote-debugging-port=0",
-    `--user-data-dir=${profileDir}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-extensions",
-    "--disable-component-extensions-with-background-pages",
-    "--disable-background-networking",
-    "--disable-sync",
-    "--disable-translate",
-    "--metrics-recording-only",
-    "--mute-audio",
-    "--no-pings",
-    "--disable-client-side-phishing-detection",
-    "--disable-popup-blocking=false",
-    "about:blank",
-  ], {
-    stdio: ["ignore", "ignore", "ignore"],
-    detached: process.platform !== "win32",
-  });
+  const stderrLog = openBrowserStderr(profileDir);
+  let child: ChildProcess;
+  try {
+    child = spawnPreviewBrowser(browserPath, profileDir, stderrLog.fd);
+  } finally {
+    // The child keeps its own dup. Closing the parent fd cannot fill an unread pipe.
+    if (stderrLog.fd !== undefined) closeSync(stderrLog.fd);
+  }
+  // An unhandled ChildProcess "error" (spawn ENOENT) is thrown by Node and never reaches this wait.
+  const watch = watchBrowserProcess(child);
   let cleanupPromise: Promise<void> | undefined;
   const cleanup = () => cleanupPromise ??= disposeBrowserProcess(child, profileDir, diagnostics);
 
@@ -68,7 +55,7 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
   signal.addEventListener("abort", abort, { once: true });
 
   try {
-    const endpoint = await waitForDevtoolsEndpoint(profileDir, child, signal, 15_000);
+    const endpoint = await waitForDevtoolsEndpoint(profileDir, child, signal, 15_000, watch, stderrLog.path);
     const session = await connectCdp(endpoint, cleanup, diagnostics, signal);
     signal.removeEventListener("abort", abort);
     signal.addEventListener("abort", () => {
@@ -92,31 +79,179 @@ export function classifyBrowserStartFailure(signal: AbortSignal, error?: unknown
   return { failure: "capability_unavailable", message: message || "cancelled before browser start" };
 }
 
-async function waitForDevtoolsEndpoint(
+const BROWSER_STDERR_LOG = "reprise-browser-stderr.log";
+
+type BrowserProcessWatch = {
+  spawnError?: NodeJS.ErrnoException;
+  exited: boolean;
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
+};
+
+function watchBrowserProcess(child: ChildProcess): BrowserProcessWatch {
+  const watch: BrowserProcessWatch = { exited: false, exitCode: null, signalCode: null };
+  child.on("error", (error: NodeJS.ErrnoException) => {
+    watch.spawnError = error;
+  });
+  child.on("exit", (code, signal) => {
+    watch.exited = true;
+    watch.exitCode = code;
+    watch.signalCode = signal;
+  });
+  return watch;
+}
+
+function openBrowserStderr(profileDir: string): { fd?: number; path?: string } {
+  const path = join(profileDir, BROWSER_STDERR_LOG);
+  try {
+    return { fd: openSync(path, "a"), path };
+  } catch {
+    return {};
+  }
+}
+
+function spawnPreviewBrowser(browserPath: string, profileDir: string, stderrFd: number | undefined): ChildProcess {
+  return spawnRuntimeProcess(browserPath, [
+    "--headless=new",
+    "--disable-gpu",
+    "--hide-scrollbars",
+    "--force-device-scale-factor=1",
+    "--remote-debugging-port=0",
+    `--user-data-dir=${profileDir}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-extensions",
+    "--disable-component-extensions-with-background-pages",
+    "--disable-background-networking",
+    "--disable-sync",
+    "--disable-translate",
+    "--metrics-recording-only",
+    "--mute-audio",
+    "--no-pings",
+    "--disable-client-side-phishing-detection",
+    "--disable-popup-blocking=false",
+    "about:blank",
+  ], {
+    stdio: ["ignore", "ignore", stderrFd ?? "ignore"],
+    detached: process.platform !== "win32",
+  });
+}
+
+export function describeDevtoolsStartTimeout(input: {
+  process: string;
+  profile: "present" | "missing";
+  portFile: string;
+  stderr: string;
+}): string {
+  return `timed out waiting for DevToolsActivePort: process ${input.process}; profile ${input.profile}; port file ${input.portFile}; stderr: ${input.stderr}`;
+}
+
+/** Spawn failures emit "error" and may leave exitCode negative without an "exit" event. */
+function browserLaunchFailure(child: ChildProcess, watch: BrowserProcessWatch): Error | undefined {
+  const spawnCode = typeof child.exitCode === "number" && child.exitCode < 0 && !watch.exited;
+  if (watch.spawnError || spawnCode) {
+    const code = watch.spawnError?.code ?? String(child.exitCode);
+    const detail = watch.spawnError?.message ?? "spawn failed";
+    return new Error(`browser spawn failed: ${code} ${detail}`);
+  }
+  const code = child.exitCode ?? watch.exitCode;
+  const signal = child.signalCode ?? watch.signalCode;
+  if (watch.exited || code !== null || signal !== null) {
+    return new Error(`browser exited early with code ${code ?? "null"} signal ${signal ?? "none"}`);
+  }
+  return undefined;
+}
+
+function browserProcessPhrase(child: ChildProcess, watch: BrowserProcessWatch): string {
+  const failure = browserLaunchFailure(child, watch);
+  if (!failure) return "still alive";
+  return failure.message.startsWith("browser spawn failed")
+    ? `spawn failed (${watch.spawnError?.code ?? child.exitCode ?? "unknown"})`
+    : failure.message.replace(/^browser /, "");
+}
+
+export function parseDevtoolsEndpoint(raw: string): string | undefined {
+  const [portLine, pathLine] = raw.split(/\r?\n/);
+  const port = Number(portLine?.trim());
+  const path = (pathLine ?? "").trim();
+  if (Number.isInteger(port) && port > 0 && port <= 65535 && path.startsWith("/")) {
+    return `ws://127.0.0.1:${port}${path}`;
+  }
+  return undefined;
+}
+
+function portFileRejectReason(raw: string): string {
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+  const port = Number(lines[0]);
+  const path = lines[1] ?? "";
+  const portOk = Number.isInteger(port) && port > 0 && port <= 65535;
+  return `invalid (port=${portOk ? "ok" : "bad"}, path=${path.startsWith("/") ? "ok" : "bad"}, lines=${lines.length})`;
+}
+
+async function readDevtoolsEndpoint(portFile: string): Promise<{ endpoint?: string; state: string }> {
+  try {
+    const raw = await readFile(portFile, "utf8");
+    const endpoint = parseDevtoolsEndpoint(raw);
+    return endpoint ? { endpoint, state: "ready" } : { state: portFileRejectReason(raw) };
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? String((error as { code?: string }).code) : "";
+    if (code === "ENOENT") return { state: "absent" };
+    return { state: `unreadable (${code || "error"})` };
+  }
+}
+
+async function profilePresence(profileDir: string): Promise<"present" | "missing"> {
+  try {
+    const info = await stat(profileDir);
+    return info.isDirectory() ? "present" : "missing";
+  } catch {
+    return "missing";
+  }
+}
+
+async function stderrExcerpt(path: string | undefined): Promise<string> {
+  if (!path) return "not opened";
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(path, "r");
+    const buf = Buffer.alloc(512);
+    const { bytesRead } = await handle.read(buf, 0, 512, 0);
+    const text = buf.subarray(0, bytesRead).toString("utf8").replace(/\s+/g, " ").trim();
+    return text ? text.slice(0, 180) : "empty";
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? String((error as { code?: string }).code) : "error";
+    return `unreadable ${code}`;
+  } finally {
+    await handle?.close();
+  }
+}
+
+export async function waitForDevtoolsEndpoint(
   profileDir: string,
-  child: ChildProcessWithoutNullStreams,
+  child: ChildProcess,
   signal: AbortSignal,
   timeoutMs: number,
+  watch: BrowserProcessWatch = watchBrowserProcess(child),
+  stderrPath?: string,
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   const portFile = join(profileDir, "DevToolsActivePort");
+  let portFileState = "absent";
   while (Date.now() < deadline) {
     if (signal.aborted) throw new Error("cancelled while waiting for DevTools");
-    if (child.exitCode !== null) throw new Error(`browser exited early with code ${child.exitCode}`);
-    try {
-      const raw = await readFile(portFile, "utf8");
-      const [portLine, pathLine] = raw.split(/\r?\n/);
-      const port = Number(portLine?.trim());
-      const path = (pathLine ?? "").trim();
-      if (Number.isInteger(port) && port > 0 && path.startsWith("/")) {
-        return `ws://127.0.0.1:${port}${path}`;
-      }
-    } catch {
-      // DevToolsActivePort appears after Chrome finishes binding the debug port.
-    }
+    const launchFailure = browserLaunchFailure(child, watch);
+    if (launchFailure) throw launchFailure;
+    const read = await readDevtoolsEndpoint(portFile);
+    portFileState = read.state;
+    if (read.endpoint) return read.endpoint;
     await sleep(50);
   }
-  throw new Error("timed out waiting for DevToolsActivePort");
+  throw new Error(describeDevtoolsStartTimeout({
+    process: browserProcessPhrase(child, watch),
+    profile: await profilePresence(profileDir),
+    portFile: portFileState,
+    stderr: await stderrExcerpt(stderrPath),
+  }));
 }
 
 async function connectCdp(
