@@ -52,7 +52,7 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
     "--disable-popup-blocking=false",
     "about:blank",
   ], {
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "ignore", "ignore"],
     detached: process.platform !== "win32",
   });
   let cleanupPromise: Promise<void> | undefined;
