@@ -71,19 +71,20 @@ test("two processes cancel prepare, run, and compare without touching writer.loc
     assert.equal(listed.length, 1, `expected control record under ${dataDir}`);
     const stdout: string[] = [];
     const stderr: string[] = [];
-    const code = await runCli(["cancel", ready.operationId, "--data-dir", dataDir], {
-      stdout: (message) => stdout.push(message),
-      stderr: (message) => stderr.push(message),
-    });
-    assert.equal(code, 0, `${stdout.join("\n")}\n${stderr.join("\n")}`);
-    assert.equal(await readFile(lockPath, "utf8"), "owner-lock\n");
-    const exit = await new Promise<number>((resolve, reject) => {
+    const exited = new Promise<number>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${kind} owner did not exit`)), 10_000);
       child.once("exit", (value) => {
         clearTimeout(timer);
         resolve(value ?? 1);
       });
     });
+    const code = await runCli(["cancel", ready.operationId, "--data-dir", dataDir], {
+      stdout: (message) => stdout.push(message),
+      stderr: (message) => stderr.push(message),
+    });
+    assert.equal(code, 0, `${stdout.join("\n")}\n${stderr.join("\n")}`);
+    assert.equal(await readFile(lockPath, "utf8"), "owner-lock\n");
+    const exit = await exited;
     assert.equal(exit, 0);
   }
 });
