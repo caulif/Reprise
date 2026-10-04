@@ -22,12 +22,6 @@ export type CdpSession = {
   diagnostics: RenderDiagnostic[];
 };
 
-/** Resume unread stdout/stderr so a full pipe cannot stall the child. Bytes are discarded, not logged. */
-export function drainBrowserStdio(child: Pick<ChildProcessWithoutNullStreams, "stdout" | "stderr">): void {
-  child.stdout.resume();
-  child.stderr.resume();
-}
-
 export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSession | { failure: "no_browser" | "capability_unavailable" | "timeout"; message: string; diagnostics: RenderDiagnostic[] }> {
   const diagnostics: RenderDiagnostic[] = [];
   const browserPath = await resolveHeadlessBrowser();
@@ -58,10 +52,9 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
     "--disable-popup-blocking=false",
     "about:blank",
   ], {
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "ignore", "ignore"],
     detached: process.platform !== "win32",
   });
-  drainBrowserStdio(child);
   let cleanupPromise: Promise<void> | undefined;
   const cleanup = () => cleanupPromise ??= disposeBrowserProcess(child, profileDir, diagnostics);
 
