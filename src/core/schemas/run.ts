@@ -2,11 +2,13 @@ import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, Hash, Id, JsonRecord, Timestamp } from "./ids.js";
 import { ArtifactRefSchema, CandidateSpecSchema } from "./task-case.js";
 import { CandidateSessionHandleSchema } from "./candidate.js";
+import { ComparisonResourcesSchema } from '../comparison-resources-schema.js';
 
 const AgentBudgetSchema = Type.Object({
   callTimeoutMs: Type.Integer({ minimum: 1 }),
   maxStructuredRepairAttempts: Type.Integer({ minimum: 0 }),
   maxCalls: Type.Optional(Type.Integer({ minimum: 1 })),
+  comparisonResources: Type.Optional(ComparisonResourcesSchema),
 });
 const AgentConfigSchema = Type.Object({
   providerId: Type.String({ minLength: 1 }),

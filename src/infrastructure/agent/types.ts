@@ -1,6 +1,7 @@
 import type { TSchema } from "@sinclair/typebox";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { AgentFailureKind } from "./failure.js";
+import type { AgentUsageFacts } from '../../core/schema.js';
 
 export type { AgentFailureKind };
 
@@ -57,6 +58,8 @@ export type AgentToolDefinition = {
 
 export type AgentAuditEventType =
   | "comparison.phase_completed"
+  | "comparison.resources_completed"
+  | "agent.usage_reported"
   | "agent.session_started"
   | "agent.session_completed"
   | "agent.session_failed"
@@ -209,7 +212,8 @@ export interface ProviderAdapter {
       byteLength: number;
       contentDigest: string;
     }) => Promise<void>;
-    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[] }) => Promise<void>;
+    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[]; scope?: 'generation' | 'compaction'; compactionContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] } }) => Promise<void>;
+    onModelUsage?: (payload: AgentUsageFacts) => Promise<void>;
   }): Promise<ProviderSession> | ProviderSession;
 }
 

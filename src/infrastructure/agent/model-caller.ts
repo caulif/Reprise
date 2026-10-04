@@ -3,8 +3,8 @@ import { classifyAgentFailure } from './failure.js';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
-import { contentText, createProvider, type ImageContent, type Models, type MutableModels } from '@earendil-works/pi-ai';
-import type { AgentToolDefinition, ProviderAdapter, ProviderSession } from './host.js';
+import { contentText, createProvider, type Models, type MutableModels } from '@earendil-works/pi-ai';
+import type { ProviderAdapter, ProviderSession } from './host.js';
 import { environmentNameForKeyRef, type HarnessModelConfig } from '../harness-model-config.js';
 import { PiProviderAdapter } from './providers/pi/adapter.js';
 import { sha256 } from '../../core/identity.js';
@@ -172,18 +172,7 @@ export class PiModelCaller implements ProviderAdapter {
     throw lastError ?? new Error('Pi model connection check failed.');
   }
 
-  createSession(input: {
-    sessionId: string;
-    systemPrompt: string;
-    tools: readonly AgentToolDefinition[];
-    compactionInstructions?: string;
-    onContextCompact?: (payload: { summary: string; tokensBefore: number; retainedCount: number; reason?: string; retainedTail?: readonly unknown[] }) => Promise<void>;
-    onRetry?: (payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>;
-    onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
-    onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
-    onAfterToolCall?: (payload: { tool: string; isError: boolean; contentTypes: readonly string[]; byteLength: number; contentDigest: string }) => Promise<void>;
-    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[] }) => Promise<void>;
-  }): ProviderSession {
+  createSession(input: Parameters<ProviderAdapter['createSession']>[0]): ProviderSession {
     return new PiProviderAdapter({ models: this.#models, config: this.#config, model: this.#model() }).createSession(input);
   }
 

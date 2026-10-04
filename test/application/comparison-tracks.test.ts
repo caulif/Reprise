@@ -16,8 +16,73 @@ import {
 import { recoveryEvidenceCatalog } from "../../src/products/history/source-refs.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import type { EventEnvelope, RunRecord, TaskCase } from "../../src/core/schema.js";
+import { sha256 } from '../../src/core/identity.js';
+import { comparisonSealedFinalLinks } from '../../src/application/comparison-sealed-finals.js';
 
 const timestamp = "2026-09-10T12:00:00.000Z";
+
+test('sealed JS, CSV and text finals are cited navigation leads without becoming renderable media', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-sealed-text-finals-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const attemptRoot = join(root, 'comparison-attempts', 'attempt-text');
+  const workspaceRoot = join(root, 'snapshot');
+  await mkdir(join(attemptRoot, 'finals'), { recursive: true });
+  await mkdir(workspaceRoot, { recursive: true });
+  const files = [{ path: 'average.js', content: 'export const average = xs => xs.length ? 42 : null;' },
+    { path: 'results.csv', content: 'name,value\nA,42\n' }, { path: 'summary.txt', content: 'Final summary.' }];
+  for (const file of files) await writeFile(join(attemptRoot, 'finals', file.path), file.content);
+  await writeFile(join(attemptRoot, 'finals', 'manifest.json'), JSON.stringify({ schemaVersion: 1, sourceHash: 'a'.repeat(64), extractorVersion: 'test', issues: [], artifacts: files.map((file, index) => ({
+    artifactId: `sealed-${index}`, logicalPath: file.path, bundleId: 'bundle-1', finality: 'final', origin: 'reconstructed_from_history', sourceRefs: [`message:write-${index}`], contentHash: sha256(file.content), byteLength: Buffer.byteLength(file.content),
+  })) }));
+  const record = runRecord();
+  const caseValue = taskCase();
+  const context = buildComparisonContext(caseValue, [record], [{ runId: record.attempt.runId, changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 0 }]);
+  const briefing = await writeComparisonBriefing({ attemptRoot, experimentRoot: root, workspaceRoot, taskCase: caseValue, record, context, events: [], artifacts: [], snapshotStatus: 'complete' });
+  const map = await readFile(join(attemptRoot, 'briefing', 'decision-map.md'), 'utf8');
+  for (const [index, file] of files.entries()) {
+    const link = briefing.links.find(item => item.inspectPath === `finals/${file.path}`);
+    assert.ok(link?.shortRef);
+    assert.equal(link.contentHash, sha256(file.content));
+    assert.deepEqual(link.sourceRefs, [`message:write-${index}`]);
+    assert.match(map, new RegExp(`finals/${file.path.replace('.', '\\.')}`));
+    assert.match(map, new RegExp(`hash=${sha256(file.content)}`));
+  }
+  assert.equal(briefing.media.length, 0);
+  assert.doesNotMatch(map, /openable delivery lead/);
+  await writeFile(join(attemptRoot, 'finals', 'average.js'), 'changed after sealing');
+  await assert.rejects(comparisonSealedFinalLinks(attemptRoot), /Sealed final identity mismatch: average.js/);
+  await writeFile(join(attemptRoot, 'finals', 'average.js'), files[0]!.content);
+  await rm(join(attemptRoot, 'finals', 'results.csv'));
+  const missing = await comparisonSealedFinalLinks(attemptRoot);
+  assert.equal(missing.links.some(link => link.inspectPath === 'finals/results.csv'), false);
+  assert.match(missing.unavailable[0]!, /results.csv.*missing sealed file/);
+  await writeFile(join(attemptRoot, 'finals', 'manifest.json'), '{}');
+  await assert.rejects(comparisonSealedFinalLinks(attemptRoot), /schema validation/);
+});
+
+test('sealed finals accept nested canonical paths and reject nonfinal or Windows backslash manifests', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-sealed-path-contract-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'finals', 'nested folder'), { recursive: true });
+  const content = 'Final result';
+  await writeFile(join(root, 'finals', 'nested folder', 'result.txt'), content);
+  const artifact = { artifactId: 'sealed-final', logicalPath: 'nested folder/result.txt', bundleId: 'bundle-1', finality: 'final', origin: 'reconstructed_from_history', sourceRefs: ['message:write'], contentHash: sha256(content), byteLength: Buffer.byteLength(content) };
+  const manifest = { schemaVersion: 1, sourceHash: 'a'.repeat(64), extractorVersion: 'test', issues: [], artifacts: [artifact] };
+  const path = join(root, 'finals', 'manifest.json');
+  await writeFile(path, JSON.stringify(manifest));
+  const accepted = await comparisonSealedFinalLinks(root);
+  assert.equal(accepted.links[0]?.inspectPath, 'finals/nested folder/result.txt');
+  assert.equal(accepted.links[0]?.reportHref, 'finals/nested%20folder/result.txt');
+  assert.deepEqual(accepted.unavailable, []);
+  for (const changed of [
+    { ...artifact, finality: 'intermediate' },
+    { ...artifact, finality: 'intermediate', logicalPath: 'missing.txt' },
+    { ...artifact, logicalPath: 'nested folder\\result.txt' },
+  ]) {
+    await writeFile(path, JSON.stringify({ ...manifest, artifacts: [changed] }));
+    await assert.rejects(comparisonSealedFinalLinks(root), /manifest failed schema validation/);
+  }
+});
 
 function taskCase(): TaskCase {
   return {
@@ -134,11 +199,16 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
   const events: EventEnvelope[] = [
     envelope(1, "runtime.session_started", { sessionId: "sess-1", evidenceRefs: [] }),
     envelope(2, "controller.decision", { status: "completed", value: { type: "send", message: "做一份 PPT。" } }),
-    envelope(3, "runtime.tool_finished", { sessionId: "sess-1", callId: "call-1", evidenceRefs: [] }),
+    envelope(3, "runtime.tool_finished", { sessionId: "sess-1", callId: "call-1", evidenceRefs: [],
+      item: { command: 'check source', aggregated_output: 'Connection failed; no source received.' } }),
     envelope(4, "runtime.turn_settled", { sessionId: "sess-1", turnId: "turn-1", evidenceRefs: [] }),
     envelope(5, "controller.decision", { status: "completed", value: { type: "send", message: "请补第二页。" } }),
     envelope(6, "runtime.visible_output", { sessionId: "sess-1", evidenceRefs: [] }),
     envelope(7, "runtime.turn_settled", { sessionId: "sess-1", turnId: "turn-2", evidenceRefs: [] }),
+    ...Array.from({ length: 7 }, (_, index) => envelope(8 + index, 'runtime.tool_finished', {
+      sessionId: 'sess-1', callId: `post-settlement-${index}`, item: { aggregated_output: `Post-settlement observation ${index}` },
+    })),
+    envelope(15, 'runtime.tool_finished', { sessionId: 'sess-1', callId: 'large-result', item: { aggregated_output: 'x'.repeat(9000) } }),
   ];
   const record = runRecord();
   const context = buildComparisonContext(caseValue, [record], [{
@@ -191,6 +261,10 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
   assert.match(decisionMap, /history\/transcript\/message-2\.txt/);
   assert.match(decisionMap, /candidate\/workspace-file\.txt/);
   assert.match(decisionMap, /observations\/user-inputs\/INDEX\.tsv/);
+  assert.match(decisionMap, /Event types are navigation only/);
+  assert.match(decisionMap, /4 earlier matching events omitted/);
+  assert.match(decisionMap, /truncated=true/);
+  assert.match(decisionMap, /15 runtime\.tool_finished: observations\/events\/run\//);
   assert.doesNotMatch(decisionMap, /\\environment\\|\\Users\\/);
   assert.match(briefingIndex, /turns\//);
   assert.match(briefingIndex, /run\/sent-user-messages\.jsonl/);
@@ -206,6 +280,23 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
   assert.match(await read(`observations/user-inputs/controller-send-${events[4]!.eventId}.txt`), /请补第二页/);
   assert.match(await read("briefing/candidate/process-index.tsv"), /runtime\.tool_finished/);
   assert.match(await read("briefing/candidate/process-index.tsv"), /runtime\.turn_settled/);
+  const processIndex = await read('briefing/candidate/process-index.tsv');
+  assert.equal(await readFile(join(attemptRoot, 'candidate', 'process-index.tsv'), 'utf8'), processIndex);
+  assert.match(processIndex, /evidence_ref\tobservation_path/);
+  const rows = processIndex.trim().split('\n').slice(1).map(line => line.split('\t'));
+  assert.equal(rows.length, events.length);
+  for (const [index, row] of rows.entries()) {
+    const body = JSON.parse(await read(row[5]!)) as { ref: string; truncated: boolean; observation: unknown };
+    assert.equal(body.ref, `event:${events[index]!.eventId}`);
+    if (index === events.length - 1) {
+      assert.equal(body.truncated, true);
+      assert.match(JSON.stringify(body.observation), /file_char_limit/);
+    } else {
+      assert.equal(body.truncated, false);
+      assert.deepEqual(body.observation, events[index]);
+    }
+  }
+  assert.match(await read(rows[2]![5]!), /Connection failed; no source received/);
   assert.match(await read("history/outline.tsv"), /message-2/);
   assert.match(await read("history/transcript/message-2.txt"), /历史助手已经写了第一版/);
   assert.match(await read("history/user-inputs/INDEX.tsv"), /message-3/);

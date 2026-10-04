@@ -6,6 +6,8 @@ import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
 import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
+import type { ComparisonResources } from '../core/schema.js';
+import { ComparisonResourceTracker } from './comparison-resources.js';
 
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
@@ -86,6 +88,9 @@ export type ComparisonCompareOptions = {
   getSubmissionState?: () => string;
   preflightDraft?: () => Promise<{ digest: string; error?: string }>;
   enforcePhaseBoundaries?: boolean;
+  getFindingsState?: () => string;
+  findingsReady?: () => boolean;
+  estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
 
 type ComparisonPhase = keyof typeof COMPARISON_TURN_PROMPTS;
@@ -105,12 +110,17 @@ function phaseTools(tools: readonly AgentToolDefinition[], current: { phase: Com
         return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: 'Write report.html in the compose turn.' }) });
       }
       if (tool.name === 'submit_comparison_draft' && current.phase !== 'compose' && current.phase !== 'review') {
-        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: 'Submit a draft in the compose turn.' }) });
+        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', currentPhase: current.phase, nextLegalPhase: 'compose',
+          message: 'Finish the current turn and return your findings. The Host starts compose next; do not retry this tool in the current turn.' }) });
       }
       if (tool.name === 'preview_report' && current.phase !== 'review') {
-        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', currentPhase: current.phase, nextLegalPhase: 'review', message: 'Preview report.html in the review turn.' }) });
+        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', currentPhase: current.phase, nextLegalPhase: 'review',
+          message: 'Finish the current turn and return. The Host starts the next phase; do not retry preview_report until the review turn.' }) });
       }
       const result = await tool.execute(params, signal);
+      if (tool.name === 'update_comparison_findings' && current.phase === 'investigate' && result.content.startsWith('status=accepted')) {
+        return { ...result, content: `${result.content}\nIf readyToCompose=true, finish this turn with a brief findings summary. The Host starts compose next; do not submit or preview in this turn.` };
+      }
       return tool.name === 'submit_comparison_draft' && result.content.startsWith('status=accepted')
         ? { ...result, content: `${result.content}\ncurrentPhase=${current.phase}\nnextLegalPhase=review` }
         : result;
@@ -121,9 +131,8 @@ function phaseTools(tools: readonly AgentToolDefinition[], current: { phase: Com
 async function ensureDraftStructure(input: {
   session: AgentSessionHost;
   preflight: () => Promise<{ digest: string; error?: string }>;
-  timeoutMs: number;
+  work: (prompt: string) => Promise<FreeformInvocation>;
   seen: Set<string>;
-  signal?: AbortSignal;
   review: boolean;
 }): Promise<FreeformInvocation> {
   let draft = await input.preflight();
@@ -136,15 +145,18 @@ async function ensureDraftStructure(input: {
       };
     }
     input.seen.add(key);
-    const correction = await input.session.work({
-      promptContent: `The report draft cannot be published: ${draft.error}\nRestore the required Agent slots and zones in report.html, then ${input.review ? 'preview the corrected draft and' : ''} return. The Host rebuilds its own regions.`,
-      timeoutMs: input.timeoutMs,
-      ...(input.signal ? { signal: input.signal } : {}),
-    });
+    const correction = await input.work(`The report draft cannot be published: ${draft.error}\nRestore the required Agent slots and zones in report.html, then ${input.review ? 'preview the corrected draft and' : ''} return. The Host rebuilds its own regions.`);
     if (correction.status !== 'completed') return correction;
     draft = await input.preflight();
   }
   return { status: 'completed', sessionId: input.session.sessionId, value: {} };
+}
+
+function comparisonTimeout(resources: ComparisonResourceTracker, limits: ComparisonResources, callTimeoutMs: number): number {
+  resources.checkHard('phase invocation');
+  if (limits.maxElapsedMs === undefined) return callTimeoutMs;
+  const remaining = Math.max(1, limits.maxElapsedMs - Number(resources.snapshot().elapsedMs));
+  return callTimeoutMs > 0 ? Math.min(callTimeoutMs, remaining) : remaining;
 }
 
 const COMPARISON_COMPACTION = [
@@ -154,6 +166,7 @@ const COMPARISON_COMPACTION = [
   'work/comparison-plan.md, the last accepted draft digest and preview_report digest when one',
   'exists, and the next investigation or report action.',
   'Drop long bodies that can be reread by path.',
+  'Preserve the latest update_comparison_findings state, settled questions and scope of each observation.',
   'Do not carry an earlier phase label (for example still-in-understand) into review.',
   'The summary is not the only remaining source of those facts.',
 ].join(' ');
@@ -199,8 +212,11 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'Do not change them. Before writing, classify every difference as one of four kinds: result, process, replay limitation, or configuration.',
   'Distinguish outcome differences from process, replay, and configuration differences.',
   'A harness limit or missing historical evidence is not proof of weaker model capability.',
+  'A Controller or Host completion records lifecycle acceptance, not the hidden basis for that decision or a quality certification.',
   'Use the recorded metric definitions. reportFacts are Host-projected hard facts:',
   'show missing values as "not collected" or "undeterminable", never as zero.',
+  'The Host already displays metrics. Avoid repeating them; if they affect the choice, check each side and each field separately.',
+  'One missing historical duration or token count does not make the candidate duration or all usage unknown.',
   'Summaries in the briefing are claims until checked. Separate observation, inference,',
   'and unknown; do not attribute an uninvestigated cause to model capability; do not',
   'fabricate files, screenshots, process, metrics, or visual observations.',
@@ -210,6 +226,31 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'limitations that change the choice next to that result. Put technical detail',
   'and the longer audit trail in the optional details area. Do not repeat model',
   'IDs in every sentence or add remaining work that the user did not need.',
+  'Aim for a short decision card, normally 300–600 Chinese characters in the main comparison.',
+  'This is a reading target, not a reason to omit decisive counterevidence or limitations.',
+  'Show one or two process turning points only when they change the choice; otherwise omit process commentary.',
+  'Final files show the resulting state, not which edits happened. Without a before-state or edit record,',
+  'say the final output has a defect; do not call it the original or unchanged implementation, or claim the model skipped the edit.',
+  'A Host changed-path record supports which paths changed within its snapshot scope, not the exact edit sequence.',
+  'The two attempts are not a before/after edit pair. Shared values do not show that one author copied, converted or corrected the other output without lineage evidence.',
+  'Equal content hashes establish identical bytes, not copying, common origin, or whether two independent checks ran.',
+  'Missing before-state limits edit-history claims, not an explicitly sealed final artifact. Do not invent final-version uncertainty without a recorded source conflict or gap.',
+  'Visible progress messages alone do not establish an edit or test timeline.',
+  'A generic done/completed message does not assert faithful content or passing tests. Quote the exact',
+  'quality or verification claim before calling it contradicted; do not infer concealment, deception or intent.',
+  'Judge the user\'s requested criteria. Do not introduce an extra mandatory explanation, test or feature',
+  'and penalize its absence when the delivered content already satisfies the request.',
+  'An invariant of one object does not prove equivalence of both outputs or an entire timeline.',
+  'For animation or interaction, compare equivalent states or normalized phases; different periods',
+  'make equal wall-clock times insufficient. Test a counterexample before asserting broad equivalence.',
+  'Do not invent an only/every-state claim when one distinguishing sample suffices. Identical initial appearance is not identical source text.',
+  'For nontrivial derived geometry or precision claims, use a small reproducible calculation and register its observed output; otherwise omit unnecessary exact numbers.',
+  'Missing recordings show a coverage gap, not what evidence the author secretly used or their only basis.',
+  'Source inspection, execution records, samples, mathematical recomputation and self-report support different claims.',
+  'A check comparing a target formula to itself does not verify the rendered result. Syntax checks do not prove behavior.',
+  'Never promote a later Comparison check into original-run verification.',
+  'Saved findings validate provenance, not the truth of your interpretation.',
+  'Different tools, environments, recording coverage and configurations limit model-capability attribution.',
   '',
   'Before finishing, preview the actual report, inspect the supported observations,',
   'and correct missing assets, misleading pairing, unreadable content, or a weak',
@@ -266,6 +307,10 @@ export const COMPARISON_TURN_PROMPTS = {
     'final outputs from drafts and observation from inference. Stop when further',
     'reading is unlikely to change the conclusion. Record a brief conclusion,',
     'decisive references, and remaining uncertainty in work/comparison-plan.md.',
+    'When update_comparison_findings is available, save criteria, both final-source locations,',
+    'scoped observations, important limitations and decision questions before finishing.',
+    'Resolve each question or explain why its evidence is unavailable. Reopen settled questions only with new grounds.',
+    'Each next check must have a possible outcome that changes the choice or an important limitation.',
   ].join('\n'),
   understand: [
     'Understand the user\'s task and the final outcome they wanted. Read the user-input',
@@ -288,6 +333,8 @@ export const COMPARISON_TURN_PROMPTS = {
     'is unlikely to change the conclusion; do not exhaust every log by default.',
     'Before another check, ask whether its possible result could change the',
     'recommendation, confidence, or a material limitation. If not, stop this turn.',
+    'Cross-check derived coordinates or error bounds with a reproducible calculation before saving a quantitative finding.',
+    'For a claim of testing or source verification, open the relevant tool-result payloads and compare them with the claim. Event types and indexes are navigation, not check results.',
     'Do not write or preview report.html in this turn.',
     'Update the notes with the proposed conclusion, its strongest evidence, its',
     'important limitation, and the best way to show it to a new reader.',
@@ -313,13 +360,20 @@ export const COMPARISON_TURN_PROMPTS = {
     'Avoid always, never, exact, or whole-run claims from partial history, still',
     'frames, source inference, or discrete samples. State the observed scope.',
     'Move long methods, file listings, and investigation detail to the details area.',
+    'Do not restate the headline in an opening paragraph and again in a recommendation.',
+    'Omit unchanged rows unless they establish a relevant tradeoff; show only the decisive excerpt,',
+    'not both complete source files. Put command transcripts, methods and repeated caveats in details.',
+    'Label shortened or normalized quotations as excerpts; call them complete file text only when they reproduce the entire actual source.',
     'Do not include external resources, credentials or private paths. The Host owns',
     'the task, model identity, metrics, page structure and CSS. Submit actual content,',
     'not only a proposed outline.',
   ].join('\n'),
   review: [
-    'Review the actual draft as a person seeing the task for the first time. Use',
-    'preview_report and, when supported, read the rendered preview. Check that the',
+    'Review the actual draft as a person seeing the task for the first time.',
+    'Reread the original task and decisive source excerpts as your audit baseline rather than trusting saved interpretations.',
+    'Check the headline, each decisive claim and remedy against them before inspecting layout. Remove unsupported causes or chronology; recorded source order does not establish unrecorded actions.',
+    'Audit the details with the same evidence rules as the main text; folding cannot excuse unsupported precision, aesthetics or causal claims.',
+    'Use preview_report and, when supported, read the rendered preview. Check that the',
     'reader can identify the task, the two models, the decisive difference, and the',
     'reason for the recommendation or uncertainty without reading an audit trail.',
     '',
@@ -328,6 +382,21 @@ export const COMPARISON_TURN_PROMPTS = {
     'important caveats are not hidden. Replace implementation jargon with its user',
     'consequence. Remove repetition and low-value process commentary. Do not mistake',
     'the number of bullets for concision.',
+    'Use the submitted mainTextCharacters feedback: above 600, shorten repetition and move methods',
+    'to details before the final preview. Keep a longer main text only when a decisive uncertainty needs it.',
+    'A limitation can usually be one plain sentence; put hashes, byte counts, provenance fields and',
+    'the full evidential argument in details. State each decisive result or caveat once.',
+    'Check process claims against actual before/after or execution records; a defective final file alone',
+    'does not show that no edit occurred. Remove unsupported original/unchanged implementation claims from the headline too.',
+    'Check prose about missing metrics against each Host field; do not call both sides uncollected when only one side or measure is missing.',
+    'Read the saved findings: verify the check tested the actual delivery, not a target formula or self-description.',
+    'Match every claim to its method and observed scope; compare planned sampling with actual capture times.',
+    'For derived geometry, check coordinate signs and centers against the source transform. Test another normalized phase before calling a state unique or two timelines equivalent.',
+    'Keep the failure trigger in negative claims. A missing behavior for affected inputs does not imply failure on every input; check boundary or already-satisfied cases before saying any/all.',
+    'A blind spot in a check does not establish what the original author concluded or why an error happened. Missing check records cannot support a claim that lack of checking caused the defect.',
+    'When describing an exact text difference, compare the actual excerpts; otherwise describe the meaning change without claiming a single-character edit.',
+    'Check suggested remedies against every explicit task constraint. An inferable value or alternative feature does not replace information or behavior the user explicitly required.',
+    'Use preview layout observations to check metrics visibility and overflow; a loaded page is not a full visual review.',
     '',
     'Revise by calling submit_comparison_draft again, then preview the revised digest.',
     'If rendering or image inspection is unavailable, record the specific review limitation',
@@ -362,12 +431,16 @@ export class ComparisonAgent implements ComparisonAgentPort {
   readonly #maxRepairAttempts: number;
   readonly #sessions = new RoleSessions();
   readonly #locale: AgentLocale;
+  readonly #resources: ComparisonResources;
+  readonly requireFindings: boolean;
 
-  constructor(input: { host: AgentHost; timeoutMs: number; maxRepairAttempts: number; locale?: AgentLocale }) {
+  constructor(input: { host: AgentHost; timeoutMs: number; maxRepairAttempts: number; locale?: AgentLocale; resources?: ComparisonResources; requireFindings?: boolean }) {
     this.#host = input.host;
     this.#timeoutMs = input.timeoutMs;
     this.#maxRepairAttempts = input.maxRepairAttempts;
     this.#locale = input.locale ?? 'zh';
+    this.#resources = input.resources ?? {};
+    this.requireFindings = input.requireFindings ?? false;
   }
 
   get timeoutMs(): number {
@@ -390,11 +463,22 @@ export class ComparisonAgent implements ComparisonAgentPort {
       return comparisonEvidenceAllowlist(context);
     };
     const current = { phase: 'investigate' as ComparisonPhase };
-    const phasedTools = options?.enforcePhaseBoundaries ? phaseTools(tools, current) : tools;
-    let activePhase: 'investigate' | 'compose' | 'review' | undefined;
+    const resources = new ComparisonResourceTracker(this.#resources);
+    const boundedTools = tools.map((tool) => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) => {
+      const reason = resources.beforeTool(tool.name);
+      if (reason) return { content: `status=investigation_limit\nreason=${reason}\nStop investigating. Save scoped findings and mark unresolved questions unavailable with this resource limitation, then return to compose. Do not invent missing evidence.` };
+      return tool.execute(params, toolSignal);
+    } }));
+    const phasedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
+    let activePhase: 'understand' | 'investigate' | 'compose' | 'review' | undefined;
     let counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
-    const measuredAudit: AgentAuditSink | undefined = audit && options?.getSubmittedResult ? {
+    const measuredAudit: AgentAuditSink = {
       append: async (event) => {
+        if (event.type === 'agent.usage_reported') {
+          const cost = options?.estimateUsageCost?.(event.payload);
+          if (cost !== undefined) event = { ...event, payload: { ...event.payload, estimatedCostUsd: cost } };
+        }
+        resources.observe(event);
         if (activePhase) {
           if (event.type === 'agent.model_request') counts.modelRequests++;
           if (event.type === 'agent.tool_called' && typeof event.payload.toolCallId === 'string') {
@@ -403,62 +487,88 @@ export class ComparisonAgent implements ComparisonAgentPort {
           }
           if (event.type === 'agent.context_compacted') counts.compactions++;
         }
-        await audit.append(event);
+        await audit?.append(event);
       },
-      ...(audit.commitModelInput ? { commitModelInput: (bytes: Uint8Array) => audit.commitModelInput!(bytes) } : {}),
-    } : audit;
+      ...(audit?.commitModelInput ? { commitModelInput: (bytes: Uint8Array) => audit.commitModelInput!(bytes) } : {}),
+    };
     const session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit);
-    const measuredWork = async (phase: 'investigate' | 'compose' | 'review', promptContent: string) => {
+    const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string) => {
       current.phase = phase;
+      resources.phase(phase);
       activePhase = phase;
       counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
       const startedAt = Date.now();
       try {
-        return await session.work({ promptContent, timeoutMs: this.#timeoutMs, ...(signal ? { signal } : {}) });
+        const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
+        return await session.work({ promptContent, timeoutMs, ...(signal ? { signal } : {}) });
       } finally {
         activePhase = undefined;
         await audit?.append({
           type: 'comparison.phase_completed', sessionId: session.sessionId, role: 'comparison',
-          payload: { phase, elapsedMs: Date.now() - startedAt, ...counts },
+          payload: { phase, elapsedMs: Date.now() - startedAt, ...counts, resources: resources.snapshot() },
         });
       }
     };
-    if (options?.getSubmittedResult) {
-      const investigated = await measuredWork('investigate', context.promptContent
-        ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
-        : COMPARISON_TURN_PROMPTS.orientAndInvestigate);
-      const prefix = investigated.status === 'completed'
-        ? await measuredWork('compose', COMPARISON_TURN_PROMPTS.compose)
-        : investigated;
-      if (prefix.status !== 'completed') {
-        if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
-        return comparisonProviderFailure(prefix);
+    try {
+      if (options?.getSubmittedResult) {
+        return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId);
       }
-      return this.#reviewSubmitted(options, measuredWork, session.sessionId, attemptId);
-    }
 
-    for (const step of ['understand', 'investigate', 'compose'] as const) {
-      current.phase = step;
-      const prefix = await session.work({
-        promptContent: step === 'understand' && context.promptContent
-          ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}`
-          : COMPARISON_TURN_PROMPTS[step],
-        timeoutMs: this.#timeoutMs,
-        ...(signal ? { signal } : {}),
-      });
-      if (prefix.status !== 'completed') {
-        if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
-        return comparisonProviderFailure(prefix);
+      for (const step of ['understand', 'investigate', 'compose'] as const) {
+        current.phase = step;
+        const prefix = await measuredWork(step, step === 'understand' && context.promptContent
+            ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}`
+            : COMPARISON_TURN_PROMPTS[step]);
+        if (prefix.status !== 'completed') {
+          if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
+          return comparisonProviderFailure(prefix);
+        }
       }
+      const seenDraftErrors = new Set<string>();
+      const ensureDraft = (review: boolean) => options?.preflightDraft
+        ? ensureDraftStructure({ session, preflight: options.preflightDraft, work: prompt => measuredWork(review ? 'review' : 'compose', prompt), seen: seenDraftErrors, review })
+        : undefined;
+      const ready = await ensureDraft(false);
+      if (ready && ready.status !== 'completed') return ready;
+      current.phase = 'review';
+      resources.phase('review');
+      return await this.#legacyEnvelope(session, tools, signal, currentAllowlist, attemptId, () => comparisonTimeout(resources, this.#resources, this.#timeoutMs), options?.preflightDraft, ensureDraft);
+    } finally {
+      await audit?.append({ type: 'comparison.resources_completed', sessionId: session.sessionId, role: 'comparison', payload: resources.snapshot() });
     }
-    const seenDraftErrors = new Set<string>();
-    const ensureDraft = (review: boolean) => options?.preflightDraft
-      ? ensureDraftStructure({ session, preflight: options.preflightDraft, timeoutMs: this.#timeoutMs, seen: seenDraftErrors, ...(signal ? { signal } : {}), review })
-      : undefined;
-    const ready = await ensureDraft(false);
-    if (ready && ready.status !== 'completed') return ready;
-    current.phase = 'review';
-    return this.#legacyEnvelope(session, tools, signal, currentAllowlist, attemptId, options?.preflightDraft, ensureDraft);
+  }
+
+  async #submittedComparison(
+    context: ComparisonContext,
+    options: ComparisonCompareOptions,
+    measuredWork: (phase: 'investigate' | 'compose' | 'review', prompt: string) => Promise<FreeformInvocation>,
+    sessionId: string,
+    attemptId: string,
+  ): Promise<AgentInvocation<ComparisonResult>> {
+    let investigated = await measuredWork('investigate', context.promptContent
+      ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
+      : COMPARISON_TURN_PROMPTS.orientAndInvestigate);
+    const seenFindings = new Set<string>();
+    while (investigated.status === 'completed' && options.findingsReady && !options.findingsReady()) {
+      const state = options.getFindingsState?.() ?? 'missing findings';
+      if (seenFindings.has(state) || seenFindings.size >= 2) {
+        await this.#sessions.discard(attemptId);
+        return { status: 'failed', sessionId,
+          failure: { code: 'draft_invalid', message: 'Comparison findings are missing or decision questions remain pending without progress.', attempts: seenFindings.size, kind: 'protocol' } };
+      }
+      seenFindings.add(state);
+      investigated = await measuredWork('investigate', `Finish the current investigation using update_comparison_findings. Resolve decision questions or explain unavailable evidence. Do not repeat settled checks. Current findings: ${state}`);
+    }
+    const findings = options.getFindingsState?.();
+    const prefix = investigated.status === 'completed'
+      ? await measuredWork('compose', `${COMPARISON_TURN_PROMPTS.compose}${findings ? `\n\nSaved findings (provenance checked, semantics still require review): ${findings}` : ''}`)
+      : investigated;
+    if (prefix.status !== 'completed') {
+      if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
+      return comparisonProviderFailure(prefix);
+    }
+    const result = await this.#reviewSubmitted(options, measuredWork, sessionId, attemptId);
+    return result;
   }
 
   async #reviewSubmitted(
@@ -467,7 +577,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     sessionId: string,
     attemptId: string,
   ): Promise<AgentInvocation<ComparisonResult>> {
-    let prompt = COMPARISON_TURN_PROMPTS.review;
+    let prompt = `${COMPARISON_TURN_PROMPTS.review}${options.getFindingsState ? `\n\nSaved findings: ${options.getFindingsState()}` : ''}`;
     const seen = new Set<string>();
     for (let repair = 0; ; repair++) {
       const reviewed = await work('review', prompt);
@@ -495,13 +605,13 @@ export class ComparisonAgent implements ComparisonAgentPort {
     signal: AbortSignal | undefined,
     currentAllowlist: () => Set<string>,
     attemptId: string,
+    timeout: () => number,
     preflightDraft?: () => Promise<{ digest: string; error?: string }>,
     ensureDraft?: (review: boolean) => Promise<AgentInvocation<unknown> | undefined> | undefined,
   ): Promise<AgentInvocation<ComparisonResult>> {
     const envelopeRequest = {
       ...(signal ? { signal } : {}),
       schema: ComparisonResultSchema,
-      timeoutMs: this.#timeoutMs,
       outputContract: OUTPUT_CONTRACT,
       normalize: (value: unknown) => normalizeComparisonEvidence(value),
       validate: (value: ComparisonAgentEnvelope) => validateComparisonEvidence(value, currentAllowlist()),
@@ -509,6 +619,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     const reviewEnvelope = async () => {
       let reviewed = await session.request<ComparisonAgentEnvelope>({
         ...envelopeRequest,
+        timeoutMs: timeout(),
         allowTools: true,
         maxRepairAttempts: 0,
         promptContent: COMPARISON_TURN_PROMPTS.review,
@@ -516,6 +627,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       if (reviewed.status === 'failed' && isInvalidEnvelopeFailure(reviewed.failure.message) && await readAttemptReport(tools, signal)) {
         reviewed = await session.request<ComparisonAgentEnvelope>({
           ...envelopeRequest,
+          timeoutMs: timeout(),
           allowTools: false,
           maxRepairAttempts: this.#maxRepairAttempts,
           promptContent: JSON_ONLY_REPAIR_PROMPT,

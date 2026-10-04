@@ -75,6 +75,10 @@ node dist/src/cli/main.js compare --experiment <experimentId> --json
 
 `experimentId` 来自该次 `run` 或 TUI 流程写入 `dataDir` 的实验目录。成功时 JSON 包含报告路径；失败时保留事件日志供排障。连接测试（TUI `/config` 的 `Ctrl+T`）同样会发出最小模型请求，可能计费。
 
+报告首先展示任务、双方身份、短结论、时间与估算费用，Token 明细和长方法按需展开。推荐只针对本次运行，可以有条件、结果相近或无法判断；不同 Runtime、工具环境和历史缺口会限制模型能力归因。估算不是实账，也不包含工具费用；未知记录不是零。
+
+默认 Comparison 调查软预算为 12 次模型请求、30 次工具、120 秒；整体硬上限为 40 次模型请求、120 次工具、10 分钟，金额上限默认不启用。集成调用方通过 `AgentBudget.comparisonResources` 完整替换默认值，传 `{}` 可关闭；长复杂任务须显式调高。普通 CLI/TUI 尚无独立预算设置入口。达到调查软预算时保留重要未知并继续创作审阅；硬保护或取消保留旧报告。启用金额保护而 usage/价格不可用时停止继续调用；在途计费不能精确封顶。真实评估入口与授权见[开发与验证](./development.md#comparison-产品质量评估)。
+
 `recover-comparison` 对旧失败 attempt 默认只读：核对冻结事实、catalog 修订、草稿 digest、成功预览事件和当前发布校验，返回可恢复状态，不调用模型。只有显式加 `--publish --status ...` 才尝试发布，状态必须由操作者依据旧草稿判断；已有根报告时拒绝覆盖。恢复会追加 `comparison.recovered` 事件并更新根 `comparison.json`，原 attempt 日志和草稿不改写。新流程不需要这个命令来处理末尾空文本。
 
 ## Reprise 模型设置

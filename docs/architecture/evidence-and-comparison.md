@@ -14,6 +14,8 @@ Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId
 
 Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请求。Host 把 system prompt、用户消息、工具结果和结构化结果写入审计事实；[`model-input.ts`](../../src/infrastructure/agent/model-input.ts) 从事件日志重建请求。上下文压缩必须追加 `agent.context_compacted`，其中 summary 与 retained tail 是后续请求可见的输入来源。新增模型可见事实必须先写入事件审计（必要时再由 briefing 做可读投影），不能只存在内存变量。
 
+压缩请求另在 `agent.model_request` 的 `compactionInput: AgentTextBody` 保存实际上下文，仅含 systemPrompt、messages 与 tools；经同一秘密过滤的上下文用于审计和发送，不保存 Provider 凭据或只留不可重建的 digest。大正文沿用附件溢出、字节长度与 hash 校验，图片记录为不可变附件引用，不把 base64 写入日志。History 重建可返回独立的 `compactionRequests`，不将压缩混入普通生成请求；历史缺输入体标记 contentComplete=false，附件缺失、损坏或图片校验失败保留不完整与诊断，不把压缩后的 summary 当作压缩请求原始输入。
+
 TUI 读取这些事实并投影状态。它不持有 CandidateRun 状态机，不展示未公开的内部推理，也不把模型输出未经 schema 校验地当成事实。
 
 History 从已校验的提交日志前缀构造只读附件读取器，每个 Session 按起始事件的 runId 绑定正文和图片读取范围；复用 Store 的 manifest、owner、提交事件及字节/hash 校验。完整图片记录不标成内容缺失，缺失或损坏附件保留诊断并标记输入不完整。此路径不创建目录、取得 writer lock 或改写未提交尾部。
@@ -32,15 +34,27 @@ Briefing 另写有界的 `decision-map.md`：从冻结证据索引、可打开�
 
 Attempt 作用域持有可修订的证据 catalog：权威 revision 落在 `facts/evidence-catalog/rev-N.json`，`CURRENT` 在 facts 镜像写完后原子切换；`briefing/facts/` 与 `facts/` 的 `media.json` / `evidence-index.json` 由同一 revision 派生。短引用 `ev-*` / `media-*` 为 2–6 位数字，append-only，不复用已分配编号。调查中可通过 `register_evidence` 追加派生分析（Host 强制 `origin=derived_analysis`）；成功注册写入 `comparison.evidence_registered`（attemptId、revision、source refs、content hash、artifact refs；不含 base64 或私人绝对路径）。mutate/persist 后若 emit 失败，同内容重试必须补发事件。`render_artifact` / `preview_report` 为 Host 受控预览入口（`experiment-report.ts` 挂载真实工厂；`sourceRef` 仅映射到冻结 `finals/`/受控 `history/` 或 candidate snapshot）。媒体记录可带 `sourceRef` / `contentHash` / `derivation`；seed/briefing 物化时对可用图片文件写入与原生交付同口径的 `contentHash`（文件字节 sha256）。`available=true` 本身不构成向模型发送图片的授权；另需 privacy/发送策略与模型 `inputCapabilities`。报告中的裸 `<img data-media-ref>` 可供人阅读；`data-claim="visual"` 还须对应媒体的 `contentHash` 出现在本 Comparison Session 实际交付的原生图片集合中（text-only 剥离后该集合为空，不得自称看过）。
 
-封存的可打开历史终稿会进入 catalog，取得 `ev-*` 引用供 `render_artifact` 使用；原始 bundle 仍留在 `finals/`，不要求 Agent 复制到 scratch。新注册的派生证据按内容 hash 保存，并仅在内容与所声明的 HTML/SVG/PNG/JSON 类型相符时保留安全扩展名；HTML/SVG 只允许静态元素和属性，发布旧 catalog 文件时再次检查；旧无后缀记录仍可读取。正式根报告引用的派生证据经过 hash 和路径校验后复制到根目录 `evidence/<hash>.<ext>`，预览继续使用 attempt 内路径。`report-model.json` 的 `evidenceRefs` 保留原事件/artifact 引用，同时以可选 `evidenceIdentities` 保存派生短引用、hash 和 source refs；旧 model 可继续读。取舍见[证据身份与可达发布](../decisions/accepted/2026-09-28-comparison-evidence-publication.md)。
+普通正文中的“视觉检查”等自然语言不由 Host 词表解释为已看图主张：否定、引述、建议和肯定句均交语义审阅判断，Host 不以词命中推断句意。显式 `data-claim="visual"` 的注册媒体与实际原生交付校验保持失败关闭。既有 `data-host-limitation` 诊断在再次验证时从 Agent 内容中抽离，按已知诊断身份统一去重投影；此前修复已移除坏媒体或引用时保留对应诊断，废弃的视觉词表诊断不再投影。该处理支持旧 boolean 标记及旧译文，只在显式验证/重建时发生，读取历史已发布文件不重写。重复验证同一规范化草稿不追加诊断或改变 digest。现有核验词表只提示“使用核验措辞而无可解析证据”，不证明自然语言核验主张成立；显式 `data-claim="verified"` 仍须可解析证据。
+
+`candidate/process-index.tsv` 及其 briefing 副本的每行新增 `observation_path`，直接指向 `observations/events/run/` 中同一事件的 JSON。路径复用 History observation materializer 的 canonical 规则；完整索引包含结算后事件，事件 type 与字节数只供导航，不能证明检查成功、失败或没有执行。`briefing/decision-map.md` 另外给出最近最多 6 条 `runtime.tool_finished` / `runtime.visible_output` 的路径，并注明遗漏数量；选择仅依据事件类型，不做内容结论，不要求全日志扫描。验证自述应打开对应工具结果负载与可见输出核对。观察文件沿用 `truncated` / `originalChars`：被截断的片段不能证明未显示的剩余内容，需取得完整注册来源或保留该限制。
+
+封存历史终稿不按扩展名过滤导航：manifest、真实路径边界、长度与 hash 通过检查的文件进入 catalog，取得 `ev-*` 引用，保留原 artifact、来源身份与完整来源集合。来源容量沿用历史 artifact 协议，不因摘要展示截断而丢失；缺失或身份不符的文件不伪造为可用。原始 bundle 仍留在 `finals/`，不要求 Agent 复制到 scratch。通用导航证据不是渲染媒体，只有现有 renderer 支持的类型可用于 `render_artifact`；未知扩展名不获得额外执行或渲染权限。
+
+新注册的派生证据按内容 hash 保存，并仅在内容与所声明的 HTML/SVG/PNG/JSON 类型相符时保留安全扩展名；HTML/SVG 只允许静态元素和属性，发布旧 catalog 文件时再次检查；旧无后缀记录仍可读取。正式根报告引用的派生证据经过 hash 和路径校验后复制到根目录 `evidence/<hash>.<ext>`，预览继续使用 attempt 内路径。`report-model.json` 的 `evidenceRefs` 保留原事件/artifact 引用，同时以可选 `evidenceIdentities` 保存派生短引用、hash 和 source refs；旧 model 可继续读。取舍见[证据身份与可达发布](../decisions/accepted/2026-09-28-comparison-evidence-publication.md)。
 
 Host 预置 HTML 模板并拥有 header、metrics、cost-note、evidence、process 等区域；新报告 `data-report-format="2"` 的 Agent 区为 `comparison`（主创作）与可选 `details`（可见 `<details>`）。Agent 在 `comparison` 内自主选择并排图、表格、短片段或步骤；无图时不强制空视觉段；单侧真实结果可保留但须就近写明缺失方。Host 从草稿中结构化提取唯一、完整的 Agent 区与允许的槽，以本 attempt 的任务、指标、证据、媒体和受控模板重建整页；不明确的槽边界拒绝提取。Agent 区禁止可执行标签、SVG/MathML、事件属性和危险 URL；只允许链接的 `href` 与图片的 `src` 使用相对 URL，图片仍须经过媒体登记和文件可读性检查，其他资源属性直接拒绝。矢量内容须作为已登记媒体进入报告。重建后仍经过 schema、HTML 契约、evidence/media 引用、模型已见图片和外部资源检查，失败则不发布。展示问题由 Host 确定性修复，无法修复时记录 limitations 并仍可发布，不能把所有样式问题提升为失败门禁。Agent 的自然语言判断不能覆盖确定性事实，证据缺失必须明确说明，不得伪造引用。版式与发布取舍见[自主任务比较报告区与安全发布](../decisions/accepted/2026-09-19-comparison-autonomous-report-zones.md)和[Host 重建报告](../decisions/accepted/2026-09-23-host-rebuilt-comparison-report.md)。
+
+新 format 2 报告在短结论后先显示时间与估算费用，再展示比较正文；Token 总量与分项默认折叠。Host metrics 的 `data-metrics-layout="compact"` 标记约束新顺序；旧无标记的正文先于指标布局和四字段指纹仍可读取，不重写旧报告。时间保留分秒，极小正费用显示 `<0.001` 美元，避免舍入为零。费用说明价格快照、非供应商账单和工具费排除，Token 分项可能重叠或缺失，不能直接当作跨工具效率评分。
 
 Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝，避免遮盖 Host 的任务、模型与指标。
 
 ## 报告发布
 
 正式报告是 experiment 根部的 `report.html` 及其媒体。新流程用 `submit_comparison_draft` 接收 category、headline、comparisonHtml、可选 detailsHtml 和证据不足状态；Host 即时校验并生成完整页面。模型文件工具不能直接改写新流程的 `report.html`，自定义旧端口仍可按旧整页契约写 attempt 草稿并接受末尾发布校验。新流程仅在草稿完整校验通过、当前 catalog revision 与草稿 digest 均匹配成功 `preview_report`、审阅调用正常完成且未取消时发布；末尾自由文本为空不阻止有效版本发布，也不表示模型作过最终质量确认。`publishComparisonArtifacts` 先把被引用媒体拷到内容寻址路径（`media/<hash>.…`）并校验，再写审计 `report-model.json`（含 `formatVersion: 2` 与 `comparison` / `details` slots；旧四区 model 仍可读），最后原子替换根 `report.html`。失败或取消不得覆盖旧成功报告仍引用的资产。
+
+默认内置路径通过 `update_comparison_findings` 保存任务标准、双方最终来源、观察方法与支持范围、反证、重要限制和判断问题。Host 校验引用归属及结构，不证明自然语言主张正确；不可变发现 artifact 和 `comparison.findings_updated` 绑定 attempt、revision、catalog revision 与 digest，工具回执沿用模型输入审计。问题历史不得静默删除，重新打开已解决问题需新依据。问题须解决或说明证据不可得才进入创作；旧自定义 Comparison 端口保留原契约。
+
+草稿接受版本通过 `comparison.draft_accepted` 同时持久化 discovery revision、catalog revision 与 HTML digest；离线恢复核对最新发现 artifact 与接受绑定，并要求匹配预览事件发生在绑定之后。发现变化使旧草稿不可发布，必须重新提交并预览当前版本。主文长度和重要限制是审阅反馈，300–600 中文字只是普通任务的指导目标。检查方法或精确推导可展开，影响取舍的未知不得藏入详情；证据注册、同公式复算或单帧截图均不证明全局行为。
 
 Comparison 是运行后的可选证据视图，不是新的实验状态机，也不为历史 Runtime 版本提供精确复现保证。报告失败不应改写 CandidateRun 的 outcome；失败诊断保留原任务和草稿排查路径，未经发布校验的草稿正文不能作为正式结论。报告中应明确 baseline、candidate、证据缺口和 cleanup 状态。
 
@@ -54,7 +68,9 @@ Comparison 每次使用独立 attempt 和连续 Session。新提交路径按定�
 
 旧 attempt 可通过 `recover-comparison` 离线复核：只读冻结 context、catalog revision、预览事件与原草稿，重新运行当前校验器。缺失预览、digest/revision 不一致或校验失败不得恢复；`--publish` 是显式操作且拒绝覆盖已有根报告，成功后追加恢复事件，不篡改原失败事件。
 
-Comparison 的理解轮只定位最终交付与会改变取舍的问题：该轮的 `shell_exec`、产物渲染和证据注册返回阶段未就绪，报告写入在创作轮前、报告预览在审阅轮前也返回阶段未就绪。调查轮按“下一项检查能否改变推荐、置信度或重要限制”决定是否继续，不以调用次数或耗时作为完成标准。创作后、审阅前，以及审阅改稿后，Host 用与正式发布共用的 HTML 解析器预检草稿 Agent 槽/区；可修结构错误反馈给同一 Session，草稿 digest 与错误重复则以无进展失败退出。`preview_report` 在渲染前做同一结构预检，返回 `publicationStructure`，但结构有效或渲染成功都不代表最终可发布；完整证据、媒体、信封与 Host 重建校验仍在正式发布时执行。取舍见[对比阶段出口与草稿预检](../decisions/accepted/2026-09-25-comparison-stage-exits-and-draft-preflight.md)。
+默认新路径以一次定向调查进入创作与审阅；旧四轮端口仍保留阶段边界。调查按下一项检查能否改变取舍、证据强度或重要限制决定是否继续，不把调用次数当成充分理解的标准。可配置 `AgentBudget.comparisonResources` 另提供调查软预算和整体硬保护，生产工厂默认调查 12 次模型请求 / 30 次工具 / 120 秒，整体 40 次模型请求 / 120 次工具 / 600 秒，不默认启用金额上限；调用方传入 `comparisonResources` 完整替换默认值，`{}` 关闭这些保护，复杂任务须显式调高。软预算限制继续调查，但允许保存带限制的发现并完成创作审阅。硬保护或取消不发布无效草稿，不覆盖旧成功报告。Pi 的生成与压缩分别审计实际模型请求和 `agent.usage_reported`；阶段与结束事件记录资源。金额保护基于已返回 usage 和价格估算，缺失时拒绝继续，不能精确限制在途费用或替代供应商账单。协议见[关键发现与资源保护](../decisions/accepted/2026-10-05-comparison-scoped-findings-and-resource-protection.md)。
+
+创作后、审阅前，以及审阅改稿后，Host 用与正式发布共用的 HTML 解析器预检草稿 Agent 槽/区；可修结构错误反馈给同一 Session，草稿 digest 与错误重复则以无进展失败退出。`preview_report` 在渲染前做同一结构预检，返回 `publicationStructure`，但结构有效或渲染成功都不代表最终可发布；完整证据、媒体、信封与 Host 重建校验仍在正式发布时执行。取舍见[对比阶段出口与草稿预检](../decisions/accepted/2026-09-25-comparison-stage-exits-and-draft-preflight.md)。
 
 Host 对 HTML/SVG 终稿做受控无头渲染（`infrastructure/artifact-renderer.ts`：127.0.0.1 bundle 服务 + CDP；raster 直接拷贝），经 `headless-screenshot.ts` 委托；双侧有视觉交付但 media 无可用配对时 `media_unavailable`。`render_artifact` / `preview_report` 工具工厂见 `comparison-render-tools.ts`，预览与发布共用 `preparePublishableComparisonHtml`（format-2：仅在 `comparison` / `details` 区内把 `data-media-ref` 写成可加载 `src`）；预览图属 host review（独立 `review-*` 短引用），不进入比较证据 allowlist。取舍见 [受控产物渲染与报告预览](../decisions/accepted/2026-09-19-controlled-artifact-render.md)。详情见 [attempt 装配](../../src/application/comparison.ts)、[发布](../../src/application/comparison-publication.ts)及[持久化比较入口](../../src/application/experiment-compare-persisted.ts)。
 
@@ -63,6 +79,8 @@ Host 对 HTML/SVG 终稿做受控无头渲染（`infrastructure/artifact-rendere
 预览的静态 mechanics 只统计活跃 DOM，忽略 `<template>` 原型；`hostMetricsPresent` 表示标记存在，不声称它位于首屏。受控渲染器另回传指定页面元素的布局位置、首屏可见状态、页面尺寸及图片加载计数；截图只覆盖请求的 viewport，不能据首屏预览宣称全页已检查。TUI 从 `agent.session_started` 展示 Comparison Session 实际模型输入能力；自定义模型未声明图片时仍按 text-only 处理，配置开关不是网关能力探测。主动停止 Claude Runtime 后的预期进程关闭保留 `session_stopped`，不再写 `runtime_failed`；非预期关闭仍记录失败。
 
 ## 事件信封字段
+
+Comparison 合成评估的新输入由每个隔离 row 的 `evaluation-inputs.json` 绑定，schema 定义在 `src/core/comparison-evaluation-input-schema.ts`。plan/ledger 记录该文件 hash，并核对 suite 变体 hash、已有输入文件内容及 committed 事件前缀；比较追加事件与新审计 artifact 不重写这个前缀。真实调用前校验全部选中 row，汇总前重查绑定。配置与凭据目录不进入输入清单；旧未绑定结果需另附离线一致性核验，不能用事后快照证明历史不可变性。
 
 <!-- BEGIN GENERATED event-catalog (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
 | 字段 | 类型 | 可选 |

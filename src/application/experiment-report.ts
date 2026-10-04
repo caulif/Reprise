@@ -41,6 +41,11 @@ import { createComparisonRenderCatalogPort } from "./comparison-render-catalog.j
 import { createPreviewReportTool, createRenderArtifactTool } from "./comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
 import { ComparisonDraft } from "./comparison-draft.js";
+import { persistComparisonDraftAcceptance } from './comparison-recovery-discovery.js';
+import { ComparisonDiscovery } from './comparison-discovery.js';
+import { AgentUsageFactsSchema } from '../core/schema.js';
+import { usagePricing } from './session-usage.js';
+import { loadOperatorPricingOverride } from './model-pricing.js';
 import {
   comparisonFailureDiagnostic,
   persistComparisonReportModel,
@@ -541,14 +546,33 @@ async function invokeCompare(
   if (input.signal?.aborted) {
     return { result: { status: "cancelled" }, deliveredImageContentHashes };
   }
+  const discovery = new ComparisonDiscovery({ catalog, attemptId, persist: async (record) => {
+    const artifact = await input.store.commitArtifact({ artifactId: `comparison-findings-${attemptId}-${record.revision}`,
+      runId: input.input.runId, kind: 'comparison_findings', mediaType: 'application/json',
+      bytes: Buffer.from(JSON.stringify(record), 'utf8') });
+    await input.store.append({ type: 'comparison.findings_updated', runId: input.input.runId,
+      operationId: `comparison-findings-${attemptId}-${record.revision}`,
+      payload: { schemaVersion: 1, attemptId, revision: record.revision, catalogRevision: record.catalogRevision,
+        digest: record.digest, artifactId: artifact.artifactId } });
+  } });
+  const requireFindings = input.input.comparison instanceof ComparisonAgent && input.input.comparison.requireFindings;
+  const override = loadOperatorPricingOverride(input.input.dataDir);
+  const estimateUsageCost = (payload: Record<string, unknown>): number | undefined => {
+    if (!Value.Check(AgentUsageFactsSchema, payload)) throw new Error('Invalid Comparison usage facts.');
+    const usage = payload.usage;
+    return usagePricing({ parts: { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheCreation: usage.cacheWrite },
+      display: usage.totalTokens, inputIncludesCache: false }, payload.model, undefined,
+      { ...(override ? { override } : {}) }).costUsd;
+  };
   const draft = new ComparisonDraft({
     attemptRoot, task: context.task.summary, facts: context.reportFacts,
     locale: await readOperatorLocale(input.input.dataDir), catalog,
     deliveredImages: deliveredImageContentHashes,
+    ...(requireFindings ? { discovery, persistAccepted: binding => persistComparisonDraftAcceptance(input.store, input.input.runId, attemptId, binding) } : {}),
   });
   const result = await input.input.comparison.compare(
     context,
-    comparisonTools(input, attemptRoot, catalog, draft),
+    [...comparisonTools(input, attemptRoot, catalog, draft), ...(requireFindings ? [discovery.tool()] : [])],
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
     {
@@ -558,6 +582,8 @@ async function invokeCompare(
       getSubmissionState: () => draft.submissionState(),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       enforcePhaseBoundaries: true,
+      estimateUsageCost,
+      ...(requireFindings ? { findingsReady: () => discovery.readyToCompose(), getFindingsState: () => discovery.state() } : {}),
     },
   );
   return { result, deliveredImageContentHashes };
@@ -702,7 +728,7 @@ function comparisonAudit(
   return {
     append: async (event) => {
       await sink.append({ ...event, payload: { attemptId, ...event.payload } });
-      if (event.type === 'agent.model_request' && Array.isArray(event.payload.images)) {
+      if (event.type === 'agent.model_request' && event.payload.scope !== 'compaction' && Array.isArray(event.payload.images)) {
         if (!hasRequestManifest) deliveredImageContentHashes.clear();
         hasRequestManifest = true;
         for (const image of event.payload.images) {

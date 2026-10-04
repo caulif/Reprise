@@ -42,11 +42,19 @@ function shareCardLayoutError(html: string): string | undefined {
   const comparison = tagMarkerIndex(html, "data-agent-zone", "comparison");
   const metrics = tagMarkerIndex(html, "data-host-zone", "metrics");
   const details = tagMarkerIndex(html, "data-agent-zone", "details");
+  const compact = /\bdata-metrics-layout\s*=\s*(["'])compact\1/i.test(extractOuter(html, "data-host-zone", "metrics") ?? "");
+  const costNote = tagMarkerIndex(html, "data-host-zone", "cost-note");
+  const orderError = compact
+    ? "Share card order must be header, headline, metrics, cost-note, then comparison; details stay after the share card."
+    : "Share card order must be header, headline, comparison, then metrics; details stay after the share card.";
   if (header < 0 || headline < 0 || comparison < 0 || metrics < 0 || details < 0) {
-    return "Share card order must be header, headline, comparison, then metrics; details stay after the share card.";
+    return orderError;
   }
-  if (!(header < headline && headline < comparison && comparison < metrics && metrics < details)) {
-    return "Share card order must be header, headline, comparison, then metrics; details stay after the share card.";
+  const valid = compact
+    ? header < headline && headline < metrics && metrics < costNote && costNote < comparison && comparison < details
+    : header < headline && headline < comparison && comparison < metrics && metrics < details;
+  if (!valid) {
+    return orderError;
   }
   return undefined;
 }

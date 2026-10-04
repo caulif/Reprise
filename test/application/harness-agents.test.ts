@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHarnessAgents } from '../../src/application/harness-agents.js';
 import { defaultHarnessModelConfig } from '../../src/infrastructure/harness-model-config.js';
 import { LANGUAGE_BLOCK } from '../../src/agents/language.js';
+import { DEFAULT_COMPARISON_RESOURCES } from '../../src/agents/comparison-resources.js';
 
 test('Harness agent factory shares one Pi session caller and persisted model choice', async () => {
   let calls = 0;
@@ -14,7 +15,7 @@ test('Harness agent factory shares one Pi session caller and persisted model cho
   assert.deepEqual(agents.config, {
     providerId: 'openai-codex',
     requestedModel: 'gpt-5.6-terra',
-    budget: { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 },
+    budget: { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1, comparisonResources: DEFAULT_COMPARISON_RESOURCES },
     recoveryBudget: { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 },
   });
 });
@@ -43,9 +44,18 @@ test('factory recovery budget still bounds Recovery', () => {
   const agents = createHarnessAgents(defaultHarnessModelConfig(), {
     createSession: () => ({ append: async () => '{"type":"done","reason":"satisfied"}', cancel() {} }),
   }, { budget, recoveryBudget });
-  assert.deepEqual(agents.config.budget, budget);
+  assert.deepEqual(agents.config.budget, { ...budget, comparisonResources: DEFAULT_COMPARISON_RESOURCES });
   assert.deepEqual(agents.config.recoveryBudget, recoveryBudget);
   assert.equal(agents.recovery.timeoutMs, recoveryBudget.callTimeoutMs);
+});
+
+test('Comparison resource overrides are preserved in the run budget', () => {
+  const budget = { callTimeoutMs: 0, maxStructuredRepairAttempts: 0, comparisonResources: { maxModelRequests: 2 } };
+  const agents = createHarnessAgents(defaultHarnessModelConfig(), {
+    createSession: () => ({ append: async () => 'done', cancel() {} }),
+  }, { budget });
+  assert.deepEqual(agents.config.budget, budget);
+  assert.equal(agents.comparison.requireFindings, true);
 });
 
 test('locale en system prompt contains English; locale zh contains Simplified Chinese', async () => {

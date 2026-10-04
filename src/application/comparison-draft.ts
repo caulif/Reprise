@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { parseFragment } from "parse5";
+import { comparisonMainTextCharacters } from "./comparison-report-text.js";
 import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonDraftSubmissionSchema, type ComparisonDraftSubmission } from "../core/schema.js";
@@ -11,8 +12,10 @@ import type { ComparisonEvidenceCatalog } from "./comparison-evidence.js";
 import { metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 import { verifyAndRenderComparisonReport } from "./comparison-publication.js";
 import type { PreparedReportPreview } from "./comparison-render-tools.js";
+import type { ComparisonDiscovery } from "./comparison-discovery.js";
+import type { ComparisonDraftBinding } from "../core/comparison-discovery-schema.js";
 
-type HtmlNode = { attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
+type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
 
 function citedEvidence(html: string): string[] {
   const refs = new Set<string>();
@@ -21,7 +24,7 @@ function citedEvidence(html: string): string[] {
     for (const child of node.childNodes ?? []) visit(child);
     if (node.content) visit(node.content);
   };
-  visit(parseFragment(html) as HtmlNode);
+  visit(parseFragment(html));
   return [...refs];
 }
 
@@ -32,7 +35,9 @@ export class ComparisonDraft {
   readonly #locale: AgentLocale;
   readonly #catalog: ComparisonEvidenceCatalog;
   readonly #deliveredImages: ReadonlySet<string>;
-  #accepted: { digest: string; revision: number; result: ComparisonResult } | undefined;
+  readonly #discovery: ComparisonDiscovery | undefined;
+  readonly #persistAccepted: ((binding: ComparisonDraftBinding) => Promise<void>) | undefined;
+  #accepted: { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult } | undefined;
   #previewed: { digest: string; revision: number } | undefined;
   #previewFailure: { digest: string; revision: number; status: string; message?: string } | undefined;
   #lastRejection: string | undefined;
@@ -44,6 +49,8 @@ export class ComparisonDraft {
     locale: AgentLocale;
     catalog: ComparisonEvidenceCatalog;
     deliveredImages: ReadonlySet<string>;
+    discovery?: ComparisonDiscovery;
+    persistAccepted?: (binding: ComparisonDraftBinding) => Promise<void>;
   }) {
     this.#attemptRoot = input.attemptRoot;
     this.#task = input.task;
@@ -51,6 +58,8 @@ export class ComparisonDraft {
     this.#locale = input.locale;
     this.#catalog = input.catalog;
     this.#deliveredImages = input.deliveredImages;
+    this.#discovery = input.discovery;
+    this.#persistAccepted = input.persistAccepted;
   }
 
   tool(): AgentToolDefinition {
@@ -71,6 +80,11 @@ export class ComparisonDraft {
   }
 
   async submit(draft: ComparisonDraftSubmission): Promise<string> {
+    if (this.#discovery && !this.#discovery.readyToCompose()) {
+      this.#lastRejection = "findings_not_ready: Save findings and resolve decision questions or mark evidence unavailable before composing.";
+      return `status=rejected\ncode=findings_not_ready\nmessage=${this.#lastRejection}`;
+    }
+    const discovery = this.#discovery?.snapshot();
     const catalog = this.#catalog.snapshot();
     const result: ComparisonResult = {
       status: draft.status,
@@ -103,17 +117,21 @@ export class ComparisonDraft {
     }
     await writeAtomic(join(this.#attemptRoot, "report.html"), verified.html);
     const digest = sha256(verified.html);
-    if (this.#accepted?.digest !== digest || this.#accepted.revision !== catalog.revision) {
+    const changed = this.#accepted?.digest !== digest || this.#accepted.revision !== catalog.revision || this.#accepted.discoveryRevision !== discovery?.revision;
+    if (changed && discovery && this.#persistAccepted) await this.#persistAccepted({ draftDigest: digest, catalogRevision: catalog.revision, findingsRevision: discovery.revision });
+    if (changed) {
       this.#previewed = undefined;
       this.#previewFailure = undefined;
     }
-    this.#accepted = { digest, revision: catalog.revision, result };
+    this.#accepted = { digest, revision: catalog.revision, ...(discovery ? { discoveryRevision: discovery.revision } : {}), result };
     this.#lastRejection = undefined;
-    return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\nPreview this exact draft in the review turn before finishing.`;
+    const length = comparisonMainTextCharacters(verified.html);
+    const feedback = length > 600 ? "Consider moving methods and repeated background to details; preserve decisive evidence and limitations. This is advisory, not a word-limit gate." : "Keep the main comparison focused on consequential differences.";
+    return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\nmainTextCharacters=${length}\nreadabilityFeedback=${feedback}\nimportantLimitations=${JSON.stringify(discovery?.submission.importantLimitations ?? [])}\nEnsure important limitations remain visible in the main comparison; their semantic coverage needs review.\nPreview this exact draft in the review turn before finishing.`;
   }
 
   submissionState(): string {
-    return JSON.stringify({ accepted: this.#accepted && { digest: this.#accepted.digest, revision: this.#accepted.revision }, previewed: this.#previewed, revision: this.#catalog.snapshot().revision, rejection: this.#lastRejection });
+    return JSON.stringify({ accepted: this.#accepted && { digest: this.#accepted.digest, revision: this.#accepted.revision, discoveryRevision: this.#accepted.discoveryRevision }, previewed: this.#previewed, revision: this.#catalog.snapshot().revision, discoveryRevision: this.#discovery?.snapshot()?.revision, rejection: this.#lastRejection });
   }
 
   recordPreview(prepared: PreparedReportPreview): void {
@@ -139,6 +157,7 @@ export class ComparisonDraft {
   async completedResult(): Promise<ComparisonResult | undefined> {
     const accepted = this.#accepted;
     const previewed = this.#previewed;
+    if (this.#discovery && (!this.#discovery.readyToCompose() || accepted?.discoveryRevision !== this.#discovery.snapshot()?.revision)) return undefined;
     if (!accepted || !previewed || accepted.digest !== previewed.digest || accepted.revision !== previewed.revision) return undefined;
     const catalog = this.#catalog.snapshot();
     if (catalog.revision !== accepted.revision) return undefined;
@@ -157,6 +176,7 @@ export class ComparisonDraft {
   }
 
   failureReason(): { code: 'draft_invalid' | 'preview_failed'; message: string; kind?: 'protocol' | 'timeout' | 'tool' } {
+    if (this.#discovery && (!this.#discovery.readyToCompose() || this.#accepted?.discoveryRevision !== this.#discovery.snapshot()?.revision)) return { code: 'draft_invalid', message: 'findings_not_ready: Update findings for the latest evidence catalog, resolve pending questions or explain unavailable evidence, then resubmit and preview the draft.' };
     if (!this.#accepted) return { code: 'draft_invalid', message: this.#lastRejection ?? 'No valid comparison draft was submitted.' };
     const failed = this.#previewFailure;
     if (failed && failed.digest === this.#accepted.digest && failed.revision === this.#accepted.revision) {

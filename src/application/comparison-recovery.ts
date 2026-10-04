@@ -13,6 +13,7 @@ import {
 } from '../core/schema.js';
 import { ExperimentStore } from '../infrastructure/store/experiment-store.js';
 import { persistComparisonReportModel, prepareComparisonArtifacts, verifyAndRenderComparisonReport } from './comparison-publication.js';
+import { recoveryFindingsBinding } from './comparison-recovery-discovery.js';
 
 const CatalogPointerSchema = Type.Object({
   schemaVersion: Type.Literal(1), revision: Type.Integer({ minimum: 0 }), attemptId: Type.String(),
@@ -58,6 +59,7 @@ async function deliveredImageHashes(
   const hashes = new Set<string>();
   const manifests = events.filter((event) => event.type === 'agent.model_request'
     && typeof event.payload === 'object' && event.payload !== null
+    && (!('scope' in event.payload) || event.payload.scope !== 'compaction')
     && 'attemptId' in event.payload && event.payload.attemptId === attemptId
     && 'sessionId' in event.payload && event.payload.sessionId === sessionId
     && 'images' in event.payload && Array.isArray(event.payload.images));
@@ -132,7 +134,10 @@ export async function inspectComparisonRecovery(input: {
   const result: ComparisonResult = { status: 'completed', reportPath: 'report.html', headline, evidenceRefs };
   const store = await ExperimentStore.open(experimentRoot, input.experimentId);
   const events = store.events();
+  const findings = await recoveryFindingsBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision });
+  if (findings.error) return { ready: false, reason: findings.error, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   const previewed = events.find((event) => event.type === 'agent.tool_completed'
+    && event.sequence > (findings.previewAfterSequence ?? 0)
     && typeof event.payload === 'object' && event.payload !== null
     && (event.payload as Record<string, unknown>).attemptId === input.attemptId
     && (event.payload as Record<string, unknown>).tool === 'preview_report'

@@ -52,6 +52,35 @@ Remove-Item Env:REPRISE_RUN_CODEX_SMOKE
 
 此命令会构建并执行 [codex-real-smoke.ts](../scripts/codex-real-smoke.ts)，验证无工具请求返回约定文字。它可能计费，既不执行完整实验，也不证明 Recovery、Controller 或报告效果。其他真实 runner 的入口、必填输入与 opt-in 以 [scripts](../scripts/) 中对应文件为准；不要复用过期样本路径或运行记录冒充新证据。真实验收缺口集中在[路线图](./roadmap.md)。
 
+## Comparison 产品质量评估
+
+[`comparison-evaluate.ts`](../scripts/comparison-evaluate.ts) 使用[冻结 suite](../test/fixtures/comparison-evaluation/suite.json) 的 12 个合成样本，每类任务至少两例，覆盖结果相近、过程归属、反证与缺失记录。`prepare` 只生成隔离 Case/Experiment 输入，不调用模型或 Runtime；`real` 对这些已冻结输入调用生产 Comparison，不重做候选任务。默认三次重复、原序/交换/匿名三种变体共 108 项；可先准备一次重复的 36 项，再通过 `--case <id>` 选择样本、`--max-rows 1` 限定首次只执行一项。匿名变体隐藏夹具身份，不代表生产链路完全盲化。
+
+```powershell
+npm run build
+$comparisonEvalOutput = 'C:\reprise-eval\comparison-validation'
+node dist/scripts/comparison-evaluate.js prepare $comparisonEvalOutput --repetitions 3
+```
+
+输出目录必须绝对路径且不存在，suite hash 与输入计划落盘后保持不变。真实生成需要另行明确授权、既有 Harness 配置目录、费用范围及停止条件；以下命令可能计费，不能放入默认 check 或 CI：
+
+```powershell
+$comparisonConfigDir = 'C:\reprise-config'
+$env:REPRISE_REAL_MODEL = '1'
+node dist/scripts/comparison-evaluate.js real $comparisonEvalOutput $comparisonConfigDir
+Remove-Item Env:REPRISE_REAL_MODEL
+```
+
+runner 只读取现有 Harness 配置，不复制凭据；逐项记录实际模型、输入能力、report hash、耗时、请求、工具、压缩、重试、预览、usage 覆盖及估算费用。缺失 usage/价格保持未知；连续三次失败或取消停止，`Ctrl+C` 取消。生产工厂默认调查 12 次模型请求 / 30 次工具 / 120 秒，整体 40 次模型请求 / 120 次工具 / 600 秒；金额上限不默认设置。`AgentBudget.comparisonResources` 完整替换默认值（包括 `{}` 关闭），复杂任务应显式调高，运行前仍须限定总评估范围。异常来源或终稿材料造成的持续调查只能作为资源风险证据，修正输入身份之前不能形成质量基线。单例 `--case` 使用单独 ledger，不自动成为完整矩阵验收。
+
+生成成功只表示报告发布链路通过。人工检查对应报告后，在 ledger 的 review 字段按当前 schema 记录决定性事实、限制、错误、过程误归属、反证处理、30 秒可读性与规范化到原始双方的取舍；review 必须绑定报告 hash。随后对完整 ledger 执行：
+
+```powershell
+node dist/scripts/comparison-evaluate.js assess $comparisonEvalOutput 'C:\reprise-eval\comparison-assessment.json'
+```
+
+统计报告区分已生成与已人工审阅，汇总遗漏、错误、资源分布和重复/变体漂移；有条件推荐变化须人工解释，不能机械要求赢家一致，也不输出模型总分或排名。正文长度与提交回执共用生成报告的计数口径：结论加主比较区，折叠 details 只计 summary，展开则计正文，排除模板与独立详情区，不从评审猜测。`manual_review_recorded` 只说明人工记录齐全，不宣称语义自动通过；假输入和协议回归不能替代真实模型质量验收。协议见[关键发现与资源保护 ADR](./decisions/accepted/2026-10-05-comparison-scoped-findings-and-resource-protection.md)。
+
 ## 发布与回滚
 
 发布包名为 `@caulif/reprise`，CLI 名为 `reprise`；裸名 npm 包不是本项目。发布前确认版本、tag、CHANGELOG 与持久化兼容策略一致，在干净检出执行安装与 check，并核对打包、依赖审计、秘密扫描结果。check 已覆盖的检查仅在证据失效时重跑。

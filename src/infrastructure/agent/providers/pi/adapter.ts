@@ -18,6 +18,7 @@ import {
 import type { Models } from "@earendil-works/pi-ai";
 import { sha256 } from "../../../../core/identity.js";
 import type { HarnessModelConfig } from "../../../harness-model-config.js";
+import { piRequestUsage } from './request-usage.js';
 
 export type PiModels = Pick<Models, "getProviders" | "getModels" | "getModel" | "getAuth" | "completeSimple" | "streamSimple">;
 
@@ -38,7 +39,8 @@ export class PiProviderAdapter implements ProviderAdapter {
 
   createSession(input: Parameters<ProviderAdapter["createSession"]>[0]): ProviderSession {
     const model = this.#model;
-    const models = this.#models;
+    const usage = piRequestUsage(this.#models, input);
+    const models = usage.models;
     const effort = this.#config.effort;
     let active = true;
     let toolsEnabled = true;
@@ -46,25 +48,12 @@ export class PiProviderAdapter implements ProviderAdapter {
     const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
     const agent = createPiAgent({
       sessionId: input.sessionId,
-      streamFn: async (streamModel, context, options) => {
-        const notify = input.onModelRequest;
-        if (notify) {
-          const serialized = JSON.stringify({ model: streamModel, context });
-          const modelId = "id" in streamModel ? String(streamModel.id) : String(streamModel);
-          const messageCount = "messages" in context && Array.isArray(context.messages) ? context.messages.length : 0;
-          const images = context.messages.flatMap((message) => Array.isArray(message.content) ? message.content.filter((block) => block.type === 'image') : []);
-          await notify({ model: modelId, digest: sha256(serialized), messageCount, images });
-        }
-        return this.#models.streamSimple(streamModel, context, {
-          ...options,
-          maxRetries: 0,
-          maxRetryDelayMs: 8_000,
-        });
-      },
+      streamFn: usage.stream,
       convertToLlm,
       beforeToolCall: async ({ toolCall }) => {
         if (!active) return { block: true, reason: "Agent session is no longer active.", terminate: true };
         if (!toolsEnabled) return { block: true, reason: "Tools are disabled for this invocation.", terminate: true };
+        await usage.flush();
         await input.onBeforeToolCall?.({ tool: toolCall.name });
         return undefined;
       },
@@ -114,6 +103,7 @@ export class PiProviderAdapter implements ProviderAdapter {
           const prompt = toPiUserPrompt(content, allowed);
           await agent.prompt(prompt.content, prompt.images);
           await recoverAgentResponse(agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
+          await usage.flush();
           const message = lastAssistant(agent.state.messages);
           if (!message || message.role !== "assistant") throw new Error("Pi Agent session ended without an assistant message.");
           if (message.stopReason === "error" || message.stopReason === "aborted") {
@@ -122,14 +112,14 @@ export class PiProviderAdapter implements ProviderAdapter {
           return contentText(message.content);
         } finally {
           signal.removeEventListener("abort", abort);
-          await agent.waitForIdle();
+          try { await agent.waitForIdle(); } finally { await usage.flush(); }
         }
       },
       cancel(): void {
         active = false;
         agent.abort();
       },
-      waitForIdle: () => agent.waitForIdle(),
+      waitForIdle: async () => { try { await agent.waitForIdle(); } finally { await usage.flush(); } },
       setToolsEnabled(enabled: boolean): void { toolsEnabled = enabled; },
     };
   }

@@ -22,7 +22,7 @@ export function recoveryObservationsRoot(experimentRoot: string, runId: string):
   return join(experimentRoot, "runs", runId, "observations");
 }
 
-function observationRelativePath(
+export function observationRelativePath(
   ref: string,
   source: "transcript" | "historical_events" | "run_events",
   transcriptId?: string,

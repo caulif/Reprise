@@ -15,6 +15,7 @@ import {
   extractHostZoneSnapshot,
   hostZonesMismatch,
   metricsFromReportFacts,
+  extractOuter,
   renderComparisonReportFromModel,
   renderComparisonReportShell,
 } from "../../src/application/comparison-report-shell.js";
@@ -133,7 +134,7 @@ test("Host template has no visible status cards and keeps facts in the model", (
   const comparison = html.indexOf('data-id="agent-comparison"');
   const details = html.indexOf('data-id="agent-details"');
   const headline = html.indexOf('<p class="note" data-agent-slot="headline"');
-  assert.ok(header < headline && headline < comparison && comparison < metrics && metrics < details);
+  assert.ok(header < headline && headline < metrics && metrics < comparison && comparison < details);
   assert.match(html, /data-report-format="2"/);
   assert.match(html, /<details class="details">/);
   assert.doesNotMatch(html, /class="audit" hidden/);
@@ -269,7 +270,7 @@ test("Host seeds paired visual evidence and explicit reasons before publication 
   }
 });
 
-test("comparison metrics use English-style min and s units", () => {
+test("comparison metrics preserve minutes and seconds in both locales", () => {
   const reportFacts = buildComparisonContext(taskCase(), [runRecord()], [{
     runId: "run-1", changedPaths: [], runtimeGeneratedPaths: [], commands: [], rejectedApprovals: 0, turns: 1, wallClockMs: 120_000,
   }]).reportFacts;
@@ -280,7 +281,7 @@ test("comparison metrics use English-style min and s units", () => {
     slots: filledSlots(),
     locale: "zh",
   });
-  assert.match(html, />2<span class="unit">min<\/span>/);
+  assert.match(html, />2:00<span class="unit">分:秒<\/span>/);
   assert.doesNotMatch(html, />2<span class="unit">分<\/span>/);
   const short = renderComparisonReportShell({
     task: "Fix the report.",
@@ -289,7 +290,7 @@ test("comparison metrics use English-style min and s units", () => {
     slots: filledSlots(),
     locale: "en",
   });
-  assert.match(short, />2<span class="unit">min<\/span>/);
+  assert.match(short, />2:00<span class="unit">min:s<\/span>/);
 });
 
 test("registered media that exists can be published", async (t) => {
@@ -541,12 +542,11 @@ test("Host zone delete, move, and value edits fail closed", () => {
   assert.ok(snapshot);
   const metrics = metricsFromReportFacts(reportFacts);
   assert.equal(hostZonesMismatch(html, snapshot, metrics), undefined);
-  const deleted = html.replace(/<section class="board"[\s\S]*?data-host-zone="metrics"[\s\S]*?<\/section>/, "");
+  const metricsBlock = extractOuter(html, "data-host-zone", "metrics")!;
+  const deleted = html.replace(metricsBlock, "");
   assert.match(hostZonesMismatch(deleted, snapshot, metrics) ?? "", /metrics/);
-  const moved = html.replace(
-    /(<section class="board"[\s\S]*?data-host-zone="metrics"[\s\S]*?<\/section>)([\s\S]*?)(<section class="slot" data-host-zone="evidence"[\s\S]*?<\/section>)/,
-    "$2$3$1",
-  );
+  const evidence = extractOuter(html, "data-host-zone", "evidence")!;
+  const moved = deleted.replace(evidence, evidence + metricsBlock);
   assert.equal(hostZonesMismatch(moved, snapshot, metrics) === "Host zone order or count was modified."
     || /Share card order/.test(hostZonesMismatch(moved, snapshot, metrics) ?? ""), true);
   const edited = html.replace('data-id="host-header"', 'data-id="host-header" data-edited="1"');
@@ -720,12 +720,12 @@ test("above-the-fold process dump and visual claims without media still publish"
   });
   assert.equal("html" in claimed, true);
   if ("html" in claimed) {
-    assert.match(claimed.html, /data-host-limitation/);
+    assert.doesNotMatch(claimed.html, /data-host-limitation/);
     assert.match(claimed.html, /视觉检查/);
   }
 });
 
-test("metrics before comparison fail share-card order", async () => {
+test("metrics before headline fail share-card order", async () => {
   const reportFacts = facts();
   const html = renderComparisonReportShell({
     task: "修复报告。",
@@ -733,7 +733,7 @@ test("metrics before comparison fail share-card order", async () => {
     metrics: reportFacts.metrics ?? {},
     slots: filledSlots(),
   });
-  const metrics = html.match(/<section class="board" data-host-zone="metrics"[\s\S]*?<\/section>/)?.[0];
+  const metrics = extractOuter(html, "data-host-zone", "metrics");
   assert.ok(metrics);
   const without = html.replace(metrics, "");
   const headerClose = without.indexOf("</header>");

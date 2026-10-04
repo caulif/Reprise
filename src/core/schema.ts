@@ -1,5 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
+export { AgentUsageFactsSchema, type ComparisonResources, type AgentUsageFacts } from './comparison-resources-schema.js';
+export { ComparisonFindingsSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonFindingsSubmission, type ComparisonDiscoveryRecord } from './comparison-discovery-schema.js';
 import {
   ComparisonBriefingContextSchema,
   ComparisonDraftSubmissionSchema,
@@ -224,7 +226,7 @@ const ComparisonLinkSchema = Type.Object({
   label: Type.Optional(Type.String({ minLength: 1 })),
   origin: Type.Optional(ComparisonEvidenceOriginSchema),
   contentHash: Type.Optional(Hash),
-  sourceRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 32 })),
+  sourceRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 64 })),
 });
 export const ComparisonLinksSchema = Type.Array(ComparisonLinkSchema);
 export type ComparisonLinkRecord = Static<typeof ComparisonLinkSchema>;

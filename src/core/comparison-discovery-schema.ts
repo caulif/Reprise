@@ -1,0 +1,77 @@
+import { Type, type Static } from "@sinclair/typebox";
+
+const text = Type.String({ minLength: 1, maxLength: 1200 });
+const id = Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" });
+const refs = Type.Array(Type.String({ pattern: "^(ev|media)-[0-9]{2,6}$" }), { maxItems: 16, uniqueItems: true });
+const side = Type.Union([Type.Literal("baseline"), Type.Literal("candidate")]);
+const final = Type.Object({
+  side,
+  sourceRefs: refs,
+  status: Type.Union([Type.Literal("located"), Type.Literal("unavailable")]),
+  description: text,
+}, { additionalProperties: false });
+const observation = Type.Object({
+  side,
+  method: Type.Union([
+    Type.Literal("source_inspection"), Type.Literal("execution_record"), Type.Literal("sample"),
+    Type.Literal("mathematical_recomputation"), Type.Literal("self_report"), Type.Literal("unavailable"),
+  ]),
+  result: text,
+  scope: text,
+  evidenceRefs: refs,
+  timing: Type.Union([Type.Literal("original_run"), Type.Literal("comparison_check")]),
+}, { additionalProperties: false });
+
+export const ComparisonFindingsSubmissionSchema = Type.Object({
+  criteria: Type.Array(text, { minItems: 1, maxItems: 12, description: 'Task success criteria. Each finding.criterion must repeat one of these strings exactly, without paraphrasing.' }),
+  finals: Type.Array(final, { minItems: 2, maxItems: 2 }),
+  findings: Type.Array(Type.Object({
+    id,
+    criterion: Type.String({ minLength: 1, maxLength: 1200, description: 'Copy exactly one string from criteria. Do not abbreviate, summarize or paraphrase it.' }),
+    difference: text,
+    userConsequence: text,
+    observations: Type.Array(observation, { minItems: 2, maxItems: 2 }),
+    limitations: Type.Array(text, { maxItems: 8 }),
+    counterEvidenceRefs: refs,
+  }, { additionalProperties: false }), { maxItems: 12 }),
+  decisionQuestions: Type.Array(Type.Object({
+    id,
+    question: text,
+    decisionImpact: text,
+    status: Type.Union([Type.Literal("pending"), Type.Literal("resolved"), Type.Literal("unavailable")]),
+    evidenceRefs: refs,
+    resolution: Type.Optional(text),
+    nextCheck: Type.Optional(text),
+    reopenReason: Type.Optional(text),
+  }, { additionalProperties: false }), { maxItems: 16 }),
+  importantLimitations: Type.Array(text, { maxItems: 12 }),
+}, { additionalProperties: false });
+export type ComparisonFindingsSubmission = Static<typeof ComparisonFindingsSubmissionSchema>;
+
+export const ComparisonDiscoveryRecordSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  attemptId: Type.String({ minLength: 1, maxLength: 128 }),
+  revision: Type.Integer({ minimum: 1 }),
+  catalogRevision: Type.Integer({ minimum: 0 }),
+  digest: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+  submission: ComparisonFindingsSubmissionSchema,
+}, { additionalProperties: false });
+export type ComparisonDiscoveryRecord = Static<typeof ComparisonDiscoveryRecordSchema>;
+
+export const ComparisonFindingsUpdatedSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  attemptId: Type.String({ minLength: 1, maxLength: 128 }),
+  revision: Type.Integer({ minimum: 1 }),
+  catalogRevision: Type.Integer({ minimum: 0 }),
+  digest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+  artifactId: Type.String({ minLength: 1, maxLength: 128 }),
+}, { additionalProperties: false });
+
+export const ComparisonDraftAcceptedSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  attemptId: Type.String({ minLength: 1, maxLength: 128 }),
+  draftDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+  catalogRevision: Type.Integer({ minimum: 0 }),
+  findingsRevision: Type.Integer({ minimum: 1 }),
+}, { additionalProperties: false });
+export type ComparisonDraftBinding = Omit<Static<typeof ComparisonDraftAcceptedSchema>, 'schemaVersion' | 'attemptId'>;

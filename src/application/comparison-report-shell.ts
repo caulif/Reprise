@@ -27,7 +27,7 @@ export type { AgentZoneName, HostZoneName, HostZoneSnapshot };
 
 export type MetricSideProjection = {
   elapsedMs?: number;
-  tokens?: { total: number };
+  tokens?: { total: number; input?: number; output?: number; cached?: number; reasoning?: number };
   costUsd?: number;
   pricingStatus?: "collected" | "not_collected" | "pricing_unavailable" | "unknown";
 };
@@ -185,6 +185,7 @@ export function renderComparisonReportShell(input: {
 <html lang="${escapeHtml(reportString(locale, "htmlLang"))}">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <style data-host-zone="style" data-id="host-style">
 ${REPORT_CSS}
@@ -197,15 +198,15 @@ ${componentTemplateHtml(locale)}
     <header data-host-zone="header" data-id="host-header">${header}</header>
     <p class="field-label">${escapeHtml(reportString(locale, "headlineLabel"))}</p>
     <p class="note" data-agent-slot="headline">${headline}</p>
-    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison">${slots.comparison === undefined ? `<!-- ${escapeHtml(reportString(locale, "comparisonZoneComment"))} -->` : ""}${comparisonBody}</section>
     ${renderMetricsBoard(input.metrics, {
       baseline: reportString(locale, "sessionHistorical"), candidate: reportString(locale, "sessionCurrent"),
     }, locale)}
+    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">${escapeHtml(reportString(locale, "costNote", { version: MODEL_PRICING_TABLE_VERSION }))}</p>
+    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison">${slots.comparison === undefined ? `<!-- ${escapeHtml(reportString(locale, "comparisonZoneComment"))} -->` : ""}${comparisonBody}</section>
   </article>
   <details class="details">
     <summary>${escapeHtml(reportString(locale, "detailsSummary"))}</summary>
     <section class="slot" data-agent-zone="details" data-id="agent-details">${slots.details === undefined ? `<!-- ${escapeHtml(reportString(locale, "detailsZoneComment"))} -->` : ""}${detailsBody}</section>
-    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">${escapeHtml(reportString(locale, "costNote", { version: MODEL_PRICING_TABLE_VERSION }))}</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence">${renderRunDiagnostics(input.facts, locale)}${renderEvidenceCatalog(input.evidence, locale)}${renderMediaCatalog(input.media, locale)}</section>
     <section class="slot" data-host-zone="process" data-id="host-process">${slots.process ?? (input.diagnostic ? diagnosticProcess(input.diagnostic, locale) : "")}</section>
   </details>
@@ -274,19 +275,38 @@ export function hostMetricsMismatch(html: string, metrics: {
     ?? extractOuter(html, "data-host", "metrics");
   if (!block) return "Host metrics block is missing.";
   const fingerprint = attributeValue(block, "data-fingerprint");
+  const legacy = attributeValue(block, "data-metrics-layout") !== "compact";
   const expected = hostMetricsFingerprint(metrics);
   if (!fingerprint) return "Host metrics numbers were modified.";
   try {
-    if (JSON.stringify(JSON.parse(decodeHtml(fingerprint))) !== JSON.stringify(JSON.parse(expected))) return "Host metrics numbers were modified.";
+    const expectedValues = JSON.parse(expected) as { b: (number | string | null)[]; c: (number | string | null)[] };
+    if (legacy) {
+      expectedValues.b = expectedValues.b.slice(0, 4);
+      expectedValues.c = expectedValues.c.slice(0, 4);
+    }
+    if (JSON.stringify(JSON.parse(decodeHtml(fingerprint))) !== JSON.stringify(expectedValues)) return "Host metrics numbers were modified.";
   } catch {
     return "Host metrics numbers were modified.";
   }
   const normalizedBlock = block.replace(/\s+/g, " ");
-  for (const visible of visibleMetricTexts(metrics, locale)) {
+  const visibleTexts = visibleMetricTexts(metrics, locale);
+  if (legacy) {
+    visibleTexts[0] = legacyTime(metrics.baseline?.elapsedMs, locale);
+    visibleTexts[1] = legacyTime(metrics.candidate?.elapsedMs, locale);
+    for (const [index, side] of [[4, metrics.baseline], [5, metrics.candidate]] as const) {
+      if (!visibleTexts[index]!.missing && side?.costUsd !== undefined) visibleTexts[index] = { text: side.costUsd.toFixed(2), missing: false };
+    }
+  }
+  for (const visible of visibleTexts) {
     if (visible.missing) continue;
-    if (!normalizedBlock.includes(visible.text)) return "Host metrics numbers were modified.";
+    if (!normalizedBlock.includes(escapeHtml(visible.text))) return "Host metrics numbers were modified.";
   }
   return undefined;
+}
+
+function legacyTime(ms: number | undefined, locale: AgentLocale): FormattedMetric {
+  if (ms === undefined) return { text: reportString(locale, "missing"), missing: true };
+  return { text: String(Math.round(ms / (ms >= 60_000 ? 60_000 : 1000))), missing: false };
 }
 
 function attributeValue(html: string, name: string): string | undefined {
@@ -336,11 +356,26 @@ function renderMetricsBoard(metrics: {
 }, labels: { baseline: string; candidate: string }, locale: AgentLocale): string {
   const fingerprint = escapeHtml(hostMetricsFingerprint(metrics));
   const aria = escapeHtml(`${reportString(locale, "metricTime")}, ${reportString(locale, "metricTokens")}, ${reportString(locale, "metricCost")}`);
-  return `<section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="${fingerprint}" aria-label="${aria}">
+  return `<section data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-metrics-layout="compact" data-fingerprint="${fingerprint}" aria-label="${aria}">
+    <div class="board">
     ${card(reportString(locale, "metricTime"), formatTime(metrics.baseline?.elapsedMs, locale), formatTime(metrics.candidate?.elapsedMs, locale), labels)}
-    ${card(reportString(locale, "metricTokens"), formatTokens(metrics.baseline?.tokens?.total, locale), formatTokens(metrics.candidate?.tokens?.total, locale), labels)}
     ${card(reportString(locale, "metricCost"), formatCost(metrics.baseline, locale), formatCost(metrics.candidate, locale), labels)}
+    </div>
+    <details class="token-details"><summary>${escapeHtml(reportString(locale, "tokenDetails"))}</summary>
+      ${card(reportString(locale, "metricTokens"), formatTokens(metrics.baseline?.tokens?.total, locale), formatTokens(metrics.candidate?.tokens?.total, locale), labels)}
+      <div class="pair token-breakdown">${renderTokenBreakdown(metrics.baseline, labels.baseline, locale)}${renderTokenBreakdown(metrics.candidate, labels.candidate, locale)}</div>
+      <p class="kicker">${escapeHtml(reportString(locale, "tokenScopeNote"))}</p>
+    </details>
   </section>`;
+}
+
+function renderTokenBreakdown(side: MetricSideProjection | undefined, label: string, locale: AgentLocale): string {
+  const rows = (["input", "output", "cached", "reasoning"] as const).map((key) => {
+    const value = side?.tokens?.[key];
+    const text = value === undefined ? reportString(locale, "missing") : String(value);
+    return `<li>${escapeHtml(reportString(locale, key))}: ${escapeHtml(text)}</li>`;
+  }).join("");
+  return `<div class="col"><span class="who">${escapeHtml(label)}</span><ul>${rows}</ul></div>`;
 }
 
 function comparisonSideLabels(facts: ComparisonReportFacts, locale: AgentLocale): { baseline: string; candidate: string } {
@@ -470,7 +505,8 @@ function metricHtml(value: FormattedMetric): string {
 function formatTime(ms: number | undefined, locale: AgentLocale = "zh"): FormattedMetric {
   if (ms === undefined) return { text: reportString(locale, "missing"), missing: true };
   if (ms >= 60_000) {
-    return { text: String(Math.round(ms / 60_000)), unit: reportString(locale, "unitMinutes"), missing: false };
+    const seconds = Math.round(ms / 1000);
+    return { text: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`, unit: reportString(locale, "unitMinuteSeconds"), missing: false };
   }
   return { text: String(Math.round(ms / 1000)), unit: reportString(locale, "unitSeconds"), missing: false };
 }
@@ -486,17 +522,25 @@ function formatTokens(total: number | undefined, locale: AgentLocale = "zh"): Fo
 export function formatCost(side: MetricSideProjection | undefined, locale: AgentLocale = "zh"): FormattedMetric {
   if (side?.pricingStatus === "pricing_unavailable") return { text: reportString(locale, "pricingUnavailable"), missing: true };
   if (side?.pricingStatus === "unknown") return { text: reportString(locale, "costUnknown"), missing: true };
-  if (side?.costUsd !== undefined) return { text: side.costUsd.toFixed(2), unit: "$", missing: false };
+  if (side?.costUsd !== undefined) {
+    const text = side.costUsd > 0 && side.costUsd < 0.001 ? "<0.001"
+      : side.costUsd < 1 ? side.costUsd.toFixed(3).replace(/0$/, "") : side.costUsd.toFixed(2);
+    return { text, unit: "$", missing: false };
+  }
   if (side?.tokens) return { text: reportString(locale, "pricingUnavailable"), missing: true };
   return { text: reportString(locale, "missing"), missing: true };
 }
 
-function sideFingerprint(side: MetricSideProjection | undefined): [number | null, number | null, number | null, string | null] {
+function sideFingerprint(side: MetricSideProjection | undefined): (number | string | null)[] {
   return [
     side?.elapsedMs ?? null,
     side?.tokens?.total ?? null,
     side?.costUsd ?? null,
     side?.pricingStatus ?? null,
+    side?.tokens?.input ?? null,
+    side?.tokens?.output ?? null,
+    side?.tokens?.cached ?? null,
+    side?.tokens?.reasoning ?? null,
   ];
 }
 
@@ -574,7 +618,11 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .task { margin:0 0 8px; font-size:16px; color:var(--soft); line-height:1.45; }
 .note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:16px; line-height:1.5; }
 [data-agent-slot="headline"] strong,[data-component="diff-table"] strong,[data-claim] { font-weight:inherit; }
-.board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
+.board { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin: 8px 0 0; }
+.token-details { margin-top:10px; font-size:13px; }
+.token-details > summary { cursor:pointer; color:var(--accent); }
+.token-details .card { margin-top:8px; }
+.token-breakdown { margin-top:8px; }
 .card,.result-card,[data-host="diagnostic-card"],[data-component="difference-card"] { background:#f7f9f8; border-radius:8px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; min-width:0; }
 .card { min-height:0; }
 .card .label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:12px; }

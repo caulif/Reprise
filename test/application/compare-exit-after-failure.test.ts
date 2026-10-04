@@ -5,7 +5,7 @@ import { once } from "node:events";
 import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ComparisonAgent, type ComparisonContext } from "../../src/agents/comparison-agent.js";
 import { activityControlReady, finishExperimentActivity, registerActivity } from "../../src/application/experiment-activity.js";
@@ -13,7 +13,6 @@ import { AgentHost } from "../../src/infrastructure/agent/host.js";
 import { listControlRecords } from "../../src/infrastructure/control-store.js";
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 
-const here = dirname(fileURLToPath(import.meta.url));
 
 function context(): ComparisonContext {
   return {
@@ -114,7 +113,7 @@ test("preview_failed closes the comparison session handle before compare returns
 });
 
 test("the compare process exits after the failure JSON is flushed", async () => {
-  const childPath = join(here, "../support/compare-exit-child.js");
+  const childPath = fileURLToPath(new URL('../support/compare-exit-child.js', import.meta.url));
   const child = spawn(process.execPath, [childPath], { stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   child.stdout?.setEncoding("utf8");

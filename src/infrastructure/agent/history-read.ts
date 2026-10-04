@@ -17,6 +17,7 @@ export async function readCommittedModelLog(
   return {
     events: parsed.events,
     requests: rebuilt.requests,
+    ...(rebuilt.compactionRequests ? { compactionRequests: rebuilt.compactionRequests } : {}),
     diagnostic: rebuilt.diagnostic ?? parsed.diagnostic,
     runStatus: historicalRunStatus(parsed.events),
   };

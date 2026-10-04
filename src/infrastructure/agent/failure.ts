@@ -45,6 +45,7 @@ export function classifyAgentFailure(error: unknown): AgentFailureKind {
   if (status === 429 || /\b(rate.?limit|too many requests|quota)\b/.test(details)) return "rate_limited";
   if (
     [408, 500, 502, 503, 504, 520].includes(status ?? 0) ||
+    /\bstream ended without (?:a )?(?:finish_reason|stop reason|finish reason|terminal event)\b/.test(details) ||
     /\b(upstream_error|upstream request failed|service temporarily unavailable|bad gateway|gateway timeout|web server returned an unknown error|520)\b/.test(
       details,
     )

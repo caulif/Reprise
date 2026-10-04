@@ -8,6 +8,7 @@ import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evid
 import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
 import { verifyAndRenderComparisonReport } from "../../src/application/comparison-publication.js";
 import { sha256 } from "../../src/core/identity.js";
+import { ComparisonDiscovery } from "../../src/application/comparison-discovery.js";
 
 const facts = {
   run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
@@ -16,6 +17,44 @@ const facts = {
   delivery: { changedPaths: [], targetArtifactStatus: "available", verificationStatus: "available" },
   replay: { conditions: [], baselineEvidence: "available", candidateEvidence: "available" },
 };
+
+test("production drafts require settled findings and invalidate preview after findings change", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-draft-findings-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: "attempt-1", links: [], media: [] });
+  const discovery = new ComparisonDiscovery({ catalog, attemptId: "attempt-1", persist: async () => undefined });
+  let bindings = 0;
+  const draft = new ComparisonDraft({ attemptRoot: root, task: "Compare outputs.", facts, locale: "en", catalog, deliveredImages: new Set(), discovery, persistAccepted: async () => { bindings++; } });
+  const submission = { status: "insufficient_evidence" as const, category: "Limited comparison", headline: "Final artifacts unavailable", comparisonHtml: "<p>Both finals unavailable.</p>" };
+  assert.match(await draft.submit(submission), /findings_not_ready/);
+  assert.match(draft.failureReason().message, /findings_not_ready/);
+  const findings = {
+    criteria: ["Preserve meaning"], finals: [
+      { side: "baseline" as const, status: "unavailable" as const, sourceRefs: [], description: "No final source" },
+      { side: "candidate" as const, status: "unavailable" as const, sourceRefs: [], description: "No final source" },
+    ], findings: [], decisionQuestions: [], importantLimitations: ["Missing final sources"],
+  };
+  await discovery.update(findings);
+  assert.match(await draft.submit(submission), /importantLimitations=.*Missing final sources/);
+  const html = await readFile(join(root, "report.html"), "utf8");
+  const digest = sha256(html);
+  const preview = { htmlPath: "preview.html", html, draftDigest: digest, preparedDigest: digest, dependencyDigest: digest, catalogRevision: catalog.snapshot().revision, outputRoot: root };
+  draft.recordPreview(preview);
+  assert.ok(await draft.completedResult());
+  await draft.submit(submission);
+  assert.equal(bindings, 1);
+  assert.ok(await draft.completedResult());
+  await discovery.update({ ...findings, importantLimitations: ["New evidence gap"] });
+  assert.equal(await draft.completedResult(), undefined);
+  assert.match(draft.submissionState(), /discoveryRevision/);
+  await draft.submit(submission);
+  assert.equal(await draft.completedResult(), undefined);
+  draft.recordPreview(preview);
+  assert.ok(await draft.completedResult());
+  const long = await draft.submit({ ...submission, comparisonHtml: `<p>${"Detail ".repeat(110)}</p><details><summary>Methods</summary>${"method ".repeat(500)}</details>` });
+  assert.match(long, /advisory, not a word-limit gate/);
+  assert.match(long, /mainTextCharacters=805/);
+});
 
 test("Host draft submission validates content and publishes only the previewed digest", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-draft-"));

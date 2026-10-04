@@ -32,6 +32,7 @@ import {
   type HostZoneSnapshot,
 } from "./comparison-report-shell.js";
 import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
+import { extractHostLimitations } from './comparison-host-limitations.js';
 import { extensionForMediaType, rewriteMediaHref, stagePublishedEvidence, stagePublishedHistoricalFinals } from "./comparison-publish-evidence.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 
@@ -113,6 +114,8 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
   { html: string; model: ComparisonReportModel } | VerificationFailure
 > {
   const locale = input.locale ?? "zh";
+  const previous = extractHostLimitations(input.html);
+  input = { ...input, html: previous.html };
   if (input.hostTask === undefined) {
     const unsafeContent = agentUnsafeContentError(input.html);
     if (unsafeContent) return { failureClass: "publication", code: "report_incomplete", message: unsafeContent };
@@ -146,7 +149,7 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
     return { failureClass: "publication", code: "publication_failed", message: "Comparison report contains external network resources." };
   }
   html = rewritten.html;
-  const limitations: ComparisonReportStringKey[] = [];
+  const limitations: ComparisonReportStringKey[] = [...previous.limitations];
   const visual = repairEmptyComparisonZone(html, input.media, locale);
   html = visual.html;
   const incomplete = repairIncompleteAboveTheFold(html, input.result.headline, locale);
@@ -163,9 +166,6 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
   }
   if (wordlistVerifiedWithoutResolvableEvidence(html, input.evidence ?? [], locale)) {
     limitations.push("hostLimitationVerifiedWordlist");
-  }
-  if (claimsVisualWithoutMedia(html, input.media, locale)) {
-    limitations.push("hostLimitationVisualWordlist");
   }
   if (citedMediaAllUnresolved(html, rewritten.unresolvedMedia, locale)) {
     limitations.push("hostLimitationCitedMediaUnresolved");
@@ -512,7 +512,7 @@ function appendHostLimitations(html: string, locale: AgentLocale, keys: readonly
   if (uniqueKeys.length === 0) return html;
   const outer = extractOuter(html, "data-agent-zone", "comparison");
   if (!outer) return html;
-  const notes = uniqueKeys.map((key) => `<p data-host-limitation>${escapeText(reportString(locale, key))}</p>`).join("");
+  const notes = uniqueKeys.map((key) => `<p data-host-limitation="${key}">${escapeText(reportString(locale, key))}</p>`).join("");
   return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${notes}</section>`));
 }
 
@@ -664,18 +664,6 @@ function leakedInternalRunInfo(html: string): string | undefined {
   }
   const turns = fold.match(/第\s*[一二三四五六七八九十0-9]+\s*轮/g) ?? [];
   if (turns.length >= 5) return "Comparison above-the-fold restates the full process.";
-  return undefined;
-}
-
-function claimsVisualWithoutMedia(html: string, media: readonly ComparisonMediaRecord[], locale: AgentLocale): string | undefined {
-  if (media.some((item) => item.available)) return undefined;
-  const body = extractInner(html, "data-agent-zone", "comparison");
-  const pattern = locale === "en"
-    ? /(visual inspection|looked at (?:the )?(?:PPT|slides|page|UI)|completed visual)/i
-    : /(已完成视觉|看过(?:了)?(?:PPT|幻灯片|网页|UI)|视觉检查)/;
-  if (pattern.test(body)) {
-    return "Comparison claimed visual inspection without available media.";
-  }
   return undefined;
 }
 

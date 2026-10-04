@@ -409,7 +409,13 @@ test('real-terminal TUI probe is opt-in and outside engineering gates', async ()
   assert.notEqual(noTty.status, 0);
   assert.match(`${noTty.stderr}${noTty.stdout}`, /real TTY/);
   const adapter = await readFile(join(SRC, 'infrastructure/agent/providers/pi/adapter.ts'), 'utf8');
-  assert.match(adapter, /await notify\(/);
+  const requests = await readFile(join(SRC, 'infrastructure/agent/providers/pi/request-usage.ts'), 'utf8');
+  assert.match(adapter, /streamFn: usage\.stream/);
+  const awaitedAudit = /await input\.onModelRequest\?\.\(/;
+  assert.match(requests, awaitedAudit);
+  assert.doesNotMatch(requests.replace('await input.onModelRequest?.(', 'void input.onModelRequest?.('), awaitedAudit);
+  assert.match(requests, /await notify\(args\[0\], context, 'compaction'\);\s*const message = await source\.completeSimple/);
+  assert.match(requests, /await notify\(args\[0\], args\[1\], 'generation'\);\s*const result = source\.streamSimple/);
 });
 
 test('opt-in agent context probe stays outside engineering gates', async () => {

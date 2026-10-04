@@ -29,11 +29,26 @@ export const AgentImageRefSchema = Type.Object({
 export type AgentImageRef = Static<typeof AgentImageRefSchema>;
 
 export const AgentModelRequestFactsSchema = Type.Object({
+  scope: Type.Optional(Type.Union([Type.Literal('generation'), Type.Literal('compaction')])),
+  compactionInput: Type.Optional(AgentTextBodySchema),
   model: Type.String({ minLength: 1 }),
   digest: Hash,
   messageCount: Type.Integer({ minimum: 0 }),
   images: Type.Optional(Type.Array(AgentImageRefSchema)),
 });
+
+export const RecordedModelContextSchema = Type.Object({
+  systemPrompt: Type.Optional(Type.String()),
+  messages: Type.Array(Type.Unknown()),
+  tools: Type.Optional(Type.Array(Type.Unknown())),
+}, { additionalProperties: false });
+export const ReconstructedCompactionRequestSchema = Type.Object({
+  schemaVersion: Type.Literal(1), scope: Type.Literal('compaction'),
+  sessionId: Type.String({ minLength: 1 }), role: Type.String(), invocationId: Type.String(), requestIndex: Type.Integer({ minimum: 0 }),
+  model: Type.String(), modelRequestDigest: Type.Optional(Hash), contentComplete: Type.Boolean(),
+  context: Type.Optional(RecordedModelContextSchema), nativeImages: Type.Optional(Type.Array(AgentImageRefSchema)),
+});
+export type ReconstructedCompactionRequest = Static<typeof ReconstructedCompactionRequestSchema>;
 
 const AgentToolSpecSchema = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 64 }),

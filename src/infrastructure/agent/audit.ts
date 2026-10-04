@@ -1,8 +1,9 @@
-import { inlineBody, redactModelVisibleText } from "./model-input.js";
+import { inlineBody, redactModelVisibleText, redactModelVisibleValue } from "./model-input.js";
 import type { AgentAuditSink, InvocationCursor, ProviderAdapter } from "./types.js";
 import { recordedContext, recordedImageRefs } from './artifacts.js';
-import { AgentModelRequestFactsSchema } from '../../core/agent-model-input-schema.js';
+import { AgentModelRequestFactsSchema, RecordedModelContextSchema, type AgentTextBody } from '../../core/agent-model-input-schema.js';
 import { Value } from '@sinclair/typebox/value';
+import { AgentUsageFactsSchema } from '../../core/schema.js';
 
 export function callerLoopHooks(
   sessionId: string,
@@ -11,9 +12,14 @@ export function callerLoopHooks(
   audit: AgentAuditSink | undefined,
 ): Pick<
   Parameters<ProviderAdapter["createSession"]>[0],
-  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onAfterToolCall" | "onModelRequest"
+  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onAfterToolCall" | "onModelRequest" | "onModelUsage"
 > {
   return {
+    onModelUsage: async (payload) => {
+      if (!Value.Check(AgentUsageFactsSchema, payload)) throw new Error('Model usage facts failed schema validation.');
+      await audit?.append({ type: 'agent.usage_reported', sessionId, role,
+        payload: { schemaVersion: 1, invocationId: cursor.invocationId, requestIndex: cursor.requestIndex, ...payload } });
+    },
     onContextCompact: async (payload) => {
       await audit?.append({
         type: "agent.context_compacted",
@@ -44,7 +50,14 @@ export function callerLoopHooks(
       await audit?.append({ type: "agent.tool_completed", sessionId, role, payload: { ...payload, nativeHook: "after" } });
     },
     onModelRequest: async (payload) => {
-      const facts = { ...payload, images: await recordedImageRefs(payload.images, audit) };
+      const { compactionContext, ...request } = payload;
+      let compactionInput: AgentTextBody | undefined;
+      if (compactionContext) {
+        const recorded = redactModelVisibleValue({ ...compactionContext, messages: await recordedContext(compactionContext.messages, audit) });
+        if (!Value.Check(RecordedModelContextSchema, recorded)) throw new Error('Compaction input context failed schema validation.');
+        compactionInput = { encoding: 'inline' as const, schemaVersion: 1 as const, text: JSON.stringify(recorded) };
+      }
+      const facts = { ...request, ...(compactionInput ? { compactionInput } : {}), images: await recordedImageRefs(payload.images, audit) };
       if (!Value.Check(AgentModelRequestFactsSchema, facts)) throw new Error('Model request facts failed schema validation.');
       await audit?.append({
         type: "agent.model_request",

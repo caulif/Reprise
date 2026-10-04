@@ -59,6 +59,31 @@ test('persistent upstream failure has three attempts while authentication never 
   }
 });
 
+test('missing SDK stream terminal marker safely continues without replaying completed tool side effects', async () => {
+  const seen: string[] = [];
+  const retries: string[] = [];
+  let writes = 0;
+  const missingTerminal = response('error', [], 'Stream ended without finish_reason');
+  missingTerminal.usage = { ...missingTerminal.usage, input: 0, output: 0, totalTokens: 0 };
+  let usageReports = 0;
+  const session = caller([
+    response('toolUse', [{ type: 'toolCall', id: 'write-1', name: 'write', arguments: {} }]),
+    missingTerminal,
+    response('stop', [{ type: 'text', text: 'Finished after safe continuation' }]),
+  ], seen).createSession({ sessionId: 'missing-terminal-retry', systemPrompt: 'test', tools: [
+    { name: 'write', description: 'write once', parameters: Type.Object({}), execute: async () => { writes++; return { content: 'written-once' }; } },
+  ], onRetry: async ({ kind }) => { retries.push(kind); }, onModelUsage: async () => { usageReports++; } });
+  assert.equal(await session.append({ content: 'single-prompt', signal: new AbortController().signal }), 'Finished after safe continuation');
+  assert.equal(writes, 1);
+  assert.deepEqual(retries, ['transient_upstream']);
+  assert.equal(seen.length, 3);
+  assert.equal(usageReports, 2);
+  for (const context of seen.slice(1)) {
+    assert.match(context, /written-once/);
+    assert.equal(context.split('single-prompt').length - 1, 1);
+  }
+});
+
 test('cancellation during backoff stops before another provider request', async () => {
   const abort = new AbortController();
   const seen: string[] = [];

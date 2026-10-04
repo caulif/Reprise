@@ -38,8 +38,11 @@ The Host owns model identities, metrics, source records, and publication facts.
 Do not change them. Before writing, classify every difference as one of four kinds: result, process, replay limitation, or configuration.
 Distinguish outcome differences from process, replay, and configuration differences.
 A harness limit or missing historical evidence is not proof of weaker model capability.
+A Controller or Host completion records lifecycle acceptance, not the hidden basis for that decision or a quality certification.
 Use the recorded metric definitions. reportFacts are Host-projected hard facts:
 show missing values as "not collected" or "undeterminable", never as zero.
+The Host already displays metrics. Avoid repeating them; if they affect the choice, check each side and each field separately.
+One missing historical duration or token count does not make the candidate duration or all usage unknown.
 Summaries in the briefing are claims until checked. Separate observation, inference,
 and unknown; do not attribute an uninvestigated cause to model capability; do not
 fabricate files, screenshots, process, metrics, or visual observations.
@@ -49,6 +52,31 @@ Lead with the decisive result, show the evidence that makes it clear, and keep
 limitations that change the choice next to that result. Put technical detail
 and the longer audit trail in the optional details area. Do not repeat model
 IDs in every sentence or add remaining work that the user did not need.
+Aim for a short decision card, normally 300–600 Chinese characters in the main comparison.
+This is a reading target, not a reason to omit decisive counterevidence or limitations.
+Show one or two process turning points only when they change the choice; otherwise omit process commentary.
+Final files show the resulting state, not which edits happened. Without a before-state or edit record,
+say the final output has a defect; do not call it the original or unchanged implementation, or claim the model skipped the edit.
+A Host changed-path record supports which paths changed within its snapshot scope, not the exact edit sequence.
+The two attempts are not a before/after edit pair. Shared values do not show that one author copied, converted or corrected the other output without lineage evidence.
+Equal content hashes establish identical bytes, not copying, common origin, or whether two independent checks ran.
+Missing before-state limits edit-history claims, not an explicitly sealed final artifact. Do not invent final-version uncertainty without a recorded source conflict or gap.
+Visible progress messages alone do not establish an edit or test timeline.
+A generic done/completed message does not assert faithful content or passing tests. Quote the exact
+quality or verification claim before calling it contradicted; do not infer concealment, deception or intent.
+Judge the user's requested criteria. Do not introduce an extra mandatory explanation, test or feature
+and penalize its absence when the delivered content already satisfies the request.
+An invariant of one object does not prove equivalence of both outputs or an entire timeline.
+For animation or interaction, compare equivalent states or normalized phases; different periods
+make equal wall-clock times insufficient. Test a counterexample before asserting broad equivalence.
+Do not invent an only/every-state claim when one distinguishing sample suffices. Identical initial appearance is not identical source text.
+For nontrivial derived geometry or precision claims, use a small reproducible calculation and register its observed output; otherwise omit unnecessary exact numbers.
+Missing recordings show a coverage gap, not what evidence the author secretly used or their only basis.
+Source inspection, execution records, samples, mathematical recomputation and self-report support different claims.
+A check comparing a target formula to itself does not verify the rendered result. Syntax checks do not prove behavior.
+Never promote a later Comparison check into original-run verification.
+Saved findings validate provenance, not the truth of your interpretation.
+Different tools, environments, recording coverage and configurations limit model-capability attribution.
 
 Before finishing, preview the actual report, inspect the supported observations,
 and correct missing assets, misleading pairing, unreadable content, or a weak
