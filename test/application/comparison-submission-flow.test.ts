@@ -45,7 +45,7 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
       const submit = tools.find((tool) => tool.name === 'submit_comparison_draft')!;
       const preview = tools.find((tool) => tool.name === 'preview_report')!;
       const draft = (headline: string) => ({ status: 'completed', decisionShape: 'single_difference', category: 'Results', headline,
-        decisionSummary: 'The result is useful for the requested task.', decisionBoundary: '', comparisonHtml: `<p>${headline}</p>` });
+        decisionSummary: 'The result is useful for the requested task.', decisionBoundary: '', decisionBasis: [], conclusionScope: 'supported_in_scope', findingDispositions: [], comparisonHtml: `<p>${headline}</p>` });
       if (turns === 2) await submit.execute(draft('Draft A'), signal);
       if (content.includes('This is the actual draft inspection checkpoint')) {
         checkpointVisits++;
@@ -54,16 +54,21 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
         return '';
       }
       if (turns === 5) {
-        assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');
+        assert.ok(!allowedToolNames?.includes('preview_report'));
+        assert.match((await preview.execute({}, signal)).content, /preview_not_ready/);
         const revised = await submit.execute(draft('Draft B'), signal);
         assert.match(revised.content, /currentPhase=review/);
         assert.doesNotMatch(revised.content, /currentPhase=compose/);
+      }
+      if (content.includes('This is the preview-only closure')) {
+        assert.deepEqual(allowedToolNames, ['preview_report']);
+        assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');
+        return '';
       }
       if (turns > 5) {
         assert.match(content, /Continue the current review turn/);
         if (repairable && turns === 6) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
-          await preview.execute({}, signal);
         }
         else if (!repairable) await submit.execute(draft(`Draft ${turns}`), signal);
       }
@@ -99,6 +104,7 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
           const accepted = await submit.execute({
             status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'The candidate produced a usable result.',
             decisionSummary: 'The result is useful for the requested task.', decisionBoundary: '',
+            decisionBasis: [], conclusionScope: 'supported_in_scope', findingDispositions: [],
             comparisonHtml: '<p>The candidate produced a usable result from the same starting task.</p>',
           }, signal);
           assert.match(accepted.content, /status=accepted/);
@@ -109,7 +115,8 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
           return '';
         }
-        if (turns === 5) {
+        if (content.includes('This is the preview-only closure')) {
+          assert.deepEqual(allowedToolNames, ['preview_report']);
           const preview = tools?.find((tool) => tool.name === 'preview_report');
           assert.ok(preview);
           const result = await preview.execute({}, signal);
@@ -137,8 +144,8 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
     return;
   }
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
-  assert.equal(turns, 5, 'full audit generation already contains the actual checkpoint inspection before its preview');
-  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 5, toolCalls: 3, compactions: 0 });
+  assert.equal(turns, 6, 'one actual full audit is followed by preview-only generation with no post-preview generation');
+  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 6, toolCalls: 3, compactions: 0 });
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /usable result/);
   const events = await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8');
   assert.match(events, /comparison.phase_completed/);
@@ -173,6 +180,7 @@ test('application refuses to publish an accepted draft without preview', async (
           assert.match((await submit.execute({
             status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'A difference.',
             decisionSummary: 'One outcome better meets the requested task.', decisionBoundary: '',
+            decisionBasis: [], conclusionScope: 'supported_in_scope', findingDispositions: [],
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }
@@ -212,6 +220,7 @@ test('a provider failure after preview does not publish the draft', async (t) =>
           assert.match((await submit.execute({
             status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'A difference.',
             decisionSummary: 'One outcome better meets the requested task.', decisionBoundary: '',
+            decisionBasis: [], conclusionScope: 'supported_in_scope', findingDispositions: [],
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }
@@ -221,7 +230,8 @@ test('a provider failure after preview does not publish the draft', async (t) =>
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
           return '';
         }
-        if (turns === 5) {
+        if (content.includes('This is the preview-only closure')) {
+          assert.deepEqual(allowedToolNames, ['preview_report']);
           const preview = tools?.find((tool) => tool.name === 'preview_report');
           assert.ok(preview);
           assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');

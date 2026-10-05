@@ -59,6 +59,7 @@ test('legitimate persisted comparisons can append events and artifacts without i
           if (turns === 2) await tools.find(tool => tool.name === 'submit_comparison_draft')!.execute({
             status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'A difference', comparisonHtml: '<p>A supported contrast.</p>',
             decisionSummary: 'One outcome better meets the requested task.', decisionBoundary: '',
+            decisionBasis: [], conclusionScope: 'supported_in_scope', findingDispositions: [],
           }, signal);
           if (turns === 3) throw new Error('Offline fixture review failure');
           return '';

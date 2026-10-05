@@ -296,6 +296,87 @@ function toolTurn(...names: string[]): AssistantMessage {
   return nativeMessage(names.map((name, index) => ({ type: 'toolCall', id: `${name}-${index}`, name, arguments: {} })));
 }
 
+for (const mode of ['success', 'provider', 'cancel', 'audit', 'hard'] as const) test(`native preview-only closure has no post-preview generation and preserves ${mode}`, async () => {
+  const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
+  const controller = new AbortController();
+  let material = false, formal = false, previewed = false, inspections = 0, auditChanges = 0, previewCalls = 0;
+  const stop = (text: string) => nativeMessage([{ type: 'text', text }], 'stop');
+  const responses = [stop('Investigated'), stop('Composed'), stop('Independent source evidence'), toolTurn('inspect_comparison_draft'),
+    toolTurn('update_comparison_findings', 'inspect_comparison_draft'), toolTurn('preview_report')];
+  const models = { getModel: () => nativeModel, streamSimple: (_model: unknown, actual: unknown) => {
+    const context = actual as typeof inputs[number];
+    inputs.push({ tools: context.tools.map(tool => ({ name: tool.name })), messages: structuredClone(context.messages) });
+    if (inputs.length === 6 && mode === 'provider') throw Object.assign(new Error('Actual preview generation upstream failure'), { status: 503 });
+    const response = responses.shift();
+    if (!response) throw new Error('A post-preview generation must not occur');
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: 'done', reason: response.stopReason as 'stop' | 'toolUse', message: response });
+    return stream;
+  } } as unknown as PiModels;
+  const caller = new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
+  const tools = [
+    { name: 'update_comparison_findings', execute: async () => { auditChanges++; formal = false; return { content: 'Actual changed findings binding' }; } },
+    { name: 'inspect_comparison_draft', execute: async () => { inspections++; return { content: `Actual current binding inspection ${inspections}` }; }, onCompleted: async () => { material = true; formal = true; } },
+    { name: 'preview_report', execute: async () => { previewCalls++; if (mode === 'cancel') controller.abort(); previewed = true; return { content: 'Actual exact-current-digest preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const agent = new ComparisonAgent({ host: new AgentHost(caller), timeoutMs: 1_000, maxRepairAttempts: 0, resources: mode === 'hard' ? { maxModelRequests: 5 } : {} });
+  const comparison = agent.compare(context, tools, { append: async event => {
+    events.push(event);
+    if (mode === 'audit' && event.type === 'comparison.phase_completed' && event.payload.pass === 'preview') throw new Error('Actual preview audit persistence failure');
+  } }, controller.signal, { hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => formal,
+    getSubmittedResult: async () => formal && previewed ? resultValue : undefined });
+  if (mode === 'audit') await assert.rejects(comparison, /Actual preview audit persistence failure/);
+  else assert.equal((await comparison).status, mode === 'success' ? 'completed' : mode === 'cancel' ? 'cancelled' : 'failed');
+  assert.equal(inputs.length, mode === 'hard' ? 5 : 6); assert.equal(inspections, 2); assert.equal(auditChanges, 1);
+  assert.ok(!inputs[4]!.tools.some(tool => tool.name === 'preview_report'), 'full audit cannot preview');
+  if (mode !== 'hard') {
+    assert.deepEqual(inputs[5]!.tools.map(tool => tool.name), ['preview_report']);
+    assert.match(JSON.stringify(inputs[5]!.messages), /Actual current binding inspection 2/);
+  }
+  assert.equal(previewCalls, mode === 'provider' || mode === 'hard' ? 0 : 1);
+  const phases = events.filter(event => event.type === 'comparison.phase_completed');
+  assert.equal(phases.find(event => event.payload.pass === 'audit')!.payload.yieldReason, 'final_inspection_ready');
+  assert.ok(phases.some(event => event.payload.pass === 'preview'), 'preview phase audit must actually be attempted');
+  if (mode !== 'audit') assert.equal(phases.find(event => event.payload.pass === 'preview')!.payload.outcome,
+    mode === 'hard' || mode === 'provider' ? 'failed' : mode === 'cancel' ? 'cancelled' : 'yielded');
+  if (mode === 'success') assert.equal(phases.at(-1)!.payload.yieldReason, 'report_ready');
+});
+
+test('preview closure execution guard returns changed bindings to a real full audit', async () => {
+  let material = false, formal = false, previews = 0, audits = 0, closureInputs = 0, forbiddenEffects = 0;
+  const inputs: string[] = [];
+  const host = new AgentHost({ createSession: input => ({ append: async ({ content, signal, allowedToolNames, yieldAfterTurn }) => {
+    inputs.push(content);
+    const call = (name: string) => input.tools.find(tool => tool.name === name)!.execute({}, signal);
+    if (content.includes('actual draft inspection checkpoint')) await call('inspect_comparison_draft');
+    else if (content.includes('This is the preview-only closure')) {
+      assert.deepEqual(allowedToolNames, ['preview_report']);
+      for (const name of ['read', 'submit_comparison_draft', 'inspect_comparison_draft']) assert.match((await call(name)).content, /preview_closure_only/);
+      if (++closureInputs === 1) formal = false;
+      const response = await call('preview_report');
+      if (closureInputs === 1) assert.match(response.content, /preview_closure_only/);
+    } else if (content.includes('Now audit') || content.includes('Continue the current review turn')) {
+      audits++;
+      assert.ok(!allowedToolNames?.includes('preview_report'));
+      assert.match((await call('preview_report')).content, /preview_not_ready/);
+      await call('inspect_comparison_draft');
+    }
+    const reason = await yieldAfterTurn?.();
+    return reason ? { status: 'yielded' as const, reason } : '';
+  }, cancel() {} }) });
+  const tools = ['read', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report'].map(name => ({ name, description: name, parameters: Type.Object({}), execute: async () => {
+    if (name === 'inspect_comparison_draft') { material = true; formal = true; }
+    else if (name === 'preview_report') previews++;
+    else forbiddenEffects++;
+    return { content: 'Actual tool result' };
+  } }));
+  const result = await new ComparisonAgent({ host, timeoutMs: 1_000, maxRepairAttempts: 0, resources: {} }).compare(context, tools, undefined, undefined, {
+    hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => formal, getSubmittedResult: async () => formal && previews > 0 ? resultValue : undefined,
+  });
+  assert.equal(result.status, 'completed'); assert.equal(audits, 2); assert.equal(closureInputs, 2); assert.equal(previews, 1); assert.equal(forbiddenEffects, 0);
+  assert.ok(inputs.indexOf(inputs.find(text => text.includes('Now audit'))!) < inputs.indexOf(inputs.find(text => text.includes('This is the preview-only closure'))!), 'initial checkpoint cannot skip actual full audit');
+});
+
 test('native draft inspection checkpoint exposes one actual tool until delivery, then restores full audit', async () => {
   const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
   let material = false, inspections = 0, reads = 0, changes = 0, previewed = false, laterGeneration = false;

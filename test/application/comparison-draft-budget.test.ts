@@ -18,7 +18,7 @@ const facts = {
   replay: { conditions: [], baselineEvidence: "available", candidateEvidence: "available" },
 };
 const base = { status: "completed" as const, category: "Result", headline: "判", comparisonHtml: "<p>不同</p>" };
-const liveBase = { ...base, decisionSummary: "用", decisionBoundary: "" };
+const liveBase = { ...base, decisionSummary: "用", decisionBoundary: "", decisionBasis: [], conclusionScope: "undetermined" as const, findingDispositions: [] };
 async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
   const root = await mkdtemp(join(tmpdir(), "reprise-draft-budget-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -42,6 +42,8 @@ test("live decision fields reject missing or blank summary and overlong plain te
   const f = await fixture(t);
   const valid = { ...liveBase, decisionShape: "single_difference" };
   for (const patch of [{ decisionSummary: undefined }, { decisionBoundary: undefined }, { decisionSummary: " \n\t" },
+    { decisionBasis: undefined }, { conclusionScope: undefined }, { findingDispositions: undefined },
+    { findingDispositions: [{ findingId: 'f', disposition: 'basis', explanation: ' \n' }] },
     { decisionSummary: "x".repeat(1201) }, { decisionBoundary: "x".repeat(1201) }]) {
     assert.match((await f.tool.execute({ ...valid, ...patch }, f.signal)).content, /invalid_submission/);
   }

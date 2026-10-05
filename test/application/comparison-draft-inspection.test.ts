@@ -8,7 +8,7 @@ import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evid
 import { ComparisonDiscovery } from "../../src/application/comparison-discovery.js";
 import { sha256 } from "../../src/core/identity.js";
 import { instrumentTools } from "../../src/infrastructure/agent/tools.js";
-import type { RenderGeometrySample } from "../../src/core/schema.js";
+import type { RenderGeometrySample, ComparisonFindingsSubmission, ComparisonDraftSubmission } from "../../src/core/schema.js";
 import type { EventEnvelope } from "../../src/core/schema.js";
 import { Value } from "@sinclair/typebox/value";
 import { Type } from '@sinclair/typebox';
@@ -39,10 +39,10 @@ const findings = {
   ], findings: [], decisionQuestions: [], importantLimitations: ["Missing final source"],
 };
 
-async function fixture(t: { after: (fn: () => Promise<void>) => void }, discoveryEnabled = false) {
+async function fixture(t: { after: (fn: () => Promise<void>) => void }, discoveryEnabled = false, candidateLink = false) {
   const root = await mkdtemp(join(tmpdir(), "reprise-draft-inspect-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: "attempt-1", links: [{ side: "baseline", inspectPath: "history/final.txt" }], media: [] });
+  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: "attempt-1", links: [{ side: "baseline", inspectPath: "history/final.txt" }, ...(candidateLink ? [{ side: 'candidate' as const, inspectPath: 'candidate/final.txt' }] : [])], media: [] });
   const discovery = discoveryEnabled ? new ComparisonDiscovery({ catalog, attemptId: "attempt-1", persist: async () => undefined }) : undefined;
   const draft = new ComparisonDraft({ attemptRoot: root, task: "Compare outputs", facts, locale: "en", catalog, deliveredImages: new Set(), ...(discovery ? { discovery } : {}) });
   const inspect = async () => {
@@ -66,15 +66,97 @@ test("saved important limitations require a visible decision boundary only for t
   assert.match(await f.draft.submit(submission), /status=accepted/);
   const current = await readFile(join(f.root, 'report.html'), 'utf8');
   for (const decisionBoundary of ['', ' \n\t']) {
-    const rejected = await f.draft.submit({ ...submission, decisionSummary: 'Cannot establish final usability.', decisionBoundary });
+    const rejected = await f.draft.submit({ ...submission, status: 'insufficient_evidence', conclusionScope: 'undetermined', decisionBasis: [], findingDispositions: [], decisionSummary: 'Cannot establish final usability.', decisionBoundary });
     assert.match(rejected, /code=decision_boundary_missing/);
     assert.match(rejected, /Missing final source/);
     assert.match(rejected, /unverified model-authored repair material/);
     assert.equal(await readFile(join(f.root, 'report.html'), 'utf8'), current);
   }
-  assert.match(await f.draft.submit({ ...submission, decisionSummary: 'Cannot establish final usability.',
+  assert.match(await f.draft.submit({ ...submission, status: 'insufficient_evidence', conclusionScope: 'undetermined', decisionBasis: [], findingDispositions: [], decisionSummary: 'Cannot establish final usability.',
     decisionBoundary: 'Final delivery remains unverified.' }), /status=accepted/);
+  assert.match(await f.draft.submit({ ...submission, decisionSummary: 'Earlier typed summary.', decisionBoundary: 'Final delivery remains unverified.' }), /status=accepted/);
   assert.match(String((await f.inspect()).comparisonHtml), /Final delivery remains unverified/);
+});
+
+test('decision dependencies cover exact current findings and reject unsupported scope without replacing accepted bytes', async t => {
+  const f = await fixture(t, true, true);
+  const observation = (side: 'baseline' | 'candidate') => ({ side, method: 'source_inspection' as const, result: 'Final output inspected', scope: 'Final relation',
+    evidenceRefs: [f.catalog.snapshot().links.find(link => link.side === side)!.shortRef!], timing: 'comparison_check' as const,
+    supportBoundary: { relationship: 'Output relation', domain: 'Final result', supportStage: 'delivered_output' as const, coveredInstances: ['Both branches'], uncheckedInstances: [] as string[] } });
+  const first = { id: 'f1', criterion: findings.criteria[0]!, difference: 'Difference', userConsequence: 'Task use', observations: [observation('baseline'), observation('candidate')], limitations: [], counterEvidenceRefs: [] };
+  const snapshot: ComparisonFindingsSubmission = { ...findings, importantLimitations: [], findings: [first, { ...first, id: 'f2' }] };
+  assert.match(await f.discovery!.update(snapshot), /status=accepted/);
+  const modern: ComparisonDraftSubmission = { ...submission, headline: 'Task choice', comparisonHtml: '<p>Evidence.</p>', decisionSummary: 'Both usable with a scoped choice.', decisionBoundary: '',
+    decisionShape: 'single_difference', decisionBasis: ['f1'], conclusionScope: 'supported_in_scope',
+    findingDispositions: [{ findingId: 'f1', disposition: 'basis', explanation: 'Changes task use' }, { findingId: 'f2', disposition: 'not_decisive', explanation: 'Does not change this choice' }] };
+  assert.match(await f.draft.submit(modern), /status=accepted/);
+  const accepted = await readFile(join(f.root, 'report.html'), 'utf8');
+  for (const findingDispositions of [modern.findingDispositions!.slice(0, 1), [...modern.findingDispositions!, modern.findingDispositions![0]!],
+    [modern.findingDispositions![0]!, { ...modern.findingDispositions![1]!, findingId: 'unknown' }]]) {
+    assert.match(await f.draft.submit({ ...modern, findingDispositions }), /decision_findings_invalid/);
+  }
+  for (const decisionBasis of [[], ['unknown'], ['f1', 'f1'], ['f2']]) assert.match(await f.draft.submit({ ...modern, decisionBasis }), /decision_basis_invalid/);
+  assert.match(await f.draft.submit({ ...modern, decisionBasis: [], findingDispositions: modern.findingDispositions!.map(item => ({ ...item, disposition: 'not_decisive' })) }), /decision_basis_missing/);
+  assert.match(await f.draft.submit({ ...modern, status: 'insufficient_evidence' }), /decision_scope_invalid/);
+  assert.equal(await readFile(join(f.root, 'report.html'), 'utf8'), accepted);
+  for (const supportBoundary of [undefined, { ...first.observations[1]!.supportBoundary, supportStage: 'intermediate_only' as const },
+    { ...first.observations[1]!.supportBoundary, supportStage: 'unavailable' as const, coveredInstances: [] },
+    { ...first.observations[1]!.supportBoundary, uncheckedInstances: ['Output branch'] }]) {
+    const { supportBoundary: _prior, ...priorObservation } = first.observations[1]!;
+    const current = { ...snapshot, findings: [{ ...first, observations: [first.observations[0]!, { ...priorObservation, ...(supportBoundary ? { supportBoundary } : {}) }] }, snapshot.findings[1]!] };
+    assert.match(await f.discovery!.update(current), /status=accepted/);
+    assert.match(await f.draft.submit(modern), /decision_scope_incomplete/);
+    assert.match(await f.draft.submit({ ...modern, conclusionScope: 'conditional' }), /status=accepted/);
+    const inspected = String((await f.inspect()).comparisonHtml);
+    assert.match(inspected, /Current run: (Output relation (remains unverified|has limited output coverage)|Preserve meaning remains unverified)/);
+    if (supportBoundary?.uncheckedInstances.length) assert.match(inspected, /Output branch/);
+    assert.match(await f.draft.submit({ ...modern, conclusionScope: 'conditional', decisionSummary: '用'.repeat(190) }), /draft_too_long/);
+    const asBoundary = { ...modern, decisionBasis: ['f2'], findingDispositions: modern.findingDispositions!.map(item => ({ ...item, disposition: item.findingId === 'f1' ? 'boundary' as const : 'basis' as const })) };
+    assert.match(await f.draft.submit(asBoundary), /decision_scope_incomplete/);
+  }
+});
+
+test('current formal inspection getter requires complete successful delivery and exact current bindings', async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update(findings);
+  await f.draft.submit(submission);
+  f.draft.beginReview();
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  const tool = f.draft.inspectTool();
+  const result = await tool.execute({}, new AbortController().signal);
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  await tool.onCompleted!({ ...result, content: JSON.stringify({ status: 'available', headline: submission.headline, comparisonHtml: '<p>Partial</p>', detailsHtml: submission.detailsHtml }) });
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  await f.inspect();
+  assert.equal(f.draft.hasCurrentReviewInspection(), true);
+  await f.discovery!.update({ ...findings, importantLimitations: ['Revised scope'] });
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  await f.draft.submit(submission);
+  await f.inspect();
+  assert.equal(f.draft.hasCurrentReviewInspection(), true);
+  f.draft.beginReview();
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  await f.inspect();
+  assert.equal(f.draft.hasCurrentReviewInspection(), true);
+  const revision = f.catalog.snapshot().revision;
+  await mkdir(join(f.root, 'scratch'), { recursive: true });
+  await writeFile(join(f.root, 'scratch', 'new.txt'), 'New source');
+  assert.equal((await f.catalog.registerEvidence({ relativePath: 'new.txt', sourceRefs: ['ev-01'], label: 'Revision' })).status, 'registered');
+  assert.ok(f.catalog.snapshot().revision > revision);
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+});
+
+test('a later failed preview invalidates prior success for the same accepted digest', async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission);
+  await preview(f);
+  assert.ok(await f.draft.completedResult());
+  const html = await readFile(join(f.root, 'report.html'), 'utf8');
+  const digest = sha256(html);
+  f.draft.recordPreviewOutcome({ htmlPath: 'preview.html', html, draftDigest: digest, preparedDigest: digest, dependencyDigest: digest,
+    catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root }, { status: 'timeout', message: 'Latest check timed out' });
+  assert.equal(await f.draft.completedResult(), undefined);
+  assert.match(f.draft.failureReason().message, /Latest check timed out/);
 });
 
 test("fresh review clears compose inspection and requires actual final text delivery after every correction", async t => {

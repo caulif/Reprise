@@ -1,6 +1,6 @@
 import { Value } from "@sinclair/typebox/value";
 import {
-  ComparisonDiscoveryRecordSchema, ComparisonFindingsSubmissionSchema,
+  ComparisonDiscoveryRecordSchema, ComparisonFindingsToolSubmissionSchema,
   type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission,
 } from "../core/schema.js";
 import { sha256 } from "../core/identity.js";
@@ -27,12 +27,12 @@ export class ComparisonDiscovery {
   tool(): AgentToolDefinition {
     return {
       name: "update_comparison_findings",
-      description: "Replace the complete findings snapshot: concise task criteria, final-source locations, scoped observations and decision questions. Each finding has exactly two observations: one baseline and one candidate. Combine same-side measurements in its single result and scope; use method=unavailable for an unverified side, never invent its evidence. Include every previously accepted decision question ID with its unchanged question and decisionImpact; history cannot be erased, even after catalog changes. Rejection repair materials are prior model-authored claims, not certified semantics. Every finding.criterion must exactly copy one criteria string. References must be registered. Resolve questions or explain unavailable evidence before composing; reopening a settled question requires new grounds. Saved findings do not prove semantic correctness.",
-      parameters: ComparisonFindingsSubmissionSchema,
+      description: "Replace the complete findings snapshot: concise task criteria, final-source locations, scoped observations and decision questions. Each finding has exactly two observations: one baseline and one candidate. Combine same-side measurements in its single result and scope; use method=unavailable for an unverified side, never invent its evidence. Include every previously accepted decision question ID with its unchanged question and decisionImpact; history cannot be erased, even after catalog changes. Rejection repair materials are prior model-authored claims, not certified semantics. Every finding.criterion must exactly copy one criteria string. References must be registered. Resolve questions or explain unavailable evidence before composing; reopening a settled question requires new grounds. Every observation must include supportBoundary: name the same compared relationship on both sides, the domain, coveredInstances and uncheckedInstances. Trace any downstream transformation, write, or returned value to the actual delivered output before declaring supportStage=delivered_output; intermediate targets or self-reports are intermediate_only, never output observation. delivered_output requires at least one covered instance; unavailable has no covered instances. A sample covers only the declared instances, not all outputs. Source inspection can trace delivered output; method does not determine supportStage. If an instance or side cannot be checked, mark it unchecked/unavailable with a decision-changing limitation and finish conditionally instead of exploring indefinitely. These scope declarations are model-authored and not Host semantic certification. Saved findings do not prove semantic correctness.",
+      parameters: ComparisonFindingsToolSubmissionSchema,
       execute: async (params, signal) => {
         signal.throwIfAborted();
-        if (!Value.Check(ComparisonFindingsSubmissionSchema, params)) {
-          const errors = [...Value.Errors(ComparisonFindingsSubmissionSchema, params)].slice(0, 3).map(error => ({ path: error.path, message: error.message }));
+        if (!Value.Check(ComparisonFindingsToolSubmissionSchema, params)) {
+          const errors = [...Value.Errors(ComparisonFindingsToolSubmissionSchema, params)].slice(0, 3).map(error => ({ path: error.path, message: error.message }));
           return { content: `status=rejected\ncode=invalid_findings\nerrors=${JSON.stringify(errors)}\nCorrect these fields and resubmit the complete findings record.` };
         }
         const operation = this.#queue.then(() => this.update(params, signal));
@@ -74,6 +74,8 @@ export class ComparisonDiscovery {
       })}`;
       if (!validRefs(finding.counterEvidenceRefs)) return rejection("evidence_unresolved");
       for (const observation of finding.observations) {
+        if (observation.supportBoundary?.supportStage === "delivered_output"
+          && (observation.method === "unavailable" || observation.method === "self_report")) return rejection("support_method_mismatch");
         if (!validRefs(observation.evidenceRefs)) return rejection("evidence_unresolved");
         if (observation.method !== "unavailable" && !observation.evidenceRefs.length) return rejection("observation_evidence_missing");
         if (observation.evidenceRefs.some((ref) => {

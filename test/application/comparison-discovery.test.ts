@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { ComparisonDiscovery } from "../../src/application/comparison-discovery.js";
 import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evidence.js";
 import type { ComparisonDiscoveryRecord, ComparisonFindingsSubmission } from "../../src/core/schema.js";
-import { ComparisonFindingsSubmissionSchema } from "../../src/core/schema.js";
+import { ComparisonFindingsSubmissionSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema } from "../../src/core/schema.js";
 import { Value } from "@sinclair/typebox/value";
 
 async function fixture(t: { after: (fn: () => Promise<void>) => void }, persist?: (record: ComparisonDiscoveryRecord) => Promise<void>) {
@@ -26,8 +26,8 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }, persist?
       { side: "candidate", status: "located", sourceRefs: [candidate!], description: "Frozen candidate" },
     ],
     findings: [{ id: "meaning", criterion: "Preserve meaning", difference: "Candidate omits a qualifier", userConsequence: "Meaning changes", observations: [
-      { side: "baseline", method: "source_inspection", result: "Qualifier retained", scope: "Final paragraph", evidenceRefs: [baseline!], timing: "comparison_check" },
-      { side: "candidate", method: "self_report", result: "Claims all content retained", scope: "Visible narrative only", evidenceRefs: [candidate!], timing: "original_run" },
+      { side: "baseline", method: "source_inspection", result: "Qualifier retained", scope: "Final paragraph", supportBoundary: { relationship: "Qualifier applicability", domain: "Final paragraph", supportStage: "delivered_output", coveredInstances: ["Final qualifier"], uncheckedInstances: [] }, evidenceRefs: [baseline!], timing: "comparison_check" },
+      { side: "candidate", method: "self_report", result: "Claims all content retained", scope: "Visible narrative only", supportBoundary: { relationship: "Qualifier applicability", domain: "Final paragraph", supportStage: "intermediate_only", coveredInstances: ["Visible final claim"], uncheckedInstances: ["Actual final qualifier"] }, evidenceRefs: [candidate!], timing: "original_run" },
     ], limitations: ["Narrative is not independent verification"], counterEvidenceRefs: [candidate!] }],
     decisionQuestions: [{ id: "qualifier", question: "Does qualifier change meaning?", decisionImpact: "Could change preference", status: "pending", nextCheck: "Compare the sentence", evidenceRefs: [] }],
     importantLimitations: ["Different tools; task-specific comparison"],
@@ -110,6 +110,7 @@ for (const repeatedSide of ['baseline', 'candidate'] as const) test(`same-side o
   const unavailable = structuredClone(corrected);
   const missingSide = unavailable.findings[0]!.observations.find(item => item.side !== repeatedSide)!;
   missingSide.method = 'unavailable';
+  missingSide.supportBoundary = { relationship: "Qualifier applicability", domain: "Final paragraph", supportStage: "unavailable", coveredInstances: [], uncheckedInstances: ["Actual final qualifier"] };
   missingSide.result = 'Unable to verify this side from retained evidence';
   missingSide.scope = 'No independent observation available';
   missingSide.evidenceRefs = [];
@@ -227,6 +228,7 @@ test("findings reject invalid ownership and incomplete decision states", async (
   unavailable.finals[0]!.status = "unavailable";
   unavailable.finals[0]!.sourceRefs = [];
   unavailable.findings[0]!.observations[0]!.method = "unavailable";
+  unavailable.findings[0]!.observations[0]!.supportBoundary = { relationship: "Qualifier applicability", domain: "Final paragraph", supportStage: "unavailable", coveredInstances: [], uncheckedInstances: ["Actual final qualifier"] };
   unavailable.findings[0]!.observations[0]!.evidenceRefs = [];
   assert.match(await discovery.update(unavailable), /accepted/);
 });
@@ -241,4 +243,60 @@ test("persistence failure never accepts findings, cancelled tools never save", a
   const abort = new AbortController();
   abort.abort();
   await assert.rejects(discovery.tool().execute(submission, abort.signal), { name: "AbortError" });
+});
+
+
+test("live findings require explicit support boundaries while legacy direct and persisted records remain valid", async t => {
+  const { discovery, submission } = await fixture(t);
+  const legacy = structuredClone(submission);
+  for (const observation of legacy.findings[0]!.observations) delete observation.supportBoundary;
+  assert.equal(Value.Check(ComparisonFindingsSubmissionSchema, legacy), true);
+  assert.equal(Value.Check(ComparisonFindingsToolSubmissionSchema, legacy), false);
+  const rejected = await discovery.tool().execute(legacy, new AbortController().signal);
+  assert.match(rejected.content, /invalid_findings/);
+  assert.equal(discovery.snapshot(), undefined);
+  assert.match(await discovery.update(legacy), /accepted/);
+  assert.equal(Value.Check(ComparisonDiscoveryRecordSchema, discovery.snapshot()), true);
+  assert.match((await discovery.tool().execute(submission, new AbortController().signal)).content, /accepted/);
+  const empty = { ...submission, findings: [] };
+  assert.equal(Value.Check(ComparisonFindingsToolSubmissionSchema, empty), true);
+});
+
+test("support stages reject missing output coverage, unavailable coverage and fabricated output observation", async t => {
+  const { discovery, submission } = await fixture(t);
+  const signal = new AbortController().signal;
+  const missingCoverage = structuredClone(submission);
+  missingCoverage.findings[0]!.observations[0]!.supportBoundary!.coveredInstances = [];
+  assert.equal(Value.Check(ComparisonFindingsToolSubmissionSchema, missingCoverage), false);
+  assert.match((await discovery.tool().execute(missingCoverage, signal)).content, /invalid_findings/);
+  const unavailableCoverage = structuredClone(submission);
+  unavailableCoverage.findings[0]!.observations[0]!.supportBoundary!.supportStage = "unavailable";
+  assert.equal(Value.Check(ComparisonFindingsToolSubmissionSchema, unavailableCoverage), false);
+  for (const method of ["self_report", "unavailable"] as const) {
+    const unsupported = structuredClone(submission);
+    unsupported.findings[0]!.observations[0]!.method = method;
+    assert.match((await discovery.tool().execute(unsupported, signal)).content, /support_method_mismatch/);
+  }
+  const unchecked = structuredClone(submission);
+  unchecked.findings[0]!.observations[0]!.supportBoundary!.supportStage = "intermediate_only";
+  unchecked.findings[0]!.observations[0]!.supportBoundary!.coveredInstances = [];
+  unchecked.findings[0]!.observations[0]!.supportBoundary!.uncheckedInstances = ["Downstream delivered return value"];
+  assert.match((await discovery.tool().execute(unchecked, signal)).content, /accepted/);
+  const scopedSample = structuredClone(submission);
+  scopedSample.findings[0]!.observations[0]!.method = "sample";
+  scopedSample.findings[0]!.observations[0]!.supportBoundary!.uncheckedInstances = ["Unsampled output instance"];
+  assert.match((await discovery.tool().execute(scopedSample, signal)).content, /accepted/);
+});
+
+test("support boundary strings and instance lists are bounded plain declarations", async t => {
+  const { submission } = await fixture(t);
+  for (const change of [
+    (boundary: NonNullable<typeof submission.findings[number]["observations"][number]["supportBoundary"]>) => { boundary.relationship = " "; },
+    (boundary: NonNullable<typeof submission.findings[number]["observations"][number]["supportBoundary"]>) => { boundary.domain = "<b>output</b>"; },
+    (boundary: NonNullable<typeof submission.findings[number]["observations"][number]["supportBoundary"]>) => { boundary.uncheckedInstances = Array.from({ length: 13 }, (_, i) => `instance ${i}`); },
+  ]) {
+    const invalid = structuredClone(submission);
+    change(invalid.findings[0]!.observations[0]!.supportBoundary!);
+    assert.equal(Value.Check(ComparisonFindingsToolSubmissionSchema, invalid), false);
+  }
 });

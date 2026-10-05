@@ -608,6 +608,7 @@ async function invokeCompare(
       getSubmissionFailure: () => draft.failureReason(),
       getSubmissionState: () => draft.submissionState(),
       hasReviewDraftMaterial: () => draft.hasReviewDraftMaterial(),
+      hasCurrentReviewInspection: () => draft.hasCurrentReviewInspection(),
       isRepairRead: params => draft.isRepairRead(params),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       enforcePhaseBoundaries: true,

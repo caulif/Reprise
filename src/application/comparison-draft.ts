@@ -22,6 +22,7 @@ import { comparisonToolTextBytes, serializeComparisonPagedJson } from './compari
 import { pathContainedBy } from '../core/paths.js';
 import { toolDeliveryToken, withToolDelivery } from '../infrastructure/agent/tool-delivery.js';
 import { redactModelVisibleText } from '../infrastructure/agent/model-input.js';
+import { decisionTextHtml, decisionContractError } from './comparison-decision-contract.js';
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
 type AcceptedDraft = { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] };
@@ -50,14 +51,8 @@ function completeInspectionMaterial(result: AgentToolResult, expected: Inspectio
 const DraftToolSchema = Type.Object({
   ...ComparisonDraftSubmissionSchema.properties,
   decisionShape: Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionShape"])).properties.decisionShape,
-  ...Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionSummary", "decisionBoundary"])).properties,
+  ...Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionSummary", "decisionBoundary", "decisionBasis", "conclusionScope", "findingDispositions"])).properties,
 });
-
-function decisionTextHtml(draft: ComparisonDraftSubmission): string {
-  const paragraph = (text: string | undefined): string => text?.trim()
-    ? `<p>${text.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;")}</p>` : "";
-  return `${paragraph(draft.decisionSummary)}${paragraph(draft.decisionBoundary)}${draft.comparisonHtml}`;
-}
 const RepairReadSchema = Type.Object({ path: Type.String(), offset: Type.Optional(Type.Integer({ minimum: 0 })),
   maxBytes: Type.Integer({ minimum: 1, maximum: 4096 }), format: Type.Optional(Type.Literal('text')),
 }, { additionalProperties: false });
@@ -125,7 +120,7 @@ export class ComparisonDraft {
   tool(): AgentToolDefinition {
     return {
       name: "submit_comparison_draft",
-      description: "Submit the report with plain-text decisionSummary describing this task's actual usability and user tradeoff, conditional choice or inability to judge. Preserve task-critical branches, not only the strongest technical advantage. Required decisionBoundary contains important unknowns or counterevidence that change the decision, not a method inventory; empty only when none identified and no saved important limitations exist. Host renders both visibly before comparisonHtml. Main headline plus all visible comparison, including these fields, is limited to 250 characters for one decision-changing difference or 600 for multiple independent differences. Supporting details are limited to 400 or 1000 characters respectively, including folded and hidden explanations; verified fixed evidence quotes are excluded. Evidence, consequences and caveats of one difference do not make it multiple. Host checks references, structure and length, not semantic correctness or coverage.",
+      description: "Submit plain-text decisionSummary describing this task's actual usability and user tradeoff, conditional choice or inability to judge. Preserve task-critical branches, not only the strongest technical advantage. Required decisionBoundary contains decision-changing unknowns or counterevidence, not a method inventory; empty only when none identified and no saved important limitations exist. Cover each current finding once in findingDispositions; decisionBasis exactly matches basis IDs. completed with findings requires a basis; insufficient_evidence requires undetermined. Incomplete basis/boundary output support cannot use supported_in_scope. These are model declarations, not semantic certification. Host visibly renders summary, boundary and incomplete support before comparisonHtml. Main headline plus all visible comparison is limited to 250 characters for one consequential difference or 600 for multiple independent differences. Supporting details, including folded and hidden explanations, are limited to 400 or 1000 respectively; validated evidence quotes are excluded. Evidence, consequences and caveats of one difference do not make it multiple.",
       parameters: DraftToolSchema,
       execute: async (params, signal) => {
         if (!Value.Check(DraftToolSchema, params)) {
@@ -213,7 +208,7 @@ export class ComparisonDraft {
         if (!result.details || typeof result.details !== "object") return;
         const pending = this.#pendingInspections.get(result.details);
         this.#pendingInspections.delete(result.details);
-        if (pending && this.#currentInspectionDelivery(pending)) {
+        if (pending && material?.formal && this.#currentInspectionDelivery(pending) && completeInspectionMaterial(result, material.text)) {
           if (pending.formal) this.#inspected = pending.accepted;
         }
       },
@@ -309,6 +304,12 @@ export class ComparisonDraft {
     return this.#reviewInspectionRequired && this.#reviewDraftMaterial !== undefined && this.#currentInspectionDelivery(this.#reviewDraftMaterial);
   }
 
+  hasCurrentReviewInspection(): boolean {
+    const material = this.#reviewDraftMaterial;
+    return Boolean(this.#reviewInspectionRequired && material?.formal && this.#inspected === this.#accepted && this.#currentInspectionDelivery(material)
+      && (this.#discovery?.readyToCompose() ?? true));
+  }
+
   #currentInspectionDelivery(delivery: DraftInspectionDelivery): boolean {
     return delivery.accepted === this.#accepted && delivery.reviewEpoch === this.#reviewEpoch
       && delivery.catalogRevision === this.#catalog.snapshot().revision && delivery.findingsRevision === this.#discovery?.snapshot()?.revision;
@@ -320,6 +321,11 @@ export class ComparisonDraft {
       return `status=rejected\ncode=findings_not_ready\nmessage=${this.#lastRejection}`;
     }
     const discovery = this.#discovery?.snapshot();
+    const contractError = decisionContractError(draft, discovery?.submission);
+    if (contractError) {
+      this.#lastRejection = contractError;
+      return `status=rejected\n${contractError}`;
+    }
     if (draft.decisionSummary !== undefined && discovery?.submission.importantLimitations.length && !draft.decisionBoundary?.trim()) {
       this.#lastRejection = "decision_boundary_missing: Saved important limitations require a visible decision boundary.";
       return `status=rejected\ncode=decision_boundary_missing\nimportantLimitations=${JSON.stringify(discovery.submission.importantLimitations)}\nmessage=These saved limitations are unverified model-authored repair material, not certified facts. Preserve those that change the task decision in decisionBoundary; do not mechanically copy the inventory or hide them only in details.`;
@@ -340,7 +346,7 @@ export class ComparisonDraft {
       slots: {
         category: draft.category,
         headline: draft.headline,
-        comparison: decisionTextHtml(draft),
+        comparison: decisionTextHtml(draft, discovery?.submission, this.#locale),
         ...(draft.detailsHtml ? { details: draft.detailsHtml } : {}),
       },
       locale: this.#locale,
@@ -409,6 +415,7 @@ export class ComparisonDraft {
       status: outcome.status,
       ...(outcome.message ? { message: outcome.message } : {}),
     };
+    this.#previewed = undefined;
   }
 
   async completedResult(): Promise<ComparisonResult | undefined> {
@@ -428,7 +435,7 @@ export class ComparisonDraft {
       locale: this.#locale, deliveredImageContentHashes: this.#deliveredImages,
       ...(this.#quoteSources ? { quoteSources: this.#quoteSources } : {}),
     });
-    if (this.#accepted !== accepted || this.#catalog.snapshot().revision !== catalog.revision || this.#discovery?.snapshot()?.revision !== accepted.discoveryRevision
+    if (this.#accepted !== accepted || this.#previewed !== previewed || this.#catalog.snapshot().revision !== catalog.revision || this.#discovery?.snapshot()?.revision !== accepted.discoveryRevision
       || (this.#reviewInspectionRequired && this.#inspected !== accepted)) return undefined;
     return "failureClass" in verified ? undefined : accepted.result;
   }

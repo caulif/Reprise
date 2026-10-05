@@ -97,6 +97,8 @@ export type ComparisonCompareOptions = {
   hasSavedFindings?: () => boolean;
   /** Actual full current/stale accepted draft delivered in this review; not final publication certification. */
   hasReviewDraftMaterial?: () => boolean;
+  /** Actual formal inspection delivered for the current binding; does not certify semantics. */
+  hasCurrentReviewInspection?: () => boolean;
   isRepairRead?: (params: unknown) => Promise<boolean>;
   estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
@@ -180,9 +182,17 @@ function comparisonYieldBoundary(outcome: FreeformInvocation, resources: Compari
   return outcome;
 }
 
-function comparisonPassToolNames(pass?: ComparisonWorkPass): readonly string[] | undefined {
-  return pass === 'findings' ? ['update_comparison_findings'] : pass === 'inspection' ? ['inspect_comparison_draft'] : undefined;
+function comparisonPassToolNames(tools: readonly AgentToolDefinition[], pass?: ComparisonWorkPass): readonly string[] | undefined {
+  if (pass === 'audit') return tools.filter(tool => tool.name !== 'preview_report').map(tool => tool.name);
+  return pass === 'findings' ? ['update_comparison_findings'] : pass === 'inspection' ? ['inspect_comparison_draft'] : pass === 'preview' ? ['preview_report'] : undefined;
 }
+
+export const COMPARISON_PREVIEW_CLOSURE_PROMPT = [
+  'This is the preview-only closure in the same independent review session after a real full draft audit turn and actual formal current inspection.',
+  'The actual complete current inspection tool result is already in this session and must be present in this generation input. Call preview_report now for that exact current digest; do not reconstruct its text from intentions or author notes.',
+  'Only preview_report is available. Do not investigate, update findings, submit, edit or repeat inspection here. If the binding changed or a current inspection is unavailable, the Host returns to formal draft audit; stale text cannot be published.',
+  'Use the actual preview result for publication structure, identities, metrics visibility and layout. Successful preview is not semantic approval. When actual current inspection delivery and matching preview are ready, the Host ends at this completed tool turn without another generation.',
+].join('\n');
 
 export const COMPARISON_DRAFT_INSPECTION_PROMPT = [
   'This is the actual draft inspection checkpoint in the same independent review session. The source pass may have ended incomplete, including an interrupted generation without a visible assessment; that certifies no guarantee.',
@@ -218,11 +228,22 @@ function sourceReviewFeedback(name: string, reason?: string): { content: string 
   return undefined;
 }
 
-function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { phase: ComparisonPhase; sourceReview: boolean; findingsClosure: boolean; draftInspection: boolean }, resources: ComparisonResourceTracker,
-  isRepairRead?: ComparisonCompareOptions['isRepairRead'], hasSavedFindings?: () => boolean): AgentToolDefinition[] {
+type ComparisonToolPhase = { phase: ComparisonPhase; sourceReview: boolean; findingsClosure: boolean; draftInspection: boolean; draftAudit: boolean; previewClosure: boolean };
+
+function setComparisonPass(current: ComparisonToolPhase, phase: ComparisonPhase, pass?: ComparisonWorkPass): void {
+  Object.assign(current, { phase, sourceReview: pass === 'sources', findingsClosure: pass === 'findings',
+    draftInspection: pass === 'inspection', draftAudit: pass === 'audit', previewClosure: pass === 'preview' });
+}
+
+function resourceBoundTools(tools: readonly AgentToolDefinition[], current: ComparisonToolPhase, resources: ComparisonResourceTracker,
+  isRepairRead?: ComparisonCompareOptions['isRepairRead'], hasSavedFindings?: () => boolean, hasCurrentReviewInspection?: () => boolean): AgentToolDefinition[] {
   return tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
     const reason = resources.beforeTool(tool.name);
     signal.throwIfAborted();
+    if (current.previewClosure && (tool.name !== 'preview_report' || !hasCurrentReviewInspection?.())) return { content: JSON.stringify({ code: 'preview_closure_only',
+      message: 'This closure permits only preview_report after actual formal inspection of the current binding. A missing or stale inspection requires full draft audit; no changes or investigation may execute here.' }) };
+    if (current.draftAudit && tool.name === 'preview_report') return { content: JSON.stringify({ code: 'preview_not_ready',
+      message: 'Finish this actual full draft audit turn and formally inspect the current accepted binding. The Host then starts a preview-only closure in the same session; do not retry preview in this audit.' }) };
     if (current.draftInspection && tool.name !== 'inspect_comparison_draft') return { content: JSON.stringify({ code: 'draft_inspection_only',
       message: 'Call inspect_comparison_draft to receive the actual full accepted text. This checkpoint permits no investigation, findings changes, submission, writing or preview. Delivery is not semantic or publication approval.' }) };
     if (current.findingsClosure && tool.name !== 'update_comparison_findings') return { content: JSON.stringify({ code: 'closure_only',
@@ -405,6 +426,7 @@ export const COMPARISON_SOURCE_REVIEW_PROMPT = [
   'If final geometry is decisive, prefer render_artifact geometryQueries for actual transformed points over a script that reconstructs intended coordinates. Read the returned statuses and coordinate domain, compare relevant elements within the same sampling window, and keep claims within the measured states.',
   'For claims covering several instances, locate each materially different downstream branch and test a corresponding output relationship. If you check only one instance or its bounding-box movement, the others remain unknown and no collective contact/alignment guarantee is supported.',
   'For each such guarantee, state its observable relationship, covered instances and checked branches. Source inference must also include the final transforms, writes or returned values. If decisive results were stubbed, a branch remains unchecked or only motion was observed, remove or narrow the guarantee in the headline and main text; a limitation in details cannot repair a broader assertion.',
+  'For each compared relationship, keep its domain and coveredInstances separate from uncheckedInstances. supportBoundary.supportStage=delivered_output requires tracing the actual drawn, written or returned relationship; intermediate_only is appropriate for local targets, self-reports or a check that compares a reconstructed algorithm with its own target. Neither intermediate consistency nor an unverified branch is positive support for a task-quality recommendation. Source inspection may prove delivered output, but only if it traces that output chain.',
   'Use existing source, execution or controlled rendering tools only when their outcome could change the decision. Distinguish source inference, actual execution, current Comparison checks and original runtime observations.',
   'If a check cannot run or evidence is unavailable, narrow the supported claim and retain the unresolved question; do not turn a resource limit into proof. Prioritize the actual output chain and counterexample over CSS or metadata inventories. Reserve time and requests for draft correction, final inspection and preview.',
   'An explicit conditional or unresolved task-level judgment can finish the comparison without more measurements. State what is supported, what remaining defect or unknown could change the choice, and the consequence for using either result; do not force a winner.',
@@ -459,6 +481,8 @@ export const COMPARISON_TURN_PROMPTS = {
     'Submit the report with submit_comparison_draft. Supply category, headline, decisionSummary, decisionBoundary,',
     'comparisonHtml and, when useful, detailsHtml. The Host builds report.html',
     'and validates it immediately; correct any rejected submission.',
+    'Supply decisionBasis as the current finding IDs actually supporting this judgment, conclusionScope as supported_in_scope, conditional or undetermined, and findingDispositions covering every current finding exactly once with basis, boundary or not_decisive plus its explanation. decisionBasis must exactly match basis dispositions; completed with findings needs a basis, and insufficient_evidence uses undetermined. Do not erase an inconvenient finding or label a consequential unknown not_decisive merely to keep a stronger recommendation.',
+    'Use each observation supportBoundary to state the compared relationship, domain, coveredInstances and uncheckedInstances. When any basis or boundary observation is intermediate_only, unavailable or has unchecked instances, use conditional or undetermined and make the impact visible. Unknown evidence cannot positively support the unverified quality. supported_in_scope means only the explicitly covered delivered output; it is your declaration, not Host semantic certification.',
     'decisionSummary is concise plain text about the requested task result, user impact and supported or conditional choice. Lead with whether the delivered outcomes are useful for that task, not class names, pixel tables or an investigation method. No winner is required when the evidence supports only a scoped improvement or an unresolved choice.',
     'decisionBoundary is concise plain text naming known defects or task-critical unknowns that could change that choice, their covered scope and remaining work. Keep it empty only when no important limitation has been identified. If saved importantLimitations are nonempty, supply a nonempty boundary; reassess their task impact rather than copying routine inventories or treating model-authored limitations as certified facts.',
     'The Host places both fields visibly before comparisonHtml and counts them with the headline and comparison in the main-text limit. Put technical derivations and routine measurement detail in optional details. These fields declare your judgment; Host validation certifies their presence and binding, not their truth or completeness.',
@@ -496,6 +520,7 @@ export const COMPARISON_TURN_PROMPTS = {
     'Audit the report against the original requirements and actual final output chain, not the author interpretation. Inspect the accepted draft with inspect_comparison_draft when available.',
     'First audit task-level decision coverage: decisionSummary must explain the requested result, user impact and supported or conditional choice; decisionBoundary must visibly retain known adverse results and task-critical unknowns that could change usability. Review every consequential task quality, not only the selected advantage or explicit success guarantees. Removing an unsupported guarantee does not make its unresolved task quality irrelevant.',
     'Compare the actual summary and boundary with current criteria, findings, userConsequence, limitations and independent source observations. Saved objects are model-authored hypotheses, not certified answers. Resolve contradictions from actual output evidence or expose the unresolved choice; do not silently delete an inconvenient defect or unknown when shortening the draft.',
+    'Audit every findingDispositions entry and the exact decisionBasis IDs against current findings. Check conclusionScope and both sides supportBoundary: a local target or self-check is intermediate_only until the actual final relationship is traced through its downstream branches. coveredInstances do not cover uncheckedInstances. Intermediate-only or unavailable evidence cannot certify task quality or serve as its positive recommendation premise, even with an adjacent global disclaimer. A declared delivered_output stage is not evidence by itself.',
     'A stale inspection exposes actual prior text and historical decision questions only for repair; it does not certify the current version. Preserve question identities when replacing findings, revise their conclusions from your independent evidence, resubmit once against the current catalog, then inspect and preview that accepted version.',
     'Prioritize decisive claims and omitted counterexamples before layout. A local target, constant or self-check is not the delivered result; trace downstream transforms, writes or returned values in their actual domain.',
     'Use the source pass to challenge the strongest advantage. If evidence does not support a guarantee, narrow or remove it and keep decision-changing uncertainty visible. Unknown evidence does not force a winner.',
@@ -520,6 +545,11 @@ export const COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT = COMPARISON_TURN_PROMPTS.
   .replace('Inspect the accepted draft with inspect_comparison_draft when available.', 'Use the actual full draft inspection tool result already delivered in this same session; do not repeat inspection merely to obtain unchanged material.')
   .replace('After the last accepted revision, reread the actual headline, main text and all details with inspect_comparison_draft; your intended edit is not proof the submitted text changed.', 'After any accepted revision, inspect the actual latest headline, main text and all details with inspect_comparison_draft; your intended edit is not proof the submitted text changed. If the current formal inspection has already been delivered and its binding has not changed, do not repeat it merely to obtain the same material. Stale material is only for repair and cannot satisfy final inspection.');
 
+export const COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT = COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT
+  .replace('then inspect and preview that accepted version.', 'then formally inspect that accepted version. The Host runs preview in a separate closure after this actual full audit turn.')
+  .replace('Then use preview_report to check identities, metrics visibility, readability, overflow and evidence loading. When supported and authorized, read its actual images; a loaded page alone is not a visual review.', 'Finish the actual full audit and formal current inspection first. preview_report is unavailable in this pass; the Host enables only preview_report in the next closure with the actual full current inspection in its generation input.')
+  .replace('If you correct anything, repeat final inspection and preview the revised digest. Stop after a valid inspected and previewed version; do not resubmit to tune advisory length.', 'If you correct anything, formally inspect the revised current digest. Finish this audit turn; the Host starts preview-only closure. Do not resubmit to tune advisory length.');
+
 const OUTPUT_CONTRACT = [
   STRUCTURED_FINAL_RULE,
   '{"status":"completed"|"insufficient_evidence","headline":"one plain-language difference sentence","evidenceRefs":["ev-02"]}',
@@ -541,13 +571,14 @@ function comparisonProviderFailure<T>(result: AgentInvocation<T> | Extract<Freef
   return { ...result, failure: { ...result.failure, code: 'provider_failure' } };
 }
 
-type ComparisonWorkPass = 'sources' | 'findings' | 'inspection';
+type ComparisonWorkPass = 'sources' | 'findings' | 'inspection' | 'audit' | 'preview';
 
 function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: string, pass: ComparisonWorkPass | undefined, options: ComparisonCompareOptions | undefined): () => Promise<string | undefined> {
   return async () => {
     resources.checkHard('completed provider turn');
     if (pass === 'findings') return options?.findingsReady?.() ? 'findings_ready' : undefined;
     if (pass === 'inspection') return options?.hasReviewDraftMaterial?.() ? 'review_draft_material_ready' : undefined;
+    if (pass === 'audit') return options?.hasCurrentReviewInspection?.() ? 'final_inspection_ready' : undefined;
     if (phase === 'investigate') return resources.softReason();
     if (phase !== 'review') return undefined;
     if (pass !== 'sources' && await options?.getSubmittedResult?.()) return 'report_ready';
@@ -625,9 +656,9 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
       return comparisonEvidenceAllowlist(context);
     };
-    const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false, findingsClosure: false, draftInspection: false };
+    const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false, findingsClosure: false, draftInspection: false, draftAudit: false, previewClosure: false };
     const resources = new ComparisonResourceTracker(this.#resources);
-    const boundedTools = resourceBoundTools(tools, current, resources, options?.isRepairRead, options?.hasSavedFindings);
+    const boundedTools = resourceBoundTools(tools, current, resources, options?.isRepairRead, options?.hasSavedFindings, options?.hasCurrentReviewInspection);
     const stagedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
     const phasedTools = options?.getSubmittedResult ? stagedTools.map(tool => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) =>
       comparisonToolFeedback(await tool.execute(params, toolSignal), resources, options.getSubmissionState?.(), tool.name) })) : stagedTools;
@@ -655,9 +686,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     let session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit);
     let freshReview = false;
     const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: ComparisonWorkPass) => {
-      current.phase = phase;
-      current.sourceReview = reviewPass === 'sources';
-      current.findingsClosure = reviewPass === 'findings'; current.draftInspection = reviewPass === 'inspection';
+      setComparisonPass(current, phase, reviewPass);
       resources.phase(phase);
       activePhase = phase;
       counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
@@ -675,7 +704,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         }
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
-        outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: comparisonPassToolNames(reviewPass),
+        outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: comparisonPassToolNames(phasedTools, reviewPass),
           ...comparisonSourceDeadline(resources, reviewPass), ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
         return outcome = comparisonYieldBoundary(outcome, resources, signal);
       } finally {
@@ -749,7 +778,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
   async #reviewSubmitted(
     context: ComparisonContext,
     options: ComparisonCompareOptions,
-    work: (phase: 'review', prompt: string, reviewPass?: 'sources' | 'inspection') => Promise<FreeformInvocation>,
+    work: (phase: 'review', prompt: string, reviewPass?: ComparisonWorkPass) => Promise<FreeformInvocation>,
     attemptId: string,
     inspectionToolAvailable: boolean,
   ): Promise<AgentInvocation<ComparisonResult>> {
@@ -772,11 +801,21 @@ export class ComparisonAgent implements ComparisonAgentPort {
       options.hasReviewDraftMaterial
         ? 'Now audit the actual accepted draft text already delivered by inspect_comparison_draft in this same review session. Compare its claims with the original requirements and your actual source/output-chain observations; correct unsupported claims and decisive omissions. Do not repeat inspection merely to obtain unchanged material. Stale text is only for repair: after revising findings or draft, obtain a new formal current inspection and preview that digest. Do not inherit author work notes or saved findings as evidence.'
         : 'Now inspect the current accepted draft with inspect_comparison_draft when available (otherwise read report.html). Compare its actual claims with the original requirements and the source/output-chain observations you just made. Do not inherit author work notes or saved findings as evidence.',
-      options.hasReviewDraftMaterial ? COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT : COMPARISON_TURN_PROMPTS.review,
+      options.hasCurrentReviewInspection ? COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT
+        : options.hasReviewDraftMaterial ? COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT : COMPARISON_TURN_PROMPTS.review,
     ].join('\n\n');
     const seen = new Set<string>();
     for (let repair = 0; ; repair++) {
-      const reviewed = await work('review', prompt);
+      let reviewed = await work('review', options.hasCurrentReviewInspection
+        ? `${prompt}\n\nComplete the full audit in this actual turn, then formally inspect the current accepted binding. Do not call preview_report here; the Host starts the separate preview-only closure after this completed turn.` : prompt,
+        options.hasCurrentReviewInspection ? 'audit' : undefined);
+      if ((reviewed.status === 'completed' || reviewed.status === 'yielded') && options.hasCurrentReviewInspection?.()) {
+        for (let closure = 0; closure < 2 && options.hasCurrentReviewInspection(); closure++) {
+          reviewed = await work('review', COMPARISON_PREVIEW_CLOSURE_PROMPT, 'preview');
+          if (reviewed.status !== 'completed' && reviewed.status !== 'yielded') break;
+          if (await options.getSubmittedResult!()) break;
+        }
+      }
       if (reviewed.status !== 'completed' && reviewed.status !== 'yielded') {
         if (reviewed.status === 'failed') await this.#sessions.discard(attemptId);
         return comparisonProviderFailure(reviewed);

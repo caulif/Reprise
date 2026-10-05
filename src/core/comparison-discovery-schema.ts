@@ -4,6 +4,15 @@ const text = Type.String({ minLength: 1, maxLength: 1200 });
 const id = Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" });
 const refs = Type.Array(Type.String({ pattern: "^(ev|media)-[0-9]{2,6}$" }), { maxItems: 16, uniqueItems: true });
 const side = Type.Union([Type.Literal("baseline"), Type.Literal("candidate")]);
+const boundaryText = Type.String({ minLength: 1, maxLength: 240, pattern: "^[^<>\\r\\n]*\\S[^<>\\r\\n]*$" });
+const instances = Type.Array(boundaryText, { maxItems: 12, uniqueItems: true });
+const boundary = { relationship: boundaryText, domain: boundaryText, uncheckedInstances: instances };
+const ComparisonSupportBoundarySchema = Type.Union([
+  Type.Object({ ...boundary, supportStage: Type.Literal("delivered_output"), coveredInstances: Type.Array(boundaryText, { minItems: 1, maxItems: 12, uniqueItems: true }) }, { additionalProperties: false }),
+  Type.Object({ ...boundary, supportStage: Type.Literal("intermediate_only"), coveredInstances: instances }, { additionalProperties: false }),
+  Type.Object({ ...boundary, supportStage: Type.Literal("unavailable"), coveredInstances: Type.Array(boundaryText, { maxItems: 0 }) }, { additionalProperties: false }),
+]);
+export type ComparisonSupportBoundary = Static<typeof ComparisonSupportBoundarySchema>;
 const final = Type.Object({
   side,
   sourceRefs: refs,
@@ -20,6 +29,7 @@ const observation = Type.Object({
   scope: text,
   evidenceRefs: refs,
   timing: Type.Union([Type.Literal("original_run"), Type.Literal("comparison_check")]),
+  supportBoundary: Type.Optional(ComparisonSupportBoundarySchema),
 }, { additionalProperties: false });
 
 export const ComparisonFindingsSubmissionSchema = Type.Object({
@@ -47,6 +57,15 @@ export const ComparisonFindingsSubmissionSchema = Type.Object({
   importantLimitations: Type.Array(text, { maxItems: 12 }),
 }, { additionalProperties: false, description: 'Complete replacement snapshot. Preserve all previously accepted decision questions and their identities; rejected submissions do not mutate the saved state.' });
 export type ComparisonFindingsSubmission = Static<typeof ComparisonFindingsSubmissionSchema>;
+
+const toolObservation = Type.Object({ ...observation.properties, supportBoundary: ComparisonSupportBoundarySchema }, { additionalProperties: false });
+const baseFinding = ComparisonFindingsSubmissionSchema.properties.findings.items;
+export const ComparisonFindingsToolSubmissionSchema = Type.Object({
+  ...ComparisonFindingsSubmissionSchema.properties,
+  findings: Type.Array(Type.Object({ ...baseFinding.properties,
+    observations: Type.Array(toolObservation, { minItems: 2, maxItems: 2 }),
+  }, { additionalProperties: false }), { maxItems: 12 }),
+}, { additionalProperties: false });
 
 export const ComparisonDiscoveryRecordSchema = Type.Object({
   schemaVersion: Type.Literal(1),

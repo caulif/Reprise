@@ -140,6 +140,13 @@ export const ComparisonDraftSubmissionSchema = Type.Object({
   headline: Type.String({ minLength: 1, maxLength: 280 }),
   decisionSummary: Type.Optional(Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S", description: "Plain text: this task's actual usability and user tradeoff, a conditional choice or inability to judge. Preserve task-critical branches, not only the strongest technical advantage." })),
   decisionBoundary: Type.Optional(Type.String({ maxLength: 1200, description: "Plain text: important unknowns or counterevidence that could change this task decision, not a method inventory. Empty only when no such important boundary has been identified; that does not certify complete verification." })),
+  decisionBasis: Type.Optional(Type.Array(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }), { maxItems: 12, uniqueItems: true, description: "Current finding IDs supporting this decision, exactly matching basis dispositions." })),
+  conclusionScope: Type.Optional(Type.Union([Type.Literal("supported_in_scope"), Type.Literal("conditional"), Type.Literal("undetermined")], { description: "A model declaration, not semantic certification. Incomplete basis or boundary observations require conditional or undetermined." })),
+  findingDispositions: Type.Optional(Type.Array(Type.Object({
+    findingId: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }),
+    disposition: Type.Union([Type.Literal("basis"), Type.Literal("boundary"), Type.Literal("not_decisive")]),
+    explanation: Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S" }),
+  }, { additionalProperties: false }), { maxItems: 12, description: "Cover every current finding exactly once and explain its decision role; explanations are unverified declarations." })),
   comparisonHtml: Type.String({ minLength: 1, maxLength: 262_144 }),
   detailsHtml: Type.Optional(Type.String({ maxLength: 262_144 })),
   decisionShape: Type.Optional(Type.Union([Type.Literal("single_difference"), Type.Literal("multiple_differences")], {
