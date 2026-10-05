@@ -93,6 +93,7 @@ export type ComparisonCompareOptions = {
   enforcePhaseBoundaries?: boolean;
   getFindingsState?: () => string;
   findingsReady?: () => boolean;
+  isRepairRead?: (params: unknown) => Promise<boolean>;
   estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
 
@@ -172,11 +173,18 @@ function sourceReviewFeedback(name: string, reason?: string): { content: string 
   return undefined;
 }
 
-function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { sourceReview: boolean }, resources: ComparisonResourceTracker): AgentToolDefinition[] {
+function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { sourceReview: boolean }, resources: ComparisonResourceTracker,
+  isRepairRead?: ComparisonCompareOptions['isRepairRead']): AgentToolDefinition[] {
   return tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
     const reason = resources.beforeTool(tool.name);
     const sourceFeedback = current.sourceReview ? sourceReviewFeedback(tool.name, reason) : undefined;
     if (sourceFeedback) return sourceFeedback;
+    if (reason && resources.snapshot().phase === 'review' && !current.sourceReview && tool.name === 'read'
+      && await isRepairRead?.(params)) {
+      signal.throwIfAborted();
+      resources.checkHard(tool.name);
+      return tool.execute(params, signal);
+    }
     return reason ? comparisonSoftLimitFeedback(reason, resources.snapshot().phase) : tool.execute(params, signal);
   } }));
 }
@@ -471,7 +479,7 @@ function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: stri
     if (phase === 'investigate') return resources.softReason();
     if (phase !== 'review') return undefined;
     if (pass !== 'sources' && await options?.getSubmittedResult?.()) return 'report_ready';
-    return resources.reviewReason();
+    return pass === 'sources' ? resources.reviewReason() : undefined;
   };
 }
 
@@ -547,7 +555,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     };
     const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false };
     const resources = new ComparisonResourceTracker(this.#resources);
-    const boundedTools = resourceBoundTools(tools, current, resources);
+    const boundedTools = resourceBoundTools(tools, current, resources, options?.isRepairRead);
     const stagedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
     const phasedTools = options?.getSubmittedResult ? stagedTools.map(tool => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) =>
       comparisonToolFeedback(await tool.execute(params, toolSignal), resources, options.getSubmissionState?.(), tool.name) })) : stagedTools;

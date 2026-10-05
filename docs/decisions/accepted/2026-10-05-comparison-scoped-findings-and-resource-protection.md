@@ -132,3 +132,5 @@ Pi 的通用 prune 会将超过 16 KiB 的工具正文替换为前缀 stub；实
 `inspect_comparison_draft` 的检查历史只提供来源、状态、frame hash、时间窗和图片交付库存，不重复完整几何。正文与 receipt 优先保留在 12 KiB 内；超量库存逐记录显式计入 omitted，超量历史问题独立保存为经 schema 校验的可分页 JSON。纯完整终稿仍超限时返回 unavailable，要求减少过量 markup/引用，绝不发送可认证的部分正文或 details receipt。原测量保留在证据文件与事件审计中；这些投影不授予视觉权限，不证明整段动画，也不增加模型请求或时间预算。
 
 现有 `read` 独立解码每个 byte range，分页切断 UTF-8 中文或 emoji 时会产生替换字符。上述两类可分页 JSON 以 ASCII Unicode escapes 保存：逐 UTF-16 code unit 编码，包含 surrogate pairs；拼接页面再 JSON.parse 与原值等价。contentHash 与 byteLength 按实际 ASCII 字节计算，不改变共享 read 的范围或解码契约。真实 read 的 4096 字节多页逆例验证中文/emoji 的完整测量与历史问题均可无损重建。
+
+历史问题分页是核稿收尾资料，不能因为 review 软调查额度耗尽而不可读。Draft 在本进程记录实际生成的 question-history 精确相对路径与内容 hash，`isRepairRead` 只认可这些文件：maxBytes 显式 1–4096、offset 为文件范围内的安全非负整数、format 为 text 或省略，拒绝其他参数、目录、symlink、越出 realpath(attemptRoot) 的父 junction、损坏或缺失文件。实际字节 hash 和既有历史 schema 仍须通过，生成清单只控制预算例外，不成为证据或语义认证。非 ENOENT I/O 错误继续显式传播。应用回调仅用于草稿收尾；source pass 不获此例外，硬资源上限和现有 read 权限继续生效，不增加工具或额度。

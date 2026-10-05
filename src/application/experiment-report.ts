@@ -607,6 +607,7 @@ async function invokeCompare(
       },
       getSubmissionFailure: () => draft.failureReason(),
       getSubmissionState: () => draft.submissionState(),
+      isRepairRead: params => draft.isRepairRead(params),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       enforcePhaseBoundaries: true,
       estimateUsageCost,

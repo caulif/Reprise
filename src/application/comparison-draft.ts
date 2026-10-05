@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { Type } from "@sinclair/typebox";
@@ -19,6 +19,7 @@ import type { ComparisonDraftBinding } from "../core/comparison-discovery-schema
 import type { ComparisonQuoteSourcePort } from "./comparison-source.js";
 import { ComparisonDraftAcceptanceReceiptSchema, ComparisonDraftInspectionSchema } from "../core/comparison-review-schema.js";
 import { comparisonToolTextBytes, serializeComparisonPagedJson } from './comparison-render-output.js';
+import { pathContainedBy } from '../core/paths.js';
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
 type AcceptedDraft = { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] };
@@ -26,6 +27,10 @@ const DraftToolSchema = Type.Object({
   ...ComparisonDraftSubmissionSchema.properties,
   decisionShape: Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionShape"])).properties.decisionShape,
 });
+const RepairReadSchema = Type.Object({ path: Type.String(), offset: Type.Optional(Type.Integer({ minimum: 0 })),
+  maxBytes: Type.Integer({ minimum: 1, maximum: 4096 }), format: Type.Optional(Type.Literal('text')),
+}, { additionalProperties: false });
+const RepairHistorySchema = Type.Pick(ComparisonFindingsSubmissionSchema, ['decisionQuestions']);
 
 function citedEvidence(html: string): string[] {
   const refs = new Set<string>();
@@ -58,6 +63,7 @@ export class ComparisonDraft {
   #bindingRevision = 0;
   #reviewEpoch = 0;
   readonly #pendingInspections = new WeakMap<object, { accepted: AcceptedDraft; reviewEpoch: number }>();
+  readonly #repairReadFiles = new Map<string, string>();
 
   constructor(input: {
     attemptRoot: string;
@@ -192,15 +198,41 @@ export class ComparisonDraft {
     const repair = payload.repairContext as { decisionQuestions: unknown[] } | undefined;
     if (repair?.decisionQuestions.length && comparisonToolTextBytes(payload) > 12_288) {
       const data = { decisionQuestions: repair.decisionQuestions };
-      if (!Value.Check(Type.Pick(ComparisonFindingsSubmissionSchema, ['decisionQuestions']), data)) throw new Error('Invalid persisted question repair history.');
+      if (!Value.Check(RepairHistorySchema, data)) throw new Error('Invalid persisted question repair history.');
       const bytes = serializeComparisonPagedJson(data);
       const relativePath = `scratch/question-history-${sha256(bytes).slice(0, 24)}.json`;
       await writeAtomic(join(this.#attemptRoot, relativePath), bytes);
+      this.#repairReadFiles.set(relativePath, sha256(bytes));
       payload.repairContext = { ...repair, decisionQuestions: data.decisionQuestions.map(question => ({ id: question.id, status: question.status })),
         fullHistory: { path: relativePath, contentHash: sha256(bytes), read: 'Read with byte offset and maxBytes=4096, continuing at nextCursor. Preserve the exact historical IDs, questions and decisionImpact from these pages before updating findings. Prior resolutions are unverified hypotheses.' } };
     }
     if (comparisonToolTextBytes(payload) <= 12_288) return payload;
     return { status: 'unavailable', reason: 'Complete inspection text exceeds the bounded tool-result budget. Reduce excessive report markup or quoted source before resubmitting; no partial text can certify inspection.', certification: 'none' };
+  }
+
+  async isRepairRead(params: unknown): Promise<boolean> {
+    if (!Value.Check(RepairReadSchema, params) || !Number.isSafeInteger(params.offset ?? 0)) return false;
+    const expectedHash = this.#repairReadFiles.get(params.path);
+    if (!expectedHash) return false;
+    try {
+      const path = join(this.#attemptRoot, params.path);
+      const [root, canonical] = await Promise.all([realpath(this.#attemptRoot), realpath(path)]);
+      if (!pathContainedBy(root, canonical)) return false;
+      const info = await lstat(path);
+      if (!info.isFile() || info.isSymbolicLink() || (params.offset ?? 0) > info.size) return false;
+      const bytes = await readFile(path);
+      if (sha256(bytes) !== expectedHash) return false;
+      let data: unknown;
+      try { data = JSON.parse(bytes.toString('utf8')); }
+      catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        return false;
+      }
+      return Value.Check(RepairHistorySchema, data);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+      throw error;
+    }
   }
 
   #repairContext() {

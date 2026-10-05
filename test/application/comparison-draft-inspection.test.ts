@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { ComparisonDraft } from "../../src/application/comparison-draft.js";
 import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evidence.js";
 import { ComparisonDiscovery } from "../../src/application/comparison-discovery.js";
@@ -349,4 +349,35 @@ test('oversized historical repair questions are readable in bounded pages withou
   assert.deepEqual(full.decisionQuestions, record.decisionQuestions);
   assert.equal('findings' in full, false);
   assert.equal(result.details, undefined);
+  const relativePath = content.repairContext.fullHistory.path;
+  const originalBytes = await readFile(join(f.root, relativePath));
+  const allowed = { path: relativePath, offset: 4096, maxBytes: 4096, format: 'text' };
+  assert.equal(await f.draft.isRepairRead(allowed), true);
+  assert.equal(await f.draft.isRepairRead({ path: relativePath, maxBytes: 1 }), true);
+  for (const params of [{ ...allowed, path: `./${relativePath}` }, { ...allowed, path: 'report.html' },
+    { ...allowed, path: 'scratch' }, { ...allowed, maxBytes: 4097 }, { ...allowed, maxBytes: 0 },
+    { ...allowed, maxBytes: undefined }, { ...allowed, offset: -1 }, { ...allowed, offset: 0.5 },
+    { ...allowed, offset: Number.MAX_SAFE_INTEGER + 1 }, { ...allowed, offset: originalBytes.byteLength + 1 },
+    { ...allowed, format: 'image' }, { ...allowed, mimeType: 'image/png' }]) {
+    assert.equal(await f.draft.isRepairRead(params), false);
+  }
+  await writeFile(join(f.root, 'scratch', 'uncertified-history.json'), originalBytes);
+  assert.equal(await f.draft.isRepairRead({ path: 'scratch/uncertified-history.json', maxBytes: 4096 }), false);
+  await writeFile(join(f.root, relativePath), '{broken');
+  assert.equal(await f.draft.isRepairRead(allowed), false);
+  await rm(join(f.root, relativePath));
+  assert.equal(await f.draft.isRepairRead(allowed), false);
+  await mkdir(join(f.root, relativePath));
+  assert.equal(await f.draft.isRepairRead(allowed), false);
+  await rm(join(f.root, relativePath), { recursive: true });
+  await writeFile(join(f.root, relativePath), originalBytes);
+  const external = await mkdtemp(join(tmpdir(), 'reprise-repair-read-external-'));
+  t.after(() => rm(external, { recursive: true, force: true }));
+  await writeFile(join(external, basename(relativePath)), originalBytes);
+  await rename(join(f.root, 'scratch'), join(f.root, 'scratch-original'));
+  await symlink(external, join(f.root, 'scratch'), 'junction');
+  assert.equal(await f.draft.isRepairRead(allowed), false, 'same-hash file behind an external parent junction must not be read');
+  await unlink(join(f.root, 'scratch'));
+  await rename(join(f.root, 'scratch-original'), join(f.root, 'scratch'));
+  assert.equal(await f.draft.isRepairRead(allowed), true);
 });
