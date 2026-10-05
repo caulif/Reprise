@@ -11,8 +11,9 @@
 - Freeform 调用可提供 Host 的 `yieldAfterTurn` 控制函数。Pi 使用现有 `shouldStopAfterTurn`：当前 assistant 与整批工具实际结束、usage 汇报后，在下一次生成前判断；不添加模型工具或任意 JavaScript 控制入口。
 - 返回显式 `yielded`，记录 `agent.invocation_yielded`，不写 `agent.invocation_completed` 或伪造最终文本。Provider 必须真正 idle；Host 等待受原 invocation 信号和超时限制。外部取消、Provider 错误、持久化错误和共享硬额度失败优先，不能转成 yield。
 - 调查与独立 source pass 的软限制在安全 turn 边界机械让出，允许正在运行的请求/工具完成；它不是精确抢占计时器。原硬时限仍约束当前调用，不增加额度。阶段统计记录实际 outcome、pass 与 yieldReason。
-- 调查让出后，最多沿用已有两次无进展修复边界，使用单个 Provider turn 收尾 findings；不能重新调查，未知问题必须保持可见并正确说明不可用。历史问题与所有发布门禁保留。
+- 调查让出后，最多执行两次实际 findings closure 调用；次数按已启动调用计数，不因首次口头返回与保存状态重复而提前失败。closure 内部工具修复可以继续，只有已有 `findingsReady` 检查确认真实保存、当前 catalog 与问题收尾就绪才在完整 turn 边界返回 `findings_ready`。口头承诺不会生成 findings，也不会触发 compose；第二次仍未就绪即失败。不能重新调查，未知问题必须保持可见并正确说明不可用。历史问题、共享硬额度、取消优先与所有发布门禁保留。
 - 独立 source pass 让出后可进入同一 fresh Session 的 draft 审查，但明确 source pass 不完整，未检查的成功保证不能因此认证。
+- findings closure 的工具边界先运行原共享硬限制，再只允许 `update_comparison_findings`；其他工具返回 `closure_only`，即使软额度尚未耗尽也不能重新调查、创作或预览。这一限制来自 Host 阶段状态，不依赖模型遵循收尾提示。
 - draft review 仅通过 Host 原 `getSubmittedResult` 判断可发布；该 getter 必须同时满足当前 receipt、preview 和正式 generation 实际包含完整绑定 inspection 的验证。inspect+preview 同批工具结束时还没有下一次 generation，不能立即作为 report_ready。
 - draft 收尾不因累计 review 软额度在每个内部工具 batch 后让出；历史问题修复、重提、正式 inspection、preview 及后续真实 generation 可在同次调用内完成，避免把内部修复拆成无进展阶段退出。扩展调查的 read/render/register 等仍受原工具软限制拒绝；共享硬限制、外部取消与已有 Host 无进展边界保留。可发布时才正常 report_ready yield，不增加默认额度。
 - structured 调用与未提供 yield policy 的调用保持普通成功/失败语义。事件输入重建将 yielded 视作 invocation 终端，保留实际 tool results 供下一轮重建；TUI 清理当前活动，不把它标成业务完成。
@@ -36,5 +37,7 @@ Comparison 共享额度、attempt 身份及来源/问题历史门禁保持原约
 等待 idle 和最终输入重建会产生本地时间开销，受原 invocation/attempt 截止保护。软时间是安全边界上的收敛目标，不能保证在途模型响应或工具在该毫秒精确停止；此限制须保留于实际审计，不通过增加额度掩盖。
 
 ## 验证
+
+native findings closure 逆例覆盖首次仅口头 will-save、第二次实际工具更新才就绪；同次调用内 invalid 工具反馈后重试成功；两次纯口头返回以实际 attempts=2 失败，未启动 compose；共享硬请求上限和外部取消优先于已经更新的 ready 状态。已拒绝调查工具在 closure 内仍不执行。
 
 `agent-session-yield.test.ts` 覆盖 idle 等待、原 Session 继续、整批副作用不重放、真实错误/取消/硬失败优先；`comparison-phase-yield.test.ts` 覆盖调查收尾、source 不完整范围、generation 未收到 inspection 时不得发布及共享请求上限。native Pi 逆例在 source 软额度已耗尽时，需要七个 draft 内部 generation/tool turn 才完成 stale inspection 修复、历史问题重提、正式 inspection、preview 和真实后续输入；验证扩展调查仍被拒绝、硬耗尽与取消仍不发布。生产 generation 认证复用既有恢复检查，没有新增独立认证状态。

@@ -57,7 +57,7 @@ test('soft yield closes findings, carries incomplete source scope and waits for 
   assert.match(prompts.find(prompt => prompt.includes('Now inspect'))!, /pass is incomplete[\s\S]*Unchecked guarantees remain unknown/);
   const phases = events.filter(event => event.type === 'comparison.phase_completed');
   assert.equal(phases.find(event => event.payload.phase === 'investigate')!.payload.outcome, 'yielded');
-  assert.equal(phases.find(event => event.payload.pass === 'findings')!.payload.yieldReason, 'findings_turn_boundary');
+  assert.equal(phases.find(event => event.payload.pass === 'findings')!.payload.yieldReason, 'findings_ready');
   assert.equal(phases.find(event => event.payload.pass === 'sources')!.payload.outcome, 'yielded');
   assert.equal(phases.at(-1)!.payload.yieldReason, 'report_ready');
   assert.equal(events.filter(event => event.type === 'agent.invocation_yielded').length, 4);
@@ -71,6 +71,75 @@ function nativeMessage(content: AssistantMessage['content'], stopReason: Assista
 function toolTurn(...names: string[]): AssistantMessage {
   return nativeMessage(names.map((name, index) => ({ type: 'toolCall', id: `${name}-${index}`, name, arguments: {} })));
 }
+
+for (const mode of ['late', 'retry', 'verbal', 'hard', 'cancel', 'unexhausted'] as const) test(`native findings closure requires actual accepted readiness; ${mode}`, async () => {
+  const events: AgentAuditEvent[] = [], inputs: string[] = [];
+  const controller = new AbortController();
+  let findings = false, submitted = false, updates = 0, reads = 0;
+  const stop = (text: string) => nativeMessage([{ type: 'text', text }], 'stop');
+  const closure = mode === 'late' ? [stop('I will save the findings.'), toolTurn('read', 'update_comparison_findings')]
+    : mode === 'verbal' ? [stop('I will save the findings.'), stop('I will save the findings now.')]
+      : mode === 'unexhausted' ? [toolTurn('read', 'render_artifact', 'register_evidence', 'shell_exec', 'submit_comparison_draft', 'update_comparison_findings')]
+        : mode === 'cancel' ? [toolTurn('update_comparison_findings')]
+        : [toolTurn('read', 'update_comparison_findings'), toolTurn('update_comparison_findings')];
+  const responses = [stop('Investigated'), ...closure, stop('Composed'), stop('Source observations'), stop('Actual review completed')];
+  const models = { getModel: () => nativeModel, streamSimple: (_model: unknown, modelContext: unknown) => {
+    inputs.push(JSON.stringify(modelContext));
+    const response = responses.shift();
+    if (!response) throw new Error('Unexpected extra generation');
+    if (response.content.some(block => block.type === 'text' && block.text === 'Actual review completed')) submitted = true;
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: 'done', reason: response.stopReason as 'stop' | 'toolUse', message: response });
+    return stream;
+  } } as unknown as PiModels;
+  const caller = new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
+  const tools = [
+    { name: 'read', execute: async () => { reads++; return { content: 'Expansion should be denied' }; } },
+    ...['render_artifact', 'register_evidence', 'shell_exec', 'submit_comparison_draft'].map(name => ({ name, execute: async () => { reads++; return { content: 'Closure side effect should be denied' }; } })),
+    { name: 'update_comparison_findings', execute: async () => {
+      updates++;
+      findings = mode !== 'retry' && mode !== 'hard' || updates > 1;
+      if (mode === 'cancel') controller.abort();
+      return { content: findings ? 'status=accepted; readyToCompose=true' : 'status=invalid; preserve historical questions and retry the actual tool' };
+    } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const agent = new ComparisonAgent({ host: new AgentHost(caller), timeoutMs: 1_000, maxRepairAttempts: 0,
+    resources: { investigationModelRequests: mode === 'unexhausted' ? 40 : 1, maxModelRequests: mode === 'hard' ? 2 : 40 } });
+  const result = await agent.compare(context, tools, { append: async event => { events.push(event); } }, controller.signal, {
+    findingsReady: () => findings, getFindingsState: () => findings ? 'actual accepted ready findings' : 'unchanged missing findings',
+    getSubmittedResult: async () => submitted ? resultValue : undefined,
+  });
+  const phases = events.filter(event => event.type === 'comparison.phase_completed');
+  const closures = phases.filter(event => event.payload.pass === 'findings');
+  const composed = phases.find(event => event.payload.phase === 'compose');
+  assert.equal(reads, 0, 'findings closure cannot expand investigation after its soft stop');
+  if (mode === 'late' || mode === 'retry' || mode === 'unexhausted') {
+    assert.equal(result.status, 'completed');
+    assert.ok(composed);
+    assert.equal(closures.length, mode === 'late' ? 2 : 1);
+    assert.equal(closures.at(-1)!.payload.yieldReason, 'findings_ready');
+    assert.equal(closures.at(-1)!.payload.modelRequests, mode === 'retry' ? 2 : 1);
+    assert.equal(updates, mode === 'retry' ? 2 : 1);
+    if (mode === 'late') {
+      assert.equal(closures[0]!.payload.outcome, 'completed');
+      assert.equal(closures[0]!.payload.yieldReason, undefined);
+      assert.ok(inputs[2]!.includes('previous closure call did not produce an actually accepted ready findings update'));
+      assert.ok(inputs[2]!.includes('do not give another verbal promise'));
+    } else if (mode === 'retry') assert.ok(inputs[2]!.includes('status=invalid'), 'same invocation receives actual invalid feedback before tool retry');
+    else assert.ok(inputs[2]!.includes('closure_only'), 'closure rejects investigation even with unused soft allowance');
+  } else {
+    assert.equal(composed, undefined);
+    assert.equal(result.status, mode === 'cancel' ? 'cancelled' : 'failed');
+    if (mode === 'verbal' && result.status === 'failed') {
+      assert.equal(result.failure.attempts, 2);
+      assert.equal(closures.length, 2);
+      assert.equal(updates, 0);
+      assert.equal(findings, false, 'verbal promises cannot fabricate saved findings');
+    }
+    if (mode === 'hard' && result.status === 'failed') assert.match(result.failure.message, /maxModelRequests/);
+    assert.equal(closures.some(event => event.payload.yieldReason === 'findings_ready'), false, 'hard failure or cancellation wins over readiness');
+  }
+});
 
 for (const mode of ['success', 'hard', 'tool_hard', 'cancel'] as const) test(`native draft closure continues internal repair turns after source soft exhaustion; ${mode} retains its boundary`, async t => {
   const events: AgentAuditEvent[] = []; const seen: string[] = [];

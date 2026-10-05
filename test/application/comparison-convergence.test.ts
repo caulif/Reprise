@@ -25,8 +25,12 @@ test('findings convergence rejects no progress and always records resource compl
     getSubmittedResult: async () => undefined, findingsReady: () => false, getFindingsState: () => 'unchanged pending question',
   });
   assert.equal(result.status, 'failed');
-  if (result.status === 'failed') assert.equal(result.failure.code, 'draft_invalid');
-  assert.equal(prompts.length, 2);
+  if (result.status === 'failed') {
+    assert.equal(result.failure.code, 'draft_invalid');
+    assert.equal(result.failure.attempts, 2);
+  }
+  assert.equal(prompts.length, 3);
+  assert.match(prompts[2]!, /previous closure call did not produce an actually accepted ready findings update/);
   assert.ok(prompts.every(prompt => !prompt.includes(COMPARISON_TURN_PROMPTS.compose)));
   assert.equal(events.filter(event => event.type === 'comparison.resources_completed').length, 1);
 });

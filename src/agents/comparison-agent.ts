@@ -173,10 +173,12 @@ function sourceReviewFeedback(name: string, reason?: string): { content: string 
   return undefined;
 }
 
-function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { sourceReview: boolean }, resources: ComparisonResourceTracker,
+function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { sourceReview: boolean; findingsClosure: boolean }, resources: ComparisonResourceTracker,
   isRepairRead?: ComparisonCompareOptions['isRepairRead']): AgentToolDefinition[] {
   return tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
     const reason = resources.beforeTool(tool.name);
+    if (current.findingsClosure && tool.name !== 'update_comparison_findings') return { content: JSON.stringify({ code: 'closure_only',
+      message: 'This findings closure permits only update_comparison_findings from already observed evidence. Do not investigate, write, submit or preview here.' }) };
     const sourceFeedback = current.sourceReview ? sourceReviewFeedback(tool.name, reason) : undefined;
     if (sourceFeedback) return sourceFeedback;
     if (reason && resources.snapshot().phase === 'review' && !current.sourceReview && tool.name === 'read'
@@ -475,7 +477,7 @@ type ComparisonWorkPass = 'sources' | 'findings';
 function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: string, pass: ComparisonWorkPass | undefined, options: ComparisonCompareOptions | undefined): () => Promise<string | undefined> {
   return async () => {
     resources.checkHard('completed provider turn');
-    if (pass === 'findings') return 'findings_turn_boundary';
+    if (pass === 'findings') return options?.findingsReady?.() ? 'findings_ready' : undefined;
     if (phase === 'investigate') return resources.softReason();
     if (phase !== 'review') return undefined;
     if (pass !== 'sources' && await options?.getSubmittedResult?.()) return 'report_ready';
@@ -553,7 +555,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
       return comparisonEvidenceAllowlist(context);
     };
-    const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false };
+    const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false, findingsClosure: false };
     const resources = new ComparisonResourceTracker(this.#resources);
     const boundedTools = resourceBoundTools(tools, current, resources, options?.isRepairRead);
     const stagedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
@@ -585,6 +587,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: ComparisonWorkPass) => {
       current.phase = phase;
       current.sourceReview = reviewPass === 'sources';
+      current.findingsClosure = reviewPass === 'findings';
       resources.phase(phase);
       activePhase = phase;
       counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
@@ -649,16 +652,16 @@ export class ComparisonAgent implements ComparisonAgentPort {
     let investigated = await measuredWork('investigate', context.promptContent
       ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
       : COMPARISON_TURN_PROMPTS.orientAndInvestigate);
-    const seenFindings = new Set<string>();
+    let closureCalls = 0;
     while ((investigated.status === 'completed' || investigated.status === 'yielded') && options.findingsReady && !options.findingsReady()) {
       const state = options.getFindingsState?.() ?? 'missing findings';
-      if (seenFindings.has(state) || seenFindings.size >= 2) {
+      if (closureCalls >= 2) {
         await this.#sessions.discard(attemptId);
         return { status: 'failed', sessionId,
-          failure: { code: 'draft_invalid', message: 'Comparison findings are missing or decision questions remain pending without progress.', attempts: seenFindings.size, kind: 'protocol' } };
+          failure: { code: 'draft_invalid', message: 'Comparison findings are missing or decision questions remain pending after two actual closure calls.', attempts: closureCalls, kind: 'protocol' } };
       }
-      seenFindings.add(state);
-      investigated = await measuredWork('investigate', `The Host stopped investigation at a completed-turn boundary; it did not certify completion. Use this bounded closure turn only to submit update_comparison_findings from already observed evidence. Do not run more investigation or repeat settled checks. Resolve questions only with existing supporting evidence; otherwise mark unavailable with the decisive uncertainty and limitation. Preserve the complete question history. Current findings: ${state}`, 'findings');
+      closureCalls++;
+      investigated = await measuredWork('investigate', `The Host stopped investigation at a completed-turn boundary; it did not certify completion. Use this bounded closure turn only to submit update_comparison_findings from already observed evidence. ${closureCalls === 2 ? 'The previous closure call did not produce an actually accepted ready findings update. Call update_comparison_findings now; do not give another verbal promise to save it. ' : ''}Do not run more investigation or repeat settled checks. Resolve questions only with existing supporting evidence; otherwise mark unavailable with the decisive uncertainty and limitation. Preserve the complete question history. Current findings: ${state}`, 'findings');
     }
     const findings = options.getFindingsState?.();
     const prefix = investigated.status === 'completed' || investigated.status === 'yielded'
