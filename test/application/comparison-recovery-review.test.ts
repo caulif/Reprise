@@ -89,6 +89,20 @@ test('inspection audit must include full matching content and receipt, not detai
   }
 });
 
+test('v2 recovery requires inspection after the current draft audit boundary', async () => {
+  const requested = event(1, 'comparison.requested', { attemptId: 'attempt', reviewInspectionContractVersion: 2 });
+  const audit = event(6, 'comparison.draft_audit_started', start.payload as Record<string, unknown>);
+  assert.match((await check([requested, start, accepted, inspect(5)]))!, /draft audit never started/);
+  assert.match((await check([requested, start, accepted, inspect(5), audit]))!, /No inspection/);
+  assert.equal(await check([requested, start, accepted, inspect(5), audit, inspect(7)]), undefined);
+  const wrongSession = event(6, audit.type, { ...(start.payload as Record<string, unknown>), sessionId: 'author' });
+  assert.match((await check([requested, start, accepted, wrongSession, inspect(7)]))!, /latest independent review session/);
+  await assert.rejects(() => check([requested, start, accepted, event(6, audit.type, { attemptId: 'attempt' }), inspect(7)]), /Invalid Comparison draft audit contract/);
+  const restart = event(8, start.type, start.payload as Record<string, unknown>);
+  assert.match((await check([requested, start, accepted, audit, inspect(7), restart]))!, /draft audit never started/);
+  assert.equal(await check([requested, start, accepted, audit, inspect(7), restart, event(9, audit.type, start.payload as Record<string, unknown>), inspect(10)]), undefined);
+});
+
 test('artifact-backed inspection checks run ownership, hash and byte length before parsing complete content', async () => {
   const bytes = Buffer.from(JSON.stringify({ ...receipt, ...content }));
   const good = inspect(5);

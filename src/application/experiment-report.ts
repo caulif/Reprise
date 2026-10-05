@@ -608,6 +608,12 @@ async function invokeCompare(
       getSubmissionFailure: () => draft.failureReason(),
       getSubmissionState: () => draft.submissionState(),
       hasReviewDraftMaterial: () => draft.hasReviewDraftMaterial(),
+      onDraftAuditStarted: async sessionId => {
+        draft.beginDraftAudit();
+        const payload = { schemaVersion: 1 as const, attemptId, sessionId, inspectionRequired: true as const };
+        if (!Value.Check(ComparisonReviewStartedSchema, payload)) throw new Error('Invalid Comparison draft audit contract.');
+        await input.store.append({ type: 'comparison.draft_audit_started', runId: input.input.runId, payload });
+      },
       hasCurrentReviewInspection: () => draft.hasCurrentReviewInspection(),
       isRepairRead: params => draft.isRepairRead(params),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
@@ -784,7 +790,7 @@ function comparisonAudit(
 }
 
 async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false): Promise<void> {
-  const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 1 as const } : undefined;
+  const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 2 as const } : undefined;
   if (reviewContract && !Value.Check(ComparisonReviewRequestSchema, reviewContract)) throw new Error('Invalid Comparison review request contract.');
   const bytes = Buffer.from(JSON.stringify(context), "utf8");
   const truncated = bytes.byteLength > MAX_COMPARISON_INPUT_BYTES;

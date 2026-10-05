@@ -9,10 +9,8 @@ import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 import type { ComparisonResources } from '../core/schema.js';
 import { ComparisonResourceTracker } from './comparison-resources.js';
 import { comparisonToolFeedback, comparisonSoftLimitFeedback } from './comparison-tool-feedback.js';
-
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
-
 export type ComparisonContext = {
   task: { caseId: string; summary: string };
   baseline: { summary: string; evidenceRefs: readonly string[] };
@@ -39,7 +37,6 @@ export type ComparisonContext = {
 };
 
 export type ComparisonFactsContext = Omit<ComparisonContext, "attemptId">;
-
 export type ComparisonReportFacts = {
   run: { runId: string; outcome: string; terminationCode: string; initiatedBy: string; elapsedMs?: number; candidateElapsedMs?: number };
   models: { candidate: string; candidateRequested?: string; candidateResolved?: string; baseline?: string; controller?: string; comparison?: string };
@@ -99,6 +96,7 @@ export type ComparisonCompareOptions = {
   hasReviewDraftMaterial?: () => boolean;
   /** Actual formal inspection delivered for the current binding; does not certify semantics. */
   hasCurrentReviewInspection?: () => boolean;
+  onDraftAuditStarted?: (sessionId: string) => void | Promise<void>;
   isRepairRead?: (params: unknown) => Promise<boolean>;
   estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
@@ -521,10 +519,10 @@ export const COMPARISON_TURN_PROMPTS = {
   review: [
     'Audit the report against the original requirements and actual final output chain, not the author interpretation. Inspect the accepted draft with inspect_comparison_draft when available.',
     'First audit task-level decision coverage: decisionSummary must explain the requested result, user impact and supported or conditional choice; decisionBoundary must visibly retain known adverse results and task-critical unknowns that could change usability. Review every consequential task quality, not only the selected advantage or explicit success guarantees. Removing an unsupported guarantee does not make its unresolved task quality irrelevant.',
-    'Compare the actual summary and boundary with current criteria, findings, userConsequence, limitations and independent source observations. Saved objects are model-authored hypotheses, not certified answers. Resolve contradictions from actual output evidence or expose the unresolved choice; do not silently delete an inconvenient defect or unknown when shortening the draft.',
+    'Compare the actual summary and boundary with current criteria, findings, userConsequence, limitations and independent source observations. Saved objects are model-authored hypotheses, not certified answers. Resolve contradictions from actual output evidence or expose the unresolved choice; do not silently delete an inconvenient defect or unknown when shortening the draft. Each independent quality claim or recommendation premise in the headline, summary and boundary must match a finding about that actual task relationship, or remain visibly unsupported; a finding about one relationship cannot support another or certify overall task usability.',
     'Audit every findingDispositions entry and the exact decisionBasis IDs against current findings. Check conclusionScope and both sides supportBoundary: a local target or self-check is intermediate_only until the actual final relationship is traced through its downstream branches. coveredInstances do not cover uncheckedInstances. Intermediate-only or unavailable evidence cannot certify task quality or serve as its positive recommendation premise, even with an adjacent global disclaimer. A declared delivered_output stage is not evidence by itself.',
     'A stale inspection exposes actual prior text and historical decision questions only for repair; it does not certify the current version. Preserve question identities when replacing findings, revise their conclusions from your independent evidence, resubmit once against the current catalog, then inspect and preview that accepted version.',
-    'Prioritize decisive claims and omitted counterexamples before layout. A local target, constant or self-check is not the delivered result; trace downstream transforms, writes or returned values in their actual domain.',
+    'Prioritize decisive claims and omitted counterexamples before layout. A local target, constant or self-check is not the delivered result; trace downstream transforms, writes or returned values in their actual domain. Resolve the existing draft against retained source observations first; do not restart or expand investigation in this audit, and retain decision-changing unchecked relationships as conditional or unknown.',
     'Use the source pass to challenge the strongest advantage. If evidence does not support a guarantee, narrow or remove it and keep decision-changing uncertainty visible. Unknown evidence does not force a winner.',
     'Check headline, paired results, every details heading and limitations together. A defect or unresolved question in details must qualify a conflicting success claim in the main text; headings must agree with their paragraphs.',
     'Match each claim to its observed scope. Read actual execution payloads for process claims; missing records do not prove an action never happened, and final defects do not establish their unrecorded cause or edit history.',
@@ -548,6 +546,7 @@ export const COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT = COMPARISON_TURN_PROMPTS.
   .replace('After the last accepted revision, reread the actual headline, main text and all details with inspect_comparison_draft; your intended edit is not proof the submitted text changed.', 'After any accepted revision, inspect the actual latest headline, main text and all details with inspect_comparison_draft; your intended edit is not proof the submitted text changed. If the current formal inspection has already been delivered and its binding has not changed, do not repeat it merely to obtain the same material. Stale material is only for repair and cannot satisfy final inspection.');
 
 export const COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT = COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT
+  .replace('If the current formal inspection has already been delivered and its binding has not changed, do not repeat it merely to obtain the same material.', 'The initial checkpoint delivers material only; obtain a new formal current inspection in this audit after checking the draft against your source observations.')
   .replace('then inspect and preview that accepted version.', 'then formally inspect that accepted version. The Host runs preview in a separate closure after this actual full audit turn.')
   .replace('Then use preview_report to check identities, metrics visibility, readability, overflow and evidence loading. When supported and authorized, read its actual images; a loaded page alone is not a visual review.', 'Finish the actual full audit and formal current inspection first. preview_report is unavailable in this pass; the Host enables only preview_report in the next closure with the actual full current inspection in its generation input.')
   .replace('If you correct anything, repeat final inspection and preview the revised digest. Stop after a valid inspected and previewed version; do not resubmit to tune advisory length.', 'If you correct anything, formally inspect the revised current digest. Finish this audit turn; the Host starts preview-only closure. Do not resubmit to tune advisory length.');
@@ -808,6 +807,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     ].join('\n\n');
     const seen = new Set<string>();
     for (let repair = 0; ; repair++) {
+      if (options.hasCurrentReviewInspection) await options.onDraftAuditStarted?.(sources.sessionId);
       let reviewed = await work('review', options.hasCurrentReviewInspection
         ? `${prompt}\n\nComplete the full audit in this actual turn, then formally inspect the current accepted binding. Do not call preview_report here; the Host starts the separate preview-only closure after this completed turn.` : prompt,
         options.hasCurrentReviewInspection ? 'audit' : undefined);

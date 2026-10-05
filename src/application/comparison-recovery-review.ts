@@ -23,18 +23,28 @@ export async function recoveryReviewBinding(input: {
   const belongs = (event: EventEnvelope) => typeof event.payload === 'object' && event.payload !== null
     && 'attemptId' in event.payload && event.payload.attemptId === input.attemptId;
   const started = input.events.filter(event => event.type === 'comparison.review_started' && belongs(event)).at(-1);
+  const auditStarted = input.events.filter(event => event.type === 'comparison.draft_audit_started' && belongs(event)
+    && (!started || event.sequence > started.sequence)).at(-1);
   const requested = input.events.filter(event => event.type === 'comparison.requested' && belongs(event)
     && typeof event.payload === 'object' && event.payload !== null && 'reviewInspectionContractVersion' in event.payload).at(-1);
   if (requested && typeof requested.payload === 'object' && requested.payload !== null) {
     const contract = { attemptId: input.attemptId, reviewInspectionContractVersion: (requested.payload as Record<string, unknown>).reviewInspectionContractVersion };
     if (!Value.Check(ComparisonReviewRequestSchema, contract)) throw new Error('Invalid Comparison review request contract audit.');
+    if (contract.reviewInspectionContractVersion === 2 && (!auditStarted || (started && auditStarted.sequence <= started.sequence))) {
+      return 'Required draft audit never started after the latest independent review.';
+    }
   }
   if (!started) return requested ? 'Required independent review never started.' : undefined;
   if (!Value.Check(ComparisonReviewStartedSchema, started.payload)) throw new Error('Invalid Comparison review contract audit.');
+  if (auditStarted && !Value.Check(ComparisonReviewStartedSchema, auditStarted.payload)) throw new Error('Invalid Comparison draft audit contract audit.');
+  if (auditStarted && Value.Check(ComparisonReviewStartedSchema, auditStarted.payload) && auditStarted.payload.sessionId !== started.payload.sessionId) {
+    return 'Draft audit does not belong to the latest independent review session.';
+  }
+  const inspectionAfter = Math.max(started.sequence, auditStarted?.sequence ?? 0, input.acceptedAfterSequence);
   const sessionId = started.payload.sessionId;
   if (sessionId !== input.previewSessionId) return 'Preview does not belong to the latest independent review session.';
   const inspected = input.events.filter(event => event.type === 'agent.tool_completed' && belongs(event)
-    && event.sequence > Math.max(started.sequence, input.acceptedAfterSequence)
+    && event.sequence > inspectionAfter
     && typeof event.payload === 'object' && event.payload !== null
     && 'tool' in event.payload && event.payload.tool === 'inspect_comparison_draft'
     && !('nativeHook' in event.payload)

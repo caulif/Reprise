@@ -123,6 +123,9 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
           const result = await preview.execute({}, signal);
           assert.equal((JSON.parse(result.content) as { status: string }).status, 'ok');
         }
+        if (content.includes('Complete the full audit in this actual turn')) {
+          await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+        }
         return '';
       },
       cancel() {},
@@ -146,13 +149,16 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
   }
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
   assert.equal(turns, 6, 'one actual full audit is followed by preview-only generation with no post-preview generation');
-  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 6, toolCalls: 3, compactions: 0 });
+  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 6, toolCalls: 4, compactions: 0 });
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /usable result/);
   const events = await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8');
   assert.match(events, /comparison.phase_completed/);
   const recorded = events.trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
-  const inspection = recorded.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft');
+  const auditStarted = recorded.find(event => event.type === 'comparison.draft_audit_started');
+  assert.ok(auditStarted);
+  const inspection = recorded.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft').at(-1);
   assert.ok(inspection);
+  assert.ok(inspection.sequence > auditStarted.sequence, 'checkpoint inspection cannot certify the subsequent full audit');
   const generation = recorded.find(event => event.type === 'agent.model_request' && event.payload.scope === 'generation'
     && event.sequence > inspection.sequence && event.payload.sessionId === inspection.payload.sessionId && 'generationInput' in event.payload);
   const preview = recorded.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report');
@@ -188,6 +194,9 @@ test('application refuses to publish an accepted draft without preview', async (
         if (content.includes('This is the actual draft inspection checkpoint')) {
           checkpointVisits++;
           assert.deepEqual(allowedToolNames, ['inspect_comparison_draft']);
+          await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+        }
+        if (content.includes('Complete the full audit in this actual turn')) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
         }
         return '';
@@ -238,6 +247,9 @@ test('a provider failure after preview does not publish the draft', async (t) =>
           assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');
           previewRan = true;
           throw Object.assign(new Error('Provider unavailable during review'), { status: 503 });
+        }
+        if (content.includes('Complete the full audit in this actual turn')) {
+          await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
         }
         return '';
       }, cancel() {},

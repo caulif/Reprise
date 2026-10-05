@@ -39,15 +39,36 @@ export function decisionContractError(draft: ComparisonDraftSubmission, findings
 
 export function decisionTextHtml(draft: ComparisonDraftSubmission, findings?: ComparisonFindingsSubmission, locale: AgentLocale = 'zh'): string {
   const relevant = new Set(draft.findingDispositions?.filter(item => item.disposition !== 'not_decisive').map(item => item.findingId));
-  const boundaries = draft.decisionSummary === undefined ? [] : (findings?.findings ?? []).flatMap(finding => relevant.has(finding.id)
+  const boundaries = draft.decisionSummary === undefined ? [] : (findings?.findings ?? []).flatMap(finding => {
+    if (!relevant.has(finding.id)) return [];
+    const observations = finding.observations.filter(observation => incomplete(observation.supportBoundary));
+    const groups = [true, false].flatMap(partial => {
+      const sides = observations.filter(observation => (observation.supportBoundary?.supportStage === 'delivered_output') === partial)
+        .map(observation => sideName(observation.side, locale));
+      if (!sides.length) return [];
+      return locale === 'en' ? [`${sides.join(' and ')}: ${partial ? 'limited delivered-output coverage' : 'delivered-output support unverified'}`]
+        : [`${sides.join('、')}${partial ? '仅有局部交付支持' : '交付结果未确认'}`];
+    });
+    return groups.length ? [locale === 'en' ? `${finding.criterion}: ${groups.join('; ')}.` : `${finding.criterion}：${groups.join('；')}。`] : [];
+  });
+  return `${paragraph(draft.decisionSummary)}${paragraph(draft.decisionBoundary)}${boundaries.map(paragraph).join('')}${draft.comparisonHtml}`;
+}
+
+function sideName(side: 'baseline' | 'candidate', locale: AgentLocale): string {
+  return locale === 'en' ? (side === 'baseline' ? 'Historical run' : 'Current run') : (side === 'baseline' ? '历史运行' : '当前运行');
+}
+
+export function decisionSupportDetailsHtml(draft: ComparisonDraftSubmission, findings?: ComparisonFindingsSubmission, locale: AgentLocale = 'zh'): string {
+  if (draft.decisionSummary === undefined) return '';
+  const relevant = new Set(draft.findingDispositions?.filter(item => item.disposition !== 'not_decisive').map(item => item.findingId));
+  return (findings?.findings ?? []).flatMap(finding => relevant.has(finding.id)
     ? finding.observations.filter(observation => incomplete(observation.supportBoundary)).map(observation => {
       const support = observation.supportBoundary;
-      const side = locale === 'en' ? (observation.side === 'baseline' ? 'Historical run' : 'Current run') : (observation.side === 'baseline' ? '历史运行' : '当前运行');
-      const relationship = support?.relationship ?? finding.criterion;
-      const unchecked = support?.uncheckedInstances.length ? support.uncheckedInstances.join('、') : undefined;
-      const partial = support?.supportStage === 'delivered_output';
-      if (locale === 'en') return `${side}: ${relationship} ${partial ? 'has limited output coverage' : 'remains unverified in the delivered output'}${unchecked ? `; unchecked instances: ${unchecked}` : ''}.`;
-      return `${side}：${relationship}${partial ? '的结果覆盖有限' : '的交付结果仍未确认'}${unchecked ? `；未检查：${unchecked}` : ''}。`;
-    }) : []);
-  return `${paragraph(draft.decisionSummary)}${paragraph(draft.decisionBoundary)}${boundaries.map(paragraph).join('')}${draft.comparisonHtml}`;
+      const identity = `${finding.criterion} · ${sideName(observation.side, locale)}`;
+      if (!support) return paragraph(locale === 'en' ? `${identity}: delivered output has not been verified.` : `${identity}：交付结果未确认。`);
+      const instances = (values: string[]) => values.length ? values.join(locale === 'en' ? ', ' : '、') : (locale === 'en' ? 'none recorded' : '未记录');
+      return paragraph(locale === 'en'
+        ? `${identity}: ${support.relationship}; scope: ${support.domain}; checked: ${instances(support.coveredInstances)}; unchecked: ${instances(support.uncheckedInstances)}.`
+        : `${identity}：${support.relationship}；范围：${support.domain}；已检查：${instances(support.coveredInstances)}；未检查：${instances(support.uncheckedInstances)}。`);
+    }) : []).join('');
 }

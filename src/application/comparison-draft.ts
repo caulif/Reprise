@@ -22,7 +22,7 @@ import { comparisonToolTextBytes, serializeComparisonPagedJson } from './compari
 import { pathContainedBy } from '../core/paths.js';
 import { toolDeliveryToken, withToolDelivery } from '../infrastructure/agent/tool-delivery.js';
 import { redactModelVisibleText } from '../infrastructure/agent/model-input.js';
-import { decisionTextHtml, decisionContractError } from './comparison-decision-contract.js';
+import { decisionTextHtml, decisionSupportDetailsHtml, decisionContractError } from './comparison-decision-contract.js';
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
 type AcceptedDraft = { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] };
@@ -304,6 +304,16 @@ export class ComparisonDraft {
     return this.#reviewInspectionRequired && this.#reviewDraftMaterial !== undefined && this.#currentInspectionDelivery(this.#reviewDraftMaterial);
   }
 
+  beginDraftAudit(): void {
+    const material = this.#reviewDraftMaterial;
+    const retained = material && this.#currentInspectionDelivery(material);
+    this.#reviewEpoch++;
+    this.#reviewDraftMaterial = retained ? { ...material, reviewEpoch: this.#reviewEpoch, formal: false } : undefined;
+    this.#inspected = undefined;
+    this.#previewed = undefined;
+    this.#pendingReviewMaterials = new WeakMap();
+  }
+
   hasCurrentReviewInspection(): boolean {
     const material = this.#reviewDraftMaterial;
     return Boolean(this.#reviewInspectionRequired && material?.formal && this.#inspected === this.#accepted && this.#currentInspectionDelivery(material)
@@ -337,6 +347,7 @@ export class ComparisonDraft {
       headline: draft.headline,
       evidenceRefs: citedEvidence(`${draft.comparisonHtml}${draft.detailsHtml ?? ""}`),
     };
+    const details = `${draft.detailsHtml ?? ''}${decisionSupportDetailsHtml(draft, discovery?.submission, this.#locale)}`;
     const html = renderComparisonReportShell({
       task: this.#task,
       facts: this.#facts,
@@ -347,7 +358,7 @@ export class ComparisonDraft {
         category: draft.category,
         headline: draft.headline,
         comparison: decisionTextHtml(draft, discovery?.submission, this.#locale),
-        ...(draft.detailsHtml ? { details: draft.detailsHtml } : {}),
+        ...(details ? { details } : {}),
       },
       locale: this.#locale,
     });

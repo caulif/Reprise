@@ -107,13 +107,25 @@ test('decision dependencies cover exact current findings and reject unsupported 
     assert.match(await f.discovery!.update(current), /status=accepted/);
     assert.match(await f.draft.submit(modern), /decision_scope_incomplete/);
     assert.match(await f.draft.submit({ ...modern, conclusionScope: 'conditional' }), /status=accepted/);
-    const inspected = String((await f.inspect()).comparisonHtml);
-    assert.match(inspected, /Current run: (Output relation (remains unverified|has limited output coverage)|Preserve meaning remains unverified)/);
-    if (supportBoundary?.uncheckedInstances.length) assert.match(inspected, /Output branch/);
-    assert.match(await f.draft.submit({ ...modern, conclusionScope: 'conditional', decisionSummary: '用'.repeat(190) }), /draft_too_long/);
+    const material = await f.inspect();
+    const inspected = String(material.comparisonHtml);
+    assert.match(inspected, /Preserve meaning: Current run: (delivered-output support unverified|limited delivered-output coverage)/);
+    if (supportBoundary?.uncheckedInstances.length) {
+      assert.doesNotMatch(inspected, /Output branch/);
+      assert.match(String(material.detailsHtml), /Output branch/);
+    }
+    assert.match(await f.draft.submit({ ...modern, conclusionScope: 'conditional', decisionSummary: '用'.repeat(240) }), /draft_too_long/);
     const asBoundary = { ...modern, decisionBasis: ['f2'], findingDispositions: modern.findingDispositions!.map(item => ({ ...item, disposition: item.findingId === 'f1' ? 'boundary' as const : 'basis' as const })) };
     assert.match(await f.draft.submit(asBoundary), /decision_scope_incomplete/);
   }
+  const longScope = { ...snapshot, findings: [{ ...first, observations: [first.observations[0]!, {
+    ...first.observations[1]!, supportBoundary: { ...first.observations[1]!.supportBoundary,
+      uncheckedInstances: Array.from({ length: 12 }, (_, index) => `Output branch ${index}: ${'x'.repeat(40)}`) },
+  }] }, snapshot.findings[1]!] };
+  assert.match(await f.discovery!.update(longScope), /status=accepted/);
+  const beforeRejectedDetails = await readFile(join(f.root, 'report.html'), 'utf8');
+  assert.match(await f.draft.submit({ ...modern, conclusionScope: 'conditional', detailsHtml: '' }), /draft_details_too_long/);
+  assert.equal(await readFile(join(f.root, 'report.html'), 'utf8'), beforeRejectedDetails);
 });
 
 test('current formal inspection getter requires complete successful delivery and exact current bindings', async t => {
@@ -157,6 +169,34 @@ test('a later failed preview invalidates prior success for the same accepted dig
     catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root }, { status: 'timeout', message: 'Latest check timed out' });
   assert.equal(await f.draft.completedResult(), undefined);
   assert.match(f.draft.failureReason().message, /Latest check timed out/);
+});
+
+test('draft audit keeps delivered text but revokes checkpoint inspection, preview and pending delivery', async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission);
+  f.draft.beginReview();
+  await f.inspect();
+  await preview(f);
+  assert.ok(await f.draft.completedResult());
+  f.draft.beginDraftAudit();
+  assert.equal(f.draft.hasReviewDraftMaterial(), true);
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  assert.equal(await f.draft.completedResult(), undefined);
+  const tool = f.draft.inspectTool();
+  const delayed = await tool.execute({}, new AbortController().signal);
+  f.draft.beginDraftAudit();
+  await tool.onCompleted!(delayed);
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  await f.inspect();
+  assert.equal(f.draft.hasCurrentReviewInspection(), true);
+  assert.equal(await f.draft.completedResult(), undefined);
+  await preview(f);
+  assert.ok(await f.draft.completedResult());
+  const inFlight = tool.execute({}, new AbortController().signal);
+  f.draft.beginDraftAudit();
+  await tool.onCompleted!(await inFlight);
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  assert.equal(await f.draft.completedResult(), undefined);
 });
 
 test("fresh review clears compose inspection and requires actual final text delivery after every correction", async t => {

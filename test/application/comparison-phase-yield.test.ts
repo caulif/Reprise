@@ -342,6 +342,44 @@ for (const mode of ['success', 'provider', 'cancel', 'audit', 'hard'] as const) 
   if (mode === 'success') assert.equal(phases.at(-1)!.payload.yieldReason, 'report_ready');
 });
 
+test('a current checkpoint cannot certify an audit containing only rejected reads', async () => {
+  const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
+  let material = false, formal = false, previewed = false, inspections = 0, reads = 0, auditStarts = 0;
+  const stop = (text: string) => nativeMessage([{ type: 'text', text }], 'stop');
+  const responses = [stop('Investigated'), stop('Composed'), stop('Retained source observations'), toolTurn('inspect_comparison_draft'),
+    toolTurn('read'), toolTurn('inspect_comparison_draft'), toolTurn('preview_report')];
+  const models = { getModel: () => nativeModel, streamSimple: (_model: unknown, actual: unknown) => {
+    const current = actual as typeof inputs[number];
+    inputs.push({ tools: current.tools.map(tool => ({ name: tool.name })), messages: structuredClone(current.messages) });
+    if (inputs.length === 5 || inputs.length === 6) {
+      assert.equal(auditStarts, 1, 'the async audit-start callback must complete before actual audit generation');
+      assert.equal(formal, false, 'checkpoint inspection is material, not formal audit certification');
+      assert.ok(!current.tools.some(tool => tool.name === 'preview_report'));
+      assert.ok(!events.some(event => event.type === 'comparison.phase_completed' && event.payload.yieldReason === 'final_inspection_ready'));
+    }
+    const response = responses.shift(); if (!response) throw new Error('Unexpected extra generation');
+    const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: response.stopReason as 'stop' | 'toolUse', message: response }); return stream;
+  } } as unknown as PiModels;
+  const caller = new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
+  const tools = [
+    { name: 'read', execute: async () => { reads++; return { content: 'Must be rejected before execution' }; } },
+    { name: 'inspect_comparison_draft', execute: async () => { inspections++; return { content: `Actual full inspection ${inspections}` }; }, onCompleted: async () => { material = true; formal = true; } },
+    { name: 'preview_report', execute: async () => { assert.equal(inspections, 2); previewed = true; return { content: 'Actual matching preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const result = await new ComparisonAgent({ host: new AgentHost(caller), timeoutMs: 1_000, maxRepairAttempts: 0,
+    resources: { investigationModelRequests: 1 } }).compare(context, tools, { append: async event => { events.push(event); } }, undefined, {
+    hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => formal,
+    onDraftAuditStarted: async () => { assert.equal(material, true); assert.equal(formal, true); await Promise.resolve(); formal = false; auditStarts++; },
+    isRepairRead: async () => false, getSubmittedResult: async () => formal && previewed ? resultValue : undefined,
+  });
+  assert.equal(result.status, 'completed'); assert.equal(inputs.length, 7); assert.equal(reads, 0); assert.equal(inspections, 2);
+  assert.match(JSON.stringify(inputs[5]!.messages), /review_investigation_limit/);
+  assert.deepEqual(inputs[6]!.tools.map(tool => tool.name), ['preview_report']);
+  assert.match(JSON.stringify(inputs[6]!.messages), /Actual full inspection 2/);
+  const audits = events.filter(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'audit');
+  assert.equal(audits.length, 1); assert.equal(audits[0]!.payload.yieldReason, 'final_inspection_ready');
+});
+
 test('preview closure execution guard returns changed bindings to a real full audit', async () => {
   let material = false, formal = false, previews = 0, audits = 0, closureInputs = 0, forbiddenEffects = 0;
   const inputs: string[] = [];
