@@ -110,7 +110,11 @@ async function reviewGenerationBinding(input: Parameters<typeof recoveryReviewBi
     const replay = await reconstructModelRequests(reviewEvents.filter(event => event.sequence <= request.sequence), resolver);
     if (replay.diagnostic) return `Independent review input audit is incomplete: ${replay.diagnostic.code}.`;
     const actual = replay.requests.at(-1);
-    if (!actual?.contentComplete || !actual.modelRequestDigest) continue;
+    const payload = request.payload;
+    if (!actual?.contentComplete || actual.contextSource !== 'generation_snapshot'
+      || !actual.modelRequestDigest || typeof payload !== 'object' || payload === null
+      || !('digest' in payload) || actual.modelRequestDigest !== payload.digest
+      || actual.sessionId !== sessionId) continue;
     if (actual.messages.some(message => {
       if (typeof message !== 'object' || message === null || !('role' in message) || message.role !== 'toolResult'
         || !('toolName' in message) || message.toolName !== 'inspect_comparison_draft'
@@ -127,5 +131,5 @@ async function reviewGenerationBinding(input: Parameters<typeof recoveryReviewBi
       });
     })) return undefined;
   }
-  return 'No generation input includes the complete inspected draft in the independent review session.';
+  return 'No generation input snapshot includes the complete inspected draft in the independent review session. Legacy event projections remain readable but cannot certify actual model delivery.';
 }

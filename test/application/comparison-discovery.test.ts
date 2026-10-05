@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { ComparisonDiscovery } from "../../src/application/comparison-discovery.js";
 import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evidence.js";
 import type { ComparisonDiscoveryRecord, ComparisonFindingsSubmission } from "../../src/core/schema.js";
+import { ComparisonFindingsSubmissionSchema } from "../../src/core/schema.js";
+import { Value } from "@sinclair/typebox/value";
 
 async function fixture(t: { after: (fn: () => Promise<void>) => void }, persist?: (record: ComparisonDiscoveryRecord) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "reprise-discovery-"));
@@ -72,6 +74,49 @@ test("findings preserve scoped evidence and question transitions, with immutable
   submission.decisionQuestions[0]!.resolution = "Original source inaccessible";
   assert.match(await discovery.update(submission), /accepted/);
   assert.equal(discovery.readyToCompose(), true);
+});
+
+for (const repeatedSide of ['baseline', 'candidate'] as const) test(`same-side observations supply bounded shape repair without changing accepted history: ${repeatedSide}`, async t => {
+  const { discovery, submission, saved } = await fixture(t);
+  const signal = new AbortController().signal;
+  await discovery.tool().execute(submission, signal);
+  const accepted = discovery.snapshot();
+  const invalid = structuredClone(submission);
+  invalid.findings[0]!.observations = [
+    structuredClone(submission.findings[0]!.observations.find(item => item.side === repeatedSide)!),
+    structuredClone(submission.findings[0]!.observations.find(item => item.side === repeatedSide)!),
+  ];
+  assert.equal(Value.Check(ComparisonFindingsSubmissionSchema, invalid), true, 'schema-valid length alone does not ensure both sides');
+  const rejection = (await discovery.tool().execute(invalid, signal)).content;
+  assert.match(rejection, /status=rejected\ncode=observation_sides/);
+  const repair = JSON.parse(rejection.split('\nrepair=')[1]!) as {
+    findingId: string; actualSideCounts: { baseline: number; candidate: number }; requiredSides: string[]; expectedCount: number; repairRequirement: string;
+  };
+  assert.equal(repair.findingId, 'meaning');
+  assert.deepEqual(repair.actualSideCounts, repeatedSide === 'baseline' ? { baseline: 2, candidate: 0 } : { baseline: 0, candidate: 2 });
+  assert.deepEqual(repair.requiredSides, ['baseline', 'candidate']);
+  assert.equal(repair.expectedCount, 2);
+  assert.match(repair.repairRequirement, /complete snapshot.*preserving all question history/);
+  assert.match(repair.repairRequirement, /method=unavailable.*do not invent evidence/);
+  assert.doesNotMatch(rejection, /Qualifier retained|Claims all content retained/, 'shape feedback supplies no known observations or answers');
+  assert.equal(saved.length, 1);
+  assert.deepEqual(discovery.snapshot(), accepted);
+  assert.equal(discovery.readyToCompose(), false);
+  const corrected = structuredClone(submission);
+  corrected.findings[0]!.observations[0]!.scope = 'Final paragraph and same-side qualifier check combined';
+  assert.match((await discovery.tool().execute(corrected, signal)).content, /status=accepted/);
+  assert.equal(saved.length, 2);
+  assert.deepEqual(discovery.snapshot()!.submission.decisionQuestions, accepted!.submission.decisionQuestions);
+  const unavailable = structuredClone(corrected);
+  const missingSide = unavailable.findings[0]!.observations.find(item => item.side !== repeatedSide)!;
+  missingSide.method = 'unavailable';
+  missingSide.result = 'Unable to verify this side from retained evidence';
+  missingSide.scope = 'No independent observation available';
+  missingSide.evidenceRefs = [];
+  assert.equal(Value.Check(ComparisonFindingsSubmissionSchema, unavailable), true);
+  assert.match((await discovery.tool().execute(unavailable, signal)).content, /status=accepted/);
+  assert.equal(saved.length, 3);
+  assert.equal(discovery.snapshot()!.submission.findings[0]!.observations.length, 2);
 });
 
 test('new catalog evidence invalidates findings until they are resubmitted against that revision', async (t) => {

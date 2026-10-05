@@ -30,7 +30,7 @@ export const ComparisonFindingsSubmissionSchema = Type.Object({
     criterion: Type.String({ minLength: 1, maxLength: 1200, description: 'Copy exactly one string from criteria. Do not abbreviate, summarize or paraphrase it.' }),
     difference: text,
     userConsequence: text,
-    observations: Type.Array(observation, { minItems: 2, maxItems: 2 }),
+    observations: Type.Array(observation, { minItems: 2, maxItems: 2, description: 'Exactly two observations per finding: one baseline and one candidate. Combine multiple measurements for the same side in its single result and scope. If that side cannot be verified, use method=unavailable and describe the uncertainty; never invent opposite-side evidence.' }),
     limitations: Type.Array(text, { maxItems: 8 }),
     counterEvidenceRefs: refs,
   }, { additionalProperties: false }), { maxItems: 12 }),

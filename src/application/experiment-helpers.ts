@@ -101,6 +101,7 @@ export async function persistAgentAuditEvent(store: ExperimentStore, runId: stri
   if ("body" in payload) payload.body = await spillInlineBody(payload.body, write);
   if ("retainedTail" in payload) payload.retainedTail = await spillInlineBody(payload.retainedTail, write);
   if ("compactionInput" in payload) payload.compactionInput = await spillInlineBody(payload.compactionInput, write);
+  if ("generationInput" in payload) payload.generationInput = await spillInlineBody(payload.generationInput, write);
   if ("images" in payload) payload.images = await spillImageRefs(payload.images, write);
   await store.append({
     type: event.type,

@@ -33,7 +33,7 @@ export function callerLoopHooks(
           tokensBefore: payload.tokensBefore,
           retainedCount: payload.retainedCount,
           reason: payload.reason ?? "compact",
-          retainedTail: inlineBody(JSON.stringify(await recordedContext(payload.retainedTail ?? [], audit))),
+          retainedTail: inlineBody(JSON.stringify(redactModelVisibleValue(await recordedContext(payload.retainedTail ?? [], audit)))),
         },
       });
     },
@@ -50,14 +50,10 @@ export function callerLoopHooks(
       await audit?.append({ type: "agent.tool_completed", sessionId, role, payload: { ...payload, nativeHook: "after" } });
     },
     onModelRequest: async (payload) => {
-      const { compactionContext, ...request } = payload;
-      let compactionInput: AgentTextBody | undefined;
-      if (compactionContext) {
-        const recorded = redactModelVisibleValue({ ...compactionContext, messages: await recordedContext(compactionContext.messages, audit) });
-        if (!Value.Check(RecordedModelContextSchema, recorded)) throw new Error('Compaction input context failed schema validation.');
-        compactionInput = { encoding: 'inline' as const, schemaVersion: 1 as const, text: JSON.stringify(recorded) };
-      }
-      const facts = { ...request, ...(compactionInput ? { compactionInput } : {}), images: await recordedImageRefs(payload.images, audit) };
+      const { compactionContext, generationContext, ...request } = payload;
+      const compactionInput = compactionContext && await recordModelContext(compactionContext, audit);
+      const generationInput = generationContext && await recordModelContext(generationContext, audit);
+      const facts = { ...request, ...(compactionInput ? { compactionInput } : {}), ...(generationInput ? { generationInput } : {}), images: await recordedImageRefs(payload.images, audit) };
       if (!Value.Check(AgentModelRequestFactsSchema, facts)) throw new Error('Model request facts failed schema validation.');
       await audit?.append({
         type: "agent.model_request",
@@ -67,4 +63,10 @@ export function callerLoopHooks(
       });
     },
   };
+}
+
+async function recordModelContext(context: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] }, audit: AgentAuditSink | undefined): Promise<AgentTextBody> {
+  const recorded = redactModelVisibleValue({ ...context, messages: await recordedContext(context.messages, audit) });
+  if (!Value.Check(RecordedModelContextSchema, recorded)) throw new Error('Model input context failed schema validation.');
+  return { encoding: 'inline', schemaVersion: 1, text: JSON.stringify(recorded) };
 }

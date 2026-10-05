@@ -5,9 +5,29 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ComparisonAgent } from '../../src/agents/comparison-agent.js';
 import { startExperiment } from '../../src/application/experiment.js';
-import { AgentHost } from '../../src/infrastructure/agent/host.js';
+import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import { sha256 } from '../../src/core/identity.js';
+
+function fixtureContext(input: Parameters<ProviderAdapter['createSession']>[0], recordActual = true) {
+  const messages: unknown[] = [];
+  let toolSequence = 0;
+  const tools = input.tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
+    const toolCallId = `fixture-${++toolSequence}`;
+    messages.push({ role: 'assistant', content: [{ type: 'toolCall', id: toolCallId, name: tool.name, arguments: structuredClone(params) }] });
+    const result = await tool.execute(params, signal);
+    messages.push({ role: 'toolResult', toolCallId, toolName: tool.name,
+      content: structuredClone(result.contentBlocks ?? [{ type: 'text', text: result.content }]) });
+    return result;
+  } }));
+  return { tools, request: async (content: string) => {
+    messages.push({ role: 'user', content: [{ type: 'text', text: content }] });
+    const context = { systemPrompt: input.systemPrompt, messages: structuredClone(messages),
+      tools: input.tools.map(({ name, description, parameters }) => ({ name, description, parameters })) };
+    await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(JSON.stringify(context)),
+      messageCount: messages.length, images: [], ...(recordActual ? { generationContext: context } : {}) });
+  } };
+}
 
 for (const repairable of [true, false]) test(`review revision ${repairable ? 'is previewed by a continuation' : 'cannot extend review indefinitely'}`, async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-review-revision-'));
@@ -16,10 +36,12 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
   await mkdir(base.sourceRoot, { recursive: true });
   await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
   let turns = 0;
-  const comparison = new ComparisonAgent({ host: new AgentHost({ createSession: ({ tools, onModelRequest }) => ({
+  const comparison = new ComparisonAgent({ host: new AgentHost({ createSession: (sessionInput) => {
+    const { tools, request } = fixtureContext(sessionInput);
+    return {
     append: async ({ content, signal }) => {
       turns++;
-      await onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: turns, images: [] });
+      await request(content);
       const submit = tools.find((tool) => tool.name === 'submit_comparison_draft')!;
       const preview = tools.find((tool) => tool.name === 'preview_report')!;
       const draft = (headline: string) => ({ status: 'completed', decisionShape: 'single_difference', category: 'Results', headline, comparisonHtml: `<p>${headline}</p>` });
@@ -40,7 +62,8 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
       }
       return '';
     }, cancel() {},
-  }) }), timeoutMs: 0, maxRepairAttempts: 0 });
+    };
+  } }), timeoutMs: 0, maxRepairAttempts: 0 });
   const result = await startExperiment({ ...base, comparison }).result;
   assert.equal(turns, 6);
   assert.equal(result.comparison.result.status, repairable ? 'completed' : 'failed');
@@ -48,7 +71,7 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
   else await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
 });
 
-test('application publishes a submitted and previewed draft after an empty final message', async (t) => {
+for (const recordActual of [true, false]) test(`application ${recordActual ? 'publishes' : 'rejects legacy projection of'} a submitted and previewed draft after an empty final message`, async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-submission-flow-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
@@ -56,10 +79,12 @@ test('application publishes a submitted and previewed draft after an empty final
   await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
   let turns = 0;
   const comparison = new ComparisonAgent({
-    host: new AgentHost({ createSession: ({ tools, onModelRequest }) => ({
+    host: new AgentHost({ createSession: (sessionInput) => {
+      const { tools, request } = fixtureContext(sessionInput, recordActual);
+      return {
       append: async ({ content, signal }) => {
         turns++;
-        await onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: turns, images: [] });
+        await request(content);
         if (turns === 2) {
           const submit = tools?.find((tool) => tool.name === 'submit_comparison_draft');
           assert.ok(submit);
@@ -79,10 +104,23 @@ test('application publishes a submitted and previewed draft after an empty final
         return '';
       },
       cancel() {},
-    }) }),
+      };
+    } }),
     timeoutMs: 0, maxRepairAttempts: 0,
   });
   const result = await startExperiment({ ...base, comparison }).result;
+  if (!recordActual) {
+    assert.equal(result.comparison.result.status, 'failed');
+    const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n')
+      .map(line => JSON.parse(line) as { type: string; payload: Record<string, unknown> });
+    assert.ok(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft'));
+    assert.ok(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report'));
+    const requests = events.filter(event => event.type === 'agent.model_request');
+    assert.ok(requests.length > 0);
+    assert.ok(requests.every(event => !('generationInput' in event.payload)), 'digest-only requests cannot certify delivered inspection');
+    await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
+    return;
+  }
   assert.equal(turns, 5);
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
   assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 5, toolCalls: 3, compactions: 0 });

@@ -45,15 +45,22 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
       replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } } };
   const input = { draft: { completedResult: async () => result }, store: { experimentId: 'experiment', events: () => events,
     readArtifact: async () => new Uint8Array() }, attemptId: 'attempt', attemptRoot: root, context, catalog };
-  return { input, events };
+  return { input, events, receipt };
 }
 test('live completion rejects a ready tool batch until generation contains the complete inspected draft', async t => {
   const f = await fixture(t);
   assert.equal(await completedReviewedComparison(f.input), undefined);
   f.events.push(event(7, 'agent.model_request', { attemptId: 'attempt', sessionId: 'review', scope: 'generation',
     invocationId: 'invocation', requestIndex: 1, model: 'fixture', digest: 'c'.repeat(64), images: [] }));
+  assert.equal(await completedReviewedComparison(f.input), undefined, 'legacy projection of a completed tool cannot certify upstream delivery');
+  f.events.push(event(8, 'agent.model_request', { attemptId: 'attempt', sessionId: 'review', scope: 'generation',
+    invocationId: 'invocation', requestIndex: 1, model: 'fixture', digest: 'd'.repeat(64), images: [],
+    generationInput: { schemaVersion: 1, encoding: 'inline', text: JSON.stringify({ systemPrompt: 'Review', tools: [], messages: [
+      { role: 'toolResult', toolName: 'inspect_comparison_draft', toolCallId: 'actual-native-inspection',
+        content: [{ type: 'text', text: JSON.stringify({ ...f.receipt, ...content }) }] },
+    ] }) } }));
   assert.deepEqual(await completedReviewedComparison(f.input), result);
-  f.events.push(event(8, 'agent.tool_completed', { attemptId: 'attempt', sessionId: 'review', tool: 'inspect_comparison_draft', toolCallId: 'inspect-again',
+  f.events.push(event(9, 'agent.tool_completed', { attemptId: 'attempt', sessionId: 'review', tool: 'inspect_comparison_draft', toolCallId: 'inspect-again',
     ...(f.events[4]!.payload as Record<string, unknown>) }));
   assert.equal(await completedReviewedComparison(f.input), undefined);
 });

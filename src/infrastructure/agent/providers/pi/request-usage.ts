@@ -40,7 +40,7 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
     await flush();
     const images = context.messages.flatMap((message) => Array.isArray(message.content) ? message.content.filter((block) => block.type === 'image') : []);
     await input.onModelRequest?.({ model: model.id, scope, digest: sha256(JSON.stringify({ model, context })), messageCount: context.messages.length, images,
-      ...(scope === 'compaction' ? { compactionContext: context } : {}) });
+      ...(scope === 'compaction' ? { compactionContext: context } : { generationContext: context }) });
   };
   const models: PiModels = {
     getProviders: (...args) => source.getProviders(...args), getModels: (...args) => source.getModels(...args),
@@ -56,8 +56,9 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
     streamSimple: (...args) => source.streamSimple(...args),
   };
   const stream = async (...args: Parameters<PiModels['streamSimple']>) => {
-    await notify(args[0], args[1], 'generation');
-    const result = source.streamSimple(args[0], args[1], { ...args[2], maxRetries: 0, maxRetryDelayMs: 8_000 });
+    const context = redactModelVisibleValue(args[1]);
+    await notify(args[0], context, 'generation');
+    const result = source.streamSimple(args[0], context, { ...args[2], maxRetries: 0, maxRetryDelayMs: 8_000 });
     const task = result.result().then((message) => report(message, 'generation'));
     // Lifecycle checkpoints await failures; attach a handler while the stream is still being consumed.
     void task.catch(() => undefined);

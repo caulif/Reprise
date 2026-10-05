@@ -21,9 +21,10 @@ const submission = event(2, 'agent.tool_completed', { attemptId: 'attempt', sess
 function inspect(sequence: number, overrides: Record<string, unknown> = {}, sessionId = 'review') {
   return event(sequence, 'agent.tool_completed', { attemptId: 'attempt', sessionId, tool: 'inspect_comparison_draft', toolCallId: `inspect-${sequence}`, details: { ...receipt, ...overrides }, body: { schemaVersion: 1, encoding: 'inline', text: JSON.stringify({ ...receipt, ...overrides, ...content }) } });
 }
-function generation(sequence = 100) {
+function generation(sequence = 100, messages: unknown[] = []) {
   return event(sequence, 'agent.model_request', { attemptId: 'attempt', sessionId: 'review', scope: 'generation',
-    invocationId: 'review-invocation', requestIndex: 1, model: 'fixture', digest: 'c'.repeat(64), images: [] });
+    invocationId: 'review-invocation', requestIndex: 1, model: 'fixture', digest: 'c'.repeat(64), images: [],
+    generationInput: { schemaVersion: 1, encoding: 'inline', text: JSON.stringify({ systemPrompt: 'Review', tools: [], messages }) } });
 }
 function check(events: EventEnvelope[], overrides: Partial<Parameters<typeof recoveryReviewBinding>[0]> = {}, includeRequest = true) {
   const bootstrap = [
@@ -31,7 +32,14 @@ function check(events: EventEnvelope[], overrides: Partial<Parameters<typeof rec
     event(0.2, 'agent.message_appended', { attemptId: 'attempt', sessionId: 'review', invocationId: 'review-invocation', requestIndex: 1,
       body: { schemaVersion: 1, encoding: 'inline', text: 'Check the draft.' } }),
   ];
-  const all = [...bootstrap, submission, ...events, ...(includeRequest ? [generation()] : [])].sort((a, b) => a.sequence - b.sequence);
+  const compacted = events.filter(e => e.type === 'agent.context_compacted').at(-1);
+  const latest = events.filter(e => e.type === 'agent.tool_completed' && (e.payload as Record<string, unknown>).tool === 'inspect_comparison_draft'
+    && !('nativeHook' in (e.payload as Record<string, unknown>))).at(-1);
+  const latestBody = (latest?.payload as { body?: { encoding: string; text?: string } } | undefined)?.body;
+  const messages = compacted ? JSON.parse(((compacted.payload as Record<string, unknown>).retainedTail as { text: string }).text) as unknown[]
+    : latest ? [{ role: 'toolResult', toolName: 'inspect_comparison_draft', toolCallId: 'native-inspection-id',
+      content: [{ type: 'text', text: latestBody?.encoding === 'artifact' ? JSON.stringify({ ...receipt, ...content }) : latestBody?.text ?? '' }] }] : [];
+  const all = [...bootstrap, submission, ...events, ...(includeRequest ? [generation(100, messages)] : [])].sort((a, b) => a.sequence - b.sequence);
   return recoveryReviewBinding({ store, content, events: all, attemptId: 'attempt', draftDigest: digest, catalogRevision: 1,
     previewSessionId: 'review', acceptedAfterSequence: 40, ...overrides,
     ...(overrides.acceptedAfterSequence === undefined ? {} : { acceptedAfterSequence: overrides.acceptedAfterSequence * 10 }) });
@@ -120,4 +128,16 @@ test('recovery requires the complete inspection in a later generation input, not
   const fullTail = event(6, compacted.type, { ...(compacted.payload as Record<string, unknown>),
     retainedTail: { schemaVersion: 1, encoding: 'inline', text: JSON.stringify([retained]) } });
   assert.equal(await check([start, accepted, inspect(5), fullTail]), undefined);
+});
+
+test('legacy projected inspection cannot certify actual generation delivery, and snapshot content takes precedence', async () => {
+  const snapshot = generation(6, []);
+  const { generationInput: _generationInput, ...legacy } = snapshot.payload as Record<string, unknown>;
+  assert.match((await check([start, accepted, inspect(5), event(6, snapshot.type, legacy)], {}, false))!, /Legacy event projections.*cannot certify/);
+  assert.match((await check([start, accepted, inspect(5), snapshot], {}, false))!, /No generation input snapshot/);
+  const actual = [{ role: 'toolResult', toolName: 'inspect_comparison_draft', toolCallId: 'upstream-native-id',
+    content: [{ type: 'text', text: JSON.stringify({ ...receipt, ...content }) }] }];
+  assert.equal(await check([start, accepted, inspect(5), generation(6, actual)], {}, false), undefined);
+  const summary = [{ role: 'assistant', content: [{ type: 'text', text: JSON.stringify({ ...receipt, ...content }) }] }];
+  assert.match((await check([start, accepted, inspect(5), generation(6, summary)], {}, false))!, /No generation input snapshot/);
 });

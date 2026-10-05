@@ -49,6 +49,8 @@ Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 termi
 
 草稿接受事件的 operation identity 标识一次接受发生，而非内容 hash：同一 findings/catalog 下 A→B→A 必须记录第三次接受，让恢复能绑定最新的 A 与其后的预览。连续提交同一 A 仍由草稿状态判断为未变化，不追加事件、不使既有预览失效。复用现有事件 sequence 排序和草稿 binding 字段，无需新增持久化 revision；自动化以真实 Store 持久化检查三次不同接受、连续重复幂等和最终 A 的离线恢复。
 
+发现工具保持每条 finding 恰好两条 observation 的原结构：baseline 与 candidate 各一条，同侧多个测量整合在该条的 result/scope 中。Schema 与工具说明直接公开这一形状；合法长度但重复侧的 `observation_sides` 拒绝附有界 repair，仅含 findingId、两侧实际数量、requiredSides、expectedCount=2 和完整 snapshot 修正说明，不返回已知答案或替模型生成观测。不可核验的一侧可用 `method=unavailable` 明示不确定性，不能伪造对侧证据。拒绝不持久化、不改变已接受记录或问题历史；按反馈修正后仍经过原引用归属与发布门禁。反向测试分别覆盖重复 baseline/candidate 的准确诊断、拒绝状态不变、真实两侧修正接受及 unavailable 合法。
+
 ## 备选方案
 
 **只改 Prompt 或引入固定评分。** 前者不能绑定发现与发布版本，后者会把未知与条件推荐压成排名。默认像素脚本、强制截图或多模型投票会扩大成本且偏离任务，因此复用现有 catalog、受控 renderer、Session 和审阅，新增最小发现协议与可配置保护。

@@ -31,6 +31,7 @@ export type AgentImageRef = Static<typeof AgentImageRefSchema>;
 export const AgentModelRequestFactsSchema = Type.Object({
   scope: Type.Optional(Type.Union([Type.Literal('generation'), Type.Literal('compaction')])),
   compactionInput: Type.Optional(AgentTextBodySchema),
+  generationInput: Type.Optional(AgentTextBodySchema),
   model: Type.String({ minLength: 1 }),
   digest: Hash,
   messageCount: Type.Integer({ minimum: 0 }),
@@ -65,6 +66,7 @@ export const ReconstructedModelRequestSchema = Type.Object({
   repair: Type.Boolean(),
   compacted: Type.Boolean(),
   contentComplete: Type.Boolean(),
+  contextSource: Type.Optional(Type.Union([Type.Literal('generation_snapshot'), Type.Literal('event_projection')])),
   legacyRequestComplete: Type.Optional(Type.Boolean()),
   systemPrompt: Type.String(),
   tools: Type.Array(AgentToolSpecSchema),

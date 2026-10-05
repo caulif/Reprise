@@ -415,7 +415,9 @@ test('real-terminal TUI probe is opt-in and outside engineering gates', async ()
   assert.match(requests, awaitedAudit);
   assert.doesNotMatch(requests.replace('await input.onModelRequest?.(', 'void input.onModelRequest?.('), awaitedAudit);
   assert.match(requests, /await notify\(args\[0\], context, 'compaction'\);\s*const message = await source\.completeSimple/);
-  assert.match(requests, /await notify\(args\[0\], args\[1\], 'generation'\);\s*const result = source\.streamSimple/);
+  const auditedGeneration = /const context = redactModelVisibleValue\(args\[1\]\);\s*await notify\(args\[0\], context, 'generation'\);\s*const result = source\.streamSimple\(args\[0\], context,/;
+  assert.match(requests, auditedGeneration);
+  assert.doesNotMatch(requests.replace("await notify(args[0], context, 'generation');", "await notify(args[0], args[1], 'generation');"), auditedGeneration);
 });
 
 test('opt-in agent context probe stays outside engineering gates', async () => {

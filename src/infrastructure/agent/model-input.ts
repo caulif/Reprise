@@ -43,6 +43,8 @@ export type ModelInputResolver = ArtifactBodyResolver & {
 
 export function redactModelVisibleText(text: string): { text: string; redacted: boolean } {
   const next = text
+    .replace(/("(?:authorization|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|password|(?:client[_-]?)?secret)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[REDACTED]"')
+    .replace(/(\\"(?:authorization|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|password|(?:client[_-]?)?secret)\\"\s*:\s*)\\"[^\r\n]*?\\"/gi, '$1\\"[REDACTED]\\"')
     .replace(/(authorization\s*[=:]\s*)(?:"?)(?:Bearer\s+)?[^\s"]+/gi, "$1[REDACTED]")
     .replace(/((?:api[_-]?key|token|password|secret)\s*[=:]\s*)([^\s]+)/gi, "$1[REDACTED]")
     .replace(/(Bearer\s+)[^\s]+/gi, "$1[REDACTED]");
@@ -54,7 +56,9 @@ export function redactModelVisibleValue<T>(value: T): T {
     if (typeof entry === 'string') return redactModelVisibleText(entry).text;
     if (Array.isArray(entry)) return entry.map(visit);
     if (!isRecord(entry)) return entry;
-    return Object.fromEntries(Object.entries(entry).map(([key, item]) => [key, entry.type === 'image' && key === 'data' ? item : visit(item)]));
+    return Object.fromEntries(Object.entries(entry).map(([key, item]) => [key,
+      typeof item === 'string' && /^(authorization|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|password|(?:client[_-]?)?secret)$/i.test(key)
+        ? '[REDACTED]' : entry.type === 'image' && key === 'data' ? item : visit(item)]));
   };
   return visit(value) as T;
 }
@@ -191,7 +195,7 @@ export async function reconstructModelRequests(
         compactionRequests.push(await replayCompactionRequest(session, payload, session.resolver));
         continue;
       }
-      if (event.type === 'agent.model_request' && Array.isArray(payload.images)) {
+      if (event.type === 'agent.model_request' && (Array.isArray(payload.images) || payload.generationInput !== undefined)) {
         await replayRequestManifest(session, payload, requests, session.resolver);
         continue;
       }
@@ -295,6 +299,11 @@ async function inspectReplayedRequests(requests: ReconstructedModelRequest[], re
 
 async function replayRequestManifest(session: SessionReplay, payload: Record<string, unknown>, requests: ReconstructedModelRequest[], resolver?: ModelInputResolver): Promise<void> {
   const previous = [...requests].reverse().find((item) => item.sessionId === session.sessionId);
+  if (payload.generationInput !== undefined) {
+    await replayGenerationSnapshot(session, payload, requests, previous, resolver);
+    session.modelRequestSeen = true;
+    return;
+  }
   const request = session.modelRequestSeen ? await snapshotRequest(session, { ...payload, repair: previous?.repair }, session.compacted ?? false, previous?.contentComplete ?? false) : previous;
   if (request && request.sessionId === session.sessionId) {
     request.messages = [...session.messages];
@@ -305,6 +314,27 @@ async function replayRequestManifest(session: SessionReplay, payload: Record<str
     if (session.modelRequestSeen) requests.push(request);
   }
   session.modelRequestSeen = true;
+}
+
+async function replayGenerationSnapshot(session: SessionReplay, payload: Record<string, unknown>, requests: ReconstructedModelRequest[], previous: ReconstructedModelRequest | undefined, resolver?: ModelInputResolver): Promise<void> {
+  const body = inspectModelInputBody(payload.generationInput);
+  if (!body.ok) throw diagnosticError(body.diagnostic);
+  const text = await resolveTextBody(body.body, resolver);
+  let context: unknown;
+  try { context = JSON.parse(text); }
+  catch { throw diagnosticError({ code: 'schema', message: 'Generation request context is not valid JSON.' }); }
+  if (!Value.Check(RecordedModelContextSchema, context)) throw diagnosticError({ code: 'schema', message: 'Generation request context failed schema validation.' });
+  const request = await snapshotRequest(session, { ...payload, repair: previous?.repair }, session.compacted ?? false, true);
+  request.systemPrompt = context.systemPrompt ?? '';
+  request.tools = (context.tools ?? []) as ReconstructedModelRequest['tools'];
+  request.messages = context.messages;
+  request.contextSource = 'generation_snapshot';
+  request.modelRequestDigest = stringField(payload.digest);
+  request.nativeImages = Array.isArray(payload.images) ? payload.images as AgentImageRef[] : [];
+  request.contentComplete = await checkRecordedImages(payload.images, resolver);
+  if (!Value.Check(ReconstructedModelRequestSchema, request)) throw diagnosticError({ code: 'schema', message: 'Generation snapshot request failed schema validation.' });
+  if (!session.modelRequestSeen && previous?.sessionId === session.sessionId) Object.assign(previous, request);
+  else requests.push(request);
 }
 
 export async function spillInlineBody(
@@ -430,6 +460,7 @@ async function snapshotRequest(session: SessionReplay, payload: Record<string, u
     repair: payload.repair === true,
     compacted,
     contentComplete,
+    contextSource: 'event_projection',
     systemPrompt: session.systemPrompt,
     tools: session.tools as ReconstructedModelRequest["tools"],
     messages: [...session.messages],

@@ -27,7 +27,7 @@ export class ComparisonDiscovery {
   tool(): AgentToolDefinition {
     return {
       name: "update_comparison_findings",
-      description: "Replace the complete findings snapshot: concise task criteria, final-source locations, scoped observations and decision questions. Include every previously accepted decision question ID with its unchanged question and decisionImpact; history cannot be erased, even after catalog changes. Rejection repair materials are prior model-authored claims, not certified semantics. Every finding.criterion must exactly copy one criteria string. References must be registered. Resolve questions or explain unavailable evidence before composing; reopening a settled question requires new grounds. Saved findings do not prove semantic correctness.",
+      description: "Replace the complete findings snapshot: concise task criteria, final-source locations, scoped observations and decision questions. Each finding has exactly two observations: one baseline and one candidate. Combine same-side measurements in its single result and scope; use method=unavailable for an unverified side, never invent its evidence. Include every previously accepted decision question ID with its unchanged question and decisionImpact; history cannot be erased, even after catalog changes. Rejection repair materials are prior model-authored claims, not certified semantics. Every finding.criterion must exactly copy one criteria string. References must be registered. Resolve questions or explain unavailable evidence before composing; reopening a settled question requires new grounds. Saved findings do not prove semantic correctness.",
       parameters: ComparisonFindingsSubmissionSchema,
       execute: async (params, signal) => {
         signal.throwIfAborted();
@@ -67,7 +67,11 @@ export class ComparisonDiscovery {
     }
     for (const finding of submission.findings) {
       if (!submission.criteria.includes(finding.criterion)) return `${rejection("criterion_unresolved")}\nfindingId=${finding.id}\ncriterion=${JSON.stringify(finding.criterion)}\nallowedCriteria=${JSON.stringify(submission.criteria)}\nCopy one allowedCriteria string exactly into finding.criterion, then resubmit.`;
-      if (new Set(finding.observations.map((item) => item.side)).size !== 2) return rejection("observation_sides");
+      if (new Set(finding.observations.map((item) => item.side)).size !== 2) return `${rejection("observation_sides")}\nrepair=${JSON.stringify({
+        findingId: finding.id, actualSideCounts: { baseline: finding.observations.filter(item => item.side === 'baseline').length, candidate: finding.observations.filter(item => item.side === 'candidate').length },
+        requiredSides: ['baseline', 'candidate'], expectedCount: 2,
+        repairRequirement: 'Resubmit the complete snapshot with exactly one baseline and one candidate observation per finding, preserving all question history. Combine same-side measurements in its single result and scope. Use method=unavailable with explicit uncertainty for an unverified side; do not invent evidence or change a side label without supporting ownership. This shape feedback certifies no observation or conclusion.',
+      })}`;
       if (!validRefs(finding.counterEvidenceRefs)) return rejection("evidence_unresolved");
       for (const observation of finding.observations) {
         if (!validRefs(observation.evidenceRefs)) return rejection("evidence_unresolved");

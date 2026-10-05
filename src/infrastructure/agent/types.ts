@@ -216,7 +216,7 @@ export interface ProviderAdapter {
       byteLength: number;
       contentDigest: string;
     }) => Promise<void>;
-    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[]; scope?: 'generation' | 'compaction'; compactionContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] } }) => Promise<void>;
+    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[]; scope?: 'generation' | 'compaction'; compactionContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] }; generationContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] } }) => Promise<void>;
     onModelUsage?: (payload: AgentUsageFacts) => Promise<void>;
   }): Promise<ProviderSession> | ProviderSession;
 }
