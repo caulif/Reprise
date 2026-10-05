@@ -79,7 +79,7 @@ jobs:
           node-version: 22.19.0
           cache: npm
       - run: npm ci
-      - run: npm run test:coverage -- --concurrency 2
+      - run: npm run test:coverage -- --concurrency 1
 
   all-checks-passed:
     if: always()

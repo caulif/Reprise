@@ -21,7 +21,7 @@ Windows 11 是唯一经过真实使用验证的平台。CI 的平台矩阵由 [c
 | 全部测试 | `npm test`；仅构建已同步时使用 `npm run test:only` |
 | 覆盖率 | `npm run test:coverage`，不在普通 check 中重复执行 |
 
-测试 runner 可显式传 `--concurrency N`（安全正整数），例如 `node scripts/run-gates.mjs test --concurrency 2` 或 `npm run test:coverage -- --concurrency 2`；省略时保持 Node 默认。Linux CI 的测试与覆盖率采用 2，Windows/macOS 默认不变；这是 CI 资源调度，不改变真实浏览器的产品超时与断言。`node scripts/run-tests-temp-guard.mjs --self-test` 验证非法并发参数被拒绝。取舍见[Linux CI 测试并发](decisions/accepted/2026-10-06-linux-ci-test-concurrency.md)。
+测试 runner 可显式传 `--concurrency N`（安全正整数），例如 `node scripts/run-gates.mjs test --concurrency 2` 或 `npm run test:coverage -- --concurrency 1`；省略时保持 Node 默认。Linux CI 的测试采用 2、覆盖率采用 1，Windows/macOS 默认不变；这是 CI 资源调度，不改变真实浏览器的产品超时与断言。`node scripts/run-tests-temp-guard.mjs --self-test` 验证非法并发参数被拒绝。取舍见[Linux CI 测试并发](decisions/accepted/2026-10-06-linux-ci-test-concurrency.md)。
 | 发布前检查 | `npm run check:full`；与 check 的具体关系以编排脚本为准 |
 | 修改 schema 或生成模板 | `npm run build`、`npm run gen:docs`、`npm run verify:generated` |
 | TUI 渲染 | `npm run audit:tui:check`，代码收尾仍跑 check |
