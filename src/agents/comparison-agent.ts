@@ -254,6 +254,8 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'A check comparing a target formula to itself does not verify the rendered result. Syntax checks do not prove behavior.',
   'Never promote a later Comparison check into original-run verification.',
   'Saved findings validate provenance, not the truth of your interpretation.',
+  'readCoverage describes the bytes returned by this read, not the completeness of the original run. Never guess truncation from a long body or label a source a stub without inspecting that fact. Omit commentary about unused sources unless their absence changes the task decision.',
+  'An invariant must be established independently for each side. A rotationally symmetric shape rotating about its own center can look unchanged, while the same shape rotating about another point changes position; do not transfer one side\'s invariant to the other.',
   'Different tools, environments, recording coverage and configurations limit model-capability attribution.',
   '',
   'Before finishing, preview the actual report, inspect the supported observations,',
@@ -510,7 +512,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     } }));
     const stagedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
     const phasedTools = options?.getSubmittedResult ? stagedTools.map(tool => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) =>
-      comparisonToolFeedback(await tool.execute(params, toolSignal), resources, options.getSubmissionState?.()) })) : stagedTools;
+      comparisonToolFeedback(await tool.execute(params, toolSignal), resources, options.getSubmissionState?.(), tool.name) })) : stagedTools;
     let activePhase: 'understand' | 'investigate' | 'compose' | 'review' | undefined;
     let counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
     const measuredAudit: AgentAuditSink = {

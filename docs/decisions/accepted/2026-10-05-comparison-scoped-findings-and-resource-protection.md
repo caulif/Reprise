@@ -78,3 +78,5 @@ Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 termi
 复审的扩展调查独立累计，但复用配置中的调查请求/工具/时间软限（默认12/30/120s）；repair或换回其他阶段不重置。整个attempt仍共享40请求/120工具/600s硬限。剩余不超过6请求、20工具或90秒时进入`reserve_finish`，停止read、shell、render、register等扩展调查，继续允许inspect、findings闭合、submit、preview及write/edit；硬限不豁免。资源有限不等于结论可信，未解决的决定性主张必须撤销保证并明确不可判断，不能自动发布旧草稿或跨digest复用预览。
 
 提交草稿端口下，每个工具结果附Host的当前phase、剩余额度及草稿/catalog/findings/preview绑定。反馈进入相同工具结果审计及模型输入，不建立第二事实源；既有JSON结果保持JSON对象、媒体交付元数据不变，旧直接端口不加此反馈。计数及绑定只证明执行条件，不认证语义正确。空资源override维持无额度限制。精确供应商`unexpected EOF`按暂态transport处理，沿既有保留tool-result的continuation，不重播已执行工具；工具解析、认证和带应用前缀的EOF不扩大归类，缺失usage保持未知。
+
+实际评估发现read的完整性元数据仅在details审计而未交付模型。选择在Comparison专用工具外层投影白名单readCoverage（available/truncated/offset与现有字节/游标），不改共享read端口或注入任意details。不存在的字段不推断；本次读取未截断不等于原运行记录完整。反馈沿原tool_completed/body和实际模型文本块存储；模型应省略不影响判断的排除来源叙述，而不是猜测来源缺陷。逆例以实际Pi适配器证明coverage进入文本/原生图片请求，并排除私有路径和非法字段。

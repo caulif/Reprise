@@ -52,3 +52,38 @@ test('denied review investigation keeps explicit unresolved closure and real rem
   assert.equal(tracker.beforeTool('preview_report'), undefined);
   assert.match(comparisonSoftLimitFeedback('investigationMs', 'investigate').content, /return to compose/);
 });
+
+test('read coverage reaches actual Pi content from whitelisted metadata without private details', async () => {
+  const tracker = new ComparisonResourceTracker({ maxModelRequests: 40 });
+  const original = { content: '[{"sequence":1}]', details: { available: true, truncated: false, offset: 0, path: 'C:/private/source/host-trace.json', error: 'private diagnostic' } };
+  const updated = comparisonToolFeedback(original, tracker, undefined, 'read');
+  const pi = toPiTool({ name: 'read', description: 'read', parameters: Type.Object({}), execute: async () => updated });
+  const delivered = await pi.execute('read-call', {}, new AbortController().signal);
+  const text = delivered.content.find(block => block.type === 'text');
+  assert.ok(text && text.type === 'text');
+  assert.match(text.text, /"readCoverage":\{"available":true,"truncated":false,"offset":0\}/);
+  assert.doesNotMatch(text.text, /private|host-trace\.json/);
+  assert.ok(text.text.startsWith(original.content));
+  assert.equal(updated.details, original.details);
+  const ranged = comparisonToolFeedback({ content: 'part', details: { available: true, truncated: true, offset: 10, nextCursor: 20 } }, tracker, undefined, 'read');
+  assert.match(ranged.content, /"readCoverage":\{"available":true,"truncated":true,"offset":10,"nextCursor":20\}/);
+  const other = comparisonToolFeedback(original, tracker, undefined, 'shell_exec');
+  assert.doesNotMatch(other.content, /readCoverage/);
+});
+
+test('read coverage does not fabricate missing fields and is delivered alongside native image blocks', async () => {
+  const tracker = new ComparisonResourceTracker({ maxModelRequests: 40 });
+  const absent = comparisonToolFeedback({ content: 'body', details: { path: 'C:/private', truncated: 'false', available: 1, offset: -1, nextCursor: Number.NaN, totalBytes: Number.POSITIVE_INFINITY } }, tracker, undefined, 'read');
+  assert.match(absent.content, /"readCoverage":\{\}/);
+  assert.doesNotMatch(absent.content, /"truncated":false|C:\/private/);
+  const image = { type: 'image' as const, data: 'AA==', mimeType: 'image/png' };
+  const original = { content: 'Image file', contentBlocks: [image], details: { available: true, truncated: false, offset: 0, byteLength: 20, returnedBytes: 20, totalBytes: 20, path: 'C:/private/image.png' } };
+  const updated = comparisonToolFeedback(original, tracker, undefined, 'read');
+  const pi = toPiTool({ name: 'read', description: 'read', parameters: Type.Object({}), execute: async () => updated });
+  const delivered = await pi.execute('image-call', {}, new AbortController().signal);
+  assert.equal(delivered.content[0], image);
+  const text = delivered.content[1];
+  assert.ok(text?.type === 'text');
+  assert.match(text.text, /"readCoverage":\{"available":true,"truncated":false,"offset":0,"byteLength":20,"returnedBytes":20,"totalBytes":20\}/);
+  assert.doesNotMatch(text.text, /private|image\.png/);
+});

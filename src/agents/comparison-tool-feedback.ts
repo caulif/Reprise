@@ -1,12 +1,13 @@
 import type { AgentToolResult } from '../infrastructure/agent/host.js';
 import type { ComparisonResourceTracker } from './comparison-resources.js';
 
-export function comparisonToolFeedback(result: AgentToolResult, resources: ComparisonResourceTracker, submissionState?: string): AgentToolResult {
+export function comparisonToolFeedback(result: AgentToolResult, resources: ComparisonResourceTracker, submissionState?: string, toolName?: string): AgentToolResult {
   const snapshot = resources.snapshot();
   const feedback = {
     phase: snapshot.phase, remainingRequests: snapshot.remainingRequests,
     remainingTools: snapshot.remainingTools, remainingMs: snapshot.remainingMs,
     reviewLimit: snapshot.reviewLimit,
+    ...(toolName === 'read' ? { readCoverage: readCoverage(result.details) } : {}),
     ...(submissionState ? { submissionState } : {}),
     meaning: 'Resource and draft binding facts only; not semantic approval. Reserve requests for one batch correction and preview of its exact digest. Do not repeat settled checks or register duplicate analysis. If a decisive claim remains unverified, remove its guarantee and explicitly state the unresolved decision; never reuse a stale preview.',
   };
@@ -27,6 +28,20 @@ export function comparisonToolFeedback(result: AgentToolResult, resources: Compa
     block.type === 'text' && block.text === result.content ? { ...block, text: content } : block) };
   const progressText = `Host progress feedback: ${JSON.stringify(feedback)}`;
   return { ...result, content: `${result.content}\n\n${progressText}`, contentBlocks: [...result.contentBlocks, { type: 'text', text: progressText }] };
+}
+
+function readCoverage(details: unknown): Record<string, number | boolean> {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return {};
+  const source = details as Record<string, unknown>;
+  const coverage: Record<string, number | boolean> = {};
+  for (const key of ['available', 'truncated']) {
+    if (typeof source[key] === 'boolean') coverage[key] = source[key];
+  }
+  for (const key of ['offset', 'byteLength', 'returnedBytes', 'totalBytes', 'nextCursor']) {
+    const value = source[key];
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) coverage[key] = value;
+  }
+  return coverage;
 }
 
 export function comparisonSoftLimitFeedback(reason: string, phase: unknown): AgentToolResult {
