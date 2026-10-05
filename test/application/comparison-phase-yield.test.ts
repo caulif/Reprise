@@ -18,6 +18,71 @@ const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' 
   replayScope: { historical: 'original', candidate: 'original' }, reportFacts: { run: { runId: 'run', outcome: 'completed', terminationCode: 'completed', initiatedBy: 'controller' }, models: { candidate: 'fixture' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' }, delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' }, replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } } };
 const resultValue = { status: 'completed' as const, reportPath: 'report.html' as const, headline: 'Scoped result', evidenceRefs: [] };
 
+for (const mode of ['ready', 'late', 'verbal', 'unavailable', 'missing', 'hard', 'cancel', 'error', 'legacy'] as const) test(`actual draft inspection checkpoint protects delivery and execution: ${mode}`, async () => {
+  const events: AgentAuditEvent[] = [], sessions: string[] = [];
+  const exposures: { checkpoint: boolean; names: readonly string[] | undefined }[] = [];
+  const controller = new AbortController();
+  let material = false, formalInspection = false, checkpointCalls = 0, inspections = 0, expansions = 0, draftCalls = 0, previewed = false, generationAfterPreview = false;
+  const host = new AgentHost({ createSession: input => {
+    sessions.push(input.sessionId);
+    return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn }) => {
+      const checkpoint = content.includes('This is the actual draft inspection checkpoint');
+      exposures.push({ checkpoint, names: allowedToolNames });
+      await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: exposures.length, images: [] });
+      const call = (name: string) => input.tools.find(tool => tool.name === name)!.execute({}, signal);
+      if (checkpoint) {
+        checkpointCalls++;
+        assert.equal(input.sessionId, sessions[1]);
+        assert.deepEqual(allowedToolNames, ['inspect_comparison_draft']);
+        if (mode === 'cancel') controller.abort();
+        for (const name of ['read', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write']) assert.match((await call(name)).content, /draft_inspection_only/);
+        assert.equal(expansions, 0, 'adapter ignoring whitelist still has no expansion side effects');
+        if (mode !== 'verbal' && !(mode === 'late' && checkpointCalls === 1)) await call('inspect_comparison_draft');
+      } else if (content.includes('Now inspect') || content.includes('Now audit') || content.includes('Continue the current review turn')) {
+        draftCalls++;
+        assert.equal(input.sessionId, sessions[1]);
+        if (mode !== 'legacy') assert.equal(material, true, 'actual delivered material precedes full draft audit');
+        if (mode !== 'legacy' && draftCalls === 1) assert.match(content, /already delivered[\s\S]*Do not repeat inspection[\s\S]*new formal current inspection/);
+        if (draftCalls === 1) { await call('inspect_comparison_draft'); await call('preview_report'); }
+        else generationAfterPreview = previewed;
+      }
+      const reason = await yieldAfterTurn?.();
+      return reason ? { status: 'yielded' as const, reason } : 'I have inspected the draft and will correct it.';
+    }, cancel() {} };
+  } });
+  const inspect = { name: 'inspect_comparison_draft', description: 'actual full draft', parameters: Type.Object({}),
+    execute: async () => { inspections++; if (mode === 'error') throw new Error('Actual inspection failed');
+      const formal = mode !== 'unavailable' && (mode === 'legacy' || inspections > 1);
+      return { content: mode === 'unavailable' ? '{"status":"unavailable"}' : JSON.stringify({ status: formal ? 'available' : 'stale', headline: 'Actual unsupported guarantee', comparisonHtml: 'Full comparison', detailsHtml: 'Actual folded limitation' }), details: { complete: mode !== 'unavailable', formal } }; },
+    onCompleted: async (result: { details?: unknown }) => {
+      if (typeof result.details === 'object' && result.details !== null && 'complete' in result.details && result.details.complete === true) material = true;
+      if (typeof result.details === 'object' && result.details !== null && 'formal' in result.details && result.details.formal === true) formalInspection = true;
+    },
+  };
+  const tools = [...(mode === 'missing' ? [] : [inspect]), ...['read', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write'].map(name => ({ name, description: name, parameters: Type.Object({}), execute: async () => {
+    expansions++; if (name === 'preview_report') previewed = true; return { content: 'Actual default tool result' };
+  } }))];
+  const agent = new ComparisonAgent({ host, timeoutMs: 1_000, maxRepairAttempts: 0, resources: mode === 'hard' ? { maxToolCalls: 0 } : {} });
+  const result = await agent.compare(context, tools, { append: async event => { events.push(event); } }, controller.signal, {
+    ...(mode === 'legacy' ? {} : { hasReviewDraftMaterial: () => material }),
+    getSubmittedResult: async () => generationAfterPreview && formalInspection ? resultValue : undefined,
+  });
+  if (mode === 'ready' || mode === 'late' || mode === 'legacy') {
+    assert.equal(result.status, 'completed'); assert.equal(draftCalls, 2); assert.equal(generationAfterPreview, true);
+    assert.equal(checkpointCalls, mode === 'legacy' ? 0 : mode === 'late' ? 2 : 1);
+    assert.equal(sessions.length, 2, 'source, checkpoint and draft use one independent session');
+    if (mode !== 'legacy') assert.equal(events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'inspection' && event.payload.outcome === 'yielded')!.payload.yieldReason, 'review_draft_material_ready');
+  } else {
+    assert.equal(result.status, mode === 'cancel' ? 'cancelled' : 'failed');
+    assert.equal(draftCalls, 0); assert.equal(expansions, 0); assert.equal(material, false);
+    if (mode === 'verbal' || mode === 'unavailable') { assert.equal(checkpointCalls, 2); if (result.status === 'failed') assert.equal(result.failure.attempts, 2); }
+    if (mode === 'missing') { assert.equal(checkpointCalls, 0); if (result.status === 'failed') assert.match(result.failure.message, /requires inspect_comparison_draft/); }
+    if (mode === 'hard' || mode === 'cancel') assert.equal(inspections, 0);
+    if (mode === 'error') assert.equal(inspections, 1);
+  }
+  assert.ok(exposures.filter(exposure => !exposure.checkpoint).every(exposure => exposure.names === undefined), 'all other passes preserve their ordinary tool exposure');
+});
+
 for (const mode of ['yielded', 'unlimited', 'legacy_timeout', 'cancel', 'hard', 'provider_error'] as const) test(`source local deadline preserves real publication and failure boundaries: ${mode}`, async t => {
   if (mode === 'hard') t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const events: AgentAuditEvent[] = [], sessions: string[] = [];
@@ -230,6 +295,42 @@ function nativeMessage(content: AssistantMessage['content'], stopReason: Assista
 function toolTurn(...names: string[]): AssistantMessage {
   return nativeMessage(names.map((name, index) => ({ type: 'toolCall', id: `${name}-${index}`, name, arguments: {} })));
 }
+
+test('native draft inspection checkpoint exposes one actual tool until delivery, then restores full audit', async () => {
+  const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
+  let material = false, inspections = 0, reads = 0, changes = 0, previewed = false, laterGeneration = false;
+  const stop = (text: string) => nativeMessage([{ type: 'text', text }], 'stop');
+  const responses = [stop('Investigated'), stop('Composed'), stop('Actual source observations'), stop('I have inspected it.'),
+    toolTurn('read', 'inspect_comparison_draft'), toolTurn('update_comparison_findings', 'inspect_comparison_draft', 'preview_report'), stop('Actual audit finished')];
+  const models = { getModel: () => nativeModel, streamSimple: (_model: unknown, actual: unknown) => {
+    const actualContext = actual as typeof inputs[number];
+    inputs.push({ tools: actualContext.tools.map(tool => ({ name: tool.name })), messages: structuredClone(actualContext.messages) });
+    if (previewed && JSON.stringify(actual).includes('Full actual accepted draft')) laterGeneration = true;
+    const response = responses.shift();
+    if (!response) throw new Error('Unexpected native request after report readiness');
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: 'done', reason: response.stopReason as 'stop' | 'toolUse', message: response });
+    return stream;
+  } } as unknown as PiModels;
+  const caller = new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
+  const tools = [
+    { name: 'read', execute: async () => { reads++; return { content: 'Should not expand inspection checkpoint' }; } },
+    { name: 'update_comparison_findings', execute: async () => { changes++; return { content: 'Actual revised findings' }; } },
+    { name: 'inspect_comparison_draft', execute: async () => { inspections++; return { content: 'Full actual accepted draft' }; }, onCompleted: async () => { material = true; } },
+    { name: 'preview_report', execute: async () => { previewed = true; return { content: 'Actual current digest preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const agent = new ComparisonAgent({ host: new AgentHost(caller), timeoutMs: 1_000, maxRepairAttempts: 0, resources: {} });
+  const result = await agent.compare(context, tools, { append: async event => { events.push(event); } }, undefined, {
+    hasReviewDraftMaterial: () => material, getSubmittedResult: async () => laterGeneration ? resultValue : undefined,
+  });
+  assert.equal(result.status, 'completed'); assert.equal(inspections, 2); assert.equal(reads, 0); assert.equal(changes, 1);
+  assert.deepEqual(inputs[3]!.tools.map(tool => tool.name), ['inspect_comparison_draft']);
+  assert.deepEqual(inputs[4]!.tools.map(tool => tool.name), ['inspect_comparison_draft']);
+  assert.ok(inputs[5]!.tools.some(tool => tool.name === 'update_comparison_findings'));
+  assert.match(JSON.stringify(inputs[5]!.messages), /Full actual accepted draft[\s\S]*Now audit/);
+  assert.equal(events.filter(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'inspection').length, 2);
+  assert.equal(events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'inspection' && event.payload.outcome === 'yielded')!.payload.yieldReason, 'review_draft_material_ready');
+});
 
 for (const mode of ['late', 'retry', 'verbal', 'hard', 'cancel', 'unexhausted'] as const) test(`native findings closure requires actual accepted readiness; ${mode}`, async () => {
   const events: AgentAuditEvent[] = [], inputs: string[] = [];

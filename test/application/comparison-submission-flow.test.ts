@@ -20,10 +20,10 @@ function fixtureContext(input: Parameters<ProviderAdapter['createSession']>[0], 
       content: structuredClone(result.contentBlocks ?? [{ type: 'text', text: result.content }]) });
     return result;
   } }));
-  return { tools, request: async (content: string) => {
+  return { tools, request: async (content: string, allowedToolNames?: readonly string[]) => {
     messages.push({ role: 'user', content: [{ type: 'text', text: content }] });
     const context = { systemPrompt: input.systemPrompt, messages: structuredClone(messages),
-      tools: input.tools.map(({ name, description, parameters }) => ({ name, description, parameters })) };
+      tools: input.tools.filter(tool => !allowedToolNames || allowedToolNames.includes(tool.name)).map(({ name, description, parameters }) => ({ name, description, parameters })) };
     await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(JSON.stringify(context)),
       messageCount: messages.length, images: [], ...(recordActual ? { generationContext: context } : {}) });
   } };
@@ -35,26 +35,32 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
-  let turns = 0;
+  let turns = 0, checkpointVisits = 0;
   const comparison = new ComparisonAgent({ host: new AgentHost({ createSession: (sessionInput) => {
     const { tools, request } = fixtureContext(sessionInput);
     return {
-    append: async ({ content, signal }) => {
+    append: async ({ content, signal, allowedToolNames }) => {
       turns++;
-      await request(content);
+      await request(content, allowedToolNames);
       const submit = tools.find((tool) => tool.name === 'submit_comparison_draft')!;
       const preview = tools.find((tool) => tool.name === 'preview_report')!;
       const draft = (headline: string) => ({ status: 'completed', decisionShape: 'single_difference', category: 'Results', headline, comparisonHtml: `<p>${headline}</p>` });
       if (turns === 2) await submit.execute(draft('Draft A'), signal);
-      if (turns === 4) {
+      if (content.includes('This is the actual draft inspection checkpoint')) {
+        checkpointVisits++;
+        assert.deepEqual(allowedToolNames, ['inspect_comparison_draft']);
+        await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+        return '';
+      }
+      if (turns === 5) {
         assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');
         const revised = await submit.execute(draft('Draft B'), signal);
         assert.match(revised.content, /currentPhase=review/);
         assert.doesNotMatch(revised.content, /currentPhase=compose/);
       }
-      if (turns > 4) {
+      if (turns > 5) {
         assert.match(content, /Continue the current review turn/);
-        if (repairable && turns === 5) {
+        if (repairable && turns === 6) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
           await preview.execute({}, signal);
         }
@@ -65,7 +71,8 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
     };
   } }), timeoutMs: 0, maxRepairAttempts: 0 });
   const result = await startExperiment({ ...base, comparison }).result;
-  assert.equal(turns, 6);
+  assert.equal(checkpointVisits, 1, 'actual inspection-only checkpoint must execute');
+  assert.equal(turns, 7);
   assert.equal(result.comparison.result.status, repairable ? 'completed' : 'failed');
   if (repairable) assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Draft B/);
   else await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
@@ -77,14 +84,14 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
-  let turns = 0;
+  let turns = 0, checkpointVisits = 0;
   const comparison = new ComparisonAgent({
     host: new AgentHost({ createSession: (sessionInput) => {
       const { tools, request } = fixtureContext(sessionInput, recordActual);
       return {
-      append: async ({ content, signal }) => {
+      append: async ({ content, signal, allowedToolNames }) => {
         turns++;
-        await request(content);
+        await request(content, allowedToolNames);
         if (turns === 2) {
           const submit = tools?.find((tool) => tool.name === 'submit_comparison_draft');
           assert.ok(submit);
@@ -94,8 +101,13 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
           }, signal);
           assert.match(accepted.content, /status=accepted/);
         }
-        if (turns === 4) {
+        if (content.includes('This is the actual draft inspection checkpoint')) {
+          checkpointVisits++;
+          assert.deepEqual(allowedToolNames, ['inspect_comparison_draft']);
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+          return '';
+        }
+        if (turns === 5) {
           const preview = tools?.find((tool) => tool.name === 'preview_report');
           assert.ok(preview);
           const result = await preview.execute({}, signal);
@@ -109,6 +121,7 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
     timeoutMs: 0, maxRepairAttempts: 0,
   });
   const result = await startExperiment({ ...base, comparison }).result;
+  assert.equal(checkpointVisits, 1, 'actual inspected text must precede full audit');
   if (!recordActual) {
     assert.equal(result.comparison.result.status, 'failed');
     const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n')
@@ -121,12 +134,21 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
     await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
     return;
   }
-  assert.equal(turns, 5);
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
+  assert.equal(turns, 5, 'full audit generation already contains the actual checkpoint inspection before its preview');
   assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 5, toolCalls: 3, compactions: 0 });
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /usable result/);
   const events = await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8');
   assert.match(events, /comparison.phase_completed/);
+  const recorded = events.trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
+  const inspection = recorded.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft');
+  assert.ok(inspection);
+  const generation = recorded.find(event => event.type === 'agent.model_request' && event.payload.scope === 'generation'
+    && event.sequence > inspection.sequence && event.payload.sessionId === inspection.payload.sessionId && 'generationInput' in event.payload);
+  const preview = recorded.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report');
+  assert.ok(generation); assert.ok(preview);
+  assert.ok(inspection.sequence < generation.sequence && generation.sequence < preview.sequence,
+    'actual inspection must enter a later generation snapshot in the same review session before the unchanged draft is previewed');
 });
 
 test('application refuses to publish an accepted draft without preview', async (t) => {
@@ -135,11 +157,14 @@ test('application refuses to publish an accepted draft without preview', async (
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
-  let turns = 0;
+  let turns = 0, checkpointVisits = 0;
   const comparison = new ComparisonAgent({
-    host: new AgentHost({ createSession: ({ tools }) => ({
-      append: async ({ signal }) => {
+    host: new AgentHost({ createSession: sessionInput => {
+      const { tools, request } = fixtureContext(sessionInput);
+      return {
+      append: async ({ content, signal, allowedToolNames }) => {
         turns++;
+        await request(content, allowedToolNames);
         if (turns === 2) {
           const submit = tools?.find((tool) => tool.name === 'submit_comparison_draft');
           assert.ok(submit);
@@ -148,12 +173,17 @@ test('application refuses to publish an accepted draft without preview', async (
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }
-        if (turns === 4) await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+        if (content.includes('This is the actual draft inspection checkpoint')) {
+          checkpointVisits++;
+          assert.deepEqual(allowedToolNames, ['inspect_comparison_draft']);
+          await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+        }
         return '';
       }, cancel() {},
-    }) }), timeoutMs: 0, maxRepairAttempts: 0,
+    }; } }), timeoutMs: 0, maxRepairAttempts: 0,
   });
   const result = await startExperiment({ ...base, comparison }).result;
+  assert.equal(checkpointVisits, 1);
   assert.equal(result.comparison.result.status, 'failed');
   if (result.comparison.result.status === 'failed') assert.equal(result.comparison.result.failure.code, 'preview_failed');
   await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
@@ -165,11 +195,14 @@ test('a provider failure after preview does not publish the draft', async (t) =>
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
-  let turns = 0;
+  let turns = 0, checkpointVisits = 0, previewRan = false;
   const comparison = new ComparisonAgent({
-    host: new AgentHost({ createSession: ({ tools }) => ({
-      append: async ({ signal }) => {
+    host: new AgentHost({ createSession: sessionInput => {
+      const { tools, request } = fixtureContext(sessionInput);
+      return {
+      append: async ({ content, signal, allowedToolNames }) => {
         turns++;
+        await request(content, allowedToolNames);
         if (turns === 2) {
           const submit = tools?.find((tool) => tool.name === 'submit_comparison_draft');
           assert.ok(submit);
@@ -178,18 +211,25 @@ test('a provider failure after preview does not publish the draft', async (t) =>
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }
-        if (turns === 4) {
+        if (content.includes('This is the actual draft inspection checkpoint')) {
+          checkpointVisits++;
+          assert.deepEqual(allowedToolNames, ['inspect_comparison_draft']);
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+          return '';
+        }
+        if (turns === 5) {
           const preview = tools?.find((tool) => tool.name === 'preview_report');
           assert.ok(preview);
           assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');
+          previewRan = true;
           throw Object.assign(new Error('Provider unavailable during review'), { status: 503 });
         }
         return '';
       }, cancel() {},
-    }) }), timeoutMs: 0, maxRepairAttempts: 0,
+    }; } }), timeoutMs: 0, maxRepairAttempts: 0,
   });
   const result = await startExperiment({ ...base, comparison }).result;
+  assert.equal(checkpointVisits, 1); assert.equal(previewRan, true, 'Provider failure must actually occur after successful preview');
   assert.equal(result.comparison.result.status, 'failed');
   if (result.comparison.result.status === 'failed') {
     assert.equal(result.comparison.result.failure.code, 'provider_failure');

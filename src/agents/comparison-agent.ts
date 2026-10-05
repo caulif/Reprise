@@ -95,6 +95,8 @@ export type ComparisonCompareOptions = {
   findingsReady?: () => boolean;
   /** Accepted discovery snapshot exists; does not certify readiness or semantic correctness. */
   hasSavedFindings?: () => boolean;
+  /** Actual full current/stale accepted draft delivered in this review; not final publication certification. */
+  hasReviewDraftMaterial?: () => boolean;
   isRepairRead?: (params: unknown) => Promise<boolean>;
   estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
@@ -178,6 +180,34 @@ function comparisonYieldBoundary(outcome: FreeformInvocation, resources: Compari
   return outcome;
 }
 
+function comparisonPassToolNames(pass?: ComparisonWorkPass): readonly string[] | undefined {
+  return pass === 'findings' ? ['update_comparison_findings'] : pass === 'inspection' ? ['inspect_comparison_draft'] : undefined;
+}
+
+export const COMPARISON_DRAFT_INSPECTION_PROMPT = [
+  'This is the actual draft inspection checkpoint in the same independent review session. The source pass may have ended incomplete, including an interrupted generation without a visible assessment; that certifies no guarantee.',
+  'Call inspect_comparison_draft now to receive the full actual accepted headline, comparison and details, including folded limitations. Do not infer the text from author notes or from your intended revision.',
+  'Only this inspection tool is available here. Do not investigate, update findings, submit, write, edit or preview. A verbal promise, unavailable result or short navigation receipt cannot satisfy this checkpoint.',
+  'A stale binding may deliver actual draft text for repair; it does not certify current evidence, final inspection, semantic correctness or publication. Retain your actual source observations and unchecked guarantees.',
+  'After actual delivery the Host starts full draft audit in this same session. Correct only evidence-supported claims, retain decisive uncertainty near the conclusion, then inspect the final revised text and preview its current digest.',
+].join('\n');
+
+async function reviewDraftInspectionCheckpoint(options: ComparisonCompareOptions,
+  work: (phase: 'review', prompt: string, pass?: 'sources' | 'inspection') => Promise<FreeformInvocation>,
+  toolAvailable: boolean, sessionId: string): Promise<Extract<FreeformInvocation, { status: 'failed' | 'cancelled' }> | undefined> {
+  if (!options.hasReviewDraftMaterial) return undefined;
+  if (!toolAvailable) return { status: 'failed', sessionId, failure: { code: 'draft_invalid', kind: 'protocol', attempts: 0,
+    message: 'Review draft checkpoint requires inspect_comparison_draft; no actual draft material can be delivered.' } };
+  for (let call = 1; call <= 2 && !options.hasReviewDraftMaterial(); call++) {
+    const inspected = await work('review', COMPARISON_DRAFT_INSPECTION_PROMPT, 'inspection');
+    if (inspected.status !== 'completed' && inspected.status !== 'yielded') return inspected;
+    sessionId = inspected.sessionId;
+  }
+  if (options.hasReviewDraftMaterial()) return undefined;
+  return { status: 'failed', sessionId, failure: { code: 'draft_invalid', kind: 'protocol', attempts: 2,
+    message: 'Actual review draft material is unavailable after two inspection checkpoint calls. Verbal promises or unavailable receipts do not permit draft audit.' } };
+}
+
 function sourceReviewFeedback(name: string, reason?: string): { content: string } | undefined {
   if (['inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report'].includes(name)) {
     return { content: JSON.stringify({ code: 'source_review_not_ready',
@@ -188,11 +218,13 @@ function sourceReviewFeedback(name: string, reason?: string): { content: string 
   return undefined;
 }
 
-function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { phase: ComparisonPhase; sourceReview: boolean; findingsClosure: boolean }, resources: ComparisonResourceTracker,
+function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { phase: ComparisonPhase; sourceReview: boolean; findingsClosure: boolean; draftInspection: boolean }, resources: ComparisonResourceTracker,
   isRepairRead?: ComparisonCompareOptions['isRepairRead'], hasSavedFindings?: () => boolean): AgentToolDefinition[] {
   return tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
     const reason = resources.beforeTool(tool.name);
     signal.throwIfAborted();
+    if (current.draftInspection && tool.name !== 'inspect_comparison_draft') return { content: JSON.stringify({ code: 'draft_inspection_only',
+      message: 'Call inspect_comparison_draft to receive the actual full accepted text. This checkpoint permits no investigation, findings changes, submission, writing or preview. Delivery is not semantic or publication approval.' }) };
     if (current.findingsClosure && tool.name !== 'update_comparison_findings') return { content: JSON.stringify({ code: 'closure_only',
       message: 'This findings closure permits only update_comparison_findings from already observed evidence. Do not investigate, write, submit or preview here.' }) };
     const sourceFeedback = current.sourceReview ? sourceReviewFeedback(tool.name, reason) : undefined;
@@ -474,6 +506,10 @@ export const COMPARISON_TURN_PROMPTS = {
   ].join('\n'),
 } as const;
 
+export const COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT = COMPARISON_TURN_PROMPTS.review
+  .replace('Inspect the accepted draft with inspect_comparison_draft when available.', 'Use the actual full draft inspection tool result already delivered in this same session; do not repeat inspection merely to obtain unchanged material.')
+  .replace('After the last accepted revision, reread the actual headline, main text and all details with inspect_comparison_draft; your intended edit is not proof the submitted text changed.', 'After any accepted revision, inspect the actual latest headline, main text and all details with inspect_comparison_draft; your intended edit is not proof the submitted text changed. If the current formal inspection has already been delivered and its binding has not changed, do not repeat it merely to obtain the same material. Stale material is only for repair and cannot satisfy final inspection.');
+
 const OUTPUT_CONTRACT = [
   STRUCTURED_FINAL_RULE,
   '{"status":"completed"|"insufficient_evidence","headline":"one plain-language difference sentence","evidenceRefs":["ev-02"]}',
@@ -495,12 +531,13 @@ function comparisonProviderFailure<T>(result: AgentInvocation<T> | Extract<Freef
   return { ...result, failure: { ...result.failure, code: 'provider_failure' } };
 }
 
-type ComparisonWorkPass = 'sources' | 'findings';
+type ComparisonWorkPass = 'sources' | 'findings' | 'inspection';
 
 function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: string, pass: ComparisonWorkPass | undefined, options: ComparisonCompareOptions | undefined): () => Promise<string | undefined> {
   return async () => {
     resources.checkHard('completed provider turn');
     if (pass === 'findings') return options?.findingsReady?.() ? 'findings_ready' : undefined;
+    if (pass === 'inspection') return options?.hasReviewDraftMaterial?.() ? 'review_draft_material_ready' : undefined;
     if (phase === 'investigate') return resources.softReason();
     if (phase !== 'review') return undefined;
     if (pass !== 'sources' && await options?.getSubmittedResult?.()) return 'report_ready';
@@ -578,7 +615,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
       return comparisonEvidenceAllowlist(context);
     };
-    const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false, findingsClosure: false };
+    const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false, findingsClosure: false, draftInspection: false };
     const resources = new ComparisonResourceTracker(this.#resources);
     const boundedTools = resourceBoundTools(tools, current, resources, options?.isRepairRead, options?.hasSavedFindings);
     const stagedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
@@ -610,7 +647,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: ComparisonWorkPass) => {
       current.phase = phase;
       current.sourceReview = reviewPass === 'sources';
-      current.findingsClosure = reviewPass === 'findings';
+      current.findingsClosure = reviewPass === 'findings'; current.draftInspection = reviewPass === 'inspection';
       resources.phase(phase);
       activePhase = phase;
       counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
@@ -628,7 +665,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         }
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
-        outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: reviewPass === 'findings' ? ['update_comparison_findings'] : undefined,
+        outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: comparisonPassToolNames(reviewPass),
           ...comparisonSourceDeadline(resources, reviewPass), ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
         return outcome = comparisonYieldBoundary(outcome, resources, signal);
       } finally {
@@ -638,7 +675,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     };
     try {
       if (options?.getSubmittedResult) {
-        return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId);
+        return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId, tools.some(tool => tool.name === 'inspect_comparison_draft'));
       }
 
       for (const step of ['understand', 'investigate', 'compose'] as const) {
@@ -671,6 +708,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     measuredWork: (phase: 'investigate' | 'compose' | 'review', prompt: string, reviewPass?: ComparisonWorkPass) => Promise<FreeformInvocation>,
     sessionId: string,
     attemptId: string,
+    inspectionToolAvailable: boolean,
   ): Promise<AgentInvocation<ComparisonResult>> {
     let investigated = await measuredWork('investigate', context.promptContent
       ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
@@ -694,20 +732,26 @@ export class ComparisonAgent implements ComparisonAgentPort {
       if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
       return comparisonProviderFailure(prefix);
     }
-    const result = await this.#reviewSubmitted(context, options, measuredWork, attemptId);
+    const result = await this.#reviewSubmitted(context, options, measuredWork, attemptId, inspectionToolAvailable);
     return result;
   }
 
   async #reviewSubmitted(
     context: ComparisonContext,
     options: ComparisonCompareOptions,
-    work: (phase: 'review', prompt: string, reviewPass?: 'sources') => Promise<FreeformInvocation>,
+    work: (phase: 'review', prompt: string, reviewPass?: 'sources' | 'inspection') => Promise<FreeformInvocation>,
     attemptId: string,
+    inspectionToolAvailable: boolean,
   ): Promise<AgentInvocation<ComparisonResult>> {
     const sources = await work('review', [context.promptContent ?? '', COMPARISON_SOURCE_REVIEW_PROMPT].join('\n\n'), 'sources');
     if (sources.status !== 'completed' && sources.status !== 'yielded') {
       if (sources.status === 'failed') await this.#sessions.discard(attemptId);
       return comparisonProviderFailure(sources);
+    }
+    const checkpoint = await reviewDraftInspectionCheckpoint(options, work, inspectionToolAvailable, sources.sessionId);
+    if (checkpoint) {
+      if (checkpoint.status === 'failed') await this.#sessions.discard(attemptId);
+      return comparisonProviderFailure(checkpoint);
     }
     let prompt = [
       sources.status === 'yielded' && sources.reason === 'bounded_source_timeout'
@@ -715,8 +759,10 @@ export class ComparisonAgent implements ComparisonAgentPort {
         : sources.status === 'yielded'
         ? `The Host stopped the independent source pass at a completed-turn boundary (${sources.reason}); that pass is incomplete. Continue in the same review session using its actual observations. Unchecked guarantees remain unknown, must qualify conflicting headline/main claims, and cannot be certified by this resource stop.`
         : 'The independent source pass is complete. Continue in this same review session; its observations are still provisional and its unavailable checks do not certify success.',
-      'Now inspect the current accepted draft with inspect_comparison_draft when available (otherwise read report.html). Compare its actual claims with the original requirements and the source/output-chain observations you just made. Do not inherit author work notes or saved findings as evidence.',
-      COMPARISON_TURN_PROMPTS.review,
+      options.hasReviewDraftMaterial
+        ? 'Now audit the actual accepted draft text already delivered by inspect_comparison_draft in this same review session. Compare its claims with the original requirements and your actual source/output-chain observations; correct unsupported claims and decisive omissions. Do not repeat inspection merely to obtain unchanged material. Stale text is only for repair: after revising findings or draft, obtain a new formal current inspection and preview that digest. Do not inherit author work notes or saved findings as evidence.'
+        : 'Now inspect the current accepted draft with inspect_comparison_draft when available (otherwise read report.html). Compare its actual claims with the original requirements and the source/output-chain observations you just made. Do not inherit author work notes or saved findings as evidence.',
+      options.hasReviewDraftMaterial ? COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT : COMPARISON_TURN_PROMPTS.review,
     ].join('\n\n');
     const seen = new Set<string>();
     for (let repair = 0; ; repair++) {

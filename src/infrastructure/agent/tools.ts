@@ -2,6 +2,7 @@ import { sha256 } from "../../core/identity.js";
 import { inlineBody, redactToolResultForModel, toolResultBody } from "./model-input.js";
 import type { AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
 import { recordedImageRefs } from './artifacts.js';
+import { preserveToolDelivery } from './tool-delivery.js';
 
 class AgentToolFailure extends Error {
   constructor(role: string, cause: unknown) {
@@ -101,11 +102,11 @@ function stripImageBlocksForTextOnly(result: AgentToolResult): AgentToolResult {
   };
   const textBlocks = result.contentBlocks.filter((block) => block.type === "text").map((block) => ({ ...block, text: deliveryText(block.text) }));
   const content = `${deliveryText(result.content)}\n${IMAGE_OMITTED_NOTE}`.trim();
-  return {
+  return preserveToolDelivery(result, {
     content,
     contentBlocks: [...textBlocks, { type: "text" as const, text: IMAGE_OMITTED_NOTE }],
     details: { ...(typeof result.details === 'object' && result.details !== null ? result.details : {}), imageDelivery: 'unsupported_model' },
-  };
+  });
 }
 
 function contentByteLength(result: AgentToolResult): number {

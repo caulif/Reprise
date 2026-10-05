@@ -8,7 +8,7 @@ import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparis
 import { sha256, writeAtomic } from "../core/identity.js";
 import { extractInner } from "../core/comparison-html.js";
 import { ComparisonDraftSubmissionSchema, ComparisonReportModelSchema, ComparisonFindingsSubmissionSchema, type ComparisonDraftSubmission } from "../core/schema.js";
-import type { AgentToolDefinition } from "../infrastructure/agent/host.js";
+import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/agent/host.js";
 import type { AgentLocale } from "../agents/language.js";
 import type { ComparisonEvidenceCatalog } from "./comparison-evidence.js";
 import { metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
@@ -20,9 +20,33 @@ import type { ComparisonQuoteSourcePort } from "./comparison-source.js";
 import { ComparisonDraftAcceptanceReceiptSchema, ComparisonDraftInspectionSchema } from "../core/comparison-review-schema.js";
 import { comparisonToolTextBytes, serializeComparisonPagedJson } from './comparison-render-output.js';
 import { pathContainedBy } from '../core/paths.js';
+import { toolDeliveryToken, withToolDelivery } from '../infrastructure/agent/tool-delivery.js';
+import { redactModelVisibleText } from '../infrastructure/agent/model-input.js';
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
 type AcceptedDraft = { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] };
+type DraftInspectionDelivery = { accepted: AcceptedDraft; reviewEpoch: number; catalogRevision: number; findingsRevision: number | undefined; formal: boolean };
+const InspectionMaterialTextSchema = Type.Object({ status: Type.Union([Type.Literal('available'), Type.Literal('stale')]),
+  headline: Type.String(), comparisonHtml: Type.String(), detailsHtml: Type.Optional(Type.String()), truncated: Type.Optional(Type.Boolean()),
+});
+type InspectionMaterialText = { status: 'available' | 'stale'; headline: string; comparisonHtml: string; detailsHtml?: string; truncated?: boolean };
+
+function inspectionMaterialText(content: string): InspectionMaterialText | undefined {
+  let payload: unknown;
+  try { payload = JSON.parse(content); }
+  catch (error) { if (!(error instanceof SyntaxError)) throw error; return undefined; }
+  return Value.Check(InspectionMaterialTextSchema, payload) && payload.truncated !== true ? payload : undefined;
+}
+
+function completeInspectionMaterial(result: AgentToolResult, expected: InspectionMaterialText): boolean {
+  const texts = result.contentBlocks === undefined ? [result.content] : result.contentBlocks.flatMap(block => block.type === 'text' ? [block.text] : []);
+  return texts.some(text => {
+    const actual = inspectionMaterialText(text);
+    return actual?.status === expected.status && actual.headline === expected.headline
+      && actual.comparisonHtml === expected.comparisonHtml && actual.detailsHtml === expected.detailsHtml;
+  });
+}
+
 const DraftToolSchema = Type.Object({
   ...ComparisonDraftSubmissionSchema.properties,
   decisionShape: Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionShape"])).properties.decisionShape,
@@ -62,7 +86,9 @@ export class ComparisonDraft {
   #inspected: AcceptedDraft | undefined;
   #bindingRevision = 0;
   #reviewEpoch = 0;
-  readonly #pendingInspections = new WeakMap<object, { accepted: AcceptedDraft; reviewEpoch: number }>();
+  #reviewDraftMaterial: DraftInspectionDelivery | undefined;
+  readonly #pendingInspections = new WeakMap<object, DraftInspectionDelivery>();
+  #pendingReviewMaterials = new WeakMap<object, DraftInspectionDelivery & { text: InspectionMaterialText }>();
   readonly #repairReadFiles = new Map<string, string>();
 
   constructor(input: {
@@ -121,9 +147,12 @@ export class ComparisonDraft {
       execute: async (params, signal) => {
         if (!Value.Check(Type.Object({}, { additionalProperties: false }), params)) throw new Error("Invalid draft inspection parameters.");
         signal.throwIfAborted();
+        this.#reviewDraftMaterial = undefined;
+        this.#pendingReviewMaterials = new WeakMap();
         const accepted = this.#accepted;
         const catalog = this.#catalog.snapshot();
         const findingsRevision = this.#discovery?.snapshot()?.revision;
+        const reviewEpoch = this.#reviewEpoch;
         if (!accepted) return { content: JSON.stringify(await this.#boundedInspection({ status: "unavailable", reason: "No accepted draft exists.", repairContext: this.#repairContext() })) };
         const html = await this.#readAcceptedHtml(accepted.digest);
         if (html === undefined) return { content: JSON.stringify({ status: "unavailable", reason: "Accepted draft file is missing or changed." }) };
@@ -134,14 +163,19 @@ export class ComparisonDraft {
         if (!Value.Check(ComparisonReportModelSchema, model)) throw new Error("Invalid persisted comparison report content.");
         if (accepted.revision !== catalog.revision || accepted.discoveryRevision !== findingsRevision) {
           signal.throwIfAborted();
-          return { content: JSON.stringify(await this.#boundedInspection({ status: "stale", draftDigest: accepted.digest,
+          const content = await this.#boundedInspection({ status: "stale", draftDigest: accepted.digest,
             acceptedCatalogRevision: accepted.revision, acceptedFindingsRevision: accepted.discoveryRevision,
             headline: model.headline, comparisonHtml: model.slots.comparison, detailsHtml: model.slots.details,
             semanticValidation: "not_performed", certification: "none",
             meaning: "Actual unverified author draft with stale bindings. Historical questions are hypotheses, not certified observations. Revise from independent source evidence, preserve question identities, resubmit current findings and draft, then inspect and preview. This result cannot satisfy final inspection or publication.",
             repairContext: this.#repairContext(),
             renderCheckHistory: this.#inspectionRenderHistory(),
-          })) };
+          });
+          if (content.status !== 'stale') return { content: JSON.stringify(content) };
+          const result = withToolDelivery({ content: JSON.stringify(content) });
+          const text = inspectionMaterialText(redactModelVisibleText(result.content).text);
+          if (text) this.#pendingReviewMaterials.set(toolDeliveryToken(result)!, { accepted, reviewEpoch, catalogRevision: catalog.revision, findingsRevision, formal: false, text });
+          return result;
         }
         const receipt = { schemaVersion: 1 as const, status: "available" as const, draftDigest: accepted.digest,
           bindingRevision: this.#bindingRevision,
@@ -158,14 +192,23 @@ export class ComparisonDraft {
           renderCheckHistory: this.#inspectionRenderHistory(),
         });
         if (content.status !== 'available') return { content: JSON.stringify(content) };
-        this.#pendingInspections.set(receipt, { accepted, reviewEpoch: this.#reviewEpoch });
-        return { details: receipt, content: JSON.stringify(content) };
+        this.#pendingInspections.set(receipt, { accepted, reviewEpoch, catalogRevision: catalog.revision, findingsRevision, formal: true });
+        const result = withToolDelivery({ details: receipt, content: JSON.stringify(content) });
+        const text = inspectionMaterialText(redactModelVisibleText(result.content).text);
+        if (text) this.#pendingReviewMaterials.set(toolDeliveryToken(result)!, { accepted, reviewEpoch, catalogRevision: catalog.revision, findingsRevision, formal: true, text });
+        return result;
       },
       onCompleted: async result => {
+        const key = toolDeliveryToken(result);
+        const material = key === undefined ? undefined : this.#pendingReviewMaterials.get(key);
+        if (key !== undefined) this.#pendingReviewMaterials.delete(key);
+        if (material && this.#currentInspectionDelivery(material) && completeInspectionMaterial(result, material.text)) this.#reviewDraftMaterial = material;
         if (!result.details || typeof result.details !== "object") return;
         const pending = this.#pendingInspections.get(result.details);
         this.#pendingInspections.delete(result.details);
-        if (pending && pending.accepted === this.#accepted && pending.reviewEpoch === this.#reviewEpoch) this.#inspected = pending.accepted;
+        if (pending && this.#currentInspectionDelivery(pending)) {
+          if (pending.formal) this.#inspected = pending.accepted;
+        }
       },
     };
   }
@@ -251,6 +294,17 @@ export class ComparisonDraft {
     this.#reviewInspectionRequired = true;
     this.#reviewEpoch++;
     this.#inspected = undefined;
+    this.#reviewDraftMaterial = undefined;
+    this.#pendingReviewMaterials = new WeakMap();
+  }
+
+  hasReviewDraftMaterial(): boolean {
+    return this.#reviewInspectionRequired && this.#reviewDraftMaterial !== undefined && this.#currentInspectionDelivery(this.#reviewDraftMaterial);
+  }
+
+  #currentInspectionDelivery(delivery: DraftInspectionDelivery): boolean {
+    return delivery.accepted === this.#accepted && delivery.reviewEpoch === this.#reviewEpoch
+      && delivery.catalogRevision === this.#catalog.snapshot().revision && delivery.findingsRevision === this.#discovery?.snapshot()?.revision;
   }
 
   async submit(draft: ComparisonDraftSubmission): Promise<string> {
@@ -311,6 +365,8 @@ export class ComparisonDraft {
       this.#previewed = undefined;
       this.#previewFailure = undefined;
       this.#inspected = undefined;
+      this.#reviewDraftMaterial = undefined;
+      this.#pendingReviewMaterials = new WeakMap();
     }
     if (changed) this.#accepted = { digest, revision: catalog.revision, ...(discovery ? { discoveryRevision: discovery.revision } : {}), result, ...(draft.decisionShape ? { decisionShape: draft.decisionShape } : {}) };
     this.#lastRejection = undefined;

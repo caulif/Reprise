@@ -19,6 +19,10 @@ import { prunePiMessagesForBudget } from '../../src/infrastructure/agent/compact
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import { comparisonToolTextBytes } from '../../src/application/comparison-render-output.js';
 import { readComparisonJsonPages } from './comparison-paged-json-reader.js';
+import { comparisonToolFeedback } from '../../src/agents/comparison-tool-feedback.js';
+import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
+import { toolDeliveryToken } from '../../src/infrastructure/agent/tool-delivery.js';
+import type { AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 
 const facts = {
   run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
@@ -223,6 +227,8 @@ test("stale actual draft and question identities aid repair without certifying f
   assert.equal(stale.comparisonHtml, submission.comparisonHtml);
   assert.equal(stale.detailsHtml, submission.detailsHtml);
   assert.equal(raw.details, undefined);
+  assert.equal(Value.Check(ComparisonDraftInspectionSchema, raw.details), false);
+  assert.equal(f.draft.hasReviewDraftMaterial(), true, 'stale actual text permits repair, not formal certification');
   assert.equal(Value.Check(ComparisonDraftInspectionSchema, stale), false);
   const context = stale.repairContext as { readyToCompose: boolean; decisionQuestions: unknown[]; findings?: unknown };
   assert.equal(context.readyToCompose, false);
@@ -230,6 +236,7 @@ test("stale actual draft and question identities aid repair without certifying f
   assert.equal(context.findings, undefined);
   assert.ok(!raw.content.includes(f.root));
   assert.equal(await f.draft.completedResult(), undefined);
+  assert.equal((JSON.parse(f.draft.submissionState()) as { inspected?: unknown }).inspected, undefined);
   const recovered = await recoveryReviewBinding({ events, attemptId: "attempt", draftDigest: String(stale.draftDigest),
     catalogRevision: f.catalog.snapshot().revision, previewSessionId: "review", acceptedAfterSequence: 1,
     store: { experimentId: "exp", readArtifact: async () => { throw new Error("Should not resolve an uncertified inspection"); } },
@@ -380,4 +387,191 @@ test('oversized historical repair questions are readable in bounded pages withou
   await unlink(join(f.root, 'scratch'));
   await rename(join(f.root, 'scratch-original'), join(f.root, 'scratch'));
   assert.equal(await f.draft.isRepairRead(allowed), true);
+});
+
+test('review material requires actual current tool completion and never inherits author inspection', async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission);
+  await f.inspect();
+  assert.equal(f.draft.hasReviewDraftMaterial(), false, 'author-session text is not review delivery');
+  f.draft.beginReview();
+  const raw = f.draft.inspectTool();
+  const pending = await raw.execute({}, new AbortController().signal);
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  await raw.onCompleted!({ content: JSON.stringify({ status: 'available', headline: submission.headline }), details: { ...(pending.details as object) } });
+  assert.equal(f.draft.hasReviewDraftMaterial(), false, 'partial or synthesized material cannot match the complete inspected body');
+  await raw.onCompleted!(pending);
+  assert.equal(f.draft.hasReviewDraftMaterial(), true);
+  f.draft.beginReview();
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+});
+
+for (const change of ['epoch', 'catalog', 'findings', 'accepted'] as const) test(`pending material delivery cannot cross a changed ${change} binding`, async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update(findings);
+  await f.draft.submit(submission);
+  f.draft.beginReview();
+  const tool = f.draft.inspectTool();
+  const pending = await tool.execute({}, new AbortController().signal);
+  if (change === 'epoch') f.draft.beginReview();
+  if (change === 'findings') await f.discovery!.update({ ...findings, importantLimitations: ['Changed finding scope'] });
+  if (change === 'accepted') await f.draft.submit({ ...submission, headline: 'Changed accepted headline' });
+  if (change === 'catalog') {
+    await mkdir(join(f.root, 'scratch')); await writeFile(join(f.root, 'scratch', 'note.txt'), 'New evidence');
+    await f.catalog.registerEvidence({ relativePath: 'note.txt', sourceRefs: ['ev-01'], label: 'New evidence' });
+  }
+  await tool.onCompleted!(pending);
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  assert.equal((JSON.parse(f.draft.submissionState()) as { inspected?: unknown }).inspected, undefined, 'outdated completion does not satisfy formal inspection either');
+  await f.inspect();
+  assert.equal(f.draft.hasReviewDraftMaterial(), true, 'a new actual complete current or stale read restores only the current binding');
+  if (change === 'catalog' || change === 'findings') assert.equal((JSON.parse(f.draft.submissionState()) as { inspected?: unknown }).inspected, undefined);
+});
+
+test('already completed material invalidates when findings, catalog or accepted draft changes', async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update(findings); await f.draft.submit(submission); f.draft.beginReview();
+  await f.inspect(); assert.equal(f.draft.hasReviewDraftMaterial(), true);
+  await f.discovery!.update({ ...findings, importantLimitations: ['New scope'] });
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  assert.equal((await f.inspect()).status, 'stale'); assert.equal(f.draft.hasReviewDraftMaterial(), true);
+  await mkdir(join(f.root, 'scratch')); await writeFile(join(f.root, 'scratch', 'note.txt'), 'New evidence');
+  await f.catalog.registerEvidence({ relativePath: 'note.txt', sourceRefs: ['ev-01'], label: 'New evidence' });
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  await f.inspect(); assert.equal(f.draft.hasReviewDraftMaterial(), true);
+  await f.discovery!.update({ ...findings, importantLimitations: ['New scope'] }); await f.draft.submit(submission);
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+});
+
+test('unavailable, damaged and oversized inspection results never provide review material', async t => {
+  const f = await fixture(t);
+  f.draft.beginReview();
+  assert.equal((await f.inspect()).status, 'unavailable'); assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  await f.draft.submit(submission); await f.inspect(); assert.equal(f.draft.hasReviewDraftMaterial(), true);
+  await writeFile(join(f.root, 'report.html'), '<p>Damaged unaccepted text</p>');
+  assert.equal((await f.inspect()).status, 'unavailable'); assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  await rm(join(f.root, 'report.html'));
+  assert.equal((await f.inspect()).status, 'unavailable'); assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  await f.draft.submit({ ...submission, comparisonHtml: `<p>Meaning.</p>${'<span></span>'.repeat(2000)}` });
+  assert.equal((await f.inspect()).status, 'unavailable'); assert.equal(f.draft.hasReviewDraftMaterial(), false);
+});
+
+for (const stale of [false, true]) test(`audit failure and aborted delivery cannot satisfy ${stale ? 'stale' : 'current'} review material`, async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update(findings); await f.draft.submit(submission); f.draft.beginReview();
+  if (stale) await f.discovery!.update({ ...findings, importantLimitations: ['Changed scope'] });
+  const failed = instrumentTools([f.draft.inspectTool()], 'review', 'comparison', { requestIndex: 0 }, {
+    append: async event => { if (event.type === 'agent.tool_completed') throw new Error('Audit write failed'); },
+  })[0]!;
+  await assert.rejects(failed.execute({}, new AbortController().signal), /tool execution failed/);
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  const controller = new AbortController(), raw = f.draft.inspectTool();
+  const aborted = instrumentTools([{ ...raw, execute: async (params, signal) => { const result = await raw.execute(params, signal); controller.abort(); return result; } }], 'review', 'comparison', { requestIndex: 0 })[0]!;
+  await assert.rejects(aborted.execute({}, controller.signal), /tool execution failed/);
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  await f.inspect(); assert.equal(f.draft.hasReviewDraftMaterial(), true);
+  if (stale) assert.equal((JSON.parse(f.draft.submissionState()) as { inspected?: unknown }).inspected, undefined);
+});
+
+test('same-body completion from an old review epoch cannot unlock a newly pending inspection', async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission); f.draft.beginReview();
+  const tool = f.draft.inspectTool();
+  const old = await tool.execute({}, new AbortController().signal);
+  f.draft.beginReview();
+  const current = await tool.execute({}, new AbortController().signal);
+  assert.equal(old.content, current.content, 'the unchanged body alone cannot identify delivery');
+  assert.notEqual(toolDeliveryToken(old), toolDeliveryToken(current));
+  await tool.onCompleted!(old);
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  assert.equal((JSON.parse(f.draft.submissionState()) as { inspected?: unknown }).inspected, undefined);
+  await tool.onCompleted!(current);
+  assert.equal(f.draft.hasReviewDraftMaterial(), true);
+});
+
+test('real progress, text-only filtering and redaction preserve only internal delivery identity without persisting a stale receipt', async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update(findings); await f.draft.submit(submission); f.draft.beginReview();
+  await f.discovery!.update({ ...findings, importantLimitations: ['Changed scope'] });
+  const raw = f.draft.inspectTool(), events: AgentAuditEvent[] = [];
+  const resources = new ComparisonResourceTracker({}); resources.phase('review');
+  let token: object | undefined;
+  const tool = instrumentTools([{ ...raw, execute: async (params, signal) => {
+    const result = await raw.execute(params, signal);
+    token = toolDeliveryToken(result);
+    assert.ok(token); assert.equal(f.draft.hasReviewDraftMaterial(), false);
+    const augmented = { ...result, contentBlocks: [{ type: 'text' as const, text: result.content }, { type: 'image' as const, data: 'fixture', mimeType: 'image/png' }] };
+    return comparisonToolFeedback(augmented, resources, undefined, raw.name);
+  } }], 'review', 'comparison', { requestIndex: 0 }, { append: async event => { events.push(event); } })[0]!;
+  const visible = await tool.execute({}, new AbortController().signal);
+  assert.equal(toolDeliveryToken(visible), token);
+  assert.deepEqual(visible.details, { imageDelivery: 'unsupported_model' });
+  assert.equal(Value.Check(ComparisonDraftInspectionSchema, visible.details), false);
+  assert.equal(visible.contentBlocks?.some(block => block.type === 'image'), false);
+  assert.match(visible.content, /Image content omitted/);
+  assert.match(visible.content, /hostProgress/);
+  assert.equal(f.draft.hasReviewDraftMaterial(), true);
+  assert.equal((JSON.parse(f.draft.submissionState()) as { inspected?: unknown }).inspected, undefined);
+  assert.equal(await f.draft.completedResult(), undefined);
+  const completed = events.find(event => event.type === 'agent.tool_completed')!;
+  assert.deepEqual(completed.payload.details, { imageDelivery: 'unsupported_model' }, 'the pre-existing image-omission diagnostic is not a stale inspection receipt');
+  assert.equal(Value.Check(ComparisonDraftInspectionSchema, completed.payload.details), false);
+  assert.equal(Object.getOwnPropertySymbols(completed.payload).length, 0);
+  assert.doesNotMatch(JSON.stringify(events), /agent-tool-delivery/);
+  assert.doesNotMatch(JSON.stringify(visible), /agent-tool-delivery/);
+});
+
+for (const missing of ['headline', 'comparisonHtml', 'detailsHtml', 'truncated', 'malformed', 'stub']) test(`a valid identity token cannot certify ${missing} material`, async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission); f.draft.beginReview();
+  const raw = f.draft.inspectTool();
+  const tool = instrumentTools([{ ...raw, execute: async (params, signal) => {
+    const result = await raw.execute(params, signal);
+    const body = JSON.parse(result.content) as Record<string, unknown>;
+    if (missing === 'truncated') body.truncated = true;
+    else delete body[missing];
+    const content = missing === 'malformed' ? '{' : missing === 'stub' ? JSON.stringify({ status: 'available', reason: 'Inspection omitted' }) : JSON.stringify(body);
+    const wrapped = { ...result, content };
+    assert.equal(toolDeliveryToken(wrapped), toolDeliveryToken(result));
+    return wrapped;
+  } }], 'review', 'comparison', { requestIndex: 0 })[0]!;
+  await tool.execute({}, new AbortController().signal);
+  assert.equal(f.draft.hasReviewDraftMaterial(), false, 'real completion and identity do not substitute for complete actual text delivery');
+});
+
+test('complete standard-redacted slots with Host progress satisfy real material delivery', async t => {
+  const f = await fixture(t);
+  const secretMarker = 'synthetic_review_secret';
+  await f.draft.submit({ ...submission, detailsHtml: `<p>Authorization: Bearer ${secretMarker}</p>` }); f.draft.beginReview();
+  const raw = f.draft.inspectTool(), resources = new ComparisonResourceTracker({}); resources.phase('review');
+  const tool = instrumentTools([{ ...raw, execute: async (params, signal) => comparisonToolFeedback(await raw.execute(params, signal), resources, undefined, raw.name) }], 'review', 'comparison', { requestIndex: 0 })[0]!;
+  const visible = await tool.execute({}, new AbortController().signal);
+  assert.equal(visible.content.includes(secretMarker), false);
+  assert.match(visible.content, /hostProgress/);
+  assert.equal(f.draft.hasReviewDraftMaterial(), true);
+});
+
+for (const empty of [false, true]) test(`complete root content cannot substitute for ${empty ? 'empty' : 'stub'} actual contentBlocks`, async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission); f.draft.beginReview();
+  const raw = f.draft.inspectTool();
+  const tool = instrumentTools([{ ...raw, execute: async (params, signal) => {
+    const result = await raw.execute(params, signal);
+    return { ...result, contentBlocks: empty ? [] : [{ type: 'text' as const, text: 'Inspection omitted' }] };
+  } }], 'review', 'comparison', { requestIndex: 0 })[0]!;
+  const visible = await tool.execute({}, new AbortController().signal);
+  assert.ok(visible.content.includes(submission.headline));
+  assert.equal(f.draft.hasReviewDraftMaterial(), false, 'Provider uses contentBlocks when present, including an empty array');
+});
+
+test('full actual contentBlocks satisfy material even when root content is only a wrapper note', async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission); f.draft.beginReview();
+  const raw = f.draft.inspectTool();
+  const tool = instrumentTools([{ ...raw, execute: async (params, signal) => {
+    const result = await raw.execute(params, signal);
+    return { ...result, content: 'Actual inspection follows in contentBlocks', contentBlocks: [{ type: 'text' as const, text: result.content }] };
+  } }], 'review', 'comparison', { requestIndex: 0 })[0]!;
+  await tool.execute({}, new AbortController().signal);
+  assert.equal(f.draft.hasReviewDraftMaterial(), true);
 });

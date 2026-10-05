@@ -16,6 +16,7 @@ import {
 import { EventEnvelopeSchema, type EventEnvelope } from "../../core/schema.js";
 import { isRecord } from "../../core/json.js";
 import { eventEnvelopeChecksum, sha256 } from "../../core/identity.js";
+import { preserveToolDelivery } from './tool-delivery.js';
 
 export type RedactableToolResult = {
   content: string;
@@ -90,11 +91,11 @@ export function redactToolResultForModel(result: RedactableToolResult): Redactab
   const contentBlocks = result.contentBlocks?.map((block) => (
     block.type === "text" ? { ...block, text: redactModelVisibleText(block.text).text } : block
   ));
-  return {
+  return preserveToolDelivery(result, {
     content,
     ...(contentBlocks ? { contentBlocks } : {}),
     ...(result.details === undefined ? {} : { details: result.details }),
-  };
+  });
 }
 
 export function toolResultBody(result: RedactableToolResult): AgentTextBody {
