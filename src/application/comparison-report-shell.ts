@@ -645,6 +645,9 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 [data-agent-zone="comparison"] [data-host="visual-unavailable"],[data-agent-zone="comparison"] [data-host="pairing-hint"] { margin:0 0 8px; font-size:14px; }
 [data-agent-zone="comparison"] table,[data-component="diff-table"] { width:100%; border-collapse:collapse; margin:8px 0; }
 [data-agent-zone="comparison"] { min-width:0; overflow-x:auto; }
+[data-component="evidence-quote"] { margin:12px 0; min-width:0; }
+[data-component="evidence-quote"] figcaption { color:var(--soft); font-size:12px; margin-bottom:6px; }
+[data-component="evidence-quote"] pre { margin:0; padding:10px 12px; border:1px solid var(--hair); border-radius:6px; max-width:100%; overflow-x:auto; font-size:12px; line-height:1.5; }
 [data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { overflow-wrap:anywhere; }
 [data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
 .details { margin-top:20px; color:var(--soft); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 18px 16px; overflow-wrap:anywhere; }

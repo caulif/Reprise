@@ -14,6 +14,8 @@ import {
 import { ExperimentStore } from '../infrastructure/store/experiment-store.js';
 import { persistComparisonReportModel, prepareComparisonArtifacts, verifyAndRenderComparisonReport } from './comparison-publication.js';
 import { recoveryFindingsBinding } from './comparison-recovery-discovery.js';
+import { recoveryComparisonQuoteSources } from './comparison-recovery-quotes.js';
+import type { ComparisonQuoteSourcePort } from './comparison-source.js';
 
 const CatalogPointerSchema = Type.Object({
   schemaVersion: Type.Literal(1), revision: Type.Integer({ minimum: 0 }), attemptId: Type.String(),
@@ -113,6 +115,7 @@ export async function inspectComparisonRecovery(input: {
   result: ComparisonResult; sessionId?: string; model?: ComparisonReportModel;
   media: import('../core/schema.js').ComparisonMediaRecord[];
   evidence: import('../core/schema.js').ComparisonLinkRecord[];
+  quoteSources?: ComparisonQuoteSourcePort;
 }> {
   if (!SAFE_ID.test(input.experimentId) || !SAFE_ID.test(input.attemptId)) throw new Error('Invalid experiment or attempt ID.');
   const dataRoot = await realpath(resolve(input.dataDir));
@@ -149,12 +152,15 @@ export async function inspectComparisonRecovery(input: {
   if (!previewed) return { ready: false, reason: 'No successful preview with a session ID for this draft and catalog revision.', draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   const sessionId = (previewed.payload as { sessionId: string }).sessionId;
   const deliveredImageContentHashes = await deliveredImageHashes(store, events, input.attemptId, sessionId);
+  const quoteSources = recoveryComparisonQuoteSources({ experimentRoot, attemptRoot, runId: context.reportFacts.run.runId,
+    evidence: links, allowModelText: context.allowModelText });
   const verified = await verifyAndRenderComparisonReport({
     html, hostTask: context.task.summary, facts: context.reportFacts, result,
     attemptRoot, evidence: links, media, deliveredImageContentHashes,
+    quoteSources,
   });
   if ('failureClass' in verified) return { ready: false, reason: `${verified.code}: ${verified.message}`, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
-  return { ready: true, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html: verified.html, result, sessionId, model: verified.model, media, evidence: links };
+  return { ready: true, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html: verified.html, result, sessionId, model: verified.model, media, evidence: links, quoteSources };
 }
 
 export async function publishRecoveredComparison(input: {
@@ -174,6 +180,7 @@ export async function publishRecoveredComparison(input: {
     const prepared = await prepareComparisonArtifacts({
       attemptRoot: checked.attemptRoot, experimentRoot: checked.experimentRoot,
       html: checked.html, media: checked.media, evidence: checked.evidence, ...(checked.model ? { model: checked.model } : {}),
+      ...(checked.quoteSources ? { quoteSources: checked.quoteSources } : {}),
     });
     const publishedDigest = sha256(prepared.html);
     const intent = {

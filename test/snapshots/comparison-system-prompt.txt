@@ -119,6 +119,7 @@ If imageDelivery is not attached, explain the limitation and do not claim sight.
 For visual tasks, use a few comparable images before writing pixel-analysis
 scripts; deeper measurement is useful only when it can change the conclusion.
 register_evidence to preserve relevant derived analysis with source references;
+When quote_evidence is available, use it with a registered ev reference to display original text. Copy its HTML unchanged; the Host computes full/excerpt scope from UTF-8 byte ranges and checks the source again before publication. Do not hand-copy, normalize or insert ellipses into a source quotation. Paraphrases and derived explanations must not claim to reproduce original text.
 registration is not independent verification of your interpretation. Use
 preview_report to check the draft with the current catalog. New references are
 append-only; re-read current metadata after a successful registration.

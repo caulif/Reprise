@@ -16,6 +16,7 @@ import { comparisonReportModelFromHtml, verifyAndRenderComparisonReport } from "
 import type { ComparisonRenderedCheck, PreparedReportPreview } from "./comparison-render-tools.js";
 import type { ComparisonDiscovery } from "./comparison-discovery.js";
 import type { ComparisonDraftBinding } from "../core/comparison-discovery-schema.js";
+import type { ComparisonQuoteSourcePort } from "./comparison-source.js";
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
 const DraftToolSchema = Type.Object({
@@ -44,6 +45,7 @@ export class ComparisonDraft {
   readonly #discovery: ComparisonDiscovery | undefined;
   readonly #persistAccepted: ((binding: ComparisonDraftBinding) => Promise<void>) | undefined;
   readonly #renderCheckHistory: (() => { records: readonly ComparisonRenderedCheck[]; omitted: number }) | undefined;
+  readonly #quoteSources: ComparisonQuoteSourcePort | undefined;
   #accepted: { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] } | undefined;
   #previewed: { digest: string; revision: number } | undefined;
   #previewFailure: { digest: string; revision: number; status: string; message?: string } | undefined;
@@ -59,6 +61,7 @@ export class ComparisonDraft {
     discovery?: ComparisonDiscovery;
     persistAccepted?: (binding: ComparisonDraftBinding) => Promise<void>;
     renderCheckHistory?: () => { records: readonly ComparisonRenderedCheck[]; omitted: number };
+    quoteSources?: ComparisonQuoteSourcePort;
   }) {
     this.#attemptRoot = input.attemptRoot;
     this.#task = input.task;
@@ -69,6 +72,7 @@ export class ComparisonDraft {
     this.#discovery = input.discovery;
     this.#persistAccepted = input.persistAccepted;
     this.#renderCheckHistory = input.renderCheckHistory;
+    this.#quoteSources = input.quoteSources;
   }
 
   tool(): AgentToolDefinition {
@@ -162,6 +166,7 @@ export class ComparisonDraft {
       html, hostTask: this.#task, facts: this.#facts, result,
       attemptRoot: this.#attemptRoot, evidence: catalog.links, media: catalog.media,
       locale: this.#locale, deliveredImageContentHashes: this.#deliveredImages,
+      ...(this.#quoteSources ? { quoteSources: this.#quoteSources } : {}),
     });
     if ("failureClass" in verified) {
       this.#lastRejection = `${verified.code}: ${verified.message}`;
@@ -227,6 +232,7 @@ export class ComparisonDraft {
       html, hostTask: this.#task, facts: this.#facts, result: accepted.result,
       attemptRoot: this.#attemptRoot, evidence: catalog.links, media: catalog.media,
       locale: this.#locale, deliveredImageContentHashes: this.#deliveredImages,
+      ...(this.#quoteSources ? { quoteSources: this.#quoteSources } : {}),
     });
     return "failureClass" in verified ? undefined : accepted.result;
   }

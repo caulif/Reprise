@@ -275,6 +275,8 @@ export type { ComparisonDraftSubmission, ComparisonMediaDerivation, ComparisonMe
 export {
   type ModelInputCapabilities,
 } from "./schemas/model-input-capabilities.js";
+export { ComparisonEvidenceQuoteParamsSchema, ComparisonEvidenceQuoteSpecSchema } from "./schemas/comparison-evidence-quote.js";
+export type { ComparisonEvidenceQuoteParams, ComparisonEvidenceQuoteSpec } from "./schemas/comparison-evidence-quote.js";
 
 
 

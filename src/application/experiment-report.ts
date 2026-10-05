@@ -54,6 +54,8 @@ import {
 } from "./comparison-publication.js";
 import { withComparisonShellDeny } from "./comparison-shell-deny.js";
 import { preflightComparisonDraft } from "./comparison-draft-preflight.js";
+import { createComparisonQuoteSourcePort, type ComparisonQuoteSourcePort } from "./comparison-source.js";
+import { createQuoteEvidenceTool, validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
 
 export { comparisonCandidateMount };
 
@@ -393,6 +395,7 @@ async function runComparisonAttempt(input: {
         { links: finalCatalog.links, media: finalCatalog.media },
         input.locale,
         deliveredImageContentHashes,
+        quoteSourcesForAttempt(input.host, input.attemptRoot, catalog, compareContext.allowModelText),
       );
     }
     if (comparisonResult.status === "completed") {
@@ -406,6 +409,7 @@ async function runComparisonAttempt(input: {
           media: catalog.snapshot().media,
           evidence: catalog.snapshot().links,
           model: publishedModel,
+          quoteSources: quoteSourcesForAttempt(input.host, input.attemptRoot, catalog, compareContext.allowModelText),
         });
       } catch (error) {
         comparisonResult = comparisonFailed("publication_failed", error, comparisonResult.sessionId);
@@ -487,6 +491,7 @@ async function enforcePublishedReport(
   briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[] },
   locale: AgentLocale,
   deliveredImageContentHashes: ReadonlySet<string>,
+  quoteSources: ComparisonQuoteSourcePort,
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (result.status !== "completed") return result;
   if (!(await reportExists(attemptRoot, result.value.reportPath))) {
@@ -510,6 +515,7 @@ async function enforcePublishedReport(
     evidence: briefing.links,
     locale,
     deliveredImageContentHashes,
+    quoteSources,
     ...(context.hostZoneSnapshot ? { hostZoneSnapshot: context.hostZoneSnapshot } : {}),
   });
   if ("failureClass" in verified) {
@@ -565,6 +571,7 @@ async function invokeCompare(
       { ...(override ? { override } : {}) }).costUsd;
   };
   const renderChecks: ComparisonRenderedCheck[] = [];
+  const quoteSources = quoteSourcesForAttempt(input, attemptRoot, catalog, context.allowModelText);
   let omittedRenderChecks = 0;
   const recordRenderCheck = (check: ComparisonRenderedCheck): void => {
     renderChecks.push(structuredClone(check));
@@ -578,11 +585,12 @@ async function invokeCompare(
     locale: await readOperatorLocale(input.input.dataDir), catalog,
     deliveredImages: deliveredImageContentHashes,
     renderCheckHistory: () => ({ records: renderChecks, omitted: omittedRenderChecks }),
+    quoteSources,
     ...(requireFindings ? { discovery, persistAccepted: binding => persistComparisonDraftAcceptance(input.store, input.input.runId, attemptId, binding) } : {}),
   });
   const result = await input.input.comparison.compare(
     context,
-    [...comparisonTools(input, attemptRoot, catalog, draft, recordRenderCheck), ...(requireFindings ? [discovery.tool()] : [])],
+    [...comparisonTools(input, attemptRoot, catalog, draft, recordRenderCheck, quoteSources), ...(requireFindings ? [discovery.tool()] : [])],
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
     {
@@ -605,12 +613,19 @@ function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]):
     : join(input.experimentRoot, "comparison-attempts", "candidate-snapshot-unavailable");
 }
 
+function quoteSourcesForAttempt(input: Parameters<typeof finishExperiment>[0], attemptRoot: string, catalog: ComparisonEvidenceCatalog, allowModelText: boolean): ComparisonQuoteSourcePort {
+  return createComparisonQuoteSourcePort({ evidence: () => catalog.snapshot().links, attemptRoot, allowModelText,
+    mounts: comparisonAttemptMounts({ experimentRoot: input.experimentRoot, runId: input.input.runId, attemptRoot,
+      candidateSnapshotStatus: input.candidateSnapshotStatus, candidateSnapshotRoot: input.candidateSnapshotRoot }) });
+}
+
 function comparisonTools(
   input: Parameters<typeof finishExperiment>[0],
   attemptRoot: string,
   catalog: ComparisonEvidenceCatalog,
   draft: ComparisonDraft,
   recordRenderCheck: (check: ComparisonRenderedCheck) => void,
+  quoteSources: ComparisonQuoteSourcePort,
 ): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
@@ -657,6 +672,7 @@ function comparisonTools(
     registerEvidenceTool(catalog),
     draft.tool(),
     draft.inspectTool(),
+    createQuoteEvidenceTool({ sources: quoteSources }),
     createRenderArtifactTool({
       catalog: renderCatalog,
       attemptRoot,
@@ -669,15 +685,23 @@ function comparisonTools(
       allowImages: input.taskCase.privacy.allowBinary,
       onPreviewSuccess: (prepared) => draft.recordPreview(prepared),
       onPreviewFinished: (prepared, outcome) => draft.recordPreviewOutcome(prepared, outcome),
-      preflightDraft: () => preflightComparisonDraft(attemptRoot),
+      preflightDraft: async () => {
+        const preflight = await preflightComparisonDraft(attemptRoot);
+        if (preflight.error) return preflight;
+        const error = await validateComparisonEvidenceQuotes(await readFile(join(attemptRoot, "report.html"), "utf8"), quoteSources);
+        return error ? { ...preflight, error } : preflight;
+      },
       prepareReportHtml: async () => {
         const snap = catalog.snapshot();
-        return materializeComparisonReportPreview({
+        const prepared = await materializeComparisonReportPreview({
           attemptRoot,
           media: snap.media,
           evidence: snap.links,
           catalogRevision: snap.revision,
         });
+        const error = await validateComparisonEvidenceQuotes(prepared.html, quoteSources);
+        if (error) throw new Error(error);
+        return prepared;
       },
     }),
   ]);

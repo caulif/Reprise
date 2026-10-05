@@ -107,3 +107,5 @@ Comparison 合成评估的新输入由每个隔离 row 的 `evaluation-inputs.js
 Comparison复审扩展调查独立累计并复用调查软额度，repair不重置；整个attempt剩余<=6请求、<=20工具或<=90s时保留收尾资源，拒绝进一步检索/渲染/登记，允许findings闭合、修稿和精确digest预览，硬限仍生效。每个新草稿端口的工具结果附phase、剩余额度和草稿/预览绑定，经标准工具结果审计复原。额度或结构有效不认证语义，未核实决定性结论必须撤回保证或明确不可判断，不发布旧预览兜底。旧直接端口与空资源override保持兼容。
 
 Comparison的read结果现在只将实际存在的available/truncated/offset/byteLength/returnedBytes/totalBytes/nextCursor白名单投影到模型可见hostProgress.readCoverage；类型不符或缺失不补造false/0，不透出物理路径/任意details。读取覆盖描述本次返回范围，不保证原运行完整记录；模型不能因正文很长猜测截断。该反馈与原工具结果一同审计/压缩/恢复，文本和原生图片工具实际块均可见，旧直接端口不受影响。
+
+Comparison 的 `quote_evidence` 只读取当前 catalog 的已登记文本引用，并从实际 UTF-8 字节生成带 ref、完整来源 SHA-256、字节范围及全文/节选标签的固定 HTML。原文展示复用该组件；派生解释不能冒称原文。提交、预览、发布和离线恢复重读安全 mounts 并核验组件，不因先前工具成功而跳过来源变化检查；有组件却无法验证则拒绝，无组件的旧报告保持兼容。工具尊重 allowModelText，拒绝二进制、非法 UTF-8、越界或切断多字节范围以及超出 16KiB 输出的请求，不静默截断。该能力认证引文字节和范围，不认证自由文字中的事实、判断或完整性；这些仍须语义审阅。

@@ -96,7 +96,7 @@ test('review allowance is independent from investigation and persists across rep
   tracker.phase('compose');
   tracker.phase('review');
   assert.equal(tracker.beforeTool('shell_exec'), 'reviewModelRequests');
-  for (const name of ['inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write', 'edit']) {
+  for (const name of ['inspect_comparison_draft', 'quote_evidence', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write', 'edit']) {
     assert.equal(tracker.beforeTool(name), undefined);
   }
   assert.equal(tracker.snapshot().reviewLimit, 'reviewModelRequests');
@@ -140,6 +140,7 @@ test('review reserves remaining hard resources for explicit finishing without re
   assert.equal(requests.beforeTool('read'), 'reserve_finish');
   assert.equal(requests.snapshot().remainingRequests, 6);
   assert.equal(requests.beforeTool('preview_report'), undefined);
+  assert.equal(requests.beforeTool('quote_evidence'), undefined);
   for (let i = 0; i < 6; i++) requests.observe(event('agent.model_request'));
   assert.throws(() => requests.observe(event('agent.model_request')), /maxModelRequests/);
   const tools = new ComparisonResourceTracker({ maxToolCalls: 21 });
@@ -156,6 +157,7 @@ test('review reserves remaining hard resources for explicit finishing without re
   assert.equal(elapsed.snapshot().remainingMs, 90_000);
   t.mock.timers.tick(90_000);
   assert.throws(() => elapsed.beforeTool('preview_report'), /maxElapsedMs/);
+  assert.throws(() => elapsed.beforeTool('quote_evidence'), /maxElapsedMs/);
 });
 
 test('empty resource override keeps all review investigation and finishing tools unlimited', t => {

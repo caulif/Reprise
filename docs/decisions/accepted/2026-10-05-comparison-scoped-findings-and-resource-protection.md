@@ -82,3 +82,11 @@ Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 termi
 实际评估发现read的完整性元数据仅在details审计而未交付模型。选择在Comparison专用工具外层投影白名单readCoverage（available/truncated/offset与现有字节/游标），不改共享read端口或注入任意details。不存在的字段不推断；本次读取未截断不等于原运行记录完整。反馈沿原tool_completed/body和实际模型文本块存储；模型应省略不影响判断的排除来源叙述，而不是猜测来源缺陷。逆例以实际Pi适配器证明coverage进入文本/原生图片请求，并排除私有路径和非法字段。
 
 Agent正文与可选details只补充决定性差异、必要的可复算论证/反例/方法边界；Host已经提供可展开来源路径、身份、指标与审计，不要求模型再翻译manifest/lifecycle字段或叙述未使用来源。简单任务可不写details，仍须保留改变任务判断的限制；折叠不是免除语义正确性的方式。
+
+### 可验证的原文引文
+
+真实评估中模型把带省略号的节选称为全文，因此提供 `quote_evidence`，只接受当前 catalog 已登记的 `ev-xx`，可选 UTF-8 字节左闭右开范围。Host 从安全只读 mounts 重读真实字节、重算完整来源 SHA-256，自动决定全文或节选标签，返回固定且转义的 HTML。模型路径、模型自报范围标签及工具调用记录都不是引文真实性的权威；正确手写组件也以来源字节核验。
+
+引文组件保留来源 ref、完整来源 hash 与字节范围；提交、预览、完成发布及离线恢复均用同一验证器重读对应来源。组件结构、标签、正文、范围或 hash 不匹配必须拒绝，不能降级成旧自由文本报告；无组件的旧报告继续读取。权限 `allowModelText=false` 不得通过新工具绕过。非法 UTF-8、二进制、多字节截断、未知 ref、来源变化、路径或符号链接越界均拒绝；16KiB 工具输出上限拒绝超大引文，不自动截断并冒称全文。HTML 换行仅按浏览器解析的 CRLF/CR 到 LF 规则匹配，不能 trim 或任意归一化内容。
+
+HTML 元数据和既有工具审计足以复原，不新增 quote registry、on-disk 权威或 Runtime 能力。引文端口使用 ComparisonContext 的正文能力，生产沿用[正文恒允许决策](2026-09-16-allow-model-text-fossil.md)，不重新激活 TaskCase 的化石开关；自定义受限端口仍可拒绝读取。`quote_evidence` 属于有界修稿工具，可在复审收尾软额度内调用，但不豁免 attempt 硬限、不登记新发现。组件只证明来源与范围，不能证明报告判断或自由段落正确；语义验收仍须检查普通文字是否把节选、解释或观察范围误述为全文。反向用例涵盖同长度篡改、标签/范围伪造、HTML 实体、结束标签转义、CRLF、UTF-8 边界、超限、source hash 变化、错误 attempt ref 与恢复来源验证。

@@ -79,7 +79,7 @@ export class ComparisonResourceTracker {
   beforeTool(name: string): string | undefined {
     this.checkHard(name);
     if (this.#phase === 'review') {
-      if (['inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write', 'edit'].includes(name)) return undefined;
+      if (['inspect_comparison_draft', 'quote_evidence', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write', 'edit'].includes(name)) return undefined;
       return this.reviewReason();
     }
     if (this.#phase !== 'investigate' || name === 'update_comparison_findings') return undefined;
