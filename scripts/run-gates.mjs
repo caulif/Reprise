@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolveNpmCliJs, selfTestNpmCli } from './npm-cli.mjs';
+import { parseTestConcurrency, selfTestTestConcurrency } from './test-runner-options.mjs';
 
 const GATES = [
   { id: 'build', label: 'build', command: 'npm', args: ['run', 'build'] },
@@ -38,6 +39,12 @@ const MODES = {
   test: ['build', 'test', 'check:node'],
   audit: ['build', 'audit:tui:check', 'audit:tui:analyze'],
 };
+
+function withTestConcurrency(gates, concurrency) {
+  return gates.map(gate => gate.id === 'test' && concurrency !== undefined
+    ? { ...gate, args: [...gate.args, '--', '--concurrency', String(concurrency)] }
+    : gate);
+}
 
 function validate(selected) {
   const ids = new Set();
@@ -126,6 +133,13 @@ function requireDiagnostic(text, fields) {
 }
 
 async function selfTest() {
+  selfTestTestConcurrency();
+  const limited = withTestConcurrency(GATES, 2);
+  if (limited.find(gate => gate.id === 'test').args.join(' ') !== 'run test:only -- --concurrency 2'
+    || limited.some((gate, index) => gate.id !== 'test' && gate !== GATES[index])
+    || withTestConcurrency(GATES, undefined).some((gate, index) => gate !== GATES[index])) {
+    throw new Error('Test concurrency must affect only the requested test gate; omitted values preserve defaults');
+  }
   const runtime = collectRuntime();
   const exitGate = { id: 'self-test-exit', label: 'self-test exit', command: process.execPath, args: ['-e', 'process.exit(3)'] };
   const exitResult = await runCommand(exitGate, { shell: false, stdio: 'ignore' });
@@ -184,18 +198,21 @@ async function selfTest() {
 }
 
 async function main() {
-  if (process.argv.includes('--self-test')) {
+  if (process.argv.length === 3 && process.argv[2] === '--self-test') {
     await selfTest();
     return;
   }
-  await selfTest();
+  if (process.argv.includes('--self-test')) throw new Error('--self-test must be the only option');
   const mode = process.argv[2] ?? 'check';
+  const concurrency = parseTestConcurrency(process.argv.slice(3));
   const ids = MODES[mode];
   if (!ids) throw new Error(`unknown mode: ${mode}`);
   if (mode === 'fast' && (!ids.includes('verify:secrets') || !ids.includes('lint') || ids.includes('knip'))) {
     throw new Error('fast mode must include secret scan and lint, and exclude knip');
   }
-  const selected = GATES.filter((gate) => ids.includes(gate.id));
+  if (concurrency !== undefined && !ids.includes('test')) throw new Error('Test concurrency requires a mode containing the test gate');
+  await selfTest();
+  const selected = withTestConcurrency(GATES.filter((gate) => ids.includes(gate.id)), concurrency);
   validate(selected);
   const runtime = collectRuntime();
   const started = Date.now();
