@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeControllerSystemPrompt } from '../../src/agents/controller-agent.js';
 import { composeComparisonSystemPrompt, COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT, COMPARISON_DRAFT_INSPECTION_PROMPT, COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT, COMPARISON_PREVIEW_CLOSURE_PROMPT, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
+import { COMPARISON_REVIEW_FINDINGS_PROMPT } from '../../src/agents/comparison-review-findings.js';
 import { composeRecoverySystemPrompt } from '../../src/agents/recovery-agent.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
 import { buildComparisonContext, type RunInspection } from '../../src/application/comparison.js';
@@ -41,6 +42,7 @@ test('agent system prompts match committed snapshots', async () => {
   await assertSnapshot('comparison-compose-prompt', `${COMPARISON_TURN_PROMPTS.compose}\n`);
   await assertSnapshot('comparison-source-review-prompt', `${COMPARISON_SOURCE_REVIEW_PROMPT}\n`);
   await assertSnapshot('comparison-draft-inspection-prompt', `${COMPARISON_DRAFT_INSPECTION_PROMPT}\n`);
+  await assertSnapshot('comparison-review-findings-prompt', `${COMPARISON_REVIEW_FINDINGS_PROMPT}\n`);
   await assertSnapshot('comparison-review-prompt', `${COMPARISON_TURN_PROMPTS.review}\n`);
   await assertSnapshot('comparison-delivered-draft-review-prompt', `${COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT}\n`);
   await assertSnapshot('comparison-formal-draft-review-prompt', `${COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT}\n`);

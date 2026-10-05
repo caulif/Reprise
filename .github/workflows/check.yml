@@ -40,6 +40,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/run-gates.mjs test
+      - name: Diagnose the actual preview browser independently of parallel tests
+        if: always() && runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          node scripts/browser-preview-smoke.mjs --self-test
+          node scripts/browser-preview-smoke.mjs
 
   audit:
     runs-on: windows-latest

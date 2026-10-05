@@ -620,7 +620,7 @@ async function invokeCompare(
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       enforcePhaseBoundaries: true,
       estimateUsageCost,
-      ...(requireFindings ? { findingsReady: () => discovery.readyToCompose(), hasSavedFindings: () => discovery.snapshot() !== undefined, getFindingsState: () => discovery.state() } : {}),
+      ...(requireFindings ? { reviewFindings: true, findingsReady: () => discovery.readyToCompose(), hasSavedFindings: () => discovery.snapshot() !== undefined, getFindingsState: () => discovery.state() } : {}),
     },
   );
   return { result, deliveredImageContentHashes };

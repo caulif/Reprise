@@ -167,6 +167,56 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
     'actual inspection must enter a later generation snapshot in the same review session before the unchanged draft is previewed');
 });
 
+test('production requireFindings uses an actual accepted review update before the full publication chain', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-review-findings-publication-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true }); await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
+  const findings = { criteria: ['Task usefulness'], finals: (['baseline', 'candidate'] as const).map(side => ({ side, status: 'unavailable', sourceRefs: [], description: 'Final not independently located by this fixture' })),
+    findings: [], importantLimitations: ['Final sources remain unverified'], decisionQuestions: [] };
+  let turns = 0, reviewUpdates = 0;
+  const comparison = new ComparisonAgent({ requireFindings: true, timeoutMs: 0, maxRepairAttempts: 0,
+    host: new AgentHost({ createSession: sessionInput => {
+      const { tools, request } = fixtureContext(sessionInput);
+      const call = (name: string, params: unknown, signal: AbortSignal) => tools.find(tool => tool.name === name)!.execute(params, signal);
+      return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn }) => {
+        turns++; await request(content, allowedToolNames);
+        if (turns === 1) assert.match((await call('update_comparison_findings', findings, signal)).content, /^status=accepted/);
+        else if (turns === 2) assert.match((await call('submit_comparison_draft', {
+          status: 'insufficient_evidence', decisionShape: 'single_difference', category: 'Results', headline: 'Outputs remain unverified.',
+          decisionSummary: 'Both outcomes still need task-quality assessment.', decisionBoundary: 'Final source checks are unavailable.',
+          decisionBasis: [], conclusionScope: 'undetermined', findingDispositions: [], comparisonHtml: '<p>No supported replacement choice.</p>',
+        }, signal)).content, /status=accepted/);
+        else if (content.includes('This is the actual draft inspection checkpoint') || content.includes('The initial checkpoint is not formal certification: after this full audit')) await call('inspect_comparison_draft', {}, signal);
+        else if (content.includes('This is the independent review findings closure')) {
+          reviewUpdates++; assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings']);
+          assert.match((await call('update_comparison_findings', findings, signal)).content, /^status=accepted/);
+        } else if (content.includes('This is the preview-only closure')) {
+          assert.deepEqual(allowedToolNames, ['preview_report']);
+          const receipt = JSON.parse((await call('preview_report', {}, signal)).content) as { status: string }; assert.equal(receipt.status, 'ok');
+        }
+        const reason = await yieldAfterTurn?.(); return reason ? { status: 'yielded' as const, reason } : '';
+      }, cancel() {} };
+    } }),
+  });
+  const result = await startExperiment({ ...base, comparison }).result;
+  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(reviewUpdates, 1); assert.equal(turns, 7);
+  const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
+  const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings');
+  assert.equal(closure?.payload.yieldReason, 'review_findings_ready');
+  const acceptedUpdates = events.filter(event => event.type === 'comparison.findings_updated');
+  assert.equal(acceptedUpdates.length, 1, 'review accepts an unchanged legal snapshot without forcing a new persisted revision');
+  const actualUpdates = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings');
+  assert.equal(actualUpdates.length, 2, 'author and independent review both actually execute the update tool');
+  assert.ok(actualUpdates[1]!.sequence < closure.sequence);
+  const audit = events.find(event => event.type === 'comparison.draft_audit_started'); assert.ok(audit && audit.sequence > closure.sequence);
+  const inspection = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft').at(-1);
+  const preview = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report')!;
+  const generation = events.find(event => event.type === 'agent.model_request' && event.sequence > inspection!.sequence && event.sequence < preview.sequence && 'generationInput' in event.payload);
+  assert.ok(inspection && inspection.sequence > audit.sequence && generation && preview.sequence > generation.sequence);
+  assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Outputs remain unverified/);
+});
+
 test('application refuses to publish an accepted draft without preview', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-submission-unpreviewed-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));

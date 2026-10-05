@@ -18,6 +18,19 @@ test("headless browser candidates include macOS application bundles", () => {
   }
 });
 
+test("Linux prefers the native installed Chrome binary before launch wrappers", () => {
+  const saved = process.platform;
+  Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+  try {
+    const candidates = headlessBrowserCandidatePaths();
+    assert.equal(candidates[0], "/opt/google/chrome/chrome");
+    assert.ok(candidates.includes("/usr/bin/google-chrome"));
+    assert.ok(candidates.includes("/snap/bin/chromium"));
+  } finally {
+    Object.defineProperty(process, "platform", { value: saved, configurable: true });
+  }
+});
+
 test("headless browser candidates include Windows x86 Edge alongside Chrome", () => {
   const saved = process.platform;
   const savedLocal = process.env.LOCALAPPDATA;
