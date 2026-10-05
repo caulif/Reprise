@@ -92,6 +92,68 @@ test('new catalog evidence invalidates findings until they are resubmitted again
   assert.equal(discovery.snapshot()!.revision, 2);
 });
 
+test('history rejection supplies bounded complete repair material after catalog changes without accepting or resolving it', async t => {
+  const { discovery, submission, saved, catalog, root } = await fixture(t);
+  submission.decisionQuestions[0]!.status = 'resolved';
+  submission.decisionQuestions[0]!.resolution = 'Prior model-authored interpretation, still subject to review';
+  submission.decisionQuestions.push({ id: 'scope', question: 'Is the difference task-relevant?', decisionImpact: 'Could limit the recommendation', status: 'unavailable', resolution: 'Original independent check absent', evidenceRefs: [] });
+  await discovery.update(submission);
+  const accepted = discovery.snapshot();
+  await mkdir(join(root, 'scratch'));
+  await writeFile(join(root, 'scratch', 'fresh.txt'), 'New source review');
+  await catalog.registerEvidence({ relativePath: 'scratch/fresh.txt', sourceRefs: [catalog.snapshot().links[0]!.shortRef!], label: 'Fresh source' });
+  assert.equal(discovery.readyToCompose(), false);
+  const replacement = structuredClone(submission);
+  replacement.decisionQuestions = [replacement.decisionQuestions[1]!];
+  const rejection = await discovery.update(replacement);
+  assert.match(rejection, /status=rejected\ncode=question_history_missing/);
+  const repair = JSON.parse(rejection.split('\nrepair=')[1]!) as { requiredQuestionIds: string[]; missingQuestionIds: string[]; existingQuestions: ComparisonFindingsSubmission['decisionQuestions']; semanticAssessment: string; repairRequirement: string };
+  assert.deepEqual(repair.requiredQuestionIds, ['qualifier', 'scope']);
+  assert.deepEqual(repair.missingQuestionIds, ['qualifier']);
+  assert.deepEqual(repair.existingQuestions, submission.decisionQuestions);
+  assert.equal(repair.semanticAssessment, 'not_certified');
+  assert.match(repair.repairRequirement, /do not automatically resolve/);
+  assert.equal(saved.length, 1);
+  assert.deepEqual(discovery.snapshot(), accepted);
+  assert.equal(discovery.readyToCompose(), false);
+  replacement.decisionQuestions = repair.existingQuestions;
+  assert.match(await discovery.update(replacement), /status=accepted/);
+  assert.equal(discovery.readyToCompose(), true);
+  assert.equal(saved.length, 2);
+  const reopened = structuredClone(replacement);
+  reopened.decisionQuestions[0]!.status = 'pending';
+  reopened.decisionQuestions[0]!.nextCheck = 'Check the new source';
+  const reopenRejection = await discovery.update(reopened);
+  assert.match(reopenRejection, /code=reopen_reason_missing[\s\S]*"questionId":"qualifier"[\s\S]*"previousStatus":"resolved"/);
+  assert.equal(saved.length, 2);
+  assert.equal(discovery.snapshot()!.submission.decisionQuestions[0]!.status, 'resolved');
+  reopened.decisionQuestions[0]!.reopenReason = 'Fresh evidence contradicts the earlier interpretation';
+  assert.match(await discovery.update(reopened), /status=accepted/);
+  assert.equal(discovery.readyToCompose(), false);
+});
+
+test('identity and decision-state rejections identify the question and requirements without mutating saved history', async t => {
+  const { discovery, submission, saved } = await fixture(t);
+  await discovery.update(submission);
+  const before = discovery.snapshot();
+  const changed = structuredClone(submission);
+  changed.decisionQuestions[0]!.question = 'Replacement question';
+  changed.decisionQuestions[0]!.decisionImpact = 'Replacement impact';
+  const identity = await discovery.update(changed);
+  assert.match(identity, /code=question_identity_changed/);
+  assert.match(identity, /"questionId":"qualifier"/);
+  assert.match(identity, /"previousIdentity":\{"id":"qualifier","question":"Does qualifier change meaning\?","decisionImpact":"Could change preference"\}/);
+  assert.match(identity, /"semanticAssessment":"not_certified"/);
+  const pending = structuredClone(submission);
+  delete pending.decisionQuestions[0]!.nextCheck;
+  assert.match(await discovery.update(pending), /code=next_check_missing[\s\S]*"questionId":"qualifier"[\s\S]*nonempty nextCheck/);
+  const resolved = structuredClone(submission);
+  resolved.decisionQuestions[0]!.status = 'resolved';
+  assert.match(await discovery.update(resolved), /code=resolution_missing[\s\S]*"questionId":"qualifier"[\s\S]*nonempty evidence-grounded resolution/);
+  assert.equal(saved.length, 1);
+  assert.deepEqual(discovery.snapshot(), before);
+});
+
 test("findings reject invalid ownership and incomplete decision states", async (t) => {
   const { discovery, submission } = await fixture(t);
   async function reject(code: string, mutate: (data: ComparisonFindingsSubmission) => void) {

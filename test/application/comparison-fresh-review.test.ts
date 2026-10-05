@@ -145,7 +145,7 @@ test('cancel targets the active fresh review session', async () => {
   assert.match(f.sessions[1]!.messages[0]!, /independent source pass/);
 });
 
-test('source review reads originals before draft and rejects all three draft tools until the next pass', async () => {
+test('source review reads originals before draft and rejects draft tools and findings updates until the next pass', async () => {
   const execution: string[] = [];
   const denied: string[] = [];
   const f = fixture(async (session, prompt, input, signal) => {
@@ -154,7 +154,7 @@ test('source review reads originals before draft and rejects all three draft too
       for (const path of ['briefing/task/initial-input.txt', 'finals/original.txt', 'candidate/original.txt']) {
         await input.tools.find(tool => tool.name === 'read')!.execute({ path }, signal);
       }
-      for (const name of ['inspect_comparison_draft', 'submit_comparison_draft', 'preview_report']) {
+      for (const name of ['inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report']) {
         denied.push((await input.tools.find(tool => tool.name === name)!.execute({}, signal)).content);
       }
     } else {
@@ -164,7 +164,7 @@ test('source review reads originals before draft and rejects all three draft too
     }
     return 'done';
   });
-  const tools = ['read', 'inspect_comparison_draft', 'submit_comparison_draft', 'preview_report'].map(name => ({
+  const tools = ['read', 'inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report'].map(name => ({
     name, description: name, parameters: Type.Object({}), execute: async (params: unknown) => {
       execution.push(name === 'read' ? `read:${(params as { path: string }).path}` : name);
       return { content: name === 'submit_comparison_draft' ? 'status=accepted' : 'available' };
@@ -176,7 +176,7 @@ test('source review reads originals before draft and rejects all three draft too
   })).status, 'completed');
   assert.deepEqual(execution, ['read:briefing/task/initial-input.txt', 'read:finals/original.txt', 'read:candidate/original.txt',
     'inspect_comparison_draft', 'submit_comparison_draft', 'preview_report']);
-  assert.equal(denied.length, 3);
+  assert.equal(denied.length, 4);
   for (const content of denied) assert.equal((JSON.parse(content) as { code: string }).code, 'source_review_not_ready');
   assert.equal(f.sessions.length, 2);
   assert.equal(f.sessions[1]!.messages.length, 2);

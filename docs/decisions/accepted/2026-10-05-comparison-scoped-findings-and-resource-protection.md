@@ -109,4 +109,12 @@ HTML 元数据和既有工具审计足以复原，不新增 quote registry、on-
 
 新生成的 fresh review 使用同一 Session 的两个调用：先从原任务和双侧决定性原件形成自己的审查基线，追踪实际输出链并优先尝试决定性反例；正常返回后再读取作者接受稿，核对并批量修订。两次调用不注入作者 findings，沿原事件审计保留真实输入和输出，仍共享整个 attempt 的预算和累计 review 软限。第一调用失败或取消不进入核稿，不能借新增调用重置额度。
 
-来源审查期间稿件 inspection、submit 和 preview 工具拒绝误用；这只是顺序保护，read 和 shell 仍可访问既有文件，不声称完全盲审。算法名称、内部目标、注释和自检都是待核线索；必须核它们是否对应最终可用输出。验证不可执行时收缩其精确或全状态保证，不把正常阶段返回认证为语义正确。之后仍要求实际终稿 inspection 和当前 digest preview；旧直接报告 workflow 保持原行为。反向用例覆盖第一调用失败、取消、稿件工具越阶段、作者假说未注入、同 Session 与额度连续性。
+来源审查期间稿件 inspection、findings 更新、submit 和 preview 工具拒绝误用；这只是顺序保护，read 和 shell 仍可访问既有文件，不声称完全盲审。算法名称、内部目标、注释和自检都是待核线索；必须核它们是否对应最终可用输出。验证不可执行时收缩其精确或全状态保证，不把正常阶段返回认证为语义正确。之后仍要求实际终稿 inspection 和当前 digest preview；旧直接报告 workflow 保持原行为。反向用例覆盖第一调用失败、取消、稿件工具越阶段、作者假说未注入、同 Session 与额度连续性。
+
+### 版本失效后的可修复核稿
+
+有界几何能力的真实原例中，来源审查新增媒体使 catalog 变化，旧 findings/draft 失绑定。核稿只能收到 inspection unavailable；完整替换 findings 又必须保存全部历史问题，拒绝却只返回裸 `question_history_missing`。四次猜测历史后超时，证明保留门禁但不给修复材料会阻碍收尾。预算不增加，也不静默删除或自动解决问题。
+
+`inspect_comparison_draft` 对文件仍符合接受 digest、仅 catalog/findings 绑定过期的稿件返回 `stale`：实际作者正文、当前检查事实和历史问题身份均可读取，但没有有效 inspection receipt，不登记全文检查完成，不满足预览、发布或离线恢复。文件缺失或篡改仍 unavailable。历史材料标为未认证假设，只用于修复；不注入作者 observations，独立 source pass 仍拒绝该工具与 findings 更新。
+
+更新 findings 仍是完整快照，必须保留每个旧问题的 ID、question 与 decisionImpact；缺失时返回 required/missing IDs 和完整既有问题对象，身份或状态字段错时返回对应问题与明确要求。拒绝不持久化、不修改现有状态；旧已解决问题返回 pending 仍须新 grounds。核稿按独立观察修订、重提当前 findings 与稿件，最终再正式 inspection 和 preview。反向用例证明 stale 可读却不可认证、历史遗漏仍拒绝且可按反馈修复、source 阶段不能提前取得修复历史。

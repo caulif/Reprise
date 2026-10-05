@@ -109,24 +109,33 @@ export class ComparisonDraft {
   inspectTool(): AgentToolDefinition {
     return {
       name: "inspect_comparison_draft",
-      description: "Read the current accepted draft's actual headline, comparison and all details, including folded limitations, without Host CSS or private paths. Returns its digest and revisions for consistency review; structural validation does not certify semantic correctness. Independent review must inspect the final accepted content after every correction before finishing. Unavailable when no accepted draft exists or its file/binding changed. This does not replace preview_report.",
+      description: "Read accepted draft headline, comparison and all details without Host CSS or private paths. Current bindings return an inspection receipt; stale bindings return actual unverified author text and historical question identities for repair, never a completion receipt. Revise from independent source observations and resubmit before final inspection and preview. Missing or changed files remain unavailable. Structural validation does not certify semantics.",
       parameters: Type.Object({}, { additionalProperties: false }),
       execute: async (params, signal) => {
         if (!Value.Check(Type.Object({}, { additionalProperties: false }), params)) throw new Error("Invalid draft inspection parameters.");
         signal.throwIfAborted();
         const accepted = this.#accepted;
         const catalog = this.#catalog.snapshot();
-        if (!accepted || accepted.revision !== catalog.revision || accepted.discoveryRevision !== this.#discovery?.snapshot()?.revision) {
-          return { content: JSON.stringify({ status: "unavailable", reason: "No accepted draft bound to the current evidence and findings." }) };
-        }
+        const findingsRevision = this.#discovery?.snapshot()?.revision;
+        if (!accepted) return { content: JSON.stringify({ status: "unavailable", reason: "No accepted draft exists.", repairContext: this.#repairContext() }) };
         const html = await this.#readAcceptedHtml(accepted.digest);
         if (html === undefined) return { content: JSON.stringify({ status: "unavailable", reason: "Accepted draft file is missing or changed." }) };
-        if (this.#accepted !== accepted || this.#catalog.snapshot().revision !== catalog.revision || this.#discovery?.snapshot()?.revision !== accepted.discoveryRevision) {
+        if (this.#accepted !== accepted || this.#catalog.snapshot().revision !== catalog.revision || this.#discovery?.snapshot()?.revision !== findingsRevision) {
           return { content: JSON.stringify({ status: "unavailable", reason: "Draft binding changed during inspection; inspect again." }) };
         }
         const model = comparisonReportModelFromHtml(html, this.#facts, accepted.result, catalog.media, catalog.links, this.#locale);
         if (!Value.Check(ComparisonReportModelSchema, model)) throw new Error("Invalid persisted comparison report content.");
-        const checks = this.#renderCheckHistory?.();
+        if (accepted.revision !== catalog.revision || accepted.discoveryRevision !== findingsRevision) {
+          signal.throwIfAborted();
+          return { content: JSON.stringify({ status: "stale", draftDigest: accepted.digest,
+            acceptedCatalogRevision: accepted.revision, acceptedFindingsRevision: accepted.discoveryRevision,
+            headline: model.headline, comparisonHtml: model.slots.comparison, detailsHtml: model.slots.details,
+            semanticValidation: "not_performed", certification: "none",
+            meaning: "Actual unverified author draft with stale bindings. Historical questions are hypotheses, not certified observations. Revise from independent source evidence, preserve question identities, resubmit current findings and draft, then inspect and preview. This result cannot satisfy final inspection or publication.",
+            repairContext: this.#repairContext(),
+            renderCheckHistory: this.#inspectionRenderHistory(),
+          }) };
+        }
         const receipt = { schemaVersion: 1 as const, status: "available" as const, draftDigest: accepted.digest,
           bindingRevision: this.#bindingRevision,
           catalogRevision: accepted.revision, ...(accepted.discoveryRevision === undefined ? {} : { findingsRevision: accepted.discoveryRevision }),
@@ -140,17 +149,7 @@ export class ComparisonDraft {
           decisionShapeValidation: "model_declaration_only",
           headline: model.headline, comparisonHtml: model.slots.comparison, detailsHtml: model.slots.details,
           mainTextCharacters: comparisonMainTextCharacters(html),
-          renderCheckHistory: {
-            coverage: checks ? "recorded_outcomes_in_this_process" : "unavailable",
-            origin: "this_comparison_attempt_not_candidate_runtime",
-            omitted: checks?.omitted ?? 0,
-            records: (checks?.records ?? []).map((check) => ({ ...check,
-              frames: check.frames.map((frame) => ({ ...frame,
-                nativeImageDeliveredToCurrentSession: this.#deliveredImages.has(frame.contentHash),
-              })),
-            })),
-            limitation: "Rendering and image delivery are distinct; this tool does not deliver images or establish visual inspection. Empty history does not prove no checks occurred.",
-          },
+          renderCheckHistory: this.#inspectionRenderHistory(),
         }) };
       },
       onCompleted: async result => {
@@ -159,6 +158,33 @@ export class ComparisonDraft {
         this.#pendingInspections.delete(result.details);
         if (pending && pending.accepted === this.#accepted && pending.reviewEpoch === this.#reviewEpoch) this.#inspected = pending.accepted;
       },
+    };
+  }
+
+  #inspectionRenderHistory() {
+    const checks = this.#renderCheckHistory?.();
+    return {
+      coverage: checks ? "recorded_outcomes_in_this_process" : "unavailable",
+      origin: "this_comparison_attempt_not_candidate_runtime",
+      omitted: checks?.omitted ?? 0,
+      records: (checks?.records ?? []).map(check => ({ ...check,
+        frames: check.frames.map(frame => ({ ...frame,
+          nativeImageDeliveredToCurrentSession: this.#deliveredImages.has(frame.contentHash),
+        })),
+      })),
+      limitation: "Rendering and image delivery are distinct; this tool does not deliver images or establish visual inspection. Empty history does not prove no checks occurred.",
+    };
+  }
+
+  #repairContext() {
+    const record = this.#discovery?.snapshot();
+    return {
+      catalogRevision: this.#catalog.snapshot().revision,
+      findingsRevision: record?.revision,
+      findingsCatalogRevision: record?.catalogRevision,
+      readyToCompose: this.#discovery?.readyToCompose() ?? true,
+      decisionQuestions: record?.submission.decisionQuestions ?? [],
+      meaning: "Historical question identities and unverified hypotheses for repair only. Reassess using independent source observations; preserve these IDs in the complete updated findings record. No author finding observations are injected here.",
     };
   }
 

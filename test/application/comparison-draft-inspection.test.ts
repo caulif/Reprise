@@ -9,6 +9,10 @@ import { ComparisonDiscovery } from "../../src/application/comparison-discovery.
 import { sha256 } from "../../src/core/identity.js";
 import { instrumentTools } from "../../src/infrastructure/agent/tools.js";
 import type { RenderGeometrySample } from "../../src/core/schema.js";
+import type { EventEnvelope } from "../../src/core/schema.js";
+import { Value } from "@sinclair/typebox/value";
+import { ComparisonDraftInspectionSchema } from "../../src/core/comparison-review-schema.js";
+import { recoveryReviewBinding } from "../../src/application/comparison-recovery-review.js";
 
 const facts = {
   run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
@@ -123,7 +127,7 @@ test("inspection binding invalidates on decision declaration, findings or catalo
   await writeFile(join(f.root, "scratch", "note.txt"), "Derived note");
   await f.catalog.registerEvidence({ relativePath: "note.txt", sourceRefs: ["ev-01"], label: "Derived note" });
   assert.equal(await f.draft.completedResult(), undefined);
-  assert.equal((await f.inspect()).status, "unavailable");
+  assert.equal((await f.inspect()).status, "stale");
 });
 
 test("inspection reads the latest accepted actual content without CSS and does not preview it", async t => {
@@ -172,12 +176,77 @@ test("inspection requires current findings and catalog bindings", async t => {
   await f.draft.submit(submission);
   assert.equal((await f.inspect()).findingsRevision, 1);
   await f.discovery!.update({ ...findings, importantLimitations: ["Revised limitation"] });
-  assert.equal((await f.inspect()).status, "unavailable");
+  assert.equal((await f.inspect()).status, "stale");
   await f.draft.submit(submission);
   assert.equal((await f.inspect()).findingsRevision, 2);
   await mkdir(join(f.root, "scratch"));
   await writeFile(join(f.root, "scratch", "note.txt"), "Derived note");
   assert.equal((await f.catalog.registerEvidence({ relativePath: "note.txt", sourceRefs: ["ev-01"], label: "Derived note" })).status, "registered");
+  assert.equal((await f.inspect()).status, "stale");
+});
+
+test("stale actual draft and question identities aid repair without certifying final or recovery inspection", async t => {
+  const f = await fixture(t, true);
+  const question = { id: "alignment", question: "Do final elements align?", decisionImpact: "Changes the guarantee",
+    status: "unavailable" as const, evidenceRefs: [], resolution: "No paired sample yet" };
+  const record = { ...findings, decisionQuestions: [question] };
+  await f.discovery!.update(record);
+  const absent = await f.inspect();
+  assert.equal(absent.status, "unavailable");
+  assert.equal(absent.headline, undefined);
+  assert.deepEqual((absent.repairContext as { decisionQuestions: unknown[] }).decisionQuestions, [question]);
+  await f.draft.submit(submission);
+  await preview(f);
+  f.draft.beginReview();
+  await mkdir(join(f.root, "scratch"));
+  await writeFile(join(f.root, "scratch", "note.txt"), "New evidence");
+  await f.catalog.registerEvidence({ relativePath: "note.txt", sourceRefs: ["ev-01"], label: "New evidence" });
+  const events: EventEnvelope[] = [];
+  const append = (type: string, payload: Record<string, unknown>) => {
+    const body = { schemaVersion: 1, sequence: events.length + 1, eventId: `e-${events.length}`, occurredAt: "2026-10-05T00:00:00.000Z", type, payload };
+    events.push({ ...body, checksum: sha256(JSON.stringify(body)) });
+  };
+  append("comparison.review_started", { schemaVersion: 1, attemptId: "attempt", sessionId: "review", inspectionRequired: true });
+  const tool = instrumentTools([f.draft.inspectTool()], "review", "comparison", { requestIndex: 0 }, {
+    append: async event => { append(event.type, { ...event.payload, sessionId: event.sessionId, role: event.role, attemptId: "attempt" }); },
+  })[0]!;
+  const raw = await tool.execute({}, new AbortController().signal);
+  const stale = JSON.parse(raw.content) as Record<string, unknown>;
+  assert.equal(stale.status, "stale");
+  assert.equal(stale.headline, submission.headline);
+  assert.equal(stale.comparisonHtml, submission.comparisonHtml);
+  assert.equal(stale.detailsHtml, submission.detailsHtml);
+  assert.equal(raw.details, undefined);
+  assert.equal(Value.Check(ComparisonDraftInspectionSchema, stale), false);
+  const context = stale.repairContext as { readyToCompose: boolean; decisionQuestions: unknown[]; findings?: unknown };
+  assert.equal(context.readyToCompose, false);
+  assert.deepEqual(context.decisionQuestions, [question]);
+  assert.equal(context.findings, undefined);
+  assert.ok(!raw.content.includes(f.root));
+  assert.equal(await f.draft.completedResult(), undefined);
+  const recovered = await recoveryReviewBinding({ events, attemptId: "attempt", draftDigest: String(stale.draftDigest),
+    catalogRevision: f.catalog.snapshot().revision, previewSessionId: "review", acceptedAfterSequence: 1,
+    store: { experimentId: "exp", readArtifact: async () => { throw new Error("Should not resolve an uncertified inspection"); } },
+    content: { headline: submission.headline, comparisonHtml: submission.comparisonHtml, detailsHtml: submission.detailsHtml } });
+  assert.match(String(recovered), /No inspection/);
+  await f.discovery!.update(record);
+  await f.draft.submit({ ...submission, headline: "A corrected scoped difference" });
+  await preview(f);
+  assert.equal(await f.draft.completedResult(), undefined);
+  assert.equal((await f.inspect()).status, "available");
+  assert.ok(await f.draft.completedResult());
+});
+
+test("stale binding cannot expose tampered or missing draft text", async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update(findings);
+  await f.draft.submit(submission);
+  await f.discovery!.update({ ...findings, importantLimitations: ["New scope"] });
+  await writeFile(join(f.root, "report.html"), "<p>Unaccepted injected text</p>");
+  const tampered = await f.inspect();
+  assert.equal(tampered.status, "unavailable");
+  assert.equal(tampered.comparisonHtml, undefined);
+  await rm(join(f.root, "report.html"));
   assert.equal((await f.inspect()).status, "unavailable");
 });
 
@@ -214,4 +283,13 @@ test("inspection preserves actual render outcomes separately from current-sessio
   assert.deepEqual(history.records[0]?.frames[0]?.geometrySample, geometrySample);
   assert.equal(history.records[0]?.frames[0]?.actualTimeMs, 537);
   assert.equal(history.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
+  await mkdir(join(f.root, "scratch"));
+  await writeFile(join(f.root, "scratch", "new-render.txt"), "Additional observed evidence");
+  await f.catalog.registerEvidence({ relativePath: "new-render.txt", sourceRefs: ["ev-01"], label: "Additional evidence" });
+  const staleResult = await draft.inspectTool().execute({}, new AbortController().signal);
+  const stale = JSON.parse(staleResult.content) as { status: string; renderCheckHistory: typeof history };
+  assert.equal(stale.status, "stale");
+  assert.equal(staleResult.details, undefined);
+  assert.deepEqual(stale.renderCheckHistory.records[0]?.frames[0]?.geometrySample, geometrySample);
+  assert.equal(stale.renderCheckHistory.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
 });

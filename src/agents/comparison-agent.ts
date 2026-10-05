@@ -162,9 +162,9 @@ function comparisonTimeout(resources: ComparisonResourceTracker, limits: Compari
 }
 
 function sourceReviewFeedback(name: string, reason?: string): { content: string } | undefined {
-  if (['inspect_comparison_draft', 'submit_comparison_draft', 'preview_report'].includes(name)) {
+  if (['inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report'].includes(name)) {
     return { content: JSON.stringify({ code: 'source_review_not_ready',
-      message: 'Finish the independent source pass without opening or revising the author draft. Return your scoped observations and counterexample; the Host enables draft inspection, correction and preview next.' }) };
+      message: 'Finish the independent source pass without opening the author draft or revising saved findings. Return your scoped observations and counterexample; the Host enables draft inspection, findings correction and preview next.' }) };
   }
   if (reason) return { content: JSON.stringify({ status: 'source_review_limit', reason,
     message: 'Return your independently supported observations and decisive uncertainty now. The Host starts draft audit next. Do not retry blocked checks or draft inspection, submission or preview in this source pass.' }) };
@@ -313,6 +313,7 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'If imageDelivery is not attached, explain the limitation and do not claim sight.',
   'Before asserting a decision-changing position or alignment guarantee, use render_artifact geometryQueries to check relevant rendered elements when supported. It measures uniquely selected SVG line/path endpoints, circle/ellipse points or DOM bounds after actual page transforms. Compare screenPoints in viewport_css_pixels, not unrelated local targets. Selectors identify elements; they do not certify their task role. If unavailable, label source inference and narrow the guarantee.',
   'Geometry observations have their own startedAtMs/finishedAtMs window before the PNG. Missing, ambiguous, unsupported or unavailable measurements are unknown. Discrete measurements do not prove a whole animation, visibility without occlusion, or aesthetic quality; numerical evidence does not grant image-viewing permission.',
+  'A changing bounding box proves motion, not contact or alignment. Compare the relevant endpoint/center relationship. Before extending an observation to multiple instances, check their materially different downstream branches; one measured instance cannot certify its unmeasured counterparts.',
   'For visual tasks, use a few comparable images before writing pixel-analysis',
   'scripts; deeper measurement is useful only when it can change the conclusion.',
   'register_evidence to preserve relevant derived analysis with source references;',
@@ -337,6 +338,7 @@ const COMPARISON_SOURCE_REVIEW_PROMPT = [
   'Name the observable result and its coordinate or data domain before comparing it. Local algorithm targets, matching constants, self-checks and intermediate values do not certify the final drawn, written or returned result.',
   'Choose one plausible counterexample that could overturn that advantage or a material guarantee. Check the final output chain rather than recomputing only the intended target; use another relevant input or normalized state when needed.',
   'If final geometry is decisive, prefer render_artifact geometryQueries for actual transformed points over a script that reconstructs intended coordinates. Read the returned statuses and coordinate domain, compare relevant elements within the same sampling window, and keep claims within the measured states.',
+  'For claims covering several instances, locate each materially different downstream branch and test a corresponding output relationship. If you check only one instance or its bounding-box movement, the others remain unknown and no collective contact/alignment guarantee is supported.',
   'Use existing source, execution or controlled rendering tools only when their outcome could change the decision. Distinguish source inference, actual execution, current Comparison checks and original runtime observations.',
   'If a check cannot run or evidence is unavailable, narrow the supported claim and retain the unresolved question; do not turn a resource limit into proof. Prioritize the actual output chain and counterexample over CSS or metadata inventories. Reserve time and requests for draft correction, final inspection and preview.',
   'When review time or investigation allowance is exhausted, return your independently supported assessment or uncertainty now. The Host then starts draft audit. Do not retry blocked checks or call inspect_comparison_draft, submit_comparison_draft or preview_report in this source pass.',
@@ -419,6 +421,7 @@ export const COMPARISON_TURN_PROMPTS = {
   ].join('\n'),
   review: [
     'Audit the report against the original requirements and actual final output chain, not the author interpretation. Inspect the accepted draft with inspect_comparison_draft when available.',
+    'A stale inspection exposes actual prior text and historical decision questions only for repair; it does not certify the current version. Preserve question identities when replacing findings, revise their conclusions from your independent evidence, resubmit once against the current catalog, then inspect and preview that accepted version.',
     'Prioritize decisive claims and omitted counterexamples before layout. A local target, constant or self-check is not the delivered result; trace downstream transforms, writes or returned values in their actual domain.',
     'Use the source pass to challenge the strongest advantage. If evidence does not support a guarantee, narrow or remove it and keep decision-changing uncertainty visible. Unknown evidence does not force a winner.',
     'Check headline, paired results, every details heading and limitations together. A defect or unresolved question in details must qualify a conflicting success claim in the main text; headings must agree with their paragraphs.',

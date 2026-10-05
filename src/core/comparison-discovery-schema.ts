@@ -43,9 +43,9 @@ export const ComparisonFindingsSubmissionSchema = Type.Object({
     resolution: Type.Optional(text),
     nextCheck: Type.Optional(text),
     reopenReason: Type.Optional(text),
-  }, { additionalProperties: false }), { maxItems: 16 }),
+  }, { additionalProperties: false }), { maxItems: 16, description: 'Complete question history, not a patch: include every previously accepted ID with the exact same question and decisionImpact, even after catalog changes. Pending requires nextCheck; resolved/unavailable requires resolution; settled to pending requires reopenReason. Repair feedback contains prior model-authored claims, not certified answers. Do not erase or automatically resolve history.' }),
   importantLimitations: Type.Array(text, { maxItems: 12 }),
-}, { additionalProperties: false });
+}, { additionalProperties: false, description: 'Complete replacement snapshot. Preserve all previously accepted decision questions and their identities; rejected submissions do not mutate the saved state.' });
 export type ComparisonFindingsSubmission = Static<typeof ComparisonFindingsSubmissionSchema>;
 
 export const ComparisonDiscoveryRecordSchema = Type.Object({

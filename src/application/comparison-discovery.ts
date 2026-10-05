@@ -27,7 +27,7 @@ export class ComparisonDiscovery {
   tool(): AgentToolDefinition {
     return {
       name: "update_comparison_findings",
-      description: "Save concise task criteria, final-source locations, scoped observations and decision questions. Every finding.criterion must exactly copy one criteria string. References must be registered. Saved findings do not prove semantic correctness. Resolve questions or explain unavailable evidence before composing; reopening a settled question requires new grounds.",
+      description: "Replace the complete findings snapshot: concise task criteria, final-source locations, scoped observations and decision questions. Include every previously accepted decision question ID with its unchanged question and decisionImpact; history cannot be erased, even after catalog changes. Rejection repair materials are prior model-authored claims, not certified semantics. Every finding.criterion must exactly copy one criteria string. References must be registered. Resolve questions or explain unavailable evidence before composing; reopening a settled question requires new grounds. Saved findings do not prove semantic correctness.",
       parameters: ComparisonFindingsSubmissionSchema,
       execute: async (params, signal) => {
         signal.throwIfAborted();
@@ -50,7 +50,12 @@ export class ComparisonDiscovery {
     const rejection = (code: string) => `status=rejected\ncode=${code}`;
     const unique = (values: readonly { id: string }[]) => new Set(values.map((item) => item.id)).size === values.length;
     if (!unique(submission.findings) || !unique(submission.decisionQuestions)) return rejection("duplicate_id");
-    if (this.#accepted?.submission.decisionQuestions.some((previous) => !submission.decisionQuestions.some((question) => question.id === previous.id))) return rejection("question_history_missing");
+    const existingQuestions = this.#accepted?.submission.decisionQuestions ?? [];
+    const missingQuestionIds = existingQuestions.filter(previous => !submission.decisionQuestions.some(question => question.id === previous.id)).map(question => question.id);
+    if (missingQuestionIds.length) return `${rejection("question_history_missing")}\nrepair=${JSON.stringify({
+      requiredQuestionIds: existingQuestions.map(question => question.id), missingQuestionIds, existingQuestions,
+      semanticAssessment: "not_certified", repairRequirement: "Resubmit a complete snapshot including every required question ID and unchanged question/decisionImpact. These prior model-authored objects are repair material, not verified answers. Independently reassess evidence; do not automatically resolve questions. A settled question may return to pending only with reopenReason. Keep the 16-question and field-length limits.",
+    })}`;
     if (new Set(submission.finals.map((item) => item.side)).size !== 2) return rejection("final_sides");
     const validRefs = (refs: readonly string[], owner?: "baseline" | "candidate") => refs.every((ref) => {
       const entry = lookup.get(ref);
@@ -74,12 +79,13 @@ export class ComparisonDiscovery {
       }
     }
     for (const question of submission.decisionQuestions) {
+      const questionRejection = (code: string, repairRequirement: string, details: Record<string, unknown> = {}) => `${rejection(code)}\nrepair=${JSON.stringify({ questionId: question.id, repairRequirement, ...details })}`;
       if (!validRefs(question.evidenceRefs)) return rejection("evidence_unresolved");
-      if (question.status === "pending" && !question.nextCheck) return rejection("next_check_missing");
-      if (question.status !== "pending" && !question.resolution) return rejection("resolution_missing");
+      if (question.status === "pending" && !question.nextCheck) return questionRejection("next_check_missing", "Supply a nonempty nextCheck for this pending question and resubmit the complete snapshot; do not change status merely to bypass the requirement.");
+      if (question.status !== "pending" && !question.resolution) return questionRejection("resolution_missing", "Supply a nonempty evidence-grounded resolution for this resolved/unavailable question and resubmit the complete snapshot; registration does not certify the resolution.");
       const previous = this.#accepted?.submission.decisionQuestions.find((item) => item.id === question.id);
-      if (previous && (previous.question !== question.question || previous.decisionImpact !== question.decisionImpact)) return rejection("question_identity_changed");
-      if (previous && previous.status !== "pending" && question.status === "pending" && !question.reopenReason) return rejection("reopen_reason_missing");
+      if (previous && (previous.question !== question.question || previous.decisionImpact !== question.decisionImpact)) return questionRejection("question_identity_changed", "Restore the exact previous question and decisionImpact for this ID. Add a distinct question under a new ID if needed, preserving all prior questions within the 16-question limit.", { previousIdentity: { id: previous.id, question: previous.question, decisionImpact: previous.decisionImpact }, semanticAssessment: "not_certified" });
+      if (previous && previous.status !== "pending" && question.status === "pending" && !question.reopenReason) return questionRejection("reopen_reason_missing", "Supply a nonempty reopenReason explaining new grounds for reopening this settled question, plus nextCheck; do not erase its history or automatically resolve it.", { previousStatus: previous.status });
     }
     const data = structuredClone(submission);
     const digest = sha256(JSON.stringify(data));

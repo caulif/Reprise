@@ -60,6 +60,8 @@ Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝
 
 可选 `geometryQueries` 在每个采样中观测最多 8 个唯一 selector 查询的 SVG line/path 起终点、circle/ellipse 中心/半径点或 DOM bounds。Host 固定采集器在独立 execution world 中运行，局部 SVG 点经实际 `getScreenCTM` 转为 `viewport_css_pixels`；缺失、歧义、无效 selector、不支持及不可测量均明确返回。外部结果经 core schema、16 KiB UTF-8 上限、身份/顺序/时间与点位映射检查。`geometrySample` 随工具正文与 `renderedCheck` 进入原审计，包含独立观测窗口，随后才采 PNG，不能宣称严格同瞬间。数值不证明元素语义、无遮挡、美观或整个动画正确，也不授予图片查看权限；旧调用不带查询保持原行为。见[渲染几何观测 ADR](../decisions/accepted/2026-10-05-comparison-rendered-geometry.md)。
 
+核稿时若接受文件 digest 正确、但 catalog/findings 绑定过期，`inspect_comparison_draft` 返回 `stale` 的实际作者正文、检查事实与历史问题身份，供按独立证据修复；不返回有效 inspection receipt，不满足最终检查、预览、发布或恢复。文件缺失/篡改仍 unavailable。findings 更新是完整替换，历史 ID/question/decisionImpact 不可抹除；缺失或状态错误返回具体修复材料，拒绝不改变已接受记录。历史解决解释不是认证证据，不能自动沿用为独立结论。独立 source pass 拒绝 inspection、findings 更新、submit 和 preview，修复材料只在核稿时取得。
+
 默认内置路径通过 `update_comparison_findings` 保存任务标准、双方最终来源、观察方法与支持范围、反证、重要限制和判断问题。Host 校验引用归属及结构，不证明自然语言主张正确；不可变发现 artifact 和 `comparison.findings_updated` 绑定 attempt、revision、catalog revision 与 digest，工具回执沿用模型输入审计。问题历史不得静默删除，重新打开已解决问题需新依据。问题须解决或说明证据不可得才进入创作；旧自定义 Comparison 端口保留原契约。
 
 草稿接受版本通过 `comparison.draft_accepted` 同时持久化 discovery revision、catalog revision 与 HTML digest；离线恢复核对最新发现 artifact 与接受绑定，并要求匹配预览事件发生在绑定之后。发现变化使旧草稿不可发布，必须重新提交并预览当前版本。主文长度和重要限制是审阅反馈，简单单差异约100–250中文字、多个决定性差异约300–600字，仅作任务自适应指导，不是硬字数门禁；常规来源/哈希检查复用Host事实，不因未重复而增造限制。检查方法或精确推导可展开，影响取舍的未知不得藏入详情；证据注册、同公式复算或单帧截图均不证明全局行为。
