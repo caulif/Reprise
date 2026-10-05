@@ -377,6 +377,69 @@ test('preview closure execution guard returns changed bindings to a real full au
   assert.ok(inputs.indexOf(inputs.find(text => text.includes('Now audit'))!) < inputs.indexOf(inputs.find(text => text.includes('This is the preview-only closure'))!), 'initial checkpoint cannot skip actual full audit');
 });
 
+for (const exhausted of [true, false]) test(`native formal audit ${exhausted ? 'hides exhausted' : 'retains available'} expansion tools`, async () => {
+  const inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
+  let material = false, formal = false, previewed = false, expansions = 0, repairs = 0;
+  const stop = (text: string) => nativeMessage([{ type: 'text', text }], 'stop');
+  const responses = [stop('Investigated'), stop('Composed'), stop('Independent source evidence'), toolTurn('inspect_comparison_draft'),
+    toolTurn('shell_exec', 'render_artifact', 'register_evidence', 'ls', 'grep', 'read', 'inspect_comparison_draft'), toolTurn('preview_report')];
+  const models = { getModel: () => nativeModel, streamSimple: (_model: unknown, actual: unknown) => {
+    const context = actual as typeof inputs[number];
+    inputs.push({ tools: context.tools.map(tool => ({ name: tool.name })), messages: structuredClone(context.messages) });
+    const response = responses.shift(); if (!response) throw new Error('Unexpected extra generation');
+    const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: response.stopReason as 'stop' | 'toolUse', message: response }); return stream;
+  } } as unknown as PiModels;
+  const caller = new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
+  const tools = [
+    ...['shell_exec', 'render_artifact', 'register_evidence', 'ls', 'grep'].map(name => ({ name, execute: async () => { expansions++; return { content: 'Actual expansion check' }; } })),
+    { name: 'read', execute: async () => { repairs++; return { content: 'Actual registered repair page' }; } },
+    ...['update_comparison_findings', 'submit_comparison_draft', 'quote_evidence', 'write', 'edit'].map(name => ({ name, execute: async () => ({ content: 'Actual repair tool' }) })),
+    { name: 'inspect_comparison_draft', execute: async () => ({ content: 'Actual formal current inspection' }), onCompleted: async () => { material = true; formal = true; } },
+    { name: 'preview_report', execute: async () => { previewed = true; return { content: 'Actual current preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const result = await new ComparisonAgent({ host: new AgentHost(caller), timeoutMs: 1_000, maxRepairAttempts: 0,
+    resources: exhausted ? { investigationModelRequests: 1 } : {} }).compare(context, tools, undefined, undefined, {
+    hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => formal, isRepairRead: async () => true,
+    getSubmittedResult: async () => formal && previewed ? resultValue : undefined,
+  });
+  assert.equal(result.status, 'completed'); assert.equal(inputs.length, 6); assert.equal(expansions, exhausted ? 0 : 5); assert.equal(repairs, 1);
+  const auditTools = inputs[4]!.tools.map(tool => tool.name);
+  for (const name of ['shell_exec', 'render_artifact', 'register_evidence', 'ls', 'grep']) assert.equal(auditTools.includes(name), !exhausted);
+  for (const name of ['read', 'inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'quote_evidence', 'write', 'edit']) assert.ok(auditTools.includes(name));
+  assert.deepEqual(inputs[5]!.tools.map(tool => tool.name), ['preview_report']);
+  assert.match(JSON.stringify(inputs[5]!.messages), /Actual formal current inspection/);
+});
+
+test('an adapter ignoring exhausted audit exposure cannot execute expansion checks', async () => {
+  let material = false, formal = false, previewed = false, expansions = 0, repairs = 0;
+  const host = new AgentHost({ createSession: input => ({ append: async ({ content, signal, allowedToolNames, yieldAfterTurn }) => {
+    await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: 1, images: [] });
+    const call = (name: string) => input.tools.find(tool => tool.name === name)!.execute({}, signal);
+    if (content.includes('actual draft inspection checkpoint')) await call('inspect_comparison_draft');
+    else if (content.includes('This is the preview-only closure')) await call('preview_report');
+    else if (content.includes('Now audit')) {
+      for (const name of ['shell_exec', 'render_artifact', 'register_evidence', 'ls', 'grep']) {
+        assert.ok(!allowedToolNames?.includes(name));
+        assert.match((await call(name)).content, /review_investigation_limit/);
+      }
+      assert.ok(allowedToolNames?.includes('read'));
+      await call('read'); await call('inspect_comparison_draft');
+    }
+    const reason = await yieldAfterTurn?.(); return reason ? { status: 'yielded' as const, reason } : '';
+  }, cancel() {} }) });
+  const tools = [
+    ...['shell_exec', 'render_artifact', 'register_evidence', 'ls', 'grep'].map(name => ({ name, execute: async () => { expansions++; return { content: 'Forbidden expansion' }; } })),
+    { name: 'read', execute: async () => { repairs++; return { content: 'Registered repair page' }; } },
+    { name: 'inspect_comparison_draft', execute: async () => { material = true; formal = true; return { content: 'Formal current inspection' }; } },
+    { name: 'preview_report', execute: async () => { previewed = true; return { content: 'Actual current preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const result = await new ComparisonAgent({ host, timeoutMs: 1_000, maxRepairAttempts: 0, resources: { investigationModelRequests: 1 } }).compare(context, tools, undefined, undefined, {
+    hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => formal, isRepairRead: async () => true,
+    getSubmittedResult: async () => formal && previewed ? resultValue : undefined,
+  });
+  assert.equal(result.status, 'completed'); assert.equal(expansions, 0); assert.equal(repairs, 1);
+});
+
 test('native draft inspection checkpoint exposes one actual tool until delivery, then restores full audit', async () => {
   const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
   let material = false, inspections = 0, reads = 0, changes = 0, previewed = false, laterGeneration = false;

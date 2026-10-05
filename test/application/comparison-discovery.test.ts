@@ -300,3 +300,78 @@ test("support boundary strings and instance lists are bounded plain declarations
     assert.equal(Value.Check(ComparisonFindingsToolSubmissionSchema, invalid), false);
   }
 });
+
+type ReferenceRepair = {
+  location: string; side?: string; findingId?: string; questionId?: string; submittedRefs: string[];
+  submittedRefMetadata: { side?: string; status: string }[];
+  catalogEntries: { ref: string }[]; omittedCatalogEntries: number;
+  semanticAssessment: string; repairRequirement: string; completeCatalogPath?: string;
+};
+
+test("reference rejection identifies wrong side, unknown and missing refs without changing accepted findings", async t => {
+  const { discovery, submission, saved } = await fixture(t);
+  assert.match(await discovery.update(submission), /accepted/);
+  const accepted = discovery.snapshot();
+  const baseline = submission.finals[0]!.sourceRefs[0]!;
+  const candidate = submission.finals[1]!.sourceRefs[0]!;
+  const cases = [
+    { code: "final_source_mismatch", location: "finals[0].sourceRefs", side: "baseline", refs: [candidate],
+      change: (data: ComparisonFindingsSubmission) => { data.finals[0]!.sourceRefs = [candidate]; } },
+    { code: "final_source_missing", location: "finals[0].sourceRefs", side: "baseline", refs: [],
+      change: (data: ComparisonFindingsSubmission) => { data.finals[0]!.sourceRefs = []; } },
+    { code: "observation_source_mismatch", location: "findings[0].observations[0].evidenceRefs", side: "baseline", refs: [candidate], findingId: "meaning",
+      change: (data: ComparisonFindingsSubmission) => { data.findings[0]!.observations[0]!.evidenceRefs = [candidate]; } },
+    { code: "evidence_unresolved", location: "findings[0].observations[0].evidenceRefs", side: "baseline", refs: ["ev-99"], findingId: "meaning",
+      change: (data: ComparisonFindingsSubmission) => { data.findings[0]!.observations[0]!.evidenceRefs = ["ev-99"]; } },
+    { code: "evidence_unresolved", location: "findings[0].counterEvidenceRefs", refs: ["ev-99"], findingId: "meaning",
+      change: (data: ComparisonFindingsSubmission) => { data.findings[0]!.counterEvidenceRefs = ["ev-99"]; } },
+    { code: "evidence_unresolved", location: "decisionQuestions[0].evidenceRefs", refs: ["ev-99"], questionId: "qualifier",
+      change: (data: ComparisonFindingsSubmission) => { data.decisionQuestions[0]!.evidenceRefs = ["ev-99"]; } },
+  ];
+  for (const item of cases) {
+    const invalid = structuredClone(submission);
+    item.change(invalid);
+    const result = (await discovery.tool().execute(invalid, new AbortController().signal)).content;
+    assert.match(result, new RegExp(`code=${item.code}`));
+    const repair = JSON.parse(result.split("\nrepair=")[1]!) as ReferenceRepair;
+    assert.equal(repair.location, item.location);
+    assert.equal(repair.side, item.side);
+    assert.equal(repair.findingId, item.findingId);
+    assert.equal(repair.questionId, item.questionId);
+    assert.deepEqual(repair.submittedRefs, item.refs);
+    if (item.refs.length) {
+      const metadata = repair.submittedRefMetadata[0];
+      assert.ok(metadata);
+      if (item.refs[0] === candidate) assert.equal(metadata.side, "candidate");
+      if (item.refs[0] === "ev-99") assert.equal(metadata.status, "not_found");
+    }
+    if (item.side) assert.deepEqual(repair.catalogEntries.map((entry: { ref: string }) => entry.ref), [baseline]);
+    assert.equal(repair.semanticAssessment, "not_certified");
+    assert.match(repair.repairRequirement, /not replacements or certified evidence/);
+    assert.doesNotMatch(result, /baseline\.txt|candidate\.txt|artifact:baseline|Qualifier retained|Claims all content retained/);
+    assert.deepEqual(discovery.snapshot(), accepted);
+    assert.equal(saved.length, 1);
+  }
+});
+
+test("reference repair directory is bounded and sends no private catalog paths or raw source identities", async t => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-ref-repair-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: "repair", links: [
+    ...Array.from({ length: 15 }, (_, i) => ({ side: "baseline" as const, inspectPath: `private-source-${i}.txt`, evidenceRef: `artifact:private-${i}`, label: `private-label-${i}` })),
+    { side: "candidate", inspectPath: "candidate-private.txt", evidenceRef: "artifact:private-candidate" },
+  ], media: [] });
+  const discovery = new ComparisonDiscovery({ catalog, attemptId: "repair", persist: async () => { assert.fail("Rejected state must not persist"); } });
+  const result = await discovery.update({ criteria: ["Task outcome"], finals: [
+    { side: "baseline", status: "located", sourceRefs: [], description: "Unknown final" },
+    { side: "candidate", status: "unavailable", sourceRefs: [], description: "Unknown final" },
+  ], findings: [], decisionQuestions: [], importantLimitations: [] });
+  const repair = JSON.parse(result.split("\nrepair=")[1]!) as ReferenceRepair;
+  assert.equal(repair.catalogEntries.length, 12);
+  assert.equal(repair.omittedCatalogEntries, 3);
+  assert.equal(repair.completeCatalogPath, undefined);
+  assert.match(repair.repairRequirement, /subject to phase resource limits and may be unavailable/);
+  assert.match(repair.repairRequirement, /do not retry denied reads/);
+  assert.doesNotMatch(result, /private-source|private-label|artifact:private|candidate-private/);
+  assert.equal(discovery.snapshot(), undefined);
+});

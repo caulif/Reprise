@@ -182,8 +182,11 @@ function comparisonYieldBoundary(outcome: FreeformInvocation, resources: Compari
   return outcome;
 }
 
-function comparisonPassToolNames(tools: readonly AgentToolDefinition[], pass?: ComparisonWorkPass): readonly string[] | undefined {
-  if (pass === 'audit') return tools.filter(tool => tool.name !== 'preview_report').map(tool => tool.name);
+function comparisonPassToolNames(tools: readonly AgentToolDefinition[], resources: ComparisonResourceTracker, pass?: ComparisonWorkPass): readonly string[] | undefined {
+  if (pass === 'audit') {
+    const exhausted = resources.reviewReason() !== undefined;
+    return tools.filter(tool => tool.name !== 'preview_report' && (!exhausted || tool.name === 'read' || !resources.beforeTool(tool.name))).map(tool => tool.name);
+  }
   return pass === 'findings' ? ['update_comparison_findings'] : pass === 'inspection' ? ['inspect_comparison_draft'] : pass === 'preview' ? ['preview_report'] : undefined;
 }
 
@@ -229,7 +232,6 @@ function sourceReviewFeedback(name: string, reason?: string): { content: string 
 }
 
 type ComparisonToolPhase = { phase: ComparisonPhase; sourceReview: boolean; findingsClosure: boolean; draftInspection: boolean; draftAudit: boolean; previewClosure: boolean };
-
 function setComparisonPass(current: ComparisonToolPhase, phase: ComparisonPhase, pass?: ComparisonWorkPass): void {
   Object.assign(current, { phase, sourceReview: pass === 'sources', findingsClosure: pass === 'findings',
     draftInspection: pass === 'inspection', draftAudit: pass === 'audit', previewClosure: pass === 'preview' });
@@ -704,7 +706,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         }
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
-        outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: comparisonPassToolNames(phasedTools, reviewPass),
+        outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: comparisonPassToolNames(phasedTools, resources, reviewPass),
           ...comparisonSourceDeadline(resources, reviewPass), ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
         return outcome = comparisonYieldBoundary(outcome, resources, signal);
       } finally {

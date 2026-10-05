@@ -62,7 +62,8 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
       }
       if (content.includes('This is the preview-only closure')) {
         assert.deepEqual(allowedToolNames, ['preview_report']);
-        assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');
+        const outcome = JSON.parse((await preview.execute({}, signal)).content) as { status: string };
+        assert.equal(outcome.status, 'ok', JSON.stringify(outcome));
         return '';
       }
       if (turns > 5) {
@@ -78,8 +79,8 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
   } }), timeoutMs: 0, maxRepairAttempts: 0 });
   const result = await startExperiment({ ...base, comparison }).result;
   assert.equal(checkpointVisits, 1, 'actual inspection-only checkpoint must execute');
-  assert.equal(turns, 7);
-  assert.equal(result.comparison.result.status, repairable ? 'completed' : 'failed');
+  assert.equal(turns, 7, JSON.stringify(result.comparison.result));
+  assert.equal(result.comparison.result.status, repairable ? 'completed' : 'failed', JSON.stringify(result.comparison.result));
   if (repairable) assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Draft B/);
   else await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
 });

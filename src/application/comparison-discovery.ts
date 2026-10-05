@@ -61,32 +61,59 @@ export class ComparisonDiscovery {
       const entry = lookup.get(ref);
       return entry && (!owner || entry.side === owner);
     });
-    for (const final of submission.finals) {
-      if (!validRefs(final.sourceRefs, final.side)) return rejection("final_source_mismatch");
-      if (final.status === "located" && !final.sourceRefs.length) return rejection("final_source_missing");
+    const refRejection = (code: string, location: string, submittedRefs: readonly string[], context: {
+      side?: "baseline" | "candidate"; findingId?: string; questionId?: string; allowNeutral?: boolean;
+    } = {}) => {
+      const describe = (ref: string) => {
+        const item = lookup.get(ref);
+        if (!item) return { ref, status: "not_found" };
+        return { ref, status: "catalog_registered", side: item.side,
+          kind: "available" in item ? "media" : "evidence",
+          ...("available" in item ? { available: item.available } : {}),
+          ...("origin" in item && item.origin ? { origin: item.origin } : {}),
+          ...("sourceRefs" in item ? { sourceShortRefs: (item.sourceRefs ?? []).filter(source => /^(ev|media)-[0-9]{2,6}$/.test(source)).slice(0, 12) } : {}),
+        };
+      };
+      const eligible = [...lookup].filter(([, item]) => (!context.side || item.side === context.side
+        || (context.allowNeutral && (item.side === "host" || item.side === "derived")))
+        && (!("available" in item) || item.available)).map(([ref]) => ref);
+      const { allowNeutral: _allowNeutral, ...identity } = context;
+      return `${rejection(code)}\nrepair=${JSON.stringify({
+        location, ...identity, submittedRefs, submittedRefMetadata: submittedRefs.map(describe),
+        catalogRevision: catalog.revision, catalogEntries: eligible.slice(0, 12).map(describe),
+        omittedCatalogEntries: Math.max(0, eligible.length - 12),
+        semanticAssessment: "not_certified",
+        repairRequirement: "Independently choose references supported by actual retained observations and this registered metadata. The bounded directory lists possible references, not replacements or certified evidence. Additional catalog navigation is subject to phase resource limits and may be unavailable; do not retry denied reads. If shown metadata and retained observations cannot establish a source, keep that uncertainty and qualify the decision instead of inventing evidence. Do not change side, criterion or question identity merely to bypass ownership. Resubmit the complete snapshot preserving question history; rejected submissions do not change accepted state.",
+      })}`;
+    };
+    for (const [finalIndex, final] of submission.finals.entries()) {
+      if (!validRefs(final.sourceRefs, final.side)) return refRejection("final_source_mismatch", `finals[${finalIndex}].sourceRefs`, final.sourceRefs, { side: final.side });
+      if (final.status === "located" && !final.sourceRefs.length) return refRejection("final_source_missing", `finals[${finalIndex}].sourceRefs`, final.sourceRefs, { side: final.side });
     }
-    for (const finding of submission.findings) {
+    for (const [findingIndex, finding] of submission.findings.entries()) {
       if (!submission.criteria.includes(finding.criterion)) return `${rejection("criterion_unresolved")}\nfindingId=${finding.id}\ncriterion=${JSON.stringify(finding.criterion)}\nallowedCriteria=${JSON.stringify(submission.criteria)}\nCopy one allowedCriteria string exactly into finding.criterion, then resubmit.`;
       if (new Set(finding.observations.map((item) => item.side)).size !== 2) return `${rejection("observation_sides")}\nrepair=${JSON.stringify({
         findingId: finding.id, actualSideCounts: { baseline: finding.observations.filter(item => item.side === 'baseline').length, candidate: finding.observations.filter(item => item.side === 'candidate').length },
         requiredSides: ['baseline', 'candidate'], expectedCount: 2,
         repairRequirement: 'Resubmit the complete snapshot with exactly one baseline and one candidate observation per finding, preserving all question history. Combine same-side measurements in its single result and scope. Use method=unavailable with explicit uncertainty for an unverified side; do not invent evidence or change a side label without supporting ownership. This shape feedback certifies no observation or conclusion.',
       })}`;
-      if (!validRefs(finding.counterEvidenceRefs)) return rejection("evidence_unresolved");
-      for (const observation of finding.observations) {
+      if (!validRefs(finding.counterEvidenceRefs)) return refRejection("evidence_unresolved", `findings[${findingIndex}].counterEvidenceRefs`, finding.counterEvidenceRefs, { findingId: finding.id });
+      for (const [observationIndex, observation] of finding.observations.entries()) {
+        const location = `findings[${findingIndex}].observations[${observationIndex}].evidenceRefs`;
+        const identity = { findingId: finding.id, side: observation.side, allowNeutral: true };
         if (observation.supportBoundary?.supportStage === "delivered_output"
           && (observation.method === "unavailable" || observation.method === "self_report")) return rejection("support_method_mismatch");
-        if (!validRefs(observation.evidenceRefs)) return rejection("evidence_unresolved");
-        if (observation.method !== "unavailable" && !observation.evidenceRefs.length) return rejection("observation_evidence_missing");
+        if (!validRefs(observation.evidenceRefs)) return refRejection("evidence_unresolved", location, observation.evidenceRefs, identity);
+        if (observation.method !== "unavailable" && !observation.evidenceRefs.length) return refRejection("observation_evidence_missing", location, observation.evidenceRefs, identity);
         if (observation.evidenceRefs.some((ref) => {
           const side = lookup.get(ref)!.side;
           return side === "baseline" || side === "candidate" ? side !== observation.side : false;
-        })) return rejection("observation_source_mismatch");
+        })) return refRejection("observation_source_mismatch", location, observation.evidenceRefs, identity);
       }
     }
-    for (const question of submission.decisionQuestions) {
+    for (const [questionIndex, question] of submission.decisionQuestions.entries()) {
       const questionRejection = (code: string, repairRequirement: string, details: Record<string, unknown> = {}) => `${rejection(code)}\nrepair=${JSON.stringify({ questionId: question.id, repairRequirement, ...details })}`;
-      if (!validRefs(question.evidenceRefs)) return rejection("evidence_unresolved");
+      if (!validRefs(question.evidenceRefs)) return refRejection("evidence_unresolved", `decisionQuestions[${questionIndex}].evidenceRefs`, question.evidenceRefs, { questionId: question.id });
       if (question.status === "pending" && !question.nextCheck) return questionRejection("next_check_missing", "Supply a nonempty nextCheck for this pending question and resubmit the complete snapshot; do not change status merely to bypass the requirement.");
       if (question.status !== "pending" && !question.resolution) return questionRejection("resolution_missing", "Supply a nonempty evidence-grounded resolution for this resolved/unavailable question and resubmit the complete snapshot; registration does not certify the resolution.");
       const previous = this.#accepted?.submission.decisionQuestions.find((item) => item.id === question.id);
