@@ -968,7 +968,7 @@ test("B7 review: tool failure surfaces a concrete limitation without inventing o
     assert.equal(result.value.status, "insufficient_evidence");
     assert.match(result.value.headline ?? "", /no browser/i);
   }
-  assert.match(COMPARISON_TURN_PROMPTS.review, /record the specific\s+review limitation/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /Record unavailable rendering\/image inspection without invented observations/);
 });
 
 test("compose prompt uses the Host-owned draft tool", () => {

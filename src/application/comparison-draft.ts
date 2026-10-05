@@ -404,6 +404,10 @@ export class ComparisonDraft {
     return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\ndecisionShape=${draft.decisionShape ?? "unknown"}\nmainTextMaximum=${target ?? "legacy_unbounded"}\ndetailsTextMaximum=${detailsMaximum ?? "legacy_unbounded"}\ndetailsTextCharacters=${detailsLength}\ndecisionShapeValidation=model_declaration_only\nmainTextCharacters=${length}\nreadabilityFeedback=${feedback}\nimportantLimitations=${JSON.stringify(discovery?.submission.importantLimitations ?? [])}\nSaved limitations are unverified semantic hypotheses: keep only those changing the task decision visible. Omit routine provenance, edit-history and metrics inventories already supplied by the Host. Details are optional; use them only for a necessary supporting argument or method boundary, not speculative descriptions of unused records.\nOnce accepted, inspect this actual current draft after any correction and preview its exact digest before finishing; reopen only for material evidence or failed validation, not repeated length tuning.`;
   }
 
+  hasAcceptedDraft(): boolean {
+    return this.#accepted !== undefined;
+  }
+
   submissionState(): string {
     return JSON.stringify({ accepted: this.#accepted && { digest: this.#accepted.digest, revision: this.#accepted.revision, discoveryRevision: this.#accepted.discoveryRevision }, inspected: this.#inspected && { digest: this.#inspected.digest, revision: this.#inspected.revision, discoveryRevision: this.#inspected.discoveryRevision }, reviewInspectionRequired: this.#reviewInspectionRequired, previewed: this.#previewed, revision: this.#catalog.snapshot().revision, discoveryRevision: this.#discovery?.snapshot()?.revision, rejection: this.#lastRejection });
   }

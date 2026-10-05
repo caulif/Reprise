@@ -175,7 +175,10 @@ for (const mode of ['ready', 'late', 'verbal', 'unavailable', 'missing', 'hard',
         draftCalls++;
         assert.equal(input.sessionId, sessions[1]);
         if (mode !== 'legacy') assert.equal(material, true, 'actual delivered material precedes full draft audit');
-        if (mode !== 'legacy' && draftCalls === 1) assert.match(content, /already delivered[\s\S]*Do not repeat inspection[\s\S]*new formal current inspection/);
+        if (mode !== 'legacy' && draftCalls === 1) {
+          assert.match(content, /already delivered[\s\S]*do not reread unchanged material/);
+          assert.match(content, /After revision, inspect the actual latest accepted text[\s\S]*stale text cannot satisfy final inspection/);
+        }
         if (draftCalls === 1) { await call('inspect_comparison_draft'); await call('preview_report'); }
         else generationAfterPreview = previewed;
       }

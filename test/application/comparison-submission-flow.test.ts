@@ -123,7 +123,7 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
           const result = await preview.execute({}, signal);
           assert.equal((JSON.parse(result.content) as { status: string }).status, 'ok');
         }
-        if (content.includes('Complete the full audit in this actual turn')) {
+        if (content.includes('The initial checkpoint is not formal certification: after this full audit')) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
         }
         return '';
@@ -196,7 +196,7 @@ test('application refuses to publish an accepted draft without preview', async (
           assert.deepEqual(allowedToolNames, ['inspect_comparison_draft']);
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
         }
-        if (content.includes('Complete the full audit in this actual turn')) {
+        if (content.includes('The initial checkpoint is not formal certification: after this full audit')) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
         }
         return '';
@@ -248,7 +248,7 @@ test('a provider failure after preview does not publish the draft', async (t) =>
           previewRan = true;
           throw Object.assign(new Error('Provider unavailable during review'), { status: 503 });
         }
-        if (content.includes('Complete the full audit in this actual turn')) {
+        if (content.includes('The initial checkpoint is not formal certification: after this full audit')) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
         }
         return '';

@@ -321,8 +321,8 @@ test('compose and review prompts require Host submission and real preview', () =
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /The left side is the historical session/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /preview_report/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /preview the revised digest/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /specific\s+review limitation/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /If corrected, repeat inspection and matching preview, then stop/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /Record unavailable rendering\/image inspection without invented observations/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /reopen report\.html and review/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /已禁用工具/);

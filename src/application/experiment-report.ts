@@ -598,6 +598,7 @@ async function invokeCompare(
     {
       getEvidenceCatalog: () => catalog.snapshot(),
       getSubmittedResult: () => completedReviewedComparison({ draft, store: input.store, attemptId, attemptRoot, context, catalog }),
+      hasAcceptedDraft: () => draft.hasAcceptedDraft(),
       onReviewStarted: async sessionId => {
         draft.beginReview();
         const payload = { schemaVersion: 1 as const, attemptId, sessionId, inspectionRequired: true as const };

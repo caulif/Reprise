@@ -67,12 +67,14 @@ test("Host draft submission validates content and publishes only the previewed d
 
   const unsafe = await tool.execute({ ...base, comparisonHtml: "<script>alert(1)</script>" }, signal);
   assert.match(unsafe.content, /status=rejected/);
+  assert.equal(draft.hasAcceptedDraft(), false);
   await assert.rejects(readFile(join(root, "report.html"), "utf8"), { code: "ENOENT" });
   const unknown = await tool.execute({ ...base, comparisonHtml: '<p data-evidence-ref="ev-99">Claim</p>' }, signal);
   assert.match(unknown.content, /evidence_unresolved/);
 
   const accepted = await tool.execute(base, signal);
   assert.match(accepted.content, /status=accepted/);
+  assert.equal(draft.hasAcceptedDraft(), true);
   assert.equal(await draft.completedResult(), undefined);
   const html = await readFile(join(root, "report.html"), "utf8");
   const digest = sha256(html);
@@ -80,6 +82,7 @@ test("Host draft submission validates content and publishes only the previewed d
   assert.equal((await draft.completedResult())?.headline, base.headline);
 
   await writeFile(join(root, "report.html"), `${html}\n<!-- changed -->`);
+  assert.equal(draft.hasAcceptedDraft(), true, 'existence alone cannot certify the changed report');
   assert.equal(await draft.completedResult(), undefined);
   await tool.execute({ ...base, headline: "A revised difference." }, signal);
   assert.equal(await draft.completedResult(), undefined);
