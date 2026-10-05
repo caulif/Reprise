@@ -40,6 +40,7 @@ export function invocationYieldDeadline(agent: { abort(): void; readonly signal?
       if (failure !== undefined) throw failure;
       return deadline!.reason;
     },
+    assertCanYield() { outer.throwIfAborted(); if (failure !== undefined) throw failure; },
     dispose() { if (timer) clearTimeout(timer); signal.removeEventListener('abort', abort); },
   };
 }

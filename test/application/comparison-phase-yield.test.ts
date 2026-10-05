@@ -13,10 +13,143 @@ import { Value } from '@sinclair/typebox/value';
 import { ComparisonDraft } from '../../src/application/comparison-draft.js';
 import { ComparisonDiscovery } from '../../src/application/comparison-discovery.js';
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
+import { comparisonDecisionMetrics, comparisonOutputContinuation } from '../../src/agents/comparison-invocation-boundaries.js';
 
 const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' }, attemptId: 'attempt', baseline: { summary: 'baseline', evidenceRefs: [] }, candidates: [], telemetry: [], artifactRefs: [], allowModelText: true,
   replayScope: { historical: 'original', candidate: 'original' }, reportFacts: { run: { runId: 'run', outcome: 'completed', terminationCode: 'completed', initiatedBy: 'controller' }, models: { candidate: 'fixture' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' }, delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' }, replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } } };
 const resultValue = { status: 'completed' as const, reportPath: 'report.html' as const, headline: 'Scoped result', evidenceRefs: [] };
+
+for (const mode of ['reasoning', 'tool', 'double', 'cancel', 'hard'] as const) test(`native output-limit continuation preserves the audit epoch and real completion: ${mode}`, async () => {
+  const events: AgentAuditEvent[] = [], inputs: string[] = [], auditSessions: string[] = [];
+  const controller = new AbortController();
+  let material = false, currentInspection = false, epoch = false, auditStarts = 0, previews = 0, actualResumedTurn = false, inspections = 0;
+  const stop = () => nativeMessage([{ type: 'text', text: 'Actual completed turn' }], 'stop');
+  const firstLimit = nativeMessage(mode === 'tool'
+    ? [{ type: 'toolCall', id: 'length-inspect', name: 'inspect_comparison_draft', arguments: {} }]
+    : [{ type: 'thinking', thinking: 'Unfinished private reasoning' }], 'length');
+  const responses = [stop(), stop(), stop(), toolTurn('inspect_comparison_draft'), firstLimit,
+    mode === 'double' ? nativeMessage([{ type: 'thinking', thinking: 'Still unfinished' }], 'length')
+      : toolTurn('inspect_comparison_draft'), toolTurn('preview_report')];
+  const models = { getModel: () => nativeModel, streamSimple: (_model: unknown, actual: unknown) => {
+    inputs.push(JSON.stringify(actual));
+    if (inputs.length >= 2) {
+      assert.match(inputs.at(-1)!, /Current Host-owned metric pair/);
+      assert.match(inputs.at(-1)!, /0\.446376/);
+      assert.match(inputs.at(-1)!, /0\.082847508/);
+    }
+    if (inputs.length === 6) {
+      assert.equal(previews, 0, 'an output-limit turn cannot enter preview yet');
+      assert.equal(inspections, 1, 'the truncated length-inspect call must not execute; only the checkpoint has run');
+      assert.equal(auditStarts, 1);
+      assert.match(inputs.at(-1)!, /previous generation reached its output limit[\s\S]*same session and audit scope[\s\S]*Host metrics for each side/);
+      actualResumedTurn = mode !== 'double';
+    }
+    const response = responses.shift();
+    if (!response) throw new Error('Unexpected native request after bounded continuation');
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: 'done', reason: response.stopReason as 'stop' | 'toolUse', message: response });
+    return stream;
+  } } as unknown as PiModels;
+  const caller = new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
+  const tools = [
+    { name: 'inspect_comparison_draft', execute: async () => { inspections++; return { content: 'Actual full draft with unchecked far branch and actual Host metrics' }; },
+      onCompleted: async () => { material = true; if (epoch) currentInspection = true; } },
+    { name: 'preview_report', execute: async () => { assert.equal(actualResumedTurn, true); previews++; return { content: 'Actual bound preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const comparison = new ComparisonAgent({ host: new AgentHost(caller), timeoutMs: 1_000, maxRepairAttempts: 0,
+    resources: mode === 'hard' ? { maxEstimatedCostUsd: 1 } : {} }).compare({ ...context,
+      promptContent: 'Historical report claims baseline is cheaper; check current facts.',
+      reportFacts: { ...context.reportFacts, metrics: {
+        baseline: { elapsedMs: 104779, costUsd: 0.446376, pricingSource: 'fixture', pricingVersion: 'v1' },
+        candidate: { elapsedMs: 489344, costUsd: 0.082847508, tokens: { total: 644134 }, usageStatus: 'collected', pricingStatus: 'collected', pricingSource: 'fixture', pricingVersion: 'v1' },
+      } },
+    }, tools, { append: async event => {
+      events.push(event);
+      if (mode === 'cancel' && inputs.length === 5 && event.type === 'agent.usage_reported') controller.abort();
+    } }, controller.signal, {
+      hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => currentInspection,
+      onDraftAuditStarted: session => { auditStarts++; auditSessions.push(session); epoch = true; currentInspection = false; },
+      estimateUsageCost: () => mode === 'hard' && inputs.length === 5 ? 1 : 0,
+      getSubmittedResult: async () => previews > 0 && actualResumedTurn ? resultValue : undefined,
+    });
+  if (mode === 'hard') {
+    await assert.rejects(comparison, /maxEstimatedCostUsd/);
+    assert.equal(auditStarts, 1); assert.equal(inputs.length, 5); assert.equal(previews, 0);
+    return;
+  }
+  const result = await comparison;
+  assert.equal(auditStarts, 1);
+  assert.ok(events.some(event => event.type === 'agent.message_appended' && JSON.stringify(event.payload).includes('Current Host-owned metric pair')
+    && JSON.stringify(event.payload).includes('0.082847508')), 'current metric pair is recoverable from the persisted invocation input');
+  const lengthInvocation = events.find(event => event.type === 'agent.invocation_yielded' && event.payload.reason === 'output_limit');
+  if (mode === 'reasoning' || mode === 'tool' || mode === 'double') {
+    assert.ok(lengthInvocation);
+    assert.equal(lengthInvocation.sessionId, auditSessions[0]);
+    const resumed = events.filter(event => event.type === 'agent.invocation_started' && event.sessionId === auditSessions[0]);
+    assert.ok(resumed.length >= 4, 'source/checkpoint/audit and continuation are actual same-session invocations');
+  }
+  if (mode === 'reasoning' || mode === 'tool') {
+    assert.equal(result.status, 'completed'); assert.equal(inputs.length, 7); assert.equal(previews, 1);
+    assert.equal(inspections, 2, 'only checkpoint and actual continuation inspections execute');
+    const audit = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'audit')!;
+    assert.equal(audit.payload.modelRequests, 2); assert.equal(audit.payload.yieldReason, 'final_inspection_ready');
+  } else {
+    assert.equal(result.status, mode === 'cancel' ? 'cancelled' : 'failed'); assert.equal(previews, 0);
+    assert.equal(inputs.length, mode === 'double' ? 6 : 5);
+    if (mode === 'double' && result.status === 'failed') { assert.equal(result.failure.code, 'invalid_output'); assert.equal(result.failure.kind, 'protocol'); assert.equal(result.failure.attempts, 2); }
+  }
+});
+
+test('decision metric pair preserves zero versus unknown and leaves findings-only inputs unchanged', () => {
+  const metrics = { candidate: { elapsedMs: 0, costUsd: 0, tokens: { total: 0 }, usageStatus: 'collected' as const } };
+  for (const phase of ['compose', 'review']) {
+    const prompt = comparisonDecisionMetrics('Original scope', phase, metrics);
+    const pair = JSON.parse(prompt.split('Current Host-owned metric pair: ')[1]!.split('\n')[0]!) as Record<'baseline' | 'candidate', Record<string, unknown>>;
+    assert.equal(pair.baseline.costUsd, 'unknown'); assert.equal(pair.baseline.totalTokens, 'unknown');
+    assert.equal(pair.candidate.costUsd, 0); assert.equal(pair.candidate.totalTokens, 0); assert.equal(pair.candidate.elapsedMs, 0);
+    assert.equal(pair.candidate.pricingSource, 'unknown'); assert.equal(pair.candidate.pricingVersion, 'unknown');
+    assert.match(prompt, /not invoices or semantic approval/);
+  }
+  assert.equal(comparisonDecisionMetrics('Findings-only original', 'investigate', metrics), 'Findings-only original');
+});
+
+for (const target of ['investigate', 'sources'] as const) test(`output-limit continuation reuses the absolute ${target} deadline`, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  const events: AgentAuditEvent[] = [], deadlines: { at: number; reason: string }[] = [];
+  let truncated = false, continuation = false, calls = 0;
+  const host = new AgentHost({ createSession: input => ({ append: async ({ content, yieldDeadline, yieldAfterTurn }) => {
+    calls++;
+    await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: 1, images: [] });
+    const initial = !truncated && (target === 'sources' ? content.includes('This is the independent source pass') : calls === 1);
+    if (initial || content.includes('The previous generation reached its output limit and did not complete this current phase/pass.')) {
+      assert.ok(yieldDeadline); deadlines.push(yieldDeadline);
+      if (initial) { truncated = true; t.mock.timers.tick(20); return { status: 'yielded' as const, reason: 'output_limit' }; }
+      continuation = true;
+    }
+    t.mock.timers.tick(1);
+    const reason = await yieldAfterTurn?.(); return reason ? { status: 'yielded' as const, reason } : 'Actually completed';
+  }, cancel() {} }) });
+  const result = await new ComparisonAgent({ host, timeoutMs: 1_000, maxRepairAttempts: 0,
+    resources: { investigationMs: 2000, maxElapsedMs: 600_000 } }).compare(context, [], { append: async event => { events.push(event); } }, undefined,
+      { findingsReady: () => true, getSubmittedResult: async () => resultValue });
+  assert.equal(result.status, 'completed'); assert.equal(continuation, true); assert.equal(deadlines.length, 2);
+  assert.deepEqual(deadlines[1], deadlines[0], 'continuation must not grant a new local deadline');
+  assert.equal(deadlines[0]!.reason, target === 'sources' ? 'bounded_source_timeout' : 'bounded_investigation_timeout');
+  const invocationInputs = events.filter(event => event.type === 'agent.invocation_started' && event.payload.yieldDeadline);
+  assert.equal(invocationInputs.filter(event => JSON.stringify(event.payload.yieldDeadline) === JSON.stringify(deadlines[0])).length, 2);
+});
+
+test('output-limit helper does not continue failures or ordinary resource yields', async () => {
+  for (const outcome of [
+    { status: 'yielded' as const, reason: 'bounded_source_timeout', sessionId: 'same' },
+    { status: 'cancelled' as const, sessionId: 'same' },
+    { status: 'failed' as const, sessionId: 'same', failure: { code: 'agent_failure' as const, kind: 'tool' as const, attempts: 1, message: 'Actual error' } },
+  ]) {
+    let calls = 0;
+    assert.equal(await comparisonOutputContinuation(async () => { calls++; return outcome; }, 'original scope'), outcome);
+    assert.equal(calls, 1);
+  }
+});
 
 for (const mode of ['ready', 'late', 'verbal', 'unavailable', 'missing', 'hard', 'cancel', 'error', 'legacy'] as const) test(`actual draft inspection checkpoint protects delivery and execution: ${mode}`, async () => {
   const events: AgentAuditEvent[] = [], sessions: string[] = [];

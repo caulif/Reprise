@@ -31,6 +31,7 @@ function turnYieldPolicy(usage: { flush(): Promise<void> }, state: TurnYieldStat
     try {
       await usage.flush();
       if (message.stopReason === 'error' || message.stopReason === 'aborted') return false;
+      if (message.stopReason === 'length' && state.policy) { state.reason = 'output_limit'; return true; }
       state.reason = await state.policy?.();
       return state.reason !== undefined;
     } catch (error) {
@@ -163,11 +164,13 @@ async function appendPiPrompt(args: {
     const interrupted = localYield();
     if (interrupted) return interrupted;
     const yieldedReason = yieldReasonAfterPrompt(agent, turnYield, deadline.signal);
-    if (yieldedReason !== undefined) return { status: 'yielded', reason: yieldedReason };
+    if (yieldedReason !== undefined) { deadline.assertCanYield(); return { status: 'yielded', reason: yieldedReason }; }
     await recoverAgentResponse(agent, model, models, effort, deadline.signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
     await usage.flush();
     const afterRecovery = localYield();
     if (afterRecovery) return afterRecovery;
+    const recoveredYield = yieldReasonAfterPrompt(agent, turnYield, deadline.signal);
+    if (recoveredYield !== undefined) { deadline.assertCanYield(); return { status: 'yielded', reason: recoveredYield }; }
     const message = lastAssistant(agent.state.messages);
     if (!message || message.role !== 'assistant') throw new Error('Pi Agent session ended without an assistant message.');
     if (message.stopReason === 'error' || message.stopReason === 'aborted') throw new Error(message.errorMessage ?? `Pi Agent session stopped: ${message.stopReason}.`);

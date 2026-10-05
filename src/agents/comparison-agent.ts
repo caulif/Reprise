@@ -9,7 +9,7 @@ import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 import type { ComparisonResources } from '../core/schema.js';
 import { ComparisonResourceTracker } from './comparison-resources.js';
 import { comparisonToolFeedback, comparisonSoftLimitFeedback } from './comparison-tool-feedback.js';
-import { comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
+import { comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
 export type ComparisonContext = {
@@ -685,19 +685,21 @@ export class ComparisonAgent implements ComparisonAgentPort {
           freshReview = true;
         }
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
-        const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
-        outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: comparisonPassToolNames(phasedTools, resources, reviewPass),
-          ...comparisonWorkDeadline(resources, phase, reviewPass), ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
-        return outcome = comparisonYieldBoundary(outcome, resources, signal);
+        const deadline = comparisonWorkDeadline(resources, phase, reviewPass);
+        return outcome = await comparisonOutputContinuation(async prompt => {
+          if (signal.aborted) return { status: 'cancelled', sessionId: session.sessionId };
+          const next = await session.work({ promptContent: comparisonDecisionMetrics(prompt, phase, context.reportFacts.metrics), timeoutMs: comparisonTimeout(resources, this.#resources, this.#timeoutMs),
+            allowedToolNames: comparisonPassToolNames(phasedTools, resources, reviewPass), ...deadline,
+            signal, yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
+          return comparisonYieldBoundary(next, resources, signal);
+        }, promptContent);
       } finally {
         activePhase = undefined;
         await appendComparisonPhaseOutcome(audit, { sessionId: session.sessionId, phase, pass: reviewPass, startedAt, counts, resources, outcome });
       }
     };
     try {
-      if (options?.getSubmittedResult) {
-        return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId, tools.some(tool => tool.name === 'inspect_comparison_draft'));
-      }
+      if (options?.getSubmittedResult) return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId, tools.some(tool => tool.name === 'inspect_comparison_draft'));
 
       for (const step of ['understand', 'investigate', 'compose'] as const) {
         current.phase = step;

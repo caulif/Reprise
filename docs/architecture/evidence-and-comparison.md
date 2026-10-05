@@ -98,6 +98,8 @@ Comparison 每次使用独立 attempt。新提交路径的定向调查与创作�
 
 生产调查也使用原累计 investigationMs 与整体收尾预留计算绝对 yieldDeadline，仅非 findings-closure 调查调用启用。截止时中止当前执行并等待实际 idle 与 usage，再记录 bounded_investigation_timeout；未完成生成不认证调查完成，已保存 findings 保留，后续 closure 和 compose 只采用已实际收到的观察，未检关系仍未知。Closure 不继承已到期的局部 deadline，仍受原整体硬限与调用边界约束；不调整模型参数、预算或吞掉真实失败。见[调查绝对截止](../decisions/accepted/2026-10-06-comparison-investigation-absolute-deadline.md)。
 
+显式启用 turn-yield 的 Pi 调用遇到输出截断 `length` 时返回 `output_limit`，不调用完成策略或认证该回合已完成。Comparison 在同 work/phase/pass 内最多续写一次，保留 Session、审计 epoch、已执行工具结果和首次局部绝对截止；两次请求都计原资源账本，第二次仍截断则失败。真实错误、审计错误、取消和硬限优先，不以纯推理耗完输出额度作为审稿通过。写稿和审阅输入同时呈现当前 Host 双侧指标，缺失为 unknown、零仍为零，避免继承旧报告价格结论；这些输入由原事件及 generation snapshot 复原，仍不能认证自然语言判断。见[有界截断续写](../decisions/accepted/2026-10-06-comparison-output-limit-continuation.md)。
+
 独立 source pass 另传入本次调用的绝对 `yieldDeadline`，由现有累计来源复审时间与整体收尾预留计算，不增加默认预算。Provider 在截止时仅中止当前执行，等待真实 idle 与 usage 审计后才返回明确的 `bounded_source_timeout` yielded；这是未完成的来源审查，可能没有可见 assessment，不能称完整 turn 或成功验证。控制配置随调用开始事件记录，模型实际输入仍以 generation snapshot 为准。外部取消、整体硬限及真实 Provider、工具、审计错误优先；旧 Provider 忽略可选字段时，普通 timeout 不被追认为局部让出。随后核稿使用同一独立 Session 已实际读取的材料，保留未知，仍须当前正文、预览与后续实际 generation 绑定，不跳过发布门禁。见[来源复审局部截止](../decisions/accepted/2026-10-05-comparison-source-yield-deadline.md)。
 
 生产提交路径在独立 source pass 后增加只读正文检查点：本次调用只允许实际 inspect_comparison_draft，完整当前稿或明确未认证的过期稿成功交付后才开放改稿与预览。Getter 是同进程交付事实，不是语义通过；过期材料只能用于修复，不设置正式 inspection 认证。最多两次实际检查点调用，不能以口头承诺、unavailable 或工具失败解锁。后续仍须当前正式 inspection、preview 与实际 generation 绑定；旧端口缺少该 getter 时保持原行为。见[核稿正文检查点](../decisions/accepted/2026-10-06-comparison-review-draft-checkpoint.md)。
