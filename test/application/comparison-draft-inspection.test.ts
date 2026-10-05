@@ -8,6 +8,7 @@ import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evid
 import { ComparisonDiscovery } from "../../src/application/comparison-discovery.js";
 import { sha256 } from "../../src/core/identity.js";
 import { instrumentTools } from "../../src/infrastructure/agent/tools.js";
+import type { RenderGeometrySample } from "../../src/core/schema.js";
 
 const facts = {
   run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
@@ -184,28 +185,33 @@ test("inspection preserves actual render outcomes separately from current-sessio
   const f = await fixture(t);
   const delivered = new Set<string>();
   const hash = "a".repeat(64);
+  const geometrySample: RenderGeometrySample = { schemaVersion: 1, coordinateDomain: "viewport_css_pixels", startedAtMs: 538, finishedAtMs: 539,
+    observations: [{ name: "wheel", selector: "#wheel", kind: "dom_rect", status: "ok",
+      bounds: { x: 1, y: 2, width: 10, height: 10 }, screenPoints: [{ name: "center", x: 6, y: 7 }] }] };
   const draft = new ComparisonDraft({ attemptRoot: f.root, task: "Compare outputs", facts, locale: "en",
     catalog: f.catalog, deliveredImages: delivered,
     renderCheckHistory: () => ({ omitted: 2, records: [{ sourceRef: "ev-01", side: "baseline", sourceHash: hash,
       status: "motion_not_proven", requestedSampleTimesMs: [0, 500], viewport: { width: 300, height: 100, scale: 1 },
-      frames: [{ sampleTimeMs: 500, actualTimeMs: 537, contentHash: hash }],
+      frames: [{ sampleTimeMs: 500, actualTimeMs: 537, contentHash: hash, geometrySample }],
     }] }),
   });
   await draft.submit(submission);
   const inspect = async () => JSON.parse((await draft.inspectTool().execute({}, new AbortController().signal)).content) as {
-    renderCheckHistory: { origin: string; omitted: number; records: { status: string; frames: { actualTimeMs: number; nativeImageDeliveredToCurrentSession: boolean }[] }[] };
+    renderCheckHistory: { origin: string; omitted: number; records: { status: string; frames: { actualTimeMs: number; geometrySample?: RenderGeometrySample; nativeImageDeliveredToCurrentSession: boolean }[] }[] };
   };
   let history = (await inspect()).renderCheckHistory;
   assert.equal(history.origin, "this_comparison_attempt_not_candidate_runtime");
   assert.equal(history.omitted, 2);
   assert.equal(history.records[0]?.status, "motion_not_proven");
   assert.equal(history.records[0]?.frames[0]?.actualTimeMs, 537);
+  assert.deepEqual(history.records[0]?.frames[0]?.geometrySample, geometrySample);
   assert.equal(history.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
   assert.equal(delivered.size, 0);
   delivered.add(hash);
   assert.equal((await inspect()).renderCheckHistory.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, true);
   delivered.clear();
   history = (await inspect()).renderCheckHistory;
+  assert.deepEqual(history.records[0]?.frames[0]?.geometrySample, geometrySample);
   assert.equal(history.records[0]?.frames[0]?.actualTimeMs, 537);
   assert.equal(history.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
 });

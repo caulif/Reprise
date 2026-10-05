@@ -116,6 +116,8 @@ Use render_artifact to derive previews from registered sources. Use
 includeImages=true on render_artifact and preview_report when image input is
 supported and authorized. Inspect the native image blocks, not only their refs.
 If imageDelivery is not attached, explain the limitation and do not claim sight.
+Before asserting a decision-changing position or alignment guarantee, use render_artifact geometryQueries to check relevant rendered elements when supported. It measures uniquely selected SVG line/path endpoints, circle/ellipse points or DOM bounds after actual page transforms. Compare screenPoints in viewport_css_pixels, not unrelated local targets. Selectors identify elements; they do not certify their task role. If unavailable, label source inference and narrow the guarantee.
+Geometry observations have their own startedAtMs/finishedAtMs window before the PNG. Missing, ambiguous, unsupported or unavailable measurements are unknown. Discrete measurements do not prove a whole animation, visibility without occlusion, or aesthetic quality; numerical evidence does not grant image-viewing permission.
 For visual tasks, use a few comparable images before writing pixel-analysis
 scripts; deeper measurement is useful only when it can change the conclusion.
 register_evidence to preserve relevant derived analysis with source references;

@@ -2,6 +2,7 @@ import { copyFile, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/p
 import { basename, dirname, extname, join } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import { sha256, sha256File } from "../core/identity.js";
+import { collectGeometrySample, createGeometryWorld, validGeometryQueries } from "./artifact-geometry.js";
 import { startBundleStaticServer, type BundleStaticServer } from "./artifact-bundle-server.js";
 import {
   capturePngBase64,
@@ -44,6 +45,7 @@ export async function renderFrozenArtifact(request: RenderRequest): Promise<Rend
 
   const entryExt = extname(request.entryRelativePath).toLowerCase();
   if (RASTER_EXTENSIONS.has(entryExt)) {
+    if (request.geometryQueries) return invalid("geometry queries require an HTML or SVG document", []);
     return renderRasterFrame(request);
   }
   if (!DOCUMENT_EXTENSIONS.has(entryExt)) {
@@ -96,6 +98,7 @@ export async function captureHeadlessScreenshotViaRenderer(
 function validateRenderRequest(request: RenderRequest): { ok: true } | RenderResult {
   const diagnostics: RenderDiagnostic[] = [];
   const { viewport, sampleTimesMs } = request;
+  if (request.geometryQueries && !validGeometryQueries(request.geometryQueries)) return invalid("geometryQueries must contain 1..8 bounded queries with unique names", diagnostics);
   if (!Number.isInteger(viewport.width) || !Number.isInteger(viewport.height) || !Number.isFinite(viewport.scale)) {
     return invalid("viewport must use integer width/height and finite scale", diagnostics);
   }
@@ -232,7 +235,7 @@ async function renderDocumentBundle(request: RenderRequest): Promise<RenderResul
     cdp = opened.cdp;
     const navigated = await navigateDocument(opened, request, watchdog, diagnostics);
     if (!navigated.ok) return navigated.result;
-    const frames = await captureSampledFrames(opened.cdp, opened.pageSessionId, request, navigated.originMs, watchdog, diagnostics);
+    const frames = await captureSampledFrames(opened.cdp, opened.pageSessionId, request, navigated.originMs, watchdog, diagnostics, navigated.geometryContextId);
     if (!frames.ok) return frames.result;
     let layout: import("./artifact-render-types.js").RenderLayout | undefined;
     if (request.layoutSelectors) {
@@ -370,12 +373,14 @@ async function navigateDocument(
   request: RenderRequest,
   watchdog: AbortSignal,
   diagnostics: RenderDiagnostic[],
-): Promise<{ ok: true; loadMs: number; originMs: number } | { ok: false; result: RenderResult }> {
+): Promise<{ ok: true; loadMs: number; originMs: number; geometryContextId?: number } | { ok: false; result: RenderResult }> {
   const entryUrl = `${opened.server.origin}/${request.entryRelativePath.split("\\").join("/")}`;
   try {
     const loadMs = await navigateAndWait(opened.cdp, opened.pageSessionId, entryUrl, RENDER_LIMITS.loadTimeoutMs, watchdog);
-    const originMs = await evaluateJson<number>(opened.cdp, opened.pageSessionId, "performance.now()");
-    return { ok: true, loadMs, originMs };
+    const geometryContextId = request.geometryQueries ? await createGeometryWorld(opened.cdp, opened.pageSessionId) : undefined;
+    const originMs = await evaluateJson<number>(opened.cdp, opened.pageSessionId, "performance.now()", geometryContextId);
+    if (!Number.isFinite(originMs) || originMs < 0) throw new Error("invalid renderer clock");
+    return { ok: true, loadMs, originMs, ...(geometryContextId === undefined ? {} : { geometryContextId }) };
   } catch (error) {
     const merged = [
       ...diagnostics,
@@ -394,6 +399,7 @@ async function captureSampledFrames(
   originMs: number,
   watchdog: AbortSignal,
   diagnostics: RenderDiagnostic[],
+  geometryContextId?: number,
 ): Promise<{ ok: true; frames: RenderFrame[] } | { ok: false; result: RenderResult }> {
   await mkdir(request.outputRoot, { recursive: true });
   const frames: RenderFrame[] = [];
@@ -411,7 +417,7 @@ async function captureSampledFrames(
     }
     let actualTimeMs: number;
     try {
-      actualTimeMs = await waitForSampleTime(session, pageSessionId, originMs, sampleTimeMs, watchdog);
+      actualTimeMs = await waitForSampleTime(session, pageSessionId, originMs, sampleTimeMs, watchdog, geometryContextId);
     } catch (error) {
       return {
         ok: false,
@@ -424,6 +430,9 @@ async function captureSampledFrames(
       };
     }
     const pngPath = join(request.outputRoot, `frame-${String(index).padStart(3, "0")}.png`);
+    const geometrySample = request.geometryQueries && geometryContextId !== undefined
+      ? await collectGeometrySample(session, pageSessionId, geometryContextId, request.geometryQueries, originMs, actualTimeMs, watchdog)
+      : undefined;
     const data = await capturePngBase64(session, pageSessionId);
     const bytes = Buffer.from(data, "base64");
     if (bytes.byteLength <= 0) {
@@ -443,6 +452,7 @@ async function captureSampledFrames(
       pngPath,
       byteLength: bytes.byteLength,
       contentHash: sha256(bytes),
+      ...(geometrySample ? { geometrySample } : {}),
     });
   }
   return { ok: true, frames };
@@ -500,13 +510,15 @@ async function waitForSampleTime(
   originMs: number,
   sampleTimeMs: number,
   signal: AbortSignal,
+  contextId?: number,
 ): Promise<number> {
   const target = originMs + sampleTimeMs;
   const deadline = Date.now() + RENDER_LIMITS.sessionTimeoutMs;
   while (Date.now() < deadline) {
     if (signal.aborted) throw new Error("cancelled during sample wait");
-    const now = await evaluateJson<number>(session, pageSessionId, "performance.now()");
-    if (now >= target) return Math.max(0, Math.round(now - originMs));
+    const now = await evaluateJson<number>(session, pageSessionId, "performance.now()", contextId);
+    if (!Number.isFinite(now)) throw new Error("invalid renderer clock");
+    if (now >= target) return Math.max(0, contextId === undefined ? Math.round(now - originMs) : now - originMs);
     await waitForDelay(signal, Math.min(40, Math.max(1, target - now)));
   }
   throw new Error(`timed out waiting for sample ${sampleTimeMs}ms`);

@@ -277,6 +277,8 @@ export {
 } from "./schemas/model-input-capabilities.js";
 export { ComparisonEvidenceQuoteParamsSchema, ComparisonEvidenceQuoteSpecSchema } from "./schemas/comparison-evidence-quote.js";
 export type { ComparisonEvidenceQuoteParams, ComparisonEvidenceQuoteSpec } from "./schemas/comparison-evidence-quote.js";
+export { RenderGeometryQueriesSchema, RenderGeometrySampleSchema, RENDER_GEOMETRY_MAX_SAMPLE_BYTES } from "./schemas/render-geometry.js";
+export type { RenderGeometryQuery, RenderGeometrySample } from "./schemas/render-geometry.js";
 
 
 

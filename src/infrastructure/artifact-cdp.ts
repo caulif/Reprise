@@ -810,10 +810,10 @@ export async function capturePngBase64(session: CdpSession, pageSessionId: strin
   return result.data;
 }
 
-export async function evaluateJson<T>(session: CdpSession, pageSessionId: string, expression: string): Promise<T> {
+export async function evaluateJson<T>(session: CdpSession, pageSessionId: string, expression: string, contextId?: number): Promise<T> {
   const result = await session.send<{ result: { value?: T; subtype?: string; description?: string } }>(
     "Runtime.evaluate",
-    { expression, returnByValue: true, awaitPromise: true },
+    { expression, returnByValue: true, awaitPromise: true, ...(contextId === undefined ? {} : { contextId }) },
     pageSessionId,
   );
   if (result.result.subtype === "error") {

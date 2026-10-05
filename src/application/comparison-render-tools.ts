@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { parse } from "parse5";
+import { RenderGeometryQueriesSchema, type RenderGeometryQuery, type RenderGeometrySample } from "../core/schema.js";
 import type { ArtifactRenderer, RenderFailureKind, RenderViewport, RenderFrame, RenderResult } from "../infrastructure/artifact-render-types.js";
 import { ARTIFACT_RENDERER_VERSION, DEFAULT_RENDER_VIEWPORT, RENDER_LIMITS } from "../infrastructure/artifact-render-types.js";
 import { renderFrozenArtifact } from "../infrastructure/artifact-renderer.js";
@@ -81,6 +82,7 @@ const RenderArtifactParamsSchema = Type.Object({
     maxItems: RENDER_LIMITS.maxFrames,
   })),
   includeImages: Type.Optional(Type.Boolean()),
+  geometryQueries: Type.Optional(RenderGeometryQueriesSchema),
 });
 export type RenderArtifactParams = Static<typeof RenderArtifactParamsSchema>;
 
@@ -105,8 +107,10 @@ export type ComparisonRenderedCheck = {
   sourceHash: string;
   status: "ok" | "motion_not_proven" | RenderFailureKind["kind"];
   requestedSampleTimesMs: readonly number[];
-  frames: readonly { sampleTimeMs: number; actualTimeMs: number; contentHash: string }[];
+  frames: readonly { sampleTimeMs: number; actualTimeMs: number; contentHash: string; geometrySample?: RenderGeometrySample; geometryUnavailable?: string }[];
   viewport: RenderViewport;
+  geometryQueries?: readonly RenderGeometryQuery[];
+  geometryScope?: string;
 };
 
 export type PreviewReportOutcome = { status: string; message?: string };
@@ -142,11 +146,14 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
   return {
     name: "render_artifact",
     description:
-      "Derive preview frames from a registered sourceRef (HTML/SVG/raster). Returns media short refs and load diagnostics. Does not accept absolute paths or arbitrary URLs.",
+      "Derive preview frames from a registered sourceRef (HTML/SVG/raster). Optional geometryQueries measure uniquely selected elements in viewport CSS pixels, without requiring image sight. Returns media refs, load diagnostics and bounded Comparison-stage measurements; no arbitrary JavaScript or URLs.",
     parameters: RenderArtifactParamsSchema,
     async execute(params: unknown, signal: AbortSignal): Promise<AgentToolResult> {
       if (!Value.Check(RenderArtifactParamsSchema, params)) {
         return textResult({ status: "invalid_request", message: "parameters failed schema check" });
+      }
+      if (params.geometryQueries && new Set(params.geometryQueries.map(query => query.name)).size !== params.geometryQueries.length) {
+        return textResult({ status: "invalid_request", message: "geometry query names must be unique" });
       }
       const source = await deps.catalog.resolveSource(params.sourceRef);
       if (!source) {
@@ -163,9 +170,10 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         sampleTimesMs,
         outputRoot,
         signal,
+        ...(params.geometryQueries ? { geometryQueries: params.geometryQueries } : {}),
       });
       const finish = async (status: ComparisonRenderedCheck["status"], payload: Record<string, unknown>): Promise<AgentToolResult> => {
-        const renderedCheck = artifactRenderedCheck(source, rendered, status, sampleTimesMs, viewport);
+        const renderedCheck = artifactRenderedCheck(source, rendered, status, sampleTimesMs, viewport, params.geometryQueries);
         await deps.onRenderedCheck?.(structuredClone(renderedCheck));
         return textResult({ ...payload, renderedCheck });
       };
@@ -202,19 +210,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         code: registrations.code,
         message: registrations.message,
       });
-      const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number; read?: { path: string; format: "image"; mimeType: "image/png" } }[] = [];
-      for (const [index, registered] of registrations.items.entries()) {
-        const frame = rendered.frames[index];
-        if (!frame) continue;
-        assertEvidenceShortRef(registered.shortRef, "artifact_preview");
-        mediaRefs.push({
-          shortRef: registered.shortRef,
-          mediaRef: registered.mediaRef,
-          ...(registered.readPath ? { read: { path: registered.readPath, format: "image" as const, mimeType: "image/png" as const } } : {}),
-          sampleTimeMs: frame.sampleTimeMs,
-          actualTimeMs: frame.actualTimeMs,
-        });
-      }
+      const mediaRefs = artifactMediaRefs(registrations.items, rendered.frames);
       const result = await finish("ok", {
         status: "ok",
         sourceRef: params.sourceRef,
@@ -235,13 +231,44 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
   };
 }
 
-function artifactRenderedCheck(source: ComparisonRenderSource, rendered: RenderResult, status: ComparisonRenderedCheck["status"], sampleTimesMs: readonly number[], viewport: RenderViewport): ComparisonRenderedCheck {
+function artifactMediaRefs(registrations: Extract<RegisterDerivedMediaBatchResult, { ok: true }>["items"], frames: readonly RenderFrame[]) {
+  return registrations.flatMap((registered, index) => {
+    const frame = frames[index];
+    if (!frame) return [];
+    assertEvidenceShortRef(registered.shortRef, "artifact_preview");
+    return [{
+      shortRef: registered.shortRef,
+      mediaRef: registered.mediaRef,
+      ...(registered.readPath ? { read: { path: registered.readPath, format: "image" as const, mimeType: "image/png" as const } } : {}),
+      sampleTimeMs: frame.sampleTimeMs,
+      actualTimeMs: frame.actualTimeMs,
+    }];
+  });
+}
+
+function artifactRenderedCheck(source: ComparisonRenderSource, rendered: RenderResult, status: ComparisonRenderedCheck["status"], sampleTimesMs: readonly number[], viewport: RenderViewport, geometryQueries?: readonly RenderGeometryQuery[]): ComparisonRenderedCheck {
   return {
     sourceRef: source.sourceRef, side: source.side, sourceHash: source.contentHash, status,
     requestedSampleTimesMs: [...sampleTimesMs],
-    frames: rendered.ok ? rendered.frames.map(({ sampleTimeMs, actualTimeMs, contentHash }) => ({ sampleTimeMs, actualTimeMs, contentHash })) : [],
+    frames: rendered.ok ? rendered.frames.map(frame => ({ sampleTimeMs: frame.sampleTimeMs, actualTimeMs: frame.actualTimeMs, contentHash: frame.contentHash,
+      ...(geometryQueries ? bindGeometrySample(frame, geometryQueries) : {}),
+    })) : [],
     viewport: { ...(rendered.ok ? rendered.measured.viewport : viewport) },
+    ...(geometryQueries ? { geometryQueries: geometryQueries.map(query => ({ ...query })), geometryScope: "Comparison-stage observation of the sourceHash at the listed viewport. Coordinates share viewport CSS pixels. Collection windows are relative to load origin and precede PNG capture, not an exact screenshot instant. Measurements do not certify visual quality, task success or a complete animation cycle." } : {}),
   };
+}
+
+function bindGeometrySample(frame: RenderFrame, queries: readonly RenderGeometryQuery[]): { geometrySample?: RenderGeometrySample; geometryUnavailable?: string } {
+  const sample = frame.geometrySample;
+  if (!sample) return { geometryUnavailable: "Renderer returned no geometry sample; no measurement is available." };
+  if (sample.observations.length !== queries.length || sample.observations.some((observation, index) => {
+    const query = queries[index]!;
+    return observation.name !== query.name || observation.selector !== query.selector || observation.kind !== query.kind;
+  })) return { geometryUnavailable: "Geometry observations do not match the requested queries; measurements were discarded." };
+  if (!Number.isFinite(sample.startedAtMs) || !Number.isFinite(sample.finishedAtMs) || sample.startedAtMs < frame.actualTimeMs || sample.finishedAtMs < sample.startedAtMs) {
+    return { geometryUnavailable: "Geometry collection window does not match the frame timing; measurements were discarded." };
+  }
+  return { geometrySample: structuredClone(sample) };
 }
 
 function artifactFrameRegistrations(source: ComparisonRenderSource, frames: readonly RenderFrame[], viewport: RenderViewport, capturedAt: string): RegisterDerivedMediaInput[] {
