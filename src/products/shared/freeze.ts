@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
@@ -16,6 +16,7 @@ import type {
 } from '../contract.js';
 import { firstReplayUserMessage } from './replay-user-input.js';
 import { frozenFilesFromExtraction } from './historical-artifact-files.js';
+import { publishFrozenDirectory, type FrozenDirectoryPublishDependencies } from './freeze-publish.js';
 
 /** Pack-bound extract callback; sync per ProductHistoryReader port. */
 export type HistoricalArtifactExtractFn = (
@@ -35,6 +36,7 @@ export type PublishFrozenCaseInput = {
   readonly reuseExisting?: boolean;
   readonly write?: typeof writeImmutable;
   readonly errorLabel?: string;
+  readonly publishDependencies?: FrozenDirectoryPublishDependencies;
 };
 
 export async function publishFrozenCase(input: PublishFrozenCaseInput): Promise<{ taskCase: TaskCase; reused: boolean }> {
@@ -66,7 +68,7 @@ export async function publishFrozenCase(input: PublishFrozenCaseInput): Promise<
       else await write(destination, file.content ?? '');
     }
     await write(join(staging, 'case.complete'), '');
-    await rename(staging, caseDir);
+    await publishFrozenDirectory(staging, caseDir, input.publishDependencies);
     return { taskCase: input.taskCase, reused: false };
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
