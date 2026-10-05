@@ -195,7 +195,7 @@ test('comparison prompt points workspace tools at the sealed snapshot mount', ()
   assert.match(COMPARISON_SYSTEM_PROMPT, /user browser profile/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /If a render tool fails, record the limitation/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /do not retry via equivalent browser shell commands/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /one continuing session/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /reviews in a fresh session without its earlier conversation/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /最后一轮不能使用工具/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /read_observation/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);

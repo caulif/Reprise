@@ -126,7 +126,9 @@ export class ComparisonDraft {
     this.#accepted = { digest, revision: catalog.revision, ...(discovery ? { discoveryRevision: discovery.revision } : {}), result };
     this.#lastRejection = undefined;
     const length = comparisonMainTextCharacters(verified.html);
-    const feedback = length > 600 ? "Consider moving methods and repeated background to details; preserve decisive evidence and limitations. This is advisory, not a word-limit gate." : "Keep the main comparison focused on consequential differences.";
+    const feedback = length > 600
+      ? "Shorten repeated conclusions and move methods to details; preserve decisive evidence and limitations. This is advisory, not a word-limit gate."
+      : "Match length to the decision: a single difference usually needs only a headline, paired excerpts and its consequence (about 100–250 Chinese characters); several consequential differences may need 300–600. Do not repeat the headline or add generic provenance/checking caveats that do not change this choice.";
     return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\nmainTextCharacters=${length}\nreadabilityFeedback=${feedback}\nimportantLimitations=${JSON.stringify(discovery?.submission.importantLimitations ?? [])}\nEnsure important limitations remain visible in the main comparison; their semantic coverage needs review.\nPreview this exact draft in the review turn before finishing.`;
   }
 

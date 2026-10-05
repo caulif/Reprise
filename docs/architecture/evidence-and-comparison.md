@@ -54,7 +54,7 @@ Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝
 
 默认内置路径通过 `update_comparison_findings` 保存任务标准、双方最终来源、观察方法与支持范围、反证、重要限制和判断问题。Host 校验引用归属及结构，不证明自然语言主张正确；不可变发现 artifact 和 `comparison.findings_updated` 绑定 attempt、revision、catalog revision 与 digest，工具回执沿用模型输入审计。问题历史不得静默删除，重新打开已解决问题需新依据。问题须解决或说明证据不可得才进入创作；旧自定义 Comparison 端口保留原契约。
 
-草稿接受版本通过 `comparison.draft_accepted` 同时持久化 discovery revision、catalog revision 与 HTML digest；离线恢复核对最新发现 artifact 与接受绑定，并要求匹配预览事件发生在绑定之后。发现变化使旧草稿不可发布，必须重新提交并预览当前版本。主文长度和重要限制是审阅反馈，300–600 中文字只是普通任务的指导目标。检查方法或精确推导可展开，影响取舍的未知不得藏入详情；证据注册、同公式复算或单帧截图均不证明全局行为。
+草稿接受版本通过 `comparison.draft_accepted` 同时持久化 discovery revision、catalog revision 与 HTML digest；离线恢复核对最新发现 artifact 与接受绑定，并要求匹配预览事件发生在绑定之后。发现变化使旧草稿不可发布，必须重新提交并预览当前版本。主文长度和重要限制是审阅反馈，简单单差异约100–250中文字、多个决定性差异约300–600字，仅作任务自适应指导，不是硬字数门禁；常规来源/哈希检查复用Host事实，不因未重复而增造限制。检查方法或精确推导可展开，影响取舍的未知不得藏入详情；证据注册、同公式复算或单帧截图均不证明全局行为。
 
 Comparison 是运行后的可选证据视图，不是新的实验状态机，也不为历史 Runtime 版本提供精确复现保证。报告失败不应改写 CandidateRun 的 outcome；失败诊断保留原任务和草稿排查路径，未经发布校验的草稿正文不能作为正式结论。报告中应明确 baseline、candidate、证据缺口和 cleanup 状态。
 
@@ -64,7 +64,9 @@ TaskCase 通过 case.complete 发布，缺少标记的半成品不能作为完�
 
 进入模型的正文先经过秘密过滤，再持久化并发送；超出内联预算的内容使用带 hash/长度的附件，重建时校验。Pi 内存 transcript 不是另一份持久化真相。角色工具读取的正文同样需要可复原的事件／附件记录，仅保存可变文件路径或 digest 不足以重建输入。
 
-Comparison 每次使用独立 attempt 和连续 Session。新提交路径按定向调查、提交、审阅三轮推进；首轮先读取确定性 briefing 索引，只追查会改变结论的问题。`comparison.phase_completed` 记录每段耗时、模型请求、工具调用、压缩和预览次数；旧四轮 JSON 信封仅保留给旧端口。可执行 Prompt 以 [`comparison-agent.ts`](../../src/agents/comparison-agent.ts) 为唯一文本源：以任务成功标准选证据形式，点名 `render_artifact` / `register_evidence` / `preview_report`；截图与页面查看只走这两个受控工具，禁止经 `shell_exec` 启动 Chrome/Edge/Firefox 或做 `--version` / `--dump-dom` / 用户 profile 探测；渲染失败则记录 limitation 并继续文本证据，不得用等价浏览器 shell 重试。Prompt 是第二道防线，不能替代 Comparison 工具装配层的 shell 边界。提交时 Host 检查短引用、媒体、结构和安全内容；review 须预览且改稿后重检。取舍见[草稿提交与版本发布](../decisions/accepted/2026-09-26-comparison-draft-publication.md)与[禁止直接浏览器 shell](../decisions/accepted/2026-09-20-comparison-prompt-no-direct-browser-shell.md)。Host 持有确定性指标和模板区域，Agent 写本次任务的差异与判断；未知 token、价格或用量不是零。候选 snapshot 缺失或不完整时明确 unavailable，不能悄悄改读可变运行副本。
+Comparison 每次使用独立 attempt。新提交路径的定向调查与创作复用同一 Session；首次审阅前关闭该 Session，以同 attempt key 创建没有此前对话的新 Session，后续审阅修正复用该新 Session。旧直接报告端口仍保持连续 Session。新提交路径按定向调查、提交、审阅三轮推进；首轮先读取确定性 briefing 索引，只追查会改变结论的问题。`comparison.phase_completed` 记录每段耗时、模型请求、工具调用、压缩和预览次数；旧四轮 JSON 信封仅保留给旧端口。可执行 Prompt 以 [`comparison-agent.ts`](../../src/agents/comparison-agent.ts) 为唯一文本源：以任务成功标准选证据形式，点名 `render_artifact` / `register_evidence` / `preview_report`；截图与页面查看只走这两个受控工具，禁止经 `shell_exec` 启动 Chrome/Edge/Firefox 或做 `--version` / `--dump-dom` / 用户 profile 探测；渲染失败则记录 limitation 并继续文本证据，不得用等价浏览器 shell 重试。Prompt 是第二道防线，不能替代 Comparison 工具装配层的 shell 边界。提交时 Host 检查短引用、媒体、结构和安全内容；review 须预览且改稿后重检。取舍见[草稿提交与版本发布](../decisions/accepted/2026-09-26-comparison-draft-publication.md)与[禁止直接浏览器 shell](../decisions/accepted/2026-09-20-comparison-prompt-no-direct-browser-shell.md)。Host 持有确定性指标和模板区域，Agent 写本次任务的差异与判断；未知 token、价格或用量不是零。候选 snapshot 缺失或不完整时明确 unavailable，不能悄悄改读可变运行副本。
+
+新审阅首轮得到原 context 的导航，先从文件读取原任务、决定性来源及实际 report.html；saved findings 只作为尚未验证的语义假设与问题历史，不能替代来源。工具、catalog、draft、阶段状态、审计与资源 tracker 仍属于同一 attempt，模型请求、工具、累计费用和开始时间不因换 Session 重置。创作失败不创建审阅 Session；attempt级取消signal跨会话存在，cancel与进行中的release先取消attempt再关闭当前缓存Session；旧Session关闭空档中取消也不创建付费review，新Session图片交付权限从空集开始，不继承旧Session图片。取消与release指向当前缓存的新Session，返回的 sessionId 来自实际审阅，模型输入仍逐请求审计。换会话本身不增加审阅轮数或并行模型调用，也不放宽预览、digest 与原生图片交付要求。
 
 旧 attempt 可通过 `recover-comparison` 离线复核：只读冻结 context、catalog revision、预览事件与原草稿，重新运行当前校验器。缺失预览、digest/revision 不一致或校验失败不得恢复；`--publish` 是显式操作且拒绝覆盖已有根报告，成功后追加恢复事件，不篡改原失败事件。
 
@@ -95,4 +97,3 @@ Comparison 合成评估的新输入由每个隔离 row 的 `evaluation-inputs.js
 | `payload` | unknown | 否 |
 | `checksum` | string | 否 |
 <!-- END GENERATED event-catalog -->
-

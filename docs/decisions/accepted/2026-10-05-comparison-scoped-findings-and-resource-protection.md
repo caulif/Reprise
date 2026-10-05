@@ -17,7 +17,7 @@
 - Pi 的实际生成与压缩请求、usage 分别审计，并区分 scope。估算按实际模型和保存的价格口径处理；usage 或价格缺失保持未知，启用金额保护时拒绝继续。该保护基于已返回记录和下一次请求/工具检查，不能保证供应商实账或精确限制在途费用；仍需独立时间和请求保护。
 - 压缩请求不能仅保存 digest 和后续 summary：`compactionInput: AgentTextBody` 保留实际 systemPrompt/messages/tools，上下文秘密过滤后同一内容用于发送和审计；不保存 Provider 配置或凭据。沿用正文附件溢出及 hash/图片身份校验。History 返回可选 `compactionRequests`，旧缺输入体保留不完整状态，不能凭 summary 反推原始请求；损坏和缺失附件继续明确诊断。
 - Host 在结论后、长比较正文前展示时间与估算费用，Token 分项默认折叠。费用注明非供应商账单及工具费排除，时间保留分秒，Token 口径差异不当作效率评分。format 2 的新 Host metrics 标记约束紧凑顺序；旧无标记页面、旧指标指纹和旧舍入展示可读取，不迁移历史文件。新草稿不能通过删除标记绕过 Host 快照。
-- 审阅消费主文长度提示、重要限制与实际布局观察；300–600 中文字为普通任务的指导目标，不作硬发布门禁。关键限制留在主文，方法和长过程进入详情。源码、执行、采样、复算和自述分别支持不同强度的主张。
+- 审阅消费主文长度提示、重要限制与实际布局观察；简单单差异100–250中文字、多个决定性差异300–600字为任务自适应指导目标，不作硬发布门禁。关键限制留在主文，方法和长过程进入详情。源码、执行、采样、复算和自述分别支持不同强度的主张。
 - 冻结 12 个跨任务合成样本，分别覆盖代码、文本、数据、视觉、交互与证据不足；运行原序、左右交换、匿名身份变体及重复样本。准备输入不调用模型，真实生成仅调用 Comparison，不重做候选任务。匿名是离线扰动，不宣称生产完全盲化；人工按报告 hash 标注事实、过程归属、限制与取舍，再统计漂移和资源分布。不能把成功生成报告或自动汇总当作语义通过。
 - 每个新评估 row 的 `evaluation-inputs.json` 经 core schema 校验，绑定 suite 变体及模型输入文件；plan 与新 ledger 保存其 hash。绑定 source、case、baseline manifest/bytes、experiment 元数据、准备时已有 run 文件/artifacts 及 environment 树，不遍历外部模型配置。事件日志绑定准备时 committed prefix 的字节长度与 hash，允许有效追加的比较事件和新审计 artifact，已有输入不可改写。真实 runner 在任何调用前校验全部选中输入，assess 复核有绑定的 row。修改任务却保留旧 contentHash 不能通过文件 hash 检查。旧未绑定评估保持读取，但需独立的 suite/content 离线核验，不能追认其准备时所有输入均不可变；新真实运行须重新 prepare。
 
@@ -26,6 +26,12 @@
 评估账本逐条按 usage 事件的实际 model 与仓库价格快照/运营 override 计价，再汇总生成和压缩的已知部分；不按 requested config 统一套价。任一未知或非法价格、或 usage 覆盖不完整时，总估算保持未知，knownEstimatedCostUsd 仅表示已知部分；pricingLookup 不因部分命中掩盖 miss/invalid。
 
 Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 terminal event 的明确错误归为 transient_upstream，复用已有移除失败末尾响应后 continue 的有限重试，保留已执行工具结果，不重新提交初始提示或重做工具。认证与普通协议错误不因类似字样扩大重试。SDK 对 error/aborted 消息初始化的全零 usage 不作为免费事实写入 usage_reported；请求审计仍保留，覆盖缺口及金额保护按未知处理。失败消息已有非零 usage 继续保存，成功的零-token记录仍保留；供应商未给出的账单不能推断为零。
+
+### 独立审阅会话与共享预算
+
+生产提交草稿路径的调查与创作共享 Session，首次 review 前关闭该 Session，再用同一 attempt key 新建审阅 Session。审阅从原 context 导航进入，先读原任务、决定性来源和实际报告；保存的发现只传递尚未验证的语义假设及问题历史，不继承创作对话。后续 repair 留在新审阅 Session，旧直接报告端口继续原来的连续 Session。该边界降低审阅重复作者前一轮解读的风险，但不宣称新会话自动保证语义正确。
+
+资源 tracker、审计 sink、工具、业务阶段、catalog 与草稿仍共享同一个 attempt。请求/工具/已知费用/累计时间不重置；审阅 Session 创建后按剩余时间分配调用超时，生成与 usage 逐请求审计。创作失败不得新建审阅；取消/release 操作当前缓存会话，结果 sessionId 指向真实审阅。保留原来的审阅轮数、preview/digest 约束和实际图片交付校验，不引入并行 reviewer 或额外投票调用。自动化覆盖新会话不携带调查/创作消息、repair 复用、模型/工具/费用/时间共享预算的反向用例，以及取消、release、创作失败与 legacy 行为。
 
 ### Host 诊断与普通正文的语义边界
 
@@ -56,3 +62,5 @@ Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 termi
 离线测试检查双侧来源、问题恢复、幂等更新、发现变化使草稿失效、软预算工具出口、硬预算拒绝、费用未知、生成与压缩审计、旧布局兼容及新布局逆序拒绝。受控 renderer 检查新生成报告的桌面、移动端、长正文与展开状态，布局检查不代替语义质量。执行项目 `npm run check`；真实重复评估单独 opt-in，记录模型、输入能力、suite/report hash、usage、费用和停止原因，人工审阅前保留未验收状态。
 
 事实归宿：[证据与 Comparison](../../architecture/evidence-and-comparison.md)、[使用指南](../../usage.md)、[开发与验证](../../development.md)。沿用[草稿发布](2026-09-26-comparison-draft-publication.md)、[原生图片与续审](2026-09-30-comparison-native-image-pipeline.md)及[Host 重建](2026-09-23-host-rebuilt-comparison-report.md)的安全与失败保留边界；资源保护补充而非替代调查的语义停止条件。
+
+独立审阅的取消signal属于整个attempt，不能依赖当前Session缓存是否存在；cancel和进行中的release在旧Session关闭空档中仍阻止新review，初始化失败也清理活动标记。同一attempt不得并发混用Session/资源状态。新的agent.session_started清理实时图片delivery及manifest状态，新Session须重新收到generation实际图片；compaction不授予视觉权限。沿用单Session旧custom port无manifest的tool/message fallback，同Session已交付图片可累计。
