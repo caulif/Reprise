@@ -18,6 +18,93 @@ const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' 
   replayScope: { historical: 'original', candidate: 'original' }, reportFacts: { run: { runId: 'run', outcome: 'completed', terminationCode: 'completed', initiatedBy: 'controller' }, models: { candidate: 'fixture' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' }, delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' }, replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } } };
 const resultValue = { status: 'completed' as const, reportPath: 'report.html' as const, headline: 'Scoped result', evidenceRefs: [] };
 
+for (const mode of ['saved', 'legacy', 'hard', 'cancel', 'error'] as const) test(`first findings checkpoint preserves execution boundaries: ${mode}`, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-first-findings-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: 'attempt', links: [], media: [] });
+  const discovery = new ComparisonDiscovery({ catalog, attemptId: 'attempt', persist: async () => {} });
+  const pending = { criteria: ['Task requirement read from INDEX.md'],
+    finals: (['baseline', 'candidate'] as const).map(side => ({ side, status: 'unavailable' as const, sourceRefs: [], description: 'Final source not yet located' })),
+    findings: [], importantLimitations: ['Final outcomes not yet checked'],
+    decisionQuestions: [{ id: 'finals', question: 'Do both finals satisfy the task?', decisionImpact: 'Changes replacement choice', status: 'pending' as const, nextCheck: 'Locate and compare final sources', evidenceRefs: [] }],
+  };
+  const controller = new AbortController();
+  const events: AgentAuditEvent[] = [];
+  let turns = 0, executed = 0, navigated = 0, composed = false, checkedBeforeCompose = false, sourcePassVisited = false;
+  const checkNames = ['shell_exec', 'render_artifact', 'register_evidence'];
+  const host = new AgentHost({ createSession: input => ({ append: async ({ content, signal }) => {
+    turns++;
+    await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: turns, images: [] });
+    const call = (name: string, params: unknown = {}) => input.tools.find(tool => tool.name === name)!.execute(params, signal);
+    if (turns === 1) {
+      if (mode === 'cancel') controller.abort();
+      if (mode === 'hard' || mode === 'cancel') { await call('render_artifact'); return 'unreachable'; }
+      await call('read'); await call('ls');
+      assert.equal(navigated, 2);
+      if (mode !== 'legacy') {
+        for (const name of checkNames) assert.match((await call(name)).content, /findings_checkpoint_required/);
+        assert.equal(executed, 0, 'denied tools have zero side effects');
+        assert.match((await call('update_comparison_findings', {})).content, /status=rejected/);
+        assert.equal(discovery.snapshot(), undefined);
+        assert.match((await call('shell_exec')).content, /findings_checkpoint_required/, 'rejected save cannot unlock investigation');
+        assert.match((await call('update_comparison_findings', pending)).content, /status=accepted/);
+        assert.equal(discovery.readyToCompose(), false, 'minimal checkpoint is not compose readiness');
+      }
+      for (const name of checkNames) {
+        const result = await call(name);
+        if (mode !== 'legacy') {
+          assert.ok(result.content.startsWith('actual result'));
+          assert.equal(result.contentBlocks?.some(block => block.type === 'image'), false, 'text-only fixture must retain the Host image filtering boundary');
+          assert.match(result.content, /Image content omitted: this model session does not accept image input/);
+          assert.doesNotMatch(result.content, /findings_checkpoint_required/);
+        }
+      }
+      return 'investigated';
+    }
+    if (content.includes('bounded closure turn')) {
+      assert.equal(composed, false);
+      assert.equal(discovery.readyToCompose(), false);
+      assert.match(await discovery.update({ ...pending, decisionQuestions: [] }), /question_history_missing/);
+      await call('update_comparison_findings', { ...pending, decisionQuestions: pending.decisionQuestions.map(question => ({ ...question, status: 'unavailable', resolution: 'Finals not accessible in this fixture' })) });
+      checkedBeforeCompose = true;
+    } else if (content.startsWith('Submit the report')) { composed = true; if (mode !== 'legacy') assert.equal(checkedBeforeCompose, true); }
+    else if (content.includes('This is the independent source pass')) {
+      sourcePassVisited = true;
+      assert.doesNotMatch(content, /Task requirement read from INDEX.md/);
+      assert.match((await call('update_comparison_findings', pending)).content, /source_review_not_ready/);
+      await call('render_artifact');
+    }
+    return 'done';
+  }, cancel() {} }) });
+  const tools = [discovery.tool(), ...['read', 'ls'].map(name => ({ name, description: name, parameters: Type.Object({}), execute: async () => { navigated++; return { content: 'source read' }; } })),
+    ...checkNames.map(name => ({ name, description: name, parameters: Type.Object({}), execute: async () => {
+      executed++; if (mode === 'error') throw new Error('Actual check failed');
+      return { content: 'actual result', contentBlocks: [{ type: 'image' as const, mimeType: 'image/png', data: 'fixture' }] };
+    } })),
+  ];
+  const agent = new ComparisonAgent({ host, timeoutMs: 1_000, maxRepairAttempts: 0, resources: mode === 'hard' ? { maxModelRequests: 1 } : {} });
+  const result = await agent.compare(context, tools, { append: async event => { events.push(event); } }, controller.signal, {
+    ...(mode !== 'legacy' ? { hasSavedFindings: () => discovery.snapshot() !== undefined, findingsReady: () => discovery.readyToCompose(), getFindingsState: () => discovery.state() } : {}),
+    getSubmittedResult: async () => resultValue,
+  });
+  if (mode === 'hard' || mode === 'error') {
+    assert.equal(result.status, 'failed');
+    if (result.status === 'failed') assert.match(result.failure.message, mode === 'hard' ? /maxModelRequests/ : /comparison agent tool execution failed/);
+  } else assert.equal(result.status, mode === 'cancel' ? 'cancelled' : 'completed');
+  if (mode === 'cancel' || mode === 'hard') { assert.equal(executed, 0); assert.equal(discovery.snapshot(), undefined); }
+  if (mode === 'error') {
+    assert.equal(executed, 1, 'real tool failure is not converted to checkpoint feedback');
+    const failures = events.filter(event => event.type === 'agent.tool_failed');
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]!.payload.tool, 'shell_exec');
+    assert.equal(failures[0]!.payload.message, 'Actual check failed', 'Host public wrapper retains the actual failure in its audit');
+  }
+  if (mode === 'saved' || mode === 'legacy') {
+    assert.equal(sourcePassVisited, true, 'independent source pass must actually execute');
+    assert.equal(executed, 4, 'three investigation checks plus one independent source check');
+  }
+});
+
 test('soft yield closes findings, carries incomplete source scope and waits for genuine generation-bound final readiness', async () => {
   const events: AgentAuditEvent[] = []; const prompts: string[] = [], allowedTools: (readonly string[] | undefined)[] = [];
   let findings = false, preview = false, inspected = false, inspectionInGeneration = false, reads = 0;

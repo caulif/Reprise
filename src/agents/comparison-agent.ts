@@ -93,6 +93,8 @@ export type ComparisonCompareOptions = {
   enforcePhaseBoundaries?: boolean;
   getFindingsState?: () => string;
   findingsReady?: () => boolean;
+  /** Accepted discovery snapshot exists; does not certify readiness or semantic correctness. */
+  hasSavedFindings?: () => boolean;
   isRepairRead?: (params: unknown) => Promise<boolean>;
   estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
@@ -173,10 +175,11 @@ function sourceReviewFeedback(name: string, reason?: string): { content: string 
   return undefined;
 }
 
-function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { sourceReview: boolean; findingsClosure: boolean }, resources: ComparisonResourceTracker,
-  isRepairRead?: ComparisonCompareOptions['isRepairRead']): AgentToolDefinition[] {
+function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { phase: ComparisonPhase; sourceReview: boolean; findingsClosure: boolean }, resources: ComparisonResourceTracker,
+  isRepairRead?: ComparisonCompareOptions['isRepairRead'], hasSavedFindings?: () => boolean): AgentToolDefinition[] {
   return tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
     const reason = resources.beforeTool(tool.name);
+    signal.throwIfAborted();
     if (current.findingsClosure && tool.name !== 'update_comparison_findings') return { content: JSON.stringify({ code: 'closure_only',
       message: 'This findings closure permits only update_comparison_findings from already observed evidence. Do not investigate, write, submit or preview here.' }) };
     const sourceFeedback = current.sourceReview ? sourceReviewFeedback(tool.name, reason) : undefined;
@@ -187,7 +190,12 @@ function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { so
       resources.checkHard(tool.name);
       return tool.execute(params, signal);
     }
-    return reason ? comparisonSoftLimitFeedback(reason, resources.snapshot().phase) : tool.execute(params, signal);
+    if (reason) return comparisonSoftLimitFeedback(reason, resources.snapshot().phase);
+    const checkpoint = current.phase === 'investigate' && !current.findingsClosure && !current.sourceReview && hasSavedFindings !== undefined;
+    const costlyCheck = ['shell_exec', 'render_artifact', 'register_evidence'].includes(tool.name);
+    if (checkpoint && costlyCheck && !hasSavedFindings()) return { content: JSON.stringify({ code: 'findings_checkpoint_required',
+      message: 'Before this check, call update_comparison_findings with a minimal complete snapshot from what you actually read: task criteria and their sources, both final locations (unavailable if not located), findings: [] if not yet checked, and pending decision questions with nextCheck. Read/navigation remains available. Do not invent observations or settle unknown questions.' }) };
+    return tool.execute(params, signal);
   } }));
 }
 
@@ -366,7 +374,8 @@ export const COMPARISON_TURN_PROMPTS = {
     'final outputs from drafts and observation from inference. Stop when further',
     'reading is unlikely to change the conclusion. Record a brief conclusion,',
     'decisive references, and remaining uncertainty in work/comparison-plan.md.',
-    'When update_comparison_findings is available, save criteria, both final-source locations,',
+    'When update_comparison_findings is available, save a minimal complete snapshot early, before shell, render or evidence registration checks. First read the task criteria and their sources and locate both finals; use status=unavailable for a final not yet located, findings: [] when nothing has been verified, and pending decision questions with nextCheck for unfinished checks. Do not delay this first save until the investigation ends or invent observations to fill it.',
+    'After decision-changing checks or catalog changes, promptly save a complete replacement snapshot, preserving every historical decision question. Save criteria, both final-source locations,',
     'scoped observations, important limitations and decision questions before finishing.',
     'Resolve each question or explain why its evidence is unavailable. Reopen settled questions only with new grounds.',
     'Each next check must have a possible outcome that changes the choice or an important limitation.',
@@ -557,7 +566,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     };
     const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false, findingsClosure: false };
     const resources = new ComparisonResourceTracker(this.#resources);
-    const boundedTools = resourceBoundTools(tools, current, resources, options?.isRepairRead);
+    const boundedTools = resourceBoundTools(tools, current, resources, options?.isRepairRead, options?.hasSavedFindings);
     const stagedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
     const phasedTools = options?.getSubmittedResult ? stagedTools.map(tool => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) =>
       comparisonToolFeedback(await tool.execute(params, toolSignal), resources, options.getSubmissionState?.(), tool.name) })) : stagedTools;

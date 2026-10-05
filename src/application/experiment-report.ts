@@ -611,7 +611,7 @@ async function invokeCompare(
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       enforcePhaseBoundaries: true,
       estimateUsageCost,
-      ...(requireFindings ? { findingsReady: () => discovery.readyToCompose(), getFindingsState: () => discovery.state() } : {}),
+      ...(requireFindings ? { findingsReady: () => discovery.readyToCompose(), hasSavedFindings: () => discovery.snapshot() !== undefined, getFindingsState: () => discovery.state() } : {}),
     },
   );
   return { result, deliveredImageContentHashes };
